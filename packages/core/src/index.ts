@@ -17,6 +17,7 @@ export {
 export { createLogger } from './logger.js';
 export type { Logger } from './logger.js';
 export { EngineRegistry } from './engine-registry.js';
-export { scanProjectContext } from './context-scanner.js';
+export { scanProjectContext, isKernProject } from './context-scanner.js';
+export type { ContextFormat } from './context-scanner.js';
 export { tracker, estimateTokens, estimateCost } from './token-tracker.js';
 export type { TokenUsage, SessionStats } from './token-tracker.js';

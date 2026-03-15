@@ -160,6 +160,7 @@ export interface AgonConfig {
   onboarded?: boolean;
   caesarModel?: 'smollm2-360m' | 'phi-3-mini' | 'none';
   projectContext?: string;
+  contextFormat?: 'plain' | 'kern';
 }
 
 export const DEFAULT_CONFIG: Required<AgonConfig> = {
@@ -182,6 +183,7 @@ export const DEFAULT_CONFIG: Required<AgonConfig> = {
   onboarded: false,
   caesarModel: 'smollm2-360m',
   projectContext: '',
+  contextFormat: 'plain',
 };
 
 // ── Forge ────────────────────────────────────────────────────────────

@@ -256,7 +256,7 @@ async function handleForge(
   console.log('');
   // Scan project context
   const config = loadConfig();
-  const projectCtx = scanProjectContext(process.cwd(), config.projectContext || undefined);
+  const projectCtx = scanProjectContext(process.cwd(), config.projectContext || undefined, config.contextFormat);
 
   const manifest = await runForge(
     {
@@ -358,7 +358,7 @@ async function handleBrainstorm(question: string): Promise<void> {
 
   // Scan project context for engines
   const config = loadConfig();
-  const projectCtx = scanProjectContext(process.cwd(), config.projectContext || undefined);
+  const projectCtx = scanProjectContext(process.cwd(), config.projectContext || undefined, config.contextFormat);
 
   const engineList = engines.map((id) => fg256(ENGINE_COLORS[id] ?? 245, id)).join(dim(', '));
   header(`Brainstorm: ${question}`);
@@ -423,7 +423,7 @@ async function handleTribunal(question: string): Promise<void> {
 
   // Scan project context
   const config = loadConfig();
-  const projectCtx = scanProjectContext(process.cwd(), config.projectContext || undefined);
+  const projectCtx = scanProjectContext(process.cwd(), config.projectContext || undefined, config.contextFormat);
   const enrichedQuestion = projectCtx
     ? `${question}\n\n## PROJECT CONTEXT\n${projectCtx}`
     : question;

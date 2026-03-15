@@ -1,6 +1,8 @@
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join, basename } from 'node:path';
 
+export type ContextFormat = 'plain' | 'kern';
+
 const CONTEXT_FILES = [
   'package.json',
   'Cargo.toml',
@@ -23,10 +25,65 @@ const MAX_TREE_DEPTH = 3;
 const MAX_TREE_ENTRIES = 60;
 
 /**
+ * Detect whether a directory is a Kern project.
+ * Checks for: kern.config.ts, 'kern-lang' in package.json deps, .kern files.
+ */
+export function isKernProject(cwd: string): boolean {
+  // kern.config.ts exists
+  if (existsSync(join(cwd, 'kern.config.ts'))) return true;
+
+  // kern-lang in package.json dependencies
+  try {
+    const pkg = JSON.parse(readFileSync(join(cwd, 'package.json'), 'utf-8'));
+    const allDeps = {
+      ...pkg.dependencies,
+      ...pkg.devDependencies,
+    };
+    if ('kern-lang' in allDeps) return true;
+  } catch { /* no package.json */ }
+
+  // .kern files in cwd or cwd/src
+  try {
+    const hasKernFiles = readdirSync(cwd).some((f) => f.endsWith('.kern'));
+    if (hasKernFiles) return true;
+  } catch { /* skip */ }
+
+  try {
+    const srcDir = join(cwd, 'src');
+    if (existsSync(srcDir)) {
+      const hasKernSrc = readdirSync(srcDir).some((f) => f.endsWith('.kern'));
+      if (hasKernSrc) return true;
+    }
+  } catch { /* skip */ }
+
+  return false;
+}
+
+/**
  * Scan a project directory and build a context summary for engine prompts.
  * Reads package manifests, READMEs, and directory structure.
+ *
+ * @param format - 'plain' (default) or 'kern' for LLM-native structured format.
+ *                 Auto-detects Kern projects when format is 'kern'.
  */
-export function scanProjectContext(cwd: string, extraContext?: string): string {
+export function scanProjectContext(
+  cwd: string,
+  extraContext?: string,
+  format?: ContextFormat,
+): string {
+  const effectiveFormat = format ?? 'plain';
+  const isKern = isKernProject(cwd);
+
+  if (effectiveFormat === 'kern' || isKern) {
+    return scanKernContext(cwd, extraContext);
+  }
+
+  return scanPlainContext(cwd, extraContext);
+}
+
+// ── Plain text context (default) ────────────────────────────────────
+
+function scanPlainContext(cwd: string, extraContext?: string): string {
   const sections: string[] = [];
 
   // Project manifest
@@ -49,7 +106,7 @@ export function scanProjectContext(cwd: string, extraContext?: string): string {
           sections.push(`${file}:\n${content.slice(0, 1000)}`);
         }
       } catch { /* skip unreadable */ }
-      break; // only first manifest
+      break;
     }
   }
 
@@ -66,18 +123,141 @@ export function scanProjectContext(cwd: string, extraContext?: string): string {
     }
   }
 
-  // Directory tree (shallow)
+  // Directory tree
   const tree = buildTree(cwd, 0);
   if (tree.length > 0) {
     sections.push(`Directory structure:\n${tree.join('\n')}`);
   }
 
-  // Extra context from config/onboarding
   if (extraContext) {
     sections.push(`User context: ${extraContext}`);
   }
 
   return sections.join('\n\n');
+}
+
+// ── Kern-format context (LLM-native structured) ────────────────────
+
+function scanKernContext(cwd: string, extraContext?: string): string {
+  const lines: string[] = [];
+
+  // Read package.json for project metadata
+  let projectName = basename(cwd);
+  let version = '?';
+  let description = '';
+  let deps: string[] = [];
+  let devDeps: string[] = [];
+
+  try {
+    const pkg = JSON.parse(readFileSync(join(cwd, 'package.json'), 'utf-8'));
+    projectName = pkg.name ?? projectName;
+    version = pkg.version ?? version;
+    description = pkg.description ?? '';
+    deps = Object.keys(pkg.dependencies ?? {});
+    devDeps = Object.keys(pkg.devDependencies ?? {});
+  } catch { /* no package.json */ }
+
+  lines.push(`project ${projectName} {`);
+  lines.push(`  version: "${version}"`);
+  if (description) lines.push(`  description: "${description}"`);
+
+  // Stack detection
+  const stack: string[] = [];
+  if (deps.includes('typescript') || devDeps.includes('typescript')) stack.push('TypeScript');
+  if (deps.includes('react') || deps.includes('react-dom')) stack.push('React');
+  if (deps.includes('next')) stack.push('Next.js');
+  if (deps.includes('express')) stack.push('Express');
+  if (deps.includes('prisma') || deps.includes('@prisma/client')) stack.push('Prisma');
+  if (deps.includes('tailwindcss') || devDeps.includes('tailwindcss')) stack.push('Tailwind');
+  if (deps.includes('vue')) stack.push('Vue');
+  if (deps.includes('svelte')) stack.push('Svelte');
+  if (stack.length > 0) lines.push(`  stack: ${stack.join(', ')}`);
+
+  // Test runner
+  if (devDeps.includes('vitest')) lines.push('  test: vitest');
+  else if (devDeps.includes('jest')) lines.push('  test: jest');
+  else if (devDeps.includes('mocha')) lines.push('  test: mocha');
+
+  // Kern-specific context
+  if (isKernProject(cwd)) {
+    lines.push('');
+    lines.push('  kern {');
+
+    // Read kern.config.ts if it exists
+    const configPath = join(cwd, 'kern.config.ts');
+    if (existsSync(configPath)) {
+      try {
+        const configContent = readFileSync(configPath, 'utf-8');
+        // Extract target from config
+        const targetMatch = /target:\s*['"](\w+)['"]/.exec(configContent);
+        if (targetMatch) lines.push(`    target: "${targetMatch[1]}"`);
+      } catch { /* skip */ }
+    }
+
+    // Find .kern files
+    const kernFiles = findFiles(cwd, '.kern', 2);
+    if (kernFiles.length > 0) {
+      lines.push(`    files: ${kernFiles.length}`);
+      for (const f of kernFiles.slice(0, 10)) {
+        lines.push(`    - ${f}`);
+      }
+    }
+
+    lines.push('  }');
+  }
+
+  // Key directories as modules
+  const tree = buildTree(cwd, 0);
+  if (tree.length > 0) {
+    lines.push('');
+    lines.push('  structure {');
+    for (const t of tree.slice(0, 30)) {
+      lines.push(`    ${t}`);
+    }
+    if (tree.length > 30) lines.push(`    ... (${tree.length - 30} more)`);
+    lines.push('  }');
+  }
+
+  // Dependencies
+  if (deps.length > 0) {
+    lines.push('');
+    lines.push(`  dependencies: ${deps.join(', ')}`);
+  }
+
+  // Extra context
+  if (extraContext) {
+    lines.push('');
+    lines.push(`  context: "${extraContext}"`);
+  }
+
+  lines.push('}');
+  return lines.join('\n');
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────
+
+function findFiles(dir: string, ext: string, maxDepth: number, depth: number = 0): string[] {
+  if (depth >= maxDepth) return [];
+  const results: string[] = [];
+
+  try {
+    for (const entry of readdirSync(dir)) {
+      if (entry.startsWith('.') || entry === 'node_modules' || entry === 'dist') continue;
+      const path = join(dir, entry);
+      try {
+        const stat = statSync(path);
+        if (stat.isFile() && entry.endsWith(ext)) {
+          results.push(path.replace(dir + '/', ''));
+        } else if (stat.isDirectory()) {
+          results.push(
+            ...findFiles(path, ext, maxDepth, depth + 1).map((f) => `${entry}/${f}`),
+          );
+        }
+      } catch { /* skip */ }
+    }
+  } catch { /* skip */ }
+
+  return results;
 }
 
 function buildTree(dir: string, depth: number): string[] {

@@ -191,6 +191,7 @@ export interface ForgeOptions {
   fitnessCmd: string;
   cwd: string;
   forgeDir: string;
+  context?: string;
   timeout?: number;
   fitnessTimeout?: number;
   starter?: string;

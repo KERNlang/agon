@@ -11,6 +11,7 @@ import {
   RUNS_DIR,
   DEFAULT_CONFIG,
   getEngineRating,
+  scanProjectContext,
 } from '@agon/core';
 import type { AgonConfig, EngineAdapter, ForgeManifest } from '@agon/core';
 import { createCliAdapter } from '@agon/adapter-cli';
@@ -251,6 +252,10 @@ async function handleForge(
   mkdirSync(forgeDir, { recursive: true });
 
   console.log('');
+  // Scan project context
+  const config = loadConfig();
+  const projectCtx = scanProjectContext(process.cwd(), config.projectContext || undefined);
+
   const manifest = await runForge(
     {
       task,
@@ -258,6 +263,7 @@ async function handleForge(
       cwd: process.cwd(),
       forgeDir,
       engines,
+      context: projectCtx,
     },
     registry,
     adapter,
@@ -342,13 +348,19 @@ async function handleBrainstorm(question: string): Promise<void> {
   const outputDir = join(RUNS_DIR, `brainstorm-${Date.now()}`);
   mkdirSync(outputDir, { recursive: true });
 
+  // Scan project context for engines
+  const config = loadConfig();
+  const projectCtx = scanProjectContext(process.cwd(), config.projectContext || undefined);
+
   const engineList = engines.map((id) => fg256(ENGINE_COLORS[id] ?? 245, id)).join(dim(', '));
   header(`Brainstorm: ${question}`);
   info(`Engines: ${engineList}`);
+  if (projectCtx) info(`Context: ${dim(process.cwd())}`);
   info('Dispatching engines for confidence bids...');
 
   const result = await runBrainstorm({
     question,
+    context: projectCtx,
     engines,
     registry,
     adapter,
@@ -394,14 +406,22 @@ async function handleTribunal(question: string): Promise<void> {
   const outputDir = join(RUNS_DIR, `tribunal-${Date.now()}`);
   mkdirSync(outputDir, { recursive: true });
 
+  // Scan project context
+  const config = loadConfig();
+  const projectCtx = scanProjectContext(process.cwd(), config.projectContext || undefined);
+  const enrichedQuestion = projectCtx
+    ? `${question}\n\n## PROJECT CONTEXT\n${projectCtx}`
+    : question;
+
   const engineList = engines.map((id) => fg256(ENGINE_COLORS[id] ?? 245, id)).join(dim(', '));
   header(`Tribunal: ${question}`);
   info(`Engines: ${engineList}`);
+  if (projectCtx) info(`Context: ${dim(process.cwd())}`);
   info('Rounds: 2');
   console.log('');
 
   const result = await runTribunal({
-    question,
+    question: enrichedQuestion,
     engines,
     rounds: 2,
     registry,

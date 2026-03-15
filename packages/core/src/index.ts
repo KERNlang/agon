@@ -17,3 +17,4 @@ export {
 export { createLogger } from './logger.js';
 export type { Logger } from './logger.js';
 export { EngineRegistry } from './engine-registry.js';
+export { scanProjectContext } from './context-scanner.js';

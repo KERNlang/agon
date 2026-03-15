@@ -61,6 +61,7 @@ export async function runForge(
   const forgePrompt = buildForgePrompt({
     task: options.task,
     fitnessCmd: options.fitnessCmd,
+    context: options.context,
   });
 
   // Initialize manifest

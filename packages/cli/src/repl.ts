@@ -281,6 +281,54 @@ async function handleForge(
   const config = loadConfig();
   const projectCtx = scanProjectContext(process.cwd(), config.projectContext || undefined, config.contextFormat);
 
+  // Engine build characters (Lemmings-style)
+  const BUILD_CHARS: Record<string, string[]> = {
+    claude:  ['🧑‍💻', '⛏️', '🔧', '🏗️'],
+    codex:   ['👷', '🔨', '⚙️', '🏗️'],
+    gemini:  ['🧙', '📐', '✨', '🏗️'],
+    ollama:  ['🦙', '🪚', '🔩', '🏗️'],
+    default: ['🤖', '⚒️', '🔧', '🏗️'],
+  };
+
+  const engineStatus: Record<string, string> = {};
+  const startTime = Date.now();
+
+  // Animated forge display
+  const forgeAnim = setInterval(() => {
+    const elapsed = Math.floor((Date.now() - startTime) / 1000);
+    const lines = engines.map((id) => {
+      const color = ENGINE_COLORS[id] ?? 245;
+      const chars = BUILD_CHARS[id] ?? BUILD_CHARS['default'];
+      const frame = chars[Math.floor(elapsed / 2) % chars.length];
+      const status = engineStatus[id] ?? 'waiting';
+
+      if (status === 'done') {
+        const score = engineStatus[`${id}:score`] ?? '?';
+        return `  ${green('✓')} ${fg256(color, bold(id.padEnd(10)))} ${green(`done (${score})`)}`;
+      }
+      if (status === 'building') {
+        const bar = '▓'.repeat(Math.min(10, Math.floor(elapsed / 3)));
+        const empty = '░'.repeat(Math.max(0, 10 - bar.length));
+        return `  ${frame} ${fg256(color, bold(id.padEnd(10)))} ${fg256(color, bar)}${dim(empty)} ${dim(`${elapsed}s`)}`;
+      }
+      return `  ${dim('○')} ${dim(id.padEnd(10))} ${dim('queued')}`;
+    });
+
+    // Move cursor up and rewrite
+    if (elapsed > 0) {
+      process.stdout.write(`\x1b[${lines.length}A`);
+    }
+    for (const line of lines) {
+      process.stdout.write(`\x1b[2K${line}\n`);
+    }
+  }, 500);
+
+  // Print initial empty lines for the animation
+  for (const id of engines) {
+    const color = ENGINE_COLORS[id] ?? 245;
+    console.log(`  ${dim('○')} ${fg256(color, bold(id.padEnd(10)))} ${dim('queued')}`);
+  }
+
   const manifest = await runForge(
     {
       task,
@@ -293,9 +341,9 @@ async function handleForge(
     registry,
     adapter,
     (event) => {
+      const id = event.engineId ?? '';
       switch (event.type) {
         case 'baseline:start':
-          info('Running baseline preflight...');
           break;
         case 'baseline:done':
           if (event.data?.passes) {
@@ -303,35 +351,42 @@ async function handleForge(
           }
           break;
         case 'stage1:dispatch':
-          info(`Stage 1: ${bold(event.engineId ?? 'starter')} dispatched...`);
+        case 'stage2:dispatch':
+          engineStatus[id] = 'building';
           break;
         case 'stage1:accepted':
-          success(
-            `Stage 1 auto-accepted: ${event.engineId} (score: ${event.data?.score})`,
-          );
-          break;
-        case 'stage2:dispatch':
-          info(`Stage 2: ${bold(event.engineId ?? 'challenger')} dispatched...`);
+          engineStatus[id] = 'done';
+          engineStatus[`${id}:score`] = String(event.data?.score ?? '?');
           break;
         case 'winner:determined':
           if (event.data?.winner) {
-            success(
-              `Winner: ${bold(String(event.data.winner))} (score: ${event.data.bestScore})`,
-            );
-          } else {
-            fail('No engine passed the fitness test');
+            const winnerId = String(event.data.winner);
+            engineStatus[winnerId] = 'done';
+            engineStatus[`${winnerId}:score`] = String(event.data.bestScore ?? '?');
           }
           break;
         case 'synthesis:done':
-          if (event.data?.wins) {
-            success(
-              `Synthesis improved: ${event.data.originalScore} → ${event.data.score}`,
-            );
-          }
           break;
       }
     },
   );
+
+  // Stop animation
+  clearInterval(forgeAnim);
+
+  // Mark all engines as done
+  process.stdout.write(`\x1b[${engines.length}A`);
+  for (const id of engines) {
+    const color = ENGINE_COLORS[id] ?? 245;
+    const r = manifest.results[id];
+    if (r) {
+      const status = r.pass ? green(`✓ ${r.score} pts`) : red('✗ failed');
+      console.log(`\x1b[2K  ${r.pass ? '🏆' : '💀'} ${fg256(color, bold(id.padEnd(10)))} ${status}  ${dim(`${r.durationSec}s`)}`);
+    } else {
+      console.log(`\x1b[2K  ${dim('○')} ${dim(id.padEnd(10))} ${dim('not dispatched')}`);
+    }
+  }
+  console.log('');
 
   // Scoreboard — engines as columns
   const engineIds = Object.keys(manifest.results);
@@ -362,7 +417,7 @@ async function handleForge(
 
 // ── Brainstorm ───────────────────────────────────────────────────────
 
-async function handleBrainstorm(question: string): Promise<void> {
+async function handleBrainstorm(question: string, rl?: ReturnType<typeof createInterface>): Promise<void> {
   ensureAgonHome();
   if (!question) {
     warn('No question provided. Usage: "best approach for caching?" or /brainstorm <question>');
@@ -386,7 +441,7 @@ async function handleBrainstorm(question: string): Promise<void> {
   header(`Brainstorm: ${question}`);
   info(`Engines: ${engineList}`);
   if (projectCtx) info(`Context: ${dim(process.cwd())}`);
-  const spin = startSpinner(`Dispatching ${engines.length} engines for confidence bids...`);
+  const spin = startSpinner(`${engines.length} engines drafting in Kern format...`);
 
   const result = await runBrainstorm({
     question,
@@ -400,33 +455,29 @@ async function handleBrainstorm(question: string): Promise<void> {
 
   spin.stop(`${result.bids.length} engines responded`);
 
-  // Show each engine's perspective
+  // Show each engine's Kern draft
   console.log('');
-  for (const bid of result.bids) {
+  for (let i = 0; i < result.bids.length; i++) {
+    const bid = result.bids[i];
     const color = ENGINE_COLORS[bid.engineId] ?? 245;
     const isWinner = bid.engineId === result.winner;
-    const badge = isWinner ? green(' ★ winner') : '';
-    const conf = bid.confidence >= 80
-      ? green(String(bid.confidence))
-      : bid.confidence >= 50
-        ? yellow(String(bid.confidence))
-        : red(String(bid.confidence));
+    const rank = `#${i + 1}`;
+    const badge = isWinner ? green(' ★ best draft') : '';
 
-    console.log(`  ${fg256(color, '┌──')} ${fg256(color, bold(bid.engineId))} ${dim(`confidence: ${conf}`)}${badge}`);
+    console.log(`  ${fg256(color, '┌──')} ${fg256(color, bold(bid.engineId))} ${dim(rank)}${badge}`);
     console.log(`  ${fg256(color, '│')}`);
 
-    // Show reasoning (wrapped nicely)
-    const reasoning = bid.reasoning || bid.approach || 'No reasoning provided';
-    const lines = reasoning.split('\n');
-    for (const line of lines.slice(0, 5)) {
-      console.log(`  ${fg256(color, '│')}  ${line}`);
-    }
-    if (lines.length > 5) console.log(`  ${fg256(color, '│')}  ${dim(`...(${lines.length - 5} more lines)`)}`);
+    // Approach (thesis)
+    console.log(`  ${fg256(color, '│')}  ${bold(bid.reasoning)}`);
 
-    if (bid.approach && bid.approach !== bid.reasoning) {
-      console.log(`  ${fg256(color, '│')}`);
-      console.log(`  ${fg256(color, '│')}  ${dim('Approach:')} ${bid.approach.slice(0, 120)}`);
+    // Steps
+    if (bid.approach) {
+      const steps = bid.approach.split('\n').filter(Boolean);
+      for (const step of steps.slice(0, 5)) {
+        console.log(`  ${fg256(color, '│')}  ${dim(step)}`);
+      }
     }
+
     console.log(`  ${fg256(color, '└──')}`);
     console.log('');
   }
@@ -444,6 +495,102 @@ async function handleBrainstorm(question: string): Promise<void> {
   }
   tracker.record(result.winner, question, result.response);
   showInlineTokens('brainstorm');
+
+  // Offer next action
+  if (rl) await offerNextAction(question, result.winner, rl);
+}
+
+// ── Post-brainstorm actions ──────────────────────────────────────────
+
+async function offerNextAction(
+  question: string,
+  winnerId: string,
+  rl: ReturnType<typeof createInterface>,
+): Promise<void> {
+  console.log('');
+  console.log(`  ${fg256(214, '━'.repeat(48))}`);
+  console.log(`  ${bold(white('What next?'))}`);
+  console.log(`  ${bold('1.')} ${fg256(214, '⚔')}  Forge it ${dim('— all engines compete to implement')}`);
+  console.log(`  ${bold('2.')} ${fg256(ENGINE_COLORS[winnerId] ?? 245, '⚒️')}  Build with ${fg256(ENGINE_COLORS[winnerId] ?? 245, bold(winnerId))} ${dim('— winner implements, you see the code')}`);
+  console.log(`  ${bold('3.')} ${fg256(33, '⚖')}  Tribunal ${dim('— debate it further')}`);
+  console.log(`  ${dim('Enter to skip')}`);
+  console.log('');
+
+  const answer = await askQuestion(rl, `  ${fg256(214, '❯')} `);
+  const choice = answer.trim();
+
+  switch (choice) {
+    case '1':
+    case 'forge': {
+      const testCmd = await askQuestion(rl, `  ${yellow('▸')} Test command: `);
+      if (testCmd.trim()) {
+        await handleForge(question, testCmd.trim(), rl);
+      }
+      break;
+    }
+    case '2':
+    case 'build': {
+      await handleBuildWithWinner(question, winnerId, rl);
+      break;
+    }
+    case '3':
+    case 'tribunal': {
+      await handleTribunal(question);
+      break;
+    }
+  }
+}
+
+async function handleBuildWithWinner(
+  task: string,
+  engineId: string,
+  _rl: ReturnType<typeof createInterface>,
+): Promise<void> {
+  ensureAgonHome();
+  const engine = registry.get(engineId);
+  const color = ENGINE_COLORS[engineId] ?? 245;
+
+  const config = loadConfig();
+  const projectCtx = scanProjectContext(process.cwd(), config.projectContext || undefined, config.contextFormat);
+
+  const prompt = [
+    `## TASK\n${task}`,
+    projectCtx ? `## CONTEXT\n${projectCtx}` : '',
+    `## INSTRUCTIONS`,
+    `Implement this directly. Write the code. Be specific and complete.`,
+    `Show each file you create or modify with its full path.`,
+  ].filter(Boolean).join('\n\n');
+
+  console.log('');
+  console.log(`  ${fg256(color, '┌──')} ${fg256(color, bold(engineId))} ${dim('is building...')}`);
+  console.log(`  ${fg256(color, '│')}`);
+
+  const outputDir = join(RUNS_DIR, `build-${Date.now()}`);
+  mkdirSync(outputDir, { recursive: true });
+
+  const spin = startSpinner(`${engineId} is writing code...`);
+
+  const result = await adapter.dispatch({
+    engine,
+    prompt,
+    cwd: process.cwd(),
+    mode: 'exec',
+    timeout: 300,
+    outputDir,
+  });
+
+  spin.stop(`${engineId} done`);
+
+  // Show the code output
+  console.log(`  ${fg256(color, '│')}`);
+  const lines = result.stdout.split('\n');
+  for (const line of lines) {
+    console.log(`  ${fg256(color, '│')} ${line}`);
+  }
+  console.log(`  ${fg256(color, '└──')}`);
+
+  tracker.record(engineId, task, result.stdout);
+  showInlineTokens('build');
 }
 
 // ── Tribunal ─────────────────────────────────────────────────────────
@@ -1022,7 +1169,7 @@ export async function startRepl(): Promise<void> {
           await handleForge(intent.task, intent.fitnessCmd, rl);
           break;
         case 'brainstorm':
-          await handleBrainstorm(intent.question);
+          await handleBrainstorm(intent.question, rl);
           break;
         case 'tribunal':
           await handleTribunal(intent.question);

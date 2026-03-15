@@ -13,7 +13,7 @@ const main = defineCommand({
   meta: {
     name: 'agon',
     version: '0.1.0',
-    description: 'Competitive AI orchestration framework',
+    description: 'Any AI can join. They compete. You ship.',
   },
   subCommands: {
     forge: forgeCommand,

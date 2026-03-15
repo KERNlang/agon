@@ -104,7 +104,7 @@ function renderDashboard(): void {
   for (const line of logo) {
     console.log(`  ${gradientText(line, LOGO_COLORS)}`);
   }
-  console.log(`  ${dim(`  v${VERSION} — Competitive AI Orchestration`)}`);
+  console.log(`  ${dim(`  v${VERSION}`)}  ${italic('Any AI can join. They compete. You ship.')}`);
   console.log('');
 
   // ── Engine Status Bar ──

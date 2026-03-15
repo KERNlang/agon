@@ -201,6 +201,28 @@ function showSlashList(): void {
   console.log('');
 }
 
+// ── Spinner ──────────────────────────────────────────────────────────
+
+const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+
+function startSpinner(msg: string): { update: (m: string) => void; stop: (m: string) => void } {
+  let i = 0;
+  let text = msg;
+  const timer = setInterval(() => {
+    const frame = fg256(214, SPINNER_FRAMES[i % SPINNER_FRAMES.length]);
+    process.stdout.write(`\r  ${frame} ${dim(text)}`);
+    i++;
+  }, 80);
+
+  return {
+    update(m: string) { text = m; },
+    stop(m: string) {
+      clearInterval(timer);
+      process.stdout.write(`\r\x1b[2K  ${green('✓')} ${m}\n`);
+    },
+  };
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────
 
 async function askQuestion(
@@ -364,7 +386,7 @@ async function handleBrainstorm(question: string): Promise<void> {
   header(`Brainstorm: ${question}`);
   info(`Engines: ${engineList}`);
   if (projectCtx) info(`Context: ${dim(process.cwd())}`);
-  info('Dispatching engines for confidence bids...');
+  const spin = startSpinner(`Dispatching ${engines.length} engines for confidence bids...`);
 
   const result = await runBrainstorm({
     question,
@@ -375,6 +397,8 @@ async function handleBrainstorm(question: string): Promise<void> {
     timeout: 120,
     outputDir,
   });
+
+  spin.stop(`${result.bids.length} bids received`);
 
   console.log('');
   header('Bids');
@@ -435,6 +459,8 @@ async function handleTribunal(question: string): Promise<void> {
   info('Rounds: 2');
   console.log('');
 
+  const spin = startSpinner('Engines debating...');
+
   const result = await runTribunal({
     question: enrichedQuestion,
     engines,
@@ -448,13 +474,13 @@ async function handleTribunal(question: string): Promise<void> {
         const engineId = event.engineId;
         const position = event.data?.position;
         if (engineId && position) {
-          info(
-            `Round ${event.data.round}: ${bold(String(engineId))} (${String(position)}) arguing...`,
-          );
+          spin.update(`Round ${event.data.round}: ${String(engineId)} (${String(position)}) arguing...`);
         }
       }
     },
   });
+
+  spin.stop(`${result.rounds.length} rounds complete`);
 
   for (const round of result.rounds) {
     console.log('');
@@ -999,60 +1025,9 @@ export async function startRepl(): Promise<void> {
         case 'tokens':
           handleTokens();
           break;
-        case 'slash-list': {
-          const picked = await clack.select({
-            message: 'Commands',
-            options: SLASH_COMMANDS.map((c) => ({
-              value: c.cmd,
-              label: bold(c.cmd),
-              hint: c.desc.trim(),
-            })),
-          });
-          if (!clack.isCancel(picked)) {
-            // Re-process the selected command
-            const selectedIntent = detectIntent(picked as string);
-            switch (selectedIntent.type) {
-              case 'forge':
-                await handleForge('', null, rl);
-                break;
-              case 'brainstorm':
-                await handleBrainstorm('');
-                break;
-              case 'tribunal':
-                await handleTribunal('');
-                break;
-              case 'use':
-                handleUse([]);
-                break;
-              case 'models':
-                await handleModels(rl);
-                break;
-              case 'tokens':
-                handleTokens();
-                break;
-              case 'engines':
-                await handleEngines();
-                break;
-              case 'leaderboard':
-                handleLeaderboard();
-                break;
-              case 'history':
-                handleHistory();
-                break;
-              case 'config':
-                handleConfig(selectedIntent);
-                break;
-              case 'help':
-                showHelp();
-                break;
-              case 'exit':
-                console.log(`\n  ${dim('Goodbye.')}\n`);
-                rl.close();
-                return;
-            }
-          }
+        case 'slash-list':
+          showSlashList();
           break;
-        }
         case 'help':
           showHelp();
           break;

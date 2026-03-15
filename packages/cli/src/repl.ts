@@ -12,6 +12,8 @@ import {
   DEFAULT_CONFIG,
   getEngineRating,
   scanProjectContext,
+  tracker,
+  estimateTokens,
 } from '@agon/core';
 import type { AgonConfig, EngineAdapter, ForgeManifest } from '@agon/core';
 import { createCliAdapter } from '@agon/adapter-cli';
@@ -328,6 +330,12 @@ async function handleForge(
     fail('No winner — all engines failed');
   }
   info(`Manifest: ${forgeDir}/manifest.json`);
+
+  // Track tokens for each engine
+  for (const [id, r] of Object.entries(manifest.results)) {
+    tracker.record(id, task, `score:${r.score} diff:${r.diffLines}`);
+  }
+  showInlineTokens('forge');
 }
 
 // ── Brainstorm ───────────────────────────────────────────────────────
@@ -382,6 +390,13 @@ async function handleBrainstorm(question: string): Promise<void> {
   console.log('');
   header(`Response from ${bold(result.winner)}`);
   console.log(result.response);
+
+  // Track tokens for each engine that participated
+  for (const bid of result.bids) {
+    tracker.record(bid.engineId, question, bid.reasoning);
+  }
+  tracker.record(result.winner, question, result.response);
+  showInlineTokens('brainstorm');
 }
 
 // ── Tribunal ─────────────────────────────────────────────────────────
@@ -462,6 +477,15 @@ async function handleTribunal(question: string): Promise<void> {
   console.log(result.summary);
   console.log('');
   info(dim(`Full debate saved: ${outputDir}`));
+
+  // Track tokens
+  for (const round of result.rounds) {
+    for (const pos of round.positions) {
+      const args = pos.arguments.join(' ');
+      tracker.record(pos.engineId, question, args);
+    }
+  }
+  showInlineTokens('tribunal');
 }
 
 // ── Leaderboard ──────────────────────────────────────────────────────
@@ -746,6 +770,63 @@ function handleUse(engineIds: string[]): void {
   success(`Active engines: ${valid.map((id) => fg256(ENGINE_COLORS[id] ?? 245, id)).join(dim(', '))}`);
 }
 
+// ── /tokens handler ─────────────────────────────────────────────────
+
+function handleTokens(): void {
+  const stats = tracker.getStats();
+
+  header('Token Usage — This Session');
+  console.log('');
+
+  if (stats.dispatches === 0) {
+    info('No engine dispatches yet.');
+    return;
+  }
+
+  const rows = Object.entries(stats.byEngine).map(([id, e]) => {
+    const color = ENGINE_COLORS[id] ?? 245;
+    const cost = e.costUsd > 0 ? `$${e.costUsd.toFixed(4)}` : green('free');
+    return [
+      fg256(color, bold(id)),
+      String(e.dispatches),
+      String(e.promptTokens),
+      String(e.responseTokens),
+      bold(String(e.totalTokens)),
+      cost,
+    ];
+  });
+
+  table(['Engine', 'Calls', 'Prompt', 'Response', 'Total', 'Cost'], rows);
+
+  console.log('');
+  const totalCost = stats.totalCostUsd > 0
+    ? `$${stats.totalCostUsd.toFixed(4)}`
+    : green('free');
+  console.log(`  ${bold('Session total:')} ${bold(String(stats.totalTokens))} tokens  ${totalCost}`);
+  console.log(`  ${dim(`${stats.dispatches} dispatches across ${Object.keys(stats.byEngine).length} engines`)}`);
+}
+
+/** Show inline token summary after a command (compact one-liner). */
+function showInlineTokens(label: string): void {
+  const recent = tracker.recent(10);
+  if (recent.length === 0) return;
+
+  // Show tokens from the most recent batch (same timestamp ± 5s)
+  const cutoff = Date.now() - 30_000;
+  const batch = recent.filter((u) => u.timestamp > cutoff);
+  if (batch.length === 0) return;
+
+  const total = batch.reduce((sum, u) => sum + u.totalTokens, 0);
+  const cost = batch.reduce((sum, u) => sum + u.costUsd, 0);
+  const engines = batch.map((u) => {
+    const color = ENGINE_COLORS[u.engineId] ?? 245;
+    return `${fg256(color, u.engineId)}:${u.totalTokens}`;
+  }).join(dim('  '));
+
+  const costStr = cost > 0 ? `  ~$${cost.toFixed(4)}` : '';
+  console.log(`  ${dim('⟐')} ${dim(`${total} tokens`)}  ${engines}${dim(costStr)}`);
+}
+
 // ── /models handler ─────────────────────────────────────────────────
 
 async function handleModels(_rl: ReturnType<typeof createInterface>): Promise<void> {
@@ -906,6 +987,9 @@ export async function startRepl(): Promise<void> {
           break;
         case 'models':
           await handleModels(rl);
+          break;
+        case 'tokens':
+          handleTokens();
           break;
         case 'slash-list':
           showSlashList();

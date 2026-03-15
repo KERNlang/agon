@@ -38,6 +38,7 @@ import {
   warn,
   info,
   table,
+  scoreboard,
   LOGO_COLORS,
   ENGINE_COLORS,
   gradientText,
@@ -332,19 +333,18 @@ async function handleForge(
     },
   );
 
-  console.log('');
-  header('Results');
-  const rows = Object.entries(manifest.results).map(([id, r]) => [
-    id === manifest.winner ? green(`★ ${id}`) : id,
-    r.pass ? green('PASS') : red('FAIL'),
-    String(r.score),
-    String(r.diffLines),
-    String(r.filesChanged),
-    `${r.durationSec}s`,
-  ]);
-  table(['Engine', 'Status', 'Score', 'Diff', 'Files', 'Time'], rows);
+  // Scoreboard — engines as columns
+  const engineIds = Object.keys(manifest.results);
+  const results = Object.values(manifest.results);
 
-  console.log('');
+  scoreboard('Forge Scoreboard', engineIds, [
+    { label: 'Fitness', values: results.map((r) => r.pass ? green(`PASS (${r.score})`) : red('FAIL')) },
+    { label: 'Score', values: results.map((r) => bold(String(r.score))) },
+    { label: 'Diff size', values: results.map((r) => `${r.diffLines} lines`) },
+    { label: 'Files changed', values: results.map((r) => String(r.filesChanged)) },
+    { label: 'Time', values: results.map((r) => `${r.durationSec}s`) },
+  ], manifest.winner);
+
   if (manifest.winner) {
     success(`Winner: ${bold(manifest.winner)}`);
     info(`Patch: ${manifest.patches[manifest.winner]}`);

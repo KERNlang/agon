@@ -61,6 +61,53 @@ export function italic(text: string): string {
 
 export { fg256, bgFg };
 
+/**
+ * Print a scoreboard — engines as columns, metrics as rows.
+ * Like a sports comparison table.
+ */
+export function scoreboard(
+  title: string,
+  engineIds: string[],
+  metrics: { label: string; values: string[] }[],
+  winnerId?: string | null,
+): void {
+  const labelWidth = Math.max(14, ...metrics.map((m) => m.label.length));
+  const colWidths = engineIds.map((id, col) =>
+    Math.max(
+      visibleLength(id) + 2,
+      ...metrics.map((m) => visibleLength(m.values[col] ?? '') + 2),
+    ),
+  );
+
+  // Title
+  console.log(`\n  ${BOLD}${WHITE}${title}${RESET}`);
+
+  // Header: empty + engine names
+  const headerCells = engineIds.map((id, i) => {
+    const color = ENGINE_COLORS[id] ?? 245;
+    const name = id === winnerId ? `★ ${id}` : id;
+    const styled = fg256(color, BOLD + name + RESET);
+    const pad = colWidths[i] - visibleLength(name);
+    return styled + ' '.repeat(Math.max(0, pad));
+  });
+  console.log(`  ${''.padEnd(labelWidth)}  ${headerCells.join('  ')}`);
+
+  // Separator
+  const sepWidth = labelWidth + colWidths.reduce((s, w) => s + w + 2, 0) + 2;
+  console.log(`  ${DIM}${'─'.repeat(sepWidth)}${RESET}`);
+
+  // Rows
+  for (const metric of metrics) {
+    const label = `${BOLD}${metric.label.padEnd(labelWidth)}${RESET}`;
+    const cells = metric.values.map((val, i) => {
+      const pad = colWidths[i] - visibleLength(val);
+      return val + ' '.repeat(Math.max(0, pad));
+    });
+    console.log(`  ${label}  ${cells.join('  ')}`);
+  }
+  console.log('');
+}
+
 // ── Shared brand constants ──────────────────────────────────────────
 
 export const LOGO_COLORS = [208, 214, 220, 226, 228, 230, 255];

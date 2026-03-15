@@ -94,7 +94,7 @@ function renderDashboard(): void {
   const allEngines = registry.list();
   const elo = getElo();
 
-  // ── ASCII Art Logo ──
+  // ── ASCII Art Logo + Version ──
   const logo = [
     '   ▄▀█ ▄▀▀ ▄▀▄ █▄ █',
     '   █▀█ ▀▄█ ▀▄▀ █ ▀█',
@@ -104,56 +104,74 @@ function renderDashboard(): void {
   for (const line of logo) {
     console.log(`  ${gradientText(line, LOGO_COLORS)}`);
   }
-  console.log(`  ${dim(`  v${VERSION}`)}  ${italic('Any AI can join. They compete. You ship.')}`);
+  console.log(`  ${italic('   Any AI can join. They compete. You ship.')}`);
+  console.log(`  ${dim(`   v${VERSION}`)}`);
   console.log('');
 
-  // ── Engine Status Bar ──
-  console.log(`  ${bold(white('ENGINES'))}`);
-  console.log(`  ${dim('─'.repeat(48))}`);
-
-  for (const engine of allEngines) {
-    const isAvail = registry.isAvailable(engine);
-    const color = ENGINE_COLORS[engine.id] ?? 245;
-    const rating = getEngineRating(engine.id);
-    const dot = isAvail ? fg256(color, '●') : fg256(240, '○');
-    const name = isAvail
-      ? fg256(color, bold(engine.id.padEnd(12)))
-      : fg256(240, engine.id.padEnd(12));
-    const status = isAvail ? fg256(color, 'ready') : dim('missing');
-    const eloStr = rating.wins + rating.losses > 0
-      ? dim(` ELO ${rating.rating}`)
-      : '';
-
-    console.log(`  ${dot} ${name} ${status}${eloStr}`);
-  }
-  console.log('');
-
-  // ── ELO Leader ──
+  // ── Insights ──
+  const readyCount = available.length;
+  const totalEngines = allEngines.length;
   const totalMatches = Object.values(elo.global).reduce(
     (sum, r) => sum + r.wins + r.losses,
     0,
   );
+
+  const insights: string[] = [];
+
+  // Engine roster
+  const engineTags = available.map((id) => fg256(ENGINE_COLORS[id] ?? 245, id));
+  insights.push(`${fg256(214, '⚔')}  ${bold(white(`${readyCount} engines`))} ready to compete  ${engineTags.join(dim('  '))}`);
+
+  if (readyCount < totalEngines) {
+    const missing = allEngines.filter((e) => !registry.isAvailable(e)).map((e) => e.id);
+    insights.push(`${fg256(240, '○')}  ${dim(`${missing.length} not installed: ${missing.join(', ')}`)}`);
+  }
+
+  // ELO stats
   if (totalMatches > 0) {
     const sorted = Object.entries(elo.global).sort(
       ([, a], [, b]) => b.rating - a.rating,
     );
     const [topId, topRating] = sorted[0];
     const topColor = ENGINE_COLORS[topId] ?? 255;
-    console.log(`  ${fg256(220, '♛')} Leader: ${fg256(topColor, bold(topId))} ${dim(`(${topRating.rating} ELO, ${topRating.wins}W/${topRating.losses}L)`)}`);
+    const totalForges = Math.floor(totalMatches / 2);
+    insights.push(`${fg256(220, '♛')}  ${fg256(topColor, bold(topId))} leads with ${bold(String(topRating.rating))} ELO  ${dim(`(${totalForges} forges run)`)}`);
+
+    // Win rate insight
+    const bestWinRate = sorted
+      .filter(([, r]) => r.wins + r.losses >= 2)
+      .map(([id, r]) => ({ id, pct: Math.round((r.wins / (r.wins + r.losses)) * 100) }))
+      .sort((a, b) => b.pct - a.pct)[0];
+    if (bestWinRate) {
+      const wrColor = ENGINE_COLORS[bestWinRate.id] ?? 245;
+      insights.push(`${fg256(34, '↑')}  ${fg256(wrColor, bestWinRate.id)} has best win rate at ${bold(`${bestWinRate.pct}%`)}`);
+    }
   } else {
-    console.log(`  ${dim('No forges yet — engines await their first battle')}`);
+    insights.push(`${fg256(33, '◆')}  ${dim('No forges yet — run one to see engines battle')}`);
+  }
+
+  // Run history peek
+  let runCount = 0;
+  try {
+    runCount = readdirSync(RUNS_DIR).filter((f) => f.endsWith('.json')).length;
+  } catch { /* no runs dir yet */ }
+  if (runCount > 0) {
+    insights.push(`${fg256(245, '📋')} ${dim(`${runCount} runs in history — type "history" to browse`)}`);
+  }
+
+  for (const line of insights) {
+    console.log(`  ${line}`);
   }
   console.log('');
 
   // ── Quick Start ──
   console.log(`  ${bold(white('JUST TYPE'))}  ${dim('— Agon figures out the rest')}`);
   console.log(`  ${dim('─'.repeat(48))}`);
-  console.log(`  ${fg256(214, '⚔')}  ${italic('"fix the login bug, test with npm test"')}`);
-  console.log(`  ${fg256(33, '⚖')}  ${italic('"should we use REST or GraphQL?"')}`);
-  console.log(`  ${fg256(141, '💡')} ${italic('"best approach for caching?"')}`);
-  console.log(`  ${fg256(245, '📊')} ${italic('"leaderboard"  "history"  "engines"')}`);
+  console.log(`  ${italic('"fix the login bug, test with npm test"')}  ${dim('→ forge')}`);
+  console.log(`  ${italic('"should we use REST or GraphQL?"')}        ${dim('→ tribunal')}`);
+  console.log(`  ${italic('"best approach for caching?"')}            ${dim('→ brainstorm')}`);
   console.log('');
-  console.log(`  ${dim('Type / for slash commands, /use <engines> to select engines')}`);
+  console.log(`  ${dim('/ for commands    /use <engines> to select    exit to quit')}`);
   console.log('');
 }
 

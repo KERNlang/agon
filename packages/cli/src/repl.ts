@@ -17,6 +17,7 @@ import { createCliAdapter } from '@agon/adapter-cli';
 import { runForge, runBrainstorm, runTribunal } from '@agon/forge';
 import type { Intent } from './intent.js';
 import { detectIntent, SLASH_COMMANDS } from './intent.js';
+import { loadCaesar, isCaesarReady, caesarClassify, caesarSummarize } from './caesar.js';
 import {
   bold,
   dim,
@@ -61,6 +62,19 @@ function initRegistry(): void {
   );
   registry.load(enginesDir);
   adapter = createCliAdapter(registry);
+}
+
+async function initCaesar(): Promise<void> {
+  const config = loadConfig();
+  const modelId = config.caesarModel ?? 'none';
+  if (modelId === 'none') return;
+
+  process.stdout.write(`  ${dim('Loading Caesar...')}`);
+  const ok = await loadCaesar(modelId);
+  process.stdout.write('\r\x1b[2K');
+  if (ok) {
+    info(`Caesar (${modelId}) ready`);
+  }
 }
 
 // ── Dashboard ────────────────────────────────────────────────────────
@@ -573,22 +587,26 @@ function showRunDetail(id: string): void {
 
 async function handleEngines(): Promise<void> {
   header('Engines');
-  const engines = registry.list();
-  const rows: string[][] = [];
+  process.stdout.write(`  ${dim('Scanning...')}`);
 
-  for (const engine of engines) {
-    const available = registry.isAvailable(engine);
-    const version = available
-      ? ((await adapter.getVersion(engine)) ?? dim('unknown'))
-      : '';
-    rows.push([
-      available ? green(engine.id) : red(engine.id),
-      engine.displayName,
-      available ? green('installed') : red('missing'),
-      version,
-      engine.tier,
-    ]);
-  }
+  const engines = registry.list();
+  const results = await Promise.all(
+    engines.map(async (engine) => {
+      const avail = registry.isAvailable(engine);
+      const version = avail ? ((await adapter.getVersion(engine)) ?? dim('unknown')) : '';
+      return { engine, avail, version };
+    }),
+  );
+
+  process.stdout.write('\r\x1b[2K');
+
+  const rows = results.map(({ engine, avail, version }) => [
+    avail ? green(engine.id) : red(engine.id),
+    engine.displayName,
+    avail ? green('installed') : red('missing'),
+    version,
+    engine.tier,
+  ]);
   table(['ID', 'Name', 'Status', 'Version', 'Tier'], rows);
 }
 
@@ -788,6 +806,7 @@ async function handleModels(rl: ReturnType<typeof createInterface>): Promise<voi
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   initRegistry();
+  await initCaesar();
 
   renderDashboard();
 
@@ -827,7 +846,43 @@ export async function startRepl(): Promise<void> {
       return;
     }
 
-    const intent = detectIntent(input);
+    // Caesar-enhanced intent detection: try LLM first, fall back to regex
+    let intent = detectIntent(input);
+    if (intent.type === 'unknown' && isCaesarReady()) {
+      const caesarIntent = await caesarClassify(input);
+      if (caesarIntent) {
+        // Map Caesar's classification to an Intent
+        switch (caesarIntent) {
+          case 'forge':
+            intent = { type: 'forge', task: input, fitnessCmd: null };
+            break;
+          case 'brainstorm':
+            intent = { type: 'brainstorm', question: input };
+            break;
+          case 'tribunal':
+            intent = { type: 'tribunal', question: input };
+            break;
+          case 'leaderboard':
+            intent = { type: 'leaderboard' };
+            break;
+          case 'history':
+            intent = { type: 'history' };
+            break;
+          case 'engines':
+            intent = { type: 'engines' };
+            break;
+          case 'config':
+            intent = { type: 'config' };
+            break;
+          case 'help':
+            intent = { type: 'help' };
+            break;
+          case 'exit':
+            intent = { type: 'exit' };
+            break;
+        }
+      }
+    }
 
     busy = true;
     rl.pause();

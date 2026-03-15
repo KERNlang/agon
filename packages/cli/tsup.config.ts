@@ -6,7 +6,7 @@ export default defineConfig({
   dts: false,
   sourcemap: true,
   clean: true,
-  external: ['@agon/core', '@agon/forge', '@agon/adapter-cli'],
+  external: ['@agon/core', '@agon/forge', '@agon/adapter-cli', '@huggingface/transformers', 'onnxruntime-node'],
   banner: {
     js: '#!/usr/bin/env node',
   },

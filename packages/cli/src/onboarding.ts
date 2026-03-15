@@ -2,6 +2,7 @@ import { createInterface } from 'node:readline';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { writeFileSync } from 'node:fs';
+import { downloadCaesar } from './caesar.js';
 import {
   EngineRegistry,
   ensureAgonHome,
@@ -97,13 +98,27 @@ export async function runOnboarding(): Promise<void> {
   const available: string[] = [];
   const versions: Record<string, string> = {};
 
-  for (const engine of allEngines) {
-    const isAvail = registry.isAvailable(engine);
-    const color = ENGINE_COLORS[engine.id] ?? 245;
+  // Scan all engines in parallel — show spinner while scanning
+  process.stdout.write(`  ${dim('Scanning engines...')}`);
 
+  const scanResults = await Promise.all(
+    allEngines.map(async (engine) => {
+      const isAvail = registry.isAvailable(engine);
+      let version = '';
+      if (isAvail) {
+        version = (await adapter.getVersion(engine)) ?? '';
+      }
+      return { engine, isAvail, version };
+    }),
+  );
+
+  // Clear the "Scanning..." line and show results
+  process.stdout.write('\r\x1b[2K');
+
+  for (const { engine, isAvail, version } of scanResults) {
+    const color = ENGINE_COLORS[engine.id] ?? 245;
     if (isAvail) {
       available.push(engine.id);
-      const version = (await adapter.getVersion(engine)) ?? '';
       versions[engine.id] = version;
       console.log(`  ${fg256(color, '●')} ${fg256(color, bold(engine.id.padEnd(14)))} ${green('ready')}  ${dim(version)}`);
     } else {
@@ -178,20 +193,34 @@ export async function runOnboarding(): Promise<void> {
 
   if (selectedCaesar.id !== 'none') {
     console.log('');
-    // Placeholder for actual model download
     console.log(`  ${dim('Downloading')} ${bold(selectedCaesar.name)}${dim('...')}`);
-    // Simulate progress
-    const bar = '████████████████████';
-    for (let i = 0; i <= 20; i++) {
-      const filled = bar.slice(0, i);
-      const empty = '░'.repeat(20 - i);
-      const pct = Math.round((i / 20) * 100);
-      process.stdout.write(`\r  ${fg256(214, filled)}${dim(empty)} ${dim(`${pct}%`)}`);
-      await new Promise((r) => setTimeout(r, 50));
-    }
+    console.log(`  ${dim('This runs 100% locally. No data leaves your machine.')}`);
     console.log('');
-    success(`${selectedCaesar.name} ready`);
-    info('Model stored in ~/.agon/models/ — runs 100% locally');
+
+    let lastFile = '';
+    const ok = await downloadCaesar(selectedCaesar.id, (progress) => {
+      if (progress.status === 'download' && progress.progress !== undefined) {
+        const pct = Math.round(progress.progress);
+        const filled = '█'.repeat(Math.floor(pct / 5));
+        const empty = '░'.repeat(20 - Math.floor(pct / 5));
+        process.stdout.write(`\r  ${fg256(214, filled)}${dim(empty)} ${dim(`${pct}%`)}`);
+      } else if (progress.status === 'initiate') {
+        const file = (progress as Record<string, unknown>).file as string | undefined;
+        if (file && file !== lastFile) {
+          lastFile = file;
+          process.stdout.write(`\r\x1b[2K  ${dim(`Fetching ${file}...`)}`);
+        }
+      }
+    });
+
+    process.stdout.write('\r\x1b[2K');
+    if (ok) {
+      success(`${selectedCaesar.name} ready`);
+      info('Model stored in ~/.agon/models/');
+    } else {
+      warn(`Could not download ${selectedCaesar.name} — using keyword matching instead`);
+      configSet('caesarModel', 'none');
+    }
   } else {
     success('Using keyword matching — no model needed');
   }

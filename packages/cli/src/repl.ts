@@ -1,4 +1,4 @@
-import { createInterface } from 'node:readline';
+import { createInterface, emitKeypressEvents } from 'node:readline';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdirSync, readdirSync, readFileSync } from 'node:fs';
@@ -720,9 +720,17 @@ export async function startRepl(): Promise<void> {
 
   renderDashboard();
 
-  // Tab completion for slash commands
+  // Tab + live completion for slash commands and /use engines
   const slashNames = SLASH_COMMANDS.map((c) => c.cmd);
+
   function completer(line: string): [string[], string] {
+    if (line.startsWith('/use ')) {
+      // Complete engine IDs after /use
+      const partial = line.slice(5).split(/[,\s]+/).pop() ?? '';
+      const available = registry.availableIds();
+      const hits = available.filter((id) => id.startsWith(partial));
+      return [hits.map((h) => line.slice(0, line.length - partial.length) + h), line];
+    }
     if (line.startsWith('/')) {
       const hits = slashNames.filter((c) => c.startsWith(line));
       return [hits.length ? hits : slashNames, line];
@@ -733,6 +741,7 @@ export async function startRepl(): Promise<void> {
   const rl = createInterface({
     input: process.stdin,
     output: process.stdout,
+    terminal: true,
     prompt: buildPrompt(),
     completer,
   });
@@ -751,10 +760,47 @@ export async function startRepl(): Promise<void> {
   }
 
   let busy = false;
+  let hintShown = false;
+
+  // Show inline command hints as user types
+  const rlAny = rl as unknown as { line: string };
+  process.stdin.on('keypress', () => {
+    if (busy) return;
+    const current = rlAny.line ?? '';
+
+    if (current === '/' && !hintShown) {
+      // Show quick command reference below the line
+      hintShown = true;
+      const save = `\x1b7`; // save cursor
+      const restore = `\x1b8`; // restore cursor
+      const hints = SLASH_COMMANDS.slice(0, 6).map(
+        (c) => `  ${fg256(240, c.cmd.padEnd(16))}${dim(c.desc.trim().slice(0, 40))}`,
+      ).join('\n');
+      process.stdout.write(`${save}\n${hints}\n  ${dim('Tab to complete, Enter to see all')}${restore}`);
+    } else if (current !== '/' && hintShown) {
+      // Clear the hints when user continues typing
+      hintShown = false;
+      // Move down and clear the hint lines, then move back
+      const lines = SLASH_COMMANDS.slice(0, 6).length + 1;
+      const clear = Array.from({ length: lines }, (_, i) =>
+        `\x1b[${i + 1}B\x1b[2K`,
+      ).join('') + `\x1b[${lines}A`;
+      process.stdout.write(clear);
+    }
+  });
 
   rl.prompt();
 
   rl.on('line', async (line: string) => {
+    // Clear any lingering hints
+    if (hintShown) {
+      hintShown = false;
+      const lines = SLASH_COMMANDS.slice(0, 6).length + 1;
+      for (let i = 0; i < lines; i++) {
+        process.stdout.write('\x1b[1B\x1b[2K');
+      }
+      process.stdout.write(`\x1b[${lines}A`);
+    }
     const input = line.trim();
     if (!input) {
       rl.prompt();

@@ -89,11 +89,8 @@ export async function runOnboarding(): Promise<void> {
   }
 
   // ── Step 2: Caesar model ──
-  p.log.info(`Caesar is Agon's local brain — runs ${bold('100% on your machine')}.
-  Routes commands, translates engine responses, ranks drafts.
-  Engines speak Kern (compact), Caesar translates to readable text.
-  ${green('Apache 2.0')} — free for commercial use. ${green('No data leaves your machine')}.
-  ${bold('Required')} — Caesar saves ~70% cloud tokens by translating locally.`);
+  p.log.info(`Caesar saves you ${bold('~70% on API costs')} by handling translation locally.
+  ${dim('Small AI on your machine. No data leaves. Free forever.')}`);
 
   const caesarChoice = await p.select({
     message: 'Choose your Caesar model',

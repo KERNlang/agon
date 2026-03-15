@@ -720,30 +720,10 @@ export async function startRepl(): Promise<void> {
 
   renderDashboard();
 
-  // Tab + live completion for slash commands and /use engines
-  const slashNames = SLASH_COMMANDS.map((c) => c.cmd);
-
-  function completer(line: string): [string[], string] {
-    if (line.startsWith('/use ')) {
-      // Complete engine IDs after /use
-      const partial = line.slice(5).split(/[,\s]+/).pop() ?? '';
-      const available = registry.availableIds();
-      const hits = available.filter((id) => id.startsWith(partial));
-      return [hits.map((h) => line.slice(0, line.length - partial.length) + h), line];
-    }
-    if (line.startsWith('/')) {
-      const hits = slashNames.filter((c) => c.startsWith(line));
-      return [hits.length ? hits : slashNames, line];
-    }
-    return [[], line];
-  }
-
   const rl = createInterface({
     input: process.stdin,
     output: process.stdout,
-    terminal: true,
     prompt: buildPrompt(),
-    completer,
   });
 
   function buildPrompt(): string {

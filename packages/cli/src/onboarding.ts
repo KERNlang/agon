@@ -148,25 +148,6 @@ export async function runOnboarding(): Promise<void> {
 
   configSet('caesarModel', selectedModel as 'smollm2-360m' | 'phi-3-mini' | 'none');
 
-  // ── Step 3: Project context ──
-  const context = await p.text({
-    message: 'What does your project do? (optional)',
-    placeholder: 'e.g. E-commerce API in TypeScript, Prisma + Redis',
-  });
-
-  if (p.isCancel(context)) {
-    p.cancel('Setup cancelled.');
-    throw new Error('cancelled');
-  }
-
-  const trimmedContext = (context as string).trim();
-  if (trimmedContext) {
-    configSet('projectContext', trimmedContext);
-    const contextPath = join(AGON_HOME, 'context.md');
-    writeFileSync(contextPath, `# Project Context\n\n${trimmedContext}\n`);
-    p.log.success('Saved to ~/.agon/context.md');
-  }
-
   // ── Done ──
   configSet('onboarded', true);
 

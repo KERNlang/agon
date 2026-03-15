@@ -35,6 +35,7 @@ export async function runOnboarding(): Promise<void> {
     console.log(`  ${gradientText(line, LOGO_COLORS)}`);
   }
   console.log(`  ${italic('   Any AI can join. They compete. You ship.')}`);
+  console.log(`  ${dim('   Powered by')} ${bold(fg256(220, 'KERN'))}`);
   console.log('');
 
   p.intro(bold(white('Welcome to Agon!')));

@@ -100,7 +100,7 @@ function renderDashboard(): void {
     console.log(`  ${gradientText(line, LOGO_COLORS)}`);
   }
   console.log(`  ${italic('   Any AI can join. They compete. You ship.')}`);
-  console.log(`  ${dim(`   v${VERSION}`)}`);
+  console.log(`  ${dim(`   v${VERSION}`)}  ${dim('Powered by')} ${bold(fg256(220, 'KERN'))}`);
   console.log('');
 
   // ── Insights ──

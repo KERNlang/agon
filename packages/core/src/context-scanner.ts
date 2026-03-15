@@ -1,5 +1,6 @@
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join, basename } from 'node:path';
+import { scanKernProject, projectToKern } from 'kern-lang/dist/context-export.js';
 
 export type ContextFormat = 'plain' | 'kern';
 
@@ -136,129 +137,23 @@ function scanPlainContext(cwd: string, extraContext?: string): string {
   return sections.join('\n\n');
 }
 
-// ── Kern-format context (LLM-native structured) ────────────────────
+// ── Kern-format context (powered by kern-lang) ─────────────────────
 
 function scanKernContext(cwd: string, extraContext?: string): string {
-  const lines: string[] = [];
+  // Use kern-lang's real scanner + formatter
+  const summary = scanKernProject(cwd);
+  let output = projectToKern(summary);
 
-  // Read package.json for project metadata
-  let projectName = basename(cwd);
-  let version = '?';
-  let description = '';
-  let deps: string[] = [];
-  let devDeps: string[] = [];
-
-  try {
-    const pkg = JSON.parse(readFileSync(join(cwd, 'package.json'), 'utf-8'));
-    projectName = pkg.name ?? projectName;
-    version = pkg.version ?? version;
-    description = pkg.description ?? '';
-    deps = Object.keys(pkg.dependencies ?? {});
-    devDeps = Object.keys(pkg.devDependencies ?? {});
-  } catch { /* no package.json */ }
-
-  lines.push(`project ${projectName} {`);
-  lines.push(`  version: "${version}"`);
-  if (description) lines.push(`  description: "${description}"`);
-
-  // Stack detection
-  const stack: string[] = [];
-  if (deps.includes('typescript') || devDeps.includes('typescript')) stack.push('TypeScript');
-  if (deps.includes('react') || deps.includes('react-dom')) stack.push('React');
-  if (deps.includes('next')) stack.push('Next.js');
-  if (deps.includes('express')) stack.push('Express');
-  if (deps.includes('prisma') || deps.includes('@prisma/client')) stack.push('Prisma');
-  if (deps.includes('tailwindcss') || devDeps.includes('tailwindcss')) stack.push('Tailwind');
-  if (deps.includes('vue')) stack.push('Vue');
-  if (deps.includes('svelte')) stack.push('Svelte');
-  if (stack.length > 0) lines.push(`  stack: ${stack.join(', ')}`);
-
-  // Test runner
-  if (devDeps.includes('vitest')) lines.push('  test: vitest');
-  else if (devDeps.includes('jest')) lines.push('  test: jest');
-  else if (devDeps.includes('mocha')) lines.push('  test: mocha');
-
-  // Kern-specific context
-  if (isKernProject(cwd)) {
-    lines.push('');
-    lines.push('  kern {');
-
-    // Read kern.config.ts if it exists
-    const configPath = join(cwd, 'kern.config.ts');
-    if (existsSync(configPath)) {
-      try {
-        const configContent = readFileSync(configPath, 'utf-8');
-        // Extract target from config
-        const targetMatch = /target:\s*['"](\w+)['"]/.exec(configContent);
-        if (targetMatch) lines.push(`    target: "${targetMatch[1]}"`);
-      } catch { /* skip */ }
-    }
-
-    // Find .kern files
-    const kernFiles = findFiles(cwd, '.kern', 2);
-    if (kernFiles.length > 0) {
-      lines.push(`    files: ${kernFiles.length}`);
-      for (const f of kernFiles.slice(0, 10)) {
-        lines.push(`    - ${f}`);
-      }
-    }
-
-    lines.push('  }');
+  // Append plain context for non-Kern project info
+  const plainExtra = scanPlainContext(cwd, extraContext);
+  if (plainExtra) {
+    output += '\n\n' + plainExtra;
   }
 
-  // Key directories as modules
-  const tree = buildTree(cwd, 0);
-  if (tree.length > 0) {
-    lines.push('');
-    lines.push('  structure {');
-    for (const t of tree.slice(0, 30)) {
-      lines.push(`    ${t}`);
-    }
-    if (tree.length > 30) lines.push(`    ... (${tree.length - 30} more)`);
-    lines.push('  }');
-  }
-
-  // Dependencies
-  if (deps.length > 0) {
-    lines.push('');
-    lines.push(`  dependencies: ${deps.join(', ')}`);
-  }
-
-  // Extra context
-  if (extraContext) {
-    lines.push('');
-    lines.push(`  context: "${extraContext}"`);
-  }
-
-  lines.push('}');
-  return lines.join('\n');
+  return output;
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────
-
-function findFiles(dir: string, ext: string, maxDepth: number, depth: number = 0): string[] {
-  if (depth >= maxDepth) return [];
-  const results: string[] = [];
-
-  try {
-    for (const entry of readdirSync(dir)) {
-      if (entry.startsWith('.') || entry === 'node_modules' || entry === 'dist') continue;
-      const path = join(dir, entry);
-      try {
-        const stat = statSync(path);
-        if (stat.isFile() && entry.endsWith(ext)) {
-          results.push(path.replace(dir + '/', ''));
-        } else if (stat.isDirectory()) {
-          results.push(
-            ...findFiles(path, ext, maxDepth, depth + 1).map((f) => `${entry}/${f}`),
-          );
-        }
-      } catch { /* skip */ }
-    }
-  } catch { /* skip */ }
-
-  return results;
-}
 
 function buildTree(dir: string, depth: number): string[] {
   if (depth >= MAX_TREE_DEPTH) return [];

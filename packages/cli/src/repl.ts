@@ -880,6 +880,14 @@ export async function startRepl(): Promise<void> {
   initRegistry();
   await initCaesar();
 
+  // Reset stdin after clack prompts (onboarding puts it in raw mode)
+  if (process.stdin.setRawMode) {
+    process.stdin.setRawMode(false);
+  }
+  process.stdin.resume();
+
+  // Clean slate for the dashboard
+  console.clear();
   renderDashboard();
 
   const rl = createInterface({

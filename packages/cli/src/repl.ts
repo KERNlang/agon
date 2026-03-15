@@ -1,4 +1,4 @@
-import { createInterface, emitKeypressEvents } from 'node:readline';
+import { createInterface } from 'node:readline';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdirSync, readdirSync, readFileSync } from 'node:fs';
@@ -760,47 +760,10 @@ export async function startRepl(): Promise<void> {
   }
 
   let busy = false;
-  let hintShown = false;
-
-  // Show inline command hints as user types
-  const rlAny = rl as unknown as { line: string };
-  process.stdin.on('keypress', () => {
-    if (busy) return;
-    const current = rlAny.line ?? '';
-
-    if (current === '/' && !hintShown) {
-      // Show quick command reference below the line
-      hintShown = true;
-      const save = `\x1b7`; // save cursor
-      const restore = `\x1b8`; // restore cursor
-      const hints = SLASH_COMMANDS.slice(0, 6).map(
-        (c) => `  ${fg256(240, c.cmd.padEnd(16))}${dim(c.desc.trim().slice(0, 40))}`,
-      ).join('\n');
-      process.stdout.write(`${save}\n${hints}\n  ${dim('Tab to complete, Enter to see all')}${restore}`);
-    } else if (current !== '/' && hintShown) {
-      // Clear the hints when user continues typing
-      hintShown = false;
-      // Move down and clear the hint lines, then move back
-      const lines = SLASH_COMMANDS.slice(0, 6).length + 1;
-      const clear = Array.from({ length: lines }, (_, i) =>
-        `\x1b[${i + 1}B\x1b[2K`,
-      ).join('') + `\x1b[${lines}A`;
-      process.stdout.write(clear);
-    }
-  });
 
   rl.prompt();
 
   rl.on('line', async (line: string) => {
-    // Clear any lingering hints
-    if (hintShown) {
-      hintShown = false;
-      const lines = SLASH_COMMANDS.slice(0, 6).length + 1;
-      for (let i = 0; i < lines; i++) {
-        process.stdout.write('\x1b[1B\x1b[2K');
-      }
-      process.stdout.write(`\x1b[${lines}A`);
-    }
     const input = line.trim();
     if (!input) {
       rl.prompt();

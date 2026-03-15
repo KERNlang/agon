@@ -26,7 +26,7 @@ import { createCliAdapter } from '@agon/adapter-cli';
 import { runForge, runBrainstorm, runTribunal } from '@agon/forge';
 import type { Intent } from './intent.js';
 import { detectIntent, SLASH_COMMANDS } from './intent.js';
-import { loadCaesar, isCaesarReady, caesarClassify, caesarSummarize } from './caesar.js';
+import { loadCaesar, isCaesarReady, caesarClassify, caesarSummarize, caesarTranslate, expandKernDraft } from './caesar.js';
 import * as clack from '@clack/prompts';
 import {
   bold,
@@ -496,12 +496,21 @@ async function handleBrainstorm(question: string, rl?: ReturnType<typeof createI
     console.log('');
   }
 
-  // Full response from winner
+  // Full response from winner — Caesar translates Kern to readable
   console.log(`  ${fg256(214, '━'.repeat(48))}`);
   console.log(`  ${bold(white('RESPONSE'))}  ${dim('from')} ${fg256(ENGINE_COLORS[result.winner] ?? 245, bold(result.winner))}`);
   console.log(`  ${fg256(214, '━'.repeat(48))}`);
   console.log('');
-  console.log(result.response);
+
+  let displayResponse = result.response;
+  if (isCaesarReady()) {
+    const translated = await caesarTranslate(result.response);
+    if (translated) {
+      displayResponse = translated;
+      info(dim('(translated from Kern by Caesar — 0 cloud tokens)'));
+    }
+  }
+  console.log(displayResponse);
 
   // Track tokens
   for (const bid of result.bids) {

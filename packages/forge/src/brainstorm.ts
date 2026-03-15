@@ -84,7 +84,7 @@ export async function runBrainstorm(opts: {
 
   const winner = ranked[0];
 
-  // Phase 3: Winner expands with full answer
+  // Phase 3: Winner expands — in Kern format for token efficiency
   const winnerEngine = opts.registry.get(winner.engineId);
   const expandPrompt = [
     opts.question,
@@ -92,7 +92,23 @@ export async function runBrainstorm(opts: {
     'Your draft approach was:',
     `"${winner.draft.approach}"`,
     '',
-    'Now give your full, detailed answer. Be specific and actionable.',
+    'Now expand your full answer. Respond in this Kern format:',
+    '',
+    'response {',
+    '  summary: "1-2 sentence overview"',
+    '  sections {',
+    '    1: "section title" {',
+    '      content: "detailed explanation"',
+    '    }',
+    '  }',
+    '  steps {',
+    '    1: "actionable step"',
+    '    2: "actionable step"',
+    '  }',
+    '  conclusion: "final thought"',
+    '}',
+    '',
+    'Be specific and actionable. Include file paths where relevant.',
   ].join('\n');
 
   const answerResult = await opts.adapter.dispatch({

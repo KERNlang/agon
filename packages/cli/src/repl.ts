@@ -999,9 +999,60 @@ export async function startRepl(): Promise<void> {
         case 'tokens':
           handleTokens();
           break;
-        case 'slash-list':
-          showSlashList();
+        case 'slash-list': {
+          const picked = await clack.select({
+            message: 'Commands',
+            options: SLASH_COMMANDS.map((c) => ({
+              value: c.cmd,
+              label: bold(c.cmd),
+              hint: c.desc.trim(),
+            })),
+          });
+          if (!clack.isCancel(picked)) {
+            // Re-process the selected command
+            const selectedIntent = detectIntent(picked as string);
+            switch (selectedIntent.type) {
+              case 'forge':
+                await handleForge('', null, rl);
+                break;
+              case 'brainstorm':
+                await handleBrainstorm('');
+                break;
+              case 'tribunal':
+                await handleTribunal('');
+                break;
+              case 'use':
+                handleUse([]);
+                break;
+              case 'models':
+                await handleModels(rl);
+                break;
+              case 'tokens':
+                handleTokens();
+                break;
+              case 'engines':
+                await handleEngines();
+                break;
+              case 'leaderboard':
+                handleLeaderboard();
+                break;
+              case 'history':
+                handleHistory();
+                break;
+              case 'config':
+                handleConfig(selectedIntent);
+                break;
+              case 'help':
+                showHelp();
+                break;
+              case 'exit':
+                console.log(`\n  ${dim('Goodbye.')}\n`);
+                rl.close();
+                return;
+            }
+          }
           break;
+        }
         case 'help':
           showHelp();
           break;
@@ -1025,6 +1076,10 @@ export async function startRepl(): Promise<void> {
       fail(err instanceof Error ? err.message : String(err));
     } finally {
       busy = false;
+      // Reset stdin in case clack put it in raw mode
+      if (process.stdin.setRawMode) {
+        process.stdin.setRawMode(false);
+      }
       rl.resume();
       refreshPrompt();
       console.log('');

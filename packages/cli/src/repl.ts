@@ -859,16 +859,16 @@ async function handleModels(_rl: ReturnType<typeof createInterface>): Promise<vo
   const caesarChoice = await clack.select({
     message: 'Caesar model',
     options: [
-      { value: 'smollm2-360m', label: bold('SmolLM2-360M'), hint: 'fast, lightweight' },
-      { value: 'phi-3-mini', label: bold('Phi-3 Mini'), hint: 'smarter, heavier' },
+      { value: 'smollm2-360m', label: bold('SmolLM2-135M'), hint: 'tiny, instant' },
+      { value: 'qwen-0.5b', label: bold('Qwen2.5-0.5B'), hint: 'smarter, better summaries' },
       { value: 'none', label: bold('None'), hint: 'keyword matching only' },
     ],
     initialValue: currentCaesar,
   });
 
   if (!clack.isCancel(caesarChoice)) {
-    configSet('caesarModel', caesarChoice as 'smollm2-360m' | 'phi-3-mini' | 'none');
-    const names: Record<string, string> = { 'smollm2-360m': 'SmolLM2-360M', 'phi-3-mini': 'Phi-3 Mini', none: 'None' };
+    configSet('caesarModel', caesarChoice as 'smollm2-360m' | 'qwen-0.5b' | 'none');
+    const names: Record<string, string> = { 'smollm2-360m': 'SmolLM2-135M', 'qwen-0.5b': 'Qwen2.5-0.5B', none: 'None' };
     success(`Caesar: ${bold(names[caesarChoice as string] ?? caesarChoice)}`);
   }
 }

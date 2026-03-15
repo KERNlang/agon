@@ -6,7 +6,8 @@ import { AGON_HOME } from '@agon/core';
 env.cacheDir = join(AGON_HOME, 'models');
 
 const MODEL_MAP: Record<string, string> = {
-  'smollm2-360m': 'onnx-community/SmolLM2-360M-Instruct',
+  'smollm2-360m': 'HuggingFaceTB/SmolLM2-135M-Instruct',
+  'qwen-0.5b': 'onnx-community/Qwen2.5-0.5B-Instruct',
   'phi-3-mini': 'onnx-community/Phi-3-mini-4k-instruct-onnx-web',
 };
 

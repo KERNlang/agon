@@ -158,7 +158,7 @@ export interface AgonConfig {
   eloKFactor?: number;
   contextSummary?: boolean;
   onboarded?: boolean;
-  caesarModel?: 'smollm2-360m' | 'phi-3-mini' | 'none';
+  caesarModel?: 'smollm2-360m' | 'qwen-0.5b' | 'phi-3-mini' | 'none';
   projectContext?: string;
   contextFormat?: 'plain' | 'kern';
 }

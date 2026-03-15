@@ -98,13 +98,13 @@ export async function runOnboarding(): Promise<void> {
     options: [
       {
         value: 'smollm2-360m',
-        label: `${bold('SmolLM2-360M')} ${dim('(~200MB)')} ${fg256(214, '★ recommended')}`,
-        hint: 'Fast, lightweight — great for routing and summaries',
+        label: `${bold('SmolLM2-135M')} ${dim('(~70MB)')} ${fg256(214, '★ recommended')}`,
+        hint: 'Tiny, instant — great for routing',
       },
       {
-        value: 'phi-3-mini',
-        label: `${bold('Phi-3 Mini')} ${dim('(~2GB)')}`,
-        hint: 'Smarter, deeper reasoning — better for tribunal verdicts',
+        value: 'qwen-0.5b',
+        label: `${bold('Qwen2.5-0.5B')} ${dim('(~300MB)')}`,
+        hint: 'Smarter, better for summaries and tribunal verdicts',
       },
       {
         value: 'none',

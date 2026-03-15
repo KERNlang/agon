@@ -89,9 +89,11 @@ export async function runOnboarding(): Promise<void> {
   }
 
   // ── Step 2: Caesar model ──
-  p.log.info(`Caesar is a small AI that runs ${bold('100% on your machine')}.
-  Routes commands, summarizes results, judges debates.
-  ${green('Apache 2.0')} — free for commercial use. ${green('No data leaves your machine')}.`);
+  p.log.info(`Caesar is Agon's local brain — runs ${bold('100% on your machine')}.
+  Routes commands, translates engine responses, ranks drafts.
+  Engines speak Kern (compact), Caesar translates to readable text.
+  ${green('Apache 2.0')} — free for commercial use. ${green('No data leaves your machine')}.
+  ${bold('Required')} — Caesar saves ~70% cloud tokens by translating locally.`);
 
   const caesarChoice = await p.select({
     message: 'Choose your Caesar model',
@@ -108,8 +110,8 @@ export async function runOnboarding(): Promise<void> {
       },
       {
         value: 'none',
-        label: bold('No Caesar'),
-        hint: 'Use keyword matching instead (always works, no download)',
+        label: bold('Skip (not recommended)'),
+        hint: 'No translation, no token savings — engines respond in verbose mode',
       },
     ],
     initialValue: 'smollm2-360m',

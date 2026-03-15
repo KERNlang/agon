@@ -1,10 +1,23 @@
 const BOLD = '\x1b[1m';
 const DIM = '\x1b[2m';
+const ITALIC = '\x1b[3m';
 const GREEN = '\x1b[32m';
 const RED = '\x1b[31m';
 const YELLOW = '\x1b[33m';
+const BLUE = '\x1b[34m';
+const MAGENTA = '\x1b[35m';
 const CYAN = '\x1b[36m';
+const WHITE = '\x1b[37m';
 const RESET = '\x1b[0m';
+
+// 256-color helpers
+function fg256(code: number, text: string): string {
+  return `\x1b[38;5;${code}m${text}${RESET}`;
+}
+
+function bgFg(bg: number, fg: number, text: string): string {
+  return `\x1b[48;5;${bg};38;5;${fg}m${text}${RESET}`;
+}
 
 export function bold(text: string): string {
   return `${BOLD}${text}${RESET}`;
@@ -29,6 +42,24 @@ export function yellow(text: string): string {
 export function cyan(text: string): string {
   return `${CYAN}${text}${RESET}`;
 }
+
+export function blue(text: string): string {
+  return `${BLUE}${text}${RESET}`;
+}
+
+export function magenta(text: string): string {
+  return `${MAGENTA}${text}${RESET}`;
+}
+
+export function white(text: string): string {
+  return `${WHITE}${text}${RESET}`;
+}
+
+export function italic(text: string): string {
+  return `${ITALIC}${text}${RESET}`;
+}
+
+export { fg256, bgFg };
 
 export function header(text: string): void {
   console.log(`\n${BOLD}${CYAN}▸ ${text}${RESET}`);

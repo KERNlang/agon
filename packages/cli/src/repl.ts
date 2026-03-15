@@ -24,6 +24,11 @@ import {
   green,
   red,
   yellow,
+  blue,
+  magenta,
+  white,
+  italic,
+  fg256,
   header,
   success,
   fail,
@@ -49,40 +54,94 @@ function initRegistry(): void {
 
 // ── Dashboard ────────────────────────────────────────────────────────
 
+// Gradient: orange → yellow → white for the Agon logo
+const LOGO_COLORS = [208, 214, 220, 226, 228, 230, 255];
+
+function gradientText(text: string, colors: number[]): string {
+  let result = '';
+  const step = Math.max(1, Math.floor(text.length / colors.length));
+  for (let i = 0; i < text.length; i++) {
+    const colorIdx = Math.min(Math.floor(i / step), colors.length - 1);
+    result += fg256(colors[colorIdx], text[i]);
+  }
+  return result;
+}
+
+// Engine-specific brand colors (256-color palette)
+const ENGINE_COLORS: Record<string, number> = {
+  claude: 208,    // orange (Anthropic)
+  codex: 34,      // green (OpenAI)
+  gemini: 33,     // blue (Google)
+  ollama: 255,    // white (local)
+  aider: 141,     // purple
+  openrouter: 197, // pink
+  qwen: 45,       // teal
+  mistral: 75,    // light blue
+};
+
 function renderDashboard(): void {
   const available = registry.availableIds();
-  const topLine = `Agon v${VERSION} — Competitive AI Orchestration`;
-  const pad = topLine.length + 4;
-
-  console.log('');
-  console.log(`  ${cyan('╭' + '─'.repeat(pad) + '╮')}`);
-  console.log(`  ${cyan('│')}  ${bold(topLine)}  ${cyan('│')}`);
-  console.log(`  ${cyan('╰' + '─'.repeat(pad) + '╯')}`);
-  console.log('');
-
-  const engineDots = available.map((id) => green(id + ' ●')).join('  ');
-  console.log(`  Engines: ${engineDots}  ${dim(`(${available.length} available)`)}`);
-
+  const allEngines = registry.list();
   const elo = getElo();
+
+  // ── ASCII Art Logo ──
+  const logo = [
+    '   ▄▀█ ▄▀▀ ▄▀▄ █▄ █',
+    '   █▀█ ▀▄█ ▀▄▀ █ ▀█',
+  ];
+
+  console.log('');
+  for (const line of logo) {
+    console.log(`  ${gradientText(line, LOGO_COLORS)}`);
+  }
+  console.log(`  ${dim(`  v${VERSION} — Competitive AI Orchestration`)}`);
+  console.log('');
+
+  // ── Engine Status Bar ──
+  console.log(`  ${bold(white('ENGINES'))}`);
+  console.log(`  ${dim('─'.repeat(48))}`);
+
+  for (const engine of allEngines) {
+    const isAvail = registry.isAvailable(engine);
+    const color = ENGINE_COLORS[engine.id] ?? 245;
+    const rating = getEngineRating(engine.id);
+    const dot = isAvail ? fg256(color, '●') : fg256(240, '○');
+    const name = isAvail
+      ? fg256(color, bold(engine.id.padEnd(12)))
+      : fg256(240, engine.id.padEnd(12));
+    const status = isAvail ? fg256(color, 'ready') : dim('missing');
+    const eloStr = rating.wins + rating.losses > 0
+      ? dim(` ELO ${rating.rating}`)
+      : '';
+
+    console.log(`  ${dot} ${name} ${status}${eloStr}`);
+  }
+  console.log('');
+
+  // ── ELO Leader ──
   const totalMatches = Object.values(elo.global).reduce(
     (sum, r) => sum + r.wins + r.losses,
     0,
   );
   if (totalMatches > 0) {
-    const topEngine = Object.entries(elo.global).sort(
+    const sorted = Object.entries(elo.global).sort(
       ([, a], [, b]) => b.rating - a.rating,
-    )[0];
-    console.log(`  ELO leader: ${bold(topEngine[0])} (${topEngine[1].rating})`);
+    );
+    const [topId, topRating] = sorted[0];
+    const topColor = ENGINE_COLORS[topId] ?? 255;
+    console.log(`  ${fg256(220, '♛')} Leader: ${fg256(topColor, bold(topId))} ${dim(`(${topRating.rating} ELO, ${topRating.wins}W/${topRating.losses}L)`)}`);
   } else {
-    console.log(`  Last forge: ${dim('none yet')}`);
+    console.log(`  ${dim('No forges yet — engines await their first battle')}`);
   }
-
   console.log('');
-  console.log(`  ${dim('Type naturally. Examples:')}`);
-  console.log(`    ${dim('"fix the login bug, test with npm test"')}    ${dim('→ forge')}`);
-  console.log(`    ${dim('"should we use REST or GraphQL?"')}           ${dim('→ tribunal')}`);
-  console.log(`    ${dim('"best approach for caching?"')}               ${dim('→ brainstorm')}`);
-  console.log(`    ${dim('"leaderboard" / "history" / "engines"')}      ${dim('→ status')}`);
+
+  // ── Quick Start ──
+  console.log(`  ${bold(white('JUST TYPE'))}  ${dim('— Agon figures out the rest')}`);
+  console.log(`  ${dim('─'.repeat(48))}`);
+  console.log(`  ${fg256(214, '⚔')}  ${italic('"fix the login bug, test with npm test"')}`);
+  console.log(`  ${fg256(33, '⚖')}  ${italic('"should we use REST or GraphQL?"')}`);
+  console.log(`  ${fg256(141, '💡')} ${italic('"best approach for caching?"')}`);
+  console.log(`  ${fg256(245, '📊')} ${italic('"leaderboard"  "history"  "engines"')}`);
   console.log('');
 }
 
@@ -599,7 +658,7 @@ export async function startRepl(): Promise<void> {
   const rl = createInterface({
     input: process.stdin,
     output: process.stdout,
-    prompt: `  ${bold('agon')} ${cyan('❯')} `,
+    prompt: `  ${fg256(208, '⚔')} ${bold(white('agon'))} ${fg256(214, '❯')} `,
   });
 
   let busy = false;

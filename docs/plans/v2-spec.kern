@@ -1,0 +1,169 @@
+// Agon v2 — Multi-Repo AI Orchestrator
+// "A world for AIs, not a prison."
+// This is the spec. Written in Kern. Built with Kern.
+
+cli name=agon version=2.0.0 description="Any AI can join. They compete. They can collaborate. They can just talk."
+
+  flag name=mode type=string default="manual" description="auto | manual"
+  flag name=budget type=number default=1.00 description="Session token budget in USD"
+
+  // ── Workspace Management ──
+
+  command name=workspace description="Manage project workspaces"
+    arg name=action type=string required=true description="add | remove | list | switch"
+    arg name=path type=string description="Path to project repo"
+    handler <<<
+      switch (action) {
+        case 'add': await addWorkspace(path);
+        case 'remove': await removeWorkspace(path);
+        case 'list': showWorkspaces();
+        case 'switch': switchWorkspace(path);
+      }
+    >>>
+
+  // ── Core Modes ──
+
+  command name=forge description="Engines race to implement code"
+    arg name=task type=string required=true
+    flag name=test alias=t type=string required=true description="Fitness test command"
+    flag name=workspace alias=w type=string description="Target workspace (default: active)"
+    flag name=engines type=string default="all" description="Engines CSV or 'all'"
+    handler <<<
+      const ws = resolveWorkspace(opts.workspace);
+      const ctx = scanContext(ws);
+      await runForge(task, opts.test, ws, ctx, opts.engines);
+    >>>
+
+  command name=brainstorm description="Draft ideas in Kern format, rank by quality"
+    arg name=question type=string required=true
+    flag name=workspace alias=w type=string
+    handler <<<
+      const ws = resolveWorkspace(opts.workspace);
+      const ctx = scanContext(ws);
+      const drafts = await collectKernDrafts(question, ctx);
+      const ranked = rankByQuality(drafts);
+      displayDrafts(ranked);
+      await offerNextAction(question, ranked[0], ws);
+    >>>
+
+  command name=tribunal description="Engines debate from opposing sides"
+    arg name=question type=string required=true
+    flag name=rounds type=number default=2
+    flag name=workspace alias=w type=string
+    handler <<<
+      const ws = resolveWorkspace(opts.workspace);
+      await runTribunal(question, opts.rounds, ws);
+    >>>
+
+  command name=campfire description="Think together, no competition"
+    arg name=topic type=string
+    handler <<<
+      const workspaces = getAllWorkspaces();
+      await runCampfire(topic, workspaces);
+    >>>
+
+  // ── Orchestration ──
+
+  command name=do description="Natural language multi-repo task (Caesar orchestrates)"
+    arg name=task type=string required=true
+    handler <<<
+      const plan = await caesar.planTask(task, getAllWorkspaces());
+      if (opts.mode === 'manual') {
+        displayPlan(plan);
+        if (!await confirm('Execute?')) return;
+      }
+      await caesar.execute(plan, { budget: opts.budget });
+    >>>
+
+  // ── Controls ──
+
+  command name=mode description="Switch auto/manual orchestration"
+    arg name=value type=string required=true description="auto | manual"
+    handler <<<
+      setMode(value);
+    >>>
+
+  command name=budget description="Token budget management"
+    arg name=amount type=number description="Budget in USD"
+    handler <<<
+      if (amount) setBudget(amount);
+      else showBudget();
+    >>>
+
+  command name=models description="Manage engines and Caesar model"
+    handler <<<
+      await interactiveModelSelect();
+    >>>
+
+  command name=tokens description="Show token usage and costs"
+    handler <<<
+      showTokenStats();
+    >>>
+
+// ── REPL (Terminal Target) ──
+
+state {
+  workspaces: Workspace[] = []
+  activeWorkspace: string = ""
+  mode: string = "manual"
+  budget: number = 1.00
+  busy: boolean = false
+}
+
+repl prompt="⚔ agon ❯" style={color: 214}
+
+  on line(input)
+    guard state.busy → text "A command is running..." style={color: "yellow"}
+    set state.busy = true
+
+    route caesar.detectIntent(input)
+      forge(task, test) →
+        parallel timeout=300 status=true
+          each engine in activeEngines()
+            dispatch engine workspace=state.activeWorkspace
+              on start → spinner engine message="building"
+              on done(r) → show engine score=r.score
+        then(results)
+          scoreboard title="Forge" results winner=best(results)
+
+      brainstorm(question) →
+        parallel timeout=120
+          each engine in activeEngines()
+            dispatch engine prompt=kernDraft(question) → draft
+        then(drafts)
+          rank drafts by=quality
+          display drafts as=cards
+          menu "What next?"
+            option "⚔ Forge it" → forge(question)
+            option "🔨 Build it" → buildWithPlan(question, drafts[0])
+            option "⚖ Tribunal" → tribunal(question)
+            option "🔥 Campfire" → campfire(question)
+
+      campfire(topic) →
+        parallel timeout=120
+          each engine in activeEngines()
+            dispatch engine prompt=campfirePrompt(topic)
+        then(responses)
+          display responses as=voices  // no ranking, just voices
+
+      tribunal(question) →
+        text "Tribunal:" style={bold: true}
+        parallel timeout=120 status=true
+          each engine in activeEngines()
+            dispatch engine prompt=tribunalPrompt(question, position)
+              on round(n) → show engine round=n arguing
+        then(result)
+          display result.verdict
+
+      do(task) →
+        // Multi-repo orchestration
+        plan = caesar.split(task, state.workspaces)
+        if state.mode == "manual"
+          display plan
+          confirm "Execute?" → execute(plan)
+        else
+          execute(plan)
+
+    set state.busy = false
+
+  on interrupt → close()

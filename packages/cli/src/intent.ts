@@ -7,6 +7,7 @@ export type Intent =
   | { type: 'engines' }
   | { type: 'config'; action?: string; key?: string; value?: string }
   | { type: 'campfire'; topic: string }
+  | { type: 'workspace'; action: string; path?: string }
   | { type: 'use'; engineIds: string[] }
   | { type: 'models' }
   | { type: 'tokens' }
@@ -20,6 +21,8 @@ export const SLASH_COMMANDS = [
   { cmd: '/brainstorm',  desc: '<question>              — confidence-bidding answers' },
   { cmd: '/tribunal',    desc: '<question>              — adversarial debate' },
   { cmd: '/campfire',    desc: '<topic>                  — think together, no competition' },
+  { cmd: '/workspace',   desc: 'add|remove|list|switch   — manage project repos' },
+  { cmd: '/ws',          desc: '                          — list workspaces (shortcut)' },
   { cmd: '/use',         desc: '<engines>               — set active engines (e.g. /use claude,codex)' },
   { cmd: '/models',      desc: '                        — manage engines & Caesar model' },
   { cmd: '/tokens',      desc: '                        — show token usage & costs' },
@@ -150,6 +153,13 @@ function parseSlashCommand(input: string): Intent {
     case 'think':
     case 'talk':
       return { type: 'campfire', topic: rest };
+    case 'workspace':
+    case 'ws': {
+      const wsParts = rest.split(/\s+/);
+      const action = wsParts[0] || 'list';
+      const wsPath = wsParts.slice(1).join(' ') || undefined;
+      return { type: 'workspace', action, path: wsPath };
+    }
     case 'models':
     case 'setup':
       return { type: 'models' };

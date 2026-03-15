@@ -16,7 +16,7 @@ import type { AgonConfig, EngineAdapter, ForgeManifest } from '@agon/core';
 import { createCliAdapter } from '@agon/adapter-cli';
 import { runForge, runBrainstorm, runTribunal } from '@agon/forge';
 import type { Intent } from './intent.js';
-import { detectIntent } from './intent.js';
+import { detectIntent, SLASH_COMMANDS } from './intent.js';
 import {
   bold,
   dim,
@@ -41,6 +41,16 @@ const VERSION = '0.1.0';
 
 let registry: EngineRegistry;
 let adapter: EngineAdapter;
+
+// Session-level engine selection. null = use all available.
+let sessionEngines: string[] | null = null;
+
+/** Get active engines for this session. */
+function activeEngines(): string[] {
+  const available = registry.availableIds();
+  if (!sessionEngines) return available;
+  return sessionEngines.filter((id) => available.includes(id));
+}
 
 function initRegistry(): void {
   registry = new EngineRegistry();
@@ -143,23 +153,38 @@ function renderDashboard(): void {
   console.log(`  ${fg256(141, '💡')} ${italic('"best approach for caching?"')}`);
   console.log(`  ${fg256(245, '📊')} ${italic('"leaderboard"  "history"  "engines"')}`);
   console.log('');
+  console.log(`  ${dim('Type / for slash commands, /use <engines> to select engines')}`);
+  console.log('');
 }
 
 function showHelp(): void {
-  header('Commands');
+  header('Natural Language');
   console.log('');
   console.log('  Just type naturally — Agon routes to the right command.');
   console.log('');
-  console.log(`  ${bold('Forge')}        "fix X, test with npm test"  — engines race to solve`);
-  console.log(`  ${bold('Tribunal')}     "should we X vs Y?"          — adversarial debate`);
-  console.log(`  ${bold('Brainstorm')}   "how should we approach X?"  — confidence bidding`);
-  console.log(`  ${bold('Leaderboard')}  "leaderboard" / "elo"        — ELO rankings`);
-  console.log(`  ${bold('History')}      "history" / /history <id>    — past forge runs`);
-  console.log(`  ${bold('Engines')}      "engines" / /engines         — available engines`);
-  console.log(`  ${bold('Config')}       /config list|get|set         — settings`);
+  console.log(`  ${fg256(214, '⚔')}  "fix X, test with npm test"  ${dim('→ forge')}`);
+  console.log(`  ${fg256(33, '⚖')}  "should we X vs Y?"          ${dim('→ tribunal')}`);
+  console.log(`  ${fg256(141, '💡')} "how should we approach X?"  ${dim('→ brainstorm')}`);
+  console.log(`  ${fg256(245, '📊')} "leaderboard" / "engines"    ${dim('→ status')}`);
+
+  showSlashList();
+
+  // Active engines
+  const active = activeEngines();
+  console.log(`  ${bold(white('Active Engines'))}  ${sessionEngines ? yellow('(custom)') : dim('(all available)')}`);
+  console.log(`  ${dim('─'.repeat(48))}`);
+  console.log(`  ${active.map((id) => fg256(ENGINE_COLORS[id] ?? 245, id)).join(dim(', '))}`);
+  console.log(`  ${dim('Change: /use claude,codex   Reset: /use all')}`);
   console.log('');
-  console.log(`  ${dim('Slash commands: /forge, /brainstorm, /tribunal, /engines, /help, /exit')}`);
-  console.log(`  ${dim('Exit: exit, quit, Ctrl+C')}`);
+}
+
+function showSlashList(): void {
+  console.log('');
+  header('Slash Commands');
+  console.log('');
+  for (const { cmd, desc } of SLASH_COMMANDS) {
+    console.log(`  ${fg256(214, bold(cmd.padEnd(16)))}${dim(desc)}`);
+  }
   console.log('');
 }
 
@@ -196,15 +221,16 @@ async function handleForge(
     }
   }
 
-  const available = registry.availableIds();
-  if (available.length === 0) {
+  const engines = activeEngines();
+  if (engines.length === 0) {
     fail('No engines available. Install at least one AI CLI tool.');
     return;
   }
 
+  const engineList = engines.map((id) => fg256(ENGINE_COLORS[id] ?? 245, id)).join(dim(', '));
   console.log(`  ${cyan('▸')} Forge: ${bold(task)}`);
   console.log(`  ${cyan('▸')} Fitness: ${fitness}`);
-  console.log(`  ${cyan('▸')} Engines: ${available.join(', ')}`);
+  console.log(`  ${cyan('▸')} Engines: ${engineList}`);
   const answer = await askQuestion(rl, `  Proceed? ${dim('[Y/n]')} `);
   if (answer.trim().toLowerCase() === 'n') {
     info('Cancelled.');
@@ -221,6 +247,7 @@ async function handleForge(
       fitnessCmd: fitness,
       cwd: process.cwd(),
       forgeDir,
+      engines,
     },
     registry,
     adapter,
@@ -296,8 +323,8 @@ async function handleBrainstorm(question: string): Promise<void> {
     return;
   }
 
-  const available = registry.availableIds();
-  if (available.length === 0) {
+  const engines = activeEngines();
+  if (engines.length === 0) {
     fail('No engines available.');
     return;
   }
@@ -305,13 +332,14 @@ async function handleBrainstorm(question: string): Promise<void> {
   const outputDir = join(RUNS_DIR, `brainstorm-${Date.now()}`);
   mkdirSync(outputDir, { recursive: true });
 
+  const engineList = engines.map((id) => fg256(ENGINE_COLORS[id] ?? 245, id)).join(dim(', '));
   header(`Brainstorm: ${question}`);
-  info(`Engines: ${available.join(', ')}`);
+  info(`Engines: ${engineList}`);
   info('Dispatching engines for confidence bids...');
 
   const result = await runBrainstorm({
     question,
-    engines: available,
+    engines,
     registry,
     adapter,
     timeout: 120,
@@ -343,21 +371,22 @@ async function handleTribunal(question: string): Promise<void> {
     return;
   }
 
-  const available = registry.availableIds();
-  if (available.length < 2) {
+  const active = activeEngines();
+  if (active.length < 2) {
     fail(
       'Tribunal needs at least 2 engines. Only found: ' +
-        (available.join(', ') || 'none'),
+        (active.join(', ') || 'none'),
     );
     return;
   }
 
-  const engines = available.slice(0, 4);
+  const engines = active.slice(0, 4);
   const outputDir = join(RUNS_DIR, `tribunal-${Date.now()}`);
   mkdirSync(outputDir, { recursive: true });
 
+  const engineList = engines.map((id) => fg256(ENGINE_COLORS[id] ?? 245, id)).join(dim(', '));
   header(`Tribunal: ${question}`);
-  info(`Engines: ${engines.join(', ')}`);
+  info(`Engines: ${engineList}`);
   info('Rounds: 2');
   console.log('');
 
@@ -647,6 +676,42 @@ function handleConfig(intent: Intent & { type: 'config' }): void {
   }
 }
 
+// ── /use handler ─────────────────────────────────────────────────────
+
+function handleUse(engineIds: string[]): void {
+  if (engineIds.length === 0 || (engineIds.length === 1 && engineIds[0] === 'all')) {
+    sessionEngines = null;
+    success('Using all available engines');
+    const all = registry.availableIds();
+    console.log(`  ${all.map((id) => fg256(ENGINE_COLORS[id] ?? 245, id)).join(dim(', '))}`);
+    return;
+  }
+
+  const available = registry.availableIds();
+  const valid: string[] = [];
+  const invalid: string[] = [];
+
+  for (const id of engineIds) {
+    if (available.includes(id)) {
+      valid.push(id);
+    } else {
+      invalid.push(id);
+    }
+  }
+
+  if (invalid.length > 0) {
+    warn(`Not available: ${invalid.join(', ')}`);
+  }
+
+  if (valid.length === 0) {
+    fail('No valid engines selected. Available: ' + available.join(', '));
+    return;
+  }
+
+  sessionEngines = valid;
+  success(`Active engines: ${valid.map((id) => fg256(ENGINE_COLORS[id] ?? 245, id)).join(dim(', '))}`);
+}
+
 // ── REPL Loop ────────────────────────────────────────────────────────
 
 export async function startRepl(): Promise<void> {
@@ -655,11 +720,35 @@ export async function startRepl(): Promise<void> {
 
   renderDashboard();
 
+  // Tab completion for slash commands
+  const slashNames = SLASH_COMMANDS.map((c) => c.cmd);
+  function completer(line: string): [string[], string] {
+    if (line.startsWith('/')) {
+      const hits = slashNames.filter((c) => c.startsWith(line));
+      return [hits.length ? hits : slashNames, line];
+    }
+    return [[], line];
+  }
+
   const rl = createInterface({
     input: process.stdin,
     output: process.stdout,
-    prompt: `  ${fg256(208, '⚔')} ${bold(white('agon'))} ${fg256(214, '❯')} `,
+    prompt: buildPrompt(),
+    completer,
   });
+
+  function buildPrompt(): string {
+    const base = `  ${fg256(208, '⚔')} ${bold(white('agon'))}`;
+    if (sessionEngines) {
+      const tag = sessionEngines.map((id) => fg256(ENGINE_COLORS[id] ?? 245, id)).join(dim(','));
+      return `${base} ${dim('[')}${tag}${dim(']')} ${fg256(214, '❯')} `;
+    }
+    return `${base} ${fg256(214, '❯')} `;
+  }
+
+  function refreshPrompt(): void {
+    rl.setPrompt(buildPrompt());
+  }
 
   let busy = false;
 
@@ -706,6 +795,12 @@ export async function startRepl(): Promise<void> {
         case 'config':
           handleConfig(intent);
           break;
+        case 'use':
+          handleUse(intent.engineIds);
+          break;
+        case 'slash-list':
+          showSlashList();
+          break;
         case 'help':
           showHelp();
           break;
@@ -731,6 +826,7 @@ export async function startRepl(): Promise<void> {
 
     busy = false;
     rl.resume();
+    refreshPrompt();
     console.log('');
     rl.prompt();
   });

@@ -6,9 +6,24 @@ export type Intent =
   | { type: 'history'; id?: string }
   | { type: 'engines' }
   | { type: 'config'; action?: string; key?: string; value?: string }
+  | { type: 'use'; engineIds: string[] }
+  | { type: 'slash-list' }
   | { type: 'help' }
   | { type: 'exit' }
   | { type: 'unknown'; input: string };
+
+export const SLASH_COMMANDS = [
+  { cmd: '/forge',       desc: '<task> test with <cmd>  — competitive code generation' },
+  { cmd: '/brainstorm',  desc: '<question>              — confidence-bidding answers' },
+  { cmd: '/tribunal',    desc: '<question>              — adversarial debate' },
+  { cmd: '/use',         desc: '<engines>               — set active engines (e.g. /use claude,codex)' },
+  { cmd: '/engines',     desc: '                        — list all engines' },
+  { cmd: '/leaderboard', desc: '                        — ELO rankings' },
+  { cmd: '/history',     desc: '[id]                    — past forge runs' },
+  { cmd: '/config',      desc: '[list|get|set]          — settings' },
+  { cmd: '/help',        desc: '                        — show this help' },
+  { cmd: '/exit',        desc: '                        — quit' },
+] as const;
 
 const FITNESS_PATTERN = /\b(?:test with|test:|--test|fitness:)\s+(.+)/i;
 
@@ -94,7 +109,12 @@ function parseForgeInput(input: string): Intent {
 }
 
 function parseSlashCommand(input: string): Intent {
-  const parts = input.slice(1).split(/\s+/);
+  const stripped = input.slice(1).trim();
+
+  // Just "/" with nothing after it → show command list
+  if (!stripped) return { type: 'slash-list' };
+
+  const parts = stripped.split(/\s+/);
   const cmd = parts[0].toLowerCase();
   const rest = parts.slice(1).join(' ');
 
@@ -112,8 +132,14 @@ function parseSlashCommand(input: string): Intent {
       return { type: 'history', id: rest || undefined };
     case 'engines':
       return { type: 'engines' };
+    case 'use': {
+      const ids = rest
+        .split(/[,\s]+/)
+        .map((s) => s.trim().toLowerCase())
+        .filter(Boolean);
+      return { type: 'use', engineIds: ids };
+    }
     case 'config': {
-      // Parse: /config, /config list, /config get <key>, /config set <key> <value>
       const configParts = rest.split(/\s+/);
       const action = configParts[0] || undefined;
       const key = configParts[1] || undefined;

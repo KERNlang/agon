@@ -730,6 +730,82 @@ function handleUse(engineIds: string[]): void {
   success(`Active engines: ${valid.map((id) => fg256(ENGINE_COLORS[id] ?? 245, id)).join(dim(', '))}`);
 }
 
+// ── /models handler ─────────────────────────────────────────────────
+
+async function handleModels(rl: ReturnType<typeof createInterface>): Promise<void> {
+  const config = loadConfig();
+  const allEngines = registry.list();
+  const available = registry.availableIds();
+
+  header('Engines');
+  console.log('');
+  for (let i = 0; i < available.length; i++) {
+    const id = available[i];
+    const color = ENGINE_COLORS[id] ?? 245;
+    const rating = getEngineRating(id);
+    const eloStr = rating.wins + rating.losses > 0 ? dim(` ELO ${rating.rating}`) : '';
+    const active = !sessionEngines || sessionEngines.includes(id);
+    const marker = active ? fg256(color, '●') : fg256(240, '○');
+    console.log(`  ${bold(String(i + 1))}. ${marker} ${fg256(color, bold(id.padEnd(12)))}${active ? green(' active') : dim(' off')}${eloStr}`);
+  }
+
+  const notInstalled = allEngines.filter((e) => !registry.isAvailable(e));
+  if (notInstalled.length > 0) {
+    console.log(`  ${dim(`   + ${notInstalled.length} not installed: ${notInstalled.map((e) => e.id).join(', ')}`)}`);
+  }
+
+  console.log('');
+  const choice = await askQuestion(rl, `  ${fg256(214, '❯')} Toggle engines ${dim('[numbers, "all" to reset, Enter to keep]')}: `);
+  const trimmed = choice.trim().toLowerCase();
+
+  if (trimmed === 'all' || trimmed === '*') {
+    sessionEngines = null;
+    configSet('forgeEnabledEngines', available);
+    success('All engines active');
+  } else if (trimmed) {
+    const indices = trimmed.split(/[,\s]+/).map((s) => parseInt(s, 10) - 1);
+    const selected = indices
+      .filter((i) => i >= 0 && i < available.length)
+      .map((i) => available[i]);
+    if (selected.length > 0) {
+      sessionEngines = selected;
+      configSet('forgeEnabledEngines', selected);
+      const tags = selected.map((id) => fg256(ENGINE_COLORS[id] ?? 245, id)).join(dim(', '));
+      success(`Active engines: ${tags}`);
+    }
+  }
+
+  // Caesar model
+  console.log('');
+  header('Caesar Model');
+  console.log('');
+  const currentCaesar = config.caesarModel ?? 'smollm2-360m';
+  const caesarOptions = [
+    { id: 'smollm2-360m', name: 'SmolLM2-360M', desc: 'fast, lightweight' },
+    { id: 'phi-3-mini', name: 'Phi-3 Mini', desc: 'smarter, heavier' },
+    { id: 'none', name: 'None', desc: 'keyword matching only' },
+  ];
+  for (let i = 0; i < caesarOptions.length; i++) {
+    const opt = caesarOptions[i];
+    const isCurrent = opt.id === currentCaesar;
+    const marker = isCurrent ? fg256(214, '●') : dim('○');
+    const label = isCurrent ? bold(white(opt.name)) : opt.name;
+    console.log(`  ${bold(String(i + 1))}. ${marker} ${label}  ${dim(opt.desc)}`);
+  }
+
+  console.log('');
+  const caesarChoice = await askQuestion(rl, `  ${fg256(214, '❯')} Caesar model ${dim('[1/2/3, Enter to keep]')}: `);
+  const caesarTrimmed = caesarChoice.trim();
+  if (caesarTrimmed) {
+    const idx = parseInt(caesarTrimmed, 10) - 1;
+    const picked = caesarOptions[idx];
+    if (picked) {
+      configSet('caesarModel', picked.id as 'smollm2-360m' | 'phi-3-mini' | 'none');
+      success(`Caesar: ${bold(picked.name)}`);
+    }
+  }
+}
+
 // ── REPL Loop ────────────────────────────────────────────────────────
 
 export async function startRepl(): Promise<void> {
@@ -804,6 +880,9 @@ export async function startRepl(): Promise<void> {
           break;
         case 'use':
           handleUse(intent.engineIds);
+          break;
+        case 'models':
+          await handleModels(rl);
           break;
         case 'slash-list':
           showSlashList();

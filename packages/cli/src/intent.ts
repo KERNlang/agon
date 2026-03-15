@@ -7,6 +7,7 @@ export type Intent =
   | { type: 'engines' }
   | { type: 'config'; action?: string; key?: string; value?: string }
   | { type: 'use'; engineIds: string[] }
+  | { type: 'models' }
   | { type: 'slash-list' }
   | { type: 'help' }
   | { type: 'exit' }
@@ -17,6 +18,7 @@ export const SLASH_COMMANDS = [
   { cmd: '/brainstorm',  desc: '<question>              — confidence-bidding answers' },
   { cmd: '/tribunal',    desc: '<question>              — adversarial debate' },
   { cmd: '/use',         desc: '<engines>               — set active engines (e.g. /use claude,codex)' },
+  { cmd: '/models',      desc: '                        — manage engines & Caesar model' },
   { cmd: '/engines',     desc: '                        — list all engines' },
   { cmd: '/leaderboard', desc: '                        — ELO rankings' },
   { cmd: '/history',     desc: '[id]                    — past forge runs' },
@@ -132,6 +134,9 @@ function parseSlashCommand(input: string): Intent {
       return { type: 'history', id: rest || undefined };
     case 'engines':
       return { type: 'engines' };
+    case 'models':
+    case 'setup':
+      return { type: 'models' };
     case 'use': {
       const ids = rest
         .split(/[,\s]+/)

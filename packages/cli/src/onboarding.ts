@@ -113,6 +113,7 @@ export async function runOnboarding(): Promise<void> {
 
   const allEngines = registry.list();
   const available: string[] = [];
+  const versions: Record<string, string> = {};
 
   for (const engine of allEngines) {
     const isAvail = registry.isAvailable(engine);
@@ -121,6 +122,7 @@ export async function runOnboarding(): Promise<void> {
     if (isAvail) {
       available.push(engine.id);
       const version = (await adapter.getVersion(engine)) ?? '';
+      versions[engine.id] = version;
       console.log(`  ${fg256(color, '●')} ${fg256(color, bold(engine.id.padEnd(14)))} ${green('ready')}  ${dim(version)}`);
     } else {
       console.log(`  ${fg256(240, '○')} ${fg256(240, engine.id.padEnd(14))} ${dim('not installed')}`);
@@ -128,17 +130,43 @@ export async function runOnboarding(): Promise<void> {
   }
 
   console.log('');
-  if (available.length >= 2) {
-    success(`${available.length} engines found — you're ready to compete!`);
-  } else if (available.length === 1) {
-    warn(`Only ${available[0]} found. Forge needs 2+ engines to compete.`);
-    info('Install more: npm i -g @anthropic-ai/claude-code, codex, gemini-cli');
-  } else {
+  if (available.length === 0) {
     fail('No engines found. Install at least one AI CLI tool.');
     info('Supported: claude, codex, gemini, ollama');
+  } else {
+    success(`${available.length} engines found`);
   }
 
-  await ask(rl, `\n  ${dim('Press Enter to continue...')} `);
+  // Let user pick which engines to enable
+  if (available.length > 0) {
+    console.log('');
+    console.log(`  ${dim('Which engines should compete? Enter numbers separated by commas.')}`);
+    console.log(`  ${dim('Press Enter to use all.')}`);
+    console.log('');
+    for (let i = 0; i < available.length; i++) {
+      const id = available[i];
+      const color = ENGINE_COLORS[id] ?? 245;
+      console.log(`  ${bold(String(i + 1))}. ${fg256(color, bold(id))}  ${dim(versions[id] ?? '')}`);
+    }
+    console.log('');
+    const engineChoice = await ask(rl, `  ${fg256(214, '❯')} Engines ${dim(`[1-${available.length}, default: all]`)}: `);
+    const trimmed = engineChoice.trim();
+
+    let selected: string[];
+    if (!trimmed) {
+      selected = available;
+    } else {
+      const indices = trimmed.split(/[,\s]+/).map((s) => parseInt(s.trim(), 10) - 1);
+      selected = indices
+        .filter((i) => i >= 0 && i < available.length)
+        .map((i) => available[i]);
+      if (selected.length === 0) selected = available;
+    }
+
+    configSet('forgeEnabledEngines', selected);
+    const tags = selected.map((id) => fg256(ENGINE_COLORS[id] ?? 245, id)).join(dim(', '));
+    success(`Active engines: ${tags}`);
+  }
 
   // ── Step 2: Caesar ──
   console.log('');

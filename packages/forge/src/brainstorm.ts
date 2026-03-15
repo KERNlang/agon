@@ -73,27 +73,63 @@ export async function runBrainstorm(opts: {
 
 function parseBid(engineId: string, output: string): BrainstormBid {
   try {
-    const jsonMatch = output.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error('No JSON found');
-
-    const parsed = JSON.parse(jsonMatch[0]) as {
-      confidence?: number;
-      reasoning?: string;
-      approach?: string;
-    };
+    const parsed = extractJson(output);
+    if (!parsed) throw new Error('No JSON found');
 
     return {
       engineId,
-      confidence: Math.min(100, Math.max(0, parsed.confidence ?? 0)),
-      reasoning: parsed.reasoning ?? '',
-      approach: parsed.approach ?? '',
+      confidence: Math.min(100, Math.max(0, Number(parsed.confidence) || 0)),
+      reasoning: String(parsed.reasoning ?? ''),
+      approach: String(parsed.approach ?? ''),
     };
   } catch {
     return {
       engineId,
-      confidence: 50, // default mid-range
+      confidence: 50,
       reasoning: 'Could not parse bid response',
       approach: output.slice(0, 200),
     };
+  }
+}
+
+/**
+ * Robustly extract JSON from LLM output.
+ * Handles: raw JSON, markdown-fenced JSON, JSON buried in text.
+ */
+function extractJson(text: string): Record<string, unknown> | null {
+  // Strip markdown code fences
+  const stripped = text.replace(/```(?:json)?\s*/gi, '').replace(/```/g, '');
+
+  // Try each { position as a potential JSON start
+  let depth = 0;
+  let start = -1;
+
+  for (let i = 0; i < stripped.length; i++) {
+    if (stripped[i] === '{') {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (stripped[i] === '}') {
+      depth--;
+      if (depth === 0 && start !== -1) {
+        const candidate = stripped.slice(start, i + 1);
+        try {
+          const parsed = JSON.parse(candidate);
+          // Must have at least a confidence field to be a valid bid
+          if (typeof parsed === 'object' && parsed !== null && 'confidence' in parsed) {
+            return parsed as Record<string, unknown>;
+          }
+        } catch {
+          // Not valid JSON, keep looking
+        }
+        start = -1;
+      }
+    }
+  }
+
+  // Fallback: try the whole text as JSON
+  try {
+    return JSON.parse(stripped.trim()) as Record<string, unknown>;
+  } catch {
+    return null;
   }
 }

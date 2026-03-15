@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { determineWinner } from '../../packages/forge/src/stages.js';
 import { classifyTask } from '../../packages/core/src/task-classifier.js';
-import { buildForgePrompt, buildCritiquePrompt, buildSynthesisPrompt, buildBrainstormPrompt } from '../../packages/core/src/prompt-builder.js';
+import { buildForgePrompt, buildCritiquePrompt, buildSynthesisPrompt, buildBrainstormPrompt, buildTribunalPrompt } from '../../packages/core/src/prompt-builder.js';
 import type { EngineResult, Critique } from '../../packages/core/src/types.js';
 
 function makeResult(overrides: Partial<EngineResult> = {}): EngineResult {
@@ -152,6 +152,31 @@ describe('Forge Integration', () => {
       });
       expect(prompt).toContain('What architecture should we use?');
       expect(prompt).toContain('confidence');
+    });
+
+    it('buildTribunalPrompt includes question and position', () => {
+      const prompt = buildTribunalPrompt({
+        question: 'Should we use microservices?',
+        position: 'Argue FOR',
+        round: 1,
+        totalRounds: 2,
+      });
+      expect(prompt).toContain('Should we use microservices?');
+      expect(prompt).toContain('Argue FOR');
+      expect(prompt).toContain('Round: 1/2');
+    });
+
+    it('buildTribunalPrompt includes previous arguments in round 2+', () => {
+      const prompt = buildTribunalPrompt({
+        question: 'Monolith vs microservices?',
+        position: 'Argue AGAINST',
+        round: 2,
+        totalRounds: 2,
+        previousArguments: 'Claude argued FOR: scalability matters...',
+      });
+      expect(prompt).toContain('PREVIOUS ARGUMENTS');
+      expect(prompt).toContain('scalability matters');
+      expect(prompt).toContain('Address and counter');
     });
   });
 });

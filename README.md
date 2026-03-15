@@ -132,14 +132,29 @@ Template variables: `{prompt}`, `{model}`, `{cwd}`, `{timeout}`
 ## Commands
 
 ```bash
-agon forge <task> --test <cmd>     # Competitive forge
+agon forge <task> --test <cmd>     # Competitive forge — engines race
 agon brainstorm <question>         # Confidence-bidding brainstorm
+agon tribunal <question>           # Adversarial debate — engines argue sides
+agon history                       # Browse past forge runs
+agon history <id>                  # Show details for a specific run
 agon engine list                   # Show detected engines
 agon engine info <id>              # Engine details + ELO
 agon leaderboard                   # Global ELO rankings
 agon leaderboard -c bugfix         # Per-task-class rankings
 agon config list                   # Show all config
 agon config set <key> <value>      # Set config value
+```
+
+### Tribunal — adversarial debate
+
+Engines take opposing positions and debate across multiple rounds. Each round sees the previous arguments. A final verdict synthesizes the debate.
+
+```bash
+# 2 engines debate, 2 rounds (default)
+agon tribunal "should we use microservices or a monolith?"
+
+# 3 engines, 3 rounds
+agon tribunal "REST vs GraphQL vs tRPC" -r 3 -e claude,codex,gemini
 ```
 
 ## Configuration

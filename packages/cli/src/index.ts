@@ -1,7 +1,9 @@
 import { defineCommand, runMain } from 'citty';
 import { forgeCommand } from './commands/forge.js';
 import { brainstormCommand } from './commands/brainstorm.js';
+import { tribunalCommand } from './commands/tribunal.js';
 import { leaderboardCommand } from './commands/leaderboard.js';
+import { historyCommand } from './commands/history.js';
 import { engineCommand } from './commands/engine.js';
 import { configCommand } from './commands/config.js';
 
@@ -14,7 +16,9 @@ const main = defineCommand({
   subCommands: {
     forge: forgeCommand,
     brainstorm: brainstormCommand,
+    tribunal: tribunalCommand,
     leaderboard: leaderboardCommand,
+    history: historyCommand,
     engine: engineCommand,
     config: configCommand,
   },

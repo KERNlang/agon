@@ -1,0 +1,14 @@
+{
+  "global": {
+    "claude": { "rating": 1532, "wins": 5, "losses": 2, "draws": 0 },
+    "codex": { "rating": 1488, "wins": 3, "losses": 4, "draws": 0 },
+    "gemini": { "rating": 1480, "wins": 2, "losses": 4, "draws": 0 }
+  },
+  "byTaskClass": {
+    "bugfix": {
+      "claude": { "rating": 1550, "wins": 3, "losses": 1, "draws": 0 },
+      "codex": { "rating": 1470, "wins": 1, "losses": 2, "draws": 0 }
+    }
+  },
+  "lastUpdated": "2026-03-15T10:00:00.000Z"
+}

@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 2,
+  "id": "qwen",
+  "displayName": "Qwen (Alibaba)",
+  "binary": "qwen",
+  "searchPaths": [
+    "${HOME}/.local/bin",
+    "${HOME}/.npm-global/bin",
+    "/usr/local/bin"
+  ],
+  "versionCmd": ["--version"],
+  "isLocal": false,
+  "tier": "builtin",
+  "installHint": "pip install qwen-cli",
+  "timeout": 180,
+
+  "exec": {
+    "args": ["--prompt", "{prompt}"]
+  },
+  "review": {
+    "args": ["--prompt", "{prompt}"]
+  },
+
+  "model": {
+    "configKey": "qwen_model",
+    "flag": "--model",
+    "default": "qwen-coder-plus"
+  },
+
+  "test": { "args": ["--version"] }
+}

@@ -1,0 +1,26 @@
+{
+  "name": "agon-ai",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/core",
+    "packages/forge",
+    "packages/adapter-cli",
+    "packages/cli"
+  ],
+  "scripts": {
+    "build": "tsc -b && npm run build -ws",
+    "typecheck": "tsc -b",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "tsup": "^8.4.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

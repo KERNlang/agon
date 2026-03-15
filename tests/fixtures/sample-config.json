@@ -1,0 +1,6 @@
+{
+  "debug": true,
+  "forgeTimeout": 300,
+  "forgeAutoAcceptScore": 90,
+  "forgeEnabledEngines": ["claude", "codex"]
+}

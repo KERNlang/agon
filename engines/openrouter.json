@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 2,
+  "id": "openrouter",
+  "displayName": "OpenRouter (Multi-Model)",
+  "binary": "openrouter",
+  "searchPaths": [
+    "${HOME}/.local/bin",
+    "${HOME}/.npm-global/bin",
+    "/usr/local/bin"
+  ],
+  "versionCmd": ["--version"],
+  "isLocal": false,
+  "tier": "builtin",
+  "installHint": "npm install -g openrouter-cli",
+  "timeout": 180,
+
+  "exec": {
+    "args": ["--prompt", "{prompt}"]
+  },
+  "review": {
+    "args": ["--prompt", "{prompt}"]
+  },
+
+  "model": {
+    "configKey": "openrouter_model",
+    "flag": "--model",
+    "default": "anthropic/claude-sonnet-4"
+  },
+
+  "env": {
+    "OPENROUTER_API_KEY": { "required": true }
+  },
+
+  "test": { "args": ["--version"] }
+}

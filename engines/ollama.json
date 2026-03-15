@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 2,
+  "id": "ollama",
+  "displayName": "Ollama (Local)",
+  "binary": "ollama",
+  "searchPaths": [
+    "${HOME}/.local/bin",
+    "/usr/local/bin",
+    "/opt/homebrew/bin"
+  ],
+  "versionCmd": ["--version"],
+  "isLocal": true,
+  "tier": "builtin",
+  "installHint": "https://ollama.com/download",
+  "timeout": 300,
+
+  "exec": {
+    "args": ["run", "{model}", "{prompt}"]
+  },
+  "review": {
+    "args": ["run", "{model}", "{prompt}"]
+  },
+
+  "model": {
+    "configKey": "ollama_model",
+    "default": "codellama"
+  },
+
+  "test": { "args": ["list"] }
+}

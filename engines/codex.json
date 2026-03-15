@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 2,
+  "id": "codex",
+  "displayName": "Codex (OpenAI)",
+  "binary": "codex",
+  "searchPaths": [
+    "${HOME}/.local/bin",
+    "${HOME}/.npm-global/bin",
+    "/usr/local/bin"
+  ],
+  "versionCmd": ["--version"],
+  "isLocal": false,
+  "tier": "builtin",
+  "installHint": "npm install -g @openai/codex",
+  "timeout": 120,
+
+  "exec": {
+    "args": ["exec", "{prompt}"]
+  },
+  "review": {
+    "args": ["exec", "review", "{prompt}"]
+  },
+
+  "model": {
+    "configKey": "codex_model",
+    "flag": "-c",
+    "default": null
+  },
+
+  "env": {
+    "OPENAI_API_KEY": { "required": false }
+  },
+
+  "test": { "args": ["--version"] }
+}

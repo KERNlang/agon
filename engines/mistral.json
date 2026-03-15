@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 2,
+  "id": "mistral",
+  "displayName": "Mistral (Mistral AI)",
+  "binary": "mistral",
+  "searchPaths": [
+    "${HOME}/.local/bin",
+    "${HOME}/.npm-global/bin",
+    "/usr/local/bin"
+  ],
+  "versionCmd": ["--version"],
+  "isLocal": false,
+  "tier": "builtin",
+  "installHint": "pip install mistral-cli",
+  "timeout": 180,
+
+  "exec": {
+    "args": ["--prompt", "{prompt}"]
+  },
+  "review": {
+    "args": ["--prompt", "{prompt}"]
+  },
+
+  "model": {
+    "configKey": "mistral_model",
+    "flag": "--model",
+    "default": "codestral-latest"
+  },
+
+  "env": {
+    "MISTRAL_API_KEY": { "required": true }
+  },
+
+  "test": { "args": ["--version"] }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "@agon/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "agon": "./dist/index.js"
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@agon/core": "*",
+    "@agon/forge": "*",
+    "@agon/adapter-cli": "*",
+    "citty": "^0.1.6"
+  }
+}

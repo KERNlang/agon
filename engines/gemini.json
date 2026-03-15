@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 2,
+  "id": "gemini",
+  "displayName": "Gemini (Google)",
+  "binary": "gemini",
+  "searchPaths": [
+    "${HOME}/.local/bin",
+    "${HOME}/.npm-global/bin",
+    "/usr/local/bin"
+  ],
+  "versionCmd": ["--version"],
+  "isLocal": false,
+  "tier": "builtin",
+  "installHint": "npm install -g @anthropic-ai/gemini-cli",
+  "timeout": 120,
+
+  "exec": {
+    "args": ["-p", "{prompt}", "--approval-mode", "yolo"]
+  },
+  "review": {
+    "args": ["-p", "{prompt}", "--approval-mode", "plan"]
+  },
+
+  "model": {
+    "configKey": "gemini_model",
+    "flag": "--model"
+  },
+
+  "env": {
+    "GOOGLE_API_KEY": { "required": false }
+  },
+
+  "test": { "args": ["--version"] }
+}

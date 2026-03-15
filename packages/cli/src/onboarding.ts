@@ -92,26 +92,44 @@ export async function runOnboarding(): Promise<void> {
   p.log.info(`Caesar saves you ${bold('~70% on API costs')} by handling translation locally.
   ${dim('Small AI on your machine. No data leaves. Free forever.')}`);
 
+  // Build Caesar options — include any installed CLI engine as option
+  const caesarOptions: { value: string; label: string; hint: string }[] = [];
+
+  // Bundled models first
+  caesarOptions.push({
+    value: 'smollm2-360m',
+    label: `${bold('SmolLM2-135M')} ${dim('(~70MB)')} ${fg256(214, '★ recommended')}`,
+    hint: 'Bundled, no setup needed',
+  });
+  caesarOptions.push({
+    value: 'qwen-0.5b',
+    label: `${bold('Qwen2.5-0.5B')} ${dim('(~300MB)')}`,
+    hint: 'Smarter, better translations',
+  });
+
+  // Add installed CLI engines as Caesar candidates
+  for (const e of engineData) {
+    if (e.isAvail) {
+      const color = ENGINE_COLORS[e.id] ?? 245;
+      const local = e.id === 'ollama' ? ' (local, free)' : ' (uses API tokens)';
+      caesarOptions.push({
+        value: `engine:${e.id}`,
+        label: `${fg256(color, bold(e.id))}${dim(local)}`,
+        hint: `Use ${e.id} as Caesar — ${e.id === 'ollama' ? 'already installed, smarter' : 'powerful but costs tokens'}`,
+      });
+    }
+  }
+
+  caesarOptions.push({
+    value: 'none',
+    label: bold('Skip (not recommended)'),
+    hint: 'No translation, no token savings',
+  });
+
   const caesarChoice = await p.select({
     message: 'Choose your Caesar model',
-    options: [
-      {
-        value: 'smollm2-360m',
-        label: `${bold('SmolLM2-135M')} ${dim('(~70MB)')} ${fg256(214, '★ recommended')}`,
-        hint: 'Tiny, instant — great for routing',
-      },
-      {
-        value: 'qwen-0.5b',
-        label: `${bold('Qwen2.5-0.5B')} ${dim('(~300MB)')}`,
-        hint: 'Smarter, better for summaries and tribunal verdicts',
-      },
-      {
-        value: 'none',
-        label: bold('Skip (not recommended)'),
-        hint: 'No translation, no token savings — engines respond in verbose mode',
-      },
-    ],
-    initialValue: 'smollm2-360m',
+    options: caesarOptions,
+    initialValue: engineData.some((e) => e.id === 'ollama' && e.isAvail) ? 'engine:ollama' : 'smollm2-360m',
   });
 
   if (p.isCancel(caesarChoice)) {

@@ -398,24 +398,47 @@ async function handleBrainstorm(question: string): Promise<void> {
     outputDir,
   });
 
-  spin.stop(`${result.bids.length} bids received`);
+  spin.stop(`${result.bids.length} engines responded`);
 
+  // Show each engine's perspective
   console.log('');
-  header('Bids');
-  const rows = result.bids.map((b) => [
-    b.engineId === result.winner ? green(`★ ${b.engineId}`) : b.engineId,
-    String(b.confidence),
-    b.reasoning.slice(0, 60),
-  ]);
-  table(['Engine', 'Confidence', 'Reasoning'], rows);
+  for (const bid of result.bids) {
+    const color = ENGINE_COLORS[bid.engineId] ?? 245;
+    const isWinner = bid.engineId === result.winner;
+    const badge = isWinner ? green(' ★ winner') : '';
+    const conf = bid.confidence >= 80
+      ? green(String(bid.confidence))
+      : bid.confidence >= 50
+        ? yellow(String(bid.confidence))
+        : red(String(bid.confidence));
 
+    console.log(`  ${fg256(color, '┌──')} ${fg256(color, bold(bid.engineId))} ${dim(`confidence: ${conf}`)}${badge}`);
+    console.log(`  ${fg256(color, '│')}`);
+
+    // Show reasoning (wrapped nicely)
+    const reasoning = bid.reasoning || bid.approach || 'No reasoning provided';
+    const lines = reasoning.split('\n');
+    for (const line of lines.slice(0, 5)) {
+      console.log(`  ${fg256(color, '│')}  ${line}`);
+    }
+    if (lines.length > 5) console.log(`  ${fg256(color, '│')}  ${dim(`...(${lines.length - 5} more lines)`)}`);
+
+    if (bid.approach && bid.approach !== bid.reasoning) {
+      console.log(`  ${fg256(color, '│')}`);
+      console.log(`  ${fg256(color, '│')}  ${dim('Approach:')} ${bid.approach.slice(0, 120)}`);
+    }
+    console.log(`  ${fg256(color, '└──')}`);
+    console.log('');
+  }
+
+  // Full response from winner
+  console.log(`  ${fg256(214, '━'.repeat(48))}`);
+  console.log(`  ${bold(white('RESPONSE'))}  ${dim('from')} ${fg256(ENGINE_COLORS[result.winner] ?? 245, bold(result.winner))}`);
+  console.log(`  ${fg256(214, '━'.repeat(48))}`);
   console.log('');
-  info(`Winner (highest confidence): ${bold(result.winner)} — fetching full response...`);
-  console.log('');
-  header(`Response from ${bold(result.winner)}`);
   console.log(result.response);
 
-  // Track tokens for each engine that participated
+  // Track tokens
   for (const bid of result.bids) {
     tracker.record(bid.engineId, question, bid.reasoning);
   }

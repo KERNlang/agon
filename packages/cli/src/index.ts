@@ -7,6 +7,7 @@ import { leaderboardCommand } from './commands/leaderboard.js';
 import { historyCommand } from './commands/history.js';
 import { engineCommand } from './commands/engine.js';
 import { configCommand } from './commands/config.js';
+import { startRepl } from './repl.js';
 
 const main = defineCommand({
   meta: {
@@ -25,4 +26,12 @@ const main = defineCommand({
   },
 });
 
-runMain(main);
+// Interactive REPL only when: no args at all AND stdin is a TTY
+const noArgs = process.argv.length <= 2;
+const isTty = process.stdin.isTTY === true;
+
+if (noArgs && isTty) {
+  startRepl();
+} else {
+  runMain(main);
+}

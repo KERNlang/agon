@@ -163,9 +163,10 @@ function renderDashboard(): void {
   // ── Quick Start ──
   console.log(`  ${bold(white('JUST TYPE'))}  ${dim('— Agon figures out the rest')}`);
   console.log(`  ${dim('─'.repeat(48))}`);
-  console.log(`  ${italic('"fix the login bug, test with npm test"')}  ${dim('→ forge')}`);
-  console.log(`  ${italic('"should we use REST or GraphQL?"')}        ${dim('→ tribunal')}`);
-  console.log(`  ${italic('"best approach for caching?"')}            ${dim('→ brainstorm')}`);
+  console.log(`  ${fg256(214, '⚔')}  ${italic('"fix the login bug, test with npm test"')}  ${dim('→ forge')}`);
+  console.log(`  ${fg256(33, '⚖')}  ${italic('"should we use REST or GraphQL?"')}        ${dim('→ tribunal')}`);
+  console.log(`  ${fg256(141, '💡')} ${italic('"best approach for caching?"')}            ${dim('→ brainstorm')}`);
+  console.log(`  ${fg256(208, '🔥')} ${italic('"lets think about this together"')}        ${dim('→ campfire')}`);
   console.log('');
   console.log(`  ${dim('/ for commands    /use <engines> to select    exit to quit')}`);
   console.log('');
@@ -659,6 +660,84 @@ async function handleBuildWithPlan(
 
   tracker.record(engineId, task, buildResult.stdout);
   showInlineTokens('build');
+}
+
+// ── Campfire ─────────────────────────────────────────────────────────
+
+async function handleCampfire(topic: string): Promise<void> {
+  ensureAgonHome();
+
+  const engines = activeEngines();
+  if (engines.length === 0) {
+    fail('No engines available.');
+    return;
+  }
+
+  const config = loadConfig();
+  const projectCtx = scanProjectContext(process.cwd(), config.projectContext || undefined, config.contextFormat);
+
+  const prompt = [
+    `## CAMPFIRE`,
+    `Topic: ${topic || 'open discussion'}`,
+    '',
+    projectCtx ? `## Project Context\n${projectCtx}\n` : '',
+    `## Rules`,
+    `This is a campfire — no competition, no ranking, no winners.`,
+    `Think freely. Share ideas, wild thoughts, "what if" scenarios.`,
+    `Be honest. Say "I'm not sure" if you're not sure.`,
+    `Build on the topic. Be interesting, not just useful.`,
+    `Keep it concise — 3-5 paragraphs max.`,
+  ].filter(Boolean).join('\n');
+
+  console.log('');
+  console.log(`  ${fg256(208, '🔥')} ${bold(white('Campfire'))}  ${dim('— no competition, just thinking together')}`);
+  if (topic) console.log(`  ${dim('Topic:')} ${italic(topic)}`);
+  console.log('');
+
+  const outputDir = join(RUNS_DIR, `campfire-${Date.now()}`);
+  mkdirSync(outputDir, { recursive: true });
+
+  // All engines respond in parallel — no ranking, all voices equal
+  const spin = startSpinner(`${engines.length} engines gathering around the fire...`);
+
+  const responses = await Promise.all(
+    engines.map(async (engineId) => {
+      const engine = registry.get(engineId);
+      try {
+        const result = await adapter.dispatch({
+          engine,
+          prompt,
+          cwd: process.cwd(),
+          mode: 'exec',
+          timeout: 120,
+          outputDir,
+        });
+        return { engineId, response: result.stdout };
+      } catch {
+        return { engineId, response: '(couldn\'t join the campfire)' };
+      }
+    }),
+  );
+
+  spin.stop('All voices in');
+
+  // Show each engine's thoughts — no ranking, no scores, just voices
+  for (const { engineId, response } of responses) {
+    const color = ENGINE_COLORS[engineId] ?? 245;
+    console.log('');
+    console.log(`  ${fg256(color, '┌──')} ${fg256(color, bold(engineId))}`);
+    console.log(`  ${fg256(color, '│')}`);
+    const lines = response.split('\n');
+    for (const line of lines.slice(0, 20)) {
+      console.log(`  ${fg256(color, '│')} ${line}`);
+    }
+    if (lines.length > 20) console.log(`  ${fg256(color, '│')} ${dim(`...(${lines.length - 20} more lines)`)}`);
+    console.log(`  ${fg256(color, '└──')}`);
+
+    tracker.record(engineId, topic, response);
+  }
+
+  showInlineTokens('campfire');
 }
 
 // ── Tribunal ─────────────────────────────────────────────────────────
@@ -1241,6 +1320,9 @@ export async function startRepl(): Promise<void> {
           break;
         case 'tribunal':
           await handleTribunal(intent.question);
+          break;
+        case 'campfire':
+          await handleCampfire(intent.topic);
           break;
         case 'leaderboard':
           handleLeaderboard();

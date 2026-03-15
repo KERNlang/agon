@@ -6,6 +6,7 @@ export type Intent =
   | { type: 'history'; id?: string }
   | { type: 'engines' }
   | { type: 'config'; action?: string; key?: string; value?: string }
+  | { type: 'campfire'; topic: string }
   | { type: 'use'; engineIds: string[] }
   | { type: 'models' }
   | { type: 'tokens' }
@@ -18,6 +19,7 @@ export const SLASH_COMMANDS = [
   { cmd: '/forge',       desc: '<task> test with <cmd>  — competitive code generation' },
   { cmd: '/brainstorm',  desc: '<question>              — confidence-bidding answers' },
   { cmd: '/tribunal',    desc: '<question>              — adversarial debate' },
+  { cmd: '/campfire',    desc: '<topic>                  — think together, no competition' },
   { cmd: '/use',         desc: '<engines>               — set active engines (e.g. /use claude,codex)' },
   { cmd: '/models',      desc: '                        — manage engines & Caesar model' },
   { cmd: '/tokens',      desc: '                        — show token usage & costs' },
@@ -39,6 +41,9 @@ const TRIBUNAL_KEYWORDS =
 
 const BRAINSTORM_KEYWORDS =
   /\b(brainstorm|ideas?|suggest|approach|best way|strategy|alternatives?|advice)\b/i;
+
+const CAMPFIRE_KEYWORDS =
+  /\b(lets? think|think together|discuss|talk about|explore|campfire|riff on|what if)\b/i;
 
 // Question words — only trigger brainstorm if no forge/tribunal keyword matched
 const QUESTION_KEYWORDS = /^(how|what)\b/i;
@@ -90,6 +95,11 @@ export function detectIntent(raw: string): Intent {
     return parseForgeInput(input);
   }
 
+  // Campfire — open-ended thinking together
+  if (CAMPFIRE_KEYWORDS.test(input)) {
+    return { type: 'campfire', topic: input };
+  }
+
   // Brainstorm — explicit brainstorm keywords
   if (BRAINSTORM_KEYWORDS.test(input)) {
     return { type: 'brainstorm', question: input };
@@ -136,6 +146,10 @@ function parseSlashCommand(input: string): Intent {
       return { type: 'history', id: rest || undefined };
     case 'engines':
       return { type: 'engines' };
+    case 'campfire':
+    case 'think':
+    case 'talk':
+      return { type: 'campfire', topic: rest };
     case 'models':
     case 'setup':
       return { type: 'models' };

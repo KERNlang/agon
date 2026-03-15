@@ -510,8 +510,9 @@ async function offerNextAction(
   console.log('');
   console.log(`  ${fg256(214, '━'.repeat(48))}`);
   console.log(`  ${bold(white('What next?'))}`);
-  console.log(`  ${bold('1.')} ${fg256(214, '⚔')}  Forge it ${dim('— all engines compete to implement')}`);
-  console.log(`  ${bold('2.')} ${fg256(ENGINE_COLORS[winnerId] ?? 245, '⚒️')}  Build with ${fg256(ENGINE_COLORS[winnerId] ?? 245, bold(winnerId))} ${dim('— winner implements, you see the code')}`);
+  const active = activeEngines();
+  console.log(`  ${bold('1.')} ${fg256(214, '⚔')}  Forge it ${dim('— all engines compete')}`);
+  console.log(`  ${bold('2.')} ${fg256(34, '🔨')} Build it ${dim('— pick engine, plan first, then implement')}`);
   console.log(`  ${bold('3.')} ${fg256(33, '⚖')}  Tribunal ${dim('— debate it further')}`);
   console.log(`  ${dim('Enter to skip')}`);
   console.log('');
@@ -530,7 +531,22 @@ async function offerNextAction(
     }
     case '2':
     case 'build': {
-      await handleBuildWithWinner(question, winnerId, rl);
+      // Pick which engine builds
+      console.log('');
+      const engineOptions = active.map((id) => {
+        const color = ENGINE_COLORS[id] ?? 245;
+        const tag = id === winnerId ? ` ${dim('(winner)')}` : '';
+        return `${fg256(color, bold(id))}${tag}`;
+      });
+      console.log(`  Engines: ${engineOptions.join(dim('  '))}`);
+      const pick = await askQuestion(rl, `  ${fg256(214, '❯')} Build with ${dim(`[default: ${winnerId}]`)}: `);
+      const buildEngine = pick.trim() || winnerId;
+
+      if (active.includes(buildEngine)) {
+        await handleBuildWithPlan(question, buildEngine, rl);
+      } else {
+        warn(`Engine "${buildEngine}" not available.`);
+      }
       break;
     }
     case '3':
@@ -541,10 +557,10 @@ async function offerNextAction(
   }
 }
 
-async function handleBuildWithWinner(
+async function handleBuildWithPlan(
   task: string,
   engineId: string,
-  _rl: ReturnType<typeof createInterface>,
+  rl: ReturnType<typeof createInterface>,
 ): Promise<void> {
   ensureAgonHome();
   const engine = registry.get(engineId);
@@ -553,43 +569,95 @@ async function handleBuildWithWinner(
   const config = loadConfig();
   const projectCtx = scanProjectContext(process.cwd(), config.projectContext || undefined, config.contextFormat);
 
-  const prompt = [
+  // ── Phase 1: Plan ──
+  const planPrompt = [
     `## TASK\n${task}`,
     projectCtx ? `## CONTEXT\n${projectCtx}` : '',
     `## INSTRUCTIONS`,
-    `Implement this directly. Write the code. Be specific and complete.`,
-    `Show each file you create or modify with its full path.`,
+    `Create an implementation plan. Do NOT write code yet. Return:`,
+    `1. Files to create (with paths)`,
+    `2. Files to modify (with paths)`,
+    `3. Step-by-step implementation plan (3-7 steps)`,
+    `4. What tests should verify the work`,
+    ``,
+    `Be specific — exact file paths, what each step does.`,
   ].filter(Boolean).join('\n\n');
 
   console.log('');
-  console.log(`  ${fg256(color, '┌──')} ${fg256(color, bold(engineId))} ${dim('is building...')}`);
-  console.log(`  ${fg256(color, '│')}`);
+  const spin = startSpinner(`${engineId} is planning...`);
 
   const outputDir = join(RUNS_DIR, `build-${Date.now()}`);
   mkdirSync(outputDir, { recursive: true });
 
-  const spin = startSpinner(`${engineId} is writing code...`);
-
-  const result = await adapter.dispatch({
+  const planResult = await adapter.dispatch({
     engine,
-    prompt,
+    prompt: planPrompt,
+    cwd: process.cwd(),
+    mode: 'exec',
+    timeout: 120,
+    outputDir,
+  });
+
+  spin.stop(`${engineId} has a plan`);
+
+  // Show the plan
+  console.log('');
+  console.log(`  ${fg256(color, '┌──')} ${fg256(color, bold(engineId))} ${dim('plan')}`);
+  console.log(`  ${fg256(color, '│')}`);
+  const planLines = planResult.stdout.split('\n');
+  for (const line of planLines) {
+    console.log(`  ${fg256(color, '│')} ${line}`);
+  }
+  console.log(`  ${fg256(color, '└──')}`);
+
+  tracker.record(engineId, task, planResult.stdout);
+
+  // ── Phase 2: Approve ──
+  console.log('');
+  const approval = await askQuestion(
+    rl,
+    `  ${fg256(214, '❯')} ${bold('Implement this plan?')} ${dim('[Y/n]')} `,
+  );
+
+  if (approval.trim().toLowerCase() === 'n') {
+    info('Cancelled.');
+    return;
+  }
+
+  // ── Phase 3: Implement ──
+  const buildPrompt = [
+    `## TASK\n${task}`,
+    projectCtx ? `## CONTEXT\n${projectCtx}` : '',
+    `## YOUR PLAN\n${planResult.stdout}`,
+    `## INSTRUCTIONS`,
+    `Implement the plan above. Write the actual code.`,
+    `Show each file with its full path. Be complete.`,
+  ].filter(Boolean).join('\n\n');
+
+  const buildSpin = startSpinner(`${engineId} is implementing...`);
+
+  const buildResult = await adapter.dispatch({
+    engine,
+    prompt: buildPrompt,
     cwd: process.cwd(),
     mode: 'exec',
     timeout: 300,
     outputDir,
   });
 
-  spin.stop(`${engineId} done`);
+  buildSpin.stop(`${engineId} done`);
 
   // Show the code output
+  console.log('');
+  console.log(`  ${fg256(color, '┌──')} ${fg256(color, bold(engineId))} ${dim('implementation')}`);
   console.log(`  ${fg256(color, '│')}`);
-  const lines = result.stdout.split('\n');
-  for (const line of lines) {
+  const codeLines = buildResult.stdout.split('\n');
+  for (const line of codeLines) {
     console.log(`  ${fg256(color, '│')} ${line}`);
   }
   console.log(`  ${fg256(color, '└──')}`);
 
-  tracker.record(engineId, task, result.stdout);
+  tracker.record(engineId, task, buildResult.stdout);
   showInlineTokens('build');
 }
 

@@ -1,6 +1,6 @@
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join, basename } from 'node:path';
-import { scanKernProject, projectToKern } from 'kern-lang/dist/context-export.js';
+import { scanKernProject, projectToKern } from 'kern-lang/context-export';
 
 export type ContextFormat = 'plain' | 'kern';
 

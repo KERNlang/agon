@@ -4,9 +4,18 @@ import type {
   BrainstormResult,
 } from '@agon/core';
 import { EngineRegistry, buildBrainstormPrompt } from '@agon/core';
+import {
+  buildKernDraftPrompt,
+  parseKernDraft,
+  buildKernRankPrompt,
+  type KernDraft,
+} from 'kern-lang';
 
 /**
- * Run a confidence-bidding brainstorm across available engines.
+ * Run a brainstorm across available engines using the Kern Draft Protocol.
+ *
+ * Flow: All engines draft (Kern format) → rank by content → winner expands.
+ * ~70% fewer tokens than verbose natural language bidding.
  */
 export async function runBrainstorm(opts: {
   question: string;
@@ -17,46 +26,78 @@ export async function runBrainstorm(opts: {
   timeout: number;
   outputDir: string;
 }): Promise<BrainstormResult> {
-  const bidPrompt = buildBrainstormPrompt({
+  // Phase 1: All engines draft in Kern format (parallel)
+  const draftPrompt = buildKernDraftPrompt({
     question: opts.question,
     context: opts.context,
+    mode: 'brainstorm',
   });
 
-  // Phase 1: Collect bids (parallel)
-  const bidPromises = opts.engines.map(async (engineId) => {
+  const draftPromises = opts.engines.map(async (engineId) => {
     const engine = opts.registry.get(engineId);
     try {
       const result = await opts.adapter.dispatch({
         engine,
-        prompt: bidPrompt,
+        prompt: draftPrompt,
         cwd: process.cwd(),
         mode: 'exec',
         timeout: opts.timeout,
         outputDir: opts.outputDir,
       });
 
-      return parseBid(engineId, result.stdout);
+      const draft = parseKernDraft(result.stdout);
+      if (draft) {
+        return { engineId, draft, raw: result.stdout };
+      }
+
+      // Fallback: parse as old-style JSON bid
+      return { engineId, draft: fallbackParse(result.stdout), raw: result.stdout };
     } catch {
       return {
         engineId,
-        confidence: 0,
-        reasoning: 'Failed to respond',
-        approach: '',
-      } satisfies BrainstormBid;
+        draft: {
+          approach: 'Failed to respond',
+          reasoning: '',
+          tradeoffs: [],
+          confidence: 0,
+          keyFiles: [],
+          steps: [],
+        } satisfies KernDraft,
+        raw: '',
+      };
     }
   });
 
-  const bids = await Promise.all(bidPromises);
+  const drafts = await Promise.all(draftPromises);
 
-  // Phase 2: Pick winner (highest confidence)
-  const sortedBids = [...bids].sort((a, b) => b.confidence - a.confidence);
-  const winner = sortedBids[0];
+  // Phase 2: Rank drafts by content quality (not self-reported confidence)
+  const ranked = rankDrafts(drafts);
 
-  // Phase 3: Dispatch winner for the full answer
+  // Convert to BrainstormBid format for display
+  const bids: BrainstormBid[] = ranked.map((d, i) => ({
+    engineId: d.engineId,
+    confidence: d.draft.confidence,
+    reasoning: d.draft.approach + (d.draft.reasoning ? ` — ${d.draft.reasoning}` : ''),
+    approach: d.draft.steps.map((s: string, j: number) => `${j + 1}. ${s}`).join('\n'),
+    rank: i + 1,
+  }));
+
+  const winner = ranked[0];
+
+  // Phase 3: Winner expands with full answer
   const winnerEngine = opts.registry.get(winner.engineId);
+  const expandPrompt = [
+    opts.question,
+    '',
+    'Your draft approach was:',
+    `"${winner.draft.approach}"`,
+    '',
+    'Now give your full, detailed answer. Be specific and actionable.',
+  ].join('\n');
+
   const answerResult = await opts.adapter.dispatch({
     engine: winnerEngine,
-    prompt: opts.question,
+    prompt: expandPrompt,
     cwd: process.cwd(),
     mode: 'exec',
     timeout: opts.timeout,
@@ -65,42 +106,60 @@ export async function runBrainstorm(opts: {
 
   return {
     question: opts.question,
-    bids: sortedBids,
+    bids,
     winner: winner.engineId,
     response: answerResult.stdout,
   };
 }
 
-function parseBid(engineId: string, output: string): BrainstormBid {
-  try {
-    const parsed = extractJson(output);
-    if (!parsed) throw new Error('No JSON found');
-
-    return {
-      engineId,
-      confidence: Math.min(100, Math.max(0, Number(parsed.confidence) || 0)),
-      reasoning: String(parsed.reasoning ?? ''),
-      approach: String(parsed.approach ?? ''),
-    };
-  } catch {
-    return {
-      engineId,
-      confidence: 50,
-      reasoning: 'Could not parse bid response',
-      approach: output.slice(0, 200),
-    };
-  }
+/**
+ * Rank drafts by content quality — specificity, steps, tradeoffs.
+ * Self-reported confidence is a weak tiebreaker, NOT the primary signal.
+ */
+function rankDrafts(
+  drafts: { engineId: string; draft: KernDraft; raw: string }[],
+): { engineId: string; draft: KernDraft; raw: string }[] {
+  return [...drafts].sort((a, b) => {
+    const scoreA = qualityScore(a.draft);
+    const scoreB = qualityScore(b.draft);
+    return scoreB - scoreA;
+  });
 }
 
 /**
- * Robustly extract JSON from LLM output.
- * Handles: raw JSON, markdown-fenced JSON, JSON buried in text.
+ * Score a draft by objective quality signals — NOT self-reported confidence.
  */
-function extractJson(text: string): Record<string, unknown> | null {
-  // Strip markdown code fences
-  const stripped = text.replace(/```(?:json)?\s*/gi, '').replace(/```/g, '');
+function qualityScore(draft: KernDraft): number {
+  let score = 0;
 
-  // Try each { position as a potential JSON start
+  // Has a concrete approach (not empty/generic)
+  if (draft.approach.length > 10) score += 20;
+  if (draft.approach.length > 30) score += 10;
+
+  // Has reasoning
+  if (draft.reasoning.length > 10) score += 15;
+
+  // Has concrete steps (more = better, up to 7)
+  score += Math.min(draft.steps.length, 7) * 5;
+
+  // Has tradeoffs (shows nuance, not just blind confidence)
+  score += Math.min(draft.tradeoffs.length, 5) * 5;
+
+  // Identifies key files (grounded in the codebase)
+  score += Math.min(draft.keyFiles.length, 5) * 3;
+
+  // Confidence as weak tiebreaker (scaled down heavily)
+  score += draft.confidence * 0.05;
+
+  return score;
+}
+
+/**
+ * Fallback: parse old-style output into a KernDraft.
+ */
+function fallbackParse(output: string): KernDraft {
+  // Try JSON extraction
+  const stripped = output.replace(/```(?:json)?\s*/gi, '').replace(/```/g, '');
   let depth = 0;
   let start = -1;
 
@@ -111,25 +170,31 @@ function extractJson(text: string): Record<string, unknown> | null {
     } else if (stripped[i] === '}') {
       depth--;
       if (depth === 0 && start !== -1) {
-        const candidate = stripped.slice(start, i + 1);
         try {
-          const parsed = JSON.parse(candidate);
-          // Must have at least a confidence field to be a valid bid
-          if (typeof parsed === 'object' && parsed !== null && 'confidence' in parsed) {
-            return parsed as Record<string, unknown>;
+          const parsed = JSON.parse(stripped.slice(start, i + 1));
+          if (typeof parsed === 'object' && parsed !== null) {
+            return {
+              approach: String(parsed.approach ?? parsed.reasoning ?? ''),
+              reasoning: String(parsed.reasoning ?? ''),
+              tradeoffs: [],
+              confidence: Number(parsed.confidence) || 50,
+              keyFiles: [],
+              steps: parsed.approach ? [parsed.approach] : [],
+            };
           }
-        } catch {
-          // Not valid JSON, keep looking
-        }
+        } catch { /* keep looking */ }
         start = -1;
       }
     }
   }
 
-  // Fallback: try the whole text as JSON
-  try {
-    return JSON.parse(stripped.trim()) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
+  // Last resort: treat the whole output as the approach
+  return {
+    approach: output.slice(0, 200),
+    reasoning: '',
+    tradeoffs: [],
+    confidence: 50,
+    keyFiles: [],
+    steps: [],
+  };
 }

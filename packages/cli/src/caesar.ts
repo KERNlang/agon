@@ -113,6 +113,71 @@ export async function caesarClassify(input: string): Promise<string | null> {
   }
 }
 
+const TRANSLATE_PROMPT = `Convert this structured Kern draft into clear, readable text. Keep all information but make it natural and easy to read. No bullet points for the main text, use flowing paragraphs. List steps as numbered items.
+
+Kern draft:
+{kern}
+
+Readable version:`;
+
+/**
+ * Translate a Kern-format response into human-readable prose.
+ * Runs 100% locally via Caesar — zero cloud tokens.
+ */
+export async function caesarTranslate(kernText: string): Promise<string | null> {
+  if (!generator) return null;
+
+  try {
+    const prompt = TRANSLATE_PROMPT.replace('{kern}', kernText.slice(0, 1500));
+    const result = await generator(prompt, {
+      max_new_tokens: 300,
+      temperature: 0.3,
+      do_sample: true,
+    });
+
+    const output = (result as Array<{ generated_text: string }>)[0]?.generated_text ?? '';
+    const translated = output.slice(prompt.length).trim();
+    return translated || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Simple non-LLM fallback: expand Kern draft to readable text.
+ * Used when Caesar is not loaded.
+ */
+export function expandKernDraft(draft: {
+  approach: string;
+  reasoning: string;
+  tradeoffs: string[];
+  steps: string[];
+  keyFiles: string[];
+  confidence: number;
+}): string {
+  const lines: string[] = [];
+
+  lines.push(draft.approach);
+  if (draft.reasoning) lines.push('', draft.reasoning);
+
+  if (draft.steps.length > 0) {
+    lines.push('', 'Steps:');
+    for (let i = 0; i < draft.steps.length; i++) {
+      lines.push(`  ${i + 1}. ${draft.steps[i]}`);
+    }
+  }
+
+  if (draft.tradeoffs.length > 0) {
+    lines.push('', `Tradeoffs: ${draft.tradeoffs.join(', ')}`);
+  }
+
+  if (draft.keyFiles.length > 0) {
+    lines.push('', `Key files: ${draft.keyFiles.join(', ')}`);
+  }
+
+  return lines.join('\n');
+}
+
 const SUMMARIZE_PROMPT = `Summarize this forge competition result in 1-2 sentences. Be concise and direct.
 
 Task: {task}

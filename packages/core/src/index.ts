@@ -18,6 +18,12 @@ export { createLogger } from './logger.js';
 export type { Logger } from './logger.js';
 export { EngineRegistry } from './engine-registry.js';
 export { scanProjectContext, isKernProject } from './context-scanner.js';
+export {
+  addWorkspace, removeWorkspace, listWorkspaces,
+  getActiveWorkspace, switchWorkspace, getWorkspace,
+  ensureCurrentWorkspace,
+} from './workspace.js';
+export type { Workspace, WorkspaceState } from './workspace.js';
 export type { ContextFormat } from './context-scanner.js';
 export { tracker, estimateTokens, estimateCost } from './token-tracker.js';
 export type { TokenUsage, SessionStats } from './token-tracker.js';

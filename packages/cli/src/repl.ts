@@ -14,6 +14,12 @@ import {
   scanProjectContext,
   tracker,
   estimateTokens,
+  addWorkspace,
+  removeWorkspace,
+  listWorkspaces,
+  getActiveWorkspace,
+  switchWorkspace,
+  ensureCurrentWorkspace,
 } from '@agon/core';
 import type { AgonConfig, EngineAdapter, ForgeManifest } from '@agon/core';
 import { createCliAdapter } from '@agon/adapter-cli';
@@ -144,6 +150,13 @@ function renderDashboard(): void {
     }
   } else {
     insights.push(`${fg256(33, '◆')}  ${dim('No forges yet — run one to see engines battle')}`);
+  }
+
+  // Active workspace
+  const activeWs = getActiveWorkspace();
+  if (activeWs) {
+    const kernTag = activeWs.isKern ? fg256(220, ' kern') : '';
+    insights.push(`${fg256(245, '📂')} ${bold(activeWs.name)}${kernTag}  ${dim(activeWs.path)}`);
   }
 
   // Run history peek
@@ -1216,12 +1229,59 @@ async function handleModels(_rl: ReturnType<typeof createInterface>): Promise<vo
   }
 }
 
+// ── Workspace handler ────────────────────────────────────────────────
+
+function handleWorkspace(action: string, path?: string): void {
+  switch (action) {
+    case 'add': {
+      if (!path) { fail('Usage: /workspace add <path>'); return; }
+      const ws = addWorkspace(path);
+      success(`Added ${bold(ws.name)} ${ws.isKern ? fg256(220, '(Kern project)') : ''}`);
+      info(`  ${dim(ws.path)}`);
+      break;
+    }
+    case 'remove': {
+      if (!path) { fail('Usage: /workspace remove <id>'); return; }
+      if (removeWorkspace(path)) success(`Removed ${path}`);
+      else fail(`Workspace "${path}" not found`);
+      break;
+    }
+    case 'switch': {
+      if (!path) { fail('Usage: /workspace switch <id>'); return; }
+      const ws = switchWorkspace(path);
+      if (ws) success(`Active: ${bold(ws.name)} ${dim(ws.path)}`);
+      else fail(`Workspace "${path}" not found`);
+      break;
+    }
+    case 'list':
+    default: {
+      const all = listWorkspaces();
+      const active = getActiveWorkspace();
+      if (all.length === 0) {
+        info('No workspaces. Current directory is used by default.');
+        info(`Add with: /workspace add ${process.cwd()}`);
+        return;
+      }
+      header('Workspaces');
+      console.log('');
+      for (const ws of all) {
+        const isActive = ws.id === active?.id;
+        const marker = isActive ? green('●') : dim('○');
+        const kern = ws.isKern ? fg256(220, ' kern') : '';
+        console.log(`  ${marker} ${bold(ws.name)}${kern}  ${dim(ws.path)}`);
+      }
+      break;
+    }
+  }
+}
+
 // ── REPL Loop ────────────────────────────────────────────────────────
 
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   initRegistry();
   await initCaesar();
+  ensureCurrentWorkspace(process.cwd());
 
   // Reset stdin after clack prompts (onboarding puts it in raw mode)
   if (process.stdin.setRawMode) {
@@ -1323,6 +1383,9 @@ export async function startRepl(): Promise<void> {
           break;
         case 'campfire':
           await handleCampfire(intent.topic);
+          break;
+        case 'workspace':
+          handleWorkspace(intent.action, intent.path);
           break;
         case 'leaderboard':
           handleLeaderboard();

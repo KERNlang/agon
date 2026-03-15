@@ -157,6 +157,9 @@ export interface AgonConfig {
   eloEnabled?: boolean;
   eloKFactor?: number;
   contextSummary?: boolean;
+  onboarded?: boolean;
+  caesarModel?: 'smollm2-360m' | 'phi-3-mini' | 'none';
+  projectContext?: string;
 }
 
 export const DEFAULT_CONFIG: Required<AgonConfig> = {
@@ -176,6 +179,9 @@ export const DEFAULT_CONFIG: Required<AgonConfig> = {
   eloEnabled: true,
   eloKFactor: 32,
   contextSummary: true,
+  onboarded: false,
+  caesarModel: 'smollm2-360m',
+  projectContext: '',
 };
 
 // ── Forge ────────────────────────────────────────────────────────────

@@ -15,11 +15,11 @@ export const configCommand = defineCommand({
       required: true,
     },
     key: {
-      type: 'positional',
+      type: 'string',
       description: 'Config key',
     },
     value: {
-      type: 'positional',
+      type: 'string',
       description: 'Config value (for set)',
     },
   },

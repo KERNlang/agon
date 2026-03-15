@@ -9,7 +9,7 @@
     "packages/cli"
   ],
   "scripts": {
-    "build": "tsc -b && npm run build -ws",
+    "build": "tsc -b --force",
     "typecheck": "tsc -b",
     "test": "vitest run",
     "test:watch": "vitest"

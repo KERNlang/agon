@@ -18,7 +18,7 @@ export const historyCommand = defineCommand({
       default: '10',
     },
     id: {
-      type: 'positional',
+      type: 'string',
       description: 'Show details for a specific forge ID',
     },
   },

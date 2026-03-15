@@ -17,7 +17,7 @@ export const engineCommand = defineCommand({
       required: true,
     },
     id: {
-      type: 'positional',
+      type: 'string',
       description: 'Engine ID (for info)',
     },
   },
@@ -27,7 +27,21 @@ export const engineCommand = defineCommand({
 
     const adapter = createCliAdapter(registry);
 
-    switch (args.action) {
+    // Handle "agon engine info claude" — citty may merge into action or use _ rest args
+    let action = args.action;
+    let id = args.id;
+    if (action.startsWith('info ')) {
+      id = action.slice(5);
+      action = 'info';
+    } else if (action === 'info' && !id) {
+      // Check for remaining args from process.argv
+      const extraArgs = process.argv.slice(4);
+      if (extraArgs.length > 0 && !extraArgs[0].startsWith('-')) {
+        id = extraArgs[0];
+      }
+    }
+
+    switch (action) {
       case 'list': {
         header('Engines');
         const engines = registry.list();
@@ -53,15 +67,15 @@ export const engineCommand = defineCommand({
       }
 
       case 'info': {
-        if (!args.id) {
+        if (!id) {
           fail('Usage: agon engine info <id>');
           process.exit(1);
         }
 
         try {
-          const engine = registry.get(args.id);
+          const engine = registry.get(id);
           const available = registry.isAvailable(engine);
-          const rating = getEngineRating(args.id);
+          const rating = getEngineRating(id);
 
           header(`Engine: ${engine.displayName}`);
           console.log(`  ID:         ${bold(engine.id)}`);
@@ -78,7 +92,7 @@ export const engineCommand = defineCommand({
             info(`Install: ${engine.installHint}`);
           }
         } catch {
-          fail(`Engine "${args.id}" not found`);
+          fail(`Engine "${id}" not found`);
           process.exit(1);
         }
         break;

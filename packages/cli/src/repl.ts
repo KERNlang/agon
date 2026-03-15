@@ -24,8 +24,6 @@ import {
   green,
   red,
   yellow,
-  blue,
-  magenta,
   white,
   italic,
   fg256,
@@ -35,6 +33,9 @@ import {
   warn,
   info,
   table,
+  LOGO_COLORS,
+  ENGINE_COLORS,
+  gradientText,
 } from './output.js';
 
 const VERSION = '0.1.0';
@@ -64,30 +65,6 @@ function initRegistry(): void {
 
 // ── Dashboard ────────────────────────────────────────────────────────
 
-// Gradient: orange → yellow → white for the Agon logo
-const LOGO_COLORS = [208, 214, 220, 226, 228, 230, 255];
-
-function gradientText(text: string, colors: number[]): string {
-  let result = '';
-  const step = Math.max(1, Math.floor(text.length / colors.length));
-  for (let i = 0; i < text.length; i++) {
-    const colorIdx = Math.min(Math.floor(i / step), colors.length - 1);
-    result += fg256(colors[colorIdx], text[i]);
-  }
-  return result;
-}
-
-// Engine-specific brand colors (256-color palette)
-const ENGINE_COLORS: Record<string, number> = {
-  claude: 208,    // orange (Anthropic)
-  codex: 34,      // green (OpenAI)
-  gemini: 33,     // blue (Google)
-  ollama: 255,    // white (local)
-  aider: 141,     // purple
-  openrouter: 197, // pink
-  qwen: 45,       // teal
-  mistral: 75,    // light blue
-};
 
 function renderDashboard(): void {
   const available = registry.availableIds();
@@ -908,13 +885,13 @@ export async function startRepl(): Promise<void> {
       }
     } catch (err) {
       fail(err instanceof Error ? err.message : String(err));
+    } finally {
+      busy = false;
+      rl.resume();
+      refreshPrompt();
+      console.log('');
+      rl.prompt();
     }
-
-    busy = false;
-    rl.resume();
-    refreshPrompt();
-    console.log('');
-    rl.prompt();
   });
 
   rl.on('close', () => {

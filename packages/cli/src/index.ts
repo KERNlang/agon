@@ -34,13 +34,15 @@ const isTty = process.stdin.isTTY === true;
 const isSetup = process.argv[2] === 'setup';
 
 if (isSetup && isTty) {
-  // agon setup — re-run onboarding
-  runOnboarding().then(() => startRepl());
+  runOnboarding()
+    .then(() => startRepl())
+    .catch(() => process.exit(0));
 } else if (noArgs && isTty) {
-  // First run → onboarding, then REPL
   const config = loadConfig();
   if (!config.onboarded) {
-    runOnboarding().then(() => startRepl());
+    runOnboarding()
+      .then(() => startRepl())
+      .catch(() => process.exit(0));
   } else {
     startRepl();
   }

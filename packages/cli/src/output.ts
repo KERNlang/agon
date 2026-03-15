@@ -61,6 +61,25 @@ export function italic(text: string): string {
 
 export { fg256, bgFg };
 
+// ── Shared brand constants ──────────────────────────────────────────
+
+export const LOGO_COLORS = [208, 214, 220, 226, 228, 230, 255];
+
+export const ENGINE_COLORS: Record<string, number> = {
+  claude: 208, codex: 34, gemini: 33, ollama: 255,
+  aider: 141, openrouter: 197, qwen: 45, mistral: 75,
+};
+
+export function gradientText(text: string, colors: number[]): string {
+  let result = '';
+  const step = Math.max(1, Math.floor(text.length / colors.length));
+  for (let i = 0; i < text.length; i++) {
+    const colorIdx = Math.min(Math.floor(i / step), colors.length - 1);
+    result += fg256(colors[colorIdx], text[i]);
+  }
+  return result;
+}
+
 export function header(text: string): void {
   console.log(`\n${BOLD}${CYAN}▸ ${text}${RESET}`);
 }

@@ -13,36 +13,18 @@ import { createCliAdapter } from '@agon/adapter-cli';
 import {
   bold,
   dim,
-  cyan,
   green,
-  red,
-  yellow,
   white,
   italic,
   fg256,
-  header,
   success,
   fail,
   warn,
   info,
+  LOGO_COLORS,
+  ENGINE_COLORS,
+  gradientText,
 } from './output.js';
-
-const LOGO_COLORS = [208, 214, 220, 226, 228, 230, 255];
-
-function gradientText(text: string, colors: number[]): string {
-  let result = '';
-  const step = Math.max(1, Math.floor(text.length / colors.length));
-  for (let i = 0; i < text.length; i++) {
-    const colorIdx = Math.min(Math.floor(i / step), colors.length - 1);
-    result += fg256(colors[colorIdx], text[i]);
-  }
-  return result;
-}
-
-const ENGINE_COLORS: Record<string, number> = {
-  claude: 208, codex: 34, gemini: 33, ollama: 255,
-  aider: 141, openrouter: 197, qwen: 45, mistral: 75,
-};
 
 const CAESAR_MODELS = [
   {

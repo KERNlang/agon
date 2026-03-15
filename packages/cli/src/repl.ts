@@ -18,6 +18,7 @@ import { runForge, runBrainstorm, runTribunal } from '@agon/forge';
 import type { Intent } from './intent.js';
 import { detectIntent, SLASH_COMMANDS } from './intent.js';
 import { loadCaesar, isCaesarReady, caesarClassify, caesarSummarize } from './caesar.js';
+import * as clack from '@clack/prompts';
 import {
   bold,
   dim,
@@ -727,77 +728,47 @@ function handleUse(engineIds: string[]): void {
 
 // ── /models handler ─────────────────────────────────────────────────
 
-async function handleModels(rl: ReturnType<typeof createInterface>): Promise<void> {
+async function handleModels(_rl: ReturnType<typeof createInterface>): Promise<void> {
   const config = loadConfig();
-  const allEngines = registry.list();
   const available = registry.availableIds();
 
-  header('Engines');
-  console.log('');
-  for (let i = 0; i < available.length; i++) {
-    const id = available[i];
-    const color = ENGINE_COLORS[id] ?? 245;
-    const rating = getEngineRating(id);
-    const eloStr = rating.wins + rating.losses > 0 ? dim(` ELO ${rating.rating}`) : '';
-    const active = !sessionEngines || sessionEngines.includes(id);
-    const marker = active ? fg256(color, '●') : fg256(240, '○');
-    console.log(`  ${bold(String(i + 1))}. ${marker} ${fg256(color, bold(id.padEnd(12)))}${active ? green(' active') : dim(' off')}${eloStr}`);
+  // Engine selection with arrow keys
+  const selected = await clack.multiselect({
+    message: 'Active engines',
+    options: available.map((id) => ({
+      value: id,
+      label: fg256(ENGINE_COLORS[id] ?? 245, bold(id)),
+      hint: (() => {
+        const r = getEngineRating(id);
+        return r.wins + r.losses > 0 ? `ELO ${r.rating}` : '';
+      })(),
+    })),
+    initialValues: sessionEngines ?? available,
+    required: true,
+  });
+
+  if (!clack.isCancel(selected)) {
+    sessionEngines = selected as string[];
+    configSet('forgeEnabledEngines', selected as string[]);
+    success(`Active: ${(selected as string[]).map((id) => fg256(ENGINE_COLORS[id] ?? 245, id)).join(dim(', '))}`);
   }
 
-  const notInstalled = allEngines.filter((e) => !registry.isAvailable(e));
-  if (notInstalled.length > 0) {
-    console.log(`  ${dim(`   + ${notInstalled.length} not installed: ${notInstalled.map((e) => e.id).join(', ')}`)}`);
-  }
-
-  console.log('');
-  const choice = await askQuestion(rl, `  ${fg256(214, '❯')} Toggle engines ${dim('[numbers, "all" to reset, Enter to keep]')}: `);
-  const trimmed = choice.trim().toLowerCase();
-
-  if (trimmed === 'all' || trimmed === '*') {
-    sessionEngines = null;
-    configSet('forgeEnabledEngines', available);
-    success('All engines active');
-  } else if (trimmed) {
-    const indices = trimmed.split(/[,\s]+/).map((s) => parseInt(s, 10) - 1);
-    const selected = indices
-      .filter((i) => i >= 0 && i < available.length)
-      .map((i) => available[i]);
-    if (selected.length > 0) {
-      sessionEngines = selected;
-      configSet('forgeEnabledEngines', selected);
-      const tags = selected.map((id) => fg256(ENGINE_COLORS[id] ?? 245, id)).join(dim(', '));
-      success(`Active engines: ${tags}`);
-    }
-  }
-
-  // Caesar model
-  console.log('');
-  header('Caesar Model');
-  console.log('');
+  // Caesar model with arrow keys
   const currentCaesar = config.caesarModel ?? 'smollm2-360m';
-  const caesarOptions = [
-    { id: 'smollm2-360m', name: 'SmolLM2-360M', desc: 'fast, lightweight' },
-    { id: 'phi-3-mini', name: 'Phi-3 Mini', desc: 'smarter, heavier' },
-    { id: 'none', name: 'None', desc: 'keyword matching only' },
-  ];
-  for (let i = 0; i < caesarOptions.length; i++) {
-    const opt = caesarOptions[i];
-    const isCurrent = opt.id === currentCaesar;
-    const marker = isCurrent ? fg256(214, '●') : dim('○');
-    const label = isCurrent ? bold(white(opt.name)) : opt.name;
-    console.log(`  ${bold(String(i + 1))}. ${marker} ${label}  ${dim(opt.desc)}`);
-  }
+  const caesarChoice = await clack.select({
+    message: 'Caesar model',
+    options: [
+      { value: 'smollm2-360m', label: bold('SmolLM2-360M'), hint: 'fast, lightweight' },
+      { value: 'phi-3-mini', label: bold('Phi-3 Mini'), hint: 'smarter, heavier' },
+      { value: 'none', label: bold('None'), hint: 'keyword matching only' },
+    ],
+    initialValue: currentCaesar,
+  });
 
-  console.log('');
-  const caesarChoice = await askQuestion(rl, `  ${fg256(214, '❯')} Caesar model ${dim('[1/2/3, Enter to keep]')}: `);
-  const caesarTrimmed = caesarChoice.trim();
-  if (caesarTrimmed) {
-    const idx = parseInt(caesarTrimmed, 10) - 1;
-    const picked = caesarOptions[idx];
-    if (picked) {
-      configSet('caesarModel', picked.id as 'smollm2-360m' | 'phi-3-mini' | 'none');
-      success(`Caesar: ${bold(picked.name)}`);
-    }
+  if (!clack.isCancel(caesarChoice)) {
+    configSet('caesarModel', caesarChoice as 'smollm2-360m' | 'phi-3-mini' | 'none');
+    const names: Record<string, string> = { 'smollm2-360m': 'SmolLM2-360M', 'phi-3-mini': 'Phi-3 Mini', none: 'None' };
+    success(`Caesar: ${bold(names[caesarChoice as string] ?? caesarChoice)}`);
   }
 }
 

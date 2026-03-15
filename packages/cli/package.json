@@ -16,6 +16,7 @@
     "@agon/adapter-cli": "*",
     "@agon/core": "*",
     "@agon/forge": "*",
+    "@clack/prompts": "^1.1.0",
     "@huggingface/transformers": "^3.8.1",
     "citty": "^0.1.6",
     "onnxruntime-node": "^1.24.3"

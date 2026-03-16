@@ -7,8 +7,6 @@ export interface InputEngine {
   pause(): void;
   resume(): void;
   close(): void;
-  /** Set up scroll region with pinned input at bottom */
-  setupLayout(): void;
 }
 
 interface SlashCommand {
@@ -24,48 +22,6 @@ function stripAnsi(str: string): string {
   return str.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
 }
 
-// ── Layout: pinned bottom input ─────────────────────────────────────
-
-function getTermHeight(): number {
-  return process.stdout.rows || 24;
-}
-
-/** Set scroll region to [1, height-2], leaving last 2 lines for separator + input */
-function setupScrollRegion(): void {
-  const h = getTermHeight();
-  process.stdout.write(`\x1b[1;${h - 2}r`); // scroll region
-  process.stdout.write(`\x1b[${h - 1};1H`);  // separator line
-  process.stdout.write(`\x1b[2K${dim('─'.repeat(process.stdout.columns || 48))}`);
-  process.stdout.write(`\x1b[${h};1H`);       // input line
-  process.stdout.write(`\x1b[2K`);             // clear input line
-}
-
-/** Move cursor into scroll region (for handler output) */
-function enterScrollRegion(): void {
-  const h = getTermHeight();
-  // Move to the last line of the scroll region
-  process.stdout.write(`\x1b[${h - 2};1H`);
-  // Ensure we're at a new line for output
-  process.stdout.write('\n');
-}
-
-/** Render input at the fixed bottom line */
-function renderAtBottom(prompt: string, buffer: string, cursor: number): void {
-  const h = getTermHeight();
-  const promptLen = stripAnsi(prompt).length;
-  // Move to last line, clear it, write prompt + buffer
-  process.stdout.write(`\x1b[${h};1H\x1b[2K${prompt}${buffer}`);
-  // Position cursor
-  const col = promptLen + cursor + 1;
-  process.stdout.write(`\x1b[${h};${col}H`);
-}
-
-/** Reset scroll region to full terminal (cleanup) */
-function resetScrollRegion(): void {
-  const h = getTermHeight();
-  process.stdout.write(`\x1b[1;${h}r`);
-  process.stdout.write(`\x1b[${h};1H`);
-}
 
 // ── LineEditor ───────────────────────────────────────────────────────
 
@@ -140,7 +96,10 @@ class LineEditor {
 
   render(): void {
     const prompt = this.promptFn();
-    renderAtBottom(prompt, this.buffer, this.cursor);
+    const promptLen = stripAnsi(prompt).length;
+    process.stdout.write(`\r\x1b[2K${prompt}${this.buffer}`);
+    const col = promptLen + this.cursor + 1;
+    process.stdout.write(`\x1b[${col}G`);
   }
 }
 
@@ -189,54 +148,55 @@ class SlashPicker {
 
   render(): void {
     const items = this.filtered();
-    const h = getTermHeight();
-
-    // Scrolling window
-    const sel = Math.min(this.selectedIndex, items.length - 1);
-    let start = 0;
-    if (sel >= this.maxVisible) {
-      start = sel - this.maxVisible + 1;
-    }
-    const visible = items.length === 0
-      ? []
-      : items.slice(start, start + this.maxVisible);
-
-    // How many lines we'll draw
-    const lineCount = items.length === 0 ? 1 : visible.length;
-
-    // Render ABOVE separator (bottom-up), starting at row (h-2-lineCount+1)
-    const startRow = h - 2 - lineCount;
-
-    // Clear old picker lines first
-    for (let i = 0; i < this.lastRenderedLines; i++) {
-      const row = h - 2 - this.lastRenderedLines + i;
-      if (row > 0) process.stdout.write(`\x1b[${row};1H\x1b[2K`);
-    }
+    let linesDrawn = 0;
 
     if (items.length === 0) {
-      process.stdout.write(`\x1b[${startRow + 1};1H\x1b[2K  ${dim('No matching commands')}`);
+      process.stdout.write(`\n\x1b[2K  ${dim('No matching commands')}`);
+      linesDrawn = 1;
     } else {
+      const sel = Math.min(this.selectedIndex, items.length - 1);
+      let start = 0;
+      if (sel >= this.maxVisible) {
+        start = sel - this.maxVisible + 1;
+      }
+      const visible = items.slice(start, start + this.maxVisible);
       for (let i = 0; i < visible.length; i++) {
-        const row = startRow + 1 + i;
+        process.stdout.write('\n\x1b[2K');
         const { cmd, desc } = visible[i];
         const isSelected = (start + i) === sel;
         const prefix = isSelected ? fg256(214, '› ') : '  ';
         const cmdText = isSelected ? fg256(214, bold(cmd)) : dim(cmd);
         const descText = dim(desc.trim());
-        process.stdout.write(`\x1b[${row};1H\x1b[2K${prefix}${cmdText}  ${descText}`);
+        process.stdout.write(`${prefix}${cmdText}  ${descText}`);
+        linesDrawn++;
+      }
+      if (start + this.maxVisible < items.length) {
+        process.stdout.write(`\n\x1b[2K  ${dim(`… ${items.length - start - this.maxVisible} more`)}`);
+        linesDrawn++;
+      }
+      if (start > 0) {
+        process.stdout.write(`\n\x1b[2K  ${dim(`↑ ${start} above`)}`);
+        linesDrawn++;
       }
     }
 
-    this.lastRenderedLines = lineCount;
+    const extra = Math.max(0, this.lastRenderedLines - linesDrawn);
+    for (let i = 0; i < extra; i++) {
+      process.stdout.write('\n\x1b[2K');
+    }
+    const totalDown = linesDrawn + extra;
+    if (totalDown > 0) {
+      process.stdout.write(`\x1b[${totalDown}A`);
+    }
+    this.lastRenderedLines = totalDown;
   }
 
   clearDisplay(): void {
     if (this.lastRenderedLines === 0) return;
-    const h = getTermHeight();
     for (let i = 0; i < this.lastRenderedLines; i++) {
-      const row = h - 2 - this.lastRenderedLines + i;
-      if (row > 0) process.stdout.write(`\x1b[${row};1H\x1b[2K`);
+      process.stdout.write('\n\x1b[2K');
     }
+    process.stdout.write(`\x1b[${this.lastRenderedLines}A`);
     this.lastRenderedLines = 0;
   }
 }
@@ -260,8 +220,7 @@ export function createInputEngine(opts: {
     const prompt = opts.prompt();
     const promptLen = stripAnsi(prompt).length;
     const col = promptLen + editor.cursor + 1;
-    const h = getTermHeight();
-    process.stdout.write(`\x1b[${h};${col}H`);
+    process.stdout.write(`\x1b[${col}G`);
   }
 
   function handleData(data: Buffer): void {
@@ -517,19 +476,7 @@ export function createInputEngine(opts: {
   // Start
   startListening();
 
-  // Handle terminal resize — update scroll region
-  process.stdout.on('resize', () => {
-    if (!paused) {
-      setupScrollRegion();
-      editor.render();
-    }
-  });
-
   return {
-    setupLayout() {
-      setupScrollRegion();
-    },
-
     showPrompt() {
       editor.render();
     },
@@ -543,9 +490,6 @@ export function createInputEngine(opts: {
         editor.clear();
       }
       stopListening();
-      // Move cursor into scroll region so handler output goes there
-      enterScrollRegion();
-      // Register process SIGINT so Ctrl+C works while handlers use stdin
       process.on('SIGINT', opts.onInterrupt);
     },
 
@@ -553,13 +497,10 @@ export function createInputEngine(opts: {
       if (!paused) return;
       paused = false;
       process.removeListener('SIGINT', opts.onInterrupt);
-      // Re-render separator + input at bottom
-      setupScrollRegion();
       startListening();
     },
 
     close() {
-      resetScrollRegion();
       stopListening();
       process.removeListener('SIGINT', opts.onInterrupt);
       process.exit(0);

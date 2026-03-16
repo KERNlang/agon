@@ -2084,7 +2084,6 @@ export async function startRepl(): Promise<void> {
     commands: SLASH_COMMANDS,
   });
 
-  inputEngine.setupLayout();
   inputEngine.showPrompt();
 
   async function handleLine(line: string): Promise<void> {
@@ -2114,6 +2113,9 @@ export async function startRepl(): Promise<void> {
     // Lock input before any async work to prevent re-entry
     busy = true;
     inputEngine.pause();
+
+    // Echo user input so it stays visible in the output
+    console.log(`  ${dim('❯')} ${input}`);
 
     // Intent detection — silent, no UI noise
     let intent = detectIntent(input);

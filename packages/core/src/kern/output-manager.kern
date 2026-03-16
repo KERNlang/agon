@@ -1,0 +1,71 @@
+fn name=formatSpinnerFrame params="frames:string[], index:number, text:string" returns="string"
+  handler <<<
+    const frame = frames[index % frames.length];
+    return `  \x1b[38;5;214m${frame}\x1b[0m \x1b[2m${text}\x1b[0m`;
+  >>>
+
+fn name=formatEngineBlock params="engineId:string, color:number, lines:string[], maxWidth:number" returns="string[]"
+  handler <<<
+    const result: string[] = [];
+    const colorStart = `\x1b[38;5;${color}m`;
+    const bold = '\x1b[1m';
+    const reset = '\x1b[0m';
+
+    result.push(`  ${colorStart}\u250c\u2500\u2500${reset} ${colorStart}${bold}${engineId}${reset}`);
+
+    for (const line of lines) {
+      // Truncate to maxWidth if needed (account for "  | " prefix = 4 visible chars)
+      const available = maxWidth - 4;
+      const trimmed = line.length > available ? line.slice(0, available - 1) + '\u2026' : line;
+      result.push(`  ${colorStart}\u2502${reset} ${trimmed}`);
+    }
+
+    result.push(`  ${colorStart}\u2514\u2500\u2500${reset}`);
+    return result;
+  >>>
+
+fn name=formatStatusLine params="engineId:string, color:number, status:string, elapsed:number" returns="string"
+  handler <<<
+    const colorStart = `\x1b[38;5;${color}m`;
+    const bold = '\x1b[1m';
+    const dim = '\x1b[2m';
+    const green = '\x1b[32m';
+    const reset = '\x1b[0m';
+
+    const paddedId = engineId.padEnd(10);
+
+    if (status === 'done') {
+      return `  ${green}\u2713${reset} ${colorStart}${bold}${paddedId}${reset} ${green}done${reset} ${dim}(${elapsed}s)${reset}`;
+    }
+    if (status === 'error' || status === 'failed') {
+      return `  \x1b[31m\u2717${reset} ${colorStart}${bold}${paddedId}${reset} \x1b[31m${status}${reset} ${dim}(${elapsed}s)${reset}`;
+    }
+    if (status === 'running' || status === 'building') {
+      const barLen = Math.min(10, Math.floor(elapsed / 3));
+      const bar = '\u2593'.repeat(barLen);
+      const empty = '\u2591'.repeat(Math.max(0, 10 - barLen));
+      return `  ${colorStart}${bold}${paddedId}${reset} ${colorStart}${bar}${reset}${dim}${empty}${reset} ${dim}${elapsed}s${reset}`;
+    }
+    // queued / waiting / other
+    return `  ${dim}\u25cb${reset} ${dim}${paddedId}${reset} ${dim}${status}${reset}`;
+  >>>
+
+fn name=clearLinesSequence params="count:number" returns="string"
+  handler <<<
+    let seq = '';
+    for (let i = 0; i < count; i++) {
+      seq += '\x1b[1A\x1b[2K';
+    }
+    return seq;
+  >>>
+
+fn name=cursorUpSequence params="count:number" returns="string"
+  handler <<<
+    if (count <= 0) return '';
+    return `\x1b[${count}A`;
+  >>>
+
+fn name=clearLineSequence params="" returns="string"
+  handler <<<
+    return '\r\x1b[2K';
+  >>>

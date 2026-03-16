@@ -39,6 +39,10 @@ export type {
 } from './plan.js';
 export { savePlan, loadPlan, listPlans, deletePlan } from './plan-store.js';
 export { wordWrap } from './text.js';
+export {
+  formatSpinnerFrame, formatEngineBlock, formatStatusLine,
+  clearLinesSequence, cursorUpSequence, clearLineSequence,
+} from './output-manager.js';
 export { parseStreamChunk } from './stream-parser.js';
 export type { ParsedChunk } from './stream-parser.js';
 export { discoverEngines } from './engine-discover.js';

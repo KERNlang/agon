@@ -1,0 +1,106 @@
+import from="node:fs" names="readFileSync"
+import from="node:child_process" names="execSync"
+import from="./types.js" names="ForgeManifest" types=true
+
+interface name=PatchInfo
+  field name=path type=string
+  field name=engineId type=string
+  field name=lineCount type=number
+  field name=content type=string
+
+interface name=ApplyPreflight
+  field name=ok type=boolean
+  field name=error type=string optional=true
+  field name=patch type=PatchInfo optional=true
+  field name=dirtyTree type=boolean
+
+fn name=readPatchFromManifest params="manifestPath:string" returns="PatchInfo|null"
+  handler <<<
+    try {
+      const raw = readFileSync(manifestPath, 'utf-8');
+      const manifest: ForgeManifest = JSON.parse(raw);
+      if (!manifest.winner) return null;
+      const patchPath = manifest.patches[manifest.winner];
+      if (!patchPath) return null;
+      const content = readFileSync(patchPath, 'utf-8');
+      const lineCount = content.split('\n').filter(
+        (l: string) => (l.startsWith('+') && !l.startsWith('+++')) || (l.startsWith('-') && !l.startsWith('---'))
+      ).length;
+      return { path: patchPath, engineId: manifest.winner, lineCount, content };
+    } catch {
+      return null;
+    }
+  >>>
+
+fn name=readPatchFromPath params="patchPath:string" returns="PatchInfo|null"
+  handler <<<
+    try {
+      const content = readFileSync(patchPath, 'utf-8');
+      if (!content.trim()) return null;
+      const lineCount = content.split('\n').filter(
+        (l: string) => (l.startsWith('+') && !l.startsWith('+++')) || (l.startsWith('-') && !l.startsWith('---'))
+      ).length;
+      return { path: patchPath, engineId: 'unknown', lineCount, content };
+    } catch {
+      return null;
+    }
+  >>>
+
+fn name=isTreeDirty params="cwd:string" returns="boolean"
+  handler <<<
+    try {
+      const result = execSync('git status --porcelain', { cwd, encoding: 'utf-8' });
+      return result.trim().length > 0;
+    } catch {
+      return false;
+    }
+  >>>
+
+fn name=dryRunApply params="cwd:string, patchContent:string" returns="{ ok:boolean, error?:string }"
+  handler <<<
+    try {
+      execSync('git apply --check -', { cwd, input: patchContent, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
+      return { ok: true };
+    } catch (err) {
+      const msg = err instanceof Error ? (err as any).stderr || err.message : String(err);
+      return { ok: false, error: msg };
+    }
+  >>>
+
+fn name=applyPatchToTree params="cwd:string, patchContent:string" returns="{ ok:boolean, error?:string }"
+  handler <<<
+    try {
+      execSync('git apply --allow-empty -', { cwd, input: patchContent, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
+      return { ok: true };
+    } catch (err) {
+      const msg = err instanceof Error ? (err as any).stderr || err.message : String(err);
+      return { ok: false, error: msg };
+    }
+  >>>
+
+fn name=preflightApply params="cwd:string, patchPath:string|null, manifestPath:string|null" returns="ApplyPreflight"
+  handler <<<
+    const dirtyTree = isTreeDirty(cwd);
+
+    let patch: PatchInfo | null = null;
+    if (patchPath) {
+      patch = readPatchFromPath(patchPath);
+    } else if (manifestPath) {
+      patch = readPatchFromManifest(manifestPath);
+    }
+
+    if (!patch) {
+      return { ok: false, error: 'No patch found. Run /forge first or provide a path.', dirtyTree };
+    }
+
+    if (dirtyTree) {
+      return { ok: false, error: 'Working tree has uncommitted changes. Commit or stash first, or use /apply --force.', patch, dirtyTree };
+    }
+
+    const dryRun = dryRunApply(cwd, patch.content);
+    if (!dryRun.ok) {
+      return { ok: false, error: `Patch would not apply cleanly: ${dryRun.error}`, patch, dirtyTree };
+    }
+
+    return { ok: true, patch, dirtyTree };
+  >>>

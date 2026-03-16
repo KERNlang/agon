@@ -15,10 +15,10 @@
   "timeout": 360,
 
   "exec": {
-    "args": ["--print", "--dangerously-skip-permissions", "--max-turns", "50", "{prompt}"]
+    "args": ["--print", "--verbose", "--output-format", "stream-json", "--max-turns", "3", "{prompt}"]
   },
   "review": {
-    "args": ["--print", "--dangerously-skip-permissions", "{prompt}"]
+    "args": ["--print", "--dangerously-skip-permissions", "--max-turns", "50", "{prompt}"]
   },
 
   "model": {

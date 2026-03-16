@@ -1,0 +1,34 @@
+error name=AgonError extends=Error
+
+error name=EngineNotFoundError extends=AgonError
+  field name=engineId type=string
+  field name=installHint type=string optional=true
+  handler <<<
+    const hint = installHint ? `. Install: ${installHint}` : '';
+    super(`Engine "${engineId}" not found${hint}`);
+    this.name = 'EngineNotFoundError';
+  >>>
+
+error name=EngineTimeoutError extends=AgonError
+  field name=engineId type=string
+  field name=timeoutMs type=number
+  handler <<<
+    super(`Engine "${engineId}" timed out after ${Math.round(timeoutMs / 1000)}s`);
+    this.name = 'EngineTimeoutError';
+  >>>
+
+error name=FitnessError extends=AgonError
+  field name=message type=string
+  field name=exitCode type=number optional=true
+
+error name=ConfigError extends=AgonError
+
+error name=GitError extends=AgonError
+  field name=message type=string
+  field name=exitCode type=number optional=true
+
+error name=WorktreeError extends=GitError
+
+error name=PlanStateError extends=AgonError message="Invalid plan state: expected ${expectedStr}, got ${actual}"
+  field name=expected type="string|string[]"
+  field name=actual type=string

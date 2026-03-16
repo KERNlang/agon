@@ -1,0 +1,75 @@
+export class AgonError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'AgonError';
+  }
+}
+
+export class EngineNotFoundError extends AgonError {
+  constructor(
+    public readonly engineId: string,
+    public readonly installHint?: string,
+  ) {
+    const hint = installHint ? `. Install: ${installHint}` : '';
+    super(`Engine "${engineId}" not found${hint}`);
+    this.name = 'EngineNotFoundError';
+    
+  }
+}
+
+export class EngineTimeoutError extends AgonError {
+  constructor(
+    public readonly engineId: string,
+    public readonly timeoutMs: number,
+  ) {
+    super(`Engine "${engineId}" timed out after ${Math.round(timeoutMs / 1000)}s`);
+    this.name = 'EngineTimeoutError';
+    
+  }
+}
+
+export class FitnessError extends AgonError {
+  constructor(
+    message: string,
+    public readonly exitCode?: number,
+  ) {
+    super(message);
+    this.name = 'FitnessError';
+  }
+}
+
+export class ConfigError extends AgonError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ConfigError';
+  }
+}
+
+export class GitError extends AgonError {
+  constructor(
+    message: string,
+    public readonly exitCode?: number,
+  ) {
+    super(message);
+    this.name = 'GitError';
+  }
+}
+
+export class WorktreeError extends GitError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'WorktreeError';
+  }
+}
+
+export class PlanStateError extends AgonError {
+  constructor(
+    public readonly expected: string|string[],
+    public readonly actual: string,
+  ) {
+    const expectedStr = Array.isArray(expected) ? expected.join(' | ') : expected;
+    super(`Invalid plan state: expected ${expectedStr}, got ${actual}`);
+    this.name = 'PlanStateError';
+  }
+}
+

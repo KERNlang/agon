@@ -11,6 +11,16 @@ export type Intent =
   | { type: 'use'; engineIds: string[] }
   | { type: 'models' }
   | { type: 'tokens' }
+  | { type: 'plan'; planId?: string }
+  | { type: 'plans' }
+  | { type: 'approve' }
+  | { type: 'retry' }
+  | { type: 'cancel' }
+  | { type: 'chat'; input: string }
+  | { type: 'discover' }
+  | { type: 'apply'; patchPath?: string; force?: boolean }
+  | { type: 'chats'; sessionId?: string }
+  | { type: 'clear' }
   | { type: 'slash-list' }
   | { type: 'help' }
   | { type: 'exit' }
@@ -30,6 +40,13 @@ export const SLASH_COMMANDS = [
   { cmd: '/leaderboard', desc: '                        — ELO rankings' },
   { cmd: '/history',     desc: '[id]                    — past forge runs' },
   { cmd: '/config',      desc: '[list|get|set]          — settings' },
+  { cmd: '/plan',        desc: '[id]                    — show current or specific plan' },
+  { cmd: '/plans',       desc: '                        — list recent plans' },
+  { cmd: '/approve',     desc: '                        — approve current plan' },
+  { cmd: '/retry',       desc: '                        — retry failed plan step' },
+  { cmd: '/cancel',      desc: '                        — cancel current plan' },
+  { cmd: '/apply',       desc: '[path] [--force]       — apply winning forge patch' },
+  { cmd: '/chats',       desc: '[id]                    — chat history' },
   { cmd: '/help',        desc: '                        — show this help' },
   { cmd: '/exit',        desc: '                        — quit' },
 ] as const;
@@ -148,7 +165,10 @@ function parseSlashCommand(input: string): Intent {
     case 'history':
       return { type: 'history', id: rest || undefined };
     case 'engines':
+      if (rest === 'discover' || rest === 'scan') return { type: 'discover' };
       return { type: 'engines' };
+    case 'discover':
+      return { type: 'discover' };
     case 'campfire':
     case 'think':
     case 'talk':
@@ -181,6 +201,30 @@ function parseSlashCommand(input: string): Intent {
       const value = configParts.slice(2).join(' ') || undefined;
       return { type: 'config', action, key, value };
     }
+    case 'plan':
+      return { type: 'plan', planId: rest || undefined };
+    case 'plans':
+      return { type: 'plans' };
+    case 'approve':
+      return { type: 'approve' };
+    case 'retry':
+    case 'resume':
+      return { type: 'retry' };
+    case 'cancel':
+    case 'abort':
+      return { type: 'cancel' };
+    case 'chat':
+    case 'ask':
+      return { type: 'chat', input: rest };
+    case 'apply': {
+      const force = rest.includes('--force');
+      const path = rest.replace('--force', '').trim() || undefined;
+      return { type: 'apply', patchPath: path, force };
+    }
+    case 'chats':
+      return { type: 'chats', sessionId: rest || undefined };
+    case 'clear':
+      return { type: 'clear' };
     case 'help':
       return { type: 'help' };
     case 'exit':

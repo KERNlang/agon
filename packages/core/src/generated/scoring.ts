@@ -1,0 +1,45 @@
+import type { FitnessResult, ScoreWeights, ScoreComponents } from './types.js';
+
+export const DEFAULT_WEIGHTS: ScoreWeights = { pass: 50, quality: 20, diff: 15, files: 10, duration: 5 };
+
+function clamp(val: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, val));
+  
+}
+
+export function computeScore(result: FitnessResult, weights?: ScoreWeights): ScoreComponents {
+  const w = weights ?? DEFAULT_WEIGHTS;
+  if (!result.pass || result.diffLines === 0) {
+    return { passScore: 0, qualityScore: 0, diffScore: 0, filesScore: 0, durationScore: 0, composite: 0 };
+  }
+  const passScore = 100;
+  const lintScore = clamp(100 - result.lintWarnings * 5, 0, 100);
+  const styleNorm = clamp(result.styleScore, 0, 100);
+  const qualityScore = Math.round((lintScore + styleNorm) / 2);
+  const diffScore = clamp(Math.round(100 - (result.diffLines * 100) / 500), 0, 100);
+  const filesScore = clamp(Math.round(100 - (result.filesChanged - 1) * 11), 0, 100);
+  const durationScore = result.durationSec <= 10
+    ? 100
+    : clamp(Math.round(100 - ((result.durationSec - 10) * 100) / 590), 0, 100);
+  const composite = clamp(
+    Math.round(
+      (passScore * w.pass + qualityScore * w.quality + diffScore * w.diff +
+        filesScore * w.files + durationScore * w.duration) / 100,
+    ), 0, 100,
+  );
+  return { passScore, qualityScore, diffScore, filesScore, durationScore, composite };
+  
+}
+
+export function tiebreak(a: FitnessResult, b: FitnessResult): number {
+  const aScore = computeScore(a).composite;
+  const bScore = computeScore(b).composite;
+  if (aScore !== bScore) return bScore - aScore;
+  if (a.lintWarnings !== b.lintWarnings) return a.lintWarnings - b.lintWarnings;
+  if (a.styleScore !== b.styleScore) return b.styleScore - a.styleScore;
+  if (a.diffLines !== b.diffLines) return a.diffLines - b.diffLines;
+  if (a.filesChanged !== b.filesChanged) return a.filesChanged - b.filesChanged;
+  return a.durationSec - b.durationSec;
+  
+}
+

@@ -1,0 +1,35 @@
+import from="node:fs" names="writeFileSync,statSync,renameSync,mkdirSync"
+import from="node:path" names="join"
+
+interface name=Logger
+  field name=debug type="(message:string,data?:Record<string,unknown>)=>void"
+  field name=info type="(message:string,data?:Record<string,unknown>)=>void"
+  field name=warn type="(message:string,data?:Record<string,unknown>)=>void"
+  field name=error type="(message:string,data?:Record<string,unknown>)=>void"
+
+fn name=createLogger params="opts:{enabled:boolean;logDir:string}" returns=Logger
+  handler <<<
+    const MAX_LOG_SIZE = 1_048_576;
+    const logFile = join(opts.logDir, 'debug.log');
+
+    function write(level: string, message: string, data?: Record<string, unknown>): void {
+      if (!opts.enabled) return;
+      try { mkdirSync(opts.logDir, { recursive: true }); } catch {}
+      try {
+        const stat = statSync(logFile);
+        if (stat.size > MAX_LOG_SIZE) renameSync(logFile, logFile + '.old');
+      } catch {}
+      const ts = new Date().toISOString();
+      const line = data
+        ? `[${ts}] ${level}: ${message} ${JSON.stringify(data)}\n`
+        : `[${ts}] ${level}: ${message}\n`;
+      try { writeFileSync(logFile, line, { flag: 'a' }); } catch {}
+    }
+
+    return {
+      debug: (msg, data) => write('DEBUG', msg, data),
+      info: (msg, data) => write('INFO', msg, data),
+      warn: (msg, data) => write('WARN', msg, data),
+      error: (msg, data) => write('ERROR', msg, data),
+    };
+  >>>

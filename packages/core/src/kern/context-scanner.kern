@@ -1,0 +1,26 @@
+import from="node:fs" names="readFileSync,readdirSync,statSync,existsSync"
+import from="node:path" names="join,basename"
+
+type name=ContextFormat values="plain|kern"
+
+fn name=isKernProject params="cwd:string" returns=boolean
+  handler <<<
+    if (existsSync(join(cwd, 'kern.config.ts'))) return true;
+    try {
+      const pkg = JSON.parse(readFileSync(join(cwd, 'package.json'), 'utf-8'));
+      if ('kern-lang' in { ...pkg.dependencies, ...pkg.devDependencies }) return true;
+    } catch {}
+    try {
+      if (readdirSync(cwd).some((f: string) => f.endsWith('.kern'))) return true;
+    } catch {}
+    try {
+      const srcDir = join(cwd, 'src');
+      if (existsSync(srcDir) && readdirSync(srcDir).some((f: string) => f.endsWith('.kern'))) return true;
+    } catch {}
+    return false;
+  >>>
+
+fn name=scanProjectContext params="cwd:string,extraContext?:string,format?:ContextFormat" returns=string
+  handler <<<
+    return '(context scanning not available from generated code)';
+  >>>

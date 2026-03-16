@@ -1,0 +1,22 @@
+import from="@agon/core" names="EngineResult,ForgeEvent,Critique" types=true
+
+interface name=StageResult
+  field name=engineResults type="Map<string, EngineResult>"
+  field name=accepted type=boolean
+  field name=winner type="string|null"
+
+interface name=SynthesisResult
+  field name=pass type=boolean
+  field name=score type=number
+  field name=wins type=boolean
+  field name=patchPath type=string
+  field name=originalWinnerScore type=number
+  field name=critiques type="Critique[]"
+
+// ForgeEventCallback is inlined as (event: ForgeEvent) => void in function params
+// KERN type node produces string literal unions, not arbitrary type aliases
+
+interface name=WorktreeEntry
+  field name=engineId type=string
+  field name=path type=string
+  field name=repoRoot type=string

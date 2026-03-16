@@ -1,24 +1,8 @@
-import type { EngineResult, ForgeManifest, ForgeEvent, Critique } from '@agon/core';
+// ── Re-export from KERN-generated types ─────────────────────────────
+// Source of truth: src/kern/types.kern
+export * from './generated/types.js';
 
-export interface StageResult {
-  engineResults: Map<string, EngineResult>;
-  accepted: boolean;
-  winner: string | null;
-}
-
-export interface SynthesisResult {
-  pass: boolean;
-  score: number;
-  wins: boolean;
-  patchPath: string;
-  originalWinnerScore: number;
-  critiques: Critique[];
-}
-
+// ForgeEventCallback — KERN's type node can't express function types
+// (it creates string literal unions). This is the one manual type.
+import type { ForgeEvent } from '@agon/core';
 export type ForgeEventCallback = (event: ForgeEvent) => void;
-
-export interface WorktreeEntry {
-  engineId: string;
-  path: string;
-  repoRoot: string;
-}

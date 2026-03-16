@@ -1,5 +1,6 @@
 import { createInterface } from 'node:readline';
 import { join, dirname } from 'node:path';
+import { createInputEngine } from './input-engine.js';
 import { fileURLToPath } from 'node:url';
 import { mkdirSync, readdirSync, readFileSync } from 'node:fs';
 import {
@@ -20,12 +21,34 @@ import {
   getActiveWorkspace,
   switchWorkspace,
   ensureCurrentWorkspace,
+  snapshotWorkspace,
+  createPlan,
+  advanceStep,
+  mergeStepResult,
+  approvePlan,
+  startPlan,
+  cancelPlan,
+  failPlan,
+  resetStepForRetry,
+  canAutoApprove,
+  savePlan,
+  loadPlan,
+  listPlans,
 } from '@agon/core';
-import type { AgonConfig, EngineAdapter, ForgeManifest } from '@agon/core';
+import type {
+  AgonConfig, EngineAdapter, ForgeManifest,
+  Plan, PlanStepInput, StepResult, ApprovalLevel,
+} from '@agon/core';
 import { createCliAdapter } from '@agon/adapter-cli';
 import { runForge, runBrainstorm, runTribunal } from '@agon/forge';
 import type { Intent } from './intent.js';
 import { detectIntent, SLASH_COMMANDS } from './intent.js';
+import {
+  discoverEngines, preflightApply, applyPatchToTree,
+  startChatSession, appendMessage, listChatSessions, loadChatSession,
+  wordWrap, parseStreamChunk,
+} from '@agon/core';
+import type { ChatSession } from '@agon/core';
 import { loadCaesar, isCaesarReady, caesarClassify, caesarSummarize, caesarTranslate, expandKernDraft } from './caesar.js';
 import * as clack from '@clack/prompts';
 import {
@@ -49,6 +72,7 @@ import {
   ENGINE_COLORS,
   gradientText,
 } from './output.js';
+import { displayPlan, displayPlanList } from './plan-display.js';
 
 const VERSION = '0.1.0';
 
@@ -57,6 +81,45 @@ let adapter: EngineAdapter;
 
 // Session-level engine selection. null = use all available.
 let sessionEngines: string[] | null = null;
+
+// Session-level plan tracking.
+let currentPlan: Plan | null = null;
+
+// ── Chat state (conversational mode) ─────────────────────────────────
+// Persistent chat session (KERN-sourced store in ~/.agon/chats/)
+let chatSession: ChatSession = startChatSession();
+const MAX_CHAT_HISTORY = 20;
+let activeAbort: AbortController | null = null;
+
+function chatContext(): string {
+  if (chatSession.messages.length === 0) return '';
+  const recent = chatSession.messages.slice(-MAX_CHAT_HISTORY);
+  return recent.map(m =>
+    m.role === 'user'
+      ? `User: ${m.content}`
+      : `${m.engineId ?? 'engine'}: ${m.content}`,
+  ).join('\n\n');
+}
+
+/** Detect if message is addressed to a specific engine ("codex what do you think?") */
+function detectTargetEngine(input: string): { engineId: string | null; message: string } {
+  const available = registry.availableIds();
+  const lower = input.toLowerCase();
+  // Check if message starts with or contains engine name as addressee
+  for (const id of available) {
+    // "codex what do you think?" or "hey codex, ..."
+    if (lower.startsWith(id + ' ') || lower.startsWith(id + ',') || lower.startsWith(id + ':')) {
+      return { engineId: id, message: input.slice(id.length).replace(/^[,:\s]+/, '').trim() || input };
+    }
+    // "hey codex" or "yo claude"
+    const heyPattern = new RegExp(`^(?:hey|yo|ok)\\s+${id}\\b[,:]?\\s*`, 'i');
+    const heyMatch = input.match(heyPattern);
+    if (heyMatch) {
+      return { engineId: id, message: input.slice(heyMatch[0].length).trim() || input };
+    }
+  }
+  return { engineId: null, message: input };
+}
 
 /** Get active engines for this session. */
 function activeEngines(): string[] {
@@ -123,6 +186,11 @@ function renderDashboard(): void {
   // Engine roster
   const engineTags = available.map((id) => fg256(ENGINE_COLORS[id] ?? 245, id));
   insights.push(`${fg256(214, '⚔')}  ${bold(white(`${readyCount} engines`))} ready to compete  ${engineTags.join(dim('  '))}`);
+  // Show default chat engine (user-configurable via /use or /config)
+  const config = loadConfig();
+  const defaultEngine = config.forgeFixedStarter ?? available[0] ?? 'none';
+  const defaultColor = ENGINE_COLORS[defaultEngine] ?? 245;
+  insights.push(`${fg256(33, '🧠')} Chat default: ${fg256(defaultColor, bold(defaultEngine))}  ${dim('(change with /use)')}`);
 
   if (readyCount < totalEngines) {
     const missing = allEngines.filter((e) => !registry.isAvailable(e)).map((e) => e.id);
@@ -174,14 +242,15 @@ function renderDashboard(): void {
   console.log('');
 
   // ── Quick Start ──
-  console.log(`  ${bold(white('JUST TYPE'))}  ${dim('— Agon figures out the rest')}`);
+  console.log(`  ${bold(white('JUST TALK'))}  ${dim('— or say an engine name to pick who answers')}`);
   console.log(`  ${dim('─'.repeat(48))}`);
+  console.log(`  ${fg256(245, '💬')} ${italic('"what do you think about the auth flow?"')}  ${dim('→ chat')}`);
+  console.log(`  ${fg256(245, '💬')} ${italic('"codex how would you approach this?"')}     ${dim('→ codex')}`);
   console.log(`  ${fg256(214, '⚔')}  ${italic('"fix the login bug, test with npm test"')}  ${dim('→ forge')}`);
   console.log(`  ${fg256(33, '⚖')}  ${italic('"should we use REST or GraphQL?"')}        ${dim('→ tribunal')}`);
   console.log(`  ${fg256(141, '💡')} ${italic('"best approach for caching?"')}            ${dim('→ brainstorm')}`);
-  console.log(`  ${fg256(208, '🔥')} ${italic('"lets think about this together"')}        ${dim('→ campfire')}`);
   console.log('');
-  console.log(`  ${dim('/ for commands    /use <engines> to select    exit to quit')}`);
+  console.log(`  ${dim('/ for commands    /clear to reset chat    exit to quit')}`);
   console.log('');
 }
 
@@ -208,24 +277,37 @@ function showHelp(): void {
 
 function showSlashList(): void {
   console.log('');
-  header('Slash Commands');
-  console.log('');
   for (const { cmd, desc } of SLASH_COMMANDS) {
     console.log(`  ${fg256(214, bold(cmd.padEnd(16)))}${dim(desc)}`);
   }
   console.log('');
 }
 
+async function showSlashPicker(): Promise<string | null> {
+  // Interactive picker — like Claude Code / Codex / Gemini
+  const result = await clack.select({
+    message: 'Pick a command',
+    options: SLASH_COMMANDS.map(({ cmd, desc }) => ({
+      value: cmd,
+      label: fg256(214, bold(cmd)),
+      hint: desc.trim(),
+    })),
+  });
+
+  if (clack.isCancel(result)) return null;
+  return result as string;
+}
+
 // ── Spinner ──────────────────────────────────────────────────────────
 
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
-function startSpinner(msg: string): { update: (m: string) => void; stop: (m: string) => void } {
+function startSpinner(msg: string): { update: (m: string) => void; stop: (m: string) => void; clear: () => void } {
   let i = 0;
   let text = msg;
   const timer = setInterval(() => {
     const frame = fg256(214, SPINNER_FRAMES[i % SPINNER_FRAMES.length]);
-    process.stdout.write(`\r  ${frame} ${dim(text)}`);
+    process.stdout.write(`\r\x1b[2K  ${frame} ${dim(text)}`);
     i++;
   }, 80);
 
@@ -233,18 +315,41 @@ function startSpinner(msg: string): { update: (m: string) => void; stop: (m: str
     update(m: string) { text = m; },
     stop(m: string) {
       clearInterval(timer);
-      process.stdout.write(`\r\x1b[2K  ${green('✓')} ${m}\n`);
+      if (m) {
+        process.stdout.write(`\r\x1b[2K  ${green('✓')} ${m}\n`);
+      } else {
+        process.stdout.write(`\r\x1b[2K`);
+      }
+    },
+    /** Clear spinner without any output */
+    clear() {
+      clearInterval(timer);
+      process.stdout.write(`\r\x1b[2K`);
     },
   };
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-async function askQuestion(
-  rl: ReturnType<typeof createInterface>,
-  question: string,
-): Promise<string> {
-  return new Promise((resolve) => rl.question(question, resolve));
+async function askQuestion(question: string): Promise<string> {
+  // During handler execution the InputEngine is paused.
+  // Use a temporary readline for simple text prompts.
+  if (process.stdin.setRawMode) {
+    process.stdin.setRawMode(false);
+  }
+  process.stdin.resume();
+
+  const tempRl = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  return new Promise((resolve) => {
+    tempRl.question(question, (answer) => {
+      tempRl.close();
+      resolve(answer);
+    });
+  });
 }
 
 // ── Forge ────────────────────────────────────────────────────────────
@@ -252,7 +357,7 @@ async function askQuestion(
 async function handleForge(
   task: string,
   fitnessCmd: string | null,
-  rl: ReturnType<typeof createInterface>,
+  existingPlan?: Plan,
 ): Promise<void> {
   ensureAgonHome();
 
@@ -263,7 +368,7 @@ async function handleForge(
 
   let fitness = fitnessCmd;
   if (!fitness) {
-    fitness = await askQuestion(rl, `  ${yellow('▸')} What command tests this? `);
+    fitness = await askQuestion(`  ${yellow('▸')} What command tests this? `);
     fitness = fitness.trim();
     if (!fitness) {
       warn('Forge needs a test command. Try again with: "fix X, test with npm test"');
@@ -277,22 +382,66 @@ async function handleForge(
     return;
   }
 
-  const engineList = engines.map((id) => fg256(ENGINE_COLORS[id] ?? 245, id)).join(dim(', '));
-  console.log(`  ${cyan('▸')} Forge: ${bold(task)}`);
-  console.log(`  ${cyan('▸')} Fitness: ${fitness}`);
-  console.log(`  ${cyan('▸')} Engines: ${engineList}`);
-  const answer = await askQuestion(rl, `  Proceed? ${dim('[Y/n]')} `);
-  if (answer.trim().toLowerCase() === 'n') {
-    info('Cancelled.');
-    return;
+  const config = loadConfig();
+  let plan: Plan;
+
+  if (existingPlan) {
+    // Resume from an already-approved plan (e.g. via /approve)
+    plan = startPlan(existingPlan);
+    currentPlan = plan;
+    savePlan(plan);
+  } else {
+    // ── Create Plan ──
+    const ws = getActiveWorkspace();
+    const snapshot = ws
+      ? snapshotWorkspace(ws)
+      : { id: 'cwd', path: process.cwd(), headSha: 'unknown', branch: 'unknown', dirty: false };
+
+    const forgeSteps: PlanStepInput[] = [
+      { id: 'baseline', kind: 'fitness', label: 'Baseline fitness check', effects: ['exec'] },
+      { id: 'dispatch', kind: 'dispatch', label: `Dispatch engines: ${engines.join(', ')}`, effects: ['exec', 'write', 'network'] },
+      { id: 'score', kind: 'fitness', label: 'Score engine results', effects: ['exec', 'read'] },
+      { id: 'winner', kind: 'dispatch', label: 'Determine winner', effects: ['read'] },
+    ];
+    if (config.forgeEnableSynthesis) {
+      forgeSteps.push({ id: 'synthesis', kind: 'synthesis', label: 'Critique & synthesize', effects: ['exec', 'write', 'network'] });
+    }
+
+    plan = createPlan(
+      { type: 'forge', task, fitnessCmd: fitness, engines },
+      snapshot,
+      forgeSteps,
+    );
+    currentPlan = plan;
+
+    // ── Display Plan ──
+    displayPlan(plan);
+
+    // Wire canAutoApprove: skip prompt if approval level allows
+    const approvalLevel = (config.approvalLevel ?? 'plan') as ApprovalLevel;
+    const skipApproval = approvalLevel === 'auto';
+
+    if (!skipApproval) {
+      const answer = await askQuestion(`  ${fg256(214, '▸')} ${bold('Approve plan?')} ${dim('[Y/n]')} `);
+      if (answer.trim().toLowerCase() === 'n') {
+        plan = cancelPlan(plan);
+        currentPlan = plan;
+        savePlan(plan);
+        info('Plan cancelled.');
+        return;
+      }
+    }
+
+    plan = approvePlan(plan);
+    plan = startPlan(plan);
+    currentPlan = plan;
+    savePlan(plan);
   }
 
   const forgeDir = join(RUNS_DIR, `forge-${Date.now()}`);
   mkdirSync(forgeDir, { recursive: true });
 
   console.log('');
-  // Scan project context
-  const config = loadConfig();
   const projectCtx = scanProjectContext(process.cwd(), config.projectContext || undefined, config.contextFormat);
 
   // Engine build characters (Lemmings-style)
@@ -307,7 +456,13 @@ async function handleForge(
   const engineStatus: Record<string, string> = {};
   const startTime = Date.now();
 
-  // Animated forge display
+  // Print initial lines for the animation BEFORE starting the interval
+  for (const id of engines) {
+    const color = ENGINE_COLORS[id] ?? 245;
+    console.log(`  ${dim('○')} ${fg256(color, bold(id.padEnd(10)))} ${dim('queued')}`);
+  }
+
+  // Animated forge display — always rewrite all lines for safety at terminal bottom
   const forgeAnim = setInterval(() => {
     const elapsed = Math.floor((Date.now() - startTime) / 1000);
     const lines = engines.map((id) => {
@@ -328,63 +483,100 @@ async function handleForge(
       return `  ${dim('○')} ${dim(id.padEnd(10))} ${dim('queued')}`;
     });
 
-    // Move cursor up and rewrite
-    if (elapsed > 0) {
-      process.stdout.write(`\x1b[${lines.length}A`);
-    }
+    // Always move cursor up and rewrite (initial lines already printed)
+    process.stdout.write(`\x1b[${lines.length}A`);
     for (const line of lines) {
       process.stdout.write(`\x1b[2K${line}\n`);
     }
-  }, 500);
+  }, 250);
 
-  // Print initial empty lines for the animation
-  for (const id of engines) {
-    const color = ENGINE_COLORS[id] ?? 245;
-    console.log(`  ${dim('○')} ${fg256(color, bold(id.padEnd(10)))} ${dim('queued')}`);
+  let manifest;
+  // Set up abort so Ctrl+C can cancel this forge run
+  const forgeAbort = new AbortController();
+  activeAbort = forgeAbort;
+
+  try {
+    manifest = await runForge(
+      {
+        task,
+        fitnessCmd: fitness,
+        cwd: process.cwd(),
+        forgeDir,
+        engines,
+        context: projectCtx,
+        signal: forgeAbort.signal,
+      },
+      registry,
+      adapter,
+      (event) => {
+        // Soft-cancel: if plan was cancelled via /cancel while running, ignore further events
+        if (currentPlan?.state === 'cancelled') return;
+
+        const id = event.engineId ?? '';
+        switch (event.type) {
+          case 'baseline:start':
+            plan = mergeStepResult(plan, 'baseline', { state: 'running', attempts: [{ startedAt: new Date().toISOString() }] });
+            break;
+          case 'baseline:done':
+            plan = mergeStepResult(plan, 'baseline', { state: 'completed' });
+            if (event.data?.passes) {
+              warn('Baseline passes — fitness test may be non-discriminating');
+            }
+            break;
+          case 'stage1:dispatch':
+            plan = mergeStepResult(plan, 'dispatch', { state: 'running', attempts: [{ startedAt: new Date().toISOString() }] });
+            engineStatus[id] = 'building';
+            break;
+          case 'stage2:dispatch':
+            engineStatus[id] = 'building';
+            break;
+          case 'stage1:accepted':
+            engineStatus[id] = 'done';
+            engineStatus[`${id}:score`] = String(event.data?.score ?? '?');
+            break;
+          case 'stage1:score':
+          case 'stage2:score': {
+            const scoreStep = plan.steps.find((s) => s.id === 'score');
+            if (scoreStep && scoreStep.result.state === 'pending') {
+              plan = mergeStepResult(plan, 'score', { state: 'running', attempts: [{ startedAt: new Date().toISOString() }] });
+            }
+            break;
+          }
+          case 'winner:determined': {
+            plan = mergeStepResult(plan, 'dispatch', { state: 'completed' });
+            plan = mergeStepResult(plan, 'score', { state: 'completed' });
+            plan = mergeStepResult(plan, 'winner', { state: 'completed' });
+            if (event.data?.winner) {
+              const winnerId = String(event.data.winner);
+              engineStatus[winnerId] = 'done';
+              engineStatus[`${winnerId}:score`] = String(event.data.bestScore ?? '?');
+            }
+            break;
+          }
+          case 'synthesis:start':
+            plan = mergeStepResult(plan, 'synthesis', { state: 'running', attempts: [{ startedAt: new Date().toISOString() }] });
+            break;
+          case 'synthesis:done':
+            plan = mergeStepResult(plan, 'synthesis', { state: 'completed' });
+            break;
+        }
+        currentPlan = plan;
+      },
+    );
+  } catch (err) {
+    // Stop animation and mark plan as failed (skip if already cancelled)
+    clearInterval(forgeAnim);
+    activeAbort = null;
+    if (currentPlan?.state !== 'cancelled') {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      plan = failPlan(plan, errorMsg);
+      currentPlan = plan;
+      savePlan(plan);
+    }
+    throw err;
   }
 
-  const manifest = await runForge(
-    {
-      task,
-      fitnessCmd: fitness,
-      cwd: process.cwd(),
-      forgeDir,
-      engines,
-      context: projectCtx,
-    },
-    registry,
-    adapter,
-    (event) => {
-      const id = event.engineId ?? '';
-      switch (event.type) {
-        case 'baseline:start':
-          break;
-        case 'baseline:done':
-          if (event.data?.passes) {
-            warn('Baseline passes — fitness test may be non-discriminating');
-          }
-          break;
-        case 'stage1:dispatch':
-        case 'stage2:dispatch':
-          engineStatus[id] = 'building';
-          break;
-        case 'stage1:accepted':
-          engineStatus[id] = 'done';
-          engineStatus[`${id}:score`] = String(event.data?.score ?? '?');
-          break;
-        case 'winner:determined':
-          if (event.data?.winner) {
-            const winnerId = String(event.data.winner);
-            engineStatus[winnerId] = 'done';
-            engineStatus[`${winnerId}:score`] = String(event.data.bestScore ?? '?');
-          }
-          break;
-        case 'synthesis:done':
-          break;
-      }
-    },
-  );
-
+  activeAbort = null;
   // Stop animation
   clearInterval(forgeAnim);
 
@@ -422,6 +614,31 @@ async function handleForge(
   }
   info(`Manifest: ${forgeDir}/manifest.json`);
 
+  // Finalize plan — ensure all steps are completed/skipped (handles stage-1 auto-accept)
+  for (const step of plan.steps) {
+    if (step.result.state === 'pending' || step.result.state === 'running') {
+      plan = mergeStepResult(plan, step.id, { state: 'completed' });
+    }
+  }
+
+  // Add artifacts to winner step
+  const allPassed = Object.values(manifest.results).some((r) => r.pass);
+  const winnerArtifacts = [
+    { type: 'manifest' as const, path: `${forgeDir}/manifest.json` },
+    ...(manifest.winner && manifest.patches[manifest.winner]
+      ? [{ type: 'patch' as const, path: manifest.patches[manifest.winner], engineId: manifest.winner }]
+      : []),
+  ];
+  plan = mergeStepResult(plan, 'winner', { state: 'completed', artifacts: winnerArtifacts });
+
+  // Override to failed if no engine passed
+  if (!allPassed) {
+    plan = { ...plan, state: 'failed', currentStepId: null, updatedAt: new Date().toISOString() };
+  }
+  currentPlan = plan;
+  savePlan(plan);
+  info(`Plan: ${plan.id}`);
+
   // Track tokens for each engine
   for (const [id, r] of Object.entries(manifest.results)) {
     tracker.record(id, task, `score:${r.score} diff:${r.diffLines}`);
@@ -431,7 +648,7 @@ async function handleForge(
 
 // ── Brainstorm ───────────────────────────────────────────────────────
 
-async function handleBrainstorm(question: string, rl?: ReturnType<typeof createInterface>): Promise<void> {
+async function handleBrainstorm(question: string): Promise<void> {
   ensureAgonHome();
   if (!question) {
     warn('No question provided. Usage: "best approach for caching?" or /brainstorm <question>');
@@ -455,7 +672,28 @@ async function handleBrainstorm(question: string, rl?: ReturnType<typeof createI
   header(`Brainstorm: ${question}`);
   info(`Engines: ${engineList}`);
   if (projectCtx) info(`Context: ${dim(process.cwd())}`);
-  const spin = startSpinner(`${engines.length} engines drafting in Kern format...`);
+  console.log('');
+
+  // Set up abort so Ctrl+C can cancel
+  const bsAbort = new AbortController();
+  activeAbort = bsAbort;
+
+  // Per-engine animated progress (instead of single spinner)
+  const THINK_FRAMES = ['◐', '◓', '◑', '◒'];
+  const bsStart = Date.now();
+  for (const id of engines) {
+    const color = ENGINE_COLORS[id] ?? 245;
+    console.log(`  ${dim('○')} ${fg256(color, bold(id.padEnd(10)))} ${dim('thinking…')}`);
+  }
+  const bsAnim = setInterval(() => {
+    const elapsed = Math.floor((Date.now() - bsStart) / 1000);
+    process.stdout.write(`\x1b[${engines.length}A`);
+    for (const id of engines) {
+      const color = ENGINE_COLORS[id] ?? 245;
+      const frame = fg256(color, THINK_FRAMES[Math.floor(elapsed / 1) % THINK_FRAMES.length]);
+      process.stdout.write(`\x1b[2K  ${frame} ${fg256(color, bold(id.padEnd(10)))} ${dim(`drafting… ${elapsed}s`)}\n`);
+    }
+  }, 250);
 
   const result = await runBrainstorm({
     question,
@@ -465,9 +703,24 @@ async function handleBrainstorm(question: string, rl?: ReturnType<typeof createI
     adapter,
     timeout: 120,
     outputDir,
+    signal: bsAbort.signal,
   });
 
-  spin.stop(`${result.bids.length} engines responded`);
+  activeAbort = null;
+  clearInterval(bsAnim);
+
+  // Replace animation with final state
+  process.stdout.write(`\x1b[${engines.length}A`);
+  for (const id of engines) {
+    const color = ENGINE_COLORS[id] ?? 245;
+    const bid = result.bids.find((b) => b.engineId === id);
+    const isWinner = bid?.engineId === result.winner;
+    const status = bid
+      ? (isWinner ? green('★ best draft') : green('✓ done'))
+      : red('✗ no response');
+    const prefix = bid ? (isWinner ? '★' : '✓') : '✗';
+    process.stdout.write(`\x1b[2K  ${prefix} ${fg256(color, bold(id.padEnd(10)))} ${status}\n`);
+  }
 
   // Show each engine's Kern draft
   console.log('');
@@ -520,7 +773,7 @@ async function handleBrainstorm(question: string, rl?: ReturnType<typeof createI
   showInlineTokens('brainstorm');
 
   // Offer next action
-  if (rl) await offerNextAction(question, result.winner, rl);
+  await offerNextAction(question, result.winner);
 }
 
 // ── Post-brainstorm actions ──────────────────────────────────────────
@@ -528,7 +781,6 @@ async function handleBrainstorm(question: string, rl?: ReturnType<typeof createI
 async function offerNextAction(
   question: string,
   winnerId: string,
-  rl: ReturnType<typeof createInterface>,
 ): Promise<void> {
   console.log('');
   console.log(`  ${fg256(214, '━'.repeat(48))}`);
@@ -540,15 +792,15 @@ async function offerNextAction(
   console.log(`  ${dim('Enter to skip')}`);
   console.log('');
 
-  const answer = await askQuestion(rl, `  ${fg256(214, '❯')} `);
+  const answer = await askQuestion(`  ${fg256(214, '❯')} `);
   const choice = answer.trim();
 
   switch (choice) {
     case '1':
     case 'forge': {
-      const testCmd = await askQuestion(rl, `  ${yellow('▸')} Test command: `);
+      const testCmd = await askQuestion(`  ${yellow('▸')} Test command: `);
       if (testCmd.trim()) {
-        await handleForge(question, testCmd.trim(), rl);
+        await handleForge(question, testCmd.trim());
       }
       break;
     }
@@ -562,11 +814,11 @@ async function offerNextAction(
         return `${fg256(color, bold(id))}${tag}`;
       });
       console.log(`  Engines: ${engineOptions.join(dim('  '))}`);
-      const pick = await askQuestion(rl, `  ${fg256(214, '❯')} Build with ${dim(`[default: ${winnerId}]`)}: `);
+      const pick = await askQuestion(`  ${fg256(214, '❯')} Build with ${dim(`[default: ${winnerId}]`)}: `);
       const buildEngine = pick.trim() || winnerId;
 
       if (active.includes(buildEngine)) {
-        await handleBuildWithPlan(question, buildEngine, rl);
+        await handleBuildWithPlan(question, buildEngine);
       } else {
         warn(`Engine "${buildEngine}" not available.`);
       }
@@ -583,7 +835,6 @@ async function offerNextAction(
 async function handleBuildWithPlan(
   task: string,
   engineId: string,
-  rl: ReturnType<typeof createInterface>,
 ): Promise<void> {
   ensureAgonHome();
   const engine = registry.get(engineId);
@@ -592,7 +843,28 @@ async function handleBuildWithPlan(
   const config = loadConfig();
   const projectCtx = scanProjectContext(process.cwd(), config.projectContext || undefined, config.contextFormat);
 
-  // ── Phase 1: Plan ──
+  // ── Create Plan ──
+  const ws = getActiveWorkspace();
+  const snapshot = ws
+    ? snapshotWorkspace(ws)
+    : { id: 'cwd', path: process.cwd(), headSha: 'unknown', branch: 'unknown', dirty: false };
+
+  const buildSteps: PlanStepInput[] = [
+    { id: 'plan', kind: 'dispatch', label: 'Get implementation plan', engineId, effects: ['exec', 'network'] },
+    { id: 'implement', kind: 'dispatch', label: 'Implement the plan', engineId, effects: ['exec', 'write', 'network'] },
+  ];
+
+  let plan = createPlan(
+    { type: 'build', task, engineId },
+    snapshot,
+    buildSteps,
+  );
+  currentPlan = plan;
+
+  displayPlan(plan);
+  savePlan(plan);
+
+  // ── Phase 1: Plan (draft — engine plans, user hasn't approved yet) ──
   const planPrompt = [
     `## TASK\n${task}`,
     projectCtx ? `## CONTEXT\n${projectCtx}` : '',
@@ -612,16 +884,39 @@ async function handleBuildWithPlan(
   const outputDir = join(RUNS_DIR, `build-${Date.now()}`);
   mkdirSync(outputDir, { recursive: true });
 
-  const planResult = await adapter.dispatch({
-    engine,
-    prompt: planPrompt,
-    cwd: process.cwd(),
-    mode: 'exec',
-    timeout: 120,
-    outputDir,
-  });
+  const planStartedAt = new Date().toISOString();
+  let planResult;
+  try {
+    planResult = await adapter.dispatch({
+      engine,
+      prompt: planPrompt,
+      cwd: process.cwd(),
+      mode: 'exec',
+      timeout: 120,
+      outputDir,
+    });
+  } catch (err) {
+    spin.stop(`${engineId} failed to plan`);
+    plan = mergeStepResult(plan, 'plan', {
+      state: 'failed',
+      attempts: [{ startedAt: planStartedAt, finishedAt: new Date().toISOString(), error: err instanceof Error ? err.message : String(err) }],
+    });
+    plan = failPlan(plan);
+    currentPlan = plan;
+    savePlan(plan);
+    throw err;
+  }
 
   spin.stop(`${engineId} has a plan`);
+
+  plan = mergeStepResult(plan, 'plan', {
+    state: 'completed',
+    attempts: [{ startedAt: planStartedAt, finishedAt: new Date().toISOString() }],
+    artifacts: [{ type: 'output', path: outputDir, engineId }],
+    durationMs: planResult.durationMs,
+  });
+  currentPlan = plan;
+  savePlan(plan);
 
   // Show the plan
   console.log('');
@@ -635,19 +930,25 @@ async function handleBuildWithPlan(
 
   tracker.record(engineId, task, planResult.stdout);
 
-  // ── Phase 2: Approve ──
+  // ── Phase 2: Approve (plan stays draft until user says yes) ──
   console.log('');
   const approval = await askQuestion(
-    rl,
     `  ${fg256(214, '❯')} ${bold('Implement this plan?')} ${dim('[Y/n]')} `,
   );
 
   if (approval.trim().toLowerCase() === 'n') {
-    info('Cancelled.');
+    plan = cancelPlan(plan);
+    currentPlan = plan;
+    savePlan(plan);
+    info('Plan cancelled.');
     return;
   }
 
-  // ── Phase 3: Implement ──
+  // ── Phase 3: Implement (plan is already running from advanceStep above) ──
+  plan = mergeStepResult(plan, 'implement', { state: 'running', attempts: [{ startedAt: new Date().toISOString() }] });
+  currentPlan = plan;
+  savePlan(plan);
+
   const buildPrompt = [
     `## TASK\n${task}`,
     projectCtx ? `## CONTEXT\n${projectCtx}` : '',
@@ -659,16 +960,43 @@ async function handleBuildWithPlan(
 
   const buildSpin = startSpinner(`${engineId} is implementing...`);
 
-  const buildResult = await adapter.dispatch({
-    engine,
-    prompt: buildPrompt,
-    cwd: process.cwd(),
-    mode: 'exec',
-    timeout: 300,
-    outputDir,
-  });
+  const implStartedAt = new Date().toISOString();
+  let buildResult;
+  try {
+    buildResult = await adapter.dispatch({
+      engine,
+      prompt: buildPrompt,
+      cwd: process.cwd(),
+      mode: 'exec',
+      timeout: 300,
+      outputDir,
+    });
+  } catch (err) {
+    buildSpin.stop(`${engineId} failed`);
+    plan = mergeStepResult(plan, 'implement', {
+      state: 'failed',
+      attempts: [{ startedAt: implStartedAt, finishedAt: new Date().toISOString(), error: err instanceof Error ? err.message : String(err) }],
+    });
+    plan = failPlan(plan);
+    currentPlan = plan;
+    savePlan(plan);
+    throw err;
+  }
 
   buildSpin.stop(`${engineId} done`);
+
+  plan = mergeStepResult(plan, 'implement', {
+    state: buildResult.exitCode === 0 ? 'completed' : 'failed',
+    attempts: [{ startedAt: implStartedAt, finishedAt: new Date().toISOString(), exitCode: buildResult.exitCode }],
+    artifacts: [{ type: 'output', path: outputDir, engineId }],
+    durationMs: buildResult.durationMs,
+  });
+  // mergeStepResult handles completed → plan completed, failed → plan paused
+  if (buildResult.exitCode !== 0) {
+    plan = failPlan(plan);
+  }
+  currentPlan = plan;
+  savePlan(plan);
 
   // Show the code output
   console.log('');
@@ -680,6 +1008,7 @@ async function handleBuildWithPlan(
   }
   console.log(`  ${fg256(color, '└──')}`);
 
+  info(`Plan: ${plan.id}`);
   tracker.record(engineId, task, buildResult.stdout);
   showInlineTokens('build');
 }
@@ -719,47 +1048,225 @@ async function handleCampfire(topic: string): Promise<void> {
   const outputDir = join(RUNS_DIR, `campfire-${Date.now()}`);
   mkdirSync(outputDir, { recursive: true });
 
-  // All engines respond in parallel — no ranking, all voices equal
-  const spin = startSpinner(`${engines.length} engines gathering around the fire...`);
+  // Set up abort so Ctrl+C can cancel
+  const cfAbort = new AbortController();
+  activeAbort = cfAbort;
 
-  const responses = await Promise.all(
-    engines.map(async (engineId) => {
-      const engine = registry.get(engineId);
-      try {
-        const result = await adapter.dispatch({
-          engine,
-          prompt,
-          cwd: process.cwd(),
-          mode: 'exec',
-          timeout: 120,
-          outputDir,
-        });
-        return { engineId, response: result.stdout };
-      } catch {
-        return { engineId, response: '(couldn\'t join the campfire)' };
+  // Per-engine animated progress
+  const FIRE_FRAMES = ['🔥', '🪵', '✨', '💭'];
+  const cfStart = Date.now();
+  const cfStatus: Record<string, 'thinking' | 'done' | 'failed'> = {};
+  for (const id of engines) {
+    cfStatus[id] = 'thinking';
+    const color = ENGINE_COLORS[id] ?? 245;
+    console.log(`  ${dim('○')} ${fg256(color, bold(id.padEnd(10)))} ${dim('joining…')}`);
+  }
+  const cfAnim = setInterval(() => {
+    const elapsed = Math.floor((Date.now() - cfStart) / 1000);
+    process.stdout.write(`\x1b[${engines.length}A`);
+    for (const id of engines) {
+      const color = ENGINE_COLORS[id] ?? 245;
+      if (cfStatus[id] === 'done') {
+        process.stdout.write(`\x1b[2K  ${green('✓')} ${fg256(color, bold(id.padEnd(10)))} ${green('done')}\n`);
+      } else if (cfStatus[id] === 'failed') {
+        process.stdout.write(`\x1b[2K  ${red('✗')} ${fg256(color, bold(id.padEnd(10)))} ${red('missed')}\n`);
+      } else {
+        const frame = FIRE_FRAMES[Math.floor(elapsed / 1) % FIRE_FRAMES.length];
+        process.stdout.write(`\x1b[2K  ${frame} ${fg256(color, bold(id.padEnd(10)))} ${dim(`thinking… ${elapsed}s`)}\n`);
       }
-    }),
-  );
-
-  spin.stop('All voices in');
-
-  // Show each engine's thoughts — no ranking, no scores, just voices
-  for (const { engineId, response } of responses) {
-    const color = ENGINE_COLORS[engineId] ?? 245;
-    console.log('');
-    console.log(`  ${fg256(color, '┌──')} ${fg256(color, bold(engineId))}`);
-    console.log(`  ${fg256(color, '│')}`);
-    const lines = response.split('\n');
-    for (const line of lines.slice(0, 20)) {
-      console.log(`  ${fg256(color, '│')} ${line}`);
     }
-    if (lines.length > 20) console.log(`  ${fg256(color, '│')} ${dim(`...(${lines.length - 20} more lines)`)}`);
-    console.log(`  ${fg256(color, '└──')}`);
+  }, 250);
 
-    tracker.record(engineId, topic, response);
+  // Stream responses as they arrive — don't wait for all
+  const termWidth = process.stdout.columns || 80;
+  const wrapWidth = termWidth - 8; // account for `  │ ` prefix
+
+  // Clear animation, show final status
+  function clearAnimation(): void {
+    clearInterval(cfAnim);
+    process.stdout.write(`\x1b[${engines.length}A`);
+    for (const id of engines) {
+      const c = ENGINE_COLORS[id] ?? 245;
+      const ok = cfStatus[id] === 'done';
+      const status = ok ? green('done') : cfStatus[id] === 'failed' ? red('missed') : dim('…');
+      process.stdout.write(`\x1b[2K  ${ok ? green('✓') : cfStatus[id] === 'failed' ? red('✗') : dim('○')} ${fg256(c, bold(id.padEnd(10)))} ${status}\n`);
+    }
   }
 
+  let animCleared = false;
+  const allDone = engines.map(async (engineId) => {
+    const engine = registry.get(engineId);
+    try {
+      const result = await adapter.dispatch({
+        engine,
+        prompt,
+        cwd: process.cwd(),
+        mode: 'exec',
+        timeout: 120,
+        outputDir,
+        signal: cfAbort.signal,
+      });
+      cfStatus[engineId] = 'done';
+
+      // First completion clears the animation
+      if (!animCleared) { animCleared = true; clearAnimation(); }
+
+      // Print this engine's response immediately
+      const color = ENGINE_COLORS[engineId] ?? 245;
+      const lines = wordWrap(result.stdout.trim(), wrapWidth);
+      console.log('');
+      console.log(`  ${fg256(color, '┌──')} ${fg256(color, bold(engineId))}`);
+      for (const line of lines.slice(0, 25)) {
+        console.log(`  ${fg256(color, '│')} ${line}`);
+      }
+      if (lines.length > 25) console.log(`  ${fg256(color, '│')} ${dim(`…${lines.length - 25} more`)}`);
+      console.log(`  ${fg256(color, '└──')}`);
+
+      tracker.record(engineId, topic, result.stdout);
+    } catch {
+      cfStatus[engineId] = 'failed';
+    }
+  });
+
+  await Promise.all(allDone);
+  if (!animCleared) { animCleared = true; clearAnimation(); }
+  activeAbort = null;
+
   showInlineTokens('campfire');
+}
+
+// ── Chat (conversational mode) ───────────────────────────────────────
+
+async function handleChat(input: string): Promise<void> {
+  ensureAgonHome();
+
+  const { engineId: targetId, message } = detectTargetEngine(input);
+  const config = loadConfig();
+  const available = activeEngines();
+
+  if (available.length === 0) {
+    fail('No engines available.');
+    return;
+  }
+
+  // Pick engine: explicit target > default starter > first available
+  const engineId = targetId
+    ?? config.forgeFixedStarter
+    ?? available[0];
+
+  if (!available.includes(engineId)) {
+    fail(`${engineId} is not available. Try: ${available.join(', ')}`);
+    return;
+  }
+
+  // Build prompt — keep it simple, engines have their own system context
+  const history = chatContext();
+  const parts: string[] = [];
+  if (history) parts.push(history);
+  parts.push(message);
+  const prompt = parts.join('\n\n');
+
+  const engine = registry.get(engineId);
+  const color = ENGINE_COLORS[engineId] ?? 245;
+  const outputDir = join(RUNS_DIR, `chat-${Date.now()}`);
+  mkdirSync(outputDir, { recursive: true });
+
+  // Set up abort so SIGINT can cancel this dispatch
+  const abort = new AbortController();
+  activeAbort = abort;
+
+  const dispatchOpts = {
+    engine,
+    prompt,
+    cwd: process.cwd(),
+    mode: 'exec' as const,
+    timeout: Math.min(config.timeout ?? 90, 90),
+    outputDir,
+    signal: abort.signal,
+  };
+
+  const spin = startSpinner(`${fg256(color, engineId)} ${dim('thinking…')}`);
+
+  try {
+    let response = '';
+    let streaming = false;
+
+    if (adapter.dispatchStream) {
+      const gen = adapter.dispatchStream(dispatchOpts);
+
+      while (true) {
+        const { value, done } = await gen.next();
+        if (done) break;
+        if (abort.signal.aborted) break;
+
+        // \x00 prefix = stderr (engine status)
+        if (value.startsWith('\x00')) {
+          const status = value.slice(1).trim();
+          if (status) spin.update(`${fg256(color, engineId)} ${dim(status)}`);
+          continue;
+        }
+
+        // Parse chunk (KERN-sourced: handles NDJSON + raw text)
+        for (const parsed of parseStreamChunk(value)) {
+          if (parsed.type === 'status') {
+            spin.update(`${fg256(color, engineId)} ${dim(parsed.content)}`);
+            continue;
+          }
+          if (parsed.type === 'result' && !streaming) {
+            response = parsed.content;
+            continue;
+          }
+          if (parsed.type === 'text' || parsed.type === 'raw') {
+            if (!streaming) {
+              spin.clear();
+              console.log(`  ${fg256(color, bold(engineId))}`);
+              streaming = true;
+            }
+            process.stdout.write(`  ${parsed.content}`);
+            response += parsed.content;
+          }
+        }
+      }
+    } else {
+      const result = await adapter.dispatch(dispatchOpts);
+      response = result.stdout;
+    }
+
+    if (abort.signal.aborted) {
+      spin.clear();
+      activeAbort = null;
+      return;
+    }
+
+    activeAbort = null;
+    response = response.trim();
+
+    if (!streaming && response) {
+      spin.clear();
+      console.log(`  ${fg256(color, bold(engineId))}`);
+      const termWidth = process.stdout.columns || 80;
+      const lines = wordWrap(response, termWidth - 4);
+      for (const line of lines.slice(0, 30)) {
+        console.log(`  ${line}`);
+      }
+      if (lines.length > 30) console.log(`  ${dim(`…${lines.length - 30} more lines`)}`);
+    }
+    if (streaming) console.log('');
+
+    if (response) {
+      appendMessage(chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
+      appendMessage(chatSession, { role: 'engine', engineId, content: response, timestamp: new Date().toISOString() });
+      tracker.record(engineId, input, response);
+    } else {
+      spin.clear();
+      info(dim('No response.'));
+    }
+  } catch (err) {
+    spin.clear();
+    activeAbort = null;
+    if (abort.signal.aborted) return;
+    fail(`${engineId}: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 // ── Tribunal ─────────────────────────────────────────────────────────
@@ -1020,6 +1527,143 @@ async function handleEngines(): Promise<void> {
   table(['ID', 'Name', 'Status', 'Version', 'Tier'], rows);
 }
 
+async function handleDiscover(): Promise<void> {
+  header('Engine Discovery');
+  const spin = startSpinner('Scanning installed engines...');
+
+  const results = await discoverEngines(registry, adapter);
+  spin.stop(`${results.length} engines checked`);
+
+  const found = results.filter((r) => r.found);
+  const missing = results.filter((r) => !r.found);
+
+  if (found.length > 0) {
+    console.log('');
+    const rows = found.map((r) => [
+      green(r.id),
+      r.displayName,
+      r.version ?? dim('unknown'),
+      r.envOk ? green('ok') : yellow(r.missingEnv.join(', ')),
+    ]);
+    table(['Engine', 'Name', 'Version', 'Env'], rows);
+  }
+
+  if (missing.length > 0) {
+    console.log('');
+    info(`Not installed: ${missing.map((r) => dim(r.id)).join(', ')}`);
+  }
+
+  // Offer to set active engines from discovered ones
+  if (found.length > 0) {
+    console.log('');
+    const currentActive = sessionEngines ?? loadConfig().forgeEnabledEngines;
+    const newEngines = found.filter((r) => !currentActive.includes(r.id));
+    if (newEngines.length > 0) {
+      info(`New: ${newEngines.map((r) => fg256(ENGINE_COLORS[r.id] ?? 245, bold(r.id))).join(', ')}`);
+      info(`Run ${dim('/use <engines>')} to activate them.`);
+    }
+  }
+}
+
+async function handleApplyPatch(patchPath?: string, force?: boolean): Promise<void> {
+  // Resolve manifest path from current plan if no explicit path given
+  let manifestPath: string | null = null;
+  if (!patchPath && currentPlan) {
+    const forgeDir = currentPlan.action.type === 'forge'
+      ? join(RUNS_DIR, `forge-${currentPlan.id}`)
+      : null;
+    // Find patch artifact from plan steps
+    for (const step of currentPlan.steps) {
+      const patchArtifact = step.result.artifacts?.find((a) => a.type === 'patch');
+      if (patchArtifact) {
+        patchPath = patchArtifact.path;
+        break;
+      }
+      const manifestArtifact = step.result.artifacts?.find((a) => a.type === 'manifest');
+      if (manifestArtifact) {
+        manifestPath = manifestArtifact.path;
+      }
+    }
+  }
+
+  const preflight = preflightApply(process.cwd(), patchPath ?? null, manifestPath);
+
+  if (!preflight.ok && preflight.dirtyTree && force) {
+    // --force overrides dirty tree check, re-run without that gate
+    if (preflight.patch) {
+      warn('Working tree is dirty — applying anyway (--force).');
+    } else {
+      fail(preflight.error ?? 'No patch found.');
+      return;
+    }
+  } else if (!preflight.ok) {
+    fail(preflight.error ?? 'Preflight failed.');
+    return;
+  }
+
+  const patch = preflight.patch!;
+  info(`Patch: ${dim(patch.path)}`);
+  info(`Engine: ${fg256(ENGINE_COLORS[patch.engineId] ?? 245, bold(patch.engineId))}`);
+  info(`Changes: ~${patch.lineCount} lines`);
+
+  const answer = await askQuestion(`  ${yellow('▸')} Apply to ${dim(process.cwd())}? ${dim('[Y/n]')} `);
+  if (answer.trim().toLowerCase() === 'n') {
+    info('Cancelled.');
+    return;
+  }
+
+  const result = applyPatchToTree(process.cwd(), patch.content);
+  if (result.ok) {
+    success('Patch applied. Review changes with git diff.');
+  } else {
+    fail(`Apply failed: ${result.error}`);
+  }
+}
+
+function handleChats(sessionId?: string): void {
+  if (sessionId) {
+    // Show specific session transcript
+    const session = loadChatSession(sessionId);
+    if (!session) {
+      fail(`Session not found: ${sessionId}`);
+      return;
+    }
+    header(`Chat: ${session.id}`);
+    info(`Started: ${dim(session.startedAt)}  Messages: ${session.messages.length}`);
+    console.log('');
+    for (const msg of session.messages) {
+      if (msg.role === 'user') {
+        console.log(`  ${bold('You:')} ${msg.content}`);
+      } else {
+        const color = ENGINE_COLORS[msg.engineId ?? ''] ?? 245;
+        console.log(`  ${fg256(color, bold(msg.engineId ?? 'engine'))}${dim(':')} ${msg.content.slice(0, 200)}${msg.content.length > 200 ? dim('…') : ''}`);
+      }
+    }
+    return;
+  }
+
+  // List recent sessions
+  const sessions = listChatSessions(20);
+  if (sessions.length === 0) {
+    info('No chat sessions yet.');
+    return;
+  }
+  header('Chat Sessions');
+  const rows = sessions.map((s) => {
+    const firstMsg = s.messages.find((m) => m.role === 'user');
+    const preview = firstMsg ? firstMsg.content.slice(0, 40) : dim('(empty)');
+    return [
+      dim(s.id),
+      String(s.messages.length),
+      s.startedAt.slice(0, 10),
+      preview,
+    ];
+  });
+  table(['Session', 'Msgs', 'Date', 'First Message'], rows);
+  console.log('');
+  info(`View a session: ${dim('/chats <id>')}`);
+}
+
 // ── Config ───────────────────────────────────────────────────────────
 
 function handleConfig(intent: Intent & { type: 'config' }): void {
@@ -1194,7 +1838,7 @@ function showInlineTokens(label: string): void {
 
 // ── /models handler ─────────────────────────────────────────────────
 
-async function handleModels(_rl: ReturnType<typeof createInterface>): Promise<void> {
+async function handleModels(): Promise<void> {
   const config = loadConfig();
   const available = registry.availableIds();
 
@@ -1286,6 +1930,104 @@ function handleWorkspace(action: string, path?: string): void {
 
 // ── REPL Loop ────────────────────────────────────────────────────────
 
+// ── Plan Commands ────────────────────────────────────────────────────
+
+function handlePlanShow(planId?: string): void {
+  if (planId) {
+    const plan = loadPlan(planId);
+    if (!plan) {
+      warn(`Plan not found: ${planId}`);
+      return;
+    }
+    displayPlan(plan);
+    return;
+  }
+
+  if (currentPlan) {
+    displayPlan(currentPlan);
+    return;
+  }
+
+  // Show most recent plan
+  const recent = listPlans(1);
+  if (recent.length > 0) {
+    displayPlan(recent[0]);
+  } else {
+    info('No plans yet. Run /forge or build to create one.');
+  }
+}
+
+function handlePlansList(): void {
+  const plans = listPlans(20);
+  displayPlanList(plans);
+}
+
+async function handleApprove(): Promise<void> {
+  if (!currentPlan) {
+    warn('No active plan to approve.');
+    return;
+  }
+  if (currentPlan.state !== 'draft') {
+    warn(`Plan is ${currentPlan.state}, not draft.`);
+    return;
+  }
+
+  currentPlan = approvePlan(currentPlan);
+  savePlan(currentPlan);
+  success('Plan approved.');
+
+  // Re-execute based on plan type, passing the existing plan to skip duplicate creation
+  if (currentPlan.action.type === 'forge') {
+    await handleForge(currentPlan.action.task, currentPlan.action.fitnessCmd ?? null, currentPlan);
+  } else {
+    info('Run the build again to execute.');
+  }
+}
+
+async function handleRetry(): Promise<void> {
+  if (!currentPlan) {
+    warn('No active plan to retry.');
+    return;
+  }
+  if (currentPlan.state !== 'paused' && currentPlan.state !== 'failed') {
+    warn(`Plan is ${currentPlan.state} — only paused/failed plans can be retried.`);
+    return;
+  }
+
+  const failedStep = currentPlan.steps.find((s) => s.result.state === 'failed');
+  if (!failedStep) {
+    info('No failed step found. Re-run the command to restart.');
+    return;
+  }
+
+  info(`Retrying from: ${failedStep.label}`);
+  currentPlan = resetStepForRetry(currentPlan, failedStep.id);
+  savePlan(currentPlan);
+
+  // Re-execute: startPlan transitions approved → running, then dispatch
+  if (currentPlan.action.type === 'forge') {
+    currentPlan = startPlan(currentPlan);
+    savePlan(currentPlan);
+    await handleForge(currentPlan.action.task, currentPlan.action.fitnessCmd ?? null, currentPlan);
+  } else {
+    info('Plan reset to approved. Run the build again to execute.');
+  }
+}
+
+function handleCancel(): void {
+  if (!currentPlan) {
+    warn('No active plan to cancel.');
+    return;
+  }
+  if (currentPlan.state === 'completed' || currentPlan.state === 'cancelled') {
+    warn(`Plan already ${currentPlan.state}.`);
+    return;
+  }
+  currentPlan = cancelPlan(currentPlan);
+  savePlan(currentPlan);
+  success('Plan cancelled.');
+}
+
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   initRegistry();
@@ -1302,14 +2044,10 @@ export async function startRepl(): Promise<void> {
   console.clear();
   renderDashboard();
 
-  const rl = createInterface({
-    input: process.stdin,
-    output: process.stdout,
-    prompt: buildPrompt(),
-  });
+  let busy = false;
 
   function buildPrompt(): string {
-    const base = `  ${fg256(208, '⚔')} ${bold(white('agon'))}`;
+    const base = `  ${fg256(208, '▸')} ${bold(white('agon'))}`;
     if (sessionEngines) {
       const tag = sessionEngines.map((id) => fg256(ENGINE_COLORS[id] ?? 245, id)).join(dim(','));
       return `${base} ${dim('[')}${tag}${dim(']')} ${fg256(214, '❯')} `;
@@ -1317,33 +2055,71 @@ export async function startRepl(): Promise<void> {
     return `${base} ${fg256(214, '❯')} `;
   }
 
-  function refreshPrompt(): void {
-    rl.setPrompt(buildPrompt());
+  function handleSigint(): void {
+    if (busy && activeAbort) {
+      // Cancel running dispatch, stay in REPL
+      activeAbort.abort();
+      activeAbort = null;
+      console.log(`\n  ${yellow('⚡')} ${dim('Cancelled.')}`);
+      return;
+    }
+    console.log(`\n  ${dim('Goodbye.')}\n`);
+    inputEngine.close();
   }
 
-  let busy = false;
+  // Declare before creating so closures inside createInputEngine can reference it safely
+  let inputEngine: ReturnType<typeof createInputEngine>;
+  inputEngine = createInputEngine({
+    prompt: buildPrompt,
+    onSubmit: (line: string) => {
+      handleLine(line).catch((err) => {
+        fail(err instanceof Error ? err.message : String(err));
+        busy = false;
+        inputEngine.resume();
+        console.log('');
+        inputEngine.showPrompt();
+      });
+    },
+    onInterrupt: handleSigint,
+    commands: SLASH_COMMANDS,
+  });
 
-  rl.prompt();
+  inputEngine.setupLayout();
+  inputEngine.showPrompt();
 
-  rl.on('line', async (line: string) => {
+  async function handleLine(line: string): Promise<void> {
     const input = line.trim();
     if (!input) {
-      rl.prompt();
+      inputEngine.showPrompt();
       return;
     }
 
-    // Prevent overlapping commands
-    if (busy) {
+    // Allow /cancel and /plan through even when busy
+    const quickIntent = detectIntent(input);
+    if (busy && quickIntent.type !== 'cancel' && quickIntent.type !== 'plan') {
       warn('A command is running. Please wait...');
       return;
     }
+    if (busy && quickIntent.type === 'cancel') {
+      handleCancel();
+      inputEngine.showPrompt();
+      return;
+    }
+    if (busy && quickIntent.type === 'plan') {
+      handlePlanShow(quickIntent.planId);
+      inputEngine.showPrompt();
+      return;
+    }
 
-    // Caesar-enhanced intent detection: try LLM first, fall back to regex
+    // Lock input before any async work to prevent re-entry
+    busy = true;
+    inputEngine.pause();
+
+    // Intent detection — silent, no UI noise
     let intent = detectIntent(input);
     if (intent.type === 'unknown' && isCaesarReady()) {
       const caesarIntent = await caesarClassify(input);
       if (caesarIntent) {
-        // Map Caesar's classification to an Intent
         switch (caesarIntent) {
           case 'forge':
             intent = { type: 'forge', task: input, fitnessCmd: null };
@@ -1376,16 +2152,13 @@ export async function startRepl(): Promise<void> {
       }
     }
 
-    busy = true;
-    rl.pause();
-
     try {
       switch (intent.type) {
         case 'forge':
-          await handleForge(intent.task, intent.fitnessCmd, rl);
+          await handleForge(intent.task, intent.fitnessCmd);
           break;
         case 'brainstorm':
-          await handleBrainstorm(intent.question, rl);
+          await handleBrainstorm(intent.question);
           break;
         case 'tribunal':
           await handleTribunal(intent.question);
@@ -1405,6 +2178,15 @@ export async function startRepl(): Promise<void> {
         case 'engines':
           await handleEngines();
           break;
+        case 'discover':
+          await handleDiscover();
+          break;
+        case 'apply':
+          await handleApplyPatch(intent.patchPath, intent.force);
+          break;
+        case 'chats':
+          handleChats(intent.sessionId);
+          break;
         case 'config':
           handleConfig(intent);
           break;
@@ -1412,31 +2194,73 @@ export async function startRepl(): Promise<void> {
           handleUse(intent.engineIds);
           break;
         case 'models':
-          await handleModels(rl);
+          await handleModels();
           break;
         case 'tokens':
           handleTokens();
           break;
-        case 'slash-list':
-          showSlashList();
+        case 'plan':
+          handlePlanShow(intent.planId);
           break;
+        case 'plans':
+          handlePlansList();
+          break;
+        case 'approve':
+          await handleApprove();
+          break;
+        case 'retry':
+          await handleRetry();
+          break;
+        case 'cancel':
+          handleCancel();
+          break;
+        case 'chat':
+          await handleChat(intent.input);
+          break;
+        case 'clear':
+          chatSession = startChatSession();
+          info('Chat history cleared.');
+          break;
+        case 'slash-list': {
+          // Fallback picker (via @clack) — only reached if '/' is pasted + Enter
+          const picked = await showSlashPicker();
+          if (picked) {
+            const pickedIntent = detectIntent(picked);
+            switch (pickedIntent.type) {
+              case 'forge': await handleForge(pickedIntent.task, pickedIntent.fitnessCmd); break;
+              case 'brainstorm': await handleBrainstorm(pickedIntent.question); break;
+              case 'tribunal': await handleTribunal(pickedIntent.question); break;
+              case 'campfire': await handleCampfire(pickedIntent.topic); break;
+              case 'leaderboard': handleLeaderboard(); break;
+              case 'history': handleHistory(pickedIntent.id); break;
+              case 'engines': await handleEngines(); break;
+              case 'config': handleConfig(pickedIntent); break;
+              case 'tokens': handleTokens(); break;
+              case 'models': await handleModels(); break;
+              case 'plan': handlePlanShow(pickedIntent.planId); break;
+              case 'plans': handlePlansList(); break;
+              case 'approve': await handleApprove(); break;
+              case 'retry': await handleRetry(); break;
+              case 'cancel': handleCancel(); break;
+              case 'help': showHelp(); break;
+              case 'workspace': handleWorkspace(pickedIntent.action, pickedIntent.path); break;
+              case 'use': handleUse(pickedIntent.engineIds); break;
+              case 'clear': chatSession = startChatSession(); info('Chat history cleared.'); break;
+              case 'exit': console.log(`\n  ${dim('Goodbye.')}\n`); inputEngine.close(); return;
+            }
+          }
+          break;
+        }
         case 'help':
           showHelp();
           break;
         case 'exit':
           console.log(`\n  ${dim('Goodbye.')}\n`);
-          rl.close();
+          inputEngine.close();
           return;
         case 'unknown':
-          console.log('');
-          console.log(
-            `  ${yellow('?')} Not sure what to do with that. Should I:`,
-          );
-          console.log(`    ${bold('/forge')} "${intent.input}"    — engines race to solve`);
-          console.log(`    ${bold('/brainstorm')} "${intent.input}" — brainstorm ideas`);
-          console.log(`    ${bold('/tribunal')} "${intent.input}"  — debate it`);
-          console.log('');
-          console.log(`  ${dim('Or type /help for all commands.')}`);
+          // Chat mode — just talk to an engine
+          await handleChat(intent.input);
           break;
       }
     } catch (err) {
@@ -1447,19 +2271,9 @@ export async function startRepl(): Promise<void> {
       if (process.stdin.setRawMode) {
         process.stdin.setRawMode(false);
       }
-      rl.resume();
-      refreshPrompt();
-      console.log('');
-      rl.prompt();
+      inputEngine.resume();
+      console.log(`\n${dim('─'.repeat(48))}\n`);
+      inputEngine.showPrompt();
     }
-  });
-
-  rl.on('close', () => {
-    process.exit(0);
-  });
-
-  rl.on('SIGINT', () => {
-    console.log(`\n  ${dim('Goodbye.')}\n`);
-    rl.close();
-  });
+  }
 }

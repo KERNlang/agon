@@ -1,0 +1,186 @@
+import { spawn } from 'node:child_process';
+
+import type { DispatchResult } from './types.js';
+
+export interface SpawnOptions {
+  command: string;
+  args: string[];
+  cwd: string;
+  timeout: number;
+  env?: Record<string,string>;
+  signal?: AbortSignal;
+  useStdin?: boolean;
+}
+
+export async function spawnWithTimeout(opts: SpawnOptions): Promise<DispatchResult> {
+  if (opts.signal?.aborted) {
+    return { exitCode: 130, stdout: '', stderr: 'Aborted', durationMs: 0, timedOut: false };
+  }
+  
+  return new Promise((resolve) => {
+    const startTime = Date.now();
+    let timedOut = false;
+    let aborted = false;
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+  
+    function finish(result: DispatchResult): void {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (opts.signal) opts.signal.removeEventListener('abort', onAbort);
+      resolve(result);
+    }
+  
+    const child = spawn(opts.command, opts.args, {
+      cwd: opts.cwd,
+      env: { ...process.env, ...opts.env },
+      stdio: [opts.useStdin ? 'pipe' : 'ignore', 'pipe', 'pipe'],
+      detached: true,
+    });
+  
+    const timer = setTimeout(() => {
+      timedOut = true;
+      killChild();
+    }, opts.timeout);
+  
+    function onAbort(): void {
+      aborted = true;
+      killChild();
+    }
+    if (opts.signal) {
+      opts.signal.addEventListener('abort', onAbort, { once: true });
+    }
+  
+    function killChild(): void {
+      try {
+        if (child.pid) process.kill(-child.pid, 'SIGTERM');
+      } catch {
+        try { child.kill('SIGKILL'); } catch {}
+      }
+    }
+  
+    child.stdout?.on('data', (data) => { stdout += String(data); });
+    child.stderr?.on('data', (data) => { stderr += String(data); });
+  
+    child.on('close', (code: number | null) => {
+      finish({
+        exitCode: code ?? (aborted ? 130 : timedOut ? 124 : 1),
+        stdout, stderr,
+        durationMs: Date.now() - startTime,
+        timedOut,
+      });
+    });
+  
+    child.on('error', (err: Error) => {
+      finish({
+        exitCode: 1,
+        stdout,
+        stderr: stderr + '\n' + err.message,
+        durationMs: Date.now() - startTime,
+        timedOut: false,
+      });
+    });
+  });
+  
+}
+
+export async function* spawnStream(opts: SpawnOptions): AsyncGenerator<string, DispatchResult, void> {
+  if (opts.signal?.aborted) {
+    return { exitCode: 130, stdout: '', stderr: 'Aborted', durationMs: 0, timedOut: false };
+  }
+  
+  const startTime = Date.now();
+  let timedOut = false;
+  let aborted = false;
+  let stdout = '';
+  let stderr = '';
+  
+  const child = spawn(opts.command, opts.args, {
+    cwd: opts.cwd,
+    env: { ...process.env, ...opts.env },
+    stdio: [opts.useStdin ? 'pipe' : 'ignore', 'pipe', 'pipe'],
+    detached: true,
+  });
+  
+  const timer = setTimeout(() => {
+    timedOut = true;
+    killChild();
+  }, opts.timeout);
+  
+  function onAbort(): void {
+    aborted = true;
+    killChild();
+  }
+  if (opts.signal) {
+    opts.signal.addEventListener('abort', onAbort, { once: true });
+  }
+  
+  function killChild(): void {
+    try {
+      if (child.pid) process.kill(-child.pid, 'SIGTERM');
+    } catch {
+      try { child.kill('SIGKILL'); } catch {}
+    }
+  }
+  
+  const chunks: string[] = [];
+  let done = false;
+  let resolveWait: (() => void) | null = null;
+  let closeResult: DispatchResult | null = null;
+  
+  child.stdout?.on('data', (data) => {
+    const chunk = String(data);
+    stdout += chunk;
+    chunks.push(chunk);
+    if (resolveWait) { resolveWait(); resolveWait = null; }
+  });
+  
+  child.stderr?.on('data', (data) => {
+    const chunk = String(data);
+    stderr += chunk;
+    // Yield stderr with \x00 prefix so consumers can distinguish
+    chunks.push('\x00' + chunk);
+    if (resolveWait) { resolveWait(); resolveWait = null; }
+  });
+  
+  child.on('close', (code: number | null) => {
+    clearTimeout(timer);
+    if (opts.signal) opts.signal.removeEventListener('abort', onAbort);
+    done = true;
+    closeResult = {
+      exitCode: code ?? (aborted ? 130 : timedOut ? 124 : 1),
+      stdout, stderr,
+      durationMs: Date.now() - startTime,
+      timedOut,
+    };
+    if (resolveWait) { resolveWait(); resolveWait = null; }
+  });
+  
+  child.on('error', (err: Error) => {
+    clearTimeout(timer);
+    if (opts.signal) opts.signal.removeEventListener('abort', onAbort);
+    done = true;
+    closeResult = {
+      exitCode: 1,
+      stdout,
+      stderr: stderr + '\n' + err.message,
+      durationMs: Date.now() - startTime,
+      timedOut: false,
+    };
+    if (resolveWait) { resolveWait(); resolveWait = null; }
+  });
+  
+  while (!done || chunks.length > 0) {
+    if (chunks.length > 0) {
+      yield chunks.shift()!;
+    } else if (!done) {
+      await new Promise<void>((r) => { resolveWait = r; });
+    }
+  }
+  
+  return closeResult!;
+  
+}
+

@@ -1,0 +1,30 @@
+import from="node:fs" names="readFileSync,writeFileSync,mkdirSync"
+import from="node:path" names="join"
+import from="@agon/core" names="ForgeManifest" types=true
+import from="@agon/core" names="RUNS_DIR"
+
+fn name=writeManifest params="manifest:ForgeManifest" returns="string"
+  handler <<<
+    const manifestPath = join(manifest.forgeDir, 'manifest.json');
+    writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
+
+    mkdirSync(RUNS_DIR, { recursive: true });
+    const historyPath = join(RUNS_DIR, `${manifest.forgeId}.json`);
+    writeFileSync(historyPath, JSON.stringify(manifest, null, 2) + '\n');
+
+    return manifestPath;
+  >>>
+
+fn name=readManifest params="forgeDir:string" returns="ForgeManifest"
+  handler <<<
+    const manifestPath = join(forgeDir, 'manifest.json');
+    return JSON.parse(readFileSync(manifestPath, 'utf-8')) as ForgeManifest;
+  >>>
+
+fn name=updateManifest params="forgeDir:string, updates:Partial<ForgeManifest>" returns="ForgeManifest"
+  handler <<<
+    const existing = readManifest(forgeDir);
+    const merged = { ...existing, ...updates };
+    writeManifest(merged);
+    return merged;
+  >>>

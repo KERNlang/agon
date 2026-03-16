@@ -158,6 +158,20 @@ function visibleLength(str: string): number {
 /**
  * Print a simple table with headers and rows.
  */
+// ── Terminal cursor helpers ──────────────────────────────────────────
+
+export function saveCursor(): void {
+  process.stdout.write('\x1b7');
+}
+
+export function restoreCursor(): void {
+  process.stdout.write('\x1b8');
+}
+
+export function clearBelow(): void {
+  process.stdout.write('\x1b[J');
+}
+
 export function table(headers: string[], rows: string[][]): void {
   const widths = headers.map((h, i) =>
     Math.max(visibleLength(h), ...rows.map((r) => visibleLength(r[i] ?? ''))),

@@ -14,10 +14,12 @@
     "dist"
   ],
   "scripts": {
+    "kern:compile": "node ../../../kern-lang/packages/cli/dist/cli.js compile src/kern --outdir=src/generated && bash scripts/kern-postcompile.sh",
+    "prebuild": "npm run kern:compile",
     "build": "tsup",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "kern-lang": "file:../../../kern-lang"
+    "kern-lang": "file:../../../kern-lang/packages/compat"
   }
 }

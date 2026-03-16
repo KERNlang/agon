@@ -1,0 +1,91 @@
+import from="node:fs" names="mkdirSync,appendFileSync,readFileSync,readdirSync,statSync"
+import from="node:path" names="join"
+import from="./config.js" names="AGON_HOME"
+
+interface name=ChatMessage
+  field name=role type="'user'|'engine'"
+  field name=engineId type=string optional=true
+  field name=content type=string
+  field name=timestamp type=string
+
+interface name=ChatSession
+  field name=id type=string
+  field name=startedAt type=string
+  field name=messages type="ChatMessage[]"
+
+fn name=chatsDir returns="string"
+  handler <<<
+    return join(AGON_HOME, 'chats');
+  >>>
+
+fn name=ensureChatsDir returns="void"
+  handler <<<
+    mkdirSync(chatsDir(), { recursive: true });
+  >>>
+
+fn name=startChatSession returns="ChatSession"
+  handler <<<
+    ensureChatsDir();
+    const id = `chat-${Date.now()}`;
+    const session: ChatSession = { id, startedAt: new Date().toISOString(), messages: [] };
+    const filePath = join(chatsDir(), `${id}.ndjson`);
+    appendFileSync(filePath, JSON.stringify({ _type: 'header', id, startedAt: session.startedAt }) + '\n');
+    return session;
+  >>>
+
+fn name=appendMessage params="session:ChatSession, msg:ChatMessage" returns="void"
+  handler <<<
+    session.messages.push(msg);
+    const filePath = join(chatsDir(), `${session.id}.ndjson`);
+    appendFileSync(filePath, JSON.stringify(msg) + '\n');
+  >>>
+
+fn name=loadChatSession params="id:string" returns="ChatSession|null"
+  handler <<<
+    try {
+      const filePath = join(chatsDir(), `${id}.ndjson`);
+      const raw = readFileSync(filePath, 'utf-8');
+      const lines = raw.trim().split('\n').filter(Boolean);
+      if (lines.length === 0) return null;
+
+      const header = JSON.parse(lines[0]);
+      const messages: ChatMessage[] = [];
+      for (let i = 1; i < lines.length; i++) {
+        const msg = JSON.parse(lines[i]);
+        if (msg.role) messages.push(msg);
+      }
+
+      return { id: header.id ?? id, startedAt: header.startedAt ?? '', messages };
+    } catch {
+      return null;
+    }
+  >>>
+
+fn name=listChatSessions params="limit:number" returns="ChatSession[]"
+  handler <<<
+    ensureChatsDir();
+    try {
+      const dir = chatsDir();
+      const files = readdirSync(dir)
+        .filter((f: string) => f.endsWith('.ndjson'))
+        .map((f: string) => ({
+          name: f,
+          mtime: statSync(join(dir, f)).mtimeMs,
+        }))
+        .sort((a: {mtime:number}, b: {mtime:number}) => b.mtime - a.mtime)
+        .slice(0, limit);
+
+      return files.map((f: {name:string}) => {
+        const id = f.name.replace('.ndjson', '');
+        return loadChatSession(id);
+      }).filter((s: ChatSession|null): s is ChatSession => s !== null);
+    } catch {
+      return [];
+    }
+  >>>
+
+fn name=latestChatSession returns="ChatSession|null"
+  handler <<<
+    const sessions = listChatSessions(1);
+    return sessions.length > 0 ? sessions[0] : null;
+  >>>

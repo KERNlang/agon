@@ -2114,8 +2114,6 @@ export async function startRepl(): Promise<void> {
     busy = true;
     inputEngine.pause();
 
-    // Echo user input so it stays visible in the output
-    console.log(`  ${dim('❯')} ${input}`);
 
     // Intent detection — silent, no UI noise
     let intent = detectIntent(input);

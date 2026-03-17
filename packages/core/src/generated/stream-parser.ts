@@ -25,8 +25,15 @@ export function parseStreamChunk(chunk: string): ParsedChunk[] {
       }
   
       // Claude Code stream-json: final result
-      if (msg.type === 'result' && msg.result) {
-        results.push({ type: 'result', content: msg.result });
+      if (msg.type === 'result') {
+        if (msg.result) {
+          results.push({ type: 'result', content: typeof msg.result === 'string' ? msg.result : JSON.stringify(msg.result) });
+        }
+        // Also capture error (e.g. "Reached max turns")
+        if (msg.is_error || msg.error) {
+          const errMsg = msg.error ?? msg.result ?? 'Unknown error';
+          results.push({ type: 'status', content: typeof errMsg === 'string' ? errMsg : JSON.stringify(errMsg) });
+        }
         continue;
       }
   

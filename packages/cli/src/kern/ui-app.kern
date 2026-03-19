@@ -1,0 +1,39 @@
+screen name=AgonApp target=ink
+  state name=replState initial="idle"
+  state name=outputBlocks initial="[]"
+  state name=liveSpinner initial="null"
+  state name=liveProgress initial="null"
+  state name=inputValue initial=""
+  state name=inputHistory initial="[]"
+  state name=slashPickerOpen initial=false
+  state name=questionPrompt initial="null"
+
+  output-area
+    handler <<<
+      {outputBlocks.map((block: OutputBlock, i: number) => (
+        <OutputBlockView key={i} block={block} />
+      ))}
+    >>>
+    handler <<<
+      {liveSpinner && <SpinnerBlock message={liveSpinner.message} color={liveSpinner.color} />}
+    >>>
+    handler <<<
+      {liveProgress && <ForgeProgress engines={liveProgress.engines} />}
+    >>>
+
+  input-area
+    handler <<<
+      {slashPickerOpen && <SlashPicker commands={SLASH_COMMANDS} onSelect={handleSlashSelect} onCancel={() => setSlashPickerOpen(false)} />}
+    >>>
+    handler <<<
+      {questionPrompt ? (
+        <QuestionInput prompt={questionPrompt.prompt} onSubmit={handleQuestionAnswer} />
+      ) : (
+        <TextInput
+          value={inputValue}
+          onChange={setInputValue}
+          onSubmit={handleSubmit}
+          placeholder={replState === 'idle' ? 'What should we build?' : ''}
+        />
+      )}
+    >>>

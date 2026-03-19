@@ -766,7 +766,8 @@ function App() {
     }
 
     const lines = newContent.split('\n');
-    if (lines.length > 3 || newContent.length > 200) {
+    // Only trigger paste mode for actual multi-line pastes or very long text
+    if (lines.length > 5 || (lines.length > 1 && newContent.length > 500)) {
       // Paste detected — replace any previous paste
       setPastedContent(newContent);
       const lineCount = lines.length;
@@ -929,11 +930,20 @@ function App() {
       }
     }
     // Ctrl+C to cancel running command or exit
-    if (input === '\x03') {
+    // With exitOnCtrlC: false, Ink passes this to useInput
+    if (input === '\x03' || (key.ctrl && input === 'c')) {
       if (replState !== 'idle' && activeAbort) {
         activeAbort.abort();
         setActiveAbort(null);
+        setLiveSpinner(null);
+        setLiveProgress(null);
         dispatch({ type: 'warning', message: 'Cancelled.' });
+        setReplState('idle');
+      } else if (replState !== 'idle') {
+        // Busy but no abort controller — force back to idle
+        setLiveSpinner(null);
+        setLiveProgress(null);
+        dispatch({ type: 'warning', message: 'Interrupted.' });
         setReplState('idle');
       } else {
         exit();
@@ -1045,5 +1055,5 @@ export async function startRepl(): Promise<void> {
     loadCaesar(config.caesarModel).catch(() => {});
   }
 
-  render(<App />);
+  render(<App />, { exitOnCtrlC: false });
 }

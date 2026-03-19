@@ -66,7 +66,6 @@ function EngineProgressView({ engines }: { engines: EngineProgress[] }) {
             </Text>
           </Box>
           <Text dimColor>{engine.status}</Text>
-          <Text dimColor> {engine.elapsed}s</Text>
         </Box>
       ))}
     </Box>
@@ -232,21 +231,47 @@ function wrapLines(text: string, maxWidth: number): string[] {
   return lines;
 }
 
+/** Filter out system/hook JSON lines from engine output */
+function cleanEngineOutput(raw: string): string {
+  return raw.split('\n').filter((line) => {
+    const trimmed = line.trim();
+    // Drop system JSON (Patrol hooks, session data, tool results)
+    if (trimmed.startsWith('{"type":"system"')) return false;
+    if (trimmed.startsWith('{"type":"hook_')) return false;
+    if (trimmed.startsWith('{"type":"result"')) return false;
+    if (trimmed.startsWith('{"type":"tool_')) return false;
+    // Drop lines that are pure JSON objects (likely metadata)
+    if (trimmed.startsWith('{') && trimmed.endsWith('}') && trimmed.includes('"type"') && trimmed.length > 200) return false;
+    return true;
+  }).join('\n').trim();
+}
+
 function EngineBlock({ engineId, color, content }: { engineId: string; color: number; content: string }) {
   const termWidth = process.stdout.columns || 80;
-  const wrapWidth = termWidth - 8; // account for "  │ " prefix
-  const wrapped = wrapLines(content.trim(), wrapWidth);
+  const wrapWidth = termWidth - 8;
+  const cleaned = cleanEngineOutput(content);
+  const wrapped = wrapLines(cleaned, wrapWidth);
   const colorStr = String(color);
 
+  if (wrapped.length === 0 || (wrapped.length === 1 && !wrapped[0])) {
+    return (
+      <Box flexDirection="column" marginY={0} paddingLeft={2}>
+        <Text color={colorStr}>{'┌── '}<Text bold>{engineId}</Text></Text>
+        <Text color={colorStr}>{'│ '}<Text dimColor>{'(no response)'}</Text></Text>
+        <Text color={colorStr}>{'└──'}</Text>
+      </Box>
+    );
+  }
+
   return (
-    <Box flexDirection="column" marginY={0} paddingLeft={2}>
-      <Text color={colorStr}>{'┌── '}<Text bold>{engineId}</Text></Text>
+    <Box flexDirection="column" marginY={1} paddingLeft={2}>
+      <Text color={colorStr}>{'┌── '}<Text bold color={colorStr}>{engineId}</Text></Text>
       <Text color={colorStr}>{'│'}</Text>
-      {wrapped.slice(0, 40).map((line, i) => (
+      {wrapped.slice(0, 50).map((line, i) => (
         <Text key={`${engineId}-${i}`}><Text color={colorStr}>{'│ '}</Text>{line}</Text>
       ))}
-      {wrapped.length > 40 && (
-        <Text><Text color={colorStr}>{'│ '}</Text><Text dimColor>{'…'}{wrapped.length - 40}{' more lines'}</Text></Text>
+      {wrapped.length > 50 && (
+        <Text><Text color={colorStr}>{'│ '}</Text><Text dimColor>{'…'}{wrapped.length - 50}{' more lines'}</Text></Text>
       )}
       <Text color={colorStr}>{'└──'}</Text>
     </Box>
@@ -524,6 +549,7 @@ function App() {
   const [questionState, setQuestionState] = useState<{ prompt: string; resolve: (answer: string) => void } | null>(null);
   const [questionAnswer, setQuestionAnswer] = useState('');
   const [enginePickerOpen, setEnginePickerOpen] = useState(false);
+  const [streamingText, setStreamingText] = useState<{ engineId: string; content: string } | null>(null);
 
   // Module-level state (mutable refs via closures)
   // Load persisted engine selection from config — null means "all available"
@@ -593,13 +619,36 @@ function App() {
       case 'progress-clear':
         setLiveProgress(null);
         break;
+      case 'streaming-chunk':
+        // Accumulate into a single growing stream block
+        setStreamingText((prev) => {
+          if (prev && prev.engineId === event.engineId) {
+            return { engineId: event.engineId, content: prev.content + event.chunk };
+          }
+          return { engineId: event.engineId, content: event.chunk };
+        });
+        break;
       case 'clear':
         setOutputBlocks([]);
+        setStreamingText(null);
         break;
       case 'question':
         setQuestionState({ prompt: event.prompt, resolve: event.resolve });
         break;
       default:
+        // If we were streaming, flush to output blocks first
+        if (event.type === 'text' || event.type === 'engine-block' || event.type === 'separator') {
+          setStreamingText((prev) => {
+            if (prev) {
+              const color = ENGINE_COLORS[prev.engineId] ?? 245;
+              setOutputBlocks((blocks) => [...blocks, {
+                id: Date.now() - 1,
+                event: { type: 'engine-block', engineId: prev.engineId, color, content: prev.content },
+              }]);
+            }
+            return null;
+          });
+        }
         setOutputBlocks((prev) => [...prev, { id: Date.now() + Math.random(), event }]);
     }
   }, []);
@@ -778,6 +827,21 @@ function App() {
           <OutputBlockView key={block.id} event={block.event} />
         ))}
         {liveSpinner && <SpinnerBlock message={liveSpinner.message} color={liveSpinner.color} />}
+        {streamingText && (() => {
+          const c = String(ENGINE_COLORS[streamingText.engineId] ?? 245);
+          const cleaned = cleanEngineOutput(streamingText.content);
+          const termWidth = process.stdout.columns || 80;
+          const wrapped = wrapLines(cleaned, termWidth - 8);
+          return (
+            <Box flexDirection="column" marginY={1} paddingLeft={2}>
+              <Text color={c} bold>{'┌── '}{streamingText.engineId}</Text>
+              <Text color={c}>{'│'}</Text>
+              {wrapped.map((line, i) => (
+                <Text key={`stream-${i}`}><Text color={c}>{'│ '}</Text>{line}</Text>
+              ))}
+            </Box>
+          );
+        })()}
         {liveProgress && <EngineProgressView engines={liveProgress} />}
       </Box>
 

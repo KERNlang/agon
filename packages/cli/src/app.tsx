@@ -605,6 +605,7 @@ function App() {
   const [pastedContent, setPastedContent] = useState<string | null>(null);
   const [inputHistory, setInputHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
+  const [mode, setMode] = useState<'chat' | 'campfire' | 'brainstorm' | 'tribunal'>('chat');
   const [liveSpinner, setLiveSpinner] = useState<{ message: string; color?: number } | null>(null);
   const [liveProgress, setLiveProgress] = useState<EngineProgress[] | null>(null);
   const [slashPickerOpen, setSlashPickerOpen] = useState(false);
@@ -786,7 +787,50 @@ function App() {
     dispatch({ type: 'separator' });
 
     let intent = detectIntent(input);
-    if (intent.type === 'unknown' && isCaesarReady()) {
+
+    // Mode switching — /campfire, /brainstorm, /tribunal, /chat switch modes
+    // If the command has no argument, just switch mode and show confirmation
+    if (intent.type === 'campfire' && !intent.topic) {
+      setMode('campfire');
+      dispatch({ type: 'success', message: 'Switched to campfire mode — just talk, all engines think together' });
+      setReplState('idle');
+      return;
+    }
+    if (intent.type === 'brainstorm' && !intent.question) {
+      setMode('brainstorm');
+      dispatch({ type: 'success', message: 'Switched to brainstorm mode — engines bid on your questions' });
+      setReplState('idle');
+      return;
+    }
+    if (intent.type === 'tribunal' && !intent.question) {
+      setMode('tribunal');
+      dispatch({ type: 'success', message: 'Switched to tribunal mode — engines debate your questions' });
+      setReplState('idle');
+      return;
+    }
+    if (intent.type === 'chat') {
+      if (mode !== 'chat') {
+        setMode('chat');
+        dispatch({ type: 'success', message: 'Switched to chat mode' });
+      }
+      // If there's actual input, process it
+      if (!intent.input?.trim()) {
+        setReplState('idle');
+        return;
+      }
+    }
+
+    // In a non-chat mode, route plain text to the mode's handler
+    if (intent.type === 'unknown' && mode !== 'chat') {
+      switch (mode) {
+        case 'campfire': intent = { type: 'campfire', topic: input }; break;
+        case 'brainstorm': intent = { type: 'brainstorm', question: input }; break;
+        case 'tribunal': intent = { type: 'tribunal', question: input }; break;
+      }
+    }
+
+    // Caesar fallback for chat mode only
+    if (intent.type === 'unknown' && mode === 'chat' && isCaesarReady()) {
       const caesarIntent = await caesarClassify(input);
       if (caesarIntent) {
         switch (caesarIntent) {
@@ -834,7 +878,7 @@ function App() {
     } finally {
       setReplState('idle');
     }
-  }, [replState, dispatch, buildContext, slashPickerOpen, exit, pastedContent]);
+  }, [replState, dispatch, buildContext, slashPickerOpen, exit, pastedContent, mode]);
 
   // ── Handle slash picker selection ──
   const handleSlashSelect = useCallback((cmd: string) => {
@@ -944,12 +988,26 @@ function App() {
             </Box>
           ) : (
             <Box>
-              <Text color="yellow">{'❯ '}</Text>
+              {mode !== 'chat' && (
+                <Text>
+                  <Text color={mode === 'campfire' ? '#f97316' : mode === 'brainstorm' ? '#22d3ee' : '#a78bfa'} bold>
+                    {mode === 'campfire' ? '🔥' : mode === 'brainstorm' ? '💡' : '⚖'}
+                    {' '}{mode}
+                  </Text>
+                  <Text dimColor>{' │ '}</Text>
+                </Text>
+              )}
+              <Text color="#fbbf24">{'❯ '}</Text>
               <TextInput
                 value={inputValue}
                 onChange={handleInputChange}
                 onSubmit={handleSubmit}
-                placeholder={replState === 'idle' ? 'What should we build?' : ''}
+                placeholder={replState === 'idle'
+                  ? mode === 'chat' ? 'What should we build?'
+                  : mode === 'campfire' ? 'What should we think about?'
+                  : mode === 'brainstorm' ? 'What question for the engines?'
+                  : 'What should they debate?'
+                  : ''}
               />
             </Box>
           )}

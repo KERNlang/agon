@@ -1,3 +1,5 @@
+import from="@agon/core" names="Plan" types=true
+
 machine name=ReplState
   state name=idle initial=true
   state name=busy

@@ -65,7 +65,7 @@ function EngineProgressView({ engines }: { engines: EngineProgress[] }) {
           </Text>
           <Text> </Text>
           <Box width={14}>
-            <Text bold color={ENGINE_COLORS[engine.id] ? String(ENGINE_COLORS[engine.id]) : undefined}>
+            <Text bold color={engineColor(engine.id)}>
               {engine.id}
             </Text>
           </Box>
@@ -124,7 +124,7 @@ function DashboardView({ event }: { event: OutputEvent & { type: 'dashboard' } }
         <Text dimColor>{' ready to compete   '}</Text>
         {event.available.map((id) => (
           <Text key={id}>
-            <Text color={ENGINE_COLORS[id] ? String(ENGINE_COLORS[id]) : '#888'} bold={event.enabled.includes(id)} dimColor={!event.enabled.includes(id)}>
+            <Text color={engineColor(id)} bold={event.enabled.includes(id)} dimColor={!event.enabled.includes(id)}>
               {id}
             </Text>
             <Text>{'  '}</Text>
@@ -136,7 +136,7 @@ function DashboardView({ event }: { event: OutputEvent & { type: 'dashboard' } }
       <Box>
         <Text color="#22d3ee">{' 🧠 '}</Text>
         <Text>{'Chat default: '}</Text>
-        <Text bold color={ENGINE_COLORS[event.defaultEngine] ? String(ENGINE_COLORS[event.defaultEngine]) : '#fbbf24'}>{event.defaultEngine}</Text>
+        <Text bold color={engineColor(event.defaultEngine)}>{event.defaultEngine}</Text>
         <Text dimColor>{'  (change with /use)'}</Text>
       </Box>
 
@@ -144,7 +144,7 @@ function DashboardView({ event }: { event: OutputEvent & { type: 'dashboard' } }
       {event.eloTop ? (
         <Box>
           <Text color="#fbbf24">{' ♛  '}</Text>
-          <Text bold color={ENGINE_COLORS[event.eloTop.id] ? String(ENGINE_COLORS[event.eloTop.id]) : 'white'}>{event.eloTop.id}</Text>
+          <Text bold color={engineColor(event.eloTop.id)}>{event.eloTop.id}</Text>
           <Text>{' leads with '}<Text bold color="#fbbf24">{String(event.eloTop.rating)}</Text>{' ELO'}</Text>
           <Text dimColor>{'  ('}{event.totalForges}{' forges run)'}</Text>
         </Box>
@@ -235,19 +235,77 @@ function wrapLines(text: string, maxWidth: number): string[] {
   return lines;
 }
 
-/** Filter out system/hook JSON lines from engine output */
+/** Convert 256-color code to hex for Ink compatibility */
+function color256toHex(code: number): string {
+  // Standard 16 colors
+  const basic16: Record<number, string> = {
+    0: '#000000', 1: '#aa0000', 2: '#00aa00', 3: '#aa5500', 4: '#0000aa',
+    5: '#aa00aa', 6: '#00aaaa', 7: '#aaaaaa', 8: '#555555', 9: '#ff5555',
+    10: '#55ff55', 11: '#ffff55', 12: '#5555ff', 13: '#ff55ff', 14: '#55ffff', 15: '#ffffff',
+  };
+  if (code < 16) return basic16[code] ?? '#ffffff';
+  if (code >= 232) {
+    // Grayscale: 232-255 → 8 to 238
+    const gray = 8 + (code - 232) * 10;
+    const h = Math.min(255, gray).toString(16).padStart(2, '0');
+    return `#${h}${h}${h}`;
+  }
+  // 216-color cube: 16-231
+  const idx = code - 16;
+  const r = Math.floor(idx / 36);
+  const g = Math.floor((idx % 36) / 6);
+  const b = idx % 6;
+  const toHex = (v: number) => (v === 0 ? 0 : 55 + v * 40).toString(16).padStart(2, '0');
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+/** Get hex color for an engine */
+function engineColor(id: string): string {
+  return color256toHex(ENGINE_COLORS[id] ?? 245);
+}
+
+/** Filter out system/hook JSON lines from engine output, extract text content */
 function cleanEngineOutput(raw: string): string {
-  return raw.split('\n').filter((line) => {
+  const lines = raw.split('\n');
+  const cleaned: string[] = [];
+
+  for (const line of lines) {
     const trimmed = line.trim();
-    // Drop system JSON (Patrol hooks, session data, tool results)
-    if (trimmed.startsWith('{"type":"system"')) return false;
-    if (trimmed.startsWith('{"type":"hook_')) return false;
-    if (trimmed.startsWith('{"type":"result"')) return false;
-    if (trimmed.startsWith('{"type":"tool_')) return false;
-    // Drop lines that are pure JSON objects (likely metadata)
-    if (trimmed.startsWith('{') && trimmed.endsWith('}') && trimmed.includes('"type"') && trimmed.length > 200) return false;
-    return true;
-  }).join('\n').trim();
+    // Skip empty lines at start
+    if (cleaned.length === 0 && !trimmed) continue;
+
+    // Try to extract content from JSON result lines
+    if (trimmed.startsWith('{') && trimmed.includes('"type"')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        // Extract actual content from result/assistant messages
+        if (parsed.type === 'assistant' && parsed.message?.content) {
+          const content = typeof parsed.message.content === 'string'
+            ? parsed.message.content
+            : Array.isArray(parsed.message.content)
+              ? parsed.message.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('\n')
+              : '';
+          if (content) cleaned.push(content);
+          continue;
+        }
+        if (parsed.type === 'result' && parsed.result) {
+          cleaned.push(typeof parsed.result === 'string' ? parsed.result : JSON.stringify(parsed.result));
+          continue;
+        }
+        // Drop system/hook/tool JSON silently
+        if (['system', 'hook_started', 'hook_response', 'tool_use', 'tool_result'].includes(parsed.type)) continue;
+        if (parsed.type?.startsWith('hook_')) continue;
+        if (parsed.subtype === 'system') continue;
+      } catch {
+        // Not valid JSON — keep as text
+      }
+    }
+
+    // Keep regular text lines
+    cleaned.push(line);
+  }
+
+  return cleaned.join('\n').trim();
 }
 
 function EngineBlock({ engineId, color, content }: { engineId: string; color: number; content: string }) {
@@ -255,29 +313,29 @@ function EngineBlock({ engineId, color, content }: { engineId: string; color: nu
   const wrapWidth = termWidth - 8;
   const cleaned = cleanEngineOutput(content);
   const wrapped = wrapLines(cleaned, wrapWidth);
-  const colorStr = String(color);
+  const hexColor = color256toHex(color);
 
   if (wrapped.length === 0 || (wrapped.length === 1 && !wrapped[0])) {
     return (
       <Box flexDirection="column" marginY={0} paddingLeft={2}>
-        <Text color={colorStr}>{'┌── '}<Text bold>{engineId}</Text></Text>
-        <Text color={colorStr}>{'│ '}<Text dimColor>{'(no response)'}</Text></Text>
-        <Text color={colorStr}>{'└──'}</Text>
+        <Text color={hexColor}>{'┌── '}<Text bold>{engineId}</Text></Text>
+        <Text color={hexColor}>{'│ '}<Text dimColor>{'(no response)'}</Text></Text>
+        <Text color={hexColor}>{'└──'}</Text>
       </Box>
     );
   }
 
   return (
     <Box flexDirection="column" marginY={1} paddingLeft={2}>
-      <Text color={colorStr}>{'┌── '}<Text bold color={colorStr}>{engineId}</Text></Text>
-      <Text color={colorStr}>{'│'}</Text>
+      <Text color={hexColor}>{'┌── '}<Text bold color={hexColor}>{engineId}</Text></Text>
+      <Text color={hexColor}>{'│'}</Text>
       {wrapped.slice(0, 50).map((line, i) => (
-        <Text key={`${engineId}-${i}`}><Text color={colorStr}>{'│ '}</Text>{line}</Text>
+        <Text key={`${engineId}-${i}`}><Text color={hexColor}>{'│ '}</Text>{line}</Text>
       ))}
       {wrapped.length > 50 && (
-        <Text><Text color={colorStr}>{'│ '}</Text><Text dimColor>{'…'}{wrapped.length - 50}{' more lines'}</Text></Text>
+        <Text><Text color={hexColor}>{'│ '}</Text><Text dimColor>{'…'}{wrapped.length - 50}{' more lines'}</Text></Text>
       )}
-      <Text color={colorStr}>{'└──'}</Text>
+      <Text color={hexColor}>{'└──'}</Text>
     </Box>
   );
 }
@@ -303,7 +361,7 @@ function OutputBlockView({ event }: { event: OutputEvent }) {
     case 'table': return <TableView headers={event.headers} rows={event.rows} />;
     case 'streaming-chunk': return <Text>{'  '}{event.chunk}</Text>;
     case 'kern-draft': {
-      const eColor = String(ENGINE_COLORS[event.engineId] ?? 245);
+      const eColor = engineColor(event.engineId);
       const termWidth = process.stdout.columns || 80;
       const wrapped = wrapLines(event.content.trim(), termWidth - 8);
       return (
@@ -321,7 +379,7 @@ function OutputBlockView({ event }: { event: OutputEvent }) {
       );
     }
     case 'debate-round': {
-      const dColor = String(ENGINE_COLORS[event.engineId] ?? 245);
+      const dColor = engineColor(event.engineId);
       const termWidth = process.stdout.columns || 80;
       const wrapped = wrapLines(event.argument.trim(), termWidth - 8);
       return (
@@ -527,7 +585,7 @@ function EnginePicker({ available, initialSelected, onConfirm, onCancel }: {
             {selected.has(id) ? '◉' : '○'}
           </Text>
           <Text>{' '}</Text>
-          <Text bold color={ENGINE_COLORS[id] ? String(ENGINE_COLORS[id]) : undefined}>{id}</Text>
+          <Text bold color={engineColor(id)}>{id}</Text>
           {!selected.has(id) && <Text dimColor>{' (disabled)'}</Text>}
         </Box>
       ))}
@@ -832,7 +890,7 @@ function App() {
         ))}
         {liveSpinner && <SpinnerBlock message={liveSpinner.message} color={liveSpinner.color} />}
         {streamingText && (() => {
-          const c = String(ENGINE_COLORS[streamingText.engineId] ?? 245);
+          const c = engineColor(streamingText.engineId);
           const cleaned = cleanEngineOutput(streamingText.content);
           const termWidth = process.stdout.columns || 80;
           const wrapped = wrapLines(cleaned, termWidth - 8);

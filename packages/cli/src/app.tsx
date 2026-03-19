@@ -752,19 +752,35 @@ function App() {
       return;
     }
 
-    const lines = value.split('\n');
-    if (lines.length > 3 || value.length > 300) {
-      // Multi-line paste detected — store full content, show preview
-      setPastedContent(value);
+    // Detect paste: check the delta (what was just added)
+    // If we already have a paste preview, the new content is appended to it
+    let newContent = value;
+    if (pastedContent && value.startsWith(inputValue)) {
+      // Extract just the newly pasted portion
+      newContent = value.slice(inputValue.length);
+      if (!newContent) {
+        // Backspace or no change
+        setInputValue(value);
+        return;
+      }
+    }
+
+    const lines = newContent.split('\n');
+    if (lines.length > 3 || newContent.length > 200) {
+      // Paste detected — replace any previous paste
+      setPastedContent(newContent);
       const lineCount = lines.length;
-      const charCount = value.length;
-      const firstLine = lines[0].slice(0, 60) + (lines[0].length > 60 ? '…' : '');
+      const charCount = newContent.length;
+      const firstLine = lines[0].slice(0, 50) + (lines[0].length > 50 ? '…' : '');
       setInputValue(`[Pasted ${lineCount} lines, ${charCount} chars] ${firstLine}`);
     } else {
-      setPastedContent(null);
+      // Normal typing — clear paste state
+      if (pastedContent && !value.startsWith('[Pasted')) {
+        setPastedContent(null);
+      }
       setInputValue(value);
     }
-  }, [slashPickerOpen]);
+  }, [slashPickerOpen, pastedContent, inputValue]);
 
   // ── Handle input submission ──
   const handleSubmit = useCallback(async (value: string) => {

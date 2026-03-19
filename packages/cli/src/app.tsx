@@ -31,9 +31,13 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readdirSync } from 'node:fs';
 
-// ── State Types ──────────────────────────────────────────────────────
-
-type ReplState = 'idle' | 'busy' | 'streaming' | 'questioning';
+// ── State Types (KERN-generated from kern/app-state.kern) ────────────
+import type { ReplStateState as ReplState } from './generated/app-state.js';
+import {
+  startCommandReplState,
+  finishReplState,
+  cancelReplState,
+} from './generated/app-state.js';
 
 interface OutputBlock {
   id: number;

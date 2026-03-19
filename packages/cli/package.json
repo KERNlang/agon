@@ -10,7 +10,8 @@
   ],
   "scripts": {
     "build": "tsup",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "kern:compile": "kern compile src/kern/ --outdir=src/generated"
   },
   "dependencies": {
     "@agon/adapter-cli": "*",

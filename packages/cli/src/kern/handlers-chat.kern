@@ -1,7 +1,7 @@
 import from="node:path" names="join"
 import from="node:fs" names="mkdirSync"
 import from="@agon/core" names="ImageAttachment" types=true
-import from="@agon/core" names="ensureAgonHome,RUNS_DIR,appendMessage,tracker,StreamParser,loadConfig"
+import from="@agon/core" names="ensureAgonHome,RUNS_DIR,appendMessage,tracker,StreamParser,loadConfig,scanProjectContext"
 import from="../output.js" names="ENGINE_COLORS"
 import from="../handlers/types.js" names="Dispatch,HandlerContext" types=true
 
@@ -48,7 +48,9 @@ fn name=handleChat params="input:string, dispatch:Dispatch, ctx:HandlerContext, 
     const history = recent.length > 0
       ? recent.map((m: any) => m.role === 'user' ? `User: ${m.content}` : `${m.engineId ?? 'engine'}: ${m.content}`).join('\n\n')
       : '';
+    const projectCtx = scanProjectContext(process.cwd(), config.projectContext || undefined, config.contextFormat);
     const parts: string[] = [];
+    if (projectCtx) parts.push(`## PROJECT CONTEXT\n${projectCtx}`);
     if (history) parts.push(history);
     parts.push(message);
     const prompt = parts.join('\n\n');

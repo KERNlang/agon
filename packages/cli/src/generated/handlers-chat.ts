@@ -4,7 +4,7 @@ import { mkdirSync } from 'node:fs';
 
 import type { ImageAttachment } from '@agon/core';
 
-import { ensureAgonHome, RUNS_DIR, appendMessage, tracker, StreamParser, loadConfig } from '@agon/core';
+import { ensureAgonHome, RUNS_DIR, appendMessage, tracker, StreamParser, loadConfig, scanProjectContext } from '@agon/core';
 
 import { ENGINE_COLORS } from '../output.js';
 
@@ -52,7 +52,9 @@ export async function handleChat(input: string, dispatch: Dispatch, ctx: Handler
     const history = recent.length > 0
       ? recent.map((m: any) => m.role === 'user' ? `User: ${m.content}` : `${m.engineId ?? 'engine'}: ${m.content}`).join('\n\n')
       : '';
+    const projectCtx = scanProjectContext(process.cwd(), config.projectContext || undefined, config.contextFormat);
     const parts: string[] = [];
+    if (projectCtx) parts.push(`## PROJECT CONTEXT\n${projectCtx}`);
     if (history) parts.push(history);
     parts.push(message);
     const prompt = parts.join('\n\n');

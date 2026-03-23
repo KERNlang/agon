@@ -15,22 +15,18 @@ function git(args: string[], cwd?: string): string {
       e.status ?? 1,
     );
   }
-  
 }
 
 export function repoRoot(cwd: string): string {
   return git(['rev-parse', '--show-toplevel'], cwd);
-  
 }
 
 export function headSha(cwd: string): string {
   return git(['rev-parse', 'HEAD'], cwd);
-  
 }
 
 export function worktreePrune(cwd: string): void {
   git(['worktree', 'prune'], cwd);
-  
 }
 
 export function worktreeCreate(repoDir: string, worktreePath: string, sha: string): string {
@@ -43,18 +39,15 @@ export function worktreeCreate(repoDir: string, worktreePath: string, sha: strin
       `Failed to create worktree at ${worktreePath}: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
-  
 }
 
 export function worktreeRemove(repoDir: string, worktreePath: string): void {
   try { git(['worktree', 'remove', worktreePath, '--force'], repoDir); } catch {}
-  
 }
 
 export function worktreeDiff(cwd: string): string {
   git(['add', '-A'], cwd);
   return git(['diff', '--cached'], cwd);
-  
 }
 
 export function diffLineCount(diff: string): number {
@@ -64,7 +57,6 @@ export function diffLineCount(diff: string): number {
     if (line.startsWith('-') && !line.startsWith('---')) count++;
   }
   return count;
-  
 }
 
 export function diffFileCount(cwd: string): number {
@@ -72,7 +64,6 @@ export function diffFileCount(cwd: string): number {
     const result = git(['diff', '--cached', '--name-only'], cwd);
     return result ? result.split('\n').filter(Boolean).length : 0;
   } catch { return 0; }
-  
 }
 
 export function applyPatch(cwd: string, patchContent: string): void {
@@ -86,24 +77,52 @@ export function applyPatch(cwd: string, patchContent: string): void {
     const e = err as { stderr?: string };
     throw new GitError(`Failed to apply patch: ${e.stderr?.trim() ?? 'unknown error'}`);
   }
-  
 }
 
 export function currentBranch(cwd: string): string {
   try { return git(['rev-parse', '--abbrev-ref', 'HEAD'], cwd); }
   catch { return 'unknown'; }
-  
 }
 
 export function isDirty(cwd: string): boolean {
   try { return git(['status', '--porcelain'], cwd).length > 0; }
   catch { return false; }
-  
 }
 
 export function recentCommits(cwd: string, count?: number): string {
   try { return git(['log', '--oneline', `-${count ?? 10}`], cwd); }
   catch { return ''; }
-  
+}
+
+export function gitStatusShort(cwd: string): string {
+  try { return git(['status', '--short'], cwd); }
+  catch { return ''; }
+}
+
+export function gitDiffStat(cwd: string): string {
+  try { return git(['diff', '--stat'], cwd); }
+  catch { return ''; }
+}
+
+export function gitChangedFiles(cwd: string): string[] {
+  try {
+    const unstaged = git(['diff', '--name-only'], cwd);
+    const staged = git(['diff', '--cached', '--name-only'], cwd);
+    const combined = new Set([
+      ...unstaged.split('\n').filter(Boolean),
+      ...staged.split('\n').filter(Boolean),
+    ]);
+    return [...combined];
+  } catch { return []; }
+}
+
+export function gitTruncatedDiff(cwd: string, maxLines?: number): string {
+  try {
+    const diff = git(['diff'], cwd);
+    const lines = diff.split('\n');
+    const limit = maxLines ?? 200;
+    if (lines.length <= limit) return diff;
+    return lines.slice(0, limit).join('\n') + `\n... (${lines.length - limit} more lines)`;
+  } catch { return ''; }
 }
 

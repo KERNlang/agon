@@ -8,6 +8,7 @@ export {
   repoRoot, headSha, worktreePrune, worktreeCreate, worktreeRemove,
   worktreeDiff, diffLineCount, diffFileCount, applyPatch, recentCommits,
   currentBranch, isDirty,
+  gitStatusShort, gitDiffStat, gitChangedFiles, gitTruncatedDiff,
 } from './git.js';
 export { spawnWithTimeout, spawnStream } from './process.js';
 export type { SpawnOptions } from './process.js';

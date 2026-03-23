@@ -43,11 +43,18 @@ export {
   formatSpinnerFrame, formatEngineBlock, formatStatusLine,
   clearLinesSequence, cursorUpSequence, clearLineSequence,
 } from './output-manager.js';
-export { parseStreamChunk } from './stream-parser.js';
+export { parseStreamChunk, StreamParser } from './stream-parser.js';
 export type { ParsedChunk } from './stream-parser.js';
 export { discoverEngines } from './engine-discover.js';
 export type { DiscoveryResult } from './engine-discover.js';
 export { preflightApply, applyPatchToTree, readPatchFromManifest, readPatchFromPath } from './patch-apply.js';
 export type { PatchInfo, ApplyPreflight } from './patch-apply.js';
+export { copyToClipboard } from './clipboard.js';
 export { startChatSession, appendMessage, loadChatSession, listChatSessions, latestChatSession } from './chat-store.js';
 export type { ChatMessage as StoredChatMessage, ChatSession } from './chat-store.js';
+export {
+  isImagePath, mimeFromExt, resolveImagePath,
+  buildImageAttachment, extractImagesFromInput,
+} from './image.js';
+export { logFlow, readFlows, analyzeFlows, FLOWS_DIR, FRICTION_TAGS } from './flow.js';
+export type { FlowRecord, FlowTelemetry, FlowFeedback, FlowModeMeta, FlowAnalysis, ModeStats } from './flow.js';

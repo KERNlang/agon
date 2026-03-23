@@ -2,12 +2,47 @@ interface name=ParsedChunk
   field name=type type="'text'|'status'|'result'|'raw'"
   field name=content type=string
 
-fn name=parseStreamChunk params="chunk:string" returns="ParsedChunk[]"
-  handler <<<
-    const results: ParsedChunk[] = [];
+service name=StreamParser
+  doc "Buffered NDJSON parser that handles partial JSON lines spanning multiple chunks."
+  field name=buffer type=string private=true
 
-    for (const line of chunk.split('\n')) {
-      if (!line.trim()) continue;
+  constructor
+    handler <<<
+      this.buffer = '';
+    >>>
+
+  method name=feed params="chunk:string" returns="ParsedChunk[]"
+    handler <<<
+      this.buffer += chunk;
+      const results: ParsedChunk[] = [];
+      const lines = this.buffer.split('\n');
+
+      // Keep the last element — it may be an incomplete line
+      this.buffer = lines.pop() ?? '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        results.push(...this._parseLine(trimmed));
+      }
+
+      return results;
+    >>>
+
+  method name=flush returns="ParsedChunk[]"
+    handler <<<
+      const results: ParsedChunk[] = [];
+      const remaining = this.buffer.trim();
+      this.buffer = '';
+
+      if (!remaining) return results;
+      results.push(...this._parseLine(remaining));
+      return results;
+    >>>
+
+  method name=_parseLine params="line:string" returns="ParsedChunk[]" private=true
+    handler <<<
+      const results: ParsedChunk[] = [];
 
       try {
         const msg = JSON.parse(line);
@@ -19,7 +54,7 @@ fn name=parseStreamChunk params="chunk:string" returns="ParsedChunk[]"
               results.push({ type: 'text', content: block.text });
             }
           }
-          continue;
+          return results;
         }
 
         // Claude Code stream-json: final result
@@ -27,27 +62,33 @@ fn name=parseStreamChunk params="chunk:string" returns="ParsedChunk[]"
           if (msg.result) {
             results.push({ type: 'result', content: typeof msg.result === 'string' ? msg.result : JSON.stringify(msg.result) });
           }
-          // Also capture error (e.g. "Reached max turns")
           if (msg.is_error || msg.error) {
             const errMsg = msg.error ?? msg.result ?? 'Unknown error';
             results.push({ type: 'status', content: typeof errMsg === 'string' ? errMsg : JSON.stringify(errMsg) });
           }
-          continue;
+          return results;
         }
 
         // Claude Code stream-json: system status
         if (msg.type === 'system') {
           if (msg.message) results.push({ type: 'status', content: msg.message });
-          continue;
+          return results;
         }
 
         // Unknown JSON — skip
-        continue;
+        return results;
       } catch {
         // Not JSON — treat as raw text (Codex, Gemini, etc.)
         results.push({ type: 'raw', content: line });
+        return results;
       }
-    }
+    >>>
 
+fn name=parseStreamChunk params="chunk:string" returns="ParsedChunk[]"
+  doc "Stateless convenience wrapper. For streaming use, prefer StreamParser.feed() + flush()."
+  handler <<<
+    const parser = new StreamParser();
+    const results = parser.feed(chunk);
+    results.push(...parser.flush());
     return results;
   >>>

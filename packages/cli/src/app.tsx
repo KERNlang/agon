@@ -1028,16 +1028,15 @@ function App() {
     const runAsJob = (type: string, label: string, fn: () => Promise<void>) => {
       const job = jobManager.create(type, label);
       setJobList([...jobManager.list()]);
-      // Run in background — don't await, return to idle immediately
+      // Run in background — don't await, return input to idle immediately
+      setReplState('idle');
       fn().then(() => {
         jobManager.complete(job.id);
         setJobList([...jobManager.list()]);
-        setReplState('idle');
       }).catch((err) => {
         jobManager.fail(job.id, err instanceof Error ? err.message : String(err));
         setJobList([...jobManager.list()]);
         dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) });
-        setReplState('idle');
       });
     };
 

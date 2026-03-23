@@ -1003,7 +1003,7 @@ function App() {
           break;
         }
         case 'brainstorm': await handleBrainstorm(intent.question, dispatch, ctx); break;
-        case 'tribunal': await handleTribunal(intent.question, dispatch, ctx); break;
+        case 'tribunal': await handleTribunal(intent.question, dispatch, ctx, (intent as any).tribunalMode); break;
         case 'campfire': await handleCampfire(intent.topic, dispatch, ctx); break;
         case 'img': {
           const att = buildImageAttachment(intent.path, process.cwd());

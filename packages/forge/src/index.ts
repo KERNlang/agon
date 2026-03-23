@@ -8,3 +8,5 @@ export { runLint, runStyleCheck } from './quality.js';
 export { writeManifest, readManifest, updateManifest } from './manifest.js';
 export type { StageResult, SynthesisResult, ForgeEventCallback, WorktreeEntry } from './types.js';
 export type { TribunalResult, TribunalRound, TribunalPosition } from './tribunal.js';
+export { getModeConfig, buildModePrompt, buildModeSummaryPrompt, isTribunalMode, TRIBUNAL_MODES } from './tribunal-modes.js';
+export type { TribunalMode, TribunalModeConfig } from './tribunal-modes.js';

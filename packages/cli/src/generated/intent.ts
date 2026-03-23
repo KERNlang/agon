@@ -24,6 +24,7 @@ export interface Intent {
   sessionId: string|undefined;
   index: number|undefined;
   tribunalMode: string|undefined;
+  jobId: string|undefined;
 }
 
 export const SLASH_COMMANDS: SlashCommand[] = [
@@ -51,6 +52,8 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { cmd: '/flow',        desc: '                        — log this session' },
   { cmd: '/flows',       desc: '                        — flow analytics dashboard' },
   { cmd: '/chats',       desc: '[id|resume <id>]        — chat history or resume session' },
+  { cmd: '/jobs',        desc: '                        — list running/completed jobs' },
+  { cmd: '/focus',       desc: '<id>                    — switch to background job output' },
   { cmd: '/help',        desc: '                        — show this help' },
   { cmd: '/exit',        desc: '                        — quit' },
 ];
@@ -191,6 +194,10 @@ function parseSlashCommand(input: string): Intent {
       }
       return { type: 'chats', sessionId: rest || undefined } as Intent;
     }
+    case 'jobs':
+      return { type: 'jobs' } as Intent;
+    case 'focus':
+      return { type: 'focus', jobId: rest || undefined } as Intent;
     case 'clear':
       return { type: 'clear' } as Intent;
     case 'help':

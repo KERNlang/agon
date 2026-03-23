@@ -23,6 +23,8 @@ import type { ImageAttachment } from '@agon/core';
 import { createCliAdapter } from '@agon/adapter-cli';
 import type { EngineAdapter } from '@agon/core';
 import { detectIntent, SLASH_COMMANDS } from './intent.js';
+import { JobManager } from './generated/job-manager.js';
+import type { Job } from './generated/job-manager.js';
 import { ENGINE_COLORS } from './output.js';
 import { parseMarkdownBlocks, truncateCodeLine, cleanEngineOutput } from './markdown.js';
 import type { ContentSegment } from './markdown.js';
@@ -674,6 +676,26 @@ function ReviewBlock({ event, onAction }: {
   );
 }
 
+// ── Background Job Rail ──────────────────────────────────────────────
+
+function BackgroundJobRail({ jobs }: { jobs: Job[] }) {
+  if (jobs.length === 0) return null;
+  return (
+    <Box paddingX={1}>
+      <Text dimColor>{'jobs: '}</Text>
+      {jobs.map((job, i) => (
+        <Text key={job.id}>
+          <Text color={job.state === 'running' ? 'yellow' : job.state === 'done' ? 'green' : 'red'}>
+            {'['}{job.id}{'] '}{job.type}{' '}
+            {job.state === 'running' ? '...' : job.state === 'done' ? 'done' : 'failed'}
+          </Text>
+          {i < jobs.length - 1 && <Text dimColor>{'  '}</Text>}
+        </Text>
+      ))}
+    </Box>
+  );
+}
+
 // ── Main App ─────────────────────────────────────────────────────────
 
 function App() {
@@ -695,6 +717,8 @@ function App() {
   const [streamingText, setStreamingText] = useState<{ engineId: string; content: string } | null>(null);
   const [pendingImages, setPendingImages] = useState<ImageAttachment[]>([]);
   const [reviewEvent, setReviewEvent] = useState<ReviewEvent | null>(null);
+  const [jobManager] = useState(() => new JobManager());
+  const [jobList, setJobList] = useState<Job[]>([]);
 
   // Module-level state (mutable refs via closures)
   // Load persisted engine selection from config — null means "all available"
@@ -936,7 +960,8 @@ function App() {
     setInputHistory((prev) => [...prev, input]);
     setHistoryIndex(-1);
 
-    if (replState !== 'idle') {
+    // Allow input during background jobs — only block on truly modal operations
+    if (replState !== 'idle' && !jobManager.running().length) {
       dispatch({ type: 'warning', message: 'A command is running. Please wait...' });
       return;
     }
@@ -994,17 +1019,45 @@ function App() {
 
     const ctx = buildContext();
 
+    // Helper: run a long-running command as a tracked job
+    const runAsJob = (type: string, label: string, fn: () => Promise<void>) => {
+      const job = jobManager.create(type, label);
+      setJobList([...jobManager.list()]);
+      // Run in background — don't await, return to idle immediately
+      fn().then(() => {
+        jobManager.complete(job.id);
+        setJobList([...jobManager.list()]);
+        setReplState('idle');
+      }).catch((err) => {
+        jobManager.fail(job.id, err instanceof Error ? err.message : String(err));
+        setJobList([...jobManager.list()]);
+        dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) });
+        setReplState('idle');
+      });
+    };
+
     try {
       switch (intent.type) {
         case 'forge': {
           const forgeStart = Date.now();
-          await handleForge(intent.task, intent.fitnessCmd, dispatch, ctx);
-          autoLogFlow(ctx, 'forge', forgeStart, 'completed', { forgeId: ctx.currentPlan?.id, winnerEngine: ctx.currentPlan?.steps?.find((s: any) => s.result.artifacts?.some((a: any) => a.type === 'patch'))?.result.artifacts?.find((a: any) => a.type === 'patch')?.engineId });
-          break;
+          runAsJob('forge', intent.task?.slice(0, 40) ?? 'forge', async () => {
+            await handleForge(intent.task, intent.fitnessCmd, dispatch, ctx);
+            autoLogFlow(ctx, 'forge', forgeStart, 'completed', { forgeId: ctx.currentPlan?.id, winnerEngine: ctx.currentPlan?.steps?.find((s: any) => s.result.artifacts?.some((a: any) => a.type === 'patch'))?.result.artifacts?.find((a: any) => a.type === 'patch')?.engineId });
+          });
+          return; // Don't hit finally — job manages state
         }
-        case 'brainstorm': await handleBrainstorm(intent.question, dispatch, ctx); break;
-        case 'tribunal': await handleTribunal(intent.question, dispatch, ctx, (intent as any).tribunalMode); break;
-        case 'campfire': await handleCampfire(intent.topic, dispatch, ctx); break;
+        case 'brainstorm': {
+          runAsJob('brainstorm', intent.question?.slice(0, 40) ?? 'brainstorm', () => handleBrainstorm(intent.question, dispatch, ctx));
+          return;
+        }
+        case 'tribunal': {
+          runAsJob('tribunal', intent.question?.slice(0, 40) ?? 'tribunal', () => handleTribunal(intent.question, dispatch, ctx, (intent as any).tribunalMode));
+          return;
+        }
+        case 'campfire': {
+          runAsJob('campfire', intent.topic?.slice(0, 40) ?? 'campfire', () => handleCampfire(intent.topic, dispatch, ctx));
+          return;
+        }
         case 'img': {
           const att = buildImageAttachment(intent.path, process.cwd());
           if (!att) dispatch({ type: 'error', message: `Image not found: ${intent.path}` });
@@ -1052,6 +1105,38 @@ function App() {
         case 'cancel': handleCancel(dispatch, ctx); break;
         case 'apply': await handleApplyPatch(dispatch, ctx, intent.patchPath, intent.force); break;
         case 'cp': handleCp(intent.index, dispatch); break;
+        case 'jobs' as string: {
+          const allJobs = jobManager.list();
+          if (allJobs.length === 0) {
+            dispatch({ type: 'info', message: 'No jobs.' });
+          } else {
+            dispatch({ type: 'header', title: 'Jobs' });
+            const rows = allJobs.map((j: Job) => [
+              j.id,
+              j.type,
+              j.state,
+              j.label.slice(0, 40),
+              j.startedAt.slice(11, 19),
+            ]);
+            dispatch({ type: 'table', headers: ['ID', 'Type', 'State', 'Label', 'Started'], rows });
+          }
+          break;
+        }
+        case 'focus' as string: {
+          const focusId = (intent as any).jobId;
+          if (!focusId) {
+            dispatch({ type: 'info', message: 'Usage: /focus <job-id>' });
+            break;
+          }
+          const job = jobManager.get(focusId);
+          if (!job) {
+            dispatch({ type: 'error', message: `Job not found: ${focusId}` });
+          } else {
+            dispatch({ type: 'info', message: `Job ${job.id}: ${job.type} — ${job.state} — ${job.label}` });
+            if (job.error) dispatch({ type: 'error', message: job.error });
+          }
+          break;
+        }
         case 'clear': dispatch({ type: 'clear' }); codeBlockBuffer.clear(); dispatch({ type: 'info', message: 'Chat history cleared.' }); break;
         case 'help': dispatch({ type: 'text', content: SLASH_COMMANDS.map((c) => `${c.cmd.padEnd(16)} ${c.desc}`).join('\n') }); break;
         case 'exit': exit(); return;
@@ -1062,7 +1147,7 @@ function App() {
     } finally {
       setReplState('idle');
     }
-  }, [replState, dispatch, buildContext, slashPickerOpen, exit, mode, pendingImages]);
+  }, [replState, dispatch, buildContext, slashPickerOpen, exit, mode, pendingImages, jobManager]);
 
   // ── Handle review action ──
   const handleReviewAction = useCallback((action: 'apply' | 'edit' | 'reject' | 'copy') => {
@@ -1194,6 +1279,9 @@ function App() {
           </>
         )}
       </Box>
+
+      {/* Background job rail */}
+      <BackgroundJobRail jobs={jobList.filter((j: Job) => j.state === 'running')} />
 
       {/* Output area — scrollable */}
       <Box flexDirection="column" flexGrow={1}>

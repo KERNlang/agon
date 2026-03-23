@@ -1,0 +1,175 @@
+type name=TribunalMode values="adversarial|socratic|red-team|steelman|synthesis|postmortem"
+
+interface name=TribunalModeConfig
+  field name=roles type="string[]"
+  field name=protocol type="'parallel'|'sequential'"
+  field name=summaryStyle type="'verdict'|'questions'|'risk-register'|'decision-matrix'|'postmortem-report'"
+  field name=maxRounds type=number
+
+const name=TRIBUNAL_MODES type="TribunalMode[]"
+  handler <<< ['adversarial', 'socratic', 'red-team', 'steelman', 'synthesis', 'postmortem'] >>>
+
+fn name=isTribunalMode params="s:string" returns="s is TribunalMode"
+  handler <<<
+    return TRIBUNAL_MODES.includes(s as TribunalMode);
+  >>>
+
+fn name=getModeConfig params="mode:TribunalMode, engineCount:number" returns="TribunalModeConfig"
+  handler <<<
+    switch (mode) {
+      case 'adversarial': {
+        const roles = engineCount === 1
+          ? ['Analyze both sides']
+          : engineCount === 2
+            ? ['Argue FOR', 'Argue AGAINST']
+            : ['Argue FOR', 'Argue AGAINST', "Play devil's advocate", ...Array.from({ length: Math.max(0, engineCount - 3) }, (_, i) => `Perspective ${i + 4}: Find unconventional angles`)];
+        return { roles, protocol: 'parallel', summaryStyle: 'verdict', maxRounds: 3 };
+      }
+      case 'socratic':
+        return {
+          roles: engineCount >= 3
+            ? ['Questioner', 'Responder', ...Array.from({ length: engineCount - 2 }, () => 'Observer')]
+            : ['Questioner', 'Responder'],
+          protocol: 'sequential',
+          summaryStyle: 'questions',
+          maxRounds: 3,
+        };
+      case 'red-team':
+        return {
+          roles: engineCount >= 2
+            ? ['Defender', ...Array.from({ length: engineCount - 1 }, (_, i) => `Attacker ${i + 1}`)]
+            : ['Defender'],
+          protocol: 'parallel',
+          summaryStyle: 'risk-register',
+          maxRounds: 2,
+        };
+      case 'steelman':
+        return {
+          roles: engineCount >= 3
+            ? ['Advocate', 'Steelman opponent', 'Judge']
+            : ['Advocate', 'Steelman opponent'],
+          protocol: 'sequential',
+          summaryStyle: 'verdict',
+          maxRounds: 2,
+        };
+      case 'synthesis':
+        return {
+          roles: engineCount >= 3
+            ? ['Proposer A', 'Proposer B', ...Array.from({ length: engineCount - 2 }, () => 'Synthesizer')]
+            : ['Proposer A', 'Proposer B'],
+          protocol: 'parallel',
+          summaryStyle: 'decision-matrix',
+          maxRounds: 2,
+        };
+      case 'postmortem':
+        return {
+          roles: engineCount >= 3
+            ? ['Timeline analyst', 'Root-cause investigator', 'Prevention designer']
+            : ['Investigator', 'Prevention designer'],
+          protocol: 'sequential',
+          summaryStyle: 'postmortem-report',
+          maxRounds: 2,
+        };
+      default:
+        return { roles: ['Analyze both sides'], protocol: 'parallel' as const, summaryStyle: 'verdict' as const, maxRounds: 2 };
+    }
+  >>>
+
+fn name=buildModePrompt params="opts:{mode:TribunalMode,role:string,question:string,round:number,totalRounds:number,previousArguments?:string}" returns=string
+  handler <<<
+    const { mode, role, question, round, totalRounds, previousArguments } = opts;
+    const parts: string[] = [];
+
+    parts.push(`## ROLE\nYou are: **${role}**`);
+    parts.push(`## QUESTION\n${question}`);
+    parts.push(`## ROUND\n${round} of ${totalRounds}`);
+
+    if (previousArguments) {
+      parts.push(`## PREVIOUS ARGUMENTS\n${previousArguments}`);
+    }
+
+    switch (mode) {
+      case 'adversarial':
+        parts.push(`## INSTRUCTIONS\nArgue your assigned position (${role}) with evidence and reasoning. Be specific. Reference code, files, or concrete examples where possible. Counter opposing arguments directly.`);
+        break;
+      case 'socratic':
+        if (role === 'Questioner') {
+          parts.push(`## INSTRUCTIONS\nAsk 3-5 probing questions that challenge assumptions in the proposal. Focus on: hidden dependencies, failure modes, scaling concerns, alternative approaches not considered. Do NOT answer — only ask.`);
+        } else if (role === 'Responder') {
+          parts.push(`## INSTRUCTIONS\nAnswer each question directly and honestly. If a question reveals a genuine weakness, acknowledge it. If you can defend the approach, do so with evidence.`);
+        } else {
+          parts.push(`## INSTRUCTIONS\nAs an observer, note which questions were not adequately answered. List unresolved assumptions. Do NOT argue a position — surface what remains unclear.`);
+        }
+        break;
+      case 'red-team':
+        if (role === 'Defender') {
+          parts.push(`## INSTRUCTIONS\nPresent the proposal/plan and its rationale. After attackers respond, defend against their critiques with evidence.`);
+        } else {
+          parts.push(`## INSTRUCTIONS\nAttack the proposal from your angle. Find: security vulnerabilities, scalability limits, edge cases, maintenance burden, wrong assumptions, missing requirements. Each attack should include: what breaks, under what conditions, and severity (critical/high/medium/low).`);
+        }
+        break;
+      case 'steelman':
+        if (role === 'Advocate') {
+          parts.push(`## INSTRUCTIONS\nPresent the STRONGEST possible case for the proposal. Use the best available evidence, strongest reasoning, and most compelling framing. This is your genuine best argument.`);
+        } else if (role === 'Steelman opponent') {
+          parts.push(`## INSTRUCTIONS\nPresent the STRONGEST possible case AGAINST the proposal. Do not strawman — give the absolute best counter-argument. Assume the smartest opponent with the best evidence.`);
+        } else {
+          parts.push(`## INSTRUCTIONS\nAs judge, evaluate both steelmanned cases. Which argument is stronger when both sides are at their best? What does this reveal about the true balance of the decision?`);
+        }
+        break;
+      case 'synthesis':
+        if (round === 1) {
+          parts.push(`## INSTRUCTIONS\nAs ${role}, propose your complete solution to the question. Include: approach, key trade-offs, implementation steps, and what you'd sacrifice. Be concrete and specific.`);
+        } else {
+          parts.push(`## INSTRUCTIONS\nNow that you've seen the other proposal(s), create a hybrid that takes the best elements from each. Explain what you take from each proposal and why the combination is stronger than either alone. Present as a decision matrix.`);
+        }
+        break;
+      case 'postmortem':
+        if (role === 'Timeline analyst') {
+          parts.push(`## INSTRUCTIONS\nAssume the failure/incident has already happened. Reconstruct a timeline: what happened, in what order, and what was the blast radius? Identify the trigger event and contributing factors.`);
+        } else if (role === 'Root-cause investigator') {
+          parts.push(`## INSTRUCTIONS\nDig past the symptoms to the root cause. Use "5 whys" reasoning. What systemic issue allowed this to happen? What detection mechanisms failed or were absent?`);
+        } else {
+          parts.push(`## INSTRUCTIONS\nDesign prevention measures. For each root cause identified, propose: immediate fix, medium-term mitigation, and long-term systemic prevention. Prioritize by impact and feasibility.`);
+        }
+        break;
+    }
+
+    return parts.join('\n\n');
+  >>>
+
+fn name=buildModeSummaryPrompt params="opts:{mode:TribunalMode,question:string,positions:{engineId:string,position:string,arguments:string[]}[]}" returns=string
+  handler <<<
+    const { mode, question, positions } = opts;
+    const debateText = positions
+      .map((p) => {
+        const allArgs = p.arguments.join('\n\n');
+        return `## ${p.engineId} (${p.position})\n${allArgs}`;
+      })
+      .join('\n\n---\n\n');
+
+    const base = `## QUESTION\n${question}\n\n## DEBATE\n${debateText}`;
+
+    switch (mode) {
+      case 'adversarial':
+        return `${base}\n\n## TASK\nSynthesize this debate into a clear verdict.\n\nProvide:\n1. **Verdict**: Which side has the stronger argument and why\n2. **Key insights**: 2-3 non-obvious points that emerged\n3. **Recommendation**: What should the user actually do?\n\nBe decisive. Don't hedge with "it depends" — pick a side and explain why.`;
+
+      case 'socratic':
+        return `${base}\n\n## TASK\nSynthesize this Socratic inquiry.\n\nProvide:\n1. **Resolved questions**: What was adequately answered\n2. **Unresolved assumptions**: What remains unclear or untested\n3. **Key insight**: The most important thing this inquiry revealed\n4. **Recommended next steps**: What should be investigated further`;
+
+      case 'red-team':
+        return `${base}\n\n## TASK\nProduce a risk register from this red-team exercise.\n\nFor each vulnerability found:\n| Risk | Severity | Likelihood | Impact | Mitigation |\n\nThen provide:\n1. **Critical risks**: Must address before proceeding\n2. **Accepted risks**: Acknowledged but acceptable\n3. **Overall assessment**: Is the proposal safe to proceed with?`;
+
+      case 'steelman':
+        return `${base}\n\n## TASK\nJudge this steelman debate.\n\nProvide:\n1. **Verdict**: Which steelmanned case is stronger and why\n2. **The crux**: What is the core disagreement when both sides argue at their best?\n3. **Recommendation**: Given the strongest opposing case, should we proceed?`;
+
+      case 'synthesis':
+        return `${base}\n\n## TASK\nEvaluate the proposals and hybrids.\n\nPresent a decision matrix:\n| Aspect | Proposal A | Proposal B | Hybrid |\n\nThen provide:\n1. **Best option**: Which proposal or hybrid wins and why\n2. **Key trade-offs**: What each option sacrifices\n3. **Recommendation**: Concrete next steps`;
+
+      case 'postmortem':
+        return `${base}\n\n## TASK\nWrite the postmortem report.\n\nProvide:\n1. **Timeline**: Reconstructed sequence of events\n2. **Root cause**: The systemic issue (not just the trigger)\n3. **Detection gap**: Why wasn't this caught earlier?\n4. **Prevention plan**: Immediate, medium-term, and long-term measures\n5. **Action items**: Specific, assigned, with deadlines`;
+
+      default:
+        return `${base}\n\n## TASK\nSynthesize this debate into a clear verdict.`;
+    }
+  >>>

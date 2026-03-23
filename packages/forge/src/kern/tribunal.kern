@@ -1,5 +1,7 @@
 import from="@agon/core" names="EngineAdapter,EngineDefinition,ForgeEvent" types=true
 import from="@agon/core" names="EngineRegistry,buildTribunalPrompt"
+import from="./tribunal-modes.js" names="TribunalMode,TribunalModeConfig" types=true
+import from="./tribunal-modes.js" names="getModeConfig,buildModePrompt,buildModeSummaryPrompt"
 
 interface name=TribunalPosition
   field name=engineId type=string
@@ -15,6 +17,7 @@ interface name=TribunalResult
   field name=rounds type="TribunalRound[]"
   field name=positions type="TribunalPosition[]"
   field name=summary type=string
+  field name=mode type=string optional=true
 
 fn name=assignPositions params="count:number" returns="string[]"
   handler <<<
@@ -47,23 +50,32 @@ fn name=buildFallbackSummary params="positions:TribunalPosition[]" returns="stri
       .join('\n\n');
   >>>
 
-fn name=runTribunal async=true params="opts:{question:string, engines:string[], rounds:number, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, onEvent?:(event:ForgeEvent)=>void}" returns="Promise<TribunalResult>"
+fn name=runTribunal async=true params="opts:{question:string, engines:string[], rounds:number, mode?:TribunalMode, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, onEvent?:(event:ForgeEvent)=>void}" returns="Promise<TribunalResult>"
   handler <<<
     const { question, engines, rounds, registry, adapter, timeout, outputDir } = opts;
+    const mode = opts.mode ?? 'adversarial';
+    const modeConfig = getModeConfig(mode, engines.length);
 
-    const positionLabels = assignPositions(engines.length);
+    // Assign roles from mode config
+    const roles = modeConfig.roles.slice(0, engines.length);
+    // Pad with generic roles if more engines than roles
+    while (roles.length < engines.length) {
+      roles.push(`Participant ${roles.length + 1}`);
+    }
+
     const positions: TribunalPosition[] = engines.map((id: string, i: number) => ({
       engineId: id,
-      position: positionLabels[i],
+      position: roles[i],
       arguments: [],
     }));
 
+    const effectiveRounds = Math.min(rounds, modeConfig.maxRounds);
     const allRounds: TribunalRound[] = [];
 
-    for (let round = 1; round <= rounds; round++) {
+    for (let round = 1; round <= effectiveRounds; round++) {
       opts.onEvent?.({
         type: 'synthesis:start',
-        data: { round, totalRounds: rounds },
+        data: { round, totalRounds: effectiveRounds, mode },
       });
 
       const prevArgs = round > 1
@@ -72,20 +84,22 @@ fn name=runTribunal async=true params="opts:{question:string, engines:string[], 
             .join('\n\n---\n\n')
         : undefined;
 
+      // Build prompts using mode-aware prompt builder
       const roundPromises = positions.map(async (pos) => {
         const engine = registry.get(pos.engineId);
-        const prompt = buildTribunalPrompt({
+        const prompt = buildModePrompt({
+          mode,
+          role: pos.position,
           question,
-          position: pos.position,
           round,
-          totalRounds: rounds,
+          totalRounds: effectiveRounds,
           previousArguments: prevArgs,
         });
 
         opts.onEvent?.({
           type: 'synthesis:critique',
           engineId: pos.engineId,
-          data: { round, position: pos.position },
+          data: { round, position: pos.position, mode },
         });
 
         try {
@@ -103,7 +117,16 @@ fn name=runTribunal async=true params="opts:{question:string, engines:string[], 
         }
       });
 
-      const roundResults = await Promise.all(roundPromises);
+      // Sequential protocol: wait for each in order
+      let roundResults: { engineId: string; argument: string }[];
+      if (modeConfig.protocol === 'sequential') {
+        roundResults = [];
+        for (const promise of roundPromises) {
+          roundResults.push(await promise);
+        }
+      } else {
+        roundResults = await Promise.all(roundPromises);
+      }
 
       for (const result of roundResults) {
         const pos = positions.find((p) => p.engineId === result.engineId);
@@ -119,8 +142,9 @@ fn name=runTribunal async=true params="opts:{question:string, engines:string[], 
       });
     }
 
+    // Summary using mode-aware summary prompt
     const summaryEngine = registry.get(engines[0]);
-    const summaryPrompt = buildSummaryPrompt(question, positions);
+    const summaryPrompt = buildModeSummaryPrompt({ mode, question, positions });
 
     let summary: string;
     try {
@@ -139,8 +163,8 @@ fn name=runTribunal async=true params="opts:{question:string, engines:string[], 
 
     opts.onEvent?.({
       type: 'forge:done',
-      data: { rounds: allRounds.length, engines: engines.length },
+      data: { rounds: allRounds.length, engines: engines.length, mode },
     });
 
-    return { question, rounds: allRounds, positions, summary };
+    return { question, rounds: allRounds, positions, summary, mode };
   >>>

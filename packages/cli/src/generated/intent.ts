@@ -23,12 +23,13 @@ export interface Intent {
   force: boolean|undefined;
   sessionId: string|undefined;
   index: number|undefined;
+  tribunalMode: string|undefined;
 }
 
 export const SLASH_COMMANDS: SlashCommand[] = [
   { cmd: '/forge',       desc: '<task> test with <cmd>  — competitive code generation' },
   { cmd: '/brainstorm',  desc: '<question>              — confidence-bidding answers' },
-  { cmd: '/tribunal',    desc: '<question>              — adversarial debate' },
+  { cmd: '/tribunal',    desc: '[mode] <question>        — debate (adversarial|socratic|red-team|steelman|synthesis|postmortem)' },
   { cmd: '/campfire',    desc: '<topic>                  — think together, no competition' },
   { cmd: '/workspace',   desc: 'add|remove|list|switch   — manage project repos' },
   { cmd: '/ws',          desc: '                          — list workspaces (shortcut)' },
@@ -90,8 +91,25 @@ function parseSlashCommand(input: string): Intent {
       return parseForgeInput(rest || '');
     case 'brainstorm':
       return { type: 'brainstorm', question: rest } as Intent;
-    case 'tribunal':
+    case 'tribunal': {
+      const MODES = ['adversarial', 'socratic', 'red-team', 'steelman', 'synthesis', 'postmortem'];
+      const tribunalParts = rest.split(/\s+/);
+      const firstWord = tribunalParts[0]?.toLowerCase();
+      // Check --mode flag
+      const modeIdx = tribunalParts.indexOf('--mode');
+      if (modeIdx >= 0 && tribunalParts[modeIdx + 1] && MODES.includes(tribunalParts[modeIdx + 1])) {
+        const tMode = tribunalParts[modeIdx + 1];
+        const tQuestion = [...tribunalParts.slice(0, modeIdx), ...tribunalParts.slice(modeIdx + 2)].join(' ');
+        return { type: 'tribunal', question: tQuestion, tribunalMode: tMode } as Intent;
+      }
+      // Check --<mode> flag
+      for (const m of MODES) {
+        if (firstWord === `--${m}` || firstWord === m) {
+          return { type: 'tribunal', question: tribunalParts.slice(1).join(' '), tribunalMode: m } as Intent;
+        }
+      }
       return { type: 'tribunal', question: rest } as Intent;
+    }
     case 'leaderboard':
     case 'elo':
       return { type: 'leaderboard' } as Intent;

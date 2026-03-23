@@ -1,6 +1,9 @@
-import from="node:fs" names="readFileSync"
+import from="node:fs" names="readFileSync,writeFileSync,mkdirSync"
+import from="node:path" names="join"
 import from="node:child_process" names="execSync"
 import from="./types.js" names="ForgeManifest" types=true
+import from="./config.js" names="AGON_HOME"
+import from="./patch-parser.js" names="invertPatch"
 
 interface name=PatchInfo
   field name=path type=string
@@ -103,4 +106,51 @@ fn name=preflightApply params="cwd:string, patchPath:string|null, manifestPath:s
     }
 
     return { ok: true, patch, dirtyTree };
+  >>>
+
+fn name=applyPatchWithUndo params="cwd:string, patchContent:string" returns="{ ok:boolean, error?:string, undoToken?:string }"
+  doc "Apply patch and save an inverse for undo."
+  handler <<<
+    const undoDir = join(AGON_HOME, 'undo');
+    mkdirSync(undoDir, { recursive: true });
+
+    // Compute inverse before applying
+    const inverse = invertPatch(patchContent);
+    const token = `undo-${Date.now()}`;
+
+    // Apply the patch
+    try {
+      execSync('git apply --allow-empty -', { cwd, input: patchContent, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
+    } catch (err) {
+      const msg = err instanceof Error ? (err as any).stderr || err.message : String(err);
+      return { ok: false, error: msg };
+    }
+
+    // Save inverse patch
+    const inversePath = join(undoDir, `${token}.patch`);
+    writeFileSync(inversePath, inverse);
+
+    return { ok: true, undoToken: token };
+  >>>
+
+fn name=undoPatch params="cwd:string, undoToken:string" returns="{ ok:boolean, error?:string }"
+  doc "Apply the saved inverse patch to undo a previous apply."
+  handler <<<
+    const undoDir = join(AGON_HOME, 'undo');
+    const inversePath = join(undoDir, `${undoToken}.patch`);
+
+    let inverse: string;
+    try {
+      inverse = readFileSync(inversePath, 'utf-8');
+    } catch {
+      return { ok: false, error: `Undo token not found: ${undoToken}` };
+    }
+
+    try {
+      execSync('git apply --allow-empty -', { cwd, input: inverse, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
+      return { ok: true };
+    } catch (err) {
+      const msg = err instanceof Error ? (err as any).stderr || err.message : String(err);
+      return { ok: false, error: `Undo failed: ${msg}` };
+    }
   >>>

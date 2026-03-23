@@ -1,0 +1,112 @@
+export interface PatchHunk {
+  header: string;
+  lines: string[];
+  additions: number;
+  deletions: number;
+}
+
+
+
+
+
+export interface PatchFile {
+  path: string;
+  hunks: PatchHunk[];
+  additions: number;
+  deletions: number;
+}
+
+export function parsePatch(content: string): PatchFile[] {
+  const files: PatchFile[] = [];
+  const lines = content.split('\n');
+  let currentFile: PatchFile | null = null;
+  let currentHunk: PatchHunk | null = null;
+  
+  for (const line of lines) {
+    // File header: diff --git a/path b/path
+    if (line.startsWith('diff --git')) {
+      if (currentHunk && currentFile) currentFile.hunks.push(currentHunk);
+      if (currentFile) files.push(currentFile);
+      const match = line.match(/diff --git a\/(.+?) b\/(.+)/);
+      const path = match ? match[2] : 'unknown';
+      currentFile = { path, hunks: [], additions: 0, deletions: 0 };
+      currentHunk = null;
+      continue;
+    }
+  
+    // Hunk header: @@ -start,count +start,count @@
+    if (line.startsWith('@@')) {
+      if (currentHunk && currentFile) currentFile.hunks.push(currentHunk);
+      currentHunk = { header: line, lines: [], additions: 0, deletions: 0 };
+      continue;
+    }
+  
+    // Skip metadata lines
+    if (line.startsWith('---') || line.startsWith('+++') || line.startsWith('index ') || line.startsWith('new file') || line.startsWith('deleted file')) {
+      continue;
+    }
+  
+    // Content lines
+    if (currentHunk) {
+      currentHunk.lines.push(line);
+      if (line.startsWith('+')) {
+        currentHunk.additions++;
+        if (currentFile) currentFile.additions++;
+      } else if (line.startsWith('-')) {
+        currentHunk.deletions++;
+        if (currentFile) currentFile.deletions++;
+      }
+    }
+  }
+  
+  if (currentHunk && currentFile) currentFile.hunks.push(currentHunk);
+  if (currentFile) files.push(currentFile);
+  
+  return files;
+}
+
+export function patchSummary(files: PatchFile[]): string {
+  if (files.length === 0) return '(empty patch)';
+  const totalAdd = files.reduce((sum, f) => sum + f.additions, 0);
+  const totalDel = files.reduce((sum, f) => sum + f.deletions, 0);
+  const fileNames = files.map((f) => {
+    const parts: string[] = [f.path];
+    if (f.additions || f.deletions) parts.push(`+${f.additions}/-${f.deletions}`);
+    return parts.join(' ');
+  });
+  return `${files.length} file${files.length === 1 ? '' : 's'} changed (+${totalAdd}, -${totalDel})\n${fileNames.join('\n')}`;
+}
+
+export function invertPatch(content: string): string {
+  const lines = content.split('\n');
+  const result: string[] = [];
+  
+  for (const line of lines) {
+    if (line.startsWith('--- a/')) {
+      result.push(line.replace('--- a/', '--- b/'));
+    } else if (line.startsWith('+++ b/')) {
+      result.push(line.replace('+++ b/', '+++ a/'));
+    } else if (line.startsWith('--- /dev/null')) {
+      result.push('+++ /dev/null');
+    } else if (line.startsWith('+++ /dev/null')) {
+      result.push('--- /dev/null');
+    } else if (line.startsWith('@@')) {
+      // Swap the hunk header ranges
+      const match = line.match(/@@ -(\d+(?:,\d+)?) \+(\d+(?:,\d+)?) @@(.*)/);
+      if (match) {
+        result.push(`@@ -${match[2]} +${match[1]} @@${match[3]}`);
+      } else {
+        result.push(line);
+      }
+    } else if (line.startsWith('+') && !line.startsWith('+++')) {
+      result.push('-' + line.slice(1));
+    } else if (line.startsWith('-') && !line.startsWith('---')) {
+      result.push('+' + line.slice(1));
+    } else {
+      result.push(line);
+    }
+  }
+  
+  return result.join('\n');
+}
+

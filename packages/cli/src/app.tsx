@@ -18,6 +18,10 @@ import {
   wordWrap,
   extractImagesFromInput,
   buildImageAttachment,
+  parsePatch,
+  patchSummary,
+  applyPatchWithUndo,
+  undoPatch,
 } from '@agon/core';
 import type { ImageAttachment } from '@agon/core';
 import { createCliAdapter } from '@agon/adapter-cli';
@@ -719,6 +723,7 @@ function App() {
   const [reviewEvent, setReviewEvent] = useState<ReviewEvent | null>(null);
   const [jobManager] = useState(() => new JobManager());
   const [jobList, setJobList] = useState<Job[]>([]);
+  const [lastUndoToken, setLastUndoToken] = useState<string | null>(null);
 
   // Module-level state (mutable refs via closures)
   // Load persisted engine selection from config — null means "all available"
@@ -1105,6 +1110,20 @@ function App() {
         case 'cancel': handleCancel(dispatch, ctx); break;
         case 'apply': await handleApplyPatch(dispatch, ctx, intent.patchPath, intent.force); break;
         case 'cp': handleCp(intent.index, dispatch); break;
+        case 'undo' as string: {
+          if (!lastUndoToken) {
+            dispatch({ type: 'warning', message: 'Nothing to undo. Apply a forge patch first.' });
+            break;
+          }
+          const undoResult = undoPatch(process.cwd(), lastUndoToken);
+          if (undoResult.ok) {
+            dispatch({ type: 'success', message: 'Patch reverted successfully.' });
+            setLastUndoToken(null);
+          } else {
+            dispatch({ type: 'error', message: undoResult.error ?? 'Undo failed' });
+          }
+          break;
+        }
         case 'jobs' as string: {
           const allJobs = jobManager.list();
           if (allJobs.length === 0) {
@@ -1154,9 +1173,18 @@ function App() {
     if (!reviewEvent) return;
     switch (action) {
       case 'apply': {
-        const result = applyPatchToTree(process.cwd(), reviewEvent.patchContent);
+        // Show structured summary before applying
+        const files = parsePatch(reviewEvent.patchContent);
+        const summary = patchSummary(files);
+        dispatch({ type: 'info', message: summary });
+
+        const result = applyPatchWithUndo(process.cwd(), reviewEvent.patchContent);
         if (result.ok) {
           dispatch({ type: 'success', message: `Patch applied from ${reviewEvent.winnerId}` });
+          if (result.undoToken) {
+            setLastUndoToken(result.undoToken);
+            dispatch({ type: 'info', message: `Undo available: /undo` });
+          }
         } else {
           dispatch({ type: 'error', message: `Apply failed: ${result.error ?? 'unknown error'}` });
         }

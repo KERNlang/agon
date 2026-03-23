@@ -52,6 +52,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { cmd: '/flow',        desc: '                        — log this session' },
   { cmd: '/flows',       desc: '                        — flow analytics dashboard' },
   { cmd: '/chats',       desc: '[id|resume <id>]        — chat history or resume session' },
+  { cmd: '/undo',        desc: '                        — revert last applied forge patch' },
   { cmd: '/jobs',        desc: '                        — list running/completed jobs' },
   { cmd: '/focus',       desc: '<id>                    — switch to background job output' },
   { cmd: '/help',        desc: '                        — show this help' },
@@ -194,6 +195,8 @@ function parseSlashCommand(input: string): Intent {
       }
       return { type: 'chats', sessionId: rest || undefined } as Intent;
     }
+    case 'undo':
+      return { type: 'undo' } as Intent;
     case 'jobs':
       return { type: 'jobs' } as Intent;
     case 'focus':

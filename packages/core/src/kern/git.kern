@@ -105,3 +105,43 @@ fn name=recentCommits params="cwd:string,count?:number" returns=string
     try { return git(['log', '--oneline', `-${count ?? 10}`], cwd); }
     catch { return ''; }
   >>>
+
+fn name=gitStatusShort params="cwd:string" returns=string
+  doc "Read-only: git status --short. Never mutates the working tree."
+  handler <<<
+    try { return git(['status', '--short'], cwd); }
+    catch { return ''; }
+  >>>
+
+fn name=gitDiffStat params="cwd:string" returns=string
+  doc "Read-only: git diff --stat for unstaged changes. No git add."
+  handler <<<
+    try { return git(['diff', '--stat'], cwd); }
+    catch { return ''; }
+  >>>
+
+fn name=gitChangedFiles params="cwd:string" returns="string[]"
+  doc "Read-only: list of changed file paths (unstaged + staged). No git add."
+  handler <<<
+    try {
+      const unstaged = git(['diff', '--name-only'], cwd);
+      const staged = git(['diff', '--cached', '--name-only'], cwd);
+      const combined = new Set([
+        ...unstaged.split('\n').filter(Boolean),
+        ...staged.split('\n').filter(Boolean),
+      ]);
+      return [...combined];
+    } catch { return []; }
+  >>>
+
+fn name=gitTruncatedDiff params="cwd:string,maxLines?:number" returns=string
+  doc "Read-only: truncated git diff (unstaged). Caps output. No git add."
+  handler <<<
+    try {
+      const diff = git(['diff'], cwd);
+      const lines = diff.split('\n');
+      const limit = maxLines ?? 200;
+      if (lines.length <= limit) return diff;
+      return lines.slice(0, limit).join('\n') + `\n... (${lines.length - limit} more lines)`;
+    } catch { return ''; }
+  >>>

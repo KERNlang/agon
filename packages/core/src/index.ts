@@ -51,7 +51,7 @@ export type { DiscoveryResult } from './engine-discover.js';
 export { preflightApply, applyPatchToTree, readPatchFromManifest, readPatchFromPath } from './patch-apply.js';
 export type { PatchInfo, ApplyPreflight } from './patch-apply.js';
 export { copyToClipboard } from './clipboard.js';
-export { startChatSession, appendMessage, loadChatSession, listChatSessions, latestChatSession } from './chat-store.js';
+export { startChatSession, appendMessage, loadChatSession, resumeChatSession, listChatSessions, latestChatSession } from './chat-store.js';
 export type { ChatMessage as StoredChatMessage, ChatSession } from './chat-store.js';
 export {
   isImagePath, mimeFromExt, resolveImagePath,

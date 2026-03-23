@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { render, Box, Text, useInput, useApp } from 'ink';
 import TextInput from 'ink-text-input';
 import Spinner from 'ink-spinner';
@@ -9,27 +9,39 @@ import {
   loadConfig,
   ensureCurrentWorkspace,
   startChatSession,
+  resumeChatSession,
+  currentBranch,
   getElo,
   getActiveWorkspace,
   configSet,
   RUNS_DIR,
+  wordWrap,
+  extractImagesFromInput,
+  buildImageAttachment,
 } from '@agon/core';
+import type { ImageAttachment } from '@agon/core';
 import { createCliAdapter } from '@agon/adapter-cli';
 import type { EngineAdapter } from '@agon/core';
 import { detectIntent, SLASH_COMMANDS } from './intent.js';
-import { loadCaesar, isCaesarReady, caesarClassify } from './caesar.js';
 import { ENGINE_COLORS } from './output.js';
+import { parseMarkdownBlocks, truncateCodeLine, cleanEngineOutput } from './markdown.js';
+import type { ContentSegment } from './markdown.js';
 import type { OutputEvent, HandlerContext, EngineProgress } from './handlers/types.js';
 import {
   handleForge, handleChat, handleBrainstorm, handleCampfire, handleTribunal,
   handleLeaderboard, handleHistory, handleEngines, handleDiscover,
   handleConfig, handleUse, handleTokens, handleModels, handleWorkspace, handleChats,
   handlePlanShow, handlePlansList, handleApprove, handleRetry, handleCancel,
-  handleApplyPatch,
+  handleApplyPatch, handleCp,
+  handleFlowReport, handleFlowAnalysis, autoLogFlow,
 } from './handlers/index.js';
+import { codeBlockBuffer } from './code-buffer.js';
+import { getGhostCompletion } from './ghost-text.js';
+import { copyToClipboard, applyPatchToTree } from '@agon/core';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readdirSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 
 // ── State Types (KERN-generated from kern/app-state.kern) ────────────
 import type { ReplStateState as ReplState } from './generated/app-state.js';
@@ -214,25 +226,97 @@ function DashboardView({ event }: { event: OutputEvent & { type: 'dashboard' } }
   );
 }
 
-/** Word wrap text to fit terminal width, accounting for prefix */
-function wrapLines(text: string, maxWidth: number): string[] {
-  const lines: string[] = [];
-  for (const rawLine of text.split('\n')) {
-    if (rawLine.length <= maxWidth) {
-      lines.push(rawLine);
-    } else {
-      let remaining = rawLine;
-      while (remaining.length > maxWidth) {
-        // Try to break at last space within maxWidth
-        let breakAt = remaining.lastIndexOf(' ', maxWidth);
-        if (breakAt <= 0) breakAt = maxWidth;
-        lines.push(remaining.slice(0, breakAt));
-        remaining = remaining.slice(breakAt).trimStart();
-      }
-      if (remaining) lines.push(remaining);
-    }
+// ── Code Block Rendering ─────────────────────────────────────────────
+
+const CODE_RAIL = '▌'; // U+258C
+const CODE_RAIL_COLOR = '#585858';
+const MAX_CODE_LINES = 30;
+
+/** Render a single diff-aware code line */
+function DiffLine({ line, maxWidth }: { line: string; maxWidth: number }) {
+  const truncated = truncateCodeLine(line, maxWidth);
+
+  if (line.startsWith('+')) {
+    return <Text color="#22c55e">{truncated}</Text>;
   }
-  return lines;
+  if (line.startsWith('-')) {
+    return <Text color="#ef4444">{truncated}</Text>;
+  }
+  if (line.startsWith('@@')) {
+    return <Text color="#22d3ee">{truncated}</Text>;
+  }
+  return <Text>{truncated}</Text>;
+}
+
+/** Code block with left rail gutter, diff coloring, no word-wrap */
+function CodeBlockView({ segment, borderColor }: { segment: ContentSegment & { type: 'code' }; borderColor: string }) {
+  const termWidth = process.stdout.columns || 80;
+  // Account for: border "│ " (2) + padding (2) + rail "▌ " (2) = 6 chars
+  const codeWidth = termWidth - 8;
+  const lines = segment.code.split('\n');
+  const isDiff = segment.language === 'diff' || lines.some((l) => /^[+-@]/.test(l));
+  const capped = lines.slice(0, MAX_CODE_LINES);
+  const overflow = lines.length - MAX_CODE_LINES;
+
+  return (
+    <Box flexDirection="column">
+      <Text color={borderColor}>{'│'}</Text>
+      {/* Language label with copy index */}
+      <Text>
+        <Text color={borderColor}>{'│  '}</Text>
+        <Text color={CODE_RAIL_COLOR}>{CODE_RAIL}</Text>
+        <Text> </Text>
+        <Text dimColor>{segment.language || 'code'}</Text>
+        {segment.index !== undefined && <Text color="#585858">{` [${segment.index}]`}</Text>}
+      </Text>
+      {/* Code lines */}
+      {capped.map((line, i) => (
+        <Text key={`code-${i}`}>
+          <Text color={borderColor}>{'│  '}</Text>
+          <Text color={CODE_RAIL_COLOR}>{CODE_RAIL}</Text>
+          <Text> </Text>
+          {isDiff ? <DiffLine line={line} maxWidth={codeWidth} /> : <Text>{truncateCodeLine(line, codeWidth)}</Text>}
+        </Text>
+      ))}
+      {/* Overflow indicator */}
+      {overflow > 0 && (
+        <Text>
+          <Text color={borderColor}>{'│  '}</Text>
+          <Text color={CODE_RAIL_COLOR}>{CODE_RAIL}</Text>
+          <Text> </Text>
+          <Text dimColor>{'… '}{overflow}{' more lines'}</Text>
+        </Text>
+      )}
+      <Text color={borderColor}>{'│'}</Text>
+    </Box>
+  );
+}
+
+/** Render parsed markdown segments inside an engine block */
+function RenderedSegments({ segments, borderColor, wrapWidth }: {
+  segments: ContentSegment[];
+  borderColor: string;
+  wrapWidth: number;
+}) {
+  return (
+    <>
+      {segments.map((seg, i) => {
+        if (seg.type === 'prose') {
+          const wrapped = wordWrap(seg.text, wrapWidth);
+          if (wrapped.length === 0 || (wrapped.length === 1 && !wrapped[0])) return null;
+          return (
+            <Box key={`seg-${i}`} flexDirection="column">
+              {wrapped.map((line, j) => (
+                <Text key={`prose-${i}-${j}`}><Text color={borderColor}>{'│ '}</Text>{line}</Text>
+              ))}
+            </Box>
+          );
+        }
+        // code segment
+        return <CodeBlockView key={`seg-${i}`} segment={seg} borderColor={borderColor} />;
+      })}
+    </>
+  );
 }
 
 /** Convert 256-color code to hex for Ink compatibility */
@@ -264,58 +348,13 @@ function engineColor(id: string): string {
   return color256toHex(ENGINE_COLORS[id] ?? 245);
 }
 
-/** Filter out system/hook JSON lines from engine output, extract text content */
-function cleanEngineOutput(raw: string): string {
-  const lines = raw.split('\n');
-  const cleaned: string[] = [];
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    // Skip empty lines at start
-    if (cleaned.length === 0 && !trimmed) continue;
-
-    // Try to extract content from JSON result lines
-    if (trimmed.startsWith('{') && trimmed.includes('"type"')) {
-      try {
-        const parsed = JSON.parse(trimmed);
-        // Extract actual content from result/assistant messages
-        if (parsed.type === 'assistant' && parsed.message?.content) {
-          const content = typeof parsed.message.content === 'string'
-            ? parsed.message.content
-            : Array.isArray(parsed.message.content)
-              ? parsed.message.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('\n')
-              : '';
-          if (content) cleaned.push(content);
-          continue;
-        }
-        if (parsed.type === 'result' && parsed.result) {
-          cleaned.push(typeof parsed.result === 'string' ? parsed.result : JSON.stringify(parsed.result));
-          continue;
-        }
-        // Drop system/hook/tool JSON silently
-        if (['system', 'hook_started', 'hook_response', 'tool_use', 'tool_result'].includes(parsed.type)) continue;
-        if (parsed.type?.startsWith('hook_')) continue;
-        if (parsed.subtype === 'system') continue;
-      } catch {
-        // Not valid JSON — keep as text
-      }
-    }
-
-    // Keep regular text lines
-    cleaned.push(line);
-  }
-
-  return cleaned.join('\n').trim();
-}
-
 function EngineBlock({ engineId, color, content }: { engineId: string; color: number; content: string }) {
   const termWidth = process.stdout.columns || 80;
   const wrapWidth = termWidth - 8;
   const cleaned = cleanEngineOutput(content);
-  const wrapped = wrapLines(cleaned, wrapWidth);
   const hexColor = color256toHex(color);
 
-  if (wrapped.length === 0 || (wrapped.length === 1 && !wrapped[0])) {
+  if (!cleaned.trim()) {
     return (
       <Box flexDirection="column" marginY={0} paddingLeft={2}>
         <Text color={hexColor}>{'┌── '}<Text bold>{engineId}</Text></Text>
@@ -325,16 +364,13 @@ function EngineBlock({ engineId, color, content }: { engineId: string; color: nu
     );
   }
 
+  const segments = parseMarkdownBlocks(cleaned);
+
   return (
     <Box flexDirection="column" marginY={1} paddingLeft={2}>
       <Text color={hexColor}>{'┌── '}<Text bold color={hexColor}>{engineId}</Text></Text>
       <Text color={hexColor}>{'│'}</Text>
-      {wrapped.slice(0, 50).map((line, i) => (
-        <Text key={`${engineId}-${i}`}><Text color={hexColor}>{'│ '}</Text>{line}</Text>
-      ))}
-      {wrapped.length > 50 && (
-        <Text><Text color={hexColor}>{'│ '}</Text><Text dimColor>{'…'}{wrapped.length - 50}{' more lines'}</Text></Text>
-      )}
+      <RenderedSegments segments={segments} borderColor={hexColor} wrapWidth={wrapWidth} />
       <Text color={hexColor}>{'└──'}</Text>
     </Box>
   );
@@ -344,7 +380,7 @@ function OutputBlockView({ event }: { event: OutputEvent }) {
   switch (event.type) {
     case 'text': {
       const termWidth = process.stdout.columns || 80;
-      const wrapped = wrapLines(event.content, termWidth - 4);
+      const wrapped = wordWrap(event.content, termWidth - 4);
       return (
         <Box flexDirection="column" paddingLeft={2}>
           {wrapped.map((line, i) => <Text key={`text-${i}`}>{line}</Text>)}
@@ -363,17 +399,13 @@ function OutputBlockView({ event }: { event: OutputEvent }) {
     case 'kern-draft': {
       const eColor = engineColor(event.engineId);
       const termWidth = process.stdout.columns || 80;
-      const wrapped = wrapLines(event.content.trim(), termWidth - 8);
+      const wrapWidth = termWidth - 8;
+      const segments = parseMarkdownBlocks(event.content.trim());
       return (
         <Box flexDirection="column" paddingLeft={2}>
           <Text color={eColor}>{'┌── '}<Text bold>{event.engineId}</Text>{event.critique ? <Text color="green">{' '}{event.critique}</Text> : ''}</Text>
           <Text color={eColor}>{'│'}</Text>
-          {wrapped.slice(0, 30).map((line, i) => (
-            <Text key={`draft-${i}`}><Text color={eColor}>{'│ '}</Text>{line}</Text>
-          ))}
-          {wrapped.length > 30 && (
-            <Text><Text color={eColor}>{'│ '}</Text><Text dimColor>{'…'}{wrapped.length - 30}{' more lines'}</Text></Text>
-          )}
+          <RenderedSegments segments={segments} borderColor={eColor} wrapWidth={wrapWidth} />
           <Text color={eColor}>{'└──'}</Text>
         </Box>
       );
@@ -381,23 +413,20 @@ function OutputBlockView({ event }: { event: OutputEvent }) {
     case 'debate-round': {
       const dColor = engineColor(event.engineId);
       const termWidth = process.stdout.columns || 80;
-      const wrapped = wrapLines(event.argument.trim(), termWidth - 8);
+      const wrapWidth = termWidth - 8;
+      const segments = parseMarkdownBlocks(event.argument.trim());
       return (
         <Box flexDirection="column" paddingLeft={2}>
           <Text color={dColor}>{'┌── '}<Text bold>{event.engineId}</Text>{' '}<Text dimColor>{'('}{event.position}{')'}</Text></Text>
-          {wrapped.slice(0, 25).map((line, i) => (
-            <Text key={`debate-${i}`}><Text color={dColor}>{'│ '}</Text>{line}</Text>
-          ))}
-          {wrapped.length > 25 && (
-            <Text><Text color={dColor}>{'│ '}</Text><Text dimColor>{'…truncated'}</Text></Text>
-          )}
+          <Text color={dColor}>{'│'}</Text>
+          <RenderedSegments segments={segments} borderColor={dColor} wrapWidth={wrapWidth} />
           <Text color={dColor}>{'└──'}</Text>
         </Box>
       );
     }
     case 'verdict': {
       const termWidth = process.stdout.columns || 80;
-      const wrapped = wrapLines(event.summary.trim(), termWidth - 4);
+      const wrapped = wordWrap(event.summary.trim(), termWidth - 4);
       return (
         <Box flexDirection="column" paddingLeft={2}>
           {wrapped.map((line, i) => <Text key={`v-${i}`}>{line}</Text>)}
@@ -595,6 +624,56 @@ function EnginePicker({ available, initialSelected, onConfirm, onCancel }: {
   );
 }
 
+// ── Review Block (Forge patch review) ────────────────────────────────
+
+interface ReviewEvent {
+  winnerId: string;
+  patchPath: string;
+  patchContent: string;
+}
+
+function ReviewBlock({ event, onAction }: {
+  event: ReviewEvent;
+  onAction: (action: 'apply' | 'edit' | 'reject' | 'copy') => void;
+}) {
+  const eColor = engineColor(event.winnerId);
+  const termWidth = process.stdout.columns || 80;
+  const codeWidth = termWidth - 10;
+  const lines = event.patchContent.split('\n').slice(0, 30);
+  const overflow = event.patchContent.split('\n').length - 30;
+
+  useInput((input) => {
+    const k = input.toLowerCase();
+    if (k === 'a') onAction('apply');
+    else if (k === 'e') onAction('edit');
+    else if (k === 'r') onAction('reject');
+    else if (k === 'c') onAction('copy');
+  });
+
+  return (
+    <Box flexDirection="column" paddingLeft={2} marginY={1}>
+      <Text color={eColor}>{'┌── Winner: '}<Text bold>{event.winnerId}</Text></Text>
+      {lines.map((line, i) => (
+        <Text key={`rv-${i}`}>
+          <Text color={eColor}>{'│ '}</Text>
+          <Text color={CODE_RAIL_COLOR}>{CODE_RAIL}</Text>
+          <Text> </Text>
+          <DiffLine line={line} maxWidth={codeWidth} />
+        </Text>
+      ))}
+      {overflow > 0 && (
+        <Text>
+          <Text color={eColor}>{'│ '}</Text>
+          <Text color={CODE_RAIL_COLOR}>{CODE_RAIL}</Text>
+          <Text> </Text>
+          <Text dimColor>{'… '}{overflow}{' more lines'}</Text>
+        </Text>
+      )}
+      <Text color={eColor}>{'└── '}<Text bold color="green">{'[A]'}</Text>{'pply  '}<Text bold color="cyan">{'[E]'}</Text>{'dit  '}<Text bold color="red">{'[R]'}</Text>{'eject  '}<Text bold color="yellow">{'[C]'}</Text>{'opy'}</Text>
+    </Box>
+  );
+}
+
 // ── Main App ─────────────────────────────────────────────────────────
 
 function App() {
@@ -602,17 +681,20 @@ function App() {
   const [replState, setReplState] = useState<ReplState>('idle');
   const [outputBlocks, setOutputBlocks] = useState<OutputBlock[]>([]);
   const [inputValue, setInputValue] = useState('');
-  const [pastedContent, setPastedContent] = useState<string | null>(null);
   const [inputHistory, setInputHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [mode, setMode] = useState<'chat' | 'campfire' | 'brainstorm' | 'tribunal'>('chat');
+  const [sessionStartTime] = useState(() => Date.now());
   const [liveSpinner, setLiveSpinner] = useState<{ message: string; color?: number } | null>(null);
   const [liveProgress, setLiveProgress] = useState<EngineProgress[] | null>(null);
   const [slashPickerOpen, setSlashPickerOpen] = useState(false);
+  const [inputKey, setInputKey] = useState(0);
   const [questionState, setQuestionState] = useState<{ prompt: string; resolve: (answer: string) => void } | null>(null);
   const [questionAnswer, setQuestionAnswer] = useState('');
   const [enginePickerOpen, setEnginePickerOpen] = useState(false);
   const [streamingText, setStreamingText] = useState<{ engineId: string; content: string } | null>(null);
+  const [pendingImages, setPendingImages] = useState<ImageAttachment[]>([]);
+  const [reviewEvent, setReviewEvent] = useState<ReviewEvent | null>(null);
 
   // Module-level state (mutable refs via closures)
   // Load persisted engine selection from config — null means "all available"
@@ -622,7 +704,13 @@ function App() {
     return saved && saved.length > 0 ? saved : null;
   });
   const [currentPlan, setCurrentPlan] = useState<Plan | null>(null);
-  const [chatSession] = useState<ChatSession>(() => startChatSession());
+  const currentPlanRef = useRef<Plan | null>(currentPlan);
+  currentPlanRef.current = currentPlan;
+  const [chatSession, setChatSession] = useState<ChatSession>(() => {
+    let branch = 'unknown';
+    try { branch = currentBranch(process.cwd()); } catch {}
+    return startChatSession({ cwd: process.cwd(), branch });
+  });
   const [activeAbort, setActiveAbort] = useState<AbortController | null>(null);
   const [registry] = useState<EngineRegistry>(() => {
     const reg = new EngineRegistry();
@@ -631,6 +719,63 @@ function App() {
     return reg;
   });
   const [adapter] = useState<EngineAdapter>(() => createCliAdapter(registry));
+
+  // ── Bracketed paste mode ──
+  const pasteBufferRef = useRef<string | null>(null);
+  const isPastingRef = useRef(false);
+
+  useEffect(() => {
+    const stdin = process.stdin;
+    if (!stdin.isTTY) return;
+
+    // Enable bracketed paste mode
+    process.stdout.write('\x1b[?2004h');
+
+    const onData = (data: Buffer) => {
+      const str = data.toString();
+
+      if (str.includes('\x1b[200~')) {
+        // Paste start marker
+        isPastingRef.current = true;
+        const afterMarker = str.split('\x1b[200~').slice(1).join('');
+        pasteBufferRef.current = afterMarker.replace(/\x1b\[201~/g, '');
+        if (str.includes('\x1b[201~')) {
+          // Paste ended in same chunk
+          isPastingRef.current = false;
+          const content = pasteBufferRef.current;
+          pasteBufferRef.current = null;
+          if (content) {
+            setInputValue((prev) => prev + content);
+          }
+        }
+        return;
+      }
+
+      if (isPastingRef.current) {
+        if (str.includes('\x1b[201~')) {
+          // Paste end marker
+          const beforeMarker = str.split('\x1b[201~')[0];
+          const content = (pasteBufferRef.current ?? '') + beforeMarker;
+          isPastingRef.current = false;
+          pasteBufferRef.current = null;
+          if (content) {
+            setInputValue((prev) => prev + content);
+          }
+        } else {
+          pasteBufferRef.current = (pasteBufferRef.current ?? '') + str;
+        }
+        return;
+      }
+    };
+
+    stdin.on('data', onData);
+
+    return () => {
+      // Disable bracketed paste mode
+      process.stdout.write('\x1b[?2004l');
+      stdin.off('data', onData);
+    };
+  }, []);
 
   // ── Render dashboard on mount (stays in history) ──
   useEffect(() => {
@@ -691,14 +836,40 @@ function App() {
           return { engineId: event.engineId, content: event.chunk };
         });
         break;
+      case 'streaming-end':
+        // Explicitly flush streaming buffer to output blocks
+        setStreamingText((prev) => {
+          if (prev) {
+            const color = ENGINE_COLORS[prev.engineId] ?? 245;
+            // Record code blocks for /cp
+            const cleaned = cleanEngineOutput(prev.content);
+            const segments = parseMarkdownBlocks(cleaned);
+            codeBlockBuffer.recordFromSegments(segments);
+            setOutputBlocks((blocks) => [...blocks, {
+              id: Date.now(),
+              event: { type: 'engine-block', engineId: prev.engineId, color, content: prev.content },
+            }]);
+          }
+          return null;
+        });
+        break;
       case 'clear':
         setOutputBlocks([]);
         setStreamingText(null);
+        break;
+      case 'patch-review':
+        setReviewEvent({ winnerId: event.winnerId, patchPath: event.patchPath, patchContent: event.patchContent });
         break;
       case 'question':
         setQuestionState({ prompt: event.prompt, resolve: event.resolve });
         break;
       default:
+        // Record code blocks for /cp from engine-block events
+        if (event.type === 'engine-block') {
+          const cleaned = cleanEngineOutput(event.content);
+          const segments = parseMarkdownBlocks(cleaned);
+          codeBlockBuffer.recordFromSegments(segments);
+        }
         // If we were streaming, flush to output blocks first
         if (event.type === 'text' || event.type === 'engine-block' || event.type === 'separator') {
           setStreamingText((prev) => {
@@ -731,19 +902,20 @@ function App() {
   }, [registry, sessionEngines]);
 
   // ── Build handler context ──
+  // Use a getter for currentPlan so long-running handlers always see latest state
   const buildContext = useCallback((): HandlerContext => ({
     registry,
     adapter,
     activeEngines,
     config: loadConfig(),
     chatSession,
-    currentPlan,
+    get currentPlan() { return currentPlanRef.current; },
     setCurrentPlan,
     setActiveAbort,
     askQuestion,
-  }), [registry, adapter, activeEngines, chatSession, currentPlan, askQuestion]);
+  }), [registry, adapter, activeEngines, chatSession, askQuestion]);
 
-  // ── Paste detection + slash picker trigger ──
+  // ── Input change + slash picker trigger ──
   const handleInputChange = useCallback((value: string) => {
     // Open slash picker immediately when user types "/" at start
     if (value === '/' && !slashPickerOpen) {
@@ -751,47 +923,16 @@ function App() {
       setInputValue('');
       return;
     }
-
-    // Detect paste: check the delta (what was just added)
-    // If we already have a paste preview, the new content is appended to it
-    let newContent = value;
-    if (pastedContent && value.startsWith(inputValue)) {
-      // Extract just the newly pasted portion
-      newContent = value.slice(inputValue.length);
-      if (!newContent) {
-        // Backspace or no change
-        setInputValue(value);
-        return;
-      }
-    }
-
-    const lines = newContent.split('\n');
-    // Only trigger paste mode for actual multi-line pastes or very long text
-    if (lines.length > 5 || (lines.length > 1 && newContent.length > 500)) {
-      // Paste detected — replace any previous paste
-      setPastedContent(newContent);
-      const lineCount = lines.length;
-      const charCount = newContent.length;
-      const firstLine = lines[0].slice(0, 50) + (lines[0].length > 50 ? '…' : '');
-      setInputValue(`[Pasted ${lineCount} lines, ${charCount} chars] ${firstLine}`);
-    } else {
-      // Normal typing — clear paste state
-      if (pastedContent && !value.startsWith('[Pasted')) {
-        setPastedContent(null);
-      }
-      setInputValue(value);
-    }
-  }, [slashPickerOpen, pastedContent, inputValue]);
+    // Accept everything as-is — pastes included, like Claude Code
+    setInputValue(value);
+  }, [slashPickerOpen]);
 
   // ── Handle input submission ──
   const handleSubmit = useCallback(async (value: string) => {
-    // Use full pasted content if available, otherwise the input value
-    const raw = pastedContent ?? value;
-    const input = raw.trim();
+    const input = value.trim();
     if (!input) return;
 
     setInputValue('');
-    setPastedContent(null);
     setInputHistory((prev) => [...prev, input]);
     setHistoryIndex(-1);
 
@@ -803,7 +944,11 @@ function App() {
     setReplState('busy');
     dispatch({ type: 'separator' });
 
-    let intent = detectIntent(input);
+    // Extract images from input (drag-and-drop paths, inline paths)
+    const { text: cleanInput, images: detectedImages } = extractImagesFromInput(input, process.cwd());
+    const allImages = [...pendingImages, ...detectedImages];
+
+    let intent = detectIntent(cleanInput || input);
 
     // Mode switching — /campfire, /brainstorm, /tribunal, /chat switch modes
     // If the command has no argument, just switch mode and show confirmation
@@ -846,28 +991,30 @@ function App() {
       }
     }
 
-    // Caesar fallback for chat mode only
-    if (intent.type === 'unknown' && mode === 'chat' && isCaesarReady()) {
-      const caesarIntent = await caesarClassify(input);
-      if (caesarIntent) {
-        switch (caesarIntent) {
-          case 'forge': intent = { type: 'forge', task: input, fitnessCmd: null }; break;
-          case 'brainstorm': intent = { type: 'brainstorm', question: input }; break;
-          case 'tribunal': intent = { type: 'tribunal', question: input }; break;
-          default: break;
-        }
-      }
-    }
 
     const ctx = buildContext();
 
     try {
       switch (intent.type) {
-        case 'forge': await handleForge(intent.task, intent.fitnessCmd, dispatch, ctx); break;
+        case 'forge': {
+          const forgeStart = Date.now();
+          await handleForge(intent.task, intent.fitnessCmd, dispatch, ctx);
+          autoLogFlow(ctx, 'forge', forgeStart, 'completed', { forgeId: ctx.currentPlan?.id, winnerEngine: ctx.currentPlan?.steps?.find((s: any) => s.result.artifacts?.some((a: any) => a.type === 'patch'))?.result.artifacts?.find((a: any) => a.type === 'patch')?.engineId });
+          break;
+        }
         case 'brainstorm': await handleBrainstorm(intent.question, dispatch, ctx); break;
         case 'tribunal': await handleTribunal(intent.question, dispatch, ctx); break;
         case 'campfire': await handleCampfire(intent.topic, dispatch, ctx); break;
-        case 'chat': await handleChat(intent.input, dispatch, ctx); break;
+        case 'img': {
+          const att = buildImageAttachment(intent.path, process.cwd());
+          if (!att) dispatch({ type: 'error', message: `Image not found: ${intent.path}` });
+          else {
+            setPendingImages(prev => [...prev, att]);
+            dispatch({ type: 'success', message: `Attached: ${att.filename}` });
+          }
+          break;
+        }
+        case 'chat': setPendingImages([]); await handleChat(intent.input, dispatch, ctx, allImages); break;
         case 'leaderboard': handleLeaderboard(dispatch); break;
         case 'history': handleHistory(dispatch, intent.id); break;
         case 'engines': await handleEngines(dispatch, ctx); break;
@@ -878,29 +1025,87 @@ function App() {
         case 'models': setEnginePickerOpen(true); break;
         case 'slash-list': dispatch({ type: 'text', content: SLASH_COMMANDS.map((c) => `${c.cmd.padEnd(16)} ${c.desc}`).join('\n') }); break;
         case 'workspace': handleWorkspace(intent.action, dispatch, intent.path); break;
+        case 'flow': await handleFlowReport(dispatch, ctx, mode, sessionStartTime); break;
+        case 'flows': handleFlowAnalysis(dispatch); break;
         case 'chats': handleChats(dispatch, intent.sessionId); break;
+        case 'chats-resume' as string: {
+          const sid = (intent as any).sessionId as string | undefined;
+          if (!sid) {
+            dispatch({ type: 'error', message: 'Usage: /chats resume <session-id>' });
+            break;
+          }
+          const resumed = resumeChatSession(sid);
+          if (resumed) {
+            setChatSession(resumed);
+            dispatch({ type: 'success', message: `Resumed session: ${resumed.id}` });
+            dispatch({ type: 'info', message: `${resumed.messages.length} messages, started ${resumed.startedAt.slice(0, 10)}` });
+            if (resumed.cwd) dispatch({ type: 'info', message: `Workspace: ${resumed.cwd}` });
+          } else {
+            dispatch({ type: 'error', message: `Session not found: ${sid}` });
+          }
+          break;
+        }
         case 'plan': handlePlanShow(dispatch, ctx, intent.planId); break;
         case 'plans': handlePlansList(dispatch); break;
         case 'approve': await handleApprove(dispatch, ctx); break;
         case 'retry': await handleRetry(dispatch, ctx); break;
         case 'cancel': handleCancel(dispatch, ctx); break;
         case 'apply': await handleApplyPatch(dispatch, ctx, intent.patchPath, intent.force); break;
-        case 'clear': dispatch({ type: 'clear' }); dispatch({ type: 'info', message: 'Chat history cleared.' }); break;
+        case 'cp': handleCp(intent.index, dispatch); break;
+        case 'clear': dispatch({ type: 'clear' }); codeBlockBuffer.clear(); dispatch({ type: 'info', message: 'Chat history cleared.' }); break;
         case 'help': dispatch({ type: 'text', content: SLASH_COMMANDS.map((c) => `${c.cmd.padEnd(16)} ${c.desc}`).join('\n') }); break;
         case 'exit': exit(); return;
-        case 'unknown': await handleChat(intent.input, dispatch, ctx); break;
+        case 'unknown': setPendingImages([]); await handleChat(intent.input, dispatch, ctx, allImages); break;
       }
     } catch (err) {
       dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) });
     } finally {
       setReplState('idle');
     }
-  }, [replState, dispatch, buildContext, slashPickerOpen, exit, pastedContent, mode]);
+  }, [replState, dispatch, buildContext, slashPickerOpen, exit, mode, pendingImages]);
+
+  // ── Handle review action ──
+  const handleReviewAction = useCallback((action: 'apply' | 'edit' | 'reject' | 'copy') => {
+    if (!reviewEvent) return;
+    switch (action) {
+      case 'apply': {
+        const result = applyPatchToTree(process.cwd(), reviewEvent.patchContent);
+        if (result.ok) {
+          dispatch({ type: 'success', message: `Patch applied from ${reviewEvent.winnerId}` });
+        } else {
+          dispatch({ type: 'error', message: `Apply failed: ${result.error ?? 'unknown error'}` });
+        }
+        break;
+      }
+      case 'edit':
+        try {
+          const editor = process.env.EDITOR || process.env.VISUAL || 'vi';
+          spawnSync(editor, [reviewEvent.patchPath], { stdio: 'inherit' });
+          dispatch({ type: 'info', message: `Opened ${reviewEvent.patchPath} in ${editor}` });
+        } catch (err) {
+          dispatch({ type: 'error', message: `Editor failed: ${err instanceof Error ? err.message : String(err)}` });
+        }
+        break;
+      case 'reject':
+        dispatch({ type: 'info', message: 'Patch rejected.' });
+        break;
+      case 'copy':
+        try {
+          copyToClipboard(reviewEvent.patchContent);
+          dispatch({ type: 'success', message: 'Patch copied to clipboard' });
+        } catch (err) {
+          dispatch({ type: 'error', message: `Copy failed: ${err instanceof Error ? err.message : String(err)}` });
+        }
+        break;
+    }
+    setReviewEvent(null);
+  }, [reviewEvent, dispatch]);
 
   // ── Handle slash picker selection ──
   const handleSlashSelect = useCallback((cmd: string) => {
     setSlashPickerOpen(false);
     setInputValue(cmd + ' ');
+    setInputKey((k) => k + 1); // Force TextInput remount → cursor at end
   }, []);
 
   // ── Handle question answer ──
@@ -912,37 +1117,57 @@ function App() {
     }
   }, [questionState]);
 
-  // ── History navigation ──
+  // ── History navigation + global keys ──
   useInput((input, key) => {
-    if (key.upArrow && inputHistory.length > 0 && !slashPickerOpen) {
-      const newIndex = historyIndex === -1 ? inputHistory.length - 1 : Math.max(0, historyIndex - 1);
-      setHistoryIndex(newIndex);
-      setInputValue(inputHistory[newIndex]);
+    // Tab key accepts ghost text completion
+    if (key.tab && !slashPickerOpen && !enginePickerOpen && !questionState && !reviewEvent) {
+      const ghost = getGhostCompletion(inputValue, SLASH_COMMANDS);
+      if (ghost) {
+        setInputValue(inputValue + ghost + ' ');
+        setInputKey((k) => k + 1);
+        return;
+      }
     }
-    if (key.downArrow && historyIndex >= 0 && !slashPickerOpen) {
-      const newIndex = historyIndex + 1;
-      if (newIndex >= inputHistory.length) {
-        setHistoryIndex(-1);
-        setInputValue('');
-      } else {
+    // Guard: don't process arrow keys when a modal overlay is active
+    if (!enginePickerOpen && !questionState) {
+      if (key.upArrow && inputHistory.length > 0 && !slashPickerOpen) {
+        const newIndex = historyIndex === -1 ? inputHistory.length - 1 : Math.max(0, historyIndex - 1);
         setHistoryIndex(newIndex);
         setInputValue(inputHistory[newIndex]);
       }
+      if (key.downArrow && historyIndex >= 0 && !slashPickerOpen) {
+        const newIndex = historyIndex + 1;
+        if (newIndex >= inputHistory.length) {
+          setHistoryIndex(-1);
+          setInputValue('');
+        } else {
+          setHistoryIndex(newIndex);
+          setInputValue(inputHistory[newIndex]);
+        }
+      }
     }
-    // Ctrl+C to cancel running command or exit
+    // Ctrl+C to cancel running command or exit (always active)
     // With exitOnCtrlC: false, Ink passes this to useInput
     if (input === '\x03' || (key.ctrl && input === 'c')) {
+      // Clear any pending question prompt first
+      if (questionState) {
+        questionState.resolve('');
+        setQuestionState(null);
+        setQuestionAnswer('');
+      }
       if (replState !== 'idle' && activeAbort) {
         activeAbort.abort();
         setActiveAbort(null);
         setLiveSpinner(null);
         setLiveProgress(null);
+        setStreamingText(null);
         dispatch({ type: 'warning', message: 'Cancelled.' });
         setReplState('idle');
       } else if (replState !== 'idle') {
         // Busy but no abort controller — force back to idle
         setLiveSpinner(null);
         setLiveProgress(null);
+        setStreamingText(null);
         dispatch({ type: 'warning', message: 'Interrupted.' });
         setReplState('idle');
       } else {
@@ -953,6 +1178,23 @@ function App() {
 
   return (
     <Box flexDirection="column" height="100%">
+      {/* Breadcrumb bar */}
+      <Box paddingX={1}>
+        <Text dimColor>{'📂 '}{process.cwd().split('/').pop()}</Text>
+        <Text dimColor>{' │ '}</Text>
+        <Text color={mode === 'chat' ? '#fbbf24' : mode === 'campfire' ? '#f97316' : mode === 'brainstorm' ? '#22d3ee' : '#a78bfa'}>
+          {mode}
+        </Text>
+        <Text dimColor>{' │ '}</Text>
+        <Text dimColor>{registry.availableIds().length}{' engines'}</Text>
+        {replState !== 'idle' && (
+          <>
+            <Text dimColor>{' │ '}</Text>
+            <Text color="yellow">{replState}</Text>
+          </>
+        )}
+      </Box>
+
       {/* Output area — scrollable */}
       <Box flexDirection="column" flexGrow={1}>
         {outputBlocks.map((block) => (
@@ -963,7 +1205,7 @@ function App() {
           const c = engineColor(streamingText.engineId);
           const cleaned = cleanEngineOutput(streamingText.content);
           const termWidth = process.stdout.columns || 80;
-          const wrapped = wrapLines(cleaned, termWidth - 8);
+          const wrapped = wordWrap(cleaned, termWidth - 8);
           return (
             <Box flexDirection="column" marginY={1} paddingLeft={2}>
               <Text color={c} bold>{'┌── '}{streamingText.engineId}</Text>
@@ -976,6 +1218,11 @@ function App() {
         })()}
         {liveProgress && <EngineProgressView engines={liveProgress} />}
       </Box>
+
+      {/* Patch review overlay */}
+      {reviewEvent && (
+        <ReviewBlock event={reviewEvent} onAction={handleReviewAction} />
+      )}
 
       {/* Engine picker (interactive /models) */}
       {enginePickerOpen && (
@@ -1007,6 +1254,14 @@ function App() {
               onCancel={() => setSlashPickerOpen(false)}
             />
           )}
+          {pendingImages.length > 0 && (
+            <Box>
+              <Text color="#22d3ee">{'📎 '}</Text>
+              {pendingImages.map((img, i) => (
+                <Text key={i} dimColor>{img.filename}{i < pendingImages.length - 1 ? ', ' : ''}</Text>
+              ))}
+            </Box>
+          )}
           {questionState ? (
             <Box>
               <Text bold color="yellow">{questionState.prompt} </Text>
@@ -1025,6 +1280,7 @@ function App() {
               )}
               <Text color="#fbbf24">{'❯ '}</Text>
               <TextInput
+                key={inputKey}
                 value={inputValue}
                 onChange={handleInputChange}
                 onSubmit={handleSubmit}
@@ -1035,6 +1291,10 @@ function App() {
                   : 'What should they debate?'
                   : ''}
               />
+              {(() => {
+                const ghost = getGhostCompletion(inputValue, SLASH_COMMANDS);
+                return ghost ? <Text dimColor>{ghost}</Text> : null;
+              })()}
             </Box>
           )}
         </Box>
@@ -1048,12 +1308,6 @@ function App() {
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());
-
-  // Initialize Caesar in background (non-blocking)
-  const config = loadConfig();
-  if (config.caesarModel && config.caesarModel !== 'none') {
-    loadCaesar(config.caesarModel).catch(() => {});
-  }
 
   render(<App />, { exitOnCtrlC: false });
 }

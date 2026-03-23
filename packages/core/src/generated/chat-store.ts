@@ -1,4 +1,4 @@
-import { mkdirSync, appendFileSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { mkdirSync, appendFileSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 
 import { join } from 'node:path';
 
@@ -9,39 +9,54 @@ export interface ChatMessage {
   engineId?: string;
   content: string;
   timestamp: string;
+  images?: string[];
 }
 
 export interface ChatSession {
   id: string;
   startedAt: string;
   messages: ChatMessage[];
+  cwd?: string;
+  branch?: string;
+  engineIds?: string[];
 }
 
 export function chatsDir(): string {
   return join(AGON_HOME, 'chats');
-  
 }
 
 export function ensureChatsDir(): void {
   mkdirSync(chatsDir(), { recursive: true });
-  
 }
 
-export function startChatSession(): ChatSession {
+export function startChatSession(opts?: {cwd?:string,branch?:string,engineIds?:string[]}): ChatSession {
   ensureChatsDir();
   const id = `chat-${Date.now()}`;
-  const session: ChatSession = { id, startedAt: new Date().toISOString(), messages: [] };
+  const session: ChatSession = {
+    id,
+    startedAt: new Date().toISOString(),
+    messages: [],
+    cwd: opts?.cwd,
+    branch: opts?.branch,
+    engineIds: opts?.engineIds,
+  };
   const filePath = join(chatsDir(), `${id}.ndjson`);
-  appendFileSync(filePath, JSON.stringify({ _type: 'header', id, startedAt: session.startedAt }) + '\n');
+  const header: Record<string, unknown> = {
+    _type: 'header',
+    id,
+    startedAt: session.startedAt,
+  };
+  if (opts?.cwd) header.cwd = opts.cwd;
+  if (opts?.branch) header.branch = opts.branch;
+  if (opts?.engineIds) header.engineIds = opts.engineIds;
+  appendFileSync(filePath, JSON.stringify(header) + '\n');
   return session;
-  
 }
 
 export function appendMessage(session: ChatSession, msg: ChatMessage): void {
   session.messages.push(msg);
   const filePath = join(chatsDir(), `${session.id}.ndjson`);
   appendFileSync(filePath, JSON.stringify(msg) + '\n');
-  
 }
 
 export function loadChatSession(id: string): ChatSession|null {
@@ -58,11 +73,21 @@ export function loadChatSession(id: string): ChatSession|null {
       if (msg.role) messages.push(msg);
     }
   
-    return { id: header.id ?? id, startedAt: header.startedAt ?? '', messages };
+    return {
+      id: header.id ?? id,
+      startedAt: header.startedAt ?? '',
+      messages,
+      cwd: header.cwd,
+      branch: header.branch,
+      engineIds: header.engineIds,
+    };
   } catch {
     return null;
   }
-  
+}
+
+export function resumeChatSession(id: string): ChatSession|null {
+  return loadChatSession(id);
 }
 
 export function listChatSessions(limit: number): ChatSession[] {
@@ -85,12 +110,10 @@ export function listChatSessions(limit: number): ChatSession[] {
   } catch {
     return [];
   }
-  
 }
 
 export function latestChatSession(): ChatSession|null {
   const sessions = listChatSessions(1);
   return sessions.length > 0 ? sessions[0] : null;
-  
 }
 

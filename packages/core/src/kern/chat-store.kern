@@ -1,4 +1,4 @@
-import from="node:fs" names="mkdirSync,appendFileSync,readFileSync,readdirSync,statSync"
+import from="node:fs" names="mkdirSync,appendFileSync,readFileSync,readdirSync,statSync,writeFileSync"
 import from="node:path" names="join"
 import from="./config.js" names="AGON_HOME"
 
@@ -7,11 +7,15 @@ interface name=ChatMessage
   field name=engineId type=string optional=true
   field name=content type=string
   field name=timestamp type=string
+  field name=images type="string[]" optional=true
 
 interface name=ChatSession
   field name=id type=string
   field name=startedAt type=string
   field name=messages type="ChatMessage[]"
+  field name=cwd type=string optional=true
+  field name=branch type=string optional=true
+  field name=engineIds type="string[]" optional=true
 
 fn name=chatsDir returns="string"
   handler <<<
@@ -23,13 +27,28 @@ fn name=ensureChatsDir returns="void"
     mkdirSync(chatsDir(), { recursive: true });
   >>>
 
-fn name=startChatSession returns="ChatSession"
+fn name=startChatSession params="opts?:{cwd?:string,branch?:string,engineIds?:string[]}" returns="ChatSession"
   handler <<<
     ensureChatsDir();
     const id = `chat-${Date.now()}`;
-    const session: ChatSession = { id, startedAt: new Date().toISOString(), messages: [] };
+    const session: ChatSession = {
+      id,
+      startedAt: new Date().toISOString(),
+      messages: [],
+      cwd: opts?.cwd,
+      branch: opts?.branch,
+      engineIds: opts?.engineIds,
+    };
     const filePath = join(chatsDir(), `${id}.ndjson`);
-    appendFileSync(filePath, JSON.stringify({ _type: 'header', id, startedAt: session.startedAt }) + '\n');
+    const header: Record<string, unknown> = {
+      _type: 'header',
+      id,
+      startedAt: session.startedAt,
+    };
+    if (opts?.cwd) header.cwd = opts.cwd;
+    if (opts?.branch) header.branch = opts.branch;
+    if (opts?.engineIds) header.engineIds = opts.engineIds;
+    appendFileSync(filePath, JSON.stringify(header) + '\n');
     return session;
   >>>
 
@@ -55,10 +74,23 @@ fn name=loadChatSession params="id:string" returns="ChatSession|null"
         if (msg.role) messages.push(msg);
       }
 
-      return { id: header.id ?? id, startedAt: header.startedAt ?? '', messages };
+      return {
+        id: header.id ?? id,
+        startedAt: header.startedAt ?? '',
+        messages,
+        cwd: header.cwd,
+        branch: header.branch,
+        engineIds: header.engineIds,
+      };
     } catch {
       return null;
     }
+  >>>
+
+fn name=resumeChatSession params="id:string" returns="ChatSession|null"
+  doc "Load an existing session for continued use. Returns null if not found."
+  handler <<<
+    return loadChatSession(id);
   >>>
 
 fn name=listChatSessions params="limit:number" returns="ChatSession[]"

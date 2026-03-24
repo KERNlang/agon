@@ -53,6 +53,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { cmd: '/flows',       desc: '                        — flow analytics dashboard' },
   { cmd: '/chats',       desc: '[id|resume <id>]        — chat history or resume session' },
   { cmd: '/build',       desc: '<task>                   — agent builds in cwd (reads/edits/tests)' },
+  { cmd: '/pipeline',   desc: '<task> [test with <cmd>]  — build→review→fix loop' },
   { cmd: '/run',         desc: '<cmd>                    — run shell command inline' },
   { cmd: '/undo',        desc: '                        — revert last applied forge patch' },
   { cmd: '/jobs',        desc: '                        — list running/completed jobs' },
@@ -200,6 +201,13 @@ function parseSlashCommand(input: string): Intent {
     case 'build':
     case 'agent':
       return { type: 'build', input: rest } as Intent;
+    case 'pipeline':
+    case 'pipe': {
+      const fitMatch = FITNESS_PATTERN.exec(rest);
+      const fitCmd = fitMatch ? fitMatch[1].trim() : null;
+      const pipeTask = fitCmd ? rest.replace(FITNESS_PATTERN, '').trim() : rest;
+      return { type: 'pipeline', task: pipeTask, fitnessCmd: fitCmd } as Intent;
+    }
     case 'run':
     case 'exec':
     case 'shell':

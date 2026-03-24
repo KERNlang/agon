@@ -39,7 +39,7 @@ export interface FlowModeMeta {
 export interface FlowRecord {
   id: string;
   schemaVersion: 1;
-  mode: 'forge'|'brainstorm'|'tribunal'|'campfire'|'chat'|'build'|'cesar';
+  mode: 'forge'|'brainstorm'|'tribunal'|'campfire'|'chat'|'build'|'cesar'|'pipeline';
   startedAt: string;
   endedAt: string;
   completionState: 'completed'|'aborted'|'crashed';

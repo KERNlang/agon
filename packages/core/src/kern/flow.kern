@@ -40,7 +40,7 @@ interface name=FlowModeMeta
 interface name=FlowRecord
   field name=id type=string
   field name=schemaVersion type=1
-  field name=mode type="'forge'|'brainstorm'|'tribunal'|'campfire'|'chat'|'build'|'cesar'"
+  field name=mode type="'forge'|'brainstorm'|'tribunal'|'campfire'|'chat'|'build'|'cesar'|'pipeline'"
   field name=startedAt type=string
   field name=endedAt type=string
   field name=completionState type="'completed'|'aborted'|'crashed'"

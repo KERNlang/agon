@@ -1,0 +1,153 @@
+import from="node:fs" names="readFileSync,writeFileSync,mkdirSync,readdirSync"
+import from="node:path" names="join"
+import from="./config.js" names="AGON_HOME"
+
+const name=FLOWS_DIR type=string
+  handler <<<
+    join(AGON_HOME, 'flows')
+  >>>
+
+const name=FRICTION_TAGS type="readonly string[]"
+  handler <<<
+    ['slow', 'wrong-mode', 'engine-error', 'unclear-output', 'timeout', 'context-lost', 'other'] as const
+  >>>
+
+interface name=FlowTelemetry
+  field name=engines type="string[]"
+  field name=durationMs type=number
+  field name=tokensByEngine type="Record<string, {prompt:number, response:number}>"
+  field name=touchedFileCount type=number optional=true
+
+interface name=FlowFeedback
+  field name=satisfactionRating type=number
+  field name=goalMet type="'yes'|'no'|'partly'"
+  field name=needsFollowup type=boolean
+  field name=frictionTags type="string[]"
+  field name=notes type=string optional=true
+
+interface name=FlowModeMeta
+  field name=forgeId type=string optional=true
+  field name=winnerEngine type=string optional=true
+  field name=brainstormWinner type=string optional=true
+  field name=tribunalVerdict type=string optional=true
+  field name=taskType type=string optional=true
+
+interface name=FlowRecord
+  field name=id type=string
+  field name=schemaVersion type=1
+  field name=mode type="'forge'|'brainstorm'|'tribunal'|'campfire'|'chat'|'build'"
+  field name=startedAt type=string
+  field name=endedAt type=string
+  field name=completionState type="'completed'|'aborted'|'crashed'"
+  field name=captureMethod type="'auto'|'manual'"
+  field name=telemetry type=FlowTelemetry
+  field name=feedback type=FlowFeedback optional=true
+  field name=modeMeta type=FlowModeMeta optional=true
+
+fn name=ensureFlowsDir params="" returns=void export=false
+  handler <<<
+    mkdirSync(FLOWS_DIR, { recursive: true });
+  >>>
+
+fn name=logFlow params="record:FlowRecord" returns=string
+  handler <<<
+    ensureFlowsDir();
+    const filename = `flow-${record.id}.json`;
+    const filepath = join(FLOWS_DIR, filename);
+    writeFileSync(filepath, JSON.stringify(record, null, 2));
+    return filepath;
+  >>>
+
+fn name=readFlows params="limit?:number" returns="FlowRecord[]"
+  handler <<<
+    ensureFlowsDir();
+    let files: string[];
+    try {
+      files = readdirSync(FLOWS_DIR)
+        .filter((f: string) => f.startsWith('flow-') && f.endsWith('.json'))
+        .sort()
+        .reverse();
+    } catch {
+      return [];
+    }
+
+    if (limit) files = files.slice(0, limit);
+
+    const records: FlowRecord[] = [];
+    for (const file of files) {
+      try {
+        const data = JSON.parse(readFileSync(join(FLOWS_DIR, file), 'utf-8')) as FlowRecord;
+        records.push(data);
+      } catch { /* skip malformed flow records */ }
+    }
+    return records;
+  >>>
+
+interface name=ModeStats
+  field name=mode type=string
+  field name=count type=number
+  field name=avgSatisfaction type="number|null"
+  field name=completedRate type=number
+  field name=avgDurationMs type=number
+  field name=avgTokens type=number
+  field name=followupRate type=number
+
+interface name=FlowAnalysis
+  field name=totalFlows type=number
+  field name=byMode type="ModeStats[]"
+  field name=topFriction type="{tag:string, count:number}[]"
+  field name=periodDays type=number
+
+fn name=analyzeFlows params="days?:number" returns=FlowAnalysis
+  handler <<<
+    const periodDays = days ?? 30;
+    const cutoff = new Date(Date.now() - periodDays * 86400_000).toISOString();
+    const all = readFlows();
+    const recent = all.filter((r) => r.startedAt >= cutoff);
+
+    const modeMap = new Map<string, FlowRecord[]>();
+    for (const r of recent) {
+      const list = modeMap.get(r.mode) ?? [];
+      list.push(r);
+      modeMap.set(r.mode, list);
+    }
+
+    const byMode: ModeStats[] = [];
+    for (const [mode, records] of modeMap) {
+      const withFeedback = records.filter((r) => r.feedback);
+      const ratings = withFeedback.map((r) => r.feedback!.satisfactionRating);
+      const avgSatisfaction = ratings.length > 0 ? ratings.reduce((a, b) => a + b, 0) / ratings.length : null;
+      const completed = records.filter((r) => r.completionState === 'completed').length;
+      const totalDuration = records.reduce((sum, r) => sum + r.telemetry.durationMs, 0);
+      const totalTokens = records.reduce((sum, r) => {
+        return sum + Object.values(r.telemetry.tokensByEngine).reduce((s, e) => s + e.prompt + e.response, 0);
+      }, 0);
+      const followups = withFeedback.filter((r) => r.feedback!.needsFollowup).length;
+
+      byMode.push({
+        mode,
+        count: records.length,
+        avgSatisfaction: avgSatisfaction !== null ? Math.round(avgSatisfaction * 10) / 10 : null,
+        completedRate: Math.round((completed / records.length) * 100),
+        avgDurationMs: Math.round(totalDuration / records.length),
+        avgTokens: Math.round(totalTokens / records.length),
+        followupRate: withFeedback.length > 0 ? Math.round((followups / withFeedback.length) * 100) : 0,
+      });
+    }
+    byMode.sort((a, b) => b.count - a.count);
+
+    const frictionCounts = new Map<string, number>();
+    for (const r of recent) {
+      if (r.feedback?.frictionTags) {
+        for (const tag of r.feedback.frictionTags) {
+          frictionCounts.set(tag, (frictionCounts.get(tag) ?? 0) + 1);
+        }
+      }
+    }
+    const topFriction = [...frictionCounts.entries()]
+      .map(([tag, count]) => ({ tag, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+
+    return { totalFlows: recent.length, byMode, topFriction, periodDays };
+  >>>

@@ -40,6 +40,7 @@ import {
   handlePlanShow, handlePlansList, handleApprove, handleRetry, handleCancel,
   handleApplyPatch, handleCp,
   handleFlowReport, handleFlowAnalysis, autoLogFlow,
+  handleBuild, handleRun,
 } from './handlers/index.js';
 import { codeBlockBuffer } from './code-buffer.js';
 import { getGhostCompletion } from './ghost-text.js';
@@ -1071,6 +1072,11 @@ function App() {
           }
           break;
         }
+        case 'build': {
+          runAsJob('build', intent.input?.slice(0, 40) ?? 'build', () => handleBuild(intent.input, dispatch, ctx));
+          return;
+        }
+        case 'run': await handleRun(intent.input, dispatch, ctx); break;
         case 'chat': setPendingImages([]); await handleChat(intent.input, dispatch, ctx, allImages); break;
         case 'leaderboard': handleLeaderboard(dispatch); break;
         case 'history': handleHistory(dispatch, intent.id); break;

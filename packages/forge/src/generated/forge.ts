@@ -40,10 +40,14 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
   
   const challengers = available.filter((id: string) => id !== starter);
   
+  const hasAgentEngines = available.some((id: string) => {
+    try { return !!registry.get(id).agent; } catch { return false; }
+  });
   const forgePrompt = buildForgePrompt({
     task: options.task,
     fitnessCmd: options.fitnessCmd,
     context: options.context,
+    agentMode: hasAgentEngines,
   });
   
   const manifest: ForgeManifest = {
@@ -205,6 +209,5 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
       worktreeRemove(wt.repoRoot, wt.path);
     }
   }
-  
 }
 

@@ -42,15 +42,28 @@ fn name=runStage1 async=true params="opts:{starter:string, forgePrompt:string, f
     opts.worktrees.push({ engineId: opts.starter, path: wtPath, repoRoot: root });
 
     opts.onEvent?.({ type: 'stage1:dispatch', engineId: opts.starter });
-    await opts.adapter.dispatch({
-      engine,
-      prompt: opts.forgePrompt,
-      cwd: wtPath,
-      mode: 'review',
-      timeout: engine.timeout,
-      outputDir: opts.forgeDir,
-      signal: opts.signal,
-    });
+    const useAgent = !!engine.agent && !!opts.adapter.dispatchAgent;
+    if (useAgent) {
+      await opts.adapter.dispatchAgent!({
+        engine,
+        prompt: opts.forgePrompt,
+        cwd: wtPath,
+        mode: 'agent',
+        timeout: engine.timeout,
+        outputDir: opts.forgeDir,
+        signal: opts.signal,
+      });
+    } else {
+      await opts.adapter.dispatch({
+        engine,
+        prompt: opts.forgePrompt,
+        cwd: wtPath,
+        mode: 'review',
+        timeout: engine.timeout,
+        outputDir: opts.forgeDir,
+        signal: opts.signal,
+      });
+    }
 
     opts.onEvent?.({ type: 'stage1:score', engineId: opts.starter });
     const result = await runFitness({
@@ -97,15 +110,28 @@ fn name=runStage2 async=true params="opts:{challengers:string[], forgePrompt:str
 
       opts.onEvent?.({ type: 'stage2:dispatch', engineId });
 
-      await opts.adapter.dispatch({
-        engine,
-        prompt: opts.forgePrompt,
-        cwd: wtPath,
-        mode: 'review',
-        timeout: engine.timeout,
-        outputDir: opts.forgeDir,
-        signal: opts.signal,
-      });
+      const useAgent = !!engine.agent && !!opts.adapter.dispatchAgent;
+      if (useAgent) {
+        await opts.adapter.dispatchAgent!({
+          engine,
+          prompt: opts.forgePrompt,
+          cwd: wtPath,
+          mode: 'agent',
+          timeout: engine.timeout,
+          outputDir: opts.forgeDir,
+          signal: opts.signal,
+        });
+      } else {
+        await opts.adapter.dispatch({
+          engine,
+          prompt: opts.forgePrompt,
+          cwd: wtPath,
+          mode: 'review',
+          timeout: engine.timeout,
+          outputDir: opts.forgeDir,
+          signal: opts.signal,
+        });
+      }
 
       opts.onEvent?.({ type: 'stage2:score', engineId });
 

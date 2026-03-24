@@ -1,10 +1,16 @@
-export type EngineMode = 'exec' | 'review';
+export type EngineMode = 'exec' | 'review' | 'agent';
 
 export type TaskClass = 'algorithm' | 'refactor' | 'bugfix' | 'test' | 'docs' | 'feature' | 'other';
 
 export interface EngineModeConfig {
   args: string[];
   stdin?: boolean;
+}
+
+export interface ImageAttachment {
+  path: string;
+  filename: string;
+  mimeType: string;
 }
 
 export interface EngineModelConfig {
@@ -19,7 +25,7 @@ export interface EngineEnvVar {
 }
 
 export interface EngineDefinition {
-  schemaVersion: 1|2;
+  schemaVersion: 1|2|3;
   id: string;
   displayName: string;
   binary: string;
@@ -37,6 +43,9 @@ export interface EngineDefinition {
   modes?: EngineMode[];
   modelConfigKey?: string;
   adapterType?: string;
+  capabilities?: string[];
+  imageFlag?: string;
+  agent?: EngineModeConfig;
 }
 
 export interface DispatchOptions {
@@ -47,6 +56,7 @@ export interface DispatchOptions {
   timeout: number;
   outputDir: string;
   signal?: AbortSignal;
+  images?: ImageAttachment[];
 }
 
 export interface DispatchResult {
@@ -57,9 +67,17 @@ export interface DispatchResult {
   timedOut: boolean;
 }
 
+export interface AgentDispatchResult extends DispatchResult {
+  diff: string;
+  diffLines: number;
+  filesChanged: number;
+}
+
 export interface EngineAdapter {
   dispatch: (options:DispatchOptions)=>Promise<DispatchResult>;
   dispatchStream?: (options:DispatchOptions)=>AsyncGenerator<string, DispatchResult, void>;
+  dispatchAgent?: (options:DispatchOptions)=>Promise<AgentDispatchResult>;
+  dispatchAgentStream?: (options:DispatchOptions)=>AsyncGenerator<string, AgentDispatchResult, void>;
   isAvailable: (engine:EngineDefinition)=>Promise<boolean>;
   getVersion: (engine:EngineDefinition)=>Promise<string|null>;
 }
@@ -122,10 +140,11 @@ export interface AgonConfig {
   eloKFactor?: number;
   contextSummary?: boolean;
   onboarded?: boolean;
-  caesarModel?: 'smollm2-360m'|'qwen-0.5b'|'phi-3-mini'|'none';
   projectContext?: string;
   contextFormat?: 'plain'|'kern';
   approvalLevel?: 'auto'|'plan'|'step';
+  agentTimeout?: number;
+  agentPermissionLevel?: 'full'|'plan'|'read-only';
 }
 
 export const DEFAULT_AGON_CONFIG: Required<AgonConfig> = {
@@ -146,10 +165,11 @@ export const DEFAULT_AGON_CONFIG: Required<AgonConfig> = {
   eloKFactor: 32,
   contextSummary: true,
   onboarded: false,
-  caesarModel: 'smollm2-360m',
   projectContext: '',
   contextFormat: 'plain',
   approvalLevel: 'plan',
+  agentTimeout: 600,
+  agentPermissionLevel: 'full',
 };
 
 export interface ForgeOptions {

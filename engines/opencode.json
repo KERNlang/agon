@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 3,
+  "id": "opencode",
+  "displayName": "OpenCode",
+  "binary": "opencode",
+  "searchPaths": [
+    "${HOME}/.opencode/bin",
+    "${HOME}/.local/bin",
+    "${HOME}/.npm-global/bin",
+    "/usr/local/bin"
+  ],
+  "versionCmd": ["--version"],
+  "isLocal": false,
+  "tier": "builtin",
+  "installHint": "curl -fsSL https://opencode.ai/install | bash",
+  "timeout": 180,
+
+  "exec": {
+    "args": ["run", "--format", "json", "{prompt}"]
+  },
+  "review": {
+    "args": ["run", "--format", "json", "{prompt}"]
+  },
+  "agent": {
+    "args": ["run", "--auto-approve", "{prompt}"]
+  },
+
+  "model": {
+    "configKey": "opencode_model",
+    "flag": "--model",
+    "default": null
+  },
+
+  "env": {
+    "ANTHROPIC_API_KEY": { "required": false },
+    "OPENAI_API_KEY": { "required": false }
+  },
+
+  "test": { "args": ["--version"] }
+}

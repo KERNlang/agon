@@ -31,11 +31,16 @@ interface name=FlowModeMeta
   field name=brainstormWinner type=string optional=true
   field name=tribunalVerdict type=string optional=true
   field name=taskType type=string optional=true
+  field name=orchestrationPath type=string optional=true
+  field name=leadEngine type=string optional=true
+  field name=observerEngines type="string[]" optional=true
+  field name=scoutCount type=number optional=true
+  field name=cesarConfidence type=number optional=true
 
 interface name=FlowRecord
   field name=id type=string
   field name=schemaVersion type=1
-  field name=mode type="'forge'|'brainstorm'|'tribunal'|'campfire'|'chat'|'build'"
+  field name=mode type="'forge'|'brainstorm'|'tribunal'|'campfire'|'chat'|'build'|'cesar'"
   field name=startedAt type=string
   field name=endedAt type=string
   field name=completionState type="'completed'|'aborted'|'crashed'"

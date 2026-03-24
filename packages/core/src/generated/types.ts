@@ -145,6 +145,11 @@ export interface AgonConfig {
   approvalLevel?: 'auto'|'plan'|'step';
   agentTimeout?: number;
   agentPermissionLevel?: 'full'|'plan'|'read-only';
+  cesarEnabled?: boolean;
+  cesarScoutCount?: number;
+  cesarDirectThreshold?: number;
+  cesarDisagreementSpread?: number;
+  campfireObserverStrategy?: 'lead-first'|'all-respond';
 }
 
 export const DEFAULT_AGON_CONFIG: Required<AgonConfig> = {
@@ -170,7 +175,39 @@ export const DEFAULT_AGON_CONFIG: Required<AgonConfig> = {
   approvalLevel: 'plan',
   agentTimeout: 600,
   agentPermissionLevel: 'full',
+  cesarEnabled: false,
+  cesarScoutCount: 2,
+  cesarDirectThreshold: 85,
+  cesarDisagreementSpread: 20,
+  campfireObserverStrategy: 'lead-first',
 };
+
+export interface ScoutBid {
+  engineId: string;
+  confidence: number;
+  approach: string;
+  steps: string[];
+  keyFiles: string[];
+  risk: 'low'|'medium'|'high';
+  needsCompetition: boolean;
+}
+
+export interface RoutingDecision {
+  action: 'chat'|'build'|'campfire'|'forge';
+  leadEngine: string;
+  confidence: number;
+  reasoning: string;
+  seedPlan?: string;
+  observerEngines: string[];
+  forgeEngines?: string[];
+  bids: ScoutBid[];
+}
+
+export interface CampfireMessage {
+  engineId: string;
+  content: string;
+  isLead: boolean;
+}
 
 export interface ForgeOptions {
   task: string;
@@ -178,6 +215,7 @@ export interface ForgeOptions {
   cwd: string;
   forgeDir: string;
   context?: string;
+  seedPlan?: string;
   timeout?: number;
   fitnessTimeout?: number;
   starter?: string;

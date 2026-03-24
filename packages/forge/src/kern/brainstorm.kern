@@ -1,9 +1,19 @@
-import from="@agon/core" names="EngineAdapter,BrainstormBid,BrainstormResult" types=true
-import from="@agon/core" names="EngineRegistry,buildBrainstormPrompt"
+import from="@agon/core" names="EngineAdapter,BrainstormBid,BrainstormResult,ScoutBid" types=true
+import from="@agon/core" names="EngineRegistry,buildBrainstormPrompt,getElo,loadConfig"
 import from="kern-lang" names="buildKernDraftPrompt,parseKernDraft,buildKernRankPrompt"
 import from="kern-lang" names="KernDraft" types=true
 
-fn name=qualityScore params="draft:KernDraft" returns="number"
+fn name=calibrateConfidence params="engineId:string, rawBid:number" returns=number
+  handler <<<
+    const elo = getElo();
+    const history = elo.global[engineId];
+    if (!history || history.wins + history.losses < 3) return rawBid;
+    const winRate = history.wins / (history.wins + history.losses);
+    // Blend: 30% self-reported, 70% track record
+    return Math.round(rawBid * 0.3 + winRate * 100 * 0.7);
+  >>>
+
+fn name=qualityScore params="engineId:string, draft:KernDraft" returns="number"
   handler <<<
     let score = 0;
     if (draft.approach.length > 10) score += 20;
@@ -12,17 +22,120 @@ fn name=qualityScore params="draft:KernDraft" returns="number"
     score += Math.min(draft.steps.length, 7) * 5;
     score += Math.min(draft.tradeoffs.length, 5) * 5;
     score += Math.min(draft.keyFiles.length, 5) * 3;
-    score += draft.confidence * 0.05;
+    // Use calibrated confidence, not raw self-report
+    score += calibrateConfidence(engineId, draft.confidence) * 0.05;
     return score;
   >>>
 
 fn name=rankDrafts params="drafts:{engineId:string, draft:KernDraft, raw:string}[]" returns="{engineId:string, draft:KernDraft, raw:string}[]"
   handler <<<
     return [...drafts].sort((a, b) => {
-      const scoreA = qualityScore(a.draft);
-      const scoreB = qualityScore(b.draft);
+      const scoreA = qualityScore(a.engineId, a.draft);
+      const scoreB = qualityScore(b.engineId, b.draft);
       return scoreB - scoreA;
     });
+  >>>
+
+fn name=collectRankedDrafts async=true params="opts:{question:string, context?:string, engines:string[], registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, signal?:AbortSignal}" returns="Promise<{engineId:string, draft:KernDraft, raw:string}[]>"
+  handler <<<
+    const draftPrompt = buildKernDraftPrompt({
+      question: opts.question,
+      context: opts.context,
+      mode: 'brainstorm',
+    });
+
+    const draftPromises = opts.engines.map(async (engineId: string) => {
+      const engine = opts.registry.get(engineId);
+      try {
+        const result = await opts.adapter.dispatch({
+          engine,
+          prompt: draftPrompt,
+          cwd: process.cwd(),
+          mode: 'exec',
+          timeout: opts.timeout,
+          outputDir: opts.outputDir,
+          signal: opts.signal,
+        });
+
+        const draft = parseKernDraft(result.stdout);
+        if (draft) {
+          return { engineId, draft, raw: result.stdout };
+        }
+
+        return { engineId, draft: fallbackParse(result.stdout), raw: result.stdout };
+      } catch {
+        return {
+          engineId,
+          draft: {
+            approach: 'Failed to respond',
+            reasoning: '',
+            tradeoffs: [],
+            confidence: 0,
+            keyFiles: [],
+            steps: [],
+          } satisfies KernDraft,
+          raw: '',
+        };
+      }
+    });
+
+    const drafts = await Promise.all(draftPromises);
+    return rankDrafts(drafts);
+  >>>
+
+fn name=scoutScore params="bid:ScoutBid" returns=number
+  handler <<<
+    let score = 0;
+    // Confidence: 40% weight (0-40 points)
+    score += Math.min(bid.confidence, 100) * 0.4;
+    // Key files: 20% weight (0-20 points)
+    score += Math.min(bid.keyFiles.length, 5) * 4;
+    // Steps detail: 20% weight (0-20 points)
+    score += Math.min(bid.steps.length, 5) * 4;
+    // Risk assessment: 20% weight (0-20 points)
+    score += bid.risk === 'low' ? 20 : bid.risk === 'medium' ? 10 : 0;
+    return score;
+  >>>
+
+fn name=runScout async=true params="opts:{question:string, context?:string, engines:string[], scoutCount?:number, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, signal?:AbortSignal}" returns="Promise<{rankedBids:ScoutBid[], leadEngine:string, topConfidence:number, disagreementSpread:number}>"
+  handler <<<
+    const count = opts.scoutCount ?? 2;
+    const scouts = opts.engines.slice(0, count);
+
+    const ranked = await collectRankedDrafts({
+      question: opts.question,
+      context: opts.context,
+      engines: scouts,
+      registry: opts.registry,
+      adapter: opts.adapter,
+      timeout: Math.min(opts.timeout, 30),
+      outputDir: opts.outputDir,
+      signal: opts.signal,
+    });
+
+    const bids: ScoutBid[] = ranked.map((d) => ({
+      engineId: d.engineId,
+      confidence: calibrateConfidence(d.engineId, d.draft.confidence),
+      approach: d.draft.approach,
+      steps: d.draft.steps,
+      keyFiles: d.draft.keyFiles,
+      risk: d.draft.approach.toLowerCase().includes('risk') || d.draft.tradeoffs.length > 2 ? 'high' as const : d.draft.tradeoffs.length > 0 ? 'medium' as const : 'low' as const,
+      needsCompetition: d.draft.tradeoffs.some((t: string) => /compet|test|verify|compar/i.test(t)),
+    }));
+
+    // Sort by scoutScore
+    bids.sort((a, b) => scoutScore(b) - scoutScore(a));
+
+    const topConfidence = bids.length > 0 ? bids[0].confidence : 0;
+    const secondConfidence = bids.length > 1 ? bids[1].confidence : 0;
+    const disagreementSpread = Math.abs(topConfidence - secondConfidence);
+
+    return {
+      rankedBids: bids,
+      leadEngine: bids.length > 0 ? bids[0].engineId : scouts[0],
+      topConfidence,
+      disagreementSpread,
+    };
   >>>
 
 fn name=fallbackParse params="output:string" returns="KernDraft"
@@ -68,54 +181,20 @@ fn name=fallbackParse params="output:string" returns="KernDraft"
 
 fn name=runBrainstorm async=true params="opts:{question:string, context?:string, engines:string[], registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, signal?:AbortSignal}" returns="Promise<BrainstormResult>"
   handler <<<
-    const draftPrompt = buildKernDraftPrompt({
+    const ranked = await collectRankedDrafts({
       question: opts.question,
       context: opts.context,
-      mode: 'brainstorm',
+      engines: opts.engines,
+      registry: opts.registry,
+      adapter: opts.adapter,
+      timeout: opts.timeout,
+      outputDir: opts.outputDir,
+      signal: opts.signal,
     });
-
-    const draftPromises = opts.engines.map(async (engineId: string) => {
-      const engine = opts.registry.get(engineId);
-      try {
-        const result = await opts.adapter.dispatch({
-          engine,
-          prompt: draftPrompt,
-          cwd: process.cwd(),
-          mode: 'exec',
-          timeout: opts.timeout,
-          outputDir: opts.outputDir,
-          signal: opts.signal,
-        });
-
-        const draft = parseKernDraft(result.stdout);
-        if (draft) {
-          return { engineId, draft, raw: result.stdout };
-        }
-
-        return { engineId, draft: fallbackParse(result.stdout), raw: result.stdout };
-      } catch {
-        return {
-          engineId,
-          draft: {
-            approach: 'Failed to respond',
-            reasoning: '',
-            tradeoffs: [],
-            confidence: 0,
-            keyFiles: [],
-            steps: [],
-          } satisfies KernDraft,
-          raw: '',
-        };
-      }
-    });
-
-    const drafts = await Promise.all(draftPromises);
-
-    const ranked = rankDrafts(drafts);
 
     const bids: BrainstormBid[] = ranked.map((d, i) => ({
       engineId: d.engineId,
-      confidence: d.draft.confidence,
+      confidence: calibrateConfidence(d.engineId, d.draft.confidence),
       reasoning: d.draft.approach + (d.draft.reasoning ? ` — ${d.draft.reasoning}` : ''),
       approach: d.draft.steps.map((s: string, j: number) => `${j + 1}. ${s}`).join('\n'),
     }));

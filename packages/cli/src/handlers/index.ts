@@ -27,4 +27,5 @@ export {
 export { handleCp } from './cp.js';
 export { handleBuild } from './build.js';
 export { handleRun } from './run.js';
+export { routeViaCesar } from './cesar.js';
 export { handleFlowReport, handleFlowAnalysis, autoLogFlow } from './flow.js';

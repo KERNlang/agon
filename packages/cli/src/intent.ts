@@ -36,6 +36,7 @@ export type Intent =
   | { type: 'chats'; sessionId?: string }
   | { type: 'build'; input: string }
   | { type: 'run'; input: string }
+  | { type: 'cesar'; input: string }
   | { type: 'clear' }
   | { type: 'slash-list' }
   | { type: 'help' }

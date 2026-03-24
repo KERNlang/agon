@@ -1,12 +1,21 @@
-import type { EngineAdapter, BrainstormBid, BrainstormResult } from '@agon/core';
+import type { EngineAdapter, BrainstormBid, BrainstormResult, ScoutBid } from '@agon/core';
 
-import { EngineRegistry, buildBrainstormPrompt } from '@agon/core';
+import { EngineRegistry, buildBrainstormPrompt, getElo, loadConfig } from '@agon/core';
 
 import { buildKernDraftPrompt, parseKernDraft, buildKernRankPrompt } from 'kern-lang';
 
 import type { KernDraft } from 'kern-lang';
 
-export function qualityScore(draft: KernDraft): number {
+export function calibrateConfidence(engineId: string, rawBid: number): number {
+  const elo = getElo();
+  const history = elo.global[engineId];
+  if (!history || history.wins + history.losses < 3) return rawBid;
+  const winRate = history.wins / (history.wins + history.losses);
+  // Blend: 30% self-reported, 70% track record
+  return Math.round(rawBid * 0.3 + winRate * 100 * 0.7);
+}
+
+export function qualityScore(engineId: string, draft: KernDraft): number {
   let score = 0;
   if (draft.approach.length > 10) score += 20;
   if (draft.approach.length > 30) score += 10;
@@ -14,62 +23,20 @@ export function qualityScore(draft: KernDraft): number {
   score += Math.min(draft.steps.length, 7) * 5;
   score += Math.min(draft.tradeoffs.length, 5) * 5;
   score += Math.min(draft.keyFiles.length, 5) * 3;
-  score += draft.confidence * 0.05;
+  // Use calibrated confidence, not raw self-report
+  score += calibrateConfidence(engineId, draft.confidence) * 0.05;
   return score;
-  
 }
 
-export function rankDrafts(drafts: {engineId:string, draft: KernDraft, raw: string}[]): {engineId:string, draft:KernDraft, raw:string}[] {
+export function rankDrafts(drafts: {engineId:string, draft:KernDraft, raw:string}[]): {engineId:string, draft:KernDraft, raw:string}[] {
   return [...drafts].sort((a, b) => {
-    const scoreA = qualityScore(a.draft);
-    const scoreB = qualityScore(b.draft);
+    const scoreA = qualityScore(a.engineId, a.draft);
+    const scoreB = qualityScore(b.engineId, b.draft);
     return scoreB - scoreA;
   });
-  
 }
 
-export function fallbackParse(output: string): KernDraft {
-  const stripped = output.replace(/\x60\x60\x60(?:json)?\s*/gi, '').replace(/\x60\x60\x60/g, '');
-  let depth = 0;
-  let start = -1;
-  
-  for (let i = 0; i < stripped.length; i++) {
-    if (stripped[i] === '{') {
-      if (depth === 0) start = i;
-      depth++;
-    } else if (stripped[i] === '}') {
-      depth--;
-      if (depth === 0 && start !== -1) {
-        try {
-          const parsed = JSON.parse(stripped.slice(start, i + 1));
-          if (typeof parsed === 'object' && parsed !== null) {
-            return {
-              approach: String(parsed.approach ?? parsed.reasoning ?? ''),
-              reasoning: String(parsed.reasoning ?? ''),
-              tradeoffs: [],
-              confidence: Number(parsed.confidence) || 50,
-              keyFiles: [],
-              steps: parsed.approach ? [parsed.approach] : [],
-            };
-          }
-        } catch { /* keep looking */ }
-        start = -1;
-      }
-    }
-  }
-  
-  return {
-    approach: output.slice(0, 200),
-    reasoning: '',
-    tradeoffs: [],
-    confidence: 50,
-    keyFiles: [],
-    steps: [],
-  };
-  
-}
-
-export async function runBrainstorm(opts: {question:string, context?: string, engines: string[], registry: EngineRegistry, adapter: EngineAdapter, timeout: number, outputDir: string, signal?: AbortSignal}): Promise<BrainstormResult> {
+export async function collectRankedDrafts(opts: {question:string, context?:string, engines:string[], registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, signal?:AbortSignal}): Promise<{engineId:string, draft:KernDraft, raw:string}[]> {
   const draftPrompt = buildKernDraftPrompt({
     question: opts.question,
     context: opts.context,
@@ -112,12 +79,117 @@ export async function runBrainstorm(opts: {question:string, context?: string, en
   });
   
   const drafts = await Promise.all(draftPromises);
+  return rankDrafts(drafts);
+}
+
+export function scoutScore(bid: ScoutBid): number {
+  let score = 0;
+  // Confidence: 40% weight (0-40 points)
+  score += Math.min(bid.confidence, 100) * 0.4;
+  // Key files: 20% weight (0-20 points)
+  score += Math.min(bid.keyFiles.length, 5) * 4;
+  // Steps detail: 20% weight (0-20 points)
+  score += Math.min(bid.steps.length, 5) * 4;
+  // Risk assessment: 20% weight (0-20 points)
+  score += bid.risk === 'low' ? 20 : bid.risk === 'medium' ? 10 : 0;
+  return score;
+}
+
+export async function runScout(opts: {question:string, context?:string, engines:string[], scoutCount?:number, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, signal?:AbortSignal}): Promise<{rankedBids:ScoutBid[], leadEngine:string, topConfidence:number, disagreementSpread:number}> {
+  const count = opts.scoutCount ?? 2;
+  const scouts = opts.engines.slice(0, count);
   
-  const ranked = rankDrafts(drafts);
+  const ranked = await collectRankedDrafts({
+    question: opts.question,
+    context: opts.context,
+    engines: scouts,
+    registry: opts.registry,
+    adapter: opts.adapter,
+    timeout: Math.min(opts.timeout, 30),
+    outputDir: opts.outputDir,
+    signal: opts.signal,
+  });
+  
+  const bids: ScoutBid[] = ranked.map((d) => ({
+    engineId: d.engineId,
+    confidence: calibrateConfidence(d.engineId, d.draft.confidence),
+    approach: d.draft.approach,
+    steps: d.draft.steps,
+    keyFiles: d.draft.keyFiles,
+    risk: d.draft.approach.toLowerCase().includes('risk') || d.draft.tradeoffs.length > 2 ? 'high' as const : d.draft.tradeoffs.length > 0 ? 'medium' as const : 'low' as const,
+    needsCompetition: d.draft.tradeoffs.some((t: string) => /compet|test|verify|compar/i.test(t)),
+  }));
+  
+  // Sort by scoutScore
+  bids.sort((a, b) => scoutScore(b) - scoutScore(a));
+  
+  const topConfidence = bids.length > 0 ? bids[0].confidence : 0;
+  const secondConfidence = bids.length > 1 ? bids[1].confidence : 0;
+  const disagreementSpread = Math.abs(topConfidence - secondConfidence);
+  
+  return {
+    rankedBids: bids,
+    leadEngine: bids.length > 0 ? bids[0].engineId : scouts[0],
+    topConfidence,
+    disagreementSpread,
+  };
+}
+
+export function fallbackParse(output: string): KernDraft {
+  const stripped = output.replace(/\x60\x60\x60(?:json)?\s*/gi, '').replace(/\x60\x60\x60/g, '');
+  let depth = 0;
+  let start = -1;
+  
+  for (let i = 0; i < stripped.length; i++) {
+    if (stripped[i] === '{') {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (stripped[i] === '}') {
+      depth--;
+      if (depth === 0 && start !== -1) {
+        try {
+          const parsed = JSON.parse(stripped.slice(start, i + 1));
+          if (typeof parsed === 'object' && parsed !== null) {
+            return {
+              approach: String(parsed.approach ?? parsed.reasoning ?? ''),
+              reasoning: String(parsed.reasoning ?? ''),
+              tradeoffs: [],
+              confidence: Number(parsed.confidence) || 50,
+              keyFiles: [],
+              steps: parsed.approach ? [parsed.approach] : [],
+            };
+          }
+        } catch { /* keep looking */ }
+        start = -1;
+      }
+    }
+  }
+  
+  return {
+    approach: output.slice(0, 200),
+    reasoning: '',
+    tradeoffs: [],
+    confidence: 50,
+    keyFiles: [],
+    steps: [],
+  };
+}
+
+export async function runBrainstorm(opts: {question:string, context?:string, engines:string[], registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, signal?:AbortSignal}): Promise<BrainstormResult> {
+  const ranked = await collectRankedDrafts({
+    question: opts.question,
+    context: opts.context,
+    engines: opts.engines,
+    registry: opts.registry,
+    adapter: opts.adapter,
+    timeout: opts.timeout,
+    outputDir: opts.outputDir,
+    signal: opts.signal,
+  });
   
   const bids: BrainstormBid[] = ranked.map((d, i) => ({
     engineId: d.engineId,
-    confidence: d.draft.confidence,
+    confidence: calibrateConfidence(d.engineId, d.draft.confidence),
     reasoning: d.draft.approach + (d.draft.reasoning ? ` — ${d.draft.reasoning}` : ''),
     approach: d.draft.steps.map((s: string, j: number) => `${j + 1}. ${s}`).join('\n'),
   }));
@@ -166,6 +238,5 @@ export async function runBrainstorm(opts: {question:string, context?: string, en
     winner: winner.engineId,
     response: answerResult.stdout,
   };
-  
 }
 

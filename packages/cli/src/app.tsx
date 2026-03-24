@@ -42,6 +42,7 @@ import {
   handleFlowReport, handleFlowAnalysis, autoLogFlow,
   handleBuild, handleRun,
 } from './handlers/index.js';
+import { routeViaCesar } from './handlers/cesar.js';
 import { codeBlockBuffer } from './code-buffer.js';
 import { getGhostCompletion } from './ghost-text.js';
 import { copyToClipboard, applyPatchToTree } from '@agon/core';
@@ -1164,7 +1165,28 @@ function App() {
         case 'clear': dispatch({ type: 'clear' }); codeBlockBuffer.clear(); dispatch({ type: 'info', message: 'Chat history cleared.' }); break;
         case 'help': dispatch({ type: 'text', content: SLASH_COMMANDS.map((c) => `${c.cmd.padEnd(16)} ${c.desc}`).join('\n') }); break;
         case 'exit': exit(); return;
-        case 'unknown': setPendingImages([]); await handleChat(intent.input, dispatch, ctx, allImages); break;
+        case 'unknown': {
+          setPendingImages([]);
+          // César routing: only in chat mode, when enabled, and unstructured input
+          if (ctx.config.cesarEnabled && mode === 'chat') {
+            const cesarStart = Date.now();
+            runAsJob('cesar', intent.input?.slice(0, 40) ?? 'routing', async () => {
+              const decision = await routeViaCesar(intent.input, dispatch, ctx);
+              switch (decision.action) {
+                case 'build': await handleBuild(intent.input, dispatch, ctx); break;
+                case 'chat': await handleChat(intent.input, dispatch, ctx, allImages); break;
+                case 'campfire': await handleCampfire(intent.input ?? '', dispatch, ctx); break;
+                case 'forge': dispatch({ type: 'info', message: `César suggests forge — use /forge <task> test with <cmd>` }); break;
+              }
+              autoLogFlow(ctx, 'chat', cesarStart, 'completed', {
+                taskType: `cesar→${decision.action}`,
+              });
+            });
+            return;
+          }
+          await handleChat(intent.input, dispatch, ctx, allImages);
+          break;
+        }
       }
     } catch (err) {
       dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) });

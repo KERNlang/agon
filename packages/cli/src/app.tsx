@@ -1183,7 +1183,7 @@ function App() {
         case 'auto': {
           // ── Auto-router: Claude Code-like experience ──
           // Progressive dispatch: question→chat(no tools), code+single→build,
-          // code+multi→silent pipeline, ambiguous+multi→César scouts
+          // code+multi→silent pipeline, ambiguous+multi→Cesar scouts
           setPendingImages([]);
           const agentIds = ctx.registry.agentCapableIds();
           const multiEngine = agentIds.length > 1;
@@ -1208,7 +1208,7 @@ function App() {
                 case 'pipeline': await handlePipeline(intent.input, dispatch, ctx, undefined, { quiet: true }); break;
                 case 'chat': await handleChat(intent.input, dispatch, ctx, allImages); break;
                 case 'campfire': await handleCampfire(intent.input ?? '', dispatch, ctx); break;
-                case 'forge': dispatch({ type: 'info', message: `César suggests forge — use /forge <task> test with <cmd>` }); break;
+                case 'forge': dispatch({ type: 'info', message: `Cesar suggests forge — use /forge <task> test with <cmd>` }); break;
               }
               autoLogFlow(ctx, 'cesar', autoStart, 'completed', { taskType: `auto→${decision.action}` });
             });

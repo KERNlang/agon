@@ -21,7 +21,7 @@ fn name=detectTargetEngine params="input:string, availableIds:string[]" returns=
     return { engineId: null, message: input };
   >>>
 
-fn name=handleChat params="input:string, dispatch:Dispatch, ctx:HandlerContext, images?:ImageAttachment[]" returns="Promise<void>" async=true
+fn name=handleChat params="input:string, dispatch:Dispatch, ctx:HandlerContext, images?:ImageAttachment[], opts?:{toolPolicy?:'full'|'none'}" returns="Promise<void>" async=true
   signal name=abort
   handler <<<
     ensureAgonHome();
@@ -62,7 +62,8 @@ fn name=handleChat params="input:string, dispatch:Dispatch, ctx:HandlerContext, 
 
     ctx.setActiveAbort(abort);
 
-    const useAgent = !!engine.agent;
+    const forceNoTools = opts?.toolPolicy === 'none';
+    const useAgent = !forceNoTools && !!engine.agent;
     const dispatchOpts = {
       engine,
       prompt,

@@ -25,6 +25,7 @@ export interface Intent {
   index: number|undefined;
   tribunalMode: string|undefined;
   jobId: string|undefined;
+  taskClass: 'code'|'question'|'ambiguous'|undefined;
 }
 
 export const SLASH_COMMANDS: SlashCommand[] = [
@@ -75,6 +76,19 @@ export const CONFIG_KEYWORDS: RegExp = /\b(config|settings?)\b/i;
 export const HELP_KEYWORDS: RegExp = /^(help|\?)$/i;
 
 export const EXIT_KEYWORDS: RegExp = /^(exit|quit|bye)$/i;
+
+export const QUESTION_PATTERN: RegExp = /^(what|how|why|where|when|who|which|explain|describe|tell|show|list|is there|does|can you explain|walk me through)\b/i;
+
+export const CODE_TASK_PATTERN: RegExp = /^(fix|add|implement|refactor|debug|create|build|write|update|change|remove|delete|rename|move|test|deploy|install|upgrade|migrate|convert|extract|inline|optimize|port)\b/i;
+
+export const CODE_ARTIFACT_PATTERN: RegExp = /(?:at \w+.*:\d+|\.[tj]sx?\b|\.[a-z]{2,4}:\d+|^[+-]{3}\s)/m;
+
+export function classifyTask(input: string): 'code'|'question'|'ambiguous' {
+  if (QUESTION_PATTERN.test(input)) return 'question';
+  if (CODE_TASK_PATTERN.test(input)) return 'code';
+  if (CODE_ARTIFACT_PATTERN.test(input)) return 'code';
+  return 'ambiguous';
+}
 
 function parseForgeInput(input: string): Intent {
   const fitnessMatch = FITNESS_PATTERN.exec(input);
@@ -245,6 +259,6 @@ export function detectIntent(raw: string): Intent {
   if (ENGINES_KEYWORDS.test(input)) return { type: 'engines' } as Intent;
   if (CONFIG_KEYWORDS.test(input)) return { type: 'config' } as Intent;
   
-  return { type: 'unknown', input } as Intent;
+  return { type: 'auto', input, taskClass: classifyTask(input) } as Intent;
 }
 

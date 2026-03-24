@@ -25,7 +25,7 @@ function detectTargetEngine(input: string, availableIds: string[]): {engineId:st
   return { engineId: null, message: input };
 }
 
-export async function handleChat(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<void> {
+export async function handleChat(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[], opts?: {toolPolicy?:'full'|'none'}): Promise<void> {
   const abort = new AbortController();
   try {
     ensureAgonHome();
@@ -66,7 +66,8 @@ export async function handleChat(input: string, dispatch: Dispatch, ctx: Handler
     
     ctx.setActiveAbort(abort);
     
-    const useAgent = !!engine.agent;
+    const forceNoTools = opts?.toolPolicy === 'none';
+    const useAgent = !forceNoTools && !!engine.agent;
     const dispatchOpts = {
       engine,
       prompt,

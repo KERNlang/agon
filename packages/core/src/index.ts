@@ -6,7 +6,7 @@ export { updateElo, getElo, getEngineRating } from './elo.js';
 export { classifyTask } from './task-classifier.js';
 export {
   repoRoot, headSha, worktreePrune, worktreeCreate, worktreeRemove,
-  worktreeDiff, diffLineCount, diffFileCount, applyPatch, recentCommits,
+  worktreeDiff, readOnlyDiff, diffLineCount, diffFileCount, applyPatch, recentCommits,
   currentBranch, isDirty,
   gitStatusShort, gitDiffStat, gitChangedFiles, gitTruncatedDiff,
 } from './git.js';

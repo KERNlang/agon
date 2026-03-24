@@ -1172,25 +1172,47 @@ function App() {
         case 'clear': dispatch({ type: 'clear' }); codeBlockBuffer.clear(); dispatch({ type: 'info', message: 'Chat history cleared.' }); break;
         case 'help': dispatch({ type: 'text', content: SLASH_COMMANDS.map((c) => `${c.cmd.padEnd(16)} ${c.desc}`).join('\n') }); break;
         case 'exit': exit(); return;
-        case 'unknown': {
+        case 'auto': {
+          // ── Auto-router: Claude Code-like experience ──
+          // Progressive dispatch: question→chat(no tools), code+single→build,
+          // code+multi→silent pipeline, ambiguous+multi→César scouts
           setPendingImages([]);
-          // César routing: only in chat mode, when enabled, and unstructured input
-          if (ctx.config.cesarEnabled && mode === 'chat') {
-            const cesarStart = Date.now();
+          const agentIds = ctx.registry.agentCapableIds();
+          const multiEngine = agentIds.length > 1;
+          const taskClass = (intent as any).taskClass as 'code' | 'question' | 'ambiguous';
+
+          if (taskClass === 'question') {
+            await handleChat(intent.input, dispatch, ctx, allImages, { toolPolicy: 'none' });
+          } else if (taskClass === 'code' && multiEngine) {
+            runAsJob('pipeline', intent.input?.slice(0, 40) ?? 'auto', () =>
+              handlePipeline(intent.input, dispatch, ctx, undefined, { quiet: true }));
+            return;
+          } else if (taskClass === 'code' && agentIds.length > 0) {
+            runAsJob('build', intent.input?.slice(0, 40) ?? 'auto', () =>
+              handleBuild(intent.input, dispatch, ctx));
+            return;
+          } else if (taskClass === 'ambiguous' && multiEngine) {
+            const autoStart = Date.now();
             runAsJob('cesar', intent.input?.slice(0, 40) ?? 'routing', async () => {
-              const decision = await routeViaCesar(intent.input, dispatch, ctx);
+              const decision = await routeViaCesar(intent.input, dispatch, ctx, 'ambiguous');
               switch (decision.action) {
                 case 'build': await handleBuild(intent.input, dispatch, ctx); break;
+                case 'pipeline': await handlePipeline(intent.input, dispatch, ctx, undefined, { quiet: true }); break;
                 case 'chat': await handleChat(intent.input, dispatch, ctx, allImages); break;
                 case 'campfire': await handleCampfire(intent.input ?? '', dispatch, ctx); break;
                 case 'forge': dispatch({ type: 'info', message: `César suggests forge — use /forge <task> test with <cmd>` }); break;
               }
-              autoLogFlow(ctx, 'chat', cesarStart, 'completed', {
-                taskType: `cesar→${decision.action}`,
-              });
+              autoLogFlow(ctx, 'cesar', autoStart, 'completed', { taskType: `auto→${decision.action}` });
             });
             return;
+          } else {
+            // Fallback: single engine, ambiguous or no agent — use chat with tools
+            await handleChat(intent.input, dispatch, ctx, allImages);
           }
+          break;
+        }
+        case 'unknown': {
+          setPendingImages([]);
           await handleChat(intent.input, dispatch, ctx, allImages);
           break;
         }

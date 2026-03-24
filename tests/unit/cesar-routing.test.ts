@@ -62,9 +62,9 @@ describe('César Routing', () => {
   });
 
   describe('Config defaults', () => {
-    it('cesarEnabled defaults to false', async () => {
+    it('cesarEnabled defaults to true', async () => {
       const { DEFAULT_AGON_CONFIG } = await import('../../packages/core/src/types.js');
-      expect(DEFAULT_AGON_CONFIG.cesarEnabled).toBe(false);
+      expect(DEFAULT_AGON_CONFIG.cesarEnabled).toBe(true);
     });
 
     it('cesarScoutCount defaults to 2', async () => {

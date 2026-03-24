@@ -22,6 +22,7 @@ interface name=Intent
   field name=index type="number|undefined"
   field name=tribunalMode type="string|undefined"
   field name=jobId type="string|undefined"
+  field name=taskClass type="'code'|'question'|'ambiguous'|undefined"
 
 const name=SLASH_COMMANDS type="SlashCommand[]"
   handler <<<
@@ -82,6 +83,23 @@ const name=HELP_KEYWORDS type=RegExp
 
 const name=EXIT_KEYWORDS type=RegExp
   handler <<< /^(exit|quit|bye)$/i >>>
+
+const name=QUESTION_PATTERN type=RegExp
+  handler <<< /^(what|how|why|where|when|who|which|explain|describe|tell|show|list|is there|does|can you explain|walk me through)\b/i >>>
+
+const name=CODE_TASK_PATTERN type=RegExp
+  handler <<< /^(fix|add|implement|refactor|debug|create|build|write|update|change|remove|delete|rename|move|test|deploy|install|upgrade|migrate|convert|extract|inline|optimize|port)\b/i >>>
+
+const name=CODE_ARTIFACT_PATTERN type=RegExp
+  handler <<< /(?:at \w+.*:\d+|\.[tj]sx?\b|\.[a-z]{2,4}:\d+|^[+-]{3}\s)/m >>>
+
+fn name=classifyTask params="input:string" returns="'code'|'question'|'ambiguous'"
+  handler <<<
+    if (QUESTION_PATTERN.test(input)) return 'question';
+    if (CODE_TASK_PATTERN.test(input)) return 'code';
+    if (CODE_ARTIFACT_PATTERN.test(input)) return 'code';
+    return 'ambiguous';
+  >>>
 
 fn name=parseForgeInput params="input:string" returns=Intent export=false
   handler <<<
@@ -255,5 +273,5 @@ fn name=detectIntent params="raw:string" returns=Intent
     if (ENGINES_KEYWORDS.test(input)) return { type: 'engines' } as Intent;
     if (CONFIG_KEYWORDS.test(input)) return { type: 'config' } as Intent;
 
-    return { type: 'unknown', input } as Intent;
+    return { type: 'auto', input, taskClass: classifyTask(input) } as Intent;
   >>>

@@ -2,13 +2,13 @@ import { join } from 'node:path';
 
 import { mkdirSync } from 'node:fs';
 
-import { ensureAgonHome, RUNS_DIR, appendMessage, tracker, scanProjectContext, worktreeDiff, diffLineCount, diffFileCount, buildCritiquePrompt, spawnWithTimeout } from '@agon/core';
+import { ensureAgonHome, RUNS_DIR, appendMessage, tracker, scanProjectContext, worktreeDiff, readOnlyDiff, diffLineCount, diffFileCount, buildCritiquePrompt, spawnWithTimeout } from '@agon/core';
 
 import { ENGINE_COLORS } from '../output.js';
 
 import type { Dispatch, HandlerContext } from '../handlers/types.js';
 
-export async function handlePipeline(input: string, dispatch: Dispatch, ctx: HandlerContext, fitnessCmd?: string): Promise<void> {
+export async function handlePipeline(input: string, dispatch: Dispatch, ctx: HandlerContext, fitnessCmd?: string, opts?: {quiet?:boolean}): Promise<void> {
   const abort = new AbortController();
   try {
     ensureAgonHome();
@@ -35,11 +35,15 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
       ? recent.map((m: any) => m.role === 'user' ? `User: ${m.content}` : `${m.engineId ?? 'engine'}: ${m.content.slice(0, 500)}`).join('\n\n')
       : '';
     
+    const quiet = opts?.quiet ?? false;
+    
     ctx.setActiveAbort(abort);
     
-    dispatch({ type: 'header', title: `Pipeline: ${buildEngine} builds → ${reviewEngine} reviews` });
-    dispatch({ type: 'info', message: `Task: ${input}` });
-    if (fitnessCmd) dispatch({ type: 'info', message: `Fitness: ${fitnessCmd}` });
+    if (!quiet) {
+      dispatch({ type: 'header', title: `Pipeline: ${buildEngine} builds → ${reviewEngine} reviews` });
+      dispatch({ type: 'info', message: `Task: ${input}` });
+      if (fitnessCmd) dispatch({ type: 'info', message: `Fitness: ${fitnessCmd}` });
+    }
     
     let iteration = 0;
     let lastReviewFeedback = '';
@@ -93,10 +97,10 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
       dispatch({ type: 'spinner-stop' });
       if (abort.signal.aborted) break;
     
-      // ── Check diff ──
-      const diff = worktreeDiff(cwd);
+      // ── Check diff (read-only — don't stage unrelated files) ──
+      const diff = readOnlyDiff(cwd);
       const lines = diffLineCount(diff);
-      const files = diffFileCount(cwd);
+      const files = diff ? diff.split('\n').filter((l: string) => l.startsWith('diff --git')).length : 0;
     
       if (!diff || lines === 0) {
         dispatch({ type: 'warning', message: `[${iteration}] ${buildEngine} made no changes.` });
@@ -161,15 +165,34 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
     
         const reviewOutput = reviewResult.stdout.trim();
     
-        // Parse critiques — if empty array or no issues, we're done
-        const hasIssues = reviewOutput.length > 10 && !reviewOutput.includes('[]');
+        // Parse structured critiques — only iterate on blocking issues
+        let hasBlockingIssues = false;
+        try {
+          const allMatches = [...reviewOutput.matchAll(/\[[\s\S]*?\]/g)];
+          const jsonStr = allMatches.length > 0 ? allMatches[allMatches.length - 1][0] : null;
+          if (jsonStr) {
+            const parsed = JSON.parse(jsonStr) as Array<{blocking?: boolean; problem?: string}>;
+            hasBlockingIssues = parsed.some((c) => c.blocking === true);
+            if (!hasBlockingIssues && parsed.length > 0) {
+              dispatch({ type: 'info', message: `[${iteration}] ${reviewEngine}: ${parsed.length} nit(s), no blocking issues.` });
+              break;
+            }
+          }
+        } catch {
+          // Fallback to string heuristic if JSON parse fails
+          hasBlockingIssues = reviewOutput.length > 10 && !reviewOutput.includes('[]');
+        }
     
-        if (!hasIssues) {
-          dispatch({ type: 'success', message: `[${iteration}] ${reviewEngine} approved — no issues found.` });
+        if (!hasBlockingIssues) {
+          dispatch({ type: 'success', message: `[${iteration}] ${reviewEngine} approved — no blocking issues.` });
           break;
         }
     
-        dispatch({ type: 'engine-block', engineId: reviewEngine, color: reviewColor, content: reviewOutput });
+        if (!quiet) {
+          dispatch({ type: 'engine-block', engineId: reviewEngine, color: reviewColor, content: reviewOutput });
+        } else {
+          dispatch({ type: 'info', message: `[${iteration}] ${reviewEngine} found blocking issues — fixing…` });
+        }
         lastReviewFeedback = reviewOutput;
         // Continue to next iteration with review feedback
       } catch {

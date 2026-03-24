@@ -50,6 +50,12 @@ export function worktreeDiff(cwd: string): string {
   return git(['diff', '--cached'], cwd);
 }
 
+export function readOnlyDiff(cwd: string): string {
+  const staged = git(['diff', '--cached'], cwd);
+  const unstaged = git(['diff'], cwd);
+  return staged + (staged && unstaged ? '\n' : '') + unstaged;
+}
+
 export function diffLineCount(diff: string): number {
   let count = 0;
   for (const line of diff.split('\n')) {

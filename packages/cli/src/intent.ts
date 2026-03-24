@@ -5,8 +5,10 @@
 import {
   detectIntent as _detectIntent,
   SLASH_COMMANDS as _SLASH_COMMANDS,
+  classifyTask as _classifyTask,
 } from './generated/intent.js';
 export type { SlashCommand } from './generated/intent.js';
+export const classifyTask = _classifyTask;
 
 export type Intent =
   | { type: 'forge'; task: string; fitnessCmd: string | null }
@@ -42,6 +44,7 @@ export type Intent =
   | { type: 'slash-list' }
   | { type: 'help' }
   | { type: 'exit' }
+  | { type: 'auto'; input: string; taskClass: 'code' | 'question' | 'ambiguous' }
   | { type: 'unknown'; input: string };
 
 export function detectIntent(raw: string): Intent {

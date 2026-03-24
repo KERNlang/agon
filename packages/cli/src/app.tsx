@@ -955,13 +955,14 @@ function App() {
       setInputValue('');
       return;
     }
-    // Accept everything as-is — pastes included, like Claude Code
-    setInputValue(value);
+    // Strip bracketed paste escape sequences (\x1b[200~ ... \x1b[201~)
+    const cleaned = value.replace(/\x1b\[20[01]~/g, '').replace(/\[200~/g, '').replace(/\[201~/g, '');
+    setInputValue(cleaned);
   }, [slashPickerOpen]);
 
   // ── Handle input submission ──
   const handleSubmit = useCallback(async (value: string) => {
-    const input = value.trim();
+    const input = value.replace(/\x1b\[20[01]~/g, '').replace(/\[200~/g, '').replace(/\[201~/g, '').trim();
     if (!input) return;
 
     setInputValue('');

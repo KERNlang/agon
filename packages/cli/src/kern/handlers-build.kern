@@ -58,8 +58,14 @@ fn name=handleBuild params="input:string, dispatch:Dispatch, ctx:HandlerContext"
     const projectCtx = scanProjectContext(cwd, config.projectContext || undefined, config.contextFormat as 'plain' | 'kern');
     const enriched = injectFileReferences(message, cwd);
 
+    const recent = ctx.chatSession.messages.slice(-10);
+    const sessionHistory = recent.length > 0
+      ? recent.map((m: any) => m.role === 'user' ? `User: ${m.content}` : `${m.engineId ?? 'engine'}: ${m.content.slice(0, 500)}`).join('\n\n')
+      : '';
+
     const parts: string[] = [];
     if (projectCtx) parts.push(`## PROJECT CONTEXT\n${projectCtx}`);
+    if (sessionHistory) parts.push(`## SESSION HISTORY (recent messages)\n${sessionHistory}`);
     parts.push(enriched);
     const prompt = parts.join('\n\n');
 

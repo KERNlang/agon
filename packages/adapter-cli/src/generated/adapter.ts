@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import type { EngineAdapter, EngineDefinition, DispatchOptions, DispatchResult, AgentDispatchResult } from '@agon/core';
 
-import { EngineRegistry, spawnWithTimeout, spawnStream, EngineNotFoundError, worktreeDiff, diffLineCount, diffFileCount } from '@agon/core';
+import { EngineRegistry, spawnWithTimeout, spawnStream, EngineNotFoundError, readOnlyDiff, diffLineCount } from '@agon/core';
 
 import { buildCommand, checkEnvVars } from './adapter-helpers.js';
 
@@ -104,9 +104,9 @@ export class CliAdapter implements EngineAdapter {
     const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
     writeFileSync(outputPath, result.stdout);
     
-    const diff = worktreeDiff(options.cwd);
+    const diff = readOnlyDiff(options.cwd);
     const lines = diffLineCount(diff);
-    const files = diffFileCount(options.cwd);
+    const files = diff ? diff.split('\n').filter((l: string) => l.startsWith('diff --git')).length : 0;
     
     return { ...result, diff, diffLines: lines, filesChanged: files };
   }
@@ -142,9 +142,9 @@ export class CliAdapter implements EngineAdapter {
     const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
     writeFileSync(outputPath, result.stdout);
     
-    const diff = worktreeDiff(options.cwd);
+    const diff = readOnlyDiff(options.cwd);
     const lines = diffLineCount(diff);
-    const files = diffFileCount(options.cwd);
+    const files = diff ? diff.split('\n').filter((l: string) => l.startsWith('diff --git')).length : 0;
     
     return { ...result, diff, diffLines: lines, filesChanged: files };
   }

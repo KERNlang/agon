@@ -559,14 +559,22 @@ function SlashPicker({ commands, onSelect, onCancel }: {
       {filtered.length === 0 ? (
         <Text dimColor>{'  No matching commands'}</Text>
       ) : (
-        filtered.slice(0, 12).map((cmd, i) => (
-          <Box key={cmd.cmd}>
-            <Text color={i === selectedIndex ? 'yellow' : undefined} bold={i === selectedIndex}>
-              {i === selectedIndex ? ' ❯ ' : '   '}{cmd.cmd.padEnd(16)}
-            </Text>
-            <Text dimColor>{cmd.desc}</Text>
-          </Box>
-        ))
+        (() => {
+          const maxVisible = 12;
+          const start = Math.max(0, Math.min(selectedIndex - Math.floor(maxVisible / 2), filtered.length - maxVisible));
+          const visible = filtered.slice(start, start + maxVisible);
+          return visible.map((cmd, vi) => {
+            const i = start + vi;
+            return (
+              <Box key={cmd.cmd}>
+                <Text color={i === selectedIndex ? 'yellow' : undefined} bold={i === selectedIndex}>
+                  {i === selectedIndex ? ' ❯ ' : '   '}{cmd.cmd.padEnd(16)}
+                </Text>
+                <Text dimColor>{cmd.desc}</Text>
+              </Box>
+            );
+          });
+        })()
       )}
     </Box>
   );

@@ -16,14 +16,16 @@ function loadRegistry(): EngineRegistry {
 
 describe('Agent Dispatch', () => {
   describe('buildCommand — agent mode', () => {
-    it('uses agent args for claude (no --print flag)', () => {
+    it('uses agent args for claude (no --print, no --output-format)', () => {
       const reg = loadRegistry();
       const engine = reg.get('claude');
       const binary = '/usr/local/bin/claude';
       const { args } = buildCommand(engine, 'agent', 'fix the bug', '/tmp', 600, binary);
       expect(args).toContain('--dangerously-skip-permissions');
       expect(args).toContain('--max-turns');
+      expect(args).toContain('--verbose');
       expect(args).not.toContain('--print');
+      expect(args).not.toContain('--output-format');
     });
 
     it('uses agent args for codex (--full-auto)', () => {

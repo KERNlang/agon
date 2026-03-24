@@ -26,6 +26,11 @@ fn name=handlePipeline params="input:string, dispatch:Dispatch, ctx:HandlerConte
     const outputDir = join(RUNS_DIR, `pipeline-${Date.now()}`);
     mkdirSync(outputDir, { recursive: true });
 
+    const recent = ctx.chatSession.messages.slice(-10);
+    const sessionHistory = recent.length > 0
+      ? recent.map((m: any) => m.role === 'user' ? `User: ${m.content}` : `${m.engineId ?? 'engine'}: ${m.content.slice(0, 500)}`).join('\n\n')
+      : '';
+
     ctx.setActiveAbort(abort);
 
     dispatch({ type: 'header', title: `Pipeline: ${buildEngine} builds → ${reviewEngine} reviews` });
@@ -45,6 +50,7 @@ fn name=handlePipeline params="input:string, dispatch:Dispatch, ctx:HandlerConte
 
       const buildPrompt = [
         projectCtx ? `## PROJECT CONTEXT\n${projectCtx}` : '',
+        sessionHistory ? `## SESSION HISTORY (recent messages)\n${sessionHistory}` : '',
         `## TASK\n${input}`,
         lastReviewFeedback ? `## REVIEW FEEDBACK FROM PREVIOUS ITERATION\nAddress these issues:\n${lastReviewFeedback}` : '',
         fitnessCmd ? `## FITNESS TEST\nRun this to verify: \`${fitnessCmd}\`` : '',
@@ -169,18 +175,42 @@ fn name=handlePipeline params="input:string, dispatch:Dispatch, ctx:HandlerConte
       }
     }
 
-    // ── Summary ──
+    // ── Summary + auto-escalation ──
     const finalDiff = worktreeDiff(cwd);
     const finalLines = diffLineCount(finalDiff);
     const finalFiles = diffFileCount(cwd);
 
-    if (finalLines > 0) {
+    // Check if fitness passed on last iteration
+    let fitnessPassed = false;
+    if (fitnessCmd && finalLines > 0) {
+      try {
+        const finalFitness = await spawnWithTimeout({
+          command: '/bin/sh',
+          args: ['-c', fitnessCmd],
+          cwd,
+          timeout: 120000,
+        });
+        fitnessPassed = finalFitness.exitCode === 0;
+      } catch {}
+    }
+
+    if (finalLines > 0 && (!fitnessCmd || fitnessPassed)) {
       dispatch({ type: 'success', message: `Pipeline complete: ${finalFiles} file(s), ${finalLines} line(s) changed in ${iteration} iteration(s)` });
       appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
       appendMessage(ctx.chatSession, { role: 'engine', engineId: buildEngine, content: `Pipeline: ${finalFiles} files, ${finalLines} lines in ${iteration} iteration(s)`, timestamp: new Date().toISOString() });
       tracker.record(buildEngine, input, `pipeline:${finalLines}lines`);
-    } else {
+    } else if (fitnessCmd && !fitnessPassed && iteration >= maxIterations) {
+      // Auto-escalation: pipeline exhausted → suggest forge
+      dispatch({ type: 'warning', message: `Pipeline exhausted ${maxIterations} iterations without passing fitness.` });
+      dispatch({ type: 'info', message: `Escalating → forge competition. Run: /forge ${input} test with ${fitnessCmd}` });
+      appendMessage(ctx.chatSession, { role: 'engine', engineId: 'pipeline', content: `Pipeline failed after ${maxIterations} iterations. Suggested escalation to forge.`, timestamp: new Date().toISOString() });
+    } else if (finalLines === 0) {
       dispatch({ type: 'info', message: 'Pipeline complete — no changes made.' });
+    } else {
+      dispatch({ type: 'success', message: `Pipeline complete: ${finalFiles} file(s), ${finalLines} line(s) changed in ${iteration} iteration(s)` });
+      appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
+      appendMessage(ctx.chatSession, { role: 'engine', engineId: buildEngine, content: `Pipeline: ${finalFiles} files, ${finalLines} lines`, timestamp: new Date().toISOString() });
+      tracker.record(buildEngine, input, `pipeline:${finalLines}lines`);
     }
   >>>
   cleanup <<<

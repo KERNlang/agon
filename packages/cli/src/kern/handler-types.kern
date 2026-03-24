@@ -1,0 +1,93 @@
+import from="@agon/core" names="EngineRegistry,EngineAdapter,Plan,AgonConfig,ChatSession" types=true
+
+interface name=EngineProgress
+  field name=id type=string
+  field name=status type=string
+  field name=elapsed type=number
+  field name=done type=boolean
+  field name=failed type=boolean
+  field name=score type=string optional=true
+
+union name=OutputEvent discriminant=type
+  variant name=text
+    field name=content type=string
+  variant name=engine-block
+    field name=engineId type=string
+    field name=color type=number
+    field name=content type=string
+  variant name=streaming-chunk
+    field name=engineId type=string
+    field name=chunk type=string
+  variant name=streaming-end
+    field name=engineId type=string
+  variant name=spinner-start
+    field name=message type=string
+    field name=color type=number optional=true
+  variant name=spinner-stop
+    field name=message type=string optional=true
+  variant name=spinner-update
+    field name=message type=string
+  variant name=progress-update
+    field name=engines type="EngineProgress[]"
+  variant name=progress-clear
+  variant name=separator
+  variant name=header
+    field name=title type=string
+  variant name=success
+    field name=message type=string
+  variant name=error
+    field name=message type=string
+  variant name=warning
+    field name=message type=string
+  variant name=info
+    field name=message type=string
+  variant name=plan
+    field name=plan type=Plan
+  variant name=plan-list
+    field name=plans type="Plan[]"
+  variant name=scoreboard
+    field name=title type=string
+    field name=winner type=string optional=true
+    field name=engineIds type="string[]"
+    field name=metrics type="{ label: string; values: string[] }[]"
+  variant name=table
+    field name=headers type="string[]"
+    field name=rows type="string[][]"
+  variant name=clear
+  variant name=kern-draft
+    field name=engineId type=string
+    field name=content type=string
+    field name=critique type=string optional=true
+  variant name=debate-round
+    field name=round type=number
+    field name=engineId type=string
+    field name=position type=string
+    field name=argument type=string
+  variant name=verdict
+    field name=summary type=string
+  variant name=question
+    field name=prompt type=string
+    field name=resolve type="(answer: string) => void"
+  variant name=patch-review
+    field name=winnerId type=string
+    field name=patchPath type=string
+    field name=patchContent type=string
+  variant name=dashboard
+    field name=available type="string[]"
+    field name=enabled type="string[]"
+    field name=defaultEngine type=string
+    field name=eloTop type="{ id: string; rating: number }" optional=true
+    field name=totalForges type=number
+    field name=workspace type="{ name: string; path: string; isKern?: boolean }" optional=true
+    field name=runCount type=number
+
+interface name=HandlerContext
+  field name=registry type=EngineRegistry
+  field name=adapter type=EngineAdapter
+  field name=activeEngines type="() => string[]"
+  field name=config type=AgonConfig
+  field name=chatSession type=ChatSession
+  field name=currentPlan type="Plan | null"
+  field name=setCurrentPlan type="(plan: Plan | null) => void"
+  field name=setActiveAbort type="(abort: AbortController | null) => void"
+  field name=askQuestion type="(prompt: string) => Promise<string>"

@@ -175,7 +175,7 @@ export const DEFAULT_AGON_CONFIG: Required<AgonConfig> = {
   approvalLevel: 'plan',
   agentTimeout: 600,
   agentPermissionLevel: 'full',
-  cesarEnabled: false,
+  cesarEnabled: true,
   cesarScoutCount: 2,
   cesarDirectThreshold: 85,
   cesarDisagreementSpread: 20,
@@ -193,7 +193,7 @@ export interface ScoutBid {
 }
 
 export interface RoutingDecision {
-  action: 'chat'|'build'|'campfire'|'forge';
+  action: 'chat'|'build'|'pipeline'|'campfire'|'forge';
   leadEngine: string;
   confidence: number;
   reasoning: string;

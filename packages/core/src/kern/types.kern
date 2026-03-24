@@ -130,7 +130,7 @@ config name=AgonConfig
   field name=approvalLevel type="'auto'|'plan'|'step'" default=plan
   field name=agentTimeout type=number default=600
   field name=agentPermissionLevel type="'full'|'plan'|'read-only'" default=full
-  field name=cesarEnabled type=boolean default=false
+  field name=cesarEnabled type=boolean default=true
   field name=cesarScoutCount type=number default=2
   field name=cesarDirectThreshold type=number default=85
   field name=cesarDisagreementSpread type=number default=20
@@ -146,7 +146,7 @@ interface name=ScoutBid
   field name=needsCompetition type=boolean
 
 interface name=RoutingDecision
-  field name=action type="'chat'|'build'|'campfire'|'forge'"
+  field name=action type="'chat'|'build'|'pipeline'|'campfire'|'forge'"
   field name=leadEngine type=string
   field name=confidence type=number
   field name=reasoning type=string

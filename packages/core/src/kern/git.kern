@@ -56,6 +56,13 @@ fn name=worktreeDiff params="cwd:string" returns=string
     return git(['diff', '--cached'], cwd);
   >>>
 
+fn name=readOnlyDiff params="cwd:string" returns=string
+  handler <<<
+    const staged = git(['diff', '--cached'], cwd);
+    const unstaged = git(['diff'], cwd);
+    return staged + (staged && unstaged ? '\n' : '') + unstaged;
+  >>>
+
 fn name=diffLineCount params="diff:string" returns=number
   handler <<<
     let count = 0;

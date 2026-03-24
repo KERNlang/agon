@@ -34,10 +34,14 @@ fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistr
 
     const challengers = available.filter((id: string) => id !== starter);
 
+    const hasAgentEngines = available.some((id: string) => {
+      try { return !!registry.get(id).agent; } catch { return false; }
+    });
     const forgePrompt = buildForgePrompt({
       task: options.task,
       fitnessCmd: options.fitnessCmd,
       context: options.context,
+      agentMode: hasAgentEngines,
     });
 
     const manifest: ForgeManifest = {

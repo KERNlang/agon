@@ -8,7 +8,7 @@ import { runFitness } from './fitness.js';
 
 import type { StageResult, ForgeEventCallback, WorktreeEntry } from '../types.js';
 
-export async function runBaseline(opts: {cwd:string, fitnessCmd: string, fitnessTimeout: number, forgeDir: string, onEvent?: ForgeEventCallback}): Promise<boolean> {
+export async function runBaseline(opts: {cwd:string, fitnessCmd:string, fitnessTimeout:number, forgeDir:string, onEvent?:ForgeEventCallback}): Promise<boolean> {
   opts.onEvent?.({ type: 'baseline:start' });
   
   const root = repoRoot(opts.cwd);
@@ -30,10 +30,9 @@ export async function runBaseline(opts: {cwd:string, fitnessCmd: string, fitness
   } finally {
     worktreeRemove(root, baselineWt);
   }
-  
 }
 
-export async function runStage1(opts: {starter:string, forgePrompt: string, fitnessCmd: string, config: Required<AgonConfig>, registry: EngineRegistry, adapter: EngineAdapter, cwd: string, forgeDir: string, worktrees: WorktreeEntry[], onEvent?: ForgeEventCallback, signal?: AbortSignal}): Promise<StageResult> {
+export async function runStage1(opts: {starter:string, forgePrompt:string, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, forgeDir:string, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal}): Promise<StageResult> {
   opts.onEvent?.({ type: 'stage1:start', engineId: opts.starter });
   
   const root = repoRoot(opts.cwd);
@@ -45,15 +44,28 @@ export async function runStage1(opts: {starter:string, forgePrompt: string, fitn
   opts.worktrees.push({ engineId: opts.starter, path: wtPath, repoRoot: root });
   
   opts.onEvent?.({ type: 'stage1:dispatch', engineId: opts.starter });
-  await opts.adapter.dispatch({
-    engine,
-    prompt: opts.forgePrompt,
-    cwd: wtPath,
-    mode: 'review',
-    timeout: engine.timeout,
-    outputDir: opts.forgeDir,
-    signal: opts.signal,
-  });
+  const useAgent = !!engine.agent && !!opts.adapter.dispatchAgent;
+  if (useAgent) {
+    await opts.adapter.dispatchAgent!({
+      engine,
+      prompt: opts.forgePrompt,
+      cwd: wtPath,
+      mode: 'agent',
+      timeout: engine.timeout,
+      outputDir: opts.forgeDir,
+      signal: opts.signal,
+    });
+  } else {
+    await opts.adapter.dispatch({
+      engine,
+      prompt: opts.forgePrompt,
+      cwd: wtPath,
+      mode: 'review',
+      timeout: engine.timeout,
+      outputDir: opts.forgeDir,
+      signal: opts.signal,
+    });
+  }
   
   opts.onEvent?.({ type: 'stage1:score', engineId: opts.starter });
   const result = await runFitness({
@@ -82,10 +94,9 @@ export async function runStage1(opts: {starter:string, forgePrompt: string, fitn
   }
   
   return { engineResults, accepted, winner: result.pass ? opts.starter : null };
-  
 }
 
-export async function runStage2(opts: {challengers:string[], forgePrompt: string, fitnessCmd: string, config: Required<AgonConfig>, registry: EngineRegistry, adapter: EngineAdapter, cwd: string, forgeDir: string, existingResults: Map<string, EngineResult>, worktrees: WorktreeEntry[], onEvent?: ForgeEventCallback, signal?: AbortSignal}): Promise<StageResult> {
+export async function runStage2(opts: {challengers:string[], forgePrompt:string, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal}): Promise<StageResult> {
   opts.onEvent?.({ type: 'stage2:start' });
   
   const root = repoRoot(opts.cwd);
@@ -100,15 +111,28 @@ export async function runStage2(opts: {challengers:string[], forgePrompt: string
   
     opts.onEvent?.({ type: 'stage2:dispatch', engineId });
   
-    await opts.adapter.dispatch({
-      engine,
-      prompt: opts.forgePrompt,
-      cwd: wtPath,
-      mode: 'review',
-      timeout: engine.timeout,
-      outputDir: opts.forgeDir,
-      signal: opts.signal,
-    });
+    const useAgent = !!engine.agent && !!opts.adapter.dispatchAgent;
+    if (useAgent) {
+      await opts.adapter.dispatchAgent!({
+        engine,
+        prompt: opts.forgePrompt,
+        cwd: wtPath,
+        mode: 'agent',
+        timeout: engine.timeout,
+        outputDir: opts.forgeDir,
+        signal: opts.signal,
+      });
+    } else {
+      await opts.adapter.dispatch({
+        engine,
+        prompt: opts.forgePrompt,
+        cwd: wtPath,
+        mode: 'review',
+        timeout: engine.timeout,
+        outputDir: opts.forgeDir,
+        signal: opts.signal,
+      });
+    }
   
     opts.onEvent?.({ type: 'stage2:score', engineId });
   
@@ -131,10 +155,9 @@ export async function runStage2(opts: {challengers:string[], forgePrompt: string
   opts.onEvent?.({ type: 'stage2:done', data: { resultCount: allResults.size } });
   
   return { engineResults: allResults, accepted: false, winner: null };
-  
 }
 
-export function determineWinner(results: Map<string, EngineResult>, spread: number): {winner:string|null, closeCall:boolean, bestScore:number, secondScore:number} {
+export function determineWinner(results: Map<string,EngineResult>, spread: number): {winner:string|null, closeCall:boolean, bestScore:number, secondScore:number} {
   const passing = [...results.entries()]
     .filter(([_, r]) => r.pass && r.score > 0)
     .sort(([_aId, a], [_bId, b]) => {
@@ -155,6 +178,5 @@ export function determineWinner(results: Map<string, EngineResult>, spread: numb
   const closeCall = passing.length > 1 && (bestScore - secondScore) < spread;
   
   return { winner: passing[0][0], closeCall, bestScore, secondScore };
-  
 }
 

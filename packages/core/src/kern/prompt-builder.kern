@@ -1,15 +1,21 @@
 import from="./types.js" names="Critique" types=true
 
-fn name=buildForgePrompt params="opts:{task:string;fitnessCmd:string;context?:string}" returns=string
+fn name=buildForgePrompt params="opts:{task:string;fitnessCmd:string;context?:string;agentMode?:boolean}" returns=string
   handler <<<
     const sections = [
       `## TASK\n${opts.task}`,
       `## FITNESS TEST\nRun this command to verify your work passes:\n\`\`\`\n${opts.fitnessCmd}\n\`\`\``,
     ];
     if (opts.context) sections.push(`## CONTEXT\n${opts.context}`);
-    sections.push(
-      `## CONSTRAINTS\n- Write code, not plans. Implement the solution directly.\n- Modify only the files necessary to complete the task.\n- Run the fitness test command to verify your work passes.\n- Exit when the fitness test passes.\n- Do not ask questions — make reasonable assumptions.`,
-    );
+    if (opts.agentMode) {
+      sections.push(
+        `## CONSTRAINTS\n- You have full tool access. Read files, edit code, run commands directly.\n- Run the fitness test command to verify your work passes.\n- Iterate until the fitness test passes — read errors, fix them, re-run.\n- Modify only the files necessary to complete the task.\n- Exit when the fitness test passes.\n- Do not ask questions — make reasonable assumptions.`,
+      );
+    } else {
+      sections.push(
+        `## CONSTRAINTS\n- Write code, not plans. Implement the solution directly.\n- Modify only the files necessary to complete the task.\n- Run the fitness test command to verify your work passes.\n- Exit when the fitness test passes.\n- Do not ask questions — make reasonable assumptions.`,
+      );
+    }
     return sections.join('\n\n');
   >>>
 

@@ -24,3 +24,7 @@ export {
   handleCancel,
   handleApplyPatch,
 } from './plan-handlers.js';
+export { handleCp } from './cp.js';
+export { handleBuild } from './build.js';
+export { handleRun } from './run.js';
+export { handleFlowReport, handleFlowAnalysis, autoLogFlow } from './flow.js';

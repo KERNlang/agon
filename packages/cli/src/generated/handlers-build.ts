@@ -1,0 +1,175 @@
+import { join } from 'node:path';
+
+import { mkdirSync, readFileSync, existsSync } from 'node:fs';
+
+import { ensureAgonHome, RUNS_DIR, appendMessage, tracker, StreamParser, scanProjectContext } from '@agon/core';
+
+import { ENGINE_COLORS } from '../output.js';
+
+import type { Dispatch, HandlerContext } from '../handlers/types.js';
+
+function injectFileReferences(input: string, cwd: string): string {
+  const FILE_REF = /(?:^|\s)([\w./-]+\.\w{1,10})\b/g;
+  let result = input;
+  const seen = new Set<string>();
+  let match;
+  while ((match = FILE_REF.exec(input)) !== null) {
+    const ref = match[1];
+    if (seen.has(ref)) continue;
+    seen.add(ref);
+    const fullPath = join(cwd, ref);
+    if (existsSync(fullPath)) {
+      try {
+        const content = readFileSync(fullPath, 'utf-8');
+        if (content.length < 50000) {
+          result += `\n\n## File: ${ref}\n\`\`\`\n${content}\n\`\`\``;
+        }
+      } catch {}
+    }
+  }
+  return result;
+}
+
+export async function handleBuild(input: string, dispatch: Dispatch, ctx: HandlerContext): Promise<void> {
+  const abort = new AbortController();
+  try {
+    ensureAgonHome();
+    
+    const agentIds = ctx.registry.agentCapableIds();
+    if (agentIds.length === 0) {
+      dispatch({ type: 'error', message: 'No agent-capable engines available. Install claude, codex, or gemini.' });
+      return;
+    }
+    
+    // Detect target engine from input (e.g. "codex fix this")
+    const lower = input.toLowerCase();
+    let detected = '';
+    let message = input;
+    for (const id of agentIds) {
+      if (lower.startsWith(id + ' ') || lower.startsWith(id + ',') || lower.startsWith(id + ':')) {
+        detected = id;
+        message = input.slice(id.length).replace(/^[,:\s]+/, '').trim() || input;
+        break;
+      }
+    }
+    
+    const preferred = ctx.config.forgeFixedStarter ?? 'claude';
+    const engineId: string = detected || (agentIds.includes(preferred) ? preferred : agentIds[0]);
+    
+    const config = ctx.config;
+    const cwd = process.cwd();
+    const projectCtx = scanProjectContext(cwd, config.projectContext || undefined, config.contextFormat as 'plain' | 'kern');
+    const enriched = injectFileReferences(message, cwd);
+    
+    const parts: string[] = [];
+    if (projectCtx) parts.push(`## PROJECT CONTEXT\n${projectCtx}`);
+    parts.push(enriched);
+    const prompt = parts.join('\n\n');
+    
+    const engine = ctx.registry.get(engineId);
+    const color = (ENGINE_COLORS as Record<string, number>)[engineId] ?? 245;
+    const outputDir = join(RUNS_DIR, `build-${Date.now()}`);
+    mkdirSync(outputDir, { recursive: true });
+    
+    ctx.setActiveAbort(abort);
+    
+    const dispatchOpts = {
+      engine,
+      prompt,
+      cwd,
+      mode: 'agent' as const,
+      timeout: config.agentTimeout ?? 600,
+      outputDir,
+      signal: abort.signal,
+    };
+    
+    dispatch({ type: 'spinner-start', message: `${engineId} building…`, color });
+    
+    let response = '';
+    let streaming = false;
+    
+    try {
+      if (ctx.adapter.dispatchAgentStream) {
+        const gen = ctx.adapter.dispatchAgentStream(dispatchOpts);
+        const parser = new StreamParser();
+    
+        while (true) {
+          const iter = await gen.next();
+          if (iter.done) break;
+          if (abort.signal.aborted) break;
+          const chunk = iter.value as string;
+    
+          if (chunk.startsWith('\x00')) {
+            const status = chunk.slice(1).trim();
+            if (status) dispatch({ type: 'spinner-update', message: `${engineId} ${status}` });
+            continue;
+          }
+    
+          for (const parsed of parser.feed(chunk)) {
+            if (parsed.type === 'status') {
+              dispatch({ type: 'spinner-update', message: `${engineId} ${parsed.content}` });
+              continue;
+            }
+            if (parsed.type === 'text' || parsed.type === 'raw') {
+              if (!streaming) {
+                dispatch({ type: 'spinner-stop' });
+                streaming = true;
+              }
+              dispatch({ type: 'streaming-chunk', engineId, chunk: parsed.content });
+              response += parsed.content;
+            }
+          }
+        }
+    
+        for (const parsed of parser.flush()) {
+          if (parsed.type === 'text' || parsed.type === 'raw') {
+            if (!streaming) {
+              dispatch({ type: 'spinner-stop' });
+              streaming = true;
+            }
+            dispatch({ type: 'streaming-chunk', engineId, chunk: parsed.content });
+            response += parsed.content;
+          }
+        }
+      } else if (ctx.adapter.dispatchAgent) {
+        const agentResult = await ctx.adapter.dispatchAgent(dispatchOpts);
+        response = agentResult.stdout;
+        dispatch({ type: 'spinner-stop' });
+        if (agentResult.diff) {
+          dispatch({ type: 'info', message: `${agentResult.filesChanged} file(s) changed, ${agentResult.diffLines} line(s)` });
+        }
+      } else {
+        dispatch({ type: 'error', message: `${engineId}: adapter does not support agent dispatch` });
+        return;
+      }
+    } catch (err) {
+      dispatch({ type: 'spinner-stop' });
+      dispatch({ type: 'error', message: `${engineId}: ${err instanceof Error ? err.message : String(err)}` });
+      return;
+    }
+    
+    if (abort.signal.aborted) {
+      dispatch({ type: 'spinner-stop' });
+      return;
+    }
+    
+    response = response.trim();
+    
+    if (!streaming && response) {
+      dispatch({ type: 'engine-block', engineId, color, content: response });
+    }
+    if (streaming) {
+      dispatch({ type: 'streaming-end', engineId });
+    }
+    
+    if (response) {
+      appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
+      appendMessage(ctx.chatSession, { role: 'engine', engineId, content: response, timestamp: new Date().toISOString() });
+      tracker.record(engineId, input, response);
+    }
+  } finally {
+    dispatch({ type: 'spinner-stop' });
+    ctx.setActiveAbort(null);
+  }
+}
+

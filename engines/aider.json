@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "id": "aider",
   "displayName": "Aider (AI Pair Programming)",
   "binary": "aider",
@@ -17,6 +17,9 @@
 
   "exec": {
     "args": ["--yes", "--no-git", "--message", "{prompt}"]
+  },
+  "agent": {
+    "args": ["--yes", "--auto-commits", "--message", "{prompt}"]
   },
 
   "model": {

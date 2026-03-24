@@ -97,14 +97,26 @@ fn name=runSynthesis async=true params="opts:{manifest:ForgeManifest, winner:str
       });
 
       const winnerEngine = registry.get(winner);
-      await adapter.dispatch({
-        engine: winnerEngine,
-        prompt: synthPrompt,
-        cwd: synthWtPath,
-        mode: 'exec',
-        timeout: opts.timeout,
-        outputDir: forgeDir,
-      });
+      const synthMode = winnerEngine.agent && adapter.dispatchAgent ? 'agent' : 'exec';
+      if (synthMode === 'agent') {
+        await adapter.dispatchAgent!({
+          engine: winnerEngine,
+          prompt: synthPrompt,
+          cwd: synthWtPath,
+          mode: 'agent',
+          timeout: opts.timeout,
+          outputDir: forgeDir,
+        });
+      } else {
+        await adapter.dispatch({
+          engine: winnerEngine,
+          prompt: synthPrompt,
+          cwd: synthWtPath,
+          mode: 'exec',
+          timeout: opts.timeout,
+          outputDir: forgeDir,
+        });
+      }
 
       opts.onEvent?.({ type: 'synthesis:score' });
 

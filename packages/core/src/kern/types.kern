@@ -1,9 +1,14 @@
-type name=EngineMode values="exec|review"
+type name=EngineMode values="exec|review|agent"
 type name=TaskClass values="algorithm|refactor|bugfix|test|docs|feature|other"
 
 interface name=EngineModeConfig
   field name=args type="string[]"
   field name=stdin type=boolean optional=true
+
+interface name=ImageAttachment
+  field name=path type=string
+  field name=filename type=string
+  field name=mimeType type=string
 
 interface name=EngineModelConfig
   field name=configKey type=string optional=true
@@ -15,7 +20,7 @@ interface name=EngineEnvVar
   field name=default type=string optional=true
 
 interface name=EngineDefinition
-  field name=schemaVersion type="1|2"
+  field name=schemaVersion type="1|2|3"
   field name=id type=string
   field name=displayName type=string
   field name=binary type=string
@@ -33,6 +38,9 @@ interface name=EngineDefinition
   field name=modes type="EngineMode[]" optional=true
   field name=modelConfigKey type=string optional=true
   field name=adapterType type=string optional=true
+  field name=capabilities type="string[]" optional=true
+  field name=imageFlag type=string optional=true
+  field name=agent type=EngineModeConfig optional=true
 
 interface name=DispatchOptions
   field name=engine type=EngineDefinition
@@ -42,6 +50,7 @@ interface name=DispatchOptions
   field name=timeout type=number
   field name=outputDir type=string
   field name=signal type=AbortSignal optional=true
+  field name=images type="ImageAttachment[]" optional=true
 
 interface name=DispatchResult
   field name=exitCode type=number
@@ -50,9 +59,16 @@ interface name=DispatchResult
   field name=durationMs type=number
   field name=timedOut type=boolean
 
+interface name=AgentDispatchResult extends=DispatchResult
+  field name=diff type=string
+  field name=diffLines type=number
+  field name=filesChanged type=number
+
 interface name=EngineAdapter
   field name=dispatch type="(options:DispatchOptions)=>Promise<DispatchResult>"
   field name=dispatchStream type="(options:DispatchOptions)=>AsyncGenerator<string, DispatchResult, void>" optional=true
+  field name=dispatchAgent type="(options:DispatchOptions)=>Promise<AgentDispatchResult>" optional=true
+  field name=dispatchAgentStream type="(options:DispatchOptions)=>AsyncGenerator<string, AgentDispatchResult, void>" optional=true
   field name=isAvailable type="(engine:EngineDefinition)=>Promise<boolean>"
   field name=getVersion type="(engine:EngineDefinition)=>Promise<string|null>"
 
@@ -109,10 +125,11 @@ config name=AgonConfig
   field name=eloKFactor type=number default=32
   field name=contextSummary type=boolean default=true
   field name=onboarded type=boolean default=false
-  field name=caesarModel type="'smollm2-360m'|'qwen-0.5b'|'phi-3-mini'|'none'" default=smollm2-360m
   field name=projectContext type=string default=""
   field name=contextFormat type="'plain'|'kern'" default=plain
   field name=approvalLevel type="'auto'|'plan'|'step'" default=plan
+  field name=agentTimeout type=number default=600
+  field name=agentPermissionLevel type="'full'|'plan'|'read-only'" default=full
 
 interface name=ForgeOptions
   field name=task type=string

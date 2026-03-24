@@ -29,12 +29,17 @@ export interface FlowModeMeta {
   brainstormWinner?: string;
   tribunalVerdict?: string;
   taskType?: string;
+  orchestrationPath?: string;
+  leadEngine?: string;
+  observerEngines?: string[];
+  scoutCount?: number;
+  cesarConfidence?: number;
 }
 
 export interface FlowRecord {
   id: string;
   schemaVersion: 1;
-  mode: 'forge'|'brainstorm'|'tribunal'|'campfire'|'chat'|'build';
+  mode: 'forge'|'brainstorm'|'tribunal'|'campfire'|'chat'|'build'|'cesar';
   startedAt: string;
   endedAt: string;
   completionState: 'completed'|'aborted'|'crashed';

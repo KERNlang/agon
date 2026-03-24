@@ -1,0 +1,172 @@
+import { join } from 'node:path';
+
+import { mkdirSync } from 'node:fs';
+
+import { ensureAgonHome, RUNS_DIR, scanProjectContext, tracker, appendMessage } from '@agon/core';
+
+import { ENGINE_COLORS } from '../output.js';
+
+import type { Dispatch, HandlerContext, EngineProgress } from '../handlers/types.js';
+
+export async function handleCampfire(topic: string, dispatch: Dispatch, ctx: HandlerContext, opts?: {seedPlan?:string, observerStrategy?:'lead-first'|'all-respond', leadEngine?:string}): Promise<void> {
+  const cfAbort = new AbortController();
+  try {
+    ensureAgonHome();
+    
+    const engines = ctx.activeEngines();
+    if (engines.length === 0) {
+      dispatch({ type: 'error', message: 'No engines available.' });
+      return;
+    }
+    
+    const config = ctx.config;
+    const projectCtx = scanProjectContext(process.cwd(), config.projectContext || undefined, config.contextFormat as 'plain' | 'kern');
+    const strategy = opts?.observerStrategy ?? 'all-respond';
+    const leadId = opts?.leadEngine && engines.includes(opts.leadEngine) ? opts.leadEngine : engines[0];
+    
+    const basePrompt = [
+      `## CAMPFIRE`,
+      `Topic: ${topic || 'open discussion'}`,
+      '',
+      projectCtx ? `## Project Context\n${projectCtx}\n` : '',
+      opts?.seedPlan ? `## Lead assessment (prior context)\n${opts.seedPlan}\n` : '',
+      `## Rules`,
+      `This is a campfire — no competition, no ranking, no winners.`,
+      `Think freely. Share ideas, wild thoughts, "what if" scenarios.`,
+      `Be honest. Say "I'm not sure" if you're not sure.`,
+      `Build on the topic. Be interesting, not just useful.`,
+      `Keep it concise — 3-5 paragraphs max.`,
+    ].filter(Boolean).join('\n');
+    
+    dispatch({ type: 'header', title: 'Campfire — no competition, just thinking together' });
+    if (topic) dispatch({ type: 'info', message: `Topic: ${topic}` });
+    
+    const outputDir = join(RUNS_DIR, `campfire-${Date.now()}`);
+    mkdirSync(outputDir, { recursive: true });
+    
+    ctx.setActiveAbort(cfAbort);
+    
+    const cfStatus: Record<string, 'thinking' | 'done' | 'failed'> = {};
+    for (const id of engines) cfStatus[id] = 'thinking';
+    
+    const startTime = Date.now();
+    const progressInterval = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - startTime) / 1000);
+      const progress: EngineProgress[] = engines.map((id: string) => ({
+        id,
+        status: cfStatus[id] === 'done' ? 'done' : cfStatus[id] === 'failed' ? 'missed' : `thinking… ${elapsed}s`,
+        elapsed,
+        done: cfStatus[id] === 'done',
+        failed: cfStatus[id] === 'failed',
+      }));
+      dispatch({ type: 'progress-update', engines: progress });
+    }, 250);
+    
+    let progressCleared = false;
+    function clearProgress(): void {
+      if (progressCleared) return;
+      progressCleared = true;
+      clearInterval(progressInterval);
+      dispatch({ type: 'progress-clear' });
+    }
+    
+    if (strategy === 'lead-first' && engines.length > 1) {
+      // Lead-first: dispatch lead engine, then observers with lead's response
+      const leadEngine = ctx.registry.get(leadId);
+      let leadResponse = '';
+    
+      try {
+        const leadResult = await ctx.adapter.dispatch({
+          engine: leadEngine,
+          prompt: basePrompt,
+          cwd: process.cwd(),
+          mode: 'exec',
+          timeout: 120,
+          outputDir,
+          signal: cfAbort.signal,
+        });
+        cfStatus[leadId] = 'done';
+        leadResponse = leadResult.stdout.trim();
+    
+        const color = (ENGINE_COLORS as Record<string, number>)[leadId] ?? 245;
+        dispatch({ type: 'engine-block', engineId: leadId, color, content: leadResponse });
+        appendMessage(ctx.chatSession, { role: 'engine', engineId: leadId, content: leadResponse, timestamp: new Date().toISOString() });
+        tracker.record(leadId, topic, leadResponse);
+      } catch {
+        cfStatus[leadId] = 'failed';
+      }
+    
+      if (leadResponse && !cfAbort.signal.aborted) {
+        const observerPrompt = [
+          basePrompt,
+          '',
+          `## Lead engine (${leadId}) response`,
+          leadResponse,
+          '',
+          `## Your role`,
+          `The lead engine proposed the above. Only respond if you have a substantively different perspective or disagree. If you mostly agree, respond with just "Agree" or stay brief.`,
+        ].join('\n');
+    
+        const observers = engines.filter((id: string) => id !== leadId);
+        const observerDone = observers.map(async (engineId: string) => {
+          const engine = ctx.registry.get(engineId);
+          try {
+            const result = await ctx.adapter.dispatch({
+              engine,
+              prompt: observerPrompt,
+              cwd: process.cwd(),
+              mode: 'exec',
+              timeout: 120,
+              outputDir,
+              signal: cfAbort.signal,
+            });
+            cfStatus[engineId] = 'done';
+            const response = result.stdout.trim();
+            // Skip near-empty or pure agreement responses
+            if (response && response.length > 20 && !/^agree\b/i.test(response)) {
+              const color = (ENGINE_COLORS as Record<string, number>)[engineId] ?? 245;
+              dispatch({ type: 'engine-block', engineId, color, content: response });
+              appendMessage(ctx.chatSession, { role: 'engine', engineId, content: response, timestamp: new Date().toISOString() });
+              tracker.record(engineId, topic, response);
+            }
+          } catch {
+            cfStatus[engineId] = 'failed';
+          }
+        });
+    
+        await Promise.all(observerDone);
+      }
+    } else {
+      // All-respond: original parallel dispatch
+      const allDone = engines.map(async (engineId: string) => {
+        const engine = ctx.registry.get(engineId);
+        try {
+          const result = await ctx.adapter.dispatch({
+            engine,
+            prompt: basePrompt,
+            cwd: process.cwd(),
+            mode: 'exec',
+            timeout: 120,
+            outputDir,
+            signal: cfAbort.signal,
+          });
+          cfStatus[engineId] = 'done';
+    
+          const color = (ENGINE_COLORS as Record<string, number>)[engineId] ?? 245;
+          dispatch({ type: 'engine-block', engineId, color, content: result.stdout.trim() });
+          appendMessage(ctx.chatSession, { role: 'engine', engineId, content: result.stdout.trim(), timestamp: new Date().toISOString() });
+          tracker.record(engineId, topic, result.stdout);
+        } catch {
+          cfStatus[engineId] = 'failed';
+        }
+      });
+    
+      await Promise.all(allDone);
+    }
+    
+    clearProgress();
+  } finally {
+    ctx.setActiveAbort(null);
+  }
+}
+

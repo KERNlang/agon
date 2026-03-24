@@ -6,7 +6,7 @@ export type StepState = 'pending' | 'running' | 'completed' | 'failed' | 'skippe
 
 export type StepEffect = 'read' | 'write' | 'exec' | 'network';
 
-export type PlanStepKind = 'dispatch' | 'fitness' | 'critique' | 'synthesis' | 'apply';
+export type PlanStepKind = 'dispatch' | 'fitness' | 'critique' | 'synthesis' | 'apply' | 'routing';
 
 export type ApprovalLevel = 'auto' | 'plan' | 'step';
 
@@ -85,7 +85,6 @@ export function createPlan(action: PlanAction, workspace: WorkspaceSnapshot, ste
     updatedAt: new Date().toISOString(),
     currentStepId: null,
   };
-  
 }
 
 export function advanceStep(plan: Plan, stepId: string, result: StepResult): Plan {
@@ -120,14 +119,12 @@ export function advanceStep(plan: Plan, stepId: string, result: StepResult): Pla
     currentStepId: newCurrentStepId,
     updatedAt: new Date().toISOString(),
   };
-  
 }
 
 export function canAutoApprove(step: PlanStep, level: ApprovalLevel): boolean {
   if (level === 'auto') return true;
   if (level === 'plan') return true;
   return step.effects.every((e) => e === 'read');
-  
 }
 
 export function mergeStepResult(plan: Plan, stepId: string, partial: Partial<StepResult>): Plan {
@@ -172,7 +169,6 @@ export function mergeStepResult(plan: Plan, stepId: string, partial: Partial<Ste
     currentStepId: newCurrentStepId,
     updatedAt: new Date().toISOString(),
   };
-  
 }
 
 export function approvePlan(plan: Plan): Plan {
@@ -180,7 +176,6 @@ export function approvePlan(plan: Plan): Plan {
     throw new PlanStateError('draft', plan.state);
   }
   return { ...plan, state: 'approved', updatedAt: new Date().toISOString() };
-  
 }
 
 export function startPlan(plan: Plan): Plan {
@@ -194,7 +189,6 @@ export function startPlan(plan: Plan): Plan {
     currentStepId: firstPending?.id ?? null,
     updatedAt: new Date().toISOString(),
   };
-  
 }
 
 export function cancelPlan(plan: Plan): Plan {
@@ -205,7 +199,6 @@ export function cancelPlan(plan: Plan): Plan {
     );
   }
   return { ...plan, state: 'cancelled', updatedAt: new Date().toISOString() };
-  
 }
 
 export function failPlan(plan: Plan, error?: string): Plan {
@@ -237,7 +230,6 @@ export function failPlan(plan: Plan, error?: string): Plan {
   }
   
   return { ...plan, steps, state: 'failed', updatedAt: new Date().toISOString() };
-  
 }
 
 export function resetStepForRetry(plan: Plan, stepId: string): Plan {
@@ -264,6 +256,5 @@ export function resetStepForRetry(plan: Plan, stepId: string): Plan {
     currentStepId: stepId,
     updatedAt: new Date().toISOString(),
   };
-  
 }
 

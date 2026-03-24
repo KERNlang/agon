@@ -22,7 +22,7 @@ export async function routeViaCesar(input: string, dispatch: Dispatch, ctx: Hand
     const action = (hintClass === 'question') ? 'chat' as const
       : hasAgent ? 'build' as const
       : 'chat' as const;
-    dispatch({ type: 'info', message: `César → ${action} (${lead}, fast path)` });
+    dispatch({ type: 'info', message: `Cesar → ${action} (${lead}, fast path)` });
     return {
       action,
       leadEngine: lead,
@@ -34,7 +34,7 @@ export async function routeViaCesar(input: string, dispatch: Dispatch, ctx: Hand
   }
   
   const scoutCount = config.cesarScoutCount ?? 2;
-  dispatch({ type: 'spinner-start', message: 'César routing…' });
+  dispatch({ type: 'spinner-start', message: 'Cesar routing…' });
   
   let rankedBids: ScoutBid[];
   let leadEngine: string;
@@ -57,7 +57,7 @@ export async function routeViaCesar(input: string, dispatch: Dispatch, ctx: Hand
     disagreementSpread = result.disagreementSpread;
   } catch (err) {
     dispatch({ type: 'spinner-stop' });
-    dispatch({ type: 'warning', message: `César scout failed: ${err instanceof Error ? err.message : String(err)}. Falling back to chat.` });
+    dispatch({ type: 'warning', message: `Cesar scout failed: ${err instanceof Error ? err.message : String(err)}. Falling back to chat.` });
     return {
       action: 'chat',
       leadEngine: engines[0] ?? 'claude',
@@ -102,8 +102,8 @@ export async function routeViaCesar(input: string, dispatch: Dispatch, ctx: Hand
   }
   
   const label = action === 'campfire'
-    ? `César → campfire (${reasoning})`
-    : `César → ${action} (${leadEngine}, ${topConfidence}%)`;
+    ? `Cesar → campfire (${reasoning})`
+    : `Cesar → ${action} (${leadEngine}, ${topConfidence}%)`;
   dispatch({ type: 'info', message: label });
   
   return {

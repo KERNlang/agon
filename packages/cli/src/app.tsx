@@ -43,6 +43,7 @@ import {
   handleBuild, handleRun,
 } from './handlers/index.js';
 import { routeViaCesar } from './handlers/cesar.js';
+import { handlePipeline } from './handlers/pipeline.js';
 import { codeBlockBuffer } from './code-buffer.js';
 import { getGhostCompletion } from './ghost-text.js';
 import { copyToClipboard, applyPatchToTree } from '@agon/core';
@@ -1075,6 +1076,11 @@ function App() {
         }
         case 'build': {
           runAsJob('build', intent.input?.slice(0, 40) ?? 'build', () => handleBuild(intent.input, dispatch, ctx));
+          return;
+        }
+        case 'pipeline': {
+          runAsJob('pipeline', intent.task?.slice(0, 40) ?? 'pipeline', () =>
+            handlePipeline(intent.task, dispatch, ctx, intent.fitnessCmd ?? undefined));
           return;
         }
         case 'run': await handleRun(intent.input, dispatch, ctx); break;

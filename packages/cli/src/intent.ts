@@ -35,6 +35,7 @@ export type Intent =
   | { type: 'flows' }
   | { type: 'chats'; sessionId?: string }
   | { type: 'build'; input: string }
+  | { type: 'pipeline'; task: string; fitnessCmd: string | null }
   | { type: 'run'; input: string }
   | { type: 'cesar'; input: string }
   | { type: 'clear' }

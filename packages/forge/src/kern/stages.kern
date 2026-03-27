@@ -77,11 +77,11 @@ fn name=runStage1 async=true params="opts:{starter:string, forgePrompt:string, f
     const engineResults = new Map<string, EngineResult>();
     engineResults.set(opts.starter, result);
 
+    // lintWarnings and styleScore are currently hardcoded (0 and 100) in fitness.kern,
+    // so those checks are no-ops. Gate on what matters: pass + score threshold.
     const accepted =
       result.pass &&
-      result.score >= opts.config.forgeAutoAcceptScore &&
-      result.lintWarnings <= 2 &&
-      result.styleScore >= 90;
+      result.score >= opts.config.forgeAutoAcceptScore;
 
     if (accepted) {
       opts.onEvent?.({

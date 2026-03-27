@@ -1,0 +1,158 @@
+import { join } from 'node:path';
+
+import { loadPlan, listPlans, approvePlan, startPlan, cancelPlan, resetStepForRetry, savePlan, preflightApply, applyPatchToTree, RUNS_DIR } from '@agon/core';
+
+import type { Plan } from '@agon/core';
+
+import type { Dispatch, HandlerContext } from '../handlers/types.js';
+
+export function handlePlanShow(dispatch: Dispatch, ctx: HandlerContext, planId?: string): void {
+  if (planId) {
+    const plan = loadPlan(planId);
+    if (!plan) {
+      dispatch({ type: 'warning', message: `Plan not found: ${planId}` });
+      return;
+    }
+    dispatch({ type: 'plan', plan });
+    return;
+  }
+  
+  if (ctx.currentPlan) {
+    dispatch({ type: 'plan', plan: ctx.currentPlan });
+    return;
+  }
+  
+  const recent = listPlans(1);
+  if (recent.length > 0) {
+    dispatch({ type: 'plan', plan: recent[0] });
+  } else {
+    dispatch({ type: 'info', message: 'No plans yet. Run /forge or build to create one.' });
+  }
+  
+}
+
+export function handlePlansList(dispatch: Dispatch): void {
+  const plans = listPlans(20);
+  dispatch({ type: 'plan-list', plans });
+  
+}
+
+export async function handleApprove(dispatch: Dispatch, ctx: HandlerContext): Promise<void> {
+  if (!ctx.currentPlan) {
+    dispatch({ type: 'warning', message: 'No active plan to approve.' });
+    return;
+  }
+  if (ctx.currentPlan.state !== 'draft') {
+    dispatch({ type: 'warning', message: `Plan is ${ctx.currentPlan.state}, not draft.` });
+    return;
+  }
+  
+  let plan = approvePlan(ctx.currentPlan);
+  ctx.setCurrentPlan(plan);
+  savePlan(plan);
+  dispatch({ type: 'success', message: 'Plan approved.' });
+  
+  if (plan.action.type === 'forge') {
+    const { handleForge } = await import('../handlers/forge.js');
+    await handleForge(plan.action.task, plan.action.fitnessCmd ?? null, dispatch, ctx, plan);
+  } else {
+    dispatch({ type: 'info', message: 'Run the build again to execute.' });
+  }
+  
+}
+
+export async function handleRetry(dispatch: Dispatch, ctx: HandlerContext): Promise<void> {
+  if (!ctx.currentPlan) {
+    dispatch({ type: 'warning', message: 'No active plan to retry.' });
+    return;
+  }
+  if (ctx.currentPlan.state !== 'paused' && ctx.currentPlan.state !== 'failed') {
+    dispatch({ type: 'warning', message: `Plan is ${ctx.currentPlan.state} — only paused/failed plans can be retried.` });
+    return;
+  }
+  
+  const failedStep = ctx.currentPlan.steps.find((s: any) => s.result.state === 'failed');
+  if (!failedStep) {
+    dispatch({ type: 'info', message: 'No failed step found. Re-run the command to restart.' });
+    return;
+  }
+  
+  dispatch({ type: 'info', message: `Retrying from: ${failedStep.label}` });
+  let plan = resetStepForRetry(ctx.currentPlan, failedStep.id);
+  ctx.setCurrentPlan(plan);
+  savePlan(plan);
+  
+  if (plan.action.type === 'forge') {
+    plan = startPlan(plan);
+    ctx.setCurrentPlan(plan);
+    savePlan(plan);
+    const { handleForge } = await import('../handlers/forge.js');
+    await handleForge(plan.action.task, plan.action.fitnessCmd ?? null, dispatch, ctx, plan);
+  } else {
+    dispatch({ type: 'info', message: 'Plan reset to approved. Run the build again to execute.' });
+  }
+  
+}
+
+export function handleCancel(dispatch: Dispatch, ctx: HandlerContext): void {
+  if (!ctx.currentPlan) {
+    dispatch({ type: 'warning', message: 'No active plan to cancel.' });
+    return;
+  }
+  if (ctx.currentPlan.state === 'completed' || ctx.currentPlan.state === 'cancelled') {
+    dispatch({ type: 'warning', message: `Plan already ${ctx.currentPlan.state}.` });
+    return;
+  }
+  const plan = cancelPlan(ctx.currentPlan);
+  ctx.setCurrentPlan(plan);
+  savePlan(plan);
+  dispatch({ type: 'success', message: 'Plan cancelled.' });
+  
+}
+
+export async function handleApplyPatch(dispatch: Dispatch, ctx: HandlerContext, patchPath?: string, force?: boolean): Promise<void> {
+  let resolvedPatchPath = patchPath;
+  let manifestPath: string | null = null;
+  
+  if (!resolvedPatchPath && ctx.currentPlan) {
+    for (const step of ctx.currentPlan.steps) {
+      const patchArtifact = step.result.artifacts?.find((a: any) => a.type === 'patch');
+      if (patchArtifact) { resolvedPatchPath = patchArtifact.path; break; }
+      const manifestArtifact = step.result.artifacts?.find((a: any) => a.type === 'manifest');
+      if (manifestArtifact) { manifestPath = manifestArtifact.path; }
+    }
+  }
+  
+  const preflight = preflightApply(process.cwd(), resolvedPatchPath ?? null, manifestPath);
+  
+  if (!preflight.ok && preflight.dirtyTree && force) {
+    if (!preflight.patch) {
+      dispatch({ type: 'error', message: preflight.error ?? 'No patch found.' });
+      return;
+    }
+    dispatch({ type: 'warning', message: 'Working tree is dirty — applying anyway (--force).' });
+  } else if (!preflight.ok) {
+    dispatch({ type: 'error', message: preflight.error ?? 'Preflight failed.' });
+    return;
+  }
+  
+  const patch = preflight.patch!;
+  dispatch({ type: 'info', message: `Patch: ${patch.path}` });
+  dispatch({ type: 'info', message: `Engine: ${patch.engineId}` });
+  dispatch({ type: 'info', message: `Changes: ~${patch.lineCount} lines` });
+  
+  const answer = await ctx.askQuestion(`Apply to ${process.cwd()}? [Y/n]`);
+  if (answer.trim().toLowerCase() === 'n') {
+    dispatch({ type: 'info', message: 'Cancelled.' });
+    return;
+  }
+  
+  const result = applyPatchToTree(process.cwd(), patch.content);
+  if (result.ok) {
+    dispatch({ type: 'success', message: 'Patch applied. Review changes with git diff.' });
+  } else {
+    dispatch({ type: 'error', message: `Apply failed: ${result.error}` });
+  }
+  
+}
+

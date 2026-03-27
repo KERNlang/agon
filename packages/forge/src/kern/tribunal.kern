@@ -19,30 +19,6 @@ interface name=TribunalResult
   field name=summary type=string
   field name=mode type=string optional=true
 
-fn name=assignPositions params="count:number" returns="string[]"
-  handler <<<
-    if (count === 1) return ['Analyze both sides'];
-    if (count === 2) return ['Argue FOR', 'Argue AGAINST'];
-    if (count === 3) return ['Argue FOR', 'Argue AGAINST', "Play devil's advocate"];
-    const positions = ['Argue FOR', 'Argue AGAINST', "Play devil's advocate"];
-    for (let i = 3; i < count; i++) {
-      positions.push(`Perspective ${i + 1}: Find unconventional angles`);
-    }
-    return positions;
-  >>>
-
-fn name=buildSummaryPrompt params="question:string, positions:TribunalPosition[]" returns="string"
-  handler <<<
-    const debateText = positions
-      .map((p) => {
-        const allArgs = p.arguments.join('\n\n');
-        return `## ${p.engineId} (${p.position})\n${allArgs}`;
-      })
-      .join('\n\n---\n\n');
-
-    return `## TASK\nSynthesize this debate into a clear verdict.\n\n## QUESTION\n${question}\n\n## DEBATE\n${debateText}\n\n## INSTRUCTIONS\nProvide:\n1. **Verdict**: Which side has the stronger argument and why\n2. **Key insights**: 2-3 non-obvious points that emerged\n3. **Recommendation**: What should the user actually do?\n\nBe decisive. Don't hedge with "it depends" — pick a side and explain why.`;
-  >>>
-
 fn name=buildFallbackSummary params="positions:TribunalPosition[]" returns="string"
   handler <<<
     return positions
@@ -112,7 +88,8 @@ fn name=runTribunal async=true params="opts:{question:string, engines:string[], 
             outputDir,
           });
           return { engineId: pos.engineId, argument: result.stdout.trim() };
-        } catch {
+        } catch (err) {
+          console.warn(`[agon] tribunal dispatch (${pos.engineId}) round ${round} failed: ${err instanceof Error ? err.message : String(err)}`);
           return { engineId: pos.engineId, argument: '(failed to respond)' };
         }
       });
@@ -157,7 +134,8 @@ fn name=runTribunal async=true params="opts:{question:string, engines:string[], 
         outputDir,
       });
       summary = summaryResult.stdout.trim();
-    } catch {
+    } catch (err) {
+      console.warn(`[agon] tribunal summary failed: ${err instanceof Error ? err.message : String(err)}`);
       summary = buildFallbackSummary(positions);
     }
 

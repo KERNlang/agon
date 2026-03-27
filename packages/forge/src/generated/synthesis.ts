@@ -30,7 +30,7 @@ export function parseCritiques(output: string): Critique[] {
         problem: c.problem!,
         minimalFix: c.minimal_fix ?? c.minimalFix ?? '',
       }));
-  } catch {
+  } catch (_parseErr) {
     return [];
   }
 }
@@ -65,7 +65,8 @@ export async function runSynthesis(opts: {manifest:ForgeManifest, winner:string,
         outputDir: forgeDir,
       });
       return parseCritiques(result.stdout);
-    } catch {
+    } catch (err) {
+      console.warn(`[agon] synthesis critique (${loserId}) failed: ${err instanceof Error ? err.message : String(err)}`);
       return [] as Critique[];
     }
   });

@@ -1,0 +1,29 @@
+interface name=CodeBlock
+  field name=index type=number
+  field name=language type=string
+  field name=code type=string
+
+service name=CodeBlockBuffer singleton=true
+  field name=blocks type="CodeBlock[]" default="[]"
+  method name=push params="language:string, code:string" returns=number
+    handler <<<
+      const index = this.blocks.length + 1;
+      this.blocks.push({ index, language, code });
+      return index;
+    >>>
+  method name=get params="index:number" returns="CodeBlock|null"
+    handler <<<
+      return this.blocks.find(b => b.index === index) ?? null;
+    >>>
+  method name=clear returns=void
+    handler <<<
+      this.blocks = [];
+    >>>
+  method name=recordFromSegments params="segments:Array<{type:string, language?:string, code?:string}>" returns=void
+    handler <<<
+      for (const seg of segments) {
+        if (seg.type === 'code' && seg.code) {
+          this.push(seg.language ?? '', seg.code);
+        }
+      }
+    >>>

@@ -1,3 +1,4 @@
+import from="node:os" names="tmpdir"
 import from="@agon/core" names="RoutingDecision,ScoutBid" types=true
 import from="@agon/core" names="EngineRegistry"
 import from="@agon/forge" names="runScout"
@@ -48,7 +49,7 @@ fn name=routeViaCesar params="input:string, dispatch:Dispatch, ctx:HandlerContex
         registry: ctx.registry,
         adapter: ctx.adapter,
         timeout: 30,
-        outputDir: '/tmp',
+        outputDir: tmpdir(),
       });
       rankedBids = result.rankedBids;
       leadEngine = result.leadEngine;

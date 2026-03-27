@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, renameSync } from 'node:fs';
 
 import { join, resolve, basename } from 'node:path';
 
@@ -27,14 +27,19 @@ function loadState(): WorkspaceState {
   const WORKSPACES_PATH = join(AGON_HOME, 'workspaces.json');
   ensureAgonHome();
   try { return JSON.parse(readFileSync(WORKSPACES_PATH, 'utf-8')) as WorkspaceState; }
-  catch { return { workspaces: [], active: '' }; }
-  
+  catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+      console.warn(`[agon] workspace state corrupted, resetting to defaults: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    return { workspaces: [], active: '' };
+  }
 }
 
 function saveState(state: WorkspaceState): void {
   const WORKSPACES_PATH = join(AGON_HOME, 'workspaces.json');
-  writeFileSync(WORKSPACES_PATH, JSON.stringify(state, null, 2) + '\n');
-  
+  const tmpPath = WORKSPACES_PATH + '.tmp';
+  writeFileSync(tmpPath, JSON.stringify(state, null, 2) + '\n');
+  renameSync(tmpPath, WORKSPACES_PATH);
 }
 
 export function addWorkspace(rawPath: string): Workspace {
@@ -50,7 +55,6 @@ export function addWorkspace(rawPath: string): Workspace {
   if (state.workspaces.length === 1) state.active = ws.id;
   saveState(state);
   return ws;
-  
 }
 
 export function removeWorkspace(idOrPath: string): boolean {
@@ -63,18 +67,15 @@ export function removeWorkspace(idOrPath: string): boolean {
   if (state.active === removed.id) state.active = state.workspaces[0]?.id ?? '';
   saveState(state);
   return true;
-  
 }
 
 export function listWorkspaces(): Workspace[] {
   return loadState().workspaces;
-  
 }
 
 export function getActiveWorkspace(): Workspace|null {
   const state = loadState();
   return state.workspaces.find((w) => w.id === state.active) ?? null;
-  
 }
 
 export function switchWorkspace(idOrPath: string): Workspace|null {
@@ -86,7 +87,6 @@ export function switchWorkspace(idOrPath: string): Workspace|null {
   state.active = ws.id;
   saveState(state);
   return ws;
-  
 }
 
 export function getWorkspace(idOrPath: string): Workspace|null {
@@ -94,17 +94,25 @@ export function getWorkspace(idOrPath: string): Workspace|null {
   return state.workspaces.find(
     (w) => w.id === idOrPath || w.path === resolve(idOrPath) || w.name === idOrPath,
   ) ?? null;
-  
 }
 
 export function snapshotWorkspace(ws: Workspace): WorkspaceSnapshot {
   let sha = 'unknown';
-  try { sha = headSha(ws.path); } catch {}
+  try { sha = headSha(ws.path); } catch (err) {
+    console.warn(`[agon] failed to get HEAD sha for ${ws.path}: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  let branch = 'unknown';
+  try { branch = currentBranch(ws.path); } catch (err) {
+    console.warn(`[agon] failed to get branch for ${ws.path}: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  let dirty = false;
+  try { dirty = isDirty(ws.path); } catch (err) {
+    console.warn(`[agon] failed to check dirty state for ${ws.path}: ${err instanceof Error ? err.message : String(err)}`);
+  }
   return {
     id: ws.id, path: ws.path, headSha: sha,
-    branch: currentBranch(ws.path), dirty: isDirty(ws.path),
+    branch, dirty,
   };
-  
 }
 
 export function ensureCurrentWorkspace(cwd: string): Workspace {
@@ -119,6 +127,5 @@ export function ensureCurrentWorkspace(cwd: string): Workspace {
     return existing;
   }
   return addWorkspace(cwd);
-  
 }
 

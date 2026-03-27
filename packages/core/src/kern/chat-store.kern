@@ -82,7 +82,8 @@ fn name=loadChatSession params="id:string" returns="ChatSession|null"
         branch: header.branch,
         engineIds: header.engineIds,
       };
-    } catch {
+    } catch (err) {
+      console.warn(`[agon] failed to load chat session ${id}: ${err instanceof Error ? err.message : String(err)}`);
       return null;
     }
   >>>
@@ -111,7 +112,8 @@ fn name=listChatSessions params="limit:number" returns="ChatSession[]"
         const id = f.name.replace('.ndjson', '');
         return loadChatSession(id);
       }).filter((s: ChatSession|null): s is ChatSession => s !== null);
-    } catch {
+    } catch (err) {
+      console.warn(`[agon] failed to list chat sessions: ${err instanceof Error ? err.message : String(err)}`);
       return [];
     }
   >>>

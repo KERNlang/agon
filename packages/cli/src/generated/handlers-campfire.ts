@@ -92,7 +92,8 @@ export async function handleCampfire(topic: string, dispatch: Dispatch, ctx: Han
         dispatch({ type: 'engine-block', engineId: leadId, color, content: leadResponse });
         appendMessage(ctx.chatSession, { role: 'engine', engineId: leadId, content: leadResponse, timestamp: new Date().toISOString() });
         tracker.record(leadId, topic, leadResponse);
-      } catch {
+      } catch (err) {
+        console.warn(`[agon] campfire lead dispatch (${leadId}) failed: ${err instanceof Error ? err.message : String(err)}`);
         cfStatus[leadId] = 'failed';
       }
     
@@ -129,7 +130,8 @@ export async function handleCampfire(topic: string, dispatch: Dispatch, ctx: Han
               appendMessage(ctx.chatSession, { role: 'engine', engineId, content: response, timestamp: new Date().toISOString() });
               tracker.record(engineId, topic, response);
             }
-          } catch {
+          } catch (err) {
+            console.warn(`[agon] campfire observer (${engineId}) failed: ${err instanceof Error ? err.message : String(err)}`);
             cfStatus[engineId] = 'failed';
           }
         });
@@ -156,7 +158,8 @@ export async function handleCampfire(topic: string, dispatch: Dispatch, ctx: Han
           dispatch({ type: 'engine-block', engineId, color, content: result.stdout.trim() });
           appendMessage(ctx.chatSession, { role: 'engine', engineId, content: result.stdout.trim(), timestamp: new Date().toISOString() });
           tracker.record(engineId, topic, result.stdout);
-        } catch {
+        } catch (err) {
+          console.warn(`[agon] campfire dispatch (${engineId}) failed: ${err instanceof Error ? err.message : String(err)}`);
           cfStatus[engineId] = 'failed';
         }
       });

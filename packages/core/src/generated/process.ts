@@ -56,8 +56,11 @@ export async function spawnWithTimeout(opts: SpawnOptions): Promise<DispatchResu
     function killChild(): void {
       try {
         if (child.pid) process.kill(-child.pid, 'SIGTERM');
-      } catch {
-        try { child.kill('SIGKILL'); } catch {}
+      } catch (err) {
+        console.warn(`[agon] failed to kill process group ${child.pid}: ${err instanceof Error ? err.message : String(err)}`);
+        try { child.kill('SIGKILL'); } catch (err2) {
+          console.warn(`[agon] fallback SIGKILL also failed: ${err2 instanceof Error ? err2.message : String(err2)}`);
+        }
       }
     }
   
@@ -83,7 +86,6 @@ export async function spawnWithTimeout(opts: SpawnOptions): Promise<DispatchResu
       });
     });
   });
-  
 }
 
 export async function* spawnStream(opts: SpawnOptions): AsyncGenerator<string, DispatchResult, void> {
@@ -120,8 +122,11 @@ export async function* spawnStream(opts: SpawnOptions): AsyncGenerator<string, D
   function killChild(): void {
     try {
       if (child.pid) process.kill(-child.pid, 'SIGTERM');
-    } catch {
-      try { child.kill('SIGKILL'); } catch {}
+    } catch (err) {
+      console.warn(`[agon] failed to kill process group ${child.pid}: ${err instanceof Error ? err.message : String(err)}`);
+      try { child.kill('SIGKILL'); } catch (err2) {
+        console.warn(`[agon] fallback SIGKILL also failed: ${err2 instanceof Error ? err2.message : String(err2)}`);
+      }
     }
   }
   
@@ -172,15 +177,23 @@ export async function* spawnStream(opts: SpawnOptions): AsyncGenerator<string, D
     if (resolveWait) { resolveWait(); resolveWait = null; }
   });
   
-  while (!done || chunks.length > 0) {
-    if (chunks.length > 0) {
-      yield chunks.shift()!;
-    } else if (!done) {
-      await new Promise<void>((r) => { resolveWait = r; });
+  try {
+    while (!done || chunks.length > 0) {
+      if (chunks.length > 0) {
+        yield chunks.shift()!;
+      } else if (!done) {
+        await new Promise<void>((r) => { resolveWait = r; });
+      }
+    }
+  } finally {
+    // If consumer stops iterating before process exits, clean up
+    if (!done) {
+      killChild();
+      clearTimeout(timer);
+      if (opts.signal) opts.signal.removeEventListener('abort', onAbort);
     }
   }
   
   return closeResult!;
-  
 }
 

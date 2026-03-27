@@ -1,0 +1,294 @@
+interface name=InlineStyle
+  field name=bold type=boolean
+  field name=italic type=boolean
+  field name=code type=boolean
+  field name=dimColor type=boolean
+  field name=linkUrl type="string|undefined"
+
+interface name=InlineSpan
+  field name=text type=string
+  field name=style type=InlineStyle
+
+const name=DEFAULT_STYLE type=InlineStyle
+  handler <<<
+    ({ bold: false, italic: false, code: false, dimColor: false, linkUrl: undefined })
+  >>>
+
+interface name=RichLine
+  field name=kind type="'plain'|'h1'|'h2'|'h3'|'bullet'|'ordered'|'blockquote'|'hr'|'blank'"
+  field name=spans type="InlineSpan[]"
+  field name=indent type=number
+  field name=marker type="string|undefined"
+
+fn name=classifyLine params="line:string" returns="{kind:RichLine['kind'], content:string, indent:number, marker:string|undefined}"
+  handler <<<
+    const trimmed = line.trimStart();
+    const leadingSpaces = line.length - trimmed.length;
+
+    if (!trimmed) return { kind: 'blank', content: '', indent: 0, marker: undefined };
+
+    // Horizontal rule: ---, ***, ___ (with optional spaces)
+    if (/^[-*_]\s*[-*_]\s*[-*_][\s*_-]*$/.test(trimmed)) {
+      return { kind: 'hr', content: '', indent: 0, marker: undefined };
+    }
+
+    // Headers
+    const h3 = trimmed.match(/^###\s+(.*)/);
+    if (h3) return { kind: 'h3', content: h3[1], indent: 0, marker: '### ' };
+    const h2 = trimmed.match(/^##\s+(.*)/);
+    if (h2) return { kind: 'h2', content: h2[1], indent: 0, marker: '## ' };
+    const h1 = trimmed.match(/^#\s+(.*)/);
+    if (h1) return { kind: 'h1', content: h1[1], indent: 0, marker: '# ' };
+
+    // Blockquote
+    const bq = trimmed.match(/^>\s?(.*)/);
+    if (bq) return { kind: 'blockquote', content: bq[1], indent: 0, marker: '> ' };
+
+    // Unordered list
+    const bullet = trimmed.match(/^[-*+]\s+(.*)/);
+    if (bullet) return { kind: 'bullet', content: bullet[1], indent: Math.floor(leadingSpaces / 2), marker: '• ' };
+
+    // Ordered list
+    const ordered = trimmed.match(/^(\d+)[.)]\s+(.*)/);
+    if (ordered) return { kind: 'ordered', content: ordered[2], indent: Math.floor(leadingSpaces / 2), marker: `${ordered[1]}. ` };
+
+    return { kind: 'plain', content: line, indent: 0, marker: undefined };
+  >>>
+
+fn name=parseInlineSpans params="text:string" returns="InlineSpan[]"
+  handler <<<
+    if (!text) return [{ text: '', style: DEFAULT_STYLE }];
+
+    const spans: InlineSpan[] = [];
+    // Regex matches: bold(**), italic(*), bold+italic(***), inline code(`), links([text](url))
+    const TOKEN = /(\*\*\*|__\_|\*\*|__|\*|_|`|\[([^\]]*)\]\(([^)]*)\))/g;
+
+    let pos = 0;
+    let bold = false;
+    let italic = false;
+
+    function pushText(t: string): void {
+      if (!t) return;
+      spans.push({ text: t, style: { bold, italic, code: false, dimColor: false, linkUrl: undefined } });
+    }
+
+    let match: RegExpExecArray | null;
+    while ((match = TOKEN.exec(text)) !== null) {
+      const before = text.slice(pos, match.index);
+      const token = match[0];
+
+      // Link: [text](url)
+      if (match[2] !== undefined) {
+        pushText(before);
+        spans.push({
+          text: match[2],
+          style: { bold, italic, code: false, dimColor: false, linkUrl: match[3] },
+        });
+        pos = match.index + token.length;
+        continue;
+      }
+
+      // Inline code
+      if (token === '`') {
+        const closeIdx = text.indexOf('`', match.index + 1);
+        if (closeIdx === -1) {
+          // No closing backtick — treat as literal
+          pushText(before + '`');
+          pos = match.index + 1;
+          continue;
+        }
+        pushText(before);
+        const codeText = text.slice(match.index + 1, closeIdx);
+        spans.push({
+          text: codeText,
+          style: { bold: false, italic: false, code: true, dimColor: false, linkUrl: undefined },
+        });
+        pos = closeIdx + 1;
+        TOKEN.lastIndex = pos;
+        continue;
+      }
+
+      // Bold+italic: *** or ___
+      if (token === '***' || token === '___') {
+        pushText(before);
+        if (bold && italic) { bold = false; italic = false; }
+        else { bold = true; italic = true; }
+        pos = match.index + token.length;
+        continue;
+      }
+
+      // Bold: ** or __
+      if (token === '**' || token === '__') {
+        pushText(before);
+        bold = !bold;
+        pos = match.index + token.length;
+        continue;
+      }
+
+      // Italic: * or _
+      if (token === '*' || token === '_') {
+        // Avoid matching underscores inside words (e.g., snake_case)
+        if (token === '_') {
+          const charBefore = match.index > 0 ? text[match.index - 1] : ' ';
+          const charAfter = match.index + 1 < text.length ? text[match.index + 1] : ' ';
+          if (/\w/.test(charBefore) && /\w/.test(charAfter)) {
+            pushText(before + '_');
+            pos = match.index + 1;
+            continue;
+          }
+        }
+        pushText(before);
+        italic = !italic;
+        pos = match.index + token.length;
+        continue;
+      }
+
+      pushText(before + token);
+      pos = match.index + token.length;
+    }
+
+    // Remaining text
+    const tail = text.slice(pos);
+    if (tail) pushText(tail);
+
+    // Merge adjacent spans with same style
+    const merged: InlineSpan[] = [];
+    for (const span of spans) {
+      const last = merged[merged.length - 1];
+      if (last && last.style.bold === span.style.bold && last.style.italic === span.style.italic
+          && last.style.code === span.style.code && last.style.dimColor === span.style.dimColor
+          && last.style.linkUrl === span.style.linkUrl) {
+        last.text += span.text;
+      } else {
+        merged.push({ ...span, style: { ...span.style } });
+      }
+    }
+
+    return merged.length > 0 ? merged : [{ text, style: DEFAULT_STYLE }];
+  >>>
+
+fn name=visibleLength params="spans:InlineSpan[]" returns=number export=false
+  handler <<<
+    return spans.reduce((sum, s) => sum + s.text.length, 0);
+  >>>
+
+fn name=richWrap params="spans:InlineSpan[], width:number" returns="InlineSpan[][]"
+  handler <<<
+    if (width <= 0) return [spans];
+
+    // Fast path: fits on one line
+    if (visibleLength(spans) <= width) return [spans];
+
+    // Flatten all text to find word-break points
+    const fullText = spans.map(s => s.text).join('');
+    if (!fullText) return [spans];
+
+    // Word-wrap the plain text
+    const breakPoints: number[] = [];
+    let lineStart = 0;
+    while (lineStart < fullText.length) {
+      if (lineStart + width >= fullText.length) {
+        breakPoints.push(fullText.length);
+        break;
+      }
+      let breakAt = fullText.lastIndexOf(' ', lineStart + width);
+      if (breakAt <= lineStart) breakAt = lineStart + width;
+      breakPoints.push(breakAt);
+      lineStart = breakAt;
+      // Skip the space at break point
+      while (lineStart < fullText.length && fullText[lineStart] === ' ') lineStart++;
+      if (lineStart < fullText.length) breakPoints.push(-lineStart); // negative = new line start
+    }
+
+    // Map break points back to spans
+    const lines: InlineSpan[][] = [];
+    let currentLine: InlineSpan[] = [];
+    let charOffset = 0;
+
+    for (const span of spans) {
+      let remaining = span.text;
+      let spanStart = charOffset;
+
+      while (remaining) {
+        // Find next break that applies within this span
+        let nextBreak = -1;
+        for (const bp of breakPoints) {
+          if (bp > 0 && bp > spanStart && bp <= spanStart + remaining.length) {
+            nextBreak = bp - spanStart;
+            break;
+          }
+        }
+
+        if (nextBreak === -1 || nextBreak >= remaining.length) {
+          // Rest of span fits on current line
+          if (remaining) currentLine.push({ text: remaining, style: { ...span.style } });
+          charOffset = spanStart + remaining.length;
+          break;
+        }
+
+        // Split at break
+        const before = remaining.slice(0, nextBreak).trimEnd();
+        if (before) currentLine.push({ text: before, style: { ...span.style } });
+        lines.push(currentLine);
+        currentLine = [];
+
+        remaining = remaining.slice(nextBreak).trimStart();
+        spanStart += nextBreak;
+        // Adjust for trimmed chars
+        while (spanStart < charOffset + span.text.length && fullText[spanStart] === ' ') spanStart++;
+      }
+    }
+    if (currentLine.length > 0) lines.push(currentLine);
+
+    return lines.length > 0 ? lines : [spans];
+  >>>
+
+fn name=parseProseToRichLines params="text:string, width:number" returns="RichLine[]"
+  handler <<<
+    if (!text.trim()) return [];
+
+    const inputLines = text.split('\n');
+    const result: RichLine[] = [];
+
+    for (const rawLine of inputLines) {
+      const classified = classifyLine(rawLine);
+
+      if (classified.kind === 'blank') {
+        result.push({ kind: 'blank', spans: [], indent: 0, marker: undefined });
+        continue;
+      }
+
+      if (classified.kind === 'hr') {
+        result.push({ kind: 'hr', spans: [{ text: '─'.repeat(Math.max(width - 2, 10)), style: { ...DEFAULT_STYLE, dimColor: true } }], indent: 0, marker: undefined });
+        continue;
+      }
+
+      const spans = parseInlineSpans(classified.content);
+
+      // Apply blockquote dimming
+      if (classified.kind === 'blockquote') {
+        for (const span of spans) {
+          if (!span.style.code) span.style.dimColor = true;
+        }
+      }
+
+      // Calculate available width after indent + marker
+      const indentWidth = classified.indent * 2;
+      const markerWidth = classified.marker ? classified.marker.length : 0;
+      const contentWidth = Math.max(width - indentWidth - markerWidth, 20);
+
+      const wrappedLines = richWrap(spans, contentWidth);
+
+      for (let i = 0; i < wrappedLines.length; i++) {
+        result.push({
+          kind: i === 0 ? classified.kind : 'plain',
+          spans: wrappedLines[i],
+          indent: classified.indent,
+          // Only first wrapped line gets the marker; continuations get indent
+          marker: i === 0 ? classified.marker : undefined,
+        });
+      }
+    }
+
+    return result;
+  >>>

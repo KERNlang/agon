@@ -32,6 +32,8 @@ import type { Job } from './generated/job-manager.js';
 import { ENGINE_COLORS } from './output.js';
 import { parseMarkdownBlocks, truncateCodeLine, cleanEngineOutput } from './markdown.js';
 import type { ContentSegment } from './markdown.js';
+import { parseProseToRichLines } from './rich-text.js';
+import type { RichLine, InlineSpan } from './rich-text.js';
 import type { OutputEvent, HandlerContext, EngineProgress } from './handlers/types.js';
 import {
   handleForge, handleChat, handleBrainstorm, handleCampfire, handleTribunal,
@@ -301,6 +303,88 @@ function CodeBlockView({ segment, borderColor }: { segment: ContentSegment & { t
   );
 }
 
+// ── Rich Markdown Rendering ──────────────────────────────────────────
+
+/** Render a single inline span with styles */
+function RichSpanView({ span }: { span: InlineSpan }) {
+  if (span.style.code) {
+    return <Text color="#a78bfa">{span.text}</Text>;
+  }
+  if (span.style.linkUrl) {
+    return <><Text bold color="#60a5fa">{span.text}</Text><Text dimColor>{` (${span.style.linkUrl})`}</Text></>;
+  }
+
+  let el = <Text>{span.text}</Text>;
+  if (span.style.bold && span.style.italic) el = <Text bold italic>{span.text}</Text>;
+  else if (span.style.bold) el = <Text bold>{span.text}</Text>;
+  else if (span.style.italic) el = <Text italic>{span.text}</Text>;
+  if (span.style.dimColor) el = <Text dimColor>{span.text}</Text>;
+  return el;
+}
+
+/** Render a single rich line with kind-specific formatting */
+function RichLineView({ line, borderColor }: { line: RichLine; borderColor?: string }) {
+  const border = borderColor ? <Text color={borderColor}>{'│ '}</Text> : null;
+  const indent = line.indent > 0 ? '  '.repeat(line.indent) : '';
+
+  if (line.kind === 'blank') return <Text>{border}{' '}</Text>;
+
+  if (line.kind === 'hr') return <Text>{border}<Text dimColor>{'─'.repeat(40)}</Text></Text>;
+
+  if (line.kind === 'h1') return <Text>{border}{indent}<Text bold color="cyan">{line.spans.map((s, i) => <RichSpanView key={i} span={s} />)}</Text></Text>;
+  if (line.kind === 'h2') return <Text>{border}{indent}<Text bold>{line.spans.map((s, i) => <RichSpanView key={i} span={s} />)}</Text></Text>;
+  if (line.kind === 'h3') return <Text>{border}{indent}<Text bold dimColor>{line.spans.map((s, i) => <RichSpanView key={i} span={s} />)}</Text></Text>;
+
+  if (line.kind === 'blockquote') {
+    return <Text>{border}{indent}<Text dimColor>{'│ '}</Text>{line.spans.map((s, i) => <RichSpanView key={i} span={s} />)}</Text>;
+  }
+
+  const marker = line.marker ?? '';
+  return <Text>{border}{indent}{marker}{line.spans.map((s, i) => <RichSpanView key={i} span={s} />)}</Text>;
+}
+
+/** Render a markdown table segment inside a border */
+function MarkdownTableView({ headers, rows, alignments, borderColor }: {
+  headers: string[];
+  rows: string[][];
+  alignments: ('left' | 'center' | 'right')[];
+  borderColor: string;
+}) {
+  // Calculate column widths
+  const colWidths = headers.map((h, i) => {
+    let max = h.length;
+    for (const row of rows) {
+      if (row[i] && row[i].length > max) max = row[i].length;
+    }
+    return max;
+  });
+
+  function padCell(text: string, colIdx: number): string {
+    const w = colWidths[colIdx] ?? text.length;
+    const align = alignments[colIdx] ?? 'left';
+    if (align === 'right') return text.padStart(w);
+    if (align === 'center') {
+      const pad = w - text.length;
+      const left = Math.floor(pad / 2);
+      return ' '.repeat(left) + text + ' '.repeat(pad - left);
+    }
+    return text.padEnd(w);
+  }
+
+  const headerLine = headers.map((h, i) => padCell(h, i)).join('  ');
+  const sepLine = colWidths.map(w => '─'.repeat(w)).join('──');
+
+  return (
+    <Box flexDirection="column">
+      <Text><Text color={borderColor}>{'│ '}</Text><Text bold>{headerLine}</Text></Text>
+      <Text><Text color={borderColor}>{'│ '}</Text><Text dimColor>{sepLine}</Text></Text>
+      {rows.map((row, ri) => (
+        <Text key={`tr-${ri}`}><Text color={borderColor}>{'│ '}</Text>{row.map((cell, ci) => padCell(cell, ci)).join('  ')}</Text>
+      ))}
+    </Box>
+  );
+}
+
 /** Render parsed markdown segments inside an engine block */
 function RenderedSegments({ segments, borderColor, wrapWidth }: {
   segments: ContentSegment[];
@@ -311,17 +395,20 @@ function RenderedSegments({ segments, borderColor, wrapWidth }: {
     <>
       {segments.map((seg, i) => {
         if (seg.type === 'prose') {
-          const wrapped = wordWrap(seg.text, wrapWidth);
-          if (wrapped.length === 0 || (wrapped.length === 1 && !wrapped[0])) return null;
+          const richLines = parseProseToRichLines(seg.text ?? '', wrapWidth);
+          if (richLines.length === 0) return null;
           return (
             <Box key={`seg-${i}`} flexDirection="column">
-              {wrapped.map((line, j) => (
-                <Text key={`prose-${i}-${j}`}><Text color={borderColor}>{'│ '}</Text>{line}</Text>
+              {richLines.map((line, j) => (
+                <RichLineView key={`rl-${i}-${j}`} line={line} borderColor={borderColor} />
               ))}
             </Box>
           );
         }
-        // code segment
+        if (seg.type === 'table') {
+          return <MarkdownTableView key={`seg-${i}`} headers={seg.headers} rows={seg.rows} alignments={seg.alignments} borderColor={borderColor} />;
+        }
+        // code segment (type narrowed to 'code')
         return <CodeBlockView key={`seg-${i}`} segment={seg} borderColor={borderColor} />;
       })}
     </>
@@ -389,10 +476,10 @@ function OutputBlockView({ event }: { event: OutputEvent }) {
   switch (event.type) {
     case 'text': {
       const termWidth = process.stdout.columns || 80;
-      const wrapped = wordWrap(event.content, termWidth - 4);
+      const richLines = parseProseToRichLines(event.content, termWidth - 4);
       return (
         <Box flexDirection="column" paddingLeft={2}>
-          {wrapped.map((line, i) => <Text key={`text-${i}`}>{line}</Text>)}
+          {richLines.map((line, i) => <RichLineView key={`text-${i}`} line={line} />)}
         </Box>
       );
     }
@@ -435,10 +522,10 @@ function OutputBlockView({ event }: { event: OutputEvent }) {
     }
     case 'verdict': {
       const termWidth = process.stdout.columns || 80;
-      const wrapped = wordWrap(event.summary.trim(), termWidth - 4);
+      const richLines = parseProseToRichLines(event.summary.trim(), termWidth - 4);
       return (
         <Box flexDirection="column" paddingLeft={2}>
-          {wrapped.map((line, i) => <Text key={`v-${i}`}>{line}</Text>)}
+          {richLines.map((line, i) => <RichLineView key={`v-${i}`} line={line} />)}
         </Box>
       );
     }
@@ -1385,14 +1472,13 @@ function App() {
           const c = engineColor(streamingText.engineId);
           const cleaned = cleanEngineOutput(streamingText.content);
           const termWidth = process.stdout.columns || 80;
-          const wrapped = wordWrap(cleaned, termWidth - 8);
+          const wrapWidth = termWidth - 8;
+          const segments = parseMarkdownBlocks(cleaned);
           return (
             <Box flexDirection="column" marginY={1} paddingLeft={2}>
               <Text color={c} bold>{'┌── '}{streamingText.engineId}</Text>
               <Text color={c}>{'│'}</Text>
-              {wrapped.map((line, i) => (
-                <Text key={`stream-${i}`}><Text color={c}>{'│ '}</Text>{line}</Text>
-              ))}
+              <RenderedSegments segments={segments} borderColor={c} wrapWidth={wrapWidth} />
             </Box>
           );
         })()}

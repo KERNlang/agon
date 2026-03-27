@@ -1,10 +1,16 @@
 export interface ContentSegment {
-  type: 'prose'|'code';
+  type: 'prose'|'code'|'table';
   text: string|undefined;
   language: string|undefined;
   code: string|undefined;
   index: number|undefined;
+  headers: string[]|undefined;
+  rows: string[][]|undefined;
+  alignments: ('left'|'center'|'right')[]|undefined;
 }
+
+
+
 
 
 
@@ -14,6 +20,63 @@ export interface ContentSegment {
 export const FENCE_OPEN: RegExp = /^```(\w*)\s*$/;
 
 export const FENCE_CLOSE: RegExp = /^```\s*$/;
+
+function isTableSeparator(line: string): boolean {
+  return /^\|[\s:_-]+(\|[\s:_-]+)*\|?\s*$/.test(line.trim());
+}
+
+function isTableRow(line: string): boolean {
+  const t = line.trim();
+  return t.startsWith('|') && t.includes('|', 1);
+}
+
+function parseTableAlignment(sepLine: string): ('left'|'center'|'right')[] {
+  const cells = sepLine.trim().replace(/^\||\|$/g, '').split('|');
+  return cells.map((c: string) => {
+    const t = c.trim();
+    if (t.startsWith(':') && t.endsWith(':')) return 'center' as const;
+    if (t.endsWith(':')) return 'right' as const;
+    return 'left' as const;
+  });
+}
+
+function parseTableCells(line: string): string[] {
+  return line.trim().replace(/^\||\|$/g, '').split('|').map((c: string) => c.trim());
+}
+
+function emitProseWithTables(proseLines: string[], segments: ContentSegment[]): void {
+  let i = 0;
+  let buffered: string[] = [];
+  
+  function flushProse(): void {
+    const text = buffered.join('\n');
+    if (text.trim()) {
+      segments.push({ type: 'prose', text, language: undefined, code: undefined, index: undefined, headers: undefined, rows: undefined, alignments: undefined });
+    }
+    buffered = [];
+  }
+  
+  while (i < proseLines.length) {
+    // Check for table: current line is a table row AND next line is a separator
+    if (isTableRow(proseLines[i]) && i + 1 < proseLines.length && isTableSeparator(proseLines[i + 1])) {
+      flushProse();
+      const headers = parseTableCells(proseLines[i]);
+      const alignments = parseTableAlignment(proseLines[i + 1]);
+      const rows: string[][] = [];
+      i += 2; // skip header + separator
+      while (i < proseLines.length && isTableRow(proseLines[i]) && !isTableSeparator(proseLines[i])) {
+        rows.push(parseTableCells(proseLines[i]));
+        i++;
+      }
+      segments.push({ type: 'table', text: undefined, language: undefined, code: undefined, index: undefined, headers, rows, alignments });
+      continue;
+    }
+  
+    buffered.push(proseLines[i]);
+    i++;
+  }
+  flushProse();
+}
 
 export function parseMarkdownBlocks(text: string): ContentSegment[] {
   const lines = text.split('\n');
@@ -31,10 +94,7 @@ export function parseMarkdownBlocks(text: string): ContentSegment[] {
     if (!inCode) {
       const openMatch = trimmed.match(FENCE_OPEN);
       if (openMatch) {
-        const proseText = proseLines.join('\n');
-        if (proseText.trim()) {
-          segments.push({ type: 'prose', text: proseText, language: undefined, code: undefined, index: undefined });
-        }
+        emitProseWithTables(proseLines, segments);
         proseLines = [];
         inCode = true;
         codeLang = openMatch[1] ?? '';
@@ -46,7 +106,7 @@ export function parseMarkdownBlocks(text: string): ContentSegment[] {
       if (FENCE_CLOSE.test(trimmed)) {
         if (codeLines.length > 0) {
           codeIndex++;
-          segments.push({ type: 'code', language: codeLang, code: codeLines.join('\n'), text: undefined, index: codeIndex });
+          segments.push({ type: 'code', language: codeLang, code: codeLines.join('\n'), text: undefined, index: codeIndex, headers: undefined, rows: undefined, alignments: undefined });
         }
         inCode = false;
         codeLang = '';
@@ -59,23 +119,18 @@ export function parseMarkdownBlocks(text: string): ContentSegment[] {
   
   if (inCode && codeLines.length > 0) {
     codeIndex++;
-    segments.push({ type: 'code', language: codeLang, code: codeLines.join('\n'), text: undefined, index: codeIndex });
+    segments.push({ type: 'code', language: codeLang, code: codeLines.join('\n'), text: undefined, index: codeIndex, headers: undefined, rows: undefined, alignments: undefined });
   } else if (proseLines.length > 0) {
-    const proseText = proseLines.join('\n');
-    if (proseText.trim()) {
-      segments.push({ type: 'prose', text: proseText, language: undefined, code: undefined, index: undefined });
-    }
+    emitProseWithTables(proseLines, segments);
   }
   
   return segments;
-  
 }
 
 export function truncateCodeLine(line: string, maxWidth: number): string {
   if (line.length <= maxWidth) return line;
   const overflow = line.length - maxWidth + 1;
   return line.slice(0, maxWidth - 1) + `…+${overflow}`;
-  
 }
 
 function extractCodexStructured(text: string): string|null {
@@ -89,7 +144,6 @@ function extractCodexStructured(text: string): string|null {
     parts.push(`\n## ${m[1]}\n${m[2]}`);
   }
   return parts.join('\n').replace(/\\n/g, '\n').trim();
-  
 }
 
 function parseStreamJsonLine(trimmed: string): {action:'use'|'skip'|'keep', content?:string} {
@@ -113,7 +167,6 @@ function parseStreamJsonLine(trimmed: string): {action:'use'|'skip'|'keep', cont
     // Not valid JSON — keep as text
   }
   return { action: 'keep' };
-  
 }
 
 export function cleanEngineOutput(raw: string): string {
@@ -137,6 +190,5 @@ export function cleanEngineOutput(raw: string): string {
   const codexResult = extractCodexStructured(result);
   if (codexResult) result = codexResult;
   return result;
-  
 }
 

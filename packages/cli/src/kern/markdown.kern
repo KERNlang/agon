@@ -1,9 +1,12 @@
 interface name=ContentSegment
-  field name=type type="'prose'|'code'"
+  field name=type type="'prose'|'code'|'table'"
   field name=text type="string|undefined"
   field name=language type="string|undefined"
   field name=code type="string|undefined"
   field name=index type="number|undefined"
+  field name=headers type="string[]|undefined"
+  field name=rows type="string[][]|undefined"
+  field name=alignments type="('left'|'center'|'right')[]|undefined"
 
 const name=FENCE_OPEN type=RegExp
   handler <<<
@@ -13,6 +16,68 @@ const name=FENCE_OPEN type=RegExp
 const name=FENCE_CLOSE type=RegExp
   handler <<<
     /^```\s*$/
+  >>>
+
+fn name=isTableSeparator params="line:string" returns=boolean export=false
+  handler <<<
+    return /^\|[\s:_-]+(\|[\s:_-]+)*\|?\s*$/.test(line.trim());
+  >>>
+
+fn name=isTableRow params="line:string" returns=boolean export=false
+  handler <<<
+    const t = line.trim();
+    return t.startsWith('|') && t.includes('|', 1);
+  >>>
+
+fn name=parseTableAlignment params="sepLine:string" returns="('left'|'center'|'right')[]" export=false
+  handler <<<
+    const cells = sepLine.trim().replace(/^\||\|$/g, '').split('|');
+    return cells.map((c: string) => {
+      const t = c.trim();
+      if (t.startsWith(':') && t.endsWith(':')) return 'center' as const;
+      if (t.endsWith(':')) return 'right' as const;
+      return 'left' as const;
+    });
+  >>>
+
+fn name=parseTableCells params="line:string" returns="string[]" export=false
+  handler <<<
+    return line.trim().replace(/^\||\|$/g, '').split('|').map((c: string) => c.trim());
+  >>>
+
+fn name=emitProseWithTables params="proseLines:string[], segments:ContentSegment[]" returns=void export=false
+  handler <<<
+    let i = 0;
+    let buffered: string[] = [];
+
+    function flushProse(): void {
+      const text = buffered.join('\n');
+      if (text.trim()) {
+        segments.push({ type: 'prose', text, language: undefined, code: undefined, index: undefined, headers: undefined, rows: undefined, alignments: undefined });
+      }
+      buffered = [];
+    }
+
+    while (i < proseLines.length) {
+      // Check for table: current line is a table row AND next line is a separator
+      if (isTableRow(proseLines[i]) && i + 1 < proseLines.length && isTableSeparator(proseLines[i + 1])) {
+        flushProse();
+        const headers = parseTableCells(proseLines[i]);
+        const alignments = parseTableAlignment(proseLines[i + 1]);
+        const rows: string[][] = [];
+        i += 2; // skip header + separator
+        while (i < proseLines.length && isTableRow(proseLines[i]) && !isTableSeparator(proseLines[i])) {
+          rows.push(parseTableCells(proseLines[i]));
+          i++;
+        }
+        segments.push({ type: 'table', text: undefined, language: undefined, code: undefined, index: undefined, headers, rows, alignments });
+        continue;
+      }
+
+      buffered.push(proseLines[i]);
+      i++;
+    }
+    flushProse();
   >>>
 
 fn name=parseMarkdownBlocks params="text:string" returns="ContentSegment[]"
@@ -32,10 +97,7 @@ fn name=parseMarkdownBlocks params="text:string" returns="ContentSegment[]"
       if (!inCode) {
         const openMatch = trimmed.match(FENCE_OPEN);
         if (openMatch) {
-          const proseText = proseLines.join('\n');
-          if (proseText.trim()) {
-            segments.push({ type: 'prose', text: proseText, language: undefined, code: undefined, index: undefined });
-          }
+          emitProseWithTables(proseLines, segments);
           proseLines = [];
           inCode = true;
           codeLang = openMatch[1] ?? '';
@@ -47,7 +109,7 @@ fn name=parseMarkdownBlocks params="text:string" returns="ContentSegment[]"
         if (FENCE_CLOSE.test(trimmed)) {
           if (codeLines.length > 0) {
             codeIndex++;
-            segments.push({ type: 'code', language: codeLang, code: codeLines.join('\n'), text: undefined, index: codeIndex });
+            segments.push({ type: 'code', language: codeLang, code: codeLines.join('\n'), text: undefined, index: codeIndex, headers: undefined, rows: undefined, alignments: undefined });
           }
           inCode = false;
           codeLang = '';
@@ -60,12 +122,9 @@ fn name=parseMarkdownBlocks params="text:string" returns="ContentSegment[]"
 
     if (inCode && codeLines.length > 0) {
       codeIndex++;
-      segments.push({ type: 'code', language: codeLang, code: codeLines.join('\n'), text: undefined, index: codeIndex });
+      segments.push({ type: 'code', language: codeLang, code: codeLines.join('\n'), text: undefined, index: codeIndex, headers: undefined, rows: undefined, alignments: undefined });
     } else if (proseLines.length > 0) {
-      const proseText = proseLines.join('\n');
-      if (proseText.trim()) {
-        segments.push({ type: 'prose', text: proseText, language: undefined, code: undefined, index: undefined });
-      }
+      emitProseWithTables(proseLines, segments);
     }
 
     return segments;

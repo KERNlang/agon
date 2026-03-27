@@ -110,4 +110,41 @@ describe('parseMarkdownBlocks', () => {
       { type: 'code', language: 'diff', code: '- old line\n+ new line\n@@ -1,3 +1,3 @@\n context', index: 1 },
     ]);
   });
+
+  it('detects a markdown table', () => {
+    const input = '| Name | Score |\n|------|-------|\n| Alice | 90 |\n| Bob | 85 |';
+    const result = parseMarkdownBlocks(input);
+    expect(result).toHaveLength(1);
+    expect(result[0].type).toBe('table');
+    if (result[0].type === 'table') {
+      expect(result[0].headers).toEqual(['Name', 'Score']);
+      expect(result[0].rows).toHaveLength(2);
+      expect(result[0].rows[0]).toEqual(['Alice', '90']);
+    }
+  });
+
+  it('table between prose paragraphs', () => {
+    const input = 'Before text\n\n| A | B |\n|---|---|\n| 1 | 2 |\n\nAfter text';
+    const result = parseMarkdownBlocks(input);
+    expect(result.length).toBe(3);
+    expect(result[0].type).toBe('prose');
+    expect(result[1].type).toBe('table');
+    expect(result[2].type).toBe('prose');
+  });
+
+  it('non-table pipe usage stays as prose', () => {
+    const input = 'Use the | operator for bitwise OR';
+    const result = parseMarkdownBlocks(input);
+    expect(result).toHaveLength(1);
+    expect(result[0].type).toBe('prose');
+  });
+
+  it('table with alignment markers', () => {
+    const input = '| Left | Center | Right |\n|:-----|:------:|------:|\n| a | b | c |';
+    const result = parseMarkdownBlocks(input);
+    expect(result).toHaveLength(1);
+    if (result[0].type === 'table') {
+      expect(result[0].alignments).toEqual(['left', 'center', 'right']);
+    }
+  });
 });

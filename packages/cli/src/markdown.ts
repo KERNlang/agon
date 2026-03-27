@@ -10,7 +10,8 @@ import {
 
 export type ContentSegment =
   | { type: 'prose'; text: string }
-  | { type: 'code'; language: string; code: string; index: number };
+  | { type: 'code'; language: string; code: string; index: number }
+  | { type: 'table'; headers: string[]; rows: string[][]; alignments: ('left' | 'center' | 'right')[] };
 
 export function parseMarkdownBlocks(text: string): ContentSegment[] {
   return _parseMarkdownBlocks(text) as ContentSegment[];

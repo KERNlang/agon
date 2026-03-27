@@ -3,7 +3,6 @@ import { render, Box, Text, useInput, useApp } from 'ink';
 import Spinner from 'ink-spinner';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { downloadCaesar } from './caesar.js';
 import {
   EngineRegistry,
   ensureAgonHome,
@@ -27,8 +26,6 @@ function OnboardingApp() {
   const [engines, setEngines] = useState<EngineInfo[]>([]);
   const [selectedEngines, setSelectedEngines] = useState<string[]>([]);
   const [defaultEngine, setDefaultEngine] = useState<string>('');
-  const [caesarModel, setCaesarModel] = useState('smollm2-360m');
-  const [downloadProgress, setDownloadProgress] = useState<string | null>(null);
   const [cursorIndex, setCursorIndex] = useState(0);
 
   // Scan engines on mount
@@ -89,42 +86,11 @@ function OnboardingApp() {
         if (id) {
           configSet('forgeFixedStarter', id);
           setDefaultEngine(id);
-          setCursorIndex(0);
+          configSet('onboarded', true);
           setStep(2);
         }
       }
     } else if (step === 2) {
-      // Caesar model selection
-      const options = ['smollm2-360m', 'qwen-0.5b', 'none'];
-      if (key.upArrow) setCursorIndex((i) => Math.max(0, i - 1));
-      if (key.downArrow) setCursorIndex((i) => Math.min(options.length - 1, i + 1));
-      if (key.return) {
-        const model = options[cursorIndex];
-        setCaesarModel(model);
-        configSet('caesarModel', model as 'smollm2-360m' | 'qwen-0.5b' | 'none');
-
-        if (model !== 'none') {
-          setStep(3); // downloading
-          setDownloadProgress('Starting download...');
-          downloadCaesar(model, (progress) => {
-            if (progress.status === 'download' && progress.progress !== undefined) {
-              setDownloadProgress(`Downloading... ${Math.round(progress.progress)}%`);
-            }
-          }).then((ok) => {
-            if (!ok) configSet('caesarModel', 'none');
-            configSet('onboarded', true);
-            setStep(4);
-          }).catch(() => {
-            configSet('caesarModel', 'none');
-            configSet('onboarded', true);
-            setStep(4);
-          });
-        } else {
-          configSet('onboarded', true);
-          setStep(4);
-        }
-      }
-    } else if (step === 4) {
       if (key.return) exit();
     }
   });
@@ -178,35 +144,6 @@ function OnboardingApp() {
       )}
 
       {step === 2 && (
-        <Box flexDirection="column">
-          <Text bold>Choose your Caesar model</Text>
-          <Text dimColor>Caesar saves ~70% on API costs by handling translation locally.</Text>
-          <Text> </Text>
-          {['smollm2-360m', 'qwen-0.5b', 'none'].map((model, i) => {
-            const labels: Record<string, string> = {
-              'smollm2-360m': 'SmolLM2-135M (~70MB) ★ recommended',
-              'qwen-0.5b': 'Qwen2.5-0.5B (~300MB)',
-              'none': 'Skip (not recommended)',
-            };
-            return (
-              <Box key={model}>
-                <Text color={i === cursorIndex ? 'yellow' : undefined}>
-                  {i === cursorIndex ? '❯ ' : '  '}
-                </Text>
-                <Text bold>{labels[model]}</Text>
-              </Box>
-            );
-          })}
-        </Box>
-      )}
-
-      {step === 3 && (
-        <Box flexDirection="column">
-          <Text><Spinner type="dots" /> {downloadProgress ?? 'Downloading...'}</Text>
-        </Box>
-      )}
-
-      {step === 4 && (
         <Box flexDirection="column">
           <Text> </Text>
           <Text bold color="green">{"You're all set! Just talk — or / for commands."}</Text>

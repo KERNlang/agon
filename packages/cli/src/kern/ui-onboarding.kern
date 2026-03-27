@@ -2,7 +2,6 @@ screen name=Onboarding target=ink
   state name=step initial=0
   state name=selectedEngines initial="[]"
   state name=defaultEngine initial="null"
-  state name=caesarModel initial="smollm2-360m"
   state name=scanning initial=true
 
   box flexDirection=column
@@ -22,6 +21,6 @@ screen name=Onboarding target=ink
         <ChatDefaultPicker engines={selectedEngines} selected={defaultEngine} onSelect={(id) => { setDefaultEngine(id); setStep(2); }} />
       )}
       {step === 2 && (
-        <CaesarPicker selected={caesarModel} onSelect={(model) => { setCaesarModel(model); finishOnboarding(); }} />
+        <DoneScreen />
       )}
     >>>

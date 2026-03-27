@@ -132,9 +132,9 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
               continue;
             }
           }
-        } catch {
+        } catch (err) {
           dispatch({ type: 'spinner-stop' });
-          dispatch({ type: 'warning', message: `[${iteration}] Fitness command failed to run` });
+          dispatch({ type: 'warning', message: `[${iteration}] Fitness command failed: ${err instanceof Error ? err.message : String(err)}` });
         }
       }
     
@@ -178,7 +178,7 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
               break;
             }
           }
-        } catch {
+        } catch (_parseErr) {
           // Fallback to string heuristic if JSON parse fails
           hasBlockingIssues = reviewOutput.length > 10 && !reviewOutput.includes('[]');
         }
@@ -195,9 +195,9 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
         }
         lastReviewFeedback = reviewOutput;
         // Continue to next iteration with review feedback
-      } catch {
+      } catch (err) {
         dispatch({ type: 'spinner-stop' });
-        dispatch({ type: 'warning', message: `[${iteration}] Review failed — accepting build as-is.` });
+        dispatch({ type: 'warning', message: `[${iteration}] Review failed: ${err instanceof Error ? err.message : String(err)} — accepting build as-is.` });
         break;
       }
     }
@@ -218,7 +218,9 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
           timeout: 120000,
         });
         fitnessPassed = finalFitness.exitCode === 0;
-      } catch {}
+      } catch (err) {
+        console.warn(`[agon] final fitness check failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
     }
     
     if (finalLines > 0 && (!fitnessCmd || fitnessPassed)) {

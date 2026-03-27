@@ -1,6 +1,6 @@
-import { writeFileSync } from 'node:fs';
+import { writeFileSync, mkdirSync } from 'node:fs';
 
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 
 import type { EngineAdapter, EngineDefinition, DispatchOptions, DispatchResult, AgentDispatchResult } from '@agon/core';
 
@@ -39,6 +39,7 @@ export class CliAdapter implements EngineAdapter {
     });
     
     const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
+    mkdirSync(dirname(outputPath), { recursive: true });
     writeFileSync(outputPath, result.stdout);
     
     return result;
@@ -73,6 +74,7 @@ export class CliAdapter implements EngineAdapter {
     }
     
     const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
+    mkdirSync(dirname(outputPath), { recursive: true });
     writeFileSync(outputPath, result.stdout);
     
     return result;
@@ -102,6 +104,7 @@ export class CliAdapter implements EngineAdapter {
     });
     
     const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
+    mkdirSync(dirname(outputPath), { recursive: true });
     writeFileSync(outputPath, result.stdout);
     
     const diff = readOnlyDiff(options.cwd);
@@ -140,6 +143,7 @@ export class CliAdapter implements EngineAdapter {
     }
     
     const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
+    mkdirSync(dirname(outputPath), { recursive: true });
     writeFileSync(outputPath, result.stdout);
     
     const diff = readOnlyDiff(options.cwd);
@@ -165,7 +169,8 @@ export class CliAdapter implements EngineAdapter {
         timeout: 5000,
       });
       return result.stdout.trim() || null;
-    } catch {
+    } catch (err) {
+      console.warn(`[agon] failed to get version for ${engine.id}: ${err instanceof Error ? err.message : String(err)}`);
       return null;
     }
   }

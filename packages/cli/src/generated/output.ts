@@ -1,0 +1,183 @@
+export const BOLD: string = '\x1b[1m';
+
+export const DIM: string = '\x1b[2m';
+
+export const ITALIC: string = '\x1b[3m';
+
+export const GREEN: string = '\x1b[32m';
+
+export const RED: string = '\x1b[31m';
+
+export const YELLOW: string = '\x1b[33m';
+
+export const BLUE: string = '\x1b[34m';
+
+export const MAGENTA: string = '\x1b[35m';
+
+export const CYAN: string = '\x1b[36m';
+
+export const WHITE: string = '\x1b[37m';
+
+export const RESET: string = '\x1b[0m';
+
+export const LOGO_COLORS: number[] = [208, 214, 220, 226, 228, 230, 255];
+
+export const ENGINE_COLORS: Record<string, number> = { claude: 208, codex: 34, gemini: 33, ollama: 255, aider: 141, openrouter: 197, qwen: 45, mistral: 75, opencode: 156 };
+
+export function fg256(code: number, text: string): string {
+  return `\x1b[38;5;${code}m${text}${RESET}`;
+  
+}
+
+export function bgFg(bg: number, fg: number, text: string): string {
+  return `\x1b[48;5;${bg};38;5;${fg}m${text}${RESET}`;
+  
+}
+
+export function bold(text: string): string {
+  return `${BOLD}${text}${RESET}`;
+  
+}
+
+export function dim(text: string): string {
+  return `${DIM}${text}${RESET}`;
+  
+}
+
+export function green(text: string): string {
+  return `${GREEN}${text}${RESET}`;
+  
+}
+
+export function red(text: string): string {
+  return `${RED}${text}${RESET}`;
+  
+}
+
+export function yellow(text: string): string {
+  return `${YELLOW}${text}${RESET}`;
+  
+}
+
+export function cyan(text: string): string {
+  return `${CYAN}${text}${RESET}`;
+  
+}
+
+export function blue(text: string): string {
+  return `${BLUE}${text}${RESET}`;
+  
+}
+
+export function magenta(text: string): string {
+  return `${MAGENTA}${text}${RESET}`;
+  
+}
+
+export function white(text: string): string {
+  return `${WHITE}${text}${RESET}`;
+  
+}
+
+export function italic(text: string): string {
+  return `${ITALIC}${text}${RESET}`;
+  
+}
+
+function stripAnsi(str: string): string {
+  return str.replace(/\x1b\[[0-9;]*m/g, '');
+  
+}
+
+function visibleLength(str: string): number {
+  return stripAnsi(str).length;
+  
+}
+
+export function gradientText(text: string, colors: number[]): string {
+  let result = '';
+  const step = Math.max(1, Math.floor(text.length / colors.length));
+  for (let i = 0; i < text.length; i++) {
+    const colorIdx = Math.min(Math.floor(i / step), colors.length - 1);
+    result += fg256(colors[colorIdx], text[i]);
+  }
+  return result;
+  
+}
+
+export function header(text: string): void {
+  console.log(`\n${BOLD}${CYAN}▸ ${text}${RESET}`);
+  
+}
+
+export function success(text: string): void {
+  console.log(`${GREEN}✓${RESET} ${text}`);
+  
+}
+
+export function fail(text: string): void {
+  console.log(`${RED}✗${RESET} ${text}`);
+  
+}
+
+export function warn(text: string): void {
+  console.log(`${YELLOW}⚠${RESET} ${text}`);
+  
+}
+
+export function info(text: string): void {
+  console.log(`${DIM}${text}${RESET}`);
+  
+}
+
+export function scoreboard(title: string, engineIds: string[], metrics: Array<{label:string,values:string[]}>, winnerId?: string|null): void {
+  const labelWidth = Math.max(14, ...metrics.map((m: {label:string}) => m.label.length));
+  const colWidths = engineIds.map((id: string, col: number) =>
+    Math.max(
+      visibleLength(id) + 2,
+      ...metrics.map((m: {values:string[]}) => visibleLength(m.values[col] ?? '') + 2),
+    ),
+  );
+  console.log(`\n  ${BOLD}${WHITE}${title}${RESET}`);
+  const headerCells = engineIds.map((id: string, i: number) => {
+    const color = ENGINE_COLORS[id] ?? 245;
+    const name = id === winnerId ? `★ ${id}` : id;
+    const styled = fg256(color, BOLD + name + RESET);
+    const pad = colWidths[i] - visibleLength(name);
+    return styled + ' '.repeat(Math.max(0, pad));
+  });
+  console.log(`  ${''.padEnd(labelWidth)}  ${headerCells.join('  ')}`);
+  const sepWidth = labelWidth + colWidths.reduce((s: number, w: number) => s + w + 2, 0) + 2;
+  console.log(`  ${DIM}${'─'.repeat(sepWidth)}${RESET}`);
+  for (const metric of metrics) {
+    const label = `${BOLD}${metric.label.padEnd(labelWidth)}${RESET}`;
+    const cells = metric.values.map((val: string, i: number) => {
+      const pad = colWidths[i] - visibleLength(val);
+      return val + ' '.repeat(Math.max(0, pad));
+    });
+    console.log(`  ${label}  ${cells.join('  ')}`);
+  }
+  console.log('');
+  
+}
+
+export function table(headers: string[], rows: string[][]): void {
+  const widths = headers.map((h: string, i: number) =>
+    Math.max(visibleLength(h), ...rows.map((r: string[]) => visibleLength(r[i] ?? ''))),
+  );
+  const headerLine = headers
+    .map((h: string, i: number) => h.padEnd(widths[i]))
+    .join('  ');
+  const separator = widths.map((w: number) => '─'.repeat(w)).join('──');
+  console.log(`  ${bold(headerLine)}`);
+  console.log(`  ${dim(separator)}`);
+  for (const row of rows) {
+    const line = row.map((cell: string, i: number) => {
+      const pad = widths[i] - visibleLength(cell);
+      return cell + ' '.repeat(Math.max(0, pad));
+    }).join('  ');
+    console.log(`  ${line}`);
+  }
+  
+}
+

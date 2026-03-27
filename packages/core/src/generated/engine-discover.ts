@@ -19,7 +19,11 @@ export async function discoverEngines(registry: EngineRegistry, adapter: EngineA
       const found = registry.isAvailable(engine);
       let version: string | null = null;
       if (found) {
-        version = await adapter.getVersion(engine);
+        try {
+          version = await adapter.getVersion(engine);
+        } catch (err) {
+          console.warn(`[agon] failed to get version for ${engine.id}: ${err instanceof Error ? err.message : String(err)}`);
+        }
       }
   
       const missingEnv: string[] = [];
@@ -41,6 +45,5 @@ export async function discoverEngines(registry: EngineRegistry, adapter: EngineA
       };
     }),
   );
-  
 }
 

@@ -69,7 +69,8 @@ export function readFlows(limit?: number): FlowRecord[] {
       .filter((f: string) => f.startsWith('flow-') && f.endsWith('.json'))
       .sort()
       .reverse();
-  } catch {
+  } catch (err) {
+    console.warn(`[agon] failed to read flows directory: ${err instanceof Error ? err.message : String(err)}`);
     return [];
   }
   
@@ -80,7 +81,9 @@ export function readFlows(limit?: number): FlowRecord[] {
     try {
       const data = JSON.parse(readFileSync(join(FLOWS_DIR, file), 'utf-8')) as FlowRecord;
       records.push(data);
-    } catch { /* skip malformed flow records */ }
+    } catch (err) {
+      console.warn(`[agon] skipping malformed flow record ${file}: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
   return records;
 }

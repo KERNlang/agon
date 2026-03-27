@@ -43,7 +43,8 @@ function showRunDetail(dispatch: Dispatch, id: string): void {
   let files: string[];
   try {
     files = readdirSync(RUNS_DIR).filter((f: string) => f.includes(id));
-  } catch {
+  } catch (err) {
+    console.warn(`[agon] failed to read runs directory: ${err instanceof Error ? err.message : String(err)}`);
     dispatch({ type: 'info', message: `Run "${id}" not found` });
     return;
   }
@@ -81,7 +82,8 @@ export function handleHistory(dispatch: Dispatch, id?: string): void {
   let files: string[];
   try {
     files = readdirSync(RUNS_DIR).filter((f: string) => f.endsWith('.json')).sort().reverse();
-  } catch {
+  } catch (err) {
+    console.warn(`[agon] failed to list runs: ${err instanceof Error ? err.message : String(err)}`);
     dispatch({ type: 'info', message: 'No forge runs yet.' });
     return;
   }
@@ -103,7 +105,9 @@ export function handleHistory(dispatch: Dispatch, id?: string): void {
       const winner = manifest.winner ?? 'none';
       const synthesis = manifest.synthesis?.wins ? 'yes' : '-';
       rows.push([date, taskStr, winner, String(manifest.enginesDispatched), synthesis, manifest.forgeId.slice(0, 8)]);
-    } catch { /* malformed manifest — skip entry */ }
+    } catch (err) {
+      console.warn(`[agon] skipping malformed manifest ${file}: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
   dispatch({ type: 'table', headers: ['Date', 'Task', 'Winner', 'Engines', 'Synth', 'ID'], rows });
   dispatch({ type: 'info', message: 'Use /history <id> for details' });

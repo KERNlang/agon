@@ -1,3 +1,5 @@
+import { tmpdir } from 'node:os';
+
 import type { RoutingDecision, ScoutBid } from '@agon/core';
 
 import { EngineRegistry } from '@agon/core';
@@ -49,7 +51,7 @@ export async function routeViaCesar(input: string, dispatch: Dispatch, ctx: Hand
       registry: ctx.registry,
       adapter: ctx.adapter,
       timeout: 30,
-      outputDir: '/tmp',
+      outputDir: tmpdir(),
     });
     rankedBids = result.rankedBids;
     leadEngine = result.leadEngine;

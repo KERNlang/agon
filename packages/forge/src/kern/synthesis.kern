@@ -27,7 +27,7 @@ fn name=parseCritiques params="output:string" returns="Critique[]"
           problem: c.problem!,
           minimalFix: c.minimal_fix ?? c.minimalFix ?? '',
         }));
-    } catch {
+    } catch (_parseErr) {
       return [];
     }
   >>>
@@ -63,7 +63,8 @@ fn name=runSynthesis async=true params="opts:{manifest:ForgeManifest, winner:str
           outputDir: forgeDir,
         });
         return parseCritiques(result.stdout);
-      } catch {
+      } catch (err) {
+        console.warn(`[agon] synthesis critique (${loserId}) failed: ${err instanceof Error ? err.message : String(err)}`);
         return [] as Critique[];
       }
     });

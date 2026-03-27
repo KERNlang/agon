@@ -62,7 +62,8 @@ export async function collectRankedDrafts(opts: {question:string, context?:strin
       }
   
       return { engineId, draft: fallbackParse(result.stdout), raw: result.stdout };
-    } catch {
+    } catch (err) {
+      console.warn(`[agon] brainstorm dispatch (${engineId}) failed: ${err instanceof Error ? err.message : String(err)}`);
       return {
         engineId,
         draft: {

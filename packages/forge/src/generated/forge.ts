@@ -30,7 +30,8 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
     try {
       const engine = registry.get(id);
       return registry.isAvailable(engine);
-    } catch {
+    } catch (err) {
+      console.warn(`[agon] engine availability check failed for ${id}: ${err instanceof Error ? err.message : String(err)}`);
       return false;
     }
   });
@@ -41,7 +42,7 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
   const challengers = available.filter((id: string) => id !== starter);
   
   const hasAgentEngines = available.some((id: string) => {
-    try { return !!registry.get(id).agent; } catch { return false; }
+    try { return !!registry.get(id).agent; } catch (_e) { return false; }
   });
   let fullContext = options.context ?? '';
   if (options.seedPlan) {

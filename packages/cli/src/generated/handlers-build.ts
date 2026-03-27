@@ -24,7 +24,9 @@ function injectFileReferences(input: string, cwd: string): string {
         if (content.length < 50000) {
           result += `\n\n## File: ${ref}\n\`\`\`\n${content}\n\`\`\``;
         }
-      } catch {}
+      } catch (err) {
+        console.warn(`[agon] failed to read referenced file ${ref}: ${err instanceof Error ? err.message : String(err)}`);
+      }
     }
   }
   return result;

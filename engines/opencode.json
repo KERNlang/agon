@@ -22,7 +22,7 @@
     "args": ["run", "--format", "json", "{prompt}"]
   },
   "agent": {
-    "args": ["run", "--auto-approve", "{prompt}"]
+    "args": ["run", "{prompt}"]
   },
 
   "model": {

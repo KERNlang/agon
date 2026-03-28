@@ -1455,7 +1455,7 @@ function App() {
   });
 
   return (
-    <Box flexDirection="column" height="100%">
+    <Box flexDirection="column">
       {/* Breadcrumb bar */}
       <Box paddingX={1}>
         <Text dimColor>{'📂 '}{process.cwd().split('/').pop()}</Text>

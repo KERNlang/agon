@@ -2,7 +2,7 @@ import { join } from 'node:path';
 
 import { mkdirSync } from 'node:fs';
 
-import { ensureAgonHome, RUNS_DIR, appendMessage, tracker, scanProjectContext, worktreeDiff, readOnlyDiff, diffLineCount, diffFileCount, buildCritiquePrompt, spawnWithTimeout } from '@agon/core';
+import { ensureAgonHome, RUNS_DIR, appendMessage, tracker, scanProjectContext, readOnlyDiff, diffLineCount, diffFileCount, buildCritiquePrompt, spawnWithTimeout } from '@agon/core';
 
 import { ENGINE_COLORS } from '../output.js';
 
@@ -203,7 +203,7 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
     }
     
     // ── Summary + auto-escalation ──
-    const finalDiff = worktreeDiff(cwd);
+    const finalDiff = readOnlyDiff(cwd);
     const finalLines = diffLineCount(finalDiff);
     const finalFiles = diffFileCount(cwd);
     

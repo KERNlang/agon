@@ -1,6 +1,6 @@
 import from="node:path" names="join"
 import from="node:fs" names="mkdirSync"
-import from="@agon/core" names="ensureAgonHome,RUNS_DIR,appendMessage,tracker,scanProjectContext,worktreeDiff,readOnlyDiff,diffLineCount,diffFileCount,buildCritiquePrompt,spawnWithTimeout"
+import from="@agon/core" names="ensureAgonHome,RUNS_DIR,appendMessage,tracker,scanProjectContext,readOnlyDiff,diffLineCount,diffFileCount,buildCritiquePrompt,spawnWithTimeout"
 import from="../output.js" names="ENGINE_COLORS"
 import from="../handlers/types.js" names="Dispatch,HandlerContext" types=true
 
@@ -199,7 +199,7 @@ fn name=handlePipeline params="input:string, dispatch:Dispatch, ctx:HandlerConte
     }
 
     // ── Summary + auto-escalation ──
-    const finalDiff = worktreeDiff(cwd);
+    const finalDiff = readOnlyDiff(cwd);
     const finalLines = diffLineCount(finalDiff);
     const finalFiles = diffFileCount(cwd);
 

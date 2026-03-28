@@ -37,9 +37,12 @@ export async function handleBuild(input: string, dispatch: Dispatch, ctx: Handle
   try {
     ensureAgonHome();
     
-    const agentIds = ctx.registry.agentCapableIds();
+    // Respect /use selection — only consider active + agent-capable engines
+    const active = ctx.activeEngines();
+    const agentCapable = new Set(ctx.registry.agentCapableIds());
+    const agentIds = active.filter((id: string) => agentCapable.has(id));
     if (agentIds.length === 0) {
-      dispatch({ type: 'error', message: 'No agent-capable engines available. Install claude, codex, or gemini.' });
+      dispatch({ type: 'error', message: 'No agent-capable engines in active set. Try /use claude or /use codex.' });
       return;
     }
     

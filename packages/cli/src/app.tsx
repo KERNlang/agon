@@ -1044,16 +1044,10 @@ function App() {
 
   // ── Input change + slash picker trigger ──
   const handleInputChange = useCallback((value: string) => {
-    // Open slash picker immediately when user types "/" at start
-    if (value === '/' && !slashPickerOpen) {
-      setSlashPickerOpen(true);
-      setInputValue('');
-      return;
-    }
-    // Strip bracketed paste escape sequences (\x1b[200~ ... \x1b[201~)
-    const cleaned = value.replace(/\x1b\[20[01]~/g, '').replace(/\[200~/g, '').replace(/\[201~/g, '');
+    // Strip bracketed paste escape sequences and Tab chars
+    const cleaned = value.replace(/\x1b\[20[01]~/g, '').replace(/\[200~/g, '').replace(/\[201~/g, '').replace(/\t/g, '');
     setInputValue(cleaned);
-  }, [slashPickerOpen]);
+  }, []);
 
   // ── Handle input submission ──
   const handleSubmit = useCallback(async (value: string) => {
@@ -1384,7 +1378,7 @@ function App() {
   // ── History navigation + global keys ──
   useInput((input, key) => {
     // Tab key accepts ghost text completion
-    if (key.tab && !slashPickerOpen && !enginePickerOpen && !questionState && !reviewEvent) {
+    if ((key.tab || input === '\t') && !slashPickerOpen && !enginePickerOpen && !questionState && !reviewEvent) {
       const ghost = getGhostCompletion(inputValue, SLASH_COMMANDS);
       if (ghost) {
         setInputValue(inputValue + ghost + ' ');
@@ -1574,6 +1568,16 @@ function App() {
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());
+
+  // Catch SIGINT (Ctrl+C) at process level as a fallback
+  // Ink's exitOnCtrlC: false routes it to useInput, but some terminals
+  // send SIGINT directly. First Ctrl+C during idle = exit gracefully.
+  let sigintCount = 0;
+  process.on('SIGINT', () => {
+    sigintCount++;
+    if (sigintCount >= 2) process.exit(0);
+    // First SIGINT is handled by Ink's useInput; this is just a safety net
+  });
 
   render(<App />, { exitOnCtrlC: false });
 }

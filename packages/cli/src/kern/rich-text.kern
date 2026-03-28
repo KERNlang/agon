@@ -179,66 +179,56 @@ fn name=richWrap params="spans:InlineSpan[], width:number" returns="InlineSpan[]
     // Fast path: fits on one line
     if (visibleLength(spans) <= width) return [spans];
 
-    // Flatten all text to find word-break points
+    // Flatten to plain text, word-wrap it, then map spans back
     const fullText = spans.map(s => s.text).join('');
     if (!fullText) return [spans];
 
-    // Word-wrap the plain text
-    const breakPoints: number[] = [];
+    // Step 1: Word-wrap the plain text into line ranges [start, end)
+    const lineRanges: [number, number][] = [];
     let lineStart = 0;
     while (lineStart < fullText.length) {
       if (lineStart + width >= fullText.length) {
-        breakPoints.push(fullText.length);
+        lineRanges.push([lineStart, fullText.length]);
         break;
       }
       let breakAt = fullText.lastIndexOf(' ', lineStart + width);
       if (breakAt <= lineStart) breakAt = lineStart + width;
-      breakPoints.push(breakAt);
+      lineRanges.push([lineStart, breakAt]);
       lineStart = breakAt;
-      // Skip the space at break point
       while (lineStart < fullText.length && fullText[lineStart] === ' ') lineStart++;
-      if (lineStart < fullText.length) breakPoints.push(-lineStart); // negative = new line start
     }
 
-    // Map break points back to spans
-    const lines: InlineSpan[][] = [];
-    let currentLine: InlineSpan[] = [];
-    let charOffset = 0;
-
+    // Step 2: Build a flat char-to-span index
+    const spanRanges: { start: number; end: number; style: InlineStyle }[] = [];
+    let offset = 0;
     for (const span of spans) {
-      let remaining = span.text;
-      let spanStart = charOffset;
-
-      while (remaining) {
-        // Find next break that applies within this span
-        let nextBreak = -1;
-        for (const bp of breakPoints) {
-          if (bp > 0 && bp > spanStart && bp <= spanStart + remaining.length) {
-            nextBreak = bp - spanStart;
-            break;
-          }
-        }
-
-        if (nextBreak === -1 || nextBreak >= remaining.length) {
-          // Rest of span fits on current line
-          if (remaining) currentLine.push({ text: remaining, style: { ...span.style } });
-          charOffset = spanStart + remaining.length;
-          break;
-        }
-
-        // Split at break
-        const before = remaining.slice(0, nextBreak).trimEnd();
-        if (before) currentLine.push({ text: before, style: { ...span.style } });
-        lines.push(currentLine);
-        currentLine = [];
-
-        remaining = remaining.slice(nextBreak).trimStart();
-        spanStart += nextBreak;
-        // Adjust for trimmed chars
-        while (spanStart < charOffset + span.text.length && fullText[spanStart] === ' ') spanStart++;
-      }
+      spanRanges.push({ start: offset, end: offset + span.text.length, style: span.style });
+      offset += span.text.length;
     }
-    if (currentLine.length > 0) lines.push(currentLine);
+
+    // Step 3: For each wrapped line, slice the relevant spans
+    const lines: InlineSpan[][] = [];
+    for (const [rangeStart, rangeEnd] of lineRanges) {
+      const lineSpans: InlineSpan[] = [];
+      for (const sr of spanRanges) {
+        // Skip spans entirely outside this line range
+        if (sr.end <= rangeStart || sr.start >= rangeEnd) continue;
+        // Intersect
+        const sliceStart = Math.max(sr.start, rangeStart) - sr.start;
+        const sliceEnd = Math.min(sr.end, rangeEnd) - sr.start;
+        const sliceText = fullText.slice(sr.start + sliceStart, sr.start + sliceEnd);
+        // Trim leading space on first span of continuation lines, trailing on last
+        const trimmed = lineSpans.length === 0 ? sliceText.trimStart() : sliceText;
+        if (trimmed) lineSpans.push({ text: trimmed, style: { ...sr.style } });
+      }
+      // Trim trailing space on last span
+      if (lineSpans.length > 0) {
+        const last = lineSpans[lineSpans.length - 1];
+        last.text = last.text.trimEnd();
+        if (!last.text) lineSpans.pop();
+      }
+      if (lineSpans.length > 0) lines.push(lineSpans);
+    }
 
     return lines.length > 0 ? lines : [spans];
   >>>

@@ -26,6 +26,7 @@ export interface Intent {
   tribunalMode: string|undefined;
   jobId: string|undefined;
   taskClass: 'code'|'question'|'ambiguous'|undefined;
+  args: string|undefined;
 }
 
 export const SLASH_COMMANDS: SlashCommand[] = [
@@ -55,6 +56,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { cmd: '/chats',       desc: '[id|resume <id>]        — chat history or resume session' },
   { cmd: '/build',       desc: '<task>                   — agent builds in cwd (reads/edits/tests)' },
   { cmd: '/pipeline',   desc: '<task> [test with <cmd>]  — build→review→fix loop' },
+  { cmd: '/provider',    desc: 'add|remove|list          — manage API providers' },
   { cmd: '/run',         desc: '<cmd>                    — run shell command inline' },
   { cmd: '/undo',        desc: '                        — revert last applied forge patch' },
   { cmd: '/jobs',        desc: '                        — list running/completed jobs' },
@@ -141,6 +143,12 @@ function parseSlashCommand(input: string): Intent {
       return { type: 'engines' } as Intent;
     case 'discover':
       return { type: 'discover' } as Intent;
+    case 'provider': {
+      const provParts = rest.trim().split(/\s+/);
+      const provAction = provParts[0] || 'list';
+      const provArgs = provParts.slice(1).join(' ');
+      return { type: 'provider', action: provAction, args: provArgs } as Intent;
+    }
     case 'campfire':
     case 'think':
     case 'talk':

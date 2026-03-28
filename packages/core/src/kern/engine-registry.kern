@@ -88,6 +88,7 @@ service name=EngineRegistry
 
   method name=isAvailable params="engine:EngineDefinition" returns=boolean
     handler <<<
+      if (engine.api) return !!process.env[engine.api.apiKeyEnv];
       return this.findBinary(engine) !== null;
     >>>
 

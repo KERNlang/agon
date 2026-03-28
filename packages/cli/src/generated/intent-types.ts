@@ -18,6 +18,7 @@ export type Intent =
   | { type: 'cancel' }
   | { type: 'img'; path: string }
   | { type: 'chat'; input: string }
+  | { type: 'provider'; action: string; args: string }
   | { type: 'discover' }
   | { type: 'apply'; patchPath?: string; force?: boolean }
   | { type: 'cp'; index?: number }

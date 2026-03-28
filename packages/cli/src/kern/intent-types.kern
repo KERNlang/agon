@@ -33,6 +33,9 @@ union name=Intent discriminant=type
     field name=path type=string
   variant name=chat
     field name=input type=string
+  variant name=provider
+    field name=action type=string
+    field name=args type=string
   variant name=discover
   variant name=apply
     field name=patchPath type=string optional=true

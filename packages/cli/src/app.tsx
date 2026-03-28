@@ -46,6 +46,7 @@ import {
 } from './handlers/index.js';
 import { routeViaCesar } from './handlers/cesar.js';
 import { handlePipeline } from './handlers/pipeline.js';
+import { handleProvider } from './handlers/provider.js';
 import { codeBlockBuffer } from './code-buffer.js';
 import { getGhostCompletion } from './ghost-text.js';
 import { copyToClipboard, applyPatchToTree } from '@agon/core';
@@ -1187,6 +1188,7 @@ function App() {
         case 'history': handleHistory(dispatch, intent.id); break;
         case 'engines': await handleEngines(dispatch, ctx); break;
         case 'discover': await handleDiscover(dispatch, ctx); break;
+        case 'provider': await handleProvider(intent.action, intent.args, dispatch, ctx); break;
         case 'config': handleConfig(intent, dispatch); break;
         case 'use': handleUse(intent.engineIds, dispatch, ctx, setSessionEngines); break;
         case 'tokens': handleTokens(dispatch); break;

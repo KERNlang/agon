@@ -17,15 +17,24 @@ export class EngineRegistry {
   private binaryCache: Map<string, string | null> = new Map();
 
   private loadDir(dir: string, tier: 'builtin'|'user'): void {
+    if (!existsSync(dir)) {
+      console.warn(`[agon] engine directory does not exist: ${dir}`);
+      return;
+    }
     let files: string[];
     try { files = readdirSync(dir).filter((f: string) => f.endsWith('.json')); }
-    catch { return; }
+    catch (err) {
+      console.warn(`[agon] failed to read engine directory ${dir}: ${err instanceof Error ? err.message : String(err)}`);
+      return;
+    }
     for (const file of files) {
       try {
         const def = JSON.parse(readFileSync(join(dir, file), 'utf-8')) as EngineDefinition;
         def.tier = tier;
         this.engines.set(def.id, def);
-      } catch {}
+      } catch (err) {
+        console.warn(`[agon] failed to load engine definition ${file}: ${err instanceof Error ? err.message : String(err)}`);
+      }
     }
   }
 
@@ -60,7 +69,9 @@ export class EngineRegistry {
     try {
       const result = execFileSync('which', [engine.binary], { encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }).trim();
       if (result) { this.binaryCache.set(engine.id, result); return result; }
-    } catch {}
+    } catch {
+      // 'which' not finding a binary is expected — no warning needed
+    }
     for (const rawPath of engine.searchPaths) {
       const expanded = rawPath.replace('${HOME}', homedir());
       const fullPath = join(expanded, engine.binary);
@@ -71,6 +82,7 @@ export class EngineRegistry {
   }
 
   isAvailable(engine: EngineDefinition): boolean {
+    if (engine.api) return !!process.env[engine.api.apiKeyEnv];
     return this.findBinary(engine) !== null;
   }
 

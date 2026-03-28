@@ -1,7 +1,7 @@
 import from="node:fs" names="writeFileSync,mkdirSync"
 import from="node:path" names="join,dirname"
 import from="@agon/core" names="EngineAdapter,EngineDefinition,DispatchOptions,DispatchResult,AgentDispatchResult" types=true
-import from="@agon/core" names="EngineRegistry,spawnWithTimeout,spawnStream,EngineNotFoundError,readOnlyDiff,diffLineCount"
+import from="@agon/core" names="EngineRegistry,spawnWithTimeout,spawnStream,EngineNotFoundError,readOnlyDiff,diffLineCount,apiDispatch,apiStreamDispatch"
 import from="./adapter-helpers.js" names="buildCommand,checkEnvVars"
 
 service name=CliAdapter implements=EngineAdapter
@@ -14,6 +14,15 @@ service name=CliAdapter implements=EngineAdapter
 
   method name=dispatch params="options:DispatchOptions" returns="Promise<DispatchResult>" async=true
     handler <<<
+      // API-based engine: use HTTP instead of spawn
+      if (options.engine.api) {
+        const result = await apiDispatch(options.engine.api, options.prompt, options.timeout, options.signal);
+        const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
+        mkdirSync(dirname(outputPath), { recursive: true });
+        writeFileSync(outputPath, result.stdout);
+        return result;
+      }
+
       const binaryPath = this.registry.findBinary(options.engine);
       if (!binaryPath) {
         throw new EngineNotFoundError(options.engine.id, options.engine.installHint);
@@ -45,6 +54,21 @@ service name=CliAdapter implements=EngineAdapter
 
   method name=dispatchStream params="options:DispatchOptions" returns="string, DispatchResult, void" async=true stream=true
     handler <<<
+      // API-based engine: stream via HTTP SSE
+      if (options.engine.api) {
+        const gen = apiStreamDispatch(options.engine.api, options.prompt, options.timeout, options.signal);
+        let result: DispatchResult;
+        while (true) {
+          const { value, done } = await gen.next();
+          if (done) { result = value; break; }
+          yield value;
+        }
+        const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
+        mkdirSync(dirname(outputPath), { recursive: true });
+        writeFileSync(outputPath, result.stdout);
+        return result;
+      }
+
       const binaryPath = this.registry.findBinary(options.engine);
       if (!binaryPath) {
         throw new EngineNotFoundError(options.engine.id, options.engine.installHint);
@@ -156,11 +180,13 @@ service name=CliAdapter implements=EngineAdapter
 
   method name=isAvailable params="engine:EngineDefinition" returns="Promise<boolean>" async=true
     handler <<<
+      if (engine.api) return !!process.env[engine.api.apiKeyEnv];
       return this.registry.isAvailable(engine);
     >>>
 
   method name=getVersion params="engine:EngineDefinition" returns="Promise<string|null>" async=true
     handler <<<
+      if (engine.api) return engine.api.model;
       const binaryPath = this.registry.findBinary(engine);
       if (!binaryPath) return null;
 

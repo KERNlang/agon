@@ -238,6 +238,17 @@ function DashboardView({ event }: { event: OutputEvent & { type: 'dashboard' } }
   );
 }
 
+// ── Layout Constants ─────────────────────────────────────────────────
+
+/** Max content width for readable output — like Claude Code */
+const MAX_CONTENT_WIDTH = 88;
+
+/** Get capped terminal width for content rendering */
+function contentWidth(padding: number): number {
+  const termWidth = process.stdout.columns || 80;
+  return Math.min(termWidth - padding, MAX_CONTENT_WIDTH);
+}
+
 // ── Code Block Rendering ─────────────────────────────────────────────
 
 const CODE_RAIL = '▌'; // U+258C
@@ -262,9 +273,7 @@ function DiffLine({ line, maxWidth }: { line: string; maxWidth: number }) {
 
 /** Code block with left rail gutter, diff coloring, no word-wrap */
 function CodeBlockView({ segment, borderColor }: { segment: ContentSegment & { type: 'code' }; borderColor: string }) {
-  const termWidth = process.stdout.columns || 80;
-  // Account for: border "│ " (2) + padding (2) + rail "▌ " (2) = 6 chars
-  const codeWidth = termWidth - 8;
+  const codeWidth = contentWidth(8);
   const lines = segment.code.split('\n');
   const isDiff = segment.language === 'diff' || lines.some((l) => /^[+-@]/.test(l));
   const capped = lines.slice(0, MAX_CODE_LINES);
@@ -446,8 +455,7 @@ function engineColor(id: string): string {
 }
 
 function EngineBlock({ engineId, color, content }: { engineId: string; color: number; content: string }) {
-  const termWidth = process.stdout.columns || 80;
-  const wrapWidth = termWidth - 8;
+  const wrapWidth = contentWidth(8);
   const cleaned = cleanEngineOutput(content);
   const hexColor = color256toHex(color);
 
@@ -476,8 +484,8 @@ function EngineBlock({ engineId, color, content }: { engineId: string; color: nu
 function OutputBlockView({ event }: { event: OutputEvent }) {
   switch (event.type) {
     case 'text': {
-      const termWidth = process.stdout.columns || 80;
-      const richLines = parseProseToRichLines(event.content, termWidth - 4);
+      const wrapWidth = contentWidth(4);
+      const richLines = parseProseToRichLines(event.content, wrapWidth);
       return (
         <Box flexDirection="column" paddingLeft={2}>
           {richLines.map((line, i) => <RichLineView key={`text-${i}`} line={line} />)}
@@ -495,8 +503,7 @@ function OutputBlockView({ event }: { event: OutputEvent }) {
     case 'streaming-chunk': return <Text>{'  '}{event.chunk}</Text>;
     case 'kern-draft': {
       const eColor = engineColor(event.engineId);
-      const termWidth = process.stdout.columns || 80;
-      const wrapWidth = termWidth - 8;
+      const wrapWidth = contentWidth(8);
       const segments = parseMarkdownBlocks(event.content.trim());
       return (
         <Box flexDirection="column" paddingLeft={2}>
@@ -509,8 +516,7 @@ function OutputBlockView({ event }: { event: OutputEvent }) {
     }
     case 'debate-round': {
       const dColor = engineColor(event.engineId);
-      const termWidth = process.stdout.columns || 80;
-      const wrapWidth = termWidth - 8;
+      const wrapWidth = contentWidth(8);
       const segments = parseMarkdownBlocks(event.argument.trim());
       return (
         <Box flexDirection="column" paddingLeft={2}>
@@ -522,8 +528,8 @@ function OutputBlockView({ event }: { event: OutputEvent }) {
       );
     }
     case 'verdict': {
-      const termWidth = process.stdout.columns || 80;
-      const richLines = parseProseToRichLines(event.summary.trim(), termWidth - 4);
+      const wrapWidth = contentWidth(4);
+      const richLines = parseProseToRichLines(event.summary.trim(), wrapWidth);
       return (
         <Box flexDirection="column" paddingLeft={2}>
           {richLines.map((line, i) => <RichLineView key={`v-${i}`} line={line} />)}
@@ -742,8 +748,7 @@ function ReviewBlock({ event, onAction }: {
   onAction: (action: 'apply' | 'edit' | 'reject' | 'copy') => void;
 }) {
   const eColor = engineColor(event.winnerId);
-  const termWidth = process.stdout.columns || 80;
-  const codeWidth = termWidth - 10;
+  const codeWidth = contentWidth(10);
   const lines = event.patchContent.split('\n').slice(0, 30);
   const overflow = event.patchContent.split('\n').length - 30;
 
@@ -1487,8 +1492,7 @@ function App() {
         {streamingText && (() => {
           const c = engineColor(streamingText.engineId);
           const cleaned = cleanEngineOutput(streamingText.content);
-          const termWidth = process.stdout.columns || 80;
-          const wrapWidth = termWidth - 8;
+          const wrapWidth = contentWidth(8);
           const segments = parseMarkdownBlocks(cleaned);
           return (
             <Box flexDirection="column" marginY={1} paddingLeft={2}>

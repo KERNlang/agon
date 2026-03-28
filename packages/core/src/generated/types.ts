@@ -46,6 +46,7 @@ export interface EngineDefinition {
   capabilities?: string[];
   imageFlag?: string;
   agent?: EngineModeConfig;
+  api?: {baseUrl:string, apiKeyEnv:string, model:string, maxTokens?:number};
 }
 
 export interface DispatchOptions {

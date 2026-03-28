@@ -4,7 +4,7 @@ import { join, dirname } from 'node:path';
 
 import type { EngineAdapter, EngineDefinition, DispatchOptions, DispatchResult, AgentDispatchResult } from '@agon/core';
 
-import { EngineRegistry, spawnWithTimeout, spawnStream, EngineNotFoundError, readOnlyDiff, diffLineCount } from '@agon/core';
+import { EngineRegistry, spawnWithTimeout, spawnStream, EngineNotFoundError, readOnlyDiff, diffLineCount, apiDispatch, apiStreamDispatch } from '@agon/core';
 
 import { buildCommand, checkEnvVars } from './adapter-helpers.js';
 
@@ -16,6 +16,15 @@ export class CliAdapter implements EngineAdapter {
   }
 
   async dispatch(options: DispatchOptions): Promise<DispatchResult> {
+    // API-based engine: use HTTP instead of spawn
+    if (options.engine.api) {
+      const result = await apiDispatch(options.engine.api, options.prompt, options.timeout, options.signal);
+      const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
+      mkdirSync(dirname(outputPath), { recursive: true });
+      writeFileSync(outputPath, result.stdout);
+      return result;
+    }
+    
     const binaryPath = this.registry.findBinary(options.engine);
     if (!binaryPath) {
       throw new EngineNotFoundError(options.engine.id, options.engine.installHint);
@@ -46,6 +55,21 @@ export class CliAdapter implements EngineAdapter {
   }
 
   async *dispatchStream(options: DispatchOptions): AsyncGenerator<string, DispatchResult, void> {
+    // API-based engine: stream via HTTP SSE
+    if (options.engine.api) {
+      const gen = apiStreamDispatch(options.engine.api, options.prompt, options.timeout, options.signal);
+      let result: DispatchResult;
+      while (true) {
+        const { value, done } = await gen.next();
+        if (done) { result = value; break; }
+        yield value;
+      }
+      const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
+      mkdirSync(dirname(outputPath), { recursive: true });
+      writeFileSync(outputPath, result.stdout);
+      return result;
+    }
+    
     const binaryPath = this.registry.findBinary(options.engine);
     if (!binaryPath) {
       throw new EngineNotFoundError(options.engine.id, options.engine.installHint);
@@ -154,10 +178,12 @@ export class CliAdapter implements EngineAdapter {
   }
 
   async isAvailable(engine: EngineDefinition): Promise<boolean> {
+    if (engine.api) return !!process.env[engine.api.apiKeyEnv];
     return this.registry.isAvailable(engine);
   }
 
   async getVersion(engine: EngineDefinition): Promise<string|null> {
+    if (engine.api) return engine.api.model;
     const binaryPath = this.registry.findBinary(engine);
     if (!binaryPath) return null;
     

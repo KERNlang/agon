@@ -806,8 +806,8 @@ function BackgroundJobRail({ jobs }: { jobs: Job[] }) {
 
 // ── Main App ─────────────────────────────────────────────────────────
 
-// Module-level ref so SIGINT handler can cancel running operations
-let _activeAbortRef: AbortController | null = null;
+// Module-level refs so SIGINT handler can cancel ALL running operations
+const _activeAborts = new Set<AbortController>();
 let _cancelCallback: (() => void) | null = null;
 
 function App() {
@@ -850,8 +850,9 @@ function App() {
   });
   const [activeAbort, _setActiveAbort] = useState<AbortController | null>(null);
   const setActiveAbort = useCallback((abort: AbortController | null) => {
+    // Track all active aborts for concurrent job cancellation
+    if (abort) _activeAborts.add(abort);
     _setActiveAbort(abort);
-    _activeAbortRef = abort;
   }, []);
   const [registry] = useState<EngineRegistry>(() => {
     const reg = new EngineRegistry();
@@ -1281,7 +1282,9 @@ function App() {
           // Progressive dispatch: question→chat(no tools), code+single→build,
           // code+multi→silent pipeline, ambiguous+multi→Cesar scouts
           setPendingImages([]);
-          const agentIds = ctx.registry.agentCapableIds();
+          const activeIds = ctx.activeEngines();
+          const agentCapable = new Set(ctx.registry.agentCapableIds());
+          const agentIds = activeIds.filter((id: string) => agentCapable.has(id));
           const multiEngine = agentIds.length > 1;
           const taskClass = (intent as any).taskClass as 'code' | 'question' | 'ambiguous';
 
@@ -1392,18 +1395,22 @@ function App() {
 
   // Register cancel callback for SIGINT handler
   _cancelCallback = useCallback(() => {
-    if (activeAbort) {
-      activeAbort.abort();
-      setActiveAbort(null);
-    }
+    for (const abort of _activeAborts) abort.abort();
+    _activeAborts.clear();
+    setActiveAbort(null);
     setLiveSpinner(null);
     setLiveProgress(null);
     setStreamingText(null);
     setReplState('idle');
-  }, [activeAbort, setActiveAbort]);
+  }, [setActiveAbort]);
 
   // ── History navigation + global keys ──
   useInput((input, key) => {
+    // Open slash picker when typing "/" on empty input
+    if (input === '/' && !inputValue && !slashPickerOpen && !enginePickerOpen && !questionState) {
+      setSlashPickerOpen(true);
+      return;
+    }
     // Tab key accepts ghost text completion
     if ((key.tab || input === '\t') && !slashPickerOpen && !enginePickerOpen && !questionState && !reviewEvent) {
       const ghost = getGhostCompletion(inputValue, SLASH_COMMANDS);
@@ -1598,9 +1605,9 @@ export async function startRepl(): Promise<void> {
   // Ctrl+C handler at process level — ink-text-input swallows Ctrl+C
   // so useInput never sees it. This is the primary cancel mechanism.
   process.on('SIGINT', () => {
-    if (_activeAbortRef) {
-      _activeAbortRef.abort();
-      _activeAbortRef = null;
+    if (_activeAborts.size > 0) {
+      for (const abort of _activeAborts) abort.abort();
+      _activeAborts.clear();
       if (_cancelCallback) _cancelCallback();
     } else {
       // Idle — exit

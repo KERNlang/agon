@@ -120,6 +120,9 @@ export class CliAdapter implements EngineAdapter {
       options.cwd, options.timeout, binaryPath, options.images,
     );
     
+    // Capture baseline diff before agent runs to exclude pre-existing changes
+    const baselineDiff = readOnlyDiff(options.cwd);
+    
     const result = await spawnWithTimeout({
       command, args,
       cwd: options.cwd,
@@ -131,9 +134,21 @@ export class CliAdapter implements EngineAdapter {
     mkdirSync(dirname(outputPath), { recursive: true });
     writeFileSync(outputPath, result.stdout);
     
-    const diff = readOnlyDiff(options.cwd);
+    const postDiff = readOnlyDiff(options.cwd);
+    // Only count new changes by excluding baseline
+    const baselineFiles = new Set(baselineDiff.split('\n').filter((l: string) => l.startsWith('diff --git')));
+    const postLines = postDiff.split('\n');
+    const newDiffLines: string[] = [];
+    let inNewFile = false;
+    for (const line of postLines) {
+      if (line.startsWith('diff --git')) {
+        inNewFile = !baselineFiles.has(line);
+      }
+      if (inNewFile) newDiffLines.push(line);
+    }
+    const diff = newDiffLines.join('\n');
     const lines = diffLineCount(diff);
-    const files = diff ? diff.split('\n').filter((l: string) => l.startsWith('diff --git')).length : 0;
+    const files = diff ? newDiffLines.filter((l: string) => l.startsWith('diff --git')).length : 0;
     
     return { ...result, diff, diffLines: lines, filesChanged: files };
   }
@@ -148,6 +163,9 @@ export class CliAdapter implements EngineAdapter {
       options.engine, options.mode, options.prompt,
       options.cwd, options.timeout, binaryPath, options.images,
     );
+    
+    // Capture baseline before agent runs
+    const baselineDiff = readOnlyDiff(options.cwd);
     
     const gen = spawnStream({
       command, args,
@@ -170,9 +188,20 @@ export class CliAdapter implements EngineAdapter {
     mkdirSync(dirname(outputPath), { recursive: true });
     writeFileSync(outputPath, result.stdout);
     
-    const diff = readOnlyDiff(options.cwd);
+    const postDiff = readOnlyDiff(options.cwd);
+    const baselineFiles = new Set(baselineDiff.split('\n').filter((l: string) => l.startsWith('diff --git')));
+    const postLines = postDiff.split('\n');
+    const newDiffLines: string[] = [];
+    let inNewFile = false;
+    for (const line of postLines) {
+      if (line.startsWith('diff --git')) {
+        inNewFile = !baselineFiles.has(line);
+      }
+      if (inNewFile) newDiffLines.push(line);
+    }
+    const diff = newDiffLines.join('\n');
     const lines = diffLineCount(diff);
-    const files = diff ? diff.split('\n').filter((l: string) => l.startsWith('diff --git')).length : 0;
+    const files = diff ? newDiffLines.filter((l: string) => l.startsWith('diff --git')).length : 0;
     
     return { ...result, diff, diffLines: lines, filesChanged: files };
   }

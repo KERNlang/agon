@@ -800,6 +800,10 @@ function BackgroundJobRail({ jobs }: { jobs: Job[] }) {
 
 // ── Main App ─────────────────────────────────────────────────────────
 
+// Module-level ref so SIGINT handler can cancel running operations
+let _activeAbortRef: AbortController | null = null;
+let _cancelCallback: (() => void) | null = null;
+
 function App() {
   const { exit } = useApp();
   const [replState, setReplState] = useState<ReplState>('idle');
@@ -838,7 +842,11 @@ function App() {
     try { branch = currentBranch(process.cwd()); } catch {}
     return startChatSession({ cwd: process.cwd(), branch });
   });
-  const [activeAbort, setActiveAbort] = useState<AbortController | null>(null);
+  const [activeAbort, _setActiveAbort] = useState<AbortController | null>(null);
+  const setActiveAbort = useCallback((abort: AbortController | null) => {
+    _setActiveAbort(abort);
+    _activeAbortRef = abort;
+  }, []);
   const [registry] = useState<EngineRegistry>(() => {
     const reg = new EngineRegistry();
     const enginesDir = join(dirname(fileURLToPath(import.meta.url)), '../../../engines');
@@ -1375,6 +1383,18 @@ function App() {
     }
   }, [questionState]);
 
+  // Register cancel callback for SIGINT handler
+  _cancelCallback = useCallback(() => {
+    if (activeAbort) {
+      activeAbort.abort();
+      setActiveAbort(null);
+    }
+    setLiveSpinner(null);
+    setLiveProgress(null);
+    setStreamingText(null);
+    setReplState('idle');
+  }, [activeAbort, setActiveAbort]);
+
   // ── History navigation + global keys ──
   useInput((input, key) => {
     // Tab key accepts ghost text completion
@@ -1569,14 +1589,17 @@ export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());
 
-  // Catch SIGINT (Ctrl+C) at process level as a fallback
-  // Ink's exitOnCtrlC: false routes it to useInput, but some terminals
-  // send SIGINT directly. First Ctrl+C during idle = exit gracefully.
-  let sigintCount = 0;
+  // Ctrl+C handler at process level — ink-text-input swallows Ctrl+C
+  // so useInput never sees it. This is the primary cancel mechanism.
   process.on('SIGINT', () => {
-    sigintCount++;
-    if (sigintCount >= 2) process.exit(0);
-    // First SIGINT is handled by Ink's useInput; this is just a safety net
+    if (_activeAbortRef) {
+      _activeAbortRef.abort();
+      _activeAbortRef = null;
+      if (_cancelCallback) _cancelCallback();
+    } else {
+      // Idle — exit
+      process.exit(0);
+    }
   });
 
   render(<App />, { exitOnCtrlC: false });

@@ -248,7 +248,13 @@ export function handleUse(engineIds: string[], dispatch: Dispatch, ctx: HandlerC
   }
   setSessionEngines(valid);
   configSet('forgeEnabledEngines', valid);
-  dispatch({ type: 'success', message: `Active engines: ${valid.join(', ')}` });
+  // When a single engine is selected, also make it the default starter
+  if (valid.length === 1) {
+    configSet('forgeFixedStarter', valid[0]);
+    dispatch({ type: 'success', message: `Default engine: ${valid[0]}` });
+  } else {
+    dispatch({ type: 'success', message: `Active engines: ${valid.join(', ')}` });
+  }
   dispatch({ type: 'info', message: 'Saved — persists across sessions' });
 }
 

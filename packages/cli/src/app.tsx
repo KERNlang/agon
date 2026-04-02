@@ -2,11 +2,14 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { render, Box, Text, useInput, useApp } from 'ink';
 import TextInput from 'ink-text-input';
 import Spinner from 'ink-spinner';
-import type { Plan, ChatSession } from '@agon/core';
+import type { Plan, ChatSession, Skill } from '@agon/core';
 import {
   EngineRegistry,
   ensureAgonHome,
   loadConfig,
+  loadSkills,
+  findSkill,
+  renderSkillPrompt,
   ensureCurrentWorkspace,
   startChatSession,
   resumeChatSession,
@@ -900,6 +903,13 @@ function App() {
     return reg;
   });
   const [adapter] = useState<EngineAdapter>(() => createCliAdapter(registry));
+  const [dynamicSkills] = useState<Skill[]>(() => loadSkills());
+
+  // Merge dynamic skills into slash commands for picker + ghost text
+  const allSlashCommands = React.useMemo(() => {
+    const skillCmds = dynamicSkills.map((s) => ({ cmd: s.trigger, desc: s.description || s.name }));
+    return [...SLASH_COMMANDS, ...skillCmds];
+  }, [dynamicSkills]);
 
   // ── Bracketed paste mode ──
   const pasteBufferRef = useRef<string | null>(null);
@@ -1260,7 +1270,7 @@ function App() {
         case 'use': handleUse(intent.engineIds, dispatch, ctx, setSessionEngines); break;
         case 'tokens': handleTokens(dispatch); break;
         case 'models': setEnginePickerOpen(true); break;
-        case 'slash-list': dispatch({ type: 'text', content: SLASH_COMMANDS.map((c) => `${c.cmd.padEnd(16)} ${c.desc}`).join('\n') }); break;
+        case 'slash-list': dispatch({ type: 'text', content: allSlashCommands.map((c) => `${c.cmd.padEnd(16)} ${c.desc}`).join('\n') }); break;
         case 'workspace': handleWorkspace(intent.action, dispatch, intent.path); break;
         case 'flow': await handleFlowReport(dispatch, ctx, mode, sessionStartTime); break;
         case 'flows': handleFlowAnalysis(dispatch); break;
@@ -1336,7 +1346,7 @@ function App() {
           break;
         }
         case 'clear': dispatch({ type: 'clear' }); codeBlockBuffer.clear(); dispatch({ type: 'info', message: 'Chat history cleared.' }); break;
-        case 'help': dispatch({ type: 'text', content: SLASH_COMMANDS.map((c) => `${c.cmd.padEnd(16)} ${c.desc}`).join('\n') }); break;
+        case 'help': dispatch({ type: 'text', content: allSlashCommands.map((c) => `${c.cmd.padEnd(16)} ${c.desc}`).join('\n') }); break;
         case 'exit': exit(); return;
         case 'suggest-brainstorm' as string: {
           // Conversational trigger — ask before escalating
@@ -1415,6 +1425,20 @@ function App() {
           break;
         }
         case 'unknown': {
+          // Check dynamic skills before falling through to chat
+          const trimmedInput = (intent.input ?? '').trim();
+          if (trimmedInput.startsWith('/')) {
+            const spaceIdx = trimmedInput.indexOf(' ');
+            const trigger = spaceIdx > 0 ? trimmedInput.slice(0, spaceIdx) : trimmedInput;
+            const skillArg = spaceIdx > 0 ? trimmedInput.slice(spaceIdx + 1).trim() : '';
+            const skill = findSkill(trigger, dynamicSkills);
+            if (skill) {
+              const skillPrompt = renderSkillPrompt(skill, skillArg);
+              setPendingImages([]);
+              await handleChat(skillPrompt, dispatch, ctx, allImages);
+              break;
+            }
+          }
           setPendingImages([]);
           await handleChat(intent.input, dispatch, ctx, allImages);
           break;
@@ -1509,7 +1533,7 @@ function App() {
     }
     // Tab key accepts ghost text completion
     if ((key.tab || input === '\t') && !slashPickerOpen && !enginePickerOpen && !questionState && !reviewEvent) {
-      const ghost = getGhostCompletion(inputValue, SLASH_COMMANDS);
+      const ghost = getGhostCompletion(inputValue, allSlashCommands);
       if (ghost) {
         setInputValue(inputValue + ghost + ' ');
         setInputKey((k) => k + 1);
@@ -1653,7 +1677,7 @@ function App() {
         <Box flexDirection="column" borderStyle={mode === 'chat' ? undefined : 'single'} borderColor={mode === 'chat' ? undefined : 'gray'} paddingX={1}>
           {slashPickerOpen && (
             <SlashPicker
-              commands={SLASH_COMMANDS}
+              commands={allSlashCommands}
               onSelect={handleSlashSelect}
               onCancel={() => setSlashPickerOpen(false)}
             />
@@ -1696,7 +1720,7 @@ function App() {
                   : ''}
               />
               {(() => {
-                const ghost = getGhostCompletion(inputValue, SLASH_COMMANDS);
+                const ghost = getGhostCompletion(inputValue, allSlashCommands);
                 return ghost ? <Text dimColor>{ghost}</Text> : null;
               })()}
             </Box>

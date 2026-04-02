@@ -4,7 +4,7 @@ import { join, dirname } from 'node:path';
 
 import type { EngineAdapter, EngineDefinition, DispatchOptions, DispatchResult, AgentDispatchResult } from '@agon/core';
 
-import { EngineRegistry, spawnWithTimeout, spawnStream, EngineNotFoundError, readOnlyDiff, diffLineCount, apiDispatch, apiStreamDispatch, companionDispatch } from '@agon/core';
+import { EngineRegistry, spawnWithTimeout, spawnStream, EngineNotFoundError, readOnlyDiff, diffLineCount, apiDispatch, apiStreamDispatch, companionDispatch, runHooks, hooksFailed } from '@agon/core';
 
 import { buildCommand, checkEnvVars } from './adapter-helpers.js';
 
@@ -33,6 +33,12 @@ export class CliAdapter implements EngineAdapter {
     const envError = checkEnvVars(options.engine);
     if (envError) {
       throw new EngineNotFoundError(options.engine.id, envError);
+    }
+    
+    // Run pre_dispatch hooks — abort if any fail
+    const preHooks = runHooks('pre_dispatch', { AGON_ENGINE: options.engine.id, AGON_MODE: options.mode });
+    if (hooksFailed(preHooks)) {
+      return { exitCode: 1, stdout: '', stderr: `pre_dispatch hook blocked: ${preHooks.find((h: any) => !h.ok)?.stderr ?? 'unknown'}`, durationMs: 0, timedOut: false };
     }
     
     // Try companion protocol (JSONRPC app-server) first — faster, more stable
@@ -70,6 +76,8 @@ export class CliAdapter implements EngineAdapter {
     const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
     mkdirSync(dirname(outputPath), { recursive: true });
     writeFileSync(outputPath, result.stdout);
+    
+    runHooks('post_dispatch', { AGON_ENGINE: options.engine.id, AGON_MODE: options.mode, AGON_EXIT_CODE: String(result.exitCode) });
     
     return result;
   }

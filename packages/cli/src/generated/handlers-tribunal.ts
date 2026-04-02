@@ -19,7 +19,6 @@ export async function handleTribunal(question: string, dispatch: Dispatch, ctx: 
       return;
     }
     
-    // Tribunal uses ALL available engines, not just the /use-filtered set
     const active = ctx.registry.availableIds();
     if (active.length < 2) {
       dispatch({ type: 'error', message: `Tribunal needs at least 2 engines. Only found: ${active.join(', ') || 'none'}` });

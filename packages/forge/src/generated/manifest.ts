@@ -15,13 +15,11 @@ export function writeManifest(manifest: ForgeManifest): string {
   writeFileSync(historyPath, JSON.stringify(manifest, null, 2) + '\n');
   
   return manifestPath;
-  
 }
 
 export function readManifest(forgeDir: string): ForgeManifest {
   const manifestPath = join(forgeDir, 'manifest.json');
   return JSON.parse(readFileSync(manifestPath, 'utf-8')) as ForgeManifest;
-  
 }
 
 export function updateManifest(forgeDir: string, updates: Partial<ForgeManifest>): ForgeManifest {
@@ -29,6 +27,5 @@ export function updateManifest(forgeDir: string, updates: Partial<ForgeManifest>
   const merged = { ...existing, ...updates };
   writeManifest(merged);
   return merged;
-  
 }
 

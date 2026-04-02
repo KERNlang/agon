@@ -7,6 +7,5 @@ export function getGhostCompletion(input: string, commands: Array<{cmd:string}>)
     }
   }
   return null;
-  
 }
 

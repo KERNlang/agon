@@ -28,13 +28,11 @@ export function handlePlanShow(dispatch: Dispatch, ctx: HandlerContext, planId?:
   } else {
     dispatch({ type: 'info', message: 'No plans yet. Run /forge or build to create one.' });
   }
-  
 }
 
 export function handlePlansList(dispatch: Dispatch): void {
   const plans = listPlans(20);
   dispatch({ type: 'plan-list', plans });
-  
 }
 
 export async function handleApprove(dispatch: Dispatch, ctx: HandlerContext): Promise<void> {
@@ -58,7 +56,6 @@ export async function handleApprove(dispatch: Dispatch, ctx: HandlerContext): Pr
   } else {
     dispatch({ type: 'info', message: 'Run the build again to execute.' });
   }
-  
 }
 
 export async function handleRetry(dispatch: Dispatch, ctx: HandlerContext): Promise<void> {
@@ -91,7 +88,6 @@ export async function handleRetry(dispatch: Dispatch, ctx: HandlerContext): Prom
   } else {
     dispatch({ type: 'info', message: 'Plan reset to approved. Run the build again to execute.' });
   }
-  
 }
 
 export function handleCancel(dispatch: Dispatch, ctx: HandlerContext): void {
@@ -107,7 +103,6 @@ export function handleCancel(dispatch: Dispatch, ctx: HandlerContext): void {
   ctx.setCurrentPlan(plan);
   savePlan(plan);
   dispatch({ type: 'success', message: 'Plan cancelled.' });
-  
 }
 
 export async function handleApplyPatch(dispatch: Dispatch, ctx: HandlerContext, patchPath?: string, force?: boolean): Promise<void> {
@@ -153,6 +148,5 @@ export async function handleApplyPatch(dispatch: Dispatch, ctx: HandlerContext, 
   } else {
     dispatch({ type: 'error', message: `Apply failed: ${result.error}` });
   }
-  
 }
 

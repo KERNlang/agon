@@ -34,6 +34,5 @@ export function handleCp(index: number|undefined, dispatch: Dispatch): void {
   } catch (err) {
     dispatch({ type: 'error', message: `Failed to copy: ${err instanceof Error ? err.message : String(err)}` });
   }
-  
 }
 

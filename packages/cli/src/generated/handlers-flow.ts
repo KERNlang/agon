@@ -15,7 +15,6 @@ function buildTelemetry(ctx: HandlerContext, startTime: number): FlowTelemetry {
     durationMs: Date.now() - startTime,
     tokensByEngine,
   };
-  
 }
 
 export async function handleFlowReport(dispatch: Dispatch, ctx: HandlerContext, sessionMode: string, startTime: number, modeMeta?: FlowModeMeta): Promise<void> {
@@ -64,7 +63,6 @@ export async function handleFlowReport(dispatch: Dispatch, ctx: HandlerContext, 
   const path = logFlow(record);
   dispatch({ type: 'success', message: `Flow logged: ${record.id.slice(0, 12)}` });
   dispatch({ type: 'info', message: path });
-  
 }
 
 export function autoLogFlow(ctx: HandlerContext, sessionMode: string, startTime: number, completionState: 'completed'|'aborted'|'crashed', modeMeta?: FlowModeMeta): void {
@@ -81,7 +79,6 @@ export function autoLogFlow(ctx: HandlerContext, sessionMode: string, startTime:
     modeMeta,
   };
   logFlow(record);
-  
 }
 
 export function handleFlowAnalysis(dispatch: Dispatch): void {
@@ -113,6 +110,5 @@ export function handleFlowAnalysis(dispatch: Dispatch): void {
     const frictionRows = analysis.topFriction.map((f) => [f.tag, String(f.count)]);
     dispatch({ type: 'table', headers: ['Tag', 'Count'], rows: frictionRows });
   }
-  
 }
 

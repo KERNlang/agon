@@ -20,7 +20,6 @@ export async function handleBrainstorm(question: string, dispatch: Dispatch, ctx
       return;
     }
     
-    // Brainstorm uses ALL available engines, not just the /use-filtered set
     const engines = ctx.registry.availableIds();
     if (engines.length === 0) {
       dispatch({ type: 'error', message: 'No engines available.' });
@@ -112,10 +111,8 @@ export async function handleBrainstorm(question: string, dispatch: Dispatch, ctx
     tracker.record(result.winner, question, result.response);
     
     dispatch({ type: 'info', message: `Winner: ${result.winner} — ask follow-ups or "/forge" to implement` });
-    
   } finally {
     ctx.setActiveAbort(null);
-    
   }
 }
 

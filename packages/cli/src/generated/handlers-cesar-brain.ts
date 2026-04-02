@@ -91,9 +91,8 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
     let streaming = false;
   
     try {
-      const streamFn = ctx.adapter.dispatchStream;
-      if (streamFn) {
-        const gen = streamFn({
+      if (ctx.adapter.dispatchStream) {
+        const gen = ctx.adapter.dispatchStream({
           engine, prompt, cwd: process.cwd(),
           mode: 'exec', timeout: Math.min(config.timeout ?? 90, 90),
           outputDir, signal: abort.signal, images: images ?? [],
@@ -217,4 +216,3 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
     ctx.setActiveAbort(null);
   }
 }
-

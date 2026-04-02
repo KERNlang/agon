@@ -34,7 +34,7 @@ export function parseDelegation(response: string): {action:string|null, rest:str
   return { action: null, rest: response };
 }
 
-export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<{delegated:boolean, action?:string, reasoning?:string}> {
+export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string}> {
   const abort = new AbortController();
   try {
     ensureAgonHome();
@@ -45,14 +45,14 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   
     if (!available.includes(cesarEngineId)) {
       // Cesar engine not available, fall through to regular chat
-      return { delegated: false };
+      return { delegated: false, responded: false };
     }
   
     let engine;
     try {
       engine = ctx.registry.get(cesarEngineId);
     } catch {
-      return { delegated: false };
+      return { delegated: false, responded: false };
     }
   
     // Build context with conversation history
@@ -135,7 +135,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                   appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
                   tracker.record(cesarEngineId, input, response);
                   if (rest) dispatch({ type: 'info', message: `Cesar: ${rest}` });
-                  return { delegated: true, action, reasoning: rest };
+                  return { delegated: true, responded: true, action, reasoning: rest };
                 }
                 dispatch({ type: 'spinner-stop' });
                 streaming = true;
@@ -171,12 +171,12 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       }
     } catch (err) {
       dispatch({ type: 'spinner-stop' });
-      return { delegated: false }; // Fall back to regular chat on error
+      return { delegated: false, responded: false }; // Fall back to regular chat on error
     }
   
     if (abort.signal.aborted) {
       dispatch({ type: 'spinner-stop' });
-      return { delegated: false };
+      return { delegated: false, responded: false };
     }
   
     response = response.trim();
@@ -190,7 +190,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
       tracker.record(cesarEngineId, input, response);
       if (rest) dispatch({ type: 'info', message: `Cesar: ${rest}` });
-      return { delegated: true, action, reasoning: rest };
+      return { delegated: true, responded: true, action, reasoning: rest };
     }
   
     // Direct response — render it
@@ -206,11 +206,12 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
       appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
       tracker.record(cesarEngineId, input, response);
+      return { delegated: false, responded: true };
     } else {
       dispatch({ type: 'spinner-stop' });
     }
   
-    return { delegated: false };
+    return { delegated: false, responded: false };
   } finally {
     dispatch({ type: 'spinner-stop' });
     ctx.setActiveAbort(null);

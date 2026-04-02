@@ -1270,16 +1270,23 @@ function App() {
         case 'run': await handleRun(intent.input, dispatch, ctx); break;
         case 'chat': {
           setPendingImages([]);
-          // Route through Cesar brain for delegation intelligence
-          const chatCesar = await handleCesarBrain(intent.input, dispatch, ctx, allImages);
-          if (chatCesar.delegated && chatCesar.action) {
-            dispatch({ type: 'info', message: `Cesar delegates → ${chatCesar.action}` });
-            switch (chatCesar.action) {
-              case 'build': runAsJob('build', intent.input?.slice(0, 40) ?? 'build', () => handleBuild(intent.input, dispatch, ctx)); return;
-              case 'forge': runAsJob('forge', intent.input?.slice(0, 40) ?? 'forge', () => handleForge(intent.input, null, dispatch, ctx)); return;
-              case 'brainstorm': runAsJob('brainstorm', intent.input?.slice(0, 40) ?? 'brainstorm', () => handleBrainstorm(intent.input, dispatch, ctx)); return;
-              case 'tribunal': runAsJob('tribunal', intent.input?.slice(0, 40) ?? 'tribunal', () => handleTribunal(intent.input, dispatch, ctx)); return;
+          let chatHandled = false;
+          try {
+            const chatCesar = await handleCesarBrain(intent.input, dispatch, ctx, allImages);
+            if (chatCesar.delegated && chatCesar.action) {
+              chatHandled = true;
+              dispatch({ type: 'info', message: `Cesar delegates → ${chatCesar.action}` });
+              switch (chatCesar.action) {
+                case 'build': runAsJob('build', intent.input?.slice(0, 40) ?? 'build', () => handleBuild(intent.input, dispatch, ctx)); return;
+                case 'forge': runAsJob('forge', intent.input?.slice(0, 40) ?? 'forge', () => handleForge(intent.input, null, dispatch, ctx)); return;
+                case 'brainstorm': runAsJob('brainstorm', intent.input?.slice(0, 40) ?? 'brainstorm', () => handleBrainstorm(intent.input, dispatch, ctx)); return;
+                case 'tribunal': runAsJob('tribunal', intent.input?.slice(0, 40) ?? 'tribunal', () => handleTribunal(intent.input, dispatch, ctx)); return;
+              }
+              chatHandled = chatCesar.responded;
             }
+          } catch { /* fall through */ }
+          if (!chatHandled) {
+            await handleChat(intent.input, dispatch, ctx, allImages);
           }
           break;
         }
@@ -1407,18 +1414,24 @@ function App() {
           break;
         }
         case 'auto': {
-          // ── Route through Cesar brain — same as unknown ──
-          // Cesar decides: answer directly or delegate to build/forge/brainstorm/tribunal
           setPendingImages([]);
-          const autoResult = await handleCesarBrain(intent.input, dispatch, ctx, allImages);
-          if (autoResult.delegated && autoResult.action) {
-            dispatch({ type: 'info', message: `Cesar delegates → ${autoResult.action}` });
-            switch (autoResult.action) {
-              case 'build': runAsJob('build', intent.input?.slice(0, 40) ?? 'build', () => handleBuild(intent.input, dispatch, ctx)); return;
-              case 'forge': runAsJob('forge', intent.input?.slice(0, 40) ?? 'forge', () => handleForge(intent.input, null, dispatch, ctx)); return;
-              case 'brainstorm': runAsJob('brainstorm', intent.input?.slice(0, 40) ?? 'brainstorm', () => handleBrainstorm(intent.input, dispatch, ctx)); return;
-              case 'tribunal': runAsJob('tribunal', intent.input?.slice(0, 40) ?? 'tribunal', () => handleTribunal(intent.input, dispatch, ctx)); return;
+          let autoHandled = false;
+          try {
+            const autoResult = await handleCesarBrain(intent.input, dispatch, ctx, allImages);
+            if (autoResult.delegated && autoResult.action) {
+              autoHandled = true;
+              dispatch({ type: 'info', message: `Cesar delegates → ${autoResult.action}` });
+              switch (autoResult.action) {
+                case 'build': runAsJob('build', intent.input?.slice(0, 40) ?? 'build', () => handleBuild(intent.input, dispatch, ctx)); return;
+                case 'forge': runAsJob('forge', intent.input?.slice(0, 40) ?? 'forge', () => handleForge(intent.input, null, dispatch, ctx)); return;
+                case 'brainstorm': runAsJob('brainstorm', intent.input?.slice(0, 40) ?? 'brainstorm', () => handleBrainstorm(intent.input, dispatch, ctx)); return;
+                case 'tribunal': runAsJob('tribunal', intent.input?.slice(0, 40) ?? 'tribunal', () => handleTribunal(intent.input, dispatch, ctx)); return;
+              }
+              autoHandled = autoResult.responded;
             }
+          } catch { /* fall through */ }
+          if (!autoHandled) {
+            await handleChat(intent.input, dispatch, ctx, allImages);
           }
           break;
         }
@@ -1439,11 +1452,13 @@ function App() {
           }
 
           // Route through Cesar brain — persistent orchestrator
+          // Falls back to handleChat if Cesar fails or doesn't respond
           setPendingImages([]);
+          let cesarHandled = false;
           try {
             const cesarResult = await handleCesarBrain(intent.input, dispatch, ctx, allImages);
-
             if (cesarResult.delegated && cesarResult.action) {
+              cesarHandled = true;
               dispatch({ type: 'info', message: `Cesar delegates → ${cesarResult.action}` });
               switch (cesarResult.action) {
                 case 'build': runAsJob('build', intent.input?.slice(0, 40) ?? 'build', () => handleBuild(intent.input, dispatch, ctx)); return;
@@ -1452,9 +1467,11 @@ function App() {
                 case 'tribunal': runAsJob('tribunal', intent.input?.slice(0, 40) ?? 'tribunal', () => handleTribunal(intent.input, dispatch, ctx)); return;
               }
             }
-            // If not delegated, Cesar already rendered the response
-          } catch {
-            // Cesar brain failed — fall back to direct chat
+            // Check if Cesar actually rendered a response (not just returned silently)
+            cesarHandled = cesarResult.responded;
+          } catch { /* fall through */ }
+          // Cesar didn't handle it — fall back to direct chat
+          if (!cesarHandled) {
             await handleChat(intent.input, dispatch, ctx, allImages);
           }
           break;

@@ -158,6 +158,7 @@ export interface AgonConfig {
   cesarDirectThreshold?: number;
   cesarDisagreementSpread?: number;
   campfireObserverStrategy?: 'lead-first'|'all-respond';
+  hooks: Record<string,Array<{command:string,engines?:string[],timeout?:number}>>;
 }
 
 export const DEFAULT_AGON_CONFIG: Required<AgonConfig> = {
@@ -188,6 +189,7 @@ export const DEFAULT_AGON_CONFIG: Required<AgonConfig> = {
   cesarDirectThreshold: 85,
   cesarDisagreementSpread: 20,
   campfireObserverStrategy: 'lead-first',
+  hooks: {},
 };
 
 export interface ScoutBid {

@@ -15,6 +15,5 @@ export function copyToClipboard(text: string): void {
   } else {
     throw new Error(`Clipboard not supported on ${platform}`);
   }
-  
 }
 

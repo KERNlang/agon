@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, mkdirSync, readdirSync, unlinkSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, unlinkSync, renameSync } from 'node:fs';
 
 import { join, resolve } from 'node:path';
 
@@ -22,12 +22,20 @@ function safePlanPath(id: string): string {
 
 export function savePlan(plan: Plan): void {
   ensurePlansDir();
-  writeFileSync(safePlanPath(plan.id), JSON.stringify(plan, null, 2) + '\n');
+  const target = safePlanPath(plan.id);
+  const tmpPath = target + '.tmp';
+  writeFileSync(tmpPath, JSON.stringify(plan, null, 2) + '\n');
+  renameSync(tmpPath, target);
 }
 
 export function loadPlan(id: string): Plan|null {
   try { return JSON.parse(readFileSync(safePlanPath(id), 'utf-8')) as Plan; }
-  catch { return null; }
+  catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+      console.warn(`[agon] failed to load plan ${id}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    return null;
+  }
 }
 
 export function listPlans(limit?: number): Plan[] {
@@ -38,11 +46,19 @@ export function listPlans(limit?: number): Plan[] {
       .map((f: string) => JSON.parse(readFileSync(join(PLANS_DIR, f), 'utf-8')) as Plan)
       .sort((a: any, b: any) => b.updatedAt.localeCompare(a.updatedAt))
       .slice(0, limit ?? 20);
-  } catch { return []; }
+  } catch (err) {
+    console.warn(`[agon] failed to list plans: ${err instanceof Error ? err.message : String(err)}`);
+    return [];
+  }
 }
 
 export function deletePlan(id: string): boolean {
   try { unlinkSync(safePlanPath(id)); return true; }
-  catch { return false; }
+  catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+      console.warn(`[agon] failed to delete plan ${id}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    return false;
+  }
 }
 

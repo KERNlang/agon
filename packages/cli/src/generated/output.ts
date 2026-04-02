@@ -26,72 +26,58 @@ export const ENGINE_COLORS: Record<string, number> = { claude: 208, codex: 34, g
 
 export function fg256(code: number, text: string): string {
   return `\x1b[38;5;${code}m${text}${RESET}`;
-  
 }
 
 export function bgFg(bg: number, fg: number, text: string): string {
   return `\x1b[48;5;${bg};38;5;${fg}m${text}${RESET}`;
-  
 }
 
 export function bold(text: string): string {
   return `${BOLD}${text}${RESET}`;
-  
 }
 
 export function dim(text: string): string {
   return `${DIM}${text}${RESET}`;
-  
 }
 
 export function green(text: string): string {
   return `${GREEN}${text}${RESET}`;
-  
 }
 
 export function red(text: string): string {
   return `${RED}${text}${RESET}`;
-  
 }
 
 export function yellow(text: string): string {
   return `${YELLOW}${text}${RESET}`;
-  
 }
 
 export function cyan(text: string): string {
   return `${CYAN}${text}${RESET}`;
-  
 }
 
 export function blue(text: string): string {
   return `${BLUE}${text}${RESET}`;
-  
 }
 
 export function magenta(text: string): string {
   return `${MAGENTA}${text}${RESET}`;
-  
 }
 
 export function white(text: string): string {
   return `${WHITE}${text}${RESET}`;
-  
 }
 
 export function italic(text: string): string {
   return `${ITALIC}${text}${RESET}`;
-  
 }
 
 function stripAnsi(str: string): string {
   return str.replace(/\x1b\[[0-9;]*m/g, '');
-  
 }
 
 function visibleLength(str: string): number {
   return stripAnsi(str).length;
-  
 }
 
 export function gradientText(text: string, colors: number[]): string {
@@ -102,32 +88,26 @@ export function gradientText(text: string, colors: number[]): string {
     result += fg256(colors[colorIdx], text[i]);
   }
   return result;
-  
 }
 
 export function header(text: string): void {
   console.log(`\n${BOLD}${CYAN}▸ ${text}${RESET}`);
-  
 }
 
 export function success(text: string): void {
   console.log(`${GREEN}✓${RESET} ${text}`);
-  
 }
 
 export function fail(text: string): void {
   console.log(`${RED}✗${RESET} ${text}`);
-  
 }
 
 export function warn(text: string): void {
   console.log(`${YELLOW}⚠${RESET} ${text}`);
-  
 }
 
 export function info(text: string): void {
   console.log(`${DIM}${text}${RESET}`);
-  
 }
 
 export function scoreboard(title: string, engineIds: string[], metrics: Array<{label:string,values:string[]}>, winnerId?: string|null): void {
@@ -158,7 +138,6 @@ export function scoreboard(title: string, engineIds: string[], metrics: Array<{l
     console.log(`  ${label}  ${cells.join('  ')}`);
   }
   console.log('');
-  
 }
 
 export function table(headers: string[], rows: string[][]): void {
@@ -178,6 +157,5 @@ export function table(headers: string[], rows: string[][]): void {
     }).join('  ');
     console.log(`  ${line}`);
   }
-  
 }
 

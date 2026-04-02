@@ -14,17 +14,14 @@ export class CodeBlockBuffer {
     const index = this.blocks.length + 1;
     this.blocks.push({ index, language, code });
     return index;
-    
   }
 
   get(index: number): CodeBlock|null {
     return this.blocks.find(b => b.index === index) ?? null;
-    
   }
 
   clear(): void {
     this.blocks = [];
-    
   }
 
   recordFromSegments(segments: Array<{type:string, language?:string, code?:string}>): void {
@@ -33,7 +30,6 @@ export class CodeBlockBuffer {
         this.push(seg.language ?? '', seg.code);
       }
     }
-    
   }
 }
 

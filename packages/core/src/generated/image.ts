@@ -25,13 +25,11 @@ export const IMG_CMD_REGEX: RegExp = /^\/img\s+(.+)$/i;
 export function isImagePath(filePath: string): boolean {
   const ext = extname(filePath).toLowerCase();
   return IMAGE_EXTENSIONS.has(ext);
-  
 }
 
 export function mimeFromExt(filePath: string): string {
   const ext = extname(filePath).toLowerCase();
   return MIME_MAP[ext] ?? 'application/octet-stream';
-  
 }
 
 export function resolveImagePath(rawPath: string, cwd: string): string|null {
@@ -44,7 +42,6 @@ export function resolveImagePath(rawPath: string, cwd: string): string|null {
     resolved = resolve(cwd, rawPath);
   }
   return existsSync(resolved) ? resolved : null;
-  
 }
 
 export function buildImageAttachment(rawPath: string, cwd: string): ImageAttachment|null {
@@ -55,7 +52,6 @@ export function buildImageAttachment(rawPath: string, cwd: string): ImageAttachm
     filename: basename(resolved),
     mimeType: mimeFromExt(resolved),
   };
-  
 }
 
 export function extractImagesFromInput(input: string, cwd: string): {text:string, images:ImageAttachment[]} {
@@ -90,6 +86,5 @@ export function extractImagesFromInput(input: string, cwd: string): {text:string
   text = text.replace(/\s{2,}/g, ' ').trim();
   
   return { text, images };
-  
 }
 

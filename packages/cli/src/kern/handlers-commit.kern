@@ -1,0 +1,135 @@
+import from="node:child_process" names="execSync"
+import from="@agon/core" names="loadConfig"
+import from="../handlers/types.js" names="Dispatch,HandlerContext" types=true
+
+fn name=gitExec params="cmd:string, cwd:string" returns=string export=false
+  handler <<<
+    try {
+      return execSync(cmd, { cwd, encoding: 'utf-8', timeout: 10000, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+    } catch (err: any) {
+      return err.stdout?.trim() ?? '';
+    }
+  >>>
+
+fn name=classifyChanges params="diff:string" returns=string export=false
+  handler <<<
+    const lower = diff.toLowerCase();
+    if (/\bfix(es|ed)?\b|\bbug\b|\bpatch\b/.test(lower)) return 'fix';
+    if (/\bfeat(ure)?\b|\badd(s|ed)?\b|\bnew\b|\bimplement/.test(lower)) return 'feat';
+    if (/\brefactor\b|\brename\b|\brestructure\b|\bmove\b/.test(lower)) return 'refactor';
+    if (/\btest\b|\bspec\b|\bvitest\b|\bjest\b/.test(lower)) return 'test';
+    if (/\bdoc(s)?\b|\breadme\b|\bchangelog\b/.test(lower)) return 'docs';
+    return 'chore';
+  >>>
+
+fn name=handleCommit async=true params="message:string|undefined, dispatch:Dispatch, ctx:HandlerContext" returns="Promise<void>"
+  handler <<<
+    const cwd = process.cwd();
+
+    dispatch({ type: 'spinner-start', message: 'Analyzing changes...' });
+
+    // Step 1: Parallel git context (like Claude Code)
+    const [status, diff, diffStat, log] = await Promise.all([
+      Promise.resolve(gitExec('git status --short', cwd)),
+      Promise.resolve(gitExec('git diff --cached', cwd) || gitExec('git diff', cwd)),
+      Promise.resolve(gitExec('git diff --stat', cwd)),
+      Promise.resolve(gitExec('git log --oneline -5', cwd)),
+    ]);
+
+    dispatch({ type: 'spinner-stop' });
+
+    if (!status && !diff) {
+      dispatch({ type: 'info', message: 'Nothing to commit — working tree clean.' });
+      return;
+    }
+
+    // Show what would be committed
+    if (diffStat) {
+      dispatch({ type: 'text', content: `**Changes:**\n\`\`\`\n${diffStat}\n\`\`\`` });
+    }
+
+    // Step 2: Check if there are staged changes, if not stage all tracked
+    const hasStaged = gitExec('git diff --cached --name-only', cwd);
+    if (!hasStaged) {
+      dispatch({ type: 'info', message: 'No staged changes. Staging all modified files...' });
+      // Stage tracked modified files only (not untracked)
+      const modifiedFiles = status
+        .split('\n')
+        .filter((l: string) => /^\s*M/.test(l))
+        .map((l: string) => l.trim().replace(/^\S+\s+/, ''));
+      if (modifiedFiles.length === 0) {
+        dispatch({ type: 'warning', message: 'No modified tracked files to commit. Use git add to stage new files.' });
+        return;
+      }
+      for (const f of modifiedFiles) {
+        gitExec(`git add "${f}"`, cwd);
+      }
+      dispatch({ type: 'success', message: `Staged ${modifiedFiles.length} file(s)` });
+    }
+
+    // Step 3: Generate or use provided commit message
+    let commitMsg = message?.trim();
+    if (!commitMsg) {
+      // Auto-classify from diff
+      const changeType = classifyChanges(diff);
+      const stagedFiles = gitExec('git diff --cached --name-only', cwd);
+      const fileList = stagedFiles.split('\n').filter(Boolean);
+      const shortSummary = fileList.length <= 3
+        ? fileList.join(', ')
+        : `${fileList.length} files`;
+
+      commitMsg = `${changeType}: ${shortSummary}`;
+
+      // Ask user to confirm/edit
+      const answer = await ctx.askQuestion(`Commit message: "${commitMsg}" — ok? (y/edit/n)`);
+      if (answer.toLowerCase() === 'n') {
+        dispatch({ type: 'info', message: 'Commit cancelled.' });
+        return;
+      }
+      if (answer.toLowerCase() !== 'y' && answer.trim()) {
+        commitMsg = answer.trim();
+      }
+    }
+
+    // Step 4: Commit with HEREDOC (safe for special chars)
+    dispatch({ type: 'spinner-start', message: 'Committing...' });
+
+    try {
+      const result = execSync(
+        `git commit -m "${commitMsg.replace(/"/g, '\\"')}"`,
+        { cwd, encoding: 'utf-8', timeout: 30000, stdio: ['ignore', 'pipe', 'pipe'] },
+      );
+      dispatch({ type: 'spinner-stop' });
+      dispatch({ type: 'success', message: result.trim() || `Committed: ${commitMsg}` });
+    } catch (err: any) {
+      dispatch({ type: 'spinner-stop' });
+      const stderr = err.stderr?.trim() ?? '';
+
+      // Pre-commit hook failure: retry once (Claude Code pattern)
+      if (stderr.includes('hook') || err.status === 1) {
+        dispatch({ type: 'warning', message: `Pre-commit hook failed. Retrying...` });
+
+        // Re-stage (hooks may have modified files)
+        gitExec('git add -u', cwd);
+
+        try {
+          const retry = execSync(
+            `git commit -m "${commitMsg.replace(/"/g, '\\"')}"`,
+            { cwd, encoding: 'utf-8', timeout: 30000, stdio: ['ignore', 'pipe', 'pipe'] },
+          );
+          dispatch({ type: 'success', message: retry.trim() || `Committed: ${commitMsg}` });
+        } catch (err2: any) {
+          dispatch({ type: 'error', message: `Commit failed after retry: ${err2.stderr?.trim() ?? err2.message}` });
+        }
+        return;
+      }
+
+      dispatch({ type: 'error', message: `Commit failed: ${stderr || err.message}` });
+    }
+
+    // Step 5: Post-commit verification
+    const postStatus = gitExec('git log --oneline -1', cwd);
+    if (postStatus) {
+      dispatch({ type: 'info', message: postStatus });
+    }
+  >>>

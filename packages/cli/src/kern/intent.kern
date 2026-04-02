@@ -56,6 +56,7 @@ const name=SLASH_COMMANDS type="SlashCommand[]"
       { cmd: '/pipeline',   desc: '<task> [test with <cmd>]  — build→review→fix loop' },
       { cmd: '/provider',    desc: 'add|remove|list          — manage API providers' },
       { cmd: '/run',         desc: '<cmd>                    — run shell command inline' },
+      { cmd: '/commit',      desc: '[message]                — stage & commit with auto-generated message' },
       { cmd: '/undo',        desc: '                        — revert last applied forge patch' },
       { cmd: '/jobs',        desc: '                        — list running/completed jobs' },
       { cmd: '/focus',       desc: '<id>                    — switch to background job output' },
@@ -247,6 +248,8 @@ fn name=parseSlashCommand params="input:string" returns=Intent export=false
       case 'exec':
       case 'shell':
         return { type: 'run', input: rest } as Intent;
+      case 'commit':
+        return { type: 'commit', input: rest || undefined } as Intent;
       case 'undo':
         return { type: 'undo' } as Intent;
       case 'jobs':

@@ -4,3 +4,4 @@ dist/
 .DS_Store
 coverage/
 .agon/
+.agon.local.json

@@ -58,6 +58,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { cmd: '/pipeline',   desc: '<task> [test with <cmd>]  — build→review→fix loop' },
   { cmd: '/provider',    desc: 'add|remove|list          — manage API providers' },
   { cmd: '/run',         desc: '<cmd>                    — run shell command inline' },
+  { cmd: '/commit',      desc: '[message]                — stage & commit with auto-generated message' },
   { cmd: '/undo',        desc: '                        — revert last applied forge patch' },
   { cmd: '/jobs',        desc: '                        — list running/completed jobs' },
   { cmd: '/focus',       desc: '<id>                    — switch to background job output' },
@@ -78,13 +79,6 @@ export const CONFIG_KEYWORDS: RegExp = /\b(config|settings?)\b/i;
 export const HELP_KEYWORDS: RegExp = /^(help|\?)$/i;
 
 export const EXIT_KEYWORDS: RegExp = /^(exit|quit|bye)$/i;
-
-// Conversational triggers for multi-engine modes
-export const BRAINSTORM_TRIGGERS: RegExp = /\b(what do you (?:guys|all) think|ask (?:the others|everyone|all engines|them all)|brainstorm this|let'?s brainstorm|get (?:other|more) opinions?|what would (?:the )?others say|group (?:think|input)|everyone'?s (?:take|opinion|thoughts?))\b/i;
-
-export const TRIBUNAL_TRIGGERS: RegExp = /\b(debate this|let'?s debate|pros and cons|tradeoffs?|trade-offs?|argue (?:both|all) sides?|devil'?s advocate|what are the arguments|should we .+ or .+)\b/i;
-
-export const FORGE_TRIGGERS: RegExp = /\b((?:let'?s |can you )?(?:build|implement|forge|ship|code|make) (?:it|this|that)|race (?:on|to) (?:build|implement)|compete on this|engines? (?:build|race))\b/i;
 
 export const QUESTION_PATTERN: RegExp = /^(what|how|why|where|when|who|which|explain|describe|tell|show|list|is there|does|can you explain|walk me through)\b/i;
 
@@ -241,6 +235,8 @@ function parseSlashCommand(input: string): Intent {
     case 'exec':
     case 'shell':
       return { type: 'run', input: rest } as Intent;
+    case 'commit':
+      return { type: 'commit', input: rest || undefined } as Intent;
     case 'undo':
       return { type: 'undo' } as Intent;
     case 'jobs':
@@ -274,11 +270,6 @@ export function detectIntent(raw: string): Intent {
   if (ENGINES_KEYWORDS.test(input)) return { type: 'engines' } as Intent;
   if (CONFIG_KEYWORDS.test(input)) return { type: 'config' } as Intent;
   
-  // Conversational triggers → suggest escalation (confirmed in app.tsx)
-  if (BRAINSTORM_TRIGGERS.test(input)) return { type: 'suggest-brainstorm', input, question: input } as Intent;
-  if (TRIBUNAL_TRIGGERS.test(input)) return { type: 'suggest-tribunal', input, question: input } as Intent;
-  if (FORGE_TRIGGERS.test(input)) return { type: 'suggest-forge', input, task: input } as Intent;
-
   return { type: 'auto', input, taskClass: classifyTask(input) } as Intent;
 }
 

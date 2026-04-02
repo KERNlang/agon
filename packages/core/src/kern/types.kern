@@ -141,6 +141,7 @@ config name=AgonConfig
   field name=cesarScoutCount type=number default=2
   field name=cesarDirectThreshold type=number default=85
   field name=cesarDisagreementSpread type=number default=20
+  field name=cesarEngine type=string default=claude
   field name=campfireObserverStrategy type="'lead-first'|'all-respond'" default=lead-first
   field name=hooks type="Record<string,Array<{command:string,engines?:string[],timeout?:number}>>" optional=true
 

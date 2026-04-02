@@ -48,6 +48,7 @@ import {
   handleBuild, handleRun,
 } from './handlers/index.js';
 import { routeViaCesar } from './handlers/cesar.js';
+import { handleCesarBrain } from './handlers/cesar-brain.js';
 import { handlePipeline } from './handlers/pipeline.js';
 import { handleProvider } from './handlers/provider.js';
 import { codeBlockBuffer } from './code-buffer.js';
@@ -1267,7 +1268,21 @@ function App() {
           return;
         }
         case 'run': await handleRun(intent.input, dispatch, ctx); break;
-        case 'chat': setPendingImages([]); await handleChat(intent.input, dispatch, ctx, allImages); break;
+        case 'chat': {
+          setPendingImages([]);
+          // Route through Cesar brain for delegation intelligence
+          const chatCesar = await handleCesarBrain(intent.input, dispatch, ctx, allImages);
+          if (chatCesar.delegated && chatCesar.action) {
+            dispatch({ type: 'info', message: `Cesar delegates → ${chatCesar.action}` });
+            switch (chatCesar.action) {
+              case 'build': runAsJob('build', intent.input?.slice(0, 40) ?? 'build', () => handleBuild(intent.input, dispatch, ctx)); return;
+              case 'forge': runAsJob('forge', intent.input?.slice(0, 40) ?? 'forge', () => handleForge(intent.input, null, dispatch, ctx)); return;
+              case 'brainstorm': runAsJob('brainstorm', intent.input?.slice(0, 40) ?? 'brainstorm', () => handleBrainstorm(intent.input, dispatch, ctx)); return;
+              case 'tribunal': runAsJob('tribunal', intent.input?.slice(0, 40) ?? 'tribunal', () => handleTribunal(intent.input, dispatch, ctx)); return;
+            }
+          }
+          break;
+        }
         case 'leaderboard': handleLeaderboard(dispatch); break;
         case 'history': handleHistory(dispatch, intent.id); break;
         case 'engines': await handleEngines(dispatch, ctx); break;
@@ -1433,7 +1448,7 @@ function App() {
           break;
         }
         case 'unknown': {
-          // Check dynamic skills before falling through to chat
+          // Check dynamic skills first
           const trimmedInput = (intent.input ?? '').trim();
           if (trimmedInput.startsWith('/')) {
             const spaceIdx = trimmedInput.indexOf(' ');
@@ -1447,8 +1462,33 @@ function App() {
               break;
             }
           }
+
+          // Route through Cesar brain — persistent orchestrator
           setPendingImages([]);
-          await handleChat(intent.input, dispatch, ctx, allImages);
+          const cesarResult = await handleCesarBrain(intent.input, dispatch, ctx, allImages);
+
+          if (cesarResult.delegated && cesarResult.action) {
+            // Cesar wants to delegate — dispatch the delegated action
+            dispatch({ type: 'info', message: `Cesar delegates → ${cesarResult.action}` });
+            switch (cesarResult.action) {
+              case 'build':
+                runAsJob('build', intent.input?.slice(0, 40) ?? 'build', () => handleBuild(intent.input, dispatch, ctx));
+                return;
+              case 'forge':
+                runAsJob('forge', intent.input?.slice(0, 40) ?? 'forge', () => handleForge(intent.input, null, dispatch, ctx));
+                return;
+              case 'brainstorm':
+                runAsJob('brainstorm', intent.input?.slice(0, 40) ?? 'brainstorm', () => handleBrainstorm(intent.input, dispatch, ctx));
+                return;
+              case 'tribunal':
+                runAsJob('tribunal', intent.input?.slice(0, 40) ?? 'tribunal', () => handleTribunal(intent.input, dispatch, ctx));
+                return;
+              default:
+                // Unknown delegation — fall through to chat
+                await handleChat(intent.input, dispatch, ctx, allImages);
+            }
+          }
+          // If not delegated, Cesar already rendered the response
           break;
         }
       }

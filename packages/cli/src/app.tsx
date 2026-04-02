@@ -1211,6 +1211,13 @@ function App() {
 
     const ctx = buildContext();
 
+    // Debug: verify registry is defined
+    if (!ctx.registry) {
+      dispatch({ type: 'error', message: `BUG: ctx.registry is undefined. Available: ${typeof registry}` });
+      setReplState('idle');
+      return;
+    }
+
     // Helper: run a long-running command as a tracked job
     const runAsJob = (type: string, label: string, fn: () => Promise<void>) => {
       const job = jobManager.create(type, label);

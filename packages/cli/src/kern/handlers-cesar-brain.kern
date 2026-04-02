@@ -91,9 +91,8 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
       let streaming = false;
 
       try {
-        const streamFn = ctx.adapter.dispatchStream;
-        if (streamFn) {
-          const gen = streamFn({
+        if (ctx.adapter.dispatchStream) {
+          const gen = ctx.adapter.dispatchStream({
             engine, prompt, cwd: process.cwd(),
             mode: 'exec', timeout: Math.min(config.timeout ?? 90, 90),
             outputDir, signal: abort.signal, images: images ?? [],

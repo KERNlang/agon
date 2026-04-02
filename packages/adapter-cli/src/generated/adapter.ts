@@ -13,6 +13,12 @@ export class CliAdapter implements EngineAdapter {
 
   constructor(registry: EngineRegistry) {
     this.registry = registry;
+    this.dispatch = this.dispatch.bind(this);
+    this.dispatchStream = this.dispatchStream.bind(this);
+    this.dispatchAgent = this.dispatchAgent.bind(this);
+    this.dispatchAgentStream = this.dispatchAgentStream.bind(this);
+    this.isAvailable = this.isAvailable.bind(this);
+    this.getVersion = this.getVersion.bind(this);
   }
 
   async dispatch(options: DispatchOptions): Promise<DispatchResult> {

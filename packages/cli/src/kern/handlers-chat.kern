@@ -88,11 +88,56 @@ fn name=handleChat params="input:string, dispatch:Dispatch, ctx:HandlerContext, 
     let streaming = false;
 
     try {
-      const streamFn = useAgent && ctx.adapter.dispatchAgentStream
-        ? ctx.adapter.dispatchAgentStream
-        : ctx.adapter.dispatchStream;
-      if (streamFn) {
-        const gen = streamFn(dispatchOpts);
+      if (useAgent && ctx.adapter.dispatchAgentStream) {
+        const gen = ctx.adapter.dispatchAgentStream(dispatchOpts);
+        const parser = new StreamParser();
+
+        while (true) {
+          const { value, done } = await gen.next();
+          if (done) break;
+          if (abort.signal.aborted) break;
+
+          if (value.startsWith('\x00')) {
+            const status = value.slice(1).trim();
+            if (status) dispatch({ type: 'spinner-update', message: `${engineId} ${status}` });
+            continue;
+          }
+
+          for (const parsed of parser.feed(value)) {
+            if (parsed.type === 'status') {
+              dispatch({ type: 'spinner-update', message: `${engineId} ${parsed.content}` });
+              continue;
+            }
+            if (parsed.type === 'result' && !streaming) {
+              response = parsed.content;
+              continue;
+            }
+            if (parsed.type === 'text' || parsed.type === 'raw') {
+              if (!streaming) {
+                dispatch({ type: 'spinner-stop' });
+                streaming = true;
+              }
+              dispatch({ type: 'streaming-chunk', engineId, chunk: parsed.content });
+              response += parsed.content;
+            }
+          }
+        }
+
+        // Flush any remaining buffered data
+        for (const parsed of parser.flush()) {
+          if (parsed.type === 'text' || parsed.type === 'raw') {
+            if (!streaming) {
+              dispatch({ type: 'spinner-stop' });
+              streaming = true;
+            }
+            dispatch({ type: 'streaming-chunk', engineId, chunk: parsed.content });
+            response += parsed.content;
+          } else if (parsed.type === 'result' && !streaming) {
+            response = parsed.content;
+          }
+        }
+      } else if (ctx.adapter.dispatchStream) {
+        const gen = ctx.adapter.dispatchStream(dispatchOpts);
         const parser = new StreamParser();
 
         while (true) {

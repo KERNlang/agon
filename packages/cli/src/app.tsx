@@ -156,7 +156,35 @@ function DashboardView({ event }: { event: OutputEvent & { type: 'dashboard' } }
         )}
       </Box>
 
-      {/* Hint */}
+      {/* Quick start */}
+      <Text> </Text>
+      <Box flexDirection="column">
+        <Box>
+          <Text dimColor>{'  '}</Text>
+          <Text italic dimColor>{'"explain the auth flow"'}</Text>
+          <Text dimColor>{'                      '}</Text>
+          <Text color="#fbbf24">{'\u2192 chat'}</Text>
+        </Box>
+        <Box>
+          <Text dimColor>{'  '}</Text>
+          <Text italic dimColor>{'"codex how would you do this?"'}</Text>
+          <Text dimColor>{'                '}</Text>
+          <Text color="#22d3ee">{'\u2192 codex'}</Text>
+        </Box>
+        <Box>
+          <Text dimColor>{'  '}</Text>
+          <Text italic dimColor>{'"fix login bug, test with npm test"'}</Text>
+          <Text dimColor>{'           '}</Text>
+          <Text color="#f97316">{'\u2192 forge'}</Text>
+        </Box>
+        <Box>
+          <Text dimColor>{'  '}</Text>
+          <Text italic dimColor>{'"should we use REST or GraphQL?"'}</Text>
+          <Text dimColor>{'              '}</Text>
+          <Text color="#a78bfa">{'\u2192 tribunal'}</Text>
+        </Box>
+      </Box>
+      <Text> </Text>
       <Text dimColor>{'  Just talk, or type '}<Text color="#f97316">{'/'}</Text>{' for commands.'}</Text>
       <Text> </Text>
     </Box>
@@ -1312,35 +1340,37 @@ function App() {
         case 'exit': exit(); return;
         case 'suggest-brainstorm' as string: {
           // Conversational trigger — ask before escalating
+          const si = intent as any;
           const answer = await askQuestion('Brainstorm with all engines? (y/n)');
           if (answer.toLowerCase().startsWith('y')) {
-            runAsJob('brainstorm', intent.question?.slice(0, 40) ?? 'brainstorm', () =>
-              handleBrainstorm(intent.question ?? intent.input, dispatch, ctx));
+            runAsJob('brainstorm', si.question?.slice(0, 40) ?? 'brainstorm', () =>
+              handleBrainstorm(si.question ?? si.input, dispatch, ctx));
             return;
           }
-          // User said no — send to regular chat
-          await handleChat(intent.input, dispatch, ctx, allImages);
+          await handleChat(si.input, dispatch, ctx, allImages);
           break;
         }
         case 'suggest-tribunal' as string: {
+          const si = intent as any;
           const answer = await askQuestion('Debate with all engines? (y/n)');
           if (answer.toLowerCase().startsWith('y')) {
-            runAsJob('tribunal', intent.question?.slice(0, 40) ?? 'tribunal', () =>
-              handleTribunal(intent.question ?? intent.input, dispatch, ctx));
+            runAsJob('tribunal', si.question?.slice(0, 40) ?? 'tribunal', () =>
+              handleTribunal(si.question ?? si.input, dispatch, ctx));
             return;
           }
-          await handleChat(intent.input, dispatch, ctx, allImages);
+          await handleChat(si.input, dispatch, ctx, allImages);
           break;
         }
         case 'suggest-forge' as string: {
+          const si = intent as any;
           const answer = await askQuestion('Forge — engines compete to build? (y/n)');
           if (answer.toLowerCase().startsWith('y')) {
-            runAsJob('forge', intent.task?.slice(0, 40) ?? 'forge', async () => {
-              await handleForge(intent.task ?? intent.input, intent.fitnessCmd, dispatch, ctx);
+            runAsJob('forge', si.task?.slice(0, 40) ?? 'forge', async () => {
+              await handleForge(si.task ?? si.input, si.fitnessCmd, dispatch, ctx);
             });
             return;
           }
-          await handleChat(intent.input, dispatch, ctx, allImages);
+          await handleChat(si.input, dispatch, ctx, allImages);
           break;
         }
         case 'auto': {

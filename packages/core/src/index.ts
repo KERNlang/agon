@@ -68,6 +68,13 @@ export type { CompanionResult } from './companion-dispatch.js';
 export { runHooks, hooksFailed, hooksOutput } from './hooks.js';
 export type { HookEvent, HookDef, HookResult } from './hooks.js';
 export { loadSkills, findSkill, renderSkillPrompt } from './skill-loader.js';
+export {
+  loadEngineMemory, addEngineNote, setEngineStrengths, setEngineWeaknesses,
+  addEngineTendency, getEngineProfile, buildRolePrompt, recordForgeOutcome,
+} from './engine-memory.js';
+export type { EngineNote, EngineProfile, EngineMemoryRecord } from './engine-memory.js';
+export { rankByTaskClass, buildSpecializedPrompt, assignForgeRoles } from './role-specialization.js';
+export type { EngineRole } from './role-specialization.js';
 export type { Skill } from './skill-loader.js';
 export { createSidechainLogger } from './sidechain-logger.js';
 export type { SidechainEvent, SidechainLogger } from './sidechain-logger.js';

@@ -143,7 +143,7 @@ function DashboardView({ event }: { event: OutputEvent & { type: 'dashboard' } }
 
       {/* Compact engine roster + ELO */}
       <Box>
-        <Text color="#f97316">{'  \u2694 '}</Text>
+        <Text color="#f97316">{'  Engines: '}</Text>
         {event.enabled.map((id, i) => (
           <Text key={id}>
             <Text color={engineColor(id)} bold>{id}</Text>

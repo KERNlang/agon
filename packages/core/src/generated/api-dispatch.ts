@@ -7,7 +7,7 @@ export interface ApiConfig {
   maxTokens?: number;
 }
 
-export async function apiDispatch(config: ApiConfig, prompt: string, timeout: number, signal?: AbortSignal): Promise<DispatchResult> {
+export async function apiDispatch(config: ApiConfig, prompt: string, timeout: number, signal?: AbortSignal, systemPrompt?: string): Promise<DispatchResult> {
   const apiKey = process.env[config.apiKeyEnv];
   if (!apiKey) {
     return {
@@ -22,9 +22,17 @@ export async function apiDispatch(config: ApiConfig, prompt: string, timeout: nu
   const startTime = Date.now();
   const url = config.baseUrl.replace(/\/$/, '') + '/v1/chat/completions';
   
+  // Separate system and user messages for cache-friendly dispatch.
+  // System messages contain stable instructions that APIs can cache across calls.
+  const messages: Array<{role: string, content: string}> = [];
+  if (systemPrompt) {
+    messages.push({ role: 'system', content: systemPrompt });
+  }
+  messages.push({ role: 'user', content: prompt });
+  
   const body = JSON.stringify({
     model: config.model,
-    messages: [{ role: 'user', content: prompt }],
+    messages,
     max_tokens: config.maxTokens ?? 4096,
     stream: false,
   });
@@ -81,7 +89,7 @@ export async function apiDispatch(config: ApiConfig, prompt: string, timeout: nu
   }
 }
 
-export async function* apiStreamDispatch(config: ApiConfig, prompt: string, timeout: number, signal?: AbortSignal): AsyncGenerator<string, DispatchResult, void> {
+export async function* apiStreamDispatch(config: ApiConfig, prompt: string, timeout: number, signal?: AbortSignal, systemPrompt?: string): AsyncGenerator<string, DispatchResult, void> {
   const apiKey = process.env[config.apiKeyEnv];
   if (!apiKey) {
     return { exitCode: 1, stdout: '', stderr: `Missing API key: set ${config.apiKeyEnv}`, durationMs: 0, timedOut: false };
@@ -90,9 +98,15 @@ export async function* apiStreamDispatch(config: ApiConfig, prompt: string, time
   const startTime = Date.now();
   const url = config.baseUrl.replace(/\/$/, '') + '/v1/chat/completions';
   
+  const messages: Array<{role: string, content: string}> = [];
+  if (systemPrompt) {
+    messages.push({ role: 'system', content: systemPrompt });
+  }
+  messages.push({ role: 'user', content: prompt });
+  
   const body = JSON.stringify({
     model: config.model,
-    messages: [{ role: 'user', content: prompt }],
+    messages,
     max_tokens: config.maxTokens ?? 4096,
     stream: true,
   });

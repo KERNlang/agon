@@ -1,0 +1,55 @@
+import from="node:fs" names="appendFileSync,mkdirSync"
+import from="node:path" names="join"
+
+interface name=SidechainEvent
+  doc "Single event in a sidechain log. JSONL format — one JSON object per line."
+  field name=ts type=string
+  field name=type type=string
+  field name=sessionType type=string
+  field name=sessionId type=string
+  field name=engineId type=string optional=true
+  field name=parentId type=string optional=true
+  field name=data type="Record<string,unknown>" optional=true
+
+interface name=SidechainLogger
+  field name=log type="(type:string, engineId?:string, data?:Record<string,unknown>)=>void"
+  field name=child type="(childSessionId:string, childSessionType:string)=>SidechainLogger"
+  field name=path type=string
+  field name=sessionId type=string
+
+fn name=createSidechainLogger params="opts:{sessionId:string, sessionType:string, outputDir:string, parentId?:string}" returns=SidechainLogger
+  doc "Creates a JSONL logger for orchestration audit trails. Follows Claude Code's sidechain pattern: forge_abc123.jsonl, tribunal_abc123_sidechain_def456.jsonl for nested sessions."
+  handler <<<
+    const suffix = opts.parentId ? `_sidechain_${opts.parentId}` : '';
+    const filename = `${opts.sessionType}_${opts.sessionId}${suffix}.jsonl`;
+    const logPath = join(opts.outputDir, filename);
+    mkdirSync(opts.outputDir, { recursive: true });
+
+    function log(type: string, engineId?: string, data?: Record<string, unknown>): void {
+      const event: SidechainEvent = {
+        ts: new Date().toISOString(),
+        type,
+        sessionType: opts.sessionType,
+        sessionId: opts.sessionId,
+        ...(engineId && { engineId }),
+        ...(opts.parentId && { parentId: opts.parentId }),
+        ...(data && { data }),
+      };
+      try {
+        appendFileSync(logPath, JSON.stringify(event) + '\n');
+      } catch (err) {
+        console.warn(`[agon] sidechain write failed (${logPath}): ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
+    function child(childSessionId: string, childSessionType: string): SidechainLogger {
+      return createSidechainLogger({
+        sessionId: childSessionId,
+        sessionType: childSessionType,
+        outputDir: opts.outputDir,
+        parentId: opts.sessionId,
+      });
+    }
+
+    return { log, child, path: logPath, sessionId: opts.sessionId };
+  >>>

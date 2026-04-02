@@ -1,6 +1,8 @@
+import { randomUUID } from 'node:crypto';
+
 import type { EngineAdapter, BrainstormBid, BrainstormResult, ScoutBid } from '@agon/core';
 
-import { EngineRegistry, buildBrainstormPrompt, getElo, loadConfig } from '@agon/core';
+import { EngineRegistry, buildBrainstormPrompt, getElo, loadConfig, createSidechainLogger } from '@agon/core';
 
 import { buildKernDraftPrompt, parseKernDraft, buildKernRankPrompt } from 'kern-lang';
 
@@ -177,6 +179,14 @@ export function fallbackParse(output: string): KernDraft {
 }
 
 export async function runBrainstorm(opts: {question:string, context?:string, engines:string[], registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, signal?:AbortSignal}): Promise<BrainstormResult> {
+  const brainstormId = randomUUID().slice(0, 8);
+  const sidechain = createSidechainLogger({
+    sessionId: brainstormId,
+    sessionType: 'brainstorm',
+    outputDir: opts.outputDir,
+  });
+  sidechain.log('brainstorm:init', undefined, { question: opts.question, engines: opts.engines });
+  
   const ranked = await collectRankedDrafts({
     question: opts.question,
     context: opts.context,
@@ -198,28 +208,21 @@ export async function runBrainstorm(opts: {question:string, context?:string, eng
   const winner = ranked[0];
   
   const winnerEngine = opts.registry.get(winner.engineId);
+  
+  // Build synthesis prompt with ALL engines' drafts
+  const allDrafts = ranked.map((d) => {
+    const steps = d.draft.steps.map((s: string, j: number) => `  ${j + 1}. ${s}`).join('\n');
+    return `## ${d.engineId} (confidence: ${d.draft.confidence}%)\nApproach: ${d.draft.approach}${d.draft.reasoning ? `\nReasoning: ${d.draft.reasoning}` : ''}${d.draft.tradeoffs?.length ? `\nTradeoffs: ${d.draft.tradeoffs.join('; ')}` : ''}${steps ? `\nSteps:\n${steps}` : ''}`;
+  }).join('\n\n');
+  
   const expandPrompt = [
     opts.question,
     '',
-    'Your draft approach was:',
-    `"${winner.draft.approach}"`,
+    `Multiple AI engines analyzed this. Here are ALL their drafts — synthesize the best parts from each into one comprehensive answer:`,
     '',
-    'Now expand your full answer. Respond in this Kern format:',
+    allDrafts,
     '',
-    'response {',
-    '  summary: "1-2 sentence overview"',
-    '  sections {',
-    '    1: "section title" {',
-    '      content: "detailed explanation"',
-    '    }',
-    '  }',
-    '  steps {',
-    '    1: "actionable step"',
-    '    2: "actionable step"',
-    '  }',
-    '  conclusion: "final thought"',
-    '}',
-    '',
+    'Now write the best possible answer by combining the strongest ideas from ALL drafts above. Don\'t just pick one — take the best parts from each.',
     'Be specific and actionable. Include file paths where relevant.',
   ].join('\n');
   
@@ -231,6 +234,11 @@ export async function runBrainstorm(opts: {question:string, context?:string, eng
     timeout: opts.timeout,
     outputDir: opts.outputDir,
     signal: opts.signal,
+  });
+  
+  sidechain.log('brainstorm:done', winner.engineId, {
+    bids: bids.map((b: BrainstormBid) => ({ engineId: b.engineId, confidence: b.confidence })),
+    responseLength: answerResult.stdout.length,
   });
   
   return {

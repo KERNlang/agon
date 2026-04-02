@@ -1,7 +1,6 @@
 export function formatSpinnerFrame(frames: string[], index: number, text: string): string {
   const frame = frames[index % frames.length];
   return `  \x1b[38;5;214m${frame}\x1b[0m \x1b[2m${text}\x1b[0m`;
-  
 }
 
 export function formatEngineBlock(engineId: string, color: number, lines: string[], maxWidth: number): string[] {
@@ -21,7 +20,6 @@ export function formatEngineBlock(engineId: string, color: number, lines: string
   
   result.push(`  ${colorStart}\u2514\u2500\u2500${reset}`);
   return result;
-  
 }
 
 export function formatStatusLine(engineId: string, color: number, status: string, elapsed: number): string {
@@ -47,7 +45,6 @@ export function formatStatusLine(engineId: string, color: number, status: string
   }
   // queued / waiting / other
   return `  ${dim}\u25cb${reset} ${dim}${paddedId}${reset} ${dim}${status}${reset}`;
-  
 }
 
 export function clearLinesSequence(count: number): string {
@@ -56,17 +53,14 @@ export function clearLinesSequence(count: number): string {
     seq += '\x1b[1A\x1b[2K';
   }
   return seq;
-  
 }
 
 export function cursorUpSequence(count: number): string {
   if (count <= 0) return '';
   return `\x1b[${count}A`;
-  
 }
 
 export function clearLineSequence(): string {
   return '\r\x1b[2K';
-  
 }
 

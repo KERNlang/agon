@@ -1,5 +1,57 @@
 import from="./types.js" names="Critique" types=true
 
+interface name=PromptBlock
+  doc "A cacheable prompt block. Stable blocks (system instructions, constraints) are cached across turns; dynamic blocks (task, diff) are not."
+  field name=role type="'system'|'user'"
+  field name=content type=string
+  field name=cacheable type=boolean
+
+fn name=splitPromptBlocks params="prompt:string" returns="PromptBlock[]"
+  doc "Split a prompt into cacheable blocks by ## section headers. Sections like CONSTRAINTS and INSTRUCTIONS are stable and cacheable; TASK, DIFF, QUESTION are dynamic."
+  handler <<<
+    const STABLE_HEADERS = /^##\s*(CONSTRAINTS|INSTRUCTIONS|FITNESS TEST|REVIEW REQUEST)/i;
+    const sections = prompt.split(/(?=^## )/m);
+    const blocks: PromptBlock[] = [];
+
+    for (const section of sections) {
+      const trimmed = section.trim();
+      if (!trimmed) continue;
+      const isStable = STABLE_HEADERS.test(trimmed);
+      blocks.push({
+        role: isStable ? 'system' : 'user',
+        content: trimmed,
+        cacheable: isStable,
+      });
+    }
+
+    // If no sections found, return whole prompt as a single user block
+    if (blocks.length === 0) {
+      blocks.push({ role: 'user', content: prompt, cacheable: false });
+    }
+
+    return blocks;
+  >>>
+
+fn name=mergeBlocksByRole params="blocks:PromptBlock[]" returns="{system:string, user:string}"
+  doc "Merge prompt blocks into system (cacheable) and user (dynamic) strings for APIs that support system/user message separation."
+  handler <<<
+    const systemParts: string[] = [];
+    const userParts: string[] = [];
+
+    for (const block of blocks) {
+      if (block.role === 'system') {
+        systemParts.push(block.content);
+      } else {
+        userParts.push(block.content);
+      }
+    }
+
+    return {
+      system: systemParts.join('\n\n'),
+      user: userParts.join('\n\n'),
+    };
+  >>>
+
 fn name=buildForgePrompt params="opts:{task:string;fitnessCmd:string;context?:string;agentMode?:boolean}" returns=string
   handler <<<
     const sections = [

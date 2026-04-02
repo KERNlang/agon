@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 import { defineCommand, runMain } from 'citty';
 import { forgeCommand } from './commands/forge.js';
 import { brainstormCommand } from './commands/brainstorm.js';

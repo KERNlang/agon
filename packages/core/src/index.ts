@@ -63,3 +63,12 @@ export { logFlow, readFlows, analyzeFlows, FLOWS_DIR, FRICTION_TAGS } from './fl
 export type { FlowRecord, FlowTelemetry, FlowFeedback, FlowModeMeta, FlowAnalysis, ModeStats } from './flow.js';
 export { apiDispatch, apiStreamDispatch } from './api-dispatch.js';
 export type { ApiConfig } from './api-dispatch.js';
+export { companionDispatch } from './companion-dispatch.js';
+export type { CompanionResult } from './companion-dispatch.js';
+export { createSidechainLogger } from './sidechain-logger.js';
+export type { SidechainEvent, SidechainLogger } from './sidechain-logger.js';
+export { sessionContext } from './session-context.js';
+export {
+  splitPromptBlocks, mergeBlocksByRole,
+} from './prompt-builder.js';
+export type { PromptBlock } from './prompt-builder.js';

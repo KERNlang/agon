@@ -33,6 +33,5 @@ export function createLogger(opts: {enabled:boolean;logDir:string}): Logger {
     warn: (msg, data) => write('WARN', msg, data),
     error: (msg, data) => write('ERROR', msg, data),
   };
-  
 }
 

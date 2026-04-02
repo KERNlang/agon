@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 
 import { join, dirname } from 'node:path';
 
@@ -23,13 +23,7 @@ export const LOCAL_CONFIG_NAME: string = '.agon.json';
 export function loadConfig(cwd?: string): Required<AgonConfig> {
   function readJsonSafe<T>(path: string): T | null {
     try { return JSON.parse(readFileSync(path, 'utf-8')) as T; }
-    catch (err) {
-      // Distinguish file-not-found (normal) from corruption (warning)
-      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-        console.warn(`[agon] warning: failed to parse config ${path}: ${err instanceof Error ? err.message : String(err)}`);
-      }
-      return null;
-    }
+    catch { return null; }
   }
   const global = readJsonSafe<Partial<AgonConfig>>(GLOBAL_CONFIG_PATH) ?? {};
   const local = cwd
@@ -48,19 +42,12 @@ export function configSet(key: keyof AgonConfig, value: AgonConfig[keyof AgonCon
   }
   function readJsonSafe<T>(path: string): T | null {
     try { return JSON.parse(readFileSync(path, 'utf-8')) as T; }
-    catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-        console.warn(`[agon] warning: failed to parse config ${path}: ${err instanceof Error ? err.message : String(err)}`);
-      }
-      return null;
-    }
+    catch { return null; }
   }
   const existing = readJsonSafe<Partial<AgonConfig>>(GLOBAL_CONFIG_PATH) ?? {};
   (existing as any)[key] = value;
   mkdirSync(dirname(GLOBAL_CONFIG_PATH), { recursive: true });
-  const tmpPath = GLOBAL_CONFIG_PATH + '.tmp';
-  writeFileSync(tmpPath, JSON.stringify(existing, null, 2) + '\n');
-  renameSync(tmpPath, GLOBAL_CONFIG_PATH);
+  writeFileSync(GLOBAL_CONFIG_PATH, JSON.stringify(existing, null, 2) + '\n');
 }
 
 export function ensureAgonHome(): void {

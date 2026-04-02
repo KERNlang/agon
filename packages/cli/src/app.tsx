@@ -135,104 +135,29 @@ function DashboardView({ event }: { event: OutputEvent & { type: 'dashboard' } }
       <Text> </Text>
       <Text italic color="#d4a041">{'     Any AI can join. They compete. You ship.'}</Text>
       <Text dimColor>{'     v'}{VERSION}{'  Powered by '}<Text bold color="#fbbf24">{'KERNlang'}</Text></Text>
-
-      {/* Accent bar */}
-      <Text> </Text>
-      <GradientLine text={'  ' + '━'.repeat(50)} colors={BRAND} />
       <Text> </Text>
 
-      {/* Engine roster */}
+      {/* Compact engine roster + ELO */}
       <Box>
-        <Text color="#f97316">{' ⚔  '}</Text>
-        <Text bold color="white">{event.available.length}{' engines'}</Text>
-        <Text dimColor>{' ready to compete   '}</Text>
-        {event.available.map((id) => (
+        <Text color="#f97316">{'  \u2694 '}</Text>
+        {event.enabled.map((id, i) => (
           <Text key={id}>
-            <Text color={engineColor(id)} bold={event.enabled.includes(id)} dimColor={!event.enabled.includes(id)}>
-              {id}
-            </Text>
-            <Text>{'  '}</Text>
+            <Text color={engineColor(id)} bold>{id}</Text>
+            {i < event.enabled.length - 1 && <Text dimColor>{' '}</Text>}
           </Text>
         ))}
+        {event.eloTop && (
+          <>
+            <Text dimColor>{' \u00b7 '}</Text>
+            <Text color="#fbbf24">{'\u265b '}</Text>
+            <Text bold color={engineColor(event.eloTop.id)}>{event.eloTop.id}</Text>
+            <Text dimColor>{' '}{String(event.eloTop.rating)}{' ELO'}</Text>
+          </>
+        )}
       </Box>
 
-      {/* Default chat */}
-      <Box>
-        <Text color="#22d3ee">{' 🧠 '}</Text>
-        <Text>{'Chat default: '}</Text>
-        <Text bold color={engineColor(event.defaultEngine)}>{event.defaultEngine}</Text>
-        <Text dimColor>{'  (change with /use)'}</Text>
-      </Box>
-
-      {/* ELO */}
-      {event.eloTop ? (
-        <Box>
-          <Text color="#fbbf24">{' ♛  '}</Text>
-          <Text bold color={engineColor(event.eloTop.id)}>{event.eloTop.id}</Text>
-          <Text>{' leads with '}<Text bold color="#fbbf24">{String(event.eloTop.rating)}</Text>{' ELO'}</Text>
-          <Text dimColor>{'  ('}{event.totalForges}{' forges run)'}</Text>
-        </Box>
-      ) : (
-        <Box>
-          <Text color="#a78bfa">{' ◆  '}</Text>
-          <Text dimColor>{'No forges yet — run one to see engines battle'}</Text>
-        </Box>
-      )}
-
-      {/* Workspace */}
-      {event.workspace && (
-        <Box>
-          <Text dimColor>{' 📂 '}</Text>
-          <Text bold>{event.workspace.name}</Text>
-          {event.workspace.isKern && <Text color="#fbbf24">{' kern'}</Text>}
-          <Text dimColor>{'  '}{event.workspace.path}</Text>
-        </Box>
-      )}
-
-      {/* Run count */}
-      {event.runCount > 0 && (
-        <Box>
-          <Text dimColor>{' 📋 '}{event.runCount}{' runs in history — type "history" to browse'}</Text>
-        </Box>
-      )}
-
-      <Text> </Text>
-
-      {/* Quick start */}
-      <Text bold color="white">{'  JUST TALK'}<Text dimColor>{' — or say an engine name to pick who answers'}</Text></Text>
-      <GradientLine text={'  ' + '─'.repeat(50)} colors={BRAND} />
-      <Box>
-        <Text dimColor>{'  💬 '}</Text>
-        <Text italic dimColor>{'"what do you think about the auth flow?"'}</Text>
-        <Text dimColor>{'       '}</Text>
-        <Text color="#fbbf24">{'→ chat'}</Text>
-      </Box>
-      <Box>
-        <Text dimColor>{'  💬 '}</Text>
-        <Text italic dimColor>{'"codex how would you approach this?"'}</Text>
-        <Text dimColor>{'           '}</Text>
-        <Text color="#22d3ee">{'→ codex'}</Text>
-      </Box>
-      <Box>
-        <Text color="#f97316">{'  ⚔  '}</Text>
-        <Text italic dimColor>{'"fix the login bug, test with npm test"'}</Text>
-        <Text dimColor>{'        '}</Text>
-        <Text color="#f97316">{'→ forge'}</Text>
-      </Box>
-      <Box>
-        <Text color="#a78bfa">{'  ⚖  '}</Text>
-        <Text italic dimColor>{'"should we use REST or GraphQL?"'}</Text>
-        <Text dimColor>{'                '}</Text>
-        <Text color="#a78bfa">{'→ tribunal'}</Text>
-      </Box>
-      <Box>
-        <Text color="#22d3ee">{'  💡 '}</Text>
-        <Text italic dimColor>{'"best approach for caching?"'}</Text>
-        <Text dimColor>{'                   '}</Text>
-        <Text color="#22d3ee">{'→ brainstorm'}</Text>
-      </Box>
-      <Text> </Text>
-      <Text dimColor>{'  '}<Text color="#f97316">{'/'}</Text>{' for commands    '}<Text color="#f97316">{'/clear'}</Text>{' to reset chat    '}<Text color="#ef4444">{'exit'}</Text>{' to quit'}</Text>
+      {/* Hint */}
+      <Text dimColor>{'  Just talk, or type '}<Text color="#f97316">{'/'}</Text>{' for commands.'}</Text>
       <Text> </Text>
     </Box>
   );
@@ -481,7 +406,70 @@ function EngineBlock({ engineId, color, content }: { engineId: string; color: nu
   );
 }
 
-function OutputBlockView({ event }: { event: OutputEvent }) {
+// ── Conversational Mode Components ──────────────────────────────────
+
+function ConversationalResponse({ engineId, content }: { engineId: string; content: string }) {
+  const wrapWidth = contentWidth(6);
+  const cleaned = cleanEngineOutput(content);
+  if (!cleaned.trim()) return null;
+  const segments = parseMarkdownBlocks(cleaned);
+  const accentColor = color256toHex(ENGINE_COLORS[engineId] ?? 245);
+  return (
+    <Box flexDirection="column" marginY={1} paddingLeft={2}>
+      <RenderedSegments segments={segments} borderColor={accentColor} wrapWidth={wrapWidth} />
+    </Box>
+  );
+}
+
+const AGON_TIPS = [
+  'Run /forge <task> test with <cmd> to make engines compete on code',
+  'Run /brainstorm to get confidence bids from all engines',
+  'Run /tribunal to start a multi-AI debate',
+  'Run /use <engine> to change your default chat engine',
+  'Run /models to pick which engines are active',
+  'Run /campfire for collaborative multi-engine thinking',
+  'Run /leaderboard to see engine ELO ratings',
+  'Run /history to browse past forge runs',
+  'Run /tokens to see session cost breakdown',
+  'Type an engine name first (e.g. "codex explain...") to pick who answers',
+  'Run /pipeline for scout, build, forge in one shot',
+  'Run /discover to find new AI CLIs on your system',
+  'Drag and drop an image path to include it in your prompt',
+  'Run /apply <patch> to apply a forge winner\'s diff',
+];
+
+function AgonTip() {
+  const [tip] = useState(() => AGON_TIPS[Math.floor(Math.random() * AGON_TIPS.length)]);
+  return (
+    <Text>
+      <Text dimColor>{'  \u2514 Tip: '}</Text>
+      <Text dimColor>{tip}</Text>
+    </Text>
+  );
+}
+
+function StatusLine({ startTime }: { startTime: number }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
+  const elapsed = Math.floor((now - startTime) / 1000);
+  const mins = Math.floor(elapsed / 60);
+  const secs = elapsed % 60;
+  const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+  return (
+    <Box flexDirection="column" paddingLeft={2}>
+      <Text>
+        <Text color="#f97316"><Spinner type="dots" /></Text>
+        <Text color="#f97316">{' Thinking\u2026'}</Text>
+        <Text dimColor>{` (${timeStr})`}</Text>
+      </Text>
+      {elapsed >= 5 && <AgonTip />}
+    </Box>
+  );
+}
+
+// ── Output Block Rendering ──────────────────────────────────────────
+
+function OutputBlockView({ event, mode }: { event: OutputEvent; mode: string }) {
   switch (event.type) {
     case 'text': {
       const wrapWidth = contentWidth(4);
@@ -492,8 +480,22 @@ function OutputBlockView({ event }: { event: OutputEvent }) {
         </Box>
       );
     }
-    case 'engine-block': return <EngineBlock engineId={event.engineId} color={event.color} content={event.content} />;
-    case 'separator': return <Text dimColor>{'  ─'.padEnd(50, '─')}</Text>;
+    case 'user-message': return mode === 'chat' ? (
+      <Box paddingLeft={2} marginTop={1}>
+        <Text bold>{event.content}</Text>
+      </Box>
+    ) : (
+      <Box paddingLeft={2} marginTop={1}>
+        <Text dimColor>{'you'}</Text>
+        <Text>{' '}{event.content}</Text>
+      </Box>
+    );
+    case 'engine-block': return mode === 'chat'
+      ? <ConversationalResponse engineId={event.engineId} content={event.content} />
+      : <EngineBlock engineId={event.engineId} color={event.color} content={event.content} />;
+    case 'separator': return mode === 'chat'
+      ? <Text>{' '}</Text>
+      : <Text dimColor>{'  ─'.padEnd(50, '─')}</Text>;
     case 'header': return <Box flexDirection="column"><Text>{' '}</Text><Text bold color="cyan">{'  ▸ '}{event.title}</Text></Box>;
     case 'success': return <Text>{'  '}<Text color="green">{'✓'}</Text>{' '}{event.message}</Text>;
     case 'error': return <Text>{'  '}<Text color="red">{'✗'}</Text>{' '}{event.message}</Text>;
@@ -578,6 +580,14 @@ function OutputBlockView({ event }: { event: OutputEvent }) {
         ))}
       </Box>
     );
+    case 'response-meta': {
+      const secs = (event.elapsed / 1000).toFixed(1);
+      return (
+        <Box paddingLeft={2}>
+          <Text dimColor>{event.engineId} · {secs}s</Text>
+        </Box>
+      );
+    }
     case 'dashboard': return <DashboardView event={event as OutputEvent & { type: 'dashboard' }} />;
     default: return null;
   }
@@ -832,6 +842,7 @@ function App() {
   const [jobManager] = useState(() => new JobManager());
   const [jobList, setJobList] = useState<Job[]>([]);
   const [lastUndoToken, setLastUndoToken] = useState<string | null>(null);
+  const chatStartTimeRef = useRef<number>(0);
 
   // Module-level state (mutable refs via closures)
   // Load persisted engine selection from config — null means "all available"
@@ -952,6 +963,7 @@ function App() {
   const dispatch = useCallback((event: OutputEvent) => {
     switch (event.type) {
       case 'spinner-start':
+        chatStartTimeRef.current = Date.now();
         setLiveSpinner({ message: event.message, color: event.color });
         break;
       case 'spinner-stop':
@@ -987,10 +999,20 @@ function App() {
             const cleaned = cleanEngineOutput(prev.content);
             const segments = parseMarkdownBlocks(cleaned);
             codeBlockBuffer.recordFromSegments(segments);
-            setOutputBlocks((blocks) => [...blocks, {
-              id: Date.now(),
-              event: { type: 'engine-block', engineId: prev.engineId, color, content: prev.content },
-            }]);
+            setOutputBlocks((blocks) => {
+              const updated = [...blocks, {
+                id: Date.now(),
+                event: { type: 'engine-block' as const, engineId: prev.engineId, color, content: prev.content },
+              }];
+              // In chat mode, append response-meta with timing info
+              if (mode === 'chat' && chatStartTimeRef.current > 0) {
+                updated.push({
+                  id: Date.now() + 1,
+                  event: { type: 'response-meta' as const, engineId: prev.engineId, elapsed: Date.now() - chatStartTimeRef.current },
+                });
+              }
+              return updated;
+            });
           }
           return null;
         });
@@ -1025,7 +1047,17 @@ function App() {
             return null;
           });
         }
-        setOutputBlocks((prev) => [...prev, { id: Date.now() + Math.random(), event }]);
+        setOutputBlocks((prev) => {
+          const updated = [...prev, { id: Date.now() + Math.random(), event }];
+          // In chat mode, append response-meta after engine-block events
+          if (mode === 'chat' && event.type === 'engine-block' && chatStartTimeRef.current > 0) {
+            updated.push({
+              id: Date.now() + 0.5,
+              event: { type: 'response-meta' as const, engineId: event.engineId, elapsed: Date.now() - chatStartTimeRef.current },
+            });
+          }
+          return updated;
+        });
     }
   }, []);
 
@@ -1081,6 +1113,7 @@ function App() {
 
     setReplState('busy');
     dispatch({ type: 'separator' });
+    dispatch({ type: 'user-message', content: input });
 
     // Extract images from input (drag-and-drop paths, inline paths)
     const { text: cleanInput, images: detectedImages } = extractImagesFromInput(input, process.cwd());
@@ -1277,6 +1310,39 @@ function App() {
         case 'clear': dispatch({ type: 'clear' }); codeBlockBuffer.clear(); dispatch({ type: 'info', message: 'Chat history cleared.' }); break;
         case 'help': dispatch({ type: 'text', content: SLASH_COMMANDS.map((c) => `${c.cmd.padEnd(16)} ${c.desc}`).join('\n') }); break;
         case 'exit': exit(); return;
+        case 'suggest-brainstorm' as string: {
+          // Conversational trigger — ask before escalating
+          const answer = await askQuestion('Brainstorm with all engines? (y/n)');
+          if (answer.toLowerCase().startsWith('y')) {
+            runAsJob('brainstorm', intent.question?.slice(0, 40) ?? 'brainstorm', () =>
+              handleBrainstorm(intent.question ?? intent.input, dispatch, ctx));
+            return;
+          }
+          // User said no — send to regular chat
+          await handleChat(intent.input, dispatch, ctx, allImages);
+          break;
+        }
+        case 'suggest-tribunal' as string: {
+          const answer = await askQuestion('Debate with all engines? (y/n)');
+          if (answer.toLowerCase().startsWith('y')) {
+            runAsJob('tribunal', intent.question?.slice(0, 40) ?? 'tribunal', () =>
+              handleTribunal(intent.question ?? intent.input, dispatch, ctx));
+            return;
+          }
+          await handleChat(intent.input, dispatch, ctx, allImages);
+          break;
+        }
+        case 'suggest-forge' as string: {
+          const answer = await askQuestion('Forge — engines compete to build? (y/n)');
+          if (answer.toLowerCase().startsWith('y')) {
+            runAsJob('forge', intent.task?.slice(0, 40) ?? 'forge', async () => {
+              await handleForge(intent.task ?? intent.input, intent.fitnessCmd, dispatch, ctx);
+            });
+            return;
+          }
+          await handleChat(intent.input, dispatch, ctx, allImages);
+          break;
+        }
         case 'auto': {
           // ── Auto-router: Claude Code-like experience ──
           // Progressive dispatch: question→chat(no tools), code+single→build,
@@ -1470,22 +1536,24 @@ function App() {
 
   return (
     <Box flexDirection="column">
-      {/* Breadcrumb bar */}
-      <Box paddingX={1}>
-        <Text dimColor>{'📂 '}{process.cwd().split('/').pop()}</Text>
-        <Text dimColor>{' │ '}</Text>
-        <Text color={mode === 'chat' ? '#fbbf24' : mode === 'campfire' ? '#f97316' : mode === 'brainstorm' ? '#22d3ee' : '#a78bfa'}>
-          {mode}
-        </Text>
-        <Text dimColor>{' │ '}</Text>
-        <Text dimColor>{registry.availableIds().length}{' engines'}</Text>
-        {replState !== 'idle' && (
-          <>
-            <Text dimColor>{' │ '}</Text>
-            <Text color="yellow">{replState}</Text>
-          </>
-        )}
-      </Box>
+      {/* Breadcrumb bar — hidden in conversational chat mode */}
+      {mode !== 'chat' && (
+        <Box paddingX={1}>
+          <Text dimColor>{'\ud83d\udcc2 '}{process.cwd().split('/').pop()}</Text>
+          <Text dimColor>{' \u2502 '}</Text>
+          <Text color={mode === 'campfire' ? '#f97316' : mode === 'brainstorm' ? '#22d3ee' : '#a78bfa'}>
+            {mode}
+          </Text>
+          <Text dimColor>{' \u2502 '}</Text>
+          <Text dimColor>{registry.availableIds().length}{' engines'}</Text>
+          {replState !== 'idle' && (
+            <>
+              <Text dimColor>{' \u2502 '}</Text>
+              <Text color="yellow">{replState}</Text>
+            </>
+          )}
+        </Box>
+      )}
 
       {/* Background job rail */}
       <BackgroundJobRail jobs={jobList.filter((j: Job) => j.state === 'running')} />
@@ -1493,12 +1561,25 @@ function App() {
       {/* Output area — scrollable */}
       <Box flexDirection="column" flexGrow={1}>
         {outputBlocks.map((block) => (
-          <OutputBlockView key={block.id} event={block.event} />
+          <OutputBlockView key={block.id} event={block.event} mode={mode} />
         ))}
-        {liveSpinner && <SpinnerBlock message={liveSpinner.message} color={liveSpinner.color} />}
+        {liveSpinner && (
+          mode === 'chat'
+            ? <StatusLine startTime={chatStartTimeRef.current || Date.now()} />
+            : <SpinnerBlock message={liveSpinner.message} color={liveSpinner.color} />
+        )}
         {streamingText && (() => {
           const c = engineColor(streamingText.engineId);
           const cleaned = cleanEngineOutput(streamingText.content);
+          if (mode === 'chat') {
+            const wrapWidth = contentWidth(6);
+            const segments = parseMarkdownBlocks(cleaned);
+            return (
+              <Box flexDirection="column" marginY={1} paddingLeft={2}>
+                <RenderedSegments segments={segments} borderColor={c} wrapWidth={wrapWidth} />
+              </Box>
+            );
+          }
           const wrapWidth = contentWidth(8);
           const segments = parseMarkdownBlocks(cleaned);
           return (
@@ -1539,7 +1620,7 @@ function App() {
 
       {/* Input area — persistent at bottom */}
       {!enginePickerOpen && (
-        <Box flexDirection="column" borderStyle="single" borderColor="gray" paddingX={1}>
+        <Box flexDirection="column" borderStyle={mode === 'chat' ? undefined : 'single'} borderColor={mode === 'chat' ? undefined : 'gray'} paddingX={1}>
           {slashPickerOpen && (
             <SlashPicker
               commands={SLASH_COMMANDS}
@@ -1571,14 +1652,14 @@ function App() {
                   <Text dimColor>{' │ '}</Text>
                 </Text>
               )}
-              <Text color="#fbbf24">{'❯ '}</Text>
+              <Text color={mode === 'chat' ? undefined : '#fbbf24'}>{mode === 'chat' ? '> ' : '❯ '}</Text>
               <TextInput
                 key={inputKey}
                 value={inputValue}
                 onChange={handleInputChange}
                 onSubmit={handleSubmit}
                 placeholder={replState === 'idle'
-                  ? mode === 'chat' ? 'What should we build?'
+                  ? mode === 'chat' ? ''
                   : mode === 'campfire' ? 'What should we think about?'
                   : mode === 'brainstorm' ? 'What question for the engines?'
                   : 'What should they debate?'

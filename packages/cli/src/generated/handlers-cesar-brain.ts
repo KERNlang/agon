@@ -4,7 +4,7 @@ import { mkdirSync } from 'node:fs';
 
 import type { EngineAdapter, ImageAttachment } from '@agon/core';
 
-import { EngineRegistry, loadConfig, ensureAgonHome, RUNS_DIR, appendMessage, tracker, scanProjectContext } from '@agon/core';
+import { EngineRegistry, loadConfig, ensureAgonHome, RUNS_DIR, appendMessage, tracker, scanProjectContext, StreamParser } from '@agon/core';
 
 import { ENGINE_COLORS } from '../output.js';
 
@@ -99,39 +99,66 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           outputDir, signal: abort.signal, images: images ?? [],
         });
   
+        const parser = new StreamParser();
+  
         while (true) {
           const { value, done } = await gen.next();
           if (done) break;
           if (abort.signal.aborted) break;
-          if (value.startsWith('\x00')) continue;
   
-          if (!streaming) {
-            // Check first chunk for delegation marker
-            response += value;
-            const { action } = parseDelegation(response);
-            if (action) {
-              // Delegation detected — stop streaming, return to REPL for dispatch
-              dispatch({ type: 'spinner-stop' });
-              const { rest } = parseDelegation(response);
+          // stderr chunks (status updates)
+          if (value.startsWith('\x00')) {
+            const status = value.slice(1).trim();
+            if (status) dispatch({ type: 'spinner-update', message: `Cesar ${status}` });
+            continue;
+          }
   
-              // Record in chat history
-              appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
-              appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
-              tracker.record(cesarEngineId, input, response);
-  
-              if (rest) {
-                dispatch({ type: 'info', message: `Cesar: ${rest}` });
-              }
-  
-              return { delegated: true, action, reasoning: rest };
+          // Parse stream (handles JSONL from claude --output-format stream-json)
+          for (const parsed of parser.feed(value)) {
+            if (parsed.type === 'status') {
+              dispatch({ type: 'spinner-update', message: `Cesar ${parsed.content}` });
+              continue;
             }
-            // No delegation — start streaming to user
-            dispatch({ type: 'spinner-stop' });
-            streaming = true;
-            dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: response });
-          } else {
-            response += value;
-            dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: value });
+            if (parsed.type === 'result' && !streaming) {
+              response = parsed.content;
+              continue;
+            }
+            if (parsed.type === 'text' || parsed.type === 'raw') {
+              if (!streaming) {
+                // Check first text for delegation marker
+                response += parsed.content;
+                const { action } = parseDelegation(response);
+                if (action) {
+                  dispatch({ type: 'spinner-stop' });
+                  const { rest } = parseDelegation(response);
+                  appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
+                  appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
+                  tracker.record(cesarEngineId, input, response);
+                  if (rest) dispatch({ type: 'info', message: `Cesar: ${rest}` });
+                  return { delegated: true, action, reasoning: rest };
+                }
+                dispatch({ type: 'spinner-stop' });
+                streaming = true;
+                dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: response });
+              } else {
+                response += parsed.content;
+                dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: parsed.content });
+              }
+            }
+          }
+        }
+  
+        // Flush remaining buffered data
+        for (const parsed of parser.flush()) {
+          if (parsed.type === 'text' || parsed.type === 'raw') {
+            if (!streaming) {
+              dispatch({ type: 'spinner-stop' });
+              streaming = true;
+            }
+            dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: parsed.content });
+            response += parsed.content;
+          } else if (parsed.type === 'result' && !streaming) {
+            response = parsed.content;
           }
         }
       } else {

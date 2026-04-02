@@ -1,6 +1,6 @@
 import from="node:path" names="join"
 import from="@agon/core" names="EngineAdapter,EngineResult,ForgeOptions,AgonConfig" types=true
-import from="@agon/core" names="EngineRegistry,worktreeCreate,worktreeRemove,headSha,repoRoot"
+import from="@agon/core" names="EngineRegistry,worktreeCreate,worktreeRemove,headSha,repoRoot,worktreeDiff"
 import from="./fitness.js" names="runFitness"
 import from="../types.js" names="StageResult,ForgeEventCallback,WorktreeEntry" types=true
 

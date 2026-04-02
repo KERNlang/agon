@@ -1,5 +1,6 @@
+import from="node:crypto" names="randomUUID"
 import from="@agon/core" names="EngineAdapter,EngineDefinition,ForgeEvent" types=true
-import from="@agon/core" names="EngineRegistry,buildTribunalPrompt"
+import from="@agon/core" names="EngineRegistry,buildTribunalPrompt,createSidechainLogger"
 import from="./tribunal-modes.js" names="TribunalMode,TribunalModeConfig" types=true
 import from="./tribunal-modes.js" names="getModeConfig,buildModePrompt,buildModeSummaryPrompt"
 
@@ -46,6 +47,15 @@ fn name=runTribunal async=true params="opts:{question:string, engines:string[], 
     }));
 
     const effectiveRounds = Math.min(rounds, modeConfig.maxRounds);
+
+    // Sidechain audit trail
+    const tribunalId = randomUUID().slice(0, 8);
+    const sidechain = createSidechainLogger({
+      sessionId: tribunalId,
+      sessionType: 'tribunal',
+      outputDir,
+    });
+    sidechain.log('tribunal:init', undefined, { question, mode, engines, rounds: effectiveRounds });
     const allRounds: TribunalRound[] = [];
 
     for (let round = 1; round <= effectiveRounds; round++) {
@@ -108,6 +118,7 @@ fn name=runTribunal async=true params="opts:{question:string, engines:string[], 
       for (const result of roundResults) {
         const pos = positions.find((p) => p.engineId === result.engineId);
         if (pos) pos.arguments.push(result.argument);
+        sidechain.log('round:response', result.engineId, { round, argLength: result.argument.length });
       }
 
       allRounds.push({
@@ -138,6 +149,13 @@ fn name=runTribunal async=true params="opts:{question:string, engines:string[], 
       console.warn(`[agon] tribunal summary failed: ${err instanceof Error ? err.message : String(err)}`);
       summary = buildFallbackSummary(positions);
     }
+
+    sidechain.log('tribunal:done', undefined, {
+      rounds: allRounds.length,
+      engines: engines.length,
+      mode,
+      summaryLength: summary.length,
+    });
 
     opts.onEvent?.({
       type: 'forge:done',

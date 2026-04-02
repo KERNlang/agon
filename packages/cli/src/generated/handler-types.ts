@@ -35,6 +35,8 @@ export type OutputEvent =
   | { type: 'verdict'; summary: string }
   | { type: 'question'; prompt: string; resolve: (answer: string) => void }
   | { type: 'patch-review'; winnerId: string; patchPath: string; patchContent: string }
+  | { type: 'user-message'; content: string }
+  | { type: 'response-meta'; engineId: string; elapsed: number }
   | { type: 'dashboard'; available: string[]; enabled: string[]; defaultEngine: string; eloTop?: { id: string; rating: number }; totalForges: number; workspace?: { name: string; path: string; isKern?: boolean }; runCount: number };
 
 export interface HandlerContext {

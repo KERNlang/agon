@@ -4,7 +4,7 @@ import { mkdirSync } from 'node:fs';
 
 import type { ForgeOptions, ForgeManifest, EngineAdapter, ForgeEvent, AgonConfig } from '@agon/core';
 
-import { EngineRegistry, loadConfig, buildForgePrompt, repoRoot, headSha, worktreeRemove, updateElo, classifyTask } from '@agon/core';
+import { EngineRegistry, loadConfig, buildForgePrompt, repoRoot, headSha, worktreeRemove, updateElo, classifyTask, createSidechainLogger } from '@agon/core';
 
 import { runBaseline, runStage1, runStage2, determineWinner } from './stages.js';
 
@@ -21,6 +21,14 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
   const worktrees: WorktreeEntry[] = [];
   
   mkdirSync(forgeDir, { recursive: true });
+  
+  // Sidechain audit trail — every forge event logged as JSONL
+  const sidechain = createSidechainLogger({
+    sessionId: forgeId,
+    sessionType: 'forge',
+    outputDir: forgeDir,
+  });
+  sidechain.log('forge:init', undefined, { task: options.task, fitnessCmd: options.fitnessCmd });
   
   const root = repoRoot(options.cwd);
   const sha = headSha(options.cwd);
@@ -114,6 +122,7 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
       manifest.stage1Accepted = true;
       manifest.winner = starter;
       writeManifest(manifest);
+      sidechain.log('stage1:accepted', starter, { score: stage1.engineResults.get(starter)?.score });
       onEvent?.({ type: 'forge:done', engineId: starter, data: { stage1Accepted: true, score: stage1.engineResults.get(starter)?.score } });
       return manifest;
     }
@@ -147,6 +156,7 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
       manifest.winner = winner;
       manifest.closeCall = closeCall;
   
+      sidechain.log('winner:determined', winner ?? undefined, { closeCall, bestScore, secondScore });
       onEvent?.({
         type: 'winner:determined',
         engineId: winner ?? undefined,
@@ -208,6 +218,12 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
     }
   
     writeManifest(manifest);
+    sidechain.log('forge:done', manifest.winner ?? undefined, {
+      enginesDispatched: manifest.enginesDispatched,
+      results: Object.fromEntries(
+        Object.entries(manifest.results).map(([id, r]) => [id, { pass: (r as any).pass, score: (r as any).score }]),
+      ),
+    });
     onEvent?.({ type: 'forge:done', data: { winner: manifest.winner } });
   
     return manifest;

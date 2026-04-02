@@ -1,7 +1,7 @@
 import from="node:fs" names="writeFileSync,mkdirSync"
 import from="node:path" names="join,dirname"
 import from="@agon/core" names="EngineAdapter,EngineDefinition,DispatchOptions,DispatchResult,AgentDispatchResult" types=true
-import from="@agon/core" names="EngineRegistry,spawnWithTimeout,spawnStream,EngineNotFoundError,readOnlyDiff,diffLineCount,apiDispatch,apiStreamDispatch"
+import from="@agon/core" names="EngineRegistry,spawnWithTimeout,spawnStream,EngineNotFoundError,readOnlyDiff,diffLineCount,apiDispatch,apiStreamDispatch,companionDispatch"
 import from="./adapter-helpers.js" names="buildCommand,checkEnvVars"
 
 service name=CliAdapter implements=EngineAdapter
@@ -31,6 +31,26 @@ service name=CliAdapter implements=EngineAdapter
       const envError = checkEnvVars(options.engine);
       if (envError) {
         throw new EngineNotFoundError(options.engine.id, envError);
+      }
+
+      // Try companion protocol (JSONRPC app-server) first — faster, more stable
+      if (options.engine.companion) {
+        const companionResult = await companionDispatch({
+          config: options.engine.companion,
+          binaryPath,
+          prompt: options.prompt,
+          cwd: options.cwd,
+          timeout: options.timeout,
+          mode: options.mode === 'agent' ? 'agent' : options.mode === 'review' ? 'review' : 'exec',
+          signal: options.signal,
+        });
+        // Exit code 2 = companion not available, fall through to CLI spawn
+        if (companionResult.exitCode !== 2) {
+          const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
+          mkdirSync(dirname(outputPath), { recursive: true });
+          writeFileSync(outputPath, companionResult.stdout);
+          return companionResult;
+        }
       }
 
       const { command, args } = buildCommand(
@@ -115,13 +135,47 @@ service name=CliAdapter implements=EngineAdapter
         throw new EngineNotFoundError(options.engine.id, envError);
       }
 
+      // Capture baseline diff before agent runs to exclude pre-existing changes
+      const baselineDiff = readOnlyDiff(options.cwd);
+
+      // Try companion protocol first
+      if (options.engine.companion) {
+        const companionResult = await companionDispatch({
+          config: options.engine.companion,
+          binaryPath,
+          prompt: options.prompt,
+          cwd: options.cwd,
+          timeout: options.timeout,
+          mode: 'agent',
+          signal: options.signal,
+        });
+        if (companionResult.exitCode !== 2) {
+          const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
+          mkdirSync(dirname(outputPath), { recursive: true });
+          writeFileSync(outputPath, companionResult.stdout);
+
+          const postDiff = readOnlyDiff(options.cwd);
+          const baselineFiles = new Set(baselineDiff.split('\n').filter((l: string) => l.startsWith('diff --git')));
+          const postLines = postDiff.split('\n');
+          const newDiffLines: string[] = [];
+          let inNewFile = false;
+          for (const line of postLines) {
+            if (line.startsWith('diff --git')) {
+              inNewFile = !baselineFiles.has(line);
+            }
+            if (inNewFile) newDiffLines.push(line);
+          }
+          const diff = newDiffLines.join('\n');
+          const lines = diffLineCount(diff);
+          const files = diff ? newDiffLines.filter((l: string) => l.startsWith('diff --git')).length : 0;
+          return { ...companionResult, diff, diffLines: lines, filesChanged: files };
+        }
+      }
+
       const { command, args } = buildCommand(
         options.engine, options.mode, options.prompt,
         options.cwd, options.timeout, binaryPath, options.images,
       );
-
-      // Capture baseline diff before agent runs to exclude pre-existing changes
-      const baselineDiff = readOnlyDiff(options.cwd);
 
       const result = await spawnWithTimeout({
         command, args,

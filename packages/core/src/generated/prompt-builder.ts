@@ -1,5 +1,53 @@
 import type { Critique } from './types.js';
 
+export interface PromptBlock {
+  role: 'system'|'user';
+  content: string;
+  cacheable: boolean;
+}
+
+export function splitPromptBlocks(prompt: string): PromptBlock[] {
+  const STABLE_HEADERS = /^##\s*(CONSTRAINTS|INSTRUCTIONS|FITNESS TEST|REVIEW REQUEST)/i;
+  const sections = prompt.split(/(?=^## )/m);
+  const blocks: PromptBlock[] = [];
+  
+  for (const section of sections) {
+    const trimmed = section.trim();
+    if (!trimmed) continue;
+    const isStable = STABLE_HEADERS.test(trimmed);
+    blocks.push({
+      role: isStable ? 'system' : 'user',
+      content: trimmed,
+      cacheable: isStable,
+    });
+  }
+  
+  // If no sections found, return whole prompt as a single user block
+  if (blocks.length === 0) {
+    blocks.push({ role: 'user', content: prompt, cacheable: false });
+  }
+  
+  return blocks;
+}
+
+export function mergeBlocksByRole(blocks: PromptBlock[]): {system:string, user:string} {
+  const systemParts: string[] = [];
+  const userParts: string[] = [];
+  
+  for (const block of blocks) {
+    if (block.role === 'system') {
+      systemParts.push(block.content);
+    } else {
+      userParts.push(block.content);
+    }
+  }
+  
+  return {
+    system: systemParts.join('\n\n'),
+    user: userParts.join('\n\n'),
+  };
+}
+
 export function buildForgePrompt(opts: {task:string;fitnessCmd:string;context?:string;agentMode?:boolean}): string {
   const sections = [
     `## TASK\n${opts.task}`,

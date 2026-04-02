@@ -12,6 +12,5 @@ export function wordWrap(text: string, width: number): string[] {
     if (remaining) result.push(remaining);
   }
   return result;
-  
 }
 

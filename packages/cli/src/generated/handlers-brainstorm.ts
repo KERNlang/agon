@@ -20,7 +20,8 @@ export async function handleBrainstorm(question: string, dispatch: Dispatch, ctx
       return;
     }
     
-    const engines = ctx.activeEngines();
+    // Brainstorm uses ALL available engines, not just the /use-filtered set
+    const engines = ctx.registry.availableIds();
     if (engines.length === 0) {
       dispatch({ type: 'error', message: 'No engines available.' });
       return;

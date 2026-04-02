@@ -34,5 +34,15 @@
     "OPENAI_API_KEY": { "required": false }
   },
 
+  "companion": {
+    "protocol": "jsonrpc",
+    "serverCmd": ["app-server"],
+    "features": {
+      "threadResume": true,
+      "nativeReview": true,
+      "structuredOutput": true
+    }
+  },
+
   "test": { "args": ["--version"] }
 }

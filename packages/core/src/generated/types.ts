@@ -24,6 +24,12 @@ export interface EngineEnvVar {
   default?: string;
 }
 
+export interface CompanionConfig {
+  protocol: 'jsonrpc'|'structured-cli';
+  serverCmd: string[];
+  features?: {threadResume?:boolean, nativeReview?:boolean, structuredOutput?:boolean};
+}
+
 export interface EngineDefinition {
   schemaVersion: 1|2|3;
   id: string;
@@ -47,6 +53,7 @@ export interface EngineDefinition {
   imageFlag?: string;
   agent?: EngineModeConfig;
   api?: {baseUrl:string, apiKeyEnv:string, model:string, maxTokens?:number};
+  companion?: CompanionConfig;
 }
 
 export interface DispatchOptions {

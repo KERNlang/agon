@@ -1,0 +1,199 @@
+import from="node:child_process" names="spawn"
+import from="node:readline" names="createInterface"
+import from="./types.js" names="DispatchResult,CompanionConfig" types=true
+
+interface name=JsonRpcMessage
+  field name=jsonrpc type=string optional=true
+  field name=id type=number optional=true
+  field name=method type=string optional=true
+  field name=params type="Record<string,unknown>" optional=true
+  field name=result type="Record<string,unknown>" optional=true
+  field name=error type="{code:number,message:string}" optional=true
+
+interface name=CompanionResult
+  field name=text type=string
+  field name=threadId type="string|null"
+  field name=fileChanges type="Array<{changes:unknown,status:string}>"
+  field name=commands type="Array<{command:string,exitCode:number,output:string}>"
+
+fn name=companionDispatch async=true params="opts:{config:CompanionConfig, binaryPath:string, prompt:string, cwd:string, timeout:number, mode:'exec'|'review'|'agent', signal?:AbortSignal}" returns="Promise<DispatchResult>"
+  handler <<<
+    if (opts.config.protocol !== 'jsonrpc') {
+      return { exitCode: 2, stdout: '', stderr: 'Only jsonrpc protocol supported', durationMs: 0, timedOut: false };
+    }
+
+    const startTime = Date.now();
+
+    // Check if app-server is available by trying --help first
+    const checkAvailable = (): Promise<boolean> => {
+      return new Promise((resolve) => {
+        const check = spawn(opts.binaryPath, ['app-server', '--help'], {
+          stdio: 'pipe',
+          timeout: 5000,
+        });
+        check.on('close', (code) => resolve(code === 0));
+        check.on('error', () => resolve(false));
+      });
+    };
+
+    const available = await checkAvailable();
+    if (!available) {
+      return { exitCode: 2, stdout: '', stderr: 'app-server not available', durationMs: Date.now() - startTime, timedOut: false };
+    }
+
+    // Spawn the app-server process
+    const proc = spawn(opts.binaryPath, opts.config.serverCmd, {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      cwd: opts.cwd,
+      detached: true,
+    });
+
+    let nextId = 1;
+    const pending = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }>();
+    const agentMessages: string[] = [];
+    let turnCompleted: Record<string, unknown> | null = null;
+    let turnError: Record<string, unknown> | null = null;
+    let threadId: string | null = null;
+
+    // Parse line-delimited JSONRPC from stdout
+    const rl = createInterface({ input: proc.stdout! });
+    rl.on('line', (line: string) => {
+      if (!line.trim()) return;
+      let msg: JsonRpcMessage;
+      try { msg = JSON.parse(line); } catch { return; }
+
+      // Response to a request we sent
+      if (msg.id !== undefined && pending.has(msg.id)) {
+        const p = pending.get(msg.id)!;
+        pending.delete(msg.id);
+        clearTimeout(p.timer);
+        if (msg.error) {
+          p.reject(new Error(`RPC error ${msg.error.code}: ${msg.error.message}`));
+        } else {
+          p.resolve(msg.result ?? {});
+        }
+        return;
+      }
+
+      // Server notification
+      if (msg.method === 'turn/completed') {
+        turnCompleted = (msg.params as Record<string, unknown>);
+      } else if (msg.method === 'item/completed') {
+        const item = (msg.params as any)?.item;
+        if (item?.type === 'agentMessage') {
+          agentMessages.push(item.text);
+        }
+        if (item?.type === 'enteredReviewMode') {
+          agentMessages.push(item.review);
+        }
+      } else if (msg.method === 'error') {
+        turnError = (msg.params as Record<string, unknown>);
+      }
+    });
+
+    function send(method: string, params: Record<string, unknown>): Promise<any> {
+      const id = nextId++;
+      const timeoutMs = method === 'initialize' ? 8000 : opts.timeout * 1000;
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          pending.delete(id);
+          reject(new Error(`Timeout waiting for ${method}`));
+        }, timeoutMs);
+        pending.set(id, { resolve, reject, timer });
+        proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
+      });
+    }
+
+    function notify(method: string): void {
+      proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', method }) + '\n');
+    }
+
+    function killProc(): void {
+      try {
+        if (proc.pid) process.kill(-proc.pid, 'SIGTERM');
+      } catch {
+        try { proc.kill('SIGTERM'); } catch { /* already dead */ }
+      }
+    }
+
+    // Forward abort signal
+    if (opts.signal) {
+      if (opts.signal.aborted) { killProc(); return { exitCode: 130, stdout: '', stderr: 'Aborted', durationMs: 0, timedOut: false }; }
+      opts.signal.addEventListener('abort', () => killProc(), { once: true });
+    }
+
+    function waitForTurnComplete(): Promise<void> {
+      const deadline = Date.now() + opts.timeout * 1000;
+      return new Promise((resolve, reject) => {
+        const check = () => {
+          if (turnCompleted) { resolve(); return; }
+          if (turnError) { reject(new Error(`Turn error: ${JSON.stringify(turnError)}`)); return; }
+          if (Date.now() > deadline) { reject(new Error('Turn timed out')); return; }
+          if (opts.signal?.aborted) { reject(new Error('Aborted')); return; }
+          setTimeout(check, 100);
+        };
+        check();
+      });
+    }
+
+    try {
+      // Wait a tick for process startup
+      await new Promise((r) => setTimeout(r, 100));
+
+      // Initialize
+      await send('initialize', {
+        clientInfo: { name: 'agon-ai', title: 'Agon AI', version: '0.1.0' },
+        capabilities: null,
+      });
+      notify('initialized');
+
+      // Start thread
+      const threadResult = await send('thread/start', {
+        cwd: opts.cwd,
+        approvalPolicy: 'never',
+        sandbox: opts.mode === 'agent' ? 'workspace-write' : 'read-only',
+        ephemeral: true,
+      }) as any;
+      threadId = threadResult?.thread?.id ?? null;
+
+      // Start turn or review
+      if (opts.mode === 'review') {
+        await send('review/start', {
+          threadId,
+          target: { type: 'uncommittedChanges' },
+        });
+      } else {
+        await send('turn/start', {
+          threadId,
+          input: [{ type: 'text', text: opts.prompt, text_elements: [] }],
+        });
+      }
+
+      await waitForTurnComplete();
+
+      const text = agentMessages.join('\n\n');
+      return {
+        exitCode: 0,
+        stdout: text,
+        stderr: '',
+        durationMs: Date.now() - startTime,
+        timedOut: false,
+      };
+    } catch (err) {
+      const durationMs = Date.now() - startTime;
+      const isTimeout = err instanceof Error && err.message.includes('timed out');
+      const isAborted = err instanceof Error && err.message === 'Aborted';
+      return {
+        exitCode: isAborted ? 130 : isTimeout ? 124 : 2,
+        stdout: agentMessages.join('\n\n'),
+        stderr: err instanceof Error ? err.message : String(err),
+        durationMs,
+        timedOut: isTimeout,
+      };
+    } finally {
+      // Clean up pending timers
+      for (const [, p] of pending) clearTimeout(p.timer);
+      pending.clear();
+      killProc();
+    }
+  >>>

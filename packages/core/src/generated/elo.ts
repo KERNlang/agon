@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 
 import { dirname } from 'node:path';
 
@@ -13,19 +13,12 @@ export function updateElo(winnerId: string, loserId: string, taskClass: TaskClas
   }
   function loadElo(): EloRecord {
     try { return JSON.parse(readFileSync(ELO_PATH, 'utf-8')) as EloRecord; }
-    catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-        console.warn(`[agon] failed to load ELO ratings: ${err instanceof Error ? err.message : String(err)}`);
-      }
-      return { global: {}, byTaskClass: {}, lastUpdated: new Date().toISOString() };
-    }
+    catch { return { global: {}, byTaskClass: {}, lastUpdated: new Date().toISOString() }; }
   }
   function saveElo(record: EloRecord): void {
     mkdirSync(dirname(ELO_PATH), { recursive: true });
     record.lastUpdated = new Date().toISOString();
-    const tmpPath = ELO_PATH + '.tmp';
-    writeFileSync(tmpPath, JSON.stringify(record, null, 2) + '\n');
-    renameSync(tmpPath, ELO_PATH);
+    writeFileSync(ELO_PATH, JSON.stringify(record, null, 2) + '\n');
   }
   function expectedScore(rA: number, rB: number): number {
     return 1 / (1 + 10 ** ((rB - rA) / 400));
@@ -63,12 +56,7 @@ export function updateElo(winnerId: string, loserId: string, taskClass: TaskClas
 
 export function getElo(): EloRecord {
   try { return JSON.parse(readFileSync(ELO_PATH, 'utf-8')) as EloRecord; }
-  catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-      console.warn(`[agon] failed to read ELO ratings: ${err instanceof Error ? err.message : String(err)}`);
-    }
-    return { global: {}, byTaskClass: {}, lastUpdated: new Date().toISOString() };
-  }
+  catch { return { global: {}, byTaskClass: {}, lastUpdated: new Date().toISOString() }; }
 }
 
 export function getEngineRating(engineId: string): EloRating {

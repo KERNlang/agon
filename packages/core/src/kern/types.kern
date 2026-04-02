@@ -19,6 +19,11 @@ interface name=EngineEnvVar
   field name=required type=boolean optional=true
   field name=default type=string optional=true
 
+interface name=CompanionConfig
+  field name=protocol type="'jsonrpc'|'structured-cli'"
+  field name=serverCmd type="string[]"
+  field name=features type="{threadResume?:boolean, nativeReview?:boolean, structuredOutput?:boolean}" optional=true
+
 interface name=EngineDefinition
   field name=schemaVersion type="1|2|3"
   field name=id type=string
@@ -42,6 +47,7 @@ interface name=EngineDefinition
   field name=imageFlag type=string optional=true
   field name=agent type=EngineModeConfig optional=true
   field name=api type="{baseUrl:string, apiKeyEnv:string, model:string, maxTokens?:number}" optional=true
+  field name=companion type=CompanionConfig optional=true
 
 interface name=DispatchOptions
   field name=engine type=EngineDefinition

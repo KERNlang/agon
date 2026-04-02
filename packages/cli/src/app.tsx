@@ -914,6 +914,7 @@ function App() {
   // ── Bracketed paste mode ──
   const pasteBufferRef = useRef<string | null>(null);
   const isPastingRef = useRef(false);
+  const justPastedRef = useRef(false);
 
   useEffect(() => {
     const stdin = process.stdin;
@@ -931,10 +932,13 @@ function App() {
         const afterMarker = str.split('\x1b[200~').slice(1).join('');
         pasteBufferRef.current = afterMarker.replace(/\x1b\[201~/g, '');
         if (str.includes('\x1b[201~')) {
-          // Paste ended in same chunk
+          // Paste ended in same chunk — collapse to single line, cap length
           isPastingRef.current = false;
-          const content = pasteBufferRef.current;
+          let content = (pasteBufferRef.current ?? '').replace(/\n/g, ' ').trim();
+          if (content.length > 2000) content = content.slice(0, 2000) + '...';
           pasteBufferRef.current = null;
+          justPastedRef.current = true;
+          setTimeout(() => { justPastedRef.current = false; }, 100);
           if (content) {
             setInputValue((prev) => prev + content);
           }
@@ -944,11 +948,14 @@ function App() {
 
       if (isPastingRef.current) {
         if (str.includes('\x1b[201~')) {
-          // Paste end marker
+          // Paste end marker — collapse to single line, cap length
           const beforeMarker = str.split('\x1b[201~')[0];
-          const content = (pasteBufferRef.current ?? '') + beforeMarker;
+          let content = ((pasteBufferRef.current ?? '') + beforeMarker).replace(/\n/g, ' ').trim();
+          if (content.length > 2000) content = content.slice(0, 2000) + '...';
           isPastingRef.current = false;
           pasteBufferRef.current = null;
+          justPastedRef.current = true;
+          setTimeout(() => { justPastedRef.current = false; }, 100);
           if (content) {
             setInputValue((prev) => prev + content);
           }
@@ -1527,8 +1534,8 @@ function App() {
 
   // ── History navigation + global keys ──
   useInput((input, key) => {
-    // Open slash picker when typing "/" on empty input
-    if (input === '/' && !inputValue && !slashPickerOpen && !enginePickerOpen && !questionState) {
+    // Open slash picker when typing "/" on empty input (not during paste)
+    if (input === '/' && !inputValue && !slashPickerOpen && !enginePickerOpen && !questionState && !justPastedRef.current && !isPastingRef.current) {
       setSlashPickerOpen(true);
       return;
     }

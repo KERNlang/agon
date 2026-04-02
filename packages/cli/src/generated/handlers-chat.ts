@@ -48,6 +48,14 @@ export async function handleChat(input: string, dispatch: Dispatch, ctx: Handler
       return;
     }
     
+    let engine;
+    try {
+      engine = ctx.registry.get(engineId);
+    } catch (err) {
+      dispatch({ type: 'error', message: `${engineId}: ${err instanceof Error ? err.message : String(err)}` });
+      return;
+    }
+    
     const recent = ctx.chatSession.messages.slice(-20);
     const history = recent.length > 0
       ? recent.map((m: any) => m.role === 'user' ? `User: ${m.content}` : `${m.engineId ?? 'engine'}: ${m.content}`).join('\n\n')
@@ -59,7 +67,6 @@ export async function handleChat(input: string, dispatch: Dispatch, ctx: Handler
     parts.push(message);
     const prompt = parts.join('\n\n');
     
-    const engine = ctx.registry.get(engineId);
     const color = ENGINE_COLORS[engineId] ?? 245;
     const outputDir = join(RUNS_DIR, `chat-${Date.now()}`);
     mkdirSync(outputDir, { recursive: true });

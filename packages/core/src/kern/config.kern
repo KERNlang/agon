@@ -26,13 +26,13 @@ const name=RUNS_DIR type=string
   >>>
 
 const name=LOCAL_CONFIG_NAME type=string value="'.agon.json'"
+const name=LOCAL_PRIVATE_CONFIG_NAME type=string value="'.agon.local.json'"
 
 fn name=loadConfig params="cwd?:string" returns="Required<AgonConfig>"
   handler <<<
     function readJsonSafe<T>(path: string): T | null {
       try { return JSON.parse(readFileSync(path, 'utf-8')) as T; }
       catch (err) {
-        // Distinguish file-not-found (normal) from corruption (warning)
         if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
           console.warn(`[agon] warning: failed to parse config ${path}: ${err instanceof Error ? err.message : String(err)}`);
         }
@@ -43,7 +43,11 @@ fn name=loadConfig params="cwd?:string" returns="Required<AgonConfig>"
     const local = cwd
       ? readJsonSafe<Partial<AgonConfig>>(join(cwd, LOCAL_CONFIG_NAME)) ?? {}
       : {};
-    return { ...DEFAULT_AGON_CONFIG, ...global, ...local } as Required<AgonConfig>;
+    // .agon.local.json — gitignored personal overrides (debug, engine prefs)
+    const localPrivate = cwd
+      ? readJsonSafe<Partial<AgonConfig>>(join(cwd, LOCAL_PRIVATE_CONFIG_NAME)) ?? {}
+      : {};
+    return { ...DEFAULT_AGON_CONFIG, ...global, ...local, ...localPrivate } as Required<AgonConfig>;
   >>>
 
 fn name=configGet params="key:keyof AgonConfig,cwd?:string" returns="Required<AgonConfig>[keyof AgonConfig]"

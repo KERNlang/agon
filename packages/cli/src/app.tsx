@@ -43,7 +43,7 @@ import {
   handleLeaderboard, handleHistory, handleEngines, handleDiscover,
   handleConfig, handleUse, handleTokens, handleModels, handleWorkspace, handleChats,
   handlePlanShow, handlePlansList, handleApprove, handleRetry, handleCancel,
-  handleApplyPatch, handleCp,
+  handleApplyPatch, handleCp, handleCommit,
   handleFlowReport, handleFlowAnalysis, autoLogFlow,
   handleBuild, handleRun,
 } from './handlers/index.js';
@@ -1299,6 +1299,7 @@ function App() {
         case 'cancel': handleCancel(dispatch, ctx); break;
         case 'apply': await handleApplyPatch(dispatch, ctx, intent.patchPath, intent.force); break;
         case 'cp': handleCp(intent.index, dispatch); break;
+        case 'commit' as string: await handleCommit((intent as any).input, dispatch, ctx); break;
         case 'undo' as string: {
           if (!lastUndoToken) {
             dispatch({ type: 'warning', message: 'Nothing to undo. Apply a forge patch first.' });

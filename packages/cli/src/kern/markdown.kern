@@ -183,6 +183,9 @@ fn name=parseStreamJsonLine params="trimmed:string" returns="{action:'use'|'skip
   handler <<<
     try {
       const parsed = JSON.parse(trimmed);
+      if (!parsed.type) return { action: 'keep' };
+
+      // Extract actual text content from streaming events
       if (parsed.type === 'assistant' && parsed.message?.content) {
         const content = typeof parsed.message.content === 'string'
           ? parsed.message.content
@@ -191,12 +194,35 @@ fn name=parseStreamJsonLine params="trimmed:string" returns="{action:'use'|'skip
             : '';
         return content ? { action: 'use', content } : { action: 'skip' };
       }
-      if (parsed.type === 'result' && parsed.result) {
-        return { action: 'use', content: typeof parsed.result === 'string' ? parsed.result : JSON.stringify(parsed.result) };
+
+      // OpenCode: text events with actual content in part.text
+      if (parsed.type === 'text' && parsed.part?.text) {
+        return { action: 'use', content: parsed.part.text };
       }
-      if (['system', 'hook_started', 'hook_response', 'tool_use', 'tool_result'].includes(parsed.type)) return { action: 'skip' };
+
+      // Result events — extract content if present, skip error metadata
+      if (parsed.type === 'result') {
+        if (parsed.subtype === 'error_max_turns' || parsed.is_error) return { action: 'skip' };
+        if (parsed.result && typeof parsed.result === 'string') return { action: 'use', content: parsed.result };
+        return { action: 'skip' };
+      }
+
+      // Skip ALL known streaming metadata types (Claude, OpenCode, Codex, Gemini)
+      const skipTypes = [
+        'system', 'hook_started', 'hook_response', 'tool_use', 'tool_result',
+        'user', 'rate_limit_event', 'message_start', 'message_stop', 'message_delta',
+        'content_block_start', 'content_block_stop', 'content_block_delta',
+        'step_start', 'step_finish', 'step-start', 'step-finish',
+        'ping', 'error', 'init', 'session_start', 'session_end',
+      ];
+      if (skipTypes.includes(parsed.type)) return { action: 'skip' };
       if (parsed.type?.startsWith('hook_')) return { action: 'skip' };
+      if (parsed.type?.startsWith('step_')) return { action: 'skip' };
       if (parsed.subtype === 'system') return { action: 'skip' };
+
+      // Any JSON with sessionID, session_id, or uuid is streaming metadata — skip
+      if (parsed.sessionID || parsed.session_id || parsed.uuid) return { action: 'skip' };
+
     } catch {
       // Not valid JSON — keep as text
     }

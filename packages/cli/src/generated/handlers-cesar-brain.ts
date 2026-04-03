@@ -141,6 +141,18 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       return { delegated: false, responded: false };
     }
   
+    // Ensure tool registry is always available (ensureCesarSession only creates it on first boot)
+    if (!(ctx as any)._toolRegistry) {
+      const toolRegistry = new ToolRegistry();
+      toolRegistry.register(createReadTool());
+      toolRegistry.register(createEditTool());
+      toolRegistry.register(createWriteTool());
+      toolRegistry.register(createBashTool());
+      toolRegistry.register(createGrepTool());
+      toolRegistry.register(createGlobTool());
+      (ctx as any)._toolRegistry = toolRegistry;
+    }
+  
     let response = '';
     let streaming = false;
     let delegated = false;
@@ -238,22 +250,29 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
     if (toolRegistry && response) {
       const toolParsed = parseToolCalls(response);
       if (toolParsed.hasToolCalls) {
-        // Stop streaming — we're entering tool execution mode
-        if (streaming) dispatch({ type: 'streaming-end', engineId: cesarEngineId });
+        // Stop streaming — replace the live stream (which has XML) with just the clean text
+        if (streaming) {
+          // End streaming first (flushes buffer as engine-block with XML)
+          dispatch({ type: 'streaming-end', engineId: cesarEngineId });
+        }
         streaming = false;
   
-        // Show text before tool calls
+        // Show text before tool calls (clean prose, no XML)
+        // This appears AFTER the flushed streaming block — the XML block is visible briefly
+        // but the tool results below it make the flow clear
         if (toolParsed.textBefore) {
           dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: toolParsed.textBefore });
         }
   
-        // Build tool context — use 'ask' mode so non-readonly commands prompt the user
+        // Build tool context — 'auto' mode: edits/writes auto-allowed within CWD, only dangerous bash prompts
         const fileStateCache = new FileStateCache();
+        const explorationMode = (ctx as any).explorationMode ?? false;
         const toolCtx: ToolContext = {
           cwd: resolveWorkingDir(),
           readFileState: (fileStateCache as any).cache,
           abortSignal: abort.signal,
-          permissionMode: 'ask',
+          permissionMode: 'auto',
+          explorationMode,
           onProgress: (msg: string) => dispatch({ type: 'spinner-update', message: `Cesar: ${msg}` }),
         };
   

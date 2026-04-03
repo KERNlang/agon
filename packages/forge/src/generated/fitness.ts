@@ -6,7 +6,7 @@ import type { FitnessResult, EngineResult } from '@agon/core';
 
 import { spawnWithTimeout, worktreeDiff, diffLineCount, diffFileCount, computeScore } from '@agon/core';
 
-export async function runFitness(opts: {engineId:string, worktreePath: string, fitnessCmd: string, timeout: number, forgeDir: string}): Promise<EngineResult> {
+export async function runFitness(opts: {engineId:string, worktreePath:string, fitnessCmd:string, timeout:number, forgeDir:string}): Promise<EngineResult> {
   const startTime = Date.now();
   
   let diff: string;
@@ -16,7 +16,8 @@ export async function runFitness(opts: {engineId:string, worktreePath: string, f
     diff = worktreeDiff(opts.worktreePath);
     diffLines = diffLineCount(diff);
     filesChanged = diffFileCount(opts.worktreePath);
-  } catch {
+  } catch (err) {
+    console.warn(`[agon] fitness diff failed for ${opts.engineId}: ${err instanceof Error ? err.message : String(err)}`);
     diff = '';
     diffLines = 0;
     filesChanged = 0;
@@ -63,6 +64,5 @@ export async function runFitness(opts: {engineId:string, worktreePath: string, f
     patchPath,
     worktreePath: opts.worktreePath,
   };
-  
 }
 

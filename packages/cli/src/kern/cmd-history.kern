@@ -1,0 +1,149 @@
+import from="citty" names="defineCommand"
+import from="node:fs" names="readdirSync,readFileSync"
+import from="node:path" names="join"
+import from="@agon/core" names="RUNS_DIR,ensureAgonHome"
+import from="@agon/core" names="ForgeManifest" types=true
+import from="../output.js" names="header,info,table,bold,green,red,dim"
+
+fn name=showRunDetail params="id:string" returns=void export=false
+  handler <<<
+    let files: string[];
+    try {
+      files = readdirSync(RUNS_DIR).filter((f: string) => f.includes(id));
+    } catch {
+      info(`Run "${id}" not found`);
+      return;
+    }
+
+    if (files.length === 0) {
+      info(`Run "${id}" not found`);
+      return;
+    }
+
+    const manifest = JSON.parse(
+      readFileSync(join(RUNS_DIR, files[0]), 'utf-8'),
+    ) as ForgeManifest;
+
+    header(`Forge Run: ${manifest.forgeId.slice(0, 8)}`);
+    console.log(`  Task:       ${manifest.task}`);
+    console.log(`  Fitness:    ${manifest.fitnessCmd}`);
+    console.log(`  Date:       ${new Date(manifest.timestamp).toLocaleString()}`);
+    console.log(`  Starter:    ${manifest.starter}`);
+    console.log(`  Engines:    ${manifest.engines.join(', ')}`);
+    console.log(`  Winner:     ${manifest.winner ? bold(manifest.winner) : red('none')}`);
+    console.log(`  Close call: ${manifest.closeCall ? 'yes' : 'no'}`);
+    console.log(`  Stage 1:    ${manifest.stage1Accepted ? green('auto-accepted') : 'escalated'}`);
+
+    if (Object.keys(manifest.results).length > 0) {
+      console.log('');
+      header('Scores');
+      const rows = Object.entries(manifest.results).map(([eid, r]: [string, any]) => [
+        eid === manifest.winner ? green(`★ ${eid}`) : eid,
+        r.pass ? green('PASS') : red('FAIL'),
+        String(r.score),
+        String(r.diffLines),
+        String(r.filesChanged),
+        `${r.durationSec}s`,
+      ]);
+      table(['Engine', 'Status', 'Score', 'Diff', 'Files', 'Time'], rows);
+    }
+
+    if (manifest.synthesis) {
+      console.log('');
+      header('Synthesis');
+      console.log(`  Pass:     ${manifest.synthesis.pass ? green('yes') : red('no')}`);
+      console.log(`  Score:    ${manifest.synthesis.score}`);
+      console.log(`  Wins:     ${manifest.synthesis.wins ? green('yes') : 'no'}`);
+      console.log(`  Original: ${manifest.synthesis.originalWinnerScore}`);
+    }
+  >>>
+
+const name=historyCommand type="ReturnType<typeof defineCommand>"
+  handler <<<
+    defineCommand({
+      meta: {
+        name: 'history',
+        description: 'Browse past forge runs',
+      },
+      args: {
+        limit: {
+          type: 'string',
+          alias: 'n',
+          description: 'Number of runs to show',
+          default: '10',
+        },
+        id: {
+          type: 'string',
+          description: 'Show details for a specific forge ID',
+        },
+      },
+      run({ args }) {
+        ensureAgonHome();
+
+        if (args.id) {
+          showRunDetail(args.id);
+          return;
+        }
+
+        // List recent runs
+        let files: string[];
+        try {
+          files = readdirSync(RUNS_DIR)
+            .filter((f: string) => f.endsWith('.json'))
+            .sort()
+            .reverse();
+        } catch {
+          info('No forge runs yet. Run `agon forge` to get started!');
+          return;
+        }
+
+        if (files.length === 0) {
+          info('No forge runs yet. Run `agon forge` to get started!');
+          return;
+        }
+
+        const limit = parseInt(args.limit, 10);
+        const recent = files.slice(0, limit);
+
+        header(`Recent Forge Runs (${Math.min(limit, files.length)} of ${files.length})`);
+
+        const rows: string[][] = [];
+        for (const file of recent) {
+          try {
+            const manifest = JSON.parse(
+              readFileSync(join(RUNS_DIR, file), 'utf-8'),
+            ) as ForgeManifest;
+
+            const date = new Date(manifest.timestamp).toLocaleString();
+            const task = manifest.task.length > 40
+              ? manifest.task.slice(0, 40) + '...'
+              : manifest.task;
+            const winner = manifest.winner
+              ? green(manifest.winner)
+              : red('none');
+            const engines = manifest.enginesDispatched;
+            const synthesis = manifest.synthesis?.wins ? 'yes' : '-';
+
+            rows.push([
+              date,
+              task,
+              winner,
+              String(engines),
+              synthesis,
+              manifest.forgeId.slice(0, 8),
+            ]);
+          } catch {
+            // skip malformed
+          }
+        }
+
+        table(
+          ['Date', 'Task', 'Winner', 'Engines', 'Synth', 'ID'],
+          rows,
+        );
+
+        console.log('');
+        info(dim(`Use \`agon history <id>\` for details`));
+      },
+    })
+  >>>

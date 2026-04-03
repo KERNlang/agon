@@ -47,13 +47,22 @@ fn name=worktreeCreate params="repoDir:string,worktreePath:string,sha:string" re
 
 fn name=worktreeRemove params="repoDir:string,worktreePath:string" returns=void
   handler <<<
-    try { git(['worktree', 'remove', worktreePath, '--force'], repoDir); } catch {}
+    try { git(['worktree', 'remove', worktreePath, '--force'], repoDir); } catch (err) {
+      console.warn(`[agon] failed to remove worktree ${worktreePath}: ${err instanceof Error ? err.message : String(err)}`);
+    }
   >>>
 
 fn name=worktreeDiff params="cwd:string" returns=string
   handler <<<
     git(['add', '-A'], cwd);
     return git(['diff', '--cached'], cwd);
+  >>>
+
+fn name=readOnlyDiff params="cwd:string" returns=string
+  handler <<<
+    const staged = git(['diff', '--cached'], cwd);
+    const unstaged = git(['diff'], cwd);
+    return staged + (staged && unstaged ? '\n' : '') + unstaged;
   >>>
 
 fn name=diffLineCount params="diff:string" returns=number
@@ -71,7 +80,10 @@ fn name=diffFileCount params="cwd:string" returns=number
     try {
       const result = git(['diff', '--cached', '--name-only'], cwd);
       return result ? result.split('\n').filter(Boolean).length : 0;
-    } catch { return 0; }
+    } catch (err) {
+      console.warn(`[agon] diffFileCount failed: ${err instanceof Error ? err.message : String(err)}`);
+      return 0;
+    }
   >>>
 
 fn name=applyPatch params="cwd:string,patchContent:string" returns=void

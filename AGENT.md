@@ -26,7 +26,7 @@ packages/
   core/          — KERN-sourced types, config, scoring, ELO, plans, process
   forge/         — Forge, brainstorm, tribunal, campfire orchestration
   adapter-cli/   — Shell exec adapter for external AI CLIs
-  cli/           — REPL, InputEngine, Caesar local LLM, output rendering
+  cli/           — REPL, InputEngine, output rendering
 engines/         — JSON engine definitions (claude.json, codex.json, etc.)
 tests/           — Unit + integration tests (vitest)
 ```

@@ -2,7 +2,7 @@ import { join } from 'node:path';
 
 import { mkdirSync } from 'node:fs';
 
-import { ensureAgonHome, RUNS_DIR, scanProjectContext, tracker, appendMessage } from '@agon/core';
+import { ensureAgonHome, RUNS_DIR, scanProjectContext, tracker, appendMessage, resolveWorkingDir } from '@agon/core';
 
 import { runTribunal } from '@agon/forge';
 
@@ -19,7 +19,7 @@ export async function handleTribunal(question: string, dispatch: Dispatch, ctx: 
       return;
     }
     
-    const active = ctx.activeEngines();
+    const active = ctx.registry.availableIds();
     if (active.length < 2) {
       dispatch({ type: 'error', message: `Tribunal needs at least 2 engines. Only found: ${active.join(', ') || 'none'}` });
       return;
@@ -31,7 +31,8 @@ export async function handleTribunal(question: string, dispatch: Dispatch, ctx: 
     mkdirSync(outputDir, { recursive: true });
     
     const config = ctx.config;
-    const projectCtx = scanProjectContext(process.cwd(), config.projectContext || undefined, config.contextFormat);
+    const tribunalCwd = resolveWorkingDir();
+    const projectCtx = scanProjectContext(tribunalCwd, config.projectContext || undefined, config.contextFormat);
     const enrichedQuestion = projectCtx
       ? `${question}\n\n## PROJECT CONTEXT\n${projectCtx}`
       : question;
@@ -39,7 +40,7 @@ export async function handleTribunal(question: string, dispatch: Dispatch, ctx: 
     dispatch({ type: 'header', title: `Tribunal (${mode}): ${question}` });
     dispatch({ type: 'info', message: `Engines: ${engines.join(', ')}` });
     dispatch({ type: 'info', message: `Mode: ${mode}` });
-    if (projectCtx) dispatch({ type: 'info', message: `Context: ${process.cwd()}` });
+    if (projectCtx) dispatch({ type: 'info', message: `Context: ${tribunalCwd}` });
     
     dispatch({ type: 'spinner-start', message: `Engines debating (${mode})...` });
     

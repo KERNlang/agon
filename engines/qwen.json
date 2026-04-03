@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "id": "qwen",
   "displayName": "Qwen (Alibaba)",
   "binary": "qwen",

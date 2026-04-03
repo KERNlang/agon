@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "id": "codex",
   "displayName": "Codex (OpenAI)",
   "binary": "codex",
@@ -20,6 +20,9 @@
   "review": {
     "args": ["exec", "review", "{prompt}"]
   },
+  "agent": {
+    "args": ["exec", "--full-auto", "{prompt}"]
+  },
 
   "model": {
     "configKey": "codex_model",
@@ -29,6 +32,16 @@
 
   "env": {
     "OPENAI_API_KEY": { "required": false }
+  },
+
+  "companion": {
+    "protocol": "jsonrpc",
+    "serverCmd": ["app-server"],
+    "features": {
+      "threadResume": true,
+      "nativeReview": true,
+      "structuredOutput": true
+    }
   },
 
   "test": { "args": ["--version"] }

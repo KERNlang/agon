@@ -1,4 +1,4 @@
-import from="node:fs" names="readFileSync,writeFileSync,mkdirSync"
+import from="node:fs" names="readFileSync,writeFileSync,mkdirSync,renameSync"
 import from="node:path" names="join"
 import from="node:child_process" names="execSync"
 import from="./types.js" names="ForgeManifest" types=true
@@ -30,7 +30,8 @@ fn name=readPatchFromManifest params="manifestPath:string" returns="PatchInfo|nu
         (l: string) => (l.startsWith('+') && !l.startsWith('+++')) || (l.startsWith('-') && !l.startsWith('---'))
       ).length;
       return { path: patchPath, engineId: manifest.winner, lineCount, content };
-    } catch {
+    } catch (err) {
+      console.warn(`[agon] failed to read patch from manifest ${manifestPath}: ${err instanceof Error ? err.message : String(err)}`);
       return null;
     }
   >>>
@@ -44,7 +45,8 @@ fn name=readPatchFromPath params="patchPath:string" returns="PatchInfo|null"
         (l: string) => (l.startsWith('+') && !l.startsWith('+++')) || (l.startsWith('-') && !l.startsWith('---'))
       ).length;
       return { path: patchPath, engineId: 'unknown', lineCount, content };
-    } catch {
+    } catch (err) {
+      console.warn(`[agon] failed to read patch from ${patchPath}: ${err instanceof Error ? err.message : String(err)}`);
       return null;
     }
   >>>
@@ -54,7 +56,8 @@ fn name=isTreeDirty params="cwd:string" returns="boolean"
     try {
       const result = execSync('git status --porcelain', { cwd, encoding: 'utf-8' });
       return result.trim().length > 0;
-    } catch {
+    } catch (err) {
+      console.warn(`[agon] failed to check tree dirty state: ${err instanceof Error ? err.message : String(err)}`);
       return false;
     }
   >>>
@@ -126,9 +129,11 @@ fn name=applyPatchWithUndo params="cwd:string, patchContent:string" returns="{ o
       return { ok: false, error: msg };
     }
 
-    // Save inverse patch
+    // Save inverse patch atomically (temp + rename)
     const inversePath = join(undoDir, `${token}.patch`);
-    writeFileSync(inversePath, inverse);
+    const tmpPath = join(undoDir, `${token}.patch.tmp`);
+    writeFileSync(tmpPath, inverse);
+    renameSync(tmpPath, inversePath);
 
     return { ok: true, undoToken: token };
   >>>

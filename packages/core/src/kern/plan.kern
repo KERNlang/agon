@@ -3,7 +3,7 @@ import from="./errors.js" names="PlanStateError"
 type name=PlanState values="draft|approved|running|paused|completed|failed|cancelled"
 type name=StepState values="pending|running|completed|failed|skipped"
 type name=StepEffect values="read|write|exec|network"
-type name=PlanStepKind values="dispatch|fitness|critique|synthesis|apply"
+type name=PlanStepKind values="dispatch|fitness|critique|synthesis|apply|routing"
 type name=ApprovalLevel values="auto|plan|step"
 
 interface name=ArtifactRef

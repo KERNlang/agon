@@ -1,58 +1,10 @@
-import type { EngineRegistry, EngineAdapter, Plan, AgonConfig, ChatSession } from '@agon/core';
+// ── Handler types — KERN-sourced ─────────────────────────────────────
+// Source of truth: kern/handler-types.kern → generated/handler-types.ts
+// This facade adds: Dispatch type alias (KERN type node can't generate function aliases)
+//                   readonly on HandlerContext.currentPlan
 
-/**
- * OutputEvent — the single communication channel from handlers to UI.
- * Handlers dispatch events, the Ink UI renders them.
- */
-export type OutputEvent =
-  | { type: 'text'; content: string }
-  | { type: 'engine-block'; engineId: string; color: number; content: string }
-  | { type: 'streaming-chunk'; engineId: string; chunk: string }
-  | { type: 'spinner-start'; message: string; color?: number }
-  | { type: 'spinner-stop'; message?: string }
-  | { type: 'spinner-update'; message: string }
-  | { type: 'progress-update'; engines: EngineProgress[] }
-  | { type: 'progress-clear' }
-  | { type: 'separator' }
-  | { type: 'header'; title: string }
-  | { type: 'success'; message: string }
-  | { type: 'error'; message: string }
-  | { type: 'warning'; message: string }
-  | { type: 'info'; message: string }
-  | { type: 'plan'; plan: Plan }
-  | { type: 'plan-list'; plans: Plan[] }
-  | { type: 'scoreboard'; title: string; winner?: string; engineIds: string[]; metrics: { label: string; values: string[] }[] }
-  | { type: 'table'; headers: string[]; rows: string[][] }
-  | { type: 'clear' }
-  | { type: 'kern-draft'; engineId: string; content: string; critique?: string }
-  | { type: 'debate-round'; round: number; engineId: string; position: string; argument: string }
-  | { type: 'verdict'; summary: string }
-  | { type: 'question'; prompt: string; resolve: (answer: string) => void }
-  | { type: 'dashboard'; available: string[]; enabled: string[]; defaultEngine: string; eloTop?: { id: string; rating: number }; totalForges: number; workspace?: { name: string; path: string; isKern?: boolean }; runCount: number };
+export type { OutputEvent, EngineProgress } from '../generated/handler-types.js';
+export type { HandlerContext } from '../generated/handler-types.js';
 
-export interface EngineProgress {
-  id: string;
-  status: string;
-  elapsed: number;
-  done: boolean;
-  failed: boolean;
-  score?: string;
-}
-
+import type { OutputEvent } from '../generated/handler-types.js';
 export type Dispatch = (event: OutputEvent) => void;
-
-/**
- * Shared context passed to all handlers.
- * Instead of closures over module-level state, handlers receive this explicitly.
- */
-export interface HandlerContext {
-  registry: EngineRegistry;
-  adapter: EngineAdapter;
-  activeEngines: () => string[];
-  config: AgonConfig;
-  chatSession: ChatSession;
-  currentPlan: Plan | null;
-  setCurrentPlan: (plan: Plan | null) => void;
-  setActiveAbort: (abort: AbortController | null) => void;
-  askQuestion: (prompt: string) => Promise<string>;
-}

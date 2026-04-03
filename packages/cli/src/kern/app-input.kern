@@ -1,0 +1,39 @@
+// ── App Input Handlers ───────────────────────────────────────────────
+// Pure functions for input processing — no React, no JSX.
+
+import from="../ghost-text.js" names="getGhostCompletion"
+
+fn name=cleanInputValue params="value:string" returns=string
+  doc "Strip bracketed paste escapes and Tab chars from input."
+  handler <<<
+    return value.replace(/\x1b\[20[01]~/g, '').replace(/\[200~/g, '').replace(/\[201~/g, '').replace(/\t/g, '');
+  >>>
+
+fn name=cleanSubmitValue params="value:string" returns=string
+  doc "Strip paste escapes and trim for submission."
+  handler <<<
+    return value.replace(/\x1b\[20[01]~/g, '').replace(/\[200~/g, '').replace(/\[201~/g, '').trim();
+  >>>
+
+fn name=navigateHistory params="direction:'up'|'down', currentIndex:number, history:string[]" returns="{index:number, value:string}"
+  doc "Navigate input history up/down."
+  handler <<<
+    if (direction === 'up' && history.length > 0) {
+      const newIndex = currentIndex === -1 ? history.length - 1 : Math.max(0, currentIndex - 1);
+      return { index: newIndex, value: history[newIndex] };
+    }
+    if (direction === 'down' && currentIndex >= 0) {
+      const newIndex = currentIndex + 1;
+      if (newIndex >= history.length) {
+        return { index: -1, value: '' };
+      }
+      return { index: newIndex, value: history[newIndex] };
+    }
+    return { index: currentIndex, value: '' };
+  >>>
+
+fn name=tryGhostComplete params="inputValue:string, commands:any[], engineIds:string[]" returns="string|null"
+  doc "Get ghost text completion for current input."
+  handler <<<
+    return getGhostCompletion(inputValue, commands, engineIds);
+  >>>

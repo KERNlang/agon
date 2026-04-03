@@ -1,0 +1,66 @@
+union name=Intent discriminant=type
+  variant name=forge
+    field name=task type=string
+    field name=fitnessCmd type="string | null"
+  variant name=brainstorm
+    field name=question type=string
+  variant name=tribunal
+    field name=question type=string
+  variant name=leaderboard
+  variant name=history
+    field name=id type=string optional=true
+  variant name=engines
+  variant name=config
+    field name=action type=string optional=true
+    field name=key type=string optional=true
+    field name=value type=string optional=true
+  variant name=campfire
+    field name=topic type=string
+  variant name=workspace
+    field name=action type=string
+    field name=path type=string optional=true
+  variant name=use
+    field name=engineIds type="string[]"
+  variant name=models
+  variant name=tokens
+  variant name=plan
+    field name=planId type=string optional=true
+  variant name=plans
+  variant name=approve
+  variant name=retry
+  variant name=cancel
+  variant name=img
+    field name=path type=string
+  variant name=chat
+    field name=input type=string
+  variant name=provider
+    field name=action type=string
+    field name=args type=string
+  variant name=discover
+  variant name=apply
+    field name=patchPath type=string optional=true
+    field name=force type=boolean optional=true
+  variant name=cp
+    field name=index type=number optional=true
+  variant name=flow
+  variant name=flows
+  variant name=chats
+    field name=sessionId type=string optional=true
+  variant name=build
+    field name=input type=string
+  variant name=pipeline
+    field name=task type=string
+    field name=fitnessCmd type="string | null"
+  variant name=run
+    field name=input type=string
+  variant name=cesar
+    field name=input type=string
+  variant name=clear
+  variant name=slash-list
+  variant name=help
+  variant name=exit
+  variant name=auto
+    field name=input type=string
+    field name=taskClass type="'code' | 'question' | 'ambiguous'"
+  variant name=unknown
+    field name=input type=string

@@ -15,16 +15,26 @@ export function createLogger(opts: {enabled:boolean;logDir:string}): Logger {
   
   function write(level: string, message: string, data?: Record<string, unknown>): void {
     if (!opts.enabled) return;
-    try { mkdirSync(opts.logDir, { recursive: true }); } catch {}
+    try { mkdirSync(opts.logDir, { recursive: true }); } catch (err) {
+      console.error(`[agon] logger: failed to create log dir ${opts.logDir}: ${err instanceof Error ? err.message : String(err)}`);
+      return;
+    }
     try {
       const stat = statSync(logFile);
       if (stat.size > MAX_LOG_SIZE) renameSync(logFile, logFile + '.old');
-    } catch {}
+    } catch (err) {
+      // File may not exist yet — only warn on unexpected errors
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+        console.error(`[agon] logger: failed to rotate log: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
     const ts = new Date().toISOString();
     const line = data
       ? `[${ts}] ${level}: ${message} ${JSON.stringify(data)}\n`
       : `[${ts}] ${level}: ${message}\n`;
-    try { writeFileSync(logFile, line, { flag: 'a' }); } catch {}
+    try { writeFileSync(logFile, line, { flag: 'a' }); } catch (err) {
+      console.error(`[agon] logger: failed to write log: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
   
   return {
@@ -33,6 +43,5 @@ export function createLogger(opts: {enabled:boolean;logDir:string}): Logger {
     warn: (msg, data) => write('WARN', msg, data),
     error: (msg, data) => write('ERROR', msg, data),
   };
-  
 }
 

@@ -1,5 +1,6 @@
+import from="node:crypto" names="randomUUID"
 import from="@agon/core" names="EngineAdapter,EngineDefinition,ForgeEvent" types=true
-import from="@agon/core" names="EngineRegistry,buildTribunalPrompt"
+import from="@agon/core" names="EngineRegistry,buildTribunalPrompt,createSidechainLogger"
 import from="./tribunal-modes.js" names="TribunalMode,TribunalModeConfig" types=true
 import from="./tribunal-modes.js" names="getModeConfig,buildModePrompt,buildModeSummaryPrompt"
 
@@ -18,30 +19,6 @@ interface name=TribunalResult
   field name=positions type="TribunalPosition[]"
   field name=summary type=string
   field name=mode type=string optional=true
-
-fn name=assignPositions params="count:number" returns="string[]"
-  handler <<<
-    if (count === 1) return ['Analyze both sides'];
-    if (count === 2) return ['Argue FOR', 'Argue AGAINST'];
-    if (count === 3) return ['Argue FOR', 'Argue AGAINST', "Play devil's advocate"];
-    const positions = ['Argue FOR', 'Argue AGAINST', "Play devil's advocate"];
-    for (let i = 3; i < count; i++) {
-      positions.push(`Perspective ${i + 1}: Find unconventional angles`);
-    }
-    return positions;
-  >>>
-
-fn name=buildSummaryPrompt params="question:string, positions:TribunalPosition[]" returns="string"
-  handler <<<
-    const debateText = positions
-      .map((p) => {
-        const allArgs = p.arguments.join('\n\n');
-        return `## ${p.engineId} (${p.position})\n${allArgs}`;
-      })
-      .join('\n\n---\n\n');
-
-    return `## TASK\nSynthesize this debate into a clear verdict.\n\n## QUESTION\n${question}\n\n## DEBATE\n${debateText}\n\n## INSTRUCTIONS\nProvide:\n1. **Verdict**: Which side has the stronger argument and why\n2. **Key insights**: 2-3 non-obvious points that emerged\n3. **Recommendation**: What should the user actually do?\n\nBe decisive. Don't hedge with "it depends" — pick a side and explain why.`;
-  >>>
 
 fn name=buildFallbackSummary params="positions:TribunalPosition[]" returns="string"
   handler <<<
@@ -70,6 +47,15 @@ fn name=runTribunal async=true params="opts:{question:string, engines:string[], 
     }));
 
     const effectiveRounds = Math.min(rounds, modeConfig.maxRounds);
+
+    // Sidechain audit trail
+    const tribunalId = randomUUID().slice(0, 8);
+    const sidechain = createSidechainLogger({
+      sessionId: tribunalId,
+      sessionType: 'tribunal',
+      outputDir,
+    });
+    sidechain.log('tribunal:init', undefined, { question, mode, engines, rounds: effectiveRounds });
     const allRounds: TribunalRound[] = [];
 
     for (let round = 1; round <= effectiveRounds; round++) {
@@ -112,7 +98,8 @@ fn name=runTribunal async=true params="opts:{question:string, engines:string[], 
             outputDir,
           });
           return { engineId: pos.engineId, argument: result.stdout.trim() };
-        } catch {
+        } catch (err) {
+          console.warn(`[agon] tribunal dispatch (${pos.engineId}) round ${round} failed: ${err instanceof Error ? err.message : String(err)}`);
           return { engineId: pos.engineId, argument: '(failed to respond)' };
         }
       });
@@ -131,6 +118,7 @@ fn name=runTribunal async=true params="opts:{question:string, engines:string[], 
       for (const result of roundResults) {
         const pos = positions.find((p) => p.engineId === result.engineId);
         if (pos) pos.arguments.push(result.argument);
+        sidechain.log('round:response', result.engineId, { round, argLength: result.argument.length });
       }
 
       allRounds.push({
@@ -157,9 +145,17 @@ fn name=runTribunal async=true params="opts:{question:string, engines:string[], 
         outputDir,
       });
       summary = summaryResult.stdout.trim();
-    } catch {
+    } catch (err) {
+      console.warn(`[agon] tribunal summary failed: ${err instanceof Error ? err.message : String(err)}`);
       summary = buildFallbackSummary(positions);
     }
+
+    sidechain.log('tribunal:done', undefined, {
+      rounds: allRounds.length,
+      engines: engines.length,
+      mode,
+      summaryLength: summary.length,
+    });
 
     opts.onEvent?.({
       type: 'forge:done',

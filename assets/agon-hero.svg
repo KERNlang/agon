@@ -1,0 +1,115 @@
+<svg width="800" height="280" viewBox="0 0 800 280" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="800" y2="280" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0d1117"/>
+      <stop offset="100%" stop-color="#1a1207"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#fbbf24"/>
+      <stop offset="50%" stop-color="#f97316"/>
+      <stop offset="100%" stop-color="#ef4444"/>
+    </linearGradient>
+    <linearGradient id="text-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#fbbf24"/>
+      <stop offset="100%" stop-color="#f97316"/>
+    </linearGradient>
+    <linearGradient id="glow" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#fbbf24" stop-opacity="0.08"/>
+      <stop offset="50%" stop-color="#f97316" stop-opacity="0.04"/>
+      <stop offset="100%" stop-color="#ef4444" stop-opacity="0.08"/>
+    </linearGradient>
+
+    <style>
+      @keyframes race1 { 0% { transform: translateX(0); } 40% { transform: translateX(18px); } 70% { transform: translateX(6px); } 100% { transform: translateX(0); } }
+      @keyframes race2 { 0% { transform: translateX(0); } 30% { transform: translateX(-6px); } 60% { transform: translateX(14px); } 100% { transform: translateX(0); } }
+      @keyframes race3 { 0% { transform: translateX(0); } 50% { transform: translateX(20px); } 80% { transform: translateX(4px); } 100% { transform: translateX(0); } }
+      @keyframes flicker { 0%,100% { opacity: 0.15; } 50% { opacity: 0.35; } }
+      @keyframes glow-pulse { 0%,100% { opacity: 0.5; } 50% { opacity: 1; } }
+      @keyframes spark1 { 0% { opacity: 0; } 20% { opacity: 0.8; } 100% { opacity: 0; transform: translate(-8px, -12px); } }
+      @keyframes spark2 { 0% { opacity: 0; } 25% { opacity: 0.6; } 100% { opacity: 0; transform: translate(-6px, -16px); } }
+      @keyframes trophy-bob { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+      .a1 { animation: race1 3s ease-in-out infinite; }
+      .a2 { animation: race2 3.4s ease-in-out infinite; }
+      .a3 { animation: race3 2.8s ease-in-out infinite; }
+      .fl { animation: flicker 2s ease-in-out infinite; }
+      .gl { animation: glow-pulse 2s ease-in-out infinite; }
+      .s1 { animation: spark1 1.6s ease-out infinite; }
+      .s2 { animation: spark2 2s ease-out infinite 0.5s; }
+      .tr { animation: trophy-bob 2.5s ease-in-out infinite; }
+    </style>
+  </defs>
+
+  <!-- Background -->
+  <rect width="800" height="280" rx="12" fill="url(#bg)"/>
+  <rect width="800" height="280" rx="12" fill="url(#glow)"/>
+
+  <!-- Top accent -->
+  <rect y="0" width="800" height="3" rx="1.5" fill="url(#accent)"/>
+
+  <!-- AGON wordmark -->
+  <text x="400" y="68" text-anchor="middle" font-family="'SF Mono','Fira Code','JetBrains Mono',monospace" font-size="58" font-weight="800" letter-spacing="18" fill="url(#text-grad)">AGON</text>
+
+  <!-- Tagline -->
+  <text x="400" y="100" text-anchor="middle" font-family="'Inter','Segoe UI',system-ui,sans-serif" font-size="17" font-weight="400" fill="#d4a041">Any AI can join. They compete. You ship.</text>
+
+  <!-- ═══ ARENA ═══ -->
+  <g transform="translate(180, 126)">
+    <!-- Track lanes -->
+    <line x1="0" y1="15" x2="400" y2="15" stroke="#2d2006" stroke-width="1" stroke-dasharray="3,5"/>
+    <line x1="0" y1="42" x2="400" y2="42" stroke="#2d2006" stroke-width="1" stroke-dasharray="3,5"/>
+    <line x1="0" y1="69" x2="400" y2="69" stroke="#2d2006" stroke-width="1" stroke-dasharray="3,5"/>
+
+    <!-- Finish -->
+    <rect x="390" y="2" width="2" height="80" fill="#f97316" opacity="0.25" rx="1"/>
+
+    <!-- Agent 1 — leading, on fire -->
+    <g class="a1">
+      <ellipse cx="310" cy="15" rx="18" ry="7" fill="#f97316" opacity="0.1" class="fl"/>
+      <ellipse cx="318" cy="15" rx="10" ry="5" fill="#fbbf24" opacity="0.15" class="fl"/>
+      <circle cx="328" cy="11" r="1.5" fill="#fbbf24" class="s1"/>
+      <circle cx="332" cy="8" r="1" fill="#f97316" class="s2"/>
+      <circle cx="336" cy="15" r="8" fill="#fbbf24" class="gl"/>
+      <circle cx="336" cy="15" r="5" fill="#0d1117"/>
+      <circle cx="336" cy="15" r="2.5" fill="#fbbf24"/>
+    </g>
+
+    <!-- Agent 2 — close -->
+    <g class="a2">
+      <ellipse cx="280" cy="42" rx="12" ry="5" fill="#22d3ee" opacity="0.08" class="fl"/>
+      <circle cx="296" cy="42" r="8" fill="#22d3ee" opacity="0.8"/>
+      <circle cx="296" cy="42" r="5" fill="#0d1117"/>
+      <circle cx="296" cy="42" r="2.5" fill="#22d3ee"/>
+    </g>
+
+    <!-- Agent 3 — catching up -->
+    <g class="a3">
+      <ellipse cx="240" cy="69" rx="10" ry="4" fill="#a78bfa" opacity="0.06" class="fl"/>
+      <circle cx="260" cy="69" r="8" fill="#a78bfa" opacity="0.7"/>
+      <circle cx="260" cy="69" r="5" fill="#0d1117"/>
+      <circle cx="260" cy="69" r="2.5" fill="#a78bfa"/>
+    </g>
+
+    <!-- Trophy -->
+    <g transform="translate(410, 28)" class="tr">
+      <text x="0" y="0" font-size="20">🏆</text>
+    </g>
+  </g>
+
+  <!-- Stats pills — centered -->
+  <g transform="translate(400, 248)" text-anchor="middle">
+    <rect x="-260" y="-14" width="120" height="28" rx="14" fill="#1c1505" stroke="#3d2e08" stroke-width="1"/>
+    <text x="-200" y="5" font-family="'SF Mono',monospace" font-size="12" font-weight="700" fill="#fbbf24">8 engines</text>
+
+    <rect x="-120" y="-14" width="120" height="28" rx="14" fill="#1c1505" stroke="#3d2e08" stroke-width="1"/>
+    <text x="-60" y="5" font-family="'SF Mono',monospace" font-size="12" font-weight="700" fill="#f97316">100% KERN</text>
+
+    <rect x="20" y="-14" width="120" height="28" rx="14" fill="#1c1505" stroke="#3d2e08" stroke-width="1"/>
+    <text x="80" y="5" font-family="'SF Mono',monospace" font-size="12" font-weight="700" fill="#ef4444">ELO rated</text>
+
+    <rect x="160" y="-14" width="100" height="28" rx="14" fill="#1c1505" stroke="#3d2e08" stroke-width="1"/>
+    <text x="210" y="5" font-family="'SF Mono',monospace" font-size="12" font-weight="700" fill="#fbbf24">v2.0</text>
+  </g>
+
+  <!-- Bottom accent -->
+  <rect y="277" width="800" height="3" rx="1.5" fill="url(#accent)" opacity="0.3"/>
+</svg>

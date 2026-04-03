@@ -1,0 +1,197 @@
+const name=BOLD type=string
+  handler <<< '\x1b[1m' >>>
+
+const name=DIM type=string
+  handler <<< '\x1b[2m' >>>
+
+const name=ITALIC type=string
+  handler <<< '\x1b[3m' >>>
+
+const name=GREEN type=string
+  handler <<< '\x1b[32m' >>>
+
+const name=RED type=string
+  handler <<< '\x1b[31m' >>>
+
+const name=YELLOW type=string
+  handler <<< '\x1b[33m' >>>
+
+const name=BLUE type=string
+  handler <<< '\x1b[34m' >>>
+
+const name=MAGENTA type=string
+  handler <<< '\x1b[35m' >>>
+
+const name=CYAN type=string
+  handler <<< '\x1b[36m' >>>
+
+const name=WHITE type=string
+  handler <<< '\x1b[37m' >>>
+
+const name=RESET type=string
+  handler <<< '\x1b[0m' >>>
+
+const name=LOGO_COLORS type="number[]"
+  handler <<< [208, 214, 220, 226, 228, 230, 255] >>>
+
+const name=ENGINE_COLORS type="Record<string, number>"
+  handler <<<
+    { claude: 208, codex: 34, gemini: 33, ollama: 255, aider: 141, openrouter: 197, qwen: 45, mistral: 75, opencode: 156 }
+  >>>
+
+fn name=fg256 params="code:number, text:string" returns=string
+  handler <<<
+    return `\x1b[38;5;${code}m${text}${RESET}`;
+  >>>
+
+fn name=bgFg params="bg:number, fg:number, text:string" returns=string
+  handler <<<
+    return `\x1b[48;5;${bg};38;5;${fg}m${text}${RESET}`;
+  >>>
+
+fn name=bold params="text:string" returns=string
+  handler <<<
+    return `${BOLD}${text}${RESET}`;
+  >>>
+
+fn name=dim params="text:string" returns=string
+  handler <<<
+    return `${DIM}${text}${RESET}`;
+  >>>
+
+fn name=green params="text:string" returns=string
+  handler <<<
+    return `${GREEN}${text}${RESET}`;
+  >>>
+
+fn name=red params="text:string" returns=string
+  handler <<<
+    return `${RED}${text}${RESET}`;
+  >>>
+
+fn name=yellow params="text:string" returns=string
+  handler <<<
+    return `${YELLOW}${text}${RESET}`;
+  >>>
+
+fn name=cyan params="text:string" returns=string
+  handler <<<
+    return `${CYAN}${text}${RESET}`;
+  >>>
+
+fn name=blue params="text:string" returns=string
+  handler <<<
+    return `${BLUE}${text}${RESET}`;
+  >>>
+
+fn name=magenta params="text:string" returns=string
+  handler <<<
+    return `${MAGENTA}${text}${RESET}`;
+  >>>
+
+fn name=white params="text:string" returns=string
+  handler <<<
+    return `${WHITE}${text}${RESET}`;
+  >>>
+
+fn name=italic params="text:string" returns=string
+  handler <<<
+    return `${ITALIC}${text}${RESET}`;
+  >>>
+
+fn name=stripAnsi params="str:string" returns=string export=false
+  handler <<<
+    return str.replace(/\x1b\[[0-9;]*m/g, '');
+  >>>
+
+fn name=visibleLength params="str:string" returns=number export=false
+  handler <<<
+    return stripAnsi(str).length;
+  >>>
+
+fn name=gradientText params="text:string, colors:number[]" returns=string
+  handler <<<
+    let result = '';
+    const step = Math.max(1, Math.floor(text.length / colors.length));
+    for (let i = 0; i < text.length; i++) {
+      const colorIdx = Math.min(Math.floor(i / step), colors.length - 1);
+      result += fg256(colors[colorIdx], text[i]);
+    }
+    return result;
+  >>>
+
+fn name=header params="text:string" returns=void
+  handler <<<
+    console.log(`\n${BOLD}${CYAN}▸ ${text}${RESET}`);
+  >>>
+
+fn name=success params="text:string" returns=void
+  handler <<<
+    console.log(`${GREEN}✓${RESET} ${text}`);
+  >>>
+
+fn name=fail params="text:string" returns=void
+  handler <<<
+    console.log(`${RED}✗${RESET} ${text}`);
+  >>>
+
+fn name=warn params="text:string" returns=void
+  handler <<<
+    console.log(`${YELLOW}⚠${RESET} ${text}`);
+  >>>
+
+fn name=info params="text:string" returns=void
+  handler <<<
+    console.log(`${DIM}${text}${RESET}`);
+  >>>
+
+fn name=scoreboard params="title:string, engineIds:string[], metrics:Array<{label:string,values:string[]}>, winnerId?:string|null" returns=void
+  handler <<<
+    const labelWidth = Math.max(14, ...metrics.map((m: {label:string}) => m.label.length));
+    const colWidths = engineIds.map((id: string, col: number) =>
+      Math.max(
+        visibleLength(id) + 2,
+        ...metrics.map((m: {values:string[]}) => visibleLength(m.values[col] ?? '') + 2),
+      ),
+    );
+    console.log(`\n  ${BOLD}${WHITE}${title}${RESET}`);
+    const headerCells = engineIds.map((id: string, i: number) => {
+      const color = ENGINE_COLORS[id] ?? 245;
+      const name = id === winnerId ? `★ ${id}` : id;
+      const styled = fg256(color, BOLD + name + RESET);
+      const pad = colWidths[i] - visibleLength(name);
+      return styled + ' '.repeat(Math.max(0, pad));
+    });
+    console.log(`  ${''.padEnd(labelWidth)}  ${headerCells.join('  ')}`);
+    const sepWidth = labelWidth + colWidths.reduce((s: number, w: number) => s + w + 2, 0) + 2;
+    console.log(`  ${DIM}${'─'.repeat(sepWidth)}${RESET}`);
+    for (const metric of metrics) {
+      const label = `${BOLD}${metric.label.padEnd(labelWidth)}${RESET}`;
+      const cells = metric.values.map((val: string, i: number) => {
+        const pad = colWidths[i] - visibleLength(val);
+        return val + ' '.repeat(Math.max(0, pad));
+      });
+      console.log(`  ${label}  ${cells.join('  ')}`);
+    }
+    console.log('');
+  >>>
+
+fn name=table params="headers:string[], rows:string[][]" returns=void
+  handler <<<
+    const widths = headers.map((h: string, i: number) =>
+      Math.max(visibleLength(h), ...rows.map((r: string[]) => visibleLength(r[i] ?? ''))),
+    );
+    const headerLine = headers
+      .map((h: string, i: number) => h.padEnd(widths[i]))
+      .join('  ');
+    const separator = widths.map((w: number) => '─'.repeat(w)).join('──');
+    console.log(`  ${bold(headerLine)}`);
+    console.log(`  ${dim(separator)}`);
+    for (const row of rows) {
+      const line = row.map((cell: string, i: number) => {
+        const pad = widths[i] - visibleLength(cell);
+        return cell + ' '.repeat(Math.max(0, pad));
+      }).join('  ');
+      console.log(`  ${line}`);
+    }
+  >>>

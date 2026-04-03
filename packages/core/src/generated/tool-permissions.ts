@@ -1,0 +1,165 @@
+import { resolve, relative, isAbsolute } from 'node:path';
+
+import { realpathSync } from 'node:fs';
+
+import type { PermissionDecision, ToolContext } from './tool-types.js';
+
+export interface PermissionRule {
+  tool: string;
+  behavior: 'allow'|'ask'|'deny';
+  pattern?: string;
+  reason?: string;
+}
+
+export const DANGEROUS_COMMANDS: string[] = [
+  'rm -rf /', 'rm -rf ~', 'rm -rf *',
+  'dd if=', 'mkfs.',
+  '> /dev/sd', '> /dev/nv',
+  'chmod 777 /',
+  ':(){:|:&};:', // fork bomb
+];
+
+export const DANGEROUS_PREFIXES: string[] = ['sudo ', 'su ', 'doas '];
+
+export const SAFE_SHELL_WRAPPERS: string[] = ['timeout', 'time', 'nice', 'nohup', 'env', 'command'];
+
+export const READONLY_COMMANDS: Set<string> = new Set([
+  'ls', 'cat', 'head', 'tail', 'less', 'more', 'wc', 'file', 'stat',
+  'pwd', 'echo', 'printf', 'date', 'which', 'whereis', 'type',
+  'find', 'grep', 'rg', 'ag', 'fd', 'fzf',
+  'git status', 'git log', 'git diff', 'git branch', 'git show', 'git blame',
+  'npm test', 'npm run test', 'npx vitest', 'npx tsc',
+  'node --version', 'npm --version', 'python --version',
+  'tree', 'du', 'df',
+]);
+
+export function stripShellWrappers(command: string): string {
+  let cmd = command.trim();
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const wrapper of SAFE_SHELL_WRAPPERS) {
+      if (cmd.startsWith(wrapper + ' ')) {
+        cmd = cmd.slice(wrapper.length + 1).trim();
+        // Skip any flags
+        while (cmd.startsWith('-')) {
+          const spaceIdx = cmd.indexOf(' ');
+          if (spaceIdx === -1) break;
+          cmd = cmd.slice(spaceIdx + 1).trim();
+        }
+        changed = true;
+      }
+    }
+  }
+  return cmd;
+}
+
+export function extractBaseCommand(command: string): string {
+  const stripped = stripShellWrappers(command);
+  // Get first word (the actual command)
+  const parts = stripped.split(/\s+/);
+  return parts[0] ?? '';
+}
+
+export function isDangerousCommand(command: string): boolean {
+  const lower = command.toLowerCase().trim();
+  for (const dangerous of DANGEROUS_COMMANDS) {
+    if (lower.includes(dangerous)) return true;
+  }
+  for (const prefix of DANGEROUS_PREFIXES) {
+    if (lower.startsWith(prefix)) return true;
+  }
+  return false;
+}
+
+export function isReadOnlyCommand(command: string): boolean {
+  const stripped = stripShellWrappers(command).trim();
+  // Split on compound operators FIRST: &&, ||, ;, &
+  // All sub-commands must be read-only for the whole command to be safe
+  if (/[;&|]{1,2}/.test(stripped) && stripped !== '|') {
+    const parts = stripped.split(/\s*(?:&&|\|\||;|&)\s*/);
+    return parts.every((p: string) => p.trim() && isReadOnlyCommand(p.trim()));
+  }
+  // Pipe chains: all commands must be read-only
+  if (stripped.includes('|')) {
+    const parts = stripped.split('|').map((p: string) => p.trim());
+    return parts.every((p: string) => isReadOnlyCommand(p));
+  }
+  // Check against known read-only commands
+  for (const safe of READONLY_COMMANDS) {
+    if (stripped === safe || stripped.startsWith(safe + ' ')) return true;
+  }
+  return false;
+}
+
+export function checkBashPermission(command: string, ctx: ToolContext): PermissionDecision {
+  if (isDangerousCommand(command)) {
+    return { behavior: 'deny', message: `Dangerous command blocked: ${command.slice(0, 50)}`, reason: 'dangerous_pattern' };
+  }
+  if (ctx.permissionMode === 'deny-all') {
+    return { behavior: 'deny', message: 'All tool execution is denied' };
+  }
+  if (ctx.permissionMode === 'auto' || isReadOnlyCommand(command)) {
+    return { behavior: 'allow' };
+  }
+  return { behavior: 'ask', message: `Run: ${command.length > 80 ? command.slice(0, 80) + '…' : command}` };
+}
+
+export function isPathUnderCwd(filePath: string, cwd: string): boolean {
+  const resolved = isAbsolute(filePath) ? filePath : resolve(cwd, filePath);
+  // Resolve symlinks to prevent traversal via symlinks
+  let realPath: string;
+  let realCwd: string;
+  try {
+    realPath = realpathSync(resolved);
+  } catch {
+    // File doesn't exist yet — use unresolved path (safe for new files)
+    realPath = resolved;
+  }
+  try {
+    realCwd = realpathSync(cwd);
+  } catch {
+    realCwd = cwd;
+  }
+  const rel = relative(realCwd, realPath);
+  return !rel.startsWith('..');
+}
+
+export function checkFileReadPermission(filePath: string, ctx: ToolContext): PermissionDecision {
+  if (ctx.permissionMode === 'deny-all') {
+    return { behavior: 'deny', message: 'All tool execution is denied' };
+  }
+  const resolved = isAbsolute(filePath) ? filePath : resolve(ctx.cwd, filePath);
+  if (isPathUnderCwd(resolved, ctx.cwd)) {
+    return { behavior: 'allow' };
+  }
+  if (ctx.permissionMode === 'auto') {
+    return { behavior: 'allow' };
+  }
+  return { behavior: 'ask', message: `Read file outside workspace: ${resolved}` };
+}
+
+export function checkFileWritePermission(filePath: string, ctx: ToolContext): PermissionDecision {
+  if (ctx.permissionMode === 'deny-all') {
+    return { behavior: 'deny', message: 'All tool execution is denied' };
+  }
+  const resolved = isAbsolute(filePath) ? filePath : resolve(ctx.cwd, filePath);
+  
+  // Block writing to sensitive files
+  const basename = resolved.split('/').pop() ?? '';
+  const sensitivePatterns = ['.env', 'credentials', 'secrets', '.pem', '.key', 'id_rsa'];
+  for (const pat of sensitivePatterns) {
+    if (basename.includes(pat)) {
+      return { behavior: 'ask', message: `Write to sensitive file: ${basename}` };
+    }
+  }
+  
+  if (isPathUnderCwd(resolved, ctx.cwd)) {
+    if (ctx.permissionMode === 'auto') {
+      return { behavior: 'allow' };
+    }
+    return { behavior: 'allow' };
+  }
+  return { behavior: 'ask', message: `Write file outside workspace: ${resolved}` };
+}
+

@@ -142,6 +142,36 @@ describe('Intent Detection — Slash Commands', () => {
     expect(detectIntent('/abort').type).toBe('cancel');
   });
 
+  it('/cp with index', () => {
+    const r = detectIntent('/cp 3');
+    expect(r.type).toBe('cp');
+    if (r.type === 'cp') expect(r.index).toBe(3);
+  });
+
+  it('/cp without index', () => {
+    const r = detectIntent('/cp');
+    expect(r.type).toBe('cp');
+    if (r.type === 'cp') expect(r.index).toBeUndefined();
+  });
+
+  it('/copy alias', () => {
+    const r = detectIntent('/copy 1');
+    expect(r.type).toBe('cp');
+    if (r.type === 'cp') expect(r.index).toBe(1);
+  });
+
+  it('/img parses path', () => {
+    const r = detectIntent('/img /tmp/screenshot.png');
+    expect(r.type).toBe('img');
+    if (r.type === 'img') expect(r.path).toBe('/tmp/screenshot.png');
+  });
+
+  it('/image alias works', () => {
+    const r = detectIntent('/image foo.png');
+    expect(r.type).toBe('img');
+    if (r.type === 'img') expect(r.path).toBe('foo.png');
+  });
+
   it('/chat sends to chat', () => {
     const r = detectIntent('/chat hello world');
     expect(r.type).toBe('chat');
@@ -174,29 +204,18 @@ describe('Intent Detection — Slash Commands', () => {
 // ── Natural Language Detection ──────────────────────────────────────
 
 describe('Intent Detection — Natural Language', () => {
-  it('forge keywords trigger forge', () => {
-    const r = detectIntent('fix the login bug');
-    expect(r.type).toBe('forge');
-  });
+  it('plain text auto-classifies into code/question/ambiguous', () => {
+    const fix = detectIntent('fix the login bug');
+    expect(fix.type).toBe('auto');
+    if (fix.type === 'auto') expect(fix.taskClass).toBe('code');
 
-  it('debate keywords trigger tribunal', () => {
-    expect(detectIntent('should we use Redis vs Postgres').type).toBe('tribunal');
-    expect(detectIntent('pros and cons of microservices').type).toBe('tribunal');
-  });
+    const question = detectIntent('how do I deploy');
+    expect(question.type).toBe('auto');
+    if (question.type === 'auto') expect(question.taskClass).toBe('question');
 
-  it('brainstorm keywords trigger brainstorm', () => {
-    expect(detectIntent('brainstorm ideas for the homepage').type).toBe('brainstorm');
-    expect(detectIntent('suggest a better approach').type).toBe('brainstorm');
-  });
-
-  it('campfire keywords trigger campfire', () => {
-    expect(detectIntent('lets think about the architecture').type).toBe('campfire');
-    expect(detectIntent('what if we used WebSockets').type).toBe('campfire');
-  });
-
-  it('question words fall back to brainstorm', () => {
-    expect(detectIntent('how do I set up auth').type).toBe('brainstorm');
-    expect(detectIntent('what is the best ORM').type).toBe('brainstorm');
+    const ambiguous = detectIntent('should we use Redis');
+    expect(ambiguous.type).toBe('auto');
+    if (ambiguous.type === 'auto') expect(ambiguous.taskClass).toBe('ambiguous');
   });
 
   it('leaderboard keywords', () => {
@@ -215,9 +234,10 @@ describe('Intent Detection — Natural Language', () => {
     expect(detectIntent('?').type).toBe('help');
   });
 
-  it('truly unknown input', () => {
-    expect(detectIntent('hello there').type).toBe('unknown');
-    expect(detectIntent('just chatting').type).toBe('unknown');
+  it('ambiguous input returns auto with ambiguous class', () => {
+    const r = detectIntent('hello there');
+    expect(r.type).toBe('auto');
+    if (r.type === 'auto') expect(r.taskClass).toBe('ambiguous');
   });
 });
 

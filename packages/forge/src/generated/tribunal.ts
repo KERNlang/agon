@@ -1,6 +1,8 @@
+import { randomUUID } from 'node:crypto';
+
 import type { EngineAdapter, EngineDefinition, ForgeEvent } from '@agon/core';
 
-import { EngineRegistry, buildTribunalPrompt } from '@agon/core';
+import { EngineRegistry, buildTribunalPrompt, createSidechainLogger } from '@agon/core';
 
 import type { TribunalMode, TribunalModeConfig } from './tribunal-modes.js';
 
@@ -23,28 +25,6 @@ export interface TribunalResult {
   positions: TribunalPosition[];
   summary: string;
   mode?: string;
-}
-
-export function assignPositions(count: number): string[] {
-  if (count === 1) return ['Analyze both sides'];
-  if (count === 2) return ['Argue FOR', 'Argue AGAINST'];
-  if (count === 3) return ['Argue FOR', 'Argue AGAINST', "Play devil's advocate"];
-  const positions = ['Argue FOR', 'Argue AGAINST', "Play devil's advocate"];
-  for (let i = 3; i < count; i++) {
-    positions.push(`Perspective ${i + 1}: Find unconventional angles`);
-  }
-  return positions;
-}
-
-export function buildSummaryPrompt(question: string, positions: TribunalPosition[]): string {
-  const debateText = positions
-    .map((p) => {
-      const allArgs = p.arguments.join('\n\n');
-      return `## ${p.engineId} (${p.position})\n${allArgs}`;
-    })
-    .join('\n\n---\n\n');
-  
-  return `## TASK\nSynthesize this debate into a clear verdict.\n\n## QUESTION\n${question}\n\n## DEBATE\n${debateText}\n\n## INSTRUCTIONS\nProvide:\n1. **Verdict**: Which side has the stronger argument and why\n2. **Key insights**: 2-3 non-obvious points that emerged\n3. **Recommendation**: What should the user actually do?\n\nBe decisive. Don't hedge with "it depends" — pick a side and explain why.`;
 }
 
 export function buildFallbackSummary(positions: TribunalPosition[]): string {
@@ -72,6 +52,15 @@ export async function runTribunal(opts: {question:string, engines:string[], roun
   }));
   
   const effectiveRounds = Math.min(rounds, modeConfig.maxRounds);
+  
+  // Sidechain audit trail
+  const tribunalId = randomUUID().slice(0, 8);
+  const sidechain = createSidechainLogger({
+    sessionId: tribunalId,
+    sessionType: 'tribunal',
+    outputDir,
+  });
+  sidechain.log('tribunal:init', undefined, { question, mode, engines, rounds: effectiveRounds });
   const allRounds: TribunalRound[] = [];
   
   for (let round = 1; round <= effectiveRounds; round++) {
@@ -114,7 +103,8 @@ export async function runTribunal(opts: {question:string, engines:string[], roun
           outputDir,
         });
         return { engineId: pos.engineId, argument: result.stdout.trim() };
-      } catch {
+      } catch (err) {
+        console.warn(`[agon] tribunal dispatch (${pos.engineId}) round ${round} failed: ${err instanceof Error ? err.message : String(err)}`);
         return { engineId: pos.engineId, argument: '(failed to respond)' };
       }
     });
@@ -133,6 +123,7 @@ export async function runTribunal(opts: {question:string, engines:string[], roun
     for (const result of roundResults) {
       const pos = positions.find((p) => p.engineId === result.engineId);
       if (pos) pos.arguments.push(result.argument);
+      sidechain.log('round:response', result.engineId, { round, argLength: result.argument.length });
     }
   
     allRounds.push({
@@ -159,9 +150,17 @@ export async function runTribunal(opts: {question:string, engines:string[], roun
       outputDir,
     });
     summary = summaryResult.stdout.trim();
-  } catch {
+  } catch (err) {
+    console.warn(`[agon] tribunal summary failed: ${err instanceof Error ? err.message : String(err)}`);
     summary = buildFallbackSummary(positions);
   }
+  
+  sidechain.log('tribunal:done', undefined, {
+    rounds: allRounds.length,
+    engines: engines.length,
+    mode,
+    summaryLength: summary.length,
+  });
   
   opts.onEvent?.({
     type: 'forge:done',

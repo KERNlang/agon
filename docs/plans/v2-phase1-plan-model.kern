@@ -1,0 +1,273 @@
+// Agon v2 Phase 1 — Typed Plan Model
+// Execution contract for forge & build operations.
+// Preview → Approve → Execute → Resume.
+
+// ── Plan State Machine ──
+
+state PlanState = draft | approved | running | paused | completed | failed | cancelled
+state StepState = pending | running | completed | failed | skipped
+
+// draft → approved → running → completed
+//                  → paused → running (retry)
+//                  → failed
+// draft → cancelled
+
+// ── Plan Types ──
+
+schema Plan = "{
+  id: string,
+  action: PlanAction,
+  state: PlanState,
+  steps: PlanStep[],
+  workspace: WorkspaceSnapshot,
+  createdAt: string,
+  updatedAt: string,
+  currentStepId: string | null
+}"
+
+schema PlanAction = "{
+  type: 'forge' | 'build',
+  task: string,
+  fitnessCmd?: string,
+  engineId?: string,
+  engines?: string[]
+}"
+
+schema PlanStep = "{
+  id: string,
+  kind: 'dispatch' | 'fitness' | 'critique' | 'synthesis' | 'apply',
+  label: string,
+  engineId?: string,
+  effects: ('read' | 'write' | 'exec' | 'network')[],
+  result: StepResult
+}"
+
+schema StepResult = "{
+  state: StepState,
+  attempts: StepAttempt[],
+  artifacts: ArtifactRef[],
+  engineId?: string,
+  score?: number,
+  durationMs?: number
+}"
+
+schema WorkspaceSnapshot = "{
+  id: string,
+  path: string,
+  headSha: string,
+  branch: string,
+  dirty: boolean
+}"
+
+// ── Plan Commands ──
+
+command name=plan description="Show current or specific plan"
+  arg name=planId type=string description="Plan ID to show"
+  handler <<<
+    if (planId) displayPlan(loadPlan(planId));
+    else if (currentPlan) displayPlan(currentPlan);
+    else displayPlan(listPlans(1)[0]);
+  >>>
+
+command name=plans description="List recent plans"
+  handler <<<
+    displayPlanList(listPlans(20));
+  >>>
+
+command name=approve description="Approve current draft plan"
+  guard currentPlan?.state === 'draft' → text "No draft plan." style={color: "yellow"}
+  handler <<<
+    currentPlan.state = 'approved';
+    savePlan(currentPlan);
+    if (currentPlan.action.type === 'forge')
+      await handleForge(currentPlan.action.task, currentPlan.action.fitnessCmd, rl, currentPlan);
+  >>>
+
+command name=retry description="Retry failed plan step"
+  guard currentPlan?.state === 'paused' | currentPlan?.state === 'failed'
+  handler <<<
+    const failed = currentPlan.steps.find(s => s.result.state === 'failed');
+    info(`Failed step: ${failed.label} — re-run the command to retry.`);
+  >>>
+
+command name=cancel description="Cancel current plan"
+  guard currentPlan?.state !== 'completed' & currentPlan?.state !== 'cancelled'
+  handler <<<
+    currentPlan.state = 'cancelled';
+    savePlan(currentPlan);
+  >>>
+
+// ── Plan Store (persist to ~/.agon/plans/) ──
+
+// savePlan(plan) → write ~/.agon/plans/{id}.json
+// loadPlan(id)   → read + sanitize path (no traversal)
+// listPlans(n)   → parse all, sort by updatedAt desc, slice n
+// deletePlan(id) → unlink
+
+// ── Plan Display (Terminal Target) ──
+
+screen name=PlanView
+  text value="{{ plan.action.type === 'forge' ? 'Forge' : 'Build' }}" tag=h2 {fw:bold,c:#FFF}
+  text value="{{ plan.id }}" {c:#888}
+  separator width=52
+
+  // Action details
+  text value="Task: {{ plan.action.task }}" {fw:bold}
+  conditional if={{ plan.action.fitnessCmd }}
+    text value="Test: {{ plan.action.fitnessCmd }}"
+  conditional if={{ plan.action.engines }}
+    text value="Engines: {{ plan.action.engines.join(', ') }}"
+
+  // Steps
+  each step in plan.steps
+    row {ai:center}
+      text value="{{ stepIcon(step.result.state) }}" {c: stepColor(step.result.state)}
+      text value="{{ step.label }}" {c: stepColor(step.result.state)}
+      conditional if={{ step.engineId }}
+        text value="({{ step.engineId }})" {c:#888}
+      conditional if={{ step.result.score != null }}
+        text value="→ {{ step.result.score }} pts" {c:#888}
+
+  // Summary
+  separator width=52
+  row
+    text value="State: {{ plan.state }}" {c:#888}
+    text value="{{ completedCount }}/{{ plan.steps.length }} steps" {c:#888}
+    text value="{{ plan.workspace.branch }}" {c:#888}
+    text value="{{ plan.workspace.dirty ? 'dirty' : 'clean' }}" {c: plan.workspace.dirty ? "#FFD700" : "#32CD32"}
+
+// ── Forge Plan Flow ──
+
+// 1. Create plan from intent
+// 2. Display plan (preview)
+// 3. Approve (Y/n prompt or /approve)
+// 4. Execute (existing forge logic)
+// 5. Update steps via event callback
+// 6. Finalize and persist
+
+repl extend="agon"
+
+  on forge(task, fitness)
+    // Snapshot workspace
+    snapshot = snapshotWorkspace(getActiveWorkspace())
+
+    // Build plan steps
+    plan = createPlan(
+      action={ type: "forge", task, fitnessCmd: fitness, engines: activeEngines() }
+      workspace=snapshot
+      steps=[
+        { id: "baseline",  kind: "fitness",   label: "Baseline fitness check" }
+        { id: "dispatch",  kind: "dispatch",  label: "Dispatch engines" }
+        { id: "score",     kind: "fitness",   label: "Score engine results" }
+        { id: "winner",    kind: "dispatch",  label: "Determine winner" }
+        { id: "synthesis", kind: "synthesis", label: "Critique & synthesize" }
+      ]
+    )
+
+    display plan
+    confirm "Approve plan?" → set plan.state = "approved"
+      decline → set plan.state = "cancelled" → savePlan(plan) → return
+
+    set plan.state = "running"
+    savePlan(plan)
+
+    // Execute with event-driven step tracking
+    parallel timeout=600 status=true
+      each engine in activeEngines()
+        dispatch engine task=task fitness=fitness
+          on baseline:start → advanceStep(plan, "baseline", running)
+          on baseline:done  → advanceStep(plan, "baseline", completed)
+          on stage1:dispatch → advanceStep(plan, "dispatch", running)
+          on winner:determined(winner)
+            advanceStep(plan, "dispatch", completed)
+            advanceStep(plan, "score", completed)
+            advanceStep(plan, "winner", completed)
+          on synthesis:start → advanceStep(plan, "synthesis", running)
+          on synthesis:done  → advanceStep(plan, "synthesis", completed)
+          on error(err)
+            advanceStep(plan, plan.currentStepId, failed, error=err)
+            set plan.state = "failed"
+            savePlan(plan)
+
+    then(manifest)
+      // Finalize — ensure all steps completed (handles stage-1 auto-accept)
+      each step in plan.steps
+        guard step.result.state === "pending" | step.result.state === "running"
+          advanceStep(plan, step.id, completed)
+
+      // Add artifacts
+      advanceStep(plan, "winner", completed, artifacts=[
+        { type: "manifest", path: forgeDir + "/manifest.json" }
+        { type: "patch", path: manifest.patches[manifest.winner] }
+      ])
+
+      set plan.state = manifest.winner ? "completed" : "failed"
+      savePlan(plan)
+
+      scoreboard title="Forge Scoreboard" winner=manifest.winner
+        metric name=Fitness values={{ results.map(r => r.pass ? "PASS" : "FAIL") }}
+        metric name=Score values={{ results.map(r => r.score) }}
+        metric name=Diff values={{ results.map(r => r.diffLines + " lines") }}
+        metric name=Time values={{ results.map(r => r.durationSec + "s") }}
+
+      text "Plan: {{ plan.id }}" {c:#888}
+
+  // ── Build Plan Flow ──
+
+  on build(task, engineId)
+    snapshot = snapshotWorkspace(getActiveWorkspace())
+
+    plan = createPlan(
+      action={ type: "build", task, engineId }
+      workspace=snapshot
+      steps=[
+        { id: "plan",      kind: "dispatch", label: "Get implementation plan", engineId }
+        { id: "implement", kind: "dispatch", label: "Implement the plan",      engineId }
+      ]
+    )
+
+    display plan
+    savePlan(plan)
+
+    // Phase 1: Engine plans (still draft — no approval needed for read-only)
+    spinner message="{{ engineId }} is planning..." color=214
+    dispatch engineId prompt=planPrompt(task, context)
+      on done(result) → advanceStep(plan, "plan", completed, artifacts=[result])
+      on error(err) → advanceStep(plan, "plan", failed, error=err) → throw err
+
+    display result as=engineBox engine=engineId label="plan"
+
+    // Phase 2: Approve implementation
+    confirm "Implement this plan?"
+      decline → set plan.state = "cancelled" → savePlan(plan) → return
+
+    // Phase 3: Implement (now running)
+    set plan.state = "running"
+    advanceStep(plan, "implement", running)
+    savePlan(plan)
+
+    spinner message="{{ engineId }} is implementing..." color=214
+    dispatch engineId prompt=buildPrompt(task, context, result)
+      on done(build)
+        advanceStep(plan, "implement", build.exitCode === 0 ? completed : failed)
+        set plan.state = build.exitCode === 0 ? "completed" : "failed"
+        savePlan(plan)
+      on error(err)
+        advanceStep(plan, "implement", failed, error=err)
+        set plan.state = "failed"
+        savePlan(plan)
+        throw err
+
+    display build as=engineBox engine=engineId label="implementation"
+    text "Plan: {{ plan.id }}" {c:#888}
+
+// ── Approval Levels ──
+// config approvalLevel: auto | plan | step
+// auto → skip all prompts, execute immediately
+// plan → approve once, all steps auto-proceed (default)
+// step → approve each write/exec step individually
+
+// canAutoApprove(step, level):
+//   auto → true
+//   plan → true (plan already approved)
+//   step → step.effects.every(e => e === 'read')

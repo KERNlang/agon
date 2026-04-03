@@ -11,14 +11,22 @@ export function isKernProject(cwd: string): boolean {
   try {
     const pkg = JSON.parse(readFileSync(join(cwd, 'package.json'), 'utf-8'));
     if ('kern-lang' in { ...pkg.dependencies, ...pkg.devDependencies }) return true;
-  } catch {}
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+      console.warn(`[agon] failed to read package.json in ${cwd}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
   try {
     if (readdirSync(cwd).some((f: string) => f.endsWith('.kern'))) return true;
-  } catch {}
+  } catch (err) {
+    console.warn(`[agon] failed to scan directory ${cwd}: ${err instanceof Error ? err.message : String(err)}`);
+  }
   try {
     const srcDir = join(cwd, 'src');
     if (existsSync(srcDir) && readdirSync(srcDir).some((f: string) => f.endsWith('.kern'))) return true;
-  } catch {}
+  } catch (err) {
+    console.warn(`[agon] failed to scan src directory in ${cwd}: ${err instanceof Error ? err.message : String(err)}`);
+  }
   return false;
 }
 
@@ -42,9 +50,13 @@ function buildFileTree(cwd: string, maxDepth?: number): string {
           } else {
             lines.push(`${prefix}${entry}`);
           }
-        } catch {}
+        } catch (err) {
+          console.warn(`[agon] failed to stat ${fullPath}: ${err instanceof Error ? err.message : String(err)}`);
+        }
       }
-    } catch {}
+    } catch (err) {
+      console.warn(`[agon] failed to read directory ${dir}: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
   
   walk(cwd, '', 0);
@@ -57,7 +69,11 @@ function detectProjectType(cwd: string): string {
     const pkg = JSON.parse(readFileSync(join(cwd, 'package.json'), 'utf-8'));
     markers.push(`node (${pkg.name ?? 'unnamed'})`);
     if (pkg.scripts?.test) markers.push(`test: ${pkg.scripts.test}`);
-  } catch {}
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+      console.warn(`[agon] failed to read package.json for project type detection: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
   if (existsSync(join(cwd, 'kern.config.ts'))) markers.push('kern');
   if (existsSync(join(cwd, 'tsconfig.json'))) markers.push('typescript');
   if (existsSync(join(cwd, 'pyproject.toml'))) markers.push('python');
@@ -72,7 +88,9 @@ export function scanProjectContext(cwd: string, extraContext?: string, format?: 
   
   // Branch + status
   let branch = 'unknown';
-  try { branch = currentBranch(cwd); } catch {}
+  try { branch = currentBranch(cwd); } catch (err) {
+    console.warn(`[agon] failed to detect branch: ${err instanceof Error ? err.message : String(err)}`);
+  }
   
   const status = gitStatusShort(cwd);
   const changed = gitChangedFiles(cwd);
@@ -89,7 +107,9 @@ export function scanProjectContext(cwd: string, extraContext?: string, format?: 
   
   // Recent commits (compact)
   let commits = '';
-  try { commits = recentCommits(cwd, 5); } catch {}
+  try { commits = recentCommits(cwd, 5); } catch (err) {
+    console.warn(`[agon] failed to read recent commits: ${err instanceof Error ? err.message : String(err)}`);
+  }
   if (commits) {
     sections.push(`Recent commits:\n${commits}`);
   }

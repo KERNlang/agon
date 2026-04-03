@@ -1,4 +1,4 @@
-import from="node:fs" names="readFileSync,writeFileSync,mkdirSync"
+import from="node:fs" names="readFileSync,writeFileSync,mkdirSync,renameSync"
 import from="node:path" names="join,dirname"
 import from="node:os" names="homedir"
 import from="./types.js" names="AgonConfig" types=true
@@ -26,18 +26,28 @@ const name=RUNS_DIR type=string
   >>>
 
 const name=LOCAL_CONFIG_NAME type=string value="'.agon.json'"
+const name=LOCAL_PRIVATE_CONFIG_NAME type=string value="'.agon.local.json'"
 
 fn name=loadConfig params="cwd?:string" returns="Required<AgonConfig>"
   handler <<<
     function readJsonSafe<T>(path: string): T | null {
       try { return JSON.parse(readFileSync(path, 'utf-8')) as T; }
-      catch { return null; }
+      catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+          console.warn(`[agon] warning: failed to parse config ${path}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+        return null;
+      }
     }
     const global = readJsonSafe<Partial<AgonConfig>>(GLOBAL_CONFIG_PATH) ?? {};
     const local = cwd
       ? readJsonSafe<Partial<AgonConfig>>(join(cwd, LOCAL_CONFIG_NAME)) ?? {}
       : {};
-    return { ...DEFAULT_AGON_CONFIG, ...global, ...local } as Required<AgonConfig>;
+    // .agon.local.json — gitignored personal overrides (debug, engine prefs)
+    const localPrivate = cwd
+      ? readJsonSafe<Partial<AgonConfig>>(join(cwd, LOCAL_PRIVATE_CONFIG_NAME)) ?? {}
+      : {};
+    return { ...DEFAULT_AGON_CONFIG, ...global, ...local, ...localPrivate } as Required<AgonConfig>;
   >>>
 
 fn name=configGet params="key:keyof AgonConfig,cwd?:string" returns="Required<AgonConfig>[keyof AgonConfig]"
@@ -52,12 +62,19 @@ fn name=configSet params="key:keyof AgonConfig,value:AgonConfig[keyof AgonConfig
     }
     function readJsonSafe<T>(path: string): T | null {
       try { return JSON.parse(readFileSync(path, 'utf-8')) as T; }
-      catch { return null; }
+      catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+          console.warn(`[agon] warning: failed to parse config ${path}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+        return null;
+      }
     }
     const existing = readJsonSafe<Partial<AgonConfig>>(GLOBAL_CONFIG_PATH) ?? {};
     (existing as any)[key] = value;
     mkdirSync(dirname(GLOBAL_CONFIG_PATH), { recursive: true });
-    writeFileSync(GLOBAL_CONFIG_PATH, JSON.stringify(existing, null, 2) + '\n');
+    const tmpPath = GLOBAL_CONFIG_PATH + '.tmp';
+    writeFileSync(tmpPath, JSON.stringify(existing, null, 2) + '\n');
+    renameSync(tmpPath, GLOBAL_CONFIG_PATH);
   >>>
 
 fn name=ensureAgonHome returns=void

@@ -42,12 +42,20 @@ export function worktreeCreate(repoDir: string, worktreePath: string, sha: strin
 }
 
 export function worktreeRemove(repoDir: string, worktreePath: string): void {
-  try { git(['worktree', 'remove', worktreePath, '--force'], repoDir); } catch {}
+  try { git(['worktree', 'remove', worktreePath, '--force'], repoDir); } catch (err) {
+    console.warn(`[agon] failed to remove worktree ${worktreePath}: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 export function worktreeDiff(cwd: string): string {
   git(['add', '-A'], cwd);
   return git(['diff', '--cached'], cwd);
+}
+
+export function readOnlyDiff(cwd: string): string {
+  const staged = git(['diff', '--cached'], cwd);
+  const unstaged = git(['diff'], cwd);
+  return staged + (staged && unstaged ? '\n' : '') + unstaged;
 }
 
 export function diffLineCount(diff: string): number {
@@ -63,7 +71,10 @@ export function diffFileCount(cwd: string): number {
   try {
     const result = git(['diff', '--cached', '--name-only'], cwd);
     return result ? result.split('\n').filter(Boolean).length : 0;
-  } catch { return 0; }
+  } catch (err) {
+    console.warn(`[agon] diffFileCount failed: ${err instanceof Error ? err.message : String(err)}`);
+    return 0;
+  }
 }
 
 export function applyPatch(cwd: string, patchContent: string): void {

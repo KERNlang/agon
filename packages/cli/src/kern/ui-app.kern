@@ -2,7 +2,7 @@
 // Replaces app.tsx monolith. All logic in KERN modules; this is the wiring.
 
 import from="react" names="useState,useCallback,useEffect,useRef,useMemo"
-import from="ink" names="render,Text,useInput,useApp"
+import from="ink" names="Box,Text,render,useApp,useInput"
 import from="ink-text-input" default="TextInput"
 import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,ensureCurrentWorkspace,startChatSession,getElo,getActiveWorkspace,RUNS_DIR,extractImagesFromInput,resolveWorkingDir,currentBranch,configSet"
 import from="@agon/core" names="Plan,ChatSession,Skill,PersistentSession,ImageAttachment" types=true
@@ -88,7 +88,7 @@ screen name=App target=ink
   state name=dynamicSkills type="Skill[]" initial="loadSkills()"
 
   // ── Derived ──
-  callback name=allSlashCommands params="" deps="dynamicSkills" returns="any[]"
+  memo name=allSlashCommands deps="dynamicSkills"
     handler <<<
       const skillCmds = dynamicSkills.map((s: any) => ({ cmd: s.trigger, desc: s.description || s.name }));
       return [...SLASH_COMMANDS, ...skillCmds];
@@ -119,9 +119,9 @@ screen name=App target=ink
     >>>
 
   // ── Output actions (KERN bridge) ──
-  callback name=outputActions params="" deps=""
+  memo name=outputActions deps=""
     handler <<<
-      return useMemo(() => ({
+      return {
         setLiveSpinner,
         setLiveProgress,
         setStreamingText: (val: any) => { streamingTextRef.current = val; setStreamingText(val); },
@@ -140,13 +140,13 @@ screen name=App target=ink
           }
         },
         getEngineColor: (engineId: string) => ENGINE_COLORS[engineId] ?? 245,
-      }), []);
+      };
     >>>
 
   callback name=dispatch params="event:OutputEvent" deps="mode"
     handler <<<
       const state: OutputState = { liveSpinner: null, liveProgress: null, streamingText: streamingTextRef.current };
-      handleOutputEvent(event, state, outputActions(), mode, chatStartTimeRef.current);
+      handleOutputEvent(event, state, outputActions, mode, chatStartTimeRef.current);
     >>>
 
   callback name=askQuestion params="prompt:string" deps="dispatch"
@@ -270,7 +270,7 @@ screen name=App target=ink
             .catch((err: any) => { jobManager.fail(job.id, err instanceof Error ? err.message : String(err)); setJobList([...jobManager.list()]); dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); });
         },
         setMode, setPendingImages, setSessionEngines, setEnginePickerOpen, setChatSession, setLastUndoToken, askQuestion, exit: () => process.exit(0),
-        allImages, allSlashCommands: allSlashCommands(), dynamicSkills, mode, lastUndoToken, sessionStartTime, jobManager,
+        allImages, allSlashCommands: allSlashCommands, dynamicSkills, mode, lastUndoToken, sessionStartTime, jobManager,
         explorationMode, setExplorationMode,
       };
       if (handleModeSwitch(intent.type, (intent as any).topic, (intent as any).question, cb)) {
@@ -328,7 +328,7 @@ screen name=App target=ink
         setSlashPickerOpen(true); return;
       }
       if ((key.tab || input === '\t') && !slashPickerOpen && !enginePickerOpen && !questionState && !reviewEvent) {
-        const ghost = getGhostCompletion(inputValue, allSlashCommands(), registry.availableIds());
+        const ghost = getGhostCompletion(inputValue, allSlashCommands, registry.availableIds());
         if (ghost) { setInputValue(inputValue + ghost + ' '); setInputKey((k: number) => k + 1); return; }
       }
       if (!enginePickerOpen && !questionState) {
@@ -356,6 +356,7 @@ screen name=App target=ink
   // ── Render ──
   render
     handler <<<
+      return (
       <Box flexDirection="column">
         {mode !== 'chat' && (
           <Box paddingX={1}>
@@ -402,7 +403,7 @@ screen name=App target=ink
         )}
         {!enginePickerOpen && (
           <Box flexDirection="column" paddingX={1} marginTop={1}>
-            {slashPickerOpen && <SlashPicker commands={allSlashCommands()} onSelect={handleSlashSelect} onCancel={() => setSlashPickerOpen(false)} />}
+            {slashPickerOpen && <SlashPicker commands={allSlashCommands} onSelect={handleSlashSelect} onCancel={() => setSlashPickerOpen(false)} />}
             {pendingImages.length > 0 && (<Box><Text color="#22d3ee">{'📎 '}</Text>{pendingImages.map((img: any, i: number) => (<Text key={i} dimColor>{img.filename}{i < pendingImages.length - 1 ? ', ' : ''}</Text>))}</Box>)}
             {inputQueue.length > 0 && (<Box><Text dimColor>{'⏳ '}{inputQueue.length} queued: </Text><Text dimColor italic>{inputQueue[0].length > 40 ? inputQueue[0].slice(0, 40) + '…' : inputQueue[0]}</Text></Box>)}
             {questionState ? (
@@ -414,7 +415,7 @@ screen name=App target=ink
                 <Box flexGrow={1}>
                   <TextInput key={inputKey} value={inputValue} onChange={handleInputChange} onSubmit={handleSubmit}
                     placeholder={replState === 'idle' ? mode === 'chat' ? '' : mode === 'campfire' ? 'What should we think about?' : mode === 'brainstorm' ? 'What question for the engines?' : 'What should they debate?' : ''} />
-                  {(() => { const ghost = getGhostCompletion(inputValue, allSlashCommands(), registry.availableIds()); return ghost ? <Text dimColor>{ghost}</Text> : null; })()}
+                  {(() => { const ghost = getGhostCompletion(inputValue, allSlashCommands, registry.availableIds()); return ghost ? <Text dimColor>{ghost}</Text> : null; })()}
                 </Box>
               </Box>
             )}
@@ -422,6 +423,7 @@ screen name=App target=ink
           </Box>
         )}
       </Box>
+      );
     >>>
 
 // ── Entry point ──

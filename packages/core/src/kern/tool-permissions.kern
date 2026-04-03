@@ -120,10 +120,12 @@ fn name=checkBashPermission params="command:string, ctx:ToolContext" returns=Per
     if (ctx.permissionMode === 'deny-all') {
       return { behavior: 'deny', message: 'All tool execution is denied' };
     }
-    if (ctx.permissionMode === 'auto' || isReadOnlyCommand(command)) {
+    // Read-only commands always auto-approved
+    if (isReadOnlyCommand(command)) {
       return { behavior: 'allow' };
     }
-    return { behavior: 'ask', message: `Run: ${command.length > 80 ? command.slice(0, 80) + '…' : command}` };
+    // Non-read-only: always ask (even in auto mode — bash is destructive)
+    return { behavior: 'ask', message: `This command requires approval`, reason: 'bash_mutating' };
   >>>
 
 fn name=isPathUnderCwd params="filePath:string, cwd:string" returns=boolean

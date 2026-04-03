@@ -74,9 +74,9 @@ export function isDangerousCommand(command: string): boolean {
 
 export function isReadOnlyCommand(command: string): boolean {
   const stripped = stripShellWrappers(command).trim();
-  // Split on compound operators: &&, ||, ;, &
+  // Split on compound operators FIRST: &&, ||, ;, &
   // All sub-commands must be read-only for the whole command to be safe
-  if (/\s*(?:&&|\|\||;|&)\s*/.test(stripped)) {
+  if (/[;&|]{1,2}/.test(stripped) && stripped !== '|') {
     const parts = stripped.split(/\s*(?:&&|\|\||;|&)\s*/);
     return parts.every((p: string) => p.trim() && isReadOnlyCommand(p.trim()));
   }
@@ -99,10 +99,12 @@ export function checkBashPermission(command: string, ctx: ToolContext): Permissi
   if (ctx.permissionMode === 'deny-all') {
     return { behavior: 'deny', message: 'All tool execution is denied' };
   }
-  if (ctx.permissionMode === 'auto' || isReadOnlyCommand(command)) {
+  // Read-only commands always auto-approved
+  if (isReadOnlyCommand(command)) {
     return { behavior: 'allow' };
   }
-  return { behavior: 'ask', message: `Run: ${command.length > 80 ? command.slice(0, 80) + '…' : command}` };
+  // Non-read-only: always ask (even in auto mode — bash is destructive)
+  return { behavior: 'ask', message: `This command requires approval`, reason: 'bash_mutating' };
 }
 
 export function isPathUnderCwd(filePath: string, cwd: string): boolean {

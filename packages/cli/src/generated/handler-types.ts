@@ -54,5 +54,7 @@ export interface HandlerContext {
   askQuestion: (prompt: string) => Promise<string>;
   cesarSession: PersistentSession | null;
   setCesarSession: (session: PersistentSession | null) => void;
+  explorationMode: boolean;
+  setExplorationMode: (mode: boolean) => void;
 }
 

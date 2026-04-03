@@ -62,6 +62,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { cmd: '/undo',        desc: '                        — revert last applied forge patch' },
   { cmd: '/jobs',        desc: '                        — list running/completed jobs' },
   { cmd: '/focus',       desc: '<id>                    — switch to background job output' },
+  { cmd: '/explore',     desc: '                        — toggle exploration mode (read-only)' },
   { cmd: '/help',        desc: '                        — show this help' },
   { cmd: '/exit',        desc: '                        — quit' },
 ];
@@ -250,6 +251,10 @@ function parseSlashCommand(input: string): Intent {
       return { type: 'jobs' } as Intent;
     case 'focus':
       return { type: 'focus', jobId: rest || undefined } as Intent;
+    case 'explore':
+    case 'plan-mode':
+    case 'readonly':
+      return { type: 'explore' } as Intent;
     case 'clear':
       return { type: 'clear' } as Intent;
     case 'help':

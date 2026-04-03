@@ -115,3 +115,5 @@ interface name=HandlerContext
   field name=askQuestion type="(prompt: string) => Promise<string>"
   field name=cesarSession type="PersistentSession | null"
   field name=setCesarSession type="(session: PersistentSession | null) => void"
+  field name=explorationMode type=boolean
+  field name=setExplorationMode type="(mode: boolean) => void"

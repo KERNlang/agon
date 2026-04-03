@@ -89,6 +89,7 @@ export default function App() {
   const [chatSession, setChatSession] = useState<ChatSession>((() => { const cwd = resolveWorkingDir(); let branch = 'unknown'; try { branch = currentBranch(cwd); } catch {} return startChatSession({ cwd, branch }); })());
   const [activeAbort, setActiveAbort] = useState<AbortController|null>(null);
   const [cesarSession, setCesarSession] = useState<PersistentSession|null>(null);
+  const [explorationMode, setExplorationMode] = useState<boolean>(false);
   const [registry, setRegistry] = useState<EngineRegistry>((() => { const reg = new EngineRegistry(); const engDir = join(dirname(fileURLToPath(import.meta.url)), '../../../../engines'); reg.load(engDir); return reg; })());
   const [adapter, setAdapter] = useState<EngineAdapter>(createCliAdapter(registry));
   const [dynamicSkills, setDynamicSkills] = useState<Skill[]>(loadSkills());
@@ -163,8 +164,9 @@ export default function App() {
       get currentPlan() { return currentPlanRef.current; },
       setCurrentPlan, setActiveAbort: trackAbort,
       askQuestion, cesarSession, setCesarSession: setCesarSessionWrapped,
+      explorationMode, setExplorationMode,
     };
-  }, [registry,adapter,activeEngines,chatSession,askQuestion,cesarSession]);
+  }, [registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode]);
 
   const finishPaste = useCallback((raw:string) => {
     const result = processPasteContent(raw);
@@ -210,6 +212,7 @@ export default function App() {
       },
       setMode, setPendingImages, setSessionEngines, setEnginePickerOpen, setChatSession, setLastUndoToken, askQuestion, exit: () => process.exit(0),
       allImages, allSlashCommands: allSlashCommands, dynamicSkills, mode, lastUndoToken, sessionStartTime, jobManager,
+      explorationMode, setExplorationMode,
     };
     if (handleModeSwitch(intent.type, (intent as any).topic, (intent as any).question, cb)) {
       if (!(intent as any).input?.trim()) { transition(finishReplState); return; }
@@ -397,7 +400,7 @@ export default function App() {
                   </Box>
                 </Box>
               )}
-              {mode === 'chat' && <StatusBar config={loadConfig()} chatSession={chatSession} />}
+              {mode === 'chat' && <StatusBar config={loadConfig()} chatSession={chatSession} explorationMode={explorationMode} />}
             </Box>
           )}
         </Box>

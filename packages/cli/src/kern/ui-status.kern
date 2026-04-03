@@ -87,6 +87,7 @@ screen name=AgonTip target=ink export=false
 screen name=StatusBar target=ink
   prop name=config type="ReturnType<typeof loadConfig>"
   prop name=chatSession type=ChatSession
+  prop name=explorationMode type=boolean optional=true
   render
     handler <<<
       const cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
@@ -108,6 +109,7 @@ screen name=StatusBar target=ink
         <Box paddingTop={0}>
           <Text>
             <Text color={cesarColor} bold>{cesarId}</Text>
+            {explorationMode ? <Text color="#22d3ee" bold>{' [explore]'}</Text> : null}
             <Text dimColor>{' in '}</Text>
             <Text color="#60a5fa">{cwd}</Text>
             {branch ? <Text dimColor>{' on '}<Text color="#34d399">{branch}</Text></Text> : null}

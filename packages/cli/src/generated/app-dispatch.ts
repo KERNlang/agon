@@ -242,6 +242,11 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
       const newMode = !cb.explorationMode;
       cb.setExplorationMode(newMode);
       cb.ctx.setExplorationMode(newMode);
+      if (cb.ctx.cesarSession) {
+        cb.ctx.cesarSession.close();
+        cb.ctx.setCesarSession(null);
+        cb.dispatch({ type: 'info', message: `Cesar session reset for ${newMode ? 'exploration' : 'agent'} mode` });
+      }
       if (newMode) {
         cb.dispatch({ type: 'success', message: 'Exploration mode ON — read-only, write tools blocked. Use /explore again to disable.' });
       } else {

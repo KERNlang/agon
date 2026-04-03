@@ -21,6 +21,7 @@ export interface ToolContext {
   readFileState: Map<string, FileState>;
   abortSignal?: AbortSignal;
   permissionMode?: 'auto'|'ask'|'deny-all';
+  explorationMode?: boolean;
   onProgress?: ((message: string) => void);
 }
 

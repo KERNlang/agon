@@ -76,7 +76,7 @@ function AgonTip({  }: {  }) {
 
 
 
-export function StatusBar({ config, chatSession }: { config: ReturnType<typeof loadConfig>; chatSession: ChatSession }) {
+export function StatusBar({ config, chatSession, explorationMode }: { config: ReturnType<typeof loadConfig>; chatSession: ChatSession; explorationMode?: boolean }) {
         const cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
         const cesarColor = color256toHex(ENGINE_COLORS[cesarId] ?? 245);
         const workDir = resolveWorkingDir();
@@ -96,6 +96,7 @@ export function StatusBar({ config, chatSession }: { config: ReturnType<typeof l
           <Box paddingTop={0}>
             <Text>
               <Text color={cesarColor} bold>{cesarId}</Text>
+              {explorationMode ? <Text color="#22d3ee" bold>{' [explore]'}</Text> : null}
               <Text dimColor>{' in '}</Text>
               <Text color="#60a5fa">{cwd}</Text>
               {branch ? <Text dimColor>{' on '}<Text color="#34d399">{branch}</Text></Text> : null}

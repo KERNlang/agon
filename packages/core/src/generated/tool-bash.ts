@@ -73,10 +73,19 @@ export function createBashTool(): ToolHandler {
     }
   
     // Check read-only commands — allow automatically
-    for (const safe of READONLY_COMMANDS) {
-      if (lower === safe || lower.startsWith(safe + ' ')) {
-        return { behavior: 'allow' };
-      }
+    const isReadOnly = READONLY_COMMANDS.some((safe: string) => lower === safe || lower.startsWith(safe + ' '));
+  
+    // Exploration mode: allow read-only commands, block everything else
+    if ((_ctx as any).explorationMode) {
+      if (isReadOnly) return { behavior: 'allow' };
+      return { behavior: 'deny', message: 'Bash blocked: exploration mode is active (read-only)', reason: 'exploration-mode' };
+    }
+  
+    if (isReadOnly) return { behavior: 'allow' };
+  
+    // Auto mode: allow all non-dangerous commands without prompting
+    if (_ctx.permissionMode === 'auto') {
+      return { behavior: 'allow' };
     }
   
     // Everything else needs user approval

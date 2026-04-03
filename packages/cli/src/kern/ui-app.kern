@@ -71,6 +71,7 @@ screen name=App target=ink
   state name=chatSession type=ChatSession initial="(() => { const cwd = resolveWorkingDir(); let branch = 'unknown'; try { branch = currentBranch(cwd); } catch {} return startChatSession({ cwd, branch }); })()"
   state name=activeAbort type="AbortController|null" initial="null"
   state name=cesarSession type="PersistentSession|null" initial="null"
+  state name=explorationMode type=boolean initial=false
 
   // ── Refs ──
   ref name=chatStartTimeRef type=number initial=0
@@ -155,7 +156,7 @@ screen name=App target=ink
       return new Promise<string>((resolve) => { dispatch({ type: 'question', prompt, resolve } as any); });
     >>>
 
-  callback name=buildContext params="" deps="registry,adapter,activeEngines,chatSession,askQuestion,cesarSession"
+  callback name=buildContext params="" deps="registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode"
     handler <<<
       return {
         registry, adapter, activeEngines,
@@ -163,6 +164,7 @@ screen name=App target=ink
         get currentPlan() { return currentPlanRef.current; },
         setCurrentPlan, setActiveAbort: trackAbort,
         askQuestion, cesarSession, setCesarSession: setCesarSessionWrapped,
+        explorationMode, setExplorationMode,
       };
     >>>
 
@@ -271,6 +273,7 @@ screen name=App target=ink
         },
         setMode, setPendingImages, setSessionEngines, setEnginePickerOpen, setChatSession, setLastUndoToken, askQuestion, exit: () => process.exit(0),
         allImages, allSlashCommands: allSlashCommands(), dynamicSkills, mode, lastUndoToken, sessionStartTime, jobManager,
+        explorationMode, setExplorationMode,
       };
       if (handleModeSwitch(intent.type, (intent as any).topic, (intent as any).question, cb)) {
         if (!(intent as any).input?.trim()) { transition(finishReplState); return; }
@@ -416,7 +419,7 @@ screen name=App target=ink
                 </Box>
               </Box>
             )}
-            {mode === 'chat' && <StatusBar config={loadConfig()} chatSession={chatSession} />}
+            {mode === 'chat' && <StatusBar config={loadConfig()} chatSession={chatSession} explorationMode={explorationMode} />}
           </Box>
         )}
       </Box>

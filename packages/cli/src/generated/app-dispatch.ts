@@ -33,6 +33,8 @@ export interface DispatchCallbacks {
   lastUndoToken: string|null;
   sessionStartTime: number;
   jobManager: any;
+  explorationMode: boolean;
+  setExplorationMode: (mode: boolean) => void;
 }
 
 export interface DispatchResult {
@@ -232,6 +234,19 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
         return { handled: true, ranAsJob: true };
       }
       await handleChat(si.input, cb.dispatch, cb.ctx, cb.allImages);
+      break;
+    }
+  
+    // ── Exploration mode toggle ──
+    case 'explore': {
+      const newMode = !cb.explorationMode;
+      cb.setExplorationMode(newMode);
+      cb.ctx.setExplorationMode(newMode);
+      if (newMode) {
+        cb.dispatch({ type: 'success', message: 'Exploration mode ON — read-only, write tools blocked. Use /explore again to disable.' });
+      } else {
+        cb.dispatch({ type: 'success', message: 'Exploration mode OFF — full agent mode restored.' });
+      }
       break;
     }
   

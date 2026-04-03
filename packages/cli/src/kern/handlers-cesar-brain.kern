@@ -173,10 +173,13 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
             const toolInput = typeof meta.input === 'string' ? meta.input
               : meta.input ? JSON.stringify(meta.input) : '';
             const toolOutput = typeof meta.output === 'string' ? meta.output : undefined;
+            const toolName = chunk.content || 'tool';
+            // Update spinner to show which tool is running
+            dispatch({ type: 'spinner-update', message: `Cesar: ${toolName}…` });
             dispatch({
               type: 'tool-call',
               engineId: cesarEngineId,
-              tool: chunk.content || 'tool',
+              tool: toolName,
               input: toolInput,
               status: (meta.status as any) ?? 'running',
               output: toolOutput,
@@ -210,7 +213,8 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
                 delegated = true;
                 return { delegated: true, responded: true, action, reasoning: rest };
               }
-              dispatch({ type: 'spinner-stop' });
+              // Switch spinner to "responding" mode — keep it visible as a progress indicator
+              dispatch({ type: 'spinner-update', message: 'Cesar responding…' });
               streaming = true;
               dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: response });
             } else {
@@ -340,6 +344,7 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
       }
       if (streaming) {
         dispatch({ type: 'streaming-end', engineId: cesarEngineId });
+        dispatch({ type: 'spinner-stop' });
       }
 
       if (response) {

@@ -62,6 +62,15 @@ export function createEditTool(): ToolHandler {
   };
   
   const checkPermission = (input: Record<string, unknown>, ctx: ToolContext): PermissionDecision => {
+    // Exploration mode blocks all writes
+    if ((ctx as any).explorationMode) {
+      return {
+        behavior: 'deny',
+        message: 'Edit blocked: exploration mode is active (read-only)',
+        reason: 'exploration-mode',
+      };
+    }
+  
     const filePath = resolve(ctx.cwd, input.file_path as string);
     const rel = relative(ctx.cwd, filePath);
   
@@ -73,6 +82,7 @@ export function createEditTool(): ToolHandler {
       };
     }
   
+    // Auto-allow edits within CWD — agent mode (like Claude Code default)
     return { behavior: 'allow' };
   };
   

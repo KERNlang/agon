@@ -30,6 +30,8 @@ interface name=DispatchCallbacks
   field name=lastUndoToken type="string|null"
   field name=sessionStartTime type=number
   field name=jobManager type="any"
+  field name=explorationMode type=boolean
+  field name=setExplorationMode type="(mode: boolean) => void"
 
 interface name=DispatchResult
   field name=handled type=boolean
@@ -233,6 +235,19 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
           return { handled: true, ranAsJob: true };
         }
         await handleChat(si.input, cb.dispatch, cb.ctx, cb.allImages);
+        break;
+      }
+
+      // ── Exploration mode toggle ──
+      case 'explore': {
+        const newMode = !cb.explorationMode;
+        cb.setExplorationMode(newMode);
+        cb.ctx.setExplorationMode(newMode);
+        if (newMode) {
+          cb.dispatch({ type: 'success', message: 'Exploration mode ON — read-only, write tools blocked. Use /explore again to disable.' });
+        } else {
+          cb.dispatch({ type: 'success', message: 'Exploration mode OFF — full agent mode restored.' });
+        }
         break;
       }
 

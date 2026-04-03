@@ -36,6 +36,15 @@ export function createWriteTool(): ToolHandler {
   };
   
   const checkPermission = (input: Record<string, unknown>, ctx: ToolContext): PermissionDecision => {
+    // Exploration mode blocks all writes
+    if ((ctx as any).explorationMode) {
+      return {
+        behavior: 'deny',
+        message: 'Write blocked: exploration mode is active (read-only)',
+        reason: 'exploration-mode',
+      };
+    }
+  
     const filePath = resolve(ctx.cwd, input.file_path as string);
     const rel = relative(ctx.cwd, filePath);
   

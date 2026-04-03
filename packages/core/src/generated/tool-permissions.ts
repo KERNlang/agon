@@ -103,7 +103,14 @@ export function checkBashPermission(command: string, ctx: ToolContext): Permissi
   if (isReadOnlyCommand(command)) {
     return { behavior: 'allow' };
   }
-  // Non-read-only: always ask (even in auto mode — bash is destructive)
+  // Check saved allowed commands (from settings.json)
+  if (ctx.allowedCommands) {
+    const base = command.trim().split(/\s+/)[0];
+    if (ctx.allowedCommands.some(ac => command.startsWith(ac) || base === ac)) {
+      return { behavior: 'allow' };
+    }
+  }
+  // Non-read-only: ask user for approval
   return { behavior: 'ask', message: `This command requires approval`, reason: 'bash_mutating' };
 }
 

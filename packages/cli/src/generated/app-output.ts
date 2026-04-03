@@ -4,6 +4,8 @@ import { parseMarkdownBlocks, cleanEngineOutput } from '../markdown.js';
 
 import { codeBlockBuffer } from '../code-buffer.js';
 
+import { loadConfig, configSet } from '@agon/core';
+
 export interface OutputState {
   liveSpinner: {message:string,color?:number,engineId?:string}|null;
   liveProgress: EngineProgress[]|null;
@@ -82,17 +84,30 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
       actions.setQuestionState({ prompt: (event as any).prompt, resolve: (event as any).resolve });
       return;
     case 'permission-ask': {
-      // Show the permission block visually, then ask Y/N
+      // Show the permission block visually, then ask Y/N/A
       actions.addBlock(event);
       const permResolve = (event as any).resolve as (approved: boolean) => void;
+      const permCommand = (event as any).command as string;
       actions.setQuestionState({
-        prompt: 'Do you want to proceed? (y/n)',
+        prompt: 'Proceed? (y)es / (n)o / (a)lways allow',
         resolve: (answer: string) => {
-          const approved = answer.toLowerCase().startsWith('y');
-          permResolve(approved);
-          if (approved) {
+          const lower = answer.toLowerCase().trim();
+          if (lower === 'a' || lower === 'always') {
+            // Save to settings.json so it persists
+            const cfg = loadConfig();
+            const allowed = (cfg as any).allowedCommands ?? [];
+            const base = permCommand.trim().split(/\s+/)[0];
+            if (base && !allowed.includes(base)) {
+              allowed.push(base);
+              configSet('allowedCommands' as any, allowed);
+            }
+            permResolve(true);
+            actions.addBlock({ type: 'success', message: `Always allowed: ${base}` } as any);
+          } else if (lower.startsWith('y')) {
+            permResolve(true);
             actions.addBlock({ type: 'info', message: 'Approved' } as any);
           } else {
+            permResolve(false);
             actions.addBlock({ type: 'warning', message: 'Denied' } as any);
           }
         },

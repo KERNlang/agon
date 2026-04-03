@@ -160,6 +160,8 @@ export interface AgonConfig {
   cesarEngine?: string;
   campfireObserverStrategy?: 'lead-first'|'all-respond';
   hooks: Record<string,Array<{command:string,engines?:string[],timeout?:number}>>;
+  allowedCommands: string[];
+  toolPermissions: Record<string,'allow'|'ask'|'deny'>;
 }
 
 export const DEFAULT_AGON_CONFIG: Required<AgonConfig> = {
@@ -191,7 +193,9 @@ export const DEFAULT_AGON_CONFIG: Required<AgonConfig> = {
   cesarDisagreementSpread: 20,
   cesarEngine: 'claude',
   campfireObserverStrategy: 'lead-first',
-  hooks: {} as Record<string, Array<{command: string, engines?: string[], timeout?: number}>>,
+  hooks: {} as any,
+  allowedCommands: [] as string[],
+  toolPermissions: {} as any,
 };
 
 export interface ScoutBid {

@@ -272,6 +272,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           abortSignal: abort.signal,
           permissionMode: 'auto',
           explorationMode,
+          allowedCommands: (config as any).allowedCommands ?? [],
           onProgress: (msg: string) => dispatch({ type: 'spinner-update', message: `Cesar: ${msg}` }),
         };
   

@@ -21,6 +21,7 @@ interface name=ToolContext
   field name=abortSignal type=AbortSignal optional=true
   field name=permissionMode type="'auto'|'ask'|'deny-all'" optional=true
   field name=explorationMode type=boolean optional=true
+  field name=allowedCommands type="string[]" optional=true
   field name=onProgress type="((message: string) => void)" optional=true
 
 interface name=FileState

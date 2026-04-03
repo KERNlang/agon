@@ -22,6 +22,7 @@ export interface ToolContext {
   abortSignal?: AbortSignal;
   permissionMode?: 'auto'|'ask'|'deny-all';
   explorationMode?: boolean;
+  allowedCommands?: string[];
   onProgress?: ((message: string) => void);
 }
 

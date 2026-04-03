@@ -103,10 +103,8 @@ export default function App() {
   const pasteHashesRef = useRef<Map<string,string>>(new Map());
 
   const allSlashCommands = useCallback(() => {
-    return useMemo(() => {
-      const skillCmds = dynamicSkills.map((s: any) => ({ cmd: s.trigger, desc: s.description || s.name }));
-      return [...SLASH_COMMANDS, ...skillCmds];
-    }, [dynamicSkills]);
+    const skillCmds = dynamicSkills.map((s: any) => ({ cmd: s.trigger, desc: s.description || s.name }));
+    return [...SLASH_COMMANDS, ...skillCmds];
   }, [dynamicSkills]);
 
   const transition = useCallback((fn:any) => {

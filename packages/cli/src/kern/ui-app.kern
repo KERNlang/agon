@@ -88,12 +88,10 @@ screen name=App target=ink
   state name=dynamicSkills type="Skill[]" initial="loadSkills()"
 
   // ── Derived ──
-  callback name=allSlashCommands params="" deps="dynamicSkills"
+  callback name=allSlashCommands params="" deps="dynamicSkills" returns="any[]"
     handler <<<
-      return useMemo(() => {
-        const skillCmds = dynamicSkills.map((s: any) => ({ cmd: s.trigger, desc: s.description || s.name }));
-        return [...SLASH_COMMANDS, ...skillCmds];
-      }, [dynamicSkills]);
+      const skillCmds = dynamicSkills.map((s: any) => ({ cmd: s.trigger, desc: s.description || s.name }));
+      return [...SLASH_COMMANDS, ...skillCmds];
     >>>
 
   callback name=transition params="fn:any"

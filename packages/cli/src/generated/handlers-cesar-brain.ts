@@ -71,6 +71,9 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
   const systemParts: string[] = [CESAR_SYSTEM_PROMPT];
   if (projectCtx) systemParts.push(`## PROJECT CONTEXT\n${projectCtx}`);
   systemParts.push(`## AVAILABLE ENGINES\n${engineList}`);
+  if (ctx.explorationMode) {
+    systemParts.push(`## OPERATING MODE\nExploration mode is ON. Stay read-only: inspect files, search, and use read-only shell commands only. Do not call Edit or Write. Do not run non-read-only Bash commands.`);
+  }
   
   // Replay existing conversation history into system prompt so Cesar doesn't lose context on reboot
   if (ctx.chatSession && ctx.chatSession.messages && ctx.chatSession.messages.length > 0) {
@@ -173,10 +176,13 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           const toolInput = typeof meta.input === 'string' ? meta.input
             : meta.input ? JSON.stringify(meta.input) : '';
           const toolOutput = typeof meta.output === 'string' ? meta.output : undefined;
+          const toolName = chunk.content || 'tool';
+          // Update spinner to show which tool is running
+          dispatch({ type: 'spinner-update', message: `Cesar: ${toolName}…` });
           dispatch({
             type: 'tool-call',
             engineId: cesarEngineId,
-            tool: chunk.content || 'tool',
+            tool: toolName,
             input: toolInput,
             status: (meta.status as any) ?? 'running',
             output: toolOutput,
@@ -210,7 +216,8 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               delegated = true;
               return { delegated: true, responded: true, action, reasoning: rest };
             }
-            dispatch({ type: 'spinner-stop' });
+            // Switch spinner to "responding" mode — keep it visible as a progress indicator
+            dispatch({ type: 'spinner-update', message: 'Cesar responding…' });
             streaming = true;
             dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: response });
           } else {
@@ -340,6 +347,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
     }
     if (streaming) {
       dispatch({ type: 'streaming-end', engineId: cesarEngineId });
+      dispatch({ type: 'spinner-stop' });
     }
   
     if (response) {
@@ -357,4 +365,3 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
     ctx.setActiveAbort(null);
   }
 }
-

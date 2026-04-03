@@ -1,10 +1,16 @@
-export type EngineMode = 'exec' | 'review';
+export type EngineMode = 'exec' | 'review' | 'agent';
 
 export type TaskClass = 'algorithm' | 'refactor' | 'bugfix' | 'test' | 'docs' | 'feature' | 'other';
 
 export interface EngineModeConfig {
   args: string[];
   stdin?: boolean;
+}
+
+export interface ImageAttachment {
+  path: string;
+  filename: string;
+  mimeType: string;
 }
 
 export interface EngineModelConfig {
@@ -18,8 +24,14 @@ export interface EngineEnvVar {
   default?: string;
 }
 
+export interface CompanionConfig {
+  protocol: 'jsonrpc'|'acp'|'structured-cli';
+  serverCmd: string[];
+  features?: {threadResume?:boolean, nativeReview?:boolean, structuredOutput?:boolean};
+}
+
 export interface EngineDefinition {
-  schemaVersion: 1|2;
+  schemaVersion: 1|2|3;
   id: string;
   displayName: string;
   binary: string;
@@ -37,6 +49,11 @@ export interface EngineDefinition {
   modes?: EngineMode[];
   modelConfigKey?: string;
   adapterType?: string;
+  capabilities?: string[];
+  imageFlag?: string;
+  agent?: EngineModeConfig;
+  api?: {baseUrl:string, apiKeyEnv:string, model:string, maxTokens?:number};
+  companion?: CompanionConfig;
 }
 
 export interface DispatchOptions {
@@ -47,6 +64,7 @@ export interface DispatchOptions {
   timeout: number;
   outputDir: string;
   signal?: AbortSignal;
+  images?: ImageAttachment[];
 }
 
 export interface DispatchResult {
@@ -57,9 +75,17 @@ export interface DispatchResult {
   timedOut: boolean;
 }
 
+export interface AgentDispatchResult extends DispatchResult {
+  diff: string;
+  diffLines: number;
+  filesChanged: number;
+}
+
 export interface EngineAdapter {
   dispatch: (options:DispatchOptions)=>Promise<DispatchResult>;
   dispatchStream?: (options:DispatchOptions)=>AsyncGenerator<string, DispatchResult, void>;
+  dispatchAgent?: (options:DispatchOptions)=>Promise<AgentDispatchResult>;
+  dispatchAgentStream?: (options:DispatchOptions)=>AsyncGenerator<string, AgentDispatchResult, void>;
   isAvailable: (engine:EngineDefinition)=>Promise<boolean>;
   getVersion: (engine:EngineDefinition)=>Promise<string|null>;
 }
@@ -122,10 +148,18 @@ export interface AgonConfig {
   eloKFactor?: number;
   contextSummary?: boolean;
   onboarded?: boolean;
-  caesarModel?: 'smollm2-360m'|'qwen-0.5b'|'phi-3-mini'|'none';
   projectContext?: string;
   contextFormat?: 'plain'|'kern';
   approvalLevel?: 'auto'|'plan'|'step';
+  agentTimeout?: number;
+  agentPermissionLevel?: 'full'|'plan'|'read-only';
+  cesarEnabled?: boolean;
+  cesarScoutCount?: number;
+  cesarDirectThreshold?: number;
+  cesarDisagreementSpread?: number;
+  cesarEngine?: string;
+  campfireObserverStrategy?: 'lead-first'|'all-respond';
+  hooks: Record<string,Array<{command:string,engines?:string[],timeout?:number}>>;
 }
 
 export const DEFAULT_AGON_CONFIG: Required<AgonConfig> = {
@@ -146,11 +180,46 @@ export const DEFAULT_AGON_CONFIG: Required<AgonConfig> = {
   eloKFactor: 32,
   contextSummary: true,
   onboarded: false,
-  caesarModel: 'smollm2-360m',
   projectContext: '',
   contextFormat: 'plain',
   approvalLevel: 'plan',
+  agentTimeout: 600,
+  agentPermissionLevel: 'full',
+  cesarEnabled: true,
+  cesarScoutCount: 2,
+  cesarDirectThreshold: 85,
+  cesarDisagreementSpread: 20,
+  cesarEngine: 'claude',
+  campfireObserverStrategy: 'lead-first',
+  hooks: {} as Record<string, Array<{command: string, engines?: string[], timeout?: number}>>,
 };
+
+export interface ScoutBid {
+  engineId: string;
+  confidence: number;
+  approach: string;
+  steps: string[];
+  keyFiles: string[];
+  risk: 'low'|'medium'|'high';
+  needsCompetition: boolean;
+}
+
+export interface RoutingDecision {
+  action: 'chat'|'build'|'pipeline'|'campfire'|'forge';
+  leadEngine: string;
+  confidence: number;
+  reasoning: string;
+  seedPlan?: string;
+  observerEngines: string[];
+  forgeEngines?: string[];
+  bids: ScoutBid[];
+}
+
+export interface CampfireMessage {
+  engineId: string;
+  content: string;
+  isLead: boolean;
+}
 
 export interface ForgeOptions {
   task: string;
@@ -158,6 +227,7 @@ export interface ForgeOptions {
   cwd: string;
   forgeDir: string;
   context?: string;
+  seedPlan?: string;
   timeout?: number;
   fitnessTimeout?: number;
   starter?: string;

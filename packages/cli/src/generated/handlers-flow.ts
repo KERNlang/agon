@@ -1,0 +1,114 @@
+import { logFlow, readFlows, analyzeFlows, FRICTION_TAGS, tracker } from '@agon/core';
+
+import type { FlowRecord, FlowFeedback, FlowTelemetry, FlowModeMeta, FlowAnalysis } from '@agon/core';
+
+import type { Dispatch, HandlerContext } from '../handlers/types.js';
+
+function buildTelemetry(ctx: HandlerContext, startTime: number): FlowTelemetry {
+  const stats = tracker.getStats();
+  const tokensByEngine: Record<string, {prompt:number, response:number}> = {};
+  for (const [id, e] of Object.entries(stats.byEngine) as [string, any][]) {
+    tokensByEngine[id] = { prompt: e.promptTokens, response: e.responseTokens };
+  }
+  return {
+    engines: ctx.activeEngines(),
+    durationMs: Date.now() - startTime,
+    tokensByEngine,
+  };
+}
+
+export async function handleFlowReport(dispatch: Dispatch, ctx: HandlerContext, sessionMode: string, startTime: number, modeMeta?: FlowModeMeta): Promise<void> {
+  const telemetry = buildTelemetry(ctx, startTime);
+  
+  dispatch({ type: 'header', title: 'Log Flow' });
+  dispatch({ type: 'info', message: `Mode: ${sessionMode}  |  Engines: ${telemetry.engines.join(', ')}  |  Duration: ${Math.round(telemetry.durationMs / 1000)}s` });
+  
+  const goalAnswer = await ctx.askQuestion('Goal met? [y/n/partly]');
+  const goalMet = goalAnswer.trim().toLowerCase().startsWith('p') ? 'partly'
+    : goalAnswer.trim().toLowerCase().startsWith('n') ? 'no' : 'yes';
+  
+  const ratingAnswer = await ctx.askQuestion('Satisfaction (1-5)?');
+  const satisfactionRating = Math.max(1, Math.min(5, parseInt(ratingAnswer.trim(), 10) || 3));
+  
+  const followupAnswer = await ctx.askQuestion('Needs followup? [y/N]');
+  const needsFollowup = followupAnswer.trim().toLowerCase() === 'y';
+  
+  dispatch({ type: 'info', message: `Friction tags: ${FRICTION_TAGS.join(', ')}` });
+  const frictionAnswer = await ctx.askQuestion('Friction? (comma-separated tags, or enter to skip)');
+  const frictionTags = frictionAnswer.trim()
+    ? frictionAnswer.split(',').map((s: string) => s.trim().toLowerCase()).filter((t: string) => FRICTION_TAGS.includes(t))
+    : [];
+  
+  let notes: string | undefined;
+  if (frictionTags.length > 0) {
+    const notesAnswer = await ctx.askQuestion('Notes? (optional, enter to skip)');
+    notes = notesAnswer.trim() || undefined;
+  }
+  
+  const feedback: FlowFeedback = { satisfactionRating, goalMet: goalMet as 'yes'|'no'|'partly', needsFollowup, frictionTags, notes };
+  
+  const record: FlowRecord = {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    schemaVersion: 1,
+    mode: sessionMode as FlowRecord['mode'],
+    startedAt: new Date(startTime).toISOString(),
+    endedAt: new Date().toISOString(),
+    completionState: 'completed',
+    captureMethod: 'manual',
+    telemetry,
+    feedback,
+    modeMeta,
+  };
+  
+  const path = logFlow(record);
+  dispatch({ type: 'success', message: `Flow logged: ${record.id.slice(0, 12)}` });
+  dispatch({ type: 'info', message: path });
+}
+
+export function autoLogFlow(ctx: HandlerContext, sessionMode: string, startTime: number, completionState: 'completed'|'aborted'|'crashed', modeMeta?: FlowModeMeta): void {
+  const telemetry = buildTelemetry(ctx, startTime);
+  const record: FlowRecord = {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    schemaVersion: 1,
+    mode: sessionMode as FlowRecord['mode'],
+    startedAt: new Date(startTime).toISOString(),
+    endedAt: new Date().toISOString(),
+    completionState,
+    captureMethod: 'auto',
+    telemetry,
+    modeMeta,
+  };
+  logFlow(record);
+}
+
+export function handleFlowAnalysis(dispatch: Dispatch): void {
+  const analysis = analyzeFlows(30);
+  
+  dispatch({ type: 'header', title: `Flow Analytics — last ${analysis.periodDays} days` });
+  
+  if (analysis.totalFlows === 0) {
+    dispatch({ type: 'info', message: 'No flows logged yet. Use /flow to log a session.' });
+    return;
+  }
+  
+  dispatch({ type: 'info', message: `${analysis.totalFlows} sessions tracked` });
+  
+  const modeRows = analysis.byMode.map((m) => [
+    m.mode,
+    String(m.count),
+    m.avgSatisfaction !== null ? `${m.avgSatisfaction}/5` : '-',
+    `${m.completedRate}%`,
+    `${Math.round(m.avgDurationMs / 1000)}s`,
+    String(m.avgTokens),
+    `${m.followupRate}%`,
+  ]);
+  dispatch({ type: 'table', headers: ['Mode', 'Sessions', 'Satisfaction', 'Completed', 'Avg Time', 'Avg Tokens', 'Followup%'], rows: modeRows });
+  
+  if (analysis.topFriction.length > 0) {
+    dispatch({ type: 'separator' });
+    dispatch({ type: 'info', message: 'Top friction:' });
+    const frictionRows = analysis.topFriction.map((f) => [f.tag, String(f.count)]);
+    dispatch({ type: 'table', headers: ['Tag', 'Count'], rows: frictionRows });
+  }
+}
+

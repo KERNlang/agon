@@ -1,5 +1,6 @@
-import from="@agon/core" names="EngineDefinition,EngineMode" types=true
+import from="@agon/core" names="EngineDefinition,EngineMode,EngineModeConfig,ImageAttachment" types=true
 import from="@agon/core" names="EngineNotFoundError"
+import from="node:fs" names="statSync"
 
 fn name=resolveArgs params="template:string[], vars:Record<string,string>" returns="string[]"
   handler <<<
@@ -21,9 +22,18 @@ fn name=resolveModel params="engine:EngineDefinition" returns="string|null"
     return modelConfig.default ?? null;
   >>>
 
-fn name=buildCommand params="engine:EngineDefinition, mode:EngineMode, prompt:string, cwd:string, timeout:number, binaryPath:string" returns="{command:string, args:string[]}"
+fn name=formatFileSize params="bytes:number" returns="string" export=false
   handler <<<
-    const modeConfig = mode === 'exec' ? engine.exec : engine.review;
+    if (bytes < 1024) return `${bytes}B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+  >>>
+
+fn name=buildCommand params="engine:EngineDefinition, mode:EngineMode, prompt:string, cwd:string, timeout:number, binaryPath:string, images?:ImageAttachment[]" returns="{command:string, args:string[]}"
+  handler <<<
+    const modeConfig = mode === 'agent' ? engine.agent
+      : mode === 'exec' ? engine.exec
+      : engine.review;
 
     if (!modeConfig) {
       throw new EngineNotFoundError(
@@ -34,8 +44,25 @@ fn name=buildCommand params="engine:EngineDefinition, mode:EngineMode, prompt:st
 
     const model = resolveModel(engine);
 
+    let effectivePrompt = prompt;
+    const hasImages = images && images.length > 0;
+    const hasVision = hasImages && engine.capabilities?.includes('vision') && engine.imageFlag;
+
+    // Non-vision engines: prepend image info as text
+    if (hasImages && !hasVision) {
+      const labels = images.map((img) => {
+        try {
+          const size = statSync(img.path).size;
+          return `[Image: ${img.path} (${formatFileSize(size)})]`;
+        } catch {
+          return `[Image: ${img.path}]`;
+        }
+      });
+      effectivePrompt = labels.join('\n') + '\n\nPlease read and analyze the image(s) above.\n\n' + prompt;
+    }
+
     const vars: Record<string, string> = {
-      prompt,
+      prompt: effectivePrompt,
       cwd,
       timeout: String(timeout),
       model: model ?? '',
@@ -44,15 +71,46 @@ fn name=buildCommand params="engine:EngineDefinition, mode:EngineMode, prompt:st
     const args = resolveArgs(modeConfig.args, vars);
 
     if (model && engine.model?.flag) {
-      const promptIdx = args.indexOf(prompt);
-      if (promptIdx > 0) {
+      const promptIdx = args.indexOf(effectivePrompt);
+      if (promptIdx >= 0) {
         args.splice(promptIdx, 0, engine.model.flag, model);
       } else {
         args.unshift(engine.model.flag, model);
       }
     }
 
+    // Vision engines: inject image flags before prompt
+    if (hasVision) {
+      const promptIdx = args.indexOf(effectivePrompt);
+      const insertAt = promptIdx >= 0 ? promptIdx : args.length;
+      const imageArgs: string[] = [];
+      for (const img of images) {
+        imageArgs.push(engine.imageFlag!, img.path);
+      }
+      args.splice(insertAt, 0, ...imageArgs);
+    }
+
     return { command: binaryPath, args };
+  >>>
+
+fn name=supportsAgentMode params="engine:EngineDefinition" returns=boolean
+  handler <<<
+    return !!engine.agent;
+  >>>
+
+fn name=resolveAgentArgs params="engine:EngineDefinition, permissionLevel:'full'|'plan'|'read-only'" returns="EngineModeConfig|null"
+  handler <<<
+    if (permissionLevel === 'read-only') return null;
+    if (!engine.agent) return null;
+    if (permissionLevel === 'full') return engine.agent;
+    // plan mode: swap vendor-specific flags
+    const planArgs = engine.agent.args.map((arg: string) => {
+      if (arg === '--dangerously-skip-permissions') return '--permission-mode=plan';
+      if (arg === 'yolo') return 'plan';
+      if (arg === '--full-auto') return '--full-auto';
+      return arg;
+    });
+    return { args: planArgs };
   >>>
 
 fn name=checkEnvVars params="engine:EngineDefinition" returns="string|null"

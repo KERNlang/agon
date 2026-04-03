@@ -4,7 +4,6 @@ export const DEFAULT_WEIGHTS: ScoreWeights = { pass: 50, quality: 20, diff: 15, 
 
 function clamp(val: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, val));
-  
 }
 
 export function computeScore(result: FitnessResult, weights?: ScoreWeights): ScoreComponents {
@@ -28,7 +27,6 @@ export function computeScore(result: FitnessResult, weights?: ScoreWeights): Sco
     ), 0, 100,
   );
   return { passScore, qualityScore, diffScore, filesScore, durationScore, composite };
-  
 }
 
 export function tiebreak(a: FitnessResult, b: FitnessResult): number {
@@ -40,6 +38,5 @@ export function tiebreak(a: FitnessResult, b: FitnessResult): number {
   if (a.diffLines !== b.diffLines) return a.diffLines - b.diffLines;
   if (a.filesChanged !== b.filesChanged) return a.filesChanged - b.filesChanged;
   return a.durationSec - b.durationSec;
-  
 }
 

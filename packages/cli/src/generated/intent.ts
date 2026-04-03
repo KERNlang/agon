@@ -25,6 +25,8 @@ export interface Intent {
   index: number|undefined;
   tribunalMode: string|undefined;
   jobId: string|undefined;
+  taskClass: 'code'|'question'|'ambiguous'|undefined;
+  args: string|undefined;
 }
 
 export const SLASH_COMMANDS: SlashCommand[] = [
@@ -34,7 +36,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { cmd: '/campfire',    desc: '<topic>                  — think together, no competition' },
   { cmd: '/workspace',   desc: 'add|remove|list|switch   — manage project repos' },
   { cmd: '/ws',          desc: '                          — list workspaces (shortcut)' },
-  { cmd: '/use',         desc: '<engines>               — set active engines (e.g. /use claude,codex)' },
+  { cmd: '/cesar',       desc: '<engine>                — set Cesar brain engine (e.g. /cesar codex)' },
   { cmd: '/models',      desc: '                        — manage engines' },
   { cmd: '/tokens',      desc: '                        — show token usage & costs' },
   { cmd: '/engines',     desc: '                        — list all engines' },
@@ -52,6 +54,11 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { cmd: '/flow',        desc: '                        — log this session' },
   { cmd: '/flows',       desc: '                        — flow analytics dashboard' },
   { cmd: '/chats',       desc: '[id|resume <id>]        — chat history or resume session' },
+  { cmd: '/build',       desc: '<task>                   — agent builds in cwd (reads/edits/tests)' },
+  { cmd: '/pipeline',   desc: '<task> [test with <cmd>]  — build→review→fix loop' },
+  { cmd: '/provider',    desc: 'add|remove|list          — manage API providers' },
+  { cmd: '/run',         desc: '<cmd>                    — run shell command inline' },
+  { cmd: '/commit',      desc: '[message]                — stage & commit with auto-generated message' },
   { cmd: '/undo',        desc: '                        — revert last applied forge patch' },
   { cmd: '/jobs',        desc: '                        — list running/completed jobs' },
   { cmd: '/focus',       desc: '<id>                    — switch to background job output' },
@@ -72,6 +79,19 @@ export const CONFIG_KEYWORDS: RegExp = /\b(config|settings?)\b/i;
 export const HELP_KEYWORDS: RegExp = /^(help|\?)$/i;
 
 export const EXIT_KEYWORDS: RegExp = /^(exit|quit|bye)$/i;
+
+export const QUESTION_PATTERN: RegExp = /^(what|how|why|where|when|who|which|explain|describe|tell|show|list|is there|does|can you explain|walk me through)\b/i;
+
+export const CODE_TASK_PATTERN: RegExp = /^(fix|add|implement|refactor|debug|create|build|write|update|change|remove|delete|rename|move|test|deploy|install|upgrade|migrate|convert|extract|inline|optimize|port)\b/i;
+
+export const CODE_ARTIFACT_PATTERN: RegExp = /(?:at \w+.*:\d+|\.[tj]sx?\b|\.[a-z]{2,4}:\d+|^[+-]{3}\s)/m;
+
+export function classifyTask(input: string): 'code'|'question'|'ambiguous' {
+  if (QUESTION_PATTERN.test(input)) return 'question';
+  if (CODE_TASK_PATTERN.test(input)) return 'code';
+  if (CODE_ARTIFACT_PATTERN.test(input)) return 'code';
+  return 'ambiguous';
+}
 
 function parseForgeInput(input: string): Intent {
   const fitnessMatch = FITNESS_PATTERN.exec(input);
@@ -124,6 +144,12 @@ function parseSlashCommand(input: string): Intent {
       return { type: 'engines' } as Intent;
     case 'discover':
       return { type: 'discover' } as Intent;
+    case 'provider': {
+      const provParts = rest.trim().split(/\s+/);
+      const provAction = provParts[0] || 'list';
+      const provArgs = provParts.slice(1).join(' ');
+      return { type: 'provider', action: provAction, args: provArgs } as Intent;
+    }
     case 'campfire':
     case 'think':
     case 'talk':
@@ -142,6 +168,13 @@ function parseSlashCommand(input: string): Intent {
     case 'usage':
     case 'cost':
       return { type: 'tokens' } as Intent;
+    case 'cesar': {
+      const cesarIds = rest
+        .split(/[,\s]+/)
+        .map((s: string) => s.trim().toLowerCase())
+        .filter(Boolean);
+      return { type: 'cesar', engineIds: cesarIds } as Intent;
+    }
     case 'use': {
       const ids = rest
         .split(/[,\s]+/)
@@ -195,6 +228,22 @@ function parseSlashCommand(input: string): Intent {
       }
       return { type: 'chats', sessionId: rest || undefined } as Intent;
     }
+    case 'build':
+    case 'agent':
+      return { type: 'build', input: rest } as Intent;
+    case 'pipeline':
+    case 'pipe': {
+      const fitMatch = FITNESS_PATTERN.exec(rest);
+      const fitCmd = fitMatch ? fitMatch[1].trim() : null;
+      const pipeTask = fitCmd ? rest.replace(FITNESS_PATTERN, '').trim() : rest;
+      return { type: 'pipeline', task: pipeTask, fitnessCmd: fitCmd } as Intent;
+    }
+    case 'run':
+    case 'exec':
+    case 'shell':
+      return { type: 'run', input: rest } as Intent;
+    case 'commit':
+      return { type: 'commit', input: rest || undefined } as Intent;
     case 'undo':
       return { type: 'undo' } as Intent;
     case 'jobs':
@@ -228,6 +277,6 @@ export function detectIntent(raw: string): Intent {
   if (ENGINES_KEYWORDS.test(input)) return { type: 'engines' } as Intent;
   if (CONFIG_KEYWORDS.test(input)) return { type: 'config' } as Intent;
   
-  return { type: 'unknown', input } as Intent;
+  return { type: 'auto', input, taskClass: classifyTask(input) } as Intent;
 }
 

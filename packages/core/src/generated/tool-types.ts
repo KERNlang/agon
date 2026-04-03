@@ -1,0 +1,64 @@
+export interface ToolInput {
+  type: string;
+}
+
+
+export interface ToolResult {
+  ok: boolean;
+  content: string;
+  error?: string;
+  metadata?: Record<string,unknown>;
+}
+
+export interface PermissionDecision {
+  behavior: 'allow'|'ask'|'deny';
+  message?: string;
+  reason?: string;
+}
+
+export interface ToolContext {
+  cwd: string;
+  readFileState: Map<string, FileState>;
+  abortSignal?: AbortSignal;
+  permissionMode?: 'auto'|'ask'|'deny-all';
+  onProgress?: ((message: string) => void);
+}
+
+export interface FileState {
+  content: string;
+  timestamp: number;
+  offset: number|undefined;
+  limit: number|undefined;
+  isPartialView?: boolean;
+}
+
+export interface ToolDefinition {
+  name: string;
+  description: string;
+  inputSchema: Record<string,unknown>;
+  maxResultSizeChars: number;
+  isReadOnly: boolean;
+  isConcurrencySafe: boolean;
+  isDestructive?: boolean;
+}
+
+export interface ToolHandler {
+  definition: ToolDefinition;
+  validate: (input: Record<string,unknown>, ctx: ToolContext) => string|null;
+  checkPermission: (input: Record<string,unknown>, ctx: ToolContext) => PermissionDecision;
+  execute: (input: Record<string,unknown>, ctx: ToolContext) => Promise<ToolResult>;
+}
+
+export interface ToolCall {
+  id: string;
+  name: string;
+  input: Record<string,unknown>;
+}
+
+export interface ToolCallResult {
+  toolCallId: string;
+  toolName: string;
+  result: ToolResult;
+  durationMs: number;
+}
+

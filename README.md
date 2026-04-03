@@ -11,7 +11,7 @@ You: "Add input validation to the signup form"
 Agon: Dispatches Claude, Codex, Gemini (or any engine) in parallel
       Each works in an isolated git worktree
       Runs your fitness test against each solution
-      Scores: correctness (50%), quality (20%), diff size (15%), focus (10%), speed (5%)
+      Scores: correctness, quality, diff size, focus, speed
       Winner gets applied. Losers critique. Synthesis refines.
       ELO ratings track who's best at what, over time.
 ```
@@ -21,63 +21,127 @@ No existing framework does this. LangChain, CrewAI, AutoGen — all cooperative.
 ## Quick start
 
 ```bash
-# Install
 git clone https://github.com/cukas/Agon-AI.git
-cd Agon-AI
-npm install && npm run build
+cd Agon-AI && npm install && npm run build
 
-# See what engines you have
-npx agon engine list
+# Launch the interactive REPL
+agon
 
-# Run a forge — engines compete on your task
-npx agon forge "add input validation to signup form" --test "npm test"
-
-# Brainstorm — engines bid on confidence, highest answers
-npx agon brainstorm "what architecture should we use for the notification system?"
-
-# Check the leaderboard
-npx agon leaderboard
+# Or use CLI commands directly
+agon forge "add validation" --test "npm test"
+agon brainstorm "what architecture for notifications?"
+agon leaderboard
 ```
+
+## Interactive REPL
+
+Just type `agon` to start. Cesar (the orchestrator brain) routes your input automatically:
+
+```
+> explain the auth flow                    → Cesar answers directly
+> fix the login bug, test with npm test    → Cesar delegates to forge
+> should we use REST or GraphQL?           → Cesar delegates to tribunal
+> /brainstorm best approach for caching?   → Explicit brainstorm
+> /forge add dark mode test with npm test  → Explicit forge
+```
+
+### Cesar — the persistent brain
+
+Cesar is a persistent AI session (configurable engine, default: Claude) that:
+- Receives **all** user input first
+- Maintains full conversation context across interactions
+- Answers directly when it can (fast chat)
+- Delegates to forge/build/brainstorm/tribunal when multi-engine collaboration helps
+- Gets delegate results back for synthesis
+
+Change your Cesar engine: `/config set cesarEngine codex`
+
+### Slash commands
+
+| Command | Description |
+|---------|-------------|
+| `/forge <task> test with <cmd>` | Competitive code generation |
+| `/brainstorm <question>` | Confidence-bidding multi-AI answers |
+| `/tribunal [mode] <question>` | Multi-round AI debate |
+| `/campfire <topic>` | Collaborative thinking (no competition) |
+| `/build <task>` | Agent builds in cwd (reads/edits/tests) |
+| `/pipeline <task>` | Build → review → fix loop |
+| `/commit [message]` | Stage & commit with auto-generated message |
+| `/use <engines>` | Set active engines (e.g. `/use claude,codex`) |
+| `/models` | Interactive engine picker |
+| `/leaderboard` | ELO rankings |
+| `/history [id]` | Past forge runs |
+| `/tokens` | Session token usage & costs |
+| `/config [list\|get\|set]` | Settings |
+| `/cp [N]` | Copy code block N to clipboard |
+| `/help` | Show all commands |
+
+### Dynamic skills
+
+Drop markdown files in `~/.agon/skills/` to add custom slash commands:
+
+```markdown
+---
+name: Review PR
+trigger: /review-pr
+description: Review the current PR with all engines
+---
+Review the changes in this PR. Focus on bugs, security issues, and performance.
+
+Context: {input}
+```
+
+The skill appears in the slash picker and ghost text automatically.
 
 ## How forge works
 
 ```
-Stage 0: Baseline     Run fitness on untouched code (sanity check)
-                       │
-Stage 1: Starter       One engine goes first (configurable)
-                       │
-            ┌──────────┴──── Score ≥ 88, lint ≤ 2, style ≥ 90?
-            │                     │
-          YES ── Auto-accept      NO
-                                  │
-Stage 2: Challengers   Remaining engines run in parallel
-                       │
-                       ├── Score all engines
-                       ├── Deterministic tiebreaker
-                       │   (score → lint → style → diff → files → speed)
-                       │
-            ┌──────────┴──── Close call? (spread < 8 points)
-            │                     │
-           NO ── Winner wins     YES
-                                  │
-Stage 3: Synthesis     Losers critique winner's diff
-                       Winner refines based on valid critiques
-                       Re-score — if better, synthesis wins
-                       │
-                       └── ELO ratings updated
+Stage 0: Baseline     Fitness test on untouched code (sanity check)
+
+Stage 1: Starter      One engine goes first (configurable)
+                      Score >= 88? → Auto-accept. Done.
+
+Stage 2: Challengers  Remaining engines run with mid-forge peek:
+                      - Scout (first challenger) runs alone
+                      - Scout's diff shared as PEEK context to followers
+                      - Followers can build on or diverge from scout's approach
+                      - Each engine gets a specialized role prompt
+                        (lead / challenger / specialist / newcomer)
+
+Stage 3: Synthesis    Close call? Losers critique winner's diff
+                      Winner refines. Re-score. Best version wins.
+
+                      ELO + engine memory updated.
 ```
+
+### Role specialization
+
+Engines get different prompts based on their ELO per-task-class:
+- **Lead**: "You're top-rated for this task type. Lead with your best."
+- **Challenger**: "Focus on what the lead might miss: edge cases, pitfalls."
+- **Specialist**: "Your win rate is X%. Focus on what you do best."
+- **Newcomer**: "Fresh perspective — don't follow conventional patterns."
+
+### Engine memory
+
+Qualitative profiles built from forge outcomes over time:
+```
+claude: Won 4 of 5 refactor tasks. Tendency: thorough but verbose.
+codex:  Lost feature forge (score 78 vs 92). Weakness: edge cases.
+gemini: Failed bugfix forge (didn't pass fitness). Timeout issues.
+```
+
+Used to inform role assignment and routing decisions.
 
 ## Scoring
 
 | Component | Weight | What it measures |
 |-----------|--------|------------------|
-| **Correctness** | 50% | Does it pass the fitness test? |
-| **Quality** | 20% | Lint warnings + code style |
-| **Diff size** | 15% | Fewer changed lines = better (avoids over-engineering) |
-| **Focus** | 10% | Fewer files changed = more surgical |
-| **Speed** | 5% | Faster is slightly better |
-
-Hard filters: fail = 0 score. Empty diff = 0 score.
+| Correctness | 50% | Does it pass the fitness test? |
+| Quality | 20% | Lint warnings + code style |
+| Diff size | 15% | Fewer changed lines = better |
+| Focus | 10% | Fewer files changed = more surgical |
+| Speed | 5% | Faster is slightly better |
 
 ## Adding engines
 
@@ -85,7 +149,7 @@ Drop a JSON file in `~/.agon/engines/`. No code needed.
 
 ```json
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "id": "deepseek",
   "displayName": "DeepSeek Coder",
   "binary": "deepseek",
@@ -94,132 +158,94 @@ Drop a JSON file in `~/.agon/engines/`. No code needed.
   "isLocal": false,
   "tier": "user",
   "timeout": 180,
+  "exec": { "args": ["--prompt", "{prompt}"] },
+  "review": { "args": ["--prompt", "{prompt}", "--mode", "review"] },
+  "model": { "configKey": "deepseek_model", "flag": "--model" },
+  "env": { "DEEPSEEK_API_KEY": { "required": true } }
+}
+```
 
-  "exec": {
-    "args": ["--prompt", "{prompt}"]
-  },
-  "review": {
-    "args": ["--prompt", "{prompt}", "--mode", "review"]
-  },
+Engines with native protocols get a `companion` field for faster, more stable dispatch:
 
-  "model": {
-    "configKey": "deepseek_model",
-    "flag": "--model",
-    "default": "deepseek-coder-v2"
-  },
-
-  "env": {
-    "DEEPSEEK_API_KEY": { "required": true }
+```json
+{
+  "companion": {
+    "protocol": "jsonrpc",
+    "serverCmd": ["app-server"],
+    "features": { "threadResume": true, "nativeReview": true }
   }
 }
 ```
 
-Template variables: `{prompt}`, `{model}`, `{cwd}`, `{timeout}`
-
 ### Builtin engines
 
-| Engine | Type | Binary | Notes |
-|--------|------|--------|-------|
-| Claude | Cloud | `claude` | Anthropic Claude Code CLI |
-| Codex | Cloud | `codex` | OpenAI Codex CLI |
-| Gemini | Cloud | `gemini` | Google Gemini CLI |
-| Ollama | Local | `ollama` | Any local model (Llama, Qwen, Mistral, Phi...) |
-| Aider | Hybrid | `aider` | AI pair programming, any backend model |
-| OpenRouter | Cloud | `openrouter` | 100+ models via proxy |
-| Qwen | Cloud | `qwen` | Alibaba Qwen |
-| Mistral | Cloud | `mistral` | Mistral AI |
-
-## Commands
-
-```bash
-agon forge <task> --test <cmd>     # Competitive forge — engines race
-agon brainstorm <question>         # Confidence-bidding brainstorm
-agon tribunal <question>           # Adversarial debate — engines argue sides
-agon history                       # Browse past forge runs
-agon history <id>                  # Show details for a specific run
-agon engine list                   # Show detected engines
-agon engine info <id>              # Engine details + ELO
-agon leaderboard                   # Global ELO rankings
-agon leaderboard -c bugfix         # Per-task-class rankings
-agon config list                   # Show all config
-agon config set <key> <value>      # Set config value
-```
-
-### Tribunal — adversarial debate
-
-Engines take opposing positions and debate across multiple rounds. Each round sees the previous arguments. A final verdict synthesizes the debate.
-
-```bash
-# 2 engines debate, 2 rounds (default)
-agon tribunal "should we use microservices or a monolith?"
-
-# 3 engines, 3 rounds
-agon tribunal "REST vs GraphQL vs tRPC" -r 3 -e claude,codex,gemini
-```
+| Engine | Binary | Type | Notes |
+|--------|--------|------|-------|
+| Claude | `claude` | Cloud | Anthropic Claude Code CLI |
+| Codex | `codex` | Cloud | OpenAI Codex CLI (JSONRPC companion) |
+| Gemini | `gemini` | Cloud | Google Gemini CLI |
+| OpenCode | `opencode` | Cloud | Multi-provider AI |
+| Ollama | `ollama` | Local | Any local model |
+| Aider | `aider` | Hybrid | AI pair programming |
+| OpenRouter | `openrouter` | Cloud | 100+ models via proxy |
+| Qwen | `qwen` | Cloud | Alibaba Qwen |
+| Mistral | `mistral` | Cloud | Mistral AI |
 
 ## Configuration
 
 ```bash
-# Set via CLI
-agon config set forgeFixedStarter claude
+agon config set cesarEngine claude          # Which engine is the brain
+agon config set forgeFixedStarter claude     # Which engine starts forge
 agon config set forgeEnabledEngines claude,codex,gemini
-agon config set eloKFactor 32
-
-# Or edit ~/.agon/config.json directly
 ```
 
-| Key | Default | Description |
-|-----|---------|-------------|
-| `forgeAutoAcceptScore` | 88 | Stage 1 auto-accept threshold |
-| `forgeClearWinnerSpread` | 8 | Close-call threshold (triggers synthesis) |
-| `forgeEnableSynthesis` | true | Enable critique + refinement |
-| `forgeMaxCritiques` | 3 | Max critiques per loser |
-| `forgeStarterStrategy` | "fixed" | "fixed" or "rotate" |
-| `forgeFixedStarter` | "claude" | Preferred starter engine |
-| `forgeEnabledEngines` | claude,codex,gemini | Which engines to use |
-| `eloEnabled` | true | Track ELO ratings |
-| `eloKFactor` | 32 | ELO sensitivity |
+Three config layers (later overrides earlier):
+1. `~/.agon/config.json` — global defaults
+2. `.agon.json` — project config (committed)
+3. `.agon.local.json` — personal overrides (gitignored)
+
+### Lifecycle hooks
+
+Define hooks in config to run shell commands at dispatch lifecycle points:
+
+```json
+{
+  "hooks": {
+    "pre_dispatch": [{ "command": "echo dispatching", "engines": ["codex"] }],
+    "post_dispatch": [{ "command": "notify-send 'Done'" }],
+    "session_start": [{ "command": "echo welcome" }]
+  }
+}
+```
+
+Hook events: `pre_dispatch`, `post_dispatch`, `pre_forge`, `post_forge`, `pre_brainstorm`, `post_brainstorm`, `pre_tribunal`, `post_tribunal`, `session_start`, `session_end`
 
 ## Architecture
 
+Written in **KERNlang** — all logic in `.kern` source files, compiled to TypeScript.
+
 ```
 packages/
-├── core/          @agon/core — zero runtime deps
-│   ├── types.ts           Interfaces (Engine, Scoring, ELO, Forge)
-│   ├── scoring.ts         Composite scorer (50/20/15/10/5)
-│   ├── elo.ts             ELO ratings (K=32, per-task-class)
-│   ├── engine-registry.ts Engine discovery + binary lookup
-│   ├── task-classifier.ts Keyword-based task classification
-│   ├── git.ts             Worktree create/remove/diff
-│   ├── process.ts         Spawn with timeout + cleanup
-│   ├── prompt-builder.ts  All prompt templates
-│   ├── config.ts          ~/.agon/ + .agon.json config
-│   ├── logger.ts          Structured debug logger
-│   └── errors.ts          Typed error hierarchy
+├── core/          @agon/core — types, scoring, ELO, engine registry, git,
+│                  process spawner, prompt builder, config, hooks, skills,
+│                  session context, sidechain logger, engine memory,
+│                  role specialization, companion JSONRPC dispatch
 │
-├── forge/         @agon/forge — orchestrator
-│   ├── forge.ts           runForge() — 3-stage pipeline
-│   ├── stages.ts          Baseline, Stage 1, Stage 2, winner logic
-│   ├── fitness.ts         Run fitness cmd + gather stats
-│   ├── synthesis.ts       Critique collection + refinement
-│   ├── brainstorm.ts      Confidence bidding
-│   └── manifest.ts        Run history persistence
+├── forge/         @agon/forge — forge orchestrator, stages (with peek),
+│                  synthesis, brainstorm, tribunal, campfire, fitness
 │
-├── adapter-cli/   @agon/adapter-cli — declarative CLI adapter
-│   └── adapter.ts         Reads args from engine JSON, interpolates
+├── adapter-cli/   @agon/adapter-cli — CLI adapter with companion protocol
+│                  fallback chain: JSONRPC → API → CLI spawn
 │
-└── cli/           @agon/cli — CLI commands
-    └── commands/          forge, brainstorm, leaderboard, engine, config
+└── cli/           @agon/cli — interactive REPL (React/Ink), Cesar brain,
+                   intent detection, handlers, conversational UX,
+                   streaming, slash commands, dynamic skills
 ```
-
-## Ported from
-
-Agon is a TypeScript port of [Claude's AI Buddies](https://github.com/cukas/claudes-ai-buddies) — a 918-line bash library with 105 tests and production usage. The name was chosen via 3-AI brainstorm consensus.
 
 ## Requirements
 
 - Node.js >= 22
-- At least one AI CLI tool installed (claude, codex, gemini, ollama, aider, etc.)
+- At least one AI CLI tool installed (claude, codex, gemini, ollama, etc.)
 - A git repository to work in (forge uses worktrees)
 
 ## License

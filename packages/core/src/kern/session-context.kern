@@ -1,0 +1,48 @@
+import from="./context-scanner.js" names="scanProjectContext"
+
+service name=SessionContext
+  doc "Memoized project context — gathered once per session, reused across dispatches. Inspired by Claude Code's immutable context pattern: capture directory structure, git status, project type at startup and cache for the session lifetime."
+
+  field name=cache type="string|null" default="null" private=true
+  field name=cachedCwd type="string|null" default="null" private=true
+  field name=cachedExtra type="string|null" default="null" private=true
+  field name=capturedAt type="number|null" default="null" private=true
+
+  method name=get params="cwd:string, extra?:string" returns=string
+    doc "Returns memoized context. Only recomputes if cwd or extra changes."
+    handler <<<
+      const extraVal = extra ?? null;
+      if (this.cache !== null && this.cachedCwd === cwd && this.cachedExtra === extraVal) {
+        return this.cache;
+      }
+      this.cache = scanProjectContext(cwd, extra);
+      this.cachedCwd = cwd;
+      this.cachedExtra = extraVal;
+      this.capturedAt = Date.now();
+      return this.cache;
+    >>>
+
+  method name=invalidate returns=void
+    doc "Force re-capture on next get() call."
+    handler <<<
+      this.cache = null;
+      this.cachedCwd = null;
+      this.cachedExtra = null;
+      this.capturedAt = null;
+    >>>
+
+  method name=age returns=number
+    doc "Milliseconds since context was captured. Returns Infinity if never captured."
+    handler <<<
+      if (this.capturedAt === null) return Infinity;
+      return Date.now() - this.capturedAt;
+    >>>
+
+  method name=isStale params="maxAgeMs?:number" returns=boolean
+    doc "Returns true if context is older than maxAgeMs (default 5 minutes)."
+    handler <<<
+      const limit = maxAgeMs ?? 300_000;
+      return this.age() > limit;
+    >>>
+
+  singleton name=sessionContext

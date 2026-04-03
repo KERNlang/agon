@@ -13,7 +13,6 @@ export class EngineNotFoundError extends AgonError {
     const hint = installHint ? `. Install: ${installHint}` : '';
     super(`Engine "${engineId}" not found${hint}`);
     this.name = 'EngineNotFoundError';
-    
   }
 }
 
@@ -24,7 +23,6 @@ export class EngineTimeoutError extends AgonError {
   ) {
     super(`Engine "${engineId}" timed out after ${Math.round(timeoutMs / 1000)}s`);
     this.name = 'EngineTimeoutError';
-    
   }
 }
 

@@ -1,0 +1,63 @@
+<svg width="800" height="240" viewBox="0 0 800 240" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="800" y2="240" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#f6f8fa"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0891b2"/>
+      <stop offset="50%" stop-color="#4f46e5"/>
+      <stop offset="100%" stop-color="#9333ea"/>
+    </linearGradient>
+    <linearGradient id="text-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0891b2"/>
+      <stop offset="100%" stop-color="#7c3aed"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="800" height="240" rx="12" fill="url(#bg)" stroke="#d0d7de" stroke-width="1"/>
+
+  <!-- Top accent -->
+  <rect y="0" width="800" height="3" rx="1.5" fill="url(#accent)"/>
+
+  <!-- Grid -->
+  <g opacity="0.04">
+    <line x1="200" y1="0" x2="200" y2="240" stroke="#1f2328" stroke-width="1"/>
+    <line x1="400" y1="0" x2="400" y2="240" stroke="#1f2328" stroke-width="1"/>
+    <line x1="600" y1="0" x2="600" y2="240" stroke="#1f2328" stroke-width="1"/>
+    <line x1="0" y1="80" x2="800" y2="80" stroke="#1f2328" stroke-width="1"/>
+    <line x1="0" y1="160" x2="800" y2="160" stroke="#1f2328" stroke-width="1"/>
+  </g>
+
+  <!-- AGON wordmark -->
+  <text x="400" y="80" text-anchor="middle" font-family="'SF Mono', 'Fira Code', 'JetBrains Mono', monospace" font-size="64" font-weight="800" letter-spacing="16" fill="url(#text-grad)">AGON</text>
+
+  <!-- Tagline -->
+  <text x="400" y="118" text-anchor="middle" font-family="'Inter', 'Segoe UI', system-ui, sans-serif" font-size="20" font-weight="400" fill="#656d76">Any AI can join. They compete. You ship.</text>
+
+  <!-- Subtitle -->
+  <text x="400" y="148" text-anchor="middle" font-family="'Inter', 'Segoe UI', system-ui, sans-serif" font-size="13" font-weight="400" fill="#8b949e">Competitive AI orchestration — first product 100% written in KERN</text>
+
+  <!-- Stats pills -->
+  <g transform="translate(400, 190)" text-anchor="middle">
+    <rect x="-360" y="-14" width="120" height="28" rx="14" fill="#f6f8fa" stroke="#d0d7de" stroke-width="1"/>
+    <text x="-300" y="5" font-family="'SF Mono', monospace" font-size="12" font-weight="600" fill="#0891b2">8</text>
+    <text x="-278" y="5" font-family="'Inter', sans-serif" font-size="11" fill="#656d76">AI engines</text>
+
+    <rect x="-220" y="-14" width="120" height="28" rx="14" fill="#f6f8fa" stroke="#d0d7de" stroke-width="1"/>
+    <text x="-160" y="5" font-family="'SF Mono', monospace" font-size="12" font-weight="600" fill="#4f46e5">63</text>
+    <text x="-138" y="5" font-family="'Inter', sans-serif" font-size="11" fill="#656d76">tests pass</text>
+
+    <rect x="-80" y="-14" width="120" height="28" rx="14" fill="#f6f8fa" stroke="#d0d7de" stroke-width="1"/>
+    <text x="-20" y="5" font-family="'SF Mono', monospace" font-size="12" font-weight="600" fill="#9333ea">16</text>
+    <text x="2" y="5" font-family="'Inter', sans-serif" font-size="11" fill="#656d76">.kern files</text>
+
+    <rect x="60" y="-14" width="100" height="28" rx="14" fill="#f6f8fa" stroke="#d0d7de" stroke-width="1"/>
+    <text x="110" y="5" font-family="'SF Mono', monospace" font-size="12" font-weight="600" fill="#d97706">ELO</text>
+    <text x="133" y="5" font-family="'Inter', sans-serif" font-size="11" fill="#656d76">rated</text>
+  </g>
+
+  <!-- Bottom accent -->
+  <rect y="237" width="800" height="3" rx="1.5" fill="url(#accent)" opacity="0.3"/>
+</svg>

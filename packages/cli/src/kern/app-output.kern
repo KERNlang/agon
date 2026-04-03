@@ -1,0 +1,121 @@
+// ── App Output Handler ───────────────────────────────────────────────
+// Processes OutputEvent dispatch calls — manages spinner, streaming, blocks.
+// Pure logic, no JSX.
+
+import from="../handlers/types.js" names="OutputEvent,EngineProgress" types=true
+import from="../markdown.js" names="parseMarkdownBlocks,cleanEngineOutput"
+import from="../code-buffer.js" names="codeBlockBuffer"
+
+interface name=OutputState
+  field name=liveSpinner type="{message:string,color?:number,engineId?:string}|null"
+  field name=liveProgress type="EngineProgress[]|null"
+  field name=streamingText type="{engineId:string,content:string}|null"
+
+interface name=OutputActions
+  field name=setLiveSpinner type="(val:any) => void"
+  field name=setLiveProgress type="(val:EngineProgress[]|null) => void"
+  field name=setStreamingText type="(val:{engineId:string,content:string}|null) => void"
+  field name=addBlock type="(event:OutputEvent) => void"
+  field name=clearBlocks type="() => void"
+  field name=setReviewEvent type="(val:any) => void"
+  field name=setQuestionState type="(val:any) => void"
+  field name=setChatStartTime type="(val:number) => void"
+  field name=flushStream type="() => void"
+  field name=getEngineColor type="(engineId:string) => number"
+
+fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:OutputActions, mode:string, chatStartTime:number" returns=void
+  doc "Process a single OutputEvent — updates spinner, streaming, and block state."
+  handler <<<
+    switch (event.type) {
+      case 'spinner-start':
+        actions.setChatStartTime(Date.now());
+        actions.setLiveSpinner({ message: event.message, color: event.color, engineId: (event as any).engineId });
+        return;
+      case 'spinner-stop':
+        actions.setLiveSpinner(null);
+        if ((event as any).message) {
+          actions.addBlock({ type: 'success', message: (event as any).message } as any);
+        }
+        return;
+      case 'spinner-update':
+        actions.setLiveSpinner((prev: any) => prev ? { ...prev, message: event.message } : null);
+        return;
+      case 'progress-update':
+        actions.setLiveProgress(event.engines);
+        return;
+      case 'progress-clear':
+        actions.setLiveProgress(null);
+        return;
+      case 'streaming-chunk': {
+        const prev = state.streamingText;
+        if (prev && prev.engineId === event.engineId) {
+          actions.setStreamingText({ engineId: event.engineId, content: prev.content + event.chunk });
+        } else {
+          actions.setStreamingText({ engineId: event.engineId, content: event.chunk });
+        }
+        return;
+      }
+      case 'streaming-end': {
+        const st = state.streamingText;
+        if (st) {
+          const color = actions.getEngineColor(st.engineId);
+          const cleaned = cleanEngineOutput(st.content);
+          if (cleaned.trim()) {
+            const segments = parseMarkdownBlocks(cleaned);
+            codeBlockBuffer.recordFromSegments(segments);
+            actions.addBlock({ type: 'engine-block', engineId: st.engineId, color, content: st.content } as any);
+            if (mode === 'chat' && chatStartTime > 0) {
+              actions.addBlock({ type: 'response-meta', engineId: st.engineId, elapsed: Date.now() - chatStartTime } as any);
+            }
+          }
+          actions.setStreamingText(null);
+        }
+        return;
+      }
+      case 'clear':
+        actions.clearBlocks();
+        actions.setStreamingText(null);
+        codeBlockBuffer.clear();
+        return;
+      case 'patch-review':
+        actions.setReviewEvent({ winnerId: (event as any).winnerId, patchPath: (event as any).patchPath, patchContent: (event as any).patchContent });
+        return;
+      case 'question':
+        actions.setQuestionState({ prompt: (event as any).prompt, resolve: (event as any).resolve });
+        return;
+      case 'permission-ask': {
+        // Show the permission block visually, then ask Y/N
+        actions.addBlock(event);
+        const permResolve = (event as any).resolve as (approved: boolean) => void;
+        actions.setQuestionState({
+          prompt: 'Do you want to proceed? (y/n)',
+          resolve: (answer: string) => {
+            const approved = answer.toLowerCase().startsWith('y');
+            permResolve(approved);
+            if (approved) {
+              actions.addBlock({ type: 'info', message: 'Approved' } as any);
+            } else {
+              actions.addBlock({ type: 'warning', message: 'Denied' } as any);
+            }
+          },
+        });
+        return;
+      }
+      default:
+        // Record code blocks from engine-block events
+        if (event.type === 'engine-block') {
+          const cleaned = cleanEngineOutput((event as any).content);
+          const segments = parseMarkdownBlocks(cleaned);
+          codeBlockBuffer.recordFromSegments(segments);
+        }
+        // Flush any pending stream before adding non-stream events
+        if (event.type === 'text' || event.type === 'engine-block' || event.type === 'separator') {
+          actions.flushStream();
+        }
+        actions.addBlock(event);
+        // Chat mode timing for engine-block
+        if (mode === 'chat' && event.type === 'engine-block' && chatStartTime > 0) {
+          actions.addBlock({ type: 'response-meta', engineId: (event as any).engineId, elapsed: Date.now() - chatStartTime } as any);
+        }
+    }
+  >>>

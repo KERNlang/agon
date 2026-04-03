@@ -1,40 +1,14 @@
-import from="@agon/core" names="Plan" types=true
-
 machine name=ReplState
   state name=idle initial=true
   state name=busy
   state name=streaming
   state name=questioning
+  state name=reviewing
   transition name=startCommand from=idle to=busy
   transition name=startStream from=busy to=streaming
   transition name=askQuestion from=busy to=questioning
   transition name=answerQuestion from=questioning to=busy
+  transition name=startReview from=idle to=reviewing
+  transition name=finishReview from=reviewing to=idle
   transition name=finish from="busy|streaming|questioning" to=idle
-  transition name=cancel from="busy|streaming" to=idle
-
-event name=OutputEvent
-  type name="text" data="{ content: string }"
-  type name="engine-block" data="{ engineId: string, color: number, content: string }"
-  type name="streaming-chunk" data="{ engineId: string, chunk: string }"
-  type name="spinner-start" data="{ message: string, color?: number }"
-  type name="spinner-stop" data="{ message?: string }"
-  type name="spinner-update" data="{ message: string }"
-  type name="progress-update" data="{ engines: Array<{ id: string, status: string, elapsed: number, done: boolean, failed: boolean }> }"
-  type name="progress-clear"
-  type name="separator"
-  type name="header" data="{ title: string }"
-  type name="success" data="{ message: string }"
-  type name="error" data="{ message: string }"
-  type name="warning" data="{ message: string }"
-  type name="info" data="{ message: string }"
-  type name="plan" data="{ plan: Plan }"
-  type name="plan-list" data="{ plans: Plan[] }"
-  type name="scoreboard" data="{ title: string, winner?: string, metrics: Array<{ name: string, values: string[] }> }"
-  type name="table" data="{ headers: string[], rows: string[][] }"
-  type name="clear"
-  type name="dashboard" data="{ engines: string[], eloStats: Record<string, { rating: number, wins: number, losses: number }>, activeWorkspace?: { name: string, path: string, isKern?: boolean }, runCount: number, defaultEngine: string }"
-  type name="help"
-  type name="kern-draft" data="{ engineId: string, content: string, critique?: string }"
-  type name="debate-round" data="{ round: number, engineId: string, position: string, argument: string }"
-  type name="verdict" data="{ summary: string }"
-  type name="question" data="{ prompt: string, resolve: (answer: string) => void }"
+  transition name=cancel from="busy|streaming|questioning" to=idle

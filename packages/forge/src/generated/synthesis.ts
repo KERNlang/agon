@@ -30,13 +30,12 @@ export function parseCritiques(output: string): Critique[] {
         problem: c.problem!,
         minimalFix: c.minimal_fix ?? c.minimalFix ?? '',
       }));
-  } catch {
+  } catch (_parseErr) {
     return [];
   }
-  
 }
 
-export async function runSynthesis(opts: {manifest:ForgeManifest, winner: string, losers: string[], registry: EngineRegistry, adapter: EngineAdapter, forgeDir: string, fitnessCmd: string, timeout: number, fitnessTimeout: number, maxCritiques: number, repoRoot: string, headSha: string, onEvent?: ForgeEventCallback}): Promise<SynthesisResult> {
+export async function runSynthesis(opts: {manifest:ForgeManifest, winner:string, losers:string[], registry:EngineRegistry, adapter:EngineAdapter, forgeDir:string, fitnessCmd:string, timeout:number, fitnessTimeout:number, maxCritiques:number, repoRoot:string, headSha:string, onEvent?:ForgeEventCallback}): Promise<SynthesisResult> {
   const { manifest, winner, losers, registry, adapter, forgeDir } = opts;
   
   const winnerResult = manifest.results[winner];
@@ -66,7 +65,8 @@ export async function runSynthesis(opts: {manifest:ForgeManifest, winner: string
         outputDir: forgeDir,
       });
       return parseCritiques(result.stdout);
-    } catch {
+    } catch (err) {
+      console.warn(`[agon] synthesis critique (${loserId}) failed: ${err instanceof Error ? err.message : String(err)}`);
       return [] as Critique[];
     }
   });
@@ -100,14 +100,26 @@ export async function runSynthesis(opts: {manifest:ForgeManifest, winner: string
     });
   
     const winnerEngine = registry.get(winner);
-    await adapter.dispatch({
-      engine: winnerEngine,
-      prompt: synthPrompt,
-      cwd: synthWtPath,
-      mode: 'exec',
-      timeout: opts.timeout,
-      outputDir: forgeDir,
-    });
+    const synthMode = winnerEngine.agent && adapter.dispatchAgent ? 'agent' : 'exec';
+    if (synthMode === 'agent') {
+      await adapter.dispatchAgent!({
+        engine: winnerEngine,
+        prompt: synthPrompt,
+        cwd: synthWtPath,
+        mode: 'agent',
+        timeout: opts.timeout,
+        outputDir: forgeDir,
+      });
+    } else {
+      await adapter.dispatch({
+        engine: winnerEngine,
+        prompt: synthPrompt,
+        cwd: synthWtPath,
+        mode: 'exec',
+        timeout: opts.timeout,
+        outputDir: forgeDir,
+      });
+    }
   
     opts.onEvent?.({ type: 'synthesis:score' });
   
@@ -137,6 +149,5 @@ export async function runSynthesis(opts: {manifest:ForgeManifest, winner: string
   } finally {
     worktreeRemove(opts.repoRoot, synthWtPath);
   }
-  
 }
 

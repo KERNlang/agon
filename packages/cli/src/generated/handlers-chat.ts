@@ -4,7 +4,7 @@ import { mkdirSync } from 'node:fs';
 
 import type { ImageAttachment } from '@agon/core';
 
-import { ensureAgonHome, RUNS_DIR, appendMessage, tracker, StreamParser, loadConfig, scanProjectContext } from '@agon/core';
+import { ensureAgonHome, RUNS_DIR, appendMessage, tracker, StreamParser, loadConfig, scanProjectContext, resolveWorkingDir } from '@agon/core';
 
 import { ENGINE_COLORS } from '../output.js';
 
@@ -25,7 +25,7 @@ function detectTargetEngine(input: string, availableIds: string[]): {engineId:st
   return { engineId: null, message: input };
 }
 
-export async function handleChat(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<void> {
+export async function handleChat(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[], opts?: {toolPolicy?:'full'|'none'}): Promise<void> {
   const abort = new AbortController();
   try {
     ensureAgonHome();
@@ -48,30 +48,40 @@ export async function handleChat(input: string, dispatch: Dispatch, ctx: Handler
       return;
     }
     
+    let engine;
+    try {
+      engine = ctx.registry.get(engineId);
+    } catch (err) {
+      dispatch({ type: 'error', message: `${engineId}: ${err instanceof Error ? err.message : String(err)}` });
+      return;
+    }
+    
     const recent = ctx.chatSession.messages.slice(-20);
     const history = recent.length > 0
       ? recent.map((m: any) => m.role === 'user' ? `User: ${m.content}` : `${m.engineId ?? 'engine'}: ${m.content}`).join('\n\n')
       : '';
-    const projectCtx = scanProjectContext(process.cwd(), config.projectContext || undefined, config.contextFormat);
+    const cwd = resolveWorkingDir();
+    const projectCtx = scanProjectContext(cwd, config.projectContext || undefined, config.contextFormat);
     const parts: string[] = [];
     if (projectCtx) parts.push(`## PROJECT CONTEXT\n${projectCtx}`);
     if (history) parts.push(history);
     parts.push(message);
     const prompt = parts.join('\n\n');
     
-    const engine = ctx.registry.get(engineId);
     const color = ENGINE_COLORS[engineId] ?? 245;
     const outputDir = join(RUNS_DIR, `chat-${Date.now()}`);
     mkdirSync(outputDir, { recursive: true });
     
     ctx.setActiveAbort(abort);
     
+    const forceNoTools = opts?.toolPolicy === 'none';
+    const useAgent = !forceNoTools && !!engine.agent;
     const dispatchOpts = {
       engine,
       prompt,
-      cwd: process.cwd(),
-      mode: 'exec' as const,
-      timeout: Math.min(config.timeout ?? 90, 90),
+      cwd,
+      mode: (useAgent ? 'agent' : 'exec') as 'agent' | 'exec',
+      timeout: useAgent ? (config.agentTimeout ?? 600) : Math.min(config.timeout ?? 90, 90),
       outputDir,
       signal: abort.signal,
       images: images ?? [],
@@ -83,7 +93,55 @@ export async function handleChat(input: string, dispatch: Dispatch, ctx: Handler
     let streaming = false;
     
     try {
-      if (ctx.adapter.dispatchStream) {
+      if (useAgent && ctx.adapter.dispatchAgentStream) {
+        const gen = ctx.adapter.dispatchAgentStream(dispatchOpts);
+        const parser = new StreamParser();
+    
+        while (true) {
+          const { value, done } = await gen.next();
+          if (done) break;
+          if (abort.signal.aborted) break;
+    
+          if (value.startsWith('\x00')) {
+            const status = value.slice(1).trim();
+            if (status) dispatch({ type: 'spinner-update', message: `${engineId} ${status}` });
+            continue;
+          }
+    
+          for (const parsed of parser.feed(value)) {
+            if (parsed.type === 'status') {
+              dispatch({ type: 'spinner-update', message: `${engineId} ${parsed.content}` });
+              continue;
+            }
+            if (parsed.type === 'result' && !streaming) {
+              response = parsed.content;
+              continue;
+            }
+            if (parsed.type === 'text' || parsed.type === 'raw') {
+              if (!streaming) {
+                dispatch({ type: 'spinner-stop' });
+                streaming = true;
+              }
+              dispatch({ type: 'streaming-chunk', engineId, chunk: parsed.content });
+              response += parsed.content;
+            }
+          }
+        }
+    
+        // Flush any remaining buffered data
+        for (const parsed of parser.flush()) {
+          if (parsed.type === 'text' || parsed.type === 'raw') {
+            if (!streaming) {
+              dispatch({ type: 'spinner-stop' });
+              streaming = true;
+            }
+            dispatch({ type: 'streaming-chunk', engineId, chunk: parsed.content });
+            response += parsed.content;
+          } else if (parsed.type === 'result' && !streaming) {
+            response = parsed.content;
+          }
+        }
+      } else if (ctx.adapter.dispatchStream) {
         const gen = ctx.adapter.dispatchStream(dispatchOpts);
         const parser = new StreamParser();
     

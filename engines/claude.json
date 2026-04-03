@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "id": "claude",
   "displayName": "Claude (Anthropic)",
   "binary": "claude",
@@ -20,6 +20,9 @@
   "review": {
     "args": ["--print", "--dangerously-skip-permissions", "--max-turns", "50", "{prompt}"]
   },
+  "agent": {
+    "args": ["--dangerously-skip-permissions", "--verbose", "--max-turns", "100", "{prompt}"]
+  },
 
   "model": {
     "configKey": "claude_model",
@@ -30,5 +33,8 @@
     "ANTHROPIC_API_KEY": { "required": false }
   },
 
-  "test": { "args": ["--version"] }
+  "test": { "args": ["--version"] },
+
+  "capabilities": ["vision"],
+  "imageFlag": "--image"
 }

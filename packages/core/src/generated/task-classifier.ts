@@ -13,6 +13,5 @@ export function classifyTask(description: string): TaskClass {
     if (pattern.test(description)) return taskClass;
   }
   return 'other';
-  
 }
 

@@ -1,5 +1,5 @@
 export { runForge } from './forge.js';
-export { runBrainstorm } from './brainstorm.js';
+export { runBrainstorm, runScout } from './brainstorm.js';
 export { runTribunal } from './tribunal.js';
 export { runSynthesis } from './synthesis.js';
 export { runBaseline, runStage1, runStage2, determineWinner } from './stages.js';

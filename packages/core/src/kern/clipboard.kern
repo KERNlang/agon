@@ -1,0 +1,94 @@
+import from="node:child_process" names="execSync"
+
+const name=_linuxHelperCache type="{ cmd: string | null; probed: boolean }"
+  doc "Cached result of Linux clipboard helper probe"
+  handler <<< { cmd: null, probed: false } >>>
+
+fn name=detectClipboardPath params="" returns="'native'|'tmux'|'osc52'"
+  doc "Detect the best clipboard write strategy for current environment."
+  export=false
+  handler <<<
+    if (process.env.TMUX) return 'tmux';
+    if (process.env.SSH_CLIENT || process.env.SSH_TTY) return 'osc52';
+    return 'native';
+  >>>
+
+fn name=writeOsc52 params="text:string" returns=void
+  doc "Write text to clipboard via OSC 52 escape sequence."
+  export=false
+  handler <<<
+    const b64 = Buffer.from(text).toString('base64');
+    process.stdout.write(`\x1b]52;c;${b64}\x07`);
+  >>>
+
+fn name=writeTmuxClipboard params="text:string" returns=void
+  doc "Write text to tmux paste buffer + OSC 52 via DCS passthrough."
+  export=false
+  handler <<<
+    // Load into tmux buffer
+    try {
+      execSync('tmux load-buffer -w -', { input: text, timeout: 5000 });
+    } catch {}
+
+    // Also send OSC 52 wrapped in DCS passthrough for terminal clipboard
+    const b64 = Buffer.from(text).toString('base64');
+    process.stdout.write(`\x1bPtmux;\x1b\x1b]52;c;${b64}\x07\x1b\\`);
+  >>>
+
+fn name=probeLinuxHelper params="" returns="string|null"
+  doc "Probe for available Linux clipboard helper. Caches result."
+  export=false
+  handler <<<
+    if (_linuxHelperCache.probed) return _linuxHelperCache.cmd;
+    _linuxHelperCache.probed = true;
+
+    const candidates: Array<{ check: string; cmd: string }> = [
+      { check: 'which wl-copy', cmd: 'wl-copy' },
+      { check: 'which xclip', cmd: 'xclip -selection clipboard' },
+      { check: 'which xsel', cmd: 'xsel --clipboard --input' },
+    ];
+
+    for (const c of candidates) {
+      try {
+        execSync(c.check, { stdio: 'ignore', timeout: 2000 });
+        _linuxHelperCache.cmd = c.cmd;
+        return c.cmd;
+      } catch {}
+    }
+
+    return null;
+  >>>
+
+fn name=copyToClipboard params="text:string" returns=void
+  doc "Copy text to system clipboard. Multi-path: native + OSC 52 on macOS, tmux buffer + DCS passthrough, Linux tool probing, SSH-only OSC 52."
+  handler <<<
+    const path = detectClipboardPath();
+    const platform = process.platform;
+
+    if (path === 'tmux') {
+      writeTmuxClipboard(text);
+      return;
+    }
+
+    if (path === 'osc52') {
+      writeOsc52(text);
+      return;
+    }
+
+    // Native path — use platform tool + OSC 52 as bonus
+    if (platform === 'darwin') {
+      execSync('pbcopy', { input: text, timeout: 5000 });
+      try { writeOsc52(text); } catch {}
+    } else if (platform === 'linux') {
+      const helper = probeLinuxHelper();
+      if (helper) {
+        execSync(helper, { input: text, timeout: 5000 });
+      }
+      try { writeOsc52(text); } catch {}
+    } else if (platform === 'win32') {
+      execSync('clip', { input: text, timeout: 5000 });
+    } else {
+      // Fallback: try OSC 52 as last resort
+      writeOsc52(text);
+    }
+  >>>

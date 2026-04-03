@@ -14,7 +14,8 @@ fn name=runFitness async=true params="opts:{engineId:string, worktreePath:string
       diff = worktreeDiff(opts.worktreePath);
       diffLines = diffLineCount(diff);
       filesChanged = diffFileCount(opts.worktreePath);
-    } catch {
+    } catch (err) {
+      console.warn(`[agon] fitness diff failed for ${opts.engineId}: ${err instanceof Error ? err.message : String(err)}`);
       diff = '';
       diffLines = 0;
       filesChanged = 0;

@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "id": "gemini",
   "displayName": "Gemini (Google)",
   "binary": "gemini",
@@ -20,6 +20,9 @@
   "review": {
     "args": ["-p", "{prompt}", "--approval-mode", "plan"]
   },
+  "agent": {
+    "args": ["{prompt}", "--approval-mode", "yolo"]
+  },
 
   "model": {
     "configKey": "gemini_model",
@@ -30,5 +33,18 @@
     "GOOGLE_API_KEY": { "required": false }
   },
 
-  "test": { "args": ["--version"] }
+  "companion": {
+    "protocol": "acp",
+    "serverCmd": ["--acp"],
+    "features": {
+      "threadResume": true,
+      "nativeReview": false,
+      "structuredOutput": true
+    }
+  },
+
+  "test": { "args": ["--version"] },
+
+  "capabilities": ["vision"],
+  "imageFlag": "--image"
 }

@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
 
 import { join } from 'node:path';
 
@@ -36,7 +36,8 @@ export function readPatchFromManifest(manifestPath: string): PatchInfo|null {
       (l: string) => (l.startsWith('+') && !l.startsWith('+++')) || (l.startsWith('-') && !l.startsWith('---'))
     ).length;
     return { path: patchPath, engineId: manifest.winner, lineCount, content };
-  } catch {
+  } catch (err) {
+    console.warn(`[agon] failed to read patch from manifest ${manifestPath}: ${err instanceof Error ? err.message : String(err)}`);
     return null;
   }
 }
@@ -49,7 +50,8 @@ export function readPatchFromPath(patchPath: string): PatchInfo|null {
       (l: string) => (l.startsWith('+') && !l.startsWith('+++')) || (l.startsWith('-') && !l.startsWith('---'))
     ).length;
     return { path: patchPath, engineId: 'unknown', lineCount, content };
-  } catch {
+  } catch (err) {
+    console.warn(`[agon] failed to read patch from ${patchPath}: ${err instanceof Error ? err.message : String(err)}`);
     return null;
   }
 }
@@ -58,7 +60,8 @@ export function isTreeDirty(cwd: string): boolean {
   try {
     const result = execSync('git status --porcelain', { cwd, encoding: 'utf-8' });
     return result.trim().length > 0;
-  } catch {
+  } catch (err) {
+    console.warn(`[agon] failed to check tree dirty state: ${err instanceof Error ? err.message : String(err)}`);
     return false;
   }
 }
@@ -125,9 +128,11 @@ export function applyPatchWithUndo(cwd: string, patchContent: string): { ok:bool
     return { ok: false, error: msg };
   }
   
-  // Save inverse patch
+  // Save inverse patch atomically (temp + rename)
   const inversePath = join(undoDir, `${token}.patch`);
-  writeFileSync(inversePath, inverse);
+  const tmpPath = join(undoDir, `${token}.patch.tmp`);
+  writeFileSync(tmpPath, inverse);
+  renameSync(tmpPath, inversePath);
   
   return { ok: true, undoToken: token };
 }

@@ -1,0 +1,79 @@
+import { execSync } from 'node:child_process';
+
+export const _linuxHelperCache: { cmd: string | null; probed: boolean } = { cmd: null, probed: false };
+
+export function detectClipboardPath(): 'native'|'tmux'|'osc52' {
+  if (process.env.TMUX) return 'tmux';
+  if (process.env.SSH_CLIENT || process.env.SSH_TTY) return 'osc52';
+  return 'native';
+}
+
+export function writeOsc52(text: string): void {
+  const b64 = Buffer.from(text).toString('base64');
+  process.stdout.write(`\x1b]52;c;${b64}\x07`);
+}
+
+export function writeTmuxClipboard(text: string): void {
+  // Load into tmux buffer
+  try {
+    execSync('tmux load-buffer -w -', { input: text, timeout: 5000 });
+  } catch {}
+  
+  // Also send OSC 52 wrapped in DCS passthrough for terminal clipboard
+  const b64 = Buffer.from(text).toString('base64');
+  process.stdout.write(`\x1bPtmux;\x1b\x1b]52;c;${b64}\x07\x1b\\`);
+}
+
+export function probeLinuxHelper(): string|null {
+  if (_linuxHelperCache.probed) return _linuxHelperCache.cmd;
+  _linuxHelperCache.probed = true;
+  
+  const candidates: Array<{ check: string; cmd: string }> = [
+    { check: 'which wl-copy', cmd: 'wl-copy' },
+    { check: 'which xclip', cmd: 'xclip -selection clipboard' },
+    { check: 'which xsel', cmd: 'xsel --clipboard --input' },
+  ];
+  
+  for (const c of candidates) {
+    try {
+      execSync(c.check, { stdio: 'ignore', timeout: 2000 });
+      _linuxHelperCache.cmd = c.cmd;
+      return c.cmd;
+    } catch {}
+  }
+  
+  return null;
+}
+
+export function copyToClipboard(text: string): void {
+  const path = detectClipboardPath();
+  const platform = process.platform;
+  
+  if (path === 'tmux') {
+    writeTmuxClipboard(text);
+    return;
+  }
+  
+  if (path === 'osc52') {
+    writeOsc52(text);
+    return;
+  }
+  
+  // Native path — use platform tool + OSC 52 as bonus
+  if (platform === 'darwin') {
+    execSync('pbcopy', { input: text, timeout: 5000 });
+    try { writeOsc52(text); } catch {}
+  } else if (platform === 'linux') {
+    const helper = probeLinuxHelper();
+    if (helper) {
+      execSync(helper, { input: text, timeout: 5000 });
+    }
+    try { writeOsc52(text); } catch {}
+  } else if (platform === 'win32') {
+    execSync('clip', { input: text, timeout: 5000 });
+  } else {
+    // Fallback: try OSC 52 as last resort
+    writeOsc52(text);
+  }
+}
+

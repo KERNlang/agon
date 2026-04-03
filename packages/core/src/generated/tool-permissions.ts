@@ -74,16 +74,15 @@ export function isDangerousCommand(command: string): boolean {
 
 export function isReadOnlyCommand(command: string): boolean {
   const stripped = stripShellWrappers(command).trim();
-  // Split on compound operators FIRST: &&, ||, ;, &
-  // All sub-commands must be read-only for the whole command to be safe
-  if (/[;&|]{1,2}/.test(stripped) && stripped !== '|') {
-    const parts = stripped.split(/\s*(?:&&|\|\||;|&)\s*/);
+  // Split on compound operators FIRST: &&, ||, ;, &  (but NOT single |)
+  if (/&&|\|\||;|&(?!&)/.test(stripped) && !/^\|/.test(stripped)) {
+    const parts = stripped.split(/\s*(?:&&|\|\||;|&(?!&))\s*/);
     return parts.every((p: string) => p.trim() && isReadOnlyCommand(p.trim()));
   }
   // Pipe chains: all commands must be read-only
   if (stripped.includes('|')) {
     const parts = stripped.split('|').map((p: string) => p.trim());
-    return parts.every((p: string) => isReadOnlyCommand(p));
+    return parts.every((p: string) => p && isReadOnlyCommand(p));
   }
   // Check against known read-only commands
   for (const safe of READONLY_COMMANDS) {
@@ -109,6 +108,10 @@ export function checkBashPermission(command: string, ctx: ToolContext): Permissi
     if (ctx.allowedCommands.some(ac => command.startsWith(ac) || base === ac)) {
       return { behavior: 'allow' };
     }
+  }
+  // Auto mode: allow all non-dangerous commands without prompting
+  if (ctx.permissionMode === 'auto') {
+    return { behavior: 'allow' };
   }
   // Non-read-only: ask user for approval
   return { behavior: 'ask', message: `This command requires approval`, reason: 'bash_mutating' };

@@ -425,7 +425,7 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
             const text = update.content?.text ?? '';
             if (text) chunks.push({ type: 'text', content: text });
           } else if (update.sessionUpdate === 'tool_call') {
-            chunks.push({ type: 'tool_call', content: update.title ?? '', metadata: { toolCallId: update.toolCallId, status: update.status } });
+            chunks.push({ type: 'tool_call', content: update.title ?? '', metadata: { toolCallId: update.toolCallId, status: update.status, input: update.input, output: update.output } });
           } else if (update.sessionUpdate === 'plan') {
             chunks.push({ type: 'status', content: 'Planning...' });
           }

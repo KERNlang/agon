@@ -158,13 +158,17 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   
         if (chunk.type === 'tool_call') {
           const meta = (chunk.metadata ?? {}) as Record<string, unknown>;
+          const toolInput = typeof meta.input === 'string' ? meta.input
+            : meta.input ? JSON.stringify(meta.input) : '';
+          const toolOutput = typeof meta.output === 'string' ? meta.output : undefined;
           dispatch({
             type: 'tool-call',
             engineId: cesarEngineId,
             tool: chunk.content || 'tool',
-            input: typeof meta.input === 'string' ? meta.input : JSON.stringify(meta.input ?? ''),
+            input: toolInput,
             status: (meta.status as any) ?? 'running',
-          });
+            output: toolOutput,
+          } as any);
           continue;
         }
   

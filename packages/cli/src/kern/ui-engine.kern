@@ -484,8 +484,8 @@ screen name=OutputBlockView target=ink
 
           // ── Write ──
           if (toolKey === 'write') {
-            const filePath = (parsed.file_path as string) ?? '';
-            const content = (parsed.content as string) ?? '';
+            const filePath = (parsed.file_path as string) || rawInput || '';
+            const content = (parsed.content as string) || '';
             const shortPath = filePath.replace(process.cwd() + '/', '').replace(process.env.HOME ?? '', '~');
             const lineCount = content ? content.split('\n').length : 0;
             return (
@@ -501,7 +501,7 @@ screen name=OutputBlockView target=ink
 
           // ── Read ──
           if (toolKey === 'read') {
-            const filePath = (parsed.file_path as string) ?? '';
+            const filePath = (parsed.file_path as string) || rawInput || '';
             const shortPath = filePath.replace(process.cwd() + '/', '').replace(process.env.HOME ?? '', '~');
             return (
               <Box paddingLeft={2} flexDirection="column">
@@ -515,8 +515,8 @@ screen name=OutputBlockView target=ink
 
           // ── Grep / Search ──
           if (toolKey === 'grep' || toolKey === 'search') {
-            const pattern = (parsed.pattern as string) ?? '';
-            const path = (parsed.path as string) ?? '';
+            const pattern = (parsed.pattern as string) || rawInput || '';
+            const path = (parsed.path as string) || '';
             const shortPath = path ? path.replace(process.cwd() + '/', '').replace(process.env.HOME ?? '', '~') : '';
             return (
               <Box paddingLeft={2} flexDirection="column">
@@ -530,7 +530,7 @@ screen name=OutputBlockView target=ink
 
           // ── Glob / Find ──
           if (toolKey === 'glob' || toolKey === 'find') {
-            const pattern = (parsed.pattern as string) ?? '';
+            const pattern = (parsed.pattern as string) || rawInput || '';
             return (
               <Box paddingLeft={2} flexDirection="column">
                 <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{'\ud83d\udcc2 Find'}</Text></Text>{' '}<Text color="#a78bfa">{pattern}</Text></Text>

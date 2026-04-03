@@ -354,37 +354,40 @@ fn name=shortenFilePaths params="text:string" returns=string export=false
   >>>
 
 fn name=addParagraphBreaks params="text:string" returns=string export=false
-  doc "Insert paragraph breaks in dense text — long lines without blank lines get split at sentence boundaries."
+  doc "Insert paragraph breaks in dense text — split at sentence boundaries for readability."
   handler <<<
     const paragraphs = text.split(/\n{2,}/);
     const result: string[] = [];
 
     for (const para of paragraphs) {
       const lines = para.split('\n');
-      // Skip if already short, has structure (headers, lists), or is a code fence
-      const isStructured = lines.some(l => /^[#\-*>|`]/.test(l.trimStart()));
+      // Skip if already structured (headers, lists, code fences, short text)
+      const isStructured = lines.some(l => /^[#\-*>|`\d+\.]/.test(l.trimStart()));
       const totalLen = lines.reduce((sum, l) => sum + l.length, 0);
-      if (isStructured || totalLen < 300 || lines.length < 3) {
+      if (isStructured || totalLen < 120) {
         result.push(para);
         continue;
       }
 
-      // Dense paragraph — split at sentence boundaries (". " followed by capital)
+      // Join into one string and split at sentence boundaries
       const joined = lines.join(' ');
       const sentences = joined.split(/(?<=\.\s)(?=[A-Z])/);
-      if (sentences.length <= 2) {
+      if (sentences.length <= 1) {
         result.push(para);
         continue;
       }
 
-      // Group sentences into chunks of ~2-3 sentences each
+      // Group sentences into chunks of ~2 sentences each
       const chunks: string[] = [];
       let current = '';
+      let sentenceCount = 0;
       for (const sentence of sentences) {
         current += sentence;
-        if (current.length > 150) {
+        sentenceCount++;
+        if (sentenceCount >= 2 || current.length > 120) {
           chunks.push(current.trim());
           current = '';
+          sentenceCount = 0;
         }
       }
       if (current.trim()) chunks.push(current.trim());

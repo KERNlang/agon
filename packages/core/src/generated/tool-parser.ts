@@ -16,7 +16,23 @@ export interface ParseResult {
 
 export const TOOL_OPEN_PATTERN: RegExp = /<tool\s+name="([^"]+)">\s*/g;
 
-export const TOOL_CLOSE: string = '</tool>';
+export const TOOL_CLOSE_TAGS: readonly string[] = ['</tool>', '</invoke>', '</minimax:tool_call>'];
+
+function parseXmlParameters(xml: string): Record<string,unknown> {
+  const result: Record<string, unknown> = {};
+  const paramRe = /<parameter\s+name="([^"]+)">([\s\S]*?)<\/parameter>/g;
+  let m;
+  while ((m = paramRe.exec(xml)) !== null) {
+    const key = m[1];
+    const val = m[2].trim();
+    // Try to parse as JSON value (for booleans, numbers)
+    if (val === 'true') result[key] = true;
+    else if (val === 'false') result[key] = false;
+    else if (/^\d+$/.test(val)) result[key] = parseInt(val, 10);
+    else result[key] = val;
+  }
+  return result;
+}
 
 export function parseToolCalls(text: string): ParseResult {
   const toolCalls: ParsedToolCall[] = [];
@@ -27,14 +43,32 @@ export function parseToolCalls(text: string): ParseResult {
   
   while ((match = pattern.exec(text)) !== null) {
     const toolName = match[1];
-    const jsonStart = match.index + match[0].length;
+    const contentStart = match.index + match[0].length;
   
-    // Find closing </tool> tag
-    const closeIdx = text.indexOf(TOOL_CLOSE, jsonStart);
+    // Find closing tag — try all known close tags
+    let closeIdx = -1;
+    let closeLen = 0;
+    for (const tag of TOOL_CLOSE_TAGS) {
+      const idx = text.indexOf(tag, contentStart);
+      if (idx !== -1 && (closeIdx === -1 || idx < closeIdx)) {
+        closeIdx = idx;
+        closeLen = tag.length;
+      }
+    }
     if (closeIdx === -1) {
-      // Unclosed tag — skip past it, look for more valid tool calls
-      pattern.lastIndex = jsonStart;
-      continue;
+      // No closing tag — check for self-contained block ending with </invoke> or similar
+      // Also try just matching to end of an XML block
+      const invokeClose = text.indexOf('</invoke>', contentStart);
+      if (invokeClose !== -1) {
+        closeIdx = invokeClose;
+        closeLen = '</invoke>'.length;
+        // Also skip any wrapper tags after </invoke>
+        const afterInvoke = text.slice(closeIdx + closeLen).match(/^\s*<\/[^>]+>/);
+        if (afterInvoke) closeLen += afterInvoke[0].length;
+      } else {
+        pattern.lastIndex = contentStart;
+        continue;
+      }
     }
   
     // Capture text before this tool call
@@ -42,20 +76,29 @@ export function parseToolCalls(text: string): ParseResult {
       textBefore = text.slice(0, match.index).trim();
     }
   
-    const jsonStr = text.slice(jsonStart, closeIdx).trim();
+    const contentStr = text.slice(contentStart, closeIdx).trim();
     let input: Record<string, unknown> = {};
   
+    // Try JSON first
     try {
-      input = JSON.parse(jsonStr);
+      input = JSON.parse(contentStr);
     } catch {
-      // Try to be lenient — handle common LLM mistakes
       try {
-        // Sometimes LLMs wrap in markdown code blocks
-        const cleaned = jsonStr.replace(/^```json?\s*\n?/, '').replace(/\n?```\s*$/, '').trim();
+        const cleaned = contentStr.replace(/^```json?\s*\n?/, '').replace(/\n?```\s*$/, '').trim();
         input = JSON.parse(cleaned);
       } catch {
-        // Give up parsing this tool call, include as text
-        continue;
+        // Try XML <parameter> format (OpenCode, Minimax, etc.)
+        if (contentStr.includes('<parameter')) {
+          input = parseXmlParameters(contentStr);
+        }
+        // If still empty, try key:value lines
+        if (Object.keys(input).length === 0 && contentStr.includes(':')) {
+          for (const line of contentStr.split('\n')) {
+            const kv = line.match(/^\s*"?(\w+)"?\s*:\s*"?(.*?)"?\s*$/);
+            if (kv) input[kv[1]] = kv[2];
+          }
+        }
+        if (Object.keys(input).length === 0) continue;
       }
     }
   
@@ -63,11 +106,14 @@ export function parseToolCalls(text: string): ParseResult {
       name: toolName,
       input,
       startIndex: match.index,
-      endIndex: closeIdx + TOOL_CLOSE.length,
+      endIndex: closeIdx + closeLen,
     });
   
-    lastEnd = closeIdx + TOOL_CLOSE.length;
-    // Advance regex past the close tag
+    lastEnd = closeIdx + closeLen;
+    // Skip any trailing wrapper tags (e.g., </minimax:tool_call>)
+    const trailing = text.slice(lastEnd).match(/^\s*<\/[a-zA-Z_:]+>/);
+    if (trailing) lastEnd += trailing[0].length;
+  
     pattern.lastIndex = lastEnd;
   }
   

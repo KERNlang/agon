@@ -1,5 +1,5 @@
 import from="node:fs" names="readdirSync,readFileSync,existsSync"
-import from="node:path" names="join,basename"
+import from="node:path" names="join,dirname"
 import from="node:os" names="homedir"
 import from="node:child_process" names="execFileSync"
 import from="./types.js" names="EngineDefinition,EngineMode" types=true
@@ -13,6 +13,20 @@ const name=AGON_ENGINES_DIR type=string
 service name=EngineRegistry
   field name=engines type="Map<string, EngineDefinition>" default="new Map()" private=true
   field name=binaryCache type="Map<string, string | null>" default="new Map()" private=true
+
+  method name=resolveBuiltinDir params="dir:string" returns=string private=true
+    handler <<<
+      if (existsSync(dir)) return dir;
+      let cursor = dirname(dir);
+      for (let i = 0; i < 6; i += 1) {
+        const candidate = join(cursor, 'engines');
+        if (candidate !== dir && existsSync(candidate)) return candidate;
+        const parent = dirname(cursor);
+        if (parent === cursor) break;
+        cursor = parent;
+      }
+      return dir;
+    >>>
 
   method name=loadDir params="dir:string, tier:'builtin'|'user'" returns=void private=true
     handler <<<
@@ -39,7 +53,7 @@ service name=EngineRegistry
 
   method name=load params="builtinDir:string" returns=void
     handler <<<
-      this.loadDir(builtinDir, 'builtin');
+      this.loadDir(this.resolveBuiltinDir(builtinDir), 'builtin');
       if (existsSync(AGON_ENGINES_DIR)) this.loadDir(AGON_ENGINES_DIR, 'user');
     >>>
 

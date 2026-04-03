@@ -89,7 +89,17 @@ const name=_MD_CACHE_MAX type=number
 fn name=parseMarkdownBlocks params="text:string" returns="ContentSegment[]"
   handler <<<
     // LRU cache — avoid re-parsing identical content during streaming
-    const key = text.length < 500 ? text : text.slice(0, 200) + '|' + text.length + '|' + text.slice(-100);
+    // Use djb2 hash for large strings to avoid collisions
+    let key: string;
+    if (text.length < 500) {
+      key = text;
+    } else {
+      let hash = 5381;
+      for (let i = 0; i < text.length; i++) {
+        hash = ((hash << 5) + hash + text.charCodeAt(i)) | 0;
+      }
+      key = `h:${hash}:${text.length}`;
+    }
     const cached = _mdCache.get(key);
     if (cached) return cached;
 

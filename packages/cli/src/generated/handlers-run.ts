@@ -23,8 +23,11 @@ export async function handleRun(command: string, dispatch: Dispatch, ctx: Handle
     }
   }
   
-  // Auto-allow safe commands, ask for confirmation on others
-  const isSafe = RUN_SAFE.some(s => lower.startsWith(s));
+  // Detect shell metacharacters — any command with chaining/piping is NOT safe
+  const hasShellMeta = /[;&|`$(){}<>]|\bif\b|\bthen\b|\bwhile\b/.test(command);
+  
+  // Auto-allow safe commands ONLY if no shell metacharacters present
+  const isSafe = !hasShellMeta && RUN_SAFE.some(s => lower.startsWith(s));
   if (!isSafe) {
     const answer = await ctx.askQuestion(`Run: ${command.length > 60 ? command.slice(0, 60) + '…' : command} — proceed? (y/n)`);
     if (!answer.toLowerCase().startsWith('y')) {

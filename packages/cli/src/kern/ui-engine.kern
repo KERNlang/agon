@@ -413,8 +413,8 @@ screen name=OutputBlockView target=ink
                 {event.output && event.status !== 'running' && (() => {
                   const outLines = event.output.split('\n');
                   const total = outLines.length;
-                  const maxHead = total > 30 ? 8 : 15;
-                  const showTail = total > 30;
+                  const maxHead = total > 50 ? 20 : 30;
+                  const showTail = total > 50;
                   const headLines = outLines.slice(0, maxHead);
                   const tailLines = showTail ? outLines.slice(-3) : [];
                   const skipped = total - maxHead - tailLines.length;
@@ -451,8 +451,8 @@ screen name=OutputBlockView target=ink
               <Box paddingLeft={2} flexDirection="column">
                 <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{'\u270f\ufe0f  Update'}</Text></Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text>
                 {(oldStr || newStr) && event.status !== 'running' && (() => {
-                  const oldLines = oldStr.split('\n').slice(0, 10);
-                  const newLines = newStr.split('\n').slice(0, 10);
+                  const oldLines = oldStr.split('\n').slice(0, 20);
+                  const newLines = newStr.split('\n').slice(0, 20);
                   const gutterW = Math.max(String(Math.max(removedCount, addedCount)).length, 2);
                   const pad = (n: number) => String(n).padStart(gutterW);
                   return (
@@ -464,14 +464,14 @@ screen name=OutputBlockView target=ink
                           <DiffLine line={`-${line}`} maxWidth={codeWidth - gutterW - 2} />
                         </Text>
                       ))}
-                      {removedCount > 10 && <Text dimColor>{'    \u2026 '}{removedCount - 10}{' more removed'}</Text>}
+                      {removedCount > 20 && <Text dimColor>{'    \u2026 '}{removedCount - 20}{' more removed'}</Text>}
                       {newLines.map((line: string, i: number) => (
                         <Text key={`new-${i}`}>
                           <Text color="#6b7280">{' '}{pad(i + 1)}{' '}</Text>
                           <DiffLine line={`+${line}`} maxWidth={codeWidth - gutterW - 2} />
                         </Text>
                       ))}
-                      {addedCount > 10 && <Text dimColor>{'    \u2026 '}{addedCount - 10}{' more added'}</Text>}
+                      {addedCount > 20 && <Text dimColor>{'    \u2026 '}{addedCount - 20}{' more added'}</Text>}
                     </>
                   );
                 })()}

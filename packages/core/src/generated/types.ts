@@ -25,7 +25,7 @@ export interface EngineEnvVar {
 }
 
 export interface CompanionConfig {
-  protocol: 'jsonrpc'|'structured-cli';
+  protocol: 'jsonrpc'|'acp'|'structured-cli';
   serverCmd: string[];
   features?: {threadResume?:boolean, nativeReview?:boolean, structuredOutput?:boolean};
 }
@@ -191,7 +191,7 @@ export const DEFAULT_AGON_CONFIG: Required<AgonConfig> = {
   cesarDisagreementSpread: 20,
   cesarEngine: 'claude',
   campfireObserverStrategy: 'lead-first',
-  hooks: {},
+  hooks: {} as Record<string, Array<{command: string, engines?: string[], timeout?: number}>>,
 };
 
 export interface ScoutBid {

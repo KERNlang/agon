@@ -2,7 +2,7 @@ import { join } from 'node:path';
 
 import { mkdirSync } from 'node:fs';
 
-import { ensureAgonHome, RUNS_DIR, scanProjectContext, tracker, appendMessage } from '@agon/core';
+import { ensureAgonHome, RUNS_DIR, scanProjectContext, tracker, appendMessage, resolveWorkingDir } from '@agon/core';
 
 import { runBrainstorm } from '@agon/forge';
 
@@ -30,11 +30,12 @@ export async function handleBrainstorm(question: string, dispatch: Dispatch, ctx
     mkdirSync(outputDir, { recursive: true });
     
     const config = ctx.config;
-    const projectCtx = scanProjectContext(process.cwd(), config.projectContext || undefined, config.contextFormat);
+    const bsCwd = resolveWorkingDir();
+    const projectCtx = scanProjectContext(bsCwd, config.projectContext || undefined, config.contextFormat);
     
     dispatch({ type: 'header', title: `Brainstorm: ${question}` });
     dispatch({ type: 'info', message: `Engines: ${engines.join(', ')}` });
-    if (projectCtx) dispatch({ type: 'info', message: `Context: ${process.cwd()}` });
+    if (projectCtx) dispatch({ type: 'info', message: `Context: ${bsCwd}` });
     
     ctx.setActiveAbort(bsAbort);
     

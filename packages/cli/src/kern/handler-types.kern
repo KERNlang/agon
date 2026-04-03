@@ -1,4 +1,4 @@
-import from="@agon/core" names="EngineRegistry,EngineAdapter,Plan,AgonConfig,ChatSession" types=true
+import from="@agon/core" names="EngineRegistry,EngineAdapter,Plan,AgonConfig,ChatSession,PersistentSession" types=true
 
 interface name=EngineProgress
   field name=id type=string
@@ -72,6 +72,17 @@ union name=OutputEvent discriminant=type
     field name=winnerId type=string
     field name=patchPath type=string
     field name=patchContent type=string
+  variant name=tool-call
+    field name=engineId type=string
+    field name=tool type=string
+    field name=input type=string
+    field name=status type="'running'|'done'|'error'"
+    field name=output type=string optional=true
+  variant name=user-message
+    field name=content type=string
+  variant name=response-meta
+    field name=engineId type=string
+    field name=elapsed type=number
   variant name=dashboard
     field name=available type="string[]"
     field name=enabled type="string[]"
@@ -91,3 +102,5 @@ interface name=HandlerContext
   field name=setCurrentPlan type="(plan: Plan | null) => void"
   field name=setActiveAbort type="(abort: AbortController | null) => void"
   field name=askQuestion type="(prompt: string) => Promise<string>"
+  field name=cesarSession type="PersistentSession | null"
+  field name=setCesarSession type="(session: PersistentSession | null) => void"

@@ -23,7 +23,7 @@ export { scanProjectContext, isKernProject } from './context-scanner.js';
 export {
   addWorkspace, removeWorkspace, listWorkspaces,
   getActiveWorkspace, switchWorkspace, getWorkspace,
-  ensureCurrentWorkspace, snapshotWorkspace,
+  ensureCurrentWorkspace, snapshotWorkspace, resolveWorkingDir,
 } from './workspace.js';
 export type { Workspace, WorkspaceState } from './workspace.js';
 export type { ContextFormat } from './context-scanner.js';
@@ -52,7 +52,20 @@ export { preflightApply, applyPatchToTree, readPatchFromManifest, readPatchFromP
 export type { PatchInfo, ApplyPreflight } from './patch-apply.js';
 export { parsePatch, patchSummary, invertPatch } from './patch-parser.js';
 export type { PatchFile, PatchHunk } from './patch-parser.js';
+export { takeSnapshot, revertSnapshot, listSnapshots, getLatestSnapshotId } from './file-history.js';
+export type { FileSnapshot, HistoryEntry } from './file-history.js';
 export { copyToClipboard } from './clipboard.js';
+// ── Tool System ──
+export type { ToolResult, ToolContext, ToolHandler, ToolDefinition, ToolCall, ToolCallResult, PermissionDecision, FileState as ToolFileState } from './tool-types.js';
+export { FileStateCache } from './file-state-cache.js';
+export { ToolRegistry, executeToolCall, executeToolCalls } from './tool-registry.js';
+export { checkBashPermission, checkFileReadPermission, checkFileWritePermission, isDangerousCommand, isReadOnlyCommand, isPathUnderCwd } from './tool-permissions.js';
+export { createReadTool, createEditTool, createWriteTool, createBashTool, createGrepTool, createGlobTool } from './tools.js';
+export { generateToolPrompt } from './generated/tool-prompt.js';
+export { parseToolCalls, toolCallsToApiFormat, formatToolResults, formatToolResult } from './generated/tool-parser.js';
+export type { ParsedToolCall, ParseResult } from './generated/tool-parser.js';
+export { buildToolSystemPrompt, processToolResponse, runToolLoop } from './generated/tool-loop.js';
+export type { ToolLoopCallbacks, ToolLoopResult } from './generated/tool-loop.js';
 export { startChatSession, appendMessage, loadChatSession, resumeChatSession, listChatSessions, latestChatSession } from './chat-store.js';
 export type { ChatMessage as StoredChatMessage, ChatSession } from './chat-store.js';
 export {
@@ -65,6 +78,13 @@ export { apiDispatch, apiStreamDispatch } from './api-dispatch.js';
 export type { ApiConfig } from './api-dispatch.js';
 export { companionDispatch } from './companion-dispatch.js';
 export type { CompanionResult } from './companion-dispatch.js';
+export {
+  createPersistentSession, createCompanionSession, createAcpSession,
+  createStreamJsonSession, createResumeSession,
+} from './persistent-session.js';
+export type {
+  PersistentSession, PersistentSessionConfig, SessionChunk, SessionSendOptions,
+} from './persistent-session.js';
 export { runHooks, hooksFailed, hooksOutput } from './hooks.js';
 export type { HookEvent, HookDef, HookResult } from './hooks.js';
 export { loadSkills, findSkill, renderSkillPrompt } from './skill-loader.js';

@@ -169,6 +169,70 @@ function parseStreamJsonLine(trimmed: string): {action:'use'|'skip'|'keep', cont
   return { action: 'keep' };
 }
 
+function deduplicateInline(line: string): string {
+  // Check if the line is a repeated substring (e.g. "abcabc" → "abc")
+  const len = line.length;
+  if (len < 10) return line;
+  for (let half = Math.floor(len / 2); half >= 5; half--) {
+    const candidate = line.slice(0, half);
+    // Check if the rest of the line starts with the same candidate
+    if (line.slice(half).startsWith(candidate)) {
+      return candidate + line.slice(half + candidate.length);
+    }
+  }
+  return line;
+}
+
+function deduplicateParagraphs(text: string): string {
+  // First: deduplicate within each line (streaming chunk concatenation artifacts)
+  const lines = text.split('\n');
+  const dedupedLines = lines.map((l: string) => deduplicateInline(l));
+  const joined = dedupedLines.join('\n');
+  
+  // Then: deduplicate consecutive paragraphs
+  const paragraphs = joined.split(/\n{2,}/);
+  const seen = new Set<string>();
+  const deduped: string[] = [];
+  
+  for (const para of paragraphs) {
+    const normalized = para.trim().replace(/\s+/g, ' ');
+    if (!normalized) continue;
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+    deduped.push(para.trim());
+  }
+  
+  return deduped.join('\n\n');
+}
+
+function stripBuddyThinkingNoise(text: string): string {
+  const lines = text.split('\n');
+  const result: string[] = [];
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+  
+    // Skip raw command output metadata from Codex
+    if (trimmed.startsWith('Command:') && trimmed.includes('/bin/')) continue;
+    if (trimmed.startsWith('Chunk ID:')) continue;
+    if (trimmed.startsWith('Wall time:')) continue;
+    if (trimmed.startsWith('Process exited with code')) continue;
+    if (trimmed.startsWith('Original token count:')) continue;
+    if (trimmed === 'Output:') continue;
+  
+    // Skip lines that are exact substrings of the next line (progressive thinking)
+    if (i + 1 < lines.length) {
+      const next = lines[i + 1].trim();
+      if (trimmed.length > 20 && next.startsWith(trimmed)) continue;
+    }
+  
+    result.push(line);
+  }
+  
+  return result.join('\n');
+}
+
 export function cleanEngineOutput(raw: string): string {
   const lines = raw.split('\n');
   const cleaned: string[] = [];
@@ -189,6 +253,11 @@ export function cleanEngineOutput(raw: string): string {
   let result = cleaned.join('\n').trim();
   const codexResult = extractCodexStructured(result);
   if (codexResult) result = codexResult;
+  
+  // Clean buddy streaming artifacts
+  result = stripBuddyThinkingNoise(result);
+  result = deduplicateParagraphs(result);
+  
   return result;
 }
 

@@ -2,7 +2,7 @@ import { join } from 'node:path';
 
 import { mkdirSync } from 'node:fs';
 
-import { ensureAgonHome, RUNS_DIR, appendMessage, tracker, scanProjectContext, readOnlyDiff, diffLineCount, diffFileCount, buildCritiquePrompt, spawnWithTimeout } from '@agon/core';
+import { ensureAgonHome, RUNS_DIR, appendMessage, tracker, scanProjectContext, readOnlyDiff, diffLineCount, diffFileCount, buildCritiquePrompt, spawnWithTimeout, resolveWorkingDir } from '@agon/core';
 
 import { ENGINE_COLORS } from '../output.js';
 
@@ -20,7 +20,7 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
     }
     
     const config = ctx.config;
-    const cwd = process.cwd();
+    const cwd = resolveWorkingDir();
     const preferred = config.forgeFixedStarter ?? 'claude';
     const buildEngine = agentIds.includes(preferred) ? preferred : agentIds[0];
     const reviewEngine = agentIds.find((id: string) => id !== buildEngine) ?? buildEngine;

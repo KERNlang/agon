@@ -20,7 +20,7 @@ interface name=EngineEnvVar
   field name=default type=string optional=true
 
 interface name=CompanionConfig
-  field name=protocol type="'jsonrpc'|'structured-cli'"
+  field name=protocol type="'jsonrpc'|'acp'|'structured-cli'"
   field name=serverCmd type="string[]"
   field name=features type="{threadResume?:boolean, nativeReview?:boolean, structuredOutput?:boolean}" optional=true
 

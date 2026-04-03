@@ -117,6 +117,13 @@ fn name=snapshotWorkspace params="ws:Workspace" returns=WorkspaceSnapshot
     };
   >>>
 
+fn name=resolveWorkingDir returns=string
+  doc "Returns the active workspace path if set, otherwise process.cwd()."
+  handler <<<
+    const ws = getActiveWorkspace();
+    return ws ? ws.path : process.cwd();
+  >>>
+
 fn name=ensureCurrentWorkspace params="cwd:string" returns=Workspace
   handler <<<
     const state = loadState();

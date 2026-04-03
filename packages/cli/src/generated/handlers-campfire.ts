@@ -2,7 +2,7 @@ import { join } from 'node:path';
 
 import { mkdirSync } from 'node:fs';
 
-import { ensureAgonHome, RUNS_DIR, scanProjectContext, tracker, appendMessage } from '@agon/core';
+import { ensureAgonHome, RUNS_DIR, scanProjectContext, tracker, appendMessage, resolveWorkingDir } from '@agon/core';
 
 import { ENGINE_COLORS } from '../output.js';
 
@@ -20,7 +20,8 @@ export async function handleCampfire(topic: string, dispatch: Dispatch, ctx: Han
     }
     
     const config = ctx.config;
-    const projectCtx = scanProjectContext(process.cwd(), config.projectContext || undefined, config.contextFormat as 'plain' | 'kern');
+    const cfCwd = resolveWorkingDir();
+    const projectCtx = scanProjectContext(cfCwd, config.projectContext || undefined, config.contextFormat as 'plain' | 'kern');
     const strategy = opts?.observerStrategy ?? 'all-respond';
     const leadId = opts?.leadEngine && engines.includes(opts.leadEngine) ? opts.leadEngine : engines[0];
     
@@ -79,7 +80,7 @@ export async function handleCampfire(topic: string, dispatch: Dispatch, ctx: Han
         const leadResult = await ctx.adapter.dispatch({
           engine: leadEngine,
           prompt: basePrompt,
-          cwd: process.cwd(),
+          cwd: cfCwd,
           mode: 'exec',
           timeout: 120,
           outputDir,
@@ -115,7 +116,7 @@ export async function handleCampfire(topic: string, dispatch: Dispatch, ctx: Han
             const result = await ctx.adapter.dispatch({
               engine,
               prompt: observerPrompt,
-              cwd: process.cwd(),
+              cwd: cfCwd,
               mode: 'exec',
               timeout: 120,
               outputDir,
@@ -146,7 +147,7 @@ export async function handleCampfire(topic: string, dispatch: Dispatch, ctx: Han
           const result = await ctx.adapter.dispatch({
             engine,
             prompt: basePrompt,
-            cwd: process.cwd(),
+            cwd: cfCwd,
             mode: 'exec',
             timeout: 120,
             outputDir,

@@ -68,9 +68,9 @@ export function finishReplState<T extends { state: ReplStateState }>(entity: T):
   return { ...entity, state: 'idle' as ReplStateState };
 }
 
-/** busy|streaming → idle */
+/** busy|streaming|questioning → idle */
 export function cancelReplState<T extends { state: ReplStateState }>(entity: T): T {
-  const validStates: ReplStateState[] = ['busy', 'streaming'];
+  const validStates: ReplStateState[] = ['busy', 'streaming', 'questioning'];
   if (!validStates.includes(entity.state)) {
     throw new ReplStateStateError(validStates, entity.state);
   }

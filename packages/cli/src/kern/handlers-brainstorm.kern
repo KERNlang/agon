@@ -1,6 +1,6 @@
 import from="node:path" names="join"
 import from="node:fs" names="mkdirSync"
-import from="@agon/core" names="ensureAgonHome,RUNS_DIR,scanProjectContext,tracker,appendMessage"
+import from="@agon/core" names="ensureAgonHome,RUNS_DIR,scanProjectContext,tracker,appendMessage,resolveWorkingDir"
 import from="@agon/forge" names="runBrainstorm"
 import from="../output.js" names="ENGINE_COLORS"
 import from="../handlers/types.js" names="Dispatch,HandlerContext,EngineProgress" types=true
@@ -25,11 +25,12 @@ fn name=handleBrainstorm params="question:string, dispatch:Dispatch, ctx:Handler
     mkdirSync(outputDir, { recursive: true });
 
     const config = ctx.config;
-    const projectCtx = scanProjectContext(process.cwd(), config.projectContext || undefined, config.contextFormat);
+    const bsCwd = resolveWorkingDir();
+    const projectCtx = scanProjectContext(bsCwd, config.projectContext || undefined, config.contextFormat);
 
     dispatch({ type: 'header', title: `Brainstorm: ${question}` });
     dispatch({ type: 'info', message: `Engines: ${engines.join(', ')}` });
-    if (projectCtx) dispatch({ type: 'info', message: `Context: ${process.cwd()}` });
+    if (projectCtx) dispatch({ type: 'info', message: `Context: ${bsCwd}` });
 
     ctx.setActiveAbort(bsAbort);
 

@@ -1,0 +1,168 @@
+// ── Tool Permission System ───────────────────────────────────────────
+// Deny > Ask > Allow layering. Filesystem checks. Dangerous command detection.
+
+import from="node:path" names="resolve,relative,isAbsolute"
+import from="./tool-types.js" names="PermissionDecision,ToolContext" types=true
+
+interface name=PermissionRule
+  field name=tool type=string
+  field name=behavior type="'allow'|'ask'|'deny'"
+  field name=pattern type=string optional=true
+  field name=reason type=string optional=true
+
+// ── Dangerous Bash Patterns ──────────────────────────────────────
+
+const name=DANGEROUS_COMMANDS type="string[]"
+  handler <<<
+    [
+      'rm -rf /', 'rm -rf ~', 'rm -rf *',
+      'dd if=', 'mkfs.',
+      '> /dev/sd', '> /dev/nv',
+      'chmod 777 /',
+      ':(){:|:&};:', // fork bomb
+    ]
+  >>>
+
+const name=DANGEROUS_PREFIXES type="string[]"
+  handler <<<
+    ['sudo ', 'su ', 'doas ']
+  >>>
+
+const name=SAFE_SHELL_WRAPPERS type="string[]"
+  handler <<<
+    ['timeout', 'time', 'nice', 'nohup', 'env', 'command']
+  >>>
+
+const name=READONLY_COMMANDS type="Set<string>"
+  handler <<<
+    new Set([
+      'ls', 'cat', 'head', 'tail', 'less', 'more', 'wc', 'file', 'stat',
+      'pwd', 'echo', 'printf', 'date', 'which', 'whereis', 'type',
+      'find', 'grep', 'rg', 'ag', 'fd', 'fzf',
+      'git status', 'git log', 'git diff', 'git branch', 'git show', 'git blame',
+      'npm test', 'npm run test', 'npx vitest', 'npx tsc',
+      'node --version', 'npm --version', 'python --version',
+      'tree', 'du', 'df',
+    ])
+  >>>
+
+// ── Core Permission Functions ─────────────────────────────────
+
+fn name=stripShellWrappers params="command:string" returns=string
+  handler <<<
+    let cmd = command.trim();
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const wrapper of SAFE_SHELL_WRAPPERS) {
+        if (cmd.startsWith(wrapper + ' ')) {
+          cmd = cmd.slice(wrapper.length + 1).trim();
+          // Skip any flags
+          while (cmd.startsWith('-')) {
+            const spaceIdx = cmd.indexOf(' ');
+            if (spaceIdx === -1) break;
+            cmd = cmd.slice(spaceIdx + 1).trim();
+          }
+          changed = true;
+        }
+      }
+    }
+    return cmd;
+  >>>
+
+fn name=extractBaseCommand params="command:string" returns=string
+  handler <<<
+    const stripped = stripShellWrappers(command);
+    // Get first word (the actual command)
+    const parts = stripped.split(/\s+/);
+    return parts[0] ?? '';
+  >>>
+
+fn name=isDangerousCommand params="command:string" returns=boolean
+  handler <<<
+    const lower = command.toLowerCase().trim();
+    for (const dangerous of DANGEROUS_COMMANDS) {
+      if (lower.includes(dangerous)) return true;
+    }
+    for (const prefix of DANGEROUS_PREFIXES) {
+      if (lower.startsWith(prefix)) return true;
+    }
+    return false;
+  >>>
+
+fn name=isReadOnlyCommand params="command:string" returns=boolean
+  handler <<<
+    const stripped = stripShellWrappers(command).trim();
+    // Check against known read-only commands
+    for (const safe of READONLY_COMMANDS) {
+      if (stripped === safe || stripped.startsWith(safe + ' ')) return true;
+    }
+    // Pipe chains: all commands must be read-only
+    if (stripped.includes('|')) {
+      const parts = stripped.split('|').map((p: string) => p.trim());
+      return parts.every((p: string) => isReadOnlyCommand(p));
+    }
+    return false;
+  >>>
+
+fn name=checkBashPermission params="command:string, ctx:ToolContext" returns=PermissionDecision
+  handler <<<
+    if (isDangerousCommand(command)) {
+      return { behavior: 'deny', message: `Dangerous command blocked: ${command.slice(0, 50)}`, reason: 'dangerous_pattern' };
+    }
+    if (ctx.permissionMode === 'deny-all') {
+      return { behavior: 'deny', message: 'All tool execution is denied' };
+    }
+    if (ctx.permissionMode === 'auto' || isReadOnlyCommand(command)) {
+      return { behavior: 'allow' };
+    }
+    return { behavior: 'ask', message: `Run: ${command.length > 80 ? command.slice(0, 80) + '…' : command}` };
+  >>>
+
+fn name=isPathUnderCwd params="filePath:string, cwd:string" returns=boolean
+  handler <<<
+    const resolved = isAbsolute(filePath) ? filePath : resolve(cwd, filePath);
+    const rel = relative(cwd, resolved);
+    // Path is under cwd if relative path doesn't start with ..
+    return !rel.startsWith('..');
+  >>>
+
+fn name=checkFileReadPermission params="filePath:string, ctx:ToolContext" returns=PermissionDecision
+  handler <<<
+    if (ctx.permissionMode === 'deny-all') {
+      return { behavior: 'deny', message: 'All tool execution is denied' };
+    }
+    const resolved = isAbsolute(filePath) ? filePath : resolve(ctx.cwd, filePath);
+    if (isPathUnderCwd(resolved, ctx.cwd)) {
+      return { behavior: 'allow' };
+    }
+    if (ctx.permissionMode === 'auto') {
+      return { behavior: 'allow' };
+    }
+    return { behavior: 'ask', message: `Read file outside workspace: ${resolved}` };
+  >>>
+
+fn name=checkFileWritePermission params="filePath:string, ctx:ToolContext" returns=PermissionDecision
+  handler <<<
+    if (ctx.permissionMode === 'deny-all') {
+      return { behavior: 'deny', message: 'All tool execution is denied' };
+    }
+    const resolved = isAbsolute(filePath) ? filePath : resolve(ctx.cwd, filePath);
+
+    // Block writing to sensitive files
+    const basename = resolved.split('/').pop() ?? '';
+    const sensitivePatterns = ['.env', 'credentials', 'secrets', '.pem', '.key', 'id_rsa'];
+    for (const pat of sensitivePatterns) {
+      if (basename.includes(pat)) {
+        return { behavior: 'ask', message: `Write to sensitive file: ${basename}` };
+      }
+    }
+
+    if (isPathUnderCwd(resolved, ctx.cwd)) {
+      if (ctx.permissionMode === 'auto') {
+        return { behavior: 'allow' };
+      }
+      return { behavior: 'allow' };
+    }
+    return { behavior: 'ask', message: `Write file outside workspace: ${resolved}` };
+  >>>

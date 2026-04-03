@@ -36,7 +36,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { cmd: '/campfire',    desc: '<topic>                  — think together, no competition' },
   { cmd: '/workspace',   desc: 'add|remove|list|switch   — manage project repos' },
   { cmd: '/ws',          desc: '                          — list workspaces (shortcut)' },
-  { cmd: '/use',         desc: '<engines>               — set active engines (e.g. /use claude,codex)' },
+  { cmd: '/cesar',       desc: '<engine>                — set Cesar brain engine (e.g. /cesar codex)' },
   { cmd: '/models',      desc: '                        — manage engines' },
   { cmd: '/tokens',      desc: '                        — show token usage & costs' },
   { cmd: '/engines',     desc: '                        — list all engines' },
@@ -168,6 +168,13 @@ function parseSlashCommand(input: string): Intent {
     case 'usage':
     case 'cost':
       return { type: 'tokens' } as Intent;
+    case 'cesar': {
+      const cesarIds = rest
+        .split(/[,\s]+/)
+        .map((s: string) => s.trim().toLowerCase())
+        .filter(Boolean);
+      return { type: 'cesar', engineIds: cesarIds } as Intent;
+    }
     case 'use': {
       const ids = rest
         .split(/[,\s]+/)

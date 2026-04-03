@@ -7,6 +7,7 @@ export {
   handleDiscover,
   handleConfig,
   handleUse,
+  handleCesar,
   handleTokens,
   handleWorkspace,
   handleChats,

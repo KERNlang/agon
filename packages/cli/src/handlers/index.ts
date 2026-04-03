@@ -11,6 +11,7 @@ export {
   handleDiscover,
   handleConfig,
   handleUse,
+  handleCesar,
   handleTokens,
   handleModels,
   handleWorkspace,

@@ -1,0 +1,146 @@
+// ── Bash Tool ────────────────────────────────────────────────────────
+// Executes shell commands with permission gating and timeout support.
+
+import from="./tool-types.js" names="ToolResult,ToolContext,ToolDefinition,PermissionDecision,ToolHandler" types=true
+import from="./process.js" names="spawnWithTimeout"
+
+const name=DANGEROUS_PREFIXES type="readonly string[]"
+  handler <<<
+    [
+      'rm -rf /',
+      'dd if=',
+      'mkfs',
+      '> /dev/',
+      'chmod 777',
+      'curl | sh',
+      'wget | sh',
+    ] as const
+  >>>
+
+const name=READONLY_COMMANDS type="readonly string[]"
+  handler <<<
+    [
+      'ls', 'cat', 'head', 'tail',
+      'git status', 'git log', 'git diff',
+      'npm test', 'echo', 'pwd', 'which',
+      'find', 'grep', 'wc', 'date',
+    ] as const
+  >>>
+
+fn name=extractBaseCommand params="command:string" returns=string
+  doc "Extract the actual command from wrappers like sudo, env, nice."
+  handler <<<
+    let cmd = command.trim();
+    // Strip common wrappers
+    const wrappers = ['sudo', 'env', 'nice', 'nohup', 'time'];
+    for (const w of wrappers) {
+      while (cmd.startsWith(w + ' ')) {
+        cmd = cmd.slice(w.length + 1).trim();
+      }
+    }
+    // Strip env VAR=val prefixes
+    while (/^[A-Z_]+=\S+\s/.test(cmd)) {
+      cmd = cmd.replace(/^[A-Z_]+=\S+\s+/, '');
+    }
+    return cmd;
+  >>>
+
+fn name=createBashTool returns=ToolHandler
+  doc "Factory: creates the Bash tool handler for shell command execution."
+  handler <<<
+    const definition: ToolDefinition = {
+      name: 'Bash',
+      description: 'Executes a shell command and returns its output.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          command: { type: 'string', description: 'The shell command to execute' },
+          timeout: { type: 'number', description: 'Optional timeout in milliseconds (default 120000)' },
+        },
+        required: ['command'],
+      },
+      maxResultSizeChars: 30000,
+      isReadOnly: false,
+      isConcurrencySafe: false,
+      isDestructive: true,
+    };
+
+    function validate(input: Record<string, unknown>, _ctx: ToolContext): string | null {
+      if (typeof input.command !== 'string' || input.command.trim() === '') {
+        return 'command is required and must be a non-empty string';
+      }
+      return null;
+    }
+
+    function checkPermission(input: Record<string, unknown>, _ctx: ToolContext): PermissionDecision {
+      const command = input.command as string;
+      const base = extractBaseCommand(command);
+      const lower = base.toLowerCase();
+
+      // Check dangerous prefixes — deny immediately
+      for (const prefix of DANGEROUS_PREFIXES) {
+        if (lower.startsWith(prefix)) {
+          return { behavior: 'deny', message: `Blocked dangerous command: ${prefix}`, reason: 'dangerous-prefix' };
+        }
+      }
+
+      // Check read-only commands — allow automatically
+      for (const safe of READONLY_COMMANDS) {
+        if (lower === safe || lower.startsWith(safe + ' ')) {
+          return { behavior: 'allow' };
+        }
+      }
+
+      // Everything else needs user approval
+      return { behavior: 'ask', message: `Allow Bash command: ${command}?` };
+    }
+
+    async function execute(input: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
+      const command = input.command as string;
+      const timeout = typeof input.timeout === 'number' ? input.timeout : 120000;
+      const start = Date.now();
+
+      if (ctx.onProgress) {
+        ctx.onProgress(`Running: ${command}`);
+      }
+
+      const result = await spawnWithTimeout({
+        command: '/bin/sh',
+        args: ['-c', command],
+        cwd: ctx.cwd,
+        timeout,
+        signal: ctx.abortSignal,
+      });
+
+      const durationMs = Date.now() - start;
+      const exitCode = result.exitCode;
+      const stdout = result.stdout;
+      const stderr = result.stderr;
+
+      if (result.timedOut) {
+        return {
+          ok: false,
+          content: stdout,
+          error: `Command timed out after ${timeout}ms`,
+          metadata: { exitCode: 124, durationMs, timedOut: true },
+        };
+      }
+
+      if (exitCode !== 0) {
+        return {
+          ok: false,
+          content: stdout,
+          error: stderr || `Process exited with code ${exitCode}`,
+          metadata: { exitCode, durationMs, timedOut: false },
+        };
+      }
+
+      return {
+        ok: true,
+        content: stdout,
+        metadata: { exitCode, durationMs, timedOut: false },
+      };
+    }
+
+    return { definition, validate, checkPermission, execute };
+  >>>

@@ -74,9 +74,9 @@ export function isDangerousCommand(command: string): boolean {
 
 export function isReadOnlyCommand(command: string): boolean {
   const stripped = stripShellWrappers(command).trim();
-  // Split on compound operators FIRST: &&, ||, ;, &
+  // Split on compound operators: &&, ||, ;, &
   // All sub-commands must be read-only for the whole command to be safe
-  if (/[;&|]{1,2}/.test(stripped) && stripped !== '|') {
+  if (/\s*(?:&&|\|\||;|&)\s*/.test(stripped)) {
     const parts = stripped.split(/\s*(?:&&|\|\||;|&)\s*/);
     return parts.every((p: string) => p.trim() && isReadOnlyCommand(p.trim()));
   }

@@ -1,7 +1,7 @@
 import from="node:path" names="join"
 import from="node:fs" names="mkdirSync"
 import from="@agon/core" names="EngineAdapter,ImageAttachment,PersistentSession,PersistentSessionConfig,SessionChunk" types=true
-import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,RUNS_DIR,appendMessage,tracker,scanProjectContext,StreamParser,createPersistentSession,resolveWorkingDir,ToolRegistry,FileStateCache,createReadTool,createEditTool,createWriteTool,createBashTool,createGrepTool,createGlobTool,buildToolSystemPrompt,parseToolCalls,processToolResponse"
+import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,RUNS_DIR,appendMessage,tracker,scanProjectContext,StreamParser,createPersistentSession,resolveWorkingDir,ToolRegistry,FileStateCache,createReadTool,createEditTool,createWriteTool,createBashTool,createGrepTool,createGlobTool,buildToolSystemPrompt,parseToolCalls,processToolResponse,runToolLoop"
 import from="@agon/core" names="ToolContext" types=true
 import from="../output.js" names="ENGINE_COLORS"
 import from="../handlers/types.js" names="Dispatch,HandlerContext" types=true
@@ -252,26 +252,18 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
         return { delegated: true, responded: true, action, reasoning: rest };
       }
 
-      // Check for tool calls in response — execute locally, feed results back
+      // Check for tool calls in response — execute via recursive tool loop
       const toolRegistry = (ctx as any)._toolRegistry as ToolRegistry | undefined;
       if (toolRegistry && response) {
         const toolParsed = parseToolCalls(response);
         if (toolParsed.hasToolCalls) {
-          // Stop streaming — replace the live stream (which has XML) with just the clean text
+          // Stop streaming — we're entering tool execution mode
           if (streaming) {
-            // End streaming first (flushes buffer as engine-block with XML)
             dispatch({ type: 'streaming-end', engineId: cesarEngineId });
           }
           streaming = false;
 
-          // Show text before tool calls (clean prose, no XML)
-          // This appears AFTER the flushed streaming block — the XML block is visible briefly
-          // but the tool results below it make the flow clear
-          if (toolParsed.textBefore) {
-            dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: toolParsed.textBefore });
-          }
-
-          // Build tool context — 'auto' mode: edits/writes auto-allowed within CWD, only dangerous bash prompts
+          // Build tool context — 'auto' mode: edits/writes auto-allowed within CWD
           const fileStateCache = new FileStateCache();
           const explorationMode = (ctx as any).explorationMode ?? false;
           const toolCtx: ToolContext = {
@@ -283,60 +275,76 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
             onProgress: (msg: string) => dispatch({ type: 'spinner-update', message: `Cesar: ${msg}` }),
           };
 
-          // Execute tool calls and show them inline
+          // Track last inputs for display
           const _lastToolInputs: Record<string, string> = {};
-          const processed = await processToolResponse(response, toolCtx, toolRegistry, {
-            onToolCall: (name: string, inp: Record<string, unknown>) => {
-              const inputJson = JSON.stringify(inp);
-              _lastToolInputs[name] = inputJson;
-              dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: name, input: inputJson, status: 'running' });
-            },
-            onToolResult: (name: string, result: any) => {
-              const out = result.result.ok ? result.result.content : result.result.error;
-              dispatch({
-                type: 'tool-call',
-                engineId: cesarEngineId,
-                tool: name,
-                input: _lastToolInputs[name] ?? '',
-                status: result.result.ok ? 'done' : 'error',
-                output: out,
-              });
-              delete _lastToolInputs[name];
-            },
-            onPermissionAsk: async (tool: string, message: string) => {
-              // Show styled permission prompt and wait for user response
-              return new Promise<boolean>((resolve) => {
-                // Extract command from the last tool input
-                const lastInput = _lastToolInputs[tool] ?? '{}';
-                let command = '';
-                try {
-                  const parsed = JSON.parse(lastInput);
-                  command = parsed.command ?? parsed.file_path ?? lastInput;
-                } catch { command = lastInput; }
-                dispatch({
-                  type: 'permission-ask',
-                  tool,
-                  command,
-                  reason: message,
-                  resolve,
-                } as any);
-              });
-            },
-          });
 
-          // Send tool results back to session for next turn
-          if (processed.toolResults && session.alive) {
-            dispatch({ type: 'spinner-start', message: 'Cesar processing tool results…', color });
-            let toolResponse = '';
-            const toolGen = session.send({ message: processed.toolResults, signal: abort.signal });
-            for await (const chunk of toolGen) {
-              if (chunk.type === 'text') toolResponse += chunk.content;
-              if (chunk.type === 'done' || chunk.type === 'error') break;
-            }
-            response = toolResponse.trim();
-            // Recurse: the tool response might contain more tool calls
-            // For now, just show it — recursive tool loops can be added later
-          }
+          // Recursive tool loop: parse → execute → send results → repeat until done
+          const loopResult = await runToolLoop(
+            // sendMessage: sends tool results back to session, returns next response
+            async (message: string) => {
+              if (!session.alive || abort.signal.aborted) return '';
+              dispatch({ type: 'spinner-start', message: 'Cesar processing results…', color });
+              let nextResponse = '';
+              const gen = session.send({ message, signal: abort.signal });
+              for await (const chunk of gen) {
+                if (chunk.type === 'text') nextResponse += chunk.content;
+                if (chunk.type === 'tool_call') {
+                  const meta = (chunk.metadata ?? {}) as Record<string, unknown>;
+                  dispatch({
+                    type: 'tool-call', engineId: cesarEngineId,
+                    tool: chunk.content || 'tool',
+                    input: typeof meta.input === 'string' ? meta.input : meta.input ? JSON.stringify(meta.input) : '',
+                    status: (meta.status as any) ?? 'running',
+                    output: typeof meta.output === 'string' ? meta.output : undefined,
+                  } as any);
+                }
+                if (chunk.type === 'done' || chunk.type === 'error') break;
+              }
+              dispatch({ type: 'spinner-stop' });
+              return nextResponse.trim();
+            },
+            response,
+            toolCtx,
+            toolRegistry,
+            {
+              onToolCall: (name: string, inp: Record<string, unknown>) => {
+                const inputJson = JSON.stringify(inp);
+                _lastToolInputs[name] = inputJson;
+                dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: name, input: inputJson, status: 'running' });
+              },
+              onToolResult: (name: string, result: any) => {
+                const out = result.result.ok ? result.result.content : result.result.error;
+                dispatch({
+                  type: 'tool-call', engineId: cesarEngineId,
+                  tool: name, input: _lastToolInputs[name] ?? '',
+                  status: result.result.ok ? 'done' : 'error', output: out,
+                });
+                delete _lastToolInputs[name];
+              },
+              onPermissionAsk: async (tool: string, message: string) => {
+                return new Promise<boolean>((resolve) => {
+                  const lastInput = _lastToolInputs[tool] ?? '{}';
+                  let command = '';
+                  try {
+                    const parsed = JSON.parse(lastInput);
+                    command = parsed.command ?? parsed.file_path ?? lastInput;
+                  } catch { command = lastInput; }
+                  dispatch({ type: 'permission-ask', tool, command, reason: message, resolve } as any);
+                });
+              },
+              onText: (text: string) => {
+                if (text.trim()) {
+                  dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: text });
+                }
+              },
+              onTurnComplete: (turn: number) => {
+                dispatch({ type: 'spinner-update', message: `Cesar tool loop turn ${turn}…` });
+              },
+            },
+          );
+
+          // Use the final text from the loop as the response
+          response = loopResult.finalText.trim();
         }
       }
 

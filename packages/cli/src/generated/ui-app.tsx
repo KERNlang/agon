@@ -89,7 +89,7 @@ export default function App() {
   const [chatSession, setChatSession] = useState<ChatSession>((() => { const cwd = resolveWorkingDir(); let branch = 'unknown'; try { branch = currentBranch(cwd); } catch {} return startChatSession({ cwd, branch }); })());
   const [activeAbort, setActiveAbort] = useState<AbortController|null>(null);
   const [cesarSession, setCesarSession] = useState<PersistentSession|null>(null);
-  const [registry, setRegistry] = useState<EngineRegistry>((() => { const reg = new EngineRegistry(); const engDir = join(dirname(fileURLToPath(import.meta.url)), '../../../engines'); reg.load(engDir); return reg; })());
+  const [registry, setRegistry] = useState<EngineRegistry>((() => { const reg = new EngineRegistry(); const engDir = join(dirname(fileURLToPath(import.meta.url)), '../../../../engines'); reg.load(engDir); return reg; })());
   const [adapter, setAdapter] = useState<EngineAdapter>(createCliAdapter(registry));
   const [dynamicSkills, setDynamicSkills] = useState<Skill[]>(loadSkills());
 
@@ -101,11 +101,9 @@ export default function App() {
   const justPastedRef = useRef<boolean>(false);
   const pasteHashesRef = useRef<Map<string,string>>(new Map());
 
-  const allSlashCommands = useCallback(() => {
-    return useMemo(() => {
-      const skillCmds = dynamicSkills.map((s: any) => ({ cmd: s.trigger, desc: s.description || s.name }));
-      return [...SLASH_COMMANDS, ...skillCmds];
-    }, [dynamicSkills]);
+  const allSlashCommands = useMemo(() => {
+    const skillCmds = dynamicSkills.map((s: any) => ({ cmd: s.trigger, desc: s.description || s.name }));
+    return [...SLASH_COMMANDS, ...skillCmds];
   }, [dynamicSkills]);
 
   const transition = useCallback((fn:any) => {
@@ -128,32 +126,30 @@ export default function App() {
     return sessionEngines.filter((id: string) => available.includes(id));
   }, [registry,sessionEngines]);
 
-  const outputActions = useCallback(() => {
-    return useMemo(() => ({
-      setLiveSpinner,
-      setLiveProgress,
-      setStreamingText: (val: any) => { streamingTextRef.current = val; setStreamingText(val); },
-      addBlock: (event: any) => setOutputBlocks((prev: any) => [...prev, { id: Date.now() + Math.random(), event }]),
-      clearBlocks: () => setOutputBlocks([]),
-      setReviewEvent,
-      setQuestionState,
-      setChatStartTime: (val: number) => { chatStartTimeRef.current = val; },
-      flushStream: () => {
-        const prev = streamingTextRef.current;
-        if (prev) {
-          const color = ENGINE_COLORS[prev.engineId] ?? 245;
-          setOutputBlocks((blocks: any) => [...blocks, { id: Date.now() - 1, event: { type: 'engine-block', engineId: prev.engineId, color, content: prev.content } }]);
-          streamingTextRef.current = null;
-          setStreamingText(null);
-        }
-      },
-      getEngineColor: (engineId: string) => ENGINE_COLORS[engineId] ?? 245,
-    }), []);
-  }, []);
+  const outputActions = useMemo(() => ({
+    setLiveSpinner,
+    setLiveProgress,
+    setStreamingText: (val: any) => { streamingTextRef.current = val; setStreamingText(val); },
+    addBlock: (event: any) => setOutputBlocks((prev: any) => [...prev, { id: Date.now() + Math.random(), event }]),
+    clearBlocks: () => setOutputBlocks([]),
+    setReviewEvent,
+    setQuestionState,
+    setChatStartTime: (val: number) => { chatStartTimeRef.current = val; },
+    flushStream: () => {
+      const prev = streamingTextRef.current;
+      if (prev) {
+        const color = ENGINE_COLORS[prev.engineId] ?? 245;
+        setOutputBlocks((blocks: any) => [...blocks, { id: Date.now() - 1, event: { type: 'engine-block', engineId: prev.engineId, color, content: prev.content } }]);
+        streamingTextRef.current = null;
+        setStreamingText(null);
+      }
+    },
+    getEngineColor: (engineId: string) => ENGINE_COLORS[engineId] ?? 245,
+  }), []);
 
   const dispatch = useCallback((event:OutputEvent) => {
     const state: OutputState = { liveSpinner: null, liveProgress: null, streamingText: streamingTextRef.current };
-    handleOutputEvent(event, state, outputActions(), mode, chatStartTimeRef.current);
+    handleOutputEvent(event, state, outputActions, mode, chatStartTimeRef.current);
   }, [mode]);
 
   const askQuestion = useCallback((prompt:string) => {
@@ -213,7 +209,7 @@ export default function App() {
           .catch((err: any) => { jobManager.fail(job.id, err instanceof Error ? err.message : String(err)); setJobList([...jobManager.list()]); dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); });
       },
       setMode, setPendingImages, setSessionEngines, setEnginePickerOpen, setChatSession, setLastUndoToken, askQuestion, exit: () => process.exit(0),
-      allImages, allSlashCommands: allSlashCommands(), dynamicSkills, mode, lastUndoToken, sessionStartTime, jobManager,
+      allImages, allSlashCommands: allSlashCommands, dynamicSkills, mode, lastUndoToken, sessionStartTime, jobManager,
     };
     if (handleModeSwitch(intent.type, (intent as any).topic, (intent as any).question, cb)) {
       if (!(intent as any).input?.trim()) { transition(finishReplState); return; }
@@ -254,7 +250,7 @@ export default function App() {
       setSlashPickerOpen(true); return;
     }
     if ((key.tab || input === '\t') && !slashPickerOpen && !enginePickerOpen && !questionState && !reviewEvent) {
-      const ghost = getGhostCompletion(inputValue, allSlashCommands(), registry.availableIds());
+      const ghost = getGhostCompletion(inputValue, allSlashCommands, registry.availableIds());
       if (ghost) { setInputValue(inputValue + ghost + ' '); setInputKey((k: number) => k + 1); return; }
     }
     if (!enginePickerOpen && !questionState) {
@@ -340,8 +336,6 @@ export default function App() {
   }, [setActiveAbort]);
 
   return (
-    <Box flexDirection="column">
-      return (
         <Box flexDirection="column">
           {mode !== 'chat' && (
             <Box paddingX={1}>
@@ -387,7 +381,7 @@ export default function App() {
           )}
           {!enginePickerOpen && (
             <Box flexDirection="column" paddingX={1} marginTop={1}>
-              {slashPickerOpen && <SlashPicker commands={allSlashCommands()} onSelect={handleSlashSelect} onCancel={() => setSlashPickerOpen(false)} />}
+              {slashPickerOpen && <SlashPicker commands={allSlashCommands} onSelect={handleSlashSelect} onCancel={() => setSlashPickerOpen(false)} />}
               {pendingImages.length > 0 && (<Box><Text color="#22d3ee">{'📎 '}</Text>{pendingImages.map((img: any, i: number) => (<Text key={i} dimColor>{img.filename}{i < pendingImages.length - 1 ? ', ' : ''}</Text>))}</Box>)}
               {inputQueue.length > 0 && (<Box><Text dimColor>{'⏳ '}{inputQueue.length} queued: </Text><Text dimColor italic>{inputQueue[0].length > 40 ? inputQueue[0].slice(0, 40) + '…' : inputQueue[0]}</Text></Box>)}
               {questionState ? (
@@ -399,7 +393,7 @@ export default function App() {
                   <Box flexGrow={1}>
                     <TextInput key={inputKey} value={inputValue} onChange={handleInputChange} onSubmit={handleSubmit}
                       placeholder={replState === 'idle' ? mode === 'chat' ? '' : mode === 'campfire' ? 'What should we think about?' : mode === 'brainstorm' ? 'What question for the engines?' : 'What should they debate?' : ''} />
-                    {(() => { const ghost = getGhostCompletion(inputValue, allSlashCommands(), registry.availableIds()); return ghost ? <Text dimColor>{ghost}</Text> : null; })()}
+                    {(() => { const ghost = getGhostCompletion(inputValue, allSlashCommands, registry.availableIds()); return ghost ? <Text dimColor>{ghost}</Text> : null; })()}
                   </Box>
                 </Box>
               )}
@@ -407,8 +401,6 @@ export default function App() {
             </Box>
           )}
         </Box>
-      );
-    </Box>
   );
 }
 

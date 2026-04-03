@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
 
-import { join, basename } from 'node:path';
+import { join, dirname } from 'node:path';
 
 import { homedir } from 'node:os';
 
@@ -15,6 +15,19 @@ export const AGON_ENGINES_DIR: string = join(homedir(), '.agon', 'engines');
 export class EngineRegistry {
   private engines: Map<string, EngineDefinition> = new Map();
   private binaryCache: Map<string, string | null> = new Map();
+
+  private resolveBuiltinDir(dir: string): string {
+    if (existsSync(dir)) return dir;
+    let cursor = dirname(dir);
+    for (let i = 0; i < 6; i += 1) {
+      const candidate = join(cursor, 'engines');
+      if (candidate !== dir && existsSync(candidate)) return candidate;
+      const parent = dirname(cursor);
+      if (parent === cursor) break;
+      cursor = parent;
+    }
+    return dir;
+  }
 
   private loadDir(dir: string, tier: 'builtin'|'user'): void {
     if (!existsSync(dir)) {
@@ -39,7 +52,7 @@ export class EngineRegistry {
   }
 
   load(builtinDir: string): void {
-    this.loadDir(builtinDir, 'builtin');
+    this.loadDir(this.resolveBuiltinDir(builtinDir), 'builtin');
     if (existsSync(AGON_ENGINES_DIR)) this.loadDir(AGON_ENGINES_DIR, 'user');
   }
 

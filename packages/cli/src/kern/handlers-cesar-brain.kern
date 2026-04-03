@@ -1,8 +1,9 @@
 import from="node:path" names="join"
 import from="node:fs" names="mkdirSync"
 import from="@agon/core" names="EngineAdapter,ImageAttachment,PersistentSession,PersistentSessionConfig,SessionChunk" types=true
-import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,RUNS_DIR,appendMessage,tracker,scanProjectContext,StreamParser,createPersistentSession,resolveWorkingDir,ToolRegistry,FileStateCache,createReadTool,createEditTool,createWriteTool,createBashTool,createGrepTool,createGlobTool,buildToolSystemPrompt,parseToolCalls,processToolResponse,runToolLoop"
-import from="@agon/core" names="ToolContext" types=true
+import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,RUNS_DIR,appendMessage,tracker,scanProjectContext,StreamParser,createPersistentSession,resolveWorkingDir,ToolRegistry,FileStateCache,createReadTool,createEditTool,createWriteTool,createBashTool,createGrepTool,createGlobTool,buildToolSystemPrompt,parseToolCalls,processToolResponse,runToolLoop,executeToolCall"
+import from="@agon/core" names="ToolContext,ToolCallResult" types=true
+import from="@agon/core" names="formatToolResults"
 import from="../output.js" names="ENGINE_COLORS"
 import from="../handlers/types.js" names="Dispatch,HandlerContext" types=true
 
@@ -156,9 +157,31 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
         (ctx as any)._toolRegistry = toolRegistry;
       }
 
+      const toolRegistry = (ctx as any)._toolRegistry as ToolRegistry;
+
       let response = '';
       let streaming = false;
       let delegated = false;
+
+      // Eager tool execution: collect promises for native tool_call chunks
+      const eagerPromises: Promise<ToolCallResult>[] = [];
+      const eagerNames: string[] = [];
+      let eagerToolCtx: ToolContext | null = null;
+
+      const getEagerCtx = (): ToolContext => {
+        if (eagerToolCtx) return eagerToolCtx;
+        const fsc = new FileStateCache();
+        const explorationMode = (ctx as any).explorationMode ?? false;
+        eagerToolCtx = {
+          cwd: resolveWorkingDir(),
+          readFileState: (fsc as any).cache,
+          abortSignal: abort.signal,
+          permissionMode: 'auto',
+          explorationMode,
+          onProgress: (msg: string) => dispatch({ type: 'spinner-update', message: `Cesar: ${msg}` }),
+        };
+        return eagerToolCtx;
+      };
 
       try {
         const gen = session.send({ message: input, signal: abort.signal, images: images?.map(img => img.path) });
@@ -177,16 +200,39 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
               : meta.input ? JSON.stringify(meta.input) : '';
             const toolOutput = typeof meta.output === 'string' ? meta.output : undefined;
             const toolName = chunk.content || 'tool';
-            // Update spinner to show which tool is running
+            const toolStatus = (meta.status as string) ?? 'running';
+
             dispatch({ type: 'spinner-update', message: `Cesar: ${toolName}…` });
-            dispatch({
-              type: 'tool-call',
-              engineId: cesarEngineId,
-              tool: toolName,
-              input: toolInput,
-              status: (meta.status as any) ?? 'running',
-              output: toolOutput,
-            } as any);
+
+            if (toolStatus === 'done') {
+              // Native engine already executed — just display result
+              dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'done', output: toolOutput } as any);
+            } else if (toolStatus === 'running' && meta.input && toolRegistry) {
+              // Eager execution: start tool immediately, don't await
+              dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'running' } as any);
+
+              // Parse input — could be string or object
+              let parsedInput: Record<string, unknown> = {};
+              try {
+                parsedInput = typeof meta.input === 'string' ? JSON.parse(meta.input) : (meta.input as Record<string, unknown>);
+              } catch { parsedInput = { raw: meta.input }; }
+
+              const callId = (meta.toolCallId as string) ?? `eager-${Date.now()}-${eagerPromises.length}`;
+              const promise = executeToolCall(
+                { id: callId, name: toolName, input: parsedInput },
+                getEagerCtx(),
+                toolRegistry,
+              ).then((result: ToolCallResult) => {
+                const out = result.result.ok ? result.result.content : result.result.error;
+                dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: result.result.ok ? 'done' : 'error', output: out } as any);
+                return result;
+              });
+              eagerPromises.push(promise);
+              eagerNames.push(toolName);
+            } else {
+              // Fallback: display as-is
+              dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: toolStatus as any, output: toolOutput } as any);
+            }
             continue;
           }
 
@@ -240,6 +286,37 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
 
       response = response.trim();
 
+      // Await eager tool promises and send results back to session
+      if (eagerPromises.length > 0 && session.alive && !abort.signal.aborted) {
+        dispatch({ type: 'spinner-start', message: `Cesar: awaiting ${eagerPromises.length} tool result${eagerPromises.length > 1 ? 's' : ''}…`, color });
+        const eagerResults = await Promise.all(eagerPromises);
+
+        // Format results for re-injection into the session
+        const formatted = formatToolResults(
+          eagerResults.map((r: ToolCallResult) => ({
+            name: r.toolName,
+            content: r.result.content,
+            error: r.result.error,
+          }))
+        );
+
+        // Send tool results back and get continuation
+        if (formatted && session.alive) {
+          dispatch({ type: 'spinner-start', message: 'Cesar processing tool results…', color });
+          let continuation = '';
+          const contGen = session.send({ message: formatted, signal: abort.signal });
+          for await (const chunk of contGen) {
+            if (chunk.type === 'text') continuation += chunk.content;
+            if (chunk.type === 'done' || chunk.type === 'error') break;
+          }
+          dispatch({ type: 'spinner-stop' });
+          if (continuation.trim()) {
+            // Append continuation to response for downstream handling (delegation, XML tools, display)
+            response = continuation.trim();
+          }
+        }
+      }
+
       // Check final response for delegation (non-streaming path)
       const { action, rest } = parseDelegation(response);
       if (action) {
@@ -253,7 +330,6 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
       }
 
       // Check for tool calls in response — execute via recursive tool loop
-      const toolRegistry = (ctx as any)._toolRegistry as ToolRegistry | undefined;
       if (toolRegistry && response) {
         const toolParsed = parseToolCalls(response);
         if (toolParsed.hasToolCalls) {

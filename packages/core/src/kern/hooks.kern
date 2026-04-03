@@ -37,7 +37,7 @@ fn name=runHook params="hook:HookDef, env:Record<string,string>" returns=HookRes
 
 fn name=runHooks params="event:HookEvent, env?:Record<string,string>" returns="HookResult[]"
   handler <<<
-    const config = loadConfig();
+    const config = loadConfig(process.cwd());
     const hooks = (config as any).hooks as Record<string, HookDef[]> | undefined;
     if (!hooks || !hooks[event]) return [];
 

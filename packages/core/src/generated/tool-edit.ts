@@ -4,7 +4,7 @@ import { resolve, dirname, relative } from 'node:path';
 
 import type { ToolResult, ToolContext, ToolHandler, ToolDefinition, PermissionDecision } from './tool-types.js';
 
-import { FileStateCache } from './file-state-cache.js';
+import { fileStateCache } from '../file-state-cache.js';
 
 import { takeSnapshot } from './file-history.js';
 
@@ -88,7 +88,7 @@ export function createEditTool(): ToolHandler {
     }
   
     // Read-before-write check: file must have been read via Read tool first
-    const cache = new FileStateCache();
+    const cache = fileStateCache;
     if (!cache.has(filePath)) {
       return {
         ok: false,

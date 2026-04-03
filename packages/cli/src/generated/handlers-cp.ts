@@ -5,17 +5,25 @@ import { codeBlockBuffer } from '../code-buffer.js';
 import type { Dispatch } from '../handlers/types.js';
 
 export function handleCp(index: number|undefined, dispatch: Dispatch): void {
+  const blocks = codeBlockBuffer.blocks;
+  if (blocks.length === 0) {
+    dispatch({ type: 'warning', message: 'No code blocks to copy.' });
+    return;
+  }
+  
   if (index === undefined) {
-    // Copy the last code block
-    const blocks = codeBlockBuffer.blocks;
-    if (blocks.length === 0) {
-      dispatch({ type: 'warning', message: 'No code blocks to copy.' });
-      return;
+    // Show available blocks AND copy the last one
+    if (blocks.length > 1) {
+      const listing = blocks.map(b => {
+        const preview = b.code.split('\n')[0]?.slice(0, 50) ?? '';
+        return `  [${b.index}] ${b.language || 'code'}  ${preview}${b.code.split('\n').length > 1 ? '…' : ''}`;
+      }).join('\n');
+      dispatch({ type: 'text', content: listing });
     }
     const last = blocks[blocks.length - 1];
     try {
       copyToClipboard(last.code);
-      dispatch({ type: 'success', message: `Copied block [${last.index}] (${last.language || 'code'}) to clipboard` });
+      dispatch({ type: 'success', message: `Copied [${last.index}] (${last.language || 'code'}, ${last.code.split('\n').length} lines) — use /cp N for a specific block` });
     } catch (err) {
       dispatch({ type: 'error', message: `Failed to copy: ${err instanceof Error ? err.message : String(err)}` });
     }
@@ -24,13 +32,14 @@ export function handleCp(index: number|undefined, dispatch: Dispatch): void {
   
   const block = codeBlockBuffer.get(index);
   if (!block) {
-    dispatch({ type: 'warning', message: `No code block [${index}]. Available: 1-${codeBlockBuffer.blocks.length}` });
+    const listing = blocks.map(b => `  [${b.index}] ${b.language || 'code'}  ${b.code.split('\n')[0]?.slice(0, 40) ?? ''}`).join('\n');
+    dispatch({ type: 'warning', message: `No block [${index}]. Available:\n${listing}` });
     return;
   }
   
   try {
     copyToClipboard(block.code);
-    dispatch({ type: 'success', message: `Copied block [${block.index}] (${block.language || 'code'}) to clipboard` });
+    dispatch({ type: 'success', message: `Copied [${block.index}] (${block.language || 'code'}, ${block.code.split('\n').length} lines)` });
   } catch (err) {
     dispatch({ type: 'error', message: `Failed to copy: ${err instanceof Error ? err.message : String(err)}` });
   }

@@ -34,10 +34,12 @@ export type OutputEvent =
   | { type: 'debate-round'; round: number; engineId: string; position: string; argument: string }
   | { type: 'verdict'; summary: string }
   | { type: 'question'; prompt: string; resolve: (answer: string) => void }
+  | { type: 'permission-ask'; tool: string; command: string; description?: string; reason: string; resolve: (approved: boolean) => void }
   | { type: 'patch-review'; winnerId: string; patchPath: string; patchContent: string }
   | { type: 'tool-call'; engineId: string; tool: string; input: string; status: 'running'|'done'|'error'; output?: string }
   | { type: 'user-message'; content: string }
-  | { type: 'response-meta'; engineId: string; elapsed: number }
+  | { type: 'response-meta'; engineId: string; elapsed: number; inputTokens?: number; outputTokens?: number; cost?: number }
+  | { type: 'file-changes'; files: { path: string; status: 'modified'|'created'|'deleted'; additions: number; deletions: number }[] }
   | { type: 'dashboard'; available: string[]; enabled: string[]; defaultEngine: string; eloTop?: { id: string; rating: number }; totalForges: number; workspace?: { name: string; path: string; isKern?: boolean }; runCount: number };
 
 export interface HandlerContext {

@@ -112,8 +112,8 @@ export async function executeToolCall(call: ToolCall, ctx: ToolContext, registry
 export async function executeToolCalls(calls: ToolCall[], ctx: ToolContext, registry: ToolRegistry, onPermissionAsk?: (tool:string,message:string)=>Promise<boolean>, onProgress?: (result:ToolCallResult)=>void): Promise<ToolCallResult[]> {
   const results: ToolCallResult[] = [];
   
-  // Partition into batches: consecutive concurrency-safe tools run in parallel
-  const batches: ToolCall[][] = [];
+  // Partition into batches with metadata: consecutive concurrency-safe tools run in parallel
+  const batchMeta: { calls: ToolCall[]; concurrent: boolean }[] = [];
   let currentBatch: ToolCall[] = [];
   let currentBatchConcurrent = false;
   
@@ -127,16 +127,16 @@ export async function executeToolCalls(calls: ToolCall[], ctx: ToolContext, regi
     } else if (isSafe && currentBatchConcurrent) {
       currentBatch.push(call);
     } else {
-      batches.push(currentBatch);
+      batchMeta.push({ calls: currentBatch, concurrent: currentBatchConcurrent });
       currentBatch = [call];
       currentBatchConcurrent = isSafe;
     }
   }
-  if (currentBatch.length > 0) batches.push(currentBatch);
+  if (currentBatch.length > 0) batchMeta.push({ calls: currentBatch, concurrent: currentBatchConcurrent });
   
   // Execute batches
-  for (const batch of batches) {
-    if (batch.length === 1 || !currentBatchConcurrent) {
+  for (const { calls: batch, concurrent } of batchMeta) {
+    if (batch.length === 1 || !concurrent) {
       // Serial
       for (const call of batch) {
         if (ctx.abortSignal?.aborted) break;

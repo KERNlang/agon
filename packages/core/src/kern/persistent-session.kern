@@ -527,7 +527,6 @@ fn name=createStreamJsonSession params="config:PersistentSessionConfig" returns=
           '--input-format', 'stream-json',
           '--output-format', 'stream-json',
           '--replay-user-messages',
-          '--dangerously-skip-permissions',
           '--max-turns', '50',
         ];
 

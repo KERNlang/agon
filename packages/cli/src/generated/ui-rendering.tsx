@@ -184,11 +184,12 @@ export function CodeBlockView({ segment, borderColor }: { segment: ContentSegmen
         const capped = lines.slice(0, MAX_CODE_LINES);
         const overflow = lines.length - MAX_CODE_LINES;
   
+        const bc = borderColor || '#585858';
         return (
           <Box flexDirection="column">
-            <Text color={borderColor}>{'\u2502'}</Text>
+            <Text color={bc}>{'\u2502'}</Text>
             <Text>
-              <Text color={borderColor}>{'\u2502  '}</Text>
+              <Text color={bc}>{'\u2502  '}</Text>
               <Text color={CODE_RAIL_COLOR}>{CODE_RAIL}</Text>
               <Text> </Text>
               <Text dimColor>{segment.language || 'code'}</Text>
@@ -196,7 +197,7 @@ export function CodeBlockView({ segment, borderColor }: { segment: ContentSegmen
             </Text>
             {capped.map((line: string, i: number) => (
               <Text key={`code-${i}`}>
-                <Text color={borderColor}>{'\u2502  '}</Text>
+                <Text color={bc}>{'\u2502  '}</Text>
                 <Text color={CODE_RAIL_COLOR}>{CODE_RAIL}</Text>
                 <Text> </Text>
                 {isDiff ? <DiffLine line={line} maxWidth={codeWidth} /> : <SyntaxLine line={line} maxWidth={codeWidth} />}
@@ -204,13 +205,13 @@ export function CodeBlockView({ segment, borderColor }: { segment: ContentSegmen
             ))}
             {overflow > 0 && (
               <Text>
-                <Text color={borderColor}>{'\u2502  '}</Text>
+                <Text color={bc}>{'\u2502  '}</Text>
                 <Text color={CODE_RAIL_COLOR}>{CODE_RAIL}</Text>
                 <Text> </Text>
                 <Text dimColor>{'\u2026 '}{overflow}{' more lines'}</Text>
               </Text>
             )}
-            <Text color={borderColor}>{'\u2502'}</Text>
+            <Text color={bc}>{'\u2502'}</Text>
           </Box>
         );
 }
@@ -299,7 +300,7 @@ export function RenderedSegments({ segments, borderColor, wrapWidth }: { segment
         return (
           <>
             {segments.map((seg: ContentSegment, i: number) => {
-              const spacer = i > 0 ? <Text key={`sp-${i}`} color={borderColor}>{'\u2502'}</Text> : null;
+              const spacer = i > 0 && borderColor ? <Text key={`sp-${i}`} color={borderColor}>{'\u2502'}</Text> : (i > 0 ? <Text key={`sp-${i}`}>{' '}</Text> : null);
   
               if (seg.type === 'prose') {
                 const richLines = parseProseToRichLines(seg.text ?? '', wrapWidth);

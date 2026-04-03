@@ -90,17 +90,16 @@ export function EngineBlock({ engineId, color, content }: { engineId: string; co
 
 
 export function ConversationalResponse({ engineId, content }: { engineId: string; content: string }) {
-        const wrapWidth = contentWidth(4);
+        const wrapWidth = contentWidth(2);
         const cleaned = cleanEngineOutput(content);
         if (!cleaned.trim()) return null;
         const segments = parseMarkdownBlocks(cleaned);
         const accentColor = color256toHex(ENGINE_COLORS[engineId] ?? 245);
         return (
-          <Box flexDirection="column" marginTop={1} marginBottom={1} paddingLeft={1}>
+          <Box flexDirection="column" marginTop={1} marginBottom={0} paddingLeft={1}>
             <Text><Text color={accentColor} bold>{'\u25cf '}{engineId}</Text></Text>
-            <Text color={accentColor}>{'\u2502'}</Text>
-            <RenderedSegments segments={segments} borderColor={accentColor} wrapWidth={wrapWidth} />
-            <Text color={accentColor}>{'\u2502'}</Text>
+            <Text>{' '}</Text>
+            <RenderedSegments segments={segments} borderColor={''} wrapWidth={wrapWidth} />
           </Box>
         );
 }

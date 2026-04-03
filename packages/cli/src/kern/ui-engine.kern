@@ -386,16 +386,19 @@ screen name=OutputBlockView target=ink
           const icon = event.status === 'error' ? '\u2717' : event.status === 'done' ? '\u2713' : '\u27f3';
           const eColor = engineColor(event.engineId);
           const codeWidth = contentWidth(10);
-          const nest = <Text color={eColor} dimColor>{' \u23bf '}</Text>;
+          const nest = <Text color={eColor}>{' \u23bf '}</Text>;
 
-          // Parse structured input (JSON from handler)
+          // Parse structured input (JSON from handler, or raw string from other engines)
           let parsed: Record<string, unknown> = {};
-          try { parsed = event.input ? JSON.parse(event.input) : {}; } catch { /* not JSON, use raw */ }
+          const rawInput = event.input || '';
+          try {
+            if (rawInput.startsWith('{')) parsed = JSON.parse(rawInput);
+          } catch { /* not JSON — rawInput used as fallback */ }
           const toolKey = event.tool.toLowerCase();
 
           // ── Bash / Run ──
           if (toolKey === 'bash' || toolKey === 'run') {
-            const cmd = (parsed.command as string) ?? event.input;
+            const cmd = (parsed.command as string) || rawInput || '(command)';
             const desc = parsed.description as string | undefined;
             const cmdLines = cmd.split('\n').slice(0, 3);
             const moreCmd = cmd.split('\n').length > 3;
@@ -441,9 +444,9 @@ screen name=OutputBlockView target=ink
 
           // ── Edit ──
           if (toolKey === 'edit') {
-            const filePath = (parsed.file_path as string) ?? '';
-            const oldStr = (parsed.old_string as string) ?? '';
-            const newStr = (parsed.new_string as string) ?? '';
+            const filePath = (parsed.file_path as string) || rawInput || '';
+            const oldStr = (parsed.old_string as string) || '';
+            const newStr = (parsed.new_string as string) || '';
             const shortPath = filePath.replace(process.cwd() + '/', '').replace(process.env.HOME ?? '', '~');
             const addedCount = newStr ? newStr.split('\n').length : 0;
             const removedCount = oldStr ? oldStr.split('\n').length : 0;

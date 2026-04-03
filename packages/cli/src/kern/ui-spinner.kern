@@ -1,0 +1,43 @@
+import from="ink" names="Box,Text"
+// Spinner imported via handler — KERN import can't do default-as
+import from="../components.js" names="engineColor,contentWidth"
+
+screen name=SpinnerBlock target=ink
+  prop name=message type=string
+  prop name=color type=number optional=true
+  render
+    handler <<<
+      <Text>
+        <Text color={color ? String(color) : 'yellow'}><Spinner type="dots" /></Text>
+        <Text> {message}</Text>
+      </Text>
+    >>>
+
+screen name=TokenGauge target=ink
+  prop name=tokens type=number
+  prop name=maxTokens type=number
+  render
+    handler <<<
+      const pct = Math.min(100, Math.round((tokens / maxTokens) * 100));
+      const barWidth = 12;
+      const filled = Math.round((pct / 100) * barWidth);
+      const empty = barWidth - filled;
+      const bar = '\u2588'.repeat(filled) + '\u2591'.repeat(empty);
+      const barColor = pct > 80 ? '#ef4444' : pct > 60 ? '#fbbf24' : '#4ade80';
+      return (
+        <Text>
+          <Text color={barColor}>{bar}</Text>
+          <Text dimColor>{` ${pct}%`}</Text>
+        </Text>
+      );
+    >>>
+
+screen name=AgonTip target=ink
+  state name=tip type=string initial="AGON_TIPS[Math.floor(Math.random() * AGON_TIPS.length)]"
+  render
+    handler <<<
+      <Text>
+        <Text dimColor>{'  \u2514 Tip: '}</Text>
+        <Text dimColor>{tip}</Text>
+      </Text>
+    >>>

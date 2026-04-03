@@ -1,5 +1,5 @@
 import from="node:path" names="join"
-import from="@agon/core" names="loadPlan,listPlans,approvePlan,startPlan,cancelPlan,resetStepForRetry,savePlan,preflightApply,applyPatchToTree,RUNS_DIR"
+import from="@agon/core" names="loadPlan,listPlans,approvePlan,startPlan,cancelPlan,resetStepForRetry,savePlan,preflightApply,applyPatchToTree,RUNS_DIR,resolveWorkingDir"
 import from="@agon/core" names="Plan" types=true
 import from="../handlers/types.js" names="Dispatch,HandlerContext" types=true
 
@@ -121,7 +121,7 @@ fn name=handleApplyPatch params="dispatch:Dispatch, ctx:HandlerContext, patchPat
       }
     }
 
-    const preflight = preflightApply(process.cwd(), resolvedPatchPath ?? null, manifestPath);
+    const preflight = preflightApply(resolveWorkingDir(), resolvedPatchPath ?? null, manifestPath);
 
     if (!preflight.ok && preflight.dirtyTree && force) {
       if (!preflight.patch) {
@@ -137,15 +137,29 @@ fn name=handleApplyPatch params="dispatch:Dispatch, ctx:HandlerContext, patchPat
     const patch = preflight.patch!;
     dispatch({ type: 'info', message: `Patch: ${patch.path}` });
     dispatch({ type: 'info', message: `Engine: ${patch.engineId}` });
-    dispatch({ type: 'info', message: `Changes: ~${patch.lineCount} lines` });
 
-    const answer = await ctx.askQuestion(`Apply to ${process.cwd()}? [Y/n]`);
+    // Show colored diff preview
+    const diffLines = patch.content.split('\n');
+    const previewLines = diffLines.slice(0, 80); // Cap preview at 80 lines
+    const diffPreview = previewLines.join('\n');
+    if (diffPreview.trim()) {
+      dispatch({ type: 'text', content: '' }); // spacer
+      // Render as code block so DiffLine coloring applies
+      dispatch({ type: 'engine-block', engineId: patch.engineId, color: 245, content: '```diff\n' + diffPreview + '\n```' });
+      if (diffLines.length > 80) {
+        dispatch({ type: 'info', message: `… ${diffLines.length - 80} more lines not shown` });
+      }
+    }
+
+    dispatch({ type: 'info', message: `Total: ~${patch.lineCount} lines changed` });
+
+    const answer = await ctx.askQuestion(`Apply to ${resolveWorkingDir()}? [Y/n]`);
     if (answer.trim().toLowerCase() === 'n') {
       dispatch({ type: 'info', message: 'Cancelled.' });
       return;
     }
 
-    const result = applyPatchToTree(process.cwd(), patch.content);
+    const result = applyPatchToTree(resolveWorkingDir(), patch.content);
     if (result.ok) {
       dispatch({ type: 'success', message: 'Patch applied. Review changes with git diff.' });
     } else {

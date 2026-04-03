@@ -33,6 +33,16 @@
     "GOOGLE_API_KEY": { "required": false }
   },
 
+  "companion": {
+    "protocol": "acp",
+    "serverCmd": ["--acp"],
+    "features": {
+      "threadResume": true,
+      "nativeReview": false,
+      "structuredOutput": true
+    }
+  },
+
   "test": { "args": ["--version"] },
 
   "capabilities": ["vision"],

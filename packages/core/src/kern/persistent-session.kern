@@ -1,0 +1,846 @@
+import from="node:child_process" names="spawn"
+import from="node:child_process" names="ChildProcess" types=true
+import from="node:readline" names="createInterface"
+import from="./types.js" names="EngineDefinition,CompanionConfig" types=true
+
+interface name=SessionChunk
+  field name=type type="'text'|'status'|'tool_call'|'error'|'done'"
+  field name=content type=string
+  field name=metadata type="Record<string,unknown>" optional=true
+
+interface name=SessionSendOptions
+  field name=message type=string
+  field name=images type="string[]" optional=true
+  field name=signal type=AbortSignal optional=true
+  field name=systemPrompt type=string optional=true
+
+interface name=PersistentSessionConfig
+  field name=engine type=EngineDefinition
+  field name=binaryPath type=string
+  field name=cwd type=string
+  field name=systemPrompt type=string optional=true
+
+interface name=PersistentSession
+  field name=alive type=boolean
+  field name=sessionId type="string|null"
+  field name=engineId type=string
+  field name=start type="() => Promise<void>"
+  field name=send type="(opts: SessionSendOptions) => AsyncGenerator<SessionChunk, void, void>"
+  field name=close type="() => void"
+
+fn name=createPersistentSession params="config:PersistentSessionConfig" returns="PersistentSession"
+  doc "Factory: picks the right session implementation based on engine config."
+  handler <<<
+    const engine = config.engine;
+
+    // Claude: bidirectional stream-json pipe
+    if (engine.id === 'claude' || engine.binary === 'claude') {
+      return createStreamJsonSession(config);
+    }
+
+    // Engines with ACP protocol (OpenCode, Gemini)
+    if (engine.companion && engine.companion.protocol === 'acp') {
+      return createAcpSession(config);
+    }
+
+    // Engines with JSONRPC companion (Codex)
+    if (engine.companion && engine.companion.protocol === 'jsonrpc') {
+      return createCompanionSession(config);
+    }
+
+    // Fallback: resume-based (spawn per turn with --resume/--continue)
+    return createResumeSession(config);
+  >>>
+
+// ─── CompanionSession (Codex) ────────────────────────────────────────
+
+fn name=createCompanionSession params="config:PersistentSessionConfig" returns="PersistentSession"
+  doc "Persistent JSONRPC session for Codex app-server. Process stays alive across turns."
+  handler <<<
+    let proc: ChildProcess | null = null;
+    let alive = false;
+    let sessionId: string | null = null;
+    let threadId: string | null = null;
+    let nextRpcId = 1;
+    let firstTurn = true;
+    const pending = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }>();
+    let notificationHandlers: Array<(method: string, params: any) => void> = [];
+
+    function sendRpc(method: string, params: Record<string, unknown>): Promise<any> {
+      const id = nextRpcId++;
+      const timeoutMs = method === 'initialize' ? 8000 : 90000;
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          pending.delete(id);
+          reject(new Error(`Timeout waiting for ${method}`));
+        }, timeoutMs);
+        pending.set(id, { resolve, reject, timer });
+        proc!.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
+      });
+    }
+
+    function notifyRpc(method: string): void {
+      proc!.stdin!.write(JSON.stringify({ jsonrpc: '2.0', method }) + '\n');
+    }
+
+    function killProc(): void {
+      if (!proc) return;
+      try {
+        if (proc.pid) process.kill(-proc.pid, 'SIGTERM');
+      } catch {
+        try { proc.kill('SIGTERM'); } catch { /* dead */ }
+      }
+      proc = null;
+      alive = false;
+    }
+
+    const session: PersistentSession = {
+      get alive() { return alive; },
+      get sessionId() { return sessionId; },
+      engineId: config.engine.id,
+
+      async start() {
+        if (alive) return;
+
+        const companion = config.engine.companion!;
+        proc = spawn(config.binaryPath, companion.serverCmd, {
+          stdio: ['pipe', 'pipe', 'pipe'],
+          cwd: config.cwd,
+          detached: true,
+        });
+
+        // Wire up JSONRPC line parser
+        const rl = createInterface({ input: proc.stdout! });
+        rl.on('line', (line: string) => {
+          if (!line.trim()) return;
+          let msg: any;
+          try { msg = JSON.parse(line); } catch { return; }
+
+          if (msg.id !== undefined && pending.has(msg.id)) {
+            const p = pending.get(msg.id)!;
+            pending.delete(msg.id);
+            clearTimeout(p.timer);
+            if (msg.error) {
+              p.reject(new Error(`RPC error ${msg.error.code}: ${msg.error.message}`));
+            } else {
+              p.resolve(msg.result ?? {});
+            }
+            return;
+          }
+
+          // Server notification — forward to active handlers
+          if (msg.method) {
+            for (const handler of notificationHandlers) {
+              handler(msg.method, msg.params ?? {});
+            }
+          }
+        });
+
+        proc.on('close', () => { alive = false; proc = null; });
+        proc.on('error', () => { alive = false; proc = null; });
+
+        // Wait for process startup
+        await new Promise((r) => setTimeout(r, 100));
+
+        // Initialize handshake
+        await sendRpc('initialize', {
+          clientInfo: { name: 'agon-ai', title: 'Agon AI', version: '0.2.0' },
+          capabilities: null,
+        });
+        notifyRpc('initialized');
+
+        // Start persistent thread (pass system prompt as instructions)
+        const threadParams: Record<string, unknown> = {
+          cwd: config.cwd,
+          approvalPolicy: 'never',
+          sandbox: 'read-only',
+          ephemeral: false,
+        };
+        if (config.systemPrompt) {
+          threadParams.instructions = config.systemPrompt;
+        }
+        const threadResult = await sendRpc('thread/start', threadParams) as any;
+        threadId = threadResult?.thread?.id ?? null;
+        sessionId = threadId;
+        alive = true;
+      },
+
+      async *send(opts: SessionSendOptions) {
+        if (!alive || !proc) {
+          yield { type: 'error' as const, content: 'Session not alive' };
+          return;
+        }
+
+      const chunks: SessionChunk[] = [];
+      let turnDone = false;
+      let resolveWait: (() => void) | null = null;
+      let emittedText = '';
+
+      const pushDelta = (text: string) => {
+        if (!text) return;
+        chunks.push({ type: 'text', content: text });
+        emittedText += text;
+      };
+
+      const pushSnapshot = (text: string) => {
+        if (!text) return;
+        let overlap = Math.min(emittedText.length, text.length);
+        while (overlap > 0 && !emittedText.endsWith(text.slice(0, overlap))) {
+          overlap -= 1;
+        }
+        const suffix = text.slice(overlap);
+        if (!suffix) return;
+        chunks.push({ type: 'text', content: suffix });
+        emittedText += suffix;
+      };
+
+      // Abort signal — break out of wait loop on cancel
+      const onAbort = () => {
+        turnDone = true;
+        chunks.push({ type: 'done', content: 'cancelled' });
+          if (resolveWait) { resolveWait(); resolveWait = null; }
+        };
+        if (opts.signal?.aborted) { yield { type: 'done' as const, content: 'cancelled' }; return; }
+        opts.signal?.addEventListener('abort', onAbort, { once: true });
+
+        const handler = (method: string, params: any) => {
+        if (method === 'turn/completed') {
+          turnDone = true;
+          chunks.push({ type: 'done', content: '' });
+        } else if (method === 'item/completed') {
+          const item = params?.item;
+          if (item?.type === 'agentMessage') {
+            pushSnapshot(item.text ?? '');
+          }
+          if (item?.type === 'enteredReviewMode') {
+            pushSnapshot(item.review ?? '');
+          }
+        } else if (method === 'item/agentMessage/delta') {
+          if (params?.delta) {
+            pushDelta(params.delta);
+          }
+        } else if (method === 'error') {
+          chunks.push({ type: 'error', content: JSON.stringify(params) });
+          turnDone = true;
+        }
+          if (resolveWait) { resolveWait(); resolveWait = null; }
+        };
+
+        notificationHandlers.push(handler);
+
+        try {
+          // On first turn, prepend system prompt as context (fallback if thread/start instructions ignored)
+          let message = opts.message;
+          if (firstTurn && config.systemPrompt) {
+            message = `[System Instructions]\n${config.systemPrompt}\n\n[User Message]\n${message}`;
+            firstTurn = false;
+          } else {
+            firstTurn = false;
+          }
+
+          // Start turn on existing thread
+          await sendRpc('turn/start', {
+            threadId,
+            input: [{ type: 'text', text: message, text_elements: [] }],
+          });
+
+          // Yield chunks as they arrive
+          while (!turnDone) {
+            if (chunks.length > 0) {
+              yield chunks.shift()!;
+            } else {
+              await new Promise<void>((r) => { resolveWait = r; });
+            }
+          }
+          // Drain remaining
+          while (chunks.length > 0) {
+            yield chunks.shift()!;
+          }
+        } finally {
+          opts.signal?.removeEventListener('abort', onAbort);
+          const idx = notificationHandlers.indexOf(handler);
+          if (idx >= 0) notificationHandlers.splice(idx, 1);
+        }
+      },
+
+      close() {
+        for (const [, p] of pending) clearTimeout(p.timer);
+        pending.clear();
+        killProc();
+      },
+    };
+
+    return session;
+  >>>
+
+// ─── AcpSession (OpenCode) ──────────────────────────────────────────
+
+fn name=createAcpSession params="config:PersistentSessionConfig" returns="PersistentSession"
+  doc "Persistent ACP (Agent Client Protocol) session for OpenCode. JSON-RPC 2.0 over stdio."
+  handler <<<
+    let proc: ChildProcess | null = null;
+    let alive = false;
+    let sessionId: string | null = null;
+    let nextRpcId = 1;
+    let firstTurn = true;
+    const pending = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }>();
+    let notificationHandlers: Array<(method: string, params: any) => void> = [];
+
+    function sendRpc(method: string, params: Record<string, unknown>): Promise<any> {
+      const id = nextRpcId++;
+      const timeoutMs = method === 'initialize' ? 8000 : 90000;
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          pending.delete(id);
+          reject(new Error(`ACP timeout: ${method}`));
+        }, timeoutMs);
+        pending.set(id, { resolve, reject, timer });
+        proc!.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
+      });
+    }
+
+    function killProc(): void {
+      if (!proc) return;
+      try {
+        if (proc.pid) process.kill(-proc.pid, 'SIGTERM');
+      } catch {
+        try { proc.kill('SIGTERM'); } catch { /* dead */ }
+      }
+      proc = null;
+      alive = false;
+    }
+
+    const session: PersistentSession = {
+      get alive() { return alive; },
+      get sessionId() { return sessionId; },
+      engineId: config.engine.id,
+
+      async start() {
+        if (alive) return;
+
+        // Use companion serverCmd if available, else fall back to binary-specific defaults
+        const companion = config.engine.companion;
+        const acpArgs = companion?.serverCmd
+          ?? (config.engine.binary === 'gemini' || config.engine.id === 'gemini' ? ['--acp'] : ['acp']);
+        proc = spawn(config.binaryPath, acpArgs, {
+          stdio: ['pipe', 'pipe', 'pipe'],
+          cwd: config.cwd,
+          detached: true,
+        });
+
+        const rl = createInterface({ input: proc.stdout! });
+        rl.on('line', (line: string) => {
+          if (!line.trim()) return;
+          let msg: any;
+          try { msg = JSON.parse(line); } catch { return; }
+
+          // Response to our request
+          if (msg.id !== undefined && pending.has(msg.id)) {
+            const p = pending.get(msg.id)!;
+            pending.delete(msg.id);
+            clearTimeout(p.timer);
+            if (msg.error) {
+              p.reject(new Error(`ACP error ${msg.error.code}: ${msg.error.message}`));
+            } else {
+              p.resolve(msg.result ?? {});
+            }
+            return;
+          }
+
+          // Server notification
+          if (msg.method) {
+            for (const handler of notificationHandlers) {
+              handler(msg.method, msg.params ?? {});
+            }
+          }
+        });
+
+        proc.on('close', () => { alive = false; proc = null; });
+        proc.on('error', () => { alive = false; proc = null; });
+
+        await new Promise((r) => setTimeout(r, 100));
+
+        // ACP initialize handshake
+        await sendRpc('initialize', {
+          protocolVersion: 1,
+          clientCapabilities: {
+            fs: { readTextFile: true, writeTextFile: false },
+            terminal: false,
+          },
+          clientInfo: { name: 'agon-ai', title: 'Agon AI', version: '0.2.0' },
+        });
+
+        // Create session (pass system prompt if available)
+        const sessParams: Record<string, unknown> = {
+          cwd: config.cwd,
+          mcpServers: [],
+        };
+        if (config.systemPrompt) {
+          sessParams.systemPrompt = config.systemPrompt;
+        }
+        const sessResult = await sendRpc('session/new', sessParams) as any;
+        sessionId = sessResult?.sessionId ?? null;
+        alive = true;
+      },
+
+      async *send(opts: SessionSendOptions) {
+        if (!alive || !proc || !sessionId) {
+          yield { type: 'error' as const, content: 'ACP session not alive' };
+          return;
+        }
+
+      const chunks: SessionChunk[] = [];
+      let turnDone = false;
+      let resolveWait: (() => void) | null = null;
+      let emittedText = '';
+
+      const pushDelta = (text: string) => {
+        if (!text) return;
+        chunks.push({ type: 'text', content: text });
+        emittedText += text;
+      };
+
+      const pushSnapshot = (text: string) => {
+        if (!text) return;
+        let overlap = Math.min(emittedText.length, text.length);
+        while (overlap > 0 && !emittedText.endsWith(text.slice(0, overlap))) {
+          overlap -= 1;
+        }
+        const suffix = text.slice(overlap);
+        if (!suffix) return;
+        chunks.push({ type: 'text', content: suffix });
+        emittedText += suffix;
+      };
+
+      const onAbort = () => {
+        turnDone = true;
+        chunks.push({ type: 'done', content: 'cancelled' });
+        if (resolveWait) { resolveWait(); resolveWait = null; }
+        };
+        if (opts.signal?.aborted) { yield { type: 'done' as const, content: 'cancelled' }; return; }
+        opts.signal?.addEventListener('abort', onAbort, { once: true });
+
+        const handler = (method: string, params: any) => {
+          if (method === 'session/update') {
+            const update = params?.update;
+            if (!update) return;
+            if (update.sessionUpdate === 'agent_message_chunk') {
+              const text = update.content?.text ?? '';
+              if (text) chunks.push({ type: 'text', content: text });
+            } else if (update.sessionUpdate === 'tool_call') {
+              chunks.push({ type: 'tool_call', content: update.title ?? '', metadata: { toolCallId: update.toolCallId, status: update.status } });
+            } else if (update.sessionUpdate === 'plan') {
+              chunks.push({ type: 'status', content: 'Planning...' });
+            }
+          }
+          if (resolveWait) { resolveWait(); resolveWait = null; }
+        };
+
+        notificationHandlers.push(handler);
+
+        try {
+          // On first turn, prepend system prompt as context (fallback if session/new systemPrompt ignored)
+          let message = opts.message;
+          if (firstTurn && config.systemPrompt) {
+            message = `[System Instructions]\n${config.systemPrompt}\n\n[User Message]\n${message}`;
+            firstTurn = false;
+          } else {
+            firstTurn = false;
+          }
+
+          // session/prompt is a request — the response signals turn completion
+          const promptPromise = sendRpc('session/prompt', {
+            sessionId,
+            prompt: [{ type: 'text', text: message }],
+          });
+
+          // Yield streamed chunks while waiting for prompt response
+          const donePromise = promptPromise.then((result: any) => {
+            turnDone = true;
+            chunks.push({ type: 'done', content: result?.stopReason ?? 'end_turn' });
+            if (resolveWait) { resolveWait(); resolveWait = null; }
+          }).catch((err: Error) => {
+            turnDone = true;
+            chunks.push({ type: 'error', content: err.message });
+            if (resolveWait) { resolveWait(); resolveWait = null; }
+          });
+
+          while (!turnDone) {
+            if (chunks.length > 0) {
+              yield chunks.shift()!;
+            } else {
+              await new Promise<void>((r) => { resolveWait = r; });
+            }
+          }
+          while (chunks.length > 0) {
+            yield chunks.shift()!;
+          }
+        } finally {
+          opts.signal?.removeEventListener('abort', onAbort);
+          const idx = notificationHandlers.indexOf(handler);
+          if (idx >= 0) notificationHandlers.splice(idx, 1);
+        }
+      },
+
+      close() {
+        for (const [, p] of pending) clearTimeout(p.timer);
+        pending.clear();
+        killProc();
+      },
+    };
+
+    return session;
+  >>>
+
+// ─── StreamJsonSession (Claude) ─────────────────────────────────────
+
+fn name=createStreamJsonSession params="config:PersistentSessionConfig" returns="PersistentSession"
+  doc "Persistent bidirectional NDJSON session for Claude Code. One process, multi-turn via stdin."
+  handler <<<
+    let proc: ChildProcess | null = null;
+    let alive = false;
+    let sessionId: string | null = null;
+    let lineHandlers: Array<(parsed: any) => void> = [];
+
+    function killProc(): void {
+      if (!proc) return;
+      try {
+        if (proc.pid) process.kill(-proc.pid, 'SIGTERM');
+      } catch {
+        try { proc.kill('SIGTERM'); } catch { /* dead */ }
+      }
+      proc = null;
+      alive = false;
+    }
+
+    const session: PersistentSession = {
+      get alive() { return alive; },
+      get sessionId() { return sessionId; },
+      engineId: config.engine.id,
+
+      async start() {
+        if (alive) return;
+
+        const args = [
+          '--print',
+          '--bare',
+          '--input-format', 'stream-json',
+          '--output-format', 'stream-json',
+          '--replay-user-messages',
+          '--dangerously-skip-permissions',
+          '--max-turns', '50',
+        ];
+
+        if (config.systemPrompt) {
+          args.push('--system-prompt', config.systemPrompt);
+        }
+
+        proc = spawn(config.binaryPath, args, {
+          stdio: ['pipe', 'pipe', 'pipe'],
+          cwd: config.cwd,
+          detached: true,
+        });
+
+        // Parse NDJSON from stdout
+        const rl = createInterface({ input: proc.stdout! });
+        rl.on('line', (line: string) => {
+          if (!line.trim()) return;
+          let parsed: any;
+          try { parsed = JSON.parse(line); } catch { return; }
+
+          // Capture session ID from init event
+          if (parsed.type === 'system' && parsed.session_id) {
+            sessionId = parsed.session_id;
+          }
+
+          for (const handler of lineHandlers) {
+            handler(parsed);
+          }
+        });
+
+        // Log stderr for debugging startup issues
+        proc.stderr?.on('data', (data: Buffer) => {
+          const msg = String(data).trim();
+          if (msg) console.error(`[cesar:claude:stderr] ${msg}`);
+        });
+
+        proc.on('close', (code: number | null) => {
+          console.error(`[cesar:claude] process exited code=${code}`);
+          alive = false;
+          proc = null;
+        });
+        proc.on('error', (err: Error) => {
+          console.error(`[cesar:claude] process error: ${err.message}`);
+          alive = false;
+          proc = null;
+        });
+
+        // Wait for first stdout line (signals process is ready)
+        await new Promise<void>((resolve) => {
+          const timeout = setTimeout(resolve, 3000);
+          rl.once('line', () => { clearTimeout(timeout); resolve(); });
+        });
+        alive = true;
+      },
+
+      async *send(opts: SessionSendOptions) {
+        if (!alive || !proc) {
+          yield { type: 'error' as const, content: 'Claude stream session not alive' };
+          return;
+        }
+
+        const chunks: SessionChunk[] = [];
+        let turnDone = false;
+        let resolveWait: (() => void) | null = null;
+        let emittedText = '';
+
+        const pushDelta = (text: string) => {
+          if (!text) return;
+          chunks.push({ type: 'text', content: text });
+          emittedText += text;
+        };
+
+        const pushSnapshot = (text: string) => {
+          if (!text) return;
+          let overlap = Math.min(emittedText.length, text.length);
+          while (overlap > 0 && !emittedText.endsWith(text.slice(0, overlap))) {
+            overlap -= 1;
+          }
+          const suffix = text.slice(overlap);
+          if (!suffix) return;
+          chunks.push({ type: 'text', content: suffix });
+          emittedText += suffix;
+        };
+
+        const onAbort = () => {
+          turnDone = true;
+          chunks.push({ type: 'done', content: 'cancelled' });
+          if (resolveWait) { resolveWait(); resolveWait = null; }
+        };
+        if (opts.signal?.aborted) { yield { type: 'done' as const, content: 'cancelled' }; return; }
+        opts.signal?.addEventListener('abort', onAbort, { once: true });
+
+        const handler = (parsed: any) => {
+          // Assistant text content
+          if (parsed.type === 'assistant' && parsed.message?.content) {
+            for (const block of parsed.message.content) {
+              if (block.type === 'text' && block.text) {
+                pushSnapshot(block.text);
+              }
+            }
+            // Check if this is the final message (stop_reason present)
+            if (parsed.message?.stop_reason) {
+              turnDone = true;
+              chunks.push({ type: 'done', content: parsed.message.stop_reason });
+            }
+          }
+
+          // Content block delta (streaming partial text)
+          if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
+            pushDelta(parsed.delta.text);
+          }
+
+          // Result event — marks turn completion
+          if (parsed.type === 'result') {
+            turnDone = true;
+            const text = parsed.result ?? '';
+            if (text && typeof text === 'string') {
+              pushSnapshot(text);
+            }
+            chunks.push({ type: 'done', content: 'end_turn' });
+          }
+
+          // Message start with session info
+          if (parsed.type === 'message_start' && parsed.session_id) {
+            sessionId = parsed.session_id;
+          }
+
+          // Tool use events
+          if (parsed.type === 'tool_use') {
+            chunks.push({
+              type: 'tool_call',
+              content: parsed.name ?? 'tool',
+              metadata: { input: parsed.input },
+            });
+          }
+
+          // Error
+          if (parsed.type === 'error') {
+            chunks.push({ type: 'error', content: parsed.error?.message ?? 'Unknown error' });
+            turnDone = true;
+          }
+
+          if (resolveWait) { resolveWait(); resolveWait = null; }
+        };
+
+        lineHandlers.push(handler);
+
+        try {
+          // Send user message as NDJSON on stdin
+          const envelope: Record<string, unknown> = {
+            type: 'user',
+            message: {
+              role: 'user',
+              content: opts.message,
+            },
+          };
+          if (sessionId) envelope.session_id = sessionId;
+
+          proc.stdin!.write(JSON.stringify(envelope) + '\n');
+
+          // Yield chunks as they arrive
+          while (!turnDone) {
+            if (chunks.length > 0) {
+              yield chunks.shift()!;
+            } else {
+              await new Promise<void>((r) => { resolveWait = r; });
+            }
+          }
+          while (chunks.length > 0) {
+            yield chunks.shift()!;
+          }
+        } finally {
+          opts.signal?.removeEventListener('abort', onAbort);
+          const idx = lineHandlers.indexOf(handler);
+          if (idx >= 0) lineHandlers.splice(idx, 1);
+        }
+      },
+
+      close() {
+        // Close stdin to signal EOF, then kill
+        if (proc?.stdin) {
+          try { proc.stdin.end(); } catch { /* ignore */ }
+        }
+        setTimeout(() => killProc(), 1000);
+      },
+    };
+
+    return session;
+  >>>
+
+// ─── ResumeSession (fallback for any engine) ────────────────────────
+
+fn name=createResumeSession params="config:PersistentSessionConfig" returns="PersistentSession"
+  doc "Fallback: spawn per turn with --resume/--continue. Works for any CLI engine."
+  handler <<<
+    let alive = false;
+    let sessionId: string | null = null;
+    let firstTurn = true;
+
+    const session: PersistentSession = {
+      get alive() { return alive; },
+      get sessionId() { return sessionId; },
+      engineId: config.engine.id,
+
+      async start() {
+        alive = true;
+        firstTurn = true;
+      },
+
+      async *send(opts: SessionSendOptions) {
+        if (!alive) {
+          yield { type: 'error' as const, content: 'Session not started' };
+          return;
+        }
+
+        const args: string[] = [];
+        const engineExec = config.engine.exec;
+        if (!engineExec) {
+          yield { type: 'error' as const, content: `Engine ${config.engine.id} has no exec config` };
+          return;
+        }
+
+        // Build args from engine config
+        for (const arg of engineExec.args) {
+          if (arg === '{prompt}') {
+            args.push(opts.message);
+          } else {
+            args.push(arg);
+          }
+        }
+
+        // Add resume flag on subsequent turns
+        if (!firstTurn && sessionId) {
+          // Try common resume flags
+          if (config.engine.binary === 'claude') {
+            args.unshift('--resume', sessionId);
+          } else if (config.engine.binary === 'opencode') {
+            args.unshift('--session', sessionId, '--continue');
+          }
+        }
+
+        const child = spawn(config.binaryPath, args, {
+          stdio: ['ignore', 'pipe', 'pipe'],
+          cwd: config.cwd,
+          detached: true,
+        });
+
+        const chunks: SessionChunk[] = [];
+        let done = false;
+        let resolveWait: (() => void) | null = null;
+
+        // Abort: kill spawned child process
+        const onAbort = () => {
+          done = true;
+          chunks.push({ type: 'done', content: 'cancelled' });
+          try { if (child.pid) process.kill(-child.pid, 'SIGTERM'); } catch { try { child.kill('SIGTERM'); } catch {} }
+          if (resolveWait) { resolveWait(); resolveWait = null; }
+        };
+        if (opts.signal?.aborted) { yield { type: 'done' as const, content: 'cancelled' }; return; }
+        opts.signal?.addEventListener('abort', onAbort, { once: true });
+
+        const rl = createInterface({ input: child.stdout! });
+        rl.on('line', (line: string) => {
+          // Try to parse as NDJSON
+          try {
+            const parsed = JSON.parse(line);
+            if (parsed.session_id && !sessionId) {
+              sessionId = parsed.session_id;
+            }
+            if (parsed.type === 'assistant' || parsed.type === 'result' || parsed.type === 'content_block_delta') {
+              const text = parsed.result ?? parsed.delta?.text ?? '';
+              if (text) chunks.push({ type: 'text', content: text });
+            }
+          } catch {
+            // Raw text
+            chunks.push({ type: 'text', content: line });
+          }
+          if (resolveWait) { resolveWait(); resolveWait = null; }
+        });
+
+        child.on('close', () => {
+          done = true;
+          chunks.push({ type: 'done', content: 'end_turn' });
+          if (resolveWait) { resolveWait(); resolveWait = null; }
+        });
+
+        child.on('error', (err: Error) => {
+          done = true;
+          chunks.push({ type: 'error', content: err.message });
+          if (resolveWait) { resolveWait(); resolveWait = null; }
+        });
+
+        try {
+          while (!done) {
+            if (chunks.length > 0) {
+              yield chunks.shift()!;
+            } else {
+              await new Promise<void>((r) => { resolveWait = r; });
+            }
+          }
+          while (chunks.length > 0) {
+            yield chunks.shift()!;
+          }
+        } finally {
+          opts.signal?.removeEventListener('abort', onAbort);
+          firstTurn = false;
+        }
+      },
+
+      close() {
+        alive = false;
+      },
+    };
+
+    return session;
+  >>>

@@ -1,0 +1,86 @@
+import from="ink" names="Box,Text"
+// Spinner imported in generated file header
+import from="@agon/core" names="resolveWorkingDir,currentBranch,tracker"
+import from="@agon/core" names="ChatSession,AgonConfig" types=true
+import from="../components.js" names="engineColor,color256toHex,ENGINE_COLORS,TokenGauge"
+
+screen name=StatusBar target=ink
+  prop name=config type=AgonConfig
+  prop name=chatSession type=ChatSession
+  render
+    handler <<<
+      const cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
+      const cesarColor = color256toHex(ENGINE_COLORS[cesarId] ?? 245);
+      const workDir = resolveWorkingDir();
+      let branch = '';
+      try { branch = currentBranch(workDir); } catch {}
+      const cwd = workDir.replace(process.env.HOME ?? '', '~');
+      const stats = tracker.getStats();
+      const cost = stats.totalCostUsd > 0 ? `$${stats.totalCostUsd.toFixed(2)}` : '';
+      const msgs = chatSession.messages.length;
+      const tokens = stats.totalTokens;
+      const contextWindows: Record<string, number> = {
+        claude: 1000000, codex: 200000, gemini: 1000000, opencode: 200000,
+      };
+      const contextBudget = contextWindows[cesarId] ?? 200000;
+
+      return (
+        <Box paddingTop={0}>
+          <Text>
+            <Text color={cesarColor} bold>{cesarId}</Text>
+            <Text dimColor>{' in '}</Text>
+            <Text color="#60a5fa">{cwd}</Text>
+            {branch ? <Text dimColor>{' on '}<Text color="#34d399">{branch}</Text></Text> : null}
+            {tokens > 0 ? <Text dimColor>{' | '}</Text> : null}
+            {tokens > 0 ? <TokenGauge tokens={tokens} maxTokens={contextBudget} /> : null}
+            {tokens > 0 ? <Text dimColor>{` | ${(tokens / 1000).toFixed(1)}k tok`}</Text> : null}
+            {msgs > 0 ? <Text dimColor>{` · ${msgs} msgs`}</Text> : null}
+            {cost ? <Text dimColor>{` · ${cost}`}</Text> : null}
+          </Text>
+        </Box>
+      );
+    >>>
+
+screen name=StatusLine target=ink
+  prop name=startTime type=number
+  prop name=engineId type=string optional=true
+  prop name=color type=number optional=true
+  state name=elapsed type=number initial="0"
+  effect
+    handler <<<
+      const interval = setInterval(() => {
+        setElapsed(Math.floor((Date.now() - startTime) / 1000));
+      }, 1000);
+      return () => clearInterval(interval);
+    >>>
+  render
+    handler <<<
+      const c = color ? color256toHex(color) : '#a78bfa';
+      const secs = elapsed;
+      const eId = engineId ?? 'cesar';
+      return (
+        <Box paddingLeft={1}>
+          <Text>
+            <Text color={c}><Spinner type="dots" /></Text>
+            <Text color={c} bold>{` ${eId}`}</Text>
+            <Text dimColor>{` thinking\u2026 (${secs}s)`}</Text>
+          </Text>
+        </Box>
+      );
+    >>>
+
+screen name=BackgroundJobRail target=ink
+  prop name=jobs type="any[]"
+  render
+    handler <<<
+      if (jobs.length === 0) return null;
+      return (
+        <Box paddingX={1}>
+          {jobs.map((job: any) => (
+            <Text key={job.id} dimColor>
+              {'⟳ '}{job.type}{': '}{job.label.slice(0, 30)}{'  '}
+            </Text>
+          ))}
+        </Box>
+      );
+    >>>

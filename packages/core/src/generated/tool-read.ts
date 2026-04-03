@@ -1,0 +1,133 @@
+import { readFileSync, statSync, existsSync } from 'node:fs';
+
+import { resolve, relative } from 'node:path';
+
+import type { ToolResult, ToolContext, ToolHandler, ToolDefinition, PermissionDecision, FileState } from './tool-types.js';
+
+import { FileStateCache } from './file-state-cache.js';
+
+function formatWithLineNumbers(text: string, startLine: number): string {
+  const lines = text.split('\n');
+  return lines.map((line, i) => {
+    const num = String(startLine + i).padStart(6, ' ');
+    return `${num}\t${line}`;
+  }).join('\n');
+}
+
+export function createReadTool(): ToolHandler {
+  const definition: ToolDefinition = {
+    name: 'Read',
+    description: 'Read a file from the filesystem with optional offset and limit. Returns content with line numbers.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        file_path: { type: 'string', description: 'Absolute or relative path to the file to read' },
+        offset: { type: 'number', description: 'Line number to start reading from (0-based). Optional.' },
+        limit: { type: 'number', description: 'Maximum number of lines to read. Optional, defaults to 2000.' },
+      },
+      required: ['file_path'],
+    },
+    maxResultSizeChars: 100000,
+    isReadOnly: true,
+    isConcurrencySafe: true,
+  };
+  
+  const validate = (input: Record<string, unknown>, _ctx: ToolContext): string | null => {
+    if (!input.file_path || typeof input.file_path !== 'string') {
+      return 'Missing required parameter: file_path';
+    }
+    if (input.offset !== undefined && (typeof input.offset !== 'number' || input.offset < 0)) {
+      return 'offset must be a non-negative number';
+    }
+    if (input.limit !== undefined && (typeof input.limit !== 'number' || input.limit <= 0)) {
+      return 'limit must be a positive number';
+    }
+    return null;
+  };
+  
+  const checkPermission = (input: Record<string, unknown>, ctx: ToolContext): PermissionDecision => {
+    const filePath = resolve(ctx.cwd, input.file_path as string);
+    const rel = relative(ctx.cwd, filePath);
+  
+    // Deny if path escapes cwd (starts with '..' or is absolute outside cwd)
+    if (rel.startsWith('..') || resolve(ctx.cwd, rel) !== filePath) {
+      return {
+        behavior: 'deny',
+        message: `Read denied: ${filePath} is outside the working directory`,
+        reason: 'path-outside-cwd',
+      };
+    }
+  
+    return { behavior: 'allow' };
+  };
+  
+  const execute = async (input: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> => {
+    const filePath = resolve(ctx.cwd, input.file_path as string);
+  
+    // Check if file exists
+    if (!existsSync(filePath)) {
+      return { ok: false, content: '', error: `File not found: ${filePath}` };
+    }
+  
+    // Stat the file for mtime
+    let mtime: number;
+    try {
+      const stat = statSync(filePath);
+      mtime = stat.mtimeMs;
+    } catch (err) {
+      return { ok: false, content: '', error: `Cannot stat file: ${err instanceof Error ? err.message : String(err)}` };
+    }
+  
+    // Dedup check: if cache has it and mtime hasn't changed, return short message
+    const cache = new FileStateCache();
+    const cached = cache.get(filePath);
+    if (cached && !cache.isStale(filePath, mtime)) {
+      // If same offset/limit requested, file is unchanged
+      const reqOffset = (input.offset as number | undefined) ?? 0;
+      const reqLimit = (input.limit as number | undefined) ?? undefined;
+      if (cached.offset === reqOffset && cached.limit === reqLimit) {
+        return { ok: true, content: '[File unchanged since last read]' };
+      }
+    }
+  
+    // Read file content
+    let fullContent: string;
+    try {
+      fullContent = readFileSync(filePath, 'utf-8');
+    } catch (err) {
+      return { ok: false, content: '', error: `Cannot read file: ${err instanceof Error ? err.message : String(err)}` };
+    }
+  
+    // Apply offset/limit
+    const lines = fullContent.split('\n');
+    const offset = (input.offset as number | undefined) ?? 0;
+    const limit = (input.limit as number | undefined) ?? 2000;
+    const sliced = lines.slice(offset, offset + limit);
+    const isPartialView = offset > 0 || sliced.length < lines.length;
+  
+    // Format with line numbers (1-based, like cat -n)
+    const formatted = formatWithLineNumbers(sliced.join('\n'), offset + 1);
+  
+    // Update cache
+    const state: FileState = {
+      content: fullContent,
+      timestamp: mtime,
+      offset: offset,
+      limit: limit,
+      isPartialView,
+    };
+    cache.set(filePath, state);
+  
+    // Build result with metadata
+    const totalLines = lines.length;
+    let result = formatted;
+    if (isPartialView) {
+      result += `\n\n[Showing lines ${offset + 1}-${offset + sliced.length} of ${totalLines} total]`;
+    }
+  
+    return { ok: true, content: result };
+  };
+  
+  return { definition, validate, checkPermission, execute };
+}
+

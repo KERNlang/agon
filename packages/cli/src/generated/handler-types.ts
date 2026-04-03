@@ -1,4 +1,4 @@
-import type { EngineRegistry, EngineAdapter, Plan, AgonConfig, ChatSession } from '@agon/core';
+import type { EngineRegistry, EngineAdapter, Plan, AgonConfig, ChatSession, PersistentSession } from '@agon/core';
 
 export interface EngineProgress {
   id: string;
@@ -35,6 +35,7 @@ export type OutputEvent =
   | { type: 'verdict'; summary: string }
   | { type: 'question'; prompt: string; resolve: (answer: string) => void }
   | { type: 'patch-review'; winnerId: string; patchPath: string; patchContent: string }
+  | { type: 'tool-call'; engineId: string; tool: string; input: string; status: 'running'|'done'|'error'; output?: string }
   | { type: 'user-message'; content: string }
   | { type: 'response-meta'; engineId: string; elapsed: number }
   | { type: 'dashboard'; available: string[]; enabled: string[]; defaultEngine: string; eloTop?: { id: string; rating: number }; totalForges: number; workspace?: { name: string; path: string; isKern?: boolean }; runCount: number };
@@ -49,5 +50,7 @@ export interface HandlerContext {
   setCurrentPlan: (plan: Plan | null) => void;
   setActiveAbort: (abort: AbortController | null) => void;
   askQuestion: (prompt: string) => Promise<string>;
+  cesarSession: PersistentSession | null;
+  setCesarSession: (session: PersistentSession | null) => void;
 }
 

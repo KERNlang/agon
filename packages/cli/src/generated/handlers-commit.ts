@@ -1,6 +1,6 @@
 import { execSync } from 'node:child_process';
 
-import { loadConfig } from '@agon/core';
+import { loadConfig, resolveWorkingDir } from '@agon/core';
 
 import type { Dispatch, HandlerContext } from '../handlers/types.js';
 
@@ -23,7 +23,7 @@ function classifyChanges(diff: string): string {
 }
 
 export async function handleCommit(message: string|undefined, dispatch: Dispatch, ctx: HandlerContext): Promise<void> {
-  const cwd = process.cwd();
+  const cwd = resolveWorkingDir();
   
   dispatch({ type: 'spinner-start', message: 'Analyzing changes...' });
   

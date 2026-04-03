@@ -2,7 +2,7 @@ import { join } from 'node:path';
 
 import { mkdirSync, readFileSync } from 'node:fs';
 
-import { ensureAgonHome, RUNS_DIR, createPlan, approvePlan, startPlan, mergeStepResult, cancelPlan, failPlan, savePlan, scanProjectContext, getActiveWorkspace, snapshotWorkspace, tracker } from '@agon/core';
+import { ensureAgonHome, RUNS_DIR, createPlan, approvePlan, startPlan, mergeStepResult, cancelPlan, failPlan, savePlan, scanProjectContext, getActiveWorkspace, snapshotWorkspace, tracker, resolveWorkingDir } from '@agon/core';
 
 import type { Plan, PlanStepInput, ApprovalLevel } from '@agon/core';
 
@@ -103,7 +103,7 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
       const ws = getActiveWorkspace();
       const snapshot = ws
         ? snapshotWorkspace(ws)
-        : { id: 'cwd', path: process.cwd(), headSha: 'unknown', branch: 'unknown', dirty: false };
+        : { id: 'cwd', path: resolveWorkingDir(), headSha: 'unknown', branch: 'unknown', dirty: false };
     
       const forgeSteps: PlanStepInput[] = [
         { id: 'baseline', kind: 'fitness', label: 'Baseline fitness check', effects: ['exec'] },
@@ -145,7 +145,8 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
     const forgeDir = join(RUNS_DIR, `forge-${Date.now()}`);
     mkdirSync(forgeDir, { recursive: true });
     
-    const projectCtx = scanProjectContext(process.cwd(), config.projectContext || undefined, config.contextFormat);
+    const forgeCwd = resolveWorkingDir();
+    const projectCtx = scanProjectContext(forgeCwd, config.projectContext || undefined, config.contextFormat);
     
     const engineStatus: Record<string, string> = {};
     const startTime = Date.now();
@@ -174,7 +175,7 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
         {
           task,
           fitnessCmd: fitness,
-          cwd: process.cwd(),
+          cwd: forgeCwd,
           forgeDir,
           engines,
           context: projectCtx,

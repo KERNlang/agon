@@ -28,7 +28,7 @@ export type Intent =
   | { type: 'build'; input: string }
   | { type: 'pipeline'; task: string; fitnessCmd: string | null }
   | { type: 'run'; input: string }
-  | { type: 'cesar'; input: string }
+  | { type: 'cesar'; engineIds: string[] }
   | { type: 'clear' }
   | { type: 'slash-list' }
   | { type: 'help' }

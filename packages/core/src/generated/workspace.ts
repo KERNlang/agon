@@ -115,6 +115,11 @@ export function snapshotWorkspace(ws: Workspace): WorkspaceSnapshot {
   };
 }
 
+export function resolveWorkingDir(): string {
+  const ws = getActiveWorkspace();
+  return ws ? ws.path : process.cwd();
+}
+
 export function ensureCurrentWorkspace(cwd: string): Workspace {
   const state = loadState();
   const path = resolve(cwd);

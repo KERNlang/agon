@@ -249,14 +249,39 @@ fn name=handleUse params="engineIds:string[], dispatch:Dispatch, ctx:HandlerCont
     }
     setSessionEngines(valid);
     configSet('forgeEnabledEngines', valid);
-    // When a single engine is selected, also make it the default starter
-    if (valid.length === 1) {
-      configSet('forgeFixedStarter', valid[0]);
-      dispatch({ type: 'success', message: `Default engine: ${valid[0]}` });
-    } else {
-      dispatch({ type: 'success', message: `Active engines: ${valid.join(', ')}` });
+
+    dispatch({ type: 'success', message: `Active engines: ${valid.join(', ')}` });
+    dispatch({ type: 'info', message: 'Saved — persists across sessions. Use /cesar <engine> to change Cesar brain separately.' });
+  >>>
+
+fn name=handleCesar params="engineId:string, dispatch:Dispatch, ctx:HandlerContext" returns=void
+  handler <<<
+    if (!engineId) {
+      // Show current Cesar brain
+      const config = ctx.config;
+      const current = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
+      dispatch({ type: 'info', message: `Cesar brain: ${current}` });
+      dispatch({ type: 'info', message: 'Usage: /cesar <engine> (e.g. /cesar codex)' });
+      return;
     }
-    dispatch({ type: 'info', message: 'Saved — persists across sessions' });
+
+    const available = ctx.registry.availableIds();
+    if (!available.includes(engineId)) {
+      dispatch({ type: 'error', message: `Engine "${engineId}" not available. Available: ${available.join(', ')}` });
+      return;
+    }
+
+    // Only change Cesar brain — do NOT touch sessionEngines, forgeEnabledEngines, or forgeFixedStarter
+    configSet('cesarEngine', engineId);
+
+    // Kill old persistent session so next message boots fresh with new engine
+    if (ctx.cesarSession) {
+      ctx.cesarSession.close();
+      ctx.setCesarSession(null);
+    }
+
+    dispatch({ type: 'success', message: `Cesar brain set to: ${engineId}` });
+    dispatch({ type: 'info', message: 'Forge/tribunal/brainstorm engines unchanged. Use /use to change those.' });
   >>>
 
 fn name=handleTokens params="dispatch:Dispatch" returns=void
@@ -284,7 +309,7 @@ fn name=handleTokens params="dispatch:Dispatch" returns=void
     dispatch({ type: 'info', message: `${stats.dispatches} dispatches across ${Object.keys(stats.byEngine).length} engines` });
   >>>
 
-fn name=handleWorkspace params="action:string, dispatch:Dispatch, path?:string" returns=void
+fn name=handleWorkspace params="action:string, dispatch:Dispatch, ctx:HandlerContext, path?:string" returns=void
   handler <<<
     switch (action) {
       case 'add': {
@@ -303,7 +328,15 @@ fn name=handleWorkspace params="action:string, dispatch:Dispatch, path?:string" 
       case 'switch': {
         if (!path) { dispatch({ type: 'error', message: 'Usage: /workspace switch <id>' }); return; }
         const ws = switchWorkspace(path);
-        if (ws) dispatch({ type: 'success', message: `Active: ${ws.name} ${ws.path}` });
+        if (ws) {
+          dispatch({ type: 'success', message: `Active: ${ws.name} ${ws.path}` });
+          // Invalidate Cesar session — it was booted with previous workspace context
+          if (ctx.cesarSession) {
+            ctx.cesarSession.close();
+            ctx.setCesarSession(null);
+            dispatch({ type: 'info', message: 'Cesar session reset for new workspace' });
+          }
+        }
         else dispatch({ type: 'error', message: `Workspace "${path}" not found` });
         break;
       }

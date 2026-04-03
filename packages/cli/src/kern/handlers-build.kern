@@ -1,6 +1,7 @@
 import from="node:path" names="join"
 import from="node:fs" names="mkdirSync,readFileSync,existsSync"
-import from="@agon/core" names="ensureAgonHome,RUNS_DIR,appendMessage,tracker,StreamParser,scanProjectContext"
+import from="@agon/core" names="ensureAgonHome,RUNS_DIR,appendMessage,tracker,StreamParser,scanProjectContext,resolveWorkingDir,createPlan,approvePlan,startPlan,mergeStepResult,cancelPlan,failPlan,savePlan,getActiveWorkspace,snapshotWorkspace"
+import from="@agon/core" names="Plan,PlanStepInput,ApprovalLevel" types=true
 import from="../output.js" names="ENGINE_COLORS"
 import from="../handlers/types.js" names="Dispatch,HandlerContext" types=true
 
@@ -29,7 +30,7 @@ fn name=injectFileReferences params="input:string, cwd:string" returns=string ex
     return result;
   >>>
 
-fn name=handleBuild params="input:string, dispatch:Dispatch, ctx:HandlerContext" returns="Promise<void>" async=true
+fn name=handleBuild params="input:string, dispatch:Dispatch, ctx:HandlerContext, existingPlan?:Plan" returns="Promise<void>" async=true
   signal name=abort
   handler <<<
     ensureAgonHome();
@@ -59,7 +60,7 @@ fn name=handleBuild params="input:string, dispatch:Dispatch, ctx:HandlerContext"
     const engineId: string = detected || (agentIds.includes(preferred) ? preferred : agentIds[0]);
 
     const config = ctx.config;
-    const cwd = process.cwd();
+    const cwd = resolveWorkingDir();
     const projectCtx = scanProjectContext(cwd, config.projectContext || undefined, config.contextFormat as 'plain' | 'kern');
     const enriched = injectFileReferences(message, cwd);
 
@@ -78,6 +79,50 @@ fn name=handleBuild params="input:string, dispatch:Dispatch, ctx:HandlerContext"
     const color = (ENGINE_COLORS as Record<string, number>)[engineId] ?? 245;
     const outputDir = join(RUNS_DIR, `build-${Date.now()}`);
     mkdirSync(outputDir, { recursive: true });
+
+    // ── Plan model: preview → approve → implement ──
+    let plan: Plan;
+
+    if (existingPlan) {
+      plan = startPlan(existingPlan);
+      ctx.setCurrentPlan(plan);
+      savePlan(plan);
+    } else {
+      const ws = getActiveWorkspace();
+      const snapshot = ws
+        ? snapshotWorkspace(ws)
+        : { id: 'cwd', path: cwd, headSha: 'unknown', branch: 'unknown', dirty: false };
+
+      const buildSteps: PlanStepInput[] = [
+        { id: 'implement', kind: 'dispatch', label: `Agent build: ${engineId}`, effects: ['exec', 'write', 'network'] },
+      ];
+
+      plan = createPlan(
+        { type: 'build', task: message, engineId },
+        snapshot,
+        buildSteps,
+      );
+      ctx.setCurrentPlan(plan);
+
+      dispatch({ type: 'plan', plan });
+
+      const approvalLevel = (config.approvalLevel ?? 'plan') as ApprovalLevel;
+      if (approvalLevel !== 'auto') {
+        const answer = await ctx.askQuestion('Approve build plan? [Y/n]');
+        if (answer.trim().toLowerCase() === 'n') {
+          plan = cancelPlan(plan);
+          ctx.setCurrentPlan(plan);
+          savePlan(plan);
+          dispatch({ type: 'info', message: 'Build cancelled.' });
+          return;
+        }
+      }
+
+      plan = approvePlan(plan);
+      plan = startPlan(plan);
+      ctx.setCurrentPlan(plan);
+      savePlan(plan);
+    }
 
     ctx.setActiveAbort(abort);
 
@@ -153,6 +198,9 @@ fn name=handleBuild params="input:string, dispatch:Dispatch, ctx:HandlerContext"
     } catch (err) {
       dispatch({ type: 'spinner-stop' });
       dispatch({ type: 'error', message: `${engineId}: ${err instanceof Error ? err.message : String(err)}` });
+      plan = failPlan(plan, err instanceof Error ? err.message : String(err));
+      ctx.setCurrentPlan(plan);
+      savePlan(plan);
       return;
     }
 
@@ -174,6 +222,15 @@ fn name=handleBuild params="input:string, dispatch:Dispatch, ctx:HandlerContext"
       appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
       appendMessage(ctx.chatSession, { role: 'engine', engineId, content: response, timestamp: new Date().toISOString() });
       tracker.record(engineId, input, response);
+
+      // Mark plan step as completed
+      plan = mergeStepResult(plan, 'implement', { state: 'completed' as any, engineId });
+      ctx.setCurrentPlan(plan);
+      savePlan(plan);
+    } else {
+      plan = failPlan(plan, 'No response from engine');
+      ctx.setCurrentPlan(plan);
+      savePlan(plan);
     }
   >>>
   cleanup <<<

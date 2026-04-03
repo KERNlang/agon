@@ -1,6 +1,6 @@
 import from="node:path" names="join"
 import from="node:fs" names="mkdirSync"
-import from="@agon/core" names="ensureAgonHome,RUNS_DIR,scanProjectContext,tracker,appendMessage"
+import from="@agon/core" names="ensureAgonHome,RUNS_DIR,scanProjectContext,tracker,appendMessage,resolveWorkingDir"
 import from="../output.js" names="ENGINE_COLORS"
 import from="../handlers/types.js" names="Dispatch,HandlerContext,EngineProgress" types=true
 
@@ -16,7 +16,8 @@ fn name=handleCampfire params="topic:string, dispatch:Dispatch, ctx:HandlerConte
     }
 
     const config = ctx.config;
-    const projectCtx = scanProjectContext(process.cwd(), config.projectContext || undefined, config.contextFormat as 'plain' | 'kern');
+    const cfCwd = resolveWorkingDir();
+    const projectCtx = scanProjectContext(cfCwd, config.projectContext || undefined, config.contextFormat as 'plain' | 'kern');
     const strategy = opts?.observerStrategy ?? 'all-respond';
     const leadId = opts?.leadEngine && engines.includes(opts.leadEngine) ? opts.leadEngine : engines[0];
 
@@ -75,7 +76,7 @@ fn name=handleCampfire params="topic:string, dispatch:Dispatch, ctx:HandlerConte
         const leadResult = await ctx.adapter.dispatch({
           engine: leadEngine,
           prompt: basePrompt,
-          cwd: process.cwd(),
+          cwd: cfCwd,
           mode: 'exec',
           timeout: 120,
           outputDir,
@@ -111,7 +112,7 @@ fn name=handleCampfire params="topic:string, dispatch:Dispatch, ctx:HandlerConte
             const result = await ctx.adapter.dispatch({
               engine,
               prompt: observerPrompt,
-              cwd: process.cwd(),
+              cwd: cfCwd,
               mode: 'exec',
               timeout: 120,
               outputDir,
@@ -142,7 +143,7 @@ fn name=handleCampfire params="topic:string, dispatch:Dispatch, ctx:HandlerConte
           const result = await ctx.adapter.dispatch({
             engine,
             prompt: basePrompt,
-            cwd: process.cwd(),
+            cwd: cfCwd,
             mode: 'exec',
             timeout: 120,
             outputDir,

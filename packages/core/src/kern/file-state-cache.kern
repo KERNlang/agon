@@ -1,0 +1,102 @@
+// ── File State Cache — Trust Boundary ────────────────────────────────
+// Read populates it, Edit/Write check it. Prevents stale writes.
+
+import from="./tool-types.js" names="FileState" types=true
+
+const name=MAX_CACHE_ENTRIES type=number
+  handler <<< 100 >>>
+
+const name=MAX_CACHE_BYTES type=number
+  handler <<< 25 * 1024 * 1024 >>>
+
+service name=FileStateCache singleton=true
+  field name=cache type="Map<string, FileState>"
+  field name=totalBytes type=number
+  field name=accessOrder type="string[]"
+
+  constructor
+    handler <<<
+      this.cache = new Map();
+      this.totalBytes = 0;
+      this.accessOrder = [];
+    >>>
+
+  method name=get params="filePath:string" returns="FileState|undefined"
+    handler <<<
+      const state = this.cache.get(filePath);
+      if (state) {
+        // Move to end of access order (LRU)
+        this.accessOrder = this.accessOrder.filter(p => p !== filePath);
+        this.accessOrder.push(filePath);
+      }
+      return state;
+    >>>
+
+  method name=set params="filePath:string, state:FileState" returns=void
+    handler <<<
+      const existing = this.cache.get(filePath);
+      if (existing) {
+        this.totalBytes -= existing.content.length;
+      }
+      this.cache.set(filePath, state);
+      this.totalBytes += state.content.length;
+      this.accessOrder = this.accessOrder.filter(p => p !== filePath);
+      this.accessOrder.push(filePath);
+      this.evict();
+    >>>
+
+  method name=has params="filePath:string" returns=boolean
+    handler <<<
+      return this.cache.has(filePath);
+    >>>
+
+  method name=isStale params="filePath:string, currentMtime:number" returns=boolean
+    handler <<<
+      const state = this.cache.get(filePath);
+      if (!state) return true;
+      return currentMtime > state.timestamp;
+    >>>
+
+  method name=wasReadFully params="filePath:string" returns=boolean
+    handler <<<
+      const state = this.cache.get(filePath);
+      if (!state) return false;
+      return !state.isPartialView;
+    >>>
+
+  method name=remove params="filePath:string" returns=void
+    handler <<<
+      const state = this.cache.get(filePath);
+      if (state) {
+        this.totalBytes -= state.content.length;
+        this.cache.delete(filePath);
+        this.accessOrder = this.accessOrder.filter(p => p !== filePath);
+      }
+    >>>
+
+  method name=clear returns=void
+    handler <<<
+      this.cache.clear();
+      this.totalBytes = 0;
+      this.accessOrder = [];
+    >>>
+
+  method name=size returns=number
+    handler <<<
+      return this.cache.size;
+    >>>
+
+  method name=evict returns=void export=false
+    handler <<<
+      while (
+        (this.cache.size > MAX_CACHE_ENTRIES || this.totalBytes > MAX_CACHE_BYTES)
+        && this.accessOrder.length > 0
+      ) {
+        const oldest = this.accessOrder.shift()!;
+        const state = this.cache.get(oldest);
+        if (state) {
+          this.totalBytes -= state.content.length;
+          this.cache.delete(oldest);
+        }
+      }
+    >>>

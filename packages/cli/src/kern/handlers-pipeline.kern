@@ -1,6 +1,6 @@
 import from="node:path" names="join"
 import from="node:fs" names="mkdirSync"
-import from="@agon/core" names="ensureAgonHome,RUNS_DIR,appendMessage,tracker,scanProjectContext,readOnlyDiff,diffLineCount,diffFileCount,buildCritiquePrompt,spawnWithTimeout"
+import from="@agon/core" names="ensureAgonHome,RUNS_DIR,appendMessage,tracker,scanProjectContext,readOnlyDiff,diffLineCount,diffFileCount,buildCritiquePrompt,spawnWithTimeout,resolveWorkingDir"
 import from="../output.js" names="ENGINE_COLORS"
 import from="../handlers/types.js" names="Dispatch,HandlerContext" types=true
 
@@ -16,7 +16,7 @@ fn name=handlePipeline params="input:string, dispatch:Dispatch, ctx:HandlerConte
     }
 
     const config = ctx.config;
-    const cwd = process.cwd();
+    const cwd = resolveWorkingDir();
     const preferred = config.forgeFixedStarter ?? 'claude';
     const buildEngine = agentIds.includes(preferred) ? preferred : agentIds[0];
     const reviewEngine = agentIds.find((id: string) => id !== buildEngine) ?? buildEngine;

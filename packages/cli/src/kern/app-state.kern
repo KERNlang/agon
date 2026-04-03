@@ -11,4 +11,4 @@ machine name=ReplState
   transition name=startReview from=idle to=reviewing
   transition name=finishReview from=reviewing to=idle
   transition name=finish from="busy|streaming|questioning" to=idle
-  transition name=cancel from="busy|streaming" to=idle
+  transition name=cancel from="busy|streaming|questioning" to=idle

@@ -1,6 +1,6 @@
 import from="node:path" names="join"
 import from="node:fs" names="mkdirSync,readFileSync"
-import from="@agon/core" names="ensureAgonHome,RUNS_DIR,createPlan,approvePlan,startPlan,mergeStepResult,cancelPlan,failPlan,savePlan,scanProjectContext,getActiveWorkspace,snapshotWorkspace,tracker"
+import from="@agon/core" names="ensureAgonHome,RUNS_DIR,createPlan,approvePlan,startPlan,mergeStepResult,cancelPlan,failPlan,savePlan,scanProjectContext,getActiveWorkspace,snapshotWorkspace,tracker,resolveWorkingDir"
 import from="@agon/core" names="Plan,PlanStepInput,ApprovalLevel" types=true
 import from="@agon/forge" names="runForge"
 import from="../output.js" names="ENGINE_COLORS"
@@ -98,7 +98,7 @@ fn name=handleForge params="task:string, fitnessCmd:string|null, dispatch:Dispat
       const ws = getActiveWorkspace();
       const snapshot = ws
         ? snapshotWorkspace(ws)
-        : { id: 'cwd', path: process.cwd(), headSha: 'unknown', branch: 'unknown', dirty: false };
+        : { id: 'cwd', path: resolveWorkingDir(), headSha: 'unknown', branch: 'unknown', dirty: false };
 
       const forgeSteps: PlanStepInput[] = [
         { id: 'baseline', kind: 'fitness', label: 'Baseline fitness check', effects: ['exec'] },
@@ -140,7 +140,8 @@ fn name=handleForge params="task:string, fitnessCmd:string|null, dispatch:Dispat
     const forgeDir = join(RUNS_DIR, `forge-${Date.now()}`);
     mkdirSync(forgeDir, { recursive: true });
 
-    const projectCtx = scanProjectContext(process.cwd(), config.projectContext || undefined, config.contextFormat);
+    const forgeCwd = resolveWorkingDir();
+    const projectCtx = scanProjectContext(forgeCwd, config.projectContext || undefined, config.contextFormat);
 
     const engineStatus: Record<string, string> = {};
     const startTime = Date.now();
@@ -169,7 +170,7 @@ fn name=handleForge params="task:string, fitnessCmd:string|null, dispatch:Dispat
         {
           task,
           fitnessCmd: fitness,
-          cwd: process.cwd(),
+          cwd: forgeCwd,
           forgeDir,
           engines,
           context: projectCtx,

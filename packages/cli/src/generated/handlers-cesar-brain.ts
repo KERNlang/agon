@@ -2,9 +2,11 @@ import { join } from 'node:path';
 
 import { mkdirSync } from 'node:fs';
 
-import type { EngineAdapter, ImageAttachment } from '@agon/core';
+import type { EngineAdapter, ImageAttachment, PersistentSession, PersistentSessionConfig, SessionChunk } from '@agon/core';
 
-import { EngineRegistry, loadConfig, ensureAgonHome, RUNS_DIR, appendMessage, tracker, scanProjectContext, StreamParser } from '@agon/core';
+import { EngineRegistry, loadConfig, ensureAgonHome, RUNS_DIR, appendMessage, tracker, scanProjectContext, StreamParser, createPersistentSession, resolveWorkingDir, ToolRegistry, FileStateCache, createReadTool, createEditTool, createWriteTool, createBashTool, createGrepTool, createGlobTool, buildToolSystemPrompt, parseToolCalls, processToolResponse } from '@agon/core';
+
+import type { ToolContext } from '@agon/core';
 
 import { ENGINE_COLORS } from '../output.js';
 
@@ -34,6 +36,85 @@ export function parseDelegation(response: string): {action:string|null, rest:str
   return { action: null, rest: response };
 }
 
+export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
+  // Return existing alive session
+  if (ctx.cesarSession && ctx.cesarSession.alive) {
+    return ctx.cesarSession;
+  }
+  
+  const config = ctx.config;
+  const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
+  let engine;
+  try {
+    engine = ctx.registry.get(cesarEngineId);
+  } catch {
+    throw new Error(`Cesar engine "${cesarEngineId}" not found`);
+  }
+  
+  const binaryPath = ctx.registry.findBinary(engine);
+  if (!binaryPath) {
+    throw new Error(`Binary for "${cesarEngineId}" not found`);
+  }
+  
+  // Build context for system prompt
+  const cesarCwd = resolveWorkingDir();
+  const projectCtx = scanProjectContext(cesarCwd, config.projectContext || undefined);
+  const available = ctx.activeEngines();
+  const engineList = available.map((id: string) => {
+    try {
+      const e = ctx.registry.get(id);
+      const hasAgent = !!e.agent;
+      return `- ${id}${hasAgent ? ' (agent-capable)' : ''}`;
+    } catch { return `- ${id}`; }
+  }).join('\n');
+  
+  const systemParts: string[] = [CESAR_SYSTEM_PROMPT];
+  if (projectCtx) systemParts.push(`## PROJECT CONTEXT\n${projectCtx}`);
+  systemParts.push(`## AVAILABLE ENGINES\n${engineList}`);
+  
+  // Replay existing conversation history into system prompt so Cesar doesn't lose context on reboot
+  if (ctx.chatSession && ctx.chatSession.messages && ctx.chatSession.messages.length > 0) {
+    const historyLines: string[] = [];
+    // Cap at last 20 messages to avoid blowing context
+    const recent = ctx.chatSession.messages.slice(-20);
+    for (const msg of recent) {
+      if (msg.role === 'user') {
+        historyLines.push(`User: ${msg.content}`);
+      } else {
+        const eid = (msg as any).engineId ?? 'engine';
+        historyLines.push(`${eid}: ${msg.content}`);
+      }
+    }
+    systemParts.push(`## CONVERSATION HISTORY (session resumed)\nThe user has an ongoing conversation. Here is the recent context:\n\n${historyLines.join('\n\n')}`);
+  }
+  
+  // Initialize tool registry and inject tool prompt — works with ANY engine
+  const toolRegistry = new ToolRegistry();
+  toolRegistry.register(createReadTool());
+  toolRegistry.register(createEditTool());
+  toolRegistry.register(createWriteTool());
+  toolRegistry.register(createBashTool());
+  toolRegistry.register(createGrepTool());
+  toolRegistry.register(createGlobTool());
+  const toolPrompt = buildToolSystemPrompt(toolRegistry);
+  systemParts.push(toolPrompt);
+  
+  // Store registry on context for tool execution during responses
+  (ctx as any)._toolRegistry = toolRegistry;
+  
+  const sessionConfig: PersistentSessionConfig = {
+    engine,
+    binaryPath,
+    cwd: cesarCwd,
+    systemPrompt: systemParts.join('\n\n'),
+  };
+  
+  const session = createPersistentSession(sessionConfig);
+  await session.start();
+  ctx.setCesarSession(session);
+  return session;
+}
+
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string}> {
   const abort = new AbortController();
   try {
@@ -44,133 +125,89 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
     const available = ctx.activeEngines();
   
     if (!available.includes(cesarEngineId)) {
-      // Cesar engine not available, fall through to regular chat
       return { delegated: false, responded: false };
     }
   
-    let engine;
-    try {
-      engine = ctx.registry.get(cesarEngineId);
-    } catch {
-      return { delegated: false, responded: false };
-    }
-  
-    // Build context with conversation history
-    const recent = ctx.chatSession.messages.slice(-30);
-    const history = recent.length > 0
-      ? recent.map((m: any) => m.role === 'user' ? `User: ${m.content}` : `${m.engineId ?? 'Cesar'}: ${m.content}`).join('\n\n')
-      : '';
-    const projectCtx = scanProjectContext(process.cwd(), config.projectContext || undefined);
-  
-    const parts: string[] = [];
-    parts.push(CESAR_SYSTEM_PROMPT);
-    if (projectCtx) parts.push(`## PROJECT CONTEXT\n${projectCtx}`);
-  
-    // Include available engines info
-    const engineList = available.map((id: string) => {
-      try {
-        const e = ctx.registry.get(id);
-        const hasAgent = !!e.agent;
-        return `- ${id}${hasAgent ? ' (agent-capable)' : ''}`;
-      } catch { return `- ${id}`; }
-    }).join('\n');
-    parts.push(`## AVAILABLE ENGINES\n${engineList}`);
-  
-    if (history) parts.push(`## CONVERSATION\n${history}`);
-    parts.push(`## USER\n${input}`);
-  
-    const prompt = parts.join('\n\n');
     const color = ENGINE_COLORS[cesarEngineId] ?? 245;
-    const outputDir = join(RUNS_DIR, `cesar-${Date.now()}`);
-    mkdirSync(outputDir, { recursive: true });
-  
     ctx.setActiveAbort(abort);
     dispatch({ type: 'spinner-start', message: 'Cesar thinking…', color });
   
+    // Boot or reuse persistent session
+    let session: PersistentSession;
+    try {
+      session = await ensureCesarSession(ctx);
+    } catch (err) {
+      dispatch({ type: 'spinner-stop' });
+      return { delegated: false, responded: false };
+    }
+  
     let response = '';
     let streaming = false;
+    let delegated = false;
   
     try {
-      if (ctx.adapter.dispatchStream) {
-        const gen = ctx.adapter.dispatchStream({
-          engine, prompt, cwd: process.cwd(),
-          mode: 'exec', timeout: Math.min(config.timeout ?? 90, 90),
-          outputDir, signal: abort.signal, images: images ?? [],
-        });
+      const gen = session.send({ message: input, signal: abort.signal, images: images?.map(img => img.path) });
   
-        const parser = new StreamParser();
+      for await (const chunk of gen) {
+        if (abort.signal.aborted) break;
   
-        while (true) {
-          const { value, done } = await gen.next();
-          if (done) break;
-          if (abort.signal.aborted) break;
-  
-          // stderr chunks (status updates)
-          if (value.startsWith('\x00')) {
-            const status = value.slice(1).trim();
-            if (status) dispatch({ type: 'spinner-update', message: `Cesar ${status}` });
-            continue;
-          }
-  
-          // Parse stream (handles JSONL from claude --output-format stream-json)
-          for (const parsed of parser.feed(value)) {
-            if (parsed.type === 'status') {
-              dispatch({ type: 'spinner-update', message: `Cesar ${parsed.content}` });
-              continue;
-            }
-            if (parsed.type === 'result' && !streaming) {
-              response = parsed.content;
-              continue;
-            }
-            if (parsed.type === 'text' || parsed.type === 'raw') {
-              if (!streaming) {
-                // Check first text for delegation marker
-                response += parsed.content;
-                const { action } = parseDelegation(response);
-                if (action) {
-                  dispatch({ type: 'spinner-stop' });
-                  const { rest } = parseDelegation(response);
-                  appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
-                  appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
-                  tracker.record(cesarEngineId, input, response);
-                  if (rest) dispatch({ type: 'info', message: `Cesar: ${rest}` });
-                  return { delegated: true, responded: true, action, reasoning: rest };
-                }
-                dispatch({ type: 'spinner-stop' });
-                streaming = true;
-                dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: response });
-              } else {
-                response += parsed.content;
-                dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: parsed.content });
-              }
-            }
-          }
+        if (chunk.type === 'status') {
+          dispatch({ type: 'spinner-update', message: `Cesar ${chunk.content}` });
+          continue;
         }
   
-        // Flush remaining buffered data
-        for (const parsed of parser.flush()) {
-          if (parsed.type === 'text' || parsed.type === 'raw') {
-            if (!streaming) {
+        if (chunk.type === 'tool_call') {
+          const meta = (chunk.metadata ?? {}) as Record<string, unknown>;
+          dispatch({
+            type: 'tool-call',
+            engineId: cesarEngineId,
+            tool: chunk.content || 'tool',
+            input: typeof meta.input === 'string' ? meta.input : JSON.stringify(meta.input ?? '').slice(0, 100),
+            status: (meta.status as any) ?? 'running',
+          });
+          continue;
+        }
+  
+        if (chunk.type === 'error') {
+          dispatch({ type: 'spinner-stop' });
+          // Session died — clear it so next message reboots
+          ctx.setCesarSession(null);
+          return { delegated: false, responded: false };
+        }
+  
+        if (chunk.type === 'done') {
+          break;
+        }
+  
+        if (chunk.type === 'text') {
+          if (!streaming) {
+            response += chunk.content;
+            // Check for delegation marker before streaming
+            const { action } = parseDelegation(response);
+            if (action) {
               dispatch({ type: 'spinner-stop' });
-              streaming = true;
+              const { rest } = parseDelegation(response);
+              appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
+              appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
+              tracker.record(cesarEngineId, input, response);
+              if (rest) dispatch({ type: 'info', message: `Cesar: ${rest}` });
+              delegated = true;
+              return { delegated: true, responded: true, action, reasoning: rest };
             }
-            dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: parsed.content });
-            response += parsed.content;
-          } else if (parsed.type === 'result' && !streaming) {
-            response = parsed.content;
+            dispatch({ type: 'spinner-stop' });
+            streaming = true;
+            dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: response });
+          } else {
+            response += chunk.content;
+            dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: chunk.content });
           }
         }
-      } else {
-        const result = await ctx.adapter.dispatch({
-          engine, prompt, cwd: process.cwd(),
-          mode: 'exec', timeout: Math.min(config.timeout ?? 90, 90),
-          outputDir, signal: abort.signal, images: images ?? [],
-        });
-        response = result.stdout;
       }
     } catch (err) {
       dispatch({ type: 'spinner-stop' });
-      return { delegated: false, responded: false }; // Fall back to regular chat on error
+      // Session error — clear and fall back
+      ctx.setCesarSession(null);
+      return { delegated: false, responded: false };
     }
   
     if (abort.signal.aborted) {
@@ -192,7 +229,65 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       return { delegated: true, responded: true, action, reasoning: rest };
     }
   
-    // Direct response — render it
+    // Check for tool calls in response — execute locally, feed results back
+    const toolRegistry = (ctx as any)._toolRegistry as ToolRegistry | undefined;
+    if (toolRegistry && response) {
+      const toolParsed = parseToolCalls(response);
+      if (toolParsed.hasToolCalls) {
+        // Stop streaming — we're entering tool execution mode
+        if (streaming) dispatch({ type: 'streaming-end', engineId: cesarEngineId });
+        streaming = false;
+  
+        // Show text before tool calls
+        if (toolParsed.textBefore) {
+          dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: toolParsed.textBefore });
+        }
+  
+        // Build tool context
+        const fileStateCache = new FileStateCache();
+        const toolCtx: ToolContext = {
+          cwd: resolveWorkingDir(),
+          readFileState: (fileStateCache as any).cache,
+          abortSignal: abort.signal,
+          permissionMode: 'auto',
+          onProgress: (msg: string) => dispatch({ type: 'spinner-update', message: `Cesar: ${msg}` }),
+        };
+  
+        // Execute tool calls and show them inline
+        const processed = await processToolResponse(response, toolCtx, toolRegistry, {
+          onToolCall: (name: string, inp: Record<string, unknown>) => {
+            const preview = JSON.stringify(inp).slice(0, 80);
+            dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: name, input: preview, status: 'running' });
+          },
+          onToolResult: (name: string, result: any) => {
+            dispatch({
+              type: 'tool-call',
+              engineId: cesarEngineId,
+              tool: name,
+              input: '',
+              status: result.result.ok ? 'done' : 'error',
+              output: result.result.ok ? result.result.content.slice(0, 200) : result.result.error,
+            });
+          },
+        });
+  
+        // Send tool results back to session for next turn
+        if (processed.toolResults && session.alive) {
+          dispatch({ type: 'spinner-start', message: 'Cesar processing tool results…', color });
+          let toolResponse = '';
+          const toolGen = session.send({ message: processed.toolResults, signal: abort.signal });
+          for await (const chunk of toolGen) {
+            if (chunk.type === 'text') toolResponse += chunk.content;
+            if (chunk.type === 'done' || chunk.type === 'error') break;
+          }
+          response = toolResponse.trim();
+          // Recurse: the tool response might contain more tool calls
+          // For now, just show it — recursive tool loops can be added later
+        }
+      }
+    }
+  
+    // Direct response
     if (!streaming && response) {
       dispatch({ type: 'spinner-stop' });
       dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: response });
@@ -216,3 +311,4 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
     ctx.setActiveAbort(null);
   }
 }
+

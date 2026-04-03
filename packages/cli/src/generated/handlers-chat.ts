@@ -4,7 +4,7 @@ import { mkdirSync } from 'node:fs';
 
 import type { ImageAttachment } from '@agon/core';
 
-import { ensureAgonHome, RUNS_DIR, appendMessage, tracker, StreamParser, loadConfig, scanProjectContext } from '@agon/core';
+import { ensureAgonHome, RUNS_DIR, appendMessage, tracker, StreamParser, loadConfig, scanProjectContext, resolveWorkingDir } from '@agon/core';
 
 import { ENGINE_COLORS } from '../output.js';
 
@@ -60,7 +60,8 @@ export async function handleChat(input: string, dispatch: Dispatch, ctx: Handler
     const history = recent.length > 0
       ? recent.map((m: any) => m.role === 'user' ? `User: ${m.content}` : `${m.engineId ?? 'engine'}: ${m.content}`).join('\n\n')
       : '';
-    const projectCtx = scanProjectContext(process.cwd(), config.projectContext || undefined, config.contextFormat);
+    const cwd = resolveWorkingDir();
+    const projectCtx = scanProjectContext(cwd, config.projectContext || undefined, config.contextFormat);
     const parts: string[] = [];
     if (projectCtx) parts.push(`## PROJECT CONTEXT\n${projectCtx}`);
     if (history) parts.push(history);
@@ -78,7 +79,7 @@ export async function handleChat(input: string, dispatch: Dispatch, ctx: Handler
     const dispatchOpts = {
       engine,
       prompt,
-      cwd: process.cwd(),
+      cwd,
       mode: (useAgent ? 'agent' : 'exec') as 'agent' | 'exec',
       timeout: useAgent ? (config.agentTimeout ?? 600) : Math.min(config.timeout ?? 90, 90),
       outputDir,
@@ -95,18 +96,18 @@ export async function handleChat(input: string, dispatch: Dispatch, ctx: Handler
       if (useAgent && ctx.adapter.dispatchAgentStream) {
         const gen = ctx.adapter.dispatchAgentStream(dispatchOpts);
         const parser = new StreamParser();
-
+    
         while (true) {
           const { value, done } = await gen.next();
           if (done) break;
           if (abort.signal.aborted) break;
-
+    
           if (value.startsWith('\x00')) {
             const status = value.slice(1).trim();
             if (status) dispatch({ type: 'spinner-update', message: `${engineId} ${status}` });
             continue;
           }
-
+    
           for (const parsed of parser.feed(value)) {
             if (parsed.type === 'status') {
               dispatch({ type: 'spinner-update', message: `${engineId} ${parsed.content}` });
@@ -126,7 +127,7 @@ export async function handleChat(input: string, dispatch: Dispatch, ctx: Handler
             }
           }
         }
-
+    
         // Flush any remaining buffered data
         for (const parsed of parser.flush()) {
           if (parsed.type === 'text' || parsed.type === 'raw') {
@@ -226,3 +227,4 @@ export async function handleChat(input: string, dispatch: Dispatch, ctx: Handler
     ctx.setActiveAbort(null);
   }
 }
+

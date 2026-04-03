@@ -1,5 +1,5 @@
 import from="node:child_process" names="execSync"
-import from="@agon/core" names="loadConfig"
+import from="@agon/core" names="loadConfig,resolveWorkingDir"
 import from="../handlers/types.js" names="Dispatch,HandlerContext" types=true
 
 fn name=gitExec params="cmd:string, cwd:string" returns=string export=false
@@ -24,7 +24,7 @@ fn name=classifyChanges params="diff:string" returns=string export=false
 
 fn name=handleCommit async=true params="message:string|undefined, dispatch:Dispatch, ctx:HandlerContext" returns="Promise<void>"
   handler <<<
-    const cwd = process.cwd();
+    const cwd = resolveWorkingDir();
 
     dispatch({ type: 'spinner-start', message: 'Analyzing changes...' });
 

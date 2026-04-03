@@ -381,9 +381,10 @@ screen name=App target=ink
             const wrapWidth = contentWidth(mode === 'chat' ? 6 : 8);
             const segments = parseMarkdownBlocks(cleaned);
             return mode === 'chat' ? (
-              <Box flexDirection="column" marginY={1} paddingLeft={2}>
+              <Box flexDirection="column" marginY={1} paddingLeft={1}>
                 <Text><Text color={c} bold>{'● '}{streamingText.engineId}</Text></Text>
-                <RenderedSegments segments={segments} borderColor={c} wrapWidth={wrapWidth} />
+                <Text>{' '}</Text>
+                <RenderedSegments segments={segments} borderColor={''} wrapWidth={wrapWidth} />
               </Box>
             ) : (
               <Box flexDirection="column" marginY={1} paddingLeft={2}>

@@ -162,7 +162,7 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
               type: 'tool-call',
               engineId: cesarEngineId,
               tool: chunk.content || 'tool',
-              input: typeof meta.input === 'string' ? meta.input : JSON.stringify(meta.input ?? '').slice(0, 100),
+              input: typeof meta.input === 'string' ? meta.input : JSON.stringify(meta.input ?? ''),
               status: (meta.status as any) ?? 'running',
             });
             continue;
@@ -243,30 +243,53 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
             dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: toolParsed.textBefore });
           }
 
-          // Build tool context
+          // Build tool context — use 'ask' mode so non-readonly commands prompt the user
           const fileStateCache = new FileStateCache();
           const toolCtx: ToolContext = {
             cwd: resolveWorkingDir(),
             readFileState: (fileStateCache as any).cache,
             abortSignal: abort.signal,
-            permissionMode: 'auto',
+            permissionMode: 'ask',
             onProgress: (msg: string) => dispatch({ type: 'spinner-update', message: `Cesar: ${msg}` }),
           };
 
           // Execute tool calls and show them inline
+          const _lastToolInputs: Record<string, string> = {};
           const processed = await processToolResponse(response, toolCtx, toolRegistry, {
             onToolCall: (name: string, inp: Record<string, unknown>) => {
-              const preview = JSON.stringify(inp).slice(0, 80);
-              dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: name, input: preview, status: 'running' });
+              const inputJson = JSON.stringify(inp);
+              _lastToolInputs[name] = inputJson;
+              dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: name, input: inputJson, status: 'running' });
             },
             onToolResult: (name: string, result: any) => {
+              const out = result.result.ok ? result.result.content : result.result.error;
               dispatch({
                 type: 'tool-call',
                 engineId: cesarEngineId,
                 tool: name,
-                input: '',
+                input: _lastToolInputs[name] ?? '',
                 status: result.result.ok ? 'done' : 'error',
-                output: result.result.ok ? result.result.content.slice(0, 200) : result.result.error,
+                output: out,
+              });
+              delete _lastToolInputs[name];
+            },
+            onPermissionAsk: async (tool: string, message: string) => {
+              // Show styled permission prompt and wait for user response
+              return new Promise<boolean>((resolve) => {
+                // Extract command from the last tool input
+                const lastInput = _lastToolInputs[tool] ?? '{}';
+                let command = '';
+                try {
+                  const parsed = JSON.parse(lastInput);
+                  command = parsed.command ?? parsed.file_path ?? lastInput;
+                } catch { command = lastInput; }
+                dispatch({
+                  type: 'permission-ask',
+                  tool,
+                  command,
+                  reason: message,
+                  resolve,
+                } as any);
               });
             },
           });

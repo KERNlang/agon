@@ -4,7 +4,7 @@ import { resolve, relative } from 'node:path';
 
 import type { ToolResult, ToolContext, ToolHandler, ToolDefinition, PermissionDecision, FileState } from './tool-types.js';
 
-import { FileStateCache } from './file-state-cache.js';
+import { fileStateCache } from '../file-state-cache.js';
 
 function formatWithLineNumbers(text: string, startLine: number): string {
   const lines = text.split('\n');
@@ -79,7 +79,7 @@ export function createReadTool(): ToolHandler {
     }
   
     // Dedup check: if cache has it and mtime hasn't changed, return short message
-    const cache = new FileStateCache();
+    const cache = fileStateCache;
     const cached = cache.get(filePath);
     if (cached && !cache.isStale(filePath, mtime)) {
       // If same offset/limit requested, file is unchanged

@@ -2,6 +2,7 @@
 // Deny > Ask > Allow layering. Filesystem checks. Dangerous command detection.
 
 import from="node:path" names="resolve,relative,isAbsolute"
+import from="node:fs" names="realpathSync"
 import from="./tool-types.js" names="PermissionDecision,ToolContext" types=true
 
 interface name=PermissionRule
@@ -93,14 +94,20 @@ fn name=isDangerousCommand params="command:string" returns=boolean
 fn name=isReadOnlyCommand params="command:string" returns=boolean
   handler <<<
     const stripped = stripShellWrappers(command).trim();
-    // Check against known read-only commands
-    for (const safe of READONLY_COMMANDS) {
-      if (stripped === safe || stripped.startsWith(safe + ' ')) return true;
+    // Split on compound operators FIRST: &&, ||, ;, &
+    // All sub-commands must be read-only for the whole command to be safe
+    if (/[;&|]{1,2}/.test(stripped) && stripped !== '|') {
+      const parts = stripped.split(/\s*(?:&&|\|\||;|&)\s*/);
+      return parts.every((p: string) => p.trim() && isReadOnlyCommand(p.trim()));
     }
     // Pipe chains: all commands must be read-only
     if (stripped.includes('|')) {
       const parts = stripped.split('|').map((p: string) => p.trim());
       return parts.every((p: string) => isReadOnlyCommand(p));
+    }
+    // Check against known read-only commands
+    for (const safe of READONLY_COMMANDS) {
+      if (stripped === safe || stripped.startsWith(safe + ' ')) return true;
     }
     return false;
   >>>
@@ -122,8 +129,21 @@ fn name=checkBashPermission params="command:string, ctx:ToolContext" returns=Per
 fn name=isPathUnderCwd params="filePath:string, cwd:string" returns=boolean
   handler <<<
     const resolved = isAbsolute(filePath) ? filePath : resolve(cwd, filePath);
-    const rel = relative(cwd, resolved);
-    // Path is under cwd if relative path doesn't start with ..
+    // Resolve symlinks to prevent traversal via symlinks
+    let realPath: string;
+    let realCwd: string;
+    try {
+      realPath = realpathSync(resolved);
+    } catch {
+      // File doesn't exist yet — use unresolved path (safe for new files)
+      realPath = resolved;
+    }
+    try {
+      realCwd = realpathSync(cwd);
+    } catch {
+      realCwd = cwd;
+    }
+    const rel = relative(realCwd, realPath);
     return !rel.startsWith('..');
   >>>
 

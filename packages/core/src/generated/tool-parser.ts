@@ -31,7 +31,11 @@ export function parseToolCalls(text: string): ParseResult {
   
     // Find closing </tool> tag
     const closeIdx = text.indexOf(TOOL_CLOSE, jsonStart);
-    if (closeIdx === -1) break; // Unclosed tag — stop parsing
+    if (closeIdx === -1) {
+      // Unclosed tag — skip past it, look for more valid tool calls
+      pattern.lastIndex = jsonStart;
+      continue;
+    }
   
     // Capture text before this tool call
     if (toolCalls.length === 0) {

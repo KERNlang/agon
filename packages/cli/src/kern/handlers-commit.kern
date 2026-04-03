@@ -1,4 +1,4 @@
-import from="node:child_process" names="execSync"
+import from="node:child_process" names="execSync,execFileSync"
 import from="@agon/core" names="loadConfig,resolveWorkingDir"
 import from="../handlers/types.js" names="Dispatch,HandlerContext" types=true
 
@@ -95,8 +95,7 @@ fn name=handleCommit async=true params="message:string|undefined, dispatch:Dispa
     dispatch({ type: 'spinner-start', message: 'Committing...' });
 
     try {
-      const result = execSync(
-        `git commit -m "${commitMsg.replace(/"/g, '\\"')}"`,
+      const result = execFileSync('git', ['commit', '-m', commitMsg],
         { cwd, encoding: 'utf-8', timeout: 30000, stdio: ['ignore', 'pipe', 'pipe'] },
       );
       dispatch({ type: 'spinner-stop' });
@@ -113,8 +112,7 @@ fn name=handleCommit async=true params="message:string|undefined, dispatch:Dispa
         gitExec('git add -u', cwd);
 
         try {
-          const retry = execSync(
-            `git commit -m "${commitMsg.replace(/"/g, '\\"')}"`,
+          const retry = execFileSync('git', ['commit', '-m', commitMsg],
             { cwd, encoding: 'utf-8', timeout: 30000, stdio: ['ignore', 'pipe', 'pipe'] },
           );
           dispatch({ type: 'success', message: retry.trim() || `Committed: ${commitMsg}` });

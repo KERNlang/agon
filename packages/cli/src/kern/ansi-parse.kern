@@ -1,0 +1,130 @@
+// ── ANSI escape code parser — converts ANSI-styled text to typed segments ──
+
+interface name=AnsiSegment
+  field name=text type=string
+  field name=color type=string optional=true
+  field name=bgColor type=string optional=true
+  field name=bold type=boolean optional=true
+  field name=dim type=boolean optional=true
+  field name=italic type=boolean optional=true
+
+const name=ANSI_COLORS type="Record<number, string>"
+  handler <<<
+    ({
+      30: '#000000', 31: '#ef4444', 32: '#4ade80', 33: '#fbbf24',
+      34: '#60a5fa', 35: '#c084fc', 36: '#22d3ee', 37: '#e2e8f0',
+      90: '#6b7280', 91: '#f87171', 92: '#86efac', 93: '#fde047',
+      94: '#93c5fd', 95: '#d8b4fe', 96: '#67e8f9', 97: '#ffffff',
+    })
+  >>>
+
+const name=ANSI_BG_COLORS type="Record<number, string>"
+  handler <<<
+    ({
+      40: '#000000', 41: '#991b1b', 42: '#166534', 43: '#854d0e',
+      44: '#1e3a5f', 45: '#581c87', 46: '#155e75', 47: '#374151',
+      100: '#4b5563', 101: '#b91c1c', 102: '#15803d', 103: '#a16207',
+      104: '#1d4ed8', 105: '#7e22ce', 106: '#0e7490', 107: '#9ca3af',
+    })
+  >>>
+
+fn name=parseAnsiText params="text:string" returns="AnsiSegment[]"
+  handler <<<
+    const segments: AnsiSegment[] = [];
+    // Match ANSI escape sequences: ESC[ ... m
+    const ansiRe = /\x1b\[([0-9;]*)m/g;
+
+    let lastIndex = 0;
+    let currentColor: string | undefined;
+    let currentBg: string | undefined;
+    let bold = false;
+    let dim = false;
+    let italic = false;
+
+    let match: RegExpExecArray | null;
+    while ((match = ansiRe.exec(text)) !== null) {
+      // Push text before this escape sequence
+      if (match.index > lastIndex) {
+        const chunk = text.slice(lastIndex, match.index);
+        if (chunk) {
+          segments.push({ text: chunk, color: currentColor, bgColor: currentBg, bold: bold || undefined, dim: dim || undefined, italic: italic || undefined });
+        }
+      }
+      lastIndex = match.index + match[0].length;
+
+      // Parse the codes
+      const codes = match[1].split(';').map(Number);
+      for (let i = 0; i < codes.length; i++) {
+        const code = codes[i];
+        if (code === 0) { currentColor = undefined; currentBg = undefined; bold = false; dim = false; italic = false; }
+        else if (code === 1) { bold = true; }
+        else if (code === 2) { dim = true; }
+        else if (code === 3) { italic = true; }
+        else if (code === 22) { bold = false; dim = false; }
+        else if (code === 23) { italic = false; }
+        else if (code >= 30 && code <= 37) { currentColor = ANSI_COLORS[code]; }
+        else if (code >= 90 && code <= 97) { currentColor = ANSI_COLORS[code]; }
+        else if (code === 39) { currentColor = undefined; }
+        else if (code >= 40 && code <= 47) { currentBg = ANSI_BG_COLORS[code]; }
+        else if (code >= 100 && code <= 107) { currentBg = ANSI_BG_COLORS[code]; }
+        else if (code === 49) { currentBg = undefined; }
+        else if (code === 38 && codes[i + 1] === 5 && codes[i + 2] !== undefined) {
+          // 256-color foreground: ESC[38;5;Nm
+          const n = codes[i + 2];
+          if (n < 16) {
+            const basic: Record<number, string> = {
+              0: '#000000', 1: '#aa0000', 2: '#00aa00', 3: '#aa5500', 4: '#0000aa',
+              5: '#aa00aa', 6: '#00aaaa', 7: '#aaaaaa', 8: '#555555', 9: '#ff5555',
+              10: '#55ff55', 11: '#ffff55', 12: '#5555ff', 13: '#ff55ff', 14: '#55ffff', 15: '#ffffff',
+            };
+            currentColor = basic[n] ?? '#ffffff';
+          } else if (n >= 232) {
+            const gray = 8 + (n - 232) * 10;
+            const h = Math.min(255, gray).toString(16).padStart(2, '0');
+            currentColor = `#${h}${h}${h}`;
+          } else {
+            const idx = n - 16;
+            const r = Math.floor(idx / 36);
+            const g = Math.floor((idx % 36) / 6);
+            const b = idx % 6;
+            const toHex = (v: number) => (v === 0 ? 0 : 55 + v * 40).toString(16).padStart(2, '0');
+            currentColor = `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+          }
+          i += 2;
+        }
+        else if (code === 38 && codes[i + 1] === 2 && codes[i + 4] !== undefined) {
+          // RGB foreground: ESC[38;2;R;G;Bm
+          const r = (codes[i + 2] ?? 0).toString(16).padStart(2, '0');
+          const g = (codes[i + 3] ?? 0).toString(16).padStart(2, '0');
+          const b = (codes[i + 4] ?? 0).toString(16).padStart(2, '0');
+          currentColor = `#${r}${g}${b}`;
+          i += 4;
+        }
+      }
+    }
+
+    // Remaining text after last escape
+    if (lastIndex < text.length) {
+      const chunk = text.slice(lastIndex);
+      if (chunk) {
+        segments.push({ text: chunk, color: currentColor, bgColor: currentBg, bold: bold || undefined, dim: dim || undefined, italic: italic || undefined });
+      }
+    }
+
+    // If no ANSI codes found, return the original text as a single segment
+    if (segments.length === 0 && text) {
+      segments.push({ text });
+    }
+
+    return segments;
+  >>>
+
+fn name=hasAnsiCodes params="text:string" returns=boolean
+  handler <<<
+    return /\x1b\[/.test(text);
+  >>>
+
+fn name=stripAnsi params="text:string" returns=string
+  handler <<<
+    return text.replace(/\x1b\[[0-9;]*m/g, '');
+  >>>

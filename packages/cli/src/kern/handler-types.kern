@@ -68,6 +68,12 @@ union name=OutputEvent discriminant=type
   variant name=question
     field name=prompt type=string
     field name=resolve type="(answer: string) => void"
+  variant name=permission-ask
+    field name=tool type=string
+    field name=command type=string
+    field name=description type=string optional=true
+    field name=reason type=string
+    field name=resolve type="(approved: boolean) => void"
   variant name=patch-review
     field name=winnerId type=string
     field name=patchPath type=string
@@ -83,6 +89,11 @@ union name=OutputEvent discriminant=type
   variant name=response-meta
     field name=engineId type=string
     field name=elapsed type=number
+    field name=inputTokens type=number optional=true
+    field name=outputTokens type=number optional=true
+    field name=cost type=number optional=true
+  variant name=file-changes
+    field name=files type="{ path: string; status: 'modified'|'created'|'deleted'; additions: number; deletions: number }[]"
   variant name=dashboard
     field name=available type="string[]"
     field name=enabled type="string[]"

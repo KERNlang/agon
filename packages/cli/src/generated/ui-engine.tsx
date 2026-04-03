@@ -1,0 +1,581 @@
+import React from 'react';
+
+import { Box, Text } from 'ink';
+
+import { parseMarkdownBlocks, cleanEngineOutput } from '../markdown.js';
+
+import type { ContentSegment } from '../markdown.js';
+
+import { parseProseToRichLines } from '../rich-text.js';
+
+import type { RichLine } from '../rich-text.js';
+
+import { ENGINE_COLORS } from '../generated/output.js';
+
+import type { OutputEvent, EngineProgress } from '../handlers/types.js';
+
+import { contentWidth, color256toHex, engineColor, RenderedSegments, RichLineView, DiffLine, SyntaxLine, GradientLine, AnsiLine, CODE_RAIL, CODE_RAIL_COLOR, MAX_CODE_LINES } from './ui-rendering.js';
+
+import { truncateCodeLine } from '../markdown.js';
+
+export const BRAND: readonly string[] = ['#fbbf24', '#f9a816', '#f97316', '#f45a2a', '#ef4444'] as const;
+
+export const LOGO_LINES: string[] = [
+  '    \u2588\u2588\u2588\u2588\u2588\u2557  \u2588\u2588\u2588\u2588\u2588\u2588\u2557  \u2588\u2588\u2588\u2588\u2588\u2588\u2557 \u2588\u2588\u2588\u2557   \u2588\u2588\u2557',
+  '   \u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2554\u2550\u2550\u2550\u2550\u255d \u2588\u2588\u2554\u2550\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2588\u2588\u2557  \u2588\u2588\u2551',
+  '   \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2551\u2588\u2588\u2551  \u2588\u2588\u2588\u2557\u2588\u2588\u2551   \u2588\u2588\u2551\u2588\u2588\u2554\u2588\u2588\u2557 \u2588\u2588\u2551',
+  '   \u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2551\u2588\u2588\u2551   \u2588\u2588\u2551\u2588\u2588\u2551   \u2588\u2588\u2551\u2588\u2588\u2551\u255a\u2588\u2588\u2557\u2588\u2588\u2551',
+  '   \u2588\u2588\u2551  \u2588\u2588\u2551\u255a\u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d\u255a\u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d\u2588\u2588\u2551 \u255a\u2588\u2588\u2588\u2588\u2551',
+  '   \u255a\u2550\u255d  \u255a\u2550\u255d \u255a\u2550\u2550\u2550\u2550\u2550\u255d  \u255a\u2550\u2550\u2550\u2550\u2550\u255d \u255a\u2550\u255d  \u255a\u2550\u2550\u2550\u255d',
+];
+
+export const VERSION: string = '0.1.0';
+
+export interface OutputBlock {
+  id: number;
+  event: OutputEvent;
+}
+
+
+export function EngineProgressView({ engines }: { engines: EngineProgress[] }) {
+        return (
+          <Box flexDirection="column">
+            {engines.map((engine: EngineProgress) => (
+              <Box key={engine.id}>
+                <Text color={engine.done ? 'green' : engine.failed ? 'red' : 'yellow'}>
+                  {engine.done ? '\u2713' : engine.failed ? '\u2717' : '\u25c9'}
+                </Text>
+                <Text> </Text>
+                <Box width={14}>
+                  <Text bold color={engineColor(engine.id)}>
+                    {engine.id}
+                  </Text>
+                </Box>
+                <Text dimColor>{engine.status}</Text>
+              </Box>
+            ))}
+          </Box>
+        );
+}
+
+
+
+export function EngineBlock({ engineId, color, content }: { engineId: string; color: number; content: string }) {
+        const wrapWidth = contentWidth(8);
+        const cleaned = cleanEngineOutput(content);
+        const hexColor = color256toHex(color);
+  
+        if (!cleaned.trim()) {
+          return (
+            <Box flexDirection="column" marginY={0} paddingLeft={2}>
+              <Text color={hexColor}>{'\u250c\u2500\u2500 '}<Text bold>{engineId}</Text></Text>
+              <Text color={hexColor}>{'\u2502 '}<Text dimColor>{'(no response)'}</Text></Text>
+              <Text color={hexColor}>{'\u2514\u2500\u2500'}</Text>
+            </Box>
+          );
+        }
+  
+        const segments = parseMarkdownBlocks(cleaned);
+  
+        return (
+          <Box flexDirection="column" marginY={1} paddingLeft={2}>
+            <Text color={hexColor}>{'\u250c\u2500\u2500 '}<Text bold color={hexColor}>{engineId}</Text></Text>
+            <Text color={hexColor}>{'\u2502'}</Text>
+            <RenderedSegments segments={segments} borderColor={hexColor} wrapWidth={wrapWidth} />
+            <Text color={hexColor}>{'\u2514\u2500\u2500'}</Text>
+          </Box>
+        );
+}
+
+
+
+export function ConversationalResponse({ engineId, content }: { engineId: string; content: string }) {
+        const wrapWidth = contentWidth(4);
+        const cleaned = cleanEngineOutput(content);
+        if (!cleaned.trim()) return null;
+        const segments = parseMarkdownBlocks(cleaned);
+        const accentColor = color256toHex(ENGINE_COLORS[engineId] ?? 245);
+        return (
+          <Box flexDirection="column" marginTop={1} marginBottom={1} paddingLeft={1}>
+            <Text><Text color={accentColor} bold>{'\u25cf '}{engineId}</Text></Text>
+            <Text color={accentColor}>{'\u2502'}</Text>
+            <RenderedSegments segments={segments} borderColor={accentColor} wrapWidth={wrapWidth} />
+            <Text color={accentColor}>{'\u2502'}</Text>
+          </Box>
+        );
+}
+
+
+
+function DashboardView({ event }: { event: OutputEvent & { type: 'dashboard' } }) {
+        return (
+          <Box flexDirection="column" paddingX={1} paddingY={1}>
+            {LOGO_LINES.map((line: string, i: number) => (
+              <GradientLine key={i} text={line} colors={BRAND} />
+            ))}
+            <Text> </Text>
+            <Text italic color="#d4a041">{'     Any AI can join. They compete. You ship.'}</Text>
+            <Text dimColor>{'     v'}{VERSION}{'  Powered by '}<Text bold color="#fbbf24">{'KERNlang'}</Text></Text>
+            <Text> </Text>
+  
+            <Box>
+              <Text color="#f97316">{'  Engines: '}</Text>
+              {event.enabled.map((id: string, i: number) => (
+                <Text key={id}>
+                  <Text color={engineColor(id)} bold>{id}</Text>
+                  {i < event.enabled.length - 1 && <Text dimColor>{' '}</Text>}
+                </Text>
+              ))}
+              {event.eloTop && (
+                <>
+                  <Text dimColor>{' \u00b7 '}</Text>
+                  <Text color="#fbbf24">{'\u265b '}</Text>
+                  <Text bold color={engineColor(event.eloTop.id)}>{event.eloTop.id}</Text>
+                  <Text dimColor>{' '}{String(event.eloTop.rating)}{' ELO'}</Text>
+                </>
+              )}
+            </Box>
+  
+            <Text> </Text>
+            <Box flexDirection="column">
+              <Box>
+                <Text dimColor>{'  '}</Text>
+                <Text italic dimColor>{'"explain the auth flow"'}</Text>
+                <Text dimColor>{'                      '}</Text>
+                <Text color="#fbbf24">{'\u2192 chat'}</Text>
+              </Box>
+              <Box>
+                <Text dimColor>{'  '}</Text>
+                <Text italic dimColor>{'"codex how would you do this?"'}</Text>
+                <Text dimColor>{'                '}</Text>
+                <Text color="#22d3ee">{'\u2192 codex'}</Text>
+              </Box>
+              <Box>
+                <Text dimColor>{'  '}</Text>
+                <Text italic dimColor>{'"fix login bug, test with npm test"'}</Text>
+                <Text dimColor>{'           '}</Text>
+                <Text color="#f97316">{'\u2192 forge'}</Text>
+              </Box>
+              <Box>
+                <Text dimColor>{'  '}</Text>
+                <Text italic dimColor>{'"should we use REST or GraphQL?"'}</Text>
+                <Text dimColor>{'              '}</Text>
+                <Text color="#a78bfa">{'\u2192 tribunal'}</Text>
+              </Box>
+            </Box>
+            <Text> </Text>
+            <Text dimColor>{'  Just talk, or type '}<Text color="#f97316">{'/'}</Text>{' for commands.'}</Text>
+            <Text> </Text>
+          </Box>
+        );
+}
+
+
+
+function TableView({ headers, rows }: { headers: string[]; rows: string[][] }) {
+        const widths = headers.map((h: string, i: number) =>
+          Math.max(h.length, ...rows.map((r: string[]) => (r[i] ?? '').length)) + 2,
+        );
+        return (
+          <Box flexDirection="column" paddingLeft={2} marginY={1}>
+            <Box>
+              {headers.map((h: string, i: number) => (
+                <Box key={h} width={widths[i]}><Text bold>{h}</Text></Box>
+              ))}
+            </Box>
+            <Text dimColor>{'\u2500'.repeat(widths.reduce((a: number, b: number) => a + b, 0))}</Text>
+            {rows.map((row: string[], ri: number) => (
+              <Box key={`row-${ri}-${row[0] ?? ''}`}>
+                {row.map((cell: string, ci: number) => (
+                  <Box key={`${headers[ci]}-${ci}`} width={widths[ci]}><Text>{cell}</Text></Box>
+                ))}
+              </Box>
+            ))}
+          </Box>
+        );
+}
+
+
+
+export function OutputBlockView({ event, mode }: { event: OutputEvent; mode: string }) {
+        switch (event.type) {
+          case 'text': {
+            const wrapWidth = contentWidth(4);
+            const richLines = parseProseToRichLines(event.content, wrapWidth);
+            return (
+              <Box flexDirection="column" paddingLeft={2}>
+                {richLines.map((line: RichLine, i: number) => <RichLineView key={`text-${i}`} line={line} />)}
+              </Box>
+            );
+          }
+          case 'user-message': return (
+            <Box paddingLeft={1} marginTop={1} marginBottom={0} flexDirection="row">
+              <Text color="#f97316" bold>{'\u276f '}</Text>
+              <Text bold>{event.content}</Text>
+            </Box>
+          );
+          case 'engine-block': return mode === 'chat'
+            ? <ConversationalResponse engineId={event.engineId} content={event.content} />
+            : <EngineBlock engineId={event.engineId} color={event.color} content={event.content} />;
+          case 'separator': return <Text>{' '}</Text>;
+          case 'header': return <Box flexDirection="column"><Text>{' '}</Text><Text bold color="cyan">{'  \u25b8 '}{event.title}</Text></Box>;
+          case 'success': return <Text>{'  '}<Text color="#4ade80">{'\u2713'}</Text>{' '}{event.message}</Text>;
+          case 'error': {
+            const errLines = event.message.split('\n');
+            const firstLine = errLines[0] ?? '';
+            const errMatch = firstLine.match(/^(\w+Error):\s*(.*)/);
+            const fileMatch = event.message.match(/at\s+.*?([^\s/]+\.\w+:\d+(?::\d+)?)/);
+            if (errMatch || errLines.length > 1) {
+              return (
+                <Box flexDirection="column" paddingLeft={2}>
+                  <Text>
+                    <Text color="#ef4444" bold>{'\u2717 '}{errMatch ? errMatch[1] : 'Error'}</Text>
+                    <Text color="#ef4444">{errMatch ? ': ' + errMatch[2] : ': ' + firstLine}</Text>
+                  </Text>
+                  {fileMatch && (
+                    <Text dimColor>{'    at '}<Text color="#a78bfa">{fileMatch[1]}</Text></Text>
+                  )}
+                  {errLines.length > 1 && errLines.slice(1, 5).map((line: string, i: number) => (
+                    <Text key={`err-${i}`} dimColor>{'    '}{line.trim()}</Text>
+                  ))}
+                  {errLines.length > 5 && <Text dimColor>{'    \u2026 '}{errLines.length - 5}{' more lines'}</Text>}
+                </Box>
+              );
+            }
+            return <Text>{'  '}<Text color="#ef4444">{'\u2717'}</Text>{' '}{event.message}</Text>;
+          }
+          case 'warning': return <Text>{'  '}<Text color="#fbbf24">{'\u26a0'}</Text>{' '}{event.message}</Text>;
+          case 'info': return <Text dimColor>{'  '}{event.message}</Text>;
+          case 'permission-ask': {
+            const permCmd = (event as any).command as string;
+            const permDesc = (event as any).description as string | undefined;
+            const permReason = (event as any).reason as string;
+            const permTool = (event as any).tool as string;
+            const cmdLines = permCmd.split('\n').slice(0, 6);
+            const moreLines = permCmd.split('\n').length > 6;
+            return (
+              <Box flexDirection="column" paddingLeft={1} marginY={1}>
+                <Box borderStyle="round" borderColor="#fbbf24" paddingX={1} flexDirection="column">
+                  <Text color="#fbbf24" bold>{permTool === 'Bash' || permTool === 'bash' ? '\u26a1 Bash command' : `\u26a0 ${permTool}`}</Text>
+                  <Text> </Text>
+                  {cmdLines.map((line: string, i: number) => (
+                    <Text key={`perm-cmd-${i}`}>
+                      <Text dimColor>{'  '}{i === 0 ? '$ ' : '  '}</Text>
+                      <Text>{line}</Text>
+                    </Text>
+                  ))}
+                  {moreLines && <Text dimColor>{'    \u2026'}</Text>}
+                  {permDesc && (
+                    <>
+                      <Text> </Text>
+                      <Text dimColor>{'  '}{permDesc}</Text>
+                    </>
+                  )}
+                  <Text> </Text>
+                  <Text color="#fbbf24">{permReason}</Text>
+                </Box>
+              </Box>
+            );
+          }
+          case 'table': return <TableView headers={event.headers} rows={event.rows} />;
+          case 'streaming-chunk': return <Text>{'  '}{event.chunk}</Text>;
+          case 'kern-draft': {
+            const eColor = engineColor(event.engineId);
+            const wrapWidth = contentWidth(8);
+            const segments = parseMarkdownBlocks(event.content.trim());
+            return (
+              <Box flexDirection="column" paddingLeft={2}>
+                <Text color={eColor}>{'\u250c\u2500\u2500 '}<Text bold>{event.engineId}</Text>{event.critique ? <Text color="green">{' '}{event.critique}</Text> : ''}</Text>
+                <Text color={eColor}>{'\u2502'}</Text>
+                <RenderedSegments segments={segments} borderColor={eColor} wrapWidth={wrapWidth} />
+                <Text color={eColor}>{'\u2514\u2500\u2500'}</Text>
+              </Box>
+            );
+          }
+          case 'debate-round': {
+            const dColor = engineColor(event.engineId);
+            const wrapWidth = contentWidth(8);
+            const segments = parseMarkdownBlocks(event.argument.trim());
+            return (
+              <Box flexDirection="column" paddingLeft={2}>
+                <Text color={dColor}>{'\u250c\u2500\u2500 '}<Text bold>{event.engineId}</Text>{' '}<Text dimColor>{'('}{event.position}{')'}</Text></Text>
+                <Text color={dColor}>{'\u2502'}</Text>
+                <RenderedSegments segments={segments} borderColor={dColor} wrapWidth={wrapWidth} />
+                <Text color={dColor}>{'\u2514\u2500\u2500'}</Text>
+              </Box>
+            );
+          }
+          case 'verdict': {
+            const wrapWidth = contentWidth(4);
+            const richLines = parseProseToRichLines(event.summary.trim(), wrapWidth);
+            return (
+              <Box flexDirection="column" paddingLeft={2}>
+                {richLines.map((line: RichLine, i: number) => <RichLineView key={`v-${i}`} line={line} />)}
+              </Box>
+            );
+          }
+          case 'scoreboard': return (
+            <Box flexDirection="column" paddingLeft={2} marginY={1}>
+              <Text bold>{event.title}</Text>
+              {event.winner && <Text bold color="green">{'  \u2605 Winner: '}{event.winner}</Text>}
+              <Text dimColor>{'  '}{('\u2500').repeat(46)}</Text>
+              {event.metrics.map((m: { label: string; values: string[] }) => (
+                <Box key={m.label}>
+                  <Text>{'  '}</Text>
+                  <Box width={16}><Text bold>{m.label}</Text></Box>
+                  <Text>{m.values.join('  \u2502  ')}</Text>
+                </Box>
+              ))}
+            </Box>
+          );
+          case 'plan': return (
+            <Box flexDirection="column" paddingLeft={2} marginY={1}>
+              <Text bold color="cyan">{'\u25b8 Plan: '}{event.plan.id.slice(0, 12)}</Text>
+              <Text>{'  State: '}<Text bold>{event.plan.state}</Text></Text>
+              <Text>{'  Task:  '}{event.plan.action.task}</Text>
+              <Text dimColor>{'  '}{('\u2500').repeat(46)}</Text>
+              {event.plan.steps.map((step: any) => (
+                <Box key={step.id}>
+                  <Text>{'  '}</Text>
+                  <Text color={step.result.state === 'completed' ? 'green' : step.result.state === 'failed' ? 'red' : step.result.state === 'running' ? 'yellow' : undefined}>
+                    {step.result.state === 'completed' ? '\u2713' : step.result.state === 'failed' ? '\u2717' : step.result.state === 'running' ? '\u25c9' : '\u25cb'}
+                  </Text>
+                  <Text> {step.label}</Text>
+                </Box>
+              ))}
+            </Box>
+          );
+          case 'plan-list': return (
+            <Box flexDirection="column" paddingLeft={2}>
+              {event.plans.map((p: any) => (
+                <Box key={p.id}>
+                  <Box width={14}><Text dimColor>{p.id.slice(0, 12)}</Text></Box>
+                  <Box width={12}><Text color={p.state === 'completed' ? 'green' : p.state === 'failed' ? 'red' : undefined}>{p.state}</Text></Box>
+                  <Text>{p.action.task.slice(0, 40)}</Text>
+                </Box>
+              ))}
+            </Box>
+          );
+          case 'tool-call': {
+            const toolColor = event.status === 'error' ? '#ef4444' : event.status === 'done' ? '#4ade80' : '#fbbf24';
+            const icon = event.status === 'error' ? '\u2717' : event.status === 'done' ? '\u2713' : '\u27f3';
+            const eColor = engineColor(event.engineId);
+            const codeWidth = contentWidth(10);
+            const nest = <Text color={eColor} dimColor>{' \u23bf '}</Text>;
+  
+            // Parse structured input (JSON from handler)
+            let parsed: Record<string, unknown> = {};
+            try { parsed = event.input ? JSON.parse(event.input) : {}; } catch { /* not JSON, use raw */ }
+            const toolKey = event.tool.toLowerCase();
+  
+            // ── Bash / Run ──
+            if (toolKey === 'bash' || toolKey === 'run') {
+              const cmd = (parsed.command as string) ?? event.input;
+              const desc = parsed.description as string | undefined;
+              const cmdLines = cmd.split('\n').slice(0, 3);
+              const moreCmd = cmd.split('\n').length > 3;
+              return (
+                <Box paddingLeft={2} flexDirection="column">
+                  <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{'Bash'}</Text></Text>{desc ? <Text dimColor>{' \u00b7 '}{desc}</Text> : ''}</Text>
+                  <Text> </Text>
+                  {cmdLines.map((line: string, i: number) => (
+                    <Text key={`cmd-${i}`}>
+                      <Text dimColor>{'    '}{i === 0 ? '$ ' : '  '}</Text>
+                      <Text>{truncateCodeLine(line, codeWidth)}</Text>
+                    </Text>
+                  ))}
+                  {moreCmd && <Text dimColor>{'      \u2026'}</Text>}
+                  {event.output && event.status !== 'running' && (() => {
+                    const outLines = event.output.split('\n');
+                    const total = outLines.length;
+                    const maxHead = total > 30 ? 8 : 15;
+                    const showTail = total > 30;
+                    const headLines = outLines.slice(0, maxHead);
+                    const tailLines = showTail ? outLines.slice(-3) : [];
+                    const skipped = total - maxHead - tailLines.length;
+                    const renderLine = (line: string, i: number, prefix: string) => (
+                      <Box key={`${prefix}-${i}`}>
+                        <Text dimColor>{'    '}</Text>
+                        {event.status === 'error'
+                          ? <Text color="#ef4444">{truncateCodeLine(line, codeWidth)}</Text>
+                          : <AnsiLine text={line} maxWidth={codeWidth} fallbackDim={true} />}
+                      </Box>
+                    );
+                    return (
+                      <>
+                        <Text> </Text>
+                        {headLines.map((line: string, i: number) => renderLine(line, i, 'head'))}
+                        {skipped > 0 && <Text dimColor>{'    \u2026 '}{skipped}{' more lines \u2026'}</Text>}
+                        {tailLines.map((line: string, i: number) => renderLine(line, i, 'tail'))}
+                      </>
+                    );
+                  })()}
+                </Box>
+              );
+            }
+  
+            // ── Edit ──
+            if (toolKey === 'edit') {
+              const filePath = (parsed.file_path as string) ?? '';
+              const oldStr = (parsed.old_string as string) ?? '';
+              const newStr = (parsed.new_string as string) ?? '';
+              const shortPath = filePath.replace(process.cwd() + '/', '').replace(process.env.HOME ?? '', '~');
+              const addedCount = newStr ? newStr.split('\n').length : 0;
+              const removedCount = oldStr ? oldStr.split('\n').length : 0;
+              return (
+                <Box paddingLeft={2} flexDirection="column">
+                  <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{'\u270f\ufe0f  Update'}</Text></Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text>
+                  {(oldStr || newStr) && event.status !== 'running' && (() => {
+                    const oldLines = oldStr.split('\n').slice(0, 10);
+                    const newLines = newStr.split('\n').slice(0, 10);
+                    const gutterW = Math.max(String(Math.max(removedCount, addedCount)).length, 2);
+                    const pad = (n: number) => String(n).padStart(gutterW);
+                    return (
+                      <>
+                        <Text dimColor>{'    '}<Text color="#ef4444">{'-'}{removedCount}</Text>{' '}<Text color="#4ade80">{'+'}{addedCount}</Text>{' lines'}</Text>
+                        {oldLines.map((line: string, i: number) => (
+                          <Text key={`old-${i}`}>
+                            <Text color="#6b7280">{' '}{pad(i + 1)}{' '}</Text>
+                            <DiffLine line={`-${line}`} maxWidth={codeWidth - gutterW - 2} />
+                          </Text>
+                        ))}
+                        {removedCount > 10 && <Text dimColor>{'    \u2026 '}{removedCount - 10}{' more removed'}</Text>}
+                        {newLines.map((line: string, i: number) => (
+                          <Text key={`new-${i}`}>
+                            <Text color="#6b7280">{' '}{pad(i + 1)}{' '}</Text>
+                            <DiffLine line={`+${line}`} maxWidth={codeWidth - gutterW - 2} />
+                          </Text>
+                        ))}
+                        {addedCount > 10 && <Text dimColor>{'    \u2026 '}{addedCount - 10}{' more added'}</Text>}
+                      </>
+                    );
+                  })()}
+                </Box>
+              );
+            }
+  
+            // ── Write ──
+            if (toolKey === 'write') {
+              const filePath = (parsed.file_path as string) ?? '';
+              const content = (parsed.content as string) ?? '';
+              const shortPath = filePath.replace(process.cwd() + '/', '').replace(process.env.HOME ?? '', '~');
+              const lineCount = content ? content.split('\n').length : 0;
+              return (
+                <Box paddingLeft={2} flexDirection="column">
+                  <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{'\ud83d\udcdd Write'}</Text></Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text>
+                  {lineCount > 0 && <Text dimColor>{'  '}{lineCount}{' lines'}</Text>}
+                  {event.output && event.status === 'done' && (
+                    <Text dimColor>{'  '}{event.output.length > 80 ? event.output.slice(0, 80) + '\u2026' : event.output}</Text>
+                  )}
+                </Box>
+              );
+            }
+  
+            // ── Read ──
+            if (toolKey === 'read') {
+              const filePath = (parsed.file_path as string) ?? '';
+              const shortPath = filePath.replace(process.cwd() + '/', '').replace(process.env.HOME ?? '', '~');
+              return (
+                <Box paddingLeft={2} flexDirection="column">
+                  <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{'\ud83d\udcc4 Read'}</Text></Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text>
+                  {event.output && event.status === 'done' && (
+                    <Text dimColor>{'  '}{event.output.split('\n').length}{' lines ('}{Math.ceil(event.output.length / 1024)}{'kb)'}</Text>
+                  )}
+                </Box>
+              );
+            }
+  
+            // ── Grep / Search ──
+            if (toolKey === 'grep' || toolKey === 'search') {
+              const pattern = (parsed.pattern as string) ?? '';
+              const path = (parsed.path as string) ?? '';
+              const shortPath = path ? path.replace(process.cwd() + '/', '').replace(process.env.HOME ?? '', '~') : '';
+              return (
+                <Box paddingLeft={2} flexDirection="column">
+                  <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{'\ud83d\udd0d Search'}</Text></Text>{' '}<Text color="#a78bfa">{pattern}</Text>{shortPath ? <Text dimColor>{' in '}{shortPath}</Text> : ''}</Text>
+                  {event.output && event.status === 'done' && (
+                    <Text dimColor>{'  '}{event.output.split('\n').length}{' matches'}</Text>
+                  )}
+                </Box>
+              );
+            }
+  
+            // ── Glob / Find ──
+            if (toolKey === 'glob' || toolKey === 'find') {
+              const pattern = (parsed.pattern as string) ?? '';
+              return (
+                <Box paddingLeft={2} flexDirection="column">
+                  <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{'\ud83d\udcc2 Find'}</Text></Text>{' '}<Text color="#a78bfa">{pattern}</Text></Text>
+                  {event.output && event.status === 'done' && (
+                    <Text dimColor>{'  '}{event.output.split('\n').filter((l: string) => l.trim()).length}{' files'}</Text>
+                  )}
+                </Box>
+              );
+            }
+  
+            // ── Fallback: generic tool ──
+            const toolLabels: Record<string, string> = {
+              'Read': '\ud83d\udcc4 Read', 'Edit': '\u270f\ufe0f  Edit', 'Write': '\ud83d\udcdd Write',
+              'Bash': '\u26a1 Run', 'Grep': '\ud83d\udd0d Search', 'Glob': '\ud83d\udcc2 Find',
+              'tool': '\ud83d\udd27 Tool',
+            };
+            const label = toolLabels[event.tool] ?? `\ud83d\udd27 ${event.tool}`;
+            const inputPreview = event.input.length > 80 ? event.input.slice(0, 80) + '\u2026' : event.input;
+            return (
+              <Box paddingLeft={2} flexDirection="column">
+                <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{label}</Text></Text>{' '}<Text dimColor>{inputPreview}</Text></Text>
+                {event.output && event.status === 'done' && event.output.length <= 200 && (
+                  <Text dimColor>{'    '}{event.output.length > 120 ? event.output.slice(0, 120) + '\u2026' : event.output}</Text>
+                )}
+                {event.output && event.status === 'done' && event.output.length > 200 && (
+                  <Text dimColor>{'    '}{event.output.split('\n').length}{' lines ('}{Math.ceil(event.output.length / 1024)}{'kb)'}</Text>
+                )}
+              </Box>
+            );
+          }
+          case 'response-meta': {
+            const secs = (event.elapsed / 1000).toFixed(1);
+            const tokens = (event as any).inputTokens || (event as any).outputTokens
+              ? `${((event as any).inputTokens ?? 0) + ((event as any).outputTokens ?? 0)} tok`
+              : '';
+            const cost = (event as any).cost ? `$${(event as any).cost.toFixed(4)}` : '';
+            const parts = [event.engineId, `${secs}s`, tokens, cost].filter(Boolean);
+            return (
+              <Box paddingLeft={2}>
+                <Text dimColor>{parts.join(' \u00b7 ')}</Text>
+              </Box>
+            );
+          }
+          case 'file-changes': {
+            const files = (event as any).files as { path: string; status: string; additions: number; deletions: number }[];
+            if (!files || files.length === 0) return null;
+            const cwd = process.cwd();
+            return (
+              <Box flexDirection="column" paddingLeft={2} marginY={1}>
+                <Text bold>{'Files changed'}</Text>
+                {files.map((f: any) => {
+                  const shortPath = f.path.replace(cwd + '/', '');
+                  const total = f.additions + f.deletions;
+                  const barW = 10;
+                  const addBar = total > 0 ? Math.max(1, Math.round((f.additions / total) * barW)) : 0;
+                  const delBar = barW - addBar;
+                  return (
+                    <Box key={f.path}>
+                      <Text color={f.status === 'created' ? '#22d3ee' : f.status === 'deleted' ? '#ef4444' : '#4ade80'}>
+                        {f.status === 'created' ? '\u25cf' : f.status === 'deleted' ? '\u2296' : '\u2713'}
+                      </Text>
+                      <Text>{' '}{shortPath}</Text>
+                      <Text dimColor>{' +'}{f.additions}{' -'}{f.deletions}{' '}</Text>
+                      <Text><Text color="#4ade80">{'\u2588'.repeat(addBar)}</Text><Text color="#ef4444">{'\u2588'.repeat(delBar)}</Text></Text>
+                    </Box>
+                  );
+                })}
+              </Box>
+            );
+          }
+          case 'dashboard': return <DashboardView event={event as OutputEvent & { type: 'dashboard' }} />;
+          default: return null;
+        }
+}
+
+

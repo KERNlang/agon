@@ -5,7 +5,7 @@
 import from="node:fs" names="readFileSync,writeFileSync,statSync,existsSync,mkdirSync"
 import from="node:path" names="resolve,dirname,relative"
 import from="./tool-types.js" names="ToolResult,ToolContext,ToolHandler,ToolDefinition,PermissionDecision" types=true
-import from="./file-state-cache.js" names="FileStateCache"
+import from="../file-state-cache.js" names="fileStateCache"
 import from="./file-history.js" names="takeSnapshot"
 
 fn name=normalizeCurlyQuotes params="text:string" returns=string export=false
@@ -93,7 +93,7 @@ fn name=createEditTool returns=ToolHandler
       }
 
       // Read-before-write check: file must have been read via Read tool first
-      const cache = new FileStateCache();
+      const cache = fileStateCache;
       if (!cache.has(filePath)) {
         return {
           ok: false,

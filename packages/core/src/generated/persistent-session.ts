@@ -520,7 +520,6 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
         '--input-format', 'stream-json',
         '--output-format', 'stream-json',
         '--replay-user-messages',
-        '--dangerously-skip-permissions',
         '--max-turns', '50',
       ];
   

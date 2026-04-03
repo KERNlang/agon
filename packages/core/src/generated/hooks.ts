@@ -38,7 +38,7 @@ export function runHook(hook: HookDef, env: Record<string,string>): HookResult {
 }
 
 export function runHooks(event: HookEvent, env?: Record<string,string>): HookResult[] {
-  const config = loadConfig();
+  const config = loadConfig(process.cwd());
   const hooks = (config as any).hooks as Record<string, HookDef[]> | undefined;
   if (!hooks || !hooks[event]) return [];
   

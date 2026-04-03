@@ -78,7 +78,16 @@ function emitProseWithTables(proseLines: string[], segments: ContentSegment[]): 
   flushProse();
 }
 
+export const _mdCache: Map<string, ContentSegment[]> = new Map();
+
+export const _MD_CACHE_MAX: number = 500;
+
 export function parseMarkdownBlocks(text: string): ContentSegment[] {
+  // LRU cache — avoid re-parsing identical content during streaming
+  const key = text.length < 500 ? text : text.slice(0, 200) + '|' + text.length + '|' + text.slice(-100);
+  const cached = _mdCache.get(key);
+  if (cached) return cached;
+  
   const lines = text.split('\n');
   const segments: ContentSegment[] = [];
   
@@ -123,6 +132,13 @@ export function parseMarkdownBlocks(text: string): ContentSegment[] {
   } else if (proseLines.length > 0) {
     emitProseWithTables(proseLines, segments);
   }
+  
+  // Store in cache, evict oldest if full
+  if (_mdCache.size >= _MD_CACHE_MAX) {
+    const firstKey = _mdCache.keys().next().value;
+    if (firstKey !== undefined) _mdCache.delete(firstKey);
+  }
+  _mdCache.set(key, segments);
   
   return segments;
 }
@@ -233,7 +249,106 @@ function stripBuddyThinkingNoise(text: string): string {
   return result.join('\n');
 }
 
+function shortenFilePaths(text: string): string {
+  // Only shorten paths in prose — skip fenced code blocks
+  const fenceRe = /^```[\s\S]*?^```/gm;
+  const fences: Array<{ start: number; end: number }> = [];
+  let fm: RegExpExecArray | null;
+  while ((fm = fenceRe.exec(text)) !== null) {
+    fences.push({ start: fm.index, end: fm.index + fm[0].length });
+  }
+  function insideFence(pos: number): boolean {
+    return fences.some(f => pos >= f.start && pos < f.end);
+  }
+  
+  const cwd = process.cwd();
+  const home = process.env.HOME ?? '';
+  
+  const exts = 'tsx|jsx|ts|js|json|kern|md|py|rs|go|yaml|yml|toml|sh|css|html|svelte|vue|rb|java|cpp|c|h';
+  const pathRe = new RegExp('(?<!`)(?:~/|/)[A-Za-z0-9._\\-/]+\\.(?:' + exts + ')(?::[0-9]+(?::[0-9]+)?|#L[0-9]+)?(?!`)', 'g');
+  
+  return text.replace(pathRe, (match, offset: number) => {
+    // Never rewrite paths inside fenced code blocks
+    if (insideFence(offset)) return match;
+    // Skip if too short or doesn't look like a real path
+    if (match.length < 10) return match;
+    if (!match.includes('/')) return match;
+  
+    let shortened = match;
+  
+    // Expand ~/ to home
+    if (shortened.startsWith('~/') && home) {
+      shortened = home + shortened.slice(1);
+    }
+  
+    // Strip cwd prefix → relative path
+    if (shortened.startsWith(cwd + '/')) {
+      shortened = shortened.slice(cwd.length + 1);
+    }
+    // Strip home prefix → ~/...
+    else if (home && shortened.startsWith(home + '/')) {
+      shortened = '~/' + shortened.slice(home.length + 1);
+    }
+  
+    // Collapse to just filename:line for inline references
+    // packages/cli/src/generated/handlers-cesar-brain.ts:91 → handlers-cesar-brain.ts:91
+    const parts = shortened.split('/');
+    if (parts.length > 2) {
+      shortened = parts[parts.length - 1];
+    }
+  
+    // Wrap in backticks for inline-code (purple) styling
+    return '`' + shortened + '`';
+  });
+}
+
+function addParagraphBreaks(text: string): string {
+  const paragraphs = text.split(/\n{2,}/);
+  const result: string[] = [];
+  
+  for (const para of paragraphs) {
+    const lines = para.split('\n');
+    // Skip if already short, has structure (headers, lists), or is a code fence
+    const isStructured = lines.some(l => /^[#\-*>|`]/.test(l.trimStart()));
+    const totalLen = lines.reduce((sum, l) => sum + l.length, 0);
+    if (isStructured || totalLen < 300 || lines.length < 3) {
+      result.push(para);
+      continue;
+    }
+  
+    // Dense paragraph — split at sentence boundaries (". " followed by capital)
+    const joined = lines.join(' ');
+    const sentences = joined.split(/(?<=\.\s)(?=[A-Z])/);
+    if (sentences.length <= 2) {
+      result.push(para);
+      continue;
+    }
+  
+    // Group sentences into chunks of ~2-3 sentences each
+    const chunks: string[] = [];
+    let current = '';
+    for (const sentence of sentences) {
+      current += sentence;
+      if (current.length > 150) {
+        chunks.push(current.trim());
+        current = '';
+      }
+    }
+    if (current.trim()) chunks.push(current.trim());
+    result.push(chunks.join('\n\n'));
+  }
+  
+  return result.join('\n\n');
+}
+
+export const _cleanCache: Map<number, string> = new Map();
+
 export function cleanEngineOutput(raw: string): string {
+  // Cache by length — during streaming, content only grows
+  const cacheKey = raw.length;
+  const cached = _cleanCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+  
   const lines = raw.split('\n');
   const cleaned: string[] = [];
   
@@ -257,6 +372,16 @@ export function cleanEngineOutput(raw: string): string {
   // Clean buddy streaming artifacts
   result = stripBuddyThinkingNoise(result);
   result = deduplicateParagraphs(result);
+  
+  // Break dense walls of text into paragraphs at sentence boundaries
+  result = addParagraphBreaks(result);
+  
+  // Shorten absolute file paths → relative, backtick-wrapped for purple styling
+  result = shortenFilePaths(result);
+  
+  // Cache and evict old entries
+  if (_cleanCache.size > 200) _cleanCache.clear();
+  _cleanCache.set(cacheKey, result);
   
   return result;
 }

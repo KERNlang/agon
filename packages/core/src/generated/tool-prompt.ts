@@ -17,12 +17,18 @@ Wait for the result before continuing. The result will appear as:
 You can call multiple tools in sequence. Always use tools instead of guessing file contents or command outputs.`;
 
 function toolDefinitionToPrompt(def: ToolDefinition): string {
-  const schemaLines = Object.entries(def.inputSchema)
+  // inputSchema is JSON Schema: { type:'object', properties:{...}, required:[...] }
+      const schema = def.inputSchema as any;
+      const props = schema.properties ?? schema;
+      const requiredFields = new Set(Array.isArray(schema.required) ? schema.required : []);
+      const schemaLines = Object.entries(props)
+        .filter(([key]) => key !== 'type' && key !== 'required' && key !== 'properties')
         .map(([key, spec]) => {
           const s = spec as any;
-          const required = s.required !== false ? ' (required)' : ' (optional)';
+          const isReq = requiredFields.has(key) || s.required === true;
+          const reqLabel = isReq ? ' (required)' : ' (optional)';
           const desc = s.description ? ` — ${s.description}` : '';
-          return `  - ${key}: ${s.type ?? 'string'}${required}${desc}`;
+          return `  - ${key}: ${s.type ?? 'string'}${reqLabel}${desc}`;
         })
         .join('\n');
   

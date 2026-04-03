@@ -5,7 +5,7 @@
 import from="node:fs" names="writeFileSync,statSync,existsSync,mkdirSync"
 import from="node:path" names="resolve,dirname,relative"
 import from="./tool-types.js" names="ToolResult,ToolContext,ToolHandler,ToolDefinition,PermissionDecision" types=true
-import from="./file-state-cache.js" names="FileStateCache"
+import from="../file-state-cache.js" names="fileStateCache"
 import from="./file-history.js" names="takeSnapshot"
 
 fn name=createWriteTool returns=ToolHandler
@@ -56,7 +56,7 @@ fn name=createWriteTool returns=ToolHandler
       const filePath = resolve(ctx.cwd, input.file_path as string);
       const content = input.content as string;
       const relPath = relative(ctx.cwd, filePath);
-      const cache = new FileStateCache();
+      const cache = fileStateCache;
       const fileExists = existsSync(filePath);
 
       if (fileExists) {

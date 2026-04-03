@@ -1,5 +1,7 @@
 import { resolve, relative, isAbsolute } from 'node:path';
 
+import { realpathSync } from 'node:fs';
+
 import type { PermissionDecision, ToolContext } from './tool-types.js';
 
 export interface PermissionRule {
@@ -72,14 +74,20 @@ export function isDangerousCommand(command: string): boolean {
 
 export function isReadOnlyCommand(command: string): boolean {
   const stripped = stripShellWrappers(command).trim();
-  // Check against known read-only commands
-  for (const safe of READONLY_COMMANDS) {
-    if (stripped === safe || stripped.startsWith(safe + ' ')) return true;
+  // Split on compound operators FIRST: &&, ||, ;, &
+  // All sub-commands must be read-only for the whole command to be safe
+  if (/[;&|]{1,2}/.test(stripped) && stripped !== '|') {
+    const parts = stripped.split(/\s*(?:&&|\|\||;|&)\s*/);
+    return parts.every((p: string) => p.trim() && isReadOnlyCommand(p.trim()));
   }
   // Pipe chains: all commands must be read-only
   if (stripped.includes('|')) {
     const parts = stripped.split('|').map((p: string) => p.trim());
     return parts.every((p: string) => isReadOnlyCommand(p));
+  }
+  // Check against known read-only commands
+  for (const safe of READONLY_COMMANDS) {
+    if (stripped === safe || stripped.startsWith(safe + ' ')) return true;
   }
   return false;
 }
@@ -99,8 +107,21 @@ export function checkBashPermission(command: string, ctx: ToolContext): Permissi
 
 export function isPathUnderCwd(filePath: string, cwd: string): boolean {
   const resolved = isAbsolute(filePath) ? filePath : resolve(cwd, filePath);
-  const rel = relative(cwd, resolved);
-  // Path is under cwd if relative path doesn't start with ..
+  // Resolve symlinks to prevent traversal via symlinks
+  let realPath: string;
+  let realCwd: string;
+  try {
+    realPath = realpathSync(resolved);
+  } catch {
+    // File doesn't exist yet — use unresolved path (safe for new files)
+    realPath = resolved;
+  }
+  try {
+    realCwd = realpathSync(cwd);
+  } catch {
+    realCwd = cwd;
+  }
+  const rel = relative(realCwd, realPath);
   return !rel.startsWith('..');
 }
 

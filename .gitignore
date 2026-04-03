@@ -5,3 +5,7 @@ dist/
 coverage/
 .agon/
 .agon.local.json
+.CLAUDE.md
+.CLAUDE
+.Agent.md
+.Agent

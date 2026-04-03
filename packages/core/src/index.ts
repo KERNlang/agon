@@ -55,9 +55,11 @@ export type { PatchFile, PatchHunk } from './patch-parser.js';
 export { takeSnapshot, revertSnapshot, listSnapshots, getLatestSnapshotId } from './file-history.js';
 export type { FileSnapshot, HistoryEntry } from './file-history.js';
 export { copyToClipboard } from './clipboard.js';
+export { pasteStore, PASTE_THRESHOLD, PASTE_MAX_AGE } from './paste-store.js';
+export type { PasteStoreResult } from './paste-store.js';
 // ── Tool System ──
 export type { ToolResult, ToolContext, ToolHandler, ToolDefinition, ToolCall, ToolCallResult, PermissionDecision, FileState as ToolFileState } from './tool-types.js';
-export { FileStateCache } from './file-state-cache.js';
+export { FileStateCache, fileStateCache } from './file-state-cache.js';
 export { ToolRegistry, executeToolCall, executeToolCalls } from './tool-registry.js';
 export { checkBashPermission, checkFileReadPermission, checkFileWritePermission, isDangerousCommand, isReadOnlyCommand, isPathUnderCwd } from './tool-permissions.js';
 export { createReadTool, createEditTool, createWriteTool, createBashTool, createGrepTool, createGlobTool } from './tools.js';

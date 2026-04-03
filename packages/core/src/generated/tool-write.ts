@@ -4,7 +4,7 @@ import { resolve, dirname, relative } from 'node:path';
 
 import type { ToolResult, ToolContext, ToolHandler, ToolDefinition, PermissionDecision } from './tool-types.js';
 
-import { FileStateCache } from './file-state-cache.js';
+import { fileStateCache } from '../file-state-cache.js';
 
 import { takeSnapshot } from './file-history.js';
 
@@ -54,7 +54,7 @@ export function createWriteTool(): ToolHandler {
     const filePath = resolve(ctx.cwd, input.file_path as string);
     const content = input.content as string;
     const relPath = relative(ctx.cwd, filePath);
-    const cache = new FileStateCache();
+    const cache = fileStateCache;
     const fileExists = existsSync(filePath);
   
     if (fileExists) {

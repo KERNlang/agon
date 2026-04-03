@@ -1,3 +1,6 @@
+import from="react" names="React,useState,useEffect"
+import from="ink" names="Box,Text"
+
 screen name=Onboarding target=ink
   state name=step initial=0
   state name=selectedEngines initial="[]"

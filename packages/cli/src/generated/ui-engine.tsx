@@ -361,16 +361,19 @@ export function OutputBlockView({ event, mode }: { event: OutputEvent; mode: str
             const icon = event.status === 'error' ? '\u2717' : event.status === 'done' ? '\u2713' : '\u27f3';
             const eColor = engineColor(event.engineId);
             const codeWidth = contentWidth(10);
-            const nest = <Text color={eColor} dimColor>{' \u23bf '}</Text>;
+            const nest = <Text color={eColor}>{' \u23bf '}</Text>;
   
-            // Parse structured input (JSON from handler)
+            // Parse structured input (JSON from handler, or raw string from other engines)
             let parsed: Record<string, unknown> = {};
-            try { parsed = event.input ? JSON.parse(event.input) : {}; } catch { /* not JSON, use raw */ }
+            const rawInput = event.input || '';
+            try {
+              if (rawInput.startsWith('{')) parsed = JSON.parse(rawInput);
+            } catch { /* not JSON — rawInput used as fallback */ }
             const toolKey = event.tool.toLowerCase();
   
             // ── Bash / Run ──
             if (toolKey === 'bash' || toolKey === 'run') {
-              const cmd = (parsed.command as string) ?? event.input;
+              const cmd = (parsed.command as string) || rawInput || '(command)';
               const desc = parsed.description as string | undefined;
               const cmdLines = cmd.split('\n').slice(0, 3);
               const moreCmd = cmd.split('\n').length > 3;
@@ -416,9 +419,9 @@ export function OutputBlockView({ event, mode }: { event: OutputEvent; mode: str
   
             // ── Edit ──
             if (toolKey === 'edit') {
-              const filePath = (parsed.file_path as string) ?? '';
-              const oldStr = (parsed.old_string as string) ?? '';
-              const newStr = (parsed.new_string as string) ?? '';
+              const filePath = (parsed.file_path as string) || rawInput || '';
+              const oldStr = (parsed.old_string as string) || '';
+              const newStr = (parsed.new_string as string) || '';
               const shortPath = filePath.replace(process.cwd() + '/', '').replace(process.env.HOME ?? '', '~');
               const addedCount = newStr ? newStr.split('\n').length : 0;
               const removedCount = oldStr ? oldStr.split('\n').length : 0;
@@ -456,8 +459,8 @@ export function OutputBlockView({ event, mode }: { event: OutputEvent; mode: str
   
             // ── Write ──
             if (toolKey === 'write') {
-              const filePath = (parsed.file_path as string) ?? '';
-              const content = (parsed.content as string) ?? '';
+              const filePath = (parsed.file_path as string) || rawInput || '';
+              const content = (parsed.content as string) || '';
               const shortPath = filePath.replace(process.cwd() + '/', '').replace(process.env.HOME ?? '', '~');
               const lineCount = content ? content.split('\n').length : 0;
               return (
@@ -473,7 +476,7 @@ export function OutputBlockView({ event, mode }: { event: OutputEvent; mode: str
   
             // ── Read ──
             if (toolKey === 'read') {
-              const filePath = (parsed.file_path as string) ?? '';
+              const filePath = (parsed.file_path as string) || rawInput || '';
               const shortPath = filePath.replace(process.cwd() + '/', '').replace(process.env.HOME ?? '', '~');
               return (
                 <Box paddingLeft={2} flexDirection="column">
@@ -487,8 +490,8 @@ export function OutputBlockView({ event, mode }: { event: OutputEvent; mode: str
   
             // ── Grep / Search ──
             if (toolKey === 'grep' || toolKey === 'search') {
-              const pattern = (parsed.pattern as string) ?? '';
-              const path = (parsed.path as string) ?? '';
+              const pattern = (parsed.pattern as string) || rawInput || '';
+              const path = (parsed.path as string) || '';
               const shortPath = path ? path.replace(process.cwd() + '/', '').replace(process.env.HOME ?? '', '~') : '';
               return (
                 <Box paddingLeft={2} flexDirection="column">
@@ -502,7 +505,7 @@ export function OutputBlockView({ event, mode }: { event: OutputEvent; mode: str
   
             // ── Glob / Find ──
             if (toolKey === 'glob' || toolKey === 'find') {
-              const pattern = (parsed.pattern as string) ?? '';
+              const pattern = (parsed.pattern as string) || rawInput || '';
               return (
                 <Box paddingLeft={2} flexDirection="column">
                   <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{'\ud83d\udcc2 Find'}</Text></Text>{' '}<Text color="#a78bfa">{pattern}</Text></Text>

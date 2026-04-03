@@ -144,6 +144,8 @@ config name=AgonConfig
   field name=cesarEngine type=string default=claude
   field name=campfireObserverStrategy type="'lead-first'|'all-respond'" default=lead-first
   field name=hooks type="Record<string,Array<{command:string,engines?:string[],timeout?:number}>>" optional=true
+  field name=allowedCommands type="string[]" optional=true
+  field name=toolPermissions type="Record<string,'allow'|'ask'|'deny'>" optional=true
 
 interface name=ScoutBid
   field name=engineId type=string

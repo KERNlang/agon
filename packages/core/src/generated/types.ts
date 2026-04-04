@@ -194,7 +194,7 @@ export const DEFAULT_AGON_CONFIG: Required<AgonConfig> = {
   cesarEngine: 'claude',
   campfireObserverStrategy: 'lead-first',
   hooks: {} as any,
-  allowedCommands: [] as string[],
+  allowedCommands: [],
   toolPermissions: {} as any,
 };
 

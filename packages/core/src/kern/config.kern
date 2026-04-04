@@ -25,6 +25,11 @@ const name=RUNS_DIR type=string
     join(AGON_HOME, 'runs')
   >>>
 
+const name=TEAM_ELO_PATH type=string
+  handler <<<
+    join(AGON_HOME, 'team-elo.json')
+  >>>
+
 const name=LOCAL_CONFIG_NAME type=string value="'.agon.json'"
 const name=LOCAL_PRIVATE_CONFIG_NAME type=string value="'.agon.local.json'"
 
@@ -47,7 +52,12 @@ fn name=loadConfig params="cwd?:string" returns="Required<AgonConfig>"
     const localPrivate = cwd
       ? readJsonSafe<Partial<AgonConfig>>(join(cwd, LOCAL_PRIVATE_CONFIG_NAME)) ?? {}
       : {};
-    return { ...DEFAULT_AGON_CONFIG, ...global, ...local, ...localPrivate } as Required<AgonConfig>;
+    const merged = { ...DEFAULT_AGON_CONFIG, ...global, ...local, ...localPrivate } as Required<AgonConfig>;
+    // Compiler can't emit object/array defaults for Record types — ensure correct runtime types
+    if (!merged.hooks || typeof merged.hooks === 'string') (merged as any).hooks = {};
+    if (!merged.allowedCommands || typeof merged.allowedCommands === 'string') (merged as any).allowedCommands = [];
+    if (!merged.toolPermissions || typeof merged.toolPermissions === 'string') (merged as any).toolPermissions = {};
+    return merged;
   >>>
 
 fn name=configGet params="key:keyof AgonConfig,cwd?:string" returns="Required<AgonConfig>[keyof AgonConfig]"

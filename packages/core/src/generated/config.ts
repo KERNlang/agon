@@ -40,7 +40,12 @@ export function loadConfig(cwd?: string): Required<AgonConfig> {
   const localPrivate = cwd
     ? readJsonSafe<Partial<AgonConfig>>(join(cwd, LOCAL_PRIVATE_CONFIG_NAME)) ?? {}
     : {};
-  return { ...DEFAULT_AGON_CONFIG, ...global, ...local, ...localPrivate } as Required<AgonConfig>;
+  const merged = { ...DEFAULT_AGON_CONFIG, ...global, ...local, ...localPrivate } as Required<AgonConfig>;
+  // Compiler can't emit object/array defaults for Record types — ensure correct runtime types
+  if (!merged.hooks || typeof merged.hooks === 'string') (merged as any).hooks = {};
+  if (!merged.allowedCommands || typeof merged.allowedCommands === 'string') (merged as any).allowedCommands = [];
+  if (!merged.toolPermissions || typeof merged.toolPermissions === 'string') (merged as any).toolPermissions = {};
+  return merged;
 }
 
 export function configGet(key: keyof AgonConfig, cwd?: string): Required<AgonConfig>[keyof AgonConfig] {

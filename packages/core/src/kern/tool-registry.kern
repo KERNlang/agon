@@ -18,7 +18,7 @@ service name=ToolRegistry singleton=true
 
   method name=get params="name:string" returns="ToolHandler|undefined"
     handler <<<
-      return this.tools.get(name);
+      return this.tools.get(name) ?? this.tools.get(name.charAt(0).toUpperCase() + name.slice(1));
     >>>
 
   method name=list returns="ToolDefinition[]"
@@ -28,7 +28,7 @@ service name=ToolRegistry singleton=true
 
   method name=has params="name:string" returns=boolean
     handler <<<
-      return this.tools.has(name);
+      return this.tools.has(name) || this.tools.has(name.charAt(0).toUpperCase() + name.slice(1));
     >>>
 
   method name=names returns="string[]"

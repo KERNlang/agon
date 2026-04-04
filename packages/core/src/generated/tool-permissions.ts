@@ -98,6 +98,13 @@ export function checkBashPermission(command: string, ctx: ToolContext): Permissi
   if (ctx.permissionMode === 'deny-all') {
     return { behavior: 'deny', message: 'All tool execution is denied' };
   }
+  // Check per-tool permission from settings.json
+  if (ctx.toolPermissions?.['Bash']) {
+    const tp = ctx.toolPermissions['Bash'];
+    if (tp === 'allow') return { behavior: 'allow' };
+    if (tp === 'deny') return { behavior: 'deny', message: 'Bash denied in settings' };
+    // tp === 'ask' — fall through to normal checks
+  }
   // Read-only commands always auto-approved
   if (isReadOnlyCommand(command)) {
     return { behavior: 'allow' };
@@ -109,7 +116,7 @@ export function checkBashPermission(command: string, ctx: ToolContext): Permissi
       return { behavior: 'allow' };
     }
   }
-  // Non-read-only: always ask user for approval (even in auto mode)
+  // Non-read-only: always ask user for approval
   return { behavior: 'ask', message: `This command requires approval`, reason: 'bash_mutating' };
 }
 
@@ -137,9 +144,16 @@ export function checkFileReadPermission(filePath: string, ctx: ToolContext): Per
   if (ctx.permissionMode === 'deny-all') {
     return { behavior: 'deny', message: 'All tool execution is denied' };
   }
+  // Check per-tool permission from settings.json
+  if (ctx.toolPermissions?.['Read'] === 'deny') {
+    return { behavior: 'deny', message: 'Read denied in settings' };
+  }
   const resolved = isAbsolute(filePath) ? filePath : resolve(ctx.cwd, filePath);
   if (isPathUnderCwd(resolved, ctx.cwd)) {
     return { behavior: 'allow' };
+  }
+  if (ctx.toolPermissions?.['Read'] === 'ask') {
+    return { behavior: 'ask', message: `Read file outside workspace: ${resolved}` };
   }
   if (ctx.permissionMode === 'auto') {
     return { behavior: 'allow' };
@@ -150,6 +164,12 @@ export function checkFileReadPermission(filePath: string, ctx: ToolContext): Per
 export function checkFileWritePermission(filePath: string, ctx: ToolContext): PermissionDecision {
   if (ctx.permissionMode === 'deny-all') {
     return { behavior: 'deny', message: 'All tool execution is denied' };
+  }
+  // Check per-tool permission from settings.json
+  if (ctx.toolPermissions?.['Edit']) {
+    const tp = ctx.toolPermissions['Edit'];
+    if (tp === 'deny') return { behavior: 'deny', message: 'Edit/Write denied in settings' };
+    if (tp === 'ask') return { behavior: 'ask', message: `Edit requires approval: ${filePath}` };
   }
   const resolved = isAbsolute(filePath) ? filePath : resolve(ctx.cwd, filePath);
   
@@ -163,9 +183,6 @@ export function checkFileWritePermission(filePath: string, ctx: ToolContext): Pe
   }
   
   if (isPathUnderCwd(resolved, ctx.cwd)) {
-    if (ctx.permissionMode === 'auto') {
-      return { behavior: 'allow' };
-    }
     return { behavior: 'allow' };
   }
   return { behavior: 'ask', message: `Write file outside workspace: ${resolved}` };

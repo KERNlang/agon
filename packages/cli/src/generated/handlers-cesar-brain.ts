@@ -126,6 +126,12 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
     ensureAgonHome();
   
     const config = ctx.config;
+  
+    // Check cesarEnabled setting
+    if ((config as any).cesarEnabled === false) {
+      return { delegated: false, responded: false };
+    }
+  
     const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
     const available = ctx.activeEngines();
   
@@ -350,6 +356,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           permissionMode: 'auto',
           explorationMode,
           allowedCommands: (config as any).allowedCommands ?? [],
+          toolPermissions: (config as any).toolPermissions ?? {},
           onProgress: (msg: string) => dispatch({ type: 'spinner-update', message: `Cesar: ${msg}` }),
         };
   

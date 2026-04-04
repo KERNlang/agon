@@ -356,14 +356,14 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         }
         streaming = false;
   
-        // Build tool context — 'auto' mode: edits/writes auto-allowed within CWD
+        // Build tool context — 'ask' mode: user must approve tool execution
         const fileStateCache = new FileStateCache();
         const explorationMode = (ctx as any).explorationMode ?? false;
         const toolCtx: ToolContext = {
           cwd: resolveWorkingDir(),
           readFileState: (fileStateCache as any).cache,
           abortSignal: abort.signal,
-          permissionMode: 'auto',
+          permissionMode: 'ask',
           explorationMode,
           allowedCommands: (config as any).allowedCommands ?? [],
           toolPermissions: (config as any).toolPermissions ?? {},
@@ -457,6 +457,28 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
       appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
       tracker.record(cesarEngineId, input, response);
+  
+      // Detect if engine is asking a yes/no question — show interactive prompt
+      const lastLine = response.split('\n').filter((l: string) => l.trim()).pop()?.trim() ?? '';
+      const asksConfirmation = /\?\s*$/.test(lastLine) && /\b(want|shall|should|ready|proceed|go ahead|dispatch|confirm|continue)\b/i.test(lastLine);
+      if (asksConfirmation && ctx.askQuestion) {
+        const answer = await ctx.askQuestion(`${cesarEngineId}: ${lastLine.length > 80 ? lastLine.slice(0, 80) + '…' : lastLine}`);
+        if (answer.trim()) {
+          // Feed the answer back to the session
+          if (session.alive && !abort.signal.aborted) {
+            let followUp = '';
+            const gen = session.send({ message: answer, signal: abort.signal });
+            for await (const chunk of gen) {
+              if (chunk.type === 'text') followUp += chunk.content;
+              if (chunk.type === 'done' || chunk.type === 'error') break;
+            }
+            if (followUp.trim()) {
+              dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: followUp.trim() });
+            }
+          }
+        }
+      }
+  
       return { delegated: false, responded: true };
     } else {
       dispatch({ type: 'spinner-stop' });

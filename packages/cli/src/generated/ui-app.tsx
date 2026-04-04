@@ -214,6 +214,7 @@ export function App({  }: {  }) {
           let input = cleanSubmitValue(value);
           if (!input) return;
           input = expandPastePlaceholders(input, pasteHashesRef.current);
+          pasteHashesRef.current.clear();
           pasteCountRef.current = 0;
           setInputValue(''); setInputHistory((prev: string[]) => [...prev, input]); setHistoryIndex(-1);
           if (replState !== 'idle' && !jobManager.running().length) {

@@ -56,10 +56,9 @@ export class PasteStore {
             unlinkSync(fp);
             deleted++;
           }
-        } catch {}
+        } catch (_e) { /* stat may fail — skip file */ }
       }
-    } catch {}
+    } catch (err) { console.warn(`[agon] paste cleanup failed: ${err instanceof Error ? err.message : String(err)}`); }
     return deleted;
   }
 }
-

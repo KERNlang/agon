@@ -46,7 +46,7 @@ import { handleOutputEvent } from '../generated/app-output.js';
 
 import type { OutputActions, OutputState } from '../generated/app-output.js';
 
-import { cleanInputValue, cleanSubmitValue, navigateHistory } from '../generated/app-input.js';
+import { cleanInputValue, cleanSubmitValue, findInputChange, navigateHistory } from '../generated/app-input.js';
 
 import { handleReviewAction } from '../generated/app-review.js';
 
@@ -97,10 +97,38 @@ export default function App() {
   const chatStartTimeRef = useRef<number>(0);
   const currentPlanRef = useRef<Plan|null>(null);
   const streamingTextRef = useRef<any>(null);
-  const pasteBufferRef = useRef<string|null>(null);
-  const isPastingRef = useRef<boolean>(false);
   const justPastedRef = useRef<boolean>(false);
   const pasteHashesRef = useRef<Map<string,string>>(new Map());
+  const pasteCountRef = useRef<number>(0);
+  const lastEscRef = useRef<number>(0);
+
+  const allSlashCommands = useMemo(() => {
+          const skillCmds = dynamicSkills.map((s: any) => ({ cmd: s.trigger, desc: s.description || s.name }));
+          return [...SLASH_COMMANDS, ...skillCmds];
+  }, [dynamicSkills]);
+
+  const outputActions = useMemo(() => {
+          return {
+            setLiveSpinner,
+            setLiveProgress,
+            setStreamingText: (val: any) => { streamingTextRef.current = val; setStreamingText(val); },
+            addBlock: (event: any) => setOutputBlocks((prev: any) => [...prev, { id: Date.now() + Math.random(), event }]),
+            clearBlocks: () => setOutputBlocks([]),
+            setReviewEvent,
+            setQuestionState,
+            setChatStartTime: (val: number) => { chatStartTimeRef.current = val; },
+            flushStream: () => {
+              const prev = streamingTextRef.current;
+              if (prev) {
+                const color = ENGINE_COLORS[prev.engineId] ?? 245;
+                setOutputBlocks((blocks: any) => [...blocks, { id: Date.now() - 1, event: { type: 'engine-block', engineId: prev.engineId, color, content: prev.content } }]);
+                streamingTextRef.current = null;
+                setStreamingText(null);
+              }
+            },
+            getEngineColor: (engineId: string) => ENGINE_COLORS[engineId] ?? 245,
+          };
+  }, []);
 
   const transition = useCallback((fn:any) => {
     setReplState((prev: any) => fn({ state: prev }).state);
@@ -142,27 +170,40 @@ export default function App() {
     };
   }, [registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode]);
 
-  const finishPaste = useCallback((raw:string) => {
-    const result = processPasteContent(raw);
-    if (result.type === 'empty') return;
+  const handleInputChange = useCallback((value:string) => {
+    const nextValue = cleanInputValue(value);
+    const change = findInputChange(inputValue, nextValue);
+    const looksLikePaste = value !== nextValue || change.inserted.length > 1;
+    
+    if (!looksLikePaste || !change.inserted) {
+      setInputValue(nextValue);
+      return;
+    }
+    
     justPastedRef.current = true;
     setTimeout(() => { justPastedRef.current = false; }, 100);
-    if (result.type === 'stored') {
-      pasteHashesRef.current.set(result.tag, result.fullHash);
-      setInputValue((prev: string) => prev + result.placeholder);
-    } else {
-      setInputValue((prev: string) => prev + result.content);
+    
+    pasteCountRef.current += 1;
+    const result = processPasteContent(change.inserted, pasteCountRef.current);
+    if (result.type === 'empty') {
+      setInputValue(nextValue);
+      return;
     }
-  }, []);
-
-  const handleInputChange = useCallback((value:string) => {
-    setInputValue(cleanInputValue(value));
-  }, []);
+    
+    if (result.type === 'stored') {
+      pasteHashesRef.current.set(String(pasteCountRef.current), result.fullHash);
+    }
+    
+    const replacement = result.type === 'stored' ? result.placeholder : result.content;
+    const updatedValue = nextValue.slice(0, change.start) + replacement + nextValue.slice(change.start + change.inserted.length);
+    setInputValue(updatedValue);
+  }, [inputValue]);
 
   const handleSubmit = useCallback(async (value:string) => {
     let input = cleanSubmitValue(value);
     if (!input) return;
     input = expandPastePlaceholders(input, pasteHashesRef.current);
+    pasteCountRef.current = 0;
     setInputValue(''); setInputHistory((prev: string[]) => [...prev, input]); setHistoryIndex(-1);
     if (replState !== 'idle' && !jobManager.running().length) {
       setInputQueue((prev: string[]) => [...prev, input]);
@@ -222,10 +263,9 @@ export default function App() {
     if (questionState) { questionState.resolve(answer); setQuestionState(null); setQuestionAnswer(''); }
   }, [questionState]);
 
-  const _handleInputRef = useRef<(input: string, key: any) => void>(() => {});
-  const _lastEscRef = useRef<number>(0);
-  _handleInputRef.current = (input:string, key:any) => {
-    if (input === '/' && !inputValue && !slashPickerOpen && !enginePickerOpen && !questionState && !justPastedRef.current && !isPastingRef.current) {
+  const _inputHandlerRef = useRef<(input: string, key: any) => void>(() => {});
+  _inputHandlerRef.current = (input: string, key: any) => {
+    if (input === '/' && !inputValue && !slashPickerOpen && !enginePickerOpen && !questionState && !justPastedRef.current) {
       setSlashPickerOpen(true); return;
     }
     if ((key.tab || input === '\t') && !slashPickerOpen && !enginePickerOpen && !questionState && !reviewEvent) {
@@ -240,14 +280,13 @@ export default function App() {
       if (enginePickerOpen) { setEnginePickerOpen(false); return; }
       if (questionState) { questionState.resolve(''); setQuestionState(null); setQuestionAnswer(''); return; }
       const now = Date.now();
-      if (inputValue) { setInputValue(''); _lastEscRef.current = now; return; }
-      // Double Esc (within 500ms, empty input) → clear chat
-      if (now - _lastEscRef.current < 500) {
+      if (inputValue) { setInputValue(''); lastEscRef.current = now; return; }
+      if (now - lastEscRef.current < 500) {
         dispatch({ type: 'clear' } as any);
-        _lastEscRef.current = 0;
+        lastEscRef.current = 0;
         return;
       }
-      _lastEscRef.current = now;
+      lastEscRef.current = now;
       return;
     }
     if (key.ctrl && input === 'j') {
@@ -274,28 +313,13 @@ export default function App() {
       } else { process.exit(0); }
     }
   };
+  useInput((input: string, key: any) => _inputHandlerRef.current(input, key));
 
   useEffect(() => {
     const stdin = process.stdin;
     if (!stdin.isTTY) return;
     process.stdout.write('\x1b[?2004h');
-    const onData = (data: Buffer) => {
-      const str = data.toString();
-      if (str.includes('\x1b[200~')) {
-        isPastingRef.current = true;
-        const afterMarker = str.split('\x1b[200~').slice(1).join('');
-        pasteBufferRef.current = afterMarker.replace(/\x1b\[201~/g, '');
-        if (str.includes('\x1b[201~')) { isPastingRef.current = false; finishPaste(pasteBufferRef.current ?? ''); pasteBufferRef.current = null; }
-        return;
-      }
-      if (isPastingRef.current) {
-        if (str.includes('\x1b[201~')) { const bm = str.split('\x1b[201~')[0]; isPastingRef.current = false; finishPaste((pasteBufferRef.current ?? '') + bm); pasteBufferRef.current = null; }
-        else { pasteBufferRef.current = (pasteBufferRef.current ?? '') + str; }
-        return;
-      }
-    };
-    stdin.on('data', onData);
-    return () => { process.stdout.write('\x1b[?2004l'); stdin.off('data', onData); };
+    return () => { process.stdout.write('\x1b[?2004l'); };
   }, []);
 
   useEffect(() => {
@@ -335,101 +359,73 @@ export default function App() {
     };
   }, [setActiveAbort]);
 
-  const allSlashCommands = useMemo(() => {
-    const skillCmds = dynamicSkills.map((s: any) => ({ cmd: s.trigger, desc: s.description || s.name }));
-    return [...SLASH_COMMANDS, ...skillCmds];
-  }, [dynamicSkills]);
-
-  const outputActions = useMemo(() => ({
-    setLiveSpinner,
-    setLiveProgress,
-    setStreamingText: (val: any) => { streamingTextRef.current = val; setStreamingText(val); },
-    addBlock: (event: any) => setOutputBlocks((prev: any) => [...prev, { id: Date.now() + Math.random(), event }]),
-    clearBlocks: () => setOutputBlocks([]),
-    setReviewEvent,
-    setQuestionState,
-    setChatStartTime: (val: number) => { chatStartTimeRef.current = val; },
-    flushStream: () => {
-      const prev = streamingTextRef.current;
-      if (prev) {
-        const color = ENGINE_COLORS[prev.engineId] ?? 245;
-        setOutputBlocks((blocks: any) => [...blocks, { id: Date.now() - 1, event: { type: 'engine-block', engineId: prev.engineId, color, content: prev.content } }]);
-        streamingTextRef.current = null;
-        setStreamingText(null);
-      }
-    },
-    getEngineColor: (engineId: string) => ENGINE_COLORS[engineId] ?? 245,
-  }), []);
-
-  useInput((input: string, key: any) => _handleInputRef.current(input, key));
-
   return (
-      <Box flexDirection="column">
-        {mode !== 'chat' && (
-          <Box paddingX={1}>
-            <Text dimColor>{'\ud83d\udcc2 '}{resolveWorkingDir().split('/').pop()}</Text>
-            <Text dimColor>{' \u2502 '}</Text>
-            <Text color={mode === 'campfire' ? '#f97316' : mode === 'brainstorm' ? '#22d3ee' : '#a78bfa'}>{mode}</Text>
-            <Text dimColor>{' \u2502 '}</Text>
-            <Text dimColor>{registry.availableIds().length}{' engines'}</Text>
-            {replState !== 'idle' && (<><Text dimColor>{' \u2502 '}</Text><Text color="yellow">{replState}</Text></>)}
-          </Box>
-        )}
-        <BackgroundJobRail jobs={jobList.filter((j: Job) => j.state === 'running')} />
-        <Box flexDirection="column">
-          {outputBlocks.map((block: OutputBlock) => (<OutputBlockView key={block.id} event={block.event} mode={mode} />))}
-          {streamingText && (() => {
-            const c = engineColor(streamingText.engineId);
-            const cleaned = cleanEngineOutput(streamingText.content);
-            const wrapWidth = contentWidth(mode === 'chat' ? 6 : 8);
-            const segments = parseMarkdownBlocks(cleaned);
-            return mode === 'chat' ? (
-              <Box flexDirection="column" marginY={1} paddingLeft={1}>
-                <Text><Text color={c} bold>{'● '}{streamingText.engineId}</Text></Text>
-                <Text>{' '}</Text>
-                <RenderedSegments segments={segments} borderColor={''} wrapWidth={wrapWidth} />
-              </Box>
-            ) : (
-              <Box flexDirection="column" marginY={1} paddingLeft={2}>
-                <Text color={c} bold>{'┌── '}{streamingText.engineId}</Text>
-                <Text color={c}>{'│'}</Text>
-                <RenderedSegments segments={segments} borderColor={c} wrapWidth={wrapWidth} />
-              </Box>
-            );
-          })()}
-          {liveProgress && <EngineProgressView engines={liveProgress} />}
-        </Box>
-        {reviewEvent && <ReviewBlock event={reviewEvent} onAction={handleReviewActionCb} />}
-        {enginePickerOpen && (
-          <EnginePicker available={registry.availableIds()} initialSelected={sessionEngines ?? registry.availableIds()}
-            onConfirm={(selected: string[]) => { setEnginePickerOpen(false); setSessionEngines(selected); configSet('forgeEnabledEngines', selected); dispatch({ type: 'success', message: `Active engines: ${selected.join(', ')}` } as any); }}
-            onCancel={() => setEnginePickerOpen(false)} />
-        )}
-        {liveSpinner && (mode === 'chat'
-          ? <StatusLine startTime={chatStartTimeRef.current || Date.now()} engineId={liveSpinner.engineId} color={liveSpinner.color} />
-          : <SpinnerBlock message={liveSpinner.message} color={liveSpinner.color} />)}
-        {!enginePickerOpen && (
-          <Box flexDirection="column" paddingX={1} marginTop={1}>
-            {slashPickerOpen && <SlashPicker commands={allSlashCommands} onSelect={handleSlashSelect} onCancel={() => setSlashPickerOpen(false)} />}
-            {pendingImages.length > 0 && (<Box><Text color="#22d3ee">{'📎 '}</Text>{pendingImages.map((img: any, i: number) => (<Text key={i} dimColor>{img.filename}{i < pendingImages.length - 1 ? ', ' : ''}</Text>))}</Box>)}
-            {inputQueue.length > 0 && (<Box><Text dimColor>{'⏳ '}{inputQueue.length} queued: </Text><Text dimColor italic>{inputQueue[0].length > 40 ? inputQueue[0].slice(0, 40) + '…' : inputQueue[0]}</Text></Box>)}
-            {questionState ? (
-              <Box><Text bold color="yellow">{questionState.prompt} </Text><TextInput value={questionAnswer} onChange={setQuestionAnswer} onSubmit={handleQuestionAnswer} /></Box>
-            ) : (
-              <Box borderStyle={mode === 'chat' ? 'round' : 'single'} borderColor={mode === 'chat' ? '#585858' : 'gray'} borderLeft={mode !== 'chat'} borderRight={mode !== 'chat'} borderTop borderBottom paddingX={1} width="100%">
-                {mode !== 'chat' && (<Text><Text color={mode === 'campfire' ? '#f97316' : mode === 'brainstorm' ? '#22d3ee' : '#a78bfa'} bold>{mode === 'campfire' ? '🔥' : mode === 'brainstorm' ? '💡' : '⚖'}{' '}{mode}</Text><Text dimColor>{' │ '}</Text></Text>)}
-                <Text color={mode === 'chat' ? '#585858' : '#fbbf24'}>{mode === 'chat' ? '> ' : '❯ '}</Text>
-                <Box flexGrow={1}>
-                  <TextInput key={inputKey} value={inputValue} onChange={handleInputChange} onSubmit={handleSubmit}
-                    placeholder={replState === 'idle' ? mode === 'chat' ? '' : mode === 'campfire' ? 'What should we think about?' : mode === 'brainstorm' ? 'What question for the engines?' : 'What should they debate?' : ''} />
-                  {(() => { const ghost = getGhostCompletion(inputValue, allSlashCommands, registry.availableIds()); return ghost ? <Text dimColor>{ghost}</Text> : null; })()}
-                </Box>
-              </Box>
-            )}
-            {mode === 'chat' && <StatusBar config={loadConfig()} chatSession={chatSession} explorationMode={explorationMode} />}
-          </Box>
-        )}
+  <Box flexDirection="column">
+    {mode !== 'chat' && (
+      <Box paddingX={1}>
+        <Text dimColor>{'\ud83d\udcc2 '}{resolveWorkingDir().split('/').pop()}</Text>
+        <Text dimColor>{' \u2502 '}</Text>
+        <Text color={mode === 'campfire' ? '#f97316' : mode === 'brainstorm' ? '#22d3ee' : '#a78bfa'}>{mode}</Text>
+        <Text dimColor>{' \u2502 '}</Text>
+        <Text dimColor>{registry.availableIds().length}{' engines'}</Text>
+        {replState !== 'idle' && (<><Text dimColor>{' \u2502 '}</Text><Text color="yellow">{replState}</Text></>)}
       </Box>
+    )}
+    <BackgroundJobRail jobs={jobList.filter((j: Job) => j.state === 'running')} />
+    <Box flexDirection="column">
+      {outputBlocks.map((block: OutputBlock) => (<OutputBlockView key={block.id} event={block.event} mode={mode} />))}
+      {streamingText && (() => {
+        const c = engineColor(streamingText.engineId);
+        const cleaned = cleanEngineOutput(streamingText.content);
+        const wrapWidth = contentWidth(mode === 'chat' ? 6 : 8);
+        const segments = parseMarkdownBlocks(cleaned);
+        return mode === 'chat' ? (
+          <Box flexDirection="column" marginY={1} paddingLeft={1}>
+            <Text><Text color={c} bold>{'● '}{streamingText.engineId}</Text></Text>
+            <Text>{' '}</Text>
+            <RenderedSegments segments={segments} borderColor={''} wrapWidth={wrapWidth} />
+          </Box>
+        ) : (
+          <Box flexDirection="column" marginY={1} paddingLeft={2}>
+            <Text color={c} bold>{'┌── '}{streamingText.engineId}</Text>
+            <Text color={c}>{'│'}</Text>
+            <RenderedSegments segments={segments} borderColor={c} wrapWidth={wrapWidth} />
+          </Box>
+        );
+      })()}
+      {liveProgress && <EngineProgressView engines={liveProgress} />}
+    </Box>
+    {reviewEvent && <ReviewBlock event={reviewEvent} onAction={handleReviewActionCb} />}
+    {enginePickerOpen && (
+      <EnginePicker available={registry.availableIds()} initialSelected={sessionEngines ?? registry.availableIds()}
+        onConfirm={(selected: string[]) => { setEnginePickerOpen(false); setSessionEngines(selected); configSet('forgeEnabledEngines', selected); dispatch({ type: 'success', message: `Active engines: ${selected.join(', ')}` } as any); }}
+        onCancel={() => setEnginePickerOpen(false)} />
+    )}
+    {liveSpinner && (mode === 'chat'
+      ? <StatusLine startTime={chatStartTimeRef.current || Date.now()} engineId={liveSpinner.engineId} color={liveSpinner.color} />
+      : <SpinnerBlock message={liveSpinner.message} color={liveSpinner.color} />)}
+    {!enginePickerOpen && (
+      <Box flexDirection="column" paddingX={1} marginTop={1}>
+        {slashPickerOpen && <SlashPicker commands={allSlashCommands} onSelect={handleSlashSelect} onCancel={() => setSlashPickerOpen(false)} />}
+        {pendingImages.length > 0 && (<Box><Text color="#22d3ee">{'📎 '}</Text>{pendingImages.map((img: any, i: number) => (<Text key={i} dimColor>{img.filename}{i < pendingImages.length - 1 ? ', ' : ''}</Text>))}</Box>)}
+        {inputQueue.length > 0 && (<Box><Text dimColor>{'⏳ '}{inputQueue.length} queued: </Text><Text dimColor italic>{inputQueue[0].length > 40 ? inputQueue[0].slice(0, 40) + '…' : inputQueue[0]}</Text></Box>)}
+        {questionState ? (
+          <Box><Text bold color="yellow">{questionState.prompt} </Text><TextInput value={questionAnswer} onChange={setQuestionAnswer} onSubmit={handleQuestionAnswer} /></Box>
+        ) : (
+          <Box borderStyle={mode === 'chat' ? 'round' : 'single'} borderColor={mode === 'chat' ? '#585858' : 'gray'} borderLeft={mode !== 'chat'} borderRight={mode !== 'chat'} borderTop borderBottom paddingX={1} width="100%">
+            {mode !== 'chat' && (<Text><Text color={mode === 'campfire' ? '#f97316' : mode === 'brainstorm' ? '#22d3ee' : '#a78bfa'} bold>{mode === 'campfire' ? '🔥' : mode === 'brainstorm' ? '💡' : '⚖'}{' '}{mode}</Text><Text dimColor>{' │ '}</Text></Text>)}
+            <Text color={mode === 'chat' ? '#585858' : '#fbbf24'}>{mode === 'chat' ? '> ' : '❯ '}</Text>
+            <Box flexGrow={1}>
+              <TextInput key={inputKey} value={inputValue} onChange={handleInputChange} onSubmit={handleSubmit}
+                placeholder={replState === 'idle' ? mode === 'chat' ? '' : mode === 'campfire' ? 'What should we think about?' : mode === 'brainstorm' ? 'What question for the engines?' : 'What should they debate?' : ''} />
+              {(() => { const ghost = getGhostCompletion(inputValue, allSlashCommands, registry.availableIds()); return ghost ? <Text dimColor>{ghost}</Text> : null; })()}
+            </Box>
+          </Box>
+        )}
+        {mode === 'chat' && <StatusBar config={loadConfig()} chatSession={chatSession} explorationMode={explorationMode} />}
+      </Box>
+    )}
+  </Box>
   );
 }
 

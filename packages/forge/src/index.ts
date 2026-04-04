@@ -10,3 +10,10 @@ export type { StageResult, SynthesisResult, ForgeEventCallback, WorktreeEntry } 
 export type { TribunalResult, TribunalRound, TribunalPosition } from './tribunal.js';
 export { getModeConfig, buildModePrompt, buildModeSummaryPrompt, isTribunalMode, TRIBUNAL_MODES } from './tribunal-modes.js';
 export type { TribunalMode, TribunalModeConfig } from './tribunal-modes.js';
+// ── Team Competition ──
+export { runTeamForge } from './generated/team-forge.js';
+export type { TeamForgeOptions } from './generated/team-forge.js';
+export { runTeamTribunal } from './generated/team-tribunal.js';
+export type { TeamTribunalOptions } from './generated/team-tribunal.js';
+export { runTeamBrainstorm } from './generated/team-brainstorm.js';
+export type { TeamBrainstormOptions } from './generated/team-brainstorm.js';

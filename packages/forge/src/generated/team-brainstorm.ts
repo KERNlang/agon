@@ -1,0 +1,260 @@
+import { randomUUID } from 'node:crypto';
+
+import type { EngineAdapter, BrainstormBid, ForgeEvent, TaskClass } from '@agon/core';
+
+import type { TeamSpec, TeamFormat, TeamComposeMode, TeamRoundTrace, TeamSubmission, TeamScoreCard, TeamMatchResult, TeamEvent } from '@agon/core';
+
+import { EngineRegistry, loadConfig, classifyTask, createSidechainLogger, composeTeams, makeFormat } from '@agon/core';
+
+import { updateTeamElo } from '@agon/core';
+
+import { buildKernDraftPrompt, parseKernDraft } from 'kern-lang';
+
+import type { KernDraft } from 'kern-lang';
+
+import { calibrateConfidence, qualityScore } from './brainstorm.js';
+
+export interface TeamBrainstormOptions {
+  question: string;
+  context?: string;
+  membersPerSide: number;
+  composeMode?: TeamComposeMode;
+  explicitTeams?: [string[],string[]];
+  engines?: string[];
+  registry: EngineRegistry;
+  adapter: EngineAdapter;
+  timeout: number;
+  outputDir: string;
+  signal?: AbortSignal;
+  onEvent?: (event:ForgeEvent|TeamEvent)=>void;
+}
+
+export async function runTeamCoopBrainstorm(team: TeamSpec, question: string, context: string|undefined, registry: EngineRegistry, adapter: EngineAdapter, timeout: number, outputDir: string, onEvent?: (event:ForgeEvent|TeamEvent)=>void, signal?: AbortSignal): Promise<{submission:TeamSubmission, proposal:string, score:number}> {
+  const trace: TeamRoundTrace[] = [];
+  const start = Date.now();
+  
+  const architect = team.members.find((m) => m.role === 'architect') ?? team.members[0];
+  const others = team.members.filter((m) => m.engineId !== architect.engineId);
+  
+  // --- Phase 1: All members draft independently (parallel) ---
+  onEvent?.({ type: 'team:round-start' as any, data: { teamId: team.teamId, round: 1 } });
+  
+  const draftPrompt = buildKernDraftPrompt({
+    question,
+    context,
+    mode: 'brainstorm',
+  });
+  
+  const draftPromises = team.members.map(async (m) => {
+    onEvent?.({ type: 'team:member-dispatch' as any, data: { teamId: team.teamId, engineId: m.engineId, role: m.role } });
+  
+    const engine = registry.get(m.engineId);
+    const result = await adapter.dispatch({
+      engine,
+      prompt: draftPrompt,
+      cwd: process.cwd(),
+      mode: 'exec',
+      timeout,
+      outputDir,
+      signal,
+    });
+  
+    const draft = parseKernDraft(result.stdout);
+    trace.push({
+      round: 1,
+      actor: m.engineId,
+      role: m.role,
+      action: 'implemented',
+      artifactSummary: draft ? draft.approach.slice(0, 200) : result.stdout.slice(0, 200),
+      durationMs: result.durationMs,
+    });
+  
+    onEvent?.({ type: 'team:member-done' as any, data: { teamId: team.teamId, engineId: m.engineId } });
+  
+    return {
+      engineId: m.engineId,
+      draft: draft ?? { approach: result.stdout.slice(0, 300), reasoning: '', tradeoffs: [], confidence: 50, keyFiles: [], steps: [] },
+      raw: result.stdout,
+      score: qualityScore(m.engineId, draft ?? { approach: '', reasoning: '', tradeoffs: [], confidence: 50, keyFiles: [], steps: [] }),
+    };
+  });
+  
+  const drafts = await Promise.all(draftPromises);
+  onEvent?.({ type: 'team:round-done' as any, data: { teamId: team.teamId, round: 1 } });
+  
+  // --- Phase 2: Architect synthesizes all team drafts ---
+  onEvent?.({ type: 'team:round-start' as any, data: { teamId: team.teamId, round: 2 } });
+  onEvent?.({ type: 'team:member-dispatch' as any, data: { teamId: team.teamId, engineId: architect.engineId, role: 'architect' } });
+  
+  const allDrafts = drafts
+    .sort((a, b) => b.score - a.score)
+    .map((d) => {
+      const steps = d.draft.steps.map((s: string, i: number) => `  ${i + 1}. ${s}`).join('\n');
+      return `## ${d.engineId} (quality: ${d.score}, confidence: ${d.draft.confidence}%)\nApproach: ${d.draft.approach}${d.draft.reasoning ? `\nReasoning: ${d.draft.reasoning}` : ''}${d.draft.tradeoffs?.length ? `\nTradeoffs: ${d.draft.tradeoffs.join('; ')}` : ''}${steps ? `\nSteps:\n${steps}` : ''}`;
+    })
+    .join('\n\n');
+  
+  const synthPrompt = `## TEAM SYNTHESIS — PRODUCE YOUR TEAM'S BEST PROPOSAL\nYou are the team architect. Your teammates produced these drafts. Synthesize the best parts into ONE comprehensive, superior proposal.\n\nQuestion: ${question}\n\n${allDrafts}\n\nCombine the strongest ideas from ALL drafts above. Don't just pick one — take the best parts from each. Be specific and actionable. Your team's rating depends on this proposal winning against the other team.`;
+  
+  const synthEngine = registry.get(architect.engineId);
+  const synthResult = await adapter.dispatch({
+    engine: synthEngine,
+    prompt: synthPrompt,
+    cwd: process.cwd(),
+    mode: 'exec',
+    timeout,
+    outputDir,
+    signal,
+  });
+  
+  const proposal = synthResult.stdout.trim();
+  
+  trace.push({
+    round: 2,
+    actor: architect.engineId,
+    role: 'architect',
+    action: 'finalized',
+    artifactSummary: proposal.slice(0, 200),
+    durationMs: synthResult.durationMs,
+  });
+  
+  onEvent?.({ type: 'team:member-done' as any, data: { teamId: team.teamId, engineId: architect.engineId } });
+  onEvent?.({ type: 'team:round-done' as any, data: { teamId: team.teamId, round: 2 } });
+  
+  // Score the final proposal
+  const avgDraftScore = drafts.reduce((s, d) => s + d.score, 0) / drafts.length;
+  const proposalScore = Math.min(avgDraftScore * 1.2, 100); // Synthesis should be better
+  
+  return {
+    submission: {
+      teamId: team.teamId,
+      finalOutput: proposal,
+      trace,
+      totalTokens: 0,
+      wallClockMs: Date.now() - start,
+      collaborationLift: proposalScore - Math.max(...drafts.map((d) => d.score)),
+    },
+    proposal,
+    score: proposalScore,
+  };
+}
+
+export async function runTeamBrainstorm(options: TeamBrainstormOptions): Promise<TeamMatchResult> {
+  const config = loadConfig(process.cwd());
+  const matchId = randomUUID().slice(0, 8);
+  
+  const sidechain = createSidechainLogger({
+    sessionId: matchId,
+    sessionType: 'team-brainstorm',
+    outputDir: options.outputDir,
+  });
+  
+  const enabledEngines = options.engines ?? config.forgeEnabledEngines;
+  const available = enabledEngines.filter((id: string) => {
+    try {
+      const engine = options.registry.get(id);
+      return options.registry.isAvailable(engine);
+    } catch { return false; }
+  });
+  
+  // Engines can appear on both teams — minimum is 2 engines + Cesar as judge
+  if (available.length < 2) {
+    throw new Error(`Team brainstorm requires at least 2 available engines, only ${available.length} available`);
+  }
+  
+  const taskClass = classifyTask(options.question);
+  const format = makeFormat(options.membersPerSide);
+  const composeMode = options.composeMode ?? 'auto-balanced';
+  
+  // Cesar is the impartial judge — exclude from competing pool
+  const cesarId = config.cesarEngine;
+  const competitors = available.filter((id: string) => id !== cesarId);
+  if (competitors.length < 2) {
+    // If Cesar is the only option or pool too small, let Cesar compete AND judge
+    competitors.push(...available.filter((id: string) => !competitors.includes(id)));
+  }
+  
+  const [teamA, teamB] = composeTeams(
+    competitors,
+    options.membersPerSide,
+    composeMode,
+    taskClass,
+    options.explicitTeams,
+  );
+  
+  sidechain.log('team-brainstorm:init', undefined, {
+    format: format.label,
+    teamA: teamA.members.map((m) => `${m.engineId}:${m.role}`),
+    teamB: teamB.members.map((m) => `${m.engineId}:${m.role}`),
+  });
+  
+  options.onEvent?.({ type: 'team:compose' as any, data: { teams: [teamA, teamB] } });
+  
+  // Run both teams in parallel
+  const [resultA, resultB] = await Promise.all([
+    runTeamCoopBrainstorm(teamA, options.question, options.context, options.registry, options.adapter, options.timeout, options.outputDir, options.onEvent, options.signal),
+    runTeamCoopBrainstorm(teamB, options.question, options.context, options.registry, options.adapter, options.timeout, options.outputDir, options.onEvent, options.signal),
+  ]);
+  
+  // --- Cesar judges (impartial — not on either team when possible) ---
+  const judgeEngine = options.registry.get(cesarId);
+  const judgePrompt = `## BRAINSTORM JUDGE\nYou are an impartial judge. Two teams produced competing proposals for the same question. Evaluate and declare a winner.\n\nQuestion: ${options.question}\n\n## TEAM ALPHA PROPOSAL:\n${resultA.proposal}\n\n## TEAM BETA PROPOSAL:\n${resultB.proposal}\n\nEvaluate each on: completeness (0-25), actionability (0-25), creativity (0-25), feasibility (0-25).\nYou MUST end your response with exactly these two lines:\nSCORE_ALPHA: <number 0-100>\nSCORE_BETA: <number 0-100>\nThen declare: WINNER: "ALPHA" or "BETA" or "DRAW"`;
+  
+  const judgeResult = await options.adapter.dispatch({
+    engine: judgeEngine,
+    prompt: judgePrompt,
+    cwd: process.cwd(),
+    mode: 'review',
+    timeout: options.timeout,
+    outputDir: options.outputDir,
+    signal: options.signal,
+  });
+  
+  const judgeText = judgeResult.stdout.trim();
+  
+  let winnerTeamId: string | null = null;
+  if (/WINNER.*ALPHA/i.test(judgeText)) winnerTeamId = teamA.teamId;
+  else if (/WINNER.*BETA/i.test(judgeText)) winnerTeamId = teamB.teamId;
+  
+  // Parse structured scores from judge (SCORE_ALPHA: XX, SCORE_BETA: XX)
+  const alphaMatch = judgeText.match(/SCORE_ALPHA\s*:\s*(\d{1,3})/i);
+  const betaMatch = judgeText.match(/SCORE_BETA\s*:\s*(\d{1,3})/i);
+  const rawScoreA = alphaMatch ? parseInt(alphaMatch[1], 10) : resultA.score;
+  const rawScoreB = betaMatch ? parseInt(betaMatch[1], 10) : resultB.score;
+  
+  const cardA: TeamScoreCard = { teamId: teamA.teamId, score: Math.min(rawScoreA, 100), breakdown: {} };
+  const cardB: TeamScoreCard = { teamId: teamB.teamId, score: Math.min(rawScoreB, 100), breakdown: {} };
+  
+  options.onEvent?.({ type: 'team:score' as any, data: { teamId: teamA.teamId, score: cardA.score } });
+  options.onEvent?.({ type: 'team:score' as any, data: { teamId: teamB.teamId, score: cardB.score } });
+  options.onEvent?.({ type: 'team:winner' as any, data: { winnerTeamId } });
+  
+  const matchResult: TeamMatchResult = {
+    matchId,
+    mode: 'brainstorm',
+    task: options.question,
+    format,
+    teams: [teamA, teamB],
+    submissions: {
+      [teamA.teamId]: resultA.submission,
+      [teamB.teamId]: resultB.submission,
+    },
+    scorecards: { [teamA.teamId]: cardA, [teamB.teamId]: cardB },
+    winnerTeamId,
+    timestamp: new Date().toISOString(),
+  };
+  
+  if (config.eloEnabled) {
+    updateTeamElo(matchResult, config.eloKFactor);
+  }
+  
+  sidechain.log('team-brainstorm:done', winnerTeamId ?? undefined, {
+    scoreA: cardA.score,
+    scoreB: cardB.score,
+  });
+  
+  options.onEvent?.({ type: 'team:match-done' as any, data: {} });
+  
+  return matchResult;
+}
+

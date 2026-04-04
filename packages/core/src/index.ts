@@ -1,6 +1,6 @@
 export * from './types.js';
 export * from './errors.js';
-export { loadConfig, configGet, configSet, ensureAgonHome, AGON_HOME, ELO_PATH, RUNS_DIR } from './config.js';
+export { loadConfig, configGet, configSet, ensureAgonHome, AGON_HOME, ELO_PATH, TEAM_ELO_PATH, RUNS_DIR } from './config.js';
 export { computeScore, tiebreak, DEFAULT_WEIGHTS } from './scoring.js';
 export { updateElo, getElo, getEngineRating } from './elo.js';
 export { classifyTask } from './task-classifier.js';
@@ -105,3 +105,13 @@ export {
   splitPromptBlocks, mergeBlocksByRole,
 } from './prompt-builder.js';
 export type { PromptBlock } from './prompt-builder.js';
+// ── Team Competition ──
+export {
+  lineupKey, makeFormat, assignTeamRoles, composeTeams, computeContributionWeights,
+} from './generated/team.js';
+export type {
+  TeamRole, TeamComposeMode, TeamCoopStrategy, TeamMember, TeamSpec, TeamFormat,
+  TeamRoundTrace, TeamSubmission, TeamScoreCard, TeamMatchResult, TeamEvent,
+} from './generated/team.js';
+export { getTeamElo, updateTeamElo, predictTeamRating } from './generated/team-elo.js';
+export type { TeamCompositionRating, TeamRoleRating, TeamEloRecord } from './generated/team-elo.js';

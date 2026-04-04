@@ -8,6 +8,12 @@ import type { Dispatch, HandlerContext } from '../handlers/types.js';
 
 import { handleForge, handleChat, handleBrainstorm, handleCampfire, handleTribunal, handleLeaderboard, handleHistory, handleEngines, handleDiscover, handleConfig, handleUse, handleCesar, handleTokens, handleModels, handleWorkspace, handleChats, handlePlanShow, handlePlansList, handleApprove, handleRetry, handleCancel, handleApplyPatch, handleCp, handleCommit, handleFlowReport, handleFlowAnalysis, handleBuild, handleRun } from '../handlers/index.js';
 
+import { handleTeamTribunal } from '../generated/handlers-team-tribunal.js';
+
+import { handleTeamForge } from '../generated/handlers-team-forge.js';
+
+import { handleTeamBrainstorm } from '../generated/handlers-team-brainstorm.js';
+
 import { handleCesarBrain } from '../handlers/cesar-brain.js';
 
 import { handlePipeline } from '../handlers/pipeline.js';
@@ -82,8 +88,71 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
       }
     }
     if (result.responded) return false;
-  } catch { /* fall through */ }
-  await handleChat(input, cb.dispatch, cb.ctx, images);
+  } catch { /* Cesar brain threw — do NOT fall through to another engine */ }
+  
+  // Cesar didn't respond — try fresh CLI dispatch to Cesar engine
+  const cesarConfig = cb.ctx.config;
+  const cesarId = (cesarConfig as any).cesarEngine ?? 'claude';
+  try {
+    const cesarEngine = cb.ctx.registry.get(cesarId);
+    const { join } = await import('node:path');
+    const { mkdirSync } = await import('node:fs');
+    const { resolveWorkingDir, RUNS_DIR, appendMessage } = await import('@agon/core');
+    const outDir = join(RUNS_DIR, `cesar-fallback-${Date.now()}`);
+    mkdirSync(outDir, { recursive: true });
+    cb.dispatch({ type: 'warning', message: `Cesar session busy — retrying ${cesarId} with fresh dispatch…` });
+    const freshResult = await cb.ctx.adapter.dispatch({
+      engine: cesarEngine,
+      prompt: input,
+      cwd: resolveWorkingDir(),
+      mode: 'exec' as any,
+      timeout: (cesarConfig as any).timeout ?? 120,
+      outputDir: outDir,
+    });
+    if (freshResult.stdout.trim()) {
+      cb.dispatch({ type: 'engine-block', engineId: cesarId, color: 81, content: freshResult.stdout.trim() });
+      appendMessage(cb.ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
+      appendMessage(cb.ctx.chatSession, { role: 'engine', engineId: cesarId, content: freshResult.stdout.trim(), timestamp: new Date().toISOString() });
+      return false;
+    }
+  } catch { /* Cesar truly unavailable */ }
+  
+  // Cesar completely unavailable — pick next best engine as acting Cesar with full context
+  const available = cb.ctx.registry.availableIds();
+  const actingCesar = available.find((id: string) => id !== cesarId) ?? cesarId;
+  cb.dispatch({ type: 'warning', message: `Cesar (${cesarId}) unavailable — ${actingCesar} stepping in as acting Cesar` });
+  
+  // Build context so acting Cesar can lead
+  const recentMessages = cb.ctx.chatSession?.messages?.slice(-10) ?? [];
+  const historyContext = recentMessages
+    .map((m: any) => `${m.role === 'user' ? 'User' : (m.engineId ?? 'engine')}: ${m.content}`)
+    .join('\n\n');
+  const actingPrompt = `You are stepping in as acting Cesar (lead AI) for Agon AI because ${cesarId} is temporarily unavailable. You have full authority to answer, delegate, and lead.\n\n${historyContext ? `## RECENT CONVERSATION\n${historyContext}\n\n` : ''}## USER MESSAGE\n${input}`;
+  
+  try {
+    const { resolveWorkingDir, RUNS_DIR, appendMessage } = await import('@agon/core');
+    const { join } = await import('node:path');
+    const { mkdirSync } = await import('node:fs');
+    const actingEngine = cb.ctx.registry.get(actingCesar);
+    const outDir = join(RUNS_DIR, `acting-cesar-${Date.now()}`);
+    mkdirSync(outDir, { recursive: true });
+    const actingResult = await cb.ctx.adapter.dispatch({
+      engine: actingEngine,
+      prompt: actingPrompt,
+      cwd: resolveWorkingDir(),
+      mode: 'exec' as any,
+      timeout: (cesarConfig as any).timeout ?? 120,
+      outputDir: outDir,
+    });
+    if (actingResult.stdout.trim()) {
+      cb.dispatch({ type: 'engine-block', engineId: actingCesar, color: 208, content: actingResult.stdout.trim() });
+      appendMessage(cb.ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
+      appendMessage(cb.ctx.chatSession, { role: 'engine', engineId: actingCesar, content: `[acting-cesar] ${actingResult.stdout.trim()}`, timestamp: new Date().toISOString() });
+      return false;
+    }
+  } catch { /* all engines failed */ }
+  
+  cb.dispatch({ type: 'error', message: 'All engines unavailable. Check /engines.' });
   return false;
 }
 
@@ -105,6 +174,15 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
       return { handled: true, ranAsJob: true };
     case 'campfire':
       cb.runAsJob('campfire', intent.topic?.slice(0, 40) ?? 'campfire', () => handleCampfire(intent.topic, cb.dispatch, cb.ctx));
+      return { handled: true, ranAsJob: true };
+    case 'team-tribunal':
+      cb.runAsJob('team-tribunal', intent.question?.slice(0, 40) ?? 'team-tribunal', () => handleTeamTribunal(intent.question, cb.dispatch, cb.ctx, intent.tribunalMode, intent.membersPerSide));
+      return { handled: true, ranAsJob: true };
+    case 'team-forge':
+      cb.runAsJob('team-forge', intent.task?.slice(0, 40) ?? 'team-forge', () => handleTeamForge(intent.task, intent.fitnessCmd, cb.dispatch, cb.ctx, intent.membersPerSide));
+      return { handled: true, ranAsJob: true };
+    case 'team-brainstorm':
+      cb.runAsJob('team-brainstorm', intent.question?.slice(0, 40) ?? 'team-brainstorm', () => handleTeamBrainstorm(intent.question, cb.dispatch, cb.ctx, intent.membersPerSide));
       return { handled: true, ranAsJob: true };
     case 'build':
       cb.runAsJob('build', intent.input?.slice(0, 40) ?? 'build', () => handleBuild(intent.input, cb.dispatch, cb.ctx));

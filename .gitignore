@@ -9,3 +9,5 @@ coverage/
 .CLAUDE
 .Agent.md
 .Agent
+.kern/cache/*
+.kern-gaps/*

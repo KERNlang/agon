@@ -210,6 +210,12 @@ screen name=App target=ink
   callback name=handleInputChange params="value:string" deps="inputValue"
     handler <<<
       const nextValue = cleanInputValue(value);
+
+      if (justPastedRef.current) {
+        setInputValue(nextValue);
+        return;
+      }
+
       const change = findInputChange(inputValue, nextValue);
       const looksLikePaste = value !== nextValue || change.inserted.length > 1;
 
@@ -235,6 +241,7 @@ screen name=App target=ink
       const replacement = result.type === 'stored' ? result.placeholder : result.content;
       const updatedValue = nextValue.slice(0, change.start) + replacement + nextValue.slice(change.start + change.inserted.length);
       setInputValue(updatedValue);
+      setInputKey((k: number) => k + 1);
     >>>
 
   callback name=handleSubmit async=true params="value:string" deps="replState,dispatch,buildContext,mode,pendingImages,jobManager"

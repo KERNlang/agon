@@ -1,4 +1,4 @@
-import { pasteStore, PASTE_THRESHOLD } from '@agon/core';
+import { pasteStore } from '@agon/core';
 
 import type { PasteStoreResult } from '@agon/core';
 
@@ -7,35 +7,41 @@ export type PasteResult =
   | { type: 'direct'; content: string }
   | { type: 'empty' };
 
-export function processPasteContent(raw: string): PasteResult {
-  const content = raw.replace(/\r\n/g, '\n').trimEnd();
+export function processPasteContent(raw: string, pasteIndex?: number): PasteResult {
+  const normalized = raw.replace(/\r\n/g, '\n');
+  const content = normalized.trimEnd();
   if (!content) return { type: 'empty' };
   
-  if (content.length > PASTE_THRESHOLD) {
+  const lines = content.split('\n');
+  const isMultiLine = lines.length > 1;
+  const isLong = content.length > 500;
+  
+  if (isMultiLine || isLong) {
     try {
       const result = pasteStore.store(content);
       const tag = result.hash.slice(0, 8);
-      const placeholder = `[Paste:${tag} ${result.lineCount} lines]`;
+      const idx = pasteIndex ?? 1;
+      const placeholder = `[Pasted text #${idx} +${result.lineCount} lines]`;
       return { type: 'stored', tag, fullHash: result.hash, placeholder };
     } catch {
       // Storage failed — fall through to direct
     }
   }
   
-  return { type: 'direct', content };
+  return { type: 'direct', content: normalized };
 }
 
 export function expandPastePlaceholders(input: string, hashMap: Map<string,string>): string {
-  const pasteRe = /\[Paste:([a-f0-9]{8}) \d+ lines\]/g;
-  const expanded = input.replace(pasteRe, (_match: string, tag: string) => {
-    const fullHash = hashMap.get(tag);
-    if (!fullHash) return _match;
+  const pasteRe = /\[Pasted text #(\d+) \+\d+ lines\]/g;
+  const expanded = input.replace(pasteRe, (match: string, idx: string) => {
+    const fullHash = hashMap.get(idx);
+    if (!fullHash) return match;
     const content = pasteStore.retrieve(fullHash);
-    return content ?? _match;
+    return content ?? match;
   });
-  // Clean up used tags after all replacements are done
-  for (const tag of [...hashMap.keys()]) {
-    if (!expanded.includes(`[Paste:${tag}`)) hashMap.delete(tag);
+  // Clean up used entries
+  for (const key of [...hashMap.keys()]) {
+    if (!expanded.includes(`[Pasted text #${key}`)) hashMap.delete(key);
   }
   return expanded;
 }

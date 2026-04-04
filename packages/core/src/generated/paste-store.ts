@@ -8,8 +8,6 @@ import { AGON_HOME, ensureAgonHome } from '../config.js';
 
 export const PASTE_STORE_DIR: string = join(AGON_HOME, 'paste-cache');
 
-export const PASTE_THRESHOLD: number = 10_000;
-
 export const PASTE_MAX_AGE: number = 7 * 24 * 60 * 60 * 1000;
 
 export interface PasteStoreResult {

@@ -223,6 +223,7 @@ export default function App() {
   }, [questionState]);
 
   const _handleInputRef = useRef<(input: string, key: any) => void>(() => {});
+  const _lastEscRef = useRef<number>(0);
   _handleInputRef.current = (input:string, key:any) => {
     if (input === '/' && !inputValue && !slashPickerOpen && !enginePickerOpen && !questionState && !justPastedRef.current && !isPastingRef.current) {
       setSlashPickerOpen(true); return;
@@ -238,7 +239,16 @@ export default function App() {
       if (slashPickerOpen) { setSlashPickerOpen(false); return; }
       if (enginePickerOpen) { setEnginePickerOpen(false); return; }
       if (questionState) { questionState.resolve(''); setQuestionState(null); setQuestionAnswer(''); return; }
-      if (inputValue) { setInputValue(''); return; }
+      const now = Date.now();
+      if (inputValue) { setInputValue(''); _lastEscRef.current = now; return; }
+      // Double Esc (within 500ms, empty input) → clear chat
+      if (now - _lastEscRef.current < 500) {
+        dispatch({ type: 'clear' } as any);
+        _lastEscRef.current = 0;
+        return;
+      }
+      _lastEscRef.current = now;
+      return;
     }
     if (key.ctrl && input === 'j') {
       setInputValue((prev: string) => prev + '\n'); return;

@@ -172,6 +172,12 @@ export default function App() {
 
   const handleInputChange = useCallback((value:string) => {
     const nextValue = cleanInputValue(value);
+    
+    if (justPastedRef.current) {
+      setInputValue(nextValue);
+      return;
+    }
+    
     const change = findInputChange(inputValue, nextValue);
     const looksLikePaste = value !== nextValue || change.inserted.length > 1;
     
@@ -197,6 +203,7 @@ export default function App() {
     const replacement = result.type === 'stored' ? result.placeholder : result.content;
     const updatedValue = nextValue.slice(0, change.start) + replacement + nextValue.slice(change.start + change.inserted.length);
     setInputValue(updatedValue);
+    setInputKey((k: number) => k + 1);
   }, [inputValue]);
 
   const handleSubmit = useCallback(async (value:string) => {

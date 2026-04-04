@@ -198,12 +198,18 @@ export async function runBrainstorm(opts: {question:string, context?:string, eng
     signal: opts.signal,
   });
   
-  const bids: BrainstormBid[] = ranked.map((d, i) => ({
-    engineId: d.engineId,
-    confidence: calibrateConfidence(d.engineId, d.draft.confidence),
-    reasoning: d.draft.approach + (d.draft.reasoning ? ` — ${d.draft.reasoning}` : ''),
-    approach: d.draft.steps.map((s: string, j: number) => `${j + 1}. ${s}`).join('\n'),
-  }));
+  const bids: BrainstormBid[] = ranked.map((d, i) => {
+    const reasoning = d.draft.approach + (d.draft.reasoning ? ` — ${d.draft.reasoning}` : '');
+    const approach = d.draft.steps.map((s: string, j: number) => `${j + 1}. ${s}`).join('\n');
+    const score = qualityScore(d.engineId, d.draft);
+    return {
+      engineId: d.engineId,
+      confidence: calibrateConfidence(d.engineId, d.draft.confidence),
+      reasoning: reasoning || d.raw.slice(0, 300) || '[No response]',
+      approach: approach || '',
+      score,
+    };
+  });
   
   const winner = ranked[0];
   

@@ -321,8 +321,13 @@ screen name=App target=ink
       };
     >>>
 
-  // ── Keyboard handling ──
-  on event=input
+  // ── Keyboard handling (useInput — KERN 'on event=input' not compiled, using raw call) ──
+  effect deps=""
+    handler <<<
+      // Empty effect — useInput is called inline below
+    >>>
+
+  callback name=_handleInput params="input:string, key:any"
     handler <<<
       if (input === '/' && !inputValue && !slashPickerOpen && !enginePickerOpen && !questionState && !justPastedRef.current && !isPastingRef.current) {
         setSlashPickerOpen(true); return;
@@ -330,6 +335,12 @@ screen name=App target=ink
       if ((key.tab || input === '\t') && !slashPickerOpen && !enginePickerOpen && !questionState && !reviewEvent) {
         const ghost = getGhostCompletion(inputValue, allSlashCommands, registry.availableIds());
         if (ghost) { setInputValue(inputValue + ghost + ' '); setInputKey((k: number) => k + 1); return; }
+      }
+      if (key.ctrl && input === 'l') {
+        dispatch({ type: 'clear' } as any); return;
+      }
+      if (key.ctrl && input === 'j') {
+        setInputValue((prev: string) => prev + '\n'); return;
       }
       if (!enginePickerOpen && !questionState) {
         if (key.upArrow && inputHistory.length > 0 && !slashPickerOpen) {
@@ -356,6 +367,7 @@ screen name=App target=ink
   // ── Render ──
   render
     handler <<<
+      useInput(_handleInput);
       return (
       <Box flexDirection="column">
         {mode !== 'chat' && (

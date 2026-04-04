@@ -147,6 +147,31 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
       try {
         session = await ensureCesarSession(ctx);
       } catch (err) {
+        // Persistent session failed — fall back to fresh CLI dispatch so Cesar still answers
+        dispatch({ type: 'spinner-update', message: 'Cesar session busy, dispatching fresh…' });
+        try {
+          const engine = ctx.registry.get(cesarEngineId);
+          const cesarCwd = resolveWorkingDir();
+          const outputDir = join(RUNS_DIR, `cesar-fallback-${Date.now()}`);
+          mkdirSync(outputDir, { recursive: true });
+          const freshResult = await ctx.adapter.dispatch({
+            engine,
+            prompt: input,
+            cwd: cesarCwd,
+            mode: 'exec' as any,
+            timeout: config.timeout ?? 120,
+            outputDir,
+            signal: abort.signal,
+          });
+          dispatch({ type: 'spinner-stop' });
+          if (freshResult.stdout.trim()) {
+            dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: freshResult.stdout.trim() });
+            appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
+            appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: freshResult.stdout.trim(), timestamp: new Date().toISOString() });
+            tracker.record(cesarEngineId, input, freshResult.stdout.trim());
+            return { delegated: false, responded: true };
+          }
+        } catch { /* truly failed — fall through */ }
         dispatch({ type: 'spinner-stop' });
         return { delegated: false, responded: false };
       }
@@ -291,8 +316,33 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
         }
       } catch (err) {
         dispatch({ type: 'spinner-stop' });
-        // Session error — clear and fall back
+        // Session error — clear it and try fresh CLI dispatch so Cesar still answers
         ctx.setCesarSession(null);
+        try {
+          dispatch({ type: 'spinner-start', message: 'Cesar session died, dispatching fresh…', color });
+          const engine = ctx.registry.get(cesarEngineId);
+          const cesarCwd = resolveWorkingDir();
+          const outputDir = join(RUNS_DIR, `cesar-fallback-${Date.now()}`);
+          mkdirSync(outputDir, { recursive: true });
+          const freshResult = await ctx.adapter.dispatch({
+            engine,
+            prompt: input,
+            cwd: cesarCwd,
+            mode: 'exec' as any,
+            timeout: config.timeout ?? 120,
+            outputDir,
+            signal: abort.signal,
+          });
+          dispatch({ type: 'spinner-stop' });
+          if (freshResult.stdout.trim()) {
+            dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: freshResult.stdout.trim() });
+            appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
+            appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: freshResult.stdout.trim(), timestamp: new Date().toISOString() });
+            tracker.record(cesarEngineId, input, freshResult.stdout.trim());
+            return { delegated: false, responded: true };
+          }
+        } catch { /* truly failed */ }
+        dispatch({ type: 'spinner-stop' });
         return { delegated: false, responded: false };
       }
 

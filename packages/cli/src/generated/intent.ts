@@ -24,6 +24,7 @@ export interface Intent {
   sessionId: string|undefined;
   index: number|undefined;
   tribunalMode: string|undefined;
+  membersPerSide: number|undefined;
   jobId: string|undefined;
   taskClass: 'code'|'question'|'ambiguous'|undefined;
   args: string|undefined;
@@ -55,6 +56,9 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { cmd: '/flows',       desc: '                        — flow analytics dashboard' },
   { cmd: '/chats',       desc: '[id|resume <id>]        — chat history or resume session' },
   { cmd: '/build',       desc: '<task>                   — agent builds in cwd (reads/edits/tests)' },
+  { cmd: '/team-forge',      desc: '[2v2|3v3] <task> test with <cmd> — team code competition' },
+  { cmd: '/team-tribunal',   desc: '[2v2|3v3] [mode] <question>    — team debate' },
+  { cmd: '/team-brainstorm', desc: '[2v2|3v3] <question>            — team ideation' },
   { cmd: '/pipeline',   desc: '<task> [test with <cmd>]  — build→review→fix loop' },
   { cmd: '/provider',    desc: 'add|remove|list          — manage API providers' },
   { cmd: '/run',         desc: '<cmd>                    — run shell command inline' },
@@ -134,6 +138,50 @@ function parseSlashCommand(input: string): Intent {
         }
       }
       return { type: 'tribunal', question: rest } as Intent;
+    }
+    case 'team-tribunal': {
+      const MODES = ['adversarial', 'socratic', 'red-team', 'steelman', 'synthesis', 'postmortem'];
+      const ttParts = rest.split(/\s+/);
+      let ttSize: number | undefined;
+      let ttMode: string | undefined;
+      let ttStart = 0;
+      // Parse optional NvN format
+      const sizeMatch = ttParts[0]?.match(/^(\d+)v(\d+)$/i);
+      if (sizeMatch) {
+        ttSize = parseInt(sizeMatch[1], 10);
+        ttStart = 1;
+      }
+      // Parse optional mode
+      const mw = ttParts[ttStart]?.toLowerCase();
+      if (mw && MODES.includes(mw)) {
+        ttMode = mw;
+        ttStart++;
+      } else if (mw && mw.startsWith('--')) {
+        const stripped = mw.slice(2);
+        if (MODES.includes(stripped)) { ttMode = stripped; ttStart++; }
+      }
+      const ttQuestion = ttParts.slice(ttStart).join(' ');
+      return { type: 'team-tribunal', question: ttQuestion, tribunalMode: ttMode, membersPerSide: ttSize } as Intent;
+    }
+    case 'team-forge': {
+      const tfParts = rest.split(/\s+/);
+      let tfSize: number | undefined;
+      let tfStart = 0;
+      const tfSizeMatch = tfParts[0]?.match(/^(\d+)v(\d+)$/i);
+      if (tfSizeMatch) { tfSize = parseInt(tfSizeMatch[1], 10); tfStart = 1; }
+      const tfRest = tfParts.slice(tfStart).join(' ');
+      const tfFitness = FITNESS_PATTERN.exec(tfRest);
+      const tfCmd = tfFitness ? tfFitness[1].trim() : null;
+      const tfTask = tfCmd ? tfRest.replace(FITNESS_PATTERN, '').trim() : tfRest;
+      return { type: 'team-forge', task: tfTask, fitnessCmd: tfCmd, membersPerSide: tfSize } as Intent;
+    }
+    case 'team-brainstorm': {
+      const tbParts = rest.split(/\s+/);
+      let tbSize: number | undefined;
+      let tbStart = 0;
+      const tbSizeMatch = tbParts[0]?.match(/^(\d+)v(\d+)$/i);
+      if (tbSizeMatch) { tbSize = parseInt(tbSizeMatch[1], 10); tbStart = 1; }
+      return { type: 'team-brainstorm', question: tbParts.slice(tbStart).join(' '), membersPerSide: tbSize } as Intent;
     }
     case 'leaderboard':
     case 'elo':

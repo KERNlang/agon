@@ -344,30 +344,30 @@ function addParagraphBreaks(text: string): string {
   
   for (const para of paragraphs) {
     const lines = para.split('\n');
-    // Skip if already structured or short enough
-    const isStructured = lines.some(l => /^[#\-*>|`\d+\.]/.test(l.trimStart()));
+    // Skip if already has markdown structure (headers, real lists) or is short
+    const isStructured = lines.some(l => /^(#{1,3}\s|[-*]\s+\w|\d+\.\s+\w|>\s)/.test(l.trimStart()));
     const totalLen = lines.reduce((sum, l) => sum + l.length, 0);
-    if (isStructured || totalLen < 400) {
+    if (isStructured || totalLen < 250) {
       result.push(para);
       continue;
     }
   
-    // Only split genuine walls — 5+ sentences crammed together
+    // Split dense blocks at sentence boundaries
     const joined = lines.join(' ');
     const sentences = joined.split(/(?<=\.\s)(?=[A-Z])/);
-    if (sentences.length <= 4) {
+    if (sentences.length <= 2) {
       result.push(para);
       continue;
     }
   
-    // Group into chunks of 3-4 sentences
+    // Group into chunks of 3 sentences
     const chunks: string[] = [];
     let current = '';
     let count = 0;
     for (const sentence of sentences) {
       current += sentence;
       count++;
-      if (count >= 4 || current.length > 350) {
+      if (count >= 3 || current.length > 250) {
         chunks.push(current.trim());
         current = '';
         count = 0;

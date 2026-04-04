@@ -397,8 +397,16 @@ screen name=OutputBlockView target=ink
 
           // ── Bash / Run ──
           if (toolKey === 'bash' || toolKey === 'run') {
-            const cmd = (parsed.command as string) || rawInput || '(command)';
+            const cmd = (parsed.command as string) || rawInput || '';
             const desc = parsed.description as string | undefined;
+            if (!cmd) {
+              // No input data (e.g. ACP streaming) — just show tool name
+              return (
+                <Box paddingLeft={2}>
+                  <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{'Bash'}</Text></Text>{desc ? <Text dimColor>{' \u00b7 '}{desc}</Text> : ''}</Text>
+                </Box>
+              );
+            }
             const cmdLines = cmd.split('\n').slice(0, 3);
             const moreCmd = cmd.split('\n').length > 3;
             return (
@@ -446,12 +454,12 @@ screen name=OutputBlockView target=ink
             const filePath = (parsed.file_path as string) || rawInput || '';
             const oldStr = (parsed.old_string as string) || '';
             const newStr = (parsed.new_string as string) || '';
-            const shortPath = filePath.replace(process.cwd() + '/', '').replace(process.env.HOME ?? '', '~');
+            const shortPath = filePath ? filePath.replace(process.cwd() + '/', '').replace(process.env.HOME ?? '', '~') : '';
             const addedCount = newStr ? newStr.split('\n').length : 0;
             const removedCount = oldStr ? oldStr.split('\n').length : 0;
             return (
               <Box paddingLeft={2} flexDirection="column">
-                <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{'\u270f\ufe0f  Update'}</Text></Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text>
+                <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{'\u270f\ufe0f  Update'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}</Text>
                 {(oldStr || newStr) && event.status !== 'running' && (() => {
                   const oldLines = oldStr.split('\n').slice(0, 20);
                   const newLines = newStr.split('\n').slice(0, 20);
@@ -489,7 +497,7 @@ screen name=OutputBlockView target=ink
             const lineCount = content ? content.split('\n').length : 0;
             return (
               <Box paddingLeft={2} flexDirection="column">
-                <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{'\ud83d\udcdd Write'}</Text></Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text>
+                <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{'\ud83d\udcdd Write'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}</Text>
                 {lineCount > 0 && <Text dimColor>{'  '}{lineCount}{' lines'}</Text>}
                 {event.output && event.status === 'done' && (
                   <Text dimColor>{'  '}{event.output.length > 80 ? event.output.slice(0, 80) + '\u2026' : event.output}</Text>
@@ -501,10 +509,10 @@ screen name=OutputBlockView target=ink
           // ── Read ──
           if (toolKey === 'read') {
             const filePath = (parsed.file_path as string) || rawInput || '';
-            const shortPath = filePath.replace(process.cwd() + '/', '').replace(process.env.HOME ?? '', '~');
+            const shortPath = filePath ? filePath.replace(process.cwd() + '/', '').replace(process.env.HOME ?? '', '~') : '';
             return (
               <Box paddingLeft={2} flexDirection="column">
-                <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{'\ud83d\udcc4 Read'}</Text></Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text>
+                <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{'\ud83d\udcc4 Read'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}</Text>
                 {event.output && event.status === 'done' && (
                   <Text dimColor>{'  '}{event.output.split('\n').length}{' lines ('}{Math.ceil(event.output.length / 1024)}{'kb)'}</Text>
                 )}

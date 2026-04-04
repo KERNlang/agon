@@ -169,6 +169,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
     let response = '';
     let streaming = false;
     let delegated = false;
+    let ranToolLoop = false;
   
     // Eager tool execution: collect promises for native tool_call chunks
     const eagerPromises: Promise<ToolCallResult>[] = [];
@@ -440,6 +441,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   
         // Use the final text from the loop as the response
         response = loopResult.finalText.trim();
+        ranToolLoop = true;
       }
     }
   
@@ -459,8 +461,9 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       tracker.record(cesarEngineId, input, response);
   
       // Detect if engine is asking a yes/no question — show choice buttons
+      // Skip after tool loop: intermediate turns may end with questions already acted on
       const lastLine = response.split('\n').filter((l: string) => l.trim()).pop()?.trim() ?? '';
-      const asksConfirmation = /\?\s*$/.test(lastLine) && /\b(want|shall|should|ready|proceed|go ahead|dispatch|confirm|continue|implement)\b/i.test(lastLine);
+      const asksConfirmation = !ranToolLoop && /\?\s*$/.test(lastLine) && /\b(want|shall|should|ready|proceed|go ahead|dispatch|confirm|continue|implement)\b/i.test(lastLine);
       if (asksConfirmation) {
         const answer = await new Promise<string>((resolve) => {
           dispatch({ type: 'question', prompt: `${cesarEngineId}: ${lastLine.length > 80 ? lastLine.slice(0, 80) + '…' : lastLine}`, choices: [
@@ -473,6 +476,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           let followUp = '';
           const gen = session.send({ message: 'yes', signal: abort.signal });
           for await (const chunk of gen) {
+            if (abort.signal.aborted) break;
             if (chunk.type === 'text') followUp += chunk.content;
             if (chunk.type === 'done' || chunk.type === 'error') break;
           }

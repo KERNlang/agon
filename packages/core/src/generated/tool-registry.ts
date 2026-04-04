@@ -12,7 +12,9 @@ export class ToolRegistry {
   }
 
   get(name: string): ToolHandler|undefined {
-    return this.tools.get(name) ?? this.tools.get(name.charAt(0).toUpperCase() + name.slice(1));
+    return this.tools.get(name)
+      ?? this.tools.get(name.charAt(0).toUpperCase() + name.slice(1))
+      ?? [...this.tools.values()].find(h => h.definition.name.toLowerCase() === name.toLowerCase());
   }
 
   list(): ToolDefinition[] {
@@ -20,7 +22,10 @@ export class ToolRegistry {
   }
 
   has(name: string): boolean {
-    return this.tools.has(name) || this.tools.has(name.charAt(0).toUpperCase() + name.slice(1));
+    if (this.tools.has(name) || this.tools.has(name.charAt(0).toUpperCase() + name.slice(1))) return true;
+    const lower = name.toLowerCase();
+    for (const h of this.tools.values()) { if (h.definition.name.toLowerCase() === lower) return true; }
+    return false;
   }
 
   names(): string[] {

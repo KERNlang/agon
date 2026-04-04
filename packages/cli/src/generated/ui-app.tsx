@@ -222,7 +222,8 @@ export default function App() {
     if (questionState) { questionState.resolve(answer); setQuestionState(null); setQuestionAnswer(''); }
   }, [questionState]);
 
-  const _handleInput = useCallback((input:string, key:any) => {
+  const _handleInputRef = useRef<(input: string, key: any) => void>(() => {});
+  _handleInputRef.current = (input:string, key:any) => {
     if (input === '/' && !inputValue && !slashPickerOpen && !enginePickerOpen && !questionState && !justPastedRef.current && !isPastingRef.current) {
       setSlashPickerOpen(true); return;
     }
@@ -262,7 +263,7 @@ export default function App() {
         dispatch({ type: 'warning', message: 'Interrupted.' } as any); transition(cancelReplState);
       } else { process.exit(0); }
     }
-  }, []);
+  };
 
   useEffect(() => {
     const stdin = process.stdin;
@@ -350,7 +351,7 @@ export default function App() {
     getEngineColor: (engineId: string) => ENGINE_COLORS[engineId] ?? 245,
   }), []);
 
-  useInput(_handleInput);
+  useInput((input: string, key: any) => _handleInputRef.current(input, key));
 
   return (
       <Box flexDirection="column">

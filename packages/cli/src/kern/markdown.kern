@@ -427,6 +427,13 @@ fn name=cleanEngineOutput params="raw:string" returns=string
     const codexResult = extractCodexStructured(result);
     if (codexResult) result = codexResult;
 
+    // Strip XML tool tags — engines embed <tool>, <tool_result>, <invoke> in text
+    result = result.replace(/<tool\s+name="[^"]*">[\s\S]*?<\/tool>/g, '');
+    result = result.replace(/<tool\s+name="[^"]*">[\s\S]*?<\/invoke>(\s*<\/[a-zA-Z_:]+>)*/g, '');
+    result = result.replace(/<tool_result[\s\S]*?<\/tool_result>/g, '');
+    result = result.replace(/<\/minimax:tool_call>/g, '');
+    result = result.replace(/<parameter\s+name="[^"]*">[^<]*<\/parameter>/g, '');
+
     // Clean buddy streaming artifacts
     result = stripBuddyThinkingNoise(result);
     result = deduplicateParagraphs(result);

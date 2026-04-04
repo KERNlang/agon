@@ -109,11 +109,7 @@ export function checkBashPermission(command: string, ctx: ToolContext): Permissi
       return { behavior: 'allow' };
     }
   }
-  // Auto mode: allow all non-dangerous commands without prompting
-  if (ctx.permissionMode === 'auto') {
-    return { behavior: 'allow' };
-  }
-  // Non-read-only: ask user for approval
+  // Non-read-only: always ask user for approval (even in auto mode)
   return { behavior: 'ask', message: `This command requires approval`, reason: 'bash_mutating' };
 }
 

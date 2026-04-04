@@ -426,9 +426,9 @@ export function OutputBlockView({ event, mode }: { event: OutputEvent; mode: str
   
             // ── Edit ──
             if (toolKey === 'edit') {
-              const filePath = (parsed.file_path as string) || rawInput || '';
-              const oldStr = (parsed.old_string as string) || '';
-              const newStr = (parsed.new_string as string) || '';
+              const filePath = (parsed.file_path as string) || (parsed.filePath as string) || '';
+              const oldStr = (parsed.old_string as string) || (parsed.oldString as string) || '';
+              const newStr = (parsed.new_string as string) || (parsed.newString as string) || '';
               const shortPath = filePath ? filePath.replace(process.cwd() + '/', '').replace(process.env.HOME ?? '', '~') : '';
               const addedCount = newStr ? newStr.split('\n').length : 0;
               const removedCount = oldStr ? oldStr.split('\n').length : 0;
@@ -466,7 +466,7 @@ export function OutputBlockView({ event, mode }: { event: OutputEvent; mode: str
   
             // ── Write ──
             if (toolKey === 'write') {
-              const filePath = (parsed.file_path as string) || rawInput || '';
+              const filePath = (parsed.file_path as string) || (parsed.filePath as string) || '';
               const content = (parsed.content as string) || '';
               const shortPath = filePath.replace(process.cwd() + '/', '').replace(process.env.HOME ?? '', '~');
               const lineCount = content ? content.split('\n').length : 0;
@@ -483,7 +483,7 @@ export function OutputBlockView({ event, mode }: { event: OutputEvent; mode: str
   
             // ── Read ──
             if (toolKey === 'read') {
-              const filePath = (parsed.file_path as string) || rawInput || '';
+              const filePath = (parsed.file_path as string) || (parsed.filePath as string) || '';
               const shortPath = filePath ? filePath.replace(process.cwd() + '/', '').replace(process.env.HOME ?? '', '~') : '';
               return (
                 <Box paddingLeft={2} flexDirection="column">

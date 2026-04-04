@@ -81,19 +81,23 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
       actions.setReviewEvent({ winnerId: (event as any).winnerId, patchPath: (event as any).patchPath, patchContent: (event as any).patchContent });
       return;
     case 'question':
-      actions.setQuestionState({ prompt: (event as any).prompt, resolve: (event as any).resolve });
+      actions.setQuestionState({ prompt: (event as any).prompt, resolve: (event as any).resolve, choices: (event as any).choices });
       return;
     case 'permission-ask': {
-      // Show the permission block visually, then ask Y/N/A
+      // Show the permission block visually, then ask Y/N/A with choice buttons
       actions.addBlock(event);
       const permResolve = (event as any).resolve as (approved: boolean) => void;
       const permCommand = (event as any).command as string;
       actions.setQuestionState({
-        prompt: 'Proceed? (y)es / (n)o / (a)lways allow',
+        prompt: `${(event as any).tool}: ${permCommand.length > 60 ? permCommand.slice(0, 60) + '…' : permCommand}`,
+        choices: [
+          { key: 'y', label: 'Yes', color: '#4ade80' },
+          { key: 'n', label: 'No', color: '#ef4444' },
+          { key: 'a', label: 'Always', color: '#60a5fa' },
+        ],
         resolve: (answer: string) => {
           const lower = answer.toLowerCase().trim();
-          if (lower === 'a' || lower === 'always') {
-            // Save to settings.json so it persists
+          if (lower === 'a') {
             const cfg = loadConfig();
             const allowed = (cfg as any).allowedCommands ?? [];
             const base = permCommand.trim().split(/\s+/)[0];
@@ -103,9 +107,8 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
             }
             permResolve(true);
             actions.addBlock({ type: 'success', message: `Always allowed: ${base}` } as any);
-          } else if (lower.startsWith('y')) {
+          } else if (lower === 'y') {
             permResolve(true);
-            actions.addBlock({ type: 'info', message: 'Approved' } as any);
           } else {
             permResolve(false);
             actions.addBlock({ type: 'warning', message: 'Denied' } as any);

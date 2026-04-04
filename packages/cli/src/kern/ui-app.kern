@@ -24,7 +24,7 @@ import from="../generated/app-dispatch.js" names="dispatchIntent,handleModeSwitc
 import from="../generated/app-dispatch.js" names="DispatchCallbacks" types=true
 import from="../generated/app-output.js" names="handleOutputEvent"
 import from="../generated/app-output.js" names="OutputActions,OutputState" types=true
-import from="../generated/app-input.js" names="cleanInputValue,cleanSubmitValue,navigateHistory"
+import from="../generated/app-input.js" names="cleanInputValue,cleanSubmitValue,findInputChange,navigateHistory"
 import from="../generated/app-review.js" names="handleReviewAction"
 import from="../components.js" names="SpinnerBlock,EngineProgressView,StatusLine,StatusBar,OutputBlockView,SlashPicker,EnginePicker,ReviewBlock,BackgroundJobRail,RenderedSegments,contentWidth,engineColor"
 import from="../components.js" names="OutputBlock,ReviewEvent" types=true
@@ -77,10 +77,10 @@ screen name=App target=ink
   ref name=chatStartTimeRef type=number initial=0
   ref name=currentPlanRef type="Plan|null" initial="null"
   ref name=streamingTextRef type=any initial="null"
-  ref name=pasteBufferRef type="string|null"
-  ref name=isPastingRef type=boolean initial=false
   ref name=justPastedRef type=boolean initial=false
   ref name=pasteHashesRef type="Map<string,string>" initial="new Map()"
+  ref name=pasteCountRef type=number initial=0
+  ref name=lastEscRef type=number initial=0
 
   // ── Init-once state (registry, adapter, skills) ──
   state name=registry type=EngineRegistry initial="(() => { const reg = new EngineRegistry(); const engDir = join(dirname(fileURLToPath(import.meta.url)), '../../../../engines'); reg.load(engDir); return reg; })()"
@@ -166,43 +166,12 @@ screen name=App target=ink
       };
     >>>
 
-  // ── Paste handling (KERN) ──
-  callback name=finishPaste params="raw:string"
-    handler <<<
-      const result = processPasteContent(raw);
-      if (result.type === 'empty') return;
-      justPastedRef.current = true;
-      setTimeout(() => { justPastedRef.current = false; }, 100);
-      if (result.type === 'stored') {
-        pasteHashesRef.current.set(result.tag, result.fullHash);
-        setInputValue((prev: string) => prev + result.placeholder);
-      } else {
-        setInputValue((prev: string) => prev + result.content);
-      }
-    >>>
-
   effect
     handler <<<
       const stdin = process.stdin;
       if (!stdin.isTTY) return;
       process.stdout.write('\x1b[?2004h');
-      const onData = (data: Buffer) => {
-        const str = data.toString();
-        if (str.includes('\x1b[200~')) {
-          isPastingRef.current = true;
-          const afterMarker = str.split('\x1b[200~').slice(1).join('');
-          pasteBufferRef.current = afterMarker.replace(/\x1b\[201~/g, '');
-          if (str.includes('\x1b[201~')) { isPastingRef.current = false; finishPaste(pasteBufferRef.current ?? ''); pasteBufferRef.current = null; }
-          return;
-        }
-        if (isPastingRef.current) {
-          if (str.includes('\x1b[201~')) { const bm = str.split('\x1b[201~')[0]; isPastingRef.current = false; finishPaste((pasteBufferRef.current ?? '') + bm); pasteBufferRef.current = null; }
-          else { pasteBufferRef.current = (pasteBufferRef.current ?? '') + str; }
-          return;
-        }
-      };
-      stdin.on('data', onData);
-      return () => { process.stdout.write('\x1b[?2004l'); stdin.off('data', onData); };
+      return () => { process.stdout.write('\x1b[?2004l'); };
     >>>
 
   // ── Dashboard on mount ──
@@ -238,9 +207,34 @@ screen name=App target=ink
     >>>
 
   // ── Input handlers ──
-  callback name=handleInputChange params="value:string"
+  callback name=handleInputChange params="value:string" deps="inputValue"
     handler <<<
-      setInputValue(cleanInputValue(value));
+      const nextValue = cleanInputValue(value);
+      const change = findInputChange(inputValue, nextValue);
+      const looksLikePaste = value !== nextValue || change.inserted.length > 1;
+
+      if (!looksLikePaste || !change.inserted) {
+        setInputValue(nextValue);
+        return;
+      }
+
+      justPastedRef.current = true;
+      setTimeout(() => { justPastedRef.current = false; }, 100);
+
+      pasteCountRef.current += 1;
+      const result = processPasteContent(change.inserted, pasteCountRef.current);
+      if (result.type === 'empty') {
+        setInputValue(nextValue);
+        return;
+      }
+
+      if (result.type === 'stored') {
+        pasteHashesRef.current.set(String(pasteCountRef.current), result.fullHash);
+      }
+
+      const replacement = result.type === 'stored' ? result.placeholder : result.content;
+      const updatedValue = nextValue.slice(0, change.start) + replacement + nextValue.slice(change.start + change.inserted.length);
+      setInputValue(updatedValue);
     >>>
 
   callback name=handleSubmit async=true params="value:string" deps="replState,dispatch,buildContext,mode,pendingImages,jobManager"
@@ -248,6 +242,7 @@ screen name=App target=ink
       let input = cleanSubmitValue(value);
       if (!input) return;
       input = expandPastePlaceholders(input, pasteHashesRef.current);
+      pasteCountRef.current = 0;
       setInputValue(''); setInputHistory((prev: string[]) => [...prev, input]); setHistoryIndex(-1);
       if (replState !== 'idle' && !jobManager.running().length) {
         setInputQueue((prev: string[]) => [...prev, input]);
@@ -321,15 +316,10 @@ screen name=App target=ink
       };
     >>>
 
-  // ── Keyboard handling (useInput — KERN 'on event=input' not compiled, using raw call) ──
-  effect deps=""
+  // ── Keyboard handling ──
+  on event=input
     handler <<<
-      // Empty effect — useInput is called inline below
-    >>>
-
-  callback name=_handleInput params="input:string, key:any"
-    handler <<<
-      if (input === '/' && !inputValue && !slashPickerOpen && !enginePickerOpen && !questionState && !justPastedRef.current && !isPastingRef.current) {
+      if (input === '/' && !inputValue && !slashPickerOpen && !enginePickerOpen && !questionState && !justPastedRef.current) {
         setSlashPickerOpen(true); return;
       }
       if ((key.tab || input === '\t') && !slashPickerOpen && !enginePickerOpen && !questionState && !reviewEvent) {
@@ -343,7 +333,15 @@ screen name=App target=ink
         if (slashPickerOpen) { setSlashPickerOpen(false); return; }
         if (enginePickerOpen) { setEnginePickerOpen(false); return; }
         if (questionState) { questionState.resolve(''); setQuestionState(null); setQuestionAnswer(''); return; }
-        if (inputValue) { setInputValue(''); return; }
+        const now = Date.now();
+        if (inputValue) { setInputValue(''); lastEscRef.current = now; return; }
+        if (now - lastEscRef.current < 500) {
+          dispatch({ type: 'clear' } as any);
+          lastEscRef.current = 0;
+          return;
+        }
+        lastEscRef.current = now;
+        return;
       }
       if (key.ctrl && input === 'j') {
         setInputValue((prev: string) => prev + '\n'); return;
@@ -373,7 +371,6 @@ screen name=App target=ink
   // ── Render ──
   render
     handler <<<
-      useInput(_handleInput);
       return (
       <Box flexDirection="column">
         {mode !== 'chat' && (

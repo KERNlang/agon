@@ -23,6 +23,7 @@ export interface ToolContext {
   permissionMode?: 'auto'|'ask'|'deny-all';
   explorationMode?: boolean;
   allowedCommands?: string[];
+  toolPermissions?: Record<string,'allow'|'ask'|'deny'>;
   onProgress?: ((message: string) => void);
 }
 

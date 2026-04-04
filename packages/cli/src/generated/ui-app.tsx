@@ -233,6 +233,12 @@ export default function App() {
     if (key.ctrl && input === 'l') {
       dispatch({ type: 'clear' } as any); return;
     }
+    if (key.escape) {
+      if (slashPickerOpen) { setSlashPickerOpen(false); return; }
+      if (enginePickerOpen) { setEnginePickerOpen(false); return; }
+      if (questionState) { questionState.resolve(''); setQuestionState(null); setQuestionAnswer(''); return; }
+      if (inputValue) { setInputValue(''); return; }
+    }
     if (key.ctrl && input === 'j') {
       setInputValue((prev: string) => prev + '\n'); return;
     }
@@ -361,9 +367,6 @@ export default function App() {
         <BackgroundJobRail jobs={jobList.filter((j: Job) => j.state === 'running')} />
         <Box flexDirection="column">
           {outputBlocks.map((block: OutputBlock) => (<OutputBlockView key={block.id} event={block.event} mode={mode} />))}
-          {liveSpinner && (mode === 'chat'
-            ? <StatusLine startTime={chatStartTimeRef.current || Date.now()} engineId={liveSpinner.engineId} color={liveSpinner.color} />
-            : <SpinnerBlock message={liveSpinner.message} color={liveSpinner.color} />)}
           {streamingText && (() => {
             const c = engineColor(streamingText.engineId);
             const cleaned = cleanEngineOutput(streamingText.content);
@@ -391,6 +394,9 @@ export default function App() {
             onConfirm={(selected: string[]) => { setEnginePickerOpen(false); setSessionEngines(selected); configSet('forgeEnabledEngines', selected); dispatch({ type: 'success', message: `Active engines: ${selected.join(', ')}` } as any); }}
             onCancel={() => setEnginePickerOpen(false)} />
         )}
+        {liveSpinner && (mode === 'chat'
+          ? <StatusLine startTime={chatStartTimeRef.current || Date.now()} engineId={liveSpinner.engineId} color={liveSpinner.color} />
+          : <SpinnerBlock message={liveSpinner.message} color={liveSpinner.color} />)}
         {!enginePickerOpen && (
           <Box flexDirection="column" paddingX={1} marginTop={1}>
             {slashPickerOpen && <SlashPicker commands={allSlashCommands} onSelect={handleSlashSelect} onCancel={() => setSlashPickerOpen(false)} />}

@@ -458,23 +458,27 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
       tracker.record(cesarEngineId, input, response);
   
-      // Detect if engine is asking a yes/no question — show interactive prompt
+      // Detect if engine is asking a yes/no question — show choice buttons
       const lastLine = response.split('\n').filter((l: string) => l.trim()).pop()?.trim() ?? '';
-      const asksConfirmation = /\?\s*$/.test(lastLine) && /\b(want|shall|should|ready|proceed|go ahead|dispatch|confirm|continue)\b/i.test(lastLine);
-      if (asksConfirmation && ctx.askQuestion) {
-        const answer = await ctx.askQuestion(`${cesarEngineId}: ${lastLine.length > 80 ? lastLine.slice(0, 80) + '…' : lastLine}`);
-        if (answer.trim()) {
-          // Feed the answer back to the session
-          if (session.alive && !abort.signal.aborted) {
-            let followUp = '';
-            const gen = session.send({ message: answer, signal: abort.signal });
-            for await (const chunk of gen) {
-              if (chunk.type === 'text') followUp += chunk.content;
-              if (chunk.type === 'done' || chunk.type === 'error') break;
-            }
-            if (followUp.trim()) {
-              dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: followUp.trim() });
-            }
+      const asksConfirmation = /\?\s*$/.test(lastLine) && /\b(want|shall|should|ready|proceed|go ahead|dispatch|confirm|continue|implement)\b/i.test(lastLine);
+      if (asksConfirmation) {
+        const answer = await new Promise<string>((resolve) => {
+          dispatch({ type: 'question', prompt: `${cesarEngineId}: ${lastLine.length > 80 ? lastLine.slice(0, 80) + '…' : lastLine}`, choices: [
+            { key: 'y', label: 'Yes', color: '#4ade80' },
+            { key: 'n', label: 'No', color: '#ef4444' },
+          ], resolve } as any);
+        });
+        if (answer === 'y' && session.alive && !abort.signal.aborted) {
+          dispatch({ type: 'spinner-start', message: `${cesarEngineId} continuing…`, color });
+          let followUp = '';
+          const gen = session.send({ message: 'yes', signal: abort.signal });
+          for await (const chunk of gen) {
+            if (chunk.type === 'text') followUp += chunk.content;
+            if (chunk.type === 'done' || chunk.type === 'error') break;
+          }
+          dispatch({ type: 'spinner-stop' });
+          if (followUp.trim()) {
+            dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: followUp.trim() });
           }
         }
       }

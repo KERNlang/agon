@@ -326,6 +326,24 @@ screen name=App target=ink
   // ── Keyboard handling ──
   on event=input
     handler <<<
+      // Choice-based question: single keypress resolves immediately
+      if (questionState && questionState.choices) {
+        const pressed = input.toLowerCase();
+        const match = (questionState.choices as {key:string,label:string}[]).find((c: any) => c.key.toLowerCase() === pressed);
+        if (match) {
+          questionState.resolve(match.key);
+          setQuestionState(null);
+          setQuestionAnswer('');
+          return;
+        }
+        if (key.escape) {
+          questionState.resolve('n');
+          setQuestionState(null);
+          setQuestionAnswer('');
+          return;
+        }
+        return; // Swallow other keys while choices are shown
+      }
       if (input === '/' && !inputValue && !slashPickerOpen && !enginePickerOpen && !questionState && !justPastedRef.current) {
         setSlashPickerOpen(true); return;
       }
@@ -429,7 +447,18 @@ screen name=App target=ink
             {pendingImages.length > 0 && (<Box><Text color="#22d3ee">{'📎 '}</Text>{pendingImages.map((img: any, i: number) => (<Text key={i} dimColor>{img.filename}{i < pendingImages.length - 1 ? ', ' : ''}</Text>))}</Box>)}
             {inputQueue.length > 0 && (<Box><Text dimColor>{'⏳ '}{inputQueue.length} queued: </Text><Text dimColor italic>{inputQueue[0].length > 40 ? inputQueue[0].slice(0, 40) + '…' : inputQueue[0]}</Text></Box>)}
             {questionState ? (
-              <Box><Text bold color="yellow">{questionState.prompt} </Text><TextInput value={questionAnswer} onChange={setQuestionAnswer} onSubmit={handleQuestionAnswer} /></Box>
+              <Box flexDirection="column">
+                <Box><Text bold color="yellow">{questionState.prompt}</Text></Box>
+                {questionState.choices ? (
+                  <Box gap={2} marginTop={0}>
+                    {(questionState.choices as {key:string,label:string,color?:string}[]).map((c: any, i: number) => (
+                      <Text key={i}><Text color={c.color ?? '#6b7280'} bold>[{c.key}]</Text><Text> {c.label}</Text></Text>
+                    ))}
+                  </Box>
+                ) : (
+                  <Box><TextInput value={questionAnswer} onChange={setQuestionAnswer} onSubmit={handleQuestionAnswer} /></Box>
+                )}
+              </Box>
             ) : (
               <Box borderStyle={mode === 'chat' ? 'round' : 'single'} borderColor={mode === 'chat' ? '#585858' : 'gray'} borderLeft={mode !== 'chat'} borderRight={mode !== 'chat'} borderTop borderBottom paddingX={1} width="100%">
                 {mode !== 'chat' && (<Text><Text color={mode === 'campfire' ? '#f97316' : mode === 'brainstorm' ? '#22d3ee' : '#a78bfa'} bold>{mode === 'campfire' ? '🔥' : mode === 'brainstorm' ? '💡' : '⚖'}{' '}{mode}</Text><Text dimColor>{' │ '}</Text></Text>)}

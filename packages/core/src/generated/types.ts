@@ -307,6 +307,7 @@ export interface BrainstormBid {
   confidence: number;
   reasoning: string;
   approach: string;
+  score?: number;
 }
 
 export interface BrainstormResult {

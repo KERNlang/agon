@@ -91,11 +91,12 @@ export async function handleBrainstorm(question: string, dispatch: Dispatch, ctx
     for (let i = 0; i < result.bids.length; i++) {
       const bid = result.bids[i];
       const isWinner = bid.engineId === result.winner;
+      const scoreLabel = bid.score != null ? ` (score: ${bid.score})` : '';
       dispatch({
         type: 'kern-draft',
         engineId: bid.engineId,
         content: bid.reasoning + (bid.approach ? '\n' + bid.approach : ''),
-        critique: isWinner ? '★ best draft' : undefined,
+        critique: isWinner ? `★ best draft${scoreLabel}` : `✓ done${scoreLabel}`,
       });
     }
     

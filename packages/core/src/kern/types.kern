@@ -239,6 +239,7 @@ interface name=BrainstormBid
   field name=confidence type=number
   field name=reasoning type=string
   field name=approach type=string
+  field name=score type=number optional=true
 
 interface name=BrainstormResult
   field name=question type=string

@@ -183,7 +183,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         cwd: resolveWorkingDir(),
         readFileState: (fsc as any).cache,
         abortSignal: abort.signal,
-        permissionMode: 'auto',
+        permissionMode: 'ask',
         explorationMode,
         onProgress: (msg: string) => dispatch({ type: 'spinner-update', message: `Cesar: ${msg}` }),
       };
@@ -229,6 +229,16 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               { id: callId, name: toolName, input: parsedInput },
               getEagerCtx(),
               toolRegistry,
+              async (tool: string, message: string) => {
+                return new Promise<boolean>((resolve) => {
+                  let command = '';
+                  try {
+                    const parsed = typeof meta.input === 'string' ? JSON.parse(meta.input as string) : meta.input;
+                    command = (parsed as any).command ?? (parsed as any).file_path ?? toolInput;
+                  } catch { command = toolInput; }
+                  dispatch({ type: 'permission-ask', tool, command, reason: message, resolve } as any);
+                });
+              },
             ).then((result: ToolCallResult) => {
               const out = result.result.ok ? result.result.content : result.result.error;
               dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: result.result.ok ? 'done' : 'error', output: out } as any);

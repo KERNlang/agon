@@ -12,7 +12,7 @@ fn name=handleTeamTribunal params="question:string, dispatch:Dispatch, ctx:Handl
 
     if (!question) {
       dispatch({ type: 'warning', message: 'Usage: /team-tribunal [2v2|3v3] [mode] <question>' });
-      dispatch({ type: 'info', message: 'Modes: synthesis (default), adversarial, socratic, red-team, steelman, postmortem' });
+      dispatch({ type: 'info', message: 'Modes: adversarial (default), socratic, red-team, steelman, synthesis, postmortem' });
       return;
     }
 
@@ -23,7 +23,7 @@ fn name=handleTeamTribunal params="question:string, dispatch:Dispatch, ctx:Handl
     }
 
     const size = membersPerSide ?? 2;
-    const mode = (tribunalMode ?? 'synthesis') as TribunalMode;
+    const mode = (tribunalMode ?? 'adversarial') as TribunalMode;
     const outputDir = join(RUNS_DIR, `team-tribunal-${Date.now()}`);
     mkdirSync(outputDir, { recursive: true });
 

@@ -30,6 +30,16 @@ const name=TEAM_ELO_PATH type=string
     join(AGON_HOME, 'team-elo.json')
   >>>
 
+const name=CORPUS_PATH type=string
+  handler <<<
+    join(AGON_HOME, 'corpus.json')
+  >>>
+
+const name=SKILLS_DIR type=string
+  handler <<<
+    join(AGON_HOME, 'skills')
+  >>>
+
 const name=LOCAL_CONFIG_NAME type=string value="'.agon.json'"
 const name=LOCAL_PRIVATE_CONFIG_NAME type=string value="'.agon.local.json'"
 

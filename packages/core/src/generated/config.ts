@@ -20,6 +20,10 @@ export const RUNS_DIR: string = join(AGON_HOME, 'runs');
 
 export const TEAM_ELO_PATH: string = join(AGON_HOME, 'team-elo.json');
 
+export const CORPUS_PATH: string = join(AGON_HOME, 'corpus.json');
+
+export const SKILLS_DIR: string = join(AGON_HOME, 'skills');
+
 export const LOCAL_CONFIG_NAME: string = '.agon.json';
 
 export const LOCAL_PRIVATE_CONFIG_NAME: string = '.agon.local.json';

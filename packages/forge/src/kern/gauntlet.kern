@@ -1,0 +1,272 @@
+import from="node:crypto" names="randomUUID"
+import from="node:fs" names="writeFileSync,mkdirSync"
+import from="node:path" names="join"
+import from="@agon/core" names="EngineAdapter,EngineResult,ForgeEvent,BreakerArtifact,GauntletResult,TaskClass" types=true
+import from="@agon/core" names="EngineRegistry,loadConfig,worktreeCreate,worktreeRemove,worktreeDiff,headSha,repoRoot,spawnWithTimeout,createSidechainLogger"
+import from="./fitness.js" names="runFitness"
+
+fn name=buildBreakerPrompt params="task:string, winnerDiff:string, engineId:string" returns=string
+  handler <<<
+    return [
+      `## BREAKER MODE`,
+      `You are in breaker mode. Your job is to BREAK the winning patch below.`,
+      `Write a minimal, deterministic test script that exposes a bug, edge case, or vulnerability in this patch.`,
+      ``,
+      `Rules:`,
+      `- The test MUST fail when the patch is applied`,
+      `- The test SHOULD pass on the original code (before the patch) — this proves you're testing the right thing`,
+      `- The test must be deterministic — no randomness, no timing dependencies, no network calls`,
+      `- Output a single executable test file. Use the project's existing test framework if possible.`,
+      `- Focus on: edge cases, null/undefined inputs, boundary conditions, concurrency issues, type coercion bugs`,
+      ``,
+      `## ORIGINAL TASK`,
+      task,
+      ``,
+      `## WINNING PATCH TO BREAK`,
+      '```diff',
+      winnerDiff.slice(0, 8000),
+      '```',
+      ``,
+      `Write ONLY the test file content. No explanations.`,
+    ].join('\n');
+  >>>
+
+fn name=buildRepairPrompt params="task:string, breakerTests:string" returns=string
+  handler <<<
+    return [
+      `## REPAIR MODE`,
+      `Your patch was attacked by breaker engines. The following tests expose real bugs in your code.`,
+      `Fix your implementation so ALL breaker tests pass while keeping the original fitness test passing.`,
+      ``,
+      `## ORIGINAL TASK`,
+      task,
+      ``,
+      `## BREAKER TESTS THAT BREAK YOUR CODE`,
+      breakerTests,
+      ``,
+      `Fix the bugs. Be minimal — only change what's needed to pass the breaker tests.`,
+    ].join('\n');
+  >>>
+
+fn name=validateBreakerArtifact async=true params="opts:{artifact:BreakerArtifact, winnerWorktree:string, cleanWorktree:string, fitnessTimeout:number}" returns="Promise<BreakerArtifact>"
+  handler <<<
+    const { artifact, winnerWorktree, cleanWorktree, fitnessTimeout } = opts;
+
+    // Write test script to both worktrees
+    const testFileName = `breaker-${artifact.engineId}-${Date.now()}.test.ts`;
+    const winnerTestPath = join(winnerWorktree, testFileName);
+    const cleanTestPath = join(cleanWorktree, testFileName);
+
+    writeFileSync(winnerTestPath, artifact.testScript);
+    writeFileSync(cleanTestPath, artifact.testScript);
+
+    // Run 1: Must FAIL on winner's patched code
+    let failsOnWinner = false;
+    try {
+      const result1 = await spawnWithTimeout({
+        command: '/bin/sh',
+        args: ['-c', `npx vitest run ${testFileName} --reporter=verbose 2>&1 || exit 1`],
+        cwd: winnerWorktree,
+        timeout: fitnessTimeout * 1000,
+      });
+      failsOnWinner = result1.exitCode !== 0;
+    } catch {
+      failsOnWinner = true;
+    }
+
+    if (!failsOnWinner) {
+      return { ...artifact, validated: false, deterministic: false };
+    }
+
+    // Run 2: Determinism check — run again, must fail again
+    let failsAgain = false;
+    try {
+      const result2 = await spawnWithTimeout({
+        command: '/bin/sh',
+        args: ['-c', `npx vitest run ${testFileName} --reporter=verbose 2>&1 || exit 1`],
+        cwd: winnerWorktree,
+        timeout: fitnessTimeout * 1000,
+      });
+      failsAgain = result2.exitCode !== 0;
+    } catch {
+      failsAgain = true;
+    }
+
+    if (!failsAgain) {
+      return { ...artifact, validated: false, deterministic: false };
+    }
+
+    // Both runs failed — it's deterministic and validated
+    return { ...artifact, validated: true, deterministic: true, testPath: winnerTestPath };
+  >>>
+
+fn name=runGauntlet async=true params="opts:{winnerId:string, losers:string[], task:string, winnerWorktree:string, fitnessCmd:string, taskClass:TaskClass, forgeDir:string, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, fitnessTimeout:number, maxBreakers:number, repairTimeout:number, cwd:string, onEvent?:(event:ForgeEvent)=>void, signal?:AbortSignal}" returns="Promise<GauntletResult>"
+  handler <<<
+    const { winnerId, losers, task, winnerWorktree, fitnessCmd, taskClass, forgeDir, registry, adapter, timeout, fitnessTimeout, maxBreakers, repairTimeout, cwd } = opts;
+
+    const sidechain = createSidechainLogger({
+      sessionId: randomUUID().slice(0, 8),
+      sessionType: 'gauntlet',
+      outputDir: forgeDir,
+    });
+
+    opts.onEvent?.({ type: 'gauntlet:start' as any });
+    sidechain.log('gauntlet:start', winnerId, { losers, taskClass });
+
+    // Get winner's diff for breaker prompt
+    let winnerDiff: string;
+    try {
+      winnerDiff = worktreeDiff(winnerWorktree);
+    } catch {
+      winnerDiff = '(unable to get diff)';
+    }
+
+    // --- Dispatch breakers in parallel ---
+    const breakerEngines = losers.slice(0, maxBreakers);
+    const breakerPrompt = buildBreakerPrompt(task, winnerDiff, winnerId);
+
+    const breakerPromises = breakerEngines.map(async (engineId: string) => {
+      opts.onEvent?.({ type: 'gauntlet:breaker-dispatch' as any, data: { engineId } });
+
+      try {
+        const engine = registry.get(engineId);
+        const result = await adapter.dispatch({
+          engine,
+          prompt: breakerPrompt,
+          cwd,
+          mode: 'exec',
+          timeout,
+          outputDir: forgeDir,
+          signal: opts.signal,
+        });
+
+        const testScript = result.stdout.trim();
+        if (!testScript || testScript.length < 20) {
+          return null;
+        }
+
+        const artifact: BreakerArtifact = {
+          engineId,
+          testScript,
+          testPath: '',
+          failureMessage: '',
+          deterministic: false,
+          validated: false,
+        };
+
+        return artifact;
+      } catch (err) {
+        console.warn(`[agon] gauntlet breaker dispatch (${engineId}) failed: ${err instanceof Error ? err.message : String(err)}`);
+        return null;
+      }
+    });
+
+    const rawArtifacts = (await Promise.all(breakerPromises)).filter((a): a is BreakerArtifact => a !== null);
+
+    // --- Validate each breaker artifact ---
+    const root = repoRoot(cwd);
+    const sha = headSha(cwd);
+
+    // Create a clean worktree (no patch) for validation comparison
+    const cleanWtPath = join(forgeDir, 'gauntlet-clean');
+    worktreeCreate(root, cleanWtPath, sha);
+
+    const validatedArtifacts: BreakerArtifact[] = [];
+    try {
+      for (const artifact of rawArtifacts) {
+        const validated = await validateBreakerArtifact({
+          artifact,
+          winnerWorktree,
+          cleanWorktree: cleanWtPath,
+          fitnessTimeout,
+        });
+
+        opts.onEvent?.({ type: 'gauntlet:breaker-done' as any, data: { engineId: artifact.engineId, validated: validated.validated } });
+        sidechain.log('breaker:validated', artifact.engineId, { validated: validated.validated, deterministic: validated.deterministic });
+
+        if (validated.validated) {
+          validatedArtifacts.push(validated);
+          opts.onEvent?.({ type: 'gauntlet:attack-landed' as any, data: { engineId: artifact.engineId, failureMessage: `Breaker test from ${artifact.engineId} breaks winner's patch` } });
+        }
+      }
+    } finally {
+      worktreeRemove(root, cleanWtPath);
+    }
+
+    const attacksLanded = validatedArtifacts.length;
+
+    // --- Repair round (if attacks landed) ---
+    let repairPass = false;
+    let preRepairScore = 0;
+    let postRepairScore = 0;
+    let repairAttempted = false;
+
+    // Get pre-repair score
+    const preRepair = await runFitness({ engineId: winnerId, worktreePath: winnerWorktree, fitnessCmd, timeout: fitnessTimeout, forgeDir });
+    preRepairScore = preRepair.score;
+
+    if (attacksLanded > 0) {
+      repairAttempted = true;
+      opts.onEvent?.({ type: 'gauntlet:repair-start' as any });
+
+      // Build repair prompt with all validated breaker tests
+      const breakerTestsText = validatedArtifacts
+        .map((a, i) => `### Breaker ${i + 1} (from ${a.engineId}):\n\`\`\`\n${a.testScript}\n\`\`\``)
+        .join('\n\n');
+
+      const repairPromptText = buildRepairPrompt(task, breakerTestsText);
+
+      // Dispatch winner for repair
+      const winnerEngine = registry.get(winnerId);
+      const hasAgent = !!winnerEngine.agent;
+
+      if (hasAgent && adapter.dispatchAgent) {
+        await adapter.dispatchAgent({
+          engine: winnerEngine,
+          prompt: repairPromptText,
+          cwd: winnerWorktree,
+          mode: 'agent',
+          timeout: repairTimeout,
+          outputDir: forgeDir,
+          signal: opts.signal,
+        });
+      } else {
+        await adapter.dispatch({
+          engine: winnerEngine,
+          prompt: repairPromptText,
+          cwd: winnerWorktree,
+          mode: 'exec',
+          timeout: repairTimeout,
+          outputDir: forgeDir,
+          signal: opts.signal,
+        });
+      }
+
+      // Re-score after repair
+      const postRepair = await runFitness({ engineId: winnerId, worktreePath: winnerWorktree, fitnessCmd, timeout: fitnessTimeout, forgeDir });
+      postRepairScore = postRepair.score;
+      repairPass = postRepair.pass;
+
+      opts.onEvent?.({ type: 'gauntlet:repair-done' as any, data: { pass: repairPass, score: postRepairScore } });
+      sidechain.log('repair:done', winnerId, { pass: repairPass, preScore: preRepairScore, postScore: postRepairScore });
+    } else {
+      postRepairScore = preRepairScore;
+      repairPass = preRepair.pass;
+    }
+
+    const result: GauntletResult = {
+      winnerId,
+      breakerArtifacts: validatedArtifacts,
+      attacksLanded,
+      repairAttempted,
+      repairPass,
+      preRepairScore,
+      postRepairScore,
+      finalWinnerId: winnerId,
+    };
+
+    opts.onEvent?.({ type: 'gauntlet:done' as any, data: { attacksLanded, repairPass } });
+    sidechain.log('gauntlet:done', winnerId, { attacksLanded, repairPass, preRepairScore, postRepairScore });
+
+    return result;
+  >>>

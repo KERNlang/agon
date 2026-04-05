@@ -39,13 +39,7 @@ export async function handleTeamTribunal(question: string, dispatch: Dispatch, c
       ? `${question}\n\n## PROJECT CONTEXT\n${projectCtx}`
       : question;
     
-    dispatch({ type: 'header', title: `Team Tribunal ${size}v${size} (${mode}): ${question}` });
-    dispatch({ type: 'info', message: `Engines: ${active.join(', ')}` });
-    dispatch({ type: 'info', message: `Cesar (judge): ${config.cesarEngine}` });
-    dispatch({ type: 'info', message: `Mode: ${mode} — engines can appear on both teams` });
-    
-    dispatch({ type: 'spinner-start', message: `Composing teams and debating (${mode})...` });
-    
+    dispatch({ type: 'spinner-start', message: `Composing teams...` });
     ctx.setActiveAbort(teamAbort);
     
     let result: any;
@@ -64,14 +58,19 @@ export async function handleTeamTribunal(question: string, dispatch: Dispatch, c
           if (teamAbort.signal.aborted) return;
           if (event.type === 'team:compose' && event.data?.teams) {
             const [tA, tB] = event.data.teams;
-            dispatch({ type: 'info', message: `Team Alpha: ${tA.members.map((m: any) => `${m.engineId}(${m.role})`).join(' + ')}` });
-            dispatch({ type: 'info', message: `Team Beta: ${tB.members.map((m: any) => `${m.engineId}(${m.role})`).join(' + ')}` });
+            dispatch({ type: 'spinner-stop' });
+            dispatch({
+              type: 'team-matchup',
+              format: `${size}v${size}`,
+              mode,
+              judge: (config as any).cesarEngine ?? 'claude',
+              teamA: { name: tA.name, members: tA.members.map((m: any) => ({ engineId: m.engineId, role: m.role })), elo: tA.aggregateElo },
+              teamB: { name: tB.name, members: tB.members.map((m: any) => ({ engineId: m.engineId, role: m.role })), elo: tB.aggregateElo },
+            } as any);
+            dispatch({ type: 'spinner-start', message: `Teams debating (${mode})...` });
           }
           if (event.type === 'team:member-dispatch' && event.data) {
-            dispatch({ type: 'spinner-update', message: `${String(event.data.teamId)}: ${String(event.data.engineId)} (${String(event.data.role)}) working...` });
-          }
-          if (event.type === 'team:score' && event.data) {
-            dispatch({ type: 'info', message: `${String(event.data.teamId)} scored: ${String(event.data.score)}` });
+            dispatch({ type: 'spinner-update', message: `${String(event.data.engineId)} (${String(event.data.role)}) working...` });
           }
         },
       });
@@ -85,36 +84,26 @@ export async function handleTeamTribunal(question: string, dispatch: Dispatch, c
       return;
     }
     
-    dispatch({ type: 'spinner-stop', message: 'Team debate complete' });
+    dispatch({ type: 'spinner-stop' });
     
-    // Show results
     const [teamA, teamB] = result.teams;
     const subA = result.submissions[teamA.teamId];
     const subB = result.submissions[teamB.teamId];
     const cardA = result.scorecards[teamA.teamId];
     const cardB = result.scorecards[teamB.teamId];
     
-    dispatch({ type: 'header', title: `Team Alpha — ${teamA.name}` });
-    dispatch({ type: 'info', message: `Lineup: ${teamA.members.map((m: any) => `${m.engineId}(${m.role})`).join(' + ')} | ELO: ${teamA.aggregateElo}` });
-    dispatch({ type: 'verdict', summary: String(subA?.finalOutput ?? '(no submission)') });
-    dispatch({ type: 'info', message: `Score: ${cardA?.score ?? '?'}/100` });
+    dispatch({ type: 'team-argument', teamName: teamA.name, content: String(subA?.finalOutput ?? '(no submission)'), score: cardA?.score ?? 0, color: 34 } as any);
+    dispatch({ type: 'team-argument', teamName: teamB.name, content: String(subB?.finalOutput ?? '(no submission)'), score: cardB?.score ?? 0, color: 33 } as any);
     
-    dispatch({ type: 'header', title: `Team Beta — ${teamB.name}` });
-    dispatch({ type: 'info', message: `Lineup: ${teamB.members.map((m: any) => `${m.engineId}(${m.role})`).join(' + ')} | ELO: ${teamB.aggregateElo}` });
-    dispatch({ type: 'verdict', summary: String(subB?.finalOutput ?? '(no submission)') });
-    dispatch({ type: 'info', message: `Score: ${cardB?.score ?? '?'}/100` });
+    const isDraw = !result.winnerTeamId;
+    const winner = result.winnerTeamId === teamA.teamId ? teamA : teamB;
+    const loser = result.winnerTeamId === teamA.teamId ? teamB : teamA;
+    const winCard = result.winnerTeamId ? result.scorecards[result.winnerTeamId] : cardA;
+    const loseCard = result.winnerTeamId ? result.scorecards[result.winnerTeamId === teamA.teamId ? teamB.teamId : teamA.teamId] : cardB;
     
-    // Winner
-    if (result.winnerTeamId) {
-      const winner = result.winnerTeamId === teamA.teamId ? teamA : teamB;
-      const winnerCard = result.scorecards[result.winnerTeamId];
-      dispatch({ type: 'header', title: `Winner: ${winner.name}` });
-      dispatch({ type: 'info', message: `${winner.members.map((m: any) => `${m.engineId}(${m.role})`).join(' + ')} — Score: ${winnerCard?.score}/100` });
-    } else {
-      dispatch({ type: 'header', title: 'Draw — no clear winner' });
-    }
+    dispatch({ type: 'team-winner', winnerName: isDraw ? teamA.name : winner.name, winnerScore: isDraw ? (cardA?.score ?? 0) : (winCard?.score ?? 0), loserName: isDraw ? teamB.name : loser.name, loserScore: isDraw ? (cardB?.score ?? 0) : (loseCard?.score ?? 0), isDraw } as any);
     
-    dispatch({ type: 'info', message: `Full debate saved: ${outputDir}` });
+    dispatch({ type: 'info', message: `Saved: ${outputDir}` });
     
     appendMessage(ctx.chatSession, { role: 'user', content: `[team-tribunal:${mode}:${size}v${size}] ${question}`, timestamp: new Date().toISOString() });
     appendMessage(ctx.chatSession, {

@@ -16,7 +16,7 @@ import from="../generated/ansi-parse.js" names="AnsiSegment" types=true
 fn name=contentWidth params="padding:number" returns=number
   handler <<<
     const termWidth = process.stdout.columns || 100;
-    return Math.min(Math.max(termWidth - padding, 40), 100);
+    return Math.max(termWidth - padding, 40);
   >>>
 
 // ── Color Helpers ───────────────────────────────────────────────────

@@ -18,7 +18,7 @@ import type { AnsiSegment } from '../generated/ansi-parse.js';
 
 export function contentWidth(padding: number): number {
   const termWidth = process.stdout.columns || 100;
-  return Math.min(Math.max(termWidth - padding, 40), 100);
+  return Math.max(termWidth - padding, 40);
 }
 
 export function color256toHex(code: number): string {

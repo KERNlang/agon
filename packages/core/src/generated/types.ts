@@ -153,6 +153,11 @@ export interface AgonConfig {
   approvalLevel?: 'auto'|'plan'|'step';
   agentTimeout?: number;
   agentPermissionLevel?: 'full'|'plan'|'read-only';
+  gauntletEnabled?: boolean;
+  gauntletMaxBreakers?: number;
+  gauntletRepairTimeout?: number;
+  corpusReplayLimit?: number;
+  skillSynthesisThreshold?: number;
   cesarEnabled?: boolean;
   cesarScoutCount?: number;
   cesarDirectThreshold?: number;
@@ -187,6 +192,11 @@ export const DEFAULT_AGON_CONFIG: Required<AgonConfig> = {
   approvalLevel: 'plan',
   agentTimeout: 600,
   agentPermissionLevel: 'full',
+  gauntletEnabled: true,
+  gauntletMaxBreakers: 3,
+  gauntletRepairTimeout: 300,
+  corpusReplayLimit: 5,
+  skillSynthesisThreshold: 3,
   cesarEnabled: true,
   cesarScoutCount: 2,
   cesarDirectThreshold: 85,
@@ -269,9 +279,10 @@ export interface ForgeManifest {
   starter: string;
   enginesDispatched: number;
   synthesis?: {pass:boolean,score:number,wins:boolean,patchPath:string,originalWinnerScore:number};
+  gauntlet?: GauntletResult;
 }
 
-export type ForgeEventType = 'baseline:start' | 'baseline:done' | 'stage1:start' | 'stage1:dispatch' | 'stage1:score' | 'stage1:accepted' | 'stage2:start' | 'stage2:dispatch' | 'stage2:score' | 'stage2:done' | 'winner:determined' | 'synthesis:start' | 'synthesis:critique' | 'synthesis:refine' | 'synthesis:score' | 'synthesis:done' | 'elo:update' | 'forge:done';
+export type ForgeEventType = 'baseline:start' | 'baseline:done' | 'stage1:start' | 'stage1:dispatch' | 'stage1:score' | 'stage1:accepted' | 'stage2:start' | 'stage2:dispatch' | 'stage2:score' | 'stage2:done' | 'winner:determined' | 'synthesis:start' | 'synthesis:critique' | 'synthesis:refine' | 'synthesis:score' | 'synthesis:done' | 'elo:update' | 'gauntlet:start' | 'gauntlet:breaker-dispatch' | 'gauntlet:breaker-done' | 'gauntlet:attack-landed' | 'gauntlet:repair-start' | 'gauntlet:repair-done' | 'gauntlet:corpus-save' | 'gauntlet:done' | 'forge:done';
 
 export interface ForgeEvent {
   type: ForgeEventType;
@@ -297,6 +308,14 @@ export interface ForgeEventMap {
   'synthesis:score': { score: number };
   'synthesis:done': Record<string, unknown>;
   'elo:update': Record<string, unknown>;
+  'gauntlet:start': Record<string, unknown>;
+  'gauntlet:breaker-dispatch': { engineId: string };
+  'gauntlet:breaker-done': { engineId: string, validated: boolean };
+  'gauntlet:attack-landed': { engineId: string, failureMessage: string };
+  'gauntlet:repair-start': Record<string, unknown>;
+  'gauntlet:repair-done': { pass: boolean, score: number };
+  'gauntlet:corpus-save': { count: number };
+  'gauntlet:done': { attacksLanded: number, repairPass: boolean };
   'forge:done': Record<string, unknown>;
 }
 
@@ -315,6 +334,46 @@ export interface BrainstormResult {
   bids: BrainstormBid[];
   winner: string;
   response: string;
+}
+
+export interface BreakerArtifact {
+  engineId: string;
+  testScript: string;
+  testPath: string;
+  failureMessage: string;
+  deterministic: boolean;
+  validated: boolean;
+}
+
+export interface GauntletResult {
+  winnerId: string;
+  breakerArtifacts: BreakerArtifact[];
+  attacksLanded: number;
+  repairAttempted: boolean;
+  repairPass: boolean;
+  preRepairScore: number;
+  postRepairScore: number;
+  finalWinnerId: string;
+  patchPath?: string;
+}
+
+export interface CorpusEntry {
+  forgeId: string;
+  taskClass: TaskClass;
+  artifact: BreakerArtifact;
+  timestamp: string;
+  replayCount: number;
+  pattern?: string;
+}
+
+export interface GapPattern {
+  pattern: string;
+  taskClass: TaskClass;
+  frequency: number;
+  firstSeen: string;
+  lastSeen: string;
+  skillProposed: boolean;
+  skillPath?: string;
 }
 
 export interface Critique {

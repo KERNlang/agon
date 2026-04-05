@@ -137,6 +137,11 @@ config name=AgonConfig
   field name=approvalLevel type="'auto'|'plan'|'step'" default=plan
   field name=agentTimeout type=number default=600
   field name=agentPermissionLevel type="'full'|'plan'|'read-only'" default=full
+  field name=gauntletEnabled type=boolean default=true
+  field name=gauntletMaxBreakers type=number default=3
+  field name=gauntletRepairTimeout type=number default=300
+  field name=corpusReplayLimit type=number default=5
+  field name=skillSynthesisThreshold type=number default=3
   field name=cesarEnabled type=boolean default=true
   field name=cesarScoutCount type=number default=2
   field name=cesarDirectThreshold type=number default=85
@@ -213,6 +218,7 @@ interface name=ForgeManifest
   field name=starter type=string
   field name=enginesDispatched type=number
   field name=synthesis type="{pass:boolean,score:number,wins:boolean,patchPath:string,originalWinnerScore:number}" optional=true
+  field name=gauntlet type=GauntletResult optional=true
 
 event name=ForgeEvent
   type name="baseline:start"
@@ -232,6 +238,14 @@ event name=ForgeEvent
   type name="synthesis:score" data="{ score: number }"
   type name="synthesis:done"
   type name="elo:update"
+  type name="gauntlet:start"
+  type name="gauntlet:breaker-dispatch" data="{ engineId: string }"
+  type name="gauntlet:breaker-done" data="{ engineId: string, validated: boolean }"
+  type name="gauntlet:attack-landed" data="{ engineId: string, failureMessage: string }"
+  type name="gauntlet:repair-start"
+  type name="gauntlet:repair-done" data="{ pass: boolean, score: number }"
+  type name="gauntlet:corpus-save" data="{ count: number }"
+  type name="gauntlet:done" data="{ attacksLanded: number, repairPass: boolean }"
   type name="forge:done"
 
 interface name=BrainstormBid
@@ -246,6 +260,42 @@ interface name=BrainstormResult
   field name=bids type="BrainstormBid[]"
   field name=winner type=string
   field name=response type=string
+
+interface name=BreakerArtifact
+  field name=engineId type=string
+  field name=testScript type=string
+  field name=testPath type=string
+  field name=failureMessage type=string
+  field name=deterministic type=boolean
+  field name=validated type=boolean
+
+interface name=GauntletResult
+  field name=winnerId type=string
+  field name=breakerArtifacts type="BreakerArtifact[]"
+  field name=attacksLanded type=number
+  field name=repairAttempted type=boolean
+  field name=repairPass type=boolean
+  field name=preRepairScore type=number
+  field name=postRepairScore type=number
+  field name=finalWinnerId type=string
+  field name=patchPath type=string optional=true
+
+interface name=CorpusEntry
+  field name=forgeId type=string
+  field name=taskClass type=TaskClass
+  field name=artifact type=BreakerArtifact
+  field name=timestamp type=string
+  field name=replayCount type=number
+  field name=pattern type=string optional=true
+
+interface name=GapPattern
+  field name=pattern type=string
+  field name=taskClass type=TaskClass
+  field name=frequency type=number
+  field name=firstSeen type=string
+  field name=lastSeen type=string
+  field name=skillProposed type=boolean
+  field name=skillPath type=string optional=true
 
 interface name=Critique
   field name=file type=string

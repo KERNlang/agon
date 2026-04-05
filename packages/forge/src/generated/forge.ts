@@ -10,6 +10,10 @@ import { runBaseline, runStage1, runStage2, runStage2WithPeek, determineWinner }
 
 import { runSynthesis } from './synthesis.js';
 
+import { runGauntlet } from './gauntlet.js';
+
+import { addToCorpus } from './corpus.js';
+
 import { writeManifest } from './manifest.js';
 
 import type { WorktreeEntry } from '../types.js';
@@ -241,6 +245,47 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
       const loserScores: Record<string, number> = {};
       for (const id of losers) loserScores[id] = manifest.results[id]?.score ?? 0;
       recordForgeOutcome(eloWinner, losers, taskClass, forgeId, manifest.results[eloWinner]?.score ?? 0, loserScores);
+    }
+  
+    // --- Gauntlet: losers try to break the winner ---
+    if (config.gauntletEnabled && eloWinner && manifest.winner) {
+      const gauntletLosers = available.filter((id: string) => id !== eloWinner);
+      const winnerWt = worktrees.find((wt) => wt.engineId === eloWinner || wt.engineId === manifest.winner);
+  
+      if (gauntletLosers.length > 0 && winnerWt) {
+        try {
+          const gauntletResult = await runGauntlet({
+            winnerId: eloWinner,
+            losers: gauntletLosers,
+            task: options.task,
+            winnerWorktree: winnerWt.path,
+            fitnessCmd: options.fitnessCmd,
+            taskClass,
+            forgeDir,
+            registry,
+            adapter,
+            timeout: config.forgeTimeout,
+            fitnessTimeout: config.forgeFitnessTimeout,
+            maxBreakers: config.gauntletMaxBreakers,
+            repairTimeout: config.gauntletRepairTimeout,
+            cwd: options.cwd,
+            onEvent,
+            signal: options.signal,
+          });
+  
+          manifest.gauntlet = gauntletResult;
+  
+          // Save validated attacks to corpus
+          if (gauntletResult.attacksLanded > 0) {
+            const saved = addToCorpus(forgeId, taskClass, gauntletResult.breakerArtifacts);
+            onEvent?.({ type: 'gauntlet:corpus-save' as any, data: { count: saved } });
+            sidechain.log('corpus:save', undefined, { saved, taskClass });
+          }
+        } catch (err) {
+          console.warn(`[agon] gauntlet failed: ${err instanceof Error ? err.message : String(err)}`);
+          sidechain.log('gauntlet:error', undefined, { error: err instanceof Error ? err.message : String(err) });
+        }
+      }
     }
   
     writeManifest(manifest);

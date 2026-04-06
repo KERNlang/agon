@@ -119,7 +119,7 @@ fn name=routeWithCesar async=true params="input:string, images:ImageAttachment[]
         }
       }
       if (result.responded) return false;
-    } catch { /* Cesar brain threw — do NOT fall through to another engine */ }
+    } catch (e) { console.warn(`[agon] dispatch: Cesar brain threw: ${e instanceof Error ? e.message : String(e)}`); }
 
     // Cesar didn't respond — try fresh CLI dispatch to Cesar engine
     const cesarConfig = cb.ctx.config;
@@ -147,7 +147,7 @@ fn name=routeWithCesar async=true params="input:string, images:ImageAttachment[]
         appendMessage(cb.ctx.chatSession, { role: 'engine', engineId: cesarId, content: freshResult.stdout.trim(), timestamp: new Date().toISOString() });
         return false;
       }
-    } catch { /* Cesar truly unavailable */ }
+    } catch (e) { console.warn(`[agon] dispatch: Cesar fallback failed: ${e instanceof Error ? e.message : String(e)}`); }
 
     // Cesar completely unavailable — pick next best engine as acting Cesar with full context
     const available = cb.ctx.registry.availableIds();
@@ -183,7 +183,7 @@ fn name=routeWithCesar async=true params="input:string, images:ImageAttachment[]
         appendMessage(cb.ctx.chatSession, { role: 'engine', engineId: actingCesar, content: `[acting-cesar] ${actingResult.stdout.trim()}`, timestamp: new Date().toISOString() });
         return false;
       }
-    } catch { /* all engines failed */ }
+    } catch (e) { console.warn(`[agon] dispatch: acting Cesar failed: ${e instanceof Error ? e.message : String(e)}`); }
 
     cb.dispatch({ type: 'error', message: 'All engines unavailable. Check /engines.' });
     return false;
@@ -251,7 +251,7 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
       case 'config': handleConfig(intent, cb.dispatch); break;
       case 'use': handleUse(intent.engineIds, cb.dispatch, cb.ctx, cb.setSessionEngines); break;
       case 'cesar': {
-        const cesarTarget = intent.engineIds?.[0] ?? '';
+        const cesarTarget = (intent.engineIds ?? []).join(' ').trim();
         if (cesarTarget) {
           handleCesar(cesarTarget, cb.dispatch, cb.ctx);
         } else {

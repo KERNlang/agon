@@ -130,9 +130,10 @@ export function EnginePicker({ available, initialSelected, userEngines, onConfir
               onRemove(id);
             } else {
               // Builtin engine: hide from picker + deselect
-              setHidden((prev: Set<string>) => { const next = new Set(prev); next.add(id); return next; });
+              const nextHidden = new Set([...hidden, id]);
+              setHidden(nextHidden);
               setSelected((prev: Set<string>) => { const next = new Set(prev); next.delete(id); return next; });
-              configSet('hiddenEngines', [...hidden, id]);
+              configSet('hiddenEngines', [...nextHidden]);
               setCursor((i: number) => Math.min(i, visible.length - 2));
             }
           }
@@ -172,7 +173,7 @@ export function EnginePicker({ available, initialSelected, userEngines, onConfir
 }
 
 
-// @kern-source: ui-controls:177
+// @kern-source: ui-controls:178
 export interface ModelPickerEntry {
   providerId: string;
   providerName: string;
@@ -186,7 +187,7 @@ export interface ModelPickerEntry {
   costOutput?: number;
 }
 
-// @kern-source: ui-controls:189
+// @kern-source: ui-controls:190
 
 export function ModelPicker({ entries, onSelect, onCancel, loading }: { entries: ModelPickerEntry[]; onSelect: (entry: ModelPickerEntry) => void; onCancel: () => void; loading?: boolean }) {
   const [cursor, setCursor] = useState<number>(0);
@@ -338,7 +339,7 @@ export function ModelPicker({ entries, onSelect, onCancel, loading }: { entries:
 }
 
 
-// @kern-source: ui-controls:345
+// @kern-source: ui-controls:346
 
 export function ReviewBlock({ event, onAction }: { event: ReviewEvent; onAction: (action: 'apply' | 'edit' | 'reject' | 'copy') => void }) {
         const eColor = engineColor(event.winnerId);
@@ -379,7 +380,7 @@ export function ReviewBlock({ event, onAction }: { event: ReviewEvent; onAction:
 }
 
 
-// @kern-source: ui-controls:387
+// @kern-source: ui-controls:388
 
 export function CesarPicker({ engines, currentCesar, onSelect, onCancel }: { engines: string[]; currentCesar: string; onSelect: (engineId: string) => void; onCancel: () => void }) {
   const [cursor, setCursor] = useState<number>(0);

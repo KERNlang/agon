@@ -12,6 +12,22 @@ export interface ApiConfig {
 
 // @kern-source: api-dispatch:10
 export async function apiDispatch(config: ApiConfig, prompt: string, timeout: number, signal?: AbortSignal, systemPrompt?: string): Promise<DispatchResult> {
+  // Route Anthropic format to Messages API
+  if ((config as any).format === 'anthropic') {
+    const messages: Array<{role:string,content:string}> = [];
+    if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
+    messages.push({ role: 'user', content: prompt });
+    let stdout = '';
+    const gen = anthropicStreamDispatchWithHistory(config, messages, timeout, signal);
+    let result: any;
+    while (true) {
+      const { value, done } = await gen.next();
+      if (done) { result = value; break; }
+      stdout += value as string;
+    }
+    return result ?? { exitCode: 0, stdout, stderr: '', durationMs: 0, timedOut: false };
+  }
+  
   const apiKey = process.env[config.apiKeyEnv];
   if (!apiKey) {
     return {
@@ -94,8 +110,16 @@ export async function apiDispatch(config: ApiConfig, prompt: string, timeout: nu
   }
 }
 
-// @kern-source: api-dispatch:94
+// @kern-source: api-dispatch:110
 export async function* apiStreamDispatch(config: ApiConfig, prompt: string, timeout: number, signal?: AbortSignal, systemPrompt?: string): AsyncGenerator<string, DispatchResult, void> {
+  // Route Anthropic format to Messages API
+  if ((config as any).format === 'anthropic') {
+    const messages: Array<{role:string,content:string}> = [];
+    if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
+    messages.push({ role: 'user', content: prompt });
+    return yield* anthropicStreamDispatchWithHistory(config, messages, timeout, signal);
+  }
+  
   const apiKey = process.env[config.apiKeyEnv];
   if (!apiKey) {
     return { exitCode: 1, stdout: '', stderr: `Missing API key: set ${config.apiKeyEnv}`, durationMs: 0, timedOut: false };
@@ -168,7 +192,7 @@ export async function* apiStreamDispatch(config: ApiConfig, prompt: string, time
             stdout += chunk;
             yield chunk;
           }
-        } catch (_e) { /* skip malformed SSE lines */ }
+        } catch (_e) { console.warn(`[agon] api-dispatch: malformed SSE chunk skipped: ${data.slice(0, 120)}`); }
       }
     }
   } catch (err) {
@@ -182,7 +206,7 @@ export async function* apiStreamDispatch(config: ApiConfig, prompt: string, time
   return { exitCode: 0, stdout, stderr: '', durationMs: Date.now() - startTime, timedOut: false };
 }
 
-// @kern-source: api-dispatch:182
+// @kern-source: api-dispatch:206
 export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages: Array<{role:string,content:string}>, timeout: number, signal?: AbortSignal): AsyncGenerator<string, DispatchResult, void> {
   if ((config as any).format === 'anthropic') {
     return yield* anthropicStreamDispatchWithHistory(config, messages, timeout, signal);
@@ -254,7 +278,7 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
             stdout += chunk;
             yield chunk;
           }
-        } catch (_e) { /* skip malformed SSE lines */ }
+        } catch (_e) { console.warn(`[agon] api-dispatch: malformed SSE chunk skipped: ${data.slice(0, 120)}`); }
       }
     }
   } catch (err) {
@@ -268,7 +292,7 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
   return { exitCode: 0, stdout, stderr: '', durationMs: Date.now() - startTime, timedOut: false };
 }
 
-// @kern-source: api-dispatch:269
+// @kern-source: api-dispatch:293
 export async function* anthropicStreamDispatchWithHistory(config: ApiConfig, messages: Array<{role:string,content:string}>, timeout: number, signal?: AbortSignal): AsyncGenerator<string, DispatchResult, void> {
   const apiKey = process.env[config.apiKeyEnv];
   if (!apiKey) {
@@ -375,7 +399,7 @@ export async function* anthropicStreamDispatchWithHistory(config: ApiConfig, mes
               yield chunk;
             }
           }
-        } catch (_e) { /* skip malformed SSE lines */ }
+        } catch (_e) { console.warn(`[agon] api-dispatch: malformed SSE chunk skipped: ${data.slice(0, 120)}`); }
       }
     }
   } catch (err) {

@@ -269,7 +269,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
     case 'config': handleConfig(intent, cb.dispatch); break;
     case 'use': handleUse(intent.engineIds, cb.dispatch, cb.ctx, cb.setSessionEngines); break;
     case 'cesar': {
-      const cesarTarget = intent.engineIds?.[0] ?? '';
+      const cesarTarget = (intent.engineIds ?? []).join(' ').trim();
       if (cesarTarget) {
         handleCesar(cesarTarget, cb.dispatch, cb.ctx);
       } else {

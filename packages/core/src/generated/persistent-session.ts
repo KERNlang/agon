@@ -11,7 +11,7 @@ import { createInterface } from 'node:readline';
 import type { EngineDefinition, CompanionConfig } from './types.js';
 
 // @kern-source: persistent-session:5
-import { apiStreamDispatch } from './api-dispatch.js';
+import { apiStreamDispatch, apiStreamDispatchWithHistory } from './api-dispatch.js';
 
 // @kern-source: persistent-session:7
 export interface SessionChunk {
@@ -830,6 +830,8 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
   let alive = false;
   let sessionId: string | null = null;
   let firstTurn = true;
+  // Message history for API engines — enables multi-turn tool loops
+  const messageHistory: Array<{role: string, content: string}> = [];
   
   const session: PersistentSession = {
     get alive() { return alive; },
@@ -839,6 +841,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
     async start() {
       alive = true;
       firstTurn = true;
+      messageHistory.length = 0;
     },
   
     async *send(opts: SessionSendOptions) {
@@ -847,27 +850,53 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
         return;
       }
   
-      // API-only engines: use HTTP dispatch instead of spawn
+      // API-only engines: use HTTP dispatch with conversation history
       if (config.engine.api && !config.binaryPath) {
-        const gen = apiStreamDispatch(config.engine.api, opts.message, config.engine.timeout ?? 180, opts.signal, config.systemPrompt ?? opts.systemPrompt);
+        // Inject system prompt on first turn
+        if (firstTurn) {
+          const sysPrompt = config.systemPrompt ?? opts.systemPrompt;
+          if (sysPrompt) {
+            messageHistory.push({ role: 'system', content: sysPrompt });
+          }
+          firstTurn = false;
+        }
+  
+        // Append user message (or tool results on subsequent turns)
+        messageHistory.push({ role: 'user', content: opts.message });
+  
+        // Truncate history safety: keep system + last 48 messages (24 round trips)
+        if (messageHistory.length > 50) {
+          const system = messageHistory[0].role === 'system' ? [messageHistory[0]] : [];
+          const recent = messageHistory.slice(-(50 - system.length));
+          messageHistory.length = 0;
+          messageHistory.push(...system, ...recent);
+        }
+  
+        let fullResponse = '';
+        const gen = apiStreamDispatchWithHistory(config.engine.api, messageHistory, config.engine.timeout ?? 180, opts.signal);
         try {
           while (true) {
             const { value, done } = await gen.next();
             if (done) {
-              // done value is DispatchResult
               const result = value as any;
               if (result?.stderr) {
                 yield { type: 'error' as const, content: result.stderr };
               }
               break;
             }
+            fullResponse += value as string;
             yield { type: 'text' as const, content: value as string };
           }
         } catch (err: any) {
           yield { type: 'error' as const, content: err.message ?? String(err) };
         }
+  
+        // Push assistant response to history for next turn
+        if (fullResponse) {
+          messageHistory.push({ role: 'assistant', content: fullResponse });
+        }
+  
         yield { type: 'done' as const, content: 'end_turn' };
-        firstTurn = false;
         return;
       }
   

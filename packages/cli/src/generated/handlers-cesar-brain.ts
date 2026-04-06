@@ -431,6 +431,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
     let ranToolLoop = false;
     let parsedConfidence: number | null = null;
     let confidenceParsed = false;
+    let insideThinkBlock = false;
   
     // Eager tool execution: collect promises for native tool_call chunks
     const eagerPromises: Promise<ToolCallResult>[] = [];
@@ -614,15 +615,37 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             // Switch spinner to "responding" mode
             dispatch({ type: 'spinner-update', message: 'Cesar responding…' });
             streaming = true;
-            // Strip <think> blocks before streaming to user
-            const cleanFirst = response.replace(/<think>[\s\S]*?<\/think>\s*/gi, '');
-            if (cleanFirst) dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: cleanFirst });
+            // Strip <think> blocks before first display
+            let cleanFirst = response;
+            if (cleanFirst.includes('<think>')) {
+              cleanFirst = cleanFirst.replace(/<think>[\s\S]*?<\/think>\s*/gi, '');
+              if (response.includes('<think>') && !response.includes('</think>')) {
+                insideThinkBlock = true;
+                cleanFirst = response.replace(/<think>[\s\S]*/gi, '');
+              }
+            }
+            if (cleanFirst.trim()) dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: cleanFirst });
           } else {
             response += chunk.content;
-            // Don't stream content inside <think> blocks
-            if (!response.includes('<think>') || response.includes('</think>')) {
-              const cleanChunk = chunk.content.replace(/<\/?think>/gi, '');
-              if (cleanChunk) dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: cleanChunk });
+            // Track <think> block state across chunks
+            if (insideThinkBlock) {
+              if (chunk.content.includes('</think>')) {
+                insideThinkBlock = false;
+                const afterThink = chunk.content.split('</think>').pop()?.trim() ?? '';
+                if (afterThink) dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: afterThink });
+              }
+              // else: still inside think block, suppress output
+            } else if (chunk.content.includes('<think>')) {
+              const beforeThink = chunk.content.split('<think>')[0];
+              if (beforeThink) dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: beforeThink });
+              if (!chunk.content.includes('</think>')) {
+                insideThinkBlock = true;
+              } else {
+                const afterThink = chunk.content.split('</think>').pop()?.trim() ?? '';
+                if (afterThink) dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: afterThink });
+              }
+            } else {
+              dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: chunk.content });
             }
           }
         }
@@ -874,7 +897,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   }
 }
 
-// @kern-source: handlers-cesar-brain:868
+// @kern-source: handlers-cesar-brain:891
 export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatch, ctx: HandlerContext): Promise<ForgeJudgment|null> {
   // Need an alive Cesar session
       let session;
@@ -988,7 +1011,7 @@ export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatc
       return judgment;
 }
 
-// @kern-source: handlers-cesar-brain:983
+// @kern-source: handlers-cesar-brain:1006
 function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJudgment|null {
   // Strip confidence prefix (e.g. ~91%) before parsing structured output
   const stripped = parseConfidence(response).rest;
@@ -1032,7 +1055,7 @@ function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJud
   return { winner, strengths, convergencePlan, summary, shouldConverge };
 }
 
-// @kern-source: handlers-cesar-brain:1028
+// @kern-source: handlers-cesar-brain:1051
 export async function cesarConvergeForge(manifest: ForgeManifest, judgment: ForgeJudgment, dispatch: Dispatch, ctx: HandlerContext): Promise<string|null> {
   let session;
       try {

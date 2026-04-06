@@ -390,6 +390,29 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
           return;
         }
   
+        // Server REQUEST with method — approval requests from engine
+        if (msg.id !== undefined && msg.method) {
+          if (msg.method === 'approval/request' || msg.method === 'tool/approve' || msg.method === 'permission/request') {
+            const toolName = msg.params?.tool ?? msg.params?.type ?? 'unknown';
+            const toolCmd = msg.params?.command ?? msg.params?.description ?? JSON.stringify(msg.params ?? {});
+  
+            for (const handler of notificationHandlers) {
+              handler('tool/approval', { tool: toolName, command: toolCmd, rpcId: msg.id });
+            }
+  
+            if (config.onApproval) {
+              config.onApproval(toolName, toolCmd).then((approved: boolean) => {
+                if (proc) proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { approved } }) + '\n');
+              }).catch(() => {
+                if (proc) proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { approved: false } }) + '\n');
+              });
+            } else {
+              proc!.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { approved: true } }) + '\n');
+            }
+            return;
+          }
+        }
+  
         // Server notification
         if (msg.method) {
           for (const handler of notificationHandlers) {
@@ -403,12 +426,12 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
   
       await new Promise((r) => setTimeout(r, 100));
   
-      // ACP initialize handshake
+      // ACP initialize handshake — full capabilities, Agon handles permissions
       await sendRpc('initialize', {
         protocolVersion: 1,
         clientCapabilities: {
-          fs: { readTextFile: true, writeTextFile: false },
-          terminal: false,
+          fs: { readTextFile: true, writeTextFile: true },
+          terminal: true,
         },
         clientInfo: { name: 'agon-ai', title: 'Agon AI', version: '0.2.0' },
       });
@@ -464,7 +487,14 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
       opts.signal?.addEventListener('abort', onAbort, { once: true });
   
       const handler = (method: string, params: any) => {
-        if (method === 'session/update') {
+        if (method === 'tool/approval') {
+          // Approval request routed from Agon — emit as tool_call chunk
+          chunks.push({
+            type: 'tool_call',
+            content: params.tool ?? 'tool',
+            metadata: { input: params.command, status: 'running', approval: true },
+          });
+        } else if (method === 'session/update') {
           const update = params?.update;
           if (!update) return;
           if (update.sessionUpdate === 'agent_message_chunk') {

@@ -253,6 +253,37 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
     cwd: cesarCwd,
     systemPrompt: systemParts.join('\n\n'),
     nativeTools,
+    // Native tool execution callback — session calls this when API returns tool_calls
+    onToolCall: nativeTools ? async (name: string, args: Record<string, unknown>, callId: string) => {
+      const fsc = new FileStateCache();
+      const explorationMode = (ctx as any).explorationMode ?? false;
+      const toolCtx: ToolContext = {
+        cwd: resolveWorkingDir(),
+        readFileState: (fsc as any).cache,
+        abortSignal: undefined,
+        permissionMode: (config as any).permissionMode ?? 'ask',
+        explorationMode,
+        allowedCommands: (config as any).allowedCommands ?? [],
+        toolPermissions: (config as any).toolPermissions ?? {},
+      };
+      const result = await executeToolCall(
+        { id: callId, name, input: args },
+        toolCtx,
+        toolRegistry,
+        async (tool: string, message: string) => {
+          return new Promise<boolean>((resolve) => {
+            const d = (ctx as any)._lastDispatch;
+            if (d) {
+              const cmd = (args as any).command ?? (args as any).file_path ?? JSON.stringify(args);
+              d({ type: 'permission-ask', tool, command: cmd, reason: message, resolve } as any);
+            } else {
+              resolve(true);
+            }
+          });
+        },
+      );
+      return result.result.ok ? result.result.content : (result.result.error ?? 'Tool execution failed');
+    } : undefined,
     // Route engine tool approvals through Agon's permission system — same rules for ALL engines
     onApproval: async (tool: string, command: string) => {
       const cfg = ctx.config;
@@ -296,7 +327,7 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
   return session;
 }
 
-// @kern-source: handlers-cesar-brain:290
+// @kern-source: handlers-cesar-brain:321
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}> {
   const abort = new AbortController();
   const _turnStart = Date.now();
@@ -955,7 +986,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   }
 }
 
-// @kern-source: handlers-cesar-brain:949
+// @kern-source: handlers-cesar-brain:980
 export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatch, ctx: HandlerContext): Promise<ForgeJudgment|null> {
   // Need an alive Cesar session
       let session;
@@ -1069,7 +1100,7 @@ export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatc
       return judgment;
 }
 
-// @kern-source: handlers-cesar-brain:1064
+// @kern-source: handlers-cesar-brain:1095
 function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJudgment|null {
   // Strip confidence prefix (e.g. ~91%) before parsing structured output
   const stripped = parseConfidence(response).rest;
@@ -1113,7 +1144,7 @@ function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJud
   return { winner, strengths, convergencePlan, summary, shouldConverge };
 }
 
-// @kern-source: handlers-cesar-brain:1109
+// @kern-source: handlers-cesar-brain:1140
 export async function cesarConvergeForge(manifest: ForgeManifest, judgment: ForgeJudgment, dispatch: Dispatch, ctx: HandlerContext): Promise<string|null> {
   let session;
       try {

@@ -244,6 +244,37 @@ fn name=ensureCesarSession async=true params="ctx:HandlerContext" returns="Promi
       cwd: cesarCwd,
       systemPrompt: systemParts.join('\n\n'),
       nativeTools,
+      // Native tool execution callback — session calls this when API returns tool_calls
+      onToolCall: nativeTools ? async (name: string, args: Record<string, unknown>, callId: string) => {
+        const fsc = new FileStateCache();
+        const explorationMode = (ctx as any).explorationMode ?? false;
+        const toolCtx: ToolContext = {
+          cwd: resolveWorkingDir(),
+          readFileState: (fsc as any).cache,
+          abortSignal: undefined,
+          permissionMode: (config as any).permissionMode ?? 'ask',
+          explorationMode,
+          allowedCommands: (config as any).allowedCommands ?? [],
+          toolPermissions: (config as any).toolPermissions ?? {},
+        };
+        const result = await executeToolCall(
+          { id: callId, name, input: args },
+          toolCtx,
+          toolRegistry,
+          async (tool: string, message: string) => {
+            return new Promise<boolean>((resolve) => {
+              const d = (ctx as any)._lastDispatch;
+              if (d) {
+                const cmd = (args as any).command ?? (args as any).file_path ?? JSON.stringify(args);
+                d({ type: 'permission-ask', tool, command: cmd, reason: message, resolve } as any);
+              } else {
+                resolve(true);
+              }
+            });
+          },
+        );
+        return result.result.ok ? result.result.content : (result.result.error ?? 'Tool execution failed');
+      } : undefined,
       // Route engine tool approvals through Agon's permission system — same rules for ALL engines
       onApproval: async (tool: string, command: string) => {
         const cfg = ctx.config;

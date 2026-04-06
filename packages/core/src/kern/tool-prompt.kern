@@ -6,7 +6,16 @@ import from="./tool-types.js" names="ToolDefinition,ToolHandler" types=true
 
 const name=TOOL_USE_FORMAT type=string
   handler <<<
-    `Tool format: <tool name="X">{"param":"value"}</tool> → result arrives as <tool_result name="X">...</tool_result>. Use tools — don't guess.`
+    `Tool format — output this exact XML to call tools:
+
+<tool name="Read">{"file_path":"src/index.ts"}</tool>
+
+Result arrives as: <tool_result name="Read">file content here</tool_result>
+
+Example — to run a command:
+<tool name="Bash">{"command":"npm test"}</tool>
+
+ALWAYS use tools. NEVER say "let me look at" without calling Read/Grep. NEVER describe edits without calling Edit.`
   >>>
 
 fn name=toolDefinitionToPrompt params="def:ToolDefinition" returns=string export=false

@@ -323,6 +323,16 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
     const abort = new AbortController();
     const _turnStart = Date.now();
     const _toolsUsed: string[] = [];
+
+    // Concurrency guard with message queue — latest message wins
+    if ((ctx as any)._cesarBusy) {
+      // Queue this message — replaces any previously queued (latest wins)
+      (ctx as any)._cesarQueue = { input, dispatch, images };
+      dispatch({ type: 'info', message: 'Cesar is working — your message is queued.' });
+      return { delegated: false, responded: true }; // responded=true so fallback doesn't fire
+    }
+    (ctx as any)._cesarBusy = true;
+
     try {
       ensureAgonHome();
 
@@ -330,6 +340,7 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
 
       // Check cesarEnabled setting
       if ((config as any).cesarEnabled === false) {
+        (ctx as any)._cesarBusy = false;
         return { delegated: false, responded: false };
       }
 
@@ -972,8 +983,17 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
 
       return { delegated: false, responded: false };
     } finally {
+      (ctx as any)._cesarBusy = false;
       dispatch({ type: 'spinner-stop' });
       ctx.setActiveAbort(null);
+
+      // Auto-drain queue — process next message if one was queued while busy
+      const queued = (ctx as any)._cesarQueue;
+      if (queued) {
+        (ctx as any)._cesarQueue = null;
+        // Fire-and-forget — don't await, let it run as next turn
+        handleCesarBrain(queued.input, queued.dispatch, ctx, queued.images).catch(() => {});
+      }
     }
   >>>
 

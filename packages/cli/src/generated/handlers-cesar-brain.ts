@@ -332,6 +332,16 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   const abort = new AbortController();
   const _turnStart = Date.now();
   const _toolsUsed: string[] = [];
+  
+  // Concurrency guard with message queue — latest message wins
+  if ((ctx as any)._cesarBusy) {
+    // Queue this message — replaces any previously queued (latest wins)
+    (ctx as any)._cesarQueue = { input, dispatch, images };
+    dispatch({ type: 'info', message: 'Cesar is working — your message is queued.' });
+    return { delegated: false, responded: true }; // responded=true so fallback doesn't fire
+  }
+  (ctx as any)._cesarBusy = true;
+  
   try {
     ensureAgonHome();
   
@@ -339,6 +349,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   
     // Check cesarEnabled setting
     if ((config as any).cesarEnabled === false) {
+      (ctx as any)._cesarBusy = false;
       return { delegated: false, responded: false };
     }
   
@@ -981,12 +992,21 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   
     return { delegated: false, responded: false };
   } finally {
+    (ctx as any)._cesarBusy = false;
     dispatch({ type: 'spinner-stop' });
     ctx.setActiveAbort(null);
+  
+    // Auto-drain queue — process next message if one was queued while busy
+    const queued = (ctx as any)._cesarQueue;
+    if (queued) {
+      (ctx as any)._cesarQueue = null;
+      // Fire-and-forget — don't await, let it run as next turn
+      handleCesarBrain(queued.input, queued.dispatch, ctx, queued.images).catch(() => {});
+    }
   }
 }
 
-// @kern-source: handlers-cesar-brain:980
+// @kern-source: handlers-cesar-brain:1000
 export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatch, ctx: HandlerContext): Promise<ForgeJudgment|null> {
   // Need an alive Cesar session
       let session;
@@ -1100,7 +1120,7 @@ export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatc
       return judgment;
 }
 
-// @kern-source: handlers-cesar-brain:1095
+// @kern-source: handlers-cesar-brain:1115
 function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJudgment|null {
   // Strip confidence prefix (e.g. ~91%) before parsing structured output
   const stripped = parseConfidence(response).rest;
@@ -1144,7 +1164,7 @@ function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJud
   return { winner, strengths, convergencePlan, summary, shouldConverge };
 }
 
-// @kern-source: handlers-cesar-brain:1140
+// @kern-source: handlers-cesar-brain:1160
 export async function cesarConvergeForge(manifest: ForgeManifest, judgment: ForgeJudgment, dispatch: Dispatch, ctx: HandlerContext): Promise<string|null> {
   let session;
       try {

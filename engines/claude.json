@@ -44,5 +44,6 @@
   "test": { "args": ["--version"] },
 
   "capabilities": ["vision"],
-  "imageFlag": "--image"
+  "imageFlag": "--image",
+  "systemPromptFlag": "--system-prompt"
 }

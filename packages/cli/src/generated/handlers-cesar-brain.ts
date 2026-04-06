@@ -67,18 +67,35 @@ Format: Start response with ~X% then your content. Examples:
 - ~84% I'm not confident about this approach. The session handling has a race condition I need to investigate first. What happens when...
 - ~60% I can't proceed — I need to understand the API contract before touching this. Can you show me the endpoint spec?
 
+## ROUTING PATTERNS — Which mode fits which situation
+
+| User intent | Best mode | Why |
+|-------------|-----------|-----|
+| Implement a feature, fix a bug, refactor | build | Single focused engine, fast |
+| Complex multi-file change, risky refactor | forge | Multiple engines compete, best wins |
+| High-stakes code (auth, payments, data) | forge-hardened | Competition + adversarial gauntlet |
+| "Is this the right approach?" | tribunal-steelman | Strengthens both sides of the argument |
+| Comparing 2+ approaches | tribunal-synthesis | Combines competing proposals |
+| Architecture or design exploration | campfire | Open thinking, no competition |
+| "What could go wrong?" / security review | tribunal-red-team | Attacks from failure/security perspective |
+| Something went wrong, need root cause | tribunal-postmortem | Structured analysis of what failed |
+| Need multiple perspectives on a question | brainstorm | Each engine bids confidence, user picks |
+| Heated disagreement or controversial choice | tribunal-adversarial | Structured opposition debate |
+| Large-scale change across many files | team-forge | Engines form teams for parallel work |
+| Need deep Socratic exploration | tribunal-socratic | Question-driven discovery |
+
 Rules for mode suggestions:
 - Only suggest when 85-92% confident AND multi-engine work would genuinely help.
 - Always explain WHY you're suggesting that specific mode.
 - The user will confirm before dispatch. Don't assume they'll accept.
-- For code tasks: prefer build (single engine) unless complex enough for forge.
-- For debates/comparisons: tribunal. For brainstorming: brainstorm or campfire.
+- Match the mode to the INTENT, not just the complexity.
+- When unsure between modes, prefer the lighter one (build > forge, campfire > tribunal).
 - For high-stakes changes: add -hardened to forge modes.`;
 
-// @kern-source: handlers-cesar-brain:65
+// @kern-source: handlers-cesar-brain:82
 export const CONFIDENCE_TIERS: { direct: number; suggest: number; nero: number; stop: number } = ({ direct: 93, suggest: 85, nero: 85, stop: 70 });
 
-// @kern-source: handlers-cesar-brain:70
+// @kern-source: handlers-cesar-brain:87
 export function parseConfidence(response: string): { value: number | null; rest: string } {
   // Match ~X% at start (with optional whitespace)
   const tildeMatch = response.match(/^~(\d{1,3})%\s*/);
@@ -98,7 +115,7 @@ export function parseConfidence(response: string): { value: number | null; rest:
   return { value: null, rest: response };
 }
 
-// @kern-source: handlers-cesar-brain:91
+// @kern-source: handlers-cesar-brain:108
 export function confidenceColor(value: number): string {
   if (value >= 94) return '\x1b[32m';  // green
   if (value >= 90) return '\x1b[33m';  // yellow
@@ -106,7 +123,7 @@ export function confidenceColor(value: number): string {
   return '\x1b[31m'; // red
 }
 
-// @kern-source: handlers-cesar-brain:100
+// @kern-source: handlers-cesar-brain:117
 export function confidenceBadge(value: number): string {
   const color = confidenceColor(value);
   const reset = '\x1b[0m';
@@ -114,7 +131,7 @@ export function confidenceBadge(value: number): string {
   return `${color}${dot} ${value}%${reset}`;
 }
 
-// @kern-source: handlers-cesar-brain:109
+// @kern-source: handlers-cesar-brain:126
 export interface SuggestionResult {
   action: string|null;
   rest: string;
@@ -124,7 +141,7 @@ export interface SuggestionResult {
   membersPerSide?: number;
 }
 
-// @kern-source: handlers-cesar-brain:117
+// @kern-source: handlers-cesar-brain:134
 export function parseSuggestion(response: string): SuggestionResult {
   // Match [SUGGEST:compound-name] or legacy [DELEGATE:mode]
   const match = response.match(/^\[(SUGGEST|DELEGATE):([\w-]+)\]\s*/i);
@@ -167,7 +184,7 @@ export function parseSuggestion(response: string): SuggestionResult {
   return { action, rest, hardened, tribunalMode, team };
 }
 
-// @kern-source: handlers-cesar-brain:161
+// @kern-source: handlers-cesar-brain:178
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
       const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
@@ -357,7 +374,7 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
       return session;
 }
 
-// @kern-source: handlers-cesar-brain:351
+// @kern-source: handlers-cesar-brain:368
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}> {
   const abort = new AbortController();
   const _turnStart = Date.now();
@@ -442,6 +459,11 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
     let parsedConfidence: number | null = null;
     let confidenceParsed = false;
     let insideThinkBlock = false;
+  
+    // Auto-escalation: second opinion when confidence is low
+    let secondOpinionPromise: Promise<any> | null = null;
+    let secondOpinionId: string | null = null;
+    let secondOpinionColor: number = 245;
   
     // Eager tool execution: collect promises for native tool_call chunks
     const eagerPromises: Promise<ToolCallResult>[] = [];
@@ -586,43 +608,28 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               return { delegated: false, responded: true };
             }
   
-            // HARD ENFORCEMENT: if confidence < 85%, block direct response and force escalation
-            if (confidenceParsed && parsedConfidence !== null && parsedConfidence < CONFIDENCE_TIERS.nero && !suggestion.action) {
-              dispatch({ type: 'spinner-stop' });
-  
-              if (parsedConfidence < CONFIDENCE_TIERS.stop) {
-                // <70% — full stop, show what Cesar said and halt
-                dispatch({ type: 'warning', message: confidenceBadge(parsedConfidence) + ' Cesar cannot proceed — confidence too low' });
-                dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: response });
-                appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
-                appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
-                return { delegated: false, responded: true };
+            // AUTO-ESCALATION: if confidence < 85%, fire a second engine in parallel
+            if (confidenceParsed && parsedConfidence !== null && parsedConfidence < CONFIDENCE_TIERS.nero && !suggestion.action && !secondOpinionPromise) {
+              // Pick a second engine — anyone available that isn't Cesar
+              const otherEngines = ctx.activeEngines().filter((id: string) => id !== cesarEngineId);
+              if (otherEngines.length > 0) {
+                secondOpinionId = otherEngines[0];
+                secondOpinionColor = ENGINE_COLORS[secondOpinionId] ?? 245;
+                const secondEngine = ctx.registry.get(secondOpinionId);
+                const outDir = join(RUNS_DIR, `second-opinion-${Date.now()}`);
+                mkdirSync(outDir, { recursive: true });
+                dispatch({ type: 'info', message: confidenceBadge(parsedConfidence) + ` Auto-escalation: ${secondOpinionId} providing second opinion…` });
+                secondOpinionPromise = ctx.adapter.dispatch({
+                  engine: secondEngine,
+                  prompt: input,
+                  cwd: resolveWorkingDir(),
+                  mode: 'exec' as any,
+                  timeout: config.timeout ?? 120,
+                  outputDir: outDir,
+                  systemPrompt: CESAR_SYSTEM_PROMPT,
+                });
               }
-  
-              // <90% — force escalation: show Cesar's reasoning, then ask to brainstorm/tribunal
-              dispatch({ type: 'warning', message: confidenceBadge(parsedConfidence) + ' Cesar is not confident — recommending multi-engine input' });
-              dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: response });
-              appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
-              appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
-  
-              const escAnswer = await new Promise<string>((resolve) => {
-                dispatch({ type: 'question', prompt: `Cesar @ ${parsedConfidence}% — escalate?`, choices: [
-                  { key: 'b', label: 'Brainstorm', color: '#60a5fa' },
-                  { key: 't', label: 'Tribunal', color: '#f59e0b' },
-                  { key: 'f', label: 'Forge', color: '#a78bfa' },
-                  { key: 's', label: 'Skip (let Cesar proceed)', color: '#6b7280' },
-                ], resolve } as any);
-              });
-  
-              if (escAnswer === 'b') {
-                return { delegated: true, responded: true, action: 'brainstorm', reasoning: response };
-              } else if (escAnswer === 't') {
-                return { delegated: true, responded: true, action: 'tribunal', reasoning: response };
-              } else if (escAnswer === 'f') {
-                return { delegated: true, responded: true, action: 'forge', reasoning: response };
-              }
-              // 's' = skip — fall through and let response stream
-              return { delegated: false, responded: true };
+              // DON'T block — let Cesar continue streaming
             }
   
             // Switch spinner to "responding" mode
@@ -722,6 +729,56 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         response = conf.rest;
       }
       confidenceParsed = true;
+    }
+  
+    // Handle second opinion if auto-escalation was triggered
+    if (secondOpinionPromise && secondOpinionId) {
+      if (streaming) {
+        dispatch({ type: 'streaming-end', engineId: cesarEngineId });
+        streaming = false;
+      }
+      dispatch({ type: 'spinner-start', message: `Awaiting ${secondOpinionId} second opinion…`, color: secondOpinionColor });
+      try {
+        const secondResult = await secondOpinionPromise;
+        dispatch({ type: 'spinner-stop' });
+        if (secondResult.stdout.trim()) {
+          // Strip <think> blocks from second opinion
+          const secondResponse = secondResult.stdout.trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
+          dispatch({ type: 'engine-block', engineId: secondOpinionId, color: secondOpinionColor, content: secondResponse });
+          appendMessage(ctx.chatSession, { role: 'engine', engineId: secondOpinionId, content: secondResponse, timestamp: new Date().toISOString() });
+          tracker.record(secondOpinionId, input, secondResponse);
+        }
+      } catch {
+        dispatch({ type: 'spinner-stop' });
+        dispatch({ type: 'warning', message: `${secondOpinionId} second opinion failed` });
+      }
+  
+      // Save Cesar's response
+      appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
+      appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
+      tracker.record(cesarEngineId, input, response);
+  
+      // Escalation menu with both perspectives
+      if (parsedConfidence !== null && parsedConfidence < CONFIDENCE_TIERS.stop) {
+        // <70% — full stop after showing both
+        dispatch({ type: 'warning', message: confidenceBadge(parsedConfidence) + ' Confidence too low — review both opinions before proceeding' });
+        return { delegated: false, responded: true };
+      }
+  
+      const escAnswer = await new Promise<string>((resolve) => {
+        dispatch({ type: 'question', prompt: `Cesar @ ${parsedConfidence}% + ${secondOpinionId} — escalate or accept?`, choices: [
+          { key: 'a', label: 'Accept (proceed with Cesar)', color: '#4ade80' },
+          { key: 'b', label: 'Brainstorm (more opinions)', color: '#60a5fa' },
+          { key: 't', label: 'Tribunal (debate it)', color: '#f59e0b' },
+          { key: 'f', label: 'Forge (compete)', color: '#a78bfa' },
+        ], resolve } as any);
+      });
+  
+      if (escAnswer === 'b') return { delegated: true, responded: true, action: 'brainstorm', reasoning: response };
+      if (escAnswer === 't') return { delegated: true, responded: true, action: 'tribunal', reasoning: response };
+      if (escAnswer === 'f') return { delegated: true, responded: true, action: 'forge', reasoning: response };
+      // 'a' = accept — fall through normally
+      return { delegated: false, responded: true };
     }
   
     // Check final response for suggestion/delegation (non-streaming path)
@@ -934,7 +991,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   }
 }
 
-// @kern-source: handlers-cesar-brain:928
+// @kern-source: handlers-cesar-brain:985
 export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatch, ctx: HandlerContext): Promise<ForgeJudgment|null> {
   // Need an alive Cesar session
       let session;
@@ -1048,7 +1105,7 @@ export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatc
       return judgment;
 }
 
-// @kern-source: handlers-cesar-brain:1043
+// @kern-source: handlers-cesar-brain:1100
 function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJudgment|null {
   // Strip confidence prefix (e.g. ~91%) before parsing structured output
   const stripped = parseConfidence(response).rest;
@@ -1092,7 +1149,7 @@ function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJud
   return { winner, strengths, convergencePlan, summary, shouldConverge };
 }
 
-// @kern-source: handlers-cesar-brain:1088
+// @kern-source: handlers-cesar-brain:1145
 export async function cesarConvergeForge(manifest: ForgeManifest, judgment: ForgeJudgment, dispatch: Dispatch, ctx: HandlerContext): Promise<string|null> {
   let session;
       try {

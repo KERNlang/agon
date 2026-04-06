@@ -1,7 +1,10 @@
 export type Intent =
   | { type: 'forge'; task: string; fitnessCmd: string | null }
   | { type: 'brainstorm'; question: string }
-  | { type: 'tribunal'; question: string }
+  | { type: 'tribunal'; question: string; tribunalMode?: string }
+  | { type: 'team-tribunal'; question: string; tribunalMode?: string; membersPerSide?: number }
+  | { type: 'team-forge'; task: string; fitnessCmd: string | null; membersPerSide?: number }
+  | { type: 'team-brainstorm'; question: string; membersPerSide?: number }
   | { type: 'leaderboard' }
   | { type: 'history'; id?: string }
   | { type: 'engines' }
@@ -25,49 +28,22 @@ export type Intent =
   | { type: 'flow' }
   | { type: 'flows' }
   | { type: 'chats'; sessionId?: string }
+  | { type: 'chats-resume'; sessionId: string }
   | { type: 'build'; input: string }
   | { type: 'pipeline'; task: string; fitnessCmd: string | null }
   | { type: 'run'; input: string }
   | { type: 'cesar'; engineIds: string[] }
+  | { type: 'commit'; input?: string }
+  | { type: 'undo' }
+  | { type: 'jobs' }
+  | { type: 'focus'; jobId?: string }
+  | { type: 'explore' }
+  | { type: 'suggest-brainstorm'; input: string; question?: string }
+  | { type: 'suggest-tribunal'; input: string; question?: string }
+  | { type: 'suggest-forge'; input: string; task?: string; fitnessCmd?: string | null }
   | { type: 'clear' }
   | { type: 'slash-list' }
   | { type: 'help' }
   | { type: 'exit' }
   | { type: 'auto'; input: string; taskClass: 'code' | 'question' | 'ambiguous' }
   | { type: 'unknown'; input: string };
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

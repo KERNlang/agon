@@ -39,6 +39,35 @@ describe('Intent Detection — Slash Commands', () => {
     if (r.type === 'tribunal') expect(r.question).toBe('React vs Svelte');
   });
 
+  it('/team-tribunal parses size and mode', () => {
+    const r = detectIntent('/team-tribunal 3v3 synthesis What should we launch first?');
+    expect(r.type).toBe('team-tribunal');
+    if (r.type === 'team-tribunal') {
+      expect(r.membersPerSide).toBe(3);
+      expect(r.tribunalMode).toBe('synthesis');
+      expect(r.question).toBe('What should we launch first?');
+    }
+  });
+
+  it('/team-forge parses size, task, and fitness command', () => {
+    const r = detectIntent('/team-forge 2v2 fix auth test with npm test');
+    expect(r.type).toBe('team-forge');
+    if (r.type === 'team-forge') {
+      expect(r.membersPerSide).toBe(2);
+      expect(r.task).toBe('fix auth');
+      expect(r.fitnessCmd).toBe('npm test');
+    }
+  });
+
+  it('/team-brainstorm parses size and question', () => {
+    const r = detectIntent('/team-brainstorm 2v2 Which feature should headline v1?');
+    expect(r.type).toBe('team-brainstorm');
+    if (r.type === 'team-brainstorm') {
+      expect(r.membersPerSide).toBe(2);
+      expect(r.question).toBe('Which feature should headline v1?');
+    }
+  });
+
   it('/campfire parses topic', () => {
     const r = detectIntent('/campfire the future of AI');
     expect(r.type).toBe('campfire');

@@ -1050,23 +1050,21 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
               continue;
             }
 
-            // No tool calls — final response.
-            // Collapse entire tool exchange into clean user/assistant pair.
-            // Remove intermediate tool_calls + role:tool messages so next turn
-            // sees only clean history (like Vercel AI SDK response.messages).
-            const userMsgIdx = messageHistory.length - 1;
-            // Walk back and remove all tool-related messages from this turn
-            while (messageHistory.length > 0) {
-              const last = messageHistory[messageHistory.length - 1];
-              if ((last as any).role === 'tool' || ((last as any).role === 'assistant' && (last as any).tool_calls)) {
-                messageHistory.pop();
-              } else {
-                break;
-              }
-            }
-            // Add the final clean response
+            // No tool calls — final response. Add to history and exit.
             messageHistory.push({ role: 'assistant', content: fullResponse });
             break;
+          }
+
+          // ALWAYS clean up after tool loop — remove role:'tool' and tool_calls from history.
+          // This runs whether the loop exited cleanly or via error/break.
+          // Next turn only sees clean user/assistant pairs.
+          while (messageHistory.length > 0) {
+            const last = messageHistory[messageHistory.length - 1] as any;
+            if (last.role === 'tool' || (last.role === 'assistant' && last.tool_calls)) {
+              messageHistory.pop();
+            } else {
+              break;
+            }
           }
 
           yield { type: 'done' as const, content: 'end_turn' };

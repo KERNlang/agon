@@ -264,6 +264,7 @@ You are now in Nero mode — adversarial, challenging, devil's advocate.
       binaryPath,
       cwd: cesarCwd,
       systemPrompt: systemParts.join('\n\n'),
+      readOnly: ctx.explorationMode,
     };
 
     const session = createPersistentSession(sessionConfig);

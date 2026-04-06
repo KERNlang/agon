@@ -962,6 +962,7 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
                 if (done) {
                   const result = value as any;
                   if (result?.stderr) {
+                    alive = false; // API error — mark dead for clean restart
                     yield { type: 'error' as const, content: result.stderr };
                   }
                   break;
@@ -970,6 +971,7 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
                 yield { type: 'text' as const, content: value as string };
               }
             } catch (err: any) {
+              alive = false; // Mark dead so ensureCesarSession creates fresh session on next turn
               yield { type: 'error' as const, content: err.message ?? String(err) };
               break;
             }

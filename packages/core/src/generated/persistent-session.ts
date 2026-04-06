@@ -966,6 +966,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
               if (done) {
                 const result = value as any;
                 if (result?.stderr) {
+                  alive = false; // API error — mark dead for clean restart
                   yield { type: 'error' as const, content: result.stderr };
                 }
                 break;
@@ -974,6 +975,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
               yield { type: 'text' as const, content: value as string };
             }
           } catch (err: any) {
+            alive = false; // Mark dead so ensureCesarSession creates fresh session on next turn
             yield { type: 'error' as const, content: err.message ?? String(err) };
             break;
           }

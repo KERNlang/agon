@@ -29,6 +29,14 @@
     "flag": "--model"
   },
 
+  "api": {
+    "baseUrl": "https://api.anthropic.com",
+    "apiKeyEnv": "ANTHROPIC_API_KEY",
+    "model": "claude-sonnet-4-20250514",
+    "maxTokens": 8192,
+    "format": "anthropic"
+  },
+
   "env": {
     "ANTHROPIC_API_KEY": { "required": false }
   },

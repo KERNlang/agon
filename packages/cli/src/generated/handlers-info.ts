@@ -1,17 +1,25 @@
+// @kern-source: handlers-info:1
 import { readdirSync, readFileSync } from 'node:fs';
 
+// @kern-source: handlers-info:2
 import { join } from 'node:path';
 
+// @kern-source: handlers-info:3
 import { ensureAgonHome, RUNS_DIR, getElo, getEngineRating, tracker, loadConfig, configSet, DEFAULT_CONFIG, discoverEngines, addWorkspace, removeWorkspace, switchWorkspace, listWorkspaces, getActiveWorkspace, listChatSessions, loadChatSession } from '@agon/core';
 
+// @kern-source: handlers-info:4
 import type { AgonConfig, ForgeManifest } from '@agon/core';
 
+// @kern-source: handlers-info:5
 import type { Intent } from '../intent.js';
 
+// @kern-source: handlers-info:6
 import type { Dispatch, HandlerContext } from '../handlers/types.js';
 
+// @kern-source: handlers-info:7
 import { EngineRegistry } from '@agon/core';
 
+// @kern-source: handlers-info:9
 export function handleLeaderboard(dispatch: Dispatch): void {
   const elo = getElo();
   dispatch({ type: 'header', title: 'Global Leaderboard' });
@@ -39,6 +47,7 @@ export function handleLeaderboard(dispatch: Dispatch): void {
   }
 }
 
+// @kern-source: handlers-info:37
 function showRunDetail(dispatch: Dispatch, id: string): void {
   let files: string[];
   try {
@@ -71,6 +80,7 @@ function showRunDetail(dispatch: Dispatch, id: string): void {
   }
 }
 
+// @kern-source: handlers-info:70
 export function handleHistory(dispatch: Dispatch, id?: string): void {
   ensureAgonHome();
   
@@ -113,36 +123,59 @@ export function handleHistory(dispatch: Dispatch, id?: string): void {
   dispatch({ type: 'info', message: 'Use /history <id> for details' });
 }
 
+// @kern-source: handlers-info:113
 export async function handleEngines(dispatch: Dispatch, ctx: HandlerContext): Promise<void> {
   dispatch({ type: 'header', title: 'Engines' });
   dispatch({ type: 'spinner-start', message: 'Scanning...' });
+  
+  const config = ctx.config;
+  const cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
+  const cesarBackend = (config as any).cesarBackend ?? 'auto';
   
   try {
     const engines = ctx.registry.list();
     const results = await Promise.all(
       engines.map(async (engine: any) => {
-        const avail = ctx.registry.isAvailable(engine);
+        const hasBinary = !!(engine.binary && ctx.registry.findBinary(engine));
+        const hasApi = !!(engine.api && process.env[engine.api.apiKeyEnv]);
+        const avail = hasBinary || hasApi;
         const version = avail ? ((await ctx.adapter.getVersion(engine)) ?? 'unknown') : '';
-        return { engine, avail, version };
+        return { engine, avail, version, hasBinary, hasApi };
       }),
     );
   
     dispatch({ type: 'spinner-stop' });
   
-    const rows = results.map(({ engine, avail, version }: any) => [
-      engine.id,
-      engine.displayName,
-      avail ? 'installed' : 'missing',
-      version,
-      engine.tier,
-    ]);
-    dispatch({ type: 'table', headers: ['ID', 'Name', 'Status', 'Version', 'Tier'], rows });
+    const rows = results.map(({ engine, avail, version, hasBinary, hasApi }: any) => {
+      // Show which backends are available
+      const cli = hasBinary ? '● cli' : '○ cli';
+      const api = engine.api ? (hasApi ? '● api' : '○ api') : '— api';
+      // Show active backend for Cesar brain engine
+      let active = '';
+      if (engine.id === cesarId) {
+        if (cesarBackend === 'api' && hasApi) active = '← api';
+        else if (cesarBackend === 'cli' && hasBinary) active = '← cli';
+        else if (cesarBackend === 'auto') active = hasBinary ? '← cli' : hasApi ? '← api' : '';
+        active = active ? `[cesar] ${active}` : '[cesar]';
+      }
+      return [
+        engine.id,
+        avail ? 'installed' : 'missing',
+        cli,
+        api,
+        version,
+        active,
+      ];
+    });
+    dispatch({ type: 'table', headers: ['ID', 'Status', 'CLI', 'API', 'Version', ''], rows });
+    dispatch({ type: 'info', message: `Backend: ${cesarBackend}. Switch: /cesar <engine> cli|api` });
   } catch (err) {
     dispatch({ type: 'spinner-stop' });
     throw err;
   }
 }
 
+// @kern-source: handlers-info:165
 export async function handleDiscover(dispatch: Dispatch, ctx: HandlerContext): Promise<void> {
   dispatch({ type: 'header', title: 'Engine Discovery' });
   dispatch({ type: 'spinner-start', message: 'Scanning installed engines...' });
@@ -170,6 +203,7 @@ export async function handleDiscover(dispatch: Dispatch, ctx: HandlerContext): P
   }
 }
 
+// @kern-source: handlers-info:193
 export function handleConfig(intent: Intent&{type:'config'}, dispatch: Dispatch): void {
   ensureAgonHome();
   const action = (intent as any).action ?? 'list';
@@ -225,6 +259,7 @@ export function handleConfig(intent: Intent&{type:'config'}, dispatch: Dispatch)
   }
 }
 
+// @kern-source: handlers-info:249
 export function handleUse(engineIds: string[], dispatch: Dispatch, ctx: HandlerContext, setSessionEngines: (engines:string[]|null)=>void): void {
   if (engineIds.length === 0 || (engineIds.length === 1 && engineIds[0] === 'all')) {
     setSessionEngines(null);
@@ -253,24 +288,65 @@ export function handleUse(engineIds: string[], dispatch: Dispatch, ctx: HandlerC
   dispatch({ type: 'info', message: 'Saved — persists across sessions. Use /cesar <engine> to change Cesar brain separately.' });
 }
 
+// @kern-source: handlers-info:278
 export function handleCesar(engineId: string, dispatch: Dispatch, ctx: HandlerContext): void {
-  if (!engineId) {
-    // Show current Cesar brain
+  // Parse: "/cesar claude api" or "/cesar claude cli" or "/cesar claude" or "/cesar"
+  const parts = engineId.trim().split(/\s+/);
+  const id = parts[0] ?? '';
+  const backendArg = parts[1]?.toLowerCase();
+  
+  if (!id) {
+    // Show current Cesar brain + backend
     const config = ctx.config;
     const current = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
-    dispatch({ type: 'info', message: `Cesar brain: ${current}` });
-    dispatch({ type: 'info', message: 'Usage: /cesar <engine> (e.g. /cesar codex)' });
+    const backend = (config as any).cesarBackend ?? 'auto';
+    dispatch({ type: 'info', message: `Cesar brain: ${current} (backend: ${backend})` });
+    dispatch({ type: 'info', message: 'Usage: /cesar <engine> [cli|api|auto]' });
+    return;
+  }
+  
+  // Backend-only switch: "/cesar cli" or "/cesar api" or "/cesar auto"
+  if (['cli', 'api', 'auto'].includes(id)) {
+    configSet('cesarBackend', id);
+    // Kill session to force reboot with new backend
+    if (ctx.cesarSession) {
+      ctx.cesarSession.close();
+      ctx.setCesarSession(null);
+    }
+    dispatch({ type: 'success', message: `Cesar backend set to: ${id}` });
     return;
   }
   
   const available = ctx.registry.availableIds();
-  if (!available.includes(engineId)) {
-    dispatch({ type: 'error', message: `Engine "${engineId}" not available. Available: ${available.join(', ')}` });
+  if (!available.includes(id)) {
+    dispatch({ type: 'error', message: `Engine "${id}" not available. Available: ${available.join(', ')}` });
     return;
   }
   
+  // Validate backend if specified
+  if (backendArg && !['cli', 'api', 'auto'].includes(backendArg)) {
+    dispatch({ type: 'error', message: `Invalid backend "${backendArg}". Use: cli, api, or auto` });
+    return;
+  }
+  
+  if (backendArg === 'api') {
+    const engine = ctx.registry.get(id);
+    if (!engine.api || !process.env[engine.api.apiKeyEnv]) {
+      dispatch({ type: 'error', message: `API not available for ${id} — need ${engine.api?.apiKeyEnv ?? 'API key'}` });
+      return;
+    }
+  }
+  if (backendArg === 'cli') {
+    const engine = ctx.registry.get(id);
+    if (!engine.binary || !ctx.registry.findBinary(engine)) {
+      dispatch({ type: 'error', message: `CLI binary not found for ${id}` });
+      return;
+    }
+  }
+  
   // Only change Cesar brain — do NOT touch sessionEngines, forgeEnabledEngines, or forgeFixedStarter
-  configSet('cesarEngine', engineId);
+  configSet('cesarEngine', id);
+  if (backendArg) configSet('cesarBackend', backendArg);
   
   // Kill old persistent session so next message boots fresh with new engine
   if (ctx.cesarSession) {
@@ -278,10 +354,12 @@ export function handleCesar(engineId: string, dispatch: Dispatch, ctx: HandlerCo
     ctx.setCesarSession(null);
   }
   
-  dispatch({ type: 'success', message: `Cesar brain set to: ${engineId}` });
+  const backend = backendArg ?? (ctx.config as any).cesarBackend ?? 'auto';
+  dispatch({ type: 'success', message: `Cesar brain set to: ${id} (backend: ${backend})` });
   dispatch({ type: 'info', message: 'Conversation context + memory preserved. Forge/tribunal engines unchanged — use /use to change those.' });
 }
 
+// @kern-source: handlers-info:349
 export function handleTokens(dispatch: Dispatch): void {
   const stats = tracker.getStats();
   dispatch({ type: 'header', title: 'Token Usage — This Session' });
@@ -306,6 +384,7 @@ export function handleTokens(dispatch: Dispatch): void {
   dispatch({ type: 'info', message: `${stats.dispatches} dispatches across ${Object.keys(stats.byEngine).length} engines` });
 }
 
+// @kern-source: handlers-info:374
 export function handleWorkspace(action: string, dispatch: Dispatch, ctx: HandlerContext, path?: string): void {
   switch (action) {
     case 'add': {
@@ -357,6 +436,7 @@ export function handleWorkspace(action: string, dispatch: Dispatch, ctx: Handler
   }
 }
 
+// @kern-source: handlers-info:426
 export function handleChats(dispatch: Dispatch, sessionId?: string): void {
   if (sessionId) {
     const session = loadChatSession(sessionId);
@@ -390,6 +470,7 @@ export function handleChats(dispatch: Dispatch, sessionId?: string): void {
   dispatch({ type: 'table', headers: ['Session', 'Msgs', 'Date', 'First Message'], rows });
 }
 
+// @kern-source: handlers-info:460
 export function handleModels(dispatch: Dispatch, ctx: HandlerContext): void {
   dispatch({ type: 'header', title: 'Models & Engines' });
   

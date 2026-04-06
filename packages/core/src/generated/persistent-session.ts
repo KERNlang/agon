@@ -623,7 +623,7 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
         '--input-format', 'stream-json',
         '--output-format', 'stream-json',
         '--replay-user-messages',
-        '--max-turns', '50',
+        '--max-turns', '0',
       ];
   
       if (config.systemPrompt) {
@@ -731,6 +731,14 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
             if (block.type === 'text' && block.text) {
               pushSnapshot(block.text);
             }
+            // Tool use blocks inside assistant messages — mark native so Agon doesn't double-execute
+            if (block.type === 'tool_use') {
+              chunks.push({
+                type: 'tool_call',
+                content: block.name ?? 'tool',
+                metadata: { input: block.input, status: 'native' },
+              });
+            }
           }
           // Check if this is the final message (stop_reason present)
           if (parsed.message?.stop_reason) {
@@ -762,12 +770,21 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
           sessionId = parsed.session_id;
         }
   
-        // Tool use events
+        // Tool use events — Claude handles execution internally (--dangerously-skip-permissions)
         if (parsed.type === 'tool_use') {
           chunks.push({
             type: 'tool_call',
             content: parsed.name ?? 'tool',
-            metadata: { input: parsed.input },
+            metadata: { input: parsed.input, status: 'native' },
+          });
+        }
+  
+        // Tool result events — Claude completed a tool, show output
+        if (parsed.type === 'tool_result') {
+          chunks.push({
+            type: 'tool_call',
+            content: parsed.name ?? 'tool',
+            metadata: { output: parsed.content ?? parsed.output ?? '', status: 'done' },
           });
         }
   
@@ -825,7 +842,7 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
   return session;
 }
 
-// @kern-source: persistent-session:823
+// @kern-source: persistent-session:840
 export function createResumeSession(config: PersistentSessionConfig): PersistentSession {
   let alive = false;
   let sessionId: string | null = null;

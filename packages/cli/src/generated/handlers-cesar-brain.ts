@@ -200,16 +200,32 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
         throw new Error(`Cesar engine "${cesarEngineId}" not found`);
       }
   
-      // API-only engines use ResumeSession with direct API dispatch — no binary needed
-      const isApiOnly = engine.api && !engine.binary;
+      // Resolve backend: user preference → auto (CLI first, API fallback)
+      const cesarBackend = (config as any).cesarBackend ?? 'auto';
+      const hasBinary = !!(engine.binary && ctx.registry.findBinary(engine));
+      const hasApi = !!(engine.api && process.env[engine.api?.apiKeyEnv]);
   
       let binaryPath = '';
-      if (!isApiOnly) {
-        binaryPath = ctx.registry.findBinary(engine) ?? '';
-        if (!binaryPath) {
-          throw new Error(`Binary for "${cesarEngineId}" not found`);
+      if (cesarBackend === 'api' && hasApi) {
+        binaryPath = ''; // force API path
+      } else if (cesarBackend === 'cli' && hasBinary) {
+        binaryPath = ctx.registry.findBinary(engine)!;
+      } else if (cesarBackend === 'auto') {
+        // Auto: prefer CLI (subscription), fall back to API
+        if (hasBinary) {
+          binaryPath = ctx.registry.findBinary(engine)!;
+        } else if (hasApi) {
+          binaryPath = ''; // API fallback
+        } else {
+          throw new Error(`No backend for "${cesarEngineId}" — install CLI or set ${engine.api?.apiKeyEnv ?? 'API key'}`);
         }
+      } else {
+        // Explicit backend not available — try the other
+        if (hasBinary) binaryPath = ctx.registry.findBinary(engine)!;
+        else if (hasApi) binaryPath = '';
+        else throw new Error(`No backend for "${cesarEngineId}"`);
       }
+      const usingApi = !binaryPath;
   
       // Build context for system prompt
       const cesarCwd = resolveWorkingDir();
@@ -273,30 +289,21 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
       toolRegistry.register(createGlobTool());
       const toolPrompt = buildToolSystemPrompt(toolRegistry);
   
-      // Tell ALL engines to use tools directly — Agon handles permissions
-      const isClaudeEngine = engine.id === 'claude' || engine.binary === 'claude';
-      if (isClaudeEngine) {
-        systemParts.push(`## TOOL EXECUTION
+      // ALL engines (including Claude CLI): XML tool format, Agon controls execution + permissions
+      systemParts.push(`## CRITICAL — TOOL EXECUTION
   
-  You have full tool access. Use your native tools (Read, Edit, Write, Bash, Grep, Glob) directly. Do NOT ask the user for permission in text — the permission system handles approval automatically. Just call the tool.
+  You MUST use the XML tool format below for ALL file and shell operations. Do NOT describe what you would do — execute the tool. Do NOT use your native/built-in tools — they are disabled. Only the XML format works.
   
-  NEVER say "Can you approve the edit?" or "I need write permission" — just use the tool.`);
-      } else {
-        systemParts.push(`## CRITICAL — TOOL EXECUTION
+  - Read a file → use the Read tool
+  - Edit a file → use the Edit tool
+  - Write a new file → use the Write tool
+  - Run a shell command → use the Bash tool
+  - Search file contents → use the Grep tool
+  - Find files → use the Glob tool
   
-  Your native filesystem write access and shell execution are DISABLED. You are running in a read-only sandbox.
-  
-  The ONLY way to edit files, write files, or run commands is through the XML tool format below. If you try to use your native tools for writes or commands, they WILL fail.
-  
-  You CAN read files natively — that works. But for ANY of these actions, you MUST use the XML tool format:
-  - Editing a file → use the Edit tool
-  - Writing a new file → use the Write tool
-  - Running a shell command → use the Bash tool
-  - Searching file contents → use the Grep tool
-  
-  Output tool calls using this exact XML format. Agon will execute them and return results.
-  Do NOT say "I can't write because of sandbox" — use the XML tools instead.`);
-      }
+  Output tool calls using the exact XML format below. Agon will execute them and return results.
+  NEVER say "Can you approve the edit?" or "I need permission" — just call the tool. The permission system handles approval automatically.
+  NEVER describe changes in text when you can use a tool to make them directly.`);
       systemParts.push(toolPrompt);
   
       // Store registry on context for tool execution during responses
@@ -350,7 +357,7 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
       return session;
 }
 
-// @kern-source: handlers-cesar-brain:344
+// @kern-source: handlers-cesar-brain:351
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}> {
   const abort = new AbortController();
   try {
@@ -479,6 +486,9 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           if (toolStatus === 'done') {
             // Native engine already executed — just display result
             dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'done', output: toolOutput } as any);
+          } else if (toolStatus === 'native') {
+            // Claude handles tool execution internally (--dangerously-skip-permissions) — display only, don't execute
+            dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'running' } as any);
           } else if (toolStatus === 'running' && meta.input && toolRegistry) {
             // Eager execution: start tool immediately, don't await
             dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'running' } as any);
@@ -898,7 +908,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   }
 }
 
-// @kern-source: handlers-cesar-brain:892
+// @kern-source: handlers-cesar-brain:902
 export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatch, ctx: HandlerContext): Promise<ForgeJudgment|null> {
   // Need an alive Cesar session
       let session;
@@ -1012,7 +1022,7 @@ export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatc
       return judgment;
 }
 
-// @kern-source: handlers-cesar-brain:1007
+// @kern-source: handlers-cesar-brain:1017
 function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJudgment|null {
   // Strip confidence prefix (e.g. ~91%) before parsing structured output
   const stripped = parseConfidence(response).rest;
@@ -1056,7 +1066,7 @@ function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJud
   return { winner, strengths, convergencePlan, summary, shouldConverge };
 }
 
-// @kern-source: handlers-cesar-brain:1052
+// @kern-source: handlers-cesar-brain:1062
 export async function cesarConvergeForge(manifest: ForgeManifest, judgment: ForgeJudgment, dispatch: Dispatch, ctx: HandlerContext): Promise<string|null> {
   let session;
       try {

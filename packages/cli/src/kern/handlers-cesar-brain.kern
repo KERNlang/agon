@@ -75,7 +75,8 @@ fn name=parseSuggestion params="response:string" returns="SuggestionResult"
   doc "Parse [SUGGEST:mode-name] or legacy [DELEGATE:mode] from response start."
   handler <<<
     // Match [SUGGEST:compound-name] or legacy [DELEGATE:mode]
-    const match = response.match(/^\[(SUGGEST|DELEGATE):([\w-]+)\]\s*/i);
+    // Allow leading punctuation/whitespace after confidence was stripped (e.g. ". [SUGGEST:build]")
+    const match = response.match(/^[\s.,;:!?\-—]*\[(SUGGEST|DELEGATE):([\w-]+)\]\s*/i);
     if (!match) return { action: null, rest: response };
 
     const raw = match[2].toLowerCase();

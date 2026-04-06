@@ -247,7 +247,7 @@ export interface ScoutBid {
 
 // @kern-source: types:169
 export interface RoutingDecision {
-  action: 'chat'|'build'|'pipeline'|'campfire'|'forge';
+  action: 'chat'|'build'|'pipeline'|'campfire'|'forge'|'brainstorm'|'tribunal';
   leadEngine: string;
   confidence: number;
   reasoning: string;

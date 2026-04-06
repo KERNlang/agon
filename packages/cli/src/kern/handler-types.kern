@@ -1,4 +1,4 @@
-import from="@agon/core" names="EngineRegistry,EngineAdapter,Plan,AgonConfig,ChatSession,PersistentSession" types=true
+import from="@agon/core" names="EngineRegistry,EngineAdapter,Plan,AgonConfig,ChatSession,PersistentSession,CesarMemory" types=true
 
 interface name=EngineProgress
   field name=id type=string
@@ -117,3 +117,6 @@ interface name=HandlerContext
   field name=setCesarSession type="(session: PersistentSession | null) => void"
   field name=explorationMode type=boolean
   field name=setExplorationMode type="(mode: boolean) => void"
+  field name=neroMode type=boolean
+  field name=setNeroMode type="(mode: boolean) => void"
+  field name=cesarMemory type=CesarMemory

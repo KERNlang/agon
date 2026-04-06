@@ -283,6 +283,21 @@ export interface ForgeManifest {
   gauntlet?: GauntletResult;
 }
 
+export interface ConvergenceEntry {
+  file: string;
+  fn: string;
+  from: string;
+  reason: string;
+}
+
+export interface ForgeJudgment {
+  winner: string;
+  strengths: { engineId: string; category: string; reason: string }[];
+  convergencePlan: ConvergenceEntry[];
+  summary: string;
+  shouldConverge: boolean;
+}
+
 export type ForgeEventType = 'baseline:start' | 'baseline:done' | 'stage1:start' | 'stage1:dispatch' | 'stage1:score' | 'stage1:accepted' | 'stage2:start' | 'stage2:dispatch' | 'stage2:score' | 'stage2:done' | 'winner:determined' | 'synthesis:start' | 'synthesis:critique' | 'synthesis:refine' | 'synthesis:score' | 'synthesis:done' | 'elo:update' | 'gauntlet:start' | 'gauntlet:breaker-dispatch' | 'gauntlet:breaker-done' | 'gauntlet:attack-landed' | 'gauntlet:repair-start' | 'gauntlet:repair-done' | 'gauntlet:corpus-save' | 'gauntlet:done' | 'forge:done';
 
 export interface ForgeEvent {

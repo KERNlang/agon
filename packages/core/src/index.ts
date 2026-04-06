@@ -91,6 +91,8 @@ export {
 export type {
   PersistentSession, PersistentSessionConfig, SessionChunk, SessionSendOptions,
 } from './persistent-session.js';
+export { createCesarMemory } from './generated/cesar-memory.js';
+export type { CesarMemory, MemoryEntry } from './generated/cesar-memory.js';
 export { runHooks, hooksFailed, hooksOutput } from './hooks.js';
 export type { HookEvent, HookDef, HookResult } from './hooks.js';
 export { loadSkills, findSkill, renderSkillPrompt } from './skill-loader.js';

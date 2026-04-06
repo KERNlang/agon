@@ -1,8 +1,8 @@
 import { join } from 'node:path';
 
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 
-import type { EngineAdapter, ImageAttachment, PersistentSession, PersistentSessionConfig, SessionChunk } from '@agon/core';
+import type { EngineAdapter, ImageAttachment, PersistentSession, PersistentSessionConfig, SessionChunk, ForgeManifest, ForgeJudgment, ConvergenceEntry } from '@agon/core';
 
 import { EngineRegistry, loadConfig, ensureAgonHome, RUNS_DIR, appendMessage, tracker, scanProjectContext, StreamParser, createPersistentSession, resolveWorkingDir, ToolRegistry, FileStateCache, createReadTool, createEditTool, createWriteTool, createBashTool, createGrepTool, createGlobTool, buildToolSystemPrompt, parseToolCalls, processToolResponse, runToolLoop, executeToolCall } from '@agon/core';
 
@@ -18,113 +18,254 @@ export const CESAR_SYSTEM_PROMPT: string = `You are Cesar, the orchestrator of A
 
 You are the user's primary interface. Answer questions directly when you can. You have full context of the conversation.
 
-When you encounter tasks that would benefit from other engines, delegate by including one of these markers at the START of your response:
+## SUGGESTING MODES
 
-[DELEGATE:build] — for code implementation tasks you want an agent engine to handle
-[DELEGATE:forge] — for tasks that should be competitively built by multiple engines
-[DELEGATE:brainstorm] — for questions where multiple AI perspectives would help
-[DELEGATE:tribunal] — for debates or comparative analysis
+When a task would benefit from multi-engine work, suggest the best mode by putting a marker at the START of your response, then explain why. Format: [SUGGEST:mode-name]
 
-Only delegate when genuinely needed. Most questions you should answer yourself.
-When you delegate, briefly explain WHY in the same response.
+| Mode | When to suggest |
+|------|----------------|
+| build | Single-engine code task — implement, fix, refactor |
+| forge | Competitive build — 2+ engines race, best wins |
+| forge-hardened | Forge + adversarial gauntlet — edge cases, stress test |
+| team-forge | Team competitive build — engines form teams |
+| team-forge-hardened | Team forge + gauntlet |
+| brainstorm | Multi-AI confidence bid — each rates their confidence |
+| team-brainstorm | Team brainstorm — engines form groups |
+| tribunal | Structured debate — adversarial analysis |
+| tribunal-adversarial | Heated opposition debate |
+| tribunal-synthesis | Combine competing proposals |
+| tribunal-steelman | Strengthen both sides |
+| tribunal-socratic | Question-driven exploration |
+| tribunal-red-team | Attack from security/failure perspective |
+| tribunal-postmortem | Analyze what went wrong |
+| team-tribunal | Team debate with multiple members per side |
+| campfire | Open conversation — all engines think together, no competition |
+| pipeline | Full pipeline — forge + brainstorm + tribunal chained |
 
-After delegation, you'll receive the results and can synthesize or comment on them.`;
+## CONFIDENCE — ALWAYS STATE IT
 
-export function parseDelegation(response: string): {action:string|null, rest:string} {
-  const match = response.match(/^\[DELEGATE:(build|forge|brainstorm|tribunal)\]\s*/);
-  if (match) {
-    return { action: match[1], rest: response.slice(match[0].length).trim() };
+Every response MUST start with your confidence level: ~X%
+
+Your confidence determines your behavior:
+- **94%+** → Answer directly. You're confident — just do it.
+- **90-93%** → Suggest a mode. You think multi-engine help would improve the result. Use [SUGGEST:mode] after your confidence.
+- **<90%** → Challenge first. State what concerns you, what needs investigation, what could go wrong. Do NOT implement. Ask hard questions.
+- **<70%** → Full stop. Say explicitly what's needed before you can proceed.
+
+Format: Start response with ~X% then your content. Examples:
+- ~96% Here's the fix for the auth bug...
+- ~91% [SUGGEST:forge-hardened] This refactor touches auth and payments — I'd recommend competitive builds with gauntlet.
+- ~84% I'm not confident about this approach. The session handling has a race condition I need to investigate first. What happens when...
+- ~60% I can't proceed — I need to understand the API contract before touching this. Can you show me the endpoint spec?
+
+Rules for mode suggestions:
+- Only suggest when 90-93% confident AND multi-engine work would genuinely help.
+- Always explain WHY you're suggesting that specific mode.
+- The user will confirm before dispatch. Don't assume they'll accept.
+- For code tasks: prefer build (single engine) unless complex enough for forge.
+- For debates/comparisons: tribunal. For brainstorming: brainstorm or campfire.
+- For high-stakes changes: add -hardened to forge modes.`;
+
+export const CONFIDENCE_TIERS: { direct: number; suggest: number; nero: number; stop: number } = ({ direct: 94, suggest: 90, nero: 90, stop: 70 });
+
+export function parseConfidence(response: string): { value: number | null; rest: string } {
+  // Match ~X% at start (with optional whitespace)
+  const tildeMatch = response.match(/^~(\d{1,3})%\s*/);
+  if (tildeMatch) {
+    return { value: parseInt(tildeMatch[1], 10), rest: response.slice(tildeMatch[0].length) };
   }
-  return { action: null, rest: response };
+  // Match "Confidence: 0.X" at start
+  const decimalMatch = response.match(/^Confidence:\s*0\.(\d{1,2})\s*/i);
+  if (decimalMatch) {
+    return { value: parseInt(decimalMatch[1], 10), rest: response.slice(decimalMatch[0].length) };
+  }
+  // Match "I'm ~X% sure" or "I'm X% confident" anywhere in first line
+  const inlineMatch = response.match(/(?:I'm|I am)\s+~?(\d{1,3})%\s+(?:sure|confident)/i);
+  if (inlineMatch) {
+    return { value: parseInt(inlineMatch[1], 10), rest: response };
+  }
+  return { value: null, rest: response };
+}
+
+export function confidenceColor(value: number): string {
+  if (value >= 94) return '\x1b[32m';  // green
+  if (value >= 90) return '\x1b[33m';  // yellow
+  if (value >= 70) return '\x1b[38;5;208m'; // orange
+  return '\x1b[31m'; // red
+}
+
+export function confidenceBadge(value: number): string {
+  const color = confidenceColor(value);
+  const reset = '\x1b[0m';
+  const dot = value >= 94 ? '●' : value >= 90 ? '●' : value >= 70 ? '●' : '●';
+  return `${color}${dot} ${value}%${reset}`;
+}
+
+export interface SuggestionResult {
+  action: string|null;
+  rest: string;
+  hardened?: boolean;
+  tribunalMode?: string;
+  team?: boolean;
+  membersPerSide?: number;
+}
+
+export function parseSuggestion(response: string): SuggestionResult {
+  // Match [SUGGEST:compound-name] or legacy [DELEGATE:mode]
+  const match = response.match(/^\[(SUGGEST|DELEGATE):([\w-]+)\]\s*/i);
+  if (!match) return { action: null, rest: response };
+  
+  const raw = match[2].toLowerCase();
+  const rest = response.slice(match[0].length).trim();
+  
+  // Parse compound mode name into action + options
+  let action = raw;
+  let hardened = false;
+  let tribunalMode: string | undefined;
+  let team = false;
+  
+  // Extract team prefix
+  if (action.startsWith('team-')) {
+    team = true;
+    action = action.slice(5); // remove 'team-'
+  }
+  
+  // Extract -hardened suffix from forge
+  if (action === 'forge-hardened') {
+    action = 'forge';
+    hardened = true;
+  }
+  
+  // Extract tribunal mode suffix
+  const tribunalModes = ['adversarial', 'synthesis', 'steelman', 'socratic', 'red-team', 'postmortem'];
+  for (const mode of tribunalModes) {
+    if (action === `tribunal-${mode}`) {
+      action = 'tribunal';
+      tribunalMode = mode;
+      break;
+    }
+  }
+  
+  // Reconstruct action with team prefix for routing
+  if (team) action = `team-${action}`;
+  
+  return { action, rest, hardened, tribunalMode, team };
 }
 
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   // Return existing alive session
-  if (ctx.cesarSession && ctx.cesarSession.alive) {
-    return ctx.cesarSession;
-  }
-  
-  const config = ctx.config;
-  const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
-  let engine;
-  try {
-    engine = ctx.registry.get(cesarEngineId);
-  } catch {
-    throw new Error(`Cesar engine "${cesarEngineId}" not found`);
-  }
-  
-  if (engine.api && !engine.binary) {
-    throw new Error(`Cesar engine "${cesarEngineId}" is API-only — Cesar requires a CLI engine`);
-  }
-  
-  const binaryPath = ctx.registry.findBinary(engine);
-  if (!binaryPath) {
-    throw new Error(`Binary for "${cesarEngineId}" not found`);
-  }
-  
-  // Build context for system prompt
-  const cesarCwd = resolveWorkingDir();
-  const projectCtx = scanProjectContext(cesarCwd, config.projectContext || undefined);
-  const available = ctx.activeEngines();
-  const engineList = available.map((id: string) => {
-    try {
-      const e = ctx.registry.get(id);
-      const hasAgent = !!e.agent;
-      return `- ${id}${hasAgent ? ' (agent-capable)' : ''}`;
-    } catch { return `- ${id}`; }
-  }).join('\n');
-  
-  const systemParts: string[] = [CESAR_SYSTEM_PROMPT];
-  if (projectCtx) systemParts.push(`## PROJECT CONTEXT\n${projectCtx}`);
-  systemParts.push(`## AVAILABLE ENGINES\n${engineList}`);
-  if (ctx.explorationMode) {
-    systemParts.push(`## OPERATING MODE\nExploration mode is ON. Stay read-only: inspect files, search, and use read-only shell commands only. Do not call Edit or Write. Do not run non-read-only Bash commands.`);
-  }
-  
-  // Replay existing conversation history into system prompt so Cesar doesn't lose context on reboot
-  if (ctx.chatSession && ctx.chatSession.messages && ctx.chatSession.messages.length > 0) {
-    const historyLines: string[] = [];
-    // Cap at last 20 messages to avoid blowing context
-    const recent = ctx.chatSession.messages.slice(-20);
-    for (const msg of recent) {
-      if (msg.role === 'user') {
-        historyLines.push(`User: ${msg.content}`);
-      } else {
-        const eid = (msg as any).engineId ?? 'engine';
-        historyLines.push(`${eid}: ${msg.content}`);
+      if (ctx.cesarSession && ctx.cesarSession.alive) {
+        return ctx.cesarSession;
       }
-    }
-    systemParts.push(`## CONVERSATION HISTORY (session resumed)\nThe user has an ongoing conversation. Here is the recent context:\n\n${historyLines.join('\n\n')}`);
-  }
   
-  // Initialize tool registry and inject tool prompt — works with ANY engine
-  const toolRegistry = new ToolRegistry();
-  toolRegistry.register(createReadTool());
-  toolRegistry.register(createEditTool());
-  toolRegistry.register(createWriteTool());
-  toolRegistry.register(createBashTool());
-  toolRegistry.register(createGrepTool());
-  toolRegistry.register(createGlobTool());
-  const toolPrompt = buildToolSystemPrompt(toolRegistry);
-  systemParts.push(toolPrompt);
+      // Session exists but died — try restarting it before creating a new one
+      if (ctx.cesarSession && !ctx.cesarSession.alive) {
+        try {
+          await ctx.cesarSession.start();
+          if (ctx.cesarSession.alive) return ctx.cesarSession;
+        } catch {
+          // Restart failed — fall through to create fresh session
+        }
+      }
   
-  // Store registry on context for tool execution during responses
-  (ctx as any)._toolRegistry = toolRegistry;
+      const config = ctx.config;
+      const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
+      let engine;
+      try {
+        engine = ctx.registry.get(cesarEngineId);
+      } catch {
+        throw new Error(`Cesar engine "${cesarEngineId}" not found`);
+      }
   
-  const sessionConfig: PersistentSessionConfig = {
-    engine,
-    binaryPath,
-    cwd: cesarCwd,
-    systemPrompt: systemParts.join('\n\n'),
-  };
+      if (engine.api && !engine.binary) {
+        throw new Error(`Cesar engine "${cesarEngineId}" is API-only — Cesar requires a CLI engine`);
+      }
   
-  const session = createPersistentSession(sessionConfig);
-  await session.start();
-  ctx.setCesarSession(session);
-  return session;
+      const binaryPath = ctx.registry.findBinary(engine);
+      if (!binaryPath) {
+        throw new Error(`Binary for "${cesarEngineId}" not found`);
+      }
+  
+      // Build context for system prompt
+      const cesarCwd = resolveWorkingDir();
+      const projectCtx = scanProjectContext(cesarCwd, config.projectContext || undefined);
+      const available = ctx.activeEngines();
+      const engineList = available.map((id: string) => {
+        try {
+          const e = ctx.registry.get(id);
+          const hasAgent = !!e.agent;
+          return `- ${id}${hasAgent ? ' (agent-capable)' : ''}`;
+        } catch { return `- ${id}`; }
+      }).join('\n');
+  
+      const systemParts: string[] = [CESAR_SYSTEM_PROMPT];
+      if (projectCtx) systemParts.push(`## PROJECT CONTEXT\n${projectCtx}`);
+      systemParts.push(`## AVAILABLE ENGINES\n${engineList}`);
+      if (ctx.explorationMode) {
+        systemParts.push(`## OPERATING MODE\nExploration mode is ON. Stay read-only: inspect files, search, and use read-only shell commands only. Do not call Edit or Write. Do not run non-read-only Bash commands.`);
+      }
+      // Inject Cesar memory context
+      if ((ctx as any).cesarMemory) {
+        const memoryCtx = (ctx as any).cesarMemory.toPromptContext();
+        if (memoryCtx) systemParts.push(memoryCtx);
+      }
+  
+      if ((ctx as any).neroMode) {
+        systemParts.push(`## NERO MODE — ACTIVE
+  You are now in Nero mode — adversarial, challenging, devil's advocate.
+  - Challenge the user's assumptions. Poke holes in their ideas BEFORE implementing.
+  - Ask hard questions: "What happens when this fails?" "Have you considered X?"
+  - Point out risks, edge cases, and overlooked complexity.
+  - Be direct and unsparing, but constructive — your goal is to strengthen their thinking.
+  - If the user's idea is genuinely good, say so, but still probe for weaknesses.
+  - Do NOT implement anything until you've stress-tested the approach.
+  - If you would normally suggest a mode, suggest tribunal-red-team or tribunal-adversarial.`);
+      }
+  
+      // Replay existing conversation history into system prompt so Cesar doesn't lose context on reboot
+      if (ctx.chatSession && ctx.chatSession.messages && ctx.chatSession.messages.length > 0) {
+        const historyLines: string[] = [];
+        // Cap at last 20 messages to avoid blowing context
+        const recent = ctx.chatSession.messages.slice(-20);
+        for (const msg of recent) {
+          if (msg.role === 'user') {
+            historyLines.push(`User: ${msg.content}`);
+          } else {
+            const eid = (msg as any).engineId ?? 'engine';
+            historyLines.push(`${eid}: ${msg.content}`);
+          }
+        }
+        systemParts.push(`## CONVERSATION HISTORY (session resumed)\nThe user has an ongoing conversation. Here is the recent context:\n\n${historyLines.join('\n\n')}`);
+      }
+  
+      // Initialize tool registry and inject tool prompt — works with ANY engine
+      const toolRegistry = new ToolRegistry();
+      toolRegistry.register(createReadTool());
+      toolRegistry.register(createEditTool());
+      toolRegistry.register(createWriteTool());
+      toolRegistry.register(createBashTool());
+      toolRegistry.register(createGrepTool());
+      toolRegistry.register(createGlobTool());
+      const toolPrompt = buildToolSystemPrompt(toolRegistry);
+      systemParts.push(toolPrompt);
+  
+      // Store registry on context for tool execution during responses
+      (ctx as any)._toolRegistry = toolRegistry;
+  
+      const sessionConfig: PersistentSessionConfig = {
+        engine,
+        binaryPath,
+        cwd: cesarCwd,
+        systemPrompt: systemParts.join('\n\n'),
+      };
+  
+      const session = createPersistentSession(sessionConfig);
+      await session.start();
+      ctx.setCesarSession(session);
+      return session;
 }
 
-export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string}> {
+export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}> {
   const abort = new AbortController();
   try {
     ensureAgonHome();
@@ -199,6 +340,8 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
     let streaming = false;
     let delegated = false;
     let ranToolLoop = false;
+    let parsedConfidence: number | null = null;
+    let confidenceParsed = false;
   
     // Eager tool execution: collect promises for native tool_call chunks
     const eagerPromises: Promise<ToolCallResult>[] = [];
@@ -285,8 +428,8 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   
         if (chunk.type === 'error') {
           dispatch({ type: 'spinner-stop' });
-          // Session died — clear it so next message reboots
-          ctx.setCesarSession(null);
+          // Session hit an error — DON'T destroy it. ensureCesarSession checks alive
+          // and will restart on next turn, preserving the session object + sessionId.
           return { delegated: false, responded: false };
         }
   
@@ -297,19 +440,54 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         if (chunk.type === 'text') {
           if (!streaming) {
             response += chunk.content;
-            // Check for delegation marker before streaming
-            const { action } = parseDelegation(response);
-            if (action) {
+  
+            // Parse confidence from first chunk(s) — before anything else
+            if (!confidenceParsed && response.length > 5) {
+              const conf = parseConfidence(response);
+              if (conf.value !== null) {
+                parsedConfidence = conf.value;
+                confidenceParsed = true;
+                // Show confidence badge
+                dispatch({ type: 'info', message: confidenceBadge(conf.value) + ` Cesar` });
+                // Strip confidence prefix from response for further parsing
+                response = conf.rest;
+              } else if (response.length > 30) {
+                // No confidence found after 30 chars — give up parsing
+                confidenceParsed = true;
+              }
+            }
+  
+            // Check for suggestion/delegation marker
+            const suggestion = parseSuggestion(response);
+            if (suggestion.action) {
               dispatch({ type: 'spinner-stop' });
-              const { rest } = parseDelegation(response);
               appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
               appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
               tracker.record(cesarEngineId, input, response);
-              if (rest) dispatch({ type: 'info', message: `Cesar: ${rest}` });
-              delegated = true;
-              return { delegated: true, responded: true, action, reasoning: rest };
+              // Show explanation and ask for confirmation
+              if (suggestion.rest) dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: suggestion.rest });
+              const confirmLabel = suggestion.hardened ? `${suggestion.action} (hardened)` : suggestion.action;
+              const answer = await new Promise<string>((resolve) => {
+                dispatch({ type: 'question', prompt: `Cesar suggests: ${confirmLabel}${suggestion.tribunalMode ? ` [${suggestion.tribunalMode}]` : ''}`, choices: [
+                  { key: 'y', label: 'Go', color: '#4ade80' },
+                  { key: 'n', label: 'Skip', color: '#ef4444' },
+                ], resolve } as any);
+              });
+              if (answer === 'y') {
+                delegated = true;
+                return { delegated: true, responded: true, action: suggestion.action, reasoning: suggestion.rest, hardened: suggestion.hardened, tribunalMode: suggestion.tribunalMode, team: suggestion.team };
+              }
+              // User declined — treat as normal response
+              return { delegated: false, responded: true };
             }
-            // Switch spinner to "responding" mode — keep it visible as a progress indicator
+  
+            // Auto-nero: if confidence < 90% and nero isn't already active, inject challenge
+            if (confidenceParsed && parsedConfidence !== null && parsedConfidence < CONFIDENCE_TIERS.nero && !(ctx as any).neroMode) {
+              // Don't block — just flag in the UI that Cesar is self-challenging
+              dispatch({ type: 'spinner-update', message: 'Cesar challenging approach…' });
+            }
+  
+            // Switch spinner to "responding" mode
             dispatch({ type: 'spinner-update', message: 'Cesar responding…' });
             streaming = true;
             dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: response });
@@ -321,33 +499,10 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       }
     } catch (err) {
       dispatch({ type: 'spinner-stop' });
-      // Session error — clear it and try fresh CLI dispatch so Cesar still answers
-      ctx.setCesarSession(null);
-      try {
-        dispatch({ type: 'spinner-start', message: 'Cesar session died, dispatching fresh…', color });
-        const engine = ctx.registry.get(cesarEngineId);
-        const cesarCwd = resolveWorkingDir();
-        const outputDir = join(RUNS_DIR, `cesar-fallback-${Date.now()}`);
-        mkdirSync(outputDir, { recursive: true });
-        const freshResult = await ctx.adapter.dispatch({
-          engine,
-          prompt: input,
-          cwd: cesarCwd,
-          mode: 'exec' as any,
-          timeout: config.timeout ?? 120,
-          outputDir,
-          signal: abort.signal,
-        });
-        dispatch({ type: 'spinner-stop' });
-        if (freshResult.stdout.trim()) {
-          dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: freshResult.stdout.trim() });
-          appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
-          appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: freshResult.stdout.trim(), timestamp: new Date().toISOString() });
-          tracker.record(cesarEngineId, input, freshResult.stdout.trim());
-          return { delegated: false, responded: true };
-        }
-      } catch { /* truly failed */ }
-      dispatch({ type: 'spinner-stop' });
+      // Session threw — don't destroy it; ensureCesarSession will restart on next turn.
+      // Log for debugging but don't cascade into fallback dispatch.
+      console.error(`[cesar:claude] send error: ${(err as Error).message ?? err}`);
+      dispatch({ type: 'warning', message: 'Cesar session error — will restart on next message' });
       return { delegated: false, responded: false };
     }
   
@@ -389,16 +544,37 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       }
     }
   
-    // Check final response for delegation (non-streaming path)
-    const { action, rest } = parseDelegation(response);
-    if (action) {
+    // Parse confidence from final response if not already parsed (non-streaming path)
+    if (!confidenceParsed && response) {
+      const conf = parseConfidence(response);
+      if (conf.value !== null) {
+        parsedConfidence = conf.value;
+        dispatch({ type: 'info', message: confidenceBadge(conf.value) + ` Cesar` });
+        response = conf.rest;
+      }
+      confidenceParsed = true;
+    }
+  
+    // Check final response for suggestion/delegation (non-streaming path)
+    const finalSuggestion = parseSuggestion(response);
+    if (finalSuggestion.action) {
       if (!streaming) dispatch({ type: 'spinner-stop' });
       if (streaming) dispatch({ type: 'streaming-end', engineId: cesarEngineId });
       appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
       appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
       tracker.record(cesarEngineId, input, response);
-      if (rest) dispatch({ type: 'info', message: `Cesar: ${rest}` });
-      return { delegated: true, responded: true, action, reasoning: rest };
+      if (finalSuggestion.rest) dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: finalSuggestion.rest });
+      const confirmLabel = finalSuggestion.hardened ? `${finalSuggestion.action} (hardened)` : finalSuggestion.action;
+      const answer = await new Promise<string>((resolve) => {
+        dispatch({ type: 'question', prompt: `Cesar suggests: ${confirmLabel}${finalSuggestion.tribunalMode ? ` [${finalSuggestion.tribunalMode}]` : ''}`, choices: [
+          { key: 'y', label: 'Go', color: '#4ade80' },
+          { key: 'n', label: 'Skip', color: '#ef4444' },
+        ], resolve } as any);
+      });
+      if (answer === 'y') {
+        return { delegated: true, responded: true, action: finalSuggestion.action, reasoning: finalSuggestion.rest, hardened: finalSuggestion.hardened, tribunalMode: finalSuggestion.tribunalMode, team: finalSuggestion.team };
+      }
+      return { delegated: false, responded: true };
     }
   
     // Check for tool calls in response — execute via recursive tool loop
@@ -514,6 +690,18 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
       tracker.record(cesarEngineId, input, response);
   
+      // Auto-remember: track topics discussed in session memory
+      if ((ctx as any).cesarMemory) {
+        const mem = (ctx as any).cesarMemory;
+        // Remember the topic of this exchange (first 80 chars of input)
+        const topic = input.slice(0, 80).replace(/\n/g, ' ');
+        mem.remember(`turn:${Date.now()}`, topic, 'decision');
+        // If Cesar used tools, remember files touched
+        if (ranToolLoop) {
+          mem.remember(`tools:${Date.now()}`, `Cesar used tools for: ${topic}`, 'file');
+        }
+      }
+  
       // Detect if engine is asking a yes/no question — show choice buttons
       // Skip after tool loop: intermediate turns may end with questions already acted on
       const lastLine = response.split('\n').filter((l: string) => l.trim()).pop()?.trim() ?? '';
@@ -551,5 +739,249 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
     dispatch({ type: 'spinner-stop' });
     ctx.setActiveAbort(null);
   }
+}
+
+export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatch, ctx: HandlerContext): Promise<ForgeJudgment|null> {
+  // Need an alive Cesar session
+      let session;
+      try {
+        session = await ensureCesarSession(ctx);
+      } catch {
+        return null; // No Cesar available — skip judgment
+      }
+      if (!session.alive) return null;
+  
+      const cesarEngineId = ((ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude');
+      const color = ENGINE_COLORS[cesarEngineId] ?? 245;
+  
+      // Build structured judgment prompt with patch summaries
+      const engineSummaries: string[] = [];
+      for (const [id, result] of Object.entries(manifest.results) as [string, any][]) {
+        let patchSummary = '(no patch)';
+        const patchPath = manifest.patches[id];
+        if (patchPath) {
+          try {
+            const patch = readFileSync(patchPath, 'utf-8');
+            // Include first 150 lines of patch for evaluation
+            const lines = patch.split('\n');
+            patchSummary = lines.slice(0, 150).join('\n');
+            if (lines.length > 150) patchSummary += `\n... (${lines.length - 150} more lines)`;
+          } catch { patchSummary = '(patch unreadable)'; }
+        }
+        engineSummaries.push(
+          `### ${id}\n` +
+          `- Score: ${result.score} | Pass: ${result.pass} | Diff: ${result.diffLines} lines | Files: ${result.filesChanged} | Time: ${result.durationSec}s\n` +
+          `\`\`\`diff\n${patchSummary}\n\`\`\``
+        );
+      }
+  
+      const judgePrompt = `You are judging forge results. Multiple engines competed on this task.
+  
+  TASK: ${manifest.task}
+  FITNESS COMMAND: ${manifest.fitnessCmd}
+  AUTOMATIC WINNER: ${manifest.winner ?? 'none'}
+  
+  ## ENGINE RESULTS
+  
+  ${engineSummaries.join('\n\n')}
+  
+  ## YOUR JOB
+  
+  Evaluate each engine's code. Identify:
+  1. **Overall winner** — who produced the best result and why
+  2. **Per-engine strengths** — where each engine did something BETTER than others (architecture, error handling, tests, edge cases, code style, performance)
+  3. **Convergence plan** — if multiple engines have complementary strengths, list which parts from which engine should be merged. Only suggest convergence if it would genuinely improve the result.
+  
+  Respond in this EXACT format:
+  
+  WINNER: {engineId}
+  STRENGTHS:
+  - {engineId}: {category} — {reason}
+  - {engineId}: {category} — {reason}
+  CONVERGE: {yes|no}
+  CONVERGENCE:
+  - file:{path} fn:{name} from:{engineId} reason:{why}
+  SUMMARY: {1-2 sentence judgment}`;
+  
+      dispatch({ type: 'spinner-start', message: 'Cesar judging forge results…', color });
+  
+      let judgeResponse = '';
+      try {
+        const gen = session.send({ message: judgePrompt, signal: undefined });
+        for await (const chunk of gen) {
+          if (chunk.type === 'text') judgeResponse += chunk.content;
+          if (chunk.type === 'done' || chunk.type === 'error') break;
+        }
+      } catch {
+        dispatch({ type: 'spinner-stop' });
+        return null;
+      }
+      dispatch({ type: 'spinner-stop' });
+  
+      // Parse structured judgment
+      const judgment = parseForgeJudgment(judgeResponse, manifest);
+  
+      // Show confidence badge if present
+      const conf = parseConfidence(judgeResponse);
+      if (conf.value !== null) {
+        dispatch({ type: 'info', message: confidenceBadge(conf.value) + ' Cesar (judge)' });
+      }
+  
+      // Display judgment
+      if (judgment) {
+        dispatch({ type: 'header', title: 'Cesar\'s Judgment' });
+        dispatch({ type: 'success', message: `Winner: ${judgment.winner}` });
+  
+        if (judgment.strengths.length > 0) {
+          dispatch({ type: 'info', message: 'Per-engine strengths:' });
+          for (const s of judgment.strengths) {
+            const sColor = ENGINE_COLORS[s.engineId] ?? 245;
+            dispatch({ type: 'engine-block', engineId: s.engineId, color: sColor, content: `${s.category} — ${s.reason}` });
+          }
+        }
+  
+        dispatch({ type: 'info', message: judgment.summary });
+  
+        if (judgment.shouldConverge && judgment.convergencePlan.length > 0) {
+          dispatch({ type: 'header', title: 'Convergence Plan' });
+          for (const entry of judgment.convergencePlan) {
+            const eColor = ENGINE_COLORS[entry.from] ?? 245;
+            dispatch({ type: 'engine-block', engineId: entry.from, color: eColor, content: `${entry.file}:${entry.fn} — ${entry.reason}` });
+          }
+        }
+      }
+  
+      return judgment;
+}
+
+function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJudgment|null {
+  // Strip confidence prefix (e.g. ~91%) before parsing structured output
+  const stripped = parseConfidence(response).rest;
+  const lines = stripped.split('\n');
+  let winner = manifest.winner ?? '';
+  const strengths: { engineId: string; category: string; reason: string }[] = [];
+  const convergencePlan: ConvergenceEntry[] = [];
+  let summary = '';
+  let shouldConverge = false;
+  
+  for (const line of lines) {
+    const trimmed = line.trim();
+  
+    // WINNER: engineId
+    const winnerMatch = trimmed.match(/^WINNER:\s*(.+)/i);
+    if (winnerMatch) winner = winnerMatch[1].trim();
+  
+    // CONVERGE: yes|no
+    const convergeMatch = trimmed.match(/^CONVERGE:\s*(yes|no)/i);
+    if (convergeMatch) shouldConverge = convergeMatch[1].toLowerCase() === 'yes';
+  
+    // SUMMARY: text
+    const summaryMatch = trimmed.match(/^SUMMARY:\s*(.+)/i);
+    if (summaryMatch) summary = summaryMatch[1].trim();
+  
+    // Strength: - engineId: category — reason
+    const strengthMatch = trimmed.match(/^-\s+(\w+):\s+(.+?)\s+[—–-]\s+(.+)/);
+    if (strengthMatch && !trimmed.startsWith('- file:')) {
+      strengths.push({ engineId: strengthMatch[1], category: strengthMatch[2], reason: strengthMatch[3] });
+    }
+  
+    // Convergence: - file:path fn:name from:engineId reason:why
+    const convMatch = trimmed.match(/^-\s+file:(\S+)\s+fn:(\S+)\s+from:(\S+)\s+reason:(.+)/);
+    if (convMatch) {
+      convergencePlan.push({ file: convMatch[1], fn: convMatch[2], from: convMatch[3], reason: convMatch[4].trim() });
+    }
+  }
+  
+  if (!winner) return null;
+  
+  return { winner, strengths, convergencePlan, summary, shouldConverge };
+}
+
+export async function cesarConvergeForge(manifest: ForgeManifest, judgment: ForgeJudgment, dispatch: Dispatch, ctx: HandlerContext): Promise<string|null> {
+  let session;
+      try {
+        session = await ensureCesarSession(ctx);
+      } catch { return null; }
+      if (!session.alive) return null;
+  
+      const cesarEngineId = ((ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude');
+      const color = ENGINE_COLORS[cesarEngineId] ?? 245;
+  
+      // Collect relevant patches — always include the winner's patch as the base
+      const patchContents: Record<string, string> = {};
+      if (judgment.winner && manifest.patches[judgment.winner]) {
+        try {
+          patchContents[judgment.winner] = readFileSync(manifest.patches[judgment.winner], 'utf-8');
+        } catch { /* skip unreadable */ }
+      }
+      for (const entry of judgment.convergencePlan) {
+        if (!patchContents[entry.from] && manifest.patches[entry.from]) {
+          try {
+            patchContents[entry.from] = readFileSync(manifest.patches[entry.from], 'utf-8');
+          } catch { /* skip unreadable */ }
+        }
+      }
+  
+      // Build the convergence synthesis prompt
+      const patchSections = Object.entries(patchContents).map(([id, content]) => {
+        const lines = content.split('\n');
+        const summary = lines.slice(0, 200).join('\n');
+        return `### ${id}'s patch\n\`\`\`diff\n${summary}\n\`\`\``;
+      }).join('\n\n');
+  
+      const planLines = judgment.convergencePlan.map(e =>
+        `- Take ${e.fn} from ${e.from} (${e.file}) — ${e.reason}`
+      ).join('\n');
+  
+      const convergePrompt = `You are synthesizing a converged patch from multiple forge competitors.
+  
+  TASK: ${manifest.task}
+  WINNER: ${judgment.winner}
+  
+  ## CONVERGENCE PLAN
+  ${planLines}
+  
+  ## PATCHES TO MERGE
+  ${patchSections}
+  
+  ## INSTRUCTIONS
+  Create a single unified diff that takes the best parts from each engine according to the convergence plan above.
+  - Start from the winner's patch as the base
+  - Replace specific functions/sections with the better versions from other engines
+  - Ensure the merged result is coherent — no duplicate functions, no conflicts
+  - Output ONLY the unified diff, nothing else. Start with --- and +++ lines.`;
+  
+      dispatch({ type: 'spinner-start', message: 'Cesar synthesizing converged patch…', color });
+  
+      let convergedPatch = '';
+      try {
+        const gen = session.send({ message: convergePrompt, signal: undefined });
+        for await (const chunk of gen) {
+          if (chunk.type === 'text') convergedPatch += chunk.content;
+          if (chunk.type === 'done' || chunk.type === 'error') break;
+        }
+      } catch {
+        dispatch({ type: 'spinner-stop' });
+        return null;
+      }
+      dispatch({ type: 'spinner-stop' });
+  
+      // Extract diff from response (strip markdown fences if present)
+      let patch = convergedPatch.trim();
+      const fenceMatch = patch.match(/```(?:diff)?\n([\s\S]*?)```/);
+      if (fenceMatch) patch = fenceMatch[1].trim();
+  
+      if (!patch || !patch.includes('---')) {
+        dispatch({ type: 'warning', message: 'Cesar could not produce a valid converged patch' });
+        return null;
+      }
+  
+      // Write converged patch to forge directory
+      const { join } = await import('node:path');
+      const { writeFileSync } = await import('node:fs');
+      const convergePath = join(manifest.forgeDir, 'convergence-patch.diff');
+      writeFileSync(convergePath, patch, 'utf-8');
+  
+      return convergePath;
 }
 

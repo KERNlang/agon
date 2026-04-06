@@ -4,7 +4,7 @@
 import from="react" names="useState,useCallback,useEffect,useRef,useMemo"
 import from="ink" names="Box,Text,render,useApp,useInput"
 import from="ink-text-input" default="TextInput"
-import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,ensureCurrentWorkspace,startChatSession,getElo,getActiveWorkspace,RUNS_DIR,extractImagesFromInput,resolveWorkingDir,currentBranch,configSet"
+import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,ensureCurrentWorkspace,startChatSession,getElo,getActiveWorkspace,RUNS_DIR,extractImagesFromInput,resolveWorkingDir,currentBranch,configSet,createCesarMemory"
 import from="@agon/core" names="Plan,ChatSession,Skill,PersistentSession,ImageAttachment" types=true
 import from="../handlers/types.js" names="EngineProgress" types=true
 import from="@agon/adapter-cli" names="createCliAdapter"
@@ -26,7 +26,7 @@ import from="../generated/app-output.js" names="handleOutputEvent"
 import from="../generated/app-output.js" names="OutputActions,OutputState" types=true
 import from="../generated/app-input.js" names="cleanInputValue,cleanSubmitValue,findInputChange,navigateHistory"
 import from="../generated/app-review.js" names="handleReviewAction"
-import from="../components.js" names="SpinnerBlock,EngineProgressView,StatusLine,StatusBar,OutputBlockView,SlashPicker,EnginePicker,ReviewBlock,BackgroundJobRail,RenderedSegments,contentWidth,engineColor"
+import from="../components.js" names="SpinnerBlock,EngineProgressView,StatusLine,StatusBar,OutputBlockView,SlashPicker,EnginePicker,ModelPicker,ReviewBlock,BackgroundJobRail,RenderedSegments,contentWidth,engineColor"
 import from="../components.js" names="OutputBlock,ReviewEvent" types=true
 import from="node:path" names="join,dirname"
 import from="node:url" names="fileURLToPath"
@@ -60,6 +60,9 @@ screen name=App target=ink
   state name=questionState type=any initial="null"
   state name=questionAnswer type=string initial="''"
   state name=enginePickerOpen type=boolean initial=false
+  state name=modelPickerOpen type=boolean initial=false
+  state name=modelPickerEntries type="any[]" initial="[]"
+  state name=modelPickerLoading type=boolean initial=false
   state name=streamingText type=any initial="null"
   state name=pendingImages type="ImageAttachment[]" initial="[]"
   state name=reviewEvent type="ReviewEvent|null" initial="null"
@@ -72,6 +75,8 @@ screen name=App target=ink
   state name=activeAbort type="AbortController|null" initial="null"
   state name=cesarSession type="PersistentSession|null" initial="null"
   state name=explorationMode type=boolean initial=false
+  state name=neroMode type=boolean initial=false
+  state name=cesarMemory type=any initial="() => createCesarMemory()"
 
   // ── Refs ──
   ref name=chatStartTimeRef type=number initial=0
@@ -154,7 +159,7 @@ screen name=App target=ink
       return new Promise<string>((resolve) => { dispatch({ type: 'question', prompt, resolve } as any); });
     >>>
 
-  callback name=buildContext params="" deps="registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode"
+  callback name=buildContext params="" deps="registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode"
     handler <<<
       return {
         registry, adapter, activeEngines,
@@ -163,6 +168,8 @@ screen name=App target=ink
         setCurrentPlan, setActiveAbort: trackAbort,
         askQuestion, cesarSession, setCesarSession: setCesarSessionWrapped,
         explorationMode, setExplorationMode,
+        neroMode, setNeroMode,
+        cesarMemory,
       };
     >>>
 
@@ -211,6 +218,13 @@ screen name=App target=ink
     handler <<<
       const nextValue = cleanInputValue(value);
 
+      // "/" typed into empty input → open slash picker, swallow the character
+      if (!inputValue && nextValue === '/' && !slashPickerOpen && !enginePickerOpen && !questionState && !justPastedRef.current) {
+        setSlashPickerOpen(true);
+        setInputKey((k: number) => k + 1);
+        return;
+      }
+
       if (justPastedRef.current) {
         setInputValue(nextValue);
         return;
@@ -248,6 +262,8 @@ screen name=App target=ink
     handler <<<
       let input = cleanSubmitValue(value);
       if (!input) return;
+      // Bare "/" → open slash picker flyout, don't dump text list
+      if (input === '/') { setSlashPickerOpen(true); return; }
       input = expandPastePlaceholders(input, pasteHashesRef.current);
       pasteHashesRef.current.clear();
       pasteCountRef.current = 0;
@@ -272,9 +288,10 @@ screen name=App target=ink
           fn().then(() => { jobManager.complete(job.id); setJobList([...jobManager.list()]); })
             .catch((err: any) => { jobManager.fail(job.id, err instanceof Error ? err.message : String(err)); setJobList([...jobManager.list()]); dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); });
         },
-        setMode, setPendingImages, setSessionEngines, setEnginePickerOpen, setChatSession, setLastUndoToken, askQuestion, exit: () => process.exit(0),
+        setMode, setPendingImages, setSessionEngines, setEnginePickerOpen, setModelPickerOpen, setModelPickerEntries, setModelPickerLoading, setChatSession, setLastUndoToken, askQuestion, exit: () => process.exit(0),
         allImages, allSlashCommands: allSlashCommands, dynamicSkills, mode, lastUndoToken, sessionStartTime, jobManager,
         explorationMode, setExplorationMode,
+        neroMode, setNeroMode,
       };
       if (handleModeSwitch(intent.type, (intent as any).topic, (intent as any).question, cb)) {
         if (!(intent as any).input?.trim()) { transition(finishReplState); return; }
@@ -344,9 +361,6 @@ screen name=App target=ink
           return;
         }
         return; // Swallow other keys while choices are shown
-      }
-      if (input === '/' && !inputValue && !slashPickerOpen && !enginePickerOpen && !questionState && !justPastedRef.current) {
-        setSlashPickerOpen(true); return;
       }
       if ((key.tab || input === '\t') && !slashPickerOpen && !enginePickerOpen && !questionState && !reviewEvent) {
         const ghost = getGhostCompletion(inputValue, allSlashCommands, registry.availableIds());

@@ -279,7 +279,7 @@ export function handleCesar(engineId: string, dispatch: Dispatch, ctx: HandlerCo
   }
   
   dispatch({ type: 'success', message: `Cesar brain set to: ${engineId}` });
-  dispatch({ type: 'info', message: 'Forge/tribunal/brainstorm engines unchanged. Use /use to change those.' });
+  dispatch({ type: 'info', message: 'Conversation context + memory preserved. Forge/tribunal engines unchanged — use /use to change those.' });
 }
 
 export function handleTokens(dispatch: Dispatch): void {

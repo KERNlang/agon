@@ -6,7 +6,7 @@
 
 The workflow:
 1. Write `.kern` source in `packages/*/src/kern/`
-2. Compile: `node /Users/nicolascukas/GitHub/kern-lang/packages/cli/dist/cli.js compile <file.kern> --outdir=<package>/src/generated`
+2. Compile: `node /Users/nicolascukas/KERN/kern-lang/packages/cli/dist/cli.js compile <file.kern> --outdir=<package>/src/generated`
 3. The hand-maintained `.ts` file becomes a thin re-export facade
 4. If the type needs a discriminated union, use KERN's `union` node. If it needs a class, use `service`. If it needs async with abort, use `signal` + `cleanup`.
 5. **NEVER write logic in TypeScript that KERN can express.** If you think KERN can't do it, check these primitives first:
@@ -28,7 +28,7 @@ These are compiled output. Edit the `.kern` source, recompile.
 ## KERN Compiler Location
 
 ```
-/Users/nicolascukas/GitHub/kern-lang/packages/cli/dist/cli.js
+/Users/nicolascukas/KERN/kern-lang/packages/cli/dist/cli.js
 ```
 
 Compile core nodes: `node $KERN compile <file.kern> --outdir=<dir>`

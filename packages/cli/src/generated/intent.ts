@@ -68,6 +68,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { cmd: '/jobs',        desc: '                        — list running/completed jobs' },
   { cmd: '/focus',       desc: '<id>                    — switch to background job output' },
   { cmd: '/explore',     desc: '                        — toggle exploration mode (read-only)' },
+  { cmd: '/nero',        desc: '                        — toggle Nero mode (adversarial devil\'s advocate)' },
   { cmd: '/help',        desc: '                        — show this help' },
   { cmd: '/exit',        desc: '                        — quit' },
 ];
@@ -85,6 +86,8 @@ export const CONFIG_KEYWORDS: RegExp = /\b(config|settings?)\b/i;
 export const HELP_KEYWORDS: RegExp = /^(help|\?)$/i;
 
 export const EXIT_KEYWORDS: RegExp = /^(exit|quit|bye)$/i;
+
+export const SENTENCE_PREFIX: RegExp = /^(do|does|did|is|are|was|were|have|has|had|can|could|would|should|will|shall|i\s)/i;
 
 export const QUESTION_PATTERN: RegExp = /^(what|how|why|where|when|who|which|explain|describe|tell|show|list|is there|does|can you explain|walk me through)\b/i;
 
@@ -310,6 +313,10 @@ function parseSlashCommand(input: string): Intent {
     case 'plan-mode':
     case 'readonly':
       return { type: 'explore' } as Intent;
+    case 'nero':
+    case 'devil':
+    case 'adversarial':
+      return { type: 'nero' } as Intent;
     case 'clear':
       return { type: 'clear' } as Intent;
     case 'help':
@@ -332,10 +339,16 @@ export function detectIntent(raw: string): Intent {
   
   if (EXIT_KEYWORDS.test(input)) return { type: 'exit' } as Intent;
   if (HELP_KEYWORDS.test(input)) return { type: 'help' } as Intent;
-  if (LEADERBOARD_KEYWORDS.test(input)) return { type: 'leaderboard' } as Intent;
-  if (HISTORY_KEYWORDS.test(input)) return { type: 'history' } as Intent;
-  if (ENGINES_KEYWORDS.test(input)) return { type: 'engines' } as Intent;
-  if (CONFIG_KEYWORDS.test(input)) return { type: 'config' } as Intent;
+  
+  // Only match keyword shortcuts for short, command-like inputs.
+  // Skip if input looks like a natural language sentence (question words, pronouns, >4 words).
+  const isCommandLike = input.split(/\s+/).length <= 4 && !SENTENCE_PREFIX.test(input);
+  if (isCommandLike) {
+    if (LEADERBOARD_KEYWORDS.test(input)) return { type: 'leaderboard' } as Intent;
+    if (HISTORY_KEYWORDS.test(input)) return { type: 'history' } as Intent;
+    if (ENGINES_KEYWORDS.test(input)) return { type: 'engines' } as Intent;
+    if (CONFIG_KEYWORDS.test(input)) return { type: 'config' } as Intent;
+  }
   
   return { type: 'auto', input, taskClass: classifyTask(input) } as Intent;
 }

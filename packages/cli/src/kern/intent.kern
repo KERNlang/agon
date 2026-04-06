@@ -66,6 +66,7 @@ const name=SLASH_COMMANDS type="SlashCommand[]"
       { cmd: '/jobs',        desc: '                        — list running/completed jobs' },
       { cmd: '/focus',       desc: '<id>                    — switch to background job output' },
       { cmd: '/explore',     desc: '                        — toggle exploration mode (read-only)' },
+      { cmd: '/nero',        desc: '                        — toggle Nero mode (adversarial devil\'s advocate)' },
       { cmd: '/help',        desc: '                        — show this help' },
       { cmd: '/exit',        desc: '                        — quit' },
     ]
@@ -92,6 +93,9 @@ const name=HELP_KEYWORDS type=RegExp
 
 const name=EXIT_KEYWORDS type=RegExp
   handler <<< /^(exit|quit|bye)$/i >>>
+
+const name=SENTENCE_PREFIX type=RegExp
+  handler <<< /^(do|does|did|is|are|was|were|have|has|had|can|could|would|should|will|shall|i\s)/i >>>
 
 const name=QUESTION_PATTERN type=RegExp
   handler <<< /^(what|how|why|where|when|who|which|explain|describe|tell|show|list|is there|does|can you explain|walk me through)\b/i >>>
@@ -323,6 +327,10 @@ fn name=parseSlashCommand params="input:string" returns=Intent export=false
       case 'plan-mode':
       case 'readonly':
         return { type: 'explore' } as Intent;
+      case 'nero':
+      case 'devil':
+      case 'adversarial':
+        return { type: 'nero' } as Intent;
       case 'clear':
         return { type: 'clear' } as Intent;
       case 'help':
@@ -346,10 +354,16 @@ fn name=detectIntent params="raw:string" returns=Intent
 
     if (EXIT_KEYWORDS.test(input)) return { type: 'exit' } as Intent;
     if (HELP_KEYWORDS.test(input)) return { type: 'help' } as Intent;
-    if (LEADERBOARD_KEYWORDS.test(input)) return { type: 'leaderboard' } as Intent;
-    if (HISTORY_KEYWORDS.test(input)) return { type: 'history' } as Intent;
-    if (ENGINES_KEYWORDS.test(input)) return { type: 'engines' } as Intent;
-    if (CONFIG_KEYWORDS.test(input)) return { type: 'config' } as Intent;
+
+    // Only match keyword shortcuts for short, command-like inputs.
+    // Skip if input looks like a natural language sentence (question words, pronouns, >4 words).
+    const isCommandLike = input.split(/\s+/).length <= 4 && !SENTENCE_PREFIX.test(input);
+    if (isCommandLike) {
+      if (LEADERBOARD_KEYWORDS.test(input)) return { type: 'leaderboard' } as Intent;
+      if (HISTORY_KEYWORDS.test(input)) return { type: 'history' } as Intent;
+      if (ENGINES_KEYWORDS.test(input)) return { type: 'engines' } as Intent;
+      if (CONFIG_KEYWORDS.test(input)) return { type: 'config' } as Intent;
+    }
 
     return { type: 'auto', input, taskClass: classifyTask(input) } as Intent;
   >>>

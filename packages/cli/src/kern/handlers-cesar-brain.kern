@@ -92,10 +92,12 @@ fn name=parseConfidence params="response:string" returns="{ value: number | null
     if (tildeMatch) {
       return { value: parseInt(tildeMatch[1], 10), rest: response.slice(tildeMatch[0].length) };
     }
-    // Match "Confidence: 0.X" at start
+    // Match "Confidence: 0.X" at start — normalize: 0.9 → 90, 0.85 → 85
     const decimalMatch = response.match(/^Confidence:\s*0\.(\d{1,2})\s*/i);
     if (decimalMatch) {
-      return { value: parseInt(decimalMatch[1], 10), rest: response.slice(decimalMatch[0].length) };
+      const digits = decimalMatch[1];
+      const value = digits.length === 1 ? parseInt(digits, 10) * 10 : parseInt(digits, 10);
+      return { value, rest: response.slice(decimalMatch[0].length) };
     }
     // Match "I'm ~X% sure" or "I'm X% confident" anywhere in first line
     const inlineMatch = response.match(/(?:I'm|I am)\s+~?(\d{1,3})%\s+(?:sure|confident)/i);
@@ -635,15 +637,12 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
                 }
 
                 // Auto-activate Nero for subsequent turns — Cesar enters adversarial mode
+                // Defer session kill to after the stream ends (avoid truncating mid-output)
                 if (!(ctx as any).neroMode && ctx.setNeroMode) {
                   ctx.setNeroMode(true);
                   (ctx as any).neroMode = true;
                   (ctx as any)._autoNero = true; // track that Nero was auto-enabled, not manual
-                  // Kill session so next turn reboots with Nero system prompt
-                  if (ctx.cesarSession) {
-                    ctx.cesarSession.close();
-                    ctx.setCesarSession(null);
-                  }
+                  (ctx as any)._neroKillPending = true; // deferred — kill after stream completes
                   dispatch({ type: 'info', message: '⚔ Nero activated — Cesar will challenge on next turn' });
                 }
                 // DON'T block — let Cesar continue streaming
@@ -702,6 +701,15 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
       }
 
       response = response.trim();
+
+      // Deferred Nero session kill — now safe since stream is done
+      if ((ctx as any)._neroKillPending) {
+        (ctx as any)._neroKillPending = false;
+        if (ctx.cesarSession) {
+          ctx.cesarSession.close();
+          ctx.setCesarSession(null);
+        }
+      }
 
       // Strip <think>...</think> reasoning blocks from API/reasoning models
       response = response.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();

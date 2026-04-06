@@ -35,13 +35,13 @@ fn name=createPersistentSession params="config:PersistentSessionConfig" returns=
   handler <<<
     const engine = config.engine;
 
-    // API-only engines use resume session (stateless per-turn) — no binary to keep alive
-    if (engine.api && !engine.binary) {
+    // API path: engine has API config and no binary path provided → use stateless resume session
+    if (engine.api && !config.binaryPath) {
       return createResumeSession(config);
     }
 
     // Claude: bidirectional stream-json pipe
-    if (engine.id === 'claude' || engine.binary === 'claude') {
+    if ((engine.id === 'claude' || engine.binary === 'claude') && config.binaryPath) {
       return createStreamJsonSession(config);
     }
 
@@ -94,8 +94,9 @@ fn name=createCompanionSession params="config:PersistentSessionConfig" returns="
       if (!proc) return;
       try {
         if (proc.pid) process.kill(-proc.pid, 'SIGTERM');
-      } catch {
-        try { proc.kill('SIGTERM'); } catch { /* dead */ }
+      } catch (e) {
+        console.warn(`[agon] persistent-session: group kill failed (pid=${proc.pid}): ${e instanceof Error ? e.message : String(e)}`);
+        try { proc.kill('SIGTERM'); } catch (e2) { console.warn(`[agon] persistent-session: direct kill also failed: ${e2 instanceof Error ? e2.message : String(e2)}`); }
       }
       proc = null;
       alive = false;
@@ -358,8 +359,9 @@ fn name=createAcpSession params="config:PersistentSessionConfig" returns="Persis
       if (!proc) return;
       try {
         if (proc.pid) process.kill(-proc.pid, 'SIGTERM');
-      } catch {
-        try { proc.kill('SIGTERM'); } catch { /* dead */ }
+      } catch (e) {
+        console.warn(`[agon] persistent-session: group kill failed (pid=${proc.pid}): ${e instanceof Error ? e.message : String(e)}`);
+        try { proc.kill('SIGTERM'); } catch (e2) { console.warn(`[agon] persistent-session: direct kill also failed: ${e2 instanceof Error ? e2.message : String(e2)}`); }
       }
       proc = null;
       alive = false;
@@ -592,8 +594,9 @@ fn name=createStreamJsonSession params="config:PersistentSessionConfig" returns=
       if (!proc) return;
       try {
         if (proc.pid) process.kill(-proc.pid, 'SIGTERM');
-      } catch {
-        try { proc.kill('SIGTERM'); } catch { /* dead */ }
+      } catch (e) {
+        console.warn(`[agon] persistent-session: group kill failed (pid=${proc.pid}): ${e instanceof Error ? e.message : String(e)}`);
+        try { proc.kill('SIGTERM'); } catch (e2) { console.warn(`[agon] persistent-session: direct kill also failed: ${e2 instanceof Error ? e2.message : String(e2)}`); }
       }
       proc = null;
       alive = false;
@@ -823,7 +826,7 @@ fn name=createStreamJsonSession params="config:PersistentSessionConfig" returns=
       close() {
         // Close stdin to signal EOF, then kill
         if (proc?.stdin) {
-          try { proc.stdin.end(); } catch { /* ignore */ }
+          try { proc.stdin.end(); } catch (e) { console.warn(`[agon] persistent-session: stdin.end() failed: ${e instanceof Error ? e.message : String(e)}`); }
         }
         setTimeout(() => killProc(), 1000);
       },
@@ -950,7 +953,7 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
         const onAbort = () => {
           done = true;
           chunks.push({ type: 'done', content: 'cancelled' });
-          try { if (child.pid) process.kill(-child.pid, 'SIGTERM'); } catch { try { child.kill('SIGTERM'); } catch {} }
+          try { if (child.pid) process.kill(-child.pid, 'SIGTERM'); } catch (e) { console.warn(`[agon] session-stream: kill failed: ${e instanceof Error ? e.message : String(e)}`); try { child.kill('SIGTERM'); } catch {} }
           if (resolveWait) { resolveWait(); resolveWait = null; }
         };
         if (opts.signal?.aborted) { yield { type: 'done' as const, content: 'cancelled' }; return; }

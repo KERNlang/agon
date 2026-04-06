@@ -102,10 +102,12 @@ export function parseConfidence(response: string): { value: number | null; rest:
   if (tildeMatch) {
     return { value: parseInt(tildeMatch[1], 10), rest: response.slice(tildeMatch[0].length) };
   }
-  // Match "Confidence: 0.X" at start
+  // Match "Confidence: 0.X" at start — normalize: 0.9 → 90, 0.85 → 85
   const decimalMatch = response.match(/^Confidence:\s*0\.(\d{1,2})\s*/i);
   if (decimalMatch) {
-    return { value: parseInt(decimalMatch[1], 10), rest: response.slice(decimalMatch[0].length) };
+    const digits = decimalMatch[1];
+    const value = digits.length === 1 ? parseInt(digits, 10) * 10 : parseInt(digits, 10);
+    return { value, rest: response.slice(decimalMatch[0].length) };
   }
   // Match "I'm ~X% sure" or "I'm X% confident" anywhere in first line
   const inlineMatch = response.match(/(?:I'm|I am)\s+~?(\d{1,3})%\s+(?:sure|confident)/i);
@@ -115,7 +117,7 @@ export function parseConfidence(response: string): { value: number | null; rest:
   return { value: null, rest: response };
 }
 
-// @kern-source: handlers-cesar-brain:108
+// @kern-source: handlers-cesar-brain:110
 export function confidenceColor(value: number): string {
   if (value >= 94) return '\x1b[32m';  // green
   if (value >= 90) return '\x1b[33m';  // yellow
@@ -123,7 +125,7 @@ export function confidenceColor(value: number): string {
   return '\x1b[31m'; // red
 }
 
-// @kern-source: handlers-cesar-brain:117
+// @kern-source: handlers-cesar-brain:119
 export function confidenceBadge(value: number): string {
   const color = confidenceColor(value);
   const reset = '\x1b[0m';
@@ -131,7 +133,7 @@ export function confidenceBadge(value: number): string {
   return `${color}${dot} ${value}%${reset}`;
 }
 
-// @kern-source: handlers-cesar-brain:126
+// @kern-source: handlers-cesar-brain:128
 export interface SuggestionResult {
   action: string|null;
   rest: string;
@@ -141,7 +143,7 @@ export interface SuggestionResult {
   membersPerSide?: number;
 }
 
-// @kern-source: handlers-cesar-brain:134
+// @kern-source: handlers-cesar-brain:136
 export function parseSuggestion(response: string): SuggestionResult {
   // Match [SUGGEST:compound-name] or legacy [DELEGATE:mode]
   const match = response.match(/^\[(SUGGEST|DELEGATE):([\w-]+)\]\s*/i);
@@ -184,7 +186,7 @@ export function parseSuggestion(response: string): SuggestionResult {
   return { action, rest, hardened, tribunalMode, team };
 }
 
-// @kern-source: handlers-cesar-brain:178
+// @kern-source: handlers-cesar-brain:180
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
       const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
@@ -374,7 +376,7 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
       return session;
 }
 
-// @kern-source: handlers-cesar-brain:368
+// @kern-source: handlers-cesar-brain:370
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}> {
   const abort = new AbortController();
   const _turnStart = Date.now();
@@ -644,15 +646,12 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               }
   
               // Auto-activate Nero for subsequent turns — Cesar enters adversarial mode
+              // Defer session kill to after the stream ends (avoid truncating mid-output)
               if (!(ctx as any).neroMode && ctx.setNeroMode) {
                 ctx.setNeroMode(true);
                 (ctx as any).neroMode = true;
                 (ctx as any)._autoNero = true; // track that Nero was auto-enabled, not manual
-                // Kill session so next turn reboots with Nero system prompt
-                if (ctx.cesarSession) {
-                  ctx.cesarSession.close();
-                  ctx.setCesarSession(null);
-                }
+                (ctx as any)._neroKillPending = true; // deferred — kill after stream completes
                 dispatch({ type: 'info', message: '⚔ Nero activated — Cesar will challenge on next turn' });
               }
               // DON'T block — let Cesar continue streaming
@@ -711,6 +710,15 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
     }
   
     response = response.trim();
+  
+    // Deferred Nero session kill — now safe since stream is done
+    if ((ctx as any)._neroKillPending) {
+      (ctx as any)._neroKillPending = false;
+      if (ctx.cesarSession) {
+        ctx.cesarSession.close();
+        ctx.setCesarSession(null);
+      }
+    }
   
     // Strip <think>...</think> reasoning blocks from API/reasoning models
     response = response.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
@@ -1017,7 +1025,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   }
 }
 
-// @kern-source: handlers-cesar-brain:1011
+// @kern-source: handlers-cesar-brain:1019
 export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatch, ctx: HandlerContext): Promise<ForgeJudgment|null> {
   // Need an alive Cesar session
       let session;
@@ -1131,7 +1139,7 @@ export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatc
       return judgment;
 }
 
-// @kern-source: handlers-cesar-brain:1126
+// @kern-source: handlers-cesar-brain:1134
 function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJudgment|null {
   // Strip confidence prefix (e.g. ~91%) before parsing structured output
   const stripped = parseConfidence(response).rest;
@@ -1175,7 +1183,7 @@ function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJud
   return { winner, strengths, convergencePlan, summary, shouldConverge };
 }
 
-// @kern-source: handlers-cesar-brain:1171
+// @kern-source: handlers-cesar-brain:1179
 export async function cesarConvergeForge(manifest: ForgeManifest, judgment: ForgeJudgment, dispatch: Dispatch, ctx: HandlerContext): Promise<string|null> {
   let session;
       try {

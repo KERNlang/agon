@@ -401,12 +401,16 @@ export function App({  }: {  }) {
             if (input === '\x03' || (key.ctrl && input === 'c')) { process.exit(0); }
             return;
           }
-          // Choice-based question: single keypress resolves immediately
+          // Choice-based question: single keypress resolves immediately (letter key OR 1/2/3 numeric shortcut)
           if (questionState && questionState.choices) {
             const pressed = input.toLowerCase();
-            const match = (questionState.choices as {key:string,label:string}[]).find((c: any) => c.key.toLowerCase() === pressed);
-            if (match) {
-              questionState.resolve(match.key);
+            const choices = questionState.choices as {key:string,label:string}[];
+            const match = choices.find((c: any) => c.key.toLowerCase() === pressed);
+            // Also accept 1-based numeric index: 1 = first choice, 2 = second, 3 = third, etc.
+            const numIdx = /^[1-9]$/.test(pressed) ? parseInt(pressed, 10) - 1 : -1;
+            const resolved = match ?? (numIdx >= 0 && numIdx < choices.length ? choices[numIdx] : null);
+            if (resolved) {
+              questionState.resolve(resolved.key);
               setQuestionState(null);
               setQuestionAnswer('');
               return;
@@ -567,7 +571,7 @@ export function App({  }: {  }) {
                   {questionState.choices ? (
                     <Box gap={2} marginTop={0}>
                       {(questionState.choices as {key:string,label:string,color?:string}[]).map((c: any, i: number) => (
-                        <Text key={i}><Text color={c.color ?? '#6b7280'} bold>[{c.key}]</Text><Text> {c.label}</Text></Text>
+                        <Text key={i}><Text color={c.color ?? '#6b7280'} bold>[{i + 1}/{c.key}]</Text><Text> {c.label}</Text></Text>
                       ))}
                     </Box>
                   ) : (
@@ -593,7 +597,7 @@ export function App({  }: {  }) {
 }
 
 
-// @kern-source: ui-app:568
+// @kern-source: ui-app:572
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

@@ -51,13 +51,13 @@ export interface PersistentSession {
 export function createPersistentSession(config: PersistentSessionConfig): PersistentSession {
   const engine = config.engine;
   
-  // API-only engines use resume session (stateless per-turn) — no binary to keep alive
-  if (engine.api && !engine.binary) {
+  // API path: engine has API config and no binary path provided → use stateless resume session
+  if (engine.api && !config.binaryPath) {
     return createResumeSession(config);
   }
   
   // Claude: bidirectional stream-json pipe
-  if (engine.id === 'claude' || engine.binary === 'claude') {
+  if ((engine.id === 'claude' || engine.binary === 'claude') && config.binaryPath) {
     return createStreamJsonSession(config);
   }
   
@@ -107,8 +107,9 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
     if (!proc) return;
     try {
       if (proc.pid) process.kill(-proc.pid, 'SIGTERM');
-    } catch {
-      try { proc.kill('SIGTERM'); } catch { /* dead */ }
+    } catch (e) {
+      console.warn(`[agon] persistent-session: group kill failed (pid=${proc.pid}): ${e instanceof Error ? e.message : String(e)}`);
+      try { proc.kill('SIGTERM'); } catch (e2) { console.warn(`[agon] persistent-session: direct kill also failed: ${e2 instanceof Error ? e2.message : String(e2)}`); }
     }
     proc = null;
     alive = false;
@@ -341,7 +342,7 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
   return session;
 }
 
-// @kern-source: persistent-session:333
+// @kern-source: persistent-session:334
 export function createAcpSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -368,8 +369,9 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
     if (!proc) return;
     try {
       if (proc.pid) process.kill(-proc.pid, 'SIGTERM');
-    } catch {
-      try { proc.kill('SIGTERM'); } catch { /* dead */ }
+    } catch (e) {
+      console.warn(`[agon] persistent-session: group kill failed (pid=${proc.pid}): ${e instanceof Error ? e.message : String(e)}`);
+      try { proc.kill('SIGTERM'); } catch (e2) { console.warn(`[agon] persistent-session: direct kill also failed: ${e2 instanceof Error ? e2.message : String(e2)}`); }
     }
     proc = null;
     alive = false;
@@ -588,7 +590,7 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
   return session;
 }
 
-// @kern-source: persistent-session:583
+// @kern-source: persistent-session:585
 export function createStreamJsonSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -599,8 +601,9 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
     if (!proc) return;
     try {
       if (proc.pid) process.kill(-proc.pid, 'SIGTERM');
-    } catch {
-      try { proc.kill('SIGTERM'); } catch { /* dead */ }
+    } catch (e) {
+      console.warn(`[agon] persistent-session: group kill failed (pid=${proc.pid}): ${e instanceof Error ? e.message : String(e)}`);
+      try { proc.kill('SIGTERM'); } catch (e2) { console.warn(`[agon] persistent-session: direct kill also failed: ${e2 instanceof Error ? e2.message : String(e2)}`); }
     }
     proc = null;
     alive = false;
@@ -830,7 +833,7 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
     close() {
       // Close stdin to signal EOF, then kill
       if (proc?.stdin) {
-        try { proc.stdin.end(); } catch { /* ignore */ }
+        try { proc.stdin.end(); } catch (e) { console.warn(`[agon] persistent-session: stdin.end() failed: ${e instanceof Error ? e.message : String(e)}`); }
       }
       setTimeout(() => killProc(), 1000);
     },
@@ -839,7 +842,7 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
   return session;
 }
 
-// @kern-source: persistent-session:837
+// @kern-source: persistent-session:840
 export function createResumeSession(config: PersistentSessionConfig): PersistentSession {
   let alive = false;
   let sessionId: string | null = null;
@@ -954,7 +957,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
       const onAbort = () => {
         done = true;
         chunks.push({ type: 'done', content: 'cancelled' });
-        try { if (child.pid) process.kill(-child.pid, 'SIGTERM'); } catch { try { child.kill('SIGTERM'); } catch {} }
+        try { if (child.pid) process.kill(-child.pid, 'SIGTERM'); } catch (e) { console.warn(`[agon] session-stream: kill failed: ${e instanceof Error ? e.message : String(e)}`); try { child.kill('SIGTERM'); } catch {} }
         if (resolveWait) { resolveWait(); resolveWait = null; }
       };
       if (opts.signal?.aborted) { yield { type: 'done' as const, content: 'cancelled' }; return; }

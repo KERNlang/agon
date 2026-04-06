@@ -68,7 +68,7 @@ export async function fetchModelsRegistry(): Promise<Record<string, ModelsDevPro
       if (age < CACHE_TTL_MS) {
         return JSON.parse(readFileSync(CACHE_FILE, 'utf-8'));
       }
-    } catch (_e) { /* stale or corrupt cache, refetch */ }
+    } catch (_e) { console.warn(`[agon] models-registry: cache read failed, refetching: ${_e instanceof Error ? _e.message : String(_e)}`); }
   }
   
   // Fetch from models.dev
@@ -179,6 +179,7 @@ export function modelEntryToEngineDef(entry: ModelEntry): Record<string, any> {
       apiKeyEnv: entry.apiKeyEnv,
       model: entry.modelId,
       maxTokens: Math.min(entry.contextWindow ? Math.floor(entry.contextWindow / 4) : 4096, 16384),
+      format: entry.format ?? 'openai',
     },
   };
 }

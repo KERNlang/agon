@@ -4,6 +4,7 @@ import from="node:os" names="homedir"
 import from="node:child_process" names="execFileSync"
 import from="./types.js" names="EngineDefinition,EngineMode" types=true
 import from="./errors.js" names="EngineNotFoundError"
+import from="../schemas/engine-schema.js" names="validateEngineConfig"
 
 const name=AGON_ENGINES_DIR type=string
   handler <<<
@@ -42,7 +43,17 @@ service name=EngineRegistry
       }
       for (const file of files) {
         try {
-          const def = JSON.parse(readFileSync(join(dir, file), 'utf-8')) as EngineDefinition;
+          const raw = JSON.parse(readFileSync(join(dir, file), 'utf-8'));
+          const validation = validateEngineConfig(raw, file);
+          if (!validation.ok) {
+            console.warn(`[agon] ${validation.error}`);
+            // Still load the engine with a warning — don't break existing setups
+            const def = raw as EngineDefinition;
+            def.tier = tier;
+            this.engines.set(def.id, def);
+            continue;
+          }
+          const def = validation.data as unknown as EngineDefinition;
           def.tier = tier;
           this.engines.set(def.id, def);
         } catch (err) {
@@ -124,7 +135,7 @@ service name=EngineRegistry
   method name=agentCapableIds returns="string[]"
     handler <<<
       return this.availableEngines()
-        .filter((e: EngineDefinition) => !!e.agent)
+        .filter((e: EngineDefinition) => !!e.agent && !!e.binary && this.findBinary(e) !== null)
         .map((e: EngineDefinition) => e.id);
     >>>
 

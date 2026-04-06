@@ -16,10 +16,13 @@ import type { EngineDefinition, EngineMode } from './types.js';
 // @kern-source: engine-registry:6
 import { EngineNotFoundError } from './errors.js';
 
-// @kern-source: engine-registry:8
+// @kern-source: engine-registry:7
+import { validateEngineConfig } from '../schemas/engine-schema.js';
+
+// @kern-source: engine-registry:9
 export const AGON_ENGINES_DIR: string = join(homedir(), '.agon', 'engines');
 
-// @kern-source: engine-registry:13
+// @kern-source: engine-registry:14
 export class EngineRegistry {
   private engines: Map<string, EngineDefinition> = new Map();
   private binaryCache: Map<string, string | null> = new Map();
@@ -50,7 +53,17 @@ export class EngineRegistry {
     }
     for (const file of files) {
       try {
-        const def = JSON.parse(readFileSync(join(dir, file), 'utf-8')) as EngineDefinition;
+        const raw = JSON.parse(readFileSync(join(dir, file), 'utf-8'));
+        const validation = validateEngineConfig(raw, file);
+        if (!validation.ok) {
+          console.warn(`[agon] ${validation.error}`);
+          // Still load the engine with a warning — don't break existing setups
+          const def = raw as EngineDefinition;
+          def.tier = tier;
+          this.engines.set(def.id, def);
+          continue;
+        }
+        const def = validation.data as unknown as EngineDefinition;
         def.tier = tier;
         this.engines.set(def.id, def);
       } catch (err) {
@@ -122,7 +135,7 @@ export class EngineRegistry {
 
   agentCapableIds(): string[] {
     return this.availableEngines()
-      .filter((e: EngineDefinition) => !!e.agent)
+      .filter((e: EngineDefinition) => !!e.agent && !!e.binary && this.findBinary(e) !== null)
       .map((e: EngineDefinition) => e.id);
   }
 

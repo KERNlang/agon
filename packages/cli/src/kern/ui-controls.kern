@@ -131,9 +131,10 @@ screen name=EnginePicker target=ink
             onRemove(id);
           } else {
             // Builtin engine: hide from picker + deselect
-            setHidden((prev: Set<string>) => { const next = new Set(prev); next.add(id); return next; });
+            const nextHidden = new Set([...hidden, id]);
+            setHidden(nextHidden);
             setSelected((prev: Set<string>) => { const next = new Set(prev); next.delete(id); return next; });
-            configSet('hiddenEngines', [...hidden, id]);
+            configSet('hiddenEngines', [...nextHidden]);
             setCursor((i: number) => Math.min(i, visible.length - 2));
           }
         }

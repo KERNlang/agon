@@ -2,9 +2,18 @@
 import type { ToolDefinition, ToolHandler } from './tool-types.js';
 
 // @kern-source: tool-prompt:7
-export const TOOL_USE_FORMAT: string = `Tool format: <tool name="X">{"param":"value"}</tool> → result arrives as <tool_result name="X">...</tool_result>. Use tools — don't guess.`;
+export const TOOL_USE_FORMAT: string = `Tool format — output this exact XML to call tools:
 
-// @kern-source: tool-prompt:12
+<tool name="Read">{"file_path":"src/index.ts"}</tool>
+
+Result arrives as: <tool_result name="Read">file content here</tool_result>
+
+Example — to run a command:
+<tool name="Bash">{"command":"npm test"}</tool>
+
+ALWAYS use tools. NEVER say "let me look at" without calling Read/Grep. NEVER describe edits without calling Edit.`;
+
+// @kern-source: tool-prompt:21
 function toolDefinitionToPrompt(def: ToolDefinition): string {
   const schema = def.inputSchema as any;
   const props = schema.properties ?? schema;
@@ -20,7 +29,7 @@ function toolDefinitionToPrompt(def: ToolDefinition): string {
   return `${def.name}(${params}) — ${def.description}`;
 }
 
-// @kern-source: tool-prompt:28
+// @kern-source: tool-prompt:37
 export function generateToolPrompt(handlers: ToolHandler[]): string {
   const sections: string[] = [TOOL_USE_FORMAT, '\n## Available Tools\n'];
   
@@ -33,7 +42,7 @@ export function generateToolPrompt(handlers: ToolHandler[]): string {
   return sections.join('\n\n');
 }
 
-// @kern-source: tool-prompt:42
+// @kern-source: tool-prompt:51
 function generateReadToolSchema(): Record<string,unknown> {
   return {
     file_path: { type: 'string', required: true, description: 'Absolute or relative path to file' },
@@ -42,7 +51,7 @@ function generateReadToolSchema(): Record<string,unknown> {
   };
 }
 
-// @kern-source: tool-prompt:51
+// @kern-source: tool-prompt:60
 function generateEditToolSchema(): Record<string,unknown> {
   return {
     file_path: { type: 'string', required: true, description: 'Path to file to edit' },
@@ -52,7 +61,7 @@ function generateEditToolSchema(): Record<string,unknown> {
   };
 }
 
-// @kern-source: tool-prompt:61
+// @kern-source: tool-prompt:70
 function generateWriteToolSchema(): Record<string,unknown> {
   return {
     file_path: { type: 'string', required: true, description: 'Path to file to write' },
@@ -60,7 +69,7 @@ function generateWriteToolSchema(): Record<string,unknown> {
   };
 }
 
-// @kern-source: tool-prompt:69
+// @kern-source: tool-prompt:78
 function generateBashToolSchema(): Record<string,unknown> {
   return {
     command: { type: 'string', required: true, description: 'Shell command to execute' },
@@ -68,7 +77,7 @@ function generateBashToolSchema(): Record<string,unknown> {
   };
 }
 
-// @kern-source: tool-prompt:77
+// @kern-source: tool-prompt:86
 function generateGrepToolSchema(): Record<string,unknown> {
   return {
     pattern: { type: 'string', required: true, description: 'Regex pattern to search for' },
@@ -78,7 +87,7 @@ function generateGrepToolSchema(): Record<string,unknown> {
   };
 }
 
-// @kern-source: tool-prompt:87
+// @kern-source: tool-prompt:96
 function generateGlobToolSchema(): Record<string,unknown> {
   return {
     pattern: { type: 'string', required: true, description: 'Glob pattern (e.g. "**/*.ts")' },

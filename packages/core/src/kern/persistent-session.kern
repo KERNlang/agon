@@ -847,9 +847,7 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
     let firstTurn = true;
     // Message history for API engines — enables multi-turn tool loops
     const messageHistory: Array<{role: string, content: string}> = [];
-    // Track pending native tool calls for proper role:'tool' result formatting
-    const pendingToolCallIds: string[] = [];
-    let pendingAssistantToolMsg: any = null;
+    // Tool calls are handled inside the agentic loop in send() — no cross-turn state needed.
 
     const session: PersistentSession = {
       get alive() { return alive; },
@@ -884,52 +882,9 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
             firstTurn = false;
           }
 
-          // If previous turn had native tool_calls, this message contains tool results.
-          // Format as proper role:'tool' messages so the API understands them.
-          if (pendingToolCallIds.length > 0 && config.nativeTools) {
-            // Add assistant message with tool_calls to history (was stored from previous response)
-            if (pendingAssistantToolMsg) {
-              messageHistory.push(pendingAssistantToolMsg);
-            }
-            // Parse tool results from the formatted text and add as role:'tool' messages
-            // The formatToolResults function outputs: <tool_result name="X">content</tool_result>
-            const resultRegex = /<tool_result\s+name="([^"]+)">([\s\S]*?)<\/tool_result>/g;
-            let resultMatch;
-            let resultIdx = 0;
-            // Keep tool results small in history — model can re-read if needed
-            const INLINE_LIMIT = 800; // ~200 tokens — short results inline, large ones summarized
-            while ((resultMatch = resultRegex.exec(opts.message)) !== null) {
-              const toolCallId = pendingToolCallIds[resultIdx] ?? `tool_${resultIdx}`;
-              const toolName = resultMatch[1];
-              const raw = resultMatch[2].trim();
-              let content: string;
-              if (raw.length <= INLINE_LIMIT) {
-                content = raw;
-              } else {
-                // Summary: first 300 chars + stats. Model can call Read/Grep again for full content.
-                const lines = raw.split('\n').length;
-                content = raw.slice(0, 300) + `\n...\n[${lines} lines, ${raw.length} chars — use ${toolName} again for full content]`;
-              }
-              messageHistory.push({ role: 'tool', content, tool_call_id: toolCallId } as any);
-              resultIdx++;
-            }
-            // If no XML results found, send as plain tool result for each pending call
-            if (resultIdx === 0) {
-              for (const tcId of pendingToolCallIds) {
-                let content = opts.message;
-                if (content.length > INLINE_LIMIT) {
-                  const lines = content.split('\n').length;
-                  content = content.slice(0, 300) + `\n...\n[${lines} lines, ${content.length} chars — use tool again for full content]`;
-                }
-                messageHistory.push({ role: 'tool', content, tool_call_id: tcId } as any);
-              }
-            }
-            pendingToolCallIds.length = 0;
-            pendingAssistantToolMsg = null;
-          } else {
-            // Normal user message
-            messageHistory.push({ role: 'user', content: opts.message });
-          }
+          // All messages are user messages. Tool results are handled inside the
+          // agentic loop (same turn), not across turns.
+          messageHistory.push({ role: 'user', content: opts.message });
 
           // Smart context window: summarize old messages to control token growth.
           // Keep system prompt + last 10 messages verbatim. Summarize older ones.
@@ -961,9 +916,9 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
             step++;
             let fullResponse = '';
 
-            // History is always clean (tool exchanges collapsed after each loop).
-            // During the tool loop, intermediate role:'tool' messages are present
-            // but get cleaned up when the loop exits.
+            // Preserve the raw replayable transcript for API engines.
+            // OpenAI-compatible APIs are stateless: every follow-up call must replay
+            // the exact assistant(tool_calls) -> tool -> assistant chain from prior turns.
             const gen = apiStreamDispatchWithHistory(config.engine.api, messageHistory, config.engine.timeout ?? 180, opts.signal, config.nativeTools);
             try {
               while (true) {
@@ -1053,18 +1008,6 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
             // No tool calls — final response. Add to history and exit.
             messageHistory.push({ role: 'assistant', content: fullResponse });
             break;
-          }
-
-          // ALWAYS clean up after tool loop — remove role:'tool' and tool_calls from history.
-          // This runs whether the loop exited cleanly or via error/break.
-          // Next turn only sees clean user/assistant pairs.
-          while (messageHistory.length > 0) {
-            const last = messageHistory[messageHistory.length - 1] as any;
-            if (last.role === 'tool' || (last.role === 'assistant' && last.tool_calls)) {
-              messageHistory.pop();
-            } else {
-              break;
-            }
           }
 
           yield { type: 'done' as const, content: 'end_turn' };

@@ -12,6 +12,7 @@ export interface SessionChunk {
   metadata?: Record<string,unknown>;
 }
 
+
 export interface SessionSendOptions {
   message: string;
   images?: string[];
@@ -927,4 +928,3 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
   
   return session;
 }
-

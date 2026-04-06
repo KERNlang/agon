@@ -140,7 +140,14 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
     if (result.responded) return false;
   } catch (e) { console.warn(`[agon] dispatch: Cesar brain threw: ${e instanceof Error ? e.message : String(e)}`); }
   
-  // Cesar didn't respond — try fresh CLI dispatch to Cesar engine
+  // Cesar didn't respond — check if tool loop is active before falling back
+  // If the session is alive and busy (tool loop running), don't interrupt with a fresh dispatch
+  if (cb.ctx.cesarSession && cb.ctx.cesarSession.alive) {
+    cb.dispatch({ type: 'info', message: 'Cesar is busy (tool loop running) — message queued, will process when done.' });
+    return false;
+  }
+  
+  // Cesar truly didn't respond — try fresh CLI dispatch
   const cesarConfig = cb.ctx.config;
   const cesarId = (cesarConfig as any).cesarEngine ?? 'claude';
   try {
@@ -150,7 +157,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
     const { resolveWorkingDir, RUNS_DIR, appendMessage } = await import('@agon/core');
     const outDir = join(RUNS_DIR, `cesar-fallback-${Date.now()}`);
     mkdirSync(outDir, { recursive: true });
-    cb.dispatch({ type: 'warning', message: `Cesar session busy — retrying ${cesarId} with fresh dispatch…` });
+    cb.dispatch({ type: 'warning', message: `Cesar session unavailable — retrying ${cesarId} with fresh dispatch…` });
     const freshResult = await cb.ctx.adapter.dispatch({
       engine: cesarEngine,
       prompt: input,
@@ -208,7 +215,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
   return false;
 }
 
-// @kern-source: app-dispatch:192
+// @kern-source: app-dispatch:199
 export async function dispatchIntent(intent: any, input: string, cb: DispatchCallbacks): Promise<DispatchResult> {
   switch (intent.type) {
     // ── Job-dispatched commands (return immediately, don't hit finally) ──

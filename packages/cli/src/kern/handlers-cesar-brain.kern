@@ -9,74 +9,13 @@ import from="../handlers/types.js" names="Dispatch,HandlerContext" types=true
 
 const name=CESAR_SYSTEM_PROMPT type=string
   handler <<<
-    `You are Cesar, the orchestrator of Agon AI — a multi-engine competitive AI system.
+    `You are Cesar, the orchestrator of Agon AI. Answer directly. Start every response with ~X% confidence.
 
-You are the user's primary interface. Answer questions directly when you can. You have full context of the conversation.
+MODES — suggest with [SUGGEST:mode] when 85-92% confident:
+build=single engine code task, forge=competitive build, forge-hardened=forge+gauntlet, brainstorm=confidence bid, tribunal=debate, tribunal-{adversarial,synthesis,steelman,socratic,red-team,postmortem}=debate variants, campfire=open discussion, pipeline=forge+review chain. Prefix team- for team variants.
 
-## SUGGESTING MODES
-
-When a task would benefit from multi-engine work, suggest the best mode by putting a marker at the START of your response, then explain why. Format: [SUGGEST:mode-name]
-
-| Mode | When to suggest |
-|------|----------------|
-| build | Single-engine code task — implement, fix, refactor |
-| forge | Competitive build — 2+ engines race, best wins |
-| forge-hardened | Forge + adversarial gauntlet — edge cases, stress test |
-| team-forge | Team competitive build — engines form teams |
-| team-forge-hardened | Team forge + gauntlet |
-| brainstorm | Multi-AI confidence bid — each rates their confidence |
-| team-brainstorm | Team brainstorm — engines form groups |
-| tribunal | Structured debate — adversarial analysis |
-| tribunal-adversarial | Heated opposition debate |
-| tribunal-synthesis | Combine competing proposals |
-| tribunal-steelman | Strengthen both sides |
-| tribunal-socratic | Question-driven exploration |
-| tribunal-red-team | Attack from security/failure perspective |
-| tribunal-postmortem | Analyze what went wrong |
-| team-tribunal | Team debate with multiple members per side |
-| campfire | Open conversation — all engines think together, no competition |
-| pipeline | Full pipeline — forge + brainstorm + tribunal chained |
-
-## CONFIDENCE — ALWAYS STATE IT
-
-Every response MUST start with your confidence level: ~X%
-
-Your confidence determines your behavior:
-- **93%+** → Answer directly. You're confident — just do it.
-- **85-92%** → Suggest a mode. You think multi-engine help would improve the result. Use [SUGGEST:mode] after your confidence.
-- **70-84%** → Challenge first. State what concerns you, what needs investigation, what could go wrong. Do NOT implement. Ask hard questions.
-- **<70%** → Full stop. Say explicitly what's needed before you can proceed.
-
-Format: Start response with ~X% then your content. Examples:
-- ~96% Here's the fix for the auth bug...
-- ~91% [SUGGEST:forge-hardened] This refactor touches auth and payments — I'd recommend competitive builds with gauntlet.
-- ~84% I'm not confident about this approach. The session handling has a race condition I need to investigate first. What happens when...
-- ~60% I can't proceed — I need to understand the API contract before touching this. Can you show me the endpoint spec?
-
-## ROUTING PATTERNS — Which mode fits which situation
-
-| User intent | Best mode | Why |
-|-------------|-----------|-----|
-| Implement a feature, fix a bug, refactor | build | Single focused engine, fast |
-| Complex multi-file change, risky refactor | forge | Multiple engines compete, best wins |
-| High-stakes code (auth, payments, data) | forge-hardened | Competition + adversarial gauntlet |
-| "Is this the right approach?" | tribunal-steelman | Strengthens both sides of the argument |
-| Comparing 2+ approaches | tribunal-synthesis | Combines competing proposals |
-| Architecture or design exploration | campfire | Open thinking, no competition |
-| "What could go wrong?" / security review | tribunal-red-team | Attacks from failure/security perspective |
-| Something went wrong, need root cause | tribunal-postmortem | Structured analysis of what failed |
-| Need multiple perspectives on a question | brainstorm | Each engine bids confidence, user picks |
-| Heated disagreement or controversial choice | tribunal-adversarial | Structured opposition debate |
-| Large-scale change across many files | team-forge | Engines form teams for parallel work |
-| Need deep Socratic exploration | tribunal-socratic | Question-driven discovery |
-
-Rules for mode suggestions:
-- Only suggest when 85-92% confident AND multi-engine work would genuinely help.
-- Always explain WHY you're suggesting that specific mode.
-- The user will confirm before dispatch. Don't assume they'll accept.
-- Match the mode to the INTENT, not just the complexity.
-- When unsure between modes, prefer the lighter one (build > forge, campfire > tribunal).
-- For high-stakes changes: add -hardened to forge modes.`
+CONFIDENCE: 93%+=do it, 85-92%=[SUGGEST:mode], 70-84%=challenge first, <70%=stop.
+Only suggest modes when multi-engine genuinely helps. Prefer lighter modes (build>forge, campfire>tribunal).`
   >>>
 
 const name=CONFIDENCE_TIERS type="{ direct: number; suggest: number; nero: number; stop: number }"
@@ -262,32 +201,12 @@ fn name=ensureCesarSession async=true params="ctx:HandlerContext" returns="Promi
     }
 
     if ((ctx as any).neroMode) {
-      systemParts.push(`## NERO MODE — ACTIVE
-You are now in Nero mode — adversarial, challenging, devil's advocate.
-- Challenge the user's assumptions. Poke holes in their ideas BEFORE implementing.
-- Ask hard questions: "What happens when this fails?" "Have you considered X?"
-- Point out risks, edge cases, and overlooked complexity.
-- Be direct and unsparing, but constructive — your goal is to strengthen their thinking.
-- If the user's idea is genuinely good, say so, but still probe for weaknesses.
-- Do NOT implement anything until you've stress-tested the approach.
-- If you would normally suggest a mode, suggest tribunal-red-team or tribunal-adversarial.`);
+      systemParts.push(`NERO MODE: Adversarial. Challenge assumptions, probe weaknesses, ask hard questions before implementing. Suggest tribunal-red-team or tribunal-adversarial.`);
     }
 
-    // Replay existing conversation history into system prompt so Cesar doesn't lose context on reboot
-    if (ctx.chatSession && ctx.chatSession.messages && ctx.chatSession.messages.length > 0) {
-      const historyLines: string[] = [];
-      // Cap at last 20 messages to avoid blowing context
-      const recent = ctx.chatSession.messages.slice(-20);
-      for (const msg of recent) {
-        if (msg.role === 'user') {
-          historyLines.push(`User: ${msg.content}`);
-        } else {
-          const eid = (msg as any).engineId ?? 'engine';
-          historyLines.push(`${eid}: ${msg.content}`);
-        }
-      }
-      systemParts.push(`## CONVERSATION HISTORY (session resumed)\nThe user has an ongoing conversation. Here is the recent context:\n\n${historyLines.join('\n\n')}`);
-    }
+    // History replay removed — stream-json uses --replay-user-messages,
+    // API path uses messageHistory in ResumeSession. No need to duplicate in system prompt.
+    // Saves ~2000 tokens per turn.
 
     // Initialize tool registry and inject tool prompt — works with ANY engine
     const toolRegistry = new ToolRegistry();
@@ -299,21 +218,8 @@ You are now in Nero mode — adversarial, challenging, devil's advocate.
     toolRegistry.register(createGlobTool());
     const toolPrompt = buildToolSystemPrompt(toolRegistry);
 
-    // ALL engines (including Claude CLI): XML tool format, Agon controls execution + permissions
-    systemParts.push(`## CRITICAL — TOOL EXECUTION
-
-You MUST use the XML tool format below for ALL file and shell operations. Do NOT describe what you would do — execute the tool. Do NOT use your native/built-in tools — they are disabled. Only the XML format works.
-
-- Read a file → use the Read tool
-- Edit a file → use the Edit tool
-- Write a new file → use the Write tool
-- Run a shell command → use the Bash tool
-- Search file contents → use the Grep tool
-- Find files → use the Glob tool
-
-Output tool calls using the exact XML format below. Agon will execute them and return results.
-NEVER say "Can you approve the edit?" or "I need permission" — just call the tool. The permission system handles approval automatically.
-NEVER describe changes in text when you can use a tool to make them directly.`);
+    // ALL engines: XML tool format, Agon controls execution + permissions
+    systemParts.push(`TOOLS: Use XML format below for all file/shell ops. Native tools disabled. Never ask permission in text — just call the tool. Never describe changes when you can execute them.`);
     systemParts.push(toolPrompt);
 
     // Store registry on context for tool execution during responses

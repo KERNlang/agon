@@ -99,7 +99,7 @@ fn name=handleProviderList params="dispatch:Dispatch" returns=void
           const hasKey = !!process.env[def.api.apiKeyEnv];
           rows.push([def.id, def.api.model, def.api.baseUrl, hasKey ? 'ready' : 'no key']);
         }
-      } catch (_e) { /* skip malformed */ }
+      } catch (_e) { console.warn(`[agon] provider: failed to load ${file}: ${_e instanceof Error ? _e.message : String(_e)}`); }
     }
     if (rows.length > 0) {
       dispatch({ type: 'table', headers: ['ID', 'Model', 'API URL', 'Status'], rows });

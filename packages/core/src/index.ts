@@ -106,6 +106,8 @@ export type { EngineRole } from './role-specialization.js';
 export type { Skill } from './skill-loader.js';
 export { createSidechainLogger } from './sidechain-logger.js';
 export type { SidechainEvent, SidechainLogger } from './sidechain-logger.js';
+export { validateEngineConfig, validateEngineDir, EngineDefinitionSchema } from './schemas/engine-schema.js';
+export type { ValidatedEngineDefinition } from './schemas/engine-schema.js';
 export { sessionContext } from './session-context.js';
 export {
   splitPromptBlocks, mergeBlocksByRole,

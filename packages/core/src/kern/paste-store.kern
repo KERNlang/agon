@@ -65,7 +65,7 @@ service name=PasteStore singleton=true
               unlinkSync(fp);
               deleted++;
             }
-          } catch (_e) { /* stat may fail — skip file */ }
+          } catch (_e) { console.warn(`[agon] paste-store: cleanup failed for ${fp}: ${_e instanceof Error ? _e.message : String(_e)}`); }
         }
       } catch (err) { console.warn(`[agon] paste cleanup failed: ${err instanceof Error ? err.message : String(err)}`); }
       return deleted;

@@ -264,15 +264,38 @@ You are now in Nero mode — adversarial, challenging, devil's advocate.
       binaryPath,
       cwd: cesarCwd,
       systemPrompt: systemParts.join('\n\n'),
-      // Route engine tool approvals through Agon's permission system
+      // Route engine tool approvals through Agon's permission system — same rules for ALL engines
       onApproval: async (tool: string, command: string) => {
+        const cfg = ctx.config;
+        const perms = (cfg as any).toolPermissions ?? {};
+        const allowed = (cfg as any).allowedCommands ?? [];
+        const mode = (cfg as any).permissionMode ?? 'ask';
+
+        // Check config-based permissions FIRST — same as Claude path
+        // Map engine tool names to Agon tool names
+        const toolMap: Record<string, string> = { shell: 'Bash', bash: 'Bash', edit: 'Edit', write: 'Write', read: 'Read', grep: 'Grep', glob: 'Glob' };
+        const agonTool = toolMap[tool.toLowerCase()] ?? tool;
+        const perm = perms[agonTool];
+
+        // deny → block immediately
+        if (perm === 'deny' || mode === 'deny-all') return false;
+
+        // allow → auto-approve
+        if (perm === 'allow' || mode === 'auto') return true;
+
+        // For Bash: check allowedCommands whitelist
+        if (agonTool === 'Bash' && allowed.length > 0) {
+          const cmdLower = command.toLowerCase();
+          if (allowed.some((a: string) => cmdLower.startsWith(a.toLowerCase()))) return true;
+        }
+
+        // ask → show permission prompt (same UI as Claude Code)
         return new Promise<boolean>((resolve) => {
-          // This dispatches to the UI — shows the same permission prompt as Claude Code
           const dispatch = (ctx as any)._lastDispatch;
           if (dispatch) {
-            dispatch({ type: 'permission-ask', tool, command, reason: `Cesar (${engine.id}) wants to execute`, resolve } as any);
+            dispatch({ type: 'permission-ask', tool: agonTool, command, reason: `Cesar (${engine.id}) wants to execute`, resolve } as any);
           } else {
-            resolve(true); // No dispatch available — auto-approve
+            resolve(true);
           }
         });
       },

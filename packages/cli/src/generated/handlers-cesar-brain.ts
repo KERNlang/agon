@@ -374,7 +374,8 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       session = await ensureCesarSession(ctx);
     } catch (err) {
       // Persistent session failed — fall back to fresh CLI dispatch so Cesar still answers
-      dispatch({ type: 'spinner-update', message: 'Cesar session busy, dispatching fresh…' });
+      const errMsg = err instanceof Error ? err.message : String(err);
+      dispatch({ type: 'spinner-update', message: `Cesar session error: ${errMsg.slice(0, 80)}` });
       try {
         const engine = ctx.registry.get(cesarEngineId);
         const cesarCwd = resolveWorkingDir();
@@ -865,7 +866,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   }
 }
 
-// @kern-source: handlers-cesar-brain:859
+// @kern-source: handlers-cesar-brain:860
 export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatch, ctx: HandlerContext): Promise<ForgeJudgment|null> {
   // Need an alive Cesar session
       let session;
@@ -979,7 +980,7 @@ export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatc
       return judgment;
 }
 
-// @kern-source: handlers-cesar-brain:974
+// @kern-source: handlers-cesar-brain:975
 function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJudgment|null {
   // Strip confidence prefix (e.g. ~91%) before parsing structured output
   const stripped = parseConfidence(response).rest;
@@ -1023,7 +1024,7 @@ function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJud
   return { winner, strengths, convergencePlan, summary, shouldConverge };
 }
 
-// @kern-source: handlers-cesar-brain:1019
+// @kern-source: handlers-cesar-brain:1020
 export async function cesarConvergeForge(manifest: ForgeManifest, judgment: ForgeJudgment, dispatch: Dispatch, ctx: HandlerContext): Promise<string|null> {
   let session;
       try {

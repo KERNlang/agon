@@ -1,13 +1,19 @@
+// @kern-source: adapter:1
 import { writeFileSync, mkdirSync } from 'node:fs';
 
+// @kern-source: adapter:2
 import { join, dirname } from 'node:path';
 
+// @kern-source: adapter:3
 import type { EngineAdapter, EngineDefinition, DispatchOptions, DispatchResult, AgentDispatchResult } from '@agon/core';
 
+// @kern-source: adapter:4
 import { EngineRegistry, spawnWithTimeout, spawnStream, EngineNotFoundError, readOnlyDiff, diffLineCount, apiDispatch, apiStreamDispatch, companionDispatch, runHooks, hooksFailed } from '@agon/core';
 
+// @kern-source: adapter:5
 import { buildCommand, checkEnvVars } from './adapter-helpers.js';
 
+// @kern-source: adapter:7
 export class CliAdapter implements EngineAdapter {
   private registry: EngineRegistry;
 
@@ -24,7 +30,7 @@ export class CliAdapter implements EngineAdapter {
   async dispatch(options: DispatchOptions): Promise<DispatchResult> {
     // API-based engine: use HTTP instead of spawn
     if (options.engine.api) {
-      const result = await apiDispatch(options.engine.api, options.prompt, options.timeout, options.signal);
+      const result = await apiDispatch(options.engine.api, options.prompt, options.timeout, options.signal, options.systemPrompt);
       const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
       mkdirSync(dirname(outputPath), { recursive: true });
       writeFileSync(outputPath, result.stdout);

@@ -24,7 +24,7 @@ export interface PersistentSessionConfig {
   binaryPath: string;
   cwd: string;
   systemPrompt?: string;
-  readOnly?: boolean;
+  onApproval?: (tool: string, command: string) => Promise<boolean>;
 }
 
 export interface PersistentSession {
@@ -135,6 +135,32 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
           return;
         }
   
+        // Server REQUEST with method — approval requests from engine
+        if (msg.id !== undefined && msg.method) {
+          if (msg.method === 'approval/request' || msg.method === 'tool/approve') {
+            const toolName = msg.params?.tool ?? msg.params?.command?.type ?? 'unknown';
+            const toolCmd = msg.params?.command?.command ?? msg.params?.description ?? JSON.stringify(msg.params ?? {});
+  
+            // Emit tool_call so handleCesarBrain can show permission UI
+            for (const handler of notificationHandlers) {
+              handler('tool/approval', { tool: toolName, command: toolCmd, rpcId: msg.id });
+            }
+  
+            // Route through Agon's permission callback
+            if (config.onApproval) {
+              config.onApproval(toolName, toolCmd).then((approved: boolean) => {
+                if (proc) proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { approved } }) + '\n');
+              }).catch(() => {
+                if (proc) proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { approved: false } }) + '\n');
+              });
+            } else {
+              // No approval callback — auto-approve
+              proc!.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { approved: true } }) + '\n');
+            }
+            return;
+          }
+        }
+  
         // Server notification — forward to active handlers
         if (msg.method) {
           for (const handler of notificationHandlers) {
@@ -156,11 +182,10 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
       });
       notifyRpc('initialized');
   
-      // Start persistent thread (pass system prompt as instructions)
+      // Start persistent thread — 'ask' routes tool approvals through Agon
       const threadParams: Record<string, unknown> = {
         cwd: config.cwd,
-        approvalPolicy: config.readOnly ? 'never' : 'auto-edit',
-        sandbox: config.readOnly ? 'read-only' : undefined,
+        approvalPolicy: 'ask',
         ephemeral: false,
       };
       if (config.systemPrompt) {
@@ -214,10 +239,25 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
       if (method === 'turn/completed') {
         turnDone = true;
         chunks.push({ type: 'done', content: '' });
+      } else if (method === 'tool/approval') {
+        // Approval request routed from Agon — emit as tool_call chunk
+        chunks.push({
+          type: 'tool_call',
+          content: params.tool ?? 'tool',
+          metadata: { input: params.command, status: 'running', approval: true },
+        });
       } else if (method === 'item/completed') {
         const item = params?.item;
         if (item?.type === 'agentMessage') {
           pushSnapshot(item.text ?? '');
+        }
+        if (item?.type === 'toolCall') {
+          // Native tool execution completed — show in UI
+          chunks.push({
+            type: 'tool_call',
+            content: item.name ?? item.type ?? 'tool',
+            metadata: { input: item.input ?? '', output: item.output ?? '', status: 'done' },
+          });
         }
         if (item?.type === 'enteredReviewMode') {
           pushSnapshot(item.review ?? '');

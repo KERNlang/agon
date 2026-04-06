@@ -1,5 +1,5 @@
 // @kern-source: app-dispatch:5
-import { resolveWorkingDir, extractImagesFromInput, buildImageAttachment, undoPatch, resumeChatSession, findSkill, renderSkillPrompt, configSet } from '@agon/core';
+import { resolveWorkingDir, extractImagesFromInput, buildImageAttachment, undoPatch, resumeChatSession, findSkill, renderSkillPrompt, configSet, startChatSession, currentBranch } from '@agon/core';
 
 // @kern-source: app-dispatch:6
 import type { ImageAttachment, ChatSession } from '@agon/core';
@@ -427,7 +427,35 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
   
     // ── UI commands ──
     case 'slash-list': cb.dispatch({ type: 'text', content: cb.allSlashCommands.map((c: any) => `${c.cmd.padEnd(16)} ${c.desc}`).join('\n') }); break;
-    case 'clear': cb.dispatch({ type: 'clear' }); break;
+    case 'clear': {
+      // Option 3: Save context before clearing, kill brain, reset everything
+      const oldChatId = cb.ctx.chatSession?.id ?? null;
+  
+      // 1. Kill Cesar's brain subprocess
+      if (cb.ctx.cesarSession) {
+        cb.ctx.cesarSession.close();
+        cb.ctx.setCesarSession(null);
+      }
+  
+      // 2. Clear visual output (blocks, streaming, clipboard)
+      cb.dispatch({ type: 'clear' });
+  
+      // 3. Start fresh chat session (old one is already persisted to ~/.agon/chats/)
+      const clearCwd = resolveWorkingDir();
+      let clearBranch = 'unknown';
+      try { clearBranch = currentBranch(clearCwd); } catch {}
+      cb.setChatSession(startChatSession({ cwd: clearCwd, branch: clearBranch }));
+  
+      // 4. Reset mode back to chat
+      cb.setMode('chat');
+  
+      // 5. Confirm with saved session reference
+      const clearMsg = oldChatId
+        ? `Session cleared. Previous chat saved as ${oldChatId} — use /chats resume ${oldChatId} to recover.`
+        : 'Session cleared.';
+      cb.dispatch({ type: 'success', message: clearMsg });
+      break;
+    }
     case 'help': cb.dispatch({ type: 'text', content: cb.allSlashCommands.map((c: any) => `${c.cmd.padEnd(16)} ${c.desc}`).join('\n') }); break;
     case 'exit': cb.exit(); return { handled: true, ranAsJob: true };
   

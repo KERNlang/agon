@@ -1,10 +1,14 @@
+// @kern-source: intent:1
 export interface SlashCommand {
   cmd: string;
   desc: string;
 }
 
+// @kern-source: intent:2
 
+// @kern-source: intent:3
 
+// @kern-source: intent:5
 export interface Intent {
   type: string;
   task: string|undefined;
@@ -31,6 +35,7 @@ export interface Intent {
   args: string|undefined;
 }
 
+// @kern-source: intent:30
 export const SLASH_COMMANDS: SlashCommand[] = [
   { cmd: '/forge',       desc: '<task> test with <cmd> [--hardened] — competitive code generation' },
   { cmd: '/brainstorm',  desc: '<question>              — confidence-bidding answers' },
@@ -69,32 +74,45 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { cmd: '/focus',       desc: '<id>                    — switch to background job output' },
   { cmd: '/explore',     desc: '                        — toggle exploration mode (read-only)' },
   { cmd: '/nero',        desc: '                        — toggle Nero mode (adversarial devil\'s advocate)' },
+  { cmd: '/clear',       desc: '                        — reset session (saves chat, clears brain)' },
   { cmd: '/help',        desc: '                        — show this help' },
   { cmd: '/exit',        desc: '                        — quit' },
 ];
 
+// @kern-source: intent:76
 export const FITNESS_PATTERN: RegExp = /\b(?:test with|test:|--test|fitness:)\s+(.+)/i;
 
+// @kern-source: intent:80
 export const LEADERBOARD_KEYWORDS: RegExp = /\b(leaderboard|elo|rankings?)\b/i;
 
+// @kern-source: intent:83
 export const HISTORY_KEYWORDS: RegExp = /\b(history|last runs?|recent)\b/i;
 
+// @kern-source: intent:86
 export const ENGINES_KEYWORDS: RegExp = /\b(engines?|what engines)\b/i;
 
+// @kern-source: intent:89
 export const CONFIG_KEYWORDS: RegExp = /\b(config|settings?)\b/i;
 
+// @kern-source: intent:92
 export const HELP_KEYWORDS: RegExp = /^(help|\?)$/i;
 
+// @kern-source: intent:95
 export const EXIT_KEYWORDS: RegExp = /^(exit|quit|bye)$/i;
 
+// @kern-source: intent:98
 export const SENTENCE_PREFIX: RegExp = /^(do|does|did|is|are|was|were|have|has|had|can|could|would|should|will|shall|i\s)/i;
 
+// @kern-source: intent:101
 export const QUESTION_PATTERN: RegExp = /^(what|how|why|where|when|who|which|explain|describe|tell|show|list|is there|does|can you explain|walk me through)\b/i;
 
+// @kern-source: intent:104
 export const CODE_TASK_PATTERN: RegExp = /^(fix|add|implement|refactor|debug|create|build|write|update|change|remove|delete|rename|move|test|deploy|install|upgrade|migrate|convert|extract|inline|optimize|port)\b/i;
 
+// @kern-source: intent:107
 export const CODE_ARTIFACT_PATTERN: RegExp = /(?:at \w+.*:\d+|\.[tj]sx?\b|\.[a-z]{2,4}:\d+|^[+-]{3}\s)/m;
 
+// @kern-source: intent:110
 export function classifyTask(input: string): 'code'|'question'|'ambiguous' {
   if (QUESTION_PATTERN.test(input)) return 'question';
   if (CODE_TASK_PATTERN.test(input)) return 'code';
@@ -102,6 +120,7 @@ export function classifyTask(input: string): 'code'|'question'|'ambiguous' {
   return 'ambiguous';
 }
 
+// @kern-source: intent:118
 function parseForgeInput(input: string): Intent {
   // Only match --hardened as a standalone flag (not inside task text or test args)
   const hardenedMatch = input.match(/^(--hardened)\s+(.*)$/i) || input.match(/^(.*?)\s+(--hardened)\s*$/i);
@@ -117,6 +136,7 @@ function parseForgeInput(input: string): Intent {
   return { type: 'forge', task, fitnessCmd, hardened } as Intent;
 }
 
+// @kern-source: intent:134
 function parseSlashCommand(input: string): Intent {
   const stripped = input.slice(1).trim();
   if (!stripped) return { type: 'slash-list' } as Intent;
@@ -329,6 +349,7 @@ function parseSlashCommand(input: string): Intent {
   }
 }
 
+// @kern-source: intent:347
 export function detectIntent(raw: string): Intent {
   const input = raw.trim();
   if (!input) return { type: 'unknown', input: '' } as Intent;

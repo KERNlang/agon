@@ -424,7 +424,7 @@ export function App({  }: {  }) {
             if (ghost) { setInputValue(inputValue + ghost + ' '); setInputKey((k: number) => k + 1); return; }
           }
           if (key.ctrl && input === 'l') {
-            dispatch({ type: 'clear' } as any); return;
+            handleSubmit('/clear'); return;
           }
           if (key.escape) {
             const decision = resolveEscapeAction({

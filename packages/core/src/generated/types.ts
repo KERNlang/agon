@@ -34,9 +34,9 @@ export interface EngineDefinition {
   schemaVersion: 1|2|3;
   id: string;
   displayName: string;
-  binary: string;
-  searchPaths: string[];
-  versionCmd: string[];
+  binary?: string;
+  searchPaths?: string[];
+  versionCmd?: string[];
   isLocal: boolean;
   tier: 'builtin'|'user';
   installHint?: string;
@@ -192,7 +192,7 @@ export const DEFAULT_AGON_CONFIG: Required<AgonConfig> = {
   approvalLevel: 'plan',
   agentTimeout: 600,
   agentPermissionLevel: 'full',
-  gauntletEnabled: true,
+  gauntletEnabled: false,
   gauntletMaxBreakers: 3,
   gauntletRepairTimeout: 300,
   corpusReplayLimit: 5,
@@ -247,6 +247,7 @@ export interface ForgeOptions {
   starter?: string;
   engines?: string[];
   dryRun?: boolean;
+  hardened?: boolean;
   signal?: AbortSignal;
 }
 

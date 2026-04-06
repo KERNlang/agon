@@ -66,7 +66,7 @@ function handleForgeEvent(event: any, plan: Plan, engineStatus: Record<string,st
   return plan;
 }
 
-export async function handleForge(task: string, fitnessCmd: string|null, dispatch: Dispatch, ctx: HandlerContext, existingPlan?: Plan): Promise<void> {
+export async function handleForge(task: string, fitnessCmd: string|null, dispatch: Dispatch, ctx: HandlerContext, existingPlan?: Plan, hardened?: boolean): Promise<void> {
   const forgeAbort = new AbortController();
   try {
     ensureAgonHome();
@@ -179,6 +179,7 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
           forgeDir,
           engines,
           context: projectCtx,
+          hardened: hardened ?? false,
           signal: forgeAbort.signal,
         },
         ctx.registry,

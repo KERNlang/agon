@@ -890,12 +890,19 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
             const resultRegex = /<tool_result\s+name="([^"]+)">([\s\S]*?)<\/tool_result>/g;
             let resultMatch;
             let resultIdx = 0;
-            const MAX_TOOL_RESULT_CHARS = 4000; // ~1000 tokens — prevent context explosion
+            // Keep tool results small in history — model can re-read if needed
+            const INLINE_LIMIT = 800; // ~200 tokens — short results inline, large ones summarized
             while ((resultMatch = resultRegex.exec(opts.message)) !== null) {
               const toolCallId = pendingToolCallIds[resultIdx] ?? `tool_${resultIdx}`;
-              let content = resultMatch[2].trim();
-              if (content.length > MAX_TOOL_RESULT_CHARS) {
-                content = content.slice(0, MAX_TOOL_RESULT_CHARS) + `\n... (truncated, ${content.length} chars total)`;
+              const toolName = resultMatch[1];
+              const raw = resultMatch[2].trim();
+              let content: string;
+              if (raw.length <= INLINE_LIMIT) {
+                content = raw;
+              } else {
+                // Summary: first 300 chars + stats. Model can call Read/Grep again for full content.
+                const lines = raw.split('\n').length;
+                content = raw.slice(0, 300) + `\n...\n[${lines} lines, ${raw.length} chars — use ${toolName} again for full content]`;
               }
               messageHistory.push({ role: 'tool', content, tool_call_id: toolCallId } as any);
               resultIdx++;
@@ -904,8 +911,9 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
             if (resultIdx === 0) {
               for (const tcId of pendingToolCallIds) {
                 let content = opts.message;
-                if (content.length > MAX_TOOL_RESULT_CHARS) {
-                  content = content.slice(0, MAX_TOOL_RESULT_CHARS) + `\n... (truncated, ${content.length} chars total)`;
+                if (content.length > INLINE_LIMIT) {
+                  const lines = content.split('\n').length;
+                  content = content.slice(0, 300) + `\n...\n[${lines} lines, ${content.length} chars — use tool again for full content]`;
                 }
                 messageHistory.push({ role: 'tool', content, tool_call_id: tcId } as any);
               }

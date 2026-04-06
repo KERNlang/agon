@@ -774,6 +774,7 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
                 if (chunk.type === 'done' || chunk.type === 'error') break;
               }
               dispatch({ type: 'spinner-stop' });
+              if (!nextResponse.trim()) return '[No response from engine]';
               return nextResponse.trim();
             },
             response,

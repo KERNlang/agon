@@ -783,6 +783,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               if (chunk.type === 'done' || chunk.type === 'error') break;
             }
             dispatch({ type: 'spinner-stop' });
+            if (!nextResponse.trim()) return '[No response from engine]';
             return nextResponse.trim();
           },
           response,
@@ -897,7 +898,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   }
 }
 
-// @kern-source: handlers-cesar-brain:891
+// @kern-source: handlers-cesar-brain:892
 export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatch, ctx: HandlerContext): Promise<ForgeJudgment|null> {
   // Need an alive Cesar session
       let session;
@@ -1011,7 +1012,7 @@ export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatc
       return judgment;
 }
 
-// @kern-source: handlers-cesar-brain:1006
+// @kern-source: handlers-cesar-brain:1007
 function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJudgment|null {
   // Strip confidence prefix (e.g. ~91%) before parsing structured output
   const stripped = parseConfidence(response).rest;
@@ -1055,7 +1056,7 @@ function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJud
   return { winner, strengths, convergencePlan, summary, shouldConverge };
 }
 
-// @kern-source: handlers-cesar-brain:1051
+// @kern-source: handlers-cesar-brain:1052
 export async function cesarConvergeForge(manifest: ForgeManifest, judgment: ForgeJudgment, dispatch: Dispatch, ctx: HandlerContext): Promise<string|null> {
   let session;
       try {

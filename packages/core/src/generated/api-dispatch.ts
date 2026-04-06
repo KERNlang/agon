@@ -181,3 +181,85 @@ export async function* apiStreamDispatch(config: ApiConfig, prompt: string, time
   return { exitCode: 0, stdout, stderr: '', durationMs: Date.now() - startTime, timedOut: false };
 }
 
+// @kern-source: api-dispatch:181
+export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages: Array<{role:string,content:string}>, timeout: number, signal?: AbortSignal): AsyncGenerator<string, DispatchResult, void> {
+  const apiKey = process.env[config.apiKeyEnv];
+  if (!apiKey) {
+    return { exitCode: 1, stdout: '', stderr: `Missing API key: set ${config.apiKeyEnv}`, durationMs: 0, timedOut: false };
+  }
+  
+  const startTime = Date.now();
+  const url = config.baseUrl.replace(/\/$/, '') + '/chat/completions';
+  
+  const body = JSON.stringify({
+    model: config.model,
+    messages,
+    max_tokens: config.maxTokens ?? 4096,
+    stream: true,
+  });
+  
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout * 1000);
+  if (signal) {
+    if (signal.aborted) { clearTimeout(timer); return { exitCode: 130, stdout: '', stderr: 'Aborted', durationMs: 0, timedOut: false }; }
+    signal.addEventListener('abort', () => controller.abort(), { once: true });
+  }
+  
+  let stdout = '';
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      body,
+      signal: controller.signal,
+    });
+  
+    clearTimeout(timer);
+  
+    if (!response.ok) {
+      const errText = await response.text().catch(() => '');
+      return { exitCode: 1, stdout: '', stderr: `API error ${response.status}: ${errText.slice(0, 500)}`, durationMs: Date.now() - startTime, timedOut: false };
+    }
+  
+    const reader = response.body?.getReader();
+    if (!reader) {
+      return { exitCode: 1, stdout: '', stderr: 'No response body', durationMs: Date.now() - startTime, timedOut: false };
+    }
+  
+    const decoder = new TextDecoder();
+    let buffer = '';
+  
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+  
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+  
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const data = line.slice(6).trim();
+        if (data === '[DONE]') continue;
+        try {
+          const parsed = JSON.parse(data) as { choices?: Array<{ delta?: { content?: string, reasoning_content?: string } }> };
+          const delta = parsed.choices?.[0]?.delta;
+          const chunk = delta?.content ?? delta?.reasoning_content;
+          if (chunk) {
+            stdout += chunk;
+            yield chunk;
+          }
+        } catch (_e) { /* skip malformed SSE lines */ }
+      }
+    }
+  } catch (err) {
+    const durationMs = Date.now() - startTime;
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      return { exitCode: signal?.aborted ? 130 : 124, stdout, stderr: 'Request timed out', durationMs, timedOut: !signal?.aborted };
+    }
+    return { exitCode: 1, stdout, stderr: `API stream failed: ${err instanceof Error ? err.message : String(err)}`, durationMs, timedOut: false };
+  }
+  
+  return { exitCode: 0, stdout, stderr: '', durationMs: Date.now() - startTime, timedOut: false };
+}
+

@@ -599,10 +599,16 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             // Switch spinner to "responding" mode
             dispatch({ type: 'spinner-update', message: 'Cesar responding…' });
             streaming = true;
-            dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: response });
+            // Strip <think> blocks before streaming to user
+            const cleanFirst = response.replace(/<think>[\s\S]*?<\/think>\s*/gi, '');
+            if (cleanFirst) dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: cleanFirst });
           } else {
             response += chunk.content;
-            dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: chunk.content });
+            // Don't stream content inside <think> blocks
+            if (!response.includes('<think>') || response.includes('</think>')) {
+              const cleanChunk = chunk.content.replace(/<\/?think>/gi, '');
+              if (cleanChunk) dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: cleanChunk });
+            }
           }
         }
       }
@@ -621,6 +627,9 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
     }
   
     response = response.trim();
+  
+    // Strip <think>...</think> reasoning blocks from API/reasoning models
+    response = response.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
   
     // Await eager tool promises and send results back to session
     if (eagerPromises.length > 0 && session.alive && !abort.signal.aborted) {
@@ -850,7 +859,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   }
 }
 
-// @kern-source: handlers-cesar-brain:844
+// @kern-source: handlers-cesar-brain:853
 export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatch, ctx: HandlerContext): Promise<ForgeJudgment|null> {
   // Need an alive Cesar session
       let session;
@@ -964,7 +973,7 @@ export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatc
       return judgment;
 }
 
-// @kern-source: handlers-cesar-brain:959
+// @kern-source: handlers-cesar-brain:968
 function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJudgment|null {
   // Strip confidence prefix (e.g. ~91%) before parsing structured output
   const stripped = parseConfidence(response).rest;
@@ -1008,7 +1017,7 @@ function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJud
   return { winner, strengths, convergencePlan, summary, shouldConverge };
 }
 
-// @kern-source: handlers-cesar-brain:1004
+// @kern-source: handlers-cesar-brain:1013
 export async function cesarConvergeForge(manifest: ForgeManifest, judgment: ForgeJudgment, dispatch: Dispatch, ctx: HandlerContext): Promise<string|null> {
   let session;
       try {

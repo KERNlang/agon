@@ -245,10 +245,12 @@ fn name=ensureCesarSession async=true params="ctx:HandlerContext" returns="Promi
       systemPrompt: systemParts.join('\n\n'),
       nativeTools,
       // Native tool execution callback — session calls this when API returns tool_calls
-      onToolCall: nativeTools ? async (name: string, args: Record<string, unknown>, callId: string) => {
+      onToolCall: nativeTools ? (() => {
+        // Shared state across all tool calls in this session — not recreated per call
         const fsc = new FileStateCache();
+        const toolResultCache = new Map<string, string>(); // dedup: same call → cached result
         const explorationMode = (ctx as any).explorationMode ?? false;
-        const toolCtx: ToolContext = {
+        const sharedToolCtx: ToolContext = {
           cwd: resolveWorkingDir(),
           readFileState: (fsc as any).cache,
           abortSignal: undefined,
@@ -257,24 +259,36 @@ fn name=ensureCesarSession async=true params="ctx:HandlerContext" returns="Promi
           allowedCommands: (config as any).allowedCommands ?? [],
           toolPermissions: (config as any).toolPermissions ?? {},
         };
-        const result = await executeToolCall(
-          { id: callId, name, input: args },
-          toolCtx,
-          toolRegistry,
-          async (tool: string, message: string) => {
-            return new Promise<boolean>((resolve) => {
-              const d = (ctx as any)._lastDispatch;
-              if (d) {
-                const cmd = (args as any).command ?? (args as any).file_path ?? JSON.stringify(args);
-                d({ type: 'permission-ask', tool, command: cmd, reason: message, resolve } as any);
-              } else {
-                resolve(true);
-              }
-            });
-          },
-        );
-        return result.result.ok ? result.result.content : (result.result.error ?? 'Tool execution failed');
-      } : undefined,
+        return async (name: string, args: Record<string, unknown>, callId: string) => {
+          // Dedup: if exact same tool+args was called before, return cached result
+          const cacheKey = `${name}:${JSON.stringify(args)}`;
+          const cached = toolResultCache.get(cacheKey);
+          if (cached !== undefined) return cached;
+
+          const result = await executeToolCall(
+            { id: callId, name, input: args },
+            sharedToolCtx,
+            toolRegistry,
+            async (tool: string, message: string) => {
+              return new Promise<boolean>((resolve) => {
+                const d = (ctx as any)._lastDispatch;
+                if (d) {
+                  const cmd = (args as any).command ?? (args as any).file_path ?? JSON.stringify(args);
+                  d({ type: 'permission-ask', tool, command: cmd, reason: message, resolve } as any);
+                } else {
+                  resolve(true);
+                }
+              });
+            },
+          );
+          const output = result.result.ok ? result.result.content : (result.result.error ?? 'Tool execution failed');
+          // Cache read-only results (Read, Grep, Glob, Find). Don't cache Bash/Edit/Write.
+          if (['Read', 'Grep', 'Glob'].includes(name)) {
+            toolResultCache.set(cacheKey, output);
+          }
+          return output;
+        };
+      })() : undefined,
       // Route engine tool approvals through Agon's permission system — same rules for ALL engines
       onApproval: async (tool: string, command: string) => {
         const cfg = ctx.config;

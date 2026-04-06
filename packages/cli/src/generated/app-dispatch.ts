@@ -138,7 +138,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
       }
     }
     if (result.responded) return false;
-  } catch { /* Cesar brain threw — do NOT fall through to another engine */ }
+  } catch (e) { console.warn(`[agon] dispatch: Cesar brain threw: ${e instanceof Error ? e.message : String(e)}`); }
   
   // Cesar didn't respond — try fresh CLI dispatch to Cesar engine
   const cesarConfig = cb.ctx.config;
@@ -166,7 +166,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
       appendMessage(cb.ctx.chatSession, { role: 'engine', engineId: cesarId, content: freshResult.stdout.trim(), timestamp: new Date().toISOString() });
       return false;
     }
-  } catch { /* Cesar truly unavailable */ }
+  } catch (e) { console.warn(`[agon] dispatch: Cesar fallback failed: ${e instanceof Error ? e.message : String(e)}`); }
   
   // Cesar completely unavailable — pick next best engine as acting Cesar with full context
   const available = cb.ctx.registry.availableIds();
@@ -202,7 +202,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
       appendMessage(cb.ctx.chatSession, { role: 'engine', engineId: actingCesar, content: `[acting-cesar] ${actingResult.stdout.trim()}`, timestamp: new Date().toISOString() });
       return false;
     }
-  } catch { /* all engines failed */ }
+  } catch (e) { console.warn(`[agon] dispatch: acting Cesar failed: ${e instanceof Error ? e.message : String(e)}`); }
   
   cb.dispatch({ type: 'error', message: 'All engines unavailable. Check /engines.' });
   return false;

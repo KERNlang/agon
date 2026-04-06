@@ -1,15 +1,21 @@
+// @kern-source: handlers-provider:1
 import { writeFileSync, mkdirSync, unlinkSync, readdirSync, readFileSync, existsSync } from 'node:fs';
 
+// @kern-source: handlers-provider:2
 import { join } from 'node:path';
 
+// @kern-source: handlers-provider:3
 import { homedir } from 'node:os';
 
+// @kern-source: handlers-provider:4
 import type { Dispatch, HandlerContext } from '../handlers/types.js';
 
+// @kern-source: handlers-provider:6
 function enginesDir(): string {
   return join(homedir(), '.agon', 'engines');
 }
 
+// @kern-source: handlers-provider:11
 export async function handleProviderAdd(dispatch: Dispatch, ctx: HandlerContext, args: string): Promise<void> {
   // Parse: /provider add <id> <baseUrl> <apiKeyEnv> <model>
   const parts = args.trim().split(/\s+/);
@@ -58,6 +64,7 @@ export async function handleProviderAdd(dispatch: Dispatch, ctx: HandlerContext,
   dispatch({ type: 'info', message: `Use: /use ${id}` });
 }
 
+// @kern-source: handlers-provider:60
 export function handleProviderRemove(dispatch: Dispatch, ctx: HandlerContext, id: string): void {
   if (!id) {
     dispatch({ type: 'error', message: 'Usage: /provider remove <id>' });
@@ -76,6 +83,7 @@ export function handleProviderRemove(dispatch: Dispatch, ctx: HandlerContext, id
   dispatch({ type: 'success', message: `Removed provider: ${id}` });
 }
 
+// @kern-source: handlers-provider:79
 export function handleProviderList(dispatch: Dispatch): void {
   const dir = enginesDir();
   if (!existsSync(dir)) {
@@ -98,7 +106,7 @@ export function handleProviderList(dispatch: Dispatch): void {
         const hasKey = !!process.env[def.api.apiKeyEnv];
         rows.push([def.id, def.api.model, def.api.baseUrl, hasKey ? 'ready' : 'no key']);
       }
-    } catch (_e) { /* skip malformed */ }
+    } catch (_e) { console.warn(`[agon] provider: failed to load ${file}: ${_e instanceof Error ? _e.message : String(_e)}`); }
   }
   if (rows.length > 0) {
     dispatch({ type: 'table', headers: ['ID', 'Model', 'API URL', 'Status'], rows });
@@ -106,6 +114,7 @@ export function handleProviderList(dispatch: Dispatch): void {
   dispatch({ type: 'info', message: 'Add: /provider add <id> <baseUrl> <API_KEY_ENV> <model>' });
 }
 
+// @kern-source: handlers-provider:110
 export async function handleProvider(action: string, args: string, dispatch: Dispatch, ctx: HandlerContext): Promise<void> {
   switch (action) {
     case 'add': return handleProviderAdd(dispatch, ctx, args);

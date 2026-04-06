@@ -1,0 +1,109 @@
+/**
+ * Zod schemas for engine configuration validation.
+ * External library binding — stays TypeScript per CLAUDE.md.
+ *
+ * Validates engine/*.json configs at load time, killing silent failures.
+ * Schema mirrors EngineDefinition from types.kern.
+ */
+import { z } from 'zod';
+
+export const EngineModeConfigSchema = z.object({
+  args: z.array(z.string()),
+  stdin: z.boolean().optional(),
+});
+
+export const EngineModelConfigSchema = z.object({
+  configKey: z.string().optional(),
+  flag: z.string().optional(),
+  default: z.union([z.string(), z.null()]).optional(),
+});
+
+export const EngineEnvVarSchema = z.object({
+  required: z.boolean().optional(),
+  default: z.string().optional(),
+});
+
+export const CompanionConfigSchema = z.object({
+  protocol: z.enum(['jsonrpc', 'acp', 'structured-cli']),
+  serverCmd: z.array(z.string()),
+  features: z.object({
+    threadResume: z.boolean().optional(),
+    nativeReview: z.boolean().optional(),
+    structuredOutput: z.boolean().optional(),
+  }).optional(),
+});
+
+export const ApiConfigSchema = z.object({
+  baseUrl: z.string().url(),
+  apiKeyEnv: z.string(),
+  model: z.string(),
+  maxTokens: z.number().int().positive().optional(),
+  format: z.enum(['openai', 'anthropic']).optional(),
+});
+
+export const EngineDefinitionSchema = z.object({
+  schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+  id: z.string().min(1),
+  displayName: z.string().min(1),
+  binary: z.string().optional(),
+  searchPaths: z.array(z.string()).optional(),
+  versionCmd: z.array(z.string()).optional(),
+  isLocal: z.boolean(),
+  tier: z.enum(['builtin', 'user']),
+  installHint: z.string().optional(),
+  timeout: z.number().int().positive(),
+  exec: EngineModeConfigSchema.optional(),
+  review: EngineModeConfigSchema.optional(),
+  agent: EngineModeConfigSchema.optional(),
+  model: EngineModelConfigSchema.optional(),
+  env: z.record(z.string(), EngineEnvVarSchema).optional(),
+  test: z.object({ args: z.array(z.string()) }).optional(),
+  modes: z.array(z.enum(['exec', 'review', 'agent'])).optional(),
+  modelConfigKey: z.string().optional(),
+  adapterType: z.string().optional(),
+  capabilities: z.array(z.string()).optional(),
+  imageFlag: z.string().optional(),
+  systemPromptFlag: z.string().optional(),
+  api: ApiConfigSchema.optional(),
+  companion: CompanionConfigSchema.optional(),
+});
+
+export type ValidatedEngineDefinition = z.infer<typeof EngineDefinitionSchema>;
+
+/**
+ * Validate an engine config, returning the parsed result or a descriptive error.
+ * Used by EngineRegistry.loadDir() to replace silent JSON.parse failures.
+ */
+export function validateEngineConfig(
+  raw: unknown,
+  filename: string,
+): { ok: true; data: ValidatedEngineDefinition } | { ok: false; error: string } {
+  const result = EngineDefinitionSchema.safeParse(raw);
+  if (result.success) {
+    return { ok: true, data: result.data };
+  }
+  const issues = result.error.issues
+    .map((i) => `  ${i.path.join('.')}: ${i.message}`)
+    .join('\n');
+  return { ok: false, error: `Invalid engine config ${filename}:\n${issues}` };
+}
+
+/**
+ * Validate all engine configs in a directory.
+ * Returns valid engines and a list of errors for invalid ones.
+ */
+export function validateEngineDir(
+  configs: Array<{ filename: string; raw: unknown }>,
+): { valid: ValidatedEngineDefinition[]; errors: string[] } {
+  const valid: ValidatedEngineDefinition[] = [];
+  const errors: string[] = [];
+  for (const { filename, raw } of configs) {
+    const result = validateEngineConfig(raw, filename);
+    if (result.ok) {
+      valid.push(result.data);
+    } else {
+      errors.push(result.error);
+    }
+  }
+  return { valid, errors };
+}

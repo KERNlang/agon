@@ -17,6 +17,7 @@ Example — to run a command:
 <tool name="Bash">{"command":"npm test"}</tool>
 
 ALWAYS use tools. NEVER say "let me look at" without calling Read/Grep. NEVER describe edits without calling Edit.
+NEVER use Bash for searching — use Grep for content search, Glob for file search. Bash is ONLY for running commands (build, test, git).
 Keep going until the task is DONE. Don't stop after reading one file — chain tool calls: Read → analyze → Read more → Edit → Bash to verify. Complete the full task in one turn.`
   >>>
 

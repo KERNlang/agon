@@ -76,8 +76,15 @@ describe('Cesar Brain', () => {
       expect(rest).toBe('Here is my direct answer to your question.');
     });
 
-    it('returns null for marker not at start', () => {
-      const { action } = parseSuggestion('I think [SUGGEST:build] might help here.');
+    it('finds marker within first 150 chars even with leading text', () => {
+      const { action, rest } = parseSuggestion('I think [SUGGEST:build] might help here.');
+      expect(action).toBe('build');
+      expect(rest).toBe('might help here.');
+    });
+
+    it('returns null for marker beyond 150 chars', () => {
+      const padding = 'x'.repeat(150);
+      const { action } = parseSuggestion(`${padding} [SUGGEST:build] too far`);
       expect(action).toBeNull();
     });
 

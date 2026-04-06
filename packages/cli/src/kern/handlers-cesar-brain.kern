@@ -72,15 +72,17 @@ interface name=SuggestionResult
   field name=membersPerSide type=number optional=true
 
 fn name=parseSuggestion params="response:string" returns="SuggestionResult"
-  doc "Parse [SUGGEST:mode-name] or legacy [DELEGATE:mode] from response start."
+  doc "Parse [SUGGEST:mode-name] or legacy [DELEGATE:mode] from response."
   handler <<<
-    // Match [SUGGEST:compound-name] or legacy [DELEGATE:mode]
-    // Allow leading punctuation/whitespace after confidence was stripped (e.g. ". [SUGGEST:build]")
-    const match = response.match(/^[\s.,;:!?\-—]*\[(SUGGEST|DELEGATE):([\w-]+)\]\s*/i);
+    // Search for [SUGGEST:mode] anywhere in the first 150 chars — engines put
+    // varying amounts of text between confidence and the marker.
+    const searchArea = response.slice(0, 150);
+    const match = searchArea.match(/\[(SUGGEST|DELEGATE):([\w-]+)\]/i);
     if (!match) return { action: null, rest: response };
 
     const raw = match[2].toLowerCase();
-    const rest = response.slice(match[0].length).trim();
+    const idx = response.indexOf(match[0]);
+    const rest = response.slice(idx + match[0].length).trim();
 
     // Parse compound mode name into action + options
     let action = raw;

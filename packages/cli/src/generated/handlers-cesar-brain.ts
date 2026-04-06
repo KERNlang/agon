@@ -83,13 +83,15 @@ export interface SuggestionResult {
 
 // @kern-source: handlers-cesar-brain:74
 export function parseSuggestion(response: string): SuggestionResult {
-  // Match [SUGGEST:compound-name] or legacy [DELEGATE:mode]
-  // Allow leading punctuation/whitespace after confidence was stripped (e.g. ". [SUGGEST:build]")
-  const match = response.match(/^[\s.,;:!?\-—]*\[(SUGGEST|DELEGATE):([\w-]+)\]\s*/i);
+  // Search for [SUGGEST:mode] anywhere in the first 150 chars — engines put
+  // varying amounts of text between confidence and the marker.
+  const searchArea = response.slice(0, 150);
+  const match = searchArea.match(/\[(SUGGEST|DELEGATE):([\w-]+)\]/i);
   if (!match) return { action: null, rest: response };
   
   const raw = match[2].toLowerCase();
-  const rest = response.slice(match[0].length).trim();
+  const idx = response.indexOf(match[0]);
+  const rest = response.slice(idx + match[0].length).trim();
   
   // Parse compound mode name into action + options
   let action = raw;
@@ -125,7 +127,7 @@ export function parseSuggestion(response: string): SuggestionResult {
   return { action, rest, hardened, tribunalMode, team };
 }
 
-// @kern-source: handlers-cesar-brain:119
+// @kern-source: handlers-cesar-brain:121
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
   const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
@@ -344,7 +346,7 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
   return session;
 }
 
-// @kern-source: handlers-cesar-brain:338
+// @kern-source: handlers-cesar-brain:340
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}> {
   const abort = new AbortController();
   const _turnStart = Date.now();
@@ -1086,7 +1088,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   }
 }
 
-// @kern-source: handlers-cesar-brain:1080
+// @kern-source: handlers-cesar-brain:1082
 export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatch, ctx: HandlerContext): Promise<ForgeJudgment|null> {
   // Need an alive Cesar session
       let session;
@@ -1200,7 +1202,7 @@ export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatc
       return judgment;
 }
 
-// @kern-source: handlers-cesar-brain:1195
+// @kern-source: handlers-cesar-brain:1197
 function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJudgment|null {
   // Strip confidence prefix (e.g. ~91%) before parsing structured output
   const stripped = parseConfidence(response).rest;
@@ -1244,7 +1246,7 @@ function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJud
   return { winner, strengths, convergencePlan, summary, shouldConverge };
 }
 
-// @kern-source: handlers-cesar-brain:1240
+// @kern-source: handlers-cesar-brain:1242
 export async function cesarConvergeForge(manifest: ForgeManifest, judgment: ForgeJudgment, dispatch: Dispatch, ctx: HandlerContext): Promise<string|null> {
   let session;
       try {

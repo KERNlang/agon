@@ -1,5 +1,7 @@
+// @kern-source: api-dispatch:1
 import type { DispatchResult } from './types.js';
 
+// @kern-source: api-dispatch:3
 export interface ApiConfig {
   baseUrl: string;
   apiKeyEnv: string;
@@ -7,6 +9,7 @@ export interface ApiConfig {
   maxTokens?: number;
 }
 
+// @kern-source: api-dispatch:9
 export async function apiDispatch(config: ApiConfig, prompt: string, timeout: number, signal?: AbortSignal, systemPrompt?: string): Promise<DispatchResult> {
   const apiKey = process.env[config.apiKeyEnv];
   if (!apiKey) {
@@ -20,7 +23,7 @@ export async function apiDispatch(config: ApiConfig, prompt: string, timeout: nu
   }
   
   const startTime = Date.now();
-  const url = config.baseUrl.replace(/\/$/, '') + '/v1/chat/completions';
+  const url = config.baseUrl.replace(/\/$/, '') + '/chat/completions';
   
   // Separate system and user messages for cache-friendly dispatch.
   // System messages contain stable instructions that APIs can cache across calls.
@@ -89,6 +92,7 @@ export async function apiDispatch(config: ApiConfig, prompt: string, timeout: nu
   }
 }
 
+// @kern-source: api-dispatch:92
 export async function* apiStreamDispatch(config: ApiConfig, prompt: string, timeout: number, signal?: AbortSignal, systemPrompt?: string): AsyncGenerator<string, DispatchResult, void> {
   const apiKey = process.env[config.apiKeyEnv];
   if (!apiKey) {
@@ -96,7 +100,7 @@ export async function* apiStreamDispatch(config: ApiConfig, prompt: string, time
   }
   
   const startTime = Date.now();
-  const url = config.baseUrl.replace(/\/$/, '') + '/v1/chat/completions';
+  const url = config.baseUrl.replace(/\/$/, '') + '/chat/completions';
   
   const messages: Array<{role: string, content: string}> = [];
   if (systemPrompt) {

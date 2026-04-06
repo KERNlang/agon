@@ -74,7 +74,7 @@ import { cleanInputValue, cleanSubmitValue, findInputChange, navigateHistory, re
 import { handleReviewAction } from '../generated/app-review.js';
 
 // @kern-source: ui-app:29
-import { SpinnerBlock, EngineProgressView, StatusLine, StatusBar, OutputBlockView, SlashPicker, EnginePicker, ModelPicker, ReviewBlock, BackgroundJobRail, RenderedSegments, contentWidth, engineColor } from '../components.js';
+import { SpinnerBlock, EngineProgressView, StatusLine, StatusBar, OutputBlockView, SlashPicker, EnginePicker, ModelPicker, ReviewBlock, BackgroundJobRail, RenderedSegments, CesarPicker, contentWidth, engineColor } from '../components.js';
 
 // @kern-source: ui-app:30
 import type { OutputBlock, ReviewEvent } from '../components.js';
@@ -86,7 +86,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // @kern-source: ui-app:33
-import { readdirSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readdirSync, writeFileSync, mkdirSync, unlinkSync } from 'node:fs';
 
 // @kern-source: ui-app:34
 import { homedir } from 'node:os';
@@ -124,6 +124,7 @@ export function App({  }: {  }) {
   const [modelPickerOpen, setModelPickerOpen] = useState<boolean>(false);
   const [modelPickerEntries, setModelPickerEntries] = useState<any[]>([]);
   const [modelPickerLoading, setModelPickerLoading] = useState<boolean>(false);
+  const [cesarPickerOpen, setCesarPickerOpen] = useState<boolean>(false);
   const [streamingText, setStreamingText] = useState<any>(null);
   const [pendingImages, setPendingImages] = useState<ImageAttachment[]>([]);
   const [reviewEvent, setReviewEvent] = useState<ReviewEvent|null>(null);
@@ -309,7 +310,7 @@ export function App({  }: {  }) {
               fn().then(() => { jobManager.complete(job.id); setJobList([...jobManager.list()]); })
                 .catch((err: any) => { jobManager.fail(job.id, err instanceof Error ? err.message : String(err)); setJobList([...jobManager.list()]); dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); });
             },
-            setMode, setPendingImages, setSessionEngines, setEnginePickerOpen, setModelPickerOpen, setModelPickerEntries, setModelPickerLoading, setChatSession, setLastUndoToken, askQuestion, exit: () => process.exit(0),
+            setMode, setPendingImages, setSessionEngines, setEnginePickerOpen, setModelPickerOpen, setModelPickerEntries, setModelPickerLoading, setCesarPickerOpen, setChatSession, setLastUndoToken, askQuestion, exit: () => process.exit(0),
             allImages, allSlashCommands: allSlashCommands, dynamicSkills, mode, lastUndoToken, sessionStartTime, jobManager,
             explorationMode, setExplorationMode,
             neroMode, setNeroMode,
@@ -396,7 +397,7 @@ export function App({  }: {  }) {
   const _inputHandlerRef = useRef<(input: string, key: any) => void>(() => {});
   _inputHandlerRef.current = (input: string, key: any) => {
           // When model picker is open, let it handle all input (except Ctrl+C)
-          if (modelPickerOpen) {
+          if (modelPickerOpen || cesarPickerOpen) {
             if (input === '\x03' || (key.ctrl && input === 'c')) { process.exit(0); }
             return;
           }
@@ -515,8 +516,16 @@ export function App({  }: {  }) {
           {reviewEvent && <ReviewBlock event={reviewEvent} onAction={handleReviewActionCb} />}
           {enginePickerOpen && (
             <EnginePicker available={registry.availableIds()} initialSelected={sessionEngines ?? registry.availableIds()}
+              userEngines={new Set(registry.list().filter((e: any) => e.tier === 'user').map((e: any) => e.id))}
               onConfirm={(selected: string[]) => { setEnginePickerOpen(false); setSessionEngines(selected); configSet('forgeEnabledEngines', selected); dispatch({ type: 'success', message: `Active engines: ${selected.join(', ')}` } as any); }}
-              onCancel={() => setEnginePickerOpen(false)} />
+              onCancel={() => setEnginePickerOpen(false)}
+              onRemove={(engineId: string) => {
+                const engPath = join(homedir(), '.agon', 'engines', `${engineId}.json`);
+                try { unlinkSync(engPath); } catch (_e) {}
+                registry.unregister(engineId);
+                setSessionEngines((prev: string[]|null) => prev ? prev.filter((id: string) => id !== engineId) : null);
+                dispatch({ type: 'success', message: `Removed: ${engineId}` } as any);
+              }} />
           )}
           {modelPickerOpen && (
             <ModelPicker entries={modelPickerEntries} loading={modelPickerLoading}
@@ -531,10 +540,23 @@ export function App({  }: {  }) {
               }}
               onCancel={() => setModelPickerOpen(false)} />
           )}
+          {cesarPickerOpen && (
+            <CesarPicker
+              engines={registry.availableIds()}
+              currentCesar={(loadConfig() as any).cesarEngine ?? loadConfig().forgeFixedStarter ?? 'claude'}
+              onSelect={(engineId: string) => {
+                setCesarPickerOpen(false);
+                configSet('cesarEngine', engineId);
+                if (cesarSession) { cesarSession.close(); setCesarSession(null); }
+                dispatch({ type: 'success', message: `Cesar brain set to: ${engineId}` } as any);
+                dispatch({ type: 'info', message: 'Conversation context + memory preserved.' } as any);
+              }}
+              onCancel={() => setCesarPickerOpen(false)} />
+          )}
           {liveSpinner && (mode === 'chat'
             ? <StatusLine startTime={chatStartTimeRef.current || Date.now()} engineId={liveSpinner.engineId} color={liveSpinner.color} />
             : <SpinnerBlock message={liveSpinner.message} color={liveSpinner.color} />)}
-          {!enginePickerOpen && !modelPickerOpen && (
+          {!enginePickerOpen && !modelPickerOpen && !cesarPickerOpen && (
             <Box flexDirection="column" paddingX={1} marginTop={1}>
               {slashPickerOpen && <SlashPicker commands={allSlashCommands} onSelect={handleSlashSelect} onCancel={() => setSlashPickerOpen(false)} />}
               {pendingImages.length > 0 && (<Box><Text color="#22d3ee">{'📎 '}</Text>{pendingImages.map((img: any, i: number) => (<Text key={i} dimColor>{img.filename}{i < pendingImages.length - 1 ? ', ' : ''}</Text>))}</Box>)}
@@ -571,7 +593,7 @@ export function App({  }: {  }) {
 }
 
 
-// @kern-source: ui-app:546
+// @kern-source: ui-app:568
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

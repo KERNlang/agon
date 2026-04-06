@@ -62,6 +62,11 @@ service name=EngineRegistry
       this.engines.set(engine.id, engine);
     >>>
 
+  method name=unregister params="id:string" returns=void
+    handler <<<
+      this.engines.delete(id);
+    >>>
+
   method name=get params="id:string" returns=EngineDefinition
     handler <<<
       const engine = this.engines.get(id);

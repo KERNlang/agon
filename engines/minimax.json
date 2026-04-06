@@ -7,7 +7,7 @@
   "timeout": 180,
 
   "api": {
-    "baseUrl": "https://api.minimax.chat",
+    "baseUrl": "https://api.minimax.chat/v1",
     "apiKeyEnv": "MINIMAX_API_KEY",
     "model": "MiniMax-M1",
     "maxTokens": 4096

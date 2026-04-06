@@ -151,6 +151,12 @@ fn name=searchModels params="entries:ModelEntry[], query:string" returns="ModelE
     });
   >>>
 
+fn name=normalizeBaseUrl params="url:string" returns=string
+  handler <<<
+    // Strip /anthropic/ path segments — our apiDispatch uses OpenAI format only
+    return url.replace(/\/anthropic(\/|$)/, '$1');
+  >>>
+
 fn name=modelEntryToEngineDef params="entry:ModelEntry" returns="Record<string, any>"
   handler <<<
     return {
@@ -163,7 +169,7 @@ fn name=modelEntryToEngineDef params="entry:ModelEntry" returns="Record<string, 
       exec: { args: [] },
       review: { args: [] },
       api: {
-        baseUrl: entry.baseUrl,
+        baseUrl: normalizeBaseUrl(entry.baseUrl),
         apiKeyEnv: entry.apiKeyEnv,
         model: entry.modelId,
         maxTokens: Math.min(entry.contextWindow ? Math.floor(entry.contextWindow / 4) : 4096, 16384),

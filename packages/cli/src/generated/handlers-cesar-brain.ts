@@ -560,13 +560,12 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 });
               }
   
-              // Auto-activate Nero for subsequent turns — Cesar enters adversarial mode
-              // Defer session kill to after the stream ends (avoid truncating mid-output)
+              // Auto-activate Nero — inject mode switch into live session (no reboot, preserves context)
               if (!(ctx as any).neroMode && ctx.setNeroMode) {
                 ctx.setNeroMode(true);
                 (ctx as any).neroMode = true;
-                (ctx as any)._autoNero = true; // track that Nero was auto-enabled, not manual
-                (ctx as any)._neroKillPending = true; // deferred — kill after stream completes
+                (ctx as any)._autoNero = true;
+                (ctx as any)._neroInjectPending = true; // inject after stream completes
                 dispatch({ type: 'info', message: '⚔ Nero activated — Cesar will challenge on next turn' });
               }
               // DON'T block — let Cesar continue streaming
@@ -626,12 +625,15 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   
     response = response.trim();
   
-    // Deferred Nero session kill — now safe since stream is done
-    if ((ctx as any)._neroKillPending) {
-      (ctx as any)._neroKillPending = false;
-      if (ctx.cesarSession) {
-        ctx.cesarSession.close();
-        ctx.setCesarSession(null);
+    // Inject Nero mode into live session — no reboot, full context preserved
+    if ((ctx as any)._neroInjectPending && session.alive && !abort.signal.aborted) {
+      (ctx as any)._neroInjectPending = false;
+      const neroMsg = '[SYSTEM] Mode switch: NERO active. Be adversarial — challenge assumptions, probe weaknesses, ask hard questions before implementing. Suggest tribunal-red-team for risky changes.';
+      // Fire-and-forget: inject into session so next user turn sees it
+      const neroGen = session.send({ message: neroMsg, signal: abort.signal });
+      for await (const chunk of neroGen) {
+        if (chunk.type === 'done' || chunk.type === 'error') break;
+        // Discard any response — this is just a mode injection
       }
     }
   
@@ -940,7 +942,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   }
 }
 
-// @kern-source: handlers-cesar-brain:934
+// @kern-source: handlers-cesar-brain:936
 export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatch, ctx: HandlerContext): Promise<ForgeJudgment|null> {
   // Need an alive Cesar session
       let session;
@@ -1054,7 +1056,7 @@ export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatc
       return judgment;
 }
 
-// @kern-source: handlers-cesar-brain:1049
+// @kern-source: handlers-cesar-brain:1051
 function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJudgment|null {
   // Strip confidence prefix (e.g. ~91%) before parsing structured output
   const stripped = parseConfidence(response).rest;
@@ -1098,7 +1100,7 @@ function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJud
   return { winner, strengths, convergencePlan, summary, shouldConverge };
 }
 
-// @kern-source: handlers-cesar-brain:1094
+// @kern-source: handlers-cesar-brain:1096
 export async function cesarConvergeForge(manifest: ForgeManifest, judgment: ForgeJudgment, dispatch: Dispatch, ctx: HandlerContext): Promise<string|null> {
   let session;
       try {

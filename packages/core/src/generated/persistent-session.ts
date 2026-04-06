@@ -881,12 +881,25 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
         // Append user message (or tool results on subsequent turns)
         messageHistory.push({ role: 'user', content: opts.message });
   
-        // Truncate history safety: keep system + last 48 messages (24 round trips)
-        if (messageHistory.length > 50) {
-          const system = messageHistory[0].role === 'system' ? [messageHistory[0]] : [];
-          const recent = messageHistory.slice(-(50 - system.length));
+        // Smart context window: summarize old messages to control token growth.
+        // Keep system prompt + last 10 messages verbatim. Summarize older ones.
+        if (messageHistory.length > 14) {
+          const hasSystem = messageHistory[0].role === 'system';
+          const system = hasSystem ? [messageHistory[0]] : [];
+          const cutoff = hasSystem ? 1 : 0;
+          const old = messageHistory.slice(cutoff, -10);
+          const recent = messageHistory.slice(-10);
+  
+          // Compress old messages into a single summary
+          const summaryLines = old.map((m: {role:string, content:string}) => {
+            const label = m.role === 'user' ? 'U' : 'A';
+            const text = m.content.length > 150 ? m.content.slice(0, 150) + '…' : m.content;
+            return `${label}: ${text}`;
+          });
+          const summary = { role: 'user', content: `[Earlier conversation summary — ${old.length} messages]\n${summaryLines.join('\n')}` };
+  
           messageHistory.length = 0;
-          messageHistory.push(...system, ...recent);
+          messageHistory.push(...system, summary, ...recent);
         }
   
         let fullResponse = '';

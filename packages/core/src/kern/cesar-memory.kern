@@ -112,14 +112,14 @@ fn name=createCesarMemory params="" returns=CesarMemory
             const raw = readFileSync(persistPath, 'utf-8');
             persistent = JSON.parse(raw);
           }
-        } catch { persistent = []; }
+        } catch (e) { console.warn(`[agon] cesar-memory: failed to load persistent memory, resetting: ${e instanceof Error ? e.message : String(e)}`); persistent = []; }
       },
 
       save() {
         try {
           ensureAgonHome();
           writeFileSync(persistPath, JSON.stringify(persistent, null, 2), 'utf-8');
-        } catch { /* ignore write errors */ }
+        } catch (e) { console.warn(`[agon] cesar-memory: failed to persist memory: ${e instanceof Error ? e.message : String(e)}`); }
       },
     };
 

@@ -1,21 +1,29 @@
+// @kern-source: file-history:1
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, unlinkSync, statSync } from 'node:fs';
 
+// @kern-source: file-history:2
 import { join, dirname, relative, resolve } from 'node:path';
 
+// @kern-source: file-history:3
 import { randomUUID } from 'node:crypto';
 
+// @kern-source: file-history:4
 import { AGON_HOME, ensureAgonHome } from '../config.js';
 
+// @kern-source: file-history:6
 export const SNAPSHOTS_DIR: string = join(AGON_HOME, 'snapshots');
 
+// @kern-source: file-history:11
 export const MAX_SNAPSHOTS: number = 50;
 
+// @kern-source: file-history:14
 export interface FileSnapshot {
   path: string;
   content: string;
   timestamp: number;
 }
 
+// @kern-source: file-history:19
 export interface HistoryEntry {
   id: string;
   label: string;
@@ -24,11 +32,13 @@ export interface HistoryEntry {
   createdAt: string;
 }
 
+// @kern-source: file-history:26
 function ensureSnapshotsDir(): void {
   ensureAgonHome();
   mkdirSync(SNAPSHOTS_DIR, { recursive: true });
 }
 
+// @kern-source: file-history:32
 export function takeSnapshot(label: string, cwd: string, filePaths: string[]): HistoryEntry {
   ensureSnapshotsDir();
   
@@ -65,6 +75,7 @@ export function takeSnapshot(label: string, cwd: string, filePaths: string[]): H
   return entry;
 }
 
+// @kern-source: file-history:70
 export function revertSnapshot(id: string): {ok:boolean, error?:string, filesReverted:number} {
   ensureSnapshotsDir();
   const entryPath = join(SNAPSHOTS_DIR, `${id}.json`);
@@ -100,11 +111,12 @@ export function revertSnapshot(id: string): {ok:boolean, error?:string, filesRev
   }
   
   // Remove the used snapshot
-  try { unlinkSync(entryPath); } catch {}
+  try { unlinkSync(entryPath); } catch (e) { console.warn(`[agon] file-history: failed to remove snapshot ${entryPath}: ${e instanceof Error ? e.message : String(e)}`); }
   
   return { ok: true, filesReverted: reverted };
 }
 
+// @kern-source: file-history:112
 export function listSnapshots(): HistoryEntry[] {
   ensureSnapshotsDir();
   try {
@@ -121,6 +133,7 @@ export function listSnapshots(): HistoryEntry[] {
   }
 }
 
+// @kern-source: file-history:129
 function pruneSnapshots(): void {
   try {
     const files = readdirSync(SNAPSHOTS_DIR).filter((f: string) => f.endsWith('.json')).sort();
@@ -133,6 +146,7 @@ function pruneSnapshots(): void {
   } catch {}
 }
 
+// @kern-source: file-history:142
 export function getLatestSnapshotId(): string|null {
   ensureSnapshotsDir();
   try {

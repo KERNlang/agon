@@ -104,7 +104,7 @@ fn name=revertSnapshot params="id:string" returns="{ok:boolean, error?:string, f
     }
 
     // Remove the used snapshot
-    try { unlinkSync(entryPath); } catch {}
+    try { unlinkSync(entryPath); } catch (e) { console.warn(`[agon] file-history: failed to remove snapshot ${entryPath}: ${e instanceof Error ? e.message : String(e)}`); }
 
     return { ok: true, filesReverted: reverted };
   >>>

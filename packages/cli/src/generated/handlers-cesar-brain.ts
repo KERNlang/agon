@@ -23,79 +23,18 @@ import { ENGINE_COLORS } from '../output.js';
 import type { Dispatch, HandlerContext } from '../handlers/types.js';
 
 // @kern-source: handlers-cesar-brain:10
-export const CESAR_SYSTEM_PROMPT: string = `You are Cesar, the orchestrator of Agon AI — a multi-engine competitive AI system.
+export const CESAR_SYSTEM_PROMPT: string = `You are Cesar, the orchestrator of Agon AI. Answer directly. Start every response with ~X% confidence.
 
-You are the user's primary interface. Answer questions directly when you can. You have full context of the conversation.
+MODES — suggest with [SUGGEST:mode] when 85-92% confident:
+build=single engine code task, forge=competitive build, forge-hardened=forge+gauntlet, brainstorm=confidence bid, tribunal=debate, tribunal-{adversarial,synthesis,steelman,socratic,red-team,postmortem}=debate variants, campfire=open discussion, pipeline=forge+review chain. Prefix team- for team variants.
 
-## SUGGESTING MODES
+CONFIDENCE: 93%+=do it, 85-92%=[SUGGEST:mode], 70-84%=challenge first, <70%=stop.
+Only suggest modes when multi-engine genuinely helps. Prefer lighter modes (build>forge, campfire>tribunal).`;
 
-When a task would benefit from multi-engine work, suggest the best mode by putting a marker at the START of your response, then explain why. Format: [SUGGEST:mode-name]
-
-| Mode | When to suggest |
-|------|----------------|
-| build | Single-engine code task — implement, fix, refactor |
-| forge | Competitive build — 2+ engines race, best wins |
-| forge-hardened | Forge + adversarial gauntlet — edge cases, stress test |
-| team-forge | Team competitive build — engines form teams |
-| team-forge-hardened | Team forge + gauntlet |
-| brainstorm | Multi-AI confidence bid — each rates their confidence |
-| team-brainstorm | Team brainstorm — engines form groups |
-| tribunal | Structured debate — adversarial analysis |
-| tribunal-adversarial | Heated opposition debate |
-| tribunal-synthesis | Combine competing proposals |
-| tribunal-steelman | Strengthen both sides |
-| tribunal-socratic | Question-driven exploration |
-| tribunal-red-team | Attack from security/failure perspective |
-| tribunal-postmortem | Analyze what went wrong |
-| team-tribunal | Team debate with multiple members per side |
-| campfire | Open conversation — all engines think together, no competition |
-| pipeline | Full pipeline — forge + brainstorm + tribunal chained |
-
-## CONFIDENCE — ALWAYS STATE IT
-
-Every response MUST start with your confidence level: ~X%
-
-Your confidence determines your behavior:
-- **93%+** → Answer directly. You're confident — just do it.
-- **85-92%** → Suggest a mode. You think multi-engine help would improve the result. Use [SUGGEST:mode] after your confidence.
-- **70-84%** → Challenge first. State what concerns you, what needs investigation, what could go wrong. Do NOT implement. Ask hard questions.
-- **<70%** → Full stop. Say explicitly what's needed before you can proceed.
-
-Format: Start response with ~X% then your content. Examples:
-- ~96% Here's the fix for the auth bug...
-- ~91% [SUGGEST:forge-hardened] This refactor touches auth and payments — I'd recommend competitive builds with gauntlet.
-- ~84% I'm not confident about this approach. The session handling has a race condition I need to investigate first. What happens when...
-- ~60% I can't proceed — I need to understand the API contract before touching this. Can you show me the endpoint spec?
-
-## ROUTING PATTERNS — Which mode fits which situation
-
-| User intent | Best mode | Why |
-|-------------|-----------|-----|
-| Implement a feature, fix a bug, refactor | build | Single focused engine, fast |
-| Complex multi-file change, risky refactor | forge | Multiple engines compete, best wins |
-| High-stakes code (auth, payments, data) | forge-hardened | Competition + adversarial gauntlet |
-| "Is this the right approach?" | tribunal-steelman | Strengthens both sides of the argument |
-| Comparing 2+ approaches | tribunal-synthesis | Combines competing proposals |
-| Architecture or design exploration | campfire | Open thinking, no competition |
-| "What could go wrong?" / security review | tribunal-red-team | Attacks from failure/security perspective |
-| Something went wrong, need root cause | tribunal-postmortem | Structured analysis of what failed |
-| Need multiple perspectives on a question | brainstorm | Each engine bids confidence, user picks |
-| Heated disagreement or controversial choice | tribunal-adversarial | Structured opposition debate |
-| Large-scale change across many files | team-forge | Engines form teams for parallel work |
-| Need deep Socratic exploration | tribunal-socratic | Question-driven discovery |
-
-Rules for mode suggestions:
-- Only suggest when 85-92% confident AND multi-engine work would genuinely help.
-- Always explain WHY you're suggesting that specific mode.
-- The user will confirm before dispatch. Don't assume they'll accept.
-- Match the mode to the INTENT, not just the complexity.
-- When unsure between modes, prefer the lighter one (build > forge, campfire > tribunal).
-- For high-stakes changes: add -hardened to forge modes.`;
-
-// @kern-source: handlers-cesar-brain:82
+// @kern-source: handlers-cesar-brain:21
 export const CONFIDENCE_TIERS: { direct: number; suggest: number; nero: number; stop: number } = ({ direct: 93, suggest: 85, nero: 85, stop: 70 });
 
-// @kern-source: handlers-cesar-brain:87
+// @kern-source: handlers-cesar-brain:26
 export function parseConfidence(response: string): { value: number | null; rest: string } {
   // Match ~X% at start (with optional whitespace)
   const tildeMatch = response.match(/^~(\d{1,3})%\s*/);
@@ -117,7 +56,7 @@ export function parseConfidence(response: string): { value: number | null; rest:
   return { value: null, rest: response };
 }
 
-// @kern-source: handlers-cesar-brain:110
+// @kern-source: handlers-cesar-brain:49
 export function confidenceColor(value: number): string {
   if (value >= 94) return '\x1b[32m';  // green
   if (value >= 90) return '\x1b[33m';  // yellow
@@ -125,7 +64,7 @@ export function confidenceColor(value: number): string {
   return '\x1b[31m'; // red
 }
 
-// @kern-source: handlers-cesar-brain:119
+// @kern-source: handlers-cesar-brain:58
 export function confidenceBadge(value: number): string {
   const color = confidenceColor(value);
   const reset = '\x1b[0m';
@@ -133,7 +72,7 @@ export function confidenceBadge(value: number): string {
   return `${color}${dot} ${value}%${reset}`;
 }
 
-// @kern-source: handlers-cesar-brain:128
+// @kern-source: handlers-cesar-brain:67
 export interface SuggestionResult {
   action: string|null;
   rest: string;
@@ -143,7 +82,7 @@ export interface SuggestionResult {
   membersPerSide?: number;
 }
 
-// @kern-source: handlers-cesar-brain:136
+// @kern-source: handlers-cesar-brain:75
 export function parseSuggestion(response: string): SuggestionResult {
   // Match [SUGGEST:compound-name] or legacy [DELEGATE:mode]
   const match = response.match(/^\[(SUGGEST|DELEGATE):([\w-]+)\]\s*/i);
@@ -186,197 +125,164 @@ export function parseSuggestion(response: string): SuggestionResult {
   return { action, rest, hardened, tribunalMode, team };
 }
 
-// @kern-source: handlers-cesar-brain:180
+// @kern-source: handlers-cesar-brain:119
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
-      const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
+  const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
   
-      // Return existing alive session IF it's for the same engine
-      if (ctx.cesarSession && ctx.cesarSession.alive && ctx.cesarSession.engineId === cesarEngineId) {
-        return ctx.cesarSession;
+  // Return existing alive session IF it's for the same engine
+  if (ctx.cesarSession && ctx.cesarSession.alive && ctx.cesarSession.engineId === cesarEngineId) {
+    return ctx.cesarSession;
+  }
+  
+  // Wrong engine or dead session — close old one
+  if (ctx.cesarSession && ctx.cesarSession.engineId !== cesarEngineId) {
+    ctx.cesarSession.close();
+    ctx.setCesarSession(null);
+  }
+  
+  // Session exists but died — try restarting it before creating a new one
+  if (ctx.cesarSession && !ctx.cesarSession.alive) {
+    try {
+      await ctx.cesarSession.start();
+      if (ctx.cesarSession.alive) return ctx.cesarSession;
+    } catch {
+      // Restart failed — fall through to create fresh session
+    }
+  }
+  
+  let engine;
+  try {
+    engine = ctx.registry.get(cesarEngineId);
+  } catch {
+    throw new Error(`Cesar engine "${cesarEngineId}" not found`);
+  }
+  
+  // Resolve backend: user preference → auto (CLI first, API fallback)
+  const cesarBackend = (config as any).cesarBackend ?? 'auto';
+  const hasBinary = !!(engine.binary && ctx.registry.findBinary(engine));
+  const hasApi = !!(engine.api && process.env[engine.api?.apiKeyEnv]);
+  
+  let binaryPath = '';
+  if (cesarBackend === 'api' && hasApi) {
+    binaryPath = ''; // force API path
+  } else if (cesarBackend === 'cli' && hasBinary) {
+    binaryPath = ctx.registry.findBinary(engine)!;
+  } else if (cesarBackend === 'auto') {
+    // Auto: prefer CLI (subscription), fall back to API
+    if (hasBinary) {
+      binaryPath = ctx.registry.findBinary(engine)!;
+    } else if (hasApi) {
+      binaryPath = ''; // API fallback
+    } else {
+      throw new Error(`No backend for "${cesarEngineId}" — install CLI or set ${engine.api?.apiKeyEnv ?? 'API key'}`);
+    }
+  } else {
+    // Explicit backend not available — try the other
+    if (hasBinary) binaryPath = ctx.registry.findBinary(engine)!;
+    else if (hasApi) binaryPath = '';
+    else throw new Error(`No backend for "${cesarEngineId}"`);
+  }
+  const usingApi = !binaryPath;
+  
+  // Build context for system prompt
+  const cesarCwd = resolveWorkingDir();
+  const projectCtx = scanProjectContext(cesarCwd, config.projectContext || undefined);
+  const available = ctx.activeEngines();
+  const engineList = available.map((id: string) => {
+    try {
+      const e = ctx.registry.get(id);
+      const hasAgent = !!e.agent;
+      return `- ${id}${hasAgent ? ' (agent-capable)' : ''}`;
+    } catch { return `- ${id}`; }
+  }).join('\n');
+  
+  const systemParts: string[] = [CESAR_SYSTEM_PROMPT];
+  if (projectCtx) systemParts.push(`## PROJECT CONTEXT\n${projectCtx}`);
+  systemParts.push(`## AVAILABLE ENGINES\n${engineList}`);
+  if (ctx.explorationMode) {
+    systemParts.push(`## OPERATING MODE\nExploration mode is ON. Stay read-only: inspect files, search, and use read-only shell commands only. Do not call Edit or Write. Do not run non-read-only Bash commands.`);
+  }
+  // Inject Cesar memory context
+  if ((ctx as any).cesarMemory) {
+    const memoryCtx = (ctx as any).cesarMemory.toPromptContext();
+    if (memoryCtx) systemParts.push(memoryCtx);
+  }
+  
+  if ((ctx as any).neroMode) {
+    systemParts.push(`NERO MODE: Adversarial. Challenge assumptions, probe weaknesses, ask hard questions before implementing. Suggest tribunal-red-team or tribunal-adversarial.`);
+  }
+  
+  // History replay removed — stream-json uses --replay-user-messages,
+  // API path uses messageHistory in ResumeSession. No need to duplicate in system prompt.
+  // Saves ~2000 tokens per turn.
+  
+  // Initialize tool registry and inject tool prompt — works with ANY engine
+  const toolRegistry = new ToolRegistry();
+  toolRegistry.register(createReadTool());
+  toolRegistry.register(createEditTool());
+  toolRegistry.register(createWriteTool());
+  toolRegistry.register(createBashTool());
+  toolRegistry.register(createGrepTool());
+  toolRegistry.register(createGlobTool());
+  const toolPrompt = buildToolSystemPrompt(toolRegistry);
+  
+  // ALL engines: XML tool format, Agon controls execution + permissions
+  systemParts.push(`TOOLS: Use XML format below for all file/shell ops. Native tools disabled. Never ask permission in text — just call the tool. Never describe changes when you can execute them.`);
+  systemParts.push(toolPrompt);
+  
+  // Store registry on context for tool execution during responses
+  (ctx as any)._toolRegistry = toolRegistry;
+  
+  const sessionConfig: PersistentSessionConfig = {
+    engine,
+    binaryPath,
+    cwd: cesarCwd,
+    systemPrompt: systemParts.join('\n\n'),
+    // Route engine tool approvals through Agon's permission system — same rules for ALL engines
+    onApproval: async (tool: string, command: string) => {
+      const cfg = ctx.config;
+      const perms = (cfg as any).toolPermissions ?? {};
+      const allowed = (cfg as any).allowedCommands ?? [];
+      const mode = (cfg as any).permissionMode ?? 'ask';
+  
+      // Check config-based permissions FIRST — same as Claude path
+      // Map engine tool names to Agon tool names
+      const toolMap: Record<string, string> = { shell: 'Bash', bash: 'Bash', edit: 'Edit', write: 'Write', read: 'Read', grep: 'Grep', glob: 'Glob' };
+      const agonTool = toolMap[tool.toLowerCase()] ?? tool;
+      const perm = perms[agonTool];
+  
+      // deny → block immediately
+      if (perm === 'deny' || mode === 'deny-all') return false;
+  
+      // allow → auto-approve
+      if (perm === 'allow' || mode === 'auto') return true;
+  
+      // For Bash: check allowedCommands whitelist
+      if (agonTool === 'Bash' && allowed.length > 0) {
+        const cmdLower = command.toLowerCase();
+        if (allowed.some((a: string) => cmdLower.startsWith(a.toLowerCase()))) return true;
       }
   
-      // Wrong engine or dead session — close old one
-      if (ctx.cesarSession && ctx.cesarSession.engineId !== cesarEngineId) {
-        ctx.cesarSession.close();
-        ctx.setCesarSession(null);
-      }
-  
-      // Session exists but died — try restarting it before creating a new one
-      if (ctx.cesarSession && !ctx.cesarSession.alive) {
-        try {
-          await ctx.cesarSession.start();
-          if (ctx.cesarSession.alive) return ctx.cesarSession;
-        } catch {
-          // Restart failed — fall through to create fresh session
-        }
-      }
-  
-      let engine;
-      try {
-        engine = ctx.registry.get(cesarEngineId);
-      } catch {
-        throw new Error(`Cesar engine "${cesarEngineId}" not found`);
-      }
-  
-      // Resolve backend: user preference → auto (CLI first, API fallback)
-      const cesarBackend = (config as any).cesarBackend ?? 'auto';
-      const hasBinary = !!(engine.binary && ctx.registry.findBinary(engine));
-      const hasApi = !!(engine.api && process.env[engine.api?.apiKeyEnv]);
-  
-      let binaryPath = '';
-      if (cesarBackend === 'api' && hasApi) {
-        binaryPath = ''; // force API path
-      } else if (cesarBackend === 'cli' && hasBinary) {
-        binaryPath = ctx.registry.findBinary(engine)!;
-      } else if (cesarBackend === 'auto') {
-        // Auto: prefer CLI (subscription), fall back to API
-        if (hasBinary) {
-          binaryPath = ctx.registry.findBinary(engine)!;
-        } else if (hasApi) {
-          binaryPath = ''; // API fallback
+      // ask → show permission prompt (same UI as Claude Code)
+      return new Promise<boolean>((resolve) => {
+        const dispatch = (ctx as any)._lastDispatch;
+        if (dispatch) {
+          dispatch({ type: 'permission-ask', tool: agonTool, command, reason: `Cesar (${engine.id}) wants to execute`, resolve } as any);
         } else {
-          throw new Error(`No backend for "${cesarEngineId}" — install CLI or set ${engine.api?.apiKeyEnv ?? 'API key'}`);
+          resolve(true);
         }
-      } else {
-        // Explicit backend not available — try the other
-        if (hasBinary) binaryPath = ctx.registry.findBinary(engine)!;
-        else if (hasApi) binaryPath = '';
-        else throw new Error(`No backend for "${cesarEngineId}"`);
-      }
-      const usingApi = !binaryPath;
+      });
+    },
+  };
   
-      // Build context for system prompt
-      const cesarCwd = resolveWorkingDir();
-      const projectCtx = scanProjectContext(cesarCwd, config.projectContext || undefined);
-      const available = ctx.activeEngines();
-      const engineList = available.map((id: string) => {
-        try {
-          const e = ctx.registry.get(id);
-          const hasAgent = !!e.agent;
-          return `- ${id}${hasAgent ? ' (agent-capable)' : ''}`;
-        } catch { return `- ${id}`; }
-      }).join('\n');
-  
-      const systemParts: string[] = [CESAR_SYSTEM_PROMPT];
-      if (projectCtx) systemParts.push(`## PROJECT CONTEXT\n${projectCtx}`);
-      systemParts.push(`## AVAILABLE ENGINES\n${engineList}`);
-      if (ctx.explorationMode) {
-        systemParts.push(`## OPERATING MODE\nExploration mode is ON. Stay read-only: inspect files, search, and use read-only shell commands only. Do not call Edit or Write. Do not run non-read-only Bash commands.`);
-      }
-      // Inject Cesar memory context
-      if ((ctx as any).cesarMemory) {
-        const memoryCtx = (ctx as any).cesarMemory.toPromptContext();
-        if (memoryCtx) systemParts.push(memoryCtx);
-      }
-  
-      if ((ctx as any).neroMode) {
-        systemParts.push(`## NERO MODE — ACTIVE
-  You are now in Nero mode — adversarial, challenging, devil's advocate.
-  - Challenge the user's assumptions. Poke holes in their ideas BEFORE implementing.
-  - Ask hard questions: "What happens when this fails?" "Have you considered X?"
-  - Point out risks, edge cases, and overlooked complexity.
-  - Be direct and unsparing, but constructive — your goal is to strengthen their thinking.
-  - If the user's idea is genuinely good, say so, but still probe for weaknesses.
-  - Do NOT implement anything until you've stress-tested the approach.
-  - If you would normally suggest a mode, suggest tribunal-red-team or tribunal-adversarial.`);
-      }
-  
-      // Replay existing conversation history into system prompt so Cesar doesn't lose context on reboot
-      if (ctx.chatSession && ctx.chatSession.messages && ctx.chatSession.messages.length > 0) {
-        const historyLines: string[] = [];
-        // Cap at last 20 messages to avoid blowing context
-        const recent = ctx.chatSession.messages.slice(-20);
-        for (const msg of recent) {
-          if (msg.role === 'user') {
-            historyLines.push(`User: ${msg.content}`);
-          } else {
-            const eid = (msg as any).engineId ?? 'engine';
-            historyLines.push(`${eid}: ${msg.content}`);
-          }
-        }
-        systemParts.push(`## CONVERSATION HISTORY (session resumed)\nThe user has an ongoing conversation. Here is the recent context:\n\n${historyLines.join('\n\n')}`);
-      }
-  
-      // Initialize tool registry and inject tool prompt — works with ANY engine
-      const toolRegistry = new ToolRegistry();
-      toolRegistry.register(createReadTool());
-      toolRegistry.register(createEditTool());
-      toolRegistry.register(createWriteTool());
-      toolRegistry.register(createBashTool());
-      toolRegistry.register(createGrepTool());
-      toolRegistry.register(createGlobTool());
-      const toolPrompt = buildToolSystemPrompt(toolRegistry);
-  
-      // ALL engines (including Claude CLI): XML tool format, Agon controls execution + permissions
-      systemParts.push(`## CRITICAL — TOOL EXECUTION
-  
-  You MUST use the XML tool format below for ALL file and shell operations. Do NOT describe what you would do — execute the tool. Do NOT use your native/built-in tools — they are disabled. Only the XML format works.
-  
-  - Read a file → use the Read tool
-  - Edit a file → use the Edit tool
-  - Write a new file → use the Write tool
-  - Run a shell command → use the Bash tool
-  - Search file contents → use the Grep tool
-  - Find files → use the Glob tool
-  
-  Output tool calls using the exact XML format below. Agon will execute them and return results.
-  NEVER say "Can you approve the edit?" or "I need permission" — just call the tool. The permission system handles approval automatically.
-  NEVER describe changes in text when you can use a tool to make them directly.`);
-      systemParts.push(toolPrompt);
-  
-      // Store registry on context for tool execution during responses
-      (ctx as any)._toolRegistry = toolRegistry;
-  
-      const sessionConfig: PersistentSessionConfig = {
-        engine,
-        binaryPath,
-        cwd: cesarCwd,
-        systemPrompt: systemParts.join('\n\n'),
-        // Route engine tool approvals through Agon's permission system — same rules for ALL engines
-        onApproval: async (tool: string, command: string) => {
-          const cfg = ctx.config;
-          const perms = (cfg as any).toolPermissions ?? {};
-          const allowed = (cfg as any).allowedCommands ?? [];
-          const mode = (cfg as any).permissionMode ?? 'ask';
-  
-          // Check config-based permissions FIRST — same as Claude path
-          // Map engine tool names to Agon tool names
-          const toolMap: Record<string, string> = { shell: 'Bash', bash: 'Bash', edit: 'Edit', write: 'Write', read: 'Read', grep: 'Grep', glob: 'Glob' };
-          const agonTool = toolMap[tool.toLowerCase()] ?? tool;
-          const perm = perms[agonTool];
-  
-          // deny → block immediately
-          if (perm === 'deny' || mode === 'deny-all') return false;
-  
-          // allow → auto-approve
-          if (perm === 'allow' || mode === 'auto') return true;
-  
-          // For Bash: check allowedCommands whitelist
-          if (agonTool === 'Bash' && allowed.length > 0) {
-            const cmdLower = command.toLowerCase();
-            if (allowed.some((a: string) => cmdLower.startsWith(a.toLowerCase()))) return true;
-          }
-  
-          // ask → show permission prompt (same UI as Claude Code)
-          return new Promise<boolean>((resolve) => {
-            const dispatch = (ctx as any)._lastDispatch;
-            if (dispatch) {
-              dispatch({ type: 'permission-ask', tool: agonTool, command, reason: `Cesar (${engine.id}) wants to execute`, resolve } as any);
-            } else {
-              resolve(true);
-            }
-          });
-        },
-      };
-  
-      const session = createPersistentSession(sessionConfig);
-      await session.start();
-      ctx.setCesarSession(session);
-      return session;
+  const session = createPersistentSession(sessionConfig);
+  await session.start();
+  ctx.setCesarSession(session);
+  return session;
 }
 
-// @kern-source: handlers-cesar-brain:370
+// @kern-source: handlers-cesar-brain:276
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}> {
   const abort = new AbortController();
   const _turnStart = Date.now();
@@ -1025,7 +931,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   }
 }
 
-// @kern-source: handlers-cesar-brain:1019
+// @kern-source: handlers-cesar-brain:925
 export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatch, ctx: HandlerContext): Promise<ForgeJudgment|null> {
   // Need an alive Cesar session
       let session;
@@ -1139,7 +1045,7 @@ export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatc
       return judgment;
 }
 
-// @kern-source: handlers-cesar-brain:1134
+// @kern-source: handlers-cesar-brain:1040
 function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJudgment|null {
   // Strip confidence prefix (e.g. ~91%) before parsing structured output
   const stripped = parseConfidence(response).rest;
@@ -1183,7 +1089,7 @@ function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJud
   return { winner, strengths, convergencePlan, summary, shouldConverge };
 }
 
-// @kern-source: handlers-cesar-brain:1179
+// @kern-source: handlers-cesar-brain:1085
 export async function cesarConvergeForge(manifest: ForgeManifest, judgment: ForgeJudgment, dispatch: Dispatch, ctx: HandlerContext): Promise<string|null> {
   let session;
       try {

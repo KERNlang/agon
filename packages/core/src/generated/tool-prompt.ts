@@ -1,63 +1,39 @@
+// @kern-source: tool-prompt:5
 import type { ToolDefinition, ToolHandler } from './tool-types.js';
 
-export const TOOL_USE_FORMAT: string = `## How to use tools
+// @kern-source: tool-prompt:7
+export const TOOL_USE_FORMAT: string = `Tool format: <tool name="X">{"param":"value"}</tool> → result arrives as <tool_result name="X">...</tool_result>. Use tools — don't guess.`;
 
-When you need to perform an action (read a file, edit code, run a command, search), output a tool call using this exact format:
-
-<tool name="ToolName">
-{"param1": "value1", "param2": "value2"}
-</tool>
-
-Wait for the result before continuing. The result will appear as:
-
-<tool_result name="ToolName">
-... result content ...
-</tool_result>
-
-You can call multiple tools in sequence. Always use tools instead of guessing file contents or command outputs.`;
-
+// @kern-source: tool-prompt:12
 function toolDefinitionToPrompt(def: ToolDefinition): string {
-  // inputSchema is JSON Schema: { type:'object', properties:{...}, required:[...] }
-      const schema = def.inputSchema as any;
-      const props = schema.properties ?? schema;
-      const requiredFields = new Set(Array.isArray(schema.required) ? schema.required : []);
-      const schemaLines = Object.entries(props)
-        .filter(([key]) => key !== 'type' && key !== 'required' && key !== 'properties')
-        .map(([key, spec]) => {
-          const s = spec as any;
-          const isReq = requiredFields.has(key) || s.required === true;
-          const reqLabel = isReq ? ' (required)' : ' (optional)';
-          const desc = s.description ? ` — ${s.description}` : '';
-          return `  - ${key}: ${s.type ?? 'string'}${reqLabel}${desc}`;
-        })
-        .join('\n');
-  
-      return `### ${def.name}
-  ${def.description}
-  Parameters:
-  ${schemaLines}`;
+  const schema = def.inputSchema as any;
+  const props = schema.properties ?? schema;
+  const requiredFields = new Set(Array.isArray(schema.required) ? schema.required : []);
+  const params = Object.entries(props)
+    .filter(([key]) => key !== 'type' && key !== 'required' && key !== 'properties')
+    .map(([key, spec]) => {
+      const s = spec as any;
+      const opt = requiredFields.has(key) || s.required === true ? '' : '?';
+      return `${key}${opt}:${s.type ?? 'string'}`;
+    })
+    .join(', ');
+  return `${def.name}(${params}) — ${def.description}`;
 }
 
+// @kern-source: tool-prompt:28
 export function generateToolPrompt(handlers: ToolHandler[]): string {
   const sections: string[] = [TOOL_USE_FORMAT, '\n## Available Tools\n'];
   
-      for (const handler of handlers) {
-        sections.push(toolDefinitionToPrompt(handler.definition));
-      }
+  for (const handler of handlers) {
+    sections.push(toolDefinitionToPrompt(handler.definition));
+  }
   
-      sections.push(`
-  ## Tool Rules
-  - Always Read a file before editing it
-  - Use Edit for modifying existing files (not Write)
-  - Use Write only for creating new files or complete rewrites
-  - Use Grep/Glob to find files before reading them
-  - For Bash: prefer read-only commands. Destructive commands need justification.
-  - Keep tool calls focused — one action per tool call
-  - After editing, verify with Bash (run tests, typecheck) when appropriate`);
+  sections.push(`Rules: Read before Edit. Edit for changes, Write for new files. Grep/Glob to find files. One action per call.`);
   
-      return sections.join('\n\n');
+  return sections.join('\n\n');
 }
 
+// @kern-source: tool-prompt:42
 function generateReadToolSchema(): Record<string,unknown> {
   return {
     file_path: { type: 'string', required: true, description: 'Absolute or relative path to file' },
@@ -66,6 +42,7 @@ function generateReadToolSchema(): Record<string,unknown> {
   };
 }
 
+// @kern-source: tool-prompt:51
 function generateEditToolSchema(): Record<string,unknown> {
   return {
     file_path: { type: 'string', required: true, description: 'Path to file to edit' },
@@ -75,6 +52,7 @@ function generateEditToolSchema(): Record<string,unknown> {
   };
 }
 
+// @kern-source: tool-prompt:61
 function generateWriteToolSchema(): Record<string,unknown> {
   return {
     file_path: { type: 'string', required: true, description: 'Path to file to write' },
@@ -82,6 +60,7 @@ function generateWriteToolSchema(): Record<string,unknown> {
   };
 }
 
+// @kern-source: tool-prompt:69
 function generateBashToolSchema(): Record<string,unknown> {
   return {
     command: { type: 'string', required: true, description: 'Shell command to execute' },
@@ -89,6 +68,7 @@ function generateBashToolSchema(): Record<string,unknown> {
   };
 }
 
+// @kern-source: tool-prompt:77
 function generateGrepToolSchema(): Record<string,unknown> {
   return {
     pattern: { type: 'string', required: true, description: 'Regex pattern to search for' },
@@ -98,6 +78,7 @@ function generateGrepToolSchema(): Record<string,unknown> {
   };
 }
 
+// @kern-source: tool-prompt:87
 function generateGlobToolSchema(): Record<string,unknown> {
   return {
     pattern: { type: 'string', required: true, description: 'Glob pattern (e.g. "**/*.ts")' },

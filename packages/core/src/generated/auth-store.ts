@@ -1,0 +1,83 @@
+import { readFileSync, writeFileSync, mkdirSync, existsSync, chmodSync } from 'node:fs';
+
+import { join, dirname } from 'node:path';
+
+import { homedir } from 'node:os';
+
+export interface AuthEntry {
+  type: 'api';
+  key: string;
+  provider?: string;
+}
+
+export interface AuthStore {
+  entries: Record<string, AuthEntry>;
+}
+
+export const AUTH_FILE: string = join(homedir(), '.agon', 'auth.json');
+
+export function loadAuthStore(): AuthStore {
+  if (!existsSync(AUTH_FILE)) {
+    return { entries: {} };
+  }
+  try {
+    const data = JSON.parse(readFileSync(AUTH_FILE, 'utf-8'));
+    return { entries: data ?? {} };
+  } catch (_e) {
+    return { entries: {} };
+  }
+}
+
+export function saveAuthStore(store: AuthStore): void {
+  const dir = dirname(AUTH_FILE);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(AUTH_FILE, JSON.stringify(store.entries, null, 2) + '\n', { mode: 0o600 });
+  try { chmodSync(AUTH_FILE, 0o600); } catch (_e) { /* best effort */ }
+}
+
+export function setAuthKey(envVar: string, key: string, providerName?: string): void {
+  const store = loadAuthStore();
+  store.entries[envVar] = { type: 'api', key, provider: providerName };
+  saveAuthStore(store);
+  // Also set in current process so it's immediately available
+  process.env[envVar] = key;
+}
+
+export function removeAuthKey(envVar: string): void {
+  const store = loadAuthStore();
+  delete store.entries[envVar];
+  saveAuthStore(store);
+}
+
+export function getAuthKey(envVar: string): string|null {
+  // 1. Check process env first (explicit export takes precedence)
+  if (process.env[envVar]) return process.env[envVar]!;
+  // 2. Check stored auth
+  const store = loadAuthStore();
+  const entry = store.entries[envVar];
+  if (entry?.key) {
+    // Inject into process.env so downstream code (apiDispatch) sees it
+    process.env[envVar] = entry.key;
+    return entry.key;
+  }
+  return null;
+}
+
+export function loadAllAuthKeys(): void {
+  const store = loadAuthStore();
+  for (const [envVar, entry] of Object.entries(store.entries)) {
+    // Don't override explicitly set env vars
+    if (!process.env[envVar] && entry.key) {
+      process.env[envVar] = entry.key;
+    }
+  }
+}
+
+export function listStoredProviders(): Array<{envVar:string, provider?:string}> {
+  const store = loadAuthStore();
+  return Object.entries(store.entries).map(([envVar, entry]) => ({
+    envVar,
+    provider: entry.provider,
+  }));
+}
+

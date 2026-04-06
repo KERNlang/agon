@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { createInterface } from 'node:readline';
 import { header, success, fail, info, table, bold, green, red, dim, yellow } from '../output.js';
-import { fetchModelsRegistry, buildModelEntries, searchModels, modelEntryToEngineDef } from '@agon/core';
+import { fetchModelsRegistry, buildModelEntries, searchModels, modelEntryToEngineDef, getAuthKey, setAuthKey, loadAllAuthKeys, listStoredProviders } from '@agon/core';
 import type { ModelEntry } from '@agon/core';
 
 function enginesDir() {
@@ -93,15 +93,18 @@ async function interactiveAdd() {
     console.log(`  Format:   ${selected.format}`);
     console.log(`  Auth:     ${selected.apiKeyEnv}`);
 
-    const hasKey = !!process.env[selected.apiKeyEnv];
+    const hasKey = !!getAuthKey(selected.apiKeyEnv);
     if (!hasKey) {
       console.log('');
-      console.log(yellow(`  ${selected.apiKeyEnv} is not set.`));
-      const key = await prompt(`  Enter API key (or press Enter to skip): `);
+      const key = await prompt(`  Enter ${selected.apiKeyEnv}: `);
       if (key) {
-        console.log(dim(`  Set for this session. To persist: export ${selected.apiKeyEnv}=${key}`));
-        process.env[selected.apiKeyEnv] = key;
+        setAuthKey(selected.apiKeyEnv, key, selected.providerName);
+        console.log(green('  Key saved to ~/.agon/auth.json'));
+      } else {
+        console.log(yellow('  Skipped. Add later: agon provider login'));
       }
+    } else {
+      console.log(green(`  Key:      ${selected.apiKeyEnv} (saved)`));
     }
 
     // Write engine definition
@@ -208,6 +211,93 @@ export const providerCommand = defineCommand({
         break;
       }
 
+      case 'login': {
+        // agon provider login — interactive key entry for any provider
+        header('Provider Login');
+        loadAllAuthKeys();
+
+        let registry;
+        try {
+          registry = await fetchModelsRegistry();
+        } catch (err) {
+          fail(`Could not fetch models.dev: ${err instanceof Error ? err.message : String(err)}`);
+          process.exit(1);
+        }
+
+        // Show providers grouped, let user pick
+        const providers = Object.values(registry)
+          .filter((p: any) => p.api && p.env?.length > 0)
+          .sort((a: any, b: any) => a.name.localeCompare(b.name));
+
+        const query = extra[0] || await prompt('Search provider: ');
+        const q = query.toLowerCase();
+        const matches = providers.filter((p: any) =>
+          p.name.toLowerCase().includes(q) || p.id.toLowerCase().includes(q)
+        );
+
+        if (matches.length === 0) {
+          fail('No matching providers.');
+          break;
+        }
+
+        for (let i = 0; i < Math.min(matches.length, 20); i++) {
+          const p = matches[i] as any;
+          const envVar = p.env[0];
+          const hasKey = !!getAuthKey(envVar);
+          console.log(`  ${dim(String(i + 1).padStart(3))}  ${hasKey ? green(p.name) : p.name}${hasKey ? green(' (connected)') : ''}`);
+        }
+        console.log('');
+
+        const pick = await prompt('Select provider number: ');
+        const num = parseInt(pick, 10);
+        if (isNaN(num) || num < 1 || num > matches.length) {
+          fail('Invalid selection.');
+          break;
+        }
+
+        const selected = matches[num - 1] as any;
+        const envVar = selected.env[0];
+        const existing = getAuthKey(envVar);
+        if (existing) {
+          console.log(green(`  ${selected.name} is already connected.`));
+          const overwrite = await prompt('  Overwrite? (y/N): ');
+          if (overwrite.toLowerCase() !== 'y') break;
+        }
+
+        const key = await prompt(`  Enter ${envVar}: `);
+        if (!key) {
+          fail('No key entered.');
+          break;
+        }
+
+        setAuthKey(envVar, key, selected.name);
+        success(`${selected.name} connected! Key saved to ~/.agon/auth.json`);
+        break;
+      }
+
+      case 'logout': {
+        const providerQuery = extra[0];
+        if (!providerQuery) {
+          fail('Usage: agon provider logout <provider-name>');
+          process.exit(1);
+        }
+        // Find matching stored key
+        const stored = listStoredProviders();
+        const match = stored.find(s =>
+          s.envVar.toLowerCase().includes(providerQuery.toLowerCase()) ||
+          (s.provider && s.provider.toLowerCase().includes(providerQuery.toLowerCase()))
+        );
+        if (!match) {
+          fail(`No stored credentials matching "${providerQuery}"`);
+          break;
+        }
+        const { removeAuthKey: removeKey } = await import('@agon/core');
+        removeKey(match.envVar);
+        delete process.env[match.envVar];
+        success(`Removed credentials for ${match.provider ?? match.envVar}`);
+        break;
+      }
+
       case 'browse': {
         // Show full registry grouped by provider
         header('Available Models — models.dev');
@@ -227,43 +317,52 @@ export const providerCommand = defineCommand({
 
       case 'list':
       default: {
+        loadAllAuthKeys();
         const dir = enginesDir();
-        header('Custom Providers');
+        header('Providers');
 
-        if (!existsSync(dir)) {
-          info('No custom providers yet.');
+        // Show stored credentials
+        const stored = listStoredProviders();
+        if (stored.length > 0) {
+          console.log(bold('  Connected:'));
+          for (const s of stored) {
+            console.log(`    ${green('●')} ${s.provider ?? s.envVar}`);
+          }
           console.log('');
-          info('Add one: agon provider add');
-          return;
         }
 
-        const files = readdirSync(dir).filter((f: string) => f.endsWith('.json'));
-        if (files.length === 0) {
-          info('No custom providers yet.');
-          console.log('');
-          info('Add one: agon provider add');
-          return;
-        }
-
-        const rows: string[][] = [];
-        for (const file of files) {
-          try {
-            const def = JSON.parse(readFileSync(join(dir, file), 'utf-8'));
-            if (def.api) {
-              const hasKey = !!process.env[def.api.apiKeyEnv];
-              rows.push([
-                hasKey ? green(def.id) : red(def.id),
-                def.api.model,
-                dim(def.api.baseUrl),
-                hasKey ? green('ready') : red(`needs ${def.api.apiKeyEnv}`),
-              ]);
+        // Show configured engines
+        if (existsSync(dir)) {
+          const files = readdirSync(dir).filter((f: string) => f.endsWith('.json'));
+          if (files.length > 0) {
+            const rows: string[][] = [];
+            for (const file of files) {
+              try {
+                const def = JSON.parse(readFileSync(join(dir, file), 'utf-8'));
+                if (def.api) {
+                  const hasKey = !!getAuthKey(def.api.apiKeyEnv);
+                  rows.push([
+                    hasKey ? green(def.id) : red(def.id),
+                    def.api.model,
+                    dim(def.api.baseUrl),
+                    hasKey ? green('ready') : red('no key'),
+                  ]);
+                }
+              } catch (_e) { /* skip malformed */ }
             }
-          } catch (_e) { /* skip malformed */ }
+            if (rows.length > 0) {
+              table(['ID', 'Model', 'API', 'Status'], rows);
+            }
+          }
         }
 
-        if (rows.length > 0) {
-          table(['ID', 'Model', 'API', 'Status'], rows);
+        if (stored.length === 0) {
+          info('No providers connected yet.');
         }
+        console.log('');
+        info('agon provider add     — add model from registry');
+        info('agon provider login   — connect a provider');
+        info('agon provider logout  — disconnect a provider');
         break;
       }
     }

@@ -73,8 +73,9 @@ export async function apiDispatch(config: ApiConfig, prompt: string, timeout: nu
       };
     }
   
-    const data = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
-    const content = data.choices?.[0]?.message?.content ?? '';
+    const data = await response.json() as { choices?: Array<{ message?: { content?: string, reasoning_content?: string } }> };
+    const msg = data.choices?.[0]?.message;
+    const content = msg?.content || msg?.reasoning_content || '';
   
     return {
       exitCode: 0,
@@ -92,7 +93,7 @@ export async function apiDispatch(config: ApiConfig, prompt: string, timeout: nu
   }
 }
 
-// @kern-source: api-dispatch:92
+// @kern-source: api-dispatch:93
 export async function* apiStreamDispatch(config: ApiConfig, prompt: string, timeout: number, signal?: AbortSignal, systemPrompt?: string): AsyncGenerator<string, DispatchResult, void> {
   const apiKey = process.env[config.apiKeyEnv];
   if (!apiKey) {
@@ -159,8 +160,9 @@ export async function* apiStreamDispatch(config: ApiConfig, prompt: string, time
         const data = line.slice(6).trim();
         if (data === '[DONE]') continue;
         try {
-          const parsed = JSON.parse(data) as { choices?: Array<{ delta?: { content?: string } }> };
-          const chunk = parsed.choices?.[0]?.delta?.content;
+          const parsed = JSON.parse(data) as { choices?: Array<{ delta?: { content?: string, reasoning_content?: string } }> };
+          const delta = parsed.choices?.[0]?.delta;
+          const chunk = delta?.content ?? delta?.reasoning_content;
           if (chunk) {
             stdout += chunk;
             yield chunk;

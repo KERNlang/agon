@@ -236,6 +236,7 @@ fn name=ensureCesarSession async=true params="ctx:HandlerContext" returns="Promi
 
     // Build native function calling tools for API engines (OpenAI-compatible)
     const nativeTools = (!binaryPath && engine.api) ? toolsToOpenAIFormat(toolRegistry) : undefined;
+    (ctx as any)._hasNativeTools = !!nativeTools;
 
     const sessionConfig: PersistentSessionConfig = {
       engine,
@@ -509,8 +510,11 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
                 }
               }
 
-              // Check for suggestion/delegation marker
-              const suggestion = parseSuggestion(response);
+              // Check for suggestion/delegation marker — skip when native tools active
+              // (API models with function calling should use tools directly, not suggest modes)
+              const suggestion = (ctx as any)._hasNativeTools
+                ? { action: null, rest: response }
+                : parseSuggestion(response);
               if (suggestion.action) {
                 dispatch({ type: 'spinner-stop' });
                 appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
@@ -634,6 +638,11 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
 
       // Strip <think>...</think> reasoning blocks from API/reasoning models
       response = response.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
+
+      // Strip [SUGGEST:...] tags from API engines (already skipped in parsing, just clean display)
+      if ((ctx as any)._hasNativeTools) {
+        response = response.replace(/^\[(SUGGEST|DELEGATE):[^\]]*\]\s*/i, '').trim();
+      }
 
       // Await eager tool promises and send results back to session
       if (eagerPromises.length > 0 && session.alive && !abort.signal.aborted) {

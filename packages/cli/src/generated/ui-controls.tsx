@@ -190,8 +190,10 @@ export function ModelPicker({ entries, onSelect, onCancel, loading }: { entries:
               return;
             }
             if (key.backspace || key.delete) { setApiKeyInput((v: string) => v.slice(0, -1)); return; }
-            if (input && !key.ctrl && !key.meta && input.length === 1) {
-              setApiKeyInput((v: string) => v + input);
+            if (input && !key.ctrl && !key.meta) {
+              // Strip bracketed paste escape sequences (\e[200~ and \e[201~)
+              const clean = input.replace(/\x1b\[200~/g, '').replace(/\x1b\[201~/g, '').replace(/\[200~/g, '').replace(/\[201~/g, '');
+              if (clean) setApiKeyInput((v: string) => v + clean);
             }
             return;
           }
@@ -306,7 +308,7 @@ export function ModelPicker({ entries, onSelect, onCancel, loading }: { entries:
 }
 
 
-// @kern-source: ui-controls:311
+// @kern-source: ui-controls:313
 
 export function ReviewBlock({ event, onAction }: { event: ReviewEvent; onAction: (action: 'apply' | 'edit' | 'reject' | 'copy') => void }) {
         const eColor = engineColor(event.winnerId);

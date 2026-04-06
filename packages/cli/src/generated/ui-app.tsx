@@ -395,6 +395,11 @@ export function App({  }: {  }) {
 
   const _inputHandlerRef = useRef<(input: string, key: any) => void>(() => {});
   _inputHandlerRef.current = (input: string, key: any) => {
+          // When model picker is open, let it handle all input (except Ctrl+C)
+          if (modelPickerOpen) {
+            if (input === '\x03' || (key.ctrl && input === 'c')) { process.exit(0); }
+            return;
+          }
           // Choice-based question: single keypress resolves immediately
           if (questionState && questionState.choices) {
             const pressed = input.toLowerCase();
@@ -529,7 +534,7 @@ export function App({  }: {  }) {
           {liveSpinner && (mode === 'chat'
             ? <StatusLine startTime={chatStartTimeRef.current || Date.now()} engineId={liveSpinner.engineId} color={liveSpinner.color} />
             : <SpinnerBlock message={liveSpinner.message} color={liveSpinner.color} />)}
-          {!enginePickerOpen && (
+          {!enginePickerOpen && !modelPickerOpen && (
             <Box flexDirection="column" paddingX={1} marginTop={1}>
               {slashPickerOpen && <SlashPicker commands={allSlashCommands} onSelect={handleSlashSelect} onCancel={() => setSlashPickerOpen(false)} />}
               {pendingImages.length > 0 && (<Box><Text color="#22d3ee">{'📎 '}</Text>{pendingImages.map((img: any, i: number) => (<Text key={i} dimColor>{img.filename}{i < pendingImages.length - 1 ? ', ' : ''}</Text>))}</Box>)}
@@ -566,7 +571,7 @@ export function App({  }: {  }) {
 }
 
 
-// @kern-source: ui-app:541
+// @kern-source: ui-app:546
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

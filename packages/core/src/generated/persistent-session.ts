@@ -862,8 +862,13 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
   
     async start() {
       alive = true;
-      firstTurn = true;
-      messageHistory.length = 0;
+      // Preserve messageHistory across restarts — API is stateless, history IS the context.
+      // Only reset firstTurn if history is empty (truly fresh session).
+      if (messageHistory.length === 0) {
+        firstTurn = true;
+      }
+      // Don't clear messageHistory — that's the whole conversation context.
+      // Other tools (OpenCode, Cursor, Claude Code) never clear history either.
     },
   
     async *send(opts: SessionSendOptions) {

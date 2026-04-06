@@ -16,7 +16,8 @@ Result arrives as: <tool_result name="Read">file content here</tool_result>
 Example — to run a command:
 <tool name="Bash">{"command":"npm test"}</tool>
 
-ALWAYS use tools. NEVER say "let me look at" without calling Read/Grep. NEVER describe edits without calling Edit.`
+ALWAYS use tools. NEVER say "let me look at" without calling Read/Grep. NEVER describe edits without calling Edit.
+Keep going until the task is DONE. Don't stop after reading one file — chain tool calls: Read → analyze → Read more → Edit → Bash to verify. Complete the full task in one turn.`
   >>>
 
 fn name=toolDefinitionToPrompt params="def:ToolDefinition" returns=string export=false

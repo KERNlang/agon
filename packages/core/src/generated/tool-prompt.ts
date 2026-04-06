@@ -14,9 +14,10 @@ Result arrives as: <tool_result name="Read">file content here</tool_result>
 Example — to run a command:
 <tool name="Bash">{"command":"npm test"}</tool>
 
-ALWAYS use tools. NEVER say "let me look at" without calling Read/Grep. NEVER describe edits without calling Edit.`;
+ALWAYS use tools. NEVER say "let me look at" without calling Read/Grep. NEVER describe edits without calling Edit.
+Keep going until the task is DONE. Don't stop after reading one file — chain tool calls: Read → analyze → Read more → Edit → Bash to verify. Complete the full task in one turn.`;
 
-// @kern-source: tool-prompt:22
+// @kern-source: tool-prompt:23
 function toolDefinitionToPrompt(def: ToolDefinition): string {
   const schema = def.inputSchema as any;
   const props = schema.properties ?? schema;
@@ -32,7 +33,7 @@ function toolDefinitionToPrompt(def: ToolDefinition): string {
   return `${def.name}(${params}) — ${def.description}`;
 }
 
-// @kern-source: tool-prompt:38
+// @kern-source: tool-prompt:39
 export function generateToolPrompt(handlers: ToolHandler[]): string {
   const sections: string[] = [TOOL_USE_FORMAT, '\n## Available Tools\n'];
   
@@ -45,7 +46,7 @@ export function generateToolPrompt(handlers: ToolHandler[]): string {
   return sections.join('\n\n');
 }
 
-// @kern-source: tool-prompt:52
+// @kern-source: tool-prompt:53
 function generateReadToolSchema(): Record<string,unknown> {
   return {
     file_path: { type: 'string', required: true, description: 'Absolute or relative path to file' },
@@ -54,7 +55,7 @@ function generateReadToolSchema(): Record<string,unknown> {
   };
 }
 
-// @kern-source: tool-prompt:61
+// @kern-source: tool-prompt:62
 function generateEditToolSchema(): Record<string,unknown> {
   return {
     file_path: { type: 'string', required: true, description: 'Path to file to edit' },
@@ -64,7 +65,7 @@ function generateEditToolSchema(): Record<string,unknown> {
   };
 }
 
-// @kern-source: tool-prompt:71
+// @kern-source: tool-prompt:72
 function generateWriteToolSchema(): Record<string,unknown> {
   return {
     file_path: { type: 'string', required: true, description: 'Path to file to write' },
@@ -72,7 +73,7 @@ function generateWriteToolSchema(): Record<string,unknown> {
   };
 }
 
-// @kern-source: tool-prompt:79
+// @kern-source: tool-prompt:80
 function generateBashToolSchema(): Record<string,unknown> {
   return {
     command: { type: 'string', required: true, description: 'Shell command to execute' },
@@ -80,7 +81,7 @@ function generateBashToolSchema(): Record<string,unknown> {
   };
 }
 
-// @kern-source: tool-prompt:87
+// @kern-source: tool-prompt:88
 function generateGrepToolSchema(): Record<string,unknown> {
   return {
     pattern: { type: 'string', required: true, description: 'Regex pattern to search for' },
@@ -90,7 +91,7 @@ function generateGrepToolSchema(): Record<string,unknown> {
   };
 }
 
-// @kern-source: tool-prompt:97
+// @kern-source: tool-prompt:98
 function generateGlobToolSchema(): Record<string,unknown> {
   return {
     pattern: { type: 'string', required: true, description: 'Glob pattern (e.g. "**/*.ts")' },
@@ -98,7 +99,7 @@ function generateGlobToolSchema(): Record<string,unknown> {
   };
 }
 
-// @kern-source: tool-prompt:105
+// @kern-source: tool-prompt:106
 export function toolsToOpenAIFormat(registry: ToolRegistry): Array<{type:string,function:{name:string,description:string,parameters:Record<string,unknown>}}> {
   const handlers = Array.from((registry as any).tools.values()) as ToolHandler[];
   return handlers.map((h: ToolHandler) => {

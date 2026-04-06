@@ -257,9 +257,15 @@ You are now in Nero mode — adversarial, challenging, devil's advocate.
     toolRegistry.register(createGlobTool());
     const toolPrompt = buildToolSystemPrompt(toolRegistry);
 
-    // Non-Claude engines: harden the tool prompt — native tools are sandboxed read-only
-    const isNativeToolEngine = engine.id === 'claude' || engine.binary === 'claude';
-    if (!isNativeToolEngine) {
+    // Tell ALL engines to use tools directly — Agon handles permissions
+    const isClaudeEngine = engine.id === 'claude' || engine.binary === 'claude';
+    if (isClaudeEngine) {
+      systemParts.push(`## TOOL EXECUTION
+
+You have full tool access. Use your native tools (Read, Edit, Write, Bash, Grep, Glob) directly. Do NOT ask the user for permission in text — the permission system handles approval automatically. Just call the tool.
+
+NEVER say "Can you approve the edit?" or "I need write permission" — just use the tool.`);
+    } else {
       systemParts.push(`## CRITICAL — TOOL EXECUTION
 
 Your native filesystem write access and shell execution are DISABLED. You are running in a read-only sandbox.

@@ -134,30 +134,32 @@ fn name=createCompanionSession params="config:PersistentSessionConfig" returns="
             return;
           }
 
-          // Server REQUEST with method — approval requests from engine
+          // Server REQUEST with method (has id + method) — engine asking us something
           if (msg.id !== undefined && msg.method) {
-            if (msg.method === 'approval/request' || msg.method === 'tool/approve') {
-              const toolName = msg.params?.tool ?? msg.params?.command?.type ?? 'unknown';
-              const toolCmd = msg.params?.command?.command ?? msg.params?.description ?? JSON.stringify(msg.params ?? {});
+            const m = msg.method;
+            console.error(`[cesar:companion] server request: ${m} id=${msg.id}`);
 
-              // Emit tool_call so handleCesarBrain can show permission UI
-              for (const handler of notificationHandlers) {
-                handler('tool/approval', { tool: toolName, command: toolCmd, rpcId: msg.id });
-              }
+            // Extract tool info from any approval-like request
+            const toolName = msg.params?.tool ?? msg.params?.command?.type ?? msg.params?.name ?? m;
+            const toolCmd = msg.params?.command?.command ?? msg.params?.command ?? msg.params?.description ?? JSON.stringify(msg.params ?? {});
 
-              // Route through Agon's permission callback
-              if (config.onApproval) {
-                config.onApproval(toolName, toolCmd).then((approved: boolean) => {
-                  if (proc) proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { approved } }) + '\n');
-                }).catch(() => {
-                  if (proc) proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { approved: false } }) + '\n');
-                });
-              } else {
-                // No approval callback — auto-approve
-                proc!.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { approved: true } }) + '\n');
-              }
-              return;
+            // Emit as tool_call for UI visibility
+            for (const handler of notificationHandlers) {
+              handler('tool/approval', { tool: toolName, command: toolCmd, rpcId: msg.id });
             }
+
+            // Route through Agon's permission callback for ALL server requests
+            if (config.onApproval) {
+              config.onApproval(String(toolName), String(toolCmd)).then((approved: boolean) => {
+                if (proc) proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { approved } }) + '\n');
+              }).catch(() => {
+                if (proc) proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { approved: false } }) + '\n');
+              });
+            } else {
+              // No approval callback — auto-approve to prevent deadlock
+              proc!.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { approved: true } }) + '\n');
+            }
+            return;
           }
 
           // Server notification — forward to active handlers
@@ -393,27 +395,28 @@ fn name=createAcpSession params="config:PersistentSessionConfig" returns="Persis
             return;
           }
 
-          // Server REQUEST with method — approval requests from engine
+          // Server REQUEST with method — engine asking us something (approval, etc.)
           if (msg.id !== undefined && msg.method) {
-            if (msg.method === 'approval/request' || msg.method === 'tool/approve' || msg.method === 'permission/request') {
-              const toolName = msg.params?.tool ?? msg.params?.type ?? 'unknown';
-              const toolCmd = msg.params?.command ?? msg.params?.description ?? JSON.stringify(msg.params ?? {});
+            const m = msg.method;
+            console.error(`[cesar:acp] server request: ${m} id=${msg.id}`);
 
-              for (const handler of notificationHandlers) {
-                handler('tool/approval', { tool: toolName, command: toolCmd, rpcId: msg.id });
-              }
+            const toolName = msg.params?.tool ?? msg.params?.name ?? msg.params?.type ?? m;
+            const toolCmd = msg.params?.command ?? msg.params?.description ?? JSON.stringify(msg.params ?? {});
 
-              if (config.onApproval) {
-                config.onApproval(toolName, toolCmd).then((approved: boolean) => {
-                  if (proc) proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { approved } }) + '\n');
-                }).catch(() => {
-                  if (proc) proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { approved: false } }) + '\n');
-                });
-              } else {
-                proc!.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { approved: true } }) + '\n');
-              }
-              return;
+            for (const handler of notificationHandlers) {
+              handler('tool/approval', { tool: toolName, command: toolCmd, rpcId: msg.id });
             }
+
+            if (config.onApproval) {
+              config.onApproval(String(toolName), String(toolCmd)).then((approved: boolean) => {
+                if (proc) proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { approved } }) + '\n');
+              }).catch(() => {
+                if (proc) proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { approved: false } }) + '\n');
+              });
+            } else {
+              proc!.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { approved: true } }) + '\n');
+            }
+            return;
           }
 
           // Server notification

@@ -4,7 +4,7 @@
 import from="react" names="useState,useCallback,useEffect,useRef,useMemo"
 import from="ink" names="Box,Text,render,useApp,useInput"
 import from="ink-text-input" default="TextInput"
-import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,ensureCurrentWorkspace,startChatSession,getElo,getActiveWorkspace,RUNS_DIR,extractImagesFromInput,resolveWorkingDir,currentBranch,configSet,createCesarMemory"
+import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,ensureCurrentWorkspace,startChatSession,getElo,getActiveWorkspace,RUNS_DIR,extractImagesFromInput,resolveWorkingDir,currentBranch,configSet,createCesarMemory,modelEntryToEngineDef"
 import from="@agon/core" names="Plan,ChatSession,Skill,PersistentSession,ImageAttachment" types=true
 import from="../handlers/types.js" names="EngineProgress" types=true
 import from="@agon/adapter-cli" names="createCliAdapter"
@@ -24,13 +24,14 @@ import from="../generated/app-dispatch.js" names="dispatchIntent,handleModeSwitc
 import from="../generated/app-dispatch.js" names="DispatchCallbacks" types=true
 import from="../generated/app-output.js" names="handleOutputEvent"
 import from="../generated/app-output.js" names="OutputActions,OutputState" types=true
-import from="../generated/app-input.js" names="cleanInputValue,cleanSubmitValue,findInputChange,navigateHistory"
+import from="../generated/app-input.js" names="cleanInputValue,cleanSubmitValue,findInputChange,navigateHistory,resolveEscapeAction"
 import from="../generated/app-review.js" names="handleReviewAction"
 import from="../components.js" names="SpinnerBlock,EngineProgressView,StatusLine,StatusBar,OutputBlockView,SlashPicker,EnginePicker,ModelPicker,ReviewBlock,BackgroundJobRail,RenderedSegments,contentWidth,engineColor"
 import from="../components.js" names="OutputBlock,ReviewEvent" types=true
 import from="node:path" names="join,dirname"
 import from="node:url" names="fileURLToPath"
-import from="node:fs" names="readdirSync"
+import from="node:fs" names="readdirSync,writeFileSync,mkdirSync"
+import from="node:os" names="homedir"
 import from="@agon/core" names="loadSkills"
 
 // ── Module-level mutable refs for SIGINT ──
@@ -85,7 +86,7 @@ screen name=App target=ink
   ref name=justPastedRef type=boolean initial=false
   ref name=pasteHashesRef type="Map<string,string>" initial="new Map()"
   ref name=pasteCountRef type=number initial=0
-  ref name=lastEscRef type=number initial=0
+  ref name=activeAbortRef type="AbortController|null" initial="null"
 
   // ── Init-once state (registry, adapter, skills) ──
   state name=registry type=EngineRegistry initial="(() => { const reg = new EngineRegistry(); const engDir = join(dirname(fileURLToPath(import.meta.url)), '../../../../engines'); reg.load(engDir); return reg; })()"
@@ -106,6 +107,8 @@ screen name=App target=ink
 
   callback name=trackAbort params="abort:AbortController|null"
     handler <<<
+      if (activeAbortRef.current) _activeAborts.delete(activeAbortRef.current);
+      activeAbortRef.current = abort;
       if (abort) _activeAborts.add(abort);
       setActiveAbort(abort);
     >>>
@@ -157,6 +160,23 @@ screen name=App target=ink
   callback name=askQuestion params="prompt:string" deps="dispatch"
     handler <<<
       return new Promise<string>((resolve) => { dispatch({ type: 'question', prompt, resolve } as any); });
+    >>>
+
+  callback name=interruptActiveRun params="message:string, clearChat:boolean" deps="replState,dispatch,trackAbort"
+    handler <<<
+      const abort = activeAbortRef.current;
+      if (abort) abort.abort();
+      trackAbort(null);
+      setLiveSpinner(null);
+      setLiveProgress(null);
+      setStreamingText(null);
+
+      if (replState !== 'idle') {
+        if (message) dispatch({ type: 'warning', message } as any);
+        setReplState((prev: any) => prev === 'idle' ? prev : cancelReplState({ state: prev }).state);
+      }
+
+      if (clearChat) dispatch({ type: 'clear' } as any);
     >>>
 
   callback name=buildContext params="" deps="registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode"
@@ -336,6 +356,7 @@ screen name=App target=ink
       _cancelCallback.fn = () => {
         for (const abort of _activeAborts) abort.abort();
         _activeAborts.clear();
+        activeAbortRef.current = null;
         setActiveAbort(null); setLiveSpinner(null); setLiveProgress(null); setStreamingText(null);
         setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state);
       };
@@ -370,18 +391,33 @@ screen name=App target=ink
         dispatch({ type: 'clear' } as any); return;
       }
       if (key.escape) {
-        if (slashPickerOpen) { setSlashPickerOpen(false); return; }
-        if (enginePickerOpen) { setEnginePickerOpen(false); return; }
-        if (questionState) { questionState.resolve(''); setQuestionState(null); setQuestionAnswer(''); return; }
-        const now = Date.now();
-        if (inputValue) { setInputValue(''); lastEscRef.current = now; return; }
-        if (now - lastEscRef.current < 500) {
-          dispatch({ type: 'clear' } as any);
-          lastEscRef.current = 0;
-          return;
+        const decision = resolveEscapeAction({
+          replState,
+          inputValue,
+          slashPickerOpen,
+          enginePickerOpen,
+          questionOpen: !!questionState,
+        });
+
+        switch (decision.action) {
+          case 'close-slash':
+            setSlashPickerOpen(false);
+            return;
+          case 'close-engine-picker':
+            setEnginePickerOpen(false);
+            return;
+          case 'cancel-question':
+            if (questionState) { questionState.resolve(''); setQuestionState(null); setQuestionAnswer(''); }
+            return;
+          case 'interrupt':
+            interruptActiveRun('Interrupted.', false);
+            return;
+          case 'clear-input':
+            setInputValue('');
+            return;
+          case 'noop':
+            return;
         }
-        lastEscRef.current = now;
-        return;
       }
       if (key.ctrl && input === 'j') {
         setInputValue((prev: string) => prev + '\n'); return;
@@ -398,12 +434,8 @@ screen name=App target=ink
       }
       if (input === '\x03' || (key.ctrl && input === 'c')) {
         if (questionState) { questionState.resolve(''); setQuestionState(null); setQuestionAnswer(''); }
-        if (replState !== 'idle' && activeAbort) {
-          activeAbort.abort(); setActiveAbort(null); setLiveSpinner(null); setLiveProgress(null); setStreamingText(null);
-          dispatch({ type: 'warning', message: 'Cancelled.' } as any); transition(cancelReplState);
-        } else if (replState !== 'idle') {
-          setLiveSpinner(null); setLiveProgress(null); setStreamingText(null);
-          dispatch({ type: 'warning', message: 'Interrupted.' } as any); transition(cancelReplState);
+        if (replState !== 'idle') {
+          interruptActiveRun(activeAbortRef.current ? 'Cancelled.' : 'Interrupted.', false);
         } else { process.exit(0); }
       }
     >>>
@@ -457,11 +489,7 @@ screen name=App target=ink
           <ModelPicker entries={modelPickerEntries} loading={modelPickerLoading}
             onSelect={(entry: any) => {
               setModelPickerOpen(false);
-              const { modelEntryToEngineDef } = require('@agon/core');
               const def = modelEntryToEngineDef(entry);
-              const { writeFileSync, mkdirSync } = require('node:fs');
-              const { join } = require('node:path');
-              const { homedir } = require('node:os');
               const dir = join(homedir(), '.agon', 'engines');
               mkdirSync(dir, { recursive: true });
               writeFileSync(join(dir, `${def.id}.json`), JSON.stringify(def, null, 2) + '\n');

@@ -137,6 +137,9 @@ fn name=checkBashPermission params="command:string, ctx:ToolContext" returns=Per
         return { behavior: 'allow' };
       }
     }
+    if (ctx.permissionMode === 'auto') {
+      return { behavior: 'allow' };
+    }
     // Non-read-only: always ask user for approval
     return { behavior: 'ask', message: `This command requires approval`, reason: 'bash_mutating' };
   >>>

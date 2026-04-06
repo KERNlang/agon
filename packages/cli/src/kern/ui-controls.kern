@@ -5,6 +5,7 @@ import from="ink" names="Box,Text,useInput"
 import from="../generated/intent.js" names="SLASH_COMMANDS"
 import from="./ui-rendering.js" names="contentWidth,engineColor,color256toHex,DiffLine,CODE_RAIL,CODE_RAIL_COLOR"
 import from="../generated/output.js" names="ENGINE_COLORS"
+import from="@agon/core" names="setAuthKey,getAuthKey"
 
 // ── Interface: ReviewEvent ──────────────────────────────────────────
 
@@ -180,7 +181,6 @@ screen name=ModelPicker target=ink
           if (key.return && apiKeyInput.trim()) {
             // Store key and select
             const entry = selectedEntry!;
-            const { setAuthKey } = require('@agon/core');
             setAuthKey(entry.apiKeyEnv, apiKeyInput.trim(), entry.providerName);
             onSelect(entry);
             return;
@@ -202,7 +202,6 @@ screen name=ModelPicker target=ink
         if (key.return) {
           if (filtered[cursor]) {
             const entry = filtered[cursor];
-            const { getAuthKey } = require('@agon/core');
             if (getAuthKey(entry.apiKeyEnv)) {
               onSelect(entry);
             } else {

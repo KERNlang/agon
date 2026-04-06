@@ -1,19 +1,28 @@
+// @kern-source: handlers-cesar-brain:1
 import { join } from 'node:path';
 
+// @kern-source: handlers-cesar-brain:2
 import { mkdirSync, readFileSync } from 'node:fs';
 
+// @kern-source: handlers-cesar-brain:3
 import type { EngineAdapter, ImageAttachment, PersistentSession, PersistentSessionConfig, SessionChunk, ForgeManifest, ForgeJudgment, ConvergenceEntry } from '@agon/core';
 
+// @kern-source: handlers-cesar-brain:4
 import { EngineRegistry, loadConfig, ensureAgonHome, RUNS_DIR, appendMessage, tracker, scanProjectContext, StreamParser, createPersistentSession, resolveWorkingDir, ToolRegistry, FileStateCache, createReadTool, createEditTool, createWriteTool, createBashTool, createGrepTool, createGlobTool, buildToolSystemPrompt, parseToolCalls, processToolResponse, runToolLoop, executeToolCall } from '@agon/core';
 
+// @kern-source: handlers-cesar-brain:5
 import type { ToolContext, ToolCallResult } from '@agon/core';
 
+// @kern-source: handlers-cesar-brain:6
 import { formatToolResults } from '@agon/core';
 
+// @kern-source: handlers-cesar-brain:7
 import { ENGINE_COLORS } from '../output.js';
 
+// @kern-source: handlers-cesar-brain:8
 import type { Dispatch, HandlerContext } from '../handlers/types.js';
 
+// @kern-source: handlers-cesar-brain:10
 export const CESAR_SYSTEM_PROMPT: string = `You are Cesar, the orchestrator of Agon AI — a multi-engine competitive AI system.
 
 You are the user's primary interface. Answer questions directly when you can. You have full context of the conversation.
@@ -66,8 +75,10 @@ Rules for mode suggestions:
 - For debates/comparisons: tribunal. For brainstorming: brainstorm or campfire.
 - For high-stakes changes: add -hardened to forge modes.`;
 
+// @kern-source: handlers-cesar-brain:65
 export const CONFIDENCE_TIERS: { direct: number; suggest: number; nero: number; stop: number } = ({ direct: 94, suggest: 90, nero: 90, stop: 70 });
 
+// @kern-source: handlers-cesar-brain:70
 export function parseConfidence(response: string): { value: number | null; rest: string } {
   // Match ~X% at start (with optional whitespace)
   const tildeMatch = response.match(/^~(\d{1,3})%\s*/);
@@ -87,6 +98,7 @@ export function parseConfidence(response: string): { value: number | null; rest:
   return { value: null, rest: response };
 }
 
+// @kern-source: handlers-cesar-brain:91
 export function confidenceColor(value: number): string {
   if (value >= 94) return '\x1b[32m';  // green
   if (value >= 90) return '\x1b[33m';  // yellow
@@ -94,6 +106,7 @@ export function confidenceColor(value: number): string {
   return '\x1b[31m'; // red
 }
 
+// @kern-source: handlers-cesar-brain:100
 export function confidenceBadge(value: number): string {
   const color = confidenceColor(value);
   const reset = '\x1b[0m';
@@ -101,6 +114,7 @@ export function confidenceBadge(value: number): string {
   return `${color}${dot} ${value}%${reset}`;
 }
 
+// @kern-source: handlers-cesar-brain:109
 export interface SuggestionResult {
   action: string|null;
   rest: string;
@@ -110,6 +124,7 @@ export interface SuggestionResult {
   membersPerSide?: number;
 }
 
+// @kern-source: handlers-cesar-brain:117
 export function parseSuggestion(response: string): SuggestionResult {
   // Match [SUGGEST:compound-name] or legacy [DELEGATE:mode]
   const match = response.match(/^\[(SUGGEST|DELEGATE):([\w-]+)\]\s*/i);
@@ -152,6 +167,7 @@ export function parseSuggestion(response: string): SuggestionResult {
   return { action, rest, hardened, tribunalMode, team };
 }
 
+// @kern-source: handlers-cesar-brain:161
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   // Return existing alive session
       if (ctx.cesarSession && ctx.cesarSession.alive) {
@@ -247,6 +263,25 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
       toolRegistry.register(createGrepTool());
       toolRegistry.register(createGlobTool());
       const toolPrompt = buildToolSystemPrompt(toolRegistry);
+  
+      // Non-Claude engines: harden the tool prompt — native tools are sandboxed read-only
+      const isNativeToolEngine = engine.id === 'claude' || engine.binary === 'claude';
+      if (!isNativeToolEngine) {
+        systemParts.push(`## CRITICAL — TOOL EXECUTION
+  
+  Your native filesystem write access and shell execution are DISABLED. You are running in a read-only sandbox.
+  
+  The ONLY way to edit files, write files, or run commands is through the XML tool format below. If you try to use your native tools for writes or commands, they WILL fail.
+  
+  You CAN read files natively — that works. But for ANY of these actions, you MUST use the XML tool format:
+  - Editing a file → use the Edit tool
+  - Writing a new file → use the Write tool
+  - Running a shell command → use the Bash tool
+  - Searching file contents → use the Grep tool
+  
+  Output tool calls using this exact XML format. Agon will execute them and return results.
+  Do NOT say "I can't write because of sandbox" — use the XML tools instead.`);
+      }
       systemParts.push(toolPrompt);
   
       // Store registry on context for tool execution during responses
@@ -300,6 +335,7 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
       return session;
 }
 
+// @kern-source: handlers-cesar-brain:329
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}> {
   const abort = new AbortController();
   try {
@@ -812,6 +848,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   }
 }
 
+// @kern-source: handlers-cesar-brain:842
 export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatch, ctx: HandlerContext): Promise<ForgeJudgment|null> {
   // Need an alive Cesar session
       let session;
@@ -925,6 +962,7 @@ export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatc
       return judgment;
 }
 
+// @kern-source: handlers-cesar-brain:957
 function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJudgment|null {
   // Strip confidence prefix (e.g. ~91%) before parsing structured output
   const stripped = parseConfidence(response).rest;
@@ -968,6 +1006,7 @@ function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJud
   return { winner, strengths, convergencePlan, summary, shouldConverge };
 }
 
+// @kern-source: handlers-cesar-brain:1002
 export async function cesarConvergeForge(manifest: ForgeManifest, judgment: ForgeJudgment, dispatch: Dispatch, ctx: HandlerContext): Promise<string|null> {
   let session;
       try {

@@ -116,6 +116,9 @@ export function checkBashPermission(command: string, ctx: ToolContext): Permissi
       return { behavior: 'allow' };
     }
   }
+  if (ctx.permissionMode === 'auto') {
+    return { behavior: 'allow' };
+  }
   // Non-read-only: always ask user for approval
   return { behavior: 'ask', message: `This command requires approval`, reason: 'bash_mutating' };
 }
@@ -187,4 +190,3 @@ export function checkFileWritePermission(filePath: string, ctx: ToolContext): Pe
   }
   return { behavior: 'ask', message: `Write file outside workspace: ${resolved}` };
 }
-

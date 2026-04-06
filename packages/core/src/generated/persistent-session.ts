@@ -1,18 +1,23 @@
+// @kern-source: persistent-session:1
 import { spawn } from 'node:child_process';
 
+// @kern-source: persistent-session:2
 import type { ChildProcess } from 'node:child_process';
 
+// @kern-source: persistent-session:3
 import { createInterface } from 'node:readline';
 
+// @kern-source: persistent-session:4
 import type { EngineDefinition, CompanionConfig } from './types.js';
 
+// @kern-source: persistent-session:6
 export interface SessionChunk {
   type: 'text'|'status'|'tool_call'|'error'|'done';
   content: string;
   metadata?: Record<string,unknown>;
 }
 
-
+// @kern-source: persistent-session:11
 export interface SessionSendOptions {
   message: string;
   images?: string[];
@@ -20,6 +25,7 @@ export interface SessionSendOptions {
   systemPrompt?: string;
 }
 
+// @kern-source: persistent-session:17
 export interface PersistentSessionConfig {
   engine: EngineDefinition;
   binaryPath: string;
@@ -28,6 +34,7 @@ export interface PersistentSessionConfig {
   onApproval?: (tool: string, command: string) => Promise<boolean>;
 }
 
+// @kern-source: persistent-session:24
 export interface PersistentSession {
   alive: boolean;
   sessionId: string|null;
@@ -37,6 +44,7 @@ export interface PersistentSession {
   close: () => void;
 }
 
+// @kern-source: persistent-session:32
 export function createPersistentSession(config: PersistentSessionConfig): PersistentSession {
   const engine = config.engine;
   
@@ -64,6 +72,7 @@ export function createPersistentSession(config: PersistentSessionConfig): Persis
   return createResumeSession(config);
 }
 
+// @kern-source: persistent-session:63
 export function createCompanionSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -117,10 +126,13 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
         detached: true,
       });
   
-      // Wire up JSONRPC line parser
+      // Wire up JSONRPC line parser — log ALL messages for protocol discovery
+      const _fs = await import('node:fs');
+      const wireLog = config.cwd + '/.agon-wire.log';
       const rl = createInterface({ input: proc.stdout! });
       rl.on('line', (line: string) => {
         if (!line.trim()) return;
+        try { _fs.appendFileSync(wireLog, line + '\n'); } catch {}
         let msg: any;
         try { msg = JSON.parse(line); } catch { return; }
   
@@ -190,11 +202,11 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
       });
       notifyRpc('initialized');
   
-      // Start persistent thread — 'on-request' routes tool approvals through Agon
+      // Start persistent thread — read-only sandbox forces engine to use Agon's XML tools for writes/bash
       const threadParams: Record<string, unknown> = {
         cwd: config.cwd,
-        approvalPolicy: 'on-request',
-        sandbox: 'workspace-write',
+        approvalPolicy: 'never',
+        sandbox: 'read-only',
         ephemeral: false,
       };
       if (config.systemPrompt) {
@@ -329,6 +341,7 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
   return session;
 }
 
+// @kern-source: persistent-session:335
 export function createAcpSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -436,12 +449,12 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
   
       await new Promise((r) => setTimeout(r, 100));
   
-      // ACP initialize handshake — full capabilities, Agon handles permissions
+      // ACP initialize handshake — read-only, writes go through Agon's XML tool system
       await sendRpc('initialize', {
         protocolVersion: 1,
         clientCapabilities: {
-          fs: { readTextFile: true, writeTextFile: true },
-          terminal: true,
+          fs: { readTextFile: true, writeTextFile: false },
+          terminal: false,
         },
         clientInfo: { name: 'agon-ai', title: 'Agon AI', version: '0.2.0' },
       });
@@ -575,6 +588,7 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
   return session;
 }
 
+// @kern-source: persistent-session:585
 export function createStreamJsonSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -806,6 +820,7 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
   return session;
 }
 
+// @kern-source: persistent-session:820
 export function createResumeSession(config: PersistentSessionConfig): PersistentSession {
   let alive = false;
   let sessionId: string | null = null;
@@ -928,3 +943,4 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
   
   return session;
 }
+

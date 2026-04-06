@@ -55,6 +55,27 @@ fn name=navigateHistory params="direction:'up'|'down', currentIndex:number, hist
     return { index: currentIndex, value: '' };
   >>>
 
+interface name=EscapeDecision
+  field name=action type="'close-slash'|'close-engine-picker'|'cancel-question'|'interrupt'|'clear-input'|'noop'"
+
+fn name=resolveEscapeAction params="opts:{replState:string,inputValue:string,slashPickerOpen:boolean,enginePickerOpen:boolean,questionOpen:boolean}" returns="EscapeDecision"
+  doc "Resolve Esc behavior without destructive transcript clearing."
+  handler <<<
+    if (opts.slashPickerOpen) return { action: 'close-slash' };
+    if (opts.enginePickerOpen) return { action: 'close-engine-picker' };
+    if (opts.questionOpen) return { action: 'cancel-question' };
+
+    if (opts.replState !== 'idle') {
+      return { action: 'interrupt' };
+    }
+
+    if (opts.inputValue) {
+      return { action: 'clear-input' };
+    }
+
+    return { action: 'noop' };
+  >>>
+
 fn name=tryGhostComplete params="inputValue:string, commands:any[], engineIds:string[]" returns="string|null"
   doc "Get ghost text completion for current input."
   handler <<<

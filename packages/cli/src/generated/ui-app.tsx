@@ -1,71 +1,109 @@
+// @kern-source: ui-app:4
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 
+// @kern-source: ui-app:5
 import { Box, Text, render, useApp, useInput } from 'ink';
 
+// @kern-source: ui-app:6
 import TextInput from 'ink-text-input';
 
-import { EngineRegistry, loadConfig, ensureAgonHome, ensureCurrentWorkspace, startChatSession, getElo, getActiveWorkspace, RUNS_DIR, extractImagesFromInput, resolveWorkingDir, currentBranch, configSet, createCesarMemory } from '@agon/core';
+// @kern-source: ui-app:7
+import { EngineRegistry, loadConfig, ensureAgonHome, ensureCurrentWorkspace, startChatSession, getElo, getActiveWorkspace, RUNS_DIR, extractImagesFromInput, resolveWorkingDir, currentBranch, configSet, createCesarMemory, modelEntryToEngineDef } from '@agon/core';
 
+// @kern-source: ui-app:8
 import type { Plan, ChatSession, Skill, PersistentSession, ImageAttachment } from '@agon/core';
 
+// @kern-source: ui-app:9
 import type { EngineProgress } from '../handlers/types.js';
 
+// @kern-source: ui-app:10
 import { createCliAdapter } from '@agon/adapter-cli';
 
+// @kern-source: ui-app:11
 import type { EngineAdapter } from '@agon/core';
 
+// @kern-source: ui-app:12
 import { detectIntent, SLASH_COMMANDS } from '../intent.js';
 
+// @kern-source: ui-app:13
 import { JobManager } from '../generated/job-manager.js';
 
+// @kern-source: ui-app:14
 import type { Job } from '../generated/job-manager.js';
 
+// @kern-source: ui-app:15
 import { ENGINE_COLORS } from '../output.js';
 
+// @kern-source: ui-app:16
 import { parseMarkdownBlocks, cleanEngineOutput } from '../markdown.js';
 
+// @kern-source: ui-app:17
 import type { OutputEvent, HandlerContext } from '../handlers/types.js';
 
+// @kern-source: ui-app:18
 import { codeBlockBuffer } from '../code-buffer.js';
 
+// @kern-source: ui-app:19
 import { getGhostCompletion } from '../ghost-text.js';
 
+// @kern-source: ui-app:20
 import { startCommandReplState, finishReplState, cancelReplState } from '../generated/app-state.js';
 
+// @kern-source: ui-app:21
 import type { ReplStateState } from '../generated/app-state.js';
 
+// @kern-source: ui-app:22
 import { processPasteContent, expandPastePlaceholders } from '../paste-handler.js';
 
+// @kern-source: ui-app:23
 import { dispatchIntent, handleModeSwitch } from '../generated/app-dispatch.js';
 
+// @kern-source: ui-app:24
 import type { DispatchCallbacks } from '../generated/app-dispatch.js';
 
+// @kern-source: ui-app:25
 import { handleOutputEvent } from '../generated/app-output.js';
 
+// @kern-source: ui-app:26
 import type { OutputActions, OutputState } from '../generated/app-output.js';
 
-import { cleanInputValue, cleanSubmitValue, findInputChange, navigateHistory } from '../generated/app-input.js';
+// @kern-source: ui-app:27
+import { cleanInputValue, cleanSubmitValue, findInputChange, navigateHistory, resolveEscapeAction } from '../generated/app-input.js';
 
+// @kern-source: ui-app:28
 import { handleReviewAction } from '../generated/app-review.js';
 
+// @kern-source: ui-app:29
 import { SpinnerBlock, EngineProgressView, StatusLine, StatusBar, OutputBlockView, SlashPicker, EnginePicker, ModelPicker, ReviewBlock, BackgroundJobRail, RenderedSegments, contentWidth, engineColor } from '../components.js';
 
+// @kern-source: ui-app:30
 import type { OutputBlock, ReviewEvent } from '../components.js';
 
+// @kern-source: ui-app:31
 import { join, dirname } from 'node:path';
 
+// @kern-source: ui-app:32
 import { fileURLToPath } from 'node:url';
 
-import { readdirSync } from 'node:fs';
+// @kern-source: ui-app:33
+import { readdirSync, writeFileSync, mkdirSync } from 'node:fs';
 
+// @kern-source: ui-app:34
+import { homedir } from 'node:os';
+
+// @kern-source: ui-app:35
 import { loadSkills } from '@agon/core';
 
+// @kern-source: ui-app:38
 export const _activeAborts: Set<AbortController> = new Set<AbortController>();
 
+// @kern-source: ui-app:41
 export const _cancelCallback: { fn: (() => void) | null } = { fn: null };
 
+// @kern-source: ui-app:44
 export const _cesarSessionRef: { session: PersistentSession | null } = { session: null };
 
+// @kern-source: ui-app:47
 
 export function App({  }: {  }) {
   const [replState, setReplState] = useState<ReplStateState>('idle');
@@ -109,7 +147,7 @@ export function App({  }: {  }) {
   const justPastedRef = useRef<boolean>(false);
   const pasteHashesRef = useRef<Map<string,string>>(new Map());
   const pasteCountRef = useRef<number>(0);
-  const lastEscRef = useRef<number>(0);
+  const activeAbortRef = useRef<AbortController|null>(null);
 
   const allSlashCommands = useMemo(() => {
           const skillCmds = dynamicSkills.map((s: any) => ({ cmd: s.trigger, desc: s.description || s.name }));
@@ -144,6 +182,8 @@ export function App({  }: {  }) {
   }, []);
 
   const trackAbort = useCallback((abort:AbortController|null) => {
+          if (activeAbortRef.current) _activeAborts.delete(activeAbortRef.current);
+          activeAbortRef.current = abort;
           if (abort) _activeAborts.add(abort);
           setActiveAbort(abort);
   }, []);
@@ -167,6 +207,22 @@ export function App({  }: {  }) {
   const askQuestion = useCallback((prompt:string) => {
           return new Promise<string>((resolve) => { dispatch({ type: 'question', prompt, resolve } as any); });
   }, [dispatch]);
+
+  const interruptActiveRun = useCallback((message:string, clearChat:boolean) => {
+          const abort = activeAbortRef.current;
+          if (abort) abort.abort();
+          trackAbort(null);
+          setLiveSpinner(null);
+          setLiveProgress(null);
+          setStreamingText(null);
+    
+          if (replState !== 'idle') {
+            if (message) dispatch({ type: 'warning', message } as any);
+            setReplState((prev: any) => prev === 'idle' ? prev : cancelReplState({ state: prev }).state);
+          }
+    
+          if (clearChat) dispatch({ type: 'clear' } as any);
+  }, [replState,dispatch,trackAbort]);
 
   const buildContext = useCallback(() => {
           return {
@@ -331,6 +387,7 @@ export function App({  }: {  }) {
           _cancelCallback.fn = () => {
             for (const abort of _activeAborts) abort.abort();
             _activeAborts.clear();
+            activeAbortRef.current = null;
             setActiveAbort(null); setLiveSpinner(null); setLiveProgress(null); setStreamingText(null);
             setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state);
           };
@@ -364,18 +421,33 @@ export function App({  }: {  }) {
             dispatch({ type: 'clear' } as any); return;
           }
           if (key.escape) {
-            if (slashPickerOpen) { setSlashPickerOpen(false); return; }
-            if (enginePickerOpen) { setEnginePickerOpen(false); return; }
-            if (questionState) { questionState.resolve(''); setQuestionState(null); setQuestionAnswer(''); return; }
-            const now = Date.now();
-            if (inputValue) { setInputValue(''); lastEscRef.current = now; return; }
-            if (now - lastEscRef.current < 500) {
-              dispatch({ type: 'clear' } as any);
-              lastEscRef.current = 0;
-              return;
+            const decision = resolveEscapeAction({
+              replState,
+              inputValue,
+              slashPickerOpen,
+              enginePickerOpen,
+              questionOpen: !!questionState,
+            });
+    
+            switch (decision.action) {
+              case 'close-slash':
+                setSlashPickerOpen(false);
+                return;
+              case 'close-engine-picker':
+                setEnginePickerOpen(false);
+                return;
+              case 'cancel-question':
+                if (questionState) { questionState.resolve(''); setQuestionState(null); setQuestionAnswer(''); }
+                return;
+              case 'interrupt':
+                interruptActiveRun('Interrupted.', false);
+                return;
+              case 'clear-input':
+                setInputValue('');
+                return;
+              case 'noop':
+                return;
             }
-            lastEscRef.current = now;
-            return;
           }
           if (key.ctrl && input === 'j') {
             setInputValue((prev: string) => prev + '\n'); return;
@@ -392,12 +464,8 @@ export function App({  }: {  }) {
           }
           if (input === '\x03' || (key.ctrl && input === 'c')) {
             if (questionState) { questionState.resolve(''); setQuestionState(null); setQuestionAnswer(''); }
-            if (replState !== 'idle' && activeAbort) {
-              activeAbort.abort(); setActiveAbort(null); setLiveSpinner(null); setLiveProgress(null); setStreamingText(null);
-              dispatch({ type: 'warning', message: 'Cancelled.' } as any); transition(cancelReplState);
-            } else if (replState !== 'idle') {
-              setLiveSpinner(null); setLiveProgress(null); setStreamingText(null);
-              dispatch({ type: 'warning', message: 'Interrupted.' } as any); transition(cancelReplState);
+            if (replState !== 'idle') {
+              interruptActiveRun(activeAbortRef.current ? 'Cancelled.' : 'Interrupted.', false);
             } else { process.exit(0); }
           }
   };
@@ -449,11 +517,7 @@ export function App({  }: {  }) {
             <ModelPicker entries={modelPickerEntries} loading={modelPickerLoading}
               onSelect={(entry: any) => {
                 setModelPickerOpen(false);
-                const { modelEntryToEngineDef } = require('@agon/core');
                 const def = modelEntryToEngineDef(entry);
-                const { writeFileSync, mkdirSync } = require('node:fs');
-                const { join } = require('node:path');
-                const { homedir } = require('node:os');
                 const dir = join(homedir(), '.agon', 'engines');
                 mkdirSync(dir, { recursive: true });
                 writeFileSync(join(dir, `${def.id}.json`), JSON.stringify(def, null, 2) + '\n');
@@ -502,6 +566,7 @@ export function App({  }: {  }) {
 }
 
 
+// @kern-source: ui-app:541
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

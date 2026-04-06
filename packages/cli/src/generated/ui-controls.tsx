@@ -1,19 +1,29 @@
+// @kern-source: ui-controls:3
 import { useState, useMemo } from 'react';
 
+// @kern-source: ui-controls:4
 import { Box, Text, useInput } from 'ink';
 
+// @kern-source: ui-controls:5
 import { SLASH_COMMANDS } from '../generated/intent.js';
 
+// @kern-source: ui-controls:6
 import { contentWidth, engineColor, color256toHex, DiffLine, CODE_RAIL, CODE_RAIL_COLOR } from './ui-rendering.js';
 
+// @kern-source: ui-controls:7
 import { ENGINE_COLORS } from '../generated/output.js';
 
+// @kern-source: ui-controls:8
+import { setAuthKey, getAuthKey } from '@agon/core';
+
+// @kern-source: ui-controls:12
 export interface ReviewEvent {
   winnerId: string;
   patchPath: string;
   patchContent: string;
 }
 
+// @kern-source: ui-controls:19
 
 export function SlashPicker({ commands, onSelect, onCancel }: { commands: typeof SLASH_COMMANDS; onSelect: (cmd: string) => void; onCancel: () => void }) {
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
@@ -78,6 +88,7 @@ export function SlashPicker({ commands, onSelect, onCancel }: { commands: typeof
 }
 
 
+// @kern-source: ui-controls:87
 
 export function EnginePicker({ available, initialSelected, onConfirm, onCancel }: { available: string[]; initialSelected: string[]; onConfirm: (selected: string[]) => void; onCancel: () => void }) {
   const [cursor, setCursor] = useState<number>(0);
@@ -131,6 +142,7 @@ export function EnginePicker({ available, initialSelected, onConfirm, onCancel }
 }
 
 
+// @kern-source: ui-controls:145
 export interface ModelPickerEntry {
   providerId: string;
   providerName: string;
@@ -144,6 +156,7 @@ export interface ModelPickerEntry {
   costOutput?: number;
 }
 
+// @kern-source: ui-controls:157
 
 export function ModelPicker({ entries, onSelect, onCancel, loading }: { entries: ModelPickerEntry[]; onSelect: (entry: ModelPickerEntry) => void; onCancel: () => void; loading?: boolean }) {
   const [cursor, setCursor] = useState<number>(0);
@@ -167,7 +180,6 @@ export function ModelPicker({ entries, onSelect, onCancel, loading }: { entries:
             if (key.return && apiKeyInput.trim()) {
               // Store key and select
               const entry = selectedEntry!;
-              const { setAuthKey } = require('@agon/core');
               setAuthKey(entry.apiKeyEnv, apiKeyInput.trim(), entry.providerName);
               onSelect(entry);
               return;
@@ -189,7 +201,6 @@ export function ModelPicker({ entries, onSelect, onCancel, loading }: { entries:
           if (key.return) {
             if (filtered[cursor]) {
               const entry = filtered[cursor];
-              const { getAuthKey } = require('@agon/core');
               if (getAuthKey(entry.apiKeyEnv)) {
                 onSelect(entry);
               } else {
@@ -295,6 +306,7 @@ export function ModelPicker({ entries, onSelect, onCancel, loading }: { entries:
 }
 
 
+// @kern-source: ui-controls:311
 
 export function ReviewBlock({ event, onAction }: { event: ReviewEvent; onAction: (action: 'apply' | 'edit' | 'reject' | 'copy') => void }) {
         const eColor = engineColor(event.winnerId);

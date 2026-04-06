@@ -116,13 +116,10 @@ fn name=createCompanionSession params="config:PersistentSessionConfig" returns="
           detached: true,
         });
 
-        // Wire up JSONRPC line parser — log ALL messages for protocol discovery
-        const _fs = await import('node:fs');
-        const wireLog = config.cwd + '/.agon-wire.log';
+        // Wire up JSONRPC line parser
         const rl = createInterface({ input: proc.stdout! });
         rl.on('line', (line: string) => {
           if (!line.trim()) return;
-          try { _fs.appendFileSync(wireLog, line + '\n'); } catch {}
           let msg: any;
           try { msg = JSON.parse(line); } catch { return; }
 

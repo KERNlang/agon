@@ -129,13 +129,10 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
         detached: true,
       });
   
-      // Wire up JSONRPC line parser — log ALL messages for protocol discovery
-      const _fs = await import('node:fs');
-      const wireLog = config.cwd + '/.agon-wire.log';
+      // Wire up JSONRPC line parser
       const rl = createInterface({ input: proc.stdout! });
       rl.on('line', (line: string) => {
         if (!line.trim()) return;
-        try { _fs.appendFileSync(wireLog, line + '\n'); } catch {}
         let msg: any;
         try { msg = JSON.parse(line); } catch { return; }
   
@@ -344,7 +341,7 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
   return session;
 }
 
-// @kern-source: persistent-session:336
+// @kern-source: persistent-session:333
 export function createAcpSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -591,7 +588,7 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
   return session;
 }
 
-// @kern-source: persistent-session:586
+// @kern-source: persistent-session:583
 export function createStreamJsonSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -842,7 +839,7 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
   return session;
 }
 
-// @kern-source: persistent-session:840
+// @kern-source: persistent-session:837
 export function createResumeSession(config: PersistentSessionConfig): PersistentSession {
   let alive = false;
   let sessionId: string | null = null;

@@ -16,11 +16,9 @@ fn name=processPasteContent params="raw:string, pasteIndex?:number" returns=Past
     const content = normalized.trimEnd();
     if (!content) return { type: 'empty' };
 
-    const lines = content.split('\n');
-    const isMultiLine = lines.length > 1;
     const isLong = content.length > 500;
 
-    if (isMultiLine || isLong) {
+    if (isLong) {
       try {
         const result = pasteStore.store(content);
         const tag = result.hash.slice(0, 8);

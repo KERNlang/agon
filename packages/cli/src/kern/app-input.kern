@@ -2,17 +2,40 @@
 // Pure functions for input processing — no React, no JSX.
 
 import from="../ghost-text.js" names="getGhostCompletion"
+import from="../input-utils.js" names="stripBracketedPasteMarkers"
 
 fn name=cleanInputValue params="value:string" returns=string
-  doc "Strip bracketed paste escapes and Tab chars from input."
+  doc "Strip bracketed paste escapes from input while preserving pasted content."
   handler <<<
-    return value.replace(/\x1b\[20[01]~/g, '').replace(/\[200~/g, '').replace(/\[201~/g, '').replace(/\t/g, '');
+    return stripBracketedPasteMarkers(value);
   >>>
 
 fn name=cleanSubmitValue params="value:string" returns=string
   doc "Strip paste escapes and trim for submission."
   handler <<<
-    return value.replace(/\x1b\[20[01]~/g, '').replace(/\[200~/g, '').replace(/\[201~/g, '').trim();
+    return stripBracketedPasteMarkers(value).trim();
+  >>>
+
+fn name=findInputChange params="previous:string, next:string" returns="{start:number, removed:string, inserted:string}"
+  doc "Find the single contiguous edit between two input values."
+  handler <<<
+    let start = 0;
+    while (start < previous.length && start < next.length && previous[start] === next[start]) {
+      start++;
+    }
+
+    let previousEnd = previous.length;
+    let nextEnd = next.length;
+    while (previousEnd > start && nextEnd > start && previous[previousEnd - 1] === next[nextEnd - 1]) {
+      previousEnd--;
+      nextEnd--;
+    }
+
+    return {
+      start,
+      removed: previous.slice(start, previousEnd),
+      inserted: next.slice(start, nextEnd),
+    };
   >>>
 
 fn name=navigateHistory params="direction:'up'|'down', currentIndex:number, history:string[]" returns="{index:number, value:string}"

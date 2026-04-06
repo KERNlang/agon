@@ -1,11 +1,33 @@
 import { getGhostCompletion } from '../ghost-text.js';
 
+import { stripBracketedPasteMarkers } from '../input-utils.js';
+
 export function cleanInputValue(value: string): string {
-  return value.replace(/\x1b\[20[01]~/g, '').replace(/\[200~/g, '').replace(/\[201~/g, '').replace(/\t/g, '');
+  return stripBracketedPasteMarkers(value);
 }
 
 export function cleanSubmitValue(value: string): string {
-  return value.replace(/\x1b\[20[01]~/g, '').replace(/\[200~/g, '').replace(/\[201~/g, '').trim();
+  return stripBracketedPasteMarkers(value).trim();
+}
+
+export function findInputChange(previous: string, next: string): {start:number, removed:string, inserted:string} {
+  let start = 0;
+  while (start < previous.length && start < next.length && previous[start] === next[start]) {
+    start++;
+  }
+  
+  let previousEnd = previous.length;
+  let nextEnd = next.length;
+  while (previousEnd > start && nextEnd > start && previous[previousEnd - 1] === next[nextEnd - 1]) {
+    previousEnd--;
+    nextEnd--;
+  }
+  
+  return {
+    start,
+    removed: previous.slice(start, previousEnd),
+    inserted: next.slice(start, nextEnd),
+  };
 }
 
 export function navigateHistory(direction: 'up'|'down', currentIndex: number, history: string[]): {index:number, value:string} {
@@ -26,4 +48,3 @@ export function navigateHistory(direction: 'up'|'down', currentIndex: number, hi
 export function tryGhostComplete(inputValue: string, commands: any[], engineIds: string[]): string|null {
   return getGhostCompletion(inputValue, commands, engineIds);
 }
-

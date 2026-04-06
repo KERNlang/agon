@@ -12,11 +12,9 @@ export function processPasteContent(raw: string, pasteIndex?: number): PasteResu
   const content = normalized.trimEnd();
   if (!content) return { type: 'empty' };
   
-  const lines = content.split('\n');
-  const isMultiLine = lines.length > 1;
   const isLong = content.length > 500;
   
-  if (isMultiLine || isLong) {
+  if (isLong) {
     try {
       const result = pasteStore.store(content);
       const tag = result.hash.slice(0, 8);
@@ -45,4 +43,3 @@ export function expandPastePlaceholders(input: string, hashMap: Map<string,strin
   }
   return expanded;
 }
-

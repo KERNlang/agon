@@ -6,6 +6,18 @@ union name=Intent discriminant=type
     field name=question type=string
   variant name=tribunal
     field name=question type=string
+    field name=tribunalMode type=string optional=true
+  variant name=team-tribunal
+    field name=question type=string
+    field name=tribunalMode type=string optional=true
+    field name=membersPerSide type=number optional=true
+  variant name=team-forge
+    field name=task type=string
+    field name=fitnessCmd type="string | null"
+    field name=membersPerSide type=number optional=true
+  variant name=team-brainstorm
+    field name=question type=string
+    field name=membersPerSide type=number optional=true
   variant name=leaderboard
   variant name=history
     field name=id type=string optional=true
@@ -54,7 +66,26 @@ union name=Intent discriminant=type
   variant name=run
     field name=input type=string
   variant name=cesar
+    field name=engineIds type="string[]"
+  variant name=commit
+    field name=input type=string optional=true
+  variant name=undo
+  variant name=jobs
+  variant name=focus
+    field name=jobId type=string optional=true
+  variant name=explore
+  variant name=chats-resume
+    field name=sessionId type=string
+  variant name=suggest-brainstorm
     field name=input type=string
+    field name=question type=string optional=true
+  variant name=suggest-tribunal
+    field name=input type=string
+    field name=question type=string optional=true
+  variant name=suggest-forge
+    field name=input type=string
+    field name=task type=string optional=true
+    field name=fitnessCmd type="string | null | undefined"
   variant name=clear
   variant name=slash-list
   variant name=help

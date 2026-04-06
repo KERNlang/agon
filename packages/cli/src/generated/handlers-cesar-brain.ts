@@ -369,8 +369,10 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         cwd: resolveWorkingDir(),
         readFileState: (fsc as any).cache,
         abortSignal: abort.signal,
-        permissionMode: 'ask',
+        permissionMode: (config as any).permissionMode ?? 'ask',
         explorationMode,
+        allowedCommands: (config as any).allowedCommands ?? [],
+        toolPermissions: (config as any).toolPermissions ?? {},
         onProgress: (msg: string) => dispatch({ type: 'spinner-update', message: `Cesar: ${msg}` }),
       };
       return eagerToolCtx;
@@ -640,7 +642,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           cwd: resolveWorkingDir(),
           readFileState: (fileStateCache as any).cache,
           abortSignal: abort.signal,
-          permissionMode: 'ask',
+          permissionMode: (config as any).permissionMode ?? 'ask',
           explorationMode,
           allowedCommands: (config as any).allowedCommands ?? [],
           toolPermissions: (config as any).toolPermissions ?? {},

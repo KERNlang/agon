@@ -27,6 +27,13 @@
     "default": "anthropic/claude-sonnet-4"
   },
 
+  "api": {
+    "baseUrl": "https://openrouter.ai/api/v1",
+    "apiKeyEnv": "OPENROUTER_API_KEY",
+    "model": "anthropic/claude-sonnet-4",
+    "maxTokens": 4096
+  },
+
   "env": {
     "OPENROUTER_API_KEY": { "required": true }
   },

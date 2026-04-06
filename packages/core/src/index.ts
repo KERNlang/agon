@@ -63,7 +63,7 @@ export { FileStateCache, fileStateCache } from './file-state-cache.js';
 export { ToolRegistry, executeToolCall, executeToolCalls } from './tool-registry.js';
 export { checkBashPermission, checkFileReadPermission, checkFileWritePermission, isDangerousCommand, isReadOnlyCommand, isPathUnderCwd } from './tool-permissions.js';
 export { createReadTool, createEditTool, createWriteTool, createBashTool, createGrepTool, createGlobTool } from './tools.js';
-export { generateToolPrompt } from './generated/tool-prompt.js';
+export { generateToolPrompt, toolsToOpenAIFormat } from './generated/tool-prompt.js';
 export { parseToolCalls, toolCallsToApiFormat, formatToolResults, formatToolResult } from './generated/tool-parser.js';
 export type { ParsedToolCall, ParseResult } from './generated/tool-parser.js';
 export { buildToolSystemPrompt, processToolResponse, runToolLoop } from './generated/tool-loop.js';

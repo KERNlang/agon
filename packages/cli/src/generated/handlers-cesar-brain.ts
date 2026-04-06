@@ -8,7 +8,7 @@ import { mkdirSync, readFileSync } from 'node:fs';
 import type { EngineAdapter, ImageAttachment, PersistentSession, PersistentSessionConfig, SessionChunk, ForgeManifest, ForgeJudgment, ConvergenceEntry } from '@agon/core';
 
 // @kern-source: handlers-cesar-brain:4
-import { EngineRegistry, loadConfig, ensureAgonHome, RUNS_DIR, appendMessage, tracker, scanProjectContext, StreamParser, createPersistentSession, resolveWorkingDir, ToolRegistry, FileStateCache, createReadTool, createEditTool, createWriteTool, createBashTool, createGrepTool, createGlobTool, buildToolSystemPrompt, parseToolCalls, processToolResponse, runToolLoop, executeToolCall, classifyTask } from '@agon/core';
+import { EngineRegistry, loadConfig, ensureAgonHome, RUNS_DIR, appendMessage, tracker, scanProjectContext, StreamParser, createPersistentSession, resolveWorkingDir, ToolRegistry, FileStateCache, createReadTool, createEditTool, createWriteTool, createBashTool, createGrepTool, createGlobTool, buildToolSystemPrompt, parseToolCalls, processToolResponse, runToolLoop, executeToolCall, classifyTask, toolsToOpenAIFormat } from '@agon/core';
 
 // @kern-source: handlers-cesar-brain:5
 import type { ToolContext, ToolCallResult } from '@agon/core';
@@ -243,11 +243,15 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
   // Store registry on context for tool execution during responses
   (ctx as any)._toolRegistry = toolRegistry;
   
+  // Build native function calling tools for API engines (OpenAI-compatible)
+  const nativeTools = (!binaryPath && engine.api) ? toolsToOpenAIFormat(toolRegistry) : undefined;
+  
   const sessionConfig: PersistentSessionConfig = {
     engine,
     binaryPath,
     cwd: cesarCwd,
     systemPrompt: systemParts.join('\n\n'),
+    nativeTools,
     // Route engine tool approvals through Agon's permission system — same rules for ALL engines
     onApproval: async (tool: string, command: string) => {
       const cfg = ctx.config;
@@ -291,7 +295,7 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
   return session;
 }
 
-// @kern-source: handlers-cesar-brain:285
+// @kern-source: handlers-cesar-brain:289
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}> {
   const abort = new AbortController();
   const _turnStart = Date.now();
@@ -942,7 +946,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   }
 }
 
-// @kern-source: handlers-cesar-brain:936
+// @kern-source: handlers-cesar-brain:940
 export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatch, ctx: HandlerContext): Promise<ForgeJudgment|null> {
   // Need an alive Cesar session
       let session;
@@ -1056,7 +1060,7 @@ export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatc
       return judgment;
 }
 
-// @kern-source: handlers-cesar-brain:1051
+// @kern-source: handlers-cesar-brain:1055
 function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJudgment|null {
   // Strip confidence prefix (e.g. ~91%) before parsing structured output
   const stripped = parseConfidence(response).rest;
@@ -1100,7 +1104,7 @@ function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJud
   return { winner, strengths, convergencePlan, summary, shouldConverge };
 }
 
-// @kern-source: handlers-cesar-brain:1096
+// @kern-source: handlers-cesar-brain:1100
 export async function cesarConvergeForge(manifest: ForgeManifest, judgment: ForgeJudgment, dispatch: Dispatch, ctx: HandlerContext): Promise<string|null> {
   let session;
       try {

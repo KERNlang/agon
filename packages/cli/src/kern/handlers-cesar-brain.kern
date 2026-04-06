@@ -1,7 +1,7 @@
 import from="node:path" names="join"
 import from="node:fs" names="mkdirSync,readFileSync"
 import from="@agon/core" names="EngineAdapter,ImageAttachment,PersistentSession,PersistentSessionConfig,SessionChunk,ForgeManifest,ForgeJudgment,ConvergenceEntry" types=true
-import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,RUNS_DIR,appendMessage,tracker,scanProjectContext,StreamParser,createPersistentSession,resolveWorkingDir,ToolRegistry,FileStateCache,createReadTool,createEditTool,createWriteTool,createBashTool,createGrepTool,createGlobTool,buildToolSystemPrompt,parseToolCalls,processToolResponse,runToolLoop,executeToolCall,classifyTask"
+import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,RUNS_DIR,appendMessage,tracker,scanProjectContext,StreamParser,createPersistentSession,resolveWorkingDir,ToolRegistry,FileStateCache,createReadTool,createEditTool,createWriteTool,createBashTool,createGrepTool,createGlobTool,buildToolSystemPrompt,parseToolCalls,processToolResponse,runToolLoop,executeToolCall,classifyTask,toolsToOpenAIFormat"
 import from="@agon/core" names="ToolContext,ToolCallResult" types=true
 import from="@agon/core" names="formatToolResults"
 import from="../output.js" names="ENGINE_COLORS"
@@ -234,11 +234,15 @@ fn name=ensureCesarSession async=true params="ctx:HandlerContext" returns="Promi
     // Store registry on context for tool execution during responses
     (ctx as any)._toolRegistry = toolRegistry;
 
+    // Build native function calling tools for API engines (OpenAI-compatible)
+    const nativeTools = (!binaryPath && engine.api) ? toolsToOpenAIFormat(toolRegistry) : undefined;
+
     const sessionConfig: PersistentSessionConfig = {
       engine,
       binaryPath,
       cwd: cesarCwd,
       systemPrompt: systemParts.join('\n\n'),
+      nativeTools,
       // Route engine tool approvals through Agon's permission system — same rules for ALL engines
       onApproval: async (tool: string, command: string) => {
         const cfg = ctx.config;

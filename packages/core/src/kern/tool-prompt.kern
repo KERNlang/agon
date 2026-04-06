@@ -3,6 +3,7 @@
 // Engine-agnostic: works with Claude, Codex, Gemini, OpenCode, any LLM.
 
 import from="./tool-types.js" names="ToolDefinition,ToolHandler" types=true
+import from="./tool-registry.js" names="ToolRegistry"
 
 const name=TOOL_USE_FORMAT type=string
   handler <<<
@@ -99,4 +100,36 @@ fn name=generateGlobToolSchema returns="Record<string,unknown>" export=false
       pattern: { type: 'string', required: true, description: 'Glob pattern (e.g. "**/*.ts")' },
       path: { type: 'string', required: false, description: 'Base directory (default: cwd)' },
     };
+  >>>
+
+fn name=toolsToOpenAIFormat params="registry:ToolRegistry" returns="Array<{type:string,function:{name:string,description:string,parameters:Record<string,unknown>}}>"
+  doc "Convert Agon tool definitions to OpenAI function calling format."
+  handler <<<
+    const handlers = Array.from((registry as any).tools.values()) as ToolHandler[];
+    return handlers.map((h: ToolHandler) => {
+      const schema = h.definition.inputSchema as any;
+      const props = schema.properties ?? schema;
+      const properties: Record<string, unknown> = {};
+      const required: string[] = [];
+
+      for (const [key, spec] of Object.entries(props)) {
+        if (key === 'type' || key === 'required' || key === 'properties') continue;
+        const s = spec as any;
+        properties[key] = { type: s.type ?? 'string', description: s.description ?? key };
+        if (s.required === true) required.push(key);
+      }
+      // Also check schema-level required array
+      if (Array.isArray(schema.required)) {
+        for (const r of schema.required) { if (!required.includes(r)) required.push(r); }
+      }
+
+      return {
+        type: 'function' as const,
+        function: {
+          name: h.definition.name,
+          description: h.definition.description,
+          parameters: { type: 'object', properties, required },
+        },
+      };
+    });
   >>>

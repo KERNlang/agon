@@ -364,9 +364,10 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
     }
   
     const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
-    const available = ctx.activeEngines();
   
-    if (!available.includes(cesarEngineId)) {
+    // Cesar can be ANY available engine, not just session/forge engines
+    const allAvailable = ctx.registry.availableIds();
+    if (!allAvailable.includes(cesarEngineId)) {
       return { delegated: false, responded: false };
     }
   
@@ -873,7 +874,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   }
 }
 
-// @kern-source: handlers-cesar-brain:867
+// @kern-source: handlers-cesar-brain:868
 export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatch, ctx: HandlerContext): Promise<ForgeJudgment|null> {
   // Need an alive Cesar session
       let session;
@@ -987,7 +988,7 @@ export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatc
       return judgment;
 }
 
-// @kern-source: handlers-cesar-brain:982
+// @kern-source: handlers-cesar-brain:983
 function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJudgment|null {
   // Strip confidence prefix (e.g. ~91%) before parsing structured output
   const stripped = parseConfidence(response).rest;
@@ -1031,7 +1032,7 @@ function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJud
   return { winner, strengths, convergencePlan, summary, shouldConverge };
 }
 
-// @kern-source: handlers-cesar-brain:1027
+// @kern-source: handlers-cesar-brain:1028
 export async function cesarConvergeForge(manifest: ForgeManifest, judgment: ForgeJudgment, dispatch: Dispatch, ctx: HandlerContext): Promise<string|null> {
   let session;
       try {

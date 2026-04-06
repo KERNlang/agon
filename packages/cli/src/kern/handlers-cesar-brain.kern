@@ -355,9 +355,10 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
       }
 
       const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
-      const available = ctx.activeEngines();
 
-      if (!available.includes(cesarEngineId)) {
+      // Cesar can be ANY available engine, not just session/forge engines
+      const allAvailable = ctx.registry.availableIds();
+      if (!allAvailable.includes(cesarEngineId)) {
         return { delegated: false, responded: false };
       }
 

@@ -135,14 +135,19 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
           return;
         }
   
-        // Server REQUEST with method (has id + method) — engine asking us something
+        // Server REQUEST with method (has id + method) — engine asking for approval
         if (msg.id !== undefined && msg.method) {
           const m = msg.method;
           console.error(`[cesar:companion] server request: ${m} id=${msg.id}`);
   
-          // Extract tool info from any approval-like request
-          const toolName = msg.params?.tool ?? msg.params?.command?.type ?? msg.params?.name ?? m;
-          const toolCmd = msg.params?.command?.command ?? msg.params?.command ?? msg.params?.description ?? JSON.stringify(msg.params ?? {});
+          // Map Codex approval method names to tool categories
+          const methodToolMap: Record<string, string> = {
+            'item/commandExecution/requestApproval': 'Bash',
+            'item/fileChange/requestApproval': 'Edit',
+            'item/permissions/requestApproval': 'Permission',
+          };
+          const toolName = methodToolMap[m] ?? msg.params?.tool ?? msg.params?.command?.type ?? msg.params?.name ?? m;
+          const toolCmd = msg.params?.command?.command ?? msg.params?.command ?? msg.params?.description ?? msg.params?.path ?? JSON.stringify(msg.params ?? {});
   
           // Emit as tool_call for UI visibility
           for (const handler of notificationHandlers) {
@@ -184,10 +189,11 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
       });
       notifyRpc('initialized');
   
-      // Start persistent thread — 'ask' routes tool approvals through Agon
+      // Start persistent thread — 'on-request' routes tool approvals through Agon
       const threadParams: Record<string, unknown> = {
         cwd: config.cwd,
-        approvalPolicy: 'ask',
+        approvalPolicy: 'on-request',
+        sandbox: 'workspace-write',
         ephemeral: false,
       };
       if (config.systemPrompt) {

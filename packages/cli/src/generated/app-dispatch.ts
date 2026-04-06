@@ -28,6 +28,9 @@ export interface DispatchCallbacks {
   setPendingImages: (fn:(prev:ImageAttachment[])=>ImageAttachment[]) => void;
   setSessionEngines: (engines:string[]|null) => void;
   setEnginePickerOpen: (open:boolean) => void;
+  setModelPickerOpen: (open:boolean) => void;
+  setModelPickerEntries: (entries:any[]) => void;
+  setModelPickerLoading: (loading:boolean) => void;
   setChatSession: (session:ChatSession) => void;
   setLastUndoToken: (token:string|null) => void;
   askQuestion: (prompt:string) => Promise<string>;
@@ -248,7 +251,22 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
     case 'use': handleUse(intent.engineIds, cb.dispatch, cb.ctx, cb.setSessionEngines); break;
     case 'cesar': handleCesar(intent.engineIds?.[0] ?? '', cb.dispatch, cb.ctx); break;
     case 'tokens': handleTokens(cb.dispatch); break;
-    case 'models': cb.setEnginePickerOpen(true); break;
+    case 'models': {
+      cb.setModelPickerLoading(true);
+      cb.setModelPickerOpen(true);
+      import('@agon/core').then(({ fetchModelsRegistry, buildModelEntries }) => {
+        fetchModelsRegistry().then((reg: any) => {
+          cb.setModelPickerEntries(buildModelEntries(reg));
+          cb.setModelPickerLoading(false);
+        }).catch((err: any) => {
+          cb.setModelPickerOpen(false);
+          cb.setModelPickerLoading(false);
+          cb.dispatch({ type: 'error', message: `Failed to fetch models: ${err.message}` } as any);
+        });
+      });
+      break;
+    }
+    case 'engines': cb.setEnginePickerOpen(true); break;
     case 'workspace': handleWorkspace(intent.action, cb.dispatch, cb.ctx, intent.path); break;
     case 'flow': await handleFlowReport(cb.dispatch, cb.ctx, cb.mode, cb.sessionStartTime); break;
     case 'flows': handleFlowAnalysis(cb.dispatch); break;

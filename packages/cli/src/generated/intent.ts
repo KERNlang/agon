@@ -100,8 +100,12 @@ export function classifyTask(input: string): 'code'|'question'|'ambiguous' {
 }
 
 function parseForgeInput(input: string): Intent {
-  const hardened = /--hardened\b/i.test(input);
-  const cleaned = input.replace(/--hardened\b/gi, '').trim();
+  // Only match --hardened as a standalone flag (not inside task text or test args)
+  const hardenedMatch = input.match(/^(--hardened)\s+(.*)$/i) || input.match(/^(.*?)\s+(--hardened)\s*$/i);
+  const hardened = hardenedMatch !== null;
+  const cleaned = hardened
+    ? (hardenedMatch[1] === '--hardened' ? hardenedMatch[2] : hardenedMatch[1]).trim()
+    : input;
   const fitnessMatch = FITNESS_PATTERN.exec(cleaned);
   const fitnessCmd = fitnessMatch ? fitnessMatch[1].trim() : null;
   const task = fitnessCmd

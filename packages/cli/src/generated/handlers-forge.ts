@@ -116,7 +116,7 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
       }
     
       plan = createPlan(
-        { type: 'forge', task, fitnessCmd: fitness, engines },
+        { type: 'forge', task, fitnessCmd: fitness, engines, hardened: hardened ?? false },
         snapshot,
         forgeSteps,
       );

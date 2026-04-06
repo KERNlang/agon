@@ -55,6 +55,7 @@ export interface PlanAction {
   fitnessCmd?: string;
   engineId?: string;
   engines?: string[];
+  hardened?: boolean;
 }
 
 export interface Plan {

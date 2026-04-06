@@ -111,7 +111,7 @@ fn name=handleForge params="task:string, fitnessCmd:string|null, dispatch:Dispat
       }
 
       plan = createPlan(
-        { type: 'forge', task, fitnessCmd: fitness, engines },
+        { type: 'forge', task, fitnessCmd: fitness, engines, hardened: hardened ?? false },
         snapshot,
         forgeSteps,
       );

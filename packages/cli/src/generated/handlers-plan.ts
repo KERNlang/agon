@@ -52,7 +52,7 @@ export async function handleApprove(dispatch: Dispatch, ctx: HandlerContext): Pr
   
   if (plan.action.type === 'forge') {
     const { handleForge } = await import('../handlers/forge.js');
-    await handleForge(plan.action.task, plan.action.fitnessCmd ?? null, dispatch, ctx, plan);
+    await handleForge(plan.action.task, plan.action.fitnessCmd ?? null, dispatch, ctx, plan, plan.action.hardened);
   } else {
     dispatch({ type: 'info', message: 'Run the build again to execute.' });
   }
@@ -84,7 +84,7 @@ export async function handleRetry(dispatch: Dispatch, ctx: HandlerContext): Prom
     ctx.setCurrentPlan(plan);
     savePlan(plan);
     const { handleForge } = await import('../handlers/forge.js');
-    await handleForge(plan.action.task, plan.action.fitnessCmd ?? null, dispatch, ctx, plan);
+    await handleForge(plan.action.task, plan.action.fitnessCmd ?? null, dispatch, ctx, plan, plan.action.hardened);
   } else {
     dispatch({ type: 'info', message: 'Plan reset to approved. Run the build again to execute.' });
   }

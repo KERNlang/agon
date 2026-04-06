@@ -890,15 +890,24 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
             const resultRegex = /<tool_result\s+name="([^"]+)">([\s\S]*?)<\/tool_result>/g;
             let resultMatch;
             let resultIdx = 0;
+            const MAX_TOOL_RESULT_CHARS = 4000; // ~1000 tokens — prevent context explosion
             while ((resultMatch = resultRegex.exec(opts.message)) !== null) {
               const toolCallId = pendingToolCallIds[resultIdx] ?? `tool_${resultIdx}`;
-              messageHistory.push({ role: 'tool', content: resultMatch[2].trim(), tool_call_id: toolCallId } as any);
+              let content = resultMatch[2].trim();
+              if (content.length > MAX_TOOL_RESULT_CHARS) {
+                content = content.slice(0, MAX_TOOL_RESULT_CHARS) + `\n... (truncated, ${content.length} chars total)`;
+              }
+              messageHistory.push({ role: 'tool', content, tool_call_id: toolCallId } as any);
               resultIdx++;
             }
             // If no XML results found, send as plain tool result for each pending call
             if (resultIdx === 0) {
               for (const tcId of pendingToolCallIds) {
-                messageHistory.push({ role: 'tool', content: opts.message, tool_call_id: tcId } as any);
+                let content = opts.message;
+                if (content.length > MAX_TOOL_RESULT_CHARS) {
+                  content = content.slice(0, MAX_TOOL_RESULT_CHARS) + `\n... (truncated, ${content.length} chars total)`;
+                }
+                messageHistory.push({ role: 'tool', content, tool_call_id: tcId } as any);
               }
             }
             pendingToolCallIds.length = 0;

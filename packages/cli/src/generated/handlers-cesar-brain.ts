@@ -333,12 +333,18 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   const _turnStart = Date.now();
   const _toolsUsed: string[] = [];
   
-  // Concurrency guard with message queue — latest message wins
+  // Concurrency guard with message queue — combines queued messages (like Claude Code)
   if ((ctx as any)._cesarBusy) {
-    // Queue this message — replaces any previously queued (latest wins)
-    (ctx as any)._cesarQueue = { input, dispatch, images };
-    dispatch({ type: 'info', message: 'Cesar is working — your message is queued.' });
-    return { delegated: false, responded: true }; // responded=true so fallback doesn't fire
+    const existing = (ctx as any)._cesarQueue;
+    if (existing) {
+      // Combine with previously queued message
+      existing.input = existing.input + '\n\n' + input;
+      if (images?.length) existing.images = [...(existing.images ?? []), ...images];
+    } else {
+      (ctx as any)._cesarQueue = { input, dispatch, images };
+    }
+    dispatch({ type: 'info', message: 'Queued — will send when Cesar finishes.' });
+    return { delegated: false, responded: true };
   }
   (ctx as any)._cesarBusy = true;
   
@@ -1006,7 +1012,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   }
 }
 
-// @kern-source: handlers-cesar-brain:1000
+// @kern-source: handlers-cesar-brain:1006
 export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatch, ctx: HandlerContext): Promise<ForgeJudgment|null> {
   // Need an alive Cesar session
       let session;
@@ -1120,7 +1126,7 @@ export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatc
       return judgment;
 }
 
-// @kern-source: handlers-cesar-brain:1115
+// @kern-source: handlers-cesar-brain:1121
 function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJudgment|null {
   // Strip confidence prefix (e.g. ~91%) before parsing structured output
   const stripped = parseConfidence(response).rest;
@@ -1164,7 +1170,7 @@ function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJud
   return { winner, strengths, convergencePlan, summary, shouldConverge };
 }
 
-// @kern-source: handlers-cesar-brain:1160
+// @kern-source: handlers-cesar-brain:1166
 export async function cesarConvergeForge(manifest: ForgeManifest, judgment: ForgeJudgment, dispatch: Dispatch, ctx: HandlerContext): Promise<string|null> {
   let session;
       try {

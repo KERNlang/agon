@@ -93,19 +93,26 @@ export function SlashPicker({ commands, onSelect, onCancel }: { commands: typeof
 export function EnginePicker({ available, initialSelected, userEngines, onConfirm, onCancel, onRemove }: { available: string[]; initialSelected: string[]; userEngines: Set<string>; onConfirm: (selected: string[]) => void; onCancel: () => void; onRemove: (engineId: string) => void }) {
   const [cursor, setCursor] = useState<number>(0);
   const [selected, setSelected] = useState<Set<string>>(new Set(initialSelected));
+  const [hidden, setHidden] = useState<Set<string>>(new Set((loadConfig() as any).hiddenEngines ?? []));
 
+        // Only show: selected engines + user engines + non-hidden available engines
+        const visible = useMemo(() => available.filter((id: string) =>
+          selected.has(id) || userEngines.has(id) || !hidden.has(id)
+        ), [available, selected, userEngines, hidden]);
+  
         useInput((input: string, key: any) => {
           if (key.escape) { onCancel(); return; }
           if (key.return) {
-            const result = available.filter((id: string) => selected.has(id));
+            const result = visible.filter((id: string) => selected.has(id));
             if (result.length === 0) return;
             onConfirm(result);
             return;
           }
           if (key.upArrow) setCursor((i: number) => Math.max(0, i - 1));
-          if (key.downArrow) setCursor((i: number) => Math.min(available.length - 1, i + 1));
+          if (key.downArrow) setCursor((i: number) => Math.min(visible.length - 1, i + 1));
           if (input === ' ') {
-            const id = available[cursor];
+            const id = visible[cursor];
+            if (!id) return;
             setSelected((prev: Set<string>) => {
               const next = new Set(prev);
               if (next.has(id)) next.delete(id);
@@ -113,13 +120,26 @@ export function EnginePicker({ available, initialSelected, userEngines, onConfir
               return next;
             });
           }
-          if (input === 'a') setSelected(new Set(available));
+          if (input === 'a') setSelected(new Set(visible));
           if (input === 'n') setSelected(new Set());
           if (input === 'd' || input === 'x') {
-            const id = available[cursor];
+            const id = visible[cursor];
+            if (!id) return;
             if (userEngines.has(id)) {
+              // User engine: fully remove
               onRemove(id);
+            } else {
+              // Builtin engine: hide from picker + deselect
+              setHidden((prev: Set<string>) => { const next = new Set(prev); next.add(id); return next; });
+              setSelected((prev: Set<string>) => { const next = new Set(prev); next.delete(id); return next; });
+              configSet('hiddenEngines', [...hidden, id]);
+              setCursor((i: number) => Math.min(i, visible.length - 2));
             }
+          }
+          if (input === 'u') {
+            // Unhide all — bring back hidden builtins
+            setHidden(new Set());
+            configSet('hiddenEngines', []);
           }
         });
   
@@ -129,9 +149,9 @@ export function EnginePicker({ available, initialSelected, userEngines, onConfir
               <Text bold color="cyan">{'Select active engines'}</Text>
               <Text dimColor>{'esc'}</Text>
             </Box>
-            <Text dimColor>{'Space toggle  \u2191\u2193 navigate  a all  n none  d remove  Enter confirm'}</Text>
+            <Text dimColor>{'Space toggle  \u2191\u2193 navigate  a all  n none  d hide/remove  u unhide  Enter confirm'}</Text>
             <Text dimColor>{'\u2500'.repeat(48)}</Text>
-            {available.map((id: string, i: number) => (
+            {visible.map((id: string, i: number) => (
               <Box key={id}>
                 <Text color={i === cursor ? 'yellow' : undefined}>
                   {i === cursor ? ' \u276f ' : '   '}
@@ -146,13 +166,13 @@ export function EnginePicker({ available, initialSelected, userEngines, onConfir
               </Box>
             ))}
             <Text dimColor>{'\u2500'.repeat(48)}</Text>
-            <Text dimColor>{selected.size}{' of '}{available.length}{' selected'}</Text>
+            <Text dimColor>{selected.size}{' of '}{visible.length}{' selected'}{hidden.size > 0 ? `  (${hidden.size} hidden \u2014 u to unhide)` : ''}</Text>
           </Box>
         );
 }
 
 
-// @kern-source: ui-controls:157
+// @kern-source: ui-controls:177
 export interface ModelPickerEntry {
   providerId: string;
   providerName: string;
@@ -166,7 +186,7 @@ export interface ModelPickerEntry {
   costOutput?: number;
 }
 
-// @kern-source: ui-controls:169
+// @kern-source: ui-controls:189
 
 export function ModelPicker({ entries, onSelect, onCancel, loading }: { entries: ModelPickerEntry[]; onSelect: (entry: ModelPickerEntry) => void; onCancel: () => void; loading?: boolean }) {
   const [cursor, setCursor] = useState<number>(0);
@@ -318,7 +338,7 @@ export function ModelPicker({ entries, onSelect, onCancel, loading }: { entries:
 }
 
 
-// @kern-source: ui-controls:325
+// @kern-source: ui-controls:345
 
 export function ReviewBlock({ event, onAction }: { event: ReviewEvent; onAction: (action: 'apply' | 'edit' | 'reject' | 'copy') => void }) {
         const eColor = engineColor(event.winnerId);
@@ -359,7 +379,7 @@ export function ReviewBlock({ event, onAction }: { event: ReviewEvent; onAction:
 }
 
 
-// @kern-source: ui-controls:367
+// @kern-source: ui-controls:387
 
 export function CesarPicker({ engines, currentCesar, onSelect, onCancel }: { engines: string[]; currentCesar: string; onSelect: (engineId: string) => void; onCancel: () => void }) {
   const [cursor, setCursor] = useState<number>(0);

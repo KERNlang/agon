@@ -23,7 +23,7 @@ export type { OutputBlock } from './generated/ui-engine.js';
 
 // Controls
 export {
-  SlashPicker, EnginePicker, ModelPicker, ReviewBlock,
+  SlashPicker, EnginePicker, ModelPicker, ReviewBlock, CesarPicker,
 } from './generated/ui-controls.js';
 export type { ReviewEvent, ModelPickerEntry } from './generated/ui-controls.js';
 

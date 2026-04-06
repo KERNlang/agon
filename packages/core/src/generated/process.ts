@@ -1,7 +1,10 @@
+// @kern-source: process:1
 import { spawn } from 'node:child_process';
 
+// @kern-source: process:2
 import type { DispatchResult } from './types.js';
 
+// @kern-source: process:4
 export interface SpawnOptions {
   command: string;
   args: string[];
@@ -12,6 +15,7 @@ export interface SpawnOptions {
   useStdin?: boolean;
 }
 
+// @kern-source: process:13
 export async function spawnWithTimeout(opts: SpawnOptions): Promise<DispatchResult> {
   if (opts.signal?.aborted) {
     return { exitCode: 130, stdout: '', stderr: 'Aborted', durationMs: 0, timedOut: false };
@@ -88,6 +92,7 @@ export async function spawnWithTimeout(opts: SpawnOptions): Promise<DispatchResu
   });
 }
 
+// @kern-source: process:90
 export async function* spawnStream(opts: SpawnOptions): AsyncGenerator<string, DispatchResult, void> {
   if (opts.signal?.aborted) {
     return { exitCode: 130, stdout: '', stderr: 'Aborted', durationMs: 0, timedOut: false };

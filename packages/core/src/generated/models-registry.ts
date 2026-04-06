@@ -1,9 +1,13 @@
+// @kern-source: models-registry:1
 import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync } from 'node:fs';
 
+// @kern-source: models-registry:2
 import { join } from 'node:path';
 
+// @kern-source: models-registry:3
 import { homedir } from 'node:os';
 
+// @kern-source: models-registry:5
 export interface ModelsDevModel {
   id: string;
   name: string;
@@ -16,6 +20,7 @@ export interface ModelsDevModel {
   provider?: {npm?:string, api?:string};
 }
 
+// @kern-source: models-registry:16
 export interface ModelsDevProvider {
   id: string;
   name: string;
@@ -26,6 +31,7 @@ export interface ModelsDevProvider {
   models: Record<string, ModelsDevModel>;
 }
 
+// @kern-source: models-registry:25
 export interface ModelEntry {
   providerId: string;
   providerName: string;
@@ -40,14 +46,19 @@ export interface ModelEntry {
   toolCall?: boolean;
 }
 
+// @kern-source: models-registry:38
 export const CACHE_DIR: string = join(homedir(), '.agon', 'cache');
 
+// @kern-source: models-registry:43
 export const CACHE_FILE: string = join(CACHE_DIR, 'models-dev.json');
 
+// @kern-source: models-registry:48
 export const CACHE_TTL_MS: number = 3600000;
 
+// @kern-source: models-registry:50
 export const MODELS_DEV_URL: string = 'https://models.dev/api.json';
 
+// @kern-source: models-registry:55
 export async function fetchModelsRegistry(): Promise<Record<string, ModelsDevProvider>> {
   // Check cache first
   if (existsSync(CACHE_FILE)) {
@@ -79,6 +90,7 @@ export async function fetchModelsRegistry(): Promise<Record<string, ModelsDevPro
   return data;
 }
 
+// @kern-source: models-registry:87
 export function resolveModelFormat(providerNpm: string, model?: ModelsDevModel): 'openai'|'anthropic' {
   // Model-level override takes precedence
   const npm = model?.provider?.npm ?? providerNpm;
@@ -86,6 +98,7 @@ export function resolveModelFormat(providerNpm: string, model?: ModelsDevModel):
   return 'openai';
 }
 
+// @kern-source: models-registry:95
 export function resolveBaseUrl(provider: ModelsDevProvider, model?: ModelsDevModel): string|null {
   // Model-level override
   if (model?.provider?.api) return model.provider.api;
@@ -93,6 +106,7 @@ export function resolveBaseUrl(provider: ModelsDevProvider, model?: ModelsDevMod
   return provider.api ?? null;
 }
 
+// @kern-source: models-registry:103
 export function buildModelEntries(registry: Record<string, ModelsDevProvider>): ModelEntry[] {
   const entries: ModelEntry[] = [];
   
@@ -131,6 +145,7 @@ export function buildModelEntries(registry: Record<string, ModelsDevProvider>): 
   return entries;
 }
 
+// @kern-source: models-registry:142
 export function searchModels(entries: ModelEntry[], query: string): ModelEntry[] {
   if (!query.trim()) return entries;
   const q = query.toLowerCase();
@@ -142,6 +157,13 @@ export function searchModels(entries: ModelEntry[], query: string): ModelEntry[]
   });
 }
 
+// @kern-source: models-registry:154
+export function normalizeBaseUrl(url: string): string {
+  // Strip /anthropic/ path segments — our apiDispatch uses OpenAI format only
+  return url.replace(/\/anthropic(\/|$)/, '$1');
+}
+
+// @kern-source: models-registry:160
 export function modelEntryToEngineDef(entry: ModelEntry): Record<string, any> {
   return {
     schemaVersion: 3,
@@ -153,7 +175,7 @@ export function modelEntryToEngineDef(entry: ModelEntry): Record<string, any> {
     exec: { args: [] },
     review: { args: [] },
     api: {
-      baseUrl: entry.baseUrl,
+      baseUrl: normalizeBaseUrl(entry.baseUrl),
       apiKeyEnv: entry.apiKeyEnv,
       model: entry.modelId,
       maxTokens: Math.min(entry.contextWindow ? Math.floor(entry.contextWindow / 4) : 4096, 16384),

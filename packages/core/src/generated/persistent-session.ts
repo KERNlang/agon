@@ -10,14 +10,17 @@ import { createInterface } from 'node:readline';
 // @kern-source: persistent-session:4
 import type { EngineDefinition, CompanionConfig } from './types.js';
 
-// @kern-source: persistent-session:6
+// @kern-source: persistent-session:5
+import { apiStreamDispatch } from './api-dispatch.js';
+
+// @kern-source: persistent-session:7
 export interface SessionChunk {
   type: 'text'|'status'|'tool_call'|'error'|'done';
   content: string;
   metadata?: Record<string,unknown>;
 }
 
-// @kern-source: persistent-session:11
+// @kern-source: persistent-session:12
 export interface SessionSendOptions {
   message: string;
   images?: string[];
@@ -25,7 +28,7 @@ export interface SessionSendOptions {
   systemPrompt?: string;
 }
 
-// @kern-source: persistent-session:17
+// @kern-source: persistent-session:18
 export interface PersistentSessionConfig {
   engine: EngineDefinition;
   binaryPath: string;
@@ -34,7 +37,7 @@ export interface PersistentSessionConfig {
   onApproval?: (tool: string, command: string) => Promise<boolean>;
 }
 
-// @kern-source: persistent-session:24
+// @kern-source: persistent-session:25
 export interface PersistentSession {
   alive: boolean;
   sessionId: string|null;
@@ -44,7 +47,7 @@ export interface PersistentSession {
   close: () => void;
 }
 
-// @kern-source: persistent-session:32
+// @kern-source: persistent-session:33
 export function createPersistentSession(config: PersistentSessionConfig): PersistentSession {
   const engine = config.engine;
   
@@ -72,7 +75,7 @@ export function createPersistentSession(config: PersistentSessionConfig): Persis
   return createResumeSession(config);
 }
 
-// @kern-source: persistent-session:63
+// @kern-source: persistent-session:64
 export function createCompanionSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -341,7 +344,7 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
   return session;
 }
 
-// @kern-source: persistent-session:335
+// @kern-source: persistent-session:336
 export function createAcpSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -588,7 +591,7 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
   return session;
 }
 
-// @kern-source: persistent-session:585
+// @kern-source: persistent-session:586
 export function createStreamJsonSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -823,7 +826,7 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
   return session;
 }
 
-// @kern-source: persistent-session:823
+// @kern-source: persistent-session:824
 export function createResumeSession(config: PersistentSessionConfig): PersistentSession {
   let alive = false;
   let sessionId: string | null = null;
@@ -842,6 +845,30 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
     async *send(opts: SessionSendOptions) {
       if (!alive) {
         yield { type: 'error' as const, content: 'Session not started' };
+        return;
+      }
+  
+      // API-only engines: use HTTP dispatch instead of spawn
+      if (config.engine.api && !config.binaryPath) {
+        const gen = apiStreamDispatch(config.engine.api, opts.message, config.engine.timeout ?? 180, opts.signal, config.systemPrompt ?? opts.systemPrompt);
+        try {
+          while (true) {
+            const { value, done } = await gen.next();
+            if (done) {
+              // done value is DispatchResult
+              const result = value as any;
+              if (result?.stderr) {
+                yield { type: 'error' as const, content: result.stderr };
+              }
+              break;
+            }
+            yield { type: 'text' as const, content: value as string };
+          }
+        } catch (err: any) {
+          yield { type: 'error' as const, content: err.message ?? String(err) };
+        }
+        yield { type: 'done' as const, content: 'end_turn' };
+        firstTurn = false;
         return;
       }
   

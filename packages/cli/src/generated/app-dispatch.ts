@@ -1,25 +1,37 @@
+// @kern-source: app-dispatch:5
 import { resolveWorkingDir, extractImagesFromInput, buildImageAttachment, undoPatch, resumeChatSession, findSkill, renderSkillPrompt, configSet } from '@agon/core';
 
+// @kern-source: app-dispatch:6
 import type { ImageAttachment, ChatSession } from '@agon/core';
 
+// @kern-source: app-dispatch:7
 import { detectIntent } from '../intent.js';
 
+// @kern-source: app-dispatch:8
 import type { Dispatch, HandlerContext } from '../handlers/types.js';
 
+// @kern-source: app-dispatch:9
 import { handleForge, handleChat, handleBrainstorm, handleCampfire, handleTribunal, handleLeaderboard, handleHistory, handleEngines, handleDiscover, handleConfig, handleUse, handleCesar, handleTokens, handleModels, handleWorkspace, handleChats, handlePlanShow, handlePlansList, handleApprove, handleRetry, handleCancel, handleApplyPatch, handleCp, handleCommit, handleFlowReport, handleFlowAnalysis, handleBuild, handleRun } from '../handlers/index.js';
 
+// @kern-source: app-dispatch:10
 import { handleTeamTribunal } from '../generated/handlers-team-tribunal.js';
 
+// @kern-source: app-dispatch:11
 import { handleTeamForge } from '../generated/handlers-team-forge.js';
 
+// @kern-source: app-dispatch:12
 import { handleTeamBrainstorm } from '../generated/handlers-team-brainstorm.js';
 
+// @kern-source: app-dispatch:13
 import { handleCesarBrain } from '../handlers/cesar-brain.js';
 
+// @kern-source: app-dispatch:14
 import { handlePipeline } from '../handlers/pipeline.js';
 
+// @kern-source: app-dispatch:15
 import { handleProvider } from '../handlers/provider.js';
 
+// @kern-source: app-dispatch:17
 export interface DispatchCallbacks {
   dispatch: Dispatch;
   ctx: HandlerContext;
@@ -31,6 +43,7 @@ export interface DispatchCallbacks {
   setModelPickerOpen: (open:boolean) => void;
   setModelPickerEntries: (entries:any[]) => void;
   setModelPickerLoading: (loading:boolean) => void;
+  setCesarPickerOpen: (open:boolean) => void;
   setChatSession: (session:ChatSession) => void;
   setLastUndoToken: (token:string|null) => void;
   askQuestion: (prompt:string) => Promise<string>;
@@ -48,11 +61,13 @@ export interface DispatchCallbacks {
   setNeroMode: (mode: boolean) => void;
 }
 
+// @kern-source: app-dispatch:45
 export interface DispatchResult {
   handled: boolean;
   ranAsJob: boolean;
 }
 
+// @kern-source: app-dispatch:49
 export function handleModeSwitch(intentType: string, topic: string|undefined, question: string|undefined, cb: DispatchCallbacks): boolean {
   if (intentType === 'campfire' && !topic) {
     cb.setMode('campfire');
@@ -79,6 +94,7 @@ export function handleModeSwitch(intentType: string, topic: string|undefined, qu
   return false;
 }
 
+// @kern-source: app-dispatch:77
 export async function routeWithCesar(input: string, images: ImageAttachment[], cb: DispatchCallbacks): Promise<boolean> {
   cb.setPendingImages(() => []);
   try {
@@ -190,6 +206,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
   return false;
 }
 
+// @kern-source: app-dispatch:190
 export async function dispatchIntent(intent: any, input: string, cb: DispatchCallbacks): Promise<DispatchResult> {
   switch (intent.type) {
     // ── Job-dispatched commands (return immediately, don't hit finally) ──
@@ -244,12 +261,20 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
     // ── Info commands ──
     case 'leaderboard': handleLeaderboard(cb.dispatch); break;
     case 'history': handleHistory(cb.dispatch, intent.id); break;
-    case 'engines': await handleEngines(cb.dispatch, cb.ctx); break;
+    case 'engines': cb.setEnginePickerOpen(true); break;
     case 'discover': await handleDiscover(cb.dispatch, cb.ctx); break;
     case 'provider': await handleProvider(intent.action, intent.args, cb.dispatch, cb.ctx); break;
     case 'config': handleConfig(intent, cb.dispatch); break;
     case 'use': handleUse(intent.engineIds, cb.dispatch, cb.ctx, cb.setSessionEngines); break;
-    case 'cesar': handleCesar(intent.engineIds?.[0] ?? '', cb.dispatch, cb.ctx); break;
+    case 'cesar': {
+      const cesarTarget = intent.engineIds?.[0] ?? '';
+      if (cesarTarget) {
+        handleCesar(cesarTarget, cb.dispatch, cb.ctx);
+      } else {
+        cb.setCesarPickerOpen(true);
+      }
+      break;
+    }
     case 'tokens': handleTokens(cb.dispatch); break;
     case 'models': {
       cb.setModelPickerLoading(true);
@@ -266,7 +291,6 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
       });
       break;
     }
-    case 'engines': cb.setEnginePickerOpen(true); break;
     case 'workspace': handleWorkspace(intent.action, cb.dispatch, cb.ctx, intent.path); break;
     case 'flow': await handleFlowReport(cb.dispatch, cb.ctx, cb.mode, cb.sessionStartTime); break;
     case 'flows': handleFlowAnalysis(cb.dispatch); break;

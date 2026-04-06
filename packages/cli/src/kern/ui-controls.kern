@@ -5,7 +5,7 @@ import from="ink" names="Box,Text,useInput"
 import from="../generated/intent.js" names="SLASH_COMMANDS"
 import from="./ui-rendering.js" names="contentWidth,engineColor,color256toHex,DiffLine,CODE_RAIL,CODE_RAIL_COLOR"
 import from="../generated/output.js" names="ENGINE_COLORS"
-import from="@agon/core" names="setAuthKey,getAuthKey"
+import from="@agon/core" names="setAuthKey,getAuthKey,loadConfig,configSet"
 
 // ── Interface: ReviewEvent ──────────────────────────────────────────
 
@@ -87,8 +87,10 @@ screen name=SlashPicker target=ink
 screen name=EnginePicker target=ink
   prop name=available type="string[]"
   prop name=initialSelected type="string[]"
+  prop name=userEngines type="Set<string>"
   prop name=onConfirm type="(selected: string[]) => void"
   prop name=onCancel type="() => void"
+  prop name=onRemove type="(engineId: string) => void"
   state name=cursor type=number initial="0"
   state name=selected type="Set<string>" initial="new Set(initialSelected)"
   render
@@ -114,12 +116,21 @@ screen name=EnginePicker target=ink
         }
         if (input === 'a') setSelected(new Set(available));
         if (input === 'n') setSelected(new Set());
+        if (input === 'd' || input === 'x') {
+          const id = available[cursor];
+          if (userEngines.has(id)) {
+            onRemove(id);
+          }
+        }
       });
 
       return (
         <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1} marginY={1}>
-          <Text bold color="cyan">{'Select active engines'}</Text>
-          <Text dimColor>{'Space toggle  \u2191\u2193 navigate  a all  n none  Enter confirm  Esc cancel'}</Text>
+          <Box justifyContent="space-between">
+            <Text bold color="cyan">{'Select active engines'}</Text>
+            <Text dimColor>{'esc'}</Text>
+          </Box>
+          <Text dimColor>{'Space toggle  \u2191\u2193 navigate  a all  n none  d remove  Enter confirm'}</Text>
           <Text dimColor>{'\u2500'.repeat(48)}</Text>
           {available.map((id: string, i: number) => (
             <Box key={id}>
@@ -131,7 +142,8 @@ screen name=EnginePicker target=ink
               </Text>
               <Text>{' '}</Text>
               <Text bold color={engineColor(id)}>{id}</Text>
-              {!selected.has(id) && <Text dimColor>{' (disabled)'}</Text>}
+              {userEngines.has(id) && <Text dimColor>{' (user)'}</Text>}
+              {!selected.has(id) && !userEngines.has(id) && <Text dimColor>{' (disabled)'}</Text>}
             </Box>
           ))}
           <Text dimColor>{'\u2500'.repeat(48)}</Text>
@@ -348,6 +360,73 @@ screen name=ReviewBlock target=ink
             </Text>
           )}
           <Text color={eColor}>{'\u2514\u2500\u2500 '}<Text bold color="green">{'[A]'}</Text>{'pply  '}<Text bold color="cyan">{'[E]'}</Text>{'dit  '}<Text bold color="red">{'[R]'}</Text>{'eject  '}<Text bold color="yellow">{'[C]'}</Text>{'opy'}</Text>
+        </Box>
+      );
+    >>>
+
+screen name=CesarPicker target=ink
+  prop name=engines type="string[]"
+  prop name=currentCesar type=string
+  prop name=onSelect type="(engineId: string) => void"
+  prop name=onCancel type="() => void"
+  state name=cursor type=number initial="0"
+  state name=filter type=string initial="''"
+  render
+    handler <<<
+      const filtered = useMemo(() => {
+        if (!filter.trim()) return engines;
+        const q = filter.toLowerCase();
+        return engines.filter((id: string) => id.toLowerCase().includes(q));
+      }, [engines, filter]);
+
+      useInput((input: string, key: any) => {
+        if (key.escape || (key.ctrl && input === 'c')) { onCancel(); return; }
+        if (key.return) {
+          if (filtered[cursor]) onSelect(filtered[cursor]);
+          return;
+        }
+        if (key.upArrow) { setCursor((i: number) => Math.max(0, i - 1)); return; }
+        if (key.downArrow) { setCursor((i: number) => Math.min(filtered.length - 1, i + 1)); return; }
+        if (key.backspace || key.delete) {
+          setFilter((f: string) => f.slice(0, -1));
+          setCursor(0);
+          return;
+        }
+        if (input && !key.ctrl && !key.meta && input.length === 1 && input >= ' ') {
+          setFilter((f: string) => f + input);
+          setCursor(0);
+        }
+      });
+
+      return (
+        <Box flexDirection="column" borderStyle="round" borderColor="#a78bfa" paddingX={1}>
+          <Box justifyContent="space-between">
+            <Text bold color="#a78bfa">{'Select Cesar brain'}</Text>
+            <Text dimColor>{'esc'}</Text>
+          </Box>
+          <Box>
+            <Text color="#a78bfa">{'\u2588 search '}</Text>
+            <Text>{filter}</Text>
+            <Text dimColor>{filter ? '' : 'type to filter'}</Text>
+          </Box>
+          <Text dimColor>{'\u2500'.repeat(48)}</Text>
+          {filtered.length === 0 ? (
+            <Text dimColor>{'  No matching engines'}</Text>
+          ) : (
+            filtered.map((id: string, i: number) => (
+              <Box key={id}>
+                <Text color={i === cursor ? '#a78bfa' : undefined} bold={i === cursor}>
+                  {i === cursor ? ' \u276f ' : '   '}
+                </Text>
+                <Text color={i === cursor ? '#a78bfa' : undefined} bold={i === cursor}>
+                  {id}
+                </Text>
+                {id === currentCesar && <Text color="green">{' \u2713 current'}</Text>}
+              </Box>
+            ))
+          )}
+          <Text dimColor>{'\u2500'.repeat(48)}</Text>
+          <Text dimColor>{filtered.length}{' engines  \u2191\u2193 navigate  Enter select  Esc cancel'}</Text>
         </Box>
       );
     >>>

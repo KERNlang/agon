@@ -1,17 +1,25 @@
+// @kern-source: engine-registry:1
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
 
+// @kern-source: engine-registry:2
 import { join, dirname } from 'node:path';
 
+// @kern-source: engine-registry:3
 import { homedir } from 'node:os';
 
+// @kern-source: engine-registry:4
 import { execFileSync } from 'node:child_process';
 
+// @kern-source: engine-registry:5
 import type { EngineDefinition, EngineMode } from './types.js';
 
+// @kern-source: engine-registry:6
 import { EngineNotFoundError } from './errors.js';
 
+// @kern-source: engine-registry:8
 export const AGON_ENGINES_DIR: string = join(homedir(), '.agon', 'engines');
 
+// @kern-source: engine-registry:13
 export class EngineRegistry {
   private engines: Map<string, EngineDefinition> = new Map();
   private binaryCache: Map<string, string | null> = new Map();
@@ -58,6 +66,10 @@ export class EngineRegistry {
 
   register(engine: EngineDefinition): void {
     this.engines.set(engine.id, engine);
+  }
+
+  unregister(id: string): void {
+    this.engines.delete(id);
   }
 
   get(id: string): EngineDefinition {

@@ -2,6 +2,7 @@ import from="node:child_process" names="spawn"
 import from="node:child_process" names="ChildProcess" types=true
 import from="node:readline" names="createInterface"
 import from="./types.js" names="EngineDefinition,CompanionConfig" types=true
+import from="./api-dispatch.js" names="apiStreamDispatch"
 
 interface name=SessionChunk
   field name=type type="'text'|'status'|'tool_call'|'error'|'done'"
@@ -840,6 +841,30 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
       async *send(opts: SessionSendOptions) {
         if (!alive) {
           yield { type: 'error' as const, content: 'Session not started' };
+          return;
+        }
+
+        // API-only engines: use HTTP dispatch instead of spawn
+        if (config.engine.api && !config.binaryPath) {
+          const gen = apiStreamDispatch(config.engine.api, opts.message, config.engine.timeout ?? 180, opts.signal, config.systemPrompt ?? opts.systemPrompt);
+          try {
+            while (true) {
+              const { value, done } = await gen.next();
+              if (done) {
+                // done value is DispatchResult
+                const result = value as any;
+                if (result?.stderr) {
+                  yield { type: 'error' as const, content: result.stderr };
+                }
+                break;
+              }
+              yield { type: 'text' as const, content: value as string };
+            }
+          } catch (err: any) {
+            yield { type: 'error' as const, content: err.message ?? String(err) };
+          }
+          yield { type: 'done' as const, content: 'end_turn' };
+          firstTurn = false;
           return;
         }
 

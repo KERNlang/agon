@@ -25,6 +25,7 @@ interface name=DispatchCallbacks
   field name=setModelPickerOpen type="(open:boolean) => void"
   field name=setModelPickerEntries type="(entries:any[]) => void"
   field name=setModelPickerLoading type="(loading:boolean) => void"
+  field name=setCesarPickerOpen type="(open:boolean) => void"
   field name=setChatSession type="(session:ChatSession) => void"
   field name=setLastUndoToken type="(token:string|null) => void"
   field name=askQuestion type="(prompt:string) => Promise<string>"
@@ -242,12 +243,20 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
       // ── Info commands ──
       case 'leaderboard': handleLeaderboard(cb.dispatch); break;
       case 'history': handleHistory(cb.dispatch, intent.id); break;
-      case 'engines': await handleEngines(cb.dispatch, cb.ctx); break;
+      case 'engines': cb.setEnginePickerOpen(true); break;
       case 'discover': await handleDiscover(cb.dispatch, cb.ctx); break;
       case 'provider': await handleProvider(intent.action, intent.args, cb.dispatch, cb.ctx); break;
       case 'config': handleConfig(intent, cb.dispatch); break;
       case 'use': handleUse(intent.engineIds, cb.dispatch, cb.ctx, cb.setSessionEngines); break;
-      case 'cesar': handleCesar(intent.engineIds?.[0] ?? '', cb.dispatch, cb.ctx); break;
+      case 'cesar': {
+        const cesarTarget = intent.engineIds?.[0] ?? '';
+        if (cesarTarget) {
+          handleCesar(cesarTarget, cb.dispatch, cb.ctx);
+        } else {
+          cb.setCesarPickerOpen(true);
+        }
+        break;
+      }
       case 'tokens': handleTokens(cb.dispatch); break;
       case 'models': {
         cb.setModelPickerLoading(true);
@@ -264,7 +273,6 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
         });
         break;
       }
-      case 'engines': cb.setEnginePickerOpen(true); break;
       case 'workspace': handleWorkspace(intent.action, cb.dispatch, cb.ctx, intent.path); break;
       case 'flow': await handleFlowReport(cb.dispatch, cb.ctx, cb.mode, cb.sessionStartTime); break;
       case 'flows': handleFlowAnalysis(cb.dispatch); break;

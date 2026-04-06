@@ -228,7 +228,8 @@ fn name=ensureCesarSession async=true params="ctx:HandlerContext" returns="Promi
     const toolPrompt = buildToolSystemPrompt(toolRegistry);
 
     // ALL engines: XML tool format, Agon controls execution + permissions
-    systemParts.push(`TOOLS: Use XML format below for all file/shell ops. Native tools disabled. Never ask permission in text — just call the tool. Never describe changes when you can execute them.`);
+    systemParts.push(`TOOLS: Use XML format below for all file/shell ops. Native tools disabled. Never ask permission in text — just call the tool. Never describe changes when you can execute them.
+IMPORTANT: Use Read for files — NEVER use cat/head/tail via Bash to read files. Never re-read a file you already read. Use Grep to search, not grep/rg via Bash.`);
     systemParts.push(toolPrompt);
 
     // Store registry on context for tool execution during responses

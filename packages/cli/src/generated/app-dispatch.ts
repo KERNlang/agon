@@ -140,12 +140,8 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
     if (result.responded) return false;
   } catch (e) { console.warn(`[agon] dispatch: Cesar brain threw: ${e instanceof Error ? e.message : String(e)}`); }
   
-  // Cesar didn't respond — check if tool loop is active before falling back
-  // If the session is alive and busy (tool loop running), don't interrupt with a fresh dispatch
-  if (cb.ctx.cesarSession && cb.ctx.cesarSession.alive) {
-    cb.dispatch({ type: 'info', message: 'Cesar is busy (tool loop running) — message queued, will process when done.' });
-    return false;
-  }
+  // If brain handler queued the message (responded=true), don't fall back
+  // The queue auto-drains when the current turn finishes
   
   // Cesar truly didn't respond — try fresh CLI dispatch
   const cesarConfig = cb.ctx.config;
@@ -215,7 +211,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
   return false;
 }
 
-// @kern-source: app-dispatch:199
+// @kern-source: app-dispatch:195
 export async function dispatchIntent(intent: any, input: string, cb: DispatchCallbacks): Promise<DispatchResult> {
   switch (intent.type) {
     // ── Job-dispatched commands (return immediately, don't hit finally) ──

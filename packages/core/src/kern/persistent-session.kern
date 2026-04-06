@@ -21,6 +21,7 @@ interface name=PersistentSessionConfig
   field name=cwd type=string
   field name=systemPrompt type=string optional=true
   field name=onApproval type="(tool: string, command: string) => Promise<boolean>" optional=true
+  field name=nativeTools type="Array<{type:string,function:{name:string,description:string,parameters:Record<string,unknown>}}>" optional=true
 
 interface name=PersistentSession
   field name=alive type=boolean
@@ -899,7 +900,7 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
           }
 
           let fullResponse = '';
-          const gen = apiStreamDispatchWithHistory(config.engine.api, messageHistory, config.engine.timeout ?? 180, opts.signal);
+          const gen = apiStreamDispatchWithHistory(config.engine.api, messageHistory, config.engine.timeout ?? 180, opts.signal, config.nativeTools);
           try {
             while (true) {
               const { value, done } = await gen.next();

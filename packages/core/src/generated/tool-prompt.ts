@@ -1,7 +1,10 @@
 // @kern-source: tool-prompt:5
 import type { ToolDefinition, ToolHandler } from './tool-types.js';
 
-// @kern-source: tool-prompt:7
+// @kern-source: tool-prompt:6
+import { ToolRegistry } from './tool-registry.js';
+
+// @kern-source: tool-prompt:8
 export const TOOL_USE_FORMAT: string = `Tool format — output this exact XML to call tools:
 
 <tool name="Read">{"file_path":"src/index.ts"}</tool>
@@ -13,7 +16,7 @@ Example — to run a command:
 
 ALWAYS use tools. NEVER say "let me look at" without calling Read/Grep. NEVER describe edits without calling Edit.`;
 
-// @kern-source: tool-prompt:21
+// @kern-source: tool-prompt:22
 function toolDefinitionToPrompt(def: ToolDefinition): string {
   const schema = def.inputSchema as any;
   const props = schema.properties ?? schema;
@@ -29,7 +32,7 @@ function toolDefinitionToPrompt(def: ToolDefinition): string {
   return `${def.name}(${params}) — ${def.description}`;
 }
 
-// @kern-source: tool-prompt:37
+// @kern-source: tool-prompt:38
 export function generateToolPrompt(handlers: ToolHandler[]): string {
   const sections: string[] = [TOOL_USE_FORMAT, '\n## Available Tools\n'];
   
@@ -42,7 +45,7 @@ export function generateToolPrompt(handlers: ToolHandler[]): string {
   return sections.join('\n\n');
 }
 
-// @kern-source: tool-prompt:51
+// @kern-source: tool-prompt:52
 function generateReadToolSchema(): Record<string,unknown> {
   return {
     file_path: { type: 'string', required: true, description: 'Absolute or relative path to file' },
@@ -51,7 +54,7 @@ function generateReadToolSchema(): Record<string,unknown> {
   };
 }
 
-// @kern-source: tool-prompt:60
+// @kern-source: tool-prompt:61
 function generateEditToolSchema(): Record<string,unknown> {
   return {
     file_path: { type: 'string', required: true, description: 'Path to file to edit' },
@@ -61,7 +64,7 @@ function generateEditToolSchema(): Record<string,unknown> {
   };
 }
 
-// @kern-source: tool-prompt:70
+// @kern-source: tool-prompt:71
 function generateWriteToolSchema(): Record<string,unknown> {
   return {
     file_path: { type: 'string', required: true, description: 'Path to file to write' },
@@ -69,7 +72,7 @@ function generateWriteToolSchema(): Record<string,unknown> {
   };
 }
 
-// @kern-source: tool-prompt:78
+// @kern-source: tool-prompt:79
 function generateBashToolSchema(): Record<string,unknown> {
   return {
     command: { type: 'string', required: true, description: 'Shell command to execute' },
@@ -77,7 +80,7 @@ function generateBashToolSchema(): Record<string,unknown> {
   };
 }
 
-// @kern-source: tool-prompt:86
+// @kern-source: tool-prompt:87
 function generateGrepToolSchema(): Record<string,unknown> {
   return {
     pattern: { type: 'string', required: true, description: 'Regex pattern to search for' },
@@ -87,11 +90,42 @@ function generateGrepToolSchema(): Record<string,unknown> {
   };
 }
 
-// @kern-source: tool-prompt:96
+// @kern-source: tool-prompt:97
 function generateGlobToolSchema(): Record<string,unknown> {
   return {
     pattern: { type: 'string', required: true, description: 'Glob pattern (e.g. "**/*.ts")' },
     path: { type: 'string', required: false, description: 'Base directory (default: cwd)' },
   };
+}
+
+// @kern-source: tool-prompt:105
+export function toolsToOpenAIFormat(registry: ToolRegistry): Array<{type:string,function:{name:string,description:string,parameters:Record<string,unknown>}}> {
+  const handlers = Array.from((registry as any).tools.values()) as ToolHandler[];
+  return handlers.map((h: ToolHandler) => {
+    const schema = h.definition.inputSchema as any;
+    const props = schema.properties ?? schema;
+    const properties: Record<string, unknown> = {};
+    const required: string[] = [];
+  
+    for (const [key, spec] of Object.entries(props)) {
+      if (key === 'type' || key === 'required' || key === 'properties') continue;
+      const s = spec as any;
+      properties[key] = { type: s.type ?? 'string', description: s.description ?? key };
+      if (s.required === true) required.push(key);
+    }
+    // Also check schema-level required array
+    if (Array.isArray(schema.required)) {
+      for (const r of schema.required) { if (!required.includes(r)) required.push(r); }
+    }
+  
+    return {
+      type: 'function' as const,
+      function: {
+        name: h.definition.name,
+        description: h.definition.description,
+        parameters: { type: 'object', properties, required },
+      },
+    };
+  });
 }
 

@@ -207,7 +207,7 @@ export async function* apiStreamDispatch(config: ApiConfig, prompt: string, time
 }
 
 // @kern-source: api-dispatch:206
-export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages: Array<{role:string,content:string}>, timeout: number, signal?: AbortSignal): AsyncGenerator<string, DispatchResult, void> {
+export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages: Array<{role:string,content:string}>, timeout: number, signal?: AbortSignal, tools?: Array<{type:string,function:{name:string,description:string,parameters:Record<string,unknown>}}>): AsyncGenerator<string, DispatchResult, void> {
   if ((config as any).format === 'anthropic') {
     return yield* anthropicStreamDispatchWithHistory(config, messages, timeout, signal);
   }
@@ -220,12 +220,17 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
   const startTime = Date.now();
   const url = config.baseUrl.replace(/\/$/, '') + '/chat/completions';
   
-  const body = JSON.stringify({
+  const reqBody: Record<string, unknown> = {
     model: config.model,
     messages,
     max_tokens: config.maxTokens ?? 4096,
     stream: true,
-  });
+  };
+  if (tools && tools.length > 0) {
+    reqBody.tools = tools;
+  }
+  
+  const body = JSON.stringify(reqBody);
   
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout * 1000);
@@ -235,6 +240,9 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
   }
   
   let stdout = '';
+  // Accumulate tool calls from streaming deltas
+  const pendingToolCalls: Map<number, { id: string; name: string; arguments: string }> = new Map();
+  
   try {
     const response = await fetch(url, {
       method: 'POST',
@@ -257,6 +265,7 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
   
     const decoder = new TextDecoder();
     let buffer = '';
+    let finishReason = '';
   
     while (true) {
       const { done, value } = await reader.read();
@@ -271,14 +280,46 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
         const data = line.slice(6).trim();
         if (data === '[DONE]') continue;
         try {
-          const parsed = JSON.parse(data) as { choices?: Array<{ delta?: { content?: string, reasoning_content?: string } }> };
-          const delta = parsed.choices?.[0]?.delta;
+          const parsed = JSON.parse(data) as any;
+          const choice = parsed.choices?.[0];
+          const delta = choice?.delta;
+  
+          // Text content
           const chunk = delta?.content ?? delta?.reasoning_content;
           if (chunk) {
             stdout += chunk;
             yield chunk;
           }
+  
+          // Tool call deltas — accumulate
+          if (delta?.tool_calls) {
+            for (const tc of delta.tool_calls) {
+              const idx = tc.index ?? 0;
+              if (!pendingToolCalls.has(idx)) {
+                pendingToolCalls.set(idx, { id: tc.id ?? '', name: tc.function?.name ?? '', arguments: '' });
+              }
+              const pending = pendingToolCalls.get(idx)!;
+              if (tc.id) pending.id = tc.id;
+              if (tc.function?.name) pending.name = tc.function.name;
+              if (tc.function?.arguments) pending.arguments += tc.function.arguments;
+            }
+          }
+  
+          // Track finish reason
+          if (choice?.finish_reason) finishReason = choice.finish_reason;
         } catch (_e) { console.warn(`[agon] api-dispatch: malformed SSE chunk skipped: ${data.slice(0, 120)}`); }
+      }
+    }
+  
+    // If model returned tool calls, yield them as <tool> markers matching Agon's parser format
+    if (pendingToolCalls.size > 0) {
+      for (const [, tc] of pendingToolCalls) {
+        let parsedArgs: Record<string, unknown> = {};
+        try { parsedArgs = JSON.parse(tc.arguments); } catch { parsedArgs = { raw: tc.arguments }; }
+        // Use <tool name="X"> format — matches existing parseToolCalls regex
+        const marker = `\n<tool name="${tc.name}">${JSON.stringify(parsedArgs)}</tool>\n`;
+        stdout += marker;
+        yield marker;
       }
     }
   } catch (err) {
@@ -292,7 +333,7 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
   return { exitCode: 0, stdout, stderr: '', durationMs: Date.now() - startTime, timedOut: false };
 }
 
-// @kern-source: api-dispatch:293
+// @kern-source: api-dispatch:334
 export async function* anthropicStreamDispatchWithHistory(config: ApiConfig, messages: Array<{role:string,content:string}>, timeout: number, signal?: AbortSignal): AsyncGenerator<string, DispatchResult, void> {
   const apiKey = process.env[config.apiKeyEnv];
   if (!apiKey) {

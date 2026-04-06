@@ -35,9 +35,10 @@ export interface PersistentSessionConfig {
   cwd: string;
   systemPrompt?: string;
   onApproval?: (tool: string, command: string) => Promise<boolean>;
+  nativeTools?: Array<{type:string,function:{name:string,description:string,parameters:Record<string,unknown>}}>;
 }
 
-// @kern-source: persistent-session:25
+// @kern-source: persistent-session:26
 export interface PersistentSession {
   alive: boolean;
   sessionId: string|null;
@@ -47,7 +48,7 @@ export interface PersistentSession {
   close: () => void;
 }
 
-// @kern-source: persistent-session:33
+// @kern-source: persistent-session:34
 export function createPersistentSession(config: PersistentSessionConfig): PersistentSession {
   const engine = config.engine;
   
@@ -75,7 +76,7 @@ export function createPersistentSession(config: PersistentSessionConfig): Persis
   return createResumeSession(config);
 }
 
-// @kern-source: persistent-session:64
+// @kern-source: persistent-session:65
 export function createCompanionSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -342,7 +343,7 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
   return session;
 }
 
-// @kern-source: persistent-session:334
+// @kern-source: persistent-session:335
 export function createAcpSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -590,7 +591,7 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
   return session;
 }
 
-// @kern-source: persistent-session:585
+// @kern-source: persistent-session:586
 export function createStreamJsonSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -842,7 +843,7 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
   return session;
 }
 
-// @kern-source: persistent-session:840
+// @kern-source: persistent-session:841
 export function createResumeSession(config: PersistentSessionConfig): PersistentSession {
   let alive = false;
   let sessionId: string | null = null;
@@ -903,7 +904,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
         }
   
         let fullResponse = '';
-        const gen = apiStreamDispatchWithHistory(config.engine.api, messageHistory, config.engine.timeout ?? 180, opts.signal);
+        const gen = apiStreamDispatchWithHistory(config.engine.api, messageHistory, config.engine.timeout ?? 180, opts.signal, config.nativeTools);
         try {
           while (true) {
             const { value, done } = await gen.next();

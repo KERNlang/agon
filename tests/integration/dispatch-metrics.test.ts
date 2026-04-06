@@ -257,6 +257,7 @@ describe('ELO Update Integration', () => {
     // Record a win for claude over codex in refactor tasks
     const before = getElo();
     const claudeBefore = before.global?.claude?.rating ?? 1500;
+    const codexBefore = before.global?.codex?.rating ?? 1500;
 
     updateElo('claude', 'codex', 'refactor', 32);
 
@@ -267,9 +268,11 @@ describe('ELO Update Integration', () => {
     // Winner rating should increase
     expect(claudeAfter).toBeGreaterThan(claudeBefore);
     // Loser rating should decrease
-    expect(codexAfter).toBeLessThan(1500);
-    // Ratings should be symmetric (gains ~= losses for equal starting ELO)
-    expect(Math.abs((claudeAfter - claudeBefore) + (codexAfter - 1500))).toBeLessThan(1);
+    expect(codexAfter).toBeLessThan(codexBefore);
+    // ELO is zero-sum: winner gain + loser loss ≈ 0
+    const gain = claudeAfter - claudeBefore;
+    const loss = codexAfter - codexBefore;
+    expect(Math.abs(gain + loss)).toBeLessThan(1);
   });
 
   it('ELO tracks per task class', async () => {

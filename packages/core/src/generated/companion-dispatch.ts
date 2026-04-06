@@ -120,8 +120,9 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
   function killProc(): void {
     try {
       if (proc.pid) process.kill(-proc.pid, 'SIGTERM');
-    } catch {
-      try { proc.kill('SIGTERM'); } catch { /* already dead */ }
+    } catch (e) {
+      console.warn(`[agon] companion-dispatch: group kill failed (pid=${proc.pid}): ${e instanceof Error ? e.message : String(e)}`);
+      try { proc.kill('SIGTERM'); } catch (e2) { console.warn(`[agon] companion-dispatch: direct kill also failed: ${e2 instanceof Error ? e2.message : String(e2)}`); }
     }
   }
   

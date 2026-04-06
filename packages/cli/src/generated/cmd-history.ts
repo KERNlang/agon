@@ -134,8 +134,8 @@ export const historyCommand: any = defineCommand({
           synthesis,
           manifest.forgeId.slice(0, 8),
         ]);
-      } catch {
-        // skip malformed
+      } catch (e) {
+        console.warn(`[agon] history: skipped malformed manifest: ${e instanceof Error ? e.message : String(e)}`);
       }
     }
 

@@ -1,13 +1,19 @@
+// @kern-source: cesar-memory:5
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 
+// @kern-source: cesar-memory:6
 import { join } from 'node:path';
 
+// @kern-source: cesar-memory:7
 import { ensureAgonHome, AGON_HOME } from './config.js';
 
+// @kern-source: cesar-memory:9
 export const MAX_SESSION_ENTRIES: number = 50;
 
+// @kern-source: cesar-memory:14
 export const MAX_PERSISTENT_ENTRIES: number = 30;
 
+// @kern-source: cesar-memory:19
 export interface MemoryEntry {
   key: string;
   value: string;
@@ -15,6 +21,7 @@ export interface MemoryEntry {
   category: 'file'|'decision'|'attempt'|'preference'|'pattern';
 }
 
+// @kern-source: cesar-memory:25
 export interface CesarMemory {
   session: Map<string, MemoryEntry>;
   persistent: MemoryEntry[];
@@ -27,6 +34,7 @@ export interface CesarMemory {
   save: () => void;
 }
 
+// @kern-source: cesar-memory:36
 export function createCesarMemory(): CesarMemory {
   const session = new Map<string, MemoryEntry>();
   let persistent: MemoryEntry[] = [];
@@ -104,14 +112,14 @@ export function createCesarMemory(): CesarMemory {
           const raw = readFileSync(persistPath, 'utf-8');
           persistent = JSON.parse(raw);
         }
-      } catch { persistent = []; }
+      } catch (e) { console.warn(`[agon] cesar-memory: failed to load persistent memory, resetting: ${e instanceof Error ? e.message : String(e)}`); persistent = []; }
     },
   
     save() {
       try {
         ensureAgonHome();
         writeFileSync(persistPath, JSON.stringify(persistent, null, 2), 'utf-8');
-      } catch { /* ignore write errors */ }
+      } catch (e) { console.warn(`[agon] cesar-memory: failed to persist memory: ${e instanceof Error ? e.message : String(e)}`); }
     },
   };
   

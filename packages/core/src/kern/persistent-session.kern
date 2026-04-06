@@ -999,25 +999,35 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
                 })),
               } as any);
 
-              // Execute each tool and add results as role:'tool'
+              // Execute tools in parallel (like Vercel AI SDK Promise.all pattern)
               const INLINE_LIMIT = 800;
-              for (const tc of extractedCalls) {
+
+              // Emit all as running
+              const parsedCalls = extractedCalls.map(tc => {
                 let args: Record<string, unknown> = {};
                 try { args = JSON.parse(tc.arguments); } catch { args = { raw: tc.arguments }; }
+                return { ...tc, args };
+              });
+              for (const tc of parsedCalls) {
+                yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, status: 'running' } };
+              }
 
-                yield { type: 'tool_call' as const, content: tc.name, metadata: { input: args, status: 'running' } };
-
+              // Execute all in parallel
+              const results = await Promise.all(parsedCalls.map(async (tc) => {
                 let result: string;
                 try {
-                  result = await config.onToolCall(tc.name, args, tc.id);
+                  result = await config.onToolCall!(tc.name, tc.args, tc.id);
                 } catch (err: any) {
                   result = `Error: ${err.message ?? String(err)}`;
                 }
+                return { ...tc, result };
+              }));
 
-                yield { type: 'tool_call' as const, content: tc.name, metadata: { input: args, output: result, status: 'done' } };
+              // Emit results and add to history
+              for (const tc of results) {
+                yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, output: tc.result, status: 'done' } };
 
-                // Add to history — summarize large results
-                let histContent = result;
+                let histContent = tc.result;
                 if (histContent.length > INLINE_LIMIT) {
                   const lines = histContent.split('\n').length;
                   histContent = histContent.slice(0, 300) + `\n...\n[${lines} lines, ${histContent.length} chars — use ${tc.name} again for full content]`;

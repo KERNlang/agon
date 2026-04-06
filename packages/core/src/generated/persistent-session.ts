@@ -38,6 +38,11 @@ export interface PersistentSession {
 export function createPersistentSession(config: PersistentSessionConfig): PersistentSession {
   const engine = config.engine;
   
+  // API-only engines cannot use persistent sessions (no binary to spawn)
+  if (engine.api && !engine.binary) {
+    throw new Error(`Engine "${engine.id}" is API-only and cannot use a persistent session`);
+  }
+  
   // Claude: bidirectional stream-json pipe
   if (engine.id === 'claude' || engine.binary === 'claude') {
     return createStreamJsonSession(config);

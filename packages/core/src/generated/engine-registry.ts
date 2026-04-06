@@ -75,6 +75,7 @@ export class EngineRegistry {
   }
 
   findBinary(engine: EngineDefinition): string|null {
+    if (!engine.binary) { this.binaryCache.set(engine.id, null); return null; }
     if (this.binaryCache.has(engine.id)) return this.binaryCache.get(engine.id) ?? null;
     const envKey = `${engine.id.toUpperCase()}_PATH`;
     const envPath = process.env[envKey];
@@ -85,7 +86,7 @@ export class EngineRegistry {
     } catch {
       // 'which' not finding a binary is expected — no warning needed
     }
-    for (const rawPath of engine.searchPaths) {
+    for (const rawPath of (engine.searchPaths ?? [])) {
       const expanded = rawPath.replace('${HOME}', homedir());
       const fullPath = join(expanded, engine.binary);
       if (existsSync(fullPath)) { this.binaryCache.set(engine.id, fullPath); return fullPath; }

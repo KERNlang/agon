@@ -493,7 +493,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           } else if (toolStatus === 'native') {
             // Claude handles tool execution internally (--dangerously-skip-permissions) — display only, don't execute
             dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'running' } as any);
-          } else if (toolStatus === 'running' && meta.input && toolRegistry) {
+          } else if (toolStatus === 'running' && meta.input && toolRegistry && !(ctx as any)._hasNativeTools) {
             // Eager execution: start tool immediately, don't await
             dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'running' } as any);
   
@@ -705,13 +705,15 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
     // Strip <think>...</think> reasoning blocks from API/reasoning models
     response = response.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
   
-    // Strip [SUGGEST:...] tags from API engines (already skipped in parsing, just clean display)
+    // Strip internal markers from API engines
     if ((ctx as any)._hasNativeTools) {
       response = response.replace(/^\[(SUGGEST|DELEGATE):[^\]]*\]\s*/i, '').trim();
+      // Strip <tool> markers injected by apiStreamDispatch (internal, not for display)
+      response = response.replace(/<tool\s+name="[^"]+">[\s\S]*?<\/tool>/g, '').trim();
     }
   
     // Await eager tool promises and send results back to session
-    if (eagerPromises.length > 0 && session.alive && !abort.signal.aborted) {
+    if (eagerPromises.length > 0 && !(ctx as any)._hasNativeTools && session.alive && !abort.signal.aborted) {
       dispatch({ type: 'spinner-start', message: `Cesar: awaiting ${eagerPromises.length} tool result${eagerPromises.length > 1 ? 's' : ''}…`, color });
       const eagerResults = await Promise.all(eagerPromises);
   
@@ -824,8 +826,9 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       return { delegated: false, responded: true };
     }
   
-    // Check for tool calls in response — execute via recursive tool loop
-    if (toolRegistry && response) {
+    // Check for XML tool calls in response — only for CLI engines (not API with native tools).
+    // API engines handle tools inside the session's agentic loop via onToolCall callback.
+    if (toolRegistry && response && !(ctx as any)._hasNativeTools) {
       const toolParsed = parseToolCalls(response);
       if (toolParsed.hasToolCalls) {
         // Stop streaming — we're entering tool execution mode
@@ -1027,7 +1030,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   }
 }
 
-// @kern-source: handlers-cesar-brain:1021
+// @kern-source: handlers-cesar-brain:1024
 export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatch, ctx: HandlerContext): Promise<ForgeJudgment|null> {
   // Need an alive Cesar session
       let session;
@@ -1141,7 +1144,7 @@ export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatc
       return judgment;
 }
 
-// @kern-source: handlers-cesar-brain:1136
+// @kern-source: handlers-cesar-brain:1139
 function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJudgment|null {
   // Strip confidence prefix (e.g. ~91%) before parsing structured output
   const stripped = parseConfidence(response).rest;
@@ -1185,7 +1188,7 @@ function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJud
   return { winner, strengths, convergencePlan, summary, shouldConverge };
 }
 
-// @kern-source: handlers-cesar-brain:1181
+// @kern-source: handlers-cesar-brain:1184
 export async function cesarConvergeForge(manifest: ForgeManifest, judgment: ForgeJudgment, dispatch: Dispatch, ctx: HandlerContext): Promise<string|null> {
   let session;
       try {

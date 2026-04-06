@@ -578,6 +578,19 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 dispatch({ type: 'info', message: confidenceBadge(conf.value) + ` Cesar` });
                 // Strip confidence prefix from response for further parsing
                 response = conf.rest;
+  
+                // Auto-deactivate Nero when confidence recovers
+                if (conf.value >= CONFIDENCE_TIERS.direct && (ctx as any)._autoNero) {
+                  ctx.setNeroMode(false);
+                  (ctx as any).neroMode = false;
+                  (ctx as any)._autoNero = false;
+                  // Kill session so next turn reboots without Nero prompt
+                  if (ctx.cesarSession) {
+                    ctx.cesarSession.close();
+                    ctx.setCesarSession(null);
+                  }
+                  dispatch({ type: 'info', message: '⚔ Nero deactivated — confidence recovered' });
+                }
               } else if (response.length > 30) {
                 // No confidence found after 30 chars — give up parsing
                 confidenceParsed = true;
@@ -608,7 +621,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               return { delegated: false, responded: true };
             }
   
-            // AUTO-ESCALATION: if confidence < 85%, fire a second engine in parallel
+            // AUTO-ESCALATION: if confidence < 85%, fire second engine + activate Nero
             if (confidenceParsed && parsedConfidence !== null && parsedConfidence < CONFIDENCE_TIERS.nero && !suggestion.action && !secondOpinionPromise) {
               // Pick a second engine — anyone available that isn't Cesar
               const otherEngines = ctx.activeEngines().filter((id: string) => id !== cesarEngineId);
@@ -628,6 +641,19 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                   outputDir: outDir,
                   systemPrompt: CESAR_SYSTEM_PROMPT,
                 });
+              }
+  
+              // Auto-activate Nero for subsequent turns — Cesar enters adversarial mode
+              if (!(ctx as any).neroMode && ctx.setNeroMode) {
+                ctx.setNeroMode(true);
+                (ctx as any).neroMode = true;
+                (ctx as any)._autoNero = true; // track that Nero was auto-enabled, not manual
+                // Kill session so next turn reboots with Nero system prompt
+                if (ctx.cesarSession) {
+                  ctx.cesarSession.close();
+                  ctx.setCesarSession(null);
+                }
+                dispatch({ type: 'info', message: '⚔ Nero activated — Cesar will challenge on next turn' });
               }
               // DON'T block — let Cesar continue streaming
             }
@@ -991,7 +1017,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   }
 }
 
-// @kern-source: handlers-cesar-brain:985
+// @kern-source: handlers-cesar-brain:1011
 export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatch, ctx: HandlerContext): Promise<ForgeJudgment|null> {
   // Need an alive Cesar session
       let session;
@@ -1105,7 +1131,7 @@ export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatc
       return judgment;
 }
 
-// @kern-source: handlers-cesar-brain:1100
+// @kern-source: handlers-cesar-brain:1126
 function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJudgment|null {
   // Strip confidence prefix (e.g. ~91%) before parsing structured output
   const stripped = parseConfidence(response).rest;
@@ -1149,7 +1175,7 @@ function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJud
   return { winner, strengths, convergencePlan, summary, shouldConverge };
 }
 
-// @kern-source: handlers-cesar-brain:1145
+// @kern-source: handlers-cesar-brain:1171
 export async function cesarConvergeForge(manifest: ForgeManifest, judgment: ForgeJudgment, dispatch: Dispatch, ctx: HandlerContext): Promise<string|null> {
   let session;
       try {

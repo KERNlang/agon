@@ -593,11 +593,9 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               }
             }
   
-            // Check for suggestion/delegation marker — skip when native tools active
-            // (API models with function calling should use tools directly, not suggest modes)
-            const suggestion = (ctx as any)._hasNativeTools
-              ? { action: null, rest: response }
-              : parseSuggestion(response);
+            // Check for suggestion/delegation marker — Agon modes (forge, brainstorm, etc.)
+            // Always parse regardless of native tools — [SUGGEST:mode] is orchestration, not tool use
+            const suggestion = parseSuggestion(response);
             if (suggestion.action) {
               dispatch({ type: 'spinner-stop' });
               appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
@@ -722,9 +720,9 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
     // Strip <think>...</think> reasoning blocks from API/reasoning models
     response = response.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
   
-    // Strip internal markers from API engines
+    // Strip internal markers from API engines — but NOT [SUGGEST:mode]
+    // (suggestion parsing happens below via finalSuggestion)
     if ((ctx as any)._hasNativeTools) {
-      response = response.replace(/^\[(SUGGEST|DELEGATE):[^\]]*\]\s*/i, '').trim();
       // Strip <tool> markers injected by apiStreamDispatch (internal, not for display)
       response = response.replace(/<tool\s+name="[^"]+">[\s\S]*?<\/tool>/g, '').trim();
     }
@@ -1082,7 +1080,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   }
 }
 
-// @kern-source: handlers-cesar-brain:1076
+// @kern-source: handlers-cesar-brain:1074
 export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatch, ctx: HandlerContext): Promise<ForgeJudgment|null> {
   // Need an alive Cesar session
       let session;
@@ -1196,7 +1194,7 @@ export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatc
       return judgment;
 }
 
-// @kern-source: handlers-cesar-brain:1191
+// @kern-source: handlers-cesar-brain:1189
 function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJudgment|null {
   // Strip confidence prefix (e.g. ~91%) before parsing structured output
   const stripped = parseConfidence(response).rest;
@@ -1240,7 +1238,7 @@ function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJud
   return { winner, strengths, convergencePlan, summary, shouldConverge };
 }
 
-// @kern-source: handlers-cesar-brain:1236
+// @kern-source: handlers-cesar-brain:1234
 export async function cesarConvergeForge(manifest: ForgeManifest, judgment: ForgeJudgment, dispatch: Dispatch, ctx: HandlerContext): Promise<string|null> {
   let session;
       try {

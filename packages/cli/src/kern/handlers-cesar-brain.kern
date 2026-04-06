@@ -584,11 +584,9 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
                 }
               }
 
-              // Check for suggestion/delegation marker — skip when native tools active
-              // (API models with function calling should use tools directly, not suggest modes)
-              const suggestion = (ctx as any)._hasNativeTools
-                ? { action: null, rest: response }
-                : parseSuggestion(response);
+              // Check for suggestion/delegation marker — Agon modes (forge, brainstorm, etc.)
+              // Always parse regardless of native tools — [SUGGEST:mode] is orchestration, not tool use
+              const suggestion = parseSuggestion(response);
               if (suggestion.action) {
                 dispatch({ type: 'spinner-stop' });
                 appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
@@ -713,9 +711,9 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
       // Strip <think>...</think> reasoning blocks from API/reasoning models
       response = response.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
 
-      // Strip internal markers from API engines
+      // Strip internal markers from API engines — but NOT [SUGGEST:mode]
+      // (suggestion parsing happens below via finalSuggestion)
       if ((ctx as any)._hasNativeTools) {
-        response = response.replace(/^\[(SUGGEST|DELEGATE):[^\]]*\]\s*/i, '').trim();
         // Strip <tool> markers injected by apiStreamDispatch (internal, not for display)
         response = response.replace(/<tool\s+name="[^"]+">[\s\S]*?<\/tool>/g, '').trim();
       }

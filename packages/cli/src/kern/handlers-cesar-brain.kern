@@ -324,12 +324,18 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
     const _turnStart = Date.now();
     const _toolsUsed: string[] = [];
 
-    // Concurrency guard with message queue — latest message wins
+    // Concurrency guard with message queue — combines queued messages (like Claude Code)
     if ((ctx as any)._cesarBusy) {
-      // Queue this message — replaces any previously queued (latest wins)
-      (ctx as any)._cesarQueue = { input, dispatch, images };
-      dispatch({ type: 'info', message: 'Cesar is working — your message is queued.' });
-      return { delegated: false, responded: true }; // responded=true so fallback doesn't fire
+      const existing = (ctx as any)._cesarQueue;
+      if (existing) {
+        // Combine with previously queued message
+        existing.input = existing.input + '\n\n' + input;
+        if (images?.length) existing.images = [...(existing.images ?? []), ...images];
+      } else {
+        (ctx as any)._cesarQueue = { input, dispatch, images };
+      }
+      dispatch({ type: 'info', message: 'Queued — will send when Cesar finishes.' });
+      return { delegated: false, responded: true };
     }
     (ctx as any)._cesarBusy = true;
 

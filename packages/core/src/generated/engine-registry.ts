@@ -108,8 +108,9 @@ export class EngineRegistry {
   }
 
   isAvailable(engine: EngineDefinition): boolean {
-    if (engine.api) return !!process.env[engine.api.apiKeyEnv];
-    return this.findBinary(engine) !== null;
+    const hasApiKey = !!(engine.api && process.env[engine.api.apiKeyEnv]);
+    const hasBinary = !!(engine.binary && this.findBinary(engine) !== null);
+    return hasApiKey || hasBinary;
   }
 
   supportsMode(engine: EngineDefinition, mode: EngineMode): boolean {

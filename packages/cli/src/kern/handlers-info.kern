@@ -115,26 +115,47 @@ fn name=handleEngines params="dispatch:Dispatch, ctx:HandlerContext" returns="Pr
     dispatch({ type: 'header', title: 'Engines' });
     dispatch({ type: 'spinner-start', message: 'Scanning...' });
 
+    const config = ctx.config;
+    const cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
+    const cesarBackend = (config as any).cesarBackend ?? 'auto';
+
     try {
       const engines = ctx.registry.list();
       const results = await Promise.all(
         engines.map(async (engine: any) => {
-          const avail = ctx.registry.isAvailable(engine);
+          const hasBinary = !!(engine.binary && ctx.registry.findBinary(engine));
+          const hasApi = !!(engine.api && process.env[engine.api.apiKeyEnv]);
+          const avail = hasBinary || hasApi;
           const version = avail ? ((await ctx.adapter.getVersion(engine)) ?? 'unknown') : '';
-          return { engine, avail, version };
+          return { engine, avail, version, hasBinary, hasApi };
         }),
       );
 
       dispatch({ type: 'spinner-stop' });
 
-      const rows = results.map(({ engine, avail, version }: any) => [
-        engine.id,
-        engine.displayName,
-        avail ? 'installed' : 'missing',
-        version,
-        engine.tier,
-      ]);
-      dispatch({ type: 'table', headers: ['ID', 'Name', 'Status', 'Version', 'Tier'], rows });
+      const rows = results.map(({ engine, avail, version, hasBinary, hasApi }: any) => {
+        // Show which backends are available
+        const cli = hasBinary ? '● cli' : '○ cli';
+        const api = engine.api ? (hasApi ? '● api' : '○ api') : '— api';
+        // Show active backend for Cesar brain engine
+        let active = '';
+        if (engine.id === cesarId) {
+          if (cesarBackend === 'api' && hasApi) active = '← api';
+          else if (cesarBackend === 'cli' && hasBinary) active = '← cli';
+          else if (cesarBackend === 'auto') active = hasBinary ? '← cli' : hasApi ? '← api' : '';
+          active = active ? `[cesar] ${active}` : '[cesar]';
+        }
+        return [
+          engine.id,
+          avail ? 'installed' : 'missing',
+          cli,
+          api,
+          version,
+          active,
+        ];
+      });
+      dispatch({ type: 'table', headers: ['ID', 'Status', 'CLI', 'API', 'Version', ''], rows });
+      dispatch({ type: 'info', message: `Backend: ${cesarBackend}. Switch: /cesar <engine> cli|api` });
     } catch (err) {
       dispatch({ type: 'spinner-stop' });
       throw err;
@@ -256,23 +277,63 @@ fn name=handleUse params="engineIds:string[], dispatch:Dispatch, ctx:HandlerCont
 
 fn name=handleCesar params="engineId:string, dispatch:Dispatch, ctx:HandlerContext" returns=void
   handler <<<
-    if (!engineId) {
-      // Show current Cesar brain
+    // Parse: "/cesar claude api" or "/cesar claude cli" or "/cesar claude" or "/cesar"
+    const parts = engineId.trim().split(/\s+/);
+    const id = parts[0] ?? '';
+    const backendArg = parts[1]?.toLowerCase();
+
+    if (!id) {
+      // Show current Cesar brain + backend
       const config = ctx.config;
       const current = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
-      dispatch({ type: 'info', message: `Cesar brain: ${current}` });
-      dispatch({ type: 'info', message: 'Usage: /cesar <engine> (e.g. /cesar codex)' });
+      const backend = (config as any).cesarBackend ?? 'auto';
+      dispatch({ type: 'info', message: `Cesar brain: ${current} (backend: ${backend})` });
+      dispatch({ type: 'info', message: 'Usage: /cesar <engine> [cli|api|auto]' });
+      return;
+    }
+
+    // Backend-only switch: "/cesar cli" or "/cesar api" or "/cesar auto"
+    if (['cli', 'api', 'auto'].includes(id)) {
+      configSet('cesarBackend', id);
+      // Kill session to force reboot with new backend
+      if (ctx.cesarSession) {
+        ctx.cesarSession.close();
+        ctx.setCesarSession(null);
+      }
+      dispatch({ type: 'success', message: `Cesar backend set to: ${id}` });
       return;
     }
 
     const available = ctx.registry.availableIds();
-    if (!available.includes(engineId)) {
-      dispatch({ type: 'error', message: `Engine "${engineId}" not available. Available: ${available.join(', ')}` });
+    if (!available.includes(id)) {
+      dispatch({ type: 'error', message: `Engine "${id}" not available. Available: ${available.join(', ')}` });
       return;
     }
 
+    // Validate backend if specified
+    if (backendArg && !['cli', 'api', 'auto'].includes(backendArg)) {
+      dispatch({ type: 'error', message: `Invalid backend "${backendArg}". Use: cli, api, or auto` });
+      return;
+    }
+
+    if (backendArg === 'api') {
+      const engine = ctx.registry.get(id);
+      if (!engine.api || !process.env[engine.api.apiKeyEnv]) {
+        dispatch({ type: 'error', message: `API not available for ${id} — need ${engine.api?.apiKeyEnv ?? 'API key'}` });
+        return;
+      }
+    }
+    if (backendArg === 'cli') {
+      const engine = ctx.registry.get(id);
+      if (!engine.binary || !ctx.registry.findBinary(engine)) {
+        dispatch({ type: 'error', message: `CLI binary not found for ${id}` });
+        return;
+      }
+    }
+
     // Only change Cesar brain — do NOT touch sessionEngines, forgeEnabledEngines, or forgeFixedStarter
-    configSet('cesarEngine', engineId);
+    configSet('cesarEngine', id);
+    if (backendArg) configSet('cesarBackend', backendArg);
 
     // Kill old persistent session so next message boots fresh with new engine
     if (ctx.cesarSession) {
@@ -280,7 +341,8 @@ fn name=handleCesar params="engineId:string, dispatch:Dispatch, ctx:HandlerConte
       ctx.setCesarSession(null);
     }
 
-    dispatch({ type: 'success', message: `Cesar brain set to: ${engineId}` });
+    const backend = backendArg ?? (ctx.config as any).cesarBackend ?? 'auto';
+    dispatch({ type: 'success', message: `Cesar brain set to: ${id} (backend: ${backend})` });
     dispatch({ type: 'info', message: 'Conversation context + memory preserved. Forge/tribunal engines unchanged — use /use to change those.' });
   >>>
 

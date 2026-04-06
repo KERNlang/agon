@@ -7,9 +7,10 @@ export interface ApiConfig {
   apiKeyEnv: string;
   model: string;
   maxTokens?: number;
+  format?: 'openai'|'anthropic';
 }
 
-// @kern-source: api-dispatch:9
+// @kern-source: api-dispatch:10
 export async function apiDispatch(config: ApiConfig, prompt: string, timeout: number, signal?: AbortSignal, systemPrompt?: string): Promise<DispatchResult> {
   const apiKey = process.env[config.apiKeyEnv];
   if (!apiKey) {
@@ -93,7 +94,7 @@ export async function apiDispatch(config: ApiConfig, prompt: string, timeout: nu
   }
 }
 
-// @kern-source: api-dispatch:93
+// @kern-source: api-dispatch:94
 export async function* apiStreamDispatch(config: ApiConfig, prompt: string, timeout: number, signal?: AbortSignal, systemPrompt?: string): AsyncGenerator<string, DispatchResult, void> {
   const apiKey = process.env[config.apiKeyEnv];
   if (!apiKey) {
@@ -181,8 +182,12 @@ export async function* apiStreamDispatch(config: ApiConfig, prompt: string, time
   return { exitCode: 0, stdout, stderr: '', durationMs: Date.now() - startTime, timedOut: false };
 }
 
-// @kern-source: api-dispatch:181
+// @kern-source: api-dispatch:182
 export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages: Array<{role:string,content:string}>, timeout: number, signal?: AbortSignal): AsyncGenerator<string, DispatchResult, void> {
+  if ((config as any).format === 'anthropic') {
+    return yield* anthropicStreamDispatchWithHistory(config, messages, timeout, signal);
+  }
+  
   const apiKey = process.env[config.apiKeyEnv];
   if (!apiKey) {
     return { exitCode: 1, stdout: '', stderr: `Missing API key: set ${config.apiKeyEnv}`, durationMs: 0, timedOut: false };
@@ -258,6 +263,127 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
       return { exitCode: signal?.aborted ? 130 : 124, stdout, stderr: 'Request timed out', durationMs, timedOut: !signal?.aborted };
     }
     return { exitCode: 1, stdout, stderr: `API stream failed: ${err instanceof Error ? err.message : String(err)}`, durationMs, timedOut: false };
+  }
+  
+  return { exitCode: 0, stdout, stderr: '', durationMs: Date.now() - startTime, timedOut: false };
+}
+
+// @kern-source: api-dispatch:269
+export async function* anthropicStreamDispatchWithHistory(config: ApiConfig, messages: Array<{role:string,content:string}>, timeout: number, signal?: AbortSignal): AsyncGenerator<string, DispatchResult, void> {
+  const apiKey = process.env[config.apiKeyEnv];
+  if (!apiKey) {
+    return { exitCode: 1, stdout: '', stderr: `Missing API key: set ${config.apiKeyEnv}`, durationMs: 0, timedOut: false };
+  }
+  
+  const startTime = Date.now();
+  const url = config.baseUrl.replace(/\/$/, '') + '/v1/messages';
+  
+  // Separate system messages from conversation messages
+  let systemPrompt = '';
+  const apiMessages: Array<{role: string, content: string}> = [];
+  for (const msg of messages) {
+    if (msg.role === 'system') {
+      systemPrompt += (systemPrompt ? '\n\n' : '') + msg.content;
+    } else {
+      // Anthropic only accepts 'user' and 'assistant' roles
+      const role = msg.role === 'assistant' ? 'assistant' : 'user';
+      apiMessages.push({ role, content: msg.content });
+    }
+  }
+  
+  // Anthropic requires alternating user/assistant messages — merge consecutive same-role
+  const merged: Array<{role: string, content: string}> = [];
+  for (const msg of apiMessages) {
+    if (merged.length > 0 && merged[merged.length - 1].role === msg.role) {
+      merged[merged.length - 1].content += '\n\n' + msg.content;
+    } else {
+      merged.push({ ...msg });
+    }
+  }
+  
+  // Anthropic requires first message to be 'user'
+  if (merged.length === 0 || merged[0].role !== 'user') {
+    merged.unshift({ role: 'user', content: '(continue)' });
+  }
+  
+  const reqBody: Record<string, unknown> = {
+    model: config.model,
+    messages: merged,
+    max_tokens: config.maxTokens ?? 8192,
+    stream: true,
+  };
+  if (systemPrompt) {
+    reqBody.system = systemPrompt;
+  }
+  
+  const body = JSON.stringify(reqBody);
+  
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout * 1000);
+  if (signal) {
+    if (signal.aborted) { clearTimeout(timer); return { exitCode: 130, stdout: '', stderr: 'Aborted', durationMs: 0, timedOut: false }; }
+    signal.addEventListener('abort', () => controller.abort(), { once: true });
+  }
+  
+  let stdout = '';
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body,
+      signal: controller.signal,
+    });
+  
+    clearTimeout(timer);
+  
+    if (!response.ok) {
+      const errText = await response.text().catch(() => '');
+      return { exitCode: 1, stdout: '', stderr: `Anthropic API error ${response.status}: ${errText.slice(0, 500)}`, durationMs: Date.now() - startTime, timedOut: false };
+    }
+  
+    const reader = response.body?.getReader();
+    if (!reader) {
+      return { exitCode: 1, stdout: '', stderr: 'No response body', durationMs: Date.now() - startTime, timedOut: false };
+    }
+  
+    const decoder = new TextDecoder();
+    let buffer = '';
+  
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+  
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+  
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const data = line.slice(6).trim();
+        if (data === '[DONE]') continue;
+        try {
+          const parsed = JSON.parse(data) as any;
+          // Anthropic SSE: content_block_delta with text_delta
+          if (parsed.type === 'content_block_delta' && parsed.delta?.type === 'text_delta') {
+            const chunk = parsed.delta.text;
+            if (chunk) {
+              stdout += chunk;
+              yield chunk;
+            }
+          }
+        } catch (_e) { /* skip malformed SSE lines */ }
+      }
+    }
+  } catch (err) {
+    const durationMs = Date.now() - startTime;
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      return { exitCode: signal?.aborted ? 130 : 124, stdout, stderr: 'Request timed out', durationMs, timedOut: !signal?.aborted };
+    }
+    return { exitCode: 1, stdout, stderr: `Anthropic API stream failed: ${err instanceof Error ? err.message : String(err)}`, durationMs, timedOut: false };
   }
   
   return { exitCode: 0, stdout, stderr: '', durationMs: Date.now() - startTime, timedOut: false };

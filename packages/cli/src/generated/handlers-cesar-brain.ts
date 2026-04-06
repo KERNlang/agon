@@ -618,6 +618,12 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               return { delegated: false, responded: true };
             }
   
+            // Buffer: don't start streaming until we've had enough text to detect [SUGGEST:mode]
+            // Suggestions appear in the first ~30 chars after confidence. Wait before streaming.
+            if (response.length < 40) {
+              continue; // accumulate more chunks before switching to stream mode
+            }
+  
             // AUTO-ESCALATION: if confidence < 85%, fire second engine + activate Nero
             if (confidenceParsed && parsedConfidence !== null && parsedConfidence < CONFIDENCE_TIERS.nero && !suggestion.action && !secondOpinionPromise) {
               // Pick a second engine — anyone available that isn't Cesar
@@ -1080,7 +1086,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   }
 }
 
-// @kern-source: handlers-cesar-brain:1074
+// @kern-source: handlers-cesar-brain:1080
 export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatch, ctx: HandlerContext): Promise<ForgeJudgment|null> {
   // Need an alive Cesar session
       let session;
@@ -1194,7 +1200,7 @@ export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatc
       return judgment;
 }
 
-// @kern-source: handlers-cesar-brain:1189
+// @kern-source: handlers-cesar-brain:1195
 function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJudgment|null {
   // Strip confidence prefix (e.g. ~91%) before parsing structured output
   const stripped = parseConfidence(response).rest;
@@ -1238,7 +1244,7 @@ function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJud
   return { winner, strengths, convergencePlan, summary, shouldConverge };
 }
 
-// @kern-source: handlers-cesar-brain:1234
+// @kern-source: handlers-cesar-brain:1240
 export async function cesarConvergeForge(manifest: ForgeManifest, judgment: ForgeJudgment, dispatch: Dispatch, ctx: HandlerContext): Promise<string|null> {
   let session;
       try {

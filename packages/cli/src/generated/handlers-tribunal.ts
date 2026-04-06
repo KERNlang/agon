@@ -1,13 +1,19 @@
+// @kern-source: handlers-tribunal:1
 import { join } from 'node:path';
 
+// @kern-source: handlers-tribunal:2
 import { mkdirSync } from 'node:fs';
 
+// @kern-source: handlers-tribunal:3
 import { ensureAgonHome, RUNS_DIR, scanProjectContext, tracker, appendMessage, resolveWorkingDir } from '@agon/core';
 
+// @kern-source: handlers-tribunal:4
 import { runTribunal } from '@agon/forge';
 
+// @kern-source: handlers-tribunal:5
 import type { Dispatch, HandlerContext } from '../handlers/types.js';
 
+// @kern-source: handlers-tribunal:7
 export async function handleTribunal(question: string, dispatch: Dispatch, ctx: HandlerContext, tribunalMode?: string): Promise<void> {
   const tribunalAbort = new AbortController();
   try {
@@ -19,7 +25,7 @@ export async function handleTribunal(question: string, dispatch: Dispatch, ctx: 
       return;
     }
     
-    const active = ctx.registry.availableIds();
+    const active = ctx.activeEngines();
     if (active.length < 2) {
       dispatch({ type: 'error', message: `Tribunal needs at least 2 engines. Only found: ${active.join(', ') || 'none'}` });
       return;

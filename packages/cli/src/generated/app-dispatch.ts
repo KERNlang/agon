@@ -23,7 +23,7 @@ import { handleTeamForge } from '../generated/handlers-team-forge.js';
 import { handleTeamBrainstorm } from '../generated/handlers-team-brainstorm.js';
 
 // @kern-source: app-dispatch:13
-import { handleCesarBrain } from '../handlers/cesar-brain.js';
+import { handleCesarBrain, CESAR_SYSTEM_PROMPT } from '../handlers/cesar-brain.js';
 
 // @kern-source: app-dispatch:14
 import { handlePipeline } from '../handlers/pipeline.js';
@@ -158,6 +158,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
       mode: 'exec' as any,
       timeout: (cesarConfig as any).timeout ?? 120,
       outputDir: outDir,
+      systemPrompt: CESAR_SYSTEM_PROMPT,
     });
     if (freshResult.stdout.trim()) {
       cb.dispatch({ type: 'engine-block', engineId: cesarId, color: 81, content: freshResult.stdout.trim() });
@@ -193,6 +194,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
       mode: 'exec' as any,
       timeout: (cesarConfig as any).timeout ?? 120,
       outputDir: outDir,
+      systemPrompt: CESAR_SYSTEM_PROMPT,
     });
     if (actingResult.stdout.trim()) {
       cb.dispatch({ type: 'engine-block', engineId: actingCesar, color: 208, content: actingResult.stdout.trim() });
@@ -206,7 +208,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
   return false;
 }
 
-// @kern-source: app-dispatch:190
+// @kern-source: app-dispatch:192
 export async function dispatchIntent(intent: any, input: string, cb: DispatchCallbacks): Promise<DispatchResult> {
   switch (intent.type) {
     // ── Job-dispatched commands (return immediately, don't hit finally) ──

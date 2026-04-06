@@ -15,7 +15,7 @@ fn name=handleBrainstorm params="question:string, dispatch:Dispatch, ctx:Handler
       return;
     }
 
-    const engines = ctx.registry.availableIds();
+    const engines = ctx.activeEngines();
     if (engines.length === 0) {
       dispatch({ type: 'error', message: 'No engines available.' });
       return;

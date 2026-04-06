@@ -16,7 +16,7 @@ interface name=CompanionResult
   field name=fileChanges type="Array<{changes:unknown,status:string}>"
   field name=commands type="Array<{command:string,exitCode:number,output:string}>"
 
-fn name=companionDispatch async=true params="opts:{config:CompanionConfig, binaryPath:string, prompt:string, cwd:string, timeout:number, mode:'exec'|'review'|'agent', signal?:AbortSignal}" returns="Promise<DispatchResult>"
+fn name=companionDispatch async=true params="opts:{config:CompanionConfig, binaryPath:string, prompt:string, cwd:string, timeout:number, mode:'exec'|'review'|'agent', signal?:AbortSignal, systemPrompt?:string}" returns="Promise<DispatchResult>"
   handler <<<
     if (opts.config.protocol !== 'jsonrpc') {
       return { exitCode: 2, stdout: '', stderr: 'Only jsonrpc protocol supported', durationMs: 0, timedOut: false };
@@ -148,12 +148,16 @@ fn name=companionDispatch async=true params="opts:{config:CompanionConfig, binar
       notify('initialized');
 
       // Start thread
-      const threadResult = await send('thread/start', {
+      const threadParams: Record<string, unknown> = {
         cwd: opts.cwd,
         approvalPolicy: 'never',
         sandbox: opts.mode === 'agent' ? 'workspace-write' : 'read-only',
         ephemeral: true,
-      }) as any;
+      };
+      if (opts.systemPrompt) {
+        threadParams.instructions = opts.systemPrompt;
+      }
+      const threadResult = await send('thread/start', threadParams) as any;
       threadId = threadResult?.thread?.id ?? null;
 
       // Start turn or review

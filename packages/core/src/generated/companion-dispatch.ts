@@ -1,9 +1,13 @@
+// @kern-source: companion-dispatch:1
 import { spawn } from 'node:child_process';
 
+// @kern-source: companion-dispatch:2
 import { createInterface } from 'node:readline';
 
+// @kern-source: companion-dispatch:3
 import type { DispatchResult, CompanionConfig } from './types.js';
 
+// @kern-source: companion-dispatch:5
 export interface JsonRpcMessage {
   jsonrpc?: string;
   id?: number;
@@ -13,6 +17,7 @@ export interface JsonRpcMessage {
   error?: {code:number,message:string};
 }
 
+// @kern-source: companion-dispatch:13
 export interface CompanionResult {
   text: string;
   threadId: string|null;
@@ -20,7 +25,8 @@ export interface CompanionResult {
   commands: Array<{command:string,exitCode:number,output:string}>;
 }
 
-export async function companionDispatch(opts: {config:CompanionConfig, binaryPath:string, prompt:string, cwd:string, timeout:number, mode:'exec'|'review'|'agent', signal?:AbortSignal}): Promise<DispatchResult> {
+// @kern-source: companion-dispatch:19
+export async function companionDispatch(opts: {config:CompanionConfig, binaryPath:string, prompt:string, cwd:string, timeout:number, mode:'exec'|'review'|'agent', signal?:AbortSignal, systemPrompt?:string}): Promise<DispatchResult> {
   if (opts.config.protocol !== 'jsonrpc') {
     return { exitCode: 2, stdout: '', stderr: 'Only jsonrpc protocol supported', durationMs: 0, timedOut: false };
   }
@@ -151,12 +157,16 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
     notify('initialized');
   
     // Start thread
-    const threadResult = await send('thread/start', {
+    const threadParams: Record<string, unknown> = {
       cwd: opts.cwd,
       approvalPolicy: 'never',
       sandbox: opts.mode === 'agent' ? 'workspace-write' : 'read-only',
       ephemeral: true,
-    }) as any;
+    };
+    if (opts.systemPrompt) {
+      threadParams.instructions = opts.systemPrompt;
+    }
+    const threadResult = await send('thread/start', threadParams) as any;
     threadId = threadResult?.thread?.id ?? null;
   
     // Start turn or review

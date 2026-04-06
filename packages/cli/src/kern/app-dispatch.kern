@@ -10,7 +10,7 @@ import from="../handlers/index.js" names="handleForge,handleChat,handleBrainstor
 import from="../generated/handlers-team-tribunal.js" names="handleTeamTribunal"
 import from="../generated/handlers-team-forge.js" names="handleTeamForge"
 import from="../generated/handlers-team-brainstorm.js" names="handleTeamBrainstorm"
-import from="../handlers/cesar-brain.js" names="handleCesarBrain"
+import from="../handlers/cesar-brain.js" names="handleCesarBrain,CESAR_SYSTEM_PROMPT"
 import from="../handlers/pipeline.js" names="handlePipeline"
 import from="../handlers/provider.js" names="handleProvider"
 
@@ -139,6 +139,7 @@ fn name=routeWithCesar async=true params="input:string, images:ImageAttachment[]
         mode: 'exec' as any,
         timeout: (cesarConfig as any).timeout ?? 120,
         outputDir: outDir,
+        systemPrompt: CESAR_SYSTEM_PROMPT,
       });
       if (freshResult.stdout.trim()) {
         cb.dispatch({ type: 'engine-block', engineId: cesarId, color: 81, content: freshResult.stdout.trim() });
@@ -174,6 +175,7 @@ fn name=routeWithCesar async=true params="input:string, images:ImageAttachment[]
         mode: 'exec' as any,
         timeout: (cesarConfig as any).timeout ?? 120,
         outputDir: outDir,
+        systemPrompt: CESAR_SYSTEM_PROMPT,
       });
       if (actingResult.stdout.trim()) {
         cb.dispatch({ type: 'engine-block', engineId: actingCesar, color: 208, content: actingResult.stdout.trim() });

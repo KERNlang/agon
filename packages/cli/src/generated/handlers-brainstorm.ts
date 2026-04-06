@@ -1,15 +1,22 @@
+// @kern-source: handlers-brainstorm:1
 import { join } from 'node:path';
 
+// @kern-source: handlers-brainstorm:2
 import { mkdirSync } from 'node:fs';
 
+// @kern-source: handlers-brainstorm:3
 import { ensureAgonHome, RUNS_DIR, scanProjectContext, tracker, appendMessage, resolveWorkingDir } from '@agon/core';
 
+// @kern-source: handlers-brainstorm:4
 import { runBrainstorm } from '@agon/forge';
 
+// @kern-source: handlers-brainstorm:5
 import { ENGINE_COLORS } from '../output.js';
 
+// @kern-source: handlers-brainstorm:6
 import type { Dispatch, HandlerContext, EngineProgress } from '../handlers/types.js';
 
+// @kern-source: handlers-brainstorm:8
 export async function handleBrainstorm(question: string, dispatch: Dispatch, ctx: HandlerContext): Promise<void> {
   const bsAbort = new AbortController();
   try {
@@ -20,7 +27,7 @@ export async function handleBrainstorm(question: string, dispatch: Dispatch, ctx
       return;
     }
     
-    const engines = ctx.registry.availableIds();
+    const engines = ctx.activeEngines();
     if (engines.length === 0) {
       dispatch({ type: 'error', message: 'No engines available.' });
       return;

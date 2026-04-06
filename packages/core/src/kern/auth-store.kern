@@ -1,0 +1,89 @@
+import from="node:fs" names="readFileSync,writeFileSync,mkdirSync,existsSync,chmodSync"
+import from="node:path" names="join,dirname"
+import from="node:os" names="homedir"
+
+interface name=AuthEntry
+  field name=type type="'api'"
+  field name=key type=string
+  field name=provider type=string optional=true
+
+interface name=AuthStore
+  field name=entries type="Record<string, AuthEntry>"
+
+const name=AUTH_FILE type=string
+  handler <<<
+    join(homedir(), '.agon', 'auth.json')
+  >>>
+
+fn name=loadAuthStore returns=AuthStore
+  handler <<<
+    if (!existsSync(AUTH_FILE)) {
+      return { entries: {} };
+    }
+    try {
+      const data = JSON.parse(readFileSync(AUTH_FILE, 'utf-8'));
+      return { entries: data ?? {} };
+    } catch (_e) {
+      return { entries: {} };
+    }
+  >>>
+
+fn name=saveAuthStore params="store:AuthStore" returns=void
+  handler <<<
+    const dir = dirname(AUTH_FILE);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(AUTH_FILE, JSON.stringify(store.entries, null, 2) + '\n', { mode: 0o600 });
+    try { chmodSync(AUTH_FILE, 0o600); } catch (_e) { /* best effort */ }
+  >>>
+
+fn name=setAuthKey params="envVar:string, key:string, providerName?:string" returns=void
+  handler <<<
+    const store = loadAuthStore();
+    store.entries[envVar] = { type: 'api', key, provider: providerName };
+    saveAuthStore(store);
+    // Also set in current process so it's immediately available
+    process.env[envVar] = key;
+  >>>
+
+fn name=removeAuthKey params="envVar:string" returns=void
+  handler <<<
+    const store = loadAuthStore();
+    delete store.entries[envVar];
+    saveAuthStore(store);
+  >>>
+
+fn name=getAuthKey params="envVar:string" returns="string|null"
+  handler <<<
+    // 1. Check process env first (explicit export takes precedence)
+    if (process.env[envVar]) return process.env[envVar]!;
+    // 2. Check stored auth
+    const store = loadAuthStore();
+    const entry = store.entries[envVar];
+    if (entry?.key) {
+      // Inject into process.env so downstream code (apiDispatch) sees it
+      process.env[envVar] = entry.key;
+      return entry.key;
+    }
+    return null;
+  >>>
+
+fn name=loadAllAuthKeys returns=void
+  doc "Load all stored keys into process.env at startup. Call once during init."
+  handler <<<
+    const store = loadAuthStore();
+    for (const [envVar, entry] of Object.entries(store.entries)) {
+      // Don't override explicitly set env vars
+      if (!process.env[envVar] && entry.key) {
+        process.env[envVar] = entry.key;
+      }
+    }
+  >>>
+
+fn name=listStoredProviders returns="Array<{envVar:string, provider?:string}>"
+  handler <<<
+    const store = loadAuthStore();
+    return Object.entries(store.entries).map(([envVar, entry]) => ({
+      envVar,
+      provider: entry.provider,
+    }));
+  >>>

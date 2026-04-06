@@ -82,6 +82,8 @@ export { companionDispatch } from './companion-dispatch.js';
 export type { CompanionResult } from './companion-dispatch.js';
 export { fetchModelsRegistry, buildModelEntries, searchModels, modelEntryToEngineDef } from './models-registry.js';
 export type { ModelEntry, ModelsDevProvider, ModelsDevModel } from './models-registry.js';
+export { loadAuthStore, saveAuthStore, setAuthKey, removeAuthKey, getAuthKey, loadAllAuthKeys, listStoredProviders } from './auth-store.js';
+export type { AuthEntry, AuthStore } from './auth-store.js';
 export {
   createPersistentSession, createCompanionSession, createAcpSession,
   createStreamJsonSession, createResumeSession,

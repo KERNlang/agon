@@ -22,6 +22,10 @@ export async function handleProviderAdd(dispatch: Dispatch, ctx: HandlerContext,
   }
   
   const [id, baseUrl, apiKeyEnv, ...modelParts] = parts;
+  if (!/^[a-zA-Z0-9._-]+$/.test(id)) {
+    dispatch({ type: 'error', message: 'Provider ID must contain only letters, numbers, hyphens, and underscores' });
+    return;
+  }
   const model = modelParts.join(' ');
   
   // Check if API key is set
@@ -33,15 +37,12 @@ export async function handleProviderAdd(dispatch: Dispatch, ctx: HandlerContext,
     schemaVersion: 3,
     id,
     displayName: id.charAt(0).toUpperCase() + id.slice(1),
-    binary: '',
-    searchPaths: [],
-    versionCmd: [],
     isLocal: false,
     tier: 'user',
-    timeout: 120,
+    timeout: 180,
     exec: { args: [] },
     review: { args: [] },
-    api: { baseUrl, apiKeyEnv, model },
+    api: { baseUrl, apiKeyEnv, model, maxTokens: 4096 },
   };
   
   const dir = enginesDir();
@@ -60,6 +61,10 @@ export async function handleProviderAdd(dispatch: Dispatch, ctx: HandlerContext,
 export function handleProviderRemove(dispatch: Dispatch, ctx: HandlerContext, id: string): void {
   if (!id) {
     dispatch({ type: 'error', message: 'Usage: /provider remove <id>' });
+    return;
+  }
+  if (!/^[a-zA-Z0-9._-]+$/.test(id)) {
+    dispatch({ type: 'error', message: 'Provider ID must contain only letters, numbers, hyphens, and underscores' });
     return;
   }
   const path = join(enginesDir(), `${id}.json`);

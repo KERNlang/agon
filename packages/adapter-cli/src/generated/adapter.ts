@@ -139,6 +139,19 @@ export class CliAdapter implements EngineAdapter {
   }
 
   async dispatchAgent(options: DispatchOptions): Promise<AgentDispatchResult> {
+    if (options.engine.api && !options.engine.binary) {
+      return {
+        exitCode: 1,
+        stdout: '',
+        stderr: `Engine "${options.engine.id}" is API-only and does not support agent mode`,
+        durationMs: 0,
+        timedOut: false,
+        diff: '',
+        diffLines: 0,
+        filesChanged: 0,
+      };
+    }
+    
     const binaryPath = this.registry.findBinary(options.engine);
     if (!binaryPath) {
       throw new EngineNotFoundError(options.engine.id, options.engine.installHint);
@@ -222,6 +235,19 @@ export class CliAdapter implements EngineAdapter {
   }
 
   async *dispatchAgentStream(options: DispatchOptions): AsyncGenerator<string, AgentDispatchResult, void> {
+    if (options.engine.api && !options.engine.binary) {
+      return {
+        exitCode: 1,
+        stdout: '',
+        stderr: `Engine "${options.engine.id}" is API-only and does not support agent mode`,
+        durationMs: 0,
+        timedOut: false,
+        diff: '',
+        diffLines: 0,
+        filesChanged: 0,
+      };
+    }
+    
     const binaryPath = this.registry.findBinary(options.engine);
     if (!binaryPath) {
       throw new EngineNotFoundError(options.engine.id, options.engine.installHint);
@@ -283,6 +309,7 @@ export class CliAdapter implements EngineAdapter {
     if (engine.api) return engine.api.model;
     const binaryPath = this.registry.findBinary(engine);
     if (!binaryPath) return null;
+    if (!engine.versionCmd) return null;
     
     try {
       const result = await spawnWithTimeout({

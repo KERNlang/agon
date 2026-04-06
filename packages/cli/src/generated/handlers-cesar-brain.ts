@@ -53,6 +53,10 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
     throw new Error(`Cesar engine "${cesarEngineId}" not found`);
   }
   
+  if (engine.api && !engine.binary) {
+    throw new Error(`Cesar engine "${cesarEngineId}" is API-only — Cesar requires a CLI engine`);
+  }
+  
   const binaryPath = ctx.registry.findBinary(engine);
   if (!binaryPath) {
     throw new Error(`Binary for "${cesarEngineId}" not found`);

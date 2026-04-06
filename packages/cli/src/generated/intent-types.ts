@@ -28,7 +28,6 @@ export type Intent =
   | { type: 'flow' }
   | { type: 'flows' }
   | { type: 'chats'; sessionId?: string }
-  | { type: 'chats-resume'; sessionId: string }
   | { type: 'build'; input: string }
   | { type: 'pipeline'; task: string; fitnessCmd: string | null }
   | { type: 'run'; input: string }
@@ -38,12 +37,64 @@ export type Intent =
   | { type: 'jobs' }
   | { type: 'focus'; jobId?: string }
   | { type: 'explore' }
+  | { type: 'nero' }
+  | { type: 'chats-resume'; sessionId: string }
   | { type: 'suggest-brainstorm'; input: string; question?: string }
   | { type: 'suggest-tribunal'; input: string; question?: string }
-  | { type: 'suggest-forge'; input: string; task?: string; fitnessCmd?: string | null }
+  | { type: 'suggest-forge'; input: string; task?: string; fitnessCmd: string | null | undefined }
   | { type: 'clear' }
   | { type: 'slash-list' }
   | { type: 'help' }
   | { type: 'exit' }
   | { type: 'auto'; input: string; taskClass: 'code' | 'question' | 'ambiguous' }
   | { type: 'unknown'; input: string };
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -522,6 +522,7 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
       const args = [
         '--print',
         '--bare',
+        '--verbose',
         '--input-format', 'stream-json',
         '--output-format', 'stream-json',
         '--replay-user-messages',
@@ -572,11 +573,20 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
         proc = null;
       });
   
-      // Wait for first stdout line (signals process is ready)
-      await new Promise<void>((resolve) => {
-        const timeout = setTimeout(resolve, 3000);
-        rl.once('line', () => { clearTimeout(timeout); resolve(); });
+      // Wait for first stdout line OR early process death
+      const startOk = await new Promise<boolean>((resolve) => {
+        const timeout = setTimeout(() => resolve(true), 5000);
+        rl.once('line', () => { clearTimeout(timeout); resolve(true); });
+        proc!.once('close', (code: number | null) => {
+          clearTimeout(timeout);
+          console.error(`[cesar:claude] process died during start, code=${code}`);
+          resolve(false);
+        });
       });
+      if (!startOk || !proc) {
+        alive = false;
+        throw new Error('Claude stream-json process died during startup');
+      }
       alive = true;
     },
   

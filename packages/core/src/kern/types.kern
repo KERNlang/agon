@@ -221,6 +221,19 @@ interface name=ForgeManifest
   field name=synthesis type="{pass:boolean,score:number,wins:boolean,patchPath:string,originalWinnerScore:number}" optional=true
   field name=gauntlet type=GauntletResult optional=true
 
+interface name=ConvergenceEntry
+  field name=file type=string
+  field name=fn type=string
+  field name=from type=string
+  field name=reason type=string
+
+interface name=ForgeJudgment
+  field name=winner type=string
+  field name=strengths type="{ engineId: string; category: string; reason: string }[]"
+  field name=convergencePlan type="ConvergenceEntry[]"
+  field name=summary type=string
+  field name=shouldConverge type=boolean
+
 event name=ForgeEvent
   type name="baseline:start"
   type name="baseline:done" data="{ passes: boolean }"

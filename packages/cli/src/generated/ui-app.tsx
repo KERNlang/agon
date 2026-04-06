@@ -4,7 +4,7 @@ import { Box, Text, render, useApp, useInput } from 'ink';
 
 import TextInput from 'ink-text-input';
 
-import { EngineRegistry, loadConfig, ensureAgonHome, ensureCurrentWorkspace, startChatSession, getElo, getActiveWorkspace, RUNS_DIR, extractImagesFromInput, resolveWorkingDir, currentBranch, configSet } from '@agon/core';
+import { EngineRegistry, loadConfig, ensureAgonHome, ensureCurrentWorkspace, startChatSession, getElo, getActiveWorkspace, RUNS_DIR, extractImagesFromInput, resolveWorkingDir, currentBranch, configSet, createCesarMemory } from '@agon/core';
 
 import type { Plan, ChatSession, Skill, PersistentSession, ImageAttachment } from '@agon/core';
 
@@ -95,6 +95,8 @@ export function App({  }: {  }) {
   const [activeAbort, setActiveAbort] = useState<AbortController|null>(null);
   const [cesarSession, setCesarSession] = useState<PersistentSession|null>(null);
   const [explorationMode, setExplorationMode] = useState<boolean>(false);
+  const [neroMode, setNeroMode] = useState<boolean>(false);
+  const [cesarMemory, setCesarMemory] = useState<any>(() => createCesarMemory());
   const [registry, setRegistry] = useState<EngineRegistry>((() => { const reg = new EngineRegistry(); const engDir = join(dirname(fileURLToPath(import.meta.url)), '../../../../engines'); reg.load(engDir); return reg; })());
   const [adapter, setAdapter] = useState<EngineAdapter>(createCliAdapter(registry));
   const [dynamicSkills, setDynamicSkills] = useState<Skill[]>(loadSkills());
@@ -171,11 +173,20 @@ export function App({  }: {  }) {
             setCurrentPlan, setActiveAbort: trackAbort,
             askQuestion, cesarSession, setCesarSession: setCesarSessionWrapped,
             explorationMode, setExplorationMode,
+            neroMode, setNeroMode,
+            cesarMemory,
           };
-  }, [registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode]);
+  }, [registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode]);
 
   const handleInputChange = useCallback((value:string) => {
           const nextValue = cleanInputValue(value);
+    
+          // "/" typed into empty input → open slash picker, swallow the character
+          if (!inputValue && nextValue === '/' && !slashPickerOpen && !enginePickerOpen && !questionState && !justPastedRef.current) {
+            setSlashPickerOpen(true);
+            setInputKey((k: number) => k + 1);
+            return;
+          }
     
           if (justPastedRef.current) {
             setInputValue(nextValue);
@@ -213,6 +224,8 @@ export function App({  }: {  }) {
   const handleSubmit = useCallback(async (value:string) => {
           let input = cleanSubmitValue(value);
           if (!input) return;
+          // Bare "/" → open slash picker flyout, don't dump text list
+          if (input === '/') { setSlashPickerOpen(true); return; }
           input = expandPastePlaceholders(input, pasteHashesRef.current);
           pasteHashesRef.current.clear();
           pasteCountRef.current = 0;
@@ -240,6 +253,7 @@ export function App({  }: {  }) {
             setMode, setPendingImages, setSessionEngines, setEnginePickerOpen, setChatSession, setLastUndoToken, askQuestion, exit: () => process.exit(0),
             allImages, allSlashCommands: allSlashCommands, dynamicSkills, mode, lastUndoToken, sessionStartTime, jobManager,
             explorationMode, setExplorationMode,
+            neroMode, setNeroMode,
           };
           if (handleModeSwitch(intent.type, (intent as any).topic, (intent as any).question, cb)) {
             if (!(intent as any).input?.trim()) { transition(finishReplState); return; }
@@ -338,9 +352,6 @@ export function App({  }: {  }) {
               return;
             }
             return; // Swallow other keys while choices are shown
-          }
-          if (input === '/' && !inputValue && !slashPickerOpen && !enginePickerOpen && !questionState && !justPastedRef.current) {
-            setSlashPickerOpen(true); return;
           }
           if ((key.tab || input === '\t') && !slashPickerOpen && !enginePickerOpen && !questionState && !reviewEvent) {
             const ghost = getGhostCompletion(inputValue, allSlashCommands, registry.availableIds());

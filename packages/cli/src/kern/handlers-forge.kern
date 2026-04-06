@@ -5,6 +5,7 @@ import from="@agon/core" names="Plan,PlanStepInput,ApprovalLevel" types=true
 import from="@agon/forge" names="runForge"
 import from="../output.js" names="ENGINE_COLORS"
 import from="../handlers/types.js" names="Dispatch,HandlerContext,EngineProgress" types=true
+import from="../handlers/cesar-brain.js" names="cesarJudgeForge,cesarConvergeForge"
 
 fn name=handleForgeEvent params="event:any, plan:Plan, engineStatus:Record<string,string>, dispatch:Dispatch, ctx:HandlerContext" returns=Plan export=false
   handler <<<
@@ -216,15 +217,66 @@ fn name=handleForge params="task:string, fitnessCmd:string|null, dispatch:Dispat
       ],
     });
 
-    if (manifest.winner) {
-      dispatch({ type: 'success', message: `Winner: ${manifest.winner}` });
-      const patchPath = manifest.patches[manifest.winner];
+    // Route through Cesar for judgment + convergence analysis
+    let judgment: any = null;
+    const passingEngines = Object.values(manifest.results).filter((r: any) => r.pass).length;
+    if (passingEngines >= 2 && ctx.cesarSession) {
+      try {
+        judgment = await cesarJudgeForge(manifest, dispatch, ctx);
+      } catch (err) {
+        console.warn(`[agon] Cesar judge failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
+    // Use Cesar's winner if available, otherwise fall back to automatic
+    const finalWinner = judgment?.winner ?? manifest.winner;
+
+    // Convergence: if Cesar says merge best-of-breed, synthesize a converged patch
+    if (judgment?.shouldConverge && judgment.convergencePlan.length > 0 && finalWinner) {
+      dispatch({ type: 'info', message: 'Cesar recommends convergence — synthesizing best-of-breed…' });
+      const answer = await ctx.askQuestion('Converge best parts from all engines? [Y/n]');
+      if (answer.trim().toLowerCase() !== 'n') {
+        try {
+          const convergedPath = await cesarConvergeForge(manifest, judgment, dispatch, ctx);
+          if (convergedPath) {
+            dispatch({ type: 'success', message: 'Convergence complete — merged patch ready' });
+            const convergedContent = readFileSync(convergedPath, 'utf-8');
+            dispatch({ type: 'patch-review' as any, winnerId: 'convergence', patchPath: convergedPath, patchContent: convergedContent });
+            // Skip normal winner patch — convergence replaces it
+            dispatch({ type: 'info', message: `Manifest: ${forgeDir}/manifest.json` });
+
+            for (const step of plan.steps) {
+              if (step.result.state === 'pending' || step.result.state === 'running') {
+                plan = mergeStepResult(plan, step.id, { state: 'completed' });
+              }
+            }
+            const winnerArtifacts = [
+              { type: 'manifest' as const, path: `${forgeDir}/manifest.json` },
+              { type: 'patch' as const, path: convergedPath, engineId: 'convergence' },
+            ];
+            plan = mergeStepResult(plan, 'winner', { state: 'completed', artifacts: winnerArtifacts });
+            ctx.setCurrentPlan(plan);
+            savePlan(plan);
+            dispatch({ type: 'info', message: `Plan: ${plan.id}` });
+            for (const [id, r] of Object.entries(manifest.results) as [string, any][]) {
+              tracker.record(id, task, `score:${r.score} diff:${r.diffLines}`);
+            }
+            return; // Early return — convergence handled everything
+          }
+        } catch (err) {
+          dispatch({ type: 'warning', message: `Convergence failed: ${err instanceof Error ? err.message : String(err)}. Falling back to winner.` });
+        }
+      }
+    }
+
+    if (finalWinner) {
+      if (!judgment) dispatch({ type: 'success', message: `Winner: ${finalWinner}` });
+      const patchPath = manifest.patches[finalWinner];
       dispatch({ type: 'info', message: `Patch: ${patchPath}` });
-      // Dispatch patch-review for interactive apply flow
       if (patchPath) {
         try {
           const patchContent = readFileSync(patchPath, 'utf-8');
-          dispatch({ type: 'patch-review' as any, winnerId: manifest.winner, patchPath, patchContent });
+          dispatch({ type: 'patch-review' as any, winnerId: finalWinner, patchPath, patchContent });
         } catch (err) {
           console.warn(`[agon] failed to read winning patch ${patchPath}: ${err instanceof Error ? err.message : String(err)}`);
         }
@@ -241,10 +293,12 @@ fn name=handleForge params="task:string, fitnessCmd:string|null, dispatch:Dispat
     }
 
     const anyPassed = Object.values(manifest.results).some((r: any) => r.pass);
+    // Use Cesar's chosen winner (finalWinner) for plan artifacts, not automatic manifest.winner
+    const winnerForPlan = finalWinner ?? manifest.winner;
     const winnerArtifacts = [
       { type: 'manifest' as const, path: `${forgeDir}/manifest.json` },
-      ...(manifest.winner && manifest.patches[manifest.winner]
-        ? [{ type: 'patch' as const, path: manifest.patches[manifest.winner], engineId: manifest.winner }]
+      ...(winnerForPlan && manifest.patches[winnerForPlan]
+        ? [{ type: 'patch' as const, path: manifest.patches[winnerForPlan], engineId: winnerForPlan }]
         : []),
     ];
     plan = mergeStepResult(plan, 'winner', { state: 'completed', artifacts: winnerArtifacts });

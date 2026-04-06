@@ -1,4 +1,4 @@
-import type { EngineRegistry, EngineAdapter, Plan, AgonConfig, ChatSession, PersistentSession } from '@agon/core';
+import type { EngineRegistry, EngineAdapter, Plan, AgonConfig, ChatSession, PersistentSession, CesarMemory } from '@agon/core';
 
 export interface EngineProgress {
   id: string;
@@ -56,5 +56,8 @@ export interface HandlerContext {
   setCesarSession: (session: PersistentSession | null) => void;
   explorationMode: boolean;
   setExplorationMode: (mode: boolean) => void;
+  neroMode: boolean;
+  setNeroMode: (mode: boolean) => void;
+  cesarMemory: CesarMemory;
 }
 

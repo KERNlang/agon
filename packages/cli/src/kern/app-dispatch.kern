@@ -35,6 +35,8 @@ interface name=DispatchCallbacks
   field name=jobManager type="any"
   field name=explorationMode type=boolean
   field name=setExplorationMode type="(mode: boolean) => void"
+  field name=neroMode type=boolean
+  field name=setNeroMode type="(mode: boolean) => void"
 
 interface name=DispatchResult
   field name=handled type=boolean
@@ -75,12 +77,41 @@ fn name=routeWithCesar async=true params="input:string, images:ImageAttachment[]
     try {
       const result = await handleCesarBrain(input, cb.dispatch, cb.ctx, images);
       if (result.delegated && result.action) {
-        cb.dispatch({ type: 'info', message: `Cesar delegates → ${result.action}` });
+        const label = input.slice(0, 40);
+        const hardened = result.hardened ?? false;
+        const tMode = result.tribunalMode;
+        cb.dispatch({ type: 'info', message: `Cesar → ${result.action}${hardened ? ' (hardened)' : ''}${tMode ? ` [${tMode}]` : ''}` });
         switch (result.action) {
-          case 'build': cb.runAsJob('build', input.slice(0, 40), () => handleBuild(input, cb.dispatch, cb.ctx)); return true;
-          case 'forge': cb.runAsJob('forge', input.slice(0, 40), () => handleForge(input, null, cb.dispatch, cb.ctx)); return true;
-          case 'brainstorm': cb.runAsJob('brainstorm', input.slice(0, 40), () => handleBrainstorm(input, cb.dispatch, cb.ctx)); return true;
-          case 'tribunal': cb.runAsJob('tribunal', input.slice(0, 40), () => handleTribunal(input, cb.dispatch, cb.ctx)); return true;
+          case 'build':
+            cb.runAsJob('build', label, () => handleBuild(input, cb.dispatch, cb.ctx));
+            return true;
+          case 'forge':
+            cb.runAsJob('forge', label, () => handleForge(input, null, cb.dispatch, cb.ctx, undefined, hardened));
+            return true;
+          case 'team-forge': {
+            const tfFitness = await cb.askQuestion('What command tests this?');
+            if (!tfFitness.trim()) { cb.dispatch({ type: 'warning', message: 'Team-forge needs a test command.' }); break; }
+            cb.runAsJob('team-forge', label, () => handleTeamForge(input, tfFitness.trim(), cb.dispatch, cb.ctx, undefined));
+            return true;
+          }
+          case 'brainstorm':
+            cb.runAsJob('brainstorm', label, () => handleBrainstorm(input, cb.dispatch, cb.ctx));
+            return true;
+          case 'team-brainstorm':
+            cb.runAsJob('team-brainstorm', label, () => handleTeamBrainstorm(input, cb.dispatch, cb.ctx));
+            return true;
+          case 'tribunal':
+            cb.runAsJob('tribunal', label, () => handleTribunal(input, cb.dispatch, cb.ctx, tMode));
+            return true;
+          case 'team-tribunal':
+            cb.runAsJob('team-tribunal', label, () => handleTeamTribunal(input, cb.dispatch, cb.ctx, tMode));
+            return true;
+          case 'campfire':
+            cb.runAsJob('campfire', label, () => handleCampfire(input, cb.dispatch, cb.ctx));
+            return true;
+          case 'pipeline':
+            cb.runAsJob('pipeline', label, () => handlePipeline(input, cb.dispatch, cb.ctx));
+            return true;
         }
       }
       if (result.responded) return false;
@@ -327,6 +358,25 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
           cb.dispatch({ type: 'success', message: 'Exploration mode ON — read-only, write tools blocked. Use /explore again to disable.' });
         } else {
           cb.dispatch({ type: 'success', message: 'Exploration mode OFF — full agent mode restored.' });
+        }
+        break;
+      }
+
+      // ── Nero mode toggle ──
+      case 'nero': {
+        const newNero = !cb.neroMode;
+        cb.setNeroMode(newNero);
+        (cb.ctx as any).neroMode = newNero;
+        // Reset Cesar session so the new system prompt takes effect
+        if (cb.ctx.cesarSession) {
+          cb.ctx.cesarSession.close();
+          cb.ctx.setCesarSession(null);
+          cb.dispatch({ type: 'info', message: 'Cesar session reset for Nero mode change' });
+        }
+        if (newNero) {
+          cb.dispatch({ type: 'success', message: '🔥 Nero mode ON — Cesar will challenge your ideas before implementing. Use /nero again to disable.' });
+        } else {
+          cb.dispatch({ type: 'success', message: 'Nero mode OFF — Cesar back to normal.' });
         }
         break;
       }

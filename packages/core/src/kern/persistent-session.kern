@@ -886,43 +886,98 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
           // agentic loop (same turn), not across turns.
           messageHistory.push({ role: 'user', content: opts.message });
 
-          // Smart context window: summarize old messages to control token growth.
-          // Keep system prompt + recent messages. Don't split tool chains.
-          if (messageHistory.length > 14) {
-            const hasSystem = messageHistory[0].role === 'system';
-            const system = hasSystem ? [messageHistory[0]] : [];
-            const cutoff = hasSystem ? 1 : 0;
+          // ── OpenCode-style two-tier context compaction ──
+          // Token-based overflow detection, not message count.
+          // Tier 1: Prune old tool results (biggest token hogs).
+          // Tier 2: Structured summary compression if still over limit.
+          const estimateTokens = (msgs: Array<{role: string, content: any}>) =>
+            msgs.reduce((sum, m) => {
+              if (typeof m.content === 'string') return sum + Math.ceil(m.content.length / 4);
+              if (m.content === null && (m as any).tool_calls) {
+                return sum + (m as any).tool_calls.reduce((s: number, tc: any) =>
+                  s + Math.ceil((tc.function?.arguments ?? '').length / 4), 100);
+              }
+              return sum + 50;
+            }, 0);
 
-            // Find safe split point — don't cut between assistant(tool_calls) and role:tool
-            let splitIdx = messageHistory.length - 10;
-            if (splitIdx <= cutoff) splitIdx = cutoff;
-            // Walk forward until we're NOT inside a tool chain
-            while (splitIdx < messageHistory.length) {
-              const msg = messageHistory[splitIdx] as any;
-              if (msg.role === 'tool' || (msg.role === 'assistant' && msg.tool_calls)) {
-                splitIdx++;
-              } else {
-                break;
+          const CONTEXT_LIMIT = config.engine.api?.maxTokens
+            ? config.engine.api.maxTokens * 4  // maxTokens is output; context ≈ 4x
+            : 128_000;
+          const COMPACTION_BUFFER = 20_000;
+          const PRUNE_PROTECT_TURNS = 4; // protect last N user-assistant exchanges
+
+          const totalTokens = estimateTokens(messageHistory);
+          if (totalTokens > CONTEXT_LIMIT - COMPACTION_BUFFER) {
+            const hasSystem = messageHistory[0].role === 'system';
+            const startIdx = hasSystem ? 1 : 0;
+
+            // Count protected messages from the end (last N turns, including tool chains)
+            let protectFrom = messageHistory.length;
+            let turnsFound = 0;
+            for (let i = messageHistory.length - 1; i >= startIdx; i--) {
+              if ((messageHistory[i] as any).role === 'user') turnsFound++;
+              if (turnsFound > PRUNE_PROTECT_TURNS) break;
+              protectFrom = i;
+            }
+
+            // ── Tier 1: Prune old tool result outputs ──
+            let prunedTokens = 0;
+            for (let i = startIdx; i < protectFrom; i++) {
+              const msg = messageHistory[i] as any;
+              if (msg.role === 'tool' && msg.content && msg.content.length > 200) {
+                prunedTokens += Math.ceil(msg.content.length / 4);
+                msg.content = '[Old tool result cleared]';
               }
             }
-            if (splitIdx >= messageHistory.length) splitIdx = cutoff; // safety
 
-            const old = messageHistory.slice(cutoff, splitIdx);
-            const recent = messageHistory.slice(splitIdx);
+            // ── Tier 2: Structured summary if pruning wasn't enough ──
+            const afterPrune = estimateTokens(messageHistory);
+            if (afterPrune > CONTEXT_LIMIT - COMPACTION_BUFFER) {
+              const old = messageHistory.slice(startIdx, protectFrom);
+              const recent = messageHistory.slice(protectFrom);
+              const system = hasSystem ? [messageHistory[0]] : [];
 
-            if (old.length > 0) {
-              // Compress old messages — handle content:null from tool-only assistant messages
-              const summaryLines = old.map((m: any) => {
-                if (m.role === 'tool') return `T: [tool result]`;
-                if (m.role === 'assistant' && m.tool_calls) return `A: [called ${m.tool_calls.length} tool(s)]`;
-                const label = m.role === 'user' ? 'U' : 'A';
-                const text = (m.content ?? '').length > 150 ? (m.content ?? '').slice(0, 150) + '…' : (m.content ?? '(no text)');
-                return `${label}: ${text}`;
-              });
-              const summary = { role: 'user', content: `[Earlier conversation — ${old.length} messages]\n${summaryLines.join('\n')}` };
+              if (old.length > 0) {
+                // Extract structured context from old messages (like OpenCode compaction)
+                const userMsgs = old.filter((m: any) => m.role === 'user' && typeof m.content === 'string');
+                const assistMsgs = old.filter((m: any) => m.role === 'assistant' && typeof m.content === 'string');
 
-              messageHistory.length = 0;
-              messageHistory.push(...system, summary, ...recent);
+                // Goal: first user message
+                const goal = userMsgs.length > 0
+                  ? (userMsgs[0].content as string).slice(0, 300)
+                  : '';
+
+                // Files touched: extract paths from tool calls
+                const filePaths = new Set<string>();
+                for (const m of old as any[]) {
+                  if (m.tool_calls) {
+                    for (const tc of m.tool_calls) {
+                      try {
+                        const args = JSON.parse(tc.function?.arguments ?? '{}');
+                        if (args.file_path) filePaths.add(args.file_path);
+                        if (args.path) filePaths.add(args.path);
+                        if (args.pattern) filePaths.add(`grep:${args.pattern}`);
+                      } catch {}
+                    }
+                  }
+                }
+
+                // Discoveries: last assistant message before cutoff
+                const lastAssist = assistMsgs.length > 0
+                  ? (assistMsgs[assistMsgs.length - 1].content as string).slice(0, 500)
+                  : '';
+
+                const compacted = [
+                  `[Context compacted — ${old.length} messages]`,
+                  goal ? `GOAL: ${goal}` : '',
+                  filePaths.size > 0 ? `FILES: ${[...filePaths].slice(0, 20).join(', ')}` : '',
+                  lastAssist ? `PROGRESS: ${lastAssist}` : '',
+                ].filter(Boolean).join('\n');
+
+                const summary = { role: 'user' as const, content: compacted };
+                messageHistory.length = 0;
+                messageHistory.push(...system, summary, ...recent);
+              }
             }
           }
 

@@ -115,8 +115,9 @@ export async function routeViaCesar(input: string, dispatch: Dispatch, ctx: Hand
     action = 'forge';
     reasoning = `Bids suggest competitive testing needed`;
   } else if (disagreementSpread >= spreadThreshold) {
-    action = 'campfire';
-    reasoning = `Engines disagree: ${rankedBids.map((b: ScoutBid) => `${b.engineId} ${b.confidence}%`).join(' vs ')}`;
+    // High disagreement: debate for questions, open discussion for code/ambiguous
+    action = (hintClass === 'question') ? 'tribunal' : 'campfire';
+    reasoning = `Engines disagree (spread ${disagreementSpread}): ${rankedBids.map((b: ScoutBid) => `${b.engineId} ${b.confidence}%`).join(' vs ')}`;
   } else if (topConfidence >= threshold && leadHasAgent) {
     // Upgrade to pipeline if a second agent-capable engine exists for review
     const hasReviewer = observerEngines.some((id: string) => agentIds.includes(id));
@@ -127,13 +128,22 @@ export async function routeViaCesar(input: string, dispatch: Dispatch, ctx: Hand
   } else if (topConfidence >= threshold) {
     action = 'chat';
     reasoning = `High confidence (${topConfidence}%), direct response`;
+  } else if (hintClass === 'code') {
+    // Below threshold on code → compete
+    action = 'forge';
+    reasoning = `Moderate confidence (${topConfidence}%) on code task — engines should compete`;
+  } else if (hintClass === 'question') {
+    // Below threshold on question → get multiple opinions
+    action = 'brainstorm';
+    reasoning = `Moderate confidence (${topConfidence}%) — multiple perspectives needed`;
   } else {
-    action = 'chat';
-    reasoning = `Moderate confidence (${topConfidence}%), direct response`;
+    // Ambiguous, below threshold → brainstorm to clarify
+    action = 'brainstorm';
+    reasoning = `Ambiguous task (${topConfidence}%) — brainstorm to find best approach`;
   }
   
-  const label = action === 'campfire'
-    ? `Cesar → campfire (${reasoning})`
+  const label = (action === 'campfire' || action === 'tribunal' || action === 'brainstorm')
+    ? `Cesar → ${action} (${reasoning})`
     : `Cesar → ${action} (${leadEngine}, ${topConfidence}%)`;
   dispatch({ type: 'info', message: label });
   

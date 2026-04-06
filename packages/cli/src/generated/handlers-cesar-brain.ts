@@ -213,14 +213,14 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
     systemParts.push(`NERO MODE: Adversarial. Challenge assumptions, probe weaknesses, ask hard questions before implementing. Suggest tribunal-red-team or tribunal-adversarial.`);
   }
   
-  // Compact history replay — only needed when session reboots (new process loses context).
+  // History replay — only needed when session reboots (new process loses context).
   // While alive, the CLI process / API messageHistory maintains state across turns.
-  // Keep it lean: last 10 messages, truncated to 200 chars each.
+  // Keep enough context so Cesar doesn't "stroke" — 20 messages, 500 chars each.
   if (ctx.chatSession && ctx.chatSession.messages && ctx.chatSession.messages.length > 0) {
-    const recent = ctx.chatSession.messages.slice(-10);
+    const recent = ctx.chatSession.messages.slice(-20);
     const lines = recent.map((msg: any) => {
       const role = msg.role === 'user' ? 'U' : (msg.engineId ?? 'E');
-      const text = msg.content.length > 200 ? msg.content.slice(0, 200) + '…' : msg.content;
+      const text = msg.content.length > 500 ? msg.content.slice(0, 500) + '…' : msg.content;
       return `${role}: ${text}`;
     });
     systemParts.push(`HISTORY:\n${lines.join('\n')}`);
@@ -944,6 +944,41 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       }
     }
   
+    // ── Protocol enforcement: suggest mode when engine didn't ──
+    // Only fires in the gap: confidence 85-92%, engine didn't [SUGGEST:mode],
+    // no tool loop ran, no auto-escalation already triggered.
+    if (!finalSuggestion.action && !ranToolLoop && !secondOpinionPromise
+        && parsedConfidence !== null
+        && parsedConfidence >= CONFIDENCE_TIERS.suggest
+        && parsedConfidence < CONFIDENCE_TIERS.direct
+        && ctx.activeEngines().length > 1) {
+      const isCodeTask = /^(fix|add|implement|refactor|debug|create|build|write|update|change|remove|delete|rename|move|test|deploy|install|upgrade|migrate|convert|extract|optimize|port)\b/i.test(input.trim());
+      const suggestedAction = isCodeTask ? 'forge' : 'brainstorm';
+  
+      // End streaming first so response is visible before prompt
+      if (streaming) {
+        dispatch({ type: 'streaming-end', engineId: cesarEngineId });
+        streaming = false;
+      }
+  
+      const answer = await new Promise<string>((resolve) => {
+        dispatch({ type: 'question',
+          prompt: `${parsedConfidence}% confidence — ${suggestedAction}?`,
+          choices: [
+            { key: 'y', label: suggestedAction, color: '#4ade80' },
+            { key: 'n', label: 'Skip', color: '#ef4444' },
+          ],
+          resolve,
+        } as any);
+      });
+      if (answer === 'y') {
+        appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
+        appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
+        tracker.record(cesarEngineId, input, response);
+        return { delegated: true, responded: true, action: suggestedAction, reasoning: response };
+      }
+    }
+  
     // Direct response
     if (!streaming && response) {
       dispatch({ type: 'spinner-stop' });
@@ -1047,7 +1082,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   }
 }
 
-// @kern-source: handlers-cesar-brain:1041
+// @kern-source: handlers-cesar-brain:1076
 export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatch, ctx: HandlerContext): Promise<ForgeJudgment|null> {
   // Need an alive Cesar session
       let session;
@@ -1161,7 +1196,7 @@ export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatc
       return judgment;
 }
 
-// @kern-source: handlers-cesar-brain:1156
+// @kern-source: handlers-cesar-brain:1191
 function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJudgment|null {
   // Strip confidence prefix (e.g. ~91%) before parsing structured output
   const stripped = parseConfidence(response).rest;
@@ -1205,7 +1240,7 @@ function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJud
   return { winner, strengths, convergencePlan, summary, shouldConverge };
 }
 
-// @kern-source: handlers-cesar-brain:1201
+// @kern-source: handlers-cesar-brain:1236
 export async function cesarConvergeForge(manifest: ForgeManifest, judgment: ForgeJudgment, dispatch: Dispatch, ctx: HandlerContext): Promise<string|null> {
   let session;
       try {

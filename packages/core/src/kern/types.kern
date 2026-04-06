@@ -167,7 +167,7 @@ interface name=ScoutBid
   field name=needsCompetition type=boolean
 
 interface name=RoutingDecision
-  field name=action type="'chat'|'build'|'pipeline'|'campfire'|'forge'"
+  field name=action type="'chat'|'build'|'pipeline'|'campfire'|'forge'|'brainstorm'|'tribunal'"
   field name=leadEngine type=string
   field name=confidence type=number
   field name=reasoning type=string

@@ -204,9 +204,18 @@ fn name=ensureCesarSession async=true params="ctx:HandlerContext" returns="Promi
       systemParts.push(`NERO MODE: Adversarial. Challenge assumptions, probe weaknesses, ask hard questions before implementing. Suggest tribunal-red-team or tribunal-adversarial.`);
     }
 
-    // History replay removed — stream-json uses --replay-user-messages,
-    // API path uses messageHistory in ResumeSession. No need to duplicate in system prompt.
-    // Saves ~2000 tokens per turn.
+    // Compact history replay — only needed when session reboots (new process loses context).
+    // While alive, the CLI process / API messageHistory maintains state across turns.
+    // Keep it lean: last 10 messages, truncated to 200 chars each.
+    if (ctx.chatSession && ctx.chatSession.messages && ctx.chatSession.messages.length > 0) {
+      const recent = ctx.chatSession.messages.slice(-10);
+      const lines = recent.map((msg: any) => {
+        const role = msg.role === 'user' ? 'U' : (msg.engineId ?? 'E');
+        const text = msg.content.length > 200 ? msg.content.slice(0, 200) + '…' : msg.content;
+        return `${role}: ${text}`;
+      });
+      systemParts.push(`HISTORY:\n${lines.join('\n')}`);
+    }
 
     // Initialize tool registry and inject tool prompt — works with ANY engine
     const toolRegistry = new ToolRegistry();

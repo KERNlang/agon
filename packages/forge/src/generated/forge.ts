@@ -1,23 +1,34 @@
+// @kern-source: forge:1
 import { randomUUID } from 'node:crypto';
 
+// @kern-source: forge:2
 import { mkdirSync } from 'node:fs';
 
-import type { ForgeOptions, ForgeManifest, EngineAdapter, ForgeEvent, AgonConfig } from '@agon/core';
+// @kern-source: forge:3
+import type { ForgeOptions, ForgeManifest, EngineAdapter, ForgeEvent, AgonConfig, DispatchMetric } from '@agon/core';
 
-import { EngineRegistry, loadConfig, buildForgePrompt, repoRoot, headSha, worktreeRemove, updateElo, classifyTask, createSidechainLogger, assignForgeRoles, buildSpecializedPrompt, recordForgeOutcome } from '@agon/core';
+// @kern-source: forge:4
+import { EngineRegistry, loadConfig, buildForgePrompt, repoRoot, headSha, worktreeRemove, updateElo, classifyTask, createSidechainLogger, assignForgeRoles, buildSpecializedPrompt, recordForgeOutcome, tracker } from '@agon/core';
 
+// @kern-source: forge:5
 import { runBaseline, runStage1, runStage2, runStage2WithPeek, determineWinner } from './stages.js';
 
+// @kern-source: forge:6
 import { runSynthesis } from './synthesis.js';
 
+// @kern-source: forge:7
 import { runGauntlet } from './gauntlet.js';
 
+// @kern-source: forge:8
 import { addToCorpus } from './corpus.js';
 
+// @kern-source: forge:9
 import { writeManifest } from './manifest.js';
 
+// @kern-source: forge:10
 import type { WorktreeEntry } from '../types.js';
 
+// @kern-source: forge:12
 export async function runForge(options: ForgeOptions, registry: EngineRegistry, adapter: EngineAdapter, onEvent?: (event:ForgeEvent)=>void): Promise<ForgeManifest> {
   const config = loadConfig(options.cwd);
   const forgeId = randomUUID();
@@ -140,9 +151,15 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
     });
   
     manifest.enginesDispatched = 1;
+    const allMetrics: DispatchMetric[] = [...(stage1.metrics ?? [])];
     for (const [id, result] of stage1.engineResults) {
       manifest.results[id] = result;
       if (result.patchPath) manifest.patches[id] = result.patchPath;
+    }
+    // Record token usage for stage 1
+    for (const m of stage1.metrics ?? []) {
+      if (m.tokens) tracker.record(m.engineId, 'x'.repeat(m.tokens.prompt * 4), 'x'.repeat(m.tokens.response * 4));
+      sidechain.log('dispatch:complete', m.engineId, { phase: m.phase, durationMs: m.dispatchDurationMs, score: m.score, pass: m.pass, tokens: m.tokens });
     }
   
     if (stage1.accepted) {
@@ -175,9 +192,15 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
       });
   
       manifest.enginesDispatched = available.length;
+      allMetrics.push(...(stage2.metrics ?? []));
       for (const [id, result] of stage2.engineResults) {
         manifest.results[id] = result;
         if (result.patchPath) manifest.patches[id] = result.patchPath;
+      }
+      // Record token usage for stage 2
+      for (const m of stage2.metrics ?? []) {
+        if (m.tokens) tracker.record(m.engineId, 'x'.repeat(m.tokens.prompt * 4), 'x'.repeat(m.tokens.response * 4));
+        sidechain.log('dispatch:complete', m.engineId, { phase: m.phase, durationMs: m.dispatchDurationMs, score: m.score, pass: m.pass, tokens: m.tokens, error: m.error });
       }
   
       const { winner, closeCall, bestScore, secondScore } = determineWinner(
@@ -294,9 +317,13 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
       }
     }
   
+    manifest.dispatchLog = allMetrics;
     writeManifest(manifest);
+    const stats = tracker.getStats();
     sidechain.log('forge:done', manifest.winner ?? undefined, {
       enginesDispatched: manifest.enginesDispatched,
+      totalCostUsd: stats.totalCostUsd,
+      totalTokens: stats.totalTokens,
       results: Object.fromEntries(
         Object.entries(manifest.results).map(([id, r]) => [id, { pass: (r as any).pass, score: (r as any).score }]),
       ),

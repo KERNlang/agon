@@ -296,6 +296,20 @@ export interface EngineResult {
 }
 
 // @kern-source: types:211
+export interface DispatchMetric {
+  engineId: string;
+  phase: 'stage1'|'stage2-scout'|'stage2-follower'|'synthesis'|'gauntlet';
+  dispatchDurationMs: number;
+  fitnessDurationMs?: number;
+  totalDurationMs: number;
+  pass?: boolean;
+  score?: number;
+  timedOut?: boolean;
+  error?: string;
+  tokens?: {prompt:number, response:number, costUsd:number};
+}
+
+// @kern-source: types:223
 export interface ForgeManifest {
   forgeId: string;
   forgeDir: string;
@@ -311,11 +325,12 @@ export interface ForgeManifest {
   baselinePasses: boolean;
   starter: string;
   enginesDispatched: number;
+  dispatchLog?: DispatchMetric[];
   synthesis?: {pass:boolean,score:number,wins:boolean,patchPath:string,originalWinnerScore:number};
   gauntlet?: GauntletResult;
 }
 
-// @kern-source: types:229
+// @kern-source: types:242
 export interface ConvergenceEntry {
   file: string;
   fn: string;
@@ -323,7 +338,7 @@ export interface ConvergenceEntry {
   reason: string;
 }
 
-// @kern-source: types:235
+// @kern-source: types:248
 export interface ForgeJudgment {
   winner: string;
   strengths: { engineId: string; category: string; reason: string }[];
@@ -332,7 +347,7 @@ export interface ForgeJudgment {
   shouldConverge: boolean;
 }
 
-// @kern-source: types:242
+// @kern-source: types:255
 export type ForgeEventType = 'baseline:start' | 'baseline:done' | 'stage1:start' | 'stage1:dispatch' | 'stage1:score' | 'stage1:accepted' | 'stage2:start' | 'stage2:dispatch' | 'stage2:score' | 'stage2:done' | 'winner:determined' | 'synthesis:start' | 'synthesis:critique' | 'synthesis:refine' | 'synthesis:score' | 'synthesis:done' | 'elo:update' | 'gauntlet:start' | 'gauntlet:breaker-dispatch' | 'gauntlet:breaker-done' | 'gauntlet:attack-landed' | 'gauntlet:repair-start' | 'gauntlet:repair-done' | 'gauntlet:corpus-save' | 'gauntlet:done' | 'forge:done';
 
 export interface ForgeEvent {
@@ -372,7 +387,7 @@ export interface ForgeEventMap {
 
 export type ForgeEventCallback = (event: ForgeEvent) => void;
 
-// @kern-source: types:270
+// @kern-source: types:283
 export interface BrainstormBid {
   engineId: string;
   confidence: number;
@@ -381,7 +396,7 @@ export interface BrainstormBid {
   score?: number;
 }
 
-// @kern-source: types:277
+// @kern-source: types:290
 export interface BrainstormResult {
   question: string;
   bids: BrainstormBid[];
@@ -389,7 +404,7 @@ export interface BrainstormResult {
   response: string;
 }
 
-// @kern-source: types:283
+// @kern-source: types:296
 export interface BreakerArtifact {
   engineId: string;
   testScript: string;
@@ -399,7 +414,7 @@ export interface BreakerArtifact {
   validated: boolean;
 }
 
-// @kern-source: types:291
+// @kern-source: types:304
 export interface GauntletResult {
   winnerId: string;
   breakerArtifacts: BreakerArtifact[];
@@ -412,7 +427,7 @@ export interface GauntletResult {
   patchPath?: string;
 }
 
-// @kern-source: types:302
+// @kern-source: types:315
 export interface CorpusEntry {
   forgeId: string;
   taskClass: TaskClass;
@@ -422,7 +437,7 @@ export interface CorpusEntry {
   pattern?: string;
 }
 
-// @kern-source: types:310
+// @kern-source: types:323
 export interface GapPattern {
   pattern: string;
   taskClass: TaskClass;
@@ -433,7 +448,7 @@ export interface GapPattern {
   skillPath?: string;
 }
 
-// @kern-source: types:319
+// @kern-source: types:332
 export interface Critique {
   file: string;
   lines: string;
@@ -441,6 +456,6 @@ export interface Critique {
   minimalFix: string;
 }
 
-// @kern-source: types:325
+// @kern-source: types:338
 export const DEFAULT_CONFIG: Required<AgonConfig> = DEFAULT_AGON_CONFIG;
 

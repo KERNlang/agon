@@ -48,7 +48,7 @@ import { cleanInputValue, cleanSubmitValue, findInputChange, navigateHistory } f
 
 import { handleReviewAction } from '../generated/app-review.js';
 
-import { SpinnerBlock, EngineProgressView, StatusLine, StatusBar, OutputBlockView, SlashPicker, EnginePicker, ReviewBlock, BackgroundJobRail, RenderedSegments, contentWidth, engineColor } from '../components.js';
+import { SpinnerBlock, EngineProgressView, StatusLine, StatusBar, OutputBlockView, SlashPicker, EnginePicker, ModelPicker, ReviewBlock, BackgroundJobRail, RenderedSegments, contentWidth, engineColor } from '../components.js';
 
 import type { OutputBlock, ReviewEvent } from '../components.js';
 
@@ -83,6 +83,9 @@ export function App({  }: {  }) {
   const [questionState, setQuestionState] = useState<any>(null);
   const [questionAnswer, setQuestionAnswer] = useState<string>('');
   const [enginePickerOpen, setEnginePickerOpen] = useState<boolean>(false);
+  const [modelPickerOpen, setModelPickerOpen] = useState<boolean>(false);
+  const [modelPickerEntries, setModelPickerEntries] = useState<any[]>([]);
+  const [modelPickerLoading, setModelPickerLoading] = useState<boolean>(false);
   const [streamingText, setStreamingText] = useState<any>(null);
   const [pendingImages, setPendingImages] = useState<ImageAttachment[]>([]);
   const [reviewEvent, setReviewEvent] = useState<ReviewEvent|null>(null);
@@ -182,7 +185,7 @@ export function App({  }: {  }) {
           const nextValue = cleanInputValue(value);
     
           // "/" typed into empty input → open slash picker, swallow the character
-          if (!inputValue && nextValue === '/' && !slashPickerOpen && !enginePickerOpen && !questionState && !justPastedRef.current) {
+          if (!inputValue && nextValue === '/' && !slashPickerOpen && !enginePickerOpen && !modelPickerOpen && !questionState && !justPastedRef.current) {
             setSlashPickerOpen(true);
             setInputKey((k: number) => k + 1);
             return;
@@ -250,7 +253,7 @@ export function App({  }: {  }) {
               fn().then(() => { jobManager.complete(job.id); setJobList([...jobManager.list()]); })
                 .catch((err: any) => { jobManager.fail(job.id, err instanceof Error ? err.message : String(err)); setJobList([...jobManager.list()]); dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); });
             },
-            setMode, setPendingImages, setSessionEngines, setEnginePickerOpen, setChatSession, setLastUndoToken, askQuestion, exit: () => process.exit(0),
+            setMode, setPendingImages, setSessionEngines, setEnginePickerOpen, setModelPickerOpen, setModelPickerEntries, setModelPickerLoading, setChatSession, setLastUndoToken, askQuestion, exit: () => process.exit(0),
             allImages, allSlashCommands: allSlashCommands, dynamicSkills, mode, lastUndoToken, sessionStartTime, jobManager,
             explorationMode, setExplorationMode,
             neroMode, setNeroMode,
@@ -441,6 +444,23 @@ export function App({  }: {  }) {
             <EnginePicker available={registry.availableIds()} initialSelected={sessionEngines ?? registry.availableIds()}
               onConfirm={(selected: string[]) => { setEnginePickerOpen(false); setSessionEngines(selected); configSet('forgeEnabledEngines', selected); dispatch({ type: 'success', message: `Active engines: ${selected.join(', ')}` } as any); }}
               onCancel={() => setEnginePickerOpen(false)} />
+          )}
+          {modelPickerOpen && (
+            <ModelPicker entries={modelPickerEntries} loading={modelPickerLoading}
+              onSelect={(entry: any) => {
+                setModelPickerOpen(false);
+                const { modelEntryToEngineDef } = require('@agon/core');
+                const def = modelEntryToEngineDef(entry);
+                const { writeFileSync, mkdirSync } = require('node:fs');
+                const { join } = require('node:path');
+                const { homedir } = require('node:os');
+                const dir = join(homedir(), '.agon', 'engines');
+                mkdirSync(dir, { recursive: true });
+                writeFileSync(join(dir, `${def.id}.json`), JSON.stringify(def, null, 2) + '\n');
+                registry.register(def as any);
+                dispatch({ type: 'success', message: `Added: ${entry.providerName} \u2014 ${entry.modelName}` } as any);
+              }}
+              onCancel={() => setModelPickerOpen(false)} />
           )}
           {liveSpinner && (mode === 'chat'
             ? <StatusLine startTime={chatStartTimeRef.current || Date.now()} engineId={liveSpinner.engineId} color={liveSpinner.color} />

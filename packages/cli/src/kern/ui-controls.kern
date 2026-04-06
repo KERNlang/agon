@@ -1,6 +1,6 @@
 // ── UI Controls: interactive pickers and review block ───────────────
 
-import from="react" names="React,useState"
+import from="react" names="useState,useMemo"
 import from="ink" names="Box,Text,useInput"
 import from="../generated/intent.js" names="SLASH_COMMANDS"
 import from="./ui-rendering.js" names="contentWidth,engineColor,color256toHex,DiffLine,CODE_RAIL,CODE_RAIL_COLOR"
@@ -165,7 +165,7 @@ screen name=ModelPicker target=ink
   state name=apiKeyInput type=string initial="''"
   render
     handler <<<
-      const filtered = React.useMemo(() => {
+      const filtered = useMemo(() => {
         if (!filter.trim()) return entries.slice(0, 50);
         const terms = filter.toLowerCase().split(/\s+/);
         return entries.filter((e: ModelPickerEntry) => {

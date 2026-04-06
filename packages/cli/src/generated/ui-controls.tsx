@@ -1,4 +1,4 @@
-import * as React from 'react'; import { useState } from 'react';
+import { useState, useMemo } from 'react';
 
 import { Box, Text, useInput } from 'ink';
 
@@ -126,6 +126,170 @@ export function EnginePicker({ available, initialSelected, onConfirm, onCancel }
             ))}
             <Text dimColor>{'\u2500'.repeat(48)}</Text>
             <Text dimColor>{selected.size}{' of '}{available.length}{' selected'}</Text>
+          </Box>
+        );
+}
+
+
+export interface ModelPickerEntry {
+  providerId: string;
+  providerName: string;
+  modelId: string;
+  modelName: string;
+  baseUrl: string;
+  apiKeyEnv: string;
+  format: 'openai'|'anthropic';
+  contextWindow?: number;
+  costInput?: number;
+  costOutput?: number;
+}
+
+
+export function ModelPicker({ entries, onSelect, onCancel, loading }: { entries: ModelPickerEntry[]; onSelect: (entry: ModelPickerEntry) => void; onCancel: () => void; loading?: boolean }) {
+  const [cursor, setCursor] = useState<number>(0);
+  const [filter, setFilter] = useState<string>('');
+  const [phase, setPhase] = useState<'search'|'apikey'>('search');
+  const [selectedEntry, setSelectedEntry] = useState<ModelPickerEntry|null>(null);
+  const [apiKeyInput, setApiKeyInput] = useState<string>('');
+
+        const filtered = useMemo(() => {
+          if (!filter.trim()) return entries.slice(0, 50);
+          const terms = filter.toLowerCase().split(/\s+/);
+          return entries.filter((e: ModelPickerEntry) => {
+            const hay = `${e.providerName} ${e.modelName} ${e.modelId}`.toLowerCase();
+            return terms.every((t: string) => hay.includes(t));
+          }).slice(0, 50);
+        }, [entries, filter]);
+  
+        useInput((input: string, key: any) => {
+          if (phase === 'apikey') {
+            if (key.escape) { setPhase('search'); setSelectedEntry(null); setApiKeyInput(''); return; }
+            if (key.return && apiKeyInput.trim()) {
+              // Store key and select
+              const entry = selectedEntry!;
+              const { setAuthKey } = require('@agon/core');
+              setAuthKey(entry.apiKeyEnv, apiKeyInput.trim(), entry.providerName);
+              onSelect(entry);
+              return;
+            }
+            if (key.return && !apiKeyInput.trim()) {
+              // Skip key, select anyway
+              onSelect(selectedEntry!);
+              return;
+            }
+            if (key.backspace || key.delete) { setApiKeyInput((v: string) => v.slice(0, -1)); return; }
+            if (input && !key.ctrl && !key.meta && input.length === 1) {
+              setApiKeyInput((v: string) => v + input);
+            }
+            return;
+          }
+  
+          // Search phase
+          if (key.escape || (key.ctrl && input === 'c')) { onCancel(); return; }
+          if (key.return) {
+            if (filtered[cursor]) {
+              const entry = filtered[cursor];
+              const { getAuthKey } = require('@agon/core');
+              if (getAuthKey(entry.apiKeyEnv)) {
+                onSelect(entry);
+              } else {
+                setSelectedEntry(entry);
+                setPhase('apikey');
+                setApiKeyInput('');
+              }
+            }
+            return;
+          }
+          if (key.upArrow) { setCursor((i: number) => Math.max(0, i - 1)); return; }
+          if (key.downArrow) { setCursor((i: number) => Math.min(filtered.length - 1, i + 1)); return; }
+          if (key.backspace || key.delete) {
+            setFilter((f: string) => f.slice(0, -1));
+            setCursor(0);
+            return;
+          }
+          if (input && !key.ctrl && !key.meta && input.length === 1 && input >= ' ') {
+            setFilter((f: string) => f + input);
+            setCursor(0);
+          }
+        });
+  
+        if (loading) {
+          return (
+            <Box flexDirection="column" borderStyle="round" borderColor="magenta" paddingX={1}>
+              <Text bold color="magenta">{'Select model'}</Text>
+              <Text dimColor>{'Fetching models.dev registry...'}</Text>
+            </Box>
+          );
+        }
+  
+        if (phase === 'apikey' && selectedEntry) {
+          return (
+            <Box flexDirection="column" borderStyle="round" borderColor="magenta" paddingX={1}>
+              <Text bold color="magenta">{'Connect: '}{selectedEntry.providerName}</Text>
+              <Text dimColor>{'\u2500'.repeat(48)}</Text>
+              <Text>{'  Model:    '}<Text bold>{selectedEntry.modelName}</Text></Text>
+              <Text>{'  API:      '}<Text dimColor>{selectedEntry.baseUrl}</Text></Text>
+              <Text>{''}</Text>
+              <Box>
+                <Text color="yellow">{'  '}{selectedEntry.apiKeyEnv}{': '}</Text>
+                <Text>{apiKeyInput ? '*'.repeat(apiKeyInput.length) : ''}</Text>
+                <Text dimColor>{'\u2588'}</Text>
+              </Box>
+              <Text dimColor>{'  Enter key \u2022 Enter to skip \u2022 Esc back'}</Text>
+            </Box>
+          );
+        }
+  
+        // Search phase — grouped model list
+        const maxVisible = 16;
+        const start = Math.max(0, Math.min(cursor - Math.floor(maxVisible / 2), filtered.length - maxVisible));
+        const visible = filtered.slice(start, start + maxVisible);
+        let lastProvider = '';
+  
+        return (
+          <Box flexDirection="column" borderStyle="round" borderColor="magenta" paddingX={1}>
+            <Box justifyContent="space-between">
+              <Text bold color="magenta">{'Select model'}</Text>
+              <Text dimColor>{'esc'}</Text>
+            </Box>
+            <Box>
+              <Text dimColor>{'\u2588'}</Text>
+              <Text color="magenta">{'search '}</Text>
+              <Text>{filter}</Text>
+              <Text dimColor>{filter ? '' : 'type to filter'}</Text>
+            </Box>
+            <Text dimColor>{'\u2500'.repeat(48)}</Text>
+            {filtered.length === 0 ? (
+              <Text dimColor>{'  No matching models'}</Text>
+            ) : (
+              visible.map((entry: ModelPickerEntry, vi: number) => {
+                const i = start + vi;
+                const showHeader = entry.providerName !== lastProvider;
+                lastProvider = entry.providerName;
+                const ctx = entry.contextWindow ? `${Math.round(entry.contextWindow / 1024)}k` : '';
+                const cost = entry.costInput != null ? `$${entry.costInput}/${entry.costOutput}` : '';
+                return (
+                  <Box key={`${entry.providerId}-${entry.modelId}`} flexDirection="column">
+                    {showHeader && <Text bold color="white">{'\n  '}{entry.providerName}</Text>}
+                    <Box>
+                      <Text color={i === cursor ? 'magenta' : undefined} bold={i === cursor}>
+                        {i === cursor ? ' \u276f ' : '   '}
+                      </Text>
+                      <Text color={i === cursor ? 'magenta' : undefined} bold={i === cursor}>
+                        {entry.modelName}
+                      </Text>
+                      {ctx ? <Text dimColor>{'  '}{ctx}</Text> : null}
+                      {cost ? <Text dimColor>{'  '}{cost}</Text> : null}
+                    </Box>
+                  </Box>
+                );
+              })
+            )}
+            {filtered.length > maxVisible && (
+              <Text dimColor>{'  ... '}{filtered.length - maxVisible}{' more \u2014 narrow search'}</Text>
+            )}
+            <Text dimColor>{'\u2500'.repeat(48)}</Text>
+            <Text dimColor>{filtered.length}{' models  \u2191\u2193 navigate  Enter select  Esc cancel'}</Text>
           </Box>
         );
 }

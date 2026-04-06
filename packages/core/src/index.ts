@@ -80,6 +80,8 @@ export { apiDispatch, apiStreamDispatch } from './api-dispatch.js';
 export type { ApiConfig } from './api-dispatch.js';
 export { companionDispatch } from './companion-dispatch.js';
 export type { CompanionResult } from './companion-dispatch.js';
+export { fetchModelsRegistry, buildModelEntries, searchModels, modelEntryToEngineDef } from './models-registry.js';
+export type { ModelEntry, ModelsDevProvider, ModelsDevModel } from './models-registry.js';
 export {
   createPersistentSession, createCompanionSession, createAcpSession,
   createStreamJsonSession, createResumeSession,

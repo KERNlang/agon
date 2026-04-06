@@ -45,6 +45,26 @@ export function navigateHistory(direction: 'up'|'down', currentIndex: number, hi
   return { index: currentIndex, value: '' };
 }
 
+export interface EscapeDecision {
+  action: 'close-slash'|'close-engine-picker'|'cancel-question'|'interrupt'|'clear-input'|'noop';
+}
+
+export function resolveEscapeAction(opts: {replState:string,inputValue:string,slashPickerOpen:boolean,enginePickerOpen:boolean,questionOpen:boolean}): EscapeDecision {
+  if (opts.slashPickerOpen) return { action: 'close-slash' };
+  if (opts.enginePickerOpen) return { action: 'close-engine-picker' };
+  if (opts.questionOpen) return { action: 'cancel-question' };
+
+  if (opts.replState !== 'idle') {
+    return { action: 'interrupt' };
+  }
+
+  if (opts.inputValue) {
+    return { action: 'clear-input' };
+  }
+
+  return { action: 'noop' };
+}
+
 export function tryGhostComplete(inputValue: string, commands: any[], engineIds: string[]): string|null {
   return getGhostCompletion(inputValue, commands, engineIds);
 }

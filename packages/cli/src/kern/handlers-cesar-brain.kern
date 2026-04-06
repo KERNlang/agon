@@ -254,6 +254,25 @@ You are now in Nero mode — adversarial, challenging, devil's advocate.
     toolRegistry.register(createGrepTool());
     toolRegistry.register(createGlobTool());
     const toolPrompt = buildToolSystemPrompt(toolRegistry);
+
+    // Non-Claude engines: harden the tool prompt — native tools are sandboxed read-only
+    const isNativeToolEngine = engine.id === 'claude' || engine.binary === 'claude';
+    if (!isNativeToolEngine) {
+      systemParts.push(`## CRITICAL — TOOL EXECUTION
+
+Your native filesystem write access and shell execution are DISABLED. You are running in a read-only sandbox.
+
+The ONLY way to edit files, write files, or run commands is through the XML tool format below. If you try to use your native tools for writes or commands, they WILL fail.
+
+You CAN read files natively — that works. But for ANY of these actions, you MUST use the XML tool format:
+- Editing a file → use the Edit tool
+- Writing a new file → use the Write tool
+- Running a shell command → use the Bash tool
+- Searching file contents → use the Grep tool
+
+Output tool calls using this exact XML format. Agon will execute them and return results.
+Do NOT say "I can't write because of sandbox" — use the XML tools instead.`);
+    }
     systemParts.push(toolPrompt);
 
     // Store registry on context for tool execution during responses

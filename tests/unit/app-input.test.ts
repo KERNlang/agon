@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { cleanInputValue, cleanSubmitValue, findInputChange } from '../../packages/cli/src/generated/app-input.js';
+import { cleanInputValue, cleanSubmitValue, findInputChange, resolveEscapeAction } from '../../packages/cli/src/generated/app-input.js';
 import { processPasteContent } from '../../packages/cli/src/generated/paste-handler.js';
 import { pasteStore } from '@agon/core';
 
@@ -45,5 +45,47 @@ describe('processPasteContent', () => {
       type: 'stored',
       placeholder: '[Pasted text #2 +1 lines]',
     });
+  });
+});
+
+describe('resolveEscapeAction', () => {
+  it('interrupts active work on a single escape', () => {
+    expect(resolveEscapeAction({
+      replState: 'streaming',
+      inputValue: 'draft text',
+      slashPickerOpen: false,
+      enginePickerOpen: false,
+      questionOpen: false,
+    })).toEqual({ action: 'interrupt' });
+  });
+
+  it('still clears input on first escape while idle', () => {
+    expect(resolveEscapeAction({
+      replState: 'idle',
+      inputValue: 'keep this short',
+      slashPickerOpen: false,
+      enginePickerOpen: false,
+      questionOpen: false,
+    })).toEqual({ action: 'clear-input' });
+  });
+
+  it('closes open pickers before applying global escape behavior', () => {
+    expect(resolveEscapeAction({
+      replState: 'streaming',
+      inputValue: '',
+      slashPickerOpen: true,
+      enginePickerOpen: false,
+      questionOpen: false,
+    })).toEqual({ action: 'close-slash' });
+  });
+
+  it('does nothing while idle with empty input', () => {
+    expect(resolveEscapeAction({
+      replState: 'idle',
+      inputValue: '',
+      slashPickerOpen: false,
+      enginePickerOpen: false,
+      questionOpen: false,
+    })).toEqual({ action: 'noop' });
   });
 });

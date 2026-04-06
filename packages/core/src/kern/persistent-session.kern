@@ -115,10 +115,13 @@ fn name=createCompanionSession params="config:PersistentSessionConfig" returns="
           detached: true,
         });
 
-        // Wire up JSONRPC line parser
+        // Wire up JSONRPC line parser — log ALL messages for protocol discovery
+        const _fs = await import('node:fs');
+        const wireLog = config.cwd + '/.agon-wire.log';
         const rl = createInterface({ input: proc.stdout! });
         rl.on('line', (line: string) => {
           if (!line.trim()) return;
+          try { _fs.appendFileSync(wireLog, line + '\n'); } catch {}
           let msg: any;
           try { msg = JSON.parse(line); } catch { return; }
 
@@ -188,11 +191,11 @@ fn name=createCompanionSession params="config:PersistentSessionConfig" returns="
         });
         notifyRpc('initialized');
 
-        // Start persistent thread — 'on-request' routes tool approvals through Agon
+        // Start persistent thread — read-only sandbox forces engine to use Agon's XML tools for writes/bash
         const threadParams: Record<string, unknown> = {
           cwd: config.cwd,
-          approvalPolicy: 'on-request',
-          sandbox: 'workspace-write',
+          approvalPolicy: 'never',
+          sandbox: 'read-only',
           ephemeral: false,
         };
         if (config.systemPrompt) {
@@ -438,12 +441,12 @@ fn name=createAcpSession params="config:PersistentSessionConfig" returns="Persis
 
         await new Promise((r) => setTimeout(r, 100));
 
-        // ACP initialize handshake — full capabilities, Agon handles permissions
+        // ACP initialize handshake — read-only, writes go through Agon's XML tool system
         await sendRpc('initialize', {
           protocolVersion: 1,
           clientCapabilities: {
-            fs: { readTextFile: true, writeTextFile: true },
-            terminal: true,
+            fs: { readTextFile: true, writeTextFile: false },
+            terminal: false,
           },
           clientInfo: { name: 'agon-ai', title: 'Agon AI', version: '0.2.0' },
         });

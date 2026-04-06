@@ -609,6 +609,12 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
                 return { delegated: false, responded: true };
               }
 
+              // Buffer: don't start streaming until we've had enough text to detect [SUGGEST:mode]
+              // Suggestions appear in the first ~30 chars after confidence. Wait before streaming.
+              if (response.length < 40) {
+                continue; // accumulate more chunks before switching to stream mode
+              }
+
               // AUTO-ESCALATION: if confidence < 85%, fire second engine + activate Nero
               if (confidenceParsed && parsedConfidence !== null && parsedConfidence < CONFIDENCE_TIERS.nero && !suggestion.action && !secondOpinionPromise) {
                 // Pick a second engine — anyone available that isn't Cesar

@@ -61,7 +61,7 @@ fn name=handleForgeEvent params="event:any, plan:Plan, engineStatus:Record<strin
     return plan;
   >>>
 
-fn name=handleForge params="task:string, fitnessCmd:string|null, dispatch:Dispatch, ctx:HandlerContext, existingPlan?:Plan" returns="Promise<void>" async=true
+fn name=handleForge params="task:string, fitnessCmd:string|null, dispatch:Dispatch, ctx:HandlerContext, existingPlan?:Plan, hardened?:boolean" returns="Promise<void>" async=true
   signal name=forgeAbort
   handler <<<
     ensureAgonHome();
@@ -174,6 +174,7 @@ fn name=handleForge params="task:string, fitnessCmd:string|null, dispatch:Dispat
           forgeDir,
           engines,
           context: projectCtx,
+          hardened: hardened ?? false,
           signal: forgeAbort.signal,
         },
         ctx.registry,

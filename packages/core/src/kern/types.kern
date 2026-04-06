@@ -28,9 +28,9 @@ interface name=EngineDefinition
   field name=schemaVersion type="1|2|3"
   field name=id type=string
   field name=displayName type=string
-  field name=binary type=string
-  field name=searchPaths type="string[]"
-  field name=versionCmd type="string[]"
+  field name=binary type=string optional=true
+  field name=searchPaths type="string[]" optional=true
+  field name=versionCmd type="string[]" optional=true
   field name=isLocal type=boolean
   field name=tier type="'builtin'|'user'"
   field name=installHint type=string optional=true
@@ -137,7 +137,7 @@ config name=AgonConfig
   field name=approvalLevel type="'auto'|'plan'|'step'" default=plan
   field name=agentTimeout type=number default=600
   field name=agentPermissionLevel type="'full'|'plan'|'read-only'" default=full
-  field name=gauntletEnabled type=boolean default=true
+  field name=gauntletEnabled type=boolean default=false
   field name=gauntletMaxBreakers type=number default=3
   field name=gauntletRepairTimeout type=number default=300
   field name=corpusReplayLimit type=number default=5
@@ -188,6 +188,7 @@ interface name=ForgeOptions
   field name=starter type=string optional=true
   field name=engines type="string[]" optional=true
   field name=dryRun type=boolean optional=true
+  field name=hardened type=boolean optional=true
   field name=signal type=AbortSignal optional=true
 
 interface name=EngineResult

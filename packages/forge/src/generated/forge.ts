@@ -41,6 +41,7 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
   const available = enabledEngines.filter((id: string) => {
     try {
       const engine = registry.get(id);
+      if (engine.api && !engine.binary) return false; // API-only engines cannot participate in forge
       return registry.isAvailable(engine);
     } catch (err) {
       console.warn(`[agon] engine availability check failed for ${id}: ${err instanceof Error ? err.message : String(err)}`);
@@ -248,7 +249,8 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
     }
   
     // --- Gauntlet: losers try to break the winner ---
-    if (config.gauntletEnabled && eloWinner && manifest.winner) {
+    const gauntletActive = options.hardened || config.gauntletEnabled;
+    if (gauntletActive && eloWinner && manifest.winner) {
       const gauntletLosers = available.filter((id: string) => id !== eloWinner);
       const winnerWt = worktrees.find((wt) => wt.engineId === eloWinner || wt.engineId === manifest.winner);
   

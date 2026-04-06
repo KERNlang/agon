@@ -162,7 +162,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
     case 'forge': {
       const forgeStart = Date.now();
       cb.runAsJob('forge', intent.task?.slice(0, 40) ?? 'forge', async () => {
-        await handleForge(intent.task, intent.fitnessCmd, cb.dispatch, cb.ctx);
+        await handleForge(intent.task, intent.fitnessCmd, cb.dispatch, cb.ctx, undefined, intent.hardened);
       });
       return { handled: true, ranAsJob: true };
     }

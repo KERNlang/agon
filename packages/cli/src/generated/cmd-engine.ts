@@ -84,9 +84,14 @@ export const engineCommand: any = defineCommand({
 
           header(`Engine: ${engine.displayName}`);
           console.log(`  ID:         ${bold(engine.id)}`);
-          console.log(`  Binary:     ${engine.binary}`);
-          console.log(`  Status:     ${available ? green('installed') : red('not found')}`);
-          const modes = [engine.exec ? 'exec' : '', engine.review ? 'review' : ''].filter(Boolean);
+          console.log(`  Binary:     ${engine.binary ?? dim('(API-only)')}`);
+          if (engine.api) {
+            console.log(`  API:        ${engine.api.baseUrl}`);
+            console.log(`  Auth:       ${engine.api.apiKeyEnv}`);
+            console.log(`  Model:      ${engine.api.model}`);
+          }
+          console.log(`  Status:     ${available ? green('available') : red('not available')}`);
+          const modes = [engine.exec ? 'exec' : '', engine.review ? 'review' : '', engine.agent ? 'agent' : ''].filter(Boolean);
           console.log(`  Modes:      ${modes.join(', ') || 'none'}`);
           console.log(`  Timeout:    ${engine.timeout}s`);
           console.log(`  Tier:       ${engine.tier}`);

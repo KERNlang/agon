@@ -22,6 +22,7 @@ interface name=Intent
   field name=index type="number|undefined"
   field name=tribunalMode type="string|undefined"
   field name=membersPerSide type="number|undefined"
+  field name=hardened type="boolean|undefined"
   field name=jobId type="string|undefined"
   field name=taskClass type="'code'|'question'|'ambiguous'|undefined"
   field name=args type="string|undefined"
@@ -29,7 +30,7 @@ interface name=Intent
 const name=SLASH_COMMANDS type="SlashCommand[]"
   handler <<<
     [
-      { cmd: '/forge',       desc: '<task> test with <cmd>  — competitive code generation' },
+      { cmd: '/forge',       desc: '<task> test with <cmd> [--hardened] — competitive code generation' },
       { cmd: '/brainstorm',  desc: '<question>              — confidence-bidding answers' },
       { cmd: '/tribunal',    desc: '[mode] <question>        — debate (adversarial|socratic|red-team|steelman|synthesis|postmortem)' },
       { cmd: '/campfire',    desc: '<topic>                  — think together, no competition' },
@@ -111,12 +112,14 @@ fn name=classifyTask params="input:string" returns="'code'|'question'|'ambiguous
 
 fn name=parseForgeInput params="input:string" returns=Intent export=false
   handler <<<
-    const fitnessMatch = FITNESS_PATTERN.exec(input);
+    const hardened = /--hardened\b/i.test(input);
+    const cleaned = input.replace(/--hardened\b/gi, '').trim();
+    const fitnessMatch = FITNESS_PATTERN.exec(cleaned);
     const fitnessCmd = fitnessMatch ? fitnessMatch[1].trim() : null;
     const task = fitnessCmd
-      ? input.replace(FITNESS_PATTERN, '').trim()
-      : input;
-    return { type: 'forge', task, fitnessCmd } as Intent;
+      ? cleaned.replace(FITNESS_PATTERN, '').trim()
+      : cleaned;
+    return { type: 'forge', task, fitnessCmd, hardened } as Intent;
   >>>
 
 fn name=parseSlashCommand params="input:string" returns=Intent export=false

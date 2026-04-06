@@ -29,6 +29,13 @@
     "flag": "--model"
   },
 
+  "api": {
+    "baseUrl": "https://generativelanguage.googleapis.com/v1beta/openai",
+    "apiKeyEnv": "GOOGLE_API_KEY",
+    "model": "gemini-2.5-flash",
+    "maxTokens": 8192
+  },
+
   "env": {
     "GOOGLE_API_KEY": { "required": false }
   },

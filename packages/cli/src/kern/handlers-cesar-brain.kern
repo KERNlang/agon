@@ -160,9 +160,18 @@ fn name=parseSuggestion params="response:string" returns="SuggestionResult"
 
 fn name=ensureCesarSession async=true params="ctx:HandlerContext" returns="Promise<PersistentSession>"
   handler <<<
-    // Return existing alive session
-    if (ctx.cesarSession && ctx.cesarSession.alive) {
+    const config = ctx.config;
+    const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
+
+    // Return existing alive session IF it's for the same engine
+    if (ctx.cesarSession && ctx.cesarSession.alive && ctx.cesarSession.engineId === cesarEngineId) {
       return ctx.cesarSession;
+    }
+
+    // Wrong engine or dead session — close old one
+    if (ctx.cesarSession && ctx.cesarSession.engineId !== cesarEngineId) {
+      ctx.cesarSession.close();
+      ctx.setCesarSession(null);
     }
 
     // Session exists but died — try restarting it before creating a new one
@@ -175,8 +184,6 @@ fn name=ensureCesarSession async=true params="ctx:HandlerContext" returns="Promi
       }
     }
 
-    const config = ctx.config;
-    const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
     let engine;
     try {
       engine = ctx.registry.get(cesarEngineId);

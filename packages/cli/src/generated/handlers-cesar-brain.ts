@@ -169,9 +169,18 @@ export function parseSuggestion(response: string): SuggestionResult {
 
 // @kern-source: handlers-cesar-brain:161
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
-  // Return existing alive session
-      if (ctx.cesarSession && ctx.cesarSession.alive) {
+  const config = ctx.config;
+      const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
+  
+      // Return existing alive session IF it's for the same engine
+      if (ctx.cesarSession && ctx.cesarSession.alive && ctx.cesarSession.engineId === cesarEngineId) {
         return ctx.cesarSession;
+      }
+  
+      // Wrong engine or dead session — close old one
+      if (ctx.cesarSession && ctx.cesarSession.engineId !== cesarEngineId) {
+        ctx.cesarSession.close();
+        ctx.setCesarSession(null);
       }
   
       // Session exists but died — try restarting it before creating a new one
@@ -184,8 +193,6 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
         }
       }
   
-      const config = ctx.config;
-      const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
       let engine;
       try {
         engine = ctx.registry.get(cesarEngineId);
@@ -343,7 +350,7 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
       return session;
 }
 
-// @kern-source: handlers-cesar-brain:337
+// @kern-source: handlers-cesar-brain:344
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}> {
   const abort = new AbortController();
   try {
@@ -866,7 +873,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   }
 }
 
-// @kern-source: handlers-cesar-brain:860
+// @kern-source: handlers-cesar-brain:867
 export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatch, ctx: HandlerContext): Promise<ForgeJudgment|null> {
   // Need an alive Cesar session
       let session;
@@ -980,7 +987,7 @@ export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatc
       return judgment;
 }
 
-// @kern-source: handlers-cesar-brain:975
+// @kern-source: handlers-cesar-brain:982
 function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJudgment|null {
   // Strip confidence prefix (e.g. ~91%) before parsing structured output
   const stripped = parseConfidence(response).rest;
@@ -1024,7 +1031,7 @@ function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJud
   return { winner, strengths, convergencePlan, summary, shouldConverge };
 }
 
-// @kern-source: handlers-cesar-brain:1020
+// @kern-source: handlers-cesar-brain:1027
 export async function cesarConvergeForge(manifest: ForgeManifest, judgment: ForgeJudgment, dispatch: Dispatch, ctx: HandlerContext): Promise<string|null> {
   let session;
       try {

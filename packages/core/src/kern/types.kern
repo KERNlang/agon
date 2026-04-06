@@ -45,6 +45,7 @@ interface name=EngineDefinition
   field name=adapterType type=string optional=true
   field name=capabilities type="string[]" optional=true
   field name=imageFlag type=string optional=true
+  field name=systemPromptFlag type=string optional=true
   field name=agent type=EngineModeConfig optional=true
   field name=api type="{baseUrl:string, apiKeyEnv:string, model:string, maxTokens?:number, format?:'openai'|'anthropic'}" optional=true
   field name=companion type=CompanionConfig optional=true

@@ -335,18 +335,27 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   
   // Concurrency guard with message queue — combines queued messages (like Claude Code)
   if ((ctx as any)._cesarBusy) {
-    const existing = (ctx as any)._cesarQueue;
-    if (existing) {
-      // Combine with previously queued message
-      existing.input = existing.input + '\n\n' + input;
-      if (images?.length) existing.images = [...(existing.images ?? []), ...images];
+    // Safety: force-clear if stuck for 3+ minutes (should never happen)
+    const busySince = (ctx as any)._cesarBusySince ?? 0;
+    if (busySince && Date.now() - busySince > 180_000) {
+      console.warn('[cesar:brain] force-clearing stuck busy flag');
+      (ctx as any)._cesarBusy = false;
+      (ctx as any)._cesarQueue = null;
+      // Fall through to normal execution
     } else {
-      (ctx as any)._cesarQueue = { input, dispatch, images };
+      const existing = (ctx as any)._cesarQueue;
+      if (existing) {
+        existing.input = existing.input + '\n\n' + input;
+        if (images?.length) existing.images = [...(existing.images ?? []), ...images];
+      } else {
+        (ctx as any)._cesarQueue = { input, dispatch, images };
+      }
+      dispatch({ type: 'info', message: 'Queued — will send when Cesar finishes.' });
+      return { delegated: false, responded: true };
     }
-    dispatch({ type: 'info', message: 'Queued — will send when Cesar finishes.' });
-    return { delegated: false, responded: true };
   }
   (ctx as any)._cesarBusy = true;
+  (ctx as any)._cesarBusySince = Date.now();
   
   try {
     ensureAgonHome();
@@ -999,20 +1008,26 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
     return { delegated: false, responded: false };
   } finally {
     (ctx as any)._cesarBusy = false;
+    (ctx as any)._cesarBusySince = null;
     dispatch({ type: 'spinner-stop' });
     ctx.setActiveAbort(null);
   
-    // Auto-drain queue — process next message if one was queued while busy
+    // Auto-drain queue — process queued message(s) after current turn finishes or is interrupted
     const queued = (ctx as any)._cesarQueue;
     if (queued) {
       (ctx as any)._cesarQueue = null;
-      // Fire-and-forget — don't await, let it run as next turn
-      handleCesarBrain(queued.input, queued.dispatch, ctx, queued.images).catch(() => {});
+      // Small delay to let UI update before next turn
+      setTimeout(() => {
+        handleCesarBrain(queued.input, queued.dispatch, ctx, queued.images).catch((err: any) => {
+          console.error(`[cesar:queue] drain failed: ${err.message ?? err}`);
+          (ctx as any)._cesarBusy = false; // force-clear on drain failure
+        });
+      }, 100);
     }
   }
 }
 
-// @kern-source: handlers-cesar-brain:1006
+// @kern-source: handlers-cesar-brain:1021
 export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatch, ctx: HandlerContext): Promise<ForgeJudgment|null> {
   // Need an alive Cesar session
       let session;
@@ -1126,7 +1141,7 @@ export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatc
       return judgment;
 }
 
-// @kern-source: handlers-cesar-brain:1121
+// @kern-source: handlers-cesar-brain:1136
 function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJudgment|null {
   // Strip confidence prefix (e.g. ~91%) before parsing structured output
   const stripped = parseConfidence(response).rest;
@@ -1170,7 +1185,7 @@ function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJud
   return { winner, strengths, convergencePlan, summary, shouldConverge };
 }
 
-// @kern-source: handlers-cesar-brain:1166
+// @kern-source: handlers-cesar-brain:1181
 export async function cesarConvergeForge(manifest: ForgeManifest, judgment: ForgeJudgment, dispatch: Dispatch, ctx: HandlerContext): Promise<string|null> {
   let session;
       try {

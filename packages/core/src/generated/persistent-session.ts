@@ -850,6 +850,9 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
   let firstTurn = true;
   // Message history for API engines — enables multi-turn tool loops
   const messageHistory: Array<{role: string, content: string}> = [];
+  // Track pending native tool calls for proper role:'tool' result formatting
+  const pendingToolCallIds: string[] = [];
+  let pendingAssistantToolMsg: any = null;
   
   const session: PersistentSession = {
     get alive() { return alive; },
@@ -879,8 +882,35 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
           firstTurn = false;
         }
   
-        // Append user message (or tool results on subsequent turns)
-        messageHistory.push({ role: 'user', content: opts.message });
+        // If previous turn had native tool_calls, this message contains tool results.
+        // Format as proper role:'tool' messages so the API understands them.
+        if (pendingToolCallIds.length > 0 && config.nativeTools) {
+          // Add assistant message with tool_calls to history (was stored from previous response)
+          if (pendingAssistantToolMsg) {
+            messageHistory.push(pendingAssistantToolMsg);
+          }
+          // Parse tool results from the formatted text and add as role:'tool' messages
+          // The formatToolResults function outputs: <tool_result name="X">content</tool_result>
+          const resultRegex = /<tool_result\s+name="([^"]+)">([\s\S]*?)<\/tool_result>/g;
+          let resultMatch;
+          let resultIdx = 0;
+          while ((resultMatch = resultRegex.exec(opts.message)) !== null) {
+            const toolCallId = pendingToolCallIds[resultIdx] ?? `tool_${resultIdx}`;
+            messageHistory.push({ role: 'tool', content: resultMatch[2].trim(), tool_call_id: toolCallId } as any);
+            resultIdx++;
+          }
+          // If no XML results found, send as plain tool result for each pending call
+          if (resultIdx === 0) {
+            for (const tcId of pendingToolCallIds) {
+              messageHistory.push({ role: 'tool', content: opts.message, tool_call_id: tcId } as any);
+            }
+          }
+          pendingToolCallIds.length = 0;
+          pendingAssistantToolMsg = null;
+        } else {
+          // Normal user message
+          messageHistory.push({ role: 'user', content: opts.message });
+        }
   
         // Smart context window: summarize old messages to control token growth.
         // Keep system prompt + last 10 messages verbatim. Summarize older ones.
@@ -922,9 +952,37 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
           yield { type: 'error' as const, content: err.message ?? String(err) };
         }
   
-        // Push assistant response to history for next turn
+        // Push assistant response to history — detect native tool calls for proper formatting
         if (fullResponse) {
-          messageHistory.push({ role: 'assistant', content: fullResponse });
+          // Check if response contains native tool call markers from apiStreamDispatch
+          const toolMarkerRe = /<tool\s+name="([^"]+)">([\s\S]*?)<\/tool>/g;
+          const extractedCalls: Array<{id: string, name: string, arguments: string}> = [];
+          let tmMatch;
+          let cleanResponse = fullResponse;
+          while ((tmMatch = toolMarkerRe.exec(fullResponse)) !== null) {
+            const callId = `call_${Date.now()}_${extractedCalls.length}`;
+            extractedCalls.push({ id: callId, name: tmMatch[1], arguments: tmMatch[2] });
+          }
+  
+          if (extractedCalls.length > 0 && config.nativeTools) {
+            // Strip tool markers from displayed response
+            cleanResponse = fullResponse.replace(/<tool\s+name="[^"]+">[\s\S]*?<\/tool>/g, '').trim();
+  
+            // Store assistant message with tool_calls for next send()
+            pendingAssistantToolMsg = {
+              role: 'assistant',
+              content: cleanResponse || null,
+              tool_calls: extractedCalls.map((tc, i) => ({
+                id: tc.id,
+                type: 'function',
+                function: { name: tc.name, arguments: tc.arguments },
+              })),
+            };
+            pendingToolCallIds.length = 0;
+            pendingToolCallIds.push(...extractedCalls.map(tc => tc.id));
+          } else {
+            messageHistory.push({ role: 'assistant', content: fullResponse });
+          }
         }
   
         yield { type: 'done' as const, content: 'end_turn' };

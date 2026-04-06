@@ -481,10 +481,43 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               return { delegated: false, responded: true };
             }
   
-            // Auto-nero: if confidence < 90% and nero isn't already active, inject challenge
-            if (confidenceParsed && parsedConfidence !== null && parsedConfidence < CONFIDENCE_TIERS.nero && !(ctx as any).neroMode) {
-              // Don't block — just flag in the UI that Cesar is self-challenging
-              dispatch({ type: 'spinner-update', message: 'Cesar challenging approach…' });
+            // HARD ENFORCEMENT: if confidence < 90%, block direct response and force escalation
+            if (confidenceParsed && parsedConfidence !== null && parsedConfidence < CONFIDENCE_TIERS.nero && !suggestion.action) {
+              dispatch({ type: 'spinner-stop' });
+  
+              if (parsedConfidence < CONFIDENCE_TIERS.stop) {
+                // <70% — full stop, show what Cesar said and halt
+                dispatch({ type: 'warning', message: confidenceBadge(parsedConfidence) + ' Cesar cannot proceed — confidence too low' });
+                dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: response });
+                appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
+                appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
+                return { delegated: false, responded: true };
+              }
+  
+              // <90% — force escalation: show Cesar's reasoning, then ask to brainstorm/tribunal
+              dispatch({ type: 'warning', message: confidenceBadge(parsedConfidence) + ' Cesar is not confident — recommending multi-engine input' });
+              dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: response });
+              appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
+              appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
+  
+              const escAnswer = await new Promise<string>((resolve) => {
+                dispatch({ type: 'question', prompt: `Cesar @ ${parsedConfidence}% — escalate?`, choices: [
+                  { key: 'b', label: 'Brainstorm', color: '#60a5fa' },
+                  { key: 't', label: 'Tribunal', color: '#f59e0b' },
+                  { key: 'f', label: 'Forge', color: '#a78bfa' },
+                  { key: 's', label: 'Skip (let Cesar proceed)', color: '#6b7280' },
+                ], resolve } as any);
+              });
+  
+              if (escAnswer === 'b') {
+                return { delegated: true, responded: true, action: 'brainstorm', reasoning: response };
+              } else if (escAnswer === 't') {
+                return { delegated: true, responded: true, action: 'tribunal', reasoning: response };
+              } else if (escAnswer === 'f') {
+                return { delegated: true, responded: true, action: 'forge', reasoning: response };
+              }
+              // 's' = skip — fall through and let response stream
+              return { delegated: false, responded: true };
             }
   
             // Switch spinner to "responding" mode

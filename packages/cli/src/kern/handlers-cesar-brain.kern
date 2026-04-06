@@ -365,7 +365,8 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
         session = await ensureCesarSession(ctx);
       } catch (err) {
         // Persistent session failed — fall back to fresh CLI dispatch so Cesar still answers
-        dispatch({ type: 'spinner-update', message: 'Cesar session busy, dispatching fresh…' });
+        const errMsg = err instanceof Error ? err.message : String(err);
+        dispatch({ type: 'spinner-update', message: `Cesar session error: ${errMsg.slice(0, 80)}` });
         try {
           const engine = ctx.registry.get(cesarEngineId);
           const cesarCwd = resolveWorkingDir();

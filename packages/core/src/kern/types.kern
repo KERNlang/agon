@@ -58,6 +58,7 @@ interface name=DispatchOptions
   field name=outputDir type=string
   field name=signal type=AbortSignal optional=true
   field name=images type="ImageAttachment[]" optional=true
+  field name=systemPrompt type=string optional=true
 
 interface name=DispatchResult
   field name=exitCode type=number

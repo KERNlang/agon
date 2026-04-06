@@ -8,7 +8,7 @@ import { mkdirSync, readFileSync } from 'node:fs';
 import type { EngineAdapter, ImageAttachment, PersistentSession, PersistentSessionConfig, SessionChunk, ForgeManifest, ForgeJudgment, ConvergenceEntry } from '@agon/core';
 
 // @kern-source: handlers-cesar-brain:4
-import { EngineRegistry, loadConfig, ensureAgonHome, RUNS_DIR, appendMessage, tracker, scanProjectContext, StreamParser, createPersistentSession, resolveWorkingDir, ToolRegistry, FileStateCache, createReadTool, createEditTool, createWriteTool, createBashTool, createGrepTool, createGlobTool, buildToolSystemPrompt, parseToolCalls, processToolResponse, runToolLoop, executeToolCall, classifyTask, toolsToOpenAIFormat } from '@agon/core';
+import { EngineRegistry, loadConfig, ensureAgonHome, RUNS_DIR, appendMessage, tracker, scanProjectContext, StreamParser, createPersistentSession, resolveWorkingDir, ToolRegistry, FileStateCache, createReadTool, createEditTool, createWriteTool, createBashTool, createGrepTool, createGlobTool, createForgeTool, createBrainstormTool, createTribunalTool, createCampfireTool, createPipelineTool, buildToolSystemPrompt, parseToolCalls, processToolResponse, runToolLoop, executeToolCall, classifyTask, toolsToOpenAIFormat } from '@agon/core';
 
 // @kern-source: handlers-cesar-brain:5
 import type { ToolContext, ToolCallResult } from '@agon/core';
@@ -87,7 +87,42 @@ export function parseSuggestion(response: string): SuggestionResult {
   // varying amounts of text between confidence and the marker.
   const searchArea = response.slice(0, 150);
   const match = searchArea.match(/\[(SUGGEST|DELEGATE):([\w-]+)\]/i);
-  if (!match) return { action: null, rest: response };
+  if (!match) {
+    // ── Keyword fallback: catch natural language delegation (e.g. GLM-5.1) ──
+    const nlArea = response.slice(0, 300).toLowerCase();
+    // Optional filler between intent verb and mode word: "I suggest we *launch a* forge"
+    const FILLER = '(?:(?:use|launch|start|open|run|set up|do)\\s+(?:a\\s+)?)?';
+    const INTENT = `(?:i(?:'ll| will| should| recommend| suggest(?:ing)?)\\s+(?:we\\s+)?${FILLER}|let(?:'s| me| us)\\s+${FILLER}|this (?:needs?|calls for|warrants) (?:a )?|delegate (?:this )?to |send (?:this )?to |launch(?:ing)?\\s+(?:a\\s+)?)`;
+    const NL_PATTERNS: Array<{ re: RegExp; action: string; hardened?: boolean; team?: boolean }> = [
+      { re: /\bteam[\s-]forge\b/, action: 'team-forge', team: true },
+      { re: /\bforge[\s-]hardened\b/, action: 'forge', hardened: true },
+      { re: new RegExp(`\\b(?:${INTENT})forge\\b`), action: 'forge' },
+      { re: /\bteam[\s-]brainstorm\b/, action: 'team-brainstorm', team: true },
+      { re: new RegExp(`\\b(?:${INTENT})brainstorm\\b`), action: 'brainstorm' },
+      { re: /\bteam[\s-]tribunal\b/, action: 'team-tribunal', team: true },
+      { re: /\btribunal[\s-](adversarial|synthesis|steelman|socratic|red[\s-]team|postmortem)\b/, action: 'tribunal' },
+      { re: new RegExp(`\\b(?:${INTENT})tribunal\\b`), action: 'tribunal' },
+      { re: new RegExp(`\\b(?:${INTENT}|open(?:ing)?\\s+(?:a\\s+)?)campfire\\b`), action: 'campfire' },
+      { re: new RegExp(`\\b(?:${INTENT}|full\\s+)pipeline\\b`), action: 'pipeline' },
+    ];
+    for (const pat of NL_PATTERNS) {
+      const nlMatch = nlArea.match(pat.re);
+      if (nlMatch) {
+        const matchIdx = nlArea.indexOf(nlMatch[0]);
+        const rest = response.slice(matchIdx + nlMatch[0].length).trim();
+        let action = pat.action;
+        let hardened = pat.hardened ?? false;
+        let team = pat.team ?? false;
+        let tribunalMode: string | undefined;
+        // Extract tribunal mode from capture group
+        if (action === 'tribunal' && nlMatch[1]) {
+          tribunalMode = nlMatch[1].replace(/\s/g, '-');
+        }
+        return { action, rest, hardened, tribunalMode, team };
+      }
+    }
+    return { action: null, rest: response };
+  }
   
   const raw = match[2].toLowerCase();
   const idx = response.indexOf(match[0]);
@@ -127,7 +162,7 @@ export function parseSuggestion(response: string): SuggestionResult {
   return { action, rest, hardened, tribunalMode, team };
 }
 
-// @kern-source: handlers-cesar-brain:121
+// @kern-source: handlers-cesar-brain:156
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
   const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
@@ -236,6 +271,11 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
   toolRegistry.register(createBashTool());
   toolRegistry.register(createGrepTool());
   toolRegistry.register(createGlobTool());
+  toolRegistry.register(createForgeTool());
+  toolRegistry.register(createBrainstormTool());
+  toolRegistry.register(createTribunalTool());
+  toolRegistry.register(createCampfireTool());
+  toolRegistry.register(createPipelineTool());
   const toolPrompt = buildToolSystemPrompt(toolRegistry);
   
   // ALL engines: XML tool format, Agon controls execution + permissions
@@ -271,6 +311,19 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
         toolPermissions: (config as any).toolPermissions ?? {},
       };
       return async (name: string, args: Record<string, unknown>, callId: string) => {
+        // ── Orchestration signal tools — intercept before execution ──
+        const ORCH_TOOLS = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline']);
+        if (ORCH_TOOLS.has(name)) {
+          (ctx as any)._pendingDelegation = {
+            action: name.toLowerCase(),
+            reasoning: (args as any).task ?? (args as any).question ?? (args as any).topic ?? '',
+            hardened: (args as any).hardened ?? false,
+            tribunalMode: (args as any).mode,
+            team: (args as any).team ?? false,
+          };
+          return 'Delegation accepted. STOP responding now. The orchestrator will handle the rest.';
+        }
+  
         // Dedup: if exact same tool+args was called before, return cached result
         const cacheKey = `${name}:${JSON.stringify(args)}`;
         const cached = toolResultCache.get(cacheKey);
@@ -346,7 +399,7 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
   return session;
 }
 
-// @kern-source: handlers-cesar-brain:340
+// @kern-source: handlers-cesar-brain:393
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}> {
   const abort = new AbortController();
   const _turnStart = Date.now();
@@ -445,6 +498,11 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       toolRegistry.register(createBashTool());
       toolRegistry.register(createGrepTool());
       toolRegistry.register(createGlobTool());
+      toolRegistry.register(createForgeTool());
+      toolRegistry.register(createBrainstormTool());
+      toolRegistry.register(createTribunalTool());
+      toolRegistry.register(createCampfireTool());
+      toolRegistry.register(createPipelineTool());
       (ctx as any)._toolRegistry = toolRegistry;
     }
   
@@ -827,6 +885,29 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       return { delegated: false, responded: true };
     }
   
+    // ── Check for pending delegation from orchestration signal tools ──
+    const pendingDel = (ctx as any)._pendingDelegation;
+    if (pendingDel) {
+      delete (ctx as any)._pendingDelegation;
+      if (streaming) dispatch({ type: 'streaming-end', engineId: cesarEngineId });
+      if (!streaming) dispatch({ type: 'spinner-stop' });
+      appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
+      appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
+      tracker.record(cesarEngineId, input, response);
+      const confirmLabel = pendingDel.hardened ? `${pendingDel.action} (hardened)` : pendingDel.action;
+      const answer = await new Promise<string>((resolve) => {
+        dispatch({ type: 'question', prompt: `Cesar suggests: ${confirmLabel}${pendingDel.tribunalMode ? ` [${pendingDel.tribunalMode}]` : ''}`, choices: [
+          { key: 'y', label: 'Go', color: '#4ade80' },
+          { key: 'n', label: 'Skip', color: '#ef4444' },
+        ], resolve } as any);
+      });
+      if (answer === 'y') {
+        let action = pendingDel.team ? `team-${pendingDel.action}` : pendingDel.action;
+        return { delegated: true, responded: true, action, reasoning: pendingDel.reasoning, hardened: pendingDel.hardened, tribunalMode: pendingDel.tribunalMode, team: pendingDel.team };
+      }
+      return { delegated: false, responded: true };
+    }
+  
     // Check final response for suggestion/delegation (non-streaming path)
     const finalSuggestion = parseSuggestion(response);
     if (finalSuggestion.action) {
@@ -1088,7 +1169,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   }
 }
 
-// @kern-source: handlers-cesar-brain:1082
+// @kern-source: handlers-cesar-brain:1163
 export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatch, ctx: HandlerContext): Promise<ForgeJudgment|null> {
   // Need an alive Cesar session
       let session;
@@ -1202,7 +1283,7 @@ export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatc
       return judgment;
 }
 
-// @kern-source: handlers-cesar-brain:1197
+// @kern-source: handlers-cesar-brain:1278
 function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJudgment|null {
   // Strip confidence prefix (e.g. ~91%) before parsing structured output
   const stripped = parseConfidence(response).rest;
@@ -1246,7 +1327,7 @@ function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJud
   return { winner, strengths, convergencePlan, summary, shouldConverge };
 }
 
-// @kern-source: handlers-cesar-brain:1242
+// @kern-source: handlers-cesar-brain:1323
 export async function cesarConvergeForge(manifest: ForgeManifest, judgment: ForgeJudgment, dispatch: Dispatch, ctx: HandlerContext): Promise<string|null> {
   let session;
       try {

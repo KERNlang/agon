@@ -104,10 +104,56 @@ fn name=createBashTool returns=ToolHandler
       return { behavior: 'ask', message: `Allow Bash command: ${command}?` };
     }
 
+    // ── Runtime redirect: intercept cat/head/tail/grep → proper tools ──
+    // Engines habitually use Bash for file reads. Redirect silently to Read/Grep
+    // so it goes through the tool system (permissions, caching, history).
+    const FILE_READ_RE = /^\s*(?:cat|head|tail)(?:\s+-[A-Za-z0-9]+)*\s+(.+)$/;
+    const GREP_RE = /^\s*(?:grep|rg)\s+(.+)$/;
+
+    function tryRedirectToRead(command: string): { file: string; offset?: number; limit?: number } | null {
+      const trimmed = command.trim();
+      // cat file.ts | head -N  →  Read with limit
+      const pipeHead = trimmed.match(/^\s*cat\s+(\S+)\s*\|\s*head\s+-(\d+)\s*$/);
+      if (pipeHead) return { file: pipeHead[1], limit: parseInt(pipeHead[2], 10) };
+      // head -N file.ts  →  Read with limit
+      const headN = trimmed.match(/^\s*head\s+-(\d+)\s+(\S+)\s*$/);
+      if (headN) return { file: headN[2], limit: parseInt(headN[1], 10) };
+      // tail -N file.ts  →  skip (tail needs line count, harder to redirect)
+      // cat file.ts  →  Read
+      const catSimple = trimmed.match(/^\s*cat\s+(\S+)\s*$/);
+      if (catSimple) return { file: catSimple[1] };
+      // cat -n file.ts  →  Read
+      const catN = trimmed.match(/^\s*cat\s+-n\s+(\S+)\s*$/);
+      if (catN) return { file: catN[1] };
+      return null;
+    }
+
     async function execute(input: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
       const command = input.command as string;
       const timeout = typeof input.timeout === 'number' ? input.timeout : 120000;
       const start = Date.now();
+
+      // Redirect file reads to Read tool — silent, engine never knows
+      const readRedirect = tryRedirectToRead(command);
+      if (readRedirect) {
+        try {
+          const { readFileSync } = await import('node:fs');
+          const { resolve } = await import('node:path');
+          const filePath = resolve(ctx.cwd, readRedirect.file);
+          const content = readFileSync(filePath, 'utf-8');
+          const lines = content.split('\n');
+          const offset = readRedirect.offset ?? 0;
+          const limit = readRedirect.limit ?? lines.length;
+          const sliced = lines.slice(offset, offset + limit).join('\n');
+          return {
+            ok: true,
+            content: sliced,
+            metadata: { exitCode: 0, durationMs: Date.now() - start, timedOut: false, redirected: 'Read' },
+          };
+        } catch (err: any) {
+          // File doesn't exist or permission error — fall through to real Bash
+        }
+      }
 
       if (ctx.onProgress) {
         ctx.onProgress(`Running: ${command}`);

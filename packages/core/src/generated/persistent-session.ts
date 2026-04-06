@@ -964,7 +964,33 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
         while (step < MAX_TOOL_STEPS) {
           step++;
           let fullResponse = '';
-          const gen = apiStreamDispatchWithHistory(config.engine.api, messageHistory, config.engine.timeout ?? 180, opts.signal, config.nativeTools);
+  
+          // Sanitize history for API — convert role:'tool' and tool_calls to plain messages
+          // for APIs that don't support OpenAI function calling protocol fully
+          const apiMessages = messageHistory.map((m: any) => {
+            if (m.role === 'tool') {
+              // Convert tool results to user messages
+              return { role: 'user', content: `[Tool result${m.tool_call_id ? ` (${m.tool_call_id})` : ''}]: ${m.content}` };
+            }
+            if (m.role === 'assistant' && m.tool_calls) {
+              // Convert assistant tool_calls to plain text
+              const callDescs = m.tool_calls.map((tc: any) => `${tc.function?.name}(${tc.function?.arguments})`).join(', ');
+              return { role: 'assistant', content: (m.content ? m.content + '\n' : '') + `[Called tools: ${callDescs}]` };
+            }
+            return m;
+          });
+  
+          // Ensure alternating user/assistant — merge consecutive same-role
+          const cleanMessages: Array<{role: string, content: string}> = [];
+          for (const msg of apiMessages) {
+            if (cleanMessages.length > 0 && cleanMessages[cleanMessages.length - 1].role === msg.role) {
+              cleanMessages[cleanMessages.length - 1].content += '\n' + (msg.content ?? '');
+            } else {
+              cleanMessages.push({ role: msg.role, content: msg.content ?? '' });
+            }
+          }
+  
+          const gen = apiStreamDispatchWithHistory(config.engine.api, cleanMessages, config.engine.timeout ?? 180, opts.signal, config.nativeTools);
           try {
             while (true) {
               const { value, done } = await gen.next();

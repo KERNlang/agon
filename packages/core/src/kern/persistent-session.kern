@@ -19,6 +19,7 @@ interface name=PersistentSessionConfig
   field name=binaryPath type=string
   field name=cwd type=string
   field name=systemPrompt type=string optional=true
+  field name=readOnly type=boolean optional=true
 
 interface name=PersistentSession
   field name=alive type=boolean
@@ -157,8 +158,8 @@ fn name=createCompanionSession params="config:PersistentSessionConfig" returns="
         // Start persistent thread (pass system prompt as instructions)
         const threadParams: Record<string, unknown> = {
           cwd: config.cwd,
-          approvalPolicy: 'never',
-          sandbox: 'read-only',
+          approvalPolicy: config.readOnly ? 'never' : 'auto-edit',
+          sandbox: config.readOnly ? 'read-only' : undefined,
           ephemeral: false,
         };
         if (config.systemPrompt) {

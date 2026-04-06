@@ -257,6 +257,7 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
         binaryPath,
         cwd: cesarCwd,
         systemPrompt: systemParts.join('\n\n'),
+        readOnly: ctx.explorationMode,
       };
   
       const session = createPersistentSession(sessionConfig);

@@ -24,6 +24,7 @@ export interface PersistentSessionConfig {
   binaryPath: string;
   cwd: string;
   systemPrompt?: string;
+  readOnly?: boolean;
 }
 
 export interface PersistentSession {
@@ -158,8 +159,8 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
       // Start persistent thread (pass system prompt as instructions)
       const threadParams: Record<string, unknown> = {
         cwd: config.cwd,
-        approvalPolicy: 'never',
-        sandbox: 'read-only',
+        approvalPolicy: config.readOnly ? 'never' : 'auto-edit',
+        sandbox: config.readOnly ? 'read-only' : undefined,
         ephemeral: false,
       };
       if (config.systemPrompt) {

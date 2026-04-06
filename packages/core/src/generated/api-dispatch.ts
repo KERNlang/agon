@@ -337,7 +337,11 @@ export async function* anthropicStreamDispatchWithHistory(config: ApiConfig, mes
     stream: true,
   };
   if (systemPrompt) {
-    reqBody.system = systemPrompt;
+    // Use structured system with cache_control for prompt caching.
+    // Cache is content-based — shared across sessions with same system prompt.
+    reqBody.system = [
+      { type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } },
+    ];
   }
   
   const body = JSON.stringify(reqBody);
@@ -357,6 +361,7 @@ export async function* anthropicStreamDispatchWithHistory(config: ApiConfig, mes
         'Content-Type': 'application/json',
         'x-api-key': apiKey,
         'anthropic-version': '2023-06-01',
+        'anthropic-beta': 'prompt-caching-2024-07-31',
       },
       body,
       signal: controller.signal,

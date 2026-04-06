@@ -266,9 +266,15 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
       toolRegistry.register(createGlobTool());
       const toolPrompt = buildToolSystemPrompt(toolRegistry);
   
-      // Non-Claude engines: harden the tool prompt — native tools are sandboxed read-only
-      const isNativeToolEngine = engine.id === 'claude' || engine.binary === 'claude';
-      if (!isNativeToolEngine) {
+      // Tell ALL engines to use tools directly — Agon handles permissions
+      const isClaudeEngine = engine.id === 'claude' || engine.binary === 'claude';
+      if (isClaudeEngine) {
+        systemParts.push(`## TOOL EXECUTION
+  
+  You have full tool access. Use your native tools (Read, Edit, Write, Bash, Grep, Glob) directly. Do NOT ask the user for permission in text — the permission system handles approval automatically. Just call the tool.
+  
+  NEVER say "Can you approve the edit?" or "I need write permission" — just use the tool.`);
+      } else {
         systemParts.push(`## CRITICAL — TOOL EXECUTION
   
   Your native filesystem write access and shell execution are DISABLED. You are running in a read-only sandbox.
@@ -337,7 +343,7 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
       return session;
 }
 
-// @kern-source: handlers-cesar-brain:331
+// @kern-source: handlers-cesar-brain:337
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}> {
   const abort = new AbortController();
   try {
@@ -859,7 +865,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   }
 }
 
-// @kern-source: handlers-cesar-brain:853
+// @kern-source: handlers-cesar-brain:859
 export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatch, ctx: HandlerContext): Promise<ForgeJudgment|null> {
   // Need an alive Cesar session
       let session;
@@ -973,7 +979,7 @@ export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatc
       return judgment;
 }
 
-// @kern-source: handlers-cesar-brain:968
+// @kern-source: handlers-cesar-brain:974
 function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJudgment|null {
   // Strip confidence prefix (e.g. ~91%) before parsing structured output
   const stripped = parseConfidence(response).rest;
@@ -1017,7 +1023,7 @@ function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJud
   return { winner, strengths, convergencePlan, summary, shouldConverge };
 }
 
-// @kern-source: handlers-cesar-brain:1013
+// @kern-source: handlers-cesar-brain:1019
 export async function cesarConvergeForge(manifest: ForgeManifest, judgment: ForgeJudgment, dispatch: Dispatch, ctx: HandlerContext): Promise<string|null> {
   let session;
       try {

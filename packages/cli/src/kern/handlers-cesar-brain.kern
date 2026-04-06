@@ -590,10 +590,16 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
               // Switch spinner to "responding" mode
               dispatch({ type: 'spinner-update', message: 'Cesar responding…' });
               streaming = true;
-              dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: response });
+              // Strip <think> blocks before streaming to user
+              const cleanFirst = response.replace(/<think>[\s\S]*?<\/think>\s*/gi, '');
+              if (cleanFirst) dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: cleanFirst });
             } else {
               response += chunk.content;
-              dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: chunk.content });
+              // Don't stream content inside <think> blocks
+              if (!response.includes('<think>') || response.includes('</think>')) {
+                const cleanChunk = chunk.content.replace(/<\/?think>/gi, '');
+                if (cleanChunk) dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: cleanChunk });
+              }
             }
           }
         }
@@ -612,6 +618,9 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
       }
 
       response = response.trim();
+
+      // Strip <think>...</think> reasoning blocks from API/reasoning models
+      response = response.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
 
       // Await eager tool promises and send results back to session
       if (eagerPromises.length > 0 && session.alive && !abort.signal.aborted) {

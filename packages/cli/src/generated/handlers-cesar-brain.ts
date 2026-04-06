@@ -193,13 +193,15 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
         throw new Error(`Cesar engine "${cesarEngineId}" not found`);
       }
   
-      if (engine.api && !engine.binary) {
-        throw new Error(`Cesar engine "${cesarEngineId}" is API-only — Cesar requires a CLI engine`);
-      }
+      // API-only engines use ResumeSession with direct API dispatch — no binary needed
+      const isApiOnly = engine.api && !engine.binary;
   
-      const binaryPath = ctx.registry.findBinary(engine);
-      if (!binaryPath) {
-        throw new Error(`Binary for "${cesarEngineId}" not found`);
+      let binaryPath = '';
+      if (!isApiOnly) {
+        binaryPath = ctx.registry.findBinary(engine) ?? '';
+        if (!binaryPath) {
+          throw new Error(`Binary for "${cesarEngineId}" not found`);
+        }
       }
   
       // Build context for system prompt
@@ -335,7 +337,7 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
       return session;
 }
 
-// @kern-source: handlers-cesar-brain:329
+// @kern-source: handlers-cesar-brain:331
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}> {
   const abort = new AbortController();
   try {
@@ -848,7 +850,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   }
 }
 
-// @kern-source: handlers-cesar-brain:842
+// @kern-source: handlers-cesar-brain:844
 export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatch, ctx: HandlerContext): Promise<ForgeJudgment|null> {
   // Need an alive Cesar session
       let session;
@@ -962,7 +964,7 @@ export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatc
       return judgment;
 }
 
-// @kern-source: handlers-cesar-brain:957
+// @kern-source: handlers-cesar-brain:959
 function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJudgment|null {
   // Strip confidence prefix (e.g. ~91%) before parsing structured output
   const stripped = parseConfidence(response).rest;
@@ -1006,7 +1008,7 @@ function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJud
   return { winner, strengths, convergencePlan, summary, shouldConverge };
 }
 
-// @kern-source: handlers-cesar-brain:1002
+// @kern-source: handlers-cesar-brain:1004
 export async function cesarConvergeForge(manifest: ForgeManifest, judgment: ForgeJudgment, dispatch: Dispatch, ctx: HandlerContext): Promise<string|null> {
   let session;
       try {

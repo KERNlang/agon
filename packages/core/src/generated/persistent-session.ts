@@ -48,9 +48,9 @@ export interface PersistentSession {
 export function createPersistentSession(config: PersistentSessionConfig): PersistentSession {
   const engine = config.engine;
   
-  // API-only engines cannot use persistent sessions (no binary to spawn)
+  // API-only engines use resume session (stateless per-turn) — no binary to keep alive
   if (engine.api && !engine.binary) {
-    throw new Error(`Engine "${engine.id}" is API-only and cannot use a persistent session`);
+    return createResumeSession(config);
   }
   
   // Claude: bidirectional stream-json pipe
@@ -742,12 +742,15 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
           pushDelta(parsed.delta.text);
         }
   
-        // Result event — marks turn completion
+        // Result event — marks turn completion (text already emitted by assistant/delta events)
         if (parsed.type === 'result') {
           turnDone = true;
-          const text = parsed.result ?? '';
-          if (text && typeof text === 'string') {
-            pushSnapshot(text);
+          // Only emit result text if nothing was streamed yet (fallback for non-streaming responses)
+          if (!emittedText) {
+            const text = parsed.result ?? '';
+            if (text && typeof text === 'string') {
+              pushSnapshot(text);
+            }
           }
           chunks.push({ type: 'done', content: 'end_turn' });
         }
@@ -820,7 +823,7 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
   return session;
 }
 
-// @kern-source: persistent-session:820
+// @kern-source: persistent-session:823
 export function createResumeSession(config: PersistentSessionConfig): PersistentSession {
   let alive = false;
   let sessionId: string | null = null;
@@ -896,9 +899,16 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
           if (parsed.session_id && !sessionId) {
             sessionId = parsed.session_id;
           }
-          if (parsed.type === 'assistant' || parsed.type === 'result' || parsed.type === 'content_block_delta') {
-            const text = parsed.result ?? parsed.delta?.text ?? '';
-            if (text) chunks.push({ type: 'text', content: text });
+          if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
+            chunks.push({ type: 'text', content: parsed.delta.text });
+          } else if (parsed.type === 'assistant' && parsed.message?.content) {
+            for (const block of parsed.message.content) {
+              if (block.type === 'text' && block.text) chunks.push({ type: 'text', content: block.text });
+            }
+          } else if (parsed.type === 'result' && !chunks.some((c: any) => c.type === 'text')) {
+            // Only use result text if no text was streamed yet
+            const text = parsed.result ?? '';
+            if (text && typeof text === 'string') chunks.push({ type: 'text', content: text });
           }
         } catch {
           // Raw text

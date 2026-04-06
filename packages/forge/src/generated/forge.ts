@@ -49,6 +49,10 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
     }
   });
   
+  if (available.length === 0) {
+    throw new Error(`No CLI-capable engines available for forge. API-only engines cannot participate. Enabled: ${enabledEngines.join(', ')}`);
+  }
+  
   const starter = options.starter
     ?? registry.pickStarter(available, config.forgeStarterStrategy, config.forgeFixedStarter);
   

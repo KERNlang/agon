@@ -36,9 +36,10 @@ export interface PersistentSessionConfig {
   systemPrompt?: string;
   onApproval?: (tool: string, command: string) => Promise<boolean>;
   nativeTools?: Array<{type:string,function:{name:string,description:string,parameters:Record<string,unknown>}}>;
+  onToolCall?: (name: string, args: Record<string,unknown>, callId: string) => Promise<string>;
 }
 
-// @kern-source: persistent-session:26
+// @kern-source: persistent-session:27
 export interface PersistentSession {
   alive: boolean;
   sessionId: string|null;
@@ -48,7 +49,7 @@ export interface PersistentSession {
   close: () => void;
 }
 
-// @kern-source: persistent-session:34
+// @kern-source: persistent-session:35
 export function createPersistentSession(config: PersistentSessionConfig): PersistentSession {
   const engine = config.engine;
   
@@ -76,7 +77,7 @@ export function createPersistentSession(config: PersistentSessionConfig): Persis
   return createResumeSession(config);
 }
 
-// @kern-source: persistent-session:65
+// @kern-source: persistent-session:66
 export function createCompanionSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -343,7 +344,7 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
   return session;
 }
 
-// @kern-source: persistent-session:335
+// @kern-source: persistent-session:336
 export function createAcpSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -591,7 +592,7 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
   return session;
 }
 
-// @kern-source: persistent-session:586
+// @kern-source: persistent-session:587
 export function createStreamJsonSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -843,7 +844,7 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
   return session;
 }
 
-// @kern-source: persistent-session:841
+// @kern-source: persistent-session:842
 export function createResumeSession(config: PersistentSessionConfig): PersistentSession {
   let alive = false;
   let sessionId: string | null = null;
@@ -950,56 +951,91 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
           messageHistory.push(...system, summary, ...recent);
         }
   
-        let fullResponse = '';
-        const gen = apiStreamDispatchWithHistory(config.engine.api, messageHistory, config.engine.timeout ?? 180, opts.signal, config.nativeTools);
-        try {
-          while (true) {
-            const { value, done } = await gen.next();
-            if (done) {
-              const result = value as any;
-              if (result?.stderr) {
-                yield { type: 'error' as const, content: result.stderr };
-              }
-              break;
-            }
-            fullResponse += value as string;
-            yield { type: 'text' as const, content: value as string };
-          }
-        } catch (err: any) {
-          yield { type: 'error' as const, content: err.message ?? String(err) };
-        }
+        // ── Agentic tool loop (like Vercel AI SDK maxSteps) ──
+        // Call API → if tool_calls returned → execute → add role:'tool' results → call API again → repeat
+        const MAX_TOOL_STEPS = 15;
+        let step = 0;
   
-        // Push assistant response to history — detect native tool calls for proper formatting
-        if (fullResponse) {
-          // Check if response contains native tool call markers from apiStreamDispatch
+        while (step < MAX_TOOL_STEPS) {
+          step++;
+          let fullResponse = '';
+          const gen = apiStreamDispatchWithHistory(config.engine.api, messageHistory, config.engine.timeout ?? 180, opts.signal, config.nativeTools);
+          try {
+            while (true) {
+              const { value, done } = await gen.next();
+              if (done) {
+                const result = value as any;
+                if (result?.stderr) {
+                  yield { type: 'error' as const, content: result.stderr };
+                }
+                break;
+              }
+              fullResponse += value as string;
+              yield { type: 'text' as const, content: value as string };
+            }
+          } catch (err: any) {
+            yield { type: 'error' as const, content: err.message ?? String(err) };
+            break;
+          }
+  
+          if (!fullResponse) break;
+  
+          // Check for native tool call markers from apiStreamDispatch
           const toolMarkerRe = /<tool\s+name="([^"]+)">([\s\S]*?)<\/tool>/g;
           const extractedCalls: Array<{id: string, name: string, arguments: string}> = [];
           let tmMatch;
-          let cleanResponse = fullResponse;
           while ((tmMatch = toolMarkerRe.exec(fullResponse)) !== null) {
             const callId = `call_${Date.now()}_${extractedCalls.length}`;
             extractedCalls.push({ id: callId, name: tmMatch[1], arguments: tmMatch[2] });
           }
   
-          if (extractedCalls.length > 0 && config.nativeTools) {
-            // Strip tool markers from displayed response
-            cleanResponse = fullResponse.replace(/<tool\s+name="[^"]+">[\s\S]*?<\/tool>/g, '').trim();
+          if (extractedCalls.length > 0 && config.nativeTools && config.onToolCall) {
+            // Model requested tool calls — execute and loop
+            const cleanText = fullResponse.replace(/<tool\s+name="[^"]+">[\s\S]*?<\/tool>/g, '').trim();
   
-            // Store assistant message with tool_calls for next send()
-            pendingAssistantToolMsg = {
+            // Add assistant message with tool_calls to history
+            messageHistory.push({
               role: 'assistant',
-              content: cleanResponse || null,
-              tool_calls: extractedCalls.map((tc, i) => ({
-                id: tc.id,
-                type: 'function',
+              content: cleanText || null,
+              tool_calls: extractedCalls.map(tc => ({
+                id: tc.id, type: 'function',
                 function: { name: tc.name, arguments: tc.arguments },
               })),
-            };
-            pendingToolCallIds.length = 0;
-            pendingToolCallIds.push(...extractedCalls.map(tc => tc.id));
-          } else {
-            messageHistory.push({ role: 'assistant', content: fullResponse });
+            } as any);
+  
+            // Execute each tool and add results as role:'tool'
+            const INLINE_LIMIT = 800;
+            for (const tc of extractedCalls) {
+              let args: Record<string, unknown> = {};
+              try { args = JSON.parse(tc.arguments); } catch { args = { raw: tc.arguments }; }
+  
+              yield { type: 'tool_call' as const, content: tc.name, metadata: { input: args, status: 'running' } };
+  
+              let result: string;
+              try {
+                result = await config.onToolCall(tc.name, args, tc.id);
+              } catch (err: any) {
+                result = `Error: ${err.message ?? String(err)}`;
+              }
+  
+              yield { type: 'tool_call' as const, content: tc.name, metadata: { input: args, output: result, status: 'done' } };
+  
+              // Add to history — summarize large results
+              let histContent = result;
+              if (histContent.length > INLINE_LIMIT) {
+                const lines = histContent.split('\n').length;
+                histContent = histContent.slice(0, 300) + `\n...\n[${lines} lines, ${histContent.length} chars — use ${tc.name} again for full content]`;
+              }
+              messageHistory.push({ role: 'tool', content: histContent, tool_call_id: tc.id } as any);
+            }
+  
+            // Continue loop — call API again with tool results
+            continue;
           }
+  
+          // No tool calls — final response. Add to history and exit loop.
+          messageHistory.push({ role: 'assistant', content: fullResponse });
+          break;
         }
   
         yield { type: 'done' as const, content: 'end_turn' };

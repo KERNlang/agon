@@ -213,9 +213,18 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
     systemParts.push(`NERO MODE: Adversarial. Challenge assumptions, probe weaknesses, ask hard questions before implementing. Suggest tribunal-red-team or tribunal-adversarial.`);
   }
   
-  // History replay removed — stream-json uses --replay-user-messages,
-  // API path uses messageHistory in ResumeSession. No need to duplicate in system prompt.
-  // Saves ~2000 tokens per turn.
+  // Compact history replay — only needed when session reboots (new process loses context).
+  // While alive, the CLI process / API messageHistory maintains state across turns.
+  // Keep it lean: last 10 messages, truncated to 200 chars each.
+  if (ctx.chatSession && ctx.chatSession.messages && ctx.chatSession.messages.length > 0) {
+    const recent = ctx.chatSession.messages.slice(-10);
+    const lines = recent.map((msg: any) => {
+      const role = msg.role === 'user' ? 'U' : (msg.engineId ?? 'E');
+      const text = msg.content.length > 200 ? msg.content.slice(0, 200) + '…' : msg.content;
+      return `${role}: ${text}`;
+    });
+    systemParts.push(`HISTORY:\n${lines.join('\n')}`);
+  }
   
   // Initialize tool registry and inject tool prompt — works with ANY engine
   const toolRegistry = new ToolRegistry();
@@ -282,7 +291,7 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
   return session;
 }
 
-// @kern-source: handlers-cesar-brain:276
+// @kern-source: handlers-cesar-brain:285
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}> {
   const abort = new AbortController();
   const _turnStart = Date.now();
@@ -931,7 +940,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   }
 }
 
-// @kern-source: handlers-cesar-brain:925
+// @kern-source: handlers-cesar-brain:934
 export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatch, ctx: HandlerContext): Promise<ForgeJudgment|null> {
   // Need an alive Cesar session
       let session;
@@ -1045,7 +1054,7 @@ export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatc
       return judgment;
 }
 
-// @kern-source: handlers-cesar-brain:1040
+// @kern-source: handlers-cesar-brain:1049
 function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJudgment|null {
   // Strip confidence prefix (e.g. ~91%) before parsing structured output
   const stripped = parseConfidence(response).rest;
@@ -1089,7 +1098,7 @@ function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJud
   return { winner, strengths, convergencePlan, summary, shouldConverge };
 }
 
-// @kern-source: handlers-cesar-brain:1085
+// @kern-source: handlers-cesar-brain:1094
 export async function cesarConvergeForge(manifest: ForgeManifest, judgment: ForgeJudgment, dispatch: Dispatch, ctx: HandlerContext): Promise<string|null> {
   let session;
       try {

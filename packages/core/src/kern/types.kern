@@ -208,6 +208,18 @@ interface name=EngineResult
   field name=patchPath type=string optional=true
   field name=worktreePath type=string optional=true
 
+interface name=DispatchMetric
+  field name=engineId type=string
+  field name=phase type="'stage1'|'stage2-scout'|'stage2-follower'|'synthesis'|'gauntlet'"
+  field name=dispatchDurationMs type=number
+  field name=fitnessDurationMs type=number optional=true
+  field name=totalDurationMs type=number
+  field name=pass type=boolean optional=true
+  field name=score type=number optional=true
+  field name=timedOut type=boolean optional=true
+  field name=error type=string optional=true
+  field name=tokens type="{prompt:number, response:number, costUsd:number}" optional=true
+
 interface name=ForgeManifest
   field name=forgeId type=string
   field name=forgeDir type=string
@@ -223,6 +235,7 @@ interface name=ForgeManifest
   field name=baselinePasses type=boolean
   field name=starter type=string
   field name=enginesDispatched type=number
+  field name=dispatchLog type="DispatchMetric[]" optional=true
   field name=synthesis type="{pass:boolean,score:number,wins:boolean,patchPath:string,originalWinnerScore:number}" optional=true
   field name=gauntlet type=GauntletResult optional=true
 

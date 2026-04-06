@@ -257,7 +257,18 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
         binaryPath,
         cwd: cesarCwd,
         systemPrompt: systemParts.join('\n\n'),
-        readOnly: ctx.explorationMode,
+        // Route engine tool approvals through Agon's permission system
+        onApproval: async (tool: string, command: string) => {
+          return new Promise<boolean>((resolve) => {
+            // This dispatches to the UI — shows the same permission prompt as Claude Code
+            const dispatch = (ctx as any)._lastDispatch;
+            if (dispatch) {
+              dispatch({ type: 'permission-ask', tool, command, reason: `Cesar (${engine.id}) wants to execute`, resolve } as any);
+            } else {
+              resolve(true); // No dispatch available — auto-approve
+            }
+          });
+        },
       };
   
       const session = createPersistentSession(sessionConfig);
@@ -287,6 +298,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   
     const color = ENGINE_COLORS[cesarEngineId] ?? 245;
     ctx.setActiveAbort(abort);
+    (ctx as any)._lastDispatch = dispatch; // Store for onApproval callback
     dispatch({ type: 'spinner-start', message: 'Cesar thinking…', color });
   
     // Boot or reuse persistent session

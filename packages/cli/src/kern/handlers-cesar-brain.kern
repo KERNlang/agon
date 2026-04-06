@@ -1,7 +1,7 @@
 import from="node:path" names="join"
 import from="node:fs" names="mkdirSync,readFileSync"
 import from="@agon/core" names="EngineAdapter,ImageAttachment,PersistentSession,PersistentSessionConfig,SessionChunk,ForgeManifest,ForgeJudgment,ConvergenceEntry" types=true
-import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,RUNS_DIR,appendMessage,tracker,scanProjectContext,StreamParser,createPersistentSession,resolveWorkingDir,ToolRegistry,FileStateCache,createReadTool,createEditTool,createWriteTool,createBashTool,createGrepTool,createGlobTool,buildToolSystemPrompt,parseToolCalls,processToolResponse,runToolLoop,executeToolCall"
+import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,RUNS_DIR,appendMessage,tracker,scanProjectContext,StreamParser,createPersistentSession,resolveWorkingDir,ToolRegistry,FileStateCache,createReadTool,createEditTool,createWriteTool,createBashTool,createGrepTool,createGlobTool,buildToolSystemPrompt,parseToolCalls,processToolResponse,runToolLoop,executeToolCall,classifyTask"
 import from="@agon/core" names="ToolContext,ToolCallResult" types=true
 import from="@agon/core" names="formatToolResults"
 import from="../output.js" names="ENGINE_COLORS"
@@ -42,9 +42,9 @@ When a task would benefit from multi-engine work, suggest the best mode by putti
 Every response MUST start with your confidence level: ~X%
 
 Your confidence determines your behavior:
-- **94%+** → Answer directly. You're confident — just do it.
-- **90-93%** → Suggest a mode. You think multi-engine help would improve the result. Use [SUGGEST:mode] after your confidence.
-- **<90%** → Challenge first. State what concerns you, what needs investigation, what could go wrong. Do NOT implement. Ask hard questions.
+- **93%+** → Answer directly. You're confident — just do it.
+- **85-92%** → Suggest a mode. You think multi-engine help would improve the result. Use [SUGGEST:mode] after your confidence.
+- **70-84%** → Challenge first. State what concerns you, what needs investigation, what could go wrong. Do NOT implement. Ask hard questions.
 - **<70%** → Full stop. Say explicitly what's needed before you can proceed.
 
 Format: Start response with ~X% then your content. Examples:
@@ -54,7 +54,7 @@ Format: Start response with ~X% then your content. Examples:
 - ~60% I can't proceed — I need to understand the API contract before touching this. Can you show me the endpoint spec?
 
 Rules for mode suggestions:
-- Only suggest when 90-93% confident AND multi-engine work would genuinely help.
+- Only suggest when 85-92% confident AND multi-engine work would genuinely help.
 - Always explain WHY you're suggesting that specific mode.
 - The user will confirm before dispatch. Don't assume they'll accept.
 - For code tasks: prefer build (single engine) unless complex enough for forge.
@@ -64,7 +64,7 @@ Rules for mode suggestions:
 
 const name=CONFIDENCE_TIERS type="{ direct: number; suggest: number; nero: number; stop: number }"
   handler <<<
-    ({ direct: 94, suggest: 90, nero: 90, stop: 70 })
+    ({ direct: 93, suggest: 85, nero: 85, stop: 70 })
   >>>
 
 fn name=parseConfidence params="response:string" returns="{ value: number | null; rest: string }"
@@ -351,6 +351,8 @@ NEVER describe changes in text when you can use a tool to make them directly.`);
 fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx:HandlerContext, images?:ImageAttachment[]" returns="Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}>"
   handler <<<
     const abort = new AbortController();
+    const _turnStart = Date.now();
+    const _toolsUsed: string[] = [];
     try {
       ensureAgonHome();
 
@@ -395,6 +397,7 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
             timeout: config.timeout ?? 120,
             outputDir,
             signal: abort.signal,
+            systemPrompt: CESAR_SYSTEM_PROMPT,
           });
           dispatch({ type: 'spinner-stop' });
           if (freshResult.stdout.trim()) {
@@ -574,7 +577,7 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
                 return { delegated: false, responded: true };
               }
 
-              // HARD ENFORCEMENT: if confidence < 90%, block direct response and force escalation
+              // HARD ENFORCEMENT: if confidence < 85%, block direct response and force escalation
               if (confidenceParsed && parsedConfidence !== null && parsedConfidence < CONFIDENCE_TIERS.nero && !suggestion.action) {
                 dispatch({ type: 'spinner-stop' });
 
@@ -794,6 +797,7 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
               onToolCall: (name: string, inp: Record<string, unknown>) => {
                 const inputJson = JSON.stringify(inp);
                 _lastToolInputs[name] = inputJson;
+                _toolsUsed.push(name);
                 dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: name, input: inputJson, status: 'running' });
               },
               onToolResult: (name: string, result: any) => {
@@ -846,7 +850,29 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
       if (response) {
         appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
         appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
-        tracker.record(cesarEngineId, input, response);
+        const tokenUsage = tracker.record(cesarEngineId, input, response);
+
+        // ── Trace: log turn to ~/.agon/runs/cesar-trace.jsonl ──
+        try {
+          const { appendFileSync } = await import('node:fs');
+          const tracePath = join(RUNS_DIR, 'cesar-trace.jsonl');
+          const taskClass = classifyTask(input);
+          const trace = {
+            ts: new Date().toISOString(),
+            engineId: cesarEngineId,
+            backend: (config as any).cesarBackend ?? 'auto',
+            durationMs: Date.now() - _turnStart,
+            inputLen: input.length,
+            responseLen: response.length,
+            taskClass,
+            toolsUsed: _toolsUsed.length > 0 ? _toolsUsed : undefined,
+            toolCount: _toolsUsed.length,
+            delegated: false,
+            confidence: parsedConfidence,
+            tokens: tokenUsage ? { prompt: tokenUsage.promptTokens, response: tokenUsage.responseTokens, cost: tokenUsage.costUsd } : undefined,
+          };
+          appendFileSync(tracePath, JSON.stringify(trace) + '\n');
+        } catch { /* tracing is best-effort */ }
 
         // Auto-remember: track topics discussed in session memory
         if ((ctx as any).cesarMemory) {

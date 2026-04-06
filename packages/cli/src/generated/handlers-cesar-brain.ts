@@ -8,7 +8,7 @@ import { mkdirSync, readFileSync } from 'node:fs';
 import type { EngineAdapter, ImageAttachment, PersistentSession, PersistentSessionConfig, SessionChunk, ForgeManifest, ForgeJudgment, ConvergenceEntry } from '@agon/core';
 
 // @kern-source: handlers-cesar-brain:4
-import { EngineRegistry, loadConfig, ensureAgonHome, RUNS_DIR, appendMessage, tracker, scanProjectContext, StreamParser, createPersistentSession, resolveWorkingDir, ToolRegistry, FileStateCache, createReadTool, createEditTool, createWriteTool, createBashTool, createGrepTool, createGlobTool, buildToolSystemPrompt, parseToolCalls, processToolResponse, runToolLoop, executeToolCall } from '@agon/core';
+import { EngineRegistry, loadConfig, ensureAgonHome, RUNS_DIR, appendMessage, tracker, scanProjectContext, StreamParser, createPersistentSession, resolveWorkingDir, ToolRegistry, FileStateCache, createReadTool, createEditTool, createWriteTool, createBashTool, createGrepTool, createGlobTool, buildToolSystemPrompt, parseToolCalls, processToolResponse, runToolLoop, executeToolCall, classifyTask } from '@agon/core';
 
 // @kern-source: handlers-cesar-brain:5
 import type { ToolContext, ToolCallResult } from '@agon/core';
@@ -56,9 +56,9 @@ When a task would benefit from multi-engine work, suggest the best mode by putti
 Every response MUST start with your confidence level: ~X%
 
 Your confidence determines your behavior:
-- **94%+** → Answer directly. You're confident — just do it.
-- **90-93%** → Suggest a mode. You think multi-engine help would improve the result. Use [SUGGEST:mode] after your confidence.
-- **<90%** → Challenge first. State what concerns you, what needs investigation, what could go wrong. Do NOT implement. Ask hard questions.
+- **93%+** → Answer directly. You're confident — just do it.
+- **85-92%** → Suggest a mode. You think multi-engine help would improve the result. Use [SUGGEST:mode] after your confidence.
+- **70-84%** → Challenge first. State what concerns you, what needs investigation, what could go wrong. Do NOT implement. Ask hard questions.
 - **<70%** → Full stop. Say explicitly what's needed before you can proceed.
 
 Format: Start response with ~X% then your content. Examples:
@@ -68,7 +68,7 @@ Format: Start response with ~X% then your content. Examples:
 - ~60% I can't proceed — I need to understand the API contract before touching this. Can you show me the endpoint spec?
 
 Rules for mode suggestions:
-- Only suggest when 90-93% confident AND multi-engine work would genuinely help.
+- Only suggest when 85-92% confident AND multi-engine work would genuinely help.
 - Always explain WHY you're suggesting that specific mode.
 - The user will confirm before dispatch. Don't assume they'll accept.
 - For code tasks: prefer build (single engine) unless complex enough for forge.
@@ -76,7 +76,7 @@ Rules for mode suggestions:
 - For high-stakes changes: add -hardened to forge modes.`;
 
 // @kern-source: handlers-cesar-brain:65
-export const CONFIDENCE_TIERS: { direct: number; suggest: number; nero: number; stop: number } = ({ direct: 94, suggest: 90, nero: 90, stop: 70 });
+export const CONFIDENCE_TIERS: { direct: number; suggest: number; nero: number; stop: number } = ({ direct: 93, suggest: 85, nero: 85, stop: 70 });
 
 // @kern-source: handlers-cesar-brain:70
 export function parseConfidence(response: string): { value: number | null; rest: string } {
@@ -360,6 +360,8 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
 // @kern-source: handlers-cesar-brain:351
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}> {
   const abort = new AbortController();
+  const _turnStart = Date.now();
+  const _toolsUsed: string[] = [];
   try {
     ensureAgonHome();
   
@@ -404,6 +406,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           timeout: config.timeout ?? 120,
           outputDir,
           signal: abort.signal,
+          systemPrompt: CESAR_SYSTEM_PROMPT,
         });
         dispatch({ type: 'spinner-stop' });
         if (freshResult.stdout.trim()) {
@@ -583,7 +586,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               return { delegated: false, responded: true };
             }
   
-            // HARD ENFORCEMENT: if confidence < 90%, block direct response and force escalation
+            // HARD ENFORCEMENT: if confidence < 85%, block direct response and force escalation
             if (confidenceParsed && parsedConfidence !== null && parsedConfidence < CONFIDENCE_TIERS.nero && !suggestion.action) {
               dispatch({ type: 'spinner-stop' });
   
@@ -803,6 +806,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             onToolCall: (name: string, inp: Record<string, unknown>) => {
               const inputJson = JSON.stringify(inp);
               _lastToolInputs[name] = inputJson;
+              _toolsUsed.push(name);
               dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: name, input: inputJson, status: 'running' });
             },
             onToolResult: (name: string, result: any) => {
@@ -855,7 +859,29 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
     if (response) {
       appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
       appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
-      tracker.record(cesarEngineId, input, response);
+      const tokenUsage = tracker.record(cesarEngineId, input, response);
+  
+      // ── Trace: log turn to ~/.agon/runs/cesar-trace.jsonl ──
+      try {
+        const { appendFileSync } = await import('node:fs');
+        const tracePath = join(RUNS_DIR, 'cesar-trace.jsonl');
+        const taskClass = classifyTask(input);
+        const trace = {
+          ts: new Date().toISOString(),
+          engineId: cesarEngineId,
+          backend: (config as any).cesarBackend ?? 'auto',
+          durationMs: Date.now() - _turnStart,
+          inputLen: input.length,
+          responseLen: response.length,
+          taskClass,
+          toolsUsed: _toolsUsed.length > 0 ? _toolsUsed : undefined,
+          toolCount: _toolsUsed.length,
+          delegated: false,
+          confidence: parsedConfidence,
+          tokens: tokenUsage ? { prompt: tokenUsage.promptTokens, response: tokenUsage.responseTokens, cost: tokenUsage.costUsd } : undefined,
+        };
+        appendFileSync(tracePath, JSON.stringify(trace) + '\n');
+      } catch { /* tracing is best-effort */ }
   
       // Auto-remember: track topics discussed in session memory
       if ((ctx as any).cesarMemory) {
@@ -908,7 +934,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   }
 }
 
-// @kern-source: handlers-cesar-brain:902
+// @kern-source: handlers-cesar-brain:928
 export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatch, ctx: HandlerContext): Promise<ForgeJudgment|null> {
   // Need an alive Cesar session
       let session;
@@ -1022,7 +1048,7 @@ export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatc
       return judgment;
 }
 
-// @kern-source: handlers-cesar-brain:1017
+// @kern-source: handlers-cesar-brain:1043
 function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJudgment|null {
   // Strip confidence prefix (e.g. ~91%) before parsing structured output
   const stripped = parseConfidence(response).rest;
@@ -1066,7 +1092,7 @@ function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJud
   return { winner, strengths, convergencePlan, summary, shouldConverge };
 }
 
-// @kern-source: handlers-cesar-brain:1062
+// @kern-source: handlers-cesar-brain:1088
 export async function cesarConvergeForge(manifest: ForgeManifest, judgment: ForgeJudgment, dispatch: Dispatch, ctx: HandlerContext): Promise<string|null> {
   let session;
       try {

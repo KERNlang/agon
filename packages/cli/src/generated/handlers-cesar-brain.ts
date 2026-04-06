@@ -245,6 +245,7 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
   
   // Build native function calling tools for API engines (OpenAI-compatible)
   const nativeTools = (!binaryPath && engine.api) ? toolsToOpenAIFormat(toolRegistry) : undefined;
+  (ctx as any)._hasNativeTools = !!nativeTools;
   
   const sessionConfig: PersistentSessionConfig = {
     engine,
@@ -295,7 +296,7 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
   return session;
 }
 
-// @kern-source: handlers-cesar-brain:289
+// @kern-source: handlers-cesar-brain:290
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}> {
   const abort = new AbortController();
   const _turnStart = Date.now();
@@ -518,8 +519,11 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               }
             }
   
-            // Check for suggestion/delegation marker
-            const suggestion = parseSuggestion(response);
+            // Check for suggestion/delegation marker — skip when native tools active
+            // (API models with function calling should use tools directly, not suggest modes)
+            const suggestion = (ctx as any)._hasNativeTools
+              ? { action: null, rest: response }
+              : parseSuggestion(response);
             if (suggestion.action) {
               dispatch({ type: 'spinner-stop' });
               appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
@@ -643,6 +647,11 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   
     // Strip <think>...</think> reasoning blocks from API/reasoning models
     response = response.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
+  
+    // Strip [SUGGEST:...] tags from API engines (already skipped in parsing, just clean display)
+    if ((ctx as any)._hasNativeTools) {
+      response = response.replace(/^\[(SUGGEST|DELEGATE):[^\]]*\]\s*/i, '').trim();
+    }
   
     // Await eager tool promises and send results back to session
     if (eagerPromises.length > 0 && session.alive && !abort.signal.aborted) {
@@ -946,7 +955,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   }
 }
 
-// @kern-source: handlers-cesar-brain:940
+// @kern-source: handlers-cesar-brain:949
 export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatch, ctx: HandlerContext): Promise<ForgeJudgment|null> {
   // Need an alive Cesar session
       let session;
@@ -1060,7 +1069,7 @@ export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatc
       return judgment;
 }
 
-// @kern-source: handlers-cesar-brain:1055
+// @kern-source: handlers-cesar-brain:1064
 function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJudgment|null {
   // Strip confidence prefix (e.g. ~91%) before parsing structured output
   const stripped = parseConfidence(response).rest;
@@ -1104,7 +1113,7 @@ function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJud
   return { winner, strengths, convergencePlan, summary, shouldConverge };
 }
 
-// @kern-source: handlers-cesar-brain:1100
+// @kern-source: handlers-cesar-brain:1109
 export async function cesarConvergeForge(manifest: ForgeManifest, judgment: ForgeJudgment, dispatch: Dispatch, ctx: HandlerContext): Promise<string|null> {
   let session;
       try {

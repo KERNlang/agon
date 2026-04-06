@@ -184,13 +184,15 @@ fn name=ensureCesarSession async=true params="ctx:HandlerContext" returns="Promi
       throw new Error(`Cesar engine "${cesarEngineId}" not found`);
     }
 
-    if (engine.api && !engine.binary) {
-      throw new Error(`Cesar engine "${cesarEngineId}" is API-only — Cesar requires a CLI engine`);
-    }
+    // API-only engines use ResumeSession with direct API dispatch — no binary needed
+    const isApiOnly = engine.api && !engine.binary;
 
-    const binaryPath = ctx.registry.findBinary(engine);
-    if (!binaryPath) {
-      throw new Error(`Binary for "${cesarEngineId}" not found`);
+    let binaryPath = '';
+    if (!isApiOnly) {
+      binaryPath = ctx.registry.findBinary(engine) ?? '';
+      if (!binaryPath) {
+        throw new Error(`Binary for "${cesarEngineId}" not found`);
+      }
     }
 
     // Build context for system prompt

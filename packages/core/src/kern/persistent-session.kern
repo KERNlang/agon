@@ -887,24 +887,43 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
           messageHistory.push({ role: 'user', content: opts.message });
 
           // Smart context window: summarize old messages to control token growth.
-          // Keep system prompt + last 10 messages verbatim. Summarize older ones.
+          // Keep system prompt + recent messages. Don't split tool chains.
           if (messageHistory.length > 14) {
             const hasSystem = messageHistory[0].role === 'system';
             const system = hasSystem ? [messageHistory[0]] : [];
             const cutoff = hasSystem ? 1 : 0;
-            const old = messageHistory.slice(cutoff, -10);
-            const recent = messageHistory.slice(-10);
 
-            // Compress old messages into a single summary
-            const summaryLines = old.map((m: {role:string, content:string}) => {
-              const label = m.role === 'user' ? 'U' : 'A';
-              const text = m.content.length > 150 ? m.content.slice(0, 150) + '…' : m.content;
-              return `${label}: ${text}`;
-            });
-            const summary = { role: 'user', content: `[Earlier conversation summary — ${old.length} messages]\n${summaryLines.join('\n')}` };
+            // Find safe split point — don't cut between assistant(tool_calls) and role:tool
+            let splitIdx = messageHistory.length - 10;
+            if (splitIdx <= cutoff) splitIdx = cutoff;
+            // Walk forward until we're NOT inside a tool chain
+            while (splitIdx < messageHistory.length) {
+              const msg = messageHistory[splitIdx] as any;
+              if (msg.role === 'tool' || (msg.role === 'assistant' && msg.tool_calls)) {
+                splitIdx++;
+              } else {
+                break;
+              }
+            }
+            if (splitIdx >= messageHistory.length) splitIdx = cutoff; // safety
 
-            messageHistory.length = 0;
-            messageHistory.push(...system, summary, ...recent);
+            const old = messageHistory.slice(cutoff, splitIdx);
+            const recent = messageHistory.slice(splitIdx);
+
+            if (old.length > 0) {
+              // Compress old messages — handle content:null from tool-only assistant messages
+              const summaryLines = old.map((m: any) => {
+                if (m.role === 'tool') return `T: [tool result]`;
+                if (m.role === 'assistant' && m.tool_calls) return `A: [called ${m.tool_calls.length} tool(s)]`;
+                const label = m.role === 'user' ? 'U' : 'A';
+                const text = (m.content ?? '').length > 150 ? (m.content ?? '').slice(0, 150) + '…' : (m.content ?? '(no text)');
+                return `${label}: ${text}`;
+              });
+              const summary = { role: 'user', content: `[Earlier conversation — ${old.length} messages]\n${summaryLines.join('\n')}` };
+
+              messageHistory.length = 0;
+              messageHistory.push(...system, summary, ...recent);
+            }
           }
 
           // ── Agentic tool loop (like Vercel AI SDK maxSteps) ──

@@ -619,7 +619,6 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
   
       const args = [
         '--print',
-        '--bare',
         '--verbose',
         '--input-format', 'stream-json',
         '--output-format', 'stream-json',
@@ -826,7 +825,7 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
   return session;
 }
 
-// @kern-source: persistent-session:824
+// @kern-source: persistent-session:823
 export function createResumeSession(config: PersistentSessionConfig): PersistentSession {
   let alive = false;
   let sessionId: string | null = null;

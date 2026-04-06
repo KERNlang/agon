@@ -291,9 +291,12 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
           },
         );
         const output = result.result.ok ? result.result.content : (result.result.error ?? 'Tool execution failed');
-        // Cache read-only results (Read, Grep, Glob, Find). Don't cache Bash/Edit/Write.
+        // Cache read-only results. Invalidate on writes.
         if (['Read', 'Grep', 'Glob'].includes(name)) {
           toolResultCache.set(cacheKey, output);
+        } else if (['Edit', 'Write', 'Bash'].includes(name)) {
+          // Workspace changed — invalidate all cached reads
+          toolResultCache.clear();
         }
         return output;
       };
@@ -341,7 +344,7 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
   return session;
 }
 
-// @kern-source: handlers-cesar-brain:335
+// @kern-source: handlers-cesar-brain:338
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}> {
   const abort = new AbortController();
   const _turnStart = Date.now();
@@ -1044,7 +1047,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   }
 }
 
-// @kern-source: handlers-cesar-brain:1038
+// @kern-source: handlers-cesar-brain:1041
 export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatch, ctx: HandlerContext): Promise<ForgeJudgment|null> {
   // Need an alive Cesar session
       let session;
@@ -1158,7 +1161,7 @@ export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatc
       return judgment;
 }
 
-// @kern-source: handlers-cesar-brain:1153
+// @kern-source: handlers-cesar-brain:1156
 function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJudgment|null {
   // Strip confidence prefix (e.g. ~91%) before parsing structured output
   const stripped = parseConfidence(response).rest;
@@ -1202,7 +1205,7 @@ function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJud
   return { winner, strengths, convergencePlan, summary, shouldConverge };
 }
 
-// @kern-source: handlers-cesar-brain:1198
+// @kern-source: handlers-cesar-brain:1201
 export async function cesarConvergeForge(manifest: ForgeManifest, judgment: ForgeJudgment, dispatch: Dispatch, ctx: HandlerContext): Promise<string|null> {
   let session;
       try {

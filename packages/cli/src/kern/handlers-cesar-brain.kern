@@ -282,9 +282,12 @@ fn name=ensureCesarSession async=true params="ctx:HandlerContext" returns="Promi
             },
           );
           const output = result.result.ok ? result.result.content : (result.result.error ?? 'Tool execution failed');
-          // Cache read-only results (Read, Grep, Glob, Find). Don't cache Bash/Edit/Write.
+          // Cache read-only results. Invalidate on writes.
           if (['Read', 'Grep', 'Glob'].includes(name)) {
             toolResultCache.set(cacheKey, output);
+          } else if (['Edit', 'Write', 'Bash'].includes(name)) {
+            // Workspace changed — invalidate all cached reads
+            toolResultCache.clear();
           }
           return output;
         };

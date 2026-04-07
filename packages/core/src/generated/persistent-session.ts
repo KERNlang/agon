@@ -211,11 +211,11 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
       });
       notifyRpc('initialized');
   
-      // Start persistent thread — read-only sandbox forces engine to use Agon's XML tools for writes/bash
+      // Start persistent thread — workspace-write + on-request lets the host (Agon) approve/deny via JSONRPC
       const threadParams: Record<string, unknown> = {
         cwd: config.cwd,
-        approvalPolicy: 'never',
-        sandbox: 'read-only',
+        approvalPolicy: config.onApproval ? 'on-request' : 'never',
+        sandbox: config.onApproval ? 'workspace-write' : 'read-only',
         ephemeral: false,
       };
       if (config.systemPrompt) {

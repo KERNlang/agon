@@ -37,7 +37,10 @@ import { fireSecondOpinion, fireAdvisor, handleSecondOpinion, activateNero, deac
 // @kern-source: handlers-cesar-brain:13
 import { buildRoutingContext } from './cesar-routing.js';
 
-// @kern-source: handlers-cesar-brain:15
+// @kern-source: handlers-cesar-brain:16
+export const yieldToInk: () => Promise<void> = () => new Promise<void>(resolve => setImmediate(resolve));
+
+// @kern-source: handlers-cesar-brain:19
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}> {
   const abort = new AbortController();
   const _turnStart = Date.now();
@@ -94,6 +97,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
     ctx.setActiveAbort(abort);
     (ctx as any)._lastDispatch = dispatch;
     dispatch({ type: 'spinner-start', message: 'Cesar thinking…', color });
+    await yieldToInk();
   
     // ── Boot or reuse persistent session ──
     let session: PersistentSession;
@@ -381,6 +385,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             dispatch({ type: 'spinner-update', message: confidenceBadge(parsedConfidence!) + ` Getting second opinion… ${Math.round((Date.now() - _escStart) / 1000)}s` });
           }, 15_000);
           dispatch({ type: 'spinner-start', message: confidenceBadge(parsedConfidence) + ' Getting second opinion…', color });
+          await yieldToInk();
           const secondResult = await fireSecondOpinion(input, ctx, abort);
           clearInterval(_escTimer);
           dispatch({ type: 'spinner-stop' });
@@ -398,6 +403,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             dispatch({ type: 'spinner-update', message: confidenceBadge(parsedConfidence!) + ` Consulting advisor… ${Math.round((Date.now() - _escStart) / 1000)}s` });
           }, 15_000);
           dispatch({ type: 'spinner-start', message: confidenceBadge(parsedConfidence) + ' Consulting advisor…', color });
+          await yieldToInk();
           const advisorResult = await fireAdvisor(input, response, parsedConfidence, ctx, abort);
           clearInterval(_escTimer);
           dispatch({ type: 'spinner-stop' });
@@ -556,6 +562,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
     if (!streaming && response) {
       dispatch({ type: 'spinner-stop' });
       dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: response });
+      await yieldToInk();
     }
     if (streaming) {
       dispatch({ type: 'streaming-end', engineId: cesarEngineId });

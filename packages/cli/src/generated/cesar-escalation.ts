@@ -102,9 +102,6 @@ export async function fireAdvisor(input: string, cesarResponse: string, parsedCo
 export async function handleSecondOpinion(secondResult: {stdout:string, engineId:string, color:number}|null, input: string, response: string, parsedConfidence: number|null, cesarEngineId: string, dispatch: Dispatch, ctx: HandlerContext, abortSignal?: AbortSignal): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string}|null> {
   if (!secondResult || !secondResult.stdout.trim()) return null;
   
-  // If interrupted, skip entirely — don't show advisor or choice menu
-  if (abortSignal?.aborted) return null;
-  
   // Strip <think> blocks from advisor response
   const advisorResponse = secondResult.stdout.trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
   dispatch({ type: 'engine-block', engineId: secondResult.engineId, color: secondResult.color, content: advisorResponse });
@@ -116,8 +113,8 @@ export async function handleSecondOpinion(secondResult: {stdout:string, engineId
   appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
   tracker.record(cesarEngineId, input, response);
   
-  // If interrupted after showing advisor but before menu, skip menu
-  if (abortSignal?.aborted) return { delegated: false, responded: true };
+  // Yield so Ink paints the advisor response before showing the menu
+  await new Promise<void>(resolve => setImmediate(resolve));
   
   // Escalation menu — same for all low confidence, no more dead STOP
   const escAnswer = await new Promise<string>((resolve) => {
@@ -135,7 +132,7 @@ export async function handleSecondOpinion(secondResult: {stdout:string, engineId
   return { delegated: false, responded: true };
 }
 
-// @kern-source: cesar-escalation:127
+// @kern-source: cesar-escalation:124
 export function activateNero(ctx: HandlerContext, dispatch: Dispatch): void {
   if (!(ctx as any).neroMode && ctx.setNeroMode) {
     ctx.setNeroMode(true);
@@ -152,7 +149,7 @@ export function activateNero(ctx: HandlerContext, dispatch: Dispatch): void {
   }
 }
 
-// @kern-source: cesar-escalation:145
+// @kern-source: cesar-escalation:142
 export function deactivateNero(ctx: HandlerContext, dispatch: Dispatch): void {
   ctx.setNeroMode(false);
   (ctx as any).neroMode = false;
@@ -164,7 +161,7 @@ export function deactivateNero(ctx: HandlerContext, dispatch: Dispatch): void {
   dispatch({ type: 'info', message: `${icons().nero} Nero deactivated — confidence recovered` });
 }
 
-// @kern-source: cesar-escalation:159
+// @kern-source: cesar-escalation:156
 export async function promptDelegation(action: string, dispatch: Dispatch, hardened?: boolean, tribunalMode?: string, team?: boolean): Promise<{approved:boolean, action?:string, hardened?:boolean, tribunalMode?:string, team?:boolean, userContext?:string}> {
   // Check session auto-approve cache
   const autoApproved = (promptDelegation as any)._autoApprove as Set<string> | undefined;
@@ -226,7 +223,7 @@ export async function promptDelegation(action: string, dispatch: Dispatch, harde
   return { approved: true };
 }
 
-// @kern-source: cesar-escalation:222
+// @kern-source: cesar-escalation:219
 export async function promptProtocolEnforcement(input: string, parsedConfidence: number|null, ctx: HandlerContext, dispatch: Dispatch): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, team?:boolean}|null> {
   if (parsedConfidence === null
       || parsedConfidence >= CONFIDENCE_TIERS.nero

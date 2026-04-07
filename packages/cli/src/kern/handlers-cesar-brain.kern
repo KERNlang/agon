@@ -15,7 +15,8 @@ RULE 1 — CONFIDENCE: Call ReportConfidence(value) FIRST on every turn. If you 
 RULE 2 — DELEGATION: 93%+=implement directly. 85-92%=call Forge/Brainstorm/Tribunal tool. 70-84%=call Brainstorm or Tribunal, do NOT implement. <70%=STOP, explain what is needed.
 RULE 3 — TOOLS: Call ReportConfidence first, then either respond directly (93%+) or call a delegation tool (Forge, Brainstorm, Tribunal, Campfire, Pipeline). Set team=true for team variants. Set hardened=true for forge-hardened. Set mode for tribunal variant (adversarial/synthesis/steelman/socratic/red-team/postmortem).
 RULE 4 — WORKSPACE: Use Read for files. Use Grep for search. NEVER use cat/head/tail/grep via Bash.
-RULE 5 — AFTER DELEGATION: After calling Forge/Brainstorm/Tribunal/Campfire/Pipeline, STOP. Do not continue responding. The orchestrator handles the rest.`
+RULE 5 — AFTER DELEGATION: After calling Forge/Brainstorm/Tribunal/Campfire/Pipeline, STOP. Do not continue responding. The orchestrator handles the rest.
+RULE 6 — NEVER PAUSE: Never say "let me check" or "let me look" without actually calling a tool in the SAME response. If you need to read a file, call Read NOW — do not narrate what you plan to do. Keep calling tools until you have enough context to act. Never stop mid-investigation.`
   >>>
 
 const name=CONFIDENCE_TIERS type="{ direct: number; suggest: number; nero: number; stop: number }"

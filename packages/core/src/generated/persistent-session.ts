@@ -1028,9 +1028,9 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
               if (done) {
                 const result = value as any;
                 if (result?.stderr) {
-                  // Only kill session if we got NO useful output — stderr with content is a warning, not fatal
+                  // Only report error if we got NO useful output — stderr with content is a warning, not fatal
+                  // Don't kill the session — resume sessions are stateless HTTP, history survives in memory
                   if (fullResponse.length === 0) {
-                    alive = false;
                     yield { type: 'error' as const, content: result.stderr };
                   } else {
                     // Got content + stderr — log warning but keep session alive
@@ -1050,7 +1050,8 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                 await new Promise(r => setTimeout(r, 1000));
                 continue; // Retry the same step
               }
-              alive = false;
+              // Don't kill session — preserve history for next turn
+              try { saveSessionState(config.engine.id, { messageHistory, confidence: null }); } catch {}
               yield { type: 'error' as const, content: err.message ?? String(err) };
               break;
             }

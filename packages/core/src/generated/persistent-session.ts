@@ -996,9 +996,13 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
           step++;
           let fullResponse = '';
   
-          // Preserve the raw replayable transcript for API engines.
-          // OpenAI-compatible APIs are stateless: every follow-up call must replay
-          // the exact assistant(tool_calls) -> tool -> assistant chain from prior turns.
+          // ── Status update so the UI shows activity during API tool loops ──
+          if (step === 1) {
+            yield { type: 'status' as const, content: 'calling API…' };
+          } else {
+            yield { type: 'status' as const, content: `tool loop turn ${step}/${budget}…` };
+          }
+  
           const gen = apiStreamDispatchWithHistory(config.engine.api, messageHistory, config.engine.timeout ?? 180, opts.signal, config.nativeTools);
           try {
             while (true) {
@@ -1081,6 +1085,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
             }
   
             // Execute all in parallel
+            yield { type: 'status' as const, content: `executing ${parsedCalls.length} tool${parsedCalls.length > 1 ? 's' : ''}…` };
             const results = await Promise.all(parsedCalls.map(async (tc) => {
               let result: string;
               try {
@@ -1126,6 +1131,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
             }
   
             // Continue loop — call API again with tool results
+            yield { type: 'status' as const, content: `processing results, calling API again…` };
             continue;
           }
   
@@ -1159,7 +1165,8 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
               }
   
               if (syntheticCalls.length > 0) {
-                // Execute extracted tool calls
+                // Execute extracted intent — model narrated, Agon acts
+                yield { type: 'status' as const, content: `auto-executing ${syntheticCalls.map(s => s.name).join(', ')}…` };
                 const autoResults: string[] = [];
                 for (const sc of syntheticCalls) {
                   yield { type: 'tool_call' as const, content: sc.name, metadata: { input: sc.args, status: 'running' } };
@@ -1193,6 +1200,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
             // No extractable intent — fallback to nudge
             const STALL_RE = /\b(?:let me (?:check|look|examine|read|search|find|see|review|explore|investigate|understand|get|grab)|i (?:need|want|should|will) (?:to )?(?:check|look|examine|read|search|find|see|review|explore|investigate|understand|get|grab)|now (?:let me|i'll))\b/i;
             if (STALL_RE.test(tail)) {
+              yield { type: 'status' as const, content: 'nudging stalled model…' };
               messageHistory.push({ role: 'assistant', content: fullResponse });
               messageHistory.push({ role: 'user', content: 'Continue. Call the tools you need — do not narrate, just act.' });
               continue;

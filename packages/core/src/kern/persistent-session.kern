@@ -1120,6 +1120,20 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
                 messageHistory.push({ role: 'tool', content: histContent, tool_call_id: tc.id } as any);
               }
 
+              // ── Delegation break — onToolCall signaled the loop to stop ──
+              const delegationBreak = results.some(tc => tc.result.startsWith('[DELEGATION_BREAK]'));
+              if (delegationBreak) {
+                // Clean the prefix from history so it doesn't confuse the model
+                for (let i = messageHistory.length - 1; i >= 0; i--) {
+                  const m = messageHistory[i] as any;
+                  if (m.role === 'tool' && typeof m.content === 'string' && m.content.startsWith('[DELEGATION_BREAK]')) {
+                    m.content = m.content.replace('[DELEGATION_BREAK] ', '');
+                  }
+                }
+                messageHistory.push({ role: 'assistant', content: '[Delegation — tool loop stopped]' });
+                break;
+              }
+
               // ── Dynamic budget + circuit breaker ──
               if (stepErrors > 0 && stepErrors >= results.length) {
                 // ALL tools failed — shrink budget, count consecutive errors

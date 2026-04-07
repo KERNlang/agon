@@ -1,21 +1,29 @@
+// @kern-source: persistent-session:1
 import { spawn } from 'node:child_process';
 
+// @kern-source: persistent-session:2
 import type { ChildProcess } from 'node:child_process';
 
+// @kern-source: persistent-session:3
 import { createInterface } from 'node:readline';
 
+// @kern-source: persistent-session:4
 import type { EngineDefinition, CompanionConfig } from './types.js';
 
+// @kern-source: persistent-session:5
 import { apiStreamDispatch, apiStreamDispatchWithHistory } from './api-dispatch.js';
 
+// @kern-source: persistent-session:6
 import { saveSessionState, loadSessionState } from './session-store.js';
 
+// @kern-source: persistent-session:8
 export interface SessionChunk {
   type: 'text'|'status'|'tool_call'|'error'|'done';
   content: string;
   metadata?: Record<string,unknown>;
 }
 
+// @kern-source: persistent-session:13
 export interface SessionSendOptions {
   message: string;
   images?: string[];
@@ -23,6 +31,7 @@ export interface SessionSendOptions {
   systemPrompt?: string;
 }
 
+// @kern-source: persistent-session:19
 export interface PersistentSessionConfig {
   engine: EngineDefinition;
   binaryPath: string;
@@ -33,6 +42,7 @@ export interface PersistentSessionConfig {
   onToolCall?: (name: string, args: Record<string,unknown>, callId: string) => Promise<string>;
 }
 
+// @kern-source: persistent-session:28
 export interface PersistentSession {
   alive: boolean;
   sessionId: string|null;
@@ -42,6 +52,7 @@ export interface PersistentSession {
   close: () => void;
 }
 
+// @kern-source: persistent-session:36
 export function createPersistentSession(config: PersistentSessionConfig): PersistentSession {
   const engine = config.engine;
   
@@ -69,6 +80,7 @@ export function createPersistentSession(config: PersistentSessionConfig): Persis
   return createResumeSession(config);
 }
 
+// @kern-source: persistent-session:67
 export function createCompanionSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -335,6 +347,7 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
   return session;
 }
 
+// @kern-source: persistent-session:337
 export function createAcpSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -582,6 +595,7 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
   return session;
 }
 
+// @kern-source: persistent-session:588
 export function createStreamJsonSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -833,6 +847,7 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
   return session;
 }
 
+// @kern-source: persistent-session:843
 export function createResumeSession(config: PersistentSessionConfig): PersistentSession {
   let alive = false;
   let sessionId: string | null = null;
@@ -1109,6 +1124,20 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                 histContent = histContent.slice(0, 300) + `\n...\n[${lines} lines, ${histContent.length} chars — use ${tc.name} again for full content]`;
               }
               messageHistory.push({ role: 'tool', content: histContent, tool_call_id: tc.id } as any);
+            }
+  
+            // ── Delegation break — onToolCall signaled the loop to stop ──
+            const delegationBreak = results.some(tc => tc.result.startsWith('[DELEGATION_BREAK]'));
+            if (delegationBreak) {
+              // Clean the prefix from history so it doesn't confuse the model
+              for (let i = messageHistory.length - 1; i >= 0; i--) {
+                const m = messageHistory[i] as any;
+                if (m.role === 'tool' && typeof m.content === 'string' && m.content.startsWith('[DELEGATION_BREAK]')) {
+                  m.content = m.content.replace('[DELEGATION_BREAK] ', '');
+                }
+              }
+              messageHistory.push({ role: 'assistant', content: '[Delegation — tool loop stopped]' });
+              break;
             }
   
             // ── Dynamic budget + circuit breaker ──

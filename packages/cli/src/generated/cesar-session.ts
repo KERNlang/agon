@@ -1,15 +1,22 @@
+// @kern-source: cesar-session:1
 import type { PersistentSession, PersistentSessionConfig } from '@agon/core';
 
+// @kern-source: cesar-session:2
 import { EngineRegistry, loadConfig, ensureAgonHome, resolveWorkingDir, scanProjectContext, createPersistentSession, ToolRegistry, FileStateCache, buildToolSystemPrompt, toolsToOpenAIFormat, executeToolCall } from '@agon/core';
 
+// @kern-source: cesar-session:3
 import type { ToolContext, ToolCallResult } from '@agon/core';
 
+// @kern-source: cesar-session:4
 import type { HandlerContext } from '../handlers/types.js';
 
+// @kern-source: cesar-session:5
 import { createCesarToolRegistry } from './cesar-tools.js';
 
+// @kern-source: cesar-session:6
 import { buildRoutingContext } from './cesar-routing.js';
 
+// @kern-source: cesar-session:8
 export const CESAR_SYSTEM_PROMPT: string = `You are Cesar, Agon AI orchestrator. Be direct. Be concise.
 
 RULE 1 — CONFIDENCE: Call ReportConfidence(value) FIRST on every turn. If you cannot call tools, write ~X% at the very start instead. No exceptions. Initial low confidence is EXPECTED — you haven't read the code yet. Investigate first, then the orchestrator evaluates your FINAL confidence after you finish.
@@ -30,6 +37,7 @@ RULE 5 — WORKSPACE: Use Read for files. Use Grep for search. NEVER use cat/hea
 RULE 6 — AFTER DELEGATION: After calling Forge/Brainstorm/Tribunal/Campfire/Pipeline, STOP. Do not continue responding. The orchestrator handles the rest.
 RULE 7 — NEVER PAUSE: Never say "let me check" or "let me look" without actually calling a tool in the SAME response. If you need to read a file, call Read NOW — do not narrate what you plan to do. Keep calling tools until you have enough context to act. Never stop mid-investigation.`;
 
+// @kern-source: cesar-session:31
 export function buildCesarSystemPrompt(ctx: HandlerContext): string {
   const config = ctx.config;
   const cesarCwd = resolveWorkingDir();
@@ -74,6 +82,7 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
   return systemParts.join('\n\n');
 }
 
+// @kern-source: cesar-session:77
 export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry, config: any): ((name:string, args:Record<string,unknown>, callId:string) => Promise<string>) | undefined {
   const fsc = new FileStateCache();
   const toolResultCache = new Map<string, string>();
@@ -99,7 +108,9 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
         team: (args as any).team ?? false,
         createdAt: Date.now(),
       };
-      return 'Delegation accepted. STOP responding now. The orchestrator will handle the rest.';
+      // [DELEGATION_BREAK] prefix signals persistent-session to stop the tool loop
+      // immediately — the model must not continue after delegation.
+      return '[DELEGATION_BREAK] Delegation accepted. The orchestrator will handle the rest.';
     }
   
     // ── ReportConfidence signal tool — record value, don't force delegation ──
@@ -142,6 +153,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
   };
 }
 
+// @kern-source: cesar-session:149
 export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:string, command:string) => Promise<boolean> {
   const engine = ctx.registry.get(engineId);
   return async (tool: string, command: string) => {
@@ -179,6 +191,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
   };
 }
 
+// @kern-source: cesar-session:188
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
   const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';

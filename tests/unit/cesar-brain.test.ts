@@ -166,9 +166,15 @@ describe('Cesar Brain', () => {
       expect(result.action).toBeNull();
     });
 
-    it('keyword fallback: does NOT match beyond 300 chars', () => {
-      const padding = 'x'.repeat(300);
+    it('keyword fallback: matches delegation in last 600 chars', () => {
+      const padding = 'x'.repeat(400);
       const result = parseSuggestion(`${padding} I'll forge this task.`);
+      expect(result.action).toBe('forge');
+    });
+
+    it('keyword fallback: does NOT match beyond 600 chars from end', () => {
+      const padding = 'x'.repeat(700);
+      const result = parseSuggestion(`I'll forge this task. ${padding}`);
       expect(result.action).toBeNull();
     });
 

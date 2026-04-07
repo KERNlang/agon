@@ -240,16 +240,23 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
   const systemPrompt = buildCesarSystemPrompt(ctx);
   const toolRegistry = createCesarToolRegistry();
   
-  // ALL engines: XML tool format, Agon controls execution + permissions
-  const toolPrompt = buildToolSystemPrompt(toolRegistry);
-  const fullPrompt = systemPrompt + '\n\nTOOLS: XML format below. Never ask permission — just call. Never describe changes when you can execute.\n\n' + toolPrompt;
-  
   // Store registry on context for tool execution during responses
   (ctx as any)._toolRegistry = toolRegistry;
   
   // Build native function calling tools for API engines (OpenAI-compatible)
   const nativeTools = (!binaryPath && engine.api) ? toolsToOpenAIFormat(toolRegistry) : undefined;
   (ctx as any)._hasNativeTools = !!nativeTools;
+  
+  // API engines with native tools: DON'T inject XML tool descriptions — the native
+  // tools parameter is enough and XML descriptions confuse models into narrating
+  // instead of calling tools. CLI engines still need the XML prompt.
+  let fullPrompt = systemPrompt;
+  if (!nativeTools) {
+    const toolPrompt = buildToolSystemPrompt(toolRegistry);
+    fullPrompt += '\n\nTOOLS: XML format below. Never ask permission — just call. Never describe changes when you can execute.\n\n' + toolPrompt;
+  } else {
+    fullPrompt += '\n\nYou have tools available via function calling. Call them directly — do NOT describe them in XML or narrate what you would call. Just call the function.';
+  }
   
   const sessionConfig: PersistentSessionConfig = {
     engine,

@@ -1,410 +1,16 @@
 import from="node:path" names="join"
-import from="node:fs" names="mkdirSync,readFileSync"
-import from="@agon/core" names="EngineAdapter,ImageAttachment,PersistentSession,PersistentSessionConfig,SessionChunk,ForgeManifest,ForgeJudgment,ConvergenceEntry" types=true
-import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,RUNS_DIR,appendMessage,tracker,scanProjectContext,StreamParser,createPersistentSession,resolveWorkingDir,ToolRegistry,FileStateCache,createReadTool,createEditTool,createWriteTool,createBashTool,createGrepTool,createGlobTool,createForgeTool,createBrainstormTool,createTribunalTool,createCampfireTool,createReportConfidenceTool,createPipelineTool,buildToolSystemPrompt,parseToolCalls,processToolResponse,runToolLoop,executeToolCall,classifyTask,toolsToOpenAIFormat"
+import from="node:fs" names="mkdirSync,appendFileSync"
+import from="@agon/core" names="ImageAttachment,PersistentSession,ForgeManifest,ForgeJudgment" types=true
+import from="@agon/core" names="ensureAgonHome,RUNS_DIR,appendMessage,tracker,resolveWorkingDir,ToolRegistry,FileStateCache,parseToolCalls,formatToolResults,runToolLoop,classifyTask"
 import from="@agon/core" names="ToolContext,ToolCallResult" types=true
-import from="@agon/core" names="formatToolResults"
 import from="../output.js" names="ENGINE_COLORS"
 import from="../handlers/types.js" names="Dispatch,HandlerContext" types=true
-
-const name=CESAR_SYSTEM_PROMPT type=string
-  handler <<<
-    `You are Cesar, Agon AI orchestrator. Be direct. Be concise.
-
-RULE 1 — CONFIDENCE: Call ReportConfidence(value) FIRST on every turn. If you cannot call tools, write ~X% at the very start instead. No exceptions.
-RULE 2 — DELEGATION: 93%+=implement directly. 85-92%=call Forge/Brainstorm/Tribunal tool. 70-84%=call Brainstorm or Tribunal, do NOT implement. <70%=STOP, explain what is needed.
-RULE 3 — TOOLS: Call ReportConfidence first, then either respond directly (93%+) or call a delegation tool (Forge, Brainstorm, Tribunal, Campfire, Pipeline). Set team=true for team variants. Set hardened=true for forge-hardened. Set mode for tribunal variant (adversarial/synthesis/steelman/socratic/red-team/postmortem).
-RULE 4 — WORKSPACE: Use Read for files. Use Grep for search. NEVER use cat/head/tail/grep via Bash.
-RULE 5 — AFTER DELEGATION: After calling Forge/Brainstorm/Tribunal/Campfire/Pipeline, STOP. Do not continue responding. The orchestrator handles the rest.
-RULE 6 — NEVER PAUSE: Never say "let me check" or "let me look" without actually calling a tool in the SAME response. If you need to read a file, call Read NOW — do not narrate what you plan to do. Keep calling tools until you have enough context to act. Never stop mid-investigation.`
-  >>>
-
-const name=CONFIDENCE_TIERS type="{ direct: number; suggest: number; nero: number; stop: number }"
-  handler <<<
-    ({ direct: 93, suggest: 85, nero: 85, stop: 70 })
-  >>>
-
-fn name=parseConfidence params="response:string" returns="{ value: number | null; rest: string }"
-  doc "Extract ~X% or Confidence: 0.X from the start of a response."
-  handler <<<
-    // Match ~X% at start (with optional whitespace)
-    const tildeMatch = response.match(/^~(\d{1,3})%\s*/);
-    if (tildeMatch) {
-      return { value: parseInt(tildeMatch[1], 10), rest: response.slice(tildeMatch[0].length) };
-    }
-    // Match "Confidence: 0.X" at start — normalize: 0.9 → 90, 0.85 → 85
-    const decimalMatch = response.match(/^Confidence:\s*0\.(\d{1,2})\s*/i);
-    if (decimalMatch) {
-      const digits = decimalMatch[1];
-      const value = digits.length === 1 ? parseInt(digits, 10) * 10 : parseInt(digits, 10);
-      return { value, rest: response.slice(decimalMatch[0].length) };
-    }
-    // Match "I'm ~X% sure" or "I'm X% confident" anywhere in first line
-    const inlineMatch = response.match(/(?:I'm|I am)\s+~?(\d{1,3})%\s+(?:sure|confident)/i);
-    if (inlineMatch) {
-      return { value: parseInt(inlineMatch[1], 10), rest: response };
-    }
-    return { value: null, rest: response };
-  >>>
-
-fn name=confidenceColor params="value:number" returns="string"
-  doc "ANSI color for confidence badge: green 94+, yellow 90-93, red <90."
-  handler <<<
-    if (value >= 94) return '\x1b[32m';  // green
-    if (value >= 90) return '\x1b[33m';  // yellow
-    if (value >= 70) return '\x1b[38;5;208m'; // orange
-    return '\x1b[31m'; // red
-  >>>
-
-fn name=confidenceBadge params="value:number" returns="string"
-  doc "Formatted confidence badge with color."
-  handler <<<
-    const color = confidenceColor(value);
-    const reset = '\x1b[0m';
-    const dot = value >= 94 ? '●' : value >= 90 ? '●' : value >= 70 ? '●' : '●';
-    return `${color}${dot} ${value}%${reset}`;
-  >>>
-
-interface name=SuggestionResult
-  field name=action type="string|null"
-  field name=rest type=string
-  field name=hardened type=boolean optional=true
-  field name=tribunalMode type=string optional=true
-  field name=team type=boolean optional=true
-  field name=membersPerSide type=number optional=true
-
-fn name=parseSuggestion params="response:string" returns="SuggestionResult"
-  doc "Parse [SUGGEST:mode-name] or legacy [DELEGATE:mode] from response."
-  handler <<<
-    // Search for [SUGGEST:mode] anywhere in the first 150 chars — engines put
-    // varying amounts of text between confidence and the marker.
-    const searchArea = response.slice(0, 150);
-    const match = searchArea.match(/\[(SUGGEST|DELEGATE):([\w-]+)\]/i);
-    if (!match) {
-      // ── Keyword fallback: catch natural language delegation (e.g. GLM-5.1) ──
-      const nlArea = response.slice(0, 300).toLowerCase();
-      // Optional filler between intent verb and mode word: "I suggest we *launch a* forge"
-      const FILLER = '(?:(?:use|launch|start|open|run|set up|do)\\s+(?:a\\s+)?)?';
-      const INTENT = `(?:i(?:'ll| will| should| recommend| suggest(?:ing)?)\\s+(?:we\\s+)?(?:a\\s+)?${FILLER}|let(?:'s| me| us)\\s+(?:a\\s+)?${FILLER}|this (?:needs?|calls for|warrants) (?:a )?|delegate (?:this )?to |send (?:this )?to |launch(?:ing)?\\s+(?:a\\s+)?)`;
-      const NL_PATTERNS: Array<{ re: RegExp; action: string; hardened?: boolean; team?: boolean }> = [
-        // All patterns require intent verbs to avoid matching descriptions
-        { re: new RegExp(`\\b(?:${INTENT})team[\\s-]forge\\b`), action: 'team-forge', team: true },
-        { re: new RegExp(`\\b(?:${INTENT})forge[\\s-]hardened\\b`), action: 'forge', hardened: true },
-        { re: new RegExp(`\\b(?:${INTENT})forge\\b`), action: 'forge' },
-        { re: new RegExp(`\\b(?:${INTENT})team[\\s-]brainstorm\\b`), action: 'team-brainstorm', team: true },
-        { re: new RegExp(`\\b(?:${INTENT})brainstorm\\b`), action: 'brainstorm' },
-        { re: new RegExp(`\\b(?:${INTENT})team[\\s-]tribunal\\b`), action: 'team-tribunal', team: true },
-        { re: new RegExp(`\\b(?:${INTENT})tribunal[\\s-](adversarial|synthesis|steelman|socratic|red[\\s-]team|postmortem)\\b`), action: 'tribunal' },
-        { re: new RegExp(`\\b(?:${INTENT})tribunal\\b`), action: 'tribunal' },
-        { re: new RegExp(`\\b(?:${INTENT}|open(?:ing)?\\s+(?:a\\s+)?)campfire\\b`), action: 'campfire' },
-        { re: new RegExp(`\\b(?:${INTENT}|full\\s+)pipeline\\b`), action: 'pipeline' },
-      ];
-      for (const pat of NL_PATTERNS) {
-        const nlMatch = nlArea.match(pat.re);
-        if (nlMatch) {
-          const matchIdx = nlArea.indexOf(nlMatch[0]);
-          const rest = response.slice(matchIdx + nlMatch[0].length).trim();
-          let action = pat.action;
-          let hardened = pat.hardened ?? false;
-          let team = pat.team ?? false;
-          let tribunalMode: string | undefined;
-          // Extract tribunal mode from capture group
-          if (action === 'tribunal' && nlMatch[1]) {
-            tribunalMode = nlMatch[1].replace(/\s/g, '-');
-          }
-          return { action, rest, hardened, tribunalMode, team };
-        }
-      }
-      return { action: null, rest: response };
-    }
-
-    const raw = match[2].toLowerCase();
-    const idx = response.indexOf(match[0]);
-    const rest = response.slice(idx + match[0].length).trim();
-
-    // Parse compound mode name into action + options
-    let action = raw;
-    let hardened = false;
-    let tribunalMode: string | undefined;
-    let team = false;
-
-    // Extract team prefix
-    if (action.startsWith('team-')) {
-      team = true;
-      action = action.slice(5); // remove 'team-'
-    }
-
-    // Extract -hardened suffix from forge
-    if (action === 'forge-hardened') {
-      action = 'forge';
-      hardened = true;
-    }
-
-    // Extract tribunal mode suffix
-    const tribunalModes = ['adversarial', 'synthesis', 'steelman', 'socratic', 'red-team', 'postmortem'];
-    for (const mode of tribunalModes) {
-      if (action === `tribunal-${mode}`) {
-        action = 'tribunal';
-        tribunalMode = mode;
-        break;
-      }
-    }
-
-    // Reconstruct action with team prefix for routing
-    if (team) action = `team-${action}`;
-
-    return { action, rest, hardened, tribunalMode, team };
-  >>>
-
-fn name=ensureCesarSession async=true params="ctx:HandlerContext" returns="Promise<PersistentSession>"
-  handler <<<
-    const config = ctx.config;
-    const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
-
-    // Return existing alive session IF it's for the same engine
-    if (ctx.cesarSession && ctx.cesarSession.alive && ctx.cesarSession.engineId === cesarEngineId) {
-      return ctx.cesarSession;
-    }
-
-    // Wrong engine or dead session — close old one
-    if (ctx.cesarSession && ctx.cesarSession.engineId !== cesarEngineId) {
-      ctx.cesarSession.close();
-      ctx.setCesarSession(null);
-    }
-
-    // Session exists but died — try restarting it before creating a new one
-    if (ctx.cesarSession && !ctx.cesarSession.alive) {
-      try {
-        await ctx.cesarSession.start();
-        if (ctx.cesarSession.alive) return ctx.cesarSession;
-      } catch {
-        // Restart failed — fall through to create fresh session
-      }
-    }
-
-    let engine;
-    try {
-      engine = ctx.registry.get(cesarEngineId);
-    } catch {
-      throw new Error(`Cesar engine "${cesarEngineId}" not found`);
-    }
-
-    // Resolve backend: user preference → auto (CLI first, API fallback)
-    const cesarBackend = (config as any).cesarBackend ?? 'auto';
-    const hasBinary = !!(engine.binary && ctx.registry.findBinary(engine));
-    const hasApi = !!(engine.api && process.env[engine.api?.apiKeyEnv]);
-
-    let binaryPath = '';
-    if (cesarBackend === 'api' && hasApi) {
-      binaryPath = ''; // force API path
-    } else if (cesarBackend === 'cli' && hasBinary) {
-      binaryPath = ctx.registry.findBinary(engine)!;
-    } else if (cesarBackend === 'auto') {
-      // Auto: prefer CLI (subscription), fall back to API
-      if (hasBinary) {
-        binaryPath = ctx.registry.findBinary(engine)!;
-      } else if (hasApi) {
-        binaryPath = ''; // API fallback
-      } else {
-        throw new Error(`No backend for "${cesarEngineId}" — install CLI or set ${engine.api?.apiKeyEnv ?? 'API key'}`);
-      }
-    } else {
-      // Explicit backend not available — try the other
-      if (hasBinary) binaryPath = ctx.registry.findBinary(engine)!;
-      else if (hasApi) binaryPath = '';
-      else throw new Error(`No backend for "${cesarEngineId}"`);
-    }
-    const usingApi = !binaryPath;
-
-    // Build context for system prompt
-    const cesarCwd = resolveWorkingDir();
-    const projectCtx = scanProjectContext(cesarCwd, config.projectContext || undefined);
-    const available = ctx.activeEngines();
-    const engineList = available.map((id: string) => {
-      try {
-        const e = ctx.registry.get(id);
-        const hasAgent = !!e.agent;
-        return `- ${id}${hasAgent ? ' (agent-capable)' : ''}`;
-      } catch { return `- ${id}`; }
-    }).join('\n');
-
-    const systemParts: string[] = [CESAR_SYSTEM_PROMPT];
-    if (projectCtx) systemParts.push(`## PROJECT CONTEXT\n${projectCtx}`);
-    systemParts.push(`## AVAILABLE ENGINES\n${engineList}`);
-    if (ctx.explorationMode) {
-      systemParts.push(`## OPERATING MODE\nExploration mode is ON. Stay read-only: inspect files, search, and use read-only shell commands only. Do not call Edit or Write. Do not run non-read-only Bash commands.`);
-    }
-    // Inject Cesar memory context
-    if ((ctx as any).cesarMemory) {
-      const memoryCtx = (ctx as any).cesarMemory.toPromptContext();
-      if (memoryCtx) systemParts.push(memoryCtx);
-    }
-
-    if ((ctx as any).neroMode) {
-      systemParts.push(`NERO MODE: Adversarial. Challenge assumptions, probe weaknesses, ask hard questions before implementing. Suggest tribunal-red-team or tribunal-adversarial.`);
-    }
-
-    // History replay — only needed when session reboots (new process loses context).
-    // While alive, the CLI process / API messageHistory maintains state across turns.
-    // Keep enough context so Cesar doesn't "stroke" — 20 messages, 500 chars each.
-    if (ctx.chatSession && ctx.chatSession.messages && ctx.chatSession.messages.length > 0) {
-      const recent = ctx.chatSession.messages.slice(-20);
-      const lines = recent.map((msg: any) => {
-        const role = msg.role === 'user' ? 'U' : (msg.engineId ?? 'E');
-        const text = msg.content.length > 500 ? msg.content.slice(0, 500) + '…' : msg.content;
-        return `${role}: ${text}`;
-      });
-      systemParts.push(`HISTORY:\n${lines.join('\n')}`);
-    }
-
-    // Initialize tool registry and inject tool prompt — works with ANY engine
-    const toolRegistry = new ToolRegistry();
-    toolRegistry.register(createReadTool());
-    toolRegistry.register(createEditTool());
-    toolRegistry.register(createWriteTool());
-    toolRegistry.register(createBashTool());
-    toolRegistry.register(createGrepTool());
-    toolRegistry.register(createGlobTool());
-    toolRegistry.register(createForgeTool());
-    toolRegistry.register(createBrainstormTool());
-    toolRegistry.register(createTribunalTool());
-    toolRegistry.register(createCampfireTool());
-    toolRegistry.register(createPipelineTool());
-    toolRegistry.register(createReportConfidenceTool());
-    const toolPrompt = buildToolSystemPrompt(toolRegistry);
-
-    // ALL engines: XML tool format, Agon controls execution + permissions
-    systemParts.push(`TOOLS: XML format below. Never ask permission — just call. Never describe changes when you can execute.`);
-    systemParts.push(toolPrompt);
-
-    // Store registry on context for tool execution during responses
-    (ctx as any)._toolRegistry = toolRegistry;
-
-    // Build native function calling tools for API engines (OpenAI-compatible)
-    const nativeTools = (!binaryPath && engine.api) ? toolsToOpenAIFormat(toolRegistry) : undefined;
-    (ctx as any)._hasNativeTools = !!nativeTools;
-
-    const sessionConfig: PersistentSessionConfig = {
-      engine,
-      binaryPath,
-      cwd: cesarCwd,
-      systemPrompt: systemParts.join('\n\n'),
-      nativeTools,
-      // Native tool execution callback — session calls this when API returns tool_calls
-      onToolCall: nativeTools ? (() => {
-        // Shared state across all tool calls in this session — not recreated per call
-        const fsc = new FileStateCache();
-        const toolResultCache = new Map<string, string>(); // dedup: same call → cached result
-        const explorationMode = (ctx as any).explorationMode ?? false;
-        const sharedToolCtx: ToolContext = {
-          cwd: resolveWorkingDir(),
-          readFileState: (fsc as any).cache,
-          abortSignal: undefined,
-          permissionMode: (config as any).permissionMode ?? 'ask',
-          explorationMode,
-          allowedCommands: (config as any).allowedCommands ?? [],
-          toolPermissions: (config as any).toolPermissions ?? {},
-        };
-        return async (name: string, args: Record<string, unknown>, callId: string) => {
-          // ── Orchestration signal tools — intercept before execution ──
-          const ORCH_TOOLS = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline']);
-          if (ORCH_TOOLS.has(name)) {
-            (ctx as any)._pendingDelegation = {
-              action: name.toLowerCase(),
-              reasoning: (args as any).task ?? (args as any).question ?? (args as any).topic ?? '',
-              hardened: (args as any).hardened ?? false,
-              tribunalMode: (args as any).mode,
-              team: (args as any).team ?? false,
-              createdAt: Date.now(),
-            };
-            return 'Delegation accepted. STOP responding now. The orchestrator will handle the rest.';
-          }
-
-          // ── ReportConfidence signal tool — record value, don't force delegation ──
-          // Low initial confidence is normal — model needs to investigate first.
-          // Post-response fallback (auto-suggestion) handles persistent low confidence.
-          if (name === 'ReportConfidence') {
-            const value = typeof (args as any).value === 'number' ? (args as any).value : null;
-            if (value !== null && value >= 0 && value <= 100) {
-              (ctx as any)._reportedConfidence = value;
-            }
-            // Let the tool execute normally — model gets guidance in the result
-          }
-
-          // Dedup: if exact same tool+args was called before, return cached result
-          const cacheKey = `${name}:${JSON.stringify(args)}`;
-          const cached = toolResultCache.get(cacheKey);
-          if (cached !== undefined) return cached;
-
-          const result = await executeToolCall(
-            { id: callId, name, input: args },
-            sharedToolCtx,
-            toolRegistry,
-            async (tool: string, message: string) => {
-              return new Promise<boolean>((resolve) => {
-                const d = (ctx as any)._lastDispatch;
-                if (d) {
-                  const cmd = (args as any).command ?? (args as any).file_path ?? JSON.stringify(args);
-                  d({ type: 'permission-ask', tool, command: cmd, reason: message, resolve } as any);
-                } else {
-                  resolve(true);
-                }
-              });
-            },
-          );
-          const output = result.result.ok ? result.result.content : (result.result.error ?? 'Tool execution failed');
-          // Cache read-only results. Invalidate on writes.
-          if (['Read', 'Grep', 'Glob'].includes(name)) {
-            toolResultCache.set(cacheKey, output);
-          } else if (['Edit', 'Write', 'Bash'].includes(name)) {
-            // Workspace changed — invalidate all cached reads
-            toolResultCache.clear();
-          }
-          return output;
-        };
-      })() : undefined,
-      // Route engine tool approvals through Agon's permission system — same rules for ALL engines
-      onApproval: async (tool: string, command: string) => {
-        const cfg = ctx.config;
-        const perms = (cfg as any).toolPermissions ?? {};
-        const allowed = (cfg as any).allowedCommands ?? [];
-        const mode = (cfg as any).permissionMode ?? 'ask';
-
-        // Check config-based permissions FIRST — same as Claude path
-        // Map engine tool names to Agon tool names
-        const toolMap: Record<string, string> = { shell: 'Bash', bash: 'Bash', edit: 'Edit', write: 'Write', read: 'Read', grep: 'Grep', glob: 'Glob' };
-        const agonTool = toolMap[tool.toLowerCase()] ?? tool;
-        const perm = perms[agonTool];
-
-        // deny → block immediately
-        if (perm === 'deny' || mode === 'deny-all') return false;
-
-        // allow → auto-approve
-        if (perm === 'allow' || mode === 'auto') return true;
-
-        // For Bash: check allowedCommands whitelist
-        if (agonTool === 'Bash' && allowed.length > 0) {
-          const cmdLower = command.toLowerCase();
-          if (allowed.some((a: string) => cmdLower.startsWith(a.toLowerCase()))) return true;
-        }
-
-        // ask → show permission prompt (same UI as Claude Code)
-        return new Promise<boolean>((resolve) => {
-          const dispatch = (ctx as any)._lastDispatch;
-          if (dispatch) {
-            dispatch({ type: 'permission-ask', tool: agonTool, command, reason: `Cesar (${engine.id}) wants to execute`, resolve } as any);
-          } else {
-            resolve(true);
-          }
-        });
-      },
-    };
-
-    const session = createPersistentSession(sessionConfig);
-    await session.start();
-    ctx.setCesarSession(session);
-    return session;
-  >>>
+import from="./cesar-confidence.js" names="CONFIDENCE_TIERS,parseConfidence,confidenceBadge"
+import from="./cesar-suggestion.js" names="parseSuggestion"
+import from="./cesar-session.js" names="ensureCesarSession,CESAR_SYSTEM_PROMPT"
+import from="./cesar-tools.js" names="createCesarToolRegistry,createEagerToolContext,executeEagerTool"
+import from="./cesar-escalation.js" names="fireSecondOpinion,fireAdvisor,handleSecondOpinion,activateNero,deactivateNero,promptDelegation,promptProtocolEnforcement"
+import from="./cesar-routing.js" names="buildRoutingContext"
 
 fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx:HandlerContext, images?:ImageAttachment[]" returns="Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}>"
   handler <<<
@@ -412,15 +18,13 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
     const _turnStart = Date.now();
     const _toolsUsed: string[] = [];
 
-    // Concurrency guard with message queue — combines queued messages (like Claude Code)
+    // ── Concurrency guard with message queue ──
     if ((ctx as any)._cesarBusy) {
-      // Safety: force-clear if stuck for 3+ minutes (should never happen)
       const busySince = (ctx as any)._cesarBusySince ?? 0;
       if (busySince && Date.now() - busySince > 180_000) {
         console.warn('[cesar:brain] force-clearing stuck busy flag');
         (ctx as any)._cesarBusy = false;
         (ctx as any)._cesarQueue = null;
-        // Fall through to normal execution
       } else {
         const existing = (ctx as any)._cesarQueue;
         if (existing) {
@@ -438,18 +42,14 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
 
     try {
       ensureAgonHome();
-
       const config = ctx.config;
 
-      // Check cesarEnabled setting
       if ((config as any).cesarEnabled === false) {
         (ctx as any)._cesarBusy = false;
         return { delegated: false, responded: false };
       }
 
       const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
-
-      // Cesar can be ANY available engine, not just session/forge engines
       const allAvailable = ctx.registry.availableIds();
       if (!allAvailable.includes(cesarEngineId)) {
         return { delegated: false, responded: false };
@@ -457,31 +57,23 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
 
       const color = ENGINE_COLORS[cesarEngineId] ?? 245;
       ctx.setActiveAbort(abort);
-      (ctx as any)._lastDispatch = dispatch; // Store for onApproval callback
+      (ctx as any)._lastDispatch = dispatch;
       dispatch({ type: 'spinner-start', message: 'Cesar thinking…', color });
 
-      // Boot or reuse persistent session
+      // ── Boot or reuse persistent session ──
       let session: PersistentSession;
       try {
         session = await ensureCesarSession(ctx);
       } catch (err) {
-        // Persistent session failed — fall back to fresh CLI dispatch so Cesar still answers
         const errMsg = err instanceof Error ? err.message : String(err);
         dispatch({ type: 'spinner-update', message: `Cesar session error: ${errMsg.slice(0, 80)}` });
         try {
           const engine = ctx.registry.get(cesarEngineId);
-          const cesarCwd = resolveWorkingDir();
           const outputDir = join(RUNS_DIR, `cesar-fallback-${Date.now()}`);
           mkdirSync(outputDir, { recursive: true });
           const freshResult = await ctx.adapter.dispatch({
-            engine,
-            prompt: input,
-            cwd: cesarCwd,
-            mode: 'exec' as any,
-            timeout: config.timeout ?? 120,
-            outputDir,
-            signal: abort.signal,
-            systemPrompt: CESAR_SYSTEM_PROMPT,
+            engine, prompt: input, cwd: resolveWorkingDir(), mode: 'exec' as any,
+            timeout: config.timeout ?? 120, outputDir, signal: abort.signal, systemPrompt: CESAR_SYSTEM_PROMPT,
           });
           dispatch({ type: 'spinner-stop' });
           if (freshResult.stdout.trim()) {
@@ -491,68 +83,38 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
             tracker.record(cesarEngineId, input, freshResult.stdout.trim());
             return { delegated: false, responded: true };
           }
-        } catch { /* truly failed — fall through */ }
+        } catch { /* truly failed */ }
         dispatch({ type: 'spinner-stop' });
         return { delegated: false, responded: false };
       }
 
-      // Ensure tool registry is always available (ensureCesarSession only creates it on first boot)
+      // Ensure tool registry is always available
       if (!(ctx as any)._toolRegistry) {
-        const toolRegistry = new ToolRegistry();
-        toolRegistry.register(createReadTool());
-        toolRegistry.register(createEditTool());
-        toolRegistry.register(createWriteTool());
-        toolRegistry.register(createBashTool());
-        toolRegistry.register(createGrepTool());
-        toolRegistry.register(createGlobTool());
-        toolRegistry.register(createForgeTool());
-        toolRegistry.register(createBrainstormTool());
-        toolRegistry.register(createTribunalTool());
-        toolRegistry.register(createCampfireTool());
-        toolRegistry.register(createPipelineTool());
-        toolRegistry.register(createReportConfidenceTool());
-        (ctx as any)._toolRegistry = toolRegistry;
+        (ctx as any)._toolRegistry = createCesarToolRegistry();
       }
-
       const toolRegistry = (ctx as any)._toolRegistry as ToolRegistry;
 
       let response = '';
       let streaming = false;
-      let delegated = false;
-      let ranToolLoop = false;
       let parsedConfidence: number | null = null;
       let confidenceParsed = false;
       let insideThinkBlock = false;
-
-      // Auto-escalation: second opinion when confidence is low
       let secondOpinionPromise: Promise<any> | null = null;
-      let secondOpinionId: string | null = null;
-      let secondOpinionColor: number = 245;
-
-      // Eager tool execution: collect promises for native tool_call chunks
       const eagerPromises: Promise<ToolCallResult>[] = [];
-      const eagerNames: string[] = [];
       let eagerToolCtx: ToolContext | null = null;
 
-      const getEagerCtx = (): ToolContext => {
-        if (eagerToolCtx) return eagerToolCtx;
-        const fsc = new FileStateCache();
-        const explorationMode = (ctx as any).explorationMode ?? false;
-        eagerToolCtx = {
-          cwd: resolveWorkingDir(),
-          readFileState: (fsc as any).cache,
-          abortSignal: abort.signal,
-          permissionMode: (config as any).permissionMode ?? 'ask',
-          explorationMode,
-          allowedCommands: (config as any).allowedCommands ?? [],
-          toolPermissions: (config as any).toolPermissions ?? {},
-          onProgress: (msg: string) => dispatch({ type: 'spinner-update', message: `Cesar: ${msg}` }),
-        };
-        return eagerToolCtx;
-      };
-
+      // ── Build routing context (cheap: ~500ms, ~200 tokens) ──
+      let enrichedInput = input;
       try {
-        const gen = session.send({ message: input, signal: abort.signal, images: images?.map(img => img.path) });
+        const routingCtx = buildRoutingContext(input, ctx);
+        if (routingCtx) {
+          enrichedInput = `[ROUTING CONTEXT — use this to decide mode + team]\n${routingCtx}\n\n${input}`;
+        }
+      } catch { /* routing context is best-effort */ }
+
+      // ── Stream response ──
+      try {
+        const gen = session.send({ message: enrichedInput, signal: abort.signal, images: images?.map(img => img.path) });
 
         for await (const chunk of gen) {
           if (abort.signal.aborted) break;
@@ -564,193 +126,100 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
 
           if (chunk.type === 'tool_call') {
             const meta = (chunk.metadata ?? {}) as Record<string, unknown>;
-            const toolInput = typeof meta.input === 'string' ? meta.input
-              : meta.input ? JSON.stringify(meta.input) : '';
-            const toolOutput = typeof meta.output === 'string' ? meta.output : undefined;
+            const toolInput = typeof meta.input === 'string' ? meta.input : meta.input ? JSON.stringify(meta.input) : '';
             const toolName = chunk.content || 'tool';
             const toolStatus = (meta.status as string) ?? 'running';
-
             dispatch({ type: 'spinner-update', message: `Cesar: ${toolName}…` });
 
             if (toolStatus === 'done') {
-              // Native engine already executed — just display result
-              dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'done', output: toolOutput } as any);
+              dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'done', output: typeof meta.output === 'string' ? meta.output : undefined } as any);
             } else if (toolStatus === 'native') {
-              // Claude handles tool execution internally (--dangerously-skip-permissions) — display only, don't execute
               dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'running' } as any);
             } else if (toolStatus === 'running' && meta.input && toolRegistry && !(ctx as any)._hasNativeTools) {
-              // Eager execution: start tool immediately, don't await
               dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'running' } as any);
-
-              // Parse input — could be string or object
-              let parsedInput: Record<string, unknown> = {};
-              try {
-                parsedInput = typeof meta.input === 'string' ? JSON.parse(meta.input) : (meta.input as Record<string, unknown>);
-              } catch { parsedInput = { raw: meta.input }; }
-
-              const callId = (meta.toolCallId as string) ?? `eager-${Date.now()}-${eagerPromises.length}`;
-              const promise = executeToolCall(
-                { id: callId, name: toolName, input: parsedInput },
-                getEagerCtx(),
-                toolRegistry,
-                async (tool: string, message: string) => {
-                  return new Promise<boolean>((resolve) => {
-                    let command = '';
-                    try {
-                      const parsed = typeof meta.input === 'string' ? JSON.parse(meta.input as string) : meta.input;
-                      command = (parsed as any).command ?? (parsed as any).file_path ?? toolInput;
-                    } catch { command = toolInput; }
-                    dispatch({ type: 'permission-ask', tool, command, reason: message, resolve } as any);
-                  });
-                },
-              ).then((result: ToolCallResult) => {
-                const out = result.result.ok ? result.result.content : result.result.error;
-                dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: result.result.ok ? 'done' : 'error', output: out } as any);
-                return result;
-              });
-              eagerPromises.push(promise);
-              eagerNames.push(toolName);
+              if (!eagerToolCtx) eagerToolCtx = createEagerToolContext(ctx, config, abort.signal, dispatch);
+              eagerPromises.push(executeEagerTool(toolName, meta, toolRegistry, eagerToolCtx, dispatch, cesarEngineId));
             } else {
-              // Fallback: display as-is
-              dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: toolStatus as any, output: toolOutput } as any);
+              dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: toolStatus as any, output: typeof meta.output === 'string' ? meta.output : undefined } as any);
             }
             continue;
           }
 
           if (chunk.type === 'error') {
             dispatch({ type: 'spinner-stop' });
-            // Session hit an error — DON'T destroy it. ensureCesarSession checks alive
-            // and will restart on next turn, preserving the session object + sessionId.
             return { delegated: false, responded: false };
           }
 
-          if (chunk.type === 'done') {
-            break;
-          }
+          if (chunk.type === 'done') break;
 
           if (chunk.type === 'text') {
             if (!streaming) {
               response += chunk.content;
 
-              // ── Check for tool-reported confidence (ReportConfidence tool) ──
+              // Check for tool-reported confidence (ReportConfidence tool)
               if (!confidenceParsed && (ctx as any)._reportedConfidence !== undefined) {
                 const toolConf = (ctx as any)._reportedConfidence as number;
                 delete (ctx as any)._reportedConfidence;
                 parsedConfidence = toolConf;
                 confidenceParsed = true;
                 dispatch({ type: 'info', message: confidenceBadge(toolConf) + ` Cesar` });
-
-                if (toolConf >= CONFIDENCE_TIERS.direct && (ctx as any)._autoNero) {
-                  ctx.setNeroMode(false);
-                  (ctx as any).neroMode = false;
-                  (ctx as any)._autoNero = false;
-                  if (ctx.cesarSession) {
-                    ctx.cesarSession.close();
-                    ctx.setCesarSession(null);
-                  }
-                  dispatch({ type: 'info', message: '⚔ Nero deactivated — confidence recovered' });
-                }
+                if (toolConf >= CONFIDENCE_TIERS.direct && (ctx as any)._autoNero) deactivateNero(ctx, dispatch);
               }
 
-              // Parse confidence from first chunk(s) — fallback for text-based ~X%
+              // Parse confidence from first chunk(s)
               if (!confidenceParsed && response.length > 5) {
                 const conf = parseConfidence(response);
                 if (conf.value !== null) {
                   parsedConfidence = conf.value;
                   confidenceParsed = true;
-                  // Show confidence badge
                   dispatch({ type: 'info', message: confidenceBadge(conf.value) + ` Cesar` });
-                  // Strip confidence prefix from response for further parsing
                   response = conf.rest;
-
-                  // Auto-deactivate Nero when confidence recovers
-                  if (conf.value >= CONFIDENCE_TIERS.direct && (ctx as any)._autoNero) {
-                    ctx.setNeroMode(false);
-                    (ctx as any).neroMode = false;
-                    (ctx as any)._autoNero = false;
-                    // Kill session so next turn reboots without Nero prompt
-                    if (ctx.cesarSession) {
-                      ctx.cesarSession.close();
-                      ctx.setCesarSession(null);
-                    }
-                    dispatch({ type: 'info', message: '⚔ Nero deactivated — confidence recovered' });
-                  }
+                  if (conf.value >= CONFIDENCE_TIERS.direct && (ctx as any)._autoNero) deactivateNero(ctx, dispatch);
                 } else if (response.length > 30 && !(ctx as any)._hasNativeTools) {
-                  // No confidence found after 30 chars — give up parsing
-                  // BUT: for native-tool API engines, ReportConfidence arrives asynchronously
-                  // via onToolCall, so don't lock out confidenceParsed yet.
                   confidenceParsed = true;
                 }
               }
 
-              // Check for suggestion/delegation marker — Agon modes (forge, brainstorm, etc.)
-              // Always parse regardless of native tools — [SUGGEST:mode] is orchestration, not tool use
+              // Check for suggestion/delegation marker
               const suggestion = parseSuggestion(response);
               if (suggestion.action) {
                 dispatch({ type: 'spinner-stop' });
                 appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
                 appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
                 tracker.record(cesarEngineId, input, response);
-                // Show explanation and ask for confirmation
                 if (suggestion.rest) dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: suggestion.rest });
-                const confirmLabel = suggestion.hardened ? `${suggestion.action} (hardened)` : suggestion.action;
-                const answer = await new Promise<string>((resolve) => {
-                  dispatch({ type: 'question', prompt: `Cesar suggests: ${confirmLabel}${suggestion.tribunalMode ? ` [${suggestion.tribunalMode}]` : ''}`, choices: [
-                    { key: 'y', label: 'Go', color: '#4ade80' },
-                    { key: 'n', label: 'Skip', color: '#ef4444' },
-                  ], resolve } as any);
-                });
-                if (answer === 'y') {
-                  delegated = true;
+                const confirmed = await promptDelegation(suggestion.action, dispatch, suggestion.hardened, suggestion.tribunalMode, suggestion.team);
+                if (confirmed) {
                   return { delegated: true, responded: true, action: suggestion.action, reasoning: suggestion.rest, hardened: suggestion.hardened, tribunalMode: suggestion.tribunalMode, team: suggestion.team };
                 }
-                // User declined — treat as normal response
                 return { delegated: false, responded: true };
               }
 
-              // Buffer: don't start streaming until we've had enough text to detect [SUGGEST:mode]
-              // Suggestions appear in the first ~30 chars after confidence. Wait before streaming.
-              if (response.length < 40) {
-                continue; // accumulate more chunks before switching to stream mode
+              // Buffer before streaming to detect [SUGGEST:mode]
+              if (response.length < 40) continue;
+
+              // Auto-escalation based on confidence tiers:
+              // 88-92%: Nero (adversarial self-challenge, no multi-engine yet)
+              // 70-87%: second opinion + Nero for discussion modes
+              // <70%: mark for advisor (fires post-stream with full Cesar response)
+              if (confidenceParsed && parsedConfidence !== null && !suggestion.action && !secondOpinionPromise) {
+                if (parsedConfidence >= CONFIDENCE_TIERS.nero && parsedConfidence < CONFIDENCE_TIERS.direct) {
+                  // 88-92%: Nero only — challenge yourself first
+                  activateNero(ctx, dispatch);
+                } else if (parsedConfidence >= CONFIDENCE_TIERS.stop && parsedConfidence < CONFIDENCE_TIERS.nero) {
+                  // 70-87%: second opinion + Nero for discussion modes
+                  dispatch({ type: 'info', message: confidenceBadge(parsedConfidence) + ` Auto-escalation…` });
+                  secondOpinionPromise = fireSecondOpinion(input, ctx, abort);
+                  activateNero(ctx, dispatch);
+                } else if (parsedConfidence < CONFIDENCE_TIERS.stop) {
+                  // <70%: advisor fires post-stream (needs Cesar's full response for context)
+                  (ctx as any)._advisorPending = true;
+                }
               }
 
-              // AUTO-ESCALATION: if confidence < 85%, fire second engine + activate Nero
-              if (confidenceParsed && parsedConfidence !== null && parsedConfidence < CONFIDENCE_TIERS.nero && !suggestion.action && !secondOpinionPromise) {
-                // Pick a second engine — anyone available that isn't Cesar
-                const otherEngines = ctx.activeEngines().filter((id: string) => id !== cesarEngineId);
-                if (otherEngines.length > 0) {
-                  secondOpinionId = otherEngines[0];
-                  secondOpinionColor = ENGINE_COLORS[secondOpinionId] ?? 245;
-                  const secondEngine = ctx.registry.get(secondOpinionId);
-                  const outDir = join(RUNS_DIR, `second-opinion-${Date.now()}`);
-                  mkdirSync(outDir, { recursive: true });
-                  dispatch({ type: 'info', message: confidenceBadge(parsedConfidence) + ` Auto-escalation: ${secondOpinionId} providing second opinion…` });
-                  secondOpinionPromise = ctx.adapter.dispatch({
-                    engine: secondEngine,
-                    prompt: input,
-                    cwd: resolveWorkingDir(),
-                    mode: 'exec' as any,
-                    timeout: config.timeout ?? 120,
-                    outputDir: outDir,
-                    systemPrompt: CESAR_SYSTEM_PROMPT,
-                  });
-                }
-
-                // Auto-activate Nero — inject mode switch into live session (no reboot, preserves context)
-                if (!(ctx as any).neroMode && ctx.setNeroMode) {
-                  ctx.setNeroMode(true);
-                  (ctx as any).neroMode = true;
-                  (ctx as any)._autoNero = true;
-                  (ctx as any)._neroInjectPending = true; // inject after stream completes
-                  dispatch({ type: 'info', message: '⚔ Nero activated — Cesar will challenge on next turn' });
-                }
-                // DON'T block — let Cesar continue streaming
-              }
-
-              // Switch spinner to "responding" mode
+              // Switch to streaming mode
               dispatch({ type: 'spinner-update', message: 'Cesar responding…' });
               streaming = true;
-              // Strip <think> blocks before first display
               let cleanFirst = response;
               if (cleanFirst.includes('<think>')) {
                 cleanFirst = cleanFirst.replace(/<think>[\s\S]*?<\/think>\s*/gi, '');
@@ -762,14 +231,12 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
               if (cleanFirst.trim()) dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: cleanFirst });
             } else {
               response += chunk.content;
-              // Track <think> block state across chunks
               if (insideThinkBlock) {
                 if (chunk.content.includes('</think>')) {
                   insideThinkBlock = false;
                   const afterThink = chunk.content.split('</think>').pop()?.trim() ?? '';
                   if (afterThink) dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: afterThink });
                 }
-                // else: still inside think block, suppress output
               } else if (chunk.content.includes('<think>')) {
                 const beforeThink = chunk.content.split('<think>')[0];
                 if (beforeThink) dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: beforeThink });
@@ -787,8 +254,6 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
         }
       } catch (err) {
         dispatch({ type: 'spinner-stop' });
-        // Session threw — don't destroy it; ensureCesarSession will restart on next turn.
-        // Log for debugging but don't cascade into fallback dispatch.
         console.error(`[cesar:claude] send error: ${(err as Error).message ?? err}`);
         dispatch({ type: 'warning', message: 'Cesar session error — will restart on next message' });
         return { delegated: false, responded: false };
@@ -801,43 +266,19 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
 
       response = response.trim();
 
-      // Inject Nero mode into live session — no reboot, full context preserved
-      if ((ctx as any)._neroInjectPending && session.alive && !abort.signal.aborted) {
-        (ctx as any)._neroInjectPending = false;
-        const neroMsg = '[SYSTEM] Mode switch: NERO active. Be adversarial — challenge assumptions, probe weaknesses, ask hard questions before implementing. Suggest tribunal-red-team for risky changes.';
-        // Fire-and-forget: inject into session so next user turn sees it
-        const neroGen = session.send({ message: neroMsg, signal: abort.signal });
-        for await (const chunk of neroGen) {
-          if (chunk.type === 'done' || chunk.type === 'error') break;
-          // Discard any response — this is just a mode injection
-        }
-      }
-
-      // Strip <think>...</think> reasoning blocks from API/reasoning models
+      // Strip <think> blocks and internal markers
       response = response.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
-
-      // Strip internal markers from API engines — but NOT [SUGGEST:mode]
-      // (suggestion parsing happens below via finalSuggestion)
       if ((ctx as any)._hasNativeTools) {
-        // Strip <tool> markers injected by apiStreamDispatch (internal, not for display)
         response = response.replace(/<tool\s+name="[^"]+">[\s\S]*?<\/tool>/g, '').trim();
       }
 
-      // Await eager tool promises and send results back to session
+      // ── Await eager tool results ──
       if (eagerPromises.length > 0 && !(ctx as any)._hasNativeTools && session.alive && !abort.signal.aborted) {
         dispatch({ type: 'spinner-start', message: `Cesar: awaiting ${eagerPromises.length} tool result${eagerPromises.length > 1 ? 's' : ''}…`, color });
         const eagerResults = await Promise.all(eagerPromises);
-
-        // Format results for re-injection into the session
         const formatted = formatToolResults(
-          eagerResults.map((r: ToolCallResult) => ({
-            name: r.toolName,
-            content: r.result.content,
-            error: r.result.error,
-          }))
+          eagerResults.map((r: ToolCallResult) => ({ name: r.toolName, content: r.result.content, error: r.result.error }))
         );
-
-        // Send tool results back and get continuation
         if (formatted && session.alive) {
           dispatch({ type: 'spinner-start', message: 'Cesar processing tool results…', color });
           let continuation = '';
@@ -847,14 +288,11 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
             if (chunk.type === 'done' || chunk.type === 'error') break;
           }
           dispatch({ type: 'spinner-stop' });
-          if (continuation.trim()) {
-            // Append continuation to response for downstream handling (delegation, XML tools, display)
-            response = continuation.trim();
-          }
+          if (continuation.trim()) response = continuation.trim();
         }
       }
 
-      // Parse confidence from final response if not already parsed (non-streaming path)
+      // Parse confidence from final response (non-streaming path)
       if (!confidenceParsed && response) {
         const conf = parseConfidence(response);
         if (conf.value !== null) {
@@ -865,74 +303,58 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
         confidenceParsed = true;
       }
 
-      // Handle second opinion if auto-escalation was triggered
-      if (secondOpinionPromise && secondOpinionId) {
-        if (streaming) {
-          dispatch({ type: 'streaming-end', engineId: cesarEngineId });
-          streaming = false;
-        }
-        dispatch({ type: 'spinner-start', message: `Awaiting ${secondOpinionId} second opinion…`, color: secondOpinionColor });
-        try {
-          const secondResult = await secondOpinionPromise;
-          dispatch({ type: 'spinner-stop' });
-          if (secondResult.stdout.trim()) {
-            // Strip <think> blocks from second opinion
-            const secondResponse = secondResult.stdout.trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
-            dispatch({ type: 'engine-block', engineId: secondOpinionId, color: secondOpinionColor, content: secondResponse });
-            appendMessage(ctx.chatSession, { role: 'engine', engineId: secondOpinionId, content: secondResponse, timestamp: new Date().toISOString() });
-            tracker.record(secondOpinionId, input, secondResponse);
-          }
-        } catch {
-          dispatch({ type: 'spinner-stop' });
-          dispatch({ type: 'warning', message: `${secondOpinionId} second opinion failed` });
-        }
-
-        // Save Cesar's response
-        appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
-        appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
-        tracker.record(cesarEngineId, input, response);
-
-        // Escalation menu with both perspectives
-        if (parsedConfidence !== null && parsedConfidence < CONFIDENCE_TIERS.stop) {
-          // <70% — full stop after showing both
-          dispatch({ type: 'warning', message: confidenceBadge(parsedConfidence) + ' Confidence too low — review both opinions before proceeding' });
-          return { delegated: false, responded: true };
-        }
-
-        const escAnswer = await new Promise<string>((resolve) => {
-          dispatch({ type: 'question', prompt: `Cesar @ ${parsedConfidence}% + ${secondOpinionId} — escalate or accept?`, choices: [
-            { key: 'a', label: 'Accept (proceed with Cesar)', color: '#4ade80' },
-            { key: 'b', label: 'Brainstorm (more opinions)', color: '#60a5fa' },
-            { key: 't', label: 'Tribunal (debate it)', color: '#f59e0b' },
-            { key: 'f', label: 'Forge (compete)', color: '#a78bfa' },
-          ], resolve } as any);
-        });
-
-        if (escAnswer === 'b') return { delegated: true, responded: true, action: 'brainstorm', reasoning: response };
-        if (escAnswer === 't') return { delegated: true, responded: true, action: 'tribunal', reasoning: response };
-        if (escAnswer === 'f') return { delegated: true, responded: true, action: 'forge', reasoning: response };
-        // 'a' = accept — fall through normally
-        return { delegated: false, responded: true };
+      // ── Handle second opinion (70-87%) ──
+      if (secondOpinionPromise) {
+        if (streaming) { dispatch({ type: 'streaming-end', engineId: cesarEngineId }); streaming = false; }
+        dispatch({ type: 'spinner-start', message: 'Awaiting second opinion…', color });
+        const secondResult = await secondOpinionPromise;
+        dispatch({ type: 'spinner-stop' });
+        const escalation = await handleSecondOpinion(secondResult, input, response, parsedConfidence, cesarEngineId, dispatch, ctx);
+        if (escalation) return escalation;
       }
 
-      // ── Post-stream: consume tool-reported confidence if not yet consumed ──
-      // For native-tool API engines, ReportConfidence resolves after text streaming.
+      // ── Handle advisor (<70%) — fires post-stream so advisor gets Cesar's full response ──
+      if ((ctx as any)._advisorPending) {
+        delete (ctx as any)._advisorPending;
+        if (streaming) { dispatch({ type: 'streaming-end', engineId: cesarEngineId }); streaming = false; }
+        dispatch({ type: 'spinner-start', message: confidenceBadge(parsedConfidence ?? 0) + ' Consulting advisor…', color });
+        const advisorResult = await fireAdvisor(input, response, parsedConfidence, ctx, abort);
+        dispatch({ type: 'spinner-stop' });
+        if (advisorResult) {
+          const escalation = await handleSecondOpinion(advisorResult, input, response, parsedConfidence, cesarEngineId, dispatch, ctx);
+          if (escalation) return escalation;
+        } else {
+          // Advisor failed — still show escalation menu without advisor input
+          dispatch({ type: 'warning', message: 'Advisor unavailable' });
+          appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
+          appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
+          tracker.record(cesarEngineId, input, response);
+          const fallbackAnswer = await new Promise<string>((resolve) => {
+            dispatch({ type: 'question', prompt: `Cesar ${parsedConfidence ?? '?'}% — no advisor. What next?`, choices: [
+              { key: 'a', label: 'Accept Cesar', color: '#4ade80' },
+              { key: 'b', label: 'Brainstorm', color: '#60a5fa' },
+              { key: 't', label: 'Tribunal', color: '#f59e0b' },
+              { key: 'f', label: 'Forge', color: '#a78bfa' },
+            ], resolve } as any);
+          });
+          if (fallbackAnswer === 'b') return { delegated: true, responded: true, action: 'brainstorm', reasoning: response };
+          if (fallbackAnswer === 't') return { delegated: true, responded: true, action: 'tribunal', reasoning: response };
+          if (fallbackAnswer === 'f') return { delegated: true, responded: true, action: 'forge', reasoning: response };
+          return { delegated: false, responded: true };
+        }
+      }
+
+      // Post-stream: consume tool-reported confidence
       if (!confidenceParsed && (ctx as any)._reportedConfidence !== undefined) {
         const toolConf = (ctx as any)._reportedConfidence as number;
         delete (ctx as any)._reportedConfidence;
         parsedConfidence = toolConf;
         confidenceParsed = true;
         dispatch({ type: 'info', message: confidenceBadge(toolConf) + ` Cesar` });
-        if (toolConf >= CONFIDENCE_TIERS.direct && (ctx as any)._autoNero) {
-          ctx.setNeroMode(false);
-          (ctx as any).neroMode = false;
-          (ctx as any)._autoNero = false;
-          if (ctx.cesarSession) { ctx.cesarSession.close(); ctx.setCesarSession(null); }
-          dispatch({ type: 'info', message: '⚔ Nero deactivated — confidence recovered' });
-        }
+        if (toolConf >= CONFIDENCE_TIERS.direct && (ctx as any)._autoNero) deactivateNero(ctx, dispatch);
       }
 
-      // ── Check for pending delegation from orchestration signal tools ──
+      // ── Check pending delegation from orchestration signal tools ──
       const pendingDel = (ctx as any)._pendingDelegation;
       if (pendingDel) {
         delete (ctx as any)._pendingDelegation;
@@ -941,21 +363,15 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
         appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
         appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
         tracker.record(cesarEngineId, input, response);
-        const confirmLabel = pendingDel.hardened ? `${pendingDel.action} (hardened)` : pendingDel.action;
-        const answer = await new Promise<string>((resolve) => {
-          dispatch({ type: 'question', prompt: `Cesar suggests: ${confirmLabel}${pendingDel.tribunalMode ? ` [${pendingDel.tribunalMode}]` : ''}`, choices: [
-            { key: 'y', label: 'Go', color: '#4ade80' },
-            { key: 'n', label: 'Skip', color: '#ef4444' },
-          ], resolve } as any);
-        });
-        if (answer === 'y') {
+        const confirmed = await promptDelegation(pendingDel.action, dispatch, pendingDel.hardened, pendingDel.tribunalMode, pendingDel.team);
+        if (confirmed) {
           let action = pendingDel.team ? `team-${pendingDel.action}` : pendingDel.action;
           return { delegated: true, responded: true, action, reasoning: pendingDel.reasoning, hardened: pendingDel.hardened, tribunalMode: pendingDel.tribunalMode, team: pendingDel.team };
         }
         return { delegated: false, responded: true };
       }
 
-      // Check final response for suggestion/delegation (non-streaming path)
+      // Check final response for suggestion/delegation
       const finalSuggestion = parseSuggestion(response);
       if (finalSuggestion.action) {
         if (!streaming) dispatch({ type: 'spinner-stop' });
@@ -964,50 +380,30 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
         appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
         tracker.record(cesarEngineId, input, response);
         if (finalSuggestion.rest) dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: finalSuggestion.rest });
-        const confirmLabel = finalSuggestion.hardened ? `${finalSuggestion.action} (hardened)` : finalSuggestion.action;
-        const answer = await new Promise<string>((resolve) => {
-          dispatch({ type: 'question', prompt: `Cesar suggests: ${confirmLabel}${finalSuggestion.tribunalMode ? ` [${finalSuggestion.tribunalMode}]` : ''}`, choices: [
-            { key: 'y', label: 'Go', color: '#4ade80' },
-            { key: 'n', label: 'Skip', color: '#ef4444' },
-          ], resolve } as any);
-        });
-        if (answer === 'y') {
+        const confirmed = await promptDelegation(finalSuggestion.action, dispatch, finalSuggestion.hardened, finalSuggestion.tribunalMode, finalSuggestion.team);
+        if (confirmed) {
           return { delegated: true, responded: true, action: finalSuggestion.action, reasoning: finalSuggestion.rest, hardened: finalSuggestion.hardened, tribunalMode: finalSuggestion.tribunalMode, team: finalSuggestion.team };
         }
         return { delegated: false, responded: true };
       }
 
-      // Check for XML tool calls in response — only for CLI engines (not API with native tools).
-      // API engines handle tools inside the session's agentic loop via onToolCall callback.
-      if (toolRegistry && response && !(ctx as any)._hasNativeTools) {
+      // ── XML tool loop — CLI engines always, API engines if they emitted text-based tool calls (e.g. GLM-5.1) ──
+      let ranToolLoop = false;
+      const hasTextToolCalls = response.includes('<tool_call_tool>') || response.includes('<tool name=');
+      if (toolRegistry && response && (!(ctx as any)._hasNativeTools || hasTextToolCalls)) {
         const toolParsed = parseToolCalls(response);
         if (toolParsed.hasToolCalls) {
-          // Stop streaming — we're entering tool execution mode
-          if (streaming) {
-            dispatch({ type: 'streaming-end', engineId: cesarEngineId });
-          }
-          streaming = false;
-
-          // Build tool context — 'ask' mode: user must approve tool execution
+          if (streaming) { dispatch({ type: 'streaming-end', engineId: cesarEngineId }); streaming = false; }
           const fileStateCache = new FileStateCache();
           const explorationMode = (ctx as any).explorationMode ?? false;
           const toolCtx: ToolContext = {
-            cwd: resolveWorkingDir(),
-            readFileState: (fileStateCache as any).cache,
-            abortSignal: abort.signal,
-            permissionMode: (config as any).permissionMode ?? 'ask',
-            explorationMode,
-            allowedCommands: (config as any).allowedCommands ?? [],
-            toolPermissions: (config as any).toolPermissions ?? {},
+            cwd: resolveWorkingDir(), readFileState: (fileStateCache as any).cache, abortSignal: abort.signal,
+            permissionMode: (config as any).permissionMode ?? 'ask', explorationMode,
+            allowedCommands: (config as any).allowedCommands ?? [], toolPermissions: (config as any).toolPermissions ?? {},
             onProgress: (msg: string) => dispatch({ type: 'spinner-update', message: `Cesar: ${msg}` }),
           };
-
-          // Track last inputs for display
           const _lastToolInputs: Record<string, string> = {};
-
-          // Recursive tool loop: parse → execute → send results → repeat until done
           const loopResult = await runToolLoop(
-            // sendMessage: sends tool results back to session, returns next response
             async (message: string) => {
               if (!session.alive || abort.signal.aborted) return '';
               dispatch({ type: 'spinner-start', message: 'Cesar processing results…', color });
@@ -1017,13 +413,9 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
                 if (chunk.type === 'text') nextResponse += chunk.content;
                 if (chunk.type === 'tool_call') {
                   const meta = (chunk.metadata ?? {}) as Record<string, unknown>;
-                  dispatch({
-                    type: 'tool-call', engineId: cesarEngineId,
-                    tool: chunk.content || 'tool',
+                  dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: chunk.content || 'tool',
                     input: typeof meta.input === 'string' ? meta.input : meta.input ? JSON.stringify(meta.input) : '',
-                    status: (meta.status as any) ?? 'running',
-                    output: typeof meta.output === 'string' ? meta.output : undefined,
-                  } as any);
+                    status: (meta.status as any) ?? 'running', output: typeof meta.output === 'string' ? meta.output : undefined } as any);
                 }
                 if (chunk.type === 'done' || chunk.type === 'error') break;
               }
@@ -1031,89 +423,48 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
               if (!nextResponse.trim()) return '[No response from engine]';
               return nextResponse.trim();
             },
-            response,
-            toolCtx,
-            toolRegistry,
+            response, toolCtx, toolRegistry,
             {
               onToolCall: (name: string, inp: Record<string, unknown>) => {
-                const inputJson = JSON.stringify(inp);
-                _lastToolInputs[name] = inputJson;
+                _lastToolInputs[name] = JSON.stringify(inp);
                 _toolsUsed.push(name);
-                dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: name, input: inputJson, status: 'running' });
+                dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: name, input: JSON.stringify(inp), status: 'running' });
               },
               onToolResult: (name: string, result: any) => {
                 const out = result.result.ok ? result.result.content : result.result.error;
-                dispatch({
-                  type: 'tool-call', engineId: cesarEngineId,
-                  tool: name, input: _lastToolInputs[name] ?? '',
-                  status: result.result.ok ? 'done' : 'error', output: out,
-                });
+                dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: name, input: _lastToolInputs[name] ?? '', status: result.result.ok ? 'done' : 'error', output: out });
                 delete _lastToolInputs[name];
               },
               onPermissionAsk: async (tool: string, message: string) => {
                 return new Promise<boolean>((resolve) => {
                   const lastInput = _lastToolInputs[tool] ?? '{}';
                   let command = '';
-                  try {
-                    const parsed = JSON.parse(lastInput);
-                    command = parsed.command ?? parsed.file_path ?? lastInput;
-                  } catch { command = lastInput; }
+                  try { command = JSON.parse(lastInput).command ?? JSON.parse(lastInput).file_path ?? lastInput; } catch { command = lastInput; }
                   dispatch({ type: 'permission-ask', tool, command, reason: message, resolve } as any);
                 });
               },
-              onText: (text: string) => {
-                if (text.trim()) {
-                  dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: text });
-                }
-              },
-              onTurnComplete: (turn: number) => {
-                dispatch({ type: 'spinner-update', message: `Cesar tool loop turn ${turn}…` });
-              },
+              onText: (text: string) => { if (text.trim()) dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: text }); },
+              onTurnComplete: (turn: number) => { dispatch({ type: 'spinner-update', message: `Cesar tool loop turn ${turn}…` }); },
             },
           );
-
-          // Use the final text from the loop as the response
           response = loopResult.finalText.trim();
           ranToolLoop = true;
         }
       }
 
       // ── Protocol enforcement: suggest mode when engine didn't ──
-      // Only fires in the gap: confidence 85-92%, engine didn't [SUGGEST:mode],
-      // no tool loop ran, no auto-escalation already triggered.
-      if (!finalSuggestion.action && !ranToolLoop && !secondOpinionPromise
-          && parsedConfidence !== null
-          && parsedConfidence >= CONFIDENCE_TIERS.suggest
-          && parsedConfidence < CONFIDENCE_TIERS.direct
-          && ctx.activeEngines().length > 1) {
-        const isCodeTask = /^(fix|add|implement|refactor|debug|create|build|write|update|change|remove|delete|rename|move|test|deploy|install|upgrade|migrate|convert|extract|optimize|port)\b/i.test(input.trim());
-        const suggestedAction = isCodeTask ? 'forge' : 'brainstorm';
-
-        // End streaming first so response is visible before prompt
-        if (streaming) {
-          dispatch({ type: 'streaming-end', engineId: cesarEngineId });
-          streaming = false;
-        }
-
-        const answer = await new Promise<string>((resolve) => {
-          dispatch({ type: 'question',
-            prompt: `${parsedConfidence}% confidence — ${suggestedAction}?`,
-            choices: [
-              { key: 'y', label: suggestedAction, color: '#4ade80' },
-              { key: 'n', label: 'Skip', color: '#ef4444' },
-            ],
-            resolve,
-          } as any);
-        });
-        if (answer === 'y') {
+      if (!finalSuggestion.action && !ranToolLoop && !secondOpinionPromise) {
+        if (streaming) { dispatch({ type: 'streaming-end', engineId: cesarEngineId }); streaming = false; }
+        const enforcement = await promptProtocolEnforcement(input, parsedConfidence, ctx, dispatch);
+        if (enforcement) {
           appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
           appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
           tracker.record(cesarEngineId, input, response);
-          return { delegated: true, responded: true, action: suggestedAction, reasoning: response };
+          return enforcement;
         }
       }
 
-      // Direct response
+      // ── Display final response ──
       if (!streaming && response) {
         dispatch({ type: 'spinner-stop' });
         dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: response });
@@ -1128,42 +479,28 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
         appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
         const tokenUsage = tracker.record(cesarEngineId, input, response);
 
-        // ── Trace: log turn to ~/.agon/runs/cesar-trace.jsonl ──
+        // Trace
         try {
-          const { appendFileSync } = await import('node:fs');
           const tracePath = join(RUNS_DIR, 'cesar-trace.jsonl');
           const taskClass = classifyTask(input);
-          const trace = {
-            ts: new Date().toISOString(),
-            engineId: cesarEngineId,
-            backend: (config as any).cesarBackend ?? 'auto',
-            durationMs: Date.now() - _turnStart,
-            inputLen: input.length,
-            responseLen: response.length,
-            taskClass,
-            toolsUsed: _toolsUsed.length > 0 ? _toolsUsed : undefined,
-            toolCount: _toolsUsed.length,
-            delegated: false,
+          appendFileSync(tracePath, JSON.stringify({
+            ts: new Date().toISOString(), engineId: cesarEngineId, backend: (config as any).cesarBackend ?? 'auto',
+            durationMs: Date.now() - _turnStart, inputLen: input.length, responseLen: response.length, taskClass,
+            toolsUsed: _toolsUsed.length > 0 ? _toolsUsed : undefined, toolCount: _toolsUsed.length, delegated: false,
             confidence: parsedConfidence,
             tokens: tokenUsage ? { prompt: tokenUsage.promptTokens, response: tokenUsage.responseTokens, cost: tokenUsage.costUsd } : undefined,
-          };
-          appendFileSync(tracePath, JSON.stringify(trace) + '\n');
+          }) + '\n');
         } catch { /* tracing is best-effort */ }
 
-        // Auto-remember: track topics discussed in session memory
+        // Auto-remember
         if ((ctx as any).cesarMemory) {
           const mem = (ctx as any).cesarMemory;
-          // Remember the topic of this exchange (first 80 chars of input)
           const topic = input.slice(0, 80).replace(/\n/g, ' ');
           mem.remember(`turn:${Date.now()}`, topic, 'decision');
-          // If Cesar used tools, remember files touched
-          if (ranToolLoop) {
-            mem.remember(`tools:${Date.now()}`, `Cesar used tools for: ${topic}`, 'file');
-          }
+          if (ranToolLoop) mem.remember(`tools:${Date.now()}`, `Cesar used tools for: ${topic}`, 'file');
         }
 
-        // Detect if engine is asking a yes/no question — show choice buttons
-        // Skip after tool loop: intermediate turns may end with questions already acted on
+        // Detect yes/no question — show choice buttons
         const lastLine = response.split('\n').filter((l: string) => l.trim()).pop()?.trim() ?? '';
         const asksConfirmation = !ranToolLoop && /\?\s*$/.test(lastLine) && /\b(want|shall|should|ready|proceed|go ahead|dispatch|confirm|continue|implement)\b/i.test(lastLine);
         if (asksConfirmation) {
@@ -1183,9 +520,7 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
               if (chunk.type === 'done' || chunk.type === 'error') break;
             }
             dispatch({ type: 'spinner-stop' });
-            if (followUp.trim()) {
-              dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: followUp.trim() });
-            }
+            if (followUp.trim()) dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: followUp.trim() });
           }
         }
 
@@ -1201,267 +536,16 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
       dispatch({ type: 'spinner-stop' });
       ctx.setActiveAbort(null);
 
-      // Auto-drain queue — process queued message(s) after current turn finishes or is interrupted
+      // Auto-drain queue
       const queued = (ctx as any)._cesarQueue;
       if (queued) {
         (ctx as any)._cesarQueue = null;
-        // Small delay to let UI update before next turn
         setTimeout(() => {
           handleCesarBrain(queued.input, queued.dispatch, ctx, queued.images).catch((err: any) => {
             console.error(`[cesar:queue] drain failed: ${err.message ?? err}`);
-            (ctx as any)._cesarBusy = false; // force-clear on drain failure
+            (ctx as any)._cesarBusy = false;
           });
         }, 100);
       }
     }
-  >>>
-
-fn name=cesarJudgeForge async=true params="manifest:ForgeManifest, dispatch:Dispatch, ctx:HandlerContext" returns="Promise<ForgeJudgment|null>"
-  doc "Send forge results to Cesar for judgment + convergence plan."
-  handler <<<
-    // Need an alive Cesar session
-    let session;
-    try {
-      session = await ensureCesarSession(ctx);
-    } catch {
-      return null; // No Cesar available — skip judgment
-    }
-    if (!session.alive) return null;
-
-    const cesarEngineId = ((ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude');
-    const color = ENGINE_COLORS[cesarEngineId] ?? 245;
-
-    // Build structured judgment prompt with patch summaries
-    const engineSummaries: string[] = [];
-    for (const [id, result] of Object.entries(manifest.results) as [string, any][]) {
-      let patchSummary = '(no patch)';
-      const patchPath = manifest.patches[id];
-      if (patchPath) {
-        try {
-          const patch = readFileSync(patchPath, 'utf-8');
-          // Include first 150 lines of patch for evaluation
-          const lines = patch.split('\n');
-          patchSummary = lines.slice(0, 150).join('\n');
-          if (lines.length > 150) patchSummary += `\n... (${lines.length - 150} more lines)`;
-        } catch { patchSummary = '(patch unreadable)'; }
-      }
-      engineSummaries.push(
-        `### ${id}\n` +
-        `- Score: ${result.score} | Pass: ${result.pass} | Diff: ${result.diffLines} lines | Files: ${result.filesChanged} | Time: ${result.durationSec}s\n` +
-        `\`\`\`diff\n${patchSummary}\n\`\`\``
-      );
-    }
-
-    const judgePrompt = `You are judging forge results. Multiple engines competed on this task.
-
-TASK: ${manifest.task}
-FITNESS COMMAND: ${manifest.fitnessCmd}
-AUTOMATIC WINNER: ${manifest.winner ?? 'none'}
-
-## ENGINE RESULTS
-
-${engineSummaries.join('\n\n')}
-
-## YOUR JOB
-
-Evaluate each engine's code. Identify:
-1. **Overall winner** — who produced the best result and why
-2. **Per-engine strengths** — where each engine did something BETTER than others (architecture, error handling, tests, edge cases, code style, performance)
-3. **Convergence plan** — if multiple engines have complementary strengths, list which parts from which engine should be merged. Only suggest convergence if it would genuinely improve the result.
-
-Respond in this EXACT format:
-
-WINNER: {engineId}
-STRENGTHS:
-- {engineId}: {category} — {reason}
-- {engineId}: {category} — {reason}
-CONVERGE: {yes|no}
-CONVERGENCE:
-- file:{path} fn:{name} from:{engineId} reason:{why}
-SUMMARY: {1-2 sentence judgment}`;
-
-    dispatch({ type: 'spinner-start', message: 'Cesar judging forge results…', color });
-
-    let judgeResponse = '';
-    try {
-      const gen = session.send({ message: judgePrompt, signal: undefined });
-      for await (const chunk of gen) {
-        if (chunk.type === 'text') judgeResponse += chunk.content;
-        if (chunk.type === 'done' || chunk.type === 'error') break;
-      }
-    } catch {
-      dispatch({ type: 'spinner-stop' });
-      return null;
-    }
-    dispatch({ type: 'spinner-stop' });
-
-    // Parse structured judgment
-    const judgment = parseForgeJudgment(judgeResponse, manifest);
-
-    // Show confidence badge if present
-    const conf = parseConfidence(judgeResponse);
-    if (conf.value !== null) {
-      dispatch({ type: 'info', message: confidenceBadge(conf.value) + ' Cesar (judge)' });
-    }
-
-    // Display judgment
-    if (judgment) {
-      dispatch({ type: 'header', title: 'Cesar\'s Judgment' });
-      dispatch({ type: 'success', message: `Winner: ${judgment.winner}` });
-
-      if (judgment.strengths.length > 0) {
-        dispatch({ type: 'info', message: 'Per-engine strengths:' });
-        for (const s of judgment.strengths) {
-          const sColor = ENGINE_COLORS[s.engineId] ?? 245;
-          dispatch({ type: 'engine-block', engineId: s.engineId, color: sColor, content: `${s.category} — ${s.reason}` });
-        }
-      }
-
-      dispatch({ type: 'info', message: judgment.summary });
-
-      if (judgment.shouldConverge && judgment.convergencePlan.length > 0) {
-        dispatch({ type: 'header', title: 'Convergence Plan' });
-        for (const entry of judgment.convergencePlan) {
-          const eColor = ENGINE_COLORS[entry.from] ?? 245;
-          dispatch({ type: 'engine-block', engineId: entry.from, color: eColor, content: `${entry.file}:${entry.fn} — ${entry.reason}` });
-        }
-      }
-    }
-
-    return judgment;
-  >>>
-
-fn name=parseForgeJudgment params="response:string, manifest:ForgeManifest" returns="ForgeJudgment|null" export=false
-  doc "Parse Cesar's structured judgment response."
-  handler <<<
-    // Strip confidence prefix (e.g. ~91%) before parsing structured output
-    const stripped = parseConfidence(response).rest;
-    const lines = stripped.split('\n');
-    let winner = manifest.winner ?? '';
-    const strengths: { engineId: string; category: string; reason: string }[] = [];
-    const convergencePlan: ConvergenceEntry[] = [];
-    let summary = '';
-    let shouldConverge = false;
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-
-      // WINNER: engineId
-      const winnerMatch = trimmed.match(/^WINNER:\s*(.+)/i);
-      if (winnerMatch) winner = winnerMatch[1].trim();
-
-      // CONVERGE: yes|no
-      const convergeMatch = trimmed.match(/^CONVERGE:\s*(yes|no)/i);
-      if (convergeMatch) shouldConverge = convergeMatch[1].toLowerCase() === 'yes';
-
-      // SUMMARY: text
-      const summaryMatch = trimmed.match(/^SUMMARY:\s*(.+)/i);
-      if (summaryMatch) summary = summaryMatch[1].trim();
-
-      // Strength: - engineId: category — reason
-      const strengthMatch = trimmed.match(/^-\s+(\w+):\s+(.+?)\s+[—–-]\s+(.+)/);
-      if (strengthMatch && !trimmed.startsWith('- file:')) {
-        strengths.push({ engineId: strengthMatch[1], category: strengthMatch[2], reason: strengthMatch[3] });
-      }
-
-      // Convergence: - file:path fn:name from:engineId reason:why
-      const convMatch = trimmed.match(/^-\s+file:(\S+)\s+fn:(\S+)\s+from:(\S+)\s+reason:(.+)/);
-      if (convMatch) {
-        convergencePlan.push({ file: convMatch[1], fn: convMatch[2], from: convMatch[3], reason: convMatch[4].trim() });
-      }
-    }
-
-    if (!winner) return null;
-
-    return { winner, strengths, convergencePlan, summary, shouldConverge };
-  >>>
-
-fn name=cesarConvergeForge async=true params="manifest:ForgeManifest, judgment:ForgeJudgment, dispatch:Dispatch, ctx:HandlerContext" returns="Promise<string|null>"
-  doc "Cesar synthesizes a converged patch from best-of-breed parts per the convergence plan."
-  handler <<<
-    let session;
-    try {
-      session = await ensureCesarSession(ctx);
-    } catch { return null; }
-    if (!session.alive) return null;
-
-    const cesarEngineId = ((ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude');
-    const color = ENGINE_COLORS[cesarEngineId] ?? 245;
-
-    // Collect relevant patches — always include the winner's patch as the base
-    const patchContents: Record<string, string> = {};
-    if (judgment.winner && manifest.patches[judgment.winner]) {
-      try {
-        patchContents[judgment.winner] = readFileSync(manifest.patches[judgment.winner], 'utf-8');
-      } catch { /* skip unreadable */ }
-    }
-    for (const entry of judgment.convergencePlan) {
-      if (!patchContents[entry.from] && manifest.patches[entry.from]) {
-        try {
-          patchContents[entry.from] = readFileSync(manifest.patches[entry.from], 'utf-8');
-        } catch { /* skip unreadable */ }
-      }
-    }
-
-    // Build the convergence synthesis prompt
-    const patchSections = Object.entries(patchContents).map(([id, content]) => {
-      const lines = content.split('\n');
-      const summary = lines.slice(0, 200).join('\n');
-      return `### ${id}'s patch\n\`\`\`diff\n${summary}\n\`\`\``;
-    }).join('\n\n');
-
-    const planLines = judgment.convergencePlan.map(e =>
-      `- Take ${e.fn} from ${e.from} (${e.file}) — ${e.reason}`
-    ).join('\n');
-
-    const convergePrompt = `You are synthesizing a converged patch from multiple forge competitors.
-
-TASK: ${manifest.task}
-WINNER: ${judgment.winner}
-
-## CONVERGENCE PLAN
-${planLines}
-
-## PATCHES TO MERGE
-${patchSections}
-
-## INSTRUCTIONS
-Create a single unified diff that takes the best parts from each engine according to the convergence plan above.
-- Start from the winner's patch as the base
-- Replace specific functions/sections with the better versions from other engines
-- Ensure the merged result is coherent — no duplicate functions, no conflicts
-- Output ONLY the unified diff, nothing else. Start with --- and +++ lines.`;
-
-    dispatch({ type: 'spinner-start', message: 'Cesar synthesizing converged patch…', color });
-
-    let convergedPatch = '';
-    try {
-      const gen = session.send({ message: convergePrompt, signal: undefined });
-      for await (const chunk of gen) {
-        if (chunk.type === 'text') convergedPatch += chunk.content;
-        if (chunk.type === 'done' || chunk.type === 'error') break;
-      }
-    } catch {
-      dispatch({ type: 'spinner-stop' });
-      return null;
-    }
-    dispatch({ type: 'spinner-stop' });
-
-    // Extract diff from response (strip markdown fences if present)
-    let patch = convergedPatch.trim();
-    const fenceMatch = patch.match(/```(?:diff)?\n([\s\S]*?)```/);
-    if (fenceMatch) patch = fenceMatch[1].trim();
-
-    if (!patch || !patch.includes('---')) {
-      dispatch({ type: 'warning', message: 'Cesar could not produce a valid converged patch' });
-      return null;
-    }
-
-    // Write converged patch to forge directory
-    const { join } = await import('node:path');
-    const { writeFileSync } = await import('node:fs');
-    const convergePath = join(manifest.forgeDir, 'convergence-patch.diff');
-    writeFileSync(convergePath, patch, 'utf-8');
-
-    return convergePath;
   >>>

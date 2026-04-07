@@ -4,6 +4,7 @@ import from="@agon/core" names="ensureAgonHome,RUNS_DIR,scanProjectContext,track
 import from="@agon/forge" names="runBrainstorm"
 import from="../output.js" names="ENGINE_COLORS"
 import from="../icons.js" names="icons"
+import from="../generated/session-results.js" names="sessionResultStore"
 import from="../handlers/types.js" names="Dispatch,HandlerContext,EngineProgress" types=true
 
 fn name=handleBrainstorm params="question:string, dispatch:Dispatch, ctx:HandlerContext" returns="Promise<void>" async=true
@@ -108,7 +109,20 @@ fn name=handleBrainstorm params="question:string, dispatch:Dispatch, ctx:Handler
     }
     tracker.record(result.winner, question, result.response);
 
+    sessionResultStore.add({
+      type: 'brainstorm',
+      timestamp: new Date().toISOString(),
+      question,
+      engines,
+      winner: result.winner,
+      data: {
+        bids: result.bids.map((b: any) => ({ engineId: b.engineId, reasoning: b.reasoning, approach: b.approach, score: b.score })),
+        response: result.response,
+      },
+    });
+
     dispatch({ type: 'info', message: `Winner: ${result.winner} — ask follow-ups or "/forge" to implement` });
+    dispatch({ type: 'progress-clear' });
   >>>
   cleanup <<<
     ctx.setActiveAbort(null);

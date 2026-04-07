@@ -1,13 +1,22 @@
+// @kern-source: handlers-campfire:1
 import { join } from 'node:path';
 
+// @kern-source: handlers-campfire:2
 import { mkdirSync } from 'node:fs';
 
+// @kern-source: handlers-campfire:3
 import { ensureAgonHome, RUNS_DIR, scanProjectContext, tracker, appendMessage, resolveWorkingDir } from '@agon/core';
 
+// @kern-source: handlers-campfire:4
 import { ENGINE_COLORS } from '../output.js';
 
+// @kern-source: handlers-campfire:5
+import { sessionResultStore } from '../generated/session-results.js';
+
+// @kern-source: handlers-campfire:6
 import type { Dispatch, HandlerContext, EngineProgress } from '../handlers/types.js';
 
+// @kern-source: handlers-campfire:8
 export async function handleCampfire(topic: string, dispatch: Dispatch, ctx: HandlerContext, opts?: {seedPlan?:string, observerStrategy?:'lead-first'|'all-respond', leadEngine?:string}): Promise<void> {
   const cfAbort = new AbortController();
   try {
@@ -46,6 +55,8 @@ export async function handleCampfire(topic: string, dispatch: Dispatch, ctx: Han
     mkdirSync(outputDir, { recursive: true });
     
     ctx.setActiveAbort(cfAbort);
+    
+    const campfireRounds: { engineId: string; content: string }[] = [];
     
     const cfStatus: Record<string, 'thinking' | 'done' | 'failed'> = {};
     for (const id of engines) cfStatus[id] = 'thinking';
@@ -92,6 +103,7 @@ export async function handleCampfire(topic: string, dispatch: Dispatch, ctx: Han
         const color = (ENGINE_COLORS as Record<string, number>)[leadId] ?? 245;
         dispatch({ type: 'engine-block', engineId: leadId, color, content: leadResponse });
         appendMessage(ctx.chatSession, { role: 'engine', engineId: leadId, content: leadResponse, timestamp: new Date().toISOString() });
+        campfireRounds.push({ engineId: leadId, content: leadResponse });
         tracker.record(leadId, topic, leadResponse);
       } catch (err) {
         console.warn(`[agon] campfire lead dispatch (${leadId}) failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -130,6 +142,7 @@ export async function handleCampfire(topic: string, dispatch: Dispatch, ctx: Han
               dispatch({ type: 'engine-block', engineId, color, content: response });
               appendMessage(ctx.chatSession, { role: 'engine', engineId, content: response, timestamp: new Date().toISOString() });
               tracker.record(engineId, topic, response);
+              campfireRounds.push({ engineId, content: response });
             }
           } catch (err) {
             console.warn(`[agon] campfire observer (${engineId}) failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -159,6 +172,7 @@ export async function handleCampfire(topic: string, dispatch: Dispatch, ctx: Han
           dispatch({ type: 'engine-block', engineId, color, content: result.stdout.trim() });
           appendMessage(ctx.chatSession, { role: 'engine', engineId, content: result.stdout.trim(), timestamp: new Date().toISOString() });
           tracker.record(engineId, topic, result.stdout);
+          campfireRounds.push({ engineId, content: result.stdout.trim() });
         } catch (err) {
           console.warn(`[agon] campfire dispatch (${engineId}) failed: ${err instanceof Error ? err.message : String(err)}`);
           cfStatus[engineId] = 'failed';
@@ -169,6 +183,15 @@ export async function handleCampfire(topic: string, dispatch: Dispatch, ctx: Han
     }
     
     clearProgress();
+    
+    sessionResultStore.add({
+      type: 'campfire',
+      timestamp: new Date().toISOString(),
+      question: topic,
+      engines,
+      winner: null,
+      data: { rounds: campfireRounds },
+    });
   } finally {
     ctx.setActiveAbort(null);
   }

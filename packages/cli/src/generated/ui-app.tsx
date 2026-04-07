@@ -302,7 +302,7 @@ export function App({  }: {  }) {
           pasteCountRef.current = 0;
           setInputValue(''); setInputHistory((prev: string[]) => [...prev, input]); setHistoryIndex(-1);
           // /btw — non-interrupting status peek, works even during dispatch
-          if (input.trim().toLowerCase() === '/btw') {
+          if (input.trim().toLowerCase() === '/btw' || input.trim().toLowerCase().startsWith('/btw ')) {
             setBtwExpanded((prev: boolean) => !prev);
             return;
           }
@@ -442,15 +442,13 @@ export function App({  }: {  }) {
           if ((key.tab || input === '\t') && !slashPickerOpen && !enginePickerOpen && !questionState && !reviewEvent) {
             const ghost = getGhostCompletion(inputValue, allSlashCommands, registry.availableIds());
             if (ghost) { setInputValue(inputValue + ghost + ' '); setInputKey((k: number) => k + 1); return; }
+            if (replState !== 'idle') { setBtwExpanded((prev: boolean) => !prev); return; }
           }
           if (key.ctrl && input === 'l') {
             handleSubmit('/clear'); return;
           }
           if ((key.ctrl && input === 'e') || input === '\x05') {
             setToolOutputExpanded((prev: boolean) => !prev); return;
-          }
-          if (key.ctrl && input === 'b') {
-            setBtwExpanded((prev: boolean) => !prev); return;
           }
           if (key.escape) {
             const decision = resolveEscapeAction({
@@ -647,7 +645,7 @@ export function App({  }: {  }) {
 }
 
 
-// @kern-source: ui-app:620
+// @kern-source: ui-app:618
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

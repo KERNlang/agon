@@ -159,7 +159,7 @@ export function StatusBar({ config, chatSession, explorationMode, toolOutputExpa
               {msgs > 0 ? <Text dimColor>{` \u00b7 ${msgs} msgs`}</Text> : null}
               {cost ? <Text dimColor>{` \u00b7 ${cost}`}</Text> : null}
               {toolOutputExpanded !== undefined && <Text dimColor>{' \u00b7 ^E '}{toolOutputExpanded ? '\u25be' : '\u25b8'}</Text>}
-              {isActive ? <Text dimColor>{' \u00b7 ^B btw'}</Text> : null}
+              {isActive ? <Text dimColor>{' \u00b7 tab btw'}</Text> : null}
             </Text>
           </Box>
         );
@@ -234,7 +234,7 @@ export function BtwPanel({ engines, spinner, jobs, lastActivityAt }: { engines: 
           return (
             <Box flexDirection="column" paddingX={1} marginY={1} borderStyle="single" borderColor="#585858">
               <Text dimColor>{' btw — nothing running right now'}</Text>
-              <Text dimColor>{' ^B or /btw to dismiss'}</Text>
+              <Text dimColor>{' tab or /btw to dismiss'}</Text>
             </Box>
           );
         }
@@ -292,7 +292,7 @@ export function BtwPanel({ engines, spinner, jobs, lastActivityAt }: { engines: 
             <Box>
               <Text dimColor>{' last activity: '}</Text>
               <Text color={agoColor}>{agoStr}</Text>
-              <Text dimColor>{'  \u00b7  ^B or /btw to dismiss'}</Text>
+              <Text dimColor>{'  \u00b7  tab or /btw to dismiss'}</Text>
             </Box>
           </Box>
         );

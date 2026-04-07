@@ -1,0 +1,51 @@
+// ── Session Store ─────────────────────────────────────────────────
+// Persists API session messageHistory to disk so sessions survive
+// process restarts. Like Claude's --resume but for stateless APIs.
+
+import from="node:fs" names="writeFileSync,readFileSync,existsSync,mkdirSync"
+import from="node:path" names="join"
+import from="./config.js" names="AGON_HOME"
+
+fn name=sessionStorePath params="engineId:string" returns="string"
+  handler <<<
+    return join(AGON_HOME, 'sessions', `${engineId}.json`);
+  >>>
+
+fn name=saveSessionState params="engineId:string, state:{ messageHistory: Array<{role:string,content:string}>, confidence:number|null }" returns="void"
+  doc "Persist API session state to disk."
+  handler <<<
+    const dir = join(AGON_HOME, 'sessions');
+    mkdirSync(dir, { recursive: true });
+    const path = sessionStorePath(engineId);
+    // Only keep last 50 messages to avoid unbounded growth
+    const trimmed = state.messageHistory.slice(-50);
+    const data = { messageHistory: trimmed, confidence: state.confidence, savedAt: Date.now() };
+    writeFileSync(path, JSON.stringify(data), 'utf-8');
+  >>>
+
+fn name=loadSessionState params="engineId:string" returns="{ messageHistory: Array<{role:string,content:string}>, confidence:number|null } | null"
+  doc "Load persisted API session state from disk. Returns null if no saved state or stale (>30min)."
+  handler <<<
+    const path = sessionStorePath(engineId);
+    if (!existsSync(path)) return null;
+    try {
+      const raw = readFileSync(path, 'utf-8');
+      const data = JSON.parse(raw);
+      // TTL: discard state older than 30 minutes
+      if (data.savedAt && Date.now() - data.savedAt > 30 * 60 * 1000) return null;
+      if (!Array.isArray(data.messageHistory)) return null;
+      return { messageHistory: data.messageHistory, confidence: data.confidence ?? null };
+    } catch {
+      return null;
+    }
+  >>>
+
+fn name=clearSessionState params="engineId:string" returns="void"
+  doc "Delete persisted session state."
+  handler <<<
+    const path = sessionStorePath(engineId);
+    try {
+      const { unlinkSync } = require('node:fs');
+      if (existsSync(path)) unlinkSync(path);
+    } catch {}
+  >>>

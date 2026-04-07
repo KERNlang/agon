@@ -57,6 +57,7 @@ export type { FileSnapshot, HistoryEntry } from './file-history.js';
 export { copyToClipboard } from './clipboard.js';
 export { pasteStore, PASTE_MAX_AGE } from './paste-store.js';
 export type { PasteStoreResult } from './paste-store.js';
+export { saveSessionState, loadSessionState, clearSessionState } from './session-store.js';
 // ── Tool System ──
 export type { ToolResult, ToolContext, ToolHandler, ToolDefinition, ToolCall, ToolCallResult, PermissionDecision, FileState as ToolFileState } from './tool-types.js';
 export { FileStateCache, fileStateCache } from './file-state-cache.js';

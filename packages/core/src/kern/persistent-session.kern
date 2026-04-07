@@ -1015,8 +1015,14 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
                 if (done) {
                   const result = value as any;
                   if (result?.stderr) {
-                    alive = false; // API error — mark dead for clean restart
-                    yield { type: 'error' as const, content: result.stderr };
+                    // Only kill session if we got NO useful output — stderr with content is a warning, not fatal
+                    if (fullResponse.length === 0) {
+                      alive = false;
+                      yield { type: 'error' as const, content: result.stderr };
+                    } else {
+                      // Got content + stderr — log warning but keep session alive
+                      console.warn(`[agon] API warning (response preserved): ${result.stderr.slice(0, 200)}`);
+                    }
                   }
                   break;
                 }
@@ -1024,15 +1030,20 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
                 yield { type: 'text' as const, content: value as string };
               }
             } catch (err: any) {
-              // Retry once on stream failure before giving up
-              if (step === 1 && fullResponse.length === 0) {
-                yield { type: 'error' as const, content: `API stream failed, retrying… (${err.message ?? String(err)})` };
-                await new Promise(r => setTimeout(r, 1000));
-                continue; // Retry the same step
+              // Retry once on stream failure before giving up — but only if we have NO output
+              if (fullResponse.length === 0) {
+                if (step === 1) {
+                  yield { type: 'error' as const, content: `API stream failed, retrying… (${err.message ?? String(err)})` };
+                  await new Promise(r => setTimeout(r, 1000));
+                  continue; // Retry the same step
+                }
+                alive = false;
+                yield { type: 'error' as const, content: err.message ?? String(err) };
+                break;
               }
-              alive = false; // Mark dead so ensureCesarSession creates fresh session on next turn
-              yield { type: 'error' as const, content: err.message ?? String(err) };
-              break;
+              // Got partial output before crash — preserve it, log warning
+              console.warn(`[agon] API stream error after ${fullResponse.length} chars (preserved): ${(err.message ?? '').slice(0, 200)}`);
+              // Fall through to process fullResponse as if stream completed
             }
 
             if (!fullResponse) break;

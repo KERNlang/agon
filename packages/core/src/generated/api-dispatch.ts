@@ -1,7 +1,5 @@
-// @kern-source: api-dispatch:1
 import type { DispatchResult } from './types.js';
 
-// @kern-source: api-dispatch:3
 export interface ApiConfig {
   baseUrl: string;
   apiKeyEnv: string;
@@ -10,7 +8,6 @@ export interface ApiConfig {
   format?: 'openai'|'anthropic';
 }
 
-// @kern-source: api-dispatch:10
 export async function apiDispatch(config: ApiConfig, prompt: string, timeout: number, signal?: AbortSignal, systemPrompt?: string): Promise<DispatchResult> {
   // Route Anthropic format to Messages API
   if ((config as any).format === 'anthropic') {
@@ -122,7 +119,6 @@ export async function apiDispatch(config: ApiConfig, prompt: string, timeout: nu
   }
 }
 
-// @kern-source: api-dispatch:122
 export async function* apiStreamDispatch(config: ApiConfig, prompt: string, timeout: number, signal?: AbortSignal, systemPrompt?: string): AsyncGenerator<string, DispatchResult, void> {
   // Route Anthropic format to Messages API
   if ((config as any).format === 'anthropic') {
@@ -218,10 +214,9 @@ export async function* apiStreamDispatch(config: ApiConfig, prompt: string, time
   return { exitCode: 0, stdout, stderr: '', durationMs: Date.now() - startTime, timedOut: false };
 }
 
-// @kern-source: api-dispatch:218
 export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages: Array<{role:string,content:string}>, timeout: number, signal?: AbortSignal, tools?: Array<{type:string,function:{name:string,description:string,parameters:Record<string,unknown>}}>): AsyncGenerator<string, DispatchResult, void> {
   if ((config as any).format === 'anthropic') {
-    return yield* anthropicStreamDispatchWithHistory(config, messages, timeout, signal);
+    return yield* anthropicStreamDispatchWithHistory(config, messages, timeout, signal, tools);
   }
   
   const apiKey = process.env[config.apiKeyEnv];
@@ -352,15 +347,16 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
   return { exitCode: 0, stdout, stderr: '', durationMs: Date.now() - startTime, timedOut: false };
 }
 
-// @kern-source: api-dispatch:353
-export async function* anthropicStreamDispatchWithHistory(config: ApiConfig, messages: Array<{role:string,content:string}>, timeout: number, signal?: AbortSignal): AsyncGenerator<string, DispatchResult, void> {
+export async function* anthropicStreamDispatchWithHistory(config: ApiConfig, messages: Array<{role:string,content:string}>, timeout: number, signal?: AbortSignal, tools?: Array<{type:string,function:{name:string,description:string,parameters:Record<string,unknown>}}>): AsyncGenerator<string, DispatchResult, void> {
   const apiKey = process.env[config.apiKeyEnv];
   if (!apiKey) {
     return { exitCode: 1, stdout: '', stderr: `Missing API key: set ${config.apiKeyEnv}`, durationMs: 0, timedOut: false };
   }
   
   const startTime = Date.now();
-  const url = config.baseUrl.replace(/\/$/, '') + '/v1/messages';
+  // Don't double-append /v1 — some providers (MiniMax) already include /v1 in baseUrl
+  const base = config.baseUrl.replace(/\/$/, '');
+  const url = base.endsWith('/v1') ? base + '/messages' : base + '/v1/messages';
   
   // Separate system messages from conversation messages
   let systemPrompt = '';
@@ -398,10 +394,17 @@ export async function* anthropicStreamDispatchWithHistory(config: ApiConfig, mes
   };
   if (systemPrompt) {
     // Use structured system with cache_control for prompt caching.
-    // Cache is content-based — shared across sessions with same system prompt.
     reqBody.system = [
       { type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } },
     ];
+  }
+  // Convert OpenAI tool format to Anthropic tool format
+  if (tools && tools.length > 0) {
+    reqBody.tools = tools.map(t => ({
+      name: t.function.name,
+      description: t.function.description,
+      input_schema: t.function.parameters,
+    }));
   }
   
   const body = JSON.stringify(reqBody);
@@ -414,6 +417,10 @@ export async function* anthropicStreamDispatchWithHistory(config: ApiConfig, mes
   }
   
   let stdout = '';
+  // Accumulate tool calls from Anthropic tool_use content blocks
+  const pendingToolCalls: Map<number, { id: string; name: string; arguments: string }> = new Map();
+  let currentBlockIdx = -1;
+  
   try {
     const response = await fetch(url, {
       method: 'POST',
@@ -456,6 +463,26 @@ export async function* anthropicStreamDispatchWithHistory(config: ApiConfig, mes
         if (data === '[DONE]') continue;
         try {
           const parsed = JSON.parse(data) as any;
+  
+          // Anthropic SSE: content_block_start with tool_use type
+          if (parsed.type === 'content_block_start' && parsed.content_block?.type === 'tool_use') {
+            currentBlockIdx = parsed.index ?? (pendingToolCalls.size);
+            pendingToolCalls.set(currentBlockIdx, {
+              id: parsed.content_block.id ?? `call_${Date.now()}_${currentBlockIdx}`,
+              name: parsed.content_block.name ?? '',
+              arguments: '',
+            });
+          }
+  
+          // Anthropic SSE: content_block_delta with input_json_delta (tool arguments streaming)
+          if (parsed.type === 'content_block_delta' && parsed.delta?.type === 'input_json_delta') {
+            const idx = parsed.index ?? currentBlockIdx;
+            const pending = pendingToolCalls.get(idx);
+            if (pending && parsed.delta.partial_json) {
+              pending.arguments += parsed.delta.partial_json;
+            }
+          }
+  
           // Anthropic SSE: content_block_delta with text_delta
           if (parsed.type === 'content_block_delta' && parsed.delta?.type === 'text_delta') {
             const chunk = parsed.delta.text;
@@ -465,6 +492,17 @@ export async function* anthropicStreamDispatchWithHistory(config: ApiConfig, mes
             }
           }
         } catch (_e) { console.warn(`[agon] api-dispatch: malformed SSE chunk skipped: ${data.slice(0, 120)}`); }
+      }
+    }
+  
+    // Emit accumulated tool calls as <tool> markers (same as OpenAI path)
+    if (pendingToolCalls.size > 0) {
+      for (const [, tc] of pendingToolCalls) {
+        let parsedArgs: Record<string, unknown> = {};
+        try { parsedArgs = JSON.parse(tc.arguments); } catch { parsedArgs = { raw: tc.arguments }; }
+        const marker = `\n<tool name="${tc.name}">${JSON.stringify(parsedArgs)}</tool>\n`;
+        stdout += marker;
+        yield marker;
       }
     }
   } catch (err) {

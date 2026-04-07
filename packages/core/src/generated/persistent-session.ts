@@ -1,29 +1,21 @@
-// @kern-source: persistent-session:1
 import { spawn } from 'node:child_process';
 
-// @kern-source: persistent-session:2
 import type { ChildProcess } from 'node:child_process';
 
-// @kern-source: persistent-session:3
 import { createInterface } from 'node:readline';
 
-// @kern-source: persistent-session:4
 import type { EngineDefinition, CompanionConfig } from './types.js';
 
-// @kern-source: persistent-session:5
 import { apiStreamDispatch, apiStreamDispatchWithHistory } from './api-dispatch.js';
 
-// @kern-source: persistent-session:6
 import { saveSessionState, loadSessionState } from './session-store.js';
 
-// @kern-source: persistent-session:8
 export interface SessionChunk {
   type: 'text'|'status'|'tool_call'|'error'|'done';
   content: string;
   metadata?: Record<string,unknown>;
 }
 
-// @kern-source: persistent-session:13
 export interface SessionSendOptions {
   message: string;
   images?: string[];
@@ -31,7 +23,6 @@ export interface SessionSendOptions {
   systemPrompt?: string;
 }
 
-// @kern-source: persistent-session:19
 export interface PersistentSessionConfig {
   engine: EngineDefinition;
   binaryPath: string;
@@ -42,7 +33,6 @@ export interface PersistentSessionConfig {
   onToolCall?: (name: string, args: Record<string,unknown>, callId: string) => Promise<string>;
 }
 
-// @kern-source: persistent-session:28
 export interface PersistentSession {
   alive: boolean;
   sessionId: string|null;
@@ -52,7 +42,6 @@ export interface PersistentSession {
   close: () => void;
 }
 
-// @kern-source: persistent-session:36
 export function createPersistentSession(config: PersistentSessionConfig): PersistentSession {
   const engine = config.engine;
   
@@ -80,7 +69,6 @@ export function createPersistentSession(config: PersistentSessionConfig): Persis
   return createResumeSession(config);
 }
 
-// @kern-source: persistent-session:67
 export function createCompanionSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -347,7 +335,6 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
   return session;
 }
 
-// @kern-source: persistent-session:337
 export function createAcpSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -595,7 +582,6 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
   return session;
 }
 
-// @kern-source: persistent-session:588
 export function createStreamJsonSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -847,7 +833,6 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
   return session;
 }
 
-// @kern-source: persistent-session:843
 export function createResumeSession(config: PersistentSessionConfig): PersistentSession {
   let alive = false;
   let sessionId: string | null = null;
@@ -1021,8 +1006,14 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
               if (done) {
                 const result = value as any;
                 if (result?.stderr) {
-                  alive = false; // API error — mark dead for clean restart
-                  yield { type: 'error' as const, content: result.stderr };
+                  // Only kill session if we got NO useful output — stderr with content is a warning, not fatal
+                  if (fullResponse.length === 0) {
+                    alive = false;
+                    yield { type: 'error' as const, content: result.stderr };
+                  } else {
+                    // Got content + stderr — log warning but keep session alive
+                    console.warn(`[agon] API warning (response preserved): ${result.stderr.slice(0, 200)}`);
+                  }
                 }
                 break;
               }
@@ -1030,15 +1021,20 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
               yield { type: 'text' as const, content: value as string };
             }
           } catch (err: any) {
-            // Retry once on stream failure before giving up
-            if (step === 1 && fullResponse.length === 0) {
-              yield { type: 'error' as const, content: `API stream failed, retrying… (${err.message ?? String(err)})` };
-              await new Promise(r => setTimeout(r, 1000));
-              continue; // Retry the same step
+            // Retry once on stream failure before giving up — but only if we have NO output
+            if (fullResponse.length === 0) {
+              if (step === 1) {
+                yield { type: 'error' as const, content: `API stream failed, retrying… (${err.message ?? String(err)})` };
+                await new Promise(r => setTimeout(r, 1000));
+                continue; // Retry the same step
+              }
+              alive = false;
+              yield { type: 'error' as const, content: err.message ?? String(err) };
+              break;
             }
-            alive = false; // Mark dead so ensureCesarSession creates fresh session on next turn
-            yield { type: 'error' as const, content: err.message ?? String(err) };
-            break;
+            // Got partial output before crash — preserve it, log warning
+            console.warn(`[agon] API stream error after ${fullResponse.length} chars (preserved): ${(err.message ?? '').slice(0, 200)}`);
+            // Fall through to process fullResponse as if stream completed
           }
   
           if (!fullResponse) break;

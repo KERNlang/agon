@@ -492,7 +492,7 @@ export function App({  }: {  }) {
         <Box flexDirection="column">
           {mode !== 'chat' && (
             <Box paddingX={1}>
-              <Text dimColor>{'\ud83d\udcc2 '}{resolveWorkingDir().split('/').pop()}</Text>
+              <Text dimColor>{icons().find + ' '}{resolveWorkingDir().split('/').pop()}</Text>
               <Text dimColor>{' \u2502 '}</Text>
               <Text color={mode === 'campfire' ? '#f97316' : mode === 'brainstorm' ? '#22d3ee' : '#a78bfa'}>{mode}</Text>
               <Text dimColor>{' \u2502 '}</Text>

@@ -49,7 +49,7 @@ screen name=EngineProgressView target=ink
           {engines.map((engine: EngineProgress) => (
             <Box key={engine.id}>
               <Text color={engine.done ? 'green' : engine.failed ? 'red' : 'yellow'}>
-                {engine.done ? '\u2713' : engine.failed ? '\u2717' : '\u25c9'}
+                {engine.done ? icons().success : engine.failed ? icons().fail : icons().dotOn}
               </Text>
               <Text> </Text>
               <Box width={14}>
@@ -112,7 +112,7 @@ screen name=ConversationalResponse target=ink
       const accentColor = color256toHex(ENGINE_COLORS[engineId] ?? 245);
       return (
         <Box flexDirection="column" marginTop={1} marginBottom={0} paddingLeft={1}>
-          <Text><Text color={accentColor} bold>{'\u25cf '}{engineId}</Text></Text>
+          <Text><Text color={accentColor} bold>{icons().dotOn + ' '}{engineId}</Text></Text>
           <Text>{' '}</Text>
           <RenderedSegments segments={segments} borderColor={''} wrapWidth={wrapWidth} />
         </Box>
@@ -244,8 +244,8 @@ screen name=OutputBlockView target=ink
           ? <ConversationalResponse engineId={event.engineId} content={event.content} />
           : <EngineBlock engineId={event.engineId} color={event.color} content={event.content} />;
         case 'separator': return <Text>{' '}</Text>;
-        case 'header': return <Box flexDirection="column"><Text>{' '}</Text><Text bold color="cyan">{'  \u25b8 '}{event.title}</Text></Box>;
-        case 'success': return <Text>{'  '}<Text color="#4ade80">{'\u2713'}</Text>{' '}{event.message}</Text>;
+        case 'header': return <Box flexDirection="column"><Text>{' '}</Text><Text bold color="cyan">{'  ' + icons().header + ' '}{event.title}</Text></Box>;
+        case 'success': return <Text>{'  '}<Text color="#4ade80">{icons().success}</Text>{' '}{event.message}</Text>;
         case 'error': {
           const errLines = event.message.split('\n');
           const firstLine = errLines[0] ?? '';
@@ -255,7 +255,7 @@ screen name=OutputBlockView target=ink
             return (
               <Box flexDirection="column" paddingLeft={2}>
                 <Text>
-                  <Text color="#ef4444" bold>{'\u2717 '}{errMatch ? errMatch[1] : 'Error'}</Text>
+                  <Text color="#ef4444" bold>{icons().fail + ' '}{errMatch ? errMatch[1] : 'Error'}</Text>
                   <Text color="#ef4444">{errMatch ? ': ' + errMatch[2] : ': ' + firstLine}</Text>
                 </Text>
                 {fileMatch && (
@@ -268,9 +268,9 @@ screen name=OutputBlockView target=ink
               </Box>
             );
           }
-          return <Text>{'  '}<Text color="#ef4444">{'\u2717'}</Text>{' '}{event.message}</Text>;
+          return <Text>{'  '}<Text color="#ef4444">{icons().fail}</Text>{' '}{event.message}</Text>;
         }
-        case 'warning': return <Text>{'  '}<Text color="#fbbf24">{'\u26a0'}</Text>{' '}{event.message}</Text>;
+        case 'warning': return <Text>{'  '}<Text color="#fbbf24">{icons().warning}</Text>{' '}{event.message}</Text>;
         case 'info': return <Text dimColor>{'  '}{event.message}</Text>;
         case 'permission-ask': {
           const permCmd = (event as any).command as string;
@@ -282,7 +282,7 @@ screen name=OutputBlockView target=ink
           return (
             <Box flexDirection="column" paddingLeft={1} marginY={1}>
               <Box borderStyle="round" borderColor="#fbbf24" paddingX={1} flexDirection="column">
-                <Text color="#fbbf24" bold>{permTool === 'Bash' || permTool === 'bash' ? '\u26a1 Bash command' : `\u26a0 ${permTool}`}</Text>
+                <Text color="#fbbf24" bold>{permTool === 'Bash' || permTool === 'bash' ? `${icons().bash} Bash command` : `${icons().warning} ${permTool}`}</Text>
                 <Text> </Text>
                 {cmdLines.map((line: string, i: number) => (
                   <Text key={`perm-cmd-${i}`}>
@@ -364,7 +364,7 @@ screen name=OutputBlockView target=ink
               <Box key={step.id}>
                 <Text>{'  '}</Text>
                 <Text color={step.result.state === 'completed' ? 'green' : step.result.state === 'failed' ? 'red' : step.result.state === 'running' ? 'yellow' : undefined}>
-                  {step.result.state === 'completed' ? '\u2713' : step.result.state === 'failed' ? '\u2717' : step.result.state === 'running' ? '\u25c9' : '\u25cb'}
+                  {step.result.state === 'completed' ? icons().success : step.result.state === 'failed' ? icons().fail : step.result.state === 'running' ? icons().dotOn : icons().dotOff}
                 </Text>
                 <Text> {step.label}</Text>
               </Box>
@@ -384,7 +384,7 @@ screen name=OutputBlockView target=ink
         );
         case 'tool-call': {
           const toolColor = event.status === 'error' ? '#ef4444' : event.status === 'done' ? '#4ade80' : '#fbbf24';
-          const icon = event.status === 'error' ? '\u2717' : event.status === 'done' ? '\u2713' : '\u27f3';
+          const icon = event.status === 'error' ? icons().fail : event.status === 'done' ? icons().success : '\u27f3';
           const eColor = engineColor(event.engineId);
           const codeWidth = contentWidth(10);
           const nest = <Text color={eColor}>{' \u23bf '}</Text>;
@@ -651,7 +651,7 @@ screen name=OutputBlockView target=ink
                 return (
                   <Box key={f.path}>
                     <Text color={f.status === 'created' ? '#22d3ee' : f.status === 'deleted' ? '#ef4444' : '#4ade80'}>
-                      {f.status === 'created' ? '\u25cf' : f.status === 'deleted' ? '\u2296' : '\u2713'}
+                      {f.status === 'created' ? icons().dotOn : f.status === 'deleted' ? '\u2296' : icons().success}
                     </Text>
                     <Text>{' '}{shortPath}</Text>
                     <Text dimColor>{' +'}{f.additions}{' -'}{f.deletions}{' '}</Text>
@@ -690,7 +690,7 @@ screen name=ToolCallGroup target=ink
         .join(', ');
       const eColor = engineColor(groupEngineId);
       const statusColor = errors > 0 ? '#ef4444' : running > 0 ? '#fbbf24' : '#4ade80';
-      const statusIcon = errors > 0 ? '\u2717' : running > 0 ? '\u27f3' : '\u2713';
+      const statusIcon = errors > 0 ? icons().fail : running > 0 ? '\u27f3' : icons().success;
 
       return (
         <Box paddingLeft={2}>

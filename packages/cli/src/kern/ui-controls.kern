@@ -5,6 +5,7 @@ import from="ink" names="Box,Text,useInput"
 import from="../generated/intent.js" names="SLASH_COMMANDS"
 import from="./ui-rendering.js" names="contentWidth,engineColor,color256toHex,DiffLine,CODE_RAIL,CODE_RAIL_COLOR"
 import from="../generated/output.js" names="ENGINE_COLORS"
+import from="../icons.js" names="icons"
 import from="@agon/core" names="setAuthKey,getAuthKey,loadConfig,configSet"
 
 // ── Interface: ReviewEvent ──────────────────────────────────────────
@@ -159,7 +160,7 @@ screen name=EnginePicker target=ink
                 {i === cursor ? ' \u276f ' : '   '}
               </Text>
               <Text color={selected.has(id) ? 'green' : 'red'}>
-                {selected.has(id) ? '\u25c9' : '\u25cb'}
+                {selected.has(id) ? icons().dotOn : icons().dotOff}
               </Text>
               <Text>{' '}</Text>
               <Text bold color={engineColor(id)}>{id}</Text>
@@ -442,7 +443,7 @@ screen name=CesarPicker target=ink
                 <Text color={i === cursor ? '#a78bfa' : undefined} bold={i === cursor}>
                   {id}
                 </Text>
-                {id === currentCesar && <Text color="green">{' \u2713 current'}</Text>}
+                {id === currentCesar && <Text color="green">{' ' + icons().success + ' current'}</Text>}
               </Box>
             ))
           )}

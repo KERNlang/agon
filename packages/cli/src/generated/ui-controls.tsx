@@ -14,16 +14,19 @@ import { contentWidth, engineColor, color256toHex, DiffLine, CODE_RAIL, CODE_RAI
 import { ENGINE_COLORS } from '../generated/output.js';
 
 // @kern-source: ui-controls:8
+import { icons } from '../icons.js';
+
+// @kern-source: ui-controls:9
 import { setAuthKey, getAuthKey, loadConfig, configSet } from '@agon/core';
 
-// @kern-source: ui-controls:12
+// @kern-source: ui-controls:13
 export interface ReviewEvent {
   winnerId: string;
   patchPath: string;
   patchContent: string;
 }
 
-// @kern-source: ui-controls:19
+// @kern-source: ui-controls:20
 
 export function SlashPicker({ commands, onSelect, onCancel }: { commands: typeof SLASH_COMMANDS; onSelect: (cmd: string) => void; onCancel: () => void }) {
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
@@ -88,7 +91,7 @@ export function SlashPicker({ commands, onSelect, onCancel }: { commands: typeof
 }
 
 
-// @kern-source: ui-controls:87
+// @kern-source: ui-controls:88
 
 export function EnginePicker({ available, initialSelected, userEngines, onConfirm, onCancel, onRemove }: { available: string[]; initialSelected: string[]; userEngines: Set<string>; onConfirm: (selected: string[]) => void; onCancel: () => void; onRemove: (engineId: string) => void }) {
   const [cursor, setCursor] = useState<number>(0);
@@ -158,7 +161,7 @@ export function EnginePicker({ available, initialSelected, userEngines, onConfir
                   {i === cursor ? ' \u276f ' : '   '}
                 </Text>
                 <Text color={selected.has(id) ? 'green' : 'red'}>
-                  {selected.has(id) ? '\u25c9' : '\u25cb'}
+                  {selected.has(id) ? icons().dotOn : icons().dotOff}
                 </Text>
                 <Text>{' '}</Text>
                 <Text bold color={engineColor(id)}>{id}</Text>
@@ -173,7 +176,7 @@ export function EnginePicker({ available, initialSelected, userEngines, onConfir
 }
 
 
-// @kern-source: ui-controls:178
+// @kern-source: ui-controls:179
 export interface ModelPickerEntry {
   providerId: string;
   providerName: string;
@@ -187,7 +190,7 @@ export interface ModelPickerEntry {
   costOutput?: number;
 }
 
-// @kern-source: ui-controls:190
+// @kern-source: ui-controls:191
 
 export function ModelPicker({ entries, onSelect, onCancel, loading }: { entries: ModelPickerEntry[]; onSelect: (entry: ModelPickerEntry) => void; onCancel: () => void; loading?: boolean }) {
   const [cursor, setCursor] = useState<number>(0);
@@ -339,7 +342,7 @@ export function ModelPicker({ entries, onSelect, onCancel, loading }: { entries:
 }
 
 
-// @kern-source: ui-controls:346
+// @kern-source: ui-controls:347
 
 export function ReviewBlock({ event, onAction }: { event: ReviewEvent; onAction: (action: 'apply' | 'edit' | 'reject' | 'copy') => void }) {
         const eColor = engineColor(event.winnerId);
@@ -380,7 +383,7 @@ export function ReviewBlock({ event, onAction }: { event: ReviewEvent; onAction:
 }
 
 
-// @kern-source: ui-controls:388
+// @kern-source: ui-controls:389
 
 export function CesarPicker({ engines, currentCesar, onSelect, onCancel }: { engines: string[]; currentCesar: string; onSelect: (engineId: string) => void; onCancel: () => void }) {
   const [cursor, setCursor] = useState<number>(0);
@@ -434,7 +437,7 @@ export function CesarPicker({ engines, currentCesar, onSelect, onCancel }: { eng
                   <Text color={i === cursor ? '#a78bfa' : undefined} bold={i === cursor}>
                     {id}
                   </Text>
-                  {id === currentCesar && <Text color="green">{' \u2713 current'}</Text>}
+                  {id === currentCesar && <Text color="green">{' ' + icons().success + ' current'}</Text>}
                 </Box>
               ))
             )}

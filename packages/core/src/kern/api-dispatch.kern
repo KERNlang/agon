@@ -9,6 +9,8 @@ interface name=ApiConfig
   field name=model type=string
   field name=maxTokens type=number optional=true
   field name=format type="'openai'|'anthropic'" optional=true
+  field name=firstChunkTimeoutMs type=number optional=true
+  field name=idleTimeoutMs type=number optional=true
 
 fn name=buildModel params="config:ApiConfig" returns="any"
   doc "Create AI SDK model instance from ApiConfig — routes to openai-compatible or anthropic provider."
@@ -207,16 +209,19 @@ fn name=apiStreamDispatchWithHistory generator=true async=true params="config:Ap
 
       const result = streamText(streamOpts);
 
-      // Iterate with per-chunk idle timeout — catches models that go silent mid-stream.
-      // If no chunk arrives within IDLE_TIMEOUT_MS, break and return partial output.
-      const IDLE_TIMEOUT_MS = 30_000;
+      // Two-tier idle timeout: longer patience before first chunk (queuing/cold start),
+      // tighter watchdog once streaming starts. Per-engine config overrides defaults.
+      const FIRST_CHUNK_TIMEOUT = config.firstChunkTimeoutMs ?? 60_000;  // 60s default
+      const IDLE_TIMEOUT = config.idleTimeoutMs ?? 15_000;              // 15s default
       const iterator = result.fullStream[Symbol.asyncIterator]();
       let iterDone = false;
+      let gotFirstChunk = false;
 
       while (!iterDone) {
+        const timeoutMs = gotFirstChunk ? IDLE_TIMEOUT : FIRST_CHUNK_TIMEOUT;
         const next = iterator.next();
         const idle = new Promise<never>((_, reject) => {
-          const t = setTimeout(() => reject(new Error('IDLE_TIMEOUT')), IDLE_TIMEOUT_MS);
+          const t = setTimeout(() => reject(new Error('IDLE_TIMEOUT')), timeoutMs);
           next.then(() => clearTimeout(t), () => clearTimeout(t));
         });
 
@@ -225,7 +230,8 @@ fn name=apiStreamDispatchWithHistory generator=true async=true params="config:Ap
           iterResult = await Promise.race([next, idle]);
         } catch (err: any) {
           if (err?.message === 'IDLE_TIMEOUT') {
-            console.warn(`[agon] api-dispatch: no chunks for ${IDLE_TIMEOUT_MS / 1000}s — breaking idle stream`);
+            const phase = gotFirstChunk ? 'inter-chunk' : 'first-chunk';
+            console.warn(`[agon] api-dispatch: ${phase} idle timeout (${timeoutMs / 1000}s) — breaking stream`);
             controller.abort();
             break;
           }
@@ -234,6 +240,11 @@ fn name=apiStreamDispatchWithHistory generator=true async=true params="config:Ap
 
         if (iterResult.done) { iterDone = true; break; }
         const part = iterResult.value;
+
+        // Any productive event switches to tighter inter-chunk timeout
+        if (!gotFirstChunk && (part.type === 'text-delta' || part.type === 'reasoning-delta' || part.type === 'tool-call')) {
+          gotFirstChunk = true;
+        }
 
         switch (part.type) {
           case 'text-delta': {

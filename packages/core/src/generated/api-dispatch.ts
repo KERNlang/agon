@@ -17,9 +17,11 @@ export interface ApiConfig {
   model: string;
   maxTokens?: number;
   format?: 'openai'|'anthropic';
+  firstChunkTimeoutMs?: number;
+  idleTimeoutMs?: number;
 }
 
-// @kern-source: api-dispatch:13
+// @kern-source: api-dispatch:15
 export function buildModel(config: ApiConfig): any {
   const apiKey = process.env[config.apiKeyEnv];
   if (!apiKey) return null;
@@ -42,7 +44,7 @@ export function buildModel(config: ApiConfig): any {
   return provider.chatModel(config.model);
 }
 
-// @kern-source: api-dispatch:37
+// @kern-source: api-dispatch:39
 export function convertToolsForSdk(tools: Array<{type:string,function:{name:string,description:string,parameters:Record<string,unknown>}}>): Record<string,any> {
   const result: Record<string, any> = {};
   for (const t of tools) {
@@ -55,7 +57,7 @@ export function convertToolsForSdk(tools: Array<{type:string,function:{name:stri
   return result;
 }
 
-// @kern-source: api-dispatch:51
+// @kern-source: api-dispatch:53
 export function convertMessagesForSdk(messages: Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>): any[] {
   // Build tool call ID -> name lookup for tool result messages
   const toolNameMap = new Map<string, string>();
@@ -121,7 +123,7 @@ export function convertMessagesForSdk(messages: Array<{role:string,content:any,t
   return result;
 }
 
-// @kern-source: api-dispatch:118
+// @kern-source: api-dispatch:120
 export async function apiDispatch(config: ApiConfig, prompt: string, timeout: number, signal?: AbortSignal, systemPrompt?: string): Promise<DispatchResult> {
   const model = buildModel(config);
   if (!model) {
@@ -167,7 +169,7 @@ export async function apiDispatch(config: ApiConfig, prompt: string, timeout: nu
   }
 }
 
-// @kern-source: api-dispatch:164
+// @kern-source: api-dispatch:166
 export async function* apiStreamDispatch(config: ApiConfig, prompt: string, timeout: number, signal?: AbortSignal, systemPrompt?: string): AsyncGenerator<string, DispatchResult, void> {
   const messages: Array<{role:string, content:string}> = [];
   if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
@@ -175,7 +177,7 @@ export async function* apiStreamDispatch(config: ApiConfig, prompt: string, time
   return yield* apiStreamDispatchWithHistory(config, messages, timeout, signal);
 }
 
-// @kern-source: api-dispatch:172
+// @kern-source: api-dispatch:174
 export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages: Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>, timeout: number, signal?: AbortSignal, tools?: Array<{type:string,function:{name:string,description:string,parameters:Record<string,unknown>}}>): AsyncGenerator<string, DispatchResult, void> {
   const model = buildModel(config);
   if (!model) {
@@ -212,16 +214,19 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
   
     const result = streamText(streamOpts);
   
-    // Iterate with per-chunk idle timeout — catches models that go silent mid-stream.
-    // If no chunk arrives within IDLE_TIMEOUT_MS, break and return partial output.
-    const IDLE_TIMEOUT_MS = 30_000;
+    // Two-tier idle timeout: longer patience before first chunk (queuing/cold start),
+    // tighter watchdog once streaming starts. Per-engine config overrides defaults.
+    const FIRST_CHUNK_TIMEOUT = config.firstChunkTimeoutMs ?? 60_000;  // 60s default
+    const IDLE_TIMEOUT = config.idleTimeoutMs ?? 15_000;              // 15s default
     const iterator = result.fullStream[Symbol.asyncIterator]();
     let iterDone = false;
+    let gotFirstChunk = false;
   
     while (!iterDone) {
+      const timeoutMs = gotFirstChunk ? IDLE_TIMEOUT : FIRST_CHUNK_TIMEOUT;
       const next = iterator.next();
       const idle = new Promise<never>((_, reject) => {
-        const t = setTimeout(() => reject(new Error('IDLE_TIMEOUT')), IDLE_TIMEOUT_MS);
+        const t = setTimeout(() => reject(new Error('IDLE_TIMEOUT')), timeoutMs);
         next.then(() => clearTimeout(t), () => clearTimeout(t));
       });
   
@@ -230,7 +235,8 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
         iterResult = await Promise.race([next, idle]);
       } catch (err: any) {
         if (err?.message === 'IDLE_TIMEOUT') {
-          console.warn(`[agon] api-dispatch: no chunks for ${IDLE_TIMEOUT_MS / 1000}s — breaking idle stream`);
+          const phase = gotFirstChunk ? 'inter-chunk' : 'first-chunk';
+          console.warn(`[agon] api-dispatch: ${phase} idle timeout (${timeoutMs / 1000}s) — breaking stream`);
           controller.abort();
           break;
         }
@@ -239,6 +245,11 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
   
       if (iterResult.done) { iterDone = true; break; }
       const part = iterResult.value;
+  
+      // Any productive event switches to tighter inter-chunk timeout
+      if (!gotFirstChunk && (part.type === 'text-delta' || part.type === 'reasoning-delta' || part.type === 'tool-call')) {
+        gotFirstChunk = true;
+      }
   
       switch (part.type) {
         case 'text-delta': {

@@ -350,19 +350,35 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
           } else if (parsedConfidence >= CONFIDENCE_TIERS.stop && parsedConfidence < CONFIDENCE_TIERS.nero) {
             // 70-87%: second opinion from best-ranked engine
             if (streaming) { dispatch({ type: 'streaming-end', engineId: cesarEngineId }); streaming = false; }
+            const _escStart = Date.now();
+            const _escTimer = setInterval(() => {
+              if (abort.signal.aborted) { clearInterval(_escTimer); return; }
+              dispatch({ type: 'spinner-update', message: confidenceBadge(parsedConfidence!) + ` Getting second opinion… ${Math.round((Date.now() - _escStart) / 1000)}s` });
+            }, 15_000);
             dispatch({ type: 'spinner-start', message: confidenceBadge(parsedConfidence) + ' Getting second opinion…', color });
             const secondResult = await fireSecondOpinion(input, ctx, abort);
+            clearInterval(_escTimer);
             dispatch({ type: 'spinner-stop' });
-            const escalation = await handleSecondOpinion(secondResult, input, response, parsedConfidence, cesarEngineId, dispatch, ctx);
-            if (escalation) return escalation;
+            if (!abort.signal.aborted) {
+              const escalation = await handleSecondOpinion(secondResult, input, response, parsedConfidence, cesarEngineId, dispatch, ctx);
+              if (escalation) return escalation;
+            }
             activateNero(ctx, dispatch);
           } else if (parsedConfidence < CONFIDENCE_TIERS.stop) {
             // <70%: advisor
             if (streaming) { dispatch({ type: 'streaming-end', engineId: cesarEngineId }); streaming = false; }
+            const _escStart = Date.now();
+            const _escTimer = setInterval(() => {
+              if (abort.signal.aborted) { clearInterval(_escTimer); return; }
+              dispatch({ type: 'spinner-update', message: confidenceBadge(parsedConfidence!) + ` Consulting advisor… ${Math.round((Date.now() - _escStart) / 1000)}s` });
+            }, 15_000);
             dispatch({ type: 'spinner-start', message: confidenceBadge(parsedConfidence) + ' Consulting advisor…', color });
             const advisorResult = await fireAdvisor(input, response, parsedConfidence, ctx, abort);
+            clearInterval(_escTimer);
             dispatch({ type: 'spinner-stop' });
-            if (advisorResult) {
+            if (abort.signal.aborted) {
+              // Interrupted during advisor — skip escalation menu
+            } else if (advisorResult) {
               const escalation = await handleSecondOpinion(advisorResult, input, response, parsedConfidence, cesarEngineId, dispatch, ctx);
               if (escalation) return escalation;
             } else {

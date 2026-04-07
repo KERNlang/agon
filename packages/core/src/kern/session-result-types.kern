@@ -1,0 +1,23 @@
+interface name=BrainstormResultData export=true
+  field name=bids type="{ engineId: string; reasoning: string; approach?: string; score?: number }[]"
+  field name=response type=string
+
+interface name=CampfireResultData export=true
+  field name=rounds type="{ engineId: string; content: string }[]"
+
+interface name=TribunalResultData export=true
+  field name=rounds type="{ round: number; engineId: string; position: string; argument: string }[]"
+  field name=verdict type=string
+
+interface name=ForgeResultData export=true
+  field name=scoreboard type="{ engineId: string; pass: boolean; score: number; diffLines: number; filesChanged: number; durationSec: number }[]"
+  field name=winner type="string | null"
+  field name=synthesis type="{ pass: boolean; score: number } | undefined" optional=true
+
+interface name=SessionResult export=true
+  field name=type type="'brainstorm' | 'campfire' | 'tribunal' | 'forge'"
+  field name=timestamp type=string
+  field name=question type=string
+  field name=engines type="string[]"
+  field name=winner type="string | null"
+  field name=data type="BrainstormResultData | CampfireResultData | TribunalResultData | ForgeResultData"

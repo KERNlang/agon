@@ -1,0 +1,26 @@
+import from="@agon/core" names="SessionResult" types=true
+
+service name=SessionResultStore
+  field name=results type="SessionResult[]" default="[]"
+
+  method name=add params="result:SessionResult" returns=void
+    handler <<<
+      this.results.push(result);
+    >>>
+
+  method name=getResults returns="SessionResult[]"
+    handler <<<
+      return [...this.results];
+    >>>
+
+  method name=hasResults returns=boolean
+    handler <<<
+      return this.results.length > 0;
+    >>>
+
+  method name=clear returns=void
+    handler <<<
+      this.results = [];
+    >>>
+
+  singleton name=sessionResultStore

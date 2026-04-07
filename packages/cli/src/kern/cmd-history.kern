@@ -4,6 +4,7 @@ import from="node:path" names="join"
 import from="@agon/core" names="RUNS_DIR,ensureAgonHome"
 import from="@agon/core" names="ForgeManifest" types=true
 import from="../output.js" names="header,info,table,bold,green,red,dim"
+import from="../icons.js" names="icons"
 
 fn name=showRunDetail params="id:string" returns=void export=false
   handler <<<
@@ -38,7 +39,7 @@ fn name=showRunDetail params="id:string" returns=void export=false
       console.log('');
       header('Scores');
       const rows = Object.entries(manifest.results).map(([eid, r]: [string, any]) => [
-        eid === manifest.winner ? green(`★ ${eid}`) : eid,
+        eid === manifest.winner ? green(`${icons().winner} ${eid}`) : eid,
         r.pass ? green('PASS') : red('FAIL'),
         String(r.score),
         String(r.diffLines),
@@ -58,7 +59,7 @@ fn name=showRunDetail params="id:string" returns=void export=false
     }
   >>>
 
-const name=historyCommand type="ReturnType<typeof defineCommand>"
+const name=historyCommand type=any
   handler <<<
     defineCommand({
       meta: {

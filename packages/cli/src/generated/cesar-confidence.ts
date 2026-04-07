@@ -1,5 +1,10 @@
+// @kern-source: cesar-confidence:2
+import { icons } from '../icons.js';
+
+// @kern-source: cesar-confidence:4
 export const CONFIDENCE_TIERS: { direct: number; nero: number; discuss: number; stop: number } = ({ direct: 93, nero: 88, discuss: 70, stop: 70 });
 
+// @kern-source: cesar-confidence:9
 export function parseConfidence(response: string): { value: number | null; rest: string } {
   // Match ~X% at start (with optional whitespace)
   const tildeMatch = response.match(/^~(\d{1,3})%\s*/);
@@ -21,6 +26,7 @@ export function parseConfidence(response: string): { value: number | null; rest:
   return { value: null, rest: response };
 }
 
+// @kern-source: cesar-confidence:32
 export function confidenceColor(value: number): string {
   if (value >= 94) return '\x1b[32m';  // green
   if (value >= 90) return '\x1b[33m';  // yellow
@@ -28,10 +34,11 @@ export function confidenceColor(value: number): string {
   return '\x1b[31m'; // red
 }
 
+// @kern-source: cesar-confidence:41
 export function confidenceBadge(value: number): string {
   const color = confidenceColor(value);
   const reset = '\x1b[0m';
-  const dot = value >= 94 ? '●' : value >= 90 ? '●' : value >= 70 ? '●' : '●';
+  const dot = icons().dotOn;
   return `${color}${dot} ${value}%${reset}`;
 }
 

@@ -7,6 +7,7 @@ import from="../markdown.js" names="ContentSegment" types=true
 import from="../rich-text.js" names="parseProseToRichLines"
 import from="../rich-text.js" names="RichLine" types=true
 import from="../generated/output.js" names="ENGINE_COLORS"
+import from="../icons.js" names="icons"
 import from="../handlers/types.js" names="OutputEvent,EngineProgress" types=true
 import from="./ui-rendering.js" names="contentWidth,color256toHex,engineColor,RenderedSegments,RichLineView,DiffLine,SyntaxLine,GradientLine,AnsiLine,CODE_RAIL,CODE_RAIL_COLOR,MAX_CODE_LINES"
 import from="../markdown.js" names="truncateCodeLine"
@@ -479,7 +480,7 @@ screen name=OutputBlockView target=ink
               return (
                 <Box paddingLeft={2}>
                   <Text>
-                    {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{'\u270f\ufe0f  Update'}</Text></Text>
+                    {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().edit + ' Update'}</Text></Text>
                     {shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}
                     <Text dimColor>{' '}<Text color="#ef4444">{'-'}{removedCount}</Text>{' '}<Text color="#4ade80">{'+'}{addedCount}</Text></Text>
                     {collapsedHint}
@@ -489,7 +490,7 @@ screen name=OutputBlockView target=ink
             }
             return (
               <Box paddingLeft={2} flexDirection="column">
-                <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{'\u270f\ufe0f  Update'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}</Text>
+                <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().edit + ' Update'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}</Text>
                 {(oldStr || newStr) && event.status !== 'running' && (() => {
                   const oldLines = oldStr.split('\n').slice(0, 20);
                   const newLines = newStr.split('\n').slice(0, 20);
@@ -530,7 +531,7 @@ screen name=OutputBlockView target=ink
               return (
                 <Box paddingLeft={2}>
                   <Text>
-                    {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{'\ud83d\udcdd Write'}</Text></Text>
+                    {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().write + ' Write'}</Text></Text>
                     {shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}
                     {lineCount > 0 && <Text dimColor>{' '}{lineCount}{' lines'}</Text>}
                     {collapsedHint}
@@ -540,7 +541,7 @@ screen name=OutputBlockView target=ink
             }
             return (
               <Box paddingLeft={2} flexDirection="column">
-                <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{'\ud83d\udcdd Write'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}</Text>
+                <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().write + ' Write'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}</Text>
                 {lineCount > 0 && <Text dimColor>{'  '}{lineCount}{' lines'}</Text>}
                 {event.output && event.status === 'done' && (
                   <Text dimColor>{'  '}{event.output.length > 80 ? event.output.slice(0, 80) + '\u2026' : event.output}</Text>
@@ -555,7 +556,7 @@ screen name=OutputBlockView target=ink
             const shortPath = filePath ? filePath.replace(process.cwd() + '/', '').replace(process.env.HOME ?? '', '~') : '';
             return (
               <Box paddingLeft={2} flexDirection="column">
-                <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{'\ud83d\udcc4 Read'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}</Text>
+                <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().read + ' Read'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}</Text>
                 {event.output && event.status === 'done' && (
                   <Text dimColor>{'  '}{event.output.split('\n').length}{' lines ('}{Math.ceil(event.output.length / 1024)}{'kb)'}</Text>
                 )}
@@ -570,7 +571,7 @@ screen name=OutputBlockView target=ink
             const shortPath = path ? path.replace(process.cwd() + '/', '').replace(process.env.HOME ?? '', '~') : '';
             return (
               <Box paddingLeft={2} flexDirection="column">
-                <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{'\ud83d\udd0d Search'}</Text></Text>{' '}<Text color="#a78bfa">{pattern}</Text>{shortPath ? <Text dimColor>{' in '}{shortPath}</Text> : ''}</Text>
+                <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().search + ' Search'}</Text></Text>{' '}<Text color="#a78bfa">{pattern}</Text>{shortPath ? <Text dimColor>{' in '}{shortPath}</Text> : ''}</Text>
                 {event.output && event.status === 'done' && (
                   <Text dimColor>{'  '}{event.output.split('\n').length}{' matches'}</Text>
                 )}
@@ -583,7 +584,7 @@ screen name=OutputBlockView target=ink
             const pattern = (parsed.pattern as string) || rawInput || '';
             return (
               <Box paddingLeft={2} flexDirection="column">
-                <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{'\ud83d\udcc2 Find'}</Text></Text>{' '}<Text color="#a78bfa">{pattern}</Text></Text>
+                <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().find + ' Find'}</Text></Text>{' '}<Text color="#a78bfa">{pattern}</Text></Text>
                 {event.output && event.status === 'done' && (
                   <Text dimColor>{'  '}{event.output.split('\n').filter((l: string) => l.trim()).length}{' files'}</Text>
                 )}
@@ -592,12 +593,13 @@ screen name=OutputBlockView target=ink
           }
 
           // ── Fallback: generic tool ──
+          const ic = icons();
           const toolLabels: Record<string, string> = {
-            'Read': '\ud83d\udcc4 Read', 'Edit': '\u270f\ufe0f  Edit', 'Write': '\ud83d\udcdd Write',
-            'Bash': '\u26a1 Run', 'Grep': '\ud83d\udd0d Search', 'Glob': '\ud83d\udcc2 Find',
-            'tool': '\ud83d\udd27 Tool',
+            'Read': `${ic.read} Read`, 'Edit': `${ic.edit} Edit`, 'Write': `${ic.write} Write`,
+            'Bash': `${ic.bash} Run`, 'Grep': `${ic.search} Search`, 'Glob': `${ic.find} Find`,
+            'tool': `${ic.tool} Tool`,
           };
-          const label = toolLabels[event.tool] ?? `\ud83d\udd27 ${event.tool}`;
+          const label = toolLabels[event.tool] ?? `${ic.tool} ${event.tool}`;
           const inputPreview = event.input.length > 80 ? event.input.slice(0, 80) + '\u2026' : event.input;
           // Collapsed: 1-line summary for generic tools
           if (!toolOutputExpanded) {

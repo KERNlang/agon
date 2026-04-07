@@ -13,6 +13,7 @@ import from="../intent.js" names="detectIntent,SLASH_COMMANDS"
 import from="../generated/job-manager.js" names="JobManager"
 import from="../generated/job-manager.js" names="Job" types=true
 import from="../output.js" names="ENGINE_COLORS"
+import from="../icons.js" names="icons"
 import from="../markdown.js" names="parseMarkdownBlocks,cleanEngineOutput"
 import from="../handlers/types.js" names="OutputEvent,HandlerContext" types=true
 import from="../code-buffer.js" names="codeBlockBuffer"
@@ -506,7 +507,7 @@ screen name=App target=ink
             const segments = parseMarkdownBlocks(cleaned);
             return mode === 'chat' ? (
               <Box flexDirection="column" marginY={1} paddingLeft={1}>
-                <Text><Text color={c} bold>{'● '}{streamingText.engineId}</Text></Text>
+                <Text><Text color={c} bold>{icons().dotOn + ' '}{streamingText.engineId}</Text></Text>
                 <Text>{' '}</Text>
                 <RenderedSegments segments={segments} borderColor={''} wrapWidth={wrapWidth} />
               </Box>
@@ -566,8 +567,8 @@ screen name=App target=ink
         {!enginePickerOpen && !modelPickerOpen && !cesarPickerOpen && (
           <Box flexDirection="column" paddingX={1} marginTop={1}>
             {slashPickerOpen && <SlashPicker commands={allSlashCommands} onSelect={handleSlashSelect} onCancel={() => setSlashPickerOpen(false)} />}
-            {pendingImages.length > 0 && (<Box><Text color="#22d3ee">{'📎 '}</Text>{pendingImages.map((img: any, i: number) => (<Text key={i} dimColor>{img.filename}{i < pendingImages.length - 1 ? ', ' : ''}</Text>))}</Box>)}
-            {inputQueue.length > 0 && (<Box><Text dimColor>{'⏳ '}{inputQueue.length} queued: </Text><Text dimColor italic>{inputQueue[0].length > 40 ? inputQueue[0].slice(0, 40) + '…' : inputQueue[0]}</Text></Box>)}
+            {pendingImages.length > 0 && (<Box><Text color="#22d3ee">{icons().image + ' '}</Text>{pendingImages.map((img: any, i: number) => (<Text key={i} dimColor>{img.filename}{i < pendingImages.length - 1 ? ', ' : ''}</Text>))}</Box>)}
+            {inputQueue.length > 0 && (<Box><Text dimColor>{icons().queue + ' '}{inputQueue.length} queued: </Text><Text dimColor italic>{inputQueue[0].length > 40 ? inputQueue[0].slice(0, 40) + '…' : inputQueue[0]}</Text></Box>)}
             {questionState ? (
               <Box flexDirection="column">
                 <Box><Text bold color="yellow">{questionState.prompt}</Text></Box>
@@ -583,8 +584,8 @@ screen name=App target=ink
               </Box>
             ) : (
               <Box borderStyle={mode === 'chat' ? 'round' : 'single'} borderColor={mode === 'chat' ? '#585858' : 'gray'} borderLeft={mode !== 'chat'} borderRight={mode !== 'chat'} borderTop borderBottom paddingX={1} width="100%">
-                {mode !== 'chat' && (<Text><Text color={mode === 'campfire' ? '#f97316' : mode === 'brainstorm' ? '#22d3ee' : '#a78bfa'} bold>{mode === 'campfire' ? '🔥' : mode === 'brainstorm' ? '💡' : '⚖'}{' '}{mode}</Text><Text dimColor>{' │ '}</Text></Text>)}
-                <Text color={mode === 'chat' ? '#585858' : '#fbbf24'}>{mode === 'chat' ? '> ' : '❯ '}</Text>
+                {mode !== 'chat' && (<Text><Text color={mode === 'campfire' ? '#f97316' : mode === 'brainstorm' ? '#22d3ee' : '#a78bfa'} bold>{mode === 'campfire' ? icons().campfire : mode === 'brainstorm' ? icons().brainstorm : icons().tribunal}{' '}{mode}</Text><Text dimColor>{' │ '}</Text></Text>)}
+                <Text color={mode === 'chat' ? '#585858' : '#fbbf24'}>{mode === 'chat' ? '> ' : icons().prompt + ' '}</Text>
                 <Box flexGrow={1}>
                   <TextInput key={inputKey} value={inputValue} onChange={handleInputChange} onSubmit={handleSubmit}
                     placeholder={replState === 'idle' ? mode === 'chat' ? '' : mode === 'campfire' ? 'What should we think about?' : mode === 'brainstorm' ? 'What question for the engines?' : 'What should they debate?' : ''} />

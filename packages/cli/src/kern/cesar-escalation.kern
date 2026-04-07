@@ -2,6 +2,7 @@ import from="node:path" names="join"
 import from="node:fs" names="mkdirSync"
 import from="@agon/core" names="RUNS_DIR,resolveWorkingDir,tracker,appendMessage,classifyTask,rankByTaskClass"
 import from="../output.js" names="ENGINE_COLORS"
+import from="../icons.js" names="icons"
 import from="../handlers/types.js" names="Dispatch,HandlerContext" types=true
 import from="./cesar-confidence.js" names="CONFIDENCE_TIERS,confidenceBadge"
 import from="./cesar-session.js" names="CESAR_SYSTEM_PROMPT"
@@ -131,7 +132,7 @@ fn name=activateNero params="ctx:HandlerContext, dispatch:Dispatch" returns=void
         ctx.cesarSession.close();
         ctx.setCesarSession(null);
       }
-      dispatch({ type: 'info', message: '⚔ Nero activated — Cesar will challenge on next turn' });
+      dispatch({ type: 'info', message: `${icons().nero} Nero activated — Cesar will challenge on next turn` });
     }
   >>>
 
@@ -145,7 +146,7 @@ fn name=deactivateNero params="ctx:HandlerContext, dispatch:Dispatch" returns=vo
       ctx.cesarSession.close();
       ctx.setCesarSession(null);
     }
-    dispatch({ type: 'info', message: '⚔ Nero deactivated — confidence recovered' });
+    dispatch({ type: 'info', message: `${icons().nero} Nero deactivated — confidence recovered` });
   >>>
 
 

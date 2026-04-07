@@ -1,19 +1,31 @@
+// @kern-source: cmd-brainstorm:1
 import { defineCommand } from 'citty';
 
+// @kern-source: cmd-brainstorm:2
 import { join, dirname } from 'node:path';
 
+// @kern-source: cmd-brainstorm:3
 import { fileURLToPath } from 'node:url';
 
+// @kern-source: cmd-brainstorm:4
 import { mkdirSync } from 'node:fs';
 
+// @kern-source: cmd-brainstorm:5
 import { EngineRegistry, ensureAgonHome, RUNS_DIR } from '@agon/core';
 
+// @kern-source: cmd-brainstorm:6
 import { createCliAdapter } from '@agon/adapter-cli';
 
+// @kern-source: cmd-brainstorm:7
 import { runBrainstorm } from '@agon/forge';
 
+// @kern-source: cmd-brainstorm:8
 import { header, success, info, table, bold, cyan, green } from '../output.js';
 
+// @kern-source: cmd-brainstorm:9
+import { icons } from '../icons.js';
+
+// @kern-source: cmd-brainstorm:11
 export const brainstormCommand: any = defineCommand({
   meta: {
     name: 'brainstorm',
@@ -65,7 +77,7 @@ export const brainstormCommand: any = defineCommand({
     console.log('');
     header('Bids');
     const rows = result.bids.map((b: any) => [
-      b.engineId === result.winner ? green(`★ ${b.engineId}`) : b.engineId,
+      b.engineId === result.winner ? green(`${icons().winner} ${b.engineId}`) : b.engineId,
       String(b.confidence),
       b.reasoning.slice(0, 60),
     ]);

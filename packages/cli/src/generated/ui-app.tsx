@@ -35,75 +35,78 @@ import type { Job } from '../generated/job-manager.js';
 import { ENGINE_COLORS } from '../output.js';
 
 // @kern-source: ui-app:16
-import { parseMarkdownBlocks, cleanEngineOutput } from '../markdown.js';
+import { icons } from '../icons.js';
 
 // @kern-source: ui-app:17
-import type { OutputEvent, HandlerContext } from '../handlers/types.js';
+import { parseMarkdownBlocks, cleanEngineOutput } from '../markdown.js';
 
 // @kern-source: ui-app:18
-import { codeBlockBuffer } from '../code-buffer.js';
+import type { OutputEvent, HandlerContext } from '../handlers/types.js';
 
 // @kern-source: ui-app:19
-import { getGhostCompletion } from '../ghost-text.js';
+import { codeBlockBuffer } from '../code-buffer.js';
 
 // @kern-source: ui-app:20
-import { startCommandReplState, finishReplState, cancelReplState } from '../generated/app-state.js';
+import { getGhostCompletion } from '../ghost-text.js';
 
 // @kern-source: ui-app:21
-import type { ReplStateState } from '../generated/app-state.js';
+import { startCommandReplState, finishReplState, cancelReplState } from '../generated/app-state.js';
 
 // @kern-source: ui-app:22
-import { processPasteContent, expandPastePlaceholders } from '../paste-handler.js';
+import type { ReplStateState } from '../generated/app-state.js';
 
 // @kern-source: ui-app:23
-import { dispatchIntent, handleModeSwitch } from '../generated/app-dispatch.js';
+import { processPasteContent, expandPastePlaceholders } from '../paste-handler.js';
 
 // @kern-source: ui-app:24
-import type { DispatchCallbacks } from '../generated/app-dispatch.js';
+import { dispatchIntent, handleModeSwitch } from '../generated/app-dispatch.js';
 
 // @kern-source: ui-app:25
-import { handleOutputEvent } from '../generated/app-output.js';
+import type { DispatchCallbacks } from '../generated/app-dispatch.js';
 
 // @kern-source: ui-app:26
-import type { OutputActions, OutputState } from '../generated/app-output.js';
+import { handleOutputEvent } from '../generated/app-output.js';
 
 // @kern-source: ui-app:27
-import { cleanInputValue, cleanSubmitValue, findInputChange, navigateHistory, resolveEscapeAction } from '../generated/app-input.js';
+import type { OutputActions, OutputState } from '../generated/app-output.js';
 
 // @kern-source: ui-app:28
-import { handleReviewAction } from '../generated/app-review.js';
+import { cleanInputValue, cleanSubmitValue, findInputChange, navigateHistory, resolveEscapeAction } from '../generated/app-input.js';
 
 // @kern-source: ui-app:29
-import { SpinnerBlock, EngineProgressView, StatusLine, StatusBar, OutputBlockView, ToolCallGroup, SlashPicker, EnginePicker, ModelPicker, ReviewBlock, BackgroundJobRail, RenderedSegments, CesarPicker, contentWidth, engineColor } from '../components.js';
+import { handleReviewAction } from '../generated/app-review.js';
 
 // @kern-source: ui-app:30
-import type { OutputBlock, ReviewEvent } from '../components.js';
+import { SpinnerBlock, EngineProgressView, StatusLine, StatusBar, OutputBlockView, ToolCallGroup, SlashPicker, EnginePicker, ModelPicker, ReviewBlock, BackgroundJobRail, RenderedSegments, CesarPicker, contentWidth, engineColor } from '../components.js';
 
 // @kern-source: ui-app:31
-import { join, dirname } from 'node:path';
+import type { OutputBlock, ReviewEvent } from '../components.js';
 
 // @kern-source: ui-app:32
-import { fileURLToPath } from 'node:url';
+import { join, dirname } from 'node:path';
 
 // @kern-source: ui-app:33
-import { readdirSync, writeFileSync, mkdirSync, unlinkSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 // @kern-source: ui-app:34
-import { homedir } from 'node:os';
+import { readdirSync, writeFileSync, mkdirSync, unlinkSync } from 'node:fs';
 
 // @kern-source: ui-app:35
+import { homedir } from 'node:os';
+
+// @kern-source: ui-app:36
 import { loadSkills } from '@agon/core';
 
-// @kern-source: ui-app:38
+// @kern-source: ui-app:39
 export const _activeAborts: Set<AbortController> = new Set<AbortController>();
 
-// @kern-source: ui-app:41
+// @kern-source: ui-app:42
 export const _cancelCallback: { fn: (() => void) | null } = { fn: null };
 
-// @kern-source: ui-app:44
+// @kern-source: ui-app:45
 export const _cesarSessionRef: { session: PersistentSession | null } = { session: null };
 
-// @kern-source: ui-app:47
+// @kern-source: ui-app:48
 
 export function App({  }: {  }) {
   const [replState, setReplState] = useState<ReplStateState>('idle');
@@ -534,7 +537,7 @@ export function App({  }: {  }) {
               const segments = parseMarkdownBlocks(cleaned);
               return mode === 'chat' ? (
                 <Box flexDirection="column" marginY={1} paddingLeft={1}>
-                  <Text><Text color={c} bold>{'● '}{streamingText.engineId}</Text></Text>
+                  <Text><Text color={c} bold>{icons().dotOn + ' '}{streamingText.engineId}</Text></Text>
                   <Text>{' '}</Text>
                   <RenderedSegments segments={segments} borderColor={''} wrapWidth={wrapWidth} />
                 </Box>
@@ -594,8 +597,8 @@ export function App({  }: {  }) {
           {!enginePickerOpen && !modelPickerOpen && !cesarPickerOpen && (
             <Box flexDirection="column" paddingX={1} marginTop={1}>
               {slashPickerOpen && <SlashPicker commands={allSlashCommands} onSelect={handleSlashSelect} onCancel={() => setSlashPickerOpen(false)} />}
-              {pendingImages.length > 0 && (<Box><Text color="#22d3ee">{'📎 '}</Text>{pendingImages.map((img: any, i: number) => (<Text key={i} dimColor>{img.filename}{i < pendingImages.length - 1 ? ', ' : ''}</Text>))}</Box>)}
-              {inputQueue.length > 0 && (<Box><Text dimColor>{'⏳ '}{inputQueue.length} queued: </Text><Text dimColor italic>{inputQueue[0].length > 40 ? inputQueue[0].slice(0, 40) + '…' : inputQueue[0]}</Text></Box>)}
+              {pendingImages.length > 0 && (<Box><Text color="#22d3ee">{icons().image + ' '}</Text>{pendingImages.map((img: any, i: number) => (<Text key={i} dimColor>{img.filename}{i < pendingImages.length - 1 ? ', ' : ''}</Text>))}</Box>)}
+              {inputQueue.length > 0 && (<Box><Text dimColor>{icons().queue + ' '}{inputQueue.length} queued: </Text><Text dimColor italic>{inputQueue[0].length > 40 ? inputQueue[0].slice(0, 40) + '…' : inputQueue[0]}</Text></Box>)}
               {questionState ? (
                 <Box flexDirection="column">
                   <Box><Text bold color="yellow">{questionState.prompt}</Text></Box>
@@ -611,8 +614,8 @@ export function App({  }: {  }) {
                 </Box>
               ) : (
                 <Box borderStyle={mode === 'chat' ? 'round' : 'single'} borderColor={mode === 'chat' ? '#585858' : 'gray'} borderLeft={mode !== 'chat'} borderRight={mode !== 'chat'} borderTop borderBottom paddingX={1} width="100%">
-                  {mode !== 'chat' && (<Text><Text color={mode === 'campfire' ? '#f97316' : mode === 'brainstorm' ? '#22d3ee' : '#a78bfa'} bold>{mode === 'campfire' ? '🔥' : mode === 'brainstorm' ? '💡' : '⚖'}{' '}{mode}</Text><Text dimColor>{' │ '}</Text></Text>)}
-                  <Text color={mode === 'chat' ? '#585858' : '#fbbf24'}>{mode === 'chat' ? '> ' : '❯ '}</Text>
+                  {mode !== 'chat' && (<Text><Text color={mode === 'campfire' ? '#f97316' : mode === 'brainstorm' ? '#22d3ee' : '#a78bfa'} bold>{mode === 'campfire' ? icons().campfire : mode === 'brainstorm' ? icons().brainstorm : icons().tribunal}{' '}{mode}</Text><Text dimColor>{' │ '}</Text></Text>)}
+                  <Text color={mode === 'chat' ? '#585858' : '#fbbf24'}>{mode === 'chat' ? '> ' : icons().prompt + ' '}</Text>
                   <Box flexGrow={1}>
                     <TextInput key={inputKey} value={inputValue} onChange={handleInputChange} onSubmit={handleSubmit}
                       placeholder={replState === 'idle' ? mode === 'chat' ? '' : mode === 'campfire' ? 'What should we think about?' : mode === 'brainstorm' ? 'What question for the engines?' : 'What should they debate?' : ''} />
@@ -628,7 +631,7 @@ export function App({  }: {  }) {
 }
 
 
-// @kern-source: ui-app:603
+// @kern-source: ui-app:604
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

@@ -172,7 +172,7 @@ screen name=StatusBar target=ink
             {msgs > 0 ? <Text dimColor>{` \u00b7 ${msgs} msgs`}</Text> : null}
             {cost ? <Text dimColor>{` \u00b7 ${cost}`}</Text> : null}
             {toolOutputExpanded !== undefined && <Text dimColor>{' \u00b7 ^E '}{toolOutputExpanded ? '\u25be' : '\u25b8'}</Text>}
-            {isActive ? <Text dimColor>{' \u00b7 tab btw'}</Text> : null}
+            {isActive ? <Text dimColor>{' \u00b7 tab peek \u00b7 /btw ask'}</Text> : null}
           </Text>
         </Box>
       );

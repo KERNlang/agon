@@ -31,6 +31,17 @@ export const AGON_TIPS: string[] = [
   'Run /discover to find new AI CLIs on your system',
   'Drag and drop an image path to include it in your prompt',
   "Run /apply <patch> to apply a forge winner's diff",
+  // ── Arena flavor — Greek agon + Roman imperium ──
+  'The arena does not reward the swift, but the precise.',
+  'In the agon, every contestant bleeds — only the best ship code.',
+  'Veni, vidi, forged — the emperor demands results.',
+  'The Colosseum had gladiators. You have engines. Same rules apply.',
+  'Ave Cesar — those about to compile salute you.',
+  'The strongest steel is forged in the hottest fire.',
+  'In the arena, there are no allies — only the next challenger.',
+  'The crowd waits. The engines compete. You ship.',
+  'Even Rome was built with tests.',
+  'The tribunal has spoken — but the emperor decides.',
 ];
 
 

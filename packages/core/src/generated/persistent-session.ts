@@ -1131,7 +1131,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
             }
   
             // Continue loop — call API again with tool results
-            yield { type: 'status' as const, content: `processing results, calling API again…` };
+            yield { type: 'status' as const, content: 'processing results, calling API again…' };
             continue;
           }
   

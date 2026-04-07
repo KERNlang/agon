@@ -77,6 +77,18 @@ fn name=apiDispatch async=true params="config:ApiConfig, prompt:string, timeout:
       clearTimeout(timer);
 
       if (!response.ok) {
+        // 429 rate limit — retry once after backoff
+        if (response.status === 429) {
+          const retryAfter = parseInt(response.headers.get('retry-after') ?? '2', 10);
+          const delay = Math.min(retryAfter, 10) * 1000;
+          await new Promise(r => setTimeout(r, delay));
+          const retry = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` }, body, signal: controller.signal });
+          if (retry.ok) {
+            const data = await retry.json() as { choices?: Array<{ message?: { content?: string, reasoning_content?: string } }> };
+            const msg = data.choices?.[0]?.message;
+            return { exitCode: 0, stdout: msg?.content || msg?.reasoning_content || '', stderr: '', durationMs: Date.now() - startTime, timedOut: false };
+          }
+        }
         const errText = await response.text().catch(() => '');
         return {
           exitCode: 1,
@@ -251,12 +263,19 @@ fn name=apiStreamDispatchWithHistory generator=true async=true params="config:Ap
 
       clearTimeout(timer);
 
-      if (!response.ok) {
-        const errText = await response.text().catch(() => '');
-        return { exitCode: 1, stdout: '', stderr: `API error ${response.status}: ${errText.slice(0, 500)}`, durationMs: Date.now() - startTime, timedOut: false };
+      // 429 rate limit — retry once after backoff (applies to all streaming dispatches)
+      let activeResponse = response;
+      if (!activeResponse.ok && activeResponse.status === 429) {
+        const retryAfter = parseInt(activeResponse.headers.get('retry-after') ?? '2', 10);
+        await new Promise(r => setTimeout(r, Math.min(retryAfter, 10) * 1000));
+        activeResponse = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` }, body, signal: controller.signal });
+      }
+      if (!activeResponse.ok) {
+        const errText = await activeResponse.text().catch(() => '');
+        return { exitCode: 1, stdout: '', stderr: `API error ${activeResponse.status}: ${errText.slice(0, 500)}`, durationMs: Date.now() - startTime, timedOut: false };
       }
 
-      const reader = response.body?.getReader();
+      const reader = activeResponse.body?.getReader();
       if (!reader) {
         return { exitCode: 1, stdout: '', stderr: 'No response body', durationMs: Date.now() - startTime, timedOut: false };
       }

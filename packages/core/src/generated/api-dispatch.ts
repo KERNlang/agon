@@ -80,6 +80,18 @@ export async function apiDispatch(config: ApiConfig, prompt: string, timeout: nu
     clearTimeout(timer);
   
     if (!response.ok) {
+      // 429 rate limit — retry once after backoff
+      if (response.status === 429) {
+        const retryAfter = parseInt(response.headers.get('retry-after') ?? '2', 10);
+        const delay = Math.min(retryAfter, 10) * 1000;
+        await new Promise(r => setTimeout(r, delay));
+        const retry = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` }, body, signal: controller.signal });
+        if (retry.ok) {
+          const data = await retry.json() as { choices?: Array<{ message?: { content?: string, reasoning_content?: string } }> };
+          const msg = data.choices?.[0]?.message;
+          return { exitCode: 0, stdout: msg?.content || msg?.reasoning_content || '', stderr: '', durationMs: Date.now() - startTime, timedOut: false };
+        }
+      }
       const errText = await response.text().catch(() => '');
       return {
         exitCode: 1,
@@ -110,7 +122,7 @@ export async function apiDispatch(config: ApiConfig, prompt: string, timeout: nu
   }
 }
 
-// @kern-source: api-dispatch:110
+// @kern-source: api-dispatch:122
 export async function* apiStreamDispatch(config: ApiConfig, prompt: string, timeout: number, signal?: AbortSignal, systemPrompt?: string): AsyncGenerator<string, DispatchResult, void> {
   // Route Anthropic format to Messages API
   if ((config as any).format === 'anthropic') {
@@ -206,7 +218,7 @@ export async function* apiStreamDispatch(config: ApiConfig, prompt: string, time
   return { exitCode: 0, stdout, stderr: '', durationMs: Date.now() - startTime, timedOut: false };
 }
 
-// @kern-source: api-dispatch:206
+// @kern-source: api-dispatch:218
 export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages: Array<{role:string,content:string}>, timeout: number, signal?: AbortSignal, tools?: Array<{type:string,function:{name:string,description:string,parameters:Record<string,unknown>}}>): AsyncGenerator<string, DispatchResult, void> {
   if ((config as any).format === 'anthropic') {
     return yield* anthropicStreamDispatchWithHistory(config, messages, timeout, signal);
@@ -253,12 +265,19 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
   
     clearTimeout(timer);
   
-    if (!response.ok) {
-      const errText = await response.text().catch(() => '');
-      return { exitCode: 1, stdout: '', stderr: `API error ${response.status}: ${errText.slice(0, 500)}`, durationMs: Date.now() - startTime, timedOut: false };
+    // 429 rate limit — retry once after backoff (applies to all streaming dispatches)
+    let activeResponse = response;
+    if (!activeResponse.ok && activeResponse.status === 429) {
+      const retryAfter = parseInt(activeResponse.headers.get('retry-after') ?? '2', 10);
+      await new Promise(r => setTimeout(r, Math.min(retryAfter, 10) * 1000));
+      activeResponse = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` }, body, signal: controller.signal });
+    }
+    if (!activeResponse.ok) {
+      const errText = await activeResponse.text().catch(() => '');
+      return { exitCode: 1, stdout: '', stderr: `API error ${activeResponse.status}: ${errText.slice(0, 500)}`, durationMs: Date.now() - startTime, timedOut: false };
     }
   
-    const reader = response.body?.getReader();
+    const reader = activeResponse.body?.getReader();
     if (!reader) {
       return { exitCode: 1, stdout: '', stderr: 'No response body', durationMs: Date.now() - startTime, timedOut: false };
     }
@@ -333,7 +352,7 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
   return { exitCode: 0, stdout, stderr: '', durationMs: Date.now() - startTime, timedOut: false };
 }
 
-// @kern-source: api-dispatch:334
+// @kern-source: api-dispatch:353
 export async function* anthropicStreamDispatchWithHistory(config: ApiConfig, messages: Array<{role:string,content:string}>, timeout: number, signal?: AbortSignal): AsyncGenerator<string, DispatchResult, void> {
   const apiKey = process.env[config.apiKeyEnv];
   if (!apiKey) {

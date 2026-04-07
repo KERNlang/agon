@@ -323,6 +323,7 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
             hardened: (args as any).hardened ?? false,
             tribunalMode: (args as any).mode,
             team: (args as any).team ?? false,
+            createdAt: Date.now(),
           };
           return 'Delegation accepted. STOP responding now. The orchestrator will handle the rest.';
         }
@@ -413,7 +414,7 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
   return session;
 }
 
-// @kern-source: handlers-cesar-brain:407
+// @kern-source: handlers-cesar-brain:408
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}> {
   const abort = new AbortController();
   const _turnStart = Date.now();
@@ -1204,7 +1205,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   }
 }
 
-// @kern-source: handlers-cesar-brain:1198
+// @kern-source: handlers-cesar-brain:1199
 export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatch, ctx: HandlerContext): Promise<ForgeJudgment|null> {
   // Need an alive Cesar session
       let session;
@@ -1318,7 +1319,7 @@ export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatc
       return judgment;
 }
 
-// @kern-source: handlers-cesar-brain:1313
+// @kern-source: handlers-cesar-brain:1314
 function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJudgment|null {
   // Strip confidence prefix (e.g. ~91%) before parsing structured output
   const stripped = parseConfidence(response).rest;
@@ -1362,7 +1363,7 @@ function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJud
   return { winner, strengths, convergencePlan, summary, shouldConverge };
 }
 
-// @kern-source: handlers-cesar-brain:1358
+// @kern-source: handlers-cesar-brain:1359
 export async function cesarConvergeForge(manifest: ForgeManifest, judgment: ForgeJudgment, dispatch: Dispatch, ctx: HandlerContext): Promise<string|null> {
   let session;
       try {

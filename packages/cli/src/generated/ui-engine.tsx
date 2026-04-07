@@ -389,7 +389,7 @@ export function OutputBlockView({ event, mode, toolOutputExpanded }: { event: Ou
               if (rawInput.startsWith('{')) parsed = JSON.parse(rawInput);
             } catch { /* not JSON — rawInput used as fallback */ }
             const toolKey = event.tool.toLowerCase();
-            const collapsedHint = !toolOutputExpanded ? <Text color="#585858">{' [^E]'}</Text> : null;
+            const collapsedHint = !toolOutputExpanded ? <Text color="#585858">{' [Ctrl+E expand]'}</Text> : null;
   
             // ── Bash / Run ──
             if (toolKey === 'bash' || toolKey === 'run') {

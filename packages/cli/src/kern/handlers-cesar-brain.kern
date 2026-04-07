@@ -204,24 +204,9 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
               // Buffer before streaming to detect [SUGGEST:mode]
               if (response.length < 40) continue;
 
-              // Auto-escalation based on confidence tiers:
-              // 88-92%: Nero (adversarial self-challenge, no multi-engine yet)
-              // 70-87%: second opinion + Nero for discussion modes
-              // <70%: mark for advisor (fires post-stream with full Cesar response)
-              if (confidenceParsed && parsedConfidence !== null && !suggestion.action && !secondOpinionPromise) {
-                if (parsedConfidence >= CONFIDENCE_TIERS.nero && parsedConfidence < CONFIDENCE_TIERS.direct) {
-                  // 88-92%: Nero only — challenge yourself first
-                  activateNero(ctx, dispatch);
-                } else if (parsedConfidence >= CONFIDENCE_TIERS.stop && parsedConfidence < CONFIDENCE_TIERS.nero) {
-                  // 70-87%: second opinion + Nero for discussion modes
-                  dispatch({ type: 'info', message: confidenceBadge(parsedConfidence) + ` Auto-escalation…` });
-                  secondOpinionPromise = fireSecondOpinion(input, ctx, abort);
-                  activateNero(ctx, dispatch);
-                } else if (parsedConfidence < CONFIDENCE_TIERS.stop) {
-                  // <70%: advisor fires post-stream (needs Cesar's full response for context)
-                  (ctx as any)._advisorPending = true;
-                }
-              }
+              // Initial confidence is just informational — don't escalate yet.
+              // The model needs to investigate first. Escalation happens post-stream
+              // when we know if the model actually worked or just narrated.
 
               // Switch to streaming mode
               dispatch({ type: 'spinner-update', message: 'Cesar responding…' });
@@ -315,44 +300,56 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
         confidenceParsed = true;
       }
 
-      // ── Handle second opinion (70-87%) ──
-      if (secondOpinionPromise) {
-        if (streaming) { dispatch({ type: 'streaming-end', engineId: cesarEngineId }); streaming = false; }
-        dispatch({ type: 'spinner-start', message: 'Awaiting second opinion…', color });
-        const secondResult = await secondOpinionPromise;
-        dispatch({ type: 'spinner-stop' });
-        const escalation = await handleSecondOpinion(secondResult, input, response, parsedConfidence, cesarEngineId, dispatch, ctx);
-        if (escalation) return escalation;
-      }
+      // ── Post-stream escalation — only NOW do we apply confidence tiers ──
+      // Initial confidence was just "I haven't read the code yet". Now the model
+      // has finished its turn (tool calls done, response complete). If confidence
+      // is still low and model didn't delegate, escalate.
+      if (parsedConfidence !== null && !secondOpinionPromise && !(ctx as any)._advisorPending) {
+        // Check: did the model delegate via tool call or [SUGGEST:mode]?
+        const pendingDel = (ctx as any)._pendingDelegation;
+        const didDelegate = !!pendingDel;
 
-      // ── Handle advisor (<70%) — fires post-stream so advisor gets Cesar's full response ──
-      if ((ctx as any)._advisorPending) {
-        delete (ctx as any)._advisorPending;
-        if (streaming) { dispatch({ type: 'streaming-end', engineId: cesarEngineId }); streaming = false; }
-        dispatch({ type: 'spinner-start', message: confidenceBadge(parsedConfidence ?? 0) + ' Consulting advisor…', color });
-        const advisorResult = await fireAdvisor(input, response, parsedConfidence, ctx, abort);
-        dispatch({ type: 'spinner-stop' });
-        if (advisorResult) {
-          const escalation = await handleSecondOpinion(advisorResult, input, response, parsedConfidence, cesarEngineId, dispatch, ctx);
-          if (escalation) return escalation;
-        } else {
-          // Advisor failed — still show escalation menu without advisor input
-          dispatch({ type: 'warning', message: 'Advisor unavailable' });
-          appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
-          appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
-          tracker.record(cesarEngineId, input, response);
-          const fallbackAnswer = await new Promise<string>((resolve) => {
-            dispatch({ type: 'question', prompt: `Cesar ${parsedConfidence ?? '?'}% — no advisor. What next?`, choices: [
-              { key: 'a', label: 'Accept Cesar', color: '#4ade80' },
-              { key: 'b', label: 'Brainstorm', color: '#60a5fa' },
-              { key: 't', label: 'Tribunal', color: '#f59e0b' },
-              { key: 'f', label: 'Forge', color: '#a78bfa' },
-            ], resolve } as any);
-          });
-          if (fallbackAnswer === 'b') return { delegated: true, responded: true, action: 'brainstorm', reasoning: response };
-          if (fallbackAnswer === 't') return { delegated: true, responded: true, action: 'tribunal', reasoning: response };
-          if (fallbackAnswer === 'f') return { delegated: true, responded: true, action: 'forge', reasoning: response };
-          return { delegated: false, responded: true };
+        if (!didDelegate) {
+          if (parsedConfidence >= CONFIDENCE_TIERS.nero && parsedConfidence < CONFIDENCE_TIERS.direct) {
+            // 88-92%: Nero — challenge on next turn
+            activateNero(ctx, dispatch);
+          } else if (parsedConfidence >= CONFIDENCE_TIERS.stop && parsedConfidence < CONFIDENCE_TIERS.nero) {
+            // 70-87%: second opinion from best-ranked engine
+            if (streaming) { dispatch({ type: 'streaming-end', engineId: cesarEngineId }); streaming = false; }
+            dispatch({ type: 'spinner-start', message: confidenceBadge(parsedConfidence) + ' Getting second opinion…', color });
+            const secondResult = await fireSecondOpinion(input, ctx, abort);
+            dispatch({ type: 'spinner-stop' });
+            const escalation = await handleSecondOpinion(secondResult, input, response, parsedConfidence, cesarEngineId, dispatch, ctx);
+            if (escalation) return escalation;
+            activateNero(ctx, dispatch);
+          } else if (parsedConfidence < CONFIDENCE_TIERS.stop) {
+            // <70%: advisor
+            if (streaming) { dispatch({ type: 'streaming-end', engineId: cesarEngineId }); streaming = false; }
+            dispatch({ type: 'spinner-start', message: confidenceBadge(parsedConfidence) + ' Consulting advisor…', color });
+            const advisorResult = await fireAdvisor(input, response, parsedConfidence, ctx, abort);
+            dispatch({ type: 'spinner-stop' });
+            if (advisorResult) {
+              const escalation = await handleSecondOpinion(advisorResult, input, response, parsedConfidence, cesarEngineId, dispatch, ctx);
+              if (escalation) return escalation;
+            } else {
+              dispatch({ type: 'warning', message: 'Advisor unavailable' });
+              appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
+              appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
+              tracker.record(cesarEngineId, input, response);
+              const fallbackAnswer = await new Promise<string>((resolve) => {
+                dispatch({ type: 'question', prompt: `Cesar ${parsedConfidence}% — no advisor. What next?`, choices: [
+                  { key: 'a', label: 'Accept Cesar', color: '#4ade80' },
+                  { key: 'b', label: 'Brainstorm', color: '#60a5fa' },
+                  { key: 't', label: 'Tribunal', color: '#f59e0b' },
+                  { key: 'f', label: 'Forge', color: '#a78bfa' },
+                ], resolve } as any);
+              });
+              if (fallbackAnswer === 'b') return { delegated: true, responded: true, action: 'brainstorm', reasoning: response };
+              if (fallbackAnswer === 't') return { delegated: true, responded: true, action: 'tribunal', reasoning: response };
+              if (fallbackAnswer === 'f') return { delegated: true, responded: true, action: 'forge', reasoning: response };
+              return { delegated: false, responded: true };
+            }
+          }
         }
       }
 

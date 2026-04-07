@@ -260,11 +260,15 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
   
     clearTimeout(timer);
   
-    // 429 rate limit — retry once after backoff (applies to all streaming dispatches)
+    // 429 rate limit — retry up to 3 times with exponential backoff
     let activeResponse = response;
-    if (!activeResponse.ok && activeResponse.status === 429) {
-      const retryAfter = parseInt(activeResponse.headers.get('retry-after') ?? '2', 10);
-      await new Promise(r => setTimeout(r, Math.min(retryAfter, 10) * 1000));
+    let retryCount = 0;
+    while (!activeResponse.ok && activeResponse.status === 429 && retryCount < 3) {
+      retryCount++;
+      const retryAfter = parseInt(activeResponse.headers.get('retry-after') ?? String(retryCount * 2), 10);
+      const delay = Math.min(retryAfter, 15) * 1000;
+      console.warn(`[agon] 429 rate limit — retry ${retryCount}/3 after ${delay / 1000}s`);
+      await new Promise(r => setTimeout(r, delay));
       activeResponse = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` }, body, signal: controller.signal });
     }
     if (!activeResponse.ok) {

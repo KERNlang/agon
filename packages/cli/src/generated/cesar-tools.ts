@@ -1,9 +1,13 @@
-import { ToolRegistry, FileStateCache, createReadTool, createEditTool, createWriteTool, createBashTool, createGrepTool, createGlobTool, createForgeTool, createBrainstormTool, createTribunalTool, createCampfireTool, createPipelineTool, createReportConfidenceTool, executeToolCall, resolveWorkingDir } from '@agon/core';
+// @kern-source: cesar-tools:1
+import { ToolRegistry, FileStateCache, createReadTool, createEditTool, createWriteTool, createBashTool, createGrepTool, createGlobTool, createForgeTool, createBrainstormTool, createTribunalTool, createCampfireTool, createPipelineTool, createDelegateTool, createReportConfidenceTool, executeToolCall, resolveWorkingDir } from '@agon/core';
 
+// @kern-source: cesar-tools:2
 import type { ToolContext, ToolCallResult } from '@agon/core';
 
+// @kern-source: cesar-tools:3
 import type { Dispatch, HandlerContext } from '../handlers/types.js';
 
+// @kern-source: cesar-tools:5
 export function createCesarToolRegistry(): ToolRegistry {
   const toolRegistry = new ToolRegistry();
   toolRegistry.register(createReadTool());
@@ -17,10 +21,12 @@ export function createCesarToolRegistry(): ToolRegistry {
   toolRegistry.register(createTribunalTool());
   toolRegistry.register(createCampfireTool());
   toolRegistry.register(createPipelineTool());
+  toolRegistry.register(createDelegateTool());
   toolRegistry.register(createReportConfidenceTool());
   return toolRegistry;
 }
 
+// @kern-source: cesar-tools:25
 export function createEagerToolContext(ctx: HandlerContext, config: any, signal: AbortSignal, dispatch: Dispatch): ToolContext {
   const fsc = new FileStateCache();
   const explorationMode = (ctx as any).explorationMode ?? false;
@@ -36,6 +42,7 @@ export function createEagerToolContext(ctx: HandlerContext, config: any, signal:
   };
 }
 
+// @kern-source: cesar-tools:42
 export async function executeEagerTool(toolName: string, meta: Record<string,unknown>, toolRegistry: ToolRegistry, toolCtx: ToolContext, dispatch: Dispatch, cesarEngineId: string): Promise<ToolCallResult> {
   let parsedInput: Record<string, unknown> = {};
   try {

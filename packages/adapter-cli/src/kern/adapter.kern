@@ -2,7 +2,7 @@ import from="node:fs" names="writeFileSync,mkdirSync"
 import from="node:path" names="join,dirname"
 import from="@agon/core" names="EngineAdapter,EngineDefinition,DispatchOptions,DispatchResult,AgentDispatchResult" types=true
 import from="@agon/core" names="EngineRegistry,spawnWithTimeout,spawnStream,EngineNotFoundError,readOnlyDiff,diffLineCount,apiDispatch,apiStreamDispatch,companionDispatch,runHooks,hooksFailed,runApiAgentLoop,scanProjectContext,resolveWorkingDir"
-import from="./adapter-helpers.js" names="buildCommand,checkEnvVars"
+import from="./adapter-helpers.js" names="buildCommand,checkEnvVars,stripStreamJson,usesStreamJson"
 
 service name=CliAdapter implements=EngineAdapter
   field name=registry type=EngineRegistry private=true
@@ -101,6 +101,11 @@ service name=CliAdapter implements=EngineAdapter
         timeout: options.timeout * 1000,
         signal: options.signal,
       });
+
+      // Strip NDJSON system/hook messages from stream-json engines (Claude)
+      if (usesStreamJson(options.engine) && result.stdout.includes('{"type":')) {
+        result.stdout = stripStreamJson(result.stdout);
+      }
 
       const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
       mkdirSync(dirname(outputPath), { recursive: true });
@@ -287,6 +292,11 @@ service name=CliAdapter implements=EngineAdapter
         timeout: options.timeout * 1000,
         signal: options.signal,
       });
+
+      // Strip NDJSON system/hook messages from stream-json engines (Claude)
+      if (usesStreamJson(options.engine) && result.stdout.includes('{"type":')) {
+        result.stdout = stripStreamJson(result.stdout);
+      }
 
       const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
       mkdirSync(dirname(outputPath), { recursive: true });

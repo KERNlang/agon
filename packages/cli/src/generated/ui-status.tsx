@@ -104,7 +104,7 @@ function AgonTip({  }: {  }) {
 
 // @kern-source: ui-status:99
 
-export function StatusBar({ config, chatSession, explorationMode, toolOutputExpanded, activity, isActive }: { config: ReturnType<typeof loadConfig>; chatSession: ChatSession; explorationMode?: boolean; toolOutputExpanded?: boolean; activity?: EngineProgress[]|null; isActive?: boolean }) {
+export function StatusBar({ config, chatSession, explorationMode, toolOutputExpanded, activity, isActive, streamSnippet }: { config: ReturnType<typeof loadConfig>; chatSession: ChatSession; explorationMode?: boolean; toolOutputExpanded?: boolean; activity?: EngineProgress[]|null; isActive?: boolean; streamSnippet?: { engineId: string; line: string } | null }) {
         const cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
         const cesarColor = color256toHex(ENGINE_COLORS[cesarId] ?? 245);
         const workDir = resolveWorkingDir();
@@ -137,6 +137,18 @@ export function StatusBar({ config, chatSession, explorationMode, toolOutputExpa
               </Text>
             );
           }
+        } else if (isActive && streamSnippet) {
+          const ec = color256toHex(ENGINE_COLORS[streamSnippet.engineId] ?? 245);
+          const maxLen = 48;
+          const line = streamSnippet.line.length > maxLen ? streamSnippet.line.slice(0, maxLen) + '\u2026' : streamSnippet.line;
+          activitySegments.push(
+            <Text key="stream">
+              <Text color="#fbbf24">{'\u25cf '}</Text>
+              <Text color={ec} bold>{streamSnippet.engineId}</Text>
+              <Text dimColor>{': '}</Text>
+              <Text dimColor>{line}</Text>
+            </Text>
+          );
         } else if (isActive) {
           activitySegments.push(<Text key="active" color="#fbbf24">{'\u25cf working\u2026'}</Text>);
         }
@@ -166,7 +178,7 @@ export function StatusBar({ config, chatSession, explorationMode, toolOutputExpa
 }
 
 
-// @kern-source: ui-status:170
+// @kern-source: ui-status:183
 
 export function StatusLine({ startTime, engineId, color }: { startTime: number; engineId?: string; color?: number }) {
   const [now, setNow] = useState<number>(Date.now());
@@ -195,7 +207,7 @@ export function StatusLine({ startTime, engineId, color }: { startTime: number; 
 }
 
 
-// @kern-source: ui-status:203
+// @kern-source: ui-status:216
 
 export function BackgroundJobRail({ jobs }: { jobs: Job[] }) {
         if (jobs.length === 0) return null;
@@ -216,9 +228,9 @@ export function BackgroundJobRail({ jobs }: { jobs: Job[] }) {
 }
 
 
-// @kern-source: ui-status:226
+// @kern-source: ui-status:239
 
-export function BtwPanel({ engines, spinner, jobs, lastActivityAt }: { engines: EngineProgress[]|null; spinner: { message: string; engineId?: string } | null; jobs: Job[]; lastActivityAt: number }) {
+export function BtwPanel({ engines, spinner, jobs, lastActivityAt, streamSnippet }: { engines: EngineProgress[]|null; spinner: { message: string; engineId?: string } | null; jobs: Job[]; lastActivityAt: number; streamSnippet?: { engineId: string; line: string } | null }) {
   const [now, setNow] = useState<number>(Date.now());
 
   useEffect(() => {
@@ -229,8 +241,9 @@ export function BtwPanel({ engines, spinner, jobs, lastActivityAt }: { engines: 
         const hasEngines = engines && engines.length > 0;
         const hasSpinner = !!spinner;
         const hasJobs = jobs.length > 0;
+        const hasStream = !!streamSnippet;
   
-        if (!hasEngines && !hasSpinner && !hasJobs) {
+        if (!hasEngines && !hasSpinner && !hasJobs && !hasStream) {
           return (
             <Box flexDirection="column" paddingX={1} marginY={1} borderStyle="single" borderColor="#585858">
               <Text dimColor>{' btw — nothing running right now'}</Text>
@@ -274,6 +287,17 @@ export function BtwPanel({ engines, spinner, jobs, lastActivityAt }: { engines: 
                 <Text color="#fbbf24">{' \u25cf '}</Text>
                 {spinner!.engineId && <Text color={color256toHex(ENGINE_COLORS[spinner!.engineId] ?? 245)} bold>{spinner!.engineId}{' '}</Text>}
                 <Text>{spinner!.message}</Text>
+              </Box>
+            )}
+  
+            {hasStream && (
+              <Box flexDirection="column" marginTop={hasEngines || hasSpinner ? 0 : 0}>
+                <Text dimColor>{' output:'}</Text>
+                <Box paddingLeft={2}>
+                  <Text color={color256toHex(ENGINE_COLORS[streamSnippet!.engineId] ?? 245)} bold>{streamSnippet!.engineId}</Text>
+                  <Text dimColor>{': '}</Text>
+                  <Text wrap="truncate">{streamSnippet!.line}</Text>
+                </Box>
               </Box>
             )}
   

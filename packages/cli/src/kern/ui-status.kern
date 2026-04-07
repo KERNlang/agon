@@ -103,6 +103,7 @@ screen name=StatusBar target=ink
   prop name=toolOutputExpanded type=boolean optional=true
   prop name=activity type="EngineProgress[]|null" optional=true
   prop name=isActive type=boolean optional=true
+  prop name=streamSnippet type="{ engineId: string; line: string } | null" optional=true
   render
     handler <<<
       const cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
@@ -137,6 +138,18 @@ screen name=StatusBar target=ink
             </Text>
           );
         }
+      } else if (isActive && streamSnippet) {
+        const ec = color256toHex(ENGINE_COLORS[streamSnippet.engineId] ?? 245);
+        const maxLen = 48;
+        const line = streamSnippet.line.length > maxLen ? streamSnippet.line.slice(0, maxLen) + '\u2026' : streamSnippet.line;
+        activitySegments.push(
+          <Text key="stream">
+            <Text color="#fbbf24">{'\u25cf '}</Text>
+            <Text color={ec} bold>{streamSnippet.engineId}</Text>
+            <Text dimColor>{': '}</Text>
+            <Text dimColor>{line}</Text>
+          </Text>
+        );
       } else if (isActive) {
         activitySegments.push(<Text key="active" color="#fbbf24">{'\u25cf working\u2026'}</Text>);
       }
@@ -228,6 +241,7 @@ screen name=BtwPanel target=ink
   prop name=spinner type="{ message: string; engineId?: string } | null"
   prop name=jobs type="Job[]"
   prop name=lastActivityAt type=number
+  prop name=streamSnippet type="{ engineId: string; line: string } | null" optional=true
   state name=now type=number initial="Date.now()"
   effect
     handler <<<
@@ -239,8 +253,9 @@ screen name=BtwPanel target=ink
       const hasEngines = engines && engines.length > 0;
       const hasSpinner = !!spinner;
       const hasJobs = jobs.length > 0;
+      const hasStream = !!streamSnippet;
 
-      if (!hasEngines && !hasSpinner && !hasJobs) {
+      if (!hasEngines && !hasSpinner && !hasJobs && !hasStream) {
         return (
           <Box flexDirection="column" paddingX={1} marginY={1} borderStyle="single" borderColor="#585858">
             <Text dimColor>{' btw — nothing running right now'}</Text>
@@ -284,6 +299,17 @@ screen name=BtwPanel target=ink
               <Text color="#fbbf24">{' \u25cf '}</Text>
               {spinner!.engineId && <Text color={color256toHex(ENGINE_COLORS[spinner!.engineId] ?? 245)} bold>{spinner!.engineId}{' '}</Text>}
               <Text>{spinner!.message}</Text>
+            </Box>
+          )}
+
+          {hasStream && (
+            <Box flexDirection="column" marginTop={hasEngines || hasSpinner ? 0 : 0}>
+              <Text dimColor>{' output:'}</Text>
+              <Box paddingLeft={2}>
+                <Text color={color256toHex(ENGINE_COLORS[streamSnippet!.engineId] ?? 245)} bold>{streamSnippet!.engineId}</Text>
+                <Text dimColor>{': '}</Text>
+                <Text wrap="truncate">{streamSnippet!.line}</Text>
+              </Box>
             </Box>
           )}
 

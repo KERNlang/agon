@@ -636,8 +636,18 @@ export function App({  }: {  }) {
                   </Box>
                 </Box>
               )}
-              {btwExpanded && <BtwPanel engines={liveProgress} spinner={liveSpinner} jobs={jobList.filter((j: Job) => j.state === 'running')} lastActivityAt={lastActivityTimeRef.current} />}
-              {mode === 'chat' && <StatusBar config={loadConfig()} chatSession={chatSession} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} activity={liveProgress} isActive={replState !== 'idle'} />}
+              {(() => {
+                // Extract last non-empty line from streaming text for btw/status
+                let snippet: { engineId: string; line: string } | null = null;
+                if (streamingText && streamingText.content) {
+                  const lines = streamingText.content.split('\n').filter((l: string) => l.trim());
+                  if (lines.length > 0) snippet = { engineId: streamingText.engineId, line: lines[lines.length - 1].trim() };
+                }
+                return (<>
+                  {btwExpanded && <BtwPanel engines={liveProgress} spinner={liveSpinner} jobs={jobList.filter((j: Job) => j.state === 'running')} lastActivityAt={lastActivityTimeRef.current} streamSnippet={snippet} />}
+                  {mode === 'chat' && <StatusBar config={loadConfig()} chatSession={chatSession} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} activity={liveProgress} isActive={replState !== 'idle'} streamSnippet={snippet} />}
+                </>);
+              })()}
             </Box>
           )}
         </Box>
@@ -645,7 +655,7 @@ export function App({  }: {  }) {
 }
 
 
-// @kern-source: ui-app:618
+// @kern-source: ui-app:628
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

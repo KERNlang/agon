@@ -1,22 +1,18 @@
 # Agon
 
-**Competitive AI orchestration framework.** Multiple AI engines race on the same task, fitness-tested and scored — the best output wins.
+**AIs compete. The best code wins.**
 
-*Agon (Greek: "contest") — the struggle, the competition, the arena.*
+Agon is a competitive AI orchestration framework. Give it a task and a test — it dispatches multiple AI engines in parallel, each working in an isolated git worktree, scores every solution, and applies the winner. Losers critique. The winner refines. ELO ratings track who's best at what over time.
 
-## What it does
+*Agon (Greek) — contest, struggle, the arena where ideas fight.*
 
-```
-You: "Add input validation to the signup form"
-Agon: Dispatches Claude, Codex, Gemini (or any engine) in parallel
-      Each works in an isolated git worktree
-      Runs your fitness test against each solution
-      Scores: correctness, quality, diff size, focus, speed
-      Winner gets applied. Losers critique. Synthesis refines.
-      ELO ratings track who's best at what, over time.
-```
+---
 
-No existing framework does this. LangChain, CrewAI, AutoGen — all cooperative. Agon is **adversarial**. AIs compete. The best code wins.
+## Why Agon
+
+Every other multi-AI framework is cooperative. LangChain, CrewAI, AutoGen — they chain AIs together and hope for the best. Agon takes the opposite approach: **competition drives quality**. When three engines race on the same task with the same fitness test, you get the best solution any of them can produce, not the average.
+
+---
 
 ## Quick start
 
@@ -24,124 +20,168 @@ No existing framework does this. LangChain, CrewAI, AutoGen — all cooperative.
 git clone https://github.com/cukas/Agon-AI.git
 cd Agon-AI && npm install && npm run build
 
-# Launch the interactive REPL
-agon
-
-# Or use CLI commands directly
-agon forge "add validation" --test "npm test"
-agon brainstorm "what architecture for notifications?"
-agon leaderboard
+agon                                              # launch interactive REPL
+agon forge "add validation" --test "npm test"     # one-shot forge
+agon brainstorm "best caching strategy?"          # confidence-bidding
+agon leaderboard                                  # ELO rankings
 ```
 
-## Interactive REPL
+Requires **Node.js >= 22**, at least one AI CLI installed, and a git repo to work in.
 
-Just type `agon` to start. Cesar (the orchestrator brain) routes your input automatically:
-
-```
-> explain the auth flow                    → Cesar answers directly
-> fix the login bug, test with npm test    → Cesar delegates to forge
-> should we use REST or GraphQL?           → Cesar delegates to tribunal
-> /brainstorm best approach for caching?   → Explicit brainstorm
-> /forge add dark mode test with npm test  → Explicit forge
-```
-
-### Cesar — the persistent brain
-
-Cesar is a persistent AI session (configurable engine, default: Claude) that:
-- Receives **all** user input first
-- Maintains full conversation context across interactions
-- Answers directly when it can (fast chat)
-- Delegates to forge/build/brainstorm/tribunal when multi-engine collaboration helps
-- Gets delegate results back for synthesis
-
-Change your Cesar engine: `/config set cesarEngine codex`
-
-### Slash commands
-
-| Command | Description |
-|---------|-------------|
-| `/forge <task> test with <cmd>` | Competitive code generation |
-| `/brainstorm <question>` | Confidence-bidding multi-AI answers |
-| `/tribunal [mode] <question>` | Multi-round AI debate |
-| `/campfire <topic>` | Collaborative thinking (no competition) |
-| `/build <task>` | Agent builds in cwd (reads/edits/tests) |
-| `/pipeline <task>` | Build → review → fix loop |
-| `/commit [message]` | Stage & commit with auto-generated message |
-| `/use <engines>` | Set active engines (e.g. `/use claude,codex`) |
-| `/models` | Interactive engine picker |
-| `/leaderboard` | ELO rankings |
-| `/history [id]` | Past forge runs |
-| `/tokens` | Session token usage & costs |
-| `/config [list\|get\|set]` | Settings |
-| `/cp [N]` | Copy code block N to clipboard |
-| `/help` | Show all commands |
-
-### Dynamic skills
-
-Drop markdown files in `~/.agon/skills/` to add custom slash commands:
-
-```markdown
 ---
-name: Review PR
-trigger: /review-pr
-description: Review the current PR with all engines
+
+## How it works
+
+Type `agon` to start. **Cesar** — a persistent AI brain — receives everything you type, maintains full conversation context, and routes automatically:
+
+```
+> explain the auth flow                     → Cesar answers directly
+> fix the login bug, test with npm test     → Cesar delegates to forge
+> should we use REST or GraphQL?            → Cesar delegates to tribunal
+> /forge add dark mode test with npm test   → explicit forge
+```
+
+Change your brain engine anytime: `/cesar codex`
+
 ---
-Review the changes in this PR. Focus on bugs, security issues, and performance.
 
-Context: {input}
-```
+## Forge — competitive code generation
 
-The skill appears in the slash picker and ghost text automatically.
-
-## How forge works
+The core of Agon. Multiple engines solve the same coding task, fitness-tested and ranked.
 
 ```
-Stage 0: Baseline     Fitness test on untouched code (sanity check)
+Stage 0  Baseline        Run fitness test on untouched code (sanity check)
 
-Stage 1: Starter      One engine goes first (configurable)
-                      Score >= 88? → Auto-accept. Done.
+Stage 1  Starter         One engine goes first
+                         Score >= 88 → auto-accept, done
 
-Stage 2: Challengers  Remaining engines run with mid-forge peek:
-                      - Scout (first challenger) runs alone
-                      - Scout's diff shared as PEEK context to followers
-                      - Followers can build on or diverge from scout's approach
-                      - Each engine gets a specialized role prompt
-                        (lead / challenger / specialist / newcomer)
+Stage 2  Challengers     Remaining engines compete with peek strategy:
+                         Scout runs alone → scout's diff shared to followers
+                         Followers build on it or diverge entirely
+                         Each engine gets a role prompt based on ELO:
+                           lead / challenger / specialist / newcomer
 
-Stage 3: Synthesis    Close call? Losers critique winner's diff
-                      Winner refines. Re-score. Best version wins.
-
-                      ELO + engine memory updated.
+Stage 3  Synthesis       Close call (spread < 8)?
+                         Losers critique the winner's patch
+                         Winner refines → re-score → best version wins
+                         ELO and engine memory updated
 ```
+
+Add `--hardened` to enable the **gauntlet**: losing engines become breakers, writing tests to attack the winning patch. Valid attacks are saved to a corpus. The winner gets a repair window.
+
+```bash
+/forge add OAuth2 signin test with npm test --hardened
+```
+
+### Scoring
+
+| Component   | Weight | Measures                            |
+|-------------|--------|-------------------------------------|
+| Correctness | 50%    | Passes the fitness test             |
+| Quality     | 20%    | Lint warnings + code style          |
+| Diff size   | 15%    | Fewer changed lines = better        |
+| Focus       | 10%    | Fewer files changed = more surgical |
+| Speed       | 5%     | Faster execution wins               |
 
 ### Role specialization
 
-Engines get different prompts based on their ELO per-task-class:
-- **Lead**: "You're top-rated for this task type. Lead with your best."
-- **Challenger**: "Focus on what the lead might miss: edge cases, pitfalls."
-- **Specialist**: "Your win rate is X%. Focus on what you do best."
-- **Newcomer**: "Fresh perspective — don't follow conventional patterns."
+Engines get tailored prompts based on their ELO for the task class:
+
+- **Lead** — top-rated, lead with your best
+- **Challenger** — focus on what the lead might miss
+- **Specialist** — lean into your proven strengths
+- **Newcomer** — fresh perspective, diverge from convention
 
 ### Engine memory
 
-Qualitative profiles built from forge outcomes over time:
+Qualitative profiles built from forge outcomes:
+
 ```
-claude: Won 4 of 5 refactor tasks. Tendency: thorough but verbose.
-codex:  Lost feature forge (score 78 vs 92). Weakness: edge cases.
-gemini: Failed bugfix forge (didn't pass fitness). Timeout issues.
+claude:  Won 4/5 refactors. Thorough but verbose.
+codex:   Lost feature forge 78 vs 92. Weakness: edge cases.
+gemini:  Failed bugfix (fitness timeout). Improving on tests.
 ```
 
 Used to inform role assignment and routing decisions.
 
-## Scoring
+---
 
-| Component | Weight | What it measures |
-|-----------|--------|------------------|
-| Correctness | 50% | Does it pass the fitness test? |
-| Quality | 20% | Lint warnings + code style |
-| Diff size | 15% | Fewer changed lines = better |
-| Focus | 10% | Fewer files changed = more surgical |
-| Speed | 5% | Faster is slightly better |
+## Brainstorm — confidence-bidding
+
+All engines produce ranked drafts with approach, reasoning, tradeoffs, and confidence. Confidence is calibrated against actual win rate (30% self-report, 70% track record). Best answer wins.
+
+```
+/brainstorm what architecture for the notification system?
+```
+
+---
+
+## Tribunal — multi-round AI debate
+
+Engines argue from assigned positions across multiple rounds, then Agon synthesizes the best arguments.
+
+```
+/tribunal adversarial should we migrate to microservices?
+/tribunal steelman is our auth model secure enough?
+/tribunal red-team review the deployment pipeline
+```
+
+Modes: `adversarial` `socratic` `red-team` `steelman` `synthesis` `postmortem`
+
+---
+
+## Campfire — collaborative thinking
+
+No competition. All engines think together on a topic. Pure collaboration.
+
+```
+/campfire how should we approach the v2 API design?
+```
+
+---
+
+## Team modes
+
+Split engines into sides for team-based competition.
+
+```
+/team-forge 2v2 add rate limiting test with npm test
+/team-tribunal 3v3 adversarial should we rewrite in Rust?
+/team-brainstorm 2v2 best approach for real-time sync?
+```
+
+Each team runs: Architect -> Implementers (parallel) -> Reviewer -> Finalize. Both teams scored by the same fitness test. Team ELO tracked separately.
+
+---
+
+## All commands
+
+| Command | What it does |
+|---------|-------------|
+| `/forge <task> test with <cmd> [--hardened]` | Competitive code generation |
+| `/brainstorm <question>` | Confidence-bidding multi-AI answers |
+| `/tribunal [mode] <question>` | Multi-round AI debate |
+| `/campfire <topic>` | Collaborative thinking |
+| `/build <task>` | Single agent builds in cwd |
+| `/pipeline <task> [test with <cmd>]` | Build -> review -> fix loop |
+| `/team-forge [2v2\|3v3] <task> test with <cmd>` | Team code competition |
+| `/team-tribunal [2v2\|3v3] [mode] <question>` | Team debate |
+| `/team-brainstorm [2v2\|3v3] <question>` | Team ideation |
+| `/cesar <engine>` | Set the brain engine |
+| `/use <engines>` | Set active engines |
+| `/models` | Browse and add models |
+| `/engine discover` | Auto-detect installed engines |
+| `/provider [add\|remove\|list]` | Manage API providers |
+| `/apply [path] [--force]` | Apply winning forge patch |
+| `/commit [message]` | Stage and commit |
+| `/leaderboard` | ELO rankings by engine and task class |
+| `/history [id]` | Past forge runs |
+| `/tokens` | Session token usage and costs |
+| `/config [list\|get\|set]` | Settings |
+| `/cp [N]` | Copy code block to clipboard |
+| `/help` | All commands |
+
+---
 
 ## Adding engines
 
@@ -154,18 +194,15 @@ Drop a JSON file in `~/.agon/engines/`. No code needed.
   "displayName": "DeepSeek Coder",
   "binary": "deepseek",
   "searchPaths": ["/usr/local/bin", "${HOME}/.local/bin"],
-  "versionCmd": ["--version"],
   "isLocal": false,
   "tier": "user",
   "timeout": 180,
   "exec": { "args": ["--prompt", "{prompt}"] },
-  "review": { "args": ["--prompt", "{prompt}", "--mode", "review"] },
-  "model": { "configKey": "deepseek_model", "flag": "--model" },
-  "env": { "DEEPSEEK_API_KEY": { "required": true } }
+  "review": { "args": ["--prompt", "{prompt}", "--mode", "review"] }
 }
 ```
 
-Engines with native protocols get a `companion` field for faster, more stable dispatch:
+Engines with a native protocol get faster dispatch via the companion field:
 
 ```json
 {
@@ -179,46 +216,105 @@ Engines with native protocols get a `companion` field for faster, more stable di
 
 ### Builtin engines
 
-| Engine | Binary | Type | Notes |
-|--------|--------|------|-------|
-| Claude | `claude` | Cloud | Anthropic Claude Code CLI |
-| Codex | `codex` | Cloud | OpenAI Codex CLI (JSONRPC companion) |
-| Gemini | `gemini` | Cloud | Google Gemini CLI |
-| OpenCode | `opencode` | Cloud | Multi-provider AI |
-| Ollama | `ollama` | Local | Any local model |
-| Aider | `aider` | Hybrid | AI pair programming |
-| OpenRouter | `openrouter` | Cloud | 100+ models via proxy |
-| Qwen | `qwen` | Cloud | Alibaba Qwen |
-| Mistral | `mistral` | Cloud | Mistral AI |
+| Engine | Type | Notes |
+|--------|------|-------|
+| Claude | Cloud | Anthropic Claude Code CLI |
+| Codex | Cloud | OpenAI Codex CLI (JSONRPC companion) |
+| Gemini | Cloud | Google Gemini CLI |
+| OpenCode | Cloud | Multi-provider |
+| Ollama | Local | Any local model |
+| Aider | Hybrid | AI pair programming |
+| OpenRouter | Cloud | 100+ models via proxy |
+| Qwen | Cloud | Alibaba Qwen |
+| Mistral | Cloud | Mistral AI |
+
+Auto-detect what's installed: `/engine discover`
+
+---
 
 ## Configuration
 
 ```bash
-agon config set cesarEngine claude          # Which engine is the brain
-agon config set forgeFixedStarter claude     # Which engine starts forge
+agon config set cesarEngine claude
+agon config set forgeFixedStarter claude
 agon config set forgeEnabledEngines claude,codex,gemini
+agon config set forgeAutoAcceptScore 88
+agon config set gauntletEnabled true
 ```
 
-Three config layers (later overrides earlier):
-1. `~/.agon/config.json` — global defaults
-2. `.agon.json` — project config (committed)
-3. `.agon.local.json` — personal overrides (gitignored)
+Three layers (later overrides earlier):
+
+| Layer | File | Scope |
+|-------|------|-------|
+| Global | `~/.agon/config.json` | All projects |
+| Project | `.agon.json` | This repo (commit it) |
+| Personal | `.agon.local.json` | This repo (gitignored) |
+
+### Key settings
+
+| Setting | Default | What it controls |
+|---------|---------|-----------------|
+| `cesarEngine` | `claude` | Brain engine |
+| `forgeFixedStarter` | `claude` | Stage 1 engine |
+| `forgeEnabledEngines` | `claude,codex,gemini` | Active forge engines |
+| `forgeAutoAcceptScore` | `88` | Stage 1 auto-accept threshold |
+| `forgeClearWinnerSpread` | `8` | Close-call trigger for synthesis |
+| `forgeEnableSynthesis` | `true` | Enable Stage 3 |
+| `forgeMaxCritiques` | `3` | Max critiques in synthesis |
+| `gauntletEnabled` | `false` | Enable adversarial gauntlet |
+| `gauntletMaxBreakers` | `3` | Max breaker engines |
+| `eloEnabled` | `true` | Track ELO ratings |
+| `eloKFactor` | `32` | ELO sensitivity |
+| `timeout` | `360` | General timeout (seconds) |
 
 ### Lifecycle hooks
 
-Define hooks in config to run shell commands at dispatch lifecycle points:
+Run shell commands at key events:
 
 ```json
 {
   "hooks": {
     "pre_dispatch": [{ "command": "echo dispatching", "engines": ["codex"] }],
-    "post_dispatch": [{ "command": "notify-send 'Done'" }],
+    "post_forge": [{ "command": "notify-send 'Forge complete'" }],
     "session_start": [{ "command": "echo welcome" }]
   }
 }
 ```
 
-Hook events: `pre_dispatch`, `post_dispatch`, `pre_forge`, `post_forge`, `pre_brainstorm`, `post_brainstorm`, `pre_tribunal`, `post_tribunal`, `session_start`, `session_end`
+Events: `pre_dispatch` `post_dispatch` `pre_forge` `post_forge` `pre_brainstorm` `post_brainstorm` `pre_tribunal` `post_tribunal` `session_start` `session_end`
+
+### Dynamic skills
+
+Drop markdown files in `~/.agon/skills/` to create custom slash commands:
+
+```markdown
+---
+name: Review PR
+trigger: /review-pr
+description: Review the current PR with all engines
+---
+Review the changes in this PR. Focus on bugs, security, and performance.
+Context: {input}
+```
+
+They show up in the slash picker and ghost text automatically.
+
+---
+
+## Persistence
+
+| Path | What |
+|------|------|
+| `~/.agon/config.json` | Global config |
+| `~/.agon/elo.json` | ELO ratings (global + per-task-class) |
+| `~/.agon/team-elo.json` | Team ELO ratings |
+| `~/.agon/engine-memory.json` | Qualitative engine profiles |
+| `~/.agon/corpus.json` | Validated gauntlet attacks |
+| `~/.agon/runs/` | Forge manifests (historical) |
+| `~/.agon/skills/` | Custom skill files |
+| `~/.agon/engines/` | Custom engine definitions |
+
+---
 
 ## Architecture
 
@@ -226,27 +322,24 @@ Written in **KERNlang** — all logic in `.kern` source files, compiled to TypeS
 
 ```
 packages/
-├── core/          @agon/core — types, scoring, ELO, engine registry, git,
-│                  process spawner, prompt builder, config, hooks, skills,
-│                  session context, sidechain logger, engine memory,
-│                  role specialization, companion JSONRPC dispatch
-│
-├── forge/         @agon/forge — forge orchestrator, stages (with peek),
-│                  synthesis, brainstorm, tribunal, campfire, fitness
-│
-├── adapter-cli/   @agon/adapter-cli — CLI adapter with companion protocol
-│                  fallback chain: JSONRPC → API → CLI spawn
-│
-└── cli/           @agon/cli — interactive REPL (React/Ink), Cesar brain,
-                   intent detection, handlers, conversational UX,
-                   streaming, slash commands, dynamic skills
+  core/           Types, scoring, ELO, engine registry, git, process spawner,
+                  prompt builder, config, hooks, skills, session context,
+                  sidechain logger, engine memory, role specialization,
+                  companion JSONRPC dispatch
+
+  forge/          Forge orchestrator, stages with peek strategy, synthesis,
+                  brainstorm, tribunal, campfire, fitness, gauntlet, corpus,
+                  team-forge, team-tribunal, team-brainstorm
+
+  adapter-cli/    CLI adapter with fallback chain:
+                  Companion (JSONRPC) -> API -> CLI spawn
+
+  cli/            Interactive REPL (React/Ink), Cesar brain, intent detection,
+                  handlers, streaming, slash commands, dynamic skills,
+                  ghost text, conversational UX
 ```
 
-## Requirements
-
-- Node.js >= 22
-- At least one AI CLI tool installed (claude, codex, gemini, ollama, etc.)
-- A git repository to work in (forge uses worktrees)
+---
 
 ## License
 

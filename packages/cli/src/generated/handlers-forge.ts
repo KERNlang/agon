@@ -1,19 +1,31 @@
+// @kern-source: handlers-forge:1
 import { join } from 'node:path';
 
+// @kern-source: handlers-forge:2
 import { mkdirSync, readFileSync } from 'node:fs';
 
+// @kern-source: handlers-forge:3
 import { ensureAgonHome, RUNS_DIR, createPlan, approvePlan, startPlan, mergeStepResult, cancelPlan, failPlan, savePlan, scanProjectContext, getActiveWorkspace, snapshotWorkspace, tracker, resolveWorkingDir } from '@agon/core';
 
+// @kern-source: handlers-forge:4
 import type { Plan, PlanStepInput, ApprovalLevel } from '@agon/core';
 
+// @kern-source: handlers-forge:5
 import { runForge } from '@agon/forge';
 
+// @kern-source: handlers-forge:6
 import { ENGINE_COLORS } from '../output.js';
 
+// @kern-source: handlers-forge:7
 import type { Dispatch, HandlerContext, EngineProgress } from '../handlers/types.js';
 
+// @kern-source: handlers-forge:8
 import { cesarJudgeForge, cesarConvergeForge } from '../handlers/cesar-brain.js';
 
+// @kern-source: handlers-forge:9
+import { sessionResultStore } from '../generated/session-results.js';
+
+// @kern-source: handlers-forge:11
 function handleForgeEvent(event: any, plan: Plan, engineStatus: Record<string,string>, dispatch: Dispatch, ctx: HandlerContext): Plan {
   if (ctx.currentPlan?.state === 'cancelled') return plan;
   const id = event.engineId ?? '';
@@ -68,6 +80,7 @@ function handleForgeEvent(event: any, plan: Plan, engineStatus: Record<string,st
   return plan;
 }
 
+// @kern-source: handlers-forge:66
 export async function handleForge(task: string, fitnessCmd: string|null, dispatch: Dispatch, ctx: HandlerContext, existingPlan?: Plan, hardened?: boolean): Promise<void> {
   const forgeAbort = new AbortController();
   try {
@@ -264,6 +277,21 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
             ctx.setCurrentPlan(plan);
             savePlan(plan);
             dispatch({ type: 'info', message: `Plan: ${plan.id}` });
+            sessionResultStore.add({
+              type: 'forge',
+              timestamp: new Date().toISOString(),
+              question: task,
+              engines: engineIds,
+              winner: 'convergence',
+              data: {
+                scoreboard: engineIds.map((id: string) => {
+                  const r = (manifest.results as any)[id];
+                  return { engineId: id, pass: r.pass, score: r.score, diffLines: r.diffLines, filesChanged: r.filesChanged, durationSec: r.durationSec };
+                }),
+                winner: 'convergence',
+                synthesis: manifest.synthesis ?? undefined,
+              },
+            });
             for (const [id, r] of Object.entries(manifest.results) as [string, any][]) {
               tracker.record(id, task, `score:${r.score} diff:${r.diffLines}`);
             }
@@ -315,6 +343,22 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
     ctx.setCurrentPlan(plan);
     savePlan(plan);
     dispatch({ type: 'info', message: `Plan: ${plan.id}` });
+    
+    sessionResultStore.add({
+      type: 'forge',
+      timestamp: new Date().toISOString(),
+      question: task,
+      engines: engineIds,
+      winner: finalWinner ?? null,
+      data: {
+        scoreboard: engineIds.map((id: string, i: number) => {
+          const r = results[i] as any;
+          return { engineId: id, pass: r.pass, score: r.score, diffLines: r.diffLines, filesChanged: r.filesChanged, durationSec: r.durationSec };
+        }),
+        winner: finalWinner ?? null,
+        synthesis: manifest.synthesis ?? undefined,
+      },
+    });
     
     for (const [id, r] of Object.entries(manifest.results) as [string, any][]) {
       tracker.record(id, task, `score:${r.score} diff:${r.diffLines}`);

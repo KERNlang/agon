@@ -11,9 +11,12 @@ import { ensureAgonHome, RUNS_DIR, scanProjectContext, tracker, appendMessage, r
 import { runTribunal } from '@agon/forge';
 
 // @kern-source: handlers-tribunal:5
+import { sessionResultStore } from '../generated/session-results.js';
+
+// @kern-source: handlers-tribunal:6
 import type { Dispatch, HandlerContext } from '../handlers/types.js';
 
-// @kern-source: handlers-tribunal:7
+// @kern-source: handlers-tribunal:8
 export async function handleTribunal(question: string, dispatch: Dispatch, ctx: HandlerContext, tribunalMode?: string): Promise<void> {
   const tribunalAbort = new AbortController();
   try {
@@ -107,6 +110,25 @@ export async function handleTribunal(question: string, dispatch: Dispatch, ctx: 
     // Save verdict to chat history for follow-ups
     appendMessage(ctx.chatSession, { role: 'user', content: `[tribunal:${mode}] ${question}`, timestamp: new Date().toISOString() });
     appendMessage(ctx.chatSession, { role: 'engine', engineId: 'tribunal', content: result.summary, timestamp: new Date().toISOString() });
+    
+    sessionResultStore.add({
+      type: 'tribunal',
+      timestamp: new Date().toISOString(),
+      question,
+      engines,
+      winner: null,
+      data: {
+        rounds: result.rounds.flatMap((round: any) =>
+          round.positions.map((pos: any) => ({
+            round: round.round,
+            engineId: pos.engineId,
+            position: pos.position,
+            argument: pos.arguments[0] ?? '',
+          }))
+        ),
+        verdict: result.summary,
+      },
+    });
     
     for (const round of result.rounds) {
       for (const pos of round.positions) {

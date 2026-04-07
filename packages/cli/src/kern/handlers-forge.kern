@@ -6,6 +6,7 @@ import from="@agon/forge" names="runForge"
 import from="../output.js" names="ENGINE_COLORS"
 import from="../handlers/types.js" names="Dispatch,HandlerContext,EngineProgress" types=true
 import from="../handlers/cesar-brain.js" names="cesarJudgeForge,cesarConvergeForge"
+import from="../generated/session-results.js" names="sessionResultStore"
 
 fn name=handleForgeEvent params="event:any, plan:Plan, engineStatus:Record<string,string>, dispatch:Dispatch, ctx:HandlerContext" returns=Plan export=false
   handler <<<
@@ -258,6 +259,21 @@ fn name=handleForge params="task:string, fitnessCmd:string|null, dispatch:Dispat
             ctx.setCurrentPlan(plan);
             savePlan(plan);
             dispatch({ type: 'info', message: `Plan: ${plan.id}` });
+            sessionResultStore.add({
+              type: 'forge',
+              timestamp: new Date().toISOString(),
+              question: task,
+              engines: engineIds,
+              winner: 'convergence',
+              data: {
+                scoreboard: engineIds.map((id: string) => {
+                  const r = (manifest.results as any)[id];
+                  return { engineId: id, pass: r.pass, score: r.score, diffLines: r.diffLines, filesChanged: r.filesChanged, durationSec: r.durationSec };
+                }),
+                winner: 'convergence',
+                synthesis: manifest.synthesis ?? undefined,
+              },
+            });
             for (const [id, r] of Object.entries(manifest.results) as [string, any][]) {
               tracker.record(id, task, `score:${r.score} diff:${r.diffLines}`);
             }
@@ -309,6 +325,22 @@ fn name=handleForge params="task:string, fitnessCmd:string|null, dispatch:Dispat
     ctx.setCurrentPlan(plan);
     savePlan(plan);
     dispatch({ type: 'info', message: `Plan: ${plan.id}` });
+
+    sessionResultStore.add({
+      type: 'forge',
+      timestamp: new Date().toISOString(),
+      question: task,
+      engines: engineIds,
+      winner: finalWinner ?? null,
+      data: {
+        scoreboard: engineIds.map((id: string, i: number) => {
+          const r = results[i] as any;
+          return { engineId: id, pass: r.pass, score: r.score, diffLines: r.diffLines, filesChanged: r.filesChanged, durationSec: r.durationSec };
+        }),
+        winner: finalWinner ?? null,
+        synthesis: manifest.synthesis ?? undefined,
+      },
+    });
 
     for (const [id, r] of Object.entries(manifest.results) as [string, any][]) {
       tracker.record(id, task, `score:${r.score} diff:${r.diffLines}`);

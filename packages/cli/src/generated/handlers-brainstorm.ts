@@ -17,9 +17,12 @@ import { ENGINE_COLORS } from '../output.js';
 import { icons } from '../icons.js';
 
 // @kern-source: handlers-brainstorm:7
+import { sessionResultStore } from '../generated/session-results.js';
+
+// @kern-source: handlers-brainstorm:8
 import type { Dispatch, HandlerContext, EngineProgress } from '../handlers/types.js';
 
-// @kern-source: handlers-brainstorm:9
+// @kern-source: handlers-brainstorm:10
 export async function handleBrainstorm(question: string, dispatch: Dispatch, ctx: HandlerContext): Promise<void> {
   const bsAbort = new AbortController();
   try {
@@ -122,7 +125,20 @@ export async function handleBrainstorm(question: string, dispatch: Dispatch, ctx
     }
     tracker.record(result.winner, question, result.response);
     
+    sessionResultStore.add({
+      type: 'brainstorm',
+      timestamp: new Date().toISOString(),
+      question,
+      engines,
+      winner: result.winner,
+      data: {
+        bids: result.bids.map((b: any) => ({ engineId: b.engineId, reasoning: b.reasoning, approach: b.approach, score: b.score })),
+        response: result.response,
+      },
+    });
+    
     dispatch({ type: 'info', message: `Winner: ${result.winner} — ask follow-ups or "/forge" to implement` });
+    dispatch({ type: 'progress-clear' });
   } finally {
     ctx.setActiveAbort(null);
   }

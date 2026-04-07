@@ -2,6 +2,7 @@ import from="node:path" names="join"
 import from="node:fs" names="mkdirSync"
 import from="@agon/core" names="ensureAgonHome,RUNS_DIR,scanProjectContext,tracker,appendMessage,resolveWorkingDir"
 import from="@agon/forge" names="runTribunal"
+import from="../generated/session-results.js" names="sessionResultStore"
 import from="../handlers/types.js" names="Dispatch,HandlerContext" types=true
 
 fn name=handleTribunal params="question:string, dispatch:Dispatch, ctx:HandlerContext, tribunalMode?:string" returns="Promise<void>" async=true
@@ -97,6 +98,25 @@ fn name=handleTribunal params="question:string, dispatch:Dispatch, ctx:HandlerCo
     // Save verdict to chat history for follow-ups
     appendMessage(ctx.chatSession, { role: 'user', content: `[tribunal:${mode}] ${question}`, timestamp: new Date().toISOString() });
     appendMessage(ctx.chatSession, { role: 'engine', engineId: 'tribunal', content: result.summary, timestamp: new Date().toISOString() });
+
+    sessionResultStore.add({
+      type: 'tribunal',
+      timestamp: new Date().toISOString(),
+      question,
+      engines,
+      winner: null,
+      data: {
+        rounds: result.rounds.flatMap((round: any) =>
+          round.positions.map((pos: any) => ({
+            round: round.round,
+            engineId: pos.engineId,
+            position: pos.position,
+            argument: pos.arguments[0] ?? '',
+          }))
+        ),
+        verdict: result.summary,
+      },
+    });
 
     for (const round of result.rounds) {
       for (const pos of round.positions) {

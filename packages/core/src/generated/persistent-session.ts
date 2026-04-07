@@ -13,14 +13,17 @@ import type { EngineDefinition, CompanionConfig } from './types.js';
 // @kern-source: persistent-session:5
 import { apiStreamDispatch, apiStreamDispatchWithHistory } from './api-dispatch.js';
 
-// @kern-source: persistent-session:7
+// @kern-source: persistent-session:6
+import { saveSessionState, loadSessionState } from './session-store.js';
+
+// @kern-source: persistent-session:8
 export interface SessionChunk {
   type: 'text'|'status'|'tool_call'|'error'|'done';
   content: string;
   metadata?: Record<string,unknown>;
 }
 
-// @kern-source: persistent-session:12
+// @kern-source: persistent-session:13
 export interface SessionSendOptions {
   message: string;
   images?: string[];
@@ -28,7 +31,7 @@ export interface SessionSendOptions {
   systemPrompt?: string;
 }
 
-// @kern-source: persistent-session:18
+// @kern-source: persistent-session:19
 export interface PersistentSessionConfig {
   engine: EngineDefinition;
   binaryPath: string;
@@ -39,7 +42,7 @@ export interface PersistentSessionConfig {
   onToolCall?: (name: string, args: Record<string,unknown>, callId: string) => Promise<string>;
 }
 
-// @kern-source: persistent-session:27
+// @kern-source: persistent-session:28
 export interface PersistentSession {
   alive: boolean;
   sessionId: string|null;
@@ -49,7 +52,7 @@ export interface PersistentSession {
   close: () => void;
 }
 
-// @kern-source: persistent-session:35
+// @kern-source: persistent-session:36
 export function createPersistentSession(config: PersistentSessionConfig): PersistentSession {
   const engine = config.engine;
   
@@ -77,7 +80,7 @@ export function createPersistentSession(config: PersistentSessionConfig): Persis
   return createResumeSession(config);
 }
 
-// @kern-source: persistent-session:66
+// @kern-source: persistent-session:67
 export function createCompanionSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -344,7 +347,7 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
   return session;
 }
 
-// @kern-source: persistent-session:336
+// @kern-source: persistent-session:337
 export function createAcpSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -592,7 +595,7 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
   return session;
 }
 
-// @kern-source: persistent-session:587
+// @kern-source: persistent-session:588
 export function createStreamJsonSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -844,7 +847,7 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
   return session;
 }
 
-// @kern-source: persistent-session:842
+// @kern-source: persistent-session:843
 export function createResumeSession(config: PersistentSessionConfig): PersistentSession {
   let alive = false;
   let sessionId: string | null = null;
@@ -861,12 +864,15 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
     async start() {
       alive = true;
       // Preserve messageHistory across restarts — API is stateless, history IS the context.
-      // Only reset firstTurn if history is empty (truly fresh session).
       if (messageHistory.length === 0) {
         firstTurn = true;
+        // Try loading persisted state from disk (survives process restart)
+        const saved = loadSessionState(config.engine.id);
+        if (saved && saved.messageHistory.length > 0) {
+          messageHistory.push(...saved.messageHistory);
+          firstTurn = false; // Not a fresh session — system prompt already in history
+        }
       }
-      // Don't clear messageHistory — that's the whole conversation context.
-      // Other tools (OpenCode, Cursor, Claude Code) never clear history either.
     },
   
     async *send(opts: SessionSendOptions) {
@@ -990,14 +996,18 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
           }
         }
   
-        // ── Agentic tool loop (like Vercel AI SDK maxSteps) ──
-        // Call API → if tool_calls returned → execute → add role:'tool' results → call API again → repeat
-        const MAX_TOOL_STEPS = 15;
+        // ── Agentic tool loop with dynamic budget ──
+        // Productive steps (successful tool calls) extend the budget.
+        // Failed steps shrink it. Models that work get more runway.
+        const BASE_BUDGET = 15;
+        const MAX_BUDGET = 30; // hard cap even for very productive sessions
         const MAX_CONSECUTIVE_ERRORS = 3;
+        let budget = BASE_BUDGET;
         let step = 0;
+        let productiveSteps = 0;
         let consecutiveErrors = 0;
   
-        while (step < MAX_TOOL_STEPS) {
+        while (step < budget) {
           step++;
           let fullResponse = '';
   
@@ -1100,8 +1110,9 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
               messageHistory.push({ role: 'tool', content: histContent, tool_call_id: tc.id } as any);
             }
   
-            // Circuit breaker: if ALL tools in this step failed, count it
+            // ── Dynamic budget + circuit breaker ──
             if (stepErrors > 0 && stepErrors >= results.length) {
+              // ALL tools failed — shrink budget, count consecutive errors
               consecutiveErrors++;
               if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
                 yield { type: 'error' as const, content: `Tool loop circuit breaker: ${consecutiveErrors} consecutive steps with all tools failing. Stopping to avoid token waste.` };
@@ -1109,28 +1120,96 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                 break;
               }
             } else {
-              consecutiveErrors = 0; // Reset on any successful tool execution
+              // At least one tool succeeded — extend budget, reset errors
+              consecutiveErrors = 0;
+              productiveSteps++;
+              // Every 3 productive steps, grant 2 more (up to MAX_BUDGET)
+              if (productiveSteps % 3 === 0 && budget < MAX_BUDGET) {
+                budget = Math.min(budget + 2, MAX_BUDGET);
+              }
             }
   
             // Continue loop — call API again with tool results
             continue;
           }
   
-          // No tool calls — check if model stopped mid-investigation.
-          // Some models (e.g. GLM-5.1) narrate "let me check..." then stop
-          // instead of calling tools. Nudge them to continue.
-          const STALL_RE = /\b(?:let me (?:check|look|examine|read|search|find|see|review|explore|investigate|understand|get|grab)|i (?:need|want|should|will) (?:to )?(?:check|look|examine|read|search|find|see|review|explore|investigate|understand|get|grab)|now (?:let me|i'll))\b/i;
-          if (config.nativeTools && step < MAX_TOOL_STEPS - 1 && STALL_RE.test(fullResponse.slice(-200))) {
-            // Model stalled mid-investigation — nudge it to continue
-            messageHistory.push({ role: 'assistant', content: fullResponse });
-            messageHistory.push({ role: 'user', content: 'Continue. Call the tools you need — do not narrate, just act.' });
-            continue;
+          // ── Intent extraction from stalls ──
+          // When a model narrates "let me read X" without calling tools,
+          // Agon extracts the intent and executes it FOR the model.
+          // Architecture, not prompts — the model narrates, Agon acts.
+          if (config.nativeTools && config.onToolCall && step < budget - 1) {
+            const tail = fullResponse.slice(-300);
+  
+            // Extract file paths from narration: "let me read/check/look at packages/foo/bar.ts"
+            const readIntent = tail.match(/\b(?:let me |i(?:'ll| need to| want to| should| will) )(?:read|check|look at|examine|see|review|open|view)\s+[`"']?([a-zA-Z0-9_./-]+\.[a-zA-Z]{1,6})[`"']?/i);
+            // Extract search intent: "let me search/grep for X", "find X in Y"
+            const searchIntent = tail.match(/\b(?:let me |i(?:'ll| need to| want to| should| will) )(?:search|grep|find|look)\s+(?:for\s+)?[`"']?(.+?)[`"']?\s*(?:in\s+|$)/i);
+            // Extract directory listing: "let me check what's in packages/mcp/"
+            const dirIntent = tail.match(/\b(?:let me |i(?:'ll| need to| want to| should| will) )(?:check|see|look at|list|find)\s+(?:what's in |files in |the )?\s*[`"']?([a-zA-Z0-9_./-]+\/)[`"']?/i);
+  
+            if (readIntent || searchIntent || dirIntent) {
+              messageHistory.push({ role: 'assistant', content: fullResponse });
+  
+              // Build synthetic tool calls from extracted intent
+              const syntheticCalls: Array<{id: string, name: string, args: Record<string,unknown>}> = [];
+              if (readIntent) {
+                syntheticCalls.push({ id: `auto_${Date.now()}_0`, name: 'Read', args: { file_path: readIntent[1] } });
+              }
+              if (dirIntent && !readIntent) {
+                syntheticCalls.push({ id: `auto_${Date.now()}_1`, name: 'Glob', args: { pattern: '**/*', path: dirIntent[1] } });
+              }
+              if (searchIntent && !readIntent && !dirIntent) {
+                syntheticCalls.push({ id: `auto_${Date.now()}_2`, name: 'Grep', args: { pattern: searchIntent[1].trim() } });
+              }
+  
+              if (syntheticCalls.length > 0) {
+                // Execute extracted tool calls
+                const autoResults: string[] = [];
+                for (const sc of syntheticCalls) {
+                  yield { type: 'tool_call' as const, content: sc.name, metadata: { input: sc.args, status: 'running' } };
+                  let result: string;
+                  try {
+                    result = await config.onToolCall(sc.name, sc.args, sc.id);
+                  } catch (err: any) {
+                    result = `Error: ${err.message ?? String(err)}`;
+                  }
+                  yield { type: 'tool_call' as const, content: sc.name, metadata: { input: sc.args, output: result, status: 'done' } };
+  
+                  // Add to history as proper tool call + result
+                  messageHistory.push({
+                    role: 'assistant', content: null,
+                    tool_calls: [{ id: sc.id, type: 'function', function: { name: sc.name, arguments: JSON.stringify(sc.args) } }],
+                  } as any);
+                  let histContent = result;
+                  if (histContent.length > 800) {
+                    histContent = histContent.slice(0, 300) + `\n...\n[truncated — use ${sc.name} again for full content]`;
+                  }
+                  messageHistory.push({ role: 'tool', content: histContent, tool_call_id: sc.id } as any);
+                  autoResults.push(result);
+                }
+  
+                productiveSteps++;
+                if (productiveSteps % 3 === 0 && budget < MAX_BUDGET) budget = Math.min(budget + 2, MAX_BUDGET);
+                continue; // Loop — model gets tool results and can continue
+              }
+            }
+  
+            // No extractable intent — fallback to nudge
+            const STALL_RE = /\b(?:let me (?:check|look|examine|read|search|find|see|review|explore|investigate|understand|get|grab)|i (?:need|want|should|will) (?:to )?(?:check|look|examine|read|search|find|see|review|explore|investigate|understand|get|grab)|now (?:let me|i'll))\b/i;
+            if (STALL_RE.test(tail)) {
+              messageHistory.push({ role: 'assistant', content: fullResponse });
+              messageHistory.push({ role: 'user', content: 'Continue. Call the tools you need — do not narrate, just act.' });
+              continue;
+            }
           }
   
           // Final response. Add to history and exit.
           messageHistory.push({ role: 'assistant', content: fullResponse });
           break;
         }
+  
+        // Persist session state to disk after each turn — survives process restart
+        try { saveSessionState(config.engine.id, { messageHistory, confidence: null }); } catch {}
   
         yield { type: 'done' as const, content: 'end_turn' };
         return;

@@ -16,14 +16,17 @@ import { apiStreamDispatch, apiStreamDispatchWithHistory } from './api-dispatch.
 // @kern-source: persistent-session:6
 import { saveSessionState, loadSessionState } from './session-store.js';
 
-// @kern-source: persistent-session:8
+// @kern-source: persistent-session:7
+import { parseToolCalls, toolCallsToApiFormat } from './tool-parser.js';
+
+// @kern-source: persistent-session:9
 export interface SessionChunk {
   type: 'text'|'status'|'tool_call'|'error'|'done';
   content: string;
   metadata?: Record<string,unknown>;
 }
 
-// @kern-source: persistent-session:13
+// @kern-source: persistent-session:14
 export interface SessionSendOptions {
   message: string;
   images?: string[];
@@ -31,7 +34,7 @@ export interface SessionSendOptions {
   systemPrompt?: string;
 }
 
-// @kern-source: persistent-session:19
+// @kern-source: persistent-session:20
 export interface PersistentSessionConfig {
   engine: EngineDefinition;
   binaryPath: string;
@@ -42,7 +45,7 @@ export interface PersistentSessionConfig {
   onToolCall?: (name: string, args: Record<string,unknown>, callId: string) => Promise<string>;
 }
 
-// @kern-source: persistent-session:28
+// @kern-source: persistent-session:29
 export interface PersistentSession {
   alive: boolean;
   sessionId: string|null;
@@ -52,7 +55,7 @@ export interface PersistentSession {
   close: () => void;
 }
 
-// @kern-source: persistent-session:36
+// @kern-source: persistent-session:37
 export function createPersistentSession(config: PersistentSessionConfig): PersistentSession {
   const engine = config.engine;
   
@@ -80,7 +83,7 @@ export function createPersistentSession(config: PersistentSessionConfig): Persis
   return createResumeSession(config);
 }
 
-// @kern-source: persistent-session:67
+// @kern-source: persistent-session:68
 export function createCompanionSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -347,7 +350,7 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
   return session;
 }
 
-// @kern-source: persistent-session:337
+// @kern-source: persistent-session:338
 export function createAcpSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -595,7 +598,7 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
   return session;
 }
 
-// @kern-source: persistent-session:588
+// @kern-source: persistent-session:589
 export function createStreamJsonSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -847,7 +850,7 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
   return session;
 }
 
-// @kern-source: persistent-session:843
+// @kern-source: persistent-session:844
 export function createResumeSession(config: PersistentSessionConfig): PersistentSession {
   let alive = false;
   let sessionId: string | null = null;
@@ -1058,18 +1061,23 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
   
           if (!fullResponse) break;
   
-          // Check for native tool call markers from apiStreamDispatch
-          const toolMarkerRe = /<tool\s+name="([^"]+)">([\s\S]*?)<\/tool>/g;
-          const extractedCalls: Array<{id: string, name: string, arguments: string}> = [];
-          let tmMatch;
-          while ((tmMatch = toolMarkerRe.exec(fullResponse)) !== null) {
-            const callId = `call_${Date.now()}_${extractedCalls.length}`;
-            extractedCalls.push({ id: callId, name: tmMatch[1], arguments: tmMatch[2] });
-          }
+          // Check for tool call markers — robust parser handles all formats:
+          // <tool name="X">{json}</tool>, <tool_call>{json}</tool_call>,
+          // <toolcall>{json}</toolcall>, <tool_call_tool>{json}</tool_call_tool>
+          const parsed = parseToolCalls(fullResponse);
+          const extractedCalls = parsed.hasToolCalls
+            ? parsed.toolCalls.map((tc, i) => ({
+                id: `call_${Date.now()}_${i}`,
+                name: tc.name,
+                args: tc.input,
+                arguments: JSON.stringify(tc.input),
+                parseError: false,
+              }))
+            : [];
   
-          if (extractedCalls.length > 0 && config.nativeTools && config.onToolCall) {
+          if (extractedCalls.length > 0 && config.onToolCall) {
             // Model requested tool calls — execute and loop
-            const cleanText = fullResponse.replace(/<tool\s+name="[^"]+">[\s\S]*?<\/tool>/g, '').trim();
+            const cleanText = (parsed.textBefore + ' ' + parsed.textAfter).trim();
   
             // Add assistant message with tool_calls to history
             messageHistory.push({
@@ -1085,12 +1093,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
             const INLINE_LIMIT = 800;
   
             // Emit all as running
-            const parsedCalls = extractedCalls.map(tc => {
-              let args: Record<string, unknown> = {};
-              let parseError = false;
-              try { args = JSON.parse(tc.arguments); } catch { args = { raw: tc.arguments }; parseError = true; }
-              return { ...tc, args, parseError };
-            });
+            const parsedCalls = extractedCalls;
             for (const tc of parsedCalls) {
               if (tc.parseError) {
                 yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, status: 'error', output: `Malformed tool arguments from API: ${tc.arguments.slice(0, 200)}` } };
@@ -1168,7 +1171,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
           // When a model narrates "let me read X" without calling tools,
           // Agon extracts the intent and executes it FOR the model.
           // Architecture, not prompts — the model narrates, Agon acts.
-          if (config.nativeTools && config.onToolCall && step < budget - 1) {
+          if (config.onToolCall && step < budget - 1) {
             const tail = fullResponse.slice(-300);
   
             // Extract file paths from narration: "let me read/check/look at packages/foo/bar.ts"

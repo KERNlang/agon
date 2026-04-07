@@ -132,18 +132,23 @@ fn name=routeWithCesar async=true params="input:string, images:ImageAttachment[]
       if (crashDel.createdAt && Date.now() - crashDel.createdAt > 60000) {
         cb.dispatch({ type: 'warning', message: 'Stale delegation discarded (>60s old)' });
       } else {
-        const label = input.slice(0, 40);
+        // Confirm with user before dispatching recovered delegation
         let action = crashDel.team ? `team-${crashDel.action}` : crashDel.action;
-        cb.dispatch({ type: 'info', message: `Cesar → ${action} (recovered from session crash)` });
-        switch (action) {
-          case 'forge': cb.runAsJob('forge', label, () => handleForge(input, null, cb.dispatch, cb.ctx, undefined, crashDel.hardened ?? false)); return true;
-          case 'brainstorm': cb.runAsJob('brainstorm', label, () => handleBrainstorm(input, cb.dispatch, cb.ctx)); return true;
-          case 'tribunal': cb.runAsJob('tribunal', label, () => handleTribunal(input, cb.dispatch, cb.ctx, crashDel.tribunalMode)); return true;
-          case 'campfire': cb.runAsJob('campfire', label, () => handleCampfire(input, cb.dispatch, cb.ctx)); return true;
-          case 'pipeline': cb.runAsJob('pipeline', label, () => handlePipeline(input, cb.dispatch, cb.ctx)); return true;
-          case 'team-forge': { const tf = await cb.askQuestion('What command tests this?'); if (tf.trim()) { cb.runAsJob('team-forge', label, () => handleTeamForge(input, tf.trim(), cb.dispatch, cb.ctx, undefined)); return true; } break; }
-          case 'team-brainstorm': cb.runAsJob('team-brainstorm', label, () => handleTeamBrainstorm(input, cb.dispatch, cb.ctx)); return true;
-          case 'team-tribunal': cb.runAsJob('team-tribunal', label, () => handleTeamTribunal(input, cb.dispatch, cb.ctx, crashDel.tribunalMode)); return true;
+        const confirmLabel = crashDel.hardened ? `${action} (hardened)` : action;
+        const answer = await cb.askQuestion(`Recovered delegation: ${confirmLabel}${crashDel.tribunalMode ? ` [${crashDel.tribunalMode}]` : ''} — run it?`);
+        if (answer === 'y' || answer === '1') {
+          const label = input.slice(0, 40);
+          cb.dispatch({ type: 'info', message: `Cesar → ${action} (recovered)` });
+          switch (action) {
+            case 'forge': cb.runAsJob('forge', label, () => handleForge(input, null, cb.dispatch, cb.ctx, undefined, crashDel.hardened ?? false)); return true;
+            case 'brainstorm': cb.runAsJob('brainstorm', label, () => handleBrainstorm(input, cb.dispatch, cb.ctx)); return true;
+            case 'tribunal': cb.runAsJob('tribunal', label, () => handleTribunal(input, cb.dispatch, cb.ctx, crashDel.tribunalMode)); return true;
+            case 'campfire': cb.runAsJob('campfire', label, () => handleCampfire(input, cb.dispatch, cb.ctx)); return true;
+            case 'pipeline': cb.runAsJob('pipeline', label, () => handlePipeline(input, cb.dispatch, cb.ctx)); return true;
+            case 'team-forge': { const tf = await cb.askQuestion('What command tests this?'); if (tf.trim()) { cb.runAsJob('team-forge', label, () => handleTeamForge(input, tf.trim(), cb.dispatch, cb.ctx, undefined)); return true; } break; }
+            case 'team-brainstorm': cb.runAsJob('team-brainstorm', label, () => handleTeamBrainstorm(input, cb.dispatch, cb.ctx)); return true;
+            case 'team-tribunal': cb.runAsJob('team-tribunal', label, () => handleTeamTribunal(input, cb.dispatch, cb.ctx, crashDel.tribunalMode)); return true;
+          }
         }
       }
     }
@@ -182,7 +187,8 @@ fn name=routeWithCesar async=true params="input:string, images:ImageAttachment[]
           // askQuestion returns the answer as a string; check for 'y' or the key value
           if (answer === 'y' || answer === '1') {
             const label = input.slice(0, 40);
-            const action = fallbackSuggestion.team ? `team-${fallbackSuggestion.action}` : fallbackSuggestion.action;
+            // parseSuggestion already includes team- prefix in action (e.g. 'team-forge')
+            const action = fallbackSuggestion.action;
             cb.dispatch({ type: 'info', message: `Cesar → ${action}` });
             switch (action) {
               case 'forge': cb.runAsJob('forge', label, () => handleForge(input, null, cb.dispatch, cb.ctx, undefined, fallbackSuggestion.hardened ?? false)); return true;

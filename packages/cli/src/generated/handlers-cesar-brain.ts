@@ -94,15 +94,16 @@ export function parseSuggestion(response: string): SuggestionResult {
     const nlArea = response.slice(0, 300).toLowerCase();
     // Optional filler between intent verb and mode word: "I suggest we *launch a* forge"
     const FILLER = '(?:(?:use|launch|start|open|run|set up|do)\\s+(?:a\\s+)?)?';
-    const INTENT = `(?:i(?:'ll| will| should| recommend| suggest(?:ing)?)\\s+(?:we\\s+)?${FILLER}|let(?:'s| me| us)\\s+${FILLER}|this (?:needs?|calls for|warrants) (?:a )?|delegate (?:this )?to |send (?:this )?to |launch(?:ing)?\\s+(?:a\\s+)?)`;
+    const INTENT = `(?:i(?:'ll| will| should| recommend| suggest(?:ing)?)\\s+(?:we\\s+)?(?:a\\s+)?${FILLER}|let(?:'s| me| us)\\s+(?:a\\s+)?${FILLER}|this (?:needs?|calls for|warrants) (?:a )?|delegate (?:this )?to |send (?:this )?to |launch(?:ing)?\\s+(?:a\\s+)?)`;
     const NL_PATTERNS: Array<{ re: RegExp; action: string; hardened?: boolean; team?: boolean }> = [
-      { re: /\bteam[\s-]forge\b/, action: 'team-forge', team: true },
-      { re: /\bforge[\s-]hardened\b/, action: 'forge', hardened: true },
+      // All patterns require intent verbs to avoid matching descriptions
+      { re: new RegExp(`\\b(?:${INTENT})team[\\s-]forge\\b`), action: 'team-forge', team: true },
+      { re: new RegExp(`\\b(?:${INTENT})forge[\\s-]hardened\\b`), action: 'forge', hardened: true },
       { re: new RegExp(`\\b(?:${INTENT})forge\\b`), action: 'forge' },
-      { re: /\bteam[\s-]brainstorm\b/, action: 'team-brainstorm', team: true },
+      { re: new RegExp(`\\b(?:${INTENT})team[\\s-]brainstorm\\b`), action: 'team-brainstorm', team: true },
       { re: new RegExp(`\\b(?:${INTENT})brainstorm\\b`), action: 'brainstorm' },
-      { re: /\bteam[\s-]tribunal\b/, action: 'team-tribunal', team: true },
-      { re: /\btribunal[\s-](adversarial|synthesis|steelman|socratic|red[\s-]team|postmortem)\b/, action: 'tribunal' },
+      { re: new RegExp(`\\b(?:${INTENT})team[\\s-]tribunal\\b`), action: 'team-tribunal', team: true },
+      { re: new RegExp(`\\b(?:${INTENT})tribunal[\\s-](adversarial|synthesis|steelman|socratic|red[\\s-]team|postmortem)\\b`), action: 'tribunal' },
       { re: new RegExp(`\\b(?:${INTENT})tribunal\\b`), action: 'tribunal' },
       { re: new RegExp(`\\b(?:${INTENT}|open(?:ing)?\\s+(?:a\\s+)?)campfire\\b`), action: 'campfire' },
       { re: new RegExp(`\\b(?:${INTENT}|full\\s+)pipeline\\b`), action: 'pipeline' },
@@ -164,7 +165,7 @@ export function parseSuggestion(response: string): SuggestionResult {
   return { action, rest, hardened, tribunalMode, team };
 }
 
-// @kern-source: handlers-cesar-brain:158
+// @kern-source: handlers-cesar-brain:159
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
   const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
@@ -414,7 +415,7 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
   return session;
 }
 
-// @kern-source: handlers-cesar-brain:408
+// @kern-source: handlers-cesar-brain:409
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}> {
   const abort = new AbortController();
   const _turnStart = Date.now();
@@ -683,8 +684,10 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                   }
                   dispatch({ type: 'info', message: '⚔ Nero deactivated — confidence recovered' });
                 }
-              } else if (response.length > 30) {
+              } else if (response.length > 30 && !(ctx as any)._hasNativeTools) {
                 // No confidence found after 30 chars — give up parsing
+                // BUT: for native-tool API engines, ReportConfidence arrives asynchronously
+                // via onToolCall, so don't lock out confidenceParsed yet.
                 confidenceParsed = true;
               }
             }
@@ -919,6 +922,23 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       if (escAnswer === 'f') return { delegated: true, responded: true, action: 'forge', reasoning: response };
       // 'a' = accept — fall through normally
       return { delegated: false, responded: true };
+    }
+  
+    // ── Post-stream: consume tool-reported confidence if not yet consumed ──
+    // For native-tool API engines, ReportConfidence resolves after text streaming.
+    if (!confidenceParsed && (ctx as any)._reportedConfidence !== undefined) {
+      const toolConf = (ctx as any)._reportedConfidence as number;
+      delete (ctx as any)._reportedConfidence;
+      parsedConfidence = toolConf;
+      confidenceParsed = true;
+      dispatch({ type: 'info', message: confidenceBadge(toolConf) + ` Cesar` });
+      if (toolConf >= CONFIDENCE_TIERS.direct && (ctx as any)._autoNero) {
+        ctx.setNeroMode(false);
+        (ctx as any).neroMode = false;
+        (ctx as any)._autoNero = false;
+        if (ctx.cesarSession) { ctx.cesarSession.close(); ctx.setCesarSession(null); }
+        dispatch({ type: 'info', message: '⚔ Nero deactivated — confidence recovered' });
+      }
     }
   
     // ── Check for pending delegation from orchestration signal tools ──
@@ -1205,7 +1225,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   }
 }
 
-// @kern-source: handlers-cesar-brain:1199
+// @kern-source: handlers-cesar-brain:1219
 export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatch, ctx: HandlerContext): Promise<ForgeJudgment|null> {
   // Need an alive Cesar session
       let session;
@@ -1319,7 +1339,7 @@ export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatc
       return judgment;
 }
 
-// @kern-source: handlers-cesar-brain:1314
+// @kern-source: handlers-cesar-brain:1334
 function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJudgment|null {
   // Strip confidence prefix (e.g. ~91%) before parsing structured output
   const stripped = parseConfidence(response).rest;
@@ -1363,7 +1383,7 @@ function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJud
   return { winner, strengths, convergencePlan, summary, shouldConverge };
 }
 
-// @kern-source: handlers-cesar-brain:1359
+// @kern-source: handlers-cesar-brain:1379
 export async function cesarConvergeForge(manifest: ForgeManifest, judgment: ForgeJudgment, dispatch: Dispatch, ctx: HandlerContext): Promise<string|null> {
   let session;
       try {

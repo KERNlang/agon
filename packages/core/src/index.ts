@@ -112,6 +112,7 @@ export type { SidechainEvent, SidechainLogger } from './sidechain-logger.js';
 export { validateEngineConfig, validateEngineDir, EngineDefinitionSchema } from './schemas/engine-schema.js';
 export type { ValidatedEngineDefinition } from './schemas/engine-schema.js';
 export { sessionContext } from './session-context.js';
+export type { SessionResult, BrainstormResultData, CampfireResultData, TribunalResultData, ForgeResultData } from './generated/session-result-types.js';
 export {
   splitPromptBlocks, mergeBlocksByRole,
 } from './prompt-builder.js';

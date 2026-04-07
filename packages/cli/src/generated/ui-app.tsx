@@ -306,7 +306,7 @@ export function App({  }: {  }) {
             runAsJob: (type: string, label: string, fn: () => Promise<void>) => {
               const job = jobManager.create(type, label);
               setJobList([...jobManager.list()]);
-              transition(finishReplState);
+              setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state);
               fn().then(() => { jobManager.complete(job.id); setJobList([...jobManager.list()]); })
                 .catch((err: any) => { jobManager.fail(job.id, err instanceof Error ? err.message : String(err)); setJobList([...jobManager.list()]); dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); });
             },

@@ -121,7 +121,7 @@ export function convertMessagesForSdk(messages: Array<{role:string,content:any,t
   return result;
 }
 
-// @kern-source: api-dispatch:115
+// @kern-source: api-dispatch:118
 export async function apiDispatch(config: ApiConfig, prompt: string, timeout: number, signal?: AbortSignal, systemPrompt?: string): Promise<DispatchResult> {
   const model = buildModel(config);
   if (!model) {
@@ -167,7 +167,7 @@ export async function apiDispatch(config: ApiConfig, prompt: string, timeout: nu
   }
 }
 
-// @kern-source: api-dispatch:160
+// @kern-source: api-dispatch:164
 export async function* apiStreamDispatch(config: ApiConfig, prompt: string, timeout: number, signal?: AbortSignal, systemPrompt?: string): AsyncGenerator<string, DispatchResult, void> {
   const messages: Array<{role:string, content:string}> = [];
   if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
@@ -175,7 +175,7 @@ export async function* apiStreamDispatch(config: ApiConfig, prompt: string, time
   return yield* apiStreamDispatchWithHistory(config, messages, timeout, signal);
 }
 
-// @kern-source: api-dispatch:168
+// @kern-source: api-dispatch:172
 export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages: Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>, timeout: number, signal?: AbortSignal, tools?: Array<{type:string,function:{name:string,description:string,parameters:Record<string,unknown>}}>): AsyncGenerator<string, DispatchResult, void> {
   const model = buildModel(config);
   if (!model) {
@@ -212,7 +212,34 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
   
     const result = streamText(streamOpts);
   
-    for await (const part of result.fullStream) {
+    // Iterate with per-chunk idle timeout — catches models that go silent mid-stream.
+    // If no chunk arrives within IDLE_TIMEOUT_MS, break and return partial output.
+    const IDLE_TIMEOUT_MS = 30_000;
+    const iterator = result.fullStream[Symbol.asyncIterator]();
+    let iterDone = false;
+  
+    while (!iterDone) {
+      const next = iterator.next();
+      const idle = new Promise<never>((_, reject) => {
+        const t = setTimeout(() => reject(new Error('IDLE_TIMEOUT')), IDLE_TIMEOUT_MS);
+        next.then(() => clearTimeout(t), () => clearTimeout(t));
+      });
+  
+      let iterResult: IteratorResult<any>;
+      try {
+        iterResult = await Promise.race([next, idle]);
+      } catch (err: any) {
+        if (err?.message === 'IDLE_TIMEOUT') {
+          console.warn(`[agon] api-dispatch: no chunks for ${IDLE_TIMEOUT_MS / 1000}s — breaking idle stream`);
+          controller.abort();
+          break;
+        }
+        throw err;
+      }
+  
+      if (iterResult.done) { iterDone = true; break; }
+      const part = iterResult.value;
+  
       switch (part.type) {
         case 'text-delta': {
           stdout += (part as any).text;

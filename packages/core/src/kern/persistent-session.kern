@@ -4,6 +4,7 @@ import from="node:readline" names="createInterface"
 import from="./types.js" names="EngineDefinition,CompanionConfig" types=true
 import from="./api-dispatch.js" names="apiStreamDispatch,apiStreamDispatchWithHistory"
 import from="./session-store.js" names="saveSessionState,loadSessionState"
+import from="./tool-parser.js" names="parseToolCalls,toolCallsToApiFormat"
 
 interface name=SessionChunk
   field name=type type="'text'|'status'|'tool_call'|'error'|'done'"
@@ -1052,18 +1053,23 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
 
             if (!fullResponse) break;
 
-            // Check for native tool call markers from apiStreamDispatch
-            const toolMarkerRe = /<tool\s+name="([^"]+)">([\s\S]*?)<\/tool>/g;
-            const extractedCalls: Array<{id: string, name: string, arguments: string}> = [];
-            let tmMatch;
-            while ((tmMatch = toolMarkerRe.exec(fullResponse)) !== null) {
-              const callId = `call_${Date.now()}_${extractedCalls.length}`;
-              extractedCalls.push({ id: callId, name: tmMatch[1], arguments: tmMatch[2] });
-            }
+            // Check for tool call markers — robust parser handles all formats:
+            // <tool name="X">{json}</tool>, <tool_call>{json}</tool_call>,
+            // <toolcall>{json}</toolcall>, <tool_call_tool>{json}</tool_call_tool>
+            const parsed = parseToolCalls(fullResponse);
+            const extractedCalls = parsed.hasToolCalls
+              ? parsed.toolCalls.map((tc, i) => ({
+                  id: `call_${Date.now()}_${i}`,
+                  name: tc.name,
+                  args: tc.input,
+                  arguments: JSON.stringify(tc.input),
+                  parseError: false,
+                }))
+              : [];
 
-            if (extractedCalls.length > 0 && config.nativeTools && config.onToolCall) {
+            if (extractedCalls.length > 0 && config.onToolCall) {
               // Model requested tool calls — execute and loop
-              const cleanText = fullResponse.replace(/<tool\s+name="[^"]+">[\s\S]*?<\/tool>/g, '').trim();
+              const cleanText = (parsed.textBefore + ' ' + parsed.textAfter).trim();
 
               // Add assistant message with tool_calls to history
               messageHistory.push({
@@ -1079,12 +1085,7 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
               const INLINE_LIMIT = 800;
 
               // Emit all as running
-              const parsedCalls = extractedCalls.map(tc => {
-                let args: Record<string, unknown> = {};
-                let parseError = false;
-                try { args = JSON.parse(tc.arguments); } catch { args = { raw: tc.arguments }; parseError = true; }
-                return { ...tc, args, parseError };
-              });
+              const parsedCalls = extractedCalls;
               for (const tc of parsedCalls) {
                 if (tc.parseError) {
                   yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, status: 'error', output: `Malformed tool arguments from API: ${tc.arguments.slice(0, 200)}` } };
@@ -1162,7 +1163,7 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
             // When a model narrates "let me read X" without calling tools,
             // Agon extracts the intent and executes it FOR the model.
             // Architecture, not prompts — the model narrates, Agon acts.
-            if (config.nativeTools && config.onToolCall && step < budget - 1) {
+            if (config.onToolCall && step < budget - 1) {
               const tail = fullResponse.slice(-300);
 
               // Extract file paths from narration: "let me read/check/look at packages/foo/bar.ts"

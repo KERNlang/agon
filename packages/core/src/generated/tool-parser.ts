@@ -1,5 +1,7 @@
+// @kern-source: tool-parser:6
 import type { ToolCall } from './tool-types.js';
 
+// @kern-source: tool-parser:8
 export interface ParsedToolCall {
   name: string;
   input: Record<string,unknown>;
@@ -7,6 +9,7 @@ export interface ParsedToolCall {
   endIndex: number;
 }
 
+// @kern-source: tool-parser:14
 export interface ParseResult {
   textBefore: string;
   toolCalls: ParsedToolCall[];
@@ -14,10 +17,13 @@ export interface ParseResult {
   hasToolCalls: boolean;
 }
 
-export const TOOL_OPEN_PATTERN: RegExp = /<tool\s+name="([^"]+)">\s*/g;
+// @kern-source: tool-parser:20
+export const TOOL_OPEN_PATTERN: RegExp = /<(?:tool|invoke)\s+name="([^"]+)">\s*/g;
 
+// @kern-source: tool-parser:25
 export const TOOL_CLOSE_TAGS: readonly string[] = ['</tool>', '</invoke>', '</minimax:tool_call>', '</tool_call_tool>'];
 
+// @kern-source: tool-parser:30
 function parseXmlParameters(xml: string): Record<string,unknown> {
   const result: Record<string, unknown> = {};
   const paramRe = /<parameter\s+name="([^"]+)">([\s\S]*?)<\/parameter>/g;
@@ -34,6 +40,57 @@ function parseXmlParameters(xml: string): Record<string,unknown> {
   return result;
 }
 
+// @kern-source: tool-parser:48
+function parseGenericToolCallTags(text: string): ParseResult {
+  const toolCalls: ParsedToolCall[] = [];
+  // Match <tool_call>...</tool_call> and <toolcall>...</toolcall>
+  const re = /<tool_?call>\s*([\s\S]*?)\s*<\/tool_?call>/g;
+  let lastEnd = 0;
+  let textBefore = '';
+  let m;
+  
+  while ((m = re.exec(text)) !== null) {
+    const body = m[1].trim();
+    if (!body) continue; // Skip empty tags
+    let parsed: any;
+    try {
+      parsed = JSON.parse(body);
+    } catch {
+      try {
+        const cleaned = body.replace(/^```json?\s*\n?/, '').replace(/\n?```\s*$/, '').trim();
+        parsed = JSON.parse(cleaned);
+      } catch {
+        continue;
+      }
+    }
+    const name = parsed.name ?? parsed.function?.name;
+    if (!name) continue;
+    let input = parsed.arguments ?? parsed.function?.arguments ?? parsed.input ?? parsed.parameters ?? {};
+    if (typeof input === 'string') {
+      try { input = JSON.parse(input); } catch { input = { raw: input }; }
+    }
+  
+    if (toolCalls.length === 0) {
+      textBefore = text.slice(0, m.index).trim();
+    }
+  
+    toolCalls.push({
+      name,
+      input,
+      startIndex: m.index,
+      endIndex: m.index + m[0].length,
+    });
+    lastEnd = m.index + m[0].length;
+  }
+  
+  const textAfter = lastEnd > 0 ? text.slice(lastEnd).trim() : '';
+  if (toolCalls.length === 0) {
+    return { textBefore: text, toolCalls: [], textAfter: '', hasToolCalls: false };
+  }
+  return { textBefore, toolCalls, textAfter, hasToolCalls: true };
+}
+
+// @kern-source: tool-parser:99
 function parseGeminiToolCalls(text: string): ParseResult {
   const toolCalls: ParsedToolCall[] = [];
   const geminiRe = /<tool_call_tool>\s*([\s\S]*?)\s*<\/tool_call_tool>/g;
@@ -82,6 +139,142 @@ function parseGeminiToolCalls(text: string): ParseResult {
   return { textBefore, toolCalls, textAfter, hasToolCalls: true };
 }
 
+// @kern-source: tool-parser:149
+function parseMistralToolCalls(text: string): ParseResult {
+  const toolCalls: ParsedToolCall[] = [];
+  const re = /\[TOOL_CALLS\]\s*(\[[\s\S]*?\])(?:\s*$|\n)/gm;
+  let lastEnd = 0;
+  let textBefore = '';
+  let m;
+  
+  while ((m = re.exec(text)) !== null) {
+    let arr: any[];
+    try {
+      arr = JSON.parse(m[1]);
+    } catch {
+      try {
+        const cleaned = m[1].replace(/^```json?\s*\n?/, '').replace(/\n?```\s*$/, '').trim();
+        arr = JSON.parse(cleaned);
+      } catch { continue; }
+    }
+    if (!Array.isArray(arr)) continue;
+  
+    if (toolCalls.length === 0) {
+      textBefore = text.slice(0, m.index).trim();
+    }
+  
+    for (const item of arr) {
+      const name = item.name ?? item.function?.name;
+      if (!name) continue;
+      let input = item.arguments ?? item.function?.arguments ?? item.parameters ?? {};
+      if (typeof input === 'string') {
+        try { input = JSON.parse(input); } catch { input = { raw: input }; }
+      }
+      toolCalls.push({
+        name,
+        input,
+        startIndex: m.index,
+        endIndex: m.index + m[0].length,
+      });
+    }
+    lastEnd = m.index + m[0].length;
+  }
+  
+  const textAfter = lastEnd > 0 ? text.slice(lastEnd).trim() : '';
+  if (toolCalls.length === 0) {
+    return { textBefore: text, toolCalls: [], textAfter: '', hasToolCalls: false };
+  }
+  return { textBefore, toolCalls, textAfter, hasToolCalls: true };
+}
+
+// @kern-source: tool-parser:198
+function parseFunctionaryToolCalls(text: string): ParseResult {
+  const toolCalls: ParsedToolCall[] = [];
+  const re = /<function=([^>]+)>\s*([\s\S]*?)\s*<\/function>/g;
+  let lastEnd = 0;
+  let textBefore = '';
+  let m;
+  
+  while ((m = re.exec(text)) !== null) {
+    const name = m[1].trim();
+    const body = m[2].trim();
+    if (!name) continue;
+    let input: Record<string, unknown> = {};
+    if (body) {
+      try { input = JSON.parse(body); }
+      catch {
+        try {
+          const cleaned = body.replace(/^```json?\s*\n?/, '').replace(/\n?```\s*$/, '').trim();
+          input = JSON.parse(cleaned);
+        } catch { continue; }
+      }
+    }
+  
+    if (toolCalls.length === 0) {
+      textBefore = text.slice(0, m.index).trim();
+    }
+  
+    toolCalls.push({
+      name,
+      input,
+      startIndex: m.index,
+      endIndex: m.index + m[0].length,
+    });
+    lastEnd = m.index + m[0].length;
+  }
+  
+  const textAfter = lastEnd > 0 ? text.slice(lastEnd).trim() : '';
+  if (toolCalls.length === 0) {
+    return { textBefore: text, toolCalls: [], textAfter: '', hasToolCalls: false };
+  }
+  return { textBefore, toolCalls, textAfter, hasToolCalls: true };
+}
+
+// @kern-source: tool-parser:242
+function parseCohereToolCalls(text: string): ParseResult {
+  const toolCalls: ParsedToolCall[] = [];
+  const re = /Action:\s*```json?\s*\n?([\s\S]*?)\n?```/g;
+  let lastEnd = 0;
+  let textBefore = '';
+  let m;
+  
+  while ((m = re.exec(text)) !== null) {
+    const body = m[1].trim();
+    let items: any[];
+    try {
+      const parsed = JSON.parse(body);
+      items = Array.isArray(parsed) ? parsed : [parsed];
+    } catch { continue; }
+  
+    if (toolCalls.length === 0) {
+      textBefore = text.slice(0, m.index).trim();
+    }
+  
+    for (const item of items) {
+      const name = item.tool_name ?? item.name ?? item.function?.name;
+      if (!name) continue;
+      let input = item.parameters ?? item.arguments ?? item.function?.arguments ?? {};
+      if (typeof input === 'string') {
+        try { input = JSON.parse(input); } catch { input = { raw: input }; }
+      }
+      toolCalls.push({
+        name,
+        input,
+        startIndex: m.index,
+        endIndex: m.index + m[0].length,
+      });
+    }
+    lastEnd = m.index + m[0].length;
+  }
+  
+  const textAfter = lastEnd > 0 ? text.slice(lastEnd).trim() : '';
+  if (toolCalls.length === 0) {
+    return { textBefore: text, toolCalls: [], textAfter: '', hasToolCalls: false };
+  }
+  return { textBefore, toolCalls, textAfter, hasToolCalls: true };
+}
+
+// @kern-source: tool-parser:287
 export function parseToolCalls(text: string): ParseResult {
   const toolCalls: ParsedToolCall[] = [];
   const pattern = new RegExp(TOOL_OPEN_PATTERN.source, 'g');
@@ -168,13 +361,22 @@ export function parseToolCalls(text: string): ParseResult {
   const textAfter = lastEnd > 0 ? text.slice(lastEnd).trim() : '';
   
   if (toolCalls.length === 0) {
-    // Fall through to Gemini format (<tool_call_tool>)
-    return parseGeminiToolCalls(text);
+    // Fall through chain — try every known format
+    const generic = parseGenericToolCallTags(text);        // <tool_call>/<toolcall> (Qwen, Hermes, DeepSeek)
+    if (generic.hasToolCalls) return generic;
+    const gemini = parseGeminiToolCalls(text);             // <tool_call_tool> (Gemini)
+    if (gemini.hasToolCalls) return gemini;
+    const mistral = parseMistralToolCalls(text);           // [TOOL_CALLS] [{...}] (Mistral)
+    if (mistral.hasToolCalls) return mistral;
+    const functionary = parseFunctionaryToolCalls(text);   // <function=name>{json}</function> (Functionary)
+    if (functionary.hasToolCalls) return functionary;
+    return parseCohereToolCalls(text);                     // Action: ```json [{...}] ``` (Cohere Command R)
   }
   
   return { textBefore, toolCalls, textAfter, hasToolCalls: true };
 }
 
+// @kern-source: tool-parser:390
 export function toolCallsToApiFormat(parsed: ParsedToolCall[]): ToolCall[] {
   return parsed.map((tc, i) => ({
     id: `tc_${Date.now()}_${i}`,
@@ -183,6 +385,7 @@ export function toolCallsToApiFormat(parsed: ParsedToolCall[]): ToolCall[] {
   }));
 }
 
+// @kern-source: tool-parser:400
 export function formatToolResult(toolName: string, result: string, isError?: boolean): string {
   if (isError) {
     return `<tool_result name="${toolName}" error="true">\n${result}\n</tool_result>`;
@@ -190,6 +393,7 @@ export function formatToolResult(toolName: string, result: string, isError?: boo
   return `<tool_result name="${toolName}">\n${result}\n</tool_result>`;
 }
 
+// @kern-source: tool-parser:409
 export function formatToolResults(results: {name:string,content:string,error?:string}[]): string {
   return results.map(r => {
     if (r.error) {

@@ -91,9 +91,6 @@ fn name=handleSecondOpinion async=true params="secondResult:{stdout:string, engi
   handler <<<
     if (!secondResult || !secondResult.stdout.trim()) return null;
 
-    // If interrupted, skip entirely — don't show advisor or choice menu
-    if (abortSignal?.aborted) return null;
-
     // Strip <think> blocks from advisor response
     const advisorResponse = secondResult.stdout.trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
     dispatch({ type: 'engine-block', engineId: secondResult.engineId, color: secondResult.color, content: advisorResponse });
@@ -105,8 +102,8 @@ fn name=handleSecondOpinion async=true params="secondResult:{stdout:string, engi
     appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
     tracker.record(cesarEngineId, input, response);
 
-    // If interrupted after showing advisor but before menu, skip menu
-    if (abortSignal?.aborted) return { delegated: false, responded: true };
+    // Yield so Ink paints the advisor response before showing the menu
+    await new Promise<void>(resolve => setImmediate(resolve));
 
     // Escalation menu — same for all low confidence, no more dead STOP
     const escAnswer = await new Promise<string>((resolve) => {

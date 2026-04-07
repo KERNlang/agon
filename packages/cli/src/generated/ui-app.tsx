@@ -301,10 +301,69 @@ export function App({  }: {  }) {
           pasteHashesRef.current.clear();
           pasteCountRef.current = 0;
           setInputValue(''); setInputHistory((prev: string[]) => [...prev, input]); setHistoryIndex(-1);
-          // /btw — non-interrupting status peek, works even during dispatch
-          if (input.trim().toLowerCase() === '/btw' || input.trim().toLowerCase().startsWith('/btw ')) {
-            setBtwExpanded((prev: boolean) => !prev);
+          // /btw <question> — side-channel question during active dispatch
+          const btwLower = input.trim().toLowerCase();
+          if (btwLower === '/btw') {
+            dispatch({ type: 'info', message: 'Usage: /btw <question> — ask something while engines work. Tab to peek status.' } as any);
             return;
+          }
+          if (btwLower.startsWith('/btw ')) {
+            const btwQuestion = input.trim().slice(5).trim();
+            if (btwQuestion && replState !== 'idle') {
+              // Fire side-dispatch — don't interrupt main task
+              dispatch({ type: 'separator' } as any);
+              dispatch({ type: 'user-message', content: `/btw ${btwQuestion}` } as any);
+    
+              const ctx = buildContext();
+              const cesarId = (ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude';
+              let engineDef: any;
+              try { engineDef = ctx.registry.get(cesarId); } catch {}
+    
+              if (!engineDef) {
+                dispatch({ type: 'error', message: `btw: engine ${cesarId} not available` } as any);
+                return;
+              }
+    
+              const color = ENGINE_COLORS[cesarId] ?? 245;
+              dispatch({ type: 'spinner-start', message: 'btw\u2026', color } as any);
+    
+              // Build context from streaming output
+              let streamCtx = '';
+              if (streamingTextRef.current && streamingTextRef.current.content) {
+                const lines = streamingTextRef.current.content.split('\n').filter((l: string) => l.trim());
+                streamCtx = lines.slice(-10).join('\n');
+              }
+    
+              const prompt = `The user asks while you are working on another task:\n\n${btwQuestion}\n\n${streamCtx ? '--- Recent output from the running task ---\n' + streamCtx + '\n---\n\n' : ''}Answer briefly and concisely. Keep it short.`;
+    
+              const btwOutputDir = join(RUNS_DIR, `btw-${Date.now()}`);
+              try { mkdirSync(btwOutputDir, { recursive: true }); } catch {}
+              ctx.adapter.dispatch({
+                engine: engineDef,
+                prompt,
+                cwd: resolveWorkingDir(),
+                mode: 'exec' as any,
+                timeout: 60,
+                outputDir: btwOutputDir,
+              }).then((result: any) => {
+                dispatch({ type: 'spinner-stop' } as any);
+                const answer = (result.stdout || '').trim();
+                if (answer) {
+                  dispatch({ type: 'engine-block', engineId: cesarId, color, content: answer } as any);
+                } else {
+                  dispatch({ type: 'warning', message: 'btw: no response' } as any);
+                }
+              }).catch((err: any) => {
+                dispatch({ type: 'spinner-stop' } as any);
+                dispatch({ type: 'error', message: `btw: ${err instanceof Error ? err.message : String(err)}` } as any);
+              });
+              return;
+            }
+            // If idle, just process as regular input (falls through to normal dispatch)
+            if (!btwQuestion) {
+              dispatch({ type: 'info', message: 'Usage: /btw <question>' } as any);
+              return;
+            }
           }
           if (replState !== 'idle' && !jobManager.running().length) {
             setInputQueue((prev: string[]) => [...prev, input]);
@@ -655,7 +714,7 @@ export function App({  }: {  }) {
 }
 
 
-// @kern-source: ui-app:628
+// @kern-source: ui-app:687
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

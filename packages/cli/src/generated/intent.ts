@@ -74,7 +74,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { cmd: '/focus',       desc: '<id>                    — switch to background job output' },
   { cmd: '/explore',     desc: '                        — toggle exploration mode (read-only)' },
   { cmd: '/nero',        desc: '                        — toggle Nero mode (adversarial devil\'s advocate)' },
-  { cmd: '/btw',         desc: '                        — peek at engine activity (works during dispatch)' },
+  { cmd: '/btw',         desc: '<question>               — ask something while engines work (side-channel)' },
   { cmd: '/clear',       desc: '                        — reset session (saves chat, clears brain)' },
   { cmd: '/help',        desc: '                        — show this help' },
   { cmd: '/exit',        desc: '                        — quit' },

@@ -1,3 +1,5 @@
+import from="./icons.js" names="icons"
+
 const name=BOLD type=string
   handler <<< '\x1b[1m' >>>
 
@@ -122,22 +124,26 @@ fn name=gradientText params="text:string, colors:number[]" returns=string
 
 fn name=header params="text:string" returns=void
   handler <<<
-    console.log(`\n${BOLD}${CYAN}▸ ${text}${RESET}`);
+    const { header: h } = icons();
+    console.log(`\n${BOLD}${CYAN}${h} ${text}${RESET}`);
   >>>
 
 fn name=success params="text:string" returns=void
   handler <<<
-    console.log(`${GREEN}✓${RESET} ${text}`);
+    const { success: s } = icons();
+    console.log(`${GREEN}${s}${RESET} ${text}`);
   >>>
 
 fn name=fail params="text:string" returns=void
   handler <<<
-    console.log(`${RED}✗${RESET} ${text}`);
+    const { fail: f } = icons();
+    console.log(`${RED}${f}${RESET} ${text}`);
   >>>
 
 fn name=warn params="text:string" returns=void
   handler <<<
-    console.log(`${YELLOW}⚠${RESET} ${text}`);
+    const { warning: w } = icons();
+    console.log(`${YELLOW}${w}${RESET} ${text}`);
   >>>
 
 fn name=info params="text:string" returns=void
@@ -157,7 +163,7 @@ fn name=scoreboard params="title:string, engineIds:string[], metrics:Array<{labe
     console.log(`\n  ${BOLD}${WHITE}${title}${RESET}`);
     const headerCells = engineIds.map((id: string, i: number) => {
       const color = ENGINE_COLORS[id] ?? 245;
-      const name = id === winnerId ? `★ ${id}` : id;
+      const name = id === winnerId ? `${icons().winner} ${id}` : id;
       const styled = fg256(color, BOLD + name + RESET);
       const pad = colWidths[i] - visibleLength(name);
       return styled + ' '.repeat(Math.max(0, pad));

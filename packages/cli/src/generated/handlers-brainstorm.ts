@@ -14,9 +14,12 @@ import { runBrainstorm } from '@agon/forge';
 import { ENGINE_COLORS } from '../output.js';
 
 // @kern-source: handlers-brainstorm:6
+import { icons } from '../icons.js';
+
+// @kern-source: handlers-brainstorm:7
 import type { Dispatch, HandlerContext, EngineProgress } from '../handlers/types.js';
 
-// @kern-source: handlers-brainstorm:8
+// @kern-source: handlers-brainstorm:9
 export async function handleBrainstorm(question: string, dispatch: Dispatch, ctx: HandlerContext): Promise<void> {
   const bsAbort = new AbortController();
   try {
@@ -86,7 +89,7 @@ export async function handleBrainstorm(question: string, dispatch: Dispatch, ctx
       const isWinner = bid?.engineId === result.winner;
       return {
         id,
-        status: bid ? (isWinner ? '★ best draft' : '✓ done') : '✗ no response',
+        status: bid ? (isWinner ? `${icons().winner} best draft` : `${icons().success} done`) : `${icons().fail} no response`,
         elapsed: Math.floor((Date.now() - startTime) / 1000),
         done: !!bid,
         failed: !bid,
@@ -103,7 +106,7 @@ export async function handleBrainstorm(question: string, dispatch: Dispatch, ctx
         type: 'kern-draft',
         engineId: bid.engineId,
         content: bid.reasoning + (bid.approach ? '\n' + bid.approach : ''),
-        critique: isWinner ? `★ best draft${scoreLabel}` : `✓ done${scoreLabel}`,
+        critique: isWinner ? `${icons().winner} best draft${scoreLabel}` : `${icons().success} done${scoreLabel}`,
       });
     }
     

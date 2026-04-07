@@ -3,6 +3,7 @@ import from="node:path" names="join"
 import from="@agon/core" names="ensureAgonHome,RUNS_DIR,getElo,getEngineRating,tracker,loadConfig,configSet,DEFAULT_CONFIG,discoverEngines,addWorkspace,removeWorkspace,switchWorkspace,listWorkspaces,getActiveWorkspace,listChatSessions,loadChatSession"
 import from="@agon/core" names="AgonConfig,ForgeManifest" types=true
 import from="../intent.js" names="Intent" types=true
+import from="../icons.js" names="icons"
 import from="../handlers/types.js" names="Dispatch,HandlerContext" types=true
 import from="@agon/core" names="EngineRegistry"
 
@@ -56,7 +57,7 @@ fn name=showRunDetail params="dispatch:Dispatch, id:string" returns=void export=
     if (Object.keys(manifest.results).length > 0) {
       dispatch({ type: 'header', title: 'Scores' });
       const rows = Object.entries(manifest.results).map(([eid, r]) => [
-        eid === manifest.winner ? `★ ${eid}` : eid,
+        eid === manifest.winner ? `${icons().winner} ${eid}` : eid,
         r.pass ? 'PASS' : 'FAIL',
         String(r.score),
         String(r.diffLines),
@@ -135,8 +136,9 @@ fn name=handleEngines params="dispatch:Dispatch, ctx:HandlerContext" returns="Pr
 
       const rows = results.map(({ engine, avail, version, hasBinary, hasApi }: any) => {
         // Show which backends are available
-        const cli = hasBinary ? '● cli' : '○ cli';
-        const api = engine.api ? (hasApi ? '● api' : '○ api') : '— api';
+        const ic = icons();
+        const cli = hasBinary ? `${ic.dotOn} cli` : `${ic.dotOff} cli`;
+        const api = engine.api ? (hasApi ? `${ic.dotOn} api` : `${ic.dotOff} api`) : '— api';
         // Show active backend for Cesar brain engine
         let active = '';
         if (engine.id === cesarId) {
@@ -412,7 +414,7 @@ fn name=handleWorkspace params="action:string, dispatch:Dispatch, ctx:HandlerCon
         }
         dispatch({ type: 'header', title: 'Workspaces' });
         const rows = all.map((ws: any) => [
-          ws.id === active?.id ? '●' : '○',
+          ws.id === active?.id ? icons().dotOn : icons().dotOff,
           ws.name,
           ws.isKern ? 'kern' : '',
           ws.path,
@@ -466,7 +468,7 @@ fn name=handleModels params="dispatch:Dispatch, ctx:HandlerContext" returns=void
     const enabled = config.forgeEnabledEngines ?? available;
 
     const rows = available.map((id: string) => [
-      enabled.includes(id) ? '●' : '○',
+      enabled.includes(id) ? icons().dotOn : icons().dotOff,
       id,
       enabled.includes(id) ? 'active' : 'inactive',
     ]);

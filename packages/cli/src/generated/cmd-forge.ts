@@ -1,19 +1,31 @@
+// @kern-source: cmd-forge:1
 import { defineCommand } from 'citty';
 
+// @kern-source: cmd-forge:2
 import { join, dirname } from 'node:path';
 
+// @kern-source: cmd-forge:3
 import { fileURLToPath } from 'node:url';
 
+// @kern-source: cmd-forge:4
 import { mkdirSync } from 'node:fs';
 
+// @kern-source: cmd-forge:5
 import { EngineRegistry, ensureAgonHome, loadConfig, RUNS_DIR } from '@agon/core';
 
+// @kern-source: cmd-forge:6
 import { createCliAdapter } from '@agon/adapter-cli';
 
+// @kern-source: cmd-forge:7
 import { runForge } from '@agon/forge';
 
+// @kern-source: cmd-forge:8
 import { header, success, fail, warn, info, table, green, red, yellow, bold, cyan } from '../output.js';
 
+// @kern-source: cmd-forge:9
+import { icons } from '../icons.js';
+
+// @kern-source: cmd-forge:11
 export const forgeCommand: any = defineCommand({
   meta: {
     name: 'forge',
@@ -143,7 +155,7 @@ export const forgeCommand: any = defineCommand({
     header('Results');
 
     const rows = Object.entries(manifest.results).map(([id, r]: [string, any]) => [
-      id === manifest.winner ? green(`★ ${id}`) : id,
+      id === manifest.winner ? green(`${icons().winner} ${id}`) : id,
       r.pass ? green('PASS') : red('FAIL'),
       String(r.score),
       String(r.diffLines),

@@ -14,12 +14,15 @@ import type { AgonConfig, ForgeManifest } from '@agon/core';
 import type { Intent } from '../intent.js';
 
 // @kern-source: handlers-info:6
-import type { Dispatch, HandlerContext } from '../handlers/types.js';
+import { icons } from '../icons.js';
 
 // @kern-source: handlers-info:7
+import type { Dispatch, HandlerContext } from '../handlers/types.js';
+
+// @kern-source: handlers-info:8
 import { EngineRegistry } from '@agon/core';
 
-// @kern-source: handlers-info:9
+// @kern-source: handlers-info:10
 export function handleLeaderboard(dispatch: Dispatch): void {
   const elo = getElo();
   dispatch({ type: 'header', title: 'Global Leaderboard' });
@@ -47,7 +50,7 @@ export function handleLeaderboard(dispatch: Dispatch): void {
   }
 }
 
-// @kern-source: handlers-info:37
+// @kern-source: handlers-info:38
 function showRunDetail(dispatch: Dispatch, id: string): void {
   let files: string[];
   try {
@@ -69,7 +72,7 @@ function showRunDetail(dispatch: Dispatch, id: string): void {
   if (Object.keys(manifest.results).length > 0) {
     dispatch({ type: 'header', title: 'Scores' });
     const rows = Object.entries(manifest.results).map(([eid, r]) => [
-      eid === manifest.winner ? `★ ${eid}` : eid,
+      eid === manifest.winner ? `${icons().winner} ${eid}` : eid,
       r.pass ? 'PASS' : 'FAIL',
       String(r.score),
       String(r.diffLines),
@@ -80,7 +83,7 @@ function showRunDetail(dispatch: Dispatch, id: string): void {
   }
 }
 
-// @kern-source: handlers-info:70
+// @kern-source: handlers-info:71
 export function handleHistory(dispatch: Dispatch, id?: string): void {
   ensureAgonHome();
   
@@ -123,7 +126,7 @@ export function handleHistory(dispatch: Dispatch, id?: string): void {
   dispatch({ type: 'info', message: 'Use /history <id> for details' });
 }
 
-// @kern-source: handlers-info:113
+// @kern-source: handlers-info:114
 export async function handleEngines(dispatch: Dispatch, ctx: HandlerContext): Promise<void> {
   dispatch({ type: 'header', title: 'Engines' });
   dispatch({ type: 'spinner-start', message: 'Scanning...' });
@@ -148,8 +151,9 @@ export async function handleEngines(dispatch: Dispatch, ctx: HandlerContext): Pr
   
     const rows = results.map(({ engine, avail, version, hasBinary, hasApi }: any) => {
       // Show which backends are available
-      const cli = hasBinary ? '● cli' : '○ cli';
-      const api = engine.api ? (hasApi ? '● api' : '○ api') : '— api';
+      const ic = icons();
+      const cli = hasBinary ? `${ic.dotOn} cli` : `${ic.dotOff} cli`;
+      const api = engine.api ? (hasApi ? `${ic.dotOn} api` : `${ic.dotOff} api`) : '— api';
       // Show active backend for Cesar brain engine
       let active = '';
       if (engine.id === cesarId) {
@@ -175,7 +179,7 @@ export async function handleEngines(dispatch: Dispatch, ctx: HandlerContext): Pr
   }
 }
 
-// @kern-source: handlers-info:165
+// @kern-source: handlers-info:167
 export async function handleDiscover(dispatch: Dispatch, ctx: HandlerContext): Promise<void> {
   dispatch({ type: 'header', title: 'Engine Discovery' });
   dispatch({ type: 'spinner-start', message: 'Scanning installed engines...' });
@@ -203,7 +207,7 @@ export async function handleDiscover(dispatch: Dispatch, ctx: HandlerContext): P
   }
 }
 
-// @kern-source: handlers-info:193
+// @kern-source: handlers-info:195
 export function handleConfig(intent: Intent&{type:'config'}, dispatch: Dispatch): void {
   ensureAgonHome();
   const action = (intent as any).action ?? 'list';
@@ -259,7 +263,7 @@ export function handleConfig(intent: Intent&{type:'config'}, dispatch: Dispatch)
   }
 }
 
-// @kern-source: handlers-info:249
+// @kern-source: handlers-info:251
 export function handleUse(engineIds: string[], dispatch: Dispatch, ctx: HandlerContext, setSessionEngines: (engines:string[]|null)=>void): void {
   if (engineIds.length === 0 || (engineIds.length === 1 && engineIds[0] === 'all')) {
     setSessionEngines(null);
@@ -288,7 +292,7 @@ export function handleUse(engineIds: string[], dispatch: Dispatch, ctx: HandlerC
   dispatch({ type: 'info', message: 'Saved — persists across sessions. Use /cesar <engine> to change Cesar brain separately.' });
 }
 
-// @kern-source: handlers-info:278
+// @kern-source: handlers-info:280
 export function handleCesar(engineId: string, dispatch: Dispatch, ctx: HandlerContext): void {
   // Parse: "/cesar claude api" or "/cesar claude cli" or "/cesar claude" or "/cesar"
   const parts = engineId.trim().split(/\s+/);
@@ -359,7 +363,7 @@ export function handleCesar(engineId: string, dispatch: Dispatch, ctx: HandlerCo
   dispatch({ type: 'info', message: 'Conversation context + memory preserved. Forge/tribunal engines unchanged — use /use to change those.' });
 }
 
-// @kern-source: handlers-info:349
+// @kern-source: handlers-info:351
 export function handleTokens(dispatch: Dispatch): void {
   const stats = tracker.getStats();
   dispatch({ type: 'header', title: 'Token Usage — This Session' });
@@ -384,7 +388,7 @@ export function handleTokens(dispatch: Dispatch): void {
   dispatch({ type: 'info', message: `${stats.dispatches} dispatches across ${Object.keys(stats.byEngine).length} engines` });
 }
 
-// @kern-source: handlers-info:374
+// @kern-source: handlers-info:376
 export function handleWorkspace(action: string, dispatch: Dispatch, ctx: HandlerContext, path?: string): void {
   switch (action) {
     case 'add': {
@@ -425,7 +429,7 @@ export function handleWorkspace(action: string, dispatch: Dispatch, ctx: Handler
       }
       dispatch({ type: 'header', title: 'Workspaces' });
       const rows = all.map((ws: any) => [
-        ws.id === active?.id ? '●' : '○',
+        ws.id === active?.id ? icons().dotOn : icons().dotOff,
         ws.name,
         ws.isKern ? 'kern' : '',
         ws.path,
@@ -436,7 +440,7 @@ export function handleWorkspace(action: string, dispatch: Dispatch, ctx: Handler
   }
 }
 
-// @kern-source: handlers-info:426
+// @kern-source: handlers-info:428
 export function handleChats(dispatch: Dispatch, sessionId?: string): void {
   if (sessionId) {
     const session = loadChatSession(sessionId);
@@ -470,7 +474,7 @@ export function handleChats(dispatch: Dispatch, sessionId?: string): void {
   dispatch({ type: 'table', headers: ['Session', 'Msgs', 'Date', 'First Message'], rows });
 }
 
-// @kern-source: handlers-info:460
+// @kern-source: handlers-info:462
 export function handleModels(dispatch: Dispatch, ctx: HandlerContext): void {
   dispatch({ type: 'header', title: 'Models & Engines' });
   
@@ -479,7 +483,7 @@ export function handleModels(dispatch: Dispatch, ctx: HandlerContext): void {
   const enabled = config.forgeEnabledEngines ?? available;
   
   const rows = available.map((id: string) => [
-    enabled.includes(id) ? '●' : '○',
+    enabled.includes(id) ? icons().dotOn : icons().dotOff,
     id,
     enabled.includes(id) ? 'active' : 'inactive',
   ]);

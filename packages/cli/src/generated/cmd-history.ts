@@ -1,15 +1,25 @@
+// @kern-source: cmd-history:1
 import { defineCommand } from 'citty';
 
+// @kern-source: cmd-history:2
 import { readdirSync, readFileSync } from 'node:fs';
 
+// @kern-source: cmd-history:3
 import { join } from 'node:path';
 
+// @kern-source: cmd-history:4
 import { RUNS_DIR, ensureAgonHome } from '@agon/core';
 
+// @kern-source: cmd-history:5
 import type { ForgeManifest } from '@agon/core';
 
+// @kern-source: cmd-history:6
 import { header, info, table, bold, green, red, dim } from '../output.js';
 
+// @kern-source: cmd-history:7
+import { icons } from '../icons.js';
+
+// @kern-source: cmd-history:9
 function showRunDetail(id: string): void {
   let files: string[];
   try {
@@ -42,7 +52,7 @@ function showRunDetail(id: string): void {
     console.log('');
     header('Scores');
     const rows = Object.entries(manifest.results).map(([eid, r]: [string, any]) => [
-      eid === manifest.winner ? green(`★ ${eid}`) : eid,
+      eid === manifest.winner ? green(`${icons().winner} ${eid}`) : eid,
       r.pass ? green('PASS') : red('FAIL'),
       String(r.score),
       String(r.diffLines),
@@ -62,6 +72,7 @@ function showRunDetail(id: string): void {
   }
 }
 
+// @kern-source: cmd-history:62
 export const historyCommand: any = defineCommand({
   meta: {
     name: 'history',

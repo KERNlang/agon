@@ -3,6 +3,7 @@ import from="node:fs" names="mkdirSync"
 import from="@agon/core" names="ensureAgonHome,RUNS_DIR,scanProjectContext,tracker,appendMessage,resolveWorkingDir"
 import from="@agon/forge" names="runBrainstorm"
 import from="../output.js" names="ENGINE_COLORS"
+import from="../icons.js" names="icons"
 import from="../handlers/types.js" names="Dispatch,HandlerContext,EngineProgress" types=true
 
 fn name=handleBrainstorm params="question:string, dispatch:Dispatch, ctx:HandlerContext" returns="Promise<void>" async=true
@@ -74,7 +75,7 @@ fn name=handleBrainstorm params="question:string, dispatch:Dispatch, ctx:Handler
       const isWinner = bid?.engineId === result.winner;
       return {
         id,
-        status: bid ? (isWinner ? '★ best draft' : '✓ done') : '✗ no response',
+        status: bid ? (isWinner ? `${icons().winner} best draft` : `${icons().success} done`) : `${icons().fail} no response`,
         elapsed: Math.floor((Date.now() - startTime) / 1000),
         done: !!bid,
         failed: !bid,
@@ -91,7 +92,7 @@ fn name=handleBrainstorm params="question:string, dispatch:Dispatch, ctx:Handler
         type: 'kern-draft',
         engineId: bid.engineId,
         content: bid.reasoning + (bid.approach ? '\n' + bid.approach : ''),
-        critique: isWinner ? `★ best draft${scoreLabel}` : `✓ done${scoreLabel}`,
+        critique: isWinner ? `${icons().winner} best draft${scoreLabel}` : `${icons().success} done${scoreLabel}`,
       });
     }
 

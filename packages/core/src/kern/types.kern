@@ -156,6 +156,7 @@ config name=AgonConfig
   field name=allowedCommands type="string[]" optional=true
   field name=toolPermissions type="Record<string,'allow'|'ask'|'deny'>" optional=true
   field name=hiddenEngines type="string[]" optional=true
+  field name=iconTheme type="'roman'|'classic'" default=roman
 
 interface name=ScoutBid
   field name=engineId type=string

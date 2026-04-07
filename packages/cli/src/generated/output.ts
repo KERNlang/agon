@@ -1,85 +1,116 @@
+// @kern-source: output:1
+import { icons } from './icons.js';
+
+// @kern-source: output:3
 export const BOLD: string = '\x1b[1m';
 
+// @kern-source: output:6
 export const DIM: string = '\x1b[2m';
 
+// @kern-source: output:9
 export const ITALIC: string = '\x1b[3m';
 
+// @kern-source: output:12
 export const GREEN: string = '\x1b[32m';
 
+// @kern-source: output:15
 export const RED: string = '\x1b[31m';
 
+// @kern-source: output:18
 export const YELLOW: string = '\x1b[33m';
 
+// @kern-source: output:21
 export const BLUE: string = '\x1b[34m';
 
+// @kern-source: output:24
 export const MAGENTA: string = '\x1b[35m';
 
+// @kern-source: output:27
 export const CYAN: string = '\x1b[36m';
 
+// @kern-source: output:30
 export const WHITE: string = '\x1b[37m';
 
+// @kern-source: output:33
 export const RESET: string = '\x1b[0m';
 
+// @kern-source: output:36
 export const LOGO_COLORS: number[] = [208, 214, 220, 226, 228, 230, 255];
 
+// @kern-source: output:39
 export const ENGINE_COLORS: Record<string, number> = { claude: 208, codex: 34, gemini: 33, ollama: 255, aider: 141, openrouter: 197, qwen: 45, mistral: 75, opencode: 156 };
 
+// @kern-source: output:44
 export function fg256(code: number, text: string): string {
   return `\x1b[38;5;${code}m${text}${RESET}`;
 }
 
+// @kern-source: output:49
 export function bgFg(bg: number, fg: number, text: string): string {
   return `\x1b[48;5;${bg};38;5;${fg}m${text}${RESET}`;
 }
 
+// @kern-source: output:54
 export function bold(text: string): string {
   return `${BOLD}${text}${RESET}`;
 }
 
+// @kern-source: output:59
 export function dim(text: string): string {
   return `${DIM}${text}${RESET}`;
 }
 
+// @kern-source: output:64
 export function green(text: string): string {
   return `${GREEN}${text}${RESET}`;
 }
 
+// @kern-source: output:69
 export function red(text: string): string {
   return `${RED}${text}${RESET}`;
 }
 
+// @kern-source: output:74
 export function yellow(text: string): string {
   return `${YELLOW}${text}${RESET}`;
 }
 
+// @kern-source: output:79
 export function cyan(text: string): string {
   return `${CYAN}${text}${RESET}`;
 }
 
+// @kern-source: output:84
 export function blue(text: string): string {
   return `${BLUE}${text}${RESET}`;
 }
 
+// @kern-source: output:89
 export function magenta(text: string): string {
   return `${MAGENTA}${text}${RESET}`;
 }
 
+// @kern-source: output:94
 export function white(text: string): string {
   return `${WHITE}${text}${RESET}`;
 }
 
+// @kern-source: output:99
 export function italic(text: string): string {
   return `${ITALIC}${text}${RESET}`;
 }
 
+// @kern-source: output:104
 function stripAnsi(str: string): string {
   return str.replace(/\x1b\[[0-9;]*m/g, '');
 }
 
+// @kern-source: output:109
 function visibleLength(str: string): number {
   return stripAnsi(str).length;
 }
 
+// @kern-source: output:114
 export function gradientText(text: string, colors: number[]): string {
   let result = '';
   const step = Math.max(1, Math.floor(text.length / colors.length));
@@ -90,26 +121,36 @@ export function gradientText(text: string, colors: number[]): string {
   return result;
 }
 
+// @kern-source: output:125
 export function header(text: string): void {
-  console.log(`\n${BOLD}${CYAN}▸ ${text}${RESET}`);
+  const { header: h } = icons();
+  console.log(`\n${BOLD}${CYAN}${h} ${text}${RESET}`);
 }
 
+// @kern-source: output:131
 export function success(text: string): void {
-  console.log(`${GREEN}✓${RESET} ${text}`);
+  const { success: s } = icons();
+  console.log(`${GREEN}${s}${RESET} ${text}`);
 }
 
+// @kern-source: output:137
 export function fail(text: string): void {
-  console.log(`${RED}✗${RESET} ${text}`);
+  const { fail: f } = icons();
+  console.log(`${RED}${f}${RESET} ${text}`);
 }
 
+// @kern-source: output:143
 export function warn(text: string): void {
-  console.log(`${YELLOW}⚠${RESET} ${text}`);
+  const { warning: w } = icons();
+  console.log(`${YELLOW}${w}${RESET} ${text}`);
 }
 
+// @kern-source: output:149
 export function info(text: string): void {
   console.log(`${DIM}${text}${RESET}`);
 }
 
+// @kern-source: output:154
 export function scoreboard(title: string, engineIds: string[], metrics: Array<{label:string,values:string[]}>, winnerId?: string|null): void {
   const labelWidth = Math.max(14, ...metrics.map((m: {label:string}) => m.label.length));
   const colWidths = engineIds.map((id: string, col: number) =>
@@ -121,7 +162,7 @@ export function scoreboard(title: string, engineIds: string[], metrics: Array<{l
   console.log(`\n  ${BOLD}${WHITE}${title}${RESET}`);
   const headerCells = engineIds.map((id: string, i: number) => {
     const color = ENGINE_COLORS[id] ?? 245;
-    const name = id === winnerId ? `★ ${id}` : id;
+    const name = id === winnerId ? `${icons().winner} ${id}` : id;
     const styled = fg256(color, BOLD + name + RESET);
     const pad = colWidths[i] - visibleLength(name);
     return styled + ' '.repeat(Math.max(0, pad));
@@ -140,6 +181,7 @@ export function scoreboard(title: string, engineIds: string[], metrics: Array<{l
   console.log('');
 }
 
+// @kern-source: output:185
 export function table(headers: string[], rows: string[][]): void {
   const widths = headers.map((h: string, i: number) =>
     Math.max(visibleLength(h), ...rows.map((r: string[]) => visibleLength(r[i] ?? ''))),

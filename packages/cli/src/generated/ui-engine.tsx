@@ -20,18 +20,21 @@ import type { RichLine } from '../rich-text.js';
 import { ENGINE_COLORS } from '../generated/output.js';
 
 // @kern-source: ui-engine:10
-import type { OutputEvent, EngineProgress } from '../handlers/types.js';
+import { icons } from '../icons.js';
 
 // @kern-source: ui-engine:11
-import { contentWidth, color256toHex, engineColor, RenderedSegments, RichLineView, DiffLine, SyntaxLine, GradientLine, AnsiLine, CODE_RAIL, CODE_RAIL_COLOR, MAX_CODE_LINES } from './ui-rendering.js';
+import type { OutputEvent, EngineProgress } from '../handlers/types.js';
 
 // @kern-source: ui-engine:12
+import { contentWidth, color256toHex, engineColor, RenderedSegments, RichLineView, DiffLine, SyntaxLine, GradientLine, AnsiLine, CODE_RAIL, CODE_RAIL_COLOR, MAX_CODE_LINES } from './ui-rendering.js';
+
+// @kern-source: ui-engine:13
 import { truncateCodeLine } from '../markdown.js';
 
-// @kern-source: ui-engine:16
+// @kern-source: ui-engine:17
 export const BRAND: readonly string[] = ['#fbbf24', '#f9a816', '#f97316', '#f45a2a', '#ef4444'] as const;
 
-// @kern-source: ui-engine:19
+// @kern-source: ui-engine:20
 export const LOGO_LINES: string[] = [
   '    \u2588\u2588\u2588\u2588\u2588\u2557  \u2588\u2588\u2588\u2588\u2588\u2588\u2557  \u2588\u2588\u2588\u2588\u2588\u2588\u2557 \u2588\u2588\u2588\u2557   \u2588\u2588\u2557',
   '   \u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2554\u2550\u2550\u2550\u2550\u255d \u2588\u2588\u2554\u2550\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2588\u2588\u2557  \u2588\u2588\u2551',
@@ -41,16 +44,16 @@ export const LOGO_LINES: string[] = [
   '   \u255a\u2550\u255d  \u255a\u2550\u255d \u255a\u2550\u2550\u2550\u2550\u2550\u255d  \u255a\u2550\u2550\u2550\u2550\u2550\u255d \u255a\u2550\u255d  \u255a\u2550\u2550\u2550\u255d',
 ];
 
-// @kern-source: ui-engine:31
+// @kern-source: ui-engine:32
 export const VERSION: string = '0.1.0';
 
-// @kern-source: ui-engine:36
+// @kern-source: ui-engine:37
 export interface OutputBlock {
   id: number;
   event: OutputEvent;
 }
 
-// @kern-source: ui-engine:42
+// @kern-source: ui-engine:43
 
 export function EngineProgressView({ engines }: { engines: EngineProgress[] }) {
         return (
@@ -74,7 +77,7 @@ export function EngineProgressView({ engines }: { engines: EngineProgress[] }) {
 }
 
 
-// @kern-source: ui-engine:68
+// @kern-source: ui-engine:69
 
 export function EngineBlock({ engineId, color, content }: { engineId: string; color: number; content: string }) {
         const wrapWidth = contentWidth(8);
@@ -104,7 +107,7 @@ export function EngineBlock({ engineId, color, content }: { engineId: string; co
 }
 
 
-// @kern-source: ui-engine:102
+// @kern-source: ui-engine:103
 
 export function ConversationalResponse({ engineId, content }: { engineId: string; content: string }) {
         const wrapWidth = contentWidth(2);
@@ -122,7 +125,7 @@ export function ConversationalResponse({ engineId, content }: { engineId: string
 }
 
 
-// @kern-source: ui-engine:123
+// @kern-source: ui-engine:124
 
 function DashboardView({ event }: { event: OutputEvent & { type: 'dashboard' } }) {
         return (
@@ -188,7 +191,7 @@ function DashboardView({ event }: { event: OutputEvent & { type: 'dashboard' } }
 }
 
 
-// @kern-source: ui-engine:191
+// @kern-source: ui-engine:192
 
 function TableView({ headers, rows }: { headers: string[]; rows: string[][] }) {
         const widths = headers.map((h: string, i: number) =>
@@ -214,7 +217,7 @@ function TableView({ headers, rows }: { headers: string[]; rows: string[][] }) {
 }
 
 
-// @kern-source: ui-engine:220
+// @kern-source: ui-engine:221
 
 export function OutputBlockView({ event, mode, toolOutputExpanded }: { event: OutputEvent; mode: string; toolOutputExpanded?: boolean }) {
         switch (event.type) {
@@ -473,7 +476,7 @@ export function OutputBlockView({ event, mode, toolOutputExpanded }: { event: Ou
                 return (
                   <Box paddingLeft={2}>
                     <Text>
-                      {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{'\u270f\ufe0f  Update'}</Text></Text>
+                      {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().edit + ' Update'}</Text></Text>
                       {shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}
                       <Text dimColor>{' '}<Text color="#ef4444">{'-'}{removedCount}</Text>{' '}<Text color="#4ade80">{'+'}{addedCount}</Text></Text>
                       {collapsedHint}
@@ -483,7 +486,7 @@ export function OutputBlockView({ event, mode, toolOutputExpanded }: { event: Ou
               }
               return (
                 <Box paddingLeft={2} flexDirection="column">
-                  <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{'\u270f\ufe0f  Update'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}</Text>
+                  <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().edit + ' Update'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}</Text>
                   {(oldStr || newStr) && event.status !== 'running' && (() => {
                     const oldLines = oldStr.split('\n').slice(0, 20);
                     const newLines = newStr.split('\n').slice(0, 20);
@@ -524,7 +527,7 @@ export function OutputBlockView({ event, mode, toolOutputExpanded }: { event: Ou
                 return (
                   <Box paddingLeft={2}>
                     <Text>
-                      {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{'\ud83d\udcdd Write'}</Text></Text>
+                      {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().write + ' Write'}</Text></Text>
                       {shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}
                       {lineCount > 0 && <Text dimColor>{' '}{lineCount}{' lines'}</Text>}
                       {collapsedHint}
@@ -534,7 +537,7 @@ export function OutputBlockView({ event, mode, toolOutputExpanded }: { event: Ou
               }
               return (
                 <Box paddingLeft={2} flexDirection="column">
-                  <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{'\ud83d\udcdd Write'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}</Text>
+                  <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().write + ' Write'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}</Text>
                   {lineCount > 0 && <Text dimColor>{'  '}{lineCount}{' lines'}</Text>}
                   {event.output && event.status === 'done' && (
                     <Text dimColor>{'  '}{event.output.length > 80 ? event.output.slice(0, 80) + '\u2026' : event.output}</Text>
@@ -549,7 +552,7 @@ export function OutputBlockView({ event, mode, toolOutputExpanded }: { event: Ou
               const shortPath = filePath ? filePath.replace(process.cwd() + '/', '').replace(process.env.HOME ?? '', '~') : '';
               return (
                 <Box paddingLeft={2} flexDirection="column">
-                  <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{'\ud83d\udcc4 Read'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}</Text>
+                  <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().read + ' Read'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}</Text>
                   {event.output && event.status === 'done' && (
                     <Text dimColor>{'  '}{event.output.split('\n').length}{' lines ('}{Math.ceil(event.output.length / 1024)}{'kb)'}</Text>
                   )}
@@ -564,7 +567,7 @@ export function OutputBlockView({ event, mode, toolOutputExpanded }: { event: Ou
               const shortPath = path ? path.replace(process.cwd() + '/', '').replace(process.env.HOME ?? '', '~') : '';
               return (
                 <Box paddingLeft={2} flexDirection="column">
-                  <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{'\ud83d\udd0d Search'}</Text></Text>{' '}<Text color="#a78bfa">{pattern}</Text>{shortPath ? <Text dimColor>{' in '}{shortPath}</Text> : ''}</Text>
+                  <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().search + ' Search'}</Text></Text>{' '}<Text color="#a78bfa">{pattern}</Text>{shortPath ? <Text dimColor>{' in '}{shortPath}</Text> : ''}</Text>
                   {event.output && event.status === 'done' && (
                     <Text dimColor>{'  '}{event.output.split('\n').length}{' matches'}</Text>
                   )}
@@ -577,7 +580,7 @@ export function OutputBlockView({ event, mode, toolOutputExpanded }: { event: Ou
               const pattern = (parsed.pattern as string) || rawInput || '';
               return (
                 <Box paddingLeft={2} flexDirection="column">
-                  <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{'\ud83d\udcc2 Find'}</Text></Text>{' '}<Text color="#a78bfa">{pattern}</Text></Text>
+                  <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().find + ' Find'}</Text></Text>{' '}<Text color="#a78bfa">{pattern}</Text></Text>
                   {event.output && event.status === 'done' && (
                     <Text dimColor>{'  '}{event.output.split('\n').filter((l: string) => l.trim()).length}{' files'}</Text>
                   )}
@@ -586,12 +589,13 @@ export function OutputBlockView({ event, mode, toolOutputExpanded }: { event: Ou
             }
   
             // ── Fallback: generic tool ──
+            const ic = icons();
             const toolLabels: Record<string, string> = {
-              'Read': '\ud83d\udcc4 Read', 'Edit': '\u270f\ufe0f  Edit', 'Write': '\ud83d\udcdd Write',
-              'Bash': '\u26a1 Run', 'Grep': '\ud83d\udd0d Search', 'Glob': '\ud83d\udcc2 Find',
-              'tool': '\ud83d\udd27 Tool',
+              'Read': `${ic.read} Read`, 'Edit': `${ic.edit} Edit`, 'Write': `${ic.write} Write`,
+              'Bash': `${ic.bash} Run`, 'Grep': `${ic.search} Search`, 'Glob': `${ic.find} Find`,
+              'tool': `${ic.tool} Tool`,
             };
-            const label = toolLabels[event.tool] ?? `\ud83d\udd27 ${event.tool}`;
+            const label = toolLabels[event.tool] ?? `${ic.tool} ${event.tool}`;
             const inputPreview = event.input.length > 80 ? event.input.slice(0, 80) + '\u2026' : event.input;
             // Collapsed: 1-line summary for generic tools
             if (!toolOutputExpanded) {
@@ -660,7 +664,7 @@ export function OutputBlockView({ event, mode, toolOutputExpanded }: { event: Ou
 }
 
 
-// @kern-source: ui-engine:670
+// @kern-source: ui-engine:672
 
 export function ToolCallGroup({ blocks }: { blocks: OutputBlock[] }) {
         const toolCounts: Record<string, number> = {};

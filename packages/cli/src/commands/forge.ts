@@ -6,6 +6,7 @@ import { EngineRegistry, ensureAgonHome, loadConfig, RUNS_DIR } from '@agon/core
 import { createCliAdapter } from '@agon/adapter-cli';
 import { runForge } from '@agon/forge';
 import { header, success, fail, warn, info, table, green, red, yellow, bold, cyan } from '../output.js';
+import { icons } from '../icons.js';
 
 export const forgeCommand = defineCommand({
   meta: {
@@ -136,7 +137,7 @@ export const forgeCommand = defineCommand({
     header('Results');
 
     const rows = Object.entries(manifest.results).map(([id, r]) => [
-      id === manifest.winner ? green(`★ ${id}`) : id,
+      id === manifest.winner ? green(`${icons().winner} ${id}`) : id,
       r.pass ? green('PASS') : red('FAIL'),
       String(r.score),
       String(r.diffLines),

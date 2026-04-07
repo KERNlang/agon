@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { RUNS_DIR, ensureAgonHome } from '@agon/core';
 import type { ForgeManifest } from '@agon/core';
 import { header, info, table, bold, green, red, dim } from '../output.js';
+import { icons } from '../icons.js';
 
 export const historyCommand = defineCommand({
   meta: {
@@ -124,7 +125,7 @@ function showRunDetail(id: string): void {
     console.log('');
     header('Scores');
     const rows = Object.entries(manifest.results).map(([id, r]) => [
-      id === manifest.winner ? green(`★ ${id}`) : id,
+      id === manifest.winner ? green(`${icons().winner} ${id}`) : id,
       r.pass ? green('PASS') : red('FAIL'),
       String(r.score),
       String(r.diffLines),

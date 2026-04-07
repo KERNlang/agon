@@ -20,6 +20,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.67",
+    "@ai-sdk/openai-compatible": "^2.0.40",
+    "ai": "^6.0.149",
     "kern-lang": "^3.1.7"
   }
 }

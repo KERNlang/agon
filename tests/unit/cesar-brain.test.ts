@@ -146,13 +146,23 @@ describe('Cesar Brain', () => {
     });
 
     it('keyword fallback: tribunal-adversarial', () => {
-      const result = parseSuggestion("~85% A tribunal-adversarial debate would help here.");
+      const result = parseSuggestion("~85% I suggest a tribunal-adversarial debate would help here.");
       expect(result.action).toBe('tribunal');
       expect(result.tribunalMode).toBe('adversarial');
     });
 
     it('keyword fallback: does NOT match bare "forge" without intent', () => {
       const result = parseSuggestion("~95% The forge pattern is common in metallurgy and blacksmithing.");
+      expect(result.action).toBeNull();
+    });
+
+    it('keyword fallback: does NOT match bare "team-forge" description', () => {
+      const result = parseSuggestion("~95% Team-forge pits two teams of models against each other.");
+      expect(result.action).toBeNull();
+    });
+
+    it('keyword fallback: does NOT match bare "tribunal-adversarial" description', () => {
+      const result = parseSuggestion("~95% The tribunal-adversarial mode enables heated debate.");
       expect(result.action).toBeNull();
     });
 

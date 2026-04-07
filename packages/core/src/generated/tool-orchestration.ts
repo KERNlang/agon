@@ -198,6 +198,54 @@ export function createReportConfidenceTool(): ToolHandler {
 }
 
 // @kern-source: tool-orchestration:210
+export function createDelegateTool(): ToolHandler {
+  const definition: ToolDefinition = {
+    name: 'Delegate',
+    description: 'Delegate a subtask to a specific engine and get the result back. Unlike Forge/Brainstorm/Tribunal which hand off entirely, Delegate sends a focused subtask to one engine and returns its response so you can continue. Use this when another engine has known strengths for a specific subtask (e.g., delegate a security review to Claude, a performance optimization to Codex). After calling, WAIT for the result — do NOT stop.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        engine: { type: 'string', description: 'Engine ID to delegate to (e.g., "claude", "codex", "gemini"). Must be a different engine than yourself.' },
+        task: { type: 'string', description: 'The subtask prompt to send to the target engine. Be specific — include relevant code snippets or file contents the engine needs.' },
+        mode: { type: 'string', description: 'Dispatch mode: "exec" (default, single response), "review" (code review), or "agent" (multi-step with tool use). Optional.' },
+      },
+      required: ['engine', 'task'],
+    },
+    maxResultSizeChars: 10000,
+    isReadOnly: true,
+    isConcurrencySafe: false,
+  };
+  
+  const validate = (input: Record<string, unknown>, _ctx: ToolContext): string | null => {
+    if (!input.engine || typeof input.engine !== 'string' || !(input.engine as string).trim()) {
+      return 'Missing required parameter: engine (e.g., "claude", "codex", "gemini")';
+    }
+    if (!input.task || typeof input.task !== 'string' || !(input.task as string).trim()) {
+      return 'Missing required parameter: task';
+    }
+    if (input.mode !== undefined) {
+      const validModes = ['exec', 'review', 'agent'];
+      if (!validModes.includes(input.mode as string)) {
+        return `Invalid mode: ${input.mode}. Must be one of: ${validModes.join(', ')}`;
+      }
+    }
+    return null;
+  };
+  
+  const checkPermission = (_input: Record<string, unknown>, _ctx: ToolContext): PermissionDecision => {
+    return { behavior: 'allow' };
+  };
+  
+  // Actual execution is handled by buildOnToolCall in cesar-session.kern
+  // which has access to ctx.adapter and ctx.registry. This execute is a fallback.
+  const execute = async (_input: Record<string, unknown>, _ctx: ToolContext): Promise<ToolResult> => {
+    return { ok: false, content: '', error: 'Delegate must be executed via the session tool handler, not directly.' };
+  };
+  
+  return { definition, validate, checkPermission, execute };
+}
+
+// @kern-source: tool-orchestration:259
 export function createPipelineTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Pipeline',

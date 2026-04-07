@@ -58,6 +58,8 @@ export { copyToClipboard } from './clipboard.js';
 export { pasteStore, PASTE_MAX_AGE } from './paste-store.js';
 export type { PasteStoreResult } from './paste-store.js';
 export { saveSessionState, loadSessionState, clearSessionState } from './session-store.js';
+export { runApiAgentLoop } from './generated/api-agent-loop.js';
+export type { ApiAgentOptions, ApiAgentResult } from './generated/api-agent-loop.js';
 // ── Tool System ──
 export type { ToolResult, ToolContext, ToolHandler, ToolDefinition, ToolCall, ToolCallResult, PermissionDecision, FileState as ToolFileState } from './tool-types.js';
 export { FileStateCache, fileStateCache } from './file-state-cache.js';

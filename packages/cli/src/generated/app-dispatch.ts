@@ -11,27 +11,30 @@ import { detectIntent } from '../intent.js';
 import type { Dispatch, HandlerContext } from '../handlers/types.js';
 
 // @kern-source: app-dispatch:9
-import { handleForge, handleChat, handleBrainstorm, handleCampfire, handleTribunal, handleLeaderboard, handleHistory, handleEngines, handleDiscover, handleConfig, handleUse, handleCesar, handleTokens, handleModels, handleWorkspace, handleChats, handlePlanShow, handlePlansList, handleApprove, handleRetry, handleCancel, handleApplyPatch, handleCp, handleCommit, handleFlowReport, handleFlowAnalysis, handleBuild, handleRun } from '../handlers/index.js';
+import { icons } from '../icons.js';
 
 // @kern-source: app-dispatch:10
-import { handleTeamTribunal } from '../generated/handlers-team-tribunal.js';
+import { handleForge, handleChat, handleBrainstorm, handleCampfire, handleTribunal, handleLeaderboard, handleHistory, handleEngines, handleDiscover, handleConfig, handleUse, handleCesar, handleTokens, handleModels, handleWorkspace, handleChats, handlePlanShow, handlePlansList, handleApprove, handleRetry, handleCancel, handleApplyPatch, handleCp, handleCommit, handleFlowReport, handleFlowAnalysis, handleBuild, handleRun } from '../handlers/index.js';
 
 // @kern-source: app-dispatch:11
-import { handleTeamForge } from '../generated/handlers-team-forge.js';
+import { handleTeamTribunal } from '../generated/handlers-team-tribunal.js';
 
 // @kern-source: app-dispatch:12
-import { handleTeamBrainstorm } from '../generated/handlers-team-brainstorm.js';
+import { handleTeamForge } from '../generated/handlers-team-forge.js';
 
 // @kern-source: app-dispatch:13
-import { handleCesarBrain, parseSuggestion, CESAR_SYSTEM_PROMPT } from '../handlers/cesar-brain.js';
+import { handleTeamBrainstorm } from '../generated/handlers-team-brainstorm.js';
 
 // @kern-source: app-dispatch:14
-import { handlePipeline } from '../handlers/pipeline.js';
+import { handleCesarBrain, parseSuggestion, CESAR_SYSTEM_PROMPT } from '../handlers/cesar-brain.js';
 
 // @kern-source: app-dispatch:15
+import { handlePipeline } from '../handlers/pipeline.js';
+
+// @kern-source: app-dispatch:16
 import { handleProvider } from '../handlers/provider.js';
 
-// @kern-source: app-dispatch:17
+// @kern-source: app-dispatch:18
 export interface DispatchCallbacks {
   dispatch: Dispatch;
   ctx: HandlerContext;
@@ -61,13 +64,13 @@ export interface DispatchCallbacks {
   setNeroMode: (mode: boolean) => void;
 }
 
-// @kern-source: app-dispatch:45
+// @kern-source: app-dispatch:46
 export interface DispatchResult {
   handled: boolean;
   ranAsJob: boolean;
 }
 
-// @kern-source: app-dispatch:49
+// @kern-source: app-dispatch:50
 export function handleModeSwitch(intentType: string, topic: string|undefined, question: string|undefined, cb: DispatchCallbacks): boolean {
   if (intentType === 'campfire' && !topic) {
     cb.setMode('campfire');
@@ -94,7 +97,7 @@ export function handleModeSwitch(intentType: string, topic: string|undefined, qu
   return false;
 }
 
-// @kern-source: app-dispatch:77
+// @kern-source: app-dispatch:78
 export async function routeWithCesar(input: string, images: ImageAttachment[], cb: DispatchCallbacks): Promise<boolean> {
   cb.setPendingImages(() => []);
   try {
@@ -200,7 +203,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
       systemPrompt: CESAR_SYSTEM_PROMPT,
     });
     if (freshResult.stdout.trim()) {
-      const freshText = freshResult.stdout.trim();
+      const freshText = freshResult.stdout.trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
       appendMessage(cb.ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
       appendMessage(cb.ctx.chatSession, { role: 'engine', engineId: cesarId, content: freshText, timestamp: new Date().toISOString() });
   
@@ -265,9 +268,10 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
       systemPrompt: CESAR_SYSTEM_PROMPT,
     });
     if (actingResult.stdout.trim()) {
-      cb.dispatch({ type: 'engine-block', engineId: actingCesar, color: 208, content: actingResult.stdout.trim() });
+      const actingText = actingResult.stdout.trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
+      cb.dispatch({ type: 'engine-block', engineId: actingCesar, color: 208, content: actingText });
       appendMessage(cb.ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
-      appendMessage(cb.ctx.chatSession, { role: 'engine', engineId: actingCesar, content: `[acting-cesar] ${actingResult.stdout.trim()}`, timestamp: new Date().toISOString() });
+      appendMessage(cb.ctx.chatSession, { role: 'engine', engineId: actingCesar, content: `[acting-cesar] ${actingText}`, timestamp: new Date().toISOString() });
       return false;
     }
   } catch (e) { console.warn(`[agon] dispatch: acting Cesar failed: ${e instanceof Error ? e.message : String(e)}`); }
@@ -276,7 +280,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
   return false;
 }
 
-// @kern-source: app-dispatch:260
+// @kern-source: app-dispatch:262
 export async function dispatchIntent(intent: any, input: string, cb: DispatchCallbacks): Promise<DispatchResult> {
   switch (intent.type) {
     // ── Job-dispatched commands (return immediately, don't hit finally) ──
@@ -488,7 +492,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
         cb.dispatch({ type: 'info', message: 'Cesar session reset for Nero mode change' });
       }
       if (newNero) {
-        cb.dispatch({ type: 'success', message: '🔥 Nero mode ON — Cesar will challenge your ideas before implementing. Use /nero again to disable.' });
+        cb.dispatch({ type: 'success', message: `${icons().nero} Nero mode ON — Cesar will challenge your ideas before implementing. Use /nero again to disable.` });
       } else {
         cb.dispatch({ type: 'success', message: 'Nero mode OFF — Cesar back to normal.' });
       }

@@ -1,0 +1,37 @@
+export const CONFIDENCE_TIERS: { direct: number; nero: number; discuss: number; stop: number } = ({ direct: 93, nero: 88, discuss: 70, stop: 70 });
+
+export function parseConfidence(response: string): { value: number | null; rest: string } {
+  // Match ~X% at start (with optional whitespace)
+  const tildeMatch = response.match(/^~(\d{1,3})%\s*/);
+  if (tildeMatch) {
+    return { value: parseInt(tildeMatch[1], 10), rest: response.slice(tildeMatch[0].length) };
+  }
+  // Match "Confidence: 0.X" at start — normalize: 0.9 → 90, 0.85 → 85
+  const decimalMatch = response.match(/^Confidence:\s*0\.(\d{1,2})\s*/i);
+  if (decimalMatch) {
+    const digits = decimalMatch[1];
+    const value = digits.length === 1 ? parseInt(digits, 10) * 10 : parseInt(digits, 10);
+    return { value, rest: response.slice(decimalMatch[0].length) };
+  }
+  // Match "I'm ~X% sure" or "I'm X% confident" anywhere in first line
+  const inlineMatch = response.match(/(?:I'm|I am)\s+~?(\d{1,3})%\s+(?:sure|confident)/i);
+  if (inlineMatch) {
+    return { value: parseInt(inlineMatch[1], 10), rest: response };
+  }
+  return { value: null, rest: response };
+}
+
+export function confidenceColor(value: number): string {
+  if (value >= 94) return '\x1b[32m';  // green
+  if (value >= 90) return '\x1b[33m';  // yellow
+  if (value >= 70) return '\x1b[38;5;208m'; // orange
+  return '\x1b[31m'; // red
+}
+
+export function confidenceBadge(value: number): string {
+  const color = confidenceColor(value);
+  const reset = '\x1b[0m';
+  const dot = value >= 94 ? '●' : value >= 90 ? '●' : value >= 70 ? '●' : '●';
+  return `${color}${dot} ${value}%${reset}`;
+}
+

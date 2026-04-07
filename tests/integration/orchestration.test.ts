@@ -114,13 +114,14 @@ describe('Nero ↔ Cesar Confidence Transitions', () => {
   it('CONFIDENCE_TIERS define correct escalation ladder', async () => {
     const { CONFIDENCE_TIERS } = await import('../../packages/cli/src/handlers/cesar-brain.js');
 
-    // direct > nero/suggest > stop — escalation order must hold
-    expect(CONFIDENCE_TIERS.direct).toBeGreaterThan(CONFIDENCE_TIERS.suggest);
-    expect(CONFIDENCE_TIERS.suggest).toBeGreaterThanOrEqual(CONFIDENCE_TIERS.nero);
+    // direct > nero > discuss/stop — escalation order must hold
+    expect(CONFIDENCE_TIERS.direct).toBeGreaterThan(CONFIDENCE_TIERS.nero);
     expect(CONFIDENCE_TIERS.nero).toBeGreaterThan(CONFIDENCE_TIERS.stop);
 
     // Nero activates below direct threshold
     expect(CONFIDENCE_TIERS.nero).toBeLessThan(CONFIDENCE_TIERS.direct);
+    // discuss === stop (both 70)
+    expect(CONFIDENCE_TIERS.discuss).toBe(CONFIDENCE_TIERS.stop);
   });
 
   it('confidence badge returns correct color for each tier', async () => {

@@ -16,7 +16,7 @@ export interface ParseResult {
 
 export const TOOL_OPEN_PATTERN: RegExp = /<tool\s+name="([^"]+)">\s*/g;
 
-export const TOOL_CLOSE_TAGS: readonly string[] = ['</tool>', '</invoke>', '</minimax:tool_call>'];
+export const TOOL_CLOSE_TAGS: readonly string[] = ['</tool>', '</invoke>', '</minimax:tool_call>', '</tool_call_tool>'];
 
 function parseXmlParameters(xml: string): Record<string,unknown> {
   const result: Record<string, unknown> = {};
@@ -32,6 +32,54 @@ function parseXmlParameters(xml: string): Record<string,unknown> {
     else result[key] = val;
   }
   return result;
+}
+
+function parseGeminiToolCalls(text: string): ParseResult {
+  const toolCalls: ParsedToolCall[] = [];
+  const geminiRe = /<tool_call_tool>\s*([\s\S]*?)\s*<\/tool_call_tool>/g;
+  let lastEnd = 0;
+  let textBefore = '';
+  let gm;
+  
+  while ((gm = geminiRe.exec(text)) !== null) {
+    const body = gm[1].trim();
+    let parsed: any;
+    try {
+      parsed = JSON.parse(body);
+    } catch {
+      try {
+        const cleaned = body.replace(/^```json?\s*\n?/, '').replace(/\n?```\s*$/, '').trim();
+        parsed = JSON.parse(cleaned);
+      } catch {
+        continue;
+      }
+    }
+    const name = parsed.name;
+    // arguments can be a JSON string (OpenAI-style) or object — normalize to object
+    let input = parsed.arguments ?? parsed.input ?? {};
+    if (typeof input === 'string') {
+      try { input = JSON.parse(input); } catch { input = { raw: input }; }
+    }
+    if (!name) continue;
+  
+    if (toolCalls.length === 0) {
+      textBefore = text.slice(0, gm.index).trim();
+    }
+  
+    toolCalls.push({
+      name,
+      input,
+      startIndex: gm.index,
+      endIndex: gm.index + gm[0].length,
+    });
+    lastEnd = gm.index + gm[0].length;
+  }
+  
+  const textAfter = lastEnd > 0 ? text.slice(lastEnd).trim() : '';
+  if (toolCalls.length === 0) {
+    return { textBefore: text, toolCalls: [], textAfter: '', hasToolCalls: false };
+  }
+  return { textBefore, toolCalls, textAfter, hasToolCalls: true };
 }
 
 export function parseToolCalls(text: string): ParseResult {
@@ -120,7 +168,8 @@ export function parseToolCalls(text: string): ParseResult {
   const textAfter = lastEnd > 0 ? text.slice(lastEnd).trim() : '';
   
   if (toolCalls.length === 0) {
-    return { textBefore: text, toolCalls: [], textAfter: '', hasToolCalls: false };
+    // Fall through to Gemini format (<tool_call_tool>)
+    return parseGeminiToolCalls(text);
   }
   
   return { textBefore, toolCalls, textAfter, hasToolCalls: true };

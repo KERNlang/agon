@@ -1,4 +1,0 @@
-// SUPERSEDED — all block components moved to:
-//   ui-rendering.kern  (CodeBlockView, DiffLine, SyntaxLine, RichSpanView, RichLineView, RenderedSegments)
-//   ui-engine.kern     (EngineBlock, OutputBlockView, DashboardView, TableView, etc.)
-// This file is intentionally empty. Delete it when confirmed.

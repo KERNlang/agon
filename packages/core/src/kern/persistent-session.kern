@@ -1207,11 +1207,24 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
               }
 
               // No extractable intent — fallback to nudge
-              const STALL_RE = /\b(?:let me (?:check|look|examine|read|search|find|see|review|explore|investigate|understand|get|grab)|i (?:need|want|should|will) (?:to )?(?:check|look|examine|read|search|find|see|review|explore|investigate|understand|get|grab)|now (?:let me|i'll))\b/i;
+              const STALL_RE = /\b(?:let me (?:check|look|examine|read|search|find|see|review|explore|investigate|understand|get|grab|continue)|i (?:need|want|should|will) (?:to )?(?:check|look|examine|read|search|find|see|review|explore|investigate|understand|get|grab|continue)|now (?:let me|i'll)|continu(?:e|ing)|keep (?:reading|investigating|looking)|next[,.]?\s*(?:i|let)|before (?:i can|proceeding|implementing|deciding))\b/i;
               if (STALL_RE.test(tail)) {
                 yield { type: 'status' as const, content: 'nudging stalled model…' };
                 messageHistory.push({ role: 'assistant', content: fullResponse });
-                messageHistory.push({ role: 'user', content: 'Continue. Call the tools you need — do not narrate, just act.' });
+                messageHistory.push({ role: 'user', content: 'Continue. Call the tools you need — do not narrate, just act. If you have enough context, delegate to Forge/Brainstorm/Tribunal now.' });
+                continue;
+              }
+            }
+
+            // ── Final check: if response ends mid-thought, auto-continue instead of breaking ──
+            // Catches models that narrate plans without calling tools or delegating
+            if (config.nativeTools && step < budget - 1) {
+              const tail = fullResponse.slice(-200);
+              const UNFINISHED_RE = /\b(?:let me|i(?:'ll| will| should| need to)|next[,:]?\s*(?:i|we|let)|to (?:be continued|summarize|complete)|(?:first|then|after that)[,:]?\s*(?:i|we|let)|still (?:need|working|investigating))\s*[.…]*\s*$/i;
+              if (UNFINISHED_RE.test(tail)) {
+                yield { type: 'status' as const, content: 'model paused mid-thought, nudging…' };
+                messageHistory.push({ role: 'assistant', content: fullResponse });
+                messageHistory.push({ role: 'user', content: 'You stopped mid-thought. Either call the tools you need NOW, or delegate to Forge/Brainstorm/Tribunal. Do not narrate — act.' });
                 continue;
               }
             }

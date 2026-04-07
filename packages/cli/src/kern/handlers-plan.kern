@@ -3,28 +3,51 @@ import from="@agon/core" names="loadPlan,listPlans,approvePlan,startPlan,cancelP
 import from="@agon/core" names="Plan" types=true
 import from="../handlers/types.js" names="Dispatch,HandlerContext" types=true
 
-fn name=handlePlanShow params="dispatch:Dispatch, ctx:HandlerContext, planId?:string" returns=void
+fn name=handlePlanShow params="dispatch:Dispatch, ctx:HandlerContext, planId?:string" returns="Promise<void>" async=true
   handler <<<
+    let plan: Plan | null = null;
+
     if (planId) {
-      const plan = loadPlan(planId);
+      plan = loadPlan(planId);
       if (!plan) {
         dispatch({ type: 'warning', message: `Plan not found: ${planId}` });
         return;
       }
-      dispatch({ type: 'plan', plan });
-      return;
-    }
-
-    if (ctx.currentPlan) {
-      dispatch({ type: 'plan', plan: ctx.currentPlan });
-      return;
-    }
-
-    const recent = listPlans(1);
-    if (recent.length > 0) {
-      dispatch({ type: 'plan', plan: recent[0] });
+    } else if (ctx.currentPlan) {
+      plan = ctx.currentPlan;
     } else {
-      dispatch({ type: 'info', message: 'No plans yet. Run /forge or build to create one.' });
+      const recent = listPlans(1);
+      if (recent.length > 0) {
+        plan = recent[0];
+      } else {
+        dispatch({ type: 'info', message: 'No plans yet. Run /forge or build to create one.' });
+        return;
+      }
+    }
+
+    dispatch({ type: 'plan', plan });
+
+    // If draft, prompt for approval inline
+    if (plan.state === 'draft') {
+      const answer = await ctx.askQuestion('Approve plan? [Y/n]');
+      if (answer.trim().toLowerCase() === 'n') {
+        const cancelled = cancelPlan(plan);
+        ctx.setCurrentPlan(cancelled);
+        savePlan(cancelled);
+        dispatch({ type: 'success', message: 'Plan cancelled.' });
+      } else {
+        const approved = approvePlan(plan);
+        ctx.setCurrentPlan(approved);
+        savePlan(approved);
+        dispatch({ type: 'success', message: 'Plan approved.' });
+
+        if (approved.action.type === 'forge') {
+          const { handleForge } = await import('../handlers/forge.js');
+          await handleForge(approved.action.task, approved.action.fitnessCmd ?? null, dispatch, ctx, approved, approved.action.hardened);
+        } else {
+          dispatch({ type: 'info', message: 'Run the build again to execute.' });
+        }
+      }
     }
   >>>
 

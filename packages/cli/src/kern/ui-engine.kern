@@ -369,6 +369,9 @@ screen name=OutputBlockView target=ink
                 <Text> {step.label}</Text>
               </Box>
             ))}
+            {event.plan.state === 'draft' && (
+              <Text dimColor>{'\n  Awaiting approval — '}<Text bold color="green">{'Y'}</Text>{' accept  '}<Text bold color="red">{'N'}</Text>{' cancel'}</Text>
+            )}
           </Box>
         );
         case 'plan-list': return (

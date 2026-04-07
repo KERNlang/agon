@@ -365,6 +365,9 @@ export function OutputBlockView({ event, mode, toolOutputExpanded }: { event: Ou
                   <Text> {step.label}</Text>
                 </Box>
               ))}
+              {event.plan.state === 'draft' && (
+                <Text dimColor>{'\n  Awaiting approval — '}<Text bold color="green">{'Y'}</Text>{' accept  '}<Text bold color="red">{'N'}</Text>{' cancel'}</Text>
+              )}
             </Box>
           );
           case 'plan-list': return (
@@ -664,7 +667,7 @@ export function OutputBlockView({ event, mode, toolOutputExpanded }: { event: Ou
 }
 
 
-// @kern-source: ui-engine:672
+// @kern-source: ui-engine:675
 
 export function ToolCallGroup({ blocks }: { blocks: OutputBlock[] }) {
         const toolCounts: Record<string, number> = {};

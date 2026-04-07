@@ -1,15 +1,22 @@
+// @kern-source: gauntlet:1
 import { randomUUID } from 'node:crypto';
 
+// @kern-source: gauntlet:2
 import { writeFileSync, mkdirSync } from 'node:fs';
 
+// @kern-source: gauntlet:3
 import { join } from 'node:path';
 
+// @kern-source: gauntlet:4
 import type { EngineAdapter, EngineResult, ForgeEvent, BreakerArtifact, GauntletResult, TaskClass } from '@agon/core';
 
+// @kern-source: gauntlet:5
 import { EngineRegistry, loadConfig, worktreeCreate, worktreeRemove, worktreeDiff, headSha, repoRoot, spawnWithTimeout, createSidechainLogger } from '@agon/core';
 
+// @kern-source: gauntlet:6
 import { runFitness } from './fitness.js';
 
+// @kern-source: gauntlet:8
 export function buildBreakerPrompt(task: string, winnerDiff: string, engineId: string): string {
   return [
     `## BREAKER MODE`,
@@ -35,6 +42,7 @@ export function buildBreakerPrompt(task: string, winnerDiff: string, engineId: s
   ].join('\n');
 }
 
+// @kern-source: gauntlet:34
 export function buildRepairPrompt(task: string, breakerTests: string): string {
   return [
     `## REPAIR MODE`,
@@ -51,6 +59,7 @@ export function buildRepairPrompt(task: string, breakerTests: string): string {
   ].join('\n');
 }
 
+// @kern-source: gauntlet:51
 export async function validateBreakerArtifact(opts: {artifact:BreakerArtifact, winnerWorktree:string, cleanWorktree:string, fitnessTimeout:number}): Promise<BreakerArtifact> {
   const { artifact, winnerWorktree, cleanWorktree, fitnessTimeout } = opts;
   
@@ -98,10 +107,30 @@ export async function validateBreakerArtifact(opts: {artifact:BreakerArtifact, w
     return { ...artifact, validated: false, deterministic: false };
   }
   
-  // Both runs failed — it's deterministic and validated
+  // Run 3: Must PASS on clean (unpatched) code — proves the test targets the patch, not a pre-existing issue
+  let passesOnClean = false;
+  try {
+    const result3 = await spawnWithTimeout({
+      command: '/bin/sh',
+      args: ['-c', `npx vitest run ${testFileName} --reporter=verbose 2>&1 || exit 1`],
+      cwd: cleanWorktree,
+      timeout: fitnessTimeout * 1000,
+    });
+    passesOnClean = result3.exitCode === 0;
+  } catch {
+    passesOnClean = false;
+  }
+  
+  if (!passesOnClean) {
+    // Test fails on clean code too — it's not targeting the patch, it's a false positive
+    return { ...artifact, validated: false, deterministic: true };
+  }
+  
+  // Fails on winner, passes on clean, deterministic — validated
   return { ...artifact, validated: true, deterministic: true, testPath: winnerTestPath };
 }
 
+// @kern-source: gauntlet:122
 export async function runGauntlet(opts: {winnerId:string, losers:string[], task:string, winnerWorktree:string, fitnessCmd:string, taskClass:TaskClass, forgeDir:string, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, fitnessTimeout:number, maxBreakers:number, repairTimeout:number, cwd:string, onEvent?:(event:ForgeEvent)=>void, signal?: AbortSignal}): Promise<GauntletResult> {
   const { winnerId, losers, task, winnerWorktree, fitnessCmd, taskClass, forgeDir, registry, adapter, timeout, fitnessTimeout, maxBreakers, repairTimeout, cwd } = opts;
   

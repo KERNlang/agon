@@ -155,9 +155,12 @@ fn name=runTeamTribunal async=true params="options:TeamTribunalOptions" returns=
 
     // Cesar is the impartial judge — exclude from competing pool
     const cesarId = config.cesarEngine;
-    const competitors = available.filter((id: string) => id !== cesarId);
+    let competitors = available.filter((id: string) => id !== cesarId);
+    let cesarCompeting = false;
     if (competitors.length < 2) {
-      competitors.push(...available.filter((id: string) => !competitors.includes(id)));
+      // Not enough competitors without Cesar — add all back
+      competitors = [...available];
+      cesarCompeting = true;
     }
 
     const [teamA, teamB] = composeTeams(
@@ -189,8 +192,18 @@ fn name=runTeamTribunal async=true params="options:TeamTribunalOptions" returns=
       runTeamCoopTribunal(teamB, posB, options.question, effectiveRounds, mode, options.registry, options.adapter, options.timeout, options.outputDir, options.onEvent, options.signal),
     ]);
 
-    // --- Cesar judges (impartial — not on either team when possible) ---
-    const judgeEngine = options.registry.get(cesarId);
+    // --- Pick impartial judge — must not be on either team ---
+    const teamMemberIds = new Set([...teamA.members.map((m: any) => m.engineId), ...teamB.members.map((m: any) => m.engineId)]);
+    let judgeId = cesarId;
+    if (cesarCompeting || teamMemberIds.has(cesarId)) {
+      const altJudge = available.find((id: string) => !teamMemberIds.has(id));
+      if (altJudge) {
+        judgeId = altJudge;
+      } else {
+        sidechain.log('team-tribunal:judge-conflict', cesarId, { warning: 'Cesar judging own debate — not enough engines for impartial judge' });
+      }
+    }
+    const judgeEngine = options.registry.get(judgeId);
     const judgePrompt = `## TRIBUNAL JUDGE\nYou are an impartial judge. Two teams debated the following question. Evaluate their arguments and declare a winner.\n\nQuestion: ${options.question}\n\n## TEAM ALPHA (${posA}):\n${resultA.arguments[resultA.arguments.length - 1]}\n\n## TEAM BETA (${posB}):\n${resultB.arguments[resultB.arguments.length - 1]}\n\nAnalyze each team's argument strengths and weaknesses.\nYou MUST end your response with exactly these two lines:\nSCORE_ALPHA: <number 0-100>\nSCORE_BETA: <number 0-100>\nThen declare: WINNER: "ALPHA" or "BETA" or "DRAW"`;
 
     const judgeResult = await options.adapter.dispatch({

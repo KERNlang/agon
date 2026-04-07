@@ -16,11 +16,12 @@ fn name=parseSuggestion params="response:string" returns="SuggestionResult"
     const searchArea = response.slice(0, 150);
     const match = searchArea.match(/\[(SUGGEST|DELEGATE):([\w-]+)\]/i);
     if (!match) {
-      // ── Keyword fallback: catch natural language delegation (e.g. GLM-5.1) ──
-      const nlArea = response.slice(0, 300).toLowerCase();
+      // ── Keyword fallback: catch natural language delegation ──
+      // Search last 600 chars — models often put delegation at the end after narration
+      const nlArea = response.slice(-600).toLowerCase();
       // Optional filler between intent verb and mode word: "I suggest we *launch a* forge"
       const FILLER = '(?:(?:use|launch|start|open|run|set up|do)\\s+(?:a\\s+)?)?';
-      const INTENT = `(?:i(?:'ll| will| should| recommend| suggest(?:ing)?)\\s+(?:we\\s+)?(?:a\\s+)?${FILLER}|let(?:'s| me| us)\\s+(?:a\\s+)?${FILLER}|this (?:needs?|calls for|warrants) (?:a )?|delegate (?:this )?to |send (?:this )?to |launch(?:ing)?\\s+(?:a\\s+)?)`;
+      const INTENT = `(?:i(?:'ll| will| should| recommend| suggest(?:ing)?)\\s+(?:we\\s+)?(?:a\\s+)?${FILLER}|let(?:'s| me| us)\\s+(?:a\\s+)?${FILLER}|this (?:needs?|calls for|warrants) (?:a )?|delegat(?:e|ed|ing) (?:this )?to (?:the )?|send (?:this )?to |launch(?:ing)?\\s+(?:a\\s+)?|going with (?:a )?|proceed(?:ing)? with (?:a )?)`;
       const NL_PATTERNS: Array<{ re: RegExp; action: string; hardened?: boolean; team?: boolean }> = [
         // All patterns require intent verbs to avoid matching descriptions
         { re: new RegExp(`\\b(?:${INTENT})team[\\s-]forge\\b`), action: 'team-forge', team: true },
@@ -32,7 +33,12 @@ fn name=parseSuggestion params="response:string" returns="SuggestionResult"
         { re: new RegExp(`\\b(?:${INTENT})tribunal[\\s-](adversarial|synthesis|steelman|socratic|red[\\s-]team|postmortem)\\b`), action: 'tribunal' },
         { re: new RegExp(`\\b(?:${INTENT})tribunal\\b`), action: 'tribunal' },
         { re: new RegExp(`\\b(?:${INTENT}|open(?:ing)?\\s+(?:a\\s+)?)campfire\\b`), action: 'campfire' },
-        { re: new RegExp(`\\b(?:${INTENT}|full\\s+)pipeline\\b`), action: 'pipeline' },
+        { re: new RegExp(`\\b(?:${INTENT}|full\\s+)(?:team[\\s-])?pipeline\\b`), action: 'pipeline' },
+        // Past-tense: "delegated to pipeline", "going with forge"
+        { re: /\bdelegated to (?:the )?(?:full )?pipeline\b/, action: 'pipeline' },
+        { re: /\bdelegated to (?:the )?forge\b/, action: 'forge' },
+        { re: /\bdelegated to (?:the )?brainstorm\b/, action: 'brainstorm' },
+        { re: /\bdelegated to (?:the )?tribunal\b/, action: 'tribunal' },
       ];
       for (const pat of NL_PATTERNS) {
         const nlMatch = nlArea.match(pat.re);

@@ -503,12 +503,19 @@ export function App({  }: {  }) {
               if (toolOutputExpanded) {
                 return outputBlocks.map((block: OutputBlock) => (<OutputBlockView key={block.id} event={block.event} mode={mode} toolOutputExpanded={true} />));
               }
+              // Group tool calls — absorb minor events (info, warning, success) between them
+              const minorTypes = new Set(['info', 'warning', 'success', 'separator']);
               const groups: (OutputBlock | OutputBlock[])[] = [];
               let idx = 0;
               while (idx < outputBlocks.length) {
                 if (outputBlocks[idx].event.type === 'tool-call') {
                   const group: OutputBlock[] = [];
-                  while (idx < outputBlocks.length && outputBlocks[idx].event.type === 'tool-call') { group.push(outputBlocks[idx]); idx++; }
+                  while (idx < outputBlocks.length) {
+                    const t = outputBlocks[idx].event.type;
+                    if (t === 'tool-call') { group.push(outputBlocks[idx]); idx++; }
+                    else if (minorTypes.has(t) && idx + 1 < outputBlocks.length && outputBlocks[idx + 1].event.type === 'tool-call') { idx++; }
+                    else break;
+                  }
                   groups.push(group);
                 } else { groups.push(outputBlocks[idx]); idx++; }
               }
@@ -621,7 +628,7 @@ export function App({  }: {  }) {
 }
 
 
-// @kern-source: ui-app:596
+// @kern-source: ui-app:603
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

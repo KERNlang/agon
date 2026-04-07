@@ -23,7 +23,7 @@ import { handleTeamForge } from '../generated/handlers-team-forge.js';
 import { handleTeamBrainstorm } from '../generated/handlers-team-brainstorm.js';
 
 // @kern-source: app-dispatch:13
-import { handleCesarBrain, CESAR_SYSTEM_PROMPT } from '../handlers/cesar-brain.js';
+import { handleCesarBrain, parseSuggestion, CESAR_SYSTEM_PROMPT } from '../handlers/cesar-brain.js';
 
 // @kern-source: app-dispatch:14
 import { handlePipeline } from '../handlers/pipeline.js';
@@ -143,6 +143,25 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
   // If brain handler queued the message (responded=true), don't fall back
   // The queue auto-drains when the current turn finishes
   
+  // Check if a delegation was pending from the crashed session
+  const crashDel = (cb.ctx as any)._pendingDelegation;
+  if (crashDel) {
+    delete (cb.ctx as any)._pendingDelegation;
+    const label = input.slice(0, 40);
+    let action = crashDel.team ? `team-${crashDel.action}` : crashDel.action;
+    cb.dispatch({ type: 'info', message: `Cesar → ${action} (recovered from session crash)` });
+    switch (action) {
+      case 'forge': cb.runAsJob('forge', label, () => handleForge(input, null, cb.dispatch, cb.ctx, undefined, crashDel.hardened ?? false)); return true;
+      case 'brainstorm': cb.runAsJob('brainstorm', label, () => handleBrainstorm(input, cb.dispatch, cb.ctx)); return true;
+      case 'tribunal': cb.runAsJob('tribunal', label, () => handleTribunal(input, cb.dispatch, cb.ctx, crashDel.tribunalMode)); return true;
+      case 'campfire': cb.runAsJob('campfire', label, () => handleCampfire(input, cb.dispatch, cb.ctx)); return true;
+      case 'pipeline': cb.runAsJob('pipeline', label, () => handlePipeline(input, cb.dispatch, cb.ctx)); return true;
+      case 'team-forge': { const tf = await cb.askQuestion('What command tests this?'); if (tf.trim()) { cb.runAsJob('team-forge', label, () => handleTeamForge(input, tf.trim(), cb.dispatch, cb.ctx, undefined)); return true; } break; }
+      case 'team-brainstorm': cb.runAsJob('team-brainstorm', label, () => handleTeamBrainstorm(input, cb.dispatch, cb.ctx)); return true;
+      case 'team-tribunal': cb.runAsJob('team-tribunal', label, () => handleTeamTribunal(input, cb.dispatch, cb.ctx, crashDel.tribunalMode)); return true;
+    }
+  }
+  
   // Cesar truly didn't respond — try fresh CLI dispatch
   const cesarConfig = cb.ctx.config;
   const cesarId = (cesarConfig as any).cesarEngine ?? 'claude';
@@ -164,9 +183,37 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
       systemPrompt: CESAR_SYSTEM_PROMPT,
     });
     if (freshResult.stdout.trim()) {
-      cb.dispatch({ type: 'engine-block', engineId: cesarId, color: 81, content: freshResult.stdout.trim() });
+      const freshText = freshResult.stdout.trim();
       appendMessage(cb.ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
-      appendMessage(cb.ctx.chatSession, { role: 'engine', engineId: cesarId, content: freshResult.stdout.trim(), timestamp: new Date().toISOString() });
+      appendMessage(cb.ctx.chatSession, { role: 'engine', engineId: cesarId, content: freshText, timestamp: new Date().toISOString() });
+  
+      // Parse fallback response for delegation — same logic as handleCesarBrain
+      const fallbackSuggestion = parseSuggestion(freshText);
+      if (fallbackSuggestion.action) {
+        if (fallbackSuggestion.rest) cb.dispatch({ type: 'engine-block', engineId: cesarId, color: 81, content: fallbackSuggestion.rest });
+        const confirmLabel = fallbackSuggestion.hardened ? `${fallbackSuggestion.action} (hardened)` : fallbackSuggestion.action;
+        const answer = await cb.askQuestion(`Cesar suggests: ${confirmLabel}${fallbackSuggestion.tribunalMode ? ` [${fallbackSuggestion.tribunalMode}]` : ''}`);
+        // askQuestion returns the answer as a string; check for 'y' or the key value
+        if (answer === 'y' || answer === '1') {
+          const label = input.slice(0, 40);
+          const action = fallbackSuggestion.team ? `team-${fallbackSuggestion.action}` : fallbackSuggestion.action;
+          cb.dispatch({ type: 'info', message: `Cesar → ${action}` });
+          switch (action) {
+            case 'forge': cb.runAsJob('forge', label, () => handleForge(input, null, cb.dispatch, cb.ctx, undefined, fallbackSuggestion.hardened ?? false)); return true;
+            case 'brainstorm': cb.runAsJob('brainstorm', label, () => handleBrainstorm(input, cb.dispatch, cb.ctx)); return true;
+            case 'tribunal': cb.runAsJob('tribunal', label, () => handleTribunal(input, cb.dispatch, cb.ctx, fallbackSuggestion.tribunalMode)); return true;
+            case 'campfire': cb.runAsJob('campfire', label, () => handleCampfire(input, cb.dispatch, cb.ctx)); return true;
+            case 'pipeline': cb.runAsJob('pipeline', label, () => handlePipeline(input, cb.dispatch, cb.ctx)); return true;
+            case 'team-forge': { const tf = await cb.askQuestion('What command tests this?'); if (tf.trim()) { cb.runAsJob('team-forge', label, () => handleTeamForge(input, tf.trim(), cb.dispatch, cb.ctx, undefined)); return true; } break; }
+            case 'team-brainstorm': cb.runAsJob('team-brainstorm', label, () => handleTeamBrainstorm(input, cb.dispatch, cb.ctx)); return true;
+            case 'team-tribunal': cb.runAsJob('team-tribunal', label, () => handleTeamTribunal(input, cb.dispatch, cb.ctx, fallbackSuggestion.tribunalMode)); return true;
+          }
+        }
+        return false;
+      }
+  
+      // No delegation — show as plain response
+      cb.dispatch({ type: 'engine-block', engineId: cesarId, color: 81, content: freshText });
       return false;
     }
   } catch (e) { console.warn(`[agon] dispatch: Cesar fallback failed: ${e instanceof Error ? e.message : String(e)}`); }
@@ -211,7 +258,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
   return false;
 }
 
-// @kern-source: app-dispatch:195
+// @kern-source: app-dispatch:242
 export async function dispatchIntent(intent: any, input: string, cb: DispatchCallbacks): Promise<DispatchResult> {
   switch (intent.type) {
     // ── Job-dispatched commands (return immediately, don't hit finally) ──

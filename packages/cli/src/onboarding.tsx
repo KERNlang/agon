@@ -11,6 +11,7 @@ import {
 import { createCliAdapter } from '@agon/adapter-cli';
 import type { EngineAdapter } from '@agon/core';
 import { ENGINE_COLORS } from './output.js';
+import { icons } from './icons.js';
 
 interface EngineInfo {
   id: string;
@@ -115,8 +116,8 @@ function OnboardingApp() {
               {available.map((e, i) => (
                 <Box key={e.id}>
                   <Text color={i === cursorIndex ? 'yellow' : undefined}>
-                    {i === cursorIndex ? '❯ ' : '  '}
-                    {selectedEngines.includes(e.id) ? '◉' : '○'} {' '}
+                    {i === cursorIndex ? icons().prompt + ' ' : '  '}
+                    {selectedEngines.includes(e.id) ? icons().dotOn : icons().dotOff} {' '}
                   </Text>
                   <Text color={String(ENGINE_COLORS[e.id] ?? 245)} bold>{e.id}</Text>
                   <Text dimColor> {e.version}</Text>
@@ -134,7 +135,7 @@ function OnboardingApp() {
           {available.map((e, i) => (
             <Box key={e.id}>
               <Text color={i === cursorIndex ? 'yellow' : undefined}>
-                {i === cursorIndex ? '❯ ' : '  '}
+                {i === cursorIndex ? icons().prompt + ' ' : '  '}
               </Text>
               <Text color={String(ENGINE_COLORS[e.id] ?? 245)} bold>{e.id}</Text>
               <Text dimColor> {e.displayName}</Text>

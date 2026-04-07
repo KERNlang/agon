@@ -92,21 +92,30 @@ import { fileURLToPath } from 'node:url';
 import { readdirSync, writeFileSync, mkdirSync, unlinkSync } from 'node:fs';
 
 // @kern-source: ui-app:35
-import { homedir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 
 // @kern-source: ui-app:36
-import { loadSkills } from '@agon/core';
+import { spawnSync } from 'node:child_process';
+
+// @kern-source: ui-app:37
+import { sessionResultStore } from '../generated/session-results.js';
+
+// @kern-source: ui-app:38
+import { formatSessionResults } from '../generated/results-formatter.js';
 
 // @kern-source: ui-app:39
-export const _activeAborts: Set<AbortController> = new Set<AbortController>();
+import { loadSkills } from '@agon/core';
 
 // @kern-source: ui-app:42
-export const _cancelCallback: { fn: (() => void) | null } = { fn: null };
+export const _activeAborts: Set<AbortController> = new Set<AbortController>();
 
 // @kern-source: ui-app:45
-export const _cesarSessionRef: { session: PersistentSession | null } = { session: null };
+export const _cancelCallback: { fn: (() => void) | null } = { fn: null };
 
 // @kern-source: ui-app:48
+export const _cesarSessionRef: { session: PersistentSession | null } = { session: null };
+
+// @kern-source: ui-app:51
 
 export function App({  }: {  }) {
   const [replState, setReplState] = useState<ReplStateState>('idle');
@@ -414,6 +423,25 @@ export function App({  }: {  }) {
           setReviewEvent(null);
   }, [reviewEvent,dispatch]);
 
+  const openResultsPager = useCallback(() => {
+          if (!sessionResultStore.hasResults()) {
+            dispatch({ type: 'info', message: 'No results yet — run /brainstorm, /campfire, /tribunal, or /forge first' } as any);
+            return;
+          }
+          const content = formatSessionResults(sessionResultStore.getResults());
+          const tmpFile = join(tmpdir(), `agon-results-${Date.now()}.txt`);
+          try {
+            writeFileSync(tmpFile, content, 'utf-8');
+            const pager = process.env.PAGER || 'less';
+            const args = pager === 'less' ? ['-R', tmpFile] : [tmpFile];
+            spawnSync(pager, args, { stdio: 'inherit' });
+          } catch (err) {
+            dispatch({ type: 'error', message: `Pager failed: ${err instanceof Error ? err.message : String(err)}` } as any);
+          } finally {
+            try { unlinkSync(tmpFile); } catch {}
+          }
+  }, [dispatch]);
+
   const handleSlashSelect = useCallback((cmd:string) => {
           setSlashPickerOpen(false);
           setInputValue(cmd + ' ');
@@ -508,6 +536,10 @@ export function App({  }: {  }) {
           }
           if ((key.ctrl && input === 'e') || input === '\x05') {
             setToolOutputExpanded((prev: boolean) => !prev); return;
+          }
+          if (key.ctrl && input === 'r') {
+            openResultsPager();
+            return;
           }
           if (key.escape) {
             const decision = resolveEscapeAction({
@@ -714,7 +746,7 @@ export function App({  }: {  }) {
 }
 
 
-// @kern-source: ui-app:687
+// @kern-source: ui-app:714
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

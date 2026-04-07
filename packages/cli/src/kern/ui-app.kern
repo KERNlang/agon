@@ -32,7 +32,10 @@ import from="../components.js" names="OutputBlock,ReviewEvent" types=true
 import from="node:path" names="join,dirname"
 import from="node:url" names="fileURLToPath"
 import from="node:fs" names="readdirSync,writeFileSync,mkdirSync,unlinkSync"
-import from="node:os" names="homedir"
+import from="node:os" names="homedir,tmpdir"
+import from="node:child_process" names="spawnSync"
+import from="../generated/session-results.js" names="sessionResultStore"
+import from="../generated/results-formatter.js" names="formatSessionResults"
 import from="@agon/core" names="loadSkills"
 
 // ── Module-level mutable refs for SIGINT ──
@@ -412,6 +415,26 @@ screen name=App target=ink
       setReviewEvent(null);
     >>>
 
+  callback name=openResultsPager params="" deps="dispatch"
+    handler <<<
+      if (!sessionResultStore.hasResults()) {
+        dispatch({ type: 'info', message: 'No results yet — run /brainstorm, /campfire, /tribunal, or /forge first' } as any);
+        return;
+      }
+      const content = formatSessionResults(sessionResultStore.getResults());
+      const tmpFile = join(tmpdir(), `agon-results-${Date.now()}.txt`);
+      try {
+        writeFileSync(tmpFile, content, 'utf-8');
+        const pager = process.env.PAGER || 'less';
+        const args = pager === 'less' ? ['-R', tmpFile] : [tmpFile];
+        spawnSync(pager, args, { stdio: 'inherit' });
+      } catch (err) {
+        dispatch({ type: 'error', message: `Pager failed: ${err instanceof Error ? err.message : String(err)}` } as any);
+      } finally {
+        try { unlinkSync(tmpFile); } catch {}
+      }
+    >>>
+
   callback name=handleSlashSelect params="cmd:string"
     handler <<<
       setSlashPickerOpen(false);
@@ -476,6 +499,10 @@ screen name=App target=ink
       }
       if ((key.ctrl && input === 'e') || input === '\x05') {
         setToolOutputExpanded((prev: boolean) => !prev); return;
+      }
+      if (key.ctrl && input === 'r') {
+        openResultsPager();
+        return;
       }
       if (key.escape) {
         const decision = resolveEscapeAction({

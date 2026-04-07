@@ -389,6 +389,7 @@ export function OutputBlockView({ event, mode, toolOutputExpanded }: { event: Ou
               if (rawInput.startsWith('{')) parsed = JSON.parse(rawInput);
             } catch { /* not JSON — rawInput used as fallback */ }
             const toolKey = event.tool.toLowerCase();
+            const collapsedHint = !toolOutputExpanded ? <Text color="#585858">{' [^E]'}</Text> : null;
   
             // ── Bash / Run ──
             if (toolKey === 'bash' || toolKey === 'run') {
@@ -412,6 +413,7 @@ export function OutputBlockView({ event, mode, toolOutputExpanded }: { event: Ou
                       {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{'Bash'}</Text></Text>
                       <Text dimColor>{desc ? ' \u00b7 ' : ' $ '}{cmdPreview}{cmdPreview.length >= 60 ? '\u2026' : ''}</Text>
                       {outputLines > 0 && event.status !== 'running' && <Text dimColor>{' \u2192 '}{outputLines}{' lines'}</Text>}
+                      {collapsedHint}
                     </Text>
                   </Box>
                 );
@@ -474,6 +476,7 @@ export function OutputBlockView({ event, mode, toolOutputExpanded }: { event: Ou
                       {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{'\u270f\ufe0f  Update'}</Text></Text>
                       {shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}
                       <Text dimColor>{' '}<Text color="#ef4444">{'-'}{removedCount}</Text>{' '}<Text color="#4ade80">{'+'}{addedCount}</Text></Text>
+                      {collapsedHint}
                     </Text>
                   </Box>
                 );
@@ -524,6 +527,7 @@ export function OutputBlockView({ event, mode, toolOutputExpanded }: { event: Ou
                       {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{'\ud83d\udcdd Write'}</Text></Text>
                       {shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}
                       {lineCount > 0 && <Text dimColor>{' '}{lineCount}{' lines'}</Text>}
+                      {collapsedHint}
                     </Text>
                   </Box>
                 );
@@ -594,7 +598,7 @@ export function OutputBlockView({ event, mode, toolOutputExpanded }: { event: Ou
               const outLines = event.output ? event.output.split('\n').length : 0;
               return (
                 <Box paddingLeft={2}>
-                  <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{label}</Text></Text>{' '}<Text dimColor>{inputPreview}</Text>{outLines > 0 && event.status === 'done' && <Text dimColor>{' \u2192 '}{outLines}{' lines'}</Text>}</Text>
+                  <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{label}</Text></Text>{' '}<Text dimColor>{inputPreview}</Text>{outLines > 0 && event.status === 'done' && <Text dimColor>{' \u2192 '}{outLines}{' lines'}</Text>}{collapsedHint}</Text>
                 </Box>
               );
             }

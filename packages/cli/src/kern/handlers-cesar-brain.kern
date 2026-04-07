@@ -194,9 +194,11 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
                 appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
                 tracker.record(cesarEngineId, input, response);
                 if (suggestion.rest) dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: suggestion.rest });
-                const confirmed = await promptDelegation(suggestion.action, dispatch, suggestion.hardened, suggestion.tribunalMode, suggestion.team);
-                if (confirmed) {
-                  return { delegated: true, responded: true, action: suggestion.action, reasoning: suggestion.rest, hardened: suggestion.hardened, tribunalMode: suggestion.tribunalMode, team: suggestion.team };
+                const delResult = await promptDelegation(suggestion.action, dispatch, suggestion.hardened, suggestion.tribunalMode, suggestion.team);
+                if (delResult.approved) {
+                  const finalAction = delResult.action ?? suggestion.action;
+                  const reasoning = delResult.userContext ? `${suggestion.rest ?? ''}\n\nUser context: ${delResult.userContext}` : suggestion.rest;
+                  return { delegated: true, responded: true, action: finalAction, reasoning, hardened: delResult.hardened ?? suggestion.hardened, tribunalMode: delResult.tribunalMode ?? suggestion.tribunalMode, team: delResult.team ?? suggestion.team };
                 }
                 return { delegated: false, responded: true };
               }
@@ -372,10 +374,12 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
         appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
         appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
         tracker.record(cesarEngineId, input, response);
-        const confirmed = await promptDelegation(pendingDel.action, dispatch, pendingDel.hardened, pendingDel.tribunalMode, pendingDel.team);
-        if (confirmed) {
-          let action = pendingDel.team ? `team-${pendingDel.action}` : pendingDel.action;
-          return { delegated: true, responded: true, action, reasoning: pendingDel.reasoning, hardened: pendingDel.hardened, tribunalMode: pendingDel.tribunalMode, team: pendingDel.team };
+        const delResult = await promptDelegation(pendingDel.action, dispatch, pendingDel.hardened, pendingDel.tribunalMode, pendingDel.team);
+        if (delResult.approved) {
+          const finalAction = delResult.action ?? pendingDel.action;
+          let action = pendingDel.team ? `team-${finalAction}` : finalAction;
+          const reasoning = delResult.userContext ? `${pendingDel.reasoning ?? ''}\n\nUser context: ${delResult.userContext}` : pendingDel.reasoning;
+          return { delegated: true, responded: true, action, reasoning, hardened: delResult.hardened ?? pendingDel.hardened, tribunalMode: delResult.tribunalMode ?? pendingDel.tribunalMode, team: delResult.team ?? pendingDel.team };
         }
         return { delegated: false, responded: true };
       }
@@ -389,9 +393,11 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
         appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
         tracker.record(cesarEngineId, input, response);
         if (finalSuggestion.rest) dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: finalSuggestion.rest });
-        const confirmed = await promptDelegation(finalSuggestion.action, dispatch, finalSuggestion.hardened, finalSuggestion.tribunalMode, finalSuggestion.team);
-        if (confirmed) {
-          return { delegated: true, responded: true, action: finalSuggestion.action, reasoning: finalSuggestion.rest, hardened: finalSuggestion.hardened, tribunalMode: finalSuggestion.tribunalMode, team: finalSuggestion.team };
+        const delResult = await promptDelegation(finalSuggestion.action, dispatch, finalSuggestion.hardened, finalSuggestion.tribunalMode, finalSuggestion.team);
+        if (delResult.approved) {
+          const finalAction = delResult.action ?? finalSuggestion.action;
+          const reasoning = delResult.userContext ? `${finalSuggestion.rest ?? ''}\n\nUser context: ${delResult.userContext}` : finalSuggestion.rest;
+          return { delegated: true, responded: true, action: finalAction, reasoning, hardened: delResult.hardened ?? finalSuggestion.hardened, tribunalMode: delResult.tribunalMode ?? finalSuggestion.tribunalMode, team: delResult.team ?? finalSuggestion.team };
         }
         return { delegated: false, responded: true };
       }

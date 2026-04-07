@@ -1,29 +1,43 @@
+// @kern-source: handlers-cesar-brain:1
 import { join } from 'node:path';
 
+// @kern-source: handlers-cesar-brain:2
 import { mkdirSync, appendFileSync } from 'node:fs';
 
+// @kern-source: handlers-cesar-brain:3
 import type { ImageAttachment, PersistentSession, ForgeManifest, ForgeJudgment } from '@agon/core';
 
+// @kern-source: handlers-cesar-brain:4
 import { ensureAgonHome, RUNS_DIR, appendMessage, tracker, resolveWorkingDir, ToolRegistry, FileStateCache, parseToolCalls, formatToolResults, runToolLoop, classifyTask } from '@agon/core';
 
+// @kern-source: handlers-cesar-brain:5
 import type { ToolContext, ToolCallResult } from '@agon/core';
 
+// @kern-source: handlers-cesar-brain:6
 import { ENGINE_COLORS } from '../output.js';
 
+// @kern-source: handlers-cesar-brain:7
 import type { Dispatch, HandlerContext } from '../handlers/types.js';
 
+// @kern-source: handlers-cesar-brain:8
 import { CONFIDENCE_TIERS, parseConfidence, confidenceBadge } from './cesar-confidence.js';
 
+// @kern-source: handlers-cesar-brain:9
 import { parseSuggestion } from './cesar-suggestion.js';
 
+// @kern-source: handlers-cesar-brain:10
 import { ensureCesarSession, CESAR_SYSTEM_PROMPT } from './cesar-session.js';
 
+// @kern-source: handlers-cesar-brain:11
 import { createCesarToolRegistry, createEagerToolContext, executeEagerTool } from './cesar-tools.js';
 
+// @kern-source: handlers-cesar-brain:12
 import { fireSecondOpinion, fireAdvisor, handleSecondOpinion, activateNero, deactivateNero, promptDelegation, promptProtocolEnforcement } from './cesar-escalation.js';
 
+// @kern-source: handlers-cesar-brain:13
 import { buildRoutingContext } from './cesar-routing.js';
 
+// @kern-source: handlers-cesar-brain:15
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}> {
   const abort = new AbortController();
   const _turnStart = Date.now();
@@ -205,9 +219,11 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
               tracker.record(cesarEngineId, input, response);
               if (suggestion.rest) dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: suggestion.rest });
-              const confirmed = await promptDelegation(suggestion.action, dispatch, suggestion.hardened, suggestion.tribunalMode, suggestion.team);
-              if (confirmed) {
-                return { delegated: true, responded: true, action: suggestion.action, reasoning: suggestion.rest, hardened: suggestion.hardened, tribunalMode: suggestion.tribunalMode, team: suggestion.team };
+              const delResult = await promptDelegation(suggestion.action, dispatch, suggestion.hardened, suggestion.tribunalMode, suggestion.team);
+              if (delResult.approved) {
+                const finalAction = delResult.action ?? suggestion.action;
+                const reasoning = delResult.userContext ? `${suggestion.rest ?? ''}\n\nUser context: ${delResult.userContext}` : suggestion.rest;
+                return { delegated: true, responded: true, action: finalAction, reasoning, hardened: delResult.hardened ?? suggestion.hardened, tribunalMode: delResult.tribunalMode ?? suggestion.tribunalMode, team: delResult.team ?? suggestion.team };
               }
               return { delegated: false, responded: true };
             }
@@ -383,10 +399,12 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
       appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
       tracker.record(cesarEngineId, input, response);
-      const confirmed = await promptDelegation(pendingDel.action, dispatch, pendingDel.hardened, pendingDel.tribunalMode, pendingDel.team);
-      if (confirmed) {
-        let action = pendingDel.team ? `team-${pendingDel.action}` : pendingDel.action;
-        return { delegated: true, responded: true, action, reasoning: pendingDel.reasoning, hardened: pendingDel.hardened, tribunalMode: pendingDel.tribunalMode, team: pendingDel.team };
+      const delResult = await promptDelegation(pendingDel.action, dispatch, pendingDel.hardened, pendingDel.tribunalMode, pendingDel.team);
+      if (delResult.approved) {
+        const finalAction = delResult.action ?? pendingDel.action;
+        let action = pendingDel.team ? `team-${finalAction}` : finalAction;
+        const reasoning = delResult.userContext ? `${pendingDel.reasoning ?? ''}\n\nUser context: ${delResult.userContext}` : pendingDel.reasoning;
+        return { delegated: true, responded: true, action, reasoning, hardened: delResult.hardened ?? pendingDel.hardened, tribunalMode: delResult.tribunalMode ?? pendingDel.tribunalMode, team: delResult.team ?? pendingDel.team };
       }
       return { delegated: false, responded: true };
     }
@@ -400,9 +418,11 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
       tracker.record(cesarEngineId, input, response);
       if (finalSuggestion.rest) dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: finalSuggestion.rest });
-      const confirmed = await promptDelegation(finalSuggestion.action, dispatch, finalSuggestion.hardened, finalSuggestion.tribunalMode, finalSuggestion.team);
-      if (confirmed) {
-        return { delegated: true, responded: true, action: finalSuggestion.action, reasoning: finalSuggestion.rest, hardened: finalSuggestion.hardened, tribunalMode: finalSuggestion.tribunalMode, team: finalSuggestion.team };
+      const delResult = await promptDelegation(finalSuggestion.action, dispatch, finalSuggestion.hardened, finalSuggestion.tribunalMode, finalSuggestion.team);
+      if (delResult.approved) {
+        const finalAction = delResult.action ?? finalSuggestion.action;
+        const reasoning = delResult.userContext ? `${finalSuggestion.rest ?? ''}\n\nUser context: ${delResult.userContext}` : finalSuggestion.rest;
+        return { delegated: true, responded: true, action: finalAction, reasoning, hardened: delResult.hardened ?? finalSuggestion.hardened, tribunalMode: delResult.tribunalMode ?? finalSuggestion.tribunalMode, team: delResult.team ?? finalSuggestion.team };
       }
       return { delegated: false, responded: true };
     }

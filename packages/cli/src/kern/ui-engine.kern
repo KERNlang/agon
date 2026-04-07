@@ -220,6 +220,7 @@ screen name=TableView target=ink export=false
 screen name=OutputBlockView target=ink
   prop name=event type=OutputEvent
   prop name=mode type=string
+  prop name=toolOutputExpanded type=boolean optional=true
   render
     handler <<<
       switch (event.type) {
@@ -407,6 +408,20 @@ screen name=OutputBlockView target=ink
                 </Box>
               );
             }
+            // Collapsed: 1-line summary
+            if (!toolOutputExpanded) {
+              const outputLines = event.output ? event.output.split('\n').length : 0;
+              const cmdPreview = desc || cmd.split('\n')[0].slice(0, 60);
+              return (
+                <Box paddingLeft={2}>
+                  <Text>
+                    {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{'Bash'}</Text></Text>
+                    <Text dimColor>{desc ? ' \u00b7 ' : ' $ '}{cmdPreview}{cmdPreview.length >= 60 ? '\u2026' : ''}</Text>
+                    {outputLines > 0 && event.status !== 'running' && <Text dimColor>{' \u2192 '}{outputLines}{' lines'}</Text>}
+                  </Text>
+                </Box>
+              );
+            }
             const cmdLines = cmd.split('\n').slice(0, 3);
             const moreCmd = cmd.split('\n').length > 3;
             return (
@@ -457,6 +472,18 @@ screen name=OutputBlockView target=ink
             const shortPath = filePath ? filePath.replace(process.cwd() + '/', '').replace(process.env.HOME ?? '', '~') : '';
             const addedCount = newStr ? newStr.split('\n').length : 0;
             const removedCount = oldStr ? oldStr.split('\n').length : 0;
+            // Collapsed: 1-line summary
+            if (!toolOutputExpanded) {
+              return (
+                <Box paddingLeft={2}>
+                  <Text>
+                    {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{'\u270f\ufe0f  Update'}</Text></Text>
+                    {shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}
+                    <Text dimColor>{' '}<Text color="#ef4444">{'-'}{removedCount}</Text>{' '}<Text color="#4ade80">{'+'}{addedCount}</Text></Text>
+                  </Text>
+                </Box>
+              );
+            }
             return (
               <Box paddingLeft={2} flexDirection="column">
                 <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{'\u270f\ufe0f  Update'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}</Text>
@@ -495,6 +522,18 @@ screen name=OutputBlockView target=ink
             const content = (parsed.content as string) || '';
             const shortPath = filePath.replace(process.cwd() + '/', '').replace(process.env.HOME ?? '', '~');
             const lineCount = content ? content.split('\n').length : 0;
+            // Collapsed: 1-line summary
+            if (!toolOutputExpanded) {
+              return (
+                <Box paddingLeft={2}>
+                  <Text>
+                    {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{'\ud83d\udcdd Write'}</Text></Text>
+                    {shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}
+                    {lineCount > 0 && <Text dimColor>{' '}{lineCount}{' lines'}</Text>}
+                  </Text>
+                </Box>
+              );
+            }
             return (
               <Box paddingLeft={2} flexDirection="column">
                 <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{'\ud83d\udcdd Write'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}</Text>
@@ -556,6 +595,15 @@ screen name=OutputBlockView target=ink
           };
           const label = toolLabels[event.tool] ?? `\ud83d\udd27 ${event.tool}`;
           const inputPreview = event.input.length > 80 ? event.input.slice(0, 80) + '\u2026' : event.input;
+          // Collapsed: 1-line summary for generic tools
+          if (!toolOutputExpanded) {
+            const outLines = event.output ? event.output.split('\n').length : 0;
+            return (
+              <Box paddingLeft={2}>
+                <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{label}</Text></Text>{' '}<Text dimColor>{inputPreview}</Text>{outLines > 0 && event.status === 'done' && <Text dimColor>{' \u2192 '}{outLines}{' lines'}</Text>}</Text>
+              </Box>
+            );
+          }
           return (
             <Box paddingLeft={2} flexDirection="column">
               <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{label}</Text></Text>{' '}<Text dimColor>{inputPreview}</Text></Text>

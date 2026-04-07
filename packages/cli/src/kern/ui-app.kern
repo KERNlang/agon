@@ -78,6 +78,7 @@ screen name=App target=ink
   state name=cesarSession type="PersistentSession|null" initial="null"
   state name=explorationMode type=boolean initial=false
   state name=neroMode type=boolean initial=false
+  state name=toolOutputExpanded type=boolean initial=false
   state name=cesarMemory type=any initial="() => createCesarMemory()"
 
   // ── Refs ──
@@ -400,6 +401,9 @@ screen name=App target=ink
       if (key.ctrl && input === 'l') {
         handleSubmit('/clear'); return;
       }
+      if (key.ctrl && input === 'e') {
+        setToolOutputExpanded((prev: boolean) => !prev); return;
+      }
       if (key.escape) {
         const decision = resolveEscapeAction({
           replState,
@@ -467,7 +471,7 @@ screen name=App target=ink
         )}
         <BackgroundJobRail jobs={jobList.filter((j: Job) => j.state === 'running')} />
         <Box flexDirection="column">
-          {outputBlocks.map((block: OutputBlock) => (<OutputBlockView key={block.id} event={block.event} mode={mode} />))}
+          {outputBlocks.map((block: OutputBlock) => (<OutputBlockView key={block.id} event={block.event} mode={mode} toolOutputExpanded={toolOutputExpanded} />))}
           {streamingText && (() => {
             const c = engineColor(streamingText.engineId);
             const cleaned = cleanEngineOutput(streamingText.content);
@@ -561,7 +565,7 @@ screen name=App target=ink
                 </Box>
               </Box>
             )}
-            {mode === 'chat' && <StatusBar config={loadConfig()} chatSession={chatSession} explorationMode={explorationMode} />}
+            {mode === 'chat' && <StatusBar config={loadConfig()} chatSession={chatSession} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} />}
           </Box>
         )}
       </Box>

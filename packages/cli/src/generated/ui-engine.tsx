@@ -1,25 +1,37 @@
+// @kern-source: ui-engine:3
 import React from 'react';
 
+// @kern-source: ui-engine:4
 import { Box, Text } from 'ink';
 
+// @kern-source: ui-engine:5
 import { parseMarkdownBlocks, cleanEngineOutput } from '../markdown.js';
 
+// @kern-source: ui-engine:6
 import type { ContentSegment } from '../markdown.js';
 
+// @kern-source: ui-engine:7
 import { parseProseToRichLines } from '../rich-text.js';
 
+// @kern-source: ui-engine:8
 import type { RichLine } from '../rich-text.js';
 
+// @kern-source: ui-engine:9
 import { ENGINE_COLORS } from '../generated/output.js';
 
+// @kern-source: ui-engine:10
 import type { OutputEvent, EngineProgress } from '../handlers/types.js';
 
+// @kern-source: ui-engine:11
 import { contentWidth, color256toHex, engineColor, RenderedSegments, RichLineView, DiffLine, SyntaxLine, GradientLine, AnsiLine, CODE_RAIL, CODE_RAIL_COLOR, MAX_CODE_LINES } from './ui-rendering.js';
 
+// @kern-source: ui-engine:12
 import { truncateCodeLine } from '../markdown.js';
 
+// @kern-source: ui-engine:16
 export const BRAND: readonly string[] = ['#fbbf24', '#f9a816', '#f97316', '#f45a2a', '#ef4444'] as const;
 
+// @kern-source: ui-engine:19
 export const LOGO_LINES: string[] = [
   '    \u2588\u2588\u2588\u2588\u2588\u2557  \u2588\u2588\u2588\u2588\u2588\u2588\u2557  \u2588\u2588\u2588\u2588\u2588\u2588\u2557 \u2588\u2588\u2588\u2557   \u2588\u2588\u2557',
   '   \u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2554\u2550\u2550\u2550\u2550\u255d \u2588\u2588\u2554\u2550\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2588\u2588\u2557  \u2588\u2588\u2551',
@@ -29,13 +41,16 @@ export const LOGO_LINES: string[] = [
   '   \u255a\u2550\u255d  \u255a\u2550\u255d \u255a\u2550\u2550\u2550\u2550\u2550\u255d  \u255a\u2550\u2550\u2550\u2550\u2550\u255d \u255a\u2550\u255d  \u255a\u2550\u2550\u2550\u255d',
 ];
 
+// @kern-source: ui-engine:31
 export const VERSION: string = '0.1.0';
 
+// @kern-source: ui-engine:36
 export interface OutputBlock {
   id: number;
   event: OutputEvent;
 }
 
+// @kern-source: ui-engine:42
 
 export function EngineProgressView({ engines }: { engines: EngineProgress[] }) {
         return (
@@ -59,6 +74,7 @@ export function EngineProgressView({ engines }: { engines: EngineProgress[] }) {
 }
 
 
+// @kern-source: ui-engine:68
 
 export function EngineBlock({ engineId, color, content }: { engineId: string; color: number; content: string }) {
         const wrapWidth = contentWidth(8);
@@ -88,6 +104,7 @@ export function EngineBlock({ engineId, color, content }: { engineId: string; co
 }
 
 
+// @kern-source: ui-engine:102
 
 export function ConversationalResponse({ engineId, content }: { engineId: string; content: string }) {
         const wrapWidth = contentWidth(2);
@@ -105,6 +122,7 @@ export function ConversationalResponse({ engineId, content }: { engineId: string
 }
 
 
+// @kern-source: ui-engine:123
 
 function DashboardView({ event }: { event: OutputEvent & { type: 'dashboard' } }) {
         return (
@@ -170,6 +188,7 @@ function DashboardView({ event }: { event: OutputEvent & { type: 'dashboard' } }
 }
 
 
+// @kern-source: ui-engine:191
 
 function TableView({ headers, rows }: { headers: string[]; rows: string[][] }) {
         const widths = headers.map((h: string, i: number) =>
@@ -195,8 +214,9 @@ function TableView({ headers, rows }: { headers: string[]; rows: string[][] }) {
 }
 
 
+// @kern-source: ui-engine:220
 
-export function OutputBlockView({ event, mode }: { event: OutputEvent; mode: string }) {
+export function OutputBlockView({ event, mode, toolOutputExpanded }: { event: OutputEvent; mode: string; toolOutputExpanded?: boolean }) {
         switch (event.type) {
           case 'text': {
             const wrapWidth = contentWidth(4);
@@ -382,6 +402,20 @@ export function OutputBlockView({ event, mode }: { event: OutputEvent; mode: str
                   </Box>
                 );
               }
+              // Collapsed: 1-line summary
+              if (!toolOutputExpanded) {
+                const outputLines = event.output ? event.output.split('\n').length : 0;
+                const cmdPreview = desc || cmd.split('\n')[0].slice(0, 60);
+                return (
+                  <Box paddingLeft={2}>
+                    <Text>
+                      {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{'Bash'}</Text></Text>
+                      <Text dimColor>{desc ? ' \u00b7 ' : ' $ '}{cmdPreview}{cmdPreview.length >= 60 ? '\u2026' : ''}</Text>
+                      {outputLines > 0 && event.status !== 'running' && <Text dimColor>{' \u2192 '}{outputLines}{' lines'}</Text>}
+                    </Text>
+                  </Box>
+                );
+              }
               const cmdLines = cmd.split('\n').slice(0, 3);
               const moreCmd = cmd.split('\n').length > 3;
               return (
@@ -432,6 +466,18 @@ export function OutputBlockView({ event, mode }: { event: OutputEvent; mode: str
               const shortPath = filePath ? filePath.replace(process.cwd() + '/', '').replace(process.env.HOME ?? '', '~') : '';
               const addedCount = newStr ? newStr.split('\n').length : 0;
               const removedCount = oldStr ? oldStr.split('\n').length : 0;
+              // Collapsed: 1-line summary
+              if (!toolOutputExpanded) {
+                return (
+                  <Box paddingLeft={2}>
+                    <Text>
+                      {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{'\u270f\ufe0f  Update'}</Text></Text>
+                      {shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}
+                      <Text dimColor>{' '}<Text color="#ef4444">{'-'}{removedCount}</Text>{' '}<Text color="#4ade80">{'+'}{addedCount}</Text></Text>
+                    </Text>
+                  </Box>
+                );
+              }
               return (
                 <Box paddingLeft={2} flexDirection="column">
                   <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{'\u270f\ufe0f  Update'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}</Text>
@@ -470,6 +516,18 @@ export function OutputBlockView({ event, mode }: { event: OutputEvent; mode: str
               const content = (parsed.content as string) || '';
               const shortPath = filePath.replace(process.cwd() + '/', '').replace(process.env.HOME ?? '', '~');
               const lineCount = content ? content.split('\n').length : 0;
+              // Collapsed: 1-line summary
+              if (!toolOutputExpanded) {
+                return (
+                  <Box paddingLeft={2}>
+                    <Text>
+                      {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{'\ud83d\udcdd Write'}</Text></Text>
+                      {shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}
+                      {lineCount > 0 && <Text dimColor>{' '}{lineCount}{' lines'}</Text>}
+                    </Text>
+                  </Box>
+                );
+              }
               return (
                 <Box paddingLeft={2} flexDirection="column">
                   <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{'\ud83d\udcdd Write'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}</Text>
@@ -531,6 +589,15 @@ export function OutputBlockView({ event, mode }: { event: OutputEvent; mode: str
             };
             const label = toolLabels[event.tool] ?? `\ud83d\udd27 ${event.tool}`;
             const inputPreview = event.input.length > 80 ? event.input.slice(0, 80) + '\u2026' : event.input;
+            // Collapsed: 1-line summary for generic tools
+            if (!toolOutputExpanded) {
+              const outLines = event.output ? event.output.split('\n').length : 0;
+              return (
+                <Box paddingLeft={2}>
+                  <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{label}</Text></Text>{' '}<Text dimColor>{inputPreview}</Text>{outLines > 0 && event.status === 'done' && <Text dimColor>{' \u2192 '}{outLines}{' lines'}</Text>}</Text>
+                </Box>
+              );
+            }
             return (
               <Box paddingLeft={2} flexDirection="column">
                 <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{label}</Text></Text>{' '}<Text dimColor>{inputPreview}</Text></Text>

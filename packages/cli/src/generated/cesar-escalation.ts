@@ -201,7 +201,7 @@ export async function promptDelegation(action: string, dispatch: Dispatch, harde
     });
     const modeMap: Record<string, string> = { f: 'forge', b: 'brainstorm', t: 'tribunal', c: 'campfire', p: 'pipeline' };
     if (modeAnswer === 'x' || !modeMap[modeAnswer]) return { approved: false };
-    return { approved: true, action: modeMap[modeAnswer] };
+    return { approved: true, action: modeMap[modeAnswer], team };
   }
   
   if (answer === 'w') {

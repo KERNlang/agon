@@ -16,7 +16,7 @@ export type { SyntaxToken } from './generated/ui-rendering.js';
 // Engine display
 export {
   EngineProgressView, EngineBlock, ConversationalResponse,
-  OutputBlockView,
+  OutputBlockView, ToolCallGroup,
   BRAND, LOGO_LINES, VERSION,
 } from './generated/ui-engine.js';
 export type { OutputBlock } from './generated/ui-engine.js';

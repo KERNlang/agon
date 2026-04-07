@@ -660,3 +660,39 @@ export function OutputBlockView({ event, mode, toolOutputExpanded }: { event: Ou
 }
 
 
+// @kern-source: ui-engine:670
+
+export function ToolCallGroup({ blocks }: { blocks: OutputBlock[] }) {
+        const toolCounts: Record<string, number> = {};
+        let errors = 0;
+        let running = 0;
+        let groupEngineId = '';
+        for (const b of blocks) {
+          const ev = b.event as any;
+          groupEngineId = ev.engineId || groupEngineId;
+          const name = ev.tool || 'tool';
+          toolCounts[name] = (toolCounts[name] || 0) + 1;
+          if (ev.status === 'error') errors++;
+          if (ev.status === 'running') running++;
+        }
+        const summary = Object.entries(toolCounts)
+          .map(([name, count]: [string, number]) => count > 1 ? `${name}\u00d7${count}` : name)
+          .join(', ');
+        const eColor = engineColor(groupEngineId);
+        const statusColor = errors > 0 ? '#ef4444' : running > 0 ? '#fbbf24' : '#4ade80';
+        const statusIcon = errors > 0 ? '\u2717' : running > 0 ? '\u27f3' : '\u2713';
+  
+        return (
+          <Box paddingLeft={2}>
+            <Text>
+              <Text color={eColor}>{' \u23bf '}</Text>
+              <Text color={statusColor}>{statusIcon}</Text>
+              <Text bold>{` ${blocks.length} tool calls`}</Text>
+              <Text dimColor>{` (${summary})`}</Text>
+              <Text color="#f59e0b">{' \u25b8 Ctrl+E'}</Text>
+            </Text>
+          </Box>
+        );
+}
+
+

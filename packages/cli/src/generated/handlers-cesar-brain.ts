@@ -43,6 +43,10 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   const _turnStart = Date.now();
   const _toolsUsed: string[] = [];
   
+  // Short follow-ups bypass escalation/delegation — they're conversation continuations
+  const FOLLOWUP_RE = /^(still\??|and\??|go on|continue|yes|no|ok|why\??|how\??|what\??|really\??|more|details|explain|show me|huh\??|so\??|\?\??|y|n)$/i;
+  const _isFollowUp = FOLLOWUP_RE.test(input.trim());
+  
   // ── Concurrency guard with message queue ──
   if ((ctx as any)._cesarBusy) {
     const busySince = (ctx as any)._cesarBusySince ?? 0;
@@ -163,7 +167,6 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         }
   
         if (chunk.type === 'tool_call') {
-          clearInterval(heartbeat);
           const meta = (chunk.metadata ?? {}) as Record<string, unknown>;
           const toolInput = typeof meta.input === 'string' ? meta.input : meta.input ? JSON.stringify(meta.input) : '';
           const toolName = chunk.content || 'tool';
@@ -354,7 +357,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
     // Initial confidence was just "I haven't read the code yet". Now the model
     // has finished its turn (tool calls done, response complete). If confidence
     // is still low and model didn't delegate, escalate.
-    if (parsedConfidence !== null && !secondOpinionPromise && !(ctx as any)._advisorPending) {
+    if (parsedConfidence !== null && !secondOpinionPromise && !(ctx as any)._advisorPending && !_isFollowUp) {
       // Check: did the model delegate via tool call or [SUGGEST:mode]?
       const pendingDel = (ctx as any)._pendingDelegation;
       const didDelegate = !!pendingDel;
@@ -516,7 +519,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
     }
   
     // ── Protocol enforcement: suggest mode when engine didn't ──
-    if (!finalSuggestion.action && !ranToolLoop && !secondOpinionPromise) {
+    if (!finalSuggestion.action && !ranToolLoop && !secondOpinionPromise && !_isFollowUp) {
       if (streaming) { dispatch({ type: 'streaming-end', engineId: cesarEngineId }); streaming = false; }
       const enforcement = await promptProtocolEnforcement(input, parsedConfidence, ctx, dispatch);
       if (enforcement) {

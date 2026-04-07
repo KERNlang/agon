@@ -86,10 +86,13 @@ You are the advisor. Be direct:
     }
   >>>
 
-fn name=handleSecondOpinion async=true params="secondResult:{stdout:string, engineId:string, color:number}|null, input:string, response:string, parsedConfidence:number|null, cesarEngineId:string, dispatch:Dispatch, ctx:HandlerContext" returns="Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string}|null>"
+fn name=handleSecondOpinion async=true params="secondResult:{stdout:string, engineId:string, color:number}|null, input:string, response:string, parsedConfidence:number|null, cesarEngineId:string, dispatch:Dispatch, ctx:HandlerContext, abortSignal?:AbortSignal" returns="Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string}|null>"
   doc "Display advisor opinion and present escalation menu. At <70%, advisor replaces STOP."
   handler <<<
     if (!secondResult || !secondResult.stdout.trim()) return null;
+
+    // If interrupted, skip entirely — don't show advisor or choice menu
+    if (abortSignal?.aborted) return null;
 
     // Strip <think> blocks from advisor response
     const advisorResponse = secondResult.stdout.trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
@@ -101,6 +104,9 @@ fn name=handleSecondOpinion async=true params="secondResult:{stdout:string, engi
     appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
     appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
     tracker.record(cesarEngineId, input, response);
+
+    // If interrupted after showing advisor but before menu, skip menu
+    if (abortSignal?.aborted) return { delegated: false, responded: true };
 
     // Escalation menu — same for all low confidence, no more dead STOP
     const escAnswer = await new Promise<string>((resolve) => {

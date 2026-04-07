@@ -77,7 +77,7 @@ import { cleanInputValue, cleanSubmitValue, findInputChange, navigateHistory, re
 import { handleReviewAction } from '../generated/app-review.js';
 
 // @kern-source: ui-app:30
-import { SpinnerBlock, EngineProgressView, StatusLine, StatusBar, OutputBlockView, ToolCallGroup, SlashPicker, EnginePicker, ModelPicker, ReviewBlock, BackgroundJobRail, RenderedSegments, CesarPicker, contentWidth, engineColor } from '../components.js';
+import { SpinnerBlock, EngineProgressView, StatusLine, StatusBar, BtwPanel, OutputBlockView, ToolCallGroup, SlashPicker, EnginePicker, ModelPicker, ReviewBlock, BackgroundJobRail, RenderedSegments, CesarPicker, contentWidth, engineColor } from '../components.js';
 
 // @kern-source: ui-app:31
 import type { OutputBlock, ReviewEvent } from '../components.js';
@@ -142,6 +142,7 @@ export function App({  }: {  }) {
   const [explorationMode, setExplorationMode] = useState<boolean>(false);
   const [neroMode, setNeroMode] = useState<boolean>(false);
   const [toolOutputExpanded, setToolOutputExpanded] = useState<boolean>(false);
+  const [btwExpanded, setBtwExpanded] = useState<boolean>(false);
   const [cesarMemory, setCesarMemory] = useState<any>(() => createCesarMemory());
   const [registry, setRegistry] = useState<EngineRegistry>((() => { const reg = new EngineRegistry(); const engDir = join(dirname(fileURLToPath(import.meta.url)), '../../../../engines'); reg.load(engDir); return reg; })());
   const [adapter, setAdapter] = useState<EngineAdapter>(createCliAdapter(registry));
@@ -153,6 +154,7 @@ export function App({  }: {  }) {
   const pasteHashesRef = useRef<Map<string,string>>(new Map());
   const pasteCountRef = useRef<number>(0);
   const activeAbortRef = useRef<AbortController|null>(null);
+  const lastActivityTimeRef = useRef<number>(Date.now());
 
   const allSlashCommands = useMemo(() => {
           const skillCmds = dynamicSkills.map((s: any) => ({ cmd: s.trigger, desc: s.description || s.name }));
@@ -205,6 +207,10 @@ export function App({  }: {  }) {
   }, [registry,sessionEngines]);
 
   const dispatch = useCallback((event:OutputEvent) => {
+          const et = (event as any).type;
+          if (et === 'streaming-chunk' || et === 'progress-update' || et === 'tool-call' || et === 'spinner-start' || et === 'spinner-update') {
+            lastActivityTimeRef.current = Date.now();
+          }
           const state: OutputState = { liveSpinner: null, liveProgress: null, streamingText: streamingTextRef.current };
           handleOutputEvent(event, state, outputActions, mode, chatStartTimeRef.current);
   }, [mode]);
@@ -220,6 +226,7 @@ export function App({  }: {  }) {
           setLiveSpinner(null);
           setLiveProgress(null);
           setStreamingText(null);
+          setBtwExpanded(false);
     
           if (replState !== 'idle') {
             if (message) dispatch({ type: 'warning', message } as any);
@@ -294,6 +301,11 @@ export function App({  }: {  }) {
           pasteHashesRef.current.clear();
           pasteCountRef.current = 0;
           setInputValue(''); setInputHistory((prev: string[]) => [...prev, input]); setHistoryIndex(-1);
+          // /btw — non-interrupting status peek, works even during dispatch
+          if (input.trim().toLowerCase() === '/btw') {
+            setBtwExpanded((prev: boolean) => !prev);
+            return;
+          }
           if (replState !== 'idle' && !jobManager.running().length) {
             setInputQueue((prev: string[]) => [...prev, input]);
             dispatch({ type: 'info', message: `Queued: ${input.length > 50 ? input.slice(0, 50) + '\u2026' : input}` } as any);
@@ -333,7 +345,7 @@ export function App({  }: {  }) {
             const result = await dispatchIntent(intent, input, cb);
             if (result.ranAsJob) return;
           } catch (err: any) { dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); }
-          finally { setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state); }
+          finally { setBtwExpanded(false); setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state); }
   }, [replState,dispatch,buildContext,mode,pendingImages,jobManager]);
 
   const handleReviewActionCb = useCallback((action:'apply'|'edit'|'reject'|'copy') => {
@@ -436,6 +448,9 @@ export function App({  }: {  }) {
           }
           if ((key.ctrl && input === 'e') || input === '\x05') {
             setToolOutputExpanded((prev: boolean) => !prev); return;
+          }
+          if (key.ctrl && input === 'b') {
+            setBtwExpanded((prev: boolean) => !prev); return;
           }
           if (key.escape) {
             const decision = resolveEscapeAction({
@@ -623,7 +638,8 @@ export function App({  }: {  }) {
                   </Box>
                 </Box>
               )}
-              {mode === 'chat' && <StatusBar config={loadConfig()} chatSession={chatSession} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} />}
+              {btwExpanded && <BtwPanel engines={liveProgress} spinner={liveSpinner} jobs={jobList.filter((j: Job) => j.state === 'running')} lastActivityAt={lastActivityTimeRef.current} />}
+              {mode === 'chat' && <StatusBar config={loadConfig()} chatSession={chatSession} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} activity={liveProgress} isActive={replState !== 'idle'} />}
             </Box>
           )}
         </Box>
@@ -631,7 +647,7 @@ export function App({  }: {  }) {
 }
 
 
-// @kern-source: ui-app:604
+// @kern-source: ui-app:620
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

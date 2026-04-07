@@ -207,7 +207,34 @@ fn name=apiStreamDispatchWithHistory generator=true async=true params="config:Ap
 
       const result = streamText(streamOpts);
 
-      for await (const part of result.fullStream) {
+      // Iterate with per-chunk idle timeout — catches models that go silent mid-stream.
+      // If no chunk arrives within IDLE_TIMEOUT_MS, break and return partial output.
+      const IDLE_TIMEOUT_MS = 30_000;
+      const iterator = result.fullStream[Symbol.asyncIterator]();
+      let iterDone = false;
+
+      while (!iterDone) {
+        const next = iterator.next();
+        const idle = new Promise<never>((_, reject) => {
+          const t = setTimeout(() => reject(new Error('IDLE_TIMEOUT')), IDLE_TIMEOUT_MS);
+          next.then(() => clearTimeout(t), () => clearTimeout(t));
+        });
+
+        let iterResult: IteratorResult<any>;
+        try {
+          iterResult = await Promise.race([next, idle]);
+        } catch (err: any) {
+          if (err?.message === 'IDLE_TIMEOUT') {
+            console.warn(`[agon] api-dispatch: no chunks for ${IDLE_TIMEOUT_MS / 1000}s — breaking idle stream`);
+            controller.abort();
+            break;
+          }
+          throw err;
+        }
+
+        if (iterResult.done) { iterDone = true; break; }
+        const part = iterResult.value;
+
         switch (part.type) {
           case 'text-delta': {
             stdout += (part as any).text;

@@ -74,7 +74,7 @@ import { cleanInputValue, cleanSubmitValue, findInputChange, navigateHistory, re
 import { handleReviewAction } from '../generated/app-review.js';
 
 // @kern-source: ui-app:29
-import { SpinnerBlock, EngineProgressView, StatusLine, StatusBar, OutputBlockView, SlashPicker, EnginePicker, ModelPicker, ReviewBlock, BackgroundJobRail, RenderedSegments, CesarPicker, contentWidth, engineColor } from '../components.js';
+import { SpinnerBlock, EngineProgressView, StatusLine, StatusBar, OutputBlockView, ToolCallGroup, SlashPicker, EnginePicker, ModelPicker, ReviewBlock, BackgroundJobRail, RenderedSegments, CesarPicker, contentWidth, engineColor } from '../components.js';
 
 // @kern-source: ui-app:30
 import type { OutputBlock, ReviewEvent } from '../components.js';
@@ -499,7 +499,27 @@ export function App({  }: {  }) {
           )}
           <BackgroundJobRail jobs={jobList.filter((j: Job) => j.state === 'running')} />
           <Box flexDirection="column">
-            {outputBlocks.map((block: OutputBlock) => (<OutputBlockView key={block.id} event={block.event} mode={mode} toolOutputExpanded={toolOutputExpanded} />))}
+            {(() => {
+              if (toolOutputExpanded) {
+                return outputBlocks.map((block: OutputBlock) => (<OutputBlockView key={block.id} event={block.event} mode={mode} toolOutputExpanded={true} />));
+              }
+              const groups: (OutputBlock | OutputBlock[])[] = [];
+              let idx = 0;
+              while (idx < outputBlocks.length) {
+                if (outputBlocks[idx].event.type === 'tool-call') {
+                  const group: OutputBlock[] = [];
+                  while (idx < outputBlocks.length && outputBlocks[idx].event.type === 'tool-call') { group.push(outputBlocks[idx]); idx++; }
+                  groups.push(group);
+                } else { groups.push(outputBlocks[idx]); idx++; }
+              }
+              return groups.map((item: OutputBlock | OutputBlock[], gi: number) => {
+                if (Array.isArray(item)) {
+                  if (item.length === 1) return <OutputBlockView key={item[0].id} event={item[0].event} mode={mode} toolOutputExpanded={false} />;
+                  return <ToolCallGroup key={`tg-${item[0].id}`} blocks={item} />;
+                }
+                return <OutputBlockView key={item.id} event={item.event} mode={mode} toolOutputExpanded={false} />;
+              });
+            })()}
             {streamingText && (() => {
               const c = engineColor(streamingText.engineId);
               const cleaned = cleanEngineOutput(streamingText.content);
@@ -601,7 +621,7 @@ export function App({  }: {  }) {
 }
 
 
-// @kern-source: ui-app:576
+// @kern-source: ui-app:596
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

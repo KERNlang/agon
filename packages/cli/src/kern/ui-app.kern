@@ -26,7 +26,7 @@ import from="../generated/app-output.js" names="handleOutputEvent"
 import from="../generated/app-output.js" names="OutputActions,OutputState" types=true
 import from="../generated/app-input.js" names="cleanInputValue,cleanSubmitValue,findInputChange,navigateHistory,resolveEscapeAction"
 import from="../generated/app-review.js" names="handleReviewAction"
-import from="../components.js" names="SpinnerBlock,EngineProgressView,StatusLine,StatusBar,OutputBlockView,SlashPicker,EnginePicker,ModelPicker,ReviewBlock,BackgroundJobRail,RenderedSegments,CesarPicker,contentWidth,engineColor"
+import from="../components.js" names="SpinnerBlock,EngineProgressView,StatusLine,StatusBar,OutputBlockView,ToolCallGroup,SlashPicker,EnginePicker,ModelPicker,ReviewBlock,BackgroundJobRail,RenderedSegments,CesarPicker,contentWidth,engineColor"
 import from="../components.js" names="OutputBlock,ReviewEvent" types=true
 import from="node:path" names="join,dirname"
 import from="node:url" names="fileURLToPath"
@@ -471,7 +471,27 @@ screen name=App target=ink
         )}
         <BackgroundJobRail jobs={jobList.filter((j: Job) => j.state === 'running')} />
         <Box flexDirection="column">
-          {outputBlocks.map((block: OutputBlock) => (<OutputBlockView key={block.id} event={block.event} mode={mode} toolOutputExpanded={toolOutputExpanded} />))}
+          {(() => {
+            if (toolOutputExpanded) {
+              return outputBlocks.map((block: OutputBlock) => (<OutputBlockView key={block.id} event={block.event} mode={mode} toolOutputExpanded={true} />));
+            }
+            const groups: (OutputBlock | OutputBlock[])[] = [];
+            let idx = 0;
+            while (idx < outputBlocks.length) {
+              if (outputBlocks[idx].event.type === 'tool-call') {
+                const group: OutputBlock[] = [];
+                while (idx < outputBlocks.length && outputBlocks[idx].event.type === 'tool-call') { group.push(outputBlocks[idx]); idx++; }
+                groups.push(group);
+              } else { groups.push(outputBlocks[idx]); idx++; }
+            }
+            return groups.map((item: OutputBlock | OutputBlock[], gi: number) => {
+              if (Array.isArray(item)) {
+                if (item.length === 1) return <OutputBlockView key={item[0].id} event={item[0].event} mode={mode} toolOutputExpanded={false} />;
+                return <ToolCallGroup key={`tg-${item[0].id}`} blocks={item} />;
+              }
+              return <OutputBlockView key={item.id} event={item.event} mode={mode} toolOutputExpanded={false} />;
+            });
+          })()}
           {streamingText && (() => {
             const c = engineColor(streamingText.engineId);
             const cleaned = cleanEngineOutput(streamingText.content);

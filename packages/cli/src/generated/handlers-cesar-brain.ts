@@ -55,6 +55,12 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       (ctx as any)._cesarBusy = false;
       (ctx as any)._cesarQueue = null;
     } else {
+      // Follow-ups while busy → show elapsed status, don't queue
+      if (_isFollowUp) {
+        const elapsed = Math.round((Date.now() - busySince) / 1000);
+        dispatch({ type: 'info', message: `Cesar still working… ${elapsed}s` });
+        return { delegated: false, responded: true };
+      }
       const existing = (ctx as any)._cesarQueue;
       if (existing) {
         existing.input = existing.input + '\n\n' + input;

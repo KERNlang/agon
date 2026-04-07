@@ -939,44 +939,49 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
 
               if (old.length > 0) {
                 // Extract structured context from old messages (like OpenCode compaction)
-                const userMsgs = old.filter((m: any) => m.role === 'user' && typeof m.content === 'string');
-                const assistMsgs = old.filter((m: any) => m.role === 'assistant' && typeof m.content === 'string');
+                // Wrapped in try-catch — malformed tool_calls from API engines can break parsing
+                try {
+                  const userMsgs = old.filter((m: any) => m.role === 'user' && typeof m.content === 'string');
+                  const assistMsgs = old.filter((m: any) => m.role === 'assistant' && typeof m.content === 'string');
 
-                // Goal: first user message
-                const goal = userMsgs.length > 0
-                  ? (userMsgs[0].content as string).slice(0, 300)
-                  : '';
+                  const goal = userMsgs.length > 0
+                    ? (userMsgs[0].content as string).slice(0, 300)
+                    : '';
 
-                // Files touched: extract paths from tool calls
-                const filePaths = new Set<string>();
-                for (const m of old as any[]) {
-                  if (m.tool_calls) {
-                    for (const tc of m.tool_calls) {
-                      try {
-                        const args = JSON.parse(tc.function?.arguments ?? '{}');
-                        if (args.file_path) filePaths.add(args.file_path);
-                        if (args.path) filePaths.add(args.path);
-                        if (args.pattern) filePaths.add(`grep:${args.pattern}`);
-                      } catch {}
+                  const filePaths = new Set<string>();
+                  for (const m of old as any[]) {
+                    if (m.tool_calls) {
+                      for (const tc of m.tool_calls) {
+                        try {
+                          const args = JSON.parse(tc.function?.arguments ?? '{}');
+                          if (args.file_path) filePaths.add(args.file_path);
+                          if (args.path) filePaths.add(args.path);
+                          if (args.pattern) filePaths.add(`grep:${args.pattern}`);
+                        } catch {}
+                      }
                     }
                   }
+
+                  const lastAssist = assistMsgs.length > 0
+                    ? (assistMsgs[assistMsgs.length - 1].content as string).slice(0, 500)
+                    : '';
+
+                  const compacted = [
+                    `[Context compacted — ${old.length} messages]`,
+                    goal ? `GOAL: ${goal}` : '',
+                    filePaths.size > 0 ? `FILES: ${[...filePaths].slice(0, 20).join(', ')}` : '',
+                    lastAssist ? `PROGRESS: ${lastAssist}` : '',
+                  ].filter(Boolean).join('\n');
+
+                  const summary = { role: 'user' as const, content: compacted };
+                  messageHistory.length = 0;
+                  messageHistory.push(...system, summary, ...recent);
+                } catch (compactErr) {
+                  // Compaction failed (malformed history) — fallback: just keep recent messages
+                  console.warn(`[agon] session: compaction failed: ${compactErr instanceof Error ? compactErr.message : String(compactErr)}`);
+                  messageHistory.length = 0;
+                  messageHistory.push(...system, ...recent);
                 }
-
-                // Discoveries: last assistant message before cutoff
-                const lastAssist = assistMsgs.length > 0
-                  ? (assistMsgs[assistMsgs.length - 1].content as string).slice(0, 500)
-                  : '';
-
-                const compacted = [
-                  `[Context compacted — ${old.length} messages]`,
-                  goal ? `GOAL: ${goal}` : '',
-                  filePaths.size > 0 ? `FILES: ${[...filePaths].slice(0, 20).join(', ')}` : '',
-                  lastAssist ? `PROGRESS: ${lastAssist}` : '',
-                ].filter(Boolean).join('\n');
-
-                const summary = { role: 'user' as const, content: compacted };
-                messageHistory.length = 0;
-                messageHistory.push(...system, summary, ...recent);
               }
             }
           }
@@ -984,7 +989,9 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
           // ── Agentic tool loop (like Vercel AI SDK maxSteps) ──
           // Call API → if tool_calls returned → execute → add role:'tool' results → call API again → repeat
           const MAX_TOOL_STEPS = 15;
+          const MAX_CONSECUTIVE_ERRORS = 3;
           let step = 0;
+          let consecutiveErrors = 0;
 
           while (step < MAX_TOOL_STEPS) {
             step++;
@@ -1009,6 +1016,12 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
                 yield { type: 'text' as const, content: value as string };
               }
             } catch (err: any) {
+              // Retry once on stream failure before giving up
+              if (step === 1 && fullResponse.length === 0) {
+                yield { type: 'error' as const, content: `API stream failed, retrying… (${err.message ?? String(err)})` };
+                await new Promise(r => setTimeout(r, 1000));
+                continue; // Retry the same step
+              }
               alive = false; // Mark dead so ensureCesarSession creates fresh session on next turn
               yield { type: 'error' as const, content: err.message ?? String(err) };
               break;
@@ -1045,11 +1058,16 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
               // Emit all as running
               const parsedCalls = extractedCalls.map(tc => {
                 let args: Record<string, unknown> = {};
-                try { args = JSON.parse(tc.arguments); } catch { args = { raw: tc.arguments }; }
-                return { ...tc, args };
+                let parseError = false;
+                try { args = JSON.parse(tc.arguments); } catch { args = { raw: tc.arguments }; parseError = true; }
+                return { ...tc, args, parseError };
               });
               for (const tc of parsedCalls) {
-                yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, status: 'running' } };
+                if (tc.parseError) {
+                  yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, status: 'error', output: `Malformed tool arguments from API: ${tc.arguments.slice(0, 200)}` } };
+                } else {
+                  yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, status: 'running' } };
+                }
               }
 
               // Execute all in parallel
@@ -1063,9 +1081,12 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
                 return { ...tc, result };
               }));
 
-              // Emit results and add to history
+              // Emit results and add to history — track errors for circuit breaker
+              let stepErrors = 0;
               for (const tc of results) {
-                yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, output: tc.result, status: 'done' } };
+                const isError = tc.result.startsWith('Error:') || tc.result.startsWith('Unknown tool:');
+                if (isError) stepErrors++;
+                yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, output: tc.result, status: isError ? 'error' : 'done' } };
 
                 let histContent = tc.result;
                 if (histContent.length > INLINE_LIMIT) {
@@ -1073,6 +1094,18 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
                   histContent = histContent.slice(0, 300) + `\n...\n[${lines} lines, ${histContent.length} chars — use ${tc.name} again for full content]`;
                 }
                 messageHistory.push({ role: 'tool', content: histContent, tool_call_id: tc.id } as any);
+              }
+
+              // Circuit breaker: if ALL tools in this step failed, count it
+              if (stepErrors > 0 && stepErrors >= results.length) {
+                consecutiveErrors++;
+                if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+                  yield { type: 'error' as const, content: `Tool loop circuit breaker: ${consecutiveErrors} consecutive steps with all tools failing. Stopping to avoid token waste.` };
+                  messageHistory.push({ role: 'assistant', content: '[Tool loop stopped — repeated failures]' });
+                  break;
+                }
+              } else {
+                consecutiveErrors = 0; // Reset on any successful tool execution
               }
 
               // Continue loop — call API again with tool results

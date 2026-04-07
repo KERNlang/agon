@@ -143,22 +143,27 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
   // If brain handler queued the message (responded=true), don't fall back
   // The queue auto-drains when the current turn finishes
   
-  // Check if a delegation was pending from the crashed session
+  // Check if a delegation was pending from the crashed session (with 60s TTL)
   const crashDel = (cb.ctx as any)._pendingDelegation;
   if (crashDel) {
     delete (cb.ctx as any)._pendingDelegation;
-    const label = input.slice(0, 40);
-    let action = crashDel.team ? `team-${crashDel.action}` : crashDel.action;
-    cb.dispatch({ type: 'info', message: `Cesar → ${action} (recovered from session crash)` });
-    switch (action) {
-      case 'forge': cb.runAsJob('forge', label, () => handleForge(input, null, cb.dispatch, cb.ctx, undefined, crashDel.hardened ?? false)); return true;
-      case 'brainstorm': cb.runAsJob('brainstorm', label, () => handleBrainstorm(input, cb.dispatch, cb.ctx)); return true;
-      case 'tribunal': cb.runAsJob('tribunal', label, () => handleTribunal(input, cb.dispatch, cb.ctx, crashDel.tribunalMode)); return true;
-      case 'campfire': cb.runAsJob('campfire', label, () => handleCampfire(input, cb.dispatch, cb.ctx)); return true;
-      case 'pipeline': cb.runAsJob('pipeline', label, () => handlePipeline(input, cb.dispatch, cb.ctx)); return true;
-      case 'team-forge': { const tf = await cb.askQuestion('What command tests this?'); if (tf.trim()) { cb.runAsJob('team-forge', label, () => handleTeamForge(input, tf.trim(), cb.dispatch, cb.ctx, undefined)); return true; } break; }
-      case 'team-brainstorm': cb.runAsJob('team-brainstorm', label, () => handleTeamBrainstorm(input, cb.dispatch, cb.ctx)); return true;
-      case 'team-tribunal': cb.runAsJob('team-tribunal', label, () => handleTeamTribunal(input, cb.dispatch, cb.ctx, crashDel.tribunalMode)); return true;
+    // TTL: discard stale delegations older than 60 seconds
+    if (crashDel.createdAt && Date.now() - crashDel.createdAt > 60000) {
+      cb.dispatch({ type: 'warning', message: 'Stale delegation discarded (>60s old)' });
+    } else {
+      const label = input.slice(0, 40);
+      let action = crashDel.team ? `team-${crashDel.action}` : crashDel.action;
+      cb.dispatch({ type: 'info', message: `Cesar → ${action} (recovered from session crash)` });
+      switch (action) {
+        case 'forge': cb.runAsJob('forge', label, () => handleForge(input, null, cb.dispatch, cb.ctx, undefined, crashDel.hardened ?? false)); return true;
+        case 'brainstorm': cb.runAsJob('brainstorm', label, () => handleBrainstorm(input, cb.dispatch, cb.ctx)); return true;
+        case 'tribunal': cb.runAsJob('tribunal', label, () => handleTribunal(input, cb.dispatch, cb.ctx, crashDel.tribunalMode)); return true;
+        case 'campfire': cb.runAsJob('campfire', label, () => handleCampfire(input, cb.dispatch, cb.ctx)); return true;
+        case 'pipeline': cb.runAsJob('pipeline', label, () => handlePipeline(input, cb.dispatch, cb.ctx)); return true;
+        case 'team-forge': { const tf = await cb.askQuestion('What command tests this?'); if (tf.trim()) { cb.runAsJob('team-forge', label, () => handleTeamForge(input, tf.trim(), cb.dispatch, cb.ctx, undefined)); return true; } break; }
+        case 'team-brainstorm': cb.runAsJob('team-brainstorm', label, () => handleTeamBrainstorm(input, cb.dispatch, cb.ctx)); return true;
+        case 'team-tribunal': cb.runAsJob('team-tribunal', label, () => handleTeamTribunal(input, cb.dispatch, cb.ctx, crashDel.tribunalMode)); return true;
+      }
     }
   }
   
@@ -258,7 +263,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
   return false;
 }
 
-// @kern-source: app-dispatch:242
+// @kern-source: app-dispatch:247
 export async function dispatchIntent(intent: any, input: string, cb: DispatchCallbacks): Promise<DispatchResult> {
   switch (intent.type) {
     // ── Job-dispatched commands (return immediately, don't hit finally) ──

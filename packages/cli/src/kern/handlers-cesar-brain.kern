@@ -314,6 +314,7 @@ fn name=ensureCesarSession async=true params="ctx:HandlerContext" returns="Promi
               hardened: (args as any).hardened ?? false,
               tribunalMode: (args as any).mode,
               team: (args as any).team ?? false,
+              createdAt: Date.now(),
             };
             return 'Delegation accepted. STOP responding now. The orchestrator will handle the rest.';
           }

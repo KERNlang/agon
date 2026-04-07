@@ -1,40 +1,70 @@
+// @kern-source: handlers-plan:1
 import { join } from 'node:path';
 
+// @kern-source: handlers-plan:2
 import { loadPlan, listPlans, approvePlan, startPlan, cancelPlan, resetStepForRetry, savePlan, preflightApply, applyPatchToTree, RUNS_DIR, resolveWorkingDir } from '@agon/core';
 
+// @kern-source: handlers-plan:3
 import type { Plan } from '@agon/core';
 
+// @kern-source: handlers-plan:4
 import type { Dispatch, HandlerContext } from '../handlers/types.js';
 
-export function handlePlanShow(dispatch: Dispatch, ctx: HandlerContext, planId?: string): void {
+// @kern-source: handlers-plan:6
+export async function handlePlanShow(dispatch: Dispatch, ctx: HandlerContext, planId?: string): Promise<void> {
+  let plan: Plan | null = null;
+  
   if (planId) {
-    const plan = loadPlan(planId);
+    plan = loadPlan(planId);
     if (!plan) {
       dispatch({ type: 'warning', message: `Plan not found: ${planId}` });
       return;
     }
-    dispatch({ type: 'plan', plan });
-    return;
-  }
-  
-  if (ctx.currentPlan) {
-    dispatch({ type: 'plan', plan: ctx.currentPlan });
-    return;
-  }
-  
-  const recent = listPlans(1);
-  if (recent.length > 0) {
-    dispatch({ type: 'plan', plan: recent[0] });
+  } else if (ctx.currentPlan) {
+    plan = ctx.currentPlan;
   } else {
-    dispatch({ type: 'info', message: 'No plans yet. Run /forge or build to create one.' });
+    const recent = listPlans(1);
+    if (recent.length > 0) {
+      plan = recent[0];
+    } else {
+      dispatch({ type: 'info', message: 'No plans yet. Run /forge or build to create one.' });
+      return;
+    }
+  }
+  
+  dispatch({ type: 'plan', plan });
+  
+  // If draft, prompt for approval inline
+  if (plan.state === 'draft') {
+    const answer = await ctx.askQuestion('Approve plan? [Y/n]');
+    if (answer.trim().toLowerCase() === 'n') {
+      const cancelled = cancelPlan(plan);
+      ctx.setCurrentPlan(cancelled);
+      savePlan(cancelled);
+      dispatch({ type: 'success', message: 'Plan cancelled.' });
+    } else {
+      const approved = approvePlan(plan);
+      ctx.setCurrentPlan(approved);
+      savePlan(approved);
+      dispatch({ type: 'success', message: 'Plan approved.' });
+  
+      if (approved.action.type === 'forge') {
+        const { handleForge } = await import('../handlers/forge.js');
+        await handleForge(approved.action.task, approved.action.fitnessCmd ?? null, dispatch, ctx, approved, approved.action.hardened);
+      } else {
+        dispatch({ type: 'info', message: 'Run the build again to execute.' });
+      }
+    }
   }
 }
 
+// @kern-source: handlers-plan:54
 export function handlePlansList(dispatch: Dispatch): void {
   const plans = listPlans(20);
   dispatch({ type: 'plan-list', plans });
 }
 
+// @kern-source: handlers-plan:60
 export async function handleApprove(dispatch: Dispatch, ctx: HandlerContext): Promise<void> {
   if (!ctx.currentPlan) {
     dispatch({ type: 'warning', message: 'No active plan to approve.' });
@@ -58,6 +88,7 @@ export async function handleApprove(dispatch: Dispatch, ctx: HandlerContext): Pr
   }
 }
 
+// @kern-source: handlers-plan:84
 export async function handleRetry(dispatch: Dispatch, ctx: HandlerContext): Promise<void> {
   if (!ctx.currentPlan) {
     dispatch({ type: 'warning', message: 'No active plan to retry.' });
@@ -90,6 +121,7 @@ export async function handleRetry(dispatch: Dispatch, ctx: HandlerContext): Prom
   }
 }
 
+// @kern-source: handlers-plan:117
 export function handleCancel(dispatch: Dispatch, ctx: HandlerContext): void {
   if (!ctx.currentPlan) {
     dispatch({ type: 'warning', message: 'No active plan to cancel.' });
@@ -105,6 +137,7 @@ export function handleCancel(dispatch: Dispatch, ctx: HandlerContext): void {
   dispatch({ type: 'success', message: 'Plan cancelled.' });
 }
 
+// @kern-source: handlers-plan:133
 export async function handleApplyPatch(dispatch: Dispatch, ctx: HandlerContext, patchPath?: string, force?: boolean): Promise<void> {
   let resolvedPatchPath = patchPath;
   let manifestPath: string | null = null;

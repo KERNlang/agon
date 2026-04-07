@@ -371,7 +371,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
     case 'chats': handleChats(cb.dispatch, intent.sessionId); break;
   
     // ── Plan commands ──
-    case 'plan': handlePlanShow(cb.dispatch, cb.ctx, intent.planId); break;
+    case 'plan': await handlePlanShow(cb.dispatch, cb.ctx, intent.planId); break;
     case 'plans': handlePlansList(cb.dispatch); break;
     case 'approve': await handleApprove(cb.dispatch, cb.ctx); break;
     case 'retry': await handleRetry(cb.dispatch, cb.ctx); break;

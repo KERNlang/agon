@@ -25,6 +25,7 @@ interface name=PersistentSessionConfig
   field name=onApproval type="(tool: string, command: string) => Promise<boolean>" optional=true
   field name=nativeTools type="Array<{type:string,function:{name:string,description:string,parameters:Record<string,unknown>}}>" optional=true
   field name=onToolCall type="(name: string, args: Record<string,unknown>, callId: string) => Promise<string>" optional=true
+  field name=mcpServers type="Array<Record<string,unknown>>" optional=true
 
 interface name=PersistentSession
   field name=alive type=boolean
@@ -195,15 +196,18 @@ fn name=createCompanionSession params="config:PersistentSessionConfig" returns="
         notifyRpc('initialized');
 
         // Start persistent thread — workspace-write + on-request lets the host (Agon) approve/deny via JSONRPC
-        const threadParams: Record<string, unknown> = {
-          cwd: config.cwd,
-          approvalPolicy: config.onApproval ? 'on-request' : 'never',
-          sandbox: config.onApproval ? 'workspace-write' : 'read-only',
-          ephemeral: false,
-        };
-        if (config.systemPrompt) {
-          threadParams.instructions = config.systemPrompt;
-        }
+      const threadParams: Record<string, unknown> = {
+        cwd: config.cwd,
+        approvalPolicy: config.onApproval ? 'on-request' : 'never',
+        sandbox: config.onApproval ? 'workspace-write' : 'read-only',
+        ephemeral: false,
+      };
+      if (config.mcpServers && config.mcpServers.length > 0) {
+        threadParams.mcpServers = config.mcpServers;
+      }
+      if (config.systemPrompt) {
+        threadParams.instructions = config.systemPrompt;
+      }
         const threadResult = await sendRpc('thread/start', threadParams) as any;
         threadId = threadResult?.thread?.id ?? null;
         sessionId = threadId;
@@ -458,7 +462,7 @@ fn name=createAcpSession params="config:PersistentSessionConfig" returns="Persis
         // Create session (pass system prompt if available)
         const sessParams: Record<string, unknown> = {
           cwd: config.cwd,
-          mcpServers: [],
+          mcpServers: config.mcpServers ?? [],
         };
         if (config.systemPrompt) {
           sessParams.systemPrompt = config.systemPrompt;

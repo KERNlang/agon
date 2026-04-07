@@ -208,7 +208,7 @@ export async function handleDiscover(dispatch: Dispatch, ctx: HandlerContext): P
 }
 
 // @kern-source: handlers-info:195
-export function handleConfig(intent: Intent&{type:'config'}, dispatch: Dispatch): void {
+export function handleConfig(intent: Intent&{type:'config'}, dispatch: Dispatch, ctx?: HandlerContext): void {
   ensureAgonHome();
   const action = (intent as any).action ?? 'list';
   
@@ -255,6 +255,12 @@ export function handleConfig(intent: Intent&{type:'config'}, dispatch: Dispatch)
       } else if (Array.isArray(defaultVal)) parsed = (intent as any).value.split(',').map((s: string) => s.trim());
       else parsed = (intent as any).value;
       configSet(key, parsed as any);
+      if (ctx && ['cesarEngine', 'cesarBackend', 'cesarMcpEnabled', 'cesarMcpConfigPath'].includes(String(key))) {
+        if (ctx.cesarSession) {
+          ctx.cesarSession.close();
+          ctx.setCesarSession(null);
+        }
+      }
       dispatch({ type: 'success', message: `Set ${(intent as any).key} = ${(intent as any).value}` });
       break;
     }
@@ -497,4 +503,3 @@ export function handleModels(dispatch: Dispatch, ctx: HandlerContext): void {
   dispatch({ type: 'info', message: 'Reset to all:    /use all' });
   dispatch({ type: 'info', message: 'Set chat default: /config set forgeFixedStarter claude' });
 }
-

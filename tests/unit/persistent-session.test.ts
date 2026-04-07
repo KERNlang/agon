@@ -48,7 +48,8 @@ afterEach(() => {
 });
 
 describe('persistent session streaming dedupe', () => {
-  it('dedupes Codex companion completed messages after deltas', async () => {
+  it('dedupes Codex companion completed messages after deltas and forwards MCP servers on thread start', async () => {
+    let threadStartParams: Record<string, unknown> | null = null;
     spawnMock.mockImplementationOnce(() => createMockProcess((line, stdout) => {
       const msg = JSON.parse(line);
 
@@ -58,6 +59,7 @@ describe('persistent session streaming dedupe', () => {
       }
 
       if (msg.id && msg.method === 'thread/start') {
+        threadStartParams = msg.params;
         stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { thread: { id: 'thread-1' } } }) + '\n');
         return;
       }
@@ -98,12 +100,17 @@ describe('persistent session streaming dedupe', () => {
       binaryPath: '/usr/local/bin/codex',
       cwd: process.cwd(),
       systemPrompt: 'You are helpful.',
+      mcpServers: [{ name: 'github', command: 'npx', args: ['-y', '@modelcontextprotocol/server-github'] }],
     });
 
     await session.start();
     const text = (await collectTextChunks(session.send({ message: 'hey' }))).join('');
 
     expect(text).toBe('Hey. What do you need help with in Agon-AI?');
+    expect(threadStartParams).toMatchObject({
+      cwd: process.cwd(),
+      mcpServers: [{ name: 'github', command: 'npx', args: ['-y', '@modelcontextprotocol/server-github'] }],
+    });
   });
 
   it('dedupes Claude result text after streamed deltas and assistant snapshot', async () => {

@@ -192,7 +192,7 @@ fn name=handleDiscover params="dispatch:Dispatch, ctx:HandlerContext" returns="P
     }
   >>>
 
-fn name=handleConfig params="intent:Intent&{type:'config'}, dispatch:Dispatch" returns=void
+fn name=handleConfig params="intent:Intent&{type:'config'}, dispatch:Dispatch, ctx?:HandlerContext" returns=void
   handler <<<
     ensureAgonHome();
     const action = (intent as any).action ?? 'list';
@@ -240,6 +240,12 @@ fn name=handleConfig params="intent:Intent&{type:'config'}, dispatch:Dispatch" r
         } else if (Array.isArray(defaultVal)) parsed = (intent as any).value.split(',').map((s: string) => s.trim());
         else parsed = (intent as any).value;
         configSet(key, parsed as any);
+        if (ctx && ['cesarEngine', 'cesarBackend', 'cesarMcpEnabled', 'cesarMcpConfigPath'].includes(String(key))) {
+          if (ctx.cesarSession) {
+            ctx.cesarSession.close();
+            ctx.setCesarSession(null);
+          }
+        }
         dispatch({ type: 'success', message: `Set ${(intent as any).key} = ${(intent as any).value}` });
         break;
       }

@@ -184,6 +184,8 @@ export interface AgonConfig {
   cesarDisagreementSpread?: number;
   cesarEngine?: string;
   cesarBackend?: 'cli'|'api'|'auto';
+  cesarMcpEnabled?: boolean;
+  cesarMcpConfigPath?: string;
   campfireObserverStrategy?: 'lead-first'|'all-respond';
   hooks: Record<string,Array<{command:string,engines?:string[],timeout?:number}>>;
   permissionMode?: 'auto'|'ask'|'deny-all';
@@ -227,6 +229,8 @@ export const DEFAULT_AGON_CONFIG: Required<AgonConfig> = {
   cesarDisagreementSpread: 20,
   cesarEngine: 'claude',
   cesarBackend: 'auto',
+  cesarMcpEnabled: false,
+  cesarMcpConfigPath: '',
   campfireObserverStrategy: 'lead-first',
   hooks: {} as any,
   permissionMode: 'ask',
@@ -460,4 +464,3 @@ export interface Critique {
 
 // @kern-source: types:339
 export const DEFAULT_CONFIG: Required<AgonConfig> = DEFAULT_AGON_CONFIG;
-

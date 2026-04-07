@@ -255,6 +255,8 @@ Three layers (later overrides earlier):
 | Setting | Default | What it controls |
 |---------|---------|-----------------|
 | `cesarEngine` | `claude` | Brain engine |
+| `cesarMcpEnabled` | `false` | Enable MCP servers for Cesar companion sessions |
+| `cesarMcpConfigPath` | `""` | JSON file with `mcpServers` or `servers` definitions |
 | `forgeFixedStarter` | `claude` | Stage 1 engine |
 | `forgeEnabledEngines` | `claude,codex,gemini` | Active forge engines |
 | `forgeAutoAcceptScore` | `88` | Stage 1 auto-accept threshold |
@@ -266,6 +268,28 @@ Three layers (later overrides earlier):
 | `eloEnabled` | `true` | Track ELO ratings |
 | `eloKFactor` | `32` | ELO sensitivity |
 | `timeout` | `360` | General timeout (seconds) |
+
+### Cesar MCP
+
+Enable it only when you actually want Cesar to have MCP tools. When disabled, Agon does not load the MCP config or add MCP guidance to Cesar's prompt.
+
+```bash
+agon config set cesarMcpEnabled true
+agon config set cesarMcpConfigPath .vscode/mcp.json
+```
+
+Example `mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"]
+    }
+  }
+}
+```
 
 ### Lifecycle hooks
 

@@ -431,7 +431,7 @@ export function App({  }: {  }) {
           if (key.ctrl && input === 'l') {
             handleSubmit('/clear'); return;
           }
-          if (key.ctrl && input === 'e') {
+          if ((key.ctrl && input === 'e') || input === '\x05') {
             setToolOutputExpanded((prev: boolean) => !prev); return;
           }
           if (key.escape) {

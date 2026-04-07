@@ -385,7 +385,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           clearInterval(_escTimer);
           dispatch({ type: 'spinner-stop' });
           if (!abort.signal.aborted) {
-            const escalation = await handleSecondOpinion(secondResult, input, response, parsedConfidence, cesarEngineId, dispatch, ctx);
+            const escalation = await handleSecondOpinion(secondResult, input, response, parsedConfidence, cesarEngineId, dispatch, ctx, abort.signal);
             if (escalation) return escalation;
           }
           activateNero(ctx, dispatch);
@@ -404,7 +404,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           if (abort.signal.aborted) {
             // Interrupted during advisor — skip escalation menu
           } else if (advisorResult) {
-            const escalation = await handleSecondOpinion(advisorResult, input, response, parsedConfidence, cesarEngineId, dispatch, ctx);
+            const escalation = await handleSecondOpinion(advisorResult, input, response, parsedConfidence, cesarEngineId, dispatch, ctx, abort.signal);
             if (escalation) return escalation;
           } else {
             dispatch({ type: 'warning', message: 'Advisor unavailable' });

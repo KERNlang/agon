@@ -96,7 +96,26 @@ fn name=validateBreakerArtifact async=true params="opts:{artifact:BreakerArtifac
       return { ...artifact, validated: false, deterministic: false };
     }
 
-    // Both runs failed — it's deterministic and validated
+    // Run 3: Must PASS on clean (unpatched) code — proves the test targets the patch, not a pre-existing issue
+    let passesOnClean = false;
+    try {
+      const result3 = await spawnWithTimeout({
+        command: '/bin/sh',
+        args: ['-c', `npx vitest run ${testFileName} --reporter=verbose 2>&1 || exit 1`],
+        cwd: cleanWorktree,
+        timeout: fitnessTimeout * 1000,
+      });
+      passesOnClean = result3.exitCode === 0;
+    } catch {
+      passesOnClean = false;
+    }
+
+    if (!passesOnClean) {
+      // Test fails on clean code too — it's not targeting the patch, it's a false positive
+      return { ...artifact, validated: false, deterministic: true };
+    }
+
+    // Fails on winner, passes on clean, deterministic — validated
     return { ...artifact, validated: true, deterministic: true, testPath: winnerTestPath };
   >>>
 

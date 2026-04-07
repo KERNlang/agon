@@ -1,17 +1,25 @@
+// @kern-source: team-tribunal:5
 import { randomUUID } from 'node:crypto';
 
+// @kern-source: team-tribunal:6
 import type { EngineAdapter, ForgeEvent, TaskClass } from '@agon/core';
 
+// @kern-source: team-tribunal:7
 import type { TeamSpec, TeamFormat, TeamComposeMode, TeamRoundTrace, TeamSubmission, TeamScoreCard, TeamMatchResult, TeamEvent } from '@agon/core';
 
+// @kern-source: team-tribunal:8
 import { EngineRegistry, loadConfig, classifyTask, createSidechainLogger, composeTeams, makeFormat } from '@agon/core';
 
+// @kern-source: team-tribunal:9
 import { updateTeamElo } from '@agon/core';
 
+// @kern-source: team-tribunal:10
 import type { TribunalMode } from './tribunal-modes.js';
 
+// @kern-source: team-tribunal:11
 import { getModeConfig } from './tribunal-modes.js';
 
+// @kern-source: team-tribunal:13
 export interface TeamTribunalOptions {
   question: string;
   membersPerSide: number;
@@ -28,6 +36,7 @@ export interface TeamTribunalOptions {
   onEvent?: (event:ForgeEvent|TeamEvent)=>void;
 }
 
+// @kern-source: team-tribunal:28
 export async function runTeamCoopTribunal(team: TeamSpec, position: string, question: string, rounds: number, mode: TribunalMode, registry: EngineRegistry, adapter: EngineAdapter, timeout: number, outputDir: string, onEvent?: (event:ForgeEvent|TeamEvent)=>void, signal?: AbortSignal): Promise<{submission:TeamSubmission, arguments:string[]}> {
   const trace: TeamRoundTrace[] = [];
   const start = Date.now();
@@ -125,6 +134,7 @@ export async function runTeamCoopTribunal(team: TeamSpec, position: string, ques
   };
 }
 
+// @kern-source: team-tribunal:126
 export async function runTeamTribunal(options: TeamTribunalOptions): Promise<TeamMatchResult> {
   const config = loadConfig(process.cwd());
   const matchId = randomUUID().slice(0, 8);
@@ -156,9 +166,12 @@ export async function runTeamTribunal(options: TeamTribunalOptions): Promise<Tea
   
   // Cesar is the impartial judge — exclude from competing pool
   const cesarId = config.cesarEngine;
-  const competitors = available.filter((id: string) => id !== cesarId);
+  let competitors = available.filter((id: string) => id !== cesarId);
+  let cesarCompeting = false;
   if (competitors.length < 2) {
-    competitors.push(...available.filter((id: string) => !competitors.includes(id)));
+    // Not enough competitors without Cesar — add all back
+    competitors = [...available];
+    cesarCompeting = true;
   }
   
   const [teamA, teamB] = composeTeams(
@@ -190,8 +203,18 @@ export async function runTeamTribunal(options: TeamTribunalOptions): Promise<Tea
     runTeamCoopTribunal(teamB, posB, options.question, effectiveRounds, mode, options.registry, options.adapter, options.timeout, options.outputDir, options.onEvent, options.signal),
   ]);
   
-  // --- Cesar judges (impartial — not on either team when possible) ---
-  const judgeEngine = options.registry.get(cesarId);
+  // --- Pick impartial judge — must not be on either team ---
+  const teamMemberIds = new Set([...teamA.members.map((m: any) => m.engineId), ...teamB.members.map((m: any) => m.engineId)]);
+  let judgeId = cesarId;
+  if (cesarCompeting || teamMemberIds.has(cesarId)) {
+    const altJudge = available.find((id: string) => !teamMemberIds.has(id));
+    if (altJudge) {
+      judgeId = altJudge;
+    } else {
+      sidechain.log('team-tribunal:judge-conflict', cesarId, { warning: 'Cesar judging own debate — not enough engines for impartial judge' });
+    }
+  }
+  const judgeEngine = options.registry.get(judgeId);
   const judgePrompt = `## TRIBUNAL JUDGE\nYou are an impartial judge. Two teams debated the following question. Evaluate their arguments and declare a winner.\n\nQuestion: ${options.question}\n\n## TEAM ALPHA (${posA}):\n${resultA.arguments[resultA.arguments.length - 1]}\n\n## TEAM BETA (${posB}):\n${resultB.arguments[resultB.arguments.length - 1]}\n\nAnalyze each team's argument strengths and weaknesses.\nYou MUST end your response with exactly these two lines:\nSCORE_ALPHA: <number 0-100>\nSCORE_BETA: <number 0-100>\nThen declare: WINNER: "ALPHA" or "BETA" or "DRAW"`;
   
   const judgeResult = await options.adapter.dispatch({

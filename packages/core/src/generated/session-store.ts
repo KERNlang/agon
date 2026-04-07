@@ -5,14 +5,18 @@ import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 // @kern-source: session-store:7
+import { createHash } from 'node:crypto';
+
+// @kern-source: session-store:8
 import { AGON_HOME } from './config.js';
 
-// @kern-source: session-store:9
+// @kern-source: session-store:10
 export function sessionStorePath(engineId: string): string {
-  return join(AGON_HOME, 'sessions', `${engineId}.json`);
+  const cwdHash = createHash('md5').update(process.cwd()).digest('hex').slice(0, 8);
+  return join(AGON_HOME, 'sessions', `${engineId}-${cwdHash}.json`);
 }
 
-// @kern-source: session-store:14
+// @kern-source: session-store:17
 export function saveSessionState(engineId: string, state: { messageHistory: Array<{role:string,content:string}>, confidence:number|null }): void {
   const dir = join(AGON_HOME, 'sessions');
   mkdirSync(dir, { recursive: true });
@@ -23,7 +27,7 @@ export function saveSessionState(engineId: string, state: { messageHistory: Arra
   writeFileSync(path, JSON.stringify(data), 'utf-8');
 }
 
-// @kern-source: session-store:26
+// @kern-source: session-store:29
 export function loadSessionState(engineId: string): { messageHistory: Array<{role:string,content:string}>, confidence:number|null } | null {
   const path = sessionStorePath(engineId);
   if (!existsSync(path)) return null;
@@ -39,7 +43,7 @@ export function loadSessionState(engineId: string): { messageHistory: Array<{rol
   }
 }
 
-// @kern-source: session-store:43
+// @kern-source: session-store:46
 export function clearSessionState(engineId: string): void {
   const path = sessionStorePath(engineId);
   try {

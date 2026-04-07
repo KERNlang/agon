@@ -184,8 +184,9 @@ export class CliAdapter implements EngineAdapter {
   }
 
   async dispatchAgent(options: DispatchOptions): Promise<AgentDispatchResult> {
-    // API-only engines: run through API agent loop with full tool support
-    if (options.engine.api && !options.engine.binary) {
+    // API fallback: use API agent loop when binary is declared but not installed
+    const agentBinaryPath = options.engine.binary ? this.registry.findBinary(options.engine) : null;
+    if (options.engine.api && !agentBinaryPath) {
       const cwd = options.cwd || resolveWorkingDir();
       const projectCtx = scanProjectContext(cwd);
       const systemPrompt = [
@@ -317,7 +318,8 @@ export class CliAdapter implements EngineAdapter {
   }
 
   async *dispatchAgentStream(options: DispatchOptions): AsyncGenerator<string, AgentDispatchResult, void> {
-    if (options.engine.api && !options.engine.binary) {
+    const streamBinaryPath = options.engine.binary ? this.registry.findBinary(options.engine) : null;
+    if (options.engine.api && !streamBinaryPath) {
       return {
         exitCode: 1,
         stdout: '',

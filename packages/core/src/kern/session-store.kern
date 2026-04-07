@@ -4,11 +4,14 @@
 
 import from="node:fs" names="writeFileSync,readFileSync,existsSync,mkdirSync"
 import from="node:path" names="join"
+import from="node:crypto" names="createHash"
 import from="./config.js" names="AGON_HOME"
 
 fn name=sessionStorePath params="engineId:string" returns="string"
+  doc "Session path scoped by engine + workspace to prevent context leaking across repos."
   handler <<<
-    return join(AGON_HOME, 'sessions', `${engineId}.json`);
+    const cwdHash = createHash('md5').update(process.cwd()).digest('hex').slice(0, 8);
+    return join(AGON_HOME, 'sessions', `${engineId}-${cwdHash}.json`);
   >>>
 
 fn name=saveSessionState params="engineId:string, state:{ messageHistory: Array<{role:string,content:string}>, confidence:number|null }" returns="void"

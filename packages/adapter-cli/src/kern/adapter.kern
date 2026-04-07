@@ -178,8 +178,9 @@ service name=CliAdapter implements=EngineAdapter
 
   method name=dispatchAgent params="options:DispatchOptions" returns="Promise<AgentDispatchResult>" async=true
     handler <<<
-      // API-only engines: run through API agent loop with full tool support
-      if (options.engine.api && !options.engine.binary) {
+      // API fallback: use API agent loop when binary is declared but not installed
+      const agentBinaryPath = options.engine.binary ? this.registry.findBinary(options.engine) : null;
+      if (options.engine.api && !agentBinaryPath) {
         const cwd = options.cwd || resolveWorkingDir();
         const projectCtx = scanProjectContext(cwd);
         const systemPrompt = [
@@ -312,7 +313,8 @@ service name=CliAdapter implements=EngineAdapter
 
   method name=dispatchAgentStream params="options:DispatchOptions" returns="string, AgentDispatchResult, void" async=true stream=true
     handler <<<
-      if (options.engine.api && !options.engine.binary) {
+      const streamBinaryPath = options.engine.binary ? this.registry.findBinary(options.engine) : null;
+      if (options.engine.api && !streamBinaryPath) {
         return {
           exitCode: 1,
           stdout: '',

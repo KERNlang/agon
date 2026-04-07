@@ -43,6 +43,7 @@ export interface PersistentSessionConfig {
   onApproval?: (tool: string, command: string) => Promise<boolean>;
   nativeTools?: Array<{type:string,function:{name:string,description:string,parameters:Record<string,unknown>}}>;
   onToolCall?: (name: string, args: Record<string,unknown>, callId: string) => Promise<string>;
+  mcpServers?: Array<Record<string,unknown>>;
 }
 
 // @kern-source: persistent-session:29
@@ -218,6 +219,9 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
         sandbox: config.onApproval ? 'workspace-write' : 'read-only',
         ephemeral: false,
       };
+      if (config.mcpServers && config.mcpServers.length > 0) {
+        threadParams.mcpServers = config.mcpServers;
+      }
       if (config.systemPrompt) {
         threadParams.instructions = config.systemPrompt;
       }
@@ -472,7 +476,7 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
       // Create session (pass system prompt if available)
       const sessParams: Record<string, unknown> = {
         cwd: config.cwd,
-        mcpServers: [],
+        mcpServers: config.mcpServers ?? [],
       };
       if (config.systemPrompt) {
         sessParams.systemPrompt = config.systemPrompt;
@@ -1373,4 +1377,3 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
   
   return session;
 }
-

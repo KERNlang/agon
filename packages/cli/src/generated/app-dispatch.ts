@@ -338,7 +338,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
     case 'engines': cb.setEnginePickerOpen(true); break;
     case 'discover': await handleDiscover(cb.dispatch, cb.ctx); break;
     case 'provider': await handleProvider(intent.action, intent.args, cb.dispatch, cb.ctx); break;
-    case 'config': handleConfig(intent, cb.dispatch); break;
+      case 'config': handleConfig(intent, cb.dispatch, cb.ctx); break;
     case 'use': handleUse(intent.engineIds, cb.dispatch, cb.ctx, cb.setSessionEngines); break;
     case 'cesar': {
       const cesarTarget = (intent.engineIds ?? []).join(' ').trim();
@@ -560,4 +560,3 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
   
   return { handled: true, ranAsJob: false };
 }
-

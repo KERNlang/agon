@@ -8,7 +8,7 @@ import { join, dirname } from 'node:path';
 import type { EngineAdapter, EngineDefinition, DispatchOptions, DispatchResult, AgentDispatchResult } from '@agon/core';
 
 // @kern-source: adapter:4
-import { EngineRegistry, spawnWithTimeout, spawnStream, EngineNotFoundError, readOnlyDiff, diffLineCount, apiDispatch, apiStreamDispatch, companionDispatch, runHooks, hooksFailed } from '@agon/core';
+import { EngineRegistry, spawnWithTimeout, spawnStream, EngineNotFoundError, readOnlyDiff, diffLineCount, apiDispatch, apiStreamDispatch, companionDispatch, runHooks, hooksFailed, runApiAgentLoop, scanProjectContext, resolveWorkingDir } from '@agon/core';
 
 // @kern-source: adapter:5
 import { buildCommand, checkEnvVars } from './adapter-helpers.js';
@@ -34,7 +34,15 @@ export class CliAdapter implements EngineAdapter {
     if (!binaryPath) {
       // No CLI binary — use API if available, otherwise fail
       if (options.engine.api) {
-        const result = await apiDispatch(options.engine.api, options.prompt, options.timeout, options.signal, options.systemPrompt);
+        // Inject project context for API engines so they know the codebase
+        let sysPrompt = options.systemPrompt;
+        if (!sysPrompt || !sysPrompt.includes('PROJECT CONTEXT')) {
+          const projectCtx = scanProjectContext(options.cwd || resolveWorkingDir());
+          if (projectCtx) {
+            sysPrompt = [sysPrompt ?? '', `## PROJECT CONTEXT\n${projectCtx}`].filter(Boolean).join('\n\n');
+          }
+        }
+        const result = await apiDispatch(options.engine.api, options.prompt, options.timeout, options.signal, sysPrompt);
         const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
         mkdirSync(dirname(outputPath), { recursive: true });
         writeFileSync(outputPath, result.stdout);
@@ -176,16 +184,53 @@ export class CliAdapter implements EngineAdapter {
   }
 
   async dispatchAgent(options: DispatchOptions): Promise<AgentDispatchResult> {
+    // API-only engines: run through API agent loop with full tool support
     if (options.engine.api && !options.engine.binary) {
+      const cwd = options.cwd || resolveWorkingDir();
+      const projectCtx = scanProjectContext(cwd);
+      const systemPrompt = [
+        options.systemPrompt ?? 'You are an AI coding assistant. Be direct and concise.',
+        projectCtx ? `## PROJECT CONTEXT\n${projectCtx}` : '',
+      ].filter(Boolean).join('\n\n');
+    
+      const startTime = Date.now();
+      const baselineDiff = readOnlyDiff(cwd);
+      const result = await runApiAgentLoop({
+        api: options.engine.api,
+        prompt: options.prompt,
+        systemPrompt,
+        cwd,
+        timeout: options.timeout,
+        signal: options.signal,
+        maxSteps: 15,
+      });
+    
+      const postDiff = readOnlyDiff(cwd);
+      const baselineFiles = new Set(baselineDiff.split('\n').filter((l: string) => l.startsWith('diff --git')));
+      const postLines = postDiff.split('\n');
+      const newDiffLines: string[] = [];
+      let inNewFile = false;
+      for (const line of postLines) {
+        if (line.startsWith('diff --git')) { inNewFile = !baselineFiles.has(line); }
+        if (inNewFile) newDiffLines.push(line);
+      }
+      const diff = newDiffLines.join('\n');
+      const lines = diffLineCount(diff);
+      const files = diff ? newDiffLines.filter((l: string) => l.startsWith('diff --git')).length : 0;
+    
+      const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
+      mkdirSync(dirname(outputPath), { recursive: true });
+      writeFileSync(outputPath, result.response);
+    
       return {
-        exitCode: 1,
-        stdout: '',
-        stderr: `Engine "${options.engine.id}" is API-only and does not support agent mode`,
-        durationMs: 0,
+        exitCode: 0,
+        stdout: result.response,
+        stderr: '',
+        durationMs: Date.now() - startTime,
         timedOut: false,
-        diff: '',
-        diffLines: 0,
-        filesChanged: 0,
+        diff,
+        diffLines: lines,
+        filesChanged: files,
       };
     }
     

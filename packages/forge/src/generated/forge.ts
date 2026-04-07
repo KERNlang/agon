@@ -52,7 +52,7 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
   const available = enabledEngines.filter((id: string) => {
     try {
       const engine = registry.get(id);
-      if (engine.api && !engine.binary) return false; // API-only engines cannot participate in forge
+      // API-only engines can now participate via runApiAgentLoop
       return registry.isAvailable(engine);
     } catch (err) {
       console.warn(`[agon] engine availability check failed for ${id}: ${err instanceof Error ? err.message : String(err)}`);

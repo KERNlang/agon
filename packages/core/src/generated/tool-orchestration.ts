@@ -153,6 +153,51 @@ export function createCampfireTool(): ToolHandler {
 }
 
 // @kern-source: tool-orchestration:164
+export function createReportConfidenceTool(): ToolHandler {
+  const definition: ToolDefinition = {
+    name: 'ReportConfidence',
+    description: 'Report your confidence level for this task as a number 0-100. Call this FIRST before responding or calling other tools. Always call this — it replaces writing ~X% in text.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        value: { type: 'number', description: 'Confidence percentage 0-100 (e.g. 92 means 92% confident)' },
+        reasoning: { type: 'string', description: 'Brief reason for this confidence level. Optional.' },
+      },
+      required: ['value'],
+    },
+    maxResultSizeChars: 200,
+    isReadOnly: true,
+    isConcurrencySafe: true,
+  };
+  
+  const validate = (input: Record<string, unknown>, _ctx: ToolContext): string | null => {
+    if (input.value === undefined || typeof input.value !== 'number') {
+      return 'Missing required parameter: value (number 0-100)';
+    }
+    if ((input.value as number) < 0 || (input.value as number) > 100) {
+      return 'value must be between 0 and 100';
+    }
+    return null;
+  };
+  
+  const checkPermission = (_input: Record<string, unknown>, _ctx: ToolContext): PermissionDecision => {
+    return { behavior: 'allow' };
+  };
+  
+  const execute = async (input: Record<string, unknown>, _ctx: ToolContext): Promise<ToolResult> => {
+    const v = input.value as number;
+    let guidance: string;
+    if (v >= 93) guidance = 'High confidence. Proceed — implement directly.';
+    else if (v >= 85) guidance = 'Good confidence. Consider delegating to Forge or Brainstorm if the task is complex.';
+    else if (v >= 70) guidance = 'Medium confidence. Strongly consider Brainstorm or Tribunal before proceeding.';
+    else guidance = 'Low confidence. STOP. Do not implement. Explain what is needed to raise confidence.';
+    return { ok: true, content: `Confidence ${v}% recorded. ${guidance}` };
+  };
+  
+  return { definition, validate, checkPermission, execute };
+}
+
+// @kern-source: tool-orchestration:210
 export function createPipelineTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Pipeline',

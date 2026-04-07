@@ -8,7 +8,7 @@ import { mkdirSync, readFileSync } from 'node:fs';
 import type { EngineAdapter, ImageAttachment, PersistentSession, PersistentSessionConfig, SessionChunk, ForgeManifest, ForgeJudgment, ConvergenceEntry } from '@agon/core';
 
 // @kern-source: handlers-cesar-brain:4
-import { EngineRegistry, loadConfig, ensureAgonHome, RUNS_DIR, appendMessage, tracker, scanProjectContext, StreamParser, createPersistentSession, resolveWorkingDir, ToolRegistry, FileStateCache, createReadTool, createEditTool, createWriteTool, createBashTool, createGrepTool, createGlobTool, createForgeTool, createBrainstormTool, createTribunalTool, createCampfireTool, createPipelineTool, buildToolSystemPrompt, parseToolCalls, processToolResponse, runToolLoop, executeToolCall, classifyTask, toolsToOpenAIFormat } from '@agon/core';
+import { EngineRegistry, loadConfig, ensureAgonHome, RUNS_DIR, appendMessage, tracker, scanProjectContext, StreamParser, createPersistentSession, resolveWorkingDir, ToolRegistry, FileStateCache, createReadTool, createEditTool, createWriteTool, createBashTool, createGrepTool, createGlobTool, createForgeTool, createBrainstormTool, createTribunalTool, createCampfireTool, createReportConfidenceTool, createPipelineTool, buildToolSystemPrompt, parseToolCalls, processToolResponse, runToolLoop, executeToolCall, classifyTask, toolsToOpenAIFormat } from '@agon/core';
 
 // @kern-source: handlers-cesar-brain:5
 import type { ToolContext, ToolCallResult } from '@agon/core';
@@ -25,15 +25,16 @@ import type { Dispatch, HandlerContext } from '../handlers/types.js';
 // @kern-source: handlers-cesar-brain:10
 export const CESAR_SYSTEM_PROMPT: string = `You are Cesar, Agon AI orchestrator. Be direct. Be concise.
 
-RULE 1 — CONFIDENCE: Start EVERY response with ~X%. No exceptions.
-RULE 2 — PROTOCOL: 93%+=just do it. 85-92%=prefix response with [SUGGEST:mode]. 70-84%=challenge first. <70%=stop.
-RULE 3 — MODES: build, forge, forge-hardened, brainstorm, tribunal, tribunal-{adversarial,synthesis,steelman,socratic,red-team,postmortem}, campfire, pipeline. Prefix team- for team variants.
-RULE 4 — TOOLS: Use Read for files. Use Grep for search. NEVER use cat/head/tail/grep via Bash.`;
+RULE 1 — CONFIDENCE: Call ReportConfidence(value) FIRST on every turn. If you cannot call tools, write ~X% at the very start instead. No exceptions.
+RULE 2 — DELEGATION: 93%+=implement directly. 85-92%=call Forge/Brainstorm/Tribunal tool. 70-84%=call Brainstorm or Tribunal, do NOT implement. <70%=STOP, explain what is needed.
+RULE 3 — TOOLS: Call ReportConfidence first, then either respond directly (93%+) or call a delegation tool (Forge, Brainstorm, Tribunal, Campfire, Pipeline). Set team=true for team variants. Set hardened=true for forge-hardened. Set mode for tribunal variant (adversarial/synthesis/steelman/socratic/red-team/postmortem).
+RULE 4 — WORKSPACE: Use Read for files. Use Grep for search. NEVER use cat/head/tail/grep via Bash.
+RULE 5 — AFTER DELEGATION: After calling Forge/Brainstorm/Tribunal/Campfire/Pipeline, STOP. Do not continue responding. The orchestrator handles the rest.`;
 
-// @kern-source: handlers-cesar-brain:20
+// @kern-source: handlers-cesar-brain:21
 export const CONFIDENCE_TIERS: { direct: number; suggest: number; nero: number; stop: number } = ({ direct: 93, suggest: 85, nero: 85, stop: 70 });
 
-// @kern-source: handlers-cesar-brain:25
+// @kern-source: handlers-cesar-brain:26
 export function parseConfidence(response: string): { value: number | null; rest: string } {
   // Match ~X% at start (with optional whitespace)
   const tildeMatch = response.match(/^~(\d{1,3})%\s*/);
@@ -55,7 +56,7 @@ export function parseConfidence(response: string): { value: number | null; rest:
   return { value: null, rest: response };
 }
 
-// @kern-source: handlers-cesar-brain:48
+// @kern-source: handlers-cesar-brain:49
 export function confidenceColor(value: number): string {
   if (value >= 94) return '\x1b[32m';  // green
   if (value >= 90) return '\x1b[33m';  // yellow
@@ -63,7 +64,7 @@ export function confidenceColor(value: number): string {
   return '\x1b[31m'; // red
 }
 
-// @kern-source: handlers-cesar-brain:57
+// @kern-source: handlers-cesar-brain:58
 export function confidenceBadge(value: number): string {
   const color = confidenceColor(value);
   const reset = '\x1b[0m';
@@ -71,7 +72,7 @@ export function confidenceBadge(value: number): string {
   return `${color}${dot} ${value}%${reset}`;
 }
 
-// @kern-source: handlers-cesar-brain:66
+// @kern-source: handlers-cesar-brain:67
 export interface SuggestionResult {
   action: string|null;
   rest: string;
@@ -81,7 +82,7 @@ export interface SuggestionResult {
   membersPerSide?: number;
 }
 
-// @kern-source: handlers-cesar-brain:74
+// @kern-source: handlers-cesar-brain:75
 export function parseSuggestion(response: string): SuggestionResult {
   // Search for [SUGGEST:mode] anywhere in the first 150 chars — engines put
   // varying amounts of text between confidence and the marker.
@@ -162,7 +163,7 @@ export function parseSuggestion(response: string): SuggestionResult {
   return { action, rest, hardened, tribunalMode, team };
 }
 
-// @kern-source: handlers-cesar-brain:156
+// @kern-source: handlers-cesar-brain:157
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
   const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
@@ -276,6 +277,7 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
   toolRegistry.register(createTribunalTool());
   toolRegistry.register(createCampfireTool());
   toolRegistry.register(createPipelineTool());
+  toolRegistry.register(createReportConfidenceTool());
   const toolPrompt = buildToolSystemPrompt(toolRegistry);
   
   // ALL engines: XML tool format, Agon controls execution + permissions
@@ -322,6 +324,15 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
             team: (args as any).team ?? false,
           };
           return 'Delegation accepted. STOP responding now. The orchestrator will handle the rest.';
+        }
+  
+        // ── ReportConfidence signal tool — intercept before execution ──
+        if (name === 'ReportConfidence') {
+          const value = typeof (args as any).value === 'number' ? (args as any).value : null;
+          if (value !== null && value >= 0 && value <= 100) {
+            (ctx as any)._reportedConfidence = value;
+          }
+          // Still execute the tool normally so the model gets guidance in the result
         }
   
         // Dedup: if exact same tool+args was called before, return cached result
@@ -399,7 +410,7 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
   return session;
 }
 
-// @kern-source: handlers-cesar-brain:393
+// @kern-source: handlers-cesar-brain:404
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}> {
   const abort = new AbortController();
   const _turnStart = Date.now();
@@ -503,6 +514,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       toolRegistry.register(createTribunalTool());
       toolRegistry.register(createCampfireTool());
       toolRegistry.register(createPipelineTool());
+      toolRegistry.register(createReportConfidenceTool());
       (ctx as any)._toolRegistry = toolRegistry;
     }
   
@@ -624,7 +636,27 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           if (!streaming) {
             response += chunk.content;
   
-            // Parse confidence from first chunk(s) — before anything else
+            // ── Check for tool-reported confidence (ReportConfidence tool) ──
+            if (!confidenceParsed && (ctx as any)._reportedConfidence !== undefined) {
+              const toolConf = (ctx as any)._reportedConfidence as number;
+              delete (ctx as any)._reportedConfidence;
+              parsedConfidence = toolConf;
+              confidenceParsed = true;
+              dispatch({ type: 'info', message: confidenceBadge(toolConf) + ` Cesar` });
+  
+              if (toolConf >= CONFIDENCE_TIERS.direct && (ctx as any)._autoNero) {
+                ctx.setNeroMode(false);
+                (ctx as any).neroMode = false;
+                (ctx as any)._autoNero = false;
+                if (ctx.cesarSession) {
+                  ctx.cesarSession.close();
+                  ctx.setCesarSession(null);
+                }
+                dispatch({ type: 'info', message: '⚔ Nero deactivated — confidence recovered' });
+              }
+            }
+  
+            // Parse confidence from first chunk(s) — fallback for text-based ~X%
             if (!confidenceParsed && response.length > 5) {
               const conf = parseConfidence(response);
               if (conf.value !== null) {
@@ -1169,7 +1201,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   }
 }
 
-// @kern-source: handlers-cesar-brain:1163
+// @kern-source: handlers-cesar-brain:1195
 export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatch, ctx: HandlerContext): Promise<ForgeJudgment|null> {
   // Need an alive Cesar session
       let session;
@@ -1283,7 +1315,7 @@ export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatc
       return judgment;
 }
 
-// @kern-source: handlers-cesar-brain:1278
+// @kern-source: handlers-cesar-brain:1310
 function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJudgment|null {
   // Strip confidence prefix (e.g. ~91%) before parsing structured output
   const stripped = parseConfidence(response).rest;
@@ -1327,7 +1359,7 @@ function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJud
   return { winner, strengths, convergencePlan, summary, shouldConverge };
 }
 
-// @kern-source: handlers-cesar-brain:1323
+// @kern-source: handlers-cesar-brain:1355
 export async function cesarConvergeForge(manifest: ForgeManifest, judgment: ForgeJudgment, dispatch: Dispatch, ctx: HandlerContext): Promise<string|null> {
   let session;
       try {

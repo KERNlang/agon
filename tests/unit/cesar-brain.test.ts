@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { parseSuggestion, parseConfidence, confidenceBadge, CONFIDENCE_TIERS } from '../../packages/cli/src/handlers/cesar-brain.js';
+import { parseSuggestion, parseConfidence, confidenceBadge, CONFIDENCE_TIERS, CESAR_SYSTEM_PROMPT } from '../../packages/cli/src/handlers/cesar-brain.js';
+import { createReportConfidenceTool, createForgeTool, createBrainstormTool, createTribunalTool, createCampfireTool, createPipelineTool } from '../../packages/core/src/tools.js';
 
 describe('Cesar Brain', () => {
   describe('parseSuggestion', () => {
@@ -239,6 +240,71 @@ describe('Cesar Brain', () => {
       expect(CONFIDENCE_TIERS.suggest).toBe(85);
       expect(CONFIDENCE_TIERS.nero).toBe(85);
       expect(CONFIDENCE_TIERS.stop).toBe(70);
+    });
+  });
+
+  describe('CESAR_SYSTEM_PROMPT', () => {
+    it('references ReportConfidence tool', () => {
+      expect(CESAR_SYSTEM_PROMPT).toContain('ReportConfidence');
+    });
+
+    it('references delegation tools', () => {
+      expect(CESAR_SYSTEM_PROMPT).toContain('Forge');
+      expect(CESAR_SYSTEM_PROMPT).toContain('Brainstorm');
+      expect(CESAR_SYSTEM_PROMPT).toContain('Tribunal');
+      expect(CESAR_SYSTEM_PROMPT).toContain('Campfire');
+      expect(CESAR_SYSTEM_PROMPT).toContain('Pipeline');
+    });
+
+    it('instructs STOP after delegation', () => {
+      expect(CESAR_SYSTEM_PROMPT).toContain('STOP');
+    });
+
+    it('mentions team and hardened variants', () => {
+      expect(CESAR_SYSTEM_PROMPT).toContain('team=true');
+      expect(CESAR_SYSTEM_PROMPT).toContain('hardened=true');
+    });
+  });
+
+  describe('Orchestration signal tools', () => {
+    it('ReportConfidence validates value range', () => {
+      const tool = createReportConfidenceTool();
+      expect(tool.definition.name).toBe('ReportConfidence');
+      expect(tool.validate({ value: 92 }, {} as any)).toBeNull();
+      expect(tool.validate({ value: -1 }, {} as any)).toContain('0 and 100');
+      expect(tool.validate({ value: 101 }, {} as any)).toContain('0 and 100');
+      expect(tool.validate({}, {} as any)).toContain('value');
+    });
+
+    it('ReportConfidence returns tier guidance', async () => {
+      const tool = createReportConfidenceTool();
+      const high = await tool.execute({ value: 95 }, {} as any);
+      expect(high.ok).toBe(true);
+      expect(high.content).toContain('Proceed');
+      const low = await tool.execute({ value: 60 }, {} as any);
+      expect(low.content).toContain('STOP');
+    });
+
+    it('Forge requires task param', () => {
+      const tool = createForgeTool();
+      expect(tool.validate({ task: 'fix auth' }, {} as any)).toBeNull();
+      expect(tool.validate({}, {} as any)).toContain('task');
+      expect(tool.validate({ task: '' }, {} as any)).toContain('task');
+    });
+
+    it('Tribunal validates mode enum', () => {
+      const tool = createTribunalTool();
+      expect(tool.validate({ question: 'which?', mode: 'adversarial' }, {} as any)).toBeNull();
+      expect(tool.validate({ question: 'which?', mode: 'invalid' }, {} as any)).toContain('Invalid mode');
+    });
+
+    it('all orchestration tools are read-only', () => {
+      const tools = [createForgeTool(), createBrainstormTool(), createTribunalTool(), createCampfireTool(), createPipelineTool(), createReportConfidenceTool()];
+      for (const t of tools) {
+        expect(t.definition.isReadOnly).toBe(true);
+        expect(t.definition.isConcurrencySafe).toBe(true);
+        expect(t.checkPermission({}, {} as any).behavior).toBe('allow');
+      }
     });
   });
 });

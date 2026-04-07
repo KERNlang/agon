@@ -326,35 +326,15 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
           return 'Delegation accepted. STOP responding now. The orchestrator will handle the rest.';
         }
   
-        // ── ReportConfidence signal tool — intercept before execution ──
-        // Architecture enforces delegation: model doesn't get to ignore low confidence.
+        // ── ReportConfidence signal tool — record value, don't force delegation ──
+        // Low initial confidence is normal — model needs to investigate first.
+        // Post-response fallback (auto-suggestion) handles persistent low confidence.
         if (name === 'ReportConfidence') {
           const value = typeof (args as any).value === 'number' ? (args as any).value : null;
           if (value !== null && value >= 0 && value <= 100) {
             (ctx as any)._reportedConfidence = value;
-  
-            // Auto-delegate when confidence is below threshold
-            if (value < CONFIDENCE_TIERS.stop) {
-              // <70%: force stop — set delegation to brainstorm so the user gets asked
-              (ctx as any)._pendingDelegation = {
-                action: 'brainstorm',
-                reasoning: (args as any).reasoning ?? `Confidence ${value}% — auto-escalated`,
-                hardened: false, tribunalMode: undefined, team: false,
-              };
-              return `Confidence ${value}% — too low. STOP. The orchestrator is escalating to brainstorm. Do not respond further.`;
-            }
-            if (value < CONFIDENCE_TIERS.suggest) {
-              // 70-84%: force brainstorm — model shouldn't implement alone
-              const isCodeTask = /^(fix|add|implement|refactor|debug|create|build|write|update|change|remove|delete|rename|move|test|deploy|install|upgrade|migrate|convert|extract|optimize|port)\b/i.test(((ctx as any)._lastUserInput ?? '').trim());
-              (ctx as any)._pendingDelegation = {
-                action: isCodeTask ? 'forge' : 'brainstorm',
-                reasoning: (args as any).reasoning ?? `Confidence ${value}% — auto-escalated`,
-                hardened: false, tribunalMode: undefined, team: false,
-              };
-              return `Confidence ${value}% — medium. The orchestrator is auto-delegating to ${isCodeTask ? 'forge' : 'brainstorm'}. STOP responding.`;
-            }
           }
-          // 85%+: let the model continue — it may still voluntarily delegate
+          // Let the tool execute normally — model gets guidance in the result
         }
   
         // Dedup: if exact same tool+args was called before, return cached result
@@ -432,7 +412,7 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
   return session;
 }
 
-// @kern-source: handlers-cesar-brain:426
+// @kern-source: handlers-cesar-brain:406
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}> {
   const abort = new AbortController();
   const _turnStart = Date.now();
@@ -1223,7 +1203,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   }
 }
 
-// @kern-source: handlers-cesar-brain:1217
+// @kern-source: handlers-cesar-brain:1197
 export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatch, ctx: HandlerContext): Promise<ForgeJudgment|null> {
   // Need an alive Cesar session
       let session;
@@ -1337,7 +1317,7 @@ export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatc
       return judgment;
 }
 
-// @kern-source: handlers-cesar-brain:1332
+// @kern-source: handlers-cesar-brain:1312
 function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJudgment|null {
   // Strip confidence prefix (e.g. ~91%) before parsing structured output
   const stripped = parseConfidence(response).rest;
@@ -1381,7 +1361,7 @@ function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJud
   return { winner, strengths, convergencePlan, summary, shouldConverge };
 }
 
-// @kern-source: handlers-cesar-brain:1377
+// @kern-source: handlers-cesar-brain:1357
 export async function cesarConvergeForge(manifest: ForgeManifest, judgment: ForgeJudgment, dispatch: Dispatch, ctx: HandlerContext): Promise<string|null> {
   let session;
       try {

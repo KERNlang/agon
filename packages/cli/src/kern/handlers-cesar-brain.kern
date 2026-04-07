@@ -317,35 +317,15 @@ fn name=ensureCesarSession async=true params="ctx:HandlerContext" returns="Promi
             return 'Delegation accepted. STOP responding now. The orchestrator will handle the rest.';
           }
 
-          // ── ReportConfidence signal tool — intercept before execution ──
-          // Architecture enforces delegation: model doesn't get to ignore low confidence.
+          // ── ReportConfidence signal tool — record value, don't force delegation ──
+          // Low initial confidence is normal — model needs to investigate first.
+          // Post-response fallback (auto-suggestion) handles persistent low confidence.
           if (name === 'ReportConfidence') {
             const value = typeof (args as any).value === 'number' ? (args as any).value : null;
             if (value !== null && value >= 0 && value <= 100) {
               (ctx as any)._reportedConfidence = value;
-
-              // Auto-delegate when confidence is below threshold
-              if (value < CONFIDENCE_TIERS.stop) {
-                // <70%: force stop — set delegation to brainstorm so the user gets asked
-                (ctx as any)._pendingDelegation = {
-                  action: 'brainstorm',
-                  reasoning: (args as any).reasoning ?? `Confidence ${value}% — auto-escalated`,
-                  hardened: false, tribunalMode: undefined, team: false,
-                };
-                return `Confidence ${value}% — too low. STOP. The orchestrator is escalating to brainstorm. Do not respond further.`;
-              }
-              if (value < CONFIDENCE_TIERS.suggest) {
-                // 70-84%: force brainstorm — model shouldn't implement alone
-                const isCodeTask = /^(fix|add|implement|refactor|debug|create|build|write|update|change|remove|delete|rename|move|test|deploy|install|upgrade|migrate|convert|extract|optimize|port)\b/i.test(((ctx as any)._lastUserInput ?? '').trim());
-                (ctx as any)._pendingDelegation = {
-                  action: isCodeTask ? 'forge' : 'brainstorm',
-                  reasoning: (args as any).reasoning ?? `Confidence ${value}% — auto-escalated`,
-                  hardened: false, tribunalMode: undefined, team: false,
-                };
-                return `Confidence ${value}% — medium. The orchestrator is auto-delegating to ${isCodeTask ? 'forge' : 'brainstorm'}. STOP responding.`;
-              }
             }
-            // 85%+: let the model continue — it may still voluntarily delegate
+            // Let the tool execute normally — model gets guidance in the result
           }
 
           // Dedup: if exact same tool+args was called before, return cached result

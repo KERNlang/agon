@@ -33,7 +33,9 @@ fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistr
     const available = enabledEngines.filter((id: string) => {
       try {
         const engine = registry.get(id);
-        // API-only engines can now participate via runApiAgentLoop
+        // API-only engines participate via runApiAgentLoop in dispatchAgent.
+        // But only if they have an api config — engines with neither binary nor api can't forge.
+        if (!engine.binary && !engine.api) return false;
         return registry.isAvailable(engine);
       } catch (err) {
         console.warn(`[agon] engine availability check failed for ${id}: ${err instanceof Error ? err.message : String(err)}`);

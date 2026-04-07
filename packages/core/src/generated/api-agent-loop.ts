@@ -97,6 +97,7 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
   ];
   
   const MAX_STEPS = opts.maxSteps ?? 10;
+  const totalDeadline = Date.now() + opts.timeout * 1000; // Total timeout for entire loop
   let step = 0;
   let totalToolCalls = 0;
   let finalResponse = '';
@@ -105,7 +106,14 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
     step++;
     let fullResponse = '';
   
-    const gen = apiStreamDispatchWithHistory(opts.api, messageHistory, opts.timeout, opts.signal, nativeTools);
+    // Per-step timeout: remaining time, not the full configured timeout
+    const remaining = Math.max(30, Math.floor((totalDeadline - Date.now()) / 1000));
+    if (remaining <= 30) {
+      // Less than 30s left — bail out with what we have
+      return { response: finalResponse || '[Timeout — ran out of time]', toolCalls: totalToolCalls, steps: step };
+    }
+  
+    const gen = apiStreamDispatchWithHistory(opts.api, messageHistory, remaining, opts.signal, nativeTools);
     try {
       while (true) {
         const { value, done } = await gen.next();

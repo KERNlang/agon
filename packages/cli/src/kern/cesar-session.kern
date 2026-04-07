@@ -101,7 +101,9 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
           team: (args as any).team ?? false,
           createdAt: Date.now(),
         };
-        return 'Delegation accepted. STOP responding now. The orchestrator will handle the rest.';
+        // [DELEGATION_BREAK] prefix signals persistent-session to stop the tool loop
+        // immediately — the model must not continue after delegation.
+        return '[DELEGATION_BREAK] Delegation accepted. The orchestrator will handle the rest.';
       }
 
       // ── ReportConfidence signal tool — record value, don't force delegation ──

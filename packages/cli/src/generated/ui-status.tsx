@@ -1,21 +1,31 @@
+// @kern-source: ui-status:3
 import React, { useState, useEffect } from 'react';
 
+// @kern-source: ui-status:4
 import { Box, Text } from 'ink';
 
+// @kern-source: ui-status:5
 import Spinner from 'ink-spinner';
 
+// @kern-source: ui-status:6
 import { resolveWorkingDir, currentBranch, tracker } from '@agon/core';
 
+// @kern-source: ui-status:7
 import type { ChatSession } from '@agon/core';
 
+// @kern-source: ui-status:8
 import { loadConfig } from '@agon/core';
 
+// @kern-source: ui-status:9
 import { ENGINE_COLORS } from '../generated/output.js';
 
+// @kern-source: ui-status:10
 import { color256toHex, engineColor } from './ui-rendering.js';
 
+// @kern-source: ui-status:11
 import type { Job } from '../generated/job-manager.js';
 
+// @kern-source: ui-status:15
 export const AGON_TIPS: string[] = [
   'Run /forge <task> test with <cmd> to make engines compete on code',
   'Run /brainstorm to get confidence bids from all engines',
@@ -44,6 +54,7 @@ export const AGON_TIPS: string[] = [
   'The tribunal has spoken — but the emperor decides.',
 ];
 
+// @kern-source: ui-status:48
 
 export function SpinnerBlock({ message, color }: { message: string; color?: number }) {
         return (
@@ -55,6 +66,7 @@ export function SpinnerBlock({ message, color }: { message: string; color?: numb
 }
 
 
+// @kern-source: ui-status:64
 
 export function TokenGauge({ tokens, maxTokens }: { tokens: number; maxTokens: number }) {
         const pct = Math.min(100, Math.round((tokens / maxTokens) * 100));
@@ -73,6 +85,7 @@ export function TokenGauge({ tokens, maxTokens }: { tokens: number; maxTokens: n
 }
 
 
+// @kern-source: ui-status:86
 
 function AgonTip({  }: {  }) {
   const [tip, setTip] = useState<string>(AGON_TIPS[Math.floor(Math.random() * AGON_TIPS.length)]);
@@ -86,8 +99,9 @@ function AgonTip({  }: {  }) {
 }
 
 
+// @kern-source: ui-status:98
 
-export function StatusBar({ config, chatSession, explorationMode }: { config: ReturnType<typeof loadConfig>; chatSession: ChatSession; explorationMode?: boolean }) {
+export function StatusBar({ config, chatSession, explorationMode, toolOutputExpanded }: { config: ReturnType<typeof loadConfig>; chatSession: ChatSession; explorationMode?: boolean; toolOutputExpanded?: boolean }) {
         const cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
         const cesarColor = color256toHex(ENGINE_COLORS[cesarId] ?? 245);
         const workDir = resolveWorkingDir();
@@ -116,12 +130,14 @@ export function StatusBar({ config, chatSession, explorationMode }: { config: Re
               {tokens > 0 ? <Text dimColor>{` | ${(tokens / 1000).toFixed(1)}k tok`}</Text> : null}
               {msgs > 0 ? <Text dimColor>{` \u00b7 ${msgs} msgs`}</Text> : null}
               {cost ? <Text dimColor>{` \u00b7 ${cost}`}</Text> : null}
+              {toolOutputExpanded !== undefined && <Text dimColor>{' \u00b7 ^E '}{toolOutputExpanded ? '\u25be' : '\u25b8'}</Text>}
             </Text>
           </Box>
         );
 }
 
 
+// @kern-source: ui-status:141
 
 export function StatusLine({ startTime, engineId, color }: { startTime: number; engineId?: string; color?: number }) {
   const [now, setNow] = useState<number>(Date.now());
@@ -150,6 +166,7 @@ export function StatusLine({ startTime, engineId, color }: { startTime: number; 
 }
 
 
+// @kern-source: ui-status:174
 
 export function BackgroundJobRail({ jobs }: { jobs: Job[] }) {
         if (jobs.length === 0) return null;

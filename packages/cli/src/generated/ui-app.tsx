@@ -138,6 +138,7 @@ export function App({  }: {  }) {
   const [cesarSession, setCesarSession] = useState<PersistentSession|null>(null);
   const [explorationMode, setExplorationMode] = useState<boolean>(false);
   const [neroMode, setNeroMode] = useState<boolean>(false);
+  const [toolOutputExpanded, setToolOutputExpanded] = useState<boolean>(false);
   const [cesarMemory, setCesarMemory] = useState<any>(() => createCesarMemory());
   const [registry, setRegistry] = useState<EngineRegistry>((() => { const reg = new EngineRegistry(); const engDir = join(dirname(fileURLToPath(import.meta.url)), '../../../../engines'); reg.load(engDir); return reg; })());
   const [adapter, setAdapter] = useState<EngineAdapter>(createCliAdapter(registry));
@@ -430,6 +431,9 @@ export function App({  }: {  }) {
           if (key.ctrl && input === 'l') {
             handleSubmit('/clear'); return;
           }
+          if (key.ctrl && input === 'e') {
+            setToolOutputExpanded((prev: boolean) => !prev); return;
+          }
           if (key.escape) {
             const decision = resolveEscapeAction({
               replState,
@@ -495,7 +499,7 @@ export function App({  }: {  }) {
           )}
           <BackgroundJobRail jobs={jobList.filter((j: Job) => j.state === 'running')} />
           <Box flexDirection="column">
-            {outputBlocks.map((block: OutputBlock) => (<OutputBlockView key={block.id} event={block.event} mode={mode} />))}
+            {outputBlocks.map((block: OutputBlock) => (<OutputBlockView key={block.id} event={block.event} mode={mode} toolOutputExpanded={toolOutputExpanded} />))}
             {streamingText && (() => {
               const c = engineColor(streamingText.engineId);
               const cleaned = cleanEngineOutput(streamingText.content);
@@ -589,7 +593,7 @@ export function App({  }: {  }) {
                   </Box>
                 </Box>
               )}
-              {mode === 'chat' && <StatusBar config={loadConfig()} chatSession={chatSession} explorationMode={explorationMode} />}
+              {mode === 'chat' && <StatusBar config={loadConfig()} chatSession={chatSession} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} />}
             </Box>
           )}
         </Box>
@@ -597,7 +601,7 @@ export function App({  }: {  }) {
 }
 
 
-// @kern-source: ui-app:572
+// @kern-source: ui-app:576
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

@@ -99,6 +99,7 @@ screen name=StatusBar target=ink
   prop name=config type="ReturnType<typeof loadConfig>"
   prop name=chatSession type=ChatSession
   prop name=explorationMode type=boolean optional=true
+  prop name=toolOutputExpanded type=boolean optional=true
   render
     handler <<<
       const cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
@@ -129,6 +130,7 @@ screen name=StatusBar target=ink
             {tokens > 0 ? <Text dimColor>{` | ${(tokens / 1000).toFixed(1)}k tok`}</Text> : null}
             {msgs > 0 ? <Text dimColor>{` \u00b7 ${msgs} msgs`}</Text> : null}
             {cost ? <Text dimColor>{` \u00b7 ${cost}`}</Text> : null}
+            {toolOutputExpanded !== undefined && <Text dimColor>{' \u00b7 ^E '}{toolOutputExpanded ? '\u25be' : '\u25b8'}</Text>}
           </Text>
         </Box>
       );

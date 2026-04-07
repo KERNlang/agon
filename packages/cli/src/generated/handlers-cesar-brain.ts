@@ -357,7 +357,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
     // Initial confidence was just "I haven't read the code yet". Now the model
     // has finished its turn (tool calls done, response complete). If confidence
     // is still low and model didn't delegate, escalate.
-    if (parsedConfidence !== null && !secondOpinionPromise && !(ctx as any)._advisorPending && !_isFollowUp) {
+    if (parsedConfidence !== null && !secondOpinionPromise && !(ctx as any)._advisorPending && !_isFollowUp && !abort.signal.aborted) {
       // Check: did the model delegate via tool call or [SUGGEST:mode]?
       const pendingDel = (ctx as any)._pendingDelegation;
       const didDelegate = !!pendingDel;
@@ -519,7 +519,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
     }
   
     // ── Protocol enforcement: suggest mode when engine didn't ──
-    if (!finalSuggestion.action && !ranToolLoop && !secondOpinionPromise && !_isFollowUp) {
+    if (!finalSuggestion.action && !ranToolLoop && !secondOpinionPromise && !_isFollowUp && !abort.signal.aborted) {
       if (streaming) { dispatch({ type: 'streaming-end', engineId: cesarEngineId }); streaming = false; }
       const enforcement = await promptProtocolEnforcement(input, parsedConfidence, ctx, dispatch);
       if (enforcement) {

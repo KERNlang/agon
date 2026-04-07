@@ -1083,7 +1083,18 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
             continue;
           }
   
-          // No tool calls — final response. Add to history and exit.
+          // No tool calls — check if model stopped mid-investigation.
+          // Some models (e.g. GLM-5.1) narrate "let me check..." then stop
+          // instead of calling tools. Nudge them to continue.
+          const STALL_RE = /\b(?:let me (?:check|look|examine|read|search|find|see|review|explore|investigate|understand|get|grab)|i (?:need|want|should|will) (?:to )?(?:check|look|examine|read|search|find|see|review|explore|investigate|understand|get|grab)|now (?:let me|i'll))\b/i;
+          if (config.nativeTools && step < MAX_TOOL_STEPS - 1 && STALL_RE.test(fullResponse.slice(-200))) {
+            // Model stalled mid-investigation — nudge it to continue
+            messageHistory.push({ role: 'assistant', content: fullResponse });
+            messageHistory.push({ role: 'user', content: 'Continue. Call the tools you need — do not narrate, just act.' });
+            continue;
+          }
+  
+          // Final response. Add to history and exit.
           messageHistory.push({ role: 'assistant', content: fullResponse });
           break;
         }

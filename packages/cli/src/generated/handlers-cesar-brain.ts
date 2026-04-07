@@ -137,6 +137,19 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       }
     } catch { /* routing context is best-effort */ }
   
+    // ── Heartbeat timer + turn timeout ──
+    const cesarTimeout = (config as any).cesarTimeout ?? 120;
+    const heartbeat = setInterval(() => {
+      const elapsed = Math.round((Date.now() - _turnStart) / 1000);
+      if (elapsed >= cesarTimeout) {
+        abort.abort();
+        clearInterval(heartbeat);
+        dispatch({ type: 'spinner-update', message: `Cesar timed out after ${elapsed}s` });
+      } else {
+        dispatch({ type: 'spinner-update', message: `Cesar thinking… ${elapsed}s` });
+      }
+    }, 15_000);
+  
     // ── Stream response ──
     try {
       const gen = session.send({ message: enrichedInput, signal: abort.signal, images: images?.map(img => img.path) });
@@ -150,6 +163,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         }
   
         if (chunk.type === 'tool_call') {
+          clearInterval(heartbeat);
           const meta = (chunk.metadata ?? {}) as Record<string, unknown>;
           const toolInput = typeof meta.input === 'string' ? meta.input : meta.input ? JSON.stringify(meta.input) : '';
           const toolName = chunk.content || 'tool';
@@ -184,6 +198,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         if (chunk.type === 'done') break;
   
         if (chunk.type === 'text') {
+          clearInterval(heartbeat);
           if (!streaming) {
             response += chunk.content;
   
@@ -271,6 +286,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         }
       }
     } catch (err) {
+      clearInterval(heartbeat);
       dispatch({ type: 'spinner-stop' });
       console.error(`[cesar:claude] send error: ${(err as Error).message ?? err}`);
       // If we already have content, preserve it instead of discarding
@@ -283,8 +299,15 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       }
     }
   
+    clearInterval(heartbeat);
+  
     if (abort.signal.aborted) {
       dispatch({ type: 'spinner-stop' });
+      const elapsed = Math.round((Date.now() - _turnStart) / 1000);
+      if (elapsed >= cesarTimeout) {
+        dispatch({ type: 'warning', message: `Cesar timed out after ${elapsed}s. Try a simpler question, or use /forge for complex tasks.` });
+        return { delegated: false, responded: true };
+      }
       return { delegated: false, responded: false };
     }
   

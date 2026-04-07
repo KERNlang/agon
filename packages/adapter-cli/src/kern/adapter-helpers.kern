@@ -113,6 +113,44 @@ fn name=resolveAgentArgs params="engine:EngineDefinition, permissionLevel:'full'
     return { args: planArgs };
   >>>
 
+fn name=stripStreamJson params="stdout:string" returns=string
+  doc "Extract text content from Claude stream-json NDJSON output. Returns plain text with system/hook messages removed."
+  handler <<<
+    const lines = stdout.split('\n');
+    const textParts: string[] = [];
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      try {
+        const msg = JSON.parse(trimmed);
+        // assistant message → extract text blocks
+        if (msg.type === 'assistant' && msg.message?.content) {
+          for (const block of msg.message.content) {
+            if (block.type === 'text' && block.text) textParts.push(block.text);
+          }
+        }
+        // result → extract result text
+        else if (msg.type === 'result' && msg.result && !msg.is_error) {
+          textParts.push(typeof msg.result === 'string' ? msg.result : JSON.stringify(msg.result));
+        }
+        // system, hook, etc. → skip
+      } catch {
+        // Not JSON — raw text from non-Claude engines, keep as-is
+        textParts.push(trimmed);
+      }
+    }
+
+    return textParts.join('\n');
+  >>>
+
+fn name=usesStreamJson params="engine:EngineDefinition" returns=boolean
+  doc "Check if engine exec mode outputs stream-json NDJSON."
+  handler <<<
+    const args = engine.exec?.args ?? [];
+    return args.includes('stream-json') || args.some((a: string) => a === '--output-format' && args[args.indexOf(a) + 1] === 'stream-json');
+  >>>
+
 fn name=checkEnvVars params="engine:EngineDefinition" returns="string|null"
   handler <<<
     if (!engine.env) return null;

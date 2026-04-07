@@ -11,7 +11,7 @@ import type { EngineAdapter, EngineDefinition, DispatchOptions, DispatchResult, 
 import { EngineRegistry, spawnWithTimeout, spawnStream, EngineNotFoundError, readOnlyDiff, diffLineCount, apiDispatch, apiStreamDispatch, companionDispatch, runHooks, hooksFailed, runApiAgentLoop, scanProjectContext, resolveWorkingDir } from '@agon/core';
 
 // @kern-source: adapter:5
-import { buildCommand, checkEnvVars } from './adapter-helpers.js';
+import { buildCommand, checkEnvVars, stripStreamJson, usesStreamJson } from './adapter-helpers.js';
 
 // @kern-source: adapter:7
 export class CliAdapter implements EngineAdapter {
@@ -109,6 +109,11 @@ export class CliAdapter implements EngineAdapter {
       timeout: options.timeout * 1000,
       signal: options.signal,
     });
+    
+    // Strip NDJSON system/hook messages from stream-json engines (Claude)
+    if (usesStreamJson(options.engine) && result.stdout.includes('{"type":')) {
+      result.stdout = stripStreamJson(result.stdout);
+    }
     
     const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
     mkdirSync(dirname(outputPath), { recursive: true });
@@ -293,6 +298,11 @@ export class CliAdapter implements EngineAdapter {
       timeout: options.timeout * 1000,
       signal: options.signal,
     });
+    
+    // Strip NDJSON system/hook messages from stream-json engines (Claude)
+    if (usesStreamJson(options.engine) && result.stdout.includes('{"type":')) {
+      result.stdout = stripStreamJson(result.stdout);
+    }
     
     const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
     mkdirSync(dirname(outputPath), { recursive: true });

@@ -176,23 +176,42 @@ export function registerExtensionSkills(ext: LoadedExtension): Skill[] {
   if (!skillContribs || skillContribs.length === 0) return skills;
   
   for (const sc of skillContribs) {
-    if (sc.handler && !sc.prompt) {
-      console.warn(`[agon] extension '${ext.manifest.id}' skill '${sc.trigger}': handler-based skills not yet supported (Phase 2)`);
-      continue;
-    }
-    skills.push({
+    const skill: Skill = {
       name: sc.name || sc.trigger.replace(/^\//, ''),
       trigger: sc.trigger.startsWith('/') ? sc.trigger : '/' + sc.trigger,
       description: sc.description || '',
       prompt: sc.prompt || '',
       source: resolve(ext.dir, 'manifest.json'),
-    });
+      tools: sc.tools,
+    };
+  
+    if (sc.handler) {
+      try {
+        const handlerPath = resolve(ext.dir, sc.handler);
+        // Dynamic import is async but registerExtensionSkills is sync.
+        // Store the path — the handler will be loaded lazily on first invocation.
+        (skill as any)._handlerPath = handlerPath;
+        skill.handler = async (args: string, ctx: any) => {
+          // Lazy-load the handler module on first call
+          const mod = await import(handlerPath);
+          if (typeof mod.execute !== 'function') {
+            ctx.dispatch({ type: 'warning', message: `Skill handler '${sc.trigger}' missing execute() export` });
+            return { handled: false };
+          }
+          return mod.execute(args, ctx);
+        };
+      } catch (err) {
+        console.warn(`[agon] extension '${ext.manifest.id}' skill '${sc.trigger}': failed to set up handler: ${(err as Error).message}`);
+      }
+    }
+  
+    skills.push(skill);
   }
   
   return skills;
 }
 
-// @kern-source: extension-loader:188
+// @kern-source: extension-loader:207
 export async function initExtensions(cwd: string, commandRegistry: CommandRegistry, engineRegistry: EngineRegistry): Promise<{ extensions: LoadedExtension[]; skills: Skill[]; systemPromptFragments: string[] }> {
   const extensions = loadExtensions(cwd);
   const allSkills: Skill[] = [];

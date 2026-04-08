@@ -769,6 +769,12 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
         const skillArg = spaceIdx > 0 ? trimmed.slice(spaceIdx + 1).trim() : '';
         const skill = findSkill(trigger, cb.dynamicSkills);
         if (skill) {
+          // Handler-based skill — execute directly
+          if (skill.handler) {
+            const result = await skill.handler(skillArg, cb);
+            if (result?.handled) break;
+          }
+          // Template-based skill — render and send to chat
           const skillPrompt = renderSkillPrompt(skill, skillArg);
           cb.setPendingImages(() => []);
           await handleChat(skillPrompt, cb.dispatch, cb.ctx, cb.allImages);

@@ -101,6 +101,8 @@ export { createCesarPlan, approveCesarPlan, advanceCesarStep, cancelCesarPlan } 
 export type { CesarPlan, CesarPlanStep, CesarStepResult } from './generated/cesar-plan.js';
 export { planCostEstimator } from './generated/plan-cost-estimator.js';
 export type { CostEstimate } from './generated/plan-cost-estimator.js';
+export { executePlan, getReadySteps } from './generated/plan-executor.js';
+export type { StepExecutor, PlanExecutorCallbacks } from './generated/plan-executor.js';
 export { runHooks, hooksFailed, hooksOutput } from './hooks.js';
 export type { HookEvent, HookDef, HookResult } from './hooks.js';
 export { loadSkills, findSkill, renderSkillPrompt } from './skill-loader.js';

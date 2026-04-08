@@ -95,6 +95,9 @@ union name=OutputEvent discriminant=type
     field name=inputTokens type=number optional=true
     field name=outputTokens type=number optional=true
     field name=cost type=number optional=true
+  variant name=confidence-update
+    field name=value type="number|null"
+    field name=engineId type=string
   variant name=file-changes
     field name=files type="{ path: string; status: 'modified'|'created'|'deleted'; additions: number; deletions: number }[]"
   variant name=dashboard

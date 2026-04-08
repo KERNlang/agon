@@ -30,7 +30,7 @@ export type { ReviewEvent, ModelPickerEntry } from './generated/ui-controls.js';
 // Status
 export {
   SpinnerBlock, TokenGauge, StatusBar, StatusLine, BackgroundJobRail,
-  BtwPanel, AGON_TIPS,
+  CesarStatusStrip, AGON_TIPS,
 } from './generated/ui-status.js';
 
 // Re-export ENGINE_COLORS from output for backward compat

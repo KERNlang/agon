@@ -104,7 +104,7 @@ function AgonTip({  }: {  }) {
 
 // @kern-source: ui-status:99
 
-export function StatusBar({ config, chatSession, explorationMode, toolOutputExpanded, activity, isActive, streamSnippet }: { config: ReturnType<typeof loadConfig>; chatSession: ChatSession; explorationMode?: boolean; toolOutputExpanded?: boolean; activity?: EngineProgress[]|null; isActive?: boolean; streamSnippet?: { engineId: string; line: string } | null }) {
+export function StatusBar({ config, chatSession, explorationMode, toolOutputExpanded, isActive }: { config: ReturnType<typeof loadConfig>; chatSession: ChatSession; explorationMode?: boolean; toolOutputExpanded?: boolean; isActive?: boolean }) {
         const cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
         const cesarColor = color256toHex(ENGINE_COLORS[cesarId] ?? 245);
         const workDir = resolveWorkingDir();
@@ -120,39 +120,6 @@ export function StatusBar({ config, chatSession, explorationMode, toolOutputExpa
         };
         const contextBudget = contextWindows[cesarId] ?? 200000;
   
-        // Build compact activity summary for engines during dispatch
-        const activitySegments: React.ReactNode[] = [];
-        if (isActive && activity && activity.length > 0) {
-          for (const eng of activity) {
-            const ec = color256toHex(ENGINE_COLORS[eng.id] ?? 245);
-            const icon = eng.done ? '\u2713' : eng.failed ? '\u2717' : '\u25cf';
-            const iconColor = eng.done ? '#4ade80' : eng.failed ? '#ef4444' : ec;
-            activitySegments.push(
-              <Text key={eng.id}>
-                <Text color={iconColor}>{icon}</Text>
-                <Text color={ec} bold>{eng.id}</Text>
-                <Text dimColor>{':'}</Text>
-                <Text dimColor>{eng.status.length > 16 ? eng.status.slice(0, 16) + '\u2026' : eng.status}</Text>
-                <Text dimColor>{' '}</Text>
-              </Text>
-            );
-          }
-        } else if (isActive && streamSnippet) {
-          const ec = color256toHex(ENGINE_COLORS[streamSnippet.engineId] ?? 245);
-          const maxLen = 48;
-          const line = streamSnippet.line.length > maxLen ? streamSnippet.line.slice(0, maxLen) + '\u2026' : streamSnippet.line;
-          activitySegments.push(
-            <Text key="stream">
-              <Text color="#fbbf24">{'\u25cf '}</Text>
-              <Text color={ec} bold>{streamSnippet.engineId}</Text>
-              <Text dimColor>{': '}</Text>
-              <Text dimColor>{line}</Text>
-            </Text>
-          );
-        } else if (isActive) {
-          activitySegments.push(<Text key="active" color="#fbbf24">{'\u25cf working\u2026'}</Text>);
-        }
-  
         return (
           <Box paddingTop={0}>
             <Text>
@@ -161,24 +128,22 @@ export function StatusBar({ config, chatSession, explorationMode, toolOutputExpa
               <Text dimColor>{' in '}</Text>
               <Text color="#60a5fa">{cwd}</Text>
               {branch ? <Text dimColor>{' on '}<Text color="#34d399">{branch}</Text></Text> : null}
-              {activitySegments.length > 0 ? <Text dimColor>{' \u2502 '}</Text> : null}
             </Text>
-            {activitySegments.length > 0 && <Text>{activitySegments}</Text>}
             <Text>
-              {activitySegments.length === 0 && tokens > 0 ? <Text dimColor>{' | '}</Text> : null}
-              {activitySegments.length === 0 && tokens > 0 ? <TokenGauge tokens={tokens} maxTokens={contextBudget} /> : null}
-              {activitySegments.length === 0 && tokens > 0 ? <Text dimColor>{` | ${(tokens / 1000).toFixed(1)}k tok`}</Text> : null}
+              {tokens > 0 ? <Text dimColor>{' | '}</Text> : null}
+              {tokens > 0 ? <TokenGauge tokens={tokens} maxTokens={contextBudget} /> : null}
+              {tokens > 0 ? <Text dimColor>{` | ${(tokens / 1000).toFixed(1)}k tok`}</Text> : null}
               {msgs > 0 ? <Text dimColor>{` \u00b7 ${msgs} msgs`}</Text> : null}
               {cost ? <Text dimColor>{` \u00b7 ${cost}`}</Text> : null}
               {toolOutputExpanded !== undefined && <Text dimColor>{' \u00b7 ^E '}{toolOutputExpanded ? '\u25be' : '\u25b8'}</Text>}
-              {isActive ? <Text dimColor>{' \u00b7 tab peek \u00b7 /btw ask'}</Text> : null}
+              {isActive ? <Text dimColor>{' \u00b7 /btw ask'}</Text> : null}
             </Text>
           </Box>
         );
 }
 
 
-// @kern-source: ui-status:183
+// @kern-source: ui-status:146
 
 export function StatusLine({ startTime, engineId, color }: { startTime: number; engineId?: string; color?: number }) {
   const [now, setNow] = useState<number>(Date.now());
@@ -207,7 +172,7 @@ export function StatusLine({ startTime, engineId, color }: { startTime: number; 
 }
 
 
-// @kern-source: ui-status:216
+// @kern-source: ui-status:179
 
 export function BackgroundJobRail({ jobs }: { jobs: Job[] }) {
         if (jobs.length === 0) return null;
@@ -228,9 +193,9 @@ export function BackgroundJobRail({ jobs }: { jobs: Job[] }) {
 }
 
 
-// @kern-source: ui-status:239
+// @kern-source: ui-status:202
 
-export function BtwPanel({ engines, spinner, jobs, lastActivityAt, streamSnippet }: { engines: EngineProgress[]|null; spinner: { message: string; engineId?: string } | null; jobs: Job[]; lastActivityAt: number; streamSnippet?: { engineId: string; line: string } | null }) {
+export function CesarStatusStrip({ cesarId, confidence, spinner, engines, lastActivityAt, streamSnippet, isActive, planModeQueued, activePlan }: { cesarId: string; confidence?: number|null; spinner: { message: string; engineId?: string } | null; engines: EngineProgress[]|null; lastActivityAt: number; streamSnippet?: { engineId: string; line: string } | null; isActive: boolean; planModeQueued?: boolean; activePlan?: any }) {
   const [now, setNow] = useState<number>(Date.now());
 
   useEffect(() => {
@@ -238,86 +203,85 @@ export function BtwPanel({ engines, spinner, jobs, lastActivityAt, streamSnippet
           return () => clearInterval(t);
   }, []);
 
-        const hasEngines = engines && engines.length > 0;
-        const hasSpinner = !!spinner;
-        const hasJobs = jobs.length > 0;
-        const hasStream = !!streamSnippet;
+        const cesarColor = color256toHex(ENGINE_COLORS[cesarId] ?? 245);
   
-        if (!hasEngines && !hasSpinner && !hasJobs && !hasStream) {
-          return (
-            <Box flexDirection="column" paddingX={1} marginY={1} borderStyle="single" borderColor="#585858">
-              <Text dimColor>{' btw — nothing running right now'}</Text>
-              <Text dimColor>{' tab or /btw to dismiss'}</Text>
-            </Box>
-          );
+        // Confidence badge with tier coloring
+        let confStr = '';
+        let confColor = '#6b7280';
+        if (confidence !== null && confidence !== undefined) {
+          confStr = ` ${confidence}%`;
+          confColor = confidence >= 96 ? '#4ade80' : confidence >= 88 ? '#fbbf24' : confidence >= 72 ? '#f97316' : '#ef4444';
         }
   
-        // Compute age from raw timestamp so the 1s timer keeps it fresh
-        const agoSec = Math.max(0, Math.floor((now - lastActivityAt) / 1000));
-        const agoStr = agoSec <= 0 ? 'just now' : agoSec < 60 ? `${agoSec}s ago` : `${Math.floor(agoSec / 60)}m ${agoSec % 60}s ago`;
-        const agoColor = agoSec < 5 ? '#4ade80' : agoSec < 15 ? '#fbbf24' : '#ef4444';
+        // Activity segment
+        let activityStr = 'idle';
+        let activityColor = '#6b7280';
+        if (isActive && spinner) {
+          const msg = spinner.message.replace(/\u2026$/, '').trim();
+          activityStr = msg.length > 20 ? msg.slice(0, 20) + '\u2026' : msg;
+          activityColor = '#fbbf24';
+        }
+  
+        // Elapsed time
+        let elapsedStr = '';
+        if (isActive) {
+          const elapsed = Math.max(0, Math.floor((now - lastActivityAt) / 1000));
+          if (elapsed > 0) {
+            const mins = Math.floor(elapsed / 60);
+            const secs = elapsed % 60;
+            elapsedStr = mins > 0 ? ` ${mins}m ${secs}s` : ` ${elapsed}s`;
+          }
+        }
+  
+        // Engine dots
+        const engineDots: React.ReactNode[] = [];
+        if (isActive && engines && engines.length > 0) {
+          for (const eng of engines) {
+            const ec = color256toHex(ENGINE_COLORS[eng.id] ?? 245);
+            const icon = eng.done ? '\u2713' : eng.failed ? '\u2717' : '\u25cf';
+            const iconColor = eng.done ? '#4ade80' : eng.failed ? '#ef4444' : ec;
+            const status = eng.status.length > 12 ? eng.status.slice(0, 12) + '\u2026' : eng.status;
+            engineDots.push(
+              <Text key={eng.id}>
+                <Text color={iconColor}>{icon}</Text>
+                <Text color={ec} bold>{eng.id}</Text>
+                <Text dimColor>:{status} </Text>
+              </Text>
+            );
+          }
+        }
+  
+        // Stream snippet
+        let snippetStr = '';
+        if (streamSnippet) {
+          const maxLen = 40;
+          snippetStr = streamSnippet.line.length > maxLen ? streamSnippet.line.slice(0, maxLen) + '\u2026' : streamSnippet.line;
+        }
+  
+        // Plan badge
+        const hasPlan = planModeQueued || (activePlan && ['planning', 'awaiting_approval', 'running', 'paused'].includes(activePlan.state));
+        let planLabel = '';
+        if (planModeQueued) planLabel = 'ready';
+        else if (activePlan?.state === 'planning') planLabel = 'thinking';
+        else if (activePlan?.state === 'awaiting_approval') planLabel = 'review';
+        else if (activePlan?.state === 'running') planLabel = 'executing';
+        else if (activePlan?.state === 'paused') planLabel = 'paused';
   
         return (
-          <Box flexDirection="column" paddingX={1} marginY={1} borderStyle="single" borderColor="#6b7280">
-            <Box>
-              <Text bold color="#a78bfa">{' btw '}</Text>
-              <Text dimColor>{'— what\u2019s happening right now'}</Text>
-            </Box>
-  
-            {hasEngines && engines!.map((eng: EngineProgress) => {
-              const ec = color256toHex(ENGINE_COLORS[eng.id] ?? 245);
-              const icon = eng.done ? '\u2713' : eng.failed ? '\u2717' : '\u25b6';
-              const iconColor = eng.done ? '#4ade80' : eng.failed ? '#ef4444' : '#fbbf24';
-              const mins = Math.floor(eng.elapsed / 60);
-              const secs = eng.elapsed % 60;
-              const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
-              return (
-                <Box key={eng.id}>
-                  <Text color={iconColor}>{' '}{icon}{' '}</Text>
-                  <Text color={ec} bold>{eng.id.padEnd(12)}</Text>
-                  <Text>{eng.status.padEnd(24)}</Text>
-                  <Text dimColor>{timeStr.padStart(6)}</Text>
-                  {eng.score ? <Text color="#4ade80">{`  \u2192 ${eng.score}`}</Text> : null}
-                </Box>
-              );
-            })}
-  
-            {hasSpinner && !hasEngines && (
-              <Box>
-                <Text color="#fbbf24">{' \u25cf '}</Text>
-                {spinner!.engineId && <Text color={color256toHex(ENGINE_COLORS[spinner!.engineId] ?? 245)} bold>{spinner!.engineId}{' '}</Text>}
-                <Text>{spinner!.message}</Text>
-              </Box>
-            )}
-  
-            {hasStream && (
-              <Box flexDirection="column" marginTop={hasEngines || hasSpinner ? 0 : 0}>
-                <Text dimColor>{' output:'}</Text>
-                <Box paddingLeft={2}>
-                  <Text color={color256toHex(ENGINE_COLORS[streamSnippet!.engineId] ?? 245)} bold>{streamSnippet!.engineId}</Text>
-                  <Text dimColor>{': '}</Text>
-                  <Text wrap="truncate">{streamSnippet!.line}</Text>
-                </Box>
-              </Box>
-            )}
-  
-            {hasJobs && (
-              <Box marginTop={0}>
-                <Text dimColor>{' jobs: '}</Text>
-                {jobs.map((job: Job) => (
-                  <Text key={job.id}>
-                    <Text color="yellow">{job.type}</Text>
-                    <Text dimColor>{' (' + job.label + ') '}</Text>
-                  </Text>
-                ))}
-              </Box>
-            )}
-  
-            <Box>
-              <Text dimColor>{' last activity: '}</Text>
-              <Text color={agoColor}>{agoStr}</Text>
-              <Text dimColor>{'  \u00b7  tab or /btw to dismiss'}</Text>
-            </Box>
+          <Box paddingTop={0}>
+            <Text dimColor={!isActive}>
+              <Text color={cesarColor} bold>{'\u25c6 '}{cesarId}</Text>
+              {confStr ? <Text color={confColor} bold>{confStr}</Text> : null}
+              <Text dimColor>{' \u2502 '}</Text>
+              <Text color={activityColor}>{activityStr}</Text>
+              {elapsedStr ? <Text dimColor>{elapsedStr}</Text> : null}
+              {engineDots.length > 0 ? <Text dimColor>{' \u2502 '}</Text> : null}
+            </Text>
+            {engineDots.length > 0 && <Text dimColor={!isActive}>{engineDots}</Text>}
+            <Text dimColor={!isActive}>
+              {snippetStr ? <><Text dimColor>{' \u2502 '}</Text><Text dimColor wrap="truncate">{snippetStr}</Text></> : null}
+              {hasPlan ? <><Text dimColor>{' \u2502 '}</Text><Text color="#c084fc" bold>{'\u25c8 PLAN'}</Text><Text dimColor>{' '}{planLabel}</Text></> : null}
+            </Text>
           </Box>
         );
 }

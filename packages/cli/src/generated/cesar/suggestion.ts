@@ -45,8 +45,10 @@ export function parseSuggestion(response: string): SuggestionResult {
       { re: new RegExp(`\\b(?:${INTENT})tribunal\\b`), action: 'tribunal' },
       { re: new RegExp(`\\b(?:${INTENT}|open(?:ing)?\\s+(?:a\\s+)?)campfire\\b`), action: 'campfire' },
       { re: new RegExp(`\\b(?:${INTENT}|full\\s+)(?:team[\\s-])?pipeline\\b`), action: 'pipeline' },
+      { re: new RegExp(`\\b(?:${INTENT})(?:code[\\s-])?review\\b`), action: 'review' },
       // Past-tense: "delegated to pipeline", "going with forge"
       { re: /\bdelegated to (?:the )?(?:full )?pipeline\b/, action: 'pipeline' },
+      { re: /\bdelegated to (?:the )?(?:code[\\s-])?review\b/, action: 'review' },
       { re: /\bdelegated to (?:the )?forge\b/, action: 'forge' },
       { re: /\bdelegated to (?:the )?brainstorm\b/, action: 'brainstorm' },
       { re: /\bdelegated to (?:the )?tribunal\b/, action: 'tribunal' },

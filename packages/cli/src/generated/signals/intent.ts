@@ -33,10 +33,12 @@ export interface Intent {
   jobId: string|undefined;
   taskClass: 'code'|'question'|'ambiguous'|undefined;
   args: string|undefined;
+  target: string|undefined;
+  engineId: string|undefined;
   commandName: string|undefined;
 }
 
-// @kern-source: intent:31
+// @kern-source: intent:33
 export const SLASH_COMMANDS: SlashCommand[] = [
   { cmd: '/forge',       desc: '<task> test with <cmd> [--hardened] — competitive code generation' },
   { cmd: '/brainstorm',  desc: '<question>              — confidence-bidding answers' },
@@ -67,6 +69,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { cmd: '/team-tribunal',   desc: '[2v2|3v3] [mode] <question>    — team debate' },
   { cmd: '/team-brainstorm', desc: '[2v2|3v3] <question>            — team ideation' },
   { cmd: '/pipeline',   desc: '<task> [test with <cmd>]  — build→review→fix loop' },
+  { cmd: '/review',     desc: '[with <engine>] [<target>] — code review (uncommitted|branch:NAME|commit:SHA)' },
   { cmd: '/provider',    desc: 'add|remove|list          — manage API providers' },
   { cmd: '/run',         desc: '<cmd>                    — run shell command inline' },
   { cmd: '/commit',      desc: '[message]                — stage & commit with auto-generated message' },
@@ -82,40 +85,40 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { cmd: '/exit',        desc: '                        — quit' },
 ];
 
-// @kern-source: intent:79
+// @kern-source: intent:82
 export const FITNESS_PATTERN: RegExp = /\b(?:test with|test:|--test|fitness:)\s+(.+)/i;
 
-// @kern-source: intent:83
+// @kern-source: intent:86
 export const LEADERBOARD_KEYWORDS: RegExp = /\b(leaderboard|elo|rankings?)\b/i;
 
-// @kern-source: intent:86
+// @kern-source: intent:89
 export const HISTORY_KEYWORDS: RegExp = /\b(history|last runs?|recent)\b/i;
 
-// @kern-source: intent:89
+// @kern-source: intent:92
 export const ENGINES_KEYWORDS: RegExp = /\b(engines?|what engines)\b/i;
 
-// @kern-source: intent:92
+// @kern-source: intent:95
 export const CONFIG_KEYWORDS: RegExp = /\b(config|settings?)\b/i;
 
-// @kern-source: intent:95
+// @kern-source: intent:98
 export const HELP_KEYWORDS: RegExp = /^(help|\?)$/i;
 
-// @kern-source: intent:98
+// @kern-source: intent:101
 export const EXIT_KEYWORDS: RegExp = /^(exit|quit|bye)$/i;
 
-// @kern-source: intent:101
+// @kern-source: intent:104
 export const SENTENCE_PREFIX: RegExp = /^(do|does|did|is|are|was|were|have|has|had|can|could|would|should|will|shall|i\s)/i;
 
-// @kern-source: intent:104
+// @kern-source: intent:107
 export const QUESTION_PATTERN: RegExp = /^(what|how|why|where|when|who|which|explain|describe|tell|show|list|is there|does|can you explain|walk me through)\b/i;
 
-// @kern-source: intent:107
+// @kern-source: intent:110
 export const CODE_TASK_PATTERN: RegExp = /^(fix|add|implement|refactor|debug|create|build|write|update|change|remove|delete|rename|move|test|deploy|install|upgrade|migrate|convert|extract|inline|optimize|port)\b/i;
 
-// @kern-source: intent:110
+// @kern-source: intent:113
 export const CODE_ARTIFACT_PATTERN: RegExp = /(?:at \w+.*:\d+|\.[tj]sx?\b|\.[a-z]{2,4}:\d+|^[+-]{3}\s)/m;
 
-// @kern-source: intent:113
+// @kern-source: intent:116
 export function classifyTask(input: string): 'code'|'question'|'ambiguous' {
   if (QUESTION_PATTERN.test(input)) return 'question';
   if (CODE_TASK_PATTERN.test(input)) return 'code';
@@ -123,7 +126,7 @@ export function classifyTask(input: string): 'code'|'question'|'ambiguous' {
   return 'ambiguous';
 }
 
-// @kern-source: intent:121
+// @kern-source: intent:124
 function parseForgeInput(input: string): Intent {
   // Only match --hardened as a standalone flag (not inside task text or test args)
   const hardenedMatch = input.match(/^(--hardened)\s+(.*)$/i) || input.match(/^(.*?)\s+(--hardened)\s*$/i);
@@ -139,7 +142,7 @@ function parseForgeInput(input: string): Intent {
   return { type: 'forge', task, fitnessCmd, hardened } as Intent;
 }
 
-// @kern-source: intent:137
+// @kern-source: intent:140
 function parseSlashCommand(input: string, commandRegistry?: any): Intent {
   const stripped = input.slice(1).trim();
   if (!stripped) return { type: 'slash-list' } as Intent;
@@ -328,6 +331,19 @@ function parseSlashCommand(input: string, commandRegistry?: any): Intent {
       const pipeTask = fitCmd ? rest.replace(FITNESS_PATTERN, '').trim() : rest;
       return { type: 'pipeline', task: pipeTask, fitnessCmd: fitCmd } as Intent;
     }
+    case 'review':
+    case 'cr': {
+      const reviewParts = rest.split(/\s+/).filter(Boolean);
+      let engineId: string | undefined;
+      let target: string | undefined;
+      let i = 0;
+      if (reviewParts[i] === 'with' && reviewParts[i + 1]) {
+        engineId = reviewParts[i + 1].toLowerCase();
+        i += 2;
+      }
+      if (reviewParts[i]) target = reviewParts[i];
+      return { type: 'review', engineId, target } as Intent;
+    }
     case 'run':
     case 'exec':
     case 'shell':
@@ -366,7 +382,7 @@ function parseSlashCommand(input: string, commandRegistry?: any): Intent {
   }
 }
 
-// @kern-source: intent:364
+// @kern-source: intent:380
 export function detectIntent(raw: string, commandRegistry?: any): Intent {
   const input = raw.trim();
   if (!input) return { type: 'unknown', input: '' } as Intent;

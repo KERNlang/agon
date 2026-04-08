@@ -23,7 +23,7 @@ import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 import { icons } from './icons.js';
 
 // @kern-source: dispatch:13
-import { handleForge, handleChat, handleBrainstorm, handleCampfire, handleTribunal, handleLeaderboard, handleHistory, handleEngines, handleDiscover, handleConfig, handleUse, handleCesar, handleTokens, handleModels, handleWorkspace, handleChats, handlePlanShow, handlePlansList, handleApprove, handleRetry, handleCancel, handleApplyPatch, handleCp, handleCommit, handleFlowReport, handleFlowAnalysis, handleBuild, handleRun } from '../../handlers/index.js';
+import { handleForge, handleChat, handleBrainstorm, handleCampfire, handleTribunal, handleLeaderboard, handleHistory, handleEngines, handleDiscover, handleConfig, handleUse, handleCesar, handleTokens, handleModels, handleWorkspace, handleChats, handlePlanShow, handlePlansList, handleApprove, handleRetry, handleCancel, handleApplyPatch, handleCp, handleCommit, handleFlowReport, handleFlowAnalysis, handleBuild, handleRun, handleReview } from '../../handlers/index.js';
 
 // @kern-source: dispatch:14
 import { handleTeamTribunal } from '../handlers/team-tribunal.js';
@@ -189,6 +189,9 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
         case 'pipeline':
           cb.runAsJob('pipeline', label, () => handlePipeline(taskInput, cb.dispatch, cb.ctx, fitnessCmd ?? undefined));
           return true;
+        case 'review':
+          cb.runAsJob('review', label, () => handleReview(cb.dispatch, cb.ctx, result.target as string | undefined, result.engineId as string | undefined));
+          return true;
       }
     }
     if (result.responded) return false;
@@ -223,6 +226,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
         case 'tribunal': cb.runAsJob('tribunal', label, () => handleTribunal(recoveredTask, cb.dispatch, cb.ctx, crashDel.tribunalMode)); return true;
         case 'campfire': cb.runAsJob('campfire', label, () => handleCampfire(recoveredTask, cb.dispatch, cb.ctx)); return true;
         case 'pipeline': cb.runAsJob('pipeline', label, () => handlePipeline(recoveredTask, cb.dispatch, cb.ctx, recoveredFitness ?? undefined)); return true;
+        case 'review': cb.runAsJob('review', label, () => handleReview(cb.dispatch, cb.ctx, crashDel.target, crashDel.engineId)); return true;
         case 'team-forge': { const tf = recoveredFitness ?? await cb.askQuestion('What command tests this?'); if (tf.trim()) { cb.runAsJob('team-forge', label, () => handleTeamForge(recoveredTask, tf.trim(), cb.dispatch, cb.ctx, undefined)); return true; } break; }
         case 'team-brainstorm': cb.runAsJob('team-brainstorm', label, () => handleTeamBrainstorm(recoveredTask, cb.dispatch, cb.ctx)); return true;
         case 'team-tribunal': cb.runAsJob('team-tribunal', label, () => handleTeamTribunal(recoveredTask, cb.dispatch, cb.ctx, crashDel.tribunalMode)); return true;
@@ -278,6 +282,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
             case 'tribunal': cb.runAsJob('tribunal', label, () => handleTribunal(fallbackTask, cb.dispatch, cb.ctx, fallbackSuggestion.tribunalMode)); return true;
             case 'campfire': cb.runAsJob('campfire', label, () => handleCampfire(fallbackTask, cb.dispatch, cb.ctx)); return true;
             case 'pipeline': cb.runAsJob('pipeline', label, () => handlePipeline(fallbackTask, cb.dispatch, cb.ctx, fallbackFitness ?? undefined)); return true;
+            case 'review': cb.runAsJob('review', label, () => handleReview(cb.dispatch, cb.ctx)); return true;
             case 'team-forge': { const tf = fallbackFitness ?? await cb.askQuestion('What command tests this?'); if (tf.trim()) { cb.runAsJob('team-forge', label, () => handleTeamForge(fallbackTask, tf.trim(), cb.dispatch, cb.ctx, undefined)); return true; } break; }
             case 'team-brainstorm': cb.runAsJob('team-brainstorm', label, () => handleTeamBrainstorm(fallbackTask, cb.dispatch, cb.ctx)); return true;
             case 'team-tribunal': cb.runAsJob('team-tribunal', label, () => handleTeamTribunal(fallbackTask, cb.dispatch, cb.ctx, fallbackSuggestion.tribunalMode)); return true;
@@ -333,7 +338,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
   return false;
 }
 
-// @kern-source: dispatch:310
+// @kern-source: dispatch:315
 export async function dispatchIntent(intent: any, input: string, cb: DispatchCallbacks): Promise<DispatchResult> {
   // ── Emit pre:dispatch event ──
   if (cb.eventBus) {
@@ -403,6 +408,13 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
       return { handled: true, ranAsJob: true };
     case 'pipeline':
       cb.runAsJob('pipeline', intent.task?.slice(0, 40) ?? 'pipeline', () => handlePipeline(intent.task, cb.dispatch, cb.ctx, intent.fitnessCmd ?? undefined));
+      return { handled: true, ranAsJob: true };
+    case 'review':
+      cb.runAsJob('review', intent.target?.slice(0, 40) ?? 'review', async () => {
+        if (cb.eventBus) await cb.eventBus.emit('pre:review', { target: intent.target, cwd: resolveWorkingDir() });
+        await handleReview(cb.dispatch, cb.ctx, intent.target, intent.engineId);
+        if (cb.eventBus) cb.eventBus.emit('post:review', { target: intent.target, cwd: resolveWorkingDir() }).catch(() => {});
+      });
       return { handled: true, ranAsJob: true };
   
     // ── Inline commands ──

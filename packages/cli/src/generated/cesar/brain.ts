@@ -44,7 +44,7 @@ export const yieldToInk: () => Promise<void> = () => new Promise<void>(resolve =
 export function extractDelegation(toolName: string, args: Record<string,unknown>): PendingDelegation {
   return {
     action: toolName.toLowerCase(),
-    reasoning: (args as any)?.task ?? (args as any)?.question ?? (args as any)?.topic ?? '',
+    reasoning: (args as any)?.task ?? (args as any)?.question ?? (args as any)?.topic ?? (args as any)?.target ?? '',
     fitnessCmd: typeof (args as any)?.fitnessCmd === 'string'
       ? (args as any).fitnessCmd
       : typeof (args as any)?.fitness === 'string'
@@ -53,12 +53,14 @@ export function extractDelegation(toolName: string, args: Record<string,unknown>
     hardened: (args as any)?.hardened ?? false,
     tribunalMode: (args as any)?.mode,
     team: (args as any)?.team ?? false,
+    target: (args as any)?.target,
+    engineId: (args as any)?.engine,
     createdAt: Date.now(),
   };
 }
 
-// @kern-source: brain:36
-export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input: string, response: string, cesarEngineId: string, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, fitnessCmd?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}> {
+// @kern-source: brain:38
+export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input: string, response: string, cesarEngineId: string, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, fitnessCmd?:string, hardened?:boolean, tribunalMode?:string, team?:boolean, target?:string, engineId?:string}> {
   if (streaming) dispatch({ type: 'streaming-end', engineId: cesarEngineId });
   if (!streaming) dispatch({ type: 'spinner-stop' });
   appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
@@ -69,12 +71,12 @@ export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input
     const finalAction = delResult.action ?? pendingDel.action;
     const action = pendingDel.team ? `team-${finalAction}` : finalAction;
     const reasoning = delResult.userContext ? `${pendingDel.reasoning ?? ''}\n\nUser context: ${delResult.userContext}` : pendingDel.reasoning;
-    return { delegated: true, responded: true, action, reasoning, fitnessCmd: pendingDel.fitnessCmd, hardened: delResult.hardened ?? pendingDel.hardened, tribunalMode: delResult.tribunalMode ?? pendingDel.tribunalMode, team: delResult.team ?? pendingDel.team };
+    return { delegated: true, responded: true, action, reasoning, fitnessCmd: pendingDel.fitnessCmd, hardened: delResult.hardened ?? pendingDel.hardened, tribunalMode: delResult.tribunalMode ?? pendingDel.tribunalMode, team: delResult.team ?? pendingDel.team, target: pendingDel.target, engineId: pendingDel.engineId };
   }
   return { delegated: false, responded: true };
 }
 
-// @kern-source: brain:53
+// @kern-source: brain:55
 export async function commitTurnAndSuggest(suggestion: {action:string, rest?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}, input: string, response: string, cesarEngineId: string, color: number, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}> {
   if (streaming) dispatch({ type: 'streaming-end', engineId: cesarEngineId });
   if (!streaming) dispatch({ type: 'spinner-stop' });
@@ -91,8 +93,8 @@ export async function commitTurnAndSuggest(suggestion: {action:string, rest?:str
   return { delegated: false, responded: true };
 }
 
-// @kern-source: brain:70
-export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, fitnessCmd?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}> {
+// @kern-source: brain:72
+export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, fitnessCmd?:string, hardened?:boolean, tribunalMode?:string, team?:boolean, target?:string, engineId?:string}> {
   const abort = new AbortController();
   const _turnStart = Date.now();
   const _toolsUsed: string[] = [];
@@ -254,7 +256,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'running' } as any);
           } else if (toolStatus === 'running' && meta.input && toolRegistry && !ctx.cesar!.hasNativeTools) {
             // Intercept orchestration signal tools — don't execute as workspace tools
-            const EAGER_ORCH = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline']);
+            const EAGER_ORCH = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review']);
             if (EAGER_ORCH.has(toolName)) {
               ctx.cesar!.pendingDelegation = extractDelegation(toolName, (meta.input ?? {}) as Record<string, unknown>);
               ctx.eventBus?.emit('cesar:delegation', { action: toolName.toLowerCase(), source: 'stream' }).catch(() => {});
@@ -508,7 +510,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               _toolsUsed.push(name);
               dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: name, input: JSON.stringify(inp), status: 'running' });
               // Intercept orchestration signal tools — set _pendingDelegation
-              const LOOP_ORCH = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline']);
+              const LOOP_ORCH = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review']);
               if (LOOP_ORCH.has(name)) {
                 ctx.cesar!.pendingDelegation = extractDelegation(name, (inp as Record<string, unknown>) ?? {});
               }

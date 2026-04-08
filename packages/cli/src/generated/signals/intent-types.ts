@@ -31,6 +31,7 @@ export type Intent =
   | { type: 'chats'; sessionId?: string }
   | { type: 'build'; input: string }
   | { type: 'pipeline'; task: string; fitnessCmd: string | null }
+  | { type: 'review'; target?: string; engineId?: string }
   | { type: 'run'; input: string }
   | { type: 'cesar'; engineIds: string[] }
   | { type: 'commit'; input?: string }
@@ -116,41 +117,43 @@ export type Intent =
 
 // @kern-source: intent-types:66
 
-// @kern-source: intent-types:68
+// @kern-source: intent-types:69
 
-// @kern-source: intent-types:70
-
-// @kern-source: intent-types:72
+// @kern-source: intent-types:71
 
 // @kern-source: intent-types:73
 
-// @kern-source: intent-types:74
+// @kern-source: intent-types:75
 
 // @kern-source: intent-types:76
 
 // @kern-source: intent-types:77
 
-// @kern-source: intent-types:78
+// @kern-source: intent-types:79
 
 // @kern-source: intent-types:80
+
+// @kern-source: intent-types:81
 
 // @kern-source: intent-types:83
 
 // @kern-source: intent-types:86
 
-// @kern-source: intent-types:90
-
-// @kern-source: intent-types:91
-
-// @kern-source: intent-types:92
+// @kern-source: intent-types:89
 
 // @kern-source: intent-types:93
 
 // @kern-source: intent-types:94
 
+// @kern-source: intent-types:95
+
+// @kern-source: intent-types:96
+
 // @kern-source: intent-types:97
 
-// @kern-source: intent-types:98
+// @kern-source: intent-types:100
 
 // @kern-source: intent-types:101
+
+// @kern-source: intent-types:104
 

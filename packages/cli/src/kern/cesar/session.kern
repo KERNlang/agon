@@ -57,8 +57,9 @@ RULE 4 — CONFIDENCE HINTS (not enforced, just awareness):
   90-95% = solid but consider a quick self-check — did you miss anything?
   80-89% = you probably have a plan but some unknowns. Consider whether Brainstorm or Delegate would help, or just investigate more.
   <80% = significant uncertainty. Think about whether this is a "I need to read more code" situation (investigate!) or a "this is genuinely hard and needs debate" situation (Tribunal/Brainstorm). Don't default to asking for help — default to investigating. But when you genuinely need other perspectives, that's exactly what these tools are for.
+RULE 4c — REVIEW: Use Review(target?, engine?) to delegate code review. Default target is "uncommitted". Targets: "uncommitted", "branch:NAME", "commit:SHA". Optionally specify engine. Use when the user asks to review code, changes, a PR, or a diff.
 RULE 5 — WORKSPACE: Use Read for files. Use Grep for search. NEVER use cat/head/tail/grep via Bash.
-RULE 6 — AFTER DELEGATION: After calling Forge/Brainstorm/Tribunal/Campfire/Pipeline, STOP. Do not continue responding. The orchestrator handles the rest. After calling Delegate, WAIT for the result — do NOT stop. Incorporate the delegated result into your response.
+RULE 6 — AFTER DELEGATION: After calling Forge/Brainstorm/Tribunal/Campfire/Pipeline/Review, STOP. Do not continue responding. The orchestrator handles the rest. After calling Delegate, WAIT for the result — do NOT stop. Incorporate the delegated result into your response.
 RULE 7 — NO NARRATION: NEVER narrate your research process. Do not write "Reading the file...", "I'm checking...", "Let me look at...", "I've confirmed...". The user sees your text output — if you narrate exploration it looks like you have no clue. Instead: call tools SILENTLY, then speak ONLY when you have the answer or decision. Your visible output should be conclusions, answers, and actions — never a play-by-play of your investigation. If you need to read files or search code, call Read/Grep/Glob directly without announcing it.`
   >>>
 
@@ -165,7 +166,7 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
       }
 
       // ── Orchestration signal tools — intercept before execution ──
-      const ORCH_TOOLS = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline']);
+      const ORCH_TOOLS = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review']);
       if (ORCH_TOOLS.has(name)) {
         ctx.cesar!.pendingDelegation = extractDelegation(name, args);
         // [DELEGATION_BREAK] prefix signals persistent-session to stop the tool loop

@@ -79,6 +79,30 @@ export function tryGhostComplete(inputValue: string, commands: any[], engineIds:
 }
 
 // @kern-source: app-input:85
+export function getSlashMatches(filter: string, commands: any[]): any[] {
+  const normalizedFilter = filter.trim().toLowerCase();
+  return commands
+    .map((c: any) => {
+      const name = c.cmd.toLowerCase().replace(/^\//, '');
+      const startsWith = normalizedFilter ? name.startsWith(normalizedFilter) : true;
+      const includes = normalizedFilter ? name.includes(normalizedFilter) : true;
+      const rank = !normalizedFilter ? 0 : startsWith ? 0 : includes ? 1 : 2;
+      const { rank: _rank, ...command } = { ...c, rank };
+      return { command, rank };
+    })
+    .filter((entry: any) => entry.rank < 2)
+    .sort((a: any, b: any) => a.rank - b.rank || a.command.cmd.localeCompare(b.command.cmd))
+    .map((entry: any) => entry.command);
+}
+
+// @kern-source: app-input:103
+export function movePickerCursor(direction: 'up'|'down', currentIndex: number, itemCount: number): number {
+  if (itemCount <= 0) return 0;
+  if (direction === 'up') return Math.max(0, currentIndex - 1);
+  return Math.min(itemCount - 1, currentIndex + 1);
+}
+
+// @kern-source: app-input:111
 export function shouldQueuePlanModeOnTab(opts: {replState:string,inputValue:string,activePlanState?:string|null}): boolean {
   if (opts.replState !== 'idle') return false;
   if (opts.inputValue.trim()) return false;

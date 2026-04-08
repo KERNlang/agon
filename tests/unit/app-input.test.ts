@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { cleanInputValue, cleanSubmitValue, findInputChange, resolveEscapeAction, shouldQueuePlanModeOnTab, tryGhostComplete } from '../../packages/cli/src/generated/signals/app-input.js';
+import { cleanInputValue, cleanSubmitValue, findInputChange, getSlashMatches, movePickerCursor, resolveEscapeAction, shouldQueuePlanModeOnTab, tryGhostComplete } from '../../packages/cli/src/generated/signals/app-input.js';
 import { processPasteContent } from '../../packages/cli/src/generated/signals/paste-handler.js';
 import { pasteStore } from '@agon/core';
 
@@ -31,6 +31,21 @@ describe('app input helpers', () => {
 
   it('still ghost-completes engine ids for /use', () => {
     expect(tryGhostComplete('/use cl', [{ cmd: '/use' }], ['claude', 'codex'])).toBe('aude');
+  });
+
+  it('ranks slash picker matches so /ap lands on /apply first', () => {
+    expect(getSlashMatches('ap', [
+      { cmd: '/cp' },
+      { cmd: '/apply' },
+      { cmd: '/map' },
+    ]).map((cmd) => cmd.cmd)).toEqual(['/apply', '/map']);
+  });
+
+  it('moves slash picker selection with arrow keys without leaving bounds', () => {
+    expect(movePickerCursor('up', 0, 3)).toBe(0);
+    expect(movePickerCursor('down', 0, 3)).toBe(1);
+    expect(movePickerCursor('down', 2, 3)).toBe(2);
+    expect(movePickerCursor('down', 0, 0)).toBe(0);
   });
 });
 

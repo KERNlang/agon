@@ -1,0 +1,148 @@
+// ── CesarPlan — type system + state machine for Cesar execution plans ──
+
+type name=CesarPlanState values="planning|awaiting_approval|running|paused|done|cancelled"
+type name=CesarStepState values="pending|blocked|running|done|failed|skipped|cancelled"
+type name=CesarStepType values="self|forge|teamforge|delegate|brainstorm|campfire|tribunal|pipeline"
+
+interface name=CesarStepResult
+  field name=status type="'success'|'failure'"
+  field name=actualTokens type=number
+  field name=actualCostUsd type=number
+  field name=durationMs type=number
+  field name=output type=string
+  field name=error type=string optional=true
+
+interface name=CesarPlanStep
+  field name=id type=string
+  field name=type type=CesarStepType
+  field name=description type=string
+  field name=engines type="string[]" optional=true
+  field name=engine type=string optional=true
+  field name=fitnessCmd type=string optional=true
+  field name=tribunalMode type=string optional=true
+  field name=parallel type=boolean optional=true
+  field name=dependsOn type="string[]" optional=true
+  field name=exports type="string[]" optional=true
+  field name=imports type="string[]" optional=true
+  field name=estimatedTokens type=number
+  field name=estimatedCostUsd type=number
+  field name=state type=CesarStepState optional=true
+  field name=result type=CesarStepResult optional=true
+
+interface name=CesarPlan
+  field name=id type=string
+  field name=state type=CesarPlanState
+  field name=intent type=string
+  field name=steps type="CesarPlanStep[]"
+  field name=planningCost type=number optional=true
+  field name=totalEstimatedTokens type=number
+  field name=totalEstimatedCostUsd type=number
+  field name=totalActualTokens type=number
+  field name=totalActualCostUsd type=number
+  field name=stepContext type="Record<string, string>"
+  field name=createdAt type=string
+  field name=approvedAt type=string optional=true
+  field name=completedAt type=string optional=true
+  field name=planFilePath type=string optional=true
+
+fn name=createCesarPlan params="intent:string,steps:CesarPlanStep[]" returns=CesarPlan
+  doc "Create a new CesarPlan in 'planning' state. Steps with dependsOn are marked 'blocked', others 'pending'."
+  handler <<<
+    const id = `cplan-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const initializedSteps = steps.map(s => ({
+      ...s,
+      state: (s.dependsOn && s.dependsOn.length > 0 ? 'blocked' : 'pending') as CesarStepState,
+    }));
+    const totalEstimatedTokens = steps.reduce((sum, s) => sum + s.estimatedTokens, 0);
+    const totalEstimatedCostUsd = steps.reduce((sum, s) => sum + s.estimatedCostUsd, 0);
+    return {
+      id,
+      state: 'planning',
+      intent,
+      steps: initializedSteps,
+      totalEstimatedTokens,
+      totalEstimatedCostUsd,
+      totalActualTokens: 0,
+      totalActualCostUsd: 0,
+      stepContext: {},
+      createdAt: new Date().toISOString(),
+    };
+  >>>
+
+fn name=approveCesarPlan params="plan:CesarPlan" returns=CesarPlan
+  doc "Transition plan from 'awaiting_approval' to 'running', set approvedAt."
+  handler <<<
+    return {
+      ...plan,
+      state: 'running' as CesarPlanState,
+      approvedAt: new Date().toISOString(),
+    };
+  >>>
+
+fn name=advanceCesarStep params="plan:CesarPlan,stepId:string,result:CesarStepResult" returns=CesarPlan
+  doc "Mark a step done/failed, unblock dependents, determine plan state."
+  handler <<<
+    const stepIdx = plan.steps.findIndex(s => s.id === stepId);
+    if (stepIdx === -1) return plan;
+
+    const isSuccess = result.status === 'success';
+    const stepState: CesarStepState = isSuccess ? 'done' : 'failed';
+
+    let newSteps = plan.steps.map((s, i) =>
+      i === stepIdx ? { ...s, state: stepState, result } : s,
+    );
+
+    // Unblock dependent steps if this step succeeded
+    if (isSuccess) {
+      newSteps = newSteps.map(s => {
+        if (s.state !== 'blocked') return s;
+        if (!s.dependsOn || s.dependsOn.length === 0) return s;
+        const allDepsDone = s.dependsOn.every(depId => {
+          const dep = newSteps.find(d => d.id === depId);
+          return dep && dep.state === 'done';
+        });
+        return allDepsDone ? { ...s, state: 'pending' as CesarStepState } : s;
+      });
+    }
+
+    // Accumulate actual costs
+    const totalActualTokens = plan.totalActualTokens + result.actualTokens;
+    const totalActualCostUsd = plan.totalActualCostUsd + result.actualCostUsd;
+
+    // Determine plan state
+    let newState: CesarPlanState = plan.state;
+    let completedAt = plan.completedAt;
+
+    if (!isSuccess) {
+      newState = 'paused';
+    } else {
+      const allDone = newSteps.every(s => s.state === 'done' || s.state === 'skipped');
+      if (allDone) {
+        newState = 'done';
+        completedAt = new Date().toISOString();
+      }
+    }
+
+    return {
+      ...plan,
+      steps: newSteps,
+      state: newState,
+      totalActualTokens,
+      totalActualCostUsd,
+      completedAt,
+    };
+  >>>
+
+fn name=cancelCesarPlan params="plan:CesarPlan" returns=CesarPlan
+  doc "Cancel the plan: mark all non-complete steps as cancelled."
+  handler <<<
+    const newSteps = plan.steps.map(s => {
+      if (s.state === 'done' || s.state === 'failed') return s;
+      return { ...s, state: 'cancelled' as CesarStepState };
+    });
+    return {
+      ...plan,
+      steps: newSteps,
+      state: 'cancelled' as CesarPlanState,
+    };
+  >>>

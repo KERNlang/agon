@@ -50,7 +50,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { cmd: '/leaderboard', desc: '                        — ELO rankings' },
   { cmd: '/history',     desc: '[id]                    — past forge runs' },
   { cmd: '/config',      desc: '[list|get|set]          — settings' },
-  { cmd: '/plan',        desc: '[id]                    — show current or specific plan' },
+  { cmd: '/plan',        desc: '<task> or no args    — plan mode or show plan' },
   { cmd: '/plans',       desc: '                        — list recent plans' },
   { cmd: '/approve',     desc: '                        — approve current plan' },
   { cmd: '/retry',       desc: '                        — retry failed plan step' },
@@ -269,8 +269,16 @@ function parseSlashCommand(input: string): Intent {
       const value = configParts.slice(2).join(' ') || undefined;
       return { type: 'config', action, key, value } as Intent;
     }
-    case 'plan':
-      return { type: 'plan', planId: rest || undefined } as Intent;
+    case 'plan': {
+        const text = rest.trim();
+        if (text && text !== 'resume') {
+          return { type: 'plan-task', task: text } as Intent;
+        }
+        if (text === 'resume') {
+          return { type: 'plan-resume' } as Intent;
+        }
+        return { type: 'plan', planId: undefined } as Intent;
+      }
     case 'plans':
       return { type: 'plans' } as Intent;
     case 'approve':
@@ -350,7 +358,7 @@ function parseSlashCommand(input: string): Intent {
   }
 }
 
-// @kern-source: intent:348
+// @kern-source: intent:356
 export function detectIntent(raw: string): Intent {
   const input = raw.trim();
   if (!input) return { type: 'unknown', input: '' } as Intent;

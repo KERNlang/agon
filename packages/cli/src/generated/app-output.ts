@@ -177,6 +177,10 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
       }
       return;
     }
+    case 'plan-proposal': {
+      actions.addBlock(event);
+      return;
+    }
     default:
       // Record code blocks from engine-block events
       if (event.type === 'engine-block') {

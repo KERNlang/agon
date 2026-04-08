@@ -42,6 +42,7 @@ interface name=DispatchCallbacks
   field name=setExplorationMode type="(mode: boolean) => void"
   field name=neroMode type=boolean
   field name=setNeroMode type="(mode: boolean) => void"
+  field name=setActivePlan type="(plan: any) => void"
 
 interface name=DispatchResult
   field name=handled type=boolean
@@ -352,6 +353,20 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
 
       // ── Plan commands ──
       case 'plan': await handlePlanShow(cb.dispatch, cb.ctx, intent.planId); break;
+      case 'plan-task': {
+        // Enter plan mode
+        const { createCesarPlan } = await import('@agon/core');
+        const cesarPlan = createCesarPlan(intent.task, []);
+        cb.setActivePlan(cesarPlan);
+        // Route to Cesar with the task
+        const cesarInput = `[PLAN MODE] ${intent.task}`;
+        if (await routeWithCesar(cesarInput, [], cb)) return { handled: true, ranAsJob: true };
+        break;
+      }
+      case 'plan-resume': {
+        cb.dispatch({ type: 'info', message: 'Plan resume not yet implemented.' });
+        break;
+      }
       case 'plans': handlePlansList(cb.dispatch); break;
       case 'approve': await handleApprove(cb.dispatch, cb.ctx); break;
       case 'retry': await handleRetry(cb.dispatch, cb.ctx); break;

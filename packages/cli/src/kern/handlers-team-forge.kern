@@ -1,5 +1,5 @@
 import from="node:path" names="join"
-import from="node:fs" names="mkdirSync"
+import from="node:fs" names="mkdirSync,readFileSync"
 import from="@agon/core" names="ensureAgonHome,RUNS_DIR,scanProjectContext,tracker,appendMessage,resolveWorkingDir,loadConfig"
 import from="@agon/forge" names="runTeamForge"
 import from="../handlers/types.js" names="Dispatch,HandlerContext" types=true
@@ -18,7 +18,7 @@ fn name=handleTeamForge params="task:string, fitnessCmd:string|null, dispatch:Di
       return;
     }
 
-    const active = ctx.registry.availableIds();
+    const active = ctx.activeEngines();
     if (active.length < 2) {
       dispatch({ type: 'error', message: `Team forge needs at least 2 engines. Only found: ${active.join(', ') || 'none'}` });
       return;
@@ -91,7 +91,21 @@ fn name=handleTeamForge params="task:string, fitnessCmd:string|null, dispatch:Di
       const winner = result.winnerTeamId === teamA.teamId ? teamA : teamB;
       const winnerCard = result.scorecards[result.winnerTeamId];
       dispatch({ type: 'header', title: `Winner: ${winner.name} — Score: ${winnerCard?.score}` });
-      dispatch({ type: 'info', message: `Apply winning patch: /apply` });
+
+      // Emit patch-review so /apply works
+      const winnerSub = result.submissions[result.winnerTeamId];
+      const winnerOutput = winnerSub?.finalOutput as any;
+      const patchPath = winnerOutput?.patchPath;
+      if (patchPath) {
+        try {
+          const patchContent = readFileSync(patchPath, 'utf-8');
+          dispatch({ type: 'patch-review' as any, winnerId: `team:${result.winnerTeamId}`, patchPath, patchContent });
+        } catch (err) {
+          dispatch({ type: 'info', message: `Winning patch: ${patchPath} (use git apply to apply manually)` });
+        }
+      } else {
+        dispatch({ type: 'info', message: `Winner worktree cleaned up — no patch file available` });
+      }
     } else {
       dispatch({ type: 'header', title: 'Draw — no clear winner' });
     }

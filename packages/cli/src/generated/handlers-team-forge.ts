@@ -1,13 +1,19 @@
+// @kern-source: handlers-team-forge:1
 import { join } from 'node:path';
 
-import { mkdirSync } from 'node:fs';
+// @kern-source: handlers-team-forge:2
+import { mkdirSync, readFileSync } from 'node:fs';
 
+// @kern-source: handlers-team-forge:3
 import { ensureAgonHome, RUNS_DIR, scanProjectContext, tracker, appendMessage, resolveWorkingDir, loadConfig } from '@agon/core';
 
+// @kern-source: handlers-team-forge:4
 import { runTeamForge } from '@agon/forge';
 
+// @kern-source: handlers-team-forge:5
 import type { Dispatch, HandlerContext } from '../handlers/types.js';
 
+// @kern-source: handlers-team-forge:7
 export async function handleTeamForge(task: string, fitnessCmd: string|null, dispatch: Dispatch, ctx: HandlerContext, membersPerSide?: number): Promise<void> {
   const teamAbort = new AbortController();
   try {
@@ -22,7 +28,7 @@ export async function handleTeamForge(task: string, fitnessCmd: string|null, dis
       return;
     }
     
-    const active = ctx.registry.availableIds();
+    const active = ctx.activeEngines();
     if (active.length < 2) {
       dispatch({ type: 'error', message: `Team forge needs at least 2 engines. Only found: ${active.join(', ') || 'none'}` });
       return;
@@ -95,7 +101,21 @@ export async function handleTeamForge(task: string, fitnessCmd: string|null, dis
       const winner = result.winnerTeamId === teamA.teamId ? teamA : teamB;
       const winnerCard = result.scorecards[result.winnerTeamId];
       dispatch({ type: 'header', title: `Winner: ${winner.name} — Score: ${winnerCard?.score}` });
-      dispatch({ type: 'info', message: `Apply winning patch: /apply` });
+    
+      // Emit patch-review so /apply works
+      const winnerSub = result.submissions[result.winnerTeamId];
+      const winnerOutput = winnerSub?.finalOutput as any;
+      const patchPath = winnerOutput?.patchPath;
+      if (patchPath) {
+        try {
+          const patchContent = readFileSync(patchPath, 'utf-8');
+          dispatch({ type: 'patch-review' as any, winnerId: `team:${result.winnerTeamId}`, patchPath, patchContent });
+        } catch (err) {
+          dispatch({ type: 'info', message: `Winning patch: ${patchPath} (use git apply to apply manually)` });
+        }
+      } else {
+        dispatch({ type: 'info', message: `Winner worktree cleaned up — no patch file available` });
+      }
     } else {
       dispatch({ type: 'header', title: 'Draw — no clear winner' });
     }

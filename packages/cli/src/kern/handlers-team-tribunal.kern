@@ -16,7 +16,7 @@ fn name=handleTeamTribunal params="question:string, dispatch:Dispatch, ctx:Handl
       return;
     }
 
-    const active = ctx.registry.availableIds();
+    const active = ctx.activeEngines();
     if (active.length < 2) {
       dispatch({ type: 'error', message: `Team tribunal needs at least 2 engines. Only found: ${active.join(', ') || 'none'}` });
       return;

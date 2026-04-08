@@ -311,6 +311,14 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
     const agonTool = toolMap[tool.toLowerCase()] ?? tool;
     const perm = perms[agonTool];
   
+    // Block writes during exploration mode
+    if ((ctx as any).explorationMode) {
+      const WRITE_TOOLS = ['Edit', 'Write', 'Bash'];
+      if (WRITE_TOOLS.includes(agonTool)) {
+        return false;
+      }
+    }
+  
     // deny → block immediately
     if (perm === 'deny' || mode === 'deny-all') return false;
   
@@ -335,7 +343,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
   };
 }
 
-// @kern-source: cesar-session:324
+// @kern-source: cesar-session:332
 export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unknown>> {
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -369,7 +377,7 @@ export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unkn
   return normalizeNamedRecord(raw);
 }
 
-// @kern-source: cesar-session:358
+// @kern-source: cesar-session:366
 export function loadCesarMcpServers(config: any, cwd: string): Array<Record<string,unknown>>|undefined {
   if (!(config as any).cesarMcpEnabled) return undefined;
   
@@ -393,14 +401,14 @@ export function loadCesarMcpServers(config: any, cwd: string): Array<Record<stri
   return servers;
 }
 
-// @kern-source: cesar-session:382
+// @kern-source: cesar-session:390
 export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
   if (!binaryPath) return false;
   const protocol = engine?.companion?.protocol;
   return protocol === 'acp' || protocol === 'jsonrpc';
 }
 
-// @kern-source: cesar-session:389
+// @kern-source: cesar-session:397
 export function mcpConfigFingerprint(config: any): string {
   const enabled = !!(config as any).cesarMcpEnabled;
   const configPath = String((config as any).cesarMcpConfigPath ?? '');
@@ -415,7 +423,7 @@ export function mcpConfigFingerprint(config: any): string {
   return `${enabled}:${configPath}:${mtime}`;
 }
 
-// @kern-source: cesar-session:405
+// @kern-source: cesar-session:413
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
   const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';

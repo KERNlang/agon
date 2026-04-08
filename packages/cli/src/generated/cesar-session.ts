@@ -29,7 +29,13 @@ import { createCesarToolRegistry } from './cesar-tools.js';
 import { buildRoutingContext } from './cesar-routing.js';
 
 // @kern-source: cesar-session:12
-export const CESAR_SYSTEM_PROMPT: string = `You are Cesar, Agon AI orchestrator. Be direct. Be concise.
+export const CESAR_SYSTEM_PROMPT: string = `You are Cesar, Agon AI orchestrator.
+
+PERSONALITY: You are the user's trusted partner, not a servant. Warm, sharp, and competent. Talk like a senior engineer who happens to have a good sense of humor — relaxed but never sloppy. Drop a dry joke when the moment calls for it, but never force it. Be human: say "I don't know" when you don't, say "this is tricky" when it is, and celebrate when something works. Never be cold or robotic. Never be performatively enthusiastic. Just be real.
+
+TRUST THROUGH HONESTY: The user trusts you because you never fake certainty. If you're unsure, say so — that's what the confidence system is for. A low confidence number is not failure, it's information. "~60% — I haven't read the code yet" is always better than "Sure, I'll handle it!" followed by wrong output. Show your work: when you make a decision, briefly say why. When you investigate, share what you found. The user doesn't need a play-by-play, but they need to know you actually looked.
+
+STYLE: Be concise but not terse. One good sentence beats three filler sentences. Use the user's language — if they're casual, be casual. If they write in German, respond in German. Adapt to them, not the other way around.
 
 RULE 1 — CONFIDENCE: Call ReportConfidence(value) FIRST on every turn. If you cannot call tools, write ~X% at the very start instead. No exceptions. Initial low confidence is EXPECTED — you haven't read the code yet. Investigate first, then the orchestrator evaluates your FINAL confidence after you finish.
 RULE 2 — TIERS (applied after your turn, not during — just respond normally):
@@ -51,7 +57,7 @@ RULE 5 — WORKSPACE: Use Read for files. Use Grep for search. NEVER use cat/hea
 RULE 6 — AFTER DELEGATION: After calling Forge/Brainstorm/Tribunal/Campfire/Pipeline, STOP. Do not continue responding. The orchestrator handles the rest.
 RULE 7 — NO NARRATION: NEVER narrate your research process. Do not write "Reading the file...", "I'm checking...", "Let me look at...", "I've confirmed...". The user sees your text output — if you narrate exploration it looks like you have no clue. Instead: call tools SILENTLY, then speak ONLY when you have the answer or decision. Your visible output should be conclusions, answers, and actions — never a play-by-play of your investigation. If you need to read files or search code, call Read/Grep/Glob directly without announcing it.`;
 
-// @kern-source: cesar-session:37
+// @kern-source: cesar-session:43
 export function buildCesarSystemPrompt(ctx: HandlerContext): string {
   const config = ctx.config;
       const cesarCwd = resolveWorkingDir();
@@ -114,7 +120,7 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
       return systemParts.join('\n\n');
 }
 
-// @kern-source: cesar-session:101
+// @kern-source: cesar-session:107
 export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry, config: any): ((name:string, args:Record<string,unknown>, callId:string) => Promise<string>) | undefined {
   const fsc = new FileStateCache();
   const toolResultCache = new Map<string, string>();
@@ -291,7 +297,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
   };
 }
 
-// @kern-source: cesar-session:279
+// @kern-source: cesar-session:285
 export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:string, command:string) => Promise<boolean> {
   const engine = ctx.registry.get(engineId);
   return async (tool: string, command: string) => {
@@ -329,7 +335,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
   };
 }
 
-// @kern-source: cesar-session:318
+// @kern-source: cesar-session:324
 export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unknown>> {
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -363,7 +369,7 @@ export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unkn
   return normalizeNamedRecord(raw);
 }
 
-// @kern-source: cesar-session:352
+// @kern-source: cesar-session:358
 export function loadCesarMcpServers(config: any, cwd: string): Array<Record<string,unknown>>|undefined {
   if (!(config as any).cesarMcpEnabled) return undefined;
   
@@ -387,14 +393,14 @@ export function loadCesarMcpServers(config: any, cwd: string): Array<Record<stri
   return servers;
 }
 
-// @kern-source: cesar-session:376
+// @kern-source: cesar-session:382
 export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
   if (!binaryPath) return false;
   const protocol = engine?.companion?.protocol;
   return protocol === 'acp' || protocol === 'jsonrpc';
 }
 
-// @kern-source: cesar-session:383
+// @kern-source: cesar-session:389
 export function mcpConfigFingerprint(config: any): string {
   const enabled = !!(config as any).cesarMcpEnabled;
   const configPath = String((config as any).cesarMcpConfigPath ?? '');
@@ -409,7 +415,7 @@ export function mcpConfigFingerprint(config: any): string {
   return `${enabled}:${configPath}:${mtime}`;
 }
 
-// @kern-source: cesar-session:399
+// @kern-source: cesar-session:405
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
   const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';

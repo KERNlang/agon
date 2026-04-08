@@ -416,7 +416,7 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
     systemPrompt: fullPrompt,
     nativeTools,
     mcpServers,
-    onToolCall: nativeTools ? buildOnToolCall(ctx, toolRegistry, config) : undefined,
+    onToolCall: buildOnToolCall(ctx, toolRegistry, config),
     onApproval: buildOnApproval(ctx, cesarEngineId),
   };
   

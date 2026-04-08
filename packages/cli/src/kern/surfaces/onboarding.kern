@@ -1,4 +1,4 @@
-import from="react" names="React,useState,useEffect"
+import from="react" names="useState,useEffect"
 import from="ink" names="Box,Text"
 
 screen name=Onboarding target=ink

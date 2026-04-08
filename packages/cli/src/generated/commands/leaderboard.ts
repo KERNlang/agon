@@ -75,5 +75,5 @@ export const leaderboardCommand: ReturnType<typeof defineCommand> = defineComman
     console.log('');
     info(dim(`Last updated: ${elo.lastUpdated}`));
   },
-});
+}) as ReturnType<typeof defineCommand>;
 

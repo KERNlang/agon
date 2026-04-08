@@ -109,5 +109,5 @@ export const configCommand: ReturnType<typeof defineCommand> = defineCommand({
         process.exit(1);
     }
   },
-});
+}) as ReturnType<typeof defineCommand>;
 

@@ -123,5 +123,5 @@ export const tribunalCommand: ReturnType<typeof defineCommand> = defineCommand({
     console.log('');
     info(dim(`Full debate saved: ${outputDir}`));
   },
-});
+}) as ReturnType<typeof defineCommand>;
 

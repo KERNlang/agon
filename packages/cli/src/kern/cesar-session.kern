@@ -1,4 +1,4 @@
-import from="node:fs" names="readFileSync"
+import from="node:fs" names="readFileSync,statSync"
 import from="node:path" names="isAbsolute,resolve"
 import from="node:path" names="join"
 import from="node:fs" names="mkdirSync"
@@ -380,15 +380,38 @@ fn name=canUseCesarMcp params="engine:any,binaryPath:string" returns=boolean
     return protocol === 'acp' || protocol === 'jsonrpc';
   >>>
 
+fn name=mcpConfigFingerprint params="config:any" returns=string
+  doc "Compute a simple fingerprint of MCP-related config to detect changes."
+  handler <<<
+    const enabled = !!(config as any).cesarMcpEnabled;
+    const configPath = String((config as any).cesarMcpConfigPath ?? '');
+    // Include file mtime when the path exists, so edits to the MCP config file are detected
+    let mtime = '';
+    if (enabled && configPath) {
+      try {
+        const resolvedPath = isAbsolute(configPath) ? configPath : resolve(resolveWorkingDir(), configPath);
+        mtime = String(statSync(resolvedPath).mtimeMs);
+      } catch { /* file may not exist yet */ }
+    }
+    return `${enabled}:${configPath}:${mtime}`;
+  >>>
+
 fn name=ensureCesarSession async=true params="ctx:HandlerContext" returns="Promise<PersistentSession>"
   handler <<<
     const config = ctx.config;
     const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
     const cwd = resolveWorkingDir();
 
-    // Return existing alive session IF it's for the same engine
+    // Return existing alive session IF it's for the same engine AND MCP config hasn't changed
+    const currentMcpFp = mcpConfigFingerprint(config);
     if (ctx.cesarSession && ctx.cesarSession.alive && ctx.cesarSession.engineId === cesarEngineId) {
-      return ctx.cesarSession;
+      const storedFp = (ctx as any)._cesarMcpFingerprint as string | undefined;
+      if (storedFp === currentMcpFp) {
+        return ctx.cesarSession;
+      }
+      // MCP config changed — close stale session and recreate
+      ctx.cesarSession.close();
+      ctx.setCesarSession(null);
     }
 
     // Wrong engine or dead session — close old one
@@ -481,5 +504,7 @@ fn name=ensureCesarSession async=true params="ctx:HandlerContext" returns="Promi
     const session = createPersistentSession(sessionConfig);
     await session.start();
     ctx.setCesarSession(session);
+    // Store MCP config fingerprint so we can detect changes on next reuse check
+    (ctx as any)._cesarMcpFingerprint = currentMcpFp;
     return session;
   >>>

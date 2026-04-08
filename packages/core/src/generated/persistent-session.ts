@@ -92,6 +92,7 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
   let threadId: string | null = null;
   let nextRpcId = 1;
   let firstTurn = true;
+  let promptSentViaStart = false; // true if system prompt was sent in thread/start
   const pending = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }>();
   let notificationHandlers: Array<(method: string, params: any) => void> = [];
   
@@ -224,6 +225,7 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
     }
     if (config.systemPrompt) {
       threadParams.developerInstructions = config.systemPrompt;
+      promptSentViaStart = true;
     }
       const threadResult = await sendRpc('thread/start', threadParams) as any;
       threadId = threadResult?.thread?.id ?? null;
@@ -310,14 +312,13 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
       notificationHandlers.push(handler);
   
       try {
-        // On first turn, prepend system prompt as context (fallback if thread/start instructions ignored)
+        // On first turn, prepend system prompt ONLY if it wasn't already sent
+        // via thread/start developerInstructions (to avoid duplicating the full prompt).
         let message = opts.message;
-        if (firstTurn && config.systemPrompt) {
+        if (firstTurn && config.systemPrompt && !promptSentViaStart) {
           message = `[System Instructions]\n${config.systemPrompt}\n\n[User Message]\n${message}`;
-          firstTurn = false;
-        } else {
-          firstTurn = false;
         }
+        firstTurn = false;
   
         // Start turn on existing thread
         await sendRpc('turn/start', {
@@ -354,13 +355,14 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
   return session;
 }
 
-// @kern-source: persistent-session:342
+// @kern-source: persistent-session:343
 export function createAcpSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
   let sessionId: string | null = null;
   let nextRpcId = 1;
   let firstTurn = true;
+  let promptSentViaStart = false; // true if system prompt was sent in session/new
   const pending = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }>();
   let notificationHandlers: Array<(method: string, params: any) => void> = [];
   
@@ -480,6 +482,7 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
       };
       if (config.systemPrompt) {
         sessParams.systemPrompt = config.systemPrompt;
+        promptSentViaStart = true;
       }
       const sessResult = await sendRpc('session/new', sessParams) as any;
       sessionId = sessResult?.sessionId ?? null;
@@ -549,14 +552,13 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
       notificationHandlers.push(handler);
   
       try {
-        // On first turn, prepend system prompt as context (fallback if session/new systemPrompt ignored)
+        // On first turn, prepend system prompt ONLY if it wasn't already sent
+        // via session/new systemPrompt (to avoid duplicating the full prompt).
         let message = opts.message;
-        if (firstTurn && config.systemPrompt) {
+        if (firstTurn && config.systemPrompt && !promptSentViaStart) {
           message = `[System Instructions]\n${config.systemPrompt}\n\n[User Message]\n${message}`;
-          firstTurn = false;
-        } else {
-          firstTurn = false;
         }
+        firstTurn = false;
   
         // session/prompt is a request — the response signals turn completion
         const promptPromise = sendRpc('session/prompt', {
@@ -602,7 +604,7 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
   return session;
 }
 
-// @kern-source: persistent-session:593
+// @kern-source: persistent-session:595
 export function createStreamJsonSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -854,7 +856,7 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
   return session;
 }
 
-// @kern-source: persistent-session:848
+// @kern-source: persistent-session:850
 export function createResumeSession(config: PersistentSessionConfig): PersistentSession {
   let alive = false;
   let sessionId: string | null = null;

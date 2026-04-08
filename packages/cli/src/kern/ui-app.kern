@@ -77,6 +77,7 @@ screen name=App target=ink
   state name=lastUndoToken type="string|null" initial="null"
   state name=sessionEngines type="string[]|null" initial="(() => { const cfg = loadConfig(); const saved = cfg.forgeEnabledEngines; return saved && saved.length > 0 ? saved : null; })()"
   state name=currentPlan type="Plan|null" initial="null"
+  state name=activePlan type="any" initial="null"
   state name=chatSession type=ChatSession initial="(() => { const cwd = resolveWorkingDir(); let branch = 'unknown'; try { branch = currentBranch(cwd); } catch {} return startChatSession({ cwd, branch }); })()"
   state name=activeAbort type="AbortController|null" initial="null"
   state name=cesarSession type="PersistentSession|null" initial="null"
@@ -193,7 +194,7 @@ screen name=App target=ink
       if (clearChat) dispatch({ type: 'clear' } as any);
     >>>
 
-  callback name=buildContext params="" deps="registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode"
+  callback name=buildContext params="" deps="registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode,activePlan"
     handler <<<
       return {
         registry, adapter, activeEngines,
@@ -204,6 +205,7 @@ screen name=App target=ink
         explorationMode, setExplorationMode,
         neroMode, setNeroMode,
         cesarMemory,
+        activePlan, setActivePlan,
       };
     >>>
 
@@ -390,6 +392,7 @@ screen name=App target=ink
         allImages, allSlashCommands: allSlashCommands, dynamicSkills, mode, lastUndoToken, sessionStartTime, jobManager,
         explorationMode, setExplorationMode,
         neroMode, setNeroMode,
+        setActivePlan,
       };
       if (handleModeSwitch(intent.type, (intent as any).topic, (intent as any).question, cb)) {
         if (!(intent as any).input?.trim()) { transition(finishReplState); return; }

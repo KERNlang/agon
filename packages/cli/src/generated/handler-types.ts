@@ -1,5 +1,7 @@
+// @kern-source: handler-types:1
 import type { EngineRegistry, EngineAdapter, Plan, AgonConfig, ChatSession, PersistentSession, CesarMemory } from '@agon/core';
 
+// @kern-source: handler-types:3
 export interface EngineProgress {
   id: string;
   status: string;
@@ -9,6 +11,7 @@ export interface EngineProgress {
   score?: string;
 }
 
+// @kern-source: handler-types:11
 export type OutputEvent =
   | { type: 'text'; content: string }
   | { type: 'engine-block'; engineId: string; color: number; content: string }
@@ -27,6 +30,7 @@ export type OutputEvent =
   | { type: 'info'; message: string }
   | { type: 'plan'; plan: Plan }
   | { type: 'plan-list'; plans: Plan[] }
+  | { type: 'plan-proposal'; plan: any; markdown: string }
   | { type: 'scoreboard'; title: string; winner?: string; engineIds: string[]; metrics: { label: string; values: string[] }[] }
   | { type: 'table'; headers: string[]; rows: string[][] }
   | { type: 'clear' }
@@ -42,6 +46,7 @@ export type OutputEvent =
   | { type: 'file-changes'; files: { path: string; status: 'modified'|'created'|'deleted'; additions: number; deletions: number }[] }
   | { type: 'dashboard'; available: string[]; enabled: string[]; defaultEngine: string; eloTop?: { id: string; rating: number }; totalForges: number; workspace?: { name: string; path: string; isKern?: boolean }; runCount: number };
 
+// @kern-source: handler-types:109
 export interface HandlerContext {
   registry: EngineRegistry;
   adapter: EngineAdapter;

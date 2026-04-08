@@ -43,7 +43,7 @@ const name=SLASH_COMMANDS type="SlashCommand[]"
       { cmd: '/leaderboard', desc: '                        — ELO rankings' },
       { cmd: '/history',     desc: '[id]                    — past forge runs' },
       { cmd: '/config',      desc: '[list|get|set]          — settings' },
-      { cmd: '/plan',        desc: '[id]                    — show current or specific plan' },
+      { cmd: '/plan',        desc: '<task> or no args    — plan mode or show plan' },
       { cmd: '/plans',       desc: '                        — list recent plans' },
       { cmd: '/approve',     desc: '                        — approve current plan' },
       { cmd: '/retry',       desc: '                        — retry failed plan step' },
@@ -264,8 +264,16 @@ fn name=parseSlashCommand params="input:string" returns=Intent export=false
         const value = configParts.slice(2).join(' ') || undefined;
         return { type: 'config', action, key, value } as Intent;
       }
-      case 'plan':
-        return { type: 'plan', planId: rest || undefined } as Intent;
+      case 'plan': {
+          const text = rest.trim();
+          if (text && text !== 'resume') {
+            return { type: 'plan-task', task: text } as Intent;
+          }
+          if (text === 'resume') {
+            return { type: 'plan-resume' } as Intent;
+          }
+          return { type: 'plan', planId: undefined } as Intent;
+        }
       case 'plans':
         return { type: 'plans' } as Intent;
       case 'approve':

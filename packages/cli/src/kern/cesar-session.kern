@@ -66,6 +66,16 @@ fn name=buildCesarSystemPrompt params="ctx:HandlerContext" returns=string
       systemParts.push(`NERO MODE: Adversarial. Challenge assumptions, probe weaknesses, ask hard questions before implementing. Suggest tribunal-red-team or tribunal-adversarial.`);
     }
 
+    if ((ctx as any).activePlan && ['planning', 'awaiting_approval'].includes((ctx as any).activePlan.state)) {
+      systemParts.push(`RULE 8 — PLAN MODE: You are in PLAN MODE. Your goal is to produce the best possible plan, then propose it with ProposePlan.
+
+ALLOWED: Brainstorm, Campfire, Tribunal, Delegate, Read, Grep, Glob, Bash (read-only), ReportConfidence, ProposePlan. Use these freely to analyze the task and build your strategy.
+
+BLOCKED: Forge, Pipeline, Edit, Write. No code execution until the plan is approved.
+
+Think deeply. Use other engines to challenge your approach. Then propose a structured plan with specific engine assignments and cost estimates for each step.`);
+    }
+
     // History replay — only needed when session reboots (new process loses context).
     if (ctx.chatSession && ctx.chatSession.messages && ctx.chatSession.messages.length > 0) {
       const recent = ctx.chatSession.messages.slice(-20);
@@ -96,6 +106,22 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
       toolPermissions: (config as any).toolPermissions ?? {},
     };
     return async (name: string, args: Record<string, unknown>, callId: string) => {
+      // Plan mode: block execution tools
+      const activePlan = (ctx as any).activePlan;
+      if (activePlan && ['planning', 'awaiting_approval'].includes(activePlan.state)) {
+        const BLOCKED_IN_PLAN = ['Forge', 'Pipeline', 'Edit', 'Write'];
+        if (BLOCKED_IN_PLAN.includes(name)) {
+          return `[BLOCKED] Tool "${name}" is not available in plan mode. Use ProposePlan to propose your execution strategy.`;
+        }
+        if (name === 'Bash') {
+          const cmd = String((args as any).command ?? '');
+          const writePatterns = /\b(rm|mv|cp|mkdir|touch|chmod|chown|git\s+(commit|push|merge|rebase|reset)|npm\s+(install|uninstall|publish))\b/;
+          if (writePatterns.test(cmd)) {
+            return `[BLOCKED] Write commands are not available in plan mode. Use ProposePlan to propose your execution strategy.`;
+          }
+        }
+      }
+
       // ── Orchestration signal tools — intercept before execution ──
       const ORCH_TOOLS = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline']);
       if (ORCH_TOOLS.has(name)) {
@@ -167,6 +193,10 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
           const msg = err instanceof Error ? err.message : String(err);
           return `[Delegate → ${targetId}] Error: ${msg}`;
         }
+      }
+
+      if (name === 'ProposePlan') {
+        return '[PLAN_PROPOSED] Plan submitted for user approval. Stop and wait.';
       }
 
       // ── ReportConfidence signal tool — record value, don't force delegation ──

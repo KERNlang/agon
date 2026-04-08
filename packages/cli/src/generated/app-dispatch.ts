@@ -62,15 +62,16 @@ export interface DispatchCallbacks {
   setExplorationMode: (mode: boolean) => void;
   neroMode: boolean;
   setNeroMode: (mode: boolean) => void;
+  setActivePlan: (plan: any) => void;
 }
 
-// @kern-source: app-dispatch:46
+// @kern-source: app-dispatch:47
 export interface DispatchResult {
   handled: boolean;
   ranAsJob: boolean;
 }
 
-// @kern-source: app-dispatch:50
+// @kern-source: app-dispatch:51
 export function handleModeSwitch(intentType: string, topic: string|undefined, question: string|undefined, cb: DispatchCallbacks): boolean {
   if (intentType === 'campfire' && !topic) {
     cb.setMode('campfire');
@@ -97,7 +98,7 @@ export function handleModeSwitch(intentType: string, topic: string|undefined, qu
   return false;
 }
 
-// @kern-source: app-dispatch:78
+// @kern-source: app-dispatch:79
 export async function routeWithCesar(input: string, images: ImageAttachment[], cb: DispatchCallbacks): Promise<boolean> {
   cb.setPendingImages(() => []);
   try {
@@ -280,7 +281,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
   return false;
 }
 
-// @kern-source: app-dispatch:262
+// @kern-source: app-dispatch:263
 export async function dispatchIntent(intent: any, input: string, cb: DispatchCallbacks): Promise<DispatchResult> {
   switch (intent.type) {
     // ── Job-dispatched commands (return immediately, don't hit finally) ──
@@ -338,7 +339,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
     case 'engines': cb.setEnginePickerOpen(true); break;
     case 'discover': await handleDiscover(cb.dispatch, cb.ctx); break;
     case 'provider': await handleProvider(intent.action, intent.args, cb.dispatch, cb.ctx); break;
-      case 'config': handleConfig(intent, cb.dispatch, cb.ctx); break;
+    case 'config': handleConfig(intent, cb.dispatch, cb.ctx); break;
     case 'use': handleUse(intent.engineIds, cb.dispatch, cb.ctx, cb.setSessionEngines); break;
     case 'cesar': {
       const cesarTarget = (intent.engineIds ?? []).join(' ').trim();
@@ -372,6 +373,20 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
   
     // ── Plan commands ──
     case 'plan': await handlePlanShow(cb.dispatch, cb.ctx, intent.planId); break;
+    case 'plan-task': {
+      // Enter plan mode
+      const { createCesarPlan } = await import('@agon/core');
+      const cesarPlan = createCesarPlan(intent.task, []);
+      cb.setActivePlan(cesarPlan);
+      // Route to Cesar with the task
+      const cesarInput = `[PLAN MODE] ${intent.task}`;
+      if (await routeWithCesar(cesarInput, [], cb)) return { handled: true, ranAsJob: true };
+      break;
+    }
+    case 'plan-resume': {
+      cb.dispatch({ type: 'info', message: 'Plan resume not yet implemented.' });
+      break;
+    }
     case 'plans': handlePlansList(cb.dispatch); break;
     case 'approve': await handleApprove(cb.dispatch, cb.ctx); break;
     case 'retry': await handleRetry(cb.dispatch, cb.ctx); break;
@@ -560,3 +575,4 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
   
   return { handled: true, ranAsJob: false };
 }
+

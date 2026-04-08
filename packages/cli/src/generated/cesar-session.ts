@@ -54,49 +54,59 @@ RULE 7 — NO NARRATION: NEVER narrate your research process. Do not write "Read
 // @kern-source: cesar-session:37
 export function buildCesarSystemPrompt(ctx: HandlerContext): string {
   const config = ctx.config;
-  const cesarCwd = resolveWorkingDir();
-  const projectCtx = scanProjectContext(cesarCwd, config.projectContext || undefined);
-  const available = ctx.activeEngines();
-  const engineList = available.map((id: string) => {
-    try {
-      const e = ctx.registry.get(id);
-      const hasAgent = !!e.agent;
-      return `- ${id}${hasAgent ? ' (agent-capable)' : ''}`;
-    } catch { return `- ${id}`; }
-  }).join('\n');
+      const cesarCwd = resolveWorkingDir();
+      const projectCtx = scanProjectContext(cesarCwd, config.projectContext || undefined);
+      const available = ctx.activeEngines();
+      const engineList = available.map((id: string) => {
+        try {
+          const e = ctx.registry.get(id);
+          const hasAgent = !!e.agent;
+          return `- ${id}${hasAgent ? ' (agent-capable)' : ''}`;
+        } catch { return `- ${id}`; }
+      }).join('\n');
   
-  const systemParts: string[] = [CESAR_SYSTEM_PROMPT];
-  if (projectCtx) systemParts.push(`## PROJECT CONTEXT\n${projectCtx}`);
-  // Engine list is now in ROUTING CONTEXT (per-turn), but keep a basic list for fallback
-  systemParts.push(`## AVAILABLE ENGINES\n${engineList}`);
-  if (ctx.explorationMode) {
-    systemParts.push(`## OPERATING MODE\nExploration mode is ON. Stay read-only: inspect files, search, and use read-only shell commands only. Do not call Edit or Write. Do not run non-read-only Bash commands.`);
-  }
-  // Inject Cesar memory context
-  if ((ctx as any).cesarMemory) {
-    const memoryCtx = (ctx as any).cesarMemory.toPromptContext();
-    if (memoryCtx) systemParts.push(memoryCtx);
-  }
+      const systemParts: string[] = [CESAR_SYSTEM_PROMPT];
+      if (projectCtx) systemParts.push(`## PROJECT CONTEXT\n${projectCtx}`);
+      // Engine list is now in ROUTING CONTEXT (per-turn), but keep a basic list for fallback
+      systemParts.push(`## AVAILABLE ENGINES\n${engineList}`);
+      if (ctx.explorationMode) {
+        systemParts.push(`## OPERATING MODE\nExploration mode is ON. Stay read-only: inspect files, search, and use read-only shell commands only. Do not call Edit or Write. Do not run non-read-only Bash commands.`);
+      }
+      // Inject Cesar memory context
+      if ((ctx as any).cesarMemory) {
+        const memoryCtx = (ctx as any).cesarMemory.toPromptContext();
+        if (memoryCtx) systemParts.push(memoryCtx);
+      }
   
-  if ((ctx as any).neroMode) {
-    systemParts.push(`NERO MODE: Adversarial. Challenge assumptions, probe weaknesses, ask hard questions before implementing. Suggest tribunal-red-team or tribunal-adversarial.`);
-  }
+      if ((ctx as any).neroMode) {
+        systemParts.push(`NERO MODE: Adversarial. Challenge assumptions, probe weaknesses, ask hard questions before implementing. Suggest tribunal-red-team or tribunal-adversarial.`);
+      }
   
-  // History replay — only needed when session reboots (new process loses context).
-  if (ctx.chatSession && ctx.chatSession.messages && ctx.chatSession.messages.length > 0) {
-    const recent = ctx.chatSession.messages.slice(-20);
-    const lines = recent.map((msg: any) => {
-      const role = msg.role === 'user' ? 'U' : (msg.engineId ?? 'E');
-      const text = msg.content.length > 500 ? msg.content.slice(0, 500) + '…' : msg.content;
-      return `${role}: ${text}`;
-    });
-    systemParts.push(`HISTORY:\n${lines.join('\n')}`);
-  }
+      if ((ctx as any).activePlan && ['planning', 'awaiting_approval'].includes((ctx as any).activePlan.state)) {
+        systemParts.push(`RULE 8 — PLAN MODE: You are in PLAN MODE. Your goal is to produce the best possible plan, then propose it with ProposePlan.
   
-  return systemParts.join('\n\n');
+  ALLOWED: Brainstorm, Campfire, Tribunal, Delegate, Read, Grep, Glob, Bash (read-only), ReportConfidence, ProposePlan. Use these freely to analyze the task and build your strategy.
+  
+  BLOCKED: Forge, Pipeline, Edit, Write. No code execution until the plan is approved.
+  
+  Think deeply. Use other engines to challenge your approach. Then propose a structured plan with specific engine assignments and cost estimates for each step.`);
+      }
+  
+      // History replay — only needed when session reboots (new process loses context).
+      if (ctx.chatSession && ctx.chatSession.messages && ctx.chatSession.messages.length > 0) {
+        const recent = ctx.chatSession.messages.slice(-20);
+        const lines = recent.map((msg: any) => {
+          const role = msg.role === 'user' ? 'U' : (msg.engineId ?? 'E');
+          const text = msg.content.length > 500 ? msg.content.slice(0, 500) + '…' : msg.content;
+          return `${role}: ${text}`;
+        });
+        systemParts.push(`HISTORY:\n${lines.join('\n')}`);
+      }
+  
+      return systemParts.join('\n\n');
 }
 
-// @kern-source: cesar-session:83
+// @kern-source: cesar-session:93
 export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry, config: any): ((name:string, args:Record<string,unknown>, callId:string) => Promise<string>) | undefined {
   const fsc = new FileStateCache();
   const toolResultCache = new Map<string, string>();
@@ -111,6 +121,22 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
     toolPermissions: (config as any).toolPermissions ?? {},
   };
   return async (name: string, args: Record<string, unknown>, callId: string) => {
+    // Plan mode: block execution tools
+    const activePlan = (ctx as any).activePlan;
+    if (activePlan && ['planning', 'awaiting_approval'].includes(activePlan.state)) {
+      const BLOCKED_IN_PLAN = ['Forge', 'Pipeline', 'Edit', 'Write'];
+      if (BLOCKED_IN_PLAN.includes(name)) {
+        return `[BLOCKED] Tool "${name}" is not available in plan mode. Use ProposePlan to propose your execution strategy.`;
+      }
+      if (name === 'Bash') {
+        const cmd = String((args as any).command ?? '');
+        const writePatterns = /\b(rm|mv|cp|mkdir|touch|chmod|chown|git\s+(commit|push|merge|rebase|reset)|npm\s+(install|uninstall|publish))\b/;
+        if (writePatterns.test(cmd)) {
+          return `[BLOCKED] Write commands are not available in plan mode. Use ProposePlan to propose your execution strategy.`;
+        }
+      }
+    }
+  
     // ── Orchestration signal tools — intercept before execution ──
     const ORCH_TOOLS = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline']);
     if (ORCH_TOOLS.has(name)) {
@@ -184,6 +210,10 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
       }
     }
   
+    if (name === 'ProposePlan') {
+      return '[PLAN_PROPOSED] Plan submitted for user approval. Stop and wait.';
+    }
+  
     // ── ReportConfidence signal tool — record value, don't force delegation ──
     if (name === 'ReportConfidence') {
       const value = typeof (args as any).value === 'number' ? (args as any).value : null;
@@ -224,7 +254,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
   };
 }
 
-// @kern-source: cesar-session:212
+// @kern-source: cesar-session:242
 export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:string, command:string) => Promise<boolean> {
   const engine = ctx.registry.get(engineId);
   return async (tool: string, command: string) => {
@@ -262,7 +292,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
   };
 }
 
-// @kern-source: cesar-session:251
+// @kern-source: cesar-session:281
 export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unknown>> {
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -296,7 +326,7 @@ export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unkn
   return normalizeNamedRecord(raw);
 }
 
-// @kern-source: cesar-session:285
+// @kern-source: cesar-session:315
 export function loadCesarMcpServers(config: any, cwd: string): Array<Record<string,unknown>>|undefined {
   if (!(config as any).cesarMcpEnabled) return undefined;
   
@@ -320,14 +350,14 @@ export function loadCesarMcpServers(config: any, cwd: string): Array<Record<stri
   return servers;
 }
 
-// @kern-source: cesar-session:309
+// @kern-source: cesar-session:339
 export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
   if (!binaryPath) return false;
   const protocol = engine?.companion?.protocol;
   return protocol === 'acp' || protocol === 'jsonrpc';
 }
 
-// @kern-source: cesar-session:316
+// @kern-source: cesar-session:346
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
   const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';

@@ -145,6 +145,7 @@ export function App({  }: {  }) {
   const [lastUndoToken, setLastUndoToken] = useState<string|null>(null);
   const [sessionEngines, setSessionEngines] = useState<string[]|null>((() => { const cfg = loadConfig(); const saved = cfg.forgeEnabledEngines; return saved && saved.length > 0 ? saved : null; })());
   const [currentPlan, setCurrentPlan] = useState<Plan|null>(null);
+  const [activePlan, setActivePlan] = useState<any>(null);
   const [chatSession, setChatSession] = useState<ChatSession>((() => { const cwd = resolveWorkingDir(); let branch = 'unknown'; try { branch = currentBranch(cwd); } catch {} return startChatSession({ cwd, branch }); })());
   const [activeAbort, setActiveAbort] = useState<AbortController|null>(null);
   const [cesarSession, setCesarSession] = useState<PersistentSession|null>(null);
@@ -256,8 +257,9 @@ export function App({  }: {  }) {
             explorationMode, setExplorationMode,
             neroMode, setNeroMode,
             cesarMemory,
+            activePlan, setActivePlan,
           };
-  }, [registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode]);
+  }, [registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode,activePlan]);
 
   const handleInputChange = useCallback((value:string) => {
           const nextValue = cleanInputValue(value);
@@ -399,6 +401,7 @@ export function App({  }: {  }) {
             allImages, allSlashCommands: allSlashCommands, dynamicSkills, mode, lastUndoToken, sessionStartTime, jobManager,
             explorationMode, setExplorationMode,
             neroMode, setNeroMode,
+            setActivePlan,
           };
           if (handleModeSwitch(intent.type, (intent as any).topic, (intent as any).question, cb)) {
             if (!(intent as any).input?.trim()) { transition(finishReplState); return; }
@@ -749,7 +752,7 @@ export function App({  }: {  }) {
 }
 
 
-// @kern-source: ui-app:717
+// @kern-source: ui-app:720
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

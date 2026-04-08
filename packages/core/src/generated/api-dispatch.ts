@@ -158,7 +158,13 @@ export async function apiDispatch(config: ApiConfig, prompt: string, timeout: nu
     });
     clearTimeout(timer);
     const text = result.text || (result as any).reasoningText || '';
-    return { exitCode: 0, stdout: text, stderr: '', durationMs: Date.now() - startTime, timedOut: false };
+    const usage = result.usage ? {
+      promptTokens: result.usage.inputTokens ?? 0,
+      completionTokens: result.usage.outputTokens ?? 0,
+      totalTokens: (result.usage.inputTokens ?? 0) + (result.usage.outputTokens ?? 0),
+      source: 'sdk' as const,
+    } : undefined;
+    return { exitCode: 0, stdout: text, stderr: '', durationMs: Date.now() - startTime, timedOut: false, usage };
   } catch (err) {
     clearTimeout(timer);
     const durationMs = Date.now() - startTime;
@@ -169,7 +175,7 @@ export async function apiDispatch(config: ApiConfig, prompt: string, timeout: nu
   }
 }
 
-// @kern-source: api-dispatch:166
+// @kern-source: api-dispatch:172
 export async function* apiStreamDispatch(config: ApiConfig, prompt: string, timeout: number, signal?: AbortSignal, systemPrompt?: string): AsyncGenerator<string, DispatchResult, void> {
   const messages: Array<{role:string, content:string}> = [];
   if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
@@ -177,7 +183,7 @@ export async function* apiStreamDispatch(config: ApiConfig, prompt: string, time
   return yield* apiStreamDispatchWithHistory(config, messages, timeout, signal);
 }
 
-// @kern-source: api-dispatch:174
+// @kern-source: api-dispatch:180
 export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages: Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>, timeout: number, signal?: AbortSignal, tools?: Array<{type:string,function:{name:string,description:string,parameters:Record<string,unknown>}}>): AsyncGenerator<string, DispatchResult, void> {
   const model = buildModel(config);
   if (!model) {
@@ -283,6 +289,20 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
     }
   
     clearTimeout(timer);
+  
+    let usage: DispatchResult['usage'] = undefined;
+    try {
+      const finalUsage = await (result as any).usage;
+      if (finalUsage) {
+        usage = {
+          promptTokens: finalUsage.inputTokens ?? 0,
+          completionTokens: finalUsage.outputTokens ?? 0,
+          totalTokens: (finalUsage.inputTokens ?? 0) + (finalUsage.outputTokens ?? 0),
+          source: 'sdk' as const,
+        };
+      }
+    } catch {}
+    return { exitCode: 0, stdout, stderr: '', durationMs: Date.now() - startTime, timedOut: false, usage };
   } catch (err) {
     clearTimeout(timer);
     const durationMs = Date.now() - startTime;
@@ -291,7 +311,5 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
     }
     return { exitCode: 1, stdout, stderr: `API stream failed: ${err instanceof Error ? err.message : String(err)}`, durationMs, timedOut: false };
   }
-  
-  return { exitCode: 0, stdout, stderr: '', durationMs: Date.now() - startTime, timedOut: false };
 }
 

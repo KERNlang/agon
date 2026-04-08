@@ -1,0 +1,117 @@
+// @kern-source: campfire:1
+import type { EngineRegistry, EngineAdapter } from '@agon/core';
+
+// @kern-source: campfire:2
+import { resolveWorkingDir } from '@agon/core';
+
+// @kern-source: campfire:4
+export interface CampfireResult {
+  topic: string;
+  rounds: {engineId:string,content:string}[];
+}
+
+// @kern-source: campfire:8
+export async function runCampfire(opts: {topic:string,context?:string,engines:string[],registry:EngineRegistry,adapter:EngineAdapter,strategy:'lead-first'|'all-respond',leadEngine?:string,seedPlan?:string,timeout:number,outputDir:string,signal?:AbortSignal}): Promise<CampfireResult> {
+  const { topic, engines, registry, adapter, strategy, timeout, outputDir } = opts;
+  const cwd = resolveWorkingDir();
+  
+  const basePrompt = [
+    `## CAMPFIRE`,
+    `Topic: ${topic || 'open discussion'}`,
+    '',
+    opts.context ? `## Project Context\n${opts.context}\n` : '',
+    opts.seedPlan ? `## Lead assessment (prior context)\n${opts.seedPlan}\n` : '',
+    `## Rules`,
+    `This is a campfire — no competition, no ranking, no winners.`,
+    `Think freely. Share ideas, wild thoughts, "what if" scenarios.`,
+    `Be honest. Say "I'm not sure" if you're not sure.`,
+    `Build on the topic. Be interesting, not just useful.`,
+    `Keep it concise — 3-5 paragraphs max.`,
+  ].filter(Boolean).join('\n');
+  
+  const rounds: { engineId: string; content: string }[] = [];
+  const leadId = opts.leadEngine && engines.includes(opts.leadEngine) ? opts.leadEngine : engines[0];
+  
+  if (strategy === 'lead-first' && engines.length > 1) {
+    // Lead-first: dispatch lead engine, then observers with lead's response
+    const leadEngine = registry.get(leadId);
+    let leadResponse = '';
+  
+    try {
+      const leadResult = await adapter.dispatch({
+        engine: leadEngine,
+        prompt: basePrompt,
+        cwd,
+        mode: 'exec',
+        timeout,
+        outputDir,
+        signal: opts.signal,
+      });
+      leadResponse = leadResult.stdout.trim();
+      rounds.push({ engineId: leadId, content: leadResponse });
+    } catch (err) {
+      console.warn(`[agon] campfire lead dispatch (${leadId}) failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  
+    if (leadResponse && !opts.signal?.aborted) {
+      const observerPrompt = [
+        basePrompt,
+        '',
+        `## Lead engine (${leadId}) response`,
+        leadResponse,
+        '',
+        `## Your role`,
+        `The lead engine proposed the above. Only respond if you have a substantively different perspective or disagree. If you mostly agree, respond with just "Agree" or stay brief.`,
+      ].join('\n');
+  
+      const observers = engines.filter((id: string) => id !== leadId);
+      const observerDone = observers.map(async (engineId: string) => {
+        const engine = registry.get(engineId);
+        try {
+          const result = await adapter.dispatch({
+            engine,
+            prompt: observerPrompt,
+            cwd,
+            mode: 'exec',
+            timeout,
+            outputDir,
+            signal: opts.signal,
+          });
+          const response = result.stdout.trim();
+          // Skip near-empty or pure agreement responses
+          if (response && response.length > 20 && !/^agree\b/i.test(response)) {
+            rounds.push({ engineId, content: response });
+          }
+        } catch (err) {
+          console.warn(`[agon] campfire observer (${engineId}) failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      });
+  
+      await Promise.all(observerDone);
+    }
+  } else {
+    // All-respond: parallel dispatch to all engines
+    const allDone = engines.map(async (engineId: string) => {
+      const engine = registry.get(engineId);
+      try {
+        const result = await adapter.dispatch({
+          engine,
+          prompt: basePrompt,
+          cwd,
+          mode: 'exec',
+          timeout,
+          outputDir,
+          signal: opts.signal,
+        });
+        rounds.push({ engineId, content: result.stdout.trim() });
+      } catch (err) {
+        console.warn(`[agon] campfire dispatch (${engineId}) failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    });
+  
+    await Promise.all(allDone);
+  }
+  
+  return { topic: topic || 'open discussion', rounds };
+}
+

@@ -11,6 +11,7 @@ import from="./command-registry.js" names="CommandHandler" types=true
 import from="./engine-registry.js" names="EngineRegistry"
 import from="./config.js" names="AGON_HOME"
 import from="./skill-loader.js" names="Skill" types=true
+import from="./event-bus.js" names="EventBus"
 
 fn name=discoverExtensionDirs params="cwd:string" returns="{ dir: string; source: 'user' | 'repo' }[]"
   doc "Scan ~/.agon/extensions/ and <cwd>/.agon/extensions/ for extension directories."
@@ -204,7 +205,33 @@ fn name=registerExtensionSkills params="ext:LoadedExtension" returns="Skill[]"
     return skills;
   >>>
 
-fn name=initExtensions async=true params="cwd:string, commandRegistry:CommandRegistry, engineRegistry:EngineRegistry" returns="Promise<{ extensions: LoadedExtension[]; skills: Skill[]; systemPromptFragments: string[] }>"
+fn name=registerExtensionHooks async=true params="ext:LoadedExtension, eventBus:EventBus" returns="Promise<string[]>"
+  doc "Dynamically import hook handlers from an extension and register them on the event bus."
+  handler <<<
+    const registered: string[] = [];
+    const hookContribs = ext.manifest.contributes?.hooks;
+    if (!hookContribs || hookContribs.length === 0) return registered;
+
+    for (const hook of hookContribs) {
+      try {
+        const handlerPath = resolve(ext.dir, hook.handler);
+        const mod = await import(handlerPath);
+        if (typeof mod.handler !== 'function' && typeof mod.default !== 'function') {
+          console.warn(`[agon] extension '${ext.manifest.id}' hook '${hook.event}': handler missing handler() or default() export`);
+          continue;
+        }
+        const fn = mod.handler ?? mod.default;
+        eventBus.on(hook.event, fn, hook.priority ?? 100, ext.manifest.id);
+        registered.push(hook.event);
+      } catch (err) {
+        console.warn(`[agon] extension '${ext.manifest.id}' hook '${hook.event}': ${(err as Error).message}`);
+      }
+    }
+
+    return registered;
+  >>>
+
+fn name=initExtensions async=true params="cwd:string, commandRegistry:CommandRegistry, engineRegistry:EngineRegistry, eventBus?:EventBus" returns="Promise<{ extensions: LoadedExtension[]; skills: Skill[]; systemPromptFragments: string[] }>"
   doc "Main entry point — discover, load, and wire all extensions. Called once at app startup."
   handler <<<
     const extensions = loadExtensions(cwd);
@@ -227,6 +254,14 @@ fn name=initExtensions async=true params="cwd:string, commandRegistry:CommandReg
       // Skills
       const skills = registerExtensionSkills(ext);
       allSkills.push(...skills);
+
+      // Hooks
+      if (eventBus) {
+        const hooks = await registerExtensionHooks(ext, eventBus);
+        if (hooks.length > 0) {
+          console.log(`[agon] extension '${ext.manifest.id}': registered hooks: ${hooks.join(', ')}`);
+        }
+      }
 
       // System prompt fragments
       if (ext.manifest.contributes?.systemPromptFragments) {

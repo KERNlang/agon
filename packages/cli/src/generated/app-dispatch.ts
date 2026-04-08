@@ -304,6 +304,20 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
 
 // @kern-source: app-dispatch:278
 export async function dispatchIntent(intent: any, input: string, cb: DispatchCallbacks): Promise<DispatchResult> {
+  // ── Registry-first dispatch — extensions and real handlers get priority ──
+  if (cb.commandRegistry) {
+    const cmdName = intent.type === 'extension-command' ? intent.commandName : intent.type;
+    const registryHandler = cb.commandRegistry.get(cmdName);
+    if (registryHandler && registryHandler.definition.source !== 'builtin') {
+      // Real handler (not a builtin shim) — execute it
+      const args = intent.type === 'extension-command'
+        ? registryHandler.parseArgs(intent.args ?? '')
+        : intent;
+      const result = await registryHandler.execute(args, cb);
+      if (result.handled) return result;
+    }
+  }
+  
   switch (intent.type) {
     // ── Job-dispatched commands (return immediately, don't hit finally) ──
     case 'forge': {

@@ -195,7 +195,7 @@ export function BackgroundJobRail({ jobs }: { jobs: Job[] }) {
 
 // @kern-source: ui-status:202
 
-export function CesarStatusStrip({ cesarId, confidence, spinner, engines, lastActivityAt, streamSnippet, isActive, planModeQueued, activePlan }: { cesarId: string; confidence?: number|null; spinner: { message: string; engineId?: string } | null; engines: EngineProgress[]|null; lastActivityAt: number; streamSnippet?: { engineId: string; line: string } | null; isActive: boolean; planModeQueued?: boolean; activePlan?: any }) {
+export function CesarStatusStrip({ cesarId, confidence, spinner, engines, startTime, streamSnippet, isActive, planModeQueued, activePlan }: { cesarId: string; confidence?: number|null; spinner: { message: string; engineId?: string } | null; engines: EngineProgress[]|null; startTime: number; streamSnippet?: { engineId: string; line: string } | null; isActive: boolean; planModeQueued?: boolean; activePlan?: any }) {
   const [now, setNow] = useState<number>(Date.now());
 
   useEffect(() => {
@@ -203,6 +203,27 @@ export function CesarStatusStrip({ cesarId, confidence, spinner, engines, lastAc
           return () => clearInterval(t);
   }, []);
 
+        // Plan badge (shared between idle and active)
+        const hasPlan = planModeQueued || (activePlan && ['planning', 'awaiting_approval', 'running', 'paused'].includes(activePlan.state));
+        let planLabel = '';
+        if (planModeQueued) planLabel = 'ready';
+        else if (activePlan?.state === 'planning') planLabel = 'thinking';
+        else if (activePlan?.state === 'awaiting_approval') planLabel = 'review';
+        else if (activePlan?.state === 'running') planLabel = 'executing';
+        else if (activePlan?.state === 'paused') planLabel = 'paused';
+  
+        // Idle: single dimmed line (no colored nesting issues)
+        if (!isActive) {
+          const confPart = (confidence !== null && confidence !== undefined) ? ` ${confidence}%` : '';
+          const planPart = hasPlan ? ` \u2502 \u25c8 PLAN ${planLabel}` : '';
+          return (
+            <Box paddingTop={0}>
+              <Text dimColor>{'\u25c6 '}{cesarId}{confPart}{' \u2502 idle'}{planPart}</Text>
+            </Box>
+          );
+        }
+  
+        // Active: full colored strip
         const cesarColor = color256toHex(ENGINE_COLORS[cesarId] ?? 245);
   
         // Confidence badge with tier coloring
@@ -214,18 +235,16 @@ export function CesarStatusStrip({ cesarId, confidence, spinner, engines, lastAc
         }
   
         // Activity segment
-        let activityStr = 'idle';
-        let activityColor = '#6b7280';
-        if (isActive && spinner) {
+        let activityStr = 'working';
+        if (spinner) {
           const msg = spinner.message.replace(/\u2026$/, '').trim();
           activityStr = msg.length > 20 ? msg.slice(0, 20) + '\u2026' : msg;
-          activityColor = '#fbbf24';
         }
   
-        // Elapsed time
+        // Elapsed time (from operation start, not last activity)
         let elapsedStr = '';
-        if (isActive) {
-          const elapsed = Math.max(0, Math.floor((now - lastActivityAt) / 1000));
+        if (startTime > 0) {
+          const elapsed = Math.max(0, Math.floor((now - startTime) / 1000));
           if (elapsed > 0) {
             const mins = Math.floor(elapsed / 60);
             const secs = elapsed % 60;
@@ -235,7 +254,7 @@ export function CesarStatusStrip({ cesarId, confidence, spinner, engines, lastAc
   
         // Engine dots
         const engineDots: React.ReactNode[] = [];
-        if (isActive && engines && engines.length > 0) {
+        if (engines && engines.length > 0) {
           for (const eng of engines) {
             const ec = color256toHex(ENGINE_COLORS[eng.id] ?? 245);
             const icon = eng.done ? '\u2713' : eng.failed ? '\u2717' : '\u25cf';
@@ -258,27 +277,18 @@ export function CesarStatusStrip({ cesarId, confidence, spinner, engines, lastAc
           snippetStr = streamSnippet.line.length > maxLen ? streamSnippet.line.slice(0, maxLen) + '\u2026' : streamSnippet.line;
         }
   
-        // Plan badge
-        const hasPlan = planModeQueued || (activePlan && ['planning', 'awaiting_approval', 'running', 'paused'].includes(activePlan.state));
-        let planLabel = '';
-        if (planModeQueued) planLabel = 'ready';
-        else if (activePlan?.state === 'planning') planLabel = 'thinking';
-        else if (activePlan?.state === 'awaiting_approval') planLabel = 'review';
-        else if (activePlan?.state === 'running') planLabel = 'executing';
-        else if (activePlan?.state === 'paused') planLabel = 'paused';
-  
         return (
           <Box paddingTop={0}>
-            <Text dimColor={!isActive}>
+            <Text>
               <Text color={cesarColor} bold>{'\u25c6 '}{cesarId}</Text>
               {confStr ? <Text color={confColor} bold>{confStr}</Text> : null}
               <Text dimColor>{' \u2502 '}</Text>
-              <Text color={activityColor}>{activityStr}</Text>
+              <Text color="#fbbf24">{activityStr}</Text>
               {elapsedStr ? <Text dimColor>{elapsedStr}</Text> : null}
               {engineDots.length > 0 ? <Text dimColor>{' \u2502 '}</Text> : null}
             </Text>
-            {engineDots.length > 0 && <Text dimColor={!isActive}>{engineDots}</Text>}
-            <Text dimColor={!isActive}>
+            {engineDots.length > 0 && <Text>{engineDots}</Text>}
+            <Text>
               {snippetStr ? <><Text dimColor>{' \u2502 '}</Text><Text dimColor wrap="truncate">{snippetStr}</Text></> : null}
               {hasPlan ? <><Text dimColor>{' \u2502 '}</Text><Text color="#c084fc" bold>{'\u25c8 PLAN'}</Text><Text dimColor>{' '}{planLabel}</Text></> : null}
             </Text>

@@ -1,17 +1,23 @@
+// @kern-source: app-output:5
 import type { OutputEvent, EngineProgress } from '../handlers/types.js';
 
+// @kern-source: app-output:6
 import { parseMarkdownBlocks, cleanEngineOutput } from '../markdown.js';
 
+// @kern-source: app-output:7
 import { codeBlockBuffer } from '../code-buffer.js';
 
+// @kern-source: app-output:8
 import { loadConfig, configSet } from '@agon/core';
 
+// @kern-source: app-output:10
 export interface OutputState {
   liveSpinner: {message:string,color?:number,engineId?:string}|null;
   liveProgress: EngineProgress[]|null;
   streamingText: {engineId:string,content:string}|null;
 }
 
+// @kern-source: app-output:15
 export interface OutputActions {
   setLiveSpinner: (val:any) => void;
   setLiveProgress: (val:EngineProgress[]|null) => void;
@@ -25,6 +31,79 @@ export interface OutputActions {
   getEngineColor: (engineId:string) => number;
 }
 
+// @kern-source: app-output:28
+export const _permissionQueue: Array<{tool:string,command:string,reason:string,resolve:(approved:boolean)=>void}> = [] as Array<{tool:string,command:string,reason:string,resolve:(approved:boolean)=>void}>;
+
+// @kern-source: app-output:31
+export function clearPermissionQueue(): void {
+  while (_permissionQueue.length > 0) {
+    const entry = _permissionQueue.shift()!;
+    entry.resolve(false);
+  }
+}
+
+// @kern-source: app-output:40
+function _drainAutoApproved(actions: OutputActions): void {
+  const cfg = loadConfig();
+  const allowed: string[] = (cfg as any).allowedCommands ?? [];
+  if (allowed.length === 0) return;
+  // Drain from the front: auto-approve entries matching the allow-list
+  while (_permissionQueue.length > 0) {
+    const head = _permissionQueue[0];
+    const base = head.command.trim().split(/\s+/)[0];
+    if (base && allowed.some((a: string) => base.toLowerCase().startsWith(a.toLowerCase()))) {
+      _permissionQueue.shift();
+      head.resolve(true);
+    } else {
+      break;
+    }
+  }
+}
+
+// @kern-source: app-output:59
+function _showNextPermission(actions: OutputActions): void {
+  // First drain any that are now auto-approved (e.g. after "Always")
+  _drainAutoApproved(actions);
+  if (_permissionQueue.length === 0) return;
+  const next = _permissionQueue[0];
+  actions.addBlock({ type: 'permission-ask', tool: next.tool, command: next.command, reason: next.reason, resolve: next.resolve } as any);
+  const permResolve = next.resolve;
+  const permCommand = next.command;
+  actions.setQuestionState({
+    prompt: `${next.tool}: ${permCommand.length > 60 ? permCommand.slice(0, 60) + '\u2026' : permCommand}`,
+    choices: [
+      { key: 'y', label: 'Yes', color: '#4ade80' },
+      { key: 'n', label: 'No', color: '#ef4444' },
+      { key: 'a', label: 'Always', color: '#60a5fa' },
+    ],
+    resolve: (answer: string) => {
+      _permissionQueue.shift();
+      const lower = answer.toLowerCase().trim();
+      if (lower === 'a') {
+        const cfg = loadConfig();
+        const allowed = (cfg as any).allowedCommands ?? [];
+        const base = permCommand.trim().split(/\s+/)[0];
+        if (base && !allowed.includes(base)) {
+          allowed.push(base);
+          configSet('allowedCommands' as any, allowed);
+        }
+        permResolve(true);
+        actions.addBlock({ type: 'success', message: `Always allowed: ${base}` } as any);
+      } else if (lower === 'y') {
+        permResolve(true);
+      } else {
+        permResolve(false);
+        actions.addBlock({ type: 'warning', message: 'Denied' } as any);
+      }
+      // Show next queued permission (drains auto-approved first)
+      if (_permissionQueue.length > 0) {
+        setTimeout(() => _showNextPermission(actions), 50);
+      }
+    },
+  });
+}
+
+// @kern-source: app-output:102
 export function handleOutputEvent(event: OutputEvent, state: OutputState, actions: OutputActions, mode: string, chatStartTime: number): void {
   switch (event.type) {
     case 'spinner-start':
@@ -84,37 +163,18 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
       actions.setQuestionState({ prompt: (event as any).prompt, resolve: (event as any).resolve, choices: (event as any).choices });
       return;
     case 'permission-ask': {
-      // Show the permission block visually, then ask Y/N/A with choice buttons
-      actions.addBlock(event);
-      const permResolve = (event as any).resolve as (approved: boolean) => void;
-      const permCommand = (event as any).command as string;
-      actions.setQuestionState({
-        prompt: `${(event as any).tool}: ${permCommand.length > 60 ? permCommand.slice(0, 60) + '…' : permCommand}`,
-        choices: [
-          { key: 'y', label: 'Yes', color: '#4ade80' },
-          { key: 'n', label: 'No', color: '#ef4444' },
-          { key: 'a', label: 'Always', color: '#60a5fa' },
-        ],
-        resolve: (answer: string) => {
-          const lower = answer.toLowerCase().trim();
-          if (lower === 'a') {
-            const cfg = loadConfig();
-            const allowed = (cfg as any).allowedCommands ?? [];
-            const base = permCommand.trim().split(/\s+/)[0];
-            if (base && !allowed.includes(base)) {
-              allowed.push(base);
-              configSet('allowedCommands' as any, allowed);
-            }
-            permResolve(true);
-            actions.addBlock({ type: 'success', message: `Always allowed: ${base}` } as any);
-          } else if (lower === 'y') {
-            permResolve(true);
-          } else {
-            permResolve(false);
-            actions.addBlock({ type: 'warning', message: 'Denied' } as any);
-          }
-        },
-      });
+      // Queue permission requests — show one at a time to prevent overwriting
+      const entry = {
+        tool: (event as any).tool as string,
+        command: (event as any).command as string,
+        reason: (event as any).reason as string,
+        resolve: (event as any).resolve as (approved: boolean) => void,
+      };
+      _permissionQueue.push(entry);
+      // Only show if this is the first/only item (no active prompt)
+      if (_permissionQueue.length === 1) {
+        _showNextPermission(actions);
+      }
       return;
     }
     default:

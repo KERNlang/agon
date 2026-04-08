@@ -23,7 +23,7 @@ import from="../generated/app-state.js" names="ReplStateState" types=true
 import from="../paste-handler.js" names="processPasteContent,expandPastePlaceholders"
 import from="../generated/app-dispatch.js" names="dispatchIntent,handleModeSwitch"
 import from="../generated/app-dispatch.js" names="DispatchCallbacks" types=true
-import from="../generated/app-output.js" names="handleOutputEvent"
+import from="../generated/app-output.js" names="handleOutputEvent,clearPermissionQueue"
 import from="../generated/app-output.js" names="OutputActions,OutputState" types=true
 import from="../generated/app-input.js" names="cleanInputValue,cleanSubmitValue,findInputChange,navigateHistory,resolveEscapeAction"
 import from="../generated/app-review.js" names="handleReviewAction"
@@ -183,6 +183,7 @@ screen name=App target=ink
       setLiveProgress(null);
       setStreamingText(null);
       setBtwExpanded(false);
+      clearPermissionQueue();
 
       if (replState !== 'idle') {
         if (message) dispatch({ type: 'warning', message } as any);
@@ -455,6 +456,7 @@ screen name=App target=ink
         _activeAborts.clear();
         activeAbortRef.current = null;
         setActiveAbort(null); setLiveSpinner(null); setLiveProgress(null); setStreamingText(null);
+        clearPermissionQueue();
         setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state);
       };
     >>>

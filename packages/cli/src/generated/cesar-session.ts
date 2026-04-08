@@ -82,14 +82,22 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
         systemParts.push(`NERO MODE: Adversarial. Challenge assumptions, probe weaknesses, ask hard questions before implementing. Suggest tribunal-red-team or tribunal-adversarial.`);
       }
   
+      // Always present — Cesar should suggest plan mode for complex tasks
+      systemParts.push(`RULE 8 — SUGGEST PLANNING: For complex tasks that would require multi-engine orchestration (forge, brainstorm + forge, or multiple delegations), suggest plan mode to the user BEFORE executing. Say: "This looks like it needs a plan. Want me to plan it first? Use /plan <task> to enter plan mode." Do NOT auto-enter plan mode — the user decides. Simple questions and single-engine tasks do not need plans.`);
+  
       if ((ctx as any).activePlan && ['planning', 'awaiting_approval'].includes((ctx as any).activePlan.state)) {
-        systemParts.push(`RULE 8 — PLAN MODE: You are in PLAN MODE. Your goal is to produce the best possible plan, then propose it with ProposePlan.
+        const stats = tracker.getStats();
+        let budgetWarning = '';
+        if (stats.totalCostUsd > 1.0) {
+          budgetWarning = `\n\nWARNING: Planning phase has spent $${stats.totalCostUsd.toFixed(2)}. Wrap up your analysis and call ProposePlan now.`;
+        }
+        systemParts.push(`RULE 9 — PLAN MODE: You are in PLAN MODE. Your goal is to produce the best possible plan, then propose it with ProposePlan.
   
   ALLOWED: Brainstorm, Campfire, Tribunal, Delegate, Read, Grep, Glob, Bash (read-only), ReportConfidence, ProposePlan. Use these freely to analyze the task and build your strategy.
   
   BLOCKED: Forge, Pipeline, Edit, Write. No code execution until the plan is approved.
   
-  Think deeply. Use other engines to challenge your approach. Then propose a structured plan with specific engine assignments and cost estimates for each step.`);
+  Think deeply. Use other engines to challenge your approach. Then propose a structured plan with specific engine assignments and cost estimates for each step.${budgetWarning}`);
       }
   
       // History replay — only needed when session reboots (new process loses context).
@@ -106,7 +114,7 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
       return systemParts.join('\n\n');
 }
 
-// @kern-source: cesar-session:93
+// @kern-source: cesar-session:101
 export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry, config: any): ((name:string, args:Record<string,unknown>, callId:string) => Promise<string>) | undefined {
   const fsc = new FileStateCache();
   const toolResultCache = new Map<string, string>();
@@ -211,6 +219,19 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
     }
   
     if (name === 'ProposePlan') {
+      // Validate engines exist before creating the plan
+      const proposedSteps = (args as any).steps ?? [];
+      for (const step of proposedSteps) {
+        const engines = step.engines ?? (step.engine ? [step.engine] : []);
+        for (const engineId of engines) {
+          try {
+            ctx.registry.get(engineId);
+          } catch {
+            return `[PLAN_ERROR] Engine "${engineId}" in step "${step.id}" is not available. Available engines: ${ctx.registry.availableIds().join(', ')}. Revise your plan.`;
+          }
+        }
+      }
+  
       // Wire ProposePlan tool to actual plan creation + display
       const { handleProposePlan } = await import('../generated/handlers-plan-mode.js');
       const dispatch = (ctx as any)._planDispatch;
@@ -270,7 +291,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
   };
 }
 
-// @kern-source: cesar-session:258
+// @kern-source: cesar-session:279
 export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:string, command:string) => Promise<boolean> {
   const engine = ctx.registry.get(engineId);
   return async (tool: string, command: string) => {
@@ -308,7 +329,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
   };
 }
 
-// @kern-source: cesar-session:297
+// @kern-source: cesar-session:318
 export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unknown>> {
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -342,7 +363,7 @@ export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unkn
   return normalizeNamedRecord(raw);
 }
 
-// @kern-source: cesar-session:331
+// @kern-source: cesar-session:352
 export function loadCesarMcpServers(config: any, cwd: string): Array<Record<string,unknown>>|undefined {
   if (!(config as any).cesarMcpEnabled) return undefined;
   
@@ -366,14 +387,14 @@ export function loadCesarMcpServers(config: any, cwd: string): Array<Record<stri
   return servers;
 }
 
-// @kern-source: cesar-session:355
+// @kern-source: cesar-session:376
 export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
   if (!binaryPath) return false;
   const protocol = engine?.companion?.protocol;
   return protocol === 'acp' || protocol === 'jsonrpc';
 }
 
-// @kern-source: cesar-session:362
+// @kern-source: cesar-session:383
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
   const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';

@@ -444,10 +444,10 @@ screen name=OutputBlockView target=ink
                 {event.output && event.status !== 'running' && (() => {
                   const outLines = event.output.split('\n');
                   const total = outLines.length;
-                  const maxHead = total > 50 ? 20 : 30;
-                  const showTail = total > 50;
+                  const maxHead = total > 80 ? 30 : 50;
+                  const showTail = total > maxHead;
                   const headLines = outLines.slice(0, maxHead);
-                  const tailLines = showTail ? outLines.slice(-3) : [];
+                  const tailLines = showTail ? outLines.slice(-5) : [];
                   const skipped = total - maxHead - tailLines.length;
                   const renderLine = (line: string, i: number, prefix: string) => (
                     <Box key={`${prefix}-${i}`}>
@@ -461,7 +461,7 @@ screen name=OutputBlockView target=ink
                     <>
                       <Text> </Text>
                       {headLines.map((line: string, i: number) => renderLine(line, i, 'head'))}
-                      {skipped > 0 && <Text dimColor>{'    \u2026 '}{skipped}{' more lines \u2026'}</Text>}
+                      {skipped > 0 && <Text dimColor>{'    \u2026 '}{skipped}{' more lines \u2026 (^E to expand all)'}</Text>}
                       {tailLines.map((line: string, i: number) => renderLine(line, i, 'tail'))}
                     </>
                   );

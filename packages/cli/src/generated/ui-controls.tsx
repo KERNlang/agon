@@ -264,7 +264,12 @@ export function ModelPicker({ entries, onSelect, onCancel, loading }: { entries:
           return (
             <Box flexDirection="column" borderStyle="round" borderColor="magenta" paddingX={1}>
               <Text bold color="magenta">{'Select model'}</Text>
-              <Text dimColor>{'Fetching models.dev registry...'}</Text>
+              <Text dimColor>{'Fetching models.dev registry\u2026'}</Text>
+              <Box flexDirection="column" marginTop={1}>
+                <Text dimColor>{'\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588 '}<Text color="#555">{'provider/model-name'}</Text></Text>
+                <Text dimColor>{'\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588 '}<Text color="#444">{'provider/another-model'}</Text></Text>
+                <Text dimColor>{'\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588 '}<Text color="#444">{'provider/third-model'}</Text></Text>
+              </Box>
             </Box>
           );
         }
@@ -342,7 +347,7 @@ export function ModelPicker({ entries, onSelect, onCancel, loading }: { entries:
 }
 
 
-// @kern-source: ui-controls:347
+// @kern-source: ui-controls:352
 
 export function ReviewBlock({ event, onAction }: { event: ReviewEvent; onAction: (action: 'apply' | 'edit' | 'reject' | 'copy') => void }) {
         const eColor = engineColor(event.winnerId);
@@ -383,7 +388,7 @@ export function ReviewBlock({ event, onAction }: { event: ReviewEvent; onAction:
 }
 
 
-// @kern-source: ui-controls:389
+// @kern-source: ui-controls:394
 
 export function CesarPicker({ engines, currentCesar, onSelect, onCancel }: { engines: string[]; currentCesar: string; onSelect: (engineId: string) => void; onCancel: () => void }) {
   const [cursor, setCursor] = useState<number>(0);

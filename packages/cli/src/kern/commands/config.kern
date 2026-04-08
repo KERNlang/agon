@@ -103,5 +103,5 @@ const name=configCommand type="ReturnType<typeof defineCommand>"
             process.exit(1);
         }
       },
-    })
+    }) as ReturnType<typeof defineCommand>
   >>>

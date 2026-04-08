@@ -208,7 +208,7 @@ export function SyntaxLine({ line, maxWidth }: { line: string; maxWidth: number 
 
 export function CodeBlockView({ segment, borderColor }: { segment: ContentSegment & { type: 'code' }; borderColor: string }) {
         const codeWidth = contentWidth(8);
-        const lines = segment.code.split('\n');
+        const lines = (segment.code ?? '').split('\n');
         const isDiff = segment.language === 'diff' || lines.some((l: string) => /^[+-@]/.test(l));
         const capped = lines.slice(0, MAX_CODE_LINES);
         const overflow = lines.length - MAX_CODE_LINES;
@@ -372,7 +372,7 @@ export function RenderedSegments({ segments, borderColor, wrapWidth }: { segment
                     {spacer}
                     <Box flexDirection="column">
                       <Text color={borderColor}>{'\u2502'}</Text>
-                      <MarkdownTableView headers={seg.headers} rows={seg.rows} alignments={seg.alignments} borderColor={borderColor} />
+                      <MarkdownTableView headers={seg.headers ?? []} rows={seg.rows ?? []} alignments={seg.alignments ?? []} borderColor={borderColor} />
                       <Text color={borderColor}>{'\u2502'}</Text>
                     </Box>
                   </React.Fragment>

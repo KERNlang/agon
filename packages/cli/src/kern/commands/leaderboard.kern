@@ -71,5 +71,5 @@ const name=leaderboardCommand type="ReturnType<typeof defineCommand>"
         console.log('');
         info(dim(`Last updated: ${elo.lastUpdated}`));
       },
-    })
+    }) as ReturnType<typeof defineCommand>
   >>>

@@ -1,5 +1,5 @@
 // @kern-source: onboarding:1
-import { React, useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 
 // @kern-source: onboarding:2
 import { Box, Text } from 'ink';

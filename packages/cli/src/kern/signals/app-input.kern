@@ -82,6 +82,32 @@ fn name=tryGhostComplete params="inputValue:string, commands:any[], engineIds:st
     return getGhostCompletion(inputValue, commands, engineIds);
   >>>
 
+fn name=getSlashMatches params="filter:string, commands:any[]" returns="any[]"
+  doc "Rank slash-command matches so prefix hits stay on top while substring hits remain reachable."
+  handler <<<
+    const normalizedFilter = filter.trim().toLowerCase();
+    return commands
+      .map((c: any) => {
+        const name = c.cmd.toLowerCase().replace(/^\//, '');
+        const startsWith = normalizedFilter ? name.startsWith(normalizedFilter) : true;
+        const includes = normalizedFilter ? name.includes(normalizedFilter) : true;
+        const rank = !normalizedFilter ? 0 : startsWith ? 0 : includes ? 1 : 2;
+        const { rank: _rank, ...command } = { ...c, rank };
+        return { command, rank };
+      })
+      .filter((entry: any) => entry.rank < 2)
+      .sort((a: any, b: any) => a.rank - b.rank || a.command.cmd.localeCompare(b.command.cmd))
+      .map((entry: any) => entry.command);
+  >>>
+
+fn name=movePickerCursor params="direction:'up'|'down', currentIndex:number, itemCount:number" returns=number
+  doc "Move a picker cursor within bounds."
+  handler <<<
+    if (itemCount <= 0) return 0;
+    if (direction === 'up') return Math.max(0, currentIndex - 1);
+    return Math.min(itemCount - 1, currentIndex + 1);
+  >>>
+
 fn name=shouldQueuePlanModeOnTab params="opts:{replState:string,inputValue:string,activePlanState?:string|null}" returns=boolean
   doc "Only queue plan mode from Tab when the composer is idle and empty."
   handler <<<

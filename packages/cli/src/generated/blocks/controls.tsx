@@ -8,50 +8,44 @@ import { Box, Text, useInput } from 'ink';
 import { SLASH_COMMANDS } from '../signals/intent.js';
 
 // @kern-source: controls:6
-import { contentWidth, engineColor, color256toHex, DiffLine, CODE_RAIL, CODE_RAIL_COLOR } from './rendering.js';
+import { getSlashMatches, movePickerCursor } from '../signals/app-input.js';
 
 // @kern-source: controls:7
-import { ENGINE_COLORS } from './output-format.js';
+import { contentWidth, engineColor, color256toHex, DiffLine, CODE_RAIL, CODE_RAIL_COLOR } from './rendering.js';
 
 // @kern-source: controls:8
-import { icons } from '../signals/icons.js';
+import { ENGINE_COLORS } from './output-format.js';
 
 // @kern-source: controls:9
+import { icons } from '../signals/icons.js';
+
+// @kern-source: controls:10
 import { setAuthKey, getAuthKey, loadConfig, configSet } from '@agon/core';
 
-// @kern-source: controls:13
+// @kern-source: controls:14
 export interface ReviewEvent {
   winnerId: string;
   patchPath: string;
   patchContent: string;
 }
 
-// @kern-source: controls:20
+// @kern-source: controls:21
 
 export function SlashPicker({ commands, onSelect, onCancel }: { commands: typeof SLASH_COMMANDS; onSelect: (cmd: string) => void; onCancel: () => void }) {
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
   const [filter, setFilter] = useState<string>('');
 
-        const normalizedFilter = filter.trim().toLowerCase();
-        const filtered = commands
-          .map((c: any) => {
-            const name = c.cmd.toLowerCase().replace(/^\//, '');
-            const startsWith = normalizedFilter ? name.startsWith(normalizedFilter) : true;
-            const includes = normalizedFilter ? name.includes(normalizedFilter) : true;
-            const rank = !normalizedFilter ? 0 : startsWith ? 0 : includes ? 1 : 2;
-            return { ...c, rank };
-          })
-          .filter((c: any) => c.rank < 2)
-          .sort((a: any, b: any) => a.rank - b.rank || a.cmd.localeCompare(b.cmd));
+        const filtered = useMemo(() => getSlashMatches(filter, commands), [filter, commands]);
+        const currentIndex = filtered.length === 0 ? 0 : Math.min(selectedIndex, filtered.length - 1);
   
         useInput((input: string, key: any) => {
           if (key.escape || (key.ctrl && input === 'c')) { onCancel(); return; }
           if (key.return) {
-            if (filtered[selectedIndex]) onSelect(filtered[selectedIndex].cmd);
+            if (filtered[currentIndex]) onSelect(filtered[currentIndex].cmd);
             return;
           }
-          if (key.upArrow) { setSelectedIndex((i: number) => Math.max(0, i - 1)); return; }
-          if (key.downArrow) { setSelectedIndex((i: number) => Math.min(filtered.length - 1, i + 1)); return; }
+          if (key.upArrow) { setSelectedIndex(movePickerCursor('up', currentIndex, filtered.length)); return; }
+          if (key.downArrow) { setSelectedIndex(movePickerCursor('down', currentIndex, filtered.length)); return; }
           if (key.backspace || key.delete) {
             if (!filter) { onCancel(); return; }
             setFilter((f: string) => f.slice(0, -1));
@@ -59,8 +53,8 @@ export function SlashPicker({ commands, onSelect, onCancel }: { commands: typeof
             return;
           }
           if (key.tab) {
-            if (filtered[selectedIndex]) {
-              setFilter(filtered[selectedIndex].cmd.replace(/^\//, ''));
+            if (filtered[currentIndex]) {
+              setFilter(filtered[currentIndex].cmd.replace(/^\//, ''));
               setSelectedIndex(0);
             }
             return;
@@ -91,8 +85,8 @@ export function SlashPicker({ commands, onSelect, onCancel }: { commands: typeof
                   const i = start + vi;
                   return (
                     <Box key={cmd.cmd}>
-                      <Text color={i === selectedIndex ? 'yellow' : undefined} bold={i === selectedIndex}>
-                        {i === selectedIndex ? ' \u276f ' : '   '}{cmd.cmd.padEnd(16)}
+                      <Text color={i === currentIndex ? 'yellow' : undefined} bold={i === currentIndex}>
+                        {i === currentIndex ? ' \u276f ' : '   '}{cmd.cmd.padEnd(16)}
                       </Text>
                       <Text dimColor>{cmd.desc}</Text>
                     </Box>
@@ -105,7 +99,7 @@ export function SlashPicker({ commands, onSelect, onCancel }: { commands: typeof
 }
 
 
-// @kern-source: controls:102
+// @kern-source: controls:94
 
 export function EnginePicker({ available, initialSelected, userEngines, onConfirm, onCancel, onRemove }: { available: string[]; initialSelected: string[]; userEngines: Set<string>; onConfirm: (selected: string[]) => void; onCancel: () => void; onRemove: (engineId: string) => void }) {
   const [cursor, setCursor] = useState<number>(0);
@@ -190,7 +184,7 @@ export function EnginePicker({ available, initialSelected, userEngines, onConfir
 }
 
 
-// @kern-source: controls:193
+// @kern-source: controls:185
 export interface ModelPickerEntry {
   providerId: string;
   providerName: string;
@@ -204,7 +198,7 @@ export interface ModelPickerEntry {
   costOutput?: number;
 }
 
-// @kern-source: controls:205
+// @kern-source: controls:197
 
 export function ModelPicker({ entries, onSelect, onCancel, loading }: { entries: ModelPickerEntry[]; onSelect: (entry: ModelPickerEntry) => void; onCancel: () => void; loading?: boolean }) {
   const [cursor, setCursor] = useState<number>(0);
@@ -361,7 +355,7 @@ export function ModelPicker({ entries, onSelect, onCancel, loading }: { entries:
 }
 
 
-// @kern-source: controls:366
+// @kern-source: controls:358
 
 export function ReviewBlock({ event, onAction }: { event: ReviewEvent; onAction: (action: 'apply' | 'edit' | 'reject' | 'copy') => void }) {
         const eColor = engineColor(event.winnerId);
@@ -402,7 +396,7 @@ export function ReviewBlock({ event, onAction }: { event: ReviewEvent; onAction:
 }
 
 
-// @kern-source: controls:408
+// @kern-source: controls:400
 
 export function CesarPicker({ engines, currentCesar, onSelect, onCancel }: { engines: string[]; currentCesar: string; onSelect: (engineId: string) => void; onCancel: () => void }) {
   const [cursor, setCursor] = useState<number>(0);

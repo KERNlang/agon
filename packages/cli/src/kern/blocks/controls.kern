@@ -3,6 +3,7 @@
 import from="react" names="useState,useMemo"
 import from="ink" names="Box,Text,useInput"
 import from="../signals/intent.js" names="SLASH_COMMANDS"
+import from="../signals/app-input.js" names="getSlashMatches,movePickerCursor"
 import from="./rendering.js" names="contentWidth,engineColor,color256toHex,DiffLine,CODE_RAIL,CODE_RAIL_COLOR"
 import from="./output-format.js" names="ENGINE_COLORS"
 import from="../signals/icons.js" names="icons"
@@ -25,26 +26,17 @@ screen name=SlashPicker target=ink
   state name=filter type=string initial="''"
   render
     handler <<<
-      const normalizedFilter = filter.trim().toLowerCase();
-      const filtered = commands
-        .map((c: any) => {
-          const name = c.cmd.toLowerCase().replace(/^\//, '');
-          const startsWith = normalizedFilter ? name.startsWith(normalizedFilter) : true;
-          const includes = normalizedFilter ? name.includes(normalizedFilter) : true;
-          const rank = !normalizedFilter ? 0 : startsWith ? 0 : includes ? 1 : 2;
-          return { ...c, rank };
-        })
-        .filter((c: any) => c.rank < 2)
-        .sort((a: any, b: any) => a.rank - b.rank || a.cmd.localeCompare(b.cmd));
+      const filtered = useMemo(() => getSlashMatches(filter, commands), [filter, commands]);
+      const currentIndex = filtered.length === 0 ? 0 : Math.min(selectedIndex, filtered.length - 1);
 
       useInput((input: string, key: any) => {
         if (key.escape || (key.ctrl && input === 'c')) { onCancel(); return; }
         if (key.return) {
-          if (filtered[selectedIndex]) onSelect(filtered[selectedIndex].cmd);
+          if (filtered[currentIndex]) onSelect(filtered[currentIndex].cmd);
           return;
         }
-        if (key.upArrow) { setSelectedIndex((i: number) => Math.max(0, i - 1)); return; }
-        if (key.downArrow) { setSelectedIndex((i: number) => Math.min(filtered.length - 1, i + 1)); return; }
+        if (key.upArrow) { setSelectedIndex(movePickerCursor('up', currentIndex, filtered.length)); return; }
+        if (key.downArrow) { setSelectedIndex(movePickerCursor('down', currentIndex, filtered.length)); return; }
         if (key.backspace || key.delete) {
           if (!filter) { onCancel(); return; }
           setFilter((f: string) => f.slice(0, -1));
@@ -52,8 +44,8 @@ screen name=SlashPicker target=ink
           return;
         }
         if (key.tab) {
-          if (filtered[selectedIndex]) {
-            setFilter(filtered[selectedIndex].cmd.replace(/^\//, ''));
+          if (filtered[currentIndex]) {
+            setFilter(filtered[currentIndex].cmd.replace(/^\//, ''));
             setSelectedIndex(0);
           }
           return;
@@ -84,8 +76,8 @@ screen name=SlashPicker target=ink
                 const i = start + vi;
                 return (
                   <Box key={cmd.cmd}>
-                    <Text color={i === selectedIndex ? 'yellow' : undefined} bold={i === selectedIndex}>
-                      {i === selectedIndex ? ' \u276f ' : '   '}{cmd.cmd.padEnd(16)}
+                    <Text color={i === currentIndex ? 'yellow' : undefined} bold={i === currentIndex}>
+                      {i === currentIndex ? ' \u276f ' : '   '}{cmd.cmd.padEnd(16)}
                     </Text>
                     <Text dimColor>{cmd.desc}</Text>
                   </Box>

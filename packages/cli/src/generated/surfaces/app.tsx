@@ -320,7 +320,7 @@ export function App({  }: {  }) {
           const updatedValue = nextValue.slice(0, change.start) + replacement + nextValue.slice(change.start + change.inserted.length);
           setInputValue(updatedValue);
           setInputKey((k: number) => k + 1);
-  }, [inputValue, slashPickerOpen, enginePickerOpen, modelPickerOpen, questionState, planModeQueued]);
+  }, [inputValue,slashPickerOpen,enginePickerOpen,modelPickerOpen,questionState,planModeQueued]);
 
   const handleSubmit = useCallback(async (value:string) => {
           let input = cleanSubmitValue(value);
@@ -829,9 +829,13 @@ export function App({  }: {  }) {
                   {mode !== 'chat' && (<Text><Text color={mode === 'campfire' ? '#f97316' : mode === 'brainstorm' ? '#22d3ee' : '#a78bfa'} bold>{mode === 'campfire' ? icons().campfire : mode === 'brainstorm' ? icons().brainstorm : icons().tribunal}{' '}{mode}</Text><Text dimColor>{' │ '}</Text></Text>)}
                   <Text color={mode === 'chat' ? (planModeQueued || (activePlan && activePlan.state === 'planning') ? '#c084fc' : '#585858') : '#fbbf24'}>{mode === 'chat' ? (planModeQueued ? '◈ ' : '> ') : icons().prompt + ' '}</Text>
                   <Box flexGrow={1}>
-                    <TextInput key={inputKey} value={inputValue} onChange={handleInputChange} onSubmit={handleSubmit}
-                      placeholder={replState === 'idle' ? mode === 'chat' ? '' : mode === 'campfire' ? 'What should we think about?' : mode === 'brainstorm' ? 'What question for the engines?' : 'What should they debate?' : ''} />
-                    {(() => { const ghost = getGhostCompletion(inputValue, allSlashCommands, registry.availableIds()); return ghost ? <Text dimColor>{ghost}</Text> : null; })()}
+                    {slashPickerOpen ? (
+                      <Text dimColor>{inputValue || '/'}</Text>
+                    ) : (
+                      <><TextInput key={inputKey} value={inputValue} onChange={handleInputChange} onSubmit={handleSubmit}
+                        placeholder={replState === 'idle' ? mode === 'chat' ? '' : mode === 'campfire' ? 'What should we think about?' : mode === 'brainstorm' ? 'What question for the engines?' : 'What should they debate?' : ''} />
+                      {(() => { const ghost = getGhostCompletion(inputValue, allSlashCommands, registry.availableIds()); return ghost ? <Text dimColor>{ghost}</Text> : null; })()}</>
+                    )}
                   </Box>
                 </Box>
               )}
@@ -857,7 +861,7 @@ export function App({  }: {  }) {
 }
 
 
-// @kern-source: app:823
+// @kern-source: app:833
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

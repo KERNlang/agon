@@ -592,7 +592,7 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
           else if (parsedConfidence >= CONFIDENCE_TIERS.brainstorm && parsedConfidence < CONFIDENCE_TIERS.nero) {
             const alreadyEscalated = ctx.cesar!.lastEscalation !== null;
             const inputLower = input.trim().toLowerCase();
-            const isOperational = /^(commit|push|pull|merge|rebase|status|deploy|ship|release|yes|no|ok|y|n|good|looks good|lgtm|do it|go ahead|please|thanks|done|next)\b/i.test(inputLower);
+            const isOperational = /^(commit|push|pull|merge|rebase|status|deploy|ship|release|yes|no|ok|y|n|go|good|looks good|lgtm|do it|do|go ahead|please|thanks|done|next|sure|fine|perfect|great|cool|nice|ship it)\b/i.test(inputLower);
             const hasPlan = /^\s*(\d+[\.\)]\s|[-*]\s).+/m.test(response) && (response.match(/^\s*\d+[\.\)]\s/gm) || []).length >= 2;
             const hasCodeBlock = /```[\s\S]+?```/.test(response);
             const isActionable = hasPlan || hasCodeBlock;

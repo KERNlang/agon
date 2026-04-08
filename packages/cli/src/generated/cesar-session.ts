@@ -254,7 +254,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
           console.warn(`[agon] ProposePlan handling failed: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
-      return '[PLAN_PROPOSED] Plan submitted for user approval. Stop and wait for their decision.';
+      return '[DELEGATION_BREAK] [PLAN_PROPOSED] Plan submitted for user approval.';
     }
   
     // ── ReportConfidence signal tool — record value, don't force delegation ──

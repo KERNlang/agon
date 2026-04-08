@@ -1,0 +1,49 @@
+// @kern-source: plan-cost-estimator:1
+import { estimateCost } from './token-tracker.js';
+
+// @kern-source: plan-cost-estimator:3
+export interface CostEstimate {
+  tokens: number;
+  costUsd: number;
+}
+
+// @kern-source: plan-cost-estimator:7
+export class PlanCostEstimator {
+  private history: { type: string, tokens: number, costUsd: number }[] = [];
+
+  estimate(stepType: string, engines: string[]): CostEstimate {
+    const typeHistory = this.history.filter((h) => h.type === stepType);
+    if (typeHistory.length >= 2) {
+      const avgTokens = Math.round(typeHistory.reduce((s, h) => s + h.tokens, 0) / typeHistory.length);
+      const avgCost = typeHistory.reduce((s, h) => s + h.costUsd, 0) / typeHistory.length;
+      return { tokens: avgTokens, costUsd: avgCost };
+    }
+    
+    const DEFAULTS: Record<string, number> = {
+      self: 2000, delegate: 5000, brainstorm: 8000, campfire: 6000,
+      tribunal: 10000, forge: 15000, teamforge: 20000, pipeline: 30000,
+    };
+    const perEngine = DEFAULTS[stepType] ?? 5000;
+    const engineCount = Math.max(engines.length, 1);
+    const tokens = perEngine * engineCount;
+    const costPerEngine = engines[0] ? estimateCost(engines[0], perEngine) : estimateCost('claude', perEngine);
+    const costUsd = costPerEngine * engineCount;
+    return { tokens, costUsd };
+  }
+
+  recordStepCompletion(stepType: string, actualTokens: number, actualCostUsd: number): void {
+    this.history.push({ type: stepType, tokens: actualTokens, costUsd: actualCostUsd });
+    const typeEntries = this.history.filter((h) => h.type === stepType);
+    if (typeEntries.length > 50) {
+      const oldest = this.history.findIndex((h) => h.type === stepType);
+      if (oldest >= 0) this.history.splice(oldest, 1);
+    }
+  }
+
+  reset(): void {
+    this.history = [];
+  }
+}
+
+export const planCostEstimator = new PlanCostEstimator();
+

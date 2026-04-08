@@ -14,7 +14,7 @@ import type { CesarPlan, CesarStepResult } from '@agon/core';
 import { buildStepExecutors } from '../handlers/plan-mode.js';
 
 // @kern-source: dispatch:10
-import { detectIntent } from './intent.js';
+import { detectIntent, FITNESS_PATTERN } from './intent.js';
 
 // @kern-source: dispatch:11
 import type { Dispatch, HandlerContext } from '../../handlers/types.js';
@@ -112,6 +112,16 @@ export function handleModeSwitch(intentType: string, topic: string|undefined, qu
 }
 
 // @kern-source: dispatch:86
+export function extractExecutionSpec(input: string): { task:string; fitnessCmd:string|null } {
+  const fitnessMatch = FITNESS_PATTERN.exec(input);
+  const fitnessCmd = fitnessMatch ? fitnessMatch[1].trim() : null;
+  const task = fitnessCmd
+    ? input.replace(FITNESS_PATTERN, '').trim()
+    : input.trim();
+  return { task, fitnessCmd };
+}
+
+// @kern-source: dispatch:86
 export async function routeWithCesar(input: string, images: ImageAttachment[], cb: DispatchCallbacks): Promise<boolean> {
   cb.setPendingImages(() => []);
   try {
@@ -134,20 +144,29 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
         }
       }
   
-      // P1 fix: enrich input with user-added context from delegation prompt
-      const taskInput = result.reasoning && result.reasoning.includes('User context:')
-        ? `${input}\n\n${result.reasoning.slice(result.reasoning.indexOf('User context:'))}`
-        : input;
+      const executionSpec = extractExecutionSpec(input);
+      const userContext = result.reasoning && result.reasoning.includes('User context:')
+        ? result.reasoning.slice(result.reasoning.indexOf('User context:')).trim()
+        : '';
+      const reasoningTask = result.reasoning && !result.reasoning.includes('User context:')
+        ? result.reasoning.trim()
+        : '';
+      const baseTask = reasoningTask
+        || ((routeAction === 'forge' || routeAction === 'team-forge' || routeAction === 'pipeline')
+          ? (executionSpec.task || input).trim()
+          : input);
+      const taskInput = userContext ? `${baseTask}\n\n${userContext}` : baseTask;
+      const fitnessCmd = result.fitnessCmd ?? executionSpec.fitnessCmd;
       cb.dispatch({ type: 'info', message: `Cesar → ${routeAction}${hardened ? ' (hardened)' : ''}${tMode ? ` [${tMode}]` : ''}` });
       switch (routeAction) {
         case 'build':
           cb.runAsJob('build', label, () => handleBuild(taskInput, cb.dispatch, cb.ctx));
           return true;
         case 'forge':
-          cb.runAsJob('forge', label, () => handleForge(taskInput, null, cb.dispatch, cb.ctx, undefined, hardened));
+          cb.runAsJob('forge', label, () => handleForge(taskInput, fitnessCmd, cb.dispatch, cb.ctx, undefined, hardened));
           return true;
         case 'team-forge': {
-          const tfFitness = await cb.askQuestion('What command tests this?');
+          const tfFitness = fitnessCmd ?? await cb.askQuestion('What command tests this?');
           if (!tfFitness.trim()) { cb.dispatch({ type: 'warning', message: 'Team-forge needs a test command.' }); break; }
           cb.runAsJob('team-forge', label, () => handleTeamForge(taskInput, tfFitness.trim(), cb.dispatch, cb.ctx, undefined));
           return true;
@@ -168,7 +187,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
           cb.runAsJob('campfire', label, () => handleCampfire(taskInput, cb.dispatch, cb.ctx));
           return true;
         case 'pipeline':
-          cb.runAsJob('pipeline', label, () => handlePipeline(taskInput, cb.dispatch, cb.ctx));
+          cb.runAsJob('pipeline', label, () => handlePipeline(taskInput, cb.dispatch, cb.ctx, fitnessCmd ?? undefined));
           return true;
       }
     }
@@ -192,16 +211,21 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
       const answer = await cb.askQuestion(`Recovered delegation: ${confirmLabel}${crashDel.tribunalMode ? ` [${crashDel.tribunalMode}]` : ''} — run it?`);
       if (answer === 'y' || answer === '1') {
         const label = input.slice(0, 40);
+        const executionSpec = extractExecutionSpec(input);
+        const recoveredTask = ['forge', 'team-forge', 'pipeline'].includes(action)
+          ? executionSpec.task || input
+          : input;
+        const recoveredFitness = crashDel.fitnessCmd ?? executionSpec.fitnessCmd;
         cb.dispatch({ type: 'info', message: `Cesar → ${action} (recovered)` });
         switch (action) {
-          case 'forge': cb.runAsJob('forge', label, () => handleForge(input, null, cb.dispatch, cb.ctx, undefined, crashDel.hardened ?? false)); return true;
-          case 'brainstorm': cb.runAsJob('brainstorm', label, () => handleBrainstorm(input, cb.dispatch, cb.ctx)); return true;
-          case 'tribunal': cb.runAsJob('tribunal', label, () => handleTribunal(input, cb.dispatch, cb.ctx, crashDel.tribunalMode)); return true;
-          case 'campfire': cb.runAsJob('campfire', label, () => handleCampfire(input, cb.dispatch, cb.ctx)); return true;
-          case 'pipeline': cb.runAsJob('pipeline', label, () => handlePipeline(input, cb.dispatch, cb.ctx)); return true;
-          case 'team-forge': { const tf = await cb.askQuestion('What command tests this?'); if (tf.trim()) { cb.runAsJob('team-forge', label, () => handleTeamForge(input, tf.trim(), cb.dispatch, cb.ctx, undefined)); return true; } break; }
-          case 'team-brainstorm': cb.runAsJob('team-brainstorm', label, () => handleTeamBrainstorm(input, cb.dispatch, cb.ctx)); return true;
-          case 'team-tribunal': cb.runAsJob('team-tribunal', label, () => handleTeamTribunal(input, cb.dispatch, cb.ctx, crashDel.tribunalMode)); return true;
+          case 'forge': cb.runAsJob('forge', label, () => handleForge(recoveredTask, recoveredFitness, cb.dispatch, cb.ctx, undefined, crashDel.hardened ?? false)); return true;
+          case 'brainstorm': cb.runAsJob('brainstorm', label, () => handleBrainstorm(recoveredTask, cb.dispatch, cb.ctx)); return true;
+          case 'tribunal': cb.runAsJob('tribunal', label, () => handleTribunal(recoveredTask, cb.dispatch, cb.ctx, crashDel.tribunalMode)); return true;
+          case 'campfire': cb.runAsJob('campfire', label, () => handleCampfire(recoveredTask, cb.dispatch, cb.ctx)); return true;
+          case 'pipeline': cb.runAsJob('pipeline', label, () => handlePipeline(recoveredTask, cb.dispatch, cb.ctx, recoveredFitness ?? undefined)); return true;
+          case 'team-forge': { const tf = recoveredFitness ?? await cb.askQuestion('What command tests this?'); if (tf.trim()) { cb.runAsJob('team-forge', label, () => handleTeamForge(recoveredTask, tf.trim(), cb.dispatch, cb.ctx, undefined)); return true; } break; }
+          case 'team-brainstorm': cb.runAsJob('team-brainstorm', label, () => handleTeamBrainstorm(recoveredTask, cb.dispatch, cb.ctx)); return true;
+          case 'team-tribunal': cb.runAsJob('team-tribunal', label, () => handleTeamTribunal(recoveredTask, cb.dispatch, cb.ctx, crashDel.tribunalMode)); return true;
         }
       }
     }
@@ -241,18 +265,22 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
         // askQuestion returns the answer as a string; check for 'y' or the key value
         if (answer === 'y' || answer === '1') {
           const label = input.slice(0, 40);
-          // parseSuggestion already includes team- prefix in action (e.g. 'team-forge')
           const action = fallbackSuggestion.action;
+          const executionSpec = extractExecutionSpec(input);
+          const fallbackTask = ['forge', 'team-forge', 'pipeline'].includes(action)
+            ? executionSpec.task || input
+            : input;
+          const fallbackFitness = executionSpec.fitnessCmd;
           cb.dispatch({ type: 'info', message: `Cesar → ${action}` });
           switch (action) {
-            case 'forge': cb.runAsJob('forge', label, () => handleForge(input, null, cb.dispatch, cb.ctx, undefined, fallbackSuggestion.hardened ?? false)); return true;
-            case 'brainstorm': cb.runAsJob('brainstorm', label, () => handleBrainstorm(input, cb.dispatch, cb.ctx)); return true;
-            case 'tribunal': cb.runAsJob('tribunal', label, () => handleTribunal(input, cb.dispatch, cb.ctx, fallbackSuggestion.tribunalMode)); return true;
-            case 'campfire': cb.runAsJob('campfire', label, () => handleCampfire(input, cb.dispatch, cb.ctx)); return true;
-            case 'pipeline': cb.runAsJob('pipeline', label, () => handlePipeline(input, cb.dispatch, cb.ctx)); return true;
-            case 'team-forge': { const tf = await cb.askQuestion('What command tests this?'); if (tf.trim()) { cb.runAsJob('team-forge', label, () => handleTeamForge(input, tf.trim(), cb.dispatch, cb.ctx, undefined)); return true; } break; }
-            case 'team-brainstorm': cb.runAsJob('team-brainstorm', label, () => handleTeamBrainstorm(input, cb.dispatch, cb.ctx)); return true;
-            case 'team-tribunal': cb.runAsJob('team-tribunal', label, () => handleTeamTribunal(input, cb.dispatch, cb.ctx, fallbackSuggestion.tribunalMode)); return true;
+            case 'forge': cb.runAsJob('forge', label, () => handleForge(fallbackTask, fallbackFitness, cb.dispatch, cb.ctx, undefined, fallbackSuggestion.hardened ?? false)); return true;
+            case 'brainstorm': cb.runAsJob('brainstorm', label, () => handleBrainstorm(fallbackTask, cb.dispatch, cb.ctx)); return true;
+            case 'tribunal': cb.runAsJob('tribunal', label, () => handleTribunal(fallbackTask, cb.dispatch, cb.ctx, fallbackSuggestion.tribunalMode)); return true;
+            case 'campfire': cb.runAsJob('campfire', label, () => handleCampfire(fallbackTask, cb.dispatch, cb.ctx)); return true;
+            case 'pipeline': cb.runAsJob('pipeline', label, () => handlePipeline(fallbackTask, cb.dispatch, cb.ctx, fallbackFitness ?? undefined)); return true;
+            case 'team-forge': { const tf = fallbackFitness ?? await cb.askQuestion('What command tests this?'); if (tf.trim()) { cb.runAsJob('team-forge', label, () => handleTeamForge(fallbackTask, tf.trim(), cb.dispatch, cb.ctx, undefined)); return true; } break; }
+            case 'team-brainstorm': cb.runAsJob('team-brainstorm', label, () => handleTeamBrainstorm(fallbackTask, cb.dispatch, cb.ctx)); return true;
+            case 'team-tribunal': cb.runAsJob('team-tribunal', label, () => handleTeamTribunal(fallbackTask, cb.dispatch, cb.ctx, fallbackSuggestion.tribunalMode)); return true;
           }
         }
         return false;
@@ -855,4 +883,3 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
   _emitPost();
   return { handled: true, ranAsJob: false };
 }
-

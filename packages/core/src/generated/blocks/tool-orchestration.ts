@@ -10,6 +10,7 @@ export function createForgeTool(): ToolHandler {
       type: 'object',
       properties: {
         task: { type: 'string', description: 'Brief description of the task to forge' },
+        fitnessCmd: { type: 'string', description: 'Optional test or fitness command to preserve when routing to forge.' },
         hardened: { type: 'boolean', description: 'Set true for forge-hardened (gauntlet verification). Optional.' },
         team: { type: 'boolean', description: 'Set true for team-forge (teams compete). Optional.' },
       },
@@ -254,6 +255,7 @@ export function createPipelineTool(): ToolHandler {
       type: 'object',
       properties: {
         task: { type: 'string', description: 'The task description' },
+        fitnessCmd: { type: 'string', description: 'Optional test or fitness command to preserve for the pipeline run.' },
       },
       required: ['task'],
     },
@@ -279,4 +281,3 @@ export function createPipelineTool(): ToolHandler {
   
   return { definition, validate, checkPermission, execute };
 }
-

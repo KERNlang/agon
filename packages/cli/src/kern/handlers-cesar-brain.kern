@@ -164,6 +164,19 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
             } else if (toolStatus === 'native') {
               dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'running' } as any);
             } else if (toolStatus === 'running' && meta.input && toolRegistry && !(ctx as any)._hasNativeTools) {
+              // Intercept orchestration signal tools — don't execute as workspace tools
+              const EAGER_ORCH = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline']);
+              if (EAGER_ORCH.has(toolName)) {
+                (ctx as any)._pendingDelegation = {
+                  action: toolName.toLowerCase(),
+                  reasoning: '',
+                  hardened: false,
+                  team: false,
+                  createdAt: Date.now(),
+                };
+                dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'done' } as any);
+                continue;
+              }
               dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'running' } as any);
               if (!eagerToolCtx) eagerToolCtx = createEagerToolContext(ctx, config, abort.signal, dispatch);
               eagerPromises.push(executeEagerTool(toolName, meta, toolRegistry, eagerToolCtx, dispatch, cesarEngineId));
@@ -475,6 +488,7 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
           const _lastToolInputs: Record<string, string> = {};
           const loopResult = await runToolLoop(
             async (message: string) => {
+              if ((ctx as any)._pendingDelegation) return '[Delegation pending]';
               if (!session.alive || abort.signal.aborted) return '';
               dispatch({ type: 'spinner-start', message: 'Cesar processing results…', color });
               let nextResponse = '';
@@ -499,6 +513,18 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
                 _lastToolInputs[name] = JSON.stringify(inp);
                 _toolsUsed.push(name);
                 dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: name, input: JSON.stringify(inp), status: 'running' });
+                // Intercept orchestration signal tools — set _pendingDelegation
+                const LOOP_ORCH = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline']);
+                if (LOOP_ORCH.has(name)) {
+                  (ctx as any)._pendingDelegation = {
+                    action: name.toLowerCase(),
+                    reasoning: (inp as any).task ?? (inp as any).question ?? (inp as any).topic ?? '',
+                    hardened: (inp as any).hardened ?? false,
+                    tribunalMode: (inp as any).mode,
+                    team: (inp as any).team ?? false,
+                    createdAt: Date.now(),
+                  };
+                }
               },
               onToolResult: (name: string, result: any) => {
                 const out = result.result.ok ? result.result.content : result.result.error;
@@ -519,6 +545,45 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
           );
           response = loopResult.finalText.trim();
           ranToolLoop = true;
+        }
+      }
+
+      // ── Post-tool-loop: check delegation set during XML tool loop ──
+      const postLoopDel = (ctx as any)._pendingDelegation;
+      if (postLoopDel) {
+        delete (ctx as any)._pendingDelegation;
+        if (streaming) dispatch({ type: 'streaming-end', engineId: cesarEngineId });
+        if (!streaming) dispatch({ type: 'spinner-stop' });
+        appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
+        appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
+        tracker.record(cesarEngineId, input, response);
+        const delResult = await promptDelegation(postLoopDel.action, dispatch, postLoopDel.hardened, postLoopDel.tribunalMode, postLoopDel.team);
+        if (delResult.approved) {
+          const finalAction = delResult.action ?? postLoopDel.action;
+          let action = postLoopDel.team ? `team-${finalAction}` : finalAction;
+          const reasoning = delResult.userContext ? `${postLoopDel.reasoning ?? ''}\n\nUser context: ${delResult.userContext}` : postLoopDel.reasoning;
+          return { delegated: true, responded: true, action, reasoning, hardened: delResult.hardened ?? postLoopDel.hardened, tribunalMode: delResult.tribunalMode ?? postLoopDel.tribunalMode, team: delResult.team ?? postLoopDel.team };
+        }
+        return { delegated: false, responded: true };
+      }
+
+      // ── Post-tool-loop: re-parse suggestion on updated response ──
+      if (ranToolLoop && !finalSuggestion.action) {
+        const postLoopSuggestion = parseSuggestion(response);
+        if (postLoopSuggestion.action) {
+          if (streaming) { dispatch({ type: 'streaming-end', engineId: cesarEngineId }); streaming = false; }
+          if (!streaming) dispatch({ type: 'spinner-stop' });
+          appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
+          appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
+          tracker.record(cesarEngineId, input, response);
+          if (postLoopSuggestion.rest) dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: postLoopSuggestion.rest });
+          const delResult = await promptDelegation(postLoopSuggestion.action, dispatch, postLoopSuggestion.hardened, postLoopSuggestion.tribunalMode, postLoopSuggestion.team);
+          if (delResult.approved) {
+            const finalAction = delResult.action ?? postLoopSuggestion.action;
+            const reasoning = delResult.userContext ? `${postLoopSuggestion.rest ?? ''}\n\nUser context: ${delResult.userContext}` : postLoopSuggestion.rest;
+            return { delegated: true, responded: true, action: finalAction, reasoning, hardened: delResult.hardened ?? postLoopSuggestion.hardened, tribunalMode: delResult.tribunalMode ?? postLoopSuggestion.tribunalMode, team: delResult.team ?? postLoopSuggestion.team };
+          }
+          return { delegated: false, responded: true };
         }
       }
 

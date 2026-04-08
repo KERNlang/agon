@@ -26,9 +26,9 @@ import from="../signals/dispatch.js" names="dispatchIntent,handleModeSwitch"
 import from="../signals/dispatch.js" names="DispatchCallbacks" types=true
 import from="../signals/output.js" names="handleOutputEvent,clearPermissionQueue"
 import from="../signals/output.js" names="OutputActions,OutputState" types=true
-import from="../signals/app-input.js" names="cleanInputValue,cleanSubmitValue,findInputChange,navigateHistory,resolveEscapeAction"
+import from="../signals/app-input.js" names="cleanInputValue,cleanSubmitValue,findInputChange,navigateHistory,resolveEscapeAction,shouldQueuePlanModeOnTab"
 import from="../blocks/review.js" names="handleReviewAction"
-import from="../../components.js" names="SpinnerBlock,EngineProgressView,StatusLine,StatusBar,CesarStatusStrip,OutputBlockView,ToolCallGroup,SlashPicker,EnginePicker,ModelPicker,ReviewBlock,BackgroundJobRail,RenderedSegments,CesarPicker,contentWidth,engineColor"
+import from="../../components.js" names="SpinnerBlock,EngineProgressView,StatusBar,CesarStatusStrip,OutputBlockView,ToolCallGroup,SlashPicker,EnginePicker,ModelPicker,ReviewBlock,BackgroundJobRail,RenderedSegments,CesarPicker,contentWidth,engineColor"
 import from="../../components.js" names="OutputBlock,ReviewEvent" types=true
 import from="node:path" names="join,dirname"
 import from="node:url" names="fileURLToPath"
@@ -326,12 +326,13 @@ screen name=App target=ink
     >>>
 
   // ── Input handlers ──
-  callback name=handleInputChange params="value:string" deps="inputValue"
+  callback name=handleInputChange params="value:string" deps="inputValue,slashPickerOpen,enginePickerOpen,modelPickerOpen,questionState,planModeQueued"
     handler <<<
       const nextValue = cleanInputValue(value);
 
       // "/" typed into empty input → open slash picker, swallow the character
       if (!inputValue && nextValue === '/' && !slashPickerOpen && !enginePickerOpen && !modelPickerOpen && !questionState && !justPastedRef.current) {
+        if (planModeQueued) setPlanModeQueued(false);
         setSlashPickerOpen(true);
         setInputKey((k: number) => k + 1);
         return;
@@ -370,12 +371,16 @@ screen name=App target=ink
       setInputKey((k: number) => k + 1);
     >>>
 
-  callback name=handleSubmit async=true params="value:string" deps="replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus"
+  callback name=handleSubmit async=true params="value:string" deps="replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,planModeQueued"
     handler <<<
       let input = cleanSubmitValue(value);
       if (!input) return;
       // Bare "/" → open slash picker flyout, don't dump text list
-      if (input === '/') { setSlashPickerOpen(true); return; }
+      if (input === '/') {
+        if (planModeQueued) setPlanModeQueued(false);
+        setSlashPickerOpen(true);
+        return;
+      }
       input = expandPastePlaceholders(input, pasteHashesRef.current);
       pasteHashesRef.current.clear();
       pasteCountRef.current = 0;
@@ -523,6 +528,7 @@ screen name=App target=ink
 
   callback name=handleSlashSelect params="cmd:string"
     handler <<<
+      setPlanModeQueued(false);
       setSlashPickerOpen(false);
       setInputValue(cmd + ' ');
       setInputKey((k: number) => k + 1);
@@ -579,8 +585,7 @@ screen name=App target=ink
       if ((key.tab || input === '\t') && !slashPickerOpen && !enginePickerOpen && !questionState && !reviewEvent) {
         const ghost = getGhostCompletion(inputValue, allSlashCommands, registry.availableIds());
         if (ghost) { setInputValue(inputValue + ghost + ' '); setInputKey((k: number) => k + 1); return; }
-        if (replState === 'idle') {
-          if (activePlan && ['planning', 'awaiting_approval', 'running', 'paused'].includes(activePlan.state)) return;
+        if (shouldQueuePlanModeOnTab({ replState, inputValue, activePlanState: activePlan?.state ?? null })) {
           setPlanModeQueued((prev: boolean) => !prev);
           return;
         }
@@ -769,9 +774,7 @@ screen name=App target=ink
             }}
             onCancel={() => setCesarPickerOpen(false)} />
         )}
-        {liveSpinner && (mode === 'chat'
-          ? <StatusLine startTime={chatStartTimeRef.current || Date.now()} engineId={liveSpinner.engineId} color={liveSpinner.color} />
-          : <SpinnerBlock message={liveSpinner.message} color={liveSpinner.color} />)}
+        {liveSpinner && mode !== 'chat' && <SpinnerBlock message={liveSpinner.message} color={liveSpinner.color} />}
         {!enginePickerOpen && !modelPickerOpen && !cesarPickerOpen && (
           <Box flexDirection="column" paddingX={1} marginTop={1}>
             {slashPickerOpen && <SlashPicker commands={allSlashCommands} onSelect={handleSlashSelect} onCancel={() => setSlashPickerOpen(false)} />}
@@ -793,8 +796,7 @@ screen name=App target=ink
             ) : (
               <Box borderStyle={mode === 'chat' ? 'round' : 'single'} borderColor={mode === 'chat' ? '#585858' : 'gray'} borderLeft={mode !== 'chat'} borderRight={mode !== 'chat'} borderTop borderBottom paddingX={1} width="100%">
                 {mode !== 'chat' && (<Text><Text color={mode === 'campfire' ? '#f97316' : mode === 'brainstorm' ? '#22d3ee' : '#a78bfa'} bold>{mode === 'campfire' ? icons().campfire : mode === 'brainstorm' ? icons().brainstorm : icons().tribunal}{' '}{mode}</Text><Text dimColor>{' │ '}</Text></Text>)}
-                {(planModeQueued || (activePlan && ['planning', 'awaiting_approval', 'running', 'paused'].includes(activePlan.state))) && (<Text><Text color="#c084fc" bold>{'◈ plan'}</Text><Text dimColor>{planModeQueued ? ' ready' : activePlan.state === 'planning' ? ' thinking…' : activePlan.state === 'awaiting_approval' ? ' review' : activePlan.state === 'running' ? ' executing…' : ' paused'}</Text><Text dimColor>{' │ '}</Text></Text>)}
-                <Text color={mode === 'chat' ? (planModeQueued || (activePlan && activePlan.state === 'planning') ? '#c084fc' : '#585858') : '#fbbf24'}>{mode === 'chat' ? '> ' : icons().prompt + ' '}</Text>
+                <Text color={mode === 'chat' ? (planModeQueued || (activePlan && activePlan.state === 'planning') ? '#c084fc' : '#585858') : '#fbbf24'}>{mode === 'chat' ? (planModeQueued ? '◈ ' : '> ') : icons().prompt + ' '}</Text>
                 <Box flexGrow={1}>
                   <TextInput key={inputKey} value={inputValue} onChange={handleInputChange} onSubmit={handleSubmit}
                     placeholder={replState === 'idle' ? mode === 'chat' ? '' : mode === 'campfire' ? 'What should we think about?' : mode === 'brainstorm' ? 'What question for the engines?' : 'What should they debate?' : ''} />

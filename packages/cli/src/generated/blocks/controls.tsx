@@ -32,7 +32,17 @@ export function SlashPicker({ commands, onSelect, onCancel }: { commands: typeof
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
   const [filter, setFilter] = useState<string>('');
 
-        const filtered = commands.filter((c: any) => c.cmd.toLowerCase().includes(filter.toLowerCase()));
+        const normalizedFilter = filter.trim().toLowerCase();
+        const filtered = commands
+          .map((c: any) => {
+            const name = c.cmd.toLowerCase().replace(/^\//, '');
+            const startsWith = normalizedFilter ? name.startsWith(normalizedFilter) : true;
+            const includes = normalizedFilter ? name.includes(normalizedFilter) : true;
+            const rank = !normalizedFilter ? 0 : startsWith ? 0 : includes ? 1 : 2;
+            return { ...c, rank };
+          })
+          .filter((c: any) => c.rank < 2)
+          .sort((a: any, b: any) => a.rank - b.rank || a.cmd.localeCompare(b.cmd));
   
         useInput((input: string, key: any) => {
           if (key.escape || (key.ctrl && input === 'c')) { onCancel(); return; }
@@ -43,12 +53,16 @@ export function SlashPicker({ commands, onSelect, onCancel }: { commands: typeof
           if (key.upArrow) { setSelectedIndex((i: number) => Math.max(0, i - 1)); return; }
           if (key.downArrow) { setSelectedIndex((i: number) => Math.min(filtered.length - 1, i + 1)); return; }
           if (key.backspace || key.delete) {
+            if (!filter) { onCancel(); return; }
             setFilter((f: string) => f.slice(0, -1));
             setSelectedIndex(0);
             return;
           }
           if (key.tab) {
-            if (filtered[selectedIndex]) onSelect(filtered[selectedIndex].cmd);
+            if (filtered[selectedIndex]) {
+              setFilter(filtered[selectedIndex].cmd.replace(/^\//, ''));
+              setSelectedIndex(0);
+            }
             return;
           }
           if (input && !key.ctrl && !key.meta && input.length === 1 && input >= ' ') {
@@ -63,7 +77,7 @@ export function SlashPicker({ commands, onSelect, onCancel }: { commands: typeof
               <Text color="yellow">{'/ '}</Text>
               <Text>{filter}</Text>
               <Text dimColor>{'\u2588'}</Text>
-              <Text dimColor>{'  \u2191\u2193 navigate  Enter select  Esc cancel'}</Text>
+              <Text dimColor>{'  \u2191\u2193 navigate  Tab fill  Enter select  Esc cancel'}</Text>
             </Box>
             <Text dimColor>{'\u2500'.repeat(48)}</Text>
             {filtered.length === 0 ? (
@@ -91,7 +105,7 @@ export function SlashPicker({ commands, onSelect, onCancel }: { commands: typeof
 }
 
 
-// @kern-source: controls:88
+// @kern-source: controls:102
 
 export function EnginePicker({ available, initialSelected, userEngines, onConfirm, onCancel, onRemove }: { available: string[]; initialSelected: string[]; userEngines: Set<string>; onConfirm: (selected: string[]) => void; onCancel: () => void; onRemove: (engineId: string) => void }) {
   const [cursor, setCursor] = useState<number>(0);
@@ -176,7 +190,7 @@ export function EnginePicker({ available, initialSelected, userEngines, onConfir
 }
 
 
-// @kern-source: controls:179
+// @kern-source: controls:193
 export interface ModelPickerEntry {
   providerId: string;
   providerName: string;
@@ -190,7 +204,7 @@ export interface ModelPickerEntry {
   costOutput?: number;
 }
 
-// @kern-source: controls:191
+// @kern-source: controls:205
 
 export function ModelPicker({ entries, onSelect, onCancel, loading }: { entries: ModelPickerEntry[]; onSelect: (entry: ModelPickerEntry) => void; onCancel: () => void; loading?: boolean }) {
   const [cursor, setCursor] = useState<number>(0);
@@ -347,7 +361,7 @@ export function ModelPicker({ entries, onSelect, onCancel, loading }: { entries:
 }
 
 
-// @kern-source: controls:352
+// @kern-source: controls:366
 
 export function ReviewBlock({ event, onAction }: { event: ReviewEvent; onAction: (action: 'apply' | 'edit' | 'reject' | 'copy') => void }) {
         const eColor = engineColor(event.winnerId);
@@ -388,7 +402,7 @@ export function ReviewBlock({ event, onAction }: { event: ReviewEvent; onAction:
 }
 
 
-// @kern-source: controls:394
+// @kern-source: controls:408
 
 export function CesarPicker({ engines, currentCesar, onSelect, onCancel }: { engines: string[]; currentCesar: string; onSelect: (engineId: string) => void; onCancel: () => void }) {
   const [cursor, setCursor] = useState<number>(0);

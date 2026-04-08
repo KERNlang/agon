@@ -123,9 +123,7 @@ export function StatusBar({ config, chatSession, explorationMode, toolOutputExpa
         return (
           <Box paddingTop={0}>
             <Text>
-              <Text color={cesarColor} bold>{cesarId}</Text>
-              {explorationMode ? <Text color="#22d3ee" bold>{' [explore]'}</Text> : null}
-              <Text dimColor>{' in '}</Text>
+              {explorationMode ? <Text color="#22d3ee" bold>{'[explore] '}</Text> : null}
               <Text color="#60a5fa">{cwd}</Text>
               {branch ? <Text dimColor>{' on '}<Text color="#34d399">{branch}</Text></Text> : null}
             </Text>
@@ -143,7 +141,7 @@ export function StatusBar({ config, chatSession, explorationMode, toolOutputExpa
 }
 
 
-// @kern-source: status:146
+// @kern-source: status:144
 
 export function StatusLine({ startTime, engineId, color }: { startTime: number; engineId?: string; color?: number }) {
   const [now, setNow] = useState<number>(Date.now());
@@ -172,7 +170,7 @@ export function StatusLine({ startTime, engineId, color }: { startTime: number; 
 }
 
 
-// @kern-source: status:179
+// @kern-source: status:177
 
 export function BackgroundJobRail({ jobs }: { jobs: Job[] }) {
         if (jobs.length === 0) return null;
@@ -193,7 +191,7 @@ export function BackgroundJobRail({ jobs }: { jobs: Job[] }) {
 }
 
 
-// @kern-source: status:202
+// @kern-source: status:200
 
 export function CesarStatusStrip({ cesarId, confidence, spinner, engines, startTime, streamSnippet, isActive, planModeQueued, activePlanState }: { cesarId: string; confidence?: number|null; spinner: { message: string; engineId?: string } | null; engines: EngineProgress[]|null; startTime: number; streamSnippet?: { engineId: string; line: string } | null; isActive: boolean; planModeQueued?: boolean; activePlanState?: string|null }) {
   const [now, setNow] = useState<number>(Date.now());
@@ -216,7 +214,7 @@ export function CesarStatusStrip({ cesarId, confidence, spinner, engines, startT
         // Idle: single dimmed line (no colored nesting issues)
         if (!isActive) {
           const confPart = (confidence !== null && confidence !== undefined) ? ` ${confidence}%` : '';
-          const planPart = hasPlan ? ` \u2502 \u25c8 PLAN ${planLabel}` : '';
+          const planPart = hasPlan ? ` \u2502 \u25c8 PLAN` : '';
           return (
             <Box paddingTop={0}>
               <Text dimColor>{'\u25c6 '}{cesarId}{confPart}{' \u2502 idle'}{planPart}</Text>
@@ -291,7 +289,7 @@ export function CesarStatusStrip({ cesarId, confidence, spinner, engines, startT
             {engineDots.length > 0 && <Text>{engineDots}</Text>}
             <Text>
               {snippetStr ? <><Text dimColor>{' \u2502 '}</Text><Text dimColor wrap="truncate">{snippetStr}</Text></> : null}
-              {hasPlan ? <><Text dimColor>{' \u2502 '}</Text><Text color="#c084fc" bold>{'\u25c8 PLAN'}</Text><Text dimColor>{' '}{planLabel}</Text></> : null}
+              {hasPlan ? <><Text dimColor>{' \u2502 '}</Text><Text color="#c084fc" bold>{'\u25c8 PLAN'}</Text></> : null}
             </Text>
           </Box>
         );

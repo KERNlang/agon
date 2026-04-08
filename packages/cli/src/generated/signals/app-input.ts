@@ -78,3 +78,11 @@ export function tryGhostComplete(inputValue: string, commands: any[], engineIds:
   return getGhostCompletion(inputValue, commands, engineIds);
 }
 
+// @kern-source: app-input:85
+export function shouldQueuePlanModeOnTab(opts: {replState:string,inputValue:string,activePlanState?:string|null}): boolean {
+  if (opts.replState !== 'idle') return false;
+  if (opts.inputValue.trim()) return false;
+  if (opts.activePlanState && ['planning', 'awaiting_approval', 'running', 'paused'].includes(opts.activePlanState)) return false;
+  return true;
+}
+

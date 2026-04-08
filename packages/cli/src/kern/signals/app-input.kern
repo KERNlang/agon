@@ -81,3 +81,12 @@ fn name=tryGhostComplete params="inputValue:string, commands:any[], engineIds:st
   handler <<<
     return getGhostCompletion(inputValue, commands, engineIds);
   >>>
+
+fn name=shouldQueuePlanModeOnTab params="opts:{replState:string,inputValue:string,activePlanState?:string|null}" returns=boolean
+  doc "Only queue plan mode from Tab when the composer is idle and empty."
+  handler <<<
+    if (opts.replState !== 'idle') return false;
+    if (opts.inputValue.trim()) return false;
+    if (opts.activePlanState && ['planning', 'awaiting_approval', 'running', 'paused'].includes(opts.activePlanState)) return false;
+    return true;
+  >>>

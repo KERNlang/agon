@@ -176,9 +176,51 @@ fn name=handleSecondOpinion async=true params="secondResult:{stdout:string, engi
     // Yield so Ink paints the advisor response before showing the menu
     await new Promise<void>(resolve => setImmediate(resolve));
 
-    // Escalation menu — same for all low confidence, no more dead STOP
+    // Parse advisor's recommended action from their response
+    const advisorLower = advisorResponse.toLowerCase();
+    const actionKeywords: Record<string, string> = {
+      tribunal: 'tribunal', brainstorm: 'brainstorm', campfire: 'campfire',
+      forge: 'forge', pipeline: 'pipeline',
+    };
+    let advisorRecommendation: string | null = null;
+    // Check for explicit "Mode Recommendation: X" or "should be: X" patterns
+    const modeMatch = advisorLower.match(/(?:mode[:\s]*recommendation|recommend(?:ation)?|should be|suggest)[:\s]*(\w+)/i);
+    if (modeMatch && actionKeywords[modeMatch[1].toLowerCase()]) {
+      advisorRecommendation = actionKeywords[modeMatch[1].toLowerCase()];
+    }
+    // Fallback: check numbered recommendations (e.g. "3. Mode: Tribunal")
+    if (!advisorRecommendation) {
+      for (const [keyword, action] of Object.entries(actionKeywords)) {
+        const pattern = new RegExp(`(?:mode|should|recommend).*?${keyword}`, 'i');
+        if (pattern.test(advisorResponse)) {
+          advisorRecommendation = action;
+          break;
+        }
+      }
+    }
+
+    // If advisor has a clear recommendation, show simple confirm
+    if (advisorRecommendation) {
+      const modeColors: Record<string, string> = {
+        forge: '#a78bfa', brainstorm: '#60a5fa', tribunal: '#f59e0b',
+        campfire: '#facc15', pipeline: '#f472b6',
+      };
+      const escAnswer = await new Promise<string>((resolve) => {
+        dispatch({ type: 'question', prompt: `${secondResult.engineId} recommends ${advisorRecommendation} — go?`, choices: [
+          { key: 'y', label: `Yes, ${advisorRecommendation}`, color: modeColors[advisorRecommendation!] ?? '#4ade80' },
+          { key: 'a', label: 'Accept Cesar instead', color: '#4ade80' },
+          { key: 'm', label: 'Other mode', color: '#6b7280' },
+        ], resolve } as any);
+      });
+
+      if (escAnswer === 'y') return { delegated: true, responded: true, action: advisorRecommendation, reasoning: response };
+      if (escAnswer === 'a') return { delegated: false, responded: true };
+      // 'm' falls through to full menu below
+    }
+
+    // Full menu — either no advisor recommendation or user chose 'Other mode'
     const escAnswer = await new Promise<string>((resolve) => {
-      dispatch({ type: 'question', prompt: `Cesar ${parsedConfidence ?? '?'}% + ${secondResult.engineId} advisor — what next?`, choices: [
+      dispatch({ type: 'question', prompt: `Cesar ${parsedConfidence ?? '?'}% — what next?`, choices: [
         { key: 'a', label: 'Accept Cesar', color: '#4ade80' },
         { key: 'c', label: 'Campfire', color: '#facc15' },
         { key: 'b', label: 'Brainstorm', color: '#60a5fa' },

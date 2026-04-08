@@ -139,6 +139,7 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
       if (st) {
         const color = actions.getEngineColor(st.engineId);
         const cleaned = cleanEngineOutput(st.content);
+        actions.setStreamingText(null);
         if (cleaned.trim()) {
           const segments = parseMarkdownBlocks(cleaned);
           codeBlockBuffer.recordFromSegments(segments);
@@ -147,7 +148,6 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
             actions.addBlock({ type: 'response-meta', engineId: st.engineId, elapsed: Date.now() - chatStartTime } as any);
           }
         }
-        actions.setStreamingText(null);
       }
       return;
     }

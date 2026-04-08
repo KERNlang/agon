@@ -128,7 +128,7 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
       } catch { /* routing context is best-effort */ }
 
       // ── Heartbeat timer + turn timeout ──
-      const cesarTimeout = (config as any).cesarTimeout ?? 120;
+      const cesarTimeout = (config as any).cesarTimeout ?? 300;
       const heartbeat = setInterval(() => {
         const elapsed = Math.round((Date.now() - _turnStart) / 1000);
         if (elapsed >= cesarTimeout) {
@@ -175,7 +175,8 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
                   createdAt: Date.now(),
                 };
                 dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'done' } as any);
-                continue;
+                // Break stream immediately — Cesar must stop after delegation (RULE 6)
+                break;
               }
               dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'running' } as any);
               if (!eagerToolCtx) eagerToolCtx = createEagerToolContext(ctx, config, abort.signal, dispatch);
@@ -354,6 +355,19 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
 
       // Deferred challenge messages — appended after user/cesar pair to preserve history order
       let _deferredChallenges: Array<{ engineId: string; content: string }> = [];
+
+      // Plan mode: skip confidence routing entirely — let Cesar propose via ProposePlan
+      const inPlanMode = (ctx as any).activePlan && ['planning', 'awaiting_approval'].includes((ctx as any).activePlan.state);
+      if (inPlanMode) {
+        dispatch({ type: 'spinner-stop' });
+        // Response was already streamed to user
+        if (response.trim()) {
+          appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
+          appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
+          tracker.record(cesarEngineId, { prompt: input, response });
+        }
+        return { delegated: false, responded: true };
+      }
 
       // ── Post-stream escalation — same-turn tiered confidence challenges ──
       // Quick-nero (93-95%) → nero (88-92%) → brainstorm (72-87%) → advisor (<72%)

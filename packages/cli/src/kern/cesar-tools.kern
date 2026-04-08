@@ -1,4 +1,4 @@
-import from="@agon/core" names="ToolRegistry,FileStateCache,createReadTool,createEditTool,createWriteTool,createBashTool,createGrepTool,createGlobTool,createForgeTool,createBrainstormTool,createTribunalTool,createCampfireTool,createPipelineTool,createDelegateTool,createReportConfidenceTool,executeToolCall,resolveWorkingDir"
+import from="@agon/core" names="ToolRegistry,FileStateCache,createReadTool,createEditTool,createWriteTool,createBashTool,createGrepTool,createGlobTool,createForgeTool,createBrainstormTool,createTribunalTool,createCampfireTool,createPipelineTool,createDelegateTool,createReportConfidenceTool,createProposePlanTool,executeToolCall,resolveWorkingDir"
 import from="@agon/core" names="ToolContext,ToolCallResult" types=true
 import from="../handlers/types.js" names="Dispatch,HandlerContext" types=true
 
@@ -19,6 +19,7 @@ fn name=createCesarToolRegistry params="" returns="ToolRegistry"
     toolRegistry.register(createPipelineTool());
     toolRegistry.register(createDelegateTool());
     toolRegistry.register(createReportConfidenceTool());
+    toolRegistry.register(createProposePlanTool());
     return toolRegistry;
   >>>
 

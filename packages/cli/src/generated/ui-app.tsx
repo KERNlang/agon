@@ -777,7 +777,7 @@ export function App({  }: {  }) {
                   if (lines.length > 0) snippet = { engineId: streamingText.engineId, line: lines[lines.length - 1].trim() };
                 }
                 return (<>
-                  {mode === 'chat' && <CesarStatusStrip cesarId={(loadConfig() as any).cesarEngine ?? loadConfig().forgeFixedStarter ?? 'claude'} confidence={cesarConfidence} spinner={liveSpinner} engines={liveProgress} lastActivityAt={lastActivityTimeRef.current} streamSnippet={snippet} isActive={replState !== 'idle'} planModeQueued={planModeQueued} activePlan={activePlan} />}
+                  <CesarStatusStrip cesarId={(loadConfig() as any).cesarEngine ?? loadConfig().forgeFixedStarter ?? 'claude'} confidence={cesarConfidence} spinner={liveSpinner} engines={liveProgress} startTime={chatStartTimeRef.current || 0} streamSnippet={snippet} isActive={replState !== 'idle'} planModeQueued={planModeQueued} activePlan={activePlan} />
                   {mode === 'chat' && <StatusBar config={loadConfig()} chatSession={chatSession} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} isActive={replState !== 'idle'} />}
                 </>);
               })()}

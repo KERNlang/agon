@@ -50,8 +50,7 @@ export async function executeToolCall(call: ToolCall, ctx: ToolContext, registry
   }
   
   // Phase 0: Read-only gate — block mutating tools during investigation
-  // Bash is special: isReadOnly is false but it has its own read-only command detection,
-  // so we let it through and rely on its permission logic to allow safe commands (ls, git diff, etc.)
+  // Bash handles readOnlyMode in its own checkPermission (allows safe commands like ls, git diff)
   if (ctx.readOnlyMode && !handler.definition.isReadOnly && call.name !== 'Bash') {
     return {
       toolCallId: call.id,
@@ -129,7 +128,7 @@ export async function executeToolCall(call: ToolCall, ctx: ToolContext, registry
   }
 }
 
-// @kern-source: tool-registry:141
+// @kern-source: tool-registry:140
 export async function executeToolCalls(calls: ToolCall[], ctx: ToolContext, registry: ToolRegistry, onPermissionAsk?: (tool:string,message:string)=>Promise<boolean>, onProgress?: (result:ToolCallResult)=>void): Promise<ToolCallResult[]> {
   const results: ToolCallResult[] = [];
   

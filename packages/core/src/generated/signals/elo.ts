@@ -67,6 +67,20 @@ export function updateElo(winnerId: string, loserId: string, taskClass: TaskClas
 }
 
 // @kern-source: elo:62
+export function updateEloRanked(ranked: Array<{engineId:string,score:number}>, taskClass: TaskClass, kFactor: number): void {
+  if (ranked.length < 2) return;
+  if (kFactor === undefined) kFactor = 32;
+  // Reduced K per pair since each engine participates in multiple pairings
+  const pairK = Math.max(8, Math.round(kFactor / Math.max(1, ranked.length - 1)));
+  for (let i = 0; i < ranked.length; i++) {
+    for (let j = i + 1; j < ranked.length; j++) {
+      if (ranked[i].score === ranked[j].score) continue; // skip ties
+      updateElo(ranked[i].engineId, ranked[j].engineId, taskClass, pairK);
+    }
+  }
+}
+
+// @kern-source: elo:77
 export function getElo(): EloRecord {
   try { return JSON.parse(readFileSync(ELO_PATH, 'utf-8')) as EloRecord; }
   catch (err) {
@@ -77,7 +91,7 @@ export function getElo(): EloRecord {
   }
 }
 
-// @kern-source: elo:73
+// @kern-source: elo:88
 export function getEngineRating(engineId: string): EloRating {
   const record = getElo();
   return record.global[engineId] ?? { rating: 1500, wins: 0, losses: 0, draws: 0 };

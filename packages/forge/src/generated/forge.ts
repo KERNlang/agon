@@ -8,7 +8,7 @@ import { mkdirSync } from 'node:fs';
 import type { ForgeOptions, ForgeManifest, EngineAdapter, ForgeEvent, AgonConfig, DispatchMetric } from '@agon/core';
 
 // @kern-source: forge:4
-import { EngineRegistry, loadConfig, buildForgePrompt, repoRoot, headSha, worktreeRemove, updateElo, classifyTask, createSidechainLogger, assignForgeRoles, buildSpecializedPrompt, recordForgeOutcome, tracker } from '@agon/core';
+import { EngineRegistry, loadConfig, buildForgePrompt, repoRoot, headSha, worktreeRemove, updateElo, updateEloRanked, classifyTask, createSidechainLogger, assignForgeRoles, buildSpecializedPrompt, recordForgeOutcome, tracker } from '@agon/core';
 
 // @kern-source: forge:5
 import { runBaseline, runStage1, runStage2, runStage2WithPeek, determineWinner } from './stages.js';
@@ -261,20 +261,29 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
           .sort(([, a], [, b]) => b.score - a.score)[0]?.[0] ?? null
       : manifest.winner;
   
-    if (config.eloEnabled && eloWinner) {
-      const losers = available.filter(
-        (id: string) => id !== eloWinner && manifest.results[id]?.pass,
-      );
+    if (config.eloEnabled) {
+      // Ranked ELO: all engines that produced results get pairwise updates
+      const ranked = Object.entries(manifest.results)
+        .filter(([id]) => id !== 'synthesis')
+        .map(([id, r]) => ({ engineId: id, score: r.pass ? r.score : -1 }))
+        .sort((a, b) => b.score - a.score);
   
-      for (const loser of losers) {
-        updateElo(eloWinner, loser, taskClass, config.eloKFactor);
-        onEvent?.({ type: 'elo:update', data: { winner: eloWinner, loser, taskClass } });
+      if (ranked.length >= 2) {
+        updateEloRanked(ranked, taskClass, config.eloKFactor);
+        for (const entry of ranked) {
+          onEvent?.({ type: 'elo:update', data: { engineId: entry.engineId, score: entry.score, rank: ranked.indexOf(entry) + 1, taskClass } });
+        }
       }
   
       // Record qualitative engine memory from forge outcome
-      const loserScores: Record<string, number> = {};
-      for (const id of losers) loserScores[id] = manifest.results[id]?.score ?? 0;
-      recordForgeOutcome(eloWinner, losers, taskClass, forgeId, manifest.results[eloWinner]?.score ?? 0, loserScores);
+      if (eloWinner) {
+        const losers = available.filter(
+          (id: string) => id !== eloWinner && manifest.results[id],
+        );
+        const loserScores: Record<string, number> = {};
+        for (const id of losers) loserScores[id] = manifest.results[id]?.score ?? 0;
+        recordForgeOutcome(eloWinner, losers, taskClass, forgeId, manifest.results[eloWinner]?.score ?? 0, loserScores);
+      }
     }
   
     // --- Gauntlet: losers try to break the winner ---

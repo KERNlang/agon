@@ -69,7 +69,7 @@ export async function runStage1(opts: {starter:string, forgePrompt:string, fitne
       engine,
       prompt: opts.forgePrompt,
       cwd: wtPath,
-      mode: 'review',
+      mode: 'exec',
       timeout: engine.timeout,
       outputDir: opts.forgeDir,
       signal: opts.signal,

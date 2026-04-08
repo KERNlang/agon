@@ -202,9 +202,12 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
         if (dispatch) {
           try {
             const plan = await handleProposePlan(args, dispatch, ctx);
+            // Set React state for UI
             if ((ctx as any).setActivePlan) {
               (ctx as any).setActivePlan(plan);
             }
+            // Stash on ctx so app-dispatch can read it synchronously after routeWithCesar returns
+            (ctx as any)._proposedPlan = plan;
           } catch (err) {
             console.warn(`[agon] ProposePlan handling failed: ${err instanceof Error ? err.message : String(err)}`);
           }

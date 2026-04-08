@@ -152,3 +152,43 @@ export function cancelCesarPlan(plan: CesarPlan): CesarPlan {
   };
 }
 
+// @kern-source: cesar-plan:150
+export function saveCesarPlan(plan: CesarPlan): void {
+  const { mkdirSync, writeFileSync } = require('node:fs');
+  const { join } = require('node:path');
+  const dir = join(process.env.HOME ?? '', '.agon', 'runs');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, `${plan.id}.json`), JSON.stringify(plan, null, 2));
+}
+
+// @kern-source: cesar-plan:160
+export function loadCesarPlan(planId: string): CesarPlan|null {
+  const { readFileSync } = require('node:fs');
+  const { join } = require('node:path');
+  const filePath = join(process.env.HOME ?? '', '.agon', 'runs', `${planId}.json`);
+  try {
+    return JSON.parse(readFileSync(filePath, 'utf-8'));
+  } catch {
+    return null;
+  }
+}
+
+// @kern-source: cesar-plan:173
+export function listCesarPlans(): CesarPlan[] {
+  const { readdirSync, readFileSync } = require('node:fs');
+  const { join } = require('node:path');
+  const dir = join(process.env.HOME ?? '', '.agon', 'runs');
+  try {
+    const files = readdirSync(dir).filter((f: string) => f.startsWith('cplan-') && f.endsWith('.json'));
+    return files.map((f: string) => {
+      try {
+        return JSON.parse(readFileSync(join(dir, f), 'utf-8')) as CesarPlan;
+      } catch {
+        return null;
+      }
+    }).filter(Boolean) as CesarPlan[];
+  } catch {
+    return [];
+  }
+}
+

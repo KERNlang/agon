@@ -146,3 +146,46 @@ fn name=cancelCesarPlan params="plan:CesarPlan" returns=CesarPlan
       state: 'cancelled' as CesarPlanState,
     };
   >>>
+
+fn name=saveCesarPlan params="plan:CesarPlan" returns=void export=true
+  doc "Persist a CesarPlan to ~/.agon/runs/<id>.json."
+  handler <<<
+    const { mkdirSync, writeFileSync } = require('node:fs');
+    const { join } = require('node:path');
+    const dir = join(process.env.HOME ?? '', '.agon', 'runs');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, `${plan.id}.json`), JSON.stringify(plan, null, 2));
+  >>>
+
+fn name=loadCesarPlan params="planId:string" returns="CesarPlan|null" export=true
+  doc "Load a persisted CesarPlan from ~/.agon/runs/<id>.json."
+  handler <<<
+    const { readFileSync } = require('node:fs');
+    const { join } = require('node:path');
+    const filePath = join(process.env.HOME ?? '', '.agon', 'runs', `${planId}.json`);
+    try {
+      return JSON.parse(readFileSync(filePath, 'utf-8'));
+    } catch {
+      return null;
+    }
+  >>>
+
+fn name=listCesarPlans params="" returns="CesarPlan[]" export=true
+  doc "List all persisted CesarPlans from ~/.agon/runs/."
+  handler <<<
+    const { readdirSync, readFileSync } = require('node:fs');
+    const { join } = require('node:path');
+    const dir = join(process.env.HOME ?? '', '.agon', 'runs');
+    try {
+      const files = readdirSync(dir).filter((f: string) => f.startsWith('cplan-') && f.endsWith('.json'));
+      return files.map((f: string) => {
+        try {
+          return JSON.parse(readFileSync(join(dir, f), 'utf-8')) as CesarPlan;
+        } catch {
+          return null;
+        }
+      }).filter(Boolean) as CesarPlan[];
+    } catch {
+      return [];
+    }
+  >>>

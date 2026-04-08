@@ -65,7 +65,7 @@ import { dispatchIntent, handleModeSwitch } from '../generated/app-dispatch.js';
 import type { DispatchCallbacks } from '../generated/app-dispatch.js';
 
 // @kern-source: ui-app:26
-import { handleOutputEvent } from '../generated/app-output.js';
+import { handleOutputEvent, clearPermissionQueue } from '../generated/app-output.js';
 
 // @kern-source: ui-app:27
 import type { OutputActions, OutputState } from '../generated/app-output.js';
@@ -236,6 +236,7 @@ export function App({  }: {  }) {
           setLiveProgress(null);
           setStreamingText(null);
           setBtwExpanded(false);
+          clearPermissionQueue();
     
           if (replState !== 'idle') {
             if (message) dispatch({ type: 'warning', message } as any);
@@ -493,6 +494,7 @@ export function App({  }: {  }) {
             _activeAborts.clear();
             activeAbortRef.current = null;
             setActiveAbort(null); setLiveSpinner(null); setLiveProgress(null); setStreamingText(null);
+            clearPermissionQueue();
             setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state);
           };
   }, [setActiveAbort]);
@@ -746,7 +748,7 @@ export function App({  }: {  }) {
 }
 
 
-// @kern-source: ui-app:714
+// @kern-source: ui-app:716
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

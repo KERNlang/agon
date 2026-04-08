@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { formatSessionResults } from '../../packages/cli/src/generated/blocks/results-formatter.js';
-import type { SessionResult } from '@agon/core';
+import { formatSessionResults, formatChatTranscript } from '../../packages/cli/src/generated/blocks/results-formatter.js';
+import type { SessionResult, ChatSession } from '@agon/core';
 
 describe('formatSessionResults', () => {
   it('returns empty-state message when no results', () => {
@@ -129,5 +129,53 @@ describe('formatSessionResults', () => {
     const output = formatSessionResults(results);
     expect(output).toContain('#1');
     expect(output).toContain('#2');
+  });
+});
+
+describe('formatChatTranscript', () => {
+  it('returns empty-state message when no chat messages exist', () => {
+    const session: ChatSession = {
+      id: 'chat-1',
+      startedAt: '2026-04-08T10:00:00.000Z',
+      messages: [],
+      cwd: '/tmp/project',
+      branch: 'main',
+    };
+
+    const output = formatChatTranscript(session);
+    expect(output).toContain('No chat messages in this session yet');
+  });
+
+  it('formats user and engine messages for pager-friendly copying', () => {
+    const session: ChatSession = {
+      id: 'chat-2',
+      startedAt: '2026-04-08T10:00:00.000Z',
+      cwd: '/tmp/project',
+      branch: 'feat/chat-pager',
+      messages: [
+        {
+          role: 'user',
+          content: 'Explain the auth flow',
+          timestamp: '2026-04-08T10:01:00.000Z',
+          images: ['diagram.png'],
+        },
+        {
+          role: 'engine',
+          engineId: 'claude',
+          content: 'The request goes through middleware first.',
+          timestamp: '2026-04-08T10:01:30.000Z',
+        },
+      ],
+    };
+
+    const output = formatChatTranscript(session);
+    expect(output).toContain('Chat Transcript');
+    expect(output).toContain('/tmp/project');
+    expect(output).toContain('branch: feat/chat-pager');
+    expect(output).toContain('USER');
+    expect(output).toContain('CLAUDE');
+    expect(output).toContain('Images: diagram.png');
+    expect(output).toContain('Explain the auth flow');
+    expect(output).toContain('The request goes through middleware first.');
   });
 });

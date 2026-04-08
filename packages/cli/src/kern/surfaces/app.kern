@@ -36,7 +36,7 @@ import from="node:fs" names="readdirSync,writeFileSync,mkdirSync,unlinkSync"
 import from="node:os" names="homedir,tmpdir"
 import from="node:child_process" names="spawnSync"
 import from="../models/session-results.js" names="sessionResultStore"
-import from="../blocks/results-formatter.js" names="formatSessionResults"
+import from="../blocks/results-formatter.js" names="formatSessionResults,formatChatTranscript"
 import from="@agon/core" names="loadSkills"
 
 // ── Module-level mutable refs for SIGINT ──
@@ -93,6 +93,9 @@ screen name=App target=ink
   ref name=chatStartTimeRef type=number initial=0
   ref name=currentPlanRef type="Plan|null" initial="null"
   ref name=streamingTextRef type=any initial="null"
+  ref name=streamingBufferRef type=any initial="null"
+  ref name=streamingFlushTimerRef type=any initial="null"
+  ref name=modeRef type="'chat'|'campfire'|'brainstorm'|'tribunal'" initial="'chat'"
   ref name=justPastedRef type=boolean initial=false
   ref name=pasteHashesRef type="Map<string,string>" initial="new Map()"
   ref name=pasteCountRef type=number initial=0
@@ -133,6 +136,18 @@ screen name=App target=ink
       }).catch((err: Error) => {
         console.warn(`[agon] extension loading failed: ${err.message}`);
       });
+    >>>
+
+  effect deps="mode"
+    handler <<<
+      modeRef.current = mode;
+    >>>
+
+  effect deps=""
+    handler <<<
+      return () => {
+        if (streamingFlushTimerRef.current) clearTimeout(streamingFlushTimerRef.current);
+      };
     >>>
 
   // ── Feed orchestration results back to Cesar's chat history ──
@@ -206,20 +221,61 @@ screen name=App target=ink
       return {
         setLiveSpinner,
         setLiveProgress,
-        setStreamingText: (val: any) => { streamingTextRef.current = val; setStreamingText(val); },
+        setStreamingText: (val: any) => {
+          streamingBufferRef.current = val;
+          if (modeRef.current !== 'chat') {
+            if (streamingFlushTimerRef.current) {
+              clearTimeout(streamingFlushTimerRef.current);
+              streamingFlushTimerRef.current = null;
+            }
+            streamingTextRef.current = val;
+            setStreamingText(val);
+            return;
+          }
+          if (!val) {
+            if (streamingFlushTimerRef.current) {
+              clearTimeout(streamingFlushTimerRef.current);
+              streamingFlushTimerRef.current = null;
+            }
+            streamingTextRef.current = null;
+            setStreamingText(null);
+            return;
+          }
+          const needsImmediatePaint = !streamingTextRef.current || streamingTextRef.current.engineId !== val.engineId;
+          if (needsImmediatePaint) {
+            if (streamingFlushTimerRef.current) {
+              clearTimeout(streamingFlushTimerRef.current);
+              streamingFlushTimerRef.current = null;
+            }
+            streamingTextRef.current = val;
+            setStreamingText(val);
+            return;
+          }
+          if (streamingFlushTimerRef.current) return;
+          streamingFlushTimerRef.current = setTimeout(() => {
+            streamingFlushTimerRef.current = null;
+            streamingTextRef.current = streamingBufferRef.current;
+            setStreamingText(streamingBufferRef.current);
+          }, 90);
+        },
         addBlock: (event: any) => { setScrollOffset(0); setOutputBlocks((prev: any) => [...prev, { id: Date.now() + Math.random(), event }]); },
         clearBlocks: () => setOutputBlocks([]),
         setReviewEvent,
         setQuestionState,
         setChatStartTime: (val: number) => { chatStartTimeRef.current = val; },
         flushStream: () => {
-          const prev = streamingTextRef.current;
+          const prev = streamingBufferRef.current ?? streamingTextRef.current;
+          if (streamingFlushTimerRef.current) {
+            clearTimeout(streamingFlushTimerRef.current);
+            streamingFlushTimerRef.current = null;
+          }
           if (prev) {
             const color = ENGINE_COLORS[prev.engineId] ?? 245;
             setOutputBlocks((blocks: any) => [...blocks, { id: Date.now() - 1, event: { type: 'engine-block', engineId: prev.engineId, color, content: prev.content } }]);
-            streamingTextRef.current = null;
-            setStreamingText(null);
           }
+          streamingBufferRef.current = null;
+          streamingTextRef.current = null;
+          setStreamingText(null);
         },
         getEngineColor: (engineId: string) => ENGINE_COLORS[engineId] ?? 245,
         setCesarConfidence,
@@ -232,7 +288,7 @@ screen name=App target=ink
       if (et === 'streaming-chunk' || et === 'progress-update' || et === 'tool-call' || et === 'spinner-start' || et === 'spinner-update') {
         lastActivityTimeRef.current = Date.now();
       }
-      const state: OutputState = { liveSpinner: null, liveProgress: null, streamingText: streamingTextRef.current };
+      const state: OutputState = { liveSpinner: null, liveProgress: null, streamingText: streamingBufferRef.current ?? streamingTextRef.current };
       handleOutputEvent(event, state, outputActions, mode, chatStartTimeRef.current);
     >>>
 
@@ -248,6 +304,12 @@ screen name=App target=ink
       trackAbort(null);
       setLiveSpinner(null);
       setLiveProgress(null);
+      if (streamingFlushTimerRef.current) {
+        clearTimeout(streamingFlushTimerRef.current);
+        streamingFlushTimerRef.current = null;
+      }
+      streamingBufferRef.current = null;
+      streamingTextRef.current = null;
       setStreamingText(null);
       clearPermissionQueue();
 
@@ -506,14 +568,25 @@ screen name=App target=ink
       setReviewEvent(null);
     >>>
 
-  callback name=openResultsPager params="" deps="dispatch"
+  callback name=openResultsPager params="" deps="dispatch,mode,chatSession"
     handler <<<
-      if (!sessionResultStore.hasResults()) {
-        dispatch({ type: 'info', message: 'No results yet — run /brainstorm, /campfire, /tribunal, or /forge first' } as any);
-        return;
+      let content = '';
+      let tmpFile = '';
+      if (mode === 'chat') {
+        if (chatSession.messages.length === 0) {
+          dispatch({ type: 'info', message: 'No chat messages yet.' } as any);
+          return;
+        }
+        content = formatChatTranscript(chatSession);
+        tmpFile = join(tmpdir(), `agon-chat-${Date.now()}.txt`);
+      } else {
+        if (!sessionResultStore.hasResults()) {
+          dispatch({ type: 'info', message: 'No results yet — run /brainstorm, /campfire, /tribunal, or /forge first' } as any);
+          return;
+        }
+        content = formatSessionResults(sessionResultStore.getResults());
+        tmpFile = join(tmpdir(), `agon-results-${Date.now()}.txt`);
       }
-      const content = formatSessionResults(sessionResultStore.getResults());
-      const tmpFile = join(tmpdir(), `agon-results-${Date.now()}.txt`);
       try {
         writeFileSync(tmpFile, content, 'utf-8');
         const pager = process.env.PAGER || 'less';
@@ -546,6 +619,12 @@ screen name=App target=ink
         for (const abort of _activeAborts) abort.abort();
         _activeAborts.clear();
         activeAbortRef.current = null;
+        if (streamingFlushTimerRef.current) {
+          clearTimeout(streamingFlushTimerRef.current);
+          streamingFlushTimerRef.current = null;
+        }
+        streamingBufferRef.current = null;
+        streamingTextRef.current = null;
         setActiveAbort(null); setLiveSpinner(null); setLiveProgress(null); setStreamingText(null);
         clearPermissionQueue();
         setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state);
@@ -719,11 +798,18 @@ screen name=App target=ink
             const wrapWidth = contentWidth(mode === 'chat' ? 6 : 8);
             const segments = parseMarkdownBlocks(cleaned);
             return mode === 'chat' ? (
-              <Box flexDirection="column" marginY={1} paddingLeft={1}>
-                <Text><Text color={c} bold>{icons().dotOn + ' '}{streamingText.engineId}</Text></Text>
-                <Text>{' '}</Text>
-                <RenderedSegments segments={segments} borderColor={''} wrapWidth={wrapWidth} />
-              </Box>
+              (() => {
+                const lines = cleaned.split('\n').filter((line: string) => line.trim());
+                const lastLine = lines.length > 0 ? lines[lines.length - 1].trim() : '';
+                const previewLimit = Math.max(24, wrapWidth - streamingText.engineId.length - 6);
+                const preview = lastLine.length > previewLimit ? lastLine.slice(0, previewLimit - 1) + '…' : lastLine;
+                return (
+                  <Box marginY={1} paddingLeft={1}>
+                    <Text color={c} bold>{icons().dotOn + ' '}{streamingText.engineId}</Text>
+                    <Text dimColor>{preview ? ` ${preview}` : ' streaming…'}</Text>
+                  </Box>
+                );
+              })()
             ) : (
               <Box flexDirection="column" marginY={1} paddingLeft={2}>
                 <Text color={c} bold>{'┌── '}{streamingText.engineId}</Text>

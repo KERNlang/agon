@@ -105,9 +105,9 @@ fn name=handleBrainstorm params="question:string, dispatch:Dispatch, ctx:Handler
     appendMessage(ctx.chatSession, { role: 'engine', engineId: result.winner, content: result.response, timestamp: new Date().toISOString() });
 
     for (const bid of result.bids) {
-      tracker.record(bid.engineId, question, bid.reasoning);
+      tracker.record(bid.engineId, { prompt: question, response: bid.reasoning });
     }
-    tracker.record(result.winner, question, result.response);
+    tracker.record(result.winner, { prompt: question, response: result.response });
 
     sessionResultStore.add({
       type: 'brainstorm',

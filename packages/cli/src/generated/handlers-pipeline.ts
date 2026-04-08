@@ -1,13 +1,19 @@
+// @kern-source: handlers-pipeline:1
 import { join } from 'node:path';
 
+// @kern-source: handlers-pipeline:2
 import { mkdirSync } from 'node:fs';
 
+// @kern-source: handlers-pipeline:3
 import { ensureAgonHome, RUNS_DIR, appendMessage, tracker, scanProjectContext, readOnlyDiff, diffLineCount, diffFileCount, buildCritiquePrompt, spawnWithTimeout, resolveWorkingDir } from '@agon/core';
 
+// @kern-source: handlers-pipeline:4
 import { ENGINE_COLORS } from '../output.js';
 
+// @kern-source: handlers-pipeline:5
 import type { Dispatch, HandlerContext } from '../handlers/types.js';
 
+// @kern-source: handlers-pipeline:7
 export async function handlePipeline(input: string, dispatch: Dispatch, ctx: HandlerContext, fitnessCmd?: string, opts?: {quiet?:boolean}): Promise<void> {
   const abort = new AbortController();
   try {
@@ -227,7 +233,7 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
       dispatch({ type: 'success', message: `Pipeline complete: ${finalFiles} file(s), ${finalLines} line(s) changed in ${iteration} iteration(s)` });
       appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
       appendMessage(ctx.chatSession, { role: 'engine', engineId: buildEngine, content: `Pipeline: ${finalFiles} files, ${finalLines} lines in ${iteration} iteration(s)`, timestamp: new Date().toISOString() });
-      tracker.record(buildEngine, input, `pipeline:${finalLines}lines`);
+      tracker.record(buildEngine, { prompt: input, response: `pipeline:${finalLines}lines` });
     } else if (fitnessCmd && !fitnessPassed && iteration >= maxIterations) {
       // Auto-escalation: pipeline exhausted → suggest forge
       dispatch({ type: 'warning', message: `Pipeline exhausted ${maxIterations} iterations without passing fitness.` });
@@ -239,7 +245,7 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
       dispatch({ type: 'success', message: `Pipeline complete: ${finalFiles} file(s), ${finalLines} line(s) changed in ${iteration} iteration(s)` });
       appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
       appendMessage(ctx.chatSession, { role: 'engine', engineId: buildEngine, content: `Pipeline: ${finalFiles} files, ${finalLines} lines`, timestamp: new Date().toISOString() });
-      tracker.record(buildEngine, input, `pipeline:${finalLines}lines`);
+      tracker.record(buildEngine, { prompt: input, response: `pipeline:${finalLines}lines` });
     }
   } finally {
     dispatch({ type: 'spinner-stop' });

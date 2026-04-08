@@ -119,7 +119,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: freshResult.stdout.trim() });
           appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
           appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: freshResult.stdout.trim(), timestamp: new Date().toISOString() });
-          tracker.record(cesarEngineId, input, freshResult.stdout.trim());
+          tracker.record(cesarEngineId, { prompt: input, response: freshResult.stdout.trim() });
           return { delegated: false, responded: true };
         }
       } catch { /* truly failed */ }
@@ -258,7 +258,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               dispatch({ type: 'spinner-stop' });
               appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
               appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
-              tracker.record(cesarEngineId, input, response);
+              tracker.record(cesarEngineId, { prompt: input, response });
               if (suggestion.rest) dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: suggestion.rest });
               const delResult = await promptDelegation(suggestion.action, dispatch, suggestion.hardened, suggestion.tribunalMode, suggestion.team);
               if (delResult.approved) {
@@ -422,7 +422,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           if (neroResult && neroResult.challengeText) {
             dispatch({ type: 'engine-block', engineId: `${cesarEngineId}-nero`, color, content: neroResult.challengeText });
             _deferredChallenges.push({ engineId: `${cesarEngineId}-nero`, content: neroResult.challengeText });
-            tracker.record(`${cesarEngineId}-nero`, input, neroResult.challengeText);
+            tracker.record(`${cesarEngineId}-nero`, { prompt: input, response: neroResult.challengeText });
           }
           // Nero is informational — user sees both original + challenge and continues
         }
@@ -433,7 +433,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           dispatch({ type: 'info', message: confidenceBadge(parsedConfidence) + ' Auto-triggering brainstorm…' });
           appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
           appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
-          tracker.record(cesarEngineId, input, response);
+          tracker.record(cesarEngineId, { prompt: input, response });
           return { delegated: true, responded: true, action: 'brainstorm', reasoning: response };
         }
   
@@ -459,7 +459,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             dispatch({ type: 'warning', message: 'Advisor unavailable' });
             appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
             appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
-            tracker.record(cesarEngineId, input, response);
+            tracker.record(cesarEngineId, { prompt: input, response });
             const fallbackAnswer = await new Promise<string>((resolve) => {
               dispatch({ type: 'question', prompt: `Cesar ${parsedConfidence}% — what next?`, choices: [
                 { key: 'a', label: 'Accept Cesar', color: '#4ade80' },
@@ -497,7 +497,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       if (!streaming) dispatch({ type: 'spinner-stop' });
       appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
       appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
-      tracker.record(cesarEngineId, input, response);
+      tracker.record(cesarEngineId, { prompt: input, response });
       const delResult = await promptDelegation(pendingDel.action, dispatch, pendingDel.hardened, pendingDel.tribunalMode, pendingDel.team);
       if (delResult.approved) {
         const finalAction = delResult.action ?? pendingDel.action;
@@ -515,7 +515,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       if (streaming) dispatch({ type: 'streaming-end', engineId: cesarEngineId });
       appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
       appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
-      tracker.record(cesarEngineId, input, response);
+      tracker.record(cesarEngineId, { prompt: input, response });
       if (finalSuggestion.rest) dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: finalSuggestion.rest });
       const delResult = await promptDelegation(finalSuggestion.action, dispatch, finalSuggestion.hardened, finalSuggestion.tribunalMode, finalSuggestion.team);
       if (delResult.approved) {
@@ -612,7 +612,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       if (!streaming) dispatch({ type: 'spinner-stop' });
       appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
       appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
-      tracker.record(cesarEngineId, input, response);
+      tracker.record(cesarEngineId, { prompt: input, response });
       const delResult = await promptDelegation(postLoopDel.action, dispatch, postLoopDel.hardened, postLoopDel.tribunalMode, postLoopDel.team);
       if (delResult.approved) {
         const finalAction = delResult.action ?? postLoopDel.action;
@@ -631,7 +631,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         if (!streaming) dispatch({ type: 'spinner-stop' });
         appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
         appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
-        tracker.record(cesarEngineId, input, response);
+        tracker.record(cesarEngineId, { prompt: input, response });
         if (postLoopSuggestion.rest) dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: postLoopSuggestion.rest });
         const delResult = await promptDelegation(postLoopSuggestion.action, dispatch, postLoopSuggestion.hardened, postLoopSuggestion.tribunalMode, postLoopSuggestion.team);
         if (delResult.approved) {
@@ -650,7 +650,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       if (enforcement) {
         appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
         appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
-        tracker.record(cesarEngineId, input, response);
+        tracker.record(cesarEngineId, { prompt: input, response });
         return enforcement;
       }
     }
@@ -675,7 +675,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           appendMessage(ctx.chatSession, { role: 'engine', engineId: ch.engineId, content: ch.content, timestamp: new Date().toISOString() });
         }
       }
-      const tokenUsage = tracker.record(cesarEngineId, input, response);
+      const tokenUsage = tracker.record(cesarEngineId, { prompt: input, response });
   
       // Trace
       try {

@@ -223,7 +223,7 @@ fn name=handlePipeline params="input:string, dispatch:Dispatch, ctx:HandlerConte
       dispatch({ type: 'success', message: `Pipeline complete: ${finalFiles} file(s), ${finalLines} line(s) changed in ${iteration} iteration(s)` });
       appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
       appendMessage(ctx.chatSession, { role: 'engine', engineId: buildEngine, content: `Pipeline: ${finalFiles} files, ${finalLines} lines in ${iteration} iteration(s)`, timestamp: new Date().toISOString() });
-      tracker.record(buildEngine, input, `pipeline:${finalLines}lines`);
+      tracker.record(buildEngine, { prompt: input, response: `pipeline:${finalLines}lines` });
     } else if (fitnessCmd && !fitnessPassed && iteration >= maxIterations) {
       // Auto-escalation: pipeline exhausted → suggest forge
       dispatch({ type: 'warning', message: `Pipeline exhausted ${maxIterations} iterations without passing fitness.` });
@@ -235,7 +235,7 @@ fn name=handlePipeline params="input:string, dispatch:Dispatch, ctx:HandlerConte
       dispatch({ type: 'success', message: `Pipeline complete: ${finalFiles} file(s), ${finalLines} line(s) changed in ${iteration} iteration(s)` });
       appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
       appendMessage(ctx.chatSession, { role: 'engine', engineId: buildEngine, content: `Pipeline: ${finalFiles} files, ${finalLines} lines`, timestamp: new Date().toISOString() });
-      tracker.record(buildEngine, input, `pipeline:${finalLines}lines`);
+      tracker.record(buildEngine, { prompt: input, response: `pipeline:${finalLines}lines` });
     }
   >>>
   cleanup <<<

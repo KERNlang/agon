@@ -175,12 +175,12 @@ export async function handleSecondOpinion(secondResult: {stdout:string, engineId
   const advisorResponse = secondResult.stdout.trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
   dispatch({ type: 'engine-block', engineId: secondResult.engineId, color: secondResult.color, content: advisorResponse });
   appendMessage(ctx.chatSession, { role: 'engine', engineId: secondResult.engineId, content: advisorResponse, timestamp: new Date().toISOString() });
-  tracker.record(secondResult.engineId, input, advisorResponse);
+  tracker.record(secondResult.engineId, { prompt: input, response: advisorResponse });
   
   // Save Cesar's response
   appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
   appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
-  tracker.record(cesarEngineId, input, response);
+  tracker.record(cesarEngineId, { prompt: input, response });
   
   // Yield so Ink paints the advisor response before showing the menu
   await new Promise<void>(resolve => setImmediate(resolve));

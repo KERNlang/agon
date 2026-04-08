@@ -1,15 +1,22 @@
+// @kern-source: handlers-chat:1
 import { join } from 'node:path';
 
+// @kern-source: handlers-chat:2
 import { mkdirSync } from 'node:fs';
 
+// @kern-source: handlers-chat:3
 import type { ImageAttachment } from '@agon/core';
 
+// @kern-source: handlers-chat:4
 import { ensureAgonHome, RUNS_DIR, appendMessage, tracker, StreamParser, loadConfig, scanProjectContext, resolveWorkingDir } from '@agon/core';
 
+// @kern-source: handlers-chat:5
 import { ENGINE_COLORS } from '../output.js';
 
+// @kern-source: handlers-chat:6
 import type { Dispatch, HandlerContext } from '../handlers/types.js';
 
+// @kern-source: handlers-chat:8
 function detectTargetEngine(input: string, availableIds: string[]): {engineId:string|null,message:string} {
   const lower = input.toLowerCase();
   for (const id of availableIds) {
@@ -25,6 +32,7 @@ function detectTargetEngine(input: string, availableIds: string[]): {engineId:st
   return { engineId: null, message: input };
 }
 
+// @kern-source: handlers-chat:24
 export async function handleChat(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[], opts?: {toolPolicy?:'full'|'none'}): Promise<void> {
   const abort = new AbortController();
   try {
@@ -217,7 +225,7 @@ export async function handleChat(input: string, dispatch: Dispatch, ctx: Handler
     if (response) {
       appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString(), images: images?.map(img => img.path) });
       appendMessage(ctx.chatSession, { role: 'engine', engineId, content: response, timestamp: new Date().toISOString() });
-      tracker.record(engineId, input, response);
+      tracker.record(engineId, { prompt: input, response });
     } else {
       dispatch({ type: 'spinner-stop' });
       dispatch({ type: 'info', message: 'No response.' });

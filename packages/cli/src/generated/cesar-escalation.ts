@@ -185,9 +185,51 @@ export async function handleSecondOpinion(secondResult: {stdout:string, engineId
   // Yield so Ink paints the advisor response before showing the menu
   await new Promise<void>(resolve => setImmediate(resolve));
   
-  // Escalation menu — same for all low confidence, no more dead STOP
+  // Parse advisor's recommended action from their response
+  const advisorLower = advisorResponse.toLowerCase();
+  const actionKeywords: Record<string, string> = {
+    tribunal: 'tribunal', brainstorm: 'brainstorm', campfire: 'campfire',
+    forge: 'forge', pipeline: 'pipeline',
+  };
+  let advisorRecommendation: string | null = null;
+  // Check for explicit "Mode Recommendation: X" or "should be: X" patterns
+  const modeMatch = advisorLower.match(/(?:mode[:\s]*recommendation|recommend(?:ation)?|should be|suggest)[:\s]*(\w+)/i);
+  if (modeMatch && actionKeywords[modeMatch[1].toLowerCase()]) {
+    advisorRecommendation = actionKeywords[modeMatch[1].toLowerCase()];
+  }
+  // Fallback: check numbered recommendations (e.g. "3. Mode: Tribunal")
+  if (!advisorRecommendation) {
+    for (const [keyword, action] of Object.entries(actionKeywords)) {
+      const pattern = new RegExp(`(?:mode|should|recommend).*?${keyword}`, 'i');
+      if (pattern.test(advisorResponse)) {
+        advisorRecommendation = action;
+        break;
+      }
+    }
+  }
+  
+  // If advisor has a clear recommendation, show simple confirm
+  if (advisorRecommendation) {
+    const modeColors: Record<string, string> = {
+      forge: '#a78bfa', brainstorm: '#60a5fa', tribunal: '#f59e0b',
+      campfire: '#facc15', pipeline: '#f472b6',
+    };
+    const escAnswer = await new Promise<string>((resolve) => {
+      dispatch({ type: 'question', prompt: `${secondResult.engineId} recommends ${advisorRecommendation} — go?`, choices: [
+        { key: 'y', label: `Yes, ${advisorRecommendation}`, color: modeColors[advisorRecommendation!] ?? '#4ade80' },
+        { key: 'a', label: 'Accept Cesar instead', color: '#4ade80' },
+        { key: 'm', label: 'Other mode', color: '#6b7280' },
+      ], resolve } as any);
+    });
+  
+    if (escAnswer === 'y') return { delegated: true, responded: true, action: advisorRecommendation, reasoning: response };
+    if (escAnswer === 'a') return { delegated: false, responded: true };
+    // 'm' falls through to full menu below
+  }
+  
+  // Full menu — either no advisor recommendation or user chose 'Other mode'
   const escAnswer = await new Promise<string>((resolve) => {
-    dispatch({ type: 'question', prompt: `Cesar ${parsedConfidence ?? '?'}% + ${secondResult.engineId} advisor — what next?`, choices: [
+    dispatch({ type: 'question', prompt: `Cesar ${parsedConfidence ?? '?'}% — what next?`, choices: [
       { key: 'a', label: 'Accept Cesar', color: '#4ade80' },
       { key: 'c', label: 'Campfire', color: '#facc15' },
       { key: 'b', label: 'Brainstorm', color: '#60a5fa' },
@@ -203,7 +245,7 @@ export async function handleSecondOpinion(secondResult: {stdout:string, engineId
   return { delegated: false, responded: true };
 }
 
-// @kern-source: cesar-escalation:197
+// @kern-source: cesar-escalation:239
 export function activateNero(ctx: HandlerContext, dispatch: Dispatch): void {
   if (!(ctx as any).neroMode && ctx.setNeroMode) {
     ctx.setNeroMode(true);
@@ -215,7 +257,7 @@ export function activateNero(ctx: HandlerContext, dispatch: Dispatch): void {
   }
 }
 
-// @kern-source: cesar-escalation:210
+// @kern-source: cesar-escalation:252
 export function deactivateNero(ctx: HandlerContext, dispatch: Dispatch): void {
   ctx.setNeroMode(false);
   (ctx as any).neroMode = false;
@@ -223,7 +265,7 @@ export function deactivateNero(ctx: HandlerContext, dispatch: Dispatch): void {
   dispatch({ type: 'info', message: `${icons().nero} Nero deactivated — confidence recovered` });
 }
 
-// @kern-source: cesar-escalation:220
+// @kern-source: cesar-escalation:262
 export async function promptDelegation(action: string, dispatch: Dispatch, hardened?: boolean, tribunalMode?: string, team?: boolean): Promise<{approved:boolean, action?:string, hardened?:boolean, tribunalMode?:string, team?:boolean, userContext?:string}> {
   // Check session auto-approve cache
   const autoApproved = (promptDelegation as any)._autoApprove as Set<string> | undefined;
@@ -285,7 +327,7 @@ export async function promptDelegation(action: string, dispatch: Dispatch, harde
   return { approved: true };
 }
 
-// @kern-source: cesar-escalation:283
+// @kern-source: cesar-escalation:325
 export async function promptProtocolEnforcement(input: string, parsedConfidence: number|null, ctx: HandlerContext, dispatch: Dispatch): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, team?:boolean}|null> {
   if (parsedConfidence === null
       || parsedConfidence >= CONFIDENCE_TIERS.nero

@@ -208,23 +208,24 @@ screen name=CesarStatusStrip target=ink
   prop name=streamSnippet type="{ engineId: string; line: string } | null" optional=true
   prop name=isActive type=boolean
   prop name=planModeQueued type=boolean optional=true
-  prop name=activePlan type=any optional=true
+  prop name=activePlanState type="string|null" optional=true
   state name=now type=number initial="Date.now()"
-  effect
+  effect deps="isActive"
     handler <<<
+      if (!isActive) return;
       const t = setInterval(() => setNow(Date.now()), 1000);
       return () => clearInterval(t);
     >>>
   render
     handler <<<
       // Plan badge (shared between idle and active)
-      const hasPlan = planModeQueued || (activePlan && ['planning', 'awaiting_approval', 'running', 'paused'].includes(activePlan.state));
+      const hasPlan = planModeQueued || (activePlanState && ['planning', 'awaiting_approval', 'running', 'paused'].includes(activePlanState));
       let planLabel = '';
       if (planModeQueued) planLabel = 'ready';
-      else if (activePlan?.state === 'planning') planLabel = 'thinking';
-      else if (activePlan?.state === 'awaiting_approval') planLabel = 'review';
-      else if (activePlan?.state === 'running') planLabel = 'executing';
-      else if (activePlan?.state === 'paused') planLabel = 'paused';
+      else if (activePlanState === 'planning') planLabel = 'thinking';
+      else if (activePlanState === 'awaiting_approval') planLabel = 'review';
+      else if (activePlanState === 'running') planLabel = 'executing';
+      else if (activePlanState === 'paused') planLabel = 'paused';
 
       // Idle: single dimmed line (no colored nesting issues)
       if (!isActive) {

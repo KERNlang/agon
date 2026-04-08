@@ -96,7 +96,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
     const color = ENGINE_COLORS[cesarEngineId] ?? 245;
     ctx.setActiveAbort(abort);
     (ctx as any)._lastDispatch = dispatch;
-    dispatch({ type: 'confidence-update', value: null, engineId: cesarEngineId } as any);
+    dispatch({ type: 'confidence-update', value: null });
     dispatch({ type: 'spinner-start', message: 'Cesar thinking…', color });
     await yieldToInk();
   
@@ -237,7 +237,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               parsedConfidence = toolConf;
               confidenceParsed = true;
               dispatch({ type: 'info', message: confidenceBadge(toolConf) + ` Cesar` });
-              dispatch({ type: 'confidence-update', value: toolConf, engineId: cesarEngineId } as any);
+              dispatch({ type: 'confidence-update', value: toolConf });
               if (toolConf >= CONFIDENCE_TIERS.direct && (ctx as any)._autoNero) deactivateNero(ctx, dispatch);
             }
   
@@ -248,7 +248,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 parsedConfidence = conf.value;
                 confidenceParsed = true;
                 dispatch({ type: 'info', message: confidenceBadge(conf.value) + ` Cesar` });
-                dispatch({ type: 'confidence-update', value: conf.value, engineId: cesarEngineId } as any);
+                dispatch({ type: 'confidence-update', value: conf.value });
                 response = conf.rest;
                 if (conf.value >= CONFIDENCE_TIERS.direct && (ctx as any)._autoNero) deactivateNero(ctx, dispatch);
               } else if (response.length > 30 && !(ctx as any)._hasNativeTools) {
@@ -375,7 +375,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       if (conf.value !== null) {
         parsedConfidence = conf.value;
         dispatch({ type: 'info', message: confidenceBadge(conf.value) + ` Cesar` });
-        dispatch({ type: 'confidence-update', value: conf.value, engineId: cesarEngineId } as any);
+        dispatch({ type: 'confidence-update', value: conf.value });
         response = conf.rest;
       }
       confidenceParsed = true;
@@ -494,7 +494,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       parsedConfidence = toolConf;
       confidenceParsed = true;
       dispatch({ type: 'info', message: confidenceBadge(toolConf) + ` Cesar` });
-      dispatch({ type: 'confidence-update', value: toolConf, engineId: cesarEngineId } as any);
+      dispatch({ type: 'confidence-update', value: toolConf });
       if (toolConf >= CONFIDENCE_TIERS.direct && (ctx as any)._autoNero) deactivateNero(ctx, dispatch);
     }
   

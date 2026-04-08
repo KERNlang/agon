@@ -23,7 +23,7 @@ interface name=OutputActions
   field name=setChatStartTime type="(val:number) => void"
   field name=flushStream type="() => void"
   field name=getEngineColor type="(engineId:string) => number"
-  field name=setCesarConfidence type="(val:number|null) => void" optional=true
+  field name=setCesarConfidence type="(val:number|null) => void"
 
 // ── Permission queue — ensures prompts don't overwrite each other ────
 const name=_permissionQueue type="Array<{tool:string,command:string,reason:string,resolve:(approved:boolean)=>void}>"
@@ -185,7 +185,7 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
         return;
       }
       case 'confidence-update': {
-        if (actions.setCesarConfidence) actions.setCesarConfidence((event as any).value);
+        actions.setCesarConfidence((event as any).value);
         return;
       }
       default:

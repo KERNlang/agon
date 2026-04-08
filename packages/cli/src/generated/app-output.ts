@@ -29,7 +29,7 @@ export interface OutputActions {
   setChatStartTime: (val:number) => void;
   flushStream: () => void;
   getEngineColor: (engineId:string) => number;
-  setCesarConfidence?: (val:number|null) => void;
+  setCesarConfidence: (val:number|null) => void;
 }
 
 // @kern-source: app-output:29
@@ -188,7 +188,7 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
       return;
     }
     case 'confidence-update': {
-      if (actions.setCesarConfidence) actions.setCesarConfidence((event as any).value);
+      actions.setCesarConfidence((event as any).value);
       return;
     }
     default:

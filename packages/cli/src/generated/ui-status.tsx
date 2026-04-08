@@ -195,22 +195,23 @@ export function BackgroundJobRail({ jobs }: { jobs: Job[] }) {
 
 // @kern-source: ui-status:202
 
-export function CesarStatusStrip({ cesarId, confidence, spinner, engines, startTime, streamSnippet, isActive, planModeQueued, activePlan }: { cesarId: string; confidence?: number|null; spinner: { message: string; engineId?: string } | null; engines: EngineProgress[]|null; startTime: number; streamSnippet?: { engineId: string; line: string } | null; isActive: boolean; planModeQueued?: boolean; activePlan?: any }) {
+export function CesarStatusStrip({ cesarId, confidence, spinner, engines, startTime, streamSnippet, isActive, planModeQueued, activePlanState }: { cesarId: string; confidence?: number|null; spinner: { message: string; engineId?: string } | null; engines: EngineProgress[]|null; startTime: number; streamSnippet?: { engineId: string; line: string } | null; isActive: boolean; planModeQueued?: boolean; activePlanState?: string|null }) {
   const [now, setNow] = useState<number>(Date.now());
 
   useEffect(() => {
+          if (!isActive) return;
           const t = setInterval(() => setNow(Date.now()), 1000);
           return () => clearInterval(t);
-  }, []);
+  }, [isActive]);
 
         // Plan badge (shared between idle and active)
-        const hasPlan = planModeQueued || (activePlan && ['planning', 'awaiting_approval', 'running', 'paused'].includes(activePlan.state));
+        const hasPlan = planModeQueued || (activePlanState && ['planning', 'awaiting_approval', 'running', 'paused'].includes(activePlanState));
         let planLabel = '';
         if (planModeQueued) planLabel = 'ready';
-        else if (activePlan?.state === 'planning') planLabel = 'thinking';
-        else if (activePlan?.state === 'awaiting_approval') planLabel = 'review';
-        else if (activePlan?.state === 'running') planLabel = 'executing';
-        else if (activePlan?.state === 'paused') planLabel = 'paused';
+        else if (activePlanState === 'planning') planLabel = 'thinking';
+        else if (activePlanState === 'awaiting_approval') planLabel = 'review';
+        else if (activePlanState === 'running') planLabel = 'executing';
+        else if (activePlanState === 'paused') planLabel = 'paused';
   
         // Idle: single dimmed line (no colored nesting issues)
         if (!isActive) {

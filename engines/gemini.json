@@ -21,7 +21,7 @@
     "args": ["-p", "{prompt}", "--approval-mode", "plan"]
   },
   "agent": {
-    "args": ["{prompt}", "--approval-mode", "yolo"]
+    "args": ["-p", "{prompt}", "--approval-mode", "yolo"]
   },
 
   "model": {

@@ -21,7 +21,7 @@
     "args": ["--print", "--dangerously-skip-permissions", "--max-turns", "50", "{prompt}"]
   },
   "agent": {
-    "args": ["--dangerously-skip-permissions", "--verbose", "--max-turns", "100", "{prompt}"]
+    "args": ["--print", "--dangerously-skip-permissions", "--verbose", "--max-turns", "100", "{prompt}"]
   },
 
   "model": {

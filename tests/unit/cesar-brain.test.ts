@@ -252,10 +252,11 @@ describe('Cesar Brain', () => {
 
   describe('CONFIDENCE_TIERS', () => {
     it('has correct thresholds', () => {
-      expect(CONFIDENCE_TIERS.direct).toBe(93);
+      expect(CONFIDENCE_TIERS.direct).toBe(96);
+      expect(CONFIDENCE_TIERS.quickNero).toBe(93);
       expect(CONFIDENCE_TIERS.nero).toBe(88);
-      expect(CONFIDENCE_TIERS.discuss).toBe(70);
-      expect(CONFIDENCE_TIERS.stop).toBe(70);
+      expect(CONFIDENCE_TIERS.brainstorm).toBe(72);
+      expect(CONFIDENCE_TIERS.advisor).toBe(72);
     });
   });
 

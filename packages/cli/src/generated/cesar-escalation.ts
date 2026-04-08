@@ -17,7 +17,7 @@ import { icons } from '../icons.js';
 import type { Dispatch, HandlerContext } from '../handlers/types.js';
 
 // @kern-source: cesar-escalation:7
-import { CONFIDENCE_TIERS, confidenceBadge } from './cesar-confidence.js';
+import { CONFIDENCE_TIERS, confidenceBadge, parseConfidence } from './cesar-confidence.js';
 
 // @kern-source: cesar-escalation:8
 import { CESAR_SYSTEM_PROMPT } from './cesar-session.js';
@@ -99,6 +99,75 @@ export async function fireAdvisor(input: string, cesarResponse: string, parsedCo
 }
 
 // @kern-source: cesar-escalation:89
+export async function fireQuickNero(session: any, response: string, input: string, confidence: number, dispatch: Dispatch, signal: AbortSignal, ctx: HandlerContext): Promise<{ challenged: boolean; newConfidence: number|null; challengeText: string }> {
+  const challengePrompt = `[SELF-CHECK] You just responded at ${confidence}% confidence to: "${input.slice(0, 200)}"
+  
+  Your response: "${response.slice(0, 800)}"
+  
+  Challenge your own answer in 2-3 sentences. What could be wrong? What assumptions might not hold? If you find a real flaw, explain it. Start with ~X% for your revised confidence after this self-review.`;
+  
+      try {
+        let challengeText = '';
+        const gen = session.send({ message: challengePrompt, signal });
+        for await (const chunk of gen) {
+          if (signal.aborted) break;
+          if (chunk.type === 'text') challengeText += chunk.content;
+          if (chunk.type === 'done') break;
+        }
+        if (!challengeText.trim()) return { challenged: false, newConfidence: null, challengeText: '' };
+  
+        // Check tool-reported confidence first (API/native-tool backends use ReportConfidence)
+        if ((ctx as any)._reportedConfidence !== undefined) {
+          const toolConf = (ctx as any)._reportedConfidence as number;
+          delete (ctx as any)._reportedConfidence;
+          return { challenged: true, newConfidence: toolConf, challengeText };
+        }
+        // Fall back to parsing ~X% from text
+        const conf = parseConfidence(challengeText);
+        return { challenged: true, newConfidence: conf.value, challengeText: conf.rest || challengeText };
+      } catch {
+        return { challenged: false, newConfidence: null, challengeText: '' };
+      }
+}
+
+// @kern-source: cesar-escalation:122
+export async function fireNero(input: string, response: string, confidence: number, ctx: HandlerContext, abort: AbortController): Promise<{ challengeText: string; challengeConfidence: number|null } | null> {
+  const cesarEngineId = (ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude';
+      const cesarEngine = ctx.registry.get(cesarEngineId);
+      const outDir = join(RUNS_DIR, `nero-${Date.now()}`);
+      mkdirSync(outDir, { recursive: true });
+  
+      const neroPrompt = `You are Nero, the adversarial challenger. Your job is to attack the original response and find flaws.
+  
+  TASK: ${input.slice(0, 500)}
+  
+  CESAR'S RESPONSE (${confidence}%): ${response.slice(0, 1500)}
+  
+  Be specific and direct:
+  1. What's wrong with this response? (flaws, incorrect assumptions, missing edge cases)
+  2. What would you do differently?
+  3. Start with ~X% for how confident YOU are that the original is correct.`;
+  
+      try {
+        const result = await ctx.adapter.dispatch({
+          engine: cesarEngine,
+          prompt: neroPrompt,
+          cwd: resolveWorkingDir(),
+          mode: 'exec' as any,
+          timeout: ctx.config.timeout ?? 120,
+          outputDir: outDir,
+          signal: abort.signal,
+        });
+        if (!result.stdout.trim()) return null;
+        const cleaned = result.stdout.trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
+        const conf = parseConfidence(cleaned);
+        return { challengeText: conf.rest || cleaned, challengeConfidence: conf.value };
+      } catch {
+        return null;
+      }
+}
+
+// @kern-source: cesar-escalation:160
 export async function handleSecondOpinion(secondResult: {stdout:string, engineId:string, color:number}|null, input: string, response: string, parsedConfidence: number|null, cesarEngineId: string, dispatch: Dispatch, ctx: HandlerContext, abortSignal?: AbortSignal): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string}|null> {
   if (!secondResult || !secondResult.stdout.trim()) return null;
   
@@ -120,48 +189,41 @@ export async function handleSecondOpinion(secondResult: {stdout:string, engineId
   const escAnswer = await new Promise<string>((resolve) => {
     dispatch({ type: 'question', prompt: `Cesar ${parsedConfidence ?? '?'}% + ${secondResult.engineId} advisor — what next?`, choices: [
       { key: 'a', label: 'Accept Cesar', color: '#4ade80' },
+      { key: 'c', label: 'Campfire', color: '#facc15' },
       { key: 'b', label: 'Brainstorm', color: '#60a5fa' },
       { key: 't', label: 'Tribunal', color: '#f59e0b' },
       { key: 'f', label: 'Forge', color: '#a78bfa' },
     ], resolve } as any);
   });
   
+  if (escAnswer === 'c') return { delegated: true, responded: true, action: 'campfire', reasoning: response };
   if (escAnswer === 'b') return { delegated: true, responded: true, action: 'brainstorm', reasoning: response };
   if (escAnswer === 't') return { delegated: true, responded: true, action: 'tribunal', reasoning: response };
   if (escAnswer === 'f') return { delegated: true, responded: true, action: 'forge', reasoning: response };
   return { delegated: false, responded: true };
 }
 
-// @kern-source: cesar-escalation:124
+// @kern-source: cesar-escalation:197
 export function activateNero(ctx: HandlerContext, dispatch: Dispatch): void {
   if (!(ctx as any).neroMode && ctx.setNeroMode) {
     ctx.setNeroMode(true);
     (ctx as any).neroMode = true;
     (ctx as any)._autoNero = true;
-    // Kill session — next turn will rebuild with NERO MODE in system prompt.
-    // This is the same approach as manual /nero. The old injectNeroMode approach
-    // sent a fake [SYSTEM] user message that models mostly ignored.
-    if (ctx.cesarSession) {
-      ctx.cesarSession.close();
-      ctx.setCesarSession(null);
-    }
-    dispatch({ type: 'info', message: `${icons().nero} Nero activated — Cesar will challenge on next turn` });
+    // No longer kill session — same-turn escalation handles challenges.
+    // Session stays alive for manual /nero toggle (system prompt injection).
+    dispatch({ type: 'info', message: `${icons().nero} Nero mode active` });
   }
 }
 
-// @kern-source: cesar-escalation:142
+// @kern-source: cesar-escalation:210
 export function deactivateNero(ctx: HandlerContext, dispatch: Dispatch): void {
   ctx.setNeroMode(false);
   (ctx as any).neroMode = false;
   (ctx as any)._autoNero = false;
-  if (ctx.cesarSession) {
-    ctx.cesarSession.close();
-    ctx.setCesarSession(null);
-  }
   dispatch({ type: 'info', message: `${icons().nero} Nero deactivated — confidence recovered` });
 }
 
-// @kern-source: cesar-escalation:156
+// @kern-source: cesar-escalation:220
 export async function promptDelegation(action: string, dispatch: Dispatch, hardened?: boolean, tribunalMode?: string, team?: boolean): Promise<{approved:boolean, action?:string, hardened?:boolean, tribunalMode?:string, team?:boolean, userContext?:string}> {
   // Check session auto-approve cache
   const autoApproved = (promptDelegation as any)._autoApprove as Set<string> | undefined;
@@ -223,11 +285,11 @@ export async function promptDelegation(action: string, dispatch: Dispatch, harde
   return { approved: true };
 }
 
-// @kern-source: cesar-escalation:219
+// @kern-source: cesar-escalation:283
 export async function promptProtocolEnforcement(input: string, parsedConfidence: number|null, ctx: HandlerContext, dispatch: Dispatch): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, team?:boolean}|null> {
   if (parsedConfidence === null
       || parsedConfidence >= CONFIDENCE_TIERS.nero
-      || parsedConfidence < CONFIDENCE_TIERS.stop
+      || parsedConfidence < CONFIDENCE_TIERS.advisor
       || ctx.activeEngines().length <= 1) {
     return null;
   }

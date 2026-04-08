@@ -32,7 +32,7 @@ import { ensureCesarSession, CESAR_SYSTEM_PROMPT } from './cesar-session.js';
 import { createCesarToolRegistry, createEagerToolContext, executeEagerTool } from './cesar-tools.js';
 
 // @kern-source: handlers-cesar-brain:12
-import { fireSecondOpinion, fireAdvisor, handleSecondOpinion, activateNero, deactivateNero, promptDelegation, promptProtocolEnforcement } from './cesar-escalation.js';
+import { fireQuickNero, fireNero, fireAdvisor, handleSecondOpinion, activateNero, deactivateNero, promptDelegation, promptProtocolEnforcement } from './cesar-escalation.js';
 
 // @kern-source: handlers-cesar-brain:13
 import { buildRoutingContext } from './cesar-routing.js';
@@ -376,39 +376,69 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       confidenceParsed = true;
     }
   
-    // ── Post-stream escalation — only NOW do we apply confidence tiers ──
-    // Initial confidence was just "I haven't read the code yet". Now the model
-    // has finished its turn (tool calls done, response complete). If confidence
-    // is still low and model didn't delegate, escalate.
+    // Deferred challenge messages — appended after user/cesar pair to preserve history order
+    let _deferredChallenges: Array<{ engineId: string; content: string }> = [];
+  
+    // ── Post-stream escalation — same-turn tiered confidence challenges ──
+    // Quick-nero (93-95%) → nero (88-92%) → brainstorm (72-87%) → advisor (<72%)
+    // Quick-nero cascades: if self-challenge drops confidence, fall through to next tier.
     if (parsedConfidence !== null && !secondOpinionPromise && !(ctx as any)._advisorPending && !_isFollowUp && !abort.signal.aborted) {
-      // Check: did the model delegate via tool call or [SUGGEST:mode]?
       const pendingDel = (ctx as any)._pendingDelegation;
       const didDelegate = !!pendingDel;
   
       if (!didDelegate) {
-        if (parsedConfidence >= CONFIDENCE_TIERS.nero && parsedConfidence < CONFIDENCE_TIERS.direct) {
-          // 88-92%: Nero — challenge on next turn
-          activateNero(ctx, dispatch);
-        } else if (parsedConfidence >= CONFIDENCE_TIERS.stop && parsedConfidence < CONFIDENCE_TIERS.nero) {
-          // 70-87%: second opinion from best-ranked engine
+  
+        // ── 93-95%: Quick Nero — same-session self-challenge ──
+        if (parsedConfidence >= CONFIDENCE_TIERS.quickNero && parsedConfidence < CONFIDENCE_TIERS.direct) {
+          if (streaming) { dispatch({ type: 'streaming-end', engineId: cesarEngineId }); streaming = false; }
+          dispatch({ type: 'spinner-start', message: confidenceBadge(parsedConfidence) + ' Quick Nero — self-challenge…', color });
+          await yieldToInk();
+          const qnResult = await fireQuickNero(session, response, input, parsedConfidence, dispatch, abort.signal, ctx);
+          dispatch({ type: 'spinner-stop' });
+          if (qnResult.challenged && qnResult.challengeText) {
+            dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: `**Self-challenge:**\n${qnResult.challengeText}` });
+            _deferredChallenges.push({ engineId: cesarEngineId, content: `[quick-nero] ${qnResult.challengeText}` });
+          }
+          // Cascade: if confidence dropped, update and fall through to next tier
+          if (qnResult.newConfidence !== null && qnResult.newConfidence < CONFIDENCE_TIERS.quickNero) {
+            parsedConfidence = qnResult.newConfidence;
+            dispatch({ type: 'info', message: confidenceBadge(parsedConfidence) + ' Confidence dropped — cascading…' });
+          }
+        }
+  
+        // ── 88-92%: Nero — same-turn adversarial subagent ──
+        if (parsedConfidence >= CONFIDENCE_TIERS.nero && parsedConfidence < CONFIDENCE_TIERS.quickNero) {
           if (streaming) { dispatch({ type: 'streaming-end', engineId: cesarEngineId }); streaming = false; }
           const _escStart = Date.now();
           const _escTimer = setInterval(() => {
             if (abort.signal.aborted) { clearInterval(_escTimer); return; }
-            dispatch({ type: 'spinner-update', message: confidenceBadge(parsedConfidence!) + ` Getting second opinion… ${Math.round((Date.now() - _escStart) / 1000)}s` });
+            dispatch({ type: 'spinner-update', message: confidenceBadge(parsedConfidence!) + ` Nero challenge… ${Math.round((Date.now() - _escStart) / 1000)}s` });
           }, 15_000);
-          dispatch({ type: 'spinner-start', message: confidenceBadge(parsedConfidence) + ' Getting second opinion…', color });
+          dispatch({ type: 'spinner-start', message: confidenceBadge(parsedConfidence) + ' Nero — adversarial challenge…', color });
           await yieldToInk();
-          const secondResult = await fireSecondOpinion(input, ctx, abort);
+          const neroResult = await fireNero(input, response, parsedConfidence, ctx, abort);
           clearInterval(_escTimer);
           dispatch({ type: 'spinner-stop' });
-          if (!abort.signal.aborted) {
-            const escalation = await handleSecondOpinion(secondResult, input, response, parsedConfidence, cesarEngineId, dispatch, ctx, abort.signal);
-            if (escalation) return escalation;
+          if (neroResult && neroResult.challengeText) {
+            dispatch({ type: 'engine-block', engineId: `${cesarEngineId}-nero`, color, content: neroResult.challengeText });
+            _deferredChallenges.push({ engineId: `${cesarEngineId}-nero`, content: neroResult.challengeText });
+            tracker.record(`${cesarEngineId}-nero`, input, neroResult.challengeText);
           }
-          activateNero(ctx, dispatch);
-        } else if (parsedConfidence < CONFIDENCE_TIERS.stop) {
-          // <70%: advisor
+          // Nero is informational — user sees both original + challenge and continues
+        }
+  
+        // ── 72-87%: Auto-brainstorm ──
+        else if (parsedConfidence >= CONFIDENCE_TIERS.brainstorm && parsedConfidence < CONFIDENCE_TIERS.nero) {
+          if (streaming) { dispatch({ type: 'streaming-end', engineId: cesarEngineId }); streaming = false; }
+          dispatch({ type: 'info', message: confidenceBadge(parsedConfidence) + ' Auto-triggering brainstorm…' });
+          appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
+          appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
+          tracker.record(cesarEngineId, input, response);
+          return { delegated: true, responded: true, action: 'brainstorm', reasoning: response };
+        }
+  
+        // ── <72%: Advisor + full escalation menu ──
+        else if (parsedConfidence < CONFIDENCE_TIERS.advisor) {
           if (streaming) { dispatch({ type: 'streaming-end', engineId: cesarEngineId }); streaming = false; }
           const _escStart = Date.now();
           const _escTimer = setInterval(() => {
@@ -431,13 +461,15 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
             tracker.record(cesarEngineId, input, response);
             const fallbackAnswer = await new Promise<string>((resolve) => {
-              dispatch({ type: 'question', prompt: `Cesar ${parsedConfidence}% — no advisor. What next?`, choices: [
+              dispatch({ type: 'question', prompt: `Cesar ${parsedConfidence}% — what next?`, choices: [
                 { key: 'a', label: 'Accept Cesar', color: '#4ade80' },
+                { key: 'c', label: 'Campfire', color: '#facc15' },
                 { key: 'b', label: 'Brainstorm', color: '#60a5fa' },
                 { key: 't', label: 'Tribunal', color: '#f59e0b' },
                 { key: 'f', label: 'Forge', color: '#a78bfa' },
               ], resolve } as any);
             });
+            if (fallbackAnswer === 'c') return { delegated: true, responded: true, action: 'campfire', reasoning: response };
             if (fallbackAnswer === 'b') return { delegated: true, responded: true, action: 'brainstorm', reasoning: response };
             if (fallbackAnswer === 't') return { delegated: true, responded: true, action: 'tribunal', reasoning: response };
             if (fallbackAnswer === 'f') return { delegated: true, responded: true, action: 'forge', reasoning: response };
@@ -637,6 +669,12 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
     if (response) {
       appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
       appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
+      // Append deferred challenge messages after user/cesar pair to preserve history order
+      if (_deferredChallenges && _deferredChallenges.length > 0) {
+        for (const ch of _deferredChallenges) {
+          appendMessage(ctx.chatSession, { role: 'engine', engineId: ch.engineId, content: ch.content, timestamp: new Date().toISOString() });
+        }
+      }
       const tokenUsage = tracker.record(cesarEngineId, input, response);
   
       // Trace

@@ -441,9 +441,10 @@ export function OutputBlockView({ event, mode, toolOutputExpanded }: { event: Ou
                     const outLines = event.output.split('\n');
                     const total = outLines.length;
                     const maxHead = total > 80 ? 30 : 50;
-                    const showTail = total > maxHead;
-                    const headLines = outLines.slice(0, maxHead);
-                    const tailLines = showTail ? outLines.slice(-5) : [];
+                    const tailCount = 5;
+                    const showTail = total > maxHead + tailCount;
+                    const headLines = outLines.slice(0, showTail ? maxHead : total);
+                    const tailLines = showTail ? outLines.slice(-tailCount) : [];
                     const skipped = total - maxHead - tailLines.length;
                     const renderLine = (line: string, i: number, prefix: string) => (
                       <Box key={`${prefix}-${i}`}>
@@ -667,7 +668,7 @@ export function OutputBlockView({ event, mode, toolOutputExpanded }: { event: Ou
 }
 
 
-// @kern-source: ui-engine:675
+// @kern-source: ui-engine:676
 
 export function ToolCallGroup({ blocks }: { blocks: OutputBlock[] }) {
         const toolCounts: Record<string, number> = {};

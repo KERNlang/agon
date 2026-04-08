@@ -68,9 +68,28 @@ fn name=buildStepExecutors params="ctx:HandlerContext" returns="Record<string,St
           );
           const totalTokens = (manifest.dispatchLog ?? []).reduce((s: number, m: any) => s + (m.tokens?.prompt ?? 0) + (m.tokens?.response ?? 0), 0);
           const totalCost = (manifest.dispatchLog ?? []).reduce((s: number, m: any) => s + (m.tokens?.costUsd ?? 0), 0);
+
+          if (!manifest.winner) {
+            // Collect per-engine summaries for the user
+            const engineSummaries = Object.entries(manifest.results ?? {}).map(([id, r]: [string, any]) => {
+              return `  ${id}: ${r.pass ? 'PASS' : 'FAIL'} (score: ${r.score ?? 'N/A'}, ${r.diffLines ?? 0} lines)`;
+            }).join('\n');
+
+            return {
+              result: {
+                status: 'failure',
+                actualTokens: totalTokens,
+                actualCostUsd: totalCost,
+                durationMs: Date.now() - startTime,
+                output: `Forge produced no winner.\n\nEngine results:\n${engineSummaries}\n\nUse /plan resume after deciding: retry with different engines, or abort.`,
+                error: 'No winner — all engines failed or no passing score',
+              },
+            };
+          }
+
           return {
-            result: { status: manifest.winner ? 'success' : 'failure', actualTokens: totalTokens, actualCostUsd: totalCost, durationMs: Date.now() - startTime, output: manifest.winner ? `Winner: ${manifest.winner}` : 'No winner', error: manifest.winner ? undefined : 'No winner' },
-            contextExport: manifest.winner ? `Forge winner: ${manifest.winner}` : undefined,
+            result: { status: 'success', actualTokens: totalTokens, actualCostUsd: totalCost, durationMs: Date.now() - startTime, output: `Winner: ${manifest.winner}` },
+            contextExport: `Forge winner: ${manifest.winner}`,
           };
         } catch (err) {
           return { result: { status: 'failure', actualTokens: 0, actualCostUsd: 0, durationMs: Date.now() - startTime, output: '', error: err instanceof Error ? err.message : String(err) } };

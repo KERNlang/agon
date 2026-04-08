@@ -10,6 +10,7 @@ interface name=PlanExecutorCallbacks export=true
   field name=onStepDone type="(stepId:string, result:CesarStepResult)=>void"
   field name=onPlanUpdate type="(plan:CesarPlan)=>void"
   field name=onBudgetWarning type="(actual:number, estimated:number)=>void"
+  field name=summarizeStepOutput type="(stepId:string, output:string)=>Promise<string>" optional=true
 
 fn name=getReadySteps params="plan:CesarPlan" returns="CesarPlanStep[]" export=true
   handler <<<
@@ -40,8 +41,12 @@ fn name=executePlan async=true params="plan:CesarPlan, executors:Record<string,S
           try {
             const { result, contextExport } = await executor.execute(step, current.stepContext, signal);
             if (contextExport && step.exports && step.exports.length > 0) {
+              let summary = contextExport;
+              if (callbacks.summarizeStepOutput) {
+                try { summary = await callbacks.summarizeStepOutput(step.id, contextExport); } catch {}
+              }
               const exportUpdates: Record<string, string> = {};
-              for (const key of step.exports) { exportUpdates[key] = contextExport; }
+              for (const key of step.exports) { exportUpdates[key] = summary; }
               current = { ...current, stepContext: { ...current.stepContext, ...exportUpdates } };
             }
             return { stepId: step.id, result };
@@ -72,8 +77,12 @@ fn name=executePlan async=true params="plan:CesarPlan, executors:Record<string,S
         try {
           const { result, contextExport } = await executor.execute(step, current.stepContext, signal);
           if (contextExport && step.exports && step.exports.length > 0) {
+            let summary = contextExport;
+            if (callbacks.summarizeStepOutput) {
+              try { summary = await callbacks.summarizeStepOutput(step.id, contextExport); } catch {}
+            }
             const exportUpdates: Record<string, string> = {};
-            for (const key of step.exports) { exportUpdates[key] = contextExport; }
+            for (const key of step.exports) { exportUpdates[key] = summary; }
             current = { ...current, stepContext: { ...current.stepContext, ...exportUpdates } };
           }
           current = advanceCesarStep(current, step.id, result);

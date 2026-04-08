@@ -439,6 +439,12 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
               onBudgetWarning: (actual: number, estimated: number) => {
                 cb.dispatch({ type: 'warning', message: `Budget warning: $${actual.toFixed(2)} actual vs $${estimated.toFixed(2)} estimated` });
               },
+              summarizeStepOutput: async (stepId: string, output: string) => {
+                // Truncate long outputs to a concise summary
+                if (output.length <= 500) return output;
+                // Simple truncation with note — full Cesar summarization can be added later
+                return output.slice(0, 500) + `\n\n[... truncated from ${output.length} chars. Full output in step ${stepId}]`;
+              },
             };
   
             try {
@@ -542,6 +548,10 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
         },
         onBudgetWarning: (actual: number, estimated: number) => {
           cb.dispatch({ type: 'warning', message: `Budget warning: $${actual.toFixed(2)} actual vs $${estimated.toFixed(2)} estimated` });
+        },
+        summarizeStepOutput: async (stepId: string, output: string) => {
+          if (output.length <= 500) return output;
+          return output.slice(0, 500) + `\n\n[... truncated from ${output.length} chars. Full output in step ${stepId}]`;
         },
       };
   

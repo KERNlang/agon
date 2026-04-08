@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { cleanInputValue, cleanSubmitValue, findInputChange, resolveEscapeAction } from '../../packages/cli/src/generated/signals/app-input.js';
+import { cleanInputValue, cleanSubmitValue, findInputChange, resolveEscapeAction, shouldQueuePlanModeOnTab, tryGhostComplete } from '../../packages/cli/src/generated/signals/app-input.js';
 import { processPasteContent } from '../../packages/cli/src/generated/signals/paste-handler.js';
 import { pasteStore } from '@agon/core';
 
@@ -23,6 +23,14 @@ describe('app input helpers', () => {
       removed: '',
       inserted: 'brave new ',
     });
+  });
+
+  it('does not ghost-complete slash command names anymore', () => {
+    expect(tryGhostComplete('/pl', [{ cmd: '/plan' }, { cmd: '/help' }], ['claude'])).toBeNull();
+  });
+
+  it('still ghost-completes engine ids for /use', () => {
+    expect(tryGhostComplete('/use cl', [{ cmd: '/use' }], ['claude', 'codex'])).toBe('aude');
   });
 });
 
@@ -87,5 +95,31 @@ describe('resolveEscapeAction', () => {
       enginePickerOpen: false,
       questionOpen: false,
     })).toEqual({ action: 'noop' });
+  });
+});
+
+describe('shouldQueuePlanModeOnTab', () => {
+  it('queues plan mode only when idle with an empty composer', () => {
+    expect(shouldQueuePlanModeOnTab({
+      replState: 'idle',
+      inputValue: '',
+      activePlanState: null,
+    })).toBe(true);
+  });
+
+  it('does not queue plan mode when there is draft input', () => {
+    expect(shouldQueuePlanModeOnTab({
+      replState: 'idle',
+      inputValue: 'draft task',
+      activePlanState: null,
+    })).toBe(false);
+  });
+
+  it('does not queue plan mode while another plan is already active', () => {
+    expect(shouldQueuePlanModeOnTab({
+      replState: 'idle',
+      inputValue: '',
+      activePlanState: 'planning',
+    })).toBe(false);
   });
 });

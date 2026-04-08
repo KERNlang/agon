@@ -74,13 +74,13 @@ import { handleOutputEvent, clearPermissionQueue } from '../signals/output.js';
 import type { OutputActions, OutputState } from '../signals/output.js';
 
 // @kern-source: app:29
-import { cleanInputValue, cleanSubmitValue, findInputChange, navigateHistory, resolveEscapeAction } from '../signals/app-input.js';
+import { cleanInputValue, cleanSubmitValue, findInputChange, navigateHistory, resolveEscapeAction, shouldQueuePlanModeOnTab } from '../signals/app-input.js';
 
 // @kern-source: app:30
 import { handleReviewAction } from '../blocks/review.js';
 
 // @kern-source: app:31
-import { SpinnerBlock, EngineProgressView, StatusLine, StatusBar, CesarStatusStrip, OutputBlockView, ToolCallGroup, SlashPicker, EnginePicker, ModelPicker, ReviewBlock, BackgroundJobRail, RenderedSegments, CesarPicker, contentWidth, engineColor } from '../../components.js';
+import { SpinnerBlock, EngineProgressView, StatusBar, CesarStatusStrip, OutputBlockView, ToolCallGroup, SlashPicker, EnginePicker, ModelPicker, ReviewBlock, BackgroundJobRail, RenderedSegments, CesarPicker, contentWidth, engineColor } from '../../components.js';
 
 // @kern-source: app:32
 import type { OutputBlock, ReviewEvent } from '../../components.js';
@@ -283,6 +283,7 @@ export function App({  }: {  }) {
     
           // "/" typed into empty input → open slash picker, swallow the character
           if (!inputValue && nextValue === '/' && !slashPickerOpen && !enginePickerOpen && !modelPickerOpen && !questionState && !justPastedRef.current) {
+            if (planModeQueued) setPlanModeQueued(false);
             setSlashPickerOpen(true);
             setInputKey((k: number) => k + 1);
             return;
@@ -319,13 +320,17 @@ export function App({  }: {  }) {
           const updatedValue = nextValue.slice(0, change.start) + replacement + nextValue.slice(change.start + change.inserted.length);
           setInputValue(updatedValue);
           setInputKey((k: number) => k + 1);
-  }, [inputValue]);
+  }, [inputValue, slashPickerOpen, enginePickerOpen, modelPickerOpen, questionState, planModeQueued]);
 
   const handleSubmit = useCallback(async (value:string) => {
           let input = cleanSubmitValue(value);
           if (!input) return;
           // Bare "/" → open slash picker flyout, don't dump text list
-          if (input === '/') { setSlashPickerOpen(true); return; }
+          if (input === '/') {
+            if (planModeQueued) setPlanModeQueued(false);
+            setSlashPickerOpen(true);
+            return;
+          }
           input = expandPastePlaceholders(input, pasteHashesRef.current);
           pasteHashesRef.current.clear();
           pasteCountRef.current = 0;
@@ -441,7 +446,7 @@ export function App({  }: {  }) {
             if (result.ranAsJob) return;
           } catch (err: any) { dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); }
           finally { setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state); }
-  }, [replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus]);
+  }, [replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,planModeQueued]);
 
   const handleReviewActionCb = useCallback((action:'apply'|'edit'|'reject'|'copy') => {
           if (!reviewEvent) return;
@@ -470,6 +475,7 @@ export function App({  }: {  }) {
   }, [dispatch]);
 
   const handleSlashSelect = useCallback((cmd:string) => {
+          setPlanModeQueued(false);
           setSlashPickerOpen(false);
           setInputValue(cmd + ' ');
           setInputKey((k: number) => k + 1);
@@ -612,8 +618,7 @@ export function App({  }: {  }) {
           if ((key.tab || input === '\t') && !slashPickerOpen && !enginePickerOpen && !questionState && !reviewEvent) {
             const ghost = getGhostCompletion(inputValue, allSlashCommands, registry.availableIds());
             if (ghost) { setInputValue(inputValue + ghost + ' '); setInputKey((k: number) => k + 1); return; }
-            if (replState === 'idle') {
-              if (activePlan && ['planning', 'awaiting_approval', 'running', 'paused'].includes(activePlan.state)) return;
+            if (shouldQueuePlanModeOnTab({ replState, inputValue, activePlanState: activePlan?.state ?? null })) {
               setPlanModeQueued((prev: boolean) => !prev);
               return;
             }
@@ -800,9 +805,7 @@ export function App({  }: {  }) {
               }}
               onCancel={() => setCesarPickerOpen(false)} />
           )}
-          {liveSpinner && (mode === 'chat'
-            ? <StatusLine startTime={chatStartTimeRef.current || Date.now()} engineId={liveSpinner.engineId} color={liveSpinner.color} />
-            : <SpinnerBlock message={liveSpinner.message} color={liveSpinner.color} />)}
+          {liveSpinner && mode !== 'chat' && <SpinnerBlock message={liveSpinner.message} color={liveSpinner.color} />}
           {!enginePickerOpen && !modelPickerOpen && !cesarPickerOpen && (
             <Box flexDirection="column" paddingX={1} marginTop={1}>
               {slashPickerOpen && <SlashPicker commands={allSlashCommands} onSelect={handleSlashSelect} onCancel={() => setSlashPickerOpen(false)} />}
@@ -824,8 +827,7 @@ export function App({  }: {  }) {
               ) : (
                 <Box borderStyle={mode === 'chat' ? 'round' : 'single'} borderColor={mode === 'chat' ? '#585858' : 'gray'} borderLeft={mode !== 'chat'} borderRight={mode !== 'chat'} borderTop borderBottom paddingX={1} width="100%">
                   {mode !== 'chat' && (<Text><Text color={mode === 'campfire' ? '#f97316' : mode === 'brainstorm' ? '#22d3ee' : '#a78bfa'} bold>{mode === 'campfire' ? icons().campfire : mode === 'brainstorm' ? icons().brainstorm : icons().tribunal}{' '}{mode}</Text><Text dimColor>{' │ '}</Text></Text>)}
-                  {(planModeQueued || (activePlan && ['planning', 'awaiting_approval', 'running', 'paused'].includes(activePlan.state))) && (<Text><Text color="#c084fc" bold>{'◈ plan'}</Text><Text dimColor>{planModeQueued ? ' ready' : activePlan.state === 'planning' ? ' thinking…' : activePlan.state === 'awaiting_approval' ? ' review' : activePlan.state === 'running' ? ' executing…' : ' paused'}</Text><Text dimColor>{' │ '}</Text></Text>)}
-                  <Text color={mode === 'chat' ? (planModeQueued || (activePlan && activePlan.state === 'planning') ? '#c084fc' : '#585858') : '#fbbf24'}>{mode === 'chat' ? '> ' : icons().prompt + ' '}</Text>
+                  <Text color={mode === 'chat' ? (planModeQueued || (activePlan && activePlan.state === 'planning') ? '#c084fc' : '#585858') : '#fbbf24'}>{mode === 'chat' ? (planModeQueued ? '◈ ' : '> ') : icons().prompt + ' '}</Text>
                   <Box flexGrow={1}>
                     <TextInput key={inputKey} value={inputValue} onChange={handleInputChange} onSubmit={handleSubmit}
                       placeholder={replState === 'idle' ? mode === 'chat' ? '' : mode === 'campfire' ? 'What should we think about?' : mode === 'brainstorm' ? 'What question for the engines?' : 'What should they debate?' : ''} />
@@ -855,7 +857,7 @@ export function App({  }: {  }) {
 }
 
 
-// @kern-source: app:827
+// @kern-source: app:823
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());
@@ -871,4 +873,3 @@ export async function startRepl(): Promise<void> {
   });
   render(<App />, { exitOnCtrlC: false });
 }
-

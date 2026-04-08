@@ -81,7 +81,7 @@ fn name=convertMessagesForSdk params="messages:Array<{role:string,content:any,to
               args = typeof tc.function?.arguments === 'string'
                 ? JSON.parse(tc.function.arguments)
                 : tc.function?.arguments ?? {};
-            } catch { args = {}; }
+            } catch { args = {}; /* malformed tool_calls JSON — use empty args */ }
             parts.push({
               type: 'tool-call',
               toolCallId: tc.id ?? `call_${Date.now()}`,
@@ -296,7 +296,7 @@ fn name=apiStreamDispatchWithHistory generator=true async=true params="config:Ap
             source: 'sdk' as const,
           };
         }
-      } catch {}
+      } catch { /* usage tokens optional — extraction failure is non-critical */ }
       return { exitCode: 0, stdout, stderr: '', durationMs: Date.now() - startTime, timedOut: false, usage };
     } catch (err) {
       clearTimeout(timer);

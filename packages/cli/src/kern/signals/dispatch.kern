@@ -501,7 +501,7 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
                     try {
                       const { writeFileSync } = require('node:fs');
                       writeFileSync(updated.planFilePath, formatCesarPlanMarkdown(updated));
-                    } catch {}
+                    } catch (err) { console.warn('[plan] failed to write plan file:', (err as Error).message ?? err); }
                   }
                 },
                 onBudgetWarning: (actual: number, estimated: number) => {
@@ -523,7 +523,7 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
                   try {
                     const { writeFileSync } = require('node:fs');
                     writeFileSync(finalPlan.planFilePath, formatCesarPlanMarkdown(finalPlan));
-                  } catch {}
+                  } catch (err) { console.warn('[plan] failed to write plan file:', (err as Error).message ?? err); }
                 }
                 if (finalPlan.state === 'done') {
                   cb.dispatch({ type: 'success', message: `Plan complete — ${finalPlan.steps.length} steps, $${finalPlan.totalActualCostUsd.toFixed(4)} actual cost` });
@@ -613,7 +613,7 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
               try {
                 const { writeFileSync } = require('node:fs');
                 writeFileSync(updated.planFilePath, formatCesarPlanMarkdown(updated));
-              } catch {}
+              } catch (err) { console.warn('[plan] failed to write plan file:', (err as Error).message ?? err); }
             }
           },
           onBudgetWarning: (actual: number, estimated: number) => {
@@ -808,7 +808,7 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
         // 3. Start fresh chat session (old one is already persisted to ~/.agon/chats/)
         const clearCwd = resolveWorkingDir();
         let clearBranch = 'unknown';
-        try { clearBranch = currentBranch(clearCwd); } catch {}
+        try { clearBranch = currentBranch(clearCwd); } catch { /* git not available */ }
         cb.setChatSession(startChatSession({ cwd: clearCwd, branch: clearBranch }));
 
         // 4. Reset mode back to chat

@@ -140,10 +140,10 @@ function pruneSnapshots(): void {
     if (files.length > MAX_SNAPSHOTS) {
       const toDelete = files.slice(0, files.length - MAX_SNAPSHOTS);
       for (const f of toDelete) {
-        try { unlinkSync(join(SNAPSHOTS_DIR, f)); } catch {}
+        try { unlinkSync(join(SNAPSHOTS_DIR, f)); } catch { /* snapshot already deleted or inaccessible */ }
       }
     }
-  } catch {}
+  } catch (err) { console.warn('[file-history] failed to save snapshot:', (err as Error).message ?? err); }
 }
 
 // @kern-source: file-history:142

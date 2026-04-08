@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import type { EngineAdapter, BrainstormBid, BrainstormResult, ScoutBid } from '@agon/core';
 
 // @kern-source: brainstorm:3
-import { EngineRegistry, buildBrainstormPrompt, getElo, getRatings, loadConfig, createSidechainLogger, updateGlickoRanked, classifyTask } from '@agon/core';
+import { EngineRegistry, buildBrainstormPrompt, getRatings, loadConfig, createSidechainLogger, updateGlickoRanked, classifyTask } from '@agon/core';
 
 // @kern-source: brainstorm:4
 import { buildKernDraftPrompt, parseKernDraft, buildKernRankPrompt } from 'kern-lang';

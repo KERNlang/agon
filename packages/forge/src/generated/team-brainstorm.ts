@@ -255,8 +255,8 @@ export async function runTeamBrainstorm(options: TeamBrainstormOptions): Promise
     timestamp: new Date().toISOString(),
   };
   
-  if (config.eloEnabled) {
-    updateTeamElo(matchResult, config.eloKFactor);
+  if (config.ratingsEnabled) {
+    updateTeamElo(matchResult, 32);
   }
   
   sidechain.log('team-brainstorm:done', winnerTeamId ?? undefined, {

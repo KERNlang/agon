@@ -22,7 +22,7 @@ export function writeTmuxClipboard(text: string): void {
   // Load into tmux buffer
   try {
     execSync('tmux load-buffer -w -', { input: text, timeout: 5000 });
-  } catch {}
+  } catch { /* tmux clipboard unavailable */ }
   
   // Also send OSC 52 wrapped in DCS passthrough for terminal clipboard
   const b64 = Buffer.from(text).toString('base64');
@@ -45,7 +45,7 @@ export function probeLinuxHelper(): string|null {
       execSync(c.check, { stdio: 'ignore', timeout: 2000 });
       _linuxHelperCache.cmd = c.cmd;
       return c.cmd;
-    } catch {}
+    } catch { /* linux clipboard helper not found — try next candidate */ }
   }
   
   return null;
@@ -69,13 +69,13 @@ export function copyToClipboard(text: string): void {
   // Native path — use platform tool + OSC 52 as bonus
   if (platform === 'darwin') {
     execSync('pbcopy', { input: text, timeout: 5000 });
-    try { writeOsc52(text); } catch {}
+    try { writeOsc52(text); } catch { /* macOS OSC52 clipboard unavailable */ }
   } else if (platform === 'linux') {
     const helper = probeLinuxHelper();
     if (helper) {
       execSync(helper, { input: text, timeout: 5000 });
     }
-    try { writeOsc52(text); } catch {}
+    try { writeOsc52(text); } catch { /* linux OSC52 clipboard unavailable */ }
   } else if (platform === 'win32') {
     execSync('clip', { input: text, timeout: 5000 });
   } else {

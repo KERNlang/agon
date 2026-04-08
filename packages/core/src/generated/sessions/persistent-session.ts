@@ -992,7 +992,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                           }
                           toolActions.set(toolName, set);
                         }
-                      } catch {}
+                      } catch { /* malformed tool metadata — skip entry */ }
                     }
                   }
                 }
@@ -1081,7 +1081,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                 continue; // Retry the same step
               }
               // Don't kill session — preserve history for next turn
-              try { saveSessionState(config.engine.id, { messageHistory, confidence: null }); } catch {}
+              try { saveSessionState(config.engine.id, { messageHistory, confidence: null }); } catch (saveErr) { console.warn('[session] failed to save state on error:', (saveErr as Error).message ?? saveErr); }
               yield { type: 'error' as const, content: err.message ?? String(err) };
               break;
             }
@@ -1289,7 +1289,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
         }
   
         // Persist session state to disk after each turn — survives process restart
-        try { saveSessionState(config.engine.id, { messageHistory, confidence: null }); } catch {}
+        try { saveSessionState(config.engine.id, { messageHistory, confidence: null }); } catch (saveErr) { console.warn('[session] failed to persist turn:', (saveErr as Error).message ?? saveErr); }
   
         yield { type: 'done' as const, content: 'end_turn' };
         return;
@@ -1335,7 +1335,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
       const onAbort = () => {
         done = true;
         chunks.push({ type: 'done', content: 'cancelled' });
-        try { if (child.pid) process.kill(-child.pid, 'SIGTERM'); } catch (e) { console.warn(`[agon] session-stream: kill failed: ${e instanceof Error ? e.message : String(e)}`); try { child.kill('SIGTERM'); } catch {} }
+        try { if (child.pid) process.kill(-child.pid, 'SIGTERM'); } catch (e) { console.warn(`[agon] session-stream: kill failed: ${e instanceof Error ? e.message : String(e)}`); try { child.kill('SIGTERM'); } catch { /* process already exited */ } }
         if (resolveWait) { resolveWait(); resolveWait = null; }
       };
       if (opts.signal?.aborted) { yield { type: 'done' as const, content: 'cancelled' }; return; }

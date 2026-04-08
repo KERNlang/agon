@@ -348,8 +348,8 @@ export async function runTeamForge(options: TeamForgeOptions, registry: EngineRe
     };
   
     // Update team ELO
-    if (config.eloEnabled) {
-      updateTeamElo(matchResult, config.eloKFactor);
+    if (config.ratingsEnabled) {
+      updateTeamElo(matchResult, 32);
     }
   
     sidechain.log('team-forge:done', winnerTeamId ?? undefined, {

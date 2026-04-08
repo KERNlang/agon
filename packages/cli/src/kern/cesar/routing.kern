@@ -1,4 +1,4 @@
-import from="@agon/core" names="classifyTask,getElo,getRatings,getEngineProfile,rankByTaskClass,diffFileCount,resolveWorkingDir,gitChangedFiles,currentBranch"
+import from="@agon/core" names="classifyTask,getRatings,getEngineProfile,rankByTaskClass,diffFileCount,resolveWorkingDir,gitChangedFiles,currentBranch"
 import from="@agon/core" names="TaskClass,EngineRole,EngineProfile" types=true
 import from="../../handlers/types.js" names="HandlerContext" types=true
 

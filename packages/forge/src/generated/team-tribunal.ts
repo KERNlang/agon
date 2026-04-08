@@ -262,8 +262,8 @@ export async function runTeamTribunal(options: TeamTribunalOptions): Promise<Tea
     timestamp: new Date().toISOString(),
   };
   
-  if (config.eloEnabled) {
-    updateTeamElo(matchResult, config.eloKFactor);
+  if (config.ratingsEnabled) {
+    updateTeamElo(matchResult, 32);
   }
   
   sidechain.log('team-tribunal:done', winnerTeamId ?? undefined, {

@@ -2,10 +2,10 @@
 import { randomUUID } from 'node:crypto';
 
 // @kern-source: team:5
-import type { TaskClass, EloRating } from '../models/types.js';
+import type { TaskClass } from '../models/types.js';
 
 // @kern-source: team:6
-import { getElo } from '../signals/elo.js';
+import { getRatings } from '../signals/glicko.js';
 
 // @kern-source: team:8
 export type TeamRole = 'architect' | 'implementer' | 'reviewer' | 'captain';
@@ -114,14 +114,18 @@ export function makeFormat(membersPerSide: number): TeamFormat {
 
 // @kern-source: team:82
 export function assignTeamRoles(engineIds: string[], taskClass: TaskClass): TeamMember[] {
-  const elo = getElo();
-  const classRatings = elo.byTaskClass[taskClass] ?? {};
+  const ratings = getRatings();
+  const classRatings = ratings.byTaskClass[taskClass] ?? {};
+  const globalRatings = ratings.global;
   
-  // Rank engines by task-class ELO
+  // Rank engines by Glicko-2 confidence floor
   const ranked = [...engineIds].sort((a, b) => {
-    const aElo = classRatings[a]?.rating ?? elo.global[a]?.rating ?? 1500;
-    const bElo = classRatings[b]?.rating ?? elo.global[b]?.rating ?? 1500;
-    return bElo - aElo;
+    const aR = classRatings[a] ?? globalRatings[a];
+    const bR = classRatings[b] ?? globalRatings[b];
+    const aFloor = aR ? aR.mu - 2 * aR.phi : 100;
+    const bFloor = bR ? bR.mu - 2 * bR.phi : 100;
+    if (aFloor !== bFloor) return bFloor - aFloor;
+    return Math.random() - 0.5;
   });
   
   const n = ranked.length;
@@ -152,13 +156,13 @@ export function assignTeamRoles(engineIds: string[], taskClass: TaskClass): Team
   return members;
 }
 
-// @kern-source: team:122
+// @kern-source: team:126
 export function composeTeams(engineIds: string[], membersPerSide: number, mode: TeamComposeMode, taskClass: TaskClass, explicitTeams?: [string[], string[]]): [TeamSpec, TeamSpec] {
-  const elo = getElo();
+  const ratings = getRatings();
   
   function engineElo(id: string): number {
-    const classRating = elo.byTaskClass[taskClass]?.[id]?.rating;
-    return classRating ?? elo.global[id]?.rating ?? 1500;
+    const r = ratings.byTaskClass[taskClass]?.[id] ?? ratings.global[id];
+    return r ? Math.round(r.mu - 2 * r.phi) : 100;
   }
   
   let teamA: string[];
@@ -229,7 +233,7 @@ export function composeTeams(engineIds: string[], membersPerSide: number, mode: 
   return [specA, specB];
 }
 
-// @kern-source: team:199
+// @kern-source: team:203
 export function computeContributionWeights(team: TeamSpec, trace: TeamRoundTrace[]): Record<string,number> {
   // Start with default weights from role assignment
   const weights: Record<string, number> = {};

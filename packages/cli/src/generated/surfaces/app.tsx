@@ -8,7 +8,7 @@ import { Box, Text, render, useApp, useInput } from 'ink';
 import TextInput from 'ink-text-input';
 
 // @kern-source: app:7
-import { EngineRegistry, loadConfig, ensureAgonHome, ensureCurrentWorkspace, startChatSession, getElo, getRatings, getActiveWorkspace, RUNS_DIR, extractImagesFromInput, resolveWorkingDir, currentBranch, configSet, createCesarMemory, modelEntryToEngineDef, appendMessage } from '@agon/core';
+import { EngineRegistry, loadConfig, ensureAgonHome, ensureCurrentWorkspace, startChatSession, getRatings, getActiveWorkspace, RUNS_DIR, extractImagesFromInput, resolveWorkingDir, currentBranch, configSet, createCesarMemory, modelEntryToEngineDef, appendMessage } from '@agon/core';
 
 // @kern-source: app:8
 import type { Plan, ChatSession, Skill, PersistentSession, ImageAttachment } from '@agon/core';
@@ -149,7 +149,7 @@ export function App({  }: {  }) {
   const [sessionEngines, setSessionEngines] = useState<string[]|null>((() => { const cfg = loadConfig(); const saved = cfg.forgeEnabledEngines; return saved && saved.length > 0 ? saved : null; })());
   const [currentPlan, setCurrentPlan] = useState<Plan|null>(null);
   const [activePlan, setActivePlan] = useState<any>(null);
-  const [chatSession, setChatSession] = useState<ChatSession>((() => { const cwd = resolveWorkingDir(); let branch = 'unknown'; try { branch = currentBranch(cwd); } catch {} return startChatSession({ cwd, branch }); })());
+  const [chatSession, setChatSession] = useState<ChatSession>((() => { const cwd = resolveWorkingDir(); let branch = 'unknown'; try { branch = currentBranch(cwd); } catch { /* git not available or not a repo */ } return startChatSession({ cwd, branch }); })());
   const [activeAbort, setActiveAbort] = useState<AbortController|null>(null);
   const [cesarSession, setCesarSession] = useState<PersistentSession|null>(null);
   const [explorationMode, setExplorationMode] = useState<boolean>(false);
@@ -346,7 +346,7 @@ export function App({  }: {  }) {
               const ctx = buildContext();
               const cesarId = (ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude';
               let engineDef: any;
-              try { engineDef = ctx.registry.get(cesarId); } catch {}
+              try { engineDef = ctx.registry.get(cesarId); } catch { /* cesar engine not registered */ }
     
               if (!engineDef) {
                 dispatch({ type: 'error', message: `btw: engine ${cesarId} not available` } as any);
@@ -366,7 +366,7 @@ export function App({  }: {  }) {
               const prompt = `The user asks while you are working on another task:\n\n${btwQuestion}\n\n${streamCtx ? '--- Recent output from the running task ---\n' + streamCtx + '\n---\n\n' : ''}Answer briefly and concisely. Keep it short.`;
     
               const btwOutputDir = join(RUNS_DIR, `btw-${Date.now()}`);
-              try { mkdirSync(btwOutputDir, { recursive: true }); } catch {}
+              try { mkdirSync(btwOutputDir, { recursive: true }); } catch { /* dir already exists or parent missing */ }
               ctx.adapter.dispatch({
                 engine: engineDef,
                 prompt,
@@ -465,7 +465,7 @@ export function App({  }: {  }) {
           } catch (err) {
             dispatch({ type: 'error', message: `Pager failed: ${err instanceof Error ? err.message : String(err)}` } as any);
           } finally {
-            try { unlinkSync(tmpFile); } catch {}
+            try { unlinkSync(tmpFile); } catch { /* temp file already cleaned up */ }
           }
   }, [dispatch]);
 
@@ -551,7 +551,7 @@ export function App({  }: {  }) {
             .sort(([, a], [, b]) => b.rating - a.rating);
           const enabled = sessionEngines ?? available;
           let runCount = 0;
-          try { runCount = readdirSync(RUNS_DIR).filter((f: string) => f.endsWith('.json')).length; } catch {}
+          try { runCount = readdirSync(RUNS_DIR).filter((f: string) => f.endsWith('.json')).length; } catch { /* runs dir missing — first run */ }
           setOutputBlocks([{ id: 0, event: {
             type: 'dashboard' as const, available, enabled, defaultEngine,
             eloTop: sorted.length > 0 ? { id: sorted[0][0], rating: (sorted[0][1] as any).rating } : undefined,
@@ -865,7 +865,7 @@ export async function startRepl(): Promise<void> {
       _activeAborts.clear();
       if (_cancelCallback.fn) _cancelCallback.fn();
     } else {
-      if (_cesarSessionRef.session) { try { _cesarSessionRef.session.close(); } catch {} _cesarSessionRef.session = null; }
+      if (_cesarSessionRef.session) { try { _cesarSessionRef.session.close(); } catch { /* session already closed or errored */ } _cesarSessionRef.session = null; }
       process.exit(0);
     }
   });

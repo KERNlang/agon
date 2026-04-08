@@ -1,7 +1,7 @@
 import from="citty" names="defineCommand"
 import from="node:path" names="join,dirname"
 import from="node:url" names="fileURLToPath"
-import from="@agon/core" names="EngineRegistry,getEngineRating"
+import from="@agon/core" names="EngineRegistry,getEngineGlickoRating"
 import from="@agon/adapter-cli" names="createCliAdapter"
 import from="../blocks/output-format.js" names="header,success,fail,info,table,bold,green,red,dim"
 
@@ -77,7 +77,7 @@ const name=engineCommand type="any"
             try {
               const engine = registry.get(id);
               const available = registry.isAvailable(engine);
-              const rating = getEngineRating(id);
+              const rating = getEngineGlickoRating(id);
 
               header(`Engine: ${engine.displayName}`);
               console.log(`  ID:         ${bold(engine.id)}`);
@@ -92,7 +92,7 @@ const name=engineCommand type="any"
               console.log(`  Modes:      ${modes.join(', ') || 'none'}`);
               console.log(`  Timeout:    ${engine.timeout}s`);
               console.log(`  Tier:       ${engine.tier}`);
-              console.log(`  ELO:        ${rating.rating} (W:${rating.wins} L:${rating.losses})`);
+              console.log(`  Rating:     ${rating.mu}+-${Math.round(rating.phi)} (W:${rating.wins} L:${rating.losses})`);
 
               if (!available && engine.installHint) {
                 console.log('');

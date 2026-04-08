@@ -8,7 +8,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // @kern-source: engine:4
-import { EngineRegistry, getEngineRating } from '@agon/core';
+import { EngineRegistry, getEngineGlickoRating } from '@agon/core';
 
 // @kern-source: engine:5
 import { createCliAdapter } from '@agon/adapter-cli';
@@ -87,7 +87,7 @@ export const engineCommand: any = defineCommand({
         try {
           const engine = registry.get(id);
           const available = registry.isAvailable(engine);
-          const rating = getEngineRating(id);
+          const rating = getEngineGlickoRating(id);
 
           header(`Engine: ${engine.displayName}`);
           console.log(`  ID:         ${bold(engine.id)}`);
@@ -102,7 +102,7 @@ export const engineCommand: any = defineCommand({
           console.log(`  Modes:      ${modes.join(', ') || 'none'}`);
           console.log(`  Timeout:    ${engine.timeout}s`);
           console.log(`  Tier:       ${engine.tier}`);
-          console.log(`  ELO:        ${rating.rating} (W:${rating.wins} L:${rating.losses})`);
+          console.log(`  Rating:     ${rating.mu}+-${Math.round(rating.phi)} (W:${rating.wins} L:${rating.losses})`);
 
           if (!available && engine.installHint) {
             console.log('');

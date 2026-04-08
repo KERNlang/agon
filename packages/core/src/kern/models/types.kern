@@ -106,17 +106,6 @@ interface name=ScoreComponents
   field name=durationScore type=number
   field name=composite type=number
 
-interface name=EloRating
-  field name=rating type=number
-  field name=wins type=number
-  field name=losses type=number
-  field name=draws type=number
-
-interface name=EloRecord
-  field name=global type="Record<string,EloRating>"
-  field name=byTaskClass type="Record<string,Record<string,EloRating>>"
-  field name=lastUpdated type=string
-
 interface name=GlickoRating
   field name=mu type=number
   field name=phi type=number
@@ -153,8 +142,7 @@ config name=AgonConfig
   field name=forgeEnabledEngines type="string[]" default="['claude','codex','gemini']"
   field name=forgeFitnessTimeout type=number default=120
   field name=forgeSynthesisTimeout type=number default=300
-  field name=eloEnabled type=boolean default=true
-  field name=eloKFactor type=number default=32
+  field name=ratingsEnabled type=boolean default=true
   field name=contextSummary type=boolean default=true
   field name=onboarded type=boolean default=false
   field name=projectContext type=string default=""

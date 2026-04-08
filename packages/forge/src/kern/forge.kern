@@ -242,7 +242,7 @@ fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistr
             .sort(([, a], [, b]) => b.score - a.score)[0]?.[0] ?? null
         : manifest.winner;
 
-      if (config.eloEnabled) {
+      if (config.ratingsEnabled) {
         // Ranked ELO: all engines that produced results get pairwise updates
         const ranked = Object.entries(manifest.results)
           .filter(([id]) => id !== 'synthesis')

@@ -1,5 +1,5 @@
 // @kern-source: routing:1
-import { classifyTask, getElo, getRatings, getEngineProfile, rankByTaskClass, diffFileCount, resolveWorkingDir, gitChangedFiles, currentBranch } from '@agon/core';
+import { classifyTask, getRatings, getEngineProfile, rankByTaskClass, diffFileCount, resolveWorkingDir, gitChangedFiles, currentBranch } from '@agon/core';
 
 // @kern-source: routing:2
 import type { TaskClass, EngineRole, EngineProfile } from '@agon/core';

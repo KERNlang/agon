@@ -58,7 +58,7 @@ export interface PendingDelegation {
   createdAt: number;
 }
 
-// @kern-source: handler-types:119
+// @kern-source: handler-types:120
 export interface CesarState {
   busy: boolean;
   busySince: number | null;
@@ -75,7 +75,7 @@ export interface CesarState {
   proposedPlan: any | undefined;
 }
 
-// @kern-source: handler-types:134
+// @kern-source: handler-types:135
 export interface HandlerContext {
   registry: EngineRegistry;
   adapter: EngineAdapter;
@@ -99,3 +99,4 @@ export interface HandlerContext {
   eventBus?: EventBus | undefined;
   cesar?: CesarState | undefined;
 }
+

@@ -45,7 +45,7 @@ export function discoverExtensionDirs(cwd: string): { dir: string; source: 'user
           }
         }
       }
-    } catch { /* ignore permission errors */ }
+    } catch { /* permission denied or missing dir — skip extensions */ }
   }
   
   // Repo-level extensions
@@ -61,7 +61,7 @@ export function discoverExtensionDirs(cwd: string): { dir: string; source: 'user
           }
         }
       }
-    } catch { /* ignore permission errors */ }
+    } catch { /* permission denied or missing dir — skip extensions */ }
   }
   
   return results;

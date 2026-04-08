@@ -57,7 +57,7 @@ export function extractDelegation(toolName: string, args: Record<string,unknown>
   };
 }
 
-// @kern-source: brain:31
+// @kern-source: brain:36
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, fitnessCmd?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}> {
   const abort = new AbortController();
   const _turnStart = Date.now();
@@ -537,7 +537,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         const finalAction = delResult.action ?? pendingDel.action;
         let action = pendingDel.team ? `team-${finalAction}` : finalAction;
         const reasoning = delResult.userContext ? `${pendingDel.reasoning ?? ''}\n\nUser context: ${delResult.userContext}` : pendingDel.reasoning;
-        return { delegated: true, responded: true, action, reasoning, fitnessCmd: pendingDel.fitnessCmd, hardened: delResult.hardened ?? pendingDel.hardened, tribunalMode: delResult.tribunalMode ?? pendingDel.tribunalMode, team: delResult.team ?? pendingDel.team };
+          return { delegated: true, responded: true, action, reasoning, fitnessCmd: pendingDel.fitnessCmd, hardened: delResult.hardened ?? pendingDel.hardened, tribunalMode: delResult.tribunalMode ?? pendingDel.tribunalMode, team: delResult.team ?? pendingDel.team };
       }
       return { delegated: false, responded: true };
     }
@@ -645,7 +645,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         const finalAction = delResult.action ?? postLoopDel.action;
         let action = postLoopDel.team ? `team-${finalAction}` : finalAction;
         const reasoning = delResult.userContext ? `${postLoopDel.reasoning ?? ''}\n\nUser context: ${delResult.userContext}` : postLoopDel.reasoning;
-        return { delegated: true, responded: true, action, reasoning, fitnessCmd: postLoopDel.fitnessCmd, hardened: delResult.hardened ?? postLoopDel.hardened, tribunalMode: delResult.tribunalMode ?? postLoopDel.tribunalMode, team: delResult.team ?? postLoopDel.team };
+      return { delegated: true, responded: true, action, reasoning, fitnessCmd: postLoopDel.fitnessCmd, hardened: delResult.hardened ?? postLoopDel.hardened, tribunalMode: delResult.tribunalMode ?? postLoopDel.tribunalMode, team: delResult.team ?? postLoopDel.team };
       }
       return { delegated: false, responded: true };
     }
@@ -775,3 +775,4 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
     }
   }
 }
+

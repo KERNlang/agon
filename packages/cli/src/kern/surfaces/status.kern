@@ -108,7 +108,7 @@ screen name=StatusBar target=ink
       const cesarColor = color256toHex(ENGINE_COLORS[cesarId] ?? 245);
       const workDir = resolveWorkingDir();
       let branch = '';
-      try { branch = currentBranch(workDir); } catch {}
+      try { branch = currentBranch(workDir); } catch { /* not a git repo */ }
       const cwd = workDir.replace(process.env.HOME ?? '', '~');
       const stats = tracker.getStats();
       const cost = stats.totalCostUsd > 0 ? `$${stats.totalCostUsd.toFixed(2)}` : '';

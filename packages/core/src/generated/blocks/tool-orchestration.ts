@@ -39,7 +39,7 @@ export function createForgeTool(): ToolHandler {
   return { definition, validate, checkPermission, execute };
 }
 
-// @kern-source: tool-orchestration:47
+// @kern-source: tool-orchestration:48
 export function createBrainstormTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Brainstorm',
@@ -75,7 +75,7 @@ export function createBrainstormTool(): ToolHandler {
   return { definition, validate, checkPermission, execute };
 }
 
-// @kern-source: tool-orchestration:84
+// @kern-source: tool-orchestration:85
 export function createTribunalTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Tribunal',
@@ -118,7 +118,7 @@ export function createTribunalTool(): ToolHandler {
   return { definition, validate, checkPermission, execute };
 }
 
-// @kern-source: tool-orchestration:128
+// @kern-source: tool-orchestration:129
 export function createCampfireTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Campfire',
@@ -153,7 +153,7 @@ export function createCampfireTool(): ToolHandler {
   return { definition, validate, checkPermission, execute };
 }
 
-// @kern-source: tool-orchestration:164
+// @kern-source: tool-orchestration:165
 export function createReportConfidenceTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'ReportConfidence',
@@ -198,7 +198,7 @@ export function createReportConfidenceTool(): ToolHandler {
   return { definition, validate, checkPermission, execute };
 }
 
-// @kern-source: tool-orchestration:210
+// @kern-source: tool-orchestration:211
 export function createDelegateTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Delegate',
@@ -246,7 +246,7 @@ export function createDelegateTool(): ToolHandler {
   return { definition, validate, checkPermission, execute };
 }
 
-// @kern-source: tool-orchestration:259
+// @kern-source: tool-orchestration:260
 export function createPipelineTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Pipeline',
@@ -281,3 +281,4 @@ export function createPipelineTool(): ToolHandler {
   
   return { definition, validate, checkPermission, execute };
 }
+

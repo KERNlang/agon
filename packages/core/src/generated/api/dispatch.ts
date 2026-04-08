@@ -87,7 +87,7 @@ export function convertMessagesForSdk(messages: Array<{role:string,content:any,t
             args = typeof tc.function?.arguments === 'string'
               ? JSON.parse(tc.function.arguments)
               : tc.function?.arguments ?? {};
-          } catch { args = {}; }
+          } catch { args = {}; /* malformed tool_calls JSON — use empty args */ }
           parts.push({
             type: 'tool-call',
             toolCallId: tc.id ?? `call_${Date.now()}`,
@@ -301,7 +301,7 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
           source: 'sdk' as const,
         };
       }
-    } catch {}
+    } catch { /* usage tokens optional — extraction failure is non-critical */ }
     return { exitCode: 0, stdout, stderr: '', durationMs: Date.now() - startTime, timedOut: false, usage };
   } catch (err) {
     clearTimeout(timer);

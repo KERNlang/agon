@@ -49,6 +49,6 @@ export function clearSessionState(engineId: string): void {
   try {
     const { unlinkSync } = require('node:fs');
     if (existsSync(path)) unlinkSync(path);
-  } catch {}
+  } catch { /* session file already removed */ }
 }
 

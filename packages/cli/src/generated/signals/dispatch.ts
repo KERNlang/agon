@@ -121,7 +121,7 @@ export function extractExecutionSpec(input: string): { task:string; fitnessCmd:s
   return { task, fitnessCmd };
 }
 
-// @kern-source: dispatch:86
+// @kern-source: dispatch:97
 export async function routeWithCesar(input: string, images: ImageAttachment[], cb: DispatchCallbacks): Promise<boolean> {
   cb.setPendingImages(() => []);
   try {
@@ -208,27 +208,27 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
       // Confirm with user before dispatching recovered delegation
       let action = crashDel.team ? `team-${crashDel.action}` : crashDel.action;
       const confirmLabel = crashDel.hardened ? `${action} (hardened)` : action;
-      const answer = await cb.askQuestion(`Recovered delegation: ${confirmLabel}${crashDel.tribunalMode ? ` [${crashDel.tribunalMode}]` : ''} — run it?`);
-      if (answer === 'y' || answer === '1') {
-        const label = input.slice(0, 40);
-        const executionSpec = extractExecutionSpec(input);
-        const recoveredTask = ['forge', 'team-forge', 'pipeline'].includes(action)
-          ? executionSpec.task || input
-          : input;
-        const recoveredFitness = crashDel.fitnessCmd ?? executionSpec.fitnessCmd;
-        cb.dispatch({ type: 'info', message: `Cesar → ${action} (recovered)` });
-        switch (action) {
-          case 'forge': cb.runAsJob('forge', label, () => handleForge(recoveredTask, recoveredFitness, cb.dispatch, cb.ctx, undefined, crashDel.hardened ?? false)); return true;
-          case 'brainstorm': cb.runAsJob('brainstorm', label, () => handleBrainstorm(recoveredTask, cb.dispatch, cb.ctx)); return true;
-          case 'tribunal': cb.runAsJob('tribunal', label, () => handleTribunal(recoveredTask, cb.dispatch, cb.ctx, crashDel.tribunalMode)); return true;
-          case 'campfire': cb.runAsJob('campfire', label, () => handleCampfire(recoveredTask, cb.dispatch, cb.ctx)); return true;
-          case 'pipeline': cb.runAsJob('pipeline', label, () => handlePipeline(recoveredTask, cb.dispatch, cb.ctx, recoveredFitness ?? undefined)); return true;
-          case 'team-forge': { const tf = recoveredFitness ?? await cb.askQuestion('What command tests this?'); if (tf.trim()) { cb.runAsJob('team-forge', label, () => handleTeamForge(recoveredTask, tf.trim(), cb.dispatch, cb.ctx, undefined)); return true; } break; }
-          case 'team-brainstorm': cb.runAsJob('team-brainstorm', label, () => handleTeamBrainstorm(recoveredTask, cb.dispatch, cb.ctx)); return true;
-          case 'team-tribunal': cb.runAsJob('team-tribunal', label, () => handleTeamTribunal(recoveredTask, cb.dispatch, cb.ctx, crashDel.tribunalMode)); return true;
-        }
+    const answer = await cb.askQuestion(`Recovered delegation: ${confirmLabel}${crashDel.tribunalMode ? ` [${crashDel.tribunalMode}]` : ''} — run it?`);
+    if (answer === 'y' || answer === '1') {
+      const label = input.slice(0, 40);
+      const executionSpec = extractExecutionSpec(input);
+      const recoveredTask = ['forge', 'team-forge', 'pipeline'].includes(action)
+        ? executionSpec.task || input
+        : input;
+      const recoveredFitness = crashDel.fitnessCmd ?? executionSpec.fitnessCmd;
+      cb.dispatch({ type: 'info', message: `Cesar → ${action} (recovered)` });
+      switch (action) {
+        case 'forge': cb.runAsJob('forge', label, () => handleForge(recoveredTask, recoveredFitness, cb.dispatch, cb.ctx, undefined, crashDel.hardened ?? false)); return true;
+        case 'brainstorm': cb.runAsJob('brainstorm', label, () => handleBrainstorm(recoveredTask, cb.dispatch, cb.ctx)); return true;
+        case 'tribunal': cb.runAsJob('tribunal', label, () => handleTribunal(recoveredTask, cb.dispatch, cb.ctx, crashDel.tribunalMode)); return true;
+        case 'campfire': cb.runAsJob('campfire', label, () => handleCampfire(recoveredTask, cb.dispatch, cb.ctx)); return true;
+        case 'pipeline': cb.runAsJob('pipeline', label, () => handlePipeline(recoveredTask, cb.dispatch, cb.ctx, recoveredFitness ?? undefined)); return true;
+        case 'team-forge': { const tf = recoveredFitness ?? await cb.askQuestion('What command tests this?'); if (tf.trim()) { cb.runAsJob('team-forge', label, () => handleTeamForge(recoveredTask, tf.trim(), cb.dispatch, cb.ctx, undefined)); return true; } break; }
+        case 'team-brainstorm': cb.runAsJob('team-brainstorm', label, () => handleTeamBrainstorm(recoveredTask, cb.dispatch, cb.ctx)); return true;
+        case 'team-tribunal': cb.runAsJob('team-tribunal', label, () => handleTeamTribunal(recoveredTask, cb.dispatch, cb.ctx, crashDel.tribunalMode)); return true;
       }
     }
+  }
   }
   
   // Cesar truly didn't respond — try fresh CLI dispatch
@@ -333,7 +333,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
   return false;
 }
 
-// @kern-source: dispatch:281
+// @kern-source: dispatch:310
 export async function dispatchIntent(intent: any, input: string, cb: DispatchCallbacks): Promise<DispatchResult> {
   // ── Emit pre:dispatch event ──
   if (cb.eventBus) {
@@ -526,7 +526,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
                   try {
                     const { writeFileSync } = require('node:fs');
                     writeFileSync(updated.planFilePath, formatCesarPlanMarkdown(updated));
-                  } catch {}
+                  } catch (err) { console.warn('[plan] failed to write plan file:', (err as Error).message ?? err); }
                 }
               },
               onBudgetWarning: (actual: number, estimated: number) => {
@@ -548,7 +548,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
                 try {
                   const { writeFileSync } = require('node:fs');
                   writeFileSync(finalPlan.planFilePath, formatCesarPlanMarkdown(finalPlan));
-                } catch {}
+                } catch (err) { console.warn('[plan] failed to write plan file:', (err as Error).message ?? err); }
               }
               if (finalPlan.state === 'done') {
                 cb.dispatch({ type: 'success', message: `Plan complete — ${finalPlan.steps.length} steps, $${finalPlan.totalActualCostUsd.toFixed(4)} actual cost` });
@@ -638,7 +638,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
             try {
               const { writeFileSync } = require('node:fs');
               writeFileSync(updated.planFilePath, formatCesarPlanMarkdown(updated));
-            } catch {}
+            } catch (err) { console.warn('[plan] failed to write plan file:', (err as Error).message ?? err); }
           }
         },
         onBudgetWarning: (actual: number, estimated: number) => {
@@ -833,7 +833,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
       // 3. Start fresh chat session (old one is already persisted to ~/.agon/chats/)
       const clearCwd = resolveWorkingDir();
       let clearBranch = 'unknown';
-      try { clearBranch = currentBranch(clearCwd); } catch {}
+      try { clearBranch = currentBranch(clearCwd); } catch { /* git not available */ }
       cb.setChatSession(startChatSession({ cwd: clearCwd, branch: clearBranch }));
   
       // 4. Reset mode back to chat
@@ -883,3 +883,4 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
   _emitPost();
   return { handled: true, ranAsJob: false };
 }
+

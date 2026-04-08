@@ -2,7 +2,7 @@
 import { defineCommand } from 'citty';
 
 // @kern-source: leaderboard:2
-import { getElo, getRatings, advisorScore } from '@agon/core';
+import { getRatings, advisorScore } from '@agon/core';
 
 // @kern-source: leaderboard:3
 import type { GlickoRating } from '@agon/core';
@@ -27,31 +27,8 @@ export const leaderboardCommand: ReturnType<typeof defineCommand> = defineComman
       alias: 'm',
       description: 'Filter by mode: forge, brainstorm, tribunal',
     },
-    legacy: {
-      type: 'boolean',
-      description: 'Show legacy ELO ratings instead of Glicko-2',
-    },
   },
   run({ args }) {
-    // Legacy ELO mode
-    if (args.legacy) {
-      const elo = getElo();
-      header('Global Leaderboard (Legacy ELO)');
-      const rows = Object.entries(elo.global)
-        .sort(([, a], [, b]) => (b as any).rating - (a as any).rating)
-        .map(([id, r]: [string, any], i: number) => [
-          `${i + 1}.`,
-          bold(id),
-          String(r.rating),
-          String(r.wins),
-          String(r.losses),
-          `${r.wins + r.losses > 0 ? Math.round((r.wins / (r.wins + r.losses)) * 100) : 0}%`,
-        ]);
-      if (rows.length === 0) { info('No legacy ELO data'); return; }
-      table(['#', 'Engine', 'ELO', 'W', 'L', 'Win%'], rows);
-      return;
-    }
-
     const ratings = getRatings();
     const mode = args.mode as 'forge' | 'brainstorm' | 'tribunal' | undefined;
 

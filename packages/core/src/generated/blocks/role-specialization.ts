@@ -1,16 +1,13 @@
 // @kern-source: role-specialization:1
-import type { TaskClass, EloRecord } from '../models/types.js';
+import type { TaskClass } from '../models/types.js';
 
 // @kern-source: role-specialization:2
-import { getElo } from '../signals/elo.js';
-
-// @kern-source: role-specialization:3
 import { getRatings, advisorScore } from '../signals/glicko.js';
 
-// @kern-source: role-specialization:4
+// @kern-source: role-specialization:3
 import { buildRolePrompt } from './engine-memory.js';
 
-// @kern-source: role-specialization:6
+// @kern-source: role-specialization:5
 export interface EngineRole {
   engineId: string;
   role: string;
@@ -18,24 +15,17 @@ export interface EngineRole {
   specialization: string;
 }
 
-// @kern-source: role-specialization:12
+// @kern-source: role-specialization:11
 export function rankByTaskClass(engineIds: string[], taskClass: TaskClass): EngineRole[] {
-  // Use Glicko-2 ratings (with ELO fallback for legacy data)
   const ratings = getRatings();
   const classRatings = ratings.byTaskClass[taskClass] ?? {};
   const globalRatings = ratings.global;
-  const elo = getElo();
   
   const ranked = engineIds.map((id) => {
     const classGlicko = classRatings[id];
     const globalGlicko = globalRatings[id];
-    // Prefer Glicko-2 confidence floor; fall back to old ELO
-    const classElo = classGlicko
-      ? Math.round(classGlicko.mu - 2 * classGlicko.phi)
-      : (elo.byTaskClass[taskClass]?.[id]?.rating ?? 1500);
-    const globalElo = globalGlicko
-      ? Math.round(globalGlicko.mu - 2 * globalGlicko.phi)
-      : (elo.global[id]?.rating ?? 1500);
+    const classElo = classGlicko ? Math.round(classGlicko.mu - 2 * classGlicko.phi) : 100;
+    const globalElo = globalGlicko ? Math.round(globalGlicko.mu - 2 * globalGlicko.phi) : 100;
     const wins = (classGlicko?.wins ?? 0) + (globalGlicko?.wins ?? 0);
     const losses = (classGlicko?.losses ?? 0) + (globalGlicko?.losses ?? 0);
     const total = wins + losses;
@@ -85,14 +75,14 @@ export function rankByTaskClass(engineIds: string[], taskClass: TaskClass): Engi
   });
 }
 
-// @kern-source: role-specialization:79
+// @kern-source: role-specialization:71
 export function buildSpecializedPrompt(engineId: string, taskClass: TaskClass, basePrompt: string): string {
   const rolePrompt = buildRolePrompt(engineId, taskClass);
   if (!rolePrompt) return basePrompt;
   return basePrompt + '\n' + rolePrompt;
 }
 
-// @kern-source: role-specialization:86
+// @kern-source: role-specialization:78
 export function assignForgeRoles(engineIds: string[], taskClass: TaskClass): Map<string,{role:string,specialization:string}> {
   const roles = rankByTaskClass(engineIds, taskClass);
   const map = new Map<string, { role: string; specialization: string }>();

@@ -4,7 +4,7 @@
 import from="react" names="useState,useCallback,useEffect,useRef,useMemo"
 import from="ink" names="Box,Text,render,useApp,useInput"
 import from="ink-text-input" default="TextInput"
-import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,ensureCurrentWorkspace,startChatSession,getElo,getRatings,getActiveWorkspace,RUNS_DIR,extractImagesFromInput,resolveWorkingDir,currentBranch,configSet,createCesarMemory,modelEntryToEngineDef,appendMessage"
+import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,ensureCurrentWorkspace,startChatSession,getRatings,getActiveWorkspace,RUNS_DIR,extractImagesFromInput,resolveWorkingDir,currentBranch,configSet,createCesarMemory,modelEntryToEngineDef,appendMessage"
 import from="@agon/core" names="Plan,ChatSession,Skill,PersistentSession,ImageAttachment" types=true
 import from="../../handlers/types.js" names="EngineProgress" types=true
 import from="@agon/adapter-cli" names="createCliAdapter"
@@ -79,7 +79,7 @@ screen name=App target=ink
   state name=sessionEngines type="string[]|null" initial="(() => { const cfg = loadConfig(); const saved = cfg.forgeEnabledEngines; return saved && saved.length > 0 ? saved : null; })()"
   state name=currentPlan type="Plan|null" initial="null"
   state name=activePlan type="any" initial="null"
-  state name=chatSession type=ChatSession initial="(() => { const cwd = resolveWorkingDir(); let branch = 'unknown'; try { branch = currentBranch(cwd); } catch {} return startChatSession({ cwd, branch }); })()"
+  state name=chatSession type=ChatSession initial="(() => { const cwd = resolveWorkingDir(); let branch = 'unknown'; try { branch = currentBranch(cwd); } catch { /* git not available or not a repo */ } return startChatSession({ cwd, branch }); })()"
   state name=activeAbort type="AbortController|null" initial="null"
   state name=cesarSession type="PersistentSession|null" initial="null"
   state name=explorationMode type=boolean initial=false
@@ -305,7 +305,7 @@ screen name=App target=ink
         .sort(([, a], [, b]) => b.rating - a.rating);
       const enabled = sessionEngines ?? available;
       let runCount = 0;
-      try { runCount = readdirSync(RUNS_DIR).filter((f: string) => f.endsWith('.json')).length; } catch {}
+      try { runCount = readdirSync(RUNS_DIR).filter((f: string) => f.endsWith('.json')).length; } catch { /* runs dir missing — first run */ }
       setOutputBlocks([{ id: 0, event: {
         type: 'dashboard' as const, available, enabled, defaultEngine,
         eloTop: sorted.length > 0 ? { id: sorted[0][0], rating: (sorted[0][1] as any).rating } : undefined,
@@ -396,7 +396,7 @@ screen name=App target=ink
           const ctx = buildContext();
           const cesarId = (ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude';
           let engineDef: any;
-          try { engineDef = ctx.registry.get(cesarId); } catch {}
+          try { engineDef = ctx.registry.get(cesarId); } catch { /* cesar engine not registered */ }
 
           if (!engineDef) {
             dispatch({ type: 'error', message: `btw: engine ${cesarId} not available` } as any);
@@ -416,7 +416,7 @@ screen name=App target=ink
           const prompt = `The user asks while you are working on another task:\n\n${btwQuestion}\n\n${streamCtx ? '--- Recent output from the running task ---\n' + streamCtx + '\n---\n\n' : ''}Answer briefly and concisely. Keep it short.`;
 
           const btwOutputDir = join(RUNS_DIR, `btw-${Date.now()}`);
-          try { mkdirSync(btwOutputDir, { recursive: true }); } catch {}
+          try { mkdirSync(btwOutputDir, { recursive: true }); } catch { /* dir already exists or parent missing */ }
           ctx.adapter.dispatch({
             engine: engineDef,
             prompt,
@@ -517,7 +517,7 @@ screen name=App target=ink
       } catch (err) {
         dispatch({ type: 'error', message: `Pager failed: ${err instanceof Error ? err.message : String(err)}` } as any);
       } finally {
-        try { unlinkSync(tmpFile); } catch {}
+        try { unlinkSync(tmpFile); } catch { /* temp file already cleaned up */ }
       }
     >>>
 
@@ -834,7 +834,7 @@ fn name=startRepl async=true returns="Promise<void>"
         _activeAborts.clear();
         if (_cancelCallback.fn) _cancelCallback.fn();
       } else {
-        if (_cesarSessionRef.session) { try { _cesarSessionRef.session.close(); } catch {} _cesarSessionRef.session = null; }
+        if (_cesarSessionRef.session) { try { _cesarSessionRef.session.close(); } catch { /* session already closed or errored */ } _cesarSessionRef.session = null; }
         process.exit(0);
       }
     });

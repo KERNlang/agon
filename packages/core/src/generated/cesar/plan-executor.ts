@@ -52,7 +52,7 @@ export async function executePlan(plan: CesarPlan, executors: Record<string,Step
           if (contextExport && step.exports && step.exports.length > 0) {
             let summary = contextExport;
             if (callbacks.summarizeStepOutput) {
-              try { summary = await callbacks.summarizeStepOutput(step.id, contextExport); } catch {}
+              try { summary = await callbacks.summarizeStepOutput(step.id, contextExport); } catch { /* summarizer unavailable — use raw context */ }
             }
             const exportUpdates: Record<string, string> = {};
             for (const key of step.exports) { exportUpdates[key] = summary; }
@@ -88,7 +88,7 @@ export async function executePlan(plan: CesarPlan, executors: Record<string,Step
         if (contextExport && step.exports && step.exports.length > 0) {
           let summary = contextExport;
           if (callbacks.summarizeStepOutput) {
-            try { summary = await callbacks.summarizeStepOutput(step.id, contextExport); } catch {}
+            try { summary = await callbacks.summarizeStepOutput(step.id, contextExport); } catch { /* summarizer unavailable — use raw context */ }
           }
           const exportUpdates: Record<string, string> = {};
           for (const key of step.exports) { exportUpdates[key] = summary; }

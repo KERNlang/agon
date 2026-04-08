@@ -1,8 +1,7 @@
 export * from './types.js';
 export * from './errors.js';
-export { loadConfig, configGet, configSet, ensureAgonHome, AGON_HOME, ELO_PATH, RATINGS_PATH, TEAM_ELO_PATH, CORPUS_PATH, SKILLS_DIR, RUNS_DIR } from './config.js';
+export { loadConfig, configGet, configSet, ensureAgonHome, AGON_HOME, RATINGS_PATH, TEAM_ELO_PATH, CORPUS_PATH, SKILLS_DIR, RUNS_DIR } from './config.js';
 export { computeScore, tiebreak, DEFAULT_WEIGHTS } from './scoring.js';
-export { updateElo, updateEloRanked, getElo, getEngineRating } from './elo.js';
 export { updateGlicko, updateGlickoRanked, getRatings, getEngineGlickoRating, advisorScore } from './glicko.js';
 export { classifyTask } from './task-classifier.js';
 export {

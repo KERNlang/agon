@@ -5,7 +5,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 // @kern-source: info:3
-import { ensureAgonHome, RUNS_DIR, getElo, getRatings, getEngineRating, tracker, loadConfig, configSet, DEFAULT_CONFIG, discoverEngines, addWorkspace, removeWorkspace, switchWorkspace, listWorkspaces, getActiveWorkspace, listChatSessions, loadChatSession } from '@agon/core';
+import { ensureAgonHome, RUNS_DIR, getRatings, tracker, loadConfig, configSet, DEFAULT_CONFIG, discoverEngines, addWorkspace, removeWorkspace, switchWorkspace, listWorkspaces, getActiveWorkspace, listChatSessions, loadChatSession } from '@agon/core';
 
 // @kern-source: info:4
 import type { AgonConfig, ForgeManifest } from '@agon/core';

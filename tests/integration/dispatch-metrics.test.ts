@@ -249,39 +249,35 @@ describe('Scoring Component Breakdown', () => {
   });
 });
 
-// ── 5. ELO Update Integration ─────────────────────────────────────
-describe('ELO Update Integration', () => {
-  it('updateElo adjusts ratings after forge outcome', async () => {
-    const { updateElo, getElo } = await import('../../packages/core/src/elo.js');
+// ── 5. Glicko-2 Rating Integration ───────────────────────────────
+describe('Glicko-2 Rating Integration', () => {
+  it('updateGlicko adjusts ratings after forge outcome', async () => {
+    const { updateGlicko, getRatings } = await import('../../packages/core/src/glicko.js');
 
-    // Record a win for claude over codex in refactor tasks
-    const before = getElo();
-    const claudeBefore = before.global?.claude?.rating ?? 1500;
-    const codexBefore = before.global?.codex?.rating ?? 1500;
+    const before = getRatings();
+    const claudeBefore = before.global?.claude?.mu ?? 1500;
+    const codexBefore = before.global?.codex?.mu ?? 1500;
 
-    updateElo('claude', 'codex', 'refactor', 32);
+    updateGlicko('claude', 'codex', 'refactor', 'forge');
 
-    const after = getElo();
-    const claudeAfter = after.global?.claude?.rating ?? 1500;
-    const codexAfter = after.global?.codex?.rating ?? 1500;
+    const after = getRatings();
+    const claudeAfter = after.global?.claude?.mu ?? 1500;
+    const codexAfter = after.global?.codex?.mu ?? 1500;
 
     // Winner rating should increase
     expect(claudeAfter).toBeGreaterThan(claudeBefore);
     // Loser rating should decrease
     expect(codexAfter).toBeLessThan(codexBefore);
-    // ELO is zero-sum: winner gain + loser loss ≈ 0
-    const gain = claudeAfter - claudeBefore;
-    const loss = codexAfter - codexBefore;
-    expect(Math.abs(gain + loss)).toBeLessThan(1);
   });
 
-  it('ELO tracks per task class', async () => {
-    const { updateElo, getElo } = await import('../../packages/core/src/elo.js');
+  it('Glicko-2 tracks per mode and task class', async () => {
+    const { updateGlicko, getRatings } = await import('../../packages/core/src/glicko.js');
 
-    updateElo('gemini', 'claude', 'algorithm', 32);
+    updateGlicko('gemini', 'claude', 'algorithm', 'brainstorm');
 
-    const elo = getElo();
-    expect(elo.byTaskClass?.algorithm?.gemini).toBeDefined();
-    expect(elo.byTaskClass?.algorithm?.gemini?.wins).toBeGreaterThanOrEqual(1);
+    const ratings = getRatings();
+    expect(ratings.byMode?.brainstorm?.gemini).toBeDefined();
+    expect(ratings.byMode?.brainstorm?.gemini?.wins).toBeGreaterThanOrEqual(1);
+    expect(ratings.byTaskClass?.algorithm?.gemini).toBeDefined();
   });
 });

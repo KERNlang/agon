@@ -132,7 +132,7 @@ export async function handleTribunal(question: string, dispatch: Dispatch, ctx: 
     
     for (const round of result.rounds) {
       for (const pos of round.positions) {
-        tracker.record(pos.engineId, question, pos.arguments.join(' '));
+        tracker.record(pos.engineId, { prompt: question, response: pos.arguments.join(' ') });
       }
     }
   } finally {

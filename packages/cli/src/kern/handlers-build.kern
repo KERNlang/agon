@@ -221,7 +221,7 @@ fn name=handleBuild params="input:string, dispatch:Dispatch, ctx:HandlerContext,
     if (response) {
       appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
       appendMessage(ctx.chatSession, { role: 'engine', engineId, content: response, timestamp: new Date().toISOString() });
-      tracker.record(engineId, input, response);
+      tracker.record(engineId, { prompt: input, response });
 
       // Mark plan step as completed
       plan = mergeStepResult(plan, 'implement', { state: 'completed' as any, engineId });

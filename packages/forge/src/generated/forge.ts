@@ -160,7 +160,7 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
     }
     // Record token usage for stage 1
     for (const m of stage1.metrics ?? []) {
-      if (m.tokens) tracker.record(m.engineId, 'x'.repeat(m.tokens.prompt * 4), 'x'.repeat(m.tokens.response * 4));
+      if (m.tokens) tracker.record(m.engineId, { prompt: 'x'.repeat(m.tokens.prompt * 4), response: 'x'.repeat(m.tokens.response * 4) });
       sidechain.log('dispatch:complete', m.engineId, { phase: m.phase, durationMs: m.dispatchDurationMs, score: m.score, pass: m.pass, tokens: m.tokens });
     }
   
@@ -201,7 +201,7 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
       }
       // Record token usage for stage 2
       for (const m of stage2.metrics ?? []) {
-        if (m.tokens) tracker.record(m.engineId, 'x'.repeat(m.tokens.prompt * 4), 'x'.repeat(m.tokens.response * 4));
+        if (m.tokens) tracker.record(m.engineId, { prompt: 'x'.repeat(m.tokens.prompt * 4), response: 'x'.repeat(m.tokens.response * 4) });
         sidechain.log('dispatch:complete', m.engineId, { phase: m.phase, durationMs: m.dispatchDurationMs, score: m.score, pass: m.pass, tokens: m.tokens, error: m.error });
       }
   

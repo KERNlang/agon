@@ -293,7 +293,7 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
               },
             });
             for (const [id, r] of Object.entries(manifest.results) as [string, any][]) {
-              tracker.record(id, task, `score:${r.score} diff:${r.diffLines}`);
+              tracker.record(id, { prompt: task, response: `score:${r.score} diff:${r.diffLines}` });
             }
             return; // Early return — convergence handled everything
           }
@@ -361,7 +361,7 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
     });
     
     for (const [id, r] of Object.entries(manifest.results) as [string, any][]) {
-      tracker.record(id, task, `score:${r.score} diff:${r.diffLines}`);
+      tracker.record(id, { prompt: task, response: `score:${r.score} diff:${r.diffLines}` });
     }
   } finally {
     ctx.setActiveAbort(null);

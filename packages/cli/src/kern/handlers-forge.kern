@@ -275,7 +275,7 @@ fn name=handleForge params="task:string, fitnessCmd:string|null, dispatch:Dispat
               },
             });
             for (const [id, r] of Object.entries(manifest.results) as [string, any][]) {
-              tracker.record(id, task, `score:${r.score} diff:${r.diffLines}`);
+              tracker.record(id, { prompt: task, response: `score:${r.score} diff:${r.diffLines}` });
             }
             return; // Early return — convergence handled everything
           }
@@ -343,7 +343,7 @@ fn name=handleForge params="task:string, fitnessCmd:string|null, dispatch:Dispat
     });
 
     for (const [id, r] of Object.entries(manifest.results) as [string, any][]) {
-      tracker.record(id, task, `score:${r.score} diff:${r.diffLines}`);
+      tracker.record(id, { prompt: task, response: `score:${r.score} diff:${r.diffLines}` });
     }
   >>>
   cleanup <<<

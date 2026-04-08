@@ -1,15 +1,22 @@
+// @kern-source: handlers-build:1
 import { join } from 'node:path';
 
+// @kern-source: handlers-build:2
 import { mkdirSync, readFileSync, existsSync } from 'node:fs';
 
+// @kern-source: handlers-build:3
 import { ensureAgonHome, RUNS_DIR, appendMessage, tracker, StreamParser, scanProjectContext, resolveWorkingDir, createPlan, approvePlan, startPlan, mergeStepResult, cancelPlan, failPlan, savePlan, getActiveWorkspace, snapshotWorkspace } from '@agon/core';
 
+// @kern-source: handlers-build:4
 import type { Plan, PlanStepInput, ApprovalLevel } from '@agon/core';
 
+// @kern-source: handlers-build:5
 import { ENGINE_COLORS } from '../output.js';
 
+// @kern-source: handlers-build:6
 import type { Dispatch, HandlerContext } from '../handlers/types.js';
 
+// @kern-source: handlers-build:8
 function injectFileReferences(input: string, cwd: string): string {
   const FILE_REF = /(?:^|\s)([\w./-]+\.\w{1,10})\b/g;
   let result = input;
@@ -34,6 +41,7 @@ function injectFileReferences(input: string, cwd: string): string {
   return result;
 }
 
+// @kern-source: handlers-build:33
 export async function handleBuild(input: string, dispatch: Dispatch, ctx: HandlerContext, existingPlan?: Plan): Promise<void> {
   const abort = new AbortController();
   try {
@@ -225,7 +233,7 @@ export async function handleBuild(input: string, dispatch: Dispatch, ctx: Handle
     if (response) {
       appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
       appendMessage(ctx.chatSession, { role: 'engine', engineId, content: response, timestamp: new Date().toISOString() });
-      tracker.record(engineId, input, response);
+      tracker.record(engineId, { prompt: input, response });
     
       // Mark plan step as completed
       plan = mergeStepResult(plan, 'implement', { state: 'completed' as any, engineId });

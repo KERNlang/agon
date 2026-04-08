@@ -687,7 +687,8 @@ screen name=App target=ink
             ) : (
               <Box borderStyle={mode === 'chat' ? 'round' : 'single'} borderColor={mode === 'chat' ? '#585858' : 'gray'} borderLeft={mode !== 'chat'} borderRight={mode !== 'chat'} borderTop borderBottom paddingX={1} width="100%">
                 {mode !== 'chat' && (<Text><Text color={mode === 'campfire' ? '#f97316' : mode === 'brainstorm' ? '#22d3ee' : '#a78bfa'} bold>{mode === 'campfire' ? icons().campfire : mode === 'brainstorm' ? icons().brainstorm : icons().tribunal}{' '}{mode}</Text><Text dimColor>{' │ '}</Text></Text>)}
-                <Text color={mode === 'chat' ? '#585858' : '#fbbf24'}>{mode === 'chat' ? '> ' : icons().prompt + ' '}</Text>
+                {activePlan && ['planning', 'awaiting_approval', 'running', 'paused'].includes(activePlan.state) && (<Text><Text color="#c084fc" bold>{'◈ plan'}</Text><Text dimColor>{activePlan.state === 'planning' ? ' thinking…' : activePlan.state === 'awaiting_approval' ? ' review' : activePlan.state === 'running' ? ' executing…' : ' paused'}</Text><Text dimColor>{' │ '}</Text></Text>)}
+                <Text color={mode === 'chat' ? (activePlan && activePlan.state === 'planning' ? '#c084fc' : '#585858') : '#fbbf24'}>{mode === 'chat' ? '> ' : icons().prompt + ' '}</Text>
                 <Box flexGrow={1}>
                   <TextInput key={inputKey} value={inputValue} onChange={handleInputChange} onSubmit={handleSubmit}
                     placeholder={replState === 'idle' ? mode === 'chat' ? '' : mode === 'campfire' ? 'What should we think about?' : mode === 'brainstorm' ? 'What question for the engines?' : 'What should they debate?' : ''} />

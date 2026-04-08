@@ -21,3 +21,6 @@ export { runTeamTribunal } from './generated/team-tribunal.js';
 export type { TeamTribunalOptions } from './generated/team-tribunal.js';
 export { runTeamBrainstorm } from './generated/team-brainstorm.js';
 export type { TeamBrainstormOptions } from './generated/team-brainstorm.js';
+// ── Campfire ──
+export { runCampfire } from './generated/campfire.js';
+export type { CampfireResult } from './generated/campfire.js';

@@ -8,15 +8,18 @@ import { mkdirSync } from 'node:fs';
 import { ensureAgonHome, RUNS_DIR, scanProjectContext, tracker, appendMessage, resolveWorkingDir } from '@agon/core';
 
 // @kern-source: handlers-campfire:4
-import { ENGINE_COLORS } from '../output.js';
+import { runCampfire } from '@agon/forge';
 
 // @kern-source: handlers-campfire:5
-import { sessionResultStore } from '../generated/session-results.js';
+import { ENGINE_COLORS } from '../output.js';
 
 // @kern-source: handlers-campfire:6
+import { sessionResultStore } from '../generated/session-results.js';
+
+// @kern-source: handlers-campfire:7
 import type { Dispatch, HandlerContext, EngineProgress } from '../handlers/types.js';
 
-// @kern-source: handlers-campfire:8
+// @kern-source: handlers-campfire:9
 export async function handleCampfire(topic: string, dispatch: Dispatch, ctx: HandlerContext, opts?: {seedPlan?:string, observerStrategy?:'lead-first'|'all-respond', leadEngine?:string}): Promise<void> {
   const cfAbort = new AbortController();
   try {
@@ -34,20 +37,6 @@ export async function handleCampfire(topic: string, dispatch: Dispatch, ctx: Han
     const strategy = opts?.observerStrategy ?? 'all-respond';
     const leadId = opts?.leadEngine && engines.includes(opts.leadEngine) ? opts.leadEngine : engines[0];
     
-    const basePrompt = [
-      `## CAMPFIRE`,
-      `Topic: ${topic || 'open discussion'}`,
-      '',
-      projectCtx ? `## Project Context\n${projectCtx}\n` : '',
-      opts?.seedPlan ? `## Lead assessment (prior context)\n${opts.seedPlan}\n` : '',
-      `## Rules`,
-      `This is a campfire — no competition, no ranking, no winners.`,
-      `Think freely. Share ideas, wild thoughts, "what if" scenarios.`,
-      `Be honest. Say "I'm not sure" if you're not sure.`,
-      `Build on the topic. Be interesting, not just useful.`,
-      `Keep it concise — 3-5 paragraphs max.`,
-    ].filter(Boolean).join('\n');
-    
     dispatch({ type: 'header', title: 'Campfire — no competition, just thinking together' });
     if (topic) dispatch({ type: 'info', message: `Topic: ${topic}` });
     
@@ -56,20 +45,15 @@ export async function handleCampfire(topic: string, dispatch: Dispatch, ctx: Han
     
     ctx.setActiveAbort(cfAbort);
     
-    const campfireRounds: { engineId: string; content: string }[] = [];
-    
-    const cfStatus: Record<string, 'thinking' | 'done' | 'failed'> = {};
-    for (const id of engines) cfStatus[id] = 'thinking';
-    
     const startTime = Date.now();
     const progressInterval = setInterval(() => {
       const elapsed = Math.floor((Date.now() - startTime) / 1000);
       const progress: EngineProgress[] = engines.map((id: string) => ({
         id,
-        status: cfStatus[id] === 'done' ? 'done' : cfStatus[id] === 'failed' ? 'missed' : `thinking… ${elapsed}s`,
+        status: `thinking… ${elapsed}s`,
         elapsed,
-        done: cfStatus[id] === 'done',
-        failed: cfStatus[id] === 'failed',
+        done: false,
+        failed: false,
       }));
       dispatch({ type: 'progress-update', engines: progress });
     }, 250);
@@ -82,107 +66,34 @@ export async function handleCampfire(topic: string, dispatch: Dispatch, ctx: Han
       dispatch({ type: 'progress-clear' });
     }
     
-    if (strategy === 'lead-first' && engines.length > 1) {
-      // Lead-first: dispatch lead engine, then observers with lead's response
-      const leadEngine = ctx.registry.get(leadId);
-      let leadResponse = '';
-    
-      try {
-        const leadResult = await ctx.adapter.dispatch({
-          engine: leadEngine,
-          prompt: basePrompt,
-          cwd: cfCwd,
-          mode: 'exec',
-          timeout: 120,
-          outputDir,
-          signal: cfAbort.signal,
-        });
-        cfStatus[leadId] = 'done';
-        leadResponse = leadResult.stdout.trim();
-    
-        const color = (ENGINE_COLORS as Record<string, number>)[leadId] ?? 245;
-        dispatch({ type: 'engine-block', engineId: leadId, color, content: leadResponse });
-        appendMessage(ctx.chatSession, { role: 'engine', engineId: leadId, content: leadResponse, timestamp: new Date().toISOString() });
-        campfireRounds.push({ engineId: leadId, content: leadResponse });
-        tracker.record(leadId, { prompt: topic, response: leadResponse });
-      } catch (err) {
-        console.warn(`[agon] campfire lead dispatch (${leadId}) failed: ${err instanceof Error ? err.message : String(err)}`);
-        cfStatus[leadId] = 'failed';
-      }
-    
-      if (leadResponse && !cfAbort.signal.aborted) {
-        const observerPrompt = [
-          basePrompt,
-          '',
-          `## Lead engine (${leadId}) response`,
-          leadResponse,
-          '',
-          `## Your role`,
-          `The lead engine proposed the above. Only respond if you have a substantively different perspective or disagree. If you mostly agree, respond with just "Agree" or stay brief.`,
-        ].join('\n');
-    
-        const observers = engines.filter((id: string) => id !== leadId);
-        const observerDone = observers.map(async (engineId: string) => {
-          const engine = ctx.registry.get(engineId);
-          try {
-            const result = await ctx.adapter.dispatch({
-              engine,
-              prompt: observerPrompt,
-              cwd: cfCwd,
-              mode: 'exec',
-              timeout: 120,
-              outputDir,
-              signal: cfAbort.signal,
-            });
-            cfStatus[engineId] = 'done';
-            const response = result.stdout.trim();
-            // Skip near-empty or pure agreement responses
-            if (response && response.length > 20 && !/^agree\b/i.test(response)) {
-              const color = (ENGINE_COLORS as Record<string, number>)[engineId] ?? 245;
-              dispatch({ type: 'engine-block', engineId, color, content: response });
-              appendMessage(ctx.chatSession, { role: 'engine', engineId, content: response, timestamp: new Date().toISOString() });
-              tracker.record(engineId, { prompt: topic, response: response });
-              campfireRounds.push({ engineId, content: response });
-            }
-          } catch (err) {
-            console.warn(`[agon] campfire observer (${engineId}) failed: ${err instanceof Error ? err.message : String(err)}`);
-            cfStatus[engineId] = 'failed';
-          }
-        });
-    
-        await Promise.all(observerDone);
-      }
-    } else {
-      // All-respond: original parallel dispatch
-      const allDone = engines.map(async (engineId: string) => {
-        const engine = ctx.registry.get(engineId);
-        try {
-          const result = await ctx.adapter.dispatch({
-            engine,
-            prompt: basePrompt,
-            cwd: cfCwd,
-            mode: 'exec',
-            timeout: 120,
-            outputDir,
-            signal: cfAbort.signal,
-          });
-          cfStatus[engineId] = 'done';
-    
-          const color = (ENGINE_COLORS as Record<string, number>)[engineId] ?? 245;
-          dispatch({ type: 'engine-block', engineId, color, content: result.stdout.trim() });
-          appendMessage(ctx.chatSession, { role: 'engine', engineId, content: result.stdout.trim(), timestamp: new Date().toISOString() });
-          tracker.record(engineId, { prompt: topic, response: result.stdout });
-          campfireRounds.push({ engineId, content: result.stdout.trim() });
-        } catch (err) {
-          console.warn(`[agon] campfire dispatch (${engineId}) failed: ${err instanceof Error ? err.message : String(err)}`);
-          cfStatus[engineId] = 'failed';
-        }
+    let result;
+    try {
+      result = await runCampfire({
+        topic,
+        context: projectCtx,
+        engines,
+        registry: ctx.registry,
+        adapter: ctx.adapter,
+        strategy,
+        leadEngine: leadId,
+        seedPlan: opts?.seedPlan,
+        timeout: 120,
+        outputDir,
+        signal: cfAbort.signal,
       });
-    
-      await Promise.all(allDone);
+    } catch (err) {
+      clearProgress();
+      throw err;
     }
     
     clearProgress();
+    
+    for (const round of result.rounds) {
+      const color = (ENGINE_COLORS as Record<string, number>)[round.engineId] ?? 245;
+      dispatch({ type: 'engine-block', engineId: round.engineId, color, content: round.content });
+      appendMessage(ctx.chatSession, { role: 'engine', engineId: round.engineId, content: round.content, timestamp: new Date().toISOString() });
+      tracker.record(round.engineId, { prompt: topic, response: round.content });
+    }
     
     sessionResultStore.add({
       type: 'campfire',
@@ -190,7 +101,7 @@ export async function handleCampfire(topic: string, dispatch: Dispatch, ctx: Han
       question: topic,
       engines,
       winner: null,
-      data: { rounds: campfireRounds },
+      data: { rounds: result.rounds },
     });
   } finally {
     ctx.setActiveAbort(null);

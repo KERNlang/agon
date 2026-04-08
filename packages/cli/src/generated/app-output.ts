@@ -29,12 +29,13 @@ export interface OutputActions {
   setChatStartTime: (val:number) => void;
   flushStream: () => void;
   getEngineColor: (engineId:string) => number;
+  setCesarConfidence?: (val:number|null) => void;
 }
 
-// @kern-source: app-output:28
+// @kern-source: app-output:29
 export const _permissionQueue: Array<{tool:string,command:string,reason:string,resolve:(approved:boolean)=>void}> = [] as Array<{tool:string,command:string,reason:string,resolve:(approved:boolean)=>void}>;
 
-// @kern-source: app-output:31
+// @kern-source: app-output:32
 export function clearPermissionQueue(): void {
   while (_permissionQueue.length > 0) {
     const entry = _permissionQueue.shift()!;
@@ -42,7 +43,7 @@ export function clearPermissionQueue(): void {
   }
 }
 
-// @kern-source: app-output:40
+// @kern-source: app-output:41
 function _drainAutoApproved(actions: OutputActions): void {
   const cfg = loadConfig();
   const allowed: string[] = (cfg as any).allowedCommands ?? [];
@@ -60,7 +61,7 @@ function _drainAutoApproved(actions: OutputActions): void {
   }
 }
 
-// @kern-source: app-output:59
+// @kern-source: app-output:60
 function _showNextPermission(actions: OutputActions): void {
   // First drain any that are now auto-approved (e.g. after "Always")
   _drainAutoApproved(actions);
@@ -103,7 +104,7 @@ function _showNextPermission(actions: OutputActions): void {
   });
 }
 
-// @kern-source: app-output:102
+// @kern-source: app-output:103
 export function handleOutputEvent(event: OutputEvent, state: OutputState, actions: OutputActions, mode: string, chatStartTime: number): void {
   switch (event.type) {
     case 'spinner-start':
@@ -179,6 +180,10 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
     }
     case 'plan-proposal': {
       actions.addBlock(event);
+      return;
+    }
+    case 'confidence-update': {
+      if (actions.setCesarConfidence) actions.setCesarConfidence((event as any).value);
       return;
     }
     default:

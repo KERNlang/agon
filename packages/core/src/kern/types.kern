@@ -67,6 +67,7 @@ interface name=DispatchResult
   field name=stderr type=string
   field name=durationMs type=number
   field name=timedOut type=boolean
+  field name=usage type="{promptTokens:number,completionTokens:number,totalTokens:number,source:'sdk'|'cli-reported'|'estimated'}" optional=true
 
 interface name=AgentDispatchResult extends=DispatchResult
   field name=diff type=string

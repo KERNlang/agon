@@ -42,7 +42,7 @@ export interface CesarPlan {
   state: CesarPlanState;
   intent: string;
   steps: CesarPlanStep[];
-  planningCost?: number;
+  planningCost?: {tokens:number,costUsd:number};
   totalEstimatedTokens: number;
   totalEstimatedCostUsd: number;
   totalActualTokens: number;

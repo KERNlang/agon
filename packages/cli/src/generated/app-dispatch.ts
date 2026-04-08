@@ -72,15 +72,16 @@ export interface DispatchCallbacks {
   neroMode: boolean;
   setNeroMode: (mode: boolean) => void;
   setActivePlan: (plan: any) => void;
+  commandRegistry?: any;
 }
 
-// @kern-source: app-dispatch:50
+// @kern-source: app-dispatch:51
 export interface DispatchResult {
   handled: boolean;
   ranAsJob: boolean;
 }
 
-// @kern-source: app-dispatch:54
+// @kern-source: app-dispatch:55
 export function handleModeSwitch(intentType: string, topic: string|undefined, question: string|undefined, cb: DispatchCallbacks): boolean {
   if (intentType === 'campfire' && !topic) {
     cb.setMode('campfire');
@@ -107,7 +108,7 @@ export function handleModeSwitch(intentType: string, topic: string|undefined, qu
   return false;
 }
 
-// @kern-source: app-dispatch:82
+// @kern-source: app-dispatch:83
 export async function routeWithCesar(input: string, images: ImageAttachment[], cb: DispatchCallbacks): Promise<boolean> {
   cb.setPendingImages(() => []);
   try {
@@ -301,7 +302,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
   return false;
 }
 
-// @kern-source: app-dispatch:277
+// @kern-source: app-dispatch:278
 export async function dispatchIntent(intent: any, input: string, cb: DispatchCallbacks): Promise<DispatchResult> {
   switch (intent.type) {
     // ── Job-dispatched commands (return immediately, don't hit finally) ──
@@ -744,6 +745,18 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
     }
     case 'help': cb.dispatch({ type: 'text', content: cb.allSlashCommands.map((c: any) => `${c.cmd.padEnd(16)} ${c.desc}`).join('\n') }); break;
     case 'exit': cb.exit(); return { handled: true, ranAsJob: true };
+  
+    // ── Extension commands ──
+    case 'extension-command': {
+      const cmdName = (intent as any).commandName as string;
+      const cmdArgs = (intent as any).args as string ?? '';
+      const extHandler = cb.commandRegistry?.get(cmdName);
+      if (extHandler) {
+        const parsed = extHandler.parseArgs(cmdArgs);
+        return extHandler.execute(parsed, cb);
+      }
+      break;
+    }
   
     // ── Cesar-routed intents ──
     case 'auto':

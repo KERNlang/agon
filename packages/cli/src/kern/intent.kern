@@ -26,6 +26,7 @@ interface name=Intent
   field name=jobId type="string|undefined"
   field name=taskClass type="'code'|'question'|'ambiguous'|undefined"
   field name=args type="string|undefined"
+  field name=commandName type="string|undefined"
 
 const name=SLASH_COMMANDS type="SlashCommand[]"
   handler <<<
@@ -132,7 +133,7 @@ fn name=parseForgeInput params="input:string" returns=Intent export=false
     return { type: 'forge', task, fitnessCmd, hardened } as Intent;
   >>>
 
-fn name=parseSlashCommand params="input:string" returns=Intent export=false
+fn name=parseSlashCommand params="input:string, commandRegistry?:any" returns=Intent export=false
   handler <<<
     const stripped = input.slice(1).trim();
     if (!stripped) return { type: 'slash-list' } as Intent;
@@ -349,17 +350,21 @@ fn name=parseSlashCommand params="input:string" returns=Intent export=false
       case 'quit':
         return { type: 'exit' } as Intent;
       default:
+        // Check command registry for extension commands
+        if (commandRegistry && commandRegistry.has(cmd)) {
+          return { type: 'extension-command', commandName: cmd, args: rest } as Intent;
+        }
         return { type: 'unknown', input } as Intent;
     }
   >>>
 
-fn name=detectIntent params="raw:string" returns=Intent
+fn name=detectIntent params="raw:string, commandRegistry?:any" returns=Intent
   handler <<<
     const input = raw.trim();
     if (!input) return { type: 'unknown', input: '' } as Intent;
 
     if (input.startsWith('/')) {
-      return parseSlashCommand(input);
+      return parseSlashCommand(input, commandRegistry);
     }
 
     if (EXIT_KEYWORDS.test(input)) return { type: 'exit' } as Intent;

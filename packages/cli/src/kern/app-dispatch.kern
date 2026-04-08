@@ -46,6 +46,7 @@ interface name=DispatchCallbacks
   field name=neroMode type=boolean
   field name=setNeroMode type="(mode: boolean) => void"
   field name=setActivePlan type="(plan: any) => void"
+  field name=commandRegistry type="any" optional=true
 
 interface name=DispatchResult
   field name=handled type=boolean
@@ -718,6 +719,18 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
       }
       case 'help': cb.dispatch({ type: 'text', content: cb.allSlashCommands.map((c: any) => `${c.cmd.padEnd(16)} ${c.desc}`).join('\n') }); break;
       case 'exit': cb.exit(); return { handled: true, ranAsJob: true };
+
+      // ── Extension commands ──
+      case 'extension-command': {
+        const cmdName = (intent as any).commandName as string;
+        const cmdArgs = (intent as any).args as string ?? '';
+        const extHandler = cb.commandRegistry?.get(cmdName);
+        if (extHandler) {
+          const parsed = extHandler.parseArgs(cmdArgs);
+          return extHandler.execute(parsed, cb);
+        }
+        break;
+      }
 
       // ── Cesar-routed intents ──
       case 'auto':

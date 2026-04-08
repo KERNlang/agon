@@ -60,8 +60,9 @@ export function buildRepairPrompt(task: string, breakerTests: string): string {
 }
 
 // @kern-source: gauntlet:51
-export async function validateBreakerArtifact(opts: {artifact:BreakerArtifact, winnerWorktree:string, cleanWorktree:string, fitnessTimeout:number}): Promise<BreakerArtifact> {
-  const { artifact, winnerWorktree, cleanWorktree, fitnessTimeout } = opts;
+export async function validateBreakerArtifact(opts: {artifact:BreakerArtifact, winnerWorktree:string, cleanWorktree:string, fitnessTimeout:number, fitnessCmd?:string}): Promise<BreakerArtifact> {
+  const { artifact, winnerWorktree, cleanWorktree, fitnessTimeout, fitnessCmd } = opts;
+  const testRunner = fitnessCmd ?? 'npx vitest run';
   
   // Write test script to both worktrees
   const testFileName = `breaker-${artifact.engineId}-${Date.now()}.test.ts`;
@@ -72,11 +73,12 @@ export async function validateBreakerArtifact(opts: {artifact:BreakerArtifact, w
   writeFileSync(cleanTestPath, artifact.testScript);
   
   // Run 1: Must FAIL on winner's patched code
+  const runCmd = `${testRunner} ${testFileName} 2>&1 || exit 1`;
   let failsOnWinner = false;
   try {
     const result1 = await spawnWithTimeout({
       command: '/bin/sh',
-      args: ['-c', `npx vitest run ${testFileName} --reporter=verbose 2>&1 || exit 1`],
+      args: ['-c', runCmd],
       cwd: winnerWorktree,
       timeout: fitnessTimeout * 1000,
     });
@@ -94,7 +96,7 @@ export async function validateBreakerArtifact(opts: {artifact:BreakerArtifact, w
   try {
     const result2 = await spawnWithTimeout({
       command: '/bin/sh',
-      args: ['-c', `npx vitest run ${testFileName} --reporter=verbose 2>&1 || exit 1`],
+      args: ['-c', runCmd],
       cwd: winnerWorktree,
       timeout: fitnessTimeout * 1000,
     });
@@ -112,7 +114,7 @@ export async function validateBreakerArtifact(opts: {artifact:BreakerArtifact, w
   try {
     const result3 = await spawnWithTimeout({
       command: '/bin/sh',
-      args: ['-c', `npx vitest run ${testFileName} --reporter=verbose 2>&1 || exit 1`],
+      args: ['-c', runCmd],
       cwd: cleanWorktree,
       timeout: fitnessTimeout * 1000,
     });
@@ -130,7 +132,7 @@ export async function validateBreakerArtifact(opts: {artifact:BreakerArtifact, w
   return { ...artifact, validated: true, deterministic: true, testPath: winnerTestPath };
 }
 
-// @kern-source: gauntlet:122
+// @kern-source: gauntlet:124
 export async function runGauntlet(opts: {winnerId:string, losers:string[], task:string, winnerWorktree:string, fitnessCmd:string, taskClass:TaskClass, forgeDir:string, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, fitnessTimeout:number, maxBreakers:number, repairTimeout:number, cwd:string, onEvent?:(event:ForgeEvent)=>void, signal?: AbortSignal}): Promise<GauntletResult> {
   const { winnerId, losers, task, winnerWorktree, fitnessCmd, taskClass, forgeDir, registry, adapter, timeout, fitnessTimeout, maxBreakers, repairTimeout, cwd } = opts;
   
@@ -209,6 +211,7 @@ export async function runGauntlet(opts: {winnerId:string, losers:string[], task:
         winnerWorktree,
         cleanWorktree: cleanWtPath,
         fitnessTimeout,
+        fitnessCmd,
       });
   
       opts.onEvent?.({ type: 'gauntlet:breaker-done' as any, data: { engineId: artifact.engineId, validated: validated.validated } });

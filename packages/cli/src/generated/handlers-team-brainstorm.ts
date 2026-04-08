@@ -1,13 +1,19 @@
+// @kern-source: handlers-team-brainstorm:1
 import { join } from 'node:path';
 
+// @kern-source: handlers-team-brainstorm:2
 import { mkdirSync } from 'node:fs';
 
+// @kern-source: handlers-team-brainstorm:3
 import { ensureAgonHome, RUNS_DIR, scanProjectContext, tracker, appendMessage, resolveWorkingDir, loadConfig } from '@agon/core';
 
+// @kern-source: handlers-team-brainstorm:4
 import { runTeamBrainstorm } from '@agon/forge';
 
+// @kern-source: handlers-team-brainstorm:5
 import type { Dispatch, HandlerContext } from '../handlers/types.js';
 
+// @kern-source: handlers-team-brainstorm:7
 export async function handleTeamBrainstorm(question: string, dispatch: Dispatch, ctx: HandlerContext, membersPerSide?: number): Promise<void> {
   const teamAbort = new AbortController();
   try {
@@ -18,7 +24,7 @@ export async function handleTeamBrainstorm(question: string, dispatch: Dispatch,
       return;
     }
     
-    const active = ctx.registry.availableIds();
+    const active = ctx.activeEngines();
     if (active.length < 2) {
       dispatch({ type: 'error', message: `Team brainstorm needs at least 2 engines. Only found: ${active.join(', ') || 'none'}` });
       return;

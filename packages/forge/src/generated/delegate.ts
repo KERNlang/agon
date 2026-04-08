@@ -1,0 +1,35 @@
+// @kern-source: delegate:1
+import type { EngineRegistry, EngineAdapter, DispatchResult } from '@agon/core';
+
+// @kern-source: delegate:2
+import { resolveWorkingDir } from '@agon/core';
+
+// @kern-source: delegate:4
+export interface DelegateResult {
+  engineId: string;
+  response: string;
+  usage?: DispatchResult['usage'];
+}
+
+// @kern-source: delegate:9
+export async function runDelegate(opts: {engineId:string,task:string,mode?:string,registry:EngineRegistry,adapter:EngineAdapter,timeout:number,outputDir:string,signal?:AbortSignal}): Promise<DelegateResult> {
+  const engine = opts.registry.get(opts.engineId);
+  const result = await opts.adapter.dispatch({
+    engine,
+    prompt: opts.task,
+    cwd: resolveWorkingDir(),
+    mode: (opts.mode ?? 'exec') as any,
+    timeout: opts.timeout,
+    outputDir: opts.outputDir,
+    signal: opts.signal,
+  });
+  
+  if (!result.stdout.trim()) {
+    return { engineId: opts.engineId, response: '', usage: result.usage };
+  }
+  
+  // Strip <think> blocks
+  const cleaned = result.stdout.trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
+  return { engineId: opts.engineId, response: cleaned, usage: result.usage };
+}
+

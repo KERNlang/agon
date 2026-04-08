@@ -733,7 +733,8 @@ export function App({  }: {  }) {
                 // Extract last non-empty line from streaming text for btw/status
                 let snippet: { engineId: string; line: string } | null = null;
                 if (streamingText && streamingText.content) {
-                  const lines = streamingText.content.split('\n').filter((l: string) => l.trim());
+                  const cleaned = cleanEngineOutput(streamingText.content);
+                  const lines = cleaned.split('\n').filter((l: string) => l.trim());
                   if (lines.length > 0) snippet = { engineId: streamingText.engineId, line: lines[lines.length - 1].trim() };
                 }
                 return (<>
@@ -748,7 +749,7 @@ export function App({  }: {  }) {
 }
 
 
-// @kern-source: ui-app:716
+// @kern-source: ui-app:717
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

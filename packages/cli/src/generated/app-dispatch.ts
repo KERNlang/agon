@@ -119,6 +119,17 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
       // P2 fix: normalize team prefix — brain may return action='forge' + team=true
       let routeAction = result.action;
       if (result.team && !routeAction.startsWith('team-')) routeAction = `team-${routeAction}`;
+  
+      // Plan mode: block execution delegations, allow thinking delegations
+      const _planActive = (cb.ctx as any).activePlan && ['planning', 'awaiting_approval'].includes((cb.ctx as any).activePlan.state);
+      if (_planActive) {
+        const EXECUTION_ACTIONS = ['forge', 'team-forge', 'build', 'pipeline'];
+        if (EXECUTION_ACTIONS.includes(routeAction)) {
+          cb.dispatch({ type: 'info', message: `Plan mode: converting ${routeAction} → brainstorm (no execution until plan approved)` });
+          routeAction = 'brainstorm';
+        }
+      }
+  
       // P1 fix: enrich input with user-added context from delegation prompt
       const taskInput = result.reasoning && result.reasoning.includes('User context:')
         ? `${input}\n\n${result.reasoning.slice(result.reasoning.indexOf('User context:'))}`
@@ -290,7 +301,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
   return false;
 }
 
-// @kern-source: app-dispatch:266
+// @kern-source: app-dispatch:277
 export async function dispatchIntent(intent: any, input: string, cb: DispatchCallbacks): Promise<DispatchResult> {
   switch (intent.type) {
     // ── Job-dispatched commands (return immediately, don't hit finally) ──

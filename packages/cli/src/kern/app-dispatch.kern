@@ -92,6 +92,17 @@ fn name=routeWithCesar async=true params="input:string, images:ImageAttachment[]
         // P2 fix: normalize team prefix — brain may return action='forge' + team=true
         let routeAction = result.action;
         if (result.team && !routeAction.startsWith('team-')) routeAction = `team-${routeAction}`;
+
+        // Plan mode: block execution delegations, allow thinking delegations
+        const _planActive = (cb.ctx as any).activePlan && ['planning', 'awaiting_approval'].includes((cb.ctx as any).activePlan.state);
+        if (_planActive) {
+          const EXECUTION_ACTIONS = ['forge', 'team-forge', 'build', 'pipeline'];
+          if (EXECUTION_ACTIONS.includes(routeAction)) {
+            cb.dispatch({ type: 'info', message: `Plan mode: converting ${routeAction} → brainstorm (no execution until plan approved)` });
+            routeAction = 'brainstorm';
+          }
+        }
+
         // P1 fix: enrich input with user-added context from delegation prompt
         const taskInput = result.reasoning && result.reasoning.includes('User context:')
           ? `${input}\n\n${result.reasoning.slice(result.reasoning.indexOf('User context:'))}`

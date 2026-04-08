@@ -380,18 +380,8 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
     // Deferred challenge messages — appended after user/cesar pair to preserve history order
     let _deferredChallenges: Array<{ engineId: string; content: string }> = [];
   
-    // Plan mode: skip confidence routing entirely — let Cesar propose via ProposePlan
+    // Plan mode flag — used below to block execution delegations while allowing thinking
     const inPlanMode = (ctx as any).activePlan && ['planning', 'awaiting_approval'].includes((ctx as any).activePlan.state);
-    if (inPlanMode) {
-      dispatch({ type: 'spinner-stop' });
-      // Response was already streamed to user
-      if (response.trim()) {
-        appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
-        appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
-        tracker.record(cesarEngineId, { prompt: input, response });
-      }
-      return { delegated: false, responded: true };
-    }
   
     // ── Post-stream escalation — same-turn tiered confidence challenges ──
     // Quick-nero (93-95%) → nero (88-92%) → brainstorm (72-87%) → advisor (<72%)

@@ -43,11 +43,11 @@ export type OutputEvent =
   | { type: 'tool-call'; engineId: string; tool: string; input: string; status: 'running'|'done'|'error'; output?: string }
   | { type: 'user-message'; content: string }
   | { type: 'response-meta'; engineId: string; elapsed: number; inputTokens?: number; outputTokens?: number; cost?: number }
-  | { type: 'confidence-update'; value: number|null; engineId: string }
+  | { type: 'confidence-update'; value: number|null }
   | { type: 'file-changes'; files: { path: string; status: 'modified'|'created'|'deleted'; additions: number; deletions: number }[] }
   | { type: 'dashboard'; available: string[]; enabled: string[]; defaultEngine: string; eloTop?: { id: string; rating: number }; totalForges: number; workspace?: { name: string; path: string; isKern?: boolean }; runCount: number };
 
-// @kern-source: handler-types:112
+// @kern-source: handler-types:111
 export interface HandlerContext {
   registry: EngineRegistry;
   adapter: EngineAdapter;

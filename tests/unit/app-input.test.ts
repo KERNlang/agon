@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { cleanInputValue, cleanSubmitValue, findInputChange, resolveEscapeAction } from '../../packages/cli/src/generated/app-input.js';
-import { processPasteContent } from '../../packages/cli/src/generated/paste-handler.js';
+import { cleanInputValue, cleanSubmitValue, findInputChange, resolveEscapeAction } from '../../packages/cli/src/generated/signals/app-input.js';
+import { processPasteContent } from '../../packages/cli/src/generated/signals/paste-handler.js';
 import { pasteStore } from '@agon/core';
 
 afterEach(() => {

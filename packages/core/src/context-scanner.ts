@@ -1,3 +1,3 @@
 // ── Re-export from KERN-generated context scanner ───────────────────
 // Source of truth: src/kern/context-scanner.kern
-export * from './generated/context-scanner.js';
+export * from './generated/blocks/context-scanner.js';

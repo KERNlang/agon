@@ -90,7 +90,7 @@ describe('persistent session streaming dedupe', () => {
       }
     }));
 
-    const { createCompanionSession } = await import('../../packages/core/src/generated/persistent-session.js');
+    const { createCompanionSession } = await import('../../packages/core/src/generated/sessions/persistent-session.js');
     const session = createCompanionSession({
       engine: {
         id: 'codex',
@@ -137,7 +137,7 @@ describe('persistent session streaming dedupe', () => {
       }
     }));
 
-    const { createCompanionSession } = await import('../../packages/core/src/generated/persistent-session.js');
+    const { createCompanionSession } = await import('../../packages/core/src/generated/sessions/persistent-session.js');
     const session = createCompanionSession({
       engine: {
         id: 'codex',
@@ -196,7 +196,7 @@ describe('persistent session streaming dedupe', () => {
       return proc;
     });
 
-    const { createStreamJsonSession } = await import('../../packages/core/src/generated/persistent-session.js');
+    const { createStreamJsonSession } = await import('../../packages/core/src/generated/sessions/persistent-session.js');
     const session = createStreamJsonSession({
       engine: { id: 'claude', binary: 'claude' } as any,
       binaryPath: '/usr/local/bin/claude',

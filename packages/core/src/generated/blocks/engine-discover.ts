@@ -1,0 +1,53 @@
+// @kern-source: engine-discover:1
+import type { EngineAdapter, EngineDefinition } from '../models/types.js';
+
+// @kern-source: engine-discover:2
+import type { EngineRegistry } from '../signals/engine-registry.js';
+
+// @kern-source: engine-discover:4
+export interface DiscoveryResult {
+  id: string;
+  displayName: string;
+  found: boolean;
+  version: string|null;
+  envOk: boolean;
+  missingEnv: string[];
+}
+
+// @kern-source: engine-discover:12
+export async function discoverEngines(registry: EngineRegistry, adapter: EngineAdapter): Promise<DiscoveryResult[]> {
+  const engines = registry.list();
+  
+  return Promise.all(
+    engines.map(async (engine: EngineDefinition) => {
+      const found = registry.isAvailable(engine);
+      let version: string | null = null;
+      if (found) {
+        try {
+          version = await adapter.getVersion(engine);
+        } catch (err) {
+          console.warn(`[agon] failed to get version for ${engine.id}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+  
+      const missingEnv: string[] = [];
+      if (engine.env) {
+        for (const [envVar, config] of Object.entries(engine.env)) {
+          if (config.required && !process.env[envVar]) {
+            missingEnv.push(envVar);
+          }
+        }
+      }
+  
+      return {
+        id: engine.id,
+        displayName: engine.displayName,
+        found,
+        version,
+        envOk: missingEnv.length === 0,
+        missingEnv,
+      };
+    }),
+  );
+}
+

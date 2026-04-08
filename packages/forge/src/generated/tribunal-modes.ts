@@ -1,5 +1,7 @@
+// @kern-source: tribunal-modes:1
 export type TribunalMode = 'adversarial' | 'socratic' | 'red-team' | 'steelman' | 'synthesis' | 'postmortem';
 
+// @kern-source: tribunal-modes:3
 export interface TribunalModeConfig {
   roles: string[];
   protocol: 'parallel'|'sequential';
@@ -7,12 +9,15 @@ export interface TribunalModeConfig {
   maxRounds: number;
 }
 
+// @kern-source: tribunal-modes:9
 export const TRIBUNAL_MODES: TribunalMode[] = ['adversarial', 'socratic', 'red-team', 'steelman', 'synthesis', 'postmortem'];
 
+// @kern-source: tribunal-modes:12
 export function isTribunalMode(s: string): s is TribunalMode {
   return TRIBUNAL_MODES.includes(s as TribunalMode);
 }
 
+// @kern-source: tribunal-modes:17
 export function getModeConfig(mode: TribunalMode, engineCount: number): TribunalModeConfig {
   switch (mode) {
     case 'adversarial': {
@@ -73,6 +78,7 @@ export function getModeConfig(mode: TribunalMode, engineCount: number): Tribunal
   }
 }
 
+// @kern-source: tribunal-modes:78
 export function buildModePrompt(opts: {mode:TribunalMode,role:string,question:string,round:number,totalRounds:number,previousArguments?:string}): string {
   const { mode, role, question, round, totalRounds, previousArguments } = opts;
   const parts: string[] = [];
@@ -135,6 +141,7 @@ export function buildModePrompt(opts: {mode:TribunalMode,role:string,question:st
   return parts.join('\n\n');
 }
 
+// @kern-source: tribunal-modes:141
 export function buildModeSummaryPrompt(opts: {mode:TribunalMode,question:string,positions:{engineId:string,position:string,arguments:string[]}[]}): string {
   const { mode, question, positions } = opts;
   const debateText = positions

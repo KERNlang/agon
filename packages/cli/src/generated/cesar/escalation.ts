@@ -1,0 +1,333 @@
+// @kern-source: escalation:1
+import { join } from 'node:path';
+
+// @kern-source: escalation:2
+import { mkdirSync } from 'node:fs';
+
+// @kern-source: escalation:3
+import { RUNS_DIR, resolveWorkingDir, tracker, appendMessage, classifyTask, rankByTaskClass } from '@agon/core';
+
+// @kern-source: escalation:4
+import { ENGINE_COLORS } from '../blocks/output-format.js';
+
+// @kern-source: escalation:5
+import { icons } from '../signals/icons.js';
+
+// @kern-source: escalation:6
+import type { Dispatch, HandlerContext } from '../../handlers/types.js';
+
+// @kern-source: escalation:7
+import { CONFIDENCE_TIERS, confidenceBadge, parseConfidence } from './confidence.js';
+
+// @kern-source: escalation:8
+import { CESAR_SYSTEM_PROMPT } from './session.js';
+
+// @kern-source: escalation:10
+export function pickBestAdvisor(input: string, ctx: HandlerContext): {engineId:string, color:number}|null {
+  const cesarEngineId = (ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude';
+  const otherEngines = ctx.activeEngines().filter((id: string) => id !== cesarEngineId);
+  if (otherEngines.length === 0) return null;
+  
+  // Rank by task class ELO — best engine for THIS type of task
+  const taskClass = classifyTask(input);
+  const ranked = rankByTaskClass(otherEngines, taskClass);
+  const advisorId = ranked.length > 0 ? ranked[0].engineId : otherEngines[0];
+  return { engineId: advisorId, color: ENGINE_COLORS[advisorId] ?? 245 };
+}
+
+// @kern-source: escalation:24
+export async function fireAdvisor(input: string, cesarResponse: string, parsedConfidence: number|null, ctx: HandlerContext, abort: AbortController): Promise<{stdout:string, engineId:string, color:number}|null> {
+  const advisor = pickBestAdvisor(input, ctx);
+      if (!advisor) return null;
+  
+      const advisorEngine = ctx.registry.get(advisor.engineId);
+      const outDir = join(RUNS_DIR, `advisor-${Date.now()}`);
+      mkdirSync(outDir, { recursive: true });
+  
+      const advisorPrompt = `Cesar (the orchestrator) is stuck on this task at ${parsedConfidence ?? '?'}% confidence.
+  
+  TASK: ${input}
+  
+  CESAR'S TAKE: ${cesarResponse.slice(0, 500)}
+  
+  You are the advisor. Be direct:
+  1. What's the right approach? (2-3 sentences)
+  2. What's Cesar missing? (1-2 key insights)
+  3. Should this be: forge (engines compete on code), tribunal (debate the approach), brainstorm (gather ideas), or campfire (explore)?
+  4. Solo or team? Why?`;
+  
+      try {
+        const result = await ctx.adapter.dispatch({
+          engine: advisorEngine,
+          prompt: advisorPrompt,
+          cwd: resolveWorkingDir(),
+          mode: 'exec' as any,
+          timeout: ctx.config.timeout ?? 120,
+          outputDir: outDir,
+          signal: abort.signal,
+        });
+        return { stdout: result.stdout, engineId: advisor.engineId, color: advisor.color };
+      } catch {
+        return null;
+      }
+}
+
+// @kern-source: escalation:62
+export async function fireQuickNero(session: any, response: string, input: string, confidence: number, dispatch: Dispatch, signal: AbortSignal, ctx: HandlerContext): Promise<{ challenged: boolean; newConfidence: number|null; challengeText: string }> {
+  const challengePrompt = `[SELF-CHECK] You just responded at ${confidence}% confidence to: "${input.slice(0, 200)}"
+  
+  Your response: "${response.slice(0, 800)}"
+  
+  Challenge your own answer in 2-3 sentences. What could be wrong? What assumptions might not hold? If you find a real flaw, explain it. Start with ~X% for your revised confidence after this self-review.`;
+  
+      try {
+        let challengeText = '';
+        const gen = session.send({ message: challengePrompt, signal });
+        for await (const chunk of gen) {
+          if (signal.aborted) break;
+          if (chunk.type === 'text') challengeText += chunk.content;
+          if (chunk.type === 'done') break;
+        }
+        if (!challengeText.trim()) return { challenged: false, newConfidence: null, challengeText: '' };
+  
+        // Check tool-reported confidence first (API/native-tool backends use ReportConfidence)
+        if (ctx.cesar!.reportedConfidence !== undefined) {
+          const toolConf = ctx.cesar!.reportedConfidence as number;
+          ctx.cesar!.reportedConfidence = undefined;
+          return { challenged: true, newConfidence: toolConf, challengeText };
+        }
+        // Fall back to parsing ~X% from text
+        const conf = parseConfidence(challengeText);
+        return { challenged: true, newConfidence: conf.value, challengeText: conf.rest || challengeText };
+      } catch {
+        return { challenged: false, newConfidence: null, challengeText: '' };
+      }
+}
+
+// @kern-source: escalation:95
+export async function fireNero(input: string, response: string, confidence: number, ctx: HandlerContext, abort: AbortController): Promise<{ challengeText: string; challengeConfidence: number|null } | null> {
+  const cesarEngineId = (ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude';
+      const cesarEngine = ctx.registry.get(cesarEngineId);
+      const outDir = join(RUNS_DIR, `nero-${Date.now()}`);
+      mkdirSync(outDir, { recursive: true });
+  
+      const neroPrompt = `You are Nero, the adversarial challenger. Your job is to attack the original response and find flaws.
+  
+  TASK: ${input.slice(0, 500)}
+  
+  CESAR'S RESPONSE (${confidence}%): ${response.slice(0, 1500)}
+  
+  Be specific and direct:
+  1. What's wrong with this response? (flaws, incorrect assumptions, missing edge cases)
+  2. What would you do differently?
+  3. Start with ~X% for how confident YOU are that the original is correct.`;
+  
+      try {
+        const result = await ctx.adapter.dispatch({
+          engine: cesarEngine,
+          prompt: neroPrompt,
+          cwd: resolveWorkingDir(),
+          mode: 'exec' as any,
+          timeout: ctx.config.timeout ?? 120,
+          outputDir: outDir,
+          signal: abort.signal,
+        });
+        if (!result.stdout.trim()) return null;
+        const cleaned = result.stdout.trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
+        const conf = parseConfidence(cleaned);
+        return { challengeText: conf.rest || cleaned, challengeConfidence: conf.value };
+      } catch {
+        return null;
+      }
+}
+
+// @kern-source: escalation:133
+export async function handleSecondOpinion(secondResult: {stdout:string, engineId:string, color:number}|null, input: string, response: string, parsedConfidence: number|null, cesarEngineId: string, dispatch: Dispatch, ctx: HandlerContext, abortSignal?: AbortSignal): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string}|null> {
+  if (!secondResult || !secondResult.stdout.trim()) return null;
+  
+  // Strip <think> blocks from advisor response
+  const advisorResponse = secondResult.stdout.trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
+  dispatch({ type: 'engine-block', engineId: secondResult.engineId, color: secondResult.color, content: advisorResponse });
+  appendMessage(ctx.chatSession, { role: 'engine', engineId: secondResult.engineId, content: advisorResponse, timestamp: new Date().toISOString() });
+  tracker.record(secondResult.engineId, { prompt: input, response: advisorResponse });
+  
+  // Save Cesar's response
+  appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
+  appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
+  tracker.record(cesarEngineId, { prompt: input, response });
+  
+  // Yield so Ink paints the advisor response before showing the menu
+  await new Promise<void>(resolve => setImmediate(resolve));
+  
+  // Parse advisor's recommended action from their response
+  const advisorLower = advisorResponse.toLowerCase();
+  const actionKeywords: Record<string, string> = {
+    tribunal: 'tribunal', brainstorm: 'brainstorm', campfire: 'campfire',
+    forge: 'forge', pipeline: 'pipeline',
+  };
+  let advisorRecommendation: string | null = null;
+  // Check for explicit "Mode Recommendation: X" or "should be: X" patterns
+  const modeMatch = advisorLower.match(/(?:mode[:\s]*recommendation|recommend(?:ation)?|should be|suggest)[:\s]*(\w+)/i);
+  if (modeMatch && actionKeywords[modeMatch[1].toLowerCase()]) {
+    advisorRecommendation = actionKeywords[modeMatch[1].toLowerCase()];
+  }
+  // Fallback: check numbered recommendations (e.g. "3. Mode: Tribunal")
+  if (!advisorRecommendation) {
+    for (const [keyword, action] of Object.entries(actionKeywords)) {
+      const pattern = new RegExp(`(?:mode|should|recommend).*?${keyword}`, 'i');
+      if (pattern.test(advisorResponse)) {
+        advisorRecommendation = action;
+        break;
+      }
+    }
+  }
+  
+  // If advisor has a clear recommendation, show simple confirm
+  if (advisorRecommendation) {
+    const modeColors: Record<string, string> = {
+      forge: '#a78bfa', brainstorm: '#60a5fa', tribunal: '#f59e0b',
+      campfire: '#facc15', pipeline: '#f472b6',
+    };
+    const escAnswer = await new Promise<string>((resolve) => {
+      dispatch({ type: 'question', prompt: `${secondResult.engineId} recommends ${advisorRecommendation} — go?`, choices: [
+        { key: 'y', label: `Yes, ${advisorRecommendation}`, color: modeColors[advisorRecommendation!] ?? '#4ade80' },
+        { key: 'a', label: 'Accept Cesar instead', color: '#4ade80' },
+        { key: 'm', label: 'Other mode', color: '#6b7280' },
+      ], resolve } as any);
+    });
+  
+    if (escAnswer === 'y') return { delegated: true, responded: true, action: advisorRecommendation, reasoning: response };
+    if (escAnswer === 'a') return { delegated: false, responded: true };
+    // 'm' falls through to full menu below
+  }
+  
+  // Full menu — either no advisor recommendation or user chose 'Other mode'
+  const escAnswer = await new Promise<string>((resolve) => {
+    dispatch({ type: 'question', prompt: `Cesar ${parsedConfidence ?? '?'}% — what next?`, choices: [
+      { key: 'a', label: 'Accept Cesar', color: '#4ade80' },
+      { key: 'c', label: 'Campfire', color: '#facc15' },
+      { key: 'b', label: 'Brainstorm', color: '#60a5fa' },
+      { key: 't', label: 'Tribunal', color: '#f59e0b' },
+      { key: 'f', label: 'Forge', color: '#a78bfa' },
+    ], resolve } as any);
+  });
+  
+  if (escAnswer === 'c') return { delegated: true, responded: true, action: 'campfire', reasoning: response };
+  if (escAnswer === 'b') return { delegated: true, responded: true, action: 'brainstorm', reasoning: response };
+  if (escAnswer === 't') return { delegated: true, responded: true, action: 'tribunal', reasoning: response };
+  if (escAnswer === 'f') return { delegated: true, responded: true, action: 'forge', reasoning: response };
+  return { delegated: false, responded: true };
+}
+
+// @kern-source: escalation:212
+export function activateNero(ctx: HandlerContext, dispatch: Dispatch): void {
+  if (!ctx.neroMode && ctx.setNeroMode) {
+    ctx.setNeroMode(true);
+    ctx.neroMode = true;
+    ctx.cesar!.autoNero = true;
+    // No longer kill session — same-turn escalation handles challenges.
+    // Session stays alive for manual /nero toggle (system prompt injection).
+    dispatch({ type: 'info', message: `${icons().nero} Nero mode active` });
+    ctx.eventBus?.emit('cesar:nero', { active: true }).catch(() => {});
+  }
+}
+
+// @kern-source: escalation:226
+export function deactivateNero(ctx: HandlerContext, dispatch: Dispatch): void {
+  ctx.setNeroMode(false);
+  ctx.neroMode = false;
+  ctx.cesar!.autoNero = false;
+  dispatch({ type: 'info', message: `${icons().nero} Nero deactivated — confidence recovered` });
+  ctx.eventBus?.emit('cesar:nero', { active: false }).catch(() => {});
+}
+
+// @kern-source: escalation:237
+export async function promptDelegation(action: string, dispatch: Dispatch, hardened?: boolean, tribunalMode?: string, team?: boolean): Promise<{approved:boolean, action?:string, hardened?:boolean, tribunalMode?:string, team?:boolean, userContext?:string}> {
+  // Check session auto-approve cache
+  const autoApproved = (promptDelegation as any)._autoApprove as Set<string> | undefined;
+  if (autoApproved?.has(action)) {
+    dispatch({ type: 'info', message: `Auto-approved: ${action} (always mode)` });
+    return { approved: true };
+  }
+  
+  const confirmLabel = hardened ? `${action} (hardened)` : action;
+  const answer = await new Promise<string>((resolve) => {
+    dispatch({ type: 'question', prompt: `\n━━━ Cesar suggests: ${confirmLabel}${tribunalMode ? ` [${tribunalMode}]` : ''} ━━━`, choices: [
+      { key: 'y', label: 'Yes', color: '#4ade80' },
+      { key: 'n', label: 'No', color: '#ef4444' },
+      { key: 'a', label: 'Always', color: '#60a5fa' },
+      { key: 'o', label: 'Other mode', color: '#f59e0b' },
+      { key: 'w', label: 'Add context', color: '#a78bfa' },
+    ], resolve } as any);
+  });
+  
+  if (answer === 'n') return { approved: false };
+  
+  if (answer === 'a') {
+    // Auto-approve this mode for rest of session
+    if (!(promptDelegation as any)._autoApprove) {
+      (promptDelegation as any)._autoApprove = new Set<string>();
+    }
+    ((promptDelegation as any)._autoApprove as Set<string>).add(action);
+    dispatch({ type: 'info', message: `Will auto-approve "${action}" for this session` });
+    return { approved: true };
+  }
+  
+  if (answer === 'o') {
+    // Let user pick a different mode
+    const modeAnswer = await new Promise<string>((resolve) => {
+      dispatch({ type: 'question', prompt: 'Pick mode:', choices: [
+        { key: 'f', label: 'Forge', color: '#a78bfa' },
+        { key: 'b', label: 'Brainstorm', color: '#60a5fa' },
+        { key: 't', label: 'Tribunal', color: '#f59e0b' },
+        { key: 'c', label: 'Campfire', color: '#facc15' },
+        { key: 'p', label: 'Pipeline', color: '#f472b6' },
+        { key: 'x', label: 'Cancel', color: '#ef4444' },
+      ], resolve } as any);
+    });
+    const modeMap: Record<string, string> = { f: 'forge', b: 'brainstorm', t: 'tribunal', c: 'campfire', p: 'pipeline' };
+    if (modeAnswer === 'x' || !modeMap[modeAnswer]) return { approved: false };
+    return { approved: true, action: modeMap[modeAnswer], team };
+  }
+  
+  if (answer === 'w') {
+    // Let user add context/instructions
+    const userInput = await new Promise<string>((resolve) => {
+      dispatch({ type: 'question', prompt: 'Add context (will be appended to the task):', resolve } as any);
+    });
+    if (!userInput?.trim()) return { approved: true }; // empty = just approve
+    return { approved: true, userContext: userInput.trim() };
+  }
+  
+  // 'y' — approve as-is
+  return { approved: true };
+}
+
+// @kern-source: escalation:300
+export async function promptProtocolEnforcement(input: string, parsedConfidence: number|null, ctx: HandlerContext, dispatch: Dispatch): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, team?:boolean}|null> {
+  if (parsedConfidence === null
+      || parsedConfidence >= CONFIDENCE_TIERS.nero
+      || parsedConfidence < CONFIDENCE_TIERS.advisor
+      || ctx.activeEngines().length <= 1) {
+    return null;
+  }
+  
+  // Cesar had full routing context (ELO, engine strengths, task class, scope)
+  // but still didn't delegate. Offer brainstorm as a safe default — the user
+  // can always pick a different mode from there.
+  const answer = await new Promise<string>((resolve) => {
+    dispatch({ type: 'question',
+      prompt: `${parsedConfidence}% — Cesar didn't delegate. Brainstorm?`,
+      choices: [
+        { key: 'y', label: 'Brainstorm', color: '#4ade80' },
+        { key: 'n', label: 'Skip', color: '#ef4444' },
+      ],
+      resolve,
+    } as any);
+  });
+  if (answer === 'y') {
+    return { delegated: true, responded: true, action: 'brainstorm' };
+  }
+  return null;
+}
+

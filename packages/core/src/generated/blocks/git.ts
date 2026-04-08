@@ -1,0 +1,159 @@
+// @kern-source: git:1
+import { execFileSync } from 'node:child_process';
+
+// @kern-source: git:2
+import { GitError, WorktreeError } from '../models/errors.js';
+
+// @kern-source: git:4
+function git(args: string[], cwd?: string): string {
+  try {
+    return execFileSync('git', args, {
+      cwd, encoding: 'utf-8', timeout: 30_000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    }).trim();
+  } catch (err: unknown) {
+    const e = err as { status?: number; stderr?: string };
+    throw new GitError(
+      `git ${args[0]} failed: ${e.stderr?.trim() ?? 'unknown error'}`,
+      e.status ?? 1,
+    );
+  }
+}
+
+// @kern-source: git:20
+export function repoRoot(cwd: string): string {
+  return git(['rev-parse', '--show-toplevel'], cwd);
+}
+
+// @kern-source: git:25
+export function headSha(cwd: string): string {
+  return git(['rev-parse', 'HEAD'], cwd);
+}
+
+// @kern-source: git:30
+export function worktreePrune(cwd: string): void {
+  git(['worktree', 'prune'], cwd);
+}
+
+// @kern-source: git:35
+export function worktreeCreate(repoDir: string, worktreePath: string, sha: string): string {
+  worktreePrune(repoDir);
+  try {
+    git(['worktree', 'add', '--detach', worktreePath, sha], repoDir);
+    return worktreePath;
+  } catch (err) {
+    throw new WorktreeError(
+      `Failed to create worktree at ${worktreePath}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+}
+
+// @kern-source: git:48
+export function worktreeRemove(repoDir: string, worktreePath: string): void {
+  try { git(['worktree', 'remove', worktreePath, '--force'], repoDir); } catch (err) {
+    console.warn(`[agon] failed to remove worktree ${worktreePath}: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+// @kern-source: git:55
+export function worktreeDiff(cwd: string): string {
+  git(['add', '-A'], cwd);
+  return git(['diff', '--cached'], cwd);
+}
+
+// @kern-source: git:61
+export function readOnlyDiff(cwd: string): string {
+  const staged = git(['diff', '--cached'], cwd);
+  const unstaged = git(['diff'], cwd);
+  return staged + (staged && unstaged ? '\n' : '') + unstaged;
+}
+
+// @kern-source: git:68
+export function diffLineCount(diff: string): number {
+  let count = 0;
+  for (const line of diff.split('\n')) {
+    if (line.startsWith('+') && !line.startsWith('+++')) count++;
+    if (line.startsWith('-') && !line.startsWith('---')) count++;
+  }
+  return count;
+}
+
+// @kern-source: git:78
+export function diffFileCount(cwd: string): number {
+  try {
+    const result = git(['diff', '--cached', '--name-only'], cwd);
+    return result ? result.split('\n').filter(Boolean).length : 0;
+  } catch (err) {
+    console.warn(`[agon] diffFileCount failed: ${err instanceof Error ? err.message : String(err)}`);
+    return 0;
+  }
+}
+
+// @kern-source: git:89
+export function applyPatch(cwd: string, patchContent: string): void {
+  if (!patchContent.trim()) return;
+  try {
+    execFileSync('git', ['apply', '--allow-empty', '-'], {
+      cwd, input: patchContent, encoding: 'utf-8', timeout: 30_000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+  } catch (err: unknown) {
+    const e = err as { stderr?: string };
+    throw new GitError(`Failed to apply patch: ${e.stderr?.trim() ?? 'unknown error'}`);
+  }
+}
+
+// @kern-source: git:103
+export function currentBranch(cwd: string): string {
+  try { return git(['rev-parse', '--abbrev-ref', 'HEAD'], cwd); }
+  catch { return 'unknown'; }
+}
+
+// @kern-source: git:109
+export function isDirty(cwd: string): boolean {
+  try { return git(['status', '--porcelain'], cwd).length > 0; }
+  catch { return false; }
+}
+
+// @kern-source: git:115
+export function recentCommits(cwd: string, count?: number): string {
+  try { return git(['log', '--oneline', `-${count ?? 10}`], cwd); }
+  catch { return ''; }
+}
+
+// @kern-source: git:121
+export function gitStatusShort(cwd: string): string {
+  try { return git(['status', '--short'], cwd); }
+  catch { return ''; }
+}
+
+// @kern-source: git:128
+export function gitDiffStat(cwd: string): string {
+  try { return git(['diff', '--stat'], cwd); }
+  catch { return ''; }
+}
+
+// @kern-source: git:135
+export function gitChangedFiles(cwd: string): string[] {
+  try {
+    const unstaged = git(['diff', '--name-only'], cwd);
+    const staged = git(['diff', '--cached', '--name-only'], cwd);
+    const combined = new Set([
+      ...unstaged.split('\n').filter(Boolean),
+      ...staged.split('\n').filter(Boolean),
+    ]);
+    return [...combined];
+  } catch { return []; }
+}
+
+// @kern-source: git:149
+export function gitTruncatedDiff(cwd: string, maxLines?: number): string {
+  try {
+    const diff = git(['diff'], cwd);
+    const lines = diff.split('\n');
+    const limit = maxLines ?? 200;
+    if (lines.length <= limit) return diff;
+    return lines.slice(0, limit).join('\n') + `\n... (${lines.length - limit} more lines)`;
+  } catch { return ''; }
+}
+

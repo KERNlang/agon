@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { createCesarPlan, approveCesarPlan, advanceCesarStep, cancelCesarPlan } from '../../packages/core/src/generated/cesar-plan.js';
-import type { CesarPlan, CesarPlanStep } from '../../packages/core/src/generated/cesar-plan.js';
+import { createCesarPlan, approveCesarPlan, advanceCesarStep, cancelCesarPlan } from '../../packages/core/src/generated/cesar/plan.js';
+import type { CesarPlan, CesarPlanStep } from '../../packages/core/src/generated/cesar/plan.js';
 
 const makeStep = (id: string, overrides?: Partial<CesarPlanStep>): CesarPlanStep => ({
   id,

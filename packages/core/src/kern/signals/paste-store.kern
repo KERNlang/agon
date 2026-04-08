@@ -1,0 +1,73 @@
+import from="node:fs" names="readFileSync,writeFileSync,mkdirSync,existsSync,readdirSync,unlinkSync,statSync"
+import from="node:path" names="join"
+import from="node:crypto" names="createHash"
+import from="./config.js" names="AGON_HOME,ensureAgonHome"
+
+const name=PASTE_STORE_DIR type=string
+  handler <<<
+    join(AGON_HOME, 'paste-cache')
+  >>>
+
+const name=PASTE_MAX_AGE type=number
+  doc "Max age in ms before cleanup removes a paste (7 days)"
+  handler <<< 7 * 24 * 60 * 60 * 1000 >>>
+
+interface name=PasteStoreResult
+  field name=hash type=string
+  field name=preview type=string
+  field name=lineCount type=number
+
+fn name=ensurePasteDir returns=void export=false
+  handler <<<
+    ensureAgonHome();
+    mkdirSync(PASTE_STORE_DIR, { recursive: true });
+  >>>
+
+service name=PasteStore singleton=true
+  doc "Content-addressed storage for large pastes. SHA-256 hash as filename."
+
+  method name=store params="text:string" returns=PasteStoreResult
+    doc "Store a large paste and return its hash + preview."
+    handler <<<
+      ensurePasteDir();
+      const hash = createHash('sha256').update(text).digest('hex');
+      const filePath = join(PASTE_STORE_DIR, `${hash}.txt`);
+      if (!existsSync(filePath)) {
+        writeFileSync(filePath, text);
+      }
+      const lines = text.split('\n');
+      const preview = text.slice(0, 200).replace(/\n/g, ' ').trim();
+      return { hash, preview, lineCount: lines.length };
+    >>>
+
+  method name=retrieve params="hash:string" returns="string|null"
+    doc "Retrieve a stored paste by hash. Returns null if missing."
+    handler <<<
+      const filePath = join(PASTE_STORE_DIR, `${hash}.txt`);
+      if (!existsSync(filePath)) return null;
+      return readFileSync(filePath, 'utf-8');
+    >>>
+
+  method name=cleanup params="maxAge?:number" returns=number
+    doc "Delete pastes older than maxAge ms. Returns count deleted."
+    handler <<<
+      const age = maxAge ?? PASTE_MAX_AGE;
+      const now = Date.now();
+      let deleted = 0;
+      ensurePasteDir();
+      try {
+        const files = readdirSync(PASTE_STORE_DIR).filter((f: string) => f.endsWith('.txt'));
+        for (const f of files) {
+          const fp = join(PASTE_STORE_DIR, f);
+          try {
+            const stat = statSync(fp);
+            if (now - stat.mtimeMs > age) {
+              unlinkSync(fp);
+              deleted++;
+            }
+          } catch (_e) { console.warn(`[agon] paste-store: cleanup failed for ${fp}: ${_e instanceof Error ? _e.message : String(_e)}`); }
+        }
+      } catch (err) { console.warn(`[agon] paste cleanup failed: ${err instanceof Error ? err.message : String(err)}`); }
+      return deleted;
+    >>>
+

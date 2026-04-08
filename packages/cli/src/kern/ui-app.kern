@@ -108,6 +108,7 @@ screen name=App target=ink
   state name=extensionSkills type="Skill[]" initial="[]"
   state name=extensionPromptFragments type="string[]" initial="[]"
   state name=loadedExtensions type="any[]" initial="[]"
+  state name=workspacePath type=string initial="resolveWorkingDir()"
 
   // ── Derived ──
   memo name=allSlashCommands deps="dynamicSkills, extensionSkills, commandRegistry"
@@ -120,10 +121,10 @@ screen name=App target=ink
       return [...registryCmds, ...uniqueSkills];
     >>>
 
-  // ── Load extensions on startup (async, non-blocking) ──
-  effect deps="[]"
+  // ── Load extensions on startup + workspace switch ──
+  effect deps="workspacePath"
     handler <<<
-      initExtensions(resolveWorkingDir(), commandRegistry, registry, eventBus).then(({ extensions, skills: extSkills, systemPromptFragments }) => {
+      initExtensions(workspacePath, commandRegistry, registry, eventBus).then(({ extensions, skills: extSkills, systemPromptFragments }) => {
         if (extSkills.length > 0) setExtensionSkills(extSkills);
         if (systemPromptFragments.length > 0) setExtensionPromptFragments(systemPromptFragments);
         if (extensions.length > 0) setLoadedExtensions(extensions);
@@ -408,7 +409,7 @@ screen name=App target=ink
       const allImages = [...pendingImages, ...detectedImages];
       let intent = detectIntent(cleanInput || input, commandRegistry);
       const cb: DispatchCallbacks = {
-        dispatch, ctx: buildContext(), commandRegistry, eventBus, loadedExtensions,
+        dispatch, ctx: buildContext(), commandRegistry, eventBus, loadedExtensions, setWorkspacePath,
         runAsJob: (type: string, label: string, fn: () => Promise<void>) => {
           const job = jobManager.create(type, label);
           setJobList([...jobManager.list()]);

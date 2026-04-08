@@ -75,15 +75,16 @@ export interface DispatchCallbacks {
   commandRegistry?: any;
   eventBus?: any;
   loadedExtensions?: any[];
+  setWorkspacePath?: (path: string) => void;
 }
 
-// @kern-source: app-dispatch:53
+// @kern-source: app-dispatch:54
 export interface DispatchResult {
   handled: boolean;
   ranAsJob: boolean;
 }
 
-// @kern-source: app-dispatch:57
+// @kern-source: app-dispatch:58
 export function handleModeSwitch(intentType: string, topic: string|undefined, question: string|undefined, cb: DispatchCallbacks): boolean {
   if (intentType === 'campfire' && !topic) {
     cb.setMode('campfire');
@@ -110,7 +111,7 @@ export function handleModeSwitch(intentType: string, topic: string|undefined, qu
   return false;
 }
 
-// @kern-source: app-dispatch:85
+// @kern-source: app-dispatch:86
 export async function routeWithCesar(input: string, images: ImageAttachment[], cb: DispatchCallbacks): Promise<boolean> {
   cb.setPendingImages(() => []);
   try {
@@ -304,7 +305,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
   return false;
 }
 
-// @kern-source: app-dispatch:280
+// @kern-source: app-dispatch:281
 export async function dispatchIntent(intent: any, input: string, cb: DispatchCallbacks): Promise<DispatchResult> {
   // ── Emit pre:dispatch event ──
   if (cb.eventBus) {
@@ -425,7 +426,12 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
       });
       break;
     }
-    case 'workspace': handleWorkspace(intent.action, cb.dispatch, cb.ctx, intent.path); break;
+    case 'workspace': {
+      handleWorkspace(intent.action, cb.dispatch, cb.ctx, intent.path);
+      // Reload extensions from new workspace
+      if (cb.setWorkspacePath) cb.setWorkspacePath(resolveWorkingDir());
+      break;
+    }
     case 'flow': await handleFlowReport(cb.dispatch, cb.ctx, cb.mode, cb.sessionStartTime); break;
     case 'flows': handleFlowAnalysis(cb.dispatch); break;
     case 'chats': handleChats(cb.dispatch, intent.sessionId); break;

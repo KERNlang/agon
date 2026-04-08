@@ -26,6 +26,8 @@ interface name=Intent
   field name=jobId type="string|undefined"
   field name=taskClass type="'code'|'question'|'ambiguous'|undefined"
   field name=args type="string|undefined"
+  field name=target type="string|undefined"
+  field name=engineId type="string|undefined"
   field name=commandName type="string|undefined"
 
 const name=SLASH_COMMANDS type="SlashCommand[]"
@@ -60,6 +62,7 @@ const name=SLASH_COMMANDS type="SlashCommand[]"
       { cmd: '/team-tribunal',   desc: '[2v2|3v3] [mode] <question>    — team debate' },
       { cmd: '/team-brainstorm', desc: '[2v2|3v3] <question>            — team ideation' },
       { cmd: '/pipeline',   desc: '<task> [test with <cmd>]  — build→review→fix loop' },
+      { cmd: '/review',     desc: '[with <engine>] [<target>] — code review (uncommitted|branch:NAME|commit:SHA)' },
       { cmd: '/provider',    desc: 'add|remove|list          — manage API providers' },
       { cmd: '/run',         desc: '<cmd>                    — run shell command inline' },
       { cmd: '/commit',      desc: '[message]                — stage & commit with auto-generated message' },
@@ -322,6 +325,19 @@ fn name=parseSlashCommand params="input:string, commandRegistry?:any" returns=In
         const fitCmd = fitMatch ? fitMatch[1].trim() : null;
         const pipeTask = fitCmd ? rest.replace(FITNESS_PATTERN, '').trim() : rest;
         return { type: 'pipeline', task: pipeTask, fitnessCmd: fitCmd } as Intent;
+      }
+      case 'review':
+      case 'cr': {
+        const reviewParts = rest.split(/\s+/).filter(Boolean);
+        let engineId: string | undefined;
+        let target: string | undefined;
+        let i = 0;
+        if (reviewParts[i] === 'with' && reviewParts[i + 1]) {
+          engineId = reviewParts[i + 1].toLowerCase();
+          i += 2;
+        }
+        if (reviewParts[i]) target = reviewParts[i];
+        return { type: 'review', engineId, target } as Intent;
       }
       case 'run':
       case 'exec':

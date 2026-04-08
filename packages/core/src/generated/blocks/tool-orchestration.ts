@@ -247,6 +247,39 @@ export function createDelegateTool(): ToolHandler {
 }
 
 // @kern-source: tool-orchestration:260
+export function createReviewTool(): ToolHandler {
+  const definition: ToolDefinition = {
+    name: 'Review',
+    description: 'Delegate to code review — dispatches an engine to review uncommitted changes, a branch diff, or a specific commit. Use when the user asks for a code review, PR review, or diff review. After calling, STOP and wait.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        target: { type: 'string', description: 'Review target: "uncommitted" (default), "branch:NAME", or "commit:SHA".' },
+        engine: { type: 'string', description: 'Specific engine for review. Omit to auto-select best available reviewer.' },
+      },
+      required: [],
+    },
+    maxResultSizeChars: 500,
+    isReadOnly: true,
+    isConcurrencySafe: true,
+  };
+  
+  const validate = (_input: Record<string, unknown>, _ctx: ToolContext): string | null => {
+    return null;
+  };
+  
+  const checkPermission = (_input: Record<string, unknown>, _ctx: ToolContext): PermissionDecision => {
+    return { behavior: 'allow' };
+  };
+  
+  const execute = async (_input: Record<string, unknown>, _ctx: ToolContext): Promise<ToolResult> => {
+    return { ok: true, content: 'Delegation accepted. STOP responding now. The orchestrator will handle the rest.' };
+  };
+  
+  return { definition, validate, checkPermission, execute };
+}
+
+// @kern-source: tool-orchestration:294
 export function createPipelineTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Pipeline',

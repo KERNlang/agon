@@ -55,10 +55,12 @@ export interface PendingDelegation {
   hardened: boolean;
   tribunalMode?: string;
   team: boolean;
+  target?: string;
+  engineId?: string;
   createdAt: number;
 }
 
-// @kern-source: handler-types:120
+// @kern-source: handler-types:122
 export interface CesarState {
   busy: boolean;
   busySince: number | null;
@@ -76,7 +78,7 @@ export interface CesarState {
   lastEscalation: string | null;
 }
 
-// @kern-source: handler-types:136
+// @kern-source: handler-types:138
 export interface HandlerContext {
   registry: EngineRegistry;
   adapter: EngineAdapter;
@@ -99,5 +101,6 @@ export interface HandlerContext {
   extensionPromptFragments?: string[];
   eventBus?: EventBus | undefined;
   cesar?: CesarState | undefined;
+  lastReviewResult?: { engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number } | undefined;
 }
 

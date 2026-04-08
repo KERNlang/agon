@@ -1,5 +1,5 @@
 // @kern-source: tools:1
-import { ToolRegistry, FileStateCache, createReadTool, createEditTool, createWriteTool, createBashTool, createGrepTool, createGlobTool, createForgeTool, createBrainstormTool, createTribunalTool, createCampfireTool, createPipelineTool, createDelegateTool, createReportConfidenceTool, createProposePlanTool, executeToolCall, resolveWorkingDir } from '@agon/core';
+import { ToolRegistry, FileStateCache, createReadTool, createEditTool, createWriteTool, createBashTool, createGrepTool, createGlobTool, createForgeTool, createBrainstormTool, createTribunalTool, createCampfireTool, createPipelineTool, createReviewTool, createDelegateTool, createReportConfidenceTool, createProposePlanTool, executeToolCall, resolveWorkingDir } from '@agon/core';
 
 // @kern-source: tools:2
 import type { ToolContext, ToolCallResult } from '@agon/core';
@@ -21,13 +21,14 @@ export function createCesarToolRegistry(): ToolRegistry {
   toolRegistry.register(createTribunalTool());
   toolRegistry.register(createCampfireTool());
   toolRegistry.register(createPipelineTool());
+  toolRegistry.register(createReviewTool());
   toolRegistry.register(createDelegateTool());
   toolRegistry.register(createReportConfidenceTool());
   toolRegistry.register(createProposePlanTool());
   return toolRegistry;
 }
 
-// @kern-source: tools:26
+// @kern-source: tools:27
 export function createEagerToolContext(ctx: HandlerContext, config: any, signal: AbortSignal, dispatch: Dispatch): ToolContext {
   const fsc = new FileStateCache();
   const explorationMode = (ctx as any).explorationMode ?? false;
@@ -43,7 +44,7 @@ export function createEagerToolContext(ctx: HandlerContext, config: any, signal:
   };
 }
 
-// @kern-source: tools:43
+// @kern-source: tools:44
 export async function executeEagerTool(toolName: string, meta: Record<string,unknown>, toolRegistry: ToolRegistry, toolCtx: ToolContext, dispatch: Dispatch, cesarEngineId: string): Promise<ToolCallResult> {
   let parsedInput: Record<string, unknown> = {};
   try {

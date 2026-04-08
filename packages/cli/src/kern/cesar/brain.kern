@@ -20,7 +20,7 @@ fn name=extractDelegation params="toolName:string, args:Record<string,unknown>" 
   handler <<<
     return {
       action: toolName.toLowerCase(),
-      reasoning: (args as any)?.task ?? (args as any)?.question ?? (args as any)?.topic ?? '',
+      reasoning: (args as any)?.task ?? (args as any)?.question ?? (args as any)?.topic ?? (args as any)?.target ?? '',
       fitnessCmd: typeof (args as any)?.fitnessCmd === 'string'
         ? (args as any).fitnessCmd
         : typeof (args as any)?.fitness === 'string'
@@ -29,11 +29,13 @@ fn name=extractDelegation params="toolName:string, args:Record<string,unknown>" 
       hardened: (args as any)?.hardened ?? false,
       tribunalMode: (args as any)?.mode,
       team: (args as any)?.team ?? false,
+      target: (args as any)?.target,
+      engineId: (args as any)?.engine,
       createdAt: Date.now(),
     };
   >>>
 
-fn name=commitTurnAndDelegate async=true params="pendingDel:PendingDelegation, input:string, response:string, cesarEngineId:string, streaming:boolean, dispatch:Dispatch, ctx:HandlerContext" returns="Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, fitnessCmd?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}>"
+fn name=commitTurnAndDelegate async=true params="pendingDel:PendingDelegation, input:string, response:string, cesarEngineId:string, streaming:boolean, dispatch:Dispatch, ctx:HandlerContext" returns="Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, fitnessCmd?:string, hardened?:boolean, tribunalMode?:string, team?:boolean, target?:string, engineId?:string}>"
   handler <<<
     if (streaming) dispatch({ type: 'streaming-end', engineId: cesarEngineId });
     if (!streaming) dispatch({ type: 'spinner-stop' });
@@ -45,7 +47,7 @@ fn name=commitTurnAndDelegate async=true params="pendingDel:PendingDelegation, i
       const finalAction = delResult.action ?? pendingDel.action;
       const action = pendingDel.team ? `team-${finalAction}` : finalAction;
       const reasoning = delResult.userContext ? `${pendingDel.reasoning ?? ''}\n\nUser context: ${delResult.userContext}` : pendingDel.reasoning;
-      return { delegated: true, responded: true, action, reasoning, fitnessCmd: pendingDel.fitnessCmd, hardened: delResult.hardened ?? pendingDel.hardened, tribunalMode: delResult.tribunalMode ?? pendingDel.tribunalMode, team: delResult.team ?? pendingDel.team };
+      return { delegated: true, responded: true, action, reasoning, fitnessCmd: pendingDel.fitnessCmd, hardened: delResult.hardened ?? pendingDel.hardened, tribunalMode: delResult.tribunalMode ?? pendingDel.tribunalMode, team: delResult.team ?? pendingDel.team, target: pendingDel.target, engineId: pendingDel.engineId };
     }
     return { delegated: false, responded: true };
   >>>
@@ -67,7 +69,7 @@ fn name=commitTurnAndSuggest async=true params="suggestion:{action:string, rest?
     return { delegated: false, responded: true };
   >>>
 
-fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx:HandlerContext, images?:ImageAttachment[]" returns="Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, fitnessCmd?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}>"
+fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx:HandlerContext, images?:ImageAttachment[]" returns="Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, fitnessCmd?:string, hardened?:boolean, tribunalMode?:string, team?:boolean, target?:string, engineId?:string}>"
   handler <<<
     const abort = new AbortController();
     const _turnStart = Date.now();
@@ -230,7 +232,7 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
               dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'running' } as any);
             } else if (toolStatus === 'running' && meta.input && toolRegistry && !ctx.cesar!.hasNativeTools) {
               // Intercept orchestration signal tools — don't execute as workspace tools
-              const EAGER_ORCH = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline']);
+              const EAGER_ORCH = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review']);
               if (EAGER_ORCH.has(toolName)) {
                 ctx.cesar!.pendingDelegation = extractDelegation(toolName, (meta.input ?? {}) as Record<string, unknown>);
                 ctx.eventBus?.emit('cesar:delegation', { action: toolName.toLowerCase(), source: 'stream' }).catch(() => {});
@@ -484,7 +486,7 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
                 _toolsUsed.push(name);
                 dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: name, input: JSON.stringify(inp), status: 'running' });
                 // Intercept orchestration signal tools — set _pendingDelegation
-                const LOOP_ORCH = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline']);
+                const LOOP_ORCH = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review']);
                 if (LOOP_ORCH.has(name)) {
                   ctx.cesar!.pendingDelegation = extractDelegation(name, (inp as Record<string, unknown>) ?? {});
                 }

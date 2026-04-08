@@ -115,6 +115,8 @@ interface name=PendingDelegation
   field name=hardened type=boolean
   field name=tribunalMode type=string optional=true
   field name=team type=boolean
+  field name=target type=string optional=true
+  field name=engineId type=string optional=true
   field name=createdAt type=number
 
 interface name=CesarState
@@ -155,3 +157,4 @@ interface name=HandlerContext
   field name=extensionPromptFragments type="string[]" optional=true
   field name=eventBus type="EventBus | undefined" optional=true
   field name=cesar type="CesarState | undefined" optional=true
+  field name=lastReviewResult type="{ engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number } | undefined" optional=true

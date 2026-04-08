@@ -63,6 +63,9 @@ union name=Intent discriminant=type
   variant name=pipeline
     field name=task type=string
     field name=fitnessCmd type="string | null"
+  variant name=review
+    field name=target type=string optional=true
+    field name=engineId type=string optional=true
   variant name=run
     field name=input type=string
   variant name=cesar

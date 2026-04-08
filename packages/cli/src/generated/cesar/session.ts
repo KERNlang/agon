@@ -349,12 +349,10 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
     // allow → auto-approve
     if (perm === 'allow' || mode === 'auto') return true;
   
-    // For Bash: check allowedCommands whitelist + always allow git
-    if (agonTool === 'Bash') {
-      const cmdLower = command.toLowerCase().trim();
-      // git is always allowed — Agon is the master, Cesar is trusted
-      if (cmdLower.startsWith('git ')) return true;
-      if (allowed.length > 0 && allowed.some((a: string) => cmdLower.startsWith(a.toLowerCase()))) return true;
+    // For Bash: check allowedCommands whitelist
+    if (agonTool === 'Bash' && allowed.length > 0) {
+      const cmdLower = command.toLowerCase();
+      if (allowed.some((a: string) => cmdLower.startsWith(a.toLowerCase()))) return true;
     }
   
     // ask → show permission prompt (same UI as Claude Code)
@@ -369,7 +367,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
   };
 }
 
-// @kern-source: session:356
+// @kern-source: session:354
 export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unknown>> {
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -403,7 +401,7 @@ export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unkn
   return normalizeNamedRecord(raw);
 }
 
-// @kern-source: session:390
+// @kern-source: session:388
 export function loadCesarMcpServers(config: any, cwd: string): Array<Record<string,unknown>>|undefined {
   if (!(config as any).cesarMcpEnabled) return undefined;
   
@@ -427,14 +425,14 @@ export function loadCesarMcpServers(config: any, cwd: string): Array<Record<stri
   return servers;
 }
 
-// @kern-source: session:414
+// @kern-source: session:412
 export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
   if (!binaryPath) return false;
   const protocol = engine?.companion?.protocol;
   return protocol === 'acp' || protocol === 'jsonrpc';
 }
 
-// @kern-source: session:421
+// @kern-source: session:419
 export function mcpConfigFingerprint(config: any): string {
   const enabled = !!(config as any).cesarMcpEnabled;
   const configPath = String((config as any).cesarMcpConfigPath ?? '');
@@ -449,7 +447,7 @@ export function mcpConfigFingerprint(config: any): string {
   return `${enabled}:${configPath}:${mtime}`;
 }
 
-// @kern-source: session:437
+// @kern-source: session:435
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
   const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';

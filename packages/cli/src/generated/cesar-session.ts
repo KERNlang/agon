@@ -211,7 +211,20 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
     }
   
     if (name === 'ProposePlan') {
-      return '[PLAN_PROPOSED] Plan submitted for user approval. Stop and wait.';
+      // Wire ProposePlan tool to actual plan creation + display
+      const { handleProposePlan } = await import('../generated/handlers-plan-mode.js');
+      const dispatch = (ctx as any)._planDispatch;
+      if (dispatch) {
+        try {
+          const plan = await handleProposePlan(args, dispatch, ctx);
+          if ((ctx as any).setActivePlan) {
+            (ctx as any).setActivePlan(plan);
+          }
+        } catch (err) {
+          console.warn(`[agon] ProposePlan handling failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+      return '[PLAN_PROPOSED] Plan submitted for user approval. Stop and wait for their decision.';
     }
   
     // ── ReportConfidence signal tool — record value, don't force delegation ──
@@ -254,7 +267,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
   };
 }
 
-// @kern-source: cesar-session:242
+// @kern-source: cesar-session:255
 export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:string, command:string) => Promise<boolean> {
   const engine = ctx.registry.get(engineId);
   return async (tool: string, command: string) => {
@@ -292,7 +305,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
   };
 }
 
-// @kern-source: cesar-session:281
+// @kern-source: cesar-session:294
 export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unknown>> {
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -326,7 +339,7 @@ export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unkn
   return normalizeNamedRecord(raw);
 }
 
-// @kern-source: cesar-session:315
+// @kern-source: cesar-session:328
 export function loadCesarMcpServers(config: any, cwd: string): Array<Record<string,unknown>>|undefined {
   if (!(config as any).cesarMcpEnabled) return undefined;
   
@@ -350,14 +363,14 @@ export function loadCesarMcpServers(config: any, cwd: string): Array<Record<stri
   return servers;
 }
 
-// @kern-source: cesar-session:339
+// @kern-source: cesar-session:352
 export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
   if (!binaryPath) return false;
   const protocol = engine?.companion?.protocol;
   return protocol === 'acp' || protocol === 'jsonrpc';
 }
 
-// @kern-source: cesar-session:346
+// @kern-source: cesar-session:359
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
   const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';

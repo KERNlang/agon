@@ -378,6 +378,8 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
       const { createCesarPlan } = await import('@agon/core');
       const cesarPlan = createCesarPlan(intent.task, []);
       cb.setActivePlan(cesarPlan);
+      // Pass dispatch to context so ProposePlan handler can create + display the plan
+      (cb.ctx as any)._planDispatch = cb.dispatch;
       // Route to Cesar with the task
       const cesarInput = `[PLAN MODE] ${intent.task}`;
       if (await routeWithCesar(cesarInput, [], cb)) return { handled: true, ranAsJob: true };

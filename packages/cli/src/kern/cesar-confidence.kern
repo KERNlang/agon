@@ -1,9 +1,9 @@
 // ── Cesar Confidence: parsing, display, tier thresholds ─────────────
 import from="../icons.js" names="icons"
 
-const name=CONFIDENCE_TIERS type="{ direct: number; nero: number; discuss: number; stop: number }"
+const name=CONFIDENCE_TIERS type="{ direct: number; quickNero: number; nero: number; brainstorm: number; advisor: number }"
   handler <<<
-    ({ direct: 93, nero: 88, discuss: 70, stop: 70 })
+    ({ direct: 96, quickNero: 93, nero: 88, brainstorm: 72, advisor: 72 })
   >>>
 
 fn name=parseConfidence params="response:string" returns="{ value: number | null; rest: string }"
@@ -32,10 +32,11 @@ fn name=parseConfidence params="response:string" returns="{ value: number | null
 fn name=confidenceColor params="value:number" returns="string"
   doc "ANSI color for confidence badge: green 94+, yellow 90-93, red <90."
   handler <<<
-    if (value >= 94) return '\x1b[32m';  // green
-    if (value >= 90) return '\x1b[33m';  // yellow
-    if (value >= 70) return '\x1b[38;5;208m'; // orange
-    return '\x1b[31m'; // red
+    if (value >= 96) return '\x1b[32m';  // green — direct
+    if (value >= 93) return '\x1b[33m';  // yellow — quickNero
+    if (value >= 88) return '\x1b[33m';  // yellow — nero
+    if (value >= 72) return '\x1b[38;5;208m'; // orange — brainstorm
+    return '\x1b[31m'; // red — advisor
   >>>
 
 fn name=confidenceBadge params="value:number" returns="string"

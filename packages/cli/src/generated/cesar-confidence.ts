@@ -2,7 +2,7 @@
 import { icons } from '../icons.js';
 
 // @kern-source: cesar-confidence:4
-export const CONFIDENCE_TIERS: { direct: number; nero: number; discuss: number; stop: number } = ({ direct: 93, nero: 88, discuss: 70, stop: 70 });
+export const CONFIDENCE_TIERS: { direct: number; quickNero: number; nero: number; brainstorm: number; advisor: number } = ({ direct: 96, quickNero: 93, nero: 88, brainstorm: 72, advisor: 72 });
 
 // @kern-source: cesar-confidence:9
 export function parseConfidence(response: string): { value: number | null; rest: string } {
@@ -28,13 +28,14 @@ export function parseConfidence(response: string): { value: number | null; rest:
 
 // @kern-source: cesar-confidence:32
 export function confidenceColor(value: number): string {
-  if (value >= 94) return '\x1b[32m';  // green
-  if (value >= 90) return '\x1b[33m';  // yellow
-  if (value >= 70) return '\x1b[38;5;208m'; // orange
-  return '\x1b[31m'; // red
+  if (value >= 96) return '\x1b[32m';  // green — direct
+  if (value >= 93) return '\x1b[33m';  // yellow — quickNero
+  if (value >= 88) return '\x1b[33m';  // yellow — nero
+  if (value >= 72) return '\x1b[38;5;208m'; // orange — brainstorm
+  return '\x1b[31m'; // red — advisor
 }
 
-// @kern-source: cesar-confidence:41
+// @kern-source: cesar-confidence:42
 export function confidenceBadge(value: number): string {
   const color = confidenceColor(value);
   const reset = '\x1b[0m';

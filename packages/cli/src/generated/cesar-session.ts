@@ -32,19 +32,16 @@ import { buildRoutingContext } from './cesar-routing.js';
 export const CESAR_SYSTEM_PROMPT: string = `You are Cesar, Agon AI orchestrator. Be direct. Be concise.
 
 RULE 1 — CONFIDENCE: Call ReportConfidence(value) FIRST on every turn. If you cannot call tools, write ~X% at the very start instead. No exceptions. Initial low confidence is EXPECTED — you haven't read the code yet. Investigate first, then the orchestrator evaluates your FINAL confidence after you finish.
-RULE 2 — TIERS (applied after your turn, not during):
-  93%+  = implement directly.
-  88-92% = the orchestrator will activate Nero (adversarial self-challenge). Just respond normally — Nero is handled externally.
-  70-87% = delegate to a DISCUSSION mode. Pick the right one:
-    - Tribunal: when you are unsure about the APPROACH (debate pros/cons, architectural decisions).
-    - Brainstorm: when you need more IDEAS (multiple perspectives, creative solutions).
-    - Campfire: when the goal is unclear or exploratory (open-ended thinking, no competition).
-    - Forge: ONLY for code/build tasks that are at least moderately complex. Forge = engines compete on implementation. Never forge a question or a simple fix.
-  <70% = you are stuck. The orchestrator will automatically consult the best-ranked engine as advisor. Just explain your uncertainty — the advisor handles the rest.
+RULE 2 — TIERS (applied after your turn, not during — just respond normally):
+  96%+  = implement directly.
+  93-95% = Quick Nero — the orchestrator challenges you via the same session. You will see a self-check prompt; answer honestly and re-report confidence.
+  88-92% = Nero — the orchestrator spawns an adversarial twin to challenge your response. Handled externally; just respond normally.
+  72-87% = auto-brainstorm — the orchestrator triggers brainstorm with all engines. Just respond normally.
+  <72% = you are stuck. The orchestrator presents the user with options (campfire/tribunal/forge/brainstorm). Just explain your uncertainty.
 RULE 3 — SOLO vs TEAM: When delegating, decide solo or team.
   Solo (team=false): single-file changes, clear scope, one obvious approach, simple bugs.
   Team (team=true): multi-file features, architecture decisions, refactors across modules, tasks that benefit from architect+implementer+reviewer roles. When in doubt, prefer solo — team costs more tokens.
-RULE 4 — TOOLS: Call ReportConfidence first, then either respond directly (93%+) or call a delegation tool (Forge, Brainstorm, Tribunal, Campfire, Pipeline). Set team=true for team variants. Set hardened=true for forge-hardened. Set mode for tribunal variant (adversarial/synthesis/steelman/socratic/red-team/postmortem).
+RULE 4 — TOOLS: Call ReportConfidence first, then respond directly. The orchestrator handles escalation automatically based on your confidence — do NOT call delegation tools (Forge, Brainstorm, Tribunal, Campfire, Pipeline) unless your confidence is below 72% and you want to suggest a specific mode. Set team=true for team variants. Set hardened=true for forge-hardened. Set mode for tribunal variant (adversarial/synthesis/steelman/socratic/red-team/postmortem).
 RULE 4b — DELEGATE: Use Delegate(engine, task) to send a focused subtask to a specific engine and get the result back inline. Unlike Forge/Brainstorm/Tribunal (which hand off entirely), Delegate returns the response so you can continue working with it. Use when:
   - Another engine has known strengths for a subtask (e.g., delegate security review to Claude, performance tuning to Codex).
   - You need a second perspective on a specific piece without full orchestration overhead.
@@ -54,7 +51,7 @@ RULE 5 — WORKSPACE: Use Read for files. Use Grep for search. NEVER use cat/hea
 RULE 6 — AFTER DELEGATION: After calling Forge/Brainstorm/Tribunal/Campfire/Pipeline, STOP. Do not continue responding. The orchestrator handles the rest.
 RULE 7 — NO NARRATION: NEVER narrate your research process. Do not write "Reading the file...", "I'm checking...", "Let me look at...", "I've confirmed...". The user sees your text output — if you narrate exploration it looks like you have no clue. Instead: call tools SILENTLY, then speak ONLY when you have the answer or decision. Your visible output should be conclusions, answers, and actions — never a play-by-play of your investigation. If you need to read files or search code, call Read/Grep/Glob directly without announcing it.`;
 
-// @kern-source: cesar-session:40
+// @kern-source: cesar-session:37
 export function buildCesarSystemPrompt(ctx: HandlerContext): string {
   const config = ctx.config;
   const cesarCwd = resolveWorkingDir();
@@ -99,7 +96,7 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
   return systemParts.join('\n\n');
 }
 
-// @kern-source: cesar-session:86
+// @kern-source: cesar-session:83
 export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry, config: any): ((name:string, args:Record<string,unknown>, callId:string) => Promise<string>) | undefined {
   const fsc = new FileStateCache();
   const toolResultCache = new Map<string, string>();
@@ -219,7 +216,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
   };
 }
 
-// @kern-source: cesar-session:207
+// @kern-source: cesar-session:204
 export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:string, command:string) => Promise<boolean> {
   const engine = ctx.registry.get(engineId);
   return async (tool: string, command: string) => {
@@ -257,7 +254,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
   };
 }
 
-// @kern-source: cesar-session:246
+// @kern-source: cesar-session:243
 export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unknown>> {
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -291,7 +288,7 @@ export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unkn
   return normalizeNamedRecord(raw);
 }
 
-// @kern-source: cesar-session:280
+// @kern-source: cesar-session:277
 export function loadCesarMcpServers(config: any, cwd: string): Array<Record<string,unknown>>|undefined {
   if (!(config as any).cesarMcpEnabled) return undefined;
   
@@ -315,14 +312,14 @@ export function loadCesarMcpServers(config: any, cwd: string): Array<Record<stri
   return servers;
 }
 
-// @kern-source: cesar-session:304
+// @kern-source: cesar-session:301
 export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
   if (!binaryPath) return false;
   const protocol = engine?.companion?.protocol;
   return protocol === 'acp' || protocol === 'jsonrpc';
 }
 
-// @kern-source: cesar-session:311
+// @kern-source: cesar-session:308
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
   const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';

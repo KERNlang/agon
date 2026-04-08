@@ -114,28 +114,27 @@ describe('Nero ↔ Cesar Confidence Transitions', () => {
   it('CONFIDENCE_TIERS define correct escalation ladder', async () => {
     const { CONFIDENCE_TIERS } = await import('../../packages/cli/src/handlers/cesar-brain.js');
 
-    // direct > nero > discuss/stop — escalation order must hold
-    expect(CONFIDENCE_TIERS.direct).toBeGreaterThan(CONFIDENCE_TIERS.nero);
-    expect(CONFIDENCE_TIERS.nero).toBeGreaterThan(CONFIDENCE_TIERS.stop);
+    // direct > quickNero > nero > brainstorm/advisor — escalation order must hold
+    expect(CONFIDENCE_TIERS.direct).toBeGreaterThan(CONFIDENCE_TIERS.quickNero);
+    expect(CONFIDENCE_TIERS.quickNero).toBeGreaterThan(CONFIDENCE_TIERS.nero);
+    expect(CONFIDENCE_TIERS.nero).toBeGreaterThan(CONFIDENCE_TIERS.brainstorm);
 
-    // Nero activates below direct threshold
-    expect(CONFIDENCE_TIERS.nero).toBeLessThan(CONFIDENCE_TIERS.direct);
-    // discuss === stop (both 70)
-    expect(CONFIDENCE_TIERS.discuss).toBe(CONFIDENCE_TIERS.stop);
+    // brainstorm === advisor (both 72)
+    expect(CONFIDENCE_TIERS.brainstorm).toBe(CONFIDENCE_TIERS.advisor);
   });
 
   it('confidence badge returns correct color for each tier', async () => {
     const { confidenceBadge } = await import('../../packages/cli/src/handlers/cesar-brain.js');
 
-    // ≥94 → green (badge uses 94 threshold)
-    const highBadge = confidenceBadge(94);
+    // ≥96 → green (direct tier)
+    const highBadge = confidenceBadge(96);
     expect(highBadge).toContain('\x1b[32m'); // green
 
-    // 90-93 → yellow
-    const midBadge = confidenceBadge(93);
+    // 93-95 → yellow (quickNero tier)
+    const midBadge = confidenceBadge(94);
     expect(midBadge).toContain('\x1b[33m'); // yellow
 
-    // <70 → red
+    // <72 → red (advisor tier)
     const lowBadge = confidenceBadge(60);
     expect(lowBadge).toContain('\x1b[31m'); // red
   });

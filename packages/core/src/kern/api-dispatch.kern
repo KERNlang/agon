@@ -152,7 +152,13 @@ fn name=apiDispatch async=true params="config:ApiConfig, prompt:string, timeout:
       });
       clearTimeout(timer);
       const text = result.text || (result as any).reasoningText || '';
-      return { exitCode: 0, stdout: text, stderr: '', durationMs: Date.now() - startTime, timedOut: false };
+      const usage = result.usage ? {
+        promptTokens: result.usage.inputTokens ?? 0,
+        completionTokens: result.usage.outputTokens ?? 0,
+        totalTokens: (result.usage.inputTokens ?? 0) + (result.usage.outputTokens ?? 0),
+        source: 'sdk' as const,
+      } : undefined;
+      return { exitCode: 0, stdout: text, stderr: '', durationMs: Date.now() - startTime, timedOut: false, usage };
     } catch (err) {
       clearTimeout(timer);
       const durationMs = Date.now() - startTime;
@@ -278,6 +284,20 @@ fn name=apiStreamDispatchWithHistory generator=true async=true params="config:Ap
       }
 
       clearTimeout(timer);
+
+      let usage: DispatchResult['usage'] = undefined;
+      try {
+        const finalUsage = await (result as any).usage;
+        if (finalUsage) {
+          usage = {
+            promptTokens: finalUsage.inputTokens ?? 0,
+            completionTokens: finalUsage.outputTokens ?? 0,
+            totalTokens: (finalUsage.inputTokens ?? 0) + (finalUsage.outputTokens ?? 0),
+            source: 'sdk' as const,
+          };
+        }
+      } catch {}
+      return { exitCode: 0, stdout, stderr: '', durationMs: Date.now() - startTime, timedOut: false, usage };
     } catch (err) {
       clearTimeout(timer);
       const durationMs = Date.now() - startTime;
@@ -286,6 +306,4 @@ fn name=apiStreamDispatchWithHistory generator=true async=true params="config:Ap
       }
       return { exitCode: 1, stdout, stderr: `API stream failed: ${err instanceof Error ? err.message : String(err)}`, durationMs, timedOut: false };
     }
-
-    return { exitCode: 0, stdout, stderr: '', durationMs: Date.now() - startTime, timedOut: false };
   >>>

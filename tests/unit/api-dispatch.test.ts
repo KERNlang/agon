@@ -1,5 +1,21 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { convertMessagesForSdk, convertToolsForSdk, buildModel } from '../../packages/core/src/generated/api-dispatch.js';
+
+// --- Usage capture tests (mocked generateText) ---
+
+vi.mock('ai', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('ai')>();
+  return {
+    ...actual,
+    generateText: vi.fn(),
+  };
+});
+vi.mock('@ai-sdk/openai-compatible', () => ({
+  createOpenAICompatible: vi.fn(() => ({ chatModel: vi.fn(() => 'mock-model') })),
+}));
+vi.mock('@ai-sdk/anthropic', () => ({
+  createAnthropic: vi.fn(() => vi.fn(() => 'mock-model')),
+}));
 
 describe('api-dispatch — AI SDK message conversion', () => {
   it('converts simple user/assistant messages', () => {
@@ -149,5 +165,76 @@ describe('api-dispatch — provider creation', () => {
     const config = { baseUrl: 'https://example.com', apiKeyEnv: 'NONEXISTENT_KEY_12345', model: 'test' };
     const result = buildModel(config);
     expect(result).toBeNull();
+  });
+});
+
+// --- Usage capture from generateText ---
+
+import { generateText } from 'ai';
+import { apiDispatch } from '../../packages/core/src/generated/api-dispatch.js';
+
+const mockGenerateText = vi.mocked(generateText);
+
+describe('apiDispatch usage capture', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.TEST_API_KEY = 'test-key';
+  });
+
+  it('includes usage in result when SDK provides it', async () => {
+    mockGenerateText.mockResolvedValueOnce({
+      text: 'Hello world',
+      usage: { inputTokens: 100, outputTokens: 50 },
+    } as any);
+
+    const result = await apiDispatch(
+      { baseUrl: 'http://test', apiKeyEnv: 'TEST_API_KEY', model: 'test-model' },
+      'test prompt',
+      30,
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe('Hello world');
+    expect(result.usage).toEqual({
+      promptTokens: 100,
+      completionTokens: 50,
+      totalTokens: 150,
+      source: 'sdk',
+    });
+  });
+
+  it('returns undefined usage when SDK does not provide it', async () => {
+    mockGenerateText.mockResolvedValueOnce({
+      text: 'Hello world',
+    } as any);
+
+    const result = await apiDispatch(
+      { baseUrl: 'http://test', apiKeyEnv: 'TEST_API_KEY', model: 'test-model' },
+      'test prompt',
+      30,
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.usage).toBeUndefined();
+  });
+
+  it('handles partial usage (only inputTokens)', async () => {
+    mockGenerateText.mockResolvedValueOnce({
+      text: 'response',
+      usage: { inputTokens: 200, outputTokens: undefined },
+    } as any);
+
+    const result = await apiDispatch(
+      { baseUrl: 'http://test', apiKeyEnv: 'TEST_API_KEY', model: 'test-model' },
+      'test prompt',
+      30,
+    );
+
+    expect(result.usage).toEqual({
+      promptTokens: 200,
+      completionTokens: 0,
+      totalTokens: 200,
+      source: 'sdk',
+    });
   });
 });

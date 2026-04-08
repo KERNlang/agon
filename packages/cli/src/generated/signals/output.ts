@@ -166,6 +166,13 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
       actions.setReviewEvent({ winnerId: (event as any).winnerId, patchPath: (event as any).patchPath, patchContent: (event as any).patchContent });
       return;
     case 'question':
+      // Don't overwrite a pending permission prompt — permission has priority
+      if (_permissionQueue.length > 0) {
+        // Auto-resolve the question as dismissed — permission takes precedence
+        const qResolve = (event as any).resolve;
+        if (qResolve) qResolve('');
+        return;
+      }
       actions.setQuestionState({ prompt: (event as any).prompt, resolve: (event as any).resolve, choices: (event as any).choices });
       return;
     case 'permission-ask': {

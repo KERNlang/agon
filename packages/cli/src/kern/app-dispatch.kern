@@ -283,10 +283,11 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
       const cmdName = intent.type === 'extension-command' ? intent.commandName : intent.type;
       const registryHandler = cb.commandRegistry.get(cmdName);
       if (registryHandler && registryHandler.definition.source !== 'builtin') {
-        // Real handler (not a builtin shim) — execute it
-        const args = intent.type === 'extension-command'
-          ? registryHandler.parseArgs(intent.args ?? '')
-          : intent;
+        // Real handler (not a builtin shim) — always use parseArgs for consistent contract
+        const rawArgs = intent.type === 'extension-command'
+          ? (intent.args ?? '')
+          : (intent.input ?? intent.task ?? intent.question ?? intent.topic ?? '');
+        const args = registryHandler.parseArgs(rawArgs);
         const result = await registryHandler.execute(args, cb);
         if (result.handled) return result;
       }
@@ -733,18 +734,6 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
       }
       case 'help': cb.dispatch({ type: 'text', content: cb.allSlashCommands.map((c: any) => `${c.cmd.padEnd(16)} ${c.desc}`).join('\n') }); break;
       case 'exit': cb.exit(); return { handled: true, ranAsJob: true };
-
-      // ── Extension commands ──
-      case 'extension-command': {
-        const cmdName = (intent as any).commandName as string;
-        const cmdArgs = (intent as any).args as string ?? '';
-        const extHandler = cb.commandRegistry?.get(cmdName);
-        if (extHandler) {
-          const parsed = extHandler.parseArgs(cmdArgs);
-          return extHandler.execute(parsed, cb);
-        }
-        break;
-      }
 
       // ── Cesar-routed intents ──
       case 'auto':

@@ -197,7 +197,7 @@ export async function handleSecondOpinion(secondResult: {stdout:string, engineId
     });
   
     if (escAnswer === 'y') return { delegated: true, responded: true, action: advisorRecommendation, reasoning: response };
-    if (escAnswer === 'a') return { delegated: false, responded: true };
+    if (escAnswer === 'a') return null; // Continue normal brain flow — Cesar proceeds
     // 'm' falls through to full menu below
   }
   

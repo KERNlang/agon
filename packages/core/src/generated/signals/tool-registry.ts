@@ -49,6 +49,18 @@ export async function executeToolCall(call: ToolCall, ctx: ToolContext, registry
     };
   }
   
+  // Phase 0: Read-only gate — block mutating tools during investigation
+  // Bash is special: isReadOnly is false but it has its own read-only command detection,
+  // so we let it through and rely on its permission logic to allow safe commands (ls, git diff, etc.)
+  if (ctx.readOnlyMode && !handler.definition.isReadOnly && call.name !== 'Bash') {
+    return {
+      toolCallId: call.id,
+      toolName: call.name,
+      result: { ok: false, content: '', error: `[Investigation phase] ${call.name} skipped — Cesar is still investigating. Mutating tools available after confidence check.` },
+      durationMs: Date.now() - start,
+    };
+  }
+  
   // Phase 1: Validate input
   const validationError = handler.validate(call.input, ctx);
   if (validationError) {
@@ -117,7 +129,7 @@ export async function executeToolCall(call: ToolCall, ctx: ToolContext, registry
   }
 }
 
-// @kern-source: tool-registry:129
+// @kern-source: tool-registry:141
 export async function executeToolCalls(calls: ToolCall[], ctx: ToolContext, registry: ToolRegistry, onPermissionAsk?: (tool:string,message:string)=>Promise<boolean>, onProgress?: (result:ToolCallResult)=>void): Promise<ToolCallResult[]> {
   const results: ToolCallResult[] = [];
   

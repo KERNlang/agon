@@ -30,9 +30,10 @@ export interface ToolContext {
   allowedCommands?: string[];
   toolPermissions?: Record<string,'allow'|'ask'|'deny'>;
   onProgress?: ((message: string) => void);
+  readOnlyMode?: boolean;
 }
 
-// @kern-source: tool-types:28
+// @kern-source: tool-types:29
 export interface FileState {
   content: string;
   timestamp: number;
@@ -41,7 +42,7 @@ export interface FileState {
   isPartialView?: boolean;
 }
 
-// @kern-source: tool-types:35
+// @kern-source: tool-types:36
 export interface ToolDefinition {
   name: string;
   description: string;
@@ -52,7 +53,7 @@ export interface ToolDefinition {
   isDestructive?: boolean;
 }
 
-// @kern-source: tool-types:44
+// @kern-source: tool-types:45
 export interface ToolHandler {
   definition: ToolDefinition;
   validate: (input: Record<string,unknown>, ctx: ToolContext) => string|null;
@@ -60,14 +61,14 @@ export interface ToolHandler {
   execute: (input: Record<string,unknown>, ctx: ToolContext) => Promise<ToolResult>;
 }
 
-// @kern-source: tool-types:50
+// @kern-source: tool-types:51
 export interface ToolCall {
   id: string;
   name: string;
   input: Record<string,unknown>;
 }
 
-// @kern-source: tool-types:55
+// @kern-source: tool-types:56
 export interface ToolCallResult {
   toolCallId: string;
   toolName: string;

@@ -237,7 +237,7 @@ export function CesarStatusStrip({ cesarId, confidence, spinner, engines, startT
         let activityStr = 'working';
         if (spinner) {
           const msg = spinner.message.replace(/\u2026$/, '').trim();
-          activityStr = msg.length > 20 ? msg.slice(0, 20) + '\u2026' : msg;
+          activityStr = msg.length > 50 ? msg.slice(0, 50) + '\u2026' : msg;
         }
   
         // Elapsed time (from operation start, not last activity)

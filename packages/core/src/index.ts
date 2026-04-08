@@ -121,7 +121,7 @@ export { validateManifest } from './extension-manifest.js';
 export type { ExtensionManifest, ExtensionContributions, CommandContribution, LoadedExtension } from './extension-manifest.js';
 export { CommandRegistry } from './command-registry.js';
 export type { CommandDefinition, CommandHandler } from './command-registry.js';
-export { initExtensions, loadExtensions, discoverExtensionDirs } from './extension-loader.js';
+export { initExtensions, loadExtensions, discoverExtensionDirs, buildExtensionContext } from './extension-loader.js';
 export { registerBuiltinCommands } from './builtin-commands.js';
 export { EventBus, bridgeShellHooks } from './event-bus.js';
 export type { EventPayload, EventListener } from './event-bus.js';

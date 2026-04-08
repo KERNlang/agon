@@ -70,6 +70,7 @@ const name=SLASH_COMMANDS type="SlashCommand[]"
       { cmd: '/nero',        desc: '                        — toggle Nero mode (adversarial devil\'s advocate)' },
       { cmd: '/btw',         desc: '<question>               — ask something while engines work (side-channel)' },
       { cmd: '/clear',       desc: '                        — reset session (saves chat, clears brain)' },
+      { cmd: '/extensions',  desc: '                        — list installed extensions' },
       { cmd: '/help',        desc: '                        — show this help' },
       { cmd: '/exit',        desc: '                        — quit' },
     ]
@@ -346,6 +347,8 @@ fn name=parseSlashCommand params="input:string, commandRegistry?:any" returns=In
         return { type: 'clear' } as Intent;
       case 'help':
         return { type: 'help' } as Intent;
+      case 'extensions':
+        return { type: 'extensions' } as Intent;
       case 'exit':
       case 'quit':
         return { type: 'exit' } as Intent;

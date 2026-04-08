@@ -94,6 +94,7 @@ union name=Intent discriminant=type
   variant name=auto
     field name=input type=string
     field name=taskClass type="'code' | 'question' | 'ambiguous'"
+  variant name=extensions
   variant name=extension-command
     field name=commandName type=string
     field name=args type=string

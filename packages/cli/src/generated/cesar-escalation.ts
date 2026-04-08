@@ -36,32 +36,6 @@ export function pickBestAdvisor(input: string, ctx: HandlerContext): {engineId:s
 }
 
 // @kern-source: cesar-escalation:24
-export async function fireSecondOpinion(input: string, ctx: HandlerContext, abort: AbortController): Promise<{stdout:string, engineId:string, color:number}|null> {
-  const advisor = pickBestAdvisor(input, ctx);
-  if (!advisor) return null;
-  
-  const secondEngine = ctx.registry.get(advisor.engineId);
-  const outDir = join(RUNS_DIR, `advisor-${Date.now()}`);
-  mkdirSync(outDir, { recursive: true });
-  
-  try {
-    const result = await ctx.adapter.dispatch({
-      engine: secondEngine,
-      prompt: input,
-      cwd: resolveWorkingDir(),
-      mode: 'exec' as any,
-      timeout: ctx.config.timeout ?? 120,
-      outputDir: outDir,
-      signal: abort.signal,
-      systemPrompt: CESAR_SYSTEM_PROMPT,
-    });
-    return { stdout: result.stdout, engineId: advisor.engineId, color: advisor.color };
-  } catch {
-    return null;
-  }
-}
-
-// @kern-source: cesar-escalation:51
 export async function fireAdvisor(input: string, cesarResponse: string, parsedConfidence: number|null, ctx: HandlerContext, abort: AbortController): Promise<{stdout:string, engineId:string, color:number}|null> {
   const advisor = pickBestAdvisor(input, ctx);
       if (!advisor) return null;
@@ -98,7 +72,7 @@ export async function fireAdvisor(input: string, cesarResponse: string, parsedCo
       }
 }
 
-// @kern-source: cesar-escalation:89
+// @kern-source: cesar-escalation:62
 export async function fireQuickNero(session: any, response: string, input: string, confidence: number, dispatch: Dispatch, signal: AbortSignal, ctx: HandlerContext): Promise<{ challenged: boolean; newConfidence: number|null; challengeText: string }> {
   const challengePrompt = `[SELF-CHECK] You just responded at ${confidence}% confidence to: "${input.slice(0, 200)}"
   
@@ -130,7 +104,7 @@ export async function fireQuickNero(session: any, response: string, input: strin
       }
 }
 
-// @kern-source: cesar-escalation:122
+// @kern-source: cesar-escalation:95
 export async function fireNero(input: string, response: string, confidence: number, ctx: HandlerContext, abort: AbortController): Promise<{ challengeText: string; challengeConfidence: number|null } | null> {
   const cesarEngineId = (ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude';
       const cesarEngine = ctx.registry.get(cesarEngineId);
@@ -167,7 +141,7 @@ export async function fireNero(input: string, response: string, confidence: numb
       }
 }
 
-// @kern-source: cesar-escalation:160
+// @kern-source: cesar-escalation:133
 export async function handleSecondOpinion(secondResult: {stdout:string, engineId:string, color:number}|null, input: string, response: string, parsedConfidence: number|null, cesarEngineId: string, dispatch: Dispatch, ctx: HandlerContext, abortSignal?: AbortSignal): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string}|null> {
   if (!secondResult || !secondResult.stdout.trim()) return null;
   
@@ -245,7 +219,7 @@ export async function handleSecondOpinion(secondResult: {stdout:string, engineId
   return { delegated: false, responded: true };
 }
 
-// @kern-source: cesar-escalation:239
+// @kern-source: cesar-escalation:212
 export function activateNero(ctx: HandlerContext, dispatch: Dispatch): void {
   if (!(ctx as any).neroMode && ctx.setNeroMode) {
     ctx.setNeroMode(true);
@@ -257,7 +231,7 @@ export function activateNero(ctx: HandlerContext, dispatch: Dispatch): void {
   }
 }
 
-// @kern-source: cesar-escalation:252
+// @kern-source: cesar-escalation:225
 export function deactivateNero(ctx: HandlerContext, dispatch: Dispatch): void {
   ctx.setNeroMode(false);
   (ctx as any).neroMode = false;
@@ -265,7 +239,7 @@ export function deactivateNero(ctx: HandlerContext, dispatch: Dispatch): void {
   dispatch({ type: 'info', message: `${icons().nero} Nero deactivated — confidence recovered` });
 }
 
-// @kern-source: cesar-escalation:262
+// @kern-source: cesar-escalation:235
 export async function promptDelegation(action: string, dispatch: Dispatch, hardened?: boolean, tribunalMode?: string, team?: boolean): Promise<{approved:boolean, action?:string, hardened?:boolean, tribunalMode?:string, team?:boolean, userContext?:string}> {
   // Check session auto-approve cache
   const autoApproved = (promptDelegation as any)._autoApprove as Set<string> | undefined;
@@ -327,7 +301,7 @@ export async function promptDelegation(action: string, dispatch: Dispatch, harde
   return { approved: true };
 }
 
-// @kern-source: cesar-escalation:325
+// @kern-source: cesar-escalation:298
 export async function promptProtocolEnforcement(input: string, parsedConfidence: number|null, ctx: HandlerContext, dispatch: Dispatch): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, team?:boolean}|null> {
   if (parsedConfidence === null
       || parsedConfidence >= CONFIDENCE_TIERS.nero

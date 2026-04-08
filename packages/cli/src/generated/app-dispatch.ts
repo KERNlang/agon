@@ -1,5 +1,5 @@
 // @kern-source: app-dispatch:5
-import { resolveWorkingDir, extractImagesFromInput, buildImageAttachment, undoPatch, resumeChatSession, findSkill, renderSkillPrompt, configSet, startChatSession, currentBranch } from '@agon/core';
+import { resolveWorkingDir, extractImagesFromInput, buildImageAttachment, undoPatch, resumeChatSession, findSkill, renderSkillPrompt, configSet, startChatSession, currentBranch, buildExtensionContext } from '@agon/core';
 
 // @kern-source: app-dispatch:6
 import type { ImageAttachment, ChatSession } from '@agon/core';
@@ -73,15 +73,17 @@ export interface DispatchCallbacks {
   setNeroMode: (mode: boolean) => void;
   setActivePlan: (plan: any) => void;
   commandRegistry?: any;
+  eventBus?: any;
+  loadedExtensions?: any[];
 }
 
-// @kern-source: app-dispatch:51
+// @kern-source: app-dispatch:53
 export interface DispatchResult {
   handled: boolean;
   ranAsJob: boolean;
 }
 
-// @kern-source: app-dispatch:55
+// @kern-source: app-dispatch:57
 export function handleModeSwitch(intentType: string, topic: string|undefined, question: string|undefined, cb: DispatchCallbacks): boolean {
   if (intentType === 'campfire' && !topic) {
     cb.setMode('campfire');
@@ -108,7 +110,7 @@ export function handleModeSwitch(intentType: string, topic: string|undefined, qu
   return false;
 }
 
-// @kern-source: app-dispatch:83
+// @kern-source: app-dispatch:85
 export async function routeWithCesar(input: string, images: ImageAttachment[], cb: DispatchCallbacks): Promise<boolean> {
   cb.setPendingImages(() => []);
   try {
@@ -302,8 +304,13 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
   return false;
 }
 
-// @kern-source: app-dispatch:278
+// @kern-source: app-dispatch:280
 export async function dispatchIntent(intent: any, input: string, cb: DispatchCallbacks): Promise<DispatchResult> {
+  // ── Emit pre:dispatch event ──
+  if (cb.eventBus) {
+    await cb.eventBus.emit('pre:dispatch', { input, intentType: intent.type, cwd: resolveWorkingDir() });
+  }
+  
   // ── Registry-first dispatch — extensions and real handlers get priority ──
   if (cb.commandRegistry) {
     const cmdName = intent.type === 'extension-command' ? intent.commandName : intent.type;
@@ -314,7 +321,9 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
         ? (intent.args ?? '')
         : (intent.input ?? intent.task ?? intent.question ?? intent.topic ?? '');
       const args = registryHandler.parseArgs(rawArgs);
-      const result = await registryHandler.execute(args, cb);
+      // Build sandboxed context for extension handlers
+      const extCtx = buildExtensionContext(cb, registryHandler.definition.source ?? 'unknown');
+      const result = await registryHandler.execute(args, extCtx);
       if (result.handled) return result;
     }
   }
@@ -322,20 +331,33 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
   switch (intent.type) {
     // ── Job-dispatched commands (return immediately, don't hit finally) ──
     case 'forge': {
-      const forgeStart = Date.now();
       cb.runAsJob('forge', intent.task?.slice(0, 40) ?? 'forge', async () => {
+        if (cb.eventBus) await cb.eventBus.emit('pre:forge', { task: intent.task, cwd: resolveWorkingDir() });
         await handleForge(intent.task, intent.fitnessCmd, cb.dispatch, cb.ctx, undefined, intent.hardened);
+        if (cb.eventBus) cb.eventBus.emit('post:forge', { task: intent.task, cwd: resolveWorkingDir() }).catch(() => {});
       });
       return { handled: true, ranAsJob: true };
     }
     case 'brainstorm':
-      cb.runAsJob('brainstorm', intent.question?.slice(0, 40) ?? 'brainstorm', () => handleBrainstorm(intent.question, cb.dispatch, cb.ctx));
+      cb.runAsJob('brainstorm', intent.question?.slice(0, 40) ?? 'brainstorm', async () => {
+        if (cb.eventBus) await cb.eventBus.emit('pre:brainstorm', { question: intent.question, cwd: resolveWorkingDir() });
+        await handleBrainstorm(intent.question, cb.dispatch, cb.ctx);
+        if (cb.eventBus) cb.eventBus.emit('post:brainstorm', { question: intent.question, cwd: resolveWorkingDir() }).catch(() => {});
+      });
       return { handled: true, ranAsJob: true };
     case 'tribunal':
-      cb.runAsJob('tribunal', intent.question?.slice(0, 40) ?? 'tribunal', () => handleTribunal(intent.question, cb.dispatch, cb.ctx, intent.tribunalMode));
+      cb.runAsJob('tribunal', intent.question?.slice(0, 40) ?? 'tribunal', async () => {
+        if (cb.eventBus) await cb.eventBus.emit('pre:tribunal', { question: intent.question, mode: intent.tribunalMode, cwd: resolveWorkingDir() });
+        await handleTribunal(intent.question, cb.dispatch, cb.ctx, intent.tribunalMode);
+        if (cb.eventBus) cb.eventBus.emit('post:tribunal', { question: intent.question, cwd: resolveWorkingDir() }).catch(() => {});
+      });
       return { handled: true, ranAsJob: true };
     case 'campfire':
-      cb.runAsJob('campfire', intent.topic?.slice(0, 40) ?? 'campfire', () => handleCampfire(intent.topic, cb.dispatch, cb.ctx));
+      cb.runAsJob('campfire', intent.topic?.slice(0, 40) ?? 'campfire', async () => {
+        if (cb.eventBus) await cb.eventBus.emit('pre:campfire', { topic: intent.topic, cwd: resolveWorkingDir() });
+        await handleCampfire(intent.topic, cb.dispatch, cb.ctx);
+        if (cb.eventBus) cb.eventBus.emit('post:campfire', { topic: intent.topic, cwd: resolveWorkingDir() }).catch(() => {});
+      });
       return { handled: true, ranAsJob: true };
     case 'team-tribunal':
       cb.runAsJob('team-tribunal', intent.question?.slice(0, 40) ?? 'team-tribunal', () => handleTeamTribunal(intent.question, cb.dispatch, cb.ctx, intent.tribunalMode, intent.membersPerSide));
@@ -728,6 +750,26 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
     }
   
     // ── UI commands ──
+    case 'extensions': {
+      const exts = cb.loadedExtensions ?? [];
+      if (exts.length === 0) {
+        cb.dispatch({ type: 'info', message: 'No extensions loaded. Add extensions to ~/.agon/extensions/ or .agon/extensions/' });
+      } else {
+        const lines = exts.map((ext: any) => {
+          const m = ext.manifest;
+          const contribs: string[] = [];
+          if (m.contributes?.commands?.length) contribs.push(`${m.contributes.commands.length} cmd`);
+          if (m.contributes?.skills?.length) contribs.push(`${m.contributes.skills.length} skill`);
+          if (m.contributes?.hooks?.length) contribs.push(`${m.contributes.hooks.length} hook`);
+          if (m.contributes?.engines?.length) contribs.push(`${m.contributes.engines.length} engine`);
+          if (m.contributes?.systemPromptFragments?.length) contribs.push(`${m.contributes.systemPromptFragments.length} prompt`);
+          const contribStr = contribs.length > 0 ? ` (${contribs.join(', ')})` : '';
+          return `  ${m.id} v${m.version} [${ext.source}]${contribStr} — ${m.description}`;
+        });
+        cb.dispatch({ type: 'text', content: `Extensions (${exts.length}):\n${lines.join('\n')}` });
+      }
+      break;
+    }
     case 'slash-list': cb.dispatch({ type: 'text', content: cb.allSlashCommands.map((c: any) => `${c.cmd.padEnd(16)} ${c.desc}`).join('\n') }); break;
     case 'clear': {
       // Option 3: Save context before clearing, kill brain, reset everything
@@ -790,6 +832,11 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
   
     default:
       cb.dispatch({ type: 'warning', message: `Unknown command: ${intent.type}` });
+  }
+  
+  // ── Emit post:dispatch event ──
+  if (cb.eventBus) {
+    cb.eventBus.emit('post:dispatch', { input, intentType: intent.type, cwd: resolveWorkingDir() }).catch(() => {});
   }
   
   return { handled: true, ranAsJob: false };

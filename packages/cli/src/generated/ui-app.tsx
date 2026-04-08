@@ -80,7 +80,7 @@ import { cleanInputValue, cleanSubmitValue, findInputChange, navigateHistory, re
 import { handleReviewAction } from '../generated/app-review.js';
 
 // @kern-source: ui-app:31
-import { SpinnerBlock, EngineProgressView, StatusLine, StatusBar, BtwPanel, OutputBlockView, ToolCallGroup, SlashPicker, EnginePicker, ModelPicker, ReviewBlock, BackgroundJobRail, RenderedSegments, CesarPicker, contentWidth, engineColor } from '../components.js';
+import { SpinnerBlock, EngineProgressView, StatusLine, StatusBar, CesarStatusStrip, OutputBlockView, ToolCallGroup, SlashPicker, EnginePicker, ModelPicker, ReviewBlock, BackgroundJobRail, RenderedSegments, CesarPicker, contentWidth, engineColor } from '../components.js';
 
 // @kern-source: ui-app:32
 import type { OutputBlock, ReviewEvent } from '../components.js';
@@ -155,8 +155,8 @@ export function App({  }: {  }) {
   const [explorationMode, setExplorationMode] = useState<boolean>(false);
   const [neroMode, setNeroMode] = useState<boolean>(false);
   const [toolOutputExpanded, setToolOutputExpanded] = useState<boolean>(false);
-  const [btwExpanded, setBtwExpanded] = useState<boolean>(false);
   const [cesarConfidence, setCesarConfidence] = useState<number|null>(null);
+  const [planModeQueued, setPlanModeQueued] = useState<boolean>(false);
   const [cesarMemory, setCesarMemory] = useState<any>(() => createCesarMemory());
   const [registry, setRegistry] = useState<EngineRegistry>((() => { const reg = new EngineRegistry(); const engDir = join(dirname(fileURLToPath(import.meta.url)), '../../../../engines'); reg.load(engDir); return reg; })());
   const [adapter, setAdapter] = useState<EngineAdapter>(createCliAdapter(registry));
@@ -164,6 +164,8 @@ export function App({  }: {  }) {
   const [commandRegistry, setCommandRegistry] = useState<any>((() => { const reg = new CommandRegistry(); registerBuiltinCommands(reg); return reg; })());
   const [eventBus, setEventBus] = useState<any>((() => { const bus = new EventBus(); const cfg = loadConfig(); if (cfg.hooks) bridgeShellHooks(bus, cfg.hooks); return bus; })());
   const [extensionSkills, setExtensionSkills] = useState<Skill[]>([]);
+  const [extensionPromptFragments, setExtensionPromptFragments] = useState<string[]>([]);
+  const [loadedExtensions, setLoadedExtensions] = useState<any[]>([]);
   const chatStartTimeRef = useRef<number>(0);
   const currentPlanRef = useRef<Plan|null>(null);
   const streamingTextRef = useRef<any>(null);
@@ -248,7 +250,6 @@ export function App({  }: {  }) {
           setLiveSpinner(null);
           setLiveProgress(null);
           setStreamingText(null);
-          setBtwExpanded(false);
           clearPermissionQueue();
     
           if (replState !== 'idle') {
@@ -270,6 +271,7 @@ export function App({  }: {  }) {
             neroMode, setNeroMode,
             cesarMemory,
             activePlan, setActivePlan,
+            extensionPromptFragments,
           };
   }, [registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode,activePlan]);
 
@@ -328,7 +330,7 @@ export function App({  }: {  }) {
           // /btw <question> — side-channel question during active dispatch
           const btwLower = input.trim().toLowerCase();
           if (btwLower === '/btw') {
-            dispatch({ type: 'info', message: 'Usage: /btw <question> — ask something while engines work. Tab to peek status.' } as any);
+            dispatch({ type: 'info', message: 'Usage: /btw <question> — ask something while engines work.' } as any);
             return;
           }
           if (btwLower.startsWith('/btw ')) {
@@ -392,6 +394,12 @@ export function App({  }: {  }) {
             dispatch({ type: 'info', message: `Queued: ${input.length > 50 ? input.slice(0, 50) + '\u2026' : input}` } as any);
             return;
           }
+          if (planModeQueued && input.trim() && !input.startsWith('/')) {
+            setPlanModeQueued(false);
+            handleSubmit(`/plan ${input}`);
+            return;
+          }
+          if (planModeQueued) setPlanModeQueued(false);
           transition(startCommandReplState);
           dispatch({ type: 'separator' } as any);
           dispatch({ type: 'user-message', content: input } as any);
@@ -399,7 +407,7 @@ export function App({  }: {  }) {
           const allImages = [...pendingImages, ...detectedImages];
           let intent = detectIntent(cleanInput || input, commandRegistry);
           const cb: DispatchCallbacks = {
-            dispatch, ctx: buildContext(), commandRegistry,
+            dispatch, ctx: buildContext(), commandRegistry, eventBus, loadedExtensions,
             runAsJob: (type: string, label: string, fn: () => Promise<void>) => {
               const job = jobManager.create(type, label);
               setJobList([...jobManager.list()]);
@@ -427,7 +435,7 @@ export function App({  }: {  }) {
             const result = await dispatchIntent(intent, input, cb);
             if (result.ranAsJob) return;
           } catch (err: any) { dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); }
-          finally { setBtwExpanded(false); setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state); }
+          finally { setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state); }
   }, [replState,dispatch,buildContext,mode,pendingImages,jobManager]);
 
   const handleReviewActionCb = useCallback((action:'apply'|'edit'|'reject'|'copy') => {
@@ -467,8 +475,10 @@ export function App({  }: {  }) {
   }, [questionState]);
 
   useEffect(() => {
-          initExtensions(resolveWorkingDir(), commandRegistry, registry, eventBus).then(({ extensions, skills: extSkills }) => {
+          initExtensions(resolveWorkingDir(), commandRegistry, registry, eventBus).then(({ extensions, skills: extSkills, systemPromptFragments }) => {
             if (extSkills.length > 0) setExtensionSkills(extSkills);
+            if (systemPromptFragments.length > 0) setExtensionPromptFragments(systemPromptFragments);
+            if (extensions.length > 0) setLoadedExtensions(extensions);
           }).catch((err: Error) => {
             console.warn(`[agon] extension loading failed: ${err.message}`);
           });
@@ -552,7 +562,12 @@ export function App({  }: {  }) {
           if ((key.tab || input === '\t') && !slashPickerOpen && !enginePickerOpen && !questionState && !reviewEvent) {
             const ghost = getGhostCompletion(inputValue, allSlashCommands, registry.availableIds());
             if (ghost) { setInputValue(inputValue + ghost + ' '); setInputKey((k: number) => k + 1); return; }
-            if (replState !== 'idle') { setBtwExpanded((prev: boolean) => !prev); return; }
+            if (replState === 'idle') {
+              if (activePlan && ['planning', 'awaiting_approval', 'running', 'paused'].includes(activePlan.state)) return;
+              setPlanModeQueued((prev: boolean) => !prev);
+              return;
+            }
+            return;
           }
           if (key.ctrl && input === 'l') {
             handleSubmit('/clear'); return;
@@ -565,6 +580,7 @@ export function App({  }: {  }) {
             return;
           }
           if (key.escape) {
+            if (planModeQueued) { setPlanModeQueued(false); return; }
             const decision = resolveEscapeAction({
               replState,
               inputValue,
@@ -742,8 +758,8 @@ export function App({  }: {  }) {
               ) : (
                 <Box borderStyle={mode === 'chat' ? 'round' : 'single'} borderColor={mode === 'chat' ? '#585858' : 'gray'} borderLeft={mode !== 'chat'} borderRight={mode !== 'chat'} borderTop borderBottom paddingX={1} width="100%">
                   {mode !== 'chat' && (<Text><Text color={mode === 'campfire' ? '#f97316' : mode === 'brainstorm' ? '#22d3ee' : '#a78bfa'} bold>{mode === 'campfire' ? icons().campfire : mode === 'brainstorm' ? icons().brainstorm : icons().tribunal}{' '}{mode}</Text><Text dimColor>{' │ '}</Text></Text>)}
-                  {activePlan && ['planning', 'awaiting_approval', 'running', 'paused'].includes(activePlan.state) && (<Text><Text color="#c084fc" bold>{'◈ plan'}</Text><Text dimColor>{activePlan.state === 'planning' ? ' thinking…' : activePlan.state === 'awaiting_approval' ? ' review' : activePlan.state === 'running' ? ' executing…' : ' paused'}</Text><Text dimColor>{' │ '}</Text></Text>)}
-                  <Text color={mode === 'chat' ? (activePlan && activePlan.state === 'planning' ? '#c084fc' : '#585858') : '#fbbf24'}>{mode === 'chat' ? '> ' : icons().prompt + ' '}</Text>
+                  {(planModeQueued || (activePlan && ['planning', 'awaiting_approval', 'running', 'paused'].includes(activePlan.state))) && (<Text><Text color="#c084fc" bold>{'◈ plan'}</Text><Text dimColor>{planModeQueued ? ' ready' : activePlan.state === 'planning' ? ' thinking…' : activePlan.state === 'awaiting_approval' ? ' review' : activePlan.state === 'running' ? ' executing…' : ' paused'}</Text><Text dimColor>{' │ '}</Text></Text>)}
+                  <Text color={mode === 'chat' ? (planModeQueued || (activePlan && activePlan.state === 'planning') ? '#c084fc' : '#585858') : '#fbbf24'}>{mode === 'chat' ? '> ' : icons().prompt + ' '}</Text>
                   <Box flexGrow={1}>
                     <TextInput key={inputKey} value={inputValue} onChange={handleInputChange} onSubmit={handleSubmit}
                       placeholder={replState === 'idle' ? mode === 'chat' ? '' : mode === 'campfire' ? 'What should we think about?' : mode === 'brainstorm' ? 'What question for the engines?' : 'What should they debate?' : ''} />
@@ -760,8 +776,8 @@ export function App({  }: {  }) {
                   if (lines.length > 0) snippet = { engineId: streamingText.engineId, line: lines[lines.length - 1].trim() };
                 }
                 return (<>
-                  {btwExpanded && <BtwPanel engines={liveProgress} spinner={liveSpinner} jobs={jobList.filter((j: Job) => j.state === 'running')} lastActivityAt={lastActivityTimeRef.current} streamSnippet={snippet} />}
-                  {mode === 'chat' && <StatusBar config={loadConfig()} chatSession={chatSession} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} activity={liveProgress} isActive={replState !== 'idle'} streamSnippet={snippet} />}
+                  {mode === 'chat' && <CesarStatusStrip cesarId={(loadConfig() as any).cesarEngine ?? loadConfig().forgeFixedStarter ?? 'claude'} confidence={cesarConfidence} spinner={liveSpinner} engines={liveProgress} lastActivityAt={lastActivityTimeRef.current} streamSnippet={snippet} isActive={replState !== 'idle'} planModeQueued={planModeQueued} activePlan={activePlan} />}
+                  {mode === 'chat' && <StatusBar config={loadConfig()} chatSession={chatSession} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} isActive={replState !== 'idle'} />}
                 </>);
               })()}
             </Box>
@@ -771,7 +787,7 @@ export function App({  }: {  }) {
 }
 
 
-// @kern-source: ui-app:739
+// @kern-source: ui-app:755
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

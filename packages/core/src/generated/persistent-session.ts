@@ -46,7 +46,7 @@ export interface PersistentSessionConfig {
   mcpServers?: Array<Record<string,unknown>>;
 }
 
-// @kern-source: persistent-session:29
+// @kern-source: persistent-session:30
 export interface PersistentSession {
   alive: boolean;
   sessionId: string|null;
@@ -56,7 +56,7 @@ export interface PersistentSession {
   close: () => void;
 }
 
-// @kern-source: persistent-session:37
+// @kern-source: persistent-session:38
 export function createPersistentSession(config: PersistentSessionConfig): PersistentSession {
   const engine = config.engine;
   
@@ -84,7 +84,7 @@ export function createPersistentSession(config: PersistentSessionConfig): Persis
   return createResumeSession(config);
 }
 
-// @kern-source: persistent-session:68
+// @kern-source: persistent-session:69
 export function createCompanionSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -213,18 +213,18 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
       notifyRpc('initialized');
   
       // Start persistent thread — workspace-write + on-request lets the host (Agon) approve/deny via JSONRPC
-      const threadParams: Record<string, unknown> = {
-        cwd: config.cwd,
-        approvalPolicy: config.onApproval ? 'on-request' : 'never',
-        sandbox: config.onApproval ? 'workspace-write' : 'read-only',
-        ephemeral: false,
-      };
-      if (config.mcpServers && config.mcpServers.length > 0) {
-        threadParams.mcpServers = config.mcpServers;
-      }
-      if (config.systemPrompt) {
-        threadParams.instructions = config.systemPrompt;
-      }
+    const threadParams: Record<string, unknown> = {
+      cwd: config.cwd,
+      approvalPolicy: config.onApproval ? 'on-request' : 'never',
+      sandbox: config.onApproval ? 'workspace-write' : 'read-only',
+      ephemeral: false,
+    };
+    if (config.mcpServers && config.mcpServers.length > 0) {
+      threadParams.mcpServers = config.mcpServers;
+    }
+    if (config.systemPrompt) {
+      threadParams.developerInstructions = config.systemPrompt;
+    }
       const threadResult = await sendRpc('thread/start', threadParams) as any;
       threadId = threadResult?.thread?.id ?? null;
       sessionId = threadId;
@@ -354,7 +354,7 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
   return session;
 }
 
-// @kern-source: persistent-session:338
+// @kern-source: persistent-session:342
 export function createAcpSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -602,7 +602,7 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
   return session;
 }
 
-// @kern-source: persistent-session:589
+// @kern-source: persistent-session:593
 export function createStreamJsonSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -854,7 +854,7 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
   return session;
 }
 
-// @kern-source: persistent-session:844
+// @kern-source: persistent-session:848
 export function createResumeSession(config: PersistentSessionConfig): PersistentSession {
   let alive = false;
   let sessionId: string | null = null;
@@ -1377,3 +1377,4 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
   
   return session;
 }
+

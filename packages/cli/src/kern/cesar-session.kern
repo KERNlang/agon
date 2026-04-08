@@ -196,7 +196,20 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
       }
 
       if (name === 'ProposePlan') {
-        return '[PLAN_PROPOSED] Plan submitted for user approval. Stop and wait.';
+        // Wire ProposePlan tool to actual plan creation + display
+        const { handleProposePlan } = await import('../generated/handlers-plan-mode.js');
+        const dispatch = (ctx as any)._planDispatch;
+        if (dispatch) {
+          try {
+            const plan = await handleProposePlan(args, dispatch, ctx);
+            if ((ctx as any).setActivePlan) {
+              (ctx as any).setActivePlan(plan);
+            }
+          } catch (err) {
+            console.warn(`[agon] ProposePlan handling failed: ${err instanceof Error ? err.message : String(err)}`);
+          }
+        }
+        return '[PLAN_PROPOSED] Plan submitted for user approval. Stop and wait for their decision.';
       }
 
       // ── ReportConfidence signal tool — record value, don't force delegation ──

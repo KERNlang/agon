@@ -23,6 +23,11 @@ function simulateOnToolCall(
     (ctx as any)._pendingDelegation = {
       action: name.toLowerCase(),
       reasoning: (inp as any).task ?? (inp as any).question ?? (inp as any).topic ?? '',
+      fitnessCmd: typeof (inp as any).fitnessCmd === 'string'
+        ? (inp as any).fitnessCmd
+        : typeof (inp as any).fitness === 'string'
+          ? (inp as any).fitness
+          : undefined,
       hardened: (inp as any).hardened ?? false,
       tribunalMode: (inp as any).mode,
       team: (inp as any).team ?? false,
@@ -40,6 +45,7 @@ describe('delegation intercept', () => {
     const del = ctx._pendingDelegation as any;
     expect(del.action).toBe('forge');
     expect(del.reasoning).toBe('fix auth bug');
+    expect(del.fitnessCmd).toBe('npm test');
     expect(del.hardened).toBe(false);
     expect(del.team).toBe(false);
     expect(del.createdAt).toBeGreaterThan(0);

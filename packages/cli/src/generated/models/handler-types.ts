@@ -51,6 +51,7 @@ export type OutputEvent =
 export interface PendingDelegation {
   action: string;
   reasoning: string;
+  fitnessCmd?: string;
   hardened: boolean;
   tribunalMode?: string;
   team: boolean;
@@ -98,4 +99,3 @@ export interface HandlerContext {
   eventBus?: EventBus | undefined;
   cesar?: CesarState | undefined;
 }
-

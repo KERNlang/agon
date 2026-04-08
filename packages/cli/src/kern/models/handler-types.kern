@@ -111,6 +111,7 @@ union name=OutputEvent discriminant=type
 interface name=PendingDelegation
   field name=action type=string
   field name=reasoning type=string
+  field name=fitnessCmd type=string optional=true
   field name=hardened type=boolean
   field name=tribunalMode type=string optional=true
   field name=team type=boolean

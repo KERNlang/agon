@@ -583,11 +583,11 @@ export function App({  }: {  }) {
           }
           // Scroll output: Shift+Up/Down for 5 blocks, Ctrl+U/D for full page
           if (key.shift && key.upArrow) {
-            setScrollOffset((prev: number) => Math.min(prev + 5, Math.max(0, outputBlocks.length - 10)));
+            setScrollOffset((prev: number) => Math.min(prev + 3, Math.max(0, outputBlocks.length - 1)));
             return;
           }
           if (key.shift && key.downArrow) {
-            setScrollOffset((prev: number) => Math.max(0, prev - 5));
+            setScrollOffset((prev: number) => Math.max(0, prev - 3));
             return;
           }
           if ((key.ctrl && input === 'e') || input === '\x05') {

@@ -1,3 +1,4 @@
+// @kern-source: patch-parser:1
 export interface PatchHunk {
   header: string;
   lines: string[];
@@ -5,10 +6,15 @@ export interface PatchHunk {
   deletions: number;
 }
 
+// @kern-source: patch-parser:2
 
+// @kern-source: patch-parser:3
 
+// @kern-source: patch-parser:4
 
+// @kern-source: patch-parser:5
 
+// @kern-source: patch-parser:7
 export interface PatchFile {
   path: string;
   hunks: PatchHunk[];
@@ -16,6 +22,7 @@ export interface PatchFile {
   deletions: number;
 }
 
+// @kern-source: patch-parser:13
 export function parsePatch(content: string): PatchFile[] {
   const files: PatchFile[] = [];
   const lines = content.split('\n');
@@ -65,6 +72,7 @@ export function parsePatch(content: string): PatchFile[] {
   return files;
 }
 
+// @kern-source: patch-parser:64
 export function patchSummary(files: PatchFile[]): string {
   if (files.length === 0) return '(empty patch)';
   const totalAdd = files.reduce((sum, f) => sum + f.additions, 0);
@@ -77,6 +85,7 @@ export function patchSummary(files: PatchFile[]): string {
   return `${files.length} file${files.length === 1 ? '' : 's'} changed (+${totalAdd}, -${totalDel})\n${fileNames.join('\n')}`;
 }
 
+// @kern-source: patch-parser:78
 export function invertPatch(content: string): string {
   const lines = content.split('\n');
   const result: string[] = [];

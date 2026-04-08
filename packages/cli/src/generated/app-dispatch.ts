@@ -125,7 +125,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
       if (result.team && !routeAction.startsWith('team-')) routeAction = `team-${routeAction}`;
   
       // Plan mode: block execution delegations, allow thinking delegations
-      const _planActive = (cb.ctx as any).activePlan && ['planning', 'awaiting_approval'].includes((cb.ctx as any).activePlan.state);
+      const _planActive = cb.ctx.activePlan && ['planning', 'awaiting_approval'].includes(cb.ctx.activePlan.state);
       if (_planActive) {
         const EXECUTION_ACTIONS = ['forge', 'team-forge', 'build', 'pipeline'];
         if (EXECUTION_ACTIONS.includes(routeAction)) {
@@ -179,9 +179,9 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
   // The queue auto-drains when the current turn finishes
   
   // Check if a delegation was pending from the crashed session (with 60s TTL)
-  const crashDel = (cb.ctx as any)._pendingDelegation;
+  const crashDel = cb.ctx.cesar?.pendingDelegation;
   if (crashDel) {
-    delete (cb.ctx as any)._pendingDelegation;
+    if (cb.ctx.cesar) cb.ctx.cesar.pendingDelegation = null;
     // TTL: discard stale delegations older than 60 seconds
     if (crashDel.createdAt && Date.now() - crashDel.createdAt > 60000) {
       cb.dispatch({ type: 'warning', message: 'Stale delegation discarded (>60s old)' });
@@ -443,15 +443,24 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
       const { createCesarPlan } = await import('@agon/core');
       const cesarPlan = createCesarPlan(intent.task, []);
       cb.setActivePlan(cesarPlan);
-      (cb.ctx as any)._planDispatch = cb.dispatch;
+      if (!cb.ctx.cesar) {
+        cb.ctx.cesar = {
+          busy: false, busySince: null, queue: null,
+          toolRegistry: null, hasNativeTools: false, lastDispatch: null,
+          pendingDelegation: null, reportedConfidence: undefined,
+          autoNero: false, advisorPending: false,
+          mcpFingerprint: undefined, planDispatch: null, proposedPlan: undefined,
+        };
+      }
+      cb.ctx.cesar.planDispatch = cb.dispatch;
       const cesarInput = `[PLAN MODE] ${intent.task}`;
       const wasJob = await routeWithCesar(cesarInput, [], cb);
   
       // After routeWithCesar, check if Cesar proposed a plan
-      const proposed: CesarPlan | undefined = (cb.ctx as any)._proposedPlan;
+      const proposed: CesarPlan | undefined = cb.ctx.cesar?.proposedPlan;
       if (proposed && proposed.state === 'awaiting_approval') {
         // Clear the stash
-        delete (cb.ctx as any)._proposedPlan;
+        if (cb.ctx.cesar) cb.ctx.cesar.proposedPlan = undefined;
   
         // Approval loop — ask user, handle Y/N/feedback
         let currentProposal = proposed;
@@ -469,7 +478,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
   
             const executors = buildStepExecutors(cb.ctx);
             const abortController = new AbortController();
-            (cb.ctx as any).setActiveAbort?.(abortController);
+            cb.ctx.setActiveAbort?.(abortController);
   
             const callbacks = {
               onStepStart: (stepId: string) => {
@@ -523,7 +532,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
             } catch (err) {
               cb.dispatch({ type: 'error', message: `Plan execution failed: ${err instanceof Error ? err.message : String(err)}` });
             } finally {
-              (cb.ctx as any).setActiveAbort?.(null);
+              cb.ctx.setActiveAbort?.(null);
             }
             decided = true;
   
@@ -538,9 +547,9 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
             cb.dispatch({ type: 'info', message: 'Revising plan with your feedback...' });
             const reviseInput = `[PLAN REVISION] The user wants changes to the plan: ${answer}\n\nRevise the plan and call ProposePlan again with the updated steps.`;
             await routeWithCesar(reviseInput, [], cb);
-            const revised: CesarPlan | undefined = (cb.ctx as any)._proposedPlan;
+            const revised: CesarPlan | undefined = cb.ctx.cesar?.proposedPlan;
             if (revised && revised.state === 'awaiting_approval') {
-              delete (cb.ctx as any)._proposedPlan;
+              if (cb.ctx.cesar) cb.ctx.cesar.proposedPlan = undefined;
               currentProposal = revised;
               // Loop continues — user will be asked again
             } else {
@@ -580,7 +589,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
   
       const executors = buildStepExecutors(cb.ctx);
       const abortController = new AbortController();
-      (cb.ctx as any).setActiveAbort?.(abortController);
+      cb.ctx.setActiveAbort?.(abortController);
   
       const callbacks = {
         onStepStart: (stepId: string) => {
@@ -627,7 +636,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
       } catch (err) {
         cb.dispatch({ type: 'error', message: `Plan resume failed: ${err instanceof Error ? err.message : String(err)}` });
       } finally {
-        (cb.ctx as any).setActiveAbort?.(null);
+        cb.ctx.setActiveAbort?.(null);
       }
       break;
     }
@@ -743,7 +752,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
     case 'nero': {
       const newNero = !cb.neroMode;
       cb.setNeroMode(newNero);
-      (cb.ctx as any).neroMode = newNero;
+      cb.ctx.neroMode = newNero;
       // Reset Cesar session so the new system prompt takes effect
       if (cb.ctx.cesarSession) {
         cb.ctx.cesarSession.close();

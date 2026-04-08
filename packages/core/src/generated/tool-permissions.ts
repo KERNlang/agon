@@ -1,9 +1,13 @@
+// @kern-source: tool-permissions:4
 import { resolve, relative, isAbsolute } from 'node:path';
 
+// @kern-source: tool-permissions:5
 import { realpathSync } from 'node:fs';
 
+// @kern-source: tool-permissions:6
 import type { PermissionDecision, ToolContext } from './tool-types.js';
 
+// @kern-source: tool-permissions:8
 export interface PermissionRule {
   tool: string;
   behavior: 'allow'|'ask'|'deny';
@@ -11,6 +15,7 @@ export interface PermissionRule {
   reason?: string;
 }
 
+// @kern-source: tool-permissions:16
 export const DANGEROUS_COMMANDS: string[] = [
   'rm -rf /', 'rm -rf ~', 'rm -rf *',
   'dd if=', 'mkfs.',
@@ -19,10 +24,13 @@ export const DANGEROUS_COMMANDS: string[] = [
   ':(){:|:&};:', // fork bomb
 ];
 
+// @kern-source: tool-permissions:27
 export const DANGEROUS_PREFIXES: string[] = ['sudo ', 'su ', 'doas '];
 
+// @kern-source: tool-permissions:32
 export const SAFE_SHELL_WRAPPERS: string[] = ['timeout', 'time', 'nice', 'nohup', 'env', 'command'];
 
+// @kern-source: tool-permissions:37
 export const READONLY_COMMANDS: Set<string> = new Set([
   'ls', 'cat', 'head', 'tail', 'less', 'more', 'wc', 'file', 'stat',
   'pwd', 'echo', 'printf', 'date', 'which', 'whereis', 'type',
@@ -33,6 +41,7 @@ export const READONLY_COMMANDS: Set<string> = new Set([
   'tree', 'du', 'df',
 ]);
 
+// @kern-source: tool-permissions:52
 export function stripShellWrappers(command: string): string {
   let cmd = command.trim();
   let changed = true;
@@ -54,6 +63,7 @@ export function stripShellWrappers(command: string): string {
   return cmd;
 }
 
+// @kern-source: tool-permissions:74
 export function extractBaseCommand(command: string): string {
   const stripped = stripShellWrappers(command);
   // Get first word (the actual command)
@@ -61,6 +71,7 @@ export function extractBaseCommand(command: string): string {
   return parts[0] ?? '';
 }
 
+// @kern-source: tool-permissions:82
 export function isDangerousCommand(command: string): boolean {
   const lower = command.toLowerCase().trim();
   for (const dangerous of DANGEROUS_COMMANDS) {
@@ -72,6 +83,7 @@ export function isDangerousCommand(command: string): boolean {
   return false;
 }
 
+// @kern-source: tool-permissions:94
 export function isReadOnlyCommand(command: string): boolean {
   const stripped = stripShellWrappers(command).trim();
   // Split on compound operators FIRST: &&, ||, ;, &  (but NOT single |)
@@ -91,6 +103,7 @@ export function isReadOnlyCommand(command: string): boolean {
   return false;
 }
 
+// @kern-source: tool-permissions:114
 export function checkBashPermission(command: string, ctx: ToolContext): PermissionDecision {
   if (isDangerousCommand(command)) {
     return { behavior: 'deny', message: `Dangerous command blocked: ${command.slice(0, 50)}`, reason: 'dangerous_pattern' };
@@ -123,6 +136,7 @@ export function checkBashPermission(command: string, ctx: ToolContext): Permissi
   return { behavior: 'ask', message: `This command requires approval`, reason: 'bash_mutating' };
 }
 
+// @kern-source: tool-permissions:147
 export function isPathUnderCwd(filePath: string, cwd: string): boolean {
   const resolved = isAbsolute(filePath) ? filePath : resolve(cwd, filePath);
   // Resolve symlinks to prevent traversal via symlinks
@@ -143,6 +157,7 @@ export function isPathUnderCwd(filePath: string, cwd: string): boolean {
   return !rel.startsWith('..');
 }
 
+// @kern-source: tool-permissions:168
 export function checkFileReadPermission(filePath: string, ctx: ToolContext): PermissionDecision {
   if (ctx.permissionMode === 'deny-all') {
     return { behavior: 'deny', message: 'All tool execution is denied' };
@@ -164,6 +179,7 @@ export function checkFileReadPermission(filePath: string, ctx: ToolContext): Per
   return { behavior: 'ask', message: `Read file outside workspace: ${resolved}` };
 }
 
+// @kern-source: tool-permissions:190
 export function checkFileWritePermission(filePath: string, ctx: ToolContext): PermissionDecision {
   if (ctx.permissionMode === 'deny-all') {
     return { behavior: 'deny', message: 'All tool execution is denied' };
@@ -190,3 +206,4 @@ export function checkFileWritePermission(filePath: string, ctx: ToolContext): Pe
   }
   return { behavior: 'ask', message: `Write file outside workspace: ${resolved}` };
 }
+

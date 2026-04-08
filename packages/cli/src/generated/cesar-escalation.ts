@@ -91,9 +91,9 @@ export async function fireQuickNero(session: any, response: string, input: strin
         if (!challengeText.trim()) return { challenged: false, newConfidence: null, challengeText: '' };
   
         // Check tool-reported confidence first (API/native-tool backends use ReportConfidence)
-        if ((ctx as any)._reportedConfidence !== undefined) {
-          const toolConf = (ctx as any)._reportedConfidence as number;
-          delete (ctx as any)._reportedConfidence;
+        if (ctx.cesar!.reportedConfidence !== undefined) {
+          const toolConf = ctx.cesar!.reportedConfidence as number;
+          ctx.cesar!.reportedConfidence = undefined;
           return { challenged: true, newConfidence: toolConf, challengeText };
         }
         // Fall back to parsing ~X% from text
@@ -221,25 +221,27 @@ export async function handleSecondOpinion(secondResult: {stdout:string, engineId
 
 // @kern-source: cesar-escalation:212
 export function activateNero(ctx: HandlerContext, dispatch: Dispatch): void {
-  if (!(ctx as any).neroMode && ctx.setNeroMode) {
+  if (!ctx.neroMode && ctx.setNeroMode) {
     ctx.setNeroMode(true);
-    (ctx as any).neroMode = true;
-    (ctx as any)._autoNero = true;
+    ctx.neroMode = true;
+    ctx.cesar!.autoNero = true;
     // No longer kill session — same-turn escalation handles challenges.
     // Session stays alive for manual /nero toggle (system prompt injection).
     dispatch({ type: 'info', message: `${icons().nero} Nero mode active` });
+    ctx.eventBus?.emit('cesar:nero', { active: true }).catch(() => {});
   }
 }
 
-// @kern-source: cesar-escalation:225
+// @kern-source: cesar-escalation:226
 export function deactivateNero(ctx: HandlerContext, dispatch: Dispatch): void {
   ctx.setNeroMode(false);
-  (ctx as any).neroMode = false;
-  (ctx as any)._autoNero = false;
+  ctx.neroMode = false;
+  ctx.cesar!.autoNero = false;
   dispatch({ type: 'info', message: `${icons().nero} Nero deactivated — confidence recovered` });
+  ctx.eventBus?.emit('cesar:nero', { active: false }).catch(() => {});
 }
 
-// @kern-source: cesar-escalation:235
+// @kern-source: cesar-escalation:237
 export async function promptDelegation(action: string, dispatch: Dispatch, hardened?: boolean, tribunalMode?: string, team?: boolean): Promise<{approved:boolean, action?:string, hardened?:boolean, tribunalMode?:string, team?:boolean, userContext?:string}> {
   // Check session auto-approve cache
   const autoApproved = (promptDelegation as any)._autoApprove as Set<string> | undefined;
@@ -301,7 +303,7 @@ export async function promptDelegation(action: string, dispatch: Dispatch, harde
   return { approved: true };
 }
 
-// @kern-source: cesar-escalation:298
+// @kern-source: cesar-escalation:300
 export async function promptProtocolEnforcement(input: string, parsedConfidence: number|null, ctx: HandlerContext, dispatch: Dispatch): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, team?:boolean}|null> {
   if (parsedConfidence === null
       || parsedConfidence >= CONFIDENCE_TIERS.nero

@@ -1,15 +1,22 @@
+// @kern-source: patch-apply:1
 import { readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
 
+// @kern-source: patch-apply:2
 import { join } from 'node:path';
 
+// @kern-source: patch-apply:3
 import { execSync } from 'node:child_process';
 
+// @kern-source: patch-apply:4
 import type { ForgeManifest } from './types.js';
 
+// @kern-source: patch-apply:5
 import { AGON_HOME } from './config.js';
 
+// @kern-source: patch-apply:6
 import { invertPatch } from './patch-parser.js';
 
+// @kern-source: patch-apply:8
 export interface PatchInfo {
   path: string;
   engineId: string;
@@ -17,6 +24,7 @@ export interface PatchInfo {
   content: string;
 }
 
+// @kern-source: patch-apply:14
 export interface ApplyPreflight {
   ok: boolean;
   error?: string;
@@ -24,6 +32,7 @@ export interface ApplyPreflight {
   dirtyTree: boolean;
 }
 
+// @kern-source: patch-apply:20
 export function readPatchFromManifest(manifestPath: string): PatchInfo|null {
   try {
     const raw = readFileSync(manifestPath, 'utf-8');
@@ -42,6 +51,7 @@ export function readPatchFromManifest(manifestPath: string): PatchInfo|null {
   }
 }
 
+// @kern-source: patch-apply:39
 export function readPatchFromPath(patchPath: string): PatchInfo|null {
   try {
     const content = readFileSync(patchPath, 'utf-8');
@@ -56,6 +66,7 @@ export function readPatchFromPath(patchPath: string): PatchInfo|null {
   }
 }
 
+// @kern-source: patch-apply:54
 export function isTreeDirty(cwd: string): boolean {
   try {
     const result = execSync('git status --porcelain', { cwd, encoding: 'utf-8' });
@@ -66,6 +77,7 @@ export function isTreeDirty(cwd: string): boolean {
   }
 }
 
+// @kern-source: patch-apply:65
 export function dryRunApply(cwd: string, patchContent: string): { ok:boolean, error?:string } {
   try {
     execSync('git apply --check -', { cwd, input: patchContent, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
@@ -76,6 +88,7 @@ export function dryRunApply(cwd: string, patchContent: string): { ok:boolean, er
   }
 }
 
+// @kern-source: patch-apply:76
 export function applyPatchToTree(cwd: string, patchContent: string): { ok:boolean, error?:string } {
   try {
     execSync('git apply --allow-empty -', { cwd, input: patchContent, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
@@ -86,6 +99,7 @@ export function applyPatchToTree(cwd: string, patchContent: string): { ok:boolea
   }
 }
 
+// @kern-source: patch-apply:87
 export function preflightApply(cwd: string, patchPath: string|null, manifestPath: string|null): ApplyPreflight {
   const dirtyTree = isTreeDirty(cwd);
   
@@ -112,6 +126,7 @@ export function preflightApply(cwd: string, patchPath: string|null, manifestPath
   return { ok: true, patch, dirtyTree };
 }
 
+// @kern-source: patch-apply:114
 export function applyPatchWithUndo(cwd: string, patchContent: string): { ok:boolean, error?:string, undoToken?:string } {
   const undoDir = join(AGON_HOME, 'undo');
   mkdirSync(undoDir, { recursive: true });
@@ -137,6 +152,7 @@ export function applyPatchWithUndo(cwd: string, patchContent: string): { ok:bool
   return { ok: true, undoToken: token };
 }
 
+// @kern-source: patch-apply:141
 export function undoPatch(cwd: string, undoToken: string): { ok:boolean, error?:string } {
   const undoDir = join(AGON_HOME, 'undo');
   const inversePath = join(undoDir, `${undoToken}.patch`);

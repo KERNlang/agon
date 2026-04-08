@@ -1,8 +1,11 @@
+// @kern-source: tool-types:4
 export interface ToolInput {
   type: string;
 }
 
+// @kern-source: tool-types:5
 
+// @kern-source: tool-types:7
 export interface ToolResult {
   ok: boolean;
   content: string;
@@ -10,12 +13,14 @@ export interface ToolResult {
   metadata?: Record<string,unknown>;
 }
 
+// @kern-source: tool-types:13
 export interface PermissionDecision {
   behavior: 'allow'|'ask'|'deny';
   message?: string;
   reason?: string;
 }
 
+// @kern-source: tool-types:18
 export interface ToolContext {
   cwd: string;
   readFileState: Map<string, FileState>;
@@ -27,6 +32,7 @@ export interface ToolContext {
   onProgress?: ((message: string) => void);
 }
 
+// @kern-source: tool-types:28
 export interface FileState {
   content: string;
   timestamp: number;
@@ -35,6 +41,7 @@ export interface FileState {
   isPartialView?: boolean;
 }
 
+// @kern-source: tool-types:35
 export interface ToolDefinition {
   name: string;
   description: string;
@@ -45,6 +52,7 @@ export interface ToolDefinition {
   isDestructive?: boolean;
 }
 
+// @kern-source: tool-types:44
 export interface ToolHandler {
   definition: ToolDefinition;
   validate: (input: Record<string,unknown>, ctx: ToolContext) => string|null;
@@ -52,12 +60,14 @@ export interface ToolHandler {
   execute: (input: Record<string,unknown>, ctx: ToolContext) => Promise<ToolResult>;
 }
 
+// @kern-source: tool-types:50
 export interface ToolCall {
   id: string;
   name: string;
   input: Record<string,unknown>;
 }
 
+// @kern-source: tool-types:55
 export interface ToolCallResult {
   toolCallId: string;
   toolName: string;

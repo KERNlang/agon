@@ -1,9 +1,13 @@
+// @kern-source: chat-store:1
 import { mkdirSync, appendFileSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 
+// @kern-source: chat-store:2
 import { join } from 'node:path';
 
+// @kern-source: chat-store:3
 import { AGON_HOME } from './config.js';
 
+// @kern-source: chat-store:5
 export interface ChatMessage {
   role: 'user'|'engine';
   engineId?: string;
@@ -12,6 +16,7 @@ export interface ChatMessage {
   images?: string[];
 }
 
+// @kern-source: chat-store:12
 export interface ChatSession {
   id: string;
   startedAt: string;
@@ -21,14 +26,17 @@ export interface ChatSession {
   engineIds?: string[];
 }
 
+// @kern-source: chat-store:20
 export function chatsDir(): string {
   return join(AGON_HOME, 'chats');
 }
 
+// @kern-source: chat-store:25
 export function ensureChatsDir(): void {
   mkdirSync(chatsDir(), { recursive: true });
 }
 
+// @kern-source: chat-store:30
 export function startChatSession(opts?: {cwd?:string,branch?:string,engineIds?:string[]}): ChatSession {
   ensureChatsDir();
   const id = `chat-${Date.now()}`;
@@ -53,12 +61,14 @@ export function startChatSession(opts?: {cwd?:string,branch?:string,engineIds?:s
   return session;
 }
 
+// @kern-source: chat-store:55
 export function appendMessage(session: ChatSession, msg: ChatMessage): void {
   session.messages.push(msg);
   const filePath = join(chatsDir(), `${session.id}.ndjson`);
   appendFileSync(filePath, JSON.stringify(msg) + '\n');
 }
 
+// @kern-source: chat-store:62
 export function loadChatSession(id: string): ChatSession|null {
   try {
     const filePath = join(chatsDir(), `${id}.ndjson`);
@@ -87,10 +97,12 @@ export function loadChatSession(id: string): ChatSession|null {
   }
 }
 
+// @kern-source: chat-store:91
 export function resumeChatSession(id: string): ChatSession|null {
   return loadChatSession(id);
 }
 
+// @kern-source: chat-store:97
 export function listChatSessions(limit: number): ChatSession[] {
   ensureChatsDir();
   try {
@@ -114,6 +126,7 @@ export function listChatSessions(limit: number): ChatSession[] {
   }
 }
 
+// @kern-source: chat-store:121
 export function latestChatSession(): ChatSession|null {
   const sessions = listChatSessions(1);
   return sessions.length > 0 ? sessions[0] : null;

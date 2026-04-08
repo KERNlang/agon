@@ -1,7 +1,10 @@
+// @kern-source: logger:1
 import { writeFileSync, statSync, renameSync, mkdirSync } from 'node:fs';
 
+// @kern-source: logger:2
 import { join } from 'node:path';
 
+// @kern-source: logger:4
 export interface Logger {
   debug: (message:string,data?:Record<string,unknown>)=>void;
   info: (message:string,data?:Record<string,unknown>)=>void;
@@ -9,6 +12,7 @@ export interface Logger {
   error: (message:string,data?:Record<string,unknown>)=>void;
 }
 
+// @kern-source: logger:10
 export function createLogger(opts: {enabled:boolean;logDir:string}): Logger {
   const MAX_LOG_SIZE = 1_048_576;
   const logFile = join(opts.logDir, 'debug.log');

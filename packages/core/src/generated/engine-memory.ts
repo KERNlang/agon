@@ -1,11 +1,16 @@
+// @kern-source: engine-memory:1
 import { readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
 
+// @kern-source: engine-memory:2
 import { join } from 'node:path';
 
+// @kern-source: engine-memory:3
 import { AGON_HOME } from './config.js';
 
+// @kern-source: engine-memory:4
 import type { TaskClass } from './types.js';
 
+// @kern-source: engine-memory:6
 export interface EngineNote {
   taskClass: TaskClass;
   observation: string;
@@ -13,6 +18,7 @@ export interface EngineNote {
   forgeId?: string;
 }
 
+// @kern-source: engine-memory:12
 export interface EngineProfile {
   strengths: string[];
   weaknesses: string[];
@@ -20,13 +26,16 @@ export interface EngineProfile {
   notes: EngineNote[];
 }
 
+// @kern-source: engine-memory:18
 export interface EngineMemoryRecord {
   engines: Record<string,EngineProfile>;
   lastUpdated: string;
 }
 
+// @kern-source: engine-memory:22
 export const MEMORY_PATH: string = join(AGON_HOME, 'engine-memory.json');
 
+// @kern-source: engine-memory:27
 export function loadEngineMemory(): EngineMemoryRecord {
   try { return JSON.parse(readFileSync(MEMORY_PATH, 'utf-8')) as EngineMemoryRecord; }
   catch (err) {
@@ -37,6 +46,7 @@ export function loadEngineMemory(): EngineMemoryRecord {
   }
 }
 
+// @kern-source: engine-memory:38
 function saveEngineMemory(record: EngineMemoryRecord): void {
   mkdirSync(AGON_HOME, { recursive: true });
   record.lastUpdated = new Date().toISOString();
@@ -45,6 +55,7 @@ function saveEngineMemory(record: EngineMemoryRecord): void {
   renameSync(tmpPath, MEMORY_PATH);
 }
 
+// @kern-source: engine-memory:47
 function ensureProfile(record: EngineMemoryRecord, engineId: string): EngineProfile {
   if (!record.engines[engineId]) {
     record.engines[engineId] = { strengths: [], weaknesses: [], tendencies: [], notes: [] };
@@ -52,6 +63,7 @@ function ensureProfile(record: EngineMemoryRecord, engineId: string): EngineProf
   return record.engines[engineId];
 }
 
+// @kern-source: engine-memory:55
 export function addEngineNote(engineId: string, taskClass: TaskClass, observation: string, forgeId?: string): void {
   const record = loadEngineMemory();
   const profile = ensureProfile(record, engineId);
@@ -68,6 +80,7 @@ export function addEngineNote(engineId: string, taskClass: TaskClass, observatio
   saveEngineMemory(record);
 }
 
+// @kern-source: engine-memory:72
 export function setEngineStrengths(engineId: string, strengths: string[]): void {
   const record = loadEngineMemory();
   const profile = ensureProfile(record, engineId);
@@ -75,6 +88,7 @@ export function setEngineStrengths(engineId: string, strengths: string[]): void 
   saveEngineMemory(record);
 }
 
+// @kern-source: engine-memory:80
 export function setEngineWeaknesses(engineId: string, weaknesses: string[]): void {
   const record = loadEngineMemory();
   const profile = ensureProfile(record, engineId);
@@ -82,6 +96,7 @@ export function setEngineWeaknesses(engineId: string, weaknesses: string[]): voi
   saveEngineMemory(record);
 }
 
+// @kern-source: engine-memory:88
 export function addEngineTendency(engineId: string, tendency: string): void {
   const record = loadEngineMemory();
   const profile = ensureProfile(record, engineId);
@@ -92,11 +107,13 @@ export function addEngineTendency(engineId: string, tendency: string): void {
   saveEngineMemory(record);
 }
 
+// @kern-source: engine-memory:99
 export function getEngineProfile(engineId: string): EngineProfile|null {
   const record = loadEngineMemory();
   return record.engines[engineId] ?? null;
 }
 
+// @kern-source: engine-memory:105
 export function buildRolePrompt(engineId: string, taskClass: TaskClass): string {
   const profile = getEngineProfile(engineId);
   if (!profile) return '';
@@ -128,6 +145,7 @@ export function buildRolePrompt(engineId: string, taskClass: TaskClass): string 
     : '';
 }
 
+// @kern-source: engine-memory:137
 export function recordForgeOutcome(winnerId: string, loserIds: string[], taskClass: TaskClass, forgeId: string, winnerScore: number, loserScores: Record<string,number>): void {
   // Auto-populate notes from forge outcomes
   addEngineNote(winnerId, taskClass, `Won ${taskClass} forge (score ${winnerScore})`, forgeId);

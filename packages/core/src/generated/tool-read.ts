@@ -1,11 +1,16 @@
+// @kern-source: tool-read:4
 import { readFileSync, statSync, existsSync } from 'node:fs';
 
+// @kern-source: tool-read:5
 import { resolve, relative } from 'node:path';
 
+// @kern-source: tool-read:6
 import type { ToolResult, ToolContext, ToolHandler, ToolDefinition, PermissionDecision, FileState } from './tool-types.js';
 
+// @kern-source: tool-read:7
 import { fileStateCache } from '../file-state-cache.js';
 
+// @kern-source: tool-read:9
 function formatWithLineNumbers(text: string, startLine: number): string {
   const lines = text.split('\n');
   return lines.map((line, i) => {
@@ -14,6 +19,7 @@ function formatWithLineNumbers(text: string, startLine: number): string {
   }).join('\n');
 }
 
+// @kern-source: tool-read:19
 export function createReadTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Read',

@@ -1,19 +1,26 @@
+// @kern-source: tool-edit:5
 import { readFileSync, writeFileSync, statSync, existsSync, mkdirSync } from 'node:fs';
 
+// @kern-source: tool-edit:6
 import { resolve, dirname, relative } from 'node:path';
 
+// @kern-source: tool-edit:7
 import type { ToolResult, ToolContext, ToolHandler, ToolDefinition, PermissionDecision } from './tool-types.js';
 
+// @kern-source: tool-edit:8
 import { fileStateCache } from '../file-state-cache.js';
 
+// @kern-source: tool-edit:9
 import { takeSnapshot } from './file-history.js';
 
+// @kern-source: tool-edit:11
 function normalizeCurlyQuotes(text: string): string {
   return text
     .replace(/[\u2018\u2019]/g, "'")
     .replace(/[\u201C\u201D]/g, '"');
 }
 
+// @kern-source: tool-edit:19
 function countOccurrences(haystack: string, needle: string): number {
   let count = 0;
   let pos = 0;
@@ -26,6 +33,7 @@ function countOccurrences(haystack: string, needle: string): number {
   return count;
 }
 
+// @kern-source: tool-edit:32
 export function createEditTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Edit',

@@ -1,11 +1,15 @@
+// @kern-source: scoring:1
 import type { FitnessResult, ScoreWeights, ScoreComponents } from './types.js';
 
+// @kern-source: scoring:3
 export const DEFAULT_WEIGHTS: ScoreWeights = { pass: 50, quality: 20, diff: 15, files: 10, duration: 5 };
 
+// @kern-source: scoring:8
 function clamp(val: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, val));
 }
 
+// @kern-source: scoring:13
 export function computeScore(result: FitnessResult, weights?: ScoreWeights): ScoreComponents {
   const w = weights ?? DEFAULT_WEIGHTS;
   if (!result.pass || result.diffLines === 0) {
@@ -29,6 +33,7 @@ export function computeScore(result: FitnessResult, weights?: ScoreWeights): Sco
   return { passScore, qualityScore, diffScore, filesScore, durationScore, composite };
 }
 
+// @kern-source: scoring:37
 export function tiebreak(a: FitnessResult, b: FitnessResult): number {
   const aScore = computeScore(a).composite;
   const bScore = computeScore(b).composite;

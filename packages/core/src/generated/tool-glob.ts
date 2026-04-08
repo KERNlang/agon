@@ -1,11 +1,16 @@
+// @kern-source: tool-glob:4
 import type { ToolResult, ToolContext, ToolDefinition, PermissionDecision, ToolHandler } from './tool-types.js';
 
+// @kern-source: tool-glob:5
 import { spawnWithTimeout } from './process.js';
 
+// @kern-source: tool-glob:7
 export const DEFAULT_MAX_FILES: number = 100;
 
+// @kern-source: tool-glob:10
 export const GLOB_TIMEOUT: number = 15000;
 
+// @kern-source: tool-glob:13
 export function createGlobTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Glob',

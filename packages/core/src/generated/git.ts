@@ -1,7 +1,10 @@
+// @kern-source: git:1
 import { execFileSync } from 'node:child_process';
 
+// @kern-source: git:2
 import { GitError, WorktreeError } from './errors.js';
 
+// @kern-source: git:4
 function git(args: string[], cwd?: string): string {
   try {
     return execFileSync('git', args, {
@@ -17,18 +20,22 @@ function git(args: string[], cwd?: string): string {
   }
 }
 
+// @kern-source: git:20
 export function repoRoot(cwd: string): string {
   return git(['rev-parse', '--show-toplevel'], cwd);
 }
 
+// @kern-source: git:25
 export function headSha(cwd: string): string {
   return git(['rev-parse', 'HEAD'], cwd);
 }
 
+// @kern-source: git:30
 export function worktreePrune(cwd: string): void {
   git(['worktree', 'prune'], cwd);
 }
 
+// @kern-source: git:35
 export function worktreeCreate(repoDir: string, worktreePath: string, sha: string): string {
   worktreePrune(repoDir);
   try {
@@ -41,23 +48,27 @@ export function worktreeCreate(repoDir: string, worktreePath: string, sha: strin
   }
 }
 
+// @kern-source: git:48
 export function worktreeRemove(repoDir: string, worktreePath: string): void {
   try { git(['worktree', 'remove', worktreePath, '--force'], repoDir); } catch (err) {
     console.warn(`[agon] failed to remove worktree ${worktreePath}: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
+// @kern-source: git:55
 export function worktreeDiff(cwd: string): string {
   git(['add', '-A'], cwd);
   return git(['diff', '--cached'], cwd);
 }
 
+// @kern-source: git:61
 export function readOnlyDiff(cwd: string): string {
   const staged = git(['diff', '--cached'], cwd);
   const unstaged = git(['diff'], cwd);
   return staged + (staged && unstaged ? '\n' : '') + unstaged;
 }
 
+// @kern-source: git:68
 export function diffLineCount(diff: string): number {
   let count = 0;
   for (const line of diff.split('\n')) {
@@ -67,6 +78,7 @@ export function diffLineCount(diff: string): number {
   return count;
 }
 
+// @kern-source: git:78
 export function diffFileCount(cwd: string): number {
   try {
     const result = git(['diff', '--cached', '--name-only'], cwd);
@@ -77,6 +89,7 @@ export function diffFileCount(cwd: string): number {
   }
 }
 
+// @kern-source: git:89
 export function applyPatch(cwd: string, patchContent: string): void {
   if (!patchContent.trim()) return;
   try {
@@ -90,31 +103,37 @@ export function applyPatch(cwd: string, patchContent: string): void {
   }
 }
 
+// @kern-source: git:103
 export function currentBranch(cwd: string): string {
   try { return git(['rev-parse', '--abbrev-ref', 'HEAD'], cwd); }
   catch { return 'unknown'; }
 }
 
+// @kern-source: git:109
 export function isDirty(cwd: string): boolean {
   try { return git(['status', '--porcelain'], cwd).length > 0; }
   catch { return false; }
 }
 
+// @kern-source: git:115
 export function recentCommits(cwd: string, count?: number): string {
   try { return git(['log', '--oneline', `-${count ?? 10}`], cwd); }
   catch { return ''; }
 }
 
+// @kern-source: git:121
 export function gitStatusShort(cwd: string): string {
   try { return git(['status', '--short'], cwd); }
   catch { return ''; }
 }
 
+// @kern-source: git:128
 export function gitDiffStat(cwd: string): string {
   try { return git(['diff', '--stat'], cwd); }
   catch { return ''; }
 }
 
+// @kern-source: git:135
 export function gitChangedFiles(cwd: string): string[] {
   try {
     const unstaged = git(['diff', '--name-only'], cwd);
@@ -127,6 +146,7 @@ export function gitChangedFiles(cwd: string): string[] {
   } catch { return []; }
 }
 
+// @kern-source: git:149
 export function gitTruncatedDiff(cwd: string, maxLines?: number): string {
   try {
     const diff = git(['diff'], cwd);

@@ -1,3 +1,4 @@
+// @kern-source: errors:1
 export class AgonError extends Error {
   constructor(message: string) {
     super(message);
@@ -5,6 +6,7 @@ export class AgonError extends Error {
   }
 }
 
+// @kern-source: errors:3
 export class EngineNotFoundError extends AgonError {
   constructor(
     public readonly engineId: string,
@@ -16,6 +18,7 @@ export class EngineNotFoundError extends AgonError {
   }
 }
 
+// @kern-source: errors:12
 export class EngineTimeoutError extends AgonError {
   constructor(
     public readonly engineId: string,
@@ -26,6 +29,7 @@ export class EngineTimeoutError extends AgonError {
   }
 }
 
+// @kern-source: errors:20
 export class FitnessError extends AgonError {
   constructor(
     message: string,
@@ -36,6 +40,7 @@ export class FitnessError extends AgonError {
   }
 }
 
+// @kern-source: errors:24
 export class ConfigError extends AgonError {
   constructor(message: string) {
     super(message);
@@ -43,6 +48,7 @@ export class ConfigError extends AgonError {
   }
 }
 
+// @kern-source: errors:26
 export class GitError extends AgonError {
   constructor(
     message: string,
@@ -53,6 +59,7 @@ export class GitError extends AgonError {
   }
 }
 
+// @kern-source: errors:30
 export class WorktreeError extends GitError {
   constructor(message: string) {
     super(message);
@@ -60,6 +67,7 @@ export class WorktreeError extends GitError {
   }
 }
 
+// @kern-source: errors:32
 export class PlanStateError extends AgonError {
   constructor(
     public readonly expected: string|string[],

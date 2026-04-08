@@ -1,5 +1,7 @@
+// @kern-source: task-classifier:1
 import type { TaskClass } from './types.js';
 
+// @kern-source: task-classifier:3
 export function classifyTask(description: string): TaskClass {
   const PATTERNS: [RegExp, TaskClass][] = [
     [/\b(tests?|spec|coverage|assert)\b/i, 'test'],

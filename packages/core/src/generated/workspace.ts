@@ -1,15 +1,22 @@
+// @kern-source: workspace:1
 import { readFileSync, writeFileSync, existsSync, renameSync } from 'node:fs';
 
+// @kern-source: workspace:2
 import { join, resolve, basename } from 'node:path';
 
+// @kern-source: workspace:3
 import { AGON_HOME, ensureAgonHome } from '../config.js';
 
+// @kern-source: workspace:4
 import { isKernProject } from '../context-scanner.js';
 
+// @kern-source: workspace:5
 import { headSha, currentBranch, isDirty } from './git.js';
 
+// @kern-source: workspace:6
 import type { WorkspaceSnapshot } from './plan.js';
 
+// @kern-source: workspace:8
 export interface Workspace {
   id: string;
   path: string;
@@ -18,11 +25,13 @@ export interface Workspace {
   addedAt: number;
 }
 
+// @kern-source: workspace:15
 export interface WorkspaceState {
   workspaces: Workspace[];
   active: string;
 }
 
+// @kern-source: workspace:19
 function loadState(): WorkspaceState {
   const WORKSPACES_PATH = join(AGON_HOME, 'workspaces.json');
   ensureAgonHome();
@@ -35,6 +44,7 @@ function loadState(): WorkspaceState {
   }
 }
 
+// @kern-source: workspace:32
 function saveState(state: WorkspaceState): void {
   const WORKSPACES_PATH = join(AGON_HOME, 'workspaces.json');
   const tmpPath = WORKSPACES_PATH + '.tmp';
@@ -42,6 +52,7 @@ function saveState(state: WorkspaceState): void {
   renameSync(tmpPath, WORKSPACES_PATH);
 }
 
+// @kern-source: workspace:40
 export function addWorkspace(rawPath: string): Workspace {
   const path = resolve(rawPath);
   const state = loadState();
@@ -57,6 +68,7 @@ export function addWorkspace(rawPath: string): Workspace {
   return ws;
 }
 
+// @kern-source: workspace:56
 export function removeWorkspace(idOrPath: string): boolean {
   const state = loadState();
   const idx = state.workspaces.findIndex(
@@ -69,15 +81,18 @@ export function removeWorkspace(idOrPath: string): boolean {
   return true;
 }
 
+// @kern-source: workspace:69
 export function listWorkspaces(): Workspace[] {
   return loadState().workspaces;
 }
 
+// @kern-source: workspace:74
 export function getActiveWorkspace(): Workspace|null {
   const state = loadState();
   return state.workspaces.find((w) => w.id === state.active) ?? null;
 }
 
+// @kern-source: workspace:80
 export function switchWorkspace(idOrPath: string): Workspace|null {
   const state = loadState();
   const ws = state.workspaces.find(
@@ -89,6 +104,7 @@ export function switchWorkspace(idOrPath: string): Workspace|null {
   return ws;
 }
 
+// @kern-source: workspace:92
 export function getWorkspace(idOrPath: string): Workspace|null {
   const state = loadState();
   return state.workspaces.find(
@@ -96,6 +112,7 @@ export function getWorkspace(idOrPath: string): Workspace|null {
   ) ?? null;
 }
 
+// @kern-source: workspace:100
 export function snapshotWorkspace(ws: Workspace): WorkspaceSnapshot {
   let sha = 'unknown';
   try { sha = headSha(ws.path); } catch (err) {
@@ -115,11 +132,13 @@ export function snapshotWorkspace(ws: Workspace): WorkspaceSnapshot {
   };
 }
 
+// @kern-source: workspace:120
 export function resolveWorkingDir(): string {
   const ws = getActiveWorkspace();
   return ws ? ws.path : process.cwd();
 }
 
+// @kern-source: workspace:127
 export function ensureCurrentWorkspace(cwd: string): Workspace {
   const state = loadState();
   const path = resolve(cwd);

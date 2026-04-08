@@ -1,18 +1,23 @@
+// @kern-source: clipboard:1
 import { execSync } from 'node:child_process';
 
+// @kern-source: clipboard:3
 export const _linuxHelperCache: { cmd: string | null; probed: boolean } = { cmd: null, probed: false };
 
+// @kern-source: clipboard:7
 export function detectClipboardPath(): 'native'|'tmux'|'osc52' {
   if (process.env.TMUX) return 'tmux';
   if (process.env.SSH_CLIENT || process.env.SSH_TTY) return 'osc52';
   return 'native';
 }
 
+// @kern-source: clipboard:16
 export function writeOsc52(text: string): void {
   const b64 = Buffer.from(text).toString('base64');
   process.stdout.write(`\x1b]52;c;${b64}\x07`);
 }
 
+// @kern-source: clipboard:24
 export function writeTmuxClipboard(text: string): void {
   // Load into tmux buffer
   try {
@@ -24,6 +29,7 @@ export function writeTmuxClipboard(text: string): void {
   process.stdout.write(`\x1bPtmux;\x1b\x1b]52;c;${b64}\x07\x1b\\`);
 }
 
+// @kern-source: clipboard:38
 export function probeLinuxHelper(): string|null {
   if (_linuxHelperCache.probed) return _linuxHelperCache.cmd;
   _linuxHelperCache.probed = true;
@@ -45,6 +51,7 @@ export function probeLinuxHelper(): string|null {
   return null;
 }
 
+// @kern-source: clipboard:62
 export function copyToClipboard(text: string): void {
   const path = detectClipboardPath();
   const platform = process.platform;

@@ -960,18 +960,40 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
                     : '';
 
                   const filePaths = new Set<string>();
+                  const editedFiles = new Set<string>();
+                  const toolActions = new Map<string, Set<string>>();
                   for (const m of old as any[]) {
                     if (m.tool_calls) {
                       for (const tc of m.tool_calls) {
                         try {
+                          const toolName: string = tc.function?.name ?? '';
                           const args = JSON.parse(tc.function?.arguments ?? '{}');
                           if (args.file_path) filePaths.add(args.file_path);
                           if (args.path) filePaths.add(args.path);
                           if (args.pattern) filePaths.add(`grep:${args.pattern}`);
+                          // Track tool actions for summary
+                          if (toolName) {
+                            const set = toolActions.get(toolName) ?? new Set<string>();
+                            if (toolName === 'Edit' || toolName === 'Write') {
+                              const fp = args.file_path || args.path || '';
+                              if (fp) { set.add(fp); editedFiles.add(fp); }
+                            } else if (toolName === 'Bash' && args.command) {
+                              set.add(args.command.slice(0, 80));
+                            } else if (toolName === 'Grep' && args.pattern) {
+                              set.add(args.pattern.slice(0, 40));
+                            }
+                            toolActions.set(toolName, set);
+                          }
                         } catch {}
                       }
                     }
                   }
+
+                  // Build tool summary
+                  const toolSummary = [...toolActions.entries()]
+                    .map(([name, args]) => `${name}(${[...args].slice(0, 3).join('; ')})`)
+                    .slice(0, 8)
+                    .join(', ');
 
                   const lastAssist = assistMsgs.length > 0
                     ? (assistMsgs[assistMsgs.length - 1].content as string).slice(0, 500)
@@ -981,6 +1003,8 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
                     `[Context compacted — ${old.length} messages]`,
                     goal ? `GOAL: ${goal}` : '',
                     filePaths.size > 0 ? `FILES: ${[...filePaths].slice(0, 20).join(', ')}` : '',
+                    editedFiles.size > 0 ? `EDITS: ${[...editedFiles].slice(0, 10).join(', ')}` : '',
+                    toolSummary ? `TOOLS: ${toolSummary}` : '',
                     lastAssist ? `PROGRESS: ${lastAssist}` : '',
                   ].filter(Boolean).join('\n');
 

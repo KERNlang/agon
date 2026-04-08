@@ -73,9 +73,10 @@ export interface CesarState {
   mcpFingerprint: string | undefined;
   planDispatch: ((event: any) => void) | null;
   proposedPlan: any | undefined;
+  lastEscalation: string | null;
 }
 
-// @kern-source: handler-types:135
+// @kern-source: handler-types:136
 export interface HandlerContext {
   registry: EngineRegistry;
   adapter: EngineAdapter;

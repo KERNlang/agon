@@ -131,6 +131,7 @@ interface name=CesarState
   field name=mcpFingerprint type="string | undefined"
   field name=planDispatch type="((event: any) => void) | null"
   field name=proposedPlan type="any | undefined"
+  field name=lastEscalation type="string | null"
 
 interface name=HandlerContext
   field name=registry type=EngineRegistry

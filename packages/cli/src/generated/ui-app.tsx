@@ -26,96 +26,99 @@ import type { EngineAdapter } from '@agon/core';
 import { detectIntent, SLASH_COMMANDS } from '../intent.js';
 
 // @kern-source: ui-app:13
-import { JobManager } from '../generated/job-manager.js';
+import { CommandRegistry, registerBuiltinCommands, initExtensions } from '@agon/core';
 
 // @kern-source: ui-app:14
-import type { Job } from '../generated/job-manager.js';
+import { JobManager } from '../generated/job-manager.js';
 
 // @kern-source: ui-app:15
-import { ENGINE_COLORS } from '../output.js';
+import type { Job } from '../generated/job-manager.js';
 
 // @kern-source: ui-app:16
-import { icons } from '../icons.js';
+import { ENGINE_COLORS } from '../output.js';
 
 // @kern-source: ui-app:17
-import { parseMarkdownBlocks, cleanEngineOutput } from '../markdown.js';
+import { icons } from '../icons.js';
 
 // @kern-source: ui-app:18
-import type { OutputEvent, HandlerContext } from '../handlers/types.js';
+import { parseMarkdownBlocks, cleanEngineOutput } from '../markdown.js';
 
 // @kern-source: ui-app:19
-import { codeBlockBuffer } from '../code-buffer.js';
+import type { OutputEvent, HandlerContext } from '../handlers/types.js';
 
 // @kern-source: ui-app:20
-import { getGhostCompletion } from '../ghost-text.js';
+import { codeBlockBuffer } from '../code-buffer.js';
 
 // @kern-source: ui-app:21
-import { startCommandReplState, finishReplState, cancelReplState } from '../generated/app-state.js';
+import { getGhostCompletion } from '../ghost-text.js';
 
 // @kern-source: ui-app:22
-import type { ReplStateState } from '../generated/app-state.js';
+import { startCommandReplState, finishReplState, cancelReplState } from '../generated/app-state.js';
 
 // @kern-source: ui-app:23
-import { processPasteContent, expandPastePlaceholders } from '../paste-handler.js';
+import type { ReplStateState } from '../generated/app-state.js';
 
 // @kern-source: ui-app:24
-import { dispatchIntent, handleModeSwitch } from '../generated/app-dispatch.js';
+import { processPasteContent, expandPastePlaceholders } from '../paste-handler.js';
 
 // @kern-source: ui-app:25
-import type { DispatchCallbacks } from '../generated/app-dispatch.js';
+import { dispatchIntent, handleModeSwitch } from '../generated/app-dispatch.js';
 
 // @kern-source: ui-app:26
-import { handleOutputEvent, clearPermissionQueue } from '../generated/app-output.js';
+import type { DispatchCallbacks } from '../generated/app-dispatch.js';
 
 // @kern-source: ui-app:27
-import type { OutputActions, OutputState } from '../generated/app-output.js';
+import { handleOutputEvent, clearPermissionQueue } from '../generated/app-output.js';
 
 // @kern-source: ui-app:28
-import { cleanInputValue, cleanSubmitValue, findInputChange, navigateHistory, resolveEscapeAction } from '../generated/app-input.js';
+import type { OutputActions, OutputState } from '../generated/app-output.js';
 
 // @kern-source: ui-app:29
-import { handleReviewAction } from '../generated/app-review.js';
+import { cleanInputValue, cleanSubmitValue, findInputChange, navigateHistory, resolveEscapeAction } from '../generated/app-input.js';
 
 // @kern-source: ui-app:30
-import { SpinnerBlock, EngineProgressView, StatusLine, StatusBar, BtwPanel, OutputBlockView, ToolCallGroup, SlashPicker, EnginePicker, ModelPicker, ReviewBlock, BackgroundJobRail, RenderedSegments, CesarPicker, contentWidth, engineColor } from '../components.js';
+import { handleReviewAction } from '../generated/app-review.js';
 
 // @kern-source: ui-app:31
-import type { OutputBlock, ReviewEvent } from '../components.js';
+import { SpinnerBlock, EngineProgressView, StatusLine, StatusBar, BtwPanel, OutputBlockView, ToolCallGroup, SlashPicker, EnginePicker, ModelPicker, ReviewBlock, BackgroundJobRail, RenderedSegments, CesarPicker, contentWidth, engineColor } from '../components.js';
 
 // @kern-source: ui-app:32
-import { join, dirname } from 'node:path';
+import type { OutputBlock, ReviewEvent } from '../components.js';
 
 // @kern-source: ui-app:33
-import { fileURLToPath } from 'node:url';
+import { join, dirname } from 'node:path';
 
 // @kern-source: ui-app:34
-import { readdirSync, writeFileSync, mkdirSync, unlinkSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 // @kern-source: ui-app:35
-import { homedir, tmpdir } from 'node:os';
+import { readdirSync, writeFileSync, mkdirSync, unlinkSync } from 'node:fs';
 
 // @kern-source: ui-app:36
-import { spawnSync } from 'node:child_process';
+import { homedir, tmpdir } from 'node:os';
 
 // @kern-source: ui-app:37
-import { sessionResultStore } from '../generated/session-results.js';
+import { spawnSync } from 'node:child_process';
 
 // @kern-source: ui-app:38
-import { formatSessionResults } from '../generated/results-formatter.js';
+import { sessionResultStore } from '../generated/session-results.js';
 
 // @kern-source: ui-app:39
+import { formatSessionResults } from '../generated/results-formatter.js';
+
+// @kern-source: ui-app:40
 import { loadSkills } from '@agon/core';
 
-// @kern-source: ui-app:42
+// @kern-source: ui-app:43
 export const _activeAborts: Set<AbortController> = new Set<AbortController>();
 
-// @kern-source: ui-app:45
+// @kern-source: ui-app:46
 export const _cancelCallback: { fn: (() => void) | null } = { fn: null };
 
-// @kern-source: ui-app:48
+// @kern-source: ui-app:49
 export const _cesarSessionRef: { session: PersistentSession | null } = { session: null };
 
-// @kern-source: ui-app:51
+// @kern-source: ui-app:52
 
 export function App({  }: {  }) {
   const [replState, setReplState] = useState<ReplStateState>('idle');
@@ -157,6 +160,8 @@ export function App({  }: {  }) {
   const [registry, setRegistry] = useState<EngineRegistry>((() => { const reg = new EngineRegistry(); const engDir = join(dirname(fileURLToPath(import.meta.url)), '../../../../engines'); reg.load(engDir); return reg; })());
   const [adapter, setAdapter] = useState<EngineAdapter>(createCliAdapter(registry));
   const [dynamicSkills, setDynamicSkills] = useState<Skill[]>(loadSkills());
+  const [commandRegistry, setCommandRegistry] = useState<any>((() => { const reg = new CommandRegistry(); registerBuiltinCommands(reg); return reg; })());
+  const [extensionSkills, setExtensionSkills] = useState<Skill[]>([]);
   const chatStartTimeRef = useRef<number>(0);
   const currentPlanRef = useRef<Plan|null>(null);
   const streamingTextRef = useRef<any>(null);
@@ -167,9 +172,13 @@ export function App({  }: {  }) {
   const lastActivityTimeRef = useRef<number>(Date.now());
 
   const allSlashCommands = useMemo(() => {
-          const skillCmds = dynamicSkills.map((s: any) => ({ cmd: s.trigger, desc: s.description || s.name }));
-          return [...SLASH_COMMANDS, ...skillCmds];
-  }, [dynamicSkills]);
+          const registryCmds = commandRegistry.listForHelp();
+          const skillCmds = [...dynamicSkills, ...extensionSkills].map((s: any) => ({ cmd: s.trigger, desc: s.description || s.name }));
+          // Dedupe: registry already has builtins, skills add on top
+          const seen = new Set(registryCmds.map((c: any) => c.cmd));
+          const uniqueSkills = skillCmds.filter((s: any) => !seen.has(s.cmd));
+          return [...registryCmds, ...uniqueSkills];
+  }, [dynamicSkills, extensionSkills, commandRegistry]);
 
   const outputActions = useMemo(() => {
           return {
@@ -385,9 +394,9 @@ export function App({  }: {  }) {
           dispatch({ type: 'user-message', content: input } as any);
           const { text: cleanInput, images: detectedImages } = extractImagesFromInput(input, resolveWorkingDir());
           const allImages = [...pendingImages, ...detectedImages];
-          let intent = detectIntent(cleanInput || input);
+          let intent = detectIntent(cleanInput || input, commandRegistry);
           const cb: DispatchCallbacks = {
-            dispatch, ctx: buildContext(),
+            dispatch, ctx: buildContext(), commandRegistry,
             runAsJob: (type: string, label: string, fn: () => Promise<void>) => {
               const job = jobManager.create(type, label);
               setJobList([...jobManager.list()]);
@@ -396,7 +405,7 @@ export function App({  }: {  }) {
                 .catch((err: any) => { jobManager.fail(job.id, err instanceof Error ? err.message : String(err)); setJobList([...jobManager.list()]); dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); });
             },
             setMode, setPendingImages, setSessionEngines, setEnginePickerOpen, setModelPickerOpen, setModelPickerEntries, setModelPickerLoading, setCesarPickerOpen, setChatSession, setLastUndoToken, askQuestion, exit: () => process.exit(0),
-            allImages, allSlashCommands: allSlashCommands, dynamicSkills, mode, lastUndoToken, sessionStartTime, jobManager,
+            allImages, allSlashCommands: allSlashCommands, dynamicSkills: [...dynamicSkills, ...extensionSkills], mode, lastUndoToken, sessionStartTime, jobManager,
             explorationMode, setExplorationMode,
             neroMode, setNeroMode,
             setActivePlan,
@@ -453,6 +462,14 @@ export function App({  }: {  }) {
   const handleQuestionAnswer = useCallback((answer:string) => {
           if (questionState) { questionState.resolve(answer); setQuestionState(null); setQuestionAnswer(''); }
   }, [questionState]);
+
+  useEffect(() => {
+          initExtensions(resolveWorkingDir(), commandRegistry, registry).then(({ extensions, skills: extSkills }) => {
+            if (extSkills.length > 0) setExtensionSkills(extSkills);
+          }).catch((err: Error) => {
+            console.warn(`[agon] extension loading failed: ${err.message}`);
+          });
+  }, []);
 
   useEffect(() => {
           const stdin = process.stdin;
@@ -751,7 +768,7 @@ export function App({  }: {  }) {
 }
 
 
-// @kern-source: ui-app:719
+// @kern-source: ui-app:736
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

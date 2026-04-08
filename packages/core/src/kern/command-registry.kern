@@ -1,0 +1,93 @@
+// ── Command Registry: dynamic command registration ──────────────────
+// Replaces the hardcoded SLASH_COMMANDS as the source of truth for
+// command listing. Same singleton pattern as ToolRegistry.
+
+interface name=CommandDefinition
+  field name=name type=string
+  field name=description type=string
+  field name=category type=string
+  field name=aliases type="string[]" optional=true
+  field name=isJob type=boolean optional=true
+  field name=source type=string optional=true
+
+interface name=CommandHandler
+  field name=definition type=CommandDefinition
+  field name=parseArgs type="(rest: string) => Record<string, unknown>"
+  field name=execute type="(args: Record<string, unknown>, ctx: any) => Promise<{ handled: boolean; ranAsJob: boolean }>"
+
+service name=CommandRegistry singleton=true
+  field name=commands type="Map<string, CommandHandler>"
+  field name=aliasMap type="Map<string, string>"
+
+  constructor
+    handler <<<
+      this.commands = new Map();
+      this.aliasMap = new Map();
+    >>>
+
+  method name=register params="handler:CommandHandler" returns=void
+    handler <<<
+      const name = handler.definition.name.toLowerCase();
+      this.commands.set(name, handler);
+      if (handler.definition.aliases) {
+        for (const alias of handler.definition.aliases) {
+          this.aliasMap.set(alias.toLowerCase(), name);
+        }
+      }
+    >>>
+
+  method name=get params="name:string" returns="CommandHandler | undefined"
+    handler <<<
+      const lower = name.toLowerCase();
+      const handler = this.commands.get(lower);
+      if (handler) return handler;
+      const canonical = this.aliasMap.get(lower);
+      if (canonical) return this.commands.get(canonical);
+      return undefined;
+    >>>
+
+  method name=has params="name:string" returns=boolean
+    handler <<<
+      const lower = name.toLowerCase();
+      return this.commands.has(lower) || this.aliasMap.has(lower);
+    >>>
+
+  method name=list returns="CommandDefinition[]"
+    handler <<<
+      return Array.from(this.commands.values())
+        .map(h => h.definition)
+        .sort((a, b) => {
+          const catCmp = a.category.localeCompare(b.category);
+          return catCmp !== 0 ? catCmp : a.name.localeCompare(b.name);
+        });
+    >>>
+
+  method name=listForHelp returns="{ cmd: string; desc: string }[]"
+    doc "Returns the same shape as the old SLASH_COMMANDS array for backward compat."
+    handler <<<
+      return Array.from(this.commands.values())
+        .map(h => ({
+          cmd: '/' + h.definition.name,
+          desc: h.definition.description,
+        }))
+        .sort((a, b) => a.cmd.localeCompare(b.cmd));
+    >>>
+
+  method name=names returns="string[]"
+    handler <<<
+      return Array.from(this.commands.keys());
+    >>>
+
+  method name=unregister params="name:string" returns=void
+    handler <<<
+      const lower = name.toLowerCase();
+      const handler = this.commands.get(lower);
+      if (handler) {
+        this.commands.delete(lower);
+        if (handler.definition.aliases) {
+          for (const alias of handler.definition.aliases) {
+            this.aliasMap.delete(alias.toLowerCase());
+          }
+        }
+      }
+    >>>

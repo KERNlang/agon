@@ -1,0 +1,1 @@
+export { discoverExtensionDirs, loadExtensionManifest, loadExtensions, registerExtensionCommands, registerExtensionEngines, registerExtensionSkills, initExtensions } from './generated/extension-loader.js';

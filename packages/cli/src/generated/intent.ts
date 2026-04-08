@@ -33,9 +33,10 @@ export interface Intent {
   jobId: string|undefined;
   taskClass: 'code'|'question'|'ambiguous'|undefined;
   args: string|undefined;
+  commandName: string|undefined;
 }
 
-// @kern-source: intent:30
+// @kern-source: intent:31
 export const SLASH_COMMANDS: SlashCommand[] = [
   { cmd: '/forge',       desc: '<task> test with <cmd> [--hardened] — competitive code generation' },
   { cmd: '/brainstorm',  desc: '<question>              — confidence-bidding answers' },
@@ -80,40 +81,40 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { cmd: '/exit',        desc: '                        — quit' },
 ];
 
-// @kern-source: intent:77
+// @kern-source: intent:78
 export const FITNESS_PATTERN: RegExp = /\b(?:test with|test:|--test|fitness:)\s+(.+)/i;
 
-// @kern-source: intent:81
+// @kern-source: intent:82
 export const LEADERBOARD_KEYWORDS: RegExp = /\b(leaderboard|elo|rankings?)\b/i;
 
-// @kern-source: intent:84
+// @kern-source: intent:85
 export const HISTORY_KEYWORDS: RegExp = /\b(history|last runs?|recent)\b/i;
 
-// @kern-source: intent:87
+// @kern-source: intent:88
 export const ENGINES_KEYWORDS: RegExp = /\b(engines?|what engines)\b/i;
 
-// @kern-source: intent:90
+// @kern-source: intent:91
 export const CONFIG_KEYWORDS: RegExp = /\b(config|settings?)\b/i;
 
-// @kern-source: intent:93
+// @kern-source: intent:94
 export const HELP_KEYWORDS: RegExp = /^(help|\?)$/i;
 
-// @kern-source: intent:96
+// @kern-source: intent:97
 export const EXIT_KEYWORDS: RegExp = /^(exit|quit|bye)$/i;
 
-// @kern-source: intent:99
+// @kern-source: intent:100
 export const SENTENCE_PREFIX: RegExp = /^(do|does|did|is|are|was|were|have|has|had|can|could|would|should|will|shall|i\s)/i;
 
-// @kern-source: intent:102
+// @kern-source: intent:103
 export const QUESTION_PATTERN: RegExp = /^(what|how|why|where|when|who|which|explain|describe|tell|show|list|is there|does|can you explain|walk me through)\b/i;
 
-// @kern-source: intent:105
+// @kern-source: intent:106
 export const CODE_TASK_PATTERN: RegExp = /^(fix|add|implement|refactor|debug|create|build|write|update|change|remove|delete|rename|move|test|deploy|install|upgrade|migrate|convert|extract|inline|optimize|port)\b/i;
 
-// @kern-source: intent:108
+// @kern-source: intent:109
 export const CODE_ARTIFACT_PATTERN: RegExp = /(?:at \w+.*:\d+|\.[tj]sx?\b|\.[a-z]{2,4}:\d+|^[+-]{3}\s)/m;
 
-// @kern-source: intent:111
+// @kern-source: intent:112
 export function classifyTask(input: string): 'code'|'question'|'ambiguous' {
   if (QUESTION_PATTERN.test(input)) return 'question';
   if (CODE_TASK_PATTERN.test(input)) return 'code';
@@ -121,7 +122,7 @@ export function classifyTask(input: string): 'code'|'question'|'ambiguous' {
   return 'ambiguous';
 }
 
-// @kern-source: intent:119
+// @kern-source: intent:120
 function parseForgeInput(input: string): Intent {
   // Only match --hardened as a standalone flag (not inside task text or test args)
   const hardenedMatch = input.match(/^(--hardened)\s+(.*)$/i) || input.match(/^(.*?)\s+(--hardened)\s*$/i);
@@ -137,8 +138,8 @@ function parseForgeInput(input: string): Intent {
   return { type: 'forge', task, fitnessCmd, hardened } as Intent;
 }
 
-// @kern-source: intent:135
-function parseSlashCommand(input: string): Intent {
+// @kern-source: intent:136
+function parseSlashCommand(input: string, commandRegistry?: any): Intent {
   const stripped = input.slice(1).trim();
   if (!stripped) return { type: 'slash-list' } as Intent;
   
@@ -354,17 +355,21 @@ function parseSlashCommand(input: string): Intent {
     case 'quit':
       return { type: 'exit' } as Intent;
     default:
+      // Check command registry for extension commands
+      if (commandRegistry && commandRegistry.has(cmd)) {
+        return { type: 'extension-command', commandName: cmd, args: rest } as Intent;
+      }
       return { type: 'unknown', input } as Intent;
   }
 }
 
-// @kern-source: intent:356
-export function detectIntent(raw: string): Intent {
+// @kern-source: intent:361
+export function detectIntent(raw: string, commandRegistry?: any): Intent {
   const input = raw.trim();
   if (!input) return { type: 'unknown', input: '' } as Intent;
   
   if (input.startsWith('/')) {
-    return parseSlashCommand(input);
+    return parseSlashCommand(input, commandRegistry);
   }
   
   if (EXIT_KEYWORDS.test(input)) return { type: 'exit' } as Intent;

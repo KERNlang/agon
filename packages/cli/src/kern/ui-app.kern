@@ -10,6 +10,7 @@ import from="../handlers/types.js" names="EngineProgress" types=true
 import from="@agon/adapter-cli" names="createCliAdapter"
 import from="@agon/core" names="EngineAdapter" types=true
 import from="../intent.js" names="detectIntent,SLASH_COMMANDS"
+import from="@agon/core" names="CommandRegistry,registerBuiltinCommands,initExtensions"
 import from="../generated/job-manager.js" names="JobManager"
 import from="../generated/job-manager.js" names="Job" types=true
 import from="../output.js" names="ENGINE_COLORS"
@@ -101,12 +102,28 @@ screen name=App target=ink
   state name=registry type=EngineRegistry initial="(() => { const reg = new EngineRegistry(); const engDir = join(dirname(fileURLToPath(import.meta.url)), '../../../../engines'); reg.load(engDir); return reg; })()"
   state name=adapter type=EngineAdapter initial="createCliAdapter(registry)"
   state name=dynamicSkills type="Skill[]" initial="loadSkills()"
+  state name=commandRegistry type="any" initial="(() => { const reg = new CommandRegistry(); registerBuiltinCommands(reg); return reg; })()"
+  state name=extensionSkills type="Skill[]" initial="[]"
 
   // ── Derived ──
-  memo name=allSlashCommands deps="dynamicSkills"
+  memo name=allSlashCommands deps="dynamicSkills, extensionSkills, commandRegistry"
     handler <<<
-      const skillCmds = dynamicSkills.map((s: any) => ({ cmd: s.trigger, desc: s.description || s.name }));
-      return [...SLASH_COMMANDS, ...skillCmds];
+      const registryCmds = commandRegistry.listForHelp();
+      const skillCmds = [...dynamicSkills, ...extensionSkills].map((s: any) => ({ cmd: s.trigger, desc: s.description || s.name }));
+      // Dedupe: registry already has builtins, skills add on top
+      const seen = new Set(registryCmds.map((c: any) => c.cmd));
+      const uniqueSkills = skillCmds.filter((s: any) => !seen.has(s.cmd));
+      return [...registryCmds, ...uniqueSkills];
+    >>>
+
+  // ── Load extensions on startup (async, non-blocking) ──
+  effect deps="[]"
+    handler <<<
+      initExtensions(resolveWorkingDir(), commandRegistry, registry).then(({ extensions, skills: extSkills }) => {
+        if (extSkills.length > 0) setExtensionSkills(extSkills);
+      }).catch((err: Error) => {
+        console.warn(`[agon] extension loading failed: ${err.message}`);
+      });
     >>>
 
   callback name=transition params="fn:any"
@@ -376,9 +393,9 @@ screen name=App target=ink
       dispatch({ type: 'user-message', content: input } as any);
       const { text: cleanInput, images: detectedImages } = extractImagesFromInput(input, resolveWorkingDir());
       const allImages = [...pendingImages, ...detectedImages];
-      let intent = detectIntent(cleanInput || input);
+      let intent = detectIntent(cleanInput || input, commandRegistry);
       const cb: DispatchCallbacks = {
-        dispatch, ctx: buildContext(),
+        dispatch, ctx: buildContext(), commandRegistry,
         runAsJob: (type: string, label: string, fn: () => Promise<void>) => {
           const job = jobManager.create(type, label);
           setJobList([...jobManager.list()]);
@@ -387,7 +404,7 @@ screen name=App target=ink
             .catch((err: any) => { jobManager.fail(job.id, err instanceof Error ? err.message : String(err)); setJobList([...jobManager.list()]); dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); });
         },
         setMode, setPendingImages, setSessionEngines, setEnginePickerOpen, setModelPickerOpen, setModelPickerEntries, setModelPickerLoading, setCesarPickerOpen, setChatSession, setLastUndoToken, askQuestion, exit: () => process.exit(0),
-        allImages, allSlashCommands: allSlashCommands, dynamicSkills, mode, lastUndoToken, sessionStartTime, jobManager,
+        allImages, allSlashCommands: allSlashCommands, dynamicSkills: [...dynamicSkills, ...extensionSkills], mode, lastUndoToken, sessionStartTime, jobManager,
         explorationMode, setExplorationMode,
         neroMode, setNeroMode,
         setActivePlan,

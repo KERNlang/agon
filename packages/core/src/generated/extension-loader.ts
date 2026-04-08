@@ -1,0 +1,230 @@
+// @kern-source: extension-loader:5
+import { join, resolve } from 'node:path';
+
+// @kern-source: extension-loader:6
+import { readdirSync, readFileSync, existsSync, statSync } from 'node:fs';
+
+// @kern-source: extension-loader:7
+import { validateManifest } from './extension-manifest.js';
+
+// @kern-source: extension-loader:8
+import type { ExtensionManifest, LoadedExtension, CommandContribution } from './extension-manifest.js';
+
+// @kern-source: extension-loader:9
+import { CommandRegistry } from './command-registry.js';
+
+// @kern-source: extension-loader:10
+import type { CommandHandler } from './command-registry.js';
+
+// @kern-source: extension-loader:11
+import { EngineRegistry } from './engine-registry.js';
+
+// @kern-source: extension-loader:12
+import { AGON_HOME } from './config.js';
+
+// @kern-source: extension-loader:13
+import type { Skill } from './skill-loader.js';
+
+// @kern-source: extension-loader:15
+export function discoverExtensionDirs(cwd: string): { dir: string; source: 'user' | 'repo' }[] {
+  const results: { dir: string; source: 'user' | 'repo' }[] = [];
+  
+  // User-level extensions
+  const userDir = join(AGON_HOME, 'extensions');
+  if (existsSync(userDir)) {
+    try {
+      const entries = readdirSync(userDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          const manifestPath = join(userDir, entry.name, 'manifest.json');
+          if (existsSync(manifestPath)) {
+            results.push({ dir: join(userDir, entry.name), source: 'user' });
+          }
+        }
+      }
+    } catch { /* ignore permission errors */ }
+  }
+  
+  // Repo-level extensions
+  const repoDir = join(cwd, '.agon', 'extensions');
+  if (existsSync(repoDir)) {
+    try {
+      const entries = readdirSync(repoDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          const manifestPath = join(repoDir, entry.name, 'manifest.json');
+          if (existsSync(manifestPath)) {
+            results.push({ dir: join(repoDir, entry.name), source: 'repo' });
+          }
+        }
+      }
+    } catch { /* ignore permission errors */ }
+  }
+  
+  return results;
+}
+
+// @kern-source: extension-loader:55
+export function loadExtensionManifest(dir: string, source: 'builtin'|'user'|'repo'): LoadedExtension | null {
+  const manifestPath = join(dir, 'manifest.json');
+  try {
+    const raw = JSON.parse(readFileSync(manifestPath, 'utf-8'));
+    const result = validateManifest(raw, manifestPath);
+    if (!result.ok || !result.data) {
+      console.warn(`[agon] skipping extension ${dir}: ${result.error}`);
+      return null;
+    }
+    return {
+      manifest: result.data,
+      dir,
+      source,
+      loadedAt: Date.now(),
+    };
+  } catch (err) {
+    console.warn(`[agon] failed to load extension ${dir}: ${(err as Error).message}`);
+    return null;
+  }
+}
+
+// @kern-source: extension-loader:78
+export function loadExtensions(cwd: string): LoadedExtension[] {
+  const dirs = discoverExtensionDirs(cwd);
+  const byId = new Map<string, LoadedExtension>();
+  
+  for (const { dir, source } of dirs) {
+    const ext = loadExtensionManifest(dir, source);
+    if (ext) {
+      if (byId.has(ext.manifest.id)) {
+        console.warn(`[agon] extension '${ext.manifest.id}' from ${source} overrides earlier definition`);
+      }
+      byId.set(ext.manifest.id, ext);
+    }
+  }
+  
+  return Array.from(byId.values());
+}
+
+// @kern-source: extension-loader:97
+export async function registerExtensionCommands(ext: LoadedExtension, commandRegistry: CommandRegistry): Promise<string[]> {
+  const registered: string[] = [];
+  const commands = ext.manifest.contributes?.commands;
+  if (!commands || commands.length === 0) return registered;
+  
+  for (const cmd of commands) {
+    try {
+      const handlerPath = resolve(ext.dir, cmd.handler);
+      const mod = await import(handlerPath);
+  
+      if (typeof mod.execute !== 'function') {
+        console.warn(`[agon] extension '${ext.manifest.id}' command '${cmd.name}': handler missing execute() export`);
+        continue;
+      }
+  
+      const handler: CommandHandler = {
+        definition: {
+          name: cmd.name,
+          description: cmd.description || '',
+          category: cmd.category || 'extension',
+          aliases: cmd.aliases,
+          source: ext.manifest.id,
+        },
+        parseArgs: typeof mod.parseArgs === 'function'
+          ? mod.parseArgs
+          : (rest: string) => ({ input: rest }),
+        execute: mod.execute,
+      };
+  
+      commandRegistry.register(handler);
+      registered.push(cmd.name);
+    } catch (err) {
+      console.warn(`[agon] extension '${ext.manifest.id}' command '${cmd.name}': failed to load handler: ${(err as Error).message}`);
+      const errorExt = ext as { errors?: string[] };
+      if (!errorExt.errors) errorExt.errors = [];
+      errorExt.errors.push(`command ${cmd.name}: ${(err as Error).message}`);
+    }
+  }
+  
+  return registered;
+}
+
+// @kern-source: extension-loader:141
+export function registerExtensionEngines(ext: LoadedExtension, engineRegistry: EngineRegistry): string[] {
+  const registered: string[] = [];
+  const enginePaths = ext.manifest.contributes?.engines;
+  if (!enginePaths || enginePaths.length === 0) return registered;
+  
+  for (const enginePath of enginePaths) {
+    try {
+      const fullPath = resolve(ext.dir, enginePath);
+      const raw = JSON.parse(readFileSync(fullPath, 'utf-8'));
+      if (raw.id) {
+        engineRegistry.register(raw);
+        registered.push(raw.id);
+      }
+    } catch (err) {
+      console.warn(`[agon] extension '${ext.manifest.id}' engine '${enginePath}': ${(err as Error).message}`);
+    }
+  }
+  
+  return registered;
+}
+
+// @kern-source: extension-loader:164
+export function registerExtensionSkills(ext: LoadedExtension): Skill[] {
+  const skills: Skill[] = [];
+  const skillContribs = ext.manifest.contributes?.skills;
+  if (!skillContribs || skillContribs.length === 0) return skills;
+  
+  for (const sc of skillContribs) {
+    if (sc.handler && !sc.prompt) {
+      console.warn(`[agon] extension '${ext.manifest.id}' skill '${sc.trigger}': handler-based skills not yet supported (Phase 2)`);
+      continue;
+    }
+    skills.push({
+      name: sc.name || sc.trigger.replace(/^\//, ''),
+      trigger: sc.trigger.startsWith('/') ? sc.trigger : '/' + sc.trigger,
+      description: sc.description || '',
+      prompt: sc.prompt || '',
+      source: resolve(ext.dir, 'manifest.json'),
+    });
+  }
+  
+  return skills;
+}
+
+// @kern-source: extension-loader:188
+export async function initExtensions(cwd: string, commandRegistry: CommandRegistry, engineRegistry: EngineRegistry): Promise<{ extensions: LoadedExtension[]; skills: Skill[]; systemPromptFragments: string[] }> {
+  const extensions = loadExtensions(cwd);
+  const allSkills: Skill[] = [];
+  const allFragments: string[] = [];
+  
+  for (const ext of extensions) {
+    // Commands
+    const cmds = await registerExtensionCommands(ext, commandRegistry);
+    if (cmds.length > 0) {
+      console.log(`[agon] extension '${ext.manifest.id}': registered commands: ${cmds.join(', ')}`);
+    }
+  
+    // Engines
+    const engines = registerExtensionEngines(ext, engineRegistry);
+    if (engines.length > 0) {
+      console.log(`[agon] extension '${ext.manifest.id}': registered engines: ${engines.join(', ')}`);
+    }
+  
+    // Skills
+    const skills = registerExtensionSkills(ext);
+    allSkills.push(...skills);
+  
+    // System prompt fragments
+    if (ext.manifest.contributes?.systemPromptFragments) {
+      allFragments.push(...ext.manifest.contributes.systemPromptFragments);
+    }
+  }
+  
+  if (extensions.length > 0) {
+    console.log(`[agon] loaded ${extensions.length} extension(s)`);
+  }
+  
+  return { extensions, skills: allSkills, systemPromptFragments: allFragments };
+}
+

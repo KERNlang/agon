@@ -1,3 +1,4 @@
+// @kern-source: intent-types:1
 export type Intent =
   | { type: 'forge'; task: string; fitnessCmd: string | null }
   | { type: 'brainstorm'; question: string }
@@ -47,54 +48,106 @@ export type Intent =
   | { type: 'help' }
   | { type: 'exit' }
   | { type: 'auto'; input: string; taskClass: 'code' | 'question' | 'ambiguous' }
+  | { type: 'extension-command'; commandName: string; args: string }
   | { type: 'unknown'; input: string };
 
+// @kern-source: intent-types:2
 
+// @kern-source: intent-types:5
 
+// @kern-source: intent-types:7
 
+// @kern-source: intent-types:10
 
+// @kern-source: intent-types:14
 
+// @kern-source: intent-types:18
 
+// @kern-source: intent-types:21
 
+// @kern-source: intent-types:22
 
+// @kern-source: intent-types:24
 
+// @kern-source: intent-types:25
 
+// @kern-source: intent-types:29
 
+// @kern-source: intent-types:31
 
+// @kern-source: intent-types:34
 
+// @kern-source: intent-types:36
 
+// @kern-source: intent-types:37
 
+// @kern-source: intent-types:38
 
+// @kern-source: intent-types:40
 
+// @kern-source: intent-types:41
 
+// @kern-source: intent-types:42
 
+// @kern-source: intent-types:43
 
+// @kern-source: intent-types:44
 
+// @kern-source: intent-types:46
 
+// @kern-source: intent-types:48
 
+// @kern-source: intent-types:51
 
+// @kern-source: intent-types:52
 
+// @kern-source: intent-types:55
 
+// @kern-source: intent-types:57
 
+// @kern-source: intent-types:58
 
+// @kern-source: intent-types:59
 
+// @kern-source: intent-types:61
 
+// @kern-source: intent-types:63
 
+// @kern-source: intent-types:66
 
+// @kern-source: intent-types:68
 
+// @kern-source: intent-types:70
 
+// @kern-source: intent-types:72
 
+// @kern-source: intent-types:73
 
+// @kern-source: intent-types:74
 
+// @kern-source: intent-types:76
 
+// @kern-source: intent-types:77
 
+// @kern-source: intent-types:78
 
+// @kern-source: intent-types:80
 
+// @kern-source: intent-types:83
 
+// @kern-source: intent-types:86
 
+// @kern-source: intent-types:90
 
+// @kern-source: intent-types:91
 
+// @kern-source: intent-types:92
 
+// @kern-source: intent-types:93
 
+// @kern-source: intent-types:94
 
+// @kern-source: intent-types:97
+
+// @kern-source: intent-types:100
 

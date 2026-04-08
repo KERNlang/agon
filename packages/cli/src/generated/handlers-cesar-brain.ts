@@ -152,7 +152,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
     } catch { /* routing context is best-effort */ }
   
     // ── Heartbeat timer + turn timeout ──
-    const cesarTimeout = (config as any).cesarTimeout ?? 120;
+    const cesarTimeout = (config as any).cesarTimeout ?? 300;
     const heartbeat = setInterval(() => {
       const elapsed = Math.round((Date.now() - _turnStart) / 1000);
       if (elapsed >= cesarTimeout) {
@@ -199,7 +199,8 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 createdAt: Date.now(),
               };
               dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'done' } as any);
-              continue;
+              // Break stream immediately — Cesar must stop after delegation (RULE 6)
+              break;
             }
             dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'running' } as any);
             if (!eagerToolCtx) eagerToolCtx = createEagerToolContext(ctx, config, abort.signal, dispatch);

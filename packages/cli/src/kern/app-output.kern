@@ -136,6 +136,7 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
         if (st) {
           const color = actions.getEngineColor(st.engineId);
           const cleaned = cleanEngineOutput(st.content);
+          actions.setStreamingText(null);
           if (cleaned.trim()) {
             const segments = parseMarkdownBlocks(cleaned);
             codeBlockBuffer.recordFromSegments(segments);
@@ -144,7 +145,6 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
               actions.addBlock({ type: 'response-meta', engineId: st.engineId, elapsed: Date.now() - chatStartTime } as any);
             }
           }
-          actions.setStreamingText(null);
         }
         return;
       }

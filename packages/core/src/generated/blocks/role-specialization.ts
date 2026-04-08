@@ -5,9 +5,12 @@ import type { TaskClass, EloRecord } from '../models/types.js';
 import { getElo } from '../signals/elo.js';
 
 // @kern-source: role-specialization:3
+import { getRatings, advisorScore } from '../signals/glicko.js';
+
+// @kern-source: role-specialization:4
 import { buildRolePrompt } from './engine-memory.js';
 
-// @kern-source: role-specialization:5
+// @kern-source: role-specialization:6
 export interface EngineRole {
   engineId: string;
   role: string;
@@ -15,18 +18,26 @@ export interface EngineRole {
   specialization: string;
 }
 
-// @kern-source: role-specialization:11
+// @kern-source: role-specialization:12
 export function rankByTaskClass(engineIds: string[], taskClass: TaskClass): EngineRole[] {
+  // Use Glicko-2 ratings (with ELO fallback for legacy data)
+  const ratings = getRatings();
+  const classRatings = ratings.byTaskClass[taskClass] ?? {};
+  const globalRatings = ratings.global;
   const elo = getElo();
-  const classRatings = elo.byTaskClass[taskClass] ?? {};
   
   const ranked = engineIds.map((id) => {
-    const rating = classRatings[id];
-    const global = elo.global[id];
-    const classElo = rating?.rating ?? 1500;
-    const globalElo = global?.rating ?? 1500;
-    const wins = (rating?.wins ?? 0) + (global?.wins ?? 0);
-    const losses = (rating?.losses ?? 0) + (global?.losses ?? 0);
+    const classGlicko = classRatings[id];
+    const globalGlicko = globalRatings[id];
+    // Prefer Glicko-2 confidence floor; fall back to old ELO
+    const classElo = classGlicko
+      ? Math.round(classGlicko.mu - 2 * classGlicko.phi)
+      : (elo.byTaskClass[taskClass]?.[id]?.rating ?? 1500);
+    const globalElo = globalGlicko
+      ? Math.round(globalGlicko.mu - 2 * globalGlicko.phi)
+      : (elo.global[id]?.rating ?? 1500);
+    const wins = (classGlicko?.wins ?? 0) + (globalGlicko?.wins ?? 0);
+    const losses = (classGlicko?.losses ?? 0) + (globalGlicko?.losses ?? 0);
     const total = wins + losses;
     const winRate = total > 0 ? wins / total : 0.5;
   
@@ -39,10 +50,12 @@ export function rankByTaskClass(engineIds: string[], taskClass: TaskClass): Engi
     };
   });
   
-  // Sort by class ELO first, then global
+  // Sort by Glicko-2 confidence floor. Shuffle ties randomly so no engine
+  // is permanently favored when ratings are equal (e.g. fresh start).
   ranked.sort((a, b) => {
     if (a.classElo !== b.classElo) return b.classElo - a.classElo;
-    return b.globalElo - a.globalElo;
+    if (a.globalElo !== b.globalElo) return b.globalElo - a.globalElo;
+    return Math.random() - 0.5;
   });
   
   return ranked.map((r, i) => {
@@ -72,14 +85,14 @@ export function rankByTaskClass(engineIds: string[], taskClass: TaskClass): Engi
   });
 }
 
-// @kern-source: role-specialization:68
+// @kern-source: role-specialization:79
 export function buildSpecializedPrompt(engineId: string, taskClass: TaskClass, basePrompt: string): string {
   const rolePrompt = buildRolePrompt(engineId, taskClass);
   if (!rolePrompt) return basePrompt;
   return basePrompt + '\n' + rolePrompt;
 }
 
-// @kern-source: role-specialization:75
+// @kern-source: role-specialization:86
 export function assignForgeRoles(engineIds: string[], taskClass: TaskClass): Map<string,{role:string,specialization:string}> {
   const roles = rankByTaskClass(engineIds, taskClass);
   const map = new Map<string, { role: string; specialization: string }>();

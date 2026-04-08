@@ -1,5 +1,5 @@
-import from="../models/types.js" names="TaskClass,EloRecord" types=true
-import from="../signals/elo.js" names="getElo"
+import from="../models/types.js" names="TaskClass" types=true
+import from="../signals/glicko.js" names="getRatings,advisorScore"
 import from="./engine-memory.js" names="buildRolePrompt"
 
 interface name=EngineRole
@@ -10,16 +10,17 @@ interface name=EngineRole
 
 fn name=rankByTaskClass params="engineIds:string[], taskClass:TaskClass" returns="EngineRole[]"
   handler <<<
-    const elo = getElo();
-    const classRatings = elo.byTaskClass[taskClass] ?? {};
+    const ratings = getRatings();
+    const classRatings = ratings.byTaskClass[taskClass] ?? {};
+    const globalRatings = ratings.global;
 
     const ranked = engineIds.map((id) => {
-      const rating = classRatings[id];
-      const global = elo.global[id];
-      const classElo = rating?.rating ?? 1500;
-      const globalElo = global?.rating ?? 1500;
-      const wins = (rating?.wins ?? 0) + (global?.wins ?? 0);
-      const losses = (rating?.losses ?? 0) + (global?.losses ?? 0);
+      const classGlicko = classRatings[id];
+      const globalGlicko = globalRatings[id];
+      const classElo = classGlicko ? Math.round(classGlicko.mu - 2 * classGlicko.phi) : 100;
+      const globalElo = globalGlicko ? Math.round(globalGlicko.mu - 2 * globalGlicko.phi) : 100;
+      const wins = (classGlicko?.wins ?? 0) + (globalGlicko?.wins ?? 0);
+      const losses = (classGlicko?.losses ?? 0) + (globalGlicko?.losses ?? 0);
       const total = wins + losses;
       const winRate = total > 0 ? wins / total : 0.5;
 
@@ -32,10 +33,12 @@ fn name=rankByTaskClass params="engineIds:string[], taskClass:TaskClass" returns
       };
     });
 
-    // Sort by class ELO first, then global
+    // Sort by Glicko-2 confidence floor. Shuffle ties randomly so no engine
+    // is permanently favored when ratings are equal (e.g. fresh start).
     ranked.sort((a, b) => {
       if (a.classElo !== b.classElo) return b.classElo - a.classElo;
-      return b.globalElo - a.globalElo;
+      if (a.globalElo !== b.globalElo) return b.globalElo - a.globalElo;
+      return Math.random() - 0.5;
     });
 
     return ranked.map((r, i) => {

@@ -29,21 +29,24 @@ export const ELO_PATH: string = join(AGON_HOME, 'elo.json');
 export const RUNS_DIR: string = join(AGON_HOME, 'runs');
 
 // @kern-source: config:28
-export const TEAM_ELO_PATH: string = join(AGON_HOME, 'team-elo.json');
+export const RATINGS_PATH: string = join(AGON_HOME, 'ratings.json');
 
 // @kern-source: config:33
-export const CORPUS_PATH: string = join(AGON_HOME, 'corpus.json');
+export const TEAM_ELO_PATH: string = join(AGON_HOME, 'team-elo.json');
 
 // @kern-source: config:38
-export const SKILLS_DIR: string = join(AGON_HOME, 'skills');
+export const CORPUS_PATH: string = join(AGON_HOME, 'corpus.json');
 
 // @kern-source: config:43
+export const SKILLS_DIR: string = join(AGON_HOME, 'skills');
+
+// @kern-source: config:48
 export const LOCAL_CONFIG_NAME: string = '.agon.json';
 
-// @kern-source: config:44
+// @kern-source: config:49
 export const LOCAL_PRIVATE_CONFIG_NAME: string = '.agon.local.json';
 
-// @kern-source: config:46
+// @kern-source: config:51
 export function loadConfig(cwd?: string): Required<AgonConfig> {
   function readJsonSafe<T>(path: string): T | null {
     try { return JSON.parse(readFileSync(path, 'utf-8')) as T; }
@@ -82,12 +85,12 @@ export function loadConfig(cwd?: string): Required<AgonConfig> {
   return merged;
 }
 
-// @kern-source: config:85
+// @kern-source: config:90
 export function configGet(key: keyof AgonConfig, cwd?: string): Required<AgonConfig>[keyof AgonConfig] {
   return loadConfig(cwd)[key];
 }
 
-// @kern-source: config:90
+// @kern-source: config:95
 export function configSet(key: keyof AgonConfig, value: AgonConfig[keyof AgonConfig]): void {
   if (!(key in DEFAULT_AGON_CONFIG)) {
     throw new ConfigError(`Unknown config key: ${String(key)}`);
@@ -109,7 +112,7 @@ export function configSet(key: keyof AgonConfig, value: AgonConfig[keyof AgonCon
   renameSync(tmpPath, GLOBAL_CONFIG_PATH);
 }
 
-// @kern-source: config:112
+// @kern-source: config:117
 export function ensureAgonHome(): void {
   mkdirSync(AGON_HOME, { recursive: true });
   mkdirSync(RUNS_DIR, { recursive: true });

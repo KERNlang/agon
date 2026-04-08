@@ -1,5 +1,5 @@
 // @kern-source: routing:1
-import { classifyTask, getElo, getEngineProfile, rankByTaskClass, diffFileCount, resolveWorkingDir, gitChangedFiles, currentBranch } from '@agon/core';
+import { classifyTask, getElo, getRatings, getEngineProfile, rankByTaskClass, diffFileCount, resolveWorkingDir, gitChangedFiles, currentBranch } from '@agon/core';
 
 // @kern-source: routing:2
 import type { TaskClass, EngineRole, EngineProfile } from '@agon/core';
@@ -46,20 +46,20 @@ export function buildRoutingContext(input: string, ctx: HandlerContext): string 
     parts.push(`ENGINES: ${activeEngines[0] ?? 'none'} (solo — only 1 available)`);
   }
   
-  // ── ELO summary for this task class ──
+  // ── Rating summary for this task class ──
   try {
-    const elo = getElo();
-    const taskElo = elo.byTaskClass?.[taskClass as keyof typeof elo.byTaskClass];
-    if (taskElo && Object.keys(taskElo).length > 0) {
-      const sorted = Object.entries(taskElo)
+    const ratings = getRatings();
+    const taskRatings = ratings.byTaskClass?.[taskClass];
+    if (taskRatings && Object.keys(taskRatings).length > 0) {
+      const sorted = Object.entries(taskRatings)
         .filter(([id]) => activeEngines.includes(id))
-        .sort(([, a], [, b]) => (b as any).rating - (a as any).rating);
+        .sort(([, a], [, b]) => (b as any).mu - (a as any).mu);
       if (sorted.length > 0) {
-        const eloLine = sorted.map(([id, r]) => `${id}:${(r as any).rating}`).join(' > ');
-        parts.push(`ELO (${taskClass}): ${eloLine}`);
+        const ratingLine = sorted.map(([id, r]) => `${id}:${Math.round((r as any).mu)}+-${Math.round((r as any).phi)}`).join(' > ');
+        parts.push(`Rating (${taskClass}): ${ratingLine}`);
       }
     }
-  } catch { /* no elo data yet */ }
+  } catch { /* no rating data yet */ }
   
   return parts.join('\n');
 }

@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import type { EngineAdapter, EngineDefinition, ForgeEvent } from '@agon/core';
 
 // @kern-source: tribunal:3
-import { EngineRegistry, buildTribunalPrompt, createSidechainLogger } from '@agon/core';
+import { EngineRegistry, buildTribunalPrompt, createSidechainLogger, updateGlickoRanked, classifyTask } from '@agon/core';
 
 // @kern-source: tribunal:4
 import type { TribunalMode, TribunalModeConfig } from './tribunal-modes.js';
@@ -176,6 +176,18 @@ export async function runTribunal(opts: {question:string, engines:string[], roun
     type: 'forge:done',
     data: { rounds: allRounds.length, engines: engines.length, mode },
   });
+  
+  // Update Glicko-2 ratings — score by argument substance (length * rounds participated)
+  if (positions.length >= 2) {
+    const taskClass = classifyTask(question);
+    const tribunalRanked = positions
+      .map((p: any) => ({
+        engineId: p.engineId,
+        score: p.arguments.reduce((sum: number, arg: string) => sum + arg.length, 0),
+      }))
+      .sort((a: any, b: any) => b.score - a.score);
+    updateGlickoRanked(tribunalRanked, taskClass, 'tribunal');
+  }
   
   return { question, rounds: allRounds, positions, summary, mode };
 }

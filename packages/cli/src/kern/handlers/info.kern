@@ -1,6 +1,6 @@
 import from="node:fs" names="readdirSync,readFileSync"
 import from="node:path" names="join"
-import from="@agon/core" names="ensureAgonHome,RUNS_DIR,getElo,getEngineRating,tracker,loadConfig,configSet,DEFAULT_CONFIG,discoverEngines,addWorkspace,removeWorkspace,switchWorkspace,listWorkspaces,getActiveWorkspace,listChatSessions,loadChatSession"
+import from="@agon/core" names="ensureAgonHome,RUNS_DIR,getElo,getRatings,getEngineRating,tracker,loadConfig,configSet,DEFAULT_CONFIG,discoverEngines,addWorkspace,removeWorkspace,switchWorkspace,listWorkspaces,getActiveWorkspace,listChatSessions,loadChatSession"
 import from="@agon/core" names="AgonConfig,ForgeManifest" types=true
 import from="../signals/intent.js" names="Intent" types=true
 import from="../signals/icons.js" names="icons"
@@ -9,29 +9,35 @@ import from="@agon/core" names="EngineRegistry"
 
 fn name=handleLeaderboard params="dispatch:Dispatch" returns=void
   handler <<<
-    const elo = getElo();
+    const ratings = getRatings();
     dispatch({ type: 'header', title: 'Global Leaderboard' });
 
-    const rows = Object.entries(elo.global)
-      .sort(([, a], [, b]) => b.rating - a.rating)
-      .map(([id, r], i) => [
-        `${i + 1}.`,
-        id,
-        String(r.rating),
-        String(r.wins),
-        String(r.losses),
-        `${r.wins + r.losses > 0 ? Math.round((r.wins / (r.wins + r.losses)) * 100) : 0}%`,
-      ]);
+    const sorted = Object.entries(ratings.global)
+      .map(([id, r]) => ({ id, r, floor: Math.round(r.mu - 2 * r.phi), matches: r.wins + r.losses }))
+      .sort((a, b) => b.floor - a.floor);
+
+    const rows = sorted.map((e, i) => [
+      `${i + 1}.`,
+      e.id + (e.matches < 30 ? ' *' : ''),
+      String(e.r.mu),
+      `+-${Math.round(e.r.phi)}`,
+      String(e.r.wins),
+      String(e.r.losses),
+      `${e.matches > 0 ? Math.round((e.r.wins / e.matches) * 100) : 0}%`,
+    ]);
 
     if (rows.length === 0) {
       dispatch({ type: 'info', message: 'No matches recorded. Run a forge to start competing!' });
       return;
     }
-    dispatch({ type: 'table', headers: ['#', 'Engine', 'ELO', 'W', 'L', 'Win%'], rows });
+    dispatch({ type: 'table', headers: ['#', 'Engine', 'Rating', '+/-', 'W', 'L', 'Win%'], rows });
 
-    const classes = Object.keys(elo.byTaskClass);
-    if (classes.length > 0) {
-      dispatch({ type: 'info', message: `Task classes with data: ${classes.join(', ')}` });
+    const modes = ['forge', 'brainstorm', 'tribunal'] as const;
+    const modeInfo = modes
+      .filter(m => Object.keys(ratings.byMode[m]).length > 0)
+      .map(m => `${m}: ${Object.values(ratings.byMode[m]).reduce((s: number, r: any) => s + r.wins + r.losses, 0)} matches`);
+    if (modeInfo.length > 0) {
+      dispatch({ type: 'info', message: `Modes: ${modeInfo.join(' | ')}` });
     }
   >>>
 

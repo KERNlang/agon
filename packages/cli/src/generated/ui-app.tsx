@@ -26,7 +26,7 @@ import type { EngineAdapter } from '@agon/core';
 import { detectIntent, SLASH_COMMANDS } from '../intent.js';
 
 // @kern-source: ui-app:13
-import { CommandRegistry, registerBuiltinCommands, initExtensions } from '@agon/core';
+import { CommandRegistry, registerBuiltinCommands, initExtensions, EventBus, bridgeShellHooks } from '@agon/core';
 
 // @kern-source: ui-app:14
 import { JobManager } from '../generated/job-manager.js';
@@ -156,11 +156,13 @@ export function App({  }: {  }) {
   const [neroMode, setNeroMode] = useState<boolean>(false);
   const [toolOutputExpanded, setToolOutputExpanded] = useState<boolean>(false);
   const [btwExpanded, setBtwExpanded] = useState<boolean>(false);
+  const [cesarConfidence, setCesarConfidence] = useState<number|null>(null);
   const [cesarMemory, setCesarMemory] = useState<any>(() => createCesarMemory());
   const [registry, setRegistry] = useState<EngineRegistry>((() => { const reg = new EngineRegistry(); const engDir = join(dirname(fileURLToPath(import.meta.url)), '../../../../engines'); reg.load(engDir); return reg; })());
   const [adapter, setAdapter] = useState<EngineAdapter>(createCliAdapter(registry));
   const [dynamicSkills, setDynamicSkills] = useState<Skill[]>(loadSkills());
   const [commandRegistry, setCommandRegistry] = useState<any>((() => { const reg = new CommandRegistry(); registerBuiltinCommands(reg); return reg; })());
+  const [eventBus, setEventBus] = useState<any>((() => { const bus = new EventBus(); const cfg = loadConfig(); if (cfg.hooks) bridgeShellHooks(bus, cfg.hooks); return bus; })());
   const [extensionSkills, setExtensionSkills] = useState<Skill[]>([]);
   const chatStartTimeRef = useRef<number>(0);
   const currentPlanRef = useRef<Plan|null>(null);
@@ -200,6 +202,7 @@ export function App({  }: {  }) {
               }
             },
             getEngineColor: (engineId: string) => ENGINE_COLORS[engineId] ?? 245,
+            setCesarConfidence,
           };
   }, []);
 
@@ -464,7 +467,7 @@ export function App({  }: {  }) {
   }, [questionState]);
 
   useEffect(() => {
-          initExtensions(resolveWorkingDir(), commandRegistry, registry).then(({ extensions, skills: extSkills }) => {
+          initExtensions(resolveWorkingDir(), commandRegistry, registry, eventBus).then(({ extensions, skills: extSkills }) => {
             if (extSkills.length > 0) setExtensionSkills(extSkills);
           }).catch((err: Error) => {
             console.warn(`[agon] extension loading failed: ${err.message}`);
@@ -768,7 +771,7 @@ export function App({  }: {  }) {
 }
 
 
-// @kern-source: ui-app:736
+// @kern-source: ui-app:739
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

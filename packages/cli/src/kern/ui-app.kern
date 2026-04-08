@@ -10,7 +10,7 @@ import from="../handlers/types.js" names="EngineProgress" types=true
 import from="@agon/adapter-cli" names="createCliAdapter"
 import from="@agon/core" names="EngineAdapter" types=true
 import from="../intent.js" names="detectIntent,SLASH_COMMANDS"
-import from="@agon/core" names="CommandRegistry,registerBuiltinCommands,initExtensions"
+import from="@agon/core" names="CommandRegistry,registerBuiltinCommands,initExtensions,EventBus,bridgeShellHooks"
 import from="../generated/job-manager.js" names="JobManager"
 import from="../generated/job-manager.js" names="Job" types=true
 import from="../output.js" names="ENGINE_COLORS"
@@ -28,7 +28,7 @@ import from="../generated/app-output.js" names="handleOutputEvent,clearPermissio
 import from="../generated/app-output.js" names="OutputActions,OutputState" types=true
 import from="../generated/app-input.js" names="cleanInputValue,cleanSubmitValue,findInputChange,navigateHistory,resolveEscapeAction"
 import from="../generated/app-review.js" names="handleReviewAction"
-import from="../components.js" names="SpinnerBlock,EngineProgressView,StatusLine,StatusBar,BtwPanel,OutputBlockView,ToolCallGroup,SlashPicker,EnginePicker,ModelPicker,ReviewBlock,BackgroundJobRail,RenderedSegments,CesarPicker,contentWidth,engineColor"
+import from="../components.js" names="SpinnerBlock,EngineProgressView,StatusLine,StatusBar,CesarStatusStrip,OutputBlockView,ToolCallGroup,SlashPicker,EnginePicker,ModelPicker,ReviewBlock,BackgroundJobRail,RenderedSegments,CesarPicker,contentWidth,engineColor"
 import from="../components.js" names="OutputBlock,ReviewEvent" types=true
 import from="node:path" names="join,dirname"
 import from="node:url" names="fileURLToPath"
@@ -85,7 +85,7 @@ screen name=App target=ink
   state name=explorationMode type=boolean initial=false
   state name=neroMode type=boolean initial=false
   state name=toolOutputExpanded type=boolean initial=false
-  state name=btwExpanded type=boolean initial=false
+  state name=cesarConfidence type="number|null" initial="null"
   state name=cesarMemory type=any initial="() => createCesarMemory()"
 
   // ── Refs ──
@@ -103,6 +103,7 @@ screen name=App target=ink
   state name=adapter type=EngineAdapter initial="createCliAdapter(registry)"
   state name=dynamicSkills type="Skill[]" initial="loadSkills()"
   state name=commandRegistry type="any" initial="(() => { const reg = new CommandRegistry(); registerBuiltinCommands(reg); return reg; })()"
+  state name=eventBus type="any" initial="(() => { const bus = new EventBus(); const cfg = loadConfig(); if (cfg.hooks) bridgeShellHooks(bus, cfg.hooks); return bus; })()"
   state name=extensionSkills type="Skill[]" initial="[]"
 
   // ── Derived ──
@@ -119,7 +120,7 @@ screen name=App target=ink
   // ── Load extensions on startup (async, non-blocking) ──
   effect deps="[]"
     handler <<<
-      initExtensions(resolveWorkingDir(), commandRegistry, registry).then(({ extensions, skills: extSkills }) => {
+      initExtensions(resolveWorkingDir(), commandRegistry, registry, eventBus).then(({ extensions, skills: extSkills }) => {
         if (extSkills.length > 0) setExtensionSkills(extSkills);
       }).catch((err: Error) => {
         console.warn(`[agon] extension loading failed: ${err.message}`);
@@ -174,6 +175,7 @@ screen name=App target=ink
           }
         },
         getEngineColor: (engineId: string) => ENGINE_COLORS[engineId] ?? 245,
+        setCesarConfidence,
       };
     >>>
 
@@ -200,7 +202,6 @@ screen name=App target=ink
       setLiveSpinner(null);
       setLiveProgress(null);
       setStreamingText(null);
-      setBtwExpanded(false);
       clearPermissionQueue();
 
       if (replState !== 'idle') {
@@ -423,7 +424,7 @@ screen name=App target=ink
         const result = await dispatchIntent(intent, input, cb);
         if (result.ranAsJob) return;
       } catch (err: any) { dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); }
-      finally { setBtwExpanded(false); setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state); }
+      finally { setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state); }
     >>>
 
   callback name=handleReviewActionCb params="action:'apply'|'edit'|'reject'|'copy'" deps="reviewEvent,dispatch"
@@ -722,7 +723,7 @@ screen name=App target=ink
                 if (lines.length > 0) snippet = { engineId: streamingText.engineId, line: lines[lines.length - 1].trim() };
               }
               return (<>
-                {btwExpanded && <BtwPanel engines={liveProgress} spinner={liveSpinner} jobs={jobList.filter((j: Job) => j.state === 'running')} lastActivityAt={lastActivityTimeRef.current} streamSnippet={snippet} />}
+                {mode === 'chat' && <CesarStatusStrip cesarId={(loadConfig() as any).cesarEngine ?? loadConfig().forgeFixedStarter ?? 'claude'} confidence={cesarConfidence} spinner={liveSpinner} engines={liveProgress} lastActivityAt={lastActivityTimeRef.current} streamSnippet={snippet} isActive={replState !== 'idle'} activePlan={activePlan} />}
                 {mode === 'chat' && <StatusBar config={loadConfig()} chatSession={chatSession} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} activity={liveProgress} isActive={replState !== 'idle'} streamSnippet={snippet} />}
               </>);
             })()}

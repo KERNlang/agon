@@ -206,7 +206,7 @@ fn name=createCompanionSession params="config:PersistentSessionConfig" returns="
         threadParams.mcpServers = config.mcpServers;
       }
       if (config.systemPrompt) {
-        threadParams.instructions = config.systemPrompt;
+        threadParams.developerInstructions = config.systemPrompt;
       }
         const threadResult = await sendRpc('thread/start', threadParams) as any;
         threadId = threadResult?.thread?.id ?? null;

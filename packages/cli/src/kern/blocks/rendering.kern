@@ -44,7 +44,9 @@ fn name=color256toHex params="code:number" returns=string
 
 fn name=engineColor params="id:string" returns=string
   handler <<<
-    return color256toHex(ENGINE_COLORS[id] ?? 245);
+    // Match known engines by prefix (e.g. "zai-coding-plan-glm-5.1" → "zai")
+    const prefix = id.split('-')[0];
+    return color256toHex(ENGINE_COLORS[id] ?? ENGINE_COLORS[prefix] ?? 124);
   >>>
 
 // ── Code Block Constants ────────────────────────────────────────────

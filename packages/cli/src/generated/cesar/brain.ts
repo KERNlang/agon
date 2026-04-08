@@ -159,7 +159,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       return { delegated: false, responded: false };
     }
   
-    const color = ENGINE_COLORS[cesarEngineId] ?? 245;
+    const color = ENGINE_COLORS[cesarEngineId] ?? 124;
     ctx.setActiveAbort(abort);
     ctx.cesar!.lastDispatch = dispatch;
     dispatch({ type: 'confidence-update', value: null });

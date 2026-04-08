@@ -144,7 +144,7 @@ fn name=handleReview params="dispatch:Dispatch, ctx:HandlerContext, target?:stri
     }
 
     const engine = ctx.registry.get(engineId);
-    const color = (ENGINE_COLORS as Record<string, number>)[engineId] ?? 245;
+    const color = (ENGINE_COLORS as Record<string, number>)[engineId] ?? 124;
 
     // 3. Build prompt
     const config = ctx.config;

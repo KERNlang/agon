@@ -54,40 +54,42 @@ export function color256toHex(code: number): string {
 
 // @kern-source: rendering:45
 export function engineColor(id: string): string {
-  return color256toHex(ENGINE_COLORS[id] ?? 245);
+  // Match known engines by prefix (e.g. "zai-coding-plan-glm-5.1" → "zai")
+  const prefix = id.split('-')[0];
+  return color256toHex(ENGINE_COLORS[id] ?? ENGINE_COLORS[prefix] ?? 124);
 }
 
-// @kern-source: rendering:52
+// @kern-source: rendering:54
 export const CODE_RAIL: string = '\u258c';
 
-// @kern-source: rendering:55
+// @kern-source: rendering:57
 export const CODE_RAIL_COLOR: string = '#585858';
 
-// @kern-source: rendering:58
+// @kern-source: rendering:60
 export const MAX_CODE_LINES: number = 60;
 
-// @kern-source: rendering:63
+// @kern-source: rendering:65
 export const SYN_KEYWORD: string = '#c084fc';
 
-// @kern-source: rendering:66
+// @kern-source: rendering:68
 export const SYN_STRING: string = '#4ade80';
 
-// @kern-source: rendering:69
+// @kern-source: rendering:71
 export const SYN_COMMENT: string = '#6b7280';
 
-// @kern-source: rendering:72
+// @kern-source: rendering:74
 export const SYN_NUMBER: string = '#fb923c';
 
-// @kern-source: rendering:75
+// @kern-source: rendering:77
 export const SYN_TYPE: string = '#38bdf8';
 
-// @kern-source: rendering:78
+// @kern-source: rendering:80
 export const SYN_PUNCT: string = '#94a3b8';
 
-// @kern-source: rendering:81
+// @kern-source: rendering:83
 export const SYN_FN: string = '#fbbf24';
 
-// @kern-source: rendering:84
+// @kern-source: rendering:86
 export const KEYWORDS: Set<string> = new Set([
   'const','let','var','function','return','if','else','for','while','do','switch','case','break','continue',
   'class','extends','implements','new','this','super','import','export','from','default','async','await',
@@ -98,7 +100,7 @@ export const KEYWORDS: Set<string> = new Set([
   'true','false','null','undefined','nil','None','True','False',
 ]);
 
-// @kern-source: rendering:97
+// @kern-source: rendering:99
 export const TYPES: Set<string> = new Set([
   'string','number','boolean','object','any','void','never','unknown','bigint','symbol',
   'String','Number','Boolean','Object','Array','Map','Set','Promise','Record','Partial',
@@ -106,13 +108,13 @@ export const TYPES: Set<string> = new Set([
   'str','Vec','Option','Result','Box','Rc','Arc',
 ]);
 
-// @kern-source: rendering:109
+// @kern-source: rendering:111
 export interface SyntaxToken {
   text: string;
   color?: string;
 }
 
-// @kern-source: rendering:113
+// @kern-source: rendering:115
 export function tokenizeLine(line: string): SyntaxToken[] {
   const tokens: SyntaxToken[] = [];
   const pattern = /\/\/.*$|\/\*.*?\*\/|#.*$|""".*?"""|'''.*?'''|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`|\b\d+(?:\.\d+)?\b|[a-zA-Z_$]\w*(?=\s*\()|[a-zA-Z_$]\w*|[{}()\[\];:,.<>=!&|?+\-*/%^~@]|\s+/g;
@@ -164,7 +166,7 @@ export function tokenizeLine(line: string): SyntaxToken[] {
   return tokens;
 }
 
-// @kern-source: rendering:167
+// @kern-source: rendering:169
 
 export function DiffLine({ line, maxWidth }: { line: string; maxWidth: number }) {
         const truncated = truncateCodeLine(line, maxWidth);
@@ -181,7 +183,7 @@ export function DiffLine({ line, maxWidth }: { line: string; maxWidth: number })
 }
 
 
-// @kern-source: rendering:187
+// @kern-source: rendering:189
 
 export function SyntaxLine({ line, maxWidth }: { line: string; maxWidth: number }) {
         if (line.length > maxWidth) {
@@ -204,7 +206,7 @@ export function SyntaxLine({ line, maxWidth }: { line: string; maxWidth: number 
 }
 
 
-// @kern-source: rendering:213
+// @kern-source: rendering:215
 
 export function CodeBlockView({ segment, borderColor }: { segment: ContentSegment & { type: 'code' }; borderColor: string }) {
         const codeWidth = contentWidth(8);
@@ -246,7 +248,7 @@ export function CodeBlockView({ segment, borderColor }: { segment: ContentSegmen
 }
 
 
-// @kern-source: rendering:258
+// @kern-source: rendering:260
 
 export function RichSpanView({ span }: { span: InlineSpan }) {
         if (span.style.code) {
@@ -265,7 +267,7 @@ export function RichSpanView({ span }: { span: InlineSpan }) {
 }
 
 
-// @kern-source: rendering:279
+// @kern-source: rendering:281
 
 export function RichLineView({ line, borderColor }: { line: RichLine; borderColor?: string }) {
         const border = borderColor ? <Text color={borderColor}>{'\u2502 '}</Text> : null;
@@ -289,7 +291,7 @@ export function RichLineView({ line, borderColor }: { line: RichLine; borderColo
 }
 
 
-// @kern-source: rendering:306
+// @kern-source: rendering:308
 
 export function MarkdownTableView({ headers, rows, alignments, borderColor }: { headers: string[]; rows: string[][]; alignments: ('left' | 'center' | 'right')[]; borderColor: string }) {
         const colWidths = headers.map((h: string, i: number) => {
@@ -327,7 +329,7 @@ export function MarkdownTableView({ headers, rows, alignments, borderColor }: { 
 }
 
 
-// @kern-source: rendering:349
+// @kern-source: rendering:351
 
 export function RenderedSegments({ segments, borderColor, wrapWidth }: { segments: ContentSegment[]; borderColor: string; wrapWidth: number }) {
         return (
@@ -390,7 +392,7 @@ export function RenderedSegments({ segments, borderColor, wrapWidth }: { segment
 }
 
 
-// @kern-source: rendering:416
+// @kern-source: rendering:418
 
 export function GradientLine({ text, colors }: { text: string; colors: readonly string[] }) {
         const step = Math.max(1, Math.ceil(text.length / colors.length));
@@ -405,7 +407,7 @@ export function GradientLine({ text, colors }: { text: string; colors: readonly 
 }
 
 
-// @kern-source: rendering:432
+// @kern-source: rendering:434
 
 export function AnsiLine({ text, maxWidth, fallbackDim }: { text: string; maxWidth: number; fallbackDim?: boolean }) {
         if (!hasAnsiCodes(text)) {

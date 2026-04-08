@@ -76,7 +76,7 @@ export async function handleChat(input: string, dispatch: Dispatch, ctx: Handler
     parts.push(message);
     const prompt = parts.join('\n\n');
     
-    const color = ENGINE_COLORS[engineId] ?? 245;
+    const color = ENGINE_COLORS[engineId] ?? 124;
     const outputDir = join(RUNS_DIR, `chat-${Date.now()}`);
     mkdirSync(outputDir, { recursive: true });
     

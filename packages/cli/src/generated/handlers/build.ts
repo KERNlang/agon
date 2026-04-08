@@ -88,7 +88,7 @@ export async function handleBuild(input: string, dispatch: Dispatch, ctx: Handle
     const prompt = parts.join('\n\n');
     
     const engine = ctx.registry.get(engineId);
-    const color = (ENGINE_COLORS as Record<string, number>)[engineId] ?? 245;
+    const color = (ENGINE_COLORS as Record<string, number>)[engineId] ?? 124;
     const outputDir = join(RUNS_DIR, `build-${Date.now()}`);
     mkdirSync(outputDir, { recursive: true });
     

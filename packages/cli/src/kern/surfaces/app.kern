@@ -270,14 +270,14 @@ screen name=App target=ink
             streamingFlushTimerRef.current = null;
           }
           if (prev) {
-            const color = ENGINE_COLORS[prev.engineId] ?? 245;
+            const color = ENGINE_COLORS[prev.engineId] ?? 124;
             setOutputBlocks((blocks: any) => [...blocks, { id: Date.now() - 1, event: { type: 'engine-block', engineId: prev.engineId, color, content: prev.content } }]);
           }
           streamingBufferRef.current = null;
           streamingTextRef.current = null;
           setStreamingText(null);
         },
-        getEngineColor: (engineId: string) => ENGINE_COLORS[engineId] ?? 245,
+        getEngineColor: (engineId: string) => ENGINE_COLORS[engineId] ?? 124,
         setCesarConfidence,
       };
     >>>
@@ -470,7 +470,7 @@ screen name=App target=ink
             return;
           }
 
-          const color = ENGINE_COLORS[cesarId] ?? 245;
+          const color = ENGINE_COLORS[cesarId] ?? 124;
           dispatch({ type: 'info', message: 'btw\u2026' } as any);
 
           // Build context from streaming output

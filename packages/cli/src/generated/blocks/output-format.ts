@@ -38,7 +38,7 @@ export const RESET: string = '\x1b[0m';
 export const LOGO_COLORS: number[] = [208, 214, 220, 226, 228, 230, 255];
 
 // @kern-source: output-format:39
-export const ENGINE_COLORS: Record<string, number> = { claude: 208, codex: 34, gemini: 33, ollama: 255, aider: 141, openrouter: 197, qwen: 45, mistral: 75, opencode: 156 };
+export const ENGINE_COLORS: Record<string, number> = { claude: 208, codex: 34, gemini: 33, ollama: 255, aider: 141, openrouter: 197, qwen: 45, mistral: 75, opencode: 156, minimax: 124, zai: 124 };
 
 // @kern-source: output-format:44
 export function fg256(code: number, text: string): string {
@@ -161,7 +161,7 @@ export function scoreboard(title: string, engineIds: string[], metrics: Array<{l
   );
   console.log(`\n  ${BOLD}${WHITE}${title}${RESET}`);
   const headerCells = engineIds.map((id: string, i: number) => {
-    const color = ENGINE_COLORS[id] ?? 245;
+    const color = ENGINE_COLORS[id] ?? 124;
     const name = id === winnerId ? `${icons().winner} ${id}` : id;
     const styled = fg256(color, BOLD + name + RESET);
     const pad = colWidths[i] - visibleLength(name);

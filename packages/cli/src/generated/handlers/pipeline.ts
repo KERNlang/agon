@@ -59,7 +59,7 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
       if (abort.signal.aborted) break;
     
       // ── Step 1: Build ──
-      const buildColor = (ENGINE_COLORS as Record<string, number>)[buildEngine] ?? 245;
+      const buildColor = (ENGINE_COLORS as Record<string, number>)[buildEngine] ?? 124;
       dispatch({ type: 'spinner-start', message: `[${iteration}/${maxIterations}] ${buildEngine} building…`, color: buildColor });
     
       const buildPrompt = [
@@ -147,7 +147,7 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
       // ── Step 3: Review (different engine) ──
       if (buildEngine === reviewEngine || iteration >= maxIterations) break;
     
-      const reviewColor = (ENGINE_COLORS as Record<string, number>)[reviewEngine] ?? 245;
+      const reviewColor = (ENGINE_COLORS as Record<string, number>)[reviewEngine] ?? 124;
       dispatch({ type: 'spinner-start', message: `[${iteration}] ${reviewEngine} reviewing…`, color: reviewColor });
     
       const critiquePrompt = buildCritiquePrompt({

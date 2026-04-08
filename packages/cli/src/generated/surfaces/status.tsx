@@ -106,7 +106,7 @@ function AgonTip({  }: {  }) {
 
 export function StatusBar({ config, chatSession, explorationMode, toolOutputExpanded, isActive }: { config: ReturnType<typeof loadConfig>; chatSession: ChatSession; explorationMode?: boolean; toolOutputExpanded?: boolean; isActive?: boolean }) {
         const cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
-        const cesarColor = color256toHex(ENGINE_COLORS[cesarId] ?? 245);
+        const cesarColor = color256toHex(ENGINE_COLORS[cesarId] ?? 124);
         const workDir = resolveWorkingDir();
         let branch = '';
         try { branch = currentBranch(workDir); } catch { /* not a git repo */ }
@@ -223,7 +223,7 @@ export function CesarStatusStrip({ cesarId, confidence, spinner, engines, startT
         }
   
         // Active: full colored strip
-        const cesarColor = color256toHex(ENGINE_COLORS[cesarId] ?? 245);
+        const cesarColor = color256toHex(ENGINE_COLORS[cesarId] ?? 124);
   
         // Confidence badge with tier coloring
         let confStr = '';
@@ -255,7 +255,7 @@ export function CesarStatusStrip({ cesarId, confidence, spinner, engines, startT
         const engineDots: React.ReactNode[] = [];
         if (engines && engines.length > 0) {
           for (const eng of engines) {
-            const ec = color256toHex(ENGINE_COLORS[eng.id] ?? 245);
+            const ec = color256toHex(ENGINE_COLORS[eng.id] ?? 124);
             const icon = eng.done ? '\u2713' : eng.failed ? '\u2717' : '\u25cf';
             const iconColor = eng.done ? '#4ade80' : eng.failed ? '#ef4444' : ec;
             const status = eng.status.length > 12 ? eng.status.slice(0, 12) + '\u2026' : eng.status;

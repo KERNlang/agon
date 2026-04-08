@@ -18,7 +18,7 @@ fn name=pickBestAdvisor params="input:string, ctx:HandlerContext" returns="{engi
     const taskClass = classifyTask(input);
     const ranked = rankByTaskClass(otherEngines, taskClass);
     const advisorId = ranked.length > 0 ? ranked[0].engineId : otherEngines[0];
-    return { engineId: advisorId, color: ENGINE_COLORS[advisorId] ?? 245 };
+    return { engineId: advisorId, color: ENGINE_COLORS[advisorId] ?? 124 };
   >>>
 
 fn name=fireAdvisor async=true params="input:string, cesarResponse:string, parsedConfidence:number|null, ctx:HandlerContext, abort:AbortController" returns="Promise<{stdout:string, engineId:string, color:number}|null>"

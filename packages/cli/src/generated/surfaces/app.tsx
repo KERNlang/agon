@@ -190,16 +190,6 @@ export function App({  }: {  }) {
           return [...registryCmds, ...uniqueSkills];
   }, [dynamicSkills, extensionSkills, commandRegistry]);
 
-  useEffect(() => {
-          modeRef.current = mode;
-  }, [mode]);
-
-  useEffect(() => {
-          return () => {
-            if (streamingFlushTimerRef.current) clearTimeout(streamingFlushTimerRef.current);
-          };
-  }, []);
-
   const outputActions = useMemo(() => {
           return {
             setLiveSpinner,
@@ -253,14 +243,14 @@ export function App({  }: {  }) {
                 streamingFlushTimerRef.current = null;
               }
               if (prev) {
-                const color = ENGINE_COLORS[prev.engineId] ?? 245;
+                const color = ENGINE_COLORS[prev.engineId] ?? 124;
                 setOutputBlocks((blocks: any) => [...blocks, { id: Date.now() - 1, event: { type: 'engine-block', engineId: prev.engineId, color, content: prev.content } }]);
               }
               streamingBufferRef.current = null;
               streamingTextRef.current = null;
               setStreamingText(null);
             },
-            getEngineColor: (engineId: string) => ENGINE_COLORS[engineId] ?? 245,
+            getEngineColor: (engineId: string) => ENGINE_COLORS[engineId] ?? 124,
             setCesarConfidence,
           };
   }, []);
@@ -418,7 +408,7 @@ export function App({  }: {  }) {
                 return;
               }
     
-              const color = ENGINE_COLORS[cesarId] ?? 245;
+              const color = ENGINE_COLORS[cesarId] ?? 124;
               dispatch({ type: 'info', message: 'btw\u2026' } as any);
     
               // Build context from streaming output
@@ -565,6 +555,16 @@ export function App({  }: {  }) {
             console.warn(`[agon] extension loading failed: ${err.message}`);
           });
   }, [workspacePath]);
+
+  useEffect(() => {
+          modeRef.current = mode;
+  }, [mode]);
+
+  useEffect(() => {
+          return () => {
+            if (streamingFlushTimerRef.current) clearTimeout(streamingFlushTimerRef.current);
+          };
+  }, []);
 
   useEffect(() => {
           const modes = ['brainstorm', 'forge', 'tribunal', 'campfire'] as const;
@@ -945,7 +945,7 @@ export function App({  }: {  }) {
 }
 
 
-// @kern-source: app:844
+// @kern-source: app:919
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());
@@ -961,3 +961,4 @@ export async function startRepl(): Promise<void> {
   });
   render(<App />, { exitOnCtrlC: false });
 }
+

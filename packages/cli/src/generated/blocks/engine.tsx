@@ -114,7 +114,7 @@ export function ConversationalResponse({ engineId, content }: { engineId: string
         const cleaned = cleanEngineOutput(content);
         if (!cleaned.trim()) return null;
         const segments = parseMarkdownBlocks(cleaned);
-        const accentColor = color256toHex(ENGINE_COLORS[engineId] ?? 245);
+        const accentColor = color256toHex(ENGINE_COLORS[engineId] ?? 124);
         return (
           <Box flexDirection="column" marginTop={1} marginBottom={0} paddingLeft={1}>
             <Text><Text color={accentColor} bold>{icons().dotOn + ' '}{engineId}</Text></Text>

@@ -89,7 +89,7 @@ export async function handleCampfire(topic: string, dispatch: Dispatch, ctx: Han
     clearProgress();
     
     for (const round of result.rounds) {
-      const color = (ENGINE_COLORS as Record<string, number>)[round.engineId] ?? 245;
+      const color = (ENGINE_COLORS as Record<string, number>)[round.engineId] ?? 124;
       dispatch({ type: 'engine-block', engineId: round.engineId, color, content: round.content });
       appendMessage(ctx.chatSession, { role: 'engine', engineId: round.engineId, content: round.content, timestamp: new Date().toISOString() });
       tracker.record(round.engineId, { prompt: topic, response: round.content });

@@ -114,7 +114,7 @@ export async function handleBrainstorm(question: string, dispatch: Dispatch, ctx
     }
     
     dispatch({ type: 'separator' });
-    dispatch({ type: 'engine-block', engineId: result.winner, color: ENGINE_COLORS[result.winner] ?? 245, content: result.response });
+    dispatch({ type: 'engine-block', engineId: result.winner, color: ENGINE_COLORS[result.winner] ?? 124, content: result.response });
     
     // Save to chat history so follow-up messages have context
     appendMessage(ctx.chatSession, { role: 'user', content: `[brainstorm] ${question}`, timestamp: new Date().toISOString() });

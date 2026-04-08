@@ -78,7 +78,7 @@ export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatc
       if (!session.alive) return null;
   
       const cesarEngineId = ((ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude');
-      const color = ENGINE_COLORS[cesarEngineId] ?? 245;
+      const color = ENGINE_COLORS[cesarEngineId] ?? 124;
   
       // Build structured judgment prompt with patch summaries
       const engineSummaries: string[] = [];
@@ -161,7 +161,7 @@ export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatc
         if (judgment.strengths.length > 0) {
           dispatch({ type: 'info', message: 'Per-engine strengths:' });
           for (const s of judgment.strengths) {
-            const sColor = ENGINE_COLORS[s.engineId] ?? 245;
+            const sColor = ENGINE_COLORS[s.engineId] ?? 124;
             dispatch({ type: 'engine-block', engineId: s.engineId, color: sColor, content: `${s.category} — ${s.reason}` });
           }
         }
@@ -171,7 +171,7 @@ export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatc
         if (judgment.shouldConverge && judgment.convergencePlan.length > 0) {
           dispatch({ type: 'header', title: 'Convergence Plan' });
           for (const entry of judgment.convergencePlan) {
-            const eColor = ENGINE_COLORS[entry.from] ?? 245;
+            const eColor = ENGINE_COLORS[entry.from] ?? 124;
             dispatch({ type: 'engine-block', engineId: entry.from, color: eColor, content: `${entry.file}:${entry.fn} — ${entry.reason}` });
           }
         }
@@ -189,7 +189,7 @@ export async function cesarConvergeForge(manifest: ForgeManifest, judgment: Forg
       if (!session.alive) return null;
   
       const cesarEngineId = ((ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude');
-      const color = ENGINE_COLORS[cesarEngineId] ?? 245;
+      const color = ENGINE_COLORS[cesarEngineId] ?? 124;
   
       // Collect relevant patches — always include the winner's patch as the base
       const patchContents: Record<string, string> = {};

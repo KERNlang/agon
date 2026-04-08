@@ -32,7 +32,7 @@ export function pickBestAdvisor(input: string, ctx: HandlerContext): {engineId:s
   const taskClass = classifyTask(input);
   const ranked = rankByTaskClass(otherEngines, taskClass);
   const advisorId = ranked.length > 0 ? ranked[0].engineId : otherEngines[0];
-  return { engineId: advisorId, color: ENGINE_COLORS[advisorId] ?? 245 };
+  return { engineId: advisorId, color: ENGINE_COLORS[advisorId] ?? 124 };
 }
 
 // @kern-source: escalation:24

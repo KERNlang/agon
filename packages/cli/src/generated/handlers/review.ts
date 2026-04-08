@@ -153,7 +153,7 @@ export async function handleReview(dispatch: Dispatch, ctx: HandlerContext, targ
     }
     
     const engine = ctx.registry.get(engineId);
-    const color = (ENGINE_COLORS as Record<string, number>)[engineId] ?? 245;
+    const color = (ENGINE_COLORS as Record<string, number>)[engineId] ?? 124;
     
     // 3. Build prompt
     const config = ctx.config;

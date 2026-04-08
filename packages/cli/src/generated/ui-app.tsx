@@ -166,6 +166,7 @@ export function App({  }: {  }) {
   const [extensionSkills, setExtensionSkills] = useState<Skill[]>([]);
   const [extensionPromptFragments, setExtensionPromptFragments] = useState<string[]>([]);
   const [loadedExtensions, setLoadedExtensions] = useState<any[]>([]);
+  const [workspacePath, setWorkspacePath] = useState<string>(resolveWorkingDir());
   const chatStartTimeRef = useRef<number>(0);
   const currentPlanRef = useRef<Plan|null>(null);
   const streamingTextRef = useRef<any>(null);
@@ -407,7 +408,7 @@ export function App({  }: {  }) {
           const allImages = [...pendingImages, ...detectedImages];
           let intent = detectIntent(cleanInput || input, commandRegistry);
           const cb: DispatchCallbacks = {
-            dispatch, ctx: buildContext(), commandRegistry, eventBus, loadedExtensions,
+            dispatch, ctx: buildContext(), commandRegistry, eventBus, loadedExtensions, setWorkspacePath,
             runAsJob: (type: string, label: string, fn: () => Promise<void>) => {
               const job = jobManager.create(type, label);
               setJobList([...jobManager.list()]);
@@ -475,14 +476,14 @@ export function App({  }: {  }) {
   }, [questionState]);
 
   useEffect(() => {
-          initExtensions(resolveWorkingDir(), commandRegistry, registry, eventBus).then(({ extensions, skills: extSkills, systemPromptFragments }) => {
+          initExtensions(workspacePath, commandRegistry, registry, eventBus).then(({ extensions, skills: extSkills, systemPromptFragments }) => {
             if (extSkills.length > 0) setExtensionSkills(extSkills);
             if (systemPromptFragments.length > 0) setExtensionPromptFragments(systemPromptFragments);
             if (extensions.length > 0) setLoadedExtensions(extensions);
           }).catch((err: Error) => {
             console.warn(`[agon] extension loading failed: ${err.message}`);
           });
-  }, []);
+  }, [workspacePath]);
 
   useEffect(() => {
           const stdin = process.stdin;
@@ -787,7 +788,7 @@ export function App({  }: {  }) {
 }
 
 
-// @kern-source: ui-app:755
+// @kern-source: ui-app:756
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

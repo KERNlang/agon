@@ -49,6 +49,7 @@ interface name=DispatchCallbacks
   field name=commandRegistry type="any" optional=true
   field name=eventBus type="any" optional=true
   field name=loadedExtensions type="any[]" optional=true
+  field name=setWorkspacePath type="(path: string) => void" optional=true
 
 interface name=DispatchResult
   field name=handled type=boolean
@@ -399,7 +400,12 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
         });
         break;
       }
-      case 'workspace': handleWorkspace(intent.action, cb.dispatch, cb.ctx, intent.path); break;
+      case 'workspace': {
+        handleWorkspace(intent.action, cb.dispatch, cb.ctx, intent.path);
+        // Reload extensions from new workspace
+        if (cb.setWorkspacePath) cb.setWorkspacePath(resolveWorkingDir());
+        break;
+      }
       case 'flow': await handleFlowReport(cb.dispatch, cb.ctx, cb.mode, cb.sessionStartTime); break;
       case 'flows': handleFlowAnalysis(cb.dispatch); break;
       case 'chats': handleChats(cb.dispatch, intent.sessionId); break;

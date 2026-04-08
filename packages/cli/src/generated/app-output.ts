@@ -117,9 +117,14 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
         actions.addBlock({ type: 'success', message: (event as any).message } as any);
       }
       return;
-    case 'spinner-update':
+    case 'spinner-update': {
+      // Throttle spinner updates to prevent jitter (200ms minimum interval)
+      const now = Date.now();
+      if ((handleOutputEvent as any)._lastSpinnerUpdate && now - (handleOutputEvent as any)._lastSpinnerUpdate < 200) return;
+      (handleOutputEvent as any)._lastSpinnerUpdate = now;
       actions.setLiveSpinner((prev: any) => prev ? { ...prev, message: event.message } : null);
       return;
+    }
     case 'progress-update':
       actions.setLiveProgress(event.engines);
       return;

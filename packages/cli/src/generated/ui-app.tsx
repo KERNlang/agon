@@ -167,6 +167,8 @@ export function App({  }: {  }) {
   const [extensionPromptFragments, setExtensionPromptFragments] = useState<string[]>([]);
   const [loadedExtensions, setLoadedExtensions] = useState<any[]>([]);
   const [workspacePath, setWorkspacePath] = useState<string>(resolveWorkingDir());
+  const [termWidth, setTermWidth] = useState<number>(process.stdout.columns || 100);
+  const [scrollOffset, setScrollOffset] = useState<number>(0);
   const chatStartTimeRef = useRef<number>(0);
   const currentPlanRef = useRef<Plan|null>(null);
   const streamingTextRef = useRef<any>(null);
@@ -190,7 +192,7 @@ export function App({  }: {  }) {
             setLiveSpinner,
             setLiveProgress,
             setStreamingText: (val: any) => { streamingTextRef.current = val; setStreamingText(val); },
-            addBlock: (event: any) => setOutputBlocks((prev: any) => [...prev, { id: Date.now() + Math.random(), event }]),
+            addBlock: (event: any) => { setScrollOffset(0); setOutputBlocks((prev: any) => [...prev, { id: Date.now() + Math.random(), event }]); },
             clearBlocks: () => setOutputBlocks([]),
             setReviewEvent,
             setQuestionState,
@@ -486,6 +488,12 @@ export function App({  }: {  }) {
   }, [workspacePath]);
 
   useEffect(() => {
+          const onResize = () => setTermWidth(process.stdout.columns || 100);
+          process.stdout.on('resize', onResize);
+          return () => { process.stdout.off('resize', onResize); };
+  }, []);
+
+  useEffect(() => {
           const stdin = process.stdin;
           if (!stdin.isTTY) return;
           process.stdout.write('\x1b[?2004h');
@@ -573,6 +581,15 @@ export function App({  }: {  }) {
           if (key.ctrl && input === 'l') {
             handleSubmit('/clear'); return;
           }
+          // Scroll output: Shift+Up/Down for 5 blocks, Ctrl+U/D for full page
+          if (key.shift && key.upArrow) {
+            setScrollOffset((prev: number) => Math.min(prev + 5, Math.max(0, outputBlocks.length - 10)));
+            return;
+          }
+          if (key.shift && key.downArrow) {
+            setScrollOffset((prev: number) => Math.max(0, prev - 5));
+            return;
+          }
           if ((key.ctrl && input === 'e') || input === '\x05') {
             setToolOutputExpanded((prev: boolean) => !prev); return;
           }
@@ -642,29 +659,36 @@ export function App({  }: {  }) {
               <Text dimColor>{' \u2502 '}</Text>
               <Text dimColor>{registry.availableIds().length}{' engines'}</Text>
               {replState !== 'idle' && (<><Text dimColor>{' \u2502 '}</Text><Text color="yellow">{replState}</Text></>)}
+              {(() => {
+                const running = jobList.filter((j: Job) => j.state === 'running');
+                if (running.length === 0) return null;
+                return (<><Text dimColor>{' \u203a '}</Text><Text color="#facc15">{running.map((j: Job) => `${j.type}: ${j.label.slice(0, 20)}`).join(', ')}</Text></>);
+              })()}
             </Box>
           )}
           <BackgroundJobRail jobs={jobList.filter((j: Job) => j.state === 'running')} />
           <Box flexDirection="column">
+            {scrollOffset > 0 && <Box paddingX={1}><Text dimColor>{`↑ ${scrollOffset} block${scrollOffset > 1 ? 's' : ''} above — Shift+↑ to scroll`}</Text></Box>}
             {(() => {
+              const visibleBlocks = scrollOffset > 0 ? outputBlocks.slice(0, outputBlocks.length - scrollOffset) : outputBlocks;
               if (toolOutputExpanded) {
-                return outputBlocks.map((block: OutputBlock) => (<OutputBlockView key={block.id} event={block.event} mode={mode} toolOutputExpanded={true} />));
+                return visibleBlocks.map((block: OutputBlock) => (<OutputBlockView key={block.id} event={block.event} mode={mode} toolOutputExpanded={true} />));
               }
               // Group tool calls — absorb minor events (info, warning, success) between them
               const minorTypes = new Set(['info', 'warning', 'success', 'separator']);
               const groups: (OutputBlock | OutputBlock[])[] = [];
               let idx = 0;
-              while (idx < outputBlocks.length) {
-                if (outputBlocks[idx].event.type === 'tool-call') {
+              while (idx < visibleBlocks.length) {
+                if (visibleBlocks[idx].event.type === 'tool-call') {
                   const group: OutputBlock[] = [];
-                  while (idx < outputBlocks.length) {
-                    const t = outputBlocks[idx].event.type;
-                    if (t === 'tool-call') { group.push(outputBlocks[idx]); idx++; }
-                    else if (minorTypes.has(t) && idx + 1 < outputBlocks.length && outputBlocks[idx + 1].event.type === 'tool-call') { idx++; }
+                  while (idx < visibleBlocks.length) {
+                    const t = visibleBlocks[idx].event.type;
+                    if (t === 'tool-call') { group.push(visibleBlocks[idx]); idx++; }
+                    else if (minorTypes.has(t) && idx + 1 < visibleBlocks.length && visibleBlocks[idx + 1].event.type === 'tool-call') { idx++; }
                     else break;
                   }
                   groups.push(group);
-                } else { groups.push(outputBlocks[idx]); idx++; }
+                } else { groups.push(visibleBlocks[idx]); idx++; }
               }
               return groups.map((item: OutputBlock | OutputBlock[], gi: number) => {
                 if (Array.isArray(item)) {
@@ -788,7 +812,7 @@ export function App({  }: {  }) {
 }
 
 
-// @kern-source: ui-app:756
+// @kern-source: ui-app:782
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

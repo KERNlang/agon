@@ -18,6 +18,11 @@ service name=SessionResultStore
       return this.results.length > 0;
     >>>
 
+  method name=getLatest returns="SessionResult|null"
+    handler <<<
+      return this.results.length > 0 ? this.results[this.results.length - 1] : null;
+    >>>
+
   method name=clear returns=void
     handler <<<
       this.results = [];

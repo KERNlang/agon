@@ -8,7 +8,7 @@ import { Box, Text, render, useApp, useInput } from 'ink';
 import TextInput from 'ink-text-input';
 
 // @kern-source: app:7
-import { EngineRegistry, loadConfig, ensureAgonHome, ensureCurrentWorkspace, startChatSession, getElo, getActiveWorkspace, RUNS_DIR, extractImagesFromInput, resolveWorkingDir, currentBranch, configSet, createCesarMemory, modelEntryToEngineDef } from '@agon/core';
+import { EngineRegistry, loadConfig, ensureAgonHome, ensureCurrentWorkspace, startChatSession, getElo, getActiveWorkspace, RUNS_DIR, extractImagesFromInput, resolveWorkingDir, currentBranch, configSet, createCesarMemory, modelEntryToEngineDef, appendMessage } from '@agon/core';
 
 // @kern-source: app:8
 import type { Plan, ChatSession, Skill, PersistentSession, ImageAttachment } from '@agon/core';
@@ -414,6 +414,8 @@ export function App({  }: {  }) {
             runAsJob: (type: string, label: string, fn: () => Promise<void>) => {
               const job = jobManager.create(type, label);
               setJobList([...jobManager.list()]);
+              // Transition to idle so user can submit new commands while job runs
+              // Strip stays active via jobList.some(j => j.state === 'running') check
               setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state);
               fn().then(() => { jobManager.complete(job.id); setJobList([...jobManager.list()]); })
                 .catch((err: any) => { jobManager.fail(job.id, err instanceof Error ? err.message : String(err)); setJobList([...jobManager.list()]); dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); });
@@ -486,6 +488,43 @@ export function App({  }: {  }) {
             console.warn(`[agon] extension loading failed: ${err.message}`);
           });
   }, [workspacePath]);
+
+  useEffect(() => {
+          const modes = ['brainstorm', 'forge', 'tribunal', 'campfire'] as const;
+          const offs: (() => void)[] = [];
+          for (const mode of modes) {
+            const off = eventBus.on(`post:${mode}`, () => {
+              const result = sessionResultStore.getLatest();
+              if (!result || result.type !== mode) return;
+              const winner = result.winner ?? 'none';
+              let summary = '';
+              if (result.type === 'brainstorm' && 'bids' in result.data) {
+                const winBid = (result.data as any).bids?.find((b: any) => b.engineId === winner);
+                summary = winBid?.approach ?? winBid?.reasoning?.slice(0, 200) ?? (result.data as any).response?.slice(0, 200) ?? '';
+              } else if (result.type === 'forge' && 'winner' in result.data) {
+                summary = winner !== 'none' ? `Winner: ${winner}. Diff proposed for review.` : 'No winner — all engines failed.';
+              } else if (result.type === 'tribunal' && 'verdict' in result.data) {
+                summary = (result.data as any).verdict?.slice(0, 200) ?? '';
+              } else if (result.type === 'campfire' && 'rounds' in result.data) {
+                const rounds = (result.data as any).rounds;
+                const last = rounds?.[rounds.length - 1];
+                summary = last ? `${last.engineId}: ${last.content?.slice(0, 200)}` : '';
+              }
+              // Append to chat history so Cesar sees it on next turn
+              appendMessage(chatSession, {
+                role: 'engine' as any,
+                engineId: `${mode}-result`,
+                content: `[${mode} result] Winner: ${winner}. ${summary}`,
+                timestamp: new Date().toISOString(),
+              });
+              // Narrate to UI
+              const label = winner !== 'none' ? `${mode} complete — winner: ${winner}` : `${mode} complete`;
+              dispatch({ type: 'info', message: label } as any);
+            });
+            offs.push(off);
+          }
+          return () => { for (const off of offs) off(); };
+  }, [eventBus,dispatch,chatSession]);
 
   useEffect(() => {
           const onResize = () => setTermWidth(process.stdout.columns || 100);
@@ -803,7 +842,7 @@ export function App({  }: {  }) {
                   if (lines.length > 0) snippet = { engineId: streamingText.engineId, line: lines[lines.length - 1].trim() };
                 }
                 return (<>
-                  <CesarStatusStrip cesarId={_cesarId} confidence={cesarConfidence} spinner={liveSpinner} engines={liveProgress} startTime={chatStartTimeRef.current || 0} streamSnippet={snippet} isActive={replState !== 'idle'} planModeQueued={planModeQueued} activePlanState={activePlan?.state ?? null} />
+                  <CesarStatusStrip cesarId={_cesarId} confidence={cesarConfidence} spinner={liveSpinner} engines={liveProgress} startTime={chatStartTimeRef.current || 0} streamSnippet={snippet} isActive={replState !== 'idle' || jobList.some((j: Job) => j.state === 'running')} planModeQueued={planModeQueued} activePlanState={activePlan?.state ?? null} />
                   {mode === 'chat' && <StatusBar config={_cfg} chatSession={chatSession} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} isActive={replState !== 'idle'} />}
                 </>);
               })()}
@@ -814,7 +853,7 @@ export function App({  }: {  }) {
 }
 
 
-// @kern-source: app:784
+// @kern-source: app:825
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

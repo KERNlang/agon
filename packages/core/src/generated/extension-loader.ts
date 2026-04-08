@@ -25,7 +25,10 @@ import { AGON_HOME } from './config.js';
 // @kern-source: extension-loader:13
 import type { Skill } from './skill-loader.js';
 
-// @kern-source: extension-loader:15
+// @kern-source: extension-loader:14
+import { EventBus } from './event-bus.js';
+
+// @kern-source: extension-loader:16
 export function discoverExtensionDirs(cwd: string): { dir: string; source: 'user' | 'repo' }[] {
   const results: { dir: string; source: 'user' | 'repo' }[] = [];
   
@@ -64,7 +67,7 @@ export function discoverExtensionDirs(cwd: string): { dir: string; source: 'user
   return results;
 }
 
-// @kern-source: extension-loader:55
+// @kern-source: extension-loader:56
 export function loadExtensionManifest(dir: string, source: 'builtin'|'user'|'repo'): LoadedExtension | null {
   const manifestPath = join(dir, 'manifest.json');
   try {
@@ -86,7 +89,7 @@ export function loadExtensionManifest(dir: string, source: 'builtin'|'user'|'rep
   }
 }
 
-// @kern-source: extension-loader:78
+// @kern-source: extension-loader:79
 export function loadExtensions(cwd: string): LoadedExtension[] {
   const dirs = discoverExtensionDirs(cwd);
   const byId = new Map<string, LoadedExtension>();
@@ -104,7 +107,7 @@ export function loadExtensions(cwd: string): LoadedExtension[] {
   return Array.from(byId.values());
 }
 
-// @kern-source: extension-loader:97
+// @kern-source: extension-loader:98
 export async function registerExtensionCommands(ext: LoadedExtension, commandRegistry: CommandRegistry): Promise<string[]> {
   const registered: string[] = [];
   const commands = ext.manifest.contributes?.commands;
@@ -147,7 +150,7 @@ export async function registerExtensionCommands(ext: LoadedExtension, commandReg
   return registered;
 }
 
-// @kern-source: extension-loader:141
+// @kern-source: extension-loader:142
 export function registerExtensionEngines(ext: LoadedExtension, engineRegistry: EngineRegistry): string[] {
   const registered: string[] = [];
   const enginePaths = ext.manifest.contributes?.engines;
@@ -169,7 +172,7 @@ export function registerExtensionEngines(ext: LoadedExtension, engineRegistry: E
   return registered;
 }
 
-// @kern-source: extension-loader:164
+// @kern-source: extension-loader:165
 export function registerExtensionSkills(ext: LoadedExtension): Skill[] {
   const skills: Skill[] = [];
   const skillContribs = ext.manifest.contributes?.skills;
@@ -211,8 +214,33 @@ export function registerExtensionSkills(ext: LoadedExtension): Skill[] {
   return skills;
 }
 
-// @kern-source: extension-loader:207
-export async function initExtensions(cwd: string, commandRegistry: CommandRegistry, engineRegistry: EngineRegistry): Promise<{ extensions: LoadedExtension[]; skills: Skill[]; systemPromptFragments: string[] }> {
+// @kern-source: extension-loader:208
+export async function registerExtensionHooks(ext: LoadedExtension, eventBus: EventBus): Promise<string[]> {
+  const registered: string[] = [];
+  const hookContribs = ext.manifest.contributes?.hooks;
+  if (!hookContribs || hookContribs.length === 0) return registered;
+  
+  for (const hook of hookContribs) {
+    try {
+      const handlerPath = resolve(ext.dir, hook.handler);
+      const mod = await import(handlerPath);
+      if (typeof mod.handler !== 'function' && typeof mod.default !== 'function') {
+        console.warn(`[agon] extension '${ext.manifest.id}' hook '${hook.event}': handler missing handler() or default() export`);
+        continue;
+      }
+      const fn = mod.handler ?? mod.default;
+      eventBus.on(hook.event, fn, hook.priority ?? 100, ext.manifest.id);
+      registered.push(hook.event);
+    } catch (err) {
+      console.warn(`[agon] extension '${ext.manifest.id}' hook '${hook.event}': ${(err as Error).message}`);
+    }
+  }
+  
+  return registered;
+}
+
+// @kern-source: extension-loader:234
+export async function initExtensions(cwd: string, commandRegistry: CommandRegistry, engineRegistry: EngineRegistry, eventBus?: EventBus): Promise<{ extensions: LoadedExtension[]; skills: Skill[]; systemPromptFragments: string[] }> {
   const extensions = loadExtensions(cwd);
   const allSkills: Skill[] = [];
   const allFragments: string[] = [];
@@ -233,6 +261,14 @@ export async function initExtensions(cwd: string, commandRegistry: CommandRegist
     // Skills
     const skills = registerExtensionSkills(ext);
     allSkills.push(...skills);
+  
+    // Hooks
+    if (eventBus) {
+      const hooks = await registerExtensionHooks(ext, eventBus);
+      if (hooks.length > 0) {
+        console.log(`[agon] extension '${ext.manifest.id}': registered hooks: ${hooks.join(', ')}`);
+      }
+    }
   
     // System prompt fragments
     if (ext.manifest.contributes?.systemPromptFragments) {

@@ -276,8 +276,22 @@ fn name=routeWithCesar async=true params="input:string, images:ImageAttachment[]
   >>>
 
 fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchCallbacks" returns="Promise<DispatchResult>"
-  doc "Route a parsed intent to the correct handler. The giant switch, modularized."
+  doc "Route a parsed intent to the correct handler. Registry-first, switch as fallback."
   handler <<<
+    // ── Registry-first dispatch — extensions and real handlers get priority ──
+    if (cb.commandRegistry) {
+      const cmdName = intent.type === 'extension-command' ? intent.commandName : intent.type;
+      const registryHandler = cb.commandRegistry.get(cmdName);
+      if (registryHandler && registryHandler.definition.source !== 'builtin') {
+        // Real handler (not a builtin shim) — execute it
+        const args = intent.type === 'extension-command'
+          ? registryHandler.parseArgs(intent.args ?? '')
+          : intent;
+        const result = await registryHandler.execute(args, cb);
+        if (result.handled) return result;
+      }
+    }
+
     switch (intent.type) {
       // ── Job-dispatched commands (return immediately, don't hit finally) ──
       case 'forge': {

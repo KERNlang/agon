@@ -123,6 +123,8 @@ export { CommandRegistry } from './command-registry.js';
 export type { CommandDefinition, CommandHandler } from './command-registry.js';
 export { initExtensions, loadExtensions, discoverExtensionDirs } from './extension-loader.js';
 export { registerBuiltinCommands } from './builtin-commands.js';
+export { EventBus, bridgeShellHooks } from './event-bus.js';
+export type { EventPayload, EventListener } from './event-bus.js';
 export type { ValidatedEngineDefinition } from './schemas/engine-schema.js';
 export { sessionContext } from './session-context.js';
 export type { SessionResult, BrainstormResultData, CampfireResultData, TribunalResultData, ForgeResultData } from './generated/session-result-types.js';

@@ -2,6 +2,7 @@ import from="node:fs" names="writeFileSync"
 import from="node:path" names="join"
 import from="@agon/core" names="FitnessResult,EngineResult" types=true
 import from="@agon/core" names="spawnWithTimeout,worktreeDiff,diffLineCount,diffFileCount,computeScore"
+import from="./quality.js" names="runLint,runStyleCheck"
 
 fn name=runFitness async=true params="opts:{engineId:string, worktreePath:string, fitnessCmd:string, timeout:number, forgeDir:string}" returns="Promise<EngineResult>"
   handler <<<
@@ -34,8 +35,8 @@ fn name=runFitness async=true params="opts:{engineId:string, worktreePath:string
     const durationSec = Math.round((Date.now() - startTime) / 1000);
     const pass = fitnessResult.exitCode === 0 && !fitnessResult.timedOut;
 
-    const lintWarnings = 0;
-    const styleScore = 100;
+    const lintWarnings = await runLint(opts.worktreePath);
+    const styleScore = await runStyleCheck(opts.worktreePath);
 
     const fitness: FitnessResult = {
       pass,

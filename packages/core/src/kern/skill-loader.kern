@@ -9,6 +9,8 @@ interface name=Skill
   field name=prompt type=string
   field name=engines type="string[]" optional=true
   field name=source type=string
+  field name=handler type="((args: string, ctx: any) => Promise<{ handled: boolean }>)" optional=true
+  field name=tools type="string[]" optional=true
 
 fn name=parseFrontmatter params="content:string" returns="{meta:Record<string,string>, body:string}"
   handler <<<

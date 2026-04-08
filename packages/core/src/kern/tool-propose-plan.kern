@@ -1,0 +1,104 @@
+import from="./tool-types.js" names="ToolHandler,ToolDefinition,ToolResult,PermissionDecision" types=true
+import from="./tool-types.js" names="ToolContext" types=true
+
+fn name=createProposePlanTool returns=ToolHandler export=true
+  handler <<<
+    const definition: ToolDefinition = {
+      name: 'ProposePlan',
+      description: 'Propose a structured execution plan for user approval. Use this in plan mode to present your strategy with steps, engine assignments, and cost estimates.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          intent: { type: 'string', description: 'What the user asked for.' },
+          planningCost: {
+            type: 'object',
+            properties: {
+              tokens: { type: 'number' },
+              costUsd: { type: 'number' },
+            },
+          },
+          steps: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                id: { type: 'string' },
+                type: { type: 'string', enum: ['self', 'forge', 'teamforge', 'delegate', 'brainstorm', 'campfire', 'tribunal', 'pipeline'] },
+                description: { type: 'string' },
+                engines: { type: 'array', items: { type: 'string' } },
+                engine: { type: 'string' },
+                fitnessCmd: { type: 'string' },
+                tribunalMode: { type: 'string' },
+                parallel: { type: 'boolean' },
+                dependsOn: { type: 'array', items: { type: 'string' } },
+                exports: { type: 'string' },
+                imports: { type: 'array', items: { type: 'string' } },
+                estimatedTokens: { type: 'number' },
+                estimatedCostUsd: { type: 'number' },
+              },
+              required: ['id', 'type', 'description', 'estimatedTokens', 'estimatedCostUsd'],
+            },
+          },
+        },
+        required: ['intent', 'steps'],
+      },
+      maxResultSizeChars: 5000,
+      isReadOnly: true,
+      isConcurrencySafe: true,
+    };
+
+    const validate = (input: Record<string, unknown>, _ctx: ToolContext): string | null => {
+      if (!input.intent || typeof input.intent !== 'string') return 'Missing required: intent';
+      if (!Array.isArray(input.steps) || input.steps.length === 0) return 'Missing required: steps (non-empty array)';
+      const steps = input.steps as any[];
+      const ids = new Set<string>();
+      for (const s of steps) {
+        if (!s.id || !s.type || !s.description) return `Step missing required fields: ${JSON.stringify(s)}`;
+        if (ids.has(s.id)) return `Duplicate step ID: ${s.id}`;
+        ids.add(s.id);
+      }
+      for (const s of steps) {
+        if (s.dependsOn) {
+          for (const dep of s.dependsOn) {
+            if (!ids.has(dep)) return `Step "${s.id}" depends on unknown step "${dep}"`;
+          }
+        }
+      }
+      // Cycle detection via topological sort
+      const visited = new Set<string>();
+      const visiting = new Set<string>();
+      const stepMap = new Map(steps.map((s: any) => [s.id, s]));
+      const hasCycle = (id: string): boolean => {
+        if (visiting.has(id)) return true;
+        if (visited.has(id)) return false;
+        visiting.add(id);
+        for (const dep of (stepMap.get(id)?.dependsOn ?? [])) {
+          if (hasCycle(dep)) return true;
+        }
+        visiting.delete(id);
+        visited.add(id);
+        return false;
+      };
+      for (const s of steps) {
+        if (hasCycle(s.id)) return `Circular dependency detected involving step "${s.id}"`;
+      }
+      // Check parallel write conflicts
+      const parallelSteps = steps.filter((s: any) => s.parallel);
+      const writeTypes = ['forge', 'teamforge', 'pipeline'];
+      const parallelWriteSteps = parallelSteps.filter((s: any) => writeTypes.includes(s.type));
+      if (parallelWriteSteps.length > 1) {
+        return `Multiple write steps (${parallelWriteSteps.map((s: any) => s.id).join(', ')}) are marked as parallel. Forge/teamforge/pipeline steps modify the workspace and cannot run in parallel. Remove the parallel flag or add dependencies.`;
+      }
+      return null;
+    };
+
+    const checkPermission = (_input: Record<string, unknown>, _ctx: ToolContext): PermissionDecision => {
+      return { behavior: 'allow' };
+    };
+
+    const execute = async (_input: Record<string, unknown>, _ctx: ToolContext): Promise<ToolResult> => {
+      return { ok: true, content: '[PLAN_PROPOSED] Plan submitted for user approval.' };
+    };
+
+    return { definition, validate, checkPermission, execute };
+  >>>

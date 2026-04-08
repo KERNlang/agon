@@ -1,6 +1,6 @@
 import from="node:fs" names="writeFileSync,mkdirSync"
 import from="node:path" names="join"
-import from="@agon/core" names="createCesarPlan,formatCesarPlanMarkdown,planCostEstimator,resolveWorkingDir,RUNS_DIR"
+import from="@agon/core" names="createCesarPlan,formatCesarPlanMarkdown,planCostEstimator,resolveWorkingDir,RUNS_DIR,tracker"
 import from="@agon/core" names="CesarPlan,CesarPlanStep,CesarStepResult,StepExecutor" types=true
 import from="@agon/forge" names="runForge,runBrainstorm,runTribunal,runCampfire,runDelegate"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext,EngineProgress" types=true
@@ -48,134 +48,190 @@ fn name=buildStepExecutors params="ctx:HandlerContext" returns="Record<string,St
 
     const wrap = (fn: (step: CesarPlanStep, context: Record<string,string>, signal?: AbortSignal) => Promise<{result: CesarStepResult, contextExport?: string}>): StepExecutor => ({ execute: fn });
 
+    // Helper: extract token/cost from tracker delta
+    const snapshotTokens = () => {
+      const s = tracker.getStats();
+      return { tokens: s.totalTokens, cost: s.totalCostUsd };
+    };
+
+    const buildContext = (step: CesarPlanStep, context: Record<string, string>) => {
+      const contextStr = (step.imports ?? []).map((k: string) => context[k] ? `## ${k}\n${context[k]}` : '').filter(Boolean).join('\n\n');
+      return contextStr ? `${step.description}\n\n${contextStr}` : step.description;
+    };
+
     return {
-      self: wrap(async (step, _context, _signal) => {
+      self: wrap(async (step, context, signal) => {
         const startTime = Date.now();
-        return {
-          result: { status: 'success', actualTokens: 0, actualCostUsd: 0, durationMs: Date.now() - startTime, output: `Self step: ${step.description}` },
-          contextExport: step.description,
-        };
+        const before = snapshotTokens();
+        const task = buildContext(step, context);
+        try {
+          // Self step: delegate to the Cesar engine to analyze/synthesize
+          const engineId = step.engine ?? step.engines?.[0] ?? 'claude';
+          const result = await runDelegate({ engineId, task: `Analyze and respond:\n${task}`, registry: ctx.registry, adapter: ctx.adapter, timeout: 180, outputDir: join(outputDir, step.id), signal });
+          const after = snapshotTokens();
+          return {
+            result: { status: 'success', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: result.response },
+            contextExport: result.response.slice(0, 500),
+          };
+        } catch (err) {
+          const after = snapshotTokens();
+          return { result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: '', error: err instanceof Error ? err.message : String(err) } };
+        }
       }),
 
       forge: wrap(async (step, context, signal) => {
         const startTime = Date.now();
-        const contextStr = (step.imports ?? []).map((k: string) => context[k] ? `## ${k}\n${context[k]}` : '').filter(Boolean).join('\n\n');
-        const task = contextStr ? `${step.description}\n\n${contextStr}` : step.description;
+        const before = snapshotTokens();
+        const task = buildContext(step, context);
         try {
           const manifest = await runForge(
             { task, fitnessCmd: step.fitnessCmd ?? 'echo "no fitness"', cwd, forgeDir: join(outputDir, step.id), engines: step.engines, signal },
             ctx.registry, ctx.adapter,
           );
-          const totalTokens = (manifest.dispatchLog ?? []).reduce((s: number, m: any) => s + (m.tokens?.prompt ?? 0) + (m.tokens?.response ?? 0), 0);
-          const totalCost = (manifest.dispatchLog ?? []).reduce((s: number, m: any) => s + (m.tokens?.costUsd ?? 0), 0);
+          const after = snapshotTokens();
 
           if (!manifest.winner) {
-            // Collect per-engine summaries for the user
             const engineSummaries = Object.entries(manifest.results ?? {}).map(([id, r]: [string, any]) => {
               return `  ${id}: ${r.pass ? 'PASS' : 'FAIL'} (score: ${r.score ?? 'N/A'}, ${r.diffLines ?? 0} lines)`;
             }).join('\n');
-
             return {
-              result: {
-                status: 'failure',
-                actualTokens: totalTokens,
-                actualCostUsd: totalCost,
-                durationMs: Date.now() - startTime,
-                output: `Forge produced no winner.\n\nEngine results:\n${engineSummaries}\n\nUse /plan resume after deciding: retry with different engines, or abort.`,
-                error: 'No winner — all engines failed or no passing score',
-              },
+              result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: `No winner.\n${engineSummaries}`, error: 'No winner' },
             };
           }
-
           return {
-            result: { status: 'success', actualTokens: totalTokens, actualCostUsd: totalCost, durationMs: Date.now() - startTime, output: `Winner: ${manifest.winner}` },
+            result: { status: 'success', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: `Winner: ${manifest.winner}` },
             contextExport: `Forge winner: ${manifest.winner}`,
           };
         } catch (err) {
-          return { result: { status: 'failure', actualTokens: 0, actualCostUsd: 0, durationMs: Date.now() - startTime, output: '', error: err instanceof Error ? err.message : String(err) } };
+          const after = snapshotTokens();
+          return { result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: '', error: err instanceof Error ? err.message : String(err) } };
         }
       }),
 
       teamforge: wrap(async (step, context, signal) => {
         const startTime = Date.now();
-        const contextStr = (step.imports ?? []).map((k: string) => context[k] ? `## ${k}\n${context[k]}` : '').filter(Boolean).join('\n\n');
-        const task = contextStr ? `${step.description}\n\n${contextStr}` : step.description;
+        const before = snapshotTokens();
+        const task = buildContext(step, context);
         try {
           const manifest = await runForge(
             { task, fitnessCmd: step.fitnessCmd ?? 'echo "no fitness"', cwd, forgeDir: join(outputDir, step.id), engines: step.engines, hardened: true, signal },
             ctx.registry, ctx.adapter,
           );
+          const after = snapshotTokens();
           return {
-            result: { status: manifest.winner ? 'success' : 'failure', actualTokens: 0, actualCostUsd: 0, durationMs: Date.now() - startTime, output: manifest.winner ? `Winner: ${manifest.winner}` : 'No winner' },
+            result: { status: manifest.winner ? 'success' : 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: manifest.winner ? `Winner: ${manifest.winner}` : 'No winner' },
             contextExport: manifest.winner ? `TeamForge winner: ${manifest.winner}` : undefined,
           };
         } catch (err) {
-          return { result: { status: 'failure', actualTokens: 0, actualCostUsd: 0, durationMs: Date.now() - startTime, output: '', error: err instanceof Error ? err.message : String(err) } };
+          const after = snapshotTokens();
+          return { result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: '', error: err instanceof Error ? err.message : String(err) } };
         }
       }),
 
       brainstorm: wrap(async (step, context, signal) => {
         const startTime = Date.now();
-        const contextStr = (step.imports ?? []).map((k: string) => context[k] ? `## ${k}\n${context[k]}` : '').filter(Boolean).join('\n\n');
-        const question = contextStr ? `${step.description}\n\n${contextStr}` : step.description;
+        const before = snapshotTokens();
+        const question = buildContext(step, context);
         try {
           const result = await runBrainstorm({ question, engines: step.engines ?? [], registry: ctx.registry, adapter: ctx.adapter, timeout: 120, outputDir: join(outputDir, step.id), signal });
+          const after = snapshotTokens();
           return {
-            result: { status: 'success', actualTokens: 0, actualCostUsd: 0, durationMs: Date.now() - startTime, output: `Winner: ${result.winner}\n${result.response}` },
+            result: { status: 'success', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: `Winner: ${result.winner}\n${result.response}` },
             contextExport: result.response,
           };
         } catch (err) {
-          return { result: { status: 'failure', actualTokens: 0, actualCostUsd: 0, durationMs: Date.now() - startTime, output: '', error: err instanceof Error ? err.message : String(err) } };
+          const after = snapshotTokens();
+          return { result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: '', error: err instanceof Error ? err.message : String(err) } };
         }
       }),
 
       tribunal: wrap(async (step, context, _signal) => {
         const startTime = Date.now();
-        const contextStr = (step.imports ?? []).map((k: string) => context[k] ? `## ${k}\n${context[k]}` : '').filter(Boolean).join('\n\n');
-        const question = contextStr ? `${step.description}\n\n${contextStr}` : step.description;
+        const before = snapshotTokens();
+        const question = buildContext(step, context);
         try {
           const result = await runTribunal({ question, engines: step.engines ?? [], rounds: 2, mode: step.tribunalMode as any, registry: ctx.registry, adapter: ctx.adapter, timeout: 120, outputDir: join(outputDir, step.id) });
+          const after = snapshotTokens();
           return {
-            result: { status: 'success', actualTokens: 0, actualCostUsd: 0, durationMs: Date.now() - startTime, output: result.summary },
+            result: { status: 'success', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: result.summary },
             contextExport: result.summary,
           };
         } catch (err) {
-          return { result: { status: 'failure', actualTokens: 0, actualCostUsd: 0, durationMs: Date.now() - startTime, output: '', error: err instanceof Error ? err.message : String(err) } };
+          const after = snapshotTokens();
+          return { result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: '', error: err instanceof Error ? err.message : String(err) } };
         }
       }),
 
-      campfire: wrap(async (step, _context, signal) => {
+      campfire: wrap(async (step, context, signal) => {
         const startTime = Date.now();
+        const before = snapshotTokens();
+        const topic = buildContext(step, context);
         try {
-          const result = await runCampfire({ topic: step.description, engines: step.engines ?? [], registry: ctx.registry, adapter: ctx.adapter, strategy: 'all-respond', timeout: 120, outputDir: join(outputDir, step.id), signal });
+          const result = await runCampfire({ topic, engines: step.engines ?? [], registry: ctx.registry, adapter: ctx.adapter, strategy: 'all-respond', timeout: 120, outputDir: join(outputDir, step.id), signal });
+          const after = snapshotTokens();
           const summary = result.rounds.map((r: any) => `${r.engineId}: ${r.content.slice(0, 200)}`).join('\n');
           return {
-            result: { status: 'success', actualTokens: 0, actualCostUsd: 0, durationMs: Date.now() - startTime, output: summary },
+            result: { status: 'success', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: summary },
             contextExport: summary,
           };
         } catch (err) {
-          return { result: { status: 'failure', actualTokens: 0, actualCostUsd: 0, durationMs: Date.now() - startTime, output: '', error: err instanceof Error ? err.message : String(err) } };
+          const after = snapshotTokens();
+          return { result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: '', error: err instanceof Error ? err.message : String(err) } };
         }
       }),
 
       delegate: wrap(async (step, context, signal) => {
         const startTime = Date.now();
-        const contextStr = (step.imports ?? []).map((k: string) => context[k] ? `## ${k}\n${context[k]}` : '').filter(Boolean).join('\n\n');
-        const task = contextStr ? `${step.description}\n\n${contextStr}` : step.description;
+        const before = snapshotTokens();
+        const task = buildContext(step, context);
         try {
           const result = await runDelegate({ engineId: step.engine ?? step.engines?.[0] ?? 'claude', task, registry: ctx.registry, adapter: ctx.adapter, timeout: 120, outputDir: join(outputDir, step.id), signal });
+          const after = snapshotTokens();
           return {
-            result: { status: 'success', actualTokens: result.usage?.totalTokens ?? 0, actualCostUsd: 0, durationMs: Date.now() - startTime, output: result.response },
-            contextExport: result.response,
+            result: { status: 'success', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: result.response },
+            contextExport: result.response.slice(0, 500),
           };
         } catch (err) {
-          return { result: { status: 'failure', actualTokens: 0, actualCostUsd: 0, durationMs: Date.now() - startTime, output: '', error: err instanceof Error ? err.message : String(err) } };
+          const after = snapshotTokens();
+          return { result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: '', error: err instanceof Error ? err.message : String(err) } };
         }
       }),
 
-      pipeline: wrap(async (step, _context, _signal) => {
+      pipeline: wrap(async (step, context, signal) => {
+        // Pipeline = brainstorm → forge → tribunal chain
         const startTime = Date.now();
-        return { result: { status: 'success', actualTokens: 0, actualCostUsd: 0, durationMs: Date.now() - startTime, output: 'Pipeline placeholder' } };
+        const before = snapshotTokens();
+        const task = buildContext(step, context);
+        let pipelineContext = '';
+        try {
+          // 1. Brainstorm — get approach bids
+          const bsResult = await runBrainstorm({ question: task, engines: step.engines ?? [], registry: ctx.registry, adapter: ctx.adapter, timeout: 120, outputDir: join(outputDir, step.id, 'brainstorm'), signal });
+          pipelineContext = bsResult.response;
+
+          // 2. Forge — compete on implementation
+          const forgeTask = `${task}\n\nBrainstorm winner approach:\n${pipelineContext}`;
+          const manifest = await runForge(
+            { task: forgeTask, fitnessCmd: step.fitnessCmd ?? 'echo "no fitness"', cwd, forgeDir: join(outputDir, step.id, 'forge'), engines: step.engines, signal },
+            ctx.registry, ctx.adapter,
+          );
+          if (!manifest.winner) {
+            const after = snapshotTokens();
+            return { result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: 'Pipeline forge step: no winner', error: 'Forge produced no winner' } };
+          }
+
+          // 3. Tribunal — review the forge winner
+          const tribunalQ = `Review the implementation from forge winner ${manifest.winner} for: ${task}`;
+          const tResult = await runTribunal({ question: tribunalQ, engines: (step.engines ?? []).slice(0, 3), rounds: 2, registry: ctx.registry, adapter: ctx.adapter, timeout: 120, outputDir: join(outputDir, step.id, 'tribunal') });
+
+          const after = snapshotTokens();
+          return {
+            result: { status: 'success', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: `Pipeline: brainstorm → forge (${manifest.winner}) → tribunal\n${tResult.summary}` },
+            contextExport: `Pipeline result: forge winner ${manifest.winner}. Tribunal: ${tResult.summary.slice(0, 300)}`,
+          };
+        } catch (err) {
+          const after = snapshotTokens();
+          return { result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: pipelineContext ? `Partial pipeline (brainstorm done): ${pipelineContext.slice(0, 200)}` : '', error: err instanceof Error ? err.message : String(err) } };
+        }
       }),
     };
   >>>

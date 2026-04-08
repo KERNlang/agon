@@ -1,7 +1,10 @@
+// @kern-source: engine-discover:1
 import type { EngineAdapter, EngineDefinition } from './types.js';
 
+// @kern-source: engine-discover:2
 import type { EngineRegistry } from '../engine-registry.js';
 
+// @kern-source: engine-discover:4
 export interface DiscoveryResult {
   id: string;
   displayName: string;
@@ -11,6 +14,7 @@ export interface DiscoveryResult {
   missingEnv: string[];
 }
 
+// @kern-source: engine-discover:12
 export async function discoverEngines(registry: EngineRegistry, adapter: EngineAdapter): Promise<DiscoveryResult[]> {
   const engines = registry.list();
   

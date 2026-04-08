@@ -1,5 +1,7 @@
+// @kern-source: tool-registry:4
 import type { ToolDefinition, ToolCall, ToolCallResult, ToolResult, ToolContext, PermissionDecision, ToolHandler } from './tool-types.js';
 
+// @kern-source: tool-registry:6
 export class ToolRegistry {
   tools: Map<string, ToolHandler>;
 
@@ -33,6 +35,7 @@ export class ToolRegistry {
   }
 }
 
+// @kern-source: tool-registry:46
 export async function executeToolCall(call: ToolCall, ctx: ToolContext, registry: ToolRegistry, onPermissionAsk?: (tool:string,message:string)=>Promise<boolean>): Promise<ToolCallResult> {
   const start = Date.now();
   const handler = registry.get(call.name);
@@ -114,6 +117,7 @@ export async function executeToolCall(call: ToolCall, ctx: ToolContext, registry
   }
 }
 
+// @kern-source: tool-registry:129
 export async function executeToolCalls(calls: ToolCall[], ctx: ToolContext, registry: ToolRegistry, onPermissionAsk?: (tool:string,message:string)=>Promise<boolean>, onProgress?: (result:ToolCallResult)=>void): Promise<ToolCallResult[]> {
   const results: ToolCallResult[] = [];
   

@@ -17,7 +17,7 @@ import type { ToolContext, ToolCallResult } from '@agon/core';
 import { ENGINE_COLORS } from '../output.js';
 
 // @kern-source: handlers-cesar-brain:7
-import type { Dispatch, HandlerContext } from '../handlers/types.js';
+import type { Dispatch, HandlerContext, PendingDelegation } from '../handlers/types.js';
 
 // @kern-source: handlers-cesar-brain:8
 import { CONFIDENCE_TIERS, parseConfidence, confidenceBadge } from './cesar-confidence.js';
@@ -41,6 +41,18 @@ import { buildRoutingContext } from './cesar-routing.js';
 export const yieldToInk: () => Promise<void> = () => new Promise<void>(resolve => setImmediate(resolve));
 
 // @kern-source: handlers-cesar-brain:19
+export function extractDelegation(toolName: string, args: Record<string,unknown>): PendingDelegation {
+  return {
+    action: toolName.toLowerCase(),
+    reasoning: (args as any)?.task ?? (args as any)?.question ?? (args as any)?.topic ?? '',
+    hardened: (args as any)?.hardened ?? false,
+    tribunalMode: (args as any)?.mode,
+    team: (args as any)?.team ?? false,
+    createdAt: Date.now(),
+  };
+}
+
+// @kern-source: handlers-cesar-brain:31
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}> {
   const abort = new AbortController();
   const _turnStart = Date.now();
@@ -50,13 +62,23 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   const FOLLOWUP_RE = /^(still\??|and\??|go on|continue|yes|no|ok|why\??|how\??|what\??|really\??|more|details|explain|show me|huh\??|so\??|\?\??|y|n)$/i;
   const _isFollowUp = FOLLOWUP_RE.test(input.trim());
   
+  if (!ctx.cesar) {
+    ctx.cesar = {
+      busy: false, busySince: null, queue: null,
+      toolRegistry: null, hasNativeTools: false, lastDispatch: null,
+      pendingDelegation: null, reportedConfidence: undefined,
+      autoNero: false, advisorPending: false,
+      mcpFingerprint: undefined, planDispatch: null, proposedPlan: undefined,
+    };
+  }
+  
   // ── Concurrency guard with message queue ──
-  if ((ctx as any)._cesarBusy) {
-    const busySince = (ctx as any)._cesarBusySince ?? 0;
+  if (ctx.cesar!.busy) {
+    const busySince = ctx.cesar!.busySince ?? 0;
     if (busySince && Date.now() - busySince > 180_000) {
       console.warn('[cesar:brain] force-clearing stuck busy flag');
-      (ctx as any)._cesarBusy = false;
-      (ctx as any)._cesarQueue = null;
+      ctx.cesar!.busy = false;
+      ctx.cesar!.queue = null;
     } else {
       // Follow-ups while busy → show elapsed status, don't queue
       if (_isFollowUp) {
@@ -64,26 +86,28 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         dispatch({ type: 'info', message: `Cesar still working… ${elapsed}s` });
         return { delegated: false, responded: true };
       }
-      const existing = (ctx as any)._cesarQueue;
+      const existing = ctx.cesar!.queue;
       if (existing) {
         existing.input = existing.input + '\n\n' + input;
         if (images?.length) existing.images = [...(existing.images ?? []), ...images];
       } else {
-        (ctx as any)._cesarQueue = { input, dispatch, images };
+        ctx.cesar!.queue = { input, dispatch, images };
       }
       dispatch({ type: 'info', message: 'Queued — will send when Cesar finishes.' });
       return { delegated: false, responded: true };
     }
   }
-  (ctx as any)._cesarBusy = true;
-  (ctx as any)._cesarBusySince = Date.now();
+  ctx.cesar!.busy = true;
+  ctx.cesar!.busySince = Date.now();
+  const _brainStartMs = Date.now();
+  if (ctx.eventBus) await ctx.eventBus.emit('pre:cesar-brain', { input });
   
   try {
     ensureAgonHome();
     const config = ctx.config;
   
     if ((config as any).cesarEnabled === false) {
-      (ctx as any)._cesarBusy = false;
+      ctx.cesar!.busy = false;
       return { delegated: false, responded: false };
     }
   
@@ -95,7 +119,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   
     const color = ENGINE_COLORS[cesarEngineId] ?? 245;
     ctx.setActiveAbort(abort);
-    (ctx as any)._lastDispatch = dispatch;
+    ctx.cesar!.lastDispatch = dispatch;
     dispatch({ type: 'confidence-update', value: null });
     dispatch({ type: 'spinner-start', message: 'Cesar thinking…', color });
     await yieldToInk();
@@ -129,10 +153,10 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
     }
   
     // Ensure tool registry is always available
-    if (!(ctx as any)._toolRegistry) {
-      (ctx as any)._toolRegistry = createCesarToolRegistry();
+    if (!ctx.cesar!.toolRegistry) {
+      ctx.cesar!.toolRegistry = createCesarToolRegistry();
     }
-    const toolRegistry = (ctx as any)._toolRegistry as ToolRegistry;
+    const toolRegistry = ctx.cesar!.toolRegistry as ToolRegistry;
   
     let response = '';
     let streaming = false;
@@ -188,17 +212,12 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'done', output: typeof meta.output === 'string' ? meta.output : undefined } as any);
           } else if (toolStatus === 'native') {
             dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'running' } as any);
-          } else if (toolStatus === 'running' && meta.input && toolRegistry && !(ctx as any)._hasNativeTools) {
+          } else if (toolStatus === 'running' && meta.input && toolRegistry && !ctx.cesar!.hasNativeTools) {
             // Intercept orchestration signal tools — don't execute as workspace tools
             const EAGER_ORCH = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline']);
             if (EAGER_ORCH.has(toolName)) {
-              (ctx as any)._pendingDelegation = {
-                action: toolName.toLowerCase(),
-                reasoning: '',
-                hardened: false,
-                team: false,
-                createdAt: Date.now(),
-              };
+              ctx.cesar!.pendingDelegation = extractDelegation(toolName, (meta.input ?? {}) as Record<string, unknown>);
+              ctx.eventBus?.emit('cesar:delegation', { action: toolName.toLowerCase(), source: 'stream' }).catch(() => {});
               dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'done' } as any);
               // Break stream immediately — Cesar must stop after delegation (RULE 6)
               break;
@@ -231,14 +250,14 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             response += chunk.content;
   
             // Check for tool-reported confidence (ReportConfidence tool)
-            if (!confidenceParsed && (ctx as any)._reportedConfidence !== undefined) {
-              const toolConf = (ctx as any)._reportedConfidence as number;
-              delete (ctx as any)._reportedConfidence;
+            if (!confidenceParsed && ctx.cesar!.reportedConfidence !== undefined) {
+              const toolConf = ctx.cesar!.reportedConfidence as number;
+              ctx.cesar!.reportedConfidence = undefined;
               parsedConfidence = toolConf;
               confidenceParsed = true;
               dispatch({ type: 'info', message: confidenceBadge(toolConf) + ` Cesar` });
               dispatch({ type: 'confidence-update', value: toolConf });
-              if (toolConf >= CONFIDENCE_TIERS.direct && (ctx as any)._autoNero) deactivateNero(ctx, dispatch);
+              if (toolConf >= CONFIDENCE_TIERS.direct && ctx.cesar!.autoNero) deactivateNero(ctx, dispatch);
             }
   
             // Parse confidence from first chunk(s)
@@ -249,9 +268,10 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 confidenceParsed = true;
                 dispatch({ type: 'info', message: confidenceBadge(conf.value) + ` Cesar` });
                 dispatch({ type: 'confidence-update', value: conf.value });
+                ctx.eventBus?.emit('cesar:confidence', { value: conf.value, source: 'stream' }).catch(() => {});
                 response = conf.rest;
-                if (conf.value >= CONFIDENCE_TIERS.direct && (ctx as any)._autoNero) deactivateNero(ctx, dispatch);
-              } else if (response.length > 30 && !(ctx as any)._hasNativeTools) {
+                if (conf.value >= CONFIDENCE_TIERS.direct && ctx.cesar!.autoNero) deactivateNero(ctx, dispatch);
+              } else if (response.length > 30 && !ctx.cesar!.hasNativeTools) {
                 confidenceParsed = true;
               }
             }
@@ -345,12 +365,12 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   
     // Strip <think> blocks and internal markers
     response = response.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
-    if ((ctx as any)._hasNativeTools) {
+    if (ctx.cesar!.hasNativeTools) {
       response = response.replace(/<tool\s+name="[^"]+">[\s\S]*?<\/tool>/g, '').trim();
     }
   
     // ── Await eager tool results ──
-    if (eagerPromises.length > 0 && !(ctx as any)._hasNativeTools && session.alive && !abort.signal.aborted) {
+    if (eagerPromises.length > 0 && !ctx.cesar!.hasNativeTools && session.alive && !abort.signal.aborted) {
       dispatch({ type: 'spinner-start', message: `Cesar: awaiting ${eagerPromises.length} tool result${eagerPromises.length > 1 ? 's' : ''}…`, color });
       const eagerResults = await Promise.all(eagerPromises);
       const formatted = formatToolResults(
@@ -385,13 +405,13 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
     let _deferredChallenges: Array<{ engineId: string; content: string }> = [];
   
     // Plan mode flag — used below to block execution delegations while allowing thinking
-    const inPlanMode = (ctx as any).activePlan && ['planning', 'awaiting_approval'].includes((ctx as any).activePlan.state);
+    const inPlanMode = ctx.activePlan && ['planning', 'awaiting_approval'].includes(ctx.activePlan.state);
   
     // ── Post-stream escalation — same-turn tiered confidence challenges ──
     // Quick-nero (93-95%) → nero (88-92%) → brainstorm (72-87%) → advisor (<72%)
     // Quick-nero cascades: if self-challenge drops confidence, fall through to next tier.
-    if (parsedConfidence !== null && !secondOpinionPromise && !(ctx as any)._advisorPending && !_isFollowUp && !abort.signal.aborted) {
-      const pendingDel = (ctx as any)._pendingDelegation;
+    if (parsedConfidence !== null && !secondOpinionPromise && !ctx.cesar!.advisorPending && !_isFollowUp && !abort.signal.aborted) {
+      const pendingDel = ctx.cesar!.pendingDelegation;
       const didDelegate = !!pendingDel;
   
       if (!didDelegate) {
@@ -488,20 +508,20 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
     }
   
     // Post-stream: consume tool-reported confidence
-    if (!confidenceParsed && (ctx as any)._reportedConfidence !== undefined) {
-      const toolConf = (ctx as any)._reportedConfidence as number;
-      delete (ctx as any)._reportedConfidence;
+    if (!confidenceParsed && ctx.cesar!.reportedConfidence !== undefined) {
+      const toolConf = ctx.cesar!.reportedConfidence as number;
+      ctx.cesar!.reportedConfidence = undefined;
       parsedConfidence = toolConf;
       confidenceParsed = true;
       dispatch({ type: 'info', message: confidenceBadge(toolConf) + ` Cesar` });
       dispatch({ type: 'confidence-update', value: toolConf });
-      if (toolConf >= CONFIDENCE_TIERS.direct && (ctx as any)._autoNero) deactivateNero(ctx, dispatch);
+      if (toolConf >= CONFIDENCE_TIERS.direct && ctx.cesar!.autoNero) deactivateNero(ctx, dispatch);
     }
   
     // ── Check pending delegation from orchestration signal tools ──
-    const pendingDel = (ctx as any)._pendingDelegation;
+    const pendingDel = ctx.cesar!.pendingDelegation;
     if (pendingDel) {
-      delete (ctx as any)._pendingDelegation;
+      ctx.cesar!.pendingDelegation = null;
       if (streaming) dispatch({ type: 'streaming-end', engineId: cesarEngineId });
       if (!streaming) dispatch({ type: 'spinner-stop' });
       appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
@@ -538,12 +558,12 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
     // ── XML tool loop — CLI engines always, API engines if they emitted text-based tool calls (e.g. GLM-5.1) ──
     let ranToolLoop = false;
     const hasTextToolCalls = response.includes('<tool_call_tool>') || response.includes('<tool name=');
-    if (toolRegistry && response && (!(ctx as any)._hasNativeTools || hasTextToolCalls)) {
+    if (toolRegistry && response && (!ctx.cesar!.hasNativeTools || hasTextToolCalls)) {
       const toolParsed = parseToolCalls(response);
       if (toolParsed.hasToolCalls) {
         if (streaming) { dispatch({ type: 'streaming-end', engineId: cesarEngineId }); streaming = false; }
         const fileStateCache = new FileStateCache();
-        const explorationMode = (ctx as any).explorationMode ?? false;
+        const explorationMode = ctx.explorationMode ?? false;
         const toolCtx: ToolContext = {
           cwd: resolveWorkingDir(), readFileState: (fileStateCache as any).cache, abortSignal: abort.signal,
           permissionMode: (config as any).permissionMode ?? 'ask', explorationMode,
@@ -553,7 +573,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         const _lastToolInputs: Record<string, string> = {};
         const loopResult = await runToolLoop(
           async (message: string) => {
-            if ((ctx as any)._pendingDelegation) return '[Delegation pending]';
+            if (ctx.cesar!.pendingDelegation) return '[Delegation pending]';
             if (!session.alive || abort.signal.aborted) return '';
             dispatch({ type: 'spinner-start', message: 'Cesar processing results…', color });
             let nextResponse = '';
@@ -581,14 +601,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               // Intercept orchestration signal tools — set _pendingDelegation
               const LOOP_ORCH = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline']);
               if (LOOP_ORCH.has(name)) {
-                (ctx as any)._pendingDelegation = {
-                  action: name.toLowerCase(),
-                  reasoning: (inp as any).task ?? (inp as any).question ?? (inp as any).topic ?? '',
-                  hardened: (inp as any).hardened ?? false,
-                  tribunalMode: (inp as any).mode,
-                  team: (inp as any).team ?? false,
-                  createdAt: Date.now(),
-                };
+                ctx.cesar!.pendingDelegation = extractDelegation(name, (inp as Record<string, unknown>) ?? {});
               }
             },
             onToolResult: (name: string, result: any) => {
@@ -614,9 +627,9 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
     }
   
     // ── Post-tool-loop: check delegation set during XML tool loop ──
-    const postLoopDel = (ctx as any)._pendingDelegation;
+    const postLoopDel = ctx.cesar!.pendingDelegation;
     if (postLoopDel) {
-      delete (ctx as any)._pendingDelegation;
+      ctx.cesar!.pendingDelegation = null;
       if (streaming) dispatch({ type: 'streaming-end', engineId: cesarEngineId });
       if (!streaming) dispatch({ type: 'spinner-stop' });
       appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
@@ -700,8 +713,8 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       } catch { /* tracing is best-effort */ }
   
       // Auto-remember
-      if ((ctx as any).cesarMemory) {
-        const mem = (ctx as any).cesarMemory;
+      if (ctx.cesarMemory) {
+        const mem = ctx.cesarMemory;
         const topic = input.slice(0, 80).replace(/\n/g, ' ');
         mem.remember(`turn:${Date.now()}`, topic, 'decision');
         if (ranToolLoop) mem.remember(`tools:${Date.now()}`, `Cesar used tools for: ${topic}`, 'file');
@@ -738,19 +751,20 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   
     return { delegated: false, responded: false };
   } finally {
-    (ctx as any)._cesarBusy = false;
-    (ctx as any)._cesarBusySince = null;
+    ctx.eventBus?.emit('post:cesar-brain', { durationMs: Date.now() - _brainStartMs }).catch(() => {});
+    ctx.cesar!.busy = false;
+    ctx.cesar!.busySince = null;
     dispatch({ type: 'spinner-stop' });
     ctx.setActiveAbort(null);
   
     // Auto-drain queue
-    const queued = (ctx as any)._cesarQueue;
+    const queued = ctx.cesar!.queue;
     if (queued) {
-      (ctx as any)._cesarQueue = null;
+      ctx.cesar!.queue = null;
       setTimeout(() => {
         handleCesarBrain(queued.input, queued.dispatch, ctx, queued.images).catch((err: any) => {
           console.error(`[cesar:queue] drain failed: ${err.message ?? err}`);
-          (ctx as any)._cesarBusy = false;
+          ctx.cesar!.busy = false;
         });
       }, 100);
     }

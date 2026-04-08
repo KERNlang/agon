@@ -1,15 +1,20 @@
+// @kern-source: hooks:1
 import { execSync } from 'node:child_process';
 
+// @kern-source: hooks:2
 import { loadConfig } from './config.js';
 
+// @kern-source: hooks:4
 export type HookEvent = 'pre_dispatch' | 'post_dispatch' | 'pre_forge' | 'post_forge' | 'pre_brainstorm' | 'post_brainstorm' | 'pre_tribunal' | 'post_tribunal' | 'session_start' | 'session_end';
 
+// @kern-source: hooks:6
 export interface HookDef {
   command: string;
   engines?: string[];
   timeout?: number;
 }
 
+// @kern-source: hooks:11
 export interface HookResult {
   ok: boolean;
   stdout: string;
@@ -17,6 +22,7 @@ export interface HookResult {
   exitCode: number;
 }
 
+// @kern-source: hooks:17
 export function runHook(hook: HookDef, env: Record<string,string>): HookResult {
   const timeout = (hook.timeout ?? 10) * 1000;
   try {
@@ -37,6 +43,7 @@ export function runHook(hook: HookDef, env: Record<string,string>): HookResult {
   }
 }
 
+// @kern-source: hooks:38
 export function runHooks(event: HookEvent, env?: Record<string,string>): HookResult[] {
   const config = loadConfig(process.cwd());
   const hooks = (config as any).hooks as Record<string, HookDef[]> | undefined;
@@ -70,10 +77,12 @@ export function runHooks(event: HookEvent, env?: Record<string,string>): HookRes
   return results;
 }
 
+// @kern-source: hooks:72
 export function hooksFailed(results: HookResult[]): boolean {
   return results.some((r) => !r.ok);
 }
 
+// @kern-source: hooks:77
 export function hooksOutput(results: HookResult[]): string {
   return results
     .filter((r) => r.stdout.trim())

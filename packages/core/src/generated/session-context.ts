@@ -1,5 +1,7 @@
+// @kern-source: session-context:1
 import { scanProjectContext } from './context-scanner.js';
 
+// @kern-source: session-context:3
 export class SessionContext {
   private cache: string|null = null;
   private cachedCwd: string|null = null;

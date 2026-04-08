@@ -1,9 +1,13 @@
+// @kern-source: role-specialization:1
 import type { TaskClass, EloRecord } from './types.js';
 
+// @kern-source: role-specialization:2
 import { getElo } from './elo.js';
 
+// @kern-source: role-specialization:3
 import { buildRolePrompt } from './engine-memory.js';
 
+// @kern-source: role-specialization:5
 export interface EngineRole {
   engineId: string;
   role: string;
@@ -11,6 +15,7 @@ export interface EngineRole {
   specialization: string;
 }
 
+// @kern-source: role-specialization:11
 export function rankByTaskClass(engineIds: string[], taskClass: TaskClass): EngineRole[] {
   const elo = getElo();
   const classRatings = elo.byTaskClass[taskClass] ?? {};
@@ -67,12 +72,14 @@ export function rankByTaskClass(engineIds: string[], taskClass: TaskClass): Engi
   });
 }
 
+// @kern-source: role-specialization:68
 export function buildSpecializedPrompt(engineId: string, taskClass: TaskClass, basePrompt: string): string {
   const rolePrompt = buildRolePrompt(engineId, taskClass);
   if (!rolePrompt) return basePrompt;
   return basePrompt + '\n' + rolePrompt;
 }
 
+// @kern-source: role-specialization:75
 export function assignForgeRoles(engineIds: string[], taskClass: TaskClass): Map<string,{role:string,specialization:string}> {
   const roles = rankByTaskClass(engineIds, taskClass);
   const map = new Map<string, { role: string; specialization: string }>();

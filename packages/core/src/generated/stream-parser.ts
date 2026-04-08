@@ -1,10 +1,14 @@
+// @kern-source: stream-parser:1
 export interface ParsedChunk {
   type: 'text'|'status'|'result'|'raw';
   content: string;
 }
 
+// @kern-source: stream-parser:2
 
+// @kern-source: stream-parser:3
 
+// @kern-source: stream-parser:5
 export class StreamParser {
   private buffer: string;
 
@@ -83,6 +87,7 @@ export class StreamParser {
   }
 }
 
+// @kern-source: stream-parser:87
 export function parseStreamChunk(chunk: string): ParsedChunk[] {
   const parser = new StreamParser();
   const results = parser.feed(chunk);

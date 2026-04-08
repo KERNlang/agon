@@ -1,11 +1,16 @@
+// @kern-source: elo:1
 import { readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
 
+// @kern-source: elo:2
 import { dirname } from 'node:path';
 
+// @kern-source: elo:3
 import type { EloRecord, EloRating, TaskClass } from './types.js';
 
+// @kern-source: elo:4
 import { ELO_PATH } from '../config.js';
 
+// @kern-source: elo:6
 export function updateElo(winnerId: string, loserId: string, taskClass: TaskClass, kFactor: number): {winnerNewRating:number;loserNewRating:number} {
   const DEFAULT_RATING = 1500;
   function defaultRating(): EloRating {
@@ -61,6 +66,7 @@ export function updateElo(winnerId: string, loserId: string, taskClass: TaskClas
   return { winnerNewRating: wGlobal.rating, loserNewRating: lGlobal.rating };
 }
 
+// @kern-source: elo:62
 export function getElo(): EloRecord {
   try { return JSON.parse(readFileSync(ELO_PATH, 'utf-8')) as EloRecord; }
   catch (err) {
@@ -71,6 +77,7 @@ export function getElo(): EloRecord {
   }
 }
 
+// @kern-source: elo:73
 export function getEngineRating(engineId: string): EloRating {
   const record = getElo();
   return record.global[engineId] ?? { rating: 1500, wins: 0, losses: 0, draws: 0 };

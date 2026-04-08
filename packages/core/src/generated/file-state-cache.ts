@@ -1,9 +1,13 @@
+// @kern-source: file-state-cache:4
 import type { FileState } from './tool-types.js';
 
+// @kern-source: file-state-cache:6
 export const MAX_CACHE_ENTRIES: number = 100;
 
+// @kern-source: file-state-cache:9
 export const MAX_CACHE_BYTES: number = 25 * 1024 * 1024;
 
+// @kern-source: file-state-cache:12
 export class FileStateCache {
   cache: Map<string, FileState>;
   totalBytes: number;

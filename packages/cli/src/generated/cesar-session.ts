@@ -28,7 +28,10 @@ import { createCesarToolRegistry } from './cesar-tools.js';
 // @kern-source: cesar-session:10
 import { buildRoutingContext } from './cesar-routing.js';
 
-// @kern-source: cesar-session:12
+// @kern-source: cesar-session:11
+import { extractDelegation } from './handlers-cesar-brain.js';
+
+// @kern-source: cesar-session:13
 export const CESAR_SYSTEM_PROMPT: string = `You are Cesar, Agon AI orchestrator.
 
 PERSONALITY: You are the user's trusted partner, not a servant. Warm, sharp, and competent. Talk like a senior engineer who happens to have a good sense of humor — relaxed but never sloppy. Drop a dry joke when the moment calls for it, but never force it. Be human: say "I don't know" when you don't, say "this is tricky" when it is, and celebrate when something works. Never be cold or robotic. Never be performatively enthusiastic. Just be real.
@@ -57,7 +60,7 @@ RULE 5 — WORKSPACE: Use Read for files. Use Grep for search. NEVER use cat/hea
 RULE 6 — AFTER DELEGATION: After calling Forge/Brainstorm/Tribunal/Campfire/Pipeline, STOP. Do not continue responding. The orchestrator handles the rest.
 RULE 7 — NO NARRATION: NEVER narrate your research process. Do not write "Reading the file...", "I'm checking...", "Let me look at...", "I've confirmed...". The user sees your text output — if you narrate exploration it looks like you have no clue. Instead: call tools SILENTLY, then speak ONLY when you have the answer or decision. Your visible output should be conclusions, answers, and actions — never a play-by-play of your investigation. If you need to read files or search code, call Read/Grep/Glob directly without announcing it.`;
 
-// @kern-source: cesar-session:43
+// @kern-source: cesar-session:44
 export function buildCesarSystemPrompt(ctx: HandlerContext): string {
   const config = ctx.config;
       const cesarCwd = resolveWorkingDir();
@@ -79,17 +82,17 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
         systemParts.push(`## OPERATING MODE\nExploration mode is ON. Stay read-only: inspect files, search, and use read-only shell commands only. Do not call Edit or Write. Do not run non-read-only Bash commands.`);
       }
       // Inject Cesar memory context
-      if ((ctx as any).cesarMemory) {
-        const memoryCtx = (ctx as any).cesarMemory.toPromptContext();
+      if (ctx.cesarMemory) {
+        const memoryCtx = ctx.cesarMemory.toPromptContext();
         if (memoryCtx) systemParts.push(memoryCtx);
       }
   
-      if ((ctx as any).neroMode) {
+      if (ctx.neroMode) {
         systemParts.push(`NERO MODE: Adversarial. Challenge assumptions, probe weaknesses, ask hard questions before implementing. Suggest tribunal-red-team or tribunal-adversarial.`);
       }
   
       // Inject extension system prompt fragments
-      const fragments = (ctx as any).extensionPromptFragments;
+      const fragments = ctx.extensionPromptFragments;
       if (Array.isArray(fragments) && fragments.length > 0) {
         systemParts.push(`## EXTENSIONS\n${fragments.join('\n')}`);
       }
@@ -97,7 +100,7 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
       // Always present — Cesar should suggest plan mode for complex tasks
       systemParts.push(`RULE 8 — SUGGEST PLANNING: For complex tasks that would require multi-engine orchestration (forge, brainstorm + forge, or multiple delegations), suggest plan mode to the user BEFORE executing. Say: "This looks like it needs a plan. Want me to plan it first? Use /plan <task> to enter plan mode." Do NOT auto-enter plan mode — the user decides. Simple questions and single-engine tasks do not need plans.`);
   
-      if ((ctx as any).activePlan && ['planning', 'awaiting_approval'].includes((ctx as any).activePlan.state)) {
+      if (ctx.activePlan && ['planning', 'awaiting_approval'].includes(ctx.activePlan.state)) {
         const stats = tracker.getStats();
         let budgetWarning = '';
         if (stats.totalCostUsd > 1.0) {
@@ -126,11 +129,11 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
       return systemParts.join('\n\n');
 }
 
-// @kern-source: cesar-session:113
+// @kern-source: cesar-session:114
 export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry, config: any): ((name:string, args:Record<string,unknown>, callId:string) => Promise<string>) | undefined {
   const fsc = new FileStateCache();
   const toolResultCache = new Map<string, string>();
-  const explorationMode = (ctx as any).explorationMode ?? false;
+  const explorationMode = ctx.explorationMode ?? false;
   const sharedToolCtx: ToolContext = {
     cwd: resolveWorkingDir(),
     readFileState: (fsc as any).cache,
@@ -142,7 +145,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
   };
   return async (name: string, args: Record<string, unknown>, callId: string) => {
     // Plan mode: block execution tools
-    const activePlan = (ctx as any).activePlan;
+    const activePlan = ctx.activePlan;
     if (activePlan && ['planning', 'awaiting_approval'].includes(activePlan.state)) {
       const BLOCKED_IN_PLAN = ['Forge', 'Pipeline', 'Edit', 'Write'];
       if (BLOCKED_IN_PLAN.includes(name)) {
@@ -160,14 +163,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
     // ── Orchestration signal tools — intercept before execution ──
     const ORCH_TOOLS = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline']);
     if (ORCH_TOOLS.has(name)) {
-      (ctx as any)._pendingDelegation = {
-        action: name.toLowerCase(),
-        reasoning: (args as any).task ?? (args as any).question ?? (args as any).topic ?? '',
-        hardened: (args as any).hardened ?? false,
-        tribunalMode: (args as any).mode,
-        team: (args as any).team ?? false,
-        createdAt: Date.now(),
-      };
+      ctx.cesar!.pendingDelegation = extractDelegation(name, args);
       // [DELEGATION_BREAK] prefix signals persistent-session to stop the tool loop
       // immediately — the model must not continue after delegation.
       return '[DELEGATION_BREAK] Delegation accepted. The orchestrator will handle the rest.';
@@ -246,16 +242,16 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
   
       // Wire ProposePlan tool to actual plan creation + display
       const { handleProposePlan } = await import('../generated/handlers-plan-mode.js');
-      const dispatch = (ctx as any)._planDispatch;
+      const dispatch = ctx.cesar!.planDispatch;
       if (dispatch) {
         try {
           const plan = await handleProposePlan(args, dispatch, ctx);
           // Set React state for UI
-          if ((ctx as any).setActivePlan) {
-            (ctx as any).setActivePlan(plan);
+          if (ctx.setActivePlan) {
+            ctx.setActivePlan(plan);
           }
           // Stash on ctx so app-dispatch can read it synchronously after routeWithCesar returns
-          (ctx as any)._proposedPlan = plan;
+          ctx.cesar!.proposedPlan = plan;
         } catch (err) {
           console.warn(`[agon] ProposePlan handling failed: ${err instanceof Error ? err.message : String(err)}`);
         }
@@ -267,7 +263,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
     if (name === 'ReportConfidence') {
       const value = typeof (args as any).value === 'number' ? (args as any).value : null;
       if (value !== null && value >= 0 && value <= 100) {
-        (ctx as any)._reportedConfidence = value;
+        ctx.cesar!.reportedConfidence = value;
       }
     }
   
@@ -282,7 +278,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
       toolRegistry,
       async (tool: string, message: string) => {
         return new Promise<boolean>((resolve) => {
-          const d = (ctx as any)._lastDispatch;
+          const d = ctx.cesar!.lastDispatch;
           if (d) {
             const cmd = (args as any).command ?? (args as any).file_path ?? JSON.stringify(args);
             d({ type: 'permission-ask', tool, command: cmd, reason: message, resolve } as any);
@@ -303,7 +299,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
   };
 }
 
-// @kern-source: cesar-session:291
+// @kern-source: cesar-session:285
 export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:string, command:string) => Promise<boolean> {
   const engine = ctx.registry.get(engineId);
   return async (tool: string, command: string) => {
@@ -318,7 +314,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
     const perm = perms[agonTool];
   
     // Block writes during exploration mode
-    if ((ctx as any).explorationMode) {
+    if (ctx.explorationMode) {
       const WRITE_TOOLS = ['Edit', 'Write', 'Bash'];
       if (WRITE_TOOLS.includes(agonTool)) {
         return false;
@@ -339,7 +335,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
   
     // ask → show permission prompt (same UI as Claude Code)
     return new Promise<boolean>((resolve) => {
-      const dispatch = (ctx as any)._lastDispatch;
+      const dispatch = ctx.cesar!.lastDispatch;
       if (dispatch) {
         dispatch({ type: 'permission-ask', tool: agonTool, command, reason: `Cesar (${engineId}) wants to execute`, resolve } as any);
       } else {
@@ -349,7 +345,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
   };
 }
 
-// @kern-source: cesar-session:338
+// @kern-source: cesar-session:332
 export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unknown>> {
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -383,7 +379,7 @@ export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unkn
   return normalizeNamedRecord(raw);
 }
 
-// @kern-source: cesar-session:372
+// @kern-source: cesar-session:366
 export function loadCesarMcpServers(config: any, cwd: string): Array<Record<string,unknown>>|undefined {
   if (!(config as any).cesarMcpEnabled) return undefined;
   
@@ -407,14 +403,14 @@ export function loadCesarMcpServers(config: any, cwd: string): Array<Record<stri
   return servers;
 }
 
-// @kern-source: cesar-session:396
+// @kern-source: cesar-session:390
 export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
   if (!binaryPath) return false;
   const protocol = engine?.companion?.protocol;
   return protocol === 'acp' || protocol === 'jsonrpc';
 }
 
-// @kern-source: cesar-session:403
+// @kern-source: cesar-session:397
 export function mcpConfigFingerprint(config: any): string {
   const enabled = !!(config as any).cesarMcpEnabled;
   const configPath = String((config as any).cesarMcpConfigPath ?? '');
@@ -429,16 +425,27 @@ export function mcpConfigFingerprint(config: any): string {
   return `${enabled}:${configPath}:${mtime}`;
 }
 
-// @kern-source: cesar-session:419
+// @kern-source: cesar-session:413
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
   const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
   const cwd = resolveWorkingDir();
   
+  // Ensure cesar state bag exists
+  if (!ctx.cesar) {
+    ctx.cesar = {
+      busy: false, busySince: null, queue: null,
+      toolRegistry: null, hasNativeTools: false, lastDispatch: null,
+      pendingDelegation: null, reportedConfidence: undefined,
+      autoNero: false, advisorPending: false,
+      mcpFingerprint: undefined, planDispatch: null, proposedPlan: undefined,
+    };
+  }
+  
   // Return existing alive session IF it's for the same engine AND MCP config hasn't changed
   const currentMcpFp = mcpConfigFingerprint(config);
   if (ctx.cesarSession && ctx.cesarSession.alive && ctx.cesarSession.engineId === cesarEngineId) {
-    const storedFp = (ctx as any)._cesarMcpFingerprint as string | undefined;
+    const storedFp = ctx.cesar!.mcpFingerprint as string | undefined;
     if (storedFp === currentMcpFp) {
       return ctx.cesarSession;
     }
@@ -503,11 +510,11 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
   const toolRegistry = createCesarToolRegistry();
   
   // Store registry on context for tool execution during responses
-  (ctx as any)._toolRegistry = toolRegistry;
+  ctx.cesar!.toolRegistry = toolRegistry;
   
   // Build native function calling tools for API engines (OpenAI-compatible)
   const nativeTools = (!binaryPath && engine.api) ? toolsToOpenAIFormat(toolRegistry) : undefined;
-  (ctx as any)._hasNativeTools = !!nativeTools;
+  ctx.cesar!.hasNativeTools = !!nativeTools;
   
   // API engines with native tools: DON'T inject XML tool descriptions — the native
   // tools parameter is enough and XML descriptions confuse models into narrating
@@ -538,7 +545,7 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
   await session.start();
   ctx.setCesarSession(session);
   // Store MCP config fingerprint so we can detect changes on next reuse check
-  (ctx as any)._cesarMcpFingerprint = currentMcpFp;
+  ctx.cesar!.mcpFingerprint = currentMcpFp;
   return session;
 }
 

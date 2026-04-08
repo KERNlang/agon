@@ -1,3 +1,4 @@
+// @kern-source: text:1
 export function wordWrap(text: string, width: number): string[] {
   const result: string[] = [];
   for (const line of text.split('\n')) {

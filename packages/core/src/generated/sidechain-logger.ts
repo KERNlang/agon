@@ -1,7 +1,10 @@
+// @kern-source: sidechain-logger:1
 import { appendFileSync, mkdirSync } from 'node:fs';
 
+// @kern-source: sidechain-logger:2
 import { join } from 'node:path';
 
+// @kern-source: sidechain-logger:4
 export interface SidechainEvent {
   ts: string;
   type: string;
@@ -12,6 +15,7 @@ export interface SidechainEvent {
   data?: Record<string,unknown>;
 }
 
+// @kern-source: sidechain-logger:14
 export interface SidechainLogger {
   log: (type:string, engineId?:string, data?:Record<string,unknown>)=>void;
   child: (childSessionId:string, childSessionType:string)=>SidechainLogger;
@@ -19,6 +23,7 @@ export interface SidechainLogger {
   sessionId: string;
 }
 
+// @kern-source: sidechain-logger:20
 export function createSidechainLogger(opts: {sessionId:string, sessionType:string, outputDir:string, parentId?:string}): SidechainLogger {
   const suffix = opts.parentId ? `_sidechain_${opts.parentId}` : '';
   const filename = `${opts.sessionType}_${opts.sessionId}${suffix}.jsonl`;

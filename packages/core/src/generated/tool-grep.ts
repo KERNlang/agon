@@ -1,17 +1,23 @@
+// @kern-source: tool-grep:4
 import type { ToolResult, ToolContext, ToolDefinition, PermissionDecision, ToolHandler } from './tool-types.js';
 
+// @kern-source: tool-grep:5
 import { spawnWithTimeout } from './process.js';
 
+// @kern-source: tool-grep:7
 export const DEFAULT_HEAD_LIMIT: number = 250;
 
+// @kern-source: tool-grep:10
 export const GREP_TIMEOUT: number = 20000;
 
+// @kern-source: tool-grep:13
 export function applyHeadLimit(text: string, limit: number): string {
   const lines = text.split('\n');
   if (lines.length <= limit) return text;
   return lines.slice(0, limit).join('\n') + `\n\n[Truncated: showing ${limit} of ${lines.length} lines]`;
 }
 
+// @kern-source: tool-grep:21
 export function createGrepTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Grep',

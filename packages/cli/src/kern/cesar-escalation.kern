@@ -79,9 +79,9 @@ Challenge your own answer in 2-3 sentences. What could be wrong? What assumption
       if (!challengeText.trim()) return { challenged: false, newConfidence: null, challengeText: '' };
 
       // Check tool-reported confidence first (API/native-tool backends use ReportConfidence)
-      if ((ctx as any)._reportedConfidence !== undefined) {
-        const toolConf = (ctx as any)._reportedConfidence as number;
-        delete (ctx as any)._reportedConfidence;
+      if (ctx.cesar!.reportedConfidence !== undefined) {
+        const toolConf = ctx.cesar!.reportedConfidence as number;
+        ctx.cesar!.reportedConfidence = undefined;
         return { challenged: true, newConfidence: toolConf, challengeText };
       }
       // Fall back to parsing ~X% from text
@@ -212,13 +212,14 @@ fn name=handleSecondOpinion async=true params="secondResult:{stdout:string, engi
 fn name=activateNero params="ctx:HandlerContext, dispatch:Dispatch" returns=void
   doc "Auto-activate Nero mode — kill session so next turn reboots with Nero system prompt."
   handler <<<
-    if (!(ctx as any).neroMode && ctx.setNeroMode) {
+    if (!ctx.neroMode && ctx.setNeroMode) {
       ctx.setNeroMode(true);
-      (ctx as any).neroMode = true;
-      (ctx as any)._autoNero = true;
+      ctx.neroMode = true;
+      ctx.cesar!.autoNero = true;
       // No longer kill session — same-turn escalation handles challenges.
       // Session stays alive for manual /nero toggle (system prompt injection).
       dispatch({ type: 'info', message: `${icons().nero} Nero mode active` });
+      ctx.eventBus?.emit('cesar:nero', { active: true }).catch(() => {});
     }
   >>>
 
@@ -226,9 +227,10 @@ fn name=deactivateNero params="ctx:HandlerContext, dispatch:Dispatch" returns=vo
   doc "Auto-deactivate Nero when confidence recovers."
   handler <<<
     ctx.setNeroMode(false);
-    (ctx as any).neroMode = false;
-    (ctx as any)._autoNero = false;
+    ctx.neroMode = false;
+    ctx.cesar!.autoNero = false;
     dispatch({ type: 'info', message: `${icons().nero} Nero deactivated — confidence recovered` });
+    ctx.eventBus?.emit('cesar:nero', { active: false }).catch(() => {});
   >>>
 
 

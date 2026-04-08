@@ -1,13 +1,19 @@
+// @kern-source: tool-write:5
 import { writeFileSync, statSync, existsSync, mkdirSync } from 'node:fs';
 
+// @kern-source: tool-write:6
 import { resolve, dirname, relative } from 'node:path';
 
+// @kern-source: tool-write:7
 import type { ToolResult, ToolContext, ToolHandler, ToolDefinition, PermissionDecision } from './tool-types.js';
 
+// @kern-source: tool-write:8
 import { fileStateCache } from '../file-state-cache.js';
 
+// @kern-source: tool-write:9
 import { takeSnapshot } from './file-history.js';
 
+// @kern-source: tool-write:11
 export function createWriteTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Write',

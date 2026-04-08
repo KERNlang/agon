@@ -1,0 +1,154 @@
+// @kern-source: cesar-plan:3
+export type CesarPlanState = 'planning' | 'awaiting_approval' | 'running' | 'paused' | 'done' | 'cancelled';
+
+// @kern-source: cesar-plan:4
+export type CesarStepState = 'pending' | 'blocked' | 'running' | 'done' | 'failed' | 'skipped' | 'cancelled';
+
+// @kern-source: cesar-plan:5
+export type CesarStepType = 'self' | 'forge' | 'teamforge' | 'delegate' | 'brainstorm' | 'campfire' | 'tribunal' | 'pipeline';
+
+// @kern-source: cesar-plan:7
+export interface CesarStepResult {
+  status: 'success'|'failure';
+  actualTokens: number;
+  actualCostUsd: number;
+  durationMs: number;
+  output: string;
+  error?: string;
+}
+
+// @kern-source: cesar-plan:15
+export interface CesarPlanStep {
+  id: string;
+  type: CesarStepType;
+  description: string;
+  engines?: string[];
+  engine?: string;
+  fitnessCmd?: string;
+  tribunalMode?: string;
+  parallel?: boolean;
+  dependsOn?: string[];
+  exports?: string[];
+  imports?: string[];
+  estimatedTokens: number;
+  estimatedCostUsd: number;
+  state?: CesarStepState;
+  result?: CesarStepResult;
+}
+
+// @kern-source: cesar-plan:32
+export interface CesarPlan {
+  id: string;
+  state: CesarPlanState;
+  intent: string;
+  steps: CesarPlanStep[];
+  planningCost?: number;
+  totalEstimatedTokens: number;
+  totalEstimatedCostUsd: number;
+  totalActualTokens: number;
+  totalActualCostUsd: number;
+  stepContext: Record<string, string>;
+  createdAt: string;
+  approvedAt?: string;
+  completedAt?: string;
+  planFilePath?: string;
+}
+
+// @kern-source: cesar-plan:48
+export function createCesarPlan(intent: string, steps: CesarPlanStep[]): CesarPlan {
+  const id = `cplan-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const initializedSteps = steps.map(s => ({
+    ...s,
+    state: (s.dependsOn && s.dependsOn.length > 0 ? 'blocked' : 'pending') as CesarStepState,
+  }));
+  const totalEstimatedTokens = steps.reduce((sum, s) => sum + s.estimatedTokens, 0);
+  const totalEstimatedCostUsd = steps.reduce((sum, s) => sum + s.estimatedCostUsd, 0);
+  return {
+    id,
+    state: 'planning',
+    intent,
+    steps: initializedSteps,
+    totalEstimatedTokens,
+    totalEstimatedCostUsd,
+    totalActualTokens: 0,
+    totalActualCostUsd: 0,
+    stepContext: {},
+    createdAt: new Date().toISOString(),
+  };
+}
+
+// @kern-source: cesar-plan:72
+export function approveCesarPlan(plan: CesarPlan): CesarPlan {
+  return {
+    ...plan,
+    state: 'running' as CesarPlanState,
+    approvedAt: new Date().toISOString(),
+  };
+}
+
+// @kern-source: cesar-plan:82
+export function advanceCesarStep(plan: CesarPlan, stepId: string, result: CesarStepResult): CesarPlan {
+  const stepIdx = plan.steps.findIndex(s => s.id === stepId);
+  if (stepIdx === -1) return plan;
+  
+  const isSuccess = result.status === 'success';
+  const stepState: CesarStepState = isSuccess ? 'done' : 'failed';
+  
+  let newSteps = plan.steps.map((s, i) =>
+    i === stepIdx ? { ...s, state: stepState, result } : s,
+  );
+  
+  // Unblock dependent steps if this step succeeded
+  if (isSuccess) {
+    newSteps = newSteps.map(s => {
+      if (s.state !== 'blocked') return s;
+      if (!s.dependsOn || s.dependsOn.length === 0) return s;
+      const allDepsDone = s.dependsOn.every(depId => {
+        const dep = newSteps.find(d => d.id === depId);
+        return dep && dep.state === 'done';
+      });
+      return allDepsDone ? { ...s, state: 'pending' as CesarStepState } : s;
+    });
+  }
+  
+  // Accumulate actual costs
+  const totalActualTokens = plan.totalActualTokens + result.actualTokens;
+  const totalActualCostUsd = plan.totalActualCostUsd + result.actualCostUsd;
+  
+  // Determine plan state
+  let newState: CesarPlanState = plan.state;
+  let completedAt = plan.completedAt;
+  
+  if (!isSuccess) {
+    newState = 'paused';
+  } else {
+    const allDone = newSteps.every(s => s.state === 'done' || s.state === 'skipped');
+    if (allDone) {
+      newState = 'done';
+      completedAt = new Date().toISOString();
+    }
+  }
+  
+  return {
+    ...plan,
+    steps: newSteps,
+    state: newState,
+    totalActualTokens,
+    totalActualCostUsd,
+    completedAt,
+  };
+}
+
+// @kern-source: cesar-plan:136
+export function cancelCesarPlan(plan: CesarPlan): CesarPlan {
+  const newSteps = plan.steps.map(s => {
+    if (s.state === 'done' || s.state === 'failed') return s;
+    return { ...s, state: 'cancelled' as CesarStepState };
+  });
+  return {
+    ...plan,
+    steps: newSteps,
+    state: 'cancelled' as CesarPlanState,
+  };
+}
+

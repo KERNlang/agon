@@ -1,5 +1,5 @@
 // @kern-source: handler-types:1
-import type { EngineRegistry, EngineAdapter, Plan, AgonConfig, ChatSession, PersistentSession, CesarMemory } from '@agon/core';
+import type { EngineRegistry, EngineAdapter, Plan, AgonConfig, ChatSession, PersistentSession, CesarMemory, EventBus, ToolRegistry } from '@agon/core';
 
 // @kern-source: handler-types:3
 export interface EngineProgress {
@@ -48,6 +48,33 @@ export type OutputEvent =
   | { type: 'dashboard'; available: string[]; enabled: string[]; defaultEngine: string; eloTop?: { id: string; rating: number }; totalForges: number; workspace?: { name: string; path: string; isKern?: boolean }; runCount: number };
 
 // @kern-source: handler-types:111
+export interface PendingDelegation {
+  action: string;
+  reasoning: string;
+  hardened: boolean;
+  tribunalMode?: string;
+  team: boolean;
+  createdAt: number;
+}
+
+// @kern-source: handler-types:119
+export interface CesarState {
+  busy: boolean;
+  busySince: number | null;
+  queue: { input: string; dispatch: any; images?: any[] } | null;
+  toolRegistry: ToolRegistry | null;
+  hasNativeTools: boolean;
+  lastDispatch: ((event: any) => void) | null;
+  pendingDelegation: PendingDelegation | null;
+  reportedConfidence: number | undefined;
+  autoNero: boolean;
+  advisorPending: boolean;
+  mcpFingerprint: string | undefined;
+  planDispatch: ((event: any) => void) | null;
+  proposedPlan: any | undefined;
+}
+
+// @kern-source: handler-types:134
 export interface HandlerContext {
   registry: EngineRegistry;
   adapter: EngineAdapter;
@@ -65,5 +92,10 @@ export interface HandlerContext {
   neroMode: boolean;
   setNeroMode: (mode: boolean) => void;
   cesarMemory: CesarMemory;
+  activePlan?: any | null;
+  setActivePlan?: ((plan: any) => void) | undefined;
+  extensionPromptFragments?: string[];
+  eventBus?: EventBus | undefined;
+  cesar?: CesarState | undefined;
 }
 

@@ -141,7 +141,7 @@ fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistr
       }
       // Record token usage for stage 1
       for (const m of stage1.metrics ?? []) {
-        if (m.tokens) tracker.record(m.engineId, { prompt: 'x'.repeat(m.tokens.prompt * 4), response: 'x'.repeat(m.tokens.response * 4) });
+        if (m.tokens) tracker.record(m.engineId, { usage: { promptTokens: m.tokens.prompt, completionTokens: m.tokens.response, totalTokens: m.tokens.prompt + m.tokens.response, source: 'cli-reported' as const } });
         sidechain.log('dispatch:complete', m.engineId, { phase: m.phase, durationMs: m.dispatchDurationMs, score: m.score, pass: m.pass, tokens: m.tokens });
       }
 
@@ -182,7 +182,7 @@ fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistr
         }
         // Record token usage for stage 2
         for (const m of stage2.metrics ?? []) {
-          if (m.tokens) tracker.record(m.engineId, { prompt: 'x'.repeat(m.tokens.prompt * 4), response: 'x'.repeat(m.tokens.response * 4) });
+          if (m.tokens) tracker.record(m.engineId, { usage: { promptTokens: m.tokens.prompt, completionTokens: m.tokens.response, totalTokens: m.tokens.prompt + m.tokens.response, source: 'cli-reported' as const } });
           sidechain.log('dispatch:complete', m.engineId, { phase: m.phase, durationMs: m.dispatchDurationMs, score: m.score, pass: m.pass, tokens: m.tokens, error: m.error });
         }
 

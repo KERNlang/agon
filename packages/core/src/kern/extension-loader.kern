@@ -275,3 +275,17 @@ fn name=initExtensions async=true params="cwd:string, commandRegistry:CommandReg
 
     return { extensions, skills: allSkills, systemPromptFragments: allFragments };
   >>>
+
+fn name=buildExtensionContext params="cb:any, source:string" returns="Record<string, unknown>"
+  doc "Build a sandboxed context object for extension command handlers."
+  handler <<<
+    return {
+      dispatch: cb.dispatch,
+      askQuestion: cb.askQuestion,
+      config: cb.ctx?.config,
+      registry: cb.ctx?.registry,
+      adapter: cb.ctx?.adapter,
+      source,
+      cwd: process.cwd(),
+    };
+  >>>

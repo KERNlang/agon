@@ -1,11 +1,19 @@
+// @kern-source: fitness:1
 import { writeFileSync } from 'node:fs';
 
+// @kern-source: fitness:2
 import { join } from 'node:path';
 
+// @kern-source: fitness:3
 import type { FitnessResult, EngineResult } from '@agon/core';
 
+// @kern-source: fitness:4
 import { spawnWithTimeout, worktreeDiff, diffLineCount, diffFileCount, computeScore } from '@agon/core';
 
+// @kern-source: fitness:5
+import { runLint, runStyleCheck } from './quality.js';
+
+// @kern-source: fitness:7
 export async function runFitness(opts: {engineId:string, worktreePath:string, fitnessCmd:string, timeout:number, forgeDir:string}): Promise<EngineResult> {
   const startTime = Date.now();
   
@@ -36,8 +44,8 @@ export async function runFitness(opts: {engineId:string, worktreePath:string, fi
   const durationSec = Math.round((Date.now() - startTime) / 1000);
   const pass = fitnessResult.exitCode === 0 && !fitnessResult.timedOut;
   
-  const lintWarnings = 0;
-  const styleScore = 100;
+  const lintWarnings = await runLint(opts.worktreePath);
+  const styleScore = await runStyleCheck(opts.worktreePath);
   
   const fitness: FitnessResult = {
     pass,

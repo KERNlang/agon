@@ -283,3 +283,16 @@ export async function initExtensions(cwd: string, commandRegistry: CommandRegist
   return { extensions, skills: allSkills, systemPromptFragments: allFragments };
 }
 
+// @kern-source: extension-loader:279
+export function buildExtensionContext(cb: any, source: string): Record<string, unknown> {
+  return {
+    dispatch: cb.dispatch,
+    askQuestion: cb.askQuestion,
+    config: cb.ctx?.config,
+    registry: cb.ctx?.registry,
+    adapter: cb.ctx?.adapter,
+    source,
+    cwd: process.cwd(),
+  };
+}
+

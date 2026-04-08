@@ -551,6 +551,8 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
         }
       } else if (wasJob) {
         return { handled: true, ranAsJob: true };
+      } else {
+        cb.setActivePlan(null);
       }
       break;
     }

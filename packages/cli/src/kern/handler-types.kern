@@ -1,4 +1,4 @@
-import from="@agon/core" names="EngineRegistry,EngineAdapter,Plan,AgonConfig,ChatSession,PersistentSession,CesarMemory" types=true
+import from="@agon/core" names="EngineRegistry,EngineAdapter,Plan,AgonConfig,ChatSession,PersistentSession,CesarMemory,EventBus,ToolRegistry" types=true
 
 interface name=EngineProgress
   field name=id type=string
@@ -108,6 +108,29 @@ union name=OutputEvent discriminant=type
     field name=workspace type="{ name: string; path: string; isKern?: boolean }" optional=true
     field name=runCount type=number
 
+interface name=PendingDelegation
+  field name=action type=string
+  field name=reasoning type=string
+  field name=hardened type=boolean
+  field name=tribunalMode type=string optional=true
+  field name=team type=boolean
+  field name=createdAt type=number
+
+interface name=CesarState
+  field name=busy type=boolean
+  field name=busySince type="number | null"
+  field name=queue type="{ input: string; dispatch: any; images?: any[] } | null"
+  field name=toolRegistry type="ToolRegistry | null"
+  field name=hasNativeTools type=boolean
+  field name=lastDispatch type="((event: any) => void) | null"
+  field name=pendingDelegation type="PendingDelegation | null"
+  field name=reportedConfidence type="number | undefined"
+  field name=autoNero type=boolean
+  field name=advisorPending type=boolean
+  field name=mcpFingerprint type="string | undefined"
+  field name=planDispatch type="((event: any) => void) | null"
+  field name=proposedPlan type="any | undefined"
+
 interface name=HandlerContext
   field name=registry type=EngineRegistry
   field name=adapter type=EngineAdapter
@@ -125,3 +148,8 @@ interface name=HandlerContext
   field name=neroMode type=boolean
   field name=setNeroMode type="(mode: boolean) => void"
   field name=cesarMemory type=CesarMemory
+  field name=activePlan type="any | null" optional=true
+  field name=setActivePlan type="((plan: any) => void) | undefined" optional=true
+  field name=extensionPromptFragments type="string[]" optional=true
+  field name=eventBus type="EventBus | undefined" optional=true
+  field name=cesar type="CesarState | undefined" optional=true

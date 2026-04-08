@@ -310,6 +310,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
   if (cb.eventBus) {
     await cb.eventBus.emit('pre:dispatch', { input, intentType: intent.type, cwd: resolveWorkingDir() });
   }
+  const _emitPost = () => { if (cb.eventBus) cb.eventBus.emit('post:dispatch', { input, intentType: intent.type, cwd: resolveWorkingDir() }).catch(() => {}); };
   
   // ── Registry-first dispatch — extensions and real handlers get priority ──
   if (cb.commandRegistry) {
@@ -834,11 +835,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
       cb.dispatch({ type: 'warning', message: `Unknown command: ${intent.type}` });
   }
   
-  // ── Emit post:dispatch event ──
-  if (cb.eventBus) {
-    cb.eventBus.emit('post:dispatch', { input, intentType: intent.type, cwd: resolveWorkingDir() }).catch(() => {});
-  }
-  
+  _emitPost();
   return { handled: true, ranAsJob: false };
 }
 

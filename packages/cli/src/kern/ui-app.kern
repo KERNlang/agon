@@ -217,7 +217,7 @@ screen name=App target=ink
       if (clearChat) dispatch({ type: 'clear' } as any);
     >>>
 
-  callback name=buildContext params="" deps="registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode,activePlan"
+  callback name=buildContext params="" deps="registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode,activePlan,extensionPromptFragments"
     handler <<<
       return {
         registry, adapter, activeEngines,
@@ -318,7 +318,7 @@ screen name=App target=ink
       setInputKey((k: number) => k + 1);
     >>>
 
-  callback name=handleSubmit async=true params="value:string" deps="replState,dispatch,buildContext,mode,pendingImages,jobManager"
+  callback name=handleSubmit async=true params="value:string" deps="replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus"
     handler <<<
       let input = cleanSubmitValue(value);
       if (!input) return;

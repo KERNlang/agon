@@ -273,7 +273,7 @@ export function App({  }: {  }) {
             activePlan, setActivePlan,
             extensionPromptFragments,
           };
-  }, [registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode,activePlan]);
+  }, [registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode,activePlan,extensionPromptFragments]);
 
   const handleInputChange = useCallback((value:string) => {
           const nextValue = cleanInputValue(value);
@@ -436,7 +436,7 @@ export function App({  }: {  }) {
             if (result.ranAsJob) return;
           } catch (err: any) { dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); }
           finally { setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state); }
-  }, [replState,dispatch,buildContext,mode,pendingImages,jobManager]);
+  }, [replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus]);
 
   const handleReviewActionCb = useCallback((action:'apply'|'edit'|'reject'|'copy') => {
           if (!reviewEvent) return;

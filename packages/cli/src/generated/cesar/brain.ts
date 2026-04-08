@@ -491,14 +491,30 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
           tracker.record(cesarEngineId, { prompt: input, response });
   
-          // Guard: skip if a brainstorm/campfire/tribunal already ran this session
+          // Guard: skip if a brainstorm/campfire/tribunal already ran this turn
           const alreadyEscalated = ctx.cesar!.lastEscalation !== null;
-          // Heuristic: short operational inputs don't need multi-engine debate
-          const inputLower = input.trim().toLowerCase();
-          const isOperational = inputLower.length < 60 && /^(commit|push|pull|merge|rebase|status|deploy|ship|release|yes|no|ok|y|n|good|looks good|lgtm|do it|go ahead|please|thanks|done|next)\b/i.test(inputLower);
   
-          if (alreadyEscalated || isOperational) {
-            // Just show confidence — user can manually /brainstorm if needed
+          // Let Cesar's own response decide: if the answer is short and definitive,
+          // or the input is trivially operational, escalation is pointless.
+          const responseLower = response.toLowerCase();
+          const responseShort = response.trim().length < 300;
+          const responseDefinitive = responseShort && !/\b(maybe|perhaps|not sure|i think|could be|depends|trade-?off|on the other hand|however|alternatively|it's (unclear|hard to say))\b/i.test(responseLower);
+          const inputLower = input.trim().toLowerCase();
+          const isOperational = /^(commit|push|pull|merge|rebase|status|deploy|ship|release|yes|no|ok|y|n|good|looks good|lgtm|do it|go ahead|please|thanks|done|next)\b/i.test(inputLower);
+          const skipEscalation = alreadyEscalated || isOperational || responseDefinitive;
+  
+          if (skipEscalation) {
+            // Cesar gave a clear answer — just confirm, no engine escalation
+            const confirm = await new Promise<string>((resolve) => {
+              dispatch({ type: 'question', prompt: `${confidenceBadge(parsedConfidence!)} Cesar`, choices: [
+                { key: 'a', label: 'Accept', color: '#4ade80' },
+                { key: 'r', label: 'Retry', color: '#f97316' },
+              ], resolve } as any);
+            });
+            if (confirm === 'r') {
+              // Re-run the same input — user wants Cesar to try again
+              return { delegated: false, responded: false };
+            }
           } else {
             // Substantive question — ask user what to do
             const answer = await new Promise<string>((resolve) => {

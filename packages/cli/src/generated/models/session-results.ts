@@ -17,6 +17,10 @@ export class SessionResultStore {
     return this.results.length > 0;
   }
 
+  getLatest(): SessionResult|null {
+    return this.results.length > 0 ? this.results[this.results.length - 1] : null;
+  }
+
   clear(): void {
     this.results = [];
   }

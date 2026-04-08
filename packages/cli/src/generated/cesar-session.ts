@@ -88,6 +88,12 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
         systemParts.push(`NERO MODE: Adversarial. Challenge assumptions, probe weaknesses, ask hard questions before implementing. Suggest tribunal-red-team or tribunal-adversarial.`);
       }
   
+      // Inject extension system prompt fragments
+      const fragments = (ctx as any).extensionPromptFragments;
+      if (Array.isArray(fragments) && fragments.length > 0) {
+        systemParts.push(`## EXTENSIONS\n${fragments.join('\n')}`);
+      }
+  
       // Always present — Cesar should suggest plan mode for complex tasks
       systemParts.push(`RULE 8 — SUGGEST PLANNING: For complex tasks that would require multi-engine orchestration (forge, brainstorm + forge, or multiple delegations), suggest plan mode to the user BEFORE executing. Say: "This looks like it needs a plan. Want me to plan it first? Use /plan <task> to enter plan mode." Do NOT auto-enter plan mode — the user decides. Simple questions and single-engine tasks do not need plans.`);
   
@@ -120,7 +126,7 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
       return systemParts.join('\n\n');
 }
 
-// @kern-source: cesar-session:107
+// @kern-source: cesar-session:113
 export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry, config: any): ((name:string, args:Record<string,unknown>, callId:string) => Promise<string>) | undefined {
   const fsc = new FileStateCache();
   const toolResultCache = new Map<string, string>();
@@ -297,7 +303,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
   };
 }
 
-// @kern-source: cesar-session:285
+// @kern-source: cesar-session:291
 export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:string, command:string) => Promise<boolean> {
   const engine = ctx.registry.get(engineId);
   return async (tool: string, command: string) => {
@@ -343,7 +349,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
   };
 }
 
-// @kern-source: cesar-session:332
+// @kern-source: cesar-session:338
 export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unknown>> {
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -377,7 +383,7 @@ export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unkn
   return normalizeNamedRecord(raw);
 }
 
-// @kern-source: cesar-session:366
+// @kern-source: cesar-session:372
 export function loadCesarMcpServers(config: any, cwd: string): Array<Record<string,unknown>>|undefined {
   if (!(config as any).cesarMcpEnabled) return undefined;
   
@@ -401,14 +407,14 @@ export function loadCesarMcpServers(config: any, cwd: string): Array<Record<stri
   return servers;
 }
 
-// @kern-source: cesar-session:390
+// @kern-source: cesar-session:396
 export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
   if (!binaryPath) return false;
   const protocol = engine?.companion?.protocol;
   return protocol === 'acp' || protocol === 'jsonrpc';
 }
 
-// @kern-source: cesar-session:397
+// @kern-source: cesar-session:403
 export function mcpConfigFingerprint(config: any): string {
   const enabled = !!(config as any).cesarMcpEnabled;
   const configPath = String((config as any).cesarMcpConfigPath ?? '');
@@ -423,7 +429,7 @@ export function mcpConfigFingerprint(config: any): string {
   return `${enabled}:${configPath}:${mtime}`;
 }
 
-// @kern-source: cesar-session:413
+// @kern-source: cesar-session:419
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
   const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';

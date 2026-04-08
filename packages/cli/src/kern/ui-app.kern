@@ -86,6 +86,7 @@ screen name=App target=ink
   state name=neroMode type=boolean initial=false
   state name=toolOutputExpanded type=boolean initial=false
   state name=cesarConfidence type="number|null" initial="null"
+  state name=planModeQueued type=boolean initial=false
   state name=cesarMemory type=any initial="() => createCesarMemory()"
 
   // ── Refs ──
@@ -105,6 +106,8 @@ screen name=App target=ink
   state name=commandRegistry type="any" initial="(() => { const reg = new CommandRegistry(); registerBuiltinCommands(reg); return reg; })()"
   state name=eventBus type="any" initial="(() => { const bus = new EventBus(); const cfg = loadConfig(); if (cfg.hooks) bridgeShellHooks(bus, cfg.hooks); return bus; })()"
   state name=extensionSkills type="Skill[]" initial="[]"
+  state name=extensionPromptFragments type="string[]" initial="[]"
+  state name=loadedExtensions type="any[]" initial="[]"
 
   // ── Derived ──
   memo name=allSlashCommands deps="dynamicSkills, extensionSkills, commandRegistry"
@@ -120,8 +123,10 @@ screen name=App target=ink
   // ── Load extensions on startup (async, non-blocking) ──
   effect deps="[]"
     handler <<<
-      initExtensions(resolveWorkingDir(), commandRegistry, registry, eventBus).then(({ extensions, skills: extSkills }) => {
+      initExtensions(resolveWorkingDir(), commandRegistry, registry, eventBus).then(({ extensions, skills: extSkills, systemPromptFragments }) => {
         if (extSkills.length > 0) setExtensionSkills(extSkills);
+        if (systemPromptFragments.length > 0) setExtensionPromptFragments(systemPromptFragments);
+        if (extensions.length > 0) setLoadedExtensions(extensions);
       }).catch((err: Error) => {
         console.warn(`[agon] extension loading failed: ${err.message}`);
       });
@@ -224,6 +229,7 @@ screen name=App target=ink
         neroMode, setNeroMode,
         cesarMemory,
         activePlan, setActivePlan,
+        extensionPromptFragments,
       };
     >>>
 
@@ -325,7 +331,7 @@ screen name=App target=ink
       // /btw <question> — side-channel question during active dispatch
       const btwLower = input.trim().toLowerCase();
       if (btwLower === '/btw') {
-        dispatch({ type: 'info', message: 'Usage: /btw <question> — ask something while engines work. Tab to peek status.' } as any);
+        dispatch({ type: 'info', message: 'Usage: /btw <question> — ask something while engines work.' } as any);
         return;
       }
       if (btwLower.startsWith('/btw ')) {
@@ -389,6 +395,12 @@ screen name=App target=ink
         dispatch({ type: 'info', message: `Queued: ${input.length > 50 ? input.slice(0, 50) + '\u2026' : input}` } as any);
         return;
       }
+      if (planModeQueued && input.trim() && !input.startsWith('/')) {
+        setPlanModeQueued(false);
+        handleSubmit(`/plan ${input}`);
+        return;
+      }
+      if (planModeQueued) setPlanModeQueued(false);
       transition(startCommandReplState);
       dispatch({ type: 'separator' } as any);
       dispatch({ type: 'user-message', content: input } as any);
@@ -396,7 +408,7 @@ screen name=App target=ink
       const allImages = [...pendingImages, ...detectedImages];
       let intent = detectIntent(cleanInput || input, commandRegistry);
       const cb: DispatchCallbacks = {
-        dispatch, ctx: buildContext(), commandRegistry,
+        dispatch, ctx: buildContext(), commandRegistry, eventBus, loadedExtensions,
         runAsJob: (type: string, label: string, fn: () => Promise<void>) => {
           const job = jobManager.create(type, label);
           setJobList([...jobManager.list()]);
@@ -513,7 +525,12 @@ screen name=App target=ink
       if ((key.tab || input === '\t') && !slashPickerOpen && !enginePickerOpen && !questionState && !reviewEvent) {
         const ghost = getGhostCompletion(inputValue, allSlashCommands, registry.availableIds());
         if (ghost) { setInputValue(inputValue + ghost + ' '); setInputKey((k: number) => k + 1); return; }
-        if (replState !== 'idle') { setBtwExpanded((prev: boolean) => !prev); return; }
+        if (replState === 'idle') {
+          if (activePlan && ['planning', 'awaiting_approval', 'running', 'paused'].includes(activePlan.state)) return;
+          setPlanModeQueued((prev: boolean) => !prev);
+          return;
+        }
+        return;
       }
       if (key.ctrl && input === 'l') {
         handleSubmit('/clear'); return;
@@ -526,6 +543,7 @@ screen name=App target=ink
         return;
       }
       if (key.escape) {
+        if (planModeQueued) { setPlanModeQueued(false); return; }
         const decision = resolveEscapeAction({
           replState,
           inputValue,
@@ -705,8 +723,8 @@ screen name=App target=ink
             ) : (
               <Box borderStyle={mode === 'chat' ? 'round' : 'single'} borderColor={mode === 'chat' ? '#585858' : 'gray'} borderLeft={mode !== 'chat'} borderRight={mode !== 'chat'} borderTop borderBottom paddingX={1} width="100%">
                 {mode !== 'chat' && (<Text><Text color={mode === 'campfire' ? '#f97316' : mode === 'brainstorm' ? '#22d3ee' : '#a78bfa'} bold>{mode === 'campfire' ? icons().campfire : mode === 'brainstorm' ? icons().brainstorm : icons().tribunal}{' '}{mode}</Text><Text dimColor>{' │ '}</Text></Text>)}
-                {activePlan && ['planning', 'awaiting_approval', 'running', 'paused'].includes(activePlan.state) && (<Text><Text color="#c084fc" bold>{'◈ plan'}</Text><Text dimColor>{activePlan.state === 'planning' ? ' thinking…' : activePlan.state === 'awaiting_approval' ? ' review' : activePlan.state === 'running' ? ' executing…' : ' paused'}</Text><Text dimColor>{' │ '}</Text></Text>)}
-                <Text color={mode === 'chat' ? (activePlan && activePlan.state === 'planning' ? '#c084fc' : '#585858') : '#fbbf24'}>{mode === 'chat' ? '> ' : icons().prompt + ' '}</Text>
+                {(planModeQueued || (activePlan && ['planning', 'awaiting_approval', 'running', 'paused'].includes(activePlan.state))) && (<Text><Text color="#c084fc" bold>{'◈ plan'}</Text><Text dimColor>{planModeQueued ? ' ready' : activePlan.state === 'planning' ? ' thinking…' : activePlan.state === 'awaiting_approval' ? ' review' : activePlan.state === 'running' ? ' executing…' : ' paused'}</Text><Text dimColor>{' │ '}</Text></Text>)}
+                <Text color={mode === 'chat' ? (planModeQueued || (activePlan && activePlan.state === 'planning') ? '#c084fc' : '#585858') : '#fbbf24'}>{mode === 'chat' ? '> ' : icons().prompt + ' '}</Text>
                 <Box flexGrow={1}>
                   <TextInput key={inputKey} value={inputValue} onChange={handleInputChange} onSubmit={handleSubmit}
                     placeholder={replState === 'idle' ? mode === 'chat' ? '' : mode === 'campfire' ? 'What should we think about?' : mode === 'brainstorm' ? 'What question for the engines?' : 'What should they debate?' : ''} />
@@ -723,8 +741,8 @@ screen name=App target=ink
                 if (lines.length > 0) snippet = { engineId: streamingText.engineId, line: lines[lines.length - 1].trim() };
               }
               return (<>
-                {mode === 'chat' && <CesarStatusStrip cesarId={(loadConfig() as any).cesarEngine ?? loadConfig().forgeFixedStarter ?? 'claude'} confidence={cesarConfidence} spinner={liveSpinner} engines={liveProgress} lastActivityAt={lastActivityTimeRef.current} streamSnippet={snippet} isActive={replState !== 'idle'} activePlan={activePlan} />}
-                {mode === 'chat' && <StatusBar config={loadConfig()} chatSession={chatSession} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} activity={liveProgress} isActive={replState !== 'idle'} streamSnippet={snippet} />}
+                {mode === 'chat' && <CesarStatusStrip cesarId={(loadConfig() as any).cesarEngine ?? loadConfig().forgeFixedStarter ?? 'claude'} confidence={cesarConfidence} spinner={liveSpinner} engines={liveProgress} lastActivityAt={lastActivityTimeRef.current} streamSnippet={snippet} isActive={replState !== 'idle'} planModeQueued={planModeQueued} activePlan={activePlan} />}
+                {mode === 'chat' && <StatusBar config={loadConfig()} chatSession={chatSession} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} isActive={replState !== 'idle'} />}
               </>);
             })()}
           </Box>

@@ -48,6 +48,7 @@ export type Intent =
   | { type: 'help' }
   | { type: 'exit' }
   | { type: 'auto'; input: string; taskClass: 'code' | 'question' | 'ambiguous' }
+  | { type: 'extensions' }
   | { type: 'extension-command'; commandName: string; args: string }
   | { type: 'unknown'; input: string };
 
@@ -149,5 +150,7 @@ export type Intent =
 
 // @kern-source: intent-types:97
 
-// @kern-source: intent-types:100
+// @kern-source: intent-types:98
+
+// @kern-source: intent-types:101
 

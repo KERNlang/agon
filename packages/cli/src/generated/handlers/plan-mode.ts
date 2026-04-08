@@ -28,8 +28,8 @@ export async function handleProposePlan(args: any, dispatch: Dispatch, ctx: Hand
     tribunalMode: s.tribunalMode,
     parallel: s.parallel ?? false,
     dependsOn: s.dependsOn,
-    exports: s.exports,
-    imports: s.imports,
+    exports: typeof s.exports === 'string' ? [s.exports] : s.exports,
+    imports: typeof s.imports === 'string' ? [s.imports] : s.imports,
     estimatedTokens: s.estimatedTokens ?? planCostEstimator.estimate(s.type, s.engines ?? []).tokens,
     estimatedCostUsd: s.estimatedCostUsd ?? planCostEstimator.estimate(s.type, s.engines ?? []).costUsd,
   }));

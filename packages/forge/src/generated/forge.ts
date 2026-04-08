@@ -8,7 +8,7 @@ import { mkdirSync } from 'node:fs';
 import type { ForgeOptions, ForgeManifest, EngineAdapter, ForgeEvent, AgonConfig, DispatchMetric } from '@agon/core';
 
 // @kern-source: forge:4
-import { EngineRegistry, loadConfig, buildForgePrompt, repoRoot, headSha, worktreeRemove, updateElo, updateEloRanked, classifyTask, createSidechainLogger, assignForgeRoles, buildSpecializedPrompt, recordForgeOutcome, tracker } from '@agon/core';
+import { EngineRegistry, loadConfig, buildForgePrompt, repoRoot, headSha, worktreeRemove, updateElo, updateEloRanked, updateGlickoRanked, classifyTask, createSidechainLogger, assignForgeRoles, buildSpecializedPrompt, recordForgeOutcome, tracker } from '@agon/core';
 
 // @kern-source: forge:5
 import { runBaseline, runStage1, runStage2, runStage2WithPeek, determineWinner } from './stages.js';
@@ -216,7 +216,7 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
       onEvent?.({
         type: 'winner:determined',
         engineId: winner ?? undefined,
-        data: { closeCall, bestScore, secondScore },
+        data: { winner: winner ?? null, closeCall, bestScore, secondScore },
       });
   
       const passingCount = [...stage2.engineResults.values()].filter((r) => r.pass).length;
@@ -270,6 +270,7 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
   
       if (ranked.length >= 2) {
         updateEloRanked(ranked, taskClass, config.eloKFactor);
+        updateGlickoRanked(ranked, taskClass, 'forge');
         for (const entry of ranked) {
           onEvent?.({ type: 'elo:update', data: { engineId: entry.engineId, score: entry.score, rank: ranked.indexOf(entry) + 1, taskClass } });
         }

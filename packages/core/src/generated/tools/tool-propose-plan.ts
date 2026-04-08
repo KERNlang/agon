@@ -34,7 +34,7 @@ export function createProposePlanTool(): ToolHandler {
               tribunalMode: { type: 'string' },
               parallel: { type: 'boolean' },
               dependsOn: { type: 'array', items: { type: 'string' } },
-              exports: { type: 'string' },
+              exports: { type: 'array', items: { type: 'string' }, description: 'Export keys — what this step produces for downstream steps' },
               imports: { type: 'array', items: { type: 'string' } },
               estimatedTokens: { type: 'number' },
               estimatedCostUsd: { type: 'number' },

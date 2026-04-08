@@ -60,7 +60,7 @@ fn name=runStage1 async=true params="opts:{starter:string, forgePrompt:string, f
         engine,
         prompt: opts.forgePrompt,
         cwd: wtPath,
-        mode: 'review',
+        mode: 'exec',
         timeout: engine.timeout,
         outputDir: opts.forgeDir,
         signal: opts.signal,

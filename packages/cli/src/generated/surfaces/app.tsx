@@ -8,7 +8,7 @@ import { Box, Text, render, useApp, useInput } from 'ink';
 import TextInput from 'ink-text-input';
 
 // @kern-source: app:7
-import { EngineRegistry, loadConfig, ensureAgonHome, ensureCurrentWorkspace, startChatSession, getElo, getActiveWorkspace, RUNS_DIR, extractImagesFromInput, resolveWorkingDir, currentBranch, configSet, createCesarMemory, modelEntryToEngineDef, appendMessage } from '@agon/core';
+import { EngineRegistry, loadConfig, ensureAgonHome, ensureCurrentWorkspace, startChatSession, getElo, getRatings, getActiveWorkspace, RUNS_DIR, extractImagesFromInput, resolveWorkingDir, currentBranch, configSet, createCesarMemory, modelEntryToEngineDef, appendMessage } from '@agon/core';
 
 // @kern-source: app:8
 import type { Plan, ChatSession, Skill, PersistentSession, ImageAttachment } from '@agon/core';
@@ -542,11 +542,13 @@ export function App({  }: {  }) {
   useEffect(() => {
           const available = registry.availableIds();
           const config = loadConfig();
-          const elo = getElo();
+          const ratings = getRatings();
           const defaultEngine = config.forgeFixedStarter ?? available[0] ?? 'none';
           const activeWs = getActiveWorkspace();
-          const totalMatches = Object.values(elo.global).reduce((sum: number, r: any) => sum + r.wins + r.losses, 0);
-          const sorted = Object.entries(elo.global).sort(([, a]: any, [, b]: any) => b.rating - a.rating);
+          const totalMatches = Object.values(ratings.global).reduce((sum: number, r: any) => sum + r.wins + r.losses, 0);
+          const sorted = Object.entries(ratings.global)
+            .map(([id, r]: any) => [id, { rating: Math.round(r.mu - 2 * r.phi) }] as const)
+            .sort(([, a], [, b]) => b.rating - a.rating);
           const enabled = sessionEngines ?? available;
           let runCount = 0;
           try { runCount = readdirSync(RUNS_DIR).filter((f: string) => f.endsWith('.json')).length; } catch {}
@@ -853,7 +855,7 @@ export function App({  }: {  }) {
 }
 
 
-// @kern-source: app:825
+// @kern-source: app:827
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

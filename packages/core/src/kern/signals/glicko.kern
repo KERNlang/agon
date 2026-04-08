@@ -1,0 +1,250 @@
+// Glicko-2 rating system for Agon AI
+// Tracks rating (mu), deviation (phi), and volatility (sigma) per engine.
+// Reference: Mark Glickman, "Example of the Glicko-2 system" (2013)
+
+import from="node:fs" names="readFileSync,writeFileSync,mkdirSync,renameSync"
+import from="node:path" names="dirname"
+import from="../models/types.js" names="GlickoRating,RatingRecord,EngineMeta,TaskClass" types=true
+import from="./config.js" names="RATINGS_PATH"
+
+const name=GLICKO_SCALE type=number
+  handler <<< 173.7178 >>>
+
+const name=DEFAULT_MU type=number
+  handler <<< 1500 >>>
+
+const name=DEFAULT_PHI type=number
+  handler <<< 350 >>>
+
+const name=DEFAULT_SIGMA type=number
+  handler <<< 0.06 >>>
+
+const name=TAU type=number
+  doc "System constant — constrains volatility change. Lower = more conservative."
+  handler <<< 0.5 >>>
+
+const name=CONVERGENCE_TOLERANCE type=number
+  handler <<< 0.000001 >>>
+
+fn name=defaultGlickoRating returns=GlickoRating
+  handler <<<
+    return {
+      mu: DEFAULT_MU,
+      phi: DEFAULT_PHI,
+      sigma: DEFAULT_SIGMA,
+      wins: 0,
+      losses: 0,
+      lastActive: new Date().toISOString(),
+    };
+  >>>
+
+fn name=defaultEngineMeta returns=EngineMeta
+  handler <<<
+    const now = new Date().toISOString();
+    return {
+      firstSeen: now,
+      lastActive: now,
+      matchCount: 0,
+      derivedFrom: null,
+      versions: [],
+    };
+  >>>
+
+fn name=loadRatings returns=RatingRecord
+  handler <<<
+    try {
+      return JSON.parse(readFileSync(RATINGS_PATH, 'utf-8')) as RatingRecord;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+        console.warn(`[agon] failed to load ratings: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      return {
+        global: {},
+        byMode: { forge: {}, brainstorm: {}, tribunal: {} },
+        byTaskClass: {},
+        engineMeta: {},
+        lastUpdated: new Date().toISOString(),
+      };
+    }
+  >>>
+
+fn name=saveRatings params="record:RatingRecord" returns=void
+  handler <<<
+    mkdirSync(dirname(RATINGS_PATH), { recursive: true });
+    record.lastUpdated = new Date().toISOString();
+    const tmpPath = RATINGS_PATH + '.tmp';
+    writeFileSync(tmpPath, JSON.stringify(record, null, 2) + '\n');
+    renameSync(tmpPath, RATINGS_PATH);
+  >>>
+
+fn name=getRatings returns=RatingRecord
+  doc "Load current Glicko-2 ratings."
+  handler <<<
+    return loadRatings();
+  >>>
+
+fn name=getEngineGlickoRating params="engineId:string, mode?:string" returns=GlickoRating
+  doc "Get a single engine's Glicko-2 rating, optionally for a specific mode."
+  handler <<<
+    const record = loadRatings();
+    if (mode && record.byMode[mode as keyof typeof record.byMode]) {
+      return record.byMode[mode as keyof typeof record.byMode][engineId] ?? defaultGlickoRating();
+    }
+    return record.global[engineId] ?? defaultGlickoRating();
+  >>>
+
+fn name=glickoG params="phi:number" returns=number
+  doc "Glicko-2 g(phi) function — reduces impact of uncertain opponents."
+  handler <<<
+    return 1 / Math.sqrt(1 + 3 * phi * phi / (Math.PI * Math.PI));
+  >>>
+
+fn name=glickoE params="mu:number, muJ:number, phiJ:number" returns=number
+  doc "Glicko-2 expected score."
+  handler <<<
+    return 1 / (1 + Math.exp(-glickoG(phiJ) * (mu - muJ)));
+  >>>
+
+fn name=updateGlicko params="winnerId:string, loserId:string, taskClass:TaskClass, mode:'forge'|'brainstorm'|'tribunal'" returns="{winnerMu:number, loserMu:number}"
+  doc "Single pairwise Glicko-2 update."
+  handler <<<
+    const record = loadRatings();
+    const now = new Date().toISOString();
+
+    // Ensure all scopes exist
+    record.byMode[mode] ??= {};
+    record.byTaskClass[taskClass] ??= {};
+    record.engineMeta[winnerId] ??= defaultEngineMeta();
+    record.engineMeta[loserId] ??= defaultEngineMeta();
+
+    const scopes: Array<Record<string, GlickoRating>> = [
+      record.global,
+      record.byMode[mode],
+      record.byTaskClass[taskClass],
+    ];
+
+    for (const scope of scopes) {
+      scope[winnerId] ??= defaultGlickoRating();
+      scope[loserId] ??= defaultGlickoRating();
+
+      const w = scope[winnerId];
+      const l = scope[loserId];
+
+      // Convert to Glicko-2 internal scale
+      const muW = (w.mu - DEFAULT_MU) / GLICKO_SCALE;
+      const phiW = w.phi / GLICKO_SCALE;
+      const muL = (l.mu - DEFAULT_MU) / GLICKO_SCALE;
+      const phiL = l.phi / GLICKO_SCALE;
+
+      // Winner update (score = 1)
+      const gL = glickoG(phiL);
+      const eW = glickoE(muW, muL, phiL);
+      const vW = 1 / (gL * gL * eW * (1 - eW));
+      const deltaW = vW * gL * (1 - eW);
+      const sigmaW = computeNewSigma(w.sigma, phiW, vW, deltaW);
+      const phiStarW = Math.sqrt(phiW * phiW + sigmaW * sigmaW);
+      const phiNewW = 1 / Math.sqrt(1 / (phiStarW * phiStarW) + 1 / vW);
+      const muNewW = muW + phiNewW * phiNewW * gL * (1 - eW);
+
+      // Loser update (score = 0)
+      const gW = glickoG(phiW);
+      const eL = glickoE(muL, muW, phiW);
+      const vL = 1 / (gW * gW * eL * (1 - eL));
+      const deltaL = vL * gW * (0 - eL);
+      const sigmaL = computeNewSigma(l.sigma, phiL, vL, deltaL);
+      const phiStarL = Math.sqrt(phiL * phiL + sigmaL * sigmaL);
+      const phiNewL = 1 / Math.sqrt(1 / (phiStarL * phiStarL) + 1 / vL);
+      const muNewL = muL + phiNewL * phiNewL * gW * (0 - eL);
+
+      // Convert back to display scale
+      w.mu = Math.round(muNewW * GLICKO_SCALE + DEFAULT_MU);
+      w.phi = Math.round(phiNewW * GLICKO_SCALE * 10) / 10;
+      w.sigma = sigmaW;
+      w.wins++;
+      w.lastActive = now;
+
+      l.mu = Math.round(muNewL * GLICKO_SCALE + DEFAULT_MU);
+      l.phi = Math.round(phiNewL * GLICKO_SCALE * 10) / 10;
+      l.sigma = sigmaL;
+      l.losses++;
+      l.lastActive = now;
+    }
+
+    // Update meta
+    record.engineMeta[winnerId].lastActive = now;
+    record.engineMeta[winnerId].matchCount++;
+    record.engineMeta[loserId].lastActive = now;
+    record.engineMeta[loserId].matchCount++;
+
+    saveRatings(record);
+    return { winnerMu: record.global[winnerId].mu, loserMu: record.global[loserId].mu };
+  >>>
+
+fn name=computeNewSigma params="sigma:number, phi:number, v:number, delta:number" returns=number
+  doc "Glicko-2 volatility update via Illinois algorithm (Step 5)."
+  handler <<<
+    const a = Math.log(sigma * sigma);
+    const tau2 = TAU * TAU;
+
+    function f(x: number): number {
+      const ex = Math.exp(x);
+      const phi2 = phi * phi;
+      const num1 = ex * (delta * delta - phi2 - v - ex);
+      const den1 = 2 * (phi2 + v + ex) * (phi2 + v + ex);
+      return num1 / den1 - (x - a) / tau2;
+    }
+
+    // Set initial bounds
+    let A = a;
+    let B: number;
+    if (delta * delta > phi * phi + v) {
+      B = Math.log(delta * delta - phi * phi - v);
+    } else {
+      let k = 1;
+      while (f(a - k * TAU) < 0) k++;
+      B = a - k * TAU;
+    }
+
+    // Illinois algorithm to find root
+    let fA = f(A);
+    let fB = f(B);
+    while (Math.abs(B - A) > CONVERGENCE_TOLERANCE) {
+      const C = A + (A - B) * fA / (fB - fA);
+      const fC = f(C);
+      if (fC * fB <= 0) {
+        A = B;
+        fA = fB;
+      } else {
+        fA = fA / 2;
+      }
+      B = C;
+      fB = fC;
+    }
+    return Math.exp(A / 2);
+  >>>
+
+fn name=updateGlickoRanked params="ranked:Array<{engineId:string,score:number}>, taskClass:TaskClass, mode:'forge'|'brainstorm'|'tribunal'" returns=void
+  doc "Pairwise Glicko-2 updates for all ranked positions. Higher score beats lower score."
+  handler <<<
+    if (ranked.length < 2) return;
+    for (let i = 0; i < ranked.length; i++) {
+      for (let j = i + 1; j < ranked.length; j++) {
+        if (ranked[i].score === ranked[j].score) continue;
+        updateGlicko(ranked[i].engineId, ranked[j].engineId, taskClass, mode);
+      }
+    }
+  >>>
+
+fn name=advisorScore params="engineId:string, mode:'forge'|'brainstorm'|'tribunal'" returns=number
+  doc "Conservative rating estimate for advisor/starter selection. Returns mu - 2*phi (lower bound of 95% CI)."
+  handler <<<
+    const rating = getEngineGlickoRating(engineId, mode);
+    // Apply inactivity: increase phi if engine hasn't competed recently
+    const daysSinceActive = (Date.now() - new Date(rating.lastActive).getTime()) / 86400000;
+    let phi = rating.phi;
+    if (daysSinceActive > 14) {
+      // Glicko-2 standard: phi grows with inactivity, capped at initial value
+      phi = Math.min(Math.sqrt(phi * phi + rating.sigma * rating.sigma * daysSinceActive), DEFAULT_PHI);
+    }
+    return Math.round(rating.mu - 2 * phi);
+  >>>

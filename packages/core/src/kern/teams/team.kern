@@ -2,8 +2,8 @@
 // This wraps ANY orchestration mode (forge, tribunal, brainstorm, campfire)
 
 import from="node:crypto" names="randomUUID"
-import from="../models/types.js" names="TaskClass,EloRating" types=true
-import from="../signals/elo.js" names="getElo"
+import from="../models/types.js" names="TaskClass" types=true
+import from="../signals/glicko.js" names="getRatings"
 
 type name=TeamRole values="architect|implementer|reviewer|captain"
 type name=TeamComposeMode values="explicit|auto-balanced|adaptive"
@@ -81,14 +81,18 @@ fn name=makeFormat params="membersPerSide:number" returns=TeamFormat
 
 fn name=assignTeamRoles params="engineIds:string[], taskClass:TaskClass" returns="TeamMember[]"
   handler <<<
-    const elo = getElo();
-    const classRatings = elo.byTaskClass[taskClass] ?? {};
+    const ratings = getRatings();
+    const classRatings = ratings.byTaskClass[taskClass] ?? {};
+    const globalRatings = ratings.global;
 
-    // Rank engines by task-class ELO
+    // Rank engines by Glicko-2 confidence floor
     const ranked = [...engineIds].sort((a, b) => {
-      const aElo = classRatings[a]?.rating ?? elo.global[a]?.rating ?? 1500;
-      const bElo = classRatings[b]?.rating ?? elo.global[b]?.rating ?? 1500;
-      return bElo - aElo;
+      const aR = classRatings[a] ?? globalRatings[a];
+      const bR = classRatings[b] ?? globalRatings[b];
+      const aFloor = aR ? aR.mu - 2 * aR.phi : 100;
+      const bFloor = bR ? bR.mu - 2 * bR.phi : 100;
+      if (aFloor !== bFloor) return bFloor - aFloor;
+      return Math.random() - 0.5;
     });
 
     const n = ranked.length;
@@ -121,11 +125,11 @@ fn name=assignTeamRoles params="engineIds:string[], taskClass:TaskClass" returns
 
 fn name=composeTeams params="engineIds:string[], membersPerSide:number, mode:TeamComposeMode, taskClass:TaskClass, explicitTeams?:[string[],string[]]" returns="[TeamSpec, TeamSpec]"
   handler <<<
-    const elo = getElo();
+    const ratings = getRatings();
 
     function engineElo(id: string): number {
-      const classRating = elo.byTaskClass[taskClass]?.[id]?.rating;
-      return classRating ?? elo.global[id]?.rating ?? 1500;
+      const r = ratings.byTaskClass[taskClass]?.[id] ?? ratings.global[id];
+      return r ? Math.round(r.mu - 2 * r.phi) : 100;
     }
 
     let teamA: string[];

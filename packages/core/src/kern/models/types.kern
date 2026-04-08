@@ -117,6 +117,28 @@ interface name=EloRecord
   field name=byTaskClass type="Record<string,Record<string,EloRating>>"
   field name=lastUpdated type=string
 
+interface name=GlickoRating
+  field name=mu type=number
+  field name=phi type=number
+  field name=sigma type=number
+  field name=wins type=number
+  field name=losses type=number
+  field name=lastActive type=string
+
+interface name=EngineMeta
+  field name=firstSeen type=string
+  field name=lastActive type=string
+  field name=matchCount type=number
+  field name=derivedFrom type="string|null"
+  field name=versions type="string[]"
+
+interface name=RatingRecord
+  field name=global type="Record<string,GlickoRating>"
+  field name=byMode type="{forge:Record<string,GlickoRating>,brainstorm:Record<string,GlickoRating>,tribunal:Record<string,GlickoRating>}"
+  field name=byTaskClass type="Record<string,Record<string,GlickoRating>>"
+  field name=engineMeta type="Record<string,EngineMeta>"
+  field name=lastUpdated type=string
+
 config name=AgonConfig
   field name=debug type=boolean default=false
   field name=timeout type=number default=360

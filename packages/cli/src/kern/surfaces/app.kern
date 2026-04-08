@@ -4,7 +4,7 @@
 import from="react" names="useState,useCallback,useEffect,useRef,useMemo"
 import from="ink" names="Box,Text,render,useApp,useInput"
 import from="ink-text-input" default="TextInput"
-import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,ensureCurrentWorkspace,startChatSession,getElo,getActiveWorkspace,RUNS_DIR,extractImagesFromInput,resolveWorkingDir,currentBranch,configSet,createCesarMemory,modelEntryToEngineDef,appendMessage"
+import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,ensureCurrentWorkspace,startChatSession,getElo,getRatings,getActiveWorkspace,RUNS_DIR,extractImagesFromInput,resolveWorkingDir,currentBranch,configSet,createCesarMemory,modelEntryToEngineDef,appendMessage"
 import from="@agon/core" names="Plan,ChatSession,Skill,PersistentSession,ImageAttachment" types=true
 import from="../../handlers/types.js" names="EngineProgress" types=true
 import from="@agon/adapter-cli" names="createCliAdapter"
@@ -296,11 +296,13 @@ screen name=App target=ink
     handler <<<
       const available = registry.availableIds();
       const config = loadConfig();
-      const elo = getElo();
+      const ratings = getRatings();
       const defaultEngine = config.forgeFixedStarter ?? available[0] ?? 'none';
       const activeWs = getActiveWorkspace();
-      const totalMatches = Object.values(elo.global).reduce((sum: number, r: any) => sum + r.wins + r.losses, 0);
-      const sorted = Object.entries(elo.global).sort(([, a]: any, [, b]: any) => b.rating - a.rating);
+      const totalMatches = Object.values(ratings.global).reduce((sum: number, r: any) => sum + r.wins + r.losses, 0);
+      const sorted = Object.entries(ratings.global)
+        .map(([id, r]: any) => [id, { rating: Math.round(r.mu - 2 * r.phi) }] as const)
+        .sort(([, a], [, b]) => b.rating - a.rating);
       const enabled = sessionEngines ?? available;
       let runCount = 0;
       try { runCount = readdirSync(RUNS_DIR).filter((f: string) => f.endsWith('.json')).length; } catch {}

@@ -1,13 +1,14 @@
 import from="node:crypto" names="randomUUID"
 import from="@agon/core" names="EngineAdapter,BrainstormBid,BrainstormResult,ScoutBid" types=true
-import from="@agon/core" names="EngineRegistry,buildBrainstormPrompt,getElo,loadConfig,createSidechainLogger"
+import from="@agon/core" names="EngineRegistry,buildBrainstormPrompt,getElo,getRatings,loadConfig,createSidechainLogger,updateGlickoRanked,classifyTask"
 import from="kern-lang" names="buildKernDraftPrompt,parseKernDraft,buildKernRankPrompt"
 import from="kern-lang" names="KernDraft" types=true
 
 fn name=calibrateConfidence params="engineId:string, rawBid:number" returns=number
   handler <<<
-    const elo = getElo();
-    const history = elo.global[engineId];
+    // Use Glicko-2 brainstorm ratings for calibration, fall back to global
+    const ratings = getRatings();
+    const history = ratings.byMode.brainstorm[engineId] ?? ratings.global[engineId];
     if (!history || history.wins + history.losses < 3) return rawBid;
     const winRate = history.wins / (history.wins + history.losses);
     // Blend: 30% self-reported, 70% track record
@@ -216,6 +217,13 @@ fn name=runBrainstorm async=true params="opts:{question:string, context?:string,
     });
 
     const winner = ranked[0];
+
+    // Update Glicko-2 ratings for all ranked engines
+    if (bids.length >= 2) {
+      const taskClass = classifyTask(opts.question);
+      const glickoRanked = bids.map(b => ({ engineId: b.engineId, score: b.score ?? 0 }));
+      updateGlickoRanked(glickoRanked, taskClass, 'brainstorm');
+    }
 
     const winnerEngine = opts.registry.get(winner.engineId);
 

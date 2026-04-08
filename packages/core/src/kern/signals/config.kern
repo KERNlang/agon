@@ -25,6 +25,11 @@ const name=RUNS_DIR type=string
     join(AGON_HOME, 'runs')
   >>>
 
+const name=RATINGS_PATH type=string
+  handler <<<
+    join(AGON_HOME, 'ratings.json')
+  >>>
+
 const name=TEAM_ELO_PATH type=string
   handler <<<
     join(AGON_HOME, 'team-elo.json')

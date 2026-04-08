@@ -476,7 +476,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
           busy: false, busySince: null, queue: null,
           toolRegistry: null, hasNativeTools: false, lastDispatch: null,
           pendingDelegation: null, reportedConfidence: undefined,
-          autoNero: false, advisorPending: false,
+          autoNero: false, advisorPending: false, lastEscalation: null,
           mcpFingerprint: undefined, planDispatch: null, proposedPlan: undefined,
         };
       }

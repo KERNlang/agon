@@ -106,7 +106,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       busy: false, busySince: null, queue: null,
       toolRegistry: null, hasNativeTools: false, lastDispatch: null,
       pendingDelegation: null, reportedConfidence: undefined,
-      autoNero: false, advisorPending: false,
+      autoNero: false, advisorPending: false, lastEscalation: null as string | null,
       mcpFingerprint: undefined, planDispatch: null, proposedPlan: undefined,
     };
   }
@@ -138,6 +138,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   }
   ctx.cesar!.busy = true;
   ctx.cesar!.busySince = Date.now();
+  ctx.cesar!.lastEscalation = null;
   const _brainStartMs = Date.now();
   if (ctx.eventBus) await ctx.eventBus.emit('pre:cesar-brain', { input });
   
@@ -444,7 +445,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   
       if (!didDelegate) {
   
-        // ── 93-95%: Quick Nero — same-session self-challenge ──
+        // ── 93-95%: Quick Nero — auto self-challenge (finds gaps) ──
         if (parsedConfidence >= CONFIDENCE_TIERS.quickNero && parsedConfidence < CONFIDENCE_TIERS.direct) {
           if (streaming) { dispatch({ type: 'streaming-end', engineId: cesarEngineId }); streaming = false; }
           dispatch({ type: 'spinner-start', message: confidenceBadge(parsedConfidence) + ' Quick Nero — self-challenge…', color });
@@ -462,7 +463,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           }
         }
   
-        // ── 88-92%: Nero — same-turn adversarial subagent ──
+        // ── 88-92%: Nero — auto adversarial subagent (finds gaps) ──
         if (parsedConfidence >= CONFIDENCE_TIERS.nero && parsedConfidence < CONFIDENCE_TIERS.quickNero) {
           if (streaming) { dispatch({ type: 'streaming-end', engineId: cesarEngineId }); streaming = false; }
           const _escStart = Date.now();
@@ -483,14 +484,42 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           // Nero is informational — user sees both original + challenge and continues
         }
   
-        // ── 72-87%: Auto-brainstorm ──
+        // ── 72-87%: Smart auto-brainstorm — skip for trivial/operational, no duplicates ──
         else if (parsedConfidence >= CONFIDENCE_TIERS.brainstorm && parsedConfidence < CONFIDENCE_TIERS.nero) {
           if (streaming) { dispatch({ type: 'streaming-end', engineId: cesarEngineId }); streaming = false; }
-          dispatch({ type: 'info', message: confidenceBadge(parsedConfidence) + ' Auto-triggering brainstorm…' });
           appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
           appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
           tracker.record(cesarEngineId, { prompt: input, response });
-          return { delegated: true, responded: true, action: 'brainstorm', reasoning: response };
+  
+          // Guard: skip if a brainstorm/campfire/tribunal already ran this session
+          const alreadyEscalated = ctx.cesar!.lastEscalation !== null;
+          // Heuristic: short operational inputs don't need multi-engine debate
+          const inputLower = input.trim().toLowerCase();
+          const isOperational = inputLower.length < 60 && /^(commit|push|pull|merge|rebase|status|deploy|ship|release|yes|no|ok|y|n|good|looks good|lgtm|do it|go ahead|please|thanks|done|next)\b/i.test(inputLower);
+  
+          if (alreadyEscalated || isOperational) {
+            // Just show confidence — user can manually /brainstorm if needed
+          } else {
+            // Substantive question — ask user what to do
+            const answer = await new Promise<string>((resolve) => {
+              dispatch({ type: 'question', prompt: `${confidenceBadge(parsedConfidence!)} Cesar`, choices: [
+                { key: 'a', label: 'Accept', color: '#4ade80' },
+                { key: 'b', label: 'Brainstorm', color: '#60a5fa' },
+                { key: 'c', label: 'Campfire', color: '#fbbf24' },
+                { key: 't', label: 'Tribunal', color: '#f59e0b' },
+              ], resolve } as any);
+            });
+            if (answer === 'b') {
+              ctx.cesar!.lastEscalation = 'brainstorm';
+              return { delegated: true, responded: true, action: 'brainstorm', reasoning: response };
+            } else if (answer === 'c') {
+              ctx.cesar!.lastEscalation = 'campfire';
+              return { delegated: true, responded: true, action: 'campfire', reasoning: response };
+            } else if (answer === 't') {
+              ctx.cesar!.lastEscalation = 'tribunal';
+              return { delegated: true, responded: true, action: 'tribunal', reasoning: response };
+            }
+          }
         }
   
         // ── <72%: Advisor + full escalation menu ──

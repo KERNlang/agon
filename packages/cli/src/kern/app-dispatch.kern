@@ -4,6 +4,9 @@
 
 import from="@agon/core" names="resolveWorkingDir,extractImagesFromInput,buildImageAttachment,undoPatch,resumeChatSession,findSkill,renderSkillPrompt,configSet,startChatSession,currentBranch"
 import from="@agon/core" names="ImageAttachment,ChatSession" types=true
+import from="@agon/core" names="approveCesarPlan,cancelCesarPlan,saveCesarPlan,loadCesarPlan,listCesarPlans,executePlan,formatCesarPlanMarkdown"
+import from="@agon/core" names="CesarPlan,CesarStepResult" types=true
+import from="../generated/handlers-plan-mode.js" names="buildStepExecutors"
 import from="../intent.js" names="detectIntent"
 import from="../handlers/types.js" names="Dispatch,HandlerContext" types=true
 import from="../icons.js" names="icons"
@@ -354,19 +357,184 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
       // ── Plan commands ──
       case 'plan': await handlePlanShow(cb.dispatch, cb.ctx, intent.planId); break;
       case 'plan-task': {
-        // Enter plan mode
+        // Enter plan mode — Cesar thinks and proposes a plan
         const { createCesarPlan } = await import('@agon/core');
         const cesarPlan = createCesarPlan(intent.task, []);
         cb.setActivePlan(cesarPlan);
-        // Pass dispatch to context so ProposePlan handler can create + display the plan
         (cb.ctx as any)._planDispatch = cb.dispatch;
-        // Route to Cesar with the task
         const cesarInput = `[PLAN MODE] ${intent.task}`;
-        if (await routeWithCesar(cesarInput, [], cb)) return { handled: true, ranAsJob: true };
+        const wasJob = await routeWithCesar(cesarInput, [], cb);
+
+        // After routeWithCesar, check if Cesar proposed a plan
+        const proposed: CesarPlan | undefined = (cb.ctx as any)._proposedPlan;
+        if (proposed && proposed.state === 'awaiting_approval') {
+          // Clear the stash
+          delete (cb.ctx as any)._proposedPlan;
+
+          // Approval loop — ask user, handle Y/N/feedback
+          let currentProposal = proposed;
+          let decided = false;
+          while (!decided) {
+            const answer = await cb.askQuestion('Approve plan? [Y/n] or give feedback to revise');
+            const trimmed = answer.trim().toLowerCase();
+
+            if (trimmed === 'y' || trimmed === 'yes' || trimmed === '') {
+              // ── Approve and execute ──
+              const approved = approveCesarPlan(currentProposal);
+              cb.setActivePlan(approved);
+              cb.dispatch({ type: 'success', message: 'Plan approved — executing...' });
+              saveCesarPlan(approved);
+
+              const executors = buildStepExecutors(cb.ctx);
+              const abortController = new AbortController();
+              (cb.ctx as any).setActiveAbort?.(abortController);
+
+              const callbacks = {
+                onStepStart: (stepId: string) => {
+                  const step = approved.steps.find((s: any) => s.id === stepId);
+                  cb.dispatch({ type: 'info', message: `Step: ${step?.description ?? stepId} — starting...` });
+                },
+                onStepDone: (stepId: string, result: CesarStepResult) => {
+                  const step = approved.steps.find((s: any) => s.id === stepId);
+                  const icon = result.status === 'success' ? '✓' : '✗';
+                  const msgType = result.status === 'success' ? 'success' : 'error';
+                  cb.dispatch({ type: msgType, message: `${icon} ${step?.description ?? stepId} — ${result.status}${result.error ? ': ' + result.error : ''} (${(result.durationMs / 1000).toFixed(1)}s)` });
+                },
+                onPlanUpdate: (updated: CesarPlan) => {
+                  cb.setActivePlan(updated);
+                  saveCesarPlan(updated);
+                  if (updated.planFilePath) {
+                    try {
+                      const { writeFileSync } = require('node:fs');
+                      writeFileSync(updated.planFilePath, formatCesarPlanMarkdown(updated));
+                    } catch {}
+                  }
+                },
+                onBudgetWarning: (actual: number, estimated: number) => {
+                  cb.dispatch({ type: 'warning', message: `Budget warning: $${actual.toFixed(2)} actual vs $${estimated.toFixed(2)} estimated` });
+                },
+              };
+
+              try {
+                const finalPlan = await executePlan(approved, executors, callbacks, abortController.signal);
+                cb.setActivePlan(finalPlan);
+                saveCesarPlan(finalPlan);
+                if (finalPlan.planFilePath) {
+                  try {
+                    const { writeFileSync } = require('node:fs');
+                    writeFileSync(finalPlan.planFilePath, formatCesarPlanMarkdown(finalPlan));
+                  } catch {}
+                }
+                if (finalPlan.state === 'done') {
+                  cb.dispatch({ type: 'success', message: `Plan complete — ${finalPlan.steps.length} steps, $${finalPlan.totalActualCostUsd.toFixed(4)} actual cost` });
+                } else if (finalPlan.state === 'paused') {
+                  const failedStep = finalPlan.steps.find((s: any) => s.state === 'failed');
+                  cb.dispatch({ type: 'warning', message: `Plan paused — step "${failedStep?.description}" failed: ${failedStep?.result?.error ?? 'unknown'}` });
+                  cb.dispatch({ type: 'info', message: 'Use /plan resume to retry, or /cancel to abort' });
+                }
+              } catch (err) {
+                cb.dispatch({ type: 'error', message: `Plan execution failed: ${err instanceof Error ? err.message : String(err)}` });
+              } finally {
+                (cb.ctx as any).setActiveAbort?.(null);
+              }
+              decided = true;
+
+            } else if (trimmed === 'n' || trimmed === 'no') {
+              // ── Reject ──
+              cb.setActivePlan(cancelCesarPlan(currentProposal));
+              cb.dispatch({ type: 'info', message: 'Plan rejected.' });
+              decided = true;
+
+            } else {
+              // ── Feedback — send to Cesar for revision ──
+              cb.dispatch({ type: 'info', message: 'Revising plan with your feedback...' });
+              const reviseInput = `[PLAN REVISION] The user wants changes to the plan: ${answer}\n\nRevise the plan and call ProposePlan again with the updated steps.`;
+              await routeWithCesar(reviseInput, [], cb);
+              const revised: CesarPlan | undefined = (cb.ctx as any)._proposedPlan;
+              if (revised && revised.state === 'awaiting_approval') {
+                delete (cb.ctx as any)._proposedPlan;
+                currentProposal = revised;
+                // Loop continues — user will be asked again
+              } else {
+                cb.dispatch({ type: 'warning', message: 'Cesar did not produce a revised plan. Use /plan <task> to start over.' });
+                decided = true;
+              }
+            }
+          }
+        } else if (wasJob) {
+          return { handled: true, ranAsJob: true };
+        }
         break;
       }
       case 'plan-resume': {
-        cb.dispatch({ type: 'info', message: 'Plan resume not yet implemented.' });
+        // Find the most recent paused plan and resume execution
+        const plans = listCesarPlans();
+        const resumable = plans
+          .filter((p: CesarPlan) => p.state === 'paused' || p.state === 'running')
+          .sort((a: CesarPlan, b: CesarPlan) => b.createdAt.localeCompare(a.createdAt));
+
+        if (resumable.length === 0) {
+          cb.dispatch({ type: 'info', message: 'No paused plan found to resume.' });
+          break;
+        }
+
+        const resumePlan = resumable[0];
+        cb.dispatch({ type: 'info', message: `Resuming plan: ${resumePlan.intent} (${resumePlan.id})` });
+
+        // Reset failed steps to pending so they can re-run
+        const resetSteps = resumePlan.steps.map((s: any) =>
+          s.state === 'failed' ? { ...s, state: 'pending' as any, result: undefined } : s
+        );
+        let runningPlan: CesarPlan = { ...resumePlan, steps: resetSteps, state: 'running' as any };
+        cb.setActivePlan(runningPlan);
+
+        const executors = buildStepExecutors(cb.ctx);
+        const abortController = new AbortController();
+        (cb.ctx as any).setActiveAbort?.(abortController);
+
+        const callbacks = {
+          onStepStart: (stepId: string) => {
+            const step = runningPlan.steps.find((s: any) => s.id === stepId);
+            cb.dispatch({ type: 'info', message: `Step: ${step?.description ?? stepId} — starting...` });
+          },
+          onStepDone: (stepId: string, result: CesarStepResult) => {
+            const step = runningPlan.steps.find((s: any) => s.id === stepId);
+            const icon = result.status === 'success' ? '✓' : '✗';
+            const msgType = result.status === 'success' ? 'success' : 'error';
+            cb.dispatch({ type: msgType, message: `${icon} ${step?.description ?? stepId} — ${result.status}${result.error ? ': ' + result.error : ''} (${(result.durationMs / 1000).toFixed(1)}s)` });
+          },
+          onPlanUpdate: (updated: CesarPlan) => {
+            runningPlan = updated;
+            cb.setActivePlan(updated);
+            saveCesarPlan(updated);
+            if (updated.planFilePath) {
+              try {
+                const { writeFileSync } = require('node:fs');
+                writeFileSync(updated.planFilePath, formatCesarPlanMarkdown(updated));
+              } catch {}
+            }
+          },
+          onBudgetWarning: (actual: number, estimated: number) => {
+            cb.dispatch({ type: 'warning', message: `Budget warning: $${actual.toFixed(2)} actual vs $${estimated.toFixed(2)} estimated` });
+          },
+        };
+
+        try {
+          const finalPlan = await executePlan(runningPlan, executors, callbacks, abortController.signal);
+          cb.setActivePlan(finalPlan);
+          saveCesarPlan(finalPlan);
+          if (finalPlan.state === 'done') {
+            cb.dispatch({ type: 'success', message: `Plan complete — ${finalPlan.steps.length} steps, $${finalPlan.totalActualCostUsd.toFixed(4)} actual cost` });
+          } else if (finalPlan.state === 'paused') {
+            const failedStep = finalPlan.steps.find((s: any) => s.state === 'failed');
+            cb.dispatch({ type: 'warning', message: `Plan paused — step "${failedStep?.description}" failed: ${failedStep?.result?.error ?? 'unknown'}` });
+            cb.dispatch({ type: 'info', message: 'Use /plan resume to retry, or /cancel to abort' });
+          }
+        } catch (err) {
+          cb.dispatch({ type: 'error', message: `Plan resume failed: ${err instanceof Error ? err.message : String(err)}` });
+        } finally {
+          (cb.ctx as any).setActiveAbort?.(null);
+        }
         break;
       }
       case 'plans': handlePlansList(cb.dispatch); break;

@@ -5,36 +5,45 @@ import { resolveWorkingDir, extractImagesFromInput, buildImageAttachment, undoPa
 import type { ImageAttachment, ChatSession } from '@agon/core';
 
 // @kern-source: app-dispatch:7
-import { detectIntent } from '../intent.js';
+import { approveCesarPlan, cancelCesarPlan, saveCesarPlan, loadCesarPlan, listCesarPlans, executePlan, formatCesarPlanMarkdown } from '@agon/core';
 
 // @kern-source: app-dispatch:8
-import type { Dispatch, HandlerContext } from '../handlers/types.js';
+import type { CesarPlan, CesarStepResult } from '@agon/core';
 
 // @kern-source: app-dispatch:9
-import { icons } from '../icons.js';
+import { buildStepExecutors } from '../generated/handlers-plan-mode.js';
 
 // @kern-source: app-dispatch:10
-import { handleForge, handleChat, handleBrainstorm, handleCampfire, handleTribunal, handleLeaderboard, handleHistory, handleEngines, handleDiscover, handleConfig, handleUse, handleCesar, handleTokens, handleModels, handleWorkspace, handleChats, handlePlanShow, handlePlansList, handleApprove, handleRetry, handleCancel, handleApplyPatch, handleCp, handleCommit, handleFlowReport, handleFlowAnalysis, handleBuild, handleRun } from '../handlers/index.js';
+import { detectIntent } from '../intent.js';
 
 // @kern-source: app-dispatch:11
-import { handleTeamTribunal } from '../generated/handlers-team-tribunal.js';
+import type { Dispatch, HandlerContext } from '../handlers/types.js';
 
 // @kern-source: app-dispatch:12
-import { handleTeamForge } from '../generated/handlers-team-forge.js';
+import { icons } from '../icons.js';
 
 // @kern-source: app-dispatch:13
-import { handleTeamBrainstorm } from '../generated/handlers-team-brainstorm.js';
+import { handleForge, handleChat, handleBrainstorm, handleCampfire, handleTribunal, handleLeaderboard, handleHistory, handleEngines, handleDiscover, handleConfig, handleUse, handleCesar, handleTokens, handleModels, handleWorkspace, handleChats, handlePlanShow, handlePlansList, handleApprove, handleRetry, handleCancel, handleApplyPatch, handleCp, handleCommit, handleFlowReport, handleFlowAnalysis, handleBuild, handleRun } from '../handlers/index.js';
 
 // @kern-source: app-dispatch:14
-import { handleCesarBrain, parseSuggestion, CESAR_SYSTEM_PROMPT } from '../handlers/cesar-brain.js';
+import { handleTeamTribunal } from '../generated/handlers-team-tribunal.js';
 
 // @kern-source: app-dispatch:15
-import { handlePipeline } from '../handlers/pipeline.js';
+import { handleTeamForge } from '../generated/handlers-team-forge.js';
 
 // @kern-source: app-dispatch:16
-import { handleProvider } from '../handlers/provider.js';
+import { handleTeamBrainstorm } from '../generated/handlers-team-brainstorm.js';
+
+// @kern-source: app-dispatch:17
+import { handleCesarBrain, parseSuggestion, CESAR_SYSTEM_PROMPT } from '../handlers/cesar-brain.js';
 
 // @kern-source: app-dispatch:18
+import { handlePipeline } from '../handlers/pipeline.js';
+
+// @kern-source: app-dispatch:19
+import { handleProvider } from '../handlers/provider.js';
+
+// @kern-source: app-dispatch:21
 export interface DispatchCallbacks {
   dispatch: Dispatch;
   ctx: HandlerContext;
@@ -65,13 +74,13 @@ export interface DispatchCallbacks {
   setActivePlan: (plan: any) => void;
 }
 
-// @kern-source: app-dispatch:47
+// @kern-source: app-dispatch:50
 export interface DispatchResult {
   handled: boolean;
   ranAsJob: boolean;
 }
 
-// @kern-source: app-dispatch:51
+// @kern-source: app-dispatch:54
 export function handleModeSwitch(intentType: string, topic: string|undefined, question: string|undefined, cb: DispatchCallbacks): boolean {
   if (intentType === 'campfire' && !topic) {
     cb.setMode('campfire');
@@ -98,7 +107,7 @@ export function handleModeSwitch(intentType: string, topic: string|undefined, qu
   return false;
 }
 
-// @kern-source: app-dispatch:79
+// @kern-source: app-dispatch:82
 export async function routeWithCesar(input: string, images: ImageAttachment[], cb: DispatchCallbacks): Promise<boolean> {
   cb.setPendingImages(() => []);
   try {
@@ -281,7 +290,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
   return false;
 }
 
-// @kern-source: app-dispatch:263
+// @kern-source: app-dispatch:266
 export async function dispatchIntent(intent: any, input: string, cb: DispatchCallbacks): Promise<DispatchResult> {
   switch (intent.type) {
     // ── Job-dispatched commands (return immediately, don't hit finally) ──
@@ -374,19 +383,184 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
     // ── Plan commands ──
     case 'plan': await handlePlanShow(cb.dispatch, cb.ctx, intent.planId); break;
     case 'plan-task': {
-      // Enter plan mode
+      // Enter plan mode — Cesar thinks and proposes a plan
       const { createCesarPlan } = await import('@agon/core');
       const cesarPlan = createCesarPlan(intent.task, []);
       cb.setActivePlan(cesarPlan);
-      // Pass dispatch to context so ProposePlan handler can create + display the plan
       (cb.ctx as any)._planDispatch = cb.dispatch;
-      // Route to Cesar with the task
       const cesarInput = `[PLAN MODE] ${intent.task}`;
-      if (await routeWithCesar(cesarInput, [], cb)) return { handled: true, ranAsJob: true };
+      const wasJob = await routeWithCesar(cesarInput, [], cb);
+  
+      // After routeWithCesar, check if Cesar proposed a plan
+      const proposed: CesarPlan | undefined = (cb.ctx as any)._proposedPlan;
+      if (proposed && proposed.state === 'awaiting_approval') {
+        // Clear the stash
+        delete (cb.ctx as any)._proposedPlan;
+  
+        // Approval loop — ask user, handle Y/N/feedback
+        let currentProposal = proposed;
+        let decided = false;
+        while (!decided) {
+          const answer = await cb.askQuestion('Approve plan? [Y/n] or give feedback to revise');
+          const trimmed = answer.trim().toLowerCase();
+  
+          if (trimmed === 'y' || trimmed === 'yes' || trimmed === '') {
+            // ── Approve and execute ──
+            const approved = approveCesarPlan(currentProposal);
+            cb.setActivePlan(approved);
+            cb.dispatch({ type: 'success', message: 'Plan approved — executing...' });
+            saveCesarPlan(approved);
+  
+            const executors = buildStepExecutors(cb.ctx);
+            const abortController = new AbortController();
+            (cb.ctx as any).setActiveAbort?.(abortController);
+  
+            const callbacks = {
+              onStepStart: (stepId: string) => {
+                const step = approved.steps.find((s: any) => s.id === stepId);
+                cb.dispatch({ type: 'info', message: `Step: ${step?.description ?? stepId} — starting...` });
+              },
+              onStepDone: (stepId: string, result: CesarStepResult) => {
+                const step = approved.steps.find((s: any) => s.id === stepId);
+                const icon = result.status === 'success' ? '✓' : '✗';
+                const msgType = result.status === 'success' ? 'success' : 'error';
+                cb.dispatch({ type: msgType, message: `${icon} ${step?.description ?? stepId} — ${result.status}${result.error ? ': ' + result.error : ''} (${(result.durationMs / 1000).toFixed(1)}s)` });
+              },
+              onPlanUpdate: (updated: CesarPlan) => {
+                cb.setActivePlan(updated);
+                saveCesarPlan(updated);
+                if (updated.planFilePath) {
+                  try {
+                    const { writeFileSync } = require('node:fs');
+                    writeFileSync(updated.planFilePath, formatCesarPlanMarkdown(updated));
+                  } catch {}
+                }
+              },
+              onBudgetWarning: (actual: number, estimated: number) => {
+                cb.dispatch({ type: 'warning', message: `Budget warning: $${actual.toFixed(2)} actual vs $${estimated.toFixed(2)} estimated` });
+              },
+            };
+  
+            try {
+              const finalPlan = await executePlan(approved, executors, callbacks, abortController.signal);
+              cb.setActivePlan(finalPlan);
+              saveCesarPlan(finalPlan);
+              if (finalPlan.planFilePath) {
+                try {
+                  const { writeFileSync } = require('node:fs');
+                  writeFileSync(finalPlan.planFilePath, formatCesarPlanMarkdown(finalPlan));
+                } catch {}
+              }
+              if (finalPlan.state === 'done') {
+                cb.dispatch({ type: 'success', message: `Plan complete — ${finalPlan.steps.length} steps, $${finalPlan.totalActualCostUsd.toFixed(4)} actual cost` });
+              } else if (finalPlan.state === 'paused') {
+                const failedStep = finalPlan.steps.find((s: any) => s.state === 'failed');
+                cb.dispatch({ type: 'warning', message: `Plan paused — step "${failedStep?.description}" failed: ${failedStep?.result?.error ?? 'unknown'}` });
+                cb.dispatch({ type: 'info', message: 'Use /plan resume to retry, or /cancel to abort' });
+              }
+            } catch (err) {
+              cb.dispatch({ type: 'error', message: `Plan execution failed: ${err instanceof Error ? err.message : String(err)}` });
+            } finally {
+              (cb.ctx as any).setActiveAbort?.(null);
+            }
+            decided = true;
+  
+          } else if (trimmed === 'n' || trimmed === 'no') {
+            // ── Reject ──
+            cb.setActivePlan(cancelCesarPlan(currentProposal));
+            cb.dispatch({ type: 'info', message: 'Plan rejected.' });
+            decided = true;
+  
+          } else {
+            // ── Feedback — send to Cesar for revision ──
+            cb.dispatch({ type: 'info', message: 'Revising plan with your feedback...' });
+            const reviseInput = `[PLAN REVISION] The user wants changes to the plan: ${answer}\n\nRevise the plan and call ProposePlan again with the updated steps.`;
+            await routeWithCesar(reviseInput, [], cb);
+            const revised: CesarPlan | undefined = (cb.ctx as any)._proposedPlan;
+            if (revised && revised.state === 'awaiting_approval') {
+              delete (cb.ctx as any)._proposedPlan;
+              currentProposal = revised;
+              // Loop continues — user will be asked again
+            } else {
+              cb.dispatch({ type: 'warning', message: 'Cesar did not produce a revised plan. Use /plan <task> to start over.' });
+              decided = true;
+            }
+          }
+        }
+      } else if (wasJob) {
+        return { handled: true, ranAsJob: true };
+      }
       break;
     }
     case 'plan-resume': {
-      cb.dispatch({ type: 'info', message: 'Plan resume not yet implemented.' });
+      // Find the most recent paused plan and resume execution
+      const plans = listCesarPlans();
+      const resumable = plans
+        .filter((p: CesarPlan) => p.state === 'paused' || p.state === 'running')
+        .sort((a: CesarPlan, b: CesarPlan) => b.createdAt.localeCompare(a.createdAt));
+  
+      if (resumable.length === 0) {
+        cb.dispatch({ type: 'info', message: 'No paused plan found to resume.' });
+        break;
+      }
+  
+      const resumePlan = resumable[0];
+      cb.dispatch({ type: 'info', message: `Resuming plan: ${resumePlan.intent} (${resumePlan.id})` });
+  
+      // Reset failed steps to pending so they can re-run
+      const resetSteps = resumePlan.steps.map((s: any) =>
+        s.state === 'failed' ? { ...s, state: 'pending' as any, result: undefined } : s
+      );
+      let runningPlan: CesarPlan = { ...resumePlan, steps: resetSteps, state: 'running' as any };
+      cb.setActivePlan(runningPlan);
+  
+      const executors = buildStepExecutors(cb.ctx);
+      const abortController = new AbortController();
+      (cb.ctx as any).setActiveAbort?.(abortController);
+  
+      const callbacks = {
+        onStepStart: (stepId: string) => {
+          const step = runningPlan.steps.find((s: any) => s.id === stepId);
+          cb.dispatch({ type: 'info', message: `Step: ${step?.description ?? stepId} — starting...` });
+        },
+        onStepDone: (stepId: string, result: CesarStepResult) => {
+          const step = runningPlan.steps.find((s: any) => s.id === stepId);
+          const icon = result.status === 'success' ? '✓' : '✗';
+          const msgType = result.status === 'success' ? 'success' : 'error';
+          cb.dispatch({ type: msgType, message: `${icon} ${step?.description ?? stepId} — ${result.status}${result.error ? ': ' + result.error : ''} (${(result.durationMs / 1000).toFixed(1)}s)` });
+        },
+        onPlanUpdate: (updated: CesarPlan) => {
+          runningPlan = updated;
+          cb.setActivePlan(updated);
+          saveCesarPlan(updated);
+          if (updated.planFilePath) {
+            try {
+              const { writeFileSync } = require('node:fs');
+              writeFileSync(updated.planFilePath, formatCesarPlanMarkdown(updated));
+            } catch {}
+          }
+        },
+        onBudgetWarning: (actual: number, estimated: number) => {
+          cb.dispatch({ type: 'warning', message: `Budget warning: $${actual.toFixed(2)} actual vs $${estimated.toFixed(2)} estimated` });
+        },
+      };
+  
+      try {
+        const finalPlan = await executePlan(runningPlan, executors, callbacks, abortController.signal);
+        cb.setActivePlan(finalPlan);
+        saveCesarPlan(finalPlan);
+        if (finalPlan.state === 'done') {
+          cb.dispatch({ type: 'success', message: `Plan complete — ${finalPlan.steps.length} steps, $${finalPlan.totalActualCostUsd.toFixed(4)} actual cost` });
+        } else if (finalPlan.state === 'paused') {
+          const failedStep = finalPlan.steps.find((s: any) => s.state === 'failed');
+          cb.dispatch({ type: 'warning', message: `Plan paused — step "${failedStep?.description}" failed: ${failedStep?.result?.error ?? 'unknown'}` });
+          cb.dispatch({ type: 'info', message: 'Use /plan resume to retry, or /cancel to abort' });
+        }
+      } catch (err) {
+        cb.dispatch({ type: 'error', message: `Plan resume failed: ${err instanceof Error ? err.message : String(err)}` });
+      } finally {
+        (cb.ctx as any).setActiveAbort?.(null);
+      }
       break;
     }
     case 'plans': handlePlansList(cb.dispatch); break;

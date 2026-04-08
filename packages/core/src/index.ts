@@ -97,7 +97,7 @@ export type {
 } from './persistent-session.js';
 export { createCesarMemory } from './generated/cesar-memory.js';
 export type { CesarMemory, MemoryEntry } from './generated/cesar-memory.js';
-export { createCesarPlan, approveCesarPlan, advanceCesarStep, cancelCesarPlan } from './generated/cesar-plan.js';
+export { createCesarPlan, approveCesarPlan, advanceCesarStep, cancelCesarPlan, saveCesarPlan, loadCesarPlan, listCesarPlans } from './generated/cesar-plan.js';
 export type { CesarPlan, CesarPlanStep, CesarStepResult } from './generated/cesar-plan.js';
 export { planCostEstimator } from './generated/plan-cost-estimator.js';
 export type { CostEstimate } from './generated/plan-cost-estimator.js';

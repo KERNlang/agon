@@ -98,6 +98,8 @@ export { createCesarMemory } from './generated/cesar-memory.js';
 export type { CesarMemory, MemoryEntry } from './generated/cesar-memory.js';
 export { createCesarPlan, approveCesarPlan, advanceCesarStep, cancelCesarPlan } from './generated/cesar-plan.js';
 export type { CesarPlan, CesarPlanStep, CesarStepResult } from './generated/cesar-plan.js';
+export { planCostEstimator } from './generated/plan-cost-estimator.js';
+export type { CostEstimate } from './generated/plan-cost-estimator.js';
 export { runHooks, hooksFailed, hooksOutput } from './hooks.js';
 export type { HookEvent, HookDef, HookResult } from './hooks.js';
 export { loadSkills, findSkill, renderSkillPrompt } from './skill-loader.js';

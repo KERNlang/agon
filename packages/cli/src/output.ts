@@ -6,4 +6,4 @@ export {
   header, success, fail, warn, info,
   scoreboard, table,
   ENGINE_COLORS, LOGO_COLORS,
-} from './generated/output.js';
+} from './generated/blocks/output-format.js';

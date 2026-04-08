@@ -1,0 +1,136 @@
+// ── Tool Execution Loop ──────────────────────────────────────────────
+// The main loop: parse engine output → execute tools → feed results back.
+// Engine-agnostic: works with any LLM via text-based tool protocol.
+
+import from="../models/tool-types.js" names="ToolCall,ToolCallResult,ToolContext,ToolHandler" types=true
+import from="../signals/tool-registry.js" names="ToolRegistry,executeToolCalls"
+import from="./tool-parser.js" names="parseToolCalls,toolCallsToApiFormat,formatToolResults"
+import from="./tool-parser.js" names="ParseResult" types=true
+import from="./tool-prompt.js" names="generateToolPrompt"
+
+const name=MAX_TOOL_TURNS type=number
+  handler <<< 25 >>>
+
+interface name=ToolLoopCallbacks
+  field name=onToolCall type="(name: string, input: Record<string,unknown>) => void" optional=true
+  field name=onToolResult type="(name: string, result: ToolCallResult) => void" optional=true
+  field name=onPermissionAsk type="(tool: string, message: string) => Promise<boolean>" optional=true
+  field name=onText type="(text: string) => void" optional=true
+  field name=onTurnComplete type="(turn: number) => void" optional=true
+
+interface name=ToolLoopResult
+  field name=finalText type=string
+  field name=toolCallCount type=number
+  field name=turns type=number
+  field name=aborted type=boolean
+
+fn name=buildToolSystemPrompt params="registry:ToolRegistry" returns=string
+  doc "Generate the tool system prompt to inject into any engine's context."
+  handler <<<
+    const handlers = Array.from((registry as any).tools.values()) as ToolHandler[];
+    return generateToolPrompt(handlers);
+  >>>
+
+fn name=processToolResponse async=true params="response:string, ctx:ToolContext, registry:ToolRegistry, callbacks?:ToolLoopCallbacks" returns="Promise<{hasTools:boolean, textBefore:string, toolResults:string, textAfter:string}>"
+  doc "Process a single engine response: parse tool calls, execute them, format results."
+  handler <<<
+    const parsed = parseToolCalls(response);
+
+    if (!parsed.hasToolCalls) {
+      return { hasTools: false, textBefore: response, toolResults: '', textAfter: '' };
+    }
+
+    // Notify about text before tools
+    if (parsed.textBefore && callbacks?.onText) {
+      callbacks.onText(parsed.textBefore);
+    }
+
+    // Convert to ToolCall format
+    const calls = toolCallsToApiFormat(parsed.toolCalls);
+
+    // Notify about each tool call
+    for (const call of calls) {
+      if (callbacks?.onToolCall) {
+        callbacks.onToolCall(call.name, call.input);
+      }
+    }
+
+    // Execute all tool calls
+    const results = await executeToolCalls(
+      calls,
+      ctx,
+      registry,
+      callbacks?.onPermissionAsk,
+      (result) => {
+        if (callbacks?.onToolResult) {
+          callbacks.onToolResult(result.toolName, result);
+        }
+      }
+    );
+
+    // Format results for re-injection
+    const formatted = formatToolResults(
+      results.map(r => ({
+        name: r.toolName,
+        content: r.result.content,
+        error: r.result.error,
+      }))
+    );
+
+    return {
+      hasTools: true,
+      textBefore: parsed.textBefore,
+      toolResults: formatted,
+      textAfter: parsed.textAfter,
+    };
+  >>>
+
+fn name=runToolLoop async=true params="sendMessage:(message:string)=>Promise<string>, initialResponse:string, ctx:ToolContext, registry:ToolRegistry, callbacks?:ToolLoopCallbacks" returns="Promise<ToolLoopResult>"
+  doc "Full tool loop: repeatedly process responses until no more tool calls or max turns reached."
+  handler <<<
+    let currentResponse = initialResponse;
+    let totalToolCalls = 0;
+    let turn = 0;
+    const allText: string[] = [];
+
+    while (turn < MAX_TOOL_TURNS) {
+      if (ctx.abortSignal?.aborted) {
+        return { finalText: allText.join('\n'), toolCallCount: totalToolCalls, turns: turn, aborted: true };
+      }
+
+      const processed = await processToolResponse(currentResponse, ctx, registry, callbacks);
+
+      if (!processed.hasTools) {
+        // No tool calls — we're done
+        allText.push(processed.textBefore);
+        if (callbacks?.onText && processed.textBefore) {
+          callbacks.onText(processed.textBefore);
+        }
+        break;
+      }
+
+      // Collect text
+      if (processed.textBefore) allText.push(processed.textBefore);
+      totalToolCalls += parseToolCalls(currentResponse).toolCalls.length;
+      turn++;
+
+      if (callbacks?.onTurnComplete) {
+        callbacks.onTurnComplete(turn);
+      }
+
+      // Send tool results back to the engine and get next response
+      const nextMessage = processed.toolResults + (processed.textAfter ? '\n\n' + processed.textAfter : '');
+      currentResponse = await sendMessage(nextMessage);
+    }
+
+    if (turn >= MAX_TOOL_TURNS) {
+      allText.push(`\n[Tool loop reached maximum of ${MAX_TOOL_TURNS} turns]`);
+    }
+
+    return {
+      finalText: allText.join('\n'),
+      toolCallCount: totalToolCalls,
+      turns: turn,
+      aborted: ctx.abortSignal?.aborted ?? false,
+    };
+  >>>

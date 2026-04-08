@@ -1,10 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
 
 import { detectIntent } from '../../packages/cli/src/intent.js';
-import { dispatchIntent } from '../../packages/cli/src/generated/app-dispatch.js';
-import { createBashTool } from '../../packages/core/src/generated/tool-bash.js';
-import { createEditTool } from '../../packages/core/src/generated/tool-edit.js';
-import { createWriteTool } from '../../packages/core/src/generated/tool-write.js';
+import { dispatchIntent } from '../../packages/cli/src/generated/signals/dispatch.js';
+import { createBashTool } from '../../packages/core/src/generated/tools/tool-bash.js';
+import { createEditTool } from '../../packages/core/src/generated/tools/tool-edit.js';
+import { createWriteTool } from '../../packages/core/src/generated/tools/tool-write.js';
 
 describe('Exploration Mode', () => {
   it('parses /explore aliases', () => {

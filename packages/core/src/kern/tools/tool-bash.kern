@@ -1,0 +1,201 @@
+// ── Bash Tool ────────────────────────────────────────────────────────
+// Executes shell commands with permission gating and timeout support.
+
+import from="../models/tool-types.js" names="ToolResult,ToolContext,ToolDefinition,PermissionDecision,ToolHandler" types=true
+import from="../blocks/process.js" names="spawnWithTimeout"
+
+const name=DANGEROUS_PREFIXES type="readonly string[]"
+  handler <<<
+    [
+      'rm -rf /',
+      'dd if=',
+      'mkfs',
+      '> /dev/',
+      'chmod 777',
+      'curl | sh',
+      'wget | sh',
+    ] as const
+  >>>
+
+const name=READONLY_COMMANDS type="readonly string[]"
+  handler <<<
+    [
+      'ls', 'cat', 'head', 'tail',
+      'git status', 'git log', 'git diff',
+      'npm test', 'echo', 'pwd', 'which',
+      'find', 'grep', 'wc', 'date',
+    ] as const
+  >>>
+
+fn name=extractBaseCommand params="command:string" returns=string
+  doc "Extract the actual command from wrappers like sudo, env, nice."
+  handler <<<
+    let cmd = command.trim();
+    // Strip common wrappers
+    const wrappers = ['sudo', 'env', 'nice', 'nohup', 'time'];
+    for (const w of wrappers) {
+      while (cmd.startsWith(w + ' ')) {
+        cmd = cmd.slice(w.length + 1).trim();
+      }
+    }
+    // Strip env VAR=val prefixes
+    while (/^[A-Z_]+=\S+\s/.test(cmd)) {
+      cmd = cmd.replace(/^[A-Z_]+=\S+\s+/, '');
+    }
+    return cmd;
+  >>>
+
+fn name=createBashTool returns=ToolHandler
+  doc "Factory: creates the Bash tool handler for shell command execution."
+  handler <<<
+    const definition: ToolDefinition = {
+      name: 'Bash',
+      description: 'Executes a shell command and returns its output.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          command: { type: 'string', description: 'The shell command to execute' },
+          timeout: { type: 'number', description: 'Optional timeout in milliseconds (default 120000)' },
+        },
+        required: ['command'],
+      },
+      maxResultSizeChars: 30000,
+      isReadOnly: false,
+      isConcurrencySafe: false,
+      isDestructive: true,
+    };
+
+    function validate(input: Record<string, unknown>, _ctx: ToolContext): string | null {
+      if (typeof input.command !== 'string' || input.command.trim() === '') {
+        return 'command is required and must be a non-empty string';
+      }
+      return null;
+    }
+
+    function checkPermission(input: Record<string, unknown>, _ctx: ToolContext): PermissionDecision {
+      const command = input.command as string;
+      const base = extractBaseCommand(command);
+      const lower = base.toLowerCase();
+
+      // Check dangerous prefixes — deny immediately
+      for (const prefix of DANGEROUS_PREFIXES) {
+        if (lower.startsWith(prefix)) {
+          return { behavior: 'deny', message: `Blocked dangerous command: ${prefix}`, reason: 'dangerous-prefix' };
+        }
+      }
+
+      // Check read-only commands — allow automatically
+      const isReadOnly = READONLY_COMMANDS.some((safe: string) => lower === safe || lower.startsWith(safe + ' '));
+
+      // Exploration mode: allow read-only commands, block everything else
+      if ((_ctx as any).explorationMode) {
+        if (isReadOnly) return { behavior: 'allow' };
+        return { behavior: 'deny', message: 'Bash blocked: exploration mode is active (read-only)', reason: 'exploration-mode' };
+      }
+
+      if (isReadOnly) return { behavior: 'allow' };
+
+      // Auto mode: allow all non-dangerous commands without prompting
+      if (_ctx.permissionMode === 'auto') {
+        return { behavior: 'allow' };
+      }
+
+      // Everything else needs user approval
+      return { behavior: 'ask', message: `Allow Bash command: ${command}?` };
+    }
+
+    // ── Runtime redirect: intercept cat/head/tail/grep → proper tools ──
+    // Engines habitually use Bash for file reads. Redirect silently to Read/Grep
+    // so it goes through the tool system (permissions, caching, history).
+    const FILE_READ_RE = /^\s*(?:cat|head|tail)(?:\s+-[A-Za-z0-9]+)*\s+(.+)$/;
+    const GREP_RE = /^\s*(?:grep|rg)\s+(.+)$/;
+
+    function tryRedirectToRead(command: string): { file: string; offset?: number; limit?: number } | null {
+      const trimmed = command.trim();
+      // cat file.ts | head -N  →  Read with limit
+      const pipeHead = trimmed.match(/^\s*cat\s+(\S+)\s*\|\s*head\s+-(\d+)\s*$/);
+      if (pipeHead) return { file: pipeHead[1], limit: parseInt(pipeHead[2], 10) };
+      // head -N file.ts  →  Read with limit
+      const headN = trimmed.match(/^\s*head\s+-(\d+)\s+(\S+)\s*$/);
+      if (headN) return { file: headN[2], limit: parseInt(headN[1], 10) };
+      // tail -N file.ts  →  skip (tail needs line count, harder to redirect)
+      // cat file.ts  →  Read
+      const catSimple = trimmed.match(/^\s*cat\s+(\S+)\s*$/);
+      if (catSimple) return { file: catSimple[1] };
+      // cat -n file.ts  →  Read
+      const catN = trimmed.match(/^\s*cat\s+-n\s+(\S+)\s*$/);
+      if (catN) return { file: catN[1] };
+      return null;
+    }
+
+    async function execute(input: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
+      const command = input.command as string;
+      const timeout = typeof input.timeout === 'number' ? input.timeout : 120000;
+      const start = Date.now();
+
+      // Redirect file reads to Read tool — silent, engine never knows
+      const readRedirect = tryRedirectToRead(command);
+      if (readRedirect) {
+        try {
+          const { readFileSync } = await import('node:fs');
+          const { resolve } = await import('node:path');
+          const filePath = resolve(ctx.cwd, readRedirect.file);
+          const content = readFileSync(filePath, 'utf-8');
+          const lines = content.split('\n');
+          const offset = readRedirect.offset ?? 0;
+          const limit = readRedirect.limit ?? lines.length;
+          const sliced = lines.slice(offset, offset + limit).join('\n');
+          return {
+            ok: true,
+            content: sliced,
+            metadata: { exitCode: 0, durationMs: Date.now() - start, timedOut: false, redirected: 'Read' },
+          };
+        } catch (err: any) {
+          // File doesn't exist or permission error — fall through to real Bash
+        }
+      }
+
+      if (ctx.onProgress) {
+        ctx.onProgress(`Running: ${command}`);
+      }
+
+      const result = await spawnWithTimeout({
+        command: '/bin/sh',
+        args: ['-c', command],
+        cwd: ctx.cwd,
+        timeout,
+        signal: ctx.abortSignal,
+      });
+
+      const durationMs = Date.now() - start;
+      const exitCode = result.exitCode;
+      const stdout = result.stdout;
+      const stderr = result.stderr;
+
+      if (result.timedOut) {
+        return {
+          ok: false,
+          content: stdout,
+          error: `Command timed out after ${timeout}ms`,
+          metadata: { exitCode: 124, durationMs, timedOut: true },
+        };
+      }
+
+      if (exitCode !== 0) {
+        return {
+          ok: false,
+          content: stdout,
+          error: stderr || `Process exited with code ${exitCode}`,
+          metadata: { exitCode, durationMs, timedOut: false },
+        };
+      }
+
+      return {
+        ok: true,
+        content: stdout,
+        metadata: { exitCode, durationMs, timedOut: false },
+      };
+    }
+
+    return { definition, validate, checkPermission, execute };
+  >>>

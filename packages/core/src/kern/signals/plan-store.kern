@@ -1,0 +1,69 @@
+import from="node:fs" names="readFileSync,writeFileSync,mkdirSync,readdirSync,unlinkSync,renameSync"
+import from="node:path" names="join,resolve"
+import from="./config.js" names="AGON_HOME,ensureAgonHome"
+import from="../blocks/plan.js" names="Plan" types=true
+
+const name=PLANS_DIR type=string
+  handler <<<
+    join(AGON_HOME, 'plans')
+  >>>
+
+fn name=ensurePlansDir returns=void export=false
+  handler <<<
+    ensureAgonHome();
+    mkdirSync(PLANS_DIR, { recursive: true });
+  >>>
+
+fn name=safePlanPath params="id:string" returns=string export=false
+  handler <<<
+    const sanitized = id.replace(/[^a-zA-Z0-9_-]/g, '');
+    const full = resolve(PLANS_DIR, `${sanitized}.json`);
+    if (!full.startsWith(resolve(PLANS_DIR))) throw new Error(`Invalid plan ID: ${id}`);
+    return full;
+  >>>
+
+fn name=savePlan params="plan:Plan" returns=void
+  handler <<<
+    ensurePlansDir();
+    const target = safePlanPath(plan.id);
+    const tmpPath = target + '.tmp';
+    writeFileSync(tmpPath, JSON.stringify(plan, null, 2) + '\n');
+    renameSync(tmpPath, target);
+  >>>
+
+fn name=loadPlan params="id:string" returns="Plan|null"
+  handler <<<
+    try { return JSON.parse(readFileSync(safePlanPath(id), 'utf-8')) as Plan; }
+    catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+        console.warn(`[agon] failed to load plan ${id}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      return null;
+    }
+  >>>
+
+fn name=listPlans params="limit?:number" returns="Plan[]"
+  handler <<<
+    ensurePlansDir();
+    try {
+      const files = readdirSync(PLANS_DIR).filter((f: string) => f.endsWith('.json'));
+      return files
+        .map((f: string) => JSON.parse(readFileSync(join(PLANS_DIR, f), 'utf-8')) as Plan)
+        .sort((a: any, b: any) => b.updatedAt.localeCompare(a.updatedAt))
+        .slice(0, limit ?? 20);
+    } catch (err) {
+      console.warn(`[agon] failed to list plans: ${err instanceof Error ? err.message : String(err)}`);
+      return [];
+    }
+  >>>
+
+fn name=deletePlan params="id:string" returns=boolean
+  handler <<<
+    try { unlinkSync(safePlanPath(id)); return true; }
+    catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+        console.warn(`[agon] failed to delete plan ${id}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      return false;
+    }
+  >>>

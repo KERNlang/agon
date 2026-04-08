@@ -1,1 +1,1 @@
-export { registerBuiltinCommands } from './generated/builtin-commands.js';
+export { registerBuiltinCommands } from './generated/blocks/builtin-commands.js';

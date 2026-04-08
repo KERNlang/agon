@@ -25,8 +25,8 @@ import {
   handleOutputEvent,
   clearPermissionQueue,
   _permissionQueue,
-} from '../../packages/cli/src/generated/app-output.js';
-import type { OutputActions, OutputState } from '../../packages/cli/src/generated/app-output.js';
+} from '../../packages/cli/src/generated/signals/output.js';
+import type { OutputActions, OutputState } from '../../packages/cli/src/generated/signals/output.js';
 
 function createMockActions(): OutputActions & { calls: Record<string, unknown[][]> } {
   const calls: Record<string, unknown[][]> = {

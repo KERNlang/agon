@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { convertMessagesForSdk, convertToolsForSdk, buildModel } from '../../packages/core/src/generated/api-dispatch.js';
+import { convertMessagesForSdk, convertToolsForSdk, buildModel } from '../../packages/core/src/generated/api/dispatch.js';
 
 // --- Usage capture tests (mocked generateText) ---
 
@@ -171,7 +171,7 @@ describe('api-dispatch — provider creation', () => {
 // --- Usage capture from generateText ---
 
 import { generateText } from 'ai';
-import { apiDispatch } from '../../packages/core/src/generated/api-dispatch.js';
+import { apiDispatch } from '../../packages/core/src/generated/api/dispatch.js';
 
 const mockGenerateText = vi.mocked(generateText);
 

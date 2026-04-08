@@ -12,4 +12,4 @@ export {
   handleWorkspace,
   handleChats,
   handleModels,
-} from '../generated/handlers-info.js';
+} from '../generated/handlers/info.js';

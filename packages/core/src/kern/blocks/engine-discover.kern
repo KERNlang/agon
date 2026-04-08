@@ -1,0 +1,47 @@
+import from="../models/types.js" names="EngineAdapter,EngineDefinition" types=true
+import from="../signals/engine-registry.js" names="EngineRegistry" types=true
+
+interface name=DiscoveryResult
+  field name=id type=string
+  field name=displayName type=string
+  field name=found type=boolean
+  field name=version type="string|null"
+  field name=envOk type=boolean
+  field name=missingEnv type="string[]"
+
+fn name=discoverEngines async=true params="registry:EngineRegistry, adapter:EngineAdapter" returns="Promise<DiscoveryResult[]>"
+  handler <<<
+    const engines = registry.list();
+
+    return Promise.all(
+      engines.map(async (engine: EngineDefinition) => {
+        const found = registry.isAvailable(engine);
+        let version: string | null = null;
+        if (found) {
+          try {
+            version = await adapter.getVersion(engine);
+          } catch (err) {
+            console.warn(`[agon] failed to get version for ${engine.id}: ${err instanceof Error ? err.message : String(err)}`);
+          }
+        }
+
+        const missingEnv: string[] = [];
+        if (engine.env) {
+          for (const [envVar, config] of Object.entries(engine.env)) {
+            if (config.required && !process.env[envVar]) {
+              missingEnv.push(envVar);
+            }
+          }
+        }
+
+        return {
+          id: engine.id,
+          displayName: engine.displayName,
+          found,
+          version,
+          envOk: missingEnv.length === 0,
+          missingEnv,
+        };
+      }),
+    );
+  >>>

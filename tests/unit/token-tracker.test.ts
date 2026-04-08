@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { tracker, estimateTokens, estimateCost } from '../../packages/core/src/generated/token-tracker.js';
-import type { TokenUsage } from '../../packages/core/src/generated/token-tracker.js';
+import { tracker, estimateTokens, estimateCost } from '../../packages/core/src/generated/signals/token-tracker.js';
+import type { TokenUsage } from '../../packages/core/src/generated/signals/token-tracker.js';
 
 describe('TokenTracker', () => {
   beforeEach(() => {

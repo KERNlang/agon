@@ -1,19 +1,28 @@
+// @kern-source: team-forge:5
 import { randomUUID } from 'node:crypto';
 
+// @kern-source: team-forge:6
 import { mkdirSync } from 'node:fs';
 
+// @kern-source: team-forge:7
 import type { ForgeOptions, EngineAdapter, EngineResult, ForgeEvent, TaskClass } from '@agon/core';
 
+// @kern-source: team-forge:8
 import type { TeamSpec, TeamFormat, TeamComposeMode, TeamMember, TeamRoundTrace, TeamSubmission, TeamScoreCard, TeamMatchResult, TeamEvent } from '@agon/core';
 
+// @kern-source: team-forge:9
 import { EngineRegistry, loadConfig, buildForgePrompt, repoRoot, headSha, worktreeCreate, worktreeRemove, classifyTask, createSidechainLogger, composeTeams, makeFormat, computeContributionWeights } from '@agon/core';
 
+// @kern-source: team-forge:10
 import { updateTeamElo } from '@agon/core';
 
+// @kern-source: team-forge:11
 import { runFitness } from './fitness.js';
 
+// @kern-source: team-forge:12
 import type { WorktreeEntry } from '../types.js';
 
+// @kern-source: team-forge:14
 export interface TeamForgeOptions {
   task: string;
   fitnessCmd: string;
@@ -28,6 +37,7 @@ export interface TeamForgeOptions {
   signal?: AbortSignal;
 }
 
+// @kern-source: team-forge:27
 export async function runTeamCoopForge(team: TeamSpec, task: string, fitnessCmd: string, forgePrompt: string, registry: EngineRegistry, adapter: EngineAdapter, cwd: string, forgeDir: string, worktrees: WorktreeEntry[], timeout: number, fitnessTimeout: number, maxReviewLoops: number, onEvent?: (event:ForgeEvent|TeamEvent)=>void, signal?: AbortSignal): Promise<TeamSubmission> {
   const trace: TeamRoundTrace[] = [];
   const start = Date.now();
@@ -236,6 +246,7 @@ export async function runTeamCoopForge(team: TeamSpec, task: string, fitnessCmd:
   };
 }
 
+// @kern-source: team-forge:236
 export async function runTeamForge(options: TeamForgeOptions, registry: EngineRegistry, adapter: EngineAdapter, onEvent?: (event:ForgeEvent|TeamEvent)=>void): Promise<TeamMatchResult> {
   const config = loadConfig(options.cwd);
   const matchId = randomUUID().slice(0, 8);

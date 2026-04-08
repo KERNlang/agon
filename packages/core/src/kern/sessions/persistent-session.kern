@@ -1,0 +1,1397 @@
+import from="node:child_process" names="spawn"
+import from="node:child_process" names="ChildProcess" types=true
+import from="node:readline" names="createInterface"
+import from="../models/types.js" names="EngineDefinition,CompanionConfig" types=true
+import from="../api/dispatch.js" names="apiStreamDispatch,apiStreamDispatchWithHistory"
+import from="../signals/session-store.js" names="saveSessionState,loadSessionState"
+import from="../tools/tool-parser.js" names="parseToolCalls,toolCallsToApiFormat"
+
+interface name=SessionChunk
+  field name=type type="'text'|'status'|'tool_call'|'error'|'done'"
+  field name=content type=string
+  field name=metadata type="Record<string,unknown>" optional=true
+
+interface name=SessionSendOptions
+  field name=message type=string
+  field name=images type="string[]" optional=true
+  field name=signal type=AbortSignal optional=true
+  field name=systemPrompt type=string optional=true
+
+interface name=PersistentSessionConfig
+  field name=engine type=EngineDefinition
+  field name=binaryPath type=string
+  field name=cwd type=string
+  field name=systemPrompt type=string optional=true
+  field name=onApproval type="(tool: string, command: string) => Promise<boolean>" optional=true
+  field name=nativeTools type="Array<{type:string,function:{name:string,description:string,parameters:Record<string,unknown>}}>" optional=true
+  field name=onToolCall type="(name: string, args: Record<string,unknown>, callId: string) => Promise<string>" optional=true
+  field name=mcpServers type="Array<Record<string,unknown>>" optional=true
+
+interface name=PersistentSession
+  field name=alive type=boolean
+  field name=sessionId type="string|null"
+  field name=engineId type=string
+  field name=start type="() => Promise<void>"
+  field name=send type="(opts: SessionSendOptions) => AsyncGenerator<SessionChunk, void, void>"
+  field name=close type="() => void"
+
+fn name=createPersistentSession params="config:PersistentSessionConfig" returns="PersistentSession"
+  doc "Factory: picks the right session implementation based on engine config."
+  handler <<<
+    const engine = config.engine;
+
+    // API path: engine has API config and no binary path provided → use stateless resume session
+    if (engine.api && !config.binaryPath) {
+      return createResumeSession(config);
+    }
+
+    // Claude: bidirectional stream-json pipe
+    if ((engine.id === 'claude' || engine.binary === 'claude') && config.binaryPath) {
+      return createStreamJsonSession(config);
+    }
+
+    // Engines with ACP protocol (OpenCode, Gemini)
+    if (engine.companion && engine.companion.protocol === 'acp') {
+      return createAcpSession(config);
+    }
+
+    // Engines with JSONRPC companion (Codex)
+    if (engine.companion && engine.companion.protocol === 'jsonrpc') {
+      return createCompanionSession(config);
+    }
+
+    // Fallback: resume-based (spawn per turn with --resume/--continue)
+    return createResumeSession(config);
+  >>>
+
+// ─── CompanionSession (Codex) ────────────────────────────────────────
+
+fn name=createCompanionSession params="config:PersistentSessionConfig" returns="PersistentSession"
+  doc "Persistent JSONRPC session for Codex app-server. Process stays alive across turns."
+  handler <<<
+    let proc: ChildProcess | null = null;
+    let alive = false;
+    let sessionId: string | null = null;
+    let threadId: string | null = null;
+    let nextRpcId = 1;
+    let firstTurn = true;
+    let promptSentViaStart = false; // true if system prompt was sent in thread/start
+    const pending = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }>();
+    let notificationHandlers: Array<(method: string, params: any) => void> = [];
+
+    function sendRpc(method: string, params: Record<string, unknown>): Promise<any> {
+      const id = nextRpcId++;
+      const timeoutMs = method === 'initialize' ? 8000 : 90000;
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          pending.delete(id);
+          reject(new Error(`Timeout waiting for ${method}`));
+        }, timeoutMs);
+        pending.set(id, { resolve, reject, timer });
+        proc!.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
+      });
+    }
+
+    function notifyRpc(method: string): void {
+      proc!.stdin!.write(JSON.stringify({ jsonrpc: '2.0', method }) + '\n');
+    }
+
+    function killProc(): void {
+      if (!proc) return;
+      try {
+        if (proc.pid) process.kill(-proc.pid, 'SIGTERM');
+      } catch (e) {
+        console.warn(`[agon] persistent-session: group kill failed (pid=${proc.pid}): ${e instanceof Error ? e.message : String(e)}`);
+        try { proc.kill('SIGTERM'); } catch (e2) { console.warn(`[agon] persistent-session: direct kill also failed: ${e2 instanceof Error ? e2.message : String(e2)}`); }
+      }
+      proc = null;
+      alive = false;
+    }
+
+    const session: PersistentSession = {
+      get alive() { return alive; },
+      get sessionId() { return sessionId; },
+      engineId: config.engine.id,
+
+      async start() {
+        if (alive) return;
+
+        const companion = config.engine.companion!;
+        proc = spawn(config.binaryPath, companion.serverCmd, {
+          stdio: ['pipe', 'pipe', 'pipe'],
+          cwd: config.cwd,
+          detached: true,
+        });
+
+        // Wire up JSONRPC line parser
+        const rl = createInterface({ input: proc.stdout! });
+        rl.on('line', (line: string) => {
+          if (!line.trim()) return;
+          let msg: any;
+          try { msg = JSON.parse(line); } catch { return; }
+
+          if (msg.id !== undefined && pending.has(msg.id)) {
+            const p = pending.get(msg.id)!;
+            pending.delete(msg.id);
+            clearTimeout(p.timer);
+            if (msg.error) {
+              p.reject(new Error(`RPC error ${msg.error.code}: ${msg.error.message}`));
+            } else {
+              p.resolve(msg.result ?? {});
+            }
+            return;
+          }
+
+          // Server REQUEST with method (has id + method) — engine asking for approval
+          if (msg.id !== undefined && msg.method) {
+            const m = msg.method;
+            console.error(`[cesar:companion] server request: ${m} id=${msg.id}`);
+
+            // Map Codex approval method names to tool categories
+            const methodToolMap: Record<string, string> = {
+              'item/commandExecution/requestApproval': 'Bash',
+              'item/fileChange/requestApproval': 'Edit',
+              'item/permissions/requestApproval': 'Permission',
+            };
+            const toolName = methodToolMap[m] ?? msg.params?.tool ?? msg.params?.command?.type ?? msg.params?.name ?? m;
+            const toolCmd = msg.params?.command?.command ?? msg.params?.command ?? msg.params?.description ?? msg.params?.path ?? JSON.stringify(msg.params ?? {});
+
+            // Emit as tool_call for UI visibility
+            for (const handler of notificationHandlers) {
+              handler('tool/approval', { tool: toolName, command: toolCmd, rpcId: msg.id });
+            }
+
+            // Route through Agon's permission callback for ALL server requests
+            if (config.onApproval) {
+              config.onApproval(String(toolName), String(toolCmd)).then((approved: boolean) => {
+                if (proc) proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { approved } }) + '\n');
+              }).catch(() => {
+                if (proc) proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { approved: false } }) + '\n');
+              });
+            } else {
+              // No approval callback — auto-approve to prevent deadlock
+              proc!.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { approved: true } }) + '\n');
+            }
+            return;
+          }
+
+          // Server notification — forward to active handlers
+          if (msg.method) {
+            for (const handler of notificationHandlers) {
+              handler(msg.method, msg.params ?? {});
+            }
+          }
+        });
+
+        proc.on('close', () => { alive = false; proc = null; });
+        proc.on('error', () => { alive = false; proc = null; });
+
+        // Wait for process startup
+        await new Promise((r) => setTimeout(r, 100));
+
+        // Initialize handshake
+        await sendRpc('initialize', {
+          clientInfo: { name: 'agon-ai', title: 'Agon AI', version: '0.2.0' },
+          capabilities: null,
+        });
+        notifyRpc('initialized');
+
+        // Start persistent thread — workspace-write + on-request lets the host (Agon) approve/deny via JSONRPC
+      const threadParams: Record<string, unknown> = {
+        cwd: config.cwd,
+        approvalPolicy: config.onApproval ? 'on-request' : 'never',
+        sandbox: config.onApproval ? 'workspace-write' : 'read-only',
+        ephemeral: false,
+      };
+      if (config.mcpServers && config.mcpServers.length > 0) {
+        threadParams.mcpServers = config.mcpServers;
+      }
+      if (config.systemPrompt) {
+        threadParams.developerInstructions = config.systemPrompt;
+        promptSentViaStart = true;
+      }
+        const threadResult = await sendRpc('thread/start', threadParams) as any;
+        threadId = threadResult?.thread?.id ?? null;
+        sessionId = threadId;
+        alive = true;
+      },
+
+      async *send(opts: SessionSendOptions) {
+        if (!alive || !proc) {
+          yield { type: 'error' as const, content: 'Session not alive' };
+          return;
+        }
+
+      const chunks: SessionChunk[] = [];
+      let turnDone = false;
+      let resolveWait: (() => void) | null = null;
+      let emittedText = '';
+
+      const pushDelta = (text: string) => {
+        if (!text) return;
+        chunks.push({ type: 'text', content: text });
+        emittedText += text;
+      };
+
+      const pushSnapshot = (text: string) => {
+        if (!text) return;
+        let overlap = Math.min(emittedText.length, text.length);
+        while (overlap > 0 && !emittedText.endsWith(text.slice(0, overlap))) {
+          overlap -= 1;
+        }
+        const suffix = text.slice(overlap);
+        if (!suffix) return;
+        chunks.push({ type: 'text', content: suffix });
+        emittedText += suffix;
+      };
+
+      // Abort signal — break out of wait loop on cancel
+      const onAbort = () => {
+        turnDone = true;
+        chunks.push({ type: 'done', content: 'cancelled' });
+          if (resolveWait) { resolveWait(); resolveWait = null; }
+        };
+        if (opts.signal?.aborted) { yield { type: 'done' as const, content: 'cancelled' }; return; }
+        opts.signal?.addEventListener('abort', onAbort, { once: true });
+
+        const handler = (method: string, params: any) => {
+        if (method === 'turn/completed') {
+          turnDone = true;
+          chunks.push({ type: 'done', content: '' });
+        } else if (method === 'tool/approval') {
+          // Approval request routed from Agon — emit as tool_call chunk
+          chunks.push({
+            type: 'tool_call',
+            content: params.tool ?? 'tool',
+            metadata: { input: params.command, status: 'running', approval: true },
+          });
+        } else if (method === 'item/completed') {
+          const item = params?.item;
+          if (item?.type === 'agentMessage') {
+            pushSnapshot(item.text ?? '');
+          }
+          if (item?.type === 'toolCall') {
+            // Native tool execution completed — show in UI
+            chunks.push({
+              type: 'tool_call',
+              content: item.name ?? item.type ?? 'tool',
+              metadata: { input: item.input ?? '', output: item.output ?? '', status: 'done' },
+            });
+          }
+          if (item?.type === 'enteredReviewMode') {
+            pushSnapshot(item.review ?? '');
+          }
+        } else if (method === 'item/agentMessage/delta') {
+          if (params?.delta) {
+            pushDelta(params.delta);
+          }
+        } else if (method === 'error') {
+          chunks.push({ type: 'error', content: JSON.stringify(params) });
+          turnDone = true;
+        }
+          if (resolveWait) { resolveWait(); resolveWait = null; }
+        };
+
+        notificationHandlers.push(handler);
+
+        try {
+          // On first turn, prepend system prompt ONLY if it wasn't already sent
+          // via thread/start developerInstructions (to avoid duplicating the full prompt).
+          let message = opts.message;
+          if (firstTurn && config.systemPrompt && !promptSentViaStart) {
+            message = `[System Instructions]\n${config.systemPrompt}\n\n[User Message]\n${message}`;
+          }
+          firstTurn = false;
+
+          // Start turn on existing thread
+          await sendRpc('turn/start', {
+            threadId,
+            input: [{ type: 'text', text: message, text_elements: [] }],
+          });
+
+          // Yield chunks as they arrive
+          while (!turnDone) {
+            if (chunks.length > 0) {
+              yield chunks.shift()!;
+            } else {
+              await new Promise<void>((r) => { resolveWait = r; });
+            }
+          }
+          // Drain remaining
+          while (chunks.length > 0) {
+            yield chunks.shift()!;
+          }
+        } finally {
+          opts.signal?.removeEventListener('abort', onAbort);
+          const idx = notificationHandlers.indexOf(handler);
+          if (idx >= 0) notificationHandlers.splice(idx, 1);
+        }
+      },
+
+      close() {
+        for (const [, p] of pending) clearTimeout(p.timer);
+        pending.clear();
+        killProc();
+      },
+    };
+
+    return session;
+  >>>
+
+// ─── AcpSession (OpenCode) ──────────────────────────────────────────
+
+fn name=createAcpSession params="config:PersistentSessionConfig" returns="PersistentSession"
+  doc "Persistent ACP (Agent Client Protocol) session for OpenCode. JSON-RPC 2.0 over stdio."
+  handler <<<
+    let proc: ChildProcess | null = null;
+    let alive = false;
+    let sessionId: string | null = null;
+    let nextRpcId = 1;
+    let firstTurn = true;
+    let promptSentViaStart = false; // true if system prompt was sent in session/new
+    const pending = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }>();
+    let notificationHandlers: Array<(method: string, params: any) => void> = [];
+
+    function sendRpc(method: string, params: Record<string, unknown>): Promise<any> {
+      const id = nextRpcId++;
+      const timeoutMs = method === 'initialize' ? 8000 : 90000;
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          pending.delete(id);
+          reject(new Error(`ACP timeout: ${method}`));
+        }, timeoutMs);
+        pending.set(id, { resolve, reject, timer });
+        proc!.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
+      });
+    }
+
+    function killProc(): void {
+      if (!proc) return;
+      try {
+        if (proc.pid) process.kill(-proc.pid, 'SIGTERM');
+      } catch (e) {
+        console.warn(`[agon] persistent-session: group kill failed (pid=${proc.pid}): ${e instanceof Error ? e.message : String(e)}`);
+        try { proc.kill('SIGTERM'); } catch (e2) { console.warn(`[agon] persistent-session: direct kill also failed: ${e2 instanceof Error ? e2.message : String(e2)}`); }
+      }
+      proc = null;
+      alive = false;
+    }
+
+    const session: PersistentSession = {
+      get alive() { return alive; },
+      get sessionId() { return sessionId; },
+      engineId: config.engine.id,
+
+      async start() {
+        if (alive) return;
+
+        // Use companion serverCmd if available, else fall back to binary-specific defaults
+        const companion = config.engine.companion;
+        const acpArgs = companion?.serverCmd
+          ?? (config.engine.binary === 'gemini' || config.engine.id === 'gemini' ? ['--acp'] : ['acp']);
+        proc = spawn(config.binaryPath, acpArgs, {
+          stdio: ['pipe', 'pipe', 'pipe'],
+          cwd: config.cwd,
+          detached: true,
+        });
+
+        const rl = createInterface({ input: proc.stdout! });
+        rl.on('line', (line: string) => {
+          if (!line.trim()) return;
+          let msg: any;
+          try { msg = JSON.parse(line); } catch { return; }
+
+          // Response to our request
+          if (msg.id !== undefined && pending.has(msg.id)) {
+            const p = pending.get(msg.id)!;
+            pending.delete(msg.id);
+            clearTimeout(p.timer);
+            if (msg.error) {
+              p.reject(new Error(`ACP error ${msg.error.code}: ${msg.error.message}`));
+            } else {
+              p.resolve(msg.result ?? {});
+            }
+            return;
+          }
+
+          // Server REQUEST with method — engine asking us something (approval, etc.)
+          if (msg.id !== undefined && msg.method) {
+            const m = msg.method;
+            console.error(`[cesar:acp] server request: ${m} id=${msg.id}`);
+
+            const toolName = msg.params?.tool ?? msg.params?.name ?? msg.params?.type ?? m;
+            const toolCmd = msg.params?.command ?? msg.params?.description ?? JSON.stringify(msg.params ?? {});
+
+            for (const handler of notificationHandlers) {
+              handler('tool/approval', { tool: toolName, command: toolCmd, rpcId: msg.id });
+            }
+
+            if (config.onApproval) {
+              config.onApproval(String(toolName), String(toolCmd)).then((approved: boolean) => {
+                if (proc) proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { approved } }) + '\n');
+              }).catch(() => {
+                if (proc) proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { approved: false } }) + '\n');
+              });
+            } else {
+              proc!.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { approved: true } }) + '\n');
+            }
+            return;
+          }
+
+          // Server notification
+          if (msg.method) {
+            for (const handler of notificationHandlers) {
+              handler(msg.method, msg.params ?? {});
+            }
+          }
+        });
+
+        proc.on('close', () => { alive = false; proc = null; });
+        proc.on('error', () => { alive = false; proc = null; });
+
+        await new Promise((r) => setTimeout(r, 100));
+
+        // ACP initialize handshake — read-only, writes go through Agon's XML tool system
+        await sendRpc('initialize', {
+          protocolVersion: 1,
+          clientCapabilities: {
+            fs: { readTextFile: true, writeTextFile: false },
+            terminal: false,
+          },
+          clientInfo: { name: 'agon-ai', title: 'Agon AI', version: '0.2.0' },
+        });
+
+        // Create session (pass system prompt if available)
+        const sessParams: Record<string, unknown> = {
+          cwd: config.cwd,
+          mcpServers: config.mcpServers ?? [],
+        };
+        if (config.systemPrompt) {
+          sessParams.systemPrompt = config.systemPrompt;
+          promptSentViaStart = true;
+        }
+        const sessResult = await sendRpc('session/new', sessParams) as any;
+        sessionId = sessResult?.sessionId ?? null;
+        alive = true;
+      },
+
+      async *send(opts: SessionSendOptions) {
+        if (!alive || !proc || !sessionId) {
+          yield { type: 'error' as const, content: 'ACP session not alive' };
+          return;
+        }
+
+      const chunks: SessionChunk[] = [];
+      let turnDone = false;
+      let resolveWait: (() => void) | null = null;
+      let emittedText = '';
+
+      const pushDelta = (text: string) => {
+        if (!text) return;
+        chunks.push({ type: 'text', content: text });
+        emittedText += text;
+      };
+
+      const pushSnapshot = (text: string) => {
+        if (!text) return;
+        let overlap = Math.min(emittedText.length, text.length);
+        while (overlap > 0 && !emittedText.endsWith(text.slice(0, overlap))) {
+          overlap -= 1;
+        }
+        const suffix = text.slice(overlap);
+        if (!suffix) return;
+        chunks.push({ type: 'text', content: suffix });
+        emittedText += suffix;
+      };
+
+      const onAbort = () => {
+        turnDone = true;
+        chunks.push({ type: 'done', content: 'cancelled' });
+        if (resolveWait) { resolveWait(); resolveWait = null; }
+        };
+        if (opts.signal?.aborted) { yield { type: 'done' as const, content: 'cancelled' }; return; }
+        opts.signal?.addEventListener('abort', onAbort, { once: true });
+
+        const handler = (method: string, params: any) => {
+          if (method === 'tool/approval') {
+            // Approval request routed from Agon — emit as tool_call chunk
+            chunks.push({
+              type: 'tool_call',
+              content: params.tool ?? 'tool',
+              metadata: { input: params.command, status: 'running', approval: true },
+            });
+          } else if (method === 'session/update') {
+            const update = params?.update;
+            if (!update) return;
+            if (update.sessionUpdate === 'agent_message_chunk') {
+              const text = update.content?.text ?? '';
+              if (text) chunks.push({ type: 'text', content: text });
+            } else if (update.sessionUpdate === 'tool_call') {
+              chunks.push({ type: 'tool_call', content: update.title ?? '', metadata: { toolCallId: update.toolCallId, status: update.status, input: update.input, output: update.output } });
+            } else if (update.sessionUpdate === 'plan') {
+              chunks.push({ type: 'status', content: 'Planning...' });
+            }
+          }
+          if (resolveWait) { resolveWait(); resolveWait = null; }
+        };
+
+        notificationHandlers.push(handler);
+
+        try {
+          // On first turn, prepend system prompt ONLY if it wasn't already sent
+          // via session/new systemPrompt (to avoid duplicating the full prompt).
+          let message = opts.message;
+          if (firstTurn && config.systemPrompt && !promptSentViaStart) {
+            message = `[System Instructions]\n${config.systemPrompt}\n\n[User Message]\n${message}`;
+          }
+          firstTurn = false;
+
+          // session/prompt is a request — the response signals turn completion
+          const promptPromise = sendRpc('session/prompt', {
+            sessionId,
+            prompt: [{ type: 'text', text: message }],
+          });
+
+          // Yield streamed chunks while waiting for prompt response
+          const donePromise = promptPromise.then((result: any) => {
+            turnDone = true;
+            chunks.push({ type: 'done', content: result?.stopReason ?? 'end_turn' });
+            if (resolveWait) { resolveWait(); resolveWait = null; }
+          }).catch((err: Error) => {
+            turnDone = true;
+            chunks.push({ type: 'error', content: err.message });
+            if (resolveWait) { resolveWait(); resolveWait = null; }
+          });
+
+          while (!turnDone) {
+            if (chunks.length > 0) {
+              yield chunks.shift()!;
+            } else {
+              await new Promise<void>((r) => { resolveWait = r; });
+            }
+          }
+          while (chunks.length > 0) {
+            yield chunks.shift()!;
+          }
+        } finally {
+          opts.signal?.removeEventListener('abort', onAbort);
+          const idx = notificationHandlers.indexOf(handler);
+          if (idx >= 0) notificationHandlers.splice(idx, 1);
+        }
+      },
+
+      close() {
+        for (const [, p] of pending) clearTimeout(p.timer);
+        pending.clear();
+        killProc();
+      },
+    };
+
+    return session;
+  >>>
+
+// ─── StreamJsonSession (Claude) ─────────────────────────────────────
+
+fn name=createStreamJsonSession params="config:PersistentSessionConfig" returns="PersistentSession"
+  doc "Persistent bidirectional NDJSON session for Claude Code. One process, multi-turn via stdin."
+  handler <<<
+    let proc: ChildProcess | null = null;
+    let alive = false;
+    let sessionId: string | null = null;
+    let lineHandlers: Array<(parsed: any) => void> = [];
+
+    function killProc(): void {
+      if (!proc) return;
+      try {
+        if (proc.pid) process.kill(-proc.pid, 'SIGTERM');
+      } catch (e) {
+        console.warn(`[agon] persistent-session: group kill failed (pid=${proc.pid}): ${e instanceof Error ? e.message : String(e)}`);
+        try { proc.kill('SIGTERM'); } catch (e2) { console.warn(`[agon] persistent-session: direct kill also failed: ${e2 instanceof Error ? e2.message : String(e2)}`); }
+      }
+      proc = null;
+      alive = false;
+    }
+
+    const session: PersistentSession = {
+      get alive() { return alive; },
+      get sessionId() { return sessionId; },
+      engineId: config.engine.id,
+
+      async start() {
+        if (alive) return;
+
+        const args = [
+          '--print',
+          '--verbose',
+          '--input-format', 'stream-json',
+          '--output-format', 'stream-json',
+          '--replay-user-messages',
+          '--max-turns', '0',
+        ];
+
+        if (config.systemPrompt) {
+          args.push('--system-prompt', config.systemPrompt);
+        }
+
+        proc = spawn(config.binaryPath, args, {
+          stdio: ['pipe', 'pipe', 'pipe'],
+          cwd: config.cwd,
+          detached: true,
+        });
+
+        // Parse NDJSON from stdout
+        const rl = createInterface({ input: proc.stdout! });
+        rl.on('line', (line: string) => {
+          if (!line.trim()) return;
+          let parsed: any;
+          try { parsed = JSON.parse(line); } catch { return; }
+
+          // Capture session ID from init event
+          if (parsed.type === 'system' && parsed.session_id) {
+            sessionId = parsed.session_id;
+          }
+
+          for (const handler of lineHandlers) {
+            handler(parsed);
+          }
+        });
+
+        // Log stderr for debugging startup issues
+        proc.stderr?.on('data', (data: Buffer) => {
+          const msg = String(data).trim();
+          if (msg) console.error(`[cesar:claude:stderr] ${msg}`);
+        });
+
+        proc.on('close', (code: number | null) => {
+          console.error(`[cesar:claude] process exited code=${code}`);
+          alive = false;
+          proc = null;
+        });
+        proc.on('error', (err: Error) => {
+          console.error(`[cesar:claude] process error: ${err.message}`);
+          alive = false;
+          proc = null;
+        });
+
+        // Wait for first stdout line OR early process death
+        const startOk = await new Promise<boolean>((resolve) => {
+          const timeout = setTimeout(() => resolve(true), 5000);
+          rl.once('line', () => { clearTimeout(timeout); resolve(true); });
+          proc!.once('close', (code: number | null) => {
+            clearTimeout(timeout);
+            console.error(`[cesar:claude] process died during start, code=${code}`);
+            resolve(false);
+          });
+        });
+        if (!startOk || !proc) {
+          alive = false;
+          throw new Error('Claude stream-json process died during startup');
+        }
+        alive = true;
+      },
+
+      async *send(opts: SessionSendOptions) {
+        if (!alive || !proc) {
+          yield { type: 'error' as const, content: 'Claude stream session not alive' };
+          return;
+        }
+
+        const chunks: SessionChunk[] = [];
+        let turnDone = false;
+        let resolveWait: (() => void) | null = null;
+        let emittedText = '';
+
+        const pushDelta = (text: string) => {
+          if (!text) return;
+          chunks.push({ type: 'text', content: text });
+          emittedText += text;
+        };
+
+        const pushSnapshot = (text: string) => {
+          if (!text) return;
+          let overlap = Math.min(emittedText.length, text.length);
+          while (overlap > 0 && !emittedText.endsWith(text.slice(0, overlap))) {
+            overlap -= 1;
+          }
+          const suffix = text.slice(overlap);
+          if (!suffix) return;
+          chunks.push({ type: 'text', content: suffix });
+          emittedText += suffix;
+        };
+
+        const onAbort = () => {
+          turnDone = true;
+          chunks.push({ type: 'done', content: 'cancelled' });
+          if (resolveWait) { resolveWait(); resolveWait = null; }
+        };
+        if (opts.signal?.aborted) { yield { type: 'done' as const, content: 'cancelled' }; return; }
+        opts.signal?.addEventListener('abort', onAbort, { once: true });
+
+        const handler = (parsed: any) => {
+          // Assistant text content
+          if (parsed.type === 'assistant' && parsed.message?.content) {
+            for (const block of parsed.message.content) {
+              if (block.type === 'text' && block.text) {
+                pushSnapshot(block.text);
+              }
+              // Tool use blocks inside assistant messages — mark native so Agon doesn't double-execute
+              if (block.type === 'tool_use') {
+                chunks.push({
+                  type: 'tool_call',
+                  content: block.name ?? 'tool',
+                  metadata: { input: block.input, status: 'native' },
+                });
+              }
+            }
+            // Check if this is the final message (stop_reason present)
+            if (parsed.message?.stop_reason) {
+              turnDone = true;
+              chunks.push({ type: 'done', content: parsed.message.stop_reason });
+            }
+          }
+
+          // Content block delta (streaming partial text)
+          if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
+            pushDelta(parsed.delta.text);
+          }
+
+          // Result event — marks turn completion (text already emitted by assistant/delta events)
+          if (parsed.type === 'result') {
+            turnDone = true;
+            // Only emit result text if nothing was streamed yet (fallback for non-streaming responses)
+            if (!emittedText) {
+              const text = parsed.result ?? '';
+              if (text && typeof text === 'string') {
+                pushSnapshot(text);
+              }
+            }
+            chunks.push({ type: 'done', content: 'end_turn' });
+          }
+
+          // Message start with session info
+          if (parsed.type === 'message_start' && parsed.session_id) {
+            sessionId = parsed.session_id;
+          }
+
+          // Tool use events — Claude handles execution internally (--dangerously-skip-permissions)
+          if (parsed.type === 'tool_use') {
+            chunks.push({
+              type: 'tool_call',
+              content: parsed.name ?? 'tool',
+              metadata: { input: parsed.input, status: 'native' },
+            });
+          }
+
+          // Tool result events — Claude completed a tool, show output
+          if (parsed.type === 'tool_result') {
+            chunks.push({
+              type: 'tool_call',
+              content: parsed.name ?? 'tool',
+              metadata: { output: parsed.content ?? parsed.output ?? '', status: 'done' },
+            });
+          }
+
+          // Error
+          if (parsed.type === 'error') {
+            chunks.push({ type: 'error', content: parsed.error?.message ?? 'Unknown error' });
+            turnDone = true;
+          }
+
+          if (resolveWait) { resolveWait(); resolveWait = null; }
+        };
+
+        lineHandlers.push(handler);
+
+        try {
+          // Send user message as NDJSON on stdin
+          const envelope: Record<string, unknown> = {
+            type: 'user',
+            message: {
+              role: 'user',
+              content: opts.message,
+            },
+          };
+          if (sessionId) envelope.session_id = sessionId;
+
+          proc.stdin!.write(JSON.stringify(envelope) + '\n');
+
+          // Yield chunks as they arrive
+          while (!turnDone) {
+            if (chunks.length > 0) {
+              yield chunks.shift()!;
+            } else {
+              await new Promise<void>((r) => { resolveWait = r; });
+            }
+          }
+          while (chunks.length > 0) {
+            yield chunks.shift()!;
+          }
+        } finally {
+          opts.signal?.removeEventListener('abort', onAbort);
+          const idx = lineHandlers.indexOf(handler);
+          if (idx >= 0) lineHandlers.splice(idx, 1);
+        }
+      },
+
+      close() {
+        // Close stdin to signal EOF, then kill
+        if (proc?.stdin) {
+          try { proc.stdin.end(); } catch (e) { console.warn(`[agon] persistent-session: stdin.end() failed: ${e instanceof Error ? e.message : String(e)}`); }
+        }
+        setTimeout(() => killProc(), 1000);
+      },
+    };
+
+    return session;
+  >>>
+
+// ─── ResumeSession (fallback for any engine) ────────────────────────
+
+fn name=createResumeSession params="config:PersistentSessionConfig" returns="PersistentSession"
+  doc "Fallback: spawn per turn with --resume/--continue. Works for any CLI engine."
+  handler <<<
+    let alive = false;
+    let sessionId: string | null = null;
+    let firstTurn = true;
+    // Message history for API engines — enables multi-turn tool loops
+    const messageHistory: Array<{role: string, content: string}> = [];
+    // Tool calls are handled inside the agentic loop in send() — no cross-turn state needed.
+
+    const session: PersistentSession = {
+      get alive() { return alive; },
+      get sessionId() { return sessionId; },
+      engineId: config.engine.id,
+
+      async start() {
+        alive = true;
+        // Preserve messageHistory across restarts — API is stateless, history IS the context.
+        if (messageHistory.length === 0) {
+          firstTurn = true;
+          // Try loading persisted state from disk (survives process restart)
+          const saved = loadSessionState(config.engine.id);
+          if (saved && saved.messageHistory.length > 0) {
+            messageHistory.push(...saved.messageHistory);
+            firstTurn = false; // Not a fresh session — system prompt already in history
+          }
+        }
+      },
+
+      async *send(opts: SessionSendOptions) {
+        if (!alive) {
+          yield { type: 'error' as const, content: 'Session not started' };
+          return;
+        }
+
+        // API-only engines: use HTTP dispatch with conversation history
+        if (config.engine.api && !config.binaryPath) {
+          // Inject system prompt on first turn
+          if (firstTurn) {
+            const sysPrompt = config.systemPrompt ?? opts.systemPrompt;
+            if (sysPrompt) {
+              messageHistory.push({ role: 'system', content: sysPrompt });
+            }
+            firstTurn = false;
+          }
+
+          // All messages are user messages. Tool results are handled inside the
+          // agentic loop (same turn), not across turns.
+          messageHistory.push({ role: 'user', content: opts.message });
+
+          // ── OpenCode-style two-tier context compaction ──
+          // Token-based overflow detection, not message count.
+          // Tier 1: Prune old tool results (biggest token hogs).
+          // Tier 2: Structured summary compression if still over limit.
+          const estimateTokens = (msgs: Array<{role: string, content: any}>) =>
+            msgs.reduce((sum, m) => {
+              if (typeof m.content === 'string') return sum + Math.ceil(m.content.length / 4);
+              if (m.content === null && (m as any).tool_calls) {
+                return sum + (m as any).tool_calls.reduce((s: number, tc: any) =>
+                  s + Math.ceil((tc.function?.arguments ?? '').length / 4), 100);
+              }
+              return sum + 50;
+            }, 0);
+
+          const CONTEXT_LIMIT = config.engine.api?.maxTokens
+            ? config.engine.api.maxTokens * 4  // maxTokens is output; context ≈ 4x
+            : 128_000;
+          const COMPACTION_BUFFER = 20_000;
+          const PRUNE_PROTECT_TURNS = 4; // protect last N user-assistant exchanges
+
+          const totalTokens = estimateTokens(messageHistory);
+          if (totalTokens > CONTEXT_LIMIT - COMPACTION_BUFFER) {
+            const hasSystem = messageHistory[0].role === 'system';
+            const startIdx = hasSystem ? 1 : 0;
+
+            // Count protected messages from the end (last N turns, including tool chains)
+            let protectFrom = messageHistory.length;
+            let turnsFound = 0;
+            for (let i = messageHistory.length - 1; i >= startIdx; i--) {
+              if ((messageHistory[i] as any).role === 'user') turnsFound++;
+              if (turnsFound > PRUNE_PROTECT_TURNS) break;
+              protectFrom = i;
+            }
+
+            // ── Tier 1: Prune old tool result outputs ──
+            let prunedTokens = 0;
+            for (let i = startIdx; i < protectFrom; i++) {
+              const msg = messageHistory[i] as any;
+              if (msg.role === 'tool' && msg.content && msg.content.length > 200) {
+                prunedTokens += Math.ceil(msg.content.length / 4);
+                msg.content = '[Old tool result cleared]';
+              }
+            }
+
+            // ── Tier 2: Structured summary if pruning wasn't enough ──
+            const afterPrune = estimateTokens(messageHistory);
+            if (afterPrune > CONTEXT_LIMIT - COMPACTION_BUFFER) {
+              const old = messageHistory.slice(startIdx, protectFrom);
+              const recent = messageHistory.slice(protectFrom);
+              const system = hasSystem ? [messageHistory[0]] : [];
+
+              if (old.length > 0) {
+                // Extract structured context from old messages (like OpenCode compaction)
+                // Wrapped in try-catch — malformed tool_calls from API engines can break parsing
+                try {
+                  const userMsgs = old.filter((m: any) => m.role === 'user' && typeof m.content === 'string');
+                  const assistMsgs = old.filter((m: any) => m.role === 'assistant' && typeof m.content === 'string');
+
+                  const goal = userMsgs.length > 0
+                    ? (userMsgs[0].content as string).slice(0, 300)
+                    : '';
+
+                  const filePaths = new Set<string>();
+                  const editedFiles = new Set<string>();
+                  const toolActions = new Map<string, Set<string>>();
+                  for (const m of old as any[]) {
+                    if (m.tool_calls) {
+                      for (const tc of m.tool_calls) {
+                        try {
+                          const toolName: string = tc.function?.name ?? '';
+                          const args = JSON.parse(tc.function?.arguments ?? '{}');
+                          if (args.file_path) filePaths.add(args.file_path);
+                          if (args.path) filePaths.add(args.path);
+                          if (args.pattern) filePaths.add(`grep:${args.pattern}`);
+                          // Track tool actions for summary
+                          if (toolName) {
+                            const set = toolActions.get(toolName) ?? new Set<string>();
+                            if (toolName === 'Edit' || toolName === 'Write') {
+                              const fp = args.file_path || args.path || '';
+                              if (fp) { set.add(fp); editedFiles.add(fp); }
+                            } else if (toolName === 'Bash' && args.command) {
+                              set.add(args.command.slice(0, 80));
+                            } else if (toolName === 'Grep' && args.pattern) {
+                              set.add(args.pattern.slice(0, 40));
+                            }
+                            toolActions.set(toolName, set);
+                          }
+                        } catch {}
+                      }
+                    }
+                  }
+
+                  // Build tool summary
+                  const toolSummary = [...toolActions.entries()]
+                    .map(([name, args]) => `${name}(${[...args].slice(0, 3).join('; ')})`)
+                    .slice(0, 8)
+                    .join(', ');
+
+                  const lastAssist = assistMsgs.length > 0
+                    ? (assistMsgs[assistMsgs.length - 1].content as string).slice(0, 500)
+                    : '';
+
+                  const compacted = [
+                    `[Context compacted — ${old.length} messages]`,
+                    goal ? `GOAL: ${goal}` : '',
+                    filePaths.size > 0 ? `FILES: ${[...filePaths].slice(0, 20).join(', ')}` : '',
+                    editedFiles.size > 0 ? `EDITS: ${[...editedFiles].slice(0, 10).join(', ')}` : '',
+                    toolSummary ? `TOOLS: ${toolSummary}` : '',
+                    lastAssist ? `PROGRESS: ${lastAssist}` : '',
+                  ].filter(Boolean).join('\n');
+
+                  const summary = { role: 'user' as const, content: compacted };
+                  messageHistory.length = 0;
+                  messageHistory.push(...system, summary, ...recent);
+                } catch (compactErr) {
+                  // Compaction failed (malformed history) — fallback: just keep recent messages
+                  console.warn(`[agon] session: compaction failed: ${compactErr instanceof Error ? compactErr.message : String(compactErr)}`);
+                  messageHistory.length = 0;
+                  messageHistory.push(...system, ...recent);
+                }
+              }
+            }
+          }
+
+          // ── Agentic tool loop with dynamic budget ──
+          // Productive steps (successful tool calls) extend the budget.
+          // Failed steps shrink it. Models that work get more runway.
+          const BASE_BUDGET = 15;
+          const MAX_BUDGET = 30; // hard cap even for very productive sessions
+          const MAX_CONSECUTIVE_ERRORS = 3;
+          let budget = BASE_BUDGET;
+          let step = 0;
+          let productiveSteps = 0;
+          let consecutiveErrors = 0;
+
+          while (step < budget) {
+            step++;
+            let fullResponse = '';
+
+            // ── Status update so the UI shows activity during API tool loops ──
+            if (step === 1) {
+              yield { type: 'status' as const, content: 'calling API…' };
+            } else {
+              yield { type: 'status' as const, content: `tool loop turn ${step}/${budget}…` };
+            }
+
+            const gen = apiStreamDispatchWithHistory(config.engine.api, messageHistory, config.engine.timeout ?? 180, opts.signal, config.nativeTools);
+            try {
+              while (true) {
+                const { value, done } = await gen.next();
+                if (done) {
+                  const result = value as any;
+                  if (result?.stderr) {
+                    // Only report error if we got NO useful output — stderr with content is a warning, not fatal
+                    // Don't kill the session — resume sessions are stateless HTTP, history survives in memory
+                    if (fullResponse.length === 0) {
+                      yield { type: 'error' as const, content: result.stderr };
+                    } else {
+                      // Got content + stderr — log warning but keep session alive
+                      console.warn(`[agon] API warning (response preserved): ${result.stderr.slice(0, 200)}`);
+                    }
+                  }
+                  break;
+                }
+                fullResponse += value as string;
+                yield { type: 'text' as const, content: value as string };
+              }
+            } catch (err: any) {
+              // Retry once on stream failure before giving up — but only if we have NO output
+              if (fullResponse.length === 0) {
+                if (step === 1) {
+                  yield { type: 'error' as const, content: `API stream failed, retrying… (${err.message ?? String(err)})` };
+                  await new Promise(r => setTimeout(r, 1000));
+                  continue; // Retry the same step
+                }
+                // Don't kill session — preserve history for next turn
+                try { saveSessionState(config.engine.id, { messageHistory, confidence: null }); } catch {}
+                yield { type: 'error' as const, content: err.message ?? String(err) };
+                break;
+              }
+              // Got partial output before crash — preserve it, log warning
+              console.warn(`[agon] API stream error after ${fullResponse.length} chars (preserved): ${(err.message ?? '').slice(0, 200)}`);
+              // Fall through to process fullResponse as if stream completed
+            }
+
+            if (!fullResponse) break;
+
+            // Check for tool call markers — robust parser handles all formats:
+            // <tool name="X">{json}</tool>, <tool_call>{json}</tool_call>,
+            // <toolcall>{json}</toolcall>, <tool_call_tool>{json}</tool_call_tool>
+            const parsed = parseToolCalls(fullResponse);
+            const extractedCalls = parsed.hasToolCalls
+              ? parsed.toolCalls.map((tc, i) => ({
+                  id: `call_${Date.now()}_${i}`,
+                  name: tc.name,
+                  args: tc.input,
+                  arguments: JSON.stringify(tc.input),
+                  parseError: false,
+                }))
+              : [];
+
+            if (extractedCalls.length > 0 && config.onToolCall) {
+              // Model requested tool calls — execute and loop
+              const cleanText = (parsed.textBefore + ' ' + parsed.textAfter).trim();
+
+              // Add assistant message with tool_calls to history
+              messageHistory.push({
+                role: 'assistant',
+                content: cleanText || null,
+                tool_calls: extractedCalls.map(tc => ({
+                  id: tc.id, type: 'function',
+                  function: { name: tc.name, arguments: tc.arguments },
+                })),
+              } as any);
+
+              // Execute tools in parallel (like Vercel AI SDK Promise.all pattern)
+              const INLINE_LIMIT = 800;
+
+              // Emit all as running
+              const parsedCalls = extractedCalls;
+              for (const tc of parsedCalls) {
+                if (tc.parseError) {
+                  yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, status: 'error', output: `Malformed tool arguments from API: ${tc.arguments.slice(0, 200)}` } };
+                } else {
+                  yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, status: 'running' } };
+                }
+              }
+
+              // Execute all in parallel
+              yield { type: 'status' as const, content: `executing ${parsedCalls.length} tool${parsedCalls.length > 1 ? 's' : ''}…` };
+              const results = await Promise.all(parsedCalls.map(async (tc) => {
+                let result: string;
+                try {
+                  result = await config.onToolCall!(tc.name, tc.args, tc.id);
+                } catch (err: any) {
+                  result = `Error: ${err.message ?? String(err)}`;
+                }
+                return { ...tc, result };
+              }));
+
+              // Emit results and add to history — track errors for circuit breaker
+              let stepErrors = 0;
+              for (const tc of results) {
+                const isError = tc.result.startsWith('Error:') || tc.result.startsWith('Unknown tool:');
+                if (isError) stepErrors++;
+                yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, output: tc.result, status: isError ? 'error' : 'done' } };
+
+                let histContent = tc.result;
+                if (histContent.length > INLINE_LIMIT) {
+                  const lines = histContent.split('\n').length;
+                  histContent = histContent.slice(0, 300) + `\n...\n[${lines} lines, ${histContent.length} chars — use ${tc.name} again for full content]`;
+                }
+                messageHistory.push({ role: 'tool', content: histContent, tool_call_id: tc.id } as any);
+              }
+
+              // ── Delegation break — onToolCall signaled the loop to stop ──
+              const delegationBreak = results.some(tc => tc.result.startsWith('[DELEGATION_BREAK]'));
+              if (delegationBreak) {
+                // Clean the prefix from history so it doesn't confuse the model
+                for (let i = messageHistory.length - 1; i >= 0; i--) {
+                  const m = messageHistory[i] as any;
+                  if (m.role === 'tool' && typeof m.content === 'string' && m.content.startsWith('[DELEGATION_BREAK]')) {
+                    m.content = m.content.replace('[DELEGATION_BREAK] ', '');
+                  }
+                }
+                messageHistory.push({ role: 'assistant', content: '[Delegation — tool loop stopped]' });
+                break;
+              }
+
+              // ── Dynamic budget + circuit breaker ──
+              if (stepErrors > 0 && stepErrors >= results.length) {
+                // ALL tools failed — shrink budget, count consecutive errors
+                consecutiveErrors++;
+                if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+                  yield { type: 'error' as const, content: `Tool loop circuit breaker: ${consecutiveErrors} consecutive steps with all tools failing. Stopping to avoid token waste.` };
+                  messageHistory.push({ role: 'assistant', content: '[Tool loop stopped — repeated failures]' });
+                  break;
+                }
+              } else {
+                // At least one tool succeeded — extend budget, reset errors
+                consecutiveErrors = 0;
+                productiveSteps++;
+                // Every 3 productive steps, grant 2 more (up to MAX_BUDGET)
+                if (productiveSteps % 3 === 0 && budget < MAX_BUDGET) {
+                  budget = Math.min(budget + 2, MAX_BUDGET);
+                }
+              }
+
+              // Continue loop — call API again with tool results
+              yield { type: 'status' as const, content: 'processing results, calling API again…' };
+              continue;
+            }
+
+            // ── Intent extraction from stalls ──
+            // When a model narrates "let me read X" without calling tools,
+            // Agon extracts the intent and executes it FOR the model.
+            // Architecture, not prompts — the model narrates, Agon acts.
+            if (config.onToolCall && step < budget - 1) {
+              const tail = fullResponse.slice(-300);
+
+              // Extract file paths from narration: "let me read/check/look at packages/foo/bar.ts"
+              const readIntent = tail.match(/\b(?:let me |i(?:'ll| need to| want to| should| will) )(?:read|check|look at|examine|see|review|open|view)\s+[`"']?([a-zA-Z0-9_./-]+\.[a-zA-Z]{1,6})[`"']?/i);
+              // Extract search intent: "let me search/grep for X", "find X in Y"
+              const searchIntent = tail.match(/\b(?:let me |i(?:'ll| need to| want to| should| will) )(?:search|grep|find|look)\s+(?:for\s+)?[`"']?(.+?)[`"']?\s*(?:in\s+|$)/i);
+              // Extract directory listing: "let me check what's in packages/mcp/"
+              const dirIntent = tail.match(/\b(?:let me |i(?:'ll| need to| want to| should| will) )(?:check|see|look at|list|find)\s+(?:what's in |files in |the )?\s*[`"']?([a-zA-Z0-9_./-]+\/)[`"']?/i);
+
+              if (readIntent || searchIntent || dirIntent) {
+                messageHistory.push({ role: 'assistant', content: fullResponse });
+
+                // Build synthetic tool calls from extracted intent
+                const syntheticCalls: Array<{id: string, name: string, args: Record<string,unknown>}> = [];
+                if (readIntent) {
+                  syntheticCalls.push({ id: `auto_${Date.now()}_0`, name: 'Read', args: { file_path: readIntent[1] } });
+                }
+                if (dirIntent && !readIntent) {
+                  syntheticCalls.push({ id: `auto_${Date.now()}_1`, name: 'Glob', args: { pattern: '**/*', path: dirIntent[1] } });
+                }
+                if (searchIntent && !readIntent && !dirIntent) {
+                  syntheticCalls.push({ id: `auto_${Date.now()}_2`, name: 'Grep', args: { pattern: searchIntent[1].trim() } });
+                }
+
+                if (syntheticCalls.length > 0) {
+                  // Execute extracted intent — model narrated, Agon acts
+                  yield { type: 'status' as const, content: `auto-executing ${syntheticCalls.map(s => s.name).join(', ')}…` };
+                  const autoResults: string[] = [];
+                  for (const sc of syntheticCalls) {
+                    yield { type: 'tool_call' as const, content: sc.name, metadata: { input: sc.args, status: 'running' } };
+                    let result: string;
+                    try {
+                      result = await config.onToolCall(sc.name, sc.args, sc.id);
+                    } catch (err: any) {
+                      result = `Error: ${err.message ?? String(err)}`;
+                    }
+                    yield { type: 'tool_call' as const, content: sc.name, metadata: { input: sc.args, output: result, status: 'done' } };
+
+                    // Add to history as proper tool call + result
+                    messageHistory.push({
+                      role: 'assistant', content: null,
+                      tool_calls: [{ id: sc.id, type: 'function', function: { name: sc.name, arguments: JSON.stringify(sc.args) } }],
+                    } as any);
+                    let histContent = result;
+                    if (histContent.length > 800) {
+                      histContent = histContent.slice(0, 300) + `\n...\n[truncated — use ${sc.name} again for full content]`;
+                    }
+                    messageHistory.push({ role: 'tool', content: histContent, tool_call_id: sc.id } as any);
+                    autoResults.push(result);
+                  }
+
+                  productiveSteps++;
+                  if (productiveSteps % 3 === 0 && budget < MAX_BUDGET) budget = Math.min(budget + 2, MAX_BUDGET);
+                  continue; // Loop — model gets tool results and can continue
+                }
+              }
+
+              // No extractable intent — fallback to nudge
+              const STALL_RE = /\b(?:let me (?:check|look|examine|read|search|find|see|review|explore|investigate|understand|get|grab|continue)|i (?:need|want|should|will) (?:to )?(?:check|look|examine|read|search|find|see|review|explore|investigate|understand|get|grab|continue)|now (?:let me|i'll)|continu(?:e|ing)|keep (?:reading|investigating|looking)|next[,.]?\s*(?:i|let)|before (?:i can|proceeding|implementing|deciding))\b/i;
+              if (STALL_RE.test(tail)) {
+                yield { type: 'status' as const, content: 'nudging stalled model…' };
+                messageHistory.push({ role: 'assistant', content: fullResponse });
+                messageHistory.push({ role: 'user', content: 'Continue. Call the tools you need — do not narrate, just act. If you have enough context, delegate to Forge/Brainstorm/Tribunal now.' });
+                continue;
+              }
+            }
+
+            // ── Final check: if response ends mid-thought, auto-continue instead of breaking ──
+            // Catches models that narrate plans without calling tools or delegating
+            if (config.nativeTools && step < budget - 1) {
+              const tail = fullResponse.slice(-200);
+              const UNFINISHED_RE = /\b(?:let me|i(?:'ll| will| should| need to)|next[,:]?\s*(?:i|we|let)|to (?:be continued|summarize|complete)|(?:first|then|after that)[,:]?\s*(?:i|we|let)|still (?:need|working|investigating))\s*[.…]*\s*$/i;
+              if (UNFINISHED_RE.test(tail)) {
+                yield { type: 'status' as const, content: 'model paused mid-thought, nudging…' };
+                messageHistory.push({ role: 'assistant', content: fullResponse });
+                messageHistory.push({ role: 'user', content: 'You stopped mid-thought. Either call the tools you need NOW, or delegate to Forge/Brainstorm/Tribunal. Do not narrate — act.' });
+                continue;
+              }
+            }
+
+            // Final response. Add to history and exit.
+            messageHistory.push({ role: 'assistant', content: fullResponse });
+            break;
+          }
+
+          // Persist session state to disk after each turn — survives process restart
+          try { saveSessionState(config.engine.id, { messageHistory, confidence: null }); } catch {}
+
+          yield { type: 'done' as const, content: 'end_turn' };
+          return;
+        }
+
+        const args: string[] = [];
+        const engineExec = config.engine.exec;
+        if (!engineExec) {
+          yield { type: 'error' as const, content: `Engine ${config.engine.id} has no exec config` };
+          return;
+        }
+
+        // Build args from engine config
+        for (const arg of engineExec.args) {
+          if (arg === '{prompt}') {
+            args.push(opts.message);
+          } else {
+            args.push(arg);
+          }
+        }
+
+        // Add resume flag on subsequent turns
+        if (!firstTurn && sessionId) {
+          // Try common resume flags
+          if (config.engine.binary === 'claude') {
+            args.unshift('--resume', sessionId);
+          } else if (config.engine.binary === 'opencode') {
+            args.unshift('--session', sessionId, '--continue');
+          }
+        }
+
+        const child = spawn(config.binaryPath, args, {
+          stdio: ['ignore', 'pipe', 'pipe'],
+          cwd: config.cwd,
+          detached: true,
+        });
+
+        const chunks: SessionChunk[] = [];
+        let done = false;
+        let resolveWait: (() => void) | null = null;
+
+        // Abort: kill spawned child process
+        const onAbort = () => {
+          done = true;
+          chunks.push({ type: 'done', content: 'cancelled' });
+          try { if (child.pid) process.kill(-child.pid, 'SIGTERM'); } catch (e) { console.warn(`[agon] session-stream: kill failed: ${e instanceof Error ? e.message : String(e)}`); try { child.kill('SIGTERM'); } catch {} }
+          if (resolveWait) { resolveWait(); resolveWait = null; }
+        };
+        if (opts.signal?.aborted) { yield { type: 'done' as const, content: 'cancelled' }; return; }
+        opts.signal?.addEventListener('abort', onAbort, { once: true });
+
+        const rl = createInterface({ input: child.stdout! });
+        rl.on('line', (line: string) => {
+          // Try to parse as NDJSON
+          try {
+            const parsed = JSON.parse(line);
+            if (parsed.session_id && !sessionId) {
+              sessionId = parsed.session_id;
+            }
+            if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
+              chunks.push({ type: 'text', content: parsed.delta.text });
+            } else if (parsed.type === 'assistant' && parsed.message?.content) {
+              for (const block of parsed.message.content) {
+                if (block.type === 'text' && block.text) chunks.push({ type: 'text', content: block.text });
+              }
+            } else if (parsed.type === 'result' && !chunks.some((c: any) => c.type === 'text')) {
+              // Only use result text if no text was streamed yet
+              const text = parsed.result ?? '';
+              if (text && typeof text === 'string') chunks.push({ type: 'text', content: text });
+            }
+          } catch {
+            // Raw text
+            chunks.push({ type: 'text', content: line });
+          }
+          if (resolveWait) { resolveWait(); resolveWait = null; }
+        });
+
+        child.on('close', () => {
+          done = true;
+          chunks.push({ type: 'done', content: 'end_turn' });
+          if (resolveWait) { resolveWait(); resolveWait = null; }
+        });
+
+        child.on('error', (err: Error) => {
+          done = true;
+          chunks.push({ type: 'error', content: err.message });
+          if (resolveWait) { resolveWait(); resolveWait = null; }
+        });
+
+        try {
+          while (!done) {
+            if (chunks.length > 0) {
+              yield chunks.shift()!;
+            } else {
+              await new Promise<void>((r) => { resolveWait = r; });
+            }
+          }
+          while (chunks.length > 0) {
+            yield chunks.shift()!;
+          }
+        } finally {
+          opts.signal?.removeEventListener('abort', onAbort);
+          firstTurn = false;
+        }
+      },
+
+      close() {
+        alive = false;
+      },
+    };
+
+    return session;
+  >>>

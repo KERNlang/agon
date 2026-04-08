@@ -1,2 +1,2 @@
 // ── Tool Permissions — KERN-sourced ──────────────────────────────
-export * from './generated/tool-permissions.js';
+export * from './generated/tools/tool-permissions.js';

@@ -1,0 +1,61 @@
+import from="@agon/core" names="classifyTask,getElo,getEngineProfile,rankByTaskClass,diffFileCount,resolveWorkingDir,gitChangedFiles,currentBranch"
+import from="@agon/core" names="TaskClass,EngineRole,EngineProfile" types=true
+import from="../../handlers/types.js" names="HandlerContext" types=true
+
+fn name=buildRoutingContext params="input:string, ctx:HandlerContext" returns=string
+  doc "Build a lightweight routing context (~200-500 tokens) for Cesar to make intelligent mode + team decisions."
+  handler <<<
+    const parts: string[] = [];
+
+    // ── Task classification (pure regex, zero cost) ──
+    const taskClass = classifyTask(input);
+    parts.push(`TASK CLASS: ${taskClass}`);
+
+    // ── Scope: changed files + branch (cheap git calls) ──
+    try {
+      const cwd = resolveWorkingDir();
+      const branch = currentBranch(cwd);
+      const changedFiles = gitChangedFiles(cwd);
+      const fileCount = changedFiles.length;
+      // Count distinct directories to estimate module spread
+      const dirs = new Set(changedFiles.map((f: string) => f.split('/').slice(0, 2).join('/')));
+      parts.push(`SCOPE: ${fileCount} changed file${fileCount !== 1 ? 's' : ''} across ${dirs.size} dir${dirs.size !== 1 ? 's' : ''} on ${branch}`);
+    } catch {
+      parts.push(`SCOPE: unknown (not a git repo or no changes)`);
+    }
+
+    // ── Engine rankings for this task class (in-memory, O(n log n)) ──
+    const activeEngines = ctx.activeEngines();
+    if (activeEngines.length > 1) {
+      const rankings = rankByTaskClass(activeEngines, taskClass);
+      if (rankings.length > 0) {
+        const lines = rankings.map((r: EngineRole) => {
+          const profile = getEngineProfile(r.engineId);
+          const strengths = profile?.strengths?.slice(0, 3).join(', ') ?? 'unknown';
+          const weaknesses = profile?.weaknesses?.slice(0, 2).join(', ') ?? 'none noted';
+          const winRate = r.confidence > 0 ? ` (${r.confidence}% win rate)` : '';
+          return `  ${r.engineId}: ${r.role}${winRate} — strengths: ${strengths} | weak: ${weaknesses}`;
+        });
+        parts.push(`ENGINES (${taskClass}):\n${lines.join('\n')}`);
+      }
+    } else {
+      parts.push(`ENGINES: ${activeEngines[0] ?? 'none'} (solo — only 1 available)`);
+    }
+
+    // ── ELO summary for this task class ──
+    try {
+      const elo = getElo();
+      const taskElo = elo.byTaskClass?.[taskClass as keyof typeof elo.byTaskClass];
+      if (taskElo && Object.keys(taskElo).length > 0) {
+        const sorted = Object.entries(taskElo)
+          .filter(([id]) => activeEngines.includes(id))
+          .sort(([, a], [, b]) => (b as any).rating - (a as any).rating);
+        if (sorted.length > 0) {
+          const eloLine = sorted.map(([id, r]) => `${id}:${(r as any).rating}`).join(' > ');
+          parts.push(`ELO (${taskClass}): ${eloLine}`);
+        }
+      }
+    } catch { /* no elo data yet */ }
+
+    return parts.join('\n');
+  >>>

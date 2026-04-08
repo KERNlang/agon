@@ -6,7 +6,7 @@ import {
   parseMarkdownBlocks as _parseMarkdownBlocks,
   truncateCodeLine,
   cleanEngineOutput,
-} from './generated/markdown.js';
+} from './generated/blocks/markdown.js';
 
 export type ContentSegment =
   | { type: 'prose'; text: string }

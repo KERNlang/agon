@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { loadSkillFile, findSkill, renderSkillPrompt, parseFrontmatter } from '../../packages/core/src/generated/skill-loader.js';
+import { loadSkillFile, findSkill, renderSkillPrompt, parseFrontmatter } from '../../packages/core/src/generated/blocks/skill-loader.js';
 import { writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';

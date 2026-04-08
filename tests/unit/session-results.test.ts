@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { sessionResultStore } from '../../packages/cli/src/generated/session-results.js';
+import { sessionResultStore } from '../../packages/cli/src/generated/models/session-results.js';
 
 describe('SessionResultStore', () => {
   beforeEach(() => {

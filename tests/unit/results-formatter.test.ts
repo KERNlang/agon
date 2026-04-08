@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatSessionResults } from '../../packages/cli/src/generated/results-formatter.js';
+import { formatSessionResults } from '../../packages/cli/src/generated/blocks/results-formatter.js';
 import type { SessionResult } from '@agon/core';
 
 describe('formatSessionResults', () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { createSidechainLogger } from '../../packages/core/src/generated/sidechain-logger.js';
+import { createSidechainLogger } from '../../packages/core/src/generated/blocks/sidechain-logger.js';
 import { readFileSync, rmSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';

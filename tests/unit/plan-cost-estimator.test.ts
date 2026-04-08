@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { planCostEstimator } from '../../packages/core/src/generated/plan-cost-estimator.js';
-import { tracker } from '../../packages/core/src/generated/token-tracker.js';
+import { planCostEstimator } from '../../packages/core/src/generated/cesar/plan-cost-estimator.js';
+import { tracker } from '../../packages/core/src/generated/signals/token-tracker.js';
 
 describe('PlanCostEstimator', () => {
   beforeEach(() => {

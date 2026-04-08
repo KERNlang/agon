@@ -58,20 +58,20 @@ export { copyToClipboard } from './clipboard.js';
 export { pasteStore, PASTE_MAX_AGE } from './paste-store.js';
 export type { PasteStoreResult } from './paste-store.js';
 export { saveSessionState, loadSessionState, clearSessionState } from './session-store.js';
-export { runApiAgentLoop } from './generated/api-agent-loop.js';
-export type { ApiAgentOptions, ApiAgentResult } from './generated/api-agent-loop.js';
+export { runApiAgentLoop } from './generated/api/agent-loop.js';
+export type { ApiAgentOptions, ApiAgentResult } from './generated/api/agent-loop.js';
 // ── Tool System ──
 export type { ToolResult, ToolContext, ToolHandler, ToolDefinition, ToolCall, ToolCallResult, PermissionDecision, FileState as ToolFileState } from './tool-types.js';
 export { FileStateCache, fileStateCache } from './file-state-cache.js';
 export { ToolRegistry, executeToolCall, executeToolCalls } from './tool-registry.js';
 export { checkBashPermission, checkFileReadPermission, checkFileWritePermission, isDangerousCommand, isReadOnlyCommand, isPathUnderCwd } from './tool-permissions.js';
 export { createReadTool, createEditTool, createWriteTool, createBashTool, createGrepTool, createGlobTool, createForgeTool, createBrainstormTool, createTribunalTool, createCampfireTool, createReportConfidenceTool, createDelegateTool, createPipelineTool, createProposePlanTool } from './tools.js';
-export { formatCesarPlanMarkdown } from './generated/cesar-plan-formatter.js';
-export { generateToolPrompt, toolsToOpenAIFormat } from './generated/tool-prompt.js';
-export { parseToolCalls, toolCallsToApiFormat, formatToolResults, formatToolResult } from './generated/tool-parser.js';
-export type { ParsedToolCall, ParseResult } from './generated/tool-parser.js';
-export { buildToolSystemPrompt, processToolResponse, runToolLoop } from './generated/tool-loop.js';
-export type { ToolLoopCallbacks, ToolLoopResult } from './generated/tool-loop.js';
+export { formatCesarPlanMarkdown } from './generated/cesar/plan-formatter.js';
+export { generateToolPrompt, toolsToOpenAIFormat } from './generated/tools/tool-prompt.js';
+export { parseToolCalls, toolCallsToApiFormat, formatToolResults, formatToolResult } from './generated/tools/tool-parser.js';
+export type { ParsedToolCall, ParseResult } from './generated/tools/tool-parser.js';
+export { buildToolSystemPrompt, processToolResponse, runToolLoop } from './generated/tools/tool-loop.js';
+export type { ToolLoopCallbacks, ToolLoopResult } from './generated/tools/tool-loop.js';
 export { startChatSession, appendMessage, loadChatSession, resumeChatSession, listChatSessions, latestChatSession } from './chat-store.js';
 export type { ChatMessage as StoredChatMessage, ChatSession } from './chat-store.js';
 export {
@@ -95,14 +95,14 @@ export {
 export type {
   PersistentSession, PersistentSessionConfig, SessionChunk, SessionSendOptions,
 } from './persistent-session.js';
-export { createCesarMemory } from './generated/cesar-memory.js';
-export type { CesarMemory, MemoryEntry } from './generated/cesar-memory.js';
-export { createCesarPlan, approveCesarPlan, advanceCesarStep, cancelCesarPlan, saveCesarPlan, loadCesarPlan, listCesarPlans } from './generated/cesar-plan.js';
-export type { CesarPlan, CesarPlanStep, CesarStepResult } from './generated/cesar-plan.js';
-export { planCostEstimator } from './generated/plan-cost-estimator.js';
-export type { CostEstimate } from './generated/plan-cost-estimator.js';
-export { executePlan, getReadySteps } from './generated/plan-executor.js';
-export type { StepExecutor, PlanExecutorCallbacks } from './generated/plan-executor.js';
+export { createCesarMemory } from './generated/cesar/memory.js';
+export type { CesarMemory, MemoryEntry } from './generated/cesar/memory.js';
+export { createCesarPlan, approveCesarPlan, advanceCesarStep, cancelCesarPlan, saveCesarPlan, loadCesarPlan, listCesarPlans } from './generated/cesar/plan.js';
+export type { CesarPlan, CesarPlanStep, CesarStepResult } from './generated/cesar/plan.js';
+export { planCostEstimator } from './generated/cesar/plan-cost-estimator.js';
+export type { CostEstimate } from './generated/cesar/plan-cost-estimator.js';
+export { executePlan, getReadySteps } from './generated/cesar/plan-executor.js';
+export type { StepExecutor, PlanExecutorCallbacks } from './generated/cesar/plan-executor.js';
 export { runHooks, hooksFailed, hooksOutput } from './hooks.js';
 export type { HookEvent, HookDef, HookResult } from './hooks.js';
 export { loadSkills, findSkill, renderSkillPrompt } from './skill-loader.js';
@@ -127,7 +127,7 @@ export { EventBus, bridgeShellHooks } from './event-bus.js';
 export type { EventPayload, EventListener } from './event-bus.js';
 export type { ValidatedEngineDefinition } from './schemas/engine-schema.js';
 export { sessionContext } from './session-context.js';
-export type { SessionResult, BrainstormResultData, CampfireResultData, TribunalResultData, ForgeResultData } from './generated/session-result-types.js';
+export type { SessionResult, BrainstormResultData, CampfireResultData, TribunalResultData, ForgeResultData } from './generated/models/session-result-types.js';
 export {
   splitPromptBlocks, mergeBlocksByRole,
 } from './prompt-builder.js';
@@ -135,10 +135,10 @@ export type { PromptBlock } from './prompt-builder.js';
 // ── Team Competition ──
 export {
   lineupKey, makeFormat, assignTeamRoles, composeTeams, computeContributionWeights,
-} from './generated/team.js';
+} from './generated/teams/team.js';
 export type {
   TeamRole, TeamComposeMode, TeamCoopStrategy, TeamMember, TeamSpec, TeamFormat,
   TeamRoundTrace, TeamSubmission, TeamScoreCard, TeamMatchResult, TeamEvent,
-} from './generated/team.js';
-export { getTeamElo, updateTeamElo, predictTeamRating } from './generated/team-elo.js';
-export type { TeamCompositionRating, TeamRoleRating, TeamEloRecord } from './generated/team-elo.js';
+} from './generated/teams/team.js';
+export { getTeamElo, updateTeamElo, predictTeamRating } from './generated/teams/team-elo.js';
+export type { TeamCompositionRating, TeamRoleRating, TeamEloRecord } from './generated/teams/team-elo.js';

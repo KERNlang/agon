@@ -78,7 +78,7 @@ describe('Eager Tool Execution', () => {
 
   it('collects tool results for batch send-back', async () => {
     // After eager execution, results should be formatted for re-injection
-    const { formatToolResults } = await import('../../packages/core/src/generated/tool-parser.js');
+    const { formatToolResults } = await import('../../packages/core/src/generated/tools/tool-parser.js');
 
     const results = formatToolResults([
       { name: 'Read', content: 'const x = 1;' },
@@ -147,10 +147,10 @@ describe('Eager Tool Execution', () => {
   });
 
   it('executeToolCalls works with native-protocol parsed inputs', async () => {
-    const { ToolRegistry, executeToolCall } = await import('../../packages/core/src/generated/tool-registry.js');
-    const { createReadTool } = await import('../../packages/core/src/generated/tool-read.js');
-    const { createGrepTool } = await import('../../packages/core/src/generated/tool-grep.js');
-    const { createGlobTool } = await import('../../packages/core/src/generated/tool-glob.js');
+    const { ToolRegistry, executeToolCall } = await import('../../packages/core/src/generated/signals/tool-registry.js');
+    const { createReadTool } = await import('../../packages/core/src/generated/tools/tool-read.js');
+    const { createGrepTool } = await import('../../packages/core/src/generated/tools/tool-grep.js');
+    const { createGlobTool } = await import('../../packages/core/src/generated/tools/tool-glob.js');
 
     const registry = new ToolRegistry();
     registry.register(createReadTool());

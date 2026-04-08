@@ -1,2 +1,2 @@
-export { CommandRegistry } from './generated/command-registry.js';
-export type { CommandDefinition, CommandHandler } from './generated/command-registry.js';
+export { CommandRegistry } from './generated/signals/command-registry.js';
+export type { CommandDefinition, CommandHandler } from './generated/signals/command-registry.js';

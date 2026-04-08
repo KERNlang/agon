@@ -1,0 +1,93 @@
+// @kern-source: file-state-cache:4
+import type { FileState } from '../models/tool-types.js';
+
+// @kern-source: file-state-cache:6
+export const MAX_CACHE_ENTRIES: number = 100;
+
+// @kern-source: file-state-cache:9
+export const MAX_CACHE_BYTES: number = 25 * 1024 * 1024;
+
+// @kern-source: file-state-cache:12
+export class FileStateCache {
+  cache: Map<string, FileState>;
+  totalBytes: number;
+  accessOrder: string[];
+
+  constructor() {
+    this.cache = new Map();
+    this.totalBytes = 0;
+    this.accessOrder = [];
+  }
+
+  get(filePath: string): FileState|undefined {
+    const state = this.cache.get(filePath);
+    if (state) {
+      // Move to end of access order (LRU)
+      this.accessOrder = this.accessOrder.filter(p => p !== filePath);
+      this.accessOrder.push(filePath);
+    }
+    return state;
+  }
+
+  set(filePath: string, state: FileState): void {
+    const existing = this.cache.get(filePath);
+    if (existing) {
+      this.totalBytes -= existing.content.length;
+    }
+    this.cache.set(filePath, state);
+    this.totalBytes += state.content.length;
+    this.accessOrder = this.accessOrder.filter(p => p !== filePath);
+    this.accessOrder.push(filePath);
+    this.evict();
+  }
+
+  has(filePath: string): boolean {
+    return this.cache.has(filePath);
+  }
+
+  isStale(filePath: string, currentMtime: number): boolean {
+    const state = this.cache.get(filePath);
+    if (!state) return true;
+    return currentMtime > state.timestamp;
+  }
+
+  wasReadFully(filePath: string): boolean {
+    const state = this.cache.get(filePath);
+    if (!state) return false;
+    return !state.isPartialView;
+  }
+
+  remove(filePath: string): void {
+    const state = this.cache.get(filePath);
+    if (state) {
+      this.totalBytes -= state.content.length;
+      this.cache.delete(filePath);
+      this.accessOrder = this.accessOrder.filter(p => p !== filePath);
+    }
+  }
+
+  clear(): void {
+    this.cache.clear();
+    this.totalBytes = 0;
+    this.accessOrder = [];
+  }
+
+  size(): number {
+    return this.cache.size;
+  }
+
+  evict(): void {
+    while (
+      (this.cache.size > MAX_CACHE_ENTRIES || this.totalBytes > MAX_CACHE_BYTES)
+      && this.accessOrder.length > 0
+    ) {
+      const oldest = this.accessOrder.shift()!;
+      const state = this.cache.get(oldest);
+      if (state) {
+        this.totalBytes -= state.content.length;
+        this.cache.delete(oldest);
+      }
+    }
+  }
+}
+

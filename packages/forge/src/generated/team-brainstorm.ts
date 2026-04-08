@@ -1,19 +1,28 @@
+// @kern-source: team-brainstorm:4
 import { randomUUID } from 'node:crypto';
 
+// @kern-source: team-brainstorm:5
 import type { EngineAdapter, BrainstormBid, ForgeEvent, TaskClass } from '@agon/core';
 
+// @kern-source: team-brainstorm:6
 import type { TeamSpec, TeamFormat, TeamComposeMode, TeamRoundTrace, TeamSubmission, TeamScoreCard, TeamMatchResult, TeamEvent } from '@agon/core';
 
+// @kern-source: team-brainstorm:7
 import { EngineRegistry, loadConfig, classifyTask, createSidechainLogger, composeTeams, makeFormat } from '@agon/core';
 
+// @kern-source: team-brainstorm:8
 import { updateTeamElo } from '@agon/core';
 
+// @kern-source: team-brainstorm:9
 import { buildKernDraftPrompt, parseKernDraft } from 'kern-lang';
 
+// @kern-source: team-brainstorm:10
 import type { KernDraft } from 'kern-lang';
 
+// @kern-source: team-brainstorm:11
 import { calibrateConfidence, qualityScore } from './brainstorm.js';
 
+// @kern-source: team-brainstorm:13
 export interface TeamBrainstormOptions {
   question: string;
   context?: string;
@@ -29,6 +38,7 @@ export interface TeamBrainstormOptions {
   onEvent?: (event:ForgeEvent|TeamEvent)=>void;
 }
 
+// @kern-source: team-brainstorm:27
 export async function runTeamCoopBrainstorm(team: TeamSpec, question: string, context: string|undefined, registry: EngineRegistry, adapter: EngineAdapter, timeout: number, outputDir: string, onEvent?: (event:ForgeEvent|TeamEvent)=>void, signal?: AbortSignal): Promise<{submission:TeamSubmission, proposal:string, score:number}> {
   const trace: TeamRoundTrace[] = [];
   const start = Date.now();
@@ -139,6 +149,7 @@ export async function runTeamCoopBrainstorm(team: TeamSpec, question: string, co
   };
 }
 
+// @kern-source: team-brainstorm:138
 export async function runTeamBrainstorm(options: TeamBrainstormOptions): Promise<TeamMatchResult> {
   const config = loadConfig(process.cwd());
   const matchId = randomUUID().slice(0, 8);

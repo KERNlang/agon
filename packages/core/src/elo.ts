@@ -1,3 +1,3 @@
 // ── Re-export from KERN-generated ELO ───────────────────────────────
 // Source of truth: src/kern/elo.kern
-export * from './generated/elo.js';
+export * from './generated/signals/elo.js';

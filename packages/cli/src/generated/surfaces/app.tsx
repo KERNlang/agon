@@ -104,7 +104,7 @@ import { spawnSync } from 'node:child_process';
 import { sessionResultStore } from '../models/session-results.js';
 
 // @kern-source: app:39
-import { formatSessionResults } from '../blocks/results-formatter.js';
+import { formatSessionResults, formatChatTranscript } from '../blocks/results-formatter.js';
 
 // @kern-source: app:40
 import { loadSkills } from '@agon/core';
@@ -172,6 +172,9 @@ export function App({  }: {  }) {
   const chatStartTimeRef = useRef<number>(0);
   const currentPlanRef = useRef<Plan|null>(null);
   const streamingTextRef = useRef<any>(null);
+  const streamingBufferRef = useRef<any>(null);
+  const streamingFlushTimerRef = useRef<any>(null);
+  const modeRef = useRef<'chat'|'campfire'|'brainstorm'|'tribunal'>('chat');
   const justPastedRef = useRef<boolean>(false);
   const pasteHashesRef = useRef<Map<string,string>>(new Map());
   const pasteCountRef = useRef<number>(0);
@@ -187,24 +190,75 @@ export function App({  }: {  }) {
           return [...registryCmds, ...uniqueSkills];
   }, [dynamicSkills, extensionSkills, commandRegistry]);
 
+  useEffect(() => {
+          modeRef.current = mode;
+  }, [mode]);
+
+  useEffect(() => {
+          return () => {
+            if (streamingFlushTimerRef.current) clearTimeout(streamingFlushTimerRef.current);
+          };
+  }, []);
+
   const outputActions = useMemo(() => {
           return {
             setLiveSpinner,
             setLiveProgress,
-            setStreamingText: (val: any) => { streamingTextRef.current = val; setStreamingText(val); },
+            setStreamingText: (val: any) => {
+              streamingBufferRef.current = val;
+              if (modeRef.current !== 'chat') {
+                if (streamingFlushTimerRef.current) {
+                  clearTimeout(streamingFlushTimerRef.current);
+                  streamingFlushTimerRef.current = null;
+                }
+                streamingTextRef.current = val;
+                setStreamingText(val);
+                return;
+              }
+              if (!val) {
+                if (streamingFlushTimerRef.current) {
+                  clearTimeout(streamingFlushTimerRef.current);
+                  streamingFlushTimerRef.current = null;
+                }
+                streamingTextRef.current = null;
+                setStreamingText(null);
+                return;
+              }
+              const needsImmediatePaint = !streamingTextRef.current || streamingTextRef.current.engineId !== val.engineId;
+              if (needsImmediatePaint) {
+                if (streamingFlushTimerRef.current) {
+                  clearTimeout(streamingFlushTimerRef.current);
+                  streamingFlushTimerRef.current = null;
+                }
+                streamingTextRef.current = val;
+                setStreamingText(val);
+                return;
+              }
+              if (streamingFlushTimerRef.current) return;
+              streamingFlushTimerRef.current = setTimeout(() => {
+                streamingFlushTimerRef.current = null;
+                streamingTextRef.current = streamingBufferRef.current;
+                setStreamingText(streamingBufferRef.current);
+              }, 90);
+            },
             addBlock: (event: any) => { setScrollOffset(0); setOutputBlocks((prev: any) => [...prev, { id: Date.now() + Math.random(), event }]); },
             clearBlocks: () => setOutputBlocks([]),
             setReviewEvent,
             setQuestionState,
             setChatStartTime: (val: number) => { chatStartTimeRef.current = val; },
             flushStream: () => {
-              const prev = streamingTextRef.current;
+              const prev = streamingBufferRef.current ?? streamingTextRef.current;
+              if (streamingFlushTimerRef.current) {
+                clearTimeout(streamingFlushTimerRef.current);
+                streamingFlushTimerRef.current = null;
+              }
               if (prev) {
                 const color = ENGINE_COLORS[prev.engineId] ?? 245;
                 setOutputBlocks((blocks: any) => [...blocks, { id: Date.now() - 1, event: { type: 'engine-block', engineId: prev.engineId, color, content: prev.content } }]);
-                streamingTextRef.current = null;
-                setStreamingText(null);
               }
+              streamingBufferRef.current = null;
+              streamingTextRef.current = null;
+              setStreamingText(null);
             },
             getEngineColor: (engineId: string) => ENGINE_COLORS[engineId] ?? 245,
             setCesarConfidence,
@@ -238,7 +292,7 @@ export function App({  }: {  }) {
           if (et === 'streaming-chunk' || et === 'progress-update' || et === 'tool-call' || et === 'spinner-start' || et === 'spinner-update') {
             lastActivityTimeRef.current = Date.now();
           }
-          const state: OutputState = { liveSpinner: null, liveProgress: null, streamingText: streamingTextRef.current };
+          const state: OutputState = { liveSpinner: null, liveProgress: null, streamingText: streamingBufferRef.current ?? streamingTextRef.current };
           handleOutputEvent(event, state, outputActions, mode, chatStartTimeRef.current);
   }, [mode]);
 
@@ -252,6 +306,12 @@ export function App({  }: {  }) {
           trackAbort(null);
           setLiveSpinner(null);
           setLiveProgress(null);
+          if (streamingFlushTimerRef.current) {
+            clearTimeout(streamingFlushTimerRef.current);
+            streamingFlushTimerRef.current = null;
+          }
+          streamingBufferRef.current = null;
+          streamingTextRef.current = null;
           setStreamingText(null);
           clearPermissionQueue();
     
@@ -456,12 +516,23 @@ export function App({  }: {  }) {
   }, [reviewEvent,dispatch]);
 
   const openResultsPager = useCallback(() => {
-          if (!sessionResultStore.hasResults()) {
-            dispatch({ type: 'info', message: 'No results yet — run /brainstorm, /campfire, /tribunal, or /forge first' } as any);
-            return;
+          let content = '';
+          let tmpFile = '';
+          if (mode === 'chat') {
+            if (chatSession.messages.length === 0) {
+              dispatch({ type: 'info', message: 'No chat messages yet.' } as any);
+              return;
+            }
+            content = formatChatTranscript(chatSession);
+            tmpFile = join(tmpdir(), `agon-chat-${Date.now()}.txt`);
+          } else {
+            if (!sessionResultStore.hasResults()) {
+              dispatch({ type: 'info', message: 'No results yet — run /brainstorm, /campfire, /tribunal, or /forge first' } as any);
+              return;
+            }
+            content = formatSessionResults(sessionResultStore.getResults());
+            tmpFile = join(tmpdir(), `agon-results-${Date.now()}.txt`);
           }
-          const content = formatSessionResults(sessionResultStore.getResults());
-          const tmpFile = join(tmpdir(), `agon-results-${Date.now()}.txt`);
           try {
             writeFileSync(tmpFile, content, 'utf-8');
             const pager = process.env.PAGER || 'less';
@@ -472,7 +543,7 @@ export function App({  }: {  }) {
           } finally {
             try { unlinkSync(tmpFile); } catch { /* temp file already cleaned up */ }
           }
-  }, [dispatch]);
+  }, [dispatch,mode,chatSession]);
 
   const handleSlashSelect = useCallback((cmd:string) => {
           setPlanModeQueued(false);
@@ -580,6 +651,12 @@ export function App({  }: {  }) {
             for (const abort of _activeAborts) abort.abort();
             _activeAborts.clear();
             activeAbortRef.current = null;
+            if (streamingFlushTimerRef.current) {
+              clearTimeout(streamingFlushTimerRef.current);
+              streamingFlushTimerRef.current = null;
+            }
+            streamingBufferRef.current = null;
+            streamingTextRef.current = null;
             setActiveAbort(null); setLiveSpinner(null); setLiveProgress(null); setStreamingText(null);
             clearPermissionQueue();
             setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state);
@@ -750,11 +827,18 @@ export function App({  }: {  }) {
               const wrapWidth = contentWidth(mode === 'chat' ? 6 : 8);
               const segments = parseMarkdownBlocks(cleaned);
               return mode === 'chat' ? (
-                <Box flexDirection="column" marginY={1} paddingLeft={1}>
-                  <Text><Text color={c} bold>{icons().dotOn + ' '}{streamingText.engineId}</Text></Text>
-                  <Text>{' '}</Text>
-                  <RenderedSegments segments={segments} borderColor={''} wrapWidth={wrapWidth} />
-                </Box>
+                (() => {
+                  const lines = cleaned.split('\n').filter((line: string) => line.trim());
+                  const lastLine = lines.length > 0 ? lines[lines.length - 1].trim() : '';
+                  const previewLimit = Math.max(24, wrapWidth - streamingText.engineId.length - 6);
+                  const preview = lastLine.length > previewLimit ? lastLine.slice(0, previewLimit - 1) + '…' : lastLine;
+                  return (
+                    <Box marginY={1} paddingLeft={1}>
+                      <Text color={c} bold>{icons().dotOn + ' '}{streamingText.engineId}</Text>
+                      <Text dimColor>{preview ? ` ${preview}` : ' streaming…'}</Text>
+                    </Box>
+                  );
+                })()
               ) : (
                 <Box flexDirection="column" marginY={1} paddingLeft={2}>
                   <Text color={c} bold>{'┌── '}{streamingText.engineId}</Text>
@@ -861,7 +945,7 @@ export function App({  }: {  }) {
 }
 
 
-// @kern-source: app:833
+// @kern-source: app:844
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

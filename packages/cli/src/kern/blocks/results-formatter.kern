@@ -1,4 +1,4 @@
-import from="@agon/core" names="SessionResult,BrainstormResultData,CampfireResultData,TribunalResultData,ForgeResultData" types=true
+import from="@agon/core" names="SessionResult,BrainstormResultData,CampfireResultData,TribunalResultData,ForgeResultData,ChatSession" types=true
 
 const name=BOLD type=string
   handler <<< '\x1b[1m' >>>
@@ -31,6 +31,34 @@ fn name=formatTime params="iso:string" returns=string
   handler <<<
     const d = new Date(iso);
     return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+  >>>
+
+fn name=formatChatTranscript params="session:ChatSession" returns=string export=true
+  handler <<<
+    if (session.messages.length === 0) {
+      return `${DIM}No chat messages in this session yet.${RESET}\n`;
+    }
+
+    const lines: string[] = [];
+    lines.push(`${BOLD}Chat Transcript${RESET}`);
+    if (session.cwd || session.branch) {
+      const meta = [session.cwd, session.branch ? `branch: ${session.branch}` : ''].filter(Boolean).join(' · ');
+      if (meta) lines.push(`${DIM}${meta}${RESET}`);
+    }
+    lines.push('');
+
+    for (const msg of session.messages) {
+      const speaker = msg.role === 'user' ? 'USER' : (msg.engineId ?? 'ENGINE').toUpperCase();
+      const color = msg.role === 'user' ? YELLOW : CYAN;
+      lines.push(`${BOLD}${color}── ${speaker} · ${formatTime(msg.timestamp)} ──${RESET}`);
+      if (msg.images && msg.images.length > 0) {
+        lines.push(`${DIM}Images: ${msg.images.join(', ')}${RESET}`);
+      }
+      lines.push(msg.content);
+      lines.push('');
+    }
+
+    return lines.join('\n');
   >>>
 
 fn name=formatBrainstorm params="r:SessionResult, idx:number" returns=string

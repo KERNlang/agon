@@ -1,5 +1,5 @@
 // @kern-source: results-formatter:1
-import type { SessionResult, BrainstormResultData, CampfireResultData, TribunalResultData, ForgeResultData } from '@agon/core';
+import type { SessionResult, BrainstormResultData, CampfireResultData, TribunalResultData, ForgeResultData, ChatSession } from '@agon/core';
 
 // @kern-source: results-formatter:3
 export const BOLD: string = '\x1b[1m';
@@ -35,6 +35,34 @@ export function formatTime(iso: string): string {
 }
 
 // @kern-source: results-formatter:36
+export function formatChatTranscript(session: ChatSession): string {
+  if (session.messages.length === 0) {
+    return `${DIM}No chat messages in this session yet.${RESET}\n`;
+  }
+  
+  const lines: string[] = [];
+  lines.push(`${BOLD}Chat Transcript${RESET}`);
+  if (session.cwd || session.branch) {
+    const meta = [session.cwd, session.branch ? `branch: ${session.branch}` : ''].filter(Boolean).join(' · ');
+    if (meta) lines.push(`${DIM}${meta}${RESET}`);
+  }
+  lines.push('');
+  
+  for (const msg of session.messages) {
+    const speaker = msg.role === 'user' ? 'USER' : (msg.engineId ?? 'ENGINE').toUpperCase();
+    const color = msg.role === 'user' ? YELLOW : CYAN;
+    lines.push(`${BOLD}${color}── ${speaker} · ${formatTime(msg.timestamp)} ──${RESET}`);
+    if (msg.images && msg.images.length > 0) {
+      lines.push(`${DIM}Images: ${msg.images.join(', ')}${RESET}`);
+    }
+    lines.push(msg.content);
+    lines.push('');
+  }
+  
+  return lines.join('\n');
+}
+
+// @kern-source: results-formatter:64
 export function formatBrainstorm(r: SessionResult, idx: number): string {
   const data = r.data as BrainstormResultData;
   const lines: string[] = [];
@@ -63,7 +91,7 @@ export function formatBrainstorm(r: SessionResult, idx: number): string {
   return lines.join('\n');
 }
 
-// @kern-source: results-formatter:65
+// @kern-source: results-formatter:93
 export function formatCampfire(r: SessionResult, idx: number): string {
   const data = r.data as CampfireResultData;
   const lines: string[] = [];
@@ -82,7 +110,7 @@ export function formatCampfire(r: SessionResult, idx: number): string {
   return lines.join('\n');
 }
 
-// @kern-source: results-formatter:84
+// @kern-source: results-formatter:112
 export function formatTribunal(r: SessionResult, idx: number): string {
   const data = r.data as TribunalResultData;
   const lines: string[] = [];
@@ -110,7 +138,7 @@ export function formatTribunal(r: SessionResult, idx: number): string {
   return lines.join('\n');
 }
 
-// @kern-source: results-formatter:112
+// @kern-source: results-formatter:140
 export function formatForge(r: SessionResult, idx: number): string {
   const data = r.data as ForgeResultData;
   const lines: string[] = [];
@@ -142,7 +170,7 @@ export function formatForge(r: SessionResult, idx: number): string {
   return lines.join('\n');
 }
 
-// @kern-source: results-formatter:144
+// @kern-source: results-formatter:172
 export function formatSessionResults(results: SessionResult[]): string {
   if (results.length === 0) {
     return `${DIM}No results in this session yet. Run /brainstorm, /campfire, /tribunal, or /forge first.${RESET}\n`;

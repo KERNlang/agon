@@ -269,7 +269,7 @@ export function handleConfig(intent: Intent&{type:'config'}, dispatch: Dispatch,
   }
 }
 
-// @kern-source: handlers-info:251
+// @kern-source: handlers-info:257
 export function handleUse(engineIds: string[], dispatch: Dispatch, ctx: HandlerContext, setSessionEngines: (engines:string[]|null)=>void): void {
   if (engineIds.length === 0 || (engineIds.length === 1 && engineIds[0] === 'all')) {
     setSessionEngines(null);
@@ -298,7 +298,7 @@ export function handleUse(engineIds: string[], dispatch: Dispatch, ctx: HandlerC
   dispatch({ type: 'info', message: 'Saved — persists across sessions. Use /cesar <engine> to change Cesar brain separately.' });
 }
 
-// @kern-source: handlers-info:280
+// @kern-source: handlers-info:286
 export function handleCesar(engineId: string, dispatch: Dispatch, ctx: HandlerContext): void {
   // Parse: "/cesar claude api" or "/cesar claude cli" or "/cesar claude" or "/cesar"
   const parts = engineId.trim().split(/\s+/);
@@ -369,7 +369,7 @@ export function handleCesar(engineId: string, dispatch: Dispatch, ctx: HandlerCo
   dispatch({ type: 'info', message: 'Conversation context + memory preserved. Forge/tribunal engines unchanged — use /use to change those.' });
 }
 
-// @kern-source: handlers-info:351
+// @kern-source: handlers-info:357
 export function handleTokens(dispatch: Dispatch): void {
   const stats = tracker.getStats();
   dispatch({ type: 'header', title: 'Token Usage — This Session' });
@@ -379,22 +379,50 @@ export function handleTokens(dispatch: Dispatch): void {
     return;
   }
   
+  // Determine dominant source per engine
+  const allUsages = tracker.recent(10000);
+  const engineSources: Record<string, Set<string>> = {};
+  for (const u of allUsages) {
+    if (!engineSources[u.engineId]) engineSources[u.engineId] = new Set();
+    engineSources[u.engineId].add(u.source);
+  }
+  
+  const sourceLabel = (id: string): string => {
+    const sources = engineSources[id];
+    if (!sources || sources.size === 0) return 'est';
+    if (sources.size === 1) {
+      const s = [...sources][0];
+      return s === 'sdk' ? 'sdk' : s === 'cli-reported' ? 'cli' : 'est';
+    }
+    return 'mixed';
+  };
+  
+  const costLabel = (costUsd: number, id: string): string => {
+    if (costUsd <= 0) return 'free';
+    const src = sourceLabel(id);
+    const prefix = src === 'sdk' ? '' : '~';
+    return `${prefix}$${costUsd.toFixed(4)}`;
+  };
+  
   const rows = Object.entries(stats.byEngine).map(([id, e]: [string, any]) => [
     id,
     String(e.dispatches),
     String(e.promptTokens),
     String(e.responseTokens),
     String(e.totalTokens),
-    e.costUsd > 0 ? `$${e.costUsd.toFixed(4)}` : 'free',
+    costLabel(e.costUsd, id),
+    sourceLabel(id),
   ]);
-  dispatch({ type: 'table', headers: ['Engine', 'Calls', 'Prompt', 'Response', 'Total', 'Cost'], rows });
+  dispatch({ type: 'table', headers: ['Engine', 'Calls', 'Prompt', 'Response', 'Total', 'Cost', 'Source'], rows });
   
-  const totalCost = stats.totalCostUsd > 0 ? `$${stats.totalCostUsd.toFixed(4)}` : 'free';
+  const hasSdk = allUsages.some((u: any) => u.source === 'sdk');
+  const totalCostPrefix = hasSdk ? '' : '~';
+  const totalCost = stats.totalCostUsd > 0 ? `${totalCostPrefix}$${stats.totalCostUsd.toFixed(4)}` : 'free';
   dispatch({ type: 'text', content: `Session total: ${stats.totalTokens} tokens  ${totalCost}` });
   dispatch({ type: 'info', message: `${stats.dispatches} dispatches across ${Object.keys(stats.byEngine).length} engines` });
 }
 
-// @kern-source: handlers-info:376
+// @kern-source: handlers-info:410
 export function handleWorkspace(action: string, dispatch: Dispatch, ctx: HandlerContext, path?: string): void {
   switch (action) {
     case 'add': {
@@ -446,7 +474,7 @@ export function handleWorkspace(action: string, dispatch: Dispatch, ctx: Handler
   }
 }
 
-// @kern-source: handlers-info:428
+// @kern-source: handlers-info:462
 export function handleChats(dispatch: Dispatch, sessionId?: string): void {
   if (sessionId) {
     const session = loadChatSession(sessionId);
@@ -480,7 +508,7 @@ export function handleChats(dispatch: Dispatch, sessionId?: string): void {
   dispatch({ type: 'table', headers: ['Session', 'Msgs', 'Date', 'First Message'], rows });
 }
 
-// @kern-source: handlers-info:462
+// @kern-source: handlers-info:496
 export function handleModels(dispatch: Dispatch, ctx: HandlerContext): void {
   dispatch({ type: 'header', title: 'Models & Engines' });
   
@@ -503,3 +531,4 @@ export function handleModels(dispatch: Dispatch, ctx: HandlerContext): void {
   dispatch({ type: 'info', message: 'Reset to all:    /use all' });
   dispatch({ type: 'info', message: 'Set chat default: /config set forgeFixedStarter claude' });
 }
+

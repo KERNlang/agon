@@ -337,7 +337,7 @@ export function App({  }: {  }) {
               }
     
               const color = ENGINE_COLORS[cesarId] ?? 245;
-              dispatch({ type: 'spinner-start', message: 'btw\u2026', color } as any);
+              dispatch({ type: 'info', message: 'btw\u2026' } as any);
     
               // Build context from streaming output
               let streamCtx = '';
@@ -358,7 +358,6 @@ export function App({  }: {  }) {
                 timeout: 60,
                 outputDir: btwOutputDir,
               }).then((result: any) => {
-                dispatch({ type: 'spinner-stop' } as any);
                 const answer = (result.stdout || '').trim();
                 if (answer) {
                   dispatch({ type: 'engine-block', engineId: cesarId, color, content: answer } as any);
@@ -366,7 +365,6 @@ export function App({  }: {  }) {
                   dispatch({ type: 'warning', message: 'btw: no response' } as any);
                 }
               }).catch((err: any) => {
-                dispatch({ type: 'spinner-stop' } as any);
                 dispatch({ type: 'error', message: `btw: ${err instanceof Error ? err.message : String(err)}` } as any);
               });
               return;
@@ -752,7 +750,7 @@ export function App({  }: {  }) {
 }
 
 
-// @kern-source: ui-app:720
+// @kern-source: ui-app:718
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

@@ -328,7 +328,7 @@ screen name=App target=ink
           }
 
           const color = ENGINE_COLORS[cesarId] ?? 245;
-          dispatch({ type: 'spinner-start', message: 'btw\u2026', color } as any);
+          dispatch({ type: 'info', message: 'btw\u2026' } as any);
 
           // Build context from streaming output
           let streamCtx = '';
@@ -349,7 +349,6 @@ screen name=App target=ink
             timeout: 60,
             outputDir: btwOutputDir,
           }).then((result: any) => {
-            dispatch({ type: 'spinner-stop' } as any);
             const answer = (result.stdout || '').trim();
             if (answer) {
               dispatch({ type: 'engine-block', engineId: cesarId, color, content: answer } as any);
@@ -357,7 +356,6 @@ screen name=App target=ink
               dispatch({ type: 'warning', message: 'btw: no response' } as any);
             }
           }).catch((err: any) => {
-            dispatch({ type: 'spinner-stop' } as any);
             dispatch({ type: 'error', message: `btw: ${err instanceof Error ? err.message : String(err)}` } as any);
           });
           return;

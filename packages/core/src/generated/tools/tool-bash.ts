@@ -81,6 +81,12 @@ export function createBashTool(): ToolHandler {
     // Check read-only commands — allow automatically
     const isReadOnly = READONLY_COMMANDS.some((safe: string) => lower === safe || lower.startsWith(safe + ' '));
   
+    // Investigation mode: allow read-only commands, block mutating ones
+    if ((_ctx as any).readOnlyMode) {
+      if (isReadOnly) return { behavior: 'allow' };
+      return { behavior: 'deny', message: '[Investigation phase] Bash command skipped — mutating commands available after confidence check.', reason: 'read-only-mode' };
+    }
+  
     // Exploration mode: allow read-only commands, block everything else
     if ((_ctx as any).explorationMode) {
       if (isReadOnly) return { behavior: 'allow' };

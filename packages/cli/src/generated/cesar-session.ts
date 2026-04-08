@@ -14,7 +14,7 @@ import { mkdirSync } from 'node:fs';
 import type { PersistentSession, PersistentSessionConfig } from '@agon/core';
 
 // @kern-source: cesar-session:6
-import { EngineRegistry, loadConfig, ensureAgonHome, resolveWorkingDir, scanProjectContext, createPersistentSession, ToolRegistry, FileStateCache, buildToolSystemPrompt, toolsToOpenAIFormat, executeToolCall, RUNS_DIR } from '@agon/core';
+import { EngineRegistry, loadConfig, ensureAgonHome, resolveWorkingDir, scanProjectContext, createPersistentSession, ToolRegistry, FileStateCache, buildToolSystemPrompt, toolsToOpenAIFormat, executeToolCall, RUNS_DIR, tracker } from '@agon/core';
 
 // @kern-source: cesar-session:7
 import type { ToolContext, ToolCallResult } from '@agon/core';
@@ -169,6 +169,14 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
   
         // Strip <think> blocks from response
         const cleaned = result.stdout.trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
+  
+        // Track token usage — real if available, estimated otherwise
+        if (result.usage) {
+          tracker.record(targetId, { usage: result.usage });
+        } else {
+          tracker.record(targetId, { prompt: task, response: cleaned });
+        }
+  
         return `[Delegate → ${targetId}]\n${cleaned}`;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -216,7 +224,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
   };
 }
 
-// @kern-source: cesar-session:204
+// @kern-source: cesar-session:212
 export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:string, command:string) => Promise<boolean> {
   const engine = ctx.registry.get(engineId);
   return async (tool: string, command: string) => {
@@ -254,7 +262,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
   };
 }
 
-// @kern-source: cesar-session:243
+// @kern-source: cesar-session:251
 export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unknown>> {
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -288,7 +296,7 @@ export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unkn
   return normalizeNamedRecord(raw);
 }
 
-// @kern-source: cesar-session:277
+// @kern-source: cesar-session:285
 export function loadCesarMcpServers(config: any, cwd: string): Array<Record<string,unknown>>|undefined {
   if (!(config as any).cesarMcpEnabled) return undefined;
   
@@ -312,14 +320,14 @@ export function loadCesarMcpServers(config: any, cwd: string): Array<Record<stri
   return servers;
 }
 
-// @kern-source: cesar-session:301
+// @kern-source: cesar-session:309
 export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
   if (!binaryPath) return false;
   const protocol = engine?.companion?.protocol;
   return protocol === 'acp' || protocol === 'jsonrpc';
 }
 
-// @kern-source: cesar-session:308
+// @kern-source: cesar-session:316
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
   const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';

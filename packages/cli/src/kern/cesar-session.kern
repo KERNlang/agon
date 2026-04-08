@@ -3,7 +3,7 @@ import from="node:path" names="isAbsolute,resolve"
 import from="node:path" names="join"
 import from="node:fs" names="mkdirSync"
 import from="@agon/core" names="PersistentSession,PersistentSessionConfig" types=true
-import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,resolveWorkingDir,scanProjectContext,createPersistentSession,ToolRegistry,FileStateCache,buildToolSystemPrompt,toolsToOpenAIFormat,executeToolCall,RUNS_DIR"
+import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,resolveWorkingDir,scanProjectContext,createPersistentSession,ToolRegistry,FileStateCache,buildToolSystemPrompt,toolsToOpenAIFormat,executeToolCall,RUNS_DIR,tracker"
 import from="@agon/core" names="ToolContext,ToolCallResult" types=true
 import from="../handlers/types.js" names="HandlerContext" types=true
 import from="./cesar-tools.js" names="createCesarToolRegistry"
@@ -154,6 +154,14 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
 
           // Strip <think> blocks from response
           const cleaned = result.stdout.trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
+
+          // Track token usage — real if available, estimated otherwise
+          if (result.usage) {
+            tracker.record(targetId, { usage: result.usage });
+          } else {
+            tracker.record(targetId, { prompt: task, response: cleaned });
+          }
+
           return `[Delegate → ${targetId}]\n${cleaned}`;
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);

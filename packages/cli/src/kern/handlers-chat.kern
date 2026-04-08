@@ -1,6 +1,6 @@
 import from="node:path" names="join"
 import from="node:fs" names="mkdirSync"
-import from="@agon/core" names="ImageAttachment" types=true
+import from="@agon/core" names="ImageAttachment,DispatchResult" types=true
 import from="@agon/core" names="ensureAgonHome,RUNS_DIR,appendMessage,tracker,StreamParser,loadConfig,scanProjectContext,resolveWorkingDir"
 import from="../output.js" names="ENGINE_COLORS"
 import from="../handlers/types.js" names="Dispatch,HandlerContext" types=true
@@ -87,6 +87,7 @@ fn name=handleChat params="input:string, dispatch:Dispatch, ctx:HandlerContext, 
 
     let response = '';
     let streaming = false;
+    let dispatchResult: DispatchResult | undefined;
 
     try {
       if (useAgent && ctx.adapter.dispatchAgentStream) {
@@ -188,6 +189,7 @@ fn name=handleChat params="input:string, dispatch:Dispatch, ctx:HandlerContext, 
       } else {
         const result = await ctx.adapter.dispatch(dispatchOpts);
         response = result.stdout;
+        dispatchResult = result;
       }
     } catch (err) {
       dispatch({ type: 'spinner-stop' });
@@ -213,7 +215,11 @@ fn name=handleChat params="input:string, dispatch:Dispatch, ctx:HandlerContext, 
     if (response) {
       appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString(), images: images?.map(img => img.path) });
       appendMessage(ctx.chatSession, { role: 'engine', engineId, content: response, timestamp: new Date().toISOString() });
-      tracker.record(engineId, { prompt: input, response });
+      if (dispatchResult?.usage) {
+        tracker.record(engineId, { usage: dispatchResult.usage, model: engine.api?.model });
+      } else {
+        tracker.record(engineId, { prompt: input, response });
+      }
     } else {
       dispatch({ type: 'spinner-stop' });
       dispatch({ type: 'info', message: 'No response.' });

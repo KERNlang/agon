@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { mkdirSync } from 'node:fs';
 
 // @kern-source: handlers-chat:3
-import type { ImageAttachment } from '@agon/core';
+import type { ImageAttachment, DispatchResult } from '@agon/core';
 
 // @kern-source: handlers-chat:4
 import { ensureAgonHome, RUNS_DIR, appendMessage, tracker, StreamParser, loadConfig, scanProjectContext, resolveWorkingDir } from '@agon/core';
@@ -99,6 +99,7 @@ export async function handleChat(input: string, dispatch: Dispatch, ctx: Handler
     
     let response = '';
     let streaming = false;
+    let dispatchResult: DispatchResult | undefined;
     
     try {
       if (useAgent && ctx.adapter.dispatchAgentStream) {
@@ -200,6 +201,7 @@ export async function handleChat(input: string, dispatch: Dispatch, ctx: Handler
       } else {
         const result = await ctx.adapter.dispatch(dispatchOpts);
         response = result.stdout;
+        dispatchResult = result;
       }
     } catch (err) {
       dispatch({ type: 'spinner-stop' });
@@ -225,7 +227,11 @@ export async function handleChat(input: string, dispatch: Dispatch, ctx: Handler
     if (response) {
       appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString(), images: images?.map(img => img.path) });
       appendMessage(ctx.chatSession, { role: 'engine', engineId, content: response, timestamp: new Date().toISOString() });
-      tracker.record(engineId, { prompt: input, response });
+      if (dispatchResult?.usage) {
+        tracker.record(engineId, { usage: dispatchResult.usage, model: engine.api?.model });
+      } else {
+        tracker.record(engineId, { prompt: input, response });
+      }
     } else {
       dispatch({ type: 'spinner-stop' });
       dispatch({ type: 'info', message: 'No response.' });

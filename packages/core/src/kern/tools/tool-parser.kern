@@ -17,6 +17,23 @@ interface name=ParseResult
   field name=textAfter type=string
   field name=hasToolCalls type=boolean
 
+fn name=repairJsonArgs params="raw:string" returns="Record<string,unknown>|null" export=false
+  doc "Repair common LLM JSON malformations: markdown fences, trailing commas, single quotes."
+  handler <<<
+    let s = raw.trim();
+    // Strip markdown fences
+    s = s.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/, '');
+    // Single quotes → double (only if no double quotes present)
+    if (!s.includes('"') && s.includes("'")) s = s.replace(/'/g, '"');
+    // Trailing commas
+    s = s.replace(/,\s*([}\]])/g, '$1');
+    try { return JSON.parse(s); } catch { /* continue */ }
+    // Extract embedded JSON object
+    const m = s.match(/\{[\s\S]*\}/);
+    if (m) { try { return JSON.parse(m[0]); } catch { /* give up */ } }
+    return null;
+  >>>
+
 const name=TOOL_OPEN_PATTERN type=RegExp
   handler <<<
     /<(?:tool|invoke)\s+name="([^"]+)">\s*/g
@@ -73,7 +90,7 @@ fn name=parseGenericToolCallTags params="text:string" returns=ParseResult export
       if (!name) continue;
       let input = parsed.arguments ?? parsed.function?.arguments ?? parsed.input ?? parsed.parameters ?? {};
       if (typeof input === 'string') {
-        try { input = JSON.parse(input); } catch { input = { raw: input }; }
+        try { input = JSON.parse(input); } catch { input = repairJsonArgs(input) ?? { raw: input }; }
       }
 
       if (toolCalls.length === 0) {
@@ -122,7 +139,7 @@ fn name=parseGeminiToolCalls params="text:string" returns=ParseResult export=fal
       // arguments can be a JSON string (OpenAI-style) or object — normalize to object
       let input = parsed.arguments ?? parsed.input ?? {};
       if (typeof input === 'string') {
-        try { input = JSON.parse(input); } catch { input = { raw: input }; }
+        try { input = JSON.parse(input); } catch { input = repairJsonArgs(input) ?? { raw: input }; }
       }
       if (!name) continue;
 
@@ -176,7 +193,7 @@ fn name=parseMistralToolCalls params="text:string" returns=ParseResult export=fa
         if (!name) continue;
         let input = item.arguments ?? item.function?.arguments ?? item.parameters ?? {};
         if (typeof input === 'string') {
-          try { input = JSON.parse(input); } catch { input = { raw: input }; }
+          try { input = JSON.parse(input); } catch { input = repairJsonArgs(input) ?? { raw: input }; }
         }
         toolCalls.push({
           name,
@@ -265,7 +282,7 @@ fn name=parseCohereToolCalls params="text:string" returns=ParseResult export=fal
         if (!name) continue;
         let input = item.parameters ?? item.arguments ?? item.function?.arguments ?? {};
         if (typeof input === 'string') {
-          try { input = JSON.parse(input); } catch { input = { raw: input }; }
+          try { input = JSON.parse(input); } catch { input = repairJsonArgs(input) ?? { raw: input }; }
         }
         toolCalls.push({
           name,

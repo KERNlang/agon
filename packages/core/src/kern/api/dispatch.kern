@@ -199,6 +199,11 @@ fn name=apiStreamDispatchWithHistory generator=true async=true params="config:Ap
     }
 
     let stdout = '';
+    // Capture structured parts at stream time — compaction folds over these
+    // instead of doing fragile regex extraction on flat text
+    const capturedParts: Array<{kind:'text',text:string}|{kind:'reasoning',text:string}|{kind:'tool_call',toolName:string,toolCallId:string,args:Record<string,unknown>}> = [];
+    let currentTextBuf = '';
+    let currentReasoningBuf = '';
 
     try {
       const streamOpts: any = {
@@ -211,6 +216,31 @@ fn name=apiStreamDispatchWithHistory generator=true async=true params="config:Ap
 
       if (tools && tools.length > 0) {
         streamOpts.tools = convertToolsForSdk(tools);
+      }
+
+      // Apply Anthropic cache control: mark system + last 2 messages as ephemeral
+      // This saves input tokens on multi-turn conversations
+      if (config.format === 'anthropic' && coreMessages.length > 0) {
+        // Cache system prompt (stable across turns)
+        for (const msg of coreMessages) {
+          if ((msg as any).role === 'system') {
+            (msg as any).experimental_providerMetadata = {
+              anthropic: { cacheControl: { type: 'ephemeral' } },
+            };
+            break;
+          }
+        }
+        // Cache last 2 user/assistant messages (recent context)
+        let cached = 0;
+        for (let i = coreMessages.length - 1; i >= 0 && cached < 2; i--) {
+          const role = (coreMessages[i] as any).role;
+          if (role === 'user' || role === 'assistant') {
+            (coreMessages[i] as any).experimental_providerMetadata = {
+              anthropic: { cacheControl: { type: 'ephemeral' } },
+            };
+            cached++;
+          }
+        }
       }
 
       const result = streamText(streamOpts);
@@ -254,24 +284,39 @@ fn name=apiStreamDispatchWithHistory generator=true async=true params="config:Ap
 
         switch (part.type) {
           case 'text-delta': {
-            stdout += (part as any).text;
-            yield (part as any).text;
+            const text = (part as any).text;
+            stdout += text;
+            currentTextBuf += text;
+            yield text;
             break;
           }
           case 'reasoning-delta': {
-            // Treat reasoning content as regular text (matches previous behavior
-            // where reasoning_content was yielded alongside content)
             const text = (part as any).delta ?? '';
             if (text) {
               stdout += text;
+              currentReasoningBuf += text;
               yield text;
             }
             break;
           }
           case 'tool-call': {
-            // Emit as <tool> marker matching Agon's parseToolCalls regex
+            // Flush accumulated text/reasoning buffers as parts
+            if (currentTextBuf) {
+              capturedParts.push({ kind: 'text', text: currentTextBuf });
+              currentTextBuf = '';
+            }
+            if (currentReasoningBuf) {
+              capturedParts.push({ kind: 'reasoning', text: currentReasoningBuf });
+              currentReasoningBuf = '';
+            }
+            // Capture tool call as structured part
+            const toolName = (part as any).toolName ?? 'unknown';
+            const toolCallId = (part as any).toolCallId ?? `call_${Date.now()}`;
             const toolInput = (part as any).input ?? {};
-            const marker = `\n<tool name="${(part as any).toolName}">${JSON.stringify(toolInput)}</tool>\n`;
+            capturedParts.push({ kind: 'tool_call', toolName, toolCallId, args: toolInput });
+
+            // Emit as <tool> marker matching Agon's parseToolCalls regex
+            const marker = `\n<tool name="${toolName}">${JSON.stringify(toolInput)}</tool>\n`;
             stdout += marker;
             yield marker;
             break;
@@ -282,6 +327,10 @@ fn name=apiStreamDispatchWithHistory generator=true async=true params="config:Ap
           }
         }
       }
+
+      // Flush final text/reasoning buffers
+      if (currentTextBuf) capturedParts.push({ kind: 'text', text: currentTextBuf });
+      if (currentReasoningBuf) capturedParts.push({ kind: 'reasoning', text: currentReasoningBuf });
 
       clearTimeout(timer);
 
@@ -297,7 +346,7 @@ fn name=apiStreamDispatchWithHistory generator=true async=true params="config:Ap
           };
         }
       } catch { /* usage tokens optional — extraction failure is non-critical */ }
-      return { exitCode: 0, stdout, stderr: '', durationMs: Date.now() - startTime, timedOut: false, usage };
+      return { exitCode: 0, stdout, stderr: '', durationMs: Date.now() - startTime, timedOut: false, usage, parts: capturedParts };
     } catch (err) {
       clearTimeout(timer);
       const durationMs = Date.now() - startTime;

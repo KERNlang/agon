@@ -65,6 +65,58 @@ export interface ApiAgentResult {
 
 // @kern-source: agent-loop:38
 /**
+ * Attempt to repair malformed JSON tool arguments. Handles common LLM mistakes: markdown fencing, trailing commas, single quotes, unquoted keys.
+ */
+export function repairToolArgs(raw: string): Record<string,unknown>|null {
+  let cleaned = raw.trim();
+  
+  // Strip markdown code fences: ```json ... ``` or ``` ... ```
+  cleaned = cleaned.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/, '');
+  
+  // Fix single quotes → double quotes (but not inside strings)
+  // Only do this if there are no double quotes at all (simple case)
+  if (!cleaned.includes('"') && cleaned.includes("'")) {
+    cleaned = cleaned.replace(/'/g, '"');
+  }
+  
+  // Remove trailing commas before } or ]
+  cleaned = cleaned.replace(/,\s*([}\]])/g, '$1');
+  
+  // Try parsing the cleaned version
+  try { return JSON.parse(cleaned); } catch { /* continue */ }
+  
+  // Last resort: try to extract a JSON object from the string
+  const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    try { return JSON.parse(jsonMatch[0]); } catch { /* give up */ }
+  }
+  
+  return null;
+}
+
+// @kern-source: agent-loop:67
+/**
+ * Auto-correct tool name case mismatches. Maps 'read' → 'Read', 'GREP' → 'Grep', etc.
+ */
+export function repairToolName(name: string, registry: any): string {
+  // Check if exact match exists
+  if (registry.has?.(name) || registry.get?.(name)) return name;
+  
+  // Try common case variants
+  const lower = name.toLowerCase();
+  const capitalized = lower.charAt(0).toUpperCase() + lower.slice(1);
+  
+  // Known tool names in Agon
+  const knownTools = ['Read', 'Edit', 'Write', 'Bash', 'Grep', 'Glob', 'Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Review', 'Delegate', 'Pipeline', 'ReportConfidence', 'ProposePlan'];
+  const match = knownTools.find((t: string) => t.toLowerCase() === lower);
+  if (match) return match;
+  
+  // Fallback to capitalized
+  return capitalized;
+}
+
+// @kern-source: agent-loop:86
+/**
  * Run an API engine with full tool loop. Returns final response after all tool calls resolve.
  */
 export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentResult> {
@@ -157,10 +209,29 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
         tool_calls: extractedCalls.map(tc => ({ id: tc.id, type: 'function', function: { name: tc.name, arguments: tc.arguments } })),
       } as any);
   
-      // Execute tools
+      // Execute tools with repair for malformed args
       for (const tc of extractedCalls) {
         let args: Record<string, unknown> = {};
-        try { args = JSON.parse(tc.arguments); } catch { args = { raw: tc.arguments }; }
+        try {
+          args = JSON.parse(tc.arguments);
+        } catch {
+          // Tool call repair — attempt to fix common malformations
+          const repaired = repairToolArgs(tc.arguments);
+          if (repaired) {
+            args = repaired;
+          } else {
+            // Still broken — send error feedback to model instead of silently passing { raw: ... }
+            messageHistory.push({ role: 'tool', content: `Error: Malformed JSON arguments for tool "${tc.name}". Got: ${tc.arguments.slice(0, 200)}. Please retry with valid JSON.`, tool_call_id: tc.id } as any);
+            totalToolCalls++;
+            continue;
+          }
+        }
+  
+        // Tool name repair — auto-correct case mismatches
+        const canonicalName = repairToolName(tc.name, registry);
+        if (canonicalName !== tc.name) {
+          tc.name = canonicalName;
+        }
   
         if (opts.onToolCall) opts.onToolCall(tc.name, args);
   

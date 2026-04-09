@@ -36,6 +36,8 @@ npm run kern:compile
 Installed via `kern-lang` npm package (^3.1.7). Available in all packages via `node_modules/.bin/kern`.
 Available primitives: `fn`, `service`, `union`, `interface`, `const`, `import`, `machine`, `event`, `screen`
 
+**KERN docs via MCP**: This project includes `.mcp.json` with Context7. Use `resolve-library-id` with `/kernlang/kern` to get KERN syntax reference and examples (348 snippets).
+
 ## Build & Test
 
 ```bash

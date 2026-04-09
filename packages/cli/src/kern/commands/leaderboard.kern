@@ -1,0 +1,102 @@
+import from="citty" names="defineCommand"
+import from="@agon/core" names="getRatings,advisorScore"
+import from="@agon/core" names="GlickoRating" types=true
+import from="../blocks/output-format.js" names="header,table,bold,dim,info"
+
+const name=leaderboardCommand type="ReturnType<typeof defineCommand>"
+  handler <<<
+    defineCommand({
+      meta: {
+        name: 'leaderboard',
+        description: 'Show engine leaderboard (Glicko-2 ratings)',
+      },
+      args: {
+        taskClass: {
+          type: 'string',
+          alias: 'c',
+          description: 'Filter by task class (algorithm, refactor, bugfix, test, docs, feature)',
+        },
+        mode: {
+          type: 'string',
+          alias: 'm',
+          description: 'Filter by mode: forge, brainstorm, tribunal',
+        },
+      },
+      run({ args }) {
+        const ratings = getRatings();
+        const mode = args.mode as 'forge' | 'brainstorm' | 'tribunal' | undefined;
+
+        // Select rating scope
+        let scope: Record<string, GlickoRating>;
+        let title: string;
+
+        if (args.taskClass) {
+          scope = ratings.byTaskClass[args.taskClass] ?? {};
+          title = `Leaderboard: ${args.taskClass}`;
+        } else if (mode && ratings.byMode[mode]) {
+          scope = ratings.byMode[mode];
+          title = `Leaderboard: ${mode.charAt(0).toUpperCase() + mode.slice(1)}`;
+        } else {
+          scope = ratings.global;
+          title = 'Global Leaderboard';
+        }
+
+        header(title);
+
+        // Sort by confidence floor (mu - 2*phi)
+        const sorted = Object.entries(scope)
+          .map(([id, r]) => {
+            const floor = Math.round(r.mu - 2 * r.phi);
+            const matches = r.wins + r.losses;
+            const provisional = matches < 30;
+            return { id, r, floor, matches, provisional };
+          })
+          .sort((a, b) => b.floor - a.floor);
+
+        if (sorted.length === 0) {
+          info(mode
+            ? `No ${mode} matches recorded. Run \`agon ${mode}\` to start competing!`
+            : 'No matches recorded. Run `agon forge` to start competing!');
+          return;
+        }
+
+        const rows = sorted.map((e, i) => [
+          `${i + 1}.`,
+          bold(e.id) + (e.provisional ? dim(' *') : ''),
+          String(e.r.mu),
+          `+-${Math.round(e.r.phi)}`,
+          String(e.floor),
+          String(e.r.wins),
+          String(e.r.losses),
+          `${e.matches > 0 ? Math.round((e.r.wins / e.matches) * 100) : 0}%`,
+        ]);
+
+        table(['#', 'Engine', 'Rating', '+/-', 'Floor', 'W', 'L', 'Win%'], rows);
+
+        // Show provisional legend if any
+        if (sorted.some(e => e.provisional)) {
+          console.log('');
+          info(dim('* = provisional (< 30 matches, rating still calibrating)'));
+        }
+
+        // Show mode breakdown summary if showing global
+        if (!mode && !args.taskClass) {
+          const modes = ['forge', 'brainstorm', 'tribunal'] as const;
+          const modeInfo = modes
+            .filter(m => Object.keys(ratings.byMode[m]).length > 0)
+            .map(m => {
+              const count = Object.values(ratings.byMode[m]).reduce((s, r) => s + r.wins + r.losses, 0);
+              return `${m}: ${count} matches`;
+            });
+          if (modeInfo.length > 0) {
+            console.log('');
+            info(`Modes: ${modeInfo.join(' | ')}`);
+            info('Use --mode <forge|brainstorm|tribunal> for per-mode ratings');
+          }
+        }
+
+        console.log('');
+        info(dim(`Glicko-2 | Floor = rating - 2x uncertainty | Last updated: ${ratings.lastUpdated}`));
+      },
+    }) as ReturnType<typeof defineCommand>
+  >>>

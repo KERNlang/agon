@@ -3,7 +3,7 @@ import {
   loadEngineMemory, addEngineNote, setEngineStrengths,
   setEngineWeaknesses, addEngineTendency, getEngineProfile,
   buildRolePrompt, recordForgeOutcome,
-} from '../../packages/core/src/generated/engine-memory.js';
+} from '../../packages/core/src/generated/blocks/engine-memory.js';
 import { rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';

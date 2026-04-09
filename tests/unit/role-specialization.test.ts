@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { rankByTaskClass, assignForgeRoles } from '../../packages/core/src/generated/role-specialization.js';
+import { rankByTaskClass, assignForgeRoles } from '../../packages/core/src/generated/blocks/role-specialization.js';
 
 describe('RoleSpecialization', () => {
   describe('rankByTaskClass', () => {

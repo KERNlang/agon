@@ -48,7 +48,8 @@ afterEach(() => {
 });
 
 describe('persistent session streaming dedupe', () => {
-  it('dedupes Codex companion completed messages after deltas', async () => {
+  it('dedupes Codex companion completed messages after deltas and forwards MCP servers on thread start', async () => {
+    let threadStartParams: Record<string, unknown> | null = null;
     spawnMock.mockImplementationOnce(() => createMockProcess((line, stdout) => {
       const msg = JSON.parse(line);
 
@@ -58,6 +59,7 @@ describe('persistent session streaming dedupe', () => {
       }
 
       if (msg.id && msg.method === 'thread/start') {
+        threadStartParams = msg.params;
         stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { thread: { id: 'thread-1' } } }) + '\n');
         return;
       }
@@ -88,7 +90,7 @@ describe('persistent session streaming dedupe', () => {
       }
     }));
 
-    const { createCompanionSession } = await import('../../packages/core/src/generated/persistent-session.js');
+    const { createCompanionSession } = await import('../../packages/core/src/generated/sessions/persistent-session.js');
     const session = createCompanionSession({
       engine: {
         id: 'codex',
@@ -98,12 +100,62 @@ describe('persistent session streaming dedupe', () => {
       binaryPath: '/usr/local/bin/codex',
       cwd: process.cwd(),
       systemPrompt: 'You are helpful.',
+      mcpServers: [{ name: 'github', command: 'npx', args: ['-y', '@modelcontextprotocol/server-github'] }],
     });
 
     await session.start();
     const text = (await collectTextChunks(session.send({ message: 'hey' }))).join('');
 
     expect(text).toBe('Hey. What do you need help with in Agon-AI?');
+    expect(threadStartParams).toMatchObject({
+      cwd: process.cwd(),
+      mcpServers: [{ name: 'github', command: 'npx', args: ['-y', '@modelcontextprotocol/server-github'] }],
+    });
+  });
+
+  it('uses developerInstructions (not instructions) in thread/start params', async () => {
+    let capturedParams: Record<string, unknown> | null = null;
+    spawnMock.mockImplementationOnce(() => createMockProcess((line, stdout) => {
+      const msg = JSON.parse(line);
+
+      if (msg.id && msg.method === 'initialize') {
+        stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: {} }) + '\n');
+        return;
+      }
+
+      if (msg.id && msg.method === 'thread/start') {
+        capturedParams = msg.params;
+        stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { thread: { id: 'thread-2' } } }) + '\n');
+        return;
+      }
+
+      if (msg.id && msg.method === 'turn/start') {
+        stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: {} }) + '\n');
+        stdout.write(JSON.stringify({ jsonrpc: '2.0', method: 'item/agentMessage/delta', params: { delta: 'OK' } }) + '\n');
+        stdout.write(JSON.stringify({ jsonrpc: '2.0', method: 'item/completed', params: { item: { type: 'agentMessage', text: 'OK' } } }) + '\n');
+        stdout.write(JSON.stringify({ jsonrpc: '2.0', method: 'turn/completed', params: {} }) + '\n');
+      }
+    }));
+
+    const { createCompanionSession } = await import('../../packages/core/src/generated/sessions/persistent-session.js');
+    const session = createCompanionSession({
+      engine: {
+        id: 'codex',
+        binary: 'codex',
+        companion: { protocol: 'jsonrpc', serverCmd: ['app-server'] },
+      } as any,
+      binaryPath: '/usr/local/bin/codex',
+      cwd: process.cwd(),
+      systemPrompt: 'You are a coding assistant.',
+    });
+
+    await session.start();
+    await collectTextChunks(session.send({ message: 'hi' }));
+
+    expect(capturedParams).toBeDefined();
+    // Must use developerInstructions, NOT instructions
+    expect((capturedParams as any).developerInstructions).toBe('You are a coding assistant.');
+    expect((capturedParams as any).instructions).toBeUndefined();
   });
 
   it('dedupes Claude result text after streamed deltas and assistant snapshot', async () => {
@@ -144,7 +196,7 @@ describe('persistent session streaming dedupe', () => {
       return proc;
     });
 
-    const { createStreamJsonSession } = await import('../../packages/core/src/generated/persistent-session.js');
+    const { createStreamJsonSession } = await import('../../packages/core/src/generated/sessions/persistent-session.js');
     const session = createStreamJsonSession({
       engine: { id: 'claude', binary: 'claude' } as any,
       binaryPath: '/usr/local/bin/claude',

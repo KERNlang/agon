@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { splitPromptBlocks, mergeBlocksByRole } from '../../packages/core/src/generated/prompt-builder.js';
+import { splitPromptBlocks, mergeBlocksByRole } from '../../packages/core/src/generated/blocks/prompt-builder.js';
 
 describe('Prompt Caching', () => {
   describe('splitPromptBlocks', () => {

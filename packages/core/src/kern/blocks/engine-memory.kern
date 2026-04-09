@@ -1,0 +1,149 @@
+import from="node:fs" names="readFileSync,writeFileSync,mkdirSync,renameSync"
+import from="node:path" names="join"
+import from="../signals/config.js" names="AGON_HOME"
+import from="../models/types.js" names="TaskClass" types=true
+
+interface name=EngineNote
+  field name=taskClass type=TaskClass
+  field name=observation type=string
+  field name=timestamp type=string
+  field name=forgeId type=string optional=true
+
+interface name=EngineProfile
+  field name=strengths type="string[]"
+  field name=weaknesses type="string[]"
+  field name=tendencies type="string[]"
+  field name=notes type="EngineNote[]"
+
+interface name=EngineMemoryRecord
+  field name=engines type="Record<string,EngineProfile>"
+  field name=lastUpdated type=string
+
+const name=MEMORY_PATH type=string
+  handler <<<
+    join(AGON_HOME, 'engine-memory.json')
+  >>>
+
+fn name=loadEngineMemory returns=EngineMemoryRecord
+  handler <<<
+    try { return JSON.parse(readFileSync(MEMORY_PATH, 'utf-8')) as EngineMemoryRecord; }
+    catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+        console.warn(`[agon] failed to load engine memory: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      return { engines: {}, lastUpdated: new Date().toISOString() };
+    }
+  >>>
+
+fn name=saveEngineMemory params="record:EngineMemoryRecord" returns=void export=false
+  handler <<<
+    mkdirSync(AGON_HOME, { recursive: true });
+    record.lastUpdated = new Date().toISOString();
+    const tmpPath = MEMORY_PATH + '.tmp';
+    writeFileSync(tmpPath, JSON.stringify(record, null, 2) + '\n');
+    renameSync(tmpPath, MEMORY_PATH);
+  >>>
+
+fn name=ensureProfile params="record:EngineMemoryRecord, engineId:string" returns=EngineProfile export=false
+  handler <<<
+    if (!record.engines[engineId]) {
+      record.engines[engineId] = { strengths: [], weaknesses: [], tendencies: [], notes: [] };
+    }
+    return record.engines[engineId];
+  >>>
+
+fn name=addEngineNote params="engineId:string, taskClass:TaskClass, observation:string, forgeId?:string" returns=void
+  handler <<<
+    const record = loadEngineMemory();
+    const profile = ensureProfile(record, engineId);
+    profile.notes.push({
+      taskClass,
+      observation,
+      timestamp: new Date().toISOString(),
+      forgeId,
+    });
+    // Keep only last 50 notes per engine
+    if (profile.notes.length > 50) {
+      profile.notes = profile.notes.slice(-50);
+    }
+    saveEngineMemory(record);
+  >>>
+
+fn name=setEngineStrengths params="engineId:string, strengths:string[]" returns=void
+  handler <<<
+    const record = loadEngineMemory();
+    const profile = ensureProfile(record, engineId);
+    profile.strengths = strengths;
+    saveEngineMemory(record);
+  >>>
+
+fn name=setEngineWeaknesses params="engineId:string, weaknesses:string[]" returns=void
+  handler <<<
+    const record = loadEngineMemory();
+    const profile = ensureProfile(record, engineId);
+    profile.weaknesses = weaknesses;
+    saveEngineMemory(record);
+  >>>
+
+fn name=addEngineTendency params="engineId:string, tendency:string" returns=void
+  handler <<<
+    const record = loadEngineMemory();
+    const profile = ensureProfile(record, engineId);
+    if (!profile.tendencies.includes(tendency)) {
+      profile.tendencies.push(tendency);
+      if (profile.tendencies.length > 10) profile.tendencies = profile.tendencies.slice(-10);
+    }
+    saveEngineMemory(record);
+  >>>
+
+fn name=getEngineProfile params="engineId:string" returns="EngineProfile|null"
+  handler <<<
+    const record = loadEngineMemory();
+    return record.engines[engineId] ?? null;
+  >>>
+
+fn name=buildRolePrompt params="engineId:string, taskClass:TaskClass" returns=string
+  handler <<<
+    const profile = getEngineProfile(engineId);
+    if (!profile) return '';
+
+    const parts: string[] = [];
+
+    if (profile.strengths.length > 0) {
+      parts.push(`Your known strengths: ${profile.strengths.join(', ')}.`);
+    }
+    if (profile.weaknesses.length > 0) {
+      parts.push(`Watch out for: ${profile.weaknesses.join(', ')}.`);
+    }
+
+    // Recent notes for this task class
+    const classNotes = profile.notes
+      .filter((n) => n.taskClass === taskClass)
+      .slice(-3)
+      .map((n) => n.observation);
+    if (classNotes.length > 0) {
+      parts.push(`Recent observations on ${taskClass} tasks: ${classNotes.join('; ')}.`);
+    }
+
+    if (profile.tendencies.length > 0) {
+      parts.push(`Known tendencies: ${profile.tendencies.join(', ')}.`);
+    }
+
+    return parts.length > 0
+      ? `\n## YOUR PROFILE (based on past performance)\n${parts.join('\n')}`
+      : '';
+  >>>
+
+fn name=recordForgeOutcome params="winnerId:string, loserIds:string[], taskClass:TaskClass, forgeId:string, winnerScore:number, loserScores:Record<string,number>" returns=void
+  handler <<<
+    // Auto-populate notes from forge outcomes
+    addEngineNote(winnerId, taskClass, `Won ${taskClass} forge (score ${winnerScore})`, forgeId);
+    for (const loserId of loserIds) {
+      const score = loserScores[loserId] ?? 0;
+      if (score === 0) {
+        addEngineNote(loserId, taskClass, `Failed ${taskClass} forge (did not pass fitness)`, forgeId);
+      } else {
+        addEngineNote(loserId, taskClass, `Lost ${taskClass} forge (score ${score} vs winner ${winnerScore})`, forgeId);
+      }
+    }
+  >>>

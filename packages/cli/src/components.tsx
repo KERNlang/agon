@@ -10,28 +10,28 @@ export {
   CODE_RAIL, CODE_RAIL_COLOR, MAX_CODE_LINES,
   SYN_KEYWORD, SYN_STRING, SYN_COMMENT, SYN_NUMBER, SYN_TYPE, SYN_PUNCT, SYN_FN,
   KEYWORDS, TYPES,
-} from './generated/ui-rendering.js';
-export type { SyntaxToken } from './generated/ui-rendering.js';
+} from './generated/blocks/rendering.js';
+export type { SyntaxToken } from './generated/blocks/rendering.js';
 
 // Engine display
 export {
   EngineProgressView, EngineBlock, ConversationalResponse,
-  OutputBlockView,
+  OutputBlockView, ToolCallGroup,
   BRAND, LOGO_LINES, VERSION,
-} from './generated/ui-engine.js';
-export type { OutputBlock } from './generated/ui-engine.js';
+} from './generated/blocks/engine.js';
+export type { OutputBlock } from './generated/blocks/engine.js';
 
 // Controls
 export {
-  SlashPicker, EnginePicker, ReviewBlock,
-} from './generated/ui-controls.js';
-export type { ReviewEvent } from './generated/ui-controls.js';
+  SlashPicker, EnginePicker, ModelPicker, ReviewBlock, CesarPicker,
+} from './generated/blocks/controls.js';
+export type { ReviewEvent, ModelPickerEntry } from './generated/blocks/controls.js';
 
 // Status
 export {
   SpinnerBlock, TokenGauge, StatusBar, StatusLine, BackgroundJobRail,
-  AGON_TIPS,
-} from './generated/ui-status.js';
+  CesarStatusStrip, AGON_TIPS,
+} from './generated/surfaces/status.js';
 
 // Re-export ENGINE_COLORS from output for backward compat
 export { ENGINE_COLORS } from './output.js';

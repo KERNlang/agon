@@ -1,0 +1,21 @@
+// @kern-source: ghost-text:1
+export function getGhostCompletion(input: string, commands: Array<{cmd:string}>, engineIds?: string[]): string|null {
+  if (!input || !input.startsWith('/')) return null;
+  
+  // Only complete engine names after /use.
+  // Command names are handled by the slash picker so the input does not feel eager.
+  if (engineIds && engineIds.length > 0) {
+    const cesarMatch = input.match(/^\/(use)\s+(\S*)$/i);
+    if (cesarMatch) {
+      const partial = cesarMatch[2].toLowerCase();
+      for (const id of engineIds) {
+        if (id.toLowerCase().startsWith(partial) && id.length > partial.length) {
+          return id.slice(partial.length);
+        }
+      }
+    }
+  }
+  
+  return null;
+}
+

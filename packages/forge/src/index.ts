@@ -10,3 +10,20 @@ export type { StageResult, SynthesisResult, ForgeEventCallback, WorktreeEntry } 
 export type { TribunalResult, TribunalRound, TribunalPosition } from './tribunal.js';
 export { getModeConfig, buildModePrompt, buildModeSummaryPrompt, isTribunalMode, TRIBUNAL_MODES } from './tribunal-modes.js';
 export type { TribunalMode, TribunalModeConfig } from './tribunal-modes.js';
+// ── Gauntlet ──
+export { runGauntlet } from './generated/gauntlet.js';
+export { addToCorpus, getCorpusForReplay, getGapPatterns, getCorpusStats, loadCorpus } from './generated/corpus.js';
+export type { CorpusRecord } from './generated/corpus.js';
+// ── Team Competition ──
+export { runTeamForge } from './generated/team-forge.js';
+export type { TeamForgeOptions } from './generated/team-forge.js';
+export { runTeamTribunal } from './generated/team-tribunal.js';
+export type { TeamTribunalOptions } from './generated/team-tribunal.js';
+export { runTeamBrainstorm } from './generated/team-brainstorm.js';
+export type { TeamBrainstormOptions } from './generated/team-brainstorm.js';
+// ── Campfire ──
+export { runCampfire } from './generated/campfire.js';
+export type { CampfireResult } from './generated/campfire.js';
+// ── Delegate ──
+export { runDelegate } from './generated/delegate.js';
+export type { DelegateResult } from './generated/delegate.js';

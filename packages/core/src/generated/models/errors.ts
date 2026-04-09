@@ -1,0 +1,81 @@
+// @kern-source: errors:1
+export class AgonError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'AgonError';
+  }
+}
+
+// @kern-source: errors:3
+export class EngineNotFoundError extends AgonError {
+  constructor(
+    public readonly engineId: string,
+    public readonly installHint?: string,
+  ) {
+    const hint = installHint ? `. Install: ${installHint}` : '';
+    super(`Engine "${engineId}" not found${hint}`);
+    this.name = 'EngineNotFoundError';
+  }
+}
+
+// @kern-source: errors:12
+export class EngineTimeoutError extends AgonError {
+  constructor(
+    public readonly engineId: string,
+    public readonly timeoutMs: number,
+  ) {
+    super(`Engine "${engineId}" timed out after ${Math.round(timeoutMs / 1000)}s`);
+    this.name = 'EngineTimeoutError';
+  }
+}
+
+// @kern-source: errors:20
+export class FitnessError extends AgonError {
+  constructor(
+    message: string,
+    public readonly exitCode?: number,
+  ) {
+    super(message);
+    this.name = 'FitnessError';
+  }
+}
+
+// @kern-source: errors:24
+export class ConfigError extends AgonError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ConfigError';
+  }
+}
+
+// @kern-source: errors:26
+export class GitError extends AgonError {
+  constructor(
+    message: string,
+    public readonly exitCode?: number,
+  ) {
+    super(message);
+    this.name = 'GitError';
+  }
+}
+
+// @kern-source: errors:30
+export class WorktreeError extends GitError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'WorktreeError';
+  }
+}
+
+// @kern-source: errors:32
+export class PlanStateError extends AgonError {
+  constructor(
+    public readonly expected: string|string[],
+    public readonly actual: string,
+  ) {
+    const expectedStr = Array.isArray(expected) ? expected.join(' | ') : expected;
+    super(`Invalid plan state: expected ${expectedStr}, got ${actual}`);
+    this.name = 'PlanStateError';
+  }
+}
+

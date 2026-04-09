@@ -30,6 +30,13 @@
     "default": null
   },
 
+  "api": {
+    "baseUrl": "https://api.openai.com/v1",
+    "apiKeyEnv": "OPENAI_API_KEY",
+    "model": "o3-mini",
+    "maxTokens": 4096
+  },
+
   "env": {
     "OPENAI_API_KEY": { "required": false }
   },

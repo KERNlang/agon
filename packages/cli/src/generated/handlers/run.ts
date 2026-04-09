@@ -1,0 +1,75 @@
+// @kern-source: run:1
+import { spawnWithTimeout } from '@agon/core';
+
+// @kern-source: run:2
+import type { Dispatch, HandlerContext } from '../../handlers/types.js';
+
+// @kern-source: run:4
+export const RUN_DANGEROUS: readonly string[] = ['rm -rf /', 'dd if=', 'mkfs', '> /dev/', 'chmod 777', 'curl | sh', 'wget | sh'];
+
+// @kern-source: run:9
+export const RUN_SAFE: readonly string[] = ['ls', 'cat', 'head', 'tail', 'echo', 'pwd', 'which', 'date', 'wc', 'find', 'grep', 'tree',
+ 'git status', 'git log', 'git diff', 'git branch', 'npm test', 'npm run'];
+
+// @kern-source: run:15
+export async function handleRun(command: string, dispatch: Dispatch, ctx: HandlerContext): Promise<void> {
+  if (!command.trim()) {
+    dispatch({ type: 'error', message: 'Usage: /run <command>' });
+    return;
+  }
+  
+  const lower = command.trim().toLowerCase();
+  
+  // Block dangerous commands
+  for (const prefix of RUN_DANGEROUS) {
+    if (lower.startsWith(prefix)) {
+      dispatch({ type: 'error', message: `Blocked dangerous command: ${prefix}` });
+      return;
+    }
+  }
+  
+  // Detect shell metacharacters — any command with chaining/piping is NOT safe
+  const hasShellMeta = /[;&|`$(){}<>]|\bif\b|\bthen\b|\bwhile\b/.test(command);
+  
+  // Auto-allow safe commands ONLY if no shell metacharacters present
+  const isSafe = !hasShellMeta && RUN_SAFE.some(s => lower.startsWith(s));
+  if (!isSafe) {
+    const answer = await ctx.askQuestion(`Run: ${command.length > 60 ? command.slice(0, 60) + '…' : command} — proceed? (y/n)`);
+    if (!answer.toLowerCase().startsWith('y')) {
+      dispatch({ type: 'info', message: 'Cancelled' });
+      return;
+    }
+  }
+  
+  dispatch({ type: 'spinner-start', message: `Running: ${command.slice(0, 60)}` });
+  
+  try {
+    // Show as tool-call for consistent display
+    dispatch({ type: 'tool-call', engineId: 'run', tool: 'Bash', input: JSON.stringify({ command }), status: 'running' } as any);
+  
+    const result = await spawnWithTimeout({
+      command: '/bin/sh',
+      args: ['-c', command],
+      cwd: process.cwd(),
+      timeout: 60000,
+    });
+  
+    dispatch({ type: 'spinner-stop' });
+  
+    const output = [result.stdout, result.stderr].filter(Boolean).join('\n').trim();
+    const exitInfo = result.timedOut ? 'timed out (60s)' : `exit ${result.exitCode}`;
+  
+    dispatch({
+      type: 'tool-call',
+      engineId: 'run',
+      tool: 'Bash',
+      input: JSON.stringify({ command, description: `[${exitInfo}] ${(result.durationMs / 1000).toFixed(1)}s` }),
+      status: result.exitCode === 0 ? 'done' : 'error',
+      output: output || '(no output)',
+    } as any);
+  } catch (err) {
+    dispatch({ type: 'spinner-stop' });
+    dispatch({ type: 'error', message: `Failed: ${err instanceof Error ? err.message : String(err)}` });
+  }
+}
+

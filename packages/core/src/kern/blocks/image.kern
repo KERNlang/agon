@@ -1,0 +1,97 @@
+import from="node:fs" names="existsSync"
+import from="node:path" names="resolve,basename,extname"
+import from="node:os" names="homedir"
+import from="../models/types.js" names="ImageAttachment" types=true
+
+const name=IMAGE_EXTENSIONS type="Set<string>"
+  handler <<< new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp']) >>>
+
+const name=MIME_MAP type="Record<string,string>"
+  handler <<<
+    ({
+      '.png': 'image/png',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.gif': 'image/gif',
+      '.webp': 'image/webp',
+      '.svg': 'image/svg+xml',
+      '.bmp': 'image/bmp',
+    })
+  >>>
+
+const name=IMAGE_PATH_REGEX type=RegExp
+  handler <<< /(?:^|\s)((?:\/[\w.\-]+)+\.(?:png|jpe?g|gif|webp|svg|bmp)|~\/[\w.\-\/]+\.(?:png|jpe?g|gif|webp|svg|bmp)|\.{1,2}\/[\w.\-\/]+\.(?:png|jpe?g|gif|webp|svg|bmp))/gi >>>
+
+const name=IMG_CMD_REGEX type=RegExp
+  handler <<< /^\/img\s+(.+)$/i >>>
+
+fn name=isImagePath params="filePath:string" returns="boolean"
+  handler <<<
+    const ext = extname(filePath).toLowerCase();
+    return IMAGE_EXTENSIONS.has(ext);
+  >>>
+
+fn name=mimeFromExt params="filePath:string" returns="string"
+  handler <<<
+    const ext = extname(filePath).toLowerCase();
+    return MIME_MAP[ext] ?? 'application/octet-stream';
+  >>>
+
+fn name=resolveImagePath params="rawPath:string, cwd:string" returns="string|null"
+  handler <<<
+    let resolved: string;
+    if (rawPath.startsWith('~/')) {
+      resolved = resolve(homedir(), rawPath.slice(2));
+    } else if (rawPath.startsWith('/')) {
+      resolved = resolve(rawPath);
+    } else {
+      resolved = resolve(cwd, rawPath);
+    }
+    return existsSync(resolved) ? resolved : null;
+  >>>
+
+fn name=buildImageAttachment params="rawPath:string, cwd:string" returns="ImageAttachment|null"
+  handler <<<
+    const resolved = resolveImagePath(rawPath.trim(), cwd);
+    if (!resolved) return null;
+    return {
+      path: resolved,
+      filename: basename(resolved),
+      mimeType: mimeFromExt(resolved),
+    };
+  >>>
+
+fn name=extractImagesFromInput params="input:string, cwd:string" returns="{text:string, images:ImageAttachment[]}"
+  handler <<<
+    const images: ImageAttachment[] = [];
+
+    // Handle /img <path> command
+    const imgCmdMatch = IMG_CMD_REGEX.exec(input.trim());
+    if (imgCmdMatch) {
+      const att = buildImageAttachment(imgCmdMatch[1], cwd);
+      if (att) images.push(att);
+      return { text: '', images };
+    }
+
+    // Detect image paths in mixed text
+    let text = input;
+    const pathRegex = new RegExp(IMAGE_PATH_REGEX.source, 'gi');
+    let match: RegExpExecArray | null;
+    const paths: string[] = [];
+
+    while ((match = pathRegex.exec(input)) !== null) {
+      const rawPath = match[1].trim();
+      const att = buildImageAttachment(rawPath, cwd);
+      if (att) {
+        images.push(att);
+        paths.push(match[0]);
+      }
+    }
+
+    for (const p of paths) {
+      text = text.replace(p, '');
+    }
+    text = text.replace(/\s{2,}/g, ' ').trim();
+
+    return { text, images };
+  >>>

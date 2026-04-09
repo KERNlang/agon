@@ -1,3 +1,3 @@
 // ── Re-export from KERN-generated types ─────────────────────────────
 // Source of truth: src/kern/types.kern
-export * from './generated/types.js';
+export * from './generated/models/types.js';

@@ -1,0 +1,279 @@
+// @kern-source: team:4
+import { randomUUID } from 'node:crypto';
+
+// @kern-source: team:5
+import type { TaskClass } from '../models/types.js';
+
+// @kern-source: team:6
+import { getRatings } from '../signals/glicko.js';
+
+// @kern-source: team:8
+export type TeamRole = 'architect' | 'implementer' | 'reviewer' | 'captain';
+
+// @kern-source: team:9
+export type TeamComposeMode = 'explicit' | 'auto-balanced' | 'adaptive';
+
+// @kern-source: team:10
+export type TeamCoopStrategy = 'sequential' | 'parallel-merge' | 'role-based';
+
+// @kern-source: team:12
+export interface TeamMember {
+  engineId: string;
+  role: TeamRole;
+  weight: number;
+}
+
+// @kern-source: team:17
+export interface TeamSpec {
+  teamId: string;
+  name: string;
+  lineupKey: string;
+  source: TeamComposeMode;
+  members: TeamMember[];
+  aggregateElo: number;
+}
+
+// @kern-source: team:25
+export interface TeamFormat {
+  membersPerSide: number;
+  label: string;
+}
+
+// @kern-source: team:29
+export interface TeamRoundTrace {
+  round: number;
+  actor: string;
+  role: TeamRole;
+  action: 'planned'|'implemented'|'reviewed-accept'|'reviewed-reject'|'finalized';
+  artifactSummary: string;
+  durationMs: number;
+}
+
+// @kern-source: team:37
+export interface TeamSubmission {
+  teamId: string;
+  finalOutput: any;
+  trace: TeamRoundTrace[];
+  totalTokens: number;
+  wallClockMs: number;
+  collaborationLift: number;
+}
+
+// @kern-source: team:45
+export interface TeamScoreCard {
+  teamId: string;
+  score: number;
+  breakdown: Record<string,number>;
+}
+
+// @kern-source: team:50
+export interface TeamMatchResult {
+  matchId: string;
+  mode: 'forge'|'tribunal'|'brainstorm';
+  task: string;
+  format: TeamFormat;
+  teams: [TeamSpec, TeamSpec];
+  submissions: Record<string,TeamSubmission>;
+  scorecards: Record<string,TeamScoreCard>;
+  winnerTeamId: string|null;
+  timestamp: string;
+}
+
+// @kern-source: team:61
+export type TeamEventType = 'team:compose' | 'team:round-start' | 'team:member-dispatch' | 'team:member-done' | 'team:round-done' | 'team:submit' | 'team:score' | 'team:winner' | 'team:match-done';
+
+export interface TeamEvent {
+  type: TeamEventType;
+  engineId?: string;
+  data?: Record<string, unknown>;
+}
+
+export interface TeamEventMap {
+  'team:compose': { teams: [TeamSpec, TeamSpec] };
+  'team:round-start': { teamId: string, round: number };
+  'team:member-dispatch': { teamId: string, engineId: string, role: string };
+  'team:member-done': { teamId: string, engineId: string };
+  'team:round-done': { teamId: string, round: number };
+  'team:submit': { teamId: string };
+  'team:score': { teamId: string, score: number };
+  'team:winner': { winnerTeamId: string|null };
+  'team:match-done': Record<string, unknown>;
+}
+
+export type TeamEventCallback = (event: TeamEvent) => void;
+
+// @kern-source: team:72
+export function lineupKey(engineIds: string[]): string {
+  return [...engineIds].sort().join('+');
+}
+
+// @kern-source: team:77
+export function makeFormat(membersPerSide: number): TeamFormat {
+  return { membersPerSide, label: `${membersPerSide}v${membersPerSide}` };
+}
+
+// @kern-source: team:82
+export function assignTeamRoles(engineIds: string[], taskClass: TaskClass): TeamMember[] {
+  const ratings = getRatings();
+  const classRatings = ratings.byTaskClass[taskClass] ?? {};
+  const globalRatings = ratings.global;
+  
+  // Rank engines by Glicko-2 confidence floor
+  const ranked = [...engineIds].sort((a, b) => {
+    const aR = classRatings[a] ?? globalRatings[a];
+    const bR = classRatings[b] ?? globalRatings[b];
+    const aFloor = aR ? aR.mu - 2 * aR.phi : 100;
+    const bFloor = bR ? bR.mu - 2 * bR.phi : 100;
+    if (aFloor !== bFloor) return bFloor - aFloor;
+    return Math.random() - 0.5;
+  });
+  
+  const n = ranked.length;
+  const members: TeamMember[] = [];
+  
+  if (n === 1) {
+    // Solo — engine does everything (captain)
+    members.push({ engineId: ranked[0], role: 'captain', weight: 1.0 });
+  } else if (n === 2) {
+    // 2v2 — architect+implementer, architect also reviews
+    members.push({ engineId: ranked[0], role: 'architect', weight: 0.6 });
+    members.push({ engineId: ranked[1], role: 'implementer', weight: 0.4 });
+  } else if (n === 3) {
+    // 3v3 — architect + implementer + reviewer
+    members.push({ engineId: ranked[0], role: 'architect', weight: 0.4 });
+    members.push({ engineId: ranked[1], role: 'implementer', weight: 0.35 });
+    members.push({ engineId: ranked[2], role: 'reviewer', weight: 0.25 });
+  } else {
+    // 4+ — architect + N-2 implementers + reviewer
+    members.push({ engineId: ranked[0], role: 'architect', weight: 0.35 });
+    const implWeight = 0.45 / (n - 2);
+    for (let i = 1; i < n - 1; i++) {
+      members.push({ engineId: ranked[i], role: 'implementer', weight: implWeight });
+    }
+    members.push({ engineId: ranked[n - 1], role: 'reviewer', weight: 0.20 });
+  }
+  
+  return members;
+}
+
+// @kern-source: team:126
+export function composeTeams(engineIds: string[], membersPerSide: number, mode: TeamComposeMode, taskClass: TaskClass, explicitTeams?: [string[], string[]]): [TeamSpec, TeamSpec] {
+  const ratings = getRatings();
+  
+  function engineElo(id: string): number {
+    const r = ratings.byTaskClass[taskClass]?.[id] ?? ratings.global[id];
+    return r ? Math.round(r.mu - 2 * r.phi) : 100;
+  }
+  
+  let teamA: string[];
+  let teamB: string[];
+  
+  if (mode === 'explicit' && explicitTeams) {
+    teamA = explicitTeams[0];
+    teamB = explicitTeams[1];
+  
+    // Validate explicit teams — engines CAN appear on both teams (different roles, independent dispatches)
+    if (teamA.length === 0 || teamB.length === 0) {
+      throw new Error('Explicit teams must each have at least one member');
+    }
+    if (teamA.length !== membersPerSide || teamB.length !== membersPerSide) {
+      throw new Error(`Explicit teams must each have exactly ${membersPerSide} members for ${membersPerSide}v${membersPerSide} format`);
+    }
+  } else if (mode === 'auto-balanced') {
+    // Engines CAN appear on both teams — they're API calls, not physical resources
+    // Fill each team to membersPerSide, reusing engines across teams as needed
+    const sorted = [...engineIds].sort((a, b) => engineElo(b) - engineElo(a));
+    teamA = [];
+    teamB = [];
+  
+    // Round-robin: alternate picks, wrapping around the engine pool
+    for (let i = 0; i < membersPerSide; i++) {
+      teamA.push(sorted[i % sorted.length]);
+    }
+    for (let i = 0; i < membersPerSide; i++) {
+      // Offset by 1 so teams get different role orderings
+      teamB.push(sorted[(i + 1) % sorted.length]);
+    }
+  } else {
+    // adaptive — maximize diversity: different engine orderings per team
+    const sorted = [...engineIds].sort((a, b) => engineElo(b) - engineElo(a));
+    const reversed = [...sorted].reverse();
+    teamA = [];
+    teamB = [];
+    for (let i = 0; i < membersPerSide; i++) {
+      teamA.push(sorted[i % sorted.length]);
+      teamB.push(reversed[i % reversed.length]);
+    }
+  }
+  
+  const membersA = assignTeamRoles(teamA, taskClass);
+  const membersB = assignTeamRoles(teamB, taskClass);
+  
+  const aggA = membersA.reduce((sum, m) => sum + engineElo(m.engineId), 0) / membersA.length;
+  const aggB = membersB.reduce((sum, m) => sum + engineElo(m.engineId), 0) / membersB.length;
+  
+  const specA: TeamSpec = {
+    teamId: randomUUID().slice(0, 8),
+    name: `Team Alpha`,
+    lineupKey: lineupKey(teamA),
+    source: mode,
+    members: membersA,
+    aggregateElo: Math.round(aggA),
+  };
+  
+  const specB: TeamSpec = {
+    teamId: randomUUID().slice(0, 8),
+    name: `Team Beta`,
+    lineupKey: lineupKey(teamB),
+    source: mode,
+    members: membersB,
+    aggregateElo: Math.round(aggB),
+  };
+  
+  return [specA, specB];
+}
+
+// @kern-source: team:203
+export function computeContributionWeights(team: TeamSpec, trace: TeamRoundTrace[]): Record<string,number> {
+  // Start with default weights from role assignment
+  const weights: Record<string, number> = {};
+  for (const m of team.members) {
+    weights[m.engineId] = m.weight;
+  }
+  
+  // Adjust based on trace: penalize engines that needed review loops
+  const rejectCounts: Record<string, number> = {};
+  for (const t of trace) {
+    if (t.action === 'reviewed-reject') {
+      // Find who was rejected (the implementer in the previous round)
+      const prevImpl = trace.find(
+        (prev) => prev.round === t.round && prev.role === 'implementer',
+      );
+      if (prevImpl) {
+        rejectCounts[prevImpl.actor] = (rejectCounts[prevImpl.actor] ?? 0) + 1;
+      }
+    }
+  }
+  
+  // Each rejection shifts 0.05 weight from implementer to reviewer
+  for (const [engineId, rejections] of Object.entries(rejectCounts)) {
+    const shift = Math.min(rejections * 0.05, weights[engineId] * 0.5);
+    weights[engineId] -= shift;
+    // Find reviewer and boost them
+    const reviewer = team.members.find((m) => m.role === 'reviewer');
+    if (reviewer) {
+      weights[reviewer.engineId] = (weights[reviewer.engineId] ?? 0) + shift;
+    }
+  }
+  
+  // Normalize to sum to 1.0
+  const total = Object.values(weights).reduce((s, w) => s + w, 0);
+  if (total > 0) {
+    for (const key of Object.keys(weights)) {
+      weights[key] /= total;
+    }
+  }
+  
+  return weights;
+}
+

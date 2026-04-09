@@ -1,9 +1,11 @@
 import from="node:crypto" names="randomUUID"
 import from="node:fs" names="mkdirSync"
-import from="@agon/core" names="ForgeOptions,ForgeManifest,EngineAdapter,ForgeEvent,AgonConfig" types=true
-import from="@agon/core" names="EngineRegistry,loadConfig,buildForgePrompt,repoRoot,headSha,worktreeRemove,updateElo,classifyTask,createSidechainLogger,assignForgeRoles,buildSpecializedPrompt,recordForgeOutcome"
+import from="@agon/core" names="ForgeOptions,ForgeManifest,EngineAdapter,ForgeEvent,AgonConfig,DispatchMetric" types=true
+import from="@agon/core" names="EngineRegistry,loadConfig,buildForgePrompt,repoRoot,headSha,worktreeRemove,updateGlickoRanked,classifyTask,createSidechainLogger,assignForgeRoles,buildSpecializedPrompt,recordForgeOutcome,tracker"
 import from="./stages.js" names="runBaseline,runStage1,runStage2,runStage2WithPeek,determineWinner"
 import from="./synthesis.js" names="runSynthesis"
+import from="./gauntlet.js" names="runGauntlet"
+import from="./corpus.js" names="addToCorpus"
 import from="./manifest.js" names="writeManifest"
 import from="../types.js" names="WorktreeEntry" types=true
 
@@ -31,12 +33,19 @@ fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistr
     const available = enabledEngines.filter((id: string) => {
       try {
         const engine = registry.get(id);
+        // API-only engines participate via runApiAgentLoop in dispatchAgent.
+        // But only if they have an api config — engines with neither binary nor api can't forge.
+        if (!engine.binary && !engine.api) return false;
         return registry.isAvailable(engine);
       } catch (err) {
         console.warn(`[agon] engine availability check failed for ${id}: ${err instanceof Error ? err.message : String(err)}`);
         return false;
       }
     });
+
+    if (available.length === 0) {
+      throw new Error(`No CLI-capable engines available for forge. API-only engines cannot participate. Enabled: ${enabledEngines.join(', ')}`);
+    }
 
     const starter = options.starter
       ?? registry.pickStarter(available, config.forgeStarterStrategy, config.forgeFixedStarter);
@@ -125,9 +134,15 @@ fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistr
       });
 
       manifest.enginesDispatched = 1;
+      const allMetrics: DispatchMetric[] = [...(stage1.metrics ?? [])];
       for (const [id, result] of stage1.engineResults) {
         manifest.results[id] = result;
         if (result.patchPath) manifest.patches[id] = result.patchPath;
+      }
+      // Record token usage for stage 1
+      for (const m of stage1.metrics ?? []) {
+        if (m.tokens) tracker.record(m.engineId, { usage: { promptTokens: m.tokens.prompt, completionTokens: m.tokens.response, totalTokens: m.tokens.prompt + m.tokens.response, source: 'cli-reported' as const } });
+        sidechain.log('dispatch:complete', m.engineId, { phase: m.phase, durationMs: m.dispatchDurationMs, score: m.score, pass: m.pass, tokens: m.tokens });
       }
 
       if (stage1.accepted) {
@@ -160,9 +175,15 @@ fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistr
         });
 
         manifest.enginesDispatched = available.length;
+        allMetrics.push(...(stage2.metrics ?? []));
         for (const [id, result] of stage2.engineResults) {
           manifest.results[id] = result;
           if (result.patchPath) manifest.patches[id] = result.patchPath;
+        }
+        // Record token usage for stage 2
+        for (const m of stage2.metrics ?? []) {
+          if (m.tokens) tracker.record(m.engineId, { usage: { promptTokens: m.tokens.prompt, completionTokens: m.tokens.response, totalTokens: m.tokens.prompt + m.tokens.response, source: 'cli-reported' as const } });
+          sidechain.log('dispatch:complete', m.engineId, { phase: m.phase, durationMs: m.dispatchDurationMs, score: m.score, pass: m.pass, tokens: m.tokens, error: m.error });
         }
 
         const { winner, closeCall, bestScore, secondScore } = determineWinner(
@@ -176,7 +197,7 @@ fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistr
         onEvent?.({
           type: 'winner:determined',
           engineId: winner ?? undefined,
-          data: { closeCall, bestScore, secondScore },
+          data: { winner: winner ?? null, closeCall, bestScore, secondScore },
         });
 
         const passingCount = [...stage2.engineResults.values()].filter((r) => r.pass).length;
@@ -221,25 +242,80 @@ fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistr
             .sort(([, a], [, b]) => b.score - a.score)[0]?.[0] ?? null
         : manifest.winner;
 
-      if (config.eloEnabled && eloWinner) {
-        const losers = available.filter(
-          (id: string) => id !== eloWinner && manifest.results[id]?.pass,
-        );
+      if (config.ratingsEnabled) {
+        // Ranked ELO: all engines that produced results get pairwise updates
+        const ranked = Object.entries(manifest.results)
+          .filter(([id]) => id !== 'synthesis')
+          .map(([id, r]) => ({ engineId: id, score: r.pass ? r.score : -1 }))
+          .sort((a, b) => b.score - a.score);
 
-        for (const loser of losers) {
-          updateElo(eloWinner, loser, taskClass, config.eloKFactor);
-          onEvent?.({ type: 'elo:update', data: { winner: eloWinner, loser, taskClass } });
+        if (ranked.length >= 2) {
+          updateGlickoRanked(ranked, taskClass, 'forge');
+          for (const entry of ranked) {
+            onEvent?.({ type: 'elo:update', data: { engineId: entry.engineId, score: entry.score, rank: ranked.indexOf(entry) + 1, taskClass } });
+          }
         }
 
         // Record qualitative engine memory from forge outcome
-        const loserScores: Record<string, number> = {};
-        for (const id of losers) loserScores[id] = manifest.results[id]?.score ?? 0;
-        recordForgeOutcome(eloWinner, losers, taskClass, forgeId, manifest.results[eloWinner]?.score ?? 0, loserScores);
+        if (eloWinner) {
+          const losers = available.filter(
+            (id: string) => id !== eloWinner && manifest.results[id],
+          );
+          const loserScores: Record<string, number> = {};
+          for (const id of losers) loserScores[id] = manifest.results[id]?.score ?? 0;
+          recordForgeOutcome(eloWinner, losers, taskClass, forgeId, manifest.results[eloWinner]?.score ?? 0, loserScores);
+        }
       }
 
+      // --- Gauntlet: losers try to break the winner ---
+      const gauntletActive = options.hardened || config.gauntletEnabled;
+      if (gauntletActive && eloWinner && manifest.winner) {
+        const gauntletLosers = available.filter((id: string) => id !== eloWinner);
+        const winnerWt = worktrees.find((wt) => wt.engineId === eloWinner || wt.engineId === manifest.winner);
+
+        if (gauntletLosers.length > 0 && winnerWt) {
+          try {
+            const gauntletResult = await runGauntlet({
+              winnerId: eloWinner,
+              losers: gauntletLosers,
+              task: options.task,
+              winnerWorktree: winnerWt.path,
+              fitnessCmd: options.fitnessCmd,
+              taskClass,
+              forgeDir,
+              registry,
+              adapter,
+              timeout: config.forgeTimeout,
+              fitnessTimeout: config.forgeFitnessTimeout,
+              maxBreakers: config.gauntletMaxBreakers,
+              repairTimeout: config.gauntletRepairTimeout,
+              cwd: options.cwd,
+              onEvent,
+              signal: options.signal,
+            });
+
+            manifest.gauntlet = gauntletResult;
+
+            // Save validated attacks to corpus
+            if (gauntletResult.attacksLanded > 0) {
+              const saved = addToCorpus(forgeId, taskClass, gauntletResult.breakerArtifacts);
+              onEvent?.({ type: 'gauntlet:corpus-save' as any, data: { count: saved } });
+              sidechain.log('corpus:save', undefined, { saved, taskClass });
+            }
+          } catch (err) {
+            console.warn(`[agon] gauntlet failed: ${err instanceof Error ? err.message : String(err)}`);
+            sidechain.log('gauntlet:error', undefined, { error: err instanceof Error ? err.message : String(err) });
+          }
+        }
+      }
+
+      manifest.dispatchLog = allMetrics;
       writeManifest(manifest);
+      const stats = tracker.getStats();
       sidechain.log('forge:done', manifest.winner ?? undefined, {
         enginesDispatched: manifest.enginesDispatched,
+        totalCostUsd: stats.totalCostUsd,
+        totalTokens: stats.totalTokens,
         results: Object.fromEntries(
           Object.entries(manifest.results).map(([id, r]) => [id, { pass: (r as any).pass, score: (r as any).score }]),
         ),

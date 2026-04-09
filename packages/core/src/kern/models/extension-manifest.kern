@@ -1,0 +1,100 @@
+// ── Extension Manifest: types + validation ──────────────────────────
+// Defines what an extension IS — its identity, permissions, and contributions.
+// Pure types + one validation function. No side effects.
+
+interface name=ExtensionPermissions
+  field name=tools type="string[]" optional=true
+  field name=hooks type="string[]" optional=true
+  field name=config type=boolean optional=true
+
+interface name=CommandContribution
+  field name=name type=string
+  field name=description type=string
+  field name=category type=string optional=true
+  field name=aliases type="string[]" optional=true
+  field name=handler type=string
+
+interface name=SkillContribution
+  field name=name type=string
+  field name=trigger type=string
+  field name=description type=string
+  field name=prompt type=string optional=true
+  field name=handler type=string optional=true
+  field name=tools type="string[]" optional=true
+
+interface name=HookContribution
+  field name=event type=string
+  field name=handler type=string
+  field name=priority type=number optional=true
+
+interface name=ExtensionContributions
+  field name=commands type="CommandContribution[]" optional=true
+  field name=skills type="SkillContribution[]" optional=true
+  field name=hooks type="HookContribution[]" optional=true
+  field name=systemPromptFragments type="string[]" optional=true
+  field name=engines type="string[]" optional=true
+
+interface name=ExtensionManifest
+  field name=id type=string
+  field name=name type=string
+  field name=version type=string
+  field name=description type=string
+  field name=agonVersion type=string optional=true
+  field name=permissions type=ExtensionPermissions optional=true
+  field name=contributes type=ExtensionContributions optional=true
+
+interface name=LoadedExtension
+  field name=manifest type=ExtensionManifest
+  field name=dir type=string
+  field name=source type="'builtin' | 'user' | 'repo'"
+  field name=loadedAt type=number
+  field name=errors type="string[]" optional=true
+
+fn name=validateManifest params="raw:unknown, filePath:string" returns="{ ok: boolean; data?: ExtensionManifest; error?: string }"
+  doc "Validate a raw JSON object as an ExtensionManifest. Returns ok + data on success, ok=false + error on failure."
+  handler <<<
+    if (!raw || typeof raw !== 'object') {
+      return { ok: false, error: `${filePath}: manifest is not an object` };
+    }
+    const obj = raw as Record<string, unknown>;
+
+    // Required fields
+    if (typeof obj.id !== 'string' || !obj.id.trim()) {
+      return { ok: false, error: `${filePath}: missing or empty 'id'` };
+    }
+    if (typeof obj.name !== 'string' || !obj.name.trim()) {
+      return { ok: false, error: `${filePath}: missing or empty 'name'` };
+    }
+    if (typeof obj.version !== 'string' || !obj.version.trim()) {
+      return { ok: false, error: `${filePath}: missing or empty 'version'` };
+    }
+    if (typeof obj.description !== 'string') {
+      return { ok: false, error: `${filePath}: missing 'description'` };
+    }
+
+    // Validate contributes.commands if present
+    if (obj.contributes && typeof obj.contributes === 'object') {
+      const contrib = obj.contributes as Record<string, unknown>;
+      if (Array.isArray(contrib.commands)) {
+        for (let i = 0; i < contrib.commands.length; i++) {
+          const cmd = contrib.commands[i] as Record<string, unknown>;
+          if (typeof cmd.name !== 'string' || !cmd.name.trim()) {
+            return { ok: false, error: `${filePath}: contributes.commands[${i}] missing 'name'` };
+          }
+          if (typeof cmd.handler !== 'string' || !cmd.handler.trim()) {
+            return { ok: false, error: `${filePath}: contributes.commands[${i}] missing 'handler'` };
+          }
+        }
+      }
+      if (Array.isArray(contrib.skills)) {
+        for (let i = 0; i < contrib.skills.length; i++) {
+          const skill = contrib.skills[i] as Record<string, unknown>;
+          if (typeof skill.trigger !== 'string' || !skill.trigger.trim()) {
+            return { ok: false, error: `${filePath}: contributes.skills[${i}] missing 'trigger'` };
+          }
+        }
+      }
+    }
+
+    return { ok: true, data: obj as unknown as ExtensionManifest };
+  >>>

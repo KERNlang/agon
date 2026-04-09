@@ -1,0 +1,51 @@
+// @kern-source: paste-handler:1
+import { pasteStore } from '@agon/core';
+
+// @kern-source: paste-handler:2
+import type { PasteStoreResult } from '@agon/core';
+
+// @kern-source: paste-handler:4
+export type PasteResult =
+  | { type: 'stored'; tag: string; fullHash: string; placeholder: string }
+  | { type: 'direct'; content: string }
+  | { type: 'empty' };
+
+// @kern-source: paste-handler:13
+export function processPasteContent(raw: string, pasteIndex?: number): PasteResult {
+  const normalized = raw.replace(/\r\n/g, '\n');
+  const content = normalized.trimEnd();
+  if (!content) return { type: 'empty' };
+  
+  const isLong = content.length > 500;
+  
+  if (isLong) {
+    try {
+      const result = pasteStore.store(content);
+      const tag = result.hash.slice(0, 8);
+      const idx = pasteIndex ?? 1;
+      const placeholder = `[Pasted text #${idx} +${result.lineCount} lines]`;
+      return { type: 'stored', tag, fullHash: result.hash, placeholder };
+    } catch {
+      // Storage failed — fall through to direct
+    }
+  }
+  
+  return { type: 'direct', content: normalized };
+}
+
+// @kern-source: paste-handler:36
+export function expandPastePlaceholders(input: string, hashMap: Map<string,string>): string {
+  const pasteRe = /\[Pasted text #(\d+) \+\d+ lines\]/g;
+  const expanded = input.replace(pasteRe, (match: string, idx: string) => {
+    const fullHash = hashMap.get(idx);
+    if (!fullHash) return match;
+    const content = pasteStore.retrieve(fullHash);
+    return content ?? match;
+  });
+  // Clean up used entries
+  for (const key of [...hashMap.keys()]) {
+    if (!expanded.includes(`[Pasted text #${key}`)) hashMap.delete(key);
+  }
+  return expanded;
+}
+

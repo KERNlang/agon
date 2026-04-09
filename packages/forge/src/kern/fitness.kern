@@ -2,6 +2,7 @@ import from="node:fs" names="writeFileSync"
 import from="node:path" names="join"
 import from="@agon/core" names="FitnessResult,EngineResult" types=true
 import from="@agon/core" names="spawnWithTimeout,worktreeDiff,diffLineCount,diffFileCount,computeScore"
+import from="./quality.js" names="runLint,runStyleCheck"
 
 fn name=runFitness async=true params="opts:{engineId:string, worktreePath:string, fitnessCmd:string, timeout:number, forgeDir:string}" returns="Promise<EngineResult>"
   handler <<<
@@ -34,8 +35,30 @@ fn name=runFitness async=true params="opts:{engineId:string, worktreePath:string
     const durationSec = Math.round((Date.now() - startTime) / 1000);
     const pass = fitnessResult.exitCode === 0 && !fitnessResult.timedOut;
 
-    const lintWarnings = 0;
-    const styleScore = 100;
+    // Persist fitness stdout/stderr to disk — followers + synthesis can read WHY tests failed
+    let fitnessLogPath: string | undefined;
+    try {
+      const logContent = [
+        `# Fitness Log: ${opts.engineId}`,
+        `Exit code: ${fitnessResult.exitCode}`,
+        `Timed out: ${fitnessResult.timedOut}`,
+        `Pass: ${pass}`,
+        `Duration: ${durationSec}s`,
+        '',
+        '## STDOUT',
+        fitnessResult.stdout || '(empty)',
+        '',
+        '## STDERR',
+        fitnessResult.stderr || '(empty)',
+      ].join('\n');
+      fitnessLogPath = join(opts.forgeDir, `${opts.engineId}-fitness.txt`);
+      writeFileSync(fitnessLogPath, logContent);
+    } catch (logErr) {
+      console.warn(`[agon] fitness: failed to write log for ${opts.engineId}: ${logErr instanceof Error ? logErr.message : String(logErr)}`);
+    }
+
+    const lintWarnings = await runLint(opts.worktreePath);
+    const styleScore = await runStyleCheck(opts.worktreePath);
 
     const fitness: FitnessResult = {
       pass,
@@ -61,5 +84,6 @@ fn name=runFitness async=true params="opts:{engineId:string, worktreePath:string
       styleScore,
       patchPath,
       worktreePath: opts.worktreePath,
+      fitnessLogPath,
     };
   >>>

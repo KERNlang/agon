@@ -7,9 +7,13 @@ import { leaderboardCommand } from './commands/leaderboard.js';
 import { historyCommand } from './commands/history.js';
 import { engineCommand } from './commands/engine.js';
 import { configCommand } from './commands/config.js';
+import { providerCommand } from './commands/provider.js';
 import { startRepl } from './repl.js';
 import { runOnboarding } from './onboarding.js';
-import { loadConfig } from '@agon/core';
+import { loadConfig, loadAllAuthKeys } from '@agon/core';
+
+// Load stored API keys from ~/.agon/auth.json into process.env at startup
+loadAllAuthKeys();
 
 const main = defineCommand({
   meta: {
@@ -24,6 +28,7 @@ const main = defineCommand({
     leaderboard: leaderboardCommand,
     history: historyCommand,
     engine: engineCommand,
+    provider: providerCommand,
     config: configCommand,
   },
 });

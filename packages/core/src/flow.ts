@@ -6,7 +6,7 @@ export {
   analyzeFlows,
   FLOWS_DIR,
   FRICTION_TAGS,
-} from './generated/flow.js';
+} from './generated/signals/flow.js';
 export type {
   FlowRecord,
   FlowTelemetry,
@@ -14,4 +14,4 @@ export type {
   FlowModeMeta,
   FlowAnalysis,
   ModeStats,
-} from './generated/flow.js';
+} from './generated/signals/flow.js';

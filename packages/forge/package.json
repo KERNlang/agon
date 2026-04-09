@@ -14,13 +14,13 @@
     "dist"
   ],
   "scripts": {
-    "kern:compile": "node ../../../kern-lang/packages/cli/dist/cli.js compile src/kern --outdir=src/generated",
+    "kern:compile": "kern compile src/kern --outdir=src/generated",
     "prebuild": "npm run kern:compile",
     "build": "tsup",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@agon/core": "*",
-    "kern-lang": "file:../../../kern-lang/packages/compat"
+    "kern-lang": "^3.1.7"
   }
 }

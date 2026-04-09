@@ -202,6 +202,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
   
     let response = '';
     let streaming = false;
+    let wasStreamed = false; // tracks if response was already shown via streaming chunks
     let parsedConfidence: number | null = null;
     let confidenceParsed = false;
     let insideThinkBlock = false;
@@ -334,6 +335,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             // Switch to streaming mode
             dispatch({ type: 'spinner-update', message: 'Cesar responding…' });
             streaming = true;
+            wasStreamed = true;
             let cleanFirst = response;
             if (cleanFirst.includes('<think>')) {
               cleanFirst = cleanFirst.replace(/<think>[\s\S]*?<\/think>\s*/gi, '');
@@ -691,8 +693,8 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       }
     }
   
-    // ── Display final response (skip if tool loop already displayed via onText) ──
-    if (!streaming && response && !ranToolLoop) {
+    // ── Display final response (skip if already displayed via streaming or tool loop) ──
+    if (!streaming && response && !ranToolLoop && !wasStreamed) {
       dispatch({ type: 'spinner-stop' });
       dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: response });
       await yieldToInk();

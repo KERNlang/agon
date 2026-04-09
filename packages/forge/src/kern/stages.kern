@@ -1,6 +1,6 @@
 import from="node:path" names="join"
-import from="@agon/core" names="EngineAdapter,EngineResult,ForgeOptions,AgonConfig,DispatchMetric" types=true
-import from="@agon/core" names="EngineRegistry,worktreeCreate,worktreeRemove,headSha,repoRoot,worktreeDiff,estimateTokens,estimateCost"
+import from="@agon/core" names="EngineAdapter,EngineResult,ForgeOptions,AgonConfig,DispatchMetric,StageContext" types=true
+import from="@agon/core" names="EngineRegistry,worktreeCreate,worktreeRemove,headSha,repoRoot,worktreeDiff,estimateTokens,estimateCost,buildStageContext,renderStageContext"
 import from="./fitness.js" names="runFitness"
 import from="../types.js" names="StageResult,ForgeEventCallback,WorktreeEntry" types=true
 
@@ -93,6 +93,9 @@ fn name=runStage1 async=true params="opts:{starter:string, forgePrompt:string, f
       timedOut: dispatchResult?.timedOut ?? false,
       tokens: { prompt: promptTokens, response: responseTokens, costUsd: estimateCost(opts.starter, promptTokens + responseTokens) },
     };
+
+    // Attach dispatch stdout to result for StageContext extraction downstream
+    (result as any).dispatchStdout = dispatchResult?.stdout?.slice(0, 5000) ?? '';
 
     const engineResults = new Map<string, EngineResult>();
     engineResults.set(opts.starter, result);
@@ -256,12 +259,11 @@ fn name=runStage2WithPeek async=true params="opts:{challengers:string[], forgePr
     }
     const scoutDispatchDurationMs = Date.now() - scoutDispatchStart;
 
-    // Get scout's diff as peek context
+    // Build typed StageContext from scout's results (replaces raw diff slice)
     const scoutDiff = worktreeDiff(scoutWt);
-    const peekContext = scoutDiff
-      ? `\n\n## PEEK — Another engine's approach (for reference, not to copy)\nAnother engine already attempted this task. Here is a summary of their approach:\n\`\`\`diff\n${scoutDiff.slice(0, 3000)}\n\`\`\`\nUse this as inspiration but find your own solution. You may improve on their approach or take a completely different path.`
-      : '';
+    const scoutStdout = scoutDispatchResult?.stdout ?? '';
 
+    // Score the scout first so StageContext has the score
     opts.onEvent?.({ type: 'stage2:score', engineId: scoutId });
     const scoutFitnessStart = Date.now();
     const scoutResult = await runFitness({
@@ -269,6 +271,22 @@ fn name=runStage2WithPeek async=true params="opts:{challengers:string[], forgePr
       fitnessCmd: opts.fitnessCmd, timeout: opts.config.forgeFitnessTimeout, forgeDir: opts.forgeDir,
     });
     const scoutFitnessDurationMs = Date.now() - scoutFitnessStart;
+
+    // Build StageContext — structured learnings for followers
+    const stageCtx: StageContext = buildStageContext({
+      engineId: scoutId,
+      pass: scoutResult.pass,
+      score: scoutResult.score,
+      prompt: scoutPrompt,
+      diff: scoutDiff,
+      fitnessLogPath: scoutResult.fitnessLogPath,
+      dispatchStdout: scoutStdout,
+    });
+
+    const peekContext = scoutDiff
+      ? `\n\n${renderStageContext(stageCtx)}`
+      : '';
+
     const scoutPromptTokens = estimateTokens(scoutPrompt);
     const scoutResponseTokens = scoutDispatchResult?.stdout ? estimateTokens(scoutDispatchResult.stdout) : 0;
     metrics.push({

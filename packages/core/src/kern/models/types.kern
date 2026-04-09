@@ -221,6 +221,8 @@ interface name=EngineResult
   field name=styleScore type=number
   field name=patchPath type=string optional=true
   field name=worktreePath type=string optional=true
+  field name=fitnessLogPath type=string optional=true
+  field name=dispatchStdout type=string optional=true
 
 interface name=DispatchMetric
   field name=engineId type=string

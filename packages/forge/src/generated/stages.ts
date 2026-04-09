@@ -2,10 +2,10 @@
 import { join } from 'node:path';
 
 // @kern-source: stages:2
-import type { EngineAdapter, EngineResult, ForgeOptions, AgonConfig, DispatchMetric } from '@agon/core';
+import type { EngineAdapter, EngineResult, ForgeOptions, AgonConfig, DispatchMetric, StageContext } from '@agon/core';
 
 // @kern-source: stages:3
-import { EngineRegistry, worktreeCreate, worktreeRemove, headSha, repoRoot, worktreeDiff, estimateTokens, estimateCost } from '@agon/core';
+import { EngineRegistry, worktreeCreate, worktreeRemove, headSha, repoRoot, worktreeDiff, estimateTokens, estimateCost, buildStageContext, renderStageContext } from '@agon/core';
 
 // @kern-source: stages:4
 import { runFitness } from './fitness.js';
@@ -103,6 +103,9 @@ export async function runStage1(opts: {starter:string, forgePrompt:string, fitne
     tokens: { prompt: promptTokens, response: responseTokens, costUsd: estimateCost(opts.starter, promptTokens + responseTokens) },
   };
   
+  // Attach dispatch stdout to result for StageContext extraction downstream
+  (result as any).dispatchStdout = dispatchResult?.stdout?.slice(0, 5000) ?? '';
+  
   const engineResults = new Map<string, EngineResult>();
   engineResults.set(opts.starter, result);
   
@@ -123,7 +126,7 @@ export async function runStage1(opts: {starter:string, forgePrompt:string, fitne
   return { engineResults, accepted, winner: result.pass ? opts.starter : null, metrics: [metric] };
 }
 
-// @kern-source: stages:117
+// @kern-source: stages:120
 export async function runStage2(opts: {challengers:string[], forgePrompt:string, enginePrompts?:Map<string,string>, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal}): Promise<StageResult> {
   opts.onEvent?.({ type: 'stage2:start' });
   
@@ -224,7 +227,7 @@ export async function runStage2(opts: {challengers:string[], forgePrompt:string,
   return { engineResults: allResults, accepted: false, winner: null, metrics };
 }
 
-// @kern-source: stages:218
+// @kern-source: stages:221
 export async function runStage2WithPeek(opts: {challengers:string[], forgePrompt:string, enginePrompts?:Map<string,string>, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal}): Promise<StageResult> {
   if (opts.challengers.length <= 1) {
     // Only one challenger — no peek possible, use normal stage2
@@ -265,12 +268,11 @@ export async function runStage2WithPeek(opts: {challengers:string[], forgePrompt
   }
   const scoutDispatchDurationMs = Date.now() - scoutDispatchStart;
   
-  // Get scout's diff as peek context
+  // Build typed StageContext from scout's results (replaces raw diff slice)
   const scoutDiff = worktreeDiff(scoutWt);
-  const peekContext = scoutDiff
-    ? `\n\n## PEEK — Another engine's approach (for reference, not to copy)\nAnother engine already attempted this task. Here is a summary of their approach:\n\`\`\`diff\n${scoutDiff.slice(0, 3000)}\n\`\`\`\nUse this as inspiration but find your own solution. You may improve on their approach or take a completely different path.`
-    : '';
+  const scoutStdout = scoutDispatchResult?.stdout ?? '';
   
+  // Score the scout first so StageContext has the score
   opts.onEvent?.({ type: 'stage2:score', engineId: scoutId });
   const scoutFitnessStart = Date.now();
   const scoutResult = await runFitness({
@@ -278,6 +280,22 @@ export async function runStage2WithPeek(opts: {challengers:string[], forgePrompt
     fitnessCmd: opts.fitnessCmd, timeout: opts.config.forgeFitnessTimeout, forgeDir: opts.forgeDir,
   });
   const scoutFitnessDurationMs = Date.now() - scoutFitnessStart;
+  
+  // Build StageContext — structured learnings for followers
+  const stageCtx: StageContext = buildStageContext({
+    engineId: scoutId,
+    pass: scoutResult.pass,
+    score: scoutResult.score,
+    prompt: scoutPrompt,
+    diff: scoutDiff,
+    fitnessLogPath: scoutResult.fitnessLogPath,
+    dispatchStdout: scoutStdout,
+  });
+  
+  const peekContext = scoutDiff
+    ? `\n\n${renderStageContext(stageCtx)}`
+    : '';
+  
   const scoutPromptTokens = estimateTokens(scoutPrompt);
   const scoutResponseTokens = scoutDispatchResult?.stdout ? estimateTokens(scoutDispatchResult.stdout) : 0;
   metrics.push({
@@ -371,7 +389,7 @@ export async function runStage2WithPeek(opts: {challengers:string[], forgePrompt
   return { engineResults: allResults, accepted: false, winner: null, metrics };
 }
 
-// @kern-source: stages:365
+// @kern-source: stages:383
 export function determineWinner(results: Map<string,EngineResult>, spread: number): {winner:string|null, closeCall:boolean, bestScore:number, secondScore:number} {
   const passing = [...results.entries()]
     .filter(([_, r]) => r.pass && r.score > 0)

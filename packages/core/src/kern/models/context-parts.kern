@@ -1,0 +1,198 @@
+// ── Context Parts ─────────────────────────────────────────────────
+// Structured message parts for API engine context management.
+// Enables selective pruning (old tool results first, then reasoning,
+// text last) and incremental compaction across cycles.
+//
+// Also defines StageContext for typed forge handoff between engines.
+
+// ── MessagePart union ────────────────────────────────────────────
+
+interface name=TextPart
+  field name=kind type="'text'"
+  field name=text type=string
+
+interface name=ToolCallPart
+  field name=kind type="'tool_call'"
+  field name=toolName type=string
+  field name=toolCallId type=string
+  field name=args type="Record<string,unknown>"
+
+interface name=ToolResultPart
+  field name=kind type="'tool_result'"
+  field name=toolCallId type=string
+  field name=toolName type=string
+  field name=preview type=string
+  field name=cachedRef type="string|null"
+  doc "preview = first 300 chars inline. cachedRef = toolCallId pointing to disk file when result > 800 chars."
+
+interface name=ReasoningPart
+  field name=kind type="'reasoning'"
+  field name=text type=string
+
+interface name=CompactionSummaryPart
+  field name=kind type="'compaction'"
+  field name=goal type=string
+  field name=discoveries type="string[]"
+  field name=filesModified type="string[]"
+  field name=filesRead type="string[]"
+  field name=toolsSummary type="string[]"
+  field name=decisions type="string[]"
+  field name=progress type=string
+  field name=compactedAt type=number
+  field name=messagesCompacted type=number
+
+union name=MessagePart
+  variant type=TextPart
+  variant type=ToolCallPart
+  variant type=ToolResultPart
+  variant type=ReasoningPart
+  variant type=CompactionSummaryPart
+
+// ── Tool Cache Manifest Entry ────────────────────────────────────
+
+interface name=ToolCacheEntry
+  field name=toolCallId type=string
+  field name=toolName type=string
+  field name=filePath type=string
+  field name=savedAt type=number
+  field name=byteSize type=number
+
+// ── StageContext for Forge Handoff ───────────────────────────────
+
+interface name=StageDecision
+  field name=choice type=string
+  field name=reason type=string
+
+interface name=ToolResultRef
+  field name=toolName type=string
+  field name=filePath type=string optional=true
+  field name=summary type=string
+
+interface name=StageContext
+  doc "Typed context passed between forge stages. Replaces raw scoutDiff.slice(0,3000)."
+  field name=goal type=string
+  field name=filesDiscovered type="string[]"
+  field name=filesModified type="string[]"
+  field name=patternsFound type="string[]"
+  field name=decisions type="StageDecision[]"
+  field name=toolResultRefs type="ToolResultRef[]"
+  field name=diffSummary type="string|null"
+  field name=fitnessLogPath type="string|null"
+  field name=engineId type=string
+  field name=score type="number|null"
+  field name=pass type=boolean
+
+// ── Helper: build StageContext from engine result + dispatch output ──
+
+fn name=buildStageContext params="opts:{engineId:string, pass:boolean, score:number, prompt:string, diff:string, fitnessLogPath?:string, dispatchStdout?:string}" returns="StageContext"
+  doc "Extract structured StageContext from raw forge outputs."
+  handler <<<
+    // Extract goal from prompt (first ## TASK section or first 300 chars)
+    const taskMatch = opts.prompt.match(/## TASK\s*\n([\s\S]*?)(?=\n## |$)/);
+    const goal = taskMatch ? taskMatch[1].trim().slice(0, 500) : opts.prompt.slice(0, 300);
+
+    // Extract files from diff
+    const filesModified: string[] = [];
+    const diffFileRe = /^diff --git a\/(.+?) b\//gm;
+    let fm;
+    while ((fm = diffFileRe.exec(opts.diff)) !== null) {
+      if (!filesModified.includes(fm[1])) filesModified.push(fm[1]);
+    }
+
+    // Extract decisions from assistant output (lines with decision markers)
+    const decisions: Array<{choice: string, reason: string}> = [];
+    if (opts.dispatchStdout) {
+      const decisionRe = /(?:^|\n)\s*(?:Decision|Approach|I (?:will|chose|decided)|Strategy)[:\s]+(.+?)(?:\n|$)/gi;
+      let dm;
+      while ((dm = decisionRe.exec(opts.dispatchStdout)) !== null) {
+        if (decisions.length < 5) {
+          decisions.push({ choice: dm[1].trim().slice(0, 200), reason: '' });
+        }
+      }
+    }
+
+    // Extract patterns from dispatch output
+    const patternsFound: string[] = [];
+    if (opts.dispatchStdout) {
+      const patternRe = /(?:pattern|convention|approach)[:\s]+(.+?)(?:\n|$)/gi;
+      let pm;
+      while ((pm = patternRe.exec(opts.dispatchStdout)) !== null) {
+        if (patternsFound.length < 5) patternsFound.push(pm[1].trim().slice(0, 150));
+      }
+    }
+
+    // Extract tool result refs from dispatch output (file paths mentioned in tool calls)
+    const toolResultRefs: Array<{toolName: string, filePath?: string, summary: string}> = [];
+    if (opts.dispatchStdout) {
+      const toolRe = /<tool\s+name="(\w+)">([\s\S]*?)<\/tool>/g;
+      let tm;
+      while ((tm = toolRe.exec(opts.dispatchStdout)) !== null) {
+        try {
+          const args = JSON.parse(tm[2]);
+          const fp = args.file_path || args.path || '';
+          if (toolResultRefs.length < 10) {
+            toolResultRefs.push({ toolName: tm[1], filePath: fp || undefined, summary: `${tm[1]}(${fp || Object.keys(args).join(',')})` });
+          }
+        } catch { /* skip malformed */ }
+      }
+    }
+
+    // Diff summary: first N lines of actual changes (skip headers)
+    let diffSummary: string | null = null;
+    if (opts.diff) {
+      const lines = opts.diff.split('\n');
+      const changeLines = lines.filter((l: string) => l.startsWith('+') || l.startsWith('-')).slice(0, 30);
+      diffSummary = changeLines.join('\n').slice(0, 2000);
+    }
+
+    return {
+      goal,
+      filesDiscovered: [...filesModified], // In simple case, discovered = modified
+      filesModified,
+      patternsFound,
+      decisions,
+      toolResultRefs,
+      diffSummary,
+      fitnessLogPath: opts.fitnessLogPath ?? null,
+      engineId: opts.engineId,
+      score: opts.score,
+      pass: opts.pass,
+    };
+  >>>
+
+fn name=renderStageContext params="ctx:StageContext" returns="string"
+  doc "Render StageContext as readable text for injection into forge prompts."
+  handler <<<
+    const sections: string[] = [
+      `## PRIOR APPROACH (${ctx.engineId} — ${ctx.pass ? 'PASSED' : 'FAILED'}${ctx.score !== null ? `, score: ${ctx.score}` : ''})`,
+    ];
+
+    sections.push(`**Goal:** ${ctx.goal}`);
+
+    if (ctx.filesModified.length > 0) {
+      sections.push(`**Files modified:** ${ctx.filesModified.join(', ')}`);
+    }
+    if (ctx.filesDiscovered.length > 0 && ctx.filesDiscovered.some((f: string) => !ctx.filesModified.includes(f))) {
+      const readOnly = ctx.filesDiscovered.filter((f: string) => !ctx.filesModified.includes(f));
+      if (readOnly.length > 0) sections.push(`**Files explored:** ${readOnly.join(', ')}`);
+    }
+    if (ctx.patternsFound.length > 0) {
+      sections.push(`**Patterns found:** ${ctx.patternsFound.join('; ')}`);
+    }
+    if (ctx.decisions.length > 0) {
+      sections.push(`**Key decisions:**\n${ctx.decisions.map((d: {choice:string,reason:string}) => `- ${d.choice}${d.reason ? ` (${d.reason})` : ''}`).join('\n')}`);
+    }
+    if (ctx.toolResultRefs.length > 0) {
+      sections.push(`**Tool usage:** ${ctx.toolResultRefs.map((r: {toolName:string,summary:string}) => r.summary).join(', ')}`);
+    }
+    if (ctx.diffSummary) {
+      sections.push(`**Diff preview:**\n\`\`\`diff\n${ctx.diffSummary.slice(0, 1500)}\n\`\`\``);
+    }
+    if (ctx.fitnessLogPath) {
+      sections.push(`**Fitness log:** ${ctx.fitnessLogPath} (Read this file for test output details)`);
+    }
+
+    sections.push(`\nUse this as context but find your own solution. You may improve on their approach or take a completely different path.`);
+
+    return sections.join('\n');
+  >>>

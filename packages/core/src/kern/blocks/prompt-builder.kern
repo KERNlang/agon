@@ -1,4 +1,5 @@
 import from="../models/types.js" names="Critique" types=true
+import from="../models/context-parts.js" names="StageContext" types=true
 
 interface name=PromptBlock
   doc "A cacheable prompt block. Stable blocks (system instructions, constraints) are cached across turns; dynamic blocks (task, diff) are not."
@@ -103,4 +104,33 @@ fn name=buildReviewPrompt params="opts:{prompt:string;diff:string}" returns=stri
       ? opts.diff.slice(0, 100_000) + '\n... [truncated]'
       : opts.diff;
     return `## REVIEW REQUEST\n${opts.prompt}\n\n## DIFF\n\`\`\`diff\n${cappedDiff}\n\`\`\``;
+  >>>
+
+fn name=buildForgePromptWithContext params="opts:{task:string;fitnessCmd:string;context?:string;agentMode?:boolean;stageContexts?:StageContext[]}" returns=string
+  doc "Enhanced forge prompt builder that includes typed StageContext from prior stages."
+  handler <<<
+    const sections = [
+      `## TASK\n${opts.task}`,
+      `## FITNESS TEST\nRun this command to verify your work passes:\n\`\`\`\n${opts.fitnessCmd}\n\`\`\``,
+    ];
+    if (opts.context) sections.push(`## CONTEXT\n${opts.context}`);
+
+    // Inject StageContexts from prior engine runs
+    if (opts.stageContexts && opts.stageContexts.length > 0) {
+      // Import renderStageContext dynamically to avoid circular deps
+      const { renderStageContext } = require('../models/context-parts.js');
+      const ctxSections = opts.stageContexts.map((ctx: StageContext) => renderStageContext(ctx));
+      sections.push(ctxSections.join('\n\n---\n\n'));
+    }
+
+    if (opts.agentMode) {
+      sections.push(
+        `## CONSTRAINTS\n- You have full tool access. Read files, edit code, run commands directly.\n- Run the fitness test command to verify your work passes.\n- Iterate until the fitness test passes — read errors, fix them, re-run.\n- Modify only the files necessary to complete the task.\n- Exit when the fitness test passes.\n- Do not ask questions — make reasonable assumptions.`,
+      );
+    } else {
+      sections.push(
+        `## CONSTRAINTS\n- Write code, not plans. Implement the solution directly.\n- Modify only the files necessary to complete the task.\n- Run the fitness test command to verify your work passes.\n- Exit when the fitness test passes.\n- Do not ask questions — make reasonable assumptions.`,
+      );
+    }
+    return sections.join('\n\n');
   >>>

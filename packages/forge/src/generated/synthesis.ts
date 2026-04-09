@@ -1,11 +1,11 @@
 // @kern-source: synthesis:1
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 
 // @kern-source: synthesis:2
-import type { EngineAdapter, EngineResult, ForgeManifest, Critique } from '@agon/core';
+import type { EngineAdapter, EngineResult, ForgeManifest, Critique, StageContext } from '@agon/core';
 
 // @kern-source: synthesis:3
-import { EngineRegistry, FitnessError, buildCritiquePrompt, buildSynthesisPrompt, worktreeCreate, worktreeRemove, applyPatch } from '@agon/core';
+import { EngineRegistry, FitnessError, buildCritiquePrompt, buildSynthesisPrompt, worktreeCreate, worktreeRemove, applyPatch, buildStageContext, renderStageContext } from '@agon/core';
 
 // @kern-source: synthesis:4
 import { runFitness } from './fitness.js';
@@ -53,14 +53,50 @@ export async function runSynthesis(opts: {manifest:ForgeManifest, winner:string,
   
   opts.onEvent?.({ type: 'synthesis:start' });
   
+  // Build StageContext for each loser — gives critics richer context about what was tried
+  const loserContexts: string[] = [];
+  for (const loserId of losers) {
+    const loserResult = manifest.results[loserId];
+    if (loserResult) {
+      const loserCtx = buildStageContext({
+        engineId: loserId,
+        pass: loserResult.pass,
+        score: loserResult.score,
+        prompt: manifest.task,
+        diff: loserResult.patchPath ? (() => { try { return readFileSync(loserResult.patchPath!, 'utf-8'); } catch { return ''; } })() : '',
+        fitnessLogPath: loserResult.fitnessLogPath,
+        dispatchStdout: loserResult.dispatchStdout,
+      });
+      loserContexts.push(renderStageContext(loserCtx));
+    }
+  }
+  
+  // Read winner's fitness log for richer critique context
+  let winnerFitnessLog = '';
+  if (winnerResult.fitnessLogPath) {
+    try {
+      if (existsSync(winnerResult.fitnessLogPath)) {
+        winnerFitnessLog = readFileSync(winnerResult.fitnessLogPath, 'utf-8').slice(0, 3000);
+      }
+    } catch { /* best effort */ }
+  }
+  
   const critiquePromises = losers.map(async (loserId: string) => {
     opts.onEvent?.({ type: 'synthesis:critique', engineId: loserId });
     const engine = registry.get(loserId);
-    const prompt = buildCritiquePrompt({
+    let prompt = buildCritiquePrompt({
       winnerEngine: winner,
       diff: winnerPatch,
       maxCritiques: opts.maxCritiques,
     });
+  
+    // Enrich critique prompt with loser context + fitness log
+    if (loserContexts.length > 0) {
+      prompt += `\n\n## OTHER APPROACHES ATTEMPTED\nThe following engines also attempted this task. Their approaches may highlight issues the winner missed:\n\n${loserContexts.join('\n\n---\n\n')}`;
+    }
+    if (winnerFitnessLog) {
+      prompt += `\n\n## WINNER FITNESS OUTPUT\n\`\`\`\n${winnerFitnessLog}\n\`\`\``;
+    }
   
     try {
       const result = await adapter.dispatch({

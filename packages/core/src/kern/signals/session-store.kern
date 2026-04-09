@@ -1,11 +1,27 @@
 // ── Session Store ─────────────────────────────────────────────────
-// Persists API session messageHistory to disk so sessions survive
-// process restarts. Like Claude's --resume but for stateless APIs.
+// Persists API session state to disk so sessions survive process restarts.
+// v2: Rich state with compaction summaries, tool cache manifests, and schema migration.
 
-import from="node:fs" names="writeFileSync,readFileSync,existsSync,mkdirSync"
-import from="node:path" names="join"
+import from="node:fs" names="writeFileSync,readFileSync,existsSync,mkdirSync,unlinkSync,readdirSync,statSync"
+import from="node:path" names="join,dirname"
 import from="node:crypto" names="createHash"
 import from="./config.js" names="AGON_HOME"
+import from="../models/context-parts.js" names="CompactionSummaryPart,ToolCacheEntry" types=true
+
+const name=SESSION_SCHEMA_VERSION type=number value=2
+const name=SESSION_MAX_MESSAGES type=number value=80
+const name=SESSION_TTL_MS type=number value=3600000
+  doc "60 minutes (was 30 min in v1)"
+const name=TOOL_CACHE_MAX_BYTES type=number value=10485760
+  doc "10 MB max total disk cache per session"
+
+interface name=SessionStateV2
+  field name=schemaVersion type=number
+  field name=messageHistory type="Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>"
+  field name=compactionSummary type="CompactionSummaryPart|null"
+  field name=toolCacheManifest type="ToolCacheEntry[]"
+  field name=confidence type="number|null"
+  field name=savedAt type=number
 
 fn name=sessionStorePath params="engineId:string" returns="string"
   doc "Session path scoped by engine + workspace to prevent context leaking across repos."
@@ -14,41 +30,129 @@ fn name=sessionStorePath params="engineId:string" returns="string"
     return join(AGON_HOME, 'sessions', `${engineId}-${cwdHash}.json`);
   >>>
 
-fn name=saveSessionState params="engineId:string, state:{ messageHistory: Array<{role:string,content:string}>, confidence:number|null }" returns="void"
-  doc "Persist API session state to disk."
+fn name=sessionCacheDir params="engineId:string" returns="string"
+  doc "Directory for disk-backed tool result cache files."
+  handler <<<
+    const cwdHash = createHash('md5').update(process.cwd()).digest('hex').slice(0, 8);
+    return join(AGON_HOME, 'sessions', `${engineId}-${cwdHash}-cache`);
+  >>>
+
+fn name=saveToolResultToDisk params="engineId:string, toolCallId:string, toolName:string, content:string" returns="ToolCacheEntry|null"
+  doc "Write a large tool result to disk cache. Returns manifest entry, or null if write failed."
+  handler <<<
+    try {
+      const cacheDir = sessionCacheDir(engineId);
+      mkdirSync(cacheDir, { recursive: true });
+      const filePath = join(cacheDir, `${toolCallId}.txt`);
+      writeFileSync(filePath, content, 'utf-8');
+      return {
+        toolCallId,
+        toolName,
+        filePath,
+        savedAt: Date.now(),
+        byteSize: Buffer.byteLength(content, 'utf-8'),
+      };
+    } catch (err) {
+      console.warn(`[agon] session-cache: failed to write ${toolCallId}: ${err instanceof Error ? err.message : String(err)}`);
+      return null;
+    }
+  >>>
+
+fn name=loadToolResultFromDisk params="engineId:string, toolCallId:string" returns="string|null"
+  doc "Read a cached tool result from disk. Returns null if not found."
+  handler <<<
+    try {
+      const cacheDir = sessionCacheDir(engineId);
+      const filePath = join(cacheDir, `${toolCallId}.txt`);
+      if (!existsSync(filePath)) return null;
+      return readFileSync(filePath, 'utf-8');
+    } catch {
+      return null;
+    }
+  >>>
+
+fn name=pruneToolCache params="engineId:string, keepIds:Set<string>" returns="void"
+  doc "Remove cached tool results not in the keep set. Prevents unbounded disk growth."
+  handler <<<
+    try {
+      const cacheDir = sessionCacheDir(engineId);
+      if (!existsSync(cacheDir)) return;
+      const files = readdirSync(cacheDir);
+      for (const f of files) {
+        const id = f.replace('.txt', '');
+        if (!keepIds.has(id)) {
+          try { unlinkSync(join(cacheDir, f)); } catch { /* already removed */ }
+        }
+      }
+    } catch { /* cache dir doesn't exist or inaccessible */ }
+  >>>
+
+fn name=saveSessionState params="engineId:string, state:{ messageHistory: Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>, confidence:number|null, compactionSummary?:CompactionSummaryPart|null, toolCacheManifest?:ToolCacheEntry[] }" returns="void"
+  doc "Persist API session state to disk (v2 schema)."
   handler <<<
     const dir = join(AGON_HOME, 'sessions');
     mkdirSync(dir, { recursive: true });
     const path = sessionStorePath(engineId);
-    // Only keep last 50 messages to avoid unbounded growth
-    const trimmed = state.messageHistory.slice(-50);
-    const data = { messageHistory: trimmed, confidence: state.confidence, savedAt: Date.now() };
+    // Keep last SESSION_MAX_MESSAGES to avoid unbounded growth
+    const trimmed = state.messageHistory.slice(-SESSION_MAX_MESSAGES);
+    const data: SessionStateV2 = {
+      schemaVersion: SESSION_SCHEMA_VERSION,
+      messageHistory: trimmed,
+      compactionSummary: state.compactionSummary ?? null,
+      toolCacheManifest: state.toolCacheManifest ?? [],
+      confidence: state.confidence,
+      savedAt: Date.now(),
+    };
     writeFileSync(path, JSON.stringify(data), 'utf-8');
   >>>
 
-fn name=loadSessionState params="engineId:string" returns="{ messageHistory: Array<{role:string,content:string}>, confidence:number|null } | null"
-  doc "Load persisted API session state from disk. Returns null if no saved state or stale (>30min)."
+fn name=loadSessionState params="engineId:string" returns="{ messageHistory: Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>, confidence:number|null, compactionSummary:CompactionSummaryPart|null, toolCacheManifest:ToolCacheEntry[] } | null"
+  doc "Load persisted API session state from disk. Handles v1→v2 migration transparently."
   handler <<<
     const path = sessionStorePath(engineId);
     if (!existsSync(path)) return null;
     try {
       const raw = readFileSync(path, 'utf-8');
       const data = JSON.parse(raw);
-      // TTL: discard state older than 30 minutes
-      if (data.savedAt && Date.now() - data.savedAt > 30 * 60 * 1000) return null;
+
+      // TTL: discard state older than SESSION_TTL_MS
+      if (data.savedAt && Date.now() - data.savedAt > SESSION_TTL_MS) return null;
       if (!Array.isArray(data.messageHistory)) return null;
-      return { messageHistory: data.messageHistory, confidence: data.confidence ?? null };
+
+      // v1 migration: old format has no schemaVersion
+      if (!data.schemaVersion || data.schemaVersion < 2) {
+        return {
+          messageHistory: data.messageHistory,
+          confidence: data.confidence ?? null,
+          compactionSummary: null,
+          toolCacheManifest: [],
+        };
+      }
+
+      return {
+        messageHistory: data.messageHistory,
+        confidence: data.confidence ?? null,
+        compactionSummary: data.compactionSummary ?? null,
+        toolCacheManifest: data.toolCacheManifest ?? [],
+      };
     } catch {
       return null;
     }
   >>>
 
 fn name=clearSessionState params="engineId:string" returns="void"
-  doc "Delete persisted session state."
+  doc "Delete persisted session state and its cache directory."
   handler <<<
     const path = sessionStorePath(engineId);
+    try { if (existsSync(path)) unlinkSync(path); } catch { /* already removed */ }
+    // Clean up cache dir too
     try {
-      const { unlinkSync } = require('node:fs');
-      if (existsSync(path)) unlinkSync(path);
-    } catch { /* session file already removed */ }
+      const cacheDir = sessionCacheDir(engineId);
+      if (existsSync(cacheDir)) {
+        const files = readdirSync(cacheDir);
+        for (const f of files) { try { unlinkSync(join(cacheDir, f)); } catch { /* skip */ } }
+        const { rmdirSync } = require('node:fs');
+        rmdirSync(cacheDir);
+      }
+    } catch { /* cache dir cleanup is best-effort */ }
   >>>

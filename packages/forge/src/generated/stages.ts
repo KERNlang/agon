@@ -199,6 +199,8 @@ export async function runStage2(opts: {challengers:string[], forgePrompt:string,
       tokens: { prompt: promptTokens, response: responseTokens, costUsd: estimateCost(engineId, promptTokens + responseTokens) },
     });
   
+    // Attach dispatch stdout for StageContext extraction in synthesis
+    (result as any).dispatchStdout = dispatchResult?.stdout?.slice(0, 5000) ?? '';
     return result;
   });
   
@@ -227,7 +229,7 @@ export async function runStage2(opts: {challengers:string[], forgePrompt:string,
   return { engineResults: allResults, accepted: false, winner: null, metrics };
 }
 
-// @kern-source: stages:221
+// @kern-source: stages:223
 export async function runStage2WithPeek(opts: {challengers:string[], forgePrompt:string, enginePrompts?:Map<string,string>, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal}): Promise<StageResult> {
   if (opts.challengers.length <= 1) {
     // Only one challenger — no peek possible, use normal stage2
@@ -360,6 +362,8 @@ export async function runStage2WithPeek(opts: {challengers:string[], forgePrompt
       tokens: { prompt: fPromptTokens, response: fResponseTokens, costUsd: estimateCost(engineId, fPromptTokens + fResponseTokens) },
     });
   
+    // Attach dispatch stdout for StageContext extraction in synthesis
+    (result as any).dispatchStdout = followerDispatchResult?.stdout?.slice(0, 5000) ?? '';
     return result;
   });
   
@@ -389,7 +393,7 @@ export async function runStage2WithPeek(opts: {challengers:string[], forgePrompt
   return { engineResults: allResults, accepted: false, winner: null, metrics };
 }
 
-// @kern-source: stages:383
+// @kern-source: stages:387
 export function determineWinner(results: Map<string,EngineResult>, spread: number): {winner:string|null, closeCall:boolean, bestScore:number, secondScore:number} {
   const passing = [...results.entries()]
     .filter(([_, r]) => r.pass && r.score > 0)

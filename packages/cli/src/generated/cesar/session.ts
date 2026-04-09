@@ -542,7 +542,7 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
   
   // Build system prompt and tool registry
   const systemPrompt = buildCesarSystemPrompt(ctx);
-  const toolRegistry = createCesarToolRegistry();
+  const toolRegistry = createCesarToolRegistry(cesarEngineId);
   
   // Store registry on context for tool execution during responses
   ctx.cesar!.toolRegistry = toolRegistry;

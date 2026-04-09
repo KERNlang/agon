@@ -11,7 +11,7 @@ import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 /**
  * Create and populate the standard Cesar tool registry. Single source of truth — no more duplication.
  */
-export function createCesarToolRegistry(): ToolRegistry {
+export function createCesarToolRegistry(engineId?: string): ToolRegistry {
   const toolRegistry = new ToolRegistry();
   toolRegistry.register(createReadTool());
   toolRegistry.register(createEditTool());
@@ -28,7 +28,7 @@ export function createCesarToolRegistry(): ToolRegistry {
   toolRegistry.register(createDelegateTool());
   toolRegistry.register(createReportConfidenceTool());
   toolRegistry.register(createProposePlanTool());
-  toolRegistry.register(createRetrieveResultTool());
+  toolRegistry.register(createRetrieveResultTool(engineId));
   return toolRegistry;
 }
 

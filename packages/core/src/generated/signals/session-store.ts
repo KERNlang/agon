@@ -107,7 +107,7 @@ export function pruneToolCache(engineId: string, keepIds: Set<string>): void {
     if (!existsSync(cacheDir)) return;
     const files = readdirSync(cacheDir);
     for (const f of files) {
-      const id = f.replace('.txt', '');
+      const id = f.replace(/\.txt$/, '');
       if (!keepIds.has(id)) {
         try { unlinkSync(join(cacheDir, f)); } catch { /* already removed */ }
       }

@@ -515,7 +515,7 @@ fn name=ensureCesarSession async=true params="ctx:HandlerContext" returns="Promi
 
     // Build system prompt and tool registry
     const systemPrompt = buildCesarSystemPrompt(ctx);
-    const toolRegistry = createCesarToolRegistry();
+    const toolRegistry = createCesarToolRegistry(cesarEngineId);
 
     // Store registry on context for tool execution during responses
     ctx.cesar!.toolRegistry = toolRegistry;

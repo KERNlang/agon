@@ -32,7 +32,7 @@ export interface EngineEnvVar {
 
 // @kern-source: types:22
 export interface CompanionConfig {
-  protocol: 'jsonrpc'|'acp'|'structured-cli';
+  protocol: 'jsonrpc'|'acp'|'structured-cli'|'stream-json';
   serverCmd: string[];
   features?: {threadResume?:boolean, nativeReview?:boolean, structuredOutput?:boolean};
 }

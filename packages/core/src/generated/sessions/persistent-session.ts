@@ -75,8 +75,8 @@ export function createPersistentSession(config: PersistentSessionConfig): Persis
     return createResumeSession(config);
   }
   
-  // Claude: bidirectional stream-json pipe
-  if ((engine.id === 'claude' || engine.binary === 'claude') && config.binaryPath) {
+  // Stream-JSON companion (Claude): bidirectional NDJSON pipe
+  if ((engine.companion?.protocol === 'stream-json' || engine.id === 'claude' || engine.binary === 'claude') && config.binaryPath) {
     return createStreamJsonSession(config);
   }
   

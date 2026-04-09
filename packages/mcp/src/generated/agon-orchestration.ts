@@ -1,5 +1,5 @@
 // @kern-source: agon-orchestration:9
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, readFileSync, mkdirSync, existsSync } from 'node:fs';
 
 // @kern-source: agon-orchestration:10
 import { join } from 'node:path';
@@ -111,7 +111,7 @@ export const ORCHESTRATION_TOOLS: Array<{name:string,description:string,inputSch
 
 // @kern-source: agon-orchestration:117
 /**
- * Write a delegation signal file for the Cesar brain to pick up.
+ * Append a signal to the signal file (array). Supports ReportConfidence + orchestration in same turn.
  */
 export function writeSignal(tool: string, args: Record<string,unknown>) {
   const signalDir = process.env.AGON_SIGNAL_DIR;
@@ -120,24 +120,33 @@ export function writeSignal(tool: string, args: Record<string,unknown>) {
   try {
     mkdirSync(signalDir, { recursive: true });
     const signalPath = join(signalDir, `${sessionId}.json`);
-    writeFileSync(signalPath, JSON.stringify({ tool, args, timestamp: Date.now() }));
+    let signals: Array<{tool: string; args: Record<string, unknown>; timestamp: number}> = [];
+    if (existsSync(signalPath)) {
+      try { signals = JSON.parse(readFileSync(signalPath, 'utf-8')); } catch { signals = []; }
+    }
+    signals.push({ tool, args, timestamp: Date.now() });
+    writeFileSync(signalPath, JSON.stringify(signals));
   } catch { /* signal write failed — not critical */ }
 }
 
-// @kern-source: agon-orchestration:130
+// @kern-source: agon-orchestration:135
 /**
  * Handle an MCP tool call — write signal and return delegation message.
  */
 export function handleToolCall(name: string, args: Record<string,unknown>): string {
   const NON_BREAKING = new Set(['ReportConfidence']);
+  const BREAK_AND_RESUME = new Set(['Delegate']);
   writeSignal(name, args);
   if (NON_BREAKING.has(name)) {
     return `Confidence ${(args as any).value}% recorded. Continue responding.`;
   }
+  if (BREAK_AND_RESUME.has(name)) {
+    return `Delegation to ${(args as any).engine} accepted. The orchestrator will execute the subtask and feed the result back to you. STOP responding now — you will receive the result in your next turn.`;
+  }
   return 'Delegation accepted. The orchestrator will handle the rest. STOP responding now — do not continue after this tool call.';
 }
 
-// @kern-source: agon-orchestration:141
+// @kern-source: agon-orchestration:150
 /**
  * Start the Agon orchestration MCP server on stdio. Line-delimited JSONRPC 2.0.
  */

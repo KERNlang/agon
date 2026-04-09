@@ -2,7 +2,9 @@
 // Pure routing logic extracted from the handleSubmit switch.
 // No JSX, no React — just decides what handler to call for each intent.
 
-import from="@agon/core" names="resolveWorkingDir,extractImagesFromInput,buildImageAttachment,undoPatch,resumeChatSession,findSkill,renderSkillPrompt,configSet,startChatSession,currentBranch,buildExtensionContext,sessionContext"
+import from="node:path" names="join"
+import from="node:fs" names="mkdirSync"
+import from="@agon/core" names="resolveWorkingDir,extractImagesFromInput,buildImageAttachment,undoPatch,resumeChatSession,findSkill,renderSkillPrompt,configSet,startChatSession,currentBranch,buildExtensionContext,sessionContext,RUNS_DIR"
 import from="../handlers/chat.js" names="invalidateCwdCache"
 import from="@agon/core" names="ImageAttachment,ChatSession" types=true
 import from="@agon/core" names="approveCesarPlan,cancelCesarPlan,saveCesarPlan,loadCesarPlan,listCesarPlans,executePlan,formatCesarPlanMarkdown"
@@ -11,6 +13,7 @@ import from="../handlers/plan-mode.js" names="buildStepExecutors"
 import from="./intent.js" names="detectIntent,FITNESS_PATTERN"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 import from="./icons.js" names="icons"
+import from="../blocks/output-format.js" names="ENGINE_COLORS"
 import from="../../handlers/index.js" names="handleForge,handleChat,handleBrainstorm,handleCampfire,handleTribunal,handleLeaderboard,handleHistory,handleEngines,handleDiscover,handleConfig,handleUse,handleCesar,handleTokens,handleModels,handleWorkspace,handleChats,handlePlanShow,handlePlansList,handleApprove,handleRetry,handleCancel,handleApplyPatch,handleCp,handleCommit,handleFlowReport,handleFlowAnalysis,handleBuild,handleRun,handleReview"
 import from="../handlers/team-tribunal.js" names="handleTeamTribunal"
 import from="../handlers/team-forge.js" names="handleTeamForge"
@@ -183,6 +186,42 @@ fn name=routeWithCesar async=true params="input:string, images:ImageAttachment[]
           case 'review':
             cb.runAsJob('review', label, () => handleReview(cb.dispatch, cb.ctx, result.target as string | undefined, result.engineId as string | undefined));
             return true;
+          case 'delegate': {
+            // Delegate: execute subtask on target engine, feed result back to Cesar
+            const targetEngineId = result.engineId as string | undefined;
+            if (!targetEngineId) { cb.dispatch({ type: 'warning', message: 'Delegate: no target engine specified' }); break; }
+            cb.runAsJob('delegate', label, async () => {
+              let targetEngine;
+              try { targetEngine = cb.ctx.registry.get(targetEngineId); } catch {
+                cb.dispatch({ type: 'error', message: `Delegate: engine "${targetEngineId}" not found` });
+                return;
+              }
+              const outDir = join(RUNS_DIR, `delegate-${targetEngineId}-${Date.now()}`);
+              mkdirSync(outDir, { recursive: true });
+              try {
+                const delegateResult = await cb.ctx.adapter.dispatch({
+                  engine: targetEngine,
+                  prompt: taskInput,
+                  cwd: resolveWorkingDir(),
+                  mode: 'exec' as any,
+                  timeout: cb.ctx.config.timeout ?? 120,
+                  outputDir: outDir,
+                });
+                const answer = (delegateResult.stdout || '').trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
+                if (answer) {
+                  cb.dispatch({ type: 'engine-block', engineId: targetEngineId, color: ENGINE_COLORS[targetEngineId] ?? 124, content: answer });
+                }
+                // Feed result back to Cesar so it can continue
+                if (cb.ctx.cesarSession) {
+                  cb.dispatch({ type: 'info', message: `Feeding delegate result back to Cesar…` });
+                  await handleChat(`[Delegate → ${targetEngineId}] Result:\n${answer || '(empty response)'}`, cb.dispatch, cb.ctx, undefined, { toolPolicy: 'none' });
+                }
+              } catch (err) {
+                cb.dispatch({ type: 'error', message: `Delegate to ${targetEngineId} failed: ${err instanceof Error ? err.message : String(err)}` });
+              }
+            });
+            return true;
+          }
         }
       }
       if (result.responded) return false;

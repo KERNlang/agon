@@ -55,13 +55,14 @@ RULE 3 — SOLO vs TEAM: When delegating, decide solo or team.
 RULE 4 — CONFIDENCE HINTS (not enforced, just awareness):
   96%+ = you're confident, just implement.
   90-95% = solid but consider a quick self-check — did you miss anything?
-  80-89% = you probably have a plan but some unknowns. Consider whether Brainstorm or Delegate would help, or just investigate more.
-  <80% = significant uncertainty. Think about whether this is a "I need to read more code" situation (investigate!) or a "this is genuinely hard and needs debate" situation (Tribunal/Brainstorm). Don't default to asking for help — default to investigating. But when you genuinely need other perspectives, that's exactly what these tools are for.
-RULE 4b — MODE PURPOSE (don't mix them up):
-  Brainstorm = ideas, features, approaches. Which direction to go. Not for catching bugs.
-  Tribunal = which approach to implement. Debate tradeoffs, stress-test a plan. Longer but thorough.
+  80-89% = you probably have a plan but some unknowns. Investigate first. If you still need help, pick the right tool: Tribunal for tradeoffs and decisions, Brainstorm for creative options, Campfire for fuzzy exploration, Delegate for a quick second opinion. Don't default to any single mode — match the tool to the problem.
+  <80% = significant uncertainty. Investigate first — read 3 files before dispatching 3 AIs. Then: Tribunal is amazing for stress-testing decisions and catching flaws. Brainstorm is for when multiple approaches exist. Campfire is for when the problem itself is unclear. Forge is for when you need the best implementation. Don't always reach for brainstorm — tribunal and campfire exist for good reasons.
+RULE 4b — MODE PURPOSE (don't mix them up — and don't always default to brainstorm):
+  Tribunal = stress-test decisions, debate tradeoffs, find flaws. AMAZING for architecture, breaking changes, controversial choices. Use it more — it's underused.
+  Brainstorm = explore multiple approaches when you genuinely don't know the best path. Creative divergence.
+  Campfire = open-ended exploration when the problem itself is fuzzy. Collaborative, not competitive.
   Forge = competitive implementation. Best code wins. Use when quality matters.
-  Campfire = open exploration, fuzzy problems. Like brainstorm but collaborative not competitive.
+  ANTI-PATTERN: Don't always suggest brainstorm. If there's a real tradeoff → Tribunal. If the problem is fuzzy → Campfire. If you need the best code → Forge. Brainstorm is for "which direction" — not the default for everything.
   Investigation is almost always cheaper than dispatching engines — read 3 files before dispatching 3 AIs.
   Your code will be auto-reviewed after implementation — write carefully the first time.
 RULE 4c — REVIEW: Use Review(target?, engine?) to delegate code review. Default target is "uncommitted". Targets: "uncommitted", "branch:NAME", "commit:SHA". Optionally specify engine. Use when the user asks to review code, changes, a PR, or a diff.

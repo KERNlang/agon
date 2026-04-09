@@ -256,7 +256,10 @@ export function App({  }: {  }) {
   }, []);
 
   const transition = useCallback((fn:any) => {
-          setReplState((prev: any) => fn({ state: prev }).state);
+          setReplState((prev: any) => {
+            try { return fn({ state: prev }).state; }
+            catch { return prev; }
+          });
   }, []);
 
   const trackAbort = useCallback((abort:AbortController|null) => {
@@ -961,7 +964,7 @@ export function App({  }: {  }) {
 }
 
 
-// @kern-source: app:935
+// @kern-source: app:938
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

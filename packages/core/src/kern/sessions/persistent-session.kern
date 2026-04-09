@@ -1082,10 +1082,12 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
                   messageHistory.length = 0;
                   messageHistory.push(...system, summary, ...recent);
                 } catch (compactErr) {
+                  // Snapshot before clearing — don't read from the array we just emptied
                   console.warn(`[agon] session: compaction failed: ${compactErr instanceof Error ? compactErr.message : String(compactErr)}`);
+                  const snapshot = [...messageHistory];
                   messageHistory.length = 0;
-                  const system = hasSystem ? [messageHistory[0] ?? { role: 'system', content: '' }] : [];
-                  messageHistory.push(...system, ...messageHistory.slice(protectFrom));
+                  const sysMsg = hasSystem ? [snapshot[0]] : [];
+                  messageHistory.push(...sysMsg, ...snapshot.slice(protectFrom));
                 }
               }
             }

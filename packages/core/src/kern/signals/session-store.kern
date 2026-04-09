@@ -2,7 +2,7 @@
 // Persists API session state to disk so sessions survive process restarts.
 // v2: Rich state with compaction summaries, tool cache manifests, and schema migration.
 
-import from="node:fs" names="writeFileSync,readFileSync,existsSync,mkdirSync,unlinkSync,readdirSync,statSync"
+import from="node:fs" names="writeFileSync,readFileSync,existsSync,mkdirSync,unlinkSync,readdirSync,statSync,rmdirSync"
 import from="node:path" names="join,dirname"
 import from="node:crypto" names="createHash"
 import from="./config.js" names="AGON_HOME"
@@ -151,7 +151,6 @@ fn name=clearSessionState params="engineId:string" returns="void"
       if (existsSync(cacheDir)) {
         const files = readdirSync(cacheDir);
         for (const f of files) { try { unlinkSync(join(cacheDir, f)); } catch { /* skip */ } }
-        const { rmdirSync } = require('node:fs');
         rmdirSync(cacheDir);
       }
     } catch { /* cache dir cleanup is best-effort */ }

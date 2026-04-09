@@ -43,22 +43,23 @@ export function runHook(hook: HookDef, env: Record<string,string>): HookResult {
   }
 }
 
-// @kern-source: hooks:39
-export const _hooksConfigCache: {config:any, cwd:string, ts:number}|null = null as {config:any, cwd:string, ts:number}|null;
+// @kern-source: hooks:40
+export const _hooksConfigCache: {value:{config:any, cwd:string, ts:number}|null} = { value: null } as {value:{config:any, cwd:string, ts:number}|null};
 
-// @kern-source: hooks:42
+// @kern-source: hooks:43
 function _cachedConfig(): any {
   const cwd = process.cwd();
   const now = Date.now();
-  if (_hooksConfigCache && _hooksConfigCache.cwd === cwd && (now - _hooksConfigCache.ts) < 60_000) {
-    return _hooksConfigCache.config;
+  const cached = _hooksConfigCache.value;
+  if (cached && cached.cwd === cwd && (now - cached.ts) < 60_000) {
+    return cached.config;
   }
   const config = loadConfig(cwd);
-  (_hooksConfigCache as any) = { config, cwd, ts: now };
+  _hooksConfigCache.value = { config, cwd, ts: now };
   return config;
 }
 
-// @kern-source: hooks:54
+// @kern-source: hooks:56
 export function runHooks(event: HookEvent, env?: Record<string,string>): HookResult[] {
   const config = _cachedConfig();
   const hooks = (config as any).hooks as Record<string, HookDef[]> | undefined;
@@ -92,12 +93,12 @@ export function runHooks(event: HookEvent, env?: Record<string,string>): HookRes
   return results;
 }
 
-// @kern-source: hooks:88
+// @kern-source: hooks:90
 export function hooksFailed(results: HookResult[]): boolean {
   return results.some((r) => !r.ok);
 }
 
-// @kern-source: hooks:93
+// @kern-source: hooks:95
 export function hooksOutput(results: HookResult[]): string {
   return results
     .filter((r) => r.stdout.trim())

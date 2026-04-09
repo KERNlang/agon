@@ -62,11 +62,9 @@ You are the advisor. Be direct:
 fn name=fireQuickNero async=true params="session:any, response:string, input:string, confidence:number, dispatch:Dispatch, signal:AbortSignal, ctx:HandlerContext" returns="Promise<{ challenged: boolean; newConfidence: number|null; challengeText: string }>"
   doc "Same-session self-challenge: inject a challenge message into the existing Cesar session. Fast — no engine spawn."
   handler <<<
-    const challengePrompt = `[SELF-CHECK] You just responded at ${confidence}% confidence to: "${input.slice(0, 200)}"
+    const challengePrompt = `[SELF-CHECK] You responded at ${confidence}% confidence.
 
-Your response: "${response.slice(0, 800)}"
-
-Challenge your own answer in 2-3 sentences. What could be wrong? What assumptions might not hold? If you find a real flaw, explain it. Start with ~X% for your revised confidence after this self-review.`;
+Take a breath. Anything you'd reconsider about your answer? Any assumption worth double-checking? If something feels off, say so briefly (1-2 sentences). If it holds up, just confirm. Start with ~X% for your revised confidence.`;
 
     try {
       let challengeText = '';

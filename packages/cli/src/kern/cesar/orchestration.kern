@@ -124,13 +124,17 @@ fn name=routeViaCesar params="input:string, dispatch:Dispatch, ctx:HandlerContex
       action = 'forge';
       reasoning = `Moderate confidence (${topConfidence}%) on code task — engines should compete`;
     } else if (hintClass === 'question') {
-      // Below threshold on question → get multiple opinions
-      action = 'brainstorm';
-      reasoning = `Moderate confidence (${topConfidence}%) — multiple perspectives needed`;
+      // Below threshold on question → tribunal debates tradeoffs, brainstorm explores options
+      // Use tribunal when bids show a clear split, brainstorm when it's genuinely open
+      const hasSplit = rankedBids.length >= 2 && Math.abs((rankedBids[0]?.confidence ?? 0) - (rankedBids[1]?.confidence ?? 0)) > 10;
+      action = hasSplit ? 'tribunal' : 'brainstorm';
+      reasoning = hasSplit
+        ? `Moderate confidence (${topConfidence}%) with split bids — tribunal to debate`
+        : `Moderate confidence (${topConfidence}%) — brainstorm for multiple perspectives`;
     } else {
-      // Ambiguous, below threshold → brainstorm to clarify
-      action = 'brainstorm';
-      reasoning = `Ambiguous task (${topConfidence}%) — brainstorm to find best approach`;
+      // Ambiguous, below threshold → campfire for open exploration (not brainstorm)
+      action = 'campfire';
+      reasoning = `Ambiguous task (${topConfidence}%) — campfire to explore the problem space`;
     }
 
     const label = (action === 'campfire' || action === 'tribunal' || action === 'brainstorm')

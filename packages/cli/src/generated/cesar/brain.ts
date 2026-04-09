@@ -570,9 +570,9 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       }
     }
   
-    // ── Investigation QC: Quick Nero self-challenge (always when <96%) ──
-    // Light self-challenge that sharpens Cesar's thinking before escalation decisions.
-    if (parsedConfidence !== null && parsedConfidence < CONFIDENCE_TIERS.direct && !secondOpinionPromise && !ctx.cesar!.advisorPending && !_isFollowUp && !abort.signal.aborted) {
+    // ── Quick Nero: gentle self-check (only when confidence genuinely warrants it) ──
+    // Not a gate — just a nudge. Fires rarely, stays in flow.
+    if (parsedConfidence !== null && parsedConfidence < 90 && !secondOpinionPromise && !ctx.cesar!.advisorPending && !_isFollowUp && !abort.signal.aborted) {
       if (streaming) { dispatch({ type: 'streaming-end', engineId: cesarEngineId }); streaming = false; }
       dispatch({ type: 'spinner-start', message: confidenceBadge(parsedConfidence) + ' Quick Nero — self-challenge…', color });
       await yieldToInk();

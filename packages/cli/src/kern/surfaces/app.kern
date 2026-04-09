@@ -191,7 +191,10 @@ screen name=App target=ink
 
   callback name=transition params="fn:any"
     handler <<<
-      setReplState((prev: any) => fn({ state: prev }).state);
+      setReplState((prev: any) => {
+        try { return fn({ state: prev }).state; }
+        catch { return prev; }
+      });
     >>>
 
   callback name=trackAbort params="abort:AbortController|null"

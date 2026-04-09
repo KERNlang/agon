@@ -75,13 +75,14 @@ RULE 3 — SOLO vs TEAM: When delegating, decide solo or team.
 RULE 4 — CONFIDENCE HINTS (not enforced, just awareness):
   96%+ = you're confident, just implement.
   90-95% = solid but consider a quick self-check — did you miss anything?
-  80-89% = you probably have a plan but some unknowns. Consider whether Brainstorm or Delegate would help, or just investigate more.
-  <80% = significant uncertainty. Think about whether this is a "I need to read more code" situation (investigate!) or a "this is genuinely hard and needs debate" situation (Tribunal/Brainstorm). Don't default to asking for help — default to investigating. But when you genuinely need other perspectives, that's exactly what these tools are for.
-RULE 4b — MODE PURPOSE (don't mix them up):
-  Brainstorm = ideas, features, approaches. Which direction to go. Not for catching bugs.
-  Tribunal = which approach to implement. Debate tradeoffs, stress-test a plan. Longer but thorough.
+  80-89% = you probably have a plan but some unknowns. Investigate first. If you still need help, pick the right tool: Tribunal for tradeoffs and decisions, Brainstorm for creative options, Campfire for fuzzy exploration, Delegate for a quick second opinion. Don't default to any single mode — match the tool to the problem.
+  <80% = significant uncertainty. Investigate first — read 3 files before dispatching 3 AIs. Then: Tribunal is amazing for stress-testing decisions and catching flaws. Brainstorm is for when multiple approaches exist. Campfire is for when the problem itself is unclear. Forge is for when you need the best implementation. Don't always reach for brainstorm — tribunal and campfire exist for good reasons.
+RULE 4b — MODE PURPOSE (don't mix them up — and don't always default to brainstorm):
+  Tribunal = stress-test decisions, debate tradeoffs, find flaws. AMAZING for architecture, breaking changes, controversial choices. Use it more — it's underused.
+  Brainstorm = explore multiple approaches when you genuinely don't know the best path. Creative divergence.
+  Campfire = open-ended exploration when the problem itself is fuzzy. Collaborative, not competitive.
   Forge = competitive implementation. Best code wins. Use when quality matters.
-  Campfire = open exploration, fuzzy problems. Like brainstorm but collaborative not competitive.
+  ANTI-PATTERN: Don't always suggest brainstorm. If there's a real tradeoff → Tribunal. If the problem is fuzzy → Campfire. If you need the best code → Forge. Brainstorm is for "which direction" — not the default for everything.
   Investigation is almost always cheaper than dispatching engines — read 3 files before dispatching 3 AIs.
   Your code will be auto-reviewed after implementation — write carefully the first time.
 RULE 4c — REVIEW: Use Review(target?, engine?) to delegate code review. Default target is "uncommitted". Targets: "uncommitted", "branch:NAME", "commit:SHA". Optionally specify engine. Use when the user asks to review code, changes, a PR, or a diff.
@@ -89,7 +90,7 @@ RULE 5 — WORKSPACE: Use Read for files. Use Grep for search. NEVER use cat/hea
 RULE 6 — AFTER DELEGATION: After calling Forge/Brainstorm/Tribunal/Campfire/Pipeline/Review, STOP. Do not continue responding. The orchestrator handles the rest. After calling Delegate, WAIT for the result — do NOT stop. Incorporate the delegated result into your response.
 RULE 7 — NO NARRATION: NEVER narrate your research process. Do not write "Reading the file...", "I'm checking...", "Let me look at...", "I've confirmed...". The user sees your text output — if you narrate exploration it looks like you have no clue. Instead: call tools SILENTLY, then speak ONLY when you have the answer or decision. Your visible output should be conclusions, answers, and actions — never a play-by-play of your investigation. If you need to read files or search code, call Read/Grep/Glob directly without announcing it.`;
 
-// @kern-source: session:73
+// @kern-source: session:74
 /**
  * Build the full Cesar system prompt with project context, engine list, and mode flags.
  */
@@ -161,7 +162,7 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
       return systemParts.join('\n\n');
 }
 
-// @kern-source: session:143
+// @kern-source: session:144
 /**
  * Build the onToolCall callback for API engines with native function calling.
  */
@@ -335,7 +336,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
   };
 }
 
-// @kern-source: session:315
+// @kern-source: session:316
 /**
  * Build the onApproval callback for engine tool approvals.
  */
@@ -384,7 +385,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
   };
 }
 
-// @kern-source: session:362
+// @kern-source: session:363
 export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unknown>> {
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -418,7 +419,7 @@ export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unkn
   return normalizeNamedRecord(raw);
 }
 
-// @kern-source: session:396
+// @kern-source: session:397
 export function loadCesarMcpServers(config: any, cwd: string): Array<Record<string,unknown>>|undefined {
   if (!(config as any).cesarMcpEnabled) return undefined;
   
@@ -442,14 +443,14 @@ export function loadCesarMcpServers(config: any, cwd: string): Array<Record<stri
   return servers;
 }
 
-// @kern-source: session:420
+// @kern-source: session:421
 export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
   if (!binaryPath) return false;
   const protocol = engine?.companion?.protocol;
   return protocol === 'acp' || protocol === 'jsonrpc';
 }
 
-// @kern-source: session:427
+// @kern-source: session:428
 /**
  * Compute a fingerprint of MCP-related config to detect changes. Includes both manual config and auto-discovery sources.
  */
@@ -469,7 +470,7 @@ export function mcpConfigFingerprint(config: any): string {
   return `${enabled}:${configPath}:${mtime}:${discoveryFp}`;
 }
 
-// @kern-source: session:445
+// @kern-source: session:446
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
     const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';

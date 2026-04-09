@@ -1,5 +1,5 @@
 import from="@agon/core" names="EngineDefinition,EngineMode,EngineModeConfig,ImageAttachment" types=true
-import from="@agon/core" names="EngineNotFoundError"
+import from="@agon/core" names="EngineNotFoundError,loadConfig"
 import from="node:fs" names="statSync"
 
 fn name=resolveArgs params="template:string[], vars:Record<string,string>" returns="string[]"
@@ -9,7 +9,7 @@ fn name=resolveArgs params="template:string[], vars:Record<string,string>" retur
     );
   >>>
 
-fn name=resolveModel params="engine:EngineDefinition" returns="string|null"
+fn name=resolveModel params="engine:EngineDefinition,cwd?:string" returns="string|null"
   handler <<<
     const modelConfig = engine.model;
     if (!modelConfig) return null;
@@ -18,6 +18,9 @@ fn name=resolveModel params="engine:EngineDefinition" returns="string|null"
       const envVal = process.env[modelConfig.configKey.toUpperCase()];
       if (envVal) return envVal;
     }
+
+    const configured = (loadConfig(cwd) as any).engineModels?.[engine.id];
+    if (configured) return configured;
 
     return modelConfig.default ?? null;
   >>>
@@ -42,7 +45,7 @@ fn name=buildCommand params="engine:EngineDefinition, mode:EngineMode, prompt:st
       );
     }
 
-    const model = resolveModel(engine);
+    const model = resolveModel(engine, cwd);
 
     let effectivePrompt = prompt;
     const hasImages = images && images.length > 0;

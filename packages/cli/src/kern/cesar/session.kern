@@ -486,11 +486,15 @@ fn name=ensureCesarSession async=true params="ctx:HandlerContext" returns="Promi
     }
 
     let engine;
-    try {
-      engine = ctx.registry.get(cesarEngineId);
-    } catch {
-      throw new Error(`Cesar engine "${cesarEngineId}" not found`);
-    }
+  try {
+    engine = ctx.registry.get(cesarEngineId);
+  } catch {
+    throw new Error(`Cesar engine "${cesarEngineId}" not found`);
+  }
+  const engineModelOverride = (config as any).engineModels?.[cesarEngineId] as string | undefined;
+  if (engineModelOverride && engine.api) {
+    engine = { ...engine, api: { ...engine.api, model: engineModelOverride } };
+  }
 
     // Resolve backend: user preference → auto (CLI first, API fallback)
     const cesarBackend = (config as any).cesarBackend ?? 'auto';

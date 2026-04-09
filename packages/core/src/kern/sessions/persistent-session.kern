@@ -809,6 +809,7 @@ fn name=createStreamJsonSession params="config:PersistentSessionConfig" returns=
         const args = [
           '--print',
           '--verbose',
+          '--dangerously-skip-permissions',
           '--input-format', 'stream-json',
           '--output-format', 'stream-json',
           '--replay-user-messages',

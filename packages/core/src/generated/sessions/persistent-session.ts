@@ -1165,8 +1165,8 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
             if (ctxPct > 80) {
               statusParts.push(`[WARNING: Context is ${ctxPct}% full. Be concise. Avoid re-reading files you already have context on.]`);
             }
-            // Inject as the last user message so the model sees it right before responding
-            messageHistory.push({ role: 'user', content: statusParts.join('\n') });
+            // Inject as system message — model sees it but it won't render in the chat UI
+            messageHistory.push({ role: 'system', content: statusParts.join('\n') });
           }
         }
   

@@ -27,7 +27,7 @@
   "model": {
     "configKey": "codex_model",
     "flag": "--model",
-    "default": "gpt-5.3-codex"
+    "default": "gpt-5.4-codex"
   },
 
   "api": {

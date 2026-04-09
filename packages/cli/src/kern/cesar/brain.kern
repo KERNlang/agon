@@ -1,5 +1,5 @@
 import from="node:path" names="join"
-import from="node:fs" names="mkdirSync,appendFileSync"
+import from="node:fs" names="mkdirSync,appendFileSync,existsSync,readFileSync,unlinkSync"
 import from="@agon/core" names="ImageAttachment,PersistentSession,ForgeManifest,ForgeJudgment" types=true
 import from="@agon/core" names="ensureAgonHome,RUNS_DIR,appendMessage,tracker,resolveWorkingDir,ToolRegistry,FileStateCache,parseToolCalls,formatToolResults,runToolLoop,classifyTask"
 import from="@agon/core" names="ToolContext,ToolCallResult" types=true
@@ -427,6 +427,30 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
         dispatch({ type: 'info', message: confidenceBadge(toolConf) + ` Cesar` });
         dispatch({ type: 'confidence-update', value: toolConf });
         if (toolConf >= CONFIDENCE_TIERS.direct && ctx.cesar!.autoNero) deactivateNero(ctx, dispatch);
+      }
+
+      // ── Check MCP signal file for delegations from companion engines ──
+      if (!ctx.cesar!.pendingDelegation && ctx.cesar!.mcpSignalPath) {
+        try {
+          const signalPath = ctx.cesar!.mcpSignalPath as string;
+          if (existsSync(signalPath)) {
+            const signal = JSON.parse(readFileSync(signalPath, 'utf-8'));
+            unlinkSync(signalPath);
+            if (signal.timestamp && Date.now() - signal.timestamp < 60000) {
+              if (signal.tool === 'ReportConfidence') {
+                const value = typeof signal.args?.value === 'number' ? signal.args.value : null;
+                if (value !== null && value >= 0 && value <= 100) {
+                  ctx.cesar!.reportedConfidence = value;
+                  parsedConfidence = value;
+                  dispatch({ type: 'info', message: confidenceBadge(value) + ` Cesar (via MCP)` });
+                  dispatch({ type: 'confidence-update', value });
+                }
+              } else {
+                ctx.cesar!.pendingDelegation = extractDelegation(signal.tool, signal.args ?? {});
+              }
+            }
+          }
+        } catch { /* signal file read failed — not critical */ }
       }
 
       // ── Check pending delegation from orchestration signal tools ──

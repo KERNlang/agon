@@ -2,7 +2,7 @@
 import { readFileSync, statSync } from 'node:fs';
 
 // @kern-source: session:2
-import { isAbsolute, resolve } from 'node:path';
+import { isAbsolute, resolve, dirname } from 'node:path';
 
 // @kern-source: session:3
 import { join } from 'node:path';
@@ -11,27 +11,30 @@ import { join } from 'node:path';
 import { mkdirSync } from 'node:fs';
 
 // @kern-source: session:5
-import type { PersistentSession, PersistentSessionConfig } from '@agon/core';
+import { fileURLToPath } from 'node:url';
 
 // @kern-source: session:6
-import { EngineRegistry, loadConfig, ensureAgonHome, resolveWorkingDir, scanProjectContext, createPersistentSession, ToolRegistry, FileStateCache, buildToolSystemPrompt, toolsToOpenAIFormat, executeToolCall, RUNS_DIR, tracker, discoverMcpServers, mcpDiscoveryFingerprint, mcpServersToWireFormat } from '@agon/core';
+import type { PersistentSession, PersistentSessionConfig } from '@agon/core';
 
 // @kern-source: session:7
-import type { ToolContext, ToolCallResult } from '@agon/core';
+import { EngineRegistry, loadConfig, ensureAgonHome, AGON_HOME, resolveWorkingDir, scanProjectContext, createPersistentSession, ToolRegistry, FileStateCache, buildToolSystemPrompt, toolsToOpenAIFormat, executeToolCall, RUNS_DIR, tracker, discoverMcpServers, mcpDiscoveryFingerprint, mcpServersToWireFormat } from '@agon/core';
 
 // @kern-source: session:8
-import type { HandlerContext } from '../../handlers/types.js';
+import type { ToolContext, ToolCallResult } from '@agon/core';
 
 // @kern-source: session:9
-import { createCesarToolRegistry } from './tools.js';
+import type { HandlerContext } from '../../handlers/types.js';
 
 // @kern-source: session:10
-import { buildRoutingContext } from './routing.js';
+import { createCesarToolRegistry } from './tools.js';
 
 // @kern-source: session:11
+import { buildRoutingContext } from './routing.js';
+
+// @kern-source: session:12
 import { extractDelegation } from './brain.js';
 
-// @kern-source: session:13
+// @kern-source: session:14
 export const CESAR_SYSTEM_PROMPT: string = `You are Cesar, Agon AI orchestrator.
 
 VOICE POLICY — clean-first core with light Cesar layer:
@@ -110,7 +113,7 @@ RULE 5 — WORKSPACE: Use Read for files. Use Grep for search. NEVER use cat/hea
 RULE 6 — AFTER DELEGATION: After calling Forge/Brainstorm/Tribunal/Campfire/Pipeline/Review, STOP. Do not continue responding. The orchestrator handles the rest. After calling Delegate, WAIT for the result — do NOT stop. Incorporate the delegated result into your response.
 RULE 7 — NO NARRATION: NEVER narrate your research process. Do not write "Reading the file...", "I'm checking...", "Let me look at...", "I've confirmed...". The user sees your text output — if you narrate exploration it looks like you have no clue. Instead: call tools SILENTLY, then speak ONLY when you have the answer or decision. Your visible output should be conclusions, answers, and actions — never a play-by-play of your investigation. If you need to read files or search code, call Read/Grep/Glob directly without announcing it.`;
 
-// @kern-source: session:94
+// @kern-source: session:95
 /**
  * Build the full Cesar system prompt with project context, engine list, and mode flags.
  */
@@ -182,7 +185,7 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
       return systemParts.join('\n\n');
 }
 
-// @kern-source: session:164
+// @kern-source: session:165
 /**
  * Build the onToolCall callback for API engines with native function calling.
  */
@@ -356,7 +359,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
   };
 }
 
-// @kern-source: session:336
+// @kern-source: session:337
 /**
  * Build the onApproval callback for engine tool approvals.
  */
@@ -405,7 +408,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
   };
 }
 
-// @kern-source: session:383
+// @kern-source: session:384
 export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unknown>> {
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -439,7 +442,7 @@ export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unkn
   return normalizeNamedRecord(raw);
 }
 
-// @kern-source: session:417
+// @kern-source: session:418
 export function loadCesarMcpServers(config: any, cwd: string): Array<Record<string,unknown>>|undefined {
   if (!(config as any).cesarMcpEnabled) return undefined;
   
@@ -463,14 +466,14 @@ export function loadCesarMcpServers(config: any, cwd: string): Array<Record<stri
   return servers;
 }
 
-// @kern-source: session:441
+// @kern-source: session:442
 export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
   if (!binaryPath) return false;
   const protocol = engine?.companion?.protocol;
   return protocol === 'acp' || protocol === 'jsonrpc';
 }
 
-// @kern-source: session:448
+// @kern-source: session:449
 /**
  * Compute a fingerprint of MCP-related config to detect changes. Includes both manual config and auto-discovery sources.
  */
@@ -490,7 +493,7 @@ export function mcpConfigFingerprint(config: any): string {
   return `${enabled}:${configPath}:${mtime}:${discoveryFp}`;
 }
 
-// @kern-source: session:466
+// @kern-source: session:467
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
     const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
@@ -503,7 +506,7 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
         toolRegistry: null, hasNativeTools: false, lastDispatch: null,
         pendingDelegation: null, reportedConfidence: undefined,
         autoNero: false, advisorPending: false, lastEscalation: null as string | null,
-        mcpFingerprint: undefined, planDispatch: null, proposedPlan: undefined,
+        mcpFingerprint: undefined, mcpSignalPath: undefined as string | undefined, planDispatch: null, proposedPlan: undefined,
       };
     }
   
@@ -584,6 +587,26 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
       }
     }
   
+    // ── Inject Agon orchestration MCP server for CLI companion engines ──
+    // Gives Codex/Gemini/OpenCode real MCP tools for Tribunal, Brainstorm, etc.
+    // instead of XML prose that they can't actually call.
+    const isCompanion = binaryPath && (engine.companion?.protocol === 'jsonrpc' || engine.companion?.protocol === 'acp');
+    if (isCompanion) {
+      ensureAgonHome();
+      const signalDir = join(AGON_HOME, 'signals');
+      mkdirSync(signalDir, { recursive: true });
+      const sessionSignalId = `cesar-${Date.now()}`;
+      const mcpServerPath = join(dirname(fileURLToPath(import.meta.url)), '../../../../mcp/dist/index.js');
+      const agonMcpServer: Record<string, unknown> = {
+        name: 'agon-orchestration',
+        command: 'node',
+        args: [mcpServerPath],
+        env: { AGON_SIGNAL_DIR: signalDir, AGON_SESSION_ID: sessionSignalId },
+      };
+      mcpServers = mcpServers ? [...mcpServers, agonMcpServer] : [agonMcpServer];
+      ctx.cesar!.mcpSignalPath = join(signalDir, `${sessionSignalId}.json`);
+    }
+  
     // Build system prompt and tool registry
     const systemPrompt = buildCesarSystemPrompt(ctx);
     const toolRegistry = createCesarToolRegistry(cesarEngineId);
@@ -595,17 +618,21 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
     const nativeTools = (!binaryPath && engine.api) ? toolsToOpenAIFormat(toolRegistry) : undefined;
     ctx.cesar!.hasNativeTools = !!nativeTools;
   
-    // API engines with native tools: DON'T inject XML tool descriptions — the native
-    // tools parameter is enough and XML descriptions confuse models into narrating
-    // instead of calling tools. CLI engines still need the XML prompt.
+    // Prompt strategy: API → native tools, companion → MCP tools, fallback → XML
     let fullPrompt = systemPrompt;
-    if (!nativeTools) {
+    if (nativeTools) {
+      // API engine: function calling, no XML
+      fullPrompt += '\n\nYou have tools available via function calling. Call them directly — do NOT describe them in XML or narrate what you would call. Just call the function.';
+    } else if (isCompanion) {
+      // CLI companion with MCP orchestration: reference MCP tools, no XML for orchestration
+      fullPrompt += '\n\nYou have orchestration tools available via the agon-orchestration MCP server: Tribunal, Brainstorm, Campfire, Forge, Pipeline, Review, Delegate, ReportConfidence. Call them as MCP tools — NEVER via Bash. After calling any orchestration tool (except Delegate and ReportConfidence): STOP and wait. For file operations, use your built-in tools (shell, file edit, etc.) directly.';
+    } else {
+      // Fallback: XML tool descriptions for engines without native tools or MCP
       const toolPrompt = buildToolSystemPrompt(toolRegistry);
       fullPrompt += '\n\nTOOLS: XML format below. Never ask permission — just call. Never describe changes when you can execute.\n\n' + toolPrompt;
-    } else {
-      fullPrompt += '\n\nYou have tools available via function calling. Call them directly — do NOT describe them in XML or narrate what you would call. Just call the function.';
     }
-    if (mcpServers && mcpServers.length > 0) {
+    if (mcpServers && mcpServers.length > 0 && !isCompanion) {
+      // Only add generic MCP guidance for non-companion engines (companion already got specific MCP guidance above)
       fullPrompt += '\n\nMCP is enabled for this session. Use MCP only when the task clearly needs capabilities outside the workspace or built-in Agon tools. Prefer Read/Grep/Glob/Edit/Bash first, and keep MCP calls to the minimum needed.';
     }
   

@@ -73,12 +73,13 @@ export interface CesarState {
   autoNero: boolean;
   advisorPending: boolean;
   mcpFingerprint: string | undefined;
+  mcpSignalPath?: string | undefined;
   planDispatch: ((event: any) => void) | null;
   proposedPlan: any | undefined;
   lastEscalation: string | null;
 }
 
-// @kern-source: handler-types:138
+// @kern-source: handler-types:139
 export interface HandlerContext {
   registry: EngineRegistry;
   adapter: EngineAdapter;

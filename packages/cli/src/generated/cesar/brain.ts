@@ -2,7 +2,7 @@
 import { join } from 'node:path';
 
 // @kern-source: brain:2
-import { mkdirSync, appendFileSync } from 'node:fs';
+import { mkdirSync, appendFileSync, existsSync, readFileSync, unlinkSync } from 'node:fs';
 
 // @kern-source: brain:3
 import type { ImageAttachment, PersistentSession, ForgeManifest, ForgeJudgment } from '@agon/core';
@@ -451,6 +451,30 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       dispatch({ type: 'info', message: confidenceBadge(toolConf) + ` Cesar` });
       dispatch({ type: 'confidence-update', value: toolConf });
       if (toolConf >= CONFIDENCE_TIERS.direct && ctx.cesar!.autoNero) deactivateNero(ctx, dispatch);
+    }
+  
+    // ── Check MCP signal file for delegations from companion engines ──
+    if (!ctx.cesar!.pendingDelegation && ctx.cesar!.mcpSignalPath) {
+      try {
+        const signalPath = ctx.cesar!.mcpSignalPath as string;
+        if (existsSync(signalPath)) {
+          const signal = JSON.parse(readFileSync(signalPath, 'utf-8'));
+          unlinkSync(signalPath);
+          if (signal.timestamp && Date.now() - signal.timestamp < 60000) {
+            if (signal.tool === 'ReportConfidence') {
+              const value = typeof signal.args?.value === 'number' ? signal.args.value : null;
+              if (value !== null && value >= 0 && value <= 100) {
+                ctx.cesar!.reportedConfidence = value;
+                parsedConfidence = value;
+                dispatch({ type: 'info', message: confidenceBadge(value) + ` Cesar (via MCP)` });
+                dispatch({ type: 'confidence-update', value });
+              }
+            } else {
+              ctx.cesar!.pendingDelegation = extractDelegation(signal.tool, signal.args ?? {});
+            }
+          }
+        }
+      } catch { /* signal file read failed — not critical */ }
     }
   
     // ── Check pending delegation from orchestration signal tools ──

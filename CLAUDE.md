@@ -5,8 +5,8 @@
 **Every new function, type, constant, and handler MUST be written in KERN.** No hand-maintained TypeScript unless it's physically impossible (React/Ink JSX until `--target=ink` ships, or external library bindings like `@huggingface/transformers`).
 
 The workflow:
-1. Write `.kern` source in `packages/*/src/kern/`
-2. Compile: `node /Users/nicolascukas/GitHub/kern-lang/packages/cli/dist/cli.js compile <file.kern> --outdir=<package>/src/generated`
+1. Write `.kern` source in `packages/*/src/kern/<category>/` (surfaces, blocks, signals, models, or a feature domain like cesar/, tools/, handlers/)
+2. Compile: `npx kern compile src/kern/<category> --outdir=src/generated/<category>` (or use `npm run kern:compile`)
 3. The hand-maintained `.ts` file becomes a thin re-export facade
 4. If the type needs a discriminated union, use KERN's `union` node. If it needs a class, use `service`. If it needs async with abort, use `signal` + `cleanup`.
 5. **NEVER write logic in TypeScript that KERN can express.** If you think KERN can't do it, check these primitives first:
@@ -25,13 +25,15 @@ The workflow:
 ### NEVER edit `packages/*/src/generated/` directly
 These are compiled output. Edit the `.kern` source, recompile.
 
-## KERN Compiler Location
+## KERN Compiler
 
-```
-/Users/nicolascukas/GitHub/kern-lang/packages/cli/dist/cli.js
+```bash
+npx kern compile src/kern/<category> --outdir=src/generated/<category>
+# Or compile all at once:
+npm run kern:compile
 ```
 
-Compile core nodes: `node $KERN compile <file.kern> --outdir=<dir>`
+Installed via `kern-lang` npm package (^3.1.7). Available in all packages via `node_modules/.bin/kern`.
 Available primitives: `fn`, `service`, `union`, `interface`, `const`, `import`, `machine`, `event`, `screen`
 
 ## Build & Test
@@ -44,10 +46,17 @@ npm run typecheck      # tsc -b (type check only)
 
 ## Architecture — KERN Coverage
 
-- **packages/core** — 20 .kern files. **100% KERN.** Types, config, scoring, ELO, plan state machine, process spawner, EngineRegistry (`service`), TokenTracker (`service` + `singleton`).
-- **packages/forge** — 9 .kern files. **100% KERN.** Forge, brainstorm, tribunal, campfire orchestration.
+- **packages/core** — 69 .kern files in `models/`, `signals/`, `blocks/`, `cesar/`, `tools/`, `api/`, `sessions/`, `teams/`. **100% KERN.**
+- **packages/cli** — 60 .kern files in `surfaces/`, `blocks/`, `signals/`, `models/`, `cesar/`, `handlers/`, `commands/`. **~95% KERN.** Remaining: `app.tsx` (Ink target pending).
+- **packages/forge** — 17 .kern files. **100% KERN.** Forge, brainstorm, tribunal, campfire orchestration.
 - **packages/adapter-cli** — 2 .kern files. **100% KERN.** CliAdapter (`service implements EngineAdapter`).
-- **packages/cli** — 16 .kern files. **~95% KERN.** All handlers, intent detection, output helpers, markdown parser. Remaining: `app.tsx` (Ink target pending).
+
+### KERN Directory Pattern
+- `surfaces/` — top-level screens (what the user sees)
+- `blocks/` — reusable UI/logic components
+- `signals/` — state, dispatch, routing, config, registries, stores
+- `models/` — types, interfaces, schemas
+- Feature domains: `cesar/`, `tools/`, `api/`, `sessions/`, `teams/`, `handlers/`, `commands/`
 
 ## Conventions
 
@@ -59,8 +68,8 @@ npm run typecheck      # tsc -b (type check only)
 
 ## Key Patterns
 
-- `spawnWithTimeout(opts)` — spawns external process with timeout + abort signal (KERN: `process.kern`)
-- `spawnStream(opts)` — async generator yielding stdout chunks (KERN: `process.kern`)
+- `spawnWithTimeout(opts)` — spawns external process with timeout + abort signal (KERN: `blocks/process.kern`)
+- `spawnStream(opts)` — async generator yielding stdout chunks (KERN: `blocks/process.kern`)
 - `signal` + `cleanup` on KERN `fn` — generates AbortController + try/finally
 - `service` with `stream=true` method — generates `async *method(): AsyncGenerator<T>`
 - All handlers use `signal name=abort` for cancellation support

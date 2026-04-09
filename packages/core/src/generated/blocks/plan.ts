@@ -1,0 +1,284 @@
+// @kern-source: plan:1
+import { PlanStateError } from '../models/errors.js';
+
+// @kern-source: plan:3
+export type PlanState = 'draft' | 'approved' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
+
+// @kern-source: plan:4
+export type StepState = 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
+
+// @kern-source: plan:5
+export type StepEffect = 'read' | 'write' | 'exec' | 'network';
+
+// @kern-source: plan:6
+export type PlanStepKind = 'dispatch' | 'fitness' | 'critique' | 'synthesis' | 'apply' | 'routing';
+
+// @kern-source: plan:7
+export type ApprovalLevel = 'auto' | 'plan' | 'step';
+
+// @kern-source: plan:9
+export interface ArtifactRef {
+  type: 'patch'|'diff'|'output'|'manifest';
+  path: string;
+  engineId?: string;
+}
+
+// @kern-source: plan:14
+export interface WorkspaceSnapshot {
+  id: string;
+  path: string;
+  headSha: string;
+  branch: string;
+  dirty: boolean;
+}
+
+// @kern-source: plan:21
+export interface StepAttempt {
+  startedAt: string;
+  finishedAt?: string;
+  exitCode?: number;
+  error?: string;
+}
+
+// @kern-source: plan:27
+export interface StepResult {
+  state: StepState;
+  attempts: StepAttempt[];
+  artifacts: ArtifactRef[];
+  engineId?: string;
+  score?: number;
+  durationMs?: number;
+}
+
+// @kern-source: plan:35
+export interface PlanStep {
+  id: string;
+  kind: PlanStepKind;
+  label: string;
+  engineId?: string;
+  effects: StepEffect[];
+  result: StepResult;
+}
+
+// @kern-source: plan:43
+export interface PlanAction {
+  type: 'forge'|'build';
+  task: string;
+  fitnessCmd?: string;
+  engineId?: string;
+  engines?: string[];
+  hardened?: boolean;
+}
+
+// @kern-source: plan:51
+export interface Plan {
+  id: string;
+  action: PlanAction;
+  state: PlanState;
+  steps: PlanStep[];
+  workspace: WorkspaceSnapshot;
+  createdAt: string;
+  updatedAt: string;
+  currentStepId: string|null;
+}
+
+// @kern-source: plan:61
+export type PlanStepInput = Omit<PlanStep,'result'>;
+
+// @kern-source: plan:63
+export function createPlan(action: PlanAction, workspace: WorkspaceSnapshot, steps: PlanStepInput[]): Plan {
+  const id = `plan-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  return {
+    id,
+    action,
+    state: 'draft',
+    steps: steps.map((s) => ({
+      ...s,
+      result: { state: 'pending', attempts: [], artifacts: [] },
+    })),
+    workspace,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    currentStepId: null,
+  };
+}
+
+// @kern-source: plan:81
+export function advanceStep(plan: Plan, stepId: string, result: StepResult): Plan {
+  const stepIdx = plan.steps.findIndex((s) => s.id === stepId);
+  if (stepIdx === -1) return plan;
+  
+  const newSteps = plan.steps.map((s, i) =>
+    i === stepIdx ? { ...s, result } : s,
+  );
+  
+  let newState = plan.state;
+  let newCurrentStepId = plan.currentStepId;
+  
+  if (result.state === 'failed') {
+    newState = 'paused';
+    newCurrentStepId = stepId;
+  } else if (result.state === 'completed' || result.state === 'skipped') {
+    const nextPending = newSteps.find((s) => s.result.state === 'pending');
+    if (nextPending) {
+      newCurrentStepId = nextPending.id;
+      newState = 'running';
+    } else {
+      newCurrentStepId = null;
+      newState = 'completed';
+    }
+  }
+  
+  return {
+    ...plan,
+    steps: newSteps,
+    state: newState,
+    currentStepId: newCurrentStepId,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+// @kern-source: plan:116
+export function canAutoApprove(step: PlanStep, level: ApprovalLevel): boolean {
+  if (level === 'auto') return true;
+  if (level === 'plan') return true;
+  return step.effects.every((e) => e === 'read');
+}
+
+// @kern-source: plan:123
+export function mergeStepResult(plan: Plan, stepId: string, partial: Partial<StepResult>): Plan {
+  const stepIdx = plan.steps.findIndex((s) => s.id === stepId);
+  if (stepIdx === -1) return plan;
+  
+  const existing = plan.steps[stepIdx].result;
+  const merged: StepResult = {
+    state: partial.state ?? existing.state,
+    attempts: [...existing.attempts, ...(partial.attempts ?? [])],
+    artifacts: [...existing.artifacts, ...(partial.artifacts ?? [])],
+    engineId: partial.engineId ?? existing.engineId,
+    score: partial.score ?? existing.score,
+    durationMs: partial.durationMs ?? existing.durationMs,
+  };
+  
+  const newSteps = plan.steps.map((s, i) =>
+    i === stepIdx ? { ...s, result: merged } : s,
+  );
+  
+  let newState = plan.state;
+  let newCurrentStepId = plan.currentStepId;
+  
+  if (merged.state === 'failed') {
+    newState = 'paused';
+    newCurrentStepId = stepId;
+  } else if (merged.state === 'completed' || merged.state === 'skipped') {
+    const nextPending = newSteps.find((s) => s.result.state === 'pending');
+    if (nextPending) {
+      newCurrentStepId = nextPending.id;
+      newState = 'running';
+    } else {
+      newCurrentStepId = null;
+      newState = 'completed';
+    }
+  }
+  
+  return {
+    ...plan,
+    steps: newSteps,
+    state: newState,
+    currentStepId: newCurrentStepId,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+// @kern-source: plan:168
+export function approvePlan(plan: Plan): Plan {
+  if (plan.state !== 'draft') {
+    throw new PlanStateError('draft', plan.state);
+  }
+  return { ...plan, state: 'approved', updatedAt: new Date().toISOString() };
+}
+
+// @kern-source: plan:176
+export function startPlan(plan: Plan): Plan {
+  if (plan.state !== 'approved') {
+    throw new PlanStateError('approved', plan.state);
+  }
+  const firstPending = plan.steps.find((s) => s.result.state === 'pending');
+  return {
+    ...plan,
+    state: 'running',
+    currentStepId: firstPending?.id ?? null,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+// @kern-source: plan:190
+export function cancelPlan(plan: Plan): Plan {
+  if (plan.state === 'completed' || plan.state === 'cancelled') {
+    throw new PlanStateError(
+      ['draft', 'approved', 'running', 'paused', 'failed'],
+      plan.state,
+    );
+  }
+  return { ...plan, state: 'cancelled', updatedAt: new Date().toISOString() };
+}
+
+// @kern-source: plan:201
+export function failPlan(plan: Plan, error?: string): Plan {
+  if (plan.state !== 'running' && plan.state !== 'paused') {
+    throw new PlanStateError(['running', 'paused'], plan.state);
+  }
+  
+  let steps = plan.steps;
+  if (plan.currentStepId && error) {
+    const stepIdx = plan.steps.findIndex((s) => s.id === plan.currentStepId);
+    if (stepIdx !== -1) {
+      const step = plan.steps[stepIdx];
+      steps = plan.steps.map((s, i) =>
+        i === stepIdx
+          ? {
+              ...s,
+              result: {
+                ...step.result,
+                state: 'failed' as StepState,
+                attempts: [
+                  ...step.result.attempts,
+                  { startedAt: new Date().toISOString(), finishedAt: new Date().toISOString(), error },
+                ],
+              },
+            }
+          : s,
+      );
+    }
+  }
+  
+  return { ...plan, steps, state: 'failed', updatedAt: new Date().toISOString() };
+}
+
+// @kern-source: plan:233
+export function resetStepForRetry(plan: Plan, stepId: string): Plan {
+  const stepIdx = plan.steps.findIndex((s) => s.id === stepId);
+  if (stepIdx === -1) return plan;
+  
+  const step = plan.steps[stepIdx];
+  if (step.result.state !== 'failed') return plan;
+  
+  const newSteps = plan.steps.map((s, i) => {
+    if (i >= stepIdx) {
+      return {
+        ...s,
+        result: { ...s.result, state: 'pending' as StepState },
+      };
+    }
+    return s;
+  });
+  
+  return {
+    ...plan,
+    steps: newSteps,
+    state: 'approved',
+    currentStepId: stepId,
+    updatedAt: new Date().toISOString(),
+  };
+}
+

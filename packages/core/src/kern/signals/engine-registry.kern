@@ -1,0 +1,160 @@
+import from="node:fs" names="readdirSync,readFileSync,existsSync"
+import from="node:path" names="join,dirname"
+import from="node:os" names="homedir"
+import from="node:child_process" names="execFileSync"
+import from="../models/types.js" names="EngineDefinition,EngineMode" types=true
+import from="../models/errors.js" names="EngineNotFoundError"
+import from="../../schemas/engine-schema.js" names="validateEngineConfig"
+
+const name=AGON_ENGINES_DIR type=string
+  handler <<<
+    join(homedir(), '.agon', 'engines')
+  >>>
+
+service name=EngineRegistry
+  field name=engines type="Map<string, EngineDefinition>" default="new Map()" private=true
+  field name=binaryCache type="Map<string, string | null>" default="new Map()" private=true
+
+  method name=resolveBuiltinDir params="dir:string" returns=string private=true
+    handler <<<
+      if (existsSync(dir)) return dir;
+      let cursor = dirname(dir);
+      for (let i = 0; i < 6; i += 1) {
+        const candidate = join(cursor, 'engines');
+        if (candidate !== dir && existsSync(candidate)) return candidate;
+        const parent = dirname(cursor);
+        if (parent === cursor) break;
+        cursor = parent;
+      }
+      return dir;
+    >>>
+
+  method name=loadDir params="dir:string, tier:'builtin'|'user'" returns=void private=true
+    handler <<<
+      if (!existsSync(dir)) {
+        console.warn(`[agon] engine directory does not exist: ${dir}`);
+        return;
+      }
+      let files: string[];
+      try { files = readdirSync(dir).filter((f: string) => f.endsWith('.json')); }
+      catch (err) {
+        console.warn(`[agon] failed to read engine directory ${dir}: ${err instanceof Error ? err.message : String(err)}`);
+        return;
+      }
+      for (const file of files) {
+        try {
+          const raw = JSON.parse(readFileSync(join(dir, file), 'utf-8'));
+          const validation = validateEngineConfig(raw, file);
+          if (!validation.ok) {
+            console.warn(`[agon] ${validation.error}`);
+            // Still load the engine with a warning — don't break existing setups
+            const def = raw as EngineDefinition;
+            def.tier = tier;
+            this.engines.set(def.id, def);
+            continue;
+          }
+          const def = validation.data as unknown as EngineDefinition;
+          def.tier = tier;
+          this.engines.set(def.id, def);
+        } catch (err) {
+          console.warn(`[agon] failed to load engine definition ${file}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+    >>>
+
+  method name=load params="builtinDir:string" returns=void
+    handler <<<
+      this.loadDir(this.resolveBuiltinDir(builtinDir), 'builtin');
+      if (existsSync(AGON_ENGINES_DIR)) this.loadDir(AGON_ENGINES_DIR, 'user');
+    >>>
+
+  method name=register params="engine:EngineDefinition" returns=void
+    handler <<<
+      this.engines.set(engine.id, engine);
+    >>>
+
+  method name=unregister params="id:string" returns=void
+    handler <<<
+      this.engines.delete(id);
+    >>>
+
+  method name=get params="id:string" returns=EngineDefinition
+    handler <<<
+      const engine = this.engines.get(id);
+      if (!engine) throw new EngineNotFoundError(id);
+      return engine;
+    >>>
+
+  method name=list returns="EngineDefinition[]"
+    handler <<<
+      return Array.from(this.engines.values());
+    >>>
+
+  method name=listIds returns="string[]"
+    handler <<<
+      return Array.from(this.engines.keys());
+    >>>
+
+  method name=findBinary params="engine:EngineDefinition" returns="string|null"
+    handler <<<
+      if (!engine.binary) { this.binaryCache.set(engine.id, null); return null; }
+      if (this.binaryCache.has(engine.id)) return this.binaryCache.get(engine.id) ?? null;
+      const envKey = `${engine.id.toUpperCase()}_PATH`;
+      const envPath = process.env[envKey];
+      if (envPath && existsSync(envPath)) { this.binaryCache.set(engine.id, envPath); return envPath; }
+      try {
+        const result = execFileSync('which', [engine.binary], { encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+        if (result) { this.binaryCache.set(engine.id, result); return result; }
+      } catch {
+        // 'which' not finding a binary is expected — no warning needed
+      }
+      for (const rawPath of (engine.searchPaths ?? [])) {
+        const expanded = rawPath.replace('${HOME}', homedir());
+        const fullPath = join(expanded, engine.binary);
+        if (existsSync(fullPath)) { this.binaryCache.set(engine.id, fullPath); return fullPath; }
+      }
+      this.binaryCache.set(engine.id, null);
+      return null;
+    >>>
+
+  method name=isAvailable params="engine:EngineDefinition" returns=boolean
+    handler <<<
+      const hasApiKey = !!(engine.api && process.env[engine.api.apiKeyEnv]);
+      const hasBinary = !!(engine.binary && this.findBinary(engine) !== null);
+      return hasApiKey || hasBinary;
+    >>>
+
+  method name=supportsMode params="engine:EngineDefinition, mode:EngineMode" returns=boolean
+    handler <<<
+      if (mode === 'exec' && engine.exec) return true;
+      if (mode === 'review' && engine.review) return true;
+      if (mode === 'agent' && engine.agent) return true;
+      return engine.modes?.includes(mode) ?? false;
+    >>>
+
+  method name=agentCapableIds returns="string[]"
+    handler <<<
+      return this.availableEngines()
+        .filter((e: EngineDefinition) => !!e.agent && !!e.binary && this.findBinary(e) !== null)
+        .map((e: EngineDefinition) => e.id);
+    >>>
+
+  method name=availableEngines returns="EngineDefinition[]"
+    handler <<<
+      return this.list().filter((e: EngineDefinition) => this.isAvailable(e));
+    >>>
+
+  method name=availableIds returns="string[]"
+    handler <<<
+      return this.availableEngines().map((e: EngineDefinition) => e.id);
+    >>>
+
+  method name=pickStarter params="available:string[], strategy:'fixed'|'rotate', preferred?:string" returns=string
+    handler <<<
+      if (available.length === 0) throw new EngineNotFoundError('(any)', 'No engines available');
+      if (strategy === 'fixed') {
+        if (preferred && available.includes(preferred)) return preferred;
+        return available[0];
+      }
+      return available[Math.floor(Date.now() / 1000) % available.length];
+    >>>

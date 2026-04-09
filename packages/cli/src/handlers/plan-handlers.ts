@@ -7,4 +7,4 @@ export {
   handleRetry,
   handleCancel,
   handleApplyPatch,
-} from '../generated/handlers-plan.js';
+} from '../generated/handlers/plan.js';

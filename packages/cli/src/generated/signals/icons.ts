@@ -1,0 +1,84 @@
+// @kern-source: icons:1
+import { loadConfig } from '@agon/core';
+
+// @kern-source: icons:3
+export interface IconSet {
+  read: string;
+  edit: string;
+  write: string;
+  bash: string;
+  search: string;
+  find: string;
+  tool: string;
+  campfire: string;
+  brainstorm: string;
+  tribunal: string;
+  image: string;
+  queue: string;
+  prompt: string;
+  winner: string;
+  success: string;
+  fail: string;
+  warning: string;
+  header: string;
+  nero: string;
+  dotOn: string;
+  dotOff: string;
+}
+
+// @kern-source: icons:26
+export const ROMAN_ICONS: IconSet = ({
+  read:      '\u039e',
+  edit:      '\u270e',
+  write:     '\u2712',
+  bash:      '\u03df',
+  search:    '\u2609',
+  find:      '\u2295',
+  tool:      '\u2692',
+  campfire:  '\u2632',
+  brainstorm:'\u2609',
+  tribunal:  '\u2696',
+  image:     '\u229e',
+  queue:     '\u231b',
+  prompt:    '\u25bb',
+  winner:    '\u2605',
+  success:   '\u2713',
+  fail:      '\u2717',
+  warning:   '\u26a0',
+  header:    '\u25b8',
+  nero:      '\u2020',
+  dotOn:     '\u25c6',
+  dotOff:    '\u25c7',
+});
+
+// @kern-source: icons:53
+export const CLASSIC_ICONS: IconSet = ({
+  read:      '\ud83d\udcc4',
+  edit:      '\u270f\ufe0f',
+  write:     '\ud83d\udcdd',
+  bash:      '\u26a1',
+  search:    '\ud83d\udd0d',
+  find:      '\ud83d\udcc2',
+  tool:      '\ud83d\udd27',
+  campfire:  '\ud83d\udd25',
+  brainstorm:'\ud83d\udca1',
+  tribunal:  '\u2696',
+  image:     '\ud83d\udcce',
+  queue:     '\u23f3',
+  prompt:    '\u276f',
+  winner:    '\u2605',
+  success:   '\u2713',
+  fail:      '\u2717',
+  warning:   '\u26a0',
+  header:    '\u25b8',
+  nero:      '\u2694',
+  dotOn:     '\u25cf',
+  dotOff:    '\u25cb',
+});
+
+// @kern-source: icons:80
+export function icons(): IconSet {
+  const theme = loadConfig().iconTheme ?? 'roman';
+  return theme === 'classic' ? CLASSIC_ICONS : ROMAN_ICONS;
+}
+

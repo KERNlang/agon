@@ -1,0 +1,120 @@
+// @kern-source: event-bus:5
+export interface EventPayload {
+  event: string;
+  data: Record<string, unknown>;
+  timestamp: number;
+}
+
+// @kern-source: event-bus:6
+
+// @kern-source: event-bus:7
+
+// @kern-source: event-bus:8
+
+// @kern-source: event-bus:10
+export interface EventListener {
+  event: string;
+  handler: (payload: EventPayload) => Promise<void> | void;
+  priority: number;
+  source?: string;
+}
+
+// @kern-source: event-bus:16
+export class EventBus {
+  listeners: Map<string, EventListener[]>;
+
+  constructor() {
+    this.listeners = new Map();
+  }
+
+  on(event: string, handler: (payload: EventPayload) => Promise<void> | void, priority?: number, source?: string): void {
+    const listener: EventListener = { event, handler, priority: priority ?? 100, source };
+    const list = this.listeners.get(event) || [];
+    list.push(listener);
+    list.sort((a, b) => a.priority - b.priority);
+    this.listeners.set(event, list);
+  }
+
+  off(event: string, handler: (payload: EventPayload) => Promise<void> | void): void {
+    const list = this.listeners.get(event);
+    if (!list) return;
+    this.listeners.set(event, list.filter(l => l.handler !== handler));
+  }
+
+  async emit(event: string, data?: Record<string, unknown>): Promise<void> {
+    const list = this.listeners.get(event);
+    if (!list || list.length === 0) return;
+    
+    const payload: EventPayload = {
+      event,
+      data: data ?? {},
+      timestamp: Date.now(),
+    };
+    
+    const isPre = event.startsWith('pre:') || event.endsWith(':before');
+    
+    if (isPre) {
+      // Pre-events run sequentially — a failure can short-circuit
+      for (const listener of list) {
+        try {
+          await listener.handler(payload);
+        } catch (err) {
+          console.warn(`[agon] event listener error (${event}${listener.source ? `, ${listener.source}` : ''}): ${(err as Error).message}`);
+        }
+      }
+    } else {
+      // Post-events run in parallel
+      await Promise.allSettled(list.map(l => {
+        try { return Promise.resolve(l.handler(payload)); }
+        catch (err) { return Promise.reject(err); }
+      }));
+    }
+  }
+
+  listenerCount(event: string): number {
+    return this.listeners.get(event)?.length ?? 0;
+  }
+
+  removeAll(source: string): void {
+    for (const [event, list] of this.listeners) {
+      this.listeners.set(event, list.filter(l => l.source !== source));
+    }
+  }
+}
+
+// @kern-source: event-bus:87
+import { runHooks } from '../blocks/hooks.js';
+
+// @kern-source: event-bus:88
+import type { HookEvent } from '../blocks/hooks.js';
+
+// @kern-source: event-bus:90
+export function bridgeShellHooks(bus: EventBus, hooks: Record<string, any[]>): void {
+  const eventMap: Record<string, string> = {
+    'pre_dispatch': 'pre:dispatch',
+    'post_dispatch': 'post:dispatch',
+    'pre_forge': 'pre:forge',
+    'post_forge': 'post:forge',
+    'pre_brainstorm': 'pre:brainstorm',
+    'post_brainstorm': 'post:brainstorm',
+    'pre_tribunal': 'pre:tribunal',
+    'post_tribunal': 'post:tribunal',
+    'session_start': 'session:start',
+    'session_end': 'session:end',
+  };
+  
+  for (const [oldEvent, newEvent] of Object.entries(eventMap)) {
+    if (hooks[oldEvent] && hooks[oldEvent].length > 0) {
+      bus.on(newEvent, async (payload) => {
+        const env: Record<string, string> = {
+          AGON_HOOK_EVENT: oldEvent,
+          AGON_CWD: String(payload.data.cwd ?? process.cwd()),
+        };
+        if (payload.data.engine) env.AGON_ENGINE = String(payload.data.engine);
+        if (payload.data.input) env.AGON_INPUT = String(payload.data.input);
+        await runHooks(oldEvent as HookEvent, env);
+      }, 200, 'shell-compat'); // priority 200 = runs after typed listeners
+    }
+  }
+}
+

@@ -16,7 +16,7 @@ function loadRegistry(): EngineRegistry {
 
 describe('Agent Dispatch', () => {
   describe('buildCommand — agent mode', () => {
-    it('uses agent args for claude (no --print, no --output-format)', () => {
+    it('uses agent args for claude with --print for non-interactive subprocess use', () => {
       const reg = loadRegistry();
       const engine = reg.get('claude');
       const binary = '/usr/local/bin/claude';
@@ -24,7 +24,7 @@ describe('Agent Dispatch', () => {
       expect(args).toContain('--dangerously-skip-permissions');
       expect(args).toContain('--max-turns');
       expect(args).toContain('--verbose');
-      expect(args).not.toContain('--print');
+      expect(args).toContain('--print');
       expect(args).not.toContain('--output-format');
     });
 
@@ -37,13 +37,13 @@ describe('Agent Dispatch', () => {
       expect(args).toContain('exec');
     });
 
-    it('uses agent args for gemini (no -p flag, yolo mode)', () => {
+    it('uses agent args for gemini with -p for non-interactive subprocess use', () => {
       const reg = loadRegistry();
       const engine = reg.get('gemini');
       const binary = '/usr/local/bin/gemini';
       const { args } = buildCommand(engine, 'agent', 'fix the bug', '/tmp', 120, binary);
       expect(args).toContain('yolo');
-      expect(args).not.toContain('-p');
+      expect(args).toContain('-p');
     });
 
     it('throws for engines without agent config', () => {

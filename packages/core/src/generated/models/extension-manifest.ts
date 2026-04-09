@@ -1,0 +1,116 @@
+// @kern-source: extension-manifest:5
+export interface ExtensionPermissions {
+  tools?: string[];
+  hooks?: string[];
+  config?: boolean;
+}
+
+// @kern-source: extension-manifest:6
+
+// @kern-source: extension-manifest:7
+
+// @kern-source: extension-manifest:8
+
+// @kern-source: extension-manifest:10
+export interface CommandContribution {
+  name: string;
+  description: string;
+  category?: string;
+  aliases?: string[];
+  handler: string;
+}
+
+// @kern-source: extension-manifest:17
+export interface SkillContribution {
+  name: string;
+  trigger: string;
+  description: string;
+  prompt?: string;
+  handler?: string;
+  tools?: string[];
+}
+
+// @kern-source: extension-manifest:25
+export interface HookContribution {
+  event: string;
+  handler: string;
+  priority?: number;
+}
+
+// @kern-source: extension-manifest:30
+export interface ExtensionContributions {
+  commands?: CommandContribution[];
+  skills?: SkillContribution[];
+  hooks?: HookContribution[];
+  systemPromptFragments?: string[];
+  engines?: string[];
+}
+
+// @kern-source: extension-manifest:37
+export interface ExtensionManifest {
+  id: string;
+  name: string;
+  version: string;
+  description: string;
+  agonVersion?: string;
+  permissions?: ExtensionPermissions;
+  contributes?: ExtensionContributions;
+}
+
+// @kern-source: extension-manifest:46
+export interface LoadedExtension {
+  manifest: ExtensionManifest;
+  dir: string;
+  source: 'builtin' | 'user' | 'repo';
+  loadedAt: number;
+  errors?: string[];
+}
+
+// @kern-source: extension-manifest:53
+export function validateManifest(raw: unknown, filePath: string): { ok: boolean; data?: ExtensionManifest; error?: string } {
+  if (!raw || typeof raw !== 'object') {
+    return { ok: false, error: `${filePath}: manifest is not an object` };
+  }
+  const obj = raw as Record<string, unknown>;
+  
+  // Required fields
+  if (typeof obj.id !== 'string' || !obj.id.trim()) {
+    return { ok: false, error: `${filePath}: missing or empty 'id'` };
+  }
+  if (typeof obj.name !== 'string' || !obj.name.trim()) {
+    return { ok: false, error: `${filePath}: missing or empty 'name'` };
+  }
+  if (typeof obj.version !== 'string' || !obj.version.trim()) {
+    return { ok: false, error: `${filePath}: missing or empty 'version'` };
+  }
+  if (typeof obj.description !== 'string') {
+    return { ok: false, error: `${filePath}: missing 'description'` };
+  }
+  
+  // Validate contributes.commands if present
+  if (obj.contributes && typeof obj.contributes === 'object') {
+    const contrib = obj.contributes as Record<string, unknown>;
+    if (Array.isArray(contrib.commands)) {
+      for (let i = 0; i < contrib.commands.length; i++) {
+        const cmd = contrib.commands[i] as Record<string, unknown>;
+        if (typeof cmd.name !== 'string' || !cmd.name.trim()) {
+          return { ok: false, error: `${filePath}: contributes.commands[${i}] missing 'name'` };
+        }
+        if (typeof cmd.handler !== 'string' || !cmd.handler.trim()) {
+          return { ok: false, error: `${filePath}: contributes.commands[${i}] missing 'handler'` };
+        }
+      }
+    }
+    if (Array.isArray(contrib.skills)) {
+      for (let i = 0; i < contrib.skills.length; i++) {
+        const skill = contrib.skills[i] as Record<string, unknown>;
+        if (typeof skill.trigger !== 'string' || !skill.trigger.trim()) {
+          return { ok: false, error: `${filePath}: contributes.skills[${i}] missing 'trigger'` };
+        }
+      }
+    }
+  }
+  
+  return { ok: true, data: obj as unknown as ExtensionManifest };
+}
+

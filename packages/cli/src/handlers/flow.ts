@@ -4,4 +4,4 @@ export {
   handleFlowReport,
   handleFlowAnalysis,
   autoLogFlow,
-} from '../generated/handlers-flow.js';
+} from '../generated/handlers/flow.js';

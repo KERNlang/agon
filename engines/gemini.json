@@ -21,12 +21,19 @@
     "args": ["-p", "{prompt}", "--approval-mode", "plan"]
   },
   "agent": {
-    "args": ["{prompt}", "--approval-mode", "yolo"]
+    "args": ["-p", "{prompt}", "--approval-mode", "yolo"]
   },
 
   "model": {
     "configKey": "gemini_model",
     "flag": "--model"
+  },
+
+  "api": {
+    "baseUrl": "https://generativelanguage.googleapis.com/v1beta/openai",
+    "apiKeyEnv": "GOOGLE_API_KEY",
+    "model": "gemini-2.5-flash",
+    "maxTokens": 8192
   },
 
   "env": {

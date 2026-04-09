@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { spawnWithTimeout } from '../../packages/core/src/generated/process.js';
+import { spawnWithTimeout } from '../../packages/core/src/generated/blocks/process.js';
 
 // ── Basic spawn behavior ────────────────────────────────────────────
 

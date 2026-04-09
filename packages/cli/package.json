@@ -11,7 +11,7 @@
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit",
-    "kern:compile": "kern compile src/kern/ --outdir=src/generated"
+    "kern:compile": "for d in surfaces blocks signals models cesar handlers commands; do kern compile src/kern/$d --outdir=src/generated/$d; done"
   },
   "dependencies": {
     "@agon/adapter-cli": "*",

@@ -1,0 +1,115 @@
+import from="citty" names="defineCommand"
+import from="node:path" names="join,dirname"
+import from="node:url" names="fileURLToPath"
+import from="@agon/core" names="EngineRegistry,getEngineGlickoRating"
+import from="@agon/adapter-cli" names="createCliAdapter"
+import from="../blocks/output-format.js" names="header,success,fail,info,table,bold,green,red,dim"
+
+const name=engineCommand type="any"
+  handler <<<
+    defineCommand({
+      meta: {
+        name: 'engine',
+        description: 'Manage AI engines',
+      },
+      args: {
+        action: {
+          type: 'positional',
+          description: 'Action: list | info <id>',
+          required: true,
+        },
+        id: {
+          type: 'string',
+          description: 'Engine ID (for info)',
+        },
+      },
+      async run({ args }) {
+        const registry = new EngineRegistry();
+        registry.load(join(dirname(fileURLToPath(import.meta.url)), '../../../../engines'));
+
+        const adapter = createCliAdapter(registry);
+
+        // Handle "agon engine info claude" — citty may merge into action or use _ rest args
+        let action = args.action;
+        let id = args.id;
+        if (action.startsWith('info ')) {
+          id = action.slice(5);
+          action = 'info';
+        } else if (action === 'info' && !id) {
+          // Check for remaining args from process.argv
+          const extraArgs = process.argv.slice(4);
+          if (extraArgs.length > 0 && !extraArgs[0].startsWith('-')) {
+            id = extraArgs[0];
+          }
+        }
+
+        switch (action) {
+          case 'list': {
+            header('Engines');
+            const engines = registry.list();
+            const rows: string[][] = [];
+
+            for (const engine of engines) {
+              const available = registry.isAvailable(engine);
+              const version = available
+                ? (await adapter.getVersion(engine)) ?? dim('unknown')
+                : '';
+
+              rows.push([
+                available ? green(engine.id) : red(engine.id),
+                engine.displayName,
+                available ? green('installed') : red('missing'),
+                version,
+                engine.tier,
+              ]);
+            }
+
+            table(['ID', 'Name', 'Status', 'Version', 'Tier'], rows);
+            break;
+          }
+
+          case 'info': {
+            if (!id) {
+              fail('Usage: agon engine info <id>');
+              process.exit(1);
+            }
+
+            try {
+              const engine = registry.get(id);
+              const available = registry.isAvailable(engine);
+              const rating = getEngineGlickoRating(id);
+
+              header(`Engine: ${engine.displayName}`);
+              console.log(`  ID:         ${bold(engine.id)}`);
+              console.log(`  Binary:     ${engine.binary ?? dim('(API-only)')}`);
+              if (engine.api) {
+                console.log(`  API:        ${engine.api.baseUrl}`);
+                console.log(`  Auth:       ${engine.api.apiKeyEnv}`);
+                console.log(`  Model:      ${engine.api.model}`);
+              }
+              console.log(`  Status:     ${available ? green('available') : red('not available')}`);
+              const modes = [engine.exec ? 'exec' : '', engine.review ? 'review' : '', engine.agent ? 'agent' : ''].filter(Boolean);
+              console.log(`  Modes:      ${modes.join(', ') || 'none'}`);
+              console.log(`  Timeout:    ${engine.timeout}s`);
+              console.log(`  Tier:       ${engine.tier}`);
+              console.log(`  Rating:     ${rating.mu}+-${Math.round(rating.phi)} (W:${rating.wins} L:${rating.losses})`);
+
+              if (!available && engine.installHint) {
+                console.log('');
+                info(`Install: ${engine.installHint}`);
+              }
+            } catch {
+              fail(`Engine "${id}" not found`);
+              process.exit(1);
+            }
+            break;
+          }
+
+          default:
+            fail(`Unknown action: ${args.action}`);
+            info('Available: list, info');
+            process.exit(1);
+        }
+      },
+    })
+  >>>

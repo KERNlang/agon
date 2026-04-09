@@ -1,24 +1,32 @@
+// @kern-source: tribunal:1
 import { randomUUID } from 'node:crypto';
 
+// @kern-source: tribunal:2
 import type { EngineAdapter, EngineDefinition, ForgeEvent } from '@agon/core';
 
-import { EngineRegistry, buildTribunalPrompt, createSidechainLogger } from '@agon/core';
+// @kern-source: tribunal:3
+import { EngineRegistry, buildTribunalPrompt, createSidechainLogger, updateGlickoRanked, classifyTask } from '@agon/core';
 
+// @kern-source: tribunal:4
 import type { TribunalMode, TribunalModeConfig } from './tribunal-modes.js';
 
+// @kern-source: tribunal:5
 import { getModeConfig, buildModePrompt, buildModeSummaryPrompt } from './tribunal-modes.js';
 
+// @kern-source: tribunal:7
 export interface TribunalPosition {
   engineId: string;
   position: string;
   arguments: string[];
 }
 
+// @kern-source: tribunal:12
 export interface TribunalRound {
   round: number;
   positions: TribunalPosition[];
 }
 
+// @kern-source: tribunal:16
 export interface TribunalResult {
   question: string;
   rounds: TribunalRound[];
@@ -27,12 +35,14 @@ export interface TribunalResult {
   mode?: string;
 }
 
+// @kern-source: tribunal:23
 export function buildFallbackSummary(positions: TribunalPosition[]): string {
   return positions
     .map((p) => `**${p.engineId} (${p.position})**: ${p.arguments[p.arguments.length - 1]?.slice(0, 200) ?? '(no response)'}...`)
     .join('\n\n');
 }
 
+// @kern-source: tribunal:30
 export async function runTribunal(opts: {question:string, engines:string[], rounds:number, mode?:TribunalMode, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, onEvent?:(event:ForgeEvent)=>void}): Promise<TribunalResult> {
   const { question, engines, rounds, registry, adapter, timeout, outputDir } = opts;
   const mode = opts.mode ?? 'adversarial';
@@ -166,6 +176,18 @@ export async function runTribunal(opts: {question:string, engines:string[], roun
     type: 'forge:done',
     data: { rounds: allRounds.length, engines: engines.length, mode },
   });
+  
+  // Update Glicko-2 ratings — score by argument substance (length * rounds participated)
+  if (positions.length >= 2) {
+    const taskClass = classifyTask(question);
+    const tribunalRanked = positions
+      .map((p: any) => ({
+        engineId: p.engineId,
+        score: p.arguments.reduce((sum: number, arg: string) => sum + arg.length, 0),
+      }))
+      .sort((a: any, b: any) => b.score - a.score);
+    updateGlickoRanked(tribunalRanked, taskClass, 'tribunal');
+  }
   
   return { question, rounds: allRounds, positions, summary, mode };
 }

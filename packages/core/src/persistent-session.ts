@@ -6,10 +6,10 @@ export {
   createAcpSession,
   createStreamJsonSession,
   createResumeSession,
-} from './generated/persistent-session.js';
+} from './generated/sessions/persistent-session.js';
 export type {
   PersistentSession,
   PersistentSessionConfig,
   SessionChunk,
   SessionSendOptions,
-} from './generated/persistent-session.js';
+} from './generated/sessions/persistent-session.js';

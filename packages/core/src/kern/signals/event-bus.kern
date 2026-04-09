@@ -1,0 +1,119 @@
+// ── Event Bus: typed lifecycle events with async support ────────────
+// Replaces shell-only hooks with a typed event system.
+// Shell hooks are kept as a compatibility adapter.
+
+interface name=EventPayload
+  field name=event type=string
+  field name=data type="Record<string, unknown>"
+  field name=timestamp type=number
+
+interface name=EventListener
+  field name=event type=string
+  field name=handler type="(payload: EventPayload) => Promise<void> | void"
+  field name=priority type=number
+  field name=source type=string optional=true
+
+service name=EventBus singleton=true
+  field name=listeners type="Map<string, EventListener[]>"
+
+  constructor
+    handler <<<
+      this.listeners = new Map();
+    >>>
+
+  method name=on params="event:string, handler:(payload: EventPayload) => Promise<void> | void, priority?:number, source?:string" returns=void
+    doc "Register a listener for an event. Lower priority runs first."
+    handler <<<
+      const listener: EventListener = { event, handler, priority: priority ?? 100, source };
+      const list = this.listeners.get(event) || [];
+      list.push(listener);
+      list.sort((a, b) => a.priority - b.priority);
+      this.listeners.set(event, list);
+    >>>
+
+  method name=off params="event:string, handler:(payload: EventPayload) => Promise<void> | void" returns=void
+    handler <<<
+      const list = this.listeners.get(event);
+      if (!list) return;
+      this.listeners.set(event, list.filter(l => l.handler !== handler));
+    >>>
+
+  method name=emit async=true params="event:string, data?:Record<string, unknown>" returns="Promise<void>"
+    doc "Emit an event to all listeners. Pre-events run sequentially; post-events run in parallel."
+    handler <<<
+      const list = this.listeners.get(event);
+      if (!list || list.length === 0) return;
+
+      const payload: EventPayload = {
+        event,
+        data: data ?? {},
+        timestamp: Date.now(),
+      };
+
+      const isPre = event.startsWith('pre:') || event.endsWith(':before');
+
+      if (isPre) {
+        // Pre-events run sequentially — a failure can short-circuit
+        for (const listener of list) {
+          try {
+            await listener.handler(payload);
+          } catch (err) {
+            console.warn(`[agon] event listener error (${event}${listener.source ? `, ${listener.source}` : ''}): ${(err as Error).message}`);
+          }
+        }
+      } else {
+        // Post-events run in parallel
+        await Promise.allSettled(list.map(l => {
+          try { return Promise.resolve(l.handler(payload)); }
+          catch (err) { return Promise.reject(err); }
+        }));
+      }
+    >>>
+
+  method name=listenerCount params="event:string" returns=number
+    handler <<<
+      return this.listeners.get(event)?.length ?? 0;
+    >>>
+
+  method name=removeAll params="source:string" returns=void
+    doc "Remove all listeners from a specific source (e.g., an extension being unloaded)."
+    handler <<<
+      for (const [event, list] of this.listeners) {
+        this.listeners.set(event, list.filter(l => l.source !== source));
+      }
+    >>>
+
+// ── Shell hook compatibility adapter ──
+import from="../blocks/hooks.js" names="runHooks"
+import from="../blocks/hooks.js" names="HookEvent" types=true
+
+fn name=bridgeShellHooks params="bus:EventBus, hooks:Record<string, any[]>" returns=void
+  doc "Register shell hooks from config as event bus listeners. Compatibility adapter."
+  handler <<<
+    const eventMap: Record<string, string> = {
+      'pre_dispatch': 'pre:dispatch',
+      'post_dispatch': 'post:dispatch',
+      'pre_forge': 'pre:forge',
+      'post_forge': 'post:forge',
+      'pre_brainstorm': 'pre:brainstorm',
+      'post_brainstorm': 'post:brainstorm',
+      'pre_tribunal': 'pre:tribunal',
+      'post_tribunal': 'post:tribunal',
+      'session_start': 'session:start',
+      'session_end': 'session:end',
+    };
+
+    for (const [oldEvent, newEvent] of Object.entries(eventMap)) {
+      if (hooks[oldEvent] && hooks[oldEvent].length > 0) {
+        bus.on(newEvent, async (payload) => {
+          const env: Record<string, string> = {
+            AGON_HOOK_EVENT: oldEvent,
+            AGON_CWD: String(payload.data.cwd ?? process.cwd()),
+          };
+          if (payload.data.engine) env.AGON_ENGINE = String(payload.data.engine);
+          if (payload.data.input) env.AGON_INPUT = String(payload.data.input);
+          await runHooks(oldEvent as HookEvent, env);
+        }, 200, 'shell-compat'); // priority 200 = runs after typed listeners
+      }
+    }
+  >>>

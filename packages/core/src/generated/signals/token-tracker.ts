@@ -1,0 +1,131 @@
+// @kern-source: token-tracker:1
+export interface TokenUsage {
+  engineId: string;
+  promptTokens: number;
+  responseTokens: number;
+  totalTokens: number;
+  costUsd: number;
+  timestamp: number;
+  source: 'sdk'|'cli-reported'|'estimated';
+  model?: string;
+}
+
+// @kern-source: token-tracker:2
+
+// @kern-source: token-tracker:3
+
+// @kern-source: token-tracker:4
+
+// @kern-source: token-tracker:5
+
+// @kern-source: token-tracker:6
+
+// @kern-source: token-tracker:7
+
+// @kern-source: token-tracker:8
+
+// @kern-source: token-tracker:9
+
+// @kern-source: token-tracker:11
+export interface SessionStats {
+  totalPromptTokens: number;
+  totalResponseTokens: number;
+  totalTokens: number;
+  totalCostUsd: number;
+  byEngine: Record<string,{promptTokens:number;responseTokens:number;totalTokens:number;costUsd:number;dispatches:number}>;
+  dispatches: number;
+}
+
+// @kern-source: token-tracker:19
+export function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
+// @kern-source: token-tracker:24
+export function estimateCost(engineId: string, tokens: number, model?: string): number {
+  const MODEL_COST: Record<string, number> = {
+    'claude-opus-4-6': 45.00,
+    'claude-sonnet-4-6': 9.00,
+    'claude-haiku-4-5': 2.00,
+    'gpt-4.1': 6.00,
+    'gpt-4.1-mini': 1.20,
+    'gpt-4.1-nano': 0.30,
+    'gemini-2.5-pro': 5.00,
+    'gemini-2.5-flash': 0.60,
+    'o3': 30.00,
+    'o4-mini': 2.80,
+  };
+  if (model && MODEL_COST[model]) {
+    return (tokens / 1_000_000) * MODEL_COST[model];
+  }
+  const ENGINE_COST: Record<string, number> = {
+    claude: 9.00, codex: 5.00, gemini: 1.25, ollama: 0.00,
+    aider: 9.00, openrouter: 3.00, qwen: 0.50, mistral: 0.50,
+    opencode: 5.00,
+  };
+  const rate = ENGINE_COST[engineId] ?? 2.00;
+  return (tokens / 1_000_000) * rate;
+}
+
+// @kern-source: token-tracker:50
+export class TokenTracker {
+  private usages: TokenUsage[] = [];
+
+  record(engineId: string, inputOrPrompt: string|{prompt:string,response:string}|{usage:{promptTokens:number,completionTokens:number,totalTokens:number,source:'sdk'|'cli-reported'|'estimated'},model?:string}, responseText?: string): TokenUsage {
+    let promptTokens: number, responseTokens: number, totalTokens: number, source: TokenUsage['source'], model: string | undefined, costUsd: number;
+    
+    // Legacy 3-arg form: record(engineId, promptText, responseText)
+    if (typeof inputOrPrompt === 'string') {
+      promptTokens = estimateTokens(inputOrPrompt);
+      responseTokens = estimateTokens(responseText ?? '');
+      totalTokens = promptTokens + responseTokens;
+      source = 'estimated';
+      model = undefined;
+      costUsd = estimateCost(engineId, totalTokens);
+    } else if ('usage' in inputOrPrompt) {
+      promptTokens = inputOrPrompt.usage.promptTokens;
+      responseTokens = inputOrPrompt.usage.completionTokens;
+      totalTokens = inputOrPrompt.usage.totalTokens;
+      source = inputOrPrompt.usage.source;
+      model = inputOrPrompt.model;
+      costUsd = estimateCost(engineId, totalTokens, model);
+    } else {
+      promptTokens = estimateTokens(inputOrPrompt.prompt);
+      responseTokens = estimateTokens(inputOrPrompt.response);
+      totalTokens = promptTokens + responseTokens;
+      source = 'estimated';
+      model = undefined;
+      costUsd = estimateCost(engineId, totalTokens);
+    }
+    
+    const usage: TokenUsage = { engineId, promptTokens, responseTokens, totalTokens, costUsd, timestamp: Date.now(), source, model };
+    this.usages.push(usage);
+    return usage;
+  }
+
+  getStats(): SessionStats {
+    const byEngine: SessionStats['byEngine'] = {};
+    let totalPromptTokens = 0, totalResponseTokens = 0, totalCostUsd = 0;
+    for (const u of this.usages) {
+      totalPromptTokens += u.promptTokens;
+      totalResponseTokens += u.responseTokens;
+      totalCostUsd += u.costUsd;
+      if (!byEngine[u.engineId]) byEngine[u.engineId] = { promptTokens: 0, responseTokens: 0, totalTokens: 0, costUsd: 0, dispatches: 0 };
+      const e = byEngine[u.engineId];
+      e.promptTokens += u.promptTokens; e.responseTokens += u.responseTokens;
+      e.totalTokens += u.promptTokens + u.responseTokens; e.costUsd += u.costUsd; e.dispatches += 1;
+    }
+    return { totalPromptTokens, totalResponseTokens, totalTokens: totalPromptTokens + totalResponseTokens, totalCostUsd, byEngine, dispatches: this.usages.length };
+  }
+
+  recent(n: number = 5): TokenUsage[] {
+    return this.usages.slice(-n);
+  }
+
+  reset(): void {
+    this.usages = [];
+  }
+}
+
+export const tracker = new TokenTracker();
+

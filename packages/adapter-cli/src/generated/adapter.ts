@@ -1,13 +1,19 @@
+// @kern-source: adapter:1
 import { writeFileSync, mkdirSync } from 'node:fs';
 
+// @kern-source: adapter:2
 import { join, dirname } from 'node:path';
 
+// @kern-source: adapter:3
 import type { EngineAdapter, EngineDefinition, DispatchOptions, DispatchResult, AgentDispatchResult } from '@agon/core';
 
-import { EngineRegistry, spawnWithTimeout, spawnStream, EngineNotFoundError, readOnlyDiff, diffLineCount, apiDispatch, apiStreamDispatch, companionDispatch, runHooks, hooksFailed } from '@agon/core';
+// @kern-source: adapter:4
+import { EngineRegistry, spawnWithTimeout, spawnStream, EngineNotFoundError, readOnlyDiff, diffLineCount, apiDispatch, apiStreamDispatch, companionDispatch, runHooks, hooksFailed, runApiAgentLoop, scanProjectContext, resolveWorkingDir } from '@agon/core';
 
-import { buildCommand, checkEnvVars } from './adapter-helpers.js';
+// @kern-source: adapter:5
+import { buildCommand, checkEnvVars, stripStreamJson, usesStreamJson } from './adapter-helpers.js';
 
+// @kern-source: adapter:7
 export class CliAdapter implements EngineAdapter {
   private registry: EngineRegistry;
 
@@ -22,17 +28,26 @@ export class CliAdapter implements EngineAdapter {
   }
 
   async dispatch(options: DispatchOptions): Promise<DispatchResult> {
-    // API-based engine: use HTTP instead of spawn
-    if (options.engine.api) {
-      const result = await apiDispatch(options.engine.api, options.prompt, options.timeout, options.signal);
-      const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
-      mkdirSync(dirname(outputPath), { recursive: true });
-      writeFileSync(outputPath, result.stdout);
-      return result;
-    }
+    // Prefer CLI binary when available — API is fallback for binary-less engines
+    const binaryPath = options.engine.binary ? this.registry.findBinary(options.engine) : null;
     
-    const binaryPath = this.registry.findBinary(options.engine);
     if (!binaryPath) {
+      // No CLI binary — use API if available, otherwise fail
+      if (options.engine.api) {
+        // Inject project context for API engines so they know the codebase
+        let sysPrompt = options.systemPrompt;
+        if (!sysPrompt || !sysPrompt.includes('PROJECT CONTEXT')) {
+          const projectCtx = scanProjectContext(options.cwd || resolveWorkingDir());
+          if (projectCtx) {
+            sysPrompt = [sysPrompt ?? '', `## PROJECT CONTEXT\n${projectCtx}`].filter(Boolean).join('\n\n');
+          }
+        }
+        const result = await apiDispatch(options.engine.api, options.prompt, options.timeout, options.signal, sysPrompt);
+        const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
+        mkdirSync(dirname(outputPath), { recursive: true });
+        writeFileSync(outputPath, result.stdout);
+        return result;
+      }
       throw new EngineNotFoundError(options.engine.id, options.engine.installHint);
     }
     
@@ -57,6 +72,7 @@ export class CliAdapter implements EngineAdapter {
         timeout: options.timeout,
         mode: options.mode === 'agent' ? 'agent' : options.mode === 'review' ? 'review' : 'exec',
         signal: options.signal,
+        systemPrompt: options.systemPrompt,
       });
       // Exit code 2 = companion not available, fall through to CLI spawn
       if (companionResult.exitCode !== 2) {
@@ -67,10 +83,25 @@ export class CliAdapter implements EngineAdapter {
       }
     }
     
+    // Resolve system prompt for CLI: native flag if available, else prepend to prompt
+    let effectivePrompt = options.prompt;
+    const sysFlag = options.engine.systemPromptFlag;
+    if (options.systemPrompt && !sysFlag) {
+      // Engine has no native system prompt flag — prepend (same as PersistentSession first-turn)
+      effectivePrompt = `[System Instructions]\n${options.systemPrompt}\n\n[User Message]\n${options.prompt}`;
+    }
+    
     const { command, args } = buildCommand(
-      options.engine, options.mode, options.prompt,
+      options.engine, options.mode, effectivePrompt,
       options.cwd, options.timeout, binaryPath, options.images,
     );
+    
+    // Inject native system prompt flag if engine supports it (e.g. Claude --system-prompt)
+    if (options.systemPrompt && sysFlag) {
+      const promptIdx = args.indexOf(effectivePrompt);
+      const insertAt = promptIdx >= 0 ? promptIdx : 0;
+      args.splice(insertAt, 0, sysFlag, options.systemPrompt);
+    }
     
     const result = await spawnWithTimeout({
       command, args,
@@ -78,6 +109,11 @@ export class CliAdapter implements EngineAdapter {
       timeout: options.timeout * 1000,
       signal: options.signal,
     });
+    
+    // Strip NDJSON system/hook messages from stream-json engines (Claude)
+    if (usesStreamJson(options.engine) && result.stdout.includes('{"type":')) {
+      result.stdout = stripStreamJson(result.stdout);
+    }
     
     const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
     mkdirSync(dirname(outputPath), { recursive: true });
@@ -89,30 +125,44 @@ export class CliAdapter implements EngineAdapter {
   }
 
   async *dispatchStream(options: DispatchOptions): AsyncGenerator<string, DispatchResult, void> {
-    // API-based engine: stream via HTTP SSE
-    if (options.engine.api) {
-      const gen = apiStreamDispatch(options.engine.api, options.prompt, options.timeout, options.signal);
-      let result: DispatchResult;
-      while (true) {
-        const { value, done } = await gen.next();
-        if (done) { result = value; break; }
-        yield value;
-      }
-      const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
-      mkdirSync(dirname(outputPath), { recursive: true });
-      writeFileSync(outputPath, result.stdout);
-      return result;
-    }
+    // Prefer CLI binary when available — API is fallback for binary-less engines
+    const binaryPath = options.engine.binary ? this.registry.findBinary(options.engine) : null;
     
-    const binaryPath = this.registry.findBinary(options.engine);
     if (!binaryPath) {
+      if (options.engine.api) {
+        const gen = apiStreamDispatch(options.engine.api, options.prompt, options.timeout, options.signal, options.systemPrompt);
+        let result: DispatchResult;
+        while (true) {
+          const { value, done } = await gen.next();
+          if (done) { result = value; break; }
+          yield value;
+        }
+        const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
+        mkdirSync(dirname(outputPath), { recursive: true });
+        writeFileSync(outputPath, result.stdout);
+        return result;
+      }
       throw new EngineNotFoundError(options.engine.id, options.engine.installHint);
     }
     
+    // Resolve system prompt for CLI: native flag if available, else prepend
+    let effectivePrompt = options.prompt;
+    const sysFlag = options.engine.systemPromptFlag;
+    if (options.systemPrompt && !sysFlag) {
+      effectivePrompt = `[System Instructions]\n${options.systemPrompt}\n\n[User Message]\n${options.prompt}`;
+    }
+    
     const { command, args } = buildCommand(
-      options.engine, options.mode, options.prompt,
+      options.engine, options.mode, effectivePrompt,
       options.cwd, options.timeout, binaryPath, options.images,
     );
+    
+    // Inject native system prompt flag if supported
+    if (options.systemPrompt && sysFlag) {
+      const promptIdx = args.indexOf(effectivePrompt);
+      const insertAt = promptIdx >= 0 ? promptIdx : 0;
+      args.splice(insertAt, 0, sysFlag, options.systemPrompt);
+    }
     
     const gen = spawnStream({
       command, args,
@@ -139,6 +189,57 @@ export class CliAdapter implements EngineAdapter {
   }
 
   async dispatchAgent(options: DispatchOptions): Promise<AgentDispatchResult> {
+    // API fallback: use API agent loop when binary is declared but not installed
+    const agentBinaryPath = options.engine.binary ? this.registry.findBinary(options.engine) : null;
+    if (options.engine.api && !agentBinaryPath) {
+      const cwd = options.cwd || resolveWorkingDir();
+      const projectCtx = scanProjectContext(cwd);
+      const systemPrompt = [
+        options.systemPrompt ?? 'You are an AI coding assistant. Be direct and concise.',
+        projectCtx ? `## PROJECT CONTEXT\n${projectCtx}` : '',
+      ].filter(Boolean).join('\n\n');
+    
+      const startTime = Date.now();
+      const baselineDiff = readOnlyDiff(cwd);
+      const result = await runApiAgentLoop({
+        api: options.engine.api,
+        prompt: options.prompt,
+        systemPrompt,
+        cwd,
+        timeout: options.timeout,
+        signal: options.signal,
+        maxSteps: 15,
+      });
+    
+      const postDiff = readOnlyDiff(cwd);
+      const baselineFiles = new Set(baselineDiff.split('\n').filter((l: string) => l.startsWith('diff --git')));
+      const postLines = postDiff.split('\n');
+      const newDiffLines: string[] = [];
+      let inNewFile = false;
+      for (const line of postLines) {
+        if (line.startsWith('diff --git')) { inNewFile = !baselineFiles.has(line); }
+        if (inNewFile) newDiffLines.push(line);
+      }
+      const diff = newDiffLines.join('\n');
+      const lines = diffLineCount(diff);
+      const files = diff ? newDiffLines.filter((l: string) => l.startsWith('diff --git')).length : 0;
+    
+      const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
+      mkdirSync(dirname(outputPath), { recursive: true });
+      writeFileSync(outputPath, result.response);
+    
+      return {
+        exitCode: 0,
+        stdout: result.response,
+        stderr: '',
+        durationMs: Date.now() - startTime,
+        timedOut: false,
+        diff,
+        diffLines: lines,
+        filesChanged: files,
+      };
+    }
+    
     const binaryPath = this.registry.findBinary(options.engine);
     if (!binaryPath) {
       throw new EngineNotFoundError(options.engine.id, options.engine.installHint);
@@ -198,6 +299,11 @@ export class CliAdapter implements EngineAdapter {
       signal: options.signal,
     });
     
+    // Strip NDJSON system/hook messages from stream-json engines (Claude)
+    if (usesStreamJson(options.engine) && result.stdout.includes('{"type":')) {
+      result.stdout = stripStreamJson(result.stdout);
+    }
+    
     const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
     mkdirSync(dirname(outputPath), { recursive: true });
     writeFileSync(outputPath, result.stdout);
@@ -222,6 +328,20 @@ export class CliAdapter implements EngineAdapter {
   }
 
   async *dispatchAgentStream(options: DispatchOptions): AsyncGenerator<string, AgentDispatchResult, void> {
+    const streamBinaryPath = options.engine.binary ? this.registry.findBinary(options.engine) : null;
+    if (options.engine.api && !streamBinaryPath) {
+      return {
+        exitCode: 1,
+        stdout: '',
+        stderr: `Engine "${options.engine.id}" is API-only and does not support agent mode`,
+        durationMs: 0,
+        timedOut: false,
+        diff: '',
+        diffLines: 0,
+        filesChanged: 0,
+      };
+    }
+    
     const binaryPath = this.registry.findBinary(options.engine);
     if (!binaryPath) {
       throw new EngineNotFoundError(options.engine.id, options.engine.installHint);
@@ -275,7 +395,6 @@ export class CliAdapter implements EngineAdapter {
   }
 
   async isAvailable(engine: EngineDefinition): Promise<boolean> {
-    if (engine.api) return !!process.env[engine.api.apiKeyEnv];
     return this.registry.isAvailable(engine);
   }
 
@@ -283,6 +402,7 @@ export class CliAdapter implements EngineAdapter {
     if (engine.api) return engine.api.model;
     const binaryPath = this.registry.findBinary(engine);
     if (!binaryPath) return null;
+    if (!engine.versionCmd) return null;
     
     try {
       const result = await spawnWithTimeout({

@@ -1,9 +1,10 @@
-import from="@agon/core" names="EngineResult,ForgeEvent,Critique" types=true
+import from="@agon/core" names="EngineResult,ForgeEvent,Critique,DispatchMetric" types=true
 
 interface name=StageResult
   field name=engineResults type="Map<string, EngineResult>"
   field name=accepted type=boolean
   field name=winner type="string|null"
+  field name=metrics type="DispatchMetric[]" optional=true
 
 interface name=SynthesisResult
   field name=pass type=boolean

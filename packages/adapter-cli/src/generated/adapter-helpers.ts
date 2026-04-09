@@ -1,15 +1,20 @@
+// @kern-source: adapter-helpers:1
 import type { EngineDefinition, EngineMode, EngineModeConfig, ImageAttachment } from '@agon/core';
 
+// @kern-source: adapter-helpers:2
 import { EngineNotFoundError } from '@agon/core';
 
+// @kern-source: adapter-helpers:3
 import { statSync } from 'node:fs';
 
+// @kern-source: adapter-helpers:5
 export function resolveArgs(template: string[], vars: Record<string,string>): string[] {
   return template.map((arg) =>
     arg.replace(/\{(\w+)\}/g, (_: string, key: string) => vars[key] ?? ''),
   );
 }
 
+// @kern-source: adapter-helpers:12
 export function resolveModel(engine: EngineDefinition): string|null {
   const modelConfig = engine.model;
   if (!modelConfig) return null;
@@ -22,12 +27,14 @@ export function resolveModel(engine: EngineDefinition): string|null {
   return modelConfig.default ?? null;
 }
 
+// @kern-source: adapter-helpers:25
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes}B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
 }
 
+// @kern-source: adapter-helpers:32
 export function buildCommand(engine: EngineDefinition, mode: EngineMode, prompt: string, cwd: string, timeout: number, binaryPath: string, images?: ImageAttachment[]): {command:string, args:string[]} {
   const modeConfig = mode === 'agent' ? engine.agent
     : mode === 'exec' ? engine.exec
@@ -91,10 +98,12 @@ export function buildCommand(engine: EngineDefinition, mode: EngineMode, prompt:
   return { command: binaryPath, args };
 }
 
+// @kern-source: adapter-helpers:96
 export function supportsAgentMode(engine: EngineDefinition): boolean {
   return !!engine.agent;
 }
 
+// @kern-source: adapter-helpers:101
 export function resolveAgentArgs(engine: EngineDefinition, permissionLevel: 'full'|'plan'|'read-only'): EngineModeConfig|null {
   if (permissionLevel === 'read-only') return null;
   if (!engine.agent) return null;
@@ -109,6 +118,43 @@ export function resolveAgentArgs(engine: EngineDefinition, permissionLevel: 'ful
   return { args: planArgs };
 }
 
+// @kern-source: adapter-helpers:116
+export function stripStreamJson(stdout: string): string {
+  const lines = stdout.split('\n');
+  const textParts: string[] = [];
+  
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      const msg = JSON.parse(trimmed);
+      // assistant message → extract text blocks
+      if (msg.type === 'assistant' && msg.message?.content) {
+        for (const block of msg.message.content) {
+          if (block.type === 'text' && block.text) textParts.push(block.text);
+        }
+      }
+      // result → extract result text
+      else if (msg.type === 'result' && msg.result && !msg.is_error) {
+        textParts.push(typeof msg.result === 'string' ? msg.result : JSON.stringify(msg.result));
+      }
+      // system, hook, etc. → skip
+    } catch {
+      // Not JSON — raw text from non-Claude engines, keep as-is
+      textParts.push(trimmed);
+    }
+  }
+  
+  return textParts.join('\n');
+}
+
+// @kern-source: adapter-helpers:147
+export function usesStreamJson(engine: EngineDefinition): boolean {
+  const args = engine.exec?.args ?? [];
+  return args.includes('stream-json') || args.some((a: string) => a === '--output-format' && args[args.indexOf(a) + 1] === 'stream-json');
+}
+
+// @kern-source: adapter-helpers:154
 export function checkEnvVars(engine: EngineDefinition): string|null {
   if (!engine.env) return null;
   for (const [envVar, config] of Object.entries(engine.env)) {

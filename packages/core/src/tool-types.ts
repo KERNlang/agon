@@ -1,2 +1,2 @@
 // ── Tool Types — KERN-sourced ─────────────────────────────────────
-export * from './generated/tool-types.js';
+export * from './generated/models/tool-types.js';

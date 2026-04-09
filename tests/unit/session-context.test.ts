@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SessionContext } from '../../packages/core/src/generated/session-context.js';
+import { SessionContext } from '../../packages/core/src/generated/blocks/session-context.js';
 
 describe('SessionContext', () => {
   it('memoizes context for same cwd', () => {

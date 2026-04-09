@@ -1,0 +1,66 @@
+// @kern-source: routing:1
+import { classifyTask, getRatings, getEngineProfile, rankByTaskClass, diffFileCount, resolveWorkingDir, gitChangedFiles, currentBranch } from '@agon/core';
+
+// @kern-source: routing:2
+import type { TaskClass, EngineRole, EngineProfile } from '@agon/core';
+
+// @kern-source: routing:3
+import type { HandlerContext } from '../../handlers/types.js';
+
+// @kern-source: routing:5
+export function buildRoutingContext(input: string, ctx: HandlerContext): string {
+  const parts: string[] = [];
+  
+  // ── Task classification (pure regex, zero cost) ──
+  const taskClass = classifyTask(input);
+  parts.push(`TASK CLASS: ${taskClass}`);
+  
+  // ── Scope: changed files + branch (cheap git calls) ──
+  try {
+    const cwd = resolveWorkingDir();
+    const branch = currentBranch(cwd);
+    const changedFiles = gitChangedFiles(cwd);
+    const fileCount = changedFiles.length;
+    // Count distinct directories to estimate module spread
+    const dirs = new Set(changedFiles.map((f: string) => f.split('/').slice(0, 2).join('/')));
+    parts.push(`SCOPE: ${fileCount} changed file${fileCount !== 1 ? 's' : ''} across ${dirs.size} dir${dirs.size !== 1 ? 's' : ''} on ${branch}`);
+  } catch {
+    parts.push(`SCOPE: unknown (not a git repo or no changes)`);
+  }
+  
+  // ── Engine rankings for this task class (in-memory, O(n log n)) ──
+  const activeEngines = ctx.activeEngines();
+  if (activeEngines.length > 1) {
+    const rankings = rankByTaskClass(activeEngines, taskClass);
+    if (rankings.length > 0) {
+      const lines = rankings.map((r: EngineRole) => {
+        const profile = getEngineProfile(r.engineId);
+        const strengths = profile?.strengths?.slice(0, 3).join(', ') ?? 'unknown';
+        const weaknesses = profile?.weaknesses?.slice(0, 2).join(', ') ?? 'none noted';
+        const winRate = r.confidence > 0 ? ` (${r.confidence}% win rate)` : '';
+        return `  ${r.engineId}: ${r.role}${winRate} — strengths: ${strengths} | weak: ${weaknesses}`;
+      });
+      parts.push(`ENGINES (${taskClass}):\n${lines.join('\n')}`);
+    }
+  } else {
+    parts.push(`ENGINES: ${activeEngines[0] ?? 'none'} (solo — only 1 available)`);
+  }
+  
+  // ── Rating summary for this task class ──
+  try {
+    const ratings = getRatings();
+    const taskRatings = ratings.byTaskClass?.[taskClass];
+    if (taskRatings && Object.keys(taskRatings).length > 0) {
+      const sorted = Object.entries(taskRatings)
+        .filter(([id]) => activeEngines.includes(id))
+        .sort(([, a], [, b]) => (b as any).mu - (a as any).mu);
+      if (sorted.length > 0) {
+        const ratingLine = sorted.map(([id, r]) => `${id}:${Math.round((r as any).mu)}+-${Math.round((r as any).phi)}`).join(' > ');
+        parts.push(`Rating (${taskClass}): ${ratingLine}`);
+      }
+    }
+  } catch { /* no rating data yet */ }
+  
+  return parts.join('\n');
+}
+

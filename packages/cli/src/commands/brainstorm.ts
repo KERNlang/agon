@@ -6,6 +6,7 @@ import { EngineRegistry, ensureAgonHome, RUNS_DIR } from '@agon/core';
 import { createCliAdapter } from '@agon/adapter-cli';
 import { runBrainstorm } from '@agon/forge';
 import { header, success, info, table, bold, cyan, green } from '../output.js';
+import { icons } from '../icons.js';
 
 export const brainstormCommand = defineCommand({
   meta: {
@@ -58,7 +59,7 @@ export const brainstormCommand = defineCommand({
     console.log('');
     header('Bids');
     const rows = result.bids.map((b) => [
-      b.engineId === result.winner ? green(`★ ${b.engineId}`) : b.engineId,
+      b.engineId === result.winner ? green(`${icons().winner} ${b.engineId}`) : b.engineId,
       String(b.confidence),
       b.reasoning.slice(0, 60),
     ]);

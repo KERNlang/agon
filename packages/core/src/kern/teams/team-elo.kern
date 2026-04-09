@@ -1,0 +1,176 @@
+// Team ELO — tracks composition synergy + per-role ratings
+// Three vectors: engine global (existing), engine-per-role (new), composition synergy (new)
+// Separate ladders per format (2v2, 3v3, etc.)
+
+import from="node:fs" names="readFileSync,writeFileSync,mkdirSync,renameSync"
+import from="node:path" names="dirname"
+import from="../models/types.js" names="TaskClass" types=true
+import from="./team.js" names="TeamRole,TeamSpec,TeamMatchResult,TeamMember" types=true
+import from="./team.js" names="computeContributionWeights"
+import from="../signals/config.js" names="TEAM_ELO_PATH"
+
+interface name=TeamCompositionRating
+  field name=lineupKey type=string
+  field name=rating type=number
+  field name=wins type=number
+  field name=losses type=number
+  field name=draws type=number
+  field name=matches type=number
+
+interface name=TeamRoleRating
+  field name=engineId type=string
+  field name=role type=TeamRole
+  field name=rating type=number
+  field name=wins type=number
+  field name=losses type=number
+  field name=matches type=number
+
+interface name=TeamEloRecord
+  field name=byFormat type="Record<string, { compositions: Record<string, TeamCompositionRating>, roles: Record<string, TeamRoleRating> }>"
+  field name=lastUpdated type=string
+
+fn name=defaultCompositionRating params="lineupKey:string" returns=TeamCompositionRating
+  handler <<<
+    return { lineupKey, rating: 1500, wins: 0, losses: 0, draws: 0, matches: 0 };
+  >>>
+
+fn name=defaultRoleRating params="engineId:string, role:TeamRole" returns=TeamRoleRating
+  handler <<<
+    return { engineId, role, rating: 1500, wins: 0, losses: 0, matches: 0 };
+  >>>
+
+fn name=loadTeamElo returns=TeamEloRecord
+  handler <<<
+    try {
+      return JSON.parse(readFileSync(TEAM_ELO_PATH, 'utf-8')) as TeamEloRecord;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+        console.warn(`[agon] failed to load team ELO: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      return { byFormat: {}, lastUpdated: new Date().toISOString() };
+    }
+  >>>
+
+fn name=saveTeamElo params="record:TeamEloRecord" returns=void
+  handler <<<
+    mkdirSync(dirname(TEAM_ELO_PATH), { recursive: true });
+    record.lastUpdated = new Date().toISOString();
+    const tmpPath = TEAM_ELO_PATH + '.tmp';
+    writeFileSync(tmpPath, JSON.stringify(record, null, 2) + '\n');
+    renameSync(tmpPath, TEAM_ELO_PATH);
+  >>>
+
+fn name=expectedScore params="rA:number, rB:number" returns=number
+  handler <<<
+    return 1 / (1 + 10 ** ((rB - rA) / 400));
+  >>>
+
+fn name=getTeamElo returns=TeamEloRecord
+  handler <<<
+    return loadTeamElo();
+  >>>
+
+fn name=predictTeamRating params="members:TeamMember[], format:string" returns=number
+  handler <<<
+    const record = loadTeamElo();
+    const formatData = record.byFormat[format];
+    if (!formatData) {
+      // No history — use average default
+      return 1500;
+    }
+
+    // Blend composition rating (if exists) with weighted role ratings
+    const lineupKey = [...members.map((m) => m.engineId)].sort().join('+');
+    const compRating = formatData.compositions[lineupKey];
+
+    let roleSum = 0;
+    let roleCount = 0;
+    for (const m of members) {
+      const roleKey = `${m.engineId}:${m.role}`;
+      const roleRating = formatData.roles[roleKey];
+      if (roleRating) {
+        roleSum += roleRating.rating * m.weight;
+        roleCount++;
+      } else {
+        roleSum += 1500 * m.weight;
+      }
+    }
+    const weightedRoleMean = roleSum; // weights already sum to ~1.0
+
+    if (!compRating || compRating.matches < 3) {
+      // Not enough composition data — rely on role ratings
+      return Math.round(weightedRoleMean);
+    }
+
+    // Blend: more composition matches → more weight on composition rating
+    const compWeight = Math.min(compRating.matches / 10, 0.6);
+    const blended = compRating.rating * compWeight + weightedRoleMean * (1 - compWeight);
+    return Math.round(blended);
+  >>>
+
+fn name=updateTeamElo params="match:TeamMatchResult, kFactor?:number" returns=void
+  handler <<<
+    if (!match.winnerTeamId) return; // draw — skip for now
+
+    const k = kFactor ?? 32;
+    const record = loadTeamElo();
+    const formatKey = match.format.label;
+    record.byFormat[formatKey] ??= { compositions: {}, roles: {} };
+    const fmt = record.byFormat[formatKey];
+
+    const [teamA, teamB] = match.teams;
+    const winner = match.winnerTeamId === teamA.teamId ? teamA : teamB;
+    const loser = match.winnerTeamId === teamA.teamId ? teamB : teamA;
+
+    // --- Composition ELO ---
+    fmt.compositions[winner.lineupKey] ??= defaultCompositionRating(winner.lineupKey);
+    fmt.compositions[loser.lineupKey] ??= defaultCompositionRating(loser.lineupKey);
+
+    const wComp = fmt.compositions[winner.lineupKey];
+    const lComp = fmt.compositions[loser.lineupKey];
+
+    const expW = expectedScore(wComp.rating, lComp.rating);
+    const expL = expectedScore(lComp.rating, wComp.rating);
+
+    wComp.rating = Math.round(wComp.rating + k * (1 - expW));
+    lComp.rating = Math.round(lComp.rating + k * (0 - expL));
+    wComp.wins++;
+    wComp.matches++;
+    lComp.losses++;
+    lComp.matches++;
+
+    // --- Role ELO with contribution weights ---
+    const winnerSubmission = match.submissions[winner.teamId];
+    const loserSubmission = match.submissions[loser.teamId];
+
+    const winnerWeights = winnerSubmission
+      ? computeContributionWeights(winner, winnerSubmission.trace)
+      : Object.fromEntries(winner.members.map((m) => [m.engineId, m.weight]));
+
+    const loserWeights = loserSubmission
+      ? computeContributionWeights(loser, loserSubmission.trace)
+      : Object.fromEntries(loser.members.map((m) => [m.engineId, m.weight]));
+
+    for (const m of winner.members) {
+      const roleKey = `${m.engineId}:${m.role}`;
+      fmt.roles[roleKey] ??= defaultRoleRating(m.engineId, m.role);
+      const r = fmt.roles[roleKey];
+      // Scale k-factor by contribution weight — bigger contributor gets bigger delta
+      const memberK = k * (winnerWeights[m.engineId] ?? m.weight) * winner.members.length;
+      r.rating = Math.round(r.rating + memberK * (1 - 0.5));
+      r.wins++;
+      r.matches++;
+    }
+
+    for (const m of loser.members) {
+      const roleKey = `${m.engineId}:${m.role}`;
+      fmt.roles[roleKey] ??= defaultRoleRating(m.engineId, m.role);
+      const r = fmt.roles[roleKey];
+      const memberK = k * (loserWeights[m.engineId] ?? m.weight) * loser.members.length;
+      r.rating = Math.round(r.rating - memberK * 0.5);
+      r.losses++;
+      r.matches++;
+    }
+
+    saveTeamElo(record);
+  >>>

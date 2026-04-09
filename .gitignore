@@ -11,3 +11,4 @@ coverage/
 .Agent
 .kern/cache/*
 .kern-gaps/*.agon-wire.log
+.mcp.json

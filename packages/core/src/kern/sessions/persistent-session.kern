@@ -1067,14 +1067,21 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
           // Tier 1: Replace old tool results with cached refs (disk-backed)
           // Tier 2: Incremental CompactionSummary — merges across cycles
           // Tier 3: (future) LLM-based summary as last resort
+          const estimateSingle = (m: {role: string, content: any}): number => {
+            if (typeof m.content === 'string') return Math.ceil(m.content.length / 4);
+            if (m.content === null && (m as any).tool_calls) {
+              return (m as any).tool_calls.reduce((s: number, tc: any) =>
+                s + Math.ceil((tc.function?.arguments ?? '').length / 4), 100);
+            }
+            return 50;
+          };
+          // Per-message token cache — only recompute for new/mutated messages
           const estimateTokens = (msgs: Array<{role: string, content: any}>) =>
             msgs.reduce((sum, m) => {
-              if (typeof m.content === 'string') return sum + Math.ceil(m.content.length / 4);
-              if (m.content === null && (m as any).tool_calls) {
-                return sum + (m as any).tool_calls.reduce((s: number, tc: any) =>
-                  s + Math.ceil((tc.function?.arguments ?? '').length / 4), 100);
+              if ((m as any)._tokenEstimate === undefined) {
+                (m as any)._tokenEstimate = estimateSingle(m);
               }
-              return sum + 50;
+              return sum + (m as any)._tokenEstimate;
             }, 0);
 
           // Context limit: use a sensible default per model family.
@@ -1115,6 +1122,7 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
                 } else {
                   msg.content = '[Old tool result cleared]';
                 }
+                delete msg._tokenEstimate; // invalidate cache — content mutated
               }
             }
 
@@ -1562,6 +1570,7 @@ Respond with ONLY the summary, no preamble.`;
                   const m = messageHistory[i] as any;
                   if (m.role === 'tool' && typeof m.content === 'string' && m.content.startsWith('[DELEGATION_BREAK]')) {
                     m.content = m.content.replace('[DELEGATION_BREAK] ', '');
+                    delete m._tokenEstimate;
                   }
                 }
                 messageHistory.push({ role: 'assistant', content: '[Delegation — tool loop stopped]' });

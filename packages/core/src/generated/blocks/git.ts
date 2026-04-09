@@ -122,18 +122,27 @@ export function recentCommits(cwd: string, count?: number): string {
 }
 
 // @kern-source: git:121
+/**
+ * Read-only: git status --short. Never mutates the working tree.
+ */
 export function gitStatusShort(cwd: string): string {
   try { return git(['status', '--short'], cwd); }
   catch { return ''; }
 }
 
 // @kern-source: git:128
+/**
+ * Read-only: git diff --stat for unstaged changes. No git add.
+ */
 export function gitDiffStat(cwd: string): string {
   try { return git(['diff', '--stat'], cwd); }
   catch { return ''; }
 }
 
 // @kern-source: git:135
+/**
+ * Read-only: list of changed file paths (unstaged + staged). No git add.
+ */
 export function gitChangedFiles(cwd: string): string[] {
   try {
     const unstaged = git(['diff', '--name-only'], cwd);
@@ -147,6 +156,9 @@ export function gitChangedFiles(cwd: string): string[] {
 }
 
 // @kern-source: git:149
+/**
+ * Read-only: truncated git diff (unstaged). Caps output. No git add.
+ */
 export function gitTruncatedDiff(cwd: string, maxLines?: number): string {
   try {
     const diff = git(['diff'], cwd);

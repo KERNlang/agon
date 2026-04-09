@@ -8,6 +8,9 @@ import type { TaskClass, EngineRole, EngineProfile } from '@agon/core';
 import type { HandlerContext } from '../../handlers/types.js';
 
 // @kern-source: routing:5
+/**
+ * Build a lightweight routing context (~200-500 tokens) for Cesar to make intelligent mode + team decisions.
+ */
 export function buildRoutingContext(input: string, ctx: HandlerContext): string {
   const parts: string[] = [];
   

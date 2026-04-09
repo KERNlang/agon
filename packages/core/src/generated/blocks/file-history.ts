@@ -39,6 +39,9 @@ function ensureSnapshotsDir(): void {
 }
 
 // @kern-source: file-history:32
+/**
+ * Snapshot files before modification. Returns entry that can be used for undo.
+ */
 export function takeSnapshot(label: string, cwd: string, filePaths: string[]): HistoryEntry {
   ensureSnapshotsDir();
   
@@ -76,6 +79,9 @@ export function takeSnapshot(label: string, cwd: string, filePaths: string[]): H
 }
 
 // @kern-source: file-history:70
+/**
+ * Revert files to a snapshot state. Deletes files that didn't exist before.
+ */
 export function revertSnapshot(id: string): {ok:boolean, error?:string, filesReverted:number} {
   ensureSnapshotsDir();
   const entryPath = join(SNAPSHOTS_DIR, `${id}.json`);

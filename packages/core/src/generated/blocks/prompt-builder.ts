@@ -8,6 +8,9 @@ import type { StageContext } from '../models/context-parts.js';
 import { renderStageContext } from '../models/context-parts.js';
 
 // @kern-source: prompt-builder:5
+/**
+ * A cacheable prompt block. Stable blocks (system instructions, constraints) are cached across turns; dynamic blocks (task, diff) are not.
+ */
 export interface PromptBlock {
   role: 'system'|'user';
   content: string;
@@ -15,6 +18,9 @@ export interface PromptBlock {
 }
 
 // @kern-source: prompt-builder:11
+/**
+ * Split a prompt into cacheable blocks by ## section headers. Sections like CONSTRAINTS and INSTRUCTIONS are stable and cacheable; TASK, DIFF, QUESTION are dynamic.
+ */
 export function splitPromptBlocks(prompt: string): PromptBlock[] {
   const STABLE_HEADERS = /^##\s*(CONSTRAINTS|INSTRUCTIONS|FITNESS TEST|REVIEW REQUEST)/i;
   const sections = prompt.split(/(?=^## )/m);
@@ -40,6 +46,9 @@ export function splitPromptBlocks(prompt: string): PromptBlock[] {
 }
 
 // @kern-source: prompt-builder:37
+/**
+ * Merge prompt blocks into system (cacheable) and user (dynamic) strings for APIs that support system/user message separation.
+ */
 export function mergeBlocksByRole(blocks: PromptBlock[]): {system:string, user:string} {
   const systemParts: string[] = [];
   const userParts: string[] = [];
@@ -112,6 +121,9 @@ export function buildReviewPrompt(opts: {prompt:string;diff:string}): string {
 }
 
 // @kern-source: prompt-builder:110
+/**
+ * Enhanced forge prompt builder that includes typed StageContext from prior stages.
+ */
 export function buildForgePromptWithContext(opts: {task:string;fitnessCmd:string;context?:string;agentMode?:boolean;stageContexts?:StageContext[]}): string {
   const sections = [
     `## TASK\n${opts.task}`,

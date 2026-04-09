@@ -88,6 +88,9 @@ export interface DispatchResult {
 }
 
 // @kern-source: dispatch:59
+/**
+ * Handle mode-switching intents. Returns true if consumed.
+ */
 export function handleModeSwitch(intentType: string, topic: string|undefined, question: string|undefined, cb: DispatchCallbacks): boolean {
   if (intentType === 'campfire' && !topic) {
     cb.setMode('campfire');
@@ -115,6 +118,9 @@ export function handleModeSwitch(intentType: string, topic: string|undefined, qu
 }
 
 // @kern-source: dispatch:87
+/**
+ * Extract a fitness command from conversational execution input while keeping the task clean.
+ */
 export function extractExecutionSpec(input: string): { task:string; fitnessCmd:string|null } {
   const fitnessMatch = FITNESS_PATTERN.exec(input);
   const fitnessCmd = fitnessMatch ? fitnessMatch[1].trim() : null;
@@ -125,6 +131,9 @@ export function extractExecutionSpec(input: string): { task:string; fitnessCmd:s
 }
 
 // @kern-source: dispatch:98
+/**
+ * Unified Cesar brain routing. Returns true if a background job was dispatched.
+ */
 export async function routeWithCesar(input: string, images: ImageAttachment[], cb: DispatchCallbacks): Promise<boolean> {
   cb.setPendingImages(() => []);
   try {
@@ -342,6 +351,9 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
 }
 
 // @kern-source: dispatch:316
+/**
+ * Route a parsed intent to the correct handler. Registry-first, switch as fallback.
+ */
 export async function dispatchIntent(intent: any, input: string, cb: DispatchCallbacks): Promise<DispatchResult> {
   // ── Emit pre:dispatch event ──
   if (cb.eventBus) {

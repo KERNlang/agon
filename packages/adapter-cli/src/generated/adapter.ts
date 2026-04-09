@@ -8,7 +8,7 @@ import { join, dirname } from 'node:path';
 import type { EngineAdapter, EngineDefinition, DispatchOptions, DispatchResult, AgentDispatchResult } from '@agon/core';
 
 // @kern-source: adapter:4
-import { EngineRegistry, spawnWithTimeout, spawnStream, EngineNotFoundError, readOnlyDiff, diffLineCount, apiDispatch, apiStreamDispatch, companionDispatch, runHooks, hooksFailed, runApiAgentLoop, scanProjectContext, resolveWorkingDir } from '@agon/core';
+import { EngineRegistry, spawnWithTimeout, spawnStream, EngineNotFoundError, readOnlyDiff, diffLineCount, apiDispatch, apiStreamDispatch, companionDispatch, runHooks, hooksFailed, runApiAgentLoop, sessionContext, resolveWorkingDir } from '@agon/core';
 
 // @kern-source: adapter:5
 import { buildCommand, checkEnvVars, resolveModel, stripStreamJson, usesStreamJson } from './adapter-helpers.js';
@@ -32,17 +32,20 @@ export class CliAdapter implements EngineAdapter {
     const binaryPath = options.engine.binary ? this.registry.findBinary(options.engine) : null;
     
     if (!binaryPath) {
-      // No CLI binary — use API if available, otherwise fail
-      if (options.engine.api) {
-        // Inject project context for API engines so they know the codebase
-        let sysPrompt = options.systemPrompt;
-        if (!sysPrompt || !sysPrompt.includes('PROJECT CONTEXT')) {
-          const projectCtx = scanProjectContext(options.cwd || resolveWorkingDir());
-          if (projectCtx) {
-            sysPrompt = [sysPrompt ?? '', `## PROJECT CONTEXT\n${projectCtx}`].filter(Boolean).join('\n\n');
-          }
+    // No CLI binary — use API if available, otherwise fail
+    if (options.engine.api) {
+      const resolvedModel = resolveModel(options.engine, options.cwd);
+      const apiConfig = resolvedModel ? { ...options.engine.api, model: resolvedModel } : options.engine.api;
+      // Inject project context for API engines so they know the codebase
+      // Uses sessionContext cache — avoids redundant git spawns when handleChat already gathered context
+      let sysPrompt = options.systemPrompt;
+      if (!sysPrompt || !sysPrompt.includes('PROJECT CONTEXT')) {
+        const projectCtx = sessionContext.get(options.cwd || resolveWorkingDir());
+        if (projectCtx) {
+          sysPrompt = [sysPrompt ?? '', `## PROJECT CONTEXT\n${projectCtx}`].filter(Boolean).join('\n\n');
         }
-        const result = await apiDispatch(options.engine.api, options.prompt, options.timeout, options.signal, sysPrompt);
+      }
+      const result = await apiDispatch(apiConfig, options.prompt, options.timeout, options.signal, sysPrompt);
         const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
         mkdirSync(dirname(outputPath), { recursive: true });
         writeFileSync(outputPath, result.stdout);
@@ -71,7 +74,7 @@ export class CliAdapter implements EngineAdapter {
         cwd: options.cwd,
         timeout: options.timeout,
         mode: options.mode === 'agent' ? 'agent' : options.mode === 'review' ? 'review' : 'exec',
-        model: resolveModel(options.engine) ?? undefined,
+        model: resolveModel(options.engine, options.cwd) ?? undefined,
         signal: options.signal,
         systemPrompt: options.systemPrompt,
       });
@@ -131,7 +134,9 @@ export class CliAdapter implements EngineAdapter {
     
     if (!binaryPath) {
       if (options.engine.api) {
-        const gen = apiStreamDispatch(options.engine.api, options.prompt, options.timeout, options.signal, options.systemPrompt);
+        const resolvedModel = resolveModel(options.engine, options.cwd);
+        const apiConfig = resolvedModel ? { ...options.engine.api, model: resolvedModel } : options.engine.api;
+        const gen = apiStreamDispatch(apiConfig, options.prompt, options.timeout, options.signal, options.systemPrompt);
         let result: DispatchResult;
         while (true) {
           const { value, done } = await gen.next();
@@ -193,69 +198,71 @@ export class CliAdapter implements EngineAdapter {
     // API fallback: use API agent loop when binary is declared but not installed
     const agentBinaryPath = options.engine.binary ? this.registry.findBinary(options.engine) : null;
     if (options.engine.api && !agentBinaryPath) {
+      const resolvedModel = resolveModel(options.engine, options.cwd);
+      const apiConfig = resolvedModel ? { ...options.engine.api, model: resolvedModel } : options.engine.api;
       const cwd = options.cwd || resolveWorkingDir();
-      const projectCtx = scanProjectContext(cwd);
-      const systemPrompt = [
-        options.systemPrompt ?? 'You are an AI coding assistant. Be direct and concise.',
-        projectCtx ? `## PROJECT CONTEXT\n${projectCtx}` : '',
-      ].filter(Boolean).join('\n\n');
+        const projectCtx = sessionContext.get(cwd);
+        const systemPrompt = [
+          options.systemPrompt ?? 'You are an AI coding assistant. Be direct and concise.',
+          projectCtx ? `## PROJECT CONTEXT\n${projectCtx}` : '',
+        ].filter(Boolean).join('\n\n');
     
       const startTime = Date.now();
       const baselineDiff = readOnlyDiff(cwd);
       const result = await runApiAgentLoop({
-        api: options.engine.api,
+        api: apiConfig,
         prompt: options.prompt,
         systemPrompt,
         cwd,
-        timeout: options.timeout,
-        signal: options.signal,
-        maxSteps: 15,
-      });
+          timeout: options.timeout,
+          signal: options.signal,
+          maxSteps: 15,
+        });
     
-      const postDiff = readOnlyDiff(cwd);
-      const baselineFiles = new Set(baselineDiff.split('\n').filter((l: string) => l.startsWith('diff --git')));
-      const postLines = postDiff.split('\n');
-      const newDiffLines: string[] = [];
-      let inNewFile = false;
-      for (const line of postLines) {
-        if (line.startsWith('diff --git')) { inNewFile = !baselineFiles.has(line); }
-        if (inNewFile) newDiffLines.push(line);
+        const postDiff = readOnlyDiff(cwd);
+        const baselineFiles = new Set(baselineDiff.split('\n').filter((l: string) => l.startsWith('diff --git')));
+        const postLines = postDiff.split('\n');
+        const newDiffLines: string[] = [];
+        let inNewFile = false;
+        for (const line of postLines) {
+          if (line.startsWith('diff --git')) { inNewFile = !baselineFiles.has(line); }
+          if (inNewFile) newDiffLines.push(line);
+        }
+        const diff = newDiffLines.join('\n');
+        const lines = diffLineCount(diff);
+        const files = diff ? newDiffLines.filter((l: string) => l.startsWith('diff --git')).length : 0;
+    
+        const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
+        mkdirSync(dirname(outputPath), { recursive: true });
+        writeFileSync(outputPath, result.response);
+    
+        return {
+          exitCode: 0,
+          stdout: result.response,
+          stderr: '',
+          durationMs: Date.now() - startTime,
+          timedOut: false,
+          diff,
+          diffLines: lines,
+          filesChanged: files,
+        };
       }
-      const diff = newDiffLines.join('\n');
-      const lines = diffLineCount(diff);
-      const files = diff ? newDiffLines.filter((l: string) => l.startsWith('diff --git')).length : 0;
     
-      const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
-      mkdirSync(dirname(outputPath), { recursive: true });
-      writeFileSync(outputPath, result.response);
+      const binaryPath = this.registry.findBinary(options.engine);
+      if (!binaryPath) {
+        throw new EngineNotFoundError(options.engine.id, options.engine.installHint);
+      }
     
-      return {
-        exitCode: 0,
-        stdout: result.response,
-        stderr: '',
-        durationMs: Date.now() - startTime,
-        timedOut: false,
-        diff,
-        diffLines: lines,
-        filesChanged: files,
-      };
-    }
+      const envError = checkEnvVars(options.engine);
+      if (envError) {
+        throw new EngineNotFoundError(options.engine.id, envError);
+      }
     
-    const binaryPath = this.registry.findBinary(options.engine);
-    if (!binaryPath) {
-      throw new EngineNotFoundError(options.engine.id, options.engine.installHint);
-    }
+      // Capture baseline diff before agent runs to exclude pre-existing changes
+      const baselineDiff = readOnlyDiff(options.cwd);
     
-    const envError = checkEnvVars(options.engine);
-    if (envError) {
-      throw new EngineNotFoundError(options.engine.id, envError);
-    }
-    
-    // Capture baseline diff before agent runs to exclude pre-existing changes
-    const baselineDiff = readOnlyDiff(options.cwd);
-    
-    // Try companion protocol first
-    if (options.engine.companion) {
+      // Try companion protocol first
+      if (options.engine.companion) {
       const companionResult = await companionDispatch({
         config: options.engine.companion,
         binaryPath,
@@ -263,70 +270,70 @@ export class CliAdapter implements EngineAdapter {
         cwd: options.cwd,
         timeout: options.timeout,
         mode: 'agent',
-        model: resolveModel(options.engine) ?? undefined,
+        model: resolveModel(options.engine, options.cwd) ?? undefined,
         signal: options.signal,
       });
-      if (companionResult.exitCode !== 2) {
-        const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
-        mkdirSync(dirname(outputPath), { recursive: true });
-        writeFileSync(outputPath, companionResult.stdout);
+        if (companionResult.exitCode !== 2) {
+          const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
+          mkdirSync(dirname(outputPath), { recursive: true });
+          writeFileSync(outputPath, companionResult.stdout);
     
-        const postDiff = readOnlyDiff(options.cwd);
-        const baselineFiles = new Set(baselineDiff.split('\n').filter((l: string) => l.startsWith('diff --git')));
-        const postLines = postDiff.split('\n');
-        const newDiffLines: string[] = [];
-        let inNewFile = false;
-        for (const line of postLines) {
-          if (line.startsWith('diff --git')) {
-            inNewFile = !baselineFiles.has(line);
+          const postDiff = readOnlyDiff(options.cwd);
+          const baselineFiles = new Set(baselineDiff.split('\n').filter((l: string) => l.startsWith('diff --git')));
+          const postLines = postDiff.split('\n');
+          const newDiffLines: string[] = [];
+          let inNewFile = false;
+          for (const line of postLines) {
+            if (line.startsWith('diff --git')) {
+              inNewFile = !baselineFiles.has(line);
+            }
+            if (inNewFile) newDiffLines.push(line);
           }
-          if (inNewFile) newDiffLines.push(line);
+          const diff = newDiffLines.join('\n');
+          const lines = diffLineCount(diff);
+          const files = diff ? newDiffLines.filter((l: string) => l.startsWith('diff --git')).length : 0;
+          return { ...companionResult, diff, diffLines: lines, filesChanged: files };
         }
-        const diff = newDiffLines.join('\n');
-        const lines = diffLineCount(diff);
-        const files = diff ? newDiffLines.filter((l: string) => l.startsWith('diff --git')).length : 0;
-        return { ...companionResult, diff, diffLines: lines, filesChanged: files };
       }
-    }
     
-    const { command, args } = buildCommand(
-      options.engine, options.mode, options.prompt,
-      options.cwd, options.timeout, binaryPath, options.images,
-    );
+      const { command, args } = buildCommand(
+        options.engine, options.mode, options.prompt,
+        options.cwd, options.timeout, binaryPath, options.images,
+      );
     
-    const result = await spawnWithTimeout({
-      command, args,
-      cwd: options.cwd,
-      timeout: options.timeout * 1000,
-      signal: options.signal,
-    });
+      const result = await spawnWithTimeout({
+        command, args,
+        cwd: options.cwd,
+        timeout: options.timeout * 1000,
+        signal: options.signal,
+      });
     
-    // Strip NDJSON system/hook messages from stream-json engines (Claude)
-    if (usesStreamJson(options.engine) && result.stdout.includes('{"type":')) {
-      result.stdout = stripStreamJson(result.stdout);
-    }
-    
-    const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
-    mkdirSync(dirname(outputPath), { recursive: true });
-    writeFileSync(outputPath, result.stdout);
-    
-    const postDiff = readOnlyDiff(options.cwd);
-    // Only count new changes by excluding baseline
-    const baselineFiles = new Set(baselineDiff.split('\n').filter((l: string) => l.startsWith('diff --git')));
-    const postLines = postDiff.split('\n');
-    const newDiffLines: string[] = [];
-    let inNewFile = false;
-    for (const line of postLines) {
-      if (line.startsWith('diff --git')) {
-        inNewFile = !baselineFiles.has(line);
+      // Strip NDJSON system/hook messages from stream-json engines (Claude)
+      if (usesStreamJson(options.engine) && result.stdout.includes('{"type":')) {
+        result.stdout = stripStreamJson(result.stdout);
       }
-      if (inNewFile) newDiffLines.push(line);
-    }
-    const diff = newDiffLines.join('\n');
-    const lines = diffLineCount(diff);
-    const files = diff ? newDiffLines.filter((l: string) => l.startsWith('diff --git')).length : 0;
     
-    return { ...result, diff, diffLines: lines, filesChanged: files };
+      const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
+      mkdirSync(dirname(outputPath), { recursive: true });
+      writeFileSync(outputPath, result.stdout);
+    
+      const postDiff = readOnlyDiff(options.cwd);
+      // Only count new changes by excluding baseline
+      const baselineFiles = new Set(baselineDiff.split('\n').filter((l: string) => l.startsWith('diff --git')));
+      const postLines = postDiff.split('\n');
+      const newDiffLines: string[] = [];
+      let inNewFile = false;
+      for (const line of postLines) {
+        if (line.startsWith('diff --git')) {
+          inNewFile = !baselineFiles.has(line);
+        }
+        if (inNewFile) newDiffLines.push(line);
+      }
+      const diff = newDiffLines.join('\n');
+      const lines = diffLineCount(diff);
+      const files = diff ? newDiffLines.filter((l: string) => l.startsWith('diff --git')).length : 0;
+    
+      return { ...result, diff, diffLines: lines, filesChanged: files };
   }
 
   async *dispatchAgentStream(options: DispatchOptions): AsyncGenerator<string, AgentDispatchResult, void> {
@@ -402,22 +409,23 @@ export class CliAdapter implements EngineAdapter {
   }
 
   async getVersion(engine: EngineDefinition): Promise<string|null> {
-    if (engine.api) return engine.api.model;
-    const binaryPath = this.registry.findBinary(engine);
-    if (!binaryPath) return null;
-    if (!engine.versionCmd) return null;
+    if (engine.api) return resolveModel(engine) ?? engine.api.model;
+      const binaryPath = this.registry.findBinary(engine);
+      if (!binaryPath) return null;
+      if (!engine.versionCmd) return null;
     
-    try {
-      const result = await spawnWithTimeout({
-        command: binaryPath,
-        args: engine.versionCmd,
-        cwd: process.cwd(),
-        timeout: 5000,
-      });
-      return result.stdout.trim() || null;
-    } catch (err) {
-      console.warn(`[agon] failed to get version for ${engine.id}: ${err instanceof Error ? err.message : String(err)}`);
-      return null;
-    }
+      try {
+        const result = await spawnWithTimeout({
+          command: binaryPath,
+          args: engine.versionCmd,
+          cwd: process.cwd(),
+          timeout: 5000,
+        });
+        return result.stdout.trim() || null;
+      } catch (err) {
+        console.warn(`[agon] failed to get version for ${engine.id}: ${err instanceof Error ? err.message : String(err)}`);
+        return null;
+      }
   }
 }
+

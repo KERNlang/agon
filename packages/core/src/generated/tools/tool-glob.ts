@@ -11,6 +11,9 @@ export const DEFAULT_MAX_FILES: number = 100;
 export const GLOB_TIMEOUT: number = 15000;
 
 // @kern-source: tool-glob:13
+/**
+ * Factory: creates the Glob tool handler for file pattern matching via ripgrep.
+ */
 export function createGlobTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Glob',

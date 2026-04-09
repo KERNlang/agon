@@ -214,3 +214,4 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
     killProc();
   }
 }
+

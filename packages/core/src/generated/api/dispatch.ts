@@ -21,30 +21,47 @@ export interface ApiConfig {
   idleTimeoutMs?: number;
 }
 
-// @kern-source: dispatch:15
+// @kern-source: dispatch:16
+export const _modelCache: Map<string,{model:any, apiKey:string}> = new Map<string,{model:any, apiKey:string}>();
+
+// @kern-source: dispatch:19
+/**
+ * Create AI SDK model instance from ApiConfig — routes to openai-compatible or anthropic provider. Cached by baseUrl+model+format; invalidated if API key changes.
+ */
 export function buildModel(config: ApiConfig): any {
   const apiKey = process.env[config.apiKeyEnv];
   if (!apiKey) return null;
   
+  const cacheKey = `${config.baseUrl}|${config.model}|${config.format ?? 'openai'}`;
+  const cached = _modelCache.get(cacheKey);
+  if (cached && cached.apiKey === apiKey) return cached.model;
+  
   const base = config.baseUrl.replace(/\/$/, '');
   
+  let model: any;
   if (config.format === 'anthropic') {
     // createAnthropic baseURL should include /v1 — it appends /messages
     const baseURL = base.endsWith('/v1') ? base : base + '/v1';
     const provider = createAnthropic({ apiKey, baseURL });
-    return provider(config.model);
+    model = provider(config.model);
+  } else {
+    // OpenAI-compatible: baseURL is used as prefix, SDK appends /chat/completions
+    const provider = createOpenAICompatible({
+      name: 'agon-api',
+      apiKey,
+      baseURL: base,
+    });
+    model = provider.chatModel(config.model);
   }
   
-  // OpenAI-compatible: baseURL is used as prefix, SDK appends /chat/completions
-  const provider = createOpenAICompatible({
-    name: 'agon-api',
-    apiKey,
-    baseURL: base,
-  });
-  return provider.chatModel(config.model);
+  _modelCache.set(cacheKey, { model, apiKey });
+  return model;
 }
 
-// @kern-source: dispatch:39
+// @kern-source: dispatch:51
+/**
+ * Convert OpenAI-format tool definitions to AI SDK tool format.
+ */
 export function convertToolsForSdk(tools: Array<{type:string,function:{name:string,description:string,parameters:Record<string,unknown>}}>): Record<string,any> {
   const result: Record<string, any> = {};
   for (const t of tools) {
@@ -57,7 +74,10 @@ export function convertToolsForSdk(tools: Array<{type:string,function:{name:stri
   return result;
 }
 
-// @kern-source: dispatch:53
+// @kern-source: dispatch:65
+/**
+ * Normalize tool call IDs per provider: Anthropic requires [a-zA-Z0-9_], Mistral max 9 chars.
+ */
 function normalizeToolCallId(id: string, format?: string): string {
   if (!id) return `call_${Date.now()}`;
   if (format === 'anthropic') {
@@ -71,7 +91,10 @@ function normalizeToolCallId(id: string, format?: string): string {
   return id;
 }
 
-// @kern-source: dispatch:68
+// @kern-source: dispatch:80
+/**
+ * Convert Agon message history (OpenAI wire format) to AI SDK CoreMessage format. Handles per-provider normalization.
+ */
 export function convertMessagesForSdk(messages: Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>, format?: string): any[] {
   // Build tool call ID -> name lookup for tool result messages
   const toolNameMap = new Map<string, string>();
@@ -154,7 +177,7 @@ export function convertMessagesForSdk(messages: Array<{role:string,content:any,t
   return result;
 }
 
-// @kern-source: dispatch:152
+// @kern-source: dispatch:164
 export async function apiDispatch(config: ApiConfig, prompt: string, timeout: number, signal?: AbortSignal, systemPrompt?: string): Promise<DispatchResult> {
   const model = buildModel(config);
   if (!model) {
@@ -211,7 +234,7 @@ export async function apiDispatch(config: ApiConfig, prompt: string, timeout: nu
   }
 }
 
-// @kern-source: dispatch:209
+// @kern-source: dispatch:221
 export async function* apiStreamDispatch(config: ApiConfig, prompt: string, timeout: number, signal?: AbortSignal, systemPrompt?: string): AsyncGenerator<string, DispatchResult, void> {
   const messages: Array<{role:string, content:string}> = [];
   if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
@@ -219,7 +242,10 @@ export async function* apiStreamDispatch(config: ApiConfig, prompt: string, time
   return yield* apiStreamDispatchWithHistory(config, messages, timeout, signal);
 }
 
-// @kern-source: dispatch:217
+// @kern-source: dispatch:229
+/**
+ * Streaming dispatch with full message history + optional native function calling. Uses Vercel AI SDK for robust SSE handling and provider abstraction.
+ */
 export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages: Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>, timeout: number, signal?: AbortSignal, tools?: Array<{type:string,function:{name:string,description:string,parameters:Record<string,unknown>}}>): AsyncGenerator<string, DispatchResult, void> {
   const model = buildModel(config);
   if (!model) {

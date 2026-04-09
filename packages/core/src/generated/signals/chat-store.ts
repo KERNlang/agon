@@ -98,6 +98,9 @@ export function loadChatSession(id: string): ChatSession|null {
 }
 
 // @kern-source: chat-store:91
+/**
+ * Load an existing session for continued use. Returns null if not found.
+ */
 export function resumeChatSession(id: string): ChatSession|null {
   return loadChatSession(id);
 }

@@ -23,6 +23,9 @@ export const DEFAULT_PHI: number = 350;
 export const DEFAULT_SIGMA: number = 0.06;
 
 // @kern-source: glicko:22
+/**
+ * System constant — constrains volatility change. Lower = more conservative.
+ */
 export const TAU: number = 0.5;
 
 // @kern-source: glicko:26
@@ -80,11 +83,17 @@ export function saveRatings(record: RatingRecord): void {
 }
 
 // @kern-source: glicko:80
+/**
+ * Load current Glicko-2 ratings.
+ */
 export function getRatings(): RatingRecord {
   return loadRatings();
 }
 
 // @kern-source: glicko:86
+/**
+ * Get a single engine's Glicko-2 rating, optionally for a specific mode.
+ */
 export function getEngineGlickoRating(engineId: string, mode?: string): GlickoRating {
   const record = loadRatings();
   if (mode && record.byMode[mode as keyof typeof record.byMode]) {
@@ -94,16 +103,25 @@ export function getEngineGlickoRating(engineId: string, mode?: string): GlickoRa
 }
 
 // @kern-source: glicko:96
+/**
+ * Glicko-2 g(phi) function — reduces impact of uncertain opponents.
+ */
 export function glickoG(phi: number): number {
   return 1 / Math.sqrt(1 + 3 * phi * phi / (Math.PI * Math.PI));
 }
 
 // @kern-source: glicko:102
+/**
+ * Glicko-2 expected score.
+ */
 export function glickoE(mu: number, muJ: number, phiJ: number): number {
   return 1 / (1 + Math.exp(-glickoG(phiJ) * (mu - muJ)));
 }
 
 // @kern-source: glicko:108
+/**
+ * Single pairwise Glicko-2 update.
+ */
 export function updateGlicko(winnerId: string, loserId: string, taskClass: TaskClass, mode: 'forge'|'brainstorm'|'tribunal'): {winnerMu:number, loserMu:number} {
   const record = loadRatings();
   const now = new Date().toISOString();
@@ -178,6 +196,9 @@ export function updateGlicko(winnerId: string, loserId: string, taskClass: TaskC
 }
 
 // @kern-source: glicko:183
+/**
+ * Glicko-2 volatility update via Illinois algorithm (Step 5).
+ */
 export function computeNewSigma(sigma: number, phi: number, v: number, delta: number): number {
   const a = Math.log(sigma * sigma);
   const tau2 = TAU * TAU;
@@ -220,6 +241,9 @@ export function computeNewSigma(sigma: number, phi: number, v: number, delta: nu
 }
 
 // @kern-source: glicko:226
+/**
+ * Pairwise Glicko-2 updates for all ranked positions. Higher score beats lower score.
+ */
 export function updateGlickoRanked(ranked: Array<{engineId:string,score:number}>, taskClass: TaskClass, mode: 'forge'|'brainstorm'|'tribunal'): void {
   if (ranked.length < 2) return;
   for (let i = 0; i < ranked.length; i++) {
@@ -231,6 +255,9 @@ export function updateGlickoRanked(ranked: Array<{engineId:string,score:number}>
 }
 
 // @kern-source: glicko:238
+/**
+ * Conservative rating estimate for advisor/starter selection. Returns mu - 2*phi (lower bound of 95% CI).
+ */
 export function advisorScore(engineId: string, mode: 'forge'|'brainstorm'|'tribunal'): number {
   const rating = getEngineGlickoRating(engineId, mode);
   // Apply inactivity: increase phi if engine hasn't competed recently

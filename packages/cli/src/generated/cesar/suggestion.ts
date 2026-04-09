@@ -21,6 +21,9 @@ export interface SuggestionResult {
 // @kern-source: suggestion:9
 
 // @kern-source: suggestion:11
+/**
+ * Parse [SUGGEST:mode-name] or legacy [DELEGATE:mode] from response.
+ */
 export function parseSuggestion(response: string): SuggestionResult {
   // Search for [SUGGEST:mode] anywhere in the first 150 chars — engines put
   // varying amounts of text between confidence and the marker.

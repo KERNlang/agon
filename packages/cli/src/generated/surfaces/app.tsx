@@ -858,14 +858,25 @@ export function App({  }: {  }) {
           {enginePickerOpen && (
             <EnginePicker available={registry.availableIds()} initialSelected={sessionEngines ?? registry.availableIds()}
               userEngines={new Set(registry.list().filter((e: any) => e.tier === 'user').map((e: any) => e.id))}
+              modelOverrides={(loadConfig() as any).engineModels ?? {}}
               onConfirm={(selected: string[]) => { setEnginePickerOpen(false); setSessionEngines(selected); configSet('forgeEnabledEngines', selected); dispatch({ type: 'success', message: `Active engines: ${selected.join(', ')}` } as any); }}
               onCancel={() => setEnginePickerOpen(false)}
               onRemove={(engineId: string) => {
                 const engPath = join(homedir(), '.agon', 'engines', `${engineId}.json`);
                 try { unlinkSync(engPath); } catch (_e) {}
+                const nextModels = { ...((loadConfig() as any).engineModels ?? {}) };
+                delete nextModels[engineId];
+                configSet('engineModels', nextModels as any);
                 registry.unregister(engineId);
                 setSessionEngines((prev: string[]|null) => prev ? prev.filter((id: string) => id !== engineId) : null);
                 dispatch({ type: 'success', message: `Removed: ${engineId}` } as any);
+              }}
+              onSetModel={(engineId: string, model: string | null) => {
+                const nextModels = { ...((loadConfig() as any).engineModels ?? {}) };
+                if (model) nextModels[engineId] = model;
+                else delete nextModels[engineId];
+                configSet('engineModels', nextModels as any);
+                dispatch({ type: 'success', message: model ? `Model override set: ${engineId} → ${model}` : `Model override cleared: ${engineId}` } as any);
               }} />
           )}
           {modelPickerOpen && (
@@ -950,7 +961,7 @@ export function App({  }: {  }) {
 }
 
 
-// @kern-source: app:924
+// @kern-source: app:935
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

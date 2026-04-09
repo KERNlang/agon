@@ -64,6 +64,9 @@ export interface PersistentSession {
 }
 
 // @kern-source: persistent-session:41
+/**
+ * Factory: picks the right session implementation based on engine config.
+ */
 export function createPersistentSession(config: PersistentSessionConfig): PersistentSession {
   const engine = config.engine;
   
@@ -92,6 +95,9 @@ export function createPersistentSession(config: PersistentSessionConfig): Persis
 }
 
 // @kern-source: persistent-session:72
+/**
+ * Persistent JSONRPC session for Codex app-server. Process stays alive across turns.
+ */
 export function createCompanionSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -421,6 +427,9 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
 }
 
 // @kern-source: persistent-session:404
+/**
+ * Persistent ACP (Agent Client Protocol) session for OpenCode. JSON-RPC 2.0 over stdio.
+ */
 export function createAcpSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -738,6 +747,9 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
 }
 
 // @kern-source: persistent-session:724
+/**
+ * Persistent bidirectional NDJSON session for Claude Code. One process, multi-turn via stdin.
+ */
 export function createStreamJsonSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -1022,6 +1034,9 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
 }
 
 // @kern-source: persistent-session:1011
+/**
+ * Fallback: spawn per turn with --resume/--continue. Works for any CLI engine.
+ */
 export function createResumeSession(config: PersistentSessionConfig): PersistentSession {
   let alive = false;
       let sessionId: string | null = null;
@@ -1079,14 +1094,21 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
             // Tier 1: Replace old tool results with cached refs (disk-backed)
             // Tier 2: Incremental CompactionSummary — merges across cycles
             // Tier 3: (future) LLM-based summary as last resort
+            const estimateSingle = (m: {role: string, content: any}): number => {
+              if (typeof m.content === 'string') return Math.ceil(m.content.length / 4);
+              if (m.content === null && (m as any).tool_calls) {
+                return (m as any).tool_calls.reduce((s: number, tc: any) =>
+                  s + Math.ceil((tc.function?.arguments ?? '').length / 4), 100);
+              }
+              return 50;
+            };
+            // Per-message token cache — only recompute for new/mutated messages
             const estimateTokens = (msgs: Array<{role: string, content: any}>) =>
               msgs.reduce((sum, m) => {
-                if (typeof m.content === 'string') return sum + Math.ceil(m.content.length / 4);
-                if (m.content === null && (m as any).tool_calls) {
-                  return sum + (m as any).tool_calls.reduce((s: number, tc: any) =>
-                    s + Math.ceil((tc.function?.arguments ?? '').length / 4), 100);
+                if ((m as any)._tokenEstimate === undefined) {
+                  (m as any)._tokenEstimate = estimateSingle(m);
                 }
-                return sum + 50;
+                return sum + (m as any)._tokenEstimate;
               }, 0);
   
             // Context limit: use a sensible default per model family.
@@ -1127,6 +1149,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                   } else {
                     msg.content = '[Old tool result cleared]';
                   }
+                  delete msg._tokenEstimate; // invalidate cache — content mutated
                 }
               }
   
@@ -1574,6 +1597,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                     const m = messageHistory[i] as any;
                     if (m.role === 'tool' && typeof m.content === 'string' && m.content.startsWith('[DELEGATION_BREAK]')) {
                       m.content = m.content.replace('[DELEGATION_BREAK] ', '');
+                      delete m._tokenEstimate;
                     }
                   }
                   messageHistory.push({ role: 'assistant', content: '[Delegation — tool loop stopped]' });

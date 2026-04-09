@@ -3,7 +3,7 @@ import from="node:path" names="isAbsolute,resolve"
 import from="node:path" names="join"
 import from="node:fs" names="mkdirSync"
 import from="@agon/core" names="PersistentSession,PersistentSessionConfig" types=true
-import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,resolveWorkingDir,scanProjectContext,createPersistentSession,ToolRegistry,FileStateCache,buildToolSystemPrompt,toolsToOpenAIFormat,executeToolCall,RUNS_DIR,tracker"
+import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,resolveWorkingDir,scanProjectContext,createPersistentSession,ToolRegistry,FileStateCache,buildToolSystemPrompt,toolsToOpenAIFormat,executeToolCall,RUNS_DIR,tracker,discoverMcpServers,mcpDiscoveryFingerprint,mcpServersToWireFormat"
 import from="@agon/core" names="ToolContext,ToolCallResult" types=true
 import from="../../handlers/types.js" names="HandlerContext" types=true
 import from="./tools.js" names="createCesarToolRegistry"
@@ -425,7 +425,7 @@ fn name=canUseCesarMcp params="engine:any,binaryPath:string" returns=boolean
   >>>
 
 fn name=mcpConfigFingerprint params="config:any" returns=string
-  doc "Compute a simple fingerprint of MCP-related config to detect changes."
+  doc "Compute a fingerprint of MCP-related config to detect changes. Includes both manual config and auto-discovery sources."
   handler <<<
     const enabled = !!(config as any).cesarMcpEnabled;
     const configPath = String((config as any).cesarMcpConfigPath ?? '');
@@ -437,7 +437,9 @@ fn name=mcpConfigFingerprint params="config:any" returns=string
         mtime = String(statSync(resolvedPath).mtimeMs);
       } catch { /* file may not exist yet */ }
     }
-    return `${enabled}:${configPath}:${mtime}`;
+    // Also include auto-discovery fingerprint — detects changes to ~/.claude/settings.json, .vscode/mcp.json, etc.
+    const discoveryFp = mcpDiscoveryFingerprint(resolveWorkingDir());
+    return `${enabled}:${configPath}:${mtime}:${discoveryFp}`;
   >>>
 
 fn name=ensureCesarSession async=true params="ctx:HandlerContext" returns="Promise<PersistentSession>"
@@ -520,9 +522,19 @@ fn name=ensureCesarSession async=true params="ctx:HandlerContext" returns="Promi
       else throw new Error(`No backend for "${cesarEngineId}"`);
     }
     const usingApi = !binaryPath;
-    const mcpServers = canUseCesarMcp(engine, binaryPath)
-      ? loadCesarMcpServers(config, cwd)
-      : undefined;
+    // MCP servers: manual config takes priority, then auto-discovery from standard paths
+    let mcpServers: Array<Record<string, unknown>> | undefined;
+    if (canUseCesarMcp(engine, binaryPath)) {
+      // Manual config (cesarMcpEnabled + cesarMcpConfigPath)
+      mcpServers = loadCesarMcpServers(config, cwd);
+      if (!mcpServers || mcpServers.length === 0) {
+        // Auto-discover from ~/.claude/settings.json, .vscode/mcp.json, .agon.json, etc.
+        const discovered = discoverMcpServers(cwd);
+        if (discovered.length > 0) {
+          mcpServers = mcpServersToWireFormat(discovered);
+        }
+      }
+    }
 
     // Build system prompt and tool registry
     const systemPrompt = buildCesarSystemPrompt(ctx);

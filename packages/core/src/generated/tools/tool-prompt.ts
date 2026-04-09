@@ -19,6 +19,38 @@ NEVER use Bash for searching — use Grep for content search, Glob for file sear
 Keep going until the task is DONE. Don't stop after reading one file — chain tool calls: Read → analyze → Read more → Edit → Bash to verify. Complete the full task in one turn.`;
 
 // @kern-source: tool-prompt:24
+/**
+ * Describe a schema property including nested array/object structures for XML prompt.
+ */
+function describeSchemaProperty(key: string, spec: any, required: boolean): string {
+  const opt = required ? '' : '?';
+  const s = spec as any;
+  
+  // Array of objects — show the item structure
+  if (s.type === 'array' && s.items?.type === 'object' && s.items?.properties) {
+    const itemProps = Object.entries(s.items.properties)
+      .map(([k, v]: [string, any]) => {
+        const itemReq = Array.isArray(s.items.required) && s.items.required.includes(k);
+        const enumHint = v.enum ? ` (${v.enum.join('|')})` : '';
+        return `${k}${itemReq ? '' : '?'}:${v.type ?? 'string'}${enumHint}`;
+      })
+      .join(', ');
+    return `${key}${opt}:[{${itemProps}}]`;
+  }
+  
+  // Object with properties
+  if (s.type === 'object' && s.properties) {
+    const subProps = Object.entries(s.properties)
+      .map(([k, v]: [string, any]) => `${k}:${v.type ?? 'string'}`)
+      .join(', ');
+    return `${key}${opt}:{${subProps}}`;
+  }
+  
+  const enumHint = s.enum ? ` (${s.enum.join('|')})` : '';
+  return `${key}${opt}:${s.type ?? 'string'}${enumHint}`;
+}
+
+// @kern-source: tool-prompt:54
 function toolDefinitionToPrompt(def: ToolDefinition): string {
   const schema = def.inputSchema as any;
   const props = schema.properties ?? schema;
@@ -27,14 +59,14 @@ function toolDefinitionToPrompt(def: ToolDefinition): string {
     .filter(([key]) => key !== 'type' && key !== 'required' && key !== 'properties')
     .map(([key, spec]) => {
       const s = spec as any;
-      const opt = requiredFields.has(key) || s.required === true ? '' : '?';
-      return `${key}${opt}:${s.type ?? 'string'}`;
+      const isReq = requiredFields.has(key) || s.required === true;
+      return describeSchemaProperty(key, s, isReq);
     })
     .join(', ');
   return `${def.name}(${params}) — ${def.description}`;
 }
 
-// @kern-source: tool-prompt:40
+// @kern-source: tool-prompt:70
 /**
  * Generate the complete tool system prompt section for any LLM.
  */
@@ -50,7 +82,7 @@ export function generateToolPrompt(handlers: ToolHandler[]): string {
   return sections.join('\n\n');
 }
 
-// @kern-source: tool-prompt:54
+// @kern-source: tool-prompt:84
 function generateReadToolSchema(): Record<string,unknown> {
   return {
     file_path: { type: 'string', required: true, description: 'Absolute or relative path to file' },
@@ -59,7 +91,7 @@ function generateReadToolSchema(): Record<string,unknown> {
   };
 }
 
-// @kern-source: tool-prompt:63
+// @kern-source: tool-prompt:93
 function generateEditToolSchema(): Record<string,unknown> {
   return {
     file_path: { type: 'string', required: true, description: 'Path to file to edit' },
@@ -69,7 +101,7 @@ function generateEditToolSchema(): Record<string,unknown> {
   };
 }
 
-// @kern-source: tool-prompt:73
+// @kern-source: tool-prompt:103
 function generateWriteToolSchema(): Record<string,unknown> {
   return {
     file_path: { type: 'string', required: true, description: 'Path to file to write' },
@@ -77,7 +109,7 @@ function generateWriteToolSchema(): Record<string,unknown> {
   };
 }
 
-// @kern-source: tool-prompt:81
+// @kern-source: tool-prompt:111
 function generateBashToolSchema(): Record<string,unknown> {
   return {
     command: { type: 'string', required: true, description: 'Shell command to execute' },
@@ -85,7 +117,7 @@ function generateBashToolSchema(): Record<string,unknown> {
   };
 }
 
-// @kern-source: tool-prompt:89
+// @kern-source: tool-prompt:119
 function generateGrepToolSchema(): Record<string,unknown> {
   return {
     pattern: { type: 'string', required: true, description: 'Regex pattern to search for' },
@@ -95,7 +127,7 @@ function generateGrepToolSchema(): Record<string,unknown> {
   };
 }
 
-// @kern-source: tool-prompt:99
+// @kern-source: tool-prompt:129
 function generateGlobToolSchema(): Record<string,unknown> {
   return {
     pattern: { type: 'string', required: true, description: 'Glob pattern (e.g. "**/*.ts")' },
@@ -103,7 +135,34 @@ function generateGlobToolSchema(): Record<string,unknown> {
   };
 }
 
-// @kern-source: tool-prompt:107
+// @kern-source: tool-prompt:137
+/**
+ * Recursively convert a JSON Schema property, preserving nested structures for arrays/objects.
+ */
+function convertSchemaProperty(spec: any): Record<string,unknown> {
+  const result: Record<string, unknown> = { type: spec.type ?? 'string' };
+  if (spec.description) result.description = spec.description;
+  if (spec.enum) result.enum = spec.enum;
+  
+  // Array with items — preserve the nested item schema
+  if (spec.type === 'array' && spec.items) {
+    result.items = convertSchemaProperty(spec.items);
+  }
+  
+  // Object with properties — recursively convert each property
+  if (spec.type === 'object' && spec.properties) {
+    const nested: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(spec.properties)) {
+      nested[k] = convertSchemaProperty(v as any);
+    }
+    result.properties = nested;
+    if (Array.isArray(spec.required)) result.required = spec.required;
+  }
+  
+  return result;
+}
+
+// @kern-source: tool-prompt:162
 /**
  * Convert Agon tool definitions to OpenAI function calling format.
  */
@@ -118,7 +177,7 @@ export function toolsToOpenAIFormat(registry: ToolRegistry): Array<{type:string,
     for (const [key, spec] of Object.entries(props)) {
       if (key === 'type' || key === 'required' || key === 'properties') continue;
       const s = spec as any;
-      properties[key] = { type: s.type ?? 'string', description: s.description ?? key };
+      properties[key] = convertSchemaProperty(s);
       if (s.required === true) required.push(key);
     }
     // Also check schema-level required array

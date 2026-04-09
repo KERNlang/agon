@@ -304,7 +304,7 @@ export function OutputBlockView({ event, mode, toolOutputExpanded }: { event: Ou
           case 'kern-draft': {
             const eColor = engineColor(event.engineId);
             const wrapWidth = contentWidth(8);
-            const segments = parseMarkdownBlocks(event.content.trim());
+            const segments = parseMarkdownBlocks(event.content.trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, ''));
             return (
               <Box flexDirection="column" paddingLeft={2}>
                 <Text color={eColor}>{'\u250c\u2500\u2500 '}<Text bold>{event.engineId}</Text>{event.critique ? <Text color="green">{' '}{event.critique}</Text> : ''}</Text>
@@ -317,7 +317,7 @@ export function OutputBlockView({ event, mode, toolOutputExpanded }: { event: Ou
           case 'debate-round': {
             const dColor = engineColor(event.engineId);
             const wrapWidth = contentWidth(8);
-            const segments = parseMarkdownBlocks(event.argument.trim());
+            const segments = parseMarkdownBlocks(event.argument.trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, ''));
             return (
               <Box flexDirection="column" paddingLeft={2}>
                 <Text color={dColor}>{'\u250c\u2500\u2500 '}<Text bold>{event.engineId}</Text>{' '}<Text dimColor>{'('}{event.position}{')'}</Text></Text>
@@ -329,7 +329,7 @@ export function OutputBlockView({ event, mode, toolOutputExpanded }: { event: Ou
           }
           case 'verdict': {
             const wrapWidth = contentWidth(4);
-            const richLines = parseProseToRichLines(event.summary.trim(), wrapWidth);
+            const richLines = parseProseToRichLines(event.summary.trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, ''), wrapWidth);
             return (
               <Box flexDirection="column" paddingLeft={2}>
                 {richLines.map((line: RichLine, i: number) => <RichLineView key={`v-${i}`} line={line} />)}
@@ -663,12 +663,44 @@ export function OutputBlockView({ event, mode, toolOutputExpanded }: { event: Ou
             );
           }
           case 'dashboard': return <DashboardView event={event as OutputEvent & { type: 'dashboard' }} />;
+          case 'plan-proposal': {
+            const p = event.plan;
+            const steps = p.steps ?? [];
+            const totalTokens = p.totalEstimatedTokens ?? steps.reduce((sum: number, s: any) => sum + (s.estimatedTokens ?? 0), 0);
+            const totalCost = p.totalEstimatedCostUsd ?? steps.reduce((sum: number, s: any) => sum + (s.estimatedCostUsd ?? 0), 0);
+            const allEngines = [...new Set(steps.flatMap((s: any) => s.engines ?? (s.engine ? [s.engine] : [])))];
+            const w = contentWidth(6);
+            const bar = '\u2500'.repeat(Math.min(w, 60));
+  
+            return (
+              <Box flexDirection="column" paddingLeft={2} marginY={1}>
+                <Text color="#c084fc">{'\u250c'}{bar}</Text>
+                <Text color="#c084fc">{'\u2502 '}<Text bold color="#c084fc">{'\u25b8 Plan: '}{p.intent}</Text></Text>
+                <Text color="#c084fc">{'\u2502'}</Text>
+                {steps.map((s: any, i: number) => {
+                  const typeLabel = s.type === 'self' ? 'Cesar' : s.type;
+                  const engines = s.engines?.length ? s.engines.join(', ') : (s.engine ?? '');
+                  const cost = s.estimatedCostUsd != null ? ` ~$${s.estimatedCostUsd.toFixed(2)}` : '';
+                  const deps = s.dependsOn?.length ? ` (after ${s.dependsOn.join(', ')})` : '';
+                  return (
+                    <Box key={s.id} flexDirection="column">
+                      <Text color="#c084fc">{'\u2502  '}<Text bold color="white">{`${i + 1}. `}</Text><Text>{s.description}</Text></Text>
+                      <Text color="#c084fc">{'\u2502     '}<Text dimColor>{typeLabel}{engines ? ` \u00b7 ${engines}` : ''}{cost}{deps}</Text></Text>
+                    </Box>
+                  );
+                })}
+                <Text color="#c084fc">{'\u2502'}</Text>
+                <Text color="#c084fc">{'\u2502 '}<Text dimColor>{'Est: ~'}{totalTokens.toLocaleString()}{' tokens ($'}{totalCost.toFixed(2)}{')'}{allEngines.length ? ` \u00b7 ${allEngines.join(', ')}` : ''}</Text></Text>
+                <Text color="#c084fc">{'\u2514'}{bar}</Text>
+              </Box>
+            );
+          }
           default: return null;
         }
 }
 
 
-// @kern-source: engine:676
+// @kern-source: engine:708
 
 export function ToolCallGroup({ blocks }: { blocks: OutputBlock[] }) {
         const toolCounts: Record<string, number> = {};

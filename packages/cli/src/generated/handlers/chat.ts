@@ -8,7 +8,7 @@ import { mkdirSync } from 'node:fs';
 import type { ImageAttachment, DispatchResult } from '@agon/core';
 
 // @kern-source: chat:4
-import { ensureAgonHome, RUNS_DIR, appendMessage, tracker, StreamParser, loadConfig, scanProjectContext, resolveWorkingDir } from '@agon/core';
+import { RUNS_DIR, appendMessage, tracker, StreamParser, loadConfig, sessionContext, resolveWorkingDir } from '@agon/core';
 
 // @kern-source: chat:5
 import { ENGINE_COLORS } from '../blocks/output-format.js';
@@ -16,7 +16,23 @@ import { ENGINE_COLORS } from '../blocks/output-format.js';
 // @kern-source: chat:6
 import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 
-// @kern-source: chat:8
+// @kern-source: chat:9
+export const _cachedCwd: {value:string|null} = { value: null };
+
+// @kern-source: chat:12
+function cachedCwd(): string {
+  if (_cachedCwd.value === null) {
+    _cachedCwd.value = resolveWorkingDir();
+  }
+  return _cachedCwd.value;
+}
+
+// @kern-source: chat:20
+export function invalidateCwdCache(): void {
+  _cachedCwd.value = null;
+}
+
+// @kern-source: chat:26
 function detectTargetEngine(input: string, availableIds: string[]): {engineId:string|null,message:string} {
   const lower = input.toLowerCase();
   for (const id of availableIds) {
@@ -32,12 +48,10 @@ function detectTargetEngine(input: string, availableIds: string[]): {engineId:st
   return { engineId: null, message: input };
 }
 
-// @kern-source: chat:24
+// @kern-source: chat:42
 export async function handleChat(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[], opts?: {toolPolicy?:'full'|'none'}): Promise<void> {
   const abort = new AbortController();
   try {
-    ensureAgonHome();
-    
     const available = ctx.activeEngines();
     if (available.length === 0) {
       dispatch({ type: 'error', message: 'No engines available.' });
@@ -68,8 +82,8 @@ export async function handleChat(input: string, dispatch: Dispatch, ctx: Handler
     const history = recent.length > 0
       ? recent.map((m: any) => m.role === 'user' ? `User: ${m.content}` : `${m.engineId ?? 'engine'}: ${m.content}`).join('\n\n')
       : '';
-    const cwd = resolveWorkingDir();
-    const projectCtx = scanProjectContext(cwd, config.projectContext || undefined, config.contextFormat);
+    const cwd = cachedCwd();
+    const projectCtx = sessionContext.get(cwd, config.projectContext || undefined, config.contextFormat);
     const parts: string[] = [];
     if (projectCtx) parts.push(`## PROJECT CONTEXT\n${projectCtx}`);
     if (history) parts.push(history);

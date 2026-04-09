@@ -6,16 +6,20 @@ export class SessionContext {
   private cache: string|null = null;
   private cachedCwd: string|null = null;
   private cachedExtra: string|null = null;
+  private cachedFormat: string|null = null;
   private capturedAt: number|null = null;
 
-  get(cwd: string, extra?: string): string {
+  get(cwd: string, extra?: string, format?: 'plain'|'kern'): string {
     const extraVal = extra ?? null;
-    if (this.cache !== null && this.cachedCwd === cwd && this.cachedExtra === extraVal) {
+    const formatVal = format ?? null;
+    const stale = this.capturedAt !== null && (Date.now() - this.capturedAt) > 300_000;
+    if (this.cache !== null && this.cachedCwd === cwd && this.cachedExtra === extraVal && this.cachedFormat === formatVal && !stale) {
       return this.cache;
     }
-    this.cache = scanProjectContext(cwd, extra);
+    this.cache = scanProjectContext(cwd, extra, format);
     this.cachedCwd = cwd;
     this.cachedExtra = extraVal;
+    this.cachedFormat = formatVal;
     this.capturedAt = Date.now();
     return this.cache;
   }
@@ -24,6 +28,7 @@ export class SessionContext {
     this.cache = null;
     this.cachedCwd = null;
     this.cachedExtra = null;
+    this.cachedFormat = null;
     this.capturedAt = null;
   }
 

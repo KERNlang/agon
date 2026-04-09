@@ -2,7 +2,8 @@
 // Pure routing logic extracted from the handleSubmit switch.
 // No JSX, no React — just decides what handler to call for each intent.
 
-import from="@agon/core" names="resolveWorkingDir,extractImagesFromInput,buildImageAttachment,undoPatch,resumeChatSession,findSkill,renderSkillPrompt,configSet,startChatSession,currentBranch,buildExtensionContext"
+import from="@agon/core" names="resolveWorkingDir,extractImagesFromInput,buildImageAttachment,undoPatch,resumeChatSession,findSkill,renderSkillPrompt,configSet,startChatSession,currentBranch,buildExtensionContext,sessionContext"
+import from="../handlers/chat.js" names="invalidateCwdCache"
 import from="@agon/core" names="ImageAttachment,ChatSession" types=true
 import from="@agon/core" names="approveCesarPlan,cancelCesarPlan,saveCesarPlan,loadCesarPlan,listCesarPlans,executePlan,formatCesarPlanMarkdown"
 import from="@agon/core" names="CesarPlan,CesarStepResult" types=true
@@ -443,6 +444,9 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
       }
       case 'workspace': {
         handleWorkspace(intent.action, cb.dispatch, cb.ctx, intent.path);
+        // Invalidate caches that depend on cwd — workspace just changed
+        invalidateCwdCache();
+        sessionContext.invalidate();
         // Reload extensions from new workspace
         if (cb.setWorkspacePath) cb.setWorkspacePath(resolveWorkingDir());
         break;

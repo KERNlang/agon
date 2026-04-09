@@ -1,49 +1,52 @@
 // @kern-source: dispatch:5
-import { resolveWorkingDir, extractImagesFromInput, buildImageAttachment, undoPatch, resumeChatSession, findSkill, renderSkillPrompt, configSet, startChatSession, currentBranch, buildExtensionContext } from '@agon/core';
+import { resolveWorkingDir, extractImagesFromInput, buildImageAttachment, undoPatch, resumeChatSession, findSkill, renderSkillPrompt, configSet, startChatSession, currentBranch, buildExtensionContext, sessionContext } from '@agon/core';
 
 // @kern-source: dispatch:6
-import type { ImageAttachment, ChatSession } from '@agon/core';
+import { invalidateCwdCache } from '../handlers/chat.js';
 
 // @kern-source: dispatch:7
-import { approveCesarPlan, cancelCesarPlan, saveCesarPlan, loadCesarPlan, listCesarPlans, executePlan, formatCesarPlanMarkdown } from '@agon/core';
+import type { ImageAttachment, ChatSession } from '@agon/core';
 
 // @kern-source: dispatch:8
-import type { CesarPlan, CesarStepResult } from '@agon/core';
+import { approveCesarPlan, cancelCesarPlan, saveCesarPlan, loadCesarPlan, listCesarPlans, executePlan, formatCesarPlanMarkdown } from '@agon/core';
 
 // @kern-source: dispatch:9
-import { buildStepExecutors } from '../handlers/plan-mode.js';
+import type { CesarPlan, CesarStepResult } from '@agon/core';
 
 // @kern-source: dispatch:10
-import { detectIntent, FITNESS_PATTERN } from './intent.js';
+import { buildStepExecutors } from '../handlers/plan-mode.js';
 
 // @kern-source: dispatch:11
-import type { Dispatch, HandlerContext } from '../../handlers/types.js';
+import { detectIntent, FITNESS_PATTERN } from './intent.js';
 
 // @kern-source: dispatch:12
-import { icons } from './icons.js';
+import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 
 // @kern-source: dispatch:13
-import { handleForge, handleChat, handleBrainstorm, handleCampfire, handleTribunal, handleLeaderboard, handleHistory, handleEngines, handleDiscover, handleConfig, handleUse, handleCesar, handleTokens, handleModels, handleWorkspace, handleChats, handlePlanShow, handlePlansList, handleApprove, handleRetry, handleCancel, handleApplyPatch, handleCp, handleCommit, handleFlowReport, handleFlowAnalysis, handleBuild, handleRun, handleReview } from '../../handlers/index.js';
+import { icons } from './icons.js';
 
 // @kern-source: dispatch:14
-import { handleTeamTribunal } from '../handlers/team-tribunal.js';
+import { handleForge, handleChat, handleBrainstorm, handleCampfire, handleTribunal, handleLeaderboard, handleHistory, handleEngines, handleDiscover, handleConfig, handleUse, handleCesar, handleTokens, handleModels, handleWorkspace, handleChats, handlePlanShow, handlePlansList, handleApprove, handleRetry, handleCancel, handleApplyPatch, handleCp, handleCommit, handleFlowReport, handleFlowAnalysis, handleBuild, handleRun, handleReview } from '../../handlers/index.js';
 
 // @kern-source: dispatch:15
-import { handleTeamForge } from '../handlers/team-forge.js';
+import { handleTeamTribunal } from '../handlers/team-tribunal.js';
 
 // @kern-source: dispatch:16
-import { handleTeamBrainstorm } from '../handlers/team-brainstorm.js';
+import { handleTeamForge } from '../handlers/team-forge.js';
 
 // @kern-source: dispatch:17
-import { handleCesarBrain, parseSuggestion, CESAR_SYSTEM_PROMPT } from '../../handlers/cesar-brain.js';
+import { handleTeamBrainstorm } from '../handlers/team-brainstorm.js';
 
 // @kern-source: dispatch:18
-import { handlePipeline } from '../handlers/pipeline.js';
+import { handleCesarBrain, parseSuggestion, CESAR_SYSTEM_PROMPT } from '../../handlers/cesar-brain.js';
 
 // @kern-source: dispatch:19
+import { handlePipeline } from '../handlers/pipeline.js';
+
+// @kern-source: dispatch:20
 import { handleProvider } from '../handlers/provider.js';
 
-// @kern-source: dispatch:21
+// @kern-source: dispatch:22
 export interface DispatchCallbacks {
   dispatch: Dispatch;
   ctx: HandlerContext;
@@ -78,13 +81,13 @@ export interface DispatchCallbacks {
   setWorkspacePath?: (path: string) => void;
 }
 
-// @kern-source: dispatch:54
+// @kern-source: dispatch:55
 export interface DispatchResult {
   handled: boolean;
   ranAsJob: boolean;
 }
 
-// @kern-source: dispatch:58
+// @kern-source: dispatch:59
 export function handleModeSwitch(intentType: string, topic: string|undefined, question: string|undefined, cb: DispatchCallbacks): boolean {
   if (intentType === 'campfire' && !topic) {
     cb.setMode('campfire');
@@ -111,7 +114,7 @@ export function handleModeSwitch(intentType: string, topic: string|undefined, qu
   return false;
 }
 
-// @kern-source: dispatch:86
+// @kern-source: dispatch:87
 export function extractExecutionSpec(input: string): { task:string; fitnessCmd:string|null } {
   const fitnessMatch = FITNESS_PATTERN.exec(input);
   const fitnessCmd = fitnessMatch ? fitnessMatch[1].trim() : null;
@@ -121,7 +124,7 @@ export function extractExecutionSpec(input: string): { task:string; fitnessCmd:s
   return { task, fitnessCmd };
 }
 
-// @kern-source: dispatch:97
+// @kern-source: dispatch:98
 export async function routeWithCesar(input: string, images: ImageAttachment[], cb: DispatchCallbacks): Promise<boolean> {
   cb.setPendingImages(() => []);
   try {
@@ -338,7 +341,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
   return false;
 }
 
-// @kern-source: dispatch:315
+// @kern-source: dispatch:316
 export async function dispatchIntent(intent: any, input: string, cb: DispatchCallbacks): Promise<DispatchResult> {
   // ── Emit pre:dispatch event ──
   if (cb.eventBus) {
@@ -468,6 +471,9 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
     }
     case 'workspace': {
       handleWorkspace(intent.action, cb.dispatch, cb.ctx, intent.path);
+      // Invalidate caches that depend on cwd — workspace just changed
+      invalidateCwdCache();
+      sessionContext.invalidate();
       // Reload extensions from new workspace
       if (cb.setWorkspacePath) cb.setWorkspacePath(resolveWorkingDir());
       break;

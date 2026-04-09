@@ -4,6 +4,7 @@ import from="node:readline" names="createInterface"
 import from="../models/types.js" names="EngineDefinition,CompanionConfig" types=true
 import from="../api/dispatch.js" names="apiStreamDispatch,apiStreamDispatchWithHistory"
 import from="../signals/session-store.js" names="saveSessionState,loadSessionState,saveToolResultToDisk,loadToolResultFromDisk,pruneToolCache,sessionCacheDir"
+import from="../signals/config.js" names="loadConfig"
 import from="../models/context-parts.js" names="CompactionSummaryPart,ToolCacheEntry" types=true
 import from="../tools/tool-parser.js" names="parseToolCalls,toolCallsToApiFormat"
 
@@ -91,6 +92,9 @@ fn name=createCompanionSession params="config:PersistentSessionConfig" returns="
         const envVal = process.env[modelConfig.configKey.toUpperCase()];
         if (envVal) return envVal;
       }
+
+      const configured = (loadConfig(config.cwd) as any).engineModels?.[engine.id];
+      if (configured) return configured;
 
       return modelConfig.default ?? null;
     };
@@ -1081,6 +1085,8 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
           const PRUNE_PROTECT_TURNS = 6; // protect last 6 user-assistant exchanges (was 4)
 
           const totalTokens = estimateTokens(messageHistory);
+          // Fast path: skip all compaction tiers when well below threshold (<40% of context).
+          // This eliminates regex extraction + merge + disk writes for short conversations.
           if (totalTokens > CONTEXT_LIMIT - COMPACTION_BUFFER) {
             const hasSystem = messageHistory[0].role === 'system';
             const startIdx = hasSystem ? 1 : 0;
@@ -1279,7 +1285,8 @@ Respond with ONLY the summary, no preamble.`;
 
           // ── Context awareness: tell the model its budget status ──
           {
-            const ctxTokens = estimateTokens(messageHistory);
+            // Reuse totalTokens if compaction didn't fire; otherwise re-estimate
+            const ctxTokens = totalTokens <= CONTEXT_LIMIT - COMPACTION_BUFFER ? totalTokens : estimateTokens(messageHistory);
             const ctxPct = Math.round((ctxTokens / CONTEXT_LIMIT) * 100);
             const cachedCount = toolCacheManifest.length;
             const compactedCount = compactionSummary?.messagesCompacted ?? 0;

@@ -17,19 +17,22 @@ import { apiStreamDispatch, apiStreamDispatchWithHistory } from '../api/dispatch
 import { saveSessionState, loadSessionState, saveToolResultToDisk, loadToolResultFromDisk, pruneToolCache, sessionCacheDir } from '../signals/session-store.js';
 
 // @kern-source: persistent-session:7
-import type { CompactionSummaryPart, ToolCacheEntry } from '../models/context-parts.js';
+import { loadConfig } from '../signals/config.js';
 
 // @kern-source: persistent-session:8
+import type { CompactionSummaryPart, ToolCacheEntry } from '../models/context-parts.js';
+
+// @kern-source: persistent-session:9
 import { parseToolCalls, toolCallsToApiFormat } from '../tools/tool-parser.js';
 
-// @kern-source: persistent-session:10
+// @kern-source: persistent-session:11
 export interface SessionChunk {
   type: 'text'|'status'|'tool_call'|'error'|'done';
   content: string;
   metadata?: Record<string,unknown>;
 }
 
-// @kern-source: persistent-session:15
+// @kern-source: persistent-session:16
 export interface SessionSendOptions {
   message: string;
   images?: string[];
@@ -37,7 +40,7 @@ export interface SessionSendOptions {
   systemPrompt?: string;
 }
 
-// @kern-source: persistent-session:21
+// @kern-source: persistent-session:22
 export interface PersistentSessionConfig {
   engine: EngineDefinition;
   binaryPath: string;
@@ -50,7 +53,7 @@ export interface PersistentSessionConfig {
   mcpServers?: Array<Record<string,unknown>>;
 }
 
-// @kern-source: persistent-session:32
+// @kern-source: persistent-session:33
 export interface PersistentSession {
   alive: boolean;
   sessionId: string|null;
@@ -60,7 +63,7 @@ export interface PersistentSession {
   close: () => void;
 }
 
-// @kern-source: persistent-session:40
+// @kern-source: persistent-session:41
 export function createPersistentSession(config: PersistentSessionConfig): PersistentSession {
   const engine = config.engine;
   
@@ -88,7 +91,7 @@ export function createPersistentSession(config: PersistentSessionConfig): Persis
   return createResumeSession(config);
 }
 
-// @kern-source: persistent-session:71
+// @kern-source: persistent-session:72
 export function createCompanionSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -110,6 +113,9 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
       const envVal = process.env[modelConfig.configKey.toUpperCase()];
       if (envVal) return envVal;
     }
+  
+    const configured = (loadConfig(config.cwd) as any).engineModels?.[engine.id];
+    if (configured) return configured;
   
     return modelConfig.default ?? null;
   };
@@ -414,7 +420,7 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
   return session;
 }
 
-// @kern-source: persistent-session:384
+// @kern-source: persistent-session:404
 export function createAcpSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -731,7 +737,7 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
   return session;
 }
 
-// @kern-source: persistent-session:704
+// @kern-source: persistent-session:724
 export function createStreamJsonSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -1015,7 +1021,7 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
   return session;
 }
 
-// @kern-source: persistent-session:991
+// @kern-source: persistent-session:1011
 export function createResumeSession(config: PersistentSessionConfig): PersistentSession {
   let alive = false;
       let sessionId: string | null = null;
@@ -1091,6 +1097,8 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
             const PRUNE_PROTECT_TURNS = 6; // protect last 6 user-assistant exchanges (was 4)
   
             const totalTokens = estimateTokens(messageHistory);
+            // Fast path: skip all compaction tiers when well below threshold (<40% of context).
+            // This eliminates regex extraction + merge + disk writes for short conversations.
             if (totalTokens > CONTEXT_LIMIT - COMPACTION_BUFFER) {
               const hasSystem = messageHistory[0].role === 'system';
               const startIdx = hasSystem ? 1 : 0;
@@ -1289,7 +1297,8 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
   
             // ── Context awareness: tell the model its budget status ──
             {
-              const ctxTokens = estimateTokens(messageHistory);
+              // Reuse totalTokens if compaction didn't fire; otherwise re-estimate
+              const ctxTokens = totalTokens <= CONTEXT_LIMIT - COMPACTION_BUFFER ? totalTokens : estimateTokens(messageHistory);
               const ctxPct = Math.round((ctxTokens / CONTEXT_LIMIT) * 100);
               const cachedCount = toolCacheManifest.length;
               const compactedCount = compactionSummary?.messagesCompacted ?? 0;
@@ -1824,3 +1833,4 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
   
       return session;
 }
+

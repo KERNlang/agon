@@ -139,7 +139,10 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
   try {
     const result = await handleCesarBrain(input, cb.dispatch, cb.ctx, images);
     if (result.delegated && result.action) {
-      const label = input.slice(0, 40);
+      // Use Cesar's reasoning as the label when available — much better than raw user input
+      const label = (result.reasoning && !result.reasoning.includes('User context:'))
+        ? result.reasoning.slice(0, 60).trim()
+        : input.slice(0, 40);
       const hardened = result.hardened ?? false;
       const tMode = result.tribunalMode;
       // P2 fix: normalize team prefix — brain may return action='forge' + team=true
@@ -184,10 +187,23 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
           return true;
         }
         case 'brainstorm':
-          cb.runAsJob('brainstorm', label, () => handleBrainstorm(taskInput, cb.dispatch, cb.ctx));
+          cb.runAsJob('brainstorm', label, async () => {
+            await handleBrainstorm(taskInput, cb.dispatch, cb.ctx);
+            // Cesar absorbs the brainstorm result — ideas go through Cesar, not the winner
+            if (cb.ctx.cesarSession) {
+              cb.dispatch({ type: 'info', message: 'Cesar absorbing brainstorm results…' });
+              await handleChat(`Based on the brainstorm above, synthesize the winning approach into a concrete plan. Be direct — the brainstorm already validated the ideas.`, cb.dispatch, cb.ctx, undefined, { toolPolicy: 'none' });
+            }
+          });
           return true;
         case 'team-brainstorm':
-          cb.runAsJob('team-brainstorm', label, () => handleTeamBrainstorm(taskInput, cb.dispatch, cb.ctx));
+          cb.runAsJob('team-brainstorm', label, async () => {
+            await handleTeamBrainstorm(taskInput, cb.dispatch, cb.ctx);
+            if (cb.ctx.cesarSession) {
+              cb.dispatch({ type: 'info', message: 'Cesar absorbing brainstorm results…' });
+              await handleChat(`Based on the team brainstorm above, synthesize the winning approach into a concrete plan. Be direct — the brainstorm already validated the ideas.`, cb.dispatch, cb.ctx, undefined, { toolPolicy: 'none' });
+            }
+          });
           return true;
         case 'tribunal':
           cb.runAsJob('tribunal', label, () => handleTribunal(taskInput, cb.dispatch, cb.ctx, tMode));
@@ -350,7 +366,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
   return false;
 }
 
-// @kern-source: dispatch:316
+// @kern-source: dispatch:332
 /**
  * Route a parsed intent to the correct handler. Registry-first, switch as fallback.
  */

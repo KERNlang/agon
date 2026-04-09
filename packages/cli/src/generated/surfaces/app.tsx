@@ -339,6 +339,11 @@ export function App({  }: {  }) {
             return;
           }
     
+          // When slash picker is open, don't update inputValue — picker manages its own filter
+          if (slashPickerOpen) {
+            return;
+          }
+    
           if (justPastedRef.current) {
             setInputValue(nextValue);
             return;
@@ -945,7 +950,7 @@ export function App({  }: {  }) {
 }
 
 
-// @kern-source: app:919
+// @kern-source: app:924
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

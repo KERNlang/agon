@@ -400,6 +400,11 @@ screen name=App target=ink
         return;
       }
 
+      // When slash picker is open, don't update inputValue — picker manages its own filter
+      if (slashPickerOpen) {
+        return;
+      }
+
       if (justPastedRef.current) {
         setInputValue(nextValue);
         return;

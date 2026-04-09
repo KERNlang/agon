@@ -1035,7 +1035,23 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                 const decisions: string[] = [];
   
                 for (const m of old as any[]) {
-                  if (m.tool_calls) {
+                  // Prefer structured _parts (captured at stream time) over regex parsing
+                  if (m._parts && Array.isArray(m._parts)) {
+                    for (const part of m._parts) {
+                      if (part.kind === 'tool_call') {
+                        const fp = part.args?.file_path || part.args?.path || '';
+                        if (fp) filesRead.add(fp);
+                        if ((part.toolName === 'Edit' || part.toolName === 'Write') && fp) {
+                          filesModified.add(fp);
+                        }
+                        if (toolsSummary.length < 15) {
+                          const detail = fp || (part.args?.pattern ? `pattern:${part.args.pattern}` : '') || '';
+                          toolsSummary.push(`${part.toolName}(${String(detail).slice(0, 80)})`);
+                        }
+                      }
+                    }
+                  } else if (m.tool_calls) {
+                    // Fallback: regex-parse from tool_calls (legacy messages without _parts)
                     for (const tc of m.tool_calls) {
                       try {
                         const toolName: string = tc.function?.name ?? '';
@@ -1060,7 +1076,6 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                       if (/(?:I (?:will|chose|decided)|Decision:|Approach:|Strategy:)/i.test(line) && decisions.length < 8) {
                         decisions.push(line.trim().slice(0, 200));
                       }
-                      // Extract discoveries (findings, bugs, patterns)
                       if (/(?:found|discovered|noticed|bug|issue|pattern|the problem is)/i.test(line) && discoveries.length < 8) {
                         discoveries.push(line.trim().slice(0, 200));
                       }
@@ -1130,6 +1145,46 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
           toolCacheManifest = toolCacheManifest.filter((e: ToolCacheEntry) => activeIds.has(e.toolCallId));
         }
   
+        // ── Context awareness: tell the model its budget status ──
+        {
+          const ctxTokens = estimateTokens(messageHistory);
+          const ctxPct = Math.round((ctxTokens / CONTEXT_LIMIT) * 100);
+          const cachedCount = toolCacheManifest.length;
+          const compactedCount = compactionSummary?.messagesCompacted ?? 0;
+  
+          if (ctxPct > 60 || compactedCount > 0) {
+            const statusParts: string[] = [
+              `[Context: ${ctxPct}% used (${ctxTokens}/${CONTEXT_LIMIT} tokens)]`,
+            ];
+            if (compactedCount > 0) {
+              statusParts.push(`[${compactedCount} older messages were compacted — key discoveries and files preserved in summary above]`);
+            }
+            if (cachedCount > 0) {
+              statusParts.push(`[${cachedCount} tool results cached to disk — use RetrieveResult(id) to get full content from [cached — id] markers]`);
+            }
+            if (ctxPct > 80) {
+              statusParts.push(`[WARNING: Context is ${ctxPct}% full. Be concise. Avoid re-reading files you already have context on.]`);
+            }
+            // Inject as the last user message so the model sees it right before responding
+            messageHistory.push({ role: 'user', content: statusParts.join('\n') });
+          }
+        }
+  
+        // ── Inject RetrieveResult tool so models can access cached results ──
+        const retrieveToolDef = {
+          type: 'function' as const,
+          function: {
+            name: 'RetrieveResult',
+            description: 'Retrieve the full content of a previously cached tool result. When you see "[cached — {id}]" in a truncated tool output, call this with that id to get the full content without re-running the original tool.',
+            parameters: {
+              type: 'object' as const,
+              properties: { id: { type: 'string', description: 'The cache ID from [cached — {id}] marker' } },
+              required: ['id'],
+            },
+          },
+        };
+        const effectiveTools = config.nativeTools ? [...config.nativeTools, retrieveToolDef] : [retrieveToolDef];
+  
         // ── Agentic tool loop with dynamic budget ──
         // Productive steps (successful tool calls) extend the budget.
         // Failed steps shrink it. Models that work get more runway.
@@ -1144,6 +1199,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
         while (step < budget) {
           step++;
           let fullResponse = '';
+          let lastDispatchParts: any[] | undefined; // Structured parts from dispatch
   
           // ── Status update so the UI shows activity during API tool loops ──
           if (step === 1) {
@@ -1152,19 +1208,20 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
             yield { type: 'status' as const, content: `tool loop turn ${step}/${budget}…` };
           }
   
-          const gen = apiStreamDispatchWithHistory(config.engine.api, messageHistory, config.engine.timeout ?? 180, opts.signal, config.nativeTools);
+          const gen = apiStreamDispatchWithHistory(config.engine.api, messageHistory, config.engine.timeout ?? 180, opts.signal, effectiveTools);
           try {
             while (true) {
               const { value, done } = await gen.next();
               if (done) {
                 const result = value as any;
+                // Capture structured parts for smarter compaction
+                if (result?.parts && Array.isArray(result.parts)) {
+                  lastDispatchParts = result.parts;
+                }
                 if (result?.stderr) {
-                  // Only report error if we got NO useful output — stderr with content is a warning, not fatal
-                  // Don't kill the session — resume sessions are stateless HTTP, history survives in memory
                   if (fullResponse.length === 0) {
                     yield { type: 'error' as const, content: result.stderr };
                   } else {
-                    // Got content + stderr — log warning but keep session alive
                     console.warn(`[agon] API warning (response preserved): ${result.stderr.slice(0, 200)}`);
                   }
                 }
@@ -1211,15 +1268,19 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
             // Model requested tool calls — execute and loop
             const cleanText = (parsed.textBefore + ' ' + parsed.textAfter).trim();
   
-            // Add assistant message with tool_calls to history
-            messageHistory.push({
+            // Add assistant message with tool_calls + structured parts to history
+            const assistToolMsg: any = {
               role: 'assistant',
               content: cleanText || null,
               tool_calls: extractedCalls.map(tc => ({
                 id: tc.id, type: 'function',
                 function: { name: tc.name, arguments: tc.arguments },
               })),
-            } as any);
+            };
+            if (lastDispatchParts && lastDispatchParts.length > 0) {
+              assistToolMsg._parts = lastDispatchParts;
+            }
+            messageHistory.push(assistToolMsg);
   
             // Execute tools in parallel (like Vercel AI SDK Promise.all pattern)
             const INLINE_LIMIT = 800;
@@ -1234,12 +1295,18 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
               }
             }
   
-            // Execute all in parallel
+            // Execute all in parallel — intercept RetrieveResult locally (cache is in-process)
             yield { type: 'status' as const, content: `executing ${parsedCalls.length} tool${parsedCalls.length > 1 ? 's' : ''}…` };
             const results = await Promise.all(parsedCalls.map(async (tc) => {
               let result: string;
               try {
-                result = await config.onToolCall!(tc.name, tc.args, tc.id);
+                // RetrieveResult: read from local disk cache, no need for external tool handler
+                if (tc.name === 'RetrieveResult' && tc.args.id) {
+                  const cached = loadToolResultFromDisk(config.engine.id, tc.args.id as string);
+                  result = cached ?? `No cached result found for id "${tc.args.id}". Try re-running the original tool.`;
+                } else {
+                  result = await config.onToolCall!(tc.name, tc.args, tc.id);
+                }
               } catch (err: any) {
                 result = `Error: ${err.message ?? String(err)}`;
               }
@@ -1400,8 +1467,12 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
             }
           }
   
-          // Final response. Add to history and exit.
-          messageHistory.push({ role: 'assistant', content: fullResponse });
+          // Final response. Add to history with structured parts for smarter compaction.
+          const assistMsg: any = { role: 'assistant', content: fullResponse };
+          if (lastDispatchParts && lastDispatchParts.length > 0) {
+            assistMsg._parts = lastDispatchParts;
+          }
+          messageHistory.push(assistMsg);
           break;
         }
   

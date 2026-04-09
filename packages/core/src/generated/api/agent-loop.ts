@@ -41,9 +41,12 @@ import { FileStateCache } from '../blocks/file-state-cache.js';
 import { saveToolResultToDisk } from '../signals/session-store.js';
 
 // @kern-source: agent-loop:20
+import { createRetrieveResultTool } from '../tools/tool-retrieve.js';
+
+// @kern-source: agent-loop:21
 import type { ToolCacheEntry } from '../models/context-parts.js';
 
-// @kern-source: agent-loop:22
+// @kern-source: agent-loop:23
 export interface ApiAgentOptions {
   api: ApiConfig;
   prompt: string;
@@ -56,14 +59,14 @@ export interface ApiAgentOptions {
   onToolCall?: (name:string,args:Record<string,unknown>)=>void;
 }
 
-// @kern-source: agent-loop:33
+// @kern-source: agent-loop:34
 export interface ApiAgentResult {
   response: string;
   toolCalls: number;
   steps: number;
 }
 
-// @kern-source: agent-loop:38
+// @kern-source: agent-loop:39
 /**
  * Attempt to repair malformed JSON tool arguments. Handles common LLM mistakes: markdown fencing, trailing commas, single quotes, unquoted keys.
  */
@@ -94,7 +97,7 @@ export function repairToolArgs(raw: string): Record<string,unknown>|null {
   return null;
 }
 
-// @kern-source: agent-loop:67
+// @kern-source: agent-loop:68
 /**
  * Auto-correct tool name case mismatches. Maps 'read' → 'Read', 'GREP' → 'Grep', etc.
  */
@@ -115,7 +118,7 @@ export function repairToolName(name: string, registry: any): string {
   return capitalized;
 }
 
-// @kern-source: agent-loop:86
+// @kern-source: agent-loop:87
 /**
  * Run an API engine with full tool loop. Returns final response after all tool calls resolve.
  */
@@ -128,6 +131,7 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
   registry.register(createBashTool());
   registry.register(createGrepTool());
   registry.register(createGlobTool());
+  registry.register(createRetrieveResultTool(opts.api.model || 'api-agent'));
   
   const nativeTools = toolsToOpenAIFormat(registry);
   

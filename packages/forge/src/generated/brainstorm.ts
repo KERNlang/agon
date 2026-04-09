@@ -272,7 +272,7 @@ export async function runBrainstorm(opts: {question:string, context?:string, eng
     question: opts.question,
     bids,
     winner: winner.engineId,
-    response: answerResult.stdout,
+    response: answerResult.stdout.replace(/<think>[\s\S]*?<\/think>\s*/gi, ''),
   };
 }
 

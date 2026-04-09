@@ -456,6 +456,9 @@ export function cleanEngineOutput(raw: string): string {
   result = result.replace(/<\/minimax:tool_call>/g, '');
   result = result.replace(/<parameter\s+name="[^"]*">[^<]*<\/parameter>/g, '');
   
+  // Strip reasoning tags from models that use <think>...</think> (MiniMax, DeepSeek, Qwen, etc.)
+  result = result.replace(/<think>[\s\S]*?<\/think>\s*/gi, '');
+  
   // Clean buddy streaming artifacts
   result = stripBuddyThinkingNoise(result);
   result = deduplicateParagraphs(result);

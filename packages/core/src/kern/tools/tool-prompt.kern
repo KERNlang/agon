@@ -21,6 +21,36 @@ NEVER use Bash for searching — use Grep for content search, Glob for file sear
 Keep going until the task is DONE. Don't stop after reading one file — chain tool calls: Read → analyze → Read more → Edit → Bash to verify. Complete the full task in one turn.`
   >>>
 
+fn name=describeSchemaProperty params="key:string, spec:any, required:boolean" returns=string export=false
+  doc "Describe a schema property including nested array/object structures for XML prompt."
+  handler <<<
+    const opt = required ? '' : '?';
+    const s = spec as any;
+
+    // Array of objects — show the item structure
+    if (s.type === 'array' && s.items?.type === 'object' && s.items?.properties) {
+      const itemProps = Object.entries(s.items.properties)
+        .map(([k, v]: [string, any]) => {
+          const itemReq = Array.isArray(s.items.required) && s.items.required.includes(k);
+          const enumHint = v.enum ? ` (${v.enum.join('|')})` : '';
+          return `${k}${itemReq ? '' : '?'}:${v.type ?? 'string'}${enumHint}`;
+        })
+        .join(', ');
+      return `${key}${opt}:[{${itemProps}}]`;
+    }
+
+    // Object with properties
+    if (s.type === 'object' && s.properties) {
+      const subProps = Object.entries(s.properties)
+        .map(([k, v]: [string, any]) => `${k}:${v.type ?? 'string'}`)
+        .join(', ');
+      return `${key}${opt}:{${subProps}}`;
+    }
+
+    const enumHint = s.enum ? ` (${s.enum.join('|')})` : '';
+    return `${key}${opt}:${s.type ?? 'string'}${enumHint}`;
+  >>>
+
 fn name=toolDefinitionToPrompt params="def:ToolDefinition" returns=string export=false
   handler <<<
     const schema = def.inputSchema as any;
@@ -30,8 +60,8 @@ fn name=toolDefinitionToPrompt params="def:ToolDefinition" returns=string export
       .filter(([key]) => key !== 'type' && key !== 'required' && key !== 'properties')
       .map(([key, spec]) => {
         const s = spec as any;
-        const opt = requiredFields.has(key) || s.required === true ? '' : '?';
-        return `${key}${opt}:${s.type ?? 'string'}`;
+        const isReq = requiredFields.has(key) || s.required === true;
+        return describeSchemaProperty(key, s, isReq);
       })
       .join(', ');
     return `${def.name}(${params}) — ${def.description}`;
@@ -104,6 +134,31 @@ fn name=generateGlobToolSchema returns="Record<string,unknown>" export=false
     };
   >>>
 
+fn name=convertSchemaProperty params="spec:any" returns="Record<string,unknown>" export=false
+  doc "Recursively convert a JSON Schema property, preserving nested structures for arrays/objects."
+  handler <<<
+    const result: Record<string, unknown> = { type: spec.type ?? 'string' };
+    if (spec.description) result.description = spec.description;
+    if (spec.enum) result.enum = spec.enum;
+
+    // Array with items — preserve the nested item schema
+    if (spec.type === 'array' && spec.items) {
+      result.items = convertSchemaProperty(spec.items);
+    }
+
+    // Object with properties — recursively convert each property
+    if (spec.type === 'object' && spec.properties) {
+      const nested: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(spec.properties)) {
+        nested[k] = convertSchemaProperty(v as any);
+      }
+      result.properties = nested;
+      if (Array.isArray(spec.required)) result.required = spec.required;
+    }
+
+    return result;
+  >>>
+
 fn name=toolsToOpenAIFormat params="registry:ToolRegistry" returns="Array<{type:string,function:{name:string,description:string,parameters:Record<string,unknown>}}>"
   doc "Convert Agon tool definitions to OpenAI function calling format."
   handler <<<
@@ -117,7 +172,7 @@ fn name=toolsToOpenAIFormat params="registry:ToolRegistry" returns="Array<{type:
       for (const [key, spec] of Object.entries(props)) {
         if (key === 'type' || key === 'required' || key === 'properties') continue;
         const s = spec as any;
-        properties[key] = { type: s.type ?? 'string', description: s.description ?? key };
+        properties[key] = convertSchemaProperty(s);
         if (s.required === true) required.push(key);
       }
       // Also check schema-level required array

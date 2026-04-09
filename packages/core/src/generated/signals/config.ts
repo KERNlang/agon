@@ -1,5 +1,5 @@
 // @kern-source: config:1
-import { readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, renameSync, readdirSync, statSync, rmSync } from 'node:fs';
 
 // @kern-source: config:2
 import { join, dirname } from 'node:path';
@@ -114,8 +114,34 @@ export function configSet(key: keyof AgonConfig, value: AgonConfig[keyof AgonCon
 }
 
 // @kern-source: config:118
+/**
+ * Remove old run directories beyond retention limit. Keeps the 100 most recent.
+ */
+export function pruneRuns(): void {
+  try {
+    const entries = readdirSync(RUNS_DIR)
+      .map((name: string) => {
+        try {
+          const fullPath = join(RUNS_DIR, name);
+          return { name, mtime: statSync(fullPath).mtimeMs };
+        } catch { return null; }
+      })
+      .filter((e: any): e is {name:string, mtime:number} => e !== null)
+      .sort((a: {mtime:number}, b: {mtime:number}) => b.mtime - a.mtime);
+  
+    if (entries.length <= 100) return;
+  
+    const toRemove = entries.slice(100);
+    for (const e of toRemove) {
+      try { rmSync(join(RUNS_DIR, e.name), { recursive: true, force: true }); } catch { /* best effort */ }
+    }
+  } catch { /* dir doesn't exist yet — not critical */ }
+}
+
+// @kern-source: config:141
 export function ensureAgonHome(): void {
   mkdirSync(AGON_HOME, { recursive: true });
   mkdirSync(RUNS_DIR, { recursive: true });
+  pruneRuns();
 }
 

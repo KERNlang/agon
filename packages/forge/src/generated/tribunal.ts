@@ -108,11 +108,12 @@ export async function runTribunal(opts: {question:string, engines:string[], roun
           engine,
           prompt,
           cwd: process.cwd(),
-          mode: 'review',
+          mode: 'exec',
           timeout,
           outputDir,
         });
-        return { engineId: pos.engineId, argument: result.stdout.trim() };
+        const cleaned = result.stdout.trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, '');
+        return { engineId: pos.engineId, argument: cleaned };
       } catch (err) {
         console.warn(`[agon] tribunal dispatch (${pos.engineId}) round ${round} failed: ${err instanceof Error ? err.message : String(err)}`);
         return { engineId: pos.engineId, argument: '(failed to respond)' };
@@ -159,11 +160,11 @@ export async function runTribunal(opts: {question:string, engines:string[], roun
       engine: summaryEngine,
       prompt: summaryPrompt,
       cwd: process.cwd(),
-      mode: 'review',
+      mode: 'exec',
       timeout,
       outputDir,
     });
-    summary = summaryResult.stdout.trim();
+    summary = summaryResult.stdout.trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, '');
   } catch (err) {
     console.warn(`[agon] tribunal summary failed: ${err instanceof Error ? err.message : String(err)}`);
     summary = buildFallbackSummary(positions);

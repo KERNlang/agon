@@ -16,6 +16,8 @@ import from="../tools/tool-bash.js" names="createBashTool"
 import from="../tools/tool-grep.js" names="createGrepTool"
 import from="../tools/tool-glob.js" names="createGlobTool"
 import from="../blocks/file-state-cache.js" names="FileStateCache"
+import from="../signals/session-store.js" names="saveToolResultToDisk"
+import from="../models/context-parts.js" names="ToolCacheEntry" types=true
 
 interface name=ApiAgentOptions
   field name=api type=ApiConfig
@@ -146,7 +148,15 @@ fn name=runApiAgentLoop async=true params="opts:ApiAgentOptions" returns="Promis
 
           let histContent = result;
           if (histContent.length > 800) {
-            histContent = histContent.slice(0, 300) + '\n...\n[truncated]';
+            // Disk-backed cache: save full result, keep preview + ref
+            const engineId = opts.api.model || 'api-agent';
+            const cacheEntry = saveToolResultToDisk(engineId, tc.id, tc.name, result);
+            if (cacheEntry) {
+              const lines = result.split('\n').length;
+              histContent = result.slice(0, 400) + `\n...\n[${lines} lines, ${result.length} chars — cached — ${tc.id}]`;
+            } else {
+              histContent = result.slice(0, 600) + '\n...\n[truncated]';
+            }
           }
           messageHistory.push({ role: 'tool', content: histContent, tool_call_id: tc.id } as any);
           totalToolCalls++;
@@ -172,7 +182,12 @@ fn name=runApiAgentLoop async=true params="opts:ApiAgentOptions" returns="Promis
         } catch (err: any) {
           result = `Error: ${err.message ?? String(err)}`;
         }
-        let histContent = result.length > 800 ? result.slice(0, 300) + '\n...\n[truncated]' : result;
+        let histContent = result;
+        if (histContent.length > 800) {
+          const engineId = opts.api.model || 'api-agent';
+          const ce = saveToolResultToDisk(engineId, callId, 'Read', result);
+          histContent = ce ? result.slice(0, 400) + `\n...\n[cached — ${callId}]` : result.slice(0, 600) + '\n...\n[truncated]';
+        }
         messageHistory.push({
           role: 'assistant', content: null,
           tool_calls: [{ id: callId, type: 'function', function: { name: 'Read', arguments: JSON.stringify({ file_path: readIntent[1] }) } }],

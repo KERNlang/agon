@@ -1,0 +1,215 @@
+// @kern-source: context-parts:10
+export interface TextPart {
+  kind: 'text';
+  text: string;
+}
+
+// @kern-source: context-parts:11
+
+// @kern-source: context-parts:12
+
+// @kern-source: context-parts:14
+export interface ToolCallPart {
+  kind: 'tool_call';
+  toolName: string;
+  toolCallId: string;
+  args: Record<string,unknown>;
+}
+
+// @kern-source: context-parts:20
+/**
+ * preview = first 300 chars inline. cachedRef = toolCallId pointing to disk file when result > 800 chars.
+ */
+export interface ToolResultPart {
+  kind: 'tool_result';
+  toolCallId: string;
+  toolName: string;
+  preview: string;
+  cachedRef: string|null;
+}
+
+// @kern-source: context-parts:28
+export interface ReasoningPart {
+  kind: 'reasoning';
+  text: string;
+}
+
+// @kern-source: context-parts:32
+export interface CompactionSummaryPart {
+  kind: 'compaction';
+  goal: string;
+  discoveries: string[];
+  filesModified: string[];
+  filesRead: string[];
+  toolsSummary: string[];
+  decisions: string[];
+  progress: string;
+  compactedAt: number;
+  messagesCompacted: number;
+}
+
+// @kern-source: context-parts:44
+export type MessagePart =
+  | { type: 'variant' }
+  | { type: 'variant' }
+  | { type: 'variant' }
+  | { type: 'variant' }
+  | { type: 'variant' };
+
+// @kern-source: context-parts:53
+export interface ToolCacheEntry {
+  toolCallId: string;
+  toolName: string;
+  filePath: string;
+  savedAt: number;
+  byteSize: number;
+}
+
+// @kern-source: context-parts:62
+export interface StageDecision {
+  choice: string;
+  reason: string;
+}
+
+// @kern-source: context-parts:66
+export interface ToolResultRef {
+  toolName: string;
+  filePath?: string;
+  summary: string;
+}
+
+// @kern-source: context-parts:71
+/**
+ * Typed context passed between forge stages. Replaces raw scoutDiff.slice(0,3000).
+ */
+export interface StageContext {
+  goal: string;
+  filesDiscovered: string[];
+  filesModified: string[];
+  patternsFound: string[];
+  decisions: StageDecision[];
+  toolResultRefs: ToolResultRef[];
+  diffSummary: string|null;
+  fitnessLogPath: string|null;
+  engineId: string;
+  score: number|null;
+  pass: boolean;
+}
+
+// @kern-source: context-parts:87
+/**
+ * Extract structured StageContext from raw forge outputs.
+ */
+export function buildStageContext(opts: {engineId:string, pass:boolean, score:number, prompt:string, diff:string, fitnessLogPath?:string, dispatchStdout?:string}): StageContext {
+  // Extract goal from prompt (first ## TASK section or first 300 chars)
+  const taskMatch = opts.prompt.match(/## TASK\s*\n([\s\S]*?)(?=\n## |$)/);
+  const goal = taskMatch ? taskMatch[1].trim().slice(0, 500) : opts.prompt.slice(0, 300);
+  
+  // Extract files from diff
+  const filesModified: string[] = [];
+  const diffFileRe = /^diff --git a\/(.+?) b\//gm;
+  let fm;
+  while ((fm = diffFileRe.exec(opts.diff)) !== null) {
+    if (!filesModified.includes(fm[1])) filesModified.push(fm[1]);
+  }
+  
+  // Extract decisions from assistant output (lines with decision markers)
+  const decisions: Array<{choice: string, reason: string}> = [];
+  if (opts.dispatchStdout) {
+    const decisionRe = /(?:^|\n)\s*(?:Decision|Approach|I (?:will|chose|decided)|Strategy)[:\s]+(.+?)(?:\n|$)/gi;
+    let dm;
+    while ((dm = decisionRe.exec(opts.dispatchStdout)) !== null) {
+      if (decisions.length < 5) {
+        decisions.push({ choice: dm[1].trim().slice(0, 200), reason: '' });
+      }
+    }
+  }
+  
+  // Extract patterns from dispatch output
+  const patternsFound: string[] = [];
+  if (opts.dispatchStdout) {
+    const patternRe = /(?:pattern|convention|approach)[:\s]+(.+?)(?:\n|$)/gi;
+    let pm;
+    while ((pm = patternRe.exec(opts.dispatchStdout)) !== null) {
+      if (patternsFound.length < 5) patternsFound.push(pm[1].trim().slice(0, 150));
+    }
+  }
+  
+  // Extract tool result refs from dispatch output (file paths mentioned in tool calls)
+  const toolResultRefs: Array<{toolName: string, filePath?: string, summary: string}> = [];
+  if (opts.dispatchStdout) {
+    const toolRe = /<tool\s+name="(\w+)">([\s\S]*?)<\/tool>/g;
+    let tm;
+    while ((tm = toolRe.exec(opts.dispatchStdout)) !== null) {
+      try {
+        const args = JSON.parse(tm[2]);
+        const fp = args.file_path || args.path || '';
+        if (toolResultRefs.length < 10) {
+          toolResultRefs.push({ toolName: tm[1], filePath: fp || undefined, summary: `${tm[1]}(${fp || Object.keys(args).join(',')})` });
+        }
+      } catch { /* skip malformed */ }
+    }
+  }
+  
+  // Diff summary: first N lines of actual changes (skip headers)
+  let diffSummary: string | null = null;
+  if (opts.diff) {
+    const lines = opts.diff.split('\n');
+    const changeLines = lines.filter((l: string) => l.startsWith('+') || l.startsWith('-')).slice(0, 30);
+    diffSummary = changeLines.join('\n').slice(0, 2000);
+  }
+  
+  return {
+    goal,
+    filesDiscovered: [...filesModified], // In simple case, discovered = modified
+    filesModified,
+    patternsFound,
+    decisions,
+    toolResultRefs,
+    diffSummary,
+    fitnessLogPath: opts.fitnessLogPath ?? null,
+    engineId: opts.engineId,
+    score: opts.score,
+    pass: opts.pass,
+  };
+}
+
+// @kern-source: context-parts:163
+/**
+ * Render StageContext as readable text for injection into forge prompts.
+ */
+export function renderStageContext(ctx: StageContext): string {
+  const sections: string[] = [
+    `## PRIOR APPROACH (${ctx.engineId} — ${ctx.pass ? 'PASSED' : 'FAILED'}${ctx.score !== null ? `, score: ${ctx.score}` : ''})`,
+  ];
+  
+  sections.push(`**Goal:** ${ctx.goal}`);
+  
+  if (ctx.filesModified.length > 0) {
+    sections.push(`**Files modified:** ${ctx.filesModified.join(', ')}`);
+  }
+  if (ctx.filesDiscovered.length > 0 && ctx.filesDiscovered.some((f: string) => !ctx.filesModified.includes(f))) {
+    const readOnly = ctx.filesDiscovered.filter((f: string) => !ctx.filesModified.includes(f));
+    if (readOnly.length > 0) sections.push(`**Files explored:** ${readOnly.join(', ')}`);
+  }
+  if (ctx.patternsFound.length > 0) {
+    sections.push(`**Patterns found:** ${ctx.patternsFound.join('; ')}`);
+  }
+  if (ctx.decisions.length > 0) {
+    sections.push(`**Key decisions:**\n${ctx.decisions.map((d: {choice:string,reason:string}) => `- ${d.choice}${d.reason ? ` (${d.reason})` : ''}`).join('\n')}`);
+  }
+  if (ctx.toolResultRefs.length > 0) {
+    sections.push(`**Tool usage:** ${ctx.toolResultRefs.map((r: {toolName:string,summary:string}) => r.summary).join(', ')}`);
+  }
+  if (ctx.diffSummary) {
+    sections.push(`**Diff preview:**\n\`\`\`diff\n${ctx.diffSummary.slice(0, 1500)}\n\`\`\``);
+  }
+  if (ctx.fitnessLogPath) {
+    sections.push(`**Fitness log:** ${ctx.fitnessLogPath} (Read this file for test output details)`);
+  }
+  
+  sections.push(`\nUse this as context but find your own solution. You may improve on their approach or take a completely different path.`);
+  
+  return sections.join('\n');
+}
+

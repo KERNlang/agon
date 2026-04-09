@@ -44,6 +44,28 @@ export async function runFitness(opts: {engineId:string, worktreePath:string, fi
   const durationSec = Math.round((Date.now() - startTime) / 1000);
   const pass = fitnessResult.exitCode === 0 && !fitnessResult.timedOut;
   
+  // Persist fitness stdout/stderr to disk — followers + synthesis can read WHY tests failed
+  let fitnessLogPath: string | undefined;
+  try {
+    const logContent = [
+      `# Fitness Log: ${opts.engineId}`,
+      `Exit code: ${fitnessResult.exitCode}`,
+      `Timed out: ${fitnessResult.timedOut}`,
+      `Pass: ${pass}`,
+      `Duration: ${durationSec}s`,
+      '',
+      '## STDOUT',
+      fitnessResult.stdout || '(empty)',
+      '',
+      '## STDERR',
+      fitnessResult.stderr || '(empty)',
+    ].join('\n');
+    fitnessLogPath = join(opts.forgeDir, `${opts.engineId}-fitness.txt`);
+    writeFileSync(fitnessLogPath, logContent);
+  } catch (logErr) {
+    console.warn(`[agon] fitness: failed to write log for ${opts.engineId}: ${logErr instanceof Error ? logErr.message : String(logErr)}`);
+  }
+  
   const lintWarnings = await runLint(opts.worktreePath);
   const styleScore = await runStyleCheck(opts.worktreePath);
   
@@ -71,6 +93,7 @@ export async function runFitness(opts: {engineId:string, worktreePath:string, fi
     styleScore,
     patchPath,
     worktreePath: opts.worktreePath,
+    fitnessLogPath,
   };
 }
 

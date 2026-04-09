@@ -37,7 +37,13 @@ import { createGlobTool } from '../tools/tool-glob.js';
 // @kern-source: agent-loop:18
 import { FileStateCache } from '../blocks/file-state-cache.js';
 
+// @kern-source: agent-loop:19
+import { saveToolResultToDisk } from '../signals/session-store.js';
+
 // @kern-source: agent-loop:20
+import type { ToolCacheEntry } from '../models/context-parts.js';
+
+// @kern-source: agent-loop:22
 export interface ApiAgentOptions {
   api: ApiConfig;
   prompt: string;
@@ -50,14 +56,17 @@ export interface ApiAgentOptions {
   onToolCall?: (name:string,args:Record<string,unknown>)=>void;
 }
 
-// @kern-source: agent-loop:31
+// @kern-source: agent-loop:33
 export interface ApiAgentResult {
   response: string;
   toolCalls: number;
   steps: number;
 }
 
-// @kern-source: agent-loop:36
+// @kern-source: agent-loop:38
+/**
+ * Run an API engine with full tool loop. Returns final response after all tool calls resolve.
+ */
 export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentResult> {
   // Build tool registry with workspace tools — read-only permission for safety
   const registry = new ToolRegistry();
@@ -169,7 +178,15 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
   
         let histContent = result;
         if (histContent.length > 800) {
-          histContent = histContent.slice(0, 300) + '\n...\n[truncated]';
+          // Disk-backed cache: save full result, keep preview + ref
+          const engineId = opts.api.model || 'api-agent';
+          const cacheEntry = saveToolResultToDisk(engineId, tc.id, tc.name, result);
+          if (cacheEntry) {
+            const lines = result.split('\n').length;
+            histContent = result.slice(0, 400) + `\n...\n[${lines} lines, ${result.length} chars — cached — ${tc.id}]`;
+          } else {
+            histContent = result.slice(0, 600) + '\n...\n[truncated]';
+          }
         }
         messageHistory.push({ role: 'tool', content: histContent, tool_call_id: tc.id } as any);
         totalToolCalls++;
@@ -195,7 +212,12 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
       } catch (err: any) {
         result = `Error: ${err.message ?? String(err)}`;
       }
-      let histContent = result.length > 800 ? result.slice(0, 300) + '\n...\n[truncated]' : result;
+      let histContent = result;
+      if (histContent.length > 800) {
+        const engineId = opts.api.model || 'api-agent';
+        const ce = saveToolResultToDisk(engineId, callId, 'Read', result);
+        histContent = ce ? result.slice(0, 400) + `\n...\n[cached — ${callId}]` : result.slice(0, 600) + '\n...\n[truncated]';
+      }
       messageHistory.push({
         role: 'assistant', content: null,
         tool_calls: [{ id: callId, type: 'function', function: { name: 'Read', arguments: JSON.stringify({ file_path: readIntent[1] }) } }],

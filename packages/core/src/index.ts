@@ -15,6 +15,7 @@ export type { SpawnOptions } from './process.js';
 export {
   buildForgePrompt, buildCritiquePrompt, buildSynthesisPrompt,
   buildBrainstormPrompt, buildTribunalPrompt, buildReviewPrompt,
+  buildForgePromptWithContext,
 } from './prompt-builder.js';
 export { createLogger } from './logger.js';
 export type { Logger } from './logger.js';
@@ -57,7 +58,19 @@ export type { FileSnapshot, HistoryEntry } from './file-history.js';
 export { copyToClipboard } from './clipboard.js';
 export { pasteStore, PASTE_MAX_AGE } from './paste-store.js';
 export type { PasteStoreResult } from './paste-store.js';
-export { saveSessionState, loadSessionState, clearSessionState } from './session-store.js';
+export {
+  saveSessionState, loadSessionState, clearSessionState,
+  saveToolResultToDisk, loadToolResultFromDisk, pruneToolCache,
+  sessionCacheDir,
+} from './session-store.js';
+// ── Context Parts (structured message parts + StageContext) ──
+export {
+  buildStageContext, renderStageContext,
+} from './context-parts.js';
+export type {
+  TextPart, ToolCallPart, ToolResultPart, ReasoningPart, CompactionSummaryPart,
+  MessagePart, ToolCacheEntry, StageContext, StageDecision, ToolResultRef,
+} from './context-parts.js';
 export { runApiAgentLoop } from './generated/api/agent-loop.js';
 export type { ApiAgentOptions, ApiAgentResult } from './generated/api/agent-loop.js';
 // ── Tool System ──

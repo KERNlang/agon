@@ -14,19 +14,22 @@ import type { EngineDefinition, CompanionConfig } from '../models/types.js';
 import { apiStreamDispatch, apiStreamDispatchWithHistory } from '../api/dispatch.js';
 
 // @kern-source: persistent-session:6
-import { saveSessionState, loadSessionState } from '../signals/session-store.js';
+import { saveSessionState, loadSessionState, saveToolResultToDisk, loadToolResultFromDisk, pruneToolCache, sessionCacheDir } from '../signals/session-store.js';
 
 // @kern-source: persistent-session:7
+import type { CompactionSummaryPart, ToolCacheEntry } from '../models/context-parts.js';
+
+// @kern-source: persistent-session:8
 import { parseToolCalls, toolCallsToApiFormat } from '../tools/tool-parser.js';
 
-// @kern-source: persistent-session:9
+// @kern-source: persistent-session:10
 export interface SessionChunk {
   type: 'text'|'status'|'tool_call'|'error'|'done';
   content: string;
   metadata?: Record<string,unknown>;
 }
 
-// @kern-source: persistent-session:14
+// @kern-source: persistent-session:15
 export interface SessionSendOptions {
   message: string;
   images?: string[];
@@ -34,7 +37,7 @@ export interface SessionSendOptions {
   systemPrompt?: string;
 }
 
-// @kern-source: persistent-session:20
+// @kern-source: persistent-session:21
 export interface PersistentSessionConfig {
   engine: EngineDefinition;
   binaryPath: string;
@@ -46,7 +49,7 @@ export interface PersistentSessionConfig {
   mcpServers?: Array<Record<string,unknown>>;
 }
 
-// @kern-source: persistent-session:30
+// @kern-source: persistent-session:31
 export interface PersistentSession {
   alive: boolean;
   sessionId: string|null;
@@ -56,7 +59,10 @@ export interface PersistentSession {
   close: () => void;
 }
 
-// @kern-source: persistent-session:38
+// @kern-source: persistent-session:39
+/**
+ * Factory: picks the right session implementation based on engine config.
+ */
 export function createPersistentSession(config: PersistentSessionConfig): PersistentSession {
   const engine = config.engine;
   
@@ -84,7 +90,10 @@ export function createPersistentSession(config: PersistentSessionConfig): Persis
   return createResumeSession(config);
 }
 
-// @kern-source: persistent-session:69
+// @kern-source: persistent-session:70
+/**
+ * Persistent JSONRPC session for Codex app-server. Process stays alive across turns.
+ */
 export function createCompanionSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -355,7 +364,10 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
   return session;
 }
 
-// @kern-source: persistent-session:343
+// @kern-source: persistent-session:344
+/**
+ * Persistent ACP (Agent Client Protocol) session for OpenCode. JSON-RPC 2.0 over stdio.
+ */
 export function createAcpSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -604,7 +616,10 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
   return session;
 }
 
-// @kern-source: persistent-session:595
+// @kern-source: persistent-session:596
+/**
+ * Persistent bidirectional NDJSON session for Claude Code. One process, multi-turn via stdin.
+ */
 export function createStreamJsonSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -856,14 +871,20 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
   return session;
 }
 
-// @kern-source: persistent-session:850
+// @kern-source: persistent-session:851
+/**
+ * Fallback: spawn per turn with --resume/--continue. Works for any CLI engine.
+ */
 export function createResumeSession(config: PersistentSessionConfig): PersistentSession {
   let alive = false;
   let sessionId: string | null = null;
   let firstTurn = true;
   // Message history for API engines — enables multi-turn tool loops
-  const messageHistory: Array<{role: string, content: string}> = [];
-  // Tool calls are handled inside the agentic loop in send() — no cross-turn state needed.
+  const messageHistory: Array<{role: string, content: any, tool_calls?: any[], tool_call_id?: string}> = [];
+  // Compaction state — accumulates across compaction cycles
+  let compactionSummary: CompactionSummaryPart | null = null;
+  // Disk-backed tool result cache manifest
+  let toolCacheManifest: ToolCacheEntry[] = [];
   
   const session: PersistentSession = {
     get alive() { return alive; },
@@ -879,6 +900,8 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
         const saved = loadSessionState(config.engine.id);
         if (saved && saved.messageHistory.length > 0) {
           messageHistory.push(...saved.messageHistory);
+          compactionSummary = saved.compactionSummary ?? null;
+          toolCacheManifest = saved.toolCacheManifest ?? [];
           firstTurn = false; // Not a fresh session — system prompt already in history
         }
       }
@@ -905,10 +928,10 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
         // agentic loop (same turn), not across turns.
         messageHistory.push({ role: 'user', content: opts.message });
   
-        // ── OpenCode-style two-tier context compaction ──
-        // Token-based overflow detection, not message count.
-        // Tier 1: Prune old tool results (biggest token hogs).
-        // Tier 2: Structured summary compression if still over limit.
+        // ── Three-tier context compaction (OpenCode-inspired) ──
+        // Tier 1: Replace old tool results with cached refs (disk-backed)
+        // Tier 2: Incremental CompactionSummary — merges across cycles
+        // Tier 3: (future) LLM-based summary as last resort
         const estimateTokens = (msgs: Array<{role: string, content: any}>) =>
           msgs.reduce((sum, m) => {
             if (typeof m.content === 'string') return sum + Math.ceil(m.content.length / 4);
@@ -920,17 +943,17 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
           }, 0);
   
         const CONTEXT_LIMIT = config.engine.api?.maxTokens
-          ? config.engine.api.maxTokens * 4  // maxTokens is output; context ≈ 4x
+          ? config.engine.api.maxTokens * 4
           : 128_000;
         const COMPACTION_BUFFER = 20_000;
-        const PRUNE_PROTECT_TURNS = 4; // protect last N user-assistant exchanges
+        const PRUNE_PROTECT_TURNS = 6; // protect last 6 user-assistant exchanges (was 4)
   
         const totalTokens = estimateTokens(messageHistory);
         if (totalTokens > CONTEXT_LIMIT - COMPACTION_BUFFER) {
           const hasSystem = messageHistory[0].role === 'system';
           const startIdx = hasSystem ? 1 : 0;
   
-          // Count protected messages from the end (last N turns, including tool chains)
+          // Count protected messages from the end
           let protectFrom = messageHistory.length;
           let turnsFound = 0;
           for (let i = messageHistory.length - 1; i >= startIdx; i--) {
@@ -939,94 +962,135 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
             protectFrom = i;
           }
   
-          // ── Tier 1: Prune old tool result outputs ──
-          let prunedTokens = 0;
+          // ── Tier 1: Replace old tool results with disk-cached refs ──
           for (let i = startIdx; i < protectFrom; i++) {
             const msg = messageHistory[i] as any;
-            if (msg.role === 'tool' && msg.content && msg.content.length > 200) {
-              prunedTokens += Math.ceil(msg.content.length / 4);
-              msg.content = '[Old tool result cleared]';
+            if (msg.role === 'tool' && msg.content && typeof msg.content === 'string' && msg.content.length > 200) {
+              // Already cached? Just clear inline
+              if (msg.content.includes('[cached —')) continue;
+              // Save to disk cache
+              const tcId = msg.tool_call_id ?? `legacy_${i}`;
+              const entry = saveToolResultToDisk(config.engine.id, tcId, 'tool', msg.content);
+              if (entry) {
+                toolCacheManifest.push(entry);
+                msg.content = msg.content.slice(0, 200) + `\n[cached — ${tcId}]`;
+              } else {
+                msg.content = '[Old tool result cleared]';
+              }
             }
           }
   
-          // ── Tier 2: Structured summary if pruning wasn't enough ──
-          const afterPrune = estimateTokens(messageHistory);
-          if (afterPrune > CONTEXT_LIMIT - COMPACTION_BUFFER) {
+          // ── Tier 2: Incremental CompactionSummary if still over limit ──
+          const afterTier1 = estimateTokens(messageHistory);
+          if (afterTier1 > CONTEXT_LIMIT - COMPACTION_BUFFER) {
             const old = messageHistory.slice(startIdx, protectFrom);
             const recent = messageHistory.slice(protectFrom);
             const system = hasSystem ? [messageHistory[0]] : [];
   
             if (old.length > 0) {
-              // Extract structured context from old messages (like OpenCode compaction)
-              // Wrapped in try-catch — malformed tool_calls from API engines can break parsing
               try {
                 const userMsgs = old.filter((m: any) => m.role === 'user' && typeof m.content === 'string');
                 const assistMsgs = old.filter((m: any) => m.role === 'assistant' && typeof m.content === 'string');
   
-                const goal = userMsgs.length > 0
-                  ? (userMsgs[0].content as string).slice(0, 300)
-                  : '';
+                // Extract structured data from old messages
+                const filesRead = new Set<string>();
+                const filesModified = new Set<string>();
+                const toolsSummary: string[] = [];
+                const discoveries: string[] = [];
+                const decisions: string[] = [];
   
-                const filePaths = new Set<string>();
-                const editedFiles = new Set<string>();
-                const toolActions = new Map<string, Set<string>>();
                 for (const m of old as any[]) {
                   if (m.tool_calls) {
                     for (const tc of m.tool_calls) {
                       try {
                         const toolName: string = tc.function?.name ?? '';
                         const args = JSON.parse(tc.function?.arguments ?? '{}');
-                        if (args.file_path) filePaths.add(args.file_path);
-                        if (args.path) filePaths.add(args.path);
-                        if (args.pattern) filePaths.add(`grep:${args.pattern}`);
-                        // Track tool actions for summary
-                        if (toolName) {
-                          const set = toolActions.get(toolName) ?? new Set<string>();
-                          if (toolName === 'Edit' || toolName === 'Write') {
-                            const fp = args.file_path || args.path || '';
-                            if (fp) { set.add(fp); editedFiles.add(fp); }
-                          } else if (toolName === 'Bash' && args.command) {
-                            set.add(args.command.slice(0, 80));
-                          } else if (toolName === 'Grep' && args.pattern) {
-                            set.add(args.pattern.slice(0, 40));
-                          }
-                          toolActions.set(toolName, set);
+                        const fp = args.file_path || args.path || '';
+  
+                        if (fp) filesRead.add(fp);
+                        if (toolName === 'Edit' || toolName === 'Write') {
+                          if (fp) filesModified.add(fp);
                         }
-                      } catch { /* malformed tool metadata — skip entry */ }
+                        if (toolName && toolsSummary.length < 15) {
+                          const detail = fp || (args.pattern ? `pattern:${args.pattern}` : '') || (args.command ? args.command.slice(0, 60) : '');
+                          toolsSummary.push(`${toolName}(${detail.slice(0, 80)})`);
+                        }
+                      } catch { /* skip malformed */ }
+                    }
+                  }
+                  // Extract decisions from assistant messages
+                  if (m.role === 'assistant' && typeof m.content === 'string') {
+                    const lines = m.content.split('\n');
+                    for (const line of lines) {
+                      if (/(?:I (?:will|chose|decided)|Decision:|Approach:|Strategy:)/i.test(line) && decisions.length < 8) {
+                        decisions.push(line.trim().slice(0, 200));
+                      }
+                      // Extract discoveries (findings, bugs, patterns)
+                      if (/(?:found|discovered|noticed|bug|issue|pattern|the problem is)/i.test(line) && discoveries.length < 8) {
+                        discoveries.push(line.trim().slice(0, 200));
+                      }
                     }
                   }
                 }
   
-                // Build tool summary
-                const toolSummary = [...toolActions.entries()]
-                  .map(([name, args]) => `${name}(${[...args].slice(0, 3).join('; ')})`)
-                  .slice(0, 8)
-                  .join(', ');
-  
-                const lastAssist = assistMsgs.length > 0
-                  ? (assistMsgs[assistMsgs.length - 1].content as string).slice(0, 500)
+                const goal = userMsgs.length > 0
+                  ? (userMsgs[0].content as string).slice(0, 500)
+                  : '';
+                const lastProgress = assistMsgs.length > 0
+                  ? (assistMsgs[assistMsgs.length - 1].content as string).slice(0, 800)
                   : '';
   
-                const compacted = [
-                  `[Context compacted — ${old.length} messages]`,
-                  goal ? `GOAL: ${goal}` : '',
-                  filePaths.size > 0 ? `FILES: ${[...filePaths].slice(0, 20).join(', ')}` : '',
-                  editedFiles.size > 0 ? `EDITS: ${[...editedFiles].slice(0, 10).join(', ')}` : '',
-                  toolSummary ? `TOOLS: ${toolSummary}` : '',
-                  lastAssist ? `PROGRESS: ${lastAssist}` : '',
+                // Build new CompactionSummary — merge with existing if present
+                const prev = compactionSummary;
+                const newSummary: CompactionSummaryPart = {
+                  kind: 'compaction' as const,
+                  goal: prev?.goal || goal,
+                  discoveries: [...new Set([...(prev?.discoveries ?? []), ...discoveries])].slice(0, 12),
+                  filesModified: [...new Set([...(prev?.filesModified ?? []), ...filesModified])].slice(0, 20),
+                  filesRead: [...new Set([...(prev?.filesRead ?? []), ...filesRead])].slice(0, 30),
+                  toolsSummary: [...new Set([...(prev?.toolsSummary ?? []), ...toolsSummary])].slice(0, 20),
+                  decisions: [...new Set([...(prev?.decisions ?? []), ...decisions])].slice(0, 10),
+                  progress: lastProgress || prev?.progress || '',
+                  compactedAt: Date.now(),
+                  messagesCompacted: (prev?.messagesCompacted ?? 0) + old.length,
+                };
+                compactionSummary = newSummary;
+  
+                // Render compaction as a structured context message
+                const compactedText = [
+                  `[Context compacted — ${newSummary.messagesCompacted} messages total, ${old.length} this cycle]`,
+                  newSummary.goal ? `GOAL: ${newSummary.goal}` : '',
+                  newSummary.discoveries.length > 0 ? `DISCOVERIES:\n${newSummary.discoveries.map((d: string) => `  - ${d}`).join('\n')}` : '',
+                  newSummary.filesRead.length > 0 ? `FILES READ: ${newSummary.filesRead.join(', ')}` : '',
+                  newSummary.filesModified.length > 0 ? `FILES MODIFIED: ${newSummary.filesModified.join(', ')}` : '',
+                  newSummary.toolsSummary.length > 0 ? `TOOLS USED: ${newSummary.toolsSummary.join(', ')}` : '',
+                  newSummary.decisions.length > 0 ? `DECISIONS:\n${newSummary.decisions.map((d: string) => `  - ${d}`).join('\n')}` : '',
+                  newSummary.progress ? `LATEST PROGRESS: ${newSummary.progress}` : '',
                 ].filter(Boolean).join('\n');
   
-                const summary = { role: 'user' as const, content: compacted };
+                const summary = { role: 'user' as const, content: compactedText };
                 messageHistory.length = 0;
                 messageHistory.push(...system, summary, ...recent);
               } catch (compactErr) {
-                // Compaction failed (malformed history) — fallback: just keep recent messages
                 console.warn(`[agon] session: compaction failed: ${compactErr instanceof Error ? compactErr.message : String(compactErr)}`);
                 messageHistory.length = 0;
-                messageHistory.push(...system, ...recent);
+                const system = hasSystem ? [messageHistory[0] ?? { role: 'system', content: '' }] : [];
+                messageHistory.push(...system, ...messageHistory.slice(protectFrom));
               }
             }
           }
+  
+          // Prune disk cache — keep only IDs still referenced in history
+          const activeIds = new Set<string>();
+          for (const m of messageHistory) {
+            if (typeof (m as any).content === 'string') {
+              const refs = ((m as any).content as string).matchAll(/\[cached — ([^\]]+)\]/g);
+              for (const ref of refs) activeIds.add(ref[1]);
+            }
+            if ((m as any).tool_call_id) activeIds.add((m as any).tool_call_id);
+          }
+          pruneToolCache(config.engine.id, activeIds);
+          toolCacheManifest = toolCacheManifest.filter((e: ToolCacheEntry) => activeIds.has(e.toolCallId));
         }
   
         // ── Agentic tool loop with dynamic budget ──
@@ -1146,6 +1210,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
             }));
   
             // Emit results and add to history — track errors for circuit breaker
+            // Large results are cached to disk; history keeps preview + ref
             let stepErrors = 0;
             for (const tc of results) {
               const isError = tc.result.startsWith('Error:') || tc.result.startsWith('Unknown tool:');
@@ -1154,8 +1219,16 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
   
               let histContent = tc.result;
               if (histContent.length > INLINE_LIMIT) {
-                const lines = histContent.split('\n').length;
-                histContent = histContent.slice(0, 300) + `\n...\n[${lines} lines, ${histContent.length} chars — use ${tc.name} again for full content]`;
+                // Disk-backed cache: save full result, keep preview + ref inline
+                const cacheEntry = saveToolResultToDisk(config.engine.id, tc.id, tc.name, tc.result);
+                if (cacheEntry) {
+                  toolCacheManifest.push(cacheEntry);
+                  const lines = histContent.split('\n').length;
+                  histContent = histContent.slice(0, 400) + `\n...\n[${lines} lines, ${histContent.length} chars — cached — ${tc.id}]`;
+                } else {
+                  // Disk write failed — still better than 300 chars, keep 600
+                  histContent = histContent.slice(0, 600) + `\n...\n[truncated — ${histContent.length} chars total]`;
+                }
               }
               messageHistory.push({ role: 'tool', content: histContent, tool_call_id: tc.id } as any);
             }
@@ -1248,7 +1321,14 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                   } as any);
                   let histContent = result;
                   if (histContent.length > 800) {
-                    histContent = histContent.slice(0, 300) + `\n...\n[truncated — use ${sc.name} again for full content]`;
+                    // Disk-backed cache for auto-executed intent results too
+                    const cacheEntry = saveToolResultToDisk(config.engine.id, sc.id, sc.name, result);
+                    if (cacheEntry) {
+                      toolCacheManifest.push(cacheEntry);
+                      histContent = histContent.slice(0, 400) + `\n...\n[cached — ${sc.id}]`;
+                    } else {
+                      histContent = histContent.slice(0, 600) + `\n...\n[truncated]`;
+                    }
                   }
                   messageHistory.push({ role: 'tool', content: histContent, tool_call_id: sc.id } as any);
                   autoResults.push(result);
@@ -1289,7 +1369,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
         }
   
         // Persist session state to disk after each turn — survives process restart
-        try { saveSessionState(config.engine.id, { messageHistory, confidence: null }); } catch (saveErr) { console.warn('[session] failed to persist turn:', (saveErr as Error).message ?? saveErr); }
+        try { saveSessionState(config.engine.id, { messageHistory, confidence: null, compactionSummary, toolCacheManifest }); } catch (saveErr) { console.warn('[session] failed to persist turn:', (saveErr as Error).message ?? saveErr); }
   
         yield { type: 'done' as const, content: 'end_turn' };
         return;

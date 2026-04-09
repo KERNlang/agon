@@ -78,11 +78,14 @@ RULE 4 — CONFIDENCE HINTS (not enforced, just awareness):
   80-89% = you probably have a plan but some unknowns. Consider whether Brainstorm or Delegate would help, or just investigate more.
   <80% = significant uncertainty. Think about whether this is a "I need to read more code" situation (investigate!) or a "this is genuinely hard and needs debate" situation (Tribunal/Brainstorm). Don't default to asking for help — default to investigating. But when you genuinely need other perspectives, that's exactly what these tools are for.
 RULE 4c — REVIEW: Use Review(target?, engine?) to delegate code review. Default target is "uncommitted". Targets: "uncommitted", "branch:NAME", "commit:SHA". Optionally specify engine. Use when the user asks to review code, changes, a PR, or a diff.
-RULE 5 — WORKSPACE: Use Read for files. Use Grep for search. NEVER use cat/head/tail/grep via Bash.
+RULE 5 — WORKSPACE: Use Read for files. Use Grep for search. NEVER use cat/head/tail/grep via Bash. For git operations (commit, push, branch, etc.) use Bash directly — permission system will ask the user to approve write operations. When the user says "commit", do it: git add the relevant files, write a good commit message, commit. Don't overthink it.
 RULE 6 — AFTER DELEGATION: After calling Forge/Brainstorm/Tribunal/Campfire/Pipeline/Review, STOP. Do not continue responding. The orchestrator handles the rest. After calling Delegate, WAIT for the result — do NOT stop. Incorporate the delegated result into your response.
 RULE 7 — NO NARRATION: NEVER narrate your research process. Do not write "Reading the file...", "I'm checking...", "Let me look at...", "I've confirmed...". The user sees your text output — if you narrate exploration it looks like you have no clue. Instead: call tools SILENTLY, then speak ONLY when you have the answer or decision. Your visible output should be conclusions, answers, and actions — never a play-by-play of your investigation. If you need to read files or search code, call Read/Grep/Glob directly without announcing it.`;
 
 // @kern-source: session:66
+/**
+ * Build the full Cesar system prompt with project context, engine list, and mode flags.
+ */
 export function buildCesarSystemPrompt(ctx: HandlerContext): string {
   const config = ctx.config;
       const cesarCwd = resolveWorkingDir();
@@ -152,6 +155,9 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
 }
 
 // @kern-source: session:136
+/**
+ * Build the onToolCall callback for API engines with native function calling.
+ */
 export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry, config: any): ((name:string, args:Record<string,unknown>, callId:string) => Promise<string>) | undefined {
   const fsc = new FileStateCache();
   const toolResultCache = new Map<string, string>();
@@ -175,9 +181,10 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
       }
       if (name === 'Bash') {
         const cmd = String((args as any).command ?? '');
-        const writePatterns = /\b(rm|mv|cp|mkdir|touch|chmod|chown|git\s+(commit|push|merge|rebase|reset)|npm\s+(install|uninstall|publish))\b/;
-        if (writePatterns.test(cmd)) {
-          return `[BLOCKED] Write commands are not available in plan mode. Use ProposePlan to propose your execution strategy.`;
+        // Block destructive shell commands in plan mode — but NOT git commit/push (user-requested operations)
+        const destructivePatterns = /\b(rm\s+-rf|rm\s+--force|chmod\s+777|mkfs\.|dd\s+if=)\b/;
+        if (destructivePatterns.test(cmd)) {
+          return `[BLOCKED] Destructive commands are not available in plan mode. Use ProposePlan to propose your execution strategy.`;
         }
       }
     }
@@ -321,7 +328,10 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
   };
 }
 
-// @kern-source: session:307
+// @kern-source: session:308
+/**
+ * Build the onApproval callback for engine tool approvals.
+ */
 export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:string, command:string) => Promise<boolean> {
   const engine = ctx.registry.get(engineId);
   return async (tool: string, command: string) => {
@@ -367,7 +377,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
   };
 }
 
-// @kern-source: session:354
+// @kern-source: session:355
 export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unknown>> {
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -401,7 +411,7 @@ export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unkn
   return normalizeNamedRecord(raw);
 }
 
-// @kern-source: session:388
+// @kern-source: session:389
 export function loadCesarMcpServers(config: any, cwd: string): Array<Record<string,unknown>>|undefined {
   if (!(config as any).cesarMcpEnabled) return undefined;
   
@@ -425,14 +435,17 @@ export function loadCesarMcpServers(config: any, cwd: string): Array<Record<stri
   return servers;
 }
 
-// @kern-source: session:412
+// @kern-source: session:413
 export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
   if (!binaryPath) return false;
   const protocol = engine?.companion?.protocol;
   return protocol === 'acp' || protocol === 'jsonrpc';
 }
 
-// @kern-source: session:419
+// @kern-source: session:420
+/**
+ * Compute a simple fingerprint of MCP-related config to detect changes.
+ */
 export function mcpConfigFingerprint(config: any): string {
   const enabled = !!(config as any).cesarMcpEnabled;
   const configPath = String((config as any).cesarMcpConfigPath ?? '');
@@ -447,7 +460,7 @@ export function mcpConfigFingerprint(config: any): string {
   return `${enabled}:${configPath}:${mtime}`;
 }
 
-// @kern-source: session:435
+// @kern-source: session:436
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
   const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';

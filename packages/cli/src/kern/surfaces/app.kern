@@ -393,6 +393,9 @@ screen name=App target=ink
   // ── Input handlers ──
   callback name=handleInputChange params="value:string" deps="inputValue,slashPickerOpen,enginePickerOpen,modelPickerOpen,questionState,planModeQueued"
     handler <<<
+      // Swallow input while a choice question is active — useInput handles keypress
+      if (questionState && questionState.choices) return;
+
       const nextValue = cleanInputValue(value);
 
       // "/" typed into empty input → open slash picker, swallow the character
@@ -904,7 +907,7 @@ screen name=App target=ink
                 {questionState.choices ? (
                   <Box flexDirection="column" paddingLeft={1}>
                     {(questionState.choices as {key:string,label:string,color?:string}[]).map((c: any, i: number) => (
-                      <Text key={i}><Text color={c.color ?? '#6b7280'} bold>  {c.key} </Text><Text>{c.label}</Text></Text>
+                      <Text key={i}><Text color={c.color ?? '#6b7280'} bold>  [{i + 1}/{c.key}] </Text><Text>{c.label}</Text></Text>
                     ))}
                   </Box>
                 ) : (

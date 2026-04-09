@@ -332,6 +332,9 @@ export function App({  }: {  }) {
   }, [registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode,activePlan,extensionPromptFragments]);
 
   const handleInputChange = useCallback((value:string) => {
+          // Swallow input while a choice question is active — useInput handles keypress
+          if (questionState && questionState.choices) return;
+    
           const nextValue = cleanInputValue(value);
     
           // "/" typed into empty input → open slash picker, swallow the character
@@ -933,7 +936,7 @@ export function App({  }: {  }) {
                   {questionState.choices ? (
                     <Box flexDirection="column" paddingLeft={1}>
                       {(questionState.choices as {key:string,label:string,color?:string}[]).map((c: any, i: number) => (
-                        <Text key={i}><Text color={c.color ?? '#6b7280'} bold>  {c.key} </Text><Text>{c.label}</Text></Text>
+                        <Text key={i}><Text color={c.color ?? '#6b7280'} bold>  [{i + 1}/{c.key}] </Text><Text>{c.label}</Text></Text>
                       ))}
                     </Box>
                   ) : (
@@ -963,7 +966,7 @@ export function App({  }: {  }) {
 }
 
 
-// @kern-source: app:937
+// @kern-source: app:940
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

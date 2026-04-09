@@ -16,7 +16,7 @@ interface name=CompanionResult
   field name=fileChanges type="Array<{changes:unknown,status:string}>"
   field name=commands type="Array<{command:string,exitCode:number,output:string}>"
 
-fn name=companionDispatch async=true params="opts:{config:CompanionConfig, binaryPath:string, prompt:string, cwd:string, timeout:number, mode:'exec'|'review'|'agent', signal?:AbortSignal, systemPrompt?:string}" returns="Promise<DispatchResult>"
+fn name=companionDispatch async=true params="opts:{config:CompanionConfig, binaryPath:string, prompt:string, cwd:string, timeout:number, mode:'exec'|'review'|'agent', model?:string, signal?:AbortSignal, systemPrompt?:string}" returns="Promise<DispatchResult>"
   handler <<<
     if (opts.config.protocol !== 'jsonrpc') {
       return { exitCode: 2, stdout: '', stderr: 'Only jsonrpc protocol supported', durationMs: 0, timedOut: false };
@@ -155,6 +155,9 @@ fn name=companionDispatch async=true params="opts:{config:CompanionConfig, binar
         sandbox: opts.mode === 'agent' ? 'workspace-write' : 'read-only',
         ephemeral: true,
       };
+      if (opts.model) {
+        threadParams.model = opts.model;
+      }
       if (opts.systemPrompt) {
         threadParams.instructions = opts.systemPrompt;
       }

@@ -180,7 +180,7 @@ fn name=apiDispatch async=true params="config:ApiConfig, prompt:string, timeout:
         messages,
         maxOutputTokens: config.maxTokens ?? 4096,
         abortSignal: controller.signal,
-        maxRetries: 3,
+        maxRetries: 5,
       });
       clearTimeout(timer);
       const text = result.text || (result as any).reasoningText || '';
@@ -197,7 +197,12 @@ fn name=apiDispatch async=true params="config:ApiConfig, prompt:string, timeout:
       if (err instanceof Error && err.name === 'AbortError') {
         return { exitCode: signal?.aborted ? 130 : 124, stdout: '', stderr: 'Request timed out', durationMs, timedOut: !signal?.aborted };
       }
-      return { exitCode: 1, stdout: '', stderr: `API request failed: ${err instanceof Error ? err.message : String(err)}`, durationMs, timedOut: false };
+      const isRateLimited = err instanceof Error && (
+        err.message.includes('429') || err.message.includes('rate') || err.name === 'AI_RetryError' || err.name === 'RetryError'
+      );
+      const exitCode = isRateLimited ? 2 : 1;
+      const prefix = isRateLimited ? 'API rate limited (retries exhausted)' : 'API request failed';
+      return { exitCode, stdout: '', stderr: `${prefix}: ${err instanceof Error ? err.message : String(err)}`, durationMs, timedOut: false };
     }
   >>>
 
@@ -247,7 +252,7 @@ fn name=apiStreamDispatchWithHistory generator=true async=true params="config:Ap
         messages: coreMessages,
         maxOutputTokens: config.maxTokens ?? 4096,
         abortSignal: controller.signal,
-        maxRetries: 3,
+        maxRetries: 5,
       };
 
       if (tools && tools.length > 0) {
@@ -389,6 +394,11 @@ fn name=apiStreamDispatchWithHistory generator=true async=true params="config:Ap
       if (err instanceof Error && err.name === 'AbortError') {
         return { exitCode: signal?.aborted ? 130 : 124, stdout, stderr: 'Request timed out', durationMs, timedOut: !signal?.aborted };
       }
-      return { exitCode: 1, stdout, stderr: `API stream failed: ${err instanceof Error ? err.message : String(err)}`, durationMs, timedOut: false };
+      const isRateLimited = err instanceof Error && (
+        err.message.includes('429') || err.message.includes('rate') || err.name === 'AI_RetryError' || err.name === 'RetryError'
+      );
+      const exitCode = isRateLimited ? 2 : 1;
+      const prefix = isRateLimited ? 'API rate limited (retries exhausted)' : 'API stream failed';
+      return { exitCode, stdout, stderr: `${prefix}: ${err instanceof Error ? err.message : String(err)}`, durationMs, timedOut: false };
     }
   >>>

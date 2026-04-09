@@ -18,7 +18,7 @@
     "args": ["exec", "{prompt}"]
   },
   "review": {
-    "args": ["exec", "review", "{prompt}"]
+    "args": ["review", "{prompt}"]
   },
   "agent": {
     "args": ["exec", "--full-auto", "{prompt}"]
@@ -26,14 +26,14 @@
 
   "model": {
     "configKey": "codex_model",
-    "flag": "-c",
-    "default": null
+    "flag": "--model",
+    "default": "gpt-5.3-codex"
   },
 
   "api": {
     "baseUrl": "https://api.openai.com/v1",
     "apiKeyEnv": "OPENAI_API_KEY",
-    "model": "o3-mini",
+    "model": "gpt-5.3-codex",
     "maxTokens": 4096
   },
 

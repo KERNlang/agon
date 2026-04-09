@@ -2,7 +2,7 @@ import from="node:fs" names="writeFileSync,mkdirSync"
 import from="node:path" names="join,dirname"
 import from="@agon/core" names="EngineAdapter,EngineDefinition,DispatchOptions,DispatchResult,AgentDispatchResult" types=true
 import from="@agon/core" names="EngineRegistry,spawnWithTimeout,spawnStream,EngineNotFoundError,readOnlyDiff,diffLineCount,apiDispatch,apiStreamDispatch,companionDispatch,runHooks,hooksFailed,runApiAgentLoop,scanProjectContext,resolveWorkingDir"
-import from="./adapter-helpers.js" names="buildCommand,checkEnvVars,stripStreamJson,usesStreamJson"
+import from="./adapter-helpers.js" names="buildCommand,checkEnvVars,resolveModel,stripStreamJson,usesStreamJson"
 
 service name=CliAdapter implements=EngineAdapter
   field name=registry type=EngineRegistry private=true
@@ -63,6 +63,7 @@ service name=CliAdapter implements=EngineAdapter
           cwd: options.cwd,
           timeout: options.timeout,
           mode: options.mode === 'agent' ? 'agent' : options.mode === 'review' ? 'review' : 'exec',
+          model: resolveModel(options.engine) ?? undefined,
           signal: options.signal,
           systemPrompt: options.systemPrompt,
         });
@@ -249,15 +250,16 @@ service name=CliAdapter implements=EngineAdapter
 
       // Try companion protocol first
       if (options.engine.companion) {
-        const companionResult = await companionDispatch({
-          config: options.engine.companion,
-          binaryPath,
-          prompt: options.prompt,
-          cwd: options.cwd,
-          timeout: options.timeout,
-          mode: 'agent',
-          signal: options.signal,
-        });
+      const companionResult = await companionDispatch({
+        config: options.engine.companion,
+        binaryPath,
+        prompt: options.prompt,
+        cwd: options.cwd,
+        timeout: options.timeout,
+        mode: 'agent',
+        model: resolveModel(options.engine) ?? undefined,
+        signal: options.signal,
+      });
         if (companionResult.exitCode !== 2) {
           const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
           mkdirSync(dirname(outputPath), { recursive: true });
@@ -325,6 +327,7 @@ service name=CliAdapter implements=EngineAdapter
     handler <<<
       const streamBinaryPath = options.engine.binary ? this.registry.findBinary(options.engine) : null;
       if (options.engine.api && !streamBinaryPath) {
+        yield `Engine "${options.engine.id}" is API-only and does not support streaming agent mode. Use non-streaming dispatch or install the CLI binary.`;
         return {
           exitCode: 1,
           stdout: '',

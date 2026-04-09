@@ -2,7 +2,7 @@
 // Persists API session state to disk so sessions survive process restarts.
 // v2: Rich state with compaction summaries, tool cache manifests, and schema migration.
 
-import from="node:fs" names="writeFileSync,readFileSync,existsSync,mkdirSync,unlinkSync,readdirSync,statSync,rmdirSync"
+import from="node:fs" names="writeFileSync,readFileSync,existsSync,mkdirSync,unlinkSync,readdirSync,statSync,rmdirSync,renameSync"
 import from="node:path" names="join,dirname"
 import from="node:crypto" names="createHash"
 import from="./config.js" names="AGON_HOME"
@@ -44,7 +44,9 @@ fn name=saveToolResultToDisk params="engineId:string, toolCallId:string, toolNam
       const cacheDir = sessionCacheDir(engineId);
       mkdirSync(cacheDir, { recursive: true });
       const filePath = join(cacheDir, `${toolCallId}.txt`);
-      writeFileSync(filePath, content, 'utf-8');
+      const tmpFilePath = filePath + '.tmp';
+      writeFileSync(tmpFilePath, content, 'utf-8');
+      renameSync(tmpFilePath, filePath);
       return {
         toolCallId,
         toolName,
@@ -103,7 +105,9 @@ fn name=saveSessionState params="engineId:string, state:{ messageHistory: Array<
       confidence: state.confidence,
       savedAt: Date.now(),
     };
-    writeFileSync(path, JSON.stringify(data), 'utf-8');
+    const tmpPath = path + '.tmp';
+    writeFileSync(tmpPath, JSON.stringify(data), 'utf-8');
+    renameSync(tmpPath, path);
   >>>
 
 fn name=loadSessionState params="engineId:string" returns="{ messageHistory: Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>, confidence:number|null, compactionSummary:CompactionSummaryPart|null, toolCacheManifest:ToolCacheEntry[] } | null"

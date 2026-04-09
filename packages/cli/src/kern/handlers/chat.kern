@@ -1,9 +1,27 @@
 import from="node:path" names="join"
 import from="node:fs" names="mkdirSync"
 import from="@agon/core" names="ImageAttachment,DispatchResult" types=true
-import from="@agon/core" names="ensureAgonHome,RUNS_DIR,appendMessage,tracker,StreamParser,loadConfig,scanProjectContext,resolveWorkingDir"
+import from="@agon/core" names="RUNS_DIR,appendMessage,tracker,StreamParser,loadConfig,sessionContext,resolveWorkingDir"
 import from="../blocks/output-format.js" names="ENGINE_COLORS"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
+
+// Module-level cwd cache — resolveWorkingDir reads disk, but workspace doesn't change mid-session
+const name=_cachedCwd type="{value:string|null}"
+  handler <<< { value: null } >>>
+
+fn name=cachedCwd returns=string export=false
+  handler <<<
+    if (_cachedCwd.value === null) {
+      _cachedCwd.value = resolveWorkingDir();
+    }
+    return _cachedCwd.value;
+  >>>
+
+fn name=invalidateCwdCache returns=void
+  doc "Call when workspace changes (e.g. /workspace switch)."
+  handler <<<
+    _cachedCwd.value = null;
+  >>>
 
 fn name=detectTargetEngine params="input:string, availableIds:string[]" returns="{engineId:string|null,message:string}" export=false
   handler <<<
@@ -24,8 +42,6 @@ fn name=detectTargetEngine params="input:string, availableIds:string[]" returns=
 fn name=handleChat params="input:string, dispatch:Dispatch, ctx:HandlerContext, images?:ImageAttachment[], opts?:{toolPolicy?:'full'|'none'}" returns="Promise<void>" async=true
   signal name=abort
   handler <<<
-    ensureAgonHome();
-
     const available = ctx.activeEngines();
     if (available.length === 0) {
       dispatch({ type: 'error', message: 'No engines available.' });
@@ -56,8 +72,8 @@ fn name=handleChat params="input:string, dispatch:Dispatch, ctx:HandlerContext, 
     const history = recent.length > 0
       ? recent.map((m: any) => m.role === 'user' ? `User: ${m.content}` : `${m.engineId ?? 'engine'}: ${m.content}`).join('\n\n')
       : '';
-    const cwd = resolveWorkingDir();
-    const projectCtx = scanProjectContext(cwd, config.projectContext || undefined, config.contextFormat);
+    const cwd = cachedCwd();
+    const projectCtx = sessionContext.get(cwd, config.projectContext || undefined, config.contextFormat);
     const parts: string[] = [];
     if (projectCtx) parts.push(`## PROJECT CONTEXT\n${projectCtx}`);
     if (history) parts.push(history);
@@ -95,8 +111,15 @@ fn name=handleChat params="input:string, dispatch:Dispatch, ctx:HandlerContext, 
         const parser = new StreamParser();
 
         while (true) {
-          const { value, done } = await gen.next();
-          if (done) break;
+          const iterResult = await gen.next();
+          if (iterResult.done) {
+            // Capture AgentDispatchResult (generator return value contains diff)
+            if (iterResult.value && typeof iterResult.value === 'object') {
+              dispatchResult = iterResult.value as any;
+            }
+            break;
+          }
+          const value = iterResult.value;
           if (abort.signal.aborted) break;
 
           if (value.startsWith('\x00')) {
@@ -210,6 +233,39 @@ fn name=handleChat params="input:string, dispatch:Dispatch, ctx:HandlerContext, 
     }
     if (streaming) {
       dispatch({ type: 'streaming-end', engineId });
+    }
+
+    // Emit file-changes event if agent dispatch returned a diff
+    if (dispatchResult && (dispatchResult as any).diff) {
+      const agentDiff = (dispatchResult as any).diff as string;
+      const fileMap = new Map<string, { additions: number; deletions: number; status: 'modified'|'created'|'deleted' }>();
+      let currentFile = '';
+      for (const line of agentDiff.split('\n')) {
+        const diffMatch = line.match(/^diff --git a\/(.+?) b\/(.+)/);
+        if (diffMatch) {
+          currentFile = diffMatch[2];
+          if (!fileMap.has(currentFile)) fileMap.set(currentFile, { additions: 0, deletions: 0, status: 'modified' });
+        }
+        if (currentFile && line.startsWith('new file')) {
+          const entry = fileMap.get(currentFile);
+          if (entry) entry.status = 'created';
+        }
+        if (currentFile && line.startsWith('deleted file')) {
+          const entry = fileMap.get(currentFile);
+          if (entry) entry.status = 'deleted';
+        }
+        if (currentFile && line.startsWith('+') && !line.startsWith('+++')) {
+          const entry = fileMap.get(currentFile);
+          if (entry) entry.additions++;
+        }
+        if (currentFile && line.startsWith('-') && !line.startsWith('---')) {
+          const entry = fileMap.get(currentFile);
+          if (entry) entry.deletions++;
+        }
+      }
+      if (fileMap.size > 0) {
+        dispatch({ type: 'file-changes', files: Array.from(fileMap.entries()).map(([path, info]) => ({ path, ...info })) } as any);
+      }
     }
 
     if (response) {

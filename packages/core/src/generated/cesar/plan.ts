@@ -55,6 +55,9 @@ export interface CesarPlan {
 }
 
 // @kern-source: plan:48
+/**
+ * Create a new CesarPlan in 'planning' state. Steps with dependsOn are marked 'blocked', others 'pending'.
+ */
 export function createCesarPlan(intent: string, steps: CesarPlanStep[]): CesarPlan {
   const id = `cplan-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const initializedSteps = steps.map(s => ({
@@ -78,6 +81,9 @@ export function createCesarPlan(intent: string, steps: CesarPlanStep[]): CesarPl
 }
 
 // @kern-source: plan:72
+/**
+ * Transition plan from 'awaiting_approval' to 'running', set approvedAt.
+ */
 export function approveCesarPlan(plan: CesarPlan): CesarPlan {
   return {
     ...plan,
@@ -87,6 +93,9 @@ export function approveCesarPlan(plan: CesarPlan): CesarPlan {
 }
 
 // @kern-source: plan:82
+/**
+ * Mark a step done/failed, unblock dependents, determine plan state.
+ */
 export function advanceCesarStep(plan: CesarPlan, stepId: string, result: CesarStepResult): CesarPlan {
   const stepIdx = plan.steps.findIndex(s => s.id === stepId);
   if (stepIdx === -1) return plan;
@@ -140,6 +149,9 @@ export function advanceCesarStep(plan: CesarPlan, stepId: string, result: CesarS
 }
 
 // @kern-source: plan:136
+/**
+ * Cancel the plan: mark all non-complete steps as cancelled.
+ */
 export function cancelCesarPlan(plan: CesarPlan): CesarPlan {
   const newSteps = plan.steps.map(s => {
     if (s.state === 'done' || s.state === 'failed') return s;
@@ -153,6 +165,9 @@ export function cancelCesarPlan(plan: CesarPlan): CesarPlan {
 }
 
 // @kern-source: plan:150
+/**
+ * Persist a CesarPlan to ~/.agon/runs/<id>.json.
+ */
 export function saveCesarPlan(plan: CesarPlan): void {
   const { mkdirSync, writeFileSync } = require('node:fs');
   const { join } = require('node:path');
@@ -162,6 +177,9 @@ export function saveCesarPlan(plan: CesarPlan): void {
 }
 
 // @kern-source: plan:160
+/**
+ * Load a persisted CesarPlan from ~/.agon/runs/<id>.json.
+ */
 export function loadCesarPlan(planId: string): CesarPlan|null {
   const { readFileSync } = require('node:fs');
   const { join } = require('node:path');
@@ -174,6 +192,9 @@ export function loadCesarPlan(planId: string): CesarPlan|null {
 }
 
 // @kern-source: plan:173
+/**
+ * List all persisted CesarPlans from ~/.agon/runs/.
+ */
 export function listCesarPlans(): CesarPlan[] {
   const { readdirSync, readFileSync } = require('node:fs');
   const { join } = require('node:path');

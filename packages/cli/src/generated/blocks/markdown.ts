@@ -244,6 +244,9 @@ function parseStreamJsonLine(trimmed: string): {action:'use'|'skip'|'keep', cont
 }
 
 // @kern-source: markdown:232
+/**
+ * Remove inline sentence repetition like 'Hello.Hello.' within a single line.
+ */
 function deduplicateInline(line: string): string {
   // Check if the line is a repeated substring (e.g. "abcabc" → "abc")
   const len = line.length;
@@ -259,6 +262,9 @@ function deduplicateInline(line: string): string {
 }
 
 // @kern-source: markdown:248
+/**
+ * Remove consecutive duplicate paragraphs/sentences from buddy streaming output.
+ */
 function deduplicateParagraphs(text: string): string {
   // First: deduplicate within each line (streaming chunk concatenation artifacts)
   const lines = text.split('\n');
@@ -282,6 +288,9 @@ function deduplicateParagraphs(text: string): string {
 }
 
 // @kern-source: markdown:272
+/**
+ * Strip progressive thinking/status updates that duplicate as streaming chunks.
+ */
 function stripBuddyThinkingNoise(text: string): string {
   const lines = text.split('\n');
   const result: string[] = [];
@@ -365,6 +374,9 @@ function shortenFilePaths(text: string): string {
 }
 
 // @kern-source: markdown:356
+/**
+ * Gently insert paragraph breaks in very dense text walls — only when truly needed.
+ */
 function addParagraphBreaks(text: string): string {
   const paragraphs = text.split(/\n{2,}/);
   const result: string[] = [];
@@ -443,6 +455,9 @@ export function cleanEngineOutput(raw: string): string {
   result = result.replace(/<tool_result[\s\S]*?<\/tool_result>/g, '');
   result = result.replace(/<\/minimax:tool_call>/g, '');
   result = result.replace(/<parameter\s+name="[^"]*">[^<]*<\/parameter>/g, '');
+  
+  // Strip reasoning tags from models that use <think>...</think> (MiniMax, DeepSeek, Qwen, etc.)
+  result = result.replace(/<think>[\s\S]*?<\/think>\s*/gi, '');
   
   // Clean buddy streaming artifacts
   result = stripBuddyThinkingNoise(result);

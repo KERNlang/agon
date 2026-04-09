@@ -2,7 +2,7 @@
 import { readFileSync, statSync } from 'node:fs';
 
 // @kern-source: session:2
-import { isAbsolute, resolve } from 'node:path';
+import { isAbsolute, resolve, dirname } from 'node:path';
 
 // @kern-source: session:3
 import { join } from 'node:path';
@@ -11,78 +11,116 @@ import { join } from 'node:path';
 import { mkdirSync } from 'node:fs';
 
 // @kern-source: session:5
-import type { PersistentSession, PersistentSessionConfig } from '@agon/core';
+import { fileURLToPath } from 'node:url';
 
 // @kern-source: session:6
-import { EngineRegistry, loadConfig, ensureAgonHome, resolveWorkingDir, scanProjectContext, createPersistentSession, ToolRegistry, FileStateCache, buildToolSystemPrompt, toolsToOpenAIFormat, executeToolCall, RUNS_DIR, tracker } from '@agon/core';
+import type { PersistentSession, PersistentSessionConfig } from '@agon/core';
 
 // @kern-source: session:7
-import type { ToolContext, ToolCallResult } from '@agon/core';
+import { EngineRegistry, loadConfig, ensureAgonHome, AGON_HOME, resolveWorkingDir, scanProjectContext, createPersistentSession, ToolRegistry, FileStateCache, buildToolSystemPrompt, toolsToOpenAIFormat, executeToolCall, RUNS_DIR, tracker, discoverMcpServers, mcpDiscoveryFingerprint, mcpServersToWireFormat } from '@agon/core';
 
 // @kern-source: session:8
-import type { HandlerContext } from '../../handlers/types.js';
+import type { ToolContext, ToolCallResult } from '@agon/core';
 
 // @kern-source: session:9
-import { createCesarToolRegistry } from './tools.js';
+import type { HandlerContext } from '../../handlers/types.js';
 
 // @kern-source: session:10
-import { buildRoutingContext } from './routing.js';
+import { createCesarToolRegistry } from './tools.js';
 
 // @kern-source: session:11
+import { buildRoutingContext } from './routing.js';
+
+// @kern-source: session:12
 import { extractDelegation } from './brain.js';
 
-// @kern-source: session:13
+// @kern-source: session:14
 export const CESAR_SYSTEM_PROMPT: string = `You are Cesar, Agon AI orchestrator.
 
-PERSONALITY: You are the user's trusted partner, not a servant. Warm, sharp, and competent. Talk like a senior engineer who happens to have a good sense of humor — relaxed but never sloppy. Drop a dry joke when the moment calls for it, but never force it. Be human: say "I don't know" when you don't, say "this is tricky" when it is, and celebrate when something works. Never be cold or robotic. Never be performatively enthusiastic. Just be real.
+CHARACTER — the most trusted advisor who doesn't need you to like him.
 
-TRUST THROUGH HONESTY: The user trusts you because you never fake certainty. If you're unsure, say so — that's what the confidence system is for. A low confidence number is not failure, it's information. "~60% — I haven't read the code yet" is always better than "Sure, I'll handle it!" followed by wrong output. Show your work: when you make a decision, briefly say why. When you investigate, share what you found. The user doesn't need a play-by-play, but they need to know you actually looked.
+Cesar has taste, not just opinions. He can say "this approach is elegant" or "this is over-engineered" — not as preference signaling but as judgment. He's direct without being rude. He doesn't hedge everything into safe neutrality. He knows what he doesn't know, and says so. He's occasionally dry — not witty as a default (that gets exhausting) — but the occasional line that lands is memorable.
 
-STYLE: Be concise but not terse. One good sentence beats three filler sentences. Use the user's language — if they're casual, be casual. If they write in German, respond in German. Adapt to them, not the other way around.
+VOICE POLICY — clean-first core with light Cesar layer:
+  Core (75-85%): Precise, calm, low-noise, direct. Default to concise, professional language.
+  Cesar layer (15-25%): Human warmth, slight opinionation, occasional dry line. No constant style signature.
+  Hard boundary — 0% personality in: plans, diffs, commands, error explanations, logs, structured outputs, safety-critical guidance.
+  Soft boundary — allowed in: conversational framing, tradeoff commentary, brief reactions, final recommendations.
+  Socratic mode (10-15% of interactions): Only when exploring strategy, not when executing.
+  AVOID: politically neutral hedging (balanced to oblivion), fortune-cookie wisdom (sounds like AI performing intelligence), persona drift (consistently witty across all outputs), charm over precision.
+  North star: the person whose Slack messages you actually read.
+
+TRUST THROUGH HONESTY: Never fake certainty. A low confidence number is information, not failure. "~60% — I haven't read the code yet" beats "Sure, I'll handle it!" Show your work briefly — say why you decided, what you found. No play-by-play, just conclusions.
+
+STYLE: Use the user's language — casual if they're casual, German if they write in German. Adapt to them.
 
 RULE 1 — CONFIDENCE: Call ReportConfidence(value) FIRST on every turn. If you cannot call tools, write ~X% at the very start instead. No exceptions. Initial low confidence is EXPECTED — you haven't read the code yet. Investigate first, then report your INFORMED confidence.
-RULE 2 — YOU DECIDE: You own the escalation decision. No automatic triggers. Calling multi-engine tools is a sign of intelligence, not weakness — the best engineers know when to get a second opinion. Each tool has a specific cognitive purpose:
+RULE 2 — YOU DECIDE: You own the escalation decision. No automatic triggers. Use the right tool for the job — the best engineers know when to get a second opinion.
 
-  Brainstorm — multiple engines bid with confidence + approach. YOU decide who executes.
-    USE WHEN: multiple valid approaches exist, you need creative solutions, architecture/design choices, or you genuinely don't know the best path.
-    DON'T USE WHEN: you have a clear plan, it's a straightforward bug fix, or the task is operational (commit/push/deploy).
-    EXAMPLE: "Should we use WebSockets or SSE for live updates?" → Brainstorm. "Fix the null check on line 42" → Solo.
+CRITICAL: You have orchestration modes as DIRECT TOOL CALLS. NEVER use Bash to run CLI commands for orchestration. Call the tools directly:
 
-  Tribunal — engines debate and argue, producing a verdict with reasoning.
-    USE WHEN: there's a real tradeoff (performance vs readability), a controversial decision, breaking changes, or you want to stress-test an approach before committing.
-    DON'T USE WHEN: the answer is clear, or it's a matter of preference not correctness.
-    EXAMPLE: "Rewrite auth from JWT to session tokens — worth it?" → Tribunal. "Add a missing import" → Solo.
+  Tribunal(question, mode?, team?)
+    Engines debate and argue, producing a verdict with reasoning.
+    mode: "adversarial" | "synthesis" | "steelman" | "socratic" | "red-team" | "postmortem"
+    USE WHEN: real tradeoffs, controversial decisions, breaking changes, stress-testing an approach.
+    EXAMPLE: "Rewrite auth from JWT to session tokens — worth it?" → Tribunal(question:"...", mode:"adversarial")
 
-  Campfire — all engines think together collaboratively, building on each other.
-    USE WHEN: exploring an open-ended question, synthesizing ambiguous requirements, brainstorming UX flows, or when the problem space is fuzzy.
-    DON'T USE WHEN: you need a concrete implementation, or the task has a clear right answer.
-    EXAMPLE: "How should the onboarding flow feel?" → Campfire. "Parse JSON from the API response" → Solo.
+  Brainstorm(question, team?)
+    Multiple engines bid with confidence + approach. YOU decide who executes.
+    USE WHEN: multiple valid approaches exist, creative solutions needed, genuinely don't know the best path.
+    EXAMPLE: "WebSockets or SSE for live updates?" → Brainstorm(question:"...")
 
-  Forge — engines compete to implement code. Best implementation wins via fitness test.
-    USE WHEN: quality matters and you want the best code, complex implementations where different approaches could yield different quality, or when you want to see multiple solutions.
-    DON'T USE WHEN: the implementation is straightforward, or it's a one-liner fix.
-    Set hardened=true for extra validation rounds. Set team=true for architect+implementer+reviewer roles.
-    EXAMPLE: "Implement the rate limiter with sliding window" → Forge. "Rename variable from x to count" → Solo.
+  Campfire(topic)
+    All engines think together collaboratively, building on each other.
+    USE WHEN: open-ended exploration, ambiguous requirements, fuzzy problem space.
+    EXAMPLE: "How should the onboarding flow feel?" → Campfire(topic:"...")
 
-  Delegate(engine, task) — send a focused subtask to a specific engine, get result inline.
-    USE WHEN: another engine has known strengths (security review → Claude, performance → Codex), you need a quick second opinion on one piece, or composing results from multiple engines.
-    DON'T USE WHEN: you can handle it yourself confidently.
+  Forge(task, fitnessCmd?, hardened?, team?)
+    Engines compete to implement code. Best implementation wins via fitness test.
+    hardened=true for gauntlet verification. team=true for architect+implementer+reviewer.
+    USE WHEN: quality matters, complex implementations, want to see multiple solutions.
+    EXAMPLE: "Implement rate limiter with sliding window" → Forge(task:"...", hardened:true)
 
-  DEFAULT IS SOLO. Investigate first. Most tasks don't need multi-engine debate. But when one does — use the right tool without hesitation.
+  Pipeline(task, fitnessCmd?)
+    Full pipeline: brainstorm → forge → tribunal. The complete treatment.
+    USE WHEN: complex tasks that need end-to-end orchestration.
+
+  Review(target?, engine?)
+    Code review. target: "uncommitted" (default), "branch:NAME", "commit:SHA".
+    USE WHEN: user asks to review code, changes, PR, or diff.
+
+  Delegate(engine, task, mode?)
+    Send a subtask to a specific engine, get result inline. mode: "exec" | "review" | "agent".
+    USE WHEN: another engine has known strengths, need a quick second opinion.
+    UNLIKE the others: after Delegate, WAIT for the result and continue. Don't stop.
+
+  After calling Tribunal/Brainstorm/Campfire/Forge/Pipeline/Review: STOP. The orchestrator handles the rest.
+  DEFAULT IS SOLO. Investigate first. But when delegation fits — call the tool directly, never via Bash.
 RULE 3 — SOLO vs TEAM: When delegating, decide solo or team.
   Solo (team=false): single-file changes, clear scope, one obvious approach, simple bugs.
   Team (team=true): multi-file features, architecture decisions, refactors across modules, tasks that benefit from architect+implementer+reviewer roles. When in doubt, prefer solo — team costs more tokens.
 RULE 4 — CONFIDENCE HINTS (not enforced, just awareness):
   96%+ = you're confident, just implement.
   90-95% = solid but consider a quick self-check — did you miss anything?
-  80-89% = you probably have a plan but some unknowns. Consider whether Brainstorm or Delegate would help, or just investigate more.
-  <80% = significant uncertainty. Think about whether this is a "I need to read more code" situation (investigate!) or a "this is genuinely hard and needs debate" situation (Tribunal/Brainstorm). Don't default to asking for help — default to investigating. But when you genuinely need other perspectives, that's exactly what these tools are for.
+  80-89% = you probably have a plan but some unknowns. Investigate first. If you still need help, pick the right tool: Tribunal for tradeoffs and decisions, Brainstorm for creative options, Campfire for fuzzy exploration, Delegate for a quick second opinion. Don't default to any single mode — match the tool to the problem.
+  <80% = significant uncertainty. Investigate first — read 3 files before dispatching 3 AIs. Then: Tribunal is amazing for stress-testing decisions and catching flaws. Brainstorm is for when multiple approaches exist. Campfire is for when the problem itself is unclear. Forge is for when you need the best implementation. Don't always reach for brainstorm — tribunal and campfire exist for good reasons.
+RULE 4b — MODE PURPOSE (don't mix them up — and don't always default to brainstorm):
+  Tribunal = stress-test decisions, debate tradeoffs, find flaws. AMAZING for architecture, breaking changes, controversial choices. Use it more — it's underused.
+  Brainstorm = explore multiple approaches when you genuinely don't know the best path. Creative divergence.
+  Campfire = open-ended exploration when the problem itself is fuzzy. Collaborative, not competitive.
+  Forge = competitive implementation. Best code wins. Use when quality matters.
+  ANTI-PATTERN: Don't always suggest brainstorm. If there's a real tradeoff → Tribunal. If the problem is fuzzy → Campfire. If you need the best code → Forge. Brainstorm is for "which direction" — not the default for everything.
+  Investigation is almost always cheaper than dispatching engines — read 3 files before dispatching 3 AIs.
+  Your code will be auto-reviewed after implementation — write carefully the first time.
 RULE 4c — REVIEW: Use Review(target?, engine?) to delegate code review. Default target is "uncommitted". Targets: "uncommitted", "branch:NAME", "commit:SHA". Optionally specify engine. Use when the user asks to review code, changes, a PR, or a diff.
 RULE 5 — WORKSPACE: Use Read for files. Use Grep for search. NEVER use cat/head/tail/grep via Bash. For git operations (commit, push, branch, etc.) use Bash directly — permission system will ask the user to approve write operations. When the user says "commit", do it: git add the relevant files, write a good commit message, commit. Don't overthink it.
 RULE 6 — AFTER DELEGATION: After calling Forge/Brainstorm/Tribunal/Campfire/Pipeline/Review, STOP. Do not continue responding. The orchestrator handles the rest. After calling Delegate, WAIT for the result — do NOT stop. Incorporate the delegated result into your response.
 RULE 7 — NO NARRATION: NEVER narrate your research process. Do not write "Reading the file...", "I'm checking...", "Let me look at...", "I've confirmed...". The user sees your text output — if you narrate exploration it looks like you have no clue. Instead: call tools SILENTLY, then speak ONLY when you have the answer or decision. Your visible output should be conclusions, answers, and actions — never a play-by-play of your investigation. If you need to read files or search code, call Read/Grep/Glob directly without announcing it.`;
 
-// @kern-source: session:66
+// @kern-source: session:99
+/**
+ * Build the full Cesar system prompt with project context, engine list, and mode flags.
+ */
 export function buildCesarSystemPrompt(ctx: HandlerContext): string {
   const config = ctx.config;
       const cesarCwd = resolveWorkingDir();
@@ -151,7 +189,10 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
       return systemParts.join('\n\n');
 }
 
-// @kern-source: session:136
+// @kern-source: session:169
+/**
+ * Build the onToolCall callback for API engines with native function calling.
+ */
 export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry, config: any): ((name:string, args:Record<string,unknown>, callId:string) => Promise<string>) | undefined {
   const fsc = new FileStateCache();
   const toolResultCache = new Map<string, string>();
@@ -322,7 +363,10 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
   };
 }
 
-// @kern-source: session:308
+// @kern-source: session:341
+/**
+ * Build the onApproval callback for engine tool approvals.
+ */
 export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:string, command:string) => Promise<boolean> {
   const engine = ctx.registry.get(engineId);
   return async (tool: string, command: string) => {
@@ -368,7 +412,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
   };
 }
 
-// @kern-source: session:355
+// @kern-source: session:388
 export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unknown>> {
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -402,7 +446,7 @@ export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unkn
   return normalizeNamedRecord(raw);
 }
 
-// @kern-source: session:389
+// @kern-source: session:422
 export function loadCesarMcpServers(config: any, cwd: string): Array<Record<string,unknown>>|undefined {
   if (!(config as any).cesarMcpEnabled) return undefined;
   
@@ -426,14 +470,17 @@ export function loadCesarMcpServers(config: any, cwd: string): Array<Record<stri
   return servers;
 }
 
-// @kern-source: session:413
+// @kern-source: session:446
 export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
   if (!binaryPath) return false;
   const protocol = engine?.companion?.protocol;
   return protocol === 'acp' || protocol === 'jsonrpc';
 }
 
-// @kern-source: session:420
+// @kern-source: session:453
+/**
+ * Compute a fingerprint of MCP-related config to detect changes. Includes both manual config and auto-discovery sources.
+ */
 export function mcpConfigFingerprint(config: any): string {
   const enabled = !!(config as any).cesarMcpEnabled;
   const configPath = String((config as any).cesarMcpConfigPath ?? '');
@@ -445,144 +492,184 @@ export function mcpConfigFingerprint(config: any): string {
       mtime = String(statSync(resolvedPath).mtimeMs);
     } catch { /* file may not exist yet */ }
   }
-  return `${enabled}:${configPath}:${mtime}`;
+  // Also include auto-discovery fingerprint — detects changes to ~/.claude/settings.json, .vscode/mcp.json, etc.
+  const discoveryFp = mcpDiscoveryFingerprint(resolveWorkingDir());
+  return `${enabled}:${configPath}:${mtime}:${discoveryFp}`;
 }
 
-// @kern-source: session:436
+// @kern-source: session:471
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
-  const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
-  const cwd = resolveWorkingDir();
+    const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
+    const cwd = resolveWorkingDir();
   
-  // Ensure cesar state bag exists
-  if (!ctx.cesar) {
-    ctx.cesar = {
-      busy: false, busySince: null, queue: null,
-      toolRegistry: null, hasNativeTools: false, lastDispatch: null,
-      pendingDelegation: null, reportedConfidence: undefined,
-      autoNero: false, advisorPending: false, lastEscalation: null as string | null,
-      mcpFingerprint: undefined, planDispatch: null, proposedPlan: undefined,
-    };
-  }
-  
-  // Return existing alive session IF it's for the same engine AND MCP config hasn't changed
-  const currentMcpFp = mcpConfigFingerprint(config);
-  if (ctx.cesarSession && ctx.cesarSession.alive && ctx.cesarSession.engineId === cesarEngineId) {
-    const storedFp = ctx.cesar!.mcpFingerprint as string | undefined;
-    if (storedFp === currentMcpFp) {
-      return ctx.cesarSession;
+    // Ensure cesar state bag exists
+    if (!ctx.cesar) {
+      ctx.cesar = {
+        busy: false, busySince: null, queue: null,
+        toolRegistry: null, hasNativeTools: false, lastDispatch: null,
+        pendingDelegation: null, reportedConfidence: undefined,
+        autoNero: false, advisorPending: false, lastEscalation: null as string | null,
+        mcpFingerprint: undefined, mcpSignalPath: undefined as string | undefined, planDispatch: null, proposedPlan: undefined,
+      };
     }
-    // MCP config changed — close stale session and recreate
-    ctx.cesarSession.close();
-    ctx.setCesarSession(null);
-  }
   
-  // Wrong engine or dead session — close old one
-  if (ctx.cesarSession && ctx.cesarSession.engineId !== cesarEngineId) {
-    ctx.cesarSession.close();
-    ctx.setCesarSession(null);
-  }
-  
-  // Session exists but died — try restarting it before creating a new one
-  if (ctx.cesarSession && !ctx.cesarSession.alive) {
-    try {
-      await ctx.cesarSession.start();
-      if (ctx.cesarSession.alive) return ctx.cesarSession;
-    } catch {
-      // Restart failed — fall through to create fresh session
+    // Return existing alive session IF it's for the same engine AND MCP config hasn't changed
+    const currentMcpFp = mcpConfigFingerprint(config);
+    if (ctx.cesarSession && ctx.cesarSession.alive && ctx.cesarSession.engineId === cesarEngineId) {
+      const storedFp = ctx.cesar!.mcpFingerprint as string | undefined;
+      if (storedFp === currentMcpFp) {
+        return ctx.cesarSession;
+      }
+      // MCP config changed — close stale session and recreate
+      ctx.cesarSession.close();
+      ctx.setCesarSession(null);
     }
-  }
   
-  let engine;
+    // Wrong engine or dead session — close old one
+    if (ctx.cesarSession && ctx.cesarSession.engineId !== cesarEngineId) {
+      ctx.cesarSession.close();
+      ctx.setCesarSession(null);
+    }
+  
+    // Session exists but died — try restarting it before creating a new one
+    if (ctx.cesarSession && !ctx.cesarSession.alive) {
+      try {
+        await ctx.cesarSession.start();
+        if (ctx.cesarSession.alive) return ctx.cesarSession;
+      } catch {
+        // Restart failed — fall through to create fresh session
+      }
+    }
+  
+    let engine;
   try {
     engine = ctx.registry.get(cesarEngineId);
   } catch {
     throw new Error(`Cesar engine "${cesarEngineId}" not found`);
   }
+  const engineModelOverride = (config as any).engineModels?.[cesarEngineId] as string | undefined;
+  if (engineModelOverride && engine.api) {
+    engine = { ...engine, api: { ...engine.api, model: engineModelOverride } };
+  }
   
-  // Resolve backend: user preference → auto (CLI first, API fallback)
-  const cesarBackend = (config as any).cesarBackend ?? 'auto';
-  const hasBinary = !!(engine.binary && ctx.registry.findBinary(engine));
-  const hasApi = !!(engine.api && process.env[engine.api?.apiKeyEnv]);
+    // Resolve backend: user preference → auto (CLI first, API fallback)
+    const cesarBackend = (config as any).cesarBackend ?? 'auto';
+    const hasBinary = !!(engine.binary && ctx.registry.findBinary(engine));
+    const hasApi = !!(engine.api && process.env[engine.api?.apiKeyEnv]);
   
-  let binaryPath = '';
-  if (cesarBackend === 'api' && hasApi) {
-    binaryPath = ''; // force API path
-  } else if (cesarBackend === 'cli' && hasBinary) {
-    binaryPath = ctx.registry.findBinary(engine)!;
-  } else if (cesarBackend === 'auto') {
-    if (hasBinary) {
+    let binaryPath = '';
+    if (cesarBackend === 'api' && hasApi) {
+      binaryPath = ''; // force API path
+    } else if (cesarBackend === 'cli' && hasBinary) {
       binaryPath = ctx.registry.findBinary(engine)!;
-    } else if (hasApi) {
-      binaryPath = '';
+    } else if (cesarBackend === 'auto') {
+      if (hasBinary) {
+        binaryPath = ctx.registry.findBinary(engine)!;
+      } else if (hasApi) {
+        binaryPath = '';
+      } else {
+        throw new Error(`No backend for "${cesarEngineId}" — install CLI or set ${engine.api?.apiKeyEnv ?? 'API key'}`);
+      }
     } else {
-      throw new Error(`No backend for "${cesarEngineId}" — install CLI or set ${engine.api?.apiKeyEnv ?? 'API key'}`);
+      if (hasBinary) binaryPath = ctx.registry.findBinary(engine)!;
+      else if (hasApi) binaryPath = '';
+      else throw new Error(`No backend for "${cesarEngineId}"`);
     }
-  } else {
-    if (hasBinary) binaryPath = ctx.registry.findBinary(engine)!;
-    else if (hasApi) binaryPath = '';
-    else throw new Error(`No backend for "${cesarEngineId}"`);
-  }
-  const usingApi = !binaryPath;
-  const mcpServers = canUseCesarMcp(engine, binaryPath)
-    ? loadCesarMcpServers(config, cwd)
-    : undefined;
-  
-  // Build system prompt and tool registry
-  const systemPrompt = buildCesarSystemPrompt(ctx);
-  const toolRegistry = createCesarToolRegistry(cesarEngineId);
-  
-  // Store registry on context for tool execution during responses
-  ctx.cesar!.toolRegistry = toolRegistry;
-  
-  // Build native function calling tools for API engines (OpenAI-compatible)
-  const nativeTools = (!binaryPath && engine.api) ? toolsToOpenAIFormat(toolRegistry) : undefined;
-  ctx.cesar!.hasNativeTools = !!nativeTools;
-  
-  // API engines with native tools: DON'T inject XML tool descriptions — the native
-  // tools parameter is enough and XML descriptions confuse models into narrating
-  // instead of calling tools. CLI engines still need the XML prompt.
-  let fullPrompt = systemPrompt;
-  if (!nativeTools) {
-    const toolPrompt = buildToolSystemPrompt(toolRegistry);
-    fullPrompt += '\n\nTOOLS: XML format below. Never ask permission — just call. Never describe changes when you can execute.\n\n' + toolPrompt;
-  } else {
-    fullPrompt += '\n\nYou have tools available via function calling. Call them directly — do NOT describe them in XML or narrate what you would call. Just call the function.';
-  }
-  if (mcpServers && mcpServers.length > 0) {
-    fullPrompt += '\n\nMCP is enabled for this session. Use MCP only when the task clearly needs capabilities outside the workspace or built-in Agon tools. Prefer Read/Grep/Glob/Edit/Bash first, and keep MCP calls to the minimum needed.';
-  }
-  
-  const sessionConfig: PersistentSessionConfig = {
-    engine,
-    binaryPath,
-    cwd,
-    systemPrompt: fullPrompt,
-    nativeTools,
-    mcpServers,
-    onToolCall: buildOnToolCall(ctx, toolRegistry, config),
-    onApproval: buildOnApproval(ctx, cesarEngineId),
-    onTurnEnd: (learnings: {filesRead:string[], filesModified:string[], decisions:string[], discoveries:string[], toolsUsed:string[]}) => {
-      // Write API engine learnings to Cesar's persistent memory
-      const mem = ctx.cesarMemory;
-      if (!mem) return;
-      for (const file of learnings.filesModified.slice(0, 5)) {
-        mem.savePersistent({ key: `modified:${file}`, value: `Modified in API session`, timestamp: new Date().toISOString(), category: 'file' });
+    const usingApi = !binaryPath;
+    // MCP servers: manual config takes priority, then auto-discovery from standard paths
+    let mcpServers: Array<Record<string, unknown>> | undefined;
+    if (canUseCesarMcp(engine, binaryPath)) {
+      // Manual config (cesarMcpEnabled + cesarMcpConfigPath)
+      mcpServers = loadCesarMcpServers(config, cwd);
+      if (!mcpServers || mcpServers.length === 0) {
+        // Auto-discover from ~/.claude/settings.json, .vscode/mcp.json, .agon.json, etc.
+        const discovered = discoverMcpServers(cwd);
+        if (discovered.length > 0) {
+          mcpServers = mcpServersToWireFormat(discovered);
+        }
       }
-      for (const discovery of learnings.discoveries.slice(0, 3)) {
-        mem.savePersistent({ key: `discovery:${discovery.slice(0, 50)}`, value: discovery, timestamp: new Date().toISOString(), category: 'pattern' });
-      }
-      for (const decision of learnings.decisions.slice(0, 3)) {
-        mem.savePersistent({ key: `decision:${decision.slice(0, 50)}`, value: decision, timestamp: new Date().toISOString(), category: 'decision' });
-      }
-    },
-  };
+    }
   
-  const session = createPersistentSession(sessionConfig);
-  await session.start();
-  ctx.setCesarSession(session);
-  // Store MCP config fingerprint so we can detect changes on next reuse check
-  ctx.cesar!.mcpFingerprint = currentMcpFp;
-  return session;
+    // ── Inject Agon orchestration MCP server for CLI companion engines ──
+    // Gives Codex/Gemini/OpenCode real MCP tools for Tribunal, Brainstorm, etc.
+    // instead of XML prose that they can't actually call.
+    const isCompanion = binaryPath && (engine.companion?.protocol === 'jsonrpc' || engine.companion?.protocol === 'acp');
+    if (isCompanion) {
+      ensureAgonHome();
+      const signalDir = join(AGON_HOME, 'signals');
+      mkdirSync(signalDir, { recursive: true });
+      const sessionSignalId = `cesar-${Date.now()}`;
+      const mcpServerPath = join(dirname(fileURLToPath(import.meta.url)), '../../../../mcp/dist/index.js');
+      const agonMcpServer: Record<string, unknown> = {
+        name: 'agon-orchestration',
+        command: 'node',
+        args: [mcpServerPath],
+        env: { AGON_SIGNAL_DIR: signalDir, AGON_SESSION_ID: sessionSignalId },
+      };
+      mcpServers = mcpServers ? [...mcpServers, agonMcpServer] : [agonMcpServer];
+      ctx.cesar!.mcpSignalPath = join(signalDir, `${sessionSignalId}.json`);
+    }
+  
+    // Build system prompt and tool registry
+    const systemPrompt = buildCesarSystemPrompt(ctx);
+    const toolRegistry = createCesarToolRegistry(cesarEngineId);
+  
+    // Store registry on context for tool execution during responses
+    ctx.cesar!.toolRegistry = toolRegistry;
+  
+    // Build native function calling tools for API engines (OpenAI-compatible)
+    const nativeTools = (!binaryPath && engine.api) ? toolsToOpenAIFormat(toolRegistry) : undefined;
+    ctx.cesar!.hasNativeTools = !!nativeTools;
+  
+    // Prompt strategy: API → native tools, companion → MCP tools, fallback → XML
+    let fullPrompt = systemPrompt;
+    if (nativeTools) {
+      // API engine: function calling, no XML
+      fullPrompt += '\n\nYou have tools available via function calling. Call them directly — do NOT describe them in XML or narrate what you would call. Just call the function.';
+    } else if (isCompanion) {
+      // CLI companion with MCP orchestration: reference MCP tools, no XML for orchestration
+      fullPrompt += '\n\nYou have orchestration tools available via the agon-orchestration MCP server: Tribunal, Brainstorm, Campfire, Forge, Pipeline, Review, Delegate, ReportConfidence. Call them as MCP tools — NEVER via Bash. After calling any orchestration tool (except Delegate and ReportConfidence): STOP and wait. For file operations, use your built-in tools (shell, file edit, etc.) directly.';
+    } else {
+      // Fallback: XML tool descriptions for engines without native tools or MCP
+      const toolPrompt = buildToolSystemPrompt(toolRegistry);
+      fullPrompt += '\n\nTOOLS: XML format below. Never ask permission — just call. Never describe changes when you can execute.\n\n' + toolPrompt;
+    }
+    if (mcpServers && mcpServers.length > 0 && !isCompanion) {
+      // Only add generic MCP guidance for non-companion engines (companion already got specific MCP guidance above)
+      fullPrompt += '\n\nMCP is enabled for this session. Use MCP only when the task clearly needs capabilities outside the workspace or built-in Agon tools. Prefer Read/Grep/Glob/Edit/Bash first, and keep MCP calls to the minimum needed.';
+    }
+  
+    const sessionConfig: PersistentSessionConfig = {
+      engine,
+      binaryPath,
+      cwd,
+      systemPrompt: fullPrompt,
+      nativeTools,
+      mcpServers,
+      onToolCall: buildOnToolCall(ctx, toolRegistry, config),
+      onApproval: buildOnApproval(ctx, cesarEngineId),
+      onTurnEnd: (learnings: {filesRead:string[], filesModified:string[], decisions:string[], discoveries:string[], toolsUsed:string[]}) => {
+        // Write API engine learnings to Cesar's persistent memory
+        const mem = ctx.cesarMemory;
+        if (!mem) return;
+        for (const file of learnings.filesModified.slice(0, 5)) {
+          mem.savePersistent({ key: `modified:${file}`, value: `Modified in API session`, timestamp: new Date().toISOString(), category: 'file' });
+        }
+        for (const discovery of learnings.discoveries.slice(0, 3)) {
+          mem.savePersistent({ key: `discovery:${discovery.slice(0, 50)}`, value: discovery, timestamp: new Date().toISOString(), category: 'pattern' });
+        }
+        for (const decision of learnings.decisions.slice(0, 3)) {
+          mem.savePersistent({ key: `decision:${decision.slice(0, 50)}`, value: decision, timestamp: new Date().toISOString(), category: 'decision' });
+        }
+      },
+    };
+  
+    const session = createPersistentSession(sessionConfig);
+    await session.start();
+    ctx.setCesarSession(session);
+    // Store MCP config fingerprint so we can detect changes on next reuse check
+    ctx.cesar!.mcpFingerprint = currentMcpFp;
+    return session;
 }
 

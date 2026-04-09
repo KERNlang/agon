@@ -2,6 +2,9 @@
 import type { ToolResult, ToolContext, ToolHandler, ToolDefinition, PermissionDecision } from '../models/tool-types.js';
 
 // @kern-source: tool-orchestration:9
+/**
+ * Signal tool — delegates to the competitive forge pipeline.
+ */
 export function createForgeTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Forge',
@@ -40,6 +43,9 @@ export function createForgeTool(): ToolHandler {
 }
 
 // @kern-source: tool-orchestration:48
+/**
+ * Signal tool — delegates to multi-AI brainstorm.
+ */
 export function createBrainstormTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Brainstorm',
@@ -76,6 +82,9 @@ export function createBrainstormTool(): ToolHandler {
 }
 
 // @kern-source: tool-orchestration:85
+/**
+ * Signal tool — delegates to AI tribunal debate.
+ */
 export function createTribunalTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Tribunal',
@@ -119,6 +128,9 @@ export function createTribunalTool(): ToolHandler {
 }
 
 // @kern-source: tool-orchestration:129
+/**
+ * Signal tool — opens a campfire discussion with all AIs.
+ */
 export function createCampfireTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Campfire',
@@ -154,6 +166,9 @@ export function createCampfireTool(): ToolHandler {
 }
 
 // @kern-source: tool-orchestration:165
+/**
+ * Signal tool — reports confidence level structurally instead of text.
+ */
 export function createReportConfidenceTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'ReportConfidence',
@@ -188,10 +203,10 @@ export function createReportConfidenceTool(): ToolHandler {
   const execute = async (input: Record<string, unknown>, _ctx: ToolContext): Promise<ToolResult> => {
     const v = input.value as number;
     let guidance: string;
-    if (v >= 93) guidance = 'High confidence. Proceed — implement directly.';
-    else if (v >= 85) guidance = 'Good confidence. Consider delegating to Forge or Brainstorm if the task is complex.';
-    else if (v >= 70) guidance = 'Medium confidence. Strongly consider Brainstorm or Tribunal before proceeding.';
-    else guidance = 'Low confidence. STOP. Do not implement. Explain what is needed to raise confidence.';
+    if (v >= 93) guidance = 'High confidence. Proceed.';
+    else if (v >= 85) guidance = 'Good confidence. Investigate if unsure, or pick the right tool: Tribunal for tradeoffs, Forge for competing implementations, Delegate for a second opinion.';
+    else if (v >= 70) guidance = 'Medium confidence. Investigate first. Then pick the right mode — Tribunal to stress-test a decision, Brainstorm for creative options, Campfire for fuzzy problems, Forge for code quality.';
+    else guidance = 'Low confidence. STOP. Investigate before implementing. Explain what is needed to raise confidence.';
     return { ok: true, content: `Confidence ${v}% recorded. ${guidance}` };
   };
   
@@ -199,6 +214,9 @@ export function createReportConfidenceTool(): ToolHandler {
 }
 
 // @kern-source: tool-orchestration:211
+/**
+ * Execution tool — delegates a subtask to a specific engine and returns the result inline.
+ */
 export function createDelegateTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Delegate',
@@ -247,6 +265,9 @@ export function createDelegateTool(): ToolHandler {
 }
 
 // @kern-source: tool-orchestration:260
+/**
+ * Signal tool — delegates to code review.
+ */
 export function createReviewTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Review',
@@ -280,6 +301,9 @@ export function createReviewTool(): ToolHandler {
 }
 
 // @kern-source: tool-orchestration:294
+/**
+ * Signal tool — delegates to full pipeline (brainstorm → forge → tribunal).
+ */
 export function createPipelineTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Pipeline',

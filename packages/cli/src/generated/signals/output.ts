@@ -36,6 +36,9 @@ export interface OutputActions {
 export const _permissionQueue: Array<{tool:string,command:string,reason:string,resolve:(approved:boolean)=>void}> = [] as Array<{tool:string,command:string,reason:string,resolve:(approved:boolean)=>void}>;
 
 // @kern-source: output:32
+/**
+ * Reject all queued permissions and clear the queue. Called on interrupt/cancel.
+ */
 export function clearPermissionQueue(): void {
   while (_permissionQueue.length > 0) {
     const entry = _permissionQueue.shift()!;
@@ -44,6 +47,9 @@ export function clearPermissionQueue(): void {
 }
 
 // @kern-source: output:41
+/**
+ * Auto-approve queued permissions whose base command is already in allowedCommands.
+ */
 function _drainAutoApproved(actions: OutputActions): void {
   const cfg = loadConfig();
   const allowed: string[] = (cfg as any).allowedCommands ?? [];
@@ -105,6 +111,9 @@ function _showNextPermission(actions: OutputActions): void {
 }
 
 // @kern-source: output:103
+/**
+ * Process a single OutputEvent — updates spinner, streaming, and block state.
+ */
 export function handleOutputEvent(event: OutputEvent, state: OutputState, actions: OutputActions, mode: string, chatStartTime: number): void {
   switch (event.type) {
     case 'spinner-start':

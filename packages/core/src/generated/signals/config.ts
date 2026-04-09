@@ -1,5 +1,5 @@
 // @kern-source: config:1
-import { readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, renameSync, readdirSync, statSync, rmSync } from 'node:fs';
 
 // @kern-source: config:2
 import { join, dirname } from 'node:path';
@@ -69,6 +69,7 @@ export function loadConfig(cwd?: string): Required<AgonConfig> {
   // Compiler can't emit object/array defaults for Record types — ensure correct runtime types
   if (!merged.hooks || typeof merged.hooks === 'string') (merged as any).hooks = {};
   if (!merged.allowedCommands || typeof merged.allowedCommands === 'string') (merged as any).allowedCommands = [];
+  if (!merged.engineModels || typeof merged.engineModels === 'string') (merged as any).engineModels = {};
   // Default tool permissions — same model as Claude Code:
   // Read/search = auto-allow, Write/Edit/Bash = ask
   if (!merged.toolPermissions || typeof merged.toolPermissions === 'string') {
@@ -85,12 +86,12 @@ export function loadConfig(cwd?: string): Required<AgonConfig> {
   return merged;
 }
 
-// @kern-source: config:90
+// @kern-source: config:91
 export function configGet(key: keyof AgonConfig, cwd?: string): Required<AgonConfig>[keyof AgonConfig] {
   return loadConfig(cwd)[key];
 }
 
-// @kern-source: config:95
+// @kern-source: config:96
 export function configSet(key: keyof AgonConfig, value: AgonConfig[keyof AgonConfig]): void {
   if (!(key in DEFAULT_AGON_CONFIG)) {
     throw new ConfigError(`Unknown config key: ${String(key)}`);
@@ -112,9 +113,35 @@ export function configSet(key: keyof AgonConfig, value: AgonConfig[keyof AgonCon
   renameSync(tmpPath, GLOBAL_CONFIG_PATH);
 }
 
-// @kern-source: config:117
+// @kern-source: config:118
+/**
+ * Remove old run directories beyond retention limit. Keeps the 100 most recent.
+ */
+export function pruneRuns(): void {
+  try {
+    const entries = readdirSync(RUNS_DIR)
+      .map((name: string) => {
+        try {
+          const fullPath = join(RUNS_DIR, name);
+          return { name, mtime: statSync(fullPath).mtimeMs };
+        } catch { return null; }
+      })
+      .filter((e: any): e is {name:string, mtime:number} => e !== null)
+      .sort((a: {mtime:number}, b: {mtime:number}) => b.mtime - a.mtime);
+  
+    if (entries.length <= 100) return;
+  
+    const toRemove = entries.slice(100);
+    for (const e of toRemove) {
+      try { rmSync(join(RUNS_DIR, e.name), { recursive: true, force: true }); } catch { /* best effort */ }
+    }
+  } catch { /* dir doesn't exist yet — not critical */ }
+}
+
+// @kern-source: config:141
 export function ensureAgonHome(): void {
   mkdirSync(AGON_HOME, { recursive: true });
   mkdirSync(RUNS_DIR, { recursive: true });
+  pruneRuns();
 }
 

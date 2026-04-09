@@ -36,6 +36,8 @@ npm run kern:compile
 Installed via `kern-lang` npm package (^3.1.7). Available in all packages via `node_modules/.bin/kern`.
 Available primitives: `fn`, `service`, `union`, `interface`, `const`, `import`, `machine`, `event`, `screen`
 
+**KERN MCP**: Add `https://kernlang.dev/api/mcp` to your `.mcp.json`. Provides compile, validate, review, schema, and 11 tools total — including autonomous compile→fix loops. See `.mcp.json.example` in this repo.
+
 ## Build & Test
 
 ```bash

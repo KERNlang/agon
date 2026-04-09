@@ -75,6 +75,9 @@ export function getAuthKey(envVar: string): string|null {
 }
 
 // @kern-source: auth-store:70
+/**
+ * Load all stored keys into process.env at startup. Call once during init.
+ */
 export function loadAllAuthKeys(): void {
   const store = loadAuthStore();
   for (const [envVar, entry] of Object.entries(store.entries)) {

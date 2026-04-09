@@ -1,49 +1,61 @@
 // @kern-source: dispatch:5
-import { resolveWorkingDir, extractImagesFromInput, buildImageAttachment, undoPatch, resumeChatSession, findSkill, renderSkillPrompt, configSet, startChatSession, currentBranch, buildExtensionContext } from '@agon/core';
+import { join } from 'node:path';
 
 // @kern-source: dispatch:6
-import type { ImageAttachment, ChatSession } from '@agon/core';
+import { mkdirSync } from 'node:fs';
 
 // @kern-source: dispatch:7
-import { approveCesarPlan, cancelCesarPlan, saveCesarPlan, loadCesarPlan, listCesarPlans, executePlan, formatCesarPlanMarkdown } from '@agon/core';
+import { resolveWorkingDir, extractImagesFromInput, buildImageAttachment, undoPatch, resumeChatSession, findSkill, renderSkillPrompt, configSet, startChatSession, currentBranch, buildExtensionContext, sessionContext, RUNS_DIR } from '@agon/core';
 
 // @kern-source: dispatch:8
-import type { CesarPlan, CesarStepResult } from '@agon/core';
+import { invalidateCwdCache } from '../handlers/chat.js';
 
 // @kern-source: dispatch:9
-import { buildStepExecutors } from '../handlers/plan-mode.js';
+import type { ImageAttachment, ChatSession } from '@agon/core';
 
 // @kern-source: dispatch:10
-import { detectIntent, FITNESS_PATTERN } from './intent.js';
+import { approveCesarPlan, cancelCesarPlan, saveCesarPlan, loadCesarPlan, listCesarPlans, executePlan, formatCesarPlanMarkdown } from '@agon/core';
 
 // @kern-source: dispatch:11
-import type { Dispatch, HandlerContext } from '../../handlers/types.js';
+import type { CesarPlan, CesarStepResult } from '@agon/core';
 
 // @kern-source: dispatch:12
-import { icons } from './icons.js';
+import { buildStepExecutors } from '../handlers/plan-mode.js';
 
 // @kern-source: dispatch:13
-import { handleForge, handleChat, handleBrainstorm, handleCampfire, handleTribunal, handleLeaderboard, handleHistory, handleEngines, handleDiscover, handleConfig, handleUse, handleCesar, handleTokens, handleModels, handleWorkspace, handleChats, handlePlanShow, handlePlansList, handleApprove, handleRetry, handleCancel, handleApplyPatch, handleCp, handleCommit, handleFlowReport, handleFlowAnalysis, handleBuild, handleRun, handleReview } from '../../handlers/index.js';
+import { detectIntent, FITNESS_PATTERN } from './intent.js';
 
 // @kern-source: dispatch:14
-import { handleTeamTribunal } from '../handlers/team-tribunal.js';
+import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 
 // @kern-source: dispatch:15
-import { handleTeamForge } from '../handlers/team-forge.js';
+import { icons } from './icons.js';
 
 // @kern-source: dispatch:16
-import { handleTeamBrainstorm } from '../handlers/team-brainstorm.js';
+import { ENGINE_COLORS } from '../blocks/output-format.js';
 
 // @kern-source: dispatch:17
-import { handleCesarBrain, parseSuggestion, CESAR_SYSTEM_PROMPT } from '../../handlers/cesar-brain.js';
+import { handleForge, handleChat, handleBrainstorm, handleCampfire, handleTribunal, handleLeaderboard, handleHistory, handleEngines, handleDiscover, handleConfig, handleUse, handleCesar, handleTokens, handleModels, handleWorkspace, handleChats, handlePlanShow, handlePlansList, handleApprove, handleRetry, handleCancel, handleApplyPatch, handleCp, handleCommit, handleFlowReport, handleFlowAnalysis, handleBuild, handleRun, handleReview } from '../../handlers/index.js';
 
 // @kern-source: dispatch:18
-import { handlePipeline } from '../handlers/pipeline.js';
+import { handleTeamTribunal } from '../handlers/team-tribunal.js';
 
 // @kern-source: dispatch:19
-import { handleProvider } from '../handlers/provider.js';
+import { handleTeamForge } from '../handlers/team-forge.js';
+
+// @kern-source: dispatch:20
+import { handleTeamBrainstorm } from '../handlers/team-brainstorm.js';
 
 // @kern-source: dispatch:21
+import { handleCesarBrain, parseSuggestion, CESAR_SYSTEM_PROMPT } from '../../handlers/cesar-brain.js';
+
+// @kern-source: dispatch:22
+import { handlePipeline } from '../handlers/pipeline.js';
+
+// @kern-source: dispatch:23
+import { handleProvider } from '../handlers/provider.js';
+
+// @kern-source: dispatch:25
 export interface DispatchCallbacks {
   dispatch: Dispatch;
   ctx: HandlerContext;
@@ -78,13 +90,16 @@ export interface DispatchCallbacks {
   setWorkspacePath?: (path: string) => void;
 }
 
-// @kern-source: dispatch:54
+// @kern-source: dispatch:58
 export interface DispatchResult {
   handled: boolean;
   ranAsJob: boolean;
 }
 
-// @kern-source: dispatch:58
+// @kern-source: dispatch:62
+/**
+ * Handle mode-switching intents. Returns true if consumed.
+ */
 export function handleModeSwitch(intentType: string, topic: string|undefined, question: string|undefined, cb: DispatchCallbacks): boolean {
   if (intentType === 'campfire' && !topic) {
     cb.setMode('campfire');
@@ -111,7 +126,10 @@ export function handleModeSwitch(intentType: string, topic: string|undefined, qu
   return false;
 }
 
-// @kern-source: dispatch:86
+// @kern-source: dispatch:90
+/**
+ * Extract a fitness command from conversational execution input while keeping the task clean.
+ */
 export function extractExecutionSpec(input: string): { task:string; fitnessCmd:string|null } {
   const fitnessMatch = FITNESS_PATTERN.exec(input);
   const fitnessCmd = fitnessMatch ? fitnessMatch[1].trim() : null;
@@ -121,13 +139,19 @@ export function extractExecutionSpec(input: string): { task:string; fitnessCmd:s
   return { task, fitnessCmd };
 }
 
-// @kern-source: dispatch:97
+// @kern-source: dispatch:101
+/**
+ * Unified Cesar brain routing. Returns true if a background job was dispatched.
+ */
 export async function routeWithCesar(input: string, images: ImageAttachment[], cb: DispatchCallbacks): Promise<boolean> {
   cb.setPendingImages(() => []);
   try {
     const result = await handleCesarBrain(input, cb.dispatch, cb.ctx, images);
     if (result.delegated && result.action) {
-      const label = input.slice(0, 40);
+      // Use Cesar's reasoning as the label when available — much better than raw user input
+      const label = (result.reasoning && !result.reasoning.includes('User context:'))
+        ? result.reasoning.slice(0, 60).trim()
+        : input.slice(0, 40);
       const hardened = result.hardened ?? false;
       const tMode = result.tribunalMode;
       // P2 fix: normalize team prefix — brain may return action='forge' + team=true
@@ -172,10 +196,25 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
           return true;
         }
         case 'brainstorm':
-          cb.runAsJob('brainstorm', label, () => handleBrainstorm(taskInput, cb.dispatch, cb.ctx));
+          cb.runAsJob('brainstorm', label, async () => {
+            const bsResult = await handleBrainstorm(taskInput, cb.dispatch, cb.ctx);
+            // Cesar absorbs the brainstorm result — inject actual content, not "above"
+            if (cb.ctx.cesarSession && bsResult) {
+              cb.dispatch({ type: 'info', message: 'Cesar absorbing brainstorm results…' });
+              const bidSummary = bsResult.bids.map((b: any) => `**${b.engineId}** (score: ${b.score}): ${b.reasoning.slice(0, 300)}`).join('\n\n');
+              const cesarMsg = `Brainstorm complete. Winner: ${bsResult.winner}.\n\n## Engine Bids\n${bidSummary}\n\n## Winner's Full Response\n${bsResult.response.slice(0, 2000)}\n\nSynthesize the winning approach into a concrete plan. Be direct — the brainstorm already validated the ideas.`;
+              await handleChat(cesarMsg, cb.dispatch, cb.ctx, undefined, { toolPolicy: 'none' });
+            }
+          });
           return true;
         case 'team-brainstorm':
-          cb.runAsJob('team-brainstorm', label, () => handleTeamBrainstorm(taskInput, cb.dispatch, cb.ctx));
+          cb.runAsJob('team-brainstorm', label, async () => {
+            await handleTeamBrainstorm(taskInput, cb.dispatch, cb.ctx);
+            if (cb.ctx.cesarSession) {
+              cb.dispatch({ type: 'info', message: 'Cesar absorbing brainstorm results…' });
+              await handleChat(`Based on the team brainstorm above, synthesize the winning approach into a concrete plan. Be direct — the brainstorm already validated the ideas.`, cb.dispatch, cb.ctx, undefined, { toolPolicy: 'none' });
+            }
+          });
           return true;
         case 'tribunal':
           cb.runAsJob('tribunal', label, () => handleTribunal(taskInput, cb.dispatch, cb.ctx, tMode));
@@ -192,6 +231,42 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
         case 'review':
           cb.runAsJob('review', label, () => handleReview(cb.dispatch, cb.ctx, result.target as string | undefined, result.engineId as string | undefined));
           return true;
+        case 'delegate': {
+          // Delegate: execute subtask on target engine, feed result back to Cesar
+          const targetEngineId = result.engineId as string | undefined;
+          if (!targetEngineId) { cb.dispatch({ type: 'warning', message: 'Delegate: no target engine specified' }); break; }
+          cb.runAsJob('delegate', label, async () => {
+            let targetEngine;
+            try { targetEngine = cb.ctx.registry.get(targetEngineId); } catch {
+              cb.dispatch({ type: 'error', message: `Delegate: engine "${targetEngineId}" not found` });
+              return;
+            }
+            const outDir = join(RUNS_DIR, `delegate-${targetEngineId}-${Date.now()}`);
+            mkdirSync(outDir, { recursive: true });
+            try {
+              const delegateResult = await cb.ctx.adapter.dispatch({
+                engine: targetEngine,
+                prompt: taskInput,
+                cwd: resolveWorkingDir(),
+                mode: 'exec' as any,
+                timeout: cb.ctx.config.timeout ?? 120,
+                outputDir: outDir,
+              });
+              const answer = (delegateResult.stdout || '').trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
+              if (answer) {
+                cb.dispatch({ type: 'engine-block', engineId: targetEngineId, color: ENGINE_COLORS[targetEngineId] ?? 124, content: answer });
+              }
+              // Feed result back to Cesar so it can continue
+              if (cb.ctx.cesarSession) {
+                cb.dispatch({ type: 'info', message: `Feeding delegate result back to Cesar…` });
+                await handleChat(`[Delegate → ${targetEngineId}] Result:\n${answer || '(empty response)'}`, cb.dispatch, cb.ctx, undefined, { toolPolicy: 'none' });
+              }
+            } catch (err) {
+              cb.dispatch({ type: 'error', message: `Delegate to ${targetEngineId} failed: ${err instanceof Error ? err.message : String(err)}` });
+            }
+          });
+          return true;
+        }
       }
     }
     if (result.responded) return false;
@@ -222,7 +297,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
       cb.dispatch({ type: 'info', message: `Cesar → ${action} (recovered)` });
       switch (action) {
         case 'forge': cb.runAsJob('forge', label, () => handleForge(recoveredTask, recoveredFitness, cb.dispatch, cb.ctx, undefined, crashDel.hardened ?? false)); return true;
-        case 'brainstorm': cb.runAsJob('brainstorm', label, () => handleBrainstorm(recoveredTask, cb.dispatch, cb.ctx)); return true;
+        case 'brainstorm': cb.runAsJob('brainstorm', label, async () => { await handleBrainstorm(recoveredTask, cb.dispatch, cb.ctx); }); return true;
         case 'tribunal': cb.runAsJob('tribunal', label, () => handleTribunal(recoveredTask, cb.dispatch, cb.ctx, crashDel.tribunalMode)); return true;
         case 'campfire': cb.runAsJob('campfire', label, () => handleCampfire(recoveredTask, cb.dispatch, cb.ctx)); return true;
         case 'pipeline': cb.runAsJob('pipeline', label, () => handlePipeline(recoveredTask, cb.dispatch, cb.ctx, recoveredFitness ?? undefined)); return true;
@@ -278,7 +353,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
           cb.dispatch({ type: 'info', message: `Cesar → ${action}` });
           switch (action) {
             case 'forge': cb.runAsJob('forge', label, () => handleForge(fallbackTask, fallbackFitness, cb.dispatch, cb.ctx, undefined, fallbackSuggestion.hardened ?? false)); return true;
-            case 'brainstorm': cb.runAsJob('brainstorm', label, () => handleBrainstorm(fallbackTask, cb.dispatch, cb.ctx)); return true;
+            case 'brainstorm': cb.runAsJob('brainstorm', label, async () => { await handleBrainstorm(fallbackTask, cb.dispatch, cb.ctx); }); return true;
             case 'tribunal': cb.runAsJob('tribunal', label, () => handleTribunal(fallbackTask, cb.dispatch, cb.ctx, fallbackSuggestion.tribunalMode)); return true;
             case 'campfire': cb.runAsJob('campfire', label, () => handleCampfire(fallbackTask, cb.dispatch, cb.ctx)); return true;
             case 'pipeline': cb.runAsJob('pipeline', label, () => handlePipeline(fallbackTask, cb.dispatch, cb.ctx, fallbackFitness ?? undefined)); return true;
@@ -338,7 +413,10 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
   return false;
 }
 
-// @kern-source: dispatch:315
+// @kern-source: dispatch:373
+/**
+ * Route a parsed intent to the correct handler. Registry-first, switch as fallback.
+ */
 export async function dispatchIntent(intent: any, input: string, cb: DispatchCallbacks): Promise<DispatchResult> {
   // ── Emit pre:dispatch event ──
   if (cb.eventBus) {
@@ -468,6 +546,9 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
     }
     case 'workspace': {
       handleWorkspace(intent.action, cb.dispatch, cb.ctx, intent.path);
+      // Invalidate caches that depend on cwd — workspace just changed
+      invalidateCwdCache();
+      sessionContext.invalidate();
       // Reload extensions from new workspace
       if (cb.setWorkspacePath) cb.setWorkspacePath(resolveWorkingDir());
       break;
@@ -489,7 +570,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
           toolRegistry: null, hasNativeTools: false, lastDispatch: null,
           pendingDelegation: null, reportedConfidence: undefined,
           autoNero: false, advisorPending: false, lastEscalation: null,
-          mcpFingerprint: undefined, planDispatch: null, proposedPlan: undefined,
+          mcpFingerprint: undefined, mcpSignalPath: undefined, planDispatch: null, proposedPlan: undefined,
         };
       }
       cb.ctx.cesar.planDispatch = cb.dispatch;
@@ -743,7 +824,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
       const si = intent as any;
       const answer = await cb.askQuestion('Brainstorm with all engines? (y/n)');
       if (answer.toLowerCase().startsWith('y')) {
-        cb.runAsJob('brainstorm', si.question?.slice(0, 40) ?? 'brainstorm', () => handleBrainstorm(si.question ?? si.input, cb.dispatch, cb.ctx));
+        cb.runAsJob('brainstorm', si.question?.slice(0, 40) ?? 'brainstorm', async () => { await handleBrainstorm(si.question ?? si.input, cb.dispatch, cb.ctx); });
         return { handled: true, ranAsJob: true };
       }
       await handleChat(si.input, cb.dispatch, cb.ctx, cb.allImages);

@@ -159,11 +159,20 @@ export function searchModels(entries: ModelEntry[], query: string): ModelEntry[]
 
 // @kern-source: models-registry:154
 export function normalizeBaseUrl(url: string): string {
-  // Strip /anthropic/ path segments — our apiDispatch uses OpenAI format only
-  return url.replace(/\/anthropic(\/|$)/, '$1');
+  // Strip /anthropic/ only when it's the first path segment (proxy prefix)
+  try {
+    const parsed = new URL(url);
+    if (parsed.pathname.startsWith('/anthropic/') || parsed.pathname === '/anthropic') {
+      parsed.pathname = parsed.pathname.replace(/^\/anthropic/, '');
+      return parsed.toString().replace(/\/$/, '');
+    }
+    return url;
+  } catch {
+    return url.replace(/^(https?:\/\/[^/]+)\/anthropic(\/|$)/, '$1$2');
+  }
 }
 
-// @kern-source: models-registry:160
+// @kern-source: models-registry:169
 export function modelEntryToEngineDef(entry: ModelEntry): Record<string, any> {
   return {
     schemaVersion: 3,

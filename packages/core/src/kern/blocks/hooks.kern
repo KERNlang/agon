@@ -35,9 +35,27 @@ fn name=runHook params="hook:HookDef, env:Record<string,string>" returns=HookRes
     }
   >>>
 
+// Module-level config cache — avoids disk read on every dispatch
+// Uses mutable wrapper object because KERN const compiles to JS const (immutable binding)
+const name=_hooksConfigCache type="{value:{config:any, cwd:string, ts:number}|null}"
+  handler <<< { value: null } as {value:{config:any, cwd:string, ts:number}|null} >>>
+
+fn name=_cachedConfig returns=any export=false
+  handler <<<
+    const cwd = process.cwd();
+    const now = Date.now();
+    const cached = _hooksConfigCache.value;
+    if (cached && cached.cwd === cwd && (now - cached.ts) < 60_000) {
+      return cached.config;
+    }
+    const config = loadConfig(cwd);
+    _hooksConfigCache.value = { config, cwd, ts: now };
+    return config;
+  >>>
+
 fn name=runHooks params="event:HookEvent, env?:Record<string,string>" returns="HookResult[]"
   handler <<<
-    const config = loadConfig(process.cwd());
+    const config = _cachedConfig();
     const hooks = (config as any).hooks as Record<string, HookDef[]> | undefined;
     if (!hooks || !hooks[event]) return [];
 

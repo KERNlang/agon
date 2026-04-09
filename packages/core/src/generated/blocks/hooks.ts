@@ -43,9 +43,25 @@ export function runHook(hook: HookDef, env: Record<string,string>): HookResult {
   }
 }
 
-// @kern-source: hooks:38
+// @kern-source: hooks:40
+export const _hooksConfigCache: {value:{config:any, cwd:string, ts:number}|null} = { value: null } as {value:{config:any, cwd:string, ts:number}|null};
+
+// @kern-source: hooks:43
+function _cachedConfig(): any {
+  const cwd = process.cwd();
+  const now = Date.now();
+  const cached = _hooksConfigCache.value;
+  if (cached && cached.cwd === cwd && (now - cached.ts) < 60_000) {
+    return cached.config;
+  }
+  const config = loadConfig(cwd);
+  _hooksConfigCache.value = { config, cwd, ts: now };
+  return config;
+}
+
+// @kern-source: hooks:56
 export function runHooks(event: HookEvent, env?: Record<string,string>): HookResult[] {
-  const config = loadConfig(process.cwd());
+  const config = _cachedConfig();
   const hooks = (config as any).hooks as Record<string, HookDef[]> | undefined;
   if (!hooks || !hooks[event]) return [];
   
@@ -77,12 +93,12 @@ export function runHooks(event: HookEvent, env?: Record<string,string>): HookRes
   return results;
 }
 
-// @kern-source: hooks:72
+// @kern-source: hooks:90
 export function hooksFailed(results: HookResult[]): boolean {
   return results.some((r) => !r.ok);
 }
 
-// @kern-source: hooks:77
+// @kern-source: hooks:95
 export function hooksOutput(results: HookResult[]): string {
   return results
     .filter((r) => r.stdout.trim())

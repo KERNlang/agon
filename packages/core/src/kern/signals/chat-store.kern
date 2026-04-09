@@ -1,4 +1,4 @@
-import from="node:fs" names="mkdirSync,appendFileSync,readFileSync,readdirSync,statSync,writeFileSync"
+import from="node:fs" names="mkdirSync,appendFileSync,readFileSync,readdirSync,statSync,writeFileSync,unlinkSync"
 import from="node:path" names="join"
 import from="./config.js" names="AGON_HOME"
 
@@ -27,9 +27,36 @@ fn name=ensureChatsDir returns="void"
     mkdirSync(chatsDir(), { recursive: true });
   >>>
 
+const name=CHAT_RETENTION type=number
+  handler <<< 50 >>>
+
+fn name=pruneChats returns="void"
+  doc "Remove old chat files beyond the retention limit. Keeps the most recent CHAT_RETENTION sessions."
+  handler <<<
+    try {
+      const dir = chatsDir();
+      const files = readdirSync(dir)
+        .filter((f: string) => f.endsWith('.ndjson'))
+        .map((f: string) => {
+          // Extract timestamp from filename (chat-<timestamp>.ndjson) for fast sort
+          const ts = parseInt(f.replace('chat-', '').replace('.ndjson', ''), 10);
+          return { name: f, ts: isNaN(ts) ? 0 : ts };
+        })
+        .sort((a: {ts:number}, b: {ts:number}) => b.ts - a.ts);
+
+      if (files.length <= CHAT_RETENTION) return;
+
+      const toRemove = files.slice(CHAT_RETENTION);
+      for (const f of toRemove) {
+        try { unlinkSync(join(dir, f.name)); } catch { /* best effort */ }
+      }
+    } catch { /* dir doesn't exist yet or read failed — not critical */ }
+  >>>
+
 fn name=startChatSession params="opts?:{cwd?:string,branch?:string,engineIds?:string[]}" returns="ChatSession"
   handler <<<
     ensureChatsDir();
+    pruneChats();
     const id = `chat-${Date.now()}`;
     const session: ChatSession = {
       id,

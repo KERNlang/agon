@@ -36,6 +36,9 @@ export class ToolRegistry {
 }
 
 // @kern-source: tool-registry:46
+/**
+ * Three-phase pipeline: validate → permission → execute
+ */
 export async function executeToolCall(call: ToolCall, ctx: ToolContext, registry: ToolRegistry, onPermissionAsk?: (tool:string,message:string)=>Promise<boolean>): Promise<ToolCallResult> {
   const start = Date.now();
   const handler = registry.get(call.name);
@@ -129,6 +132,9 @@ export async function executeToolCall(call: ToolCall, ctx: ToolContext, registry
 }
 
 // @kern-source: tool-registry:140
+/**
+ * Execute multiple tool calls, partitioned into concurrent/serial batches.
+ */
 export async function executeToolCalls(calls: ToolCall[], ctx: ToolContext, registry: ToolRegistry, onPermissionAsk?: (tool:string,message:string)=>Promise<boolean>, onProgress?: (result:ToolCallResult)=>void): Promise<ToolCallResult[]> {
   const results: ToolCallResult[] = [];
   

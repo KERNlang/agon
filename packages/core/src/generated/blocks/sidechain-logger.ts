@@ -5,6 +5,9 @@ import { appendFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 // @kern-source: sidechain-logger:4
+/**
+ * Single event in a sidechain log. JSONL format — one JSON object per line.
+ */
 export interface SidechainEvent {
   ts: string;
   type: string;
@@ -24,6 +27,9 @@ export interface SidechainLogger {
 }
 
 // @kern-source: sidechain-logger:20
+/**
+ * Creates a JSONL logger for orchestration audit trails. Follows Claude Code's sidechain pattern: forge_abc123.jsonl, tribunal_abc123_sidechain_def456.jsonl for nested sessions.
+ */
 export function createSidechainLogger(opts: {sessionId:string, sessionType:string, outputDir:string, parentId?:string}): SidechainLogger {
   const suffix = opts.parentId ? `_sidechain_${opts.parentId}` : '';
   const filename = `${opts.sessionType}_${opts.sessionId}${suffix}.jsonl`;

@@ -36,6 +36,9 @@ export function isKernProject(cwd: string): boolean {
 }
 
 // @kern-source: context-scanner:32
+/**
+ * Read-only file tree, 2 levels deep, excluding noise directories.
+ */
 function buildFileTree(cwd: string, maxDepth?: number): string {
   const IGNORE = new Set(['node_modules', '.git', 'dist', '.next', '.cache', '.turbo', '__pycache__', '.venv', 'coverage']);
   const depth = maxDepth ?? 2;

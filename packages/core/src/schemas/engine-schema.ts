@@ -24,7 +24,7 @@ export const EngineEnvVarSchema = z.object({
 });
 
 export const CompanionConfigSchema = z.object({
-  protocol: z.enum(['jsonrpc', 'acp', 'structured-cli']),
+  protocol: z.enum(['jsonrpc', 'acp', 'structured-cli', 'stream-json']),
   serverCmd: z.array(z.string()),
   features: z.object({
     threadResume: z.boolean().optional(),

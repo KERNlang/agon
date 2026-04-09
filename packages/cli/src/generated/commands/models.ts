@@ -1,0 +1,65 @@
+// @kern-source: models:1
+import { defineCommand } from 'citty';
+
+// @kern-source: models:2
+import { loadConfig, configSet } from '@agon/core';
+
+// @kern-source: models:3
+import type { AgonConfig } from '@agon/core';
+
+// @kern-source: models:4
+import { header, success, table } from '../blocks/output-format.js';
+
+// @kern-source: models:6
+export const modelsCommand: any = defineCommand({
+  meta: {
+    name: 'models',
+    description: 'Manage engine→model mappings',
+  },
+  subCommands: {
+    list: defineCommand({
+      meta: { name: 'list', description: 'List engine model mappings' },
+      async run(ctx) {
+        const config = loadConfig();
+        const mappings = config.engineModels || {};
+        header('Engine → Model Mappings');
+        const rows = Object.entries(mappings).map(([engine, model]) => [engine, model]);
+        if (rows.length === 0) {
+          console.log('  No custom model mappings. Use: agon models set <engine> <model>');
+        } else {
+          table(['Engine', 'Model'], rows);
+        }
+      },
+    }),
+    set: defineCommand({
+      meta: { name: 'set', description: 'Set model for an engine' },
+      args: {
+        engine: { type: 'positional', required: true, description: 'Engine ID (e.g., claude)' },
+        model: { type: 'positional', required: true, description: 'Model ID (e.g., gpt-4o)' },
+      },
+      async run(ctx) {
+        const engine = String(ctx.args.engine);
+        const model = String(ctx.args.model);
+        const config = loadConfig();
+        const engineModels = { ...config.engineModels, [engine]: model };
+        configSet('engineModels', engineModels as AgonConfig['engineModels']);
+        success(`Set ${engine} → ${model}`);
+      },
+    }),
+    remove: defineCommand({
+      meta: { name: 'remove', description: 'Remove model mapping' },
+      args: {
+        engine: { type: 'positional', required: true, description: 'Engine ID' },
+      },
+      async run(ctx) {
+        const engine = String(ctx.args.engine);
+        const config = loadConfig();
+        const engineModels = { ...config.engineModels };
+        delete engineModels[engine];
+        configSet('engineModels', engineModels as AgonConfig['engineModels']);
+        success(`Removed mapping for ${engine}`);
+      },
+    }),
+  },
+});
+

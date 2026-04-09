@@ -23,20 +23,20 @@ import { sessionResultStore } from '../models/session-results.js';
 import type { Dispatch, HandlerContext, EngineProgress } from '../../handlers/types.js';
 
 // @kern-source: brainstorm:10
-export async function handleBrainstorm(question: string, dispatch: Dispatch, ctx: HandlerContext): Promise<void> {
+export async function handleBrainstorm(question: string, dispatch: Dispatch, ctx: HandlerContext): Promise<{winner:string, bids:{engineId:string,reasoning:string,approach:string,score:number}[], response:string}|null> {
   const bsAbort = new AbortController();
   try {
     ensureAgonHome();
     
     if (!question) {
       dispatch({ type: 'warning', message: 'No question provided. Usage: "best approach for caching?" or /brainstorm <question>' });
-      return;
+      return null;
     }
     
     const engines = ctx.activeEngines();
     if (engines.length === 0) {
       dispatch({ type: 'error', message: 'No engines available.' });
-      return;
+      return null;
     }
     
     const outputDir = join(RUNS_DIR, `brainstorm-${Date.now()}`);
@@ -139,6 +139,12 @@ export async function handleBrainstorm(question: string, dispatch: Dispatch, ctx
     
     dispatch({ type: 'info', message: `Winner: ${result.winner} — ask follow-ups or "/forge" to implement` });
     dispatch({ type: 'progress-clear' });
+    
+    return {
+      winner: result.winner,
+      bids: result.bids.map((b: any) => ({ engineId: b.engineId, reasoning: b.reasoning, approach: b.approach, score: b.score })),
+      response: result.response,
+    };
   } finally {
     ctx.setActiveAbort(null);
   }

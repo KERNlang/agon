@@ -17,19 +17,22 @@ import { apiStreamDispatch, apiStreamDispatchWithHistory } from '../api/dispatch
 import { saveSessionState, loadSessionState, saveToolResultToDisk, loadToolResultFromDisk, pruneToolCache, sessionCacheDir } from '../signals/session-store.js';
 
 // @kern-source: persistent-session:7
-import type { CompactionSummaryPart, ToolCacheEntry } from '../models/context-parts.js';
+import { loadConfig } from '../signals/config.js';
 
 // @kern-source: persistent-session:8
+import type { CompactionSummaryPart, ToolCacheEntry } from '../models/context-parts.js';
+
+// @kern-source: persistent-session:9
 import { parseToolCalls, toolCallsToApiFormat } from '../tools/tool-parser.js';
 
-// @kern-source: persistent-session:10
+// @kern-source: persistent-session:11
 export interface SessionChunk {
   type: 'text'|'status'|'tool_call'|'error'|'done';
   content: string;
   metadata?: Record<string,unknown>;
 }
 
-// @kern-source: persistent-session:15
+// @kern-source: persistent-session:16
 export interface SessionSendOptions {
   message: string;
   images?: string[];
@@ -37,7 +40,7 @@ export interface SessionSendOptions {
   systemPrompt?: string;
 }
 
-// @kern-source: persistent-session:21
+// @kern-source: persistent-session:22
 export interface PersistentSessionConfig {
   engine: EngineDefinition;
   binaryPath: string;
@@ -50,7 +53,7 @@ export interface PersistentSessionConfig {
   mcpServers?: Array<Record<string,unknown>>;
 }
 
-// @kern-source: persistent-session:32
+// @kern-source: persistent-session:33
 export interface PersistentSession {
   alive: boolean;
   sessionId: string|null;
@@ -60,7 +63,10 @@ export interface PersistentSession {
   close: () => void;
 }
 
-// @kern-source: persistent-session:40
+// @kern-source: persistent-session:41
+/**
+ * Factory: picks the right session implementation based on engine config.
+ */
 export function createPersistentSession(config: PersistentSessionConfig): PersistentSession {
   const engine = config.engine;
   
@@ -69,8 +75,8 @@ export function createPersistentSession(config: PersistentSessionConfig): Persis
     return createResumeSession(config);
   }
   
-  // Claude: bidirectional stream-json pipe
-  if ((engine.id === 'claude' || engine.binary === 'claude') && config.binaryPath) {
+  // Stream-JSON companion (Claude): bidirectional NDJSON pipe
+  if ((engine.companion?.protocol === 'stream-json' || engine.id === 'claude' || engine.binary === 'claude') && config.binaryPath) {
     return createStreamJsonSession(config);
   }
   
@@ -88,7 +94,10 @@ export function createPersistentSession(config: PersistentSessionConfig): Persis
   return createResumeSession(config);
 }
 
-// @kern-source: persistent-session:71
+// @kern-source: persistent-session:72
+/**
+ * Persistent JSONRPC session for Codex app-server. Process stays alive across turns.
+ */
 export function createCompanionSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -97,8 +106,25 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
   let nextRpcId = 1;
   let firstTurn = true;
   let promptSentViaStart = false; // true if system prompt was sent in thread/start
+  let reconnectAttempts = 0;
+  let reconnecting = false;
   const pending = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }>();
   let notificationHandlers: Array<(method: string, params: any) => void> = [];
+  
+  const resolveModel = (engine: EngineDefinition): string | null => {
+    const modelConfig = engine.model;
+    if (!modelConfig) return null;
+  
+    if (modelConfig.configKey) {
+      const envVal = process.env[modelConfig.configKey.toUpperCase()];
+      if (envVal) return envVal;
+    }
+  
+    const configured = (loadConfig(config.cwd) as any).engineModels?.[engine.id];
+    if (configured) return configured;
+  
+    return modelConfig.default ?? null;
+  };
   
   function sendRpc(method: string, params: Record<string, unknown>): Promise<any> {
     const id = nextRpcId++;
@@ -127,6 +153,37 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
     }
     proc = null;
     alive = false;
+  }
+  
+  async function tryReconnect(): Promise<boolean> {
+    if (reconnecting) return false;
+    if (reconnectAttempts >= 5) {
+      console.error(`[agon] companion: max reconnect attempts exceeded for ${config.engine.id}`);
+      return false;
+    }
+    reconnecting = true;
+    try {
+      const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+      reconnectAttempts++;
+      console.warn(`[agon] companion: reconnecting ${config.engine.id} (attempt ${reconnectAttempts}/5, delay ${delay}ms)`);
+      await new Promise(r => setTimeout(r, delay));
+      // Reset state for fresh session
+      threadId = null;
+      sessionId = null;
+      nextRpcId = 1;
+      firstTurn = true;
+      promptSentViaStart = false;
+      pending.clear();
+      notificationHandlers = [];
+      await session.start();
+      reconnectAttempts = 0;
+      return true;
+    } catch (err) {
+      console.error(`[agon] companion: reconnect failed for ${config.engine.id}: ${err instanceof Error ? err.message : String(err)}`);
+      return false;
+    } finally {
+      reconnecting = false;
+    }
   }
   
   const session: PersistentSession = {
@@ -206,11 +263,26 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
         }
       });
   
-      proc.on('close', () => { alive = false; proc = null; });
-      proc.on('error', () => { alive = false; proc = null; });
+      proc.stderr?.on('data', (data: Buffer) => {
+        const msg = String(data).trim();
+        if (msg) console.error(`[cesar:companion:stderr] ${msg}`);
+      });
+  
+      proc.on('close', (code: number | null) => {
+        console.error(`[cesar:companion] process exited code=${code}`);
+        alive = false; proc = null;
+      });
+      proc.on('error', (err: Error) => {
+        console.error(`[cesar:companion] process error: ${err.message}`);
+        alive = false; proc = null;
+      });
   
       // Wait for process startup
-      await new Promise((r) => setTimeout(r, 100));
+      await new Promise((r) => setTimeout(r, 200));
+  
+      if (!proc) {
+        throw new Error(`Companion process for ${config.engine.id} failed to start`);
+      }
   
       // Initialize handshake
       await sendRpc('initialize', {
@@ -226,6 +298,10 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
       sandbox: config.onApproval ? 'workspace-write' : 'read-only',
       ephemeral: false,
     };
+    const model = resolveModel(config.engine);
+    if (model) {
+      threadParams.model = model;
+    }
     if (config.mcpServers && config.mcpServers.length > 0) {
       threadParams.mcpServers = config.mcpServers;
     }
@@ -241,8 +317,12 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
   
     async *send(opts: SessionSendOptions) {
       if (!alive || !proc) {
-        yield { type: 'error' as const, content: 'Session not alive' };
-        return;
+        const reconnected = await tryReconnect();
+        if (!reconnected) {
+          yield { type: 'error' as const, content: `${config.engine.id} session not alive (reconnect failed)` };
+          return;
+        }
+        yield { type: 'status' as const, content: `${config.engine.id} session reconnected` };
       }
   
     const chunks: SessionChunk[] = [];
@@ -361,7 +441,10 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
   return session;
 }
 
-// @kern-source: persistent-session:347
+// @kern-source: persistent-session:419
+/**
+ * Persistent ACP (Agent Client Protocol) session for OpenCode. JSON-RPC 2.0 over stdio.
+ */
 export function createAcpSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -369,6 +452,8 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
   let nextRpcId = 1;
   let firstTurn = true;
   let promptSentViaStart = false; // true if system prompt was sent in session/new
+  let reconnectAttempts = 0;
+  let reconnecting = false;
   const pending = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }>();
   let notificationHandlers: Array<(method: string, params: any) => void> = [];
   
@@ -395,6 +480,35 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
     }
     proc = null;
     alive = false;
+  }
+  
+  async function tryReconnect(): Promise<boolean> {
+    if (reconnecting) return false;
+    if (reconnectAttempts >= 5) {
+      console.error(`[agon] acp: max reconnect attempts exceeded for ${config.engine.id}`);
+      return false;
+    }
+    reconnecting = true;
+    try {
+      const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+      reconnectAttempts++;
+      console.warn(`[agon] acp: reconnecting ${config.engine.id} (attempt ${reconnectAttempts}/5, delay ${delay}ms)`);
+      await new Promise(r => setTimeout(r, delay));
+      sessionId = null;
+      nextRpcId = 1;
+      firstTurn = true;
+      promptSentViaStart = false;
+      pending.clear();
+      notificationHandlers = [];
+      await session.start();
+      reconnectAttempts = 0;
+      return true;
+    } catch (err) {
+      console.error(`[agon] acp: reconnect failed for ${config.engine.id}: ${err instanceof Error ? err.message : String(err)}`);
+      return false;
+    } finally {
+      reconnecting = false;
+    }
   }
   
   const session: PersistentSession = {
@@ -499,10 +613,25 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
         }
       });
   
-      proc.on('close', () => { alive = false; proc = null; });
-      proc.on('error', () => { alive = false; proc = null; });
+      proc.stderr?.on('data', (data: Buffer) => {
+        const msg = String(data).trim();
+        if (msg) console.error(`[cesar:acp:stderr] ${msg}`);
+      });
   
-      await new Promise((r) => setTimeout(r, 100));
+      proc.on('close', (code: number | null) => {
+        console.error(`[cesar:acp] process exited code=${code}`);
+        alive = false; proc = null;
+      });
+      proc.on('error', (err: Error) => {
+        console.error(`[cesar:acp] process error: ${err.message}`);
+        alive = false; proc = null;
+      });
+  
+      await new Promise((r) => setTimeout(r, 200));
+  
+      if (!proc) {
+        throw new Error(`ACP process for ${config.engine.id} failed to start`);
+      }
   
       // ACP initialize handshake — read-only, writes go through Agon's XML tool system
       await sendRpc('initialize', {
@@ -530,8 +659,12 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
   
     async *send(opts: SessionSendOptions) {
       if (!alive || !proc || !sessionId) {
-        yield { type: 'error' as const, content: 'ACP session not alive' };
-        return;
+        const reconnected = await tryReconnect();
+        if (!reconnected) {
+          yield { type: 'error' as const, content: `${config.engine.id} ACP session not alive (reconnect failed)` };
+          return;
+        }
+        yield { type: 'status' as const, content: `${config.engine.id} ACP session reconnected` };
       }
   
     const chunks: SessionChunk[] = [];
@@ -643,12 +776,17 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
   return session;
 }
 
-// @kern-source: persistent-session:632
+// @kern-source: persistent-session:754
+/**
+ * Persistent bidirectional NDJSON session for Claude Code. One process, multi-turn via stdin.
+ */
 export function createStreamJsonSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
   let sessionId: string | null = null;
   let lineHandlers: Array<(parsed: any) => void> = [];
+  let reconnectAttempts = 0;
+  let reconnecting = false;
   
   function killProc(): void {
     if (!proc) return;
@@ -660,6 +798,31 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
     }
     proc = null;
     alive = false;
+  }
+  
+  async function tryReconnect(): Promise<boolean> {
+    if (reconnecting) return false;
+    if (reconnectAttempts >= 5) {
+      console.error(`[agon] claude: max reconnect attempts exceeded for ${config.engine.id}`);
+      return false;
+    }
+    reconnecting = true;
+    try {
+      const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+      reconnectAttempts++;
+      console.warn(`[agon] claude: reconnecting ${config.engine.id} (attempt ${reconnectAttempts}/5, delay ${delay}ms)`);
+      await new Promise(r => setTimeout(r, delay));
+      sessionId = null;
+      lineHandlers = [];
+      await session.start();
+      reconnectAttempts = 0;
+      return true;
+    } catch (err) {
+      console.error(`[agon] claude: reconnect failed for ${config.engine.id}: ${err instanceof Error ? err.message : String(err)}`);
+      return false;
+    } finally {
+      reconnecting = false;
+    }
   }
   
   const session: PersistentSession = {
@@ -742,9 +905,14 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
   
     async *send(opts: SessionSendOptions) {
       if (!alive || !proc) {
-        yield { type: 'error' as const, content: 'Claude stream session not alive' };
-        return;
+        const reconnected = await tryReconnect();
+        if (!reconnected) {
+          yield { type: 'error' as const, content: `${config.engine.id} Claude session not alive (reconnect failed)` };
+          return;
+        }
+        yield { type: 'status' as const, content: `${config.engine.id} session reconnected` };
       }
+      if (!proc) { yield { type: 'error' as const, content: 'proc null after reconnect' }; return; }
   
       const chunks: SessionChunk[] = [];
       let turnDone = false;
@@ -895,7 +1063,10 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
   return session;
 }
 
-// @kern-source: persistent-session:887
+// @kern-source: persistent-session:1041
+/**
+ * Fallback: spawn per turn with --resume/--continue. Works for any CLI engine.
+ */
 export function createResumeSession(config: PersistentSessionConfig): PersistentSession {
   let alive = false;
       let sessionId: string | null = null;
@@ -953,14 +1124,21 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
             // Tier 1: Replace old tool results with cached refs (disk-backed)
             // Tier 2: Incremental CompactionSummary — merges across cycles
             // Tier 3: (future) LLM-based summary as last resort
+            const estimateSingle = (m: {role: string, content: any}): number => {
+              if (typeof m.content === 'string') return Math.ceil(m.content.length / 4);
+              if (m.content === null && (m as any).tool_calls) {
+                return (m as any).tool_calls.reduce((s: number, tc: any) =>
+                  s + Math.ceil((tc.function?.arguments ?? '').length / 4), 100);
+              }
+              return 50;
+            };
+            // Per-message token cache — only recompute for new/mutated messages
             const estimateTokens = (msgs: Array<{role: string, content: any}>) =>
               msgs.reduce((sum, m) => {
-                if (typeof m.content === 'string') return sum + Math.ceil(m.content.length / 4);
-                if (m.content === null && (m as any).tool_calls) {
-                  return sum + (m as any).tool_calls.reduce((s: number, tc: any) =>
-                    s + Math.ceil((tc.function?.arguments ?? '').length / 4), 100);
+                if ((m as any)._tokenEstimate === undefined) {
+                  (m as any)._tokenEstimate = estimateSingle(m);
                 }
-                return sum + 50;
+                return sum + (m as any)._tokenEstimate;
               }, 0);
   
             // Context limit: use a sensible default per model family.
@@ -971,6 +1149,8 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
             const PRUNE_PROTECT_TURNS = 6; // protect last 6 user-assistant exchanges (was 4)
   
             const totalTokens = estimateTokens(messageHistory);
+            // Fast path: skip all compaction tiers when well below threshold (<40% of context).
+            // This eliminates regex extraction + merge + disk writes for short conversations.
             if (totalTokens > CONTEXT_LIMIT - COMPACTION_BUFFER) {
               const hasSystem = messageHistory[0].role === 'system';
               const startIdx = hasSystem ? 1 : 0;
@@ -999,6 +1179,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                   } else {
                     msg.content = '[Old tool result cleared]';
                   }
+                  delete msg._tokenEstimate; // invalidate cache — content mutated
                 }
               }
   
@@ -1169,7 +1350,8 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
   
             // ── Context awareness: tell the model its budget status ──
             {
-              const ctxTokens = estimateTokens(messageHistory);
+              // Reuse totalTokens if compaction didn't fire; otherwise re-estimate
+              const ctxTokens = totalTokens <= CONTEXT_LIMIT - COMPACTION_BUFFER ? totalTokens : estimateTokens(messageHistory);
               const ctxPct = Math.round((ctxTokens / CONTEXT_LIMIT) * 100);
               const cachedCount = toolCacheManifest.length;
               const compactedCount = compactionSummary?.messagesCompacted ?? 0;
@@ -1445,6 +1627,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                     const m = messageHistory[i] as any;
                     if (m.role === 'tool' && typeof m.content === 'string' && m.content.startsWith('[DELEGATION_BREAK]')) {
                       m.content = m.content.replace('[DELEGATION_BREAK] ', '');
+                      delete m._tokenEstimate;
                     }
                   }
                   messageHistory.push({ role: 'assistant', content: '[Delegation — tool loop stopped]' });

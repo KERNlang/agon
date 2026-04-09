@@ -23,6 +23,9 @@ import { CONFIDENCE_TIERS, confidenceBadge, parseConfidence } from './confidence
 import { CESAR_SYSTEM_PROMPT } from './session.js';
 
 // @kern-source: escalation:10
+/**
+ * Pick the highest-ELO engine for this task class (excluding Cesar) as advisor.
+ */
 export function pickBestAdvisor(input: string, ctx: HandlerContext): {engineId:string, color:number}|null {
   const cesarEngineId = (ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude';
   const otherEngines = ctx.activeEngines().filter((id: string) => id !== cesarEngineId);
@@ -36,6 +39,9 @@ export function pickBestAdvisor(input: string, ctx: HandlerContext): {engineId:s
 }
 
 // @kern-source: escalation:24
+/**
+ * At <70% confidence, dispatch the best-ranked engine as advisor with a focused advisory prompt.
+ */
 export async function fireAdvisor(input: string, cesarResponse: string, parsedConfidence: number|null, ctx: HandlerContext, abort: AbortController): Promise<{stdout:string, engineId:string, color:number}|null> {
   const advisor = pickBestAdvisor(input, ctx);
       if (!advisor) return null;
@@ -73,12 +79,13 @@ export async function fireAdvisor(input: string, cesarResponse: string, parsedCo
 }
 
 // @kern-source: escalation:62
+/**
+ * Same-session self-challenge: inject a challenge message into the existing Cesar session. Fast — no engine spawn.
+ */
 export async function fireQuickNero(session: any, response: string, input: string, confidence: number, dispatch: Dispatch, signal: AbortSignal, ctx: HandlerContext): Promise<{ challenged: boolean; newConfidence: number|null; challengeText: string }> {
-  const challengePrompt = `[SELF-CHECK] You just responded at ${confidence}% confidence to: "${input.slice(0, 200)}"
+  const challengePrompt = `[SELF-CHECK] You responded at ${confidence}% confidence.
   
-  Your response: "${response.slice(0, 800)}"
-  
-  Challenge your own answer in 2-3 sentences. What could be wrong? What assumptions might not hold? If you find a real flaw, explain it. Start with ~X% for your revised confidence after this self-review.`;
+  Take a breath. Anything you'd reconsider about your answer? Any assumption worth double-checking? If something feels off, say so briefly (1-2 sentences). If it holds up, just confirm. Start with ~X% for your revised confidence.`;
   
       try {
         let challengeText = '';
@@ -104,7 +111,10 @@ export async function fireQuickNero(session: any, response: string, input: strin
       }
 }
 
-// @kern-source: escalation:95
+// @kern-source: escalation:93
+/**
+ * Same-turn adversarial subagent: spawn a second Cesar instance with a contrarian prompt to attack the original response.
+ */
 export async function fireNero(input: string, response: string, confidence: number, ctx: HandlerContext, abort: AbortController): Promise<{ challengeText: string; challengeConfidence: number|null } | null> {
   const cesarEngineId = (ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude';
       const cesarEngine = ctx.registry.get(cesarEngineId);
@@ -141,7 +151,10 @@ export async function fireNero(input: string, response: string, confidence: numb
       }
 }
 
-// @kern-source: escalation:133
+// @kern-source: escalation:131
+/**
+ * Display advisor opinion and present escalation menu. At <70%, advisor replaces STOP.
+ */
 export async function handleSecondOpinion(secondResult: {stdout:string, engineId:string, color:number}|null, input: string, response: string, parsedConfidence: number|null, cesarEngineId: string, dispatch: Dispatch, ctx: HandlerContext, abortSignal?: AbortSignal): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string}|null> {
   if (!secondResult || !secondResult.stdout.trim()) return null;
   
@@ -219,7 +232,10 @@ export async function handleSecondOpinion(secondResult: {stdout:string, engineId
   return { delegated: false, responded: true };
 }
 
-// @kern-source: escalation:212
+// @kern-source: escalation:210
+/**
+ * Auto-activate Nero mode — kill session so next turn reboots with Nero system prompt.
+ */
 export function activateNero(ctx: HandlerContext, dispatch: Dispatch): void {
   if (!ctx.neroMode && ctx.setNeroMode) {
     ctx.setNeroMode(true);
@@ -232,7 +248,10 @@ export function activateNero(ctx: HandlerContext, dispatch: Dispatch): void {
   }
 }
 
-// @kern-source: escalation:226
+// @kern-source: escalation:224
+/**
+ * Auto-deactivate Nero when confidence recovers.
+ */
 export function deactivateNero(ctx: HandlerContext, dispatch: Dispatch): void {
   ctx.setNeroMode(false);
   ctx.neroMode = false;
@@ -241,7 +260,10 @@ export function deactivateNero(ctx: HandlerContext, dispatch: Dispatch): void {
   ctx.eventBus?.emit('cesar:nero', { active: false }).catch(() => {});
 }
 
-// @kern-source: escalation:237
+// @kern-source: escalation:235
+/**
+ * Ask user to confirm a suggested delegation with rich options.
+ */
 export async function promptDelegation(action: string, dispatch: Dispatch, hardened?: boolean, tribunalMode?: string, team?: boolean): Promise<{approved:boolean, action?:string, hardened?:boolean, tribunalMode?:string, team?:boolean, userContext?:string}> {
   // Check session auto-approve cache
   const autoApproved = (promptDelegation as any)._autoApprove as Set<string> | undefined;
@@ -303,7 +325,10 @@ export async function promptDelegation(action: string, dispatch: Dispatch, harde
   return { approved: true };
 }
 
-// @kern-source: escalation:300
+// @kern-source: escalation:298
+/**
+ * Last-resort fallback: if Cesar had routing context but still didn't delegate at low confidence, offer brainstorm. Cesar should have decided — this is a safety net.
+ */
 export async function promptProtocolEnforcement(input: string, parsedConfidence: number|null, ctx: HandlerContext, dispatch: Dispatch): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, team?:boolean}|null> {
   if (parsedConfidence === null
       || parsedConfidence >= CONFIDENCE_TIERS.nero

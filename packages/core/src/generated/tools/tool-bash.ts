@@ -24,6 +24,9 @@ export const READONLY_COMMANDS: readonly string[] = [
 ] as const;
 
 // @kern-source: tool-bash:30
+/**
+ * Extract the actual command from wrappers like sudo, env, nice.
+ */
 export function extractBaseCommand(command: string): string {
   let cmd = command.trim();
   // Strip common wrappers
@@ -41,6 +44,9 @@ export function extractBaseCommand(command: string): string {
 }
 
 // @kern-source: tool-bash:48
+/**
+ * Factory: creates the Bash tool handler for shell command execution.
+ */
 export function createBashTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Bash',

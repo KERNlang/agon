@@ -27,27 +27,30 @@ export interface CompanionResult {
 
 // @kern-source: companion-dispatch:19
 export async function companionDispatch(opts: {config:CompanionConfig, binaryPath:string, prompt:string, cwd:string, timeout:number, mode:'exec'|'review'|'agent', model?:string, signal?:AbortSignal, systemPrompt?:string}): Promise<DispatchResult> {
-  if (opts.config.protocol !== 'jsonrpc') {
-    return { exitCode: 2, stdout: '', stderr: 'Only jsonrpc protocol supported', durationMs: 0, timedOut: false };
+  if (opts.config.protocol !== 'jsonrpc' && opts.config.protocol !== 'acp' && opts.config.protocol !== 'stream-json') {
+    return { exitCode: 2, stdout: '', stderr: `Protocol "${opts.config.protocol}" not supported for one-shot dispatch`, durationMs: 0, timedOut: false };
   }
+  const isAcp = opts.config.protocol === 'acp';
+  const isStreamJson = opts.config.protocol === 'stream-json';
   
   const startTime = Date.now();
   
-  // Check if app-server is available by trying --help first
-  const checkAvailable = (): Promise<boolean> => {
-    return new Promise((resolve) => {
-      const check = spawn(opts.binaryPath, ['app-server', '--help'], {
-        stdio: 'pipe',
-        timeout: 5000,
+  // Check if server mode is available (only needed for JSONRPC app-server)
+  if (!isAcp && !isStreamJson) {
+    const checkAvailable = (): Promise<boolean> => {
+      return new Promise((resolve) => {
+        const check = spawn(opts.binaryPath, ['app-server', '--help'], {
+          stdio: 'pipe',
+          timeout: 5000,
+        });
+        check.on('close', (code) => resolve(code === 0));
+        check.on('error', () => resolve(false));
       });
-      check.on('close', (code) => resolve(code === 0));
-      check.on('error', () => resolve(false));
-    });
-  };
-  
-  const available = await checkAvailable();
-  if (!available) {
-    return { exitCode: 2, stdout: '', stderr: 'app-server not available', durationMs: Date.now() - startTime, timedOut: false };
+    };
+    const available = await checkAvailable();
+    if (!available) {
+      return { exitCode: 2, stdout: '', stderr: 'app-server not available', durationMs: Date.now() - startTime, timedOut: false };
+    }
   }
   
   // Spawn the app-server process
@@ -84,7 +87,26 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
       return;
     }
   
-    // Server notification
+    // Stream-JSON events (Claude) — no method field, uses type field directly
+    if (isStreamJson) {
+      const raw = msg as any;
+      if (raw.type === 'assistant' && raw.message?.content) {
+        for (const block of raw.message.content) {
+          if (block.type === 'text' && block.text) agentMessages.push(block.text);
+        }
+        if (raw.message.stop_reason) { turnCompleted = raw; }
+      }
+      if (raw.type === 'result') {
+        if (!agentMessages.length && raw.result && typeof raw.result === 'string') {
+          agentMessages.push(raw.result);
+        }
+        turnCompleted = raw;
+      }
+      if (raw.type === 'error') { turnError = raw; }
+      return;
+    }
+  
+    // Server notification — handle both JSONRPC and ACP protocols
     if (msg.method === 'turn/completed') {
       turnCompleted = (msg.params as Record<string, unknown>);
     } else if (msg.method === 'item/completed') {
@@ -94,6 +116,13 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
       }
       if (item?.type === 'enteredReviewMode') {
         agentMessages.push(item.review);
+      }
+    } else if (msg.method === 'session/update') {
+      // ACP protocol notifications
+      const update = (msg.params as any)?.update;
+      if (update?.sessionUpdate === 'agent_message_chunk') {
+        const text = update.content?.text ?? '';
+        if (text) agentMessages.push(text);
       }
     } else if (msg.method === 'error') {
       turnError = (msg.params as Record<string, unknown>);
@@ -150,43 +179,67 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
     // Wait a tick for process startup
     await new Promise((r) => setTimeout(r, 100));
   
-    // Initialize
-    await send('initialize', {
-      clientInfo: { name: 'agon-ai', title: 'Agon AI', version: '0.1.0' },
-      capabilities: null,
-    });
-    notify('initialized');
-  
-    // Start thread
-    const threadParams: Record<string, unknown> = {
-      cwd: opts.cwd,
-      approvalPolicy: 'never',
-      sandbox: opts.mode === 'agent' ? 'workspace-write' : 'read-only',
-      ephemeral: true,
-    };
-    if (opts.model) {
-      threadParams.model = opts.model;
-    }
-    if (opts.systemPrompt) {
-      threadParams.instructions = opts.systemPrompt;
-    }
-    const threadResult = await send('thread/start', threadParams) as any;
-    threadId = threadResult?.thread?.id ?? null;
-  
-    // Start turn or review
-    if (opts.mode === 'review') {
-      await send('review/start', {
-        threadId,
-        target: { type: 'uncommittedChanges' },
+    if (isStreamJson) {
+      // Stream-JSON protocol (Claude Code) — NDJSON over stdio, no RPC handshake
+      // Send user message as NDJSON on stdin, read events from stdout
+      const envelope = JSON.stringify({
+        type: 'user',
+        message: { role: 'user', content: opts.prompt },
       });
+      proc.stdin!.write(envelope + '\n');
+      proc.stdin!.end(); // Signal EOF — --max-turns 1 will complete after first response
+  
+      // Wait for result event or process exit
+      await waitForTurnComplete();
+    } else if (isAcp) {
+      // ACP protocol (OpenCode/Gemini)
+      await send('initialize', {
+        protocolVersion: 1,
+        clientCapabilities: { fs: { readTextFile: true, writeTextFile: false }, terminal: false },
+        clientInfo: { name: 'agon-ai', title: 'Agon AI', version: '0.2.0' },
+      });
+  
+      const sessParams: Record<string, unknown> = { cwd: opts.cwd, mcpServers: [] };
+      if (opts.systemPrompt) sessParams.systemPrompt = opts.systemPrompt;
+      const sessResult = await send('session/new', sessParams) as any;
+      const sessionId = sessResult?.sessionId ?? null;
+  
+      // session/prompt is a request — response signals turn completion
+      const promptResult = await send('session/prompt', {
+        sessionId,
+        prompt: [{ type: 'text', text: opts.prompt }],
+      }) as any;
+  
+      // ACP returns text directly in the prompt response
+      if (promptResult?.text) agentMessages.push(promptResult.text);
+      turnCompleted = promptResult ?? {};
     } else {
-      await send('turn/start', {
-        threadId,
-        input: [{ type: 'text', text: opts.prompt, text_elements: [] }],
+      // JSONRPC protocol (Codex)
+      await send('initialize', {
+        clientInfo: { name: 'agon-ai', title: 'Agon AI', version: '0.1.0' },
+        capabilities: null,
       });
-    }
+      notify('initialized');
   
-    await waitForTurnComplete();
+      const threadParams: Record<string, unknown> = {
+        cwd: opts.cwd,
+        approvalPolicy: 'never',
+        sandbox: opts.mode === 'agent' ? 'workspace-write' : 'read-only',
+        ephemeral: true,
+      };
+      if (opts.model) threadParams.model = opts.model;
+      if (opts.systemPrompt) threadParams.instructions = opts.systemPrompt;
+      const threadResult = await send('thread/start', threadParams) as any;
+      threadId = threadResult?.thread?.id ?? null;
+  
+      if (opts.mode === 'review') {
+        await send('review/start', { threadId, target: { type: 'uncommittedChanges' } });
+      } else {
+        await send('turn/start', { threadId, input: [{ type: 'text', text: opts.prompt, text_elements: [] }] });
+      }
+  
+      await waitForTurnComplete();
+    }
   
     const text = agentMessages.join('\n\n');
     return {

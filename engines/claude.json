@@ -41,6 +41,16 @@
     "ANTHROPIC_API_KEY": { "required": false }
   },
 
+  "companion": {
+    "protocol": "stream-json",
+    "serverCmd": ["--print", "--input-format", "stream-json", "--output-format", "stream-json", "--max-turns", "1"],
+    "features": {
+      "threadResume": false,
+      "nativeReview": false,
+      "structuredOutput": false
+    }
+  },
+
   "test": { "args": ["--version"] },
 
   "capabilities": ["vision"],

@@ -484,7 +484,7 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
             toolRegistry: null, hasNativeTools: false, lastDispatch: null,
             pendingDelegation: null, reportedConfidence: undefined,
             autoNero: false, advisorPending: false, lastEscalation: null,
-            mcpFingerprint: undefined, planDispatch: null, proposedPlan: undefined,
+            mcpFingerprint: undefined, mcpSignalPath: undefined, planDispatch: null, proposedPlan: undefined,
           };
         }
         cb.ctx.cesar.planDispatch = cb.dispatch;

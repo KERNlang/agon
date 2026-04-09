@@ -6,10 +6,11 @@
     "packages/core",
     "packages/forge",
     "packages/adapter-cli",
-    "packages/cli"
+    "packages/cli",
+    "packages/mcp"
   ],
   "scripts": {
-    "kern:compile": "npm run kern:compile -w packages/core && npm run kern:compile -w packages/forge && npm run kern:compile -w packages/adapter-cli && npm run kern:compile -w packages/cli",
+    "kern:compile": "npm run kern:compile -w packages/core && npm run kern:compile -w packages/forge && npm run kern:compile -w packages/adapter-cli && npm run kern:compile -w packages/cli && npm run kern:compile -w packages/mcp",
     "build": "tsc -b --force",
     "typecheck": "tsc -b",
     "test": "vitest run",

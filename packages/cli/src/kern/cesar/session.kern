@@ -1,9 +1,10 @@
 import from="node:fs" names="readFileSync,statSync"
-import from="node:path" names="isAbsolute,resolve"
+import from="node:path" names="isAbsolute,resolve,dirname"
 import from="node:path" names="join"
 import from="node:fs" names="mkdirSync"
+import from="node:url" names="fileURLToPath"
 import from="@agon/core" names="PersistentSession,PersistentSessionConfig" types=true
-import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,resolveWorkingDir,scanProjectContext,createPersistentSession,ToolRegistry,FileStateCache,buildToolSystemPrompt,toolsToOpenAIFormat,executeToolCall,RUNS_DIR,tracker,discoverMcpServers,mcpDiscoveryFingerprint,mcpServersToWireFormat"
+import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,AGON_HOME,resolveWorkingDir,scanProjectContext,createPersistentSession,ToolRegistry,FileStateCache,buildToolSystemPrompt,toolsToOpenAIFormat,executeToolCall,RUNS_DIR,tracker,discoverMcpServers,mcpDiscoveryFingerprint,mcpServersToWireFormat"
 import from="@agon/core" names="ToolContext,ToolCallResult" types=true
 import from="../../handlers/types.js" names="HandlerContext" types=true
 import from="./tools.js" names="createCesarToolRegistry"
@@ -476,7 +477,7 @@ fn name=ensureCesarSession async=true params="ctx:HandlerContext" returns="Promi
         toolRegistry: null, hasNativeTools: false, lastDispatch: null,
         pendingDelegation: null, reportedConfidence: undefined,
         autoNero: false, advisorPending: false, lastEscalation: null as string | null,
-        mcpFingerprint: undefined, planDispatch: null, proposedPlan: undefined,
+        mcpFingerprint: undefined, mcpSignalPath: undefined as string | undefined, planDispatch: null, proposedPlan: undefined,
       };
     }
 
@@ -557,6 +558,26 @@ fn name=ensureCesarSession async=true params="ctx:HandlerContext" returns="Promi
       }
     }
 
+    // ── Inject Agon orchestration MCP server for CLI companion engines ──
+    // Gives Codex/Gemini/OpenCode real MCP tools for Tribunal, Brainstorm, etc.
+    // instead of XML prose that they can't actually call.
+    const isCompanion = binaryPath && (engine.companion?.protocol === 'jsonrpc' || engine.companion?.protocol === 'acp');
+    if (isCompanion) {
+      ensureAgonHome();
+      const signalDir = join(AGON_HOME, 'signals');
+      mkdirSync(signalDir, { recursive: true });
+      const sessionSignalId = `cesar-${Date.now()}`;
+      const mcpServerPath = join(dirname(fileURLToPath(import.meta.url)), '../../../../mcp/dist/index.js');
+      const agonMcpServer: Record<string, unknown> = {
+        name: 'agon-orchestration',
+        command: 'node',
+        args: [mcpServerPath],
+        env: { AGON_SIGNAL_DIR: signalDir, AGON_SESSION_ID: sessionSignalId },
+      };
+      mcpServers = mcpServers ? [...mcpServers, agonMcpServer] : [agonMcpServer];
+      ctx.cesar!.mcpSignalPath = join(signalDir, `${sessionSignalId}.json`);
+    }
+
     // Build system prompt and tool registry
     const systemPrompt = buildCesarSystemPrompt(ctx);
     const toolRegistry = createCesarToolRegistry(cesarEngineId);
@@ -568,17 +589,21 @@ fn name=ensureCesarSession async=true params="ctx:HandlerContext" returns="Promi
     const nativeTools = (!binaryPath && engine.api) ? toolsToOpenAIFormat(toolRegistry) : undefined;
     ctx.cesar!.hasNativeTools = !!nativeTools;
 
-    // API engines with native tools: DON'T inject XML tool descriptions — the native
-    // tools parameter is enough and XML descriptions confuse models into narrating
-    // instead of calling tools. CLI engines still need the XML prompt.
+    // Prompt strategy: API → native tools, companion → MCP tools, fallback → XML
     let fullPrompt = systemPrompt;
-    if (!nativeTools) {
+    if (nativeTools) {
+      // API engine: function calling, no XML
+      fullPrompt += '\n\nYou have tools available via function calling. Call them directly — do NOT describe them in XML or narrate what you would call. Just call the function.';
+    } else if (isCompanion) {
+      // CLI companion with MCP orchestration: reference MCP tools, no XML for orchestration
+      fullPrompt += '\n\nYou have orchestration tools available via the agon-orchestration MCP server: Tribunal, Brainstorm, Campfire, Forge, Pipeline, Review, Delegate, ReportConfidence. Call them as MCP tools — NEVER via Bash. After calling any orchestration tool (except Delegate and ReportConfidence): STOP and wait. For file operations, use your built-in tools (shell, file edit, etc.) directly.';
+    } else {
+      // Fallback: XML tool descriptions for engines without native tools or MCP
       const toolPrompt = buildToolSystemPrompt(toolRegistry);
       fullPrompt += '\n\nTOOLS: XML format below. Never ask permission — just call. Never describe changes when you can execute.\n\n' + toolPrompt;
-    } else {
-      fullPrompt += '\n\nYou have tools available via function calling. Call them directly — do NOT describe them in XML or narrate what you would call. Just call the function.';
     }
-    if (mcpServers && mcpServers.length > 0) {
+    if (mcpServers && mcpServers.length > 0 && !isCompanion) {
+      // Only add generic MCP guidance for non-companion engines (companion already got specific MCP guidance above)
       fullPrompt += '\n\nMCP is enabled for this session. Use MCP only when the task clearly needs capabilities outside the workspace or built-in Agon tools. Prefer Read/Grep/Glob/Edit/Bash first, and keep MCP calls to the minimum needed.';
     }
 

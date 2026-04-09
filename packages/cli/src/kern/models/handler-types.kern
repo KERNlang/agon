@@ -131,6 +131,7 @@ interface name=CesarState
   field name=autoNero type=boolean
   field name=advisorPending type=boolean
   field name=mcpFingerprint type="string | undefined"
+  field name=mcpSignalPath type="string | undefined" optional=true
   field name=planDispatch type="((event: any) => void) | null"
   field name=proposedPlan type="any | undefined"
   field name=lastEscalation type="string | null"

@@ -20,15 +20,9 @@ export const SESSION_SCHEMA_VERSION: number = 2;
 export const SESSION_MAX_MESSAGES: number = 80;
 
 // @kern-source: session-store:13
-/**
- * 60 minutes (was 30 min in v1)
- */
 export const SESSION_TTL_MS: number = 3600000;
 
 // @kern-source: session-store:15
-/**
- * 10 MB max total disk cache per session
- */
 export const TOOL_CACHE_MAX_BYTES: number = 10485760;
 
 // @kern-source: session-store:18
@@ -42,27 +36,18 @@ export interface SessionStateV2 {
 }
 
 // @kern-source: session-store:26
-/**
- * Session path scoped by engine + workspace to prevent context leaking across repos.
- */
 export function sessionStorePath(engineId: string): string {
   const cwdHash = createHash('md5').update(process.cwd()).digest('hex').slice(0, 8);
   return join(AGON_HOME, 'sessions', `${engineId}-${cwdHash}.json`);
 }
 
 // @kern-source: session-store:33
-/**
- * Directory for disk-backed tool result cache files.
- */
 export function sessionCacheDir(engineId: string): string {
   const cwdHash = createHash('md5').update(process.cwd()).digest('hex').slice(0, 8);
   return join(AGON_HOME, 'sessions', `${engineId}-${cwdHash}-cache`);
 }
 
 // @kern-source: session-store:40
-/**
- * Write a large tool result to disk cache. Returns manifest entry, or null if write failed.
- */
 export function saveToolResultToDisk(engineId: string, toolCallId: string, toolName: string, content: string): ToolCacheEntry|null {
   try {
     const cacheDir = sessionCacheDir(engineId);
@@ -83,9 +68,6 @@ export function saveToolResultToDisk(engineId: string, toolCallId: string, toolN
 }
 
 // @kern-source: session-store:61
-/**
- * Read a cached tool result from disk. Returns null if not found.
- */
 export function loadToolResultFromDisk(engineId: string, toolCallId: string): string|null {
   try {
     const cacheDir = sessionCacheDir(engineId);
@@ -98,9 +80,6 @@ export function loadToolResultFromDisk(engineId: string, toolCallId: string): st
 }
 
 // @kern-source: session-store:74
-/**
- * Remove cached tool results not in the keep set. Prevents unbounded disk growth.
- */
 export function pruneToolCache(engineId: string, keepIds: Set<string>): void {
   try {
     const cacheDir = sessionCacheDir(engineId);
@@ -116,9 +95,6 @@ export function pruneToolCache(engineId: string, keepIds: Set<string>): void {
 }
 
 // @kern-source: session-store:90
-/**
- * Persist API session state to disk (v2 schema).
- */
 export function saveSessionState(engineId: string, state: { messageHistory: Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>, confidence:number|null, compactionSummary?:CompactionSummaryPart|null, toolCacheManifest?:ToolCacheEntry[] }): void {
   const dir = join(AGON_HOME, 'sessions');
   mkdirSync(dir, { recursive: true });
@@ -137,9 +113,6 @@ export function saveSessionState(engineId: string, state: { messageHistory: Arra
 }
 
 // @kern-source: session-store:109
-/**
- * Load persisted API session state from disk. Handles v1→v2 migration transparently.
- */
 export function loadSessionState(engineId: string): { messageHistory: Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>, confidence:number|null, compactionSummary:CompactionSummaryPart|null, toolCacheManifest:ToolCacheEntry[] } | null {
   const path = sessionStorePath(engineId);
   if (!existsSync(path)) return null;
@@ -173,9 +146,6 @@ export function loadSessionState(engineId: string): { messageHistory: Array<{rol
 }
 
 // @kern-source: session-store:143
-/**
- * Delete persisted session state and its cache directory.
- */
 export function clearSessionState(engineId: string): void {
   const path = sessionStorePath(engineId);
   try { if (existsSync(path)) unlinkSync(path); } catch { /* already removed */ }

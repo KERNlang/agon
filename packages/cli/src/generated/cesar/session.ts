@@ -77,19 +77,18 @@ RULE 4 — CONFIDENCE HINTS (not enforced, just awareness):
   90-95% = solid but consider a quick self-check — did you miss anything?
   80-89% = you probably have a plan but some unknowns. Consider whether Brainstorm or Delegate would help, or just investigate more.
   <80% = significant uncertainty. Think about whether this is a "I need to read more code" situation (investigate!) or a "this is genuinely hard and needs debate" situation (Tribunal/Brainstorm). Don't default to asking for help — default to investigating. But when you genuinely need other perspectives, that's exactly what these tools are for.
-RULE 4b — DATA-DRIVEN GUIDANCE (from 25 real sessions):
-  Tribunal has 100% success rate — use it for architecture and risky decisions.
-  Brainstorm alone is weaker (63% bug catch) — always follow with review or tribunal for implementation.
-  Multi-mode (brainstorm → tribunal → forge) catches 91% of bugs.
-  Reviewers catch real bugs 79% of the time. Code you write WILL be auto-reviewed.
-  Codex is the most decisive challenger (58%) but times out often — keep prompts focused.
-  Don't brainstorm when you should investigate — reading 3 files is faster and cheaper than dispatching 3 engines.
+RULE 4b — PATTERNS OBSERVED (early data, 25 sessions — treat as suggestions, not rules):
+  Tribunal tends to work well for architecture and risky decisions.
+  Brainstorm alone may not catch implementation bugs — consider following up with review.
+  Multi-mode pipelines (brainstorm → tribunal → forge) tend to catch more issues.
+  Your code will be auto-reviewed after implementation — write carefully the first time.
+  Investigation is almost always cheaper than dispatching engines — read 3 files before dispatching 3 AIs.
 RULE 4c — REVIEW: Use Review(target?, engine?) to delegate code review. Default target is "uncommitted". Targets: "uncommitted", "branch:NAME", "commit:SHA". Optionally specify engine. Use when the user asks to review code, changes, a PR, or a diff.
 RULE 5 — WORKSPACE: Use Read for files. Use Grep for search. NEVER use cat/head/tail/grep via Bash. For git operations (commit, push, branch, etc.) use Bash directly — permission system will ask the user to approve write operations. When the user says "commit", do it: git add the relevant files, write a good commit message, commit. Don't overthink it.
 RULE 6 — AFTER DELEGATION: After calling Forge/Brainstorm/Tribunal/Campfire/Pipeline/Review, STOP. Do not continue responding. The orchestrator handles the rest. After calling Delegate, WAIT for the result — do NOT stop. Incorporate the delegated result into your response.
 RULE 7 — NO NARRATION: NEVER narrate your research process. Do not write "Reading the file...", "I'm checking...", "Let me look at...", "I've confirmed...". The user sees your text output — if you narrate exploration it looks like you have no clue. Instead: call tools SILENTLY, then speak ONLY when you have the answer or decision. Your visible output should be conclusions, answers, and actions — never a play-by-play of your investigation. If you need to read files or search code, call Read/Grep/Glob directly without announcing it.`;
 
-// @kern-source: session:73
+// @kern-source: session:72
 /**
  * Build the full Cesar system prompt with project context, engine list, and mode flags.
  */
@@ -161,7 +160,7 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
       return systemParts.join('\n\n');
 }
 
-// @kern-source: session:143
+// @kern-source: session:142
 /**
  * Build the onToolCall callback for API engines with native function calling.
  */
@@ -335,7 +334,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
   };
 }
 
-// @kern-source: session:315
+// @kern-source: session:314
 /**
  * Build the onApproval callback for engine tool approvals.
  */
@@ -384,7 +383,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
   };
 }
 
-// @kern-source: session:362
+// @kern-source: session:361
 export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unknown>> {
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -418,7 +417,7 @@ export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unkn
   return normalizeNamedRecord(raw);
 }
 
-// @kern-source: session:396
+// @kern-source: session:395
 export function loadCesarMcpServers(config: any, cwd: string): Array<Record<string,unknown>>|undefined {
   if (!(config as any).cesarMcpEnabled) return undefined;
   
@@ -442,14 +441,14 @@ export function loadCesarMcpServers(config: any, cwd: string): Array<Record<stri
   return servers;
 }
 
-// @kern-source: session:420
+// @kern-source: session:419
 export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
   if (!binaryPath) return false;
   const protocol = engine?.companion?.protocol;
   return protocol === 'acp' || protocol === 'jsonrpc';
 }
 
-// @kern-source: session:427
+// @kern-source: session:426
 /**
  * Compute a simple fingerprint of MCP-related config to detect changes.
  */
@@ -467,7 +466,7 @@ export function mcpConfigFingerprint(config: any): string {
   return `${enabled}:${configPath}:${mtime}`;
 }
 
-// @kern-source: session:443
+// @kern-source: session:442
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
   const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';

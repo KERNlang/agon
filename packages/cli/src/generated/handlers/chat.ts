@@ -107,8 +107,15 @@ export async function handleChat(input: string, dispatch: Dispatch, ctx: Handler
         const parser = new StreamParser();
     
         while (true) {
-          const { value, done } = await gen.next();
-          if (done) break;
+          const iterResult = await gen.next();
+          if (iterResult.done) {
+            // Capture AgentDispatchResult (generator return value contains diff)
+            if (iterResult.value && typeof iterResult.value === 'object') {
+              dispatchResult = iterResult.value as any;
+            }
+            break;
+          }
+          const value = iterResult.value;
           if (abort.signal.aborted) break;
     
           if (value.startsWith('\x00')) {
@@ -222,6 +229,39 @@ export async function handleChat(input: string, dispatch: Dispatch, ctx: Handler
     }
     if (streaming) {
       dispatch({ type: 'streaming-end', engineId });
+    }
+    
+    // Emit file-changes event if agent dispatch returned a diff
+    if (dispatchResult && (dispatchResult as any).diff) {
+      const agentDiff = (dispatchResult as any).diff as string;
+      const fileMap = new Map<string, { additions: number; deletions: number; status: 'modified'|'created'|'deleted' }>();
+      let currentFile = '';
+      for (const line of agentDiff.split('\n')) {
+        const diffMatch = line.match(/^diff --git a\/(.+?) b\/(.+)/);
+        if (diffMatch) {
+          currentFile = diffMatch[2];
+          if (!fileMap.has(currentFile)) fileMap.set(currentFile, { additions: 0, deletions: 0, status: 'modified' });
+        }
+        if (currentFile && line.startsWith('new file')) {
+          const entry = fileMap.get(currentFile);
+          if (entry) entry.status = 'created';
+        }
+        if (currentFile && line.startsWith('deleted file')) {
+          const entry = fileMap.get(currentFile);
+          if (entry) entry.status = 'deleted';
+        }
+        if (currentFile && line.startsWith('+') && !line.startsWith('+++')) {
+          const entry = fileMap.get(currentFile);
+          if (entry) entry.additions++;
+        }
+        if (currentFile && line.startsWith('-') && !line.startsWith('---')) {
+          const entry = fileMap.get(currentFile);
+          if (entry) entry.deletions++;
+        }
+      }
+      if (fileMap.size > 0) {
+        dispatch({ type: 'file-changes', files: Array.from(fileMap.entries()).map(([path, info]) => ({ path, ...info })) } as any);
+      }
     }
     
     if (response) {

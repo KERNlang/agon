@@ -97,8 +97,22 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
   let nextRpcId = 1;
   let firstTurn = true;
   let promptSentViaStart = false; // true if system prompt was sent in thread/start
+  let reconnectAttempts = 0;
+  let reconnecting = false;
   const pending = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }>();
   let notificationHandlers: Array<(method: string, params: any) => void> = [];
+  
+  const resolveModel = (engine: EngineDefinition): string | null => {
+    const modelConfig = engine.model;
+    if (!modelConfig) return null;
+  
+    if (modelConfig.configKey) {
+      const envVal = process.env[modelConfig.configKey.toUpperCase()];
+      if (envVal) return envVal;
+    }
+  
+    return modelConfig.default ?? null;
+  };
   
   function sendRpc(method: string, params: Record<string, unknown>): Promise<any> {
     const id = nextRpcId++;
@@ -127,6 +141,37 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
     }
     proc = null;
     alive = false;
+  }
+  
+  async function tryReconnect(): Promise<boolean> {
+    if (reconnecting) return false;
+    if (reconnectAttempts >= 5) {
+      console.error(`[agon] companion: max reconnect attempts exceeded for ${config.engine.id}`);
+      return false;
+    }
+    reconnecting = true;
+    try {
+      const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+      reconnectAttempts++;
+      console.warn(`[agon] companion: reconnecting ${config.engine.id} (attempt ${reconnectAttempts}/5, delay ${delay}ms)`);
+      await new Promise(r => setTimeout(r, delay));
+      // Reset state for fresh session
+      threadId = null;
+      sessionId = null;
+      nextRpcId = 1;
+      firstTurn = true;
+      promptSentViaStart = false;
+      pending.clear();
+      notificationHandlers = [];
+      await session.start();
+      reconnectAttempts = 0;
+      return true;
+    } catch (err) {
+      console.error(`[agon] companion: reconnect failed for ${config.engine.id}: ${err instanceof Error ? err.message : String(err)}`);
+      return false;
+    } finally {
+      reconnecting = false;
+    }
   }
   
   const session: PersistentSession = {
@@ -226,6 +271,10 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
       sandbox: config.onApproval ? 'workspace-write' : 'read-only',
       ephemeral: false,
     };
+    const model = resolveModel(config.engine);
+    if (model) {
+      threadParams.model = model;
+    }
     if (config.mcpServers && config.mcpServers.length > 0) {
       threadParams.mcpServers = config.mcpServers;
     }
@@ -241,8 +290,12 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
   
     async *send(opts: SessionSendOptions) {
       if (!alive || !proc) {
-        yield { type: 'error' as const, content: 'Session not alive' };
-        return;
+        const reconnected = await tryReconnect();
+        if (!reconnected) {
+          yield { type: 'error' as const, content: `${config.engine.id} session not alive (reconnect failed)` };
+          return;
+        }
+        yield { type: 'status' as const, content: `${config.engine.id} session reconnected` };
       }
   
     const chunks: SessionChunk[] = [];
@@ -361,7 +414,7 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
   return session;
 }
 
-// @kern-source: persistent-session:347
+// @kern-source: persistent-session:384
 export function createAcpSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -369,6 +422,8 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
   let nextRpcId = 1;
   let firstTurn = true;
   let promptSentViaStart = false; // true if system prompt was sent in session/new
+  let reconnectAttempts = 0;
+  let reconnecting = false;
   const pending = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }>();
   let notificationHandlers: Array<(method: string, params: any) => void> = [];
   
@@ -395,6 +450,35 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
     }
     proc = null;
     alive = false;
+  }
+  
+  async function tryReconnect(): Promise<boolean> {
+    if (reconnecting) return false;
+    if (reconnectAttempts >= 5) {
+      console.error(`[agon] acp: max reconnect attempts exceeded for ${config.engine.id}`);
+      return false;
+    }
+    reconnecting = true;
+    try {
+      const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+      reconnectAttempts++;
+      console.warn(`[agon] acp: reconnecting ${config.engine.id} (attempt ${reconnectAttempts}/5, delay ${delay}ms)`);
+      await new Promise(r => setTimeout(r, delay));
+      sessionId = null;
+      nextRpcId = 1;
+      firstTurn = true;
+      promptSentViaStart = false;
+      pending.clear();
+      notificationHandlers = [];
+      await session.start();
+      reconnectAttempts = 0;
+      return true;
+    } catch (err) {
+      console.error(`[agon] acp: reconnect failed for ${config.engine.id}: ${err instanceof Error ? err.message : String(err)}`);
+      return false;
+    } finally {
+      reconnecting = false;
+    }
   }
   
   const session: PersistentSession = {
@@ -530,8 +614,12 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
   
     async *send(opts: SessionSendOptions) {
       if (!alive || !proc || !sessionId) {
-        yield { type: 'error' as const, content: 'ACP session not alive' };
-        return;
+        const reconnected = await tryReconnect();
+        if (!reconnected) {
+          yield { type: 'error' as const, content: `${config.engine.id} ACP session not alive (reconnect failed)` };
+          return;
+        }
+        yield { type: 'status' as const, content: `${config.engine.id} ACP session reconnected` };
       }
   
     const chunks: SessionChunk[] = [];
@@ -643,12 +731,14 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
   return session;
 }
 
-// @kern-source: persistent-session:632
+// @kern-source: persistent-session:704
 export function createStreamJsonSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
   let sessionId: string | null = null;
   let lineHandlers: Array<(parsed: any) => void> = [];
+  let reconnectAttempts = 0;
+  let reconnecting = false;
   
   function killProc(): void {
     if (!proc) return;
@@ -660,6 +750,31 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
     }
     proc = null;
     alive = false;
+  }
+  
+  async function tryReconnect(): Promise<boolean> {
+    if (reconnecting) return false;
+    if (reconnectAttempts >= 5) {
+      console.error(`[agon] claude: max reconnect attempts exceeded for ${config.engine.id}`);
+      return false;
+    }
+    reconnecting = true;
+    try {
+      const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+      reconnectAttempts++;
+      console.warn(`[agon] claude: reconnecting ${config.engine.id} (attempt ${reconnectAttempts}/5, delay ${delay}ms)`);
+      await new Promise(r => setTimeout(r, delay));
+      sessionId = null;
+      lineHandlers = [];
+      await session.start();
+      reconnectAttempts = 0;
+      return true;
+    } catch (err) {
+      console.error(`[agon] claude: reconnect failed for ${config.engine.id}: ${err instanceof Error ? err.message : String(err)}`);
+      return false;
+    } finally {
+      reconnecting = false;
+    }
   }
   
   const session: PersistentSession = {
@@ -742,9 +857,14 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
   
     async *send(opts: SessionSendOptions) {
       if (!alive || !proc) {
-        yield { type: 'error' as const, content: 'Claude stream session not alive' };
-        return;
+        const reconnected = await tryReconnect();
+        if (!reconnected) {
+          yield { type: 'error' as const, content: `${config.engine.id} Claude session not alive (reconnect failed)` };
+          return;
+        }
+        yield { type: 'status' as const, content: `${config.engine.id} session reconnected` };
       }
+      if (!proc) { yield { type: 'error' as const, content: 'proc null after reconnect' }; return; }
   
       const chunks: SessionChunk[] = [];
       let turnDone = false;
@@ -895,7 +1015,7 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
   return session;
 }
 
-// @kern-source: persistent-session:887
+// @kern-source: persistent-session:991
 export function createResumeSession(config: PersistentSessionConfig): PersistentSession {
   let alive = false;
       let sessionId: string | null = null;
@@ -1704,4 +1824,3 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
   
       return session;
 }
-

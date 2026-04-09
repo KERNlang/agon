@@ -9,6 +9,7 @@
     "packages/cli"
   ],
   "scripts": {
+    "kern:compile": "npm run kern:compile -w packages/core && npm run kern:compile -w packages/forge && npm run kern:compile -w packages/adapter-cli && npm run kern:compile -w packages/cli",
     "build": "tsc -b --force",
     "typecheck": "tsc -b",
     "test": "vitest run",
@@ -18,7 +19,7 @@
     "node": ">=22"
   },
   "devDependencies": {
-    "@types/node": "^25.5.0",
+    "@types/node": "^22.0.0",
     "@vitest/coverage-v8": "^3.2.4",
     "tsup": "^8.4.0",
     "typescript": "^5.7.0",

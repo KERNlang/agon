@@ -79,9 +79,6 @@ export interface DispatchOptions {
 }
 
 // @kern-source: types:64
-/**
- * Structured parts captured at stream time. Enables compaction to fold over typed data instead of parsing strings.
- */
 export interface DispatchResult {
   exitCode: number;
   stdout: string;

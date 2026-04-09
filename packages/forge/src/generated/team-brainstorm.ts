@@ -42,6 +42,7 @@ export interface TeamBrainstormOptions {
 export async function runTeamCoopBrainstorm(team: TeamSpec, question: string, context: string|undefined, registry: EngineRegistry, adapter: EngineAdapter, timeout: number, outputDir: string, onEvent?: (event:ForgeEvent|TeamEvent)=>void, signal?: AbortSignal): Promise<{submission:TeamSubmission, proposal:string, score:number}> {
   const trace: TeamRoundTrace[] = [];
   const start = Date.now();
+  let tokenSum = 0;
   
   const architect = team.members.find((m) => m.role === 'architect') ?? team.members[0];
   const others = team.members.filter((m) => m.engineId !== architect.engineId);
@@ -69,6 +70,7 @@ export async function runTeamCoopBrainstorm(team: TeamSpec, question: string, co
       signal,
     });
   
+    tokenSum += result.usage?.totalTokens ?? 0;
     const draft = parseKernDraft(result.stdout);
     trace.push({
       round: 1,
@@ -117,6 +119,7 @@ export async function runTeamCoopBrainstorm(team: TeamSpec, question: string, co
     signal,
   });
   
+  tokenSum += synthResult.usage?.totalTokens ?? 0;
   const proposal = synthResult.stdout.trim();
   
   trace.push({
@@ -140,7 +143,7 @@ export async function runTeamCoopBrainstorm(team: TeamSpec, question: string, co
       teamId: team.teamId,
       finalOutput: proposal,
       trace,
-      totalTokens: 0,
+      totalTokens: tokenSum,
       wallClockMs: Date.now() - start,
       collaborationLift: proposalScore - Math.max(...drafts.map((d) => d.score)),
     },
@@ -149,7 +152,7 @@ export async function runTeamCoopBrainstorm(team: TeamSpec, question: string, co
   };
 }
 
-// @kern-source: team-brainstorm:138
+// @kern-source: team-brainstorm:141
 export async function runTeamBrainstorm(options: TeamBrainstormOptions): Promise<TeamMatchResult> {
   const config = loadConfig(process.cwd());
   const matchId = randomUUID().slice(0, 8);

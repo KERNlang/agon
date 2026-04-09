@@ -9,6 +9,7 @@
     "dist"
   ],
   "scripts": {
+    "prebuild": "npm run kern:compile",
     "build": "tsup",
     "typecheck": "tsc --noEmit",
     "kern:compile": "for d in surfaces blocks signals models cesar handlers commands; do kern compile src/kern/$d --outdir=src/generated/$d; done"

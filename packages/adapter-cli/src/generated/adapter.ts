@@ -11,7 +11,7 @@ import type { EngineAdapter, EngineDefinition, DispatchOptions, DispatchResult, 
 import { EngineRegistry, spawnWithTimeout, spawnStream, EngineNotFoundError, readOnlyDiff, diffLineCount, apiDispatch, apiStreamDispatch, companionDispatch, runHooks, hooksFailed, runApiAgentLoop, scanProjectContext, resolveWorkingDir } from '@agon/core';
 
 // @kern-source: adapter:5
-import { buildCommand, checkEnvVars, stripStreamJson, usesStreamJson } from './adapter-helpers.js';
+import { buildCommand, checkEnvVars, resolveModel, stripStreamJson, usesStreamJson } from './adapter-helpers.js';
 
 // @kern-source: adapter:7
 export class CliAdapter implements EngineAdapter {
@@ -71,6 +71,7 @@ export class CliAdapter implements EngineAdapter {
         cwd: options.cwd,
         timeout: options.timeout,
         mode: options.mode === 'agent' ? 'agent' : options.mode === 'review' ? 'review' : 'exec',
+        model: resolveModel(options.engine) ?? undefined,
         signal: options.signal,
         systemPrompt: options.systemPrompt,
       });
@@ -262,6 +263,7 @@ export class CliAdapter implements EngineAdapter {
         cwd: options.cwd,
         timeout: options.timeout,
         mode: 'agent',
+        model: resolveModel(options.engine) ?? undefined,
         signal: options.signal,
       });
       if (companionResult.exitCode !== 2) {
@@ -330,6 +332,7 @@ export class CliAdapter implements EngineAdapter {
   async *dispatchAgentStream(options: DispatchOptions): AsyncGenerator<string, AgentDispatchResult, void> {
     const streamBinaryPath = options.engine.binary ? this.registry.findBinary(options.engine) : null;
     if (options.engine.api && !streamBinaryPath) {
+      yield `Engine "${options.engine.id}" is API-only and does not support streaming agent mode. Use non-streaming dispatch or install the CLI binary.`;
       return {
         exitCode: 1,
         stdout: '',
@@ -418,4 +421,3 @@ export class CliAdapter implements EngineAdapter {
     }
   }
 }
-

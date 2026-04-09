@@ -185,7 +185,7 @@ export async function apiDispatch(config: ApiConfig, prompt: string, timeout: nu
       messages,
       maxOutputTokens: config.maxTokens ?? 4096,
       abortSignal: controller.signal,
-      maxRetries: 3,
+      maxRetries: 5,
     });
     clearTimeout(timer);
     const text = result.text || (result as any).reasoningText || '';
@@ -202,11 +202,16 @@ export async function apiDispatch(config: ApiConfig, prompt: string, timeout: nu
     if (err instanceof Error && err.name === 'AbortError') {
       return { exitCode: signal?.aborted ? 130 : 124, stdout: '', stderr: 'Request timed out', durationMs, timedOut: !signal?.aborted };
     }
-    return { exitCode: 1, stdout: '', stderr: `API request failed: ${err instanceof Error ? err.message : String(err)}`, durationMs, timedOut: false };
+    const isRateLimited = err instanceof Error && (
+      err.message.includes('429') || err.message.includes('rate') || err.name === 'AI_RetryError' || err.name === 'RetryError'
+    );
+    const exitCode = isRateLimited ? 2 : 1;
+    const prefix = isRateLimited ? 'API rate limited (retries exhausted)' : 'API request failed';
+    return { exitCode, stdout: '', stderr: `${prefix}: ${err instanceof Error ? err.message : String(err)}`, durationMs, timedOut: false };
   }
 }
 
-// @kern-source: dispatch:204
+// @kern-source: dispatch:209
 export async function* apiStreamDispatch(config: ApiConfig, prompt: string, timeout: number, signal?: AbortSignal, systemPrompt?: string): AsyncGenerator<string, DispatchResult, void> {
   const messages: Array<{role:string, content:string}> = [];
   if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
@@ -214,7 +219,7 @@ export async function* apiStreamDispatch(config: ApiConfig, prompt: string, time
   return yield* apiStreamDispatchWithHistory(config, messages, timeout, signal);
 }
 
-// @kern-source: dispatch:212
+// @kern-source: dispatch:217
 export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages: Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>, timeout: number, signal?: AbortSignal, tools?: Array<{type:string,function:{name:string,description:string,parameters:Record<string,unknown>}}>): AsyncGenerator<string, DispatchResult, void> {
   const model = buildModel(config);
   if (!model) {
@@ -251,7 +256,7 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
       messages: coreMessages,
       maxOutputTokens: config.maxTokens ?? 4096,
       abortSignal: controller.signal,
-      maxRetries: 3,
+      maxRetries: 5,
     };
   
     if (tools && tools.length > 0) {
@@ -393,7 +398,12 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
     if (err instanceof Error && err.name === 'AbortError') {
       return { exitCode: signal?.aborted ? 130 : 124, stdout, stderr: 'Request timed out', durationMs, timedOut: !signal?.aborted };
     }
-    return { exitCode: 1, stdout, stderr: `API stream failed: ${err instanceof Error ? err.message : String(err)}`, durationMs, timedOut: false };
+    const isRateLimited = err instanceof Error && (
+      err.message.includes('429') || err.message.includes('rate') || err.name === 'AI_RetryError' || err.name === 'RetryError'
+    );
+    const exitCode = isRateLimited ? 2 : 1;
+    const prefix = isRateLimited ? 'API rate limited (retries exhausted)' : 'API stream failed';
+    return { exitCode, stdout, stderr: `${prefix}: ${err instanceof Error ? err.message : String(err)}`, durationMs, timedOut: false };
   }
 }
 

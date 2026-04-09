@@ -17,9 +17,6 @@ export interface ToolCallPart {
 }
 
 // @kern-source: context-parts:20
-/**
- * preview = first 300 chars inline. cachedRef = toolCallId pointing to disk file when result > 800 chars.
- */
 export interface ToolResultPart {
   kind: 'tool_result';
   toolCallId: string;
@@ -49,12 +46,12 @@ export interface CompactionSummaryPart {
 }
 
 // @kern-source: context-parts:44
-export type MessagePart =
-  | TextPart
-  | ToolCallPart
-  | ToolResultPart
-  | ReasoningPart
-  | CompactionSummaryPart;
+export type MessagePart = TextPart | ToolCallPart | ToolResultPart | ReasoningPart | CompactionSummaryPart;
+
+
+
+
+;
 
 // @kern-source: context-parts:53
 export interface ToolCacheEntry {
@@ -79,9 +76,6 @@ export interface ToolResultRef {
 }
 
 // @kern-source: context-parts:71
-/**
- * Typed context passed between forge stages. Replaces raw scoutDiff.slice(0,3000).
- */
 export interface StageContext {
   goal: string;
   filesDiscovered: string[];
@@ -97,9 +91,6 @@ export interface StageContext {
 }
 
 // @kern-source: context-parts:87
-/**
- * Extract structured StageContext from raw forge outputs.
- */
 export function buildStageContext(opts: {engineId:string, pass:boolean, score:number, prompt:string, diff:string, fitnessLogPath?:string, dispatchStdout?:string}): StageContext {
   // Extract goal from prompt (first ## TASK section or first 300 chars)
   const taskMatch = opts.prompt.match(/## TASK\s*\n([\s\S]*?)(?=\n## |$)/);
@@ -175,9 +166,6 @@ export function buildStageContext(opts: {engineId:string, pass:boolean, score:nu
 }
 
 // @kern-source: context-parts:163
-/**
- * Render StageContext as readable text for injection into forge prompts.
- */
 export function renderStageContext(ctx: StageContext): string {
   const sections: string[] = [
     `## PRIOR APPROACH (${ctx.engineId} — ${ctx.pass ? 'PASSED' : 'FAILED'}${ctx.score !== null ? `, score: ${ctx.score}` : ''})`,

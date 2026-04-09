@@ -153,8 +153,17 @@ fn name=searchModels params="entries:ModelEntry[], query:string" returns="ModelE
 
 fn name=normalizeBaseUrl params="url:string" returns=string
   handler <<<
-    // Strip /anthropic/ path segments — our apiDispatch uses OpenAI format only
-    return url.replace(/\/anthropic(\/|$)/, '$1');
+    // Strip /anthropic/ only when it's the first path segment (proxy prefix)
+    try {
+      const parsed = new URL(url);
+      if (parsed.pathname.startsWith('/anthropic/') || parsed.pathname === '/anthropic') {
+        parsed.pathname = parsed.pathname.replace(/^\/anthropic/, '');
+        return parsed.toString().replace(/\/$/, '');
+      }
+      return url;
+    } catch {
+      return url.replace(/^(https?:\/\/[^/]+)\/anthropic(\/|$)/, '$1$2');
+    }
   >>>
 
 fn name=modelEntryToEngineDef params="entry:ModelEntry" returns="Record<string, any>"

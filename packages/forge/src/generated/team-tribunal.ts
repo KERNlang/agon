@@ -41,6 +41,7 @@ export async function runTeamCoopTribunal(team: TeamSpec, position: string, ques
   const trace: TeamRoundTrace[] = [];
   const start = Date.now();
   const allArguments: string[] = [];
+  let tokenSum = 0;
   
   const architect = team.members.find((m) => m.role === 'architect') ?? team.members[0];
   const implementers = team.members.filter((m) => m.role === 'implementer');
@@ -68,6 +69,7 @@ export async function runTeamCoopTribunal(team: TeamSpec, position: string, ques
       signal,
     });
   
+    tokenSum += stratResult.usage?.totalTokens ?? 0;
     const strategy = stratResult.stdout.trim();
     trace.push({ round, actor: architect.engineId, role: 'architect', action: 'planned', artifactSummary: strategy.slice(0, 200), durationMs: stratResult.durationMs });
   
@@ -89,6 +91,7 @@ export async function runTeamCoopTribunal(team: TeamSpec, position: string, ques
         signal,
       });
   
+      tokenSum += supportResult.usage?.totalTokens ?? 0;
       trace.push({ round, actor: impl.engineId, role: 'implementer', action: 'implemented', artifactSummary: supportResult.stdout.trim().slice(0, 200), durationMs: supportResult.durationMs });
   
       onEvent?.({ type: 'team:member-done' as any, data: { teamId: team.teamId, engineId: impl.engineId } });
@@ -113,6 +116,7 @@ export async function runTeamCoopTribunal(team: TeamSpec, position: string, ques
       signal,
     });
   
+    tokenSum += synthResult.usage?.totalTokens ?? 0;
     const finalArg = synthResult.stdout.trim();
     allArguments.push(finalArg);
   
@@ -126,7 +130,7 @@ export async function runTeamCoopTribunal(team: TeamSpec, position: string, ques
       teamId: team.teamId,
       finalOutput: allArguments[allArguments.length - 1],
       trace,
-      totalTokens: 0,
+      totalTokens: tokenSum,
       wallClockMs: Date.now() - start,
       collaborationLift: 0,
     },
@@ -134,7 +138,7 @@ export async function runTeamCoopTribunal(team: TeamSpec, position: string, ques
   };
 }
 
-// @kern-source: team-tribunal:126
+// @kern-source: team-tribunal:130
 export async function runTeamTribunal(options: TeamTribunalOptions): Promise<TeamMatchResult> {
   const config = loadConfig(process.cwd());
   const matchId = randomUUID().slice(0, 8);

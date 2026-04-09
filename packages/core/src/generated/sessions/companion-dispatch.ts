@@ -26,7 +26,7 @@ export interface CompanionResult {
 }
 
 // @kern-source: companion-dispatch:19
-export async function companionDispatch(opts: {config:CompanionConfig, binaryPath:string, prompt:string, cwd:string, timeout:number, mode:'exec'|'review'|'agent', signal?:AbortSignal, systemPrompt?:string}): Promise<DispatchResult> {
+export async function companionDispatch(opts: {config:CompanionConfig, binaryPath:string, prompt:string, cwd:string, timeout:number, mode:'exec'|'review'|'agent', model?:string, signal?:AbortSignal, systemPrompt?:string}): Promise<DispatchResult> {
   if (opts.config.protocol !== 'jsonrpc') {
     return { exitCode: 2, stdout: '', stderr: 'Only jsonrpc protocol supported', durationMs: 0, timedOut: false };
   }
@@ -164,6 +164,9 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
       sandbox: opts.mode === 'agent' ? 'workspace-write' : 'read-only',
       ephemeral: true,
     };
+    if (opts.model) {
+      threadParams.model = opts.model;
+    }
     if (opts.systemPrompt) {
       threadParams.instructions = opts.systemPrompt;
     }
@@ -211,4 +214,3 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
     killProc();
   }
 }
-

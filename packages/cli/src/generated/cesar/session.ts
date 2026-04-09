@@ -77,7 +77,7 @@ RULE 4 — CONFIDENCE HINTS (not enforced, just awareness):
   90-95% = solid but consider a quick self-check — did you miss anything?
   80-89% = you probably have a plan but some unknowns. Consider whether Brainstorm or Delegate would help, or just investigate more.
   <80% = significant uncertainty. Think about whether this is a "I need to read more code" situation (investigate!) or a "this is genuinely hard and needs debate" situation (Tribunal/Brainstorm). Don't default to asking for help — default to investigating. But when you genuinely need other perspectives, that's exactly what these tools are for.
-RULE 4b — PATTERNS OBSERVED (early data, 25 sessions — treat as suggestions, not rules):
+RULE 4b — OBSERVED PATTERNS:
   Tribunal tends to work well for architecture and risky decisions.
   Brainstorm alone may not catch implementation bugs — consider following up with review.
   Multi-mode pipelines (brainstorm → tribunal → forge) tend to catch more issues.

@@ -34,12 +34,18 @@ export interface ToolLoopResult {
 }
 
 // @kern-source: tool-loop:27
+/**
+ * Generate the tool system prompt to inject into any engine's context.
+ */
 export function buildToolSystemPrompt(registry: ToolRegistry): string {
   const handlers = Array.from((registry as any).tools.values()) as ToolHandler[];
   return generateToolPrompt(handlers);
 }
 
 // @kern-source: tool-loop:34
+/**
+ * Process a single engine response: parse tool calls, execute them, format results.
+ */
 export async function processToolResponse(response: string, ctx: ToolContext, registry: ToolRegistry, callbacks?: ToolLoopCallbacks): Promise<{hasTools:boolean, textBefore:string, toolResults:string, textAfter:string}> {
   const parsed = parseToolCalls(response);
   
@@ -93,6 +99,9 @@ export async function processToolResponse(response: string, ctx: ToolContext, re
 }
 
 // @kern-source: tool-loop:88
+/**
+ * Full tool loop: repeatedly process responses until no more tool calls or max turns reached.
+ */
 export async function runToolLoop(sendMessage: (message:string)=>Promise<string>, initialResponse: string, ctx: ToolContext, registry: ToolRegistry, callbacks?: ToolLoopCallbacks): Promise<ToolLoopResult> {
   let currentResponse = initialResponse;
   let totalToolCalls = 0;

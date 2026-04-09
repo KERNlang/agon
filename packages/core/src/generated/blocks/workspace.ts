@@ -133,6 +133,9 @@ export function snapshotWorkspace(ws: Workspace): WorkspaceSnapshot {
 }
 
 // @kern-source: workspace:120
+/**
+ * Returns the active workspace path if set, otherwise process.cwd().
+ */
 export function resolveWorkingDir(): string {
   const ws = getActiveWorkspace();
   return ws ? ws.path : process.cwd();

@@ -28,6 +28,7 @@ fn name=runTeamCoopBrainstorm async=true params="team:TeamSpec, question:string,
   handler <<<
     const trace: TeamRoundTrace[] = [];
     const start = Date.now();
+    let tokenSum = 0;
 
     const architect = team.members.find((m) => m.role === 'architect') ?? team.members[0];
     const others = team.members.filter((m) => m.engineId !== architect.engineId);
@@ -55,6 +56,7 @@ fn name=runTeamCoopBrainstorm async=true params="team:TeamSpec, question:string,
         signal,
       });
 
+      tokenSum += result.usage?.totalTokens ?? 0;
       const draft = parseKernDraft(result.stdout);
       trace.push({
         round: 1,
@@ -103,6 +105,7 @@ fn name=runTeamCoopBrainstorm async=true params="team:TeamSpec, question:string,
       signal,
     });
 
+    tokenSum += synthResult.usage?.totalTokens ?? 0;
     const proposal = synthResult.stdout.trim();
 
     trace.push({
@@ -126,7 +129,7 @@ fn name=runTeamCoopBrainstorm async=true params="team:TeamSpec, question:string,
         teamId: team.teamId,
         finalOutput: proposal,
         trace,
-        totalTokens: 0,
+        totalTokens: tokenSum,
         wallClockMs: Date.now() - start,
         collaborationLift: proposalScore - Math.max(...drafts.map((d) => d.score)),
       },

@@ -42,6 +42,7 @@ export async function runTeamCoopForge(team: TeamSpec, task: string, fitnessCmd:
   const trace: TeamRoundTrace[] = [];
   const start = Date.now();
   let round = 0;
+  let tokenSum = 0;
   
   const architect = team.members.find((m) => m.role === 'architect') ?? team.members[0];
   const implementers = team.members.filter((m) => m.role === 'implementer');
@@ -68,6 +69,7 @@ export async function runTeamCoopForge(team: TeamSpec, task: string, fitnessCmd:
     signal,
   });
   
+  tokenSum += planResult.usage?.totalTokens ?? 0;
   const plan = planResult.stdout.trim();
   trace.push({ round, actor: architect.engineId, role: 'architect', action: 'planned', artifactSummary: plan.slice(0, 200), durationMs: planResult.durationMs });
   
@@ -115,6 +117,8 @@ export async function runTeamCoopForge(team: TeamSpec, task: string, fitnessCmd:
         signal,
       });
     }
+  
+    tokenSum += implResult.usage?.totalTokens ?? 0;
   
     // Score this implementation
     const fitness = await runFitness({ engineId: impl.engineId, worktreePath: wt.path, fitnessCmd, timeout: fitnessTimeout, forgeDir });
@@ -166,6 +170,7 @@ export async function runTeamCoopForge(team: TeamSpec, task: string, fitnessCmd:
       signal,
     });
   
+    tokenSum += reviewResult.usage?.totalTokens ?? 0;
     const reviewText = reviewResult.stdout.trim();
     const approved = /\bAPPROVED\b/i.test(reviewText) && reviewText.length < 200;
   
@@ -240,13 +245,13 @@ export async function runTeamCoopForge(team: TeamSpec, task: string, fitnessCmd:
     teamId: team.teamId,
     finalOutput: finalResult,
     trace,
-    totalTokens: 0,
+    totalTokens: tokenSum,
     wallClockMs: Date.now() - start,
     collaborationLift,
   };
 }
 
-// @kern-source: team-forge:236
+// @kern-source: team-forge:241
 export async function runTeamForge(options: TeamForgeOptions, registry: EngineRegistry, adapter: EngineAdapter, onEvent?: (event:ForgeEvent|TeamEvent)=>void): Promise<TeamMatchResult> {
   const config = loadConfig(options.cwd);
   const matchId = randomUUID().slice(0, 8);

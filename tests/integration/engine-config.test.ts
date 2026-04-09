@@ -51,7 +51,7 @@ describe('Engine Config Validation', () => {
 
       it('companion config has valid protocol when present', () => {
         if (raw.companion) {
-          expect(['jsonrpc', 'acp', 'structured-cli']).toContain(raw.companion.protocol);
+          expect(['jsonrpc', 'acp', 'structured-cli', 'stream-json']).toContain(raw.companion.protocol);
           expect(Array.isArray(raw.companion.serverCmd)).toBe(true);
         }
       });

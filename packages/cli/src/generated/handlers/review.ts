@@ -181,7 +181,7 @@ export async function handleReview(dispatch: Dispatch, ctx: HandlerContext, targ
         engine,
         prompt,
         cwd,
-        mode: 'review' as const,
+        mode: 'exec' as const,
         timeout: (config as any).reviewTimeout ?? config.agentTimeout ?? 420,
         outputDir,
         signal: abort.signal,

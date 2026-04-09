@@ -1,5 +1,5 @@
 // @kern-source: session-store:5
-import { writeFileSync, readFileSync, existsSync, mkdirSync, unlinkSync, readdirSync, statSync, rmdirSync } from 'node:fs';
+import { writeFileSync, readFileSync, existsSync, mkdirSync, unlinkSync, readdirSync, statSync, rmdirSync, renameSync } from 'node:fs';
 
 // @kern-source: session-store:6
 import { join, dirname } from 'node:path';
@@ -68,7 +68,9 @@ export function saveToolResultToDisk(engineId: string, toolCallId: string, toolN
     const cacheDir = sessionCacheDir(engineId);
     mkdirSync(cacheDir, { recursive: true });
     const filePath = join(cacheDir, `${toolCallId}.txt`);
-    writeFileSync(filePath, content, 'utf-8');
+    const tmpFilePath = filePath + '.tmp';
+    writeFileSync(tmpFilePath, content, 'utf-8');
+    renameSync(tmpFilePath, filePath);
     return {
       toolCallId,
       toolName,
@@ -82,7 +84,7 @@ export function saveToolResultToDisk(engineId: string, toolCallId: string, toolN
   }
 }
 
-// @kern-source: session-store:61
+// @kern-source: session-store:63
 /**
  * Read a cached tool result from disk. Returns null if not found.
  */
@@ -97,7 +99,7 @@ export function loadToolResultFromDisk(engineId: string, toolCallId: string): st
   }
 }
 
-// @kern-source: session-store:74
+// @kern-source: session-store:76
 /**
  * Remove cached tool results not in the keep set. Prevents unbounded disk growth.
  */
@@ -115,7 +117,7 @@ export function pruneToolCache(engineId: string, keepIds: Set<string>): void {
   } catch { /* cache dir doesn't exist or inaccessible */ }
 }
 
-// @kern-source: session-store:90
+// @kern-source: session-store:92
 /**
  * Persist API session state to disk (v2 schema).
  */
@@ -133,10 +135,12 @@ export function saveSessionState(engineId: string, state: { messageHistory: Arra
     confidence: state.confidence,
     savedAt: Date.now(),
   };
-  writeFileSync(path, JSON.stringify(data), 'utf-8');
+  const tmpPath = path + '.tmp';
+  writeFileSync(tmpPath, JSON.stringify(data), 'utf-8');
+  renameSync(tmpPath, path);
 }
 
-// @kern-source: session-store:109
+// @kern-source: session-store:113
 /**
  * Load persisted API session state from disk. Handles v1→v2 migration transparently.
  */
@@ -172,7 +176,7 @@ export function loadSessionState(engineId: string): { messageHistory: Array<{rol
   }
 }
 
-// @kern-source: session-store:143
+// @kern-source: session-store:147
 /**
  * Delete persisted session state and its cache directory.
  */

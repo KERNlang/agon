@@ -70,6 +70,9 @@ export interface ApiAgentResult {
 }
 
 // @kern-source: agent-loop:40
+/**
+ * Attempt to repair malformed JSON tool arguments. Handles common LLM mistakes: markdown fencing, trailing commas, single quotes, unquoted keys.
+ */
 export function repairToolArgs(raw: string): Record<string,unknown>|null {
   let cleaned = raw.trim();
   
@@ -98,6 +101,9 @@ export function repairToolArgs(raw: string): Record<string,unknown>|null {
 }
 
 // @kern-source: agent-loop:69
+/**
+ * Auto-correct tool name case mismatches. Maps 'read' → 'Read', 'GREP' → 'Grep', etc.
+ */
 export function repairToolName(name: string, registry: any): string {
   // Check if exact match exists
   if (registry.has?.(name) || registry.get?.(name)) return name;
@@ -116,6 +122,9 @@ export function repairToolName(name: string, registry: any): string {
 }
 
 // @kern-source: agent-loop:88
+/**
+ * Run an API engine with full tool loop. Returns final response after all tool calls resolve.
+ */
 export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentResult> {
   // Run-scoped cache ID: prevents concurrent forge runs from colliding
   const runCacheId = `${opts.api.model || 'api-agent'}-${randomUUID().slice(0, 8)}`;

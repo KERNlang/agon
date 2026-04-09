@@ -35,6 +35,9 @@ export interface CesarMemory {
 }
 
 // @kern-source: memory:36
+/**
+ * Create a two-tier Cesar memory: session Map + persistent JSON.
+ */
 export function createCesarMemory(): CesarMemory {
   const session = new Map<string, MemoryEntry>();
   let persistent: MemoryEntry[] = [];

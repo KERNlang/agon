@@ -19,6 +19,6 @@
   },
   "dependencies": {
     "@agon/core": "*",
-    "kern-lang": "^3.1.7"
+    "kern-lang": "^3.1.8"
   }
 }

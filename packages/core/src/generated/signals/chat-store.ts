@@ -1,5 +1,5 @@
 // @kern-source: chat-store:1
-import { mkdirSync, appendFileSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, appendFileSync, readFileSync, readdirSync, statSync, writeFileSync, unlinkSync } from 'node:fs';
 
 // @kern-source: chat-store:2
 import { join } from 'node:path';
@@ -37,8 +37,37 @@ export function ensureChatsDir(): void {
 }
 
 // @kern-source: chat-store:30
+export const CHAT_RETENTION: number = 50;
+
+// @kern-source: chat-store:33
+/**
+ * Remove old chat files beyond the retention limit. Keeps the most recent CHAT_RETENTION sessions.
+ */
+export function pruneChats(): void {
+  try {
+    const dir = chatsDir();
+    const files = readdirSync(dir)
+      .filter((f: string) => f.endsWith('.ndjson'))
+      .map((f: string) => {
+        // Extract timestamp from filename (chat-<timestamp>.ndjson) for fast sort
+        const ts = parseInt(f.replace('chat-', '').replace('.ndjson', ''), 10);
+        return { name: f, ts: isNaN(ts) ? 0 : ts };
+      })
+      .sort((a: {ts:number}, b: {ts:number}) => b.ts - a.ts);
+  
+    if (files.length <= CHAT_RETENTION) return;
+  
+    const toRemove = files.slice(CHAT_RETENTION);
+    for (const f of toRemove) {
+      try { unlinkSync(join(dir, f.name)); } catch { /* best effort */ }
+    }
+  } catch { /* dir doesn't exist yet or read failed — not critical */ }
+}
+
+// @kern-source: chat-store:56
 export function startChatSession(opts?: {cwd?:string,branch?:string,engineIds?:string[]}): ChatSession {
   ensureChatsDir();
+  pruneChats();
   const id = `chat-${Date.now()}`;
   const session: ChatSession = {
     id,
@@ -61,14 +90,14 @@ export function startChatSession(opts?: {cwd?:string,branch?:string,engineIds?:s
   return session;
 }
 
-// @kern-source: chat-store:55
+// @kern-source: chat-store:82
 export function appendMessage(session: ChatSession, msg: ChatMessage): void {
   session.messages.push(msg);
   const filePath = join(chatsDir(), `${session.id}.ndjson`);
   appendFileSync(filePath, JSON.stringify(msg) + '\n');
 }
 
-// @kern-source: chat-store:62
+// @kern-source: chat-store:89
 export function loadChatSession(id: string): ChatSession|null {
   try {
     const filePath = join(chatsDir(), `${id}.ndjson`);
@@ -97,12 +126,15 @@ export function loadChatSession(id: string): ChatSession|null {
   }
 }
 
-// @kern-source: chat-store:91
+// @kern-source: chat-store:118
+/**
+ * Load an existing session for continued use. Returns null if not found.
+ */
 export function resumeChatSession(id: string): ChatSession|null {
   return loadChatSession(id);
 }
 
-// @kern-source: chat-store:97
+// @kern-source: chat-store:124
 export function listChatSessions(limit: number): ChatSession[] {
   ensureChatsDir();
   try {
@@ -126,7 +158,7 @@ export function listChatSessions(limit: number): ChatSession[] {
   }
 }
 
-// @kern-source: chat-store:121
+// @kern-source: chat-store:148
 export function latestChatSession(): ChatSession|null {
   const sessions = listChatSessions(1);
   return sessions.length > 0 ? sessions[0] : null;

@@ -89,6 +89,9 @@ import { runHooks } from '../blocks/hooks.js';
 import type { HookEvent } from '../blocks/hooks.js';
 
 // @kern-source: event-bus:90
+/**
+ * Register shell hooks from config as event bus listeners. Compatibility adapter.
+ */
 export function bridgeShellHooks(bus: EventBus, hooks: Record<string, any[]>): void {
   const eventMap: Record<string, string> = {
     'pre_dispatch': 'pre:dispatch',

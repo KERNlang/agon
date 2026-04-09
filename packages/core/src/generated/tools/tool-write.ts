@@ -14,6 +14,9 @@ import { fileStateCache } from '../../file-state-cache.js';
 import { takeSnapshot } from '../blocks/file-history.js';
 
 // @kern-source: tool-write:11
+/**
+ * Factory for the Write tool — writes or creates files with safety guards.
+ */
 export function createWriteTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Write',

@@ -67,6 +67,9 @@ export interface LoadedExtension {
 }
 
 // @kern-source: extension-manifest:53
+/**
+ * Validate a raw JSON object as an ExtensionManifest. Returns ok + data on success, ok=false + error on failure.
+ */
 export function validateManifest(raw: unknown, filePath: string): { ok: boolean; data?: ExtensionManifest; error?: string } {
   if (!raw || typeof raw !== 'object') {
     return { ok: false, error: `${filePath}: manifest is not an object` };

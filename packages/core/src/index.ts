@@ -83,6 +83,8 @@ export { formatCesarPlanMarkdown } from './generated/cesar/plan-formatter.js';
 export { generateToolPrompt, toolsToOpenAIFormat } from './generated/tools/tool-prompt.js';
 export { parseToolCalls, toolCallsToApiFormat, formatToolResults, formatToolResult } from './generated/tools/tool-parser.js';
 export type { ParsedToolCall, ParseResult } from './generated/tools/tool-parser.js';
+export { discoverMcpServers, mcpDiscoveryFingerprint, mcpServersToWireFormat } from './generated/tools/mcp-discovery.js';
+export type { McpServerConfig } from './generated/tools/mcp-discovery.js';
 export { buildToolSystemPrompt, processToolResponse, runToolLoop } from './generated/tools/tool-loop.js';
 export type { ToolLoopCallbacks, ToolLoopResult } from './generated/tools/tool-loop.js';
 export { startChatSession, appendMessage, loadChatSession, resumeChatSession, listChatSessions, latestChatSession } from './chat-store.js';

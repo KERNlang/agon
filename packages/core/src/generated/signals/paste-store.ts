@@ -14,6 +14,9 @@ import { AGON_HOME, ensureAgonHome } from './config.js';
 export const PASTE_STORE_DIR: string = join(AGON_HOME, 'paste-cache');
 
 // @kern-source: paste-store:11
+/**
+ * Max age in ms before cleanup removes a paste (7 days)
+ */
 export const PASTE_MAX_AGE: number = 7 * 24 * 60 * 60 * 1000;
 
 // @kern-source: paste-store:15
@@ -30,6 +33,9 @@ function ensurePasteDir(): void {
 }
 
 // @kern-source: paste-store:26
+/**
+ * Content-addressed storage for large pastes. SHA-256 hash as filename.
+ */
 export class PasteStore {
 
   store(text: string): PasteStoreResult {

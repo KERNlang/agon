@@ -23,6 +23,9 @@ export interface PatchFile {
 }
 
 // @kern-source: patch-parser:13
+/**
+ * Parse a unified diff into structured file-level and hunk-level data.
+ */
 export function parsePatch(content: string): PatchFile[] {
   const files: PatchFile[] = [];
   const lines = content.split('\n');
@@ -73,6 +76,9 @@ export function parsePatch(content: string): PatchFile[] {
 }
 
 // @kern-source: patch-parser:64
+/**
+ * Human-readable summary of a parsed patch.
+ */
 export function patchSummary(files: PatchFile[]): string {
   if (files.length === 0) return '(empty patch)';
   const totalAdd = files.reduce((sum, f) => sum + f.additions, 0);
@@ -86,6 +92,9 @@ export function patchSummary(files: PatchFile[]): string {
 }
 
 // @kern-source: patch-parser:78
+/**
+ * Swap +/- lines to produce an inverse patch for undo.
+ */
 export function invertPatch(content: string): string {
   const lines = content.split('\n');
   const result: string[] = [];

@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import type { EngineAdapter, EngineDefinition, ForgeEvent } from '@agon/core';
 
 // @kern-source: tribunal:3
-import { EngineRegistry, buildTribunalPrompt, createSidechainLogger, updateGlickoRanked, classifyTask } from '@agon/core';
+import { EngineRegistry, buildTribunalPrompt, createSidechainLogger, updateGlickoRanked, classifyTask, loadConfig } from '@agon/core';
 
 // @kern-source: tribunal:4
 import type { TribunalMode, TribunalModeConfig } from './tribunal-modes.js';
@@ -108,11 +108,12 @@ export async function runTribunal(opts: {question:string, engines:string[], roun
           engine,
           prompt,
           cwd: process.cwd(),
-          mode: 'review',
+          mode: 'exec',
           timeout,
           outputDir,
         });
-        return { engineId: pos.engineId, argument: result.stdout.trim() };
+        const cleaned = result.stdout.trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, '');
+        return { engineId: pos.engineId, argument: cleaned };
       } catch (err) {
         console.warn(`[agon] tribunal dispatch (${pos.engineId}) round ${round} failed: ${err instanceof Error ? err.message : String(err)}`);
         return { engineId: pos.engineId, argument: '(failed to respond)' };
@@ -145,8 +146,12 @@ export async function runTribunal(opts: {question:string, engines:string[], roun
     });
   }
   
-  // Summary using mode-aware summary prompt
-  const summaryEngine = registry.get(engines[0]);
+  // Summary using the configured Cesar engine when available, else first engine
+  let summaryEngine;
+  try {
+    const cesarId = loadConfig(process.cwd()).cesarEngine ?? 'claude';
+    summaryEngine = registry.get(cesarId);
+  } catch { summaryEngine = registry.get(engines[0]); }
   const summaryPrompt = buildModeSummaryPrompt({ mode, question, positions });
   
   let summary: string;
@@ -155,11 +160,11 @@ export async function runTribunal(opts: {question:string, engines:string[], roun
       engine: summaryEngine,
       prompt: summaryPrompt,
       cwd: process.cwd(),
-      mode: 'review',
+      mode: 'exec',
       timeout,
       outputDir,
     });
-    summary = summaryResult.stdout.trim();
+    summary = summaryResult.stdout.trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, '');
   } catch (err) {
     console.warn(`[agon] tribunal summary failed: ${err instanceof Error ? err.message : String(err)}`);
     summary = buildFallbackSummary(positions);
@@ -177,14 +182,18 @@ export async function runTribunal(opts: {question:string, engines:string[], roun
     data: { rounds: allRounds.length, engines: engines.length, mode },
   });
   
-  // Update Glicko-2 ratings — score by argument substance (length * rounds participated)
+  // Update Glicko-2 ratings — score by per-round substantive credit (not raw length)
   if (positions.length >= 2) {
     const taskClass = classifyTask(question);
     const tribunalRanked = positions
-      .map((p: any) => ({
-        engineId: p.engineId,
-        score: p.arguments.reduce((sum: number, arg: string) => sum + arg.length, 0),
-      }))
+      .map((p: any) => {
+        const substantive = p.arguments.filter((a: string) => a.length > 20 && a !== '(failed to respond)');
+        const roundCredit = substantive.length;
+        const cappedAvg = roundCredit > 0
+          ? substantive.reduce((sum: number, a: string) => sum + Math.min(a.length, 2000), 0) / roundCredit
+          : 0;
+        return { engineId: p.engineId, score: roundCredit * 1000 + Math.min(cappedAvg, 2000) };
+      })
       .sort((a: any, b: any) => b.score - a.score);
     updateGlickoRanked(tribunalRanked, taskClass, 'tribunal');
   }

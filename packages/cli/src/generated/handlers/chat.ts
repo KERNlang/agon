@@ -8,7 +8,7 @@ import { mkdirSync } from 'node:fs';
 import type { ImageAttachment, DispatchResult } from '@agon/core';
 
 // @kern-source: chat:4
-import { ensureAgonHome, RUNS_DIR, appendMessage, tracker, StreamParser, loadConfig, scanProjectContext, resolveWorkingDir } from '@agon/core';
+import { RUNS_DIR, appendMessage, tracker, StreamParser, loadConfig, sessionContext, resolveWorkingDir } from '@agon/core';
 
 // @kern-source: chat:5
 import { ENGINE_COLORS } from '../blocks/output-format.js';
@@ -16,7 +16,26 @@ import { ENGINE_COLORS } from '../blocks/output-format.js';
 // @kern-source: chat:6
 import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 
-// @kern-source: chat:8
+// @kern-source: chat:9
+export const _cachedCwd: {value:string|null} = { value: null };
+
+// @kern-source: chat:12
+function cachedCwd(): string {
+  if (_cachedCwd.value === null) {
+    _cachedCwd.value = resolveWorkingDir();
+  }
+  return _cachedCwd.value;
+}
+
+// @kern-source: chat:20
+/**
+ * Call when workspace changes (e.g. /workspace switch).
+ */
+export function invalidateCwdCache(): void {
+  _cachedCwd.value = null;
+}
+
+// @kern-source: chat:26
 function detectTargetEngine(input: string, availableIds: string[]): {engineId:string|null,message:string} {
   const lower = input.toLowerCase();
   for (const id of availableIds) {
@@ -32,12 +51,10 @@ function detectTargetEngine(input: string, availableIds: string[]): {engineId:st
   return { engineId: null, message: input };
 }
 
-// @kern-source: chat:24
+// @kern-source: chat:42
 export async function handleChat(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[], opts?: {toolPolicy?:'full'|'none'}): Promise<void> {
   const abort = new AbortController();
   try {
-    ensureAgonHome();
-    
     const available = ctx.activeEngines();
     if (available.length === 0) {
       dispatch({ type: 'error', message: 'No engines available.' });
@@ -68,8 +85,8 @@ export async function handleChat(input: string, dispatch: Dispatch, ctx: Handler
     const history = recent.length > 0
       ? recent.map((m: any) => m.role === 'user' ? `User: ${m.content}` : `${m.engineId ?? 'engine'}: ${m.content}`).join('\n\n')
       : '';
-    const cwd = resolveWorkingDir();
-    const projectCtx = scanProjectContext(cwd, config.projectContext || undefined, config.contextFormat);
+    const cwd = cachedCwd();
+    const projectCtx = sessionContext.get(cwd, config.projectContext || undefined, config.contextFormat);
     const parts: string[] = [];
     if (projectCtx) parts.push(`## PROJECT CONTEXT\n${projectCtx}`);
     if (history) parts.push(history);
@@ -107,8 +124,15 @@ export async function handleChat(input: string, dispatch: Dispatch, ctx: Handler
         const parser = new StreamParser();
     
         while (true) {
-          const { value, done } = await gen.next();
-          if (done) break;
+          const iterResult = await gen.next();
+          if (iterResult.done) {
+            // Capture AgentDispatchResult (generator return value contains diff)
+            if (iterResult.value && typeof iterResult.value === 'object') {
+              dispatchResult = iterResult.value as any;
+            }
+            break;
+          }
+          const value = iterResult.value;
           if (abort.signal.aborted) break;
     
           if (value.startsWith('\x00')) {
@@ -222,6 +246,39 @@ export async function handleChat(input: string, dispatch: Dispatch, ctx: Handler
     }
     if (streaming) {
       dispatch({ type: 'streaming-end', engineId });
+    }
+    
+    // Emit file-changes event if agent dispatch returned a diff
+    if (dispatchResult && (dispatchResult as any).diff) {
+      const agentDiff = (dispatchResult as any).diff as string;
+      const fileMap = new Map<string, { additions: number; deletions: number; status: 'modified'|'created'|'deleted' }>();
+      let currentFile = '';
+      for (const line of agentDiff.split('\n')) {
+        const diffMatch = line.match(/^diff --git a\/(.+?) b\/(.+)/);
+        if (diffMatch) {
+          currentFile = diffMatch[2];
+          if (!fileMap.has(currentFile)) fileMap.set(currentFile, { additions: 0, deletions: 0, status: 'modified' });
+        }
+        if (currentFile && line.startsWith('new file')) {
+          const entry = fileMap.get(currentFile);
+          if (entry) entry.status = 'created';
+        }
+        if (currentFile && line.startsWith('deleted file')) {
+          const entry = fileMap.get(currentFile);
+          if (entry) entry.status = 'deleted';
+        }
+        if (currentFile && line.startsWith('+') && !line.startsWith('+++')) {
+          const entry = fileMap.get(currentFile);
+          if (entry) entry.additions++;
+        }
+        if (currentFile && line.startsWith('-') && !line.startsWith('---')) {
+          const entry = fileMap.get(currentFile);
+          if (entry) entry.deletions++;
+        }
+      }
+      if (fileMap.size > 0) {
+        dispatch({ type: 'file-changes', files: Array.from(fileMap.entries()).map(([path, info]) => ({ path, ...info })) } as any);
+      }
     }
     
     if (response) {

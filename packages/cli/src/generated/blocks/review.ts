@@ -20,6 +20,9 @@ export interface ReviewState {
 }
 
 // @kern-source: review:16
+/**
+ * Process a review action. Returns undo token if patch was applied, null otherwise.
+ */
 export function handleReviewAction(action: ReviewAction, review: ReviewState, dispatch: Dispatch): string|null {
   switch (action.type) {
     case 'apply': {

@@ -1,0 +1,19 @@
+{
+  "name": "@agon/mcp",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "agon-mcp": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "kern:compile": "kern compile src/kern --outdir=src/generated",
+    "prebuild": "npm run kern:compile",
+    "build": "tsc -b",
+    "typecheck": "tsc --noEmit"
+  }
+}

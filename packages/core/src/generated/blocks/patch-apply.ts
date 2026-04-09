@@ -127,6 +127,9 @@ export function preflightApply(cwd: string, patchPath: string|null, manifestPath
 }
 
 // @kern-source: patch-apply:114
+/**
+ * Apply patch and save an inverse for undo.
+ */
 export function applyPatchWithUndo(cwd: string, patchContent: string): { ok:boolean, error?:string, undoToken?:string } {
   const undoDir = join(AGON_HOME, 'undo');
   mkdirSync(undoDir, { recursive: true });
@@ -153,6 +156,9 @@ export function applyPatchWithUndo(cwd: string, patchContent: string): { ok:bool
 }
 
 // @kern-source: patch-apply:141
+/**
+ * Apply the saved inverse patch to undo a previous apply.
+ */
 export function undoPatch(cwd: string, undoToken: string): { ok:boolean, error?:string } {
   const undoDir = join(AGON_HOME, 'undo');
   const inversePath = join(undoDir, `${undoToken}.patch`);

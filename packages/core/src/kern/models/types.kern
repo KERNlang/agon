@@ -20,7 +20,7 @@ interface name=EngineEnvVar
   field name=default type=string optional=true
 
 interface name=CompanionConfig
-  field name=protocol type="'jsonrpc'|'acp'|'structured-cli'"
+  field name=protocol type="'jsonrpc'|'acp'|'structured-cli'|'stream-json'"
   field name=serverCmd type="string[]"
   field name=features type="{threadResume?:boolean, nativeReview?:boolean, structuredOutput?:boolean}" optional=true
 
@@ -171,7 +171,14 @@ config name=AgonConfig
   field name=allowedCommands type="string[]" optional=true
   field name=toolPermissions type="Record<string,'allow'|'ask'|'deny'>" optional=true
   field name=hiddenEngines type="string[]" optional=true
+  field name=engineModels type="Record<string,string>" optional=true
   field name=iconTheme type="'roman'|'classic'" default=roman
+  field name=autoReviewAfterForge type=boolean default=true
+    doc "Auto-run review on forge winner's patch before presenting to user. Data: 79% bug catch rate."
+  field name=autoReviewAfterImpl type=boolean default=true
+    doc "Auto-run review after Cesar implements code (Edit/Write). Catches bugs before user sees 'done'."
+  field name=buddyTimeout type=number default=420
+    doc "Timeout for AI buddy dispatches (brainstorm/tribunal/forge). Codex needs 420s minimum."
 
 interface name=ScoutBid
   field name=engineId type=string

@@ -146,10 +146,10 @@ export function App({  }: {  }) {
   const [jobManager, setJobManager] = useState<any>(new JobManager());
   const [jobList, setJobList] = useState<Job[]>([]);
   const [lastUndoToken, setLastUndoToken] = useState<string|null>(null);
-  const [sessionEngines, setSessionEngines] = useState<string[]|null>((() => { const cfg = loadConfig(); const saved = cfg.forgeEnabledEngines; return saved && saved.length > 0 ? saved : null; })());
+  const [sessionEngines, setSessionEngines] = useState<string[]|null>(() => { const cfg = loadConfig(); const saved = cfg.forgeEnabledEngines; return saved && saved.length > 0 ? saved : null; });
   const [currentPlan, setCurrentPlan] = useState<Plan|null>(null);
   const [activePlan, setActivePlan] = useState<any>(null);
-  const [chatSession, setChatSession] = useState<ChatSession>((() => { const cwd = resolveWorkingDir(); let branch = 'unknown'; try { branch = currentBranch(cwd); } catch { /* git not available or not a repo */ } return startChatSession({ cwd, branch }); })());
+  const [chatSession, setChatSession] = useState<ChatSession>(() => { const cwd = resolveWorkingDir(); let branch = 'unknown'; try { branch = currentBranch(cwd); } catch { /* git not available or not a repo */ } return startChatSession({ cwd, branch }); });
   const [activeAbort, setActiveAbort] = useState<AbortController|null>(null);
   const [cesarSession, setCesarSession] = useState<PersistentSession|null>(null);
   const [explorationMode, setExplorationMode] = useState<boolean>(false);
@@ -256,7 +256,10 @@ export function App({  }: {  }) {
   }, []);
 
   const transition = useCallback((fn:any) => {
-          setReplState((prev: any) => fn({ state: prev }).state);
+          setReplState((prev: any) => {
+            try { return fn({ state: prev }).state; }
+            catch { return prev; }
+          });
   }, []);
 
   const trackAbort = useCallback((abort:AbortController|null) => {
@@ -329,6 +332,9 @@ export function App({  }: {  }) {
   }, [registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode,activePlan,extensionPromptFragments]);
 
   const handleInputChange = useCallback((value:string) => {
+          // Swallow input while a choice question is active — useInput handles keypress
+          if (questionState && questionState.choices) return;
+    
           const nextValue = cleanInputValue(value);
     
           // "/" typed into empty input → open slash picker, swallow the character
@@ -858,14 +864,25 @@ export function App({  }: {  }) {
           {enginePickerOpen && (
             <EnginePicker available={registry.availableIds()} initialSelected={sessionEngines ?? registry.availableIds()}
               userEngines={new Set(registry.list().filter((e: any) => e.tier === 'user').map((e: any) => e.id))}
+              modelOverrides={(loadConfig() as any).engineModels ?? {}}
               onConfirm={(selected: string[]) => { setEnginePickerOpen(false); setSessionEngines(selected); configSet('forgeEnabledEngines', selected); dispatch({ type: 'success', message: `Active engines: ${selected.join(', ')}` } as any); }}
               onCancel={() => setEnginePickerOpen(false)}
               onRemove={(engineId: string) => {
                 const engPath = join(homedir(), '.agon', 'engines', `${engineId}.json`);
                 try { unlinkSync(engPath); } catch (_e) {}
+                const nextModels = { ...((loadConfig() as any).engineModels ?? {}) };
+                delete nextModels[engineId];
+                configSet('engineModels', nextModels as any);
                 registry.unregister(engineId);
                 setSessionEngines((prev: string[]|null) => prev ? prev.filter((id: string) => id !== engineId) : null);
                 dispatch({ type: 'success', message: `Removed: ${engineId}` } as any);
+              }}
+              onSetModel={(engineId: string, model: string | null) => {
+                const nextModels = { ...((loadConfig() as any).engineModels ?? {}) };
+                if (model) nextModels[engineId] = model;
+                else delete nextModels[engineId];
+                configSet('engineModels', nextModels as any);
+                dispatch({ type: 'success', message: model ? `Model override set: ${engineId} → ${model}` : `Model override cleared: ${engineId}` } as any);
               }} />
           )}
           {modelPickerOpen && (
@@ -900,32 +917,31 @@ export function App({  }: {  }) {
               {slashPickerOpen && <SlashPicker commands={allSlashCommands} onSelect={handleSlashSelect} onCancel={() => setSlashPickerOpen(false)} />}
               {pendingImages.length > 0 && (<Box><Text color="#22d3ee">{icons().image + ' '}</Text>{pendingImages.map((img: any, i: number) => (<Text key={i} dimColor>{img.filename}{i < pendingImages.length - 1 ? ', ' : ''}</Text>))}</Box>)}
               {inputQueue.length > 0 && (<Box><Text dimColor>{icons().queue + ' '}{inputQueue.length} queued: </Text><Text dimColor italic>{inputQueue[0].length > 40 ? inputQueue[0].slice(0, 40) + '…' : inputQueue[0]}</Text></Box>)}
-              {questionState ? (
-                <Box flexDirection="column">
-                  <Box><Text bold color="yellow">{questionState.prompt}</Text></Box>
+              <Box borderStyle={mode === 'chat' ? 'round' : 'single'} borderColor={mode === 'chat' ? (questionState ? '#fbbf24' : '#585858') : 'gray'} borderLeft={mode !== 'chat'} borderRight={mode !== 'chat'} borderTop borderBottom paddingX={1} width="100%">
+                {mode !== 'chat' && (<Text><Text color={mode === 'campfire' ? '#f97316' : mode === 'brainstorm' ? '#22d3ee' : '#a78bfa'} bold>{mode === 'campfire' ? icons().campfire : mode === 'brainstorm' ? icons().brainstorm : icons().tribunal}{' '}{mode}</Text><Text dimColor>{' │ '}</Text></Text>)}
+                <Text color={mode === 'chat' ? (planModeQueued || (activePlan && activePlan.state === 'planning') ? '#c084fc' : '#585858') : '#fbbf24'}>{mode === 'chat' ? (planModeQueued ? '◈ ' : '> ') : icons().prompt + ' '}</Text>
+                <Box flexGrow={1}>
+                  {slashPickerOpen ? (
+                    <Text dimColor>{inputValue || '/'}</Text>
+                  ) : (
+                    <><TextInput key={inputKey} value={inputValue} onChange={handleInputChange} onSubmit={handleSubmit}
+                      placeholder={replState === 'idle' ? mode === 'chat' ? '' : mode === 'campfire' ? 'What should we think about?' : mode === 'brainstorm' ? 'What question for the engines?' : 'What should they debate?' : ''} />
+                    {(() => { const ghost = getGhostCompletion(inputValue, allSlashCommands, registry.availableIds()); return ghost ? <Text dimColor>{ghost}</Text> : null; })()}</>
+                  )}
+                </Box>
+              </Box>
+              {questionState && (
+                <Box flexDirection="column" paddingLeft={2} marginTop={0}>
+                  <Text bold color="#fbbf24">{questionState.prompt}</Text>
                   {questionState.choices ? (
-                    <Box gap={2} marginTop={0}>
+                    <Box flexDirection="column" paddingLeft={1}>
                       {(questionState.choices as {key:string,label:string,color?:string}[]).map((c: any, i: number) => (
-                        <Text key={i}><Text color={c.color ?? '#6b7280'} bold>[{i + 1}/{c.key}]</Text><Text> {c.label}</Text></Text>
+                        <Text key={i}><Text color={c.color ?? '#6b7280'} bold>  [{i + 1}/{c.key}] </Text><Text>{c.label}</Text></Text>
                       ))}
                     </Box>
                   ) : (
-                    <Box><TextInput value={questionAnswer} onChange={setQuestionAnswer} onSubmit={handleQuestionAnswer} /></Box>
+                    <Box paddingLeft={1}><TextInput value={questionAnswer} onChange={setQuestionAnswer} onSubmit={handleQuestionAnswer} /></Box>
                   )}
-                </Box>
-              ) : (
-                <Box borderStyle={mode === 'chat' ? 'round' : 'single'} borderColor={mode === 'chat' ? '#585858' : 'gray'} borderLeft={mode !== 'chat'} borderRight={mode !== 'chat'} borderTop borderBottom paddingX={1} width="100%">
-                  {mode !== 'chat' && (<Text><Text color={mode === 'campfire' ? '#f97316' : mode === 'brainstorm' ? '#22d3ee' : '#a78bfa'} bold>{mode === 'campfire' ? icons().campfire : mode === 'brainstorm' ? icons().brainstorm : icons().tribunal}{' '}{mode}</Text><Text dimColor>{' │ '}</Text></Text>)}
-                  <Text color={mode === 'chat' ? (planModeQueued || (activePlan && activePlan.state === 'planning') ? '#c084fc' : '#585858') : '#fbbf24'}>{mode === 'chat' ? (planModeQueued ? '◈ ' : '> ') : icons().prompt + ' '}</Text>
-                  <Box flexGrow={1}>
-                    {slashPickerOpen ? (
-                      <Text dimColor>{inputValue || '/'}</Text>
-                    ) : (
-                      <><TextInput key={inputKey} value={inputValue} onChange={handleInputChange} onSubmit={handleSubmit}
-                        placeholder={replState === 'idle' ? mode === 'chat' ? '' : mode === 'campfire' ? 'What should we think about?' : mode === 'brainstorm' ? 'What question for the engines?' : 'What should they debate?' : ''} />
-                      {(() => { const ghost = getGhostCompletion(inputValue, allSlashCommands, registry.availableIds()); return ghost ? <Text dimColor>{ghost}</Text> : null; })()}</>
-                    )}
-                  </Box>
                 </Box>
               )}
               {(() => {
@@ -950,7 +966,7 @@ export function App({  }: {  }) {
 }
 
 
-// @kern-source: app:924
+// @kern-source: app:940
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

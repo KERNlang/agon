@@ -23,6 +23,9 @@ import { parseConfidence, confidenceBadge } from './confidence.js';
 import { ensureCesarSession } from './session.js';
 
 // @kern-source: judge:10
+/**
+ * Parse Cesar's structured judgment response.
+ */
 function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJudgment|null {
   // Strip confidence prefix (e.g. ~91%) before parsing structured output
   const stripped = parseConfidence(response).rest;
@@ -67,6 +70,9 @@ function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJud
 }
 
 // @kern-source: judge:55
+/**
+ * Send forge results to Cesar for judgment + convergence plan.
+ */
 export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatch, ctx: HandlerContext): Promise<ForgeJudgment|null> {
   // Need an alive Cesar session
       let session;
@@ -181,6 +187,9 @@ export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatc
 }
 
 // @kern-source: judge:170
+/**
+ * Cesar synthesizes a converged patch from best-of-breed parts per the convergence plan.
+ */
 export async function cesarConvergeForge(manifest: ForgeManifest, judgment: ForgeJudgment, dispatch: Dispatch, ctx: HandlerContext): Promise<string|null> {
   let session;
       try {

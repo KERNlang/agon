@@ -454,13 +454,15 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
     }
   
     // ── Check MCP signal file for delegations from companion engines ──
+    // Signal file is an array — engine may call ReportConfidence + Tribunal in same turn.
     if (!ctx.cesar!.pendingDelegation && ctx.cesar!.mcpSignalPath) {
       try {
         const signalPath = ctx.cesar!.mcpSignalPath as string;
         if (existsSync(signalPath)) {
-          const signal = JSON.parse(readFileSync(signalPath, 'utf-8'));
+          const signals: Array<{tool: string; args?: Record<string, unknown>; timestamp: number}> = JSON.parse(readFileSync(signalPath, 'utf-8'));
           unlinkSync(signalPath);
-          if (signal.timestamp && Date.now() - signal.timestamp < 60000) {
+          for (const signal of (Array.isArray(signals) ? signals : [signals])) {
+            if (!signal.timestamp || Date.now() - signal.timestamp >= 60000) continue;
             if (signal.tool === 'ReportConfidence') {
               const value = typeof signal.args?.value === 'number' ? signal.args.value : null;
               if (value !== null && value >= 0 && value <= 100) {
@@ -470,7 +472,9 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 dispatch({ type: 'confidence-update', value });
               }
             } else {
+              // First non-confidence signal becomes the delegation
               ctx.cesar!.pendingDelegation = extractDelegation(signal.tool, signal.args ?? {});
+              break; // Only one delegation per turn
             }
           }
         }
@@ -482,6 +486,17 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
     if (pendingDel) {
       ctx.cesar!.pendingDelegation = null;
       return await commitTurnAndDelegate(pendingDel, input, response, cesarEngineId, streaming, dispatch, ctx);
+    }
+  
+    // ── Plan proposed via ProposePlan tool — let dispatch.kern handle the approval loop ──
+    if (ctx.cesar!.proposedPlan) {
+      if (streaming) { dispatch({ type: 'streaming-end', engineId: cesarEngineId }); }
+      dispatch({ type: 'spinner-stop' });
+      if (response) {
+        appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
+        appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
+      }
+      return { delegated: false, responded: true };
     }
   
     // Check final response for suggestion/delegation

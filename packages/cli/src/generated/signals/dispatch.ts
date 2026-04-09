@@ -1,52 +1,61 @@
 // @kern-source: dispatch:5
-import { resolveWorkingDir, extractImagesFromInput, buildImageAttachment, undoPatch, resumeChatSession, findSkill, renderSkillPrompt, configSet, startChatSession, currentBranch, buildExtensionContext, sessionContext } from '@agon/core';
+import { join } from 'node:path';
 
 // @kern-source: dispatch:6
-import { invalidateCwdCache } from '../handlers/chat.js';
+import { mkdirSync } from 'node:fs';
 
 // @kern-source: dispatch:7
-import type { ImageAttachment, ChatSession } from '@agon/core';
+import { resolveWorkingDir, extractImagesFromInput, buildImageAttachment, undoPatch, resumeChatSession, findSkill, renderSkillPrompt, configSet, startChatSession, currentBranch, buildExtensionContext, sessionContext, RUNS_DIR } from '@agon/core';
 
 // @kern-source: dispatch:8
-import { approveCesarPlan, cancelCesarPlan, saveCesarPlan, loadCesarPlan, listCesarPlans, executePlan, formatCesarPlanMarkdown } from '@agon/core';
+import { invalidateCwdCache } from '../handlers/chat.js';
 
 // @kern-source: dispatch:9
-import type { CesarPlan, CesarStepResult } from '@agon/core';
+import type { ImageAttachment, ChatSession } from '@agon/core';
 
 // @kern-source: dispatch:10
-import { buildStepExecutors } from '../handlers/plan-mode.js';
+import { approveCesarPlan, cancelCesarPlan, saveCesarPlan, loadCesarPlan, listCesarPlans, executePlan, formatCesarPlanMarkdown } from '@agon/core';
 
 // @kern-source: dispatch:11
-import { detectIntent, FITNESS_PATTERN } from './intent.js';
+import type { CesarPlan, CesarStepResult } from '@agon/core';
 
 // @kern-source: dispatch:12
-import type { Dispatch, HandlerContext } from '../../handlers/types.js';
+import { buildStepExecutors } from '../handlers/plan-mode.js';
 
 // @kern-source: dispatch:13
-import { icons } from './icons.js';
+import { detectIntent, FITNESS_PATTERN } from './intent.js';
 
 // @kern-source: dispatch:14
-import { handleForge, handleChat, handleBrainstorm, handleCampfire, handleTribunal, handleLeaderboard, handleHistory, handleEngines, handleDiscover, handleConfig, handleUse, handleCesar, handleTokens, handleModels, handleWorkspace, handleChats, handlePlanShow, handlePlansList, handleApprove, handleRetry, handleCancel, handleApplyPatch, handleCp, handleCommit, handleFlowReport, handleFlowAnalysis, handleBuild, handleRun, handleReview } from '../../handlers/index.js';
+import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 
 // @kern-source: dispatch:15
-import { handleTeamTribunal } from '../handlers/team-tribunal.js';
+import { icons } from './icons.js';
 
 // @kern-source: dispatch:16
-import { handleTeamForge } from '../handlers/team-forge.js';
+import { ENGINE_COLORS } from '../blocks/output-format.js';
 
 // @kern-source: dispatch:17
-import { handleTeamBrainstorm } from '../handlers/team-brainstorm.js';
+import { handleForge, handleChat, handleBrainstorm, handleCampfire, handleTribunal, handleLeaderboard, handleHistory, handleEngines, handleDiscover, handleConfig, handleUse, handleCesar, handleTokens, handleModels, handleWorkspace, handleChats, handlePlanShow, handlePlansList, handleApprove, handleRetry, handleCancel, handleApplyPatch, handleCp, handleCommit, handleFlowReport, handleFlowAnalysis, handleBuild, handleRun, handleReview } from '../../handlers/index.js';
 
 // @kern-source: dispatch:18
-import { handleCesarBrain, parseSuggestion, CESAR_SYSTEM_PROMPT } from '../../handlers/cesar-brain.js';
+import { handleTeamTribunal } from '../handlers/team-tribunal.js';
 
 // @kern-source: dispatch:19
-import { handlePipeline } from '../handlers/pipeline.js';
+import { handleTeamForge } from '../handlers/team-forge.js';
 
 // @kern-source: dispatch:20
-import { handleProvider } from '../handlers/provider.js';
+import { handleTeamBrainstorm } from '../handlers/team-brainstorm.js';
+
+// @kern-source: dispatch:21
+import { handleCesarBrain, parseSuggestion, CESAR_SYSTEM_PROMPT } from '../../handlers/cesar-brain.js';
 
 // @kern-source: dispatch:22
+import { handlePipeline } from '../handlers/pipeline.js';
+
+// @kern-source: dispatch:23
+import { handleProvider } from '../handlers/provider.js';
+
+// @kern-source: dispatch:25
 export interface DispatchCallbacks {
   dispatch: Dispatch;
   ctx: HandlerContext;
@@ -81,13 +90,13 @@ export interface DispatchCallbacks {
   setWorkspacePath?: (path: string) => void;
 }
 
-// @kern-source: dispatch:55
+// @kern-source: dispatch:58
 export interface DispatchResult {
   handled: boolean;
   ranAsJob: boolean;
 }
 
-// @kern-source: dispatch:59
+// @kern-source: dispatch:62
 /**
  * Handle mode-switching intents. Returns true if consumed.
  */
@@ -117,7 +126,7 @@ export function handleModeSwitch(intentType: string, topic: string|undefined, qu
   return false;
 }
 
-// @kern-source: dispatch:87
+// @kern-source: dispatch:90
 /**
  * Extract a fitness command from conversational execution input while keeping the task clean.
  */
@@ -130,7 +139,7 @@ export function extractExecutionSpec(input: string): { task:string; fitnessCmd:s
   return { task, fitnessCmd };
 }
 
-// @kern-source: dispatch:98
+// @kern-source: dispatch:101
 /**
  * Unified Cesar brain routing. Returns true if a background job was dispatched.
  */
@@ -220,6 +229,42 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
         case 'review':
           cb.runAsJob('review', label, () => handleReview(cb.dispatch, cb.ctx, result.target as string | undefined, result.engineId as string | undefined));
           return true;
+        case 'delegate': {
+          // Delegate: execute subtask on target engine, feed result back to Cesar
+          const targetEngineId = result.engineId as string | undefined;
+          if (!targetEngineId) { cb.dispatch({ type: 'warning', message: 'Delegate: no target engine specified' }); break; }
+          cb.runAsJob('delegate', label, async () => {
+            let targetEngine;
+            try { targetEngine = cb.ctx.registry.get(targetEngineId); } catch {
+              cb.dispatch({ type: 'error', message: `Delegate: engine "${targetEngineId}" not found` });
+              return;
+            }
+            const outDir = join(RUNS_DIR, `delegate-${targetEngineId}-${Date.now()}`);
+            mkdirSync(outDir, { recursive: true });
+            try {
+              const delegateResult = await cb.ctx.adapter.dispatch({
+                engine: targetEngine,
+                prompt: taskInput,
+                cwd: resolveWorkingDir(),
+                mode: 'exec' as any,
+                timeout: cb.ctx.config.timeout ?? 120,
+                outputDir: outDir,
+              });
+              const answer = (delegateResult.stdout || '').trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
+              if (answer) {
+                cb.dispatch({ type: 'engine-block', engineId: targetEngineId, color: ENGINE_COLORS[targetEngineId] ?? 124, content: answer });
+              }
+              // Feed result back to Cesar so it can continue
+              if (cb.ctx.cesarSession) {
+                cb.dispatch({ type: 'info', message: `Feeding delegate result back to Cesar…` });
+                await handleChat(`[Delegate → ${targetEngineId}] Result:\n${answer || '(empty response)'}`, cb.dispatch, cb.ctx, undefined, { toolPolicy: 'none' });
+              }
+            } catch (err) {
+              cb.dispatch({ type: 'error', message: `Delegate to ${targetEngineId} failed: ${err instanceof Error ? err.message : String(err)}` });
+            }
+          });
+          return true;
+        }
       }
     }
     if (result.responded) return false;
@@ -366,7 +411,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
   return false;
 }
 
-// @kern-source: dispatch:332
+// @kern-source: dispatch:371
 /**
  * Route a parsed intent to the correct handler. Registry-first, switch as fallback.
  */

@@ -206,6 +206,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
     let parsedConfidence: number | null = null;
     let confidenceParsed = false;
     let insideThinkBlock = false;
+    let hadToolActivity = false; // tracks if native tool calls were shown to user
     let secondOpinionPromise: Promise<any> | null = null;
     const eagerPromises: Promise<ToolCallResult>[] = [];
     let eagerToolCtx: ToolContext | null = null;
@@ -249,6 +250,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           const toolInput = typeof meta.input === 'string' ? meta.input : meta.input ? JSON.stringify(meta.input) : '';
           const toolName = chunk.content || 'tool';
           const toolStatus = (meta.status as string) ?? 'running';
+          hadToolActivity = true;
           dispatch({ type: 'spinner-update', message: `Cesar: ${toolName}…` });
   
           if (toolStatus === 'done') {
@@ -372,8 +374,8 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       clearInterval(heartbeat);
       dispatch({ type: 'spinner-stop' });
       console.error(`[cesar:claude] send error: ${(err as Error).message ?? err}`);
-      // If we already have content, preserve it instead of discarding
-      if (response.length > 0 || streaming) {
+      // If we already have content or tool activity, preserve it instead of discarding
+      if (response.length > 0 || streaming || hadToolActivity) {
         dispatch({ type: 'warning', message: `Cesar stream error (partial response preserved): ${((err as Error).message ?? '').slice(0, 80)}` });
         // Fall through to process whatever response we have
       } else {
@@ -804,7 +806,8 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       dispatch({ type: 'spinner-stop' });
     }
   
-    return { delegated: false, responded: false };
+    // Native tool activity counts as a response — the user saw tool calls in the UI
+    return { delegated: false, responded: hadToolActivity || ranToolLoop };
   } finally {
     ctx.eventBus?.emit('post:cesar-brain', { durationMs: Date.now() - _brainStartMs }).catch(() => {});
     ctx.cesar!.busy = false;

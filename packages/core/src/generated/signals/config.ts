@@ -69,6 +69,7 @@ export function loadConfig(cwd?: string): Required<AgonConfig> {
   // Compiler can't emit object/array defaults for Record types — ensure correct runtime types
   if (!merged.hooks || typeof merged.hooks === 'string') (merged as any).hooks = {};
   if (!merged.allowedCommands || typeof merged.allowedCommands === 'string') (merged as any).allowedCommands = [];
+  if (!merged.engineModels || typeof merged.engineModels === 'string') (merged as any).engineModels = {};
   // Default tool permissions — same model as Claude Code:
   // Read/search = auto-allow, Write/Edit/Bash = ask
   if (!merged.toolPermissions || typeof merged.toolPermissions === 'string') {
@@ -85,12 +86,12 @@ export function loadConfig(cwd?: string): Required<AgonConfig> {
   return merged;
 }
 
-// @kern-source: config:90
+// @kern-source: config:91
 export function configGet(key: keyof AgonConfig, cwd?: string): Required<AgonConfig>[keyof AgonConfig] {
   return loadConfig(cwd)[key];
 }
 
-// @kern-source: config:95
+// @kern-source: config:96
 export function configSet(key: keyof AgonConfig, value: AgonConfig[keyof AgonConfig]): void {
   if (!(key in DEFAULT_AGON_CONFIG)) {
     throw new ConfigError(`Unknown config key: ${String(key)}`);
@@ -112,7 +113,7 @@ export function configSet(key: keyof AgonConfig, value: AgonConfig[keyof AgonCon
   renameSync(tmpPath, GLOBAL_CONFIG_PATH);
 }
 
-// @kern-source: config:117
+// @kern-source: config:118
 export function ensureAgonHome(): void {
   mkdirSync(AGON_HOME, { recursive: true });
   mkdirSync(RUNS_DIR, { recursive: true });

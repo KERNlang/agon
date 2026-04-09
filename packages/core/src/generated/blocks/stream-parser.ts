@@ -9,6 +9,9 @@ export interface ParsedChunk {
 // @kern-source: stream-parser:3
 
 // @kern-source: stream-parser:5
+/**
+ * Buffered NDJSON parser that handles partial JSON lines spanning multiple chunks.
+ */
 export class StreamParser {
   private buffer: string;
 
@@ -88,6 +91,9 @@ export class StreamParser {
 }
 
 // @kern-source: stream-parser:87
+/**
+ * Stateless convenience wrapper. For streaming use, prefer StreamParser.feed() + flush().
+ */
 export function parseStreamChunk(chunk: string): ParsedChunk[] {
   const parser = new StreamParser();
   const results = parser.feed(chunk);

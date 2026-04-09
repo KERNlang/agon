@@ -2,6 +2,9 @@
 import { scanProjectContext } from './context-scanner.js';
 
 // @kern-source: session-context:3
+/**
+ * Memoized project context — gathered once per session, reused across dispatches. Inspired by Claude Code's immutable context pattern: capture directory structure, git status, project type at startup and cache for the session lifetime.
+ */
 export class SessionContext {
   private cache: string|null = null;
   private cachedCwd: string|null = null;

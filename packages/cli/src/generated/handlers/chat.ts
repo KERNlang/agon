@@ -28,6 +28,9 @@ function cachedCwd(): string {
 }
 
 // @kern-source: chat:20
+/**
+ * Call when workspace changes (e.g. /workspace switch).
+ */
 export function invalidateCwdCache(): void {
   _cachedCwd.value = null;
 }

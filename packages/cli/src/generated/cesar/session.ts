@@ -90,6 +90,9 @@ RULE 6 — AFTER DELEGATION: After calling Forge/Brainstorm/Tribunal/Campfire/Pi
 RULE 7 — NO NARRATION: NEVER narrate your research process. Do not write "Reading the file...", "I'm checking...", "Let me look at...", "I've confirmed...". The user sees your text output — if you narrate exploration it looks like you have no clue. Instead: call tools SILENTLY, then speak ONLY when you have the answer or decision. Your visible output should be conclusions, answers, and actions — never a play-by-play of your investigation. If you need to read files or search code, call Read/Grep/Glob directly without announcing it.`;
 
 // @kern-source: session:73
+/**
+ * Build the full Cesar system prompt with project context, engine list, and mode flags.
+ */
 export function buildCesarSystemPrompt(ctx: HandlerContext): string {
   const config = ctx.config;
       const cesarCwd = resolveWorkingDir();
@@ -159,6 +162,9 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
 }
 
 // @kern-source: session:143
+/**
+ * Build the onToolCall callback for API engines with native function calling.
+ */
 export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry, config: any): ((name:string, args:Record<string,unknown>, callId:string) => Promise<string>) | undefined {
   const fsc = new FileStateCache();
   const toolResultCache = new Map<string, string>();
@@ -330,6 +336,9 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
 }
 
 // @kern-source: session:315
+/**
+ * Build the onApproval callback for engine tool approvals.
+ */
 export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:string, command:string) => Promise<boolean> {
   const engine = ctx.registry.get(engineId);
   return async (tool: string, command: string) => {
@@ -441,6 +450,9 @@ export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
 }
 
 // @kern-source: session:427
+/**
+ * Compute a simple fingerprint of MCP-related config to detect changes.
+ */
 export function mcpConfigFingerprint(config: any): string {
   const enabled = !!(config as any).cesarMcpEnabled;
   const configPath = String((config as any).cesarMcpConfigPath ?? '');
@@ -458,138 +470,142 @@ export function mcpConfigFingerprint(config: any): string {
 // @kern-source: session:443
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
-  const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
-  const cwd = resolveWorkingDir();
+    const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
+    const cwd = resolveWorkingDir();
   
-  // Ensure cesar state bag exists
-  if (!ctx.cesar) {
-    ctx.cesar = {
-      busy: false, busySince: null, queue: null,
-      toolRegistry: null, hasNativeTools: false, lastDispatch: null,
-      pendingDelegation: null, reportedConfidence: undefined,
-      autoNero: false, advisorPending: false, lastEscalation: null as string | null,
-      mcpFingerprint: undefined, planDispatch: null, proposedPlan: undefined,
-    };
-  }
-  
-  // Return existing alive session IF it's for the same engine AND MCP config hasn't changed
-  const currentMcpFp = mcpConfigFingerprint(config);
-  if (ctx.cesarSession && ctx.cesarSession.alive && ctx.cesarSession.engineId === cesarEngineId) {
-    const storedFp = ctx.cesar!.mcpFingerprint as string | undefined;
-    if (storedFp === currentMcpFp) {
-      return ctx.cesarSession;
+    // Ensure cesar state bag exists
+    if (!ctx.cesar) {
+      ctx.cesar = {
+        busy: false, busySince: null, queue: null,
+        toolRegistry: null, hasNativeTools: false, lastDispatch: null,
+        pendingDelegation: null, reportedConfidence: undefined,
+        autoNero: false, advisorPending: false, lastEscalation: null as string | null,
+        mcpFingerprint: undefined, planDispatch: null, proposedPlan: undefined,
+      };
     }
-    // MCP config changed — close stale session and recreate
-    ctx.cesarSession.close();
-    ctx.setCesarSession(null);
-  }
   
-  // Wrong engine or dead session — close old one
-  if (ctx.cesarSession && ctx.cesarSession.engineId !== cesarEngineId) {
-    ctx.cesarSession.close();
-    ctx.setCesarSession(null);
-  }
-  
-  // Session exists but died — try restarting it before creating a new one
-  if (ctx.cesarSession && !ctx.cesarSession.alive) {
-    try {
-      await ctx.cesarSession.start();
-      if (ctx.cesarSession.alive) return ctx.cesarSession;
-    } catch {
-      // Restart failed — fall through to create fresh session
+    // Return existing alive session IF it's for the same engine AND MCP config hasn't changed
+    const currentMcpFp = mcpConfigFingerprint(config);
+    if (ctx.cesarSession && ctx.cesarSession.alive && ctx.cesarSession.engineId === cesarEngineId) {
+      const storedFp = ctx.cesar!.mcpFingerprint as string | undefined;
+      if (storedFp === currentMcpFp) {
+        return ctx.cesarSession;
+      }
+      // MCP config changed — close stale session and recreate
+      ctx.cesarSession.close();
+      ctx.setCesarSession(null);
     }
-  }
   
-  let engine;
+    // Wrong engine or dead session — close old one
+    if (ctx.cesarSession && ctx.cesarSession.engineId !== cesarEngineId) {
+      ctx.cesarSession.close();
+      ctx.setCesarSession(null);
+    }
+  
+    // Session exists but died — try restarting it before creating a new one
+    if (ctx.cesarSession && !ctx.cesarSession.alive) {
+      try {
+        await ctx.cesarSession.start();
+        if (ctx.cesarSession.alive) return ctx.cesarSession;
+      } catch {
+        // Restart failed — fall through to create fresh session
+      }
+    }
+  
+    let engine;
   try {
     engine = ctx.registry.get(cesarEngineId);
   } catch {
     throw new Error(`Cesar engine "${cesarEngineId}" not found`);
   }
+  const engineModelOverride = (config as any).engineModels?.[cesarEngineId] as string | undefined;
+  if (engineModelOverride && engine.api) {
+    engine = { ...engine, api: { ...engine.api, model: engineModelOverride } };
+  }
   
-  // Resolve backend: user preference → auto (CLI first, API fallback)
-  const cesarBackend = (config as any).cesarBackend ?? 'auto';
-  const hasBinary = !!(engine.binary && ctx.registry.findBinary(engine));
-  const hasApi = !!(engine.api && process.env[engine.api?.apiKeyEnv]);
+    // Resolve backend: user preference → auto (CLI first, API fallback)
+    const cesarBackend = (config as any).cesarBackend ?? 'auto';
+    const hasBinary = !!(engine.binary && ctx.registry.findBinary(engine));
+    const hasApi = !!(engine.api && process.env[engine.api?.apiKeyEnv]);
   
-  let binaryPath = '';
-  if (cesarBackend === 'api' && hasApi) {
-    binaryPath = ''; // force API path
-  } else if (cesarBackend === 'cli' && hasBinary) {
-    binaryPath = ctx.registry.findBinary(engine)!;
-  } else if (cesarBackend === 'auto') {
-    if (hasBinary) {
+    let binaryPath = '';
+    if (cesarBackend === 'api' && hasApi) {
+      binaryPath = ''; // force API path
+    } else if (cesarBackend === 'cli' && hasBinary) {
       binaryPath = ctx.registry.findBinary(engine)!;
-    } else if (hasApi) {
-      binaryPath = '';
+    } else if (cesarBackend === 'auto') {
+      if (hasBinary) {
+        binaryPath = ctx.registry.findBinary(engine)!;
+      } else if (hasApi) {
+        binaryPath = '';
+      } else {
+        throw new Error(`No backend for "${cesarEngineId}" — install CLI or set ${engine.api?.apiKeyEnv ?? 'API key'}`);
+      }
     } else {
-      throw new Error(`No backend for "${cesarEngineId}" — install CLI or set ${engine.api?.apiKeyEnv ?? 'API key'}`);
+      if (hasBinary) binaryPath = ctx.registry.findBinary(engine)!;
+      else if (hasApi) binaryPath = '';
+      else throw new Error(`No backend for "${cesarEngineId}"`);
     }
-  } else {
-    if (hasBinary) binaryPath = ctx.registry.findBinary(engine)!;
-    else if (hasApi) binaryPath = '';
-    else throw new Error(`No backend for "${cesarEngineId}"`);
-  }
-  const usingApi = !binaryPath;
-  const mcpServers = canUseCesarMcp(engine, binaryPath)
-    ? loadCesarMcpServers(config, cwd)
-    : undefined;
+    const usingApi = !binaryPath;
+    const mcpServers = canUseCesarMcp(engine, binaryPath)
+      ? loadCesarMcpServers(config, cwd)
+      : undefined;
   
-  // Build system prompt and tool registry
-  const systemPrompt = buildCesarSystemPrompt(ctx);
-  const toolRegistry = createCesarToolRegistry(cesarEngineId);
+    // Build system prompt and tool registry
+    const systemPrompt = buildCesarSystemPrompt(ctx);
+    const toolRegistry = createCesarToolRegistry(cesarEngineId);
   
-  // Store registry on context for tool execution during responses
-  ctx.cesar!.toolRegistry = toolRegistry;
+    // Store registry on context for tool execution during responses
+    ctx.cesar!.toolRegistry = toolRegistry;
   
-  // Build native function calling tools for API engines (OpenAI-compatible)
-  const nativeTools = (!binaryPath && engine.api) ? toolsToOpenAIFormat(toolRegistry) : undefined;
-  ctx.cesar!.hasNativeTools = !!nativeTools;
+    // Build native function calling tools for API engines (OpenAI-compatible)
+    const nativeTools = (!binaryPath && engine.api) ? toolsToOpenAIFormat(toolRegistry) : undefined;
+    ctx.cesar!.hasNativeTools = !!nativeTools;
   
-  // API engines with native tools: DON'T inject XML tool descriptions — the native
-  // tools parameter is enough and XML descriptions confuse models into narrating
-  // instead of calling tools. CLI engines still need the XML prompt.
-  let fullPrompt = systemPrompt;
-  if (!nativeTools) {
-    const toolPrompt = buildToolSystemPrompt(toolRegistry);
-    fullPrompt += '\n\nTOOLS: XML format below. Never ask permission — just call. Never describe changes when you can execute.\n\n' + toolPrompt;
-  } else {
-    fullPrompt += '\n\nYou have tools available via function calling. Call them directly — do NOT describe them in XML or narrate what you would call. Just call the function.';
-  }
-  if (mcpServers && mcpServers.length > 0) {
-    fullPrompt += '\n\nMCP is enabled for this session. Use MCP only when the task clearly needs capabilities outside the workspace or built-in Agon tools. Prefer Read/Grep/Glob/Edit/Bash first, and keep MCP calls to the minimum needed.';
-  }
+    // API engines with native tools: DON'T inject XML tool descriptions — the native
+    // tools parameter is enough and XML descriptions confuse models into narrating
+    // instead of calling tools. CLI engines still need the XML prompt.
+    let fullPrompt = systemPrompt;
+    if (!nativeTools) {
+      const toolPrompt = buildToolSystemPrompt(toolRegistry);
+      fullPrompt += '\n\nTOOLS: XML format below. Never ask permission — just call. Never describe changes when you can execute.\n\n' + toolPrompt;
+    } else {
+      fullPrompt += '\n\nYou have tools available via function calling. Call them directly — do NOT describe them in XML or narrate what you would call. Just call the function.';
+    }
+    if (mcpServers && mcpServers.length > 0) {
+      fullPrompt += '\n\nMCP is enabled for this session. Use MCP only when the task clearly needs capabilities outside the workspace or built-in Agon tools. Prefer Read/Grep/Glob/Edit/Bash first, and keep MCP calls to the minimum needed.';
+    }
   
-  const sessionConfig: PersistentSessionConfig = {
-    engine,
-    binaryPath,
-    cwd,
-    systemPrompt: fullPrompt,
-    nativeTools,
-    mcpServers,
-    onToolCall: buildOnToolCall(ctx, toolRegistry, config),
-    onApproval: buildOnApproval(ctx, cesarEngineId),
-    onTurnEnd: (learnings: {filesRead:string[], filesModified:string[], decisions:string[], discoveries:string[], toolsUsed:string[]}) => {
-      // Write API engine learnings to Cesar's persistent memory
-      const mem = ctx.cesarMemory;
-      if (!mem) return;
-      for (const file of learnings.filesModified.slice(0, 5)) {
-        mem.savePersistent({ key: `modified:${file}`, value: `Modified in API session`, timestamp: new Date().toISOString(), category: 'file' });
-      }
-      for (const discovery of learnings.discoveries.slice(0, 3)) {
-        mem.savePersistent({ key: `discovery:${discovery.slice(0, 50)}`, value: discovery, timestamp: new Date().toISOString(), category: 'pattern' });
-      }
-      for (const decision of learnings.decisions.slice(0, 3)) {
-        mem.savePersistent({ key: `decision:${decision.slice(0, 50)}`, value: decision, timestamp: new Date().toISOString(), category: 'decision' });
-      }
-    },
-  };
+    const sessionConfig: PersistentSessionConfig = {
+      engine,
+      binaryPath,
+      cwd,
+      systemPrompt: fullPrompt,
+      nativeTools,
+      mcpServers,
+      onToolCall: buildOnToolCall(ctx, toolRegistry, config),
+      onApproval: buildOnApproval(ctx, cesarEngineId),
+      onTurnEnd: (learnings: {filesRead:string[], filesModified:string[], decisions:string[], discoveries:string[], toolsUsed:string[]}) => {
+        // Write API engine learnings to Cesar's persistent memory
+        const mem = ctx.cesarMemory;
+        if (!mem) return;
+        for (const file of learnings.filesModified.slice(0, 5)) {
+          mem.savePersistent({ key: `modified:${file}`, value: `Modified in API session`, timestamp: new Date().toISOString(), category: 'file' });
+        }
+        for (const discovery of learnings.discoveries.slice(0, 3)) {
+          mem.savePersistent({ key: `discovery:${discovery.slice(0, 50)}`, value: discovery, timestamp: new Date().toISOString(), category: 'pattern' });
+        }
+        for (const decision of learnings.decisions.slice(0, 3)) {
+          mem.savePersistent({ key: `decision:${decision.slice(0, 50)}`, value: decision, timestamp: new Date().toISOString(), category: 'decision' });
+        }
+      },
+    };
   
-  const session = createPersistentSession(sessionConfig);
-  await session.start();
-  ctx.setCesarSession(session);
-  // Store MCP config fingerprint so we can detect changes on next reuse check
-  ctx.cesar!.mcpFingerprint = currentMcpFp;
-  return session;
+    const session = createPersistentSession(sessionConfig);
+    await session.start();
+    ctx.setCesarSession(session);
+    // Store MCP config fingerprint so we can detect changes on next reuse check
+    ctx.cesar!.mcpFingerprint = currentMcpFp;
+    return session;
 }
 

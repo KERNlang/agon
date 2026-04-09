@@ -77,6 +77,9 @@ export const CLASSIC_ICONS: IconSet = ({
 });
 
 // @kern-source: icons:80
+/**
+ * Resolve icon set from config. Call once per render cycle.
+ */
 export function icons(): IconSet {
   const theme = loadConfig().iconTheme ?? 'roman';
   return theme === 'classic' ? CLASSIC_ICONS : ROMAN_ICONS;

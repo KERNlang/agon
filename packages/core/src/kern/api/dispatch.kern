@@ -12,28 +12,40 @@ interface name=ApiConfig
   field name=firstChunkTimeoutMs type=number optional=true
   field name=idleTimeoutMs type=number optional=true
 
+// Model instance cache — provider+model objects are stateless, safe to reuse
+const name=_modelCache type="Map<string,{model:any, apiKey:string}>"
+  handler <<< new Map<string,{model:any, apiKey:string}>() >>>
+
 fn name=buildModel params="config:ApiConfig" returns="any"
-  doc "Create AI SDK model instance from ApiConfig — routes to openai-compatible or anthropic provider."
+  doc "Create AI SDK model instance from ApiConfig — routes to openai-compatible or anthropic provider. Cached by baseUrl+model+format; invalidated if API key changes."
   handler <<<
     const apiKey = process.env[config.apiKeyEnv];
     if (!apiKey) return null;
 
+    const cacheKey = `${config.baseUrl}|${config.model}|${config.format ?? 'openai'}`;
+    const cached = _modelCache.get(cacheKey);
+    if (cached && cached.apiKey === apiKey) return cached.model;
+
     const base = config.baseUrl.replace(/\/$/, '');
 
+    let model: any;
     if (config.format === 'anthropic') {
       // createAnthropic baseURL should include /v1 — it appends /messages
       const baseURL = base.endsWith('/v1') ? base : base + '/v1';
       const provider = createAnthropic({ apiKey, baseURL });
-      return provider(config.model);
+      model = provider(config.model);
+    } else {
+      // OpenAI-compatible: baseURL is used as prefix, SDK appends /chat/completions
+      const provider = createOpenAICompatible({
+        name: 'agon-api',
+        apiKey,
+        baseURL: base,
+      });
+      model = provider.chatModel(config.model);
     }
 
-    // OpenAI-compatible: baseURL is used as prefix, SDK appends /chat/completions
-    const provider = createOpenAICompatible({
-      name: 'agon-api',
-      apiKey,
-      baseURL: base,
-    });
-    return provider.chatModel(config.model);
+    _modelCache.set(cacheKey, { model, apiKey });
+    return model;
   >>>
 
 fn name=convertToolsForSdk params="tools:Array<{type:string,function:{name:string,description:string,parameters:Record<string,unknown>}}>" returns="Record<string,any>"

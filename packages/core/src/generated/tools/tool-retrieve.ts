@@ -5,6 +5,9 @@ import type { ToolResult, ToolContext, ToolHandler, ToolDefinition, PermissionDe
 import { loadToolResultFromDisk } from '../signals/session-store.js';
 
 // @kern-source: tool-retrieve:10
+/**
+ * Factory for the RetrieveResult tool — retrieves cached tool outputs from disk.
+ */
 export function createRetrieveResultTool(engineId?: string): ToolHandler {
   const definition: ToolDefinition = {
     name: 'RetrieveResult',

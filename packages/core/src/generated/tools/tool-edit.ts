@@ -14,6 +14,9 @@ import { fileStateCache } from '../../file-state-cache.js';
 import { takeSnapshot } from '../blocks/file-history.js';
 
 // @kern-source: tool-edit:11
+/**
+ * Replace curly/smart quotes with straight ASCII equivalents.
+ */
 function normalizeCurlyQuotes(text: string): string {
   return text
     .replace(/[\u2018\u2019]/g, "'")
@@ -34,6 +37,9 @@ function countOccurrences(haystack: string, needle: string): number {
 }
 
 // @kern-source: tool-edit:32
+/**
+ * Factory for the Edit tool — exact string replacement with safety checks.
+ */
 export function createEditTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Edit',

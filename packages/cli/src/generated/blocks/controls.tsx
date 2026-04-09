@@ -101,10 +101,12 @@ export function SlashPicker({ commands, onSelect, onCancel }: { commands: typeof
 
 // @kern-source: controls:94
 
-export function EnginePicker({ available, initialSelected, userEngines, onConfirm, onCancel, onRemove }: { available: string[]; initialSelected: string[]; userEngines: Set<string>; onConfirm: (selected: string[]) => void; onCancel: () => void; onRemove: (engineId: string) => void }) {
+export function EnginePicker({ available, initialSelected, userEngines, modelOverrides, onConfirm, onCancel, onRemove, onSetModel }: { available: string[]; initialSelected: string[]; userEngines: Set<string>; modelOverrides: Record<string,string>; onConfirm: (selected: string[]) => void; onCancel: () => void; onRemove: (engineId: string) => void; onSetModel: (engineId: string, model: string | null) => void }) {
   const [cursor, setCursor] = useState<number>(0);
   const [selected, setSelected] = useState<Set<string>>(new Set(initialSelected));
   const [hidden, setHidden] = useState<Set<string>>(new Set((loadConfig() as any).hiddenEngines ?? []));
+  const [phase, setPhase] = useState<'select'|'model'>('select');
+  const [modelInput, setModelInput] = useState<string>('');
 
         // Only show: selected engines + user engines + non-hidden available engines
         const visible = useMemo(() => available.filter((id: string) =>
@@ -112,6 +114,23 @@ export function EnginePicker({ available, initialSelected, userEngines, onConfir
         ), [available, selected, userEngines, hidden]);
   
         useInput((input: string, key: any) => {
+          if (phase === 'model') {
+            const id = visible[cursor];
+            if (!id) { setPhase('select'); setModelInput(''); return; }
+            if (key.escape) { setPhase('select'); setModelInput(''); return; }
+            if (key.return) {
+              onSetModel(id, modelInput.trim() || null);
+              setPhase('select');
+              setModelInput('');
+              return;
+            }
+            if (key.backspace || key.delete) { setModelInput((v: string) => v.slice(0, -1)); return; }
+            if (input && !key.ctrl && !key.meta && input.length === 1 && input >= ' ') {
+              setModelInput((v: string) => v + input);
+            }
+            return;
+          }
+  
           if (key.escape) { onCancel(); return; }
           if (key.return) {
             const result = visible.filter((id: string) => selected.has(id));
@@ -153,6 +172,12 @@ export function EnginePicker({ available, initialSelected, userEngines, onConfir
             setHidden(new Set());
             configSet('hiddenEngines', []);
           }
+          if (input === 'm') {
+            const id = visible[cursor];
+            if (!id) return;
+            setModelInput(modelOverrides[id] ?? '');
+            setPhase('model');
+          }
         });
   
         return (
@@ -161,7 +186,20 @@ export function EnginePicker({ available, initialSelected, userEngines, onConfir
               <Text bold color="cyan">{'Select active engines'}</Text>
               <Text dimColor>{'esc'}</Text>
             </Box>
-            <Text dimColor>{'Space toggle  \u2191\u2193 navigate  a all  n none  d hide/remove  u unhide  Enter confirm'}</Text>
+            <Text dimColor>{phase === 'model'
+              ? 'Type model id  Enter save  Esc cancel  blank + Enter clears'
+              : 'Space toggle  \u2191\u2193 navigate  a all  n none  d hide/remove  u unhide  m model  Enter confirm'}</Text>
+            {phase === 'model' && visible[cursor] && (
+              <Box flexDirection="column" borderStyle="round" borderColor="magenta" paddingX={1} marginY={1}>
+                <Text bold color="magenta">{'Model Override: '}{visible[cursor]}</Text>
+                <Text dimColor>{'Leave empty to use the engine default.'}</Text>
+                <Box>
+                  <Text color="magenta">{'> '}</Text>
+                  <Text>{modelInput}</Text>
+                  <Text dimColor>{'\u2588'}</Text>
+                </Box>
+              </Box>
+            )}
             <Text dimColor>{'\u2500'.repeat(48)}</Text>
             {visible.map((id: string, i: number) => (
               <Box key={id}>
@@ -174,6 +212,7 @@ export function EnginePicker({ available, initialSelected, userEngines, onConfir
                 <Text>{' '}</Text>
                 <Text bold color={engineColor(id)}>{id}</Text>
                 {userEngines.has(id) && <Text dimColor>{' (user)'}</Text>}
+                {modelOverrides[id] && <Text dimColor>{' ['}{modelOverrides[id]}{']'}</Text>}
                 {!selected.has(id) && !userEngines.has(id) && <Text dimColor>{' (disabled)'}</Text>}
               </Box>
             ))}
@@ -184,7 +223,7 @@ export function EnginePicker({ available, initialSelected, userEngines, onConfir
 }
 
 
-// @kern-source: controls:185
+// @kern-source: controls:226
 export interface ModelPickerEntry {
   providerId: string;
   providerName: string;
@@ -198,7 +237,7 @@ export interface ModelPickerEntry {
   costOutput?: number;
 }
 
-// @kern-source: controls:197
+// @kern-source: controls:238
 
 export function ModelPicker({ entries, onSelect, onCancel, loading }: { entries: ModelPickerEntry[]; onSelect: (entry: ModelPickerEntry) => void; onCancel: () => void; loading?: boolean }) {
   const [cursor, setCursor] = useState<number>(0);
@@ -355,7 +394,7 @@ export function ModelPicker({ entries, onSelect, onCancel, loading }: { entries:
 }
 
 
-// @kern-source: controls:358
+// @kern-source: controls:399
 
 export function ReviewBlock({ event, onAction }: { event: ReviewEvent; onAction: (action: 'apply' | 'edit' | 'reject' | 'copy') => void }) {
         const eColor = engineColor(event.winnerId);
@@ -396,7 +435,7 @@ export function ReviewBlock({ event, onAction }: { event: ReviewEvent; onAction:
 }
 
 
-// @kern-source: controls:400
+// @kern-source: controls:441
 
 export function CesarPicker({ engines, currentCesar, onSelect, onCancel }: { engines: string[]; currentCesar: string; onSelect: (engineId: string) => void; onCancel: () => void }) {
   const [cursor, setCursor] = useState<number>(0);

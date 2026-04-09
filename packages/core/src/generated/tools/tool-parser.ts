@@ -18,6 +18,9 @@ export interface ParseResult {
 }
 
 // @kern-source: tool-parser:20
+/**
+ * Repair common LLM JSON malformations: markdown fences, trailing commas, single quotes.
+ */
 function repairJsonArgs(raw: string): Record<string,unknown>|null {
   let s = raw.trim();
   // Strip markdown fences
@@ -40,6 +43,9 @@ export const TOOL_OPEN_PATTERN: RegExp = /<(?:tool|invoke)\s+name="([^"]+)">\s*/
 export const TOOL_CLOSE_TAGS: readonly string[] = ['</tool>', '</invoke>', '</minimax:tool_call>', '</tool_call_tool>'];
 
 // @kern-source: tool-parser:47
+/**
+ * Parse <parameter name='x'>value</parameter> XML into a Record.
+ */
 function parseXmlParameters(xml: string): Record<string,unknown> {
   const result: Record<string, unknown> = {};
   const paramRe = /<parameter\s+name="([^"]+)">([\s\S]*?)<\/parameter>/g;
@@ -57,6 +63,9 @@ function parseXmlParameters(xml: string): Record<string,unknown> {
 }
 
 // @kern-source: tool-parser:65
+/**
+ * Parse generic <tool_call> or <toolcall> markers (MiniMax, etc.) where tool name is inside JSON body.
+ */
 function parseGenericToolCallTags(text: string): ParseResult {
   const toolCalls: ParsedToolCall[] = [];
   // Match <tool_call>...</tool_call> and <toolcall>...</toolcall>
@@ -107,6 +116,9 @@ function parseGenericToolCallTags(text: string): ParseResult {
 }
 
 // @kern-source: tool-parser:116
+/**
+ * Parse Gemini-style <tool_call_tool> markers where tool name is inside JSON body.
+ */
 function parseGeminiToolCalls(text: string): ParseResult {
   const toolCalls: ParsedToolCall[] = [];
   const geminiRe = /<tool_call_tool>\s*([\s\S]*?)\s*<\/tool_call_tool>/g;
@@ -156,6 +168,9 @@ function parseGeminiToolCalls(text: string): ParseResult {
 }
 
 // @kern-source: tool-parser:166
+/**
+ * Parse Mistral-style [TOOL_CALLS] markers: [TOOL_CALLS] [{name,arguments},...]
+ */
 function parseMistralToolCalls(text: string): ParseResult {
   const toolCalls: ParsedToolCall[] = [];
   const re = /\[TOOL_CALLS\]\s*(\[[\s\S]*?\])(?:\s*$|\n)/gm;
@@ -204,6 +219,9 @@ function parseMistralToolCalls(text: string): ParseResult {
 }
 
 // @kern-source: tool-parser:215
+/**
+ * Parse Functionary-style <function=name>{json}</function> markers.
+ */
 function parseFunctionaryToolCalls(text: string): ParseResult {
   const toolCalls: ParsedToolCall[] = [];
   const re = /<function=([^>]+)>\s*([\s\S]*?)\s*<\/function>/g;
@@ -247,6 +265,9 @@ function parseFunctionaryToolCalls(text: string): ParseResult {
 }
 
 // @kern-source: tool-parser:259
+/**
+ * Parse Cohere Command R style: Action: ```json [{tool_name,parameters}] ```
+ */
 function parseCohereToolCalls(text: string): ParseResult {
   const toolCalls: ParsedToolCall[] = [];
   const re = /Action:\s*```json?\s*\n?([\s\S]*?)\n?```/g;
@@ -291,6 +312,9 @@ function parseCohereToolCalls(text: string): ParseResult {
 }
 
 // @kern-source: tool-parser:304
+/**
+ * Parse tool call markers from engine output text. Handles JSON and XML parameter formats.
+ */
 export function parseToolCalls(text: string): ParseResult {
   const toolCalls: ParsedToolCall[] = [];
   const pattern = new RegExp(TOOL_OPEN_PATTERN.source, 'g');
@@ -393,6 +417,9 @@ export function parseToolCalls(text: string): ParseResult {
 }
 
 // @kern-source: tool-parser:407
+/**
+ * Convert parsed text-based tool calls to ToolCall format for the executor.
+ */
 export function toolCallsToApiFormat(parsed: ParsedToolCall[]): ToolCall[] {
   return parsed.map((tc, i) => ({
     id: `tc_${Date.now()}_${i}`,
@@ -402,6 +429,9 @@ export function toolCallsToApiFormat(parsed: ParsedToolCall[]): ToolCall[] {
 }
 
 // @kern-source: tool-parser:417
+/**
+ * Format a tool result to inject back into the conversation.
+ */
 export function formatToolResult(toolName: string, result: string, isError?: boolean): string {
   if (isError) {
     return `<tool_result name="${toolName}" error="true">\n${result}\n</tool_result>`;
@@ -410,6 +440,9 @@ export function formatToolResult(toolName: string, result: string, isError?: boo
 }
 
 // @kern-source: tool-parser:426
+/**
+ * Format multiple tool results for injection.
+ */
 export function formatToolResults(results: {name:string,content:string,error?:string}[]): string {
   return results.map(r => {
     if (r.error) {

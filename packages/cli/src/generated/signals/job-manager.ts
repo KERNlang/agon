@@ -21,6 +21,9 @@ export interface Job {
 // @kern-source: job-manager:7
 
 // @kern-source: job-manager:9
+/**
+ * Manages background jobs for long-running commands (forge, tribunal, brainstorm, campfire).
+ */
 export class JobManager {
   private jobs: Map<string,Job>;
   private nextId: number;

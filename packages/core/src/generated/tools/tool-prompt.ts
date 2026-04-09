@@ -35,6 +35,9 @@ function toolDefinitionToPrompt(def: ToolDefinition): string {
 }
 
 // @kern-source: tool-prompt:40
+/**
+ * Generate the complete tool system prompt section for any LLM.
+ */
 export function generateToolPrompt(handlers: ToolHandler[]): string {
   const sections: string[] = [TOOL_USE_FORMAT, '\n## Available Tools\n'];
   
@@ -101,6 +104,9 @@ function generateGlobToolSchema(): Record<string,unknown> {
 }
 
 // @kern-source: tool-prompt:107
+/**
+ * Convert Agon tool definitions to OpenAI function calling format.
+ */
 export function toolsToOpenAIFormat(registry: ToolRegistry): Array<{type:string,function:{name:string,description:string,parameters:Record<string,unknown>}}> {
   const handlers = Array.from((registry as any).tools.values()) as ToolHandler[];
   return handlers.map((h: ToolHandler) => {

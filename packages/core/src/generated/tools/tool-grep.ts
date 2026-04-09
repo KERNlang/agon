@@ -11,6 +11,9 @@ export const DEFAULT_HEAD_LIMIT: number = 250;
 export const GREP_TIMEOUT: number = 20000;
 
 // @kern-source: tool-grep:13
+/**
+ * Truncate output to the first N lines.
+ */
 export function applyHeadLimit(text: string, limit: number): string {
   const lines = text.split('\n');
   if (lines.length <= limit) return text;
@@ -18,6 +21,9 @@ export function applyHeadLimit(text: string, limit: number): string {
 }
 
 // @kern-source: tool-grep:21
+/**
+ * Factory: creates the Grep tool handler for content search via ripgrep.
+ */
 export function createGrepTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Grep',

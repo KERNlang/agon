@@ -22,9 +22,6 @@ export interface ApiConfig {
 }
 
 // @kern-source: dispatch:15
-/**
- * Create AI SDK model instance from ApiConfig — routes to openai-compatible or anthropic provider.
- */
 export function buildModel(config: ApiConfig): any {
   const apiKey = process.env[config.apiKeyEnv];
   if (!apiKey) return null;
@@ -48,9 +45,6 @@ export function buildModel(config: ApiConfig): any {
 }
 
 // @kern-source: dispatch:39
-/**
- * Convert OpenAI-format tool definitions to AI SDK tool format.
- */
 export function convertToolsForSdk(tools: Array<{type:string,function:{name:string,description:string,parameters:Record<string,unknown>}}>): Record<string,any> {
   const result: Record<string, any> = {};
   for (const t of tools) {
@@ -64,16 +58,33 @@ export function convertToolsForSdk(tools: Array<{type:string,function:{name:stri
 }
 
 // @kern-source: dispatch:53
-/**
- * Convert Agon message history (OpenAI wire format) to AI SDK CoreMessage format.
- */
-export function convertMessagesForSdk(messages: Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>): any[] {
+function normalizeToolCallId(id: string, format?: string): string {
+  if (!id) return `call_${Date.now()}`;
+  if (format === 'anthropic') {
+    // Claude: alphanumeric + underscore only
+    return id.replace(/[^a-zA-Z0-9_]/g, '_');
+  }
+  // Mistral: max 9 chars, alphanumeric only
+  if (format === 'mistral') {
+    return id.replace(/[^a-zA-Z0-9]/g, '').slice(0, 9) || `c${Date.now() % 100000000}`;
+  }
+  return id;
+}
+
+// @kern-source: dispatch:68
+export function convertMessagesForSdk(messages: Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>, format?: string): any[] {
   // Build tool call ID -> name lookup for tool result messages
   const toolNameMap = new Map<string, string>();
+  // Also build original→normalized ID mapping for tool results to match
+  const idMap = new Map<string, string>();
   for (const msg of messages) {
     if (msg.tool_calls) {
       for (const tc of msg.tool_calls) {
-        if (tc.id && tc.function?.name) toolNameMap.set(tc.id, tc.function.name);
+        if (tc.id && tc.function?.name) {
+          const normalizedId = normalizeToolCallId(tc.id, format);
+          toolNameMap.set(normalizedId, tc.function.name);
+          idMap.set(tc.id, normalizedId);
+        }
       }
     }
   }
@@ -97,9 +108,10 @@ export function convertMessagesForSdk(messages: Array<{role:string,content:any,t
               ? JSON.parse(tc.function.arguments)
               : tc.function?.arguments ?? {};
           } catch { args = {}; /* malformed tool_calls JSON — use empty args */ }
+          const normalizedId = idMap.get(tc.id) ?? normalizeToolCallId(tc.id ?? `call_${Date.now()}`, format);
           parts.push({
             type: 'tool-call',
-            toolCallId: tc.id ?? `call_${Date.now()}`,
+            toolCallId: normalizedId,
             toolName: tc.function?.name ?? 'unknown',
             input: args,
           });
@@ -108,11 +120,11 @@ export function convertMessagesForSdk(messages: Array<{role:string,content:any,t
       if (parts.length > 0) {
         result.push({ role: 'assistant', content: parts });
       } else {
-        // Empty assistant message (shouldn't happen but handle gracefully)
         result.push({ role: 'assistant', content: '' });
       }
     } else if (msg.role === 'tool') {
-      const toolCallId = (msg as any).tool_call_id ?? '';
+      const originalId = (msg as any).tool_call_id ?? '';
+      const toolCallId = idMap.get(originalId) ?? normalizeToolCallId(originalId, format);
       const toolName = toolNameMap.get(toolCallId) ?? 'unknown';
       result.push({
         role: 'tool',
@@ -129,10 +141,20 @@ export function convertMessagesForSdk(messages: Array<{role:string,content:any,t
     }
   }
   
+  // Mistral quirk: needs a dummy assistant message after consecutive tool results
+  if (format === 'mistral') {
+    for (let i = 1; i < result.length; i++) {
+      if (result[i].role === 'tool' && result[i - 1].role === 'tool') {
+        result.splice(i, 0, { role: 'assistant', content: '' });
+        i++;
+      }
+    }
+  }
+  
   return result;
 }
 
-// @kern-source: dispatch:120
+// @kern-source: dispatch:152
 export async function apiDispatch(config: ApiConfig, prompt: string, timeout: number, signal?: AbortSignal, systemPrompt?: string): Promise<DispatchResult> {
   const model = buildModel(config);
   if (!model) {
@@ -184,7 +206,7 @@ export async function apiDispatch(config: ApiConfig, prompt: string, timeout: nu
   }
 }
 
-// @kern-source: dispatch:172
+// @kern-source: dispatch:204
 export async function* apiStreamDispatch(config: ApiConfig, prompt: string, timeout: number, signal?: AbortSignal, systemPrompt?: string): AsyncGenerator<string, DispatchResult, void> {
   const messages: Array<{role:string, content:string}> = [];
   if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
@@ -192,10 +214,7 @@ export async function* apiStreamDispatch(config: ApiConfig, prompt: string, time
   return yield* apiStreamDispatchWithHistory(config, messages, timeout, signal);
 }
 
-// @kern-source: dispatch:180
-/**
- * Streaming dispatch with full message history + optional native function calling. Uses Vercel AI SDK for robust SSE handling and provider abstraction.
- */
+// @kern-source: dispatch:212
 export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages: Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>, timeout: number, signal?: AbortSignal, tools?: Array<{type:string,function:{name:string,description:string,parameters:Record<string,unknown>}}>): AsyncGenerator<string, DispatchResult, void> {
   const model = buildModel(config);
   if (!model) {
@@ -205,7 +224,11 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
   const startTime = Date.now();
   
   // Convert messages to AI SDK CoreMessage format
-  const coreMessages = convertMessagesForSdk(messages);
+  // Detect provider format for per-provider normalization
+  const providerFormat = config.format === 'anthropic' ? 'anthropic'
+    : config.baseUrl?.includes('mistral') ? 'mistral'
+    : undefined;
+  const coreMessages = convertMessagesForSdk(messages, providerFormat);
   
   // Set up timeout + external abort
   const controller = new AbortController();

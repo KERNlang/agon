@@ -15,6 +15,7 @@ import from="../tools/tool-write.js" names="createWriteTool"
 import from="../tools/tool-bash.js" names="createBashTool"
 import from="../tools/tool-grep.js" names="createGrepTool"
 import from="../tools/tool-glob.js" names="createGlobTool"
+import from="node:crypto" names="randomUUID"
 import from="../blocks/file-state-cache.js" names="FileStateCache"
 import from="../signals/session-store.js" names="saveToolResultToDisk"
 import from="../tools/tool-retrieve.js" names="createRetrieveResultTool"
@@ -87,6 +88,9 @@ fn name=repairToolName params="name:string, registry:any" returns="string"
 fn name=runApiAgentLoop async=true params="opts:ApiAgentOptions" returns="Promise<ApiAgentResult>"
   doc "Run an API engine with full tool loop. Returns final response after all tool calls resolve."
   handler <<<
+    // Run-scoped cache ID: prevents concurrent forge runs from colliding
+    const runCacheId = `${opts.api.model || 'api-agent'}-${randomUUID().slice(0, 8)}`;
+
     // Build tool registry with workspace tools — read-only permission for safety
     const registry = new ToolRegistry();
     registry.register(createReadTool());
@@ -95,7 +99,7 @@ fn name=runApiAgentLoop async=true params="opts:ApiAgentOptions" returns="Promis
     registry.register(createBashTool());
     registry.register(createGrepTool());
     registry.register(createGlobTool());
-    registry.register(createRetrieveResultTool(opts.api.model || 'api-agent'));
+    registry.register(createRetrieveResultTool(runCacheId));
 
     const nativeTools = toolsToOpenAIFormat(registry);
 
@@ -218,7 +222,7 @@ fn name=runApiAgentLoop async=true params="opts:ApiAgentOptions" returns="Promis
           let histContent = result;
           if (histContent.length > 800) {
             // Disk-backed cache: save full result, keep preview + ref
-            const engineId = opts.api.model || 'api-agent';
+            const engineId = runCacheId;
             const cacheEntry = saveToolResultToDisk(engineId, tc.id, tc.name, result);
             if (cacheEntry) {
               const lines = result.split('\n').length;
@@ -253,7 +257,7 @@ fn name=runApiAgentLoop async=true params="opts:ApiAgentOptions" returns="Promis
         }
         let histContent = result;
         if (histContent.length > 800) {
-          const engineId = opts.api.model || 'api-agent';
+          const engineId = runCacheId;
           const ce = saveToolResultToDisk(engineId, callId, 'Read', result);
           histContent = ce ? result.slice(0, 400) + `\n...\n[cached — ${callId}]` : result.slice(0, 600) + '\n...\n[truncated]';
         }

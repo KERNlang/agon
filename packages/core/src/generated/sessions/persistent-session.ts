@@ -263,11 +263,26 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
         }
       });
   
-      proc.on('close', () => { alive = false; proc = null; });
-      proc.on('error', () => { alive = false; proc = null; });
+      proc.stderr?.on('data', (data: Buffer) => {
+        const msg = String(data).trim();
+        if (msg) console.error(`[cesar:companion:stderr] ${msg}`);
+      });
+  
+      proc.on('close', (code: number | null) => {
+        console.error(`[cesar:companion] process exited code=${code}`);
+        alive = false; proc = null;
+      });
+      proc.on('error', (err: Error) => {
+        console.error(`[cesar:companion] process error: ${err.message}`);
+        alive = false; proc = null;
+      });
   
       // Wait for process startup
-      await new Promise((r) => setTimeout(r, 100));
+      await new Promise((r) => setTimeout(r, 200));
+  
+      if (!proc) {
+        throw new Error(`Companion process for ${config.engine.id} failed to start`);
+      }
   
       // Initialize handshake
       await sendRpc('initialize', {
@@ -426,7 +441,7 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
   return session;
 }
 
-// @kern-source: persistent-session:404
+// @kern-source: persistent-session:419
 /**
  * Persistent ACP (Agent Client Protocol) session for OpenCode. JSON-RPC 2.0 over stdio.
  */
@@ -598,10 +613,25 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
         }
       });
   
-      proc.on('close', () => { alive = false; proc = null; });
-      proc.on('error', () => { alive = false; proc = null; });
+      proc.stderr?.on('data', (data: Buffer) => {
+        const msg = String(data).trim();
+        if (msg) console.error(`[cesar:acp:stderr] ${msg}`);
+      });
   
-      await new Promise((r) => setTimeout(r, 100));
+      proc.on('close', (code: number | null) => {
+        console.error(`[cesar:acp] process exited code=${code}`);
+        alive = false; proc = null;
+      });
+      proc.on('error', (err: Error) => {
+        console.error(`[cesar:acp] process error: ${err.message}`);
+        alive = false; proc = null;
+      });
+  
+      await new Promise((r) => setTimeout(r, 200));
+  
+      if (!proc) {
+        throw new Error(`ACP process for ${config.engine.id} failed to start`);
+      }
   
       // ACP initialize handshake — read-only, writes go through Agon's XML tool system
       await sendRpc('initialize', {
@@ -746,7 +776,7 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
   return session;
 }
 
-// @kern-source: persistent-session:724
+// @kern-source: persistent-session:754
 /**
  * Persistent bidirectional NDJSON session for Claude Code. One process, multi-turn via stdin.
  */
@@ -1033,7 +1063,7 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
   return session;
 }
 
-// @kern-source: persistent-session:1011
+// @kern-source: persistent-session:1041
 /**
  * Fallback: spawn per turn with --resume/--continue. Works for any CLI engine.
  */

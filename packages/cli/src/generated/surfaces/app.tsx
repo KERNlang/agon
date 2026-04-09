@@ -146,10 +146,10 @@ export function App({  }: {  }) {
   const [jobManager, setJobManager] = useState<any>(new JobManager());
   const [jobList, setJobList] = useState<Job[]>([]);
   const [lastUndoToken, setLastUndoToken] = useState<string|null>(null);
-  const [sessionEngines, setSessionEngines] = useState<string[]|null>((() => { const cfg = loadConfig(); const saved = cfg.forgeEnabledEngines; return saved && saved.length > 0 ? saved : null; })());
+  const [sessionEngines, setSessionEngines] = useState<string[]|null>(() => { const cfg = loadConfig(); const saved = cfg.forgeEnabledEngines; return saved && saved.length > 0 ? saved : null; });
   const [currentPlan, setCurrentPlan] = useState<Plan|null>(null);
   const [activePlan, setActivePlan] = useState<any>(null);
-  const [chatSession, setChatSession] = useState<ChatSession>((() => { const cwd = resolveWorkingDir(); let branch = 'unknown'; try { branch = currentBranch(cwd); } catch { /* git not available or not a repo */ } return startChatSession({ cwd, branch }); })());
+  const [chatSession, setChatSession] = useState<ChatSession>(() => { const cwd = resolveWorkingDir(); let branch = 'unknown'; try { branch = currentBranch(cwd); } catch { /* git not available or not a repo */ } return startChatSession({ cwd, branch }); });
   const [activeAbort, setActiveAbort] = useState<AbortController|null>(null);
   const [cesarSession, setCesarSession] = useState<PersistentSession|null>(null);
   const [explorationMode, setExplorationMode] = useState<boolean>(false);

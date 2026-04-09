@@ -76,10 +76,10 @@ screen name=App target=ink
   state name=jobManager type=any initial="new JobManager()"
   state name=jobList type="Job[]" initial="[]"
   state name=lastUndoToken type="string|null" initial="null"
-  state name=sessionEngines type="string[]|null" initial="(() => { const cfg = loadConfig(); const saved = cfg.forgeEnabledEngines; return saved && saved.length > 0 ? saved : null; })()"
+  state name=sessionEngines type="string[]|null" initial="() => { const cfg = loadConfig(); const saved = cfg.forgeEnabledEngines; return saved && saved.length > 0 ? saved : null; }"
   state name=currentPlan type="Plan|null" initial="null"
   state name=activePlan type="any" initial="null"
-  state name=chatSession type=ChatSession initial="(() => { const cwd = resolveWorkingDir(); let branch = 'unknown'; try { branch = currentBranch(cwd); } catch { /* git not available or not a repo */ } return startChatSession({ cwd, branch }); })()"
+  state name=chatSession type=ChatSession initial="() => { const cwd = resolveWorkingDir(); let branch = 'unknown'; try { branch = currentBranch(cwd); } catch { /* git not available or not a repo */ } return startChatSession({ cwd, branch }); }"
   state name=activeAbort type="AbortController|null" initial="null"
   state name=cesarSession type="PersistentSession|null" initial="null"
   state name=explorationMode type=boolean initial=false

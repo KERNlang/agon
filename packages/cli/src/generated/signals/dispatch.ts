@@ -197,11 +197,13 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
         }
         case 'brainstorm':
           cb.runAsJob('brainstorm', label, async () => {
-            await handleBrainstorm(taskInput, cb.dispatch, cb.ctx);
-            // Cesar absorbs the brainstorm result — ideas go through Cesar, not the winner
-            if (cb.ctx.cesarSession) {
+            const bsResult = await handleBrainstorm(taskInput, cb.dispatch, cb.ctx);
+            // Cesar absorbs the brainstorm result — inject actual content, not "above"
+            if (cb.ctx.cesarSession && bsResult) {
               cb.dispatch({ type: 'info', message: 'Cesar absorbing brainstorm results…' });
-              await handleChat(`Based on the brainstorm above, synthesize the winning approach into a concrete plan. Be direct — the brainstorm already validated the ideas.`, cb.dispatch, cb.ctx, undefined, { toolPolicy: 'none' });
+              const bidSummary = bsResult.bids.map((b: any) => `**${b.engineId}** (score: ${b.score}): ${b.reasoning.slice(0, 300)}`).join('\n\n');
+              const cesarMsg = `Brainstorm complete. Winner: ${bsResult.winner}.\n\n## Engine Bids\n${bidSummary}\n\n## Winner's Full Response\n${bsResult.response.slice(0, 2000)}\n\nSynthesize the winning approach into a concrete plan. Be direct — the brainstorm already validated the ideas.`;
+              await handleChat(cesarMsg, cb.dispatch, cb.ctx, undefined, { toolPolicy: 'none' });
             }
           });
           return true;
@@ -295,7 +297,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
       cb.dispatch({ type: 'info', message: `Cesar → ${action} (recovered)` });
       switch (action) {
         case 'forge': cb.runAsJob('forge', label, () => handleForge(recoveredTask, recoveredFitness, cb.dispatch, cb.ctx, undefined, crashDel.hardened ?? false)); return true;
-        case 'brainstorm': cb.runAsJob('brainstorm', label, () => handleBrainstorm(recoveredTask, cb.dispatch, cb.ctx)); return true;
+        case 'brainstorm': cb.runAsJob('brainstorm', label, async () => { await handleBrainstorm(recoveredTask, cb.dispatch, cb.ctx); }); return true;
         case 'tribunal': cb.runAsJob('tribunal', label, () => handleTribunal(recoveredTask, cb.dispatch, cb.ctx, crashDel.tribunalMode)); return true;
         case 'campfire': cb.runAsJob('campfire', label, () => handleCampfire(recoveredTask, cb.dispatch, cb.ctx)); return true;
         case 'pipeline': cb.runAsJob('pipeline', label, () => handlePipeline(recoveredTask, cb.dispatch, cb.ctx, recoveredFitness ?? undefined)); return true;
@@ -351,7 +353,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
           cb.dispatch({ type: 'info', message: `Cesar → ${action}` });
           switch (action) {
             case 'forge': cb.runAsJob('forge', label, () => handleForge(fallbackTask, fallbackFitness, cb.dispatch, cb.ctx, undefined, fallbackSuggestion.hardened ?? false)); return true;
-            case 'brainstorm': cb.runAsJob('brainstorm', label, () => handleBrainstorm(fallbackTask, cb.dispatch, cb.ctx)); return true;
+            case 'brainstorm': cb.runAsJob('brainstorm', label, async () => { await handleBrainstorm(fallbackTask, cb.dispatch, cb.ctx); }); return true;
             case 'tribunal': cb.runAsJob('tribunal', label, () => handleTribunal(fallbackTask, cb.dispatch, cb.ctx, fallbackSuggestion.tribunalMode)); return true;
             case 'campfire': cb.runAsJob('campfire', label, () => handleCampfire(fallbackTask, cb.dispatch, cb.ctx)); return true;
             case 'pipeline': cb.runAsJob('pipeline', label, () => handlePipeline(fallbackTask, cb.dispatch, cb.ctx, fallbackFitness ?? undefined)); return true;
@@ -411,7 +413,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
   return false;
 }
 
-// @kern-source: dispatch:371
+// @kern-source: dispatch:373
 /**
  * Route a parsed intent to the correct handler. Registry-first, switch as fallback.
  */
@@ -822,7 +824,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
       const si = intent as any;
       const answer = await cb.askQuestion('Brainstorm with all engines? (y/n)');
       if (answer.toLowerCase().startsWith('y')) {
-        cb.runAsJob('brainstorm', si.question?.slice(0, 40) ?? 'brainstorm', () => handleBrainstorm(si.question ?? si.input, cb.dispatch, cb.ctx));
+        cb.runAsJob('brainstorm', si.question?.slice(0, 40) ?? 'brainstorm', async () => { await handleBrainstorm(si.question ?? si.input, cb.dispatch, cb.ctx); });
         return { handled: true, ranAsJob: true };
       }
       await handleChat(si.input, cb.dispatch, cb.ctx, cb.allImages);

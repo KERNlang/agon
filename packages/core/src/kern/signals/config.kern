@@ -71,6 +71,7 @@ fn name=loadConfig params="cwd?:string" returns="Required<AgonConfig>"
     // Compiler can't emit object/array defaults for Record types — ensure correct runtime types
     if (!merged.hooks || typeof merged.hooks === 'string') (merged as any).hooks = {};
     if (!merged.allowedCommands || typeof merged.allowedCommands === 'string') (merged as any).allowedCommands = [];
+    if (!merged.engineModels || typeof merged.engineModels === 'string') (merged as any).engineModels = {};
     // Default tool permissions — same model as Claude Code:
     // Read/search = auto-allow, Write/Edit/Bash = ask
     if (!merged.toolPermissions || typeof merged.toolPermissions === 'string') {

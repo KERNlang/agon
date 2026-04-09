@@ -382,6 +382,9 @@ export function OutputBlockView({ event, mode, toolOutputExpanded }: { event: Ou
             </Box>
           );
           case 'tool-call': {
+            // Suppress empty internal tool calls (e.g. Codex Delegate with no input)
+            if (!event.input && !event.output && (event.tool === 'Delegate' || event.tool === 'delegate')) return null;
+  
             const toolColor = event.status === 'error' ? '#ef4444' : event.status === 'done' ? '#4ade80' : '#fbbf24';
             const icon = event.status === 'error' ? icons().fail : event.status === 'done' ? icons().success : '\u27f3';
             const eColor = engineColor(event.engineId);
@@ -700,7 +703,7 @@ export function OutputBlockView({ event, mode, toolOutputExpanded }: { event: Ou
 }
 
 
-// @kern-source: engine:708
+// @kern-source: engine:711
 
 export function ToolCallGroup({ blocks }: { blocks: OutputBlock[] }) {
         const toolCounts: Record<string, number> = {};

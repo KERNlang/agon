@@ -952,9 +952,10 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
               return sum + 50;
             }, 0);
 
-          const CONTEXT_LIMIT = config.engine.api?.maxTokens
-            ? config.engine.api.maxTokens * 4
-            : 128_000;
+          // Context limit: use a sensible default per model family.
+          // maxTokens is OUTPUT cap (4096-8192), NOT context window.
+          // Most modern models have 128K-200K context windows.
+          const CONTEXT_LIMIT = 128_000;
           const COMPACTION_BUFFER = 20_000;
           const PRUNE_PROTECT_TURNS = 6; // protect last 6 user-assistant exchanges (was 4)
 

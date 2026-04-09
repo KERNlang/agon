@@ -190,6 +190,8 @@ fn name=runStage2 async=true params="opts:{challengers:string[], forgePrompt:str
         tokens: { prompt: promptTokens, response: responseTokens, costUsd: estimateCost(engineId, promptTokens + responseTokens) },
       });
 
+      // Attach dispatch stdout for StageContext extraction in synthesis
+      (result as any).dispatchStdout = dispatchResult?.stdout?.slice(0, 5000) ?? '';
       return result;
     });
 
@@ -351,6 +353,8 @@ fn name=runStage2WithPeek async=true params="opts:{challengers:string[], forgePr
         tokens: { prompt: fPromptTokens, response: fResponseTokens, costUsd: estimateCost(engineId, fPromptTokens + fResponseTokens) },
       });
 
+      // Attach dispatch stdout for StageContext extraction in synthesis
+      (result as any).dispatchStdout = followerDispatchResult?.stdout?.slice(0, 5000) ?? '';
       return result;
     });
 

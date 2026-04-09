@@ -1,55 +1,87 @@
 # Agon AI — Agent Instructions
 
-## What is Agon?
+> Any AI can join. They compete. You ship.
 
-"Any AI can join. They compete. You ship."
+Agon is a multi-AI orchestration framework. Engines (Claude, Codex, Gemini, MiniMax, Qwen, etc.) compete via forge, debate via tribunal, ideate via brainstorm. Cesar orchestrates — delegates based on confidence, ELO ratings, and task classification.
 
-Agon is a competitive AI orchestration framework. Multiple AI engines (Claude, Codex, Gemini, Ollama, etc.) race to solve tasks. Engines are scored on correctness, quality, diff size, focus, speed. ELO tracks performance over time.
+## ALL IN KERN — No Exceptions
 
-## KERN-First Development
+Every new function, type, constant, and handler MUST be written in KERN. No hand-maintained TypeScript unless physically impossible (React/Ink JSX, external library bindings).
 
-This project uses [KERNlang](https://github.com/cukas/KERNlang) as the source of truth for core types and logic.
+Workflow:
+1. Write `.kern` source in `packages/*/src/kern/<category>/`
+2. Compile: `npm run kern:compile`
+3. The `.ts` facade re-exports from `generated/`
 
-**Rule:** All changes to `packages/core` MUST go through `.kern` files first:
+**NEVER edit `packages/*/src/generated/` directly.** These are compiled output.
+
+### KERN Primitives
+- `fn` — functions (`async=true`, `signal` + `cleanup` for AbortController)
+- `service` — classes with methods, `implements`, `constructor`, `singleton`, `stream=true`
+- `union` — discriminated unions with variants
+- `const` — constants (regex, arrays, records)
+- `interface` — type definitions
+- `screen target=ink` — React/Ink components
+- `import` — ESM imports
+- `machine` — state machines
+- `event` — event definitions
+
+### KERN MCP
+Add `https://kernlang.dev/api/mcp` to your MCP config for compile, validate, review, schema, and 8 more tools. See `.mcp.json.example`.
+
+## Build & Test
+
+```bash
+npm run kern:compile   # Compile all KERN sources
+npm run build          # tsc -b --force (all packages)
+npm run test           # vitest run (809 tests)
+npm run typecheck      # tsc -b (type check only)
 ```
-packages/core/src/kern/*.kern  →  kern:compile  →  packages/core/src/generated/*.ts
-```
 
-Never edit `generated/` files directly. If the KERN compiler can't express something, use the `handler <<<...>>>` escape hatch in the `.kern` file.
-
-**Exception:** CLI layer (`packages/cli/src/`) is hand-maintained TypeScript.
-
-## Monorepo Structure
+## Architecture
 
 ```
 packages/
-  core/          — KERN-sourced types, config, scoring, ELO, plans, process
-  forge/         — Forge, brainstorm, tribunal, campfire orchestration
-  adapter-cli/   — Shell exec adapter for external AI CLIs
-  cli/           — REPL, InputEngine, output rendering
+  core/          — 69 .kern files. Types, config, scoring, tools, sessions, API. 100% KERN.
+  cli/           — 60 .kern files. Surfaces, blocks, signals, handlers, commands. ~95% KERN.
+  forge/         — 17 .kern files. Forge, brainstorm, tribunal, campfire. 100% KERN.
+  adapter-cli/   — 2 .kern files. CliAdapter (service implements EngineAdapter). 100% KERN.
 engines/         — JSON engine definitions (claude.json, codex.json, etc.)
 tests/           — Unit + integration tests (vitest)
 ```
 
-## Key Commands
+### Directory Pattern
+- `surfaces/` — top-level screens (what the user sees)
+- `blocks/` — reusable UI/logic components
+- `signals/` — state, dispatch, routing, config, registries, stores
+- `models/` — types, interfaces, schemas
+- Feature domains: `cesar/`, `tools/`, `api/`, `sessions/`, `teams/`, `handlers/`, `commands/`
 
-```bash
-npm run build        # Build all packages
-npm run test         # Run 120+ tests
-npm run typecheck    # Type check all packages
-cd packages/core && npm run kern:compile  # Recompile KERN
-```
+## Conventions
+
+- ESM only (`"type": "module"`) — use `.js` extensions in imports
+- `verbatimModuleSyntax: true` — use `import type` for type-only imports
+- Engine definitions: `engines/*.json`
+- Tests: `tests/unit/*.test.ts`, `tests/integration/*.test.ts`
+- Vitest for testing, tsc for type checking
 
 ## Dispatch Chain
 
 ```
-User input → InputEngine → detectIntent() → handler
-  → adapter.dispatch({ engine, prompt, signal })
-    → spawnWithTimeout({ command, args, signal })
-      → child process (claude/codex/gemini CLI)
+User input → Cesar (orchestrator) → confidence check → delegate or respond
+  delegate → adapter.dispatch({ engine, prompt, mode, timeout, signal })
+    → companion protocol (JSONRPC/ACP/stream-json) or CLI spawn or API fallback
 ```
 
-All handlers support `AbortSignal` for Ctrl+C cancellation.
+All handlers support `AbortSignal` for cancellation.
+
+## Key Patterns
+
+- `spawnWithTimeout(opts)` — external process with timeout + abort (KERN: `blocks/process.kern`)
+- `spawnStream(opts)` — async generator yielding stdout chunks
+- `signal` + `cleanup` on `fn` — generates AbortController + try/finally
+- `service` with `stream=true` method — generates `async *method(): AsyncGenerator<T>`
+- `companionDispatch` — JSONRPC (Codex), ACP (Gemini/OpenCode), stream-json (Claude)
 
 ## Adding a New Engine
 

@@ -35,18 +35,21 @@ import { createGrepTool } from '../tools/tool-grep.js';
 import { createGlobTool } from '../tools/tool-glob.js';
 
 // @kern-source: agent-loop:18
-import { FileStateCache } from '../blocks/file-state-cache.js';
+import { randomUUID } from 'node:crypto';
 
 // @kern-source: agent-loop:19
-import { saveToolResultToDisk } from '../signals/session-store.js';
+import { FileStateCache } from '../blocks/file-state-cache.js';
 
 // @kern-source: agent-loop:20
-import { createRetrieveResultTool } from '../tools/tool-retrieve.js';
+import { saveToolResultToDisk } from '../signals/session-store.js';
 
 // @kern-source: agent-loop:21
+import { createRetrieveResultTool } from '../tools/tool-retrieve.js';
+
+// @kern-source: agent-loop:22
 import type { ToolCacheEntry } from '../models/context-parts.js';
 
-// @kern-source: agent-loop:23
+// @kern-source: agent-loop:24
 export interface ApiAgentOptions {
   api: ApiConfig;
   prompt: string;
@@ -59,17 +62,14 @@ export interface ApiAgentOptions {
   onToolCall?: (name:string,args:Record<string,unknown>)=>void;
 }
 
-// @kern-source: agent-loop:34
+// @kern-source: agent-loop:35
 export interface ApiAgentResult {
   response: string;
   toolCalls: number;
   steps: number;
 }
 
-// @kern-source: agent-loop:39
-/**
- * Attempt to repair malformed JSON tool arguments. Handles common LLM mistakes: markdown fencing, trailing commas, single quotes, unquoted keys.
- */
+// @kern-source: agent-loop:40
 export function repairToolArgs(raw: string): Record<string,unknown>|null {
   let cleaned = raw.trim();
   
@@ -97,10 +97,7 @@ export function repairToolArgs(raw: string): Record<string,unknown>|null {
   return null;
 }
 
-// @kern-source: agent-loop:68
-/**
- * Auto-correct tool name case mismatches. Maps 'read' → 'Read', 'GREP' → 'Grep', etc.
- */
+// @kern-source: agent-loop:69
 export function repairToolName(name: string, registry: any): string {
   // Check if exact match exists
   if (registry.has?.(name) || registry.get?.(name)) return name;
@@ -118,11 +115,11 @@ export function repairToolName(name: string, registry: any): string {
   return capitalized;
 }
 
-// @kern-source: agent-loop:87
-/**
- * Run an API engine with full tool loop. Returns final response after all tool calls resolve.
- */
+// @kern-source: agent-loop:88
 export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentResult> {
+  // Run-scoped cache ID: prevents concurrent forge runs from colliding
+  const runCacheId = `${opts.api.model || 'api-agent'}-${randomUUID().slice(0, 8)}`;
+  
   // Build tool registry with workspace tools — read-only permission for safety
   const registry = new ToolRegistry();
   registry.register(createReadTool());
@@ -131,7 +128,7 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
   registry.register(createBashTool());
   registry.register(createGrepTool());
   registry.register(createGlobTool());
-  registry.register(createRetrieveResultTool(opts.api.model || 'api-agent'));
+  registry.register(createRetrieveResultTool(runCacheId));
   
   const nativeTools = toolsToOpenAIFormat(registry);
   
@@ -254,7 +251,7 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
         let histContent = result;
         if (histContent.length > 800) {
           // Disk-backed cache: save full result, keep preview + ref
-          const engineId = opts.api.model || 'api-agent';
+          const engineId = runCacheId;
           const cacheEntry = saveToolResultToDisk(engineId, tc.id, tc.name, result);
           if (cacheEntry) {
             const lines = result.split('\n').length;
@@ -289,7 +286,7 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
       }
       let histContent = result;
       if (histContent.length > 800) {
-        const engineId = opts.api.model || 'api-agent';
+        const engineId = runCacheId;
         const ce = saveToolResultToDisk(engineId, callId, 'Read', result);
         histContent = ce ? result.slice(0, 400) + `\n...\n[cached — ${callId}]` : result.slice(0, 600) + '\n...\n[truncated]';
       }

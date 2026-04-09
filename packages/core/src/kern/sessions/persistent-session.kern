@@ -26,6 +26,7 @@ interface name=PersistentSessionConfig
   field name=onApproval type="(tool: string, command: string) => Promise<boolean>" optional=true
   field name=nativeTools type="Array<{type:string,function:{name:string,description:string,parameters:Record<string,unknown>}}>" optional=true
   field name=onToolCall type="(name: string, args: Record<string,unknown>, callId: string) => Promise<string>" optional=true
+  field name=onTurnEnd type="(learnings: {filesRead:string[], filesModified:string[], decisions:string[], discoveries:string[], toolsUsed:string[]}) => void" optional=true
   field name=mcpServers type="Array<Record<string,unknown>>" optional=true
 
 interface name=PersistentSession
@@ -77,6 +78,8 @@ fn name=createCompanionSession params="config:PersistentSessionConfig" returns="
     let nextRpcId = 1;
     let firstTurn = true;
     let promptSentViaStart = false; // true if system prompt was sent in thread/start
+    let reconnectAttempts = 0;
+    let reconnecting = false;
     const pending = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }>();
     let notificationHandlers: Array<(method: string, params: any) => void> = [];
 
@@ -107,6 +110,37 @@ fn name=createCompanionSession params="config:PersistentSessionConfig" returns="
       }
       proc = null;
       alive = false;
+    }
+
+    async function tryReconnect(): Promise<boolean> {
+      if (reconnecting) return false;
+      if (reconnectAttempts >= 5) {
+        console.error(`[agon] companion: max reconnect attempts exceeded for ${config.engine.id}`);
+        return false;
+      }
+      reconnecting = true;
+      try {
+        const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+        reconnectAttempts++;
+        console.warn(`[agon] companion: reconnecting ${config.engine.id} (attempt ${reconnectAttempts}/5, delay ${delay}ms)`);
+        await new Promise(r => setTimeout(r, delay));
+        // Reset state for fresh session
+        threadId = null;
+        sessionId = null;
+        nextRpcId = 1;
+        firstTurn = true;
+        promptSentViaStart = false;
+        pending.clear();
+        notificationHandlers = [];
+        await session.start();
+        reconnectAttempts = 0;
+        return true;
+      } catch (err) {
+        console.error(`[agon] companion: reconnect failed for ${config.engine.id}: ${err instanceof Error ? err.message : String(err)}`);
+        return false;
+      } finally {
+        reconnecting = false;
+      }
     }
 
     const session: PersistentSession = {
@@ -1108,6 +1142,41 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
               }
             }
 
+            // ── Tier 3: LLM-based compaction as last resort ──
+            // If Tier 1+2 weren't enough, call a cheap model to produce a refined summary.
+            // Fires rarely (<5% of compactions). Uses the engine's own API config.
+            const afterTier2 = estimateTokens(messageHistory);
+            if (afterTier2 > CONTEXT_LIMIT - COMPACTION_BUFFER && config.engine.api) {
+              try {
+                const { apiDispatch } = await import('../api/dispatch.js');
+                // Use same API config but request minimal tokens
+                const compactionPrompt = `Summarize this conversation context into a concise briefing. Preserve: the user's goal, key discoveries, files read/modified, important decisions, and current progress. Drop: verbose tool outputs, repeated attempts, and pleasantries.
+
+CONTEXT TO SUMMARIZE:
+${messageHistory.filter((m: any) => m.role !== 'system').map((m: any) => `[${m.role}] ${typeof m.content === 'string' ? m.content.slice(0, 500) : '(tool call)'}`).join('\n')}
+
+Respond with ONLY the summary, no preamble.`;
+
+                const compactionConfig = { ...config.engine.api, maxTokens: 2048 };
+                const compactionResult = await apiDispatch(compactionConfig, compactionPrompt, 30);
+                if (compactionResult.exitCode === 0 && compactionResult.stdout.length > 50) {
+                  const hasSystem = messageHistory[0]?.role === 'system';
+                  const sysMsg = hasSystem ? [messageHistory[0]] : [];
+                  const protectedRecent = messageHistory.slice(-8); // Keep last 8 messages
+                  messageHistory.length = 0;
+                  messageHistory.push(
+                    ...sysMsg,
+                    { role: 'user' as const, content: `[LLM-compacted context — ${compactionSummary?.messagesCompacted ?? 0} messages total]\n${compactionResult.stdout}` },
+                    ...protectedRecent,
+                  );
+                  console.log(`[agon] Tier 3 LLM compaction fired: ${afterTier2} → ${estimateTokens(messageHistory)} tokens`);
+                }
+              } catch (tier3Err) {
+                // Tier 3 is best-effort — don't crash if the compaction model fails
+                console.warn(`[agon] Tier 3 compaction failed (non-fatal): ${tier3Err instanceof Error ? tier3Err.message : String(tier3Err)}`);
+              }
+            }
+
             // Prune disk cache — keep only IDs still referenced in history
             const activeIds = new Set<string>();
             for (const m of messageHistory) {
@@ -1532,6 +1601,19 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
 
           // Persist session state to disk after each turn — survives process restart
           try { saveSessionState(config.engine.id, { messageHistory, confidence: null, compactionSummary, toolCacheManifest }); } catch (saveErr) { console.warn('[session] failed to persist turn:', (saveErr as Error).message ?? saveErr); }
+
+          // ── Cross-session memory: extract learnings for Cesar's brain ──
+          if (config.onTurnEnd && compactionSummary) {
+            try {
+              config.onTurnEnd({
+                filesRead: compactionSummary.filesRead ?? [],
+                filesModified: compactionSummary.filesModified ?? [],
+                decisions: compactionSummary.decisions ?? [],
+                discoveries: compactionSummary.discoveries ?? [],
+                toolsUsed: compactionSummary.toolsSummary ?? [],
+              });
+            } catch { /* memory write is best-effort */ }
+          }
 
           yield { type: 'done' as const, content: 'end_turn' };
           return;

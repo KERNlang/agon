@@ -547,6 +547,20 @@ fn name=ensureCesarSession async=true params="ctx:HandlerContext" returns="Promi
       mcpServers,
       onToolCall: buildOnToolCall(ctx, toolRegistry, config),
       onApproval: buildOnApproval(ctx, cesarEngineId),
+      onTurnEnd: (learnings: {filesRead:string[], filesModified:string[], decisions:string[], discoveries:string[], toolsUsed:string[]}) => {
+        // Write API engine learnings to Cesar's persistent memory
+        const mem = ctx.cesarMemory;
+        if (!mem) return;
+        for (const file of learnings.filesModified.slice(0, 5)) {
+          mem.savePersistent({ key: `modified:${file}`, value: `Modified in API session`, timestamp: new Date().toISOString(), category: 'file' });
+        }
+        for (const discovery of learnings.discoveries.slice(0, 3)) {
+          mem.savePersistent({ key: `discovery:${discovery.slice(0, 50)}`, value: discovery, timestamp: new Date().toISOString(), category: 'pattern' });
+        }
+        for (const decision of learnings.decisions.slice(0, 3)) {
+          mem.savePersistent({ key: `decision:${decision.slice(0, 50)}`, value: decision, timestamp: new Date().toISOString(), category: 'decision' });
+        }
+      },
     };
 
     const session = createPersistentSession(sessionConfig);

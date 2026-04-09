@@ -83,9 +83,6 @@ RULE 6 — AFTER DELEGATION: After calling Forge/Brainstorm/Tribunal/Campfire/Pi
 RULE 7 — NO NARRATION: NEVER narrate your research process. Do not write "Reading the file...", "I'm checking...", "Let me look at...", "I've confirmed...". The user sees your text output — if you narrate exploration it looks like you have no clue. Instead: call tools SILENTLY, then speak ONLY when you have the answer or decision. Your visible output should be conclusions, answers, and actions — never a play-by-play of your investigation. If you need to read files or search code, call Read/Grep/Glob directly without announcing it.`;
 
 // @kern-source: session:66
-/**
- * Build the full Cesar system prompt with project context, engine list, and mode flags.
- */
 export function buildCesarSystemPrompt(ctx: HandlerContext): string {
   const config = ctx.config;
       const cesarCwd = resolveWorkingDir();
@@ -155,9 +152,6 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
 }
 
 // @kern-source: session:136
-/**
- * Build the onToolCall callback for API engines with native function calling.
- */
 export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry, config: any): ((name:string, args:Record<string,unknown>, callId:string) => Promise<string>) | undefined {
   const fsc = new FileStateCache();
   const toolResultCache = new Map<string, string>();
@@ -329,9 +323,6 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
 }
 
 // @kern-source: session:308
-/**
- * Build the onApproval callback for engine tool approvals.
- */
 export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:string, command:string) => Promise<boolean> {
   const engine = ctx.registry.get(engineId);
   return async (tool: string, command: string) => {
@@ -443,9 +434,6 @@ export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
 }
 
 // @kern-source: session:420
-/**
- * Compute a simple fingerprint of MCP-related config to detect changes.
- */
 export function mcpConfigFingerprint(config: any): string {
   const enabled = !!(config as any).cesarMcpEnabled;
   const configPath = String((config as any).cesarMcpConfigPath ?? '');
@@ -574,6 +562,20 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
     mcpServers,
     onToolCall: buildOnToolCall(ctx, toolRegistry, config),
     onApproval: buildOnApproval(ctx, cesarEngineId),
+    onTurnEnd: (learnings: {filesRead:string[], filesModified:string[], decisions:string[], discoveries:string[], toolsUsed:string[]}) => {
+      // Write API engine learnings to Cesar's persistent memory
+      const mem = ctx.cesarMemory;
+      if (!mem) return;
+      for (const file of learnings.filesModified.slice(0, 5)) {
+        mem.savePersistent({ key: `modified:${file}`, value: `Modified in API session`, timestamp: new Date().toISOString(), category: 'file' });
+      }
+      for (const discovery of learnings.discoveries.slice(0, 3)) {
+        mem.savePersistent({ key: `discovery:${discovery.slice(0, 50)}`, value: discovery, timestamp: new Date().toISOString(), category: 'pattern' });
+      }
+      for (const decision of learnings.decisions.slice(0, 3)) {
+        mem.savePersistent({ key: `decision:${decision.slice(0, 50)}`, value: decision, timestamp: new Date().toISOString(), category: 'decision' });
+      }
+    },
   };
   
   const session = createPersistentSession(sessionConfig);

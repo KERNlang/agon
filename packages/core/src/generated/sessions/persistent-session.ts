@@ -60,6 +60,9 @@ export interface PersistentSession {
 }
 
 // @kern-source: persistent-session:39
+/**
+ * Factory: picks the right session implementation based on engine config.
+ */
 export function createPersistentSession(config: PersistentSessionConfig): PersistentSession {
   const engine = config.engine;
   
@@ -88,6 +91,9 @@ export function createPersistentSession(config: PersistentSessionConfig): Persis
 }
 
 // @kern-source: persistent-session:70
+/**
+ * Persistent JSONRPC session for Codex app-server. Process stays alive across turns.
+ */
 export function createCompanionSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -361,6 +367,9 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
 }
 
 // @kern-source: persistent-session:346
+/**
+ * Persistent ACP (Agent Client Protocol) session for OpenCode. JSON-RPC 2.0 over stdio.
+ */
 export function createAcpSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -643,6 +652,9 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
 }
 
 // @kern-source: persistent-session:631
+/**
+ * Persistent bidirectional NDJSON session for Claude Code. One process, multi-turn via stdin.
+ */
 export function createStreamJsonSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -895,6 +907,9 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
 }
 
 // @kern-source: persistent-session:886
+/**
+ * Fallback: spawn per turn with --resume/--continue. Works for any CLI engine.
+ */
 export function createResumeSession(config: PersistentSessionConfig): PersistentSession {
   let alive = false;
   let sessionId: string | null = null;
@@ -1092,10 +1107,12 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                 messageHistory.length = 0;
                 messageHistory.push(...system, summary, ...recent);
               } catch (compactErr) {
+                // Snapshot before clearing — don't read from the array we just emptied
                 console.warn(`[agon] session: compaction failed: ${compactErr instanceof Error ? compactErr.message : String(compactErr)}`);
+                const snapshot = [...messageHistory];
                 messageHistory.length = 0;
-                const system = hasSystem ? [messageHistory[0] ?? { role: 'system', content: '' }] : [];
-                messageHistory.push(...system, ...messageHistory.slice(protectFrom));
+                const sysMsg = hasSystem ? [snapshot[0]] : [];
+                messageHistory.push(...sysMsg, ...snapshot.slice(protectFrom));
               }
             }
           }

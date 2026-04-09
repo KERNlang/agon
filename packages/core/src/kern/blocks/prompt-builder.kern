@@ -1,5 +1,6 @@
 import from="../models/types.js" names="Critique" types=true
 import from="../models/context-parts.js" names="StageContext" types=true
+import from="../models/context-parts.js" names="renderStageContext"
 
 interface name=PromptBlock
   doc "A cacheable prompt block. Stable blocks (system instructions, constraints) are cached across turns; dynamic blocks (task, diff) are not."
@@ -117,8 +118,6 @@ fn name=buildForgePromptWithContext params="opts:{task:string;fitnessCmd:string;
 
     // Inject StageContexts from prior engine runs
     if (opts.stageContexts && opts.stageContexts.length > 0) {
-      // Import renderStageContext dynamically to avoid circular deps
-      const { renderStageContext } = require('../models/context-parts.js');
       const ctxSections = opts.stageContexts.map((ctx: StageContext) => renderStageContext(ctx));
       sections.push(ctxSections.join('\n\n---\n\n'));
     }

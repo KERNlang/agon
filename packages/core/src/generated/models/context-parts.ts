@@ -50,11 +50,11 @@ export interface CompactionSummaryPart {
 
 // @kern-source: context-parts:44
 export type MessagePart =
-  | { type: 'variant' }
-  | { type: 'variant' }
-  | { type: 'variant' }
-  | { type: 'variant' }
-  | { type: 'variant' };
+  | TextPart
+  | ToolCallPart
+  | ToolResultPart
+  | ReasoningPart
+  | CompactionSummaryPart;
 
 // @kern-source: context-parts:53
 export interface ToolCacheEntry {

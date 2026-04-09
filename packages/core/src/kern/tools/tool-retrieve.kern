@@ -1,0 +1,60 @@
+// ── RetrieveResult Tool ──────────────────────────────────────────────
+// Retrieves full tool results from the disk cache by toolCallId.
+// When tool results are truncated with [cached — {id}], the model
+// can call this tool to get the full content without re-running
+// the original tool. Zero-cost context recovery.
+
+import from="../models/tool-types.js" names="ToolResult,ToolContext,ToolHandler,ToolDefinition,PermissionDecision" types=true
+import from="../signals/session-store.js" names="loadToolResultFromDisk"
+
+fn name=createRetrieveResultTool params="engineId?:string" returns=ToolHandler
+  doc "Factory for the RetrieveResult tool — retrieves cached tool outputs from disk."
+  handler <<<
+    const definition: ToolDefinition = {
+      name: 'RetrieveResult',
+      description: 'Retrieve the full content of a previously cached tool result. When you see "[cached — {id}]" in a tool output, use this tool with that id to get the full content without re-running the original tool.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: 'The cache ID from the [cached — {id}] marker in a previous tool result' },
+        },
+        required: ['id'],
+      },
+      maxResultSizeChars: 100000,
+      isReadOnly: true,
+      isConcurrencySafe: true,
+    };
+
+    const validate = (input: Record<string, unknown>, _ctx: ToolContext): string | null => {
+      if (!input.id || typeof input.id !== 'string') {
+        return 'Missing required parameter: id (the cache ID from [cached — {id}] marker)';
+      }
+      return null;
+    };
+
+    const execute = async (input: Record<string, unknown>, _ctx: ToolContext): Promise<ToolResult> => {
+      const id = input.id as string;
+      const eid = engineId ?? 'api-agent';
+      const content = loadToolResultFromDisk(eid, id);
+
+      if (content === null) {
+        return {
+          ok: false,
+          content: '',
+          error: `No cached result found for id "${id}". The cache entry may have expired or been pruned. Try re-running the original tool.`,
+        };
+      }
+
+      return {
+        ok: true,
+        content,
+      };
+    };
+
+    const checkPermission = (_input: Record<string, unknown>, _ctx: ToolContext): PermissionDecision => {
+      // RetrieveResult is always allowed — it only reads from the local cache, no filesystem access
+      return { behavior: 'allow' as const };
+    };
+
+    return { definition, validate, checkPermission, execute };
+  >>>

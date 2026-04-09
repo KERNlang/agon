@@ -60,9 +60,6 @@ export interface PersistentSession {
 }
 
 // @kern-source: persistent-session:39
-/**
- * Factory: picks the right session implementation based on engine config.
- */
 export function createPersistentSession(config: PersistentSessionConfig): PersistentSession {
   const engine = config.engine;
   
@@ -91,9 +88,6 @@ export function createPersistentSession(config: PersistentSessionConfig): Persis
 }
 
 // @kern-source: persistent-session:70
-/**
- * Persistent JSONRPC session for Codex app-server. Process stays alive across turns.
- */
 export function createCompanionSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -156,19 +150,8 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
         let msg: any;
         try { msg = JSON.parse(line); } catch { return; }
   
-        if (msg.id !== undefined && pending.has(msg.id)) {
-          const p = pending.get(msg.id)!;
-          pending.delete(msg.id);
-          clearTimeout(p.timer);
-          if (msg.error) {
-            p.reject(new Error(`RPC error ${msg.error.code}: ${msg.error.message}`));
-          } else {
-            p.resolve(msg.result ?? {});
-          }
-          return;
-        }
-  
-        // Server REQUEST with method (has id + method) — engine asking for approval
+        // Server REQUEST: has both id AND method (server-initiated request expecting response)
+        // MUST check before pending responses — IDs can collide between client and server counters
         if (msg.id !== undefined && msg.method) {
           const m = msg.method;
           console.error(`[cesar:companion] server request: ${m} id=${msg.id}`);
@@ -197,6 +180,19 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
           } else {
             // No approval callback — auto-approve to prevent deadlock
             proc!.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { approved: true } }) + '\n');
+          }
+          return;
+        }
+  
+        // Response to our request: has id but NO method
+        if (msg.id !== undefined && pending.has(msg.id)) {
+          const p = pending.get(msg.id)!;
+          pending.delete(msg.id);
+          clearTimeout(p.timer);
+          if (msg.error) {
+            p.reject(new Error(`RPC error ${msg.error.code}: ${msg.error.message}`));
+          } else {
+            p.resolve(msg.result ?? {});
           }
           return;
         }
@@ -364,10 +360,7 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
   return session;
 }
 
-// @kern-source: persistent-session:344
-/**
- * Persistent ACP (Agent Client Protocol) session for OpenCode. JSON-RPC 2.0 over stdio.
- */
+// @kern-source: persistent-session:346
 export function createAcpSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -427,24 +420,44 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
         let msg: any;
         try { msg = JSON.parse(line); } catch { return; }
   
-        // Response to our request
-        if (msg.id !== undefined && pending.has(msg.id)) {
-          const p = pending.get(msg.id)!;
-          pending.delete(msg.id);
-          clearTimeout(p.timer);
-          if (msg.error) {
-            p.reject(new Error(`ACP error ${msg.error.code}: ${msg.error.message}`));
-          } else {
-            p.resolve(msg.result ?? {});
-          }
-          return;
-        }
-  
-        // Server REQUEST with method — engine asking us something (approval, etc.)
+        // Server REQUEST: has both id AND method (server-initiated request expecting response)
+        // MUST check before pending responses — IDs can collide between client and server counters
         if (msg.id !== undefined && msg.method) {
           const m = msg.method;
           console.error(`[cesar:acp] server request: ${m} id=${msg.id}`);
   
+          // Gemini session/request_permission — needs optionId response format
+          if (m === 'session/request_permission') {
+            const options: any[] = msg.params?.options ?? [];
+            const toolCall = msg.params?.toolCall ?? {};
+            const tName = toolCall.name ?? toolCall.functionDeclaration?.name ?? msg.params?.name ?? 'tool';
+            const tCmd = toolCall.args?.command ?? toolCall.args?.file_path ?? (toolCall.args ? JSON.stringify(toolCall.args) : msg.params?.description ?? m);
+            const allowOpt = options.find((o: any) => o.kind === 'allow_once') ?? options.find((o: any) => o.optionId?.includes('proceed_once'));
+            const alwaysOpt = options.find((o: any) => o.kind === 'allow_always' || o.optionId?.includes('proceed_always'));
+            const rejectOpt = options.find((o: any) => o.kind === 'reject_once') ?? options.find((o: any) => o.optionId?.includes('reject'));
+  
+            for (const handler of notificationHandlers) {
+              handler('tool/approval', { tool: tName, command: tCmd, rpcId: msg.id });
+            }
+  
+            if (config.onApproval) {
+              config.onApproval(String(tName), String(tCmd)).then((approved: boolean) => {
+                const optionId = approved
+                  ? (allowOpt?.optionId ?? alwaysOpt?.optionId ?? 'proceed_once')
+                  : (rejectOpt?.optionId ?? 'reject');
+                if (proc) proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { optionId } }) + '\n');
+              }).catch(() => {
+                const optionId = rejectOpt?.optionId ?? 'reject';
+                if (proc) proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { optionId } }) + '\n');
+              });
+            } else {
+              const optionId = allowOpt?.optionId ?? alwaysOpt?.optionId ?? 'proceed_once';
+              proc!.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { optionId } }) + '\n');
+            }
+            return;
+          }
+  
+          // Generic server request (other methods)
           const toolName = msg.params?.tool ?? msg.params?.name ?? msg.params?.type ?? m;
           const toolCmd = msg.params?.command ?? msg.params?.description ?? JSON.stringify(msg.params ?? {});
   
@@ -460,6 +473,19 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
             });
           } else {
             proc!.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { approved: true } }) + '\n');
+          }
+          return;
+        }
+  
+        // Response to our request: has id but NO method
+        if (msg.id !== undefined && pending.has(msg.id)) {
+          const p = pending.get(msg.id)!;
+          pending.delete(msg.id);
+          clearTimeout(p.timer);
+          if (msg.error) {
+            p.reject(new Error(`ACP error ${msg.error.code}: ${msg.error.message}`));
+          } else {
+            p.resolve(msg.result ?? {});
           }
           return;
         }
@@ -616,10 +642,7 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
   return session;
 }
 
-// @kern-source: persistent-session:596
-/**
- * Persistent bidirectional NDJSON session for Claude Code. One process, multi-turn via stdin.
- */
+// @kern-source: persistent-session:631
 export function createStreamJsonSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -871,10 +894,7 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
   return session;
 }
 
-// @kern-source: persistent-session:851
-/**
- * Fallback: spawn per turn with --resume/--continue. Works for any CLI engine.
- */
+// @kern-source: persistent-session:886
 export function createResumeSession(config: PersistentSessionConfig): PersistentSession {
   let alive = false;
   let sessionId: string | null = null;

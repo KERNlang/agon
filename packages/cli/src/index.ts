@@ -6,6 +6,7 @@ import { tribunalCommand } from './commands/tribunal.js';
 import { leaderboardCommand } from './commands/leaderboard.js';
 import { historyCommand } from './commands/history.js';
 import { engineCommand } from './commands/engine.js';
+import { modelsCommand } from './commands/models.js';
 import { configCommand } from './commands/config.js';
 import { providerCommand } from './commands/provider.js';
 import { startRepl } from './repl.js';
@@ -28,6 +29,7 @@ const main = defineCommand({
     leaderboard: leaderboardCommand,
     history: historyCommand,
     engine: engineCommand,
+    models: modelsCommand,
     provider: providerCommand,
     config: configCommand,
   },

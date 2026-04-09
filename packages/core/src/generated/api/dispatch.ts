@@ -22,6 +22,9 @@ export interface ApiConfig {
 }
 
 // @kern-source: dispatch:15
+/**
+ * Create AI SDK model instance from ApiConfig — routes to openai-compatible or anthropic provider.
+ */
 export function buildModel(config: ApiConfig): any {
   const apiKey = process.env[config.apiKeyEnv];
   if (!apiKey) return null;
@@ -45,6 +48,9 @@ export function buildModel(config: ApiConfig): any {
 }
 
 // @kern-source: dispatch:39
+/**
+ * Convert OpenAI-format tool definitions to AI SDK tool format.
+ */
 export function convertToolsForSdk(tools: Array<{type:string,function:{name:string,description:string,parameters:Record<string,unknown>}}>): Record<string,any> {
   const result: Record<string, any> = {};
   for (const t of tools) {
@@ -58,6 +64,9 @@ export function convertToolsForSdk(tools: Array<{type:string,function:{name:stri
 }
 
 // @kern-source: dispatch:53
+/**
+ * Convert Agon message history (OpenAI wire format) to AI SDK CoreMessage format.
+ */
 export function convertMessagesForSdk(messages: Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>): any[] {
   // Build tool call ID -> name lookup for tool result messages
   const toolNameMap = new Map<string, string>();
@@ -184,6 +193,9 @@ export async function* apiStreamDispatch(config: ApiConfig, prompt: string, time
 }
 
 // @kern-source: dispatch:180
+/**
+ * Streaming dispatch with full message history + optional native function calling. Uses Vercel AI SDK for robust SSE handling and provider abstraction.
+ */
 export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages: Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>, timeout: number, signal?: AbortSignal, tools?: Array<{type:string,function:{name:string,description:string,parameters:Record<string,unknown>}}>): AsyncGenerator<string, DispatchResult, void> {
   const model = buildModel(config);
   if (!model) {
@@ -204,6 +216,11 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
   }
   
   let stdout = '';
+  // Capture structured parts at stream time — compaction folds over these
+  // instead of doing fragile regex extraction on flat text
+  const capturedParts: Array<{kind:'text',text:string}|{kind:'reasoning',text:string}|{kind:'tool_call',toolName:string,toolCallId:string,args:Record<string,unknown>}> = [];
+  let currentTextBuf = '';
+  let currentReasoningBuf = '';
   
   try {
     const streamOpts: any = {
@@ -216,6 +233,31 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
   
     if (tools && tools.length > 0) {
       streamOpts.tools = convertToolsForSdk(tools);
+    }
+  
+    // Apply Anthropic cache control: mark system + last 2 messages as ephemeral
+    // This saves input tokens on multi-turn conversations
+    if (config.format === 'anthropic' && coreMessages.length > 0) {
+      // Cache system prompt (stable across turns)
+      for (const msg of coreMessages) {
+        if ((msg as any).role === 'system') {
+          (msg as any).experimental_providerMetadata = {
+            anthropic: { cacheControl: { type: 'ephemeral' } },
+          };
+          break;
+        }
+      }
+      // Cache last 2 user/assistant messages (recent context)
+      let cached = 0;
+      for (let i = coreMessages.length - 1; i >= 0 && cached < 2; i--) {
+        const role = (coreMessages[i] as any).role;
+        if (role === 'user' || role === 'assistant') {
+          (coreMessages[i] as any).experimental_providerMetadata = {
+            anthropic: { cacheControl: { type: 'ephemeral' } },
+          };
+          cached++;
+        }
+      }
     }
   
     const result = streamText(streamOpts);
@@ -259,24 +301,39 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
   
       switch (part.type) {
         case 'text-delta': {
-          stdout += (part as any).text;
-          yield (part as any).text;
+          const text = (part as any).text;
+          stdout += text;
+          currentTextBuf += text;
+          yield text;
           break;
         }
         case 'reasoning-delta': {
-          // Treat reasoning content as regular text (matches previous behavior
-          // where reasoning_content was yielded alongside content)
           const text = (part as any).delta ?? '';
           if (text) {
             stdout += text;
+            currentReasoningBuf += text;
             yield text;
           }
           break;
         }
         case 'tool-call': {
-          // Emit as <tool> marker matching Agon's parseToolCalls regex
+          // Flush accumulated text/reasoning buffers as parts
+          if (currentTextBuf) {
+            capturedParts.push({ kind: 'text', text: currentTextBuf });
+            currentTextBuf = '';
+          }
+          if (currentReasoningBuf) {
+            capturedParts.push({ kind: 'reasoning', text: currentReasoningBuf });
+            currentReasoningBuf = '';
+          }
+          // Capture tool call as structured part
+          const toolName = (part as any).toolName ?? 'unknown';
+          const toolCallId = (part as any).toolCallId ?? `call_${Date.now()}`;
           const toolInput = (part as any).input ?? {};
-          const marker = `\n<tool name="${(part as any).toolName}">${JSON.stringify(toolInput)}</tool>\n`;
+          capturedParts.push({ kind: 'tool_call', toolName, toolCallId, args: toolInput });
+  
+          // Emit as <tool> marker matching Agon's parseToolCalls regex
+          const marker = `\n<tool name="${toolName}">${JSON.stringify(toolInput)}</tool>\n`;
           stdout += marker;
           yield marker;
           break;
@@ -287,6 +344,10 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
         }
       }
     }
+  
+    // Flush final text/reasoning buffers
+    if (currentTextBuf) capturedParts.push({ kind: 'text', text: currentTextBuf });
+    if (currentReasoningBuf) capturedParts.push({ kind: 'reasoning', text: currentReasoningBuf });
   
     clearTimeout(timer);
   
@@ -302,7 +363,7 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
         };
       }
     } catch { /* usage tokens optional — extraction failure is non-critical */ }
-    return { exitCode: 0, stdout, stderr: '', durationMs: Date.now() - startTime, timedOut: false, usage };
+    return { exitCode: 0, stdout, stderr: '', durationMs: Date.now() - startTime, timedOut: false, usage, parts: capturedParts };
   } catch (err) {
     clearTimeout(timer);
     const durationMs = Date.now() - startTime;

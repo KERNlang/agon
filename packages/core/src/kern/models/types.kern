@@ -68,6 +68,8 @@ interface name=DispatchResult
   field name=durationMs type=number
   field name=timedOut type=boolean
   field name=usage type="{promptTokens:number,completionTokens:number,totalTokens:number,source:'sdk'|'cli-reported'|'estimated'}" optional=true
+  field name=parts type="Array<{kind:'text',text:string}|{kind:'reasoning',text:string}|{kind:'tool_call',toolName:string,toolCallId:string,args:Record<string,unknown>}>" optional=true
+  doc "Structured parts captured at stream time. Enables compaction to fold over typed data instead of parsing strings."
 
 interface name=AgentDispatchResult extends=DispatchResult
   field name=diff type=string

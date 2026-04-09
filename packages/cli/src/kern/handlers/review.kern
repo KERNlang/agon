@@ -172,7 +172,7 @@ fn name=handleReview params="dispatch:Dispatch, ctx:HandlerContext, target?:stri
         engine,
         prompt,
         cwd,
-        mode: 'review' as const,
+        mode: 'exec' as const,
         timeout: (config as any).reviewTimeout ?? config.agentTimeout ?? 420,
         outputDir,
         signal: abort.signal,

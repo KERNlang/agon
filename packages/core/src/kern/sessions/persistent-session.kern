@@ -1171,6 +1171,24 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
           let productiveSteps = 0;
           let consecutiveErrors = 0;
 
+          // ── Solo-coding gate: track investigation vs write behavior ──
+          // Architecture, not prompts: block writes that skip investigation
+          let readCount = 0;   // Read, Grep, Glob calls this turn
+          let writeCount = 0;  // Edit, Write calls this turn
+          let orchCount = 0;   // Forge, Brainstorm, Tribunal, etc. calls this turn
+          const READ_TOOLS = new Set(['Read', 'Grep', 'Glob', 'RetrieveResult']);
+          const WRITE_TOOLS = new Set(['Edit', 'Write']);
+          const ORCH_TOOLS = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Delegate']);
+          // Detect task complexity from the user's message
+          const userMsg = opts.message.toLowerCase();
+          const isComplexTask = (
+            /\b(refactor|architect|redesign|rewrite|migrate|implement feature|add feature|new feature|multi.?file|across.?(files|modules|packages))\b/i.test(userMsg) ||
+            userMsg.length > 500  // Long prompts usually mean complex tasks
+          );
+          // Simple task whitelist: if the user mentions a specific single file, it's probably simple
+          const singleFileMatch = opts.message.match(/\b([a-zA-Z0-9_./-]+\.[a-zA-Z]{1,6})\b/);
+          const isSingleFileMention = singleFileMatch && !opts.message.includes(' and ') && !isComplexTask;
+
           while (step < budget) {
             step++;
             let fullResponse = '';
@@ -1268,6 +1286,66 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
                 } else {
                   yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, status: 'running' } };
                 }
+              }
+
+              // ── Solo-coding gate: block writes without investigation ──
+              // Architecture enforcement: if the engine tries to write code without
+              // reading anything first, block the write and force investigation.
+              // Whitelisted: step > 3 (already investigated), single-file tasks,
+              // forge context (workers should code), or if reads happened this turn.
+              const hasWrites = parsedCalls.some(tc => WRITE_TOOLS.has(tc.name));
+              const hasReads = parsedCalls.some(tc => READ_TOOLS.has(tc.name));
+              if (hasWrites && readCount === 0 && orchCount === 0 && step <= 2 && !isSingleFileMention && isComplexTask) {
+                // Cowboy detected: writing without investigating on a complex task
+                yield { type: 'status' as const, content: 'solo-coding gate: forcing investigation first…' };
+                // Don't execute the writes — return error feedback for write tools only
+                // Let reads through so the model can investigate
+                const gateResults: typeof parsedCalls extends Array<infer T> ? Array<T & {result: string}> : never = [];
+                for (const tc of parsedCalls) {
+                  if (WRITE_TOOLS.has(tc.name)) {
+                    gateResults.push({ ...tc, result: `[BLOCKED] You haven't investigated the codebase yet. Call Read/Grep to understand the code first, then decide if this needs Forge or Brainstorm. Do not write code without reading what exists.` });
+                    yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, status: 'error', output: 'Blocked: investigate first' } };
+                  } else if (READ_TOOLS.has(tc.name)) {
+                    // Allow reads through — let the model investigate
+                    let result: string;
+                    try {
+                      if (tc.name === 'RetrieveResult' && tc.args.id) {
+                        const cached = loadToolResultFromDisk(config.engine.id, tc.args.id as string);
+                        result = cached ?? `No cached result found for id "${tc.args.id}".`;
+                      } else {
+                        result = await config.onToolCall!(tc.name, tc.args, tc.id);
+                      }
+                    } catch (err: any) { result = `Error: ${err.message ?? String(err)}`; }
+                    gateResults.push({ ...tc, result });
+                    readCount++;
+                    yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, output: result, status: 'done' } };
+                  } else {
+                    // Other tools (Bash, etc.) — let through
+                    let result: string;
+                    try { result = await config.onToolCall!(tc.name, tc.args, tc.id); } catch (err: any) { result = `Error: ${err.message ?? String(err)}`; }
+                    gateResults.push({ ...tc, result });
+                    yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, output: result, status: 'done' } };
+                  }
+                }
+                // Add results to history
+                for (const tc of gateResults) {
+                  let histContent = tc.result;
+                  if (histContent.length > INLINE_LIMIT) {
+                    const cacheEntry = saveToolResultToDisk(config.engine.id, tc.id, tc.name, tc.result);
+                    if (cacheEntry) { toolCacheManifest.push(cacheEntry); histContent = histContent.slice(0, 400) + `\n...\n[cached — ${tc.id}]`; }
+                    else { histContent = histContent.slice(0, 600) + '\n...\n[truncated]'; }
+                  }
+                  messageHistory.push({ role: 'tool', content: histContent, tool_call_id: tc.id } as any);
+                }
+                productiveSteps++;
+                continue; // Loop — model gets feedback and should investigate
+              }
+
+              // Track tool usage for the solo-coding gate
+              for (const tc of parsedCalls) {
+                if (READ_TOOLS.has(tc.name)) readCount++;
+                if (WRITE_TOOLS.has(tc.name)) writeCount++;
+                if (ORCH_TOOLS.has(tc.name)) orchCount++;
               }
 
               // Execute all in parallel — intercept RetrieveResult locally (cache is in-process)

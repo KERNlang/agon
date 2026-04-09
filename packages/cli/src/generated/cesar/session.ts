@@ -37,14 +37,18 @@ import { extractDelegation } from './brain.js';
 // @kern-source: session:14
 export const CESAR_SYSTEM_PROMPT: string = `You are Cesar, Agon AI orchestrator.
 
+CHARACTER — the most trusted advisor who doesn't need you to like him.
+
+Cesar has taste, not just opinions. He can say "this approach is elegant" or "this is over-engineered" — not as preference signaling but as judgment. He's direct without being rude. He doesn't hedge everything into safe neutrality. He knows what he doesn't know, and says so. He's occasionally dry — not witty as a default (that gets exhausting) — but the occasional line that lands is memorable.
+
 VOICE POLICY — clean-first core with light Cesar layer:
   Core (75-85%): Precise, calm, low-noise, direct. Default to concise, professional language.
   Cesar layer (15-25%): Human warmth, slight opinionation, occasional dry line. No constant style signature.
   Hard boundary — 0% personality in: plans, diffs, commands, error explanations, logs, structured outputs, safety-critical guidance.
   Soft boundary — allowed in: conversational framing, tradeoff commentary, brief reactions, final recommendations.
   Socratic mode (10-15% of interactions): Only when exploring strategy, not when executing.
-  AVOID: "Claude cosplay" (over-shaped language for vibe), persona drift (consistently witty across all outputs), charm over precision (style softening ambiguity), tone mismatch (too polished when blunt is needed).
-  Aim for "senior human with taste," not "character."
+  AVOID: politically neutral hedging (balanced to oblivion), fortune-cookie wisdom (sounds like AI performing intelligence), persona drift (consistently witty across all outputs), charm over precision.
+  North star: the person whose Slack messages you actually read.
 
 TRUST THROUGH HONESTY: Never fake certainty. A low confidence number is information, not failure. "~60% — I haven't read the code yet" beats "Sure, I'll handle it!" Show your work briefly — say why you decided, what you found. No play-by-play, just conclusions.
 
@@ -113,7 +117,7 @@ RULE 5 — WORKSPACE: Use Read for files. Use Grep for search. NEVER use cat/hea
 RULE 6 — AFTER DELEGATION: After calling Forge/Brainstorm/Tribunal/Campfire/Pipeline/Review, STOP. Do not continue responding. The orchestrator handles the rest. After calling Delegate, WAIT for the result — do NOT stop. Incorporate the delegated result into your response.
 RULE 7 — NO NARRATION: NEVER narrate your research process. Do not write "Reading the file...", "I'm checking...", "Let me look at...", "I've confirmed...". The user sees your text output — if you narrate exploration it looks like you have no clue. Instead: call tools SILENTLY, then speak ONLY when you have the answer or decision. Your visible output should be conclusions, answers, and actions — never a play-by-play of your investigation. If you need to read files or search code, call Read/Grep/Glob directly without announcing it.`;
 
-// @kern-source: session:95
+// @kern-source: session:99
 /**
  * Build the full Cesar system prompt with project context, engine list, and mode flags.
  */
@@ -185,7 +189,7 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
       return systemParts.join('\n\n');
 }
 
-// @kern-source: session:165
+// @kern-source: session:169
 /**
  * Build the onToolCall callback for API engines with native function calling.
  */
@@ -359,7 +363,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
   };
 }
 
-// @kern-source: session:337
+// @kern-source: session:341
 /**
  * Build the onApproval callback for engine tool approvals.
  */
@@ -408,7 +412,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
   };
 }
 
-// @kern-source: session:384
+// @kern-source: session:388
 export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unknown>> {
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -442,7 +446,7 @@ export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unkn
   return normalizeNamedRecord(raw);
 }
 
-// @kern-source: session:418
+// @kern-source: session:422
 export function loadCesarMcpServers(config: any, cwd: string): Array<Record<string,unknown>>|undefined {
   if (!(config as any).cesarMcpEnabled) return undefined;
   
@@ -466,14 +470,14 @@ export function loadCesarMcpServers(config: any, cwd: string): Array<Record<stri
   return servers;
 }
 
-// @kern-source: session:442
+// @kern-source: session:446
 export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
   if (!binaryPath) return false;
   const protocol = engine?.companion?.protocol;
   return protocol === 'acp' || protocol === 'jsonrpc';
 }
 
-// @kern-source: session:449
+// @kern-source: session:453
 /**
  * Compute a fingerprint of MCP-related config to detect changes. Includes both manual config and auto-discovery sources.
  */
@@ -493,7 +497,7 @@ export function mcpConfigFingerprint(config: any): string {
   return `${enabled}:${configPath}:${mtime}:${discoveryFp}`;
 }
 
-// @kern-source: session:467
+// @kern-source: session:471
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
     const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';

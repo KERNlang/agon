@@ -300,7 +300,14 @@ export function OutputBlockView({ event, mode, toolOutputExpanded }: { event: Ou
             );
           }
           case 'table': return <TableView headers={event.headers} rows={event.rows} />;
-          case 'streaming-chunk': return <Text>{'  '}{event.chunk}</Text>;
+          case 'streaming-chunk': {
+            // Confidence progress lines (~X% ...) render as dimmed thinking text
+            const chunkText = event.chunk as string;
+            if (/^~?\d{1,3}%\s/.test(chunkText.trim())) {
+              return <Text dimColor italic>{'  '}{chunkText}</Text>;
+            }
+            return <Text>{'  '}{chunkText}</Text>;
+          }
           case 'kern-draft': {
             const eColor = engineColor(event.engineId);
             const wrapWidth = contentWidth(8);
@@ -703,7 +710,7 @@ export function OutputBlockView({ event, mode, toolOutputExpanded }: { event: Ou
 }
 
 
-// @kern-source: engine:711
+// @kern-source: engine:718
 
 export function ToolCallGroup({ blocks }: { blocks: OutputBlock[] }) {
         const toolCounts: Record<string, number> = {};

@@ -224,7 +224,8 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
       const threadParams: Record<string, unknown> = {
         cwd: opts.cwd,
         approvalPolicy: 'never',
-        sandbox: opts.config.sandbox ?? (opts.mode === 'agent' ? 'workspace-write' : 'read-only'),
+        // Only use engine-declared sandbox for agent mode. Exec/review stay read-only for safety.
+        sandbox: opts.mode === 'agent' ? (opts.config.sandbox ?? 'workspace-write') : 'read-only',
         ephemeral: true,
       };
       if (opts.model) threadParams.model = opts.model;

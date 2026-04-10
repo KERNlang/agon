@@ -17,9 +17,9 @@ export const ORCHESTRATION_TOOLS: Array<{name:string,description:string,inputSch
       properties: {
         question: { type: 'string', description: 'The question to debate' },
         mode: { type: 'string', description: 'Debate mode: adversarial, synthesis, steelman, socratic, red-team, or postmortem', enum: ['adversarial', 'synthesis', 'steelman', 'socratic', 'red-team', 'postmortem'] },
-        team: { type: 'boolean', description: 'Solo (false) or team-tribunal (true). Required.' },
+        team: { type: 'boolean', description: 'Solo (false) or team-tribunal (true). Defaults to false.' },
       },
-      required: ['question', 'team'],
+      required: ['question'],
     },
   },
   {
@@ -29,9 +29,9 @@ export const ORCHESTRATION_TOOLS: Array<{name:string,description:string,inputSch
       type: 'object',
       properties: {
         question: { type: 'string', description: 'The question to brainstorm on' },
-        team: { type: 'boolean', description: 'Solo (false) or team-brainstorm (true). Required.' },
+        team: { type: 'boolean', description: 'Solo (false) or team-brainstorm (true). Defaults to false.' },
       },
-      required: ['question', 'team'],
+      required: ['question'],
     },
   },
   {
@@ -54,9 +54,9 @@ export const ORCHESTRATION_TOOLS: Array<{name:string,description:string,inputSch
         task: { type: 'string', description: 'The task to forge' },
         fitnessCmd: { type: 'string', description: 'Test command for fitness evaluation' },
         hardened: { type: 'boolean', description: 'Set true for gauntlet verification' },
-        team: { type: 'boolean', description: 'Solo (false) or team-forge (true). Required — choose based on task scope.' },
+        team: { type: 'boolean', description: 'Solo (false) or team-forge (true). Defaults to false.' },
       },
-      required: ['task', 'team'],
+      required: ['task'],
     },
   },
   {

@@ -47,8 +47,9 @@ screen name=EngineProgressView target=ink
   prop name=mode type=string optional=true
   render
     handler <<<
-      // Detect mode from status text when not explicitly provided
-      const detected = mode ?? (() => {
+      // Use explicit mode if it's an arena mode, otherwise detect from status text
+      const arenaModes = ['forge', 'brainstorm', 'campfire'];
+      const detected = (mode && arenaModes.includes(mode)) ? mode : (() => {
         const s = engines[0]?.status ?? '';
         if (s.startsWith('drafting')) return 'brainstorm';
         if (s.startsWith('thinking')) return 'campfire';

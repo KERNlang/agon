@@ -810,6 +810,7 @@ fn name=createStreamJsonSession params="config:PersistentSessionConfig" returns=
           '--print',
           '--verbose',
           '--dangerously-skip-permissions',
+          '--strict-mcp-config',
           '--input-format', 'stream-json',
           '--output-format', 'stream-json',
           '--replay-user-messages',

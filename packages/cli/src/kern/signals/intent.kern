@@ -40,7 +40,8 @@ const name=SLASH_COMMANDS type="SlashCommand[]"
       { cmd: '/workspace',   desc: 'add|remove|list|switch   — manage project repos' },
       { cmd: '/ws',          desc: '                          — list workspaces (shortcut)' },
       { cmd: '/cesar',       desc: '<engine>                — set Cesar brain engine (e.g. /cesar codex)' },
-      { cmd: '/models',      desc: '                        — browse & add models from 4000+ providers' },
+      { cmd: '/models',      desc: '                        — browse & add provider models' },
+      { cmd: '/cli-models',  desc: '                        — choose active CLI engines + model overrides' },
       { cmd: '/tokens',      desc: '                        — show token usage & costs' },
       { cmd: '/engines',     desc: '                        — select active engines' },
       { cmd: '/leaderboard', desc: '                        — ELO rankings' },
@@ -243,9 +244,18 @@ fn name=parseSlashCommand params="input:string, commandRegistry?:any" returns=In
         const wsPath = wsParts.slice(1).join(' ') || undefined;
         return { type: 'workspace', action, path: wsPath } as Intent;
       }
-      case 'models':
+      case 'models': {
+        const modelsArg = rest.trim().toLowerCase();
+        if (modelsArg === 'cli' || modelsArg === 'engine' || modelsArg === 'engines') {
+          return { type: 'engines' } as Intent;
+        }
+        return { type: 'models' } as Intent;
+      }
       case 'setup':
         return { type: 'models' } as Intent;
+      case 'cli-models':
+      case 'cli-model':
+        return { type: 'engines' } as Intent;
       case 'tokens':
       case 'usage':
       case 'cost':

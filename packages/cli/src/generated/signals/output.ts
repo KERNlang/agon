@@ -185,6 +185,10 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
       actions.setQuestionState({ prompt: (event as any).prompt, resolve: (event as any).resolve, choices: (event as any).choices });
       return;
     case 'permission-ask': {
+      // Flush streaming buffer so permission prompt renders in a clean area
+      if (state.streamingText) {
+        actions.flushStream();
+      }
       // Queue permission requests — show one at a time to prevent overwriting
       const entry = {
         tool: (event as any).tool as string,

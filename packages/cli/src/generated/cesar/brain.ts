@@ -2,13 +2,13 @@
 import { join } from 'node:path';
 
 // @kern-source: brain:2
-import { mkdirSync, appendFileSync, existsSync, readFileSync, unlinkSync } from 'node:fs';
+import { mkdirSync, appendFileSync, existsSync, readFileSync, unlinkSync, readdirSync, writeFileSync } from 'node:fs';
 
 // @kern-source: brain:3
 import type { ImageAttachment, PersistentSession, ForgeManifest, ForgeJudgment } from '@agon/core';
 
 // @kern-source: brain:4
-import { ensureAgonHome, RUNS_DIR, appendMessage, tracker, resolveWorkingDir, ToolRegistry, FileStateCache, parseToolCalls, formatToolResults, runToolLoop, classifyTask } from '@agon/core';
+import { ensureAgonHome, RUNS_DIR, appendMessage, tracker, resolveWorkingDir, ToolRegistry, FileStateCache, parseToolCalls, formatToolResults, runToolLoop, classifyTask, loadConfig, configSet } from '@agon/core';
 
 // @kern-source: brain:5
 import type { ToolContext, ToolCallResult } from '@agon/core';
@@ -234,6 +234,47 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       }
     }, 2_000);
   
+    // ── Permission-request watcher for MCP write tools ──
+    // The MCP server writes permission-request files; we poll for them and dispatch UI prompts.
+    const signalDir = ctx.cesar!.mcpSignalPath ? join(ctx.cesar!.mcpSignalPath, '..') : null;
+    const permWatcherInterval = signalDir ? setInterval(() => {
+      try {
+        if (!existsSync(signalDir)) return;
+        const files = readdirSync(signalDir).filter((f: string) => f.includes('-perm-') && !f.includes('-response'));
+        for (const f of files) {
+          const reqPath = join(signalDir, f);
+          const req = JSON.parse(readFileSync(reqPath, 'utf-8'));
+          if (req.type !== 'permission-request' || Date.now() - req.timestamp > 65000) continue;
+          // Check if already responded
+          const respPath = reqPath.replace('.json', '-response.json');
+          if (existsSync(respPath)) continue;
+          // Check auto-approved commands
+          const cfg = loadConfig();
+          const allowed: string[] = (cfg as any).allowedCommands ?? [];
+          const cmdBase = (req.args?.command ?? '').toString().trim().split(/\s+/)[0];
+          if (cmdBase && allowed.some((a: string) => cmdBase.toLowerCase().startsWith(a.toLowerCase()))) {
+            writeFileSync(respPath, JSON.stringify({ type: 'permission-response', id: req.id, approved: true }));
+            continue;
+          }
+          // Dispatch permission-ask to UI
+          dispatch({ type: 'permission-ask', tool: req.tool, command: String(req.args?.command ?? req.args?.file_path ?? JSON.stringify(req.args)), reason: `Cesar wants to execute`, resolve: (approved: boolean | string) => {
+            const wasApproved = typeof approved === 'string' ? approved === 'y' || approved === 'a' : approved;
+            // Handle "Always" — persist to config
+            if ((typeof approved === 'string' && approved === 'a') || approved === true) {
+              if (cmdBase && typeof approved === 'string' && approved === 'a') {
+                const curAllowed: string[] = (loadConfig() as any).allowedCommands ?? [];
+                if (!curAllowed.includes(cmdBase)) {
+                  curAllowed.push(cmdBase);
+                  configSet('allowedCommands', curAllowed);
+                }
+              }
+            }
+            writeFileSync(respPath, JSON.stringify({ type: 'permission-response', id: req.id, approved: wasApproved, reason: wasApproved ? undefined : 'User denied' }));
+          }} as any);
+        }
+      } catch { /* permission watcher error — not critical */ }
+    }, 150) : null;
+  
     // ── Stream response ──
     try {
       const gen = session.send({ message: enrichedInput, signal: abort.signal, images: images?.map(img => img.path) });
@@ -375,6 +416,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       }
     } catch (err) {
       clearInterval(heartbeat);
+      if (permWatcherInterval) clearInterval(permWatcherInterval);
       dispatch({ type: 'spinner-stop' });
       console.error(`[cesar:claude] send error: ${(err as Error).message ?? err}`);
       // If we already have content or tool activity, preserve it instead of discarding
@@ -388,6 +430,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
     }
   
     clearInterval(heartbeat);
+    if (permWatcherInterval) clearInterval(permWatcherInterval);
   
     if (abort.signal.aborted) {
       dispatch({ type: 'spinner-stop' });

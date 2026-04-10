@@ -829,7 +829,8 @@ fn name=createStreamJsonSession params="config:PersistentSessionConfig" returns=
         const args = [
           '--print',
           '--verbose',
-          '--dangerously-skip-permissions',
+          '--permission-mode', 'plan',
+          '--disallowedTools', 'Bash Edit Write',
           '--strict-mcp-config',
           '--input-format', 'stream-json',
           '--output-format', 'stream-json',

@@ -160,7 +160,7 @@ export function App({  }: {  }) {
   const [cesarMemory, setCesarMemory] = useState<any>(() => createCesarMemory());
   const [registry, setRegistry] = useState<EngineRegistry>((() => { const reg = new EngineRegistry(); const engDir = join(dirname(fileURLToPath(import.meta.url)), '../../../../engines'); reg.load(engDir); return reg; })());
   const [adapter, setAdapter] = useState<EngineAdapter>(createCliAdapter(registry));
-  const [dynamicSkills, setDynamicSkills] = useState<Skill[]>(loadSkills());
+  const [dynamicSkills, setDynamicSkills] = useState<Skill[]>(() => loadSkills(resolveWorkingDir()));
   const [commandRegistry, setCommandRegistry] = useState<any>((() => { const reg = new CommandRegistry(); registerBuiltinCommands(reg); return reg; })());
   const [eventBus, setEventBus] = useState<any>((() => { const bus = new EventBus(); const cfg = loadConfig(); if (cfg.hooks) bridgeShellHooks(bus, cfg.hooks); return bus; })());
   const [extensionSkills, setExtensionSkills] = useState<Skill[]>([]);

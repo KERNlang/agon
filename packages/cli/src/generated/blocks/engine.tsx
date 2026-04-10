@@ -31,10 +31,13 @@ import { contentWidth, color256toHex, engineColor, RenderedSegments, RichLineVie
 // @kern-source: engine:13
 import { truncateCodeLine } from './markdown.js';
 
-// @kern-source: engine:17
+// @kern-source: engine:14
+import { ForgeArena, BrainstormStorm, CampfireFire } from './arena.js';
+
+// @kern-source: engine:18
 export const BRAND: readonly string[] = ['#fbbf24', '#f9a816', '#f97316', '#f45a2a', '#ef4444'] as const;
 
-// @kern-source: engine:20
+// @kern-source: engine:21
 export const LOGO_LINES: string[] = [
   '    \u2588\u2588\u2588\u2588\u2588\u2557  \u2588\u2588\u2588\u2588\u2588\u2588\u2557  \u2588\u2588\u2588\u2588\u2588\u2588\u2557 \u2588\u2588\u2588\u2557   \u2588\u2588\u2557',
   '   \u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2554\u2550\u2550\u2550\u2550\u255d \u2588\u2588\u2554\u2550\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2588\u2588\u2557  \u2588\u2588\u2551',
@@ -44,18 +47,32 @@ export const LOGO_LINES: string[] = [
   '   \u255a\u2550\u255d  \u255a\u2550\u255d \u255a\u2550\u2550\u2550\u2550\u2550\u255d  \u255a\u2550\u2550\u2550\u2550\u2550\u255d \u255a\u2550\u255d  \u255a\u2550\u2550\u2550\u255d',
 ];
 
-// @kern-source: engine:32
+// @kern-source: engine:33
 export const VERSION: string = '0.1.0';
 
-// @kern-source: engine:37
+// @kern-source: engine:38
 export interface OutputBlock {
   id: number;
   event: OutputEvent;
 }
 
-// @kern-source: engine:43
+// @kern-source: engine:44
 
-export function EngineProgressView({ engines }: { engines: EngineProgress[] }) {
+export function EngineProgressView({ engines, mode }: { engines: EngineProgress[]; mode?: string }) {
+        // Detect mode from status text when not explicitly provided
+        const detected = mode ?? (() => {
+          const s = engines[0]?.status ?? '';
+          if (s.startsWith('drafting')) return 'brainstorm';
+          if (s.startsWith('thinking')) return 'campfire';
+          if (['queued','building'].some(k => s.startsWith(k)) || s.startsWith('done (')) return 'forge';
+          return 'default';
+        })();
+  
+        if (detected === 'forge') return <ForgeArena engines={engines} />;
+        if (detected === 'brainstorm') return <BrainstormStorm engines={engines} />;
+        if (detected === 'campfire') return <CampfireFire engines={engines} />;
+  
+        // Default: plain list (fallback for tribunal / unknown)
         return (
           <Box flexDirection="column">
             {engines.map((engine: EngineProgress) => (
@@ -77,7 +94,7 @@ export function EngineProgressView({ engines }: { engines: EngineProgress[] }) {
 }
 
 
-// @kern-source: engine:69
+// @kern-source: engine:85
 
 export function EngineBlock({ engineId, color, content }: { engineId: string; color: number; content: string }) {
         const wrapWidth = contentWidth(8);
@@ -107,7 +124,7 @@ export function EngineBlock({ engineId, color, content }: { engineId: string; co
 }
 
 
-// @kern-source: engine:103
+// @kern-source: engine:119
 
 export function ConversationalResponse({ engineId, content }: { engineId: string; content: string }) {
         const wrapWidth = contentWidth(2);
@@ -125,7 +142,7 @@ export function ConversationalResponse({ engineId, content }: { engineId: string
 }
 
 
-// @kern-source: engine:124
+// @kern-source: engine:140
 
 function DashboardView({ event }: { event: OutputEvent & { type: 'dashboard' } }) {
         return (
@@ -191,7 +208,7 @@ function DashboardView({ event }: { event: OutputEvent & { type: 'dashboard' } }
 }
 
 
-// @kern-source: engine:192
+// @kern-source: engine:208
 
 function TableView({ headers, rows }: { headers: string[]; rows: string[][] }) {
         const widths = headers.map((h: string, i: number) =>
@@ -217,7 +234,7 @@ function TableView({ headers, rows }: { headers: string[]; rows: string[][] }) {
 }
 
 
-// @kern-source: engine:221
+// @kern-source: engine:237
 
 export function OutputBlockView({ event, mode, toolOutputExpanded, thinkingExpanded }: { event: OutputEvent; mode: string; toolOutputExpanded?: boolean; thinkingExpanded?: boolean }) {
         switch (event.type) {
@@ -711,7 +728,7 @@ export function OutputBlockView({ event, mode, toolOutputExpanded, thinkingExpan
 }
 
 
-// @kern-source: engine:720
+// @kern-source: engine:736
 
 export function ToolCallGroup({ blocks }: { blocks: OutputBlock[] }) {
         const toolCounts: Record<string, number> = {};

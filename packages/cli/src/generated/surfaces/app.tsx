@@ -911,7 +911,7 @@ export function App({  }: {  }) {
                 </Box>
               );
             })()}
-            {liveProgress && <EngineProgressView engines={liveProgress} />}
+            {liveProgress && <EngineProgressView engines={liveProgress} mode={mode} />}
           </Box>
           {reviewEvent && <ReviewBlock event={reviewEvent} onAction={handleReviewActionCb} />}
           {enginePickerOpen && (

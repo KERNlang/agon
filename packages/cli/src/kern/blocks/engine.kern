@@ -737,8 +737,84 @@ screen name=ToolCallGroup target=ink
             <Text color={statusColor}>{statusIcon}</Text>
             <Text bold>{` ${blocks.length} tool calls`}</Text>
             <Text dimColor>{` (${summary})`}</Text>
-            <Text color="#f59e0b">{' \u25b8 Ctrl+E'}</Text>
+            <Text color="#f59e0b">{' \u25b8 ^E'}</Text>
           </Text>
+        </Box>
+      );
+    >>>
+
+// ── Helper: extract first meaningful sentence from engine output ──
+
+fn name=extractSummary params="text:string, maxLen:number" returns=string
+  handler <<<
+    let s = text.replace(/<think>[\s\S]*?<\/think>\s*/gi, '');
+    s = s.replace(/^#+\s+.+\n/gm, '');
+    s = s.replace(/^\s*[-*]\s+/gm, '');
+    s = s.replace(/\*\*/g, '');
+    s = s.trim();
+    const firstSentence = s.match(/^[^.!?\n]{10,}[.!?]/);
+    const summary = firstSentence ? firstSentence[0] : s.slice(0, maxLen);
+    return summary.length > maxLen ? summary.slice(0, maxLen - 1) + '\u2026' : summary;
+  >>>
+
+// ── Screen: DebateGroup — collapsed summary for tribunal rounds ──
+
+screen name=DebateGroup target=ink
+  prop name=blocks type="OutputBlock[]"
+  render
+    handler <<<
+      const round = (blocks[0]?.event as any)?.round ?? '?';
+      const w = contentWidth(6);
+      return (
+        <Box flexDirection="column" paddingLeft={2}>
+          <Text color="#a78bfa" bold>{'\u250c\u2500\u2500 Round '}{round}{' \u2500\u2500'}</Text>
+          {blocks.map((b: any, i: number) => {
+            const ev = b.event as any;
+            const eColor = engineColor(ev.engineId);
+            const summary = extractSummary(ev.argument || '', w - 30);
+            return (
+              <Text key={`dr-${i}`}>
+                <Text color="#a78bfa">{'\u2502  '}</Text>
+                <Text color={eColor} bold>{ev.engineId}</Text>
+                <Text dimColor>{' ('}{ev.position}{'): '}</Text>
+                <Text>{summary}</Text>
+              </Text>
+            );
+          })}
+          <Text color="#a78bfa">{'\u2514'}<Text color="#f59e0b">{' \u25b8 ^E expand'}</Text></Text>
+        </Box>
+      );
+    >>>
+
+// ── Screen: BidGroup — collapsed summary for brainstorm bids ──
+
+screen name=BidGroup target=ink
+  prop name=blocks type="OutputBlock[]"
+  render
+    handler <<<
+      const w = contentWidth(6);
+      return (
+        <Box flexDirection="column" paddingLeft={2}>
+          <Text color="#22d3ee" bold>{'\u250c\u2500\u2500 Brainstorm Bids \u2500\u2500'}</Text>
+          {blocks.map((b: any, i: number) => {
+            const ev = b.event as any;
+            const eColor = engineColor(ev.engineId);
+            const isWinner = ev.critique && ev.critique.includes('best');
+            const scoreMatch = ev.critique ? ev.critique.match(/score:\s*(\d+)/) : null;
+            const score = scoreMatch ? scoreMatch[1] : '?';
+            const icon = isWinner ? '\u2b50' : '\u2713';
+            const summary = extractSummary(ev.content || '', w - 30);
+            return (
+              <Text key={`bid-${i}`}>
+                <Text color="#22d3ee">{'\u2502  '}</Text>
+                <Text>{icon}{' '}</Text>
+                <Text color={eColor} bold>{ev.engineId}</Text>
+                <Text dimColor>{' ('}{score}{'): '}</Text>
+                <Text>{summary}</Text>
+              </Text>
+            );
+          })}
+          <Text color="#22d3ee">{'\u2514'}<Text color="#f59e0b">{' \u25b8 ^E expand'}</Text></Text>
         </Box>
       );
     >>>

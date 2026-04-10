@@ -16,7 +16,7 @@ export type { SyntaxToken } from './generated/blocks/rendering.js';
 // Engine display
 export {
   EngineProgressView, EngineBlock, ConversationalResponse,
-  OutputBlockView, ToolCallGroup,
+  OutputBlockView, ToolCallGroup, DebateGroup, BidGroup,
   BRAND, LOGO_LINES, VERSION,
 } from './generated/blocks/engine.js';
 export type { OutputBlock } from './generated/blocks/engine.js';

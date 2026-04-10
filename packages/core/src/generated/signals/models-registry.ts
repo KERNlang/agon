@@ -99,14 +99,27 @@ export function resolveModelFormat(providerNpm: string, model?: ModelsDevModel):
 }
 
 // @kern-source: models-registry:95
+export const CANONICAL_API_URLS: Record<string, string> = ({
+  anthropic: 'https://api.anthropic.com',
+  openai: 'https://api.openai.com/v1',
+  google: 'https://generativelanguage.googleapis.com/v1beta/openai',
+  'google-vertex': 'https://us-central1-aiplatform.googleapis.com/v1beta1',
+  mistral: 'https://api.mistral.ai/v1',
+  cohere: 'https://api.cohere.com/v2',
+  xai: 'https://api.x.ai/v1',
+});
+
+// @kern-source: models-registry:108
 export function resolveBaseUrl(provider: ModelsDevProvider, model?: ModelsDevModel): string|null {
   // Model-level override
   if (model?.provider?.api) return model.provider.api;
   // Provider-level
-  return provider.api ?? null;
+  if (provider.api) return provider.api;
+  // Fallback: well-known canonical API URLs for major providers
+  return CANONICAL_API_URLS[provider.id] ?? null;
 }
 
-// @kern-source: models-registry:103
+// @kern-source: models-registry:118
 export function buildModelEntries(registry: Record<string, ModelsDevProvider>): ModelEntry[] {
   const entries: ModelEntry[] = [];
   
@@ -145,19 +158,71 @@ export function buildModelEntries(registry: Record<string, ModelsDevProvider>): 
   return entries;
 }
 
-// @kern-source: models-registry:142
+// @kern-source: models-registry:157
 export function searchModels(entries: ModelEntry[], query: string): ModelEntry[] {
   if (!query.trim()) return entries;
   const q = query.toLowerCase();
   const terms = q.split(/\s+/);
   
-  return entries.filter((entry) => {
+  // Known model-brand → canonical provider mappings
+  const canonicalProviders: Record<string, string[]> = {
+    claude: ['anthropic'],
+    sonnet: ['anthropic'],
+    opus: ['anthropic'],
+    haiku: ['anthropic'],
+    codex: ['openai'],
+    gpt: ['openai'],
+    'o1': ['openai'],
+    'o3': ['openai'],
+    'o4': ['openai'],
+    gemini: ['google'],
+    flash: ['google'],
+    qwen: ['alibaba', 'alibaba-cn'],
+    mistral: ['mistral'],
+    deepseek: ['deepseek'],
+    minimax: ['minimax', 'minimax-cn'],
+    llama: ['meta', 'llama'],
+    phi: ['azure'],
+    command: ['cohere'],
+    grok: ['xai'],
+  };
+  
+  const matched = entries.filter((entry) => {
     const haystack = `${entry.providerName} ${entry.modelName} ${entry.modelId}`.toLowerCase();
     return terms.every((term: string) => haystack.includes(term));
   });
+  
+  // Score and sort by relevance — canonical providers first
+  const scored = matched.map((entry) => {
+    let score = 0;
+    const pid = entry.providerId.toLowerCase();
+    const pname = entry.providerName.toLowerCase();
+  
+    for (const term of terms) {
+      // Canonical provider for this model brand → top priority
+      const canonical = canonicalProviders[term];
+      if (canonical && canonical.some((c: string) => pid === c || pid.startsWith(c))) {
+        score += 100;
+      }
+      // Provider name directly matches search term → high relevance
+      if (pname.includes(term)) score += 20;
+      // Model name matches → base relevance
+      if (entry.modelName.toLowerCase().includes(term)) score += 10;
+    }
+  
+    return { entry, score };
+  });
+  
+  // Sort by score desc, then provider name asc for ties
+  scored.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    return a.entry.providerName.localeCompare(b.entry.providerName);
+  });
+  
+  return scored.map((s) => s.entry);
 }
 
-// @kern-source: models-registry:154
+// @kern-source: models-registry:221
 export function normalizeBaseUrl(url: string): string {
   // Strip /anthropic/ only when it's the first path segment (proxy prefix)
   try {
@@ -172,7 +237,7 @@ export function normalizeBaseUrl(url: string): string {
   }
 }
 
-// @kern-source: models-registry:169
+// @kern-source: models-registry:236
 export function modelEntryToEngineDef(entry: ModelEntry): Record<string, any> {
   return {
     schemaVersion: 3,

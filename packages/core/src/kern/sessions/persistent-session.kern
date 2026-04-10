@@ -541,7 +541,8 @@ fn name=createAcpSession params="config:PersistentSessionConfig" returns="Persis
               }
 
               if (config.onApproval) {
-                config.onApproval(String(tName), String(tCmd)).then((approved: boolean) => {
+                config.onApproval(String(tName), String(tCmd)).then((result: boolean | string) => {
+                  const approved = typeof result === 'string' ? false : result;
                   const optionId = approved
                     ? (allowOpt?.optionId ?? alwaysOpt?.optionId ?? 'proceed_once')
                     : (rejectOpt?.optionId ?? 'reject');

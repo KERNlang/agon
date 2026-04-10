@@ -568,7 +568,8 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
             }
   
             if (config.onApproval) {
-              config.onApproval(String(tName), String(tCmd)).then((approved: boolean) => {
+              config.onApproval(String(tName), String(tCmd)).then((result: boolean | string) => {
+                const approved = typeof result === 'string' ? false : result;
                 const optionId = approved
                   ? (allowOpt?.optionId ?? alwaysOpt?.optionId ?? 'proceed_once')
                   : (rejectOpt?.optionId ?? 'reject');
@@ -795,7 +796,7 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
   return session;
 }
 
-// @kern-source: persistent-session:773
+// @kern-source: persistent-session:774
 /**
  * Persistent bidirectional NDJSON session for Claude Code. One process, multi-turn via stdin.
  */
@@ -1090,7 +1091,7 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
   return session;
 }
 
-// @kern-source: persistent-session:1068
+// @kern-source: persistent-session:1069
 /**
  * Fallback: spawn per turn with --resume/--continue. Works for any CLI engine.
  */

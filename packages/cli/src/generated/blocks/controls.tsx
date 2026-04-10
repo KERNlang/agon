@@ -260,10 +260,47 @@ export function ModelPicker({ entries, onSelect, onCancel, loading, initialFilte
   
         const filtered = useMemo(() => {
           if (!filter.trim()) return entries.slice(0, 50);
-          const terms = filter.toLowerCase().split(/\s+/);
+          const terms = filter.toLowerCase().trim().split(/\s+/).filter(Boolean);
+          const providerAliasByTerm: Record<string, string> = {
+            claude: 'anthropic',
+            codex: 'openai',
+            gemini: 'google',
+            anthropic: 'anthropic',
+            openai: 'openai',
+            google: 'google',
+            openrouter: 'openrouter',
+            mistral: 'mistral',
+            qwen: 'qwen',
+            minimax: 'minimax',
+          };
+          const explicitProviderTerms = terms
+            .filter((t: string) => t.startsWith('provider:'))
+            .map((t: string) => t.slice('provider:'.length))
+            .filter(Boolean);
+          const hasExplicitProviderFilter = explicitProviderTerms.length > 0;
+          const inferredProviderTerms = hasExplicitProviderFilter
+            ? []
+            : Array.from(new Set(
+                terms
+                  .map((t: string) => providerAliasByTerm[t])
+                  .filter((v: string|undefined): v is string => Boolean(v))
+              ));
+          const providerTerms = [...explicitProviderTerms, ...inferredProviderTerms];
+          const genericTerms = terms.filter((t: string) => {
+            if (t.startsWith('provider:')) return false;
+            if (hasExplicitProviderFilter) return true;
+            return !providerAliasByTerm[t];
+          });
+  
           return entries.filter((e: ModelPickerEntry) => {
+            if (providerTerms.length > 0) {
+              const providerHay = `${e.providerName} ${e.providerId}`.toLowerCase();
+              if (!providerTerms.every((t: string) => providerHay.includes(t))) return false;
+            }
+  
+            if (genericTerms.length === 0) return true;
             const hay = `${e.providerName} ${e.modelName} ${e.modelId}`.toLowerCase();
-            return terms.every((t: string) => hay.includes(t));
+            return genericTerms.every((t: string) => hay.includes(t));
           }).slice(0, 50);
         }, [entries, filter]);
   
@@ -406,7 +443,7 @@ export function ModelPicker({ entries, onSelect, onCancel, loading, initialFilte
 }
 
 
-// @kern-source: controls:414
+// @kern-source: controls:451
 
 export function ReviewBlock({ event, onAction }: { event: ReviewEvent; onAction: (action: 'apply' | 'edit' | 'reject' | 'copy') => void }) {
         const eColor = engineColor(event.winnerId);
@@ -447,7 +484,7 @@ export function ReviewBlock({ event, onAction }: { event: ReviewEvent; onAction:
 }
 
 
-// @kern-source: controls:456
+// @kern-source: controls:493
 
 export function CesarPicker({ engines, currentCesar, onSelect, onCancel }: { engines: string[]; currentCesar: string; onSelect: (engineId: string) => void; onCancel: () => void }) {
   const [cursor, setCursor] = useState<number>(0);

@@ -134,18 +134,11 @@ fn name=buildCesarSystemPrompt params="ctx:HandlerContext" returns=string
       systemParts.push(`## EXTENSIONS\n${fragments.join('\n')}`);
     }
 
-    // Inject plan history so Cesar knows what plans exist
+    // Lightweight plan awareness — Cesar knows plans exist but doesn't auto-load them
     try {
-      const recentPlans = listCesarPlans().slice(0, 10);
-      if (recentPlans.length > 0) {
-        const planLines = recentPlans.map((p: any) => {
-          const date = p.createdAt ? new Date(p.createdAt).toLocaleDateString() : '?';
-          const stepCount = p.steps?.length ?? 0;
-          const state = p.state ?? 'unknown';
-          const cost = p.totalActualCostUsd > 0 ? ` $${p.totalActualCostUsd.toFixed(4)}` : '';
-          return `  - [${date}] ${p.intent} (${stepCount} steps, ${state}${cost})`;
-        }).join('\n');
-        systemParts.push(`PLAN HISTORY — Recent plans in ~/.agon/runs/:\n${planLines}\nUse this context to avoid re-planning solved tasks and to build on past approaches.`);
+      const planCount = listCesarPlans().length;
+      if (planCount > 0) {
+        systemParts.push(`PLANS: ${planCount} plan(s) stored in ~/.agon/runs/. Use the ListPlans tool to look up past plans when relevant (e.g. user references a previous task, or you want to check if something was already planned). Do NOT load plans proactively — only when the task relates to prior work.`);
       }
     } catch { /* plan history unavailable — not critical */ }
 

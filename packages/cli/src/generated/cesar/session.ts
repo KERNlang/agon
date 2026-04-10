@@ -411,8 +411,9 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
       }
       if (agonTool === 'Bash') {
         const cmd = command.toLowerCase();
-        const isReadOnly = /^\s*(git\s+(status|log|diff|show|branch|remote|rev-parse)|ls|cat|head|tail|grep|rg|find|wc|file|stat|which|echo|printf|npm\s+(run\s+type|test|run\s+build)|npx\s+kern\s+compile)/.test(cmd);
-        if (!isReadOnly) return 'BLOCKED: Plan mode — only read-only commands allowed. No writes, no installs, no code execution. Propose your plan first with ProposePlan.';
+        // Allow read-only + git ops (user may ask Cesar to commit during planning)
+        const isAllowed = /^\s*(git\s+(status|log|diff|show|branch|remote|rev-parse|add|commit|push|pull|checkout|stash|tag|fetch)|ls|cat|head|tail|grep|rg|find|wc|file|stat|which|echo|printf|npm\s+(run\s+type|test|run\s+build)|npx\s+kern\s+compile)/.test(cmd);
+        if (!isAllowed) return 'BLOCKED: Plan mode — only read-only commands and git operations allowed. Propose your plan first with ProposePlan.';
       }
     }
   
@@ -434,9 +435,10 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
       }
       if (agonTool === 'Bash') {
         const cmd = command.trimStart().toLowerCase();
-        const isReadOnly = /^\s*(git\s+(status|log|diff|show|branch|remote|rev-parse|stash\s+list)|ls|wc|file|stat|which|echo|printf|npm\s+(run\s+type|test|run\s+build)|npx\s+kern)/.test(cmd);
-        if (!isReadOnly) {
-          return 'BLOCKED: Report confidence first via ReportConfidence MCP tool before running commands. Read-only commands (git status, ls, npm test) are allowed.';
+        // Allow read-only commands AND git write ops (commit/push are user-approved mechanical actions, not code generation)
+        const isAllowed = /^\s*(git\s+(status|log|diff|show|branch|remote|rev-parse|stash\s+list|add|commit|push|pull|checkout|merge|rebase|stash|tag|fetch)|ls|wc|file|stat|which|echo|printf|npm\s+(run\s+type|test|run\s+build)|npx\s+kern)/.test(cmd);
+        if (!isAllowed) {
+          return 'BLOCKED: Report confidence first via ReportConfidence MCP tool before running commands. Read-only commands and git operations are allowed.';
         }
       }
     }
@@ -465,7 +467,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
   };
 }
 
-// @kern-source: session:441
+// @kern-source: session:443
 export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unknown>> {
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -499,7 +501,7 @@ export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unkn
   return normalizeNamedRecord(raw);
 }
 
-// @kern-source: session:475
+// @kern-source: session:477
 export function loadCesarMcpServers(config: any, cwd: string): Array<Record<string,unknown>>|undefined {
   if (!(config as any).cesarMcpEnabled) return undefined;
   
@@ -523,14 +525,14 @@ export function loadCesarMcpServers(config: any, cwd: string): Array<Record<stri
   return servers;
 }
 
-// @kern-source: session:499
+// @kern-source: session:501
 export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
   if (!binaryPath) return false;
   const protocol = engine?.companion?.protocol;
   return protocol === 'acp' || protocol === 'jsonrpc' || protocol === 'stream-json';
 }
 
-// @kern-source: session:506
+// @kern-source: session:508
 /**
  * Compute a fingerprint of MCP-related config to detect changes. Includes both manual config and auto-discovery sources.
  */
@@ -550,7 +552,7 @@ export function mcpConfigFingerprint(config: any): string {
   return `${enabled}:${configPath}:${mtime}:${discoveryFp}`;
 }
 
-// @kern-source: session:524
+// @kern-source: session:526
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
     const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';

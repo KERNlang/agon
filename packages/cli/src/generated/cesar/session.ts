@@ -157,18 +157,11 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
         systemParts.push(`## EXTENSIONS\n${fragments.join('\n')}`);
       }
   
-      // Inject plan history so Cesar knows what plans exist
+      // Lightweight plan awareness — Cesar knows plans exist but doesn't auto-load them
       try {
-        const recentPlans = listCesarPlans().slice(0, 10);
-        if (recentPlans.length > 0) {
-          const planLines = recentPlans.map((p: any) => {
-            const date = p.createdAt ? new Date(p.createdAt).toLocaleDateString() : '?';
-            const stepCount = p.steps?.length ?? 0;
-            const state = p.state ?? 'unknown';
-            const cost = p.totalActualCostUsd > 0 ? ` $${p.totalActualCostUsd.toFixed(4)}` : '';
-            return `  - [${date}] ${p.intent} (${stepCount} steps, ${state}${cost})`;
-          }).join('\n');
-          systemParts.push(`PLAN HISTORY — Recent plans in ~/.agon/runs/:\n${planLines}\nUse this context to avoid re-planning solved tasks and to build on past approaches.`);
+        const planCount = listCesarPlans().length;
+        if (planCount > 0) {
+          systemParts.push(`PLANS: ${planCount} plan(s) stored in ~/.agon/runs/. Use the ListPlans tool to look up past plans when relevant (e.g. user references a previous task, or you want to check if something was already planned). Do NOT load plans proactively — only when the task relates to prior work.`);
         }
       } catch { /* plan history unavailable — not critical */ }
   
@@ -204,7 +197,7 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
       return systemParts.join('\n\n');
 }
 
-// @kern-source: session:184
+// @kern-source: session:177
 /**
  * Build the onToolCall callback for API engines with native function calling.
  */
@@ -384,7 +377,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
   };
 }
 
-// @kern-source: session:362
+// @kern-source: session:355
 /**
  * Build the onApproval callback for engine tool approvals. Returns true to approve, false to deny silently, or a string to deny with a reason the engine can see.
  */
@@ -472,7 +465,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
   };
 }
 
-// @kern-source: session:448
+// @kern-source: session:441
 export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unknown>> {
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -506,7 +499,7 @@ export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unkn
   return normalizeNamedRecord(raw);
 }
 
-// @kern-source: session:482
+// @kern-source: session:475
 export function loadCesarMcpServers(config: any, cwd: string): Array<Record<string,unknown>>|undefined {
   if (!(config as any).cesarMcpEnabled) return undefined;
   
@@ -530,14 +523,14 @@ export function loadCesarMcpServers(config: any, cwd: string): Array<Record<stri
   return servers;
 }
 
-// @kern-source: session:506
+// @kern-source: session:499
 export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
   if (!binaryPath) return false;
   const protocol = engine?.companion?.protocol;
   return protocol === 'acp' || protocol === 'jsonrpc' || protocol === 'stream-json';
 }
 
-// @kern-source: session:513
+// @kern-source: session:506
 /**
  * Compute a fingerprint of MCP-related config to detect changes. Includes both manual config and auto-discovery sources.
  */
@@ -557,7 +550,7 @@ export function mcpConfigFingerprint(config: any): string {
   return `${enabled}:${configPath}:${mtime}:${discoveryFp}`;
 }
 
-// @kern-source: session:531
+// @kern-source: session:524
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
     const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';

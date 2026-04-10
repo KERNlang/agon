@@ -940,7 +940,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
         };
       }
       const mcpIntent = intent as any;
-      const sessionServers: Array<{name:string, type?:string, url?:string}> = (cb.ctx.cesar as any).sessionMcpServers ?? [];
+      const sessionServers: Array<Record<string,unknown>> = cb.ctx.sessionMcpServers ?? [];
   
       if (mcpIntent.action === 'list') {
         if (sessionServers.length === 0) {
@@ -991,7 +991,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
         }
   
         sessionServers.push(serverEntry);
-        (cb.ctx.cesar as any).sessionMcpServers = sessionServers;
+        if (cb.ctx.setSessionMcpServers) cb.ctx.setSessionMcpServers([...sessionServers]);
   
         // Restart Cesar session to pick up new MCP server
         if (cb.ctx.cesarSession) {
@@ -1014,7 +1014,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
           break;
         }
         sessionServers.splice(idx, 1);
-        (cb.ctx.cesar as any).sessionMcpServers = sessionServers;
+        if (cb.ctx.setSessionMcpServers) cb.ctx.setSessionMcpServers([...sessionServers]);
   
         if (cb.ctx.cesarSession) {
           cb.ctx.cesarSession.close();

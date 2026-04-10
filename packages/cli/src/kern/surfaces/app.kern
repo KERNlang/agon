@@ -88,6 +88,7 @@ screen name=App target=ink
   state name=cesarConfidence type="number|null" initial="null"
   state name=planModeQueued type=boolean initial=false
   state name=cesarMemory type=any initial="() => createCesarMemory()"
+  state name=sessionMcpServers type="Array<Record<string,unknown>>" initial="[]"
 
   // ── Refs ──
   ref name=chatStartTimeRef type=number initial=0
@@ -324,7 +325,7 @@ screen name=App target=ink
       if (clearChat) dispatch({ type: 'clear' } as any);
     >>>
 
-  callback name=buildContext params="" deps="registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode,activePlan,extensionPromptFragments"
+  callback name=buildContext params="" deps="registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode,activePlan,extensionPromptFragments,sessionMcpServers"
     handler <<<
       return {
         registry, adapter, activeEngines,
@@ -337,6 +338,7 @@ screen name=App target=ink
         cesarMemory,
         activePlan, setActivePlan,
         extensionPromptFragments,
+        sessionMcpServers, setSessionMcpServers,
       };
     >>>
 

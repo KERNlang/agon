@@ -104,5 +104,7 @@ export interface HandlerContext {
   eventBus?: EventBus | undefined;
   cesar?: CesarState | undefined;
   lastReviewResult?: { engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number } | undefined;
+  sessionMcpServers?: Array<Record<string,unknown>>;
+  setSessionMcpServers?: ((servers: Array<Record<string,unknown>>) => void) | undefined;
 }
 

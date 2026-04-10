@@ -593,11 +593,11 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
     }
   
     // ── Inject session-scoped MCP servers (from /mcp connect) ──
-    const sessionMcp = ctx.cesar?.sessionMcpServers ?? [];
+    const sessionMcp = (ctx as any).sessionMcpServers ?? [];
     if (sessionMcp.length > 0) {
       const sessionMcpWired = sessionMcp.map((s: any) => {
-        if (s.url) return { name: s.name, type: s.type ?? 'http', url: s.url };
-        return { name: s.name, command: s.command, args: s.args ?? [] };
+        if (s.url) return { name: s.name, type: s.type ?? 'http', url: s.url, ...(s.env ? { env: s.env } : {}) };
+        return { name: s.name, command: s.command, args: s.args ?? [], ...(s.env ? { env: s.env } : {}) };
       });
       mcpServers = mcpServers ? [...mcpServers, ...sessionMcpWired] : sessionMcpWired;
     }

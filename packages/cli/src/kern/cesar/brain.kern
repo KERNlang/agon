@@ -599,6 +599,10 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
                 if (LOOP_ORCH.has(name)) {
                   ctx.cesar!.pendingDelegation = extractDelegation(name, (inp as Record<string, unknown>) ?? {});
                 }
+                // Stash ProposePlan args for onToolResult to wire up
+                if (name === 'ProposePlan') {
+                  (ctx.cesar as any)._proposePlanArgs = inp;
+                }
               },
               onToolResult: (name: string, result: any) => {
                 const out = result.result.ok ? result.result.content : result.result.error;
@@ -623,6 +627,21 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
           );
           response = loopResult.finalText.trim();
           ranToolLoop = true;
+        }
+      }
+
+      // ── Post-tool-loop: wire up ProposePlan if called during XML tool loop ──
+      if ((ctx.cesar as any)?._proposePlanArgs && !ctx.cesar!.proposedPlan) {
+        const ppArgs = (ctx.cesar as any)._proposePlanArgs;
+        delete (ctx.cesar as any)._proposePlanArgs;
+        try {
+          const { handleProposePlan } = await import('../handlers/plan-mode.js');
+          const planDispatch = ctx.cesar!.planDispatch ?? dispatch;
+          const plan = await handleProposePlan(ppArgs, planDispatch, ctx);
+          if (ctx.setActivePlan) ctx.setActivePlan(plan);
+          ctx.cesar!.proposedPlan = plan;
+        } catch (err) {
+          console.warn(`[agon] ProposePlan via tool loop failed: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
 
@@ -764,53 +783,38 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
         }
       }
 
-      // ── Plan mode gate: Cesar cannot exit plan mode without calling ProposePlan ──
-      if (inPlanMode && !ctx.cesar!.proposedPlan && !ctx.cesar!.pendingDelegation) {
-        if (streaming) { dispatch({ type: 'streaming-end', engineId: cesarEngineId }); streaming = false; }
-        let planAttempts = 0;
-        const maxPlanAttempts = 3;
-        while (!ctx.cesar!.proposedPlan && !ctx.cesar!.pendingDelegation && planAttempts < maxPlanAttempts && session.alive && !abort.signal.aborted) {
-          planAttempts++;
-          dispatch({ type: 'spinner-start', message: `Cesar building plan (attempt ${planAttempts}/${maxPlanAttempts})…`, color });
-          try {
-            let planResponse = '';
-            const planGen = session.send({
-              message: `[SYSTEM] You are in PLAN MODE. Your turn cannot end without calling ProposePlan. You have investigated enough. Call ProposePlan NOW with a structured plan. Attempt ${planAttempts}/${maxPlanAttempts}.`,
-              signal: abort.signal,
-            });
-            for await (const chunk of planGen) {
-              if (chunk.type === 'text') planResponse += chunk.content;
-              if (chunk.type === 'done' || chunk.type === 'error') break;
-            }
-            dispatch({ type: 'spinner-stop' });
-            if (planResponse.trim() && !ctx.cesar!.proposedPlan) {
-              dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: planResponse.trim() });
-            }
-          } catch {
-            dispatch({ type: 'spinner-stop' });
-            break;
+      // ── Plan mode gate: Cesar must end with ProposePlan — nudge hard but don't force ──
+      if (inPlanMode && !ctx.cesar!.proposedPlan && !ctx.cesar!.pendingDelegation && session.alive && !abort.signal.aborted) {
+        dispatch({ type: 'warning', message: 'Plan mode: Cesar didn\'t call ProposePlan yet — nudging...' });
+        dispatch({ type: 'spinner-start', message: 'Cesar building plan…', color });
+        try {
+          let planResponse = '';
+          const planGen = session.send({
+            message: '[SYSTEM] You are in PLAN MODE. You investigated enough. Now call ProposePlan with your structured plan.',
+            signal: abort.signal,
+          });
+          for await (const chunk of planGen) {
+            if (chunk.type === 'text') planResponse += chunk.content;
+            if (chunk.type === 'done' || chunk.type === 'error') break;
           }
+          dispatch({ type: 'spinner-stop' });
+          if (ctx.cesar!.proposedPlan) {
+            appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
+            appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
+            return { delegated: false, responded: true };
+          }
+          if (planResponse.trim()) {
+            dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: planResponse.trim() });
+          }
+        } catch {
+          dispatch({ type: 'spinner-stop' });
         }
-        // If plan was produced, return to dispatch for approval
-        if (ctx.cesar!.proposedPlan) {
-          appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
-          appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
-          return { delegated: false, responded: true };
-        }
-        // All attempts exhausted — fall through, dispatch.kern will show the warning
       }
 
-      // ── Protocol enforcement: suggest mode when engine didn't ──
-      if (!finalSuggestion.action && !ranToolLoop && !secondOpinionPromise && !_isFollowUp && !abort.signal.aborted) {
-        if (streaming) { dispatch({ type: 'streaming-end', engineId: cesarEngineId }); streaming = false; }
-        const enforcement = await promptProtocolEnforcement(input, parsedConfidence, ctx, dispatch);
-        if (enforcement) {
-          appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
-          appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
-          tracker.record(cesarEngineId, { prompt: input, response });
-          return enforcement;
-        }
-      }
+      // ── Protocol enforcement: DISABLED ──
+      // Cesar decides all delegations. The system never forces brainstorm/tribunal on the user.
+      // If Cesar wants to delegate, he calls the tool. If he doesn't, that's his call.
+      // Quick Nero (self-challenge) handles low-confidence nudging without user interaction.
 
       // ── Display final response (skip if already displayed via streaming or tool loop) ──
       if (!streaming && response && !ranToolLoop && !wasStreamed) {

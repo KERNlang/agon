@@ -837,6 +837,7 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
         '--print',
         '--verbose',
         '--dangerously-skip-permissions',
+        '--strict-mcp-config',
         '--input-format', 'stream-json',
         '--output-format', 'stream-json',
         '--replay-user-messages',
@@ -1064,7 +1065,7 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
   return session;
 }
 
-// @kern-source: persistent-session:1042
+// @kern-source: persistent-session:1043
 /**
  * Fallback: spawn per turn with --resume/--continue. Works for any CLI engine.
  */

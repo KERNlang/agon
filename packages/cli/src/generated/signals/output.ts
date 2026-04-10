@@ -203,6 +203,10 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
       actions.addBlock(event);
       return;
     }
+    case 'plan-execution': {
+      actions.addBlock(event);
+      return;
+    }
     case 'confidence-update': {
       actions.setCesarConfidence((event as any).value);
       return;

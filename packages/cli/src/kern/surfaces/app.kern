@@ -101,6 +101,7 @@ screen name=App target=ink
   ref name=streamingBufferRef type=any initial="null"
   ref name=streamingFlushTimerRef type=any initial="null"
   ref name=modeRef type="'chat'|'campfire'|'brainstorm'|'tribunal'" initial="'chat'"
+  ref name=ctrlKeyHandledRef type=boolean initial=false
   ref name=justPastedRef type=boolean initial=false
   ref name=pasteHashesRef type="Map<string,string>" initial="new Map()"
   ref name=pasteCountRef type=number initial=0
@@ -401,6 +402,13 @@ screen name=App target=ink
     handler <<<
       // Swallow input while a choice question is active — useInput handles keypress
       if (questionState && questionState.choices) return;
+
+      // Reject value changes caused by Ctrl+key shortcuts (useInput already handled them,
+      // but TextInput still fires onChange with the raw character)
+      if (ctrlKeyHandledRef.current) {
+        ctrlKeyHandledRef.current = false;
+        return;
+      }
 
       const nextValue = cleanInputValue(value);
 
@@ -745,9 +753,11 @@ screen name=App target=ink
         return;
       }
       if ((key.ctrl && input === 'e') || input === '\x05') {
+        ctrlKeyHandledRef.current = true;
         setToolOutputExpanded((prev: boolean) => !prev); return;
       }
       if ((key.ctrl && input === 't') || input === '\x14') {
+        ctrlKeyHandledRef.current = true;
         setThinkingExpanded((prev: boolean) => !prev); return;
       }
       if (key.ctrl && input === 'r') {

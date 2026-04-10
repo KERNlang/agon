@@ -326,7 +326,7 @@ export function OutputBlockView({ event, mode, toolOutputExpanded, thinkingExpan
             const isThinking = /^~?\d{1,3}%\s/.test(chunkText.trim());
             if (isThinking) {
               if (thinkingExpanded === false) return null;
-              return <Text dimColor color="#8b8b8b">{'  \u25B9 '}{chunkText}</Text>;
+              return <Text italic dimColor color="#8b8b8b">{'  \u25B9 '}{chunkText}</Text>;
             }
             return <Text>{'  '}{chunkText}</Text>;
           }

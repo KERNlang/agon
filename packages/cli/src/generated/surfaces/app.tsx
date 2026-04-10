@@ -180,6 +180,7 @@ export function App({  }: {  }) {
   const streamingBufferRef = useRef<any>(null);
   const streamingFlushTimerRef = useRef<any>(null);
   const modeRef = useRef<'chat'|'campfire'|'brainstorm'|'tribunal'>('chat');
+  const ctrlKeyHandledRef = useRef<boolean>(false);
   const justPastedRef = useRef<boolean>(false);
   const pasteHashesRef = useRef<Map<string,string>>(new Map());
   const pasteCountRef = useRef<number>(0);
@@ -340,6 +341,13 @@ export function App({  }: {  }) {
   const handleInputChange = useCallback((value:string) => {
           // Swallow input while a choice question is active — useInput handles keypress
           if (questionState && questionState.choices) return;
+    
+          // Reject value changes caused by Ctrl+key shortcuts (useInput already handled them,
+          // but TextInput still fires onChange with the raw character)
+          if (ctrlKeyHandledRef.current) {
+            ctrlKeyHandledRef.current = false;
+            return;
+          }
     
           const nextValue = cleanInputValue(value);
     
@@ -775,9 +783,11 @@ export function App({  }: {  }) {
             return;
           }
           if ((key.ctrl && input === 'e') || input === '\x05') {
+            ctrlKeyHandledRef.current = true;
             setToolOutputExpanded((prev: boolean) => !prev); return;
           }
           if ((key.ctrl && input === 't') || input === '\x14') {
+            ctrlKeyHandledRef.current = true;
             setThinkingExpanded((prev: boolean) => !prev); return;
           }
           if (key.ctrl && input === 'r') {
@@ -1044,7 +1054,7 @@ export function App({  }: {  }) {
 }
 
 
-// @kern-source: app:1019
+// @kern-source: app:1029
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

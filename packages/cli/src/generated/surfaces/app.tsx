@@ -80,7 +80,7 @@ import { cleanInputValue, cleanSubmitValue, findInputChange, navigateHistory, re
 import { handleReviewAction } from '../blocks/review.js';
 
 // @kern-source: app:31
-import { SpinnerBlock, EngineProgressView, StatusBar, CesarStatusStrip, OutputBlockView, ToolCallGroup, SlashPicker, EnginePicker, ModelPicker, ReviewBlock, BackgroundJobRail, RenderedSegments, CesarPicker, contentWidth, engineColor } from '../../components.js';
+import { SpinnerBlock, EngineProgressView, StatusBar, CesarStatusStrip, OutputBlockView, ToolCallGroup, DebateGroup, BidGroup, SlashPicker, EnginePicker, ModelPicker, ReviewBlock, BackgroundJobRail, RenderedSegments, CesarPicker, contentWidth, engineColor } from '../../components.js';
 
 // @kern-source: app:32
 import type { OutputBlock, ReviewEvent } from '../../components.js';
@@ -871,25 +871,44 @@ export function App({  }: {  }) {
               if (toolOutputExpanded) {
                 return visibleBlocks.map((block: OutputBlock) => (<OutputBlockView key={block.id} event={block.event} mode={mode} toolOutputExpanded={true} thinkingExpanded={thinkingExpanded} />));
               }
-              // Group tool calls — absorb minor events (info, warning, success) between them
+              // Group consecutive blocks: tool-call → ToolCallGroup, debate-round → DebateGroup, kern-draft → BidGroup
               const minorTypes = new Set(['info', 'warning', 'success', 'separator']);
               const groups: (OutputBlock | OutputBlock[])[] = [];
               let idx = 0;
               while (idx < visibleBlocks.length) {
-                if (visibleBlocks[idx].event.type === 'tool-call') {
+                const t = visibleBlocks[idx].event.type;
+                if (t === 'tool-call') {
                   const group: OutputBlock[] = [];
                   while (idx < visibleBlocks.length) {
-                    const t = visibleBlocks[idx].event.type;
-                    if (t === 'tool-call') { group.push(visibleBlocks[idx]); idx++; }
-                    else if (minorTypes.has(t) && idx + 1 < visibleBlocks.length && visibleBlocks[idx + 1].event.type === 'tool-call') { idx++; }
+                    const tt = visibleBlocks[idx].event.type;
+                    if (tt === 'tool-call') { group.push(visibleBlocks[idx]); idx++; }
+                    else if (minorTypes.has(tt) && idx + 1 < visibleBlocks.length && visibleBlocks[idx + 1].event.type === 'tool-call') { idx++; }
                     else break;
+                  }
+                  groups.push(group);
+                } else if (t === 'debate-round') {
+                  // Group consecutive debate-round blocks (same round)
+                  const group: OutputBlock[] = [];
+                  const round = (visibleBlocks[idx].event as any).round;
+                  while (idx < visibleBlocks.length && visibleBlocks[idx].event.type === 'debate-round' && (visibleBlocks[idx].event as any).round === round) {
+                    group.push(visibleBlocks[idx]); idx++;
+                  }
+                  groups.push(group);
+                } else if (t === 'kern-draft') {
+                  // Group consecutive kern-draft blocks (brainstorm bids)
+                  const group: OutputBlock[] = [];
+                  while (idx < visibleBlocks.length && visibleBlocks[idx].event.type === 'kern-draft') {
+                    group.push(visibleBlocks[idx]); idx++;
                   }
                   groups.push(group);
                 } else { groups.push(visibleBlocks[idx]); idx++; }
               }
               return groups.map((item: OutputBlock | OutputBlock[], gi: number) => {
                 if (Array.isArray(item)) {
+                  const firstType = item[0].event.type;
                   if (item.length === 1) return <OutputBlockView key={item[0].id} event={item[0].event} mode={mode} toolOutputExpanded={false} thinkingExpanded={thinkingExpanded} />;
+                  if (firstType === 'debate-round') return <DebateGroup key={`dg-${item[0].id}`} blocks={item} />;
+                  if (firstType === 'kern-draft') return <BidGroup key={`bg-${item[0].id}`} blocks={item} />;
                   return <ToolCallGroup key={`tg-${item[0].id}`} blocks={item} />;
                 }
                 return <OutputBlockView key={item.id} event={item.event} mode={mode} toolOutputExpanded={false} thinkingExpanded={thinkingExpanded} />;
@@ -1054,7 +1073,7 @@ export function App({  }: {  }) {
 }
 
 
-// @kern-source: app:1029
+// @kern-source: app:1048
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

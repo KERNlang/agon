@@ -48,6 +48,8 @@ union name=OutputEvent discriminant=type
   variant name=plan-proposal
     field name=plan type=any
     field name=markdown type=string
+  variant name=plan-execution
+    field name=plan type=any
   variant name=scoreboard
     field name=title type=string
     field name=winner type=string optional=true

@@ -34,10 +34,13 @@ import { truncateCodeLine } from './markdown.js';
 // @kern-source: engine:14
 import { ForgeArena, BrainstormStorm, CampfireFire } from './arena.js';
 
-// @kern-source: engine:18
+// @kern-source: engine:15
+import { PlanProposalView, PlanExecutionView } from './plan-view.js';
+
+// @kern-source: engine:19
 export const BRAND: readonly string[] = ['#fbbf24', '#f9a816', '#f97316', '#f45a2a', '#ef4444'] as const;
 
-// @kern-source: engine:21
+// @kern-source: engine:22
 export const LOGO_LINES: string[] = [
   '    \u2588\u2588\u2588\u2588\u2588\u2557  \u2588\u2588\u2588\u2588\u2588\u2588\u2557  \u2588\u2588\u2588\u2588\u2588\u2588\u2557 \u2588\u2588\u2588\u2557   \u2588\u2588\u2557',
   '   \u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2554\u2550\u2550\u2550\u2550\u255d \u2588\u2588\u2554\u2550\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2588\u2588\u2557  \u2588\u2588\u2551',
@@ -47,16 +50,16 @@ export const LOGO_LINES: string[] = [
   '   \u255a\u2550\u255d  \u255a\u2550\u255d \u255a\u2550\u2550\u2550\u2550\u2550\u255d  \u255a\u2550\u2550\u2550\u2550\u2550\u255d \u255a\u2550\u255d  \u255a\u2550\u2550\u2550\u255d',
 ];
 
-// @kern-source: engine:33
+// @kern-source: engine:34
 export const VERSION: string = '0.1.0';
 
-// @kern-source: engine:38
+// @kern-source: engine:39
 export interface OutputBlock {
   id: number;
   event: OutputEvent;
 }
 
-// @kern-source: engine:44
+// @kern-source: engine:45
 
 export function EngineProgressView({ engines, mode }: { engines: EngineProgress[]; mode?: string }) {
         // Detect mode from status text when not explicitly provided
@@ -94,7 +97,7 @@ export function EngineProgressView({ engines, mode }: { engines: EngineProgress[
 }
 
 
-// @kern-source: engine:85
+// @kern-source: engine:86
 
 export function EngineBlock({ engineId, color, content }: { engineId: string; color: number; content: string }) {
         const wrapWidth = contentWidth(8);
@@ -124,7 +127,7 @@ export function EngineBlock({ engineId, color, content }: { engineId: string; co
 }
 
 
-// @kern-source: engine:119
+// @kern-source: engine:120
 
 export function ConversationalResponse({ engineId, content }: { engineId: string; content: string }) {
         const wrapWidth = contentWidth(2);
@@ -142,7 +145,7 @@ export function ConversationalResponse({ engineId, content }: { engineId: string
 }
 
 
-// @kern-source: engine:140
+// @kern-source: engine:141
 
 function DashboardView({ event }: { event: OutputEvent & { type: 'dashboard' } }) {
         return (
@@ -208,7 +211,7 @@ function DashboardView({ event }: { event: OutputEvent & { type: 'dashboard' } }
 }
 
 
-// @kern-source: engine:208
+// @kern-source: engine:209
 
 function TableView({ headers, rows }: { headers: string[]; rows: string[][] }) {
         const widths = headers.map((h: string, i: number) =>
@@ -234,7 +237,7 @@ function TableView({ headers, rows }: { headers: string[]; rows: string[][] }) {
 }
 
 
-// @kern-source: engine:237
+// @kern-source: engine:238
 
 export function OutputBlockView({ event, mode, toolOutputExpanded, thinkingExpanded }: { event: OutputEvent; mode: string; toolOutputExpanded?: boolean; thinkingExpanded?: boolean }) {
         switch (event.type) {
@@ -691,44 +694,14 @@ export function OutputBlockView({ event, mode, toolOutputExpanded, thinkingExpan
             );
           }
           case 'dashboard': return <DashboardView event={event as OutputEvent & { type: 'dashboard' }} />;
-          case 'plan-proposal': {
-            const p = event.plan;
-            const steps = p.steps ?? [];
-            const totalTokens = p.totalEstimatedTokens ?? steps.reduce((sum: number, s: any) => sum + (s.estimatedTokens ?? 0), 0);
-            const totalCost = p.totalEstimatedCostUsd ?? steps.reduce((sum: number, s: any) => sum + (s.estimatedCostUsd ?? 0), 0);
-            const allEngines = [...new Set(steps.flatMap((s: any) => s.engines ?? (s.engine ? [s.engine] : [])))];
-            const w = contentWidth(6);
-            const bar = '\u2500'.repeat(Math.min(w, 60));
-  
-            return (
-              <Box flexDirection="column" paddingLeft={2} marginY={1}>
-                <Text color="#c084fc">{'\u250c'}{bar}</Text>
-                <Text color="#c084fc">{'\u2502 '}<Text bold color="#c084fc">{'\u25b8 Plan: '}{p.intent}</Text></Text>
-                <Text color="#c084fc">{'\u2502'}</Text>
-                {steps.map((s: any, i: number) => {
-                  const typeLabel = s.type === 'self' ? 'Cesar' : s.type;
-                  const engines = s.engines?.length ? s.engines.join(', ') : (s.engine ?? '');
-                  const cost = s.estimatedCostUsd != null ? ` ~$${s.estimatedCostUsd.toFixed(2)}` : '';
-                  const deps = s.dependsOn?.length ? ` (after ${s.dependsOn.join(', ')})` : '';
-                  return (
-                    <Box key={s.id} flexDirection="column">
-                      <Text color="#c084fc">{'\u2502  '}<Text bold color="white">{`${i + 1}. `}</Text><Text>{s.description}</Text></Text>
-                      <Text color="#c084fc">{'\u2502     '}<Text dimColor>{typeLabel}{engines ? ` \u00b7 ${engines}` : ''}{cost}{deps}</Text></Text>
-                    </Box>
-                  );
-                })}
-                <Text color="#c084fc">{'\u2502'}</Text>
-                <Text color="#c084fc">{'\u2502 '}<Text dimColor>{'Est: ~'}{totalTokens.toLocaleString()}{' tokens ($'}{totalCost.toFixed(2)}{')'}{allEngines.length ? ` \u00b7 ${allEngines.join(', ')}` : ''}</Text></Text>
-                <Text color="#c084fc">{'\u2514'}{bar}</Text>
-              </Box>
-            );
-          }
+          case 'plan-proposal': return <PlanProposalView plan={event.plan} />;
+          case 'plan-execution': return <PlanExecutionView plan={(event as any).plan} />;
           default: return null;
         }
 }
 
 
-// @kern-source: engine:736
+// @kern-source: engine:707
 
 export function ToolCallGroup({ blocks }: { blocks: OutputBlock[] }) {
         const toolCounts: Record<string, number> = {};

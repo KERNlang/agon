@@ -288,7 +288,7 @@ export function App({  }: {  }) {
 
   const dispatch = useCallback((event:OutputEvent) => {
           const et = (event as any).type;
-          if (et === 'streaming-chunk' || et === 'progress-update' || et === 'tool-call' || et === 'spinner-start' || et === 'spinner-update') {
+          if (et === 'streaming-chunk' || et === 'thinking-chunk' || et === 'progress-update' || et === 'tool-call' || et === 'spinner-start' || et === 'spinner-update') {
             lastActivityTimeRef.current = Date.now();
           }
           const state: OutputState = { liveSpinner: null, liveProgress: null, streamingText: streamingBufferRef.current ?? streamingTextRef.current };

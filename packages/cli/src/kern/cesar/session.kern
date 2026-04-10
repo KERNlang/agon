@@ -148,16 +148,49 @@ fn name=buildCesarSystemPrompt params="ctx:HandlerContext" returns=string
     if (ctx.activePlan && ['planning', 'awaiting_approval'].includes(ctx.activePlan.state)) {
       const stats = tracker.getStats();
       let budgetWarning = '';
-      if (stats.totalCostUsd > 1.0) {
-        budgetWarning = `\n\nWARNING: Planning phase has spent $${stats.totalCostUsd.toFixed(2)}. Wrap up your analysis and call ProposePlan now.`;
+      if (stats.totalCostUsd > 0.50) {
+        budgetWarning = `\n\nURGENT: Planning has spent $${stats.totalCostUsd.toFixed(2)}. You MUST call ProposePlan NOW. No more investigation.`;
+      } else if (stats.totalCostUsd > 0.25) {
+        budgetWarning = `\n\nWARNING: Planning has spent $${stats.totalCostUsd.toFixed(2)}. Wrap up and call ProposePlan.`;
       }
-      systemParts.push(`RULE 9 — PLAN MODE: You are in PLAN MODE. Your goal is to produce the best possible plan, then propose it with ProposePlan.
+      systemParts.push(`RULE 9 — PLAN MODE: You are in PLAN MODE. You MUST call ProposePlan before your turn ends. This is not optional.
 
-ALLOWED: Brainstorm, Campfire, Tribunal, Delegate, Read, Grep, Glob, Bash (read-only), ReportConfidence, ProposePlan. Use these freely to analyze the task and build your strategy.
+PROTOCOL:
+
+1. INVESTIGATE — Go as deep as needed. Read files, Grep for patterns, trace call chains, understand the full scope. Use Brainstorm/Tribunal/Campfire/Delegate freely if the task is complex and you need other engines' input. Take your time here — thorough investigation makes better plans.
+
+2. PROPOSE — When you understand the task, call ProposePlan with a structured plan. This is MANDATORY. Your turn MUST end with a ProposePlan call. Do NOT respond with text instead of calling ProposePlan. Do NOT skip this step.
+
+PLAN QUALITY CHECKLIST — every ProposePlan call must:
+  1. Assign SPECIFIC engines to each step based on the ROUTING CONTEXT above (use engine strengths/win rates)
+  2. Include a fitnessCmd for every forge/teamforge step (e.g., "npm test", "npm run typecheck")
+  3. Use dependsOn to chain steps that need prior step output
+  4. Use exports/imports for cross-step context flow (e.g., step 1 exports "analysis", step 2 imports it)
+  5. Use parallel:true ONLY for independent read-only steps
+  6. Include at least one verification step (tribunal or self) after implementation steps
+  7. Estimate tokens and cost for each step
+  8. Include a rationale for each step explaining WHY that engine/approach was chosen
+  9. Include a verifyCmd for steps that produce testable output
+
+STEP TYPE GUIDE:
+  - self: Cesar reads/analyzes code, writes summaries — use for investigation and synthesis
+  - forge: Multiple engines compete to implement code — use for core implementation
+  - teamforge: Collaborative forge with architect/implementer/reviewer — use for complex multi-file changes
+  - delegate: Send subtask to ONE specific engine — use for focused tasks where one engine excels
+  - brainstorm: Multiple engines bid on approach — use when approach needs exploration
+  - tribunal: Structured debate/review — use for verification, architecture review, stress-testing
+  - campfire: Open collaborative discussion — use for ambiguous problems
+  - pipeline: Full brainstorm→forge→tribunal chain — use for critical implementation steps
+
+ENGINE ASSIGNMENT — use the ROUTING CONTEXT to pick engines:
+  - High win rate + matching strengths → assign as primary
+  - Different strengths → assign to complementary steps
+  - Never leave engines unassigned — specify engines[] or engine for every step
 
 BLOCKED: Forge, Pipeline, Edit, Write. No code execution until the plan is approved.
+ALLOWED: Read, Grep, Glob, Bash (read-only), Delegate, Brainstorm, Tribunal, Campfire, ReportConfidence, ProposePlan.
 
-Think deeply. Use other engines to challenge your approach. Then propose a structured plan with specific engine assignments and cost estimates for each step.${budgetWarning}`);
+HARD RULE: Your turn MUST end with a ProposePlan call. If you respond with text only, the plan mode fails. Call ProposePlan.${budgetWarning}`);
     }
 
     // History replay — only needed when session reboots (new process loses context).

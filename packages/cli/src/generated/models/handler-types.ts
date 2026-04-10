@@ -16,6 +16,7 @@ export type OutputEvent =
   | { type: 'text'; content: string }
   | { type: 'engine-block'; engineId: string; color: number; content: string }
   | { type: 'streaming-chunk'; engineId: string; chunk: string }
+  | { type: 'thinking-chunk'; engineId: string; chunk: string }
   | { type: 'streaming-end'; engineId: string }
   | { type: 'spinner-start'; message: string; color?: number }
   | { type: 'spinner-stop'; message?: string }
@@ -48,7 +49,7 @@ export type OutputEvent =
   | { type: 'file-changes'; files: { path: string; status: 'modified'|'created'|'deleted'; additions: number; deletions: number }[] }
   | { type: 'dashboard'; available: string[]; enabled: string[]; defaultEngine: string; eloTop?: { id: string; rating: number }; totalForges: number; workspace?: { name: string; path: string; isKern?: boolean }; runCount: number };
 
-// @kern-source: handler-types:113
+// @kern-source: handler-types:116
 export interface PendingDelegation {
   action: string;
   reasoning: string;
@@ -61,7 +62,7 @@ export interface PendingDelegation {
   createdAt: number;
 }
 
-// @kern-source: handler-types:124
+// @kern-source: handler-types:127
 export interface CesarState {
   busy: boolean;
   busySince: number | null;
@@ -81,7 +82,7 @@ export interface CesarState {
   sessionMcpServers: Array<{name:string, type?:string, url?:string, command?:string, args?:string[]}>;
 }
 
-// @kern-source: handler-types:142
+// @kern-source: handler-types:145
 export interface HandlerContext {
   registry: EngineRegistry;
   adapter: EngineAdapter;

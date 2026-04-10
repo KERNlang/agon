@@ -32,11 +32,13 @@ export interface CesarPlanStep {
   imports?: string[];
   estimatedTokens: number;
   estimatedCostUsd: number;
+  rationale?: string;
+  verifyCmd?: string;
   state?: CesarStepState;
   result?: CesarStepResult;
 }
 
-// @kern-source: plan:32
+// @kern-source: plan:34
 export interface CesarPlan {
   id: string;
   state: CesarPlanState;
@@ -54,7 +56,7 @@ export interface CesarPlan {
   planFilePath?: string;
 }
 
-// @kern-source: plan:48
+// @kern-source: plan:50
 /**
  * Create a new CesarPlan in 'planning' state. Steps with dependsOn are marked 'blocked', others 'pending'.
  */
@@ -80,7 +82,7 @@ export function createCesarPlan(intent: string, steps: CesarPlanStep[]): CesarPl
   };
 }
 
-// @kern-source: plan:72
+// @kern-source: plan:74
 /**
  * Transition plan from 'awaiting_approval' to 'running', set approvedAt.
  */
@@ -92,7 +94,7 @@ export function approveCesarPlan(plan: CesarPlan): CesarPlan {
   };
 }
 
-// @kern-source: plan:82
+// @kern-source: plan:84
 /**
  * Mark a step done/failed, unblock dependents, determine plan state.
  */
@@ -148,7 +150,7 @@ export function advanceCesarStep(plan: CesarPlan, stepId: string, result: CesarS
   };
 }
 
-// @kern-source: plan:136
+// @kern-source: plan:138
 /**
  * Cancel the plan: mark all non-complete steps as cancelled.
  */
@@ -164,7 +166,7 @@ export function cancelCesarPlan(plan: CesarPlan): CesarPlan {
   };
 }
 
-// @kern-source: plan:150
+// @kern-source: plan:152
 /**
  * Persist a CesarPlan to ~/.agon/runs/<id>.json.
  */
@@ -176,7 +178,7 @@ export function saveCesarPlan(plan: CesarPlan): void {
   writeFileSync(join(dir, `${plan.id}.json`), JSON.stringify(plan, null, 2));
 }
 
-// @kern-source: plan:160
+// @kern-source: plan:162
 /**
  * Load a persisted CesarPlan from ~/.agon/runs/<id>.json.
  */
@@ -191,7 +193,7 @@ export function loadCesarPlan(planId: string): CesarPlan|null {
   }
 }
 
-// @kern-source: plan:173
+// @kern-source: plan:175
 /**
  * List all persisted CesarPlans from ~/.agon/runs/.
  */

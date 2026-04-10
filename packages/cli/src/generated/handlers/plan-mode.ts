@@ -32,6 +32,8 @@ export async function handleProposePlan(args: any, dispatch: Dispatch, ctx: Hand
     imports: typeof s.imports === 'string' ? [s.imports] : s.imports,
     estimatedTokens: s.estimatedTokens ?? planCostEstimator.estimate(s.type, s.engines ?? []).tokens,
     estimatedCostUsd: s.estimatedCostUsd ?? planCostEstimator.estimate(s.type, s.engines ?? []).costUsd,
+    rationale: s.rationale,
+    verifyCmd: s.verifyCmd,
   }));
   
   let plan = createCesarPlan(args.intent, steps);
@@ -52,7 +54,7 @@ export async function handleProposePlan(args: any, dispatch: Dispatch, ctx: Hand
   return plan;
 }
 
-// @kern-source: plan-mode:44
+// @kern-source: plan-mode:46
 export function buildStepExecutors(ctx: HandlerContext): Record<string,StepExecutor> {
   const cwd = resolveWorkingDir();
   const outputDir = join(RUNS_DIR, `plan-exec-${Date.now()}`);

@@ -140,6 +140,10 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
     case 'progress-clear':
       actions.setLiveProgress(null);
       return;
+    case 'thinking-chunk': {
+      actions.addBlock(event);
+      return;
+    }
     case 'streaming-chunk': {
       const prev = state.streamingText;
       if (prev && prev.engineId === event.engineId) {

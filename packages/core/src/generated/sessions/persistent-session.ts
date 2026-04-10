@@ -229,20 +229,27 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
           }
   
           // Route through Agon's permission callback for ALL server requests
+          // Codex V2 uses { decision: "accept"|"decline" }, V1 uses { approved: boolean }
+          const isV2 = m.startsWith('item/');
+          const buildApprovalResult = (approved: boolean) => {
+            if (isV2) return { decision: approved ? 'accept' : 'decline' };
+            return { approved };
+          };
+  
           if (config.onApproval) {
             config.onApproval(String(toolName), String(toolCmd)).then((result: boolean | string) => {
               if (typeof result === 'string') {
                 // String = denied with reason — send JSONRPC error so engine sees WHY
                 if (proc) proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, error: { code: -32001, message: result } }) + '\n');
               } else {
-                if (proc) proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { approved: result } }) + '\n');
+                if (proc) proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: buildApprovalResult(result) }) + '\n');
               }
             }).catch(() => {
-              if (proc) proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { approved: false } }) + '\n');
+              if (proc) proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: buildApprovalResult(false) }) + '\n');
             });
           } else {
             // No approval callback — auto-approve to prevent deadlock
-            proc!.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { approved: true } }) + '\n');
+            proc!.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: buildApprovalResult(true) }) + '\n');
           }
           return;
         }
@@ -446,7 +453,7 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
   return session;
 }
 
-// @kern-source: persistent-session:424
+// @kern-source: persistent-session:431
 /**
  * Persistent ACP (Agent Client Protocol) session for OpenCode. JSON-RPC 2.0 over stdio.
  */
@@ -585,18 +592,21 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
             handler('tool/approval', { tool: toolName, command: toolCmd, rpcId: msg.id });
           }
   
+          const isV2Generic = m.startsWith('item/');
+          const buildGenericResult = (ok: boolean) => isV2Generic ? { decision: ok ? 'accept' : 'decline' } : { approved: ok };
+  
           if (config.onApproval) {
             config.onApproval(String(toolName), String(toolCmd)).then((result: boolean | string) => {
               if (typeof result === 'string') {
                 if (proc) proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, error: { code: -32001, message: result } }) + '\n');
               } else {
-                if (proc) proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { approved: result } }) + '\n');
+                if (proc) proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: buildGenericResult(result) }) + '\n');
               }
             }).catch(() => {
-              if (proc) proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { approved: false } }) + '\n');
+              if (proc) proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: buildGenericResult(false) }) + '\n');
             });
           } else {
-            proc!.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { approved: true } }) + '\n');
+            proc!.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: buildGenericResult(true) }) + '\n');
           }
           return;
         }
@@ -785,7 +795,7 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
   return session;
 }
 
-// @kern-source: persistent-session:763
+// @kern-source: persistent-session:773
 /**
  * Persistent bidirectional NDJSON session for Claude Code. One process, multi-turn via stdin.
  */
@@ -1080,7 +1090,7 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
   return session;
 }
 
-// @kern-source: persistent-session:1058
+// @kern-source: persistent-session:1068
 /**
  * Fallback: spawn per turn with --resume/--continue. Works for any CLI engine.
  */

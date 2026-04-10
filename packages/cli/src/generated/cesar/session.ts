@@ -331,6 +331,12 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
       }
     }
   
+    // R1 enforcement: block all non-read tools until confidence is reported
+    const READ_TOOLS = new Set(['Read', 'Grep', 'Glob', 'ReportConfidence', 'Delegate']);
+    if (ctx.cesar!.reportedConfidence === undefined && !READ_TOOLS.has(name)) {
+      return `[BLOCKED] Report confidence first. Call ReportConfidence(value) before using ${name}. Read/Grep/Glob are allowed for investigation.`;
+    }
+  
     // Dedup: if exact same tool+args was called before, return cached result
     const cacheKey = `${name}:${JSON.stringify(args)}`;
     const cached = toolResultCache.get(cacheKey);
@@ -363,7 +369,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
   };
 }
 
-// @kern-source: session:341
+// @kern-source: session:347
 /**
  * Build the onApproval callback for engine tool approvals. Returns true to approve, false to deny silently, or a string to deny with a reason the engine can see.
  */
@@ -411,6 +417,22 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
       if (/^find\s/.test(cmd)) return 'BLOCKED: Use the Glob tool instead of find. Glob is faster and tracked by Agon.';
     }
   
+    // R1 enforcement for companion engines: block write tools until confidence is reported
+    // Read-only Bash and Read/Grep are allowed for investigation
+    if (ctx.cesar!.reportedConfidence === undefined) {
+      const WRITE_TOOLS = ['Edit', 'Write'];
+      if (WRITE_TOOLS.includes(agonTool)) {
+        return 'BLOCKED: Report confidence first via ReportConfidence MCP tool before writing files.';
+      }
+      if (agonTool === 'Bash') {
+        const cmd = command.trimStart().toLowerCase();
+        const isReadOnly = /^\s*(git\s+(status|log|diff|show|branch|remote|rev-parse|stash\s+list)|ls|wc|file|stat|which|echo|printf|npm\s+(run\s+type|test|run\s+build)|npx\s+kern)/.test(cmd);
+        if (!isReadOnly) {
+          return 'BLOCKED: Report confidence first via ReportConfidence MCP tool before running commands. Read-only commands (git status, ls, npm test) are allowed.';
+        }
+      }
+    }
+  
     // deny → block immediately
     if (perm === 'deny' || mode === 'deny-all') return false;
   
@@ -435,7 +457,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
   };
 }
 
-// @kern-source: session:411
+// @kern-source: session:433
 export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unknown>> {
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -469,7 +491,7 @@ export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unkn
   return normalizeNamedRecord(raw);
 }
 
-// @kern-source: session:445
+// @kern-source: session:467
 export function loadCesarMcpServers(config: any, cwd: string): Array<Record<string,unknown>>|undefined {
   if (!(config as any).cesarMcpEnabled) return undefined;
   
@@ -493,14 +515,14 @@ export function loadCesarMcpServers(config: any, cwd: string): Array<Record<stri
   return servers;
 }
 
-// @kern-source: session:469
+// @kern-source: session:491
 export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
   if (!binaryPath) return false;
   const protocol = engine?.companion?.protocol;
   return protocol === 'acp' || protocol === 'jsonrpc' || protocol === 'stream-json';
 }
 
-// @kern-source: session:476
+// @kern-source: session:498
 /**
  * Compute a fingerprint of MCP-related config to detect changes. Includes both manual config and auto-discovery sources.
  */
@@ -520,7 +542,7 @@ export function mcpConfigFingerprint(config: any): string {
   return `${enabled}:${configPath}:${mtime}:${discoveryFp}`;
 }
 
-// @kern-source: session:494
+// @kern-source: session:516
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
     const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';

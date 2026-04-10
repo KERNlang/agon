@@ -293,7 +293,9 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
                   ctx.eventBus?.emit('cesar:confidence', { value: conf.value, source: 'stream' }).catch(() => {});
                   response = conf.rest;
                   if (conf.value >= CONFIDENCE_TIERS.direct && ctx.cesar!.autoNero) deactivateNero(ctx, dispatch);
-                } else if (response.length > 30 && !ctx.cesar!.hasNativeTools) {
+                } else if (response.length > 200 && !ctx.cesar!.hasNativeTools) {
+                  // Only give up after 200 chars (not 30) — companion engines may report via MCP later.
+                  // The R1 tool gate blocks writes anyway until confidence is reported.
                   confidenceParsed = true;
                 }
               }

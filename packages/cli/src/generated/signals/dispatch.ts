@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { mkdirSync } from 'node:fs';
 
 // @kern-source: dispatch:7
-import { resolveWorkingDir, extractImagesFromInput, buildImageAttachment, undoPatch, resumeChatSession, findSkill, renderSkillPrompt, configSet, startChatSession, currentBranch, buildExtensionContext, sessionContext, RUNS_DIR } from '@agon/core';
+import { resolveWorkingDir, extractImagesFromInput, buildImageAttachment, undoPatch, resumeChatSession, findSkill, renderSkillPrompt, configSet, startChatSession, currentBranch, gitChangedFiles, buildExtensionContext, sessionContext, RUNS_DIR } from '@agon/core';
 
 // @kern-source: dispatch:8
 import { invalidateCwdCache } from '../handlers/chat.js';
@@ -184,6 +184,26 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
           : input);
       let taskInput = userContext ? `${baseTask}\n\n${userContext}` : baseTask;
       const fitnessCmd = result.fitnessCmd ?? executionSpec.fitnessCmd;
+  
+      // R8 enforcement: suggest planning for complex execution tasks when no plan exists
+      const EXECUTION_ACTIONS_R8 = ['forge', 'team-forge', 'pipeline', 'build'];
+      if (!_planActive && EXECUTION_ACTIONS_R8.includes(routeAction)) {
+        try {
+          const cwd = resolveWorkingDir();
+          const changedFiles = gitChangedFiles(cwd);
+          const dirs = new Set(changedFiles.map((f: string) => f.split('/').slice(0, 2).join('/')));
+          const isComplex = changedFiles.length >= 5 || dirs.size >= 3 || input.length > 300;
+          if (isComplex) {
+            const planAnswer = await cb.askQuestion(`Complex task (${changedFiles.length} files, ${dirs.size} dirs). Plan first? [Y/n]`);
+            if (planAnswer === 'y' || planAnswer === '1' || planAnswer === '') {
+              const { createCesarPlan } = await import('@agon/core');
+              cb.setActivePlan(createCesarPlan(taskInput, []));
+              routeAction = 'brainstorm';
+              cb.dispatch({ type: 'info', message: 'Entering plan mode — Cesar will plan before executing.' });
+            }
+          }
+        } catch { /* git calls failed — skip complexity check */ }
+      }
   
       // Enrich delegation context — Cesar's investigation should flow to brainstorm/tribunal/campfire
       const THINKING_ACTIONS = ['brainstorm', 'tribunal', 'campfire', 'team-brainstorm', 'team-tribunal'];
@@ -430,7 +450,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
   return false;
 }
 
-// @kern-source: dispatch:390
+// @kern-source: dispatch:410
 /**
  * Route a parsed intent to the correct handler. Registry-first, switch as fallback.
  */
@@ -624,17 +644,22 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
             const callbacks = {
               onStepStart: (stepId: string) => {
                 const step = approved.steps.find((s: any) => s.id === stepId);
-                cb.dispatch({ type: 'info', message: `Step: ${step?.description ?? stepId} — starting...` });
+                const cfg: Record<string, string> = { self: '\u2699 Cesar', forge: '\u2694 Forge', teamforge: '\u2694\u2694 Team Forge', brainstorm: '\u26a1 Brainstorm', campfire: '\u2500 Campfire', tribunal: '\u2696 Tribunal', delegate: '\u27a4 Delegate', pipeline: '\u2192 Pipeline' };
+                const typeLabel = step ? (cfg[step.type] ?? step.type) : '';
+                const stepEngines = step?.engines?.length ? ` \u2192 ${step.engines.join(', ')}` : (step?.engine ? ` \u2192 ${step.engine}` : '');
+                cb.dispatch({ type: 'info', message: `Step ${approved.steps.indexOf(step!) + 1}/${approved.steps.length}: ${typeLabel}${stepEngines} \u2014 ${step?.description ?? stepId}` });
               },
               onStepDone: (stepId: string, result: CesarStepResult) => {
                 const step = approved.steps.find((s: any) => s.id === stepId);
-                const icon = result.status === 'success' ? '✓' : '✗';
+                const icon = result.status === 'success' ? '\u2713' : '\u2717';
                 const msgType = result.status === 'success' ? 'success' : 'error';
-                cb.dispatch({ type: msgType, message: `${icon} ${step?.description ?? stepId} — ${result.status}${result.error ? ': ' + result.error : ''} (${(result.durationMs / 1000).toFixed(1)}s)` });
+                cb.dispatch({ type: msgType, message: `${icon} ${step?.description ?? stepId} \u2014 ${result.status}${result.error ? ': ' + result.error : ''} (${(result.durationMs / 1000).toFixed(1)}s, $${result.actualCostUsd.toFixed(4)})` });
               },
               onPlanUpdate: (updated: CesarPlan) => {
                 cb.setActivePlan(updated);
                 saveCesarPlan(updated);
+                // Dispatch live plan execution view
+                cb.dispatch({ type: 'plan-execution', plan: updated } as any);
                 if (updated.planFilePath) {
                   try {
                     const { writeFileSync } = require('node:fs');

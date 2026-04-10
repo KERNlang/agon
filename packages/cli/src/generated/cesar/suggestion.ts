@@ -60,7 +60,9 @@ export function parseSuggestion(response: string): SuggestionResult {
       const nlMatch = nlArea.match(pat.re);
       if (nlMatch) {
         const matchIdx = nlArea.indexOf(nlMatch[0]);
-        const rest = response.slice(matchIdx + nlMatch[0].length).trim();
+        // Fix: matchIdx is relative to nlArea (last 600 chars), not the full response
+        const absoluteIdx = response.length - nlArea.length + matchIdx;
+        const rest = response.slice(absoluteIdx + nlMatch[0].length).trim();
         let action = pat.action;
         let hardened = pat.hardened ?? false;
         let team = pat.team ?? false;

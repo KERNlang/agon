@@ -62,8 +62,9 @@ export interface OutputBlock {
 // @kern-source: engine:45
 
 export function EngineProgressView({ engines, mode }: { engines: EngineProgress[]; mode?: string }) {
-        // Detect mode from status text when not explicitly provided
-        const detected = mode ?? (() => {
+        // Use explicit mode if it's an arena mode, otherwise detect from status text
+        const arenaModes = ['forge', 'brainstorm', 'campfire'];
+        const detected = (mode && arenaModes.includes(mode)) ? mode : (() => {
           const s = engines[0]?.status ?? '';
           if (s.startsWith('drafting')) return 'brainstorm';
           if (s.startsWith('thinking')) return 'campfire';
@@ -97,7 +98,7 @@ export function EngineProgressView({ engines, mode }: { engines: EngineProgress[
 }
 
 
-// @kern-source: engine:86
+// @kern-source: engine:87
 
 export function EngineBlock({ engineId, color, content }: { engineId: string; color: number; content: string }) {
         const wrapWidth = contentWidth(8);
@@ -127,7 +128,7 @@ export function EngineBlock({ engineId, color, content }: { engineId: string; co
 }
 
 
-// @kern-source: engine:120
+// @kern-source: engine:121
 
 export function ConversationalResponse({ engineId, content }: { engineId: string; content: string }) {
         const wrapWidth = contentWidth(2);
@@ -145,7 +146,7 @@ export function ConversationalResponse({ engineId, content }: { engineId: string
 }
 
 
-// @kern-source: engine:141
+// @kern-source: engine:142
 
 function DashboardView({ event }: { event: OutputEvent & { type: 'dashboard' } }) {
         return (
@@ -211,7 +212,7 @@ function DashboardView({ event }: { event: OutputEvent & { type: 'dashboard' } }
 }
 
 
-// @kern-source: engine:209
+// @kern-source: engine:210
 
 function TableView({ headers, rows }: { headers: string[]; rows: string[][] }) {
         const widths = headers.map((h: string, i: number) =>
@@ -237,7 +238,7 @@ function TableView({ headers, rows }: { headers: string[]; rows: string[][] }) {
 }
 
 
-// @kern-source: engine:238
+// @kern-source: engine:239
 
 export function OutputBlockView({ event, mode, toolOutputExpanded, thinkingExpanded }: { event: OutputEvent; mode: string; toolOutputExpanded?: boolean; thinkingExpanded?: boolean }) {
         switch (event.type) {
@@ -701,7 +702,7 @@ export function OutputBlockView({ event, mode, toolOutputExpanded, thinkingExpan
 }
 
 
-// @kern-source: engine:707
+// @kern-source: engine:708
 
 export function ToolCallGroup({ blocks }: { blocks: OutputBlock[] }) {
         const toolCounts: Record<string, number> = {};

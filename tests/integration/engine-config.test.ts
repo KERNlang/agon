@@ -53,7 +53,18 @@ describe('Engine Config Validation', () => {
         if (raw.companion) {
           expect(['jsonrpc', 'acp', 'structured-cli', 'stream-json']).toContain(raw.companion.protocol);
           expect(Array.isArray(raw.companion.serverCmd)).toBe(true);
+          if (raw.companion.sandbox) {
+            expect(['read-only', 'workspace-write', 'danger-full-access']).toContain(raw.companion.sandbox);
+          }
         }
+      });
+
+      it('preserves companion sandbox in validated config', () => {
+        if (!raw.companion?.sandbox) return;
+        const result = validateEngineConfig(raw, filename);
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+        expect(result.data.companion?.sandbox).toBe(raw.companion.sandbox);
       });
 
       it('passes Zod validation (with warnings for missing optionals)', () => {

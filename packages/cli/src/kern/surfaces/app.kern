@@ -69,6 +69,9 @@ screen name=App target=ink
   state name=modelPickerOpen type=boolean initial=false
   state name=modelPickerEntries type="any[]" initial="[]"
   state name=modelPickerLoading type=boolean initial=false
+  state name=modelPickerInitialFilter type=string initial="''"
+  state name=modelPickerTitle type=string initial="'Select model'"
+  state name=modelPickerTargetEngine type="string|null" initial="null"
   state name=cesarPickerOpen type=boolean initial=false
   state name=streamingText type=any initial="null"
   state name=pendingImages type="ImageAttachment[]" initial="[]"
@@ -85,6 +88,7 @@ screen name=App target=ink
   state name=explorationMode type=boolean initial=false
   state name=neroMode type=boolean initial=false
   state name=toolOutputExpanded type=boolean initial=false
+  state name=thinkingExpanded type=boolean initial=true
   state name=cesarConfidence type="number|null" initial="null"
   state name=planModeQueued type=boolean initial=false
   state name=cesarMemory type=any initial="() => createCesarMemory()"
@@ -551,6 +555,7 @@ screen name=App target=ink
             .catch((err: any) => { jobManager.fail(job.id, err instanceof Error ? err.message : String(err)); setJobList([...jobManager.list()]); dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); });
         },
         setMode, setPendingImages, setSessionEngines, setEnginePickerOpen, setModelPickerOpen, setModelPickerEntries, setModelPickerLoading, setCesarPickerOpen, setChatSession, setLastUndoToken, askQuestion, exit: () => process.exit(0),
+        setModelPickerTargetEngine, setModelPickerInitialFilter, setModelPickerTitle,
         allImages, allSlashCommands: allSlashCommands, dynamicSkills: [...dynamicSkills, ...extensionSkills], mode, lastUndoToken, sessionStartTime, jobManager,
         explorationMode, setExplorationMode,
         neroMode, setNeroMode,
@@ -579,6 +584,50 @@ screen name=App target=ink
       const token = handleReviewAction({ type: action }, reviewEvent, dispatch);
       if (token) setLastUndoToken(token);
       setReviewEvent(null);
+    >>>
+
+  callback name=openCliModelPicker params="engineId:string" deps="registry,dispatch"
+    handler <<<
+      let engine: any = null;
+      try { engine = registry.get(engineId); } catch { /* not found, fallback to id */ }
+
+      const env = (engine?.api?.apiKeyEnv ?? '').toLowerCase();
+      const baseUrl = (engine?.api?.baseUrl ?? '').toLowerCase();
+      const display = (engine?.displayName ?? '').toLowerCase();
+      const defaultModel = (engine?.api?.model ?? '').toLowerCase();
+
+      let providerFilter = '';
+      if (engineId === 'claude' || env.includes('anthropic') || baseUrl.includes('anthropic') || display.includes('anthropic')) providerFilter = 'anthropic claude';
+      else if (engineId === 'codex' || env.includes('openai') || baseUrl.includes('openai') || display.includes('openai')) providerFilter = 'openai gpt';
+      else if (engineId === 'gemini' || env.includes('google') || baseUrl.includes('google') || display.includes('google')) providerFilter = 'google gemini';
+      else if (engineId === 'openrouter' || env.includes('openrouter') || baseUrl.includes('openrouter')) providerFilter = '';
+      else if (engineId === 'mistral' || display.includes('mistral')) providerFilter = 'mistral';
+      else if (engineId === 'qwen' || display.includes('qwen')) providerFilter = 'qwen';
+      else if (engineId === 'minimax' || display.includes('minimax')) providerFilter = 'minimax';
+      else providerFilter = defaultModel;
+
+      setModelPickerTargetEngine(engineId);
+      setModelPickerTitle(`Select model for ${engineId}`);
+      setModelPickerInitialFilter(providerFilter);
+      setModelPickerEntries([]);
+      setModelPickerLoading(true);
+      setEnginePickerOpen(false);
+      setModelPickerOpen(true);
+
+      import('@agon/core').then(({ fetchModelsRegistry, buildModelEntries }) => {
+        fetchModelsRegistry().then((reg: any) => {
+          setModelPickerEntries(buildModelEntries(reg));
+          setModelPickerLoading(false);
+        }).catch((err: any) => {
+          setModelPickerOpen(false);
+          setModelPickerLoading(false);
+          setModelPickerTargetEngine(null);
+          setModelPickerInitialFilter('');
+          setModelPickerTitle('Select model');
+          setEnginePickerOpen(true);
+          dispatch({ type: 'error', message: `Failed to fetch models: ${err.message}` } as any);
+        });
+      });
     >>>
 
   callback name=openResultsPager params="" deps="dispatch,mode,chatSession"
@@ -698,6 +747,9 @@ screen name=App target=ink
       if ((key.ctrl && input === 'e') || input === '\x05') {
         setToolOutputExpanded((prev: boolean) => !prev); return;
       }
+      if (key.ctrl && input === 't') {
+        setThinkingExpanded((prev: boolean) => !prev); return;
+      }
       if (key.ctrl && input === 'r') {
         openResultsPager();
         return;
@@ -779,7 +831,7 @@ screen name=App target=ink
           {(() => {
             const visibleBlocks = scrollOffset > 0 ? outputBlocks.slice(0, outputBlocks.length - scrollOffset) : outputBlocks;
             if (toolOutputExpanded) {
-              return visibleBlocks.map((block: OutputBlock) => (<OutputBlockView key={block.id} event={block.event} mode={mode} toolOutputExpanded={true} />));
+              return visibleBlocks.map((block: OutputBlock) => (<OutputBlockView key={block.id} event={block.event} mode={mode} toolOutputExpanded={true} thinkingExpanded={thinkingExpanded} />));
             }
             // Group tool calls — absorb minor events (info, warning, success) between them
             const minorTypes = new Set(['info', 'warning', 'success', 'separator']);
@@ -799,10 +851,10 @@ screen name=App target=ink
             }
             return groups.map((item: OutputBlock | OutputBlock[], gi: number) => {
               if (Array.isArray(item)) {
-                if (item.length === 1) return <OutputBlockView key={item[0].id} event={item[0].event} mode={mode} toolOutputExpanded={false} />;
+                if (item.length === 1) return <OutputBlockView key={item[0].id} event={item[0].event} mode={mode} toolOutputExpanded={false} thinkingExpanded={thinkingExpanded} />;
                 return <ToolCallGroup key={`tg-${item[0].id}`} blocks={item} />;
               }
-              return <OutputBlockView key={item.id} event={item.event} mode={mode} toolOutputExpanded={false} />;
+              return <OutputBlockView key={item.id} event={item.event} mode={mode} toolOutputExpanded={false} thinkingExpanded={thinkingExpanded} />;
             });
           })()}
           {streamingText && (() => {
@@ -856,11 +908,24 @@ screen name=App target=ink
               else delete nextModels[engineId];
               configSet('engineModels', nextModels as any);
               dispatch({ type: 'success', message: model ? `Model override set: ${engineId} → ${model}` : `Model override cleared: ${engineId}` } as any);
-            }} />
+            }}
+            onBrowseModel={(engineId: string) => openCliModelPicker(engineId)} />
         )}
         {modelPickerOpen && (
-          <ModelPicker entries={modelPickerEntries} loading={modelPickerLoading}
+          <ModelPicker entries={modelPickerEntries} loading={modelPickerLoading} initialFilter={modelPickerInitialFilter} title={modelPickerTitle}
             onSelect={(entry: any) => {
+              if (modelPickerTargetEngine) {
+                const nextModels = { ...((loadConfig() as any).engineModels ?? {}) };
+                nextModels[modelPickerTargetEngine] = entry.modelId;
+                configSet('engineModels', nextModels as any);
+                dispatch({ type: 'success', message: `Model override set: ${modelPickerTargetEngine} → ${entry.modelId}` } as any);
+                setModelPickerTargetEngine(null);
+                setModelPickerInitialFilter('');
+                setModelPickerTitle('Select model');
+                setModelPickerOpen(false);
+                setEnginePickerOpen(true);
+                return;
+              }
               setModelPickerOpen(false);
               const def = modelEntryToEngineDef(entry);
               const dir = join(homedir(), '.agon', 'engines');
@@ -869,7 +934,14 @@ screen name=App target=ink
               registry.register(def as any);
               dispatch({ type: 'success', message: `Added: ${entry.providerName} \u2014 ${entry.modelName}` } as any);
             }}
-            onCancel={() => setModelPickerOpen(false)} />
+            onCancel={() => {
+              const hadTarget = !!modelPickerTargetEngine;
+              setModelPickerOpen(false);
+              setModelPickerTargetEngine(null);
+              setModelPickerInitialFilter('');
+              setModelPickerTitle('Select model');
+              if (hadTarget) setEnginePickerOpen(true);
+            }} />
         )}
         {cesarPickerOpen && (
           <CesarPicker
@@ -941,7 +1013,7 @@ screen name=App target=ink
               }
               return (<>
                 <CesarStatusStrip cesarId={_cesarId} confidence={cesarConfidence} spinner={liveSpinner} engines={liveProgress} startTime={chatStartTimeRef.current || 0} streamSnippet={snippet} isActive={replState !== 'idle' || jobList.some((j: Job) => j.state === 'running')} planModeQueued={planModeQueued} activePlanState={activePlan?.state ?? null} />
-                {mode === 'chat' && <StatusBar config={_cfg} chatSession={chatSession} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} isActive={replState !== 'idle'} />}
+                {mode === 'chat' && <StatusBar config={_cfg} chatSession={chatSession} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} thinkingExpanded={thinkingExpanded} isActive={replState !== 'idle'} />}
               </>);
             })()}
           </Box>

@@ -26,6 +26,7 @@ export const EngineEnvVarSchema = z.object({
 export const CompanionConfigSchema = z.object({
   protocol: z.enum(['jsonrpc', 'acp', 'structured-cli', 'stream-json']),
   serverCmd: z.array(z.string()),
+  sandbox: z.enum(['read-only', 'workspace-write', 'danger-full-access']).optional(),
   features: z.object({
     threadResume: z.boolean().optional(),
     nativeReview: z.boolean().optional(),

@@ -67,6 +67,9 @@ export interface DispatchCallbacks {
   setModelPickerOpen: (open:boolean) => void;
   setModelPickerEntries: (entries:any[]) => void;
   setModelPickerLoading: (loading:boolean) => void;
+  setModelPickerTargetEngine?: (engineId:string|null) => void;
+  setModelPickerInitialFilter?: (filter:string) => void;
+  setModelPickerTitle?: (title:string) => void;
   setCesarPickerOpen: (open:boolean) => void;
   setChatSession: (session:ChatSession) => void;
   setLastUndoToken: (token:string|null) => void;
@@ -90,13 +93,13 @@ export interface DispatchCallbacks {
   setWorkspacePath?: (path: string) => void;
 }
 
-// @kern-source: dispatch:58
+// @kern-source: dispatch:61
 export interface DispatchResult {
   handled: boolean;
   ranAsJob: boolean;
 }
 
-// @kern-source: dispatch:62
+// @kern-source: dispatch:65
 /**
  * Handle mode-switching intents. Returns true if consumed.
  */
@@ -126,7 +129,7 @@ export function handleModeSwitch(intentType: string, topic: string|undefined, qu
   return false;
 }
 
-// @kern-source: dispatch:90
+// @kern-source: dispatch:93
 /**
  * Extract a fitness command from conversational execution input while keeping the task clean.
  */
@@ -139,7 +142,7 @@ export function extractExecutionSpec(input: string): { task:string; fitnessCmd:s
   return { task, fitnessCmd };
 }
 
-// @kern-source: dispatch:101
+// @kern-source: dispatch:104
 /**
  * Unified Cesar brain routing. Returns true if a background job was dispatched.
  */
@@ -413,7 +416,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
   return false;
 }
 
-// @kern-source: dispatch:373
+// @kern-source: dispatch:376
 /**
  * Route a parsed intent to the correct handler. Registry-first, switch as fallback.
  */
@@ -530,6 +533,9 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
     }
     case 'tokens': handleTokens(cb.dispatch); break;
     case 'models': {
+      cb.setModelPickerTargetEngine?.(null);
+      cb.setModelPickerInitialFilter?.('');
+      cb.setModelPickerTitle?.('Select model');
       cb.setModelPickerLoading(true);
       cb.setModelPickerOpen(true);
       import('@agon/core').then(({ fetchModelsRegistry, buildModelEntries }) => {

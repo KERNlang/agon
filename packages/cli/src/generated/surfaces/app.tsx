@@ -139,6 +139,9 @@ export function App({  }: {  }) {
   const [modelPickerOpen, setModelPickerOpen] = useState<boolean>(false);
   const [modelPickerEntries, setModelPickerEntries] = useState<any[]>([]);
   const [modelPickerLoading, setModelPickerLoading] = useState<boolean>(false);
+  const [modelPickerInitialFilter, setModelPickerInitialFilter] = useState<string>('');
+  const [modelPickerTitle, setModelPickerTitle] = useState<string>('Select model');
+  const [modelPickerTargetEngine, setModelPickerTargetEngine] = useState<string|null>(null);
   const [cesarPickerOpen, setCesarPickerOpen] = useState<boolean>(false);
   const [streamingText, setStreamingText] = useState<any>(null);
   const [pendingImages, setPendingImages] = useState<ImageAttachment[]>([]);
@@ -155,6 +158,7 @@ export function App({  }: {  }) {
   const [explorationMode, setExplorationMode] = useState<boolean>(false);
   const [neroMode, setNeroMode] = useState<boolean>(false);
   const [toolOutputExpanded, setToolOutputExpanded] = useState<boolean>(false);
+  const [thinkingExpanded, setThinkingExpanded] = useState<boolean>(true);
   const [cesarConfidence, setCesarConfidence] = useState<number|null>(null);
   const [planModeQueued, setPlanModeQueued] = useState<boolean>(false);
   const [cesarMemory, setCesarMemory] = useState<any>(() => createCesarMemory());
@@ -489,6 +493,7 @@ export function App({  }: {  }) {
                 .catch((err: any) => { jobManager.fail(job.id, err instanceof Error ? err.message : String(err)); setJobList([...jobManager.list()]); dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); });
             },
             setMode, setPendingImages, setSessionEngines, setEnginePickerOpen, setModelPickerOpen, setModelPickerEntries, setModelPickerLoading, setCesarPickerOpen, setChatSession, setLastUndoToken, askQuestion, exit: () => process.exit(0),
+            setModelPickerTargetEngine, setModelPickerInitialFilter, setModelPickerTitle,
             allImages, allSlashCommands: allSlashCommands, dynamicSkills: [...dynamicSkills, ...extensionSkills], mode, lastUndoToken, sessionStartTime, jobManager,
             explorationMode, setExplorationMode,
             neroMode, setNeroMode,
@@ -517,6 +522,49 @@ export function App({  }: {  }) {
           if (token) setLastUndoToken(token);
           setReviewEvent(null);
   }, [reviewEvent,dispatch]);
+
+  const openCliModelPicker = useCallback((engineId:string) => {
+          let engine: any = null;
+          try { engine = registry.get(engineId); } catch { /* not found, fallback to id */ }
+    
+          const env = (engine?.api?.apiKeyEnv ?? '').toLowerCase();
+          const baseUrl = (engine?.api?.baseUrl ?? '').toLowerCase();
+          const display = (engine?.displayName ?? '').toLowerCase();
+          const defaultModel = (engine?.api?.model ?? '').toLowerCase();
+    
+          let providerFilter = '';
+          if (engineId === 'claude' || env.includes('anthropic') || baseUrl.includes('anthropic') || display.includes('anthropic')) providerFilter = 'anthropic claude';
+          else if (engineId === 'codex' || env.includes('openai') || baseUrl.includes('openai') || display.includes('openai')) providerFilter = 'openai gpt';
+          else if (engineId === 'gemini' || env.includes('google') || baseUrl.includes('google') || display.includes('google')) providerFilter = 'google gemini';
+          else if (engineId === 'openrouter' || env.includes('openrouter') || baseUrl.includes('openrouter')) providerFilter = '';
+          else if (engineId === 'mistral' || display.includes('mistral')) providerFilter = 'mistral';
+          else if (engineId === 'qwen' || display.includes('qwen')) providerFilter = 'qwen';
+          else if (engineId === 'minimax' || display.includes('minimax')) providerFilter = 'minimax';
+          else providerFilter = defaultModel;
+    
+          setModelPickerTargetEngine(engineId);
+          setModelPickerTitle(`Select model for ${engineId}`);
+          setModelPickerInitialFilter(providerFilter);
+          setModelPickerEntries([]);
+          setModelPickerLoading(true);
+          setEnginePickerOpen(false);
+          setModelPickerOpen(true);
+    
+          import('@agon/core').then(({ fetchModelsRegistry, buildModelEntries }) => {
+            fetchModelsRegistry().then((reg: any) => {
+              setModelPickerEntries(buildModelEntries(reg));
+              setModelPickerLoading(false);
+            }).catch((err: any) => {
+              setModelPickerOpen(false);
+              setModelPickerLoading(false);
+              setModelPickerTargetEngine(null);
+              setModelPickerInitialFilter('');
+              setModelPickerTitle('Select model');
+              setEnginePickerOpen(true);
+              dispatch({ type: 'error', message: `Failed to fetch models: ${err.message}` } as any);
+            });
+          });
+  }, [registry,dispatch]);
 
   const openResultsPager = useCallback(() => {
           let content = '';
@@ -729,6 +777,9 @@ export function App({  }: {  }) {
           if ((key.ctrl && input === 'e') || input === '\x05') {
             setToolOutputExpanded((prev: boolean) => !prev); return;
           }
+          if (key.ctrl && input === 't') {
+            setThinkingExpanded((prev: boolean) => !prev); return;
+          }
           if (key.ctrl && input === 'r') {
             openResultsPager();
             return;
@@ -808,7 +859,7 @@ export function App({  }: {  }) {
             {(() => {
               const visibleBlocks = scrollOffset > 0 ? outputBlocks.slice(0, outputBlocks.length - scrollOffset) : outputBlocks;
               if (toolOutputExpanded) {
-                return visibleBlocks.map((block: OutputBlock) => (<OutputBlockView key={block.id} event={block.event} mode={mode} toolOutputExpanded={true} />));
+                return visibleBlocks.map((block: OutputBlock) => (<OutputBlockView key={block.id} event={block.event} mode={mode} toolOutputExpanded={true} thinkingExpanded={thinkingExpanded} />));
               }
               // Group tool calls — absorb minor events (info, warning, success) between them
               const minorTypes = new Set(['info', 'warning', 'success', 'separator']);
@@ -828,10 +879,10 @@ export function App({  }: {  }) {
               }
               return groups.map((item: OutputBlock | OutputBlock[], gi: number) => {
                 if (Array.isArray(item)) {
-                  if (item.length === 1) return <OutputBlockView key={item[0].id} event={item[0].event} mode={mode} toolOutputExpanded={false} />;
+                  if (item.length === 1) return <OutputBlockView key={item[0].id} event={item[0].event} mode={mode} toolOutputExpanded={false} thinkingExpanded={thinkingExpanded} />;
                   return <ToolCallGroup key={`tg-${item[0].id}`} blocks={item} />;
                 }
-                return <OutputBlockView key={item.id} event={item.event} mode={mode} toolOutputExpanded={false} />;
+                return <OutputBlockView key={item.id} event={item.event} mode={mode} toolOutputExpanded={false} thinkingExpanded={thinkingExpanded} />;
               });
             })()}
             {streamingText && (() => {
@@ -885,11 +936,24 @@ export function App({  }: {  }) {
                 else delete nextModels[engineId];
                 configSet('engineModels', nextModels as any);
                 dispatch({ type: 'success', message: model ? `Model override set: ${engineId} → ${model}` : `Model override cleared: ${engineId}` } as any);
-              }} />
+              }}
+              onBrowseModel={(engineId: string) => openCliModelPicker(engineId)} />
           )}
           {modelPickerOpen && (
-            <ModelPicker entries={modelPickerEntries} loading={modelPickerLoading}
+            <ModelPicker entries={modelPickerEntries} loading={modelPickerLoading} initialFilter={modelPickerInitialFilter} title={modelPickerTitle}
               onSelect={(entry: any) => {
+                if (modelPickerTargetEngine) {
+                  const nextModels = { ...((loadConfig() as any).engineModels ?? {}) };
+                  nextModels[modelPickerTargetEngine] = entry.modelId;
+                  configSet('engineModels', nextModels as any);
+                  dispatch({ type: 'success', message: `Model override set: ${modelPickerTargetEngine} → ${entry.modelId}` } as any);
+                  setModelPickerTargetEngine(null);
+                  setModelPickerInitialFilter('');
+                  setModelPickerTitle('Select model');
+                  setModelPickerOpen(false);
+                  setEnginePickerOpen(true);
+                  return;
+                }
                 setModelPickerOpen(false);
                 const def = modelEntryToEngineDef(entry);
                 const dir = join(homedir(), '.agon', 'engines');
@@ -898,7 +962,14 @@ export function App({  }: {  }) {
                 registry.register(def as any);
                 dispatch({ type: 'success', message: `Added: ${entry.providerName} \u2014 ${entry.modelName}` } as any);
               }}
-              onCancel={() => setModelPickerOpen(false)} />
+              onCancel={() => {
+                const hadTarget = !!modelPickerTargetEngine;
+                setModelPickerOpen(false);
+                setModelPickerTargetEngine(null);
+                setModelPickerInitialFilter('');
+                setModelPickerTitle('Select model');
+                if (hadTarget) setEnginePickerOpen(true);
+              }} />
           )}
           {cesarPickerOpen && (
             <CesarPicker
@@ -970,7 +1041,7 @@ export function App({  }: {  }) {
                 }
                 return (<>
                   <CesarStatusStrip cesarId={_cesarId} confidence={cesarConfidence} spinner={liveSpinner} engines={liveProgress} startTime={chatStartTimeRef.current || 0} streamSnippet={snippet} isActive={replState !== 'idle' || jobList.some((j: Job) => j.state === 'running')} planModeQueued={planModeQueued} activePlanState={activePlan?.state ?? null} />
-                  {mode === 'chat' && <StatusBar config={_cfg} chatSession={chatSession} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} isActive={replState !== 'idle'} />}
+                  {mode === 'chat' && <StatusBar config={_cfg} chatSession={chatSession} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} thinkingExpanded={thinkingExpanded} isActive={replState !== 'idle'} />}
                 </>);
               })()}
             </Box>
@@ -980,7 +1051,7 @@ export function App({  }: {  }) {
 }
 
 
-// @kern-source: app:954
+// @kern-source: app:1026
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

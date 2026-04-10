@@ -232,7 +232,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       } else {
         dispatch({ type: 'spinner-update', message: `Cesar thinking… ${elapsed}s` });
       }
-    }, 15_000);
+    }, 2_000);
   
     // ── Stream response ──
     try {

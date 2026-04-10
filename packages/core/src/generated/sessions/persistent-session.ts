@@ -46,7 +46,7 @@ export interface PersistentSessionConfig {
   binaryPath: string;
   cwd: string;
   systemPrompt?: string;
-  onApproval?: (tool: string, command: string) => Promise<boolean>;
+  onApproval?: (tool: string, command: string) => Promise<boolean|string>;
   nativeTools?: Array<{type:string,function:{name:string,description:string,parameters:Record<string,unknown>}}>;
   onToolCall?: (name: string, args: Record<string,unknown>, callId: string) => Promise<string>;
   onTurnEnd?: (learnings: {filesRead:string[], filesModified:string[], decisions:string[], discoveries:string[], toolsUsed:string[]}) => void;
@@ -230,8 +230,13 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
   
           // Route through Agon's permission callback for ALL server requests
           if (config.onApproval) {
-            config.onApproval(String(toolName), String(toolCmd)).then((approved: boolean) => {
-              if (proc) proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { approved } }) + '\n');
+            config.onApproval(String(toolName), String(toolCmd)).then((result: boolean | string) => {
+              if (typeof result === 'string') {
+                // String = denied with reason — send JSONRPC error so engine sees WHY
+                if (proc) proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, error: { code: -32001, message: result } }) + '\n');
+              } else {
+                if (proc) proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { approved: result } }) + '\n');
+              }
             }).catch(() => {
               if (proc) proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { approved: false } }) + '\n');
             });
@@ -291,11 +296,11 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
       });
       notifyRpc('initialized');
   
-      // Start persistent thread — workspace-write + on-request lets the host (Agon) approve/deny via JSONRPC
+      // Start persistent thread — sandbox level from engine config, fallback to workspace-write + on-request
     const threadParams: Record<string, unknown> = {
       cwd: config.cwd,
       approvalPolicy: config.onApproval ? 'on-request' : 'never',
-      sandbox: config.onApproval ? 'workspace-write' : 'read-only',
+      sandbox: companion.sandbox ?? (config.onApproval ? 'workspace-write' : 'read-only'),
       ephemeral: false,
     };
     const model = resolveModel(config.engine);
@@ -441,7 +446,7 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
   return session;
 }
 
-// @kern-source: persistent-session:419
+// @kern-source: persistent-session:424
 /**
  * Persistent ACP (Agent Client Protocol) session for OpenCode. JSON-RPC 2.0 over stdio.
  */
@@ -581,8 +586,12 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
           }
   
           if (config.onApproval) {
-            config.onApproval(String(toolName), String(toolCmd)).then((approved: boolean) => {
-              if (proc) proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { approved } }) + '\n');
+            config.onApproval(String(toolName), String(toolCmd)).then((result: boolean | string) => {
+              if (typeof result === 'string') {
+                if (proc) proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, error: { code: -32001, message: result } }) + '\n');
+              } else {
+                if (proc) proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { approved: result } }) + '\n');
+              }
             }).catch(() => {
               if (proc) proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { approved: false } }) + '\n');
             });
@@ -776,7 +785,7 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
   return session;
 }
 
-// @kern-source: persistent-session:754
+// @kern-source: persistent-session:763
 /**
  * Persistent bidirectional NDJSON session for Claude Code. One process, multi-turn via stdin.
  */
@@ -1071,7 +1080,7 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
   return session;
 }
 
-// @kern-source: persistent-session:1049
+// @kern-source: persistent-session:1058
 /**
  * Fallback: spawn per turn with --resume/--continue. Works for any CLI engine.
  */

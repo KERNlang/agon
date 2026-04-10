@@ -793,7 +793,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       if (streaming) { dispatch({ type: 'streaming-end', engineId: cesarEngineId }); streaming = false; }
       let planAttempts = 0;
       const maxPlanAttempts = 3;
-      while (!ctx.cesar!.proposedPlan && planAttempts < maxPlanAttempts && session.alive && !abort.signal.aborted) {
+      while (!ctx.cesar!.proposedPlan && !ctx.cesar!.pendingDelegation && planAttempts < maxPlanAttempts && session.alive && !abort.signal.aborted) {
         planAttempts++;
         dispatch({ type: 'spinner-start', message: `Cesar building plan (attempt ${planAttempts}/${maxPlanAttempts})…`, color });
         try {

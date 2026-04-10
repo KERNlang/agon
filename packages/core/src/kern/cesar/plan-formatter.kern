@@ -20,8 +20,9 @@ fn name=formatCesarPlanMarkdown params="plan:CesarPlan" returns=string export=tr
     const lines: string[] = [];
     lines.push(`# Plan: ${plan.intent}`);
     lines.push('');
-    if (plan.planningCost) {
-      lines.push(`> Planning cost: ~${plan.planningCost.tokens.toLocaleString()} tokens ($${plan.planningCost.costUsd.toFixed(4)})`);
+    if (plan.planningCost && typeof plan.planningCost.tokens === 'number') {
+      const costStr = typeof plan.planningCost.costUsd === 'number' ? ` ($${plan.planningCost.costUsd.toFixed(4)})` : '';
+      lines.push(`> Planning cost: ~${plan.planningCost.tokens.toLocaleString()} tokens${costStr}`);
       lines.push('');
     }
     lines.push('## Steps');

@@ -306,6 +306,12 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
         }
       }
 
+      // R1 enforcement: block all non-read tools until confidence is reported
+      const READ_TOOLS = new Set(['Read', 'Grep', 'Glob', 'ReportConfidence', 'Delegate']);
+      if (ctx.cesar!.reportedConfidence === undefined && !READ_TOOLS.has(name)) {
+        return `[BLOCKED] Report confidence first. Call ReportConfidence(value) before using ${name}. Read/Grep/Glob are allowed for investigation.`;
+      }
+
       // Dedup: if exact same tool+args was called before, return cached result
       const cacheKey = `${name}:${JSON.stringify(args)}`;
       const cached = toolResultCache.get(cacheKey);
@@ -382,6 +388,22 @@ fn name=buildOnApproval params="ctx:HandlerContext, engineId:string" returns="(t
         if (/^(head|tail)\s/.test(cmd)) return 'BLOCKED: Use the Read tool with offset/limit instead of head/tail.';
         if (/^(grep|rg)\s/.test(cmd)) return 'BLOCKED: Use the Grep tool instead of grep/rg. Grep is faster and tracked by Agon.';
         if (/^find\s/.test(cmd)) return 'BLOCKED: Use the Glob tool instead of find. Glob is faster and tracked by Agon.';
+      }
+
+      // R1 enforcement for companion engines: block write tools until confidence is reported
+      // Read-only Bash and Read/Grep are allowed for investigation
+      if (ctx.cesar!.reportedConfidence === undefined) {
+        const WRITE_TOOLS = ['Edit', 'Write'];
+        if (WRITE_TOOLS.includes(agonTool)) {
+          return 'BLOCKED: Report confidence first via ReportConfidence MCP tool before writing files.';
+        }
+        if (agonTool === 'Bash') {
+          const cmd = command.trimStart().toLowerCase();
+          const isReadOnly = /^\s*(git\s+(status|log|diff|show|branch|remote|rev-parse|stash\s+list)|ls|wc|file|stat|which|echo|printf|npm\s+(run\s+type|test|run\s+build)|npx\s+kern)/.test(cmd);
+          if (!isReadOnly) {
+            return 'BLOCKED: Report confidence first via ReportConfidence MCP tool before running commands. Read-only commands (git status, ls, npm test) are allowed.';
+          }
+        }
       }
 
       // deny → block immediately

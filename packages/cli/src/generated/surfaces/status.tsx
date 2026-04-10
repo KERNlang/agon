@@ -34,7 +34,7 @@ export const AGON_TIPS: string[] = [
   'Run /brainstorm to get confidence bids from all engines',
   'Run /tribunal to start a multi-AI debate',
   'Run /cesar <engine> to change your Cesar brain engine',
-  'Run /models to pick which engines are active',
+  'Run /cli-models to pick active engines and CLI model overrides',
   'Run /campfire for collaborative multi-engine thinking',
   'Run /leaderboard to see engine ELO ratings',
   'Run /history to browse past forge runs',

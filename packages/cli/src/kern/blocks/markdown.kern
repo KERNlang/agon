@@ -437,6 +437,9 @@ fn name=cleanEngineOutput params="raw:string" returns=string
     // Strip reasoning tags from models that use <think>...</think> (MiniMax, DeepSeek, Qwen, etc.)
     result = result.replace(/<think>[\s\S]*?<\/think>\s*/gi, '');
 
+    // R7: Strip narration stems — companion engines narrate their research process
+    result = result.replace(/^(I'm checking|I'm looking|I'm reading|I'm searching|I'm inspecting|Let me check|Let me look|Let me read|Let me search|Let me inspect|I've confirmed|I've verified|I've checked|I'll now|I will now|Now I'm|Now let me|First,? I'll|First,? let me|Next,? I'll|Next,? let me)\b[^.\n]*[.\n]\s*/gim, '');
+
     // Clean buddy streaming artifacts
     result = stripBuddyThinkingNoise(result);
     result = deduplicateParagraphs(result);

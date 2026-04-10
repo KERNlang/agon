@@ -39,6 +39,7 @@ fn name=commitTurnAndDelegate async=true params="pendingDel:PendingDelegation, i
   handler <<<
     if (streaming) dispatch({ type: 'streaming-end', engineId: cesarEngineId });
     if (!streaming) dispatch({ type: 'spinner-stop' });
+    await yieldToInk();
     appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
     appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
     tracker.record(cesarEngineId, { prompt: input, response });
@@ -56,6 +57,7 @@ fn name=commitTurnAndSuggest async=true params="suggestion:{action:string, rest?
   handler <<<
     if (streaming) dispatch({ type: 'streaming-end', engineId: cesarEngineId });
     if (!streaming) dispatch({ type: 'spinner-stop' });
+    await yieldToInk();
     appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
     appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
     tracker.record(cesarEngineId, { prompt: input, response });
@@ -360,6 +362,11 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
               wasStreamed = true;
               let cleanFirst = response;
               if (cleanFirst.includes('<think>')) {
+                // Extract and dispatch thinking content
+                const thinkMatch = response.match(/<think>([\s\S]*?)(<\/think>|$)/i);
+                if (thinkMatch && thinkMatch[1].trim()) {
+                  dispatch({ type: 'thinking-chunk', engineId: cesarEngineId, chunk: thinkMatch[1].trim() } as any);
+                }
                 cleanFirst = cleanFirst.replace(/<think>[\s\S]*?<\/think>\s*/gi, '');
                 if (response.includes('<think>') && !response.includes('</think>')) {
                   insideThinkBlock = true;
@@ -370,17 +377,30 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
             } else {
               response += chunk.content;
               if (insideThinkBlock) {
+                // Dispatch thinking content as it streams
                 if (chunk.content.includes('</think>')) {
                   insideThinkBlock = false;
-                  const afterThink = chunk.content.split('</think>').pop()?.trim() ?? '';
+                  const parts = chunk.content.split('</think>');
+                  const thinkPart = parts[0]?.trim() ?? '';
+                  if (thinkPart) dispatch({ type: 'thinking-chunk', engineId: cesarEngineId, chunk: thinkPart } as any);
+                  const afterThink = parts.pop()?.trim() ?? '';
                   if (afterThink) dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: afterThink });
+                } else {
+                  dispatch({ type: 'thinking-chunk', engineId: cesarEngineId, chunk: chunk.content } as any);
                 }
               } else if (chunk.content.includes('<think>')) {
                 const beforeThink = chunk.content.split('<think>')[0];
                 if (beforeThink) dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: beforeThink });
                 if (!chunk.content.includes('</think>')) {
                   insideThinkBlock = true;
+                  // Dispatch the thinking start
+                  const thinkStart = chunk.content.split('<think>')[1] ?? '';
+                  if (thinkStart.trim()) dispatch({ type: 'thinking-chunk', engineId: cesarEngineId, chunk: thinkStart.trim() } as any);
                 } else {
+                  const thinkMatch = chunk.content.match(/<think>([\s\S]*?)<\/think>/i);
+                  if (thinkMatch && thinkMatch[1].trim()) {
+                    dispatch({ type: 'thinking-chunk', engineId: cesarEngineId, chunk: thinkMatch[1].trim() } as any);
+                  }
                   const afterThink = chunk.content.split('</think>').pop()?.trim() ?? '';
                   if (afterThink) dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: afterThink });
                 }
@@ -765,6 +785,7 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
       if (streaming) {
         dispatch({ type: 'streaming-end', engineId: cesarEngineId });
         dispatch({ type: 'spinner-stop' });
+        await yieldToInk();
       }
 
       if (response) {

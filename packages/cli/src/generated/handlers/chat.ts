@@ -16,10 +16,13 @@ import { ENGINE_COLORS } from '../blocks/output-format.js';
 // @kern-source: chat:6
 import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 
-// @kern-source: chat:9
+// @kern-source: chat:7
+import { yieldToInk } from '../cesar/brain.js';
+
+// @kern-source: chat:10
 export const _cachedCwd: {value:string|null} = { value: null };
 
-// @kern-source: chat:12
+// @kern-source: chat:13
 function cachedCwd(): string {
   if (_cachedCwd.value === null) {
     _cachedCwd.value = resolveWorkingDir();
@@ -27,7 +30,7 @@ function cachedCwd(): string {
   return _cachedCwd.value;
 }
 
-// @kern-source: chat:20
+// @kern-source: chat:21
 /**
  * Call when workspace changes (e.g. /workspace switch).
  */
@@ -35,7 +38,7 @@ export function invalidateCwdCache(): void {
   _cachedCwd.value = null;
 }
 
-// @kern-source: chat:26
+// @kern-source: chat:27
 function detectTargetEngine(input: string, availableIds: string[]): {engineId:string|null,message:string} {
   const lower = input.toLowerCase();
   for (const id of availableIds) {
@@ -51,7 +54,7 @@ function detectTargetEngine(input: string, availableIds: string[]): {engineId:st
   return { engineId: null, message: input };
 }
 
-// @kern-source: chat:42
+// @kern-source: chat:43
 export async function handleChat(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[], opts?: {toolPolicy?:'full'|'none'}): Promise<void> {
   const abort = new AbortController();
   try {
@@ -243,9 +246,11 @@ export async function handleChat(input: string, dispatch: Dispatch, ctx: Handler
     if (!streaming && response) {
       dispatch({ type: 'spinner-stop' });
       dispatch({ type: 'engine-block', engineId, color, content: response });
+      await yieldToInk();
     }
     if (streaming) {
       dispatch({ type: 'streaming-end', engineId });
+      await yieldToInk();
     }
     
     // Emit file-changes event if agent dispatch returned a diff

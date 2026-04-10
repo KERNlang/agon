@@ -105,7 +105,7 @@ screen name=App target=ink
   // ── Init-once state (registry, adapter, skills) ──
   state name=registry type=EngineRegistry initial="(() => { const reg = new EngineRegistry(); const engDir = join(dirname(fileURLToPath(import.meta.url)), '../../../../engines'); reg.load(engDir); return reg; })()"
   state name=adapter type=EngineAdapter initial="createCliAdapter(registry)"
-  state name=dynamicSkills type="Skill[]" initial="loadSkills()"
+  state name=dynamicSkills type="Skill[]" initial="() => loadSkills(resolveWorkingDir())"
   state name=commandRegistry type="any" initial="(() => { const reg = new CommandRegistry(); registerBuiltinCommands(reg); return reg; })()"
   state name=eventBus type="any" initial="(() => { const bus = new EventBus(); const cfg = loadConfig(); if (cfg.hooks) bridgeShellHooks(bus, cfg.hooks); return bus; })()"
   state name=extensionSkills type="Skill[]" initial="[]"

@@ -56,32 +56,55 @@ export function loadSkillFile(filePath: string): Skill|null {
 }
 
 // @kern-source: skill-loader:51
-export function loadSkills(): Skill[] {
-  const skillsDir = join(AGON_HOME, 'skills');
+function loadSkillsFromDir(dir: string, source: string): Skill[] {
   const skills: Skill[] = [];
-  
-  if (!existsSync(skillsDir)) return skills;
-  
+  if (!existsSync(dir)) return skills;
   try {
-    const files = readdirSync(skillsDir).filter((f: string) => f.endsWith('.md'));
+    const files = readdirSync(dir).filter((f: string) => f.endsWith('.md'));
     for (const file of files) {
-      const skill = loadSkillFile(join(skillsDir, file));
-      if (skill) skills.push(skill);
+      const skill = loadSkillFile(join(dir, file));
+      if (skill) {
+        skill.source = source;
+        skills.push(skill);
+      }
     }
   } catch (err) {
-    console.warn(`[agon] failed to scan skills dir: ${err instanceof Error ? err.message : String(err)}`);
+    console.warn(`[agon] failed to scan skills dir ${dir}: ${err instanceof Error ? err.message : String(err)}`);
   }
-  
   return skills;
 }
 
-// @kern-source: skill-loader:71
+// @kern-source: skill-loader:70
+export function loadSkills(cwd?: string): Skill[] {
+  const skills: Skill[] = [];
+  
+  // 1. Built-in skills (shipped with Agon)
+  const builtinDir = join(__dirname, '../../skills');
+  skills.push(...loadSkillsFromDir(builtinDir, 'builtin'));
+  
+  // 2. Global skills (~/.agon/skills/)
+  skills.push(...loadSkillsFromDir(join(AGON_HOME, 'skills'), 'global'));
+  
+  // 3. Project-level skills (.agon/skills/)
+  if (cwd) {
+    skills.push(...loadSkillsFromDir(join(cwd, '.agon', 'skills'), 'project'));
+  }
+  
+  // Deduplicate: project > global > builtin (later wins)
+  const seen = new Map<string, Skill>();
+  for (const skill of skills) {
+    seen.set(skill.trigger, skill);
+  }
+  return Array.from(seen.values());
+}
+
+// @kern-source: skill-loader:94
 export function findSkill(trigger: string, skills: Skill[]): Skill|null {
   const normalized = trigger.startsWith('/') ? trigger : `/${trigger}`;
   return skills.find((s) => s.trigger === normalized) ?? null;
 }
 
-// @kern-source: skill-loader:77
+// @kern-source: skill-loader:100
 export function renderSkillPrompt(skill: Skill, input: string): string {
   return skill.prompt
     .replace(/\{input\}/g, input)

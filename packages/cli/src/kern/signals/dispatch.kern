@@ -843,6 +843,46 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
         break;
       }
 
+      // ── Skill scaffolding ──
+      case 'create-skill': {
+        const csIntent = intent as any;
+        const skillName = csIntent.skillName as string;
+        const slug = skillName.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+        const trigger = `/${slug}`;
+        const skillDir = join(resolveWorkingDir(), '.agon', 'skills');
+        const skillPath = join(skillDir, `${slug}.md`);
+
+        const { mkdirSync, existsSync, writeFileSync } = await import('node:fs');
+        if (existsSync(skillPath)) {
+          cb.dispatch({ type: 'warning', message: `Skill already exists: ${skillPath}` });
+          break;
+        }
+
+        mkdirSync(skillDir, { recursive: true });
+        const template = [
+          '---',
+          `name: ${skillName}`,
+          `trigger: ${trigger}`,
+          `description: TODO — describe what this skill does`,
+          '---',
+          '',
+          'You are in {name} mode.',
+          '',
+          'The user said: {input}',
+          '',
+          '## Instructions',
+          '',
+          'TODO — write the skill prompt here.',
+          'Use {input} for the user\'s message after the trigger.',
+          '',
+        ].join('\n');
+
+        writeFileSync(skillPath, template);
+        cb.dispatch({ type: 'success', message: `Created skill: ${skillPath}` });
+        cb.dispatch({ type: 'info', message: `Edit the file, then use ${trigger} <args> to invoke it.` });
+        break;
+      }
+
       // ── MCP management ──
       case 'mcp': {
         if (!cb.ctx.cesar) {

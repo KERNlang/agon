@@ -118,7 +118,10 @@ export const _cancelCallback: { fn: (() => void) | null } = { fn: null };
 // @kern-source: app:49
 export const _cesarSessionRef: { session: PersistentSession | null } = { session: null };
 
-// @kern-source: app:52
+// @kern-source: app:53
+export const _paintNudge: { pending: boolean } = { pending: false };
+
+// @kern-source: app:56
 
 export function App({  }: {  }) {
   const [replState, setReplState] = useState<ReplStateState>('idle');
@@ -228,6 +231,11 @@ export function App({  }: {  }) {
                 }
                 streamingTextRef.current = val;
                 setStreamingText(val);
+                // Nudge Ink paint — direct setState from microtask context may not trigger paint
+                if (!_paintNudge.pending) {
+                  _paintNudge.pending = true;
+                  setTimeout(() => { _paintNudge.pending = false; setStreamingText((s: any) => s ? { ...s } : s); }, 0);
+                }
                 return;
               }
               if (streamingFlushTimerRef.current) return;
@@ -237,7 +245,17 @@ export function App({  }: {  }) {
                 setStreamingText(streamingBufferRef.current);
               }, 90);
             },
-            addBlock: (event: any) => { setScrollOffset(0); setOutputBlocks((prev: any) => [...prev, { id: Date.now() + Math.random(), event }]); },
+            addBlock: (event: any) => {
+              setScrollOffset(0);
+              setOutputBlocks((prev: any) => [...prev, { id: Date.now() + Math.random(), event }]);
+              // Nudge Ink's render loop — state updates from Promise continuations (microtasks)
+              // don't always trigger Ink's paint. Schedule a macrotask that forces a new React
+              // commit by creating a new array ref, which triggers Ink to repaint.
+              if (!_paintNudge.pending) {
+                _paintNudge.pending = true;
+                setTimeout(() => { _paintNudge.pending = false; setOutputBlocks((b: any) => [...b]); }, 0);
+              }
+            },
             clearBlocks: () => setOutputBlocks([]),
             setReviewEvent,
             setQuestionState,
@@ -1075,7 +1093,7 @@ export function App({  }: {  }) {
 }
 
 
-// @kern-source: app:1050
+// @kern-source: app:1069
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

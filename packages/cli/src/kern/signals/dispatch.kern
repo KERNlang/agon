@@ -525,7 +525,7 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
             toolRegistry: null, hasNativeTools: false, lastDispatch: null,
             pendingDelegation: null, reportedConfidence: undefined,
             autoNero: false, advisorPending: false, lastEscalation: null,
-            mcpFingerprint: undefined, mcpSignalPath: undefined, planDispatch: null, proposedPlan: undefined,
+            mcpFingerprint: undefined, mcpSignalPath: undefined, planDispatch: null, proposedPlan: undefined, sessionMcpServers: [],
           };
         }
         cb.ctx.cesar.planDispatch = cb.dispatch;
@@ -839,6 +839,104 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
           cb.dispatch({ type: 'success', message: `${icons().nero} Nero mode ON — Cesar will challenge your ideas before implementing. Use /nero again to disable.` });
         } else {
           cb.dispatch({ type: 'success', message: 'Nero mode OFF — Cesar back to normal.' });
+        }
+        break;
+      }
+
+      // ── MCP management ──
+      case 'mcp': {
+        if (!cb.ctx.cesar) {
+          cb.ctx.cesar = {
+            busy: false, busySince: null, queue: null,
+            toolRegistry: null, hasNativeTools: false, lastDispatch: null,
+            pendingDelegation: null, reportedConfidence: undefined,
+            autoNero: false, advisorPending: false, lastEscalation: null,
+            mcpFingerprint: undefined, mcpSignalPath: undefined, planDispatch: null, proposedPlan: undefined, sessionMcpServers: [],
+          };
+        }
+        const mcpIntent = intent as any;
+        const sessionServers: Array<{name:string, type?:string, url?:string}> = (cb.ctx.cesar as any).sessionMcpServers ?? [];
+
+        if (mcpIntent.action === 'list') {
+          if (sessionServers.length === 0) {
+            cb.dispatch({ type: 'info', message: 'No MCP servers connected. Use /mcp connect <name|url>' });
+          } else {
+            const lines = sessionServers.map((s: any) => `  ${s.name} — ${s.url ?? s.command ?? 'local'}`).join('\n');
+            cb.dispatch({ type: 'text', content: `MCP servers (session):\n${lines}` });
+          }
+          break;
+        }
+
+        if (mcpIntent.action === 'connect') {
+          const serverInput = (mcpIntent.server ?? '').trim();
+          if (!serverInput) {
+            cb.dispatch({ type: 'warning', message: 'Usage: /mcp connect <name|url>' });
+            break;
+          }
+
+          // Resolve: URL or name lookup from .mcp.json
+          let serverEntry: {name:string, type?:string, url?:string, command?:string, args?:string[]};
+          if (serverInput.startsWith('http://') || serverInput.startsWith('https://')) {
+            const name = serverInput.replace(/^https?:\/\//, '').split('/')[0].replace(/\./g, '-');
+            serverEntry = { name, type: 'http', url: serverInput };
+          } else {
+            // Look up in .mcp.json (project) or ~/.agon/mcp.json (global)
+            let found: any = null;
+            for (const configPath of [join(resolveWorkingDir(), '.mcp.json'), join(process.env.HOME ?? '', '.agon', 'mcp.json')]) {
+              try {
+                const raw = JSON.parse(require('node:fs').readFileSync(configPath, 'utf-8'));
+                const servers = raw.mcpServers ?? raw.servers ?? raw;
+                if (servers[serverInput]) {
+                  found = { name: serverInput, ...servers[serverInput] };
+                  break;
+                }
+              } catch { /* file not found — expected */ }
+            }
+            if (!found) {
+              cb.dispatch({ type: 'error', message: `MCP server "${serverInput}" not found in .mcp.json or ~/.agon/mcp.json` });
+              break;
+            }
+            serverEntry = found;
+          }
+
+          // Check if already connected
+          if (sessionServers.some((s: any) => s.name === serverEntry.name)) {
+            cb.dispatch({ type: 'info', message: `MCP server "${serverEntry.name}" already connected.` });
+            break;
+          }
+
+          sessionServers.push(serverEntry);
+          (cb.ctx.cesar as any).sessionMcpServers = sessionServers;
+
+          // Restart Cesar session to pick up new MCP server
+          if (cb.ctx.cesarSession) {
+            cb.ctx.cesarSession.close();
+            cb.ctx.setCesarSession(null);
+          }
+          cb.dispatch({ type: 'success', message: `MCP connected: ${serverEntry.name}${serverEntry.url ? ` (${serverEntry.url})` : ''}. Cesar session restarting…` });
+          break;
+        }
+
+        if (mcpIntent.action === 'disconnect') {
+          const serverName = (mcpIntent.server ?? '').trim();
+          if (!serverName) {
+            cb.dispatch({ type: 'warning', message: 'Usage: /mcp disconnect <name>' });
+            break;
+          }
+          const idx = sessionServers.findIndex((s: any) => s.name === serverName);
+          if (idx === -1) {
+            cb.dispatch({ type: 'warning', message: `MCP server "${serverName}" not connected.` });
+            break;
+          }
+          sessionServers.splice(idx, 1);
+          (cb.ctx.cesar as any).sessionMcpServers = sessionServers;
+
+          if (cb.ctx.cesarSession) {
+            cb.ctx.cesarSession.close();
+            cb.ctx.setCesarSession(null);
+          }
+          cb.dispatch({ type: 'success', message: `MCP disconnected: ${serverName}. Cesar session restarting…` });
+          break;
         }
         break;
       }

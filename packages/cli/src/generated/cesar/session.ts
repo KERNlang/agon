@@ -511,6 +511,7 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
         pendingDelegation: null, reportedConfidence: undefined,
         autoNero: false, advisorPending: false, lastEscalation: null as string | null,
         mcpFingerprint: undefined, mcpSignalPath: undefined as string | undefined, planDispatch: null, proposedPlan: undefined,
+        sessionMcpServers: [] as Array<{name:string, type?:string, url?:string, command?:string, args?:string[]}>,
       };
     }
   
@@ -589,6 +590,16 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
           mcpServers = mcpServersToWireFormat(discovered);
         }
       }
+    }
+  
+    // ── Inject session-scoped MCP servers (from /mcp connect) ──
+    const sessionMcp = ctx.cesar?.sessionMcpServers ?? [];
+    if (sessionMcp.length > 0) {
+      const sessionMcpWired = sessionMcp.map((s: any) => {
+        if (s.url) return { name: s.name, type: s.type ?? 'http', url: s.url };
+        return { name: s.name, command: s.command, args: s.args ?? [] };
+      });
+      mcpServers = mcpServers ? [...mcpServers, ...sessionMcpWired] : sessionMcpWired;
     }
   
     // ── Inject Agon orchestration MCP server for CLI companion engines ──

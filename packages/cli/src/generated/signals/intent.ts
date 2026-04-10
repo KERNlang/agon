@@ -79,46 +79,47 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { cmd: '/explore',     desc: '                        — toggle exploration mode (read-only)' },
   { cmd: '/nero',        desc: '                        — toggle Nero mode (adversarial devil\'s advocate)' },
   { cmd: '/btw',         desc: '<question>               — ask something while engines work (side-channel)' },
+  { cmd: '/mcp',         desc: 'connect <name|url> | disconnect <name> | list — manage session MCP servers' },
   { cmd: '/clear',       desc: '                        — reset session (saves chat, clears brain)' },
   { cmd: '/extensions',  desc: '                        — list installed extensions' },
   { cmd: '/help',        desc: '                        — show this help' },
   { cmd: '/exit',        desc: '                        — quit' },
 ];
 
-// @kern-source: intent:82
+// @kern-source: intent:83
 export const FITNESS_PATTERN: RegExp = /\b(?:test with|test:|--test|fitness:)\s+(.+)/i;
 
-// @kern-source: intent:86
+// @kern-source: intent:87
 export const LEADERBOARD_KEYWORDS: RegExp = /\b(leaderboard|elo|rankings?)\b/i;
 
-// @kern-source: intent:89
+// @kern-source: intent:90
 export const HISTORY_KEYWORDS: RegExp = /\b(history|last runs?|recent)\b/i;
 
-// @kern-source: intent:92
+// @kern-source: intent:93
 export const ENGINES_KEYWORDS: RegExp = /\b(engines?|what engines)\b/i;
 
-// @kern-source: intent:95
+// @kern-source: intent:96
 export const CONFIG_KEYWORDS: RegExp = /\b(config|settings?)\b/i;
 
-// @kern-source: intent:98
+// @kern-source: intent:99
 export const HELP_KEYWORDS: RegExp = /^(help|\?)$/i;
 
-// @kern-source: intent:101
+// @kern-source: intent:102
 export const EXIT_KEYWORDS: RegExp = /^(exit|quit|bye)$/i;
 
-// @kern-source: intent:104
+// @kern-source: intent:105
 export const SENTENCE_PREFIX: RegExp = /^(do|does|did|is|are|was|were|have|has|had|can|could|would|should|will|shall|i\s)/i;
 
-// @kern-source: intent:107
+// @kern-source: intent:108
 export const QUESTION_PATTERN: RegExp = /^(what|how|why|where|when|who|which|explain|describe|tell|show|list|is there|does|can you explain|walk me through)\b/i;
 
-// @kern-source: intent:110
+// @kern-source: intent:111
 export const CODE_TASK_PATTERN: RegExp = /^(fix|add|implement|refactor|debug|create|build|write|update|change|remove|delete|rename|move|test|deploy|install|upgrade|migrate|convert|extract|inline|optimize|port)\b/i;
 
-// @kern-source: intent:113
+// @kern-source: intent:114
 export const CODE_ARTIFACT_PATTERN: RegExp = /(?:at \w+.*:\d+|\.[tj]sx?\b|\.[a-z]{2,4}:\d+|^[+-]{3}\s)/m;
 
-// @kern-source: intent:116
+// @kern-source: intent:117
 export function classifyTask(input: string): 'code'|'question'|'ambiguous' {
   if (QUESTION_PATTERN.test(input)) return 'question';
   if (CODE_TASK_PATTERN.test(input)) return 'code';
@@ -126,7 +127,7 @@ export function classifyTask(input: string): 'code'|'question'|'ambiguous' {
   return 'ambiguous';
 }
 
-// @kern-source: intent:124
+// @kern-source: intent:125
 function parseForgeInput(input: string): Intent {
   // Only match --hardened as a standalone flag (not inside task text or test args)
   const hardenedMatch = input.match(/^(--hardened)\s+(.*)$/i) || input.match(/^(.*?)\s+(--hardened)\s*$/i);
@@ -142,7 +143,7 @@ function parseForgeInput(input: string): Intent {
   return { type: 'forge', task, fitnessCmd, hardened } as Intent;
 }
 
-// @kern-source: intent:140
+// @kern-source: intent:141
 function parseSlashCommand(input: string, commandRegistry?: any): Intent {
   const stripped = input.slice(1).trim();
   if (!stripped) return { type: 'slash-list' } as Intent;
@@ -364,6 +365,16 @@ function parseSlashCommand(input: string, commandRegistry?: any): Intent {
     case 'devil':
     case 'adversarial':
       return { type: 'nero' } as Intent;
+    case 'mcp': {
+      const mcpParts = rest.trim().split(/\s+/);
+      const mcpAction = mcpParts[0]?.toLowerCase() || 'list';
+      if (mcpAction === 'connect' || mcpAction === 'add') {
+        return { type: 'mcp' as const, action: 'connect' as const, server: mcpParts.slice(1).join(' ') || undefined } as unknown as Intent;
+      } else if (mcpAction === 'disconnect' || mcpAction === 'remove') {
+        return { type: 'mcp' as const, action: 'disconnect' as const, server: mcpParts.slice(1).join(' ') || undefined } as unknown as Intent;
+      }
+      return { type: 'mcp' as const, action: 'list' as const } as unknown as Intent;
+    }
     case 'clear':
       return { type: 'clear' } as Intent;
     case 'help':
@@ -382,7 +393,7 @@ function parseSlashCommand(input: string, commandRegistry?: any): Intent {
   }
 }
 
-// @kern-source: intent:380
+// @kern-source: intent:391
 export function detectIntent(raw: string, commandRegistry?: any): Intent {
   const input = raw.trim();
   if (!input) return { type: 'unknown', input: '' } as Intent;

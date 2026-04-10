@@ -844,6 +844,12 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
         '--max-turns', '0',
       ];
   
+      // Pass Agon-configured MCP servers via --mcp-config (strict mode blocks auto-discovery)
+      if (config.mcpServers && config.mcpServers.length > 0) {
+        const mcpConfig = JSON.stringify({ mcpServers: Object.fromEntries(config.mcpServers.map((s: any) => [s.name ?? s.command ?? 'mcp', s])) });
+        args.push('--mcp-config', mcpConfig);
+      }
+  
       if (config.systemPrompt) {
         args.push('--system-prompt', config.systemPrompt);
       }
@@ -1065,7 +1071,7 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
   return session;
 }
 
-// @kern-source: persistent-session:1043
+// @kern-source: persistent-session:1049
 /**
  * Fallback: spawn per turn with --resume/--continue. Works for any CLI engine.
  */

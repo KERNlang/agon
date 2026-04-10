@@ -919,6 +919,18 @@ export function App({  }: {  }) {
               {slashPickerOpen && <SlashPicker commands={allSlashCommands} onSelect={handleSlashSelect} onCancel={() => setSlashPickerOpen(false)} />}
               {pendingImages.length > 0 && (<Box><Text color="#22d3ee">{icons().image + ' '}</Text>{pendingImages.map((img: any, i: number) => (<Text key={i} dimColor>{img.filename}{i < pendingImages.length - 1 ? ', ' : ''}</Text>))}</Box>)}
               {inputQueue.length > 0 && (<Box><Text dimColor>{icons().queue + ' '}{inputQueue.length} queued: </Text><Text dimColor italic>{inputQueue[0].length > 40 ? inputQueue[0].slice(0, 40) + '…' : inputQueue[0]}</Text></Box>)}
+              {liveSpinner && mode === 'chat' && (
+                <Box paddingLeft={1}>
+                  <Text color="#fbbf24">{liveSpinner.message.replace(/\u2026$/, '').trim()}{(() => {
+                    if (!chatStartTimeRef.current) return '';
+                    const elapsed = Math.max(0, Math.floor((Date.now() - chatStartTimeRef.current) / 1000));
+                    if (elapsed <= 0) return '';
+                    const mins = Math.floor(elapsed / 60);
+                    const secs = elapsed % 60;
+                    return mins > 0 ? ` ${mins}m ${secs}s` : ` ${elapsed}s`;
+                  })()}</Text>
+                </Box>
+              )}
               <Box borderStyle={mode === 'chat' ? 'round' : 'single'} borderColor={mode === 'chat' ? (questionState ? '#fbbf24' : '#585858') : 'gray'} borderLeft={mode !== 'chat'} borderRight={mode !== 'chat'} borderTop borderBottom paddingX={1} width="100%">
                 {mode !== 'chat' && (<Text><Text color={mode === 'campfire' ? '#f97316' : mode === 'brainstorm' ? '#22d3ee' : '#a78bfa'} bold>{mode === 'campfire' ? icons().campfire : mode === 'brainstorm' ? icons().brainstorm : icons().tribunal}{' '}{mode}</Text><Text dimColor>{' │ '}</Text></Text>)}
                 <Text color={mode === 'chat' ? (planModeQueued || (activePlan && activePlan.state === 'planning') ? '#c084fc' : '#585858') : '#fbbf24'}>{mode === 'chat' ? (planModeQueued ? '◈ ' : '> ') : icons().prompt + ' '}</Text>
@@ -968,7 +980,7 @@ export function App({  }: {  }) {
 }
 
 
-// @kern-source: app:942
+// @kern-source: app:954
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

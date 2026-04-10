@@ -160,3 +160,5 @@ interface name=HandlerContext
   field name=eventBus type="EventBus | undefined" optional=true
   field name=cesar type="CesarState | undefined" optional=true
   field name=lastReviewResult type="{ engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number } | undefined" optional=true
+  field name=sessionMcpServers type="Array<Record<string,unknown>>" optional=true
+  field name=setSessionMcpServers type="((servers: Array<Record<string,unknown>>) => void) | undefined" optional=true

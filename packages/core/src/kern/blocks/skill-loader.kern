@@ -1,5 +1,6 @@
 import from="node:fs" names="readFileSync,readdirSync,existsSync"
-import from="node:path" names="join"
+import from="node:path" names="join,dirname"
+import from="node:url" names="fileURLToPath"
 import from="../signals/config.js" names="AGON_HOME"
 
 interface name=Skill
@@ -72,7 +73,7 @@ fn name=loadSkills params="cwd?:string" returns="Skill[]"
     const skills: Skill[] = [];
 
     // 1. Built-in skills (shipped with Agon)
-    const builtinDir = join(__dirname, '../../skills');
+    const builtinDir = join(dirname(fileURLToPath(import.meta.url)), '../../skills');
     skills.push(...loadSkillsFromDir(builtinDir, 'builtin'));
 
     // 2. Global skills (~/.agon/skills/)

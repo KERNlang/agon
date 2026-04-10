@@ -158,6 +158,7 @@ export function App({  }: {  }) {
   const [cesarConfidence, setCesarConfidence] = useState<number|null>(null);
   const [planModeQueued, setPlanModeQueued] = useState<boolean>(false);
   const [cesarMemory, setCesarMemory] = useState<any>(() => createCesarMemory());
+  const [sessionMcpServers, setSessionMcpServers] = useState<Array<Record<string,unknown>>>([]);
   const [registry, setRegistry] = useState<EngineRegistry>((() => { const reg = new EngineRegistry(); const engDir = join(dirname(fileURLToPath(import.meta.url)), '../../../../engines'); reg.load(engDir); return reg; })());
   const [adapter, setAdapter] = useState<EngineAdapter>(createCliAdapter(registry));
   const [dynamicSkills, setDynamicSkills] = useState<Skill[]>(() => loadSkills(resolveWorkingDir()));
@@ -328,8 +329,9 @@ export function App({  }: {  }) {
             cesarMemory,
             activePlan, setActivePlan,
             extensionPromptFragments,
+            sessionMcpServers, setSessionMcpServers,
           };
-  }, [registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode,activePlan,extensionPromptFragments]);
+  }, [registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode,activePlan,extensionPromptFragments,sessionMcpServers]);
 
   const handleInputChange = useCallback((value:string) => {
           // Swallow input while a choice question is active — useInput handles keypress
@@ -966,7 +968,7 @@ export function App({  }: {  }) {
 }
 
 
-// @kern-source: app:940
+// @kern-source: app:942
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

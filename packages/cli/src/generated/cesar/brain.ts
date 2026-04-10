@@ -110,6 +110,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       pendingDelegation: null, reportedConfidence: undefined,
       autoNero: false, advisorPending: false, lastEscalation: null as string | null,
       mcpFingerprint: undefined, planDispatch: null, proposedPlan: undefined,
+      sessionMcpServers: [],
     };
   }
   

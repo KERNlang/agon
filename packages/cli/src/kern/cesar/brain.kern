@@ -86,6 +86,7 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
         pendingDelegation: null, reportedConfidence: undefined,
         autoNero: false, advisorPending: false, lastEscalation: null as string | null,
         mcpFingerprint: undefined, planDispatch: null, proposedPlan: undefined,
+        sessionMcpServers: [],
       };
     }
 

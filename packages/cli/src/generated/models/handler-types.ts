@@ -77,9 +77,10 @@ export interface CesarState {
   planDispatch: ((event: any) => void) | null;
   proposedPlan: any | undefined;
   lastEscalation: string | null;
+  sessionMcpServers: Array<{name:string, type?:string, url?:string, command?:string, args?:string[]}>;
 }
 
-// @kern-source: handler-types:139
+// @kern-source: handler-types:140
 export interface HandlerContext {
   registry: EngineRegistry;
   adapter: EngineAdapter;

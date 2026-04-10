@@ -72,6 +72,7 @@ const name=SLASH_COMMANDS type="SlashCommand[]"
       { cmd: '/explore',     desc: '                        — toggle exploration mode (read-only)' },
       { cmd: '/nero',        desc: '                        — toggle Nero mode (adversarial devil\'s advocate)' },
       { cmd: '/btw',         desc: '<question>               — ask something while engines work (side-channel)' },
+      { cmd: '/mcp',         desc: 'connect <name|url> | disconnect <name> | list — manage session MCP servers' },
       { cmd: '/clear',       desc: '                        — reset session (saves chat, clears brain)' },
       { cmd: '/extensions',  desc: '                        — list installed extensions' },
       { cmd: '/help',        desc: '                        — show this help' },
@@ -359,6 +360,16 @@ fn name=parseSlashCommand params="input:string, commandRegistry?:any" returns=In
       case 'devil':
       case 'adversarial':
         return { type: 'nero' } as Intent;
+      case 'mcp': {
+        const mcpParts = rest.trim().split(/\s+/);
+        const mcpAction = mcpParts[0]?.toLowerCase() || 'list';
+        if (mcpAction === 'connect' || mcpAction === 'add') {
+          return { type: 'mcp' as const, action: 'connect' as const, server: mcpParts.slice(1).join(' ') || undefined } as unknown as Intent;
+        } else if (mcpAction === 'disconnect' || mcpAction === 'remove') {
+          return { type: 'mcp' as const, action: 'disconnect' as const, server: mcpParts.slice(1).join(' ') || undefined } as unknown as Intent;
+        }
+        return { type: 'mcp' as const, action: 'list' as const } as unknown as Intent;
+      }
       case 'clear':
         return { type: 'clear' } as Intent;
       case 'help':

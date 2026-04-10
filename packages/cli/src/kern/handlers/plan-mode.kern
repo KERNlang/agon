@@ -21,6 +21,8 @@ fn name=handleProposePlan params="args:any, dispatch:Dispatch, ctx:HandlerContex
       imports: typeof s.imports === 'string' ? [s.imports] : s.imports,
       estimatedTokens: s.estimatedTokens ?? planCostEstimator.estimate(s.type, s.engines ?? []).tokens,
       estimatedCostUsd: s.estimatedCostUsd ?? planCostEstimator.estimate(s.type, s.engines ?? []).costUsd,
+      rationale: s.rationale,
+      verifyCmd: s.verifyCmd,
     }));
 
     let plan = createCesarPlan(args.intent, steps);

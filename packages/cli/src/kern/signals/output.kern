@@ -128,6 +128,10 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
       case 'progress-clear':
         actions.setLiveProgress(null);
         return;
+      case 'thinking-chunk': {
+        actions.addBlock(event);
+        return;
+      }
       case 'streaming-chunk': {
         const prev = state.streamingText;
         if (prev && prev.engineId === event.engineId) {

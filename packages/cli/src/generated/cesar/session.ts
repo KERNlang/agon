@@ -171,16 +171,49 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
       if (ctx.activePlan && ['planning', 'awaiting_approval'].includes(ctx.activePlan.state)) {
         const stats = tracker.getStats();
         let budgetWarning = '';
-        if (stats.totalCostUsd > 1.0) {
-          budgetWarning = `\n\nWARNING: Planning phase has spent $${stats.totalCostUsd.toFixed(2)}. Wrap up your analysis and call ProposePlan now.`;
+        if (stats.totalCostUsd > 0.50) {
+          budgetWarning = `\n\nURGENT: Planning has spent $${stats.totalCostUsd.toFixed(2)}. You MUST call ProposePlan NOW. No more investigation.`;
+        } else if (stats.totalCostUsd > 0.25) {
+          budgetWarning = `\n\nWARNING: Planning has spent $${stats.totalCostUsd.toFixed(2)}. Wrap up and call ProposePlan.`;
         }
-        systemParts.push(`RULE 9 — PLAN MODE: You are in PLAN MODE. Your goal is to produce the best possible plan, then propose it with ProposePlan.
+        systemParts.push(`RULE 9 — PLAN MODE: You are in PLAN MODE. You MUST call ProposePlan before your turn ends. This is not optional.
   
-  ALLOWED: Brainstorm, Campfire, Tribunal, Delegate, Read, Grep, Glob, Bash (read-only), ReportConfidence, ProposePlan. Use these freely to analyze the task and build your strategy.
+  PROTOCOL:
+  
+  1. INVESTIGATE — Go as deep as needed. Read files, Grep for patterns, trace call chains, understand the full scope. Use Brainstorm/Tribunal/Campfire/Delegate freely if the task is complex and you need other engines' input. Take your time here — thorough investigation makes better plans.
+  
+  2. PROPOSE — When you understand the task, call ProposePlan with a structured plan. This is MANDATORY. Your turn MUST end with a ProposePlan call. Do NOT respond with text instead of calling ProposePlan. Do NOT skip this step.
+  
+  PLAN QUALITY CHECKLIST — every ProposePlan call must:
+    1. Assign SPECIFIC engines to each step based on the ROUTING CONTEXT above (use engine strengths/win rates)
+    2. Include a fitnessCmd for every forge/teamforge step (e.g., "npm test", "npm run typecheck")
+    3. Use dependsOn to chain steps that need prior step output
+    4. Use exports/imports for cross-step context flow (e.g., step 1 exports "analysis", step 2 imports it)
+    5. Use parallel:true ONLY for independent read-only steps
+    6. Include at least one verification step (tribunal or self) after implementation steps
+    7. Estimate tokens and cost for each step
+    8. Include a rationale for each step explaining WHY that engine/approach was chosen
+    9. Include a verifyCmd for steps that produce testable output
+  
+  STEP TYPE GUIDE:
+    - self: Cesar reads/analyzes code, writes summaries — use for investigation and synthesis
+    - forge: Multiple engines compete to implement code — use for core implementation
+    - teamforge: Collaborative forge with architect/implementer/reviewer — use for complex multi-file changes
+    - delegate: Send subtask to ONE specific engine — use for focused tasks where one engine excels
+    - brainstorm: Multiple engines bid on approach — use when approach needs exploration
+    - tribunal: Structured debate/review — use for verification, architecture review, stress-testing
+    - campfire: Open collaborative discussion — use for ambiguous problems
+    - pipeline: Full brainstorm→forge→tribunal chain — use for critical implementation steps
+  
+  ENGINE ASSIGNMENT — use the ROUTING CONTEXT to pick engines:
+    - High win rate + matching strengths → assign as primary
+    - Different strengths → assign to complementary steps
+    - Never leave engines unassigned — specify engines[] or engine for every step
   
   BLOCKED: Forge, Pipeline, Edit, Write. No code execution until the plan is approved.
+  ALLOWED: Read, Grep, Glob, Bash (read-only), Delegate, Brainstorm, Tribunal, Campfire, ReportConfidence, ProposePlan.
   
-  Think deeply. Use other engines to challenge your approach. Then propose a structured plan with specific engine assignments and cost estimates for each step.${budgetWarning}`);
+  HARD RULE: Your turn MUST end with a ProposePlan call. If you respond with text only, the plan mode fails. Call ProposePlan.${budgetWarning}`);
       }
   
       // History replay — only needed when session reboots (new process loses context).
@@ -197,7 +230,7 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
       return systemParts.join('\n\n');
 }
 
-// @kern-source: session:177
+// @kern-source: session:210
 /**
  * Build the onToolCall callback for API engines with native function calling.
  */
@@ -377,7 +410,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
   };
 }
 
-// @kern-source: session:355
+// @kern-source: session:388
 /**
  * Build the onApproval callback for engine tool approvals. Returns true to approve, false to deny silently, or a string to deny with a reason the engine can see.
  */
@@ -453,7 +486,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
   };
 }
 
-// @kern-source: session:429
+// @kern-source: session:462
 export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unknown>> {
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -487,7 +520,7 @@ export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unkn
   return normalizeNamedRecord(raw);
 }
 
-// @kern-source: session:463
+// @kern-source: session:496
 export function loadCesarMcpServers(config: any, cwd: string): Array<Record<string,unknown>>|undefined {
   if (!(config as any).cesarMcpEnabled) return undefined;
   
@@ -511,14 +544,14 @@ export function loadCesarMcpServers(config: any, cwd: string): Array<Record<stri
   return servers;
 }
 
-// @kern-source: session:487
+// @kern-source: session:520
 export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
   if (!binaryPath) return false;
   const protocol = engine?.companion?.protocol;
   return protocol === 'acp' || protocol === 'jsonrpc' || protocol === 'stream-json';
 }
 
-// @kern-source: session:494
+// @kern-source: session:527
 /**
  * Compute a fingerprint of MCP-related config to detect changes. Includes both manual config and auto-discovery sources.
  */
@@ -538,7 +571,7 @@ export function mcpConfigFingerprint(config: any): string {
   return `${enabled}:${configPath}:${mtime}:${discoveryFp}`;
 }
 
-// @kern-source: session:512
+// @kern-source: session:545
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
     const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';

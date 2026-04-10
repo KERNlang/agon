@@ -788,6 +788,42 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       }
     }
   
+    // ── Plan mode gate: Cesar cannot exit plan mode without calling ProposePlan ──
+    if (inPlanMode && !ctx.cesar!.proposedPlan && !ctx.cesar!.pendingDelegation) {
+      if (streaming) { dispatch({ type: 'streaming-end', engineId: cesarEngineId }); streaming = false; }
+      let planAttempts = 0;
+      const maxPlanAttempts = 3;
+      while (!ctx.cesar!.proposedPlan && planAttempts < maxPlanAttempts && session.alive && !abort.signal.aborted) {
+        planAttempts++;
+        dispatch({ type: 'spinner-start', message: `Cesar building plan (attempt ${planAttempts}/${maxPlanAttempts})…`, color });
+        try {
+          let planResponse = '';
+          const planGen = session.send({
+            message: `[SYSTEM] You are in PLAN MODE. Your turn cannot end without calling ProposePlan. You have investigated enough. Call ProposePlan NOW with a structured plan. Attempt ${planAttempts}/${maxPlanAttempts}.`,
+            signal: abort.signal,
+          });
+          for await (const chunk of planGen) {
+            if (chunk.type === 'text') planResponse += chunk.content;
+            if (chunk.type === 'done' || chunk.type === 'error') break;
+          }
+          dispatch({ type: 'spinner-stop' });
+          if (planResponse.trim() && !ctx.cesar!.proposedPlan) {
+            dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: planResponse.trim() });
+          }
+        } catch {
+          dispatch({ type: 'spinner-stop' });
+          break;
+        }
+      }
+      // If plan was produced, return to dispatch for approval
+      if (ctx.cesar!.proposedPlan) {
+        appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
+        appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
+        return { delegated: false, responded: true };
+      }
+      // All attempts exhausted — fall through, dispatch.kern will show the warning
+    }
+  
     // ── Protocol enforcement: suggest mode when engine didn't ──
     if (!finalSuggestion.action && !ranToolLoop && !secondOpinionPromise && !_isFollowUp && !abort.signal.aborted) {
       if (streaming) { dispatch({ type: 'streaming-end', engineId: cesarEngineId }); streaming = false; }

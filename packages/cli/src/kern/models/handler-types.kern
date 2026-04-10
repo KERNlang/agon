@@ -18,6 +18,9 @@ union name=OutputEvent discriminant=type
   variant name=streaming-chunk
     field name=engineId type=string
     field name=chunk type=string
+  variant name=thinking-chunk
+    field name=engineId type=string
+    field name=chunk type=string
   variant name=streaming-end
     field name=engineId type=string
   variant name=spinner-start

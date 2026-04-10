@@ -22,7 +22,7 @@ export function formatCesarPlanMarkdown(plan: CesarPlan): string {
   lines.push(`# Plan: ${plan.intent}`);
   lines.push('');
   if (plan.planningCost) {
-    lines.push(`> Planning cost: ~${plan.planningCost.toLocaleString()} tokens`);
+    lines.push(`> Planning cost: ~${plan.planningCost.tokens.toLocaleString()} tokens ($${plan.planningCost.costUsd.toFixed(4)})`);
     lines.push('');
   }
   lines.push('## Steps');
@@ -35,7 +35,9 @@ export function formatCesarPlanMarkdown(plan: CesarPlan): string {
     const stateIcon = s.state === 'done' ? '✓' : s.state === 'running' ? '●' : s.state === 'failed' ? '✗' : s.state === 'cancelled' ? '⊘' : '○';
     lines.push(`### Step ${num}: ${s.description} [${typeLabel}] ${stateIcon} ${s.state ?? 'pending'}`);
   
+    if (s.rationale) lines.push(`- Rationale: ${s.rationale}`);
     if (s.fitnessCmd) lines.push(`- Fitness: \`${s.fitnessCmd}\``);
+    if (s.verifyCmd) lines.push(`- Verify: \`${s.verifyCmd}\``);
     if (s.dependsOn && s.dependsOn.length > 0) lines.push(`- Depends on: ${s.dependsOn.join(', ')}`);
     if (s.exports && s.exports.length > 0) lines.push(`- Exports: ${s.exports.join(', ')}`);
     if (s.imports && s.imports.length > 0) lines.push(`- Imports: ${s.imports.join(', ')}`);

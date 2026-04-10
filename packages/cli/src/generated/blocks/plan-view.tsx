@@ -136,6 +136,24 @@ export function PlanProposalView({ plan }: { plan: any }) {
                     </Box>
                   )}
   
+                  {/* Rationale — why this engine/approach was chosen */}
+                  {s.rationale && (
+                    <Box>
+                      <Text color={planColor}>{'\u2551   '}</Text>
+                      <Text dimColor>{'  why: '}</Text>
+                      <Text color="#94a3b8">{s.rationale}</Text>
+                    </Box>
+                  )}
+  
+                  {/* Verify command */}
+                  {s.verifyCmd && (
+                    <Box>
+                      <Text color={planColor}>{'\u2551   '}</Text>
+                      <Text dimColor>{'  verify: '}</Text>
+                      <Text color="#34d399">{s.verifyCmd}</Text>
+                    </Box>
+                  )}
+  
                   {/* Separator between steps */}
                   {i < steps.length - 1 && (
                     <Text color={planColor}>{'\u2551'}</Text>
@@ -147,14 +165,14 @@ export function PlanProposalView({ plan }: { plan: any }) {
             {/* ── Footer ── */}
             <Text color={planColor}>{'\u2551'}</Text>
             <Text color={planColor}>{'\u255f'}{thinBar}{'\u2562'}</Text>
-            <Text color={planColor}>{'\u2551 '}<Text dimColor>{'Approve: '}</Text><Text bold color="green">{'Y'}</Text><Text dimColor>{' \u00b7 Reject: '}</Text><Text bold color="red">{'N'}</Text><Text dimColor>{' \u00b7 Or type feedback to revise'}</Text></Text>
+            <Text color={planColor}>{'\u2551 '}<Text dimColor>{'Approve: '}</Text><Text bold color="green">{'Y'}</Text><Text dimColor>{' \u00b7 Reject: '}</Text><Text bold color="red">{'N'}</Text><Text dimColor>{' \u00b7 Edit: '}</Text><Text bold color="#fbbf24">{'E'}</Text><Text dimColor>{' \u00b7 Or type feedback to revise'}</Text></Text>
             <Text color={planColor} bold>{'\u255a'}{bar}{'\u255d'}</Text>
           </Box>
         );
 }
 
 
-// @kern-source: plan-view:170
+// @kern-source: plan-view:188
 
 export function PlanExecutionView({ plan }: { plan: any }) {
         const steps = plan.steps ?? [];

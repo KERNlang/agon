@@ -26,6 +26,8 @@ interface name=CesarPlanStep
   field name=imports type="string[]" optional=true
   field name=estimatedTokens type=number
   field name=estimatedCostUsd type=number
+  field name=rationale type=string optional=true
+  field name=verifyCmd type=string optional=true
   field name=state type=CesarStepState optional=true
   field name=result type=CesarStepResult optional=true
 

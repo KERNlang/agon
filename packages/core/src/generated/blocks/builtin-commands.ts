@@ -24,6 +24,7 @@ export function registerBuiltinCommands(registry: CommandRegistry): void {
   
     // Execution
     { name: 'build',      desc: '<task>                   — agent builds in cwd (reads/edits/tests)', category: 'execution' },
+    { name: 'review',     desc: '[with <engine>] [<target>] — code review (uncommitted|branch:NAME|commit:SHA)', category: 'execution', aliases: ['cr'] },
     { name: 'pipeline',   desc: '<task> [test with <cmd>]  — build→review→fix loop', category: 'execution' },
     { name: 'run',         desc: '<cmd>                    — run shell command inline', category: 'execution' },
     { name: 'commit',      desc: '[message]                — stage & commit with auto-generated message', category: 'execution' },
@@ -40,7 +41,8 @@ export function registerBuiltinCommands(registry: CommandRegistry): void {
     // Config
     { name: 'workspace', desc: 'add|remove|list|switch   — manage project repos', category: 'config', aliases: ['ws'] },
     { name: 'cesar',     desc: '<engine>                — set Cesar brain engine', category: 'config' },
-    { name: 'models',    desc: '                        — browse & add models from 4000+ providers', category: 'config' },
+    { name: 'models',    desc: '                        — browse & add provider models', category: 'config' },
+    { name: 'cli-models', desc: '                        — choose active CLI engines + model overrides', category: 'config', aliases: ['cli-model'] },
     { name: 'engines',   desc: '                        — select active engines', category: 'config' },
     { name: 'config',    desc: '[list|get|set]          — settings', category: 'config' },
     { name: 'provider',  desc: 'add|remove|list          — manage API providers', category: 'config' },
@@ -56,12 +58,14 @@ export function registerBuiltinCommands(registry: CommandRegistry): void {
     { name: 'focus',       desc: '<id>                    — switch to background job output', category: 'info' },
   
     // Session
+    { name: 'mcp',        desc: 'connect <name|url> | disconnect | list — manage session MCP servers', category: 'session' },
     { name: 'explore',   desc: '                        — toggle exploration mode (read-only)', category: 'session' },
     { name: 'nero',      desc: '                        — toggle Nero mode (adversarial)', category: 'session' },
     { name: 'btw',       desc: '<question>               — ask something while engines work', category: 'session' },
     { name: 'clear',     desc: '                        — reset session', category: 'session' },
   
     // Utility
+    { name: 'create-skill', desc: '<name>                  — scaffold a new skill (.agon/skills/)', category: 'utility' },
     { name: 'img',  desc: '<path>                   — attach image to next prompt', category: 'utility' },
     { name: 'cp',   desc: '[N]                     — copy code block N to clipboard', category: 'utility' },
     { name: 'help', desc: '                        — show this help', category: 'utility', aliases: ['slash-list'] },

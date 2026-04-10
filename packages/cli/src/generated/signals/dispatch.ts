@@ -47,15 +47,18 @@ import { handleTeamForge } from '../handlers/team-forge.js';
 import { handleTeamBrainstorm } from '../handlers/team-brainstorm.js';
 
 // @kern-source: dispatch:21
-import { handleCesarBrain, parseSuggestion, CESAR_SYSTEM_PROMPT } from '../../handlers/cesar-brain.js';
+import { handleCesarBrain, parseSuggestion, CESAR_SYSTEM_PROMPT, yieldToInk } from '../../handlers/cesar-brain.js';
 
 // @kern-source: dispatch:22
-import { handlePipeline } from '../handlers/pipeline.js';
+import { appendMessage } from '@agon/core';
 
 // @kern-source: dispatch:23
+import { handlePipeline } from '../handlers/pipeline.js';
+
+// @kern-source: dispatch:24
 import { handleProvider } from '../handlers/provider.js';
 
-// @kern-source: dispatch:25
+// @kern-source: dispatch:26
 export interface DispatchCallbacks {
   dispatch: Dispatch;
   ctx: HandlerContext;
@@ -93,13 +96,13 @@ export interface DispatchCallbacks {
   setWorkspacePath?: (path: string) => void;
 }
 
-// @kern-source: dispatch:61
+// @kern-source: dispatch:62
 export interface DispatchResult {
   handled: boolean;
   ranAsJob: boolean;
 }
 
-// @kern-source: dispatch:65
+// @kern-source: dispatch:66
 /**
  * Handle mode-switching intents. Returns true if consumed.
  */
@@ -129,7 +132,7 @@ export function handleModeSwitch(intentType: string, topic: string|undefined, qu
   return false;
 }
 
-// @kern-source: dispatch:93
+// @kern-source: dispatch:94
 /**
  * Extract a fitness command from conversational execution input while keeping the task clean.
  */
@@ -142,7 +145,56 @@ export function extractExecutionSpec(input: string): { task:string; fitnessCmd:s
   return { task, fitnessCmd };
 }
 
-// @kern-source: dispatch:104
+// @kern-source: dispatch:105
+/**
+ * Send a message directly into Cesar's persistent session and stream the response. Returns the response text.
+ */
+export async function absorbIntoCesar(message: string, dispatch: Dispatch, ctx: HandlerContext): Promise<string> {
+  const session = ctx.cesarSession;
+  if (!session || !session.alive) return '';
+  
+  const cesarEngineId = (ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude';
+  const color = ENGINE_COLORS[cesarEngineId] ?? 124;
+  
+  let response = '';
+  let streaming = false;
+  const gen = session.send({ message });
+  
+  for await (const chunk of gen) {
+    if (chunk.type === 'text') {
+      if (!streaming) {
+        dispatch({ type: 'spinner-stop' });
+        streaming = true;
+      }
+      dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: chunk.content });
+      response += chunk.content;
+    } else if (chunk.type === 'status') {
+      dispatch({ type: 'spinner-update', message: `Cesar ${chunk.content}` });
+    } else if (chunk.type === 'error') {
+      dispatch({ type: 'error', message: chunk.content });
+      break;
+    } else if (chunk.type === 'done') {
+      break;
+    }
+  }
+  
+  if (streaming) {
+    dispatch({ type: 'streaming-end', engineId: cesarEngineId });
+    await yieldToInk();
+  } else {
+    dispatch({ type: 'spinner-stop' });
+  }
+  
+  response = response.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
+  
+  if (response) {
+    appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
+  }
+  
+  return response;
+}
+
+// @kern-source: dispatch:152
 /**
  * Unified Cesar brain routing. Returns true if a background job was dispatched.
  */
@@ -235,12 +287,12 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
         case 'brainstorm':
           cb.runAsJob('brainstorm', label, async () => {
             const bsResult = await handleBrainstorm(taskInput, cb.dispatch, cb.ctx);
-            // Cesar absorbs the brainstorm result — inject actual content, not "above"
+            // Cesar absorbs the brainstorm result via persistent session
             if (cb.ctx.cesarSession && bsResult) {
               cb.dispatch({ type: 'info', message: 'Cesar absorbing brainstorm results…' });
-              const bidSummary = bsResult.bids.map((b: any) => `**${b.engineId}** (score: ${b.score}): ${b.reasoning.slice(0, 300)}`).join('\n\n');
-              const cesarMsg = `Brainstorm complete. Winner: ${bsResult.winner}.\n\n## Engine Bids\n${bidSummary}\n\n## Winner's Full Response\n${bsResult.response.slice(0, 2000)}\n\nSynthesize the winning approach into a concrete plan. Be direct — the brainstorm already validated the ideas.`;
-              await handleChat(cesarMsg, cb.dispatch, cb.ctx, undefined, { toolPolicy: 'none' });
+              const bidSummary = bsResult.bids.map((b: any) => `**${b.engineId}** (score: ${b.score}): ${b.reasoning.slice(0, 800)}`).join('\n\n');
+              const cesarMsg = `Brainstorm complete. Winner: ${bsResult.winner}.\n\n## Engine Bids\n${bidSummary}\n\n## Winner's Full Response\n${bsResult.response}\n\nSynthesize the winning approach into a concrete plan. Be direct — the brainstorm already validated the ideas.`;
+              await absorbIntoCesar(cesarMsg, cb.dispatch, cb.ctx);
             }
           });
           return true;
@@ -249,7 +301,10 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
             await handleTeamBrainstorm(taskInput, cb.dispatch, cb.ctx);
             if (cb.ctx.cesarSession) {
               cb.dispatch({ type: 'info', message: 'Cesar absorbing brainstorm results…' });
-              await handleChat(`Based on the team brainstorm above, synthesize the winning approach into a concrete plan. Be direct — the brainstorm already validated the ideas.`, cb.dispatch, cb.ctx, undefined, { toolPolicy: 'none' });
+              // Team brainstorm doesn't return results — ask Cesar to synthesize from chat history
+              const recentChat = cb.ctx.chatSession?.messages?.slice(-10) ?? [];
+              const chatContext = recentChat.filter((m: any) => m.role === 'engine').map((m: any) => `[${m.engineId}]: ${m.content.slice(0, 1500)}`).join('\n\n');
+              await absorbIntoCesar(`Team brainstorm completed. Here are the engine responses:\n\n${chatContext}\n\nSynthesize the winning approach into a concrete plan.`, cb.dispatch, cb.ctx);
             }
           });
           return true;
@@ -293,10 +348,10 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
               if (answer) {
                 cb.dispatch({ type: 'engine-block', engineId: targetEngineId, color: ENGINE_COLORS[targetEngineId] ?? 124, content: answer });
               }
-              // Feed result back to Cesar so it can continue
+              // Feed result back to Cesar's persistent session so it can continue
               if (cb.ctx.cesarSession) {
                 cb.dispatch({ type: 'info', message: `Feeding delegate result back to Cesar…` });
-                await handleChat(`[Delegate → ${targetEngineId}] Result:\n${answer || '(empty response)'}`, cb.dispatch, cb.ctx, undefined, { toolPolicy: 'none' });
+                await absorbIntoCesar(`[Delegate → ${targetEngineId}] Result:\n${answer || '(empty response)'}`, cb.dispatch, cb.ctx);
               }
             } catch (err) {
               cb.dispatch({ type: 'error', message: `Delegate to ${targetEngineId} failed: ${err instanceof Error ? err.message : String(err)}` });
@@ -450,7 +505,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
   return false;
 }
 
-// @kern-source: dispatch:410
+// @kern-source: dispatch:461
 /**
  * Route a parsed intent to the correct handler. Registry-first, switch as fallback.
  */
@@ -623,11 +678,16 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
         // Clear the stash
         if (cb.ctx.cesar) cb.ctx.cesar.proposedPlan = undefined;
   
-        // Approval loop — ask user, handle Y/N/feedback
+        // Show plan file path
+        if (proposed.planFilePath) {
+          cb.dispatch({ type: 'info', message: `Plan saved: ${proposed.planFilePath}` });
+        }
+  
+        // Approval loop — ask user, handle Y/N/feedback/edit
         let currentProposal = proposed;
         let decided = false;
         while (!decided) {
-          const answer = await cb.askQuestion('Approve plan? [Y/n] or give feedback to revise');
+          const answer = await cb.askQuestion('Approve plan? [Y/n/e(dit)] or give feedback to revise');
           const trimmed = answer.trim().toLowerCase();
   
           if (trimmed === 'y' || trimmed === 'yes' || trimmed === '') {
@@ -708,10 +768,39 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
             cb.dispatch({ type: 'info', message: 'Plan rejected.' });
             decided = true;
   
+          } else if (trimmed === 'edit' || trimmed === 'e') {
+            // ── Edit — open plan file for manual editing ──
+            const filePath = currentProposal.planFilePath;
+            if (filePath) {
+              cb.dispatch({ type: 'info', message: `Plan file: ${filePath}` });
+              cb.dispatch({ type: 'info', message: 'Edit the file in your editor, then press Enter to re-read and revise.' });
+              await cb.askQuestion('Press Enter when done editing...');
+              try {
+                const { readFileSync } = require('node:fs');
+                const editedContent = readFileSync(filePath, 'utf-8');
+                cb.dispatch({ type: 'info', message: 'Re-reading edited plan and revising...' });
+                const reviseInput = `[PLAN REVISION] The user manually edited the plan file. Here is the updated content:\n\n${editedContent}\n\nParse the user's edits, incorporate them, and call ProposePlan IMMEDIATELY with the revised steps. Do NOT re-investigate.`;
+                await routeWithCesar(reviseInput, [], cb);
+                const revised: CesarPlan | undefined = cb.ctx.cesar?.proposedPlan;
+                if (revised && revised.state === 'awaiting_approval') {
+                  if (cb.ctx.cesar) cb.ctx.cesar.proposedPlan = undefined;
+                  currentProposal = revised;
+                } else {
+                  cb.dispatch({ type: 'warning', message: 'Cesar did not produce a revised plan from your edits. Try giving text feedback instead.' });
+                  decided = true;
+                }
+              } catch (err) {
+                cb.dispatch({ type: 'warning', message: `Could not read plan file: ${(err as Error).message}. Use /plan <task> to start over.` });
+                decided = true;
+              }
+            } else {
+              cb.dispatch({ type: 'warning', message: 'No plan file path available. Type feedback as text instead.' });
+            }
+  
           } else {
             // ── Feedback — send to Cesar for revision ──
             cb.dispatch({ type: 'info', message: 'Revising plan with your feedback...' });
-            const reviseInput = `[PLAN REVISION] The user wants changes to the plan: ${answer}\n\nRevise the plan and call ProposePlan again with the updated steps.`;
+            const reviseInput = `[PLAN REVISION] The user wants these changes: ${answer}\n\nRevise the plan and call ProposePlan IMMEDIATELY with the updated steps. Do NOT re-investigate. Do NOT respond with text. Just call ProposePlan with the revised plan.`;
             await routeWithCesar(reviseInput, [], cb);
             const revised: CesarPlan | undefined = cb.ctx.cesar?.proposedPlan;
             if (revised && revised.state === 'awaiting_approval') {

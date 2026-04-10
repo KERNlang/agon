@@ -597,13 +597,13 @@ screen name=App target=ink
       const defaultModel = (engine?.api?.model ?? '').toLowerCase();
 
       let providerFilter = '';
-      if (engineId === 'claude' || env.includes('anthropic') || baseUrl.includes('anthropic') || display.includes('anthropic')) providerFilter = 'anthropic claude';
-      else if (engineId === 'codex' || env.includes('openai') || baseUrl.includes('openai') || display.includes('openai')) providerFilter = 'openai gpt';
-      else if (engineId === 'gemini' || env.includes('google') || baseUrl.includes('google') || display.includes('google')) providerFilter = 'google gemini';
-      else if (engineId === 'openrouter' || env.includes('openrouter') || baseUrl.includes('openrouter')) providerFilter = '';
-      else if (engineId === 'mistral' || display.includes('mistral')) providerFilter = 'mistral';
-      else if (engineId === 'qwen' || display.includes('qwen')) providerFilter = 'qwen';
-      else if (engineId === 'minimax' || display.includes('minimax')) providerFilter = 'minimax';
+      if (engineId === 'claude' || env.includes('anthropic') || baseUrl.includes('anthropic') || display.includes('anthropic')) providerFilter = 'provider:anthropic';
+      else if (engineId === 'codex' || env.includes('openai') || baseUrl.includes('openai') || display.includes('openai')) providerFilter = 'provider:openai';
+      else if (engineId === 'gemini' || env.includes('google') || baseUrl.includes('google') || display.includes('google')) providerFilter = 'provider:google';
+      else if (engineId === 'openrouter' || env.includes('openrouter') || baseUrl.includes('openrouter')) providerFilter = 'provider:openrouter';
+      else if (engineId === 'mistral' || display.includes('mistral')) providerFilter = 'provider:mistral';
+      else if (engineId === 'qwen' || display.includes('qwen')) providerFilter = 'provider:qwen';
+      else if (engineId === 'minimax' || display.includes('minimax')) providerFilter = 'provider:minimax';
       else providerFilter = defaultModel;
 
       setModelPickerTargetEngine(engineId);
@@ -747,7 +747,7 @@ screen name=App target=ink
       if ((key.ctrl && input === 'e') || input === '\x05') {
         setToolOutputExpanded((prev: boolean) => !prev); return;
       }
-      if (key.ctrl && input === 't') {
+      if ((key.ctrl && input === 't') || input === '\x14') {
         setThinkingExpanded((prev: boolean) => !prev); return;
       }
       if (key.ctrl && input === 'r') {
@@ -964,14 +964,7 @@ screen name=App target=ink
             {inputQueue.length > 0 && (<Box><Text dimColor>{icons().queue + ' '}{inputQueue.length} queued: </Text><Text dimColor italic>{inputQueue[0].length > 40 ? inputQueue[0].slice(0, 40) + '…' : inputQueue[0]}</Text></Box>)}
             {liveSpinner && mode === 'chat' && (
               <Box paddingLeft={1}>
-                <Text color="#fbbf24">{liveSpinner.message.replace(/\u2026$/, '').trim()}{(() => {
-                  if (!chatStartTimeRef.current) return '';
-                  const elapsed = Math.max(0, Math.floor((Date.now() - chatStartTimeRef.current) / 1000));
-                  if (elapsed <= 0) return '';
-                  const mins = Math.floor(elapsed / 60);
-                  const secs = elapsed % 60;
-                  return mins > 0 ? ` ${mins}m ${secs}s` : ` ${elapsed}s`;
-                })()}</Text>
+                <Text color="#fbbf24">{liveSpinner.message}</Text>
               </Box>
             )}
             <Box borderStyle={mode === 'chat' ? 'round' : 'single'} borderColor={mode === 'chat' ? (questionState ? '#fbbf24' : '#585858') : 'gray'} borderLeft={mode !== 'chat'} borderRight={mode !== 'chat'} borderTop borderBottom paddingX={1} width="100%">

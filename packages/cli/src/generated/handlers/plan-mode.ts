@@ -5,7 +5,7 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 // @kern-source: plan-mode:3
-import { createCesarPlan, formatCesarPlanMarkdown, planCostEstimator, resolveWorkingDir, RUNS_DIR, tracker } from '@agon/core';
+import { createCesarPlan, formatCesarPlanMarkdown, planCostEstimator, resolveWorkingDir, RUNS_DIR, tracker, AGON_HOME } from '@agon/core';
 
 // @kern-source: plan-mode:4
 import type { CesarPlan, CesarPlanStep, CesarStepResult, StepExecutor } from '@agon/core';
@@ -42,8 +42,9 @@ export async function handleProposePlan(args: any, dispatch: Dispatch, ctx: Hand
   };
   
   const slug = args.intent.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40);
-  const filePath = join('docs', 'plans', `cesar-${Date.now()}-${slug}.md`);
-  mkdirSync(join('docs', 'plans'), { recursive: true });
+  const plansDir = join(AGON_HOME, 'plans');
+  const filePath = join(plansDir, `cesar-${Date.now()}-${slug}.md`);
+  mkdirSync(plansDir, { recursive: true });
   writeFileSync(filePath, formatCesarPlanMarkdown(plan));
   plan = { ...plan, planFilePath: filePath };
   
@@ -51,7 +52,7 @@ export async function handleProposePlan(args: any, dispatch: Dispatch, ctx: Hand
   return plan;
 }
 
-// @kern-source: plan-mode:43
+// @kern-source: plan-mode:44
 export function buildStepExecutors(ctx: HandlerContext): Record<string,StepExecutor> {
   const cwd = resolveWorkingDir();
   const outputDir = join(RUNS_DIR, `plan-exec-${Date.now()}`);

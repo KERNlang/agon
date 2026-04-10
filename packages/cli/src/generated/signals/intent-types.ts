@@ -49,6 +49,8 @@ export type Intent =
   | { type: 'help' }
   | { type: 'exit' }
   | { type: 'auto'; input: string; taskClass: 'code' | 'question' | 'ambiguous' }
+  | { type: 'mcp'; action: 'connect'|'disconnect'|'list'; server?: string }
+  | { type: 'create-skill'; skillName: string }
   | { type: 'extensions' }
   | { type: 'extension-command'; commandName: string; args: string }
   | { type: 'unknown'; input: string };
@@ -153,7 +155,11 @@ export type Intent =
 
 // @kern-source: intent-types:100
 
-// @kern-source: intent-types:101
+// @kern-source: intent-types:103
 
-// @kern-source: intent-types:104
+// @kern-source: intent-types:105
+
+// @kern-source: intent-types:106
+
+// @kern-source: intent-types:109
 

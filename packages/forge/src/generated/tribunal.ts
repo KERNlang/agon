@@ -107,6 +107,7 @@ export async function runTribunal(opts: {question:string, engines:string[], roun
         const result = await adapter.dispatch({
           engine,
           prompt,
+          systemPrompt: 'You are a debate participant. Respond directly with your argument as plain text. Do NOT use tools, read files, or run commands.',
           cwd: process.cwd(),
           mode: 'exec',
           timeout,
@@ -159,6 +160,7 @@ export async function runTribunal(opts: {question:string, engines:string[], roun
     const summaryResult = await adapter.dispatch({
       engine: summaryEngine,
       prompt: summaryPrompt,
+      systemPrompt: 'You are synthesizing a debate. Respond directly with your verdict as plain text. Do NOT use tools, read files, or run commands.',
       cwd: process.cwd(),
       mode: 'exec',
       timeout,

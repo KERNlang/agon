@@ -34,7 +34,7 @@ export const AGON_TIPS: string[] = [
   'Run /brainstorm to get confidence bids from all engines',
   'Run /tribunal to start a multi-AI debate',
   'Run /cesar <engine> to change your Cesar brain engine',
-  'Run /models to pick which engines are active',
+  'Run /cli-models to pick active engines and CLI model overrides',
   'Run /campfire for collaborative multi-engine thinking',
   'Run /leaderboard to see engine ELO ratings',
   'Run /history to browse past forge runs',
@@ -104,7 +104,7 @@ function AgonTip({  }: {  }) {
 
 // @kern-source: status:99
 
-export function StatusBar({ config, chatSession, explorationMode, toolOutputExpanded, isActive }: { config: ReturnType<typeof loadConfig>; chatSession: ChatSession; explorationMode?: boolean; toolOutputExpanded?: boolean; isActive?: boolean }) {
+export function StatusBar({ config, chatSession, explorationMode, toolOutputExpanded, thinkingExpanded, isActive }: { config: ReturnType<typeof loadConfig>; chatSession: ChatSession; explorationMode?: boolean; toolOutputExpanded?: boolean; thinkingExpanded?: boolean; isActive?: boolean }) {
         const cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
         const cesarColor = color256toHex(ENGINE_COLORS[cesarId] ?? 124);
         const workDir = resolveWorkingDir();
@@ -134,6 +134,7 @@ export function StatusBar({ config, chatSession, explorationMode, toolOutputExpa
               {msgs > 0 ? <Text dimColor>{` \u00b7 ${msgs} msgs`}</Text> : null}
               {cost ? <Text dimColor>{` \u00b7 ${cost}`}</Text> : null}
               {toolOutputExpanded !== undefined && <Text dimColor>{' \u00b7 ^E '}{toolOutputExpanded ? '\u25be' : '\u25b8'}</Text>}
+              {thinkingExpanded !== undefined && <Text dimColor>{' \u00b7 ^T '}{thinkingExpanded ? '\u25be' : '\u25b8'}</Text>}
               {isActive ? <Text dimColor>{' \u00b7 /btw ask'}</Text> : null}
             </Text>
           </Box>
@@ -141,7 +142,7 @@ export function StatusBar({ config, chatSession, explorationMode, toolOutputExpa
 }
 
 
-// @kern-source: status:144
+// @kern-source: status:146
 
 export function StatusLine({ startTime, engineId, color }: { startTime: number; engineId?: string; color?: number }) {
   const [now, setNow] = useState<number>(Date.now());
@@ -170,7 +171,7 @@ export function StatusLine({ startTime, engineId, color }: { startTime: number; 
 }
 
 
-// @kern-source: status:177
+// @kern-source: status:179
 
 export function BackgroundJobRail({ jobs }: { jobs: Job[] }) {
         if (jobs.length === 0) return null;
@@ -191,7 +192,7 @@ export function BackgroundJobRail({ jobs }: { jobs: Job[] }) {
 }
 
 
-// @kern-source: status:200
+// @kern-source: status:202
 
 export function CesarStatusStrip({ cesarId, confidence, spinner, engines, startTime, streamSnippet, isActive, planModeQueued, activePlanState }: { cesarId: string; confidence?: number|null; spinner: { message: string; engineId?: string } | null; engines: EngineProgress[]|null; startTime: number; streamSnippet?: { engineId: string; line: string } | null; isActive: boolean; planModeQueued?: boolean; activePlanState?: string|null }) {
   const [now, setNow] = useState<number>(Date.now());

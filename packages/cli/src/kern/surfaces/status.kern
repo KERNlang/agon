@@ -20,7 +20,7 @@ const name=AGON_TIPS type="string[]"
       'Run /brainstorm to get confidence bids from all engines',
       'Run /tribunal to start a multi-AI debate',
       'Run /cesar <engine> to change your Cesar brain engine',
-      'Run /models to pick which engines are active',
+      'Run /cli-models to pick active engines and CLI model overrides',
       'Run /campfire for collaborative multi-engine thinking',
       'Run /leaderboard to see engine ELO ratings',
       'Run /history to browse past forge runs',
@@ -101,6 +101,7 @@ screen name=StatusBar target=ink
   prop name=chatSession type=ChatSession
   prop name=explorationMode type=boolean optional=true
   prop name=toolOutputExpanded type=boolean optional=true
+  prop name=thinkingExpanded type=boolean optional=true
   prop name=isActive type=boolean optional=true
   render
     handler <<<
@@ -133,6 +134,7 @@ screen name=StatusBar target=ink
             {msgs > 0 ? <Text dimColor>{` \u00b7 ${msgs} msgs`}</Text> : null}
             {cost ? <Text dimColor>{` \u00b7 ${cost}`}</Text> : null}
             {toolOutputExpanded !== undefined && <Text dimColor>{' \u00b7 ^E '}{toolOutputExpanded ? '\u25be' : '\u25b8'}</Text>}
+            {thinkingExpanded !== undefined && <Text dimColor>{' \u00b7 ^T '}{thinkingExpanded ? '\u25be' : '\u25b8'}</Text>}
             {isActive ? <Text dimColor>{' \u00b7 /btw ask'}</Text> : null}
           </Text>
         </Box>

@@ -38,6 +38,8 @@ export function createProposePlanTool(): ToolHandler {
               imports: { type: 'array', items: { type: 'string' } },
               estimatedTokens: { type: 'number' },
               estimatedCostUsd: { type: 'number' },
+              rationale: { type: 'string', description: 'Why this engine/approach was chosen for this step' },
+              verifyCmd: { type: 'string', description: 'Bash command to verify step output (e.g., npm test, npm run typecheck)' },
             },
             required: ['id', 'type', 'description', 'estimatedTokens', 'estimatedCostUsd'],
           },

@@ -40,7 +40,8 @@ const name=SLASH_COMMANDS type="SlashCommand[]"
       { cmd: '/workspace',   desc: 'add|remove|list|switch   — manage project repos' },
       { cmd: '/ws',          desc: '                          — list workspaces (shortcut)' },
       { cmd: '/cesar',       desc: '<engine>                — set Cesar brain engine (e.g. /cesar codex)' },
-      { cmd: '/models',      desc: '                        — browse & add models from 4000+ providers' },
+      { cmd: '/models',      desc: '                        — browse & add provider models' },
+      { cmd: '/cli-models',  desc: '                        — choose active CLI engines + model overrides' },
       { cmd: '/tokens',      desc: '                        — show token usage & costs' },
       { cmd: '/engines',     desc: '                        — select active engines' },
       { cmd: '/leaderboard', desc: '                        — ELO rankings' },
@@ -72,6 +73,8 @@ const name=SLASH_COMMANDS type="SlashCommand[]"
       { cmd: '/explore',     desc: '                        — toggle exploration mode (read-only)' },
       { cmd: '/nero',        desc: '                        — toggle Nero mode (adversarial devil\'s advocate)' },
       { cmd: '/btw',         desc: '<question>               — ask something while engines work (side-channel)' },
+      { cmd: '/mcp',         desc: 'connect <name|url> | disconnect <name> | list — manage session MCP servers' },
+      { cmd: '/create-skill', desc: '<name>                  — scaffold a new skill (.agon/skills/)' },
       { cmd: '/clear',       desc: '                        — reset session (saves chat, clears brain)' },
       { cmd: '/extensions',  desc: '                        — list installed extensions' },
       { cmd: '/help',        desc: '                        — show this help' },
@@ -241,9 +244,18 @@ fn name=parseSlashCommand params="input:string, commandRegistry?:any" returns=In
         const wsPath = wsParts.slice(1).join(' ') || undefined;
         return { type: 'workspace', action, path: wsPath } as Intent;
       }
-      case 'models':
+      case 'models': {
+        const modelsArg = rest.trim().toLowerCase();
+        if (modelsArg === 'cli' || modelsArg === 'engine' || modelsArg === 'engines') {
+          return { type: 'engines' } as Intent;
+        }
+        return { type: 'models' } as Intent;
+      }
       case 'setup':
         return { type: 'models' } as Intent;
+      case 'cli-models':
+      case 'cli-model':
+        return { type: 'engines' } as Intent;
       case 'tokens':
       case 'usage':
       case 'cost':
@@ -359,6 +371,20 @@ fn name=parseSlashCommand params="input:string, commandRegistry?:any" returns=In
       case 'devil':
       case 'adversarial':
         return { type: 'nero' } as Intent;
+      case 'create-skill': {
+        const skillName = rest.trim() || 'my-skill';
+        return { type: 'create-skill' as const, skillName } as unknown as Intent;
+      }
+      case 'mcp': {
+        const mcpParts = rest.trim().split(/\s+/);
+        const mcpAction = mcpParts[0]?.toLowerCase() || 'list';
+        if (mcpAction === 'connect' || mcpAction === 'add') {
+          return { type: 'mcp' as const, action: 'connect' as const, server: mcpParts.slice(1).join(' ') || undefined } as unknown as Intent;
+        } else if (mcpAction === 'disconnect' || mcpAction === 'remove') {
+          return { type: 'mcp' as const, action: 'disconnect' as const, server: mcpParts.slice(1).join(' ') || undefined } as unknown as Intent;
+        }
+        return { type: 'mcp' as const, action: 'list' as const } as unknown as Intent;
+      }
       case 'clear':
         return { type: 'clear' } as Intent;
       case 'help':

@@ -31,10 +31,16 @@ import { contentWidth, color256toHex, engineColor, RenderedSegments, RichLineVie
 // @kern-source: engine:13
 import { truncateCodeLine } from './markdown.js';
 
-// @kern-source: engine:17
+// @kern-source: engine:14
+import { ForgeArena, BrainstormStorm, CampfireFire, TribunalCourt } from './arena.js';
+
+// @kern-source: engine:15
+import { PlanProposalView, PlanExecutionView } from './plan-view.js';
+
+// @kern-source: engine:19
 export const BRAND: readonly string[] = ['#fbbf24', '#f9a816', '#f97316', '#f45a2a', '#ef4444'] as const;
 
-// @kern-source: engine:20
+// @kern-source: engine:22
 export const LOGO_LINES: string[] = [
   '    \u2588\u2588\u2588\u2588\u2588\u2557  \u2588\u2588\u2588\u2588\u2588\u2588\u2557  \u2588\u2588\u2588\u2588\u2588\u2588\u2557 \u2588\u2588\u2588\u2557   \u2588\u2588\u2557',
   '   \u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2554\u2550\u2550\u2550\u2550\u255d \u2588\u2588\u2554\u2550\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2588\u2588\u2557  \u2588\u2588\u2551',
@@ -44,18 +50,35 @@ export const LOGO_LINES: string[] = [
   '   \u255a\u2550\u255d  \u255a\u2550\u255d \u255a\u2550\u2550\u2550\u2550\u2550\u255d  \u255a\u2550\u2550\u2550\u2550\u2550\u255d \u255a\u2550\u255d  \u255a\u2550\u2550\u2550\u255d',
 ];
 
-// @kern-source: engine:32
+// @kern-source: engine:34
 export const VERSION: string = '0.1.0';
 
-// @kern-source: engine:37
+// @kern-source: engine:39
 export interface OutputBlock {
   id: number;
   event: OutputEvent;
 }
 
-// @kern-source: engine:43
+// @kern-source: engine:45
 
-export function EngineProgressView({ engines }: { engines: EngineProgress[] }) {
+export function EngineProgressView({ engines, mode }: { engines: EngineProgress[]; mode?: string }) {
+        // Use explicit mode if it's an arena mode, otherwise detect from status text
+        const arenaModes = ['forge', 'brainstorm', 'campfire', 'tribunal'];
+        const detected = (mode && arenaModes.includes(mode)) ? mode : (() => {
+          const s = engines[0]?.status ?? '';
+          if (s.startsWith('drafting')) return 'brainstorm';
+          if (s.startsWith('thinking')) return 'campfire';
+          if (['queued','building'].some(k => s.startsWith(k)) || s.startsWith('done (')) return 'forge';
+          if (s.startsWith('R') || s.startsWith('waiting')) return 'tribunal';
+          return 'default';
+        })();
+  
+        if (detected === 'forge') return <ForgeArena engines={engines} />;
+        if (detected === 'brainstorm') return <BrainstormStorm engines={engines} />;
+        if (detected === 'campfire') return <CampfireFire engines={engines} />;
+        if (detected === 'tribunal') return <TribunalCourt engines={engines} />;
+  
+        // Default: plain list (fallback for unknown modes)
         return (
           <Box flexDirection="column">
             {engines.map((engine: EngineProgress) => (
@@ -77,7 +100,7 @@ export function EngineProgressView({ engines }: { engines: EngineProgress[] }) {
 }
 
 
-// @kern-source: engine:69
+// @kern-source: engine:89
 
 export function EngineBlock({ engineId, color, content }: { engineId: string; color: number; content: string }) {
         const wrapWidth = contentWidth(8);
@@ -107,7 +130,7 @@ export function EngineBlock({ engineId, color, content }: { engineId: string; co
 }
 
 
-// @kern-source: engine:103
+// @kern-source: engine:123
 
 export function ConversationalResponse({ engineId, content }: { engineId: string; content: string }) {
         const wrapWidth = contentWidth(2);
@@ -125,7 +148,7 @@ export function ConversationalResponse({ engineId, content }: { engineId: string
 }
 
 
-// @kern-source: engine:124
+// @kern-source: engine:144
 
 function DashboardView({ event }: { event: OutputEvent & { type: 'dashboard' } }) {
         return (
@@ -191,7 +214,7 @@ function DashboardView({ event }: { event: OutputEvent & { type: 'dashboard' } }
 }
 
 
-// @kern-source: engine:192
+// @kern-source: engine:212
 
 function TableView({ headers, rows }: { headers: string[]; rows: string[][] }) {
         const widths = headers.map((h: string, i: number) =>
@@ -217,9 +240,9 @@ function TableView({ headers, rows }: { headers: string[]; rows: string[][] }) {
 }
 
 
-// @kern-source: engine:221
+// @kern-source: engine:241
 
-export function OutputBlockView({ event, mode, toolOutputExpanded }: { event: OutputEvent; mode: string; toolOutputExpanded?: boolean }) {
+export function OutputBlockView({ event, mode, toolOutputExpanded, thinkingExpanded }: { event: OutputEvent; mode: string; toolOutputExpanded?: boolean; thinkingExpanded?: boolean }) {
         switch (event.type) {
           case 'text': {
             const wrapWidth = contentWidth(4);
@@ -277,8 +300,11 @@ export function OutputBlockView({ event, mode, toolOutputExpanded }: { event: Ou
             const moreLines = permCmd.split('\n').length > 6;
             return (
               <Box flexDirection="column" paddingLeft={1} marginY={1}>
-                <Box borderStyle="round" borderColor="#fbbf24" paddingX={1} flexDirection="column">
-                  <Text color="#fbbf24" bold>{permTool === 'Bash' || permTool === 'bash' ? `${icons().bash} Bash command` : `${icons().warning} ${permTool}`}</Text>
+                <Box borderStyle="bold" borderColor="#fbbf24" paddingX={1} flexDirection="column">
+                  <Text color="#fbbf24" bold>
+                    {permTool === 'Bash' || permTool === 'bash' ? `${icons().bash} Bash` : `${icons().warning} ${permTool}`}
+                    <Text color="#ef4444">{' \u2014 APPROVAL REQUIRED'}</Text>
+                  </Text>
                   <Text> </Text>
                   {cmdLines.map((line: string, i: number) => (
                     <Text key={`perm-cmd-${i}`}>
@@ -295,12 +321,35 @@ export function OutputBlockView({ event, mode, toolOutputExpanded }: { event: Ou
                   )}
                   <Text> </Text>
                   <Text color="#fbbf24">{permReason}</Text>
+                  <Text dimColor>{'  Press '}<Text bold color="#4ade80">{'Y'}</Text>{' to approve, '}<Text bold color="#ef4444">{'N'}</Text>{' to deny, '}<Text bold color="#60a5fa">{'A'}</Text>{' to always allow'}</Text>
                 </Box>
               </Box>
             );
           }
           case 'table': return <TableView headers={event.headers} rows={event.rows} />;
-          case 'streaming-chunk': return <Text>{'  '}{event.chunk}</Text>;
+          case 'thinking-chunk': {
+            if (thinkingExpanded === false) return null;
+            const thinkText = event.chunk as string;
+            const lines = thinkText.split('\n').filter((l: string) => l.trim());
+            const preview = lines.length > 3 ? lines.slice(0, 3) : lines;
+            return (
+              <Box flexDirection="column" paddingLeft={2}>
+                {preview.map((line: string, i: number) => (
+                  <Text key={`think-${i}`} italic dimColor color="#8b8b8b">{'  \u25B9 '}{line}</Text>
+                ))}
+                {lines.length > 3 && <Text italic dimColor color="#8b8b8b">{'  \u25B9 \u2026'}{lines.length - 3}{' more lines  '}<Text color="#f59e0b">{'^T'}</Text></Text>}
+              </Box>
+            );
+          }
+          case 'streaming-chunk': {
+            const chunkText = event.chunk as string;
+            const isThinking = /^~?\d{1,3}%\s/.test(chunkText.trim());
+            if (isThinking) {
+              if (thinkingExpanded === false) return null;
+              return <Text italic dimColor color="#8b8b8b">{'  \u25B9 '}{chunkText}</Text>;
+            }
+            return <Text>{'  '}{chunkText}</Text>;
+          }
           case 'kern-draft': {
             const eColor = engineColor(event.engineId);
             const wrapWidth = contentWidth(8);
@@ -557,6 +606,19 @@ export function OutputBlockView({ event, mode, toolOutputExpanded }: { event: Ou
             if (toolKey === 'read') {
               const filePath = (parsed.file_path as string) || (parsed.filePath as string) || '';
               const shortPath = filePath ? filePath.replace(process.cwd() + '/', '').replace(process.env.HOME ?? '', '~') : '';
+              if (!toolOutputExpanded) {
+                const lineCount = event.output ? event.output.split('\n').length : 0;
+                return (
+                  <Box paddingLeft={2}>
+                    <Text>
+                      {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().read + ' Read'}</Text></Text>
+                      {shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}
+                      {lineCount > 0 && event.status === 'done' && <Text dimColor>{' '}{lineCount}{' lines'}</Text>}
+                      {collapsedHint}
+                    </Text>
+                  </Box>
+                );
+              }
               return (
                 <Box paddingLeft={2} flexDirection="column">
                   <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().read + ' Read'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}</Text>
@@ -572,6 +634,19 @@ export function OutputBlockView({ event, mode, toolOutputExpanded }: { event: Ou
               const pattern = (parsed.pattern as string) || rawInput || '';
               const path = (parsed.path as string) || '';
               const shortPath = path ? path.replace(process.cwd() + '/', '').replace(process.env.HOME ?? '', '~') : '';
+              if (!toolOutputExpanded) {
+                const matchCount = event.output ? event.output.split('\n').length : 0;
+                return (
+                  <Box paddingLeft={2}>
+                    <Text>
+                      {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().search + ' Search'}</Text></Text>
+                      {' '}<Text color="#a78bfa">{pattern}</Text>
+                      {matchCount > 0 && event.status === 'done' && <Text dimColor>{' \u2192 '}{matchCount}{' matches'}</Text>}
+                      {collapsedHint}
+                    </Text>
+                  </Box>
+                );
+              }
               return (
                 <Box paddingLeft={2} flexDirection="column">
                   <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().search + ' Search'}</Text></Text>{' '}<Text color="#a78bfa">{pattern}</Text>{shortPath ? <Text dimColor>{' in '}{shortPath}</Text> : ''}</Text>
@@ -585,6 +660,19 @@ export function OutputBlockView({ event, mode, toolOutputExpanded }: { event: Ou
             // ── Glob / Find ──
             if (toolKey === 'glob' || toolKey === 'find') {
               const pattern = (parsed.pattern as string) || rawInput || '';
+              if (!toolOutputExpanded) {
+                const fileCount = event.output ? event.output.split('\n').filter((l: string) => l.trim()).length : 0;
+                return (
+                  <Box paddingLeft={2}>
+                    <Text>
+                      {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().find + ' Find'}</Text></Text>
+                      {' '}<Text color="#a78bfa">{pattern}</Text>
+                      {fileCount > 0 && event.status === 'done' && <Text dimColor>{' \u2192 '}{fileCount}{' files'}</Text>}
+                      {collapsedHint}
+                    </Text>
+                  </Box>
+                );
+              }
               return (
                 <Box paddingLeft={2} flexDirection="column">
                   <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().find + ' Find'}</Text></Text>{' '}<Text color="#a78bfa">{pattern}</Text></Text>
@@ -666,44 +754,14 @@ export function OutputBlockView({ event, mode, toolOutputExpanded }: { event: Ou
             );
           }
           case 'dashboard': return <DashboardView event={event as OutputEvent & { type: 'dashboard' }} />;
-          case 'plan-proposal': {
-            const p = event.plan;
-            const steps = p.steps ?? [];
-            const totalTokens = p.totalEstimatedTokens ?? steps.reduce((sum: number, s: any) => sum + (s.estimatedTokens ?? 0), 0);
-            const totalCost = p.totalEstimatedCostUsd ?? steps.reduce((sum: number, s: any) => sum + (s.estimatedCostUsd ?? 0), 0);
-            const allEngines = [...new Set(steps.flatMap((s: any) => s.engines ?? (s.engine ? [s.engine] : [])))];
-            const w = contentWidth(6);
-            const bar = '\u2500'.repeat(Math.min(w, 60));
-  
-            return (
-              <Box flexDirection="column" paddingLeft={2} marginY={1}>
-                <Text color="#c084fc">{'\u250c'}{bar}</Text>
-                <Text color="#c084fc">{'\u2502 '}<Text bold color="#c084fc">{'\u25b8 Plan: '}{p.intent}</Text></Text>
-                <Text color="#c084fc">{'\u2502'}</Text>
-                {steps.map((s: any, i: number) => {
-                  const typeLabel = s.type === 'self' ? 'Cesar' : s.type;
-                  const engines = s.engines?.length ? s.engines.join(', ') : (s.engine ?? '');
-                  const cost = s.estimatedCostUsd != null ? ` ~$${s.estimatedCostUsd.toFixed(2)}` : '';
-                  const deps = s.dependsOn?.length ? ` (after ${s.dependsOn.join(', ')})` : '';
-                  return (
-                    <Box key={s.id} flexDirection="column">
-                      <Text color="#c084fc">{'\u2502  '}<Text bold color="white">{`${i + 1}. `}</Text><Text>{s.description}</Text></Text>
-                      <Text color="#c084fc">{'\u2502     '}<Text dimColor>{typeLabel}{engines ? ` \u00b7 ${engines}` : ''}{cost}{deps}</Text></Text>
-                    </Box>
-                  );
-                })}
-                <Text color="#c084fc">{'\u2502'}</Text>
-                <Text color="#c084fc">{'\u2502 '}<Text dimColor>{'Est: ~'}{totalTokens.toLocaleString()}{' tokens ($'}{totalCost.toFixed(2)}{')'}{allEngines.length ? ` \u00b7 ${allEngines.join(', ')}` : ''}</Text></Text>
-                <Text color="#c084fc">{'\u2514'}{bar}</Text>
-              </Box>
-            );
-          }
+          case 'plan-proposal': return <PlanProposalView plan={event.plan} />;
+          case 'plan-execution': return <PlanExecutionView plan={(event as any).plan} />;
           default: return null;
         }
 }
 
 
-// @kern-source: engine:711
+// @kern-source: engine:767
 
 export function ToolCallGroup({ blocks }: { blocks: OutputBlock[] }) {
         const toolCounts: Record<string, number> = {};
@@ -732,8 +790,78 @@ export function ToolCallGroup({ blocks }: { blocks: OutputBlock[] }) {
               <Text color={statusColor}>{statusIcon}</Text>
               <Text bold>{` ${blocks.length} tool calls`}</Text>
               <Text dimColor>{` (${summary})`}</Text>
-              <Text color="#f59e0b">{' \u25b8 Ctrl+E'}</Text>
+              <Text color="#f59e0b">{' \u25b8 ^E'}</Text>
             </Text>
+          </Box>
+        );
+}
+
+
+// @kern-source: engine:805
+export function extractSummary(text: string, maxLen: number): string {
+  let s = text.replace(/<think>[\s\S]*?<\/think>\s*/gi, '');
+  s = s.replace(/^#+\s+.+\n/gm, '');
+  s = s.replace(/^\s*[-*]\s+/gm, '');
+  s = s.replace(/\*\*/g, '');
+  s = s.trim();
+  const firstSentence = s.match(/^[^.!?\n]{10,}[.!?]/);
+  const summary = firstSentence ? firstSentence[0] : s.slice(0, maxLen);
+  return summary.length > maxLen ? summary.slice(0, maxLen - 1) + '\u2026' : summary;
+}
+
+// @kern-source: engine:819
+
+export function DebateGroup({ blocks }: { blocks: OutputBlock[] }) {
+        const round = (blocks[0]?.event as any)?.round ?? '?';
+        const w = contentWidth(6);
+        return (
+          <Box flexDirection="column" paddingLeft={2}>
+            <Text color="#a78bfa" bold>{'\u250c\u2500\u2500 Round '}{round}{' \u2500\u2500'}</Text>
+            {blocks.map((b: any, i: number) => {
+              const ev = b.event as any;
+              const eColor = engineColor(ev.engineId);
+              const summary = extractSummary(ev.argument || '', w - 30);
+              return (
+                <Text key={`dr-${i}`}>
+                  <Text color="#a78bfa">{'\u2502  '}</Text>
+                  <Text color={eColor} bold>{ev.engineId}</Text>
+                  <Text dimColor>{' ('}{ev.position}{'): '}</Text>
+                  <Text>{summary}</Text>
+                </Text>
+              );
+            })}
+            <Text color="#a78bfa">{'\u2514'}<Text color="#f59e0b">{' \u25b8 ^E expand'}</Text></Text>
+          </Box>
+        );
+}
+
+
+// @kern-source: engine:848
+
+export function BidGroup({ blocks }: { blocks: OutputBlock[] }) {
+        const w = contentWidth(6);
+        return (
+          <Box flexDirection="column" paddingLeft={2}>
+            <Text color="#22d3ee" bold>{'\u250c\u2500\u2500 Brainstorm Bids \u2500\u2500'}</Text>
+            {blocks.map((b: any, i: number) => {
+              const ev = b.event as any;
+              const eColor = engineColor(ev.engineId);
+              const isWinner = ev.critique && ev.critique.includes('best');
+              const scoreMatch = ev.critique ? ev.critique.match(/score:\s*(\d+)/) : null;
+              const score = scoreMatch ? scoreMatch[1] : '?';
+              const icon = isWinner ? '\u2b50' : '\u2713';
+              const summary = extractSummary(ev.content || '', w - 30);
+              return (
+                <Text key={`bid-${i}`}>
+                  <Text color="#22d3ee">{'\u2502  '}</Text>
+                  <Text>{icon}{' '}</Text>
+                  <Text color={eColor} bold>{ev.engineId}</Text>
+                  <Text dimColor>{' ('}{score}{'): '}</Text>
+                  <Text>{summary}</Text>
+                </Text>
+              );
+            })}
+            <Text color="#22d3ee">{'\u2514'}<Text color="#f59e0b">{' \u25b8 ^E expand'}</Text></Text>
           </Box>
         );
 }

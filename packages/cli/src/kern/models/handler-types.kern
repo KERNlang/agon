@@ -18,6 +18,9 @@ union name=OutputEvent discriminant=type
   variant name=streaming-chunk
     field name=engineId type=string
     field name=chunk type=string
+  variant name=thinking-chunk
+    field name=engineId type=string
+    field name=chunk type=string
   variant name=streaming-end
     field name=engineId type=string
   variant name=spinner-start
@@ -48,6 +51,8 @@ union name=OutputEvent discriminant=type
   variant name=plan-proposal
     field name=plan type=any
     field name=markdown type=string
+  variant name=plan-execution
+    field name=plan type=any
   variant name=scoreboard
     field name=title type=string
     field name=winner type=string optional=true
@@ -135,6 +140,7 @@ interface name=CesarState
   field name=planDispatch type="((event: any) => void) | null"
   field name=proposedPlan type="any | undefined"
   field name=lastEscalation type="string | null"
+  field name=sessionMcpServers type="Array<{name:string, type?:string, url?:string, command?:string, args?:string[]}>"
 
 interface name=HandlerContext
   field name=registry type=EngineRegistry
@@ -159,3 +165,5 @@ interface name=HandlerContext
   field name=eventBus type="EventBus | undefined" optional=true
   field name=cesar type="CesarState | undefined" optional=true
   field name=lastReviewResult type="{ engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number } | undefined" optional=true
+  field name=sessionMcpServers type="Array<Record<string,unknown>>" optional=true
+  field name=setSessionMcpServers type="((servers: Array<Record<string,unknown>>) => void) | undefined" optional=true

@@ -11,6 +11,8 @@ import from="../signals/icons.js" names="icons"
 import from="../../handlers/types.js" names="OutputEvent,EngineProgress" types=true
 import from="./rendering.js" names="contentWidth,color256toHex,engineColor,RenderedSegments,RichLineView,DiffLine,SyntaxLine,GradientLine,AnsiLine,CODE_RAIL,CODE_RAIL_COLOR,MAX_CODE_LINES"
 import from="./markdown.js" names="truncateCodeLine"
+import from="./arena.js" names="ForgeArena,BrainstormStorm,CampfireFire,TribunalCourt"
+import from="./plan-view.js" names="PlanProposalView,PlanExecutionView"
 
 // ── Brand Constants ─────────────────────────────────────────────────
 
@@ -42,8 +44,26 @@ interface name=OutputBlock
 
 screen name=EngineProgressView target=ink
   prop name=engines type="EngineProgress[]"
+  prop name=mode type=string optional=true
   render
     handler <<<
+      // Use explicit mode if it's an arena mode, otherwise detect from status text
+      const arenaModes = ['forge', 'brainstorm', 'campfire', 'tribunal'];
+      const detected = (mode && arenaModes.includes(mode)) ? mode : (() => {
+        const s = engines[0]?.status ?? '';
+        if (s.startsWith('drafting')) return 'brainstorm';
+        if (s.startsWith('thinking')) return 'campfire';
+        if (['queued','building'].some(k => s.startsWith(k)) || s.startsWith('done (')) return 'forge';
+        if (s.startsWith('R') || s.startsWith('waiting')) return 'tribunal';
+        return 'default';
+      })();
+
+      if (detected === 'forge') return <ForgeArena engines={engines} />;
+      if (detected === 'brainstorm') return <BrainstormStorm engines={engines} />;
+      if (detected === 'campfire') return <CampfireFire engines={engines} />;
+      if (detected === 'tribunal') return <TribunalCourt engines={engines} />;
+
+      // Default: plain list (fallback for unknown modes)
       return (
         <Box flexDirection="column">
           {engines.map((engine: EngineProgress) => (
@@ -222,6 +242,7 @@ screen name=OutputBlockView target=ink
   prop name=event type=OutputEvent
   prop name=mode type=string
   prop name=toolOutputExpanded type=boolean optional=true
+  prop name=thinkingExpanded type=boolean optional=true
   render
     handler <<<
       switch (event.type) {
@@ -281,8 +302,11 @@ screen name=OutputBlockView target=ink
           const moreLines = permCmd.split('\n').length > 6;
           return (
             <Box flexDirection="column" paddingLeft={1} marginY={1}>
-              <Box borderStyle="round" borderColor="#fbbf24" paddingX={1} flexDirection="column">
-                <Text color="#fbbf24" bold>{permTool === 'Bash' || permTool === 'bash' ? `${icons().bash} Bash command` : `${icons().warning} ${permTool}`}</Text>
+              <Box borderStyle="bold" borderColor="#fbbf24" paddingX={1} flexDirection="column">
+                <Text color="#fbbf24" bold>
+                  {permTool === 'Bash' || permTool === 'bash' ? `${icons().bash} Bash` : `${icons().warning} ${permTool}`}
+                  <Text color="#ef4444">{' \u2014 APPROVAL REQUIRED'}</Text>
+                </Text>
                 <Text> </Text>
                 {cmdLines.map((line: string, i: number) => (
                   <Text key={`perm-cmd-${i}`}>
@@ -299,12 +323,35 @@ screen name=OutputBlockView target=ink
                 )}
                 <Text> </Text>
                 <Text color="#fbbf24">{permReason}</Text>
+                <Text dimColor>{'  Press '}<Text bold color="#4ade80">{'Y'}</Text>{' to approve, '}<Text bold color="#ef4444">{'N'}</Text>{' to deny, '}<Text bold color="#60a5fa">{'A'}</Text>{' to always allow'}</Text>
               </Box>
             </Box>
           );
         }
         case 'table': return <TableView headers={event.headers} rows={event.rows} />;
-        case 'streaming-chunk': return <Text>{'  '}{event.chunk}</Text>;
+        case 'thinking-chunk': {
+          if (thinkingExpanded === false) return null;
+          const thinkText = event.chunk as string;
+          const lines = thinkText.split('\n').filter((l: string) => l.trim());
+          const preview = lines.length > 3 ? lines.slice(0, 3) : lines;
+          return (
+            <Box flexDirection="column" paddingLeft={2}>
+              {preview.map((line: string, i: number) => (
+                <Text key={`think-${i}`} italic dimColor color="#8b8b8b">{'  \u25B9 '}{line}</Text>
+              ))}
+              {lines.length > 3 && <Text italic dimColor color="#8b8b8b">{'  \u25B9 \u2026'}{lines.length - 3}{' more lines  '}<Text color="#f59e0b">{'^T'}</Text></Text>}
+            </Box>
+          );
+        }
+        case 'streaming-chunk': {
+          const chunkText = event.chunk as string;
+          const isThinking = /^~?\d{1,3}%\s/.test(chunkText.trim());
+          if (isThinking) {
+            if (thinkingExpanded === false) return null;
+            return <Text italic dimColor color="#8b8b8b">{'  \u25B9 '}{chunkText}</Text>;
+          }
+          return <Text>{'  '}{chunkText}</Text>;
+        }
         case 'kern-draft': {
           const eColor = engineColor(event.engineId);
           const wrapWidth = contentWidth(8);
@@ -561,6 +608,19 @@ screen name=OutputBlockView target=ink
           if (toolKey === 'read') {
             const filePath = (parsed.file_path as string) || (parsed.filePath as string) || '';
             const shortPath = filePath ? filePath.replace(process.cwd() + '/', '').replace(process.env.HOME ?? '', '~') : '';
+            if (!toolOutputExpanded) {
+              const lineCount = event.output ? event.output.split('\n').length : 0;
+              return (
+                <Box paddingLeft={2}>
+                  <Text>
+                    {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().read + ' Read'}</Text></Text>
+                    {shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}
+                    {lineCount > 0 && event.status === 'done' && <Text dimColor>{' '}{lineCount}{' lines'}</Text>}
+                    {collapsedHint}
+                  </Text>
+                </Box>
+              );
+            }
             return (
               <Box paddingLeft={2} flexDirection="column">
                 <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().read + ' Read'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}</Text>
@@ -576,6 +636,19 @@ screen name=OutputBlockView target=ink
             const pattern = (parsed.pattern as string) || rawInput || '';
             const path = (parsed.path as string) || '';
             const shortPath = path ? path.replace(process.cwd() + '/', '').replace(process.env.HOME ?? '', '~') : '';
+            if (!toolOutputExpanded) {
+              const matchCount = event.output ? event.output.split('\n').length : 0;
+              return (
+                <Box paddingLeft={2}>
+                  <Text>
+                    {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().search + ' Search'}</Text></Text>
+                    {' '}<Text color="#a78bfa">{pattern}</Text>
+                    {matchCount > 0 && event.status === 'done' && <Text dimColor>{' \u2192 '}{matchCount}{' matches'}</Text>}
+                    {collapsedHint}
+                  </Text>
+                </Box>
+              );
+            }
             return (
               <Box paddingLeft={2} flexDirection="column">
                 <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().search + ' Search'}</Text></Text>{' '}<Text color="#a78bfa">{pattern}</Text>{shortPath ? <Text dimColor>{' in '}{shortPath}</Text> : ''}</Text>
@@ -589,6 +662,19 @@ screen name=OutputBlockView target=ink
           // ── Glob / Find ──
           if (toolKey === 'glob' || toolKey === 'find') {
             const pattern = (parsed.pattern as string) || rawInput || '';
+            if (!toolOutputExpanded) {
+              const fileCount = event.output ? event.output.split('\n').filter((l: string) => l.trim()).length : 0;
+              return (
+                <Box paddingLeft={2}>
+                  <Text>
+                    {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().find + ' Find'}</Text></Text>
+                    {' '}<Text color="#a78bfa">{pattern}</Text>
+                    {fileCount > 0 && event.status === 'done' && <Text dimColor>{' \u2192 '}{fileCount}{' files'}</Text>}
+                    {collapsedHint}
+                  </Text>
+                </Box>
+              );
+            }
             return (
               <Box paddingLeft={2} flexDirection="column">
                 <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().find + ' Find'}</Text></Text>{' '}<Text color="#a78bfa">{pattern}</Text></Text>
@@ -670,38 +756,8 @@ screen name=OutputBlockView target=ink
           );
         }
         case 'dashboard': return <DashboardView event={event as OutputEvent & { type: 'dashboard' }} />;
-        case 'plan-proposal': {
-          const p = event.plan;
-          const steps = p.steps ?? [];
-          const totalTokens = p.totalEstimatedTokens ?? steps.reduce((sum: number, s: any) => sum + (s.estimatedTokens ?? 0), 0);
-          const totalCost = p.totalEstimatedCostUsd ?? steps.reduce((sum: number, s: any) => sum + (s.estimatedCostUsd ?? 0), 0);
-          const allEngines = [...new Set(steps.flatMap((s: any) => s.engines ?? (s.engine ? [s.engine] : [])))];
-          const w = contentWidth(6);
-          const bar = '\u2500'.repeat(Math.min(w, 60));
-
-          return (
-            <Box flexDirection="column" paddingLeft={2} marginY={1}>
-              <Text color="#c084fc">{'\u250c'}{bar}</Text>
-              <Text color="#c084fc">{'\u2502 '}<Text bold color="#c084fc">{'\u25b8 Plan: '}{p.intent}</Text></Text>
-              <Text color="#c084fc">{'\u2502'}</Text>
-              {steps.map((s: any, i: number) => {
-                const typeLabel = s.type === 'self' ? 'Cesar' : s.type;
-                const engines = s.engines?.length ? s.engines.join(', ') : (s.engine ?? '');
-                const cost = s.estimatedCostUsd != null ? ` ~$${s.estimatedCostUsd.toFixed(2)}` : '';
-                const deps = s.dependsOn?.length ? ` (after ${s.dependsOn.join(', ')})` : '';
-                return (
-                  <Box key={s.id} flexDirection="column">
-                    <Text color="#c084fc">{'\u2502  '}<Text bold color="white">{`${i + 1}. `}</Text><Text>{s.description}</Text></Text>
-                    <Text color="#c084fc">{'\u2502     '}<Text dimColor>{typeLabel}{engines ? ` \u00b7 ${engines}` : ''}{cost}{deps}</Text></Text>
-                  </Box>
-                );
-              })}
-              <Text color="#c084fc">{'\u2502'}</Text>
-              <Text color="#c084fc">{'\u2502 '}<Text dimColor>{'Est: ~'}{totalTokens.toLocaleString()}{' tokens ($'}{totalCost.toFixed(2)}{')'}{allEngines.length ? ` \u00b7 ${allEngines.join(', ')}` : ''}</Text></Text>
-              <Text color="#c084fc">{'\u2514'}{bar}</Text>
-            </Box>
-          );
-        }
+        case 'plan-proposal': return <PlanProposalView plan={event.plan} />;
+        case 'plan-execution': return <PlanExecutionView plan={(event as any).plan} />;
         default: return null;
       }
     >>>
@@ -738,8 +794,84 @@ screen name=ToolCallGroup target=ink
             <Text color={statusColor}>{statusIcon}</Text>
             <Text bold>{` ${blocks.length} tool calls`}</Text>
             <Text dimColor>{` (${summary})`}</Text>
-            <Text color="#f59e0b">{' \u25b8 Ctrl+E'}</Text>
+            <Text color="#f59e0b">{' \u25b8 ^E'}</Text>
           </Text>
+        </Box>
+      );
+    >>>
+
+// ── Helper: extract first meaningful sentence from engine output ──
+
+fn name=extractSummary params="text:string, maxLen:number" returns=string
+  handler <<<
+    let s = text.replace(/<think>[\s\S]*?<\/think>\s*/gi, '');
+    s = s.replace(/^#+\s+.+\n/gm, '');
+    s = s.replace(/^\s*[-*]\s+/gm, '');
+    s = s.replace(/\*\*/g, '');
+    s = s.trim();
+    const firstSentence = s.match(/^[^.!?\n]{10,}[.!?]/);
+    const summary = firstSentence ? firstSentence[0] : s.slice(0, maxLen);
+    return summary.length > maxLen ? summary.slice(0, maxLen - 1) + '\u2026' : summary;
+  >>>
+
+// ── Screen: DebateGroup — collapsed summary for tribunal rounds ──
+
+screen name=DebateGroup target=ink
+  prop name=blocks type="OutputBlock[]"
+  render
+    handler <<<
+      const round = (blocks[0]?.event as any)?.round ?? '?';
+      const w = contentWidth(6);
+      return (
+        <Box flexDirection="column" paddingLeft={2}>
+          <Text color="#a78bfa" bold>{'\u250c\u2500\u2500 Round '}{round}{' \u2500\u2500'}</Text>
+          {blocks.map((b: any, i: number) => {
+            const ev = b.event as any;
+            const eColor = engineColor(ev.engineId);
+            const summary = extractSummary(ev.argument || '', w - 30);
+            return (
+              <Text key={`dr-${i}`}>
+                <Text color="#a78bfa">{'\u2502  '}</Text>
+                <Text color={eColor} bold>{ev.engineId}</Text>
+                <Text dimColor>{' ('}{ev.position}{'): '}</Text>
+                <Text>{summary}</Text>
+              </Text>
+            );
+          })}
+          <Text color="#a78bfa">{'\u2514'}<Text color="#f59e0b">{' \u25b8 ^E expand'}</Text></Text>
+        </Box>
+      );
+    >>>
+
+// ── Screen: BidGroup — collapsed summary for brainstorm bids ──
+
+screen name=BidGroup target=ink
+  prop name=blocks type="OutputBlock[]"
+  render
+    handler <<<
+      const w = contentWidth(6);
+      return (
+        <Box flexDirection="column" paddingLeft={2}>
+          <Text color="#22d3ee" bold>{'\u250c\u2500\u2500 Brainstorm Bids \u2500\u2500'}</Text>
+          {blocks.map((b: any, i: number) => {
+            const ev = b.event as any;
+            const eColor = engineColor(ev.engineId);
+            const isWinner = ev.critique && ev.critique.includes('best');
+            const scoreMatch = ev.critique ? ev.critique.match(/score:\s*(\d+)/) : null;
+            const score = scoreMatch ? scoreMatch[1] : '?';
+            const icon = isWinner ? '\u2b50' : '\u2713';
+            const summary = extractSummary(ev.content || '', w - 30);
+            return (
+              <Text key={`bid-${i}`}>
+                <Text color="#22d3ee">{'\u2502  '}</Text>
+                <Text>{icon}{' '}</Text>
+                <Text color={eColor} bold>{ev.engineId}</Text>
+                <Text dimColor>{' ('}{score}{'): '}</Text>
+                <Text>{summary}</Text>
+              </Text>
+            );
+          })}
+          <Text color="#22d3ee">{'\u2514'}<Text color="#f59e0b">{' \u25b8 ^E expand'}</Text></Text>
         </Box>
       );
     >>>

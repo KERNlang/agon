@@ -2,13 +2,13 @@
 import { join } from 'node:path';
 
 // @kern-source: brain:2
-import { mkdirSync, appendFileSync, existsSync, readFileSync, unlinkSync } from 'node:fs';
+import { mkdirSync, appendFileSync, existsSync, readFileSync, unlinkSync, readdirSync, writeFileSync } from 'node:fs';
 
 // @kern-source: brain:3
 import type { ImageAttachment, PersistentSession, ForgeManifest, ForgeJudgment } from '@agon/core';
 
 // @kern-source: brain:4
-import { ensureAgonHome, RUNS_DIR, appendMessage, tracker, resolveWorkingDir, ToolRegistry, FileStateCache, parseToolCalls, formatToolResults, runToolLoop, classifyTask } from '@agon/core';
+import { ensureAgonHome, RUNS_DIR, appendMessage, tracker, resolveWorkingDir, ToolRegistry, FileStateCache, parseToolCalls, formatToolResults, runToolLoop, classifyTask, loadConfig, configSet } from '@agon/core';
 
 // @kern-source: brain:5
 import type { ToolContext, ToolCallResult } from '@agon/core';
@@ -63,6 +63,7 @@ export function extractDelegation(toolName: string, args: Record<string,unknown>
 export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input: string, response: string, cesarEngineId: string, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, fitnessCmd?:string, hardened?:boolean, tribunalMode?:string, team?:boolean, target?:string, engineId?:string}> {
   if (streaming) dispatch({ type: 'streaming-end', engineId: cesarEngineId });
   if (!streaming) dispatch({ type: 'spinner-stop' });
+  await yieldToInk();
   appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
   appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
   tracker.record(cesarEngineId, { prompt: input, response });
@@ -76,10 +77,11 @@ export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input
   return { delegated: false, responded: true };
 }
 
-// @kern-source: brain:55
+// @kern-source: brain:56
 export async function commitTurnAndSuggest(suggestion: {action:string, rest?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}, input: string, response: string, cesarEngineId: string, color: number, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}> {
   if (streaming) dispatch({ type: 'streaming-end', engineId: cesarEngineId });
   if (!streaming) dispatch({ type: 'spinner-stop' });
+  await yieldToInk();
   appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
   appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
   tracker.record(cesarEngineId, { prompt: input, response });
@@ -93,7 +95,7 @@ export async function commitTurnAndSuggest(suggestion: {action:string, rest?:str
   return { delegated: false, responded: true };
 }
 
-// @kern-source: brain:72
+// @kern-source: brain:74
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, fitnessCmd?:string, hardened?:boolean, tribunalMode?:string, team?:boolean, target?:string, engineId?:string}> {
   const abort = new AbortController();
   const _turnStart = Date.now();
@@ -110,6 +112,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       pendingDelegation: null, reportedConfidence: undefined,
       autoNero: false, advisorPending: false, lastEscalation: null as string | null,
       mcpFingerprint: undefined, planDispatch: null, proposedPlan: undefined,
+      sessionMcpServers: [],
     };
   }
   
@@ -231,7 +234,48 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       } else {
         dispatch({ type: 'spinner-update', message: `Cesar thinking… ${elapsed}s` });
       }
-    }, 15_000);
+    }, 2_000);
+  
+    // ── Permission-request watcher for MCP write tools ──
+    // The MCP server writes permission-request files; we poll for them and dispatch UI prompts.
+    const signalDir = ctx.cesar!.mcpSignalPath ? join(ctx.cesar!.mcpSignalPath, '..') : null;
+    const permWatcherInterval = signalDir ? setInterval(() => {
+      try {
+        if (!existsSync(signalDir)) return;
+        const files = readdirSync(signalDir).filter((f: string) => f.includes('-perm-') && !f.includes('-response'));
+        for (const f of files) {
+          const reqPath = join(signalDir, f);
+          const req = JSON.parse(readFileSync(reqPath, 'utf-8'));
+          if (req.type !== 'permission-request' || Date.now() - req.timestamp > 65000) continue;
+          // Check if already responded
+          const respPath = reqPath.replace('.json', '-response.json');
+          if (existsSync(respPath)) continue;
+          // Check auto-approved commands
+          const cfg = loadConfig();
+          const allowed: string[] = (cfg as any).allowedCommands ?? [];
+          const cmdBase = (req.args?.command ?? '').toString().trim().split(/\s+/)[0];
+          if (cmdBase && allowed.some((a: string) => cmdBase.toLowerCase().startsWith(a.toLowerCase()))) {
+            writeFileSync(respPath, JSON.stringify({ type: 'permission-response', id: req.id, approved: true }));
+            continue;
+          }
+          // Dispatch permission-ask to UI
+          dispatch({ type: 'permission-ask', tool: req.tool, command: String(req.args?.command ?? req.args?.file_path ?? JSON.stringify(req.args)), reason: `Cesar wants to execute`, resolve: (approved: boolean | string) => {
+            const wasApproved = typeof approved === 'string' ? approved === 'y' || approved === 'a' : approved;
+            // Handle "Always" — persist to config
+            if ((typeof approved === 'string' && approved === 'a') || approved === true) {
+              if (cmdBase && typeof approved === 'string' && approved === 'a') {
+                const curAllowed: string[] = (loadConfig() as any).allowedCommands ?? [];
+                if (!curAllowed.includes(cmdBase)) {
+                  curAllowed.push(cmdBase);
+                  configSet('allowedCommands', curAllowed);
+                }
+              }
+            }
+            writeFileSync(respPath, JSON.stringify({ type: 'permission-response', id: req.id, approved: wasApproved, reason: wasApproved ? undefined : 'User denied' }));
+          }} as any);
+        }
+      } catch { /* permission watcher error — not critical */ }
+    }, 150) : null;
   
     // ── Stream response ──
     try {
@@ -316,7 +360,9 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 ctx.eventBus?.emit('cesar:confidence', { value: conf.value, source: 'stream' }).catch(() => {});
                 response = conf.rest;
                 if (conf.value >= CONFIDENCE_TIERS.direct && ctx.cesar!.autoNero) deactivateNero(ctx, dispatch);
-              } else if (response.length > 30 && !ctx.cesar!.hasNativeTools) {
+              } else if (response.length > 200 && !ctx.cesar!.hasNativeTools) {
+                // Only give up after 200 chars (not 30) — companion engines may report via MCP later.
+                // The R1 tool gate blocks writes anyway until confidence is reported.
                 confidenceParsed = true;
               }
             }
@@ -340,6 +386,11 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             wasStreamed = true;
             let cleanFirst = response;
             if (cleanFirst.includes('<think>')) {
+              // Extract and dispatch thinking content
+              const thinkMatch = response.match(/<think>([\s\S]*?)(<\/think>|$)/i);
+              if (thinkMatch && thinkMatch[1].trim()) {
+                dispatch({ type: 'thinking-chunk', engineId: cesarEngineId, chunk: thinkMatch[1].trim() } as any);
+              }
               cleanFirst = cleanFirst.replace(/<think>[\s\S]*?<\/think>\s*/gi, '');
               if (response.includes('<think>') && !response.includes('</think>')) {
                 insideThinkBlock = true;
@@ -350,17 +401,30 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           } else {
             response += chunk.content;
             if (insideThinkBlock) {
+              // Dispatch thinking content as it streams
               if (chunk.content.includes('</think>')) {
                 insideThinkBlock = false;
-                const afterThink = chunk.content.split('</think>').pop()?.trim() ?? '';
+                const parts = chunk.content.split('</think>');
+                const thinkPart = parts[0]?.trim() ?? '';
+                if (thinkPart) dispatch({ type: 'thinking-chunk', engineId: cesarEngineId, chunk: thinkPart } as any);
+                const afterThink = parts.pop()?.trim() ?? '';
                 if (afterThink) dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: afterThink });
+              } else {
+                dispatch({ type: 'thinking-chunk', engineId: cesarEngineId, chunk: chunk.content } as any);
               }
             } else if (chunk.content.includes('<think>')) {
               const beforeThink = chunk.content.split('<think>')[0];
               if (beforeThink) dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: beforeThink });
               if (!chunk.content.includes('</think>')) {
                 insideThinkBlock = true;
+                // Dispatch the thinking start
+                const thinkStart = chunk.content.split('<think>')[1] ?? '';
+                if (thinkStart.trim()) dispatch({ type: 'thinking-chunk', engineId: cesarEngineId, chunk: thinkStart.trim() } as any);
               } else {
+                const thinkMatch = chunk.content.match(/<think>([\s\S]*?)<\/think>/i);
+                if (thinkMatch && thinkMatch[1].trim()) {
+                  dispatch({ type: 'thinking-chunk', engineId: cesarEngineId, chunk: thinkMatch[1].trim() } as any);
+                }
                 const afterThink = chunk.content.split('</think>').pop()?.trim() ?? '';
                 if (afterThink) dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: afterThink });
               }
@@ -372,6 +436,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       }
     } catch (err) {
       clearInterval(heartbeat);
+      if (permWatcherInterval) clearInterval(permWatcherInterval);
       dispatch({ type: 'spinner-stop' });
       console.error(`[cesar:claude] send error: ${(err as Error).message ?? err}`);
       // If we already have content or tool activity, preserve it instead of discarding
@@ -385,6 +450,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
     }
   
     clearInterval(heartbeat);
+    if (permWatcherInterval) clearInterval(permWatcherInterval);
   
     if (abort.signal.aborted) {
       dispatch({ type: 'spinner-stop' });
@@ -722,6 +788,42 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       }
     }
   
+    // ── Plan mode gate: Cesar cannot exit plan mode without calling ProposePlan ──
+    if (inPlanMode && !ctx.cesar!.proposedPlan && !ctx.cesar!.pendingDelegation) {
+      if (streaming) { dispatch({ type: 'streaming-end', engineId: cesarEngineId }); streaming = false; }
+      let planAttempts = 0;
+      const maxPlanAttempts = 3;
+      while (!ctx.cesar!.proposedPlan && !ctx.cesar!.pendingDelegation && planAttempts < maxPlanAttempts && session.alive && !abort.signal.aborted) {
+        planAttempts++;
+        dispatch({ type: 'spinner-start', message: `Cesar building plan (attempt ${planAttempts}/${maxPlanAttempts})…`, color });
+        try {
+          let planResponse = '';
+          const planGen = session.send({
+            message: `[SYSTEM] You are in PLAN MODE. Your turn cannot end without calling ProposePlan. You have investigated enough. Call ProposePlan NOW with a structured plan. Attempt ${planAttempts}/${maxPlanAttempts}.`,
+            signal: abort.signal,
+          });
+          for await (const chunk of planGen) {
+            if (chunk.type === 'text') planResponse += chunk.content;
+            if (chunk.type === 'done' || chunk.type === 'error') break;
+          }
+          dispatch({ type: 'spinner-stop' });
+          if (planResponse.trim() && !ctx.cesar!.proposedPlan) {
+            dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: planResponse.trim() });
+          }
+        } catch {
+          dispatch({ type: 'spinner-stop' });
+          break;
+        }
+      }
+      // If plan was produced, return to dispatch for approval
+      if (ctx.cesar!.proposedPlan) {
+        appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
+        appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
+        return { delegated: false, responded: true };
+      }
+      // All attempts exhausted — fall through, dispatch.kern will show the warning
+    }
+  
     // ── Protocol enforcement: suggest mode when engine didn't ──
     if (!finalSuggestion.action && !ranToolLoop && !secondOpinionPromise && !_isFollowUp && !abort.signal.aborted) {
       if (streaming) { dispatch({ type: 'streaming-end', engineId: cesarEngineId }); streaming = false; }
@@ -743,6 +845,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
     if (streaming) {
       dispatch({ type: 'streaming-end', engineId: cesarEngineId });
       dispatch({ type: 'spinner-stop' });
+      await yieldToInk();
     }
   
     if (response) {

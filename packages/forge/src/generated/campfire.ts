@@ -41,6 +41,7 @@ export async function runCampfire(opts: {topic:string,context?:string,engines:st
       const leadResult = await adapter.dispatch({
         engine: leadEngine,
         prompt: basePrompt,
+        systemPrompt: 'You are in a campfire conversation. Respond directly with your thoughts as plain text. Do NOT use tools, read files, or run commands.',
         cwd,
         mode: 'exec',
         timeout,
@@ -71,6 +72,7 @@ export async function runCampfire(opts: {topic:string,context?:string,engines:st
           const result = await adapter.dispatch({
             engine,
             prompt: observerPrompt,
+            systemPrompt: 'You are in a campfire conversation. Respond directly with your thoughts as plain text. Do NOT use tools, read files, or run commands.',
             cwd,
             mode: 'exec',
             timeout,
@@ -97,6 +99,7 @@ export async function runCampfire(opts: {topic:string,context?:string,engines:st
         const result = await adapter.dispatch({
           engine,
           prompt: basePrompt,
+          systemPrompt: 'You are in a campfire conversation. Respond directly with your thoughts as plain text. Do NOT use tools, read files, or run commands.',
           cwd,
           mode: 'exec',
           timeout,

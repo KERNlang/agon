@@ -16,6 +16,7 @@ export type OutputEvent =
   | { type: 'text'; content: string }
   | { type: 'engine-block'; engineId: string; color: number; content: string }
   | { type: 'streaming-chunk'; engineId: string; chunk: string }
+  | { type: 'thinking-chunk'; engineId: string; chunk: string }
   | { type: 'streaming-end'; engineId: string }
   | { type: 'spinner-start'; message: string; color?: number }
   | { type: 'spinner-stop'; message?: string }
@@ -31,6 +32,7 @@ export type OutputEvent =
   | { type: 'plan'; plan: Plan }
   | { type: 'plan-list'; plans: Plan[] }
   | { type: 'plan-proposal'; plan: any; markdown: string }
+  | { type: 'plan-execution'; plan: any }
   | { type: 'scoreboard'; title: string; winner?: string; engineIds: string[]; metrics: { label: string; values: string[] }[] }
   | { type: 'table'; headers: string[]; rows: string[][] }
   | { type: 'clear' }
@@ -47,7 +49,7 @@ export type OutputEvent =
   | { type: 'file-changes'; files: { path: string; status: 'modified'|'created'|'deleted'; additions: number; deletions: number }[] }
   | { type: 'dashboard'; available: string[]; enabled: string[]; defaultEngine: string; eloTop?: { id: string; rating: number }; totalForges: number; workspace?: { name: string; path: string; isKern?: boolean }; runCount: number };
 
-// @kern-source: handler-types:111
+// @kern-source: handler-types:116
 export interface PendingDelegation {
   action: string;
   reasoning: string;
@@ -60,7 +62,7 @@ export interface PendingDelegation {
   createdAt: number;
 }
 
-// @kern-source: handler-types:122
+// @kern-source: handler-types:127
 export interface CesarState {
   busy: boolean;
   busySince: number | null;
@@ -77,9 +79,10 @@ export interface CesarState {
   planDispatch: ((event: any) => void) | null;
   proposedPlan: any | undefined;
   lastEscalation: string | null;
+  sessionMcpServers: Array<{name:string, type?:string, url?:string, command?:string, args?:string[]}>;
 }
 
-// @kern-source: handler-types:139
+// @kern-source: handler-types:145
 export interface HandlerContext {
   registry: EngineRegistry;
   adapter: EngineAdapter;
@@ -103,5 +106,7 @@ export interface HandlerContext {
   eventBus?: EventBus | undefined;
   cesar?: CesarState | undefined;
   lastReviewResult?: { engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number } | undefined;
+  sessionMcpServers?: Array<Record<string,unknown>>;
+  setSessionMcpServers?: ((servers: Array<Record<string,unknown>>) => void) | undefined;
 }
 

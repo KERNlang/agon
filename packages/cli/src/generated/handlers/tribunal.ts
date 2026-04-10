@@ -14,7 +14,7 @@ import { runTribunal } from '@agon/forge';
 import { sessionResultStore } from '../models/session-results.js';
 
 // @kern-source: tribunal:6
-import type { Dispatch, HandlerContext } from '../../handlers/types.js';
+import type { Dispatch, HandlerContext, EngineProgress } from '../../handlers/types.js';
 
 // @kern-source: tribunal:8
 export async function handleTribunal(question: string, dispatch: Dispatch, ctx: HandlerContext, tribunalMode?: string): Promise<void> {
@@ -51,9 +51,28 @@ export async function handleTribunal(question: string, dispatch: Dispatch, ctx: 
     dispatch({ type: 'info', message: `Mode: ${mode}` });
     if (projectCtx) dispatch({ type: 'info', message: `Context: ${tribunalCwd}` });
     
-    dispatch({ type: 'spinner-start', message: `Engines debating (${mode})...` });
-    
     ctx.setActiveAbort(tribunalAbort);
+    
+    // Track per-engine state for progress-update
+    const engineState: Record<string, { status: string; done: boolean }> = {};
+    for (const id of engines) engineState[id] = { status: 'waiting', done: false };
+    const startTime = Date.now();
+    
+    const emitProgress = () => {
+      const elapsed = Math.floor((Date.now() - startTime) / 1000);
+      const progress: EngineProgress[] = engines.map((id: string) => ({
+        id,
+        status: engineState[id]?.status ?? 'waiting',
+        elapsed,
+        done: engineState[id]?.done ?? false,
+        failed: false,
+      }));
+      dispatch({ type: 'progress-update', engines: progress });
+    };
+    
+    // Emit initial progress + start interval
+    emitProgress();
+    const progressInterval = setInterval(emitProgress, 250);
     
     let result: any;
     try {
@@ -72,22 +91,29 @@ export async function handleTribunal(question: string, dispatch: Dispatch, ctx: 
             const engineId = event.engineId;
             const position = event.data?.position;
             if (engineId && position) {
-              dispatch({ type: 'spinner-update', message: `Round ${event.data.round}: ${String(engineId)} (${String(position)}) arguing...` });
+              engineState[engineId] = { status: `R${event.data.round} ${String(position)}`, done: false };
+              emitProgress();
             }
           }
         },
       });
     } catch (err) {
-      dispatch({ type: 'spinner-stop' });
+      clearInterval(progressInterval);
+      dispatch({ type: 'progress-clear' });
       throw err;
     }
     
+    clearInterval(progressInterval);
+    
     if (tribunalAbort.signal.aborted) {
-      dispatch({ type: 'spinner-stop' });
+      dispatch({ type: 'progress-clear' });
       return;
     }
     
-    dispatch({ type: 'spinner-stop', message: `${result.rounds.length} rounds complete` });
+    // Final progress with done state
+    for (const id of engines) engineState[id] = { status: '\u2713 done', done: true };
+    emitProgress();
+    dispatch({ type: 'progress-clear' });
     
     for (const round of result.rounds) {
       dispatch({ type: 'header', title: `Round ${round.round}` });
@@ -136,7 +162,7 @@ export async function handleTribunal(question: string, dispatch: Dispatch, ctx: 
       }
     }
   } finally {
-    dispatch({ type: 'spinner-stop' });
+    dispatch({ type: 'progress-clear' });
     ctx.setActiveAbort(null);
   }
 }

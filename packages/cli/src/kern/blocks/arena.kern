@@ -216,16 +216,62 @@ screen name=CampfireFire target=ink
     >>>
 
 // ── Tribunal: The Court ─────────────────────────────────────────────
-// Tribunal uses spinner, not progress-update, so this is for future use
-// when/if tribunal switches to progress-based rendering.
 
 const name=SCALES_FRAMES type="string[]"
   handler <<<
     [
-      '     \u2696  T R I B U N A L  \u2696',
-      '    \u2696   T R I B U N A L   \u2696',
-      '   \u2696    T R I B U N A L    \u2696',
+      '  \u2696\u2550\u2550\u2550\u2550 T R I B U N A L \u2550\u2550\u2550\u2550\u2696',
+      '  \u2696\u2550\u2550\u2726\u2550 T R I B U N A L \u2550\u2726\u2550\u2550\u2696',
+      '  \u2696\u2550\u2550\u2550\u2550 T R I B U N A L \u2550\u2550\u2550\u2550\u2696',
     ]
   >>>
+
+screen name=TribunalCourt target=ink
+  prop name=engines type="EngineProgress[]"
+  render
+    handler <<<
+      const elapsed = engines[0]?.elapsed ?? 0;
+      const frame = elapsed % SCALES_FRAMES.length;
+      const title = SCALES_FRAMES[frame];
+      return (
+        <Box flexDirection="column" paddingLeft={2}>
+          <Text color="#c084fc" bold>{title}</Text>
+          <Text color="#c084fc">{'\u2551'}</Text>
+          {engines.map((e: EngineProgress) => {
+            const statusParts = e.status.split(' ');
+            const round = statusParts[0] ?? '';
+            const position = statusParts.slice(1).join(' ');
+            const posColor = position.includes('pro') || position.includes('defender') ? '#22c55e'
+              : position.includes('con') || position.includes('challenger') ? '#ef4444'
+              : '#c084fc';
+            return (
+              <Box key={e.id}>
+                <Text color="#c084fc">{'\u2551 '}</Text>
+                <Text color={e.done ? 'green' : e.status === 'waiting' ? '#64748b' : 'yellow'}>
+                  {e.done ? '\u2713' : e.status === 'waiting' ? '\u25cb' : '\u25cf'}
+                </Text>
+                <Text>{' '}</Text>
+                <Box width={14}>
+                  <Text bold color={engineColor(e.id)}>{e.id}</Text>
+                </Box>
+                {e.status === 'waiting' ? (
+                  <Text dimColor>{'awaiting turn'}</Text>
+                ) : e.done ? (
+                  <Text color="green">{e.status}</Text>
+                ) : (
+                  <Box>
+                    <Text dimColor>{round}{' '}</Text>
+                    <Text color={posColor} bold>{position}</Text>
+                  </Box>
+                )}
+                <Text color="#c084fc">{' \u2551'}</Text>
+              </Box>
+            );
+          })}
+          <Text color="#c084fc">{'\u2551'}</Text>
+          <Text color="#c084fc" bold>{title}</Text>
+        </Box>
+      );
+    >>>
 
 // ── Exports ─────────────────────────────────────────────────────────

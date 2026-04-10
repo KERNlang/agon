@@ -32,7 +32,7 @@ import { contentWidth, color256toHex, engineColor, RenderedSegments, RichLineVie
 import { truncateCodeLine } from './markdown.js';
 
 // @kern-source: engine:14
-import { ForgeArena, BrainstormStorm, CampfireFire } from './arena.js';
+import { ForgeArena, BrainstormStorm, CampfireFire, TribunalCourt } from './arena.js';
 
 // @kern-source: engine:15
 import { PlanProposalView, PlanExecutionView } from './plan-view.js';
@@ -63,20 +63,22 @@ export interface OutputBlock {
 
 export function EngineProgressView({ engines, mode }: { engines: EngineProgress[]; mode?: string }) {
         // Use explicit mode if it's an arena mode, otherwise detect from status text
-        const arenaModes = ['forge', 'brainstorm', 'campfire'];
+        const arenaModes = ['forge', 'brainstorm', 'campfire', 'tribunal'];
         const detected = (mode && arenaModes.includes(mode)) ? mode : (() => {
           const s = engines[0]?.status ?? '';
           if (s.startsWith('drafting')) return 'brainstorm';
           if (s.startsWith('thinking')) return 'campfire';
           if (['queued','building'].some(k => s.startsWith(k)) || s.startsWith('done (')) return 'forge';
+          if (s.startsWith('R') || s.startsWith('waiting')) return 'tribunal';
           return 'default';
         })();
   
         if (detected === 'forge') return <ForgeArena engines={engines} />;
         if (detected === 'brainstorm') return <BrainstormStorm engines={engines} />;
         if (detected === 'campfire') return <CampfireFire engines={engines} />;
+        if (detected === 'tribunal') return <TribunalCourt engines={engines} />;
   
-        // Default: plain list (fallback for tribunal / unknown)
+        // Default: plain list (fallback for unknown modes)
         return (
           <Box flexDirection="column">
             {engines.map((engine: EngineProgress) => (
@@ -98,7 +100,7 @@ export function EngineProgressView({ engines, mode }: { engines: EngineProgress[
 }
 
 
-// @kern-source: engine:87
+// @kern-source: engine:89
 
 export function EngineBlock({ engineId, color, content }: { engineId: string; color: number; content: string }) {
         const wrapWidth = contentWidth(8);
@@ -128,7 +130,7 @@ export function EngineBlock({ engineId, color, content }: { engineId: string; co
 }
 
 
-// @kern-source: engine:121
+// @kern-source: engine:123
 
 export function ConversationalResponse({ engineId, content }: { engineId: string; content: string }) {
         const wrapWidth = contentWidth(2);
@@ -146,7 +148,7 @@ export function ConversationalResponse({ engineId, content }: { engineId: string
 }
 
 
-// @kern-source: engine:142
+// @kern-source: engine:144
 
 function DashboardView({ event }: { event: OutputEvent & { type: 'dashboard' } }) {
         return (
@@ -212,7 +214,7 @@ function DashboardView({ event }: { event: OutputEvent & { type: 'dashboard' } }
 }
 
 
-// @kern-source: engine:210
+// @kern-source: engine:212
 
 function TableView({ headers, rows }: { headers: string[]; rows: string[][] }) {
         const widths = headers.map((h: string, i: number) =>
@@ -238,7 +240,7 @@ function TableView({ headers, rows }: { headers: string[]; rows: string[][] }) {
 }
 
 
-// @kern-source: engine:239
+// @kern-source: engine:241
 
 export function OutputBlockView({ event, mode, toolOutputExpanded, thinkingExpanded }: { event: OutputEvent; mode: string; toolOutputExpanded?: boolean; thinkingExpanded?: boolean }) {
         switch (event.type) {
@@ -702,7 +704,7 @@ export function OutputBlockView({ event, mode, toolOutputExpanded, thinkingExpan
 }
 
 
-// @kern-source: engine:708
+// @kern-source: engine:710
 
 export function ToolCallGroup({ blocks }: { blocks: OutputBlock[] }) {
         const toolCounts: Record<string, number> = {};

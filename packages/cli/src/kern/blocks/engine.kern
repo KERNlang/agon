@@ -11,7 +11,7 @@ import from="../signals/icons.js" names="icons"
 import from="../../handlers/types.js" names="OutputEvent,EngineProgress" types=true
 import from="./rendering.js" names="contentWidth,color256toHex,engineColor,RenderedSegments,RichLineView,DiffLine,SyntaxLine,GradientLine,AnsiLine,CODE_RAIL,CODE_RAIL_COLOR,MAX_CODE_LINES"
 import from="./markdown.js" names="truncateCodeLine"
-import from="./arena.js" names="ForgeArena,BrainstormStorm,CampfireFire"
+import from="./arena.js" names="ForgeArena,BrainstormStorm,CampfireFire,TribunalCourt"
 import from="./plan-view.js" names="PlanProposalView,PlanExecutionView"
 
 // ── Brand Constants ─────────────────────────────────────────────────
@@ -48,20 +48,22 @@ screen name=EngineProgressView target=ink
   render
     handler <<<
       // Use explicit mode if it's an arena mode, otherwise detect from status text
-      const arenaModes = ['forge', 'brainstorm', 'campfire'];
+      const arenaModes = ['forge', 'brainstorm', 'campfire', 'tribunal'];
       const detected = (mode && arenaModes.includes(mode)) ? mode : (() => {
         const s = engines[0]?.status ?? '';
         if (s.startsWith('drafting')) return 'brainstorm';
         if (s.startsWith('thinking')) return 'campfire';
         if (['queued','building'].some(k => s.startsWith(k)) || s.startsWith('done (')) return 'forge';
+        if (s.startsWith('R') || s.startsWith('waiting')) return 'tribunal';
         return 'default';
       })();
 
       if (detected === 'forge') return <ForgeArena engines={engines} />;
       if (detected === 'brainstorm') return <BrainstormStorm engines={engines} />;
       if (detected === 'campfire') return <CampfireFire engines={engines} />;
+      if (detected === 'tribunal') return <TribunalCourt engines={engines} />;
 
-      // Default: plain list (fallback for tribunal / unknown)
+      // Default: plain list (fallback for unknown modes)
       return (
         <Box flexDirection="column">
           {engines.map((engine: EngineProgress) => (

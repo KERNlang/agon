@@ -309,13 +309,34 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
           });
           return true;
         case 'tribunal':
-          cb.runAsJob('tribunal', label, () => handleTribunal(taskInput, cb.dispatch, cb.ctx, tMode));
+          cb.runAsJob('tribunal', label, async () => {
+            await handleTribunal(taskInput, cb.dispatch, cb.ctx, tMode);
+            if (cb.ctx.cesarSession?.alive) {
+              const recentChat = cb.ctx.chatSession?.messages?.slice(-12) ?? [];
+              const chatContext = recentChat.filter((m: any) => m.role === 'engine').map((m: any) => `[${m.engineId}]: ${m.content.slice(0, 1500)}`).join('\n\n');
+              if (chatContext) await absorbIntoCesar(`Tribunal${tMode ? ` (${tMode})` : ''} concluded on: "${taskInput.slice(0, 200)}"\n\n${chatContext}\n\nSummarize the verdict and key takeaways.`, cb.dispatch, cb.ctx);
+            }
+          });
           return true;
         case 'team-tribunal':
-          cb.runAsJob('team-tribunal', label, () => handleTeamTribunal(taskInput, cb.dispatch, cb.ctx, tMode));
+          cb.runAsJob('team-tribunal', label, async () => {
+            await handleTeamTribunal(taskInput, cb.dispatch, cb.ctx, tMode);
+            if (cb.ctx.cesarSession?.alive) {
+              const recentChat = cb.ctx.chatSession?.messages?.slice(-12) ?? [];
+              const chatContext = recentChat.filter((m: any) => m.role === 'engine').map((m: any) => `[${m.engineId}]: ${m.content.slice(0, 1500)}`).join('\n\n');
+              if (chatContext) await absorbIntoCesar(`Team tribunal${tMode ? ` (${tMode})` : ''} concluded on: "${taskInput.slice(0, 200)}"\n\n${chatContext}\n\nSummarize the verdict and key takeaways.`, cb.dispatch, cb.ctx);
+            }
+          });
           return true;
         case 'campfire':
-          cb.runAsJob('campfire', label, () => handleCampfire(taskInput, cb.dispatch, cb.ctx));
+          cb.runAsJob('campfire', label, async () => {
+            await handleCampfire(taskInput, cb.dispatch, cb.ctx);
+            if (cb.ctx.cesarSession?.alive) {
+              const recentChat = cb.ctx.chatSession?.messages?.slice(-12) ?? [];
+              const chatContext = recentChat.filter((m: any) => m.role === 'engine').map((m: any) => `[${m.engineId}]: ${m.content.slice(0, 1500)}`).join('\n\n');
+              if (chatContext) await absorbIntoCesar(`Campfire discussion on: "${taskInput.slice(0, 200)}"\n\n${chatContext}\n\nSummarize the key insights and any consensus reached.`, cb.dispatch, cb.ctx);
+            }
+          });
           return true;
         case 'pipeline':
           cb.runAsJob('pipeline', label, () => handlePipeline(taskInput, cb.dispatch, cb.ctx, fitnessCmd ?? undefined));
@@ -505,7 +526,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
   return false;
 }
 
-// @kern-source: dispatch:461
+// @kern-source: dispatch:482
 /**
  * Route a parsed intent to the correct handler. Registry-first, switch as fallback.
  */
@@ -555,6 +576,11 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
         if (cb.eventBus) await cb.eventBus.emit('pre:tribunal', { question: intent.question, mode: intent.tribunalMode, cwd: resolveWorkingDir() });
         await handleTribunal(intent.question, cb.dispatch, cb.ctx, intent.tribunalMode);
         if (cb.eventBus) cb.eventBus.emit('post:tribunal', { question: intent.question, cwd: resolveWorkingDir() }).catch(() => {});
+        if (cb.ctx.cesarSession?.alive) {
+          const recentChat = cb.ctx.chatSession?.messages?.slice(-12) ?? [];
+          const chatContext = recentChat.filter((m: any) => m.role === 'engine').map((m: any) => `[${m.engineId}]: ${m.content.slice(0, 1500)}`).join('\n\n');
+          if (chatContext) await absorbIntoCesar(`Tribunal concluded on: "${(intent.question ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize the verdict and key takeaways.`, cb.dispatch, cb.ctx);
+        }
       });
       return { handled: true, ranAsJob: true };
     case 'campfire':
@@ -562,10 +588,22 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
         if (cb.eventBus) await cb.eventBus.emit('pre:campfire', { topic: intent.topic, cwd: resolveWorkingDir() });
         await handleCampfire(intent.topic, cb.dispatch, cb.ctx);
         if (cb.eventBus) cb.eventBus.emit('post:campfire', { topic: intent.topic, cwd: resolveWorkingDir() }).catch(() => {});
+        if (cb.ctx.cesarSession?.alive) {
+          const recentChat = cb.ctx.chatSession?.messages?.slice(-12) ?? [];
+          const chatContext = recentChat.filter((m: any) => m.role === 'engine').map((m: any) => `[${m.engineId}]: ${m.content.slice(0, 1500)}`).join('\n\n');
+          if (chatContext) await absorbIntoCesar(`Campfire discussion on: "${(intent.topic ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize the key insights and any consensus reached.`, cb.dispatch, cb.ctx);
+        }
       });
       return { handled: true, ranAsJob: true };
     case 'team-tribunal':
-      cb.runAsJob('team-tribunal', intent.question?.slice(0, 40) ?? 'team-tribunal', () => handleTeamTribunal(intent.question, cb.dispatch, cb.ctx, intent.tribunalMode, intent.membersPerSide));
+      cb.runAsJob('team-tribunal', intent.question?.slice(0, 40) ?? 'team-tribunal', async () => {
+        await handleTeamTribunal(intent.question, cb.dispatch, cb.ctx, intent.tribunalMode, intent.membersPerSide);
+        if (cb.ctx.cesarSession?.alive) {
+          const recentChat = cb.ctx.chatSession?.messages?.slice(-12) ?? [];
+          const chatContext = recentChat.filter((m: any) => m.role === 'engine').map((m: any) => `[${m.engineId}]: ${m.content.slice(0, 1500)}`).join('\n\n');
+          if (chatContext) await absorbIntoCesar(`Team tribunal concluded on: "${(intent.question ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize the verdict and key takeaways.`, cb.dispatch, cb.ctx);
+        }
+      });
       return { handled: true, ranAsJob: true };
     case 'team-forge':
       cb.runAsJob('team-forge', intent.task?.slice(0, 40) ?? 'team-forge', () => handleTeamForge(intent.task, intent.fitnessCmd, cb.dispatch, cb.ctx, intent.membersPerSide));

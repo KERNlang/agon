@@ -63,6 +63,7 @@ export function extractDelegation(toolName: string, args: Record<string,unknown>
 export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input: string, response: string, cesarEngineId: string, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, fitnessCmd?:string, hardened?:boolean, tribunalMode?:string, team?:boolean, target?:string, engineId?:string}> {
   if (streaming) dispatch({ type: 'streaming-end', engineId: cesarEngineId });
   if (!streaming) dispatch({ type: 'spinner-stop' });
+  await yieldToInk();
   appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
   appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
   tracker.record(cesarEngineId, { prompt: input, response });
@@ -76,10 +77,11 @@ export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input
   return { delegated: false, responded: true };
 }
 
-// @kern-source: brain:55
+// @kern-source: brain:56
 export async function commitTurnAndSuggest(suggestion: {action:string, rest?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}, input: string, response: string, cesarEngineId: string, color: number, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}> {
   if (streaming) dispatch({ type: 'streaming-end', engineId: cesarEngineId });
   if (!streaming) dispatch({ type: 'spinner-stop' });
+  await yieldToInk();
   appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
   appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
   tracker.record(cesarEngineId, { prompt: input, response });
@@ -93,7 +95,7 @@ export async function commitTurnAndSuggest(suggestion: {action:string, rest?:str
   return { delegated: false, responded: true };
 }
 
-// @kern-source: brain:72
+// @kern-source: brain:74
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, fitnessCmd?:string, hardened?:boolean, tribunalMode?:string, team?:boolean, target?:string, engineId?:string}> {
   const abort = new AbortController();
   const _turnStart = Date.now();
@@ -384,6 +386,11 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             wasStreamed = true;
             let cleanFirst = response;
             if (cleanFirst.includes('<think>')) {
+              // Extract and dispatch thinking content
+              const thinkMatch = response.match(/<think>([\s\S]*?)(<\/think>|$)/i);
+              if (thinkMatch && thinkMatch[1].trim()) {
+                dispatch({ type: 'thinking-chunk', engineId: cesarEngineId, chunk: thinkMatch[1].trim() } as any);
+              }
               cleanFirst = cleanFirst.replace(/<think>[\s\S]*?<\/think>\s*/gi, '');
               if (response.includes('<think>') && !response.includes('</think>')) {
                 insideThinkBlock = true;
@@ -394,17 +401,30 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           } else {
             response += chunk.content;
             if (insideThinkBlock) {
+              // Dispatch thinking content as it streams
               if (chunk.content.includes('</think>')) {
                 insideThinkBlock = false;
-                const afterThink = chunk.content.split('</think>').pop()?.trim() ?? '';
+                const parts = chunk.content.split('</think>');
+                const thinkPart = parts[0]?.trim() ?? '';
+                if (thinkPart) dispatch({ type: 'thinking-chunk', engineId: cesarEngineId, chunk: thinkPart } as any);
+                const afterThink = parts.pop()?.trim() ?? '';
                 if (afterThink) dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: afterThink });
+              } else {
+                dispatch({ type: 'thinking-chunk', engineId: cesarEngineId, chunk: chunk.content } as any);
               }
             } else if (chunk.content.includes('<think>')) {
               const beforeThink = chunk.content.split('<think>')[0];
               if (beforeThink) dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: beforeThink });
               if (!chunk.content.includes('</think>')) {
                 insideThinkBlock = true;
+                // Dispatch the thinking start
+                const thinkStart = chunk.content.split('<think>')[1] ?? '';
+                if (thinkStart.trim()) dispatch({ type: 'thinking-chunk', engineId: cesarEngineId, chunk: thinkStart.trim() } as any);
               } else {
+                const thinkMatch = chunk.content.match(/<think>([\s\S]*?)<\/think>/i);
+                if (thinkMatch && thinkMatch[1].trim()) {
+                  dispatch({ type: 'thinking-chunk', engineId: cesarEngineId, chunk: thinkMatch[1].trim() } as any);
+                }
                 const afterThink = chunk.content.split('</think>').pop()?.trim() ?? '';
                 if (afterThink) dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: afterThink });
               }
@@ -789,6 +809,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
     if (streaming) {
       dispatch({ type: 'streaming-end', engineId: cesarEngineId });
       dispatch({ type: 'spinner-stop' });
+      await yieldToInk();
     }
   
     if (response) {

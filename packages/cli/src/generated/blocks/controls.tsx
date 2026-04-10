@@ -1,5 +1,5 @@
 // @kern-source: controls:3
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 
 // @kern-source: controls:4
 import { Box, Text, useInput } from 'ink';
@@ -101,11 +101,11 @@ export function SlashPicker({ commands, onSelect, onCancel }: { commands: typeof
 
 // @kern-source: controls:94
 
-export function EnginePicker({ available, initialSelected, userEngines, modelOverrides, onConfirm, onCancel, onRemove, onSetModel }: { available: string[]; initialSelected: string[]; userEngines: Set<string>; modelOverrides: Record<string,string>; onConfirm: (selected: string[]) => void; onCancel: () => void; onRemove: (engineId: string) => void; onSetModel: (engineId: string, model: string | null) => void }) {
+export function EnginePicker({ available, initialSelected, userEngines, modelOverrides, onConfirm, onCancel, onRemove, onSetModel, onBrowseModel }: { available: string[]; initialSelected: string[]; userEngines: Set<string>; modelOverrides: Record<string,string>; onConfirm: (selected: string[]) => void; onCancel: () => void; onRemove: (engineId: string) => void; onSetModel: (engineId: string, model: string | null) => void; onBrowseModel: (engineId: string) => void }) {
   const [cursor, setCursor] = useState<number>(0);
   const [selected, setSelected] = useState<Set<string>>(new Set(initialSelected));
   const [hidden, setHidden] = useState<Set<string>>(new Set((loadConfig() as any).hiddenEngines ?? []));
-  const [phase, setPhase] = useState<'select'|'model'>('select');
+  const [phase, setPhase] = useState<'select'|'type-model'>('select');
   const [modelInput, setModelInput] = useState<string>('');
 
         // Only show: selected engines + user engines + non-hidden available engines
@@ -114,7 +114,7 @@ export function EnginePicker({ available, initialSelected, userEngines, modelOve
         ), [available, selected, userEngines, hidden]);
   
         useInput((input: string, key: any) => {
-          if (phase === 'model') {
+          if (phase === 'type-model') {
             const id = visible[cursor];
             if (!id) { setPhase('select'); setModelInput(''); return; }
             if (key.escape) { setPhase('select'); setModelInput(''); return; }
@@ -175,8 +175,13 @@ export function EnginePicker({ available, initialSelected, userEngines, modelOve
           if (input === 'm') {
             const id = visible[cursor];
             if (!id) return;
+            onBrowseModel(id);
+          }
+          if (input === 't') {
+            const id = visible[cursor];
+            if (!id) return;
             setModelInput(modelOverrides[id] ?? '');
-            setPhase('model');
+            setPhase('type-model');
           }
         });
   
@@ -186,12 +191,12 @@ export function EnginePicker({ available, initialSelected, userEngines, modelOve
               <Text bold color="cyan">{'Select active engines'}</Text>
               <Text dimColor>{'esc'}</Text>
             </Box>
-            <Text dimColor>{phase === 'model'
+            <Text dimColor>{phase === 'type-model'
               ? 'Type model id  Enter save  Esc cancel  blank + Enter clears'
-              : 'Space toggle  \u2191\u2193 navigate  a all  n none  d hide/remove  u unhide  m model  Enter confirm'}</Text>
-            {phase === 'model' && visible[cursor] && (
+              : 'Space toggle  \u2191\u2193 navigate  a all  n none  d hide/remove  u unhide  m browse models  t type model  Enter confirm'}</Text>
+            {phase === 'type-model' && visible[cursor] && (
               <Box flexDirection="column" borderStyle="round" borderColor="magenta" paddingX={1} marginY={1}>
-                <Text bold color="magenta">{'Model Override: '}{visible[cursor]}</Text>
+                <Text bold color="magenta">{'Type Model Override: '}{visible[cursor]}</Text>
                 <Text dimColor>{'Leave empty to use the engine default.'}</Text>
                 <Box>
                   <Text color="magenta">{'> '}</Text>
@@ -223,7 +228,7 @@ export function EnginePicker({ available, initialSelected, userEngines, modelOve
 }
 
 
-// @kern-source: controls:226
+// @kern-source: controls:232
 export interface ModelPickerEntry {
   providerId: string;
   providerName: string;
@@ -237,15 +242,22 @@ export interface ModelPickerEntry {
   costOutput?: number;
 }
 
-// @kern-source: controls:238
+// @kern-source: controls:244
 
-export function ModelPicker({ entries, onSelect, onCancel, loading }: { entries: ModelPickerEntry[]; onSelect: (entry: ModelPickerEntry) => void; onCancel: () => void; loading?: boolean }) {
+export function ModelPicker({ entries, onSelect, onCancel, loading, initialFilter, title }: { entries: ModelPickerEntry[]; onSelect: (entry: ModelPickerEntry) => void; onCancel: () => void; loading?: boolean; initialFilter?: string; title?: string }) {
   const [cursor, setCursor] = useState<number>(0);
   const [filter, setFilter] = useState<string>('');
   const [phase, setPhase] = useState<'search'|'apikey'>('search');
   const [selectedEntry, setSelectedEntry] = useState<ModelPickerEntry|null>(null);
   const [apiKeyInput, setApiKeyInput] = useState<string>('');
 
+        const panelTitle = title ?? 'Select model';
+  
+        useEffect(() => {
+          setFilter(initialFilter ?? '');
+          setCursor(0);
+        }, [initialFilter]);
+  
         const filtered = useMemo(() => {
           if (!filter.trim()) return entries.slice(0, 50);
           const terms = filter.toLowerCase().split(/\s+/);
@@ -310,7 +322,7 @@ export function ModelPicker({ entries, onSelect, onCancel, loading }: { entries:
         if (loading) {
           return (
             <Box flexDirection="column" borderStyle="round" borderColor="magenta" paddingX={1}>
-              <Text bold color="magenta">{'Select model'}</Text>
+              <Text bold color="magenta">{panelTitle}</Text>
               <Text dimColor>{'Fetching models.dev registry\u2026'}</Text>
               <Box flexDirection="column" marginTop={1}>
                 <Text dimColor>{'\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588 '}<Text color="#555">{'provider/model-name'}</Text></Text>
@@ -348,7 +360,7 @@ export function ModelPicker({ entries, onSelect, onCancel, loading }: { entries:
         return (
           <Box flexDirection="column" borderStyle="round" borderColor="magenta" paddingX={1}>
             <Box justifyContent="space-between">
-              <Text bold color="magenta">{'Select model'}</Text>
+              <Text bold color="magenta">{panelTitle}</Text>
               <Text dimColor>{'esc'}</Text>
             </Box>
             <Box>
@@ -394,7 +406,7 @@ export function ModelPicker({ entries, onSelect, onCancel, loading }: { entries:
 }
 
 
-// @kern-source: controls:399
+// @kern-source: controls:414
 
 export function ReviewBlock({ event, onAction }: { event: ReviewEvent; onAction: (action: 'apply' | 'edit' | 'reject' | 'copy') => void }) {
         const eColor = engineColor(event.winnerId);
@@ -435,7 +447,7 @@ export function ReviewBlock({ event, onAction }: { event: ReviewEvent; onAction:
 }
 
 
-// @kern-source: controls:441
+// @kern-source: controls:456
 
 export function CesarPicker({ engines, currentCesar, onSelect, onCancel }: { engines: string[]; currentCesar: string; onSelect: (engineId: string) => void; onCancel: () => void }) {
   const [cursor, setCursor] = useState<number>(0);

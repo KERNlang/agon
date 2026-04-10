@@ -222,6 +222,7 @@ screen name=OutputBlockView target=ink
   prop name=event type=OutputEvent
   prop name=mode type=string
   prop name=toolOutputExpanded type=boolean optional=true
+  prop name=thinkingExpanded type=boolean optional=true
   render
     handler <<<
       switch (event.type) {
@@ -305,9 +306,10 @@ screen name=OutputBlockView target=ink
         }
         case 'table': return <TableView headers={event.headers} rows={event.rows} />;
         case 'streaming-chunk': {
-          // Confidence progress lines (~X% ...) render as dimmed thinking text
           const chunkText = event.chunk as string;
-          if (/^~?\d{1,3}%\s/.test(chunkText.trim())) {
+          const isThinking = /^~?\d{1,3}%\s/.test(chunkText.trim());
+          if (isThinking) {
+            if (thinkingExpanded === false) return null;
             return <Text dimColor italic>{'  '}{chunkText}</Text>;
           }
           return <Text>{'  '}{chunkText}</Text>;

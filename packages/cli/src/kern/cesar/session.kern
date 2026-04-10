@@ -338,11 +338,11 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
     };
   >>>
 
-fn name=buildOnApproval params="ctx:HandlerContext, engineId:string" returns="(tool:string, command:string) => Promise<boolean>"
-  doc "Build the onApproval callback for engine tool approvals."
+fn name=buildOnApproval params="ctx:HandlerContext, engineId:string" returns="(tool:string, command:string) => Promise<boolean|string>"
+  doc "Build the onApproval callback for engine tool approvals. Returns true to approve, false to deny silently, or a string to deny with a reason the engine can see."
   handler <<<
     const engine = ctx.registry.get(engineId);
-    return async (tool: string, command: string) => {
+    return async (tool: string, command: string): Promise<boolean | string> => {
       const cfg = ctx.config;
       const perms = (cfg as any).toolPermissions ?? {};
       const allowed = (cfg as any).allowedCommands ?? [];
@@ -357,8 +357,31 @@ fn name=buildOnApproval params="ctx:HandlerContext, engineId:string" returns="(t
       if (ctx.explorationMode) {
         const WRITE_TOOLS = ['Edit', 'Write', 'Bash'];
         if (WRITE_TOOLS.includes(agonTool)) {
-          return false;
+          return 'BLOCKED: Exploration mode is read-only. Use Read, Grep, Glob tools only.';
         }
+      }
+
+      // Block writes during plan mode — Cesar can only read, search, and use orchestration tools
+      const activePlan = ctx.activePlan;
+      if (activePlan && ['planning', 'awaiting_approval'].includes(activePlan.state)) {
+        const WRITE_TOOLS = ['Edit', 'Write'];
+        if (WRITE_TOOLS.includes(agonTool)) {
+          return 'BLOCKED: Plan mode — no code changes allowed. Use ProposePlan to propose your plan, then wait for approval before implementing.';
+        }
+        if (agonTool === 'Bash') {
+          const cmd = command.toLowerCase();
+          const isReadOnly = /^\s*(git\s+(status|log|diff|show|branch|remote|rev-parse)|ls|cat|head|tail|grep|rg|find|wc|file|stat|which|echo|printf|npm\s+(run\s+type|test|run\s+build)|npx\s+kern\s+compile)/.test(cmd);
+          if (!isReadOnly) return 'BLOCKED: Plan mode — only read-only commands allowed. No writes, no installs, no code execution. Propose your plan first with ProposePlan.';
+        }
+      }
+
+      // R5 enforcement: block cat/grep/head/tail via Bash — use proper tools instead
+      if (agonTool === 'Bash') {
+        const cmd = command.trimStart();
+        if (/^cat\s/.test(cmd)) return 'BLOCKED: Use the Read tool instead of cat. Read is faster and tracked by Agon.';
+        if (/^(head|tail)\s/.test(cmd)) return 'BLOCKED: Use the Read tool with offset/limit instead of head/tail.';
+        if (/^(grep|rg)\s/.test(cmd)) return 'BLOCKED: Use the Grep tool instead of grep/rg. Grep is faster and tracked by Agon.';
+        if (/^find\s/.test(cmd)) return 'BLOCKED: Use the Glob tool instead of find. Glob is faster and tracked by Agon.';
       }
 
       // deny → block immediately

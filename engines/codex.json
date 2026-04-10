@@ -44,6 +44,7 @@
   "companion": {
     "protocol": "jsonrpc",
     "serverCmd": ["app-server"],
+    "sandbox": "danger-full-access",
     "features": {
       "threadResume": true,
       "nativeReview": true,

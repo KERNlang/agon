@@ -1,6 +1,6 @@
 // ── UI Controls: interactive pickers and review block ───────────────
 
-import from="react" names="useState,useMemo"
+import from="react" names="useState,useMemo,useEffect"
 import from="ink" names="Box,Text,useInput"
 import from="../signals/intent.js" names="SLASH_COMMANDS"
 import from="../signals/app-input.js" names="getSlashMatches,movePickerCursor"
@@ -100,10 +100,11 @@ screen name=EnginePicker target=ink
   prop name=onCancel type="() => void"
   prop name=onRemove type="(engineId: string) => void"
   prop name=onSetModel type="(engineId: string, model: string | null) => void"
+  prop name=onBrowseModel type="(engineId: string) => void"
   state name=cursor type=number initial="0"
   state name=selected type="Set<string>" initial="new Set(initialSelected)"
   state name=hidden type="Set<string>" initial="new Set((loadConfig() as any).hiddenEngines ?? [])"
-  state name=phase type="'select'|'model'" initial="'select'"
+  state name=phase type="'select'|'type-model'" initial="'select'"
   state name=modelInput type=string initial="''"
   render
     handler <<<
@@ -113,7 +114,7 @@ screen name=EnginePicker target=ink
       ), [available, selected, userEngines, hidden]);
 
       useInput((input: string, key: any) => {
-        if (phase === 'model') {
+        if (phase === 'type-model') {
           const id = visible[cursor];
           if (!id) { setPhase('select'); setModelInput(''); return; }
           if (key.escape) { setPhase('select'); setModelInput(''); return; }
@@ -174,8 +175,13 @@ screen name=EnginePicker target=ink
         if (input === 'm') {
           const id = visible[cursor];
           if (!id) return;
+          onBrowseModel(id);
+        }
+        if (input === 't') {
+          const id = visible[cursor];
+          if (!id) return;
           setModelInput(modelOverrides[id] ?? '');
-          setPhase('model');
+          setPhase('type-model');
         }
       });
 
@@ -185,12 +191,12 @@ screen name=EnginePicker target=ink
             <Text bold color="cyan">{'Select active engines'}</Text>
             <Text dimColor>{'esc'}</Text>
           </Box>
-          <Text dimColor>{phase === 'model'
+          <Text dimColor>{phase === 'type-model'
             ? 'Type model id  Enter save  Esc cancel  blank + Enter clears'
-            : 'Space toggle  \u2191\u2193 navigate  a all  n none  d hide/remove  u unhide  m model  Enter confirm'}</Text>
-          {phase === 'model' && visible[cursor] && (
+            : 'Space toggle  \u2191\u2193 navigate  a all  n none  d hide/remove  u unhide  m browse models  t type model  Enter confirm'}</Text>
+          {phase === 'type-model' && visible[cursor] && (
             <Box flexDirection="column" borderStyle="round" borderColor="magenta" paddingX={1} marginY={1}>
-              <Text bold color="magenta">{'Model Override: '}{visible[cursor]}</Text>
+              <Text bold color="magenta">{'Type Model Override: '}{visible[cursor]}</Text>
               <Text dimColor>{'Leave empty to use the engine default.'}</Text>
               <Box>
                 <Text color="magenta">{'> '}</Text>
@@ -240,6 +246,8 @@ screen name=ModelPicker target=ink
   prop name=onSelect type="(entry: ModelPickerEntry) => void"
   prop name=onCancel type="() => void"
   prop name=loading type=boolean optional=true
+  prop name=initialFilter type=string optional=true
+  prop name=title type=string optional=true
   state name=cursor type=number initial="0"
   state name=filter type=string initial="''"
   state name=phase type="'search'|'apikey'" initial="'search'"
@@ -247,6 +255,13 @@ screen name=ModelPicker target=ink
   state name=apiKeyInput type=string initial="''"
   render
     handler <<<
+      const panelTitle = title ?? 'Select model';
+
+      useEffect(() => {
+        setFilter(initialFilter ?? '');
+        setCursor(0);
+      }, [initialFilter]);
+
       const filtered = useMemo(() => {
         if (!filter.trim()) return entries.slice(0, 50);
         const terms = filter.toLowerCase().split(/\s+/);
@@ -311,7 +326,7 @@ screen name=ModelPicker target=ink
       if (loading) {
         return (
           <Box flexDirection="column" borderStyle="round" borderColor="magenta" paddingX={1}>
-            <Text bold color="magenta">{'Select model'}</Text>
+            <Text bold color="magenta">{panelTitle}</Text>
             <Text dimColor>{'Fetching models.dev registry\u2026'}</Text>
             <Box flexDirection="column" marginTop={1}>
               <Text dimColor>{'\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588 '}<Text color="#555">{'provider/model-name'}</Text></Text>
@@ -349,7 +364,7 @@ screen name=ModelPicker target=ink
       return (
         <Box flexDirection="column" borderStyle="round" borderColor="magenta" paddingX={1}>
           <Box justifyContent="space-between">
-            <Text bold color="magenta">{'Select model'}</Text>
+            <Text bold color="magenta">{panelTitle}</Text>
             <Text dimColor>{'esc'}</Text>
           </Box>
           <Box>

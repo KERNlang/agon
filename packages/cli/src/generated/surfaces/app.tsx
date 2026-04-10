@@ -80,7 +80,7 @@ import { cleanInputValue, cleanSubmitValue, findInputChange, navigateHistory, re
 import { handleReviewAction } from '../blocks/review.js';
 
 // @kern-source: app:31
-import { SpinnerBlock, EngineProgressView, StatusBar, CesarStatusStrip, OutputBlockView, ToolCallGroup, SlashPicker, EnginePicker, ModelPicker, ReviewBlock, BackgroundJobRail, RenderedSegments, CesarPicker, contentWidth, engineColor } from '../../components.js';
+import { SpinnerBlock, EngineProgressView, StatusBar, CesarStatusStrip, OutputBlockView, ToolCallGroup, DebateGroup, BidGroup, SlashPicker, EnginePicker, ModelPicker, ReviewBlock, BackgroundJobRail, RenderedSegments, CesarPicker, contentWidth, engineColor } from '../../components.js';
 
 // @kern-source: app:32
 import type { OutputBlock, ReviewEvent } from '../../components.js';
@@ -139,6 +139,9 @@ export function App({  }: {  }) {
   const [modelPickerOpen, setModelPickerOpen] = useState<boolean>(false);
   const [modelPickerEntries, setModelPickerEntries] = useState<any[]>([]);
   const [modelPickerLoading, setModelPickerLoading] = useState<boolean>(false);
+  const [modelPickerInitialFilter, setModelPickerInitialFilter] = useState<string>('');
+  const [modelPickerTitle, setModelPickerTitle] = useState<string>('Select model');
+  const [modelPickerTargetEngine, setModelPickerTargetEngine] = useState<string|null>(null);
   const [cesarPickerOpen, setCesarPickerOpen] = useState<boolean>(false);
   const [streamingText, setStreamingText] = useState<any>(null);
   const [pendingImages, setPendingImages] = useState<ImageAttachment[]>([]);
@@ -155,12 +158,14 @@ export function App({  }: {  }) {
   const [explorationMode, setExplorationMode] = useState<boolean>(false);
   const [neroMode, setNeroMode] = useState<boolean>(false);
   const [toolOutputExpanded, setToolOutputExpanded] = useState<boolean>(false);
+  const [thinkingExpanded, setThinkingExpanded] = useState<boolean>(true);
   const [cesarConfidence, setCesarConfidence] = useState<number|null>(null);
   const [planModeQueued, setPlanModeQueued] = useState<boolean>(false);
   const [cesarMemory, setCesarMemory] = useState<any>(() => createCesarMemory());
+  const [sessionMcpServers, setSessionMcpServers] = useState<Array<Record<string,unknown>>>([]);
   const [registry, setRegistry] = useState<EngineRegistry>((() => { const reg = new EngineRegistry(); const engDir = join(dirname(fileURLToPath(import.meta.url)), '../../../../engines'); reg.load(engDir); return reg; })());
   const [adapter, setAdapter] = useState<EngineAdapter>(createCliAdapter(registry));
-  const [dynamicSkills, setDynamicSkills] = useState<Skill[]>(loadSkills());
+  const [dynamicSkills, setDynamicSkills] = useState<Skill[]>(() => loadSkills(resolveWorkingDir()));
   const [commandRegistry, setCommandRegistry] = useState<any>((() => { const reg = new CommandRegistry(); registerBuiltinCommands(reg); return reg; })());
   const [eventBus, setEventBus] = useState<any>((() => { const bus = new EventBus(); const cfg = loadConfig(); if (cfg.hooks) bridgeShellHooks(bus, cfg.hooks); return bus; })());
   const [extensionSkills, setExtensionSkills] = useState<Skill[]>([]);
@@ -175,6 +180,7 @@ export function App({  }: {  }) {
   const streamingBufferRef = useRef<any>(null);
   const streamingFlushTimerRef = useRef<any>(null);
   const modeRef = useRef<'chat'|'campfire'|'brainstorm'|'tribunal'>('chat');
+  const ctrlKeyHandledRef = useRef<boolean>(false);
   const justPastedRef = useRef<boolean>(false);
   const pasteHashesRef = useRef<Map<string,string>>(new Map());
   const pasteCountRef = useRef<number>(0);
@@ -282,7 +288,7 @@ export function App({  }: {  }) {
 
   const dispatch = useCallback((event:OutputEvent) => {
           const et = (event as any).type;
-          if (et === 'streaming-chunk' || et === 'progress-update' || et === 'tool-call' || et === 'spinner-start' || et === 'spinner-update') {
+          if (et === 'streaming-chunk' || et === 'thinking-chunk' || et === 'progress-update' || et === 'tool-call' || et === 'spinner-start' || et === 'spinner-update') {
             lastActivityTimeRef.current = Date.now();
           }
           const state: OutputState = { liveSpinner: null, liveProgress: null, streamingText: streamingBufferRef.current ?? streamingTextRef.current };
@@ -328,12 +334,20 @@ export function App({  }: {  }) {
             cesarMemory,
             activePlan, setActivePlan,
             extensionPromptFragments,
+            sessionMcpServers, setSessionMcpServers,
           };
-  }, [registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode,activePlan,extensionPromptFragments]);
+  }, [registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode,activePlan,extensionPromptFragments,sessionMcpServers]);
 
   const handleInputChange = useCallback((value:string) => {
           // Swallow input while a choice question is active — useInput handles keypress
           if (questionState && questionState.choices) return;
+    
+          // Reject value changes caused by Ctrl+key shortcuts (useInput already handled them,
+          // but TextInput still fires onChange with the raw character)
+          if (ctrlKeyHandledRef.current) {
+            ctrlKeyHandledRef.current = false;
+            return;
+          }
     
           const nextValue = cleanInputValue(value);
     
@@ -487,6 +501,7 @@ export function App({  }: {  }) {
                 .catch((err: any) => { jobManager.fail(job.id, err instanceof Error ? err.message : String(err)); setJobList([...jobManager.list()]); dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); });
             },
             setMode, setPendingImages, setSessionEngines, setEnginePickerOpen, setModelPickerOpen, setModelPickerEntries, setModelPickerLoading, setCesarPickerOpen, setChatSession, setLastUndoToken, askQuestion, exit: () => process.exit(0),
+            setModelPickerTargetEngine, setModelPickerInitialFilter, setModelPickerTitle,
             allImages, allSlashCommands: allSlashCommands, dynamicSkills: [...dynamicSkills, ...extensionSkills], mode, lastUndoToken, sessionStartTime, jobManager,
             explorationMode, setExplorationMode,
             neroMode, setNeroMode,
@@ -515,6 +530,49 @@ export function App({  }: {  }) {
           if (token) setLastUndoToken(token);
           setReviewEvent(null);
   }, [reviewEvent,dispatch]);
+
+  const openCliModelPicker = useCallback((engineId:string) => {
+          let engine: any = null;
+          try { engine = registry.get(engineId); } catch { /* not found, fallback to id */ }
+    
+          const env = (engine?.api?.apiKeyEnv ?? '').toLowerCase();
+          const baseUrl = (engine?.api?.baseUrl ?? '').toLowerCase();
+          const display = (engine?.displayName ?? '').toLowerCase();
+          const defaultModel = (engine?.api?.model ?? '').toLowerCase();
+    
+          let providerFilter = '';
+          if (engineId === 'claude' || env.includes('anthropic') || baseUrl.includes('anthropic') || display.includes('anthropic')) providerFilter = 'provider:anthropic';
+          else if (engineId === 'codex' || env.includes('openai') || baseUrl.includes('openai') || display.includes('openai')) providerFilter = 'provider:openai';
+          else if (engineId === 'gemini' || env.includes('google') || baseUrl.includes('google') || display.includes('google')) providerFilter = 'provider:google';
+          else if (engineId === 'openrouter' || env.includes('openrouter') || baseUrl.includes('openrouter')) providerFilter = 'provider:openrouter';
+          else if (engineId === 'mistral' || display.includes('mistral')) providerFilter = 'provider:mistral';
+          else if (engineId === 'qwen' || display.includes('qwen')) providerFilter = 'provider:qwen';
+          else if (engineId === 'minimax' || display.includes('minimax')) providerFilter = 'provider:minimax';
+          else providerFilter = defaultModel;
+    
+          setModelPickerTargetEngine(engineId);
+          setModelPickerTitle(`Select model for ${engineId}`);
+          setModelPickerInitialFilter(providerFilter);
+          setModelPickerEntries([]);
+          setModelPickerLoading(true);
+          setEnginePickerOpen(false);
+          setModelPickerOpen(true);
+    
+          import('@agon/core').then(({ fetchModelsRegistry, buildModelEntries }) => {
+            fetchModelsRegistry().then((reg: any) => {
+              setModelPickerEntries(buildModelEntries(reg));
+              setModelPickerLoading(false);
+            }).catch((err: any) => {
+              setModelPickerOpen(false);
+              setModelPickerLoading(false);
+              setModelPickerTargetEngine(null);
+              setModelPickerInitialFilter('');
+              setModelPickerTitle('Select model');
+              setEnginePickerOpen(true);
+              dispatch({ type: 'error', message: `Failed to fetch models: ${err.message}` } as any);
+            });
+          });
+  }, [registry,dispatch]);
 
   const openResultsPager = useCallback(() => {
           let content = '';
@@ -725,7 +783,12 @@ export function App({  }: {  }) {
             return;
           }
           if ((key.ctrl && input === 'e') || input === '\x05') {
+            ctrlKeyHandledRef.current = true;
             setToolOutputExpanded((prev: boolean) => !prev); return;
+          }
+          if ((key.ctrl && input === 't') || input === '\x14') {
+            ctrlKeyHandledRef.current = true;
+            setThinkingExpanded((prev: boolean) => !prev); return;
           }
           if (key.ctrl && input === 'r') {
             openResultsPager();
@@ -806,30 +869,49 @@ export function App({  }: {  }) {
             {(() => {
               const visibleBlocks = scrollOffset > 0 ? outputBlocks.slice(0, outputBlocks.length - scrollOffset) : outputBlocks;
               if (toolOutputExpanded) {
-                return visibleBlocks.map((block: OutputBlock) => (<OutputBlockView key={block.id} event={block.event} mode={mode} toolOutputExpanded={true} />));
+                return visibleBlocks.map((block: OutputBlock) => (<OutputBlockView key={block.id} event={block.event} mode={mode} toolOutputExpanded={true} thinkingExpanded={thinkingExpanded} />));
               }
-              // Group tool calls — absorb minor events (info, warning, success) between them
+              // Group consecutive blocks: tool-call → ToolCallGroup, debate-round → DebateGroup, kern-draft → BidGroup
               const minorTypes = new Set(['info', 'warning', 'success', 'separator']);
               const groups: (OutputBlock | OutputBlock[])[] = [];
               let idx = 0;
               while (idx < visibleBlocks.length) {
-                if (visibleBlocks[idx].event.type === 'tool-call') {
+                const t = visibleBlocks[idx].event.type;
+                if (t === 'tool-call') {
                   const group: OutputBlock[] = [];
                   while (idx < visibleBlocks.length) {
-                    const t = visibleBlocks[idx].event.type;
-                    if (t === 'tool-call') { group.push(visibleBlocks[idx]); idx++; }
-                    else if (minorTypes.has(t) && idx + 1 < visibleBlocks.length && visibleBlocks[idx + 1].event.type === 'tool-call') { idx++; }
+                    const tt = visibleBlocks[idx].event.type;
+                    if (tt === 'tool-call') { group.push(visibleBlocks[idx]); idx++; }
+                    else if (minorTypes.has(tt) && idx + 1 < visibleBlocks.length && visibleBlocks[idx + 1].event.type === 'tool-call') { idx++; }
                     else break;
+                  }
+                  groups.push(group);
+                } else if (t === 'debate-round') {
+                  // Group consecutive debate-round blocks (same round)
+                  const group: OutputBlock[] = [];
+                  const round = (visibleBlocks[idx].event as any).round;
+                  while (idx < visibleBlocks.length && visibleBlocks[idx].event.type === 'debate-round' && (visibleBlocks[idx].event as any).round === round) {
+                    group.push(visibleBlocks[idx]); idx++;
+                  }
+                  groups.push(group);
+                } else if (t === 'kern-draft') {
+                  // Group consecutive kern-draft blocks (brainstorm bids)
+                  const group: OutputBlock[] = [];
+                  while (idx < visibleBlocks.length && visibleBlocks[idx].event.type === 'kern-draft') {
+                    group.push(visibleBlocks[idx]); idx++;
                   }
                   groups.push(group);
                 } else { groups.push(visibleBlocks[idx]); idx++; }
               }
               return groups.map((item: OutputBlock | OutputBlock[], gi: number) => {
                 if (Array.isArray(item)) {
-                  if (item.length === 1) return <OutputBlockView key={item[0].id} event={item[0].event} mode={mode} toolOutputExpanded={false} />;
+                  const firstType = item[0].event.type;
+                  if (item.length === 1) return <OutputBlockView key={item[0].id} event={item[0].event} mode={mode} toolOutputExpanded={false} thinkingExpanded={thinkingExpanded} />;
+                  if (firstType === 'debate-round') return <DebateGroup key={`dg-${item[0].id}`} blocks={item} />;
+                  if (firstType === 'kern-draft') return <BidGroup key={`bg-${item[0].id}`} blocks={item} />;
                   return <ToolCallGroup key={`tg-${item[0].id}`} blocks={item} />;
                 }
-                return <OutputBlockView key={item.id} event={item.event} mode={mode} toolOutputExpanded={false} />;
+                return <OutputBlockView key={item.id} event={item.event} mode={mode} toolOutputExpanded={false} thinkingExpanded={thinkingExpanded} />;
               });
             })()}
             {streamingText && (() => {
@@ -858,7 +940,7 @@ export function App({  }: {  }) {
                 </Box>
               );
             })()}
-            {liveProgress && <EngineProgressView engines={liveProgress} />}
+            {liveProgress && <EngineProgressView engines={liveProgress} mode={mode} />}
           </Box>
           {reviewEvent && <ReviewBlock event={reviewEvent} onAction={handleReviewActionCb} />}
           {enginePickerOpen && (
@@ -883,11 +965,24 @@ export function App({  }: {  }) {
                 else delete nextModels[engineId];
                 configSet('engineModels', nextModels as any);
                 dispatch({ type: 'success', message: model ? `Model override set: ${engineId} → ${model}` : `Model override cleared: ${engineId}` } as any);
-              }} />
+              }}
+              onBrowseModel={(engineId: string) => openCliModelPicker(engineId)} />
           )}
           {modelPickerOpen && (
-            <ModelPicker entries={modelPickerEntries} loading={modelPickerLoading}
+            <ModelPicker entries={modelPickerEntries} loading={modelPickerLoading} initialFilter={modelPickerInitialFilter} title={modelPickerTitle}
               onSelect={(entry: any) => {
+                if (modelPickerTargetEngine) {
+                  const nextModels = { ...((loadConfig() as any).engineModels ?? {}) };
+                  nextModels[modelPickerTargetEngine] = entry.modelId;
+                  configSet('engineModels', nextModels as any);
+                  dispatch({ type: 'success', message: `Model override set: ${modelPickerTargetEngine} → ${entry.modelId}` } as any);
+                  setModelPickerTargetEngine(null);
+                  setModelPickerInitialFilter('');
+                  setModelPickerTitle('Select model');
+                  setModelPickerOpen(false);
+                  setEnginePickerOpen(true);
+                  return;
+                }
                 setModelPickerOpen(false);
                 const def = modelEntryToEngineDef(entry);
                 const dir = join(homedir(), '.agon', 'engines');
@@ -896,7 +991,14 @@ export function App({  }: {  }) {
                 registry.register(def as any);
                 dispatch({ type: 'success', message: `Added: ${entry.providerName} \u2014 ${entry.modelName}` } as any);
               }}
-              onCancel={() => setModelPickerOpen(false)} />
+              onCancel={() => {
+                const hadTarget = !!modelPickerTargetEngine;
+                setModelPickerOpen(false);
+                setModelPickerTargetEngine(null);
+                setModelPickerInitialFilter('');
+                setModelPickerTitle('Select model');
+                if (hadTarget) setEnginePickerOpen(true);
+              }} />
           )}
           {cesarPickerOpen && (
             <CesarPicker
@@ -917,6 +1019,13 @@ export function App({  }: {  }) {
               {slashPickerOpen && <SlashPicker commands={allSlashCommands} onSelect={handleSlashSelect} onCancel={() => setSlashPickerOpen(false)} />}
               {pendingImages.length > 0 && (<Box><Text color="#22d3ee">{icons().image + ' '}</Text>{pendingImages.map((img: any, i: number) => (<Text key={i} dimColor>{img.filename}{i < pendingImages.length - 1 ? ', ' : ''}</Text>))}</Box>)}
               {inputQueue.length > 0 && (<Box><Text dimColor>{icons().queue + ' '}{inputQueue.length} queued: </Text><Text dimColor italic>{inputQueue[0].length > 40 ? inputQueue[0].slice(0, 40) + '…' : inputQueue[0]}</Text></Box>)}
+              {liveSpinner && mode === 'chat' && (
+                <Box paddingLeft={1}>
+                  <Text color={questionState && questionState.choices ? '#ef4444' : '#fbbf24'}>
+                    {questionState && questionState.choices ? `${icons().warning} PERMISSION REQUIRED \u2014 respond below` : liveSpinner.message}
+                  </Text>
+                </Box>
+              )}
               <Box borderStyle={mode === 'chat' ? 'round' : 'single'} borderColor={mode === 'chat' ? (questionState ? '#fbbf24' : '#585858') : 'gray'} borderLeft={mode !== 'chat'} borderRight={mode !== 'chat'} borderTop borderBottom paddingX={1} width="100%">
                 {mode !== 'chat' && (<Text><Text color={mode === 'campfire' ? '#f97316' : mode === 'brainstorm' ? '#22d3ee' : '#a78bfa'} bold>{mode === 'campfire' ? icons().campfire : mode === 'brainstorm' ? icons().brainstorm : icons().tribunal}{' '}{mode}</Text><Text dimColor>{' │ '}</Text></Text>)}
                 <Text color={mode === 'chat' ? (planModeQueued || (activePlan && activePlan.state === 'planning') ? '#c084fc' : '#585858') : '#fbbf24'}>{mode === 'chat' ? (planModeQueued ? '◈ ' : '> ') : icons().prompt + ' '}</Text>
@@ -931,16 +1040,16 @@ export function App({  }: {  }) {
                 </Box>
               </Box>
               {questionState && (
-                <Box flexDirection="column" paddingLeft={2} marginTop={0}>
-                  <Text bold color="#fbbf24">{questionState.prompt}</Text>
+                <Box flexDirection="column" paddingLeft={1} marginTop={0} borderLeft borderColor={questionState.choices ? '#fbbf24' : '#585858'}>
+                  <Text bold color="#fbbf24">{questionState.choices ? ` ${icons().warning} ` : ' '}{questionState.prompt}</Text>
                   {questionState.choices ? (
-                    <Box flexDirection="column" paddingLeft={1}>
+                    <Box flexDirection="column" paddingLeft={2}>
                       {(questionState.choices as {key:string,label:string,color?:string}[]).map((c: any, i: number) => (
                         <Text key={i}><Text color={c.color ?? '#6b7280'} bold>  [{i + 1}/{c.key}] </Text><Text>{c.label}</Text></Text>
                       ))}
                     </Box>
                   ) : (
-                    <Box paddingLeft={1}><TextInput value={questionAnswer} onChange={setQuestionAnswer} onSubmit={handleQuestionAnswer} /></Box>
+                    <Box paddingLeft={2}><TextInput value={questionAnswer} onChange={setQuestionAnswer} onSubmit={handleQuestionAnswer} /></Box>
                   )}
                 </Box>
               )}
@@ -956,7 +1065,7 @@ export function App({  }: {  }) {
                 }
                 return (<>
                   <CesarStatusStrip cesarId={_cesarId} confidence={cesarConfidence} spinner={liveSpinner} engines={liveProgress} startTime={chatStartTimeRef.current || 0} streamSnippet={snippet} isActive={replState !== 'idle' || jobList.some((j: Job) => j.state === 'running')} planModeQueued={planModeQueued} activePlanState={activePlan?.state ?? null} />
-                  {mode === 'chat' && <StatusBar config={_cfg} chatSession={chatSession} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} isActive={replState !== 'idle'} />}
+                  {mode === 'chat' && <StatusBar config={_cfg} chatSession={chatSession} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} thinkingExpanded={thinkingExpanded} isActive={replState !== 'idle'} />}
                 </>);
               })()}
             </Box>
@@ -966,7 +1075,7 @@ export function App({  }: {  }) {
 }
 
 
-// @kern-source: app:940
+// @kern-source: app:1050
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

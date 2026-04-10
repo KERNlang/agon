@@ -1,0 +1,62 @@
+// @kern-source: tool-list-plans:1
+import type { ToolHandler, ToolDefinition, ToolResult, PermissionDecision } from '../models/tool-types.js';
+
+// @kern-source: tool-list-plans:2
+import type { ToolContext } from '../models/tool-types.js';
+
+// @kern-source: tool-list-plans:3
+import { listCesarPlans } from '../cesar/plan.js';
+
+// @kern-source: tool-list-plans:5
+export function createListPlansTool(): ToolHandler {
+  const definition: ToolDefinition = {
+    name: 'ListPlans',
+    description: 'List recent execution plans stored in ~/.agon/runs/. Returns plan ID, date, intent, step count, state, and cost. Use this when you need to check if a task was previously planned or to reference past plan approaches.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        limit: { type: 'number', description: 'Max plans to return (default 10).' },
+        state: { type: 'string', enum: ['done', 'cancelled', 'paused', 'running'], description: 'Filter by plan state.' },
+      },
+    },
+    maxResultSizeChars: 5000,
+    isReadOnly: true,
+    isConcurrencySafe: true,
+  };
+  
+  const validate = (_input: Record<string, unknown>, _ctx: ToolContext): string | null => null;
+  
+  const checkPermission = (_input: Record<string, unknown>, _ctx: ToolContext): PermissionDecision => {
+    return { behavior: 'allow' };
+  };
+  
+  const execute = async (input: Record<string, unknown>, _ctx: ToolContext): Promise<ToolResult> => {
+    const limit = typeof input.limit === 'number' ? input.limit : 10;
+    const stateFilter = typeof input.state === 'string' ? input.state : undefined;
+  
+    let plans = listCesarPlans();
+    if (stateFilter) {
+      plans = plans.filter((p: any) => p.state === stateFilter);
+    }
+    plans = plans.slice(0, limit);
+  
+    if (plans.length === 0) {
+      return { ok: true, content: 'No plans found.' };
+    }
+  
+    const lines = plans.map((p: any) => {
+      const date = p.createdAt ? new Date(p.createdAt).toISOString().slice(0, 10) : '?';
+      const stepCount = p.steps?.length ?? 0;
+      const doneSteps = p.steps?.filter((s: any) => s.state === 'done').length ?? 0;
+      const failedSteps = p.steps?.filter((s: any) => s.state === 'failed').length ?? 0;
+      const cost = p.totalActualCostUsd > 0 ? `$${p.totalActualCostUsd.toFixed(4)}` : '-';
+      const engines = [...new Set(p.steps?.flatMap((s: any) => s.engines ?? (s.engine ? [s.engine] : [])) ?? [])] as string[];
+      return `${p.id} | ${date} | ${p.state} | ${p.intent}\n  ${stepCount} steps (${doneSteps} done, ${failedSteps} failed) | cost: ${cost}${engines.length ? ` | engines: ${engines.join(', ')}` : ''}`;
+    });
+  
+    return { ok: true, content: `${plans.length} plan(s):\n\n${lines.join('\n\n')}` };
+  };
+  
+  return { definition, validate, checkPermission, execute };
+}
+

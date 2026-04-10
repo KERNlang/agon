@@ -25,6 +25,10 @@ interface name=OutputActions
   field name=getEngineColor type="(engineId:string) => number"
   field name=setCesarConfidence type="(val:number|null) => void"
 
+// ── Thinking buffer — coalesces thinking-chunk events into a single block ────
+const name=_thinkingBuffer type="{engineId:string,content:string}"
+  handler <<< { engineId: '', content: '' } >>>
+
 // ── Permission queue — ensures prompts don't overwrite each other ────
 const name=_permissionQueue type="Array<{tool:string,command:string,reason:string,resolve:(approved:boolean)=>void}>"
   handler <<< [] as Array<{tool:string,command:string,reason:string,resolve:(approved:boolean)=>void}> >>>
@@ -103,6 +107,13 @@ fn name=_showNextPermission params="actions:OutputActions" returns=void export=f
 fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:OutputActions, mode:string, chatStartTime:number" returns=void
   doc "Process a single OutputEvent — updates spinner, streaming, and block state."
   handler <<<
+    // Flush accumulated thinking buffer when any non-thinking event arrives
+    if (event.type !== 'thinking-chunk' && _thinkingBuffer.content) {
+      actions.addBlock({ type: 'thinking-chunk', engineId: _thinkingBuffer.engineId, chunk: _thinkingBuffer.content } as any);
+      _thinkingBuffer.engineId = '';
+      _thinkingBuffer.content = '';
+    }
+
     switch (event.type) {
       case 'spinner-start':
         actions.setChatStartTime(Date.now());
@@ -128,6 +139,17 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
       case 'progress-clear':
         actions.setLiveProgress(null);
         return;
+      case 'thinking-chunk': {
+        // Coalesce into buffer — flushed as a single block when next non-thinking event arrives
+        const eid = (event as any).engineId;
+        if (_thinkingBuffer.engineId === eid) {
+          _thinkingBuffer.content += '\n' + (event as any).chunk;
+        } else {
+          _thinkingBuffer.engineId = eid;
+          _thinkingBuffer.content = (event as any).chunk;
+        }
+        return;
+      }
       case 'streaming-chunk': {
         const prev = state.streamingText;
         if (prev && prev.engineId === event.engineId) {
@@ -173,6 +195,10 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
         actions.setQuestionState({ prompt: (event as any).prompt, resolve: (event as any).resolve, choices: (event as any).choices });
         return;
       case 'permission-ask': {
+        // Flush streaming buffer so permission prompt renders in a clean area
+        if (state.streamingText) {
+          actions.flushStream();
+        }
         // Queue permission requests — show one at a time to prevent overwriting
         const entry = {
           tool: (event as any).tool as string,
@@ -188,6 +214,10 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
         return;
       }
       case 'plan-proposal': {
+        actions.addBlock(event);
+        return;
+      }
+      case 'plan-execution': {
         actions.addBlock(event);
         return;
       }

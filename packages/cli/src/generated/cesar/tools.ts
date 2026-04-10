@@ -1,5 +1,5 @@
 // @kern-source: tools:1
-import { ToolRegistry, FileStateCache, createReadTool, createEditTool, createWriteTool, createBashTool, createGrepTool, createGlobTool, createForgeTool, createBrainstormTool, createTribunalTool, createCampfireTool, createPipelineTool, createReviewTool, createDelegateTool, createReportConfidenceTool, createProposePlanTool, createRetrieveResultTool, executeToolCall, resolveWorkingDir } from '@agon/core';
+import { ToolRegistry, FileStateCache, createReadTool, createEditTool, createWriteTool, createBashTool, createGrepTool, createGlobTool, createForgeTool, createBrainstormTool, createTribunalTool, createCampfireTool, createPipelineTool, createReviewTool, createDelegateTool, createReportConfidenceTool, createProposePlanTool, createListPlansTool, createRetrieveResultTool, executeToolCall, resolveWorkingDir } from '@agon/core';
 
 // @kern-source: tools:2
 import type { ToolContext, ToolCallResult } from '@agon/core';
@@ -28,11 +28,12 @@ export function createCesarToolRegistry(engineId?: string): ToolRegistry {
   toolRegistry.register(createDelegateTool());
   toolRegistry.register(createReportConfidenceTool());
   toolRegistry.register(createProposePlanTool());
+  toolRegistry.register(createListPlansTool());
   toolRegistry.register(createRetrieveResultTool(engineId));
   return toolRegistry;
 }
 
-// @kern-source: tools:28
+// @kern-source: tools:29
 /**
  * Create a shared ToolContext for eager tool execution during streaming.
  */
@@ -51,7 +52,7 @@ export function createEagerToolContext(ctx: HandlerContext, config: any, signal:
   };
 }
 
-// @kern-source: tools:45
+// @kern-source: tools:46
 /**
  * Execute a tool eagerly during streaming — parse input, run, dispatch result.
  */

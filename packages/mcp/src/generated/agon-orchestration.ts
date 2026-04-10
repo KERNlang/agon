@@ -1,5 +1,5 @@
 // @kern-source: agon-orchestration:9
-import { writeFileSync, readFileSync, mkdirSync, existsSync } from 'node:fs';
+import { writeFileSync, readFileSync, mkdirSync, existsSync, unlinkSync } from 'node:fs';
 
 // @kern-source: agon-orchestration:10
 import { join } from 'node:path';
@@ -7,7 +7,10 @@ import { join } from 'node:path';
 // @kern-source: agon-orchestration:11
 import { createInterface } from 'node:readline';
 
-// @kern-source: agon-orchestration:13
+// @kern-source: agon-orchestration:12
+import { execSync } from 'node:child_process';
+
+// @kern-source: agon-orchestration:14
 export const ORCHESTRATION_TOOLS: Array<{name:string,description:string,inputSchema:Record<string,unknown>}> = ([
   {
     name: 'Tribunal',
@@ -17,7 +20,7 @@ export const ORCHESTRATION_TOOLS: Array<{name:string,description:string,inputSch
       properties: {
         question: { type: 'string', description: 'The question to debate' },
         mode: { type: 'string', description: 'Debate mode: adversarial, synthesis, steelman, socratic, red-team, or postmortem', enum: ['adversarial', 'synthesis', 'steelman', 'socratic', 'red-team', 'postmortem'] },
-        team: { type: 'boolean', description: 'Set true for team-tribunal' },
+        team: { type: 'boolean', description: 'Solo (false) or team-tribunal (true). Defaults to false.' },
       },
       required: ['question'],
     },
@@ -29,7 +32,7 @@ export const ORCHESTRATION_TOOLS: Array<{name:string,description:string,inputSch
       type: 'object',
       properties: {
         question: { type: 'string', description: 'The question to brainstorm on' },
-        team: { type: 'boolean', description: 'Set true for team-brainstorm' },
+        team: { type: 'boolean', description: 'Solo (false) or team-brainstorm (true). Defaults to false.' },
       },
       required: ['question'],
     },
@@ -54,7 +57,7 @@ export const ORCHESTRATION_TOOLS: Array<{name:string,description:string,inputSch
         task: { type: 'string', description: 'The task to forge' },
         fitnessCmd: { type: 'string', description: 'Test command for fitness evaluation' },
         hardened: { type: 'boolean', description: 'Set true for gauntlet verification' },
-        team: { type: 'boolean', description: 'Set true for team-forge' },
+        team: { type: 'boolean', description: 'Solo (false) or team-forge (true). Defaults to false.' },
       },
       required: ['task'],
     },
@@ -107,9 +110,46 @@ export const ORCHESTRATION_TOOLS: Array<{name:string,description:string,inputSch
       required: ['value'],
     },
   },
+  {
+    name: 'AgonBash',
+    description: 'Execute a shell command. Agon manages permissions — the user will be asked to approve write commands (git commit, npm install, etc.). Read-only commands are auto-approved. Use this instead of your native Bash tool for all shell commands.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        command: { type: 'string', description: 'The shell command to execute' },
+        timeout: { type: 'number', description: 'Timeout in seconds (default 30)' },
+      },
+      required: ['command'],
+    },
+  },
+  {
+    name: 'AgonEdit',
+    description: 'Edit a file by replacing text. Agon manages permissions — the user will be asked to approve. Use this instead of your native Edit tool.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        file_path: { type: 'string', description: 'Absolute path to the file' },
+        old_string: { type: 'string', description: 'Text to find and replace' },
+        new_string: { type: 'string', description: 'Replacement text' },
+      },
+      required: ['file_path', 'old_string', 'new_string'],
+    },
+  },
+  {
+    name: 'AgonWrite',
+    description: 'Create or overwrite a file. Agon manages permissions — the user will be asked to approve. Use this instead of your native Write tool.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        file_path: { type: 'string', description: 'Absolute path to the file' },
+        content: { type: 'string', description: 'File content to write' },
+      },
+      required: ['file_path', 'content'],
+    },
+  },
 ]);
 
-// @kern-source: agon-orchestration:117
+// @kern-source: agon-orchestration:155
 /**
  * Append a signal to the signal file (array). Supports ReportConfidence + orchestration in same turn.
  */
@@ -129,7 +169,7 @@ export function writeSignal(tool: string, args: Record<string,unknown>) {
   } catch { /* signal write failed — not critical */ }
 }
 
-// @kern-source: agon-orchestration:135
+// @kern-source: agon-orchestration:173
 /**
  * Handle an MCP tool call — write signal and return delegation message.
  */
@@ -146,7 +186,89 @@ export function handleToolCall(name: string, args: Record<string,unknown>): stri
   return 'Delegation accepted. The orchestrator will handle the rest. STOP responding now — do not continue after this tool call.';
 }
 
-// @kern-source: agon-orchestration:150
+// @kern-source: agon-orchestration:192
+function writePermissionRequest(id: string, tool: string, args: Record<string,unknown>): void {
+  const signalDir = process.env.AGON_SIGNAL_DIR;
+  const sessionId = process.env.AGON_SESSION_ID;
+  if (!signalDir || !sessionId) return;
+  mkdirSync(signalDir, { recursive: true });
+  const requestPath = join(signalDir, `${sessionId}-perm-${id}.json`);
+  writeFileSync(requestPath, JSON.stringify({ type: 'permission-request', id, tool, args, timestamp: Date.now() }));
+}
+
+// @kern-source: agon-orchestration:202
+async function pollPermissionResponse(id: string, timeoutMs: number): Promise<{approved:boolean,reason?:string}> {
+  const signalDir = process.env.AGON_SIGNAL_DIR;
+  const sessionId = process.env.AGON_SESSION_ID;
+  if (!signalDir || !sessionId) return { approved: false, reason: 'No signal dir' };
+  const responsePath = join(signalDir, `${sessionId}-perm-${id}-response.json`);
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (existsSync(responsePath)) {
+      try {
+        const data = JSON.parse(readFileSync(responsePath, 'utf-8'));
+        try { unlinkSync(responsePath); } catch { /* cleanup optional */ }
+        return { approved: !!data.approved, reason: data.reason };
+      } catch { /* parse error — keep polling */ }
+    }
+    await new Promise(r => setTimeout(r, 100));
+  }
+  return { approved: false, reason: 'Permission request timed out' };
+}
+
+// @kern-source: agon-orchestration:222
+/**
+ * Handle write tool calls with permission — request approval, wait, execute.
+ */
+export async function handleWriteToolCall(name: string, args: Record<string,unknown>): Promise<string> {
+  const requestId = `pr-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const toolMap: Record<string, string> = { AgonBash: 'Bash', AgonEdit: 'Edit', AgonWrite: 'Write' };
+  const kernTool = toolMap[name] ?? name;
+  
+  // Write permission request signal
+  writePermissionRequest(requestId, kernTool, args);
+  
+  // Poll for response (max 60 seconds)
+  const response = await pollPermissionResponse(requestId, 60000);
+  
+  if (!response.approved) {
+    return `Permission denied: ${response.reason ?? 'User declined'}. Do NOT retry this command — ask the user what they want instead.`;
+  }
+  
+  // Execute the approved tool
+  try {
+    if (name === 'AgonBash') {
+      const cmd = (args as any).command as string;
+      const timeout = ((args as any).timeout ?? 30) * 1000;
+      const cwd = process.env.AGON_CWD || process.cwd();
+      const result = execSync(cmd, { cwd, timeout, encoding: 'utf-8', maxBuffer: 1024 * 1024, stdio: ['pipe', 'pipe', 'pipe'] });
+      return result || '(command completed with no output)';
+    }
+    if (name === 'AgonEdit') {
+      const filePath = (args as any).file_path as string;
+      const oldStr = (args as any).old_string as string;
+      const newStr = (args as any).new_string as string;
+      const content = readFileSync(filePath, 'utf-8');
+      if (!content.includes(oldStr)) return `Error: old_string not found in ${filePath}`;
+      const updated = content.replace(oldStr, newStr);
+      writeFileSync(filePath, updated);
+      return `File edited: ${filePath}`;
+    }
+    if (name === 'AgonWrite') {
+      const filePath = (args as any).file_path as string;
+      const fileContent = (args as any).content as string;
+      const { dirname: dirFn } = require('node:path');
+      mkdirSync(dirFn(filePath), { recursive: true });
+      writeFileSync(filePath, fileContent);
+      return `File written: ${filePath}`;
+    }
+    return 'Unknown write tool';
+  } catch (err: any) {
+    return `Error: ${err.message ?? String(err)}`;
+  }
+}
+
+// @kern-source: agon-orchestration:272
 /**
  * Start the Agon orchestration MCP server on stdio. Line-delimited JSONRPC 2.0.
  */
@@ -200,6 +322,16 @@ export function startMcpServer() {
       const tool = ORCHESTRATION_TOOLS.find(t => t.name === toolName);
       if (!tool) {
         respondError(id, -32602, `Unknown tool: ${toolName}`);
+        return;
+      }
+      // Write tools need async permission flow
+      const WRITE_TOOLS = new Set(['AgonBash', 'AgonEdit', 'AgonWrite']);
+      if (WRITE_TOOLS.has(toolName)) {
+        handleWriteToolCall(toolName, toolArgs).then((result: string) => {
+          respond(id, { content: [{ type: 'text', text: result }] });
+        }).catch((err: any) => {
+          respondError(id, -32603, `Tool execution failed: ${err.message ?? String(err)}`);
+        });
         return;
       }
       const result = handleToolCall(toolName, toolArgs);

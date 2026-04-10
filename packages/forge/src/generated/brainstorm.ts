@@ -61,6 +61,7 @@ export async function collectRankedDrafts(opts: {question:string, context?:strin
       const result = await opts.adapter.dispatch({
         engine,
         prompt: draftPrompt,
+        systemPrompt: 'You are participating in a brainstorm. Respond directly with your analysis and approach. Do NOT use tools, do NOT read files, do NOT run commands. Just think and write your response as plain text.',
         cwd: process.cwd(),
         mode: 'exec',
         timeout: opts.timeout,
@@ -95,7 +96,7 @@ export async function collectRankedDrafts(opts: {question:string, context?:strin
   return rankDrafts(drafts);
 }
 
-// @kern-source: brainstorm:89
+// @kern-source: brainstorm:90
 export function scoutScore(bid: ScoutBid): number {
   let score = 0;
   // Confidence: 40% weight (0-40 points)
@@ -109,7 +110,7 @@ export function scoutScore(bid: ScoutBid): number {
   return score;
 }
 
-// @kern-source: brainstorm:103
+// @kern-source: brainstorm:104
 export async function runScout(opts: {question:string, context?:string, engines:string[], scoutCount?:number, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, signal?:AbortSignal}): Promise<{rankedBids:ScoutBid[], leadEngine:string, topConfidence:number, disagreementSpread:number}> {
   const count = opts.scoutCount ?? 2;
   const scouts = opts.engines.slice(0, count);
@@ -150,7 +151,7 @@ export async function runScout(opts: {question:string, context?:string, engines:
   };
 }
 
-// @kern-source: brainstorm:144
+// @kern-source: brainstorm:145
 export function fallbackParse(output: string): KernDraft {
   const stripped = output.replace(/\x60\x60\x60(?:json)?\s*/gi, '').replace(/\x60\x60\x60/g, '');
   let depth = 0;
@@ -191,7 +192,7 @@ export function fallbackParse(output: string): KernDraft {
   };
 }
 
-// @kern-source: brainstorm:185
+// @kern-source: brainstorm:186
 export async function runBrainstorm(opts: {question:string, context?:string, engines:string[], registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, signal?:AbortSignal}): Promise<BrainstormResult> {
   const brainstormId = randomUUID().slice(0, 8);
   const sidechain = createSidechainLogger({
@@ -256,6 +257,7 @@ export async function runBrainstorm(opts: {question:string, context?:string, eng
   const answerResult = await opts.adapter.dispatch({
     engine: winnerEngine,
     prompt: expandPrompt,
+    systemPrompt: 'You are expanding on a winning brainstorm approach. Respond directly with your detailed analysis as plain text. Do NOT use tools, read files, or run commands.',
     cwd: process.cwd(),
     mode: 'exec',
     timeout: opts.timeout,

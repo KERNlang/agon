@@ -15,7 +15,7 @@ export function createForgeTool(): ToolHandler {
         task: { type: 'string', description: 'Brief description of the task to forge' },
         fitnessCmd: { type: 'string', description: 'Optional test or fitness command to preserve when routing to forge.' },
         hardened: { type: 'boolean', description: 'Set true for forge-hardened (gauntlet verification). Optional.' },
-        team: { type: 'boolean', description: 'Set true for team-forge (teams compete). Optional.' },
+        team: { type: 'boolean', description: 'Solo (false) or team-forge (true). Choose based on task scope: single-file = solo, multi-file/architecture = team. Defaults to false if omitted.' },
       },
       required: ['task'],
     },
@@ -54,7 +54,7 @@ export function createBrainstormTool(): ToolHandler {
       type: 'object',
       properties: {
         question: { type: 'string', description: 'The question to brainstorm on' },
-        team: { type: 'boolean', description: 'Set true for team-brainstorm. Optional.' },
+        team: { type: 'boolean', description: 'Solo (false) or team-brainstorm (true). Solo for quick questions, team for multi-perspective analysis. Defaults to false if omitted.' },
       },
       required: ['question'],
     },
@@ -94,7 +94,7 @@ export function createTribunalTool(): ToolHandler {
       properties: {
         question: { type: 'string', description: 'The question to debate' },
         mode: { type: 'string', description: 'Debate mode: adversarial, synthesis, steelman, socratic, red-team, or postmortem. Optional.' },
-        team: { type: 'boolean', description: 'Set true for team-tribunal. Optional.' },
+        team: { type: 'boolean', description: 'Solo (false) or team-tribunal (true). Solo for quick debates, team for thorough multi-team analysis. Defaults to false if omitted.' },
       },
       required: ['question'],
     },

@@ -329,28 +329,37 @@ export async function promptDelegation(action: string, dispatch: Dispatch, harde
 /**
  * Last-resort fallback: if Cesar had routing context but still didn't delegate at low confidence, offer brainstorm. Cesar should have decided — this is a safety net.
  */
-export async function promptProtocolEnforcement(input: string, parsedConfidence: number|null, ctx: HandlerContext, dispatch: Dispatch): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, team?:boolean}|null> {
+export async function promptProtocolEnforcement(input: string, parsedConfidence: number|null, ctx: HandlerContext, dispatch: Dispatch): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, team?:boolean, tribunalMode?:string}|null> {
   if (parsedConfidence === null
       || parsedConfidence >= CONFIDENCE_TIERS.nero
-      || parsedConfidence < CONFIDENCE_TIERS.advisor
       || ctx.activeEngines().length <= 1) {
     return null;
   }
   
-  // Cesar had full routing context (ELO, engine strengths, task class, scope)
-  // but still didn't delegate. Offer brainstorm as a safe default — the user
-  // can always pick a different mode from there.
+  // Cesar had full routing context but didn't delegate.
+  // Scale the prompt by severity — lower confidence = stronger nudge.
+  const isLow = parsedConfidence < CONFIDENCE_TIERS.advisor; // below 72%
+  const prompt = isLow
+    ? `${parsedConfidence}% — low confidence, no delegation. Tribunal recommended.`
+    : `${parsedConfidence}% — Cesar didn't delegate. Brainstorm?`;
+  const defaultAction = isLow ? 'tribunal' : 'brainstorm';
+  const defaultMode = isLow ? 'red-team' : undefined;
+  
   const answer = await new Promise<string>((resolve) => {
     dispatch({ type: 'question',
-      prompt: `${parsedConfidence}% — Cesar didn't delegate. Brainstorm?`,
+      prompt,
       choices: [
-        { key: 'y', label: 'Brainstorm', color: '#4ade80' },
+        { key: 'y', label: isLow ? 'Tribunal (red-team)' : 'Brainstorm', color: '#4ade80' },
+        { key: 'b', label: 'Brainstorm', color: '#22d3ee' },
         { key: 'n', label: 'Skip', color: '#ef4444' },
       ],
       resolve,
     } as any);
   });
   if (answer === 'y') {
+    return { delegated: true, responded: true, action: defaultAction, tribunalMode: defaultMode };
+  }
+  if (answer === 'b') {
     return { delegated: true, responded: true, action: 'brainstorm' };
   }
   return null;

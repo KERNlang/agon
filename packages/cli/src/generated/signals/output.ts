@@ -33,9 +33,12 @@ export interface OutputActions {
 }
 
 // @kern-source: output:29
+export const _thinkingBuffer: {engineId:string,content:string} = { engineId: '', content: '' };
+
+// @kern-source: output:33
 export const _permissionQueue: Array<{tool:string,command:string,reason:string,resolve:(approved:boolean)=>void}> = [] as Array<{tool:string,command:string,reason:string,resolve:(approved:boolean)=>void}>;
 
-// @kern-source: output:32
+// @kern-source: output:36
 /**
  * Reject all queued permissions and clear the queue. Called on interrupt/cancel.
  */
@@ -46,7 +49,7 @@ export function clearPermissionQueue(): void {
   }
 }
 
-// @kern-source: output:41
+// @kern-source: output:45
 /**
  * Auto-approve queued permissions whose base command is already in allowedCommands.
  */
@@ -67,7 +70,7 @@ function _drainAutoApproved(actions: OutputActions): void {
   }
 }
 
-// @kern-source: output:60
+// @kern-source: output:64
 function _showNextPermission(actions: OutputActions): void {
   // First drain any that are now auto-approved (e.g. after "Always")
   _drainAutoApproved(actions);
@@ -110,11 +113,18 @@ function _showNextPermission(actions: OutputActions): void {
   });
 }
 
-// @kern-source: output:103
+// @kern-source: output:107
 /**
  * Process a single OutputEvent — updates spinner, streaming, and block state.
  */
 export function handleOutputEvent(event: OutputEvent, state: OutputState, actions: OutputActions, mode: string, chatStartTime: number): void {
+  // Flush accumulated thinking buffer when any non-thinking event arrives
+  if (event.type !== 'thinking-chunk' && _thinkingBuffer.content) {
+    actions.addBlock({ type: 'thinking-chunk', engineId: _thinkingBuffer.engineId, chunk: _thinkingBuffer.content } as any);
+    _thinkingBuffer.engineId = '';
+    _thinkingBuffer.content = '';
+  }
+  
   switch (event.type) {
     case 'spinner-start':
       actions.setChatStartTime(Date.now());
@@ -140,6 +150,17 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
     case 'progress-clear':
       actions.setLiveProgress(null);
       return;
+    case 'thinking-chunk': {
+      // Coalesce into buffer — flushed as a single block when next non-thinking event arrives
+      const eid = (event as any).engineId;
+      if (_thinkingBuffer.engineId === eid) {
+        _thinkingBuffer.content += '\n' + (event as any).chunk;
+      } else {
+        _thinkingBuffer.engineId = eid;
+        _thinkingBuffer.content = (event as any).chunk;
+      }
+      return;
+    }
     case 'streaming-chunk': {
       const prev = state.streamingText;
       if (prev && prev.engineId === event.engineId) {
@@ -185,6 +206,10 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
       actions.setQuestionState({ prompt: (event as any).prompt, resolve: (event as any).resolve, choices: (event as any).choices });
       return;
     case 'permission-ask': {
+      // Flush streaming buffer so permission prompt renders in a clean area
+      if (state.streamingText) {
+        actions.flushStream();
+      }
       // Queue permission requests — show one at a time to prevent overwriting
       const entry = {
         tool: (event as any).tool as string,
@@ -200,6 +225,10 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
       return;
     }
     case 'plan-proposal': {
+      actions.addBlock(event);
+      return;
+    }
+    case 'plan-execution': {
       actions.addBlock(event);
       return;
     }

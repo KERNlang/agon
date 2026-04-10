@@ -52,6 +52,7 @@ fn name=collectRankedDrafts async=true params="opts:{question:string, context?:s
         const result = await opts.adapter.dispatch({
           engine,
           prompt: draftPrompt,
+          systemPrompt: 'You are participating in a brainstorm. Respond directly with your analysis and approach. Do NOT use tools, do NOT read files, do NOT run commands. Just think and write your response as plain text.',
           cwd: process.cwd(),
           mode: 'exec',
           timeout: opts.timeout,
@@ -247,6 +248,7 @@ fn name=runBrainstorm async=true params="opts:{question:string, context?:string,
     const answerResult = await opts.adapter.dispatch({
       engine: winnerEngine,
       prompt: expandPrompt,
+      systemPrompt: 'You are expanding on a winning brainstorm approach. Respond directly with your detailed analysis as plain text. Do NOT use tools, read files, or run commands.',
       cwd: process.cwd(),
       mode: 'exec',
       timeout: opts.timeout,

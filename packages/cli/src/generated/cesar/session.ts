@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 import type { PersistentSession, PersistentSessionConfig } from '@agon/core';
 
 // @kern-source: session:7
-import { EngineRegistry, loadConfig, ensureAgonHome, AGON_HOME, resolveWorkingDir, scanProjectContext, createPersistentSession, ToolRegistry, FileStateCache, buildToolSystemPrompt, toolsToOpenAIFormat, executeToolCall, RUNS_DIR, tracker, discoverMcpServers, mcpDiscoveryFingerprint, mcpServersToWireFormat } from '@agon/core';
+import { EngineRegistry, loadConfig, ensureAgonHome, AGON_HOME, resolveWorkingDir, scanProjectContext, createPersistentSession, ToolRegistry, FileStateCache, buildToolSystemPrompt, toolsToOpenAIFormat, executeToolCall, RUNS_DIR, tracker, discoverMcpServers, mcpDiscoveryFingerprint, mcpServersToWireFormat, listCesarPlans } from '@agon/core';
 
 // @kern-source: session:8
 import type { ToolContext, ToolCallResult } from '@agon/core';
@@ -113,7 +113,7 @@ RULE 4b — MODE PURPOSE (don't mix them up — and don't always default to brai
   Investigation is almost always cheaper than dispatching engines — read 3 files before dispatching 3 AIs.
   Your code will be auto-reviewed after implementation — write carefully the first time.
 RULE 4c — REVIEW: Use Review(target?, engine?) to delegate code review. Default target is "uncommitted". Targets: "uncommitted", "branch:NAME", "commit:SHA". Optionally specify engine. Use when the user asks to review code, changes, a PR, or a diff.
-RULE 5 — WORKSPACE: Use Read for files. Use Grep for search. NEVER use cat/head/tail/grep via Bash. For git operations (commit, push, branch, etc.) use Bash directly — permission system will ask the user to approve write operations. When the user says "commit", do it: git add the relevant files, write a good commit message, commit. Don't overthink it.
+RULE 5 — WORKSPACE: Use Read for files. Use Grep for search. NEVER use cat/head/tail/grep via Bash. For shell commands use AgonBash (MCP tool), for edits use AgonEdit, for new files use AgonWrite. The user will see a Y/N/Always prompt for write operations. If they choose "Always", that command is auto-approved going forward. When the user says "commit", call AgonBash with the git commands. Don't say "I can't" or "I need permission" — call the tool and the permission system handles it.
 RULE 6 — AFTER DELEGATION: After calling Forge/Brainstorm/Tribunal/Campfire/Pipeline/Review, STOP. Do not continue responding. The orchestrator handles the rest. After calling Delegate, WAIT for the result — do NOT stop. Incorporate the delegated result into your response.
 RULE 7 — NO NARRATION: NEVER narrate your research process. Do not write "Reading the file...", "I'm checking...", "Let me look at...", "I've confirmed...". The user sees your text output — if you narrate exploration it looks like you have no clue. Instead: call tools SILENTLY, then speak ONLY when you have the answer or decision. Your visible output should be conclusions, answers, and actions — never a play-by-play of your investigation. If you need to read files or search code, call Read/Grep/Glob directly without announcing it.`;
 
@@ -157,22 +157,63 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
         systemParts.push(`## EXTENSIONS\n${fragments.join('\n')}`);
       }
   
+      // Lightweight plan awareness — Cesar knows plans exist but doesn't auto-load them
+      try {
+        const planCount = listCesarPlans().length;
+        if (planCount > 0) {
+          systemParts.push(`PLANS: ${planCount} plan(s) stored in ~/.agon/runs/. Use the ListPlans tool to look up past plans when relevant (e.g. user references a previous task, or you want to check if something was already planned). Do NOT load plans proactively — only when the task relates to prior work.`);
+        }
+      } catch { /* plan history unavailable — not critical */ }
+  
       // Always present — Cesar should suggest plan mode for complex tasks
       systemParts.push(`RULE 8 — SUGGEST PLANNING: For complex tasks that would require multi-engine orchestration (forge, brainstorm + forge, or multiple delegations), suggest plan mode to the user BEFORE executing. Say: "This looks like it needs a plan. Want me to plan it first? Use /plan <task> to enter plan mode." Do NOT auto-enter plan mode — the user decides. Simple questions and single-engine tasks do not need plans.`);
   
       if (ctx.activePlan && ['planning', 'awaiting_approval'].includes(ctx.activePlan.state)) {
         const stats = tracker.getStats();
         let budgetWarning = '';
-        if (stats.totalCostUsd > 1.0) {
-          budgetWarning = `\n\nWARNING: Planning phase has spent $${stats.totalCostUsd.toFixed(2)}. Wrap up your analysis and call ProposePlan now.`;
+        if (stats.totalCostUsd > 0.50) {
+          budgetWarning = `\n\nURGENT: Planning has spent $${stats.totalCostUsd.toFixed(2)}. You MUST call ProposePlan NOW. No more investigation.`;
+        } else if (stats.totalCostUsd > 0.25) {
+          budgetWarning = `\n\nWARNING: Planning has spent $${stats.totalCostUsd.toFixed(2)}. Wrap up and call ProposePlan.`;
         }
-        systemParts.push(`RULE 9 — PLAN MODE: You are in PLAN MODE. Your goal is to produce the best possible plan, then propose it with ProposePlan.
+        systemParts.push(`RULE 9 — PLAN MODE: You are in PLAN MODE. You MUST call ProposePlan before your turn ends. This is not optional.
   
-  ALLOWED: Brainstorm, Campfire, Tribunal, Delegate, Read, Grep, Glob, Bash (read-only), ReportConfidence, ProposePlan. Use these freely to analyze the task and build your strategy.
+  PROTOCOL:
+  
+  1. INVESTIGATE — Go as deep as needed. Read files, Grep for patterns, trace call chains, understand the full scope. Use Brainstorm/Tribunal/Campfire/Delegate freely if the task is complex and you need other engines' input. Take your time here — thorough investigation makes better plans.
+  
+  2. PROPOSE — When you understand the task, call ProposePlan with a structured plan. This is MANDATORY. Your turn MUST end with a ProposePlan call. Do NOT respond with text instead of calling ProposePlan. Do NOT skip this step.
+  
+  PLAN QUALITY CHECKLIST — every ProposePlan call must:
+    1. Assign SPECIFIC engines to each step based on the ROUTING CONTEXT above (use engine strengths/win rates)
+    2. Include a fitnessCmd for every forge/teamforge step (e.g., "npm test", "npm run typecheck")
+    3. Use dependsOn to chain steps that need prior step output
+    4. Use exports/imports for cross-step context flow (e.g., step 1 exports "analysis", step 2 imports it)
+    5. Use parallel:true ONLY for independent read-only steps
+    6. Include at least one verification step (tribunal or self) after implementation steps
+    7. Estimate tokens and cost for each step
+    8. Include a rationale for each step explaining WHY that engine/approach was chosen
+    9. Include a verifyCmd for steps that produce testable output
+  
+  STEP TYPE GUIDE:
+    - self: Cesar reads/analyzes code, writes summaries — use for investigation and synthesis
+    - forge: Multiple engines compete to implement code — use for core implementation
+    - teamforge: Collaborative forge with architect/implementer/reviewer — use for complex multi-file changes
+    - delegate: Send subtask to ONE specific engine — use for focused tasks where one engine excels
+    - brainstorm: Multiple engines bid on approach — use when approach needs exploration
+    - tribunal: Structured debate/review — use for verification, architecture review, stress-testing
+    - campfire: Open collaborative discussion — use for ambiguous problems
+    - pipeline: Full brainstorm→forge→tribunal chain — use for critical implementation steps
+  
+  ENGINE ASSIGNMENT — use the ROUTING CONTEXT to pick engines:
+    - High win rate + matching strengths → assign as primary
+    - Different strengths → assign to complementary steps
+    - Never leave engines unassigned — specify engines[] or engine for every step
   
   BLOCKED: Forge, Pipeline, Edit, Write. No code execution until the plan is approved.
+  ALLOWED: Read, Grep, Glob, Bash (read-only), Delegate, Brainstorm, Tribunal, Campfire, ReportConfidence, ProposePlan.
   
-  Think deeply. Use other engines to challenge your approach. Then propose a structured plan with specific engine assignments and cost estimates for each step.${budgetWarning}`);
+  HARD RULE: Your turn MUST end with a ProposePlan call. If you respond with text only, the plan mode fails. Call ProposePlan.${budgetWarning}`);
       }
   
       // History replay — only needed when session reboots (new process loses context).
@@ -189,7 +230,7 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
       return systemParts.join('\n\n');
 }
 
-// @kern-source: session:169
+// @kern-source: session:210
 /**
  * Build the onToolCall callback for API engines with native function calling.
  */
@@ -331,6 +372,12 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
       }
     }
   
+    // R1 enforcement: block all non-read tools until confidence is reported
+    const READ_TOOLS = new Set(['Read', 'Grep', 'Glob', 'ReportConfidence', 'Delegate']);
+    if (ctx.cesar!.reportedConfidence === undefined && !READ_TOOLS.has(name)) {
+      return `[BLOCKED] Report confidence first. Call ReportConfidence(value) before using ${name}. Read/Grep/Glob are allowed for investigation.`;
+    }
+  
     // Dedup: if exact same tool+args was called before, return cached result
     const cacheKey = `${name}:${JSON.stringify(args)}`;
     const cached = toolResultCache.get(cacheKey);
@@ -363,13 +410,13 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
   };
 }
 
-// @kern-source: session:341
+// @kern-source: session:388
 /**
- * Build the onApproval callback for engine tool approvals.
+ * Build the onApproval callback for engine tool approvals. Returns true to approve, false to deny silently, or a string to deny with a reason the engine can see.
  */
-export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:string, command:string) => Promise<boolean> {
+export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:string, command:string) => Promise<boolean|string> {
   const engine = ctx.registry.get(engineId);
-  return async (tool: string, command: string) => {
+  return async (tool: string, command: string): Promise<boolean | string> => {
     const cfg = ctx.config;
     const perms = (cfg as any).toolPermissions ?? {};
     const allowed = (cfg as any).allowedCommands ?? [];
@@ -384,7 +431,34 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
     if (ctx.explorationMode) {
       const WRITE_TOOLS = ['Edit', 'Write', 'Bash'];
       if (WRITE_TOOLS.includes(agonTool)) {
-        return false;
+        return 'BLOCKED: Exploration mode is read-only. Use Read, Grep, Glob tools only.';
+      }
+    }
+  
+    // Block file writes during plan mode — Bash goes through normal permission UI
+    const activePlan = ctx.activePlan;
+    if (activePlan && ['planning', 'awaiting_approval'].includes(activePlan.state)) {
+      const WRITE_TOOLS = ['Edit', 'Write'];
+      if (WRITE_TOOLS.includes(agonTool)) {
+        return 'BLOCKED: Plan mode — no code changes allowed. Use ProposePlan to propose your plan, then wait for approval before implementing.';
+      }
+    }
+  
+    // R5 enforcement: block cat/grep/head/tail via Bash — use proper tools instead
+    if (agonTool === 'Bash') {
+      const cmd = command.trimStart();
+      if (/^cat\s/.test(cmd)) return 'BLOCKED: Use the Read tool instead of cat. Read is faster and tracked by Agon.';
+      if (/^(head|tail)\s/.test(cmd)) return 'BLOCKED: Use the Read tool with offset/limit instead of head/tail.';
+      if (/^(grep|rg)\s/.test(cmd)) return 'BLOCKED: Use the Grep tool instead of grep/rg. Grep is faster and tracked by Agon.';
+      if (/^find\s/.test(cmd)) return 'BLOCKED: Use the Glob tool instead of find. Glob is faster and tracked by Agon.';
+    }
+  
+    // R1 enforcement for companion engines: block file writes until confidence is reported
+    // Bash commands flow through to the normal permission UI — user's settings.json controls approval
+    if (ctx.cesar!.reportedConfidence === undefined) {
+      const WRITE_TOOLS = ['Edit', 'Write'];
+      if (WRITE_TOOLS.includes(agonTool)) {
+        return 'BLOCKED: Report confidence first via ReportConfidence MCP tool before writing files.';
       }
     }
   
@@ -412,7 +486,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
   };
 }
 
-// @kern-source: session:388
+// @kern-source: session:462
 export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unknown>> {
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -446,7 +520,7 @@ export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unkn
   return normalizeNamedRecord(raw);
 }
 
-// @kern-source: session:422
+// @kern-source: session:496
 export function loadCesarMcpServers(config: any, cwd: string): Array<Record<string,unknown>>|undefined {
   if (!(config as any).cesarMcpEnabled) return undefined;
   
@@ -470,14 +544,14 @@ export function loadCesarMcpServers(config: any, cwd: string): Array<Record<stri
   return servers;
 }
 
-// @kern-source: session:446
+// @kern-source: session:520
 export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
   if (!binaryPath) return false;
   const protocol = engine?.companion?.protocol;
-  return protocol === 'acp' || protocol === 'jsonrpc';
+  return protocol === 'acp' || protocol === 'jsonrpc' || protocol === 'stream-json';
 }
 
-// @kern-source: session:453
+// @kern-source: session:527
 /**
  * Compute a fingerprint of MCP-related config to detect changes. Includes both manual config and auto-discovery sources.
  */
@@ -497,7 +571,7 @@ export function mcpConfigFingerprint(config: any): string {
   return `${enabled}:${configPath}:${mtime}:${discoveryFp}`;
 }
 
-// @kern-source: session:471
+// @kern-source: session:545
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
     const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
@@ -511,6 +585,7 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
         pendingDelegation: null, reportedConfidence: undefined,
         autoNero: false, advisorPending: false, lastEscalation: null as string | null,
         mcpFingerprint: undefined, mcpSignalPath: undefined as string | undefined, planDispatch: null, proposedPlan: undefined,
+        sessionMcpServers: [] as Array<{name:string, type?:string, url?:string, command?:string, args?:string[]}>,
       };
     }
   
@@ -591,6 +666,16 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
       }
     }
   
+    // ── Inject session-scoped MCP servers (from /mcp connect) ──
+    const sessionMcp = (ctx as any).sessionMcpServers ?? [];
+    if (sessionMcp.length > 0) {
+      const sessionMcpWired = sessionMcp.map((s: any) => {
+        if (s.url) return { name: s.name, type: s.type ?? 'http', url: s.url, ...(s.env ? { env: s.env } : {}) };
+        return { name: s.name, command: s.command, args: s.args ?? [], ...(s.env ? { env: s.env } : {}) };
+      });
+      mcpServers = mcpServers ? [...mcpServers, ...sessionMcpWired] : sessionMcpWired;
+    }
+  
     // ── Inject Agon orchestration MCP server for CLI companion engines ──
     // Gives Codex/Gemini/OpenCode real MCP tools for Tribunal, Brainstorm, etc.
     // instead of XML prose that they can't actually call.
@@ -629,7 +714,7 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
       fullPrompt += '\n\nYou have tools available via function calling. Call them directly — do NOT describe them in XML or narrate what you would call. Just call the function.';
     } else if (isCompanion) {
       // CLI companion with MCP orchestration: reference MCP tools, no XML for orchestration
-      fullPrompt += '\n\nYou have orchestration tools available via the agon-orchestration MCP server: Tribunal, Brainstorm, Campfire, Forge, Pipeline, Review, Delegate, ReportConfidence. Call them as MCP tools — NEVER via Bash. After calling any orchestration tool (except Delegate and ReportConfidence): STOP and wait. For file operations, use your built-in tools (shell, file edit, etc.) directly.';
+      fullPrompt += '\n\nYou have tools available via the agon-orchestration MCP server:\n- Orchestration: Tribunal, Brainstorm, Campfire, Forge, Pipeline, Review, Delegate, ReportConfidence\n- Write operations: AgonBash (shell commands), AgonEdit (file edits), AgonWrite (file creation)\n\nCall them as MCP tools — NEVER via your native Bash/Edit/Write. Your native write tools are disabled. Use AgonBash for ALL shell commands (git, npm, etc.), AgonEdit for file edits, AgonWrite for new files. The user will be asked to approve write operations. After calling any orchestration tool (except Delegate and ReportConfidence): STOP and wait.';
     } else {
       // Fallback: XML tool descriptions for engines without native tools or MCP
       const toolPrompt = buildToolSystemPrompt(toolRegistry);

@@ -1,5 +1,6 @@
 import from="node:fs" names="readFileSync,readdirSync,existsSync"
-import from="node:path" names="join"
+import from="node:path" names="join,dirname"
+import from="node:url" names="fileURLToPath"
 import from="../signals/config.js" names="AGON_HOME"
 
 interface name=Skill
@@ -48,24 +49,47 @@ fn name=loadSkillFile params="filePath:string" returns="Skill|null"
     }
   >>>
 
-fn name=loadSkills returns="Skill[]"
+fn name=loadSkillsFromDir params="dir:string, source:string" returns="Skill[]" export=false
   handler <<<
-    const skillsDir = join(AGON_HOME, 'skills');
     const skills: Skill[] = [];
-
-    if (!existsSync(skillsDir)) return skills;
-
+    if (!existsSync(dir)) return skills;
     try {
-      const files = readdirSync(skillsDir).filter((f: string) => f.endsWith('.md'));
+      const files = readdirSync(dir).filter((f: string) => f.endsWith('.md'));
       for (const file of files) {
-        const skill = loadSkillFile(join(skillsDir, file));
-        if (skill) skills.push(skill);
+        const skill = loadSkillFile(join(dir, file));
+        if (skill) {
+          skill.source = source;
+          skills.push(skill);
+        }
       }
     } catch (err) {
-      console.warn(`[agon] failed to scan skills dir: ${err instanceof Error ? err.message : String(err)}`);
+      console.warn(`[agon] failed to scan skills dir ${dir}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    return skills;
+  >>>
+
+fn name=loadSkills params="cwd?:string" returns="Skill[]"
+  handler <<<
+    const skills: Skill[] = [];
+
+    // 1. Built-in skills (shipped with Agon)
+    const builtinDir = join(dirname(fileURLToPath(import.meta.url)), '../../skills');
+    skills.push(...loadSkillsFromDir(builtinDir, 'builtin'));
+
+    // 2. Global skills (~/.agon/skills/)
+    skills.push(...loadSkillsFromDir(join(AGON_HOME, 'skills'), 'global'));
+
+    // 3. Project-level skills (.agon/skills/)
+    if (cwd) {
+      skills.push(...loadSkillsFromDir(join(cwd, '.agon', 'skills'), 'project'));
     }
 
-    return skills;
+    // Deduplicate: project > global > builtin (later wins)
+    const seen = new Map<string, Skill>();
+    for (const skill of skills) {
+      seen.set(skill.trigger, skill);
+    }
+    return Array.from(seen.values());
   >>>
 
 fn name=findSkill params="trigger:string, skills:Skill[]" returns="Skill|null"

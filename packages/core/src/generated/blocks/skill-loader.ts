@@ -2,12 +2,15 @@
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 
 // @kern-source: skill-loader:2
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 
 // @kern-source: skill-loader:3
+import { fileURLToPath } from 'node:url';
+
+// @kern-source: skill-loader:4
 import { AGON_HOME } from '../signals/config.js';
 
-// @kern-source: skill-loader:5
+// @kern-source: skill-loader:6
 export interface Skill {
   name: string;
   trigger: string;
@@ -19,7 +22,7 @@ export interface Skill {
   tools?: string[];
 }
 
-// @kern-source: skill-loader:15
+// @kern-source: skill-loader:16
 export function parseFrontmatter(content: string): {meta:Record<string,string>, body:string} {
   const match = content.match(/^---\s*\n([\s\S]*?)\n---\s*\n([\s\S]*)$/);
   if (!match) return { meta: {}, body: content };
@@ -35,7 +38,7 @@ export function parseFrontmatter(content: string): {meta:Record<string,string>, 
   return { meta, body: match[2].trim() };
 }
 
-// @kern-source: skill-loader:31
+// @kern-source: skill-loader:32
 export function loadSkillFile(filePath: string): Skill|null {
   try {
     const content = readFileSync(filePath, 'utf-8');
@@ -55,33 +58,56 @@ export function loadSkillFile(filePath: string): Skill|null {
   }
 }
 
-// @kern-source: skill-loader:51
-export function loadSkills(): Skill[] {
-  const skillsDir = join(AGON_HOME, 'skills');
+// @kern-source: skill-loader:52
+function loadSkillsFromDir(dir: string, source: string): Skill[] {
   const skills: Skill[] = [];
-  
-  if (!existsSync(skillsDir)) return skills;
-  
+  if (!existsSync(dir)) return skills;
   try {
-    const files = readdirSync(skillsDir).filter((f: string) => f.endsWith('.md'));
+    const files = readdirSync(dir).filter((f: string) => f.endsWith('.md'));
     for (const file of files) {
-      const skill = loadSkillFile(join(skillsDir, file));
-      if (skill) skills.push(skill);
+      const skill = loadSkillFile(join(dir, file));
+      if (skill) {
+        skill.source = source;
+        skills.push(skill);
+      }
     }
   } catch (err) {
-    console.warn(`[agon] failed to scan skills dir: ${err instanceof Error ? err.message : String(err)}`);
+    console.warn(`[agon] failed to scan skills dir ${dir}: ${err instanceof Error ? err.message : String(err)}`);
   }
-  
   return skills;
 }
 
 // @kern-source: skill-loader:71
+export function loadSkills(cwd?: string): Skill[] {
+  const skills: Skill[] = [];
+  
+  // 1. Built-in skills (shipped with Agon)
+  const builtinDir = join(dirname(fileURLToPath(import.meta.url)), '../../skills');
+  skills.push(...loadSkillsFromDir(builtinDir, 'builtin'));
+  
+  // 2. Global skills (~/.agon/skills/)
+  skills.push(...loadSkillsFromDir(join(AGON_HOME, 'skills'), 'global'));
+  
+  // 3. Project-level skills (.agon/skills/)
+  if (cwd) {
+    skills.push(...loadSkillsFromDir(join(cwd, '.agon', 'skills'), 'project'));
+  }
+  
+  // Deduplicate: project > global > builtin (later wins)
+  const seen = new Map<string, Skill>();
+  for (const skill of skills) {
+    seen.set(skill.trigger, skill);
+  }
+  return Array.from(seen.values());
+}
+
+// @kern-source: skill-loader:95
 export function findSkill(trigger: string, skills: Skill[]): Skill|null {
   const normalized = trigger.startsWith('/') ? trigger : `/${trigger}`;
   return skills.find((s) => s.trigger === normalized) ?? null;
 }
 
-// @kern-source: skill-loader:77
+// @kern-source: skill-loader:101
 export function renderSkillPrompt(skill: Skill, input: string): string {
   return skill.prompt
     .replace(/\{input\}/g, input)

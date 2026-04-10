@@ -22,6 +22,7 @@ interface name=EngineEnvVar
 interface name=CompanionConfig
   field name=protocol type="'jsonrpc'|'acp'|'structured-cli'|'stream-json'"
   field name=serverCmd type="string[]"
+  field name=sandbox type="'read-only'|'workspace-write'|'danger-full-access'" optional=true
   field name=features type="{threadResume?:boolean, nativeReview?:boolean, structuredOutput?:boolean}" optional=true
 
 interface name=EngineDefinition

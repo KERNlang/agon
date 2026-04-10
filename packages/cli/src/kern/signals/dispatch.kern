@@ -4,7 +4,7 @@
 
 import from="node:path" names="join"
 import from="node:fs" names="mkdirSync"
-import from="@agon/core" names="resolveWorkingDir,extractImagesFromInput,buildImageAttachment,undoPatch,resumeChatSession,findSkill,renderSkillPrompt,configSet,startChatSession,currentBranch,buildExtensionContext,sessionContext,RUNS_DIR"
+import from="@agon/core" names="resolveWorkingDir,extractImagesFromInput,buildImageAttachment,undoPatch,resumeChatSession,findSkill,renderSkillPrompt,configSet,startChatSession,currentBranch,gitChangedFiles,buildExtensionContext,sessionContext,RUNS_DIR"
 import from="../handlers/chat.js" names="invalidateCwdCache"
 import from="@agon/core" names="ImageAttachment,ChatSession" types=true
 import from="@agon/core" names="approveCesarPlan,cancelCesarPlan,saveCesarPlan,loadCesarPlan,listCesarPlans,executePlan,formatCesarPlanMarkdown"
@@ -18,7 +18,8 @@ import from="../../handlers/index.js" names="handleForge,handleChat,handleBrains
 import from="../handlers/team-tribunal.js" names="handleTeamTribunal"
 import from="../handlers/team-forge.js" names="handleTeamForge"
 import from="../handlers/team-brainstorm.js" names="handleTeamBrainstorm"
-import from="../../handlers/cesar-brain.js" names="handleCesarBrain,parseSuggestion,CESAR_SYSTEM_PROMPT"
+import from="../../handlers/cesar-brain.js" names="handleCesarBrain,parseSuggestion,CESAR_SYSTEM_PROMPT,yieldToInk"
+import from="@agon/core" names="appendMessage"
 import from="../handlers/pipeline.js" names="handlePipeline"
 import from="../handlers/provider.js" names="handleProvider"
 
@@ -33,6 +34,9 @@ interface name=DispatchCallbacks
   field name=setModelPickerOpen type="(open:boolean) => void"
   field name=setModelPickerEntries type="(entries:any[]) => void"
   field name=setModelPickerLoading type="(loading:boolean) => void"
+  field name=setModelPickerTargetEngine type="(engineId:string|null) => void" optional=true
+  field name=setModelPickerInitialFilter type="(filter:string) => void" optional=true
+  field name=setModelPickerTitle type="(title:string) => void" optional=true
   field name=setCesarPickerOpen type="(open:boolean) => void"
   field name=setChatSession type="(session:ChatSession) => void"
   field name=setLastUndoToken type="(token:string|null) => void"
@@ -98,6 +102,53 @@ fn name=extractExecutionSpec params="input:string" returns="{ task:string; fitne
     return { task, fitnessCmd };
   >>>
 
+fn name=absorbIntoCesar async=true params="message:string, dispatch:Dispatch, ctx:HandlerContext" returns="Promise<string>"
+  doc "Send a message directly into Cesar's persistent session and stream the response. Returns the response text."
+  handler <<<
+    const session = ctx.cesarSession;
+    if (!session || !session.alive) return '';
+
+    const cesarEngineId = (ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude';
+    const color = ENGINE_COLORS[cesarEngineId] ?? 124;
+
+    let response = '';
+    let streaming = false;
+    const gen = session.send({ message });
+
+    for await (const chunk of gen) {
+      if (chunk.type === 'text') {
+        if (!streaming) {
+          dispatch({ type: 'spinner-stop' });
+          streaming = true;
+        }
+        dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: chunk.content });
+        response += chunk.content;
+      } else if (chunk.type === 'status') {
+        dispatch({ type: 'spinner-update', message: `Cesar ${chunk.content}` });
+      } else if (chunk.type === 'error') {
+        dispatch({ type: 'error', message: chunk.content });
+        break;
+      } else if (chunk.type === 'done') {
+        break;
+      }
+    }
+
+    if (streaming) {
+      dispatch({ type: 'streaming-end', engineId: cesarEngineId });
+      await yieldToInk();
+    } else {
+      dispatch({ type: 'spinner-stop' });
+    }
+
+    response = response.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
+
+    if (response) {
+      appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
+    }
+
+    return response;
+  >>>
+
 fn name=routeWithCesar async=true params="input:string, images:ImageAttachment[], cb:DispatchCallbacks" returns="Promise<boolean>"
   doc "Unified Cesar brain routing. Returns true if a background job was dispatched."
   handler <<<
@@ -136,8 +187,42 @@ fn name=routeWithCesar async=true params="input:string, images:ImageAttachment[]
           || ((routeAction === 'forge' || routeAction === 'team-forge' || routeAction === 'pipeline')
             ? (executionSpec.task || input).trim()
             : input);
-        const taskInput = userContext ? `${baseTask}\n\n${userContext}` : baseTask;
+        let taskInput = userContext ? `${baseTask}\n\n${userContext}` : baseTask;
         const fitnessCmd = result.fitnessCmd ?? executionSpec.fitnessCmd;
+
+        // R8 enforcement: suggest planning for complex execution tasks when no plan exists
+        const EXECUTION_ACTIONS_R8 = ['forge', 'team-forge', 'pipeline', 'build'];
+        if (!_planActive && EXECUTION_ACTIONS_R8.includes(routeAction)) {
+          try {
+            const cwd = resolveWorkingDir();
+            const changedFiles = gitChangedFiles(cwd);
+            const dirs = new Set(changedFiles.map((f: string) => f.split('/').slice(0, 2).join('/')));
+            const isComplex = changedFiles.length >= 5 || dirs.size >= 3 || input.length > 300;
+            if (isComplex) {
+              const planAnswer = await cb.askQuestion(`Complex task (${changedFiles.length} files, ${dirs.size} dirs). Plan first? [Y/n]`);
+              if (planAnswer === 'y' || planAnswer === '1' || planAnswer === '') {
+                const { createCesarPlan } = await import('@agon/core');
+                cb.setActivePlan(createCesarPlan(taskInput, []));
+                routeAction = 'brainstorm';
+                cb.dispatch({ type: 'info', message: 'Entering plan mode — Cesar will plan before executing.' });
+              }
+            }
+          } catch { /* git calls failed — skip complexity check */ }
+        }
+
+        // Enrich delegation context — Cesar's investigation should flow to brainstorm/tribunal/campfire
+        const THINKING_ACTIONS = ['brainstorm', 'tribunal', 'campfire', 'team-brainstorm', 'team-tribunal'];
+        if (THINKING_ACTIONS.includes(routeAction) && cb.ctx.chatSession?.messages?.length > 0) {
+          const recent = cb.ctx.chatSession.messages.slice(-4);
+          const cesarContext = recent
+            .filter((m: any) => m.role === 'engine' && m.content)
+            .map((m: any) => m.content.length > 800 ? m.content.slice(0, 800) + '…' : m.content)
+            .join('\n\n');
+          if (cesarContext) {
+            taskInput = `${taskInput}\n\n## Cesar's Investigation Context\nCesar analyzed this before escalating:\n\n${cesarContext}`;
+          }
+        }
+
         cb.dispatch({ type: 'info', message: `Cesar → ${routeAction}${hardened ? ' (hardened)' : ''}${tMode ? ` [${tMode}]` : ''}` });
         switch (routeAction) {
           case 'build':
@@ -155,12 +240,12 @@ fn name=routeWithCesar async=true params="input:string, images:ImageAttachment[]
           case 'brainstorm':
             cb.runAsJob('brainstorm', label, async () => {
               const bsResult = await handleBrainstorm(taskInput, cb.dispatch, cb.ctx);
-              // Cesar absorbs the brainstorm result — inject actual content, not "above"
+              // Cesar absorbs the brainstorm result via persistent session
               if (cb.ctx.cesarSession && bsResult) {
                 cb.dispatch({ type: 'info', message: 'Cesar absorbing brainstorm results…' });
-                const bidSummary = bsResult.bids.map((b: any) => `**${b.engineId}** (score: ${b.score}): ${b.reasoning.slice(0, 300)}`).join('\n\n');
-                const cesarMsg = `Brainstorm complete. Winner: ${bsResult.winner}.\n\n## Engine Bids\n${bidSummary}\n\n## Winner's Full Response\n${bsResult.response.slice(0, 2000)}\n\nSynthesize the winning approach into a concrete plan. Be direct — the brainstorm already validated the ideas.`;
-                await handleChat(cesarMsg, cb.dispatch, cb.ctx, undefined, { toolPolicy: 'none' });
+                const bidSummary = bsResult.bids.map((b: any) => `**${b.engineId}** (score: ${b.score}): ${b.reasoning.slice(0, 800)}`).join('\n\n');
+                const cesarMsg = `Brainstorm complete. Winner: ${bsResult.winner}.\n\n## Engine Bids\n${bidSummary}\n\n## Winner's Full Response\n${bsResult.response}\n\nSynthesize the winning approach into a concrete plan. Be direct — the brainstorm already validated the ideas.`;
+                await absorbIntoCesar(cesarMsg, cb.dispatch, cb.ctx);
               }
             });
             return true;
@@ -169,18 +254,42 @@ fn name=routeWithCesar async=true params="input:string, images:ImageAttachment[]
               await handleTeamBrainstorm(taskInput, cb.dispatch, cb.ctx);
               if (cb.ctx.cesarSession) {
                 cb.dispatch({ type: 'info', message: 'Cesar absorbing brainstorm results…' });
-                await handleChat(`Based on the team brainstorm above, synthesize the winning approach into a concrete plan. Be direct — the brainstorm already validated the ideas.`, cb.dispatch, cb.ctx, undefined, { toolPolicy: 'none' });
+                // Team brainstorm doesn't return results — ask Cesar to synthesize from chat history
+                const recentChat = cb.ctx.chatSession?.messages?.slice(-10) ?? [];
+                const chatContext = recentChat.filter((m: any) => m.role === 'engine').map((m: any) => `[${m.engineId}]: ${m.content.slice(0, 1500)}`).join('\n\n');
+                await absorbIntoCesar(`Team brainstorm completed. Here are the engine responses:\n\n${chatContext}\n\nSynthesize the winning approach into a concrete plan.`, cb.dispatch, cb.ctx);
               }
             });
             return true;
           case 'tribunal':
-            cb.runAsJob('tribunal', label, () => handleTribunal(taskInput, cb.dispatch, cb.ctx, tMode));
+            cb.runAsJob('tribunal', label, async () => {
+              await handleTribunal(taskInput, cb.dispatch, cb.ctx, tMode);
+              if (cb.ctx.cesarSession?.alive) {
+                const recentChat = cb.ctx.chatSession?.messages?.slice(-12) ?? [];
+                const chatContext = recentChat.filter((m: any) => m.role === 'engine').map((m: any) => `[${m.engineId}]: ${m.content.slice(0, 1500)}`).join('\n\n');
+                if (chatContext) await absorbIntoCesar(`Tribunal${tMode ? ` (${tMode})` : ''} concluded on: "${taskInput.slice(0, 200)}"\n\n${chatContext}\n\nSummarize the verdict and key takeaways.`, cb.dispatch, cb.ctx);
+              }
+            });
             return true;
           case 'team-tribunal':
-            cb.runAsJob('team-tribunal', label, () => handleTeamTribunal(taskInput, cb.dispatch, cb.ctx, tMode));
+            cb.runAsJob('team-tribunal', label, async () => {
+              await handleTeamTribunal(taskInput, cb.dispatch, cb.ctx, tMode);
+              if (cb.ctx.cesarSession?.alive) {
+                const recentChat = cb.ctx.chatSession?.messages?.slice(-12) ?? [];
+                const chatContext = recentChat.filter((m: any) => m.role === 'engine').map((m: any) => `[${m.engineId}]: ${m.content.slice(0, 1500)}`).join('\n\n');
+                if (chatContext) await absorbIntoCesar(`Team tribunal${tMode ? ` (${tMode})` : ''} concluded on: "${taskInput.slice(0, 200)}"\n\n${chatContext}\n\nSummarize the verdict and key takeaways.`, cb.dispatch, cb.ctx);
+              }
+            });
             return true;
           case 'campfire':
-            cb.runAsJob('campfire', label, () => handleCampfire(taskInput, cb.dispatch, cb.ctx));
+            cb.runAsJob('campfire', label, async () => {
+              await handleCampfire(taskInput, cb.dispatch, cb.ctx);
+              if (cb.ctx.cesarSession?.alive) {
+                const recentChat = cb.ctx.chatSession?.messages?.slice(-12) ?? [];
+                const chatContext = recentChat.filter((m: any) => m.role === 'engine').map((m: any) => `[${m.engineId}]: ${m.content.slice(0, 1500)}`).join('\n\n');
+                if (chatContext) await absorbIntoCesar(`Campfire discussion on: "${taskInput.slice(0, 200)}"\n\n${chatContext}\n\nSummarize the key insights and any consensus reached.`, cb.dispatch, cb.ctx);
+              }
+            });
             return true;
           case 'pipeline':
             cb.runAsJob('pipeline', label, () => handlePipeline(taskInput, cb.dispatch, cb.ctx, fitnessCmd ?? undefined));
@@ -213,10 +322,10 @@ fn name=routeWithCesar async=true params="input:string, images:ImageAttachment[]
                 if (answer) {
                   cb.dispatch({ type: 'engine-block', engineId: targetEngineId, color: ENGINE_COLORS[targetEngineId] ?? 124, content: answer });
                 }
-                // Feed result back to Cesar so it can continue
+                // Feed result back to Cesar's persistent session so it can continue
                 if (cb.ctx.cesarSession) {
                   cb.dispatch({ type: 'info', message: `Feeding delegate result back to Cesar…` });
-                  await handleChat(`[Delegate → ${targetEngineId}] Result:\n${answer || '(empty response)'}`, cb.dispatch, cb.ctx, undefined, { toolPolicy: 'none' });
+                  await absorbIntoCesar(`[Delegate → ${targetEngineId}] Result:\n${answer || '(empty response)'}`, cb.dispatch, cb.ctx);
                 }
               } catch (err) {
                 cb.dispatch({ type: 'error', message: `Delegate to ${targetEngineId} failed: ${err instanceof Error ? err.message : String(err)}` });
@@ -418,6 +527,11 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
           if (cb.eventBus) await cb.eventBus.emit('pre:tribunal', { question: intent.question, mode: intent.tribunalMode, cwd: resolveWorkingDir() });
           await handleTribunal(intent.question, cb.dispatch, cb.ctx, intent.tribunalMode);
           if (cb.eventBus) cb.eventBus.emit('post:tribunal', { question: intent.question, cwd: resolveWorkingDir() }).catch(() => {});
+          if (cb.ctx.cesarSession?.alive) {
+            const recentChat = cb.ctx.chatSession?.messages?.slice(-12) ?? [];
+            const chatContext = recentChat.filter((m: any) => m.role === 'engine').map((m: any) => `[${m.engineId}]: ${m.content.slice(0, 1500)}`).join('\n\n');
+            if (chatContext) await absorbIntoCesar(`Tribunal concluded on: "${(intent.question ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize the verdict and key takeaways.`, cb.dispatch, cb.ctx);
+          }
         });
         return { handled: true, ranAsJob: true };
       case 'campfire':
@@ -425,10 +539,22 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
           if (cb.eventBus) await cb.eventBus.emit('pre:campfire', { topic: intent.topic, cwd: resolveWorkingDir() });
           await handleCampfire(intent.topic, cb.dispatch, cb.ctx);
           if (cb.eventBus) cb.eventBus.emit('post:campfire', { topic: intent.topic, cwd: resolveWorkingDir() }).catch(() => {});
+          if (cb.ctx.cesarSession?.alive) {
+            const recentChat = cb.ctx.chatSession?.messages?.slice(-12) ?? [];
+            const chatContext = recentChat.filter((m: any) => m.role === 'engine').map((m: any) => `[${m.engineId}]: ${m.content.slice(0, 1500)}`).join('\n\n');
+            if (chatContext) await absorbIntoCesar(`Campfire discussion on: "${(intent.topic ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize the key insights and any consensus reached.`, cb.dispatch, cb.ctx);
+          }
         });
         return { handled: true, ranAsJob: true };
       case 'team-tribunal':
-        cb.runAsJob('team-tribunal', intent.question?.slice(0, 40) ?? 'team-tribunal', () => handleTeamTribunal(intent.question, cb.dispatch, cb.ctx, intent.tribunalMode, intent.membersPerSide));
+        cb.runAsJob('team-tribunal', intent.question?.slice(0, 40) ?? 'team-tribunal', async () => {
+          await handleTeamTribunal(intent.question, cb.dispatch, cb.ctx, intent.tribunalMode, intent.membersPerSide);
+          if (cb.ctx.cesarSession?.alive) {
+            const recentChat = cb.ctx.chatSession?.messages?.slice(-12) ?? [];
+            const chatContext = recentChat.filter((m: any) => m.role === 'engine').map((m: any) => `[${m.engineId}]: ${m.content.slice(0, 1500)}`).join('\n\n');
+            if (chatContext) await absorbIntoCesar(`Team tribunal concluded on: "${(intent.question ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize the verdict and key takeaways.`, cb.dispatch, cb.ctx);
+          }
+        });
         return { handled: true, ranAsJob: true };
       case 'team-forge':
         cb.runAsJob('team-forge', intent.task?.slice(0, 40) ?? 'team-forge', () => handleTeamForge(intent.task, intent.fitnessCmd, cb.dispatch, cb.ctx, intent.membersPerSide));
@@ -485,6 +611,9 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
       }
       case 'tokens': handleTokens(cb.dispatch); break;
       case 'models': {
+        cb.setModelPickerTargetEngine?.(null);
+        cb.setModelPickerInitialFilter?.('');
+        cb.setModelPickerTitle?.('Select model');
         cb.setModelPickerLoading(true);
         cb.setModelPickerOpen(true);
         import('@agon/core').then(({ fetchModelsRegistry, buildModelEntries }) => {
@@ -525,7 +654,7 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
             toolRegistry: null, hasNativeTools: false, lastDispatch: null,
             pendingDelegation: null, reportedConfidence: undefined,
             autoNero: false, advisorPending: false, lastEscalation: null,
-            mcpFingerprint: undefined, mcpSignalPath: undefined, planDispatch: null, proposedPlan: undefined,
+            mcpFingerprint: undefined, mcpSignalPath: undefined, planDispatch: null, proposedPlan: undefined, sessionMcpServers: [],
           };
         }
         cb.ctx.cesar.planDispatch = cb.dispatch;
@@ -538,11 +667,16 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
           // Clear the stash
           if (cb.ctx.cesar) cb.ctx.cesar.proposedPlan = undefined;
 
-          // Approval loop — ask user, handle Y/N/feedback
+          // Show plan file path
+          if (proposed.planFilePath) {
+            cb.dispatch({ type: 'info', message: `Plan saved: ${proposed.planFilePath}` });
+          }
+
+          // Approval loop — ask user, handle Y/N/feedback/edit
           let currentProposal = proposed;
           let decided = false;
           while (!decided) {
-            const answer = await cb.askQuestion('Approve plan? [Y/n] or give feedback to revise');
+            const answer = await cb.askQuestion('Approve plan? [Y/n/e(dit)] or give feedback to revise');
             const trimmed = answer.trim().toLowerCase();
 
             if (trimmed === 'y' || trimmed === 'yes' || trimmed === '') {
@@ -559,17 +693,22 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
               const callbacks = {
                 onStepStart: (stepId: string) => {
                   const step = approved.steps.find((s: any) => s.id === stepId);
-                  cb.dispatch({ type: 'info', message: `Step: ${step?.description ?? stepId} — starting...` });
+                  const cfg: Record<string, string> = { self: '\u2699 Cesar', forge: '\u2694 Forge', teamforge: '\u2694\u2694 Team Forge', brainstorm: '\u26a1 Brainstorm', campfire: '\u2500 Campfire', tribunal: '\u2696 Tribunal', delegate: '\u27a4 Delegate', pipeline: '\u2192 Pipeline' };
+                  const typeLabel = step ? (cfg[step.type] ?? step.type) : '';
+                  const stepEngines = step?.engines?.length ? ` \u2192 ${step.engines.join(', ')}` : (step?.engine ? ` \u2192 ${step.engine}` : '');
+                  cb.dispatch({ type: 'info', message: `Step ${approved.steps.indexOf(step!) + 1}/${approved.steps.length}: ${typeLabel}${stepEngines} \u2014 ${step?.description ?? stepId}` });
                 },
                 onStepDone: (stepId: string, result: CesarStepResult) => {
                   const step = approved.steps.find((s: any) => s.id === stepId);
-                  const icon = result.status === 'success' ? '✓' : '✗';
+                  const icon = result.status === 'success' ? '\u2713' : '\u2717';
                   const msgType = result.status === 'success' ? 'success' : 'error';
-                  cb.dispatch({ type: msgType, message: `${icon} ${step?.description ?? stepId} — ${result.status}${result.error ? ': ' + result.error : ''} (${(result.durationMs / 1000).toFixed(1)}s)` });
+                  cb.dispatch({ type: msgType, message: `${icon} ${step?.description ?? stepId} \u2014 ${result.status}${result.error ? ': ' + result.error : ''} (${(result.durationMs / 1000).toFixed(1)}s, $${result.actualCostUsd.toFixed(4)})` });
                 },
                 onPlanUpdate: (updated: CesarPlan) => {
                   cb.setActivePlan(updated);
                   saveCesarPlan(updated);
+                  // Dispatch live plan execution view
+                  cb.dispatch({ type: 'plan-execution', plan: updated } as any);
                   if (updated.planFilePath) {
                     try {
                       const { writeFileSync } = require('node:fs');
@@ -618,10 +757,39 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
               cb.dispatch({ type: 'info', message: 'Plan rejected.' });
               decided = true;
 
+            } else if (trimmed === 'edit' || trimmed === 'e') {
+              // ── Edit — open plan file for manual editing ──
+              const filePath = currentProposal.planFilePath;
+              if (filePath) {
+                cb.dispatch({ type: 'info', message: `Plan file: ${filePath}` });
+                cb.dispatch({ type: 'info', message: 'Edit the file in your editor, then press Enter to re-read and revise.' });
+                await cb.askQuestion('Press Enter when done editing...');
+                try {
+                  const { readFileSync } = require('node:fs');
+                  const editedContent = readFileSync(filePath, 'utf-8');
+                  cb.dispatch({ type: 'info', message: 'Re-reading edited plan and revising...' });
+                  const reviseInput = `[PLAN REVISION] The user manually edited the plan file. Here is the updated content:\n\n${editedContent}\n\nParse the user's edits, incorporate them, and call ProposePlan IMMEDIATELY with the revised steps. Do NOT re-investigate.`;
+                  await routeWithCesar(reviseInput, [], cb);
+                  const revised: CesarPlan | undefined = cb.ctx.cesar?.proposedPlan;
+                  if (revised && revised.state === 'awaiting_approval') {
+                    if (cb.ctx.cesar) cb.ctx.cesar.proposedPlan = undefined;
+                    currentProposal = revised;
+                  } else {
+                    cb.dispatch({ type: 'warning', message: 'Cesar did not produce a revised plan from your edits. Try giving text feedback instead.' });
+                    decided = true;
+                  }
+                } catch (err) {
+                  cb.dispatch({ type: 'warning', message: `Could not read plan file: ${(err as Error).message}. Use /plan <task> to start over.` });
+                  decided = true;
+                }
+              } else {
+                cb.dispatch({ type: 'warning', message: 'No plan file path available. Type feedback as text instead.' });
+              }
+
             } else {
               // ── Feedback — send to Cesar for revision ──
               cb.dispatch({ type: 'info', message: 'Revising plan with your feedback...' });
-              const reviseInput = `[PLAN REVISION] The user wants changes to the plan: ${answer}\n\nRevise the plan and call ProposePlan again with the updated steps.`;
+              const reviseInput = `[PLAN REVISION] The user wants these changes: ${answer}\n\nRevise the plan and call ProposePlan IMMEDIATELY with the updated steps. Do NOT re-investigate. Do NOT respond with text. Just call ProposePlan with the revised plan.`;
               await routeWithCesar(reviseInput, [], cb);
               const revised: CesarPlan | undefined = cb.ctx.cesar?.proposedPlan;
               if (revised && revised.state === 'awaiting_approval') {
@@ -839,6 +1007,144 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
           cb.dispatch({ type: 'success', message: `${icons().nero} Nero mode ON — Cesar will challenge your ideas before implementing. Use /nero again to disable.` });
         } else {
           cb.dispatch({ type: 'success', message: 'Nero mode OFF — Cesar back to normal.' });
+        }
+        break;
+      }
+
+      // ── Skill scaffolding ──
+      case 'create-skill': {
+        const csIntent = intent as any;
+        const skillName = csIntent.skillName as string;
+        const slug = skillName.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+        const trigger = `/${slug}`;
+        const skillDir = join(resolveWorkingDir(), '.agon', 'skills');
+        const skillPath = join(skillDir, `${slug}.md`);
+
+        const { mkdirSync, existsSync, writeFileSync } = await import('node:fs');
+        if (existsSync(skillPath)) {
+          cb.dispatch({ type: 'warning', message: `Skill already exists: ${skillPath}` });
+          break;
+        }
+
+        mkdirSync(skillDir, { recursive: true });
+        const template = [
+          '---',
+          `name: ${skillName}`,
+          `trigger: ${trigger}`,
+          `description: TODO — describe what this skill does`,
+          '---',
+          '',
+          'You are in {name} mode.',
+          '',
+          'The user said: {input}',
+          '',
+          '## Instructions',
+          '',
+          'TODO — write the skill prompt here.',
+          'Use {input} for the user\'s message after the trigger.',
+          '',
+        ].join('\n');
+
+        writeFileSync(skillPath, template);
+        cb.dispatch({ type: 'success', message: `Created skill: ${skillPath}` });
+        cb.dispatch({ type: 'info', message: `Edit the file, then use ${trigger} <args> to invoke it.` });
+        break;
+      }
+
+      // ── MCP management ──
+      case 'mcp': {
+        if (!cb.ctx.cesar) {
+          cb.ctx.cesar = {
+            busy: false, busySince: null, queue: null,
+            toolRegistry: null, hasNativeTools: false, lastDispatch: null,
+            pendingDelegation: null, reportedConfidence: undefined,
+            autoNero: false, advisorPending: false, lastEscalation: null,
+            mcpFingerprint: undefined, mcpSignalPath: undefined, planDispatch: null, proposedPlan: undefined, sessionMcpServers: [],
+          };
+        }
+        const mcpIntent = intent as any;
+        const sessionServers: Array<Record<string,unknown>> = cb.ctx.sessionMcpServers ?? [];
+
+        if (mcpIntent.action === 'list') {
+          if (sessionServers.length === 0) {
+            cb.dispatch({ type: 'info', message: 'No MCP servers connected. Use /mcp connect <name|url>' });
+          } else {
+            const lines = sessionServers.map((s: any) => `  ${s.name} — ${s.url ?? s.command ?? 'local'}`).join('\n');
+            cb.dispatch({ type: 'text', content: `MCP servers (session):\n${lines}` });
+          }
+          break;
+        }
+
+        if (mcpIntent.action === 'connect') {
+          const serverInput = (mcpIntent.server ?? '').trim();
+          if (!serverInput) {
+            cb.dispatch({ type: 'warning', message: 'Usage: /mcp connect <name|url>' });
+            break;
+          }
+
+          // Resolve: URL or name lookup from .mcp.json
+          let serverEntry: {name:string, type?:string, url?:string, command?:string, args?:string[]};
+          if (serverInput.startsWith('http://') || serverInput.startsWith('https://')) {
+            const name = serverInput.replace(/^https?:\/\//, '').split('/')[0].replace(/\./g, '-');
+            serverEntry = { name, type: 'http', url: serverInput };
+          } else {
+            // Look up in .mcp.json (project) or ~/.agon/mcp.json (global)
+            let found: any = null;
+            for (const configPath of [join(resolveWorkingDir(), '.mcp.json'), join(process.env.HOME ?? '', '.agon', 'mcp.json')]) {
+              try {
+                const raw = JSON.parse(require('node:fs').readFileSync(configPath, 'utf-8'));
+                const servers = raw.mcpServers ?? raw.servers ?? raw;
+                if (servers[serverInput]) {
+                  found = { name: serverInput, ...servers[serverInput] };
+                  break;
+                }
+              } catch { /* file not found — expected */ }
+            }
+            if (!found) {
+              cb.dispatch({ type: 'error', message: `MCP server "${serverInput}" not found in .mcp.json or ~/.agon/mcp.json` });
+              break;
+            }
+            serverEntry = found;
+          }
+
+          // Check if already connected
+          if (sessionServers.some((s: any) => s.name === serverEntry.name)) {
+            cb.dispatch({ type: 'info', message: `MCP server "${serverEntry.name}" already connected.` });
+            break;
+          }
+
+          sessionServers.push(serverEntry);
+          if (cb.ctx.setSessionMcpServers) cb.ctx.setSessionMcpServers([...sessionServers]);
+
+          // Restart Cesar session to pick up new MCP server
+          if (cb.ctx.cesarSession) {
+            cb.ctx.cesarSession.close();
+            cb.ctx.setCesarSession(null);
+          }
+          cb.dispatch({ type: 'success', message: `MCP connected: ${serverEntry.name}${serverEntry.url ? ` (${serverEntry.url})` : ''}. Cesar session restarting…` });
+          break;
+        }
+
+        if (mcpIntent.action === 'disconnect') {
+          const serverName = (mcpIntent.server ?? '').trim();
+          if (!serverName) {
+            cb.dispatch({ type: 'warning', message: 'Usage: /mcp disconnect <name>' });
+            break;
+          }
+          const idx = sessionServers.findIndex((s: any) => s.name === serverName);
+          if (idx === -1) {
+            cb.dispatch({ type: 'warning', message: `MCP server "${serverName}" not connected.` });
+            break;
+          }
+          sessionServers.splice(idx, 1);
+          if (cb.ctx.setSessionMcpServers) cb.ctx.setSessionMcpServers([...sessionServers]);
+
+          if (cb.ctx.cesarSession) {
+            cb.ctx.cesarSession.close();
+            cb.ctx.setCesarSession(null);
+          }
+          cb.dispatch({ type: 'success', message: `MCP disconnected: ${serverName}. Cesar session restarting…` });
+          break;
         }
         break;
       }

@@ -4,6 +4,7 @@ import from="@agon/core" names="ImageAttachment,DispatchResult" types=true
 import from="@agon/core" names="RUNS_DIR,appendMessage,tracker,StreamParser,loadConfig,sessionContext,resolveWorkingDir"
 import from="../blocks/output-format.js" names="ENGINE_COLORS"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
+import from="../cesar/brain.js" names="yieldToInk"
 
 // Module-level cwd cache — resolveWorkingDir reads disk, but workspace doesn't change mid-session
 const name=_cachedCwd type="{value:string|null}"
@@ -230,9 +231,11 @@ fn name=handleChat params="input:string, dispatch:Dispatch, ctx:HandlerContext, 
     if (!streaming && response) {
       dispatch({ type: 'spinner-stop' });
       dispatch({ type: 'engine-block', engineId, color, content: response });
+      await yieldToInk();
     }
     if (streaming) {
       dispatch({ type: 'streaming-end', engineId });
+      await yieldToInk();
     }
 
     // Emit file-changes event if agent dispatch returned a diff

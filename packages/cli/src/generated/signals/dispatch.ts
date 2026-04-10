@@ -182,8 +182,22 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
         || ((routeAction === 'forge' || routeAction === 'team-forge' || routeAction === 'pipeline')
           ? (executionSpec.task || input).trim()
           : input);
-      const taskInput = userContext ? `${baseTask}\n\n${userContext}` : baseTask;
+      let taskInput = userContext ? `${baseTask}\n\n${userContext}` : baseTask;
       const fitnessCmd = result.fitnessCmd ?? executionSpec.fitnessCmd;
+  
+      // Enrich delegation context — Cesar's investigation should flow to brainstorm/tribunal/campfire
+      const THINKING_ACTIONS = ['brainstorm', 'tribunal', 'campfire', 'team-brainstorm', 'team-tribunal'];
+      if (THINKING_ACTIONS.includes(routeAction) && cb.ctx.chatSession?.messages?.length > 0) {
+        const recent = cb.ctx.chatSession.messages.slice(-4);
+        const cesarContext = recent
+          .filter((m: any) => m.role === 'engine' && m.content)
+          .map((m: any) => m.content.length > 800 ? m.content.slice(0, 800) + '…' : m.content)
+          .join('\n\n');
+        if (cesarContext) {
+          taskInput = `${taskInput}\n\n## Cesar's Investigation Context\nCesar analyzed this before escalating:\n\n${cesarContext}`;
+        }
+      }
+  
       cb.dispatch({ type: 'info', message: `Cesar → ${routeAction}${hardened ? ' (hardened)' : ''}${tMode ? ` [${tMode}]` : ''}` });
       switch (routeAction) {
         case 'build':
@@ -416,7 +430,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
   return false;
 }
 
-// @kern-source: dispatch:376
+// @kern-source: dispatch:390
 /**
  * Route a parsed intent to the correct handler. Registry-first, switch as fallback.
  */

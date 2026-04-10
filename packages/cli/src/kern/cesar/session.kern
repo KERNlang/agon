@@ -447,7 +447,7 @@ fn name=canUseCesarMcp params="engine:any,binaryPath:string" returns=boolean
   handler <<<
     if (!binaryPath) return false;
     const protocol = engine?.companion?.protocol;
-    return protocol === 'acp' || protocol === 'jsonrpc';
+    return protocol === 'acp' || protocol === 'jsonrpc' || protocol === 'stream-json';
   >>>
 
 fn name=mcpConfigFingerprint params="config:any" returns=string

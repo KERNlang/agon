@@ -993,7 +993,9 @@ screen name=App target=ink
             {inputQueue.length > 0 && (<Box><Text dimColor>{icons().queue + ' '}{inputQueue.length} queued: </Text><Text dimColor italic>{inputQueue[0].length > 40 ? inputQueue[0].slice(0, 40) + '…' : inputQueue[0]}</Text></Box>)}
             {liveSpinner && mode === 'chat' && (
               <Box paddingLeft={1}>
-                <Text color="#fbbf24">{liveSpinner.message}</Text>
+                <Text color={questionState && questionState.choices ? '#ef4444' : '#fbbf24'}>
+                  {questionState && questionState.choices ? `${icons().warning} PERMISSION REQUIRED \u2014 respond below` : liveSpinner.message}
+                </Text>
               </Box>
             )}
             <Box borderStyle={mode === 'chat' ? 'round' : 'single'} borderColor={mode === 'chat' ? (questionState ? '#fbbf24' : '#585858') : 'gray'} borderLeft={mode !== 'chat'} borderRight={mode !== 'chat'} borderTop borderBottom paddingX={1} width="100%">
@@ -1010,16 +1012,16 @@ screen name=App target=ink
               </Box>
             </Box>
             {questionState && (
-              <Box flexDirection="column" paddingLeft={2} marginTop={0}>
-                <Text bold color="#fbbf24">{questionState.prompt}</Text>
+              <Box flexDirection="column" paddingLeft={1} marginTop={0} borderLeft borderColor={questionState.choices ? '#fbbf24' : '#585858'}>
+                <Text bold color="#fbbf24">{questionState.choices ? ` ${icons().warning} ` : ' '}{questionState.prompt}</Text>
                 {questionState.choices ? (
-                  <Box flexDirection="column" paddingLeft={1}>
+                  <Box flexDirection="column" paddingLeft={2}>
                     {(questionState.choices as {key:string,label:string,color?:string}[]).map((c: any, i: number) => (
                       <Text key={i}><Text color={c.color ?? '#6b7280'} bold>  [{i + 1}/{c.key}] </Text><Text>{c.label}</Text></Text>
                     ))}
                   </Box>
                 ) : (
-                  <Box paddingLeft={1}><TextInput value={questionAnswer} onChange={setQuestionAnswer} onSubmit={handleQuestionAnswer} /></Box>
+                  <Box paddingLeft={2}><TextInput value={questionAnswer} onChange={setQuestionAnswer} onSubmit={handleQuestionAnswer} /></Box>
                 )}
               </Box>
             )}

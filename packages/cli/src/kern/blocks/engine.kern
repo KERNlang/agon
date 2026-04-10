@@ -302,8 +302,11 @@ screen name=OutputBlockView target=ink
           const moreLines = permCmd.split('\n').length > 6;
           return (
             <Box flexDirection="column" paddingLeft={1} marginY={1}>
-              <Box borderStyle="round" borderColor="#fbbf24" paddingX={1} flexDirection="column">
-                <Text color="#fbbf24" bold>{permTool === 'Bash' || permTool === 'bash' ? `${icons().bash} Bash command` : `${icons().warning} ${permTool}`}</Text>
+              <Box borderStyle="bold" borderColor="#fbbf24" paddingX={1} flexDirection="column">
+                <Text color="#fbbf24" bold>
+                  {permTool === 'Bash' || permTool === 'bash' ? `${icons().bash} Bash` : `${icons().warning} ${permTool}`}
+                  <Text color="#ef4444">{' \u2014 APPROVAL REQUIRED'}</Text>
+                </Text>
                 <Text> </Text>
                 {cmdLines.map((line: string, i: number) => (
                   <Text key={`perm-cmd-${i}`}>
@@ -320,6 +323,7 @@ screen name=OutputBlockView target=ink
                 )}
                 <Text> </Text>
                 <Text color="#fbbf24">{permReason}</Text>
+                <Text dimColor>{'  Press '}<Text bold color="#4ade80">{'Y'}</Text>{' to approve, '}<Text bold color="#ef4444">{'N'}</Text>{' to deny, '}<Text bold color="#60a5fa">{'A'}</Text>{' to always allow'}</Text>
               </Box>
             </Box>
           );

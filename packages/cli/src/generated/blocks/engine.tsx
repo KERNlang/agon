@@ -300,8 +300,11 @@ export function OutputBlockView({ event, mode, toolOutputExpanded, thinkingExpan
             const moreLines = permCmd.split('\n').length > 6;
             return (
               <Box flexDirection="column" paddingLeft={1} marginY={1}>
-                <Box borderStyle="round" borderColor="#fbbf24" paddingX={1} flexDirection="column">
-                  <Text color="#fbbf24" bold>{permTool === 'Bash' || permTool === 'bash' ? `${icons().bash} Bash command` : `${icons().warning} ${permTool}`}</Text>
+                <Box borderStyle="bold" borderColor="#fbbf24" paddingX={1} flexDirection="column">
+                  <Text color="#fbbf24" bold>
+                    {permTool === 'Bash' || permTool === 'bash' ? `${icons().bash} Bash` : `${icons().warning} ${permTool}`}
+                    <Text color="#ef4444">{' \u2014 APPROVAL REQUIRED'}</Text>
+                  </Text>
                   <Text> </Text>
                   {cmdLines.map((line: string, i: number) => (
                     <Text key={`perm-cmd-${i}`}>
@@ -318,6 +321,7 @@ export function OutputBlockView({ event, mode, toolOutputExpanded, thinkingExpan
                   )}
                   <Text> </Text>
                   <Text color="#fbbf24">{permReason}</Text>
+                  <Text dimColor>{'  Press '}<Text bold color="#4ade80">{'Y'}</Text>{' to approve, '}<Text bold color="#ef4444">{'N'}</Text>{' to deny, '}<Text bold color="#60a5fa">{'A'}</Text>{' to always allow'}</Text>
                 </Box>
               </Box>
             );
@@ -704,7 +708,7 @@ export function OutputBlockView({ event, mode, toolOutputExpanded, thinkingExpan
 }
 
 
-// @kern-source: engine:710
+// @kern-source: engine:714
 
 export function ToolCallGroup({ blocks }: { blocks: OutputBlock[] }) {
         const toolCounts: Record<string, number> = {};
@@ -740,7 +744,7 @@ export function ToolCallGroup({ blocks }: { blocks: OutputBlock[] }) {
 }
 
 
-// @kern-source: engine:748
+// @kern-source: engine:752
 export function extractSummary(text: string, maxLen: number): string {
   let s = text.replace(/<think>[\s\S]*?<\/think>\s*/gi, '');
   s = s.replace(/^#+\s+.+\n/gm, '');
@@ -752,7 +756,7 @@ export function extractSummary(text: string, maxLen: number): string {
   return summary.length > maxLen ? summary.slice(0, maxLen - 1) + '\u2026' : summary;
 }
 
-// @kern-source: engine:762
+// @kern-source: engine:766
 
 export function DebateGroup({ blocks }: { blocks: OutputBlock[] }) {
         const round = (blocks[0]?.event as any)?.round ?? '?';
@@ -779,7 +783,7 @@ export function DebateGroup({ blocks }: { blocks: OutputBlock[] }) {
 }
 
 
-// @kern-source: engine:791
+// @kern-source: engine:795
 
 export function BidGroup({ blocks }: { blocks: OutputBlock[] }) {
         const w = contentWidth(6);

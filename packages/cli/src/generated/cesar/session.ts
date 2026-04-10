@@ -402,18 +402,12 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
       }
     }
   
-    // Block writes during plan mode — Cesar can only read, search, and use orchestration tools
+    // Block file writes during plan mode — Bash goes through normal permission UI
     const activePlan = ctx.activePlan;
     if (activePlan && ['planning', 'awaiting_approval'].includes(activePlan.state)) {
       const WRITE_TOOLS = ['Edit', 'Write'];
       if (WRITE_TOOLS.includes(agonTool)) {
         return 'BLOCKED: Plan mode — no code changes allowed. Use ProposePlan to propose your plan, then wait for approval before implementing.';
-      }
-      if (agonTool === 'Bash') {
-        const cmd = command.toLowerCase();
-        // Allow read-only + git ops (user may ask Cesar to commit during planning)
-        const isAllowed = /^\s*(git\s+(status|log|diff|show|branch|remote|rev-parse|add|commit|push|pull|checkout|stash|tag|fetch)|ls|cat|head|tail|grep|rg|find|wc|file|stat|which|echo|printf|npm\s+(run\s+type|test|run\s+build)|npx\s+kern\s+compile)/.test(cmd);
-        if (!isAllowed) return 'BLOCKED: Plan mode — only read-only commands and git operations allowed. Propose your plan first with ProposePlan.';
       }
     }
   
@@ -426,20 +420,12 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
       if (/^find\s/.test(cmd)) return 'BLOCKED: Use the Glob tool instead of find. Glob is faster and tracked by Agon.';
     }
   
-    // R1 enforcement for companion engines: block write tools until confidence is reported
-    // Read-only Bash and Read/Grep are allowed for investigation
+    // R1 enforcement for companion engines: block file writes until confidence is reported
+    // Bash commands flow through to the normal permission UI — user's settings.json controls approval
     if (ctx.cesar!.reportedConfidence === undefined) {
       const WRITE_TOOLS = ['Edit', 'Write'];
       if (WRITE_TOOLS.includes(agonTool)) {
         return 'BLOCKED: Report confidence first via ReportConfidence MCP tool before writing files.';
-      }
-      if (agonTool === 'Bash') {
-        const cmd = command.trimStart().toLowerCase();
-        // Allow read-only commands AND git write ops (commit/push are user-approved mechanical actions, not code generation)
-        const isAllowed = /^\s*(git\s+(status|log|diff|show|branch|remote|rev-parse|stash\s+list|add|commit|push|pull|checkout|merge|rebase|stash|tag|fetch)|ls|wc|file|stat|which|echo|printf|npm\s+(run\s+type|test|run\s+build)|npx\s+kern)/.test(cmd);
-        if (!isAllowed) {
-          return 'BLOCKED: Report confidence first via ReportConfidence MCP tool before running commands. Read-only commands and git operations are allowed.';
-        }
       }
     }
   
@@ -467,7 +453,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
   };
 }
 
-// @kern-source: session:443
+// @kern-source: session:429
 export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unknown>> {
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -501,7 +487,7 @@ export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unkn
   return normalizeNamedRecord(raw);
 }
 
-// @kern-source: session:477
+// @kern-source: session:463
 export function loadCesarMcpServers(config: any, cwd: string): Array<Record<string,unknown>>|undefined {
   if (!(config as any).cesarMcpEnabled) return undefined;
   
@@ -525,14 +511,14 @@ export function loadCesarMcpServers(config: any, cwd: string): Array<Record<stri
   return servers;
 }
 
-// @kern-source: session:501
+// @kern-source: session:487
 export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
   if (!binaryPath) return false;
   const protocol = engine?.companion?.protocol;
   return protocol === 'acp' || protocol === 'jsonrpc' || protocol === 'stream-json';
 }
 
-// @kern-source: session:508
+// @kern-source: session:494
 /**
  * Compute a fingerprint of MCP-related config to detect changes. Includes both manual config and auto-discovery sources.
  */
@@ -552,7 +538,7 @@ export function mcpConfigFingerprint(config: any): string {
   return `${enabled}:${configPath}:${mtime}:${discoveryFp}`;
 }
 
-// @kern-source: session:526
+// @kern-source: session:512
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
     const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';

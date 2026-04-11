@@ -14,10 +14,10 @@ import { EngineRegistry, loadConfig, classifyTask, createSidechainLogger, compos
 import { updateTeamElo } from '@agon/core';
 
 // @kern-source: team-brainstorm:9
-import { buildKernDraftPrompt, parseKernDraft } from 'kern-lang';
+import { buildKernDraftPrompt, parseKernDraft } from '../kern-draft.js';
 
 // @kern-source: team-brainstorm:10
-import type { KernDraft } from 'kern-lang';
+import type { KernDraft } from '../kern-draft.js';
 
 // @kern-source: team-brainstorm:11
 import { calibrateConfidence, qualityScore } from './brainstorm.js';

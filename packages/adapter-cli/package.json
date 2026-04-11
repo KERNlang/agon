@@ -10,7 +10,9 @@
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "kern:compile": "kern compile src/kern --outdir=src/generated",
     "prebuild": "npm run kern:compile",
@@ -19,6 +21,6 @@
   },
   "dependencies": {
     "@agon/core": "*",
-    "kern-lang": "^3.1.8"
+    "kern-lang": "file:../../../kern-lang/packages/cli"
   }
 }

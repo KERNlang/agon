@@ -148,11 +148,7 @@ screen name=StatusLine target=ink
   prop name=engineId type=string optional=true
   prop name=color type=number optional=true
   state name=now type=number initial="Date.now()"
-  effect
-    handler <<<
-      const t = setInterval(() => setNow(Date.now()), 1000);
-      return () => clearInterval(t);
-    >>>
+  animation name=now interval=1000 update="Date.now()"
   render
     handler <<<
 
@@ -199,7 +195,7 @@ screen name=BackgroundJobRail target=ink
 
 // ── Screen: CesarStatusStrip — always-visible compact status ────────
 
-screen name=CesarStatusStrip target=ink
+screen name=CesarStatusStrip target=ink export=named
   prop name=cesarId type=string
   prop name=confidence type="number|null" optional=true
   prop name=spinner type="{ message: string; engineId?: string } | null"
@@ -210,12 +206,7 @@ screen name=CesarStatusStrip target=ink
   prop name=planModeQueued type=boolean optional=true
   prop name=activePlanState type="string|null" optional=true
   state name=now type=number initial="Date.now()"
-  effect deps="isActive"
-    handler <<<
-      if (!isActive) return;
-      const t = setInterval(() => setNow(Date.now()), 1000);
-      return () => clearInterval(t);
-    >>>
+  animation name=now interval=1000 update="Date.now()" active="isActive"
   render
     handler <<<
       // Plan badge (shared between idle and active)

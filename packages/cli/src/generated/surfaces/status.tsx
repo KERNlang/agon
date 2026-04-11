@@ -76,7 +76,7 @@ export function BackgroundJobRail({ jobs }: { jobs:Job[] }) {
   );
 }
 
-export default function CesarStatusStrip({ cesarId, confidence, spinner, engines, startTime, streamSnippet, isActive, planModeQueued, activePlanState }: { cesarId:string; confidence?:number|null; spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; startTime:number; streamSnippet?:{ engineId: string; line: string } | null; isActive:boolean; planModeQueued?:boolean; activePlanState?:string|null }) {
+export function CesarStatusStrip({ cesarId, confidence, spinner, engines, startTime, streamSnippet, isActive, planModeQueued, activePlanState }: { cesarId:string; confidence?:number|null; spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; startTime:number; streamSnippet?:{ engineId: string; line: string } | null; isActive:boolean; planModeQueued?:boolean; activePlanState?:string|null }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
     return (value) => setTimeout(() => setter(value), 0);
@@ -86,9 +86,11 @@ export default function CesarStatusStrip({ cesarId, confidence, spinner, engines
   const setNow = useMemo(() => __inkSafe(_setNowRaw), [_setNowRaw]);
 
   useEffect(() => {
-    if (!isActive) return;
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
+    if (!(isActive)) return;
+    const _animId = setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
+    return () => clearInterval(_animId);
   }, [isActive]);
 
   // Plan badge (shared between idle and active)

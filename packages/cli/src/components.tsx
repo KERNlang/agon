@@ -30,9 +30,8 @@ export type { ReviewEvent, ModelPickerEntry } from './generated/blocks/controls.
 // Status
 export {
   SpinnerBlock, TokenGauge, StatusBar, StatusLine, BackgroundJobRail,
-  AGON_TIPS,
+  CesarStatusStrip, AGON_TIPS,
 } from './generated/surfaces/status.js';
-export { default as CesarStatusStrip } from './generated/surfaces/status.js';
 
 // Re-export ENGINE_COLORS from output for backward compat
 export { ENGINE_COLORS } from './output.js';

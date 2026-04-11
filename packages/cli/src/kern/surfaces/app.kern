@@ -849,7 +849,7 @@ screen name=App target=ink
               return visibleBlocks.map((block: OutputBlock) => (<OutputBlockView key={block.id} event={block.event} mode={mode} toolOutputExpanded={true} thinkingExpanded={thinkingExpanded} />));
             }
             // Group consecutive blocks: tool-call → ToolCallGroup, debate-round → DebateGroup, kern-draft → BidGroup
-            const minorTypes = new Set(['info', 'warning', 'success', 'separator']);
+            const minorTypes = new Set(['info', 'warning', 'success', 'separator', 'thinking-chunk', 'streaming-chunk', 'confidence-update', 'spinner-update', 'spinner-start', 'spinner-stop', 'progress-update', 'progress-clear']);
             const groups: (OutputBlock | OutputBlock[])[] = [];
             let idx = 0;
             while (idx < visibleBlocks.length) {

@@ -1,8 +1,8 @@
 import from="node:crypto" names="randomUUID"
 import from="@agon/core" names="EngineAdapter,BrainstormBid,BrainstormResult,ScoutBid" types=true
 import from="@agon/core" names="EngineRegistry,buildBrainstormPrompt,getRatings,loadConfig,createSidechainLogger,updateGlickoRanked,classifyTask"
-import from="kern-lang" names="buildKernDraftPrompt,parseKernDraft,buildKernRankPrompt"
-import from="kern-lang" names="KernDraft" types=true
+import from="../kern-draft.js" names="buildKernDraftPrompt,parseKernDraft,buildKernRankPrompt"
+import from="../kern-draft.js" names="KernDraft" types=true
 
 fn name=calibrateConfidence params="engineId:string, rawBid:number" returns=number
   handler <<<

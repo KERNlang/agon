@@ -8,10 +8,10 @@ import type { EngineAdapter, BrainstormBid, BrainstormResult, ScoutBid } from '@
 import { EngineRegistry, buildBrainstormPrompt, getRatings, loadConfig, createSidechainLogger, updateGlickoRanked, classifyTask } from '@agon/core';
 
 // @kern-source: brainstorm:4
-import { buildKernDraftPrompt, parseKernDraft, buildKernRankPrompt } from 'kern-lang';
+import { buildKernDraftPrompt, parseKernDraft, buildKernRankPrompt } from '../kern-draft.js';
 
 // @kern-source: brainstorm:5
-import type { KernDraft } from 'kern-lang';
+import type { KernDraft } from '../kern-draft.js';
 
 // @kern-source: brainstorm:7
 export function calibrateConfidence(engineId: string, rawBid: number): number {

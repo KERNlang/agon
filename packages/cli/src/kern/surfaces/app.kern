@@ -49,9 +49,6 @@ const name=_cancelCallback type="{ fn: (() => void) | null }"
 const name=_cesarSessionRef type="{ session: PersistentSession | null }"
   handler <<< { session: null } >>>
 
-// Paint nudge flag — prevents multiple setTimeout callbacks when addBlock is called rapidly
-const name=_paintNudge type="{ pending: boolean }"
-  handler <<< { pending: false } >>>
 
 screen name=App target=ink
   // ── State ──
@@ -262,11 +259,6 @@ screen name=App target=ink
             }
             streamingTextRef.current = val;
             setStreamingText(val);
-            // Nudge Ink paint — direct setState from microtask context may not trigger paint
-            if (!_paintNudge.pending) {
-              _paintNudge.pending = true;
-              setTimeout(() => { _paintNudge.pending = false; setStreamingText((s: any) => s ? { ...s } : s); }, 0);
-            }
             return;
           }
           if (streamingFlushTimerRef.current) return;
@@ -279,13 +271,6 @@ screen name=App target=ink
         addBlock: (event: any) => {
           setScrollOffset(0);
           setOutputBlocks((prev: any) => [...prev, { id: Date.now() + Math.random(), event }]);
-          // Nudge Ink's render loop — state updates from Promise continuations (microtasks)
-          // don't always trigger Ink's paint. Schedule a macrotask that forces a new React
-          // commit by creating a new array ref, which triggers Ink to repaint.
-          if (!_paintNudge.pending) {
-            _paintNudge.pending = true;
-            setTimeout(() => { _paintNudge.pending = false; setOutputBlocks((b: any) => [...b]); }, 0);
-          }
         },
         clearBlocks: () => setOutputBlocks([]),
         setReviewEvent,
@@ -373,6 +358,7 @@ screen name=App target=ink
       process.stdout.on('resize', onResize);
       return () => { process.stdout.off('resize', onResize); };
     >>>
+
 
   effect
     handler <<<

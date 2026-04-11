@@ -27,6 +27,7 @@
     "vitest": "^3.0.0"
   },
   "dependencies": {
+    "@kernlang/cli": "file:../kern-lang/packages/cli",
     "zod": "^4.3.6"
   }
 }

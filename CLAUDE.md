@@ -86,15 +86,16 @@ Add a comment in the `.kern` file where the gap was hit:
 // KERN-GAP: <category> — <description of what's needed>
 ```
 
-### Known gaps (pending KERN compiler improvements)
-- **async-safe-setter** — React state setters called from async/Promise context don't trigger Ink repaints. KERN needs a primitive that wraps setters to bridge microtask→macrotask automatically.
-- **throttle/debounce on state** — `state name=x throttle=90` instead of hand-rolling setTimeout timer logic in useMemo closures.
-- **ref as first-class node** — `ref name=bufferRef type="T" initial=null` instead of declaring refs inside handler blocks.
-- **Ink-aware dispatch** — KERN-generated dispatch functions should handle microtask→macrotask bridging automatically so Ink always repaints.
-- **animation primitive** — declarative interval-driven state updates (what SpinnerBlock does manually with setInterval/setNow).
-- **channel/stream primitive** — for async generators flowing into React state (the `session.send()` → UI pattern).
-- **screen composability** — screen nodes embedding other screen nodes with typed props, not raw JSX.
-- **layout node** — KERN-native Ink Box/flex configuration instead of hand-writing `<Box flexDirection="column">` in JSX.
+### Known gaps (track what KERN can't express yet)
+When you encounter a pattern KERN can't handle for Ink/React, note it here. Examples:
+- async-safe state setters (microtask→macrotask bridging)
+- throttle/debounce modifiers on state
+- ref as first-class KERN node
+- Ink-aware dispatch with automatic repaint bridging
+- animation/interval primitives
+- async generator → React state channels
+- screen composability (typed screen embedding)
+- layout nodes (KERN-native Box/flex)
 
 ### Why this matters
 Every workaround we write in TypeScript is a KERN feature request. The KERN compiler team uses these gaps to prioritize what to build next. Agon is the proving ground — if KERN can express Agon's entire CLI, it can express anything.

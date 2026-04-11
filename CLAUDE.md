@@ -86,16 +86,24 @@ Add a comment in the `.kern` file where the gap was hit:
 // KERN-GAP: <category> — <description of what's needed>
 ```
 
+### KERN Ink Primitives (available in kern-lang ≥3.2.0 with `--target=ink`)
+- `state name=x safe=false` — opt out of `__inkSafe` wrapper (default: safe, bridges microtask→macrotask)
+- `state name=x throttle=90` — rate-limited setter
+- `state name=x debounce=300` — debounced setter
+- `ref name=bufferRef type="string[]" initial=null` — first-class useRef
+- `animation name=frame interval=100 update="..."` — declarative setInterval with auto-cleanup
+- `derive name=filtered expr={{ items.filter(...) }}` — auto-memoized useMemo
+- `stream name=msgs source=session.messages mode=channel dispatch=handleChunk` — async generator → dispatch
+- `on event=key key=return` — useInput with key matching
+- `focus name=emailFocused autoFocus=true` — useFocus hook
+- `app-exit on={{ complete }}` — clean exit via useApp
+- `screen-embed screen=SpinnerBlock from="./status.kern"` — cross-file component imports
+- `layout-row gap=2` / `layout-col` / `layout-stack padding=1` / `spacer` — semantic layout
+- `screen name=X export=default` — export control (default vs named)
+- Components: `multi-select`, `confirm-input`, `password-input`, `status-message`, `alert`, `ordered-list`, `unordered-list`, `newline`
+
 ### Known gaps (track what KERN can't express yet)
-When you encounter a pattern KERN can't handle for Ink/React, note it here. Examples:
-- async-safe state setters (microtask→macrotask bridging)
-- throttle/debounce modifiers on state
-- ref as first-class KERN node
-- Ink-aware dispatch with automatic repaint bridging
-- animation/interval primitives
-- async generator → React state channels
-- screen composability (typed screen embedding)
-- layout nodes (KERN-native Box/flex)
+When you encounter a pattern KERN can't handle for Ink/React, add a `// KERN-GAP:` comment in the .kern file.
 
 ### Why this matters
 Every workaround we write in TypeScript is a KERN feature request. The KERN compiler team uses these gaps to prioritize what to build next. Agon is the proving ground — if KERN can express Agon's entire CLI, it can express anything.

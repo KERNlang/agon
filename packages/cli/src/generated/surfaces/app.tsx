@@ -127,7 +127,16 @@ export function App() {
   const [cesarPickerOpen, _setCesarPickerOpenRaw] = useState<boolean>(false);
   const setCesarPickerOpen = useMemo(() => __inkSafe(_setCesarPickerOpenRaw), [_setCesarPickerOpenRaw]);
   const [streamingText, _setStreamingTextRaw] = useState<any>(null);
-  const setStreamingText = useMemo(() => __inkSafe(_setStreamingTextRaw), [_setStreamingTextRaw]);
+  const setStreamingText = useMemo(() => {
+    let _lastCall = 0;
+    return (value: React.SetStateAction<any>) => {
+      const now = Date.now();
+      if (now - _lastCall >= 90) {
+        _lastCall = now;
+        setTimeout(() => _setStreamingTextRaw(value), 0);
+      }
+    };
+  }, []);
   const [pendingImages, _setPendingImagesRaw] = useState<ImageAttachment[]>([]);
   const setPendingImages = useMemo(() => __inkSafe(_setPendingImagesRaw), [_setPendingImagesRaw]);
   const [reviewEvent, _setReviewEventRaw] = useState<ReviewEvent|null>(null);
@@ -159,7 +168,16 @@ export function App() {
   const [thinkingExpanded, _setThinkingExpandedRaw] = useState<boolean>(true);
   const setThinkingExpanded = useMemo(() => __inkSafe(_setThinkingExpandedRaw), [_setThinkingExpandedRaw]);
   const [cesarConfidence, _setCesarConfidenceRaw] = useState<number|null>(null);
-  const setCesarConfidence = useMemo(() => __inkSafe(_setCesarConfidenceRaw), [_setCesarConfidenceRaw]);
+  const setCesarConfidence = useMemo(() => {
+    let _lastCall = 0;
+    return (value: React.SetStateAction<number|null>) => {
+      const now = Date.now();
+      if (now - _lastCall >= 200) {
+        _lastCall = now;
+        setTimeout(() => _setCesarConfidenceRaw(value), 0);
+      }
+    };
+  }, []);
   const [planModeQueued, _setPlanModeQueuedRaw] = useState<boolean>(false);
   const setPlanModeQueued = useMemo(() => __inkSafe(_setPlanModeQueuedRaw), [_setPlanModeQueuedRaw]);
   const [cesarMemory, _setCesarMemoryRaw] = useState<any>(() => createCesarMemory());
@@ -185,15 +203,22 @@ export function App() {
   const [workspacePath, _setWorkspacePathRaw] = useState<string>(resolveWorkingDir());
   const setWorkspacePath = useMemo(() => __inkSafe(_setWorkspacePathRaw), [_setWorkspacePathRaw]);
   const [termWidth, _setTermWidthRaw] = useState<number>(process.stdout.columns || 100);
-  const setTermWidth = useMemo(() => __inkSafe(_setTermWidthRaw), [_setTermWidthRaw]);
+  const setTermWidth = useMemo(() => {
+    let _lastCall = 0;
+    return (value: React.SetStateAction<number>) => {
+      const now = Date.now();
+      if (now - _lastCall >= 100) {
+        _lastCall = now;
+        setTimeout(() => _setTermWidthRaw(value), 0);
+      }
+    };
+  }, []);
   const [scrollOffset, _setScrollOffsetRaw] = useState<number>(0);
   const setScrollOffset = useMemo(() => __inkSafe(_setScrollOffsetRaw), [_setScrollOffsetRaw]);
 
   const chatStartTimeRef = useRef<number>(0);
   const currentPlanRef = useRef<Plan|null>(null);
   const streamingTextRef = useRef<any>(null);
-  const streamingBufferRef = useRef<any>(null);
-  const streamingFlushTimerRef = useRef<any>(null);
   const modeRef = useRef<'chat'|'campfire'|'brainstorm'|'tribunal'>('chat');
   const ctrlKeyHandledRef = useRef<boolean>(false);
   const justPastedRef = useRef<boolean>(false);
@@ -216,41 +241,10 @@ export function App() {
             setLiveSpinner,
             setLiveProgress,
             setStreamingText: (val: any) => {
-              streamingBufferRef.current = val;
-              if (modeRef.current !== 'chat') {
-                if (streamingFlushTimerRef.current) {
-                  clearTimeout(streamingFlushTimerRef.current);
-                  streamingFlushTimerRef.current = null;
-                }
-                streamingTextRef.current = val;
-                setStreamingText(val);
-                return;
-              }
-              if (!val) {
-                if (streamingFlushTimerRef.current) {
-                  clearTimeout(streamingFlushTimerRef.current);
-                  streamingFlushTimerRef.current = null;
-                }
-                streamingTextRef.current = null;
-                setStreamingText(null);
-                return;
-              }
-              const needsImmediatePaint = !streamingTextRef.current || streamingTextRef.current.engineId !== val.engineId;
-              if (needsImmediatePaint) {
-                if (streamingFlushTimerRef.current) {
-                  clearTimeout(streamingFlushTimerRef.current);
-                  streamingFlushTimerRef.current = null;
-                }
-                streamingTextRef.current = val;
-                setStreamingText(val);
-                return;
-              }
-              if (streamingFlushTimerRef.current) return;
-              streamingFlushTimerRef.current = setTimeout(() => {
-                streamingFlushTimerRef.current = null;
-                streamingTextRef.current = streamingBufferRef.current;
-                setStreamingText(streamingBufferRef.current);
-              }, 90);
+              // Sync mirror for dispatch/flush/snippet reads; React state is
+              // rate-limited by the throttle=90 primitive on the state declaration.
+              streamingTextRef.current = val;
+              setStreamingText(val);
             },
             addBlock: (event: any) => {
               setScrollOffset(0);
@@ -261,18 +255,19 @@ export function App() {
             setQuestionState,
             setChatStartTime: (val: number) => { chatStartTimeRef.current = val; },
             flushStream: () => {
-              const prev = streamingBufferRef.current ?? streamingTextRef.current;
-              if (streamingFlushTimerRef.current) {
-                clearTimeout(streamingFlushTimerRef.current);
-                streamingFlushTimerRef.current = null;
-              }
+              const prev = streamingTextRef.current;
               if (prev) {
                 const color = ENGINE_COLORS[prev.engineId] ?? 124;
                 setOutputBlocks((blocks: any) => [...blocks, { id: Date.now() - 1, event: { type: 'engine-block', engineId: prev.engineId, color, content: prev.content } }]);
               }
-              streamingBufferRef.current = null;
               streamingTextRef.current = null;
               setStreamingText(null);
+              // KERN-GAP: state throttle=90 is leading-edge — a null clear landing
+              // inside the 90ms lockout from the last chunk is silently dropped,
+              // leaving a stale streaming box visible alongside the finalized block.
+              // Retry past the lockout window. Remove once KERN ships trailing-edge
+              // throttle (e.g. `throttle=90 edge="trailing"`).
+              setTimeout(() => setStreamingText(null), 100);
             },
             getEngineColor: (engineId: string) => ENGINE_COLORS[engineId] ?? 124,
             setCesarConfidence,
@@ -309,7 +304,7 @@ export function App() {
     if (et === 'streaming-chunk' || et === 'thinking-chunk' || et === 'progress-update' || et === 'tool-call' || et === 'spinner-start' || et === 'spinner-update') {
       lastActivityTimeRef.current = Date.now();
     }
-    const state: OutputState = { liveSpinner: null, liveProgress: null, streamingText: streamingBufferRef.current ?? streamingTextRef.current };
+    const state: OutputState = { liveSpinner: null, liveProgress: null, streamingText: streamingTextRef.current };
     handleOutputEvent(event, state, outputActions, mode, chatStartTimeRef.current);
   }, [mode]);
 
@@ -323,13 +318,9 @@ export function App() {
     trackAbort(null);
     setLiveSpinner(null);
     setLiveProgress(null);
-    if (streamingFlushTimerRef.current) {
-      clearTimeout(streamingFlushTimerRef.current);
-      streamingFlushTimerRef.current = null;
-    }
-    streamingBufferRef.current = null;
     streamingTextRef.current = null;
     setStreamingText(null);
+    setTimeout(() => setStreamingText(null), 100); // bypass throttle lockout
     clearPermissionQueue();
     
     if (replState !== 'idle') {
@@ -718,12 +709,6 @@ export function App() {
   }, [mode]);
 
   useEffect(() => {
-    return () => {
-      if (streamingFlushTimerRef.current) clearTimeout(streamingFlushTimerRef.current);
-    };
-  }, []);
-
-  useEffect(() => {
     const modes = ['brainstorm', 'forge', 'tribunal', 'campfire'] as const;
     const offs: (() => void)[] = [];
     for (const mode of modes) {
@@ -808,13 +793,9 @@ export function App() {
       for (const abort of _activeAborts) abort.abort();
       _activeAborts.clear();
       activeAbortRef.current = null;
-      if (streamingFlushTimerRef.current) {
-        clearTimeout(streamingFlushTimerRef.current);
-        streamingFlushTimerRef.current = null;
-      }
-      streamingBufferRef.current = null;
       streamingTextRef.current = null;
       setActiveAbort(null); setLiveSpinner(null); setLiveProgress(null); setStreamingText(null);
+      setTimeout(() => setStreamingText(null), 100); // bypass throttle lockout
       clearPermissionQueue();
       setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state);
     };

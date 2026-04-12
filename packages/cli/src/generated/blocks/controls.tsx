@@ -103,8 +103,8 @@ export function SlashPicker({ commands, onSelect, onCancel }: { commands: typeof
 
 export function EnginePicker({ available, initialSelected, userEngines, modelOverrides, onConfirm, onCancel, onRemove, onSetModel, onBrowseModel }: { available: string[]; initialSelected: string[]; userEngines: Set<string>; modelOverrides: Record<string,string>; onConfirm: (selected: string[]) => void; onCancel: () => void; onRemove: (engineId: string) => void; onSetModel: (engineId: string, model: string | null) => void; onBrowseModel: (engineId: string) => void }) {
   const [cursor, setCursor] = useState<number>(0);
-  const [selected, setSelected] = useState<Set<string>>(new Set(initialSelected));
-  const [hidden, setHidden] = useState<Set<string>>(new Set((loadConfig() as any).hiddenEngines ?? []));
+  const [selected, setSelected] = useState<Set<string>>(() => new Set(initialSelected));
+  const [hidden, setHidden] = useState<Set<string>>(() => new Set((loadConfig() as any).hiddenEngines ?? []));
   const [phase, setPhase] = useState<'select'|'type-model'>('select');
   const [modelInput, setModelInput] = useState<string>('');
 

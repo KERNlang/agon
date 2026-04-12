@@ -527,19 +527,7 @@ export function OutputBlockView({ event, mode, toolOutputExpanded, thinkingExpan
               const shortPath = filePath ? filePath.replace(process.cwd() + '/', '').replace(process.env.HOME ?? '', '~') : '';
               const addedCount = newStr ? newStr.split('\n').length : 0;
               const removedCount = oldStr ? oldStr.split('\n').length : 0;
-              // Collapsed: 1-line summary
-              if (!toolOutputExpanded) {
-                return (
-                  <Box paddingLeft={2}>
-                    <Text>
-                      {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().edit + ' Update'}</Text></Text>
-                      {shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}
-                      <Text dimColor>{' '}<Text color="#ef4444">{'-'}{removedCount}</Text>{' '}<Text color="#4ade80">{'+'}{addedCount}</Text></Text>
-                      {collapsedHint}
-                    </Text>
-                  </Box>
-                );
-              }
+              // Edit always shows the full diff — code changes are never hidden.
               return (
                 <Box paddingLeft={2} flexDirection="column">
                   <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().edit + ' Update'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}</Text>
@@ -578,26 +566,28 @@ export function OutputBlockView({ event, mode, toolOutputExpanded, thinkingExpan
               const content = (parsed.content as string) || '';
               const shortPath = filePath.replace(process.cwd() + '/', '').replace(process.env.HOME ?? '', '~');
               const lineCount = content ? content.split('\n').length : 0;
-              // Collapsed: 1-line summary
-              if (!toolOutputExpanded) {
-                return (
-                  <Box paddingLeft={2}>
-                    <Text>
-                      {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().write + ' Write'}</Text></Text>
-                      {shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}
-                      {lineCount > 0 && <Text dimColor>{' '}{lineCount}{' lines'}</Text>}
-                      {collapsedHint}
-                    </Text>
-                  </Box>
-                );
-              }
+              // Write always shows the full content — code changes are never hidden.
               return (
                 <Box paddingLeft={2} flexDirection="column">
                   <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().write + ' Write'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}</Text>
-                  {lineCount > 0 && <Text dimColor>{'  '}{lineCount}{' lines'}</Text>}
-                  {event.output && event.status === 'done' && (
-                    <Text dimColor>{'  '}{event.output.length > 80 ? event.output.slice(0, 80) + '\u2026' : event.output}</Text>
-                  )}
+                  {content && event.status !== 'running' && (() => {
+                    const allLines = content.split('\n');
+                    const shown = allLines.slice(0, 40);
+                    const gutterW = Math.max(String(lineCount).length, 2);
+                    const pad = (n: number) => String(n).padStart(gutterW);
+                    return (
+                      <>
+                        <Text dimColor>{'    '}<Text color="#4ade80">{'+'}{lineCount}</Text>{' lines'}</Text>
+                        {shown.map((line: string, i: number) => (
+                          <Text key={`w-${i}`}>
+                            <Text color="#6b7280">{' '}{pad(i + 1)}{' '}</Text>
+                            <DiffLine line={`+${line}`} maxWidth={codeWidth - gutterW - 2} />
+                          </Text>
+                        ))}
+                        {allLines.length > 40 && <Text dimColor>{'    \u2026 '}{allLines.length - 40}{' more lines'}</Text>}
+                      </>
+                    );
+                  })()}
                 </Box>
               );
             }

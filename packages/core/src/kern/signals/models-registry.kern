@@ -183,26 +183,40 @@ fn name=searchModels params="entries:ModelEntry[], query:string" returns="ModelE
       grok: ['xai'],
     };
 
+    // Collect all canonical provider IDs across all search terms
+    const requiredProviders = new Set<string>();
+    for (const term of terms) {
+      const canonical = canonicalProviders[term];
+      if (canonical) {
+        for (const c of canonical) requiredProviders.add(c);
+      }
+    }
+
     const matched = entries.filter((entry) => {
+      const pid = entry.providerId.toLowerCase();
       const haystack = `${entry.providerName} ${entry.modelName} ${entry.modelId}`.toLowerCase();
+
+      // If any term maps to canonical providers, entry must be from one of them
+      if (requiredProviders.size > 0) {
+        const isCanonical = [...requiredProviders].some((c) => pid === c || pid.startsWith(c));
+        if (!isCanonical) return false;
+      }
+
       return terms.every((term: string) => haystack.includes(term));
     });
 
-    // Score and sort by relevance — canonical providers first
+    // Score and sort by relevance
     const scored = matched.map((entry) => {
       let score = 0;
       const pid = entry.providerId.toLowerCase();
       const pname = entry.providerName.toLowerCase();
 
       for (const term of terms) {
-        // Canonical provider for this model brand → top priority
         const canonical = canonicalProviders[term];
         if (canonical && canonical.some((c: string) => pid === c || pid.startsWith(c))) {
           score += 100;
         }
-        // Provider name directly matches search term → high relevance
         if (pname.includes(term)) score += 20;
-        // Model name matches → base relevance
         if (entry.modelName.toLowerCase().includes(term)) score += 10;
       }
 

@@ -856,8 +856,7 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
       const args = [
         '--print',
         '--verbose',
-        '--permission-mode', 'plan',
-        '--disallowedTools', 'Bash Edit Write',
+        '--permission-mode', 'default',
         '--strict-mcp-config',
         '--input-format', 'stream-json',
         '--output-format', 'stream-json',
@@ -1534,7 +1533,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                 messageHistory.push(assistToolMsg);
   
                 // Execute tools in parallel (like Vercel AI SDK Promise.all pattern)
-                const INLINE_LIMIT = 800;
+                const INLINE_LIMIT = 8192;
   
                 // Emit all as running
                 const parsedCalls = extractedCalls;
@@ -1590,8 +1589,8 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                     let histContent = tc.result;
                     if (histContent.length > INLINE_LIMIT) {
                       const cacheEntry = saveToolResultToDisk(config.engine.id, tc.id, tc.name, tc.result);
-                      if (cacheEntry) { toolCacheManifest.push(cacheEntry); histContent = histContent.slice(0, 400) + `\n...\n[cached — ${tc.id}]`; }
-                      else { histContent = histContent.slice(0, 600) + '\n...\n[truncated]'; }
+                      if (cacheEntry) { toolCacheManifest.push(cacheEntry); histContent = histContent.slice(0, 2048) + `\n...\n[cached — ${tc.id}]`; }
+                      else { histContent = histContent.slice(0, 2048) + '\n...\n[truncated]'; }
                     }
                     messageHistory.push({ role: 'tool', content: histContent, tool_call_id: tc.id } as any);
                   }
@@ -1639,10 +1638,9 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                     if (cacheEntry) {
                       toolCacheManifest.push(cacheEntry);
                       const lines = histContent.split('\n').length;
-                      histContent = histContent.slice(0, 400) + `\n...\n[${lines} lines, ${histContent.length} chars — cached — ${tc.id}]`;
+                      histContent = histContent.slice(0, 2048) + `\n...\n[${lines} lines, ${histContent.length} chars — cached — ${tc.id}]`;
                     } else {
-                      // Disk write failed — still better than 300 chars, keep 600
-                      histContent = histContent.slice(0, 600) + `\n...\n[truncated — ${histContent.length} chars total]`;
+                      histContent = histContent.slice(0, 2048) + `\n...\n[truncated — ${histContent.length} chars total]`;
                     }
                   }
                   messageHistory.push({ role: 'tool', content: histContent, tool_call_id: tc.id } as any);
@@ -1736,14 +1734,14 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                         tool_calls: [{ id: sc.id, type: 'function', function: { name: sc.name, arguments: JSON.stringify(sc.args) } }],
                       } as any);
                       let histContent = result;
-                      if (histContent.length > 800) {
+                      if (histContent.length > 8192) {
                         // Disk-backed cache for auto-executed intent results too
                         const cacheEntry = saveToolResultToDisk(config.engine.id, sc.id, sc.name, result);
                         if (cacheEntry) {
                           toolCacheManifest.push(cacheEntry);
-                          histContent = histContent.slice(0, 400) + `\n...\n[cached — ${sc.id}]`;
+                          histContent = histContent.slice(0, 2048) + `\n...\n[cached — ${sc.id}]`;
                         } else {
-                          histContent = histContent.slice(0, 600) + `\n...\n[truncated]`;
+                          histContent = histContent.slice(0, 2048) + `\n...\n[truncated]`;
                         }
                       }
                       messageHistory.push({ role: 'tool', content: histContent, tool_call_id: sc.id } as any);

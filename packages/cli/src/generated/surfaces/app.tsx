@@ -280,10 +280,6 @@ export function App() {
           return [...registryCmds, ...uniqueSkills];
   }, [dynamicSkills, extensionSkills, commandRegistry]);
 
-  const availableEngines = useMemo(() => {
-          return registry.availableIds();
-  }, [registry]);
-
   const runningJobs = useMemo(() => {
           return jobList.filter((j: Job) => j.state === 'running');
   }, [jobList]);
@@ -718,7 +714,7 @@ export function App() {
       planModeQueued, activePlanState: activePlan?.state ?? null,
       outputBlockCount: outputBlocks.length,
       commands: allSlashCommands,
-      engineIds: availableEngines,
+      engineIds: registry.availableIds(),
     });
     
     switch (action.type) {
@@ -887,7 +883,7 @@ export function App() {
 
   return (
   <Box flexDirection="column">
-    <ChromeBar mode={mode} cwdLabel={resolveWorkingDir().split('/').pop() ?? ''} engineCount={availableEngines.length} replState={replState} runningJobs={runningJobs} />
+    <ChromeBar mode={mode} cwdLabel={resolveWorkingDir().split('/').pop() ?? ''} engineCount={registry.availableIds().length} replState={replState} runningJobs={runningJobs} />
     <BackgroundJobRail jobs={runningJobs} />
     <Box flexDirection="column">
       <HistoryView visibleBlocks={visibleBlocks} groupedBlocks={groupedBlocks} mode={mode} scrollOffset={scrollOffset} thinkingExpanded={thinkingExpanded} />
@@ -895,7 +891,7 @@ export function App() {
     </Box>
     {reviewEvent && <ReviewBlock event={reviewEvent} onAction={handleReviewActionCb} />}
     {enginePickerOpen && (
-      <EnginePicker available={availableEngines} initialSelected={sessionEngines ?? availableEngines}
+      <EnginePicker available={registry.availableIds()} initialSelected={sessionEngines ?? registry.availableIds()}
         userEngines={new Set(registry.list().filter((e: any) => e.tier === 'user').map((e: any) => e.id))}
         modelOverrides={(loadConfig() as any).engineModels ?? {}}
         onConfirm={(selected: string[]) => { setEnginePickerOpen(false); setSessionEngines(selected); configSet('forgeEnabledEngines', selected); dispatch({ type: 'success', message: `Active engines: ${selected.join(', ')}` } as any); }}
@@ -953,7 +949,7 @@ export function App() {
     )}
     {cesarPickerOpen && (
       <CesarPicker
-        engines={availableEngines}
+        engines={registry.availableIds()}
         currentCesar={(loadConfig() as any).cesarEngine ?? loadConfig().forgeFixedStarter ?? 'claude'}
         onSelect={(engineId: string) => {
           setCesarPickerOpen(false);
@@ -986,7 +982,7 @@ export function App() {
             ) : (
               <><TextInput key={inputKey} value={inputValue} onChange={handleInputChange} onSubmit={handleSubmit}
                 placeholder={replState === 'idle' ? mode === 'chat' ? '' : mode === 'campfire' ? 'What should we think about?' : mode === 'brainstorm' ? 'What question for the engines?' : 'What should they debate?' : ''} />
-              {(() => { const ghost = getGhostCompletion(inputValue, allSlashCommands, availableEngines); return ghost ? <Text dimColor>{ghost}</Text> : null; })()}</>
+              {(() => { const ghost = getGhostCompletion(inputValue, allSlashCommands, registry.availableIds()); return ghost ? <Text dimColor>{ghost}</Text> : null; })()}</>
             )}
           </Box>
         </Box>

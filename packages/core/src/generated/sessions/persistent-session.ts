@@ -841,7 +841,13 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
       const args = [
         '--print',
         '--verbose',
-        '--permission-mode', 'default',
+        // bypassPermissions so stream-json doesn't stall on native-tool approval
+        // prompts (we're --print, not interactive). disallowedTools forces
+        // Claude to route file/shell operations through Agon's MCP-proxied
+        // Bash/Edit/Write instead of its native implementations, so every
+        // mutation still passes through Agon's permission flow.
+        '--permission-mode', 'bypassPermissions',
+        '--disallowedTools', 'Bash Edit Write',
         '--strict-mcp-config',
         '--input-format', 'stream-json',
         '--output-format', 'stream-json',

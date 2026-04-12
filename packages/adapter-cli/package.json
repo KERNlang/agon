@@ -14,7 +14,7 @@
     "dist"
   ],
   "scripts": {
-    "kern:compile": "kern compile src/kern --outdir=src/generated",
+    "kern:compile": "kern compile src/kern/ --outdir=src/generated/ --target=auto --recursive",
     "prebuild": "npm run kern:compile",
     "build": "tsup",
     "typecheck": "tsc --noEmit"

@@ -14,7 +14,7 @@
     "dist"
   ],
   "scripts": {
-    "kern:compile": "for d in models signals blocks cesar tools api sessions teams; do kern compile src/kern/$d --outdir=src/generated/$d; done && bash scripts/kern-postcompile.sh",
+    "kern:compile": "kern compile src/kern/ --outdir=src/generated/ --target=auto --recursive && bash scripts/kern-postcompile.sh",
     "prebuild": "npm run kern:compile",
     "build": "tsup",
     "typecheck": "tsc --noEmit"

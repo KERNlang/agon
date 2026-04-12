@@ -1,0 +1,46 @@
+// ── Block archive — spill oldest OutputBlocks to disk when the live buffer is full ──
+// Keeps React state bounded so long sessions don't accumulate thousands of blocks.
+// Archived lines are NDJSON and can be read back by /history or an offline pager.
+
+import from="node:fs" names="appendFileSync,mkdirSync"
+import from="node:path" names="join,dirname"
+import from="@agon/core" names="RUNS_DIR"
+import from="../blocks/engine.js" names="OutputBlock" types=true
+
+const name=MAX_LIVE_BLOCKS type=number
+  handler <<< 500 >>>
+
+const name=ARCHIVE_BATCH type=number
+  handler <<< 100 >>>
+
+fn name=makeBlockArchivePath params="sessionStartTime:number" returns=string
+  doc "Per-session archive path under RUNS_DIR. Safe to call repeatedly — same sessionStartTime yields the same path."
+  handler <<<
+    const dir = join(RUNS_DIR, `live-${sessionStartTime}`);
+    mkdirSync(dir, { recursive: true });
+    return join(dir, 'transcript.ndjson');
+  >>>
+
+fn name=archiveBlocks params="archivePath:string, blocks:OutputBlock[]" returns=void
+  doc "Append blocks as NDJSON. Fire-and-forget: logs a warning on failure but never throws."
+  handler <<<
+    if (blocks.length === 0) return;
+    try {
+      mkdirSync(dirname(archivePath), { recursive: true });
+      const lines = blocks.map(b => JSON.stringify({ id: b.id, event: b.event })).join('\n') + '\n';
+      appendFileSync(archivePath, lines);
+    } catch (err) {
+      console.warn(`[agon] block archive write failed (${archivePath}): ${err instanceof Error ? err.message : String(err)}`);
+    }
+  >>>
+
+// Pure helper — shared by addBlock / flushStream in app.kern.
+// Returns the next React-state array; overflow (if any) goes to disk.
+fn name=appendBlockWithCap params="prev:OutputBlock[], block:OutputBlock, archivePath:string" returns="OutputBlock[]"
+  handler <<<
+    const next = [...prev, block];
+    if (next.length <= MAX_LIVE_BLOCKS) return next;
+    const overflow = next.length - MAX_LIVE_BLOCKS + ARCHIVE_BATCH;
+    archiveBlocks(archivePath, next.slice(0, overflow));
+    return next.slice(overflow);
+  >>>

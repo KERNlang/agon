@@ -42,6 +42,13 @@ fn name=clearPermissionQueue returns=void
     }
   >>>
 
+fn name=clearThinkingBuffer returns=void
+  doc "Drop any buffered thinking-chunk content. Called on interrupt / clear / SIGINT so the next turn doesn't emit stale content as a fresh block."
+  handler <<<
+    _thinkingBuffer.engineId = '';
+    _thinkingBuffer.content = '';
+  >>>
+
 fn name=_drainAutoApproved params="actions:OutputActions" returns=void export=false
   doc "Auto-approve queued permissions whose base command is already in allowedCommands."
   handler <<<
@@ -180,6 +187,8 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
         actions.clearBlocks();
         actions.setStreamingText(null);
         codeBlockBuffer.clear();
+        _thinkingBuffer.engineId = '';
+        _thinkingBuffer.content = '';
         return;
       case 'patch-review':
         actions.setReviewEvent({ winnerId: (event as any).winnerId, patchPath: (event as any).patchPath, patchContent: (event as any).patchContent });

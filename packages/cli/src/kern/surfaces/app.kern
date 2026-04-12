@@ -24,10 +24,11 @@ import from="../signals/app-state.js" names="ReplStateState" types=true
 import from="../signals/paste-handler.js" names="processPasteContent,expandPastePlaceholders"
 import from="../signals/dispatch.js" names="dispatchIntent,handleModeSwitch"
 import from="../signals/dispatch.js" names="DispatchCallbacks" types=true
-import from="../signals/output.js" names="handleOutputEvent,clearPermissionQueue"
+import from="../signals/output.js" names="handleOutputEvent,clearPermissionQueue,clearThinkingBuffer"
 import from="../signals/output.js" names="OutputActions,OutputState" types=true
 import from="../signals/app-input.js" names="cleanInputValue,cleanSubmitValue,findInputChange,navigateHistory,resolveEscapeAction,shouldQueuePlanModeOnTab"
 import from="../signals/keyboard.js" names="resolveKeyboardInput"
+import from="../signals/block-archive.js" names="makeBlockArchivePath,appendBlockWithCap"
 import from="../blocks/review.js" names="handleReviewAction"
 import from="../../components.js" names="SpinnerBlock,EngineProgressView,StatusBar,CesarStatusStrip,OutputBlockView,ToolCallGroup,DebateGroup,BidGroup,SlashPicker,EnginePicker,ModelPicker,ReviewBlock,BackgroundJobRail,RenderedSegments,CesarPicker,contentWidth,engineColor"
 import from="../../components.js" names="OutputBlock,ReviewEvent" types=true
@@ -107,6 +108,7 @@ screen name=App target=ink
   ref name=pasteCountRef type=number initial=0
   ref name=activeAbortRef type="AbortController|null" initial="null"
   ref name=lastActivityTimeRef type=number initial="Date.now()"
+  ref name=blockArchivePathRef type=string initial="makeBlockArchivePath(Date.now())"
 
   // ── Init-once state (registry, adapter, skills) ──
   state name=registry type=EngineRegistry initial="(() => { const reg = new EngineRegistry(); const engDir = join(dirname(fileURLToPath(import.meta.url)), '../../../../engines'); reg.load(engDir); return reg; })()"
@@ -140,6 +142,49 @@ screen name=App target=ink
   memo name=runningJobs deps="jobList"
     handler <<<
       return jobList.filter((j: Job) => j.state === 'running');
+    >>>
+
+  memo name=visibleBlocks deps="outputBlocks, scrollOffset"
+    handler <<<
+      return scrollOffset > 0 ? outputBlocks.slice(0, outputBlocks.length - scrollOffset) : outputBlocks;
+    >>>
+
+  // Group consecutive tool-call / debate-round / kern-draft blocks.
+  // Returns null when toolOutputExpanded — the render falls back to a flat
+  // map in that branch so every tool call shows its full body.
+  memo name=groupedBlocks deps="visibleBlocks, toolOutputExpanded"
+    handler <<<
+      if (toolOutputExpanded) return null;
+      const minorTypes = new Set(['info', 'warning', 'success', 'separator', 'thinking-chunk', 'streaming-chunk', 'confidence-update', 'spinner-update', 'spinner-start', 'spinner-stop', 'progress-update', 'progress-clear']);
+      const groups: (OutputBlock | OutputBlock[])[] = [];
+      let idx = 0;
+      while (idx < visibleBlocks.length) {
+        const t = visibleBlocks[idx].event.type;
+        if (t === 'tool-call') {
+          const group: OutputBlock[] = [];
+          while (idx < visibleBlocks.length) {
+            const tt = visibleBlocks[idx].event.type;
+            if (tt === 'tool-call') { group.push(visibleBlocks[idx]); idx++; }
+            else if (minorTypes.has(tt) && idx + 1 < visibleBlocks.length && visibleBlocks[idx + 1].event.type === 'tool-call') { idx++; }
+            else break;
+          }
+          groups.push(group);
+        } else if (t === 'debate-round') {
+          const group: OutputBlock[] = [];
+          const round = (visibleBlocks[idx].event as any).round;
+          while (idx < visibleBlocks.length && visibleBlocks[idx].event.type === 'debate-round' && (visibleBlocks[idx].event as any).round === round) {
+            group.push(visibleBlocks[idx]); idx++;
+          }
+          groups.push(group);
+        } else if (t === 'kern-draft') {
+          const group: OutputBlock[] = [];
+          while (idx < visibleBlocks.length && visibleBlocks[idx].event.type === 'kern-draft') {
+            group.push(visibleBlocks[idx]); idx++;
+          }
+          groups.push(group);
+        } else { groups.push(visibleBlocks[idx]); idx++; }
+      }
+      return groups;
     >>>
 
   // ── Load extensions on startup + workspace switch ──
@@ -244,7 +289,7 @@ screen name=App target=ink
         },
         addBlock: (event: any) => {
           setScrollOffset(0);
-          setOutputBlocks((prev: any) => [...prev, { id: Date.now() + Math.random(), event }]);
+          setOutputBlocks((prev: any) => appendBlockWithCap(prev, { id: Date.now() + Math.random(), event }, blockArchivePathRef.current));
         },
         clearBlocks: () => setOutputBlocks([]),
         setReviewEvent,
@@ -254,7 +299,7 @@ screen name=App target=ink
           const prev = streamingTextRef.current;
           if (prev) {
             const color = ENGINE_COLORS[prev.engineId] ?? 124;
-            setOutputBlocks((blocks: any) => [...blocks, { id: Date.now() - 1, event: { type: 'engine-block', engineId: prev.engineId, color, content: prev.content } }]);
+            setOutputBlocks((blocks: any) => appendBlockWithCap(blocks, { id: Date.now() - 1, event: { type: 'engine-block', engineId: prev.engineId, color, content: prev.content } }, blockArchivePathRef.current));
           }
           streamingTextRef.current = null;
           setStreamingText(null);
@@ -289,6 +334,7 @@ screen name=App target=ink
       streamingTextRef.current = null;
       setStreamingText(null);
       clearPermissionQueue();
+      clearThinkingBuffer();
 
       if (replState !== 'idle') {
         if (message) dispatch({ type: 'warning', message } as any);
@@ -661,6 +707,7 @@ screen name=App target=ink
         streamingTextRef.current = null;
         setActiveAbort(null); setLiveSpinner(null); setLiveProgress(null); setStreamingText(null);
         clearPermissionQueue();
+        clearThinkingBuffer();
         setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state);
       };
     >>>
@@ -754,54 +801,18 @@ screen name=App target=ink
         <BackgroundJobRail jobs={runningJobs} />
         <Box flexDirection="column">
           {scrollOffset > 0 && <Box paddingX={1}><Text dimColor>{`↑ ${scrollOffset} block${scrollOffset > 1 ? 's' : ''} above — Shift+↑ to scroll`}</Text></Box>}
-          {(() => {
-            const visibleBlocks = scrollOffset > 0 ? outputBlocks.slice(0, outputBlocks.length - scrollOffset) : outputBlocks;
-            if (toolOutputExpanded) {
-              return visibleBlocks.map((block: OutputBlock) => (<OutputBlockView key={block.id} event={block.event} mode={mode} toolOutputExpanded={true} thinkingExpanded={thinkingExpanded} />));
-            }
-            // Group consecutive blocks: tool-call → ToolCallGroup, debate-round → DebateGroup, kern-draft → BidGroup
-            const minorTypes = new Set(['info', 'warning', 'success', 'separator', 'thinking-chunk', 'streaming-chunk', 'confidence-update', 'spinner-update', 'spinner-start', 'spinner-stop', 'progress-update', 'progress-clear']);
-            const groups: (OutputBlock | OutputBlock[])[] = [];
-            let idx = 0;
-            while (idx < visibleBlocks.length) {
-              const t = visibleBlocks[idx].event.type;
-              if (t === 'tool-call') {
-                const group: OutputBlock[] = [];
-                while (idx < visibleBlocks.length) {
-                  const tt = visibleBlocks[idx].event.type;
-                  if (tt === 'tool-call') { group.push(visibleBlocks[idx]); idx++; }
-                  else if (minorTypes.has(tt) && idx + 1 < visibleBlocks.length && visibleBlocks[idx + 1].event.type === 'tool-call') { idx++; }
-                  else break;
+          {groupedBlocks === null
+            ? visibleBlocks.map((block: OutputBlock) => (<OutputBlockView key={block.id} event={block.event} mode={mode} toolOutputExpanded={true} thinkingExpanded={thinkingExpanded} />))
+            : groupedBlocks.map((item: OutputBlock | OutputBlock[], gi: number) => {
+                if (Array.isArray(item)) {
+                  const firstType = item[0].event.type;
+                  if (item.length === 1) return <OutputBlockView key={item[0].id} event={item[0].event} mode={mode} toolOutputExpanded={false} thinkingExpanded={thinkingExpanded} />;
+                  if (firstType === 'debate-round') return <DebateGroup key={`dg-${item[0].id}`} blocks={item} />;
+                  if (firstType === 'kern-draft') return <BidGroup key={`bg-${item[0].id}`} blocks={item} />;
+                  return <ToolCallGroup key={`tg-${item[0].id}`} blocks={item} />;
                 }
-                groups.push(group);
-              } else if (t === 'debate-round') {
-                // Group consecutive debate-round blocks (same round)
-                const group: OutputBlock[] = [];
-                const round = (visibleBlocks[idx].event as any).round;
-                while (idx < visibleBlocks.length && visibleBlocks[idx].event.type === 'debate-round' && (visibleBlocks[idx].event as any).round === round) {
-                  group.push(visibleBlocks[idx]); idx++;
-                }
-                groups.push(group);
-              } else if (t === 'kern-draft') {
-                // Group consecutive kern-draft blocks (brainstorm bids)
-                const group: OutputBlock[] = [];
-                while (idx < visibleBlocks.length && visibleBlocks[idx].event.type === 'kern-draft') {
-                  group.push(visibleBlocks[idx]); idx++;
-                }
-                groups.push(group);
-              } else { groups.push(visibleBlocks[idx]); idx++; }
-            }
-            return groups.map((item: OutputBlock | OutputBlock[], gi: number) => {
-              if (Array.isArray(item)) {
-                const firstType = item[0].event.type;
-                if (item.length === 1) return <OutputBlockView key={item[0].id} event={item[0].event} mode={mode} toolOutputExpanded={false} thinkingExpanded={thinkingExpanded} />;
-                if (firstType === 'debate-round') return <DebateGroup key={`dg-${item[0].id}`} blocks={item} />;
-                if (firstType === 'kern-draft') return <BidGroup key={`bg-${item[0].id}`} blocks={item} />;
-                return <ToolCallGroup key={`tg-${item[0].id}`} blocks={item} />;
-              }
-              return <OutputBlockView key={item.id} event={item.event} mode={mode} toolOutputExpanded={false} thinkingExpanded={thinkingExpanded} />;
-            });
-          })()}
+                return <OutputBlockView key={item.id} event={item.event} mode={mode} toolOutputExpanded={false} thinkingExpanded={thinkingExpanded} />;
+              })}
           {streamingText && (() => {
             const c = engineColor(streamingText.engineId);
             const cleaned = cleanEngineOutput(streamingText.content);

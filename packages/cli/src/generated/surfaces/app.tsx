@@ -129,11 +129,24 @@ export function App() {
   const [streamingText, _setStreamingTextRaw] = useState<any>(null);
   const setStreamingText = useMemo(() => {
     let _lastCall = 0;
+    let _pendingValue: React.SetStateAction<any>;
+    let _pendingTimer: ReturnType<typeof setTimeout> | null = null;
     return (value: React.SetStateAction<any>) => {
       const now = Date.now();
-      if (now - _lastCall >= 90) {
+      const elapsed = now - _lastCall;
+      if (elapsed >= 90) {
         _lastCall = now;
+        if (_pendingTimer) { clearTimeout(_pendingTimer); _pendingTimer = null; }
         setTimeout(() => _setStreamingTextRaw(value), 0);
+      } else {
+        _pendingValue = value;
+        if (!_pendingTimer) {
+          _pendingTimer = setTimeout(() => {
+            _lastCall = Date.now();
+            _pendingTimer = null;
+            _setStreamingTextRaw(_pendingValue);
+          }, 90 - elapsed);
+        }
       }
     };
   }, []);
@@ -170,11 +183,24 @@ export function App() {
   const [cesarConfidence, _setCesarConfidenceRaw] = useState<number|null>(null);
   const setCesarConfidence = useMemo(() => {
     let _lastCall = 0;
+    let _pendingValue: React.SetStateAction<number|null>;
+    let _pendingTimer: ReturnType<typeof setTimeout> | null = null;
     return (value: React.SetStateAction<number|null>) => {
       const now = Date.now();
-      if (now - _lastCall >= 200) {
+      const elapsed = now - _lastCall;
+      if (elapsed >= 200) {
         _lastCall = now;
+        if (_pendingTimer) { clearTimeout(_pendingTimer); _pendingTimer = null; }
         setTimeout(() => _setCesarConfidenceRaw(value), 0);
+      } else {
+        _pendingValue = value;
+        if (!_pendingTimer) {
+          _pendingTimer = setTimeout(() => {
+            _lastCall = Date.now();
+            _pendingTimer = null;
+            _setCesarConfidenceRaw(_pendingValue);
+          }, 200 - elapsed);
+        }
       }
     };
   }, []);
@@ -205,11 +231,24 @@ export function App() {
   const [termWidth, _setTermWidthRaw] = useState<number>(process.stdout.columns || 100);
   const setTermWidth = useMemo(() => {
     let _lastCall = 0;
+    let _pendingValue: React.SetStateAction<number>;
+    let _pendingTimer: ReturnType<typeof setTimeout> | null = null;
     return (value: React.SetStateAction<number>) => {
       const now = Date.now();
-      if (now - _lastCall >= 100) {
+      const elapsed = now - _lastCall;
+      if (elapsed >= 100) {
         _lastCall = now;
+        if (_pendingTimer) { clearTimeout(_pendingTimer); _pendingTimer = null; }
         setTimeout(() => _setTermWidthRaw(value), 0);
+      } else {
+        _pendingValue = value;
+        if (!_pendingTimer) {
+          _pendingTimer = setTimeout(() => {
+            _lastCall = Date.now();
+            _pendingTimer = null;
+            _setTermWidthRaw(_pendingValue);
+          }, 100 - elapsed);
+        }
       }
     };
   }, []);
@@ -262,12 +301,6 @@ export function App() {
               }
               streamingTextRef.current = null;
               setStreamingText(null);
-              // KERN-GAP: state throttle=90 is leading-edge — a null clear landing
-              // inside the 90ms lockout from the last chunk is silently dropped,
-              // leaving a stale streaming box visible alongside the finalized block.
-              // Retry past the lockout window. Remove once KERN ships trailing-edge
-              // throttle (e.g. `throttle=90 edge="trailing"`).
-              setTimeout(() => setStreamingText(null), 100);
             },
             getEngineColor: (engineId: string) => ENGINE_COLORS[engineId] ?? 124,
             setCesarConfidence,
@@ -320,7 +353,6 @@ export function App() {
     setLiveProgress(null);
     streamingTextRef.current = null;
     setStreamingText(null);
-    setTimeout(() => setStreamingText(null), 100); // bypass throttle lockout
     clearPermissionQueue();
     
     if (replState !== 'idle') {
@@ -795,7 +827,6 @@ export function App() {
       activeAbortRef.current = null;
       streamingTextRef.current = null;
       setActiveAbort(null); setLiveSpinner(null); setLiveProgress(null); setStreamingText(null);
-      setTimeout(() => setStreamingText(null), 100); // bypass throttle lockout
       clearPermissionQueue();
       setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state);
     };

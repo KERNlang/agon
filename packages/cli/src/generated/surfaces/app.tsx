@@ -275,6 +275,14 @@ export function App() {
           return [...registryCmds, ...uniqueSkills];
   }, [dynamicSkills, extensionSkills, commandRegistry]);
 
+  const availableEngines = useMemo(() => {
+          return registry.availableIds();
+  }, [registry]);
+
+  const runningJobs = useMemo(() => {
+          return jobList.filter((j: Job) => j.state === 'running');
+  }, [jobList]);
+
   const outputActions = useMemo(() => {
           return {
             setLiveSpinner,
@@ -666,7 +674,7 @@ export function App() {
       planModeQueued, activePlanState: activePlan?.state ?? null,
       outputBlockCount: outputBlocks.length,
       commands: allSlashCommands,
-      engineIds: registry.availableIds(),
+      engineIds: availableEngines,
     });
     
     switch (action.type) {
@@ -840,16 +848,12 @@ export function App() {
         <Text dimColor>{' \u2502 '}</Text>
         <Text color={mode === 'campfire' ? '#f97316' : mode === 'brainstorm' ? '#22d3ee' : '#a78bfa'}>{mode}</Text>
         <Text dimColor>{' \u2502 '}</Text>
-        <Text dimColor>{registry.availableIds().length}{' engines'}</Text>
+        <Text dimColor>{availableEngines.length}{' engines'}</Text>
         {replState !== 'idle' && (<><Text dimColor>{' \u2502 '}</Text><Text color="yellow">{replState}</Text></>)}
-        {(() => {
-          const running = jobList.filter((j: Job) => j.state === 'running');
-          if (running.length === 0) return null;
-          return (<><Text dimColor>{' \u203a '}</Text><Text color="#facc15">{running.map((j: Job) => `${j.type}: ${j.label.slice(0, 20)}`).join(', ')}</Text></>);
-        })()}
+        {runningJobs.length > 0 && (<><Text dimColor>{' \u203a '}</Text><Text color="#facc15">{runningJobs.map((j: Job) => `${j.type}: ${j.label.slice(0, 20)}`).join(', ')}</Text></>)}
       </Box>
     )}
-    <BackgroundJobRail jobs={jobList.filter((j: Job) => j.state === 'running')} />
+    <BackgroundJobRail jobs={runningJobs} />
     <Box flexDirection="column">
       {scrollOffset > 0 && <Box paddingX={1}><Text dimColor>{`↑ ${scrollOffset} block${scrollOffset > 1 ? 's' : ''} above — Shift+↑ to scroll`}</Text></Box>}
       {(() => {
@@ -930,7 +934,7 @@ export function App() {
     </Box>
     {reviewEvent && <ReviewBlock event={reviewEvent} onAction={handleReviewActionCb} />}
     {enginePickerOpen && (
-      <EnginePicker available={registry.availableIds()} initialSelected={sessionEngines ?? registry.availableIds()}
+      <EnginePicker available={availableEngines} initialSelected={sessionEngines ?? availableEngines}
         userEngines={new Set(registry.list().filter((e: any) => e.tier === 'user').map((e: any) => e.id))}
         modelOverrides={(loadConfig() as any).engineModels ?? {}}
         onConfirm={(selected: string[]) => { setEnginePickerOpen(false); setSessionEngines(selected); configSet('forgeEnabledEngines', selected); dispatch({ type: 'success', message: `Active engines: ${selected.join(', ')}` } as any); }}
@@ -988,7 +992,7 @@ export function App() {
     )}
     {cesarPickerOpen && (
       <CesarPicker
-        engines={registry.availableIds()}
+        engines={availableEngines}
         currentCesar={(loadConfig() as any).cesarEngine ?? loadConfig().forgeFixedStarter ?? 'claude'}
         onSelect={(engineId: string) => {
           setCesarPickerOpen(false);
@@ -1021,7 +1025,7 @@ export function App() {
             ) : (
               <><TextInput key={inputKey} value={inputValue} onChange={handleInputChange} onSubmit={handleSubmit}
                 placeholder={replState === 'idle' ? mode === 'chat' ? '' : mode === 'campfire' ? 'What should we think about?' : mode === 'brainstorm' ? 'What question for the engines?' : 'What should they debate?' : ''} />
-              {(() => { const ghost = getGhostCompletion(inputValue, allSlashCommands, registry.availableIds()); return ghost ? <Text dimColor>{ghost}</Text> : null; })()}</>
+              {(() => { const ghost = getGhostCompletion(inputValue, allSlashCommands, availableEngines); return ghost ? <Text dimColor>{ghost}</Text> : null; })()}</>
             )}
           </Box>
         </Box>
@@ -1050,7 +1054,7 @@ export function App() {
             if (lines.length > 0) snippet = { engineId: streamingText.engineId, line: lines[lines.length - 1].trim() };
           }
           return (<>
-            <CesarStatusStrip cesarId={_cesarId} confidence={cesarConfidence} spinner={liveSpinner} engines={liveProgress} startTime={chatStartTimeRef.current || 0} streamSnippet={snippet} isActive={replState !== 'idle' || jobList.some((j: Job) => j.state === 'running')} planModeQueued={planModeQueued} activePlanState={activePlan?.state ?? null} />
+            <CesarStatusStrip cesarId={_cesarId} confidence={cesarConfidence} spinner={liveSpinner} engines={liveProgress} startTime={chatStartTimeRef.current || 0} streamSnippet={snippet} isActive={replState !== 'idle' || runningJobs.length > 0} planModeQueued={planModeQueued} activePlanState={activePlan?.state ?? null} />
             {mode === 'chat' && <StatusBar config={_cfg} chatSession={chatSession} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} thinkingExpanded={thinkingExpanded} isActive={replState !== 'idle'} />}
           </>);
         })()}

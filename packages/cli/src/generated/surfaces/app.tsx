@@ -762,7 +762,8 @@ export function App() {
         setInputValue((prev: string) => prev + '\n'); return;
       case 'historySet':
         setHistoryIndex(action.index);
-        if (action.value) setInputValue(action.value);
+        // value is always a string — empty string means "return to blank composer".
+        setInputValue(action.value);
         return;
       case 'cancelOrExit':
         if (questionState) { questionState.resolve(''); setQuestionState(null); setQuestionAnswer(''); }

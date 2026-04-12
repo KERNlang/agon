@@ -974,19 +974,21 @@ export function App() {
             </Text>
           </Box>
         )}
-        <Box borderStyle={mode === 'chat' ? 'round' : 'single'} borderColor={mode === 'chat' ? (questionState ? '#fbbf24' : '#585858') : 'gray'} borderLeft={mode !== 'chat'} borderRight={mode !== 'chat'} borderTop borderBottom paddingX={1} width="100%">
-          {mode !== 'chat' && (<Text><Text color={mode === 'campfire' ? '#f97316' : mode === 'brainstorm' ? '#22d3ee' : '#a78bfa'} bold>{mode === 'campfire' ? icons().campfire : mode === 'brainstorm' ? icons().brainstorm : icons().tribunal}{' '}{mode}</Text><Text dimColor>{' │ '}</Text></Text>)}
-          <Text color={mode === 'chat' ? (planModeQueued || (activePlan && activePlan.state === 'planning') ? '#c084fc' : '#585858') : '#fbbf24'}>{mode === 'chat' ? (planModeQueued ? '◈ ' : '> ') : icons().prompt + ' '}</Text>
-          <Box flexGrow={1}>
-            {slashPickerOpen ? (
-              <Text dimColor>{inputValue || '/'}</Text>
-            ) : (
-              <><TextInput key={inputKey} value={inputValue} onChange={handleInputChange} onSubmit={handleSubmit}
-                placeholder={replState === 'idle' ? mode === 'chat' ? '' : mode === 'campfire' ? 'What should we think about?' : mode === 'brainstorm' ? 'What question for the engines?' : 'What should they debate?' : ''} />
-              {(() => { const ghost = getGhostCompletion(inputValue, allSlashCommands, registry.availableIds()); return ghost ? <Text dimColor>{ghost}</Text> : null; })()}</>
-            )}
+        {!questionState && (
+          <Box borderStyle={mode === 'chat' ? 'round' : 'single'} borderColor={mode === 'chat' ? '#585858' : 'gray'} borderLeft={mode !== 'chat'} borderRight={mode !== 'chat'} borderTop borderBottom paddingX={1} width="100%">
+            {mode !== 'chat' && (<Text><Text color={mode === 'campfire' ? '#f97316' : mode === 'brainstorm' ? '#22d3ee' : '#a78bfa'} bold>{mode === 'campfire' ? icons().campfire : mode === 'brainstorm' ? icons().brainstorm : icons().tribunal}{' '}{mode}</Text><Text dimColor>{' │ '}</Text></Text>)}
+            <Text color={mode === 'chat' ? (planModeQueued || (activePlan && activePlan.state === 'planning') ? '#c084fc' : '#585858') : '#fbbf24'}>{mode === 'chat' ? (planModeQueued ? '◈ ' : '> ') : icons().prompt + ' '}</Text>
+            <Box flexGrow={1}>
+              {slashPickerOpen ? (
+                <Text dimColor>{inputValue || '/'}</Text>
+              ) : (
+                <><TextInput key={inputKey} value={inputValue} onChange={handleInputChange} onSubmit={handleSubmit}
+                  placeholder={replState === 'idle' ? mode === 'chat' ? '' : mode === 'campfire' ? 'What should we think about?' : mode === 'brainstorm' ? 'What question for the engines?' : 'What should they debate?' : ''} />
+                {(() => { const ghost = getGhostCompletion(inputValue, allSlashCommands, registry.availableIds()); return ghost ? <Text dimColor>{ghost}</Text> : null; })()}</>
+              )}
+            </Box>
           </Box>
-        </Box>
+        )}
         {questionState && (
           <Box flexDirection="column" paddingLeft={1} marginTop={0} borderLeft borderColor={questionState.choices ? '#fbbf24' : '#585858'}>
             <Text bold color="#fbbf24">{questionState.choices ? ` ${icons().warning} ` : ' '}{questionState.prompt}</Text>

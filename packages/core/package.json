@@ -14,7 +14,7 @@
     "dist"
   ],
   "scripts": {
-    "kern:compile": "kern compile src/kern/ --outdir=src/generated/ --target=auto --recursive && bash scripts/kern-postcompile.sh",
+    "kern:compile": "command -v kern >/dev/null 2>&1 && kern compile src/kern/ --outdir=src/generated/ --target=auto --recursive && bash scripts/kern-postcompile.sh || echo '  [kern:compile skipped — kern CLI not installed; using checked-in generated output]'",
     "prebuild": "npm run kern:compile",
     "build": "tsup",
     "typecheck": "tsc --noEmit"
@@ -22,7 +22,9 @@
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.67",
     "@ai-sdk/openai-compatible": "^2.0.40",
-    "ai": "^6.0.149",
+    "ai": "^6.0.149"
+  },
+  "optionalDependencies": {
     "kern-lang": "file:../../../kern-lang/packages/cli"
   }
 }

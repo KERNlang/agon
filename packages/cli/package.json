@@ -12,7 +12,7 @@
     "prebuild": "npm run kern:compile",
     "build": "tsup",
     "typecheck": "tsc --noEmit",
-    "kern:compile": "kern compile src/kern/ --outdir=src/generated/ --target=auto --recursive"
+    "kern:compile": "command -v kern >/dev/null 2>&1 && kern compile src/kern/ --outdir=src/generated/ --target=auto --recursive || echo '  [kern:compile skipped — kern CLI not installed; using checked-in generated output]'"
   },
   "dependencies": {
     "@agon/adapter-cli": "*",

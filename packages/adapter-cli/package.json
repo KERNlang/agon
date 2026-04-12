@@ -14,13 +14,15 @@
     "dist"
   ],
   "scripts": {
-    "kern:compile": "kern compile src/kern/ --outdir=src/generated/ --target=auto --recursive",
+    "kern:compile": "command -v kern >/dev/null 2>&1 && kern compile src/kern/ --outdir=src/generated/ --target=auto --recursive || echo '  [kern:compile skipped — kern CLI not installed; using checked-in generated output]'",
     "prebuild": "npm run kern:compile",
     "build": "tsup",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@agon/core": "*",
+    "@agon/core": "*"
+  },
+  "optionalDependencies": {
     "kern-lang": "file:../../../kern-lang/packages/cli"
   }
 }

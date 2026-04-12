@@ -46,13 +46,15 @@ import { dispatchIntent, handleModeSwitch } from '../signals/dispatch.js';
 
 import type { DispatchCallbacks } from '../signals/dispatch.js';
 
-import { handleOutputEvent, clearPermissionQueue } from '../signals/output.js';
+import { handleOutputEvent, clearPermissionQueue, clearThinkingBuffer } from '../signals/output.js';
 
 import type { OutputActions, OutputState } from '../signals/output.js';
 
 import { cleanInputValue, cleanSubmitValue, findInputChange, navigateHistory, resolveEscapeAction, shouldQueuePlanModeOnTab } from '../signals/app-input.js';
 
 import { resolveKeyboardInput } from '../signals/keyboard.js';
+
+import { makeBlockArchivePath, appendBlockWithCap } from '../signals/block-archive.js';
 
 import { handleReviewAction } from '../blocks/review.js';
 
@@ -265,6 +267,7 @@ export function App() {
   const pasteCountRef = useRef<number>(0);
   const activeAbortRef = useRef<AbortController|null>(null);
   const lastActivityTimeRef = useRef<number>(Date.now());
+  const blockArchivePathRef = useRef<string>(makeBlockArchivePath(Date.now()));
 
   const allSlashCommands = useMemo(() => {
           const registryCmds = commandRegistry.listForHelp();
@@ -283,6 +286,44 @@ export function App() {
           return jobList.filter((j: Job) => j.state === 'running');
   }, [jobList]);
 
+  const visibleBlocks = useMemo(() => {
+          return scrollOffset > 0 ? outputBlocks.slice(0, outputBlocks.length - scrollOffset) : outputBlocks;
+  }, [outputBlocks, scrollOffset]);
+
+  const groupedBlocks = useMemo(() => {
+          if (toolOutputExpanded) return null;
+          const minorTypes = new Set(['info', 'warning', 'success', 'separator', 'thinking-chunk', 'streaming-chunk', 'confidence-update', 'spinner-update', 'spinner-start', 'spinner-stop', 'progress-update', 'progress-clear']);
+          const groups: (OutputBlock | OutputBlock[])[] = [];
+          let idx = 0;
+          while (idx < visibleBlocks.length) {
+            const t = visibleBlocks[idx].event.type;
+            if (t === 'tool-call') {
+              const group: OutputBlock[] = [];
+              while (idx < visibleBlocks.length) {
+                const tt = visibleBlocks[idx].event.type;
+                if (tt === 'tool-call') { group.push(visibleBlocks[idx]); idx++; }
+                else if (minorTypes.has(tt) && idx + 1 < visibleBlocks.length && visibleBlocks[idx + 1].event.type === 'tool-call') { idx++; }
+                else break;
+              }
+              groups.push(group);
+            } else if (t === 'debate-round') {
+              const group: OutputBlock[] = [];
+              const round = (visibleBlocks[idx].event as any).round;
+              while (idx < visibleBlocks.length && visibleBlocks[idx].event.type === 'debate-round' && (visibleBlocks[idx].event as any).round === round) {
+                group.push(visibleBlocks[idx]); idx++;
+              }
+              groups.push(group);
+            } else if (t === 'kern-draft') {
+              const group: OutputBlock[] = [];
+              while (idx < visibleBlocks.length && visibleBlocks[idx].event.type === 'kern-draft') {
+                group.push(visibleBlocks[idx]); idx++;
+              }
+              groups.push(group);
+            } else { groups.push(visibleBlocks[idx]); idx++; }
+          }
+          return groups;
+  }, [visibleBlocks, toolOutputExpanded]);
+
   const outputActions = useMemo(() => {
           return {
             setLiveSpinner,
@@ -295,7 +336,7 @@ export function App() {
             },
             addBlock: (event: any) => {
               setScrollOffset(0);
-              setOutputBlocks((prev: any) => [...prev, { id: Date.now() + Math.random(), event }]);
+              setOutputBlocks((prev: any) => appendBlockWithCap(prev, { id: Date.now() + Math.random(), event }, blockArchivePathRef.current));
             },
             clearBlocks: () => setOutputBlocks([]),
             setReviewEvent,
@@ -305,7 +346,7 @@ export function App() {
               const prev = streamingTextRef.current;
               if (prev) {
                 const color = ENGINE_COLORS[prev.engineId] ?? 124;
-                setOutputBlocks((blocks: any) => [...blocks, { id: Date.now() - 1, event: { type: 'engine-block', engineId: prev.engineId, color, content: prev.content } }]);
+                setOutputBlocks((blocks: any) => appendBlockWithCap(blocks, { id: Date.now() - 1, event: { type: 'engine-block', engineId: prev.engineId, color, content: prev.content } }, blockArchivePathRef.current));
               }
               streamingTextRef.current = null;
               setStreamingText(null);
@@ -362,6 +403,7 @@ export function App() {
     streamingTextRef.current = null;
     setStreamingText(null);
     clearPermissionQueue();
+    clearThinkingBuffer();
     
     if (replState !== 'idle') {
       if (message) dispatch({ type: 'warning', message } as any);
@@ -836,6 +878,7 @@ export function App() {
       streamingTextRef.current = null;
       setActiveAbort(null); setLiveSpinner(null); setLiveProgress(null); setStreamingText(null);
       clearPermissionQueue();
+      clearThinkingBuffer();
       setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state);
     };
   }, [setActiveAbort]);
@@ -856,54 +899,18 @@ export function App() {
     <BackgroundJobRail jobs={runningJobs} />
     <Box flexDirection="column">
       {scrollOffset > 0 && <Box paddingX={1}><Text dimColor>{`↑ ${scrollOffset} block${scrollOffset > 1 ? 's' : ''} above — Shift+↑ to scroll`}</Text></Box>}
-      {(() => {
-        const visibleBlocks = scrollOffset > 0 ? outputBlocks.slice(0, outputBlocks.length - scrollOffset) : outputBlocks;
-        if (toolOutputExpanded) {
-          return visibleBlocks.map((block: OutputBlock) => (<OutputBlockView key={block.id} event={block.event} mode={mode} toolOutputExpanded={true} thinkingExpanded={thinkingExpanded} />));
-        }
-        // Group consecutive blocks: tool-call → ToolCallGroup, debate-round → DebateGroup, kern-draft → BidGroup
-        const minorTypes = new Set(['info', 'warning', 'success', 'separator', 'thinking-chunk', 'streaming-chunk', 'confidence-update', 'spinner-update', 'spinner-start', 'spinner-stop', 'progress-update', 'progress-clear']);
-        const groups: (OutputBlock | OutputBlock[])[] = [];
-        let idx = 0;
-        while (idx < visibleBlocks.length) {
-          const t = visibleBlocks[idx].event.type;
-          if (t === 'tool-call') {
-            const group: OutputBlock[] = [];
-            while (idx < visibleBlocks.length) {
-              const tt = visibleBlocks[idx].event.type;
-              if (tt === 'tool-call') { group.push(visibleBlocks[idx]); idx++; }
-              else if (minorTypes.has(tt) && idx + 1 < visibleBlocks.length && visibleBlocks[idx + 1].event.type === 'tool-call') { idx++; }
-              else break;
+      {groupedBlocks === null
+        ? visibleBlocks.map((block: OutputBlock) => (<OutputBlockView key={block.id} event={block.event} mode={mode} toolOutputExpanded={true} thinkingExpanded={thinkingExpanded} />))
+        : groupedBlocks.map((item: OutputBlock | OutputBlock[], gi: number) => {
+            if (Array.isArray(item)) {
+              const firstType = item[0].event.type;
+              if (item.length === 1) return <OutputBlockView key={item[0].id} event={item[0].event} mode={mode} toolOutputExpanded={false} thinkingExpanded={thinkingExpanded} />;
+              if (firstType === 'debate-round') return <DebateGroup key={`dg-${item[0].id}`} blocks={item} />;
+              if (firstType === 'kern-draft') return <BidGroup key={`bg-${item[0].id}`} blocks={item} />;
+              return <ToolCallGroup key={`tg-${item[0].id}`} blocks={item} />;
             }
-            groups.push(group);
-          } else if (t === 'debate-round') {
-            // Group consecutive debate-round blocks (same round)
-            const group: OutputBlock[] = [];
-            const round = (visibleBlocks[idx].event as any).round;
-            while (idx < visibleBlocks.length && visibleBlocks[idx].event.type === 'debate-round' && (visibleBlocks[idx].event as any).round === round) {
-              group.push(visibleBlocks[idx]); idx++;
-            }
-            groups.push(group);
-          } else if (t === 'kern-draft') {
-            // Group consecutive kern-draft blocks (brainstorm bids)
-            const group: OutputBlock[] = [];
-            while (idx < visibleBlocks.length && visibleBlocks[idx].event.type === 'kern-draft') {
-              group.push(visibleBlocks[idx]); idx++;
-            }
-            groups.push(group);
-          } else { groups.push(visibleBlocks[idx]); idx++; }
-        }
-        return groups.map((item: OutputBlock | OutputBlock[], gi: number) => {
-          if (Array.isArray(item)) {
-            const firstType = item[0].event.type;
-            if (item.length === 1) return <OutputBlockView key={item[0].id} event={item[0].event} mode={mode} toolOutputExpanded={false} thinkingExpanded={thinkingExpanded} />;
-            if (firstType === 'debate-round') return <DebateGroup key={`dg-${item[0].id}`} blocks={item} />;
-            if (firstType === 'kern-draft') return <BidGroup key={`bg-${item[0].id}`} blocks={item} />;
-            return <ToolCallGroup key={`tg-${item[0].id}`} blocks={item} />;
-          }
-          return <OutputBlockView key={item.id} event={item.event} mode={mode} toolOutputExpanded={false} thinkingExpanded={thinkingExpanded} />;
-        });
-      })()}
+            return <OutputBlockView key={item.id} event={item.event} mode={mode} toolOutputExpanded={false} thinkingExpanded={thinkingExpanded} />;
+          })}
       {streamingText && (() => {
         const c = engineColor(streamingText.engineId);
         const cleaned = cleanEngineOutput(streamingText.content);

@@ -43,6 +43,14 @@ export function clearPermissionQueue(): void {
 }
 
 /**
+ * Drop any buffered thinking-chunk content. Called on interrupt / clear / SIGINT so the next turn doesn't emit stale content as a fresh block.
+ */
+export function clearThinkingBuffer(): void {
+  _thinkingBuffer.engineId = '';
+  _thinkingBuffer.content = '';
+}
+
+/**
  * Auto-approve queued permissions whose base command is already in allowedCommands.
  */
 function _drainAutoApproved(actions: OutputActions): void {
@@ -181,6 +189,8 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
       actions.clearBlocks();
       actions.setStreamingText(null);
       codeBlockBuffer.clear();
+      _thinkingBuffer.engineId = '';
+      _thinkingBuffer.content = '';
       return;
     case 'patch-review':
       actions.setReviewEvent({ winnerId: (event as any).winnerId, patchPath: (event as any).patchPath, patchContent: (event as any).patchContent });

@@ -52,6 +52,8 @@ import type { OutputActions, OutputState } from '../signals/output.js';
 
 import { cleanInputValue, cleanSubmitValue, findInputChange, navigateHistory, resolveEscapeAction, shouldQueuePlanModeOnTab } from '../signals/app-input.js';
 
+import { resolveKeyboardInput } from '../signals/keyboard.js';
+
 import { handleReviewAction } from '../blocks/review.js';
 
 import { SpinnerBlock, EngineProgressView, StatusBar, CesarStatusStrip, OutputBlockView, ToolCallGroup, DebateGroup, BidGroup, SlashPicker, EnginePicker, ModelPicker, ReviewBlock, BackgroundJobRail, RenderedSegments, CesarPicker, contentWidth, engineColor } from '../../components.js';
@@ -130,7 +132,7 @@ export default function App() {
   const setPendingImages = useMemo(() => __inkSafe(_setPendingImagesRaw), [_setPendingImagesRaw]);
   const [reviewEvent, _setReviewEventRaw] = useState<ReviewEvent|null>(null);
   const setReviewEvent = useMemo(() => __inkSafe(_setReviewEventRaw), [_setReviewEventRaw]);
-  const [jobManager, _setJobManagerRaw] = useState<any>(new JobManager());
+  const [jobManager, _setJobManagerRaw] = useState<any>(() => new JobManager());
   const setJobManager = useMemo(() => __inkSafe(_setJobManagerRaw), [_setJobManagerRaw]);
   const [jobList, _setJobListRaw] = useState<Job[]>([]);
   const setJobList = useMemo(() => __inkSafe(_setJobListRaw), [_setJobListRaw]);
@@ -164,15 +166,15 @@ export default function App() {
   const setCesarMemory = useMemo(() => __inkSafe(_setCesarMemoryRaw), [_setCesarMemoryRaw]);
   const [sessionMcpServers, _setSessionMcpServersRaw] = useState<Array<Record<string,unknown>>>([]);
   const setSessionMcpServers = useMemo(() => __inkSafe(_setSessionMcpServersRaw), [_setSessionMcpServersRaw]);
-  const [registry, _setRegistryRaw] = useState<EngineRegistry>((() => { const reg = new EngineRegistry(); const engDir = join(dirname(fileURLToPath(import.meta.url)), '../../../../engines'); reg.load(engDir); return reg; })());
+  const [registry, _setRegistryRaw] = useState<EngineRegistry>(() => (() => { const reg = new EngineRegistry(); const engDir = join(dirname(fileURLToPath(import.meta.url)), '../../../../engines'); reg.load(engDir); return reg; })());
   const setRegistry = useMemo(() => __inkSafe(_setRegistryRaw), [_setRegistryRaw]);
   const [adapter, _setAdapterRaw] = useState<EngineAdapter>(createCliAdapter(registry));
   const setAdapter = useMemo(() => __inkSafe(_setAdapterRaw), [_setAdapterRaw]);
   const [dynamicSkills, _setDynamicSkillsRaw] = useState<Skill[]>(() => loadSkills(resolveWorkingDir()));
   const setDynamicSkills = useMemo(() => __inkSafe(_setDynamicSkillsRaw), [_setDynamicSkillsRaw]);
-  const [commandRegistry, _setCommandRegistryRaw] = useState<any>((() => { const reg = new CommandRegistry(); registerBuiltinCommands(reg); return reg; })());
+  const [commandRegistry, _setCommandRegistryRaw] = useState<any>(() => (() => { const reg = new CommandRegistry(); registerBuiltinCommands(reg); return reg; })());
   const setCommandRegistry = useMemo(() => __inkSafe(_setCommandRegistryRaw), [_setCommandRegistryRaw]);
-  const [eventBus, _setEventBusRaw] = useState<any>((() => { const bus = new EventBus(); const cfg = loadConfig(); if (cfg.hooks) bridgeShellHooks(bus, cfg.hooks); return bus; })());
+  const [eventBus, _setEventBusRaw] = useState<any>(() => (() => { const bus = new EventBus(); const cfg = loadConfig(); if (cfg.hooks) bridgeShellHooks(bus, cfg.hooks); return bus; })());
   const setEventBus = useMemo(() => __inkSafe(_setEventBusRaw), [_setEventBusRaw]);
   const [extensionSkills, _setExtensionSkillsRaw] = useState<Skill[]>([]);
   const setExtensionSkills = useMemo(() => __inkSafe(_setExtensionSkillsRaw), [_setExtensionSkillsRaw]);
@@ -633,114 +635,70 @@ export default function App() {
 
   const _inputHandlerRef = useRef<(input: string, key: any) => void>(() => {});
   _inputHandlerRef.current = (input: string, key: any) => {
-    // When model picker is open, let it handle all input (except Ctrl+C)
-    if (modelPickerOpen || cesarPickerOpen) {
-      if (input === '\x03' || (key.ctrl && input === 'c')) { process.exit(0); }
-      return;
-    }
-    // Choice-based question: single keypress resolves immediately (letter key OR 1/2/3 numeric shortcut)
-    if (questionState && questionState.choices) {
-      const pressed = input.toLowerCase();
-      const choices = questionState.choices as {key:string,label:string}[];
-      const match = choices.find((c: any) => c.key.toLowerCase() === pressed);
-      // Also accept 1-based numeric index: 1 = first choice, 2 = second, 3 = third, etc.
-      const numIdx = /^[1-9]$/.test(pressed) ? parseInt(pressed, 10) - 1 : -1;
-      const resolved = match ?? (numIdx >= 0 && numIdx < choices.length ? choices[numIdx] : null);
-      if (resolved) {
-        questionState.resolve(resolved.key);
-        setQuestionState(null);
-        setQuestionAnswer('');
-        return;
-      }
-      if (key.escape) {
-        questionState.resolve('n');
-        setQuestionState(null);
-        setQuestionAnswer('');
-        return;
-      }
-      return; // Swallow other keys while choices are shown
-    }
-    if ((key.tab || input === '\t') && !slashPickerOpen && !enginePickerOpen && !questionState && !reviewEvent) {
-      const ghost = getGhostCompletion(inputValue, allSlashCommands, registry.availableIds());
-      if (ghost) { setInputValue(inputValue + ghost + ' '); setInputKey((k: number) => k + 1); return; }
-      if (shouldQueuePlanModeOnTab({ replState, inputValue, activePlanState: activePlan?.state ?? null })) {
-        setPlanModeQueued((prev: boolean) => !prev);
-        return;
-      }
-      return;
-    }
-    if (key.ctrl && input === 'l') {
-      handleSubmit('/clear'); return;
-    }
-    // Scroll output: Shift+Up/Down for 5 blocks, Ctrl+U/D for full page
-    if (key.shift && key.upArrow) {
-      setScrollOffset((prev: number) => Math.min(prev + 3, Math.max(0, outputBlocks.length - 1)));
-      return;
-    }
-    if (key.shift && key.downArrow) {
-      setScrollOffset((prev: number) => Math.max(0, prev - 3));
-      return;
-    }
-    if ((key.ctrl && input === 'e') || input === '\x05') {
-      ctrlKeyHandledRef.current = true;
-      setToolOutputExpanded((prev: boolean) => !prev); return;
-    }
-    if ((key.ctrl && input === 't') || input === '\x14') {
-      ctrlKeyHandledRef.current = true;
-      setThinkingExpanded((prev: boolean) => !prev); return;
-    }
-    if (key.ctrl && input === 'r') {
-      openResultsPager();
-      return;
-    }
-    if (key.escape) {
-      if (planModeQueued) { setPlanModeQueued(false); return; }
-      const decision = resolveEscapeAction({
-        replState,
-        inputValue,
-        slashPickerOpen,
-        enginePickerOpen,
-        questionOpen: !!questionState,
-      });
+    const action = resolveKeyboardInput({
+      input, key,
+      modelPickerOpen, cesarPickerOpen, slashPickerOpen, enginePickerOpen,
+      reviewEventOpen: !!reviewEvent,
+      questionState, replState, inputValue, inputHistory, historyIndex,
+      planModeQueued, activePlanState: activePlan?.state ?? null,
+      outputBlockCount: outputBlocks.length,
+      commands: allSlashCommands,
+      engineIds: registry.availableIds(),
+    });
     
-      switch (decision.action) {
-        case 'close-slash':
-          setSlashPickerOpen(false);
-          return;
-        case 'close-engine-picker':
-          setEnginePickerOpen(false);
-          return;
-        case 'cancel-question':
-          if (questionState) { questionState.resolve(''); setQuestionState(null); setQuestionAnswer(''); }
-          return;
-        case 'interrupt':
-          interruptActiveRun('Interrupted.', false);
-          return;
-        case 'clear-input':
-          setInputValue('');
-          return;
-        case 'noop':
-          return;
-      }
-    }
-    if (key.ctrl && input === 'j') {
-      setInputValue((prev: string) => prev + '\n'); return;
-    }
-    if (!enginePickerOpen && !questionState) {
-      if (key.upArrow && inputHistory.length > 0 && !slashPickerOpen) {
-        const r = navigateHistory('up', historyIndex, inputHistory);
-        setHistoryIndex(r.index); if (r.value) setInputValue(r.value);
-      }
-      if (key.downArrow && historyIndex >= 0 && !slashPickerOpen) {
-        const r = navigateHistory('down', historyIndex, inputHistory);
-        setHistoryIndex(r.index); setInputValue(r.value);
-      }
-    }
-    if (input === '\x03' || (key.ctrl && input === 'c')) {
-      if (questionState) { questionState.resolve(''); setQuestionState(null); setQuestionAnswer(''); }
-      if (replState !== 'idle') {
-        interruptActiveRun(activeAbortRef.current ? 'Cancelled.' : 'Interrupted.', false);
-      } else { process.exit(0); }
+    switch (action.type) {
+      case 'none': return;
+      case 'exit': process.exit(0); return;
+      case 'resolveChoice':
+        questionState.resolve(action.choiceKey);
+        setQuestionState(null); setQuestionAnswer(''); return;
+      case 'cancelChoice':
+        questionState.resolve('n');
+        setQuestionState(null); setQuestionAnswer(''); return;
+      case 'swallow': return;
+      case 'ghostComplete':
+        setInputValue(inputValue + action.ghost + ' ');
+        setInputKey((k: number) => k + 1); return;
+      case 'togglePlanQueued':
+        setPlanModeQueued((prev: boolean) => !prev); return;
+      case 'submit':
+        handleSubmit(action.value); return;
+      case 'scroll':
+        setScrollOffset((prev: number) => action.delta > 0 ? Math.min(prev + action.delta, Math.max(0, outputBlocks.length - 1)) : Math.max(0, prev + action.delta));
+        return;
+      case 'toggleToolExpand':
+        ctrlKeyHandledRef.current = true;
+        setToolOutputExpanded((prev: boolean) => !prev); return;
+      case 'toggleThinking':
+        ctrlKeyHandledRef.current = true;
+        setThinkingExpanded((prev: boolean) => !prev); return;
+      case 'openResults':
+        openResultsPager(); return;
+      case 'unqueuePlan':
+        setPlanModeQueued(false); return;
+      case 'closeSlash':
+        setSlashPickerOpen(false); return;
+      case 'closeEnginePicker':
+        setEnginePickerOpen(false); return;
+      case 'cancelQuestion':
+        if (questionState) { questionState.resolve(''); setQuestionState(null); setQuestionAnswer(''); }
+        return;
+      case 'interrupt':
+        interruptActiveRun('Interrupted.', false); return;
+      case 'clearInput':
+        setInputValue(''); return;
+      case 'insertNewline':
+        setInputValue((prev: string) => prev + '\n'); return;
+      case 'historySet':
+        setHistoryIndex(action.index);
+        if (action.value) setInputValue(action.value);
+        return;
+      case 'cancelOrExit':
+        if (questionState) { questionState.resolve(''); setQuestionState(null); setQuestionAnswer(''); }
+        if (replState !== 'idle') {
+          interruptActiveRun(activeAbortRef.current ? 'Cancelled.' : 'Interrupted.', false);
+        } else { process.exit(0); }
+        return;
     }
   };
   useInput((input: string, key: any) => _inputHandlerRef.current(input, key));

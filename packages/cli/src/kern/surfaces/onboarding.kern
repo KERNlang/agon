@@ -1,29 +1,7 @@
-import from="react" names="useState,useEffect"
-import from="ink" names="Box,Text"
-
+// Orphaned — real onboarding flow lives in hand-maintained packages/cli/src/onboarding.tsx.
+// This stub exists only so surfaces/onboarding.kern still compiles.
 screen name=Onboarding target=ink
-  state name=step initial=0
-  state name=selectedEngines initial="[]"
-  state name=defaultEngine initial="null"
-  state name=scanning initial=true
-
-  box flexDirection=column
+  render
     handler <<<
-      {step === 0 && (
-        <>
-          <Text bold>Welcome to Agon!</Text>
-          <Text dimColor>Any AI can join. They compete. You ship.</Text>
-          {scanning ? (
-            <SpinnerBlock message="Scanning engines..." />
-          ) : (
-            <EngineSelector engines={availableEngines} selected={selectedEngines} onSelect={setSelectedEngines} onConfirm={() => setStep(1)} />
-          )}
-        </>
-      )}
-      {step === 1 && (
-        <ChatDefaultPicker engines={selectedEngines} selected={defaultEngine} onSelect={(id) => { setDefaultEngine(id); setStep(2); }} />
-      )}
-      {step === 2 && (
-        <DoneScreen />
-      )}
+      return null;
     >>>

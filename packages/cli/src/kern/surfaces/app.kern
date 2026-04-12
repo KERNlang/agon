@@ -27,6 +27,7 @@ import from="../signals/dispatch.js" names="DispatchCallbacks" types=true
 import from="../signals/output.js" names="handleOutputEvent,clearPermissionQueue"
 import from="../signals/output.js" names="OutputActions,OutputState" types=true
 import from="../signals/app-input.js" names="cleanInputValue,cleanSubmitValue,findInputChange,navigateHistory,resolveEscapeAction,shouldQueuePlanModeOnTab"
+import from="../signals/keyboard.js" names="resolveKeyboardInput"
 import from="../blocks/review.js" names="handleReviewAction"
 import from="../../components.js" names="SpinnerBlock,EngineProgressView,StatusBar,CesarStatusStrip,OutputBlockView,ToolCallGroup,DebateGroup,BidGroup,SlashPicker,EnginePicker,ModelPicker,ReviewBlock,BackgroundJobRail,RenderedSegments,CesarPicker,contentWidth,engineColor"
 import from="../../components.js" names="OutputBlock,ReviewEvent" types=true
@@ -706,117 +707,73 @@ screen name=App target=ink
       };
     >>>
 
-  // ── Keyboard handling ──
+  // ── Keyboard handling — pure decision tree + thin dispatcher ──
   on event=input
     handler <<<
-      // When model picker is open, let it handle all input (except Ctrl+C)
-      if (modelPickerOpen || cesarPickerOpen) {
-        if (input === '\x03' || (key.ctrl && input === 'c')) { process.exit(0); }
-        return;
-      }
-      // Choice-based question: single keypress resolves immediately (letter key OR 1/2/3 numeric shortcut)
-      if (questionState && questionState.choices) {
-        const pressed = input.toLowerCase();
-        const choices = questionState.choices as {key:string,label:string}[];
-        const match = choices.find((c: any) => c.key.toLowerCase() === pressed);
-        // Also accept 1-based numeric index: 1 = first choice, 2 = second, 3 = third, etc.
-        const numIdx = /^[1-9]$/.test(pressed) ? parseInt(pressed, 10) - 1 : -1;
-        const resolved = match ?? (numIdx >= 0 && numIdx < choices.length ? choices[numIdx] : null);
-        if (resolved) {
-          questionState.resolve(resolved.key);
-          setQuestionState(null);
-          setQuestionAnswer('');
-          return;
-        }
-        if (key.escape) {
-          questionState.resolve('n');
-          setQuestionState(null);
-          setQuestionAnswer('');
-          return;
-        }
-        return; // Swallow other keys while choices are shown
-      }
-      if ((key.tab || input === '\t') && !slashPickerOpen && !enginePickerOpen && !questionState && !reviewEvent) {
-        const ghost = getGhostCompletion(inputValue, allSlashCommands, registry.availableIds());
-        if (ghost) { setInputValue(inputValue + ghost + ' '); setInputKey((k: number) => k + 1); return; }
-        if (shouldQueuePlanModeOnTab({ replState, inputValue, activePlanState: activePlan?.state ?? null })) {
-          setPlanModeQueued((prev: boolean) => !prev);
-          return;
-        }
-        return;
-      }
-      if (key.ctrl && input === 'l') {
-        handleSubmit('/clear'); return;
-      }
-      // Scroll output: Shift+Up/Down for 5 blocks, Ctrl+U/D for full page
-      if (key.shift && key.upArrow) {
-        setScrollOffset((prev: number) => Math.min(prev + 3, Math.max(0, outputBlocks.length - 1)));
-        return;
-      }
-      if (key.shift && key.downArrow) {
-        setScrollOffset((prev: number) => Math.max(0, prev - 3));
-        return;
-      }
-      if ((key.ctrl && input === 'e') || input === '\x05') {
-        ctrlKeyHandledRef.current = true;
-        setToolOutputExpanded((prev: boolean) => !prev); return;
-      }
-      if ((key.ctrl && input === 't') || input === '\x14') {
-        ctrlKeyHandledRef.current = true;
-        setThinkingExpanded((prev: boolean) => !prev); return;
-      }
-      if (key.ctrl && input === 'r') {
-        openResultsPager();
-        return;
-      }
-      if (key.escape) {
-        if (planModeQueued) { setPlanModeQueued(false); return; }
-        const decision = resolveEscapeAction({
-          replState,
-          inputValue,
-          slashPickerOpen,
-          enginePickerOpen,
-          questionOpen: !!questionState,
-        });
+      const action = resolveKeyboardInput({
+        input, key,
+        modelPickerOpen, cesarPickerOpen, slashPickerOpen, enginePickerOpen,
+        reviewEventOpen: !!reviewEvent,
+        questionState, replState, inputValue, inputHistory, historyIndex,
+        planModeQueued, activePlanState: activePlan?.state ?? null,
+        outputBlockCount: outputBlocks.length,
+        commands: allSlashCommands,
+        engineIds: registry.availableIds(),
+      });
 
-        switch (decision.action) {
-          case 'close-slash':
-            setSlashPickerOpen(false);
-            return;
-          case 'close-engine-picker':
-            setEnginePickerOpen(false);
-            return;
-          case 'cancel-question':
-            if (questionState) { questionState.resolve(''); setQuestionState(null); setQuestionAnswer(''); }
-            return;
-          case 'interrupt':
-            interruptActiveRun('Interrupted.', false);
-            return;
-          case 'clear-input':
-            setInputValue('');
-            return;
-          case 'noop':
-            return;
-        }
-      }
-      if (key.ctrl && input === 'j') {
-        setInputValue((prev: string) => prev + '\n'); return;
-      }
-      if (!enginePickerOpen && !questionState) {
-        if (key.upArrow && inputHistory.length > 0 && !slashPickerOpen) {
-          const r = navigateHistory('up', historyIndex, inputHistory);
-          setHistoryIndex(r.index); if (r.value) setInputValue(r.value);
-        }
-        if (key.downArrow && historyIndex >= 0 && !slashPickerOpen) {
-          const r = navigateHistory('down', historyIndex, inputHistory);
-          setHistoryIndex(r.index); setInputValue(r.value);
-        }
-      }
-      if (input === '\x03' || (key.ctrl && input === 'c')) {
-        if (questionState) { questionState.resolve(''); setQuestionState(null); setQuestionAnswer(''); }
-        if (replState !== 'idle') {
-          interruptActiveRun(activeAbortRef.current ? 'Cancelled.' : 'Interrupted.', false);
-        } else { process.exit(0); }
+      switch (action.type) {
+        case 'none': return;
+        case 'exit': process.exit(0); return;
+        case 'resolveChoice':
+          questionState.resolve(action.choiceKey);
+          setQuestionState(null); setQuestionAnswer(''); return;
+        case 'cancelChoice':
+          questionState.resolve('n');
+          setQuestionState(null); setQuestionAnswer(''); return;
+        case 'swallow': return;
+        case 'ghostComplete':
+          setInputValue(inputValue + action.ghost + ' ');
+          setInputKey((k: number) => k + 1); return;
+        case 'togglePlanQueued':
+          setPlanModeQueued((prev: boolean) => !prev); return;
+        case 'submit':
+          handleSubmit(action.value); return;
+        case 'scroll':
+          setScrollOffset((prev: number) => action.delta > 0 ? Math.min(prev + action.delta, Math.max(0, outputBlocks.length - 1)) : Math.max(0, prev + action.delta));
+          return;
+        case 'toggleToolExpand':
+          ctrlKeyHandledRef.current = true;
+          setToolOutputExpanded((prev: boolean) => !prev); return;
+        case 'toggleThinking':
+          ctrlKeyHandledRef.current = true;
+          setThinkingExpanded((prev: boolean) => !prev); return;
+        case 'openResults':
+          openResultsPager(); return;
+        case 'unqueuePlan':
+          setPlanModeQueued(false); return;
+        case 'closeSlash':
+          setSlashPickerOpen(false); return;
+        case 'closeEnginePicker':
+          setEnginePickerOpen(false); return;
+        case 'cancelQuestion':
+          if (questionState) { questionState.resolve(''); setQuestionState(null); setQuestionAnswer(''); }
+          return;
+        case 'interrupt':
+          interruptActiveRun('Interrupted.', false); return;
+        case 'clearInput':
+          setInputValue(''); return;
+        case 'insertNewline':
+          setInputValue((prev: string) => prev + '\n'); return;
+        case 'historySet':
+          setHistoryIndex(action.index);
+          if (action.value) setInputValue(action.value);
+          return;
+        case 'cancelOrExit':
+          if (questionState) { questionState.resolve(''); setQuestionState(null); setQuestionAnswer(''); }
+          if (replState !== 'idle') {
+            interruptActiveRun(activeAbortRef.current ? 'Cancelled.' : 'Interrupted.', false);
+          } else { process.exit(0); }
+          return;
       }
     >>>
 

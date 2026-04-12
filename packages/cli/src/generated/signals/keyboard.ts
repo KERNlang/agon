@@ -1,0 +1,140 @@
+// @kern-source: keyboard:5
+import { navigateHistory, resolveEscapeAction, shouldQueuePlanModeOnTab, tryGhostComplete } from './app-input.js';
+
+// @kern-source: keyboard:7
+export interface KeyboardCtx {
+  input: string;
+  key: { ctrl?:boolean, shift?:boolean, escape?:boolean, tab?:boolean, upArrow?:boolean, downArrow?:boolean };
+  modelPickerOpen: boolean;
+  cesarPickerOpen: boolean;
+  slashPickerOpen: boolean;
+  enginePickerOpen: boolean;
+  reviewEventOpen: boolean;
+  questionState: any;
+  replState: string;
+  inputValue: string;
+  inputHistory: string[];
+  historyIndex: number;
+  planModeQueued: boolean;
+  activePlanState: string|null;
+  outputBlockCount: number;
+  commands: any[];
+  engineIds: string[];
+}
+
+// @kern-source: keyboard:26
+export type KeyboardAction =
+  | { type: 'none' }
+  | { type: 'exit' }
+  | { type: 'resolveChoice'; choiceKey: string }
+  | { type: 'cancelChoice' }
+  | { type: 'swallow' }
+  | { type: 'ghostComplete'; ghost: string }
+  | { type: 'togglePlanQueued' }
+  | { type: 'submit'; value: string }
+  | { type: 'scroll'; delta: number }
+  | { type: 'toggleToolExpand' }
+  | { type: 'toggleThinking' }
+  | { type: 'openResults' }
+  | { type: 'closeSlash' }
+  | { type: 'closeEnginePicker' }
+  | { type: 'cancelQuestion' }
+  | { type: 'interrupt' }
+  | { type: 'clearInput' }
+  | { type: 'unqueuePlan' }
+  | { type: 'insertNewline' }
+  | { type: 'historySet'; index: number; value: string }
+  | { type: 'cancelOrExit' };
+
+// @kern-source: keyboard:55
+/**
+ * Pure keyboard decision tree. Takes current state, returns action to execute.
+ */
+export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
+  const { input, key } = ctx;
+  
+  // Model/cesar picker open: only Ctrl+C gets through
+  if (ctx.modelPickerOpen || ctx.cesarPickerOpen) {
+    if (input === '\x03' || (key.ctrl && input === 'c')) return { type: 'exit' };
+    return { type: 'none' };
+  }
+  
+  // Choice-based question: single keypress resolves immediately
+  if (ctx.questionState && ctx.questionState.choices) {
+    const pressed = input.toLowerCase();
+    const choices = ctx.questionState.choices as { key: string; label: string }[];
+    const match = choices.find((c) => c.key.toLowerCase() === pressed);
+    const numIdx = /^[1-9]$/.test(pressed) ? parseInt(pressed, 10) - 1 : -1;
+    const resolved = match ?? (numIdx >= 0 && numIdx < choices.length ? choices[numIdx] : null);
+    if (resolved) return { type: 'resolveChoice', choiceKey: resolved.key };
+    if (key.escape) return { type: 'cancelChoice' };
+    return { type: 'swallow' };
+  }
+  
+  // Tab: ghost-complete or queue plan mode
+  if ((key.tab || input === '\t') && !ctx.slashPickerOpen && !ctx.enginePickerOpen && !ctx.questionState && !ctx.reviewEventOpen) {
+    const ghost = tryGhostComplete(ctx.inputValue, ctx.commands, ctx.engineIds);
+    if (ghost) return { type: 'ghostComplete', ghost };
+    if (shouldQueuePlanModeOnTab({ replState: ctx.replState, inputValue: ctx.inputValue, activePlanState: ctx.activePlanState })) {
+      return { type: 'togglePlanQueued' };
+    }
+    return { type: 'none' };
+  }
+  
+  // Ctrl+L: clear
+  if (key.ctrl && input === 'l') return { type: 'submit', value: '/clear' };
+  
+  // Shift+Up/Down: scroll
+  if (key.shift && key.upArrow) return { type: 'scroll', delta: Math.min(3, Math.max(0, ctx.outputBlockCount - 1)) };
+  if (key.shift && key.downArrow) return { type: 'scroll', delta: -3 };
+  
+  // Ctrl+E: toggle tool output expansion
+  if ((key.ctrl && input === 'e') || input === '\x05') return { type: 'toggleToolExpand' };
+  
+  // Ctrl+T: toggle thinking expansion
+  if ((key.ctrl && input === 't') || input === '\x14') return { type: 'toggleThinking' };
+  
+  // Ctrl+R: open results pager
+  if (key.ctrl && input === 'r') return { type: 'openResults' };
+  
+  // Escape: delegate to resolveEscapeAction
+  if (key.escape) {
+    if (ctx.planModeQueued) return { type: 'unqueuePlan' };
+    const decision = resolveEscapeAction({
+      replState: ctx.replState,
+      inputValue: ctx.inputValue,
+      slashPickerOpen: ctx.slashPickerOpen,
+      enginePickerOpen: ctx.enginePickerOpen,
+      questionOpen: !!ctx.questionState,
+    });
+    switch (decision.action) {
+      case 'close-slash': return { type: 'closeSlash' };
+      case 'close-engine-picker': return { type: 'closeEnginePicker' };
+      case 'cancel-question': return { type: 'cancelQuestion' };
+      case 'interrupt': return { type: 'interrupt' };
+      case 'clear-input': return { type: 'clearInput' };
+      case 'noop': return { type: 'none' };
+    }
+  }
+  
+  // Ctrl+J: insert newline
+  if (key.ctrl && input === 'j') return { type: 'insertNewline' };
+  
+  // Arrow keys: navigate history
+  if (!ctx.enginePickerOpen && !ctx.questionState) {
+    if (key.upArrow && ctx.inputHistory.length > 0 && !ctx.slashPickerOpen) {
+      const r = navigateHistory('up', ctx.historyIndex, ctx.inputHistory);
+      return { type: 'historySet', index: r.index, value: r.value || ctx.inputValue };
+    }
+    if (key.downArrow && ctx.historyIndex >= 0 && !ctx.slashPickerOpen) {
+      const r = navigateHistory('down', ctx.historyIndex, ctx.inputHistory);
+      return { type: 'historySet', index: r.index, value: r.value };
+    }
+  }
+  
+  // Ctrl+C: cancel or exit
+  if (input === '\x03' || (key.ctrl && input === 'c')) return { type: 'cancelOrExit' };
+  
+  return { type: 'none' };
+}
+

@@ -173,25 +173,12 @@ export function searchModels(entries: ModelEntry[], query: string): ModelEntry[]
     grok: ['xai'],
   };
   
-  // Collect all canonical provider IDs across all search terms
-  const requiredProviders = new Set<string>();
-  for (const term of terms) {
-    const canonical = canonicalProviders[term];
-    if (canonical) {
-      for (const c of canonical) requiredProviders.add(c);
-    }
-  }
-  
+  // Brand terms like "claude" or "gemini" are used to *boost* canonical
+  // providers during scoring (below), not to hard-filter. Hard-filtering
+  // breaks queries like "openrouter claude" that legitimately target a
+  // hosted variant on a non-canonical provider.
   const matched = entries.filter((entry) => {
-    const pid = entry.providerId.toLowerCase();
     const haystack = `${entry.providerName} ${entry.modelName} ${entry.modelId}`.toLowerCase();
-  
-    // If any term maps to canonical providers, entry must be from one of them
-    if (requiredProviders.size > 0) {
-      const isCanonical = [...requiredProviders].some((c) => pid === c || pid.startsWith(c));
-      if (!isCanonical) return false;
-    }
-  
     return terms.every((term: string) => haystack.includes(term));
   });
   

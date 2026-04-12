@@ -190,21 +190,31 @@ fn name=routeWithCesar async=true params="input:string, images:ImageAttachment[]
         let taskInput = userContext ? `${baseTask}\n\n${userContext}` : baseTask;
         const fitnessCmd = result.fitnessCmd ?? executionSpec.fitnessCmd;
 
-        // R8 enforcement: suggest planning for complex execution tasks when no plan exists
+        // R8 enforcement: suggest planning for truly complex execution tasks when no
+        // plan exists. When the user opts in, recursively dispatch a plan-task
+        // intent so Cesar enters plan mode, investigates, and calls ProposePlan.
+        // Do NOT force a brainstorm-as-research phase; that confused users who
+        // saw brainstorm running and expected forge, and it duplicates Cesar's
+        // own agent loop.
         const EXECUTION_ACTIONS_R8 = ['forge', 'team-forge', 'pipeline', 'build'];
         if (!_planActive && EXECUTION_ACTIONS_R8.includes(routeAction)) {
           try {
             const cwd = resolveWorkingDir();
             const changedFiles = gitChangedFiles(cwd);
             const dirs = new Set(changedFiles.map((f: string) => f.split('/').slice(0, 2).join('/')));
-            const isComplex = changedFiles.length >= 5 || dirs.size >= 3 || input.length > 300;
+            // Raised thresholds: small/medium refactors go straight to the chosen
+            // route. Only genuinely sprawling tasks trigger the plan suggestion.
+            const isComplex = changedFiles.length >= 10 || dirs.size >= 5 || input.length > 600;
             if (isComplex) {
               const planAnswer = await cb.askQuestion(`Complex task (${changedFiles.length} files, ${dirs.size} dirs). Plan first? [Y/n]`);
               if (planAnswer === 'y' || planAnswer === '1' || planAnswer === '') {
-                const { createCesarPlan } = await import('@agon/core');
-                cb.setActivePlan(createCesarPlan(taskInput, []));
-                routeAction = 'brainstorm';
-                cb.dispatch({ type: 'info', message: 'Entering plan mode — Cesar will plan before executing.' });
+                cb.dispatch({ type: 'info', message: 'Entering plan mode — Cesar will investigate and propose a plan.' });
+                // Recursively dispatch a plan-task intent — this triggers the
+                // full plan-mode + approval loop in dispatchIntent's case
+                // 'plan-task' block.
+                const planIntent = { type: 'plan-task' as const, task: taskInput };
+                const planResult = await dispatchIntent(planIntent, taskInput, cb);
+                return planResult.handled || !!planResult.ranAsJob;
               }
             }
           } catch { /* git calls failed — skip complexity check */ }

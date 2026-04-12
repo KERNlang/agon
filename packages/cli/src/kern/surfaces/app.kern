@@ -75,7 +75,7 @@ screen name=App target=ink
   state name=modelPickerTitle type=string initial="'Select model'"
   state name=modelPickerTargetEngine type="string|null" initial="null"
   state name=cesarPickerOpen type=boolean initial=false
-  state name=streamingText type=any initial="null"
+  state name=streamingText type=any initial="null" throttle=90
   state name=pendingImages type="ImageAttachment[]" initial="[]"
   state name=reviewEvent type="ReviewEvent|null" initial="null"
   state name=jobManager type=any initial="new JobManager()"
@@ -91,7 +91,7 @@ screen name=App target=ink
   state name=neroMode type=boolean initial=false
   state name=toolOutputExpanded type=boolean initial=false
   state name=thinkingExpanded type=boolean initial=true
-  state name=cesarConfidence type="number|null" initial="null"
+  state name=cesarConfidence type="number|null" initial="null" throttle=200
   state name=planModeQueued type=boolean initial=false
   state name=cesarMemory type=any initial="() => createCesarMemory()"
   state name=sessionMcpServers type="Array<Record<string,unknown>>" initial="[]"
@@ -100,8 +100,6 @@ screen name=App target=ink
   ref name=chatStartTimeRef type=number initial=0
   ref name=currentPlanRef type="Plan|null" initial="null"
   ref name=streamingTextRef type=any initial="null"
-  ref name=streamingBufferRef type=any initial="null"
-  ref name=streamingFlushTimerRef type=any initial="null"
   ref name=modeRef type="'chat'|'campfire'|'brainstorm'|'tribunal'" initial="'chat'"
   ref name=ctrlKeyHandledRef type=boolean initial=false
   ref name=justPastedRef type=boolean initial=false
@@ -120,7 +118,7 @@ screen name=App target=ink
   state name=extensionPromptFragments type="string[]" initial="[]"
   state name=loadedExtensions type="any[]" initial="[]"
   state name=workspacePath type=string initial="resolveWorkingDir()"
-  state name=termWidth type=number initial="process.stdout.columns || 100"
+  state name=termWidth type=number initial="process.stdout.columns || 100" throttle=100
   state name=scrollOffset type=number initial="0"
 
   // ── Derived ──
@@ -151,12 +149,8 @@ screen name=App target=ink
       modeRef.current = mode;
     >>>
 
-  effect deps=""
-    handler <<<
-      return () => {
-        if (streamingFlushTimerRef.current) clearTimeout(streamingFlushTimerRef.current);
-      };
-    >>>
+  // Streaming rate-limiting is handled by `state name=streamingText throttle=90` —
+  // no manual timer to clean up.
 
   // ── Feed orchestration results back to Cesar's chat history ──
   effect deps="eventBus,dispatch,chatSession"
@@ -233,41 +227,10 @@ screen name=App target=ink
         setLiveSpinner,
         setLiveProgress,
         setStreamingText: (val: any) => {
-          streamingBufferRef.current = val;
-          if (modeRef.current !== 'chat') {
-            if (streamingFlushTimerRef.current) {
-              clearTimeout(streamingFlushTimerRef.current);
-              streamingFlushTimerRef.current = null;
-            }
-            streamingTextRef.current = val;
-            setStreamingText(val);
-            return;
-          }
-          if (!val) {
-            if (streamingFlushTimerRef.current) {
-              clearTimeout(streamingFlushTimerRef.current);
-              streamingFlushTimerRef.current = null;
-            }
-            streamingTextRef.current = null;
-            setStreamingText(null);
-            return;
-          }
-          const needsImmediatePaint = !streamingTextRef.current || streamingTextRef.current.engineId !== val.engineId;
-          if (needsImmediatePaint) {
-            if (streamingFlushTimerRef.current) {
-              clearTimeout(streamingFlushTimerRef.current);
-              streamingFlushTimerRef.current = null;
-            }
-            streamingTextRef.current = val;
-            setStreamingText(val);
-            return;
-          }
-          if (streamingFlushTimerRef.current) return;
-          streamingFlushTimerRef.current = setTimeout(() => {
-            streamingFlushTimerRef.current = null;
-            streamingTextRef.current = streamingBufferRef.current;
-            setStreamingText(streamingBufferRef.current);
-          }, 90);
+          // Sync mirror for dispatch/flush/snippet reads; React state is
+          // rate-limited by the throttle=90 primitive on the state declaration.
+          streamingTextRef.current = val;
+          setStreamingText(val);
         },
         addBlock: (event: any) => {
           setScrollOffset(0);
@@ -278,18 +241,19 @@ screen name=App target=ink
         setQuestionState,
         setChatStartTime: (val: number) => { chatStartTimeRef.current = val; },
         flushStream: () => {
-          const prev = streamingBufferRef.current ?? streamingTextRef.current;
-          if (streamingFlushTimerRef.current) {
-            clearTimeout(streamingFlushTimerRef.current);
-            streamingFlushTimerRef.current = null;
-          }
+          const prev = streamingTextRef.current;
           if (prev) {
             const color = ENGINE_COLORS[prev.engineId] ?? 124;
             setOutputBlocks((blocks: any) => [...blocks, { id: Date.now() - 1, event: { type: 'engine-block', engineId: prev.engineId, color, content: prev.content } }]);
           }
-          streamingBufferRef.current = null;
           streamingTextRef.current = null;
           setStreamingText(null);
+          // KERN-GAP: state throttle=90 is leading-edge — a null clear landing
+          // inside the 90ms lockout from the last chunk is silently dropped,
+          // leaving a stale streaming box visible alongside the finalized block.
+          // Retry past the lockout window. Remove once KERN ships trailing-edge
+          // throttle (e.g. `throttle=90 edge="trailing"`).
+          setTimeout(() => setStreamingText(null), 100);
         },
         getEngineColor: (engineId: string) => ENGINE_COLORS[engineId] ?? 124,
         setCesarConfidence,
@@ -302,7 +266,7 @@ screen name=App target=ink
       if (et === 'streaming-chunk' || et === 'thinking-chunk' || et === 'progress-update' || et === 'tool-call' || et === 'spinner-start' || et === 'spinner-update') {
         lastActivityTimeRef.current = Date.now();
       }
-      const state: OutputState = { liveSpinner: null, liveProgress: null, streamingText: streamingBufferRef.current ?? streamingTextRef.current };
+      const state: OutputState = { liveSpinner: null, liveProgress: null, streamingText: streamingTextRef.current };
       handleOutputEvent(event, state, outputActions, mode, chatStartTimeRef.current);
     >>>
 
@@ -318,13 +282,9 @@ screen name=App target=ink
       trackAbort(null);
       setLiveSpinner(null);
       setLiveProgress(null);
-      if (streamingFlushTimerRef.current) {
-        clearTimeout(streamingFlushTimerRef.current);
-        streamingFlushTimerRef.current = null;
-      }
-      streamingBufferRef.current = null;
       streamingTextRef.current = null;
       setStreamingText(null);
+      setTimeout(() => setStreamingText(null), 100); // bypass throttle lockout
       clearPermissionQueue();
 
       if (replState !== 'idle') {
@@ -695,13 +655,9 @@ screen name=App target=ink
         for (const abort of _activeAborts) abort.abort();
         _activeAborts.clear();
         activeAbortRef.current = null;
-        if (streamingFlushTimerRef.current) {
-          clearTimeout(streamingFlushTimerRef.current);
-          streamingFlushTimerRef.current = null;
-        }
-        streamingBufferRef.current = null;
         streamingTextRef.current = null;
         setActiveAbort(null); setLiveSpinner(null); setLiveProgress(null); setStreamingText(null);
+        setTimeout(() => setStreamingText(null), 100); // bypass throttle lockout
         clearPermissionQueue();
         setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state);
       };

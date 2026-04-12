@@ -69,7 +69,7 @@ export function EngineProgressView({ engines, mode }: { engines:EngineProgress[]
   );
 }
 
-export function EngineBlock({ engineId, color, content }: { engineId:string; color:number; content:string }) {
+const EngineBlock = React.memo(function EngineBlock({ engineId, color, content }: { engineId:string; color:number; content:string }) {
   const wrapWidth = contentWidth(8);
   const cleaned = cleanEngineOutput(content);
   const hexColor = color256toHex(color);
@@ -94,9 +94,10 @@ export function EngineBlock({ engineId, color, content }: { engineId:string; col
       <Text color={hexColor}>{'\u2514\u2500\u2500'}</Text>
     </Box>
   );
-}
+});
+export { EngineBlock };
 
-export function ConversationalResponse({ engineId, content }: { engineId:string; content:string }) {
+const ConversationalResponse = React.memo(function ConversationalResponse({ engineId, content }: { engineId:string; content:string }) {
   const wrapWidth = contentWidth(2);
   const cleaned = cleanEngineOutput(content);
   if (!cleaned.trim()) return null;
@@ -109,7 +110,8 @@ export function ConversationalResponse({ engineId, content }: { engineId:string;
       <RenderedSegments segments={segments} borderColor={''} wrapWidth={wrapWidth} />
     </Box>
   );
-}
+});
+export { ConversationalResponse };
 
 export function DashboardView({ event }: { event:OutputEvent & { type: 'dashboard' } }) {
   return (
@@ -197,7 +199,7 @@ export function TableView({ headers, rows }: { headers:string[]; rows:string[][]
   );
 }
 
-export function OutputBlockView({ event, mode, toolOutputExpanded, thinkingExpanded }: { event:OutputEvent; mode:string; toolOutputExpanded?:boolean; thinkingExpanded?:boolean }) {
+const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolOutputExpanded, thinkingExpanded }: { event:OutputEvent; mode:string; toolOutputExpanded?:boolean; thinkingExpanded?:boolean }) {
   switch (event.type) {
     case 'text': {
       const wrapWidth = contentWidth(4);
@@ -703,9 +705,10 @@ export function OutputBlockView({ event, mode, toolOutputExpanded, thinkingExpan
     case 'plan-execution': return <PlanExecutionView plan={(event as any).plan} />;
     default: return null;
   }
-}
+});
+export { OutputBlockView };
 
-export function ToolCallGroup({ blocks }: { blocks:OutputBlock[] }) {
+const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:OutputBlock[] }) {
   const toolCounts: Record<string, number> = {};
   let errors = 0;
   let running = 0;
@@ -736,9 +739,10 @@ export function ToolCallGroup({ blocks }: { blocks:OutputBlock[] }) {
       </Text>
     </Box>
   );
-}
+});
+export { ToolCallGroup };
 
-export function DebateGroup({ blocks }: { blocks:OutputBlock[] }) {
+const DebateGroup = React.memo(function DebateGroup({ blocks }: { blocks:OutputBlock[] }) {
   const round = (blocks[0]?.event as any)?.round ?? '?';
   const w = contentWidth(6);
   return (
@@ -760,9 +764,10 @@ export function DebateGroup({ blocks }: { blocks:OutputBlock[] }) {
       <Text color="#a78bfa">{'\u2514'}<Text color="#f59e0b">{' \u25b8 ^E expand'}</Text></Text>
     </Box>
   );
-}
+});
+export { DebateGroup };
 
-export function BidGroup({ blocks }: { blocks:OutputBlock[] }) {
+const BidGroup = React.memo(function BidGroup({ blocks }: { blocks:OutputBlock[] }) {
   const w = contentWidth(6);
   return (
     <Box flexDirection="column" paddingLeft={2}>
@@ -788,7 +793,8 @@ export function BidGroup({ blocks }: { blocks:OutputBlock[] }) {
       <Text color="#22d3ee">{'\u2514'}<Text color="#f59e0b">{' \u25b8 ^E expand'}</Text></Text>
     </Box>
   );
-}
+});
+export { BidGroup };
 
 export const BRAND: readonly string[] = ['#fbbf24', '#f9a816', '#f97316', '#f45a2a', '#ef4444'] as const;
 

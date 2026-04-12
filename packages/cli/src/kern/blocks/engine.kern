@@ -86,7 +86,7 @@ screen name=EngineProgressView target=ink
 
 // ── Screen: EngineBlock ─────────────────────────────────────────────
 
-screen name=EngineBlock target=ink
+screen name=EngineBlock target=ink memo=true
   prop name=engineId type=string
   prop name=color type=number
   prop name=content type=string
@@ -120,7 +120,7 @@ screen name=EngineBlock target=ink
 
 // ── Screen: ConversationalResponse ──────────────────────────────────
 
-screen name=ConversationalResponse target=ink
+screen name=ConversationalResponse target=ink memo=true
   prop name=engineId type=string
   prop name=content type=string
   render
@@ -238,7 +238,7 @@ screen name=TableView target=ink export=false
 
 // ── Screen: OutputBlockView ─────────────────────────────────────────
 
-screen name=OutputBlockView target=ink
+screen name=OutputBlockView target=ink memo=true
   prop name=event type=OutputEvent
   prop name=mode type=string
   prop name=toolOutputExpanded type=boolean optional=true
@@ -754,7 +754,7 @@ screen name=OutputBlockView target=ink
 
 // ── Screen: ToolCallGroup — collapsed summary for consecutive tool calls ──
 
-screen name=ToolCallGroup target=ink
+screen name=ToolCallGroup target=ink memo=true
   prop name=blocks type="OutputBlock[]"
   render
     handler <<<
@@ -806,7 +806,7 @@ fn name=extractSummary params="text:string, maxLen:number" returns=string
 
 // ── Screen: DebateGroup — collapsed summary for tribunal rounds ──
 
-screen name=DebateGroup target=ink
+screen name=DebateGroup target=ink memo=true
   prop name=blocks type="OutputBlock[]"
   render
     handler <<<
@@ -835,7 +835,7 @@ screen name=DebateGroup target=ink
 
 // ── Screen: BidGroup — collapsed summary for brainstorm bids ──
 
-screen name=BidGroup target=ink
+screen name=BidGroup target=ink memo=true
   prop name=blocks type="OutputBlock[]"
   render
     handler <<<

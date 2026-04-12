@@ -258,15 +258,15 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
         }
   
         let histContent = result;
-        if (histContent.length > 800) {
+        if (histContent.length > 8192) {
           // Disk-backed cache: save full result, keep preview + ref
           const engineId = runCacheId;
           const cacheEntry = saveToolResultToDisk(engineId, tc.id, tc.name, result);
           if (cacheEntry) {
             const lines = result.split('\n').length;
-            histContent = result.slice(0, 400) + `\n...\n[${lines} lines, ${result.length} chars — cached — ${tc.id}]`;
+            histContent = result.slice(0, 2048) + `\n...\n[${lines} lines, ${result.length} chars — cached — ${tc.id}]`;
           } else {
-            histContent = result.slice(0, 600) + '\n...\n[truncated]';
+            histContent = result.slice(0, 2048) + '\n...\n[truncated]';
           }
         }
         messageHistory.push({ role: 'tool', content: histContent, tool_call_id: tc.id } as any);
@@ -294,10 +294,10 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
         result = `Error: ${err.message ?? String(err)}`;
       }
       let histContent = result;
-      if (histContent.length > 800) {
+      if (histContent.length > 8192) {
         const engineId = runCacheId;
         const ce = saveToolResultToDisk(engineId, callId, 'Read', result);
-        histContent = ce ? result.slice(0, 400) + `\n...\n[cached — ${callId}]` : result.slice(0, 600) + '\n...\n[truncated]';
+        histContent = ce ? result.slice(0, 2048) + `\n...\n[cached — ${callId}]` : result.slice(0, 2048) + '\n...\n[truncated]';
       }
       messageHistory.push({
         role: 'assistant', content: null,

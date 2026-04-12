@@ -28,7 +28,7 @@ import { ENGINE_COLORS } from '../blocks/output-format.js';
 
 import { icons } from '../signals/icons.js';
 
-import { parseMarkdownBlocks, cleanEngineOutput } from '../blocks/markdown.js';
+import { cleanEngineOutput } from '../blocks/markdown.js';
 
 import type { OutputEvent, HandlerContext } from '../../handlers/types.js';
 
@@ -58,7 +58,9 @@ import { makeBlockArchivePath, appendBlockWithCap } from '../signals/block-archi
 
 import { handleReviewAction } from '../blocks/review.js';
 
-import { SpinnerBlock, EngineProgressView, StatusBar, CesarStatusStrip, OutputBlockView, ToolCallGroup, DebateGroup, BidGroup, SlashPicker, EnginePicker, ModelPicker, ReviewBlock, BackgroundJobRail, RenderedSegments, CesarPicker, contentWidth, engineColor } from '../../components.js';
+import { SpinnerBlock, StatusBar, CesarStatusStrip, SlashPicker, EnginePicker, ModelPicker, ReviewBlock, BackgroundJobRail, CesarPicker } from '../../components.js';
+
+import { ChromeBar, HistoryView, StreamingView } from './app-views.js';
 
 import type { OutputBlock, ReviewEvent } from '../../components.js';
 
@@ -885,59 +887,11 @@ export function App() {
 
   return (
   <Box flexDirection="column">
-    {mode !== 'chat' && (
-      <Box paddingX={1}>
-        <Text dimColor>{icons().find + ' '}{resolveWorkingDir().split('/').pop()}</Text>
-        <Text dimColor>{' \u2502 '}</Text>
-        <Text color={mode === 'campfire' ? '#f97316' : mode === 'brainstorm' ? '#22d3ee' : '#a78bfa'}>{mode}</Text>
-        <Text dimColor>{' \u2502 '}</Text>
-        <Text dimColor>{availableEngines.length}{' engines'}</Text>
-        {replState !== 'idle' && (<><Text dimColor>{' \u2502 '}</Text><Text color="yellow">{replState}</Text></>)}
-        {runningJobs.length > 0 && (<><Text dimColor>{' \u203a '}</Text><Text color="#facc15">{runningJobs.map((j: Job) => `${j.type}: ${j.label.slice(0, 20)}`).join(', ')}</Text></>)}
-      </Box>
-    )}
+    <ChromeBar mode={mode} cwdLabel={resolveWorkingDir().split('/').pop() ?? ''} engineCount={availableEngines.length} replState={replState} runningJobs={runningJobs} />
     <BackgroundJobRail jobs={runningJobs} />
     <Box flexDirection="column">
-      {scrollOffset > 0 && <Box paddingX={1}><Text dimColor>{`↑ ${scrollOffset} block${scrollOffset > 1 ? 's' : ''} above — Shift+↑ to scroll`}</Text></Box>}
-      {groupedBlocks === null
-        ? visibleBlocks.map((block: OutputBlock) => (<OutputBlockView key={block.id} event={block.event} mode={mode} toolOutputExpanded={true} thinkingExpanded={thinkingExpanded} />))
-        : groupedBlocks.map((item: OutputBlock | OutputBlock[], gi: number) => {
-            if (Array.isArray(item)) {
-              const firstType = item[0].event.type;
-              if (item.length === 1) return <OutputBlockView key={item[0].id} event={item[0].event} mode={mode} toolOutputExpanded={false} thinkingExpanded={thinkingExpanded} />;
-              if (firstType === 'debate-round') return <DebateGroup key={`dg-${item[0].id}`} blocks={item} />;
-              if (firstType === 'kern-draft') return <BidGroup key={`bg-${item[0].id}`} blocks={item} />;
-              return <ToolCallGroup key={`tg-${item[0].id}`} blocks={item} />;
-            }
-            return <OutputBlockView key={item.id} event={item.event} mode={mode} toolOutputExpanded={false} thinkingExpanded={thinkingExpanded} />;
-          })}
-      {streamingText && (() => {
-        const c = engineColor(streamingText.engineId);
-        const cleaned = cleanEngineOutput(streamingText.content);
-        const wrapWidth = contentWidth(mode === 'chat' ? 6 : 8);
-        const segments = parseMarkdownBlocks(cleaned);
-        return mode === 'chat' ? (
-          (() => {
-            const lines = cleaned.split('\n').filter((line: string) => line.trim());
-            const lastLine = lines.length > 0 ? lines[lines.length - 1].trim() : '';
-            const previewLimit = Math.max(24, wrapWidth - streamingText.engineId.length - 6);
-            const preview = lastLine.length > previewLimit ? lastLine.slice(0, previewLimit - 1) + '…' : lastLine;
-            return (
-              <Box marginY={1} paddingLeft={1}>
-                <Text color={c} bold>{icons().dotOn + ' '}{streamingText.engineId}</Text>
-                <Text dimColor>{preview ? ` ${preview}` : ' streaming…'}</Text>
-              </Box>
-            );
-          })()
-        ) : (
-          <Box flexDirection="column" marginY={1} paddingLeft={2}>
-            <Text color={c} bold>{'┌── '}{streamingText.engineId}</Text>
-            <Text color={c}>{'│'}</Text>
-            <RenderedSegments segments={segments} borderColor={c} wrapWidth={wrapWidth} />
-          </Box>
-        );
-      })()}
-      {liveProgress && <EngineProgressView engines={liveProgress} mode={mode} />}
+      <HistoryView visibleBlocks={visibleBlocks} groupedBlocks={groupedBlocks} mode={mode} scrollOffset={scrollOffset} thinkingExpanded={thinkingExpanded} />
+      <StreamingView streamingText={streamingText} mode={mode} liveProgress={liveProgress} />
     </Box>
     {reviewEvent && <ReviewBlock event={reviewEvent} onAction={handleReviewActionCb} />}
     {enginePickerOpen && (

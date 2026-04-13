@@ -534,7 +534,7 @@ screen name=OutputBlockView target=ink memo=true
               return (
                 <Box paddingLeft={2}>
                   <Text>
-                    {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().edit + ' Update'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}{' '}<Text dimColor>\u00b7 </Text><Text color="#ef4444">-{removedCount}</Text><Text dimColor>{' '}</Text><Text color="#4ade80">+{addedCount}</Text>{' lines'}{' '}<Text color="#f59e0b">\u25b8 Ctrl+E</Text>}
+                    {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().edit + ' Update'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}{' '}<Text dimColor>\u00b7 </Text><Text color="#ef4444">-{removedCount}</Text><Text dimColor>{' '}</Text><Text color="#4ade80">+{addedCount}</Text>{' lines'}{' '}<Text color="#f59e0b">\u25b8 Ctrl+E</Text>
                   </Text>
                 </Box>
               );
@@ -584,7 +584,7 @@ screen name=OutputBlockView target=ink memo=true
               return (
                 <Box paddingLeft={2}>
                   <Text>
-                    {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().write + ' Write'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}{lineCount > 0 && <><Text dimColor>{' \u00b7 '}</Text><Text color="#4ade80">+{lineCount}</Text><Text dimColor>{' lines'}</Text></>}{' '}<Text color="#f59e0b">\u25b8 Ctrl+E</Text>}
+                    {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().write + ' Write'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}{lineCount > 0 && <><Text dimColor>{' \u00b7 '}</Text><Text color="#4ade80">+{lineCount}</Text><Text dimColor>{' lines'}</Text></>}{' '}<Text color="#f59e0b">\u25b8 Ctrl+E</Text>
                   </Text>
                 </Box>
               );

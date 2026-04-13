@@ -102,6 +102,7 @@ screen name=App target=ink
   ref name=currentPlanRef type="Plan|null" initial="null"
   ref name=streamingTextRef type=any initial="null"
   ref name=modeRef type="'chat'|'campfire'|'brainstorm'|'tribunal'" initial="'chat'"
+  ref name=inputValueRef type=string initial="''"
   ref name=ctrlKeyHandledRef type=boolean initial=false
   ref name=justPastedRef type=boolean initial=false
   ref name=pasteHashesRef type="Map<string,string>" initial="new Map()"
@@ -111,7 +112,11 @@ screen name=App target=ink
   ref name=blockArchivePathRef type=string initial="makeBlockArchivePath(Date.now())"
 
   // ── Init-once state (registry, adapter, skills) ──
-  state name=registry type=EngineRegistry initial="(() => { const reg = new EngineRegistry(); const engDir = join(dirname(fileURLToPath(import.meta.url)), '../../../../engines'); reg.load(engDir); return reg; })()"
+  // engines dir is at packages/cli/engines from the bundled dist/index.js
+  // (3 `..` up from dist/). For source-mode execution the path points into
+  // src/, which doesn't exist — EngineRegistry.resolveBuiltinDir walks up
+  // from there and finds the real engines/ at the repo root.
+  state name=registry type=EngineRegistry initial="(() => { const reg = new EngineRegistry(); const engDir = join(dirname(fileURLToPath(import.meta.url)), '../../../engines'); reg.load(engDir); return reg; })()"
   state name=adapter type=EngineAdapter initial="createCliAdapter(registry)"
   state name=dynamicSkills type="Skill[]" initial="() => loadSkills(resolveWorkingDir())"
   state name=commandRegistry type="any" initial="(() => { const reg = new CommandRegistry(); registerBuiltinCommands(reg); return reg; })()"
@@ -450,8 +455,19 @@ screen name=App target=ink
       }
     >>>
 
+  // Sync inputValue → inputValueRef so handleInputChange can read the
+  // latest value without a reactive dep on inputValue (which would
+  // rebuild the callback and break ComposerView's React.memo every
+  // keystroke). The ref tracks the same value, one microtask late, which
+  // is fine because every call into handleInputChange reads it before
+  // React applies the next setInputValue anyway.
+  effect deps="inputValue"
+    handler <<<
+      inputValueRef.current = inputValue;
+    >>>
+
   // ── Input handlers ──
-  callback name=handleInputChange params="value:string" deps="inputValue,slashPickerOpen,enginePickerOpen,modelPickerOpen,questionState,planModeQueued"
+  callback name=handleInputChange params="value:string" deps="slashPickerOpen,enginePickerOpen,modelPickerOpen,questionState,planModeQueued"
     handler <<<
       // Swallow input while a choice question is active — useInput handles keypress
       if (questionState && questionState.choices) return;
@@ -464,9 +480,10 @@ screen name=App target=ink
       }
 
       const nextValue = cleanInputValue(value);
+      const prevValue = inputValueRef.current;
 
       // "/" typed into empty input → open slash picker, swallow the character
-      if (!inputValue && nextValue === '/' && !slashPickerOpen && !enginePickerOpen && !modelPickerOpen && !questionState && !justPastedRef.current) {
+      if (!prevValue && nextValue === '/' && !slashPickerOpen && !enginePickerOpen && !modelPickerOpen && !questionState && !justPastedRef.current) {
         if (planModeQueued) setPlanModeQueued(false);
         setSlashPickerOpen(true);
         setInputKey((k: number) => k + 1);
@@ -483,7 +500,7 @@ screen name=App target=ink
         return;
       }
 
-      const change = findInputChange(inputValue, nextValue);
+      const change = findInputChange(prevValue, nextValue);
       const looksLikePaste = value !== nextValue || change.inserted.length > 1;
 
       if (!looksLikePaste || !change.inserted) {

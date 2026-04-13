@@ -31,11 +31,25 @@ export type { ReviewEvent, ModelPickerEntry } from './generated/blocks/controls.
 // don't reach the TextInput. See blocks/composer.kern.
 export { ComposerView } from './generated/blocks/composer.js';
 
-// Status
-export {
-  SpinnerBlock, TokenGauge, StatusBar, StatusLine, BackgroundJobRail,
-  CesarStatusStrip, AGON_TIPS,
-} from './generated/surfaces/status.js';
+// Status — BackgroundJobRail and CesarStatusStrip are React.memo-wrapped here
+// because kern-lang 3.1.7 honors `memo=true` on block screens only, not on
+// surface screens that use `export=named` or top-level `export function`.
+// See status.kern for the KERN-GAP note.
+//
+// StatusBar is intentionally NOT memoized: its render reads global mutable
+// state (tracker.getStats(), chatSession.messages.length, resolveWorkingDir(),
+// currentBranch()) that is not passed in as props. Shallow-equal would make
+// the bar go stale on quiet renders. If StatusBar becomes a measurable perf
+// hotspot, hoist those reads into props on App and then memoize.
+import * as _Status from './generated/surfaces/status.js';
+import { memo as _reactMemo } from 'react';
+export const StatusBar = _Status.StatusBar;
+export const BackgroundJobRail = _reactMemo(_Status.BackgroundJobRail);
+export const CesarStatusStrip = _reactMemo(_Status.CesarStatusStrip);
+export const SpinnerBlock = _Status.SpinnerBlock;
+export const TokenGauge = _Status.TokenGauge;
+export const StatusLine = _Status.StatusLine;
+export const AGON_TIPS = _Status.AGON_TIPS;
 
 // Re-export ENGINE_COLORS from output for backward compat
 export { ENGINE_COLORS } from './output.js';

@@ -65,7 +65,7 @@ export const forgeCommand: any = defineCommand({
     const config = loadConfig(args.cwd);
 
     const registry = new EngineRegistry();
-    registry.load(join(dirname(fileURLToPath(import.meta.url)), '../../../../engines'));
+    registry.load(join(dirname(fileURLToPath(import.meta.url)), '../../../engines'));
 
     const adapter = createCliAdapter(registry);
 

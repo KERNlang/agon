@@ -260,6 +260,8 @@ export function App() {
   const setScrollOffset = useMemo(() => __inkSafe(_setScrollOffsetRaw), [_setScrollOffsetRaw]);
   const [registryVersion, _setRegistryVersionRaw] = useState<number>(0);
   const setRegistryVersion = useMemo(() => __inkSafe(_setRegistryVersionRaw), [_setRegistryVersionRaw]);
+  const [configVersion, _setConfigVersionRaw] = useState<number>(0);
+  const setConfigVersion = useMemo(() => __inkSafe(_setConfigVersionRaw), [_setConfigVersionRaw]);
 
   const chatStartTimeRef = useRef<number>(0);
   const currentPlanRef = useRef<Plan|null>(null);
@@ -285,6 +287,18 @@ export function App() {
   const availableEngines = useMemo(() => {
           return registry.availableIds();
   }, [registry, registryVersion]);
+
+  const config = useMemo(() => {
+          return loadConfig();
+  }, [configVersion]);
+
+  const streamSnippet = useMemo(() => {
+          if (!streamingText || !streamingText.content) return null;
+          const cleaned = cleanEngineOutput(streamingText.content);
+          const lines = cleaned.split('\n').filter((l: string) => l.trim());
+          if (lines.length === 0) return null;
+          return { engineId: streamingText.engineId, line: lines[lines.length - 1].trim() };
+  }, [streamingText]);
 
   const runningJobs = useMemo(() => {
           return jobList.filter((j: Job) => j.state === 'running');
@@ -900,8 +914,8 @@ export function App() {
     {enginePickerOpen && (
       <EnginePicker available={availableEngines} initialSelected={sessionEngines ?? availableEngines}
         userEngines={new Set(registry.list().filter((e: any) => e.tier === 'user').map((e: any) => e.id))}
-        modelOverrides={(loadConfig() as any).engineModels ?? {}}
-        onConfirm={(selected: string[]) => { setEnginePickerOpen(false); setSessionEngines(selected); configSet('forgeEnabledEngines', selected); dispatch({ type: 'success', message: `Active engines: ${selected.join(', ')}` } as any); }}
+        modelOverrides={(config as any).engineModels ?? {}}
+        onConfirm={(selected: string[]) => { setEnginePickerOpen(false); setSessionEngines(selected); configSet('forgeEnabledEngines', selected); setConfigVersion((v: number) => v + 1); dispatch({ type: 'success', message: `Active engines: ${selected.join(', ')}` } as any); }}
         onCancel={() => setEnginePickerOpen(false)}
         onRemove={(engineId: string) => {
           const engPath = join(homedir(), '.agon', 'engines', `${engineId}.json`);
@@ -909,6 +923,7 @@ export function App() {
           const nextModels = { ...((loadConfig() as any).engineModels ?? {}) };
           delete nextModels[engineId];
           configSet('engineModels', nextModels as any);
+          setConfigVersion((v: number) => v + 1);
           registry.unregister(engineId);
           setRegistryVersion((v: number) => v + 1);
           setSessionEngines((prev: string[]|null) => prev ? prev.filter((id: string) => id !== engineId) : null);
@@ -919,6 +934,7 @@ export function App() {
           if (model) nextModels[engineId] = model;
           else delete nextModels[engineId];
           configSet('engineModels', nextModels as any);
+          setConfigVersion((v: number) => v + 1);
           dispatch({ type: 'success', message: model ? `Model override set: ${engineId} → ${model}` : `Model override cleared: ${engineId}` } as any);
         }}
         onBrowseModel={(engineId: string) => openCliModelPicker(engineId)} />
@@ -930,6 +946,7 @@ export function App() {
             const nextModels = { ...((loadConfig() as any).engineModels ?? {}) };
             nextModels[modelPickerTargetEngine] = entry.modelId;
             configSet('engineModels', nextModels as any);
+            setConfigVersion((v: number) => v + 1);
             dispatch({ type: 'success', message: `Model override set: ${modelPickerTargetEngine} → ${entry.modelId}` } as any);
             setModelPickerTargetEngine(null);
             setModelPickerInitialFilter('');
@@ -959,10 +976,11 @@ export function App() {
     {cesarPickerOpen && (
       <CesarPicker
         engines={availableEngines}
-        currentCesar={(loadConfig() as any).cesarEngine ?? loadConfig().forgeFixedStarter ?? 'claude'}
+        currentCesar={(config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude'}
         onSelect={(engineId: string) => {
           setCesarPickerOpen(false);
           configSet('cesarEngine', engineId);
+          setConfigVersion((v: number) => v + 1);
           if (cesarSession) { cesarSession.close(); setCesarSession(null); }
           dispatch({ type: 'success', message: `Cesar brain set to: ${engineId}` } as any);
           dispatch({ type: 'info', message: 'Conversation context + memory preserved.' } as any);
@@ -1012,18 +1030,10 @@ export function App() {
           </Box>
         )}
         {(() => {
-          const _cfg = loadConfig();
-          const _cesarId = (_cfg as any).cesarEngine ?? _cfg.forgeFixedStarter ?? 'claude';
-          // Extract last non-empty line from streaming text for status strip
-          let snippet: { engineId: string; line: string } | null = null;
-          if (streamingText && streamingText.content) {
-            const cleaned = cleanEngineOutput(streamingText.content);
-            const lines = cleaned.split('\n').filter((l: string) => l.trim());
-            if (lines.length > 0) snippet = { engineId: streamingText.engineId, line: lines[lines.length - 1].trim() };
-          }
+          const _cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
           return (<>
-            <CesarStatusStrip cesarId={_cesarId} confidence={cesarConfidence} spinner={liveSpinner} engines={liveProgress} startTime={chatStartTimeRef.current || 0} streamSnippet={snippet} isActive={replState !== 'idle' || runningJobs.length > 0} planModeQueued={planModeQueued} activePlanState={activePlan?.state ?? null} />
-            {mode === 'chat' && <StatusBar config={_cfg} chatSession={chatSession} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} thinkingExpanded={thinkingExpanded} isActive={replState !== 'idle'} />}
+            <CesarStatusStrip cesarId={_cesarId} confidence={cesarConfidence} spinner={liveSpinner} engines={liveProgress} startTime={chatStartTimeRef.current || 0} streamSnippet={streamSnippet} isActive={replState !== 'idle' || runningJobs.length > 0} planModeQueued={planModeQueued} activePlanState={activePlan?.state ?? null} />
+            {mode === 'chat' && <StatusBar config={config} chatSession={chatSession} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} thinkingExpanded={thinkingExpanded} isActive={replState !== 'idle'} />}
           </>);
         })()}
       </Box>

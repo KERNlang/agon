@@ -16,6 +16,10 @@ import { icons } from '../signals/icons.js';
 
 import { setAuthKey, getAuthKey, loadConfig, configSet } from '@agon/core';
 
+import type { CliModelEntry, CliProviderGroup } from '@agon/core';
+
+import { getCliModelsGrouped } from '@agon/core';
+
 export interface ReviewEvent {
   winnerId: string;
   patchPath: string;

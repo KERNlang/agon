@@ -123,6 +123,10 @@ screen name=App target=ink
   state name=workspacePath type=string initial="resolveWorkingDir()"
   state name=termWidth type=number initial="process.stdout.columns || 100" throttle=100
   state name=scrollOffset type=number initial="0"
+  // Bumped whenever the EngineRegistry is mutated (register/unregister) so the
+  // availableEngines memo invalidates. Without this, memoing on `registry` alone
+  // freezes the list (the registry object identity never changes).
+  state name=registryVersion type=number initial="0"
 
   // ── Derived ──
   memo name=allSlashCommands deps="dynamicSkills, extensionSkills, commandRegistry"
@@ -133,6 +137,11 @@ screen name=App target=ink
       const seen = new Set(registryCmds.map((c: any) => c.cmd));
       const uniqueSkills = skillCmds.filter((s: any) => !seen.has(s.cmd));
       return [...registryCmds, ...uniqueSkills];
+    >>>
+
+  memo name=availableEngines deps="registry, registryVersion"
+    handler <<<
+      return registry.availableIds();
     >>>
 
   memo name=runningJobs deps="jobList"
@@ -719,7 +728,7 @@ screen name=App target=ink
         planModeQueued, activePlanState: activePlan?.state ?? null,
         outputBlockCount: outputBlocks.length,
         commands: allSlashCommands,
-        engineIds: registry.availableIds(),
+        engineIds: availableEngines,
       });
 
       switch (action.type) {
@@ -784,7 +793,7 @@ screen name=App target=ink
     handler <<<
       return (
       <Box flexDirection="column">
-        <ChromeBar mode={mode} cwdLabel={resolveWorkingDir().split('/').pop() ?? ''} engineCount={registry.availableIds().length} replState={replState} runningJobs={runningJobs} />
+        <ChromeBar mode={mode} cwdLabel={resolveWorkingDir().split('/').pop() ?? ''} engineCount={availableEngines.length} replState={replState} runningJobs={runningJobs} />
         <BackgroundJobRail jobs={runningJobs} />
         <Box flexDirection="column">
           <HistoryView visibleBlocks={visibleBlocks} groupedBlocks={groupedBlocks} mode={mode} scrollOffset={scrollOffset} thinkingExpanded={thinkingExpanded} />
@@ -792,7 +801,7 @@ screen name=App target=ink
         </Box>
         {reviewEvent && <ReviewBlock event={reviewEvent} onAction={handleReviewActionCb} />}
         {enginePickerOpen && (
-          <EnginePicker available={registry.availableIds()} initialSelected={sessionEngines ?? registry.availableIds()}
+          <EnginePicker available={availableEngines} initialSelected={sessionEngines ?? availableEngines}
             userEngines={new Set(registry.list().filter((e: any) => e.tier === 'user').map((e: any) => e.id))}
             modelOverrides={(loadConfig() as any).engineModels ?? {}}
             onConfirm={(selected: string[]) => { setEnginePickerOpen(false); setSessionEngines(selected); configSet('forgeEnabledEngines', selected); dispatch({ type: 'success', message: `Active engines: ${selected.join(', ')}` } as any); }}
@@ -804,6 +813,7 @@ screen name=App target=ink
               delete nextModels[engineId];
               configSet('engineModels', nextModels as any);
               registry.unregister(engineId);
+              setRegistryVersion((v: number) => v + 1);
               setSessionEngines((prev: string[]|null) => prev ? prev.filter((id: string) => id !== engineId) : null);
               dispatch({ type: 'success', message: `Removed: ${engineId}` } as any);
             }}
@@ -837,6 +847,7 @@ screen name=App target=ink
               mkdirSync(dir, { recursive: true });
               writeFileSync(join(dir, `${def.id}.json`), JSON.stringify(def, null, 2) + '\n');
               registry.register(def as any);
+              setRegistryVersion((v: number) => v + 1);
               dispatch({ type: 'success', message: `Added: ${entry.providerName} \u2014 ${entry.modelName}` } as any);
             }}
             onCancel={() => {
@@ -850,7 +861,7 @@ screen name=App target=ink
         )}
         {cesarPickerOpen && (
           <CesarPicker
-            engines={registry.availableIds()}
+            engines={availableEngines}
             currentCesar={(loadConfig() as any).cesarEngine ?? loadConfig().forgeFixedStarter ?? 'claude'}
             onSelect={(engineId: string) => {
               setCesarPickerOpen(false);
@@ -884,7 +895,7 @@ screen name=App target=ink
                   ) : (
                     <><TextInput key={inputKey} value={inputValue} onChange={handleInputChange} onSubmit={handleSubmit}
                       placeholder={replState === 'idle' ? mode === 'chat' ? '' : mode === 'campfire' ? 'What should we think about?' : mode === 'brainstorm' ? 'What question for the engines?' : 'What should they debate?' : ''} />
-                    {(() => { const ghost = getGhostCompletion(inputValue, allSlashCommands, registry.availableIds()); return ghost ? <Text dimColor>{ghost}</Text> : null; })()}</>
+                    {(() => { const ghost = getGhostCompletion(inputValue, allSlashCommands, availableEngines); return ghost ? <Text dimColor>{ghost}</Text> : null; })()}</>
                   )}
                 </Box>
               </Box>

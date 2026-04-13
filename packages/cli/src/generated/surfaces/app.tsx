@@ -258,6 +258,8 @@ export function App() {
   }, []);
   const [scrollOffset, _setScrollOffsetRaw] = useState<number>(0);
   const setScrollOffset = useMemo(() => __inkSafe(_setScrollOffsetRaw), [_setScrollOffsetRaw]);
+  const [registryVersion, _setRegistryVersionRaw] = useState<number>(0);
+  const setRegistryVersion = useMemo(() => __inkSafe(_setRegistryVersionRaw), [_setRegistryVersionRaw]);
 
   const chatStartTimeRef = useRef<number>(0);
   const currentPlanRef = useRef<Plan|null>(null);
@@ -279,6 +281,10 @@ export function App() {
           const uniqueSkills = skillCmds.filter((s: any) => !seen.has(s.cmd));
           return [...registryCmds, ...uniqueSkills];
   }, [dynamicSkills, extensionSkills, commandRegistry]);
+
+  const availableEngines = useMemo(() => {
+          return registry.availableIds();
+  }, [registry, registryVersion]);
 
   const runningJobs = useMemo(() => {
           return jobList.filter((j: Job) => j.state === 'running');
@@ -714,7 +720,7 @@ export function App() {
       planModeQueued, activePlanState: activePlan?.state ?? null,
       outputBlockCount: outputBlocks.length,
       commands: allSlashCommands,
-      engineIds: registry.availableIds(),
+      engineIds: availableEngines,
     });
     
     switch (action.type) {
@@ -884,7 +890,7 @@ export function App() {
 
   return (
   <Box flexDirection="column">
-    <ChromeBar mode={mode} cwdLabel={resolveWorkingDir().split('/').pop() ?? ''} engineCount={registry.availableIds().length} replState={replState} runningJobs={runningJobs} />
+    <ChromeBar mode={mode} cwdLabel={resolveWorkingDir().split('/').pop() ?? ''} engineCount={availableEngines.length} replState={replState} runningJobs={runningJobs} />
     <BackgroundJobRail jobs={runningJobs} />
     <Box flexDirection="column">
       <HistoryView visibleBlocks={visibleBlocks} groupedBlocks={groupedBlocks} mode={mode} scrollOffset={scrollOffset} thinkingExpanded={thinkingExpanded} />
@@ -892,7 +898,7 @@ export function App() {
     </Box>
     {reviewEvent && <ReviewBlock event={reviewEvent} onAction={handleReviewActionCb} />}
     {enginePickerOpen && (
-      <EnginePicker available={registry.availableIds()} initialSelected={sessionEngines ?? registry.availableIds()}
+      <EnginePicker available={availableEngines} initialSelected={sessionEngines ?? availableEngines}
         userEngines={new Set(registry.list().filter((e: any) => e.tier === 'user').map((e: any) => e.id))}
         modelOverrides={(loadConfig() as any).engineModels ?? {}}
         onConfirm={(selected: string[]) => { setEnginePickerOpen(false); setSessionEngines(selected); configSet('forgeEnabledEngines', selected); dispatch({ type: 'success', message: `Active engines: ${selected.join(', ')}` } as any); }}
@@ -904,6 +910,7 @@ export function App() {
           delete nextModels[engineId];
           configSet('engineModels', nextModels as any);
           registry.unregister(engineId);
+          setRegistryVersion((v: number) => v + 1);
           setSessionEngines((prev: string[]|null) => prev ? prev.filter((id: string) => id !== engineId) : null);
           dispatch({ type: 'success', message: `Removed: ${engineId}` } as any);
         }}
@@ -937,6 +944,7 @@ export function App() {
           mkdirSync(dir, { recursive: true });
           writeFileSync(join(dir, `${def.id}.json`), JSON.stringify(def, null, 2) + '\n');
           registry.register(def as any);
+          setRegistryVersion((v: number) => v + 1);
           dispatch({ type: 'success', message: `Added: ${entry.providerName} \u2014 ${entry.modelName}` } as any);
         }}
         onCancel={() => {
@@ -950,7 +958,7 @@ export function App() {
     )}
     {cesarPickerOpen && (
       <CesarPicker
-        engines={registry.availableIds()}
+        engines={availableEngines}
         currentCesar={(loadConfig() as any).cesarEngine ?? loadConfig().forgeFixedStarter ?? 'claude'}
         onSelect={(engineId: string) => {
           setCesarPickerOpen(false);
@@ -984,7 +992,7 @@ export function App() {
               ) : (
                 <><TextInput key={inputKey} value={inputValue} onChange={handleInputChange} onSubmit={handleSubmit}
                   placeholder={replState === 'idle' ? mode === 'chat' ? '' : mode === 'campfire' ? 'What should we think about?' : mode === 'brainstorm' ? 'What question for the engines?' : 'What should they debate?' : ''} />
-                {(() => { const ghost = getGhostCompletion(inputValue, allSlashCommands, registry.availableIds()); return ghost ? <Text dimColor>{ghost}</Text> : null; })()}</>
+                {(() => { const ghost = getGhostCompletion(inputValue, allSlashCommands, availableEngines); return ghost ? <Text dimColor>{ghost}</Text> : null; })()}</>
               )}
             </Box>
           </Box>

@@ -128,6 +128,10 @@ screen name=App target=ink
   // freezes the list (the registry object identity never changes).
   state name=registryVersion type=number initial="0"
 
+  // Bumped whenever configSet(...) is called from this component. Drives the
+  // `config` memo so inline loadConfig() disk reads don't run on every keystroke.
+  state name=configVersion type=number initial="0"
+
   // ── Derived ──
   memo name=allSlashCommands deps="dynamicSkills, extensionSkills, commandRegistry"
     handler <<<
@@ -142,6 +146,29 @@ screen name=App target=ink
   memo name=availableEngines deps="registry, registryVersion"
     handler <<<
       return registry.availableIds();
+    >>>
+
+  // Memoized loadConfig() — without this, every inline `loadConfig()` call in
+  // the render tree runs 3× readFileSync + JSON.parse per keystroke (composer
+  // input lag). Keyed on configVersion so all configSet() callsites in this
+  // component trigger a re-read; external configSet() won't, but the render
+  // tree doesn't need to reflect those mid-interaction.
+  memo name=config deps="configVersion"
+    handler <<<
+      return loadConfig();
+    >>>
+
+  // Memoized stream snippet — passing a fresh `{engineId, line}` object per
+  // render to CesarStatusStrip defeats its React.memo shallow-equal, causing
+  // the whole status strip (and children) to re-render on every composer
+  // keystroke. Memoize on the raw streamingText reference.
+  memo name=streamSnippet deps="streamingText"
+    handler <<<
+      if (!streamingText || !streamingText.content) return null;
+      const cleaned = cleanEngineOutput(streamingText.content);
+      const lines = cleaned.split('\n').filter((l: string) => l.trim());
+      if (lines.length === 0) return null;
+      return { engineId: streamingText.engineId, line: lines[lines.length - 1].trim() };
     >>>
 
   memo name=runningJobs deps="jobList"
@@ -803,8 +830,8 @@ screen name=App target=ink
         {enginePickerOpen && (
           <EnginePicker available={availableEngines} initialSelected={sessionEngines ?? availableEngines}
             userEngines={new Set(registry.list().filter((e: any) => e.tier === 'user').map((e: any) => e.id))}
-            modelOverrides={(loadConfig() as any).engineModels ?? {}}
-            onConfirm={(selected: string[]) => { setEnginePickerOpen(false); setSessionEngines(selected); configSet('forgeEnabledEngines', selected); dispatch({ type: 'success', message: `Active engines: ${selected.join(', ')}` } as any); }}
+            modelOverrides={(config as any).engineModels ?? {}}
+            onConfirm={(selected: string[]) => { setEnginePickerOpen(false); setSessionEngines(selected); configSet('forgeEnabledEngines', selected); setConfigVersion((v: number) => v + 1); dispatch({ type: 'success', message: `Active engines: ${selected.join(', ')}` } as any); }}
             onCancel={() => setEnginePickerOpen(false)}
             onRemove={(engineId: string) => {
               const engPath = join(homedir(), '.agon', 'engines', `${engineId}.json`);
@@ -812,6 +839,7 @@ screen name=App target=ink
               const nextModels = { ...((loadConfig() as any).engineModels ?? {}) };
               delete nextModels[engineId];
               configSet('engineModels', nextModels as any);
+              setConfigVersion((v: number) => v + 1);
               registry.unregister(engineId);
               setRegistryVersion((v: number) => v + 1);
               setSessionEngines((prev: string[]|null) => prev ? prev.filter((id: string) => id !== engineId) : null);
@@ -822,6 +850,7 @@ screen name=App target=ink
               if (model) nextModels[engineId] = model;
               else delete nextModels[engineId];
               configSet('engineModels', nextModels as any);
+              setConfigVersion((v: number) => v + 1);
               dispatch({ type: 'success', message: model ? `Model override set: ${engineId} → ${model}` : `Model override cleared: ${engineId}` } as any);
             }}
             onBrowseModel={(engineId: string) => openCliModelPicker(engineId)} />
@@ -833,6 +862,7 @@ screen name=App target=ink
                 const nextModels = { ...((loadConfig() as any).engineModels ?? {}) };
                 nextModels[modelPickerTargetEngine] = entry.modelId;
                 configSet('engineModels', nextModels as any);
+                setConfigVersion((v: number) => v + 1);
                 dispatch({ type: 'success', message: `Model override set: ${modelPickerTargetEngine} → ${entry.modelId}` } as any);
                 setModelPickerTargetEngine(null);
                 setModelPickerInitialFilter('');
@@ -862,10 +892,11 @@ screen name=App target=ink
         {cesarPickerOpen && (
           <CesarPicker
             engines={availableEngines}
-            currentCesar={(loadConfig() as any).cesarEngine ?? loadConfig().forgeFixedStarter ?? 'claude'}
+            currentCesar={(config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude'}
             onSelect={(engineId: string) => {
               setCesarPickerOpen(false);
               configSet('cesarEngine', engineId);
+              setConfigVersion((v: number) => v + 1);
               if (cesarSession) { cesarSession.close(); setCesarSession(null); }
               dispatch({ type: 'success', message: `Cesar brain set to: ${engineId}` } as any);
               dispatch({ type: 'info', message: 'Conversation context + memory preserved.' } as any);
@@ -915,18 +946,10 @@ screen name=App target=ink
               </Box>
             )}
             {(() => {
-              const _cfg = loadConfig();
-              const _cesarId = (_cfg as any).cesarEngine ?? _cfg.forgeFixedStarter ?? 'claude';
-              // Extract last non-empty line from streaming text for status strip
-              let snippet: { engineId: string; line: string } | null = null;
-              if (streamingText && streamingText.content) {
-                const cleaned = cleanEngineOutput(streamingText.content);
-                const lines = cleaned.split('\n').filter((l: string) => l.trim());
-                if (lines.length > 0) snippet = { engineId: streamingText.engineId, line: lines[lines.length - 1].trim() };
-              }
+              const _cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
               return (<>
-                <CesarStatusStrip cesarId={_cesarId} confidence={cesarConfidence} spinner={liveSpinner} engines={liveProgress} startTime={chatStartTimeRef.current || 0} streamSnippet={snippet} isActive={replState !== 'idle' || runningJobs.length > 0} planModeQueued={planModeQueued} activePlanState={activePlan?.state ?? null} />
-                {mode === 'chat' && <StatusBar config={_cfg} chatSession={chatSession} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} thinkingExpanded={thinkingExpanded} isActive={replState !== 'idle'} />}
+                <CesarStatusStrip cesarId={_cesarId} confidence={cesarConfidence} spinner={liveSpinner} engines={liveProgress} startTime={chatStartTimeRef.current || 0} streamSnippet={streamSnippet} isActive={replState !== 'idle' || runningJobs.length > 0} planModeQueued={planModeQueued} activePlanState={activePlan?.state ?? null} />
+                {mode === 'chat' && <StatusBar config={config} chatSession={chatSession} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} thinkingExpanded={thinkingExpanded} isActive={replState !== 'idle'} />}
               </>);
             })()}
           </Box>

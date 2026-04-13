@@ -22,7 +22,5 @@
   "dependencies": {
     "@agon/core": "*"
   },
-  "optionalDependencies": {
-    "kern-lang": "file:../../../kern-lang/packages/cli"
-  }
+  "optionalDependencies": {}
 }

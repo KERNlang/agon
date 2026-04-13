@@ -24,7 +24,5 @@
     "@ai-sdk/openai-compatible": "^2.0.40",
     "ai": "^6.0.149"
   },
-  "optionalDependencies": {
-    "kern-lang": "file:../../../kern-lang/packages/cli"
-  }
+  "optionalDependencies": {}
 }

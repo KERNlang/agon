@@ -1,0 +1,123 @@
+// ── CLI Models Registry — static provider→models map + binary discovery ──
+// Curated list of which models each CLI tool provider offers.
+// Used by the unified /models picker in CLI mode.
+
+import from="node:child_process" names="execSync"
+import from="node:fs" names="existsSync"
+import from="node:path" names="join"
+import from="node:os" names="homedir"
+
+interface name=CliModelEntry
+  field name=id type=string
+  field name=name type=string
+  field name=providerId type=string
+  field name=providerName type=string
+  field name=engineId type=string
+  field name=engineBinary type=string
+  field name=contextWindow type=number optional=true
+  field name=toolCall type=boolean optional=true
+  field name=reasoning type=boolean optional=true
+
+interface name=CliProviderGroup
+  field name=providerId type=string
+  field name=providerName type=string
+  field name=engineId type=string
+  field name=engineBinary type=string
+  field name=installed type=boolean
+  field name=version type="string|null"
+  field name=models type="CliModelEntry[]"
+
+const name=CLI_MODELS_REGISTRY type="Record<string, {providerId:string, providerName:string, engineId:string, engineBinary:string, versionCmd:string[], models:{id:string, name:string, contextWindow?:number, toolCall?:boolean, reasoning?:boolean}[]}>"
+  handler <<<
+    ({
+      anthropic: {
+        providerId: 'anthropic',
+        providerName: 'Anthropic',
+        engineId: 'claude',
+        engineBinary: 'claude',
+        versionCmd: ['--version'],
+        models: [
+          { id: 'claude-opus-4-20250514', name: 'Claude Opus 4', contextWindow: 200000, toolCall: true, reasoning: true },
+          { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4', contextWindow: 200000, toolCall: true, reasoning: true },
+          { id: 'claude-haiku-3-5-20241022', name: 'Claude 3.5 Haiku', contextWindow: 200000, toolCall: true, reasoning: false },
+        ],
+      },
+      openai: {
+        providerId: 'openai',
+        providerName: 'OpenAI',
+        engineId: 'codex',
+        engineBinary: 'codex',
+        versionCmd: ['--version'],
+        models: [
+          { id: 'gpt-4o', name: 'GPT-4o', contextWindow: 128000, toolCall: true, reasoning: false },
+          { id: 'gpt-4o-mini', name: 'GPT-4o Mini', contextWindow: 128000, toolCall: true, reasoning: false },
+          { id: 'o3', name: 'o3', contextWindow: 200000, toolCall: true, reasoning: true },
+          { id: 'o4-mini', name: 'o4-mini', contextWindow: 200000, toolCall: true, reasoning: true },
+          { id: 'gpt-5.3-codex', name: 'GPT-5.3 Codex', contextWindow: 200000, toolCall: true, reasoning: true },
+        ],
+      },
+      google: {
+        providerId: 'google',
+        providerName: 'Google',
+        engineId: 'gemini',
+        engineBinary: 'gemini',
+        versionCmd: ['--version'],
+        models: [
+          { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', contextWindow: 1048576, toolCall: true, reasoning: true },
+          { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', contextWindow: 1048576, toolCall: true, reasoning: true },
+          { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', contextWindow: 1048576, toolCall: true, reasoning: false },
+        ],
+      },
+      mistral: {
+        providerId: 'mistral',
+        providerName: 'Mistral',
+        engineId: 'mistral',
+        engineBinary: 'mistral',
+        versionCmd: ['--version'],
+        models: [
+          { id: 'mistral-large-latest', name: 'Mistral Large', contextWindow: 128000, toolCall: true, reasoning: false },
+          { id: 'mistral-medium-latest', name: 'Mistral Medium', contextWindow: 32000, toolCall: true, reasoning: false },
+          { id: 'codestral-latest', name: 'Codestral', contextWindow: 256000, toolCall: true, reasoning: false },
+        ],
+      },
+      openrouter: {
+        providerId: 'openrouter',
+        providerName: 'OpenRouter',
+        engineId: 'openrouter',
+        engineBinary: 'openrouter',
+        versionCmd: [],
+        models: [
+          { id: 'auto', name: 'Auto (best for task)', toolCall: true, reasoning: false },
+        ],
+      },
+    })
+  >>>
+
+fn name=findBinary params="binary:string" returns="string|null"
+  handler <<<
+    try {
+      const result = execSync(`which ${binary}`, { encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+      if (result) return result;
+    } catch { /* not found via which */ }
+
+    const home = homedir();
+    const searchPaths = [
+      join(home, '.local', 'bin'),
+      join(home, '.npm-global', 'bin'),
+      '/usr/local/bin',
+    ];
+    for (const dir of searchPaths) {
+      const fullPath = join(dir, binary);
+      if (existsSync(fullPath)) return fullPath;
+    }
+    return null;
+  >>>
+
+fn name=getBinaryVersion params="binary:string, versionCmd:string[]" returns="string|null"
+  handler <<<
+    if (!versionCmd.length) return null;
+    try {
+      const result = execSync(`${binary} ${versionCmd.join(' ')}`, { encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+      return result || null;
+    } catch { return null; }
+  >>>

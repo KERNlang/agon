@@ -30,6 +30,18 @@
     "zod": "^4.3.6"
   },
   "optionalDependencies": {
-    "@kernlang/cli": "file:../kern-lang/packages/cli"
+    "@kernlang/cli": "~3.2.3",
+    "@kernlang/core": "~3.2.3",
+    "@kernlang/terminal": "~3.2.3",
+    "@kernlang/native": "~3.2.3",
+    "@kernlang/react": "~3.2.3",
+    "@kernlang/vue": "~3.2.3",
+    "@kernlang/evolve": "~3.2.3",
+    "@kernlang/express": "~3.2.3",
+    "@kernlang/fastapi": "~3.2.3",
+    "@kernlang/mcp": "~3.2.3",
+    "@kernlang/metrics": "~3.2.3",
+    "@kernlang/review": "~3.2.3",
+    "@kernlang/review-mcp": "~3.2.3"
   }
 }

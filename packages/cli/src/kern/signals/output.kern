@@ -17,6 +17,7 @@ interface name=OutputActions
   field name=setLiveProgress type="(val:EngineProgress[]|null) => void"
   field name=setStreamingText type="(val:{engineId:string,content:string}|null) => void"
   field name=addBlock type="(event:OutputEvent) => void"
+  field name=replaceBlocksOfType type="(eventType:string, event:OutputEvent) => void"
   field name=clearBlocks type="() => void"
   field name=setReviewEvent type="(val:any) => void"
   field name=setQuestionState type="(val:any) => void"
@@ -223,7 +224,10 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
         return;
       }
       case 'plan-proposal': {
-        actions.addBlock(event);
+        // Cesar may emit several ProposePlan calls in one turn (revisions,
+        // multi-step edits). Only the latest one is interactive — replace any
+        // prior plan-proposal blocks so the user sees a single source of truth.
+        actions.replaceBlocksOfType('plan-proposal', event);
         return;
       }
       case 'plan-execution': {

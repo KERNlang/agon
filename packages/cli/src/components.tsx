@@ -35,3 +35,13 @@ export {
 
 // Re-export ENGINE_COLORS from output for backward compat
 export { ENGINE_COLORS } from './output.js';
+
+// Memoized TextInput — ink-text-input ships unmemoized, so any parent
+// re-render forces TextInput to reconcile against stdin. While Cesar streams,
+// the App component re-renders ~11x/sec (throttle=90 streamingText), which
+// fights with stdin character delivery and produces dropped/reordered keys
+// in the composer. React.memo + stable handler refs (useCallback in
+// app.kern) lets the composer stay still while streaming runs.
+import React from 'react';
+import RawTextInput from 'ink-text-input';
+export const MemoTextInput = React.memo(RawTextInput);

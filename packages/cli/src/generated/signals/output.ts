@@ -19,6 +19,7 @@ export interface OutputActions {
   setLiveProgress: (val:EngineProgress[]|null) => void;
   setStreamingText: (val:{engineId:string,content:string}|null) => void;
   addBlock: (event:OutputEvent) => void;
+  replaceBlocksOfType: (eventType:string, event:OutputEvent) => void;
   clearBlocks: () => void;
   setReviewEvent: (val:any) => void;
   setQuestionState: (val:any) => void;
@@ -225,7 +226,10 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
       return;
     }
     case 'plan-proposal': {
-      actions.addBlock(event);
+      // Cesar may emit several ProposePlan calls in one turn (revisions,
+      // multi-step edits). Only the latest one is interactive — replace any
+      // prior plan-proposal blocks so the user sees a single source of truth.
+      actions.replaceBlocksOfType('plan-proposal', event);
       return;
     }
     case 'plan-execution': {

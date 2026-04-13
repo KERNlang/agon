@@ -136,9 +136,11 @@ export function PlanProposalView({ plan }: { plan:any }) {
       })}
   
       {/* ── Footer ── */}
+      {/* No key hints here on purpose: the actual approval prompt is
+          shown by askQuestion() below this block once Cesar finishes.
+          Showing keys here while the composer is still active misleads
+          the user into typing "y/n/e" into chat instead of the prompt. */}
       <Text color={planColor}>{'\u2551'}</Text>
-      <Text color={planColor}>{'\u255f'}{thinBar}{'\u2562'}</Text>
-      <Text color={planColor}>{'\u2551 '}<Text dimColor>{'Approve: '}</Text><Text bold color="green">{'Y'}</Text><Text dimColor>{' \u00b7 Reject: '}</Text><Text bold color="red">{'N'}</Text><Text dimColor>{' \u00b7 Edit: '}</Text><Text bold color="#fbbf24">{'E'}</Text><Text dimColor>{' \u00b7 Or type feedback to revise'}</Text></Text>
       <Text color={planColor} bold>{'\u255a'}{bar}{'\u255d'}</Text>
     </Box>
   );

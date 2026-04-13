@@ -356,6 +356,13 @@ export function App() {
               setScrollOffset(0);
               setOutputBlocks((prev: any) => appendBlockWithCap(prev, { id: Date.now() + Math.random(), event }, blockArchivePathRef.current));
             },
+            replaceBlocksOfType: (eventType: string, event: any) => {
+              setScrollOffset(0);
+              setOutputBlocks((prev: any) => {
+                const filtered = prev.filter((b: any) => b.event.type !== eventType);
+                return appendBlockWithCap(filtered, { id: Date.now() + Math.random(), event }, blockArchivePathRef.current);
+              });
+            },
             clearBlocks: () => setOutputBlocks([]),
             setReviewEvent,
             setQuestionState,

@@ -484,13 +484,24 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
         const shortPath = filePath ? filePath.replace(process.cwd() + '/', '').replace(process.env.HOME ?? '', '~') : '';
         const addedCount = newStr ? newStr.split('\n').length : 0;
         const removedCount = oldStr ? oldStr.split('\n').length : 0;
-        // Edit always shows the full diff — code changes are never hidden.
+        // Collapsed: single-line summary.
+        if (!toolOutputExpanded) {
+          return (
+            <Box paddingLeft={2}>
+              <Text>
+                {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().edit + ' Update'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}{' '}<Text dimColor>\u00b7 </Text><Text color="#ef4444">-{removedCount}</Text><Text dimColor>{' '}</Text><Text color="#4ade80">+{addedCount}</Text>{' lines'}{' '}<Text color="#f59e0b">\u25b8 Ctrl+E</Text>}
+              </Text>
+            </Box>
+          );
+        }
+        // When expanded: show all lines.
+        const maxLines = Infinity;
         return (
           <Box paddingLeft={2} flexDirection="column">
             <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().edit + ' Update'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}</Text>
             {(oldStr || newStr) && event.status !== 'running' && (() => {
-              const oldLines = oldStr.split('\n').slice(0, 20);
-              const newLines = newStr.split('\n').slice(0, 20);
+              const oldLines = oldStr.split('\n').slice(0, maxLines);
+              const newLines = newStr.split('\n').slice(0, maxLines);
               const gutterW = Math.max(String(Math.max(removedCount, addedCount)).length, 2);
               const pad = (n: number) => String(n).padStart(gutterW);
               return (
@@ -502,14 +513,14 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
                       <DiffLine line={`-${line}`} maxWidth={codeWidth - gutterW - 2} />
                     </Text>
                   ))}
-                  {removedCount > 20 && <Text dimColor>{'    \u2026 '}{removedCount - 20}{' more removed'}</Text>}
+                  {removedCount > maxLines && <Text dimColor>{'    \u2026 '}{removedCount - maxLines}{' more removed'}</Text>}
                   {newLines.map((line: string, i: number) => (
                     <Text key={`new-${i}`}>
                       <Text color="#6b7280">{' '}{pad(i + 1)}{' '}</Text>
                       <DiffLine line={`+${line}`} maxWidth={codeWidth - gutterW - 2} />
                     </Text>
                   ))}
-                  {addedCount > 20 && <Text dimColor>{'    \u2026 '}{addedCount - 20}{' more added'}</Text>}
+                  {addedCount > maxLines && <Text dimColor>{'    \u2026 '}{addedCount - maxLines}{' more added'}</Text>}
                 </>
               );
             })()}
@@ -523,13 +534,24 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
         const content = (parsed.content as string) || '';
         const shortPath = filePath.replace(process.cwd() + '/', '').replace(process.env.HOME ?? '', '~');
         const lineCount = content ? content.split('\n').length : 0;
-        // Write always shows the full content — code changes are never hidden.
+        // Collapsed: single-line summary.
+        if (!toolOutputExpanded) {
+          return (
+            <Box paddingLeft={2}>
+              <Text>
+                {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().write + ' Write'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}{lineCount > 0 && <><Text dimColor>{' \u00b7 '}</Text><Text color="#4ade80">+{lineCount}</Text><Text dimColor>{' lines'}</Text></>}{' '}<Text color="#f59e0b">\u25b8 Ctrl+E</Text>}
+              </Text>
+            </Box>
+          );
+        }
+        // When expanded: show all lines.
+        const maxLines = Infinity;
         return (
           <Box paddingLeft={2} flexDirection="column">
             <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().write + ' Write'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}</Text>
             {content && event.status !== 'running' && (() => {
               const allLines = content.split('\n');
-              const shown = allLines.slice(0, 40);
+              const shown = allLines.slice(0, maxLines);
               const gutterW = Math.max(String(lineCount).length, 2);
               const pad = (n: number) => String(n).padStart(gutterW);
               return (
@@ -541,7 +563,7 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
                       <DiffLine line={`+${line}`} maxWidth={codeWidth - gutterW - 2} />
                     </Text>
                   ))}
-                  {allLines.length > 40 && <Text dimColor>{'    \u2026 '}{allLines.length - 40}{' more lines'}</Text>}
+                  {allLines.length > maxLines && <Text dimColor>{'    \u2026 '}{allLines.length - maxLines}{' more lines'}</Text>}
                 </>
               );
             })()}

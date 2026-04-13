@@ -4,8 +4,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Box, Text, render, useApp, useInput } from 'ink';
 
 // ── Core ───────────────────────────────────────────────
-import { MemoTextInput } from '../../components.js';
-
 import { EngineRegistry, loadConfig, ensureAgonHome, ensureCurrentWorkspace, startChatSession, getRatings, getActiveWorkspace, RUNS_DIR, extractImagesFromInput, resolveWorkingDir, currentBranch, configSet, createCesarMemory, modelEntryToEngineDef, appendMessage } from '@agon/core';
 
 import type { Plan, ChatSession, Skill, PersistentSession, ImageAttachment } from '@agon/core';
@@ -58,7 +56,7 @@ import { makeBlockArchivePath, appendBlockWithCap } from '../signals/block-archi
 
 import { handleReviewAction } from '../blocks/review.js';
 
-import { SpinnerBlock, StatusBar, CesarStatusStrip, SlashPicker, EnginePicker, ModelPicker, ReviewBlock, BackgroundJobRail, CesarPicker } from '../../components.js';
+import { SpinnerBlock, StatusBar, CesarStatusStrip, EnginePicker, ModelPicker, ReviewBlock, BackgroundJobRail, CesarPicker, ComposerView } from '../../components.js';
 
 import { ChromeBar, HistoryView, StreamingView } from './app-views.js';
 
@@ -727,6 +725,10 @@ export function App() {
     setInputKey((k: number) => k + 1);
   }, []);
 
+  const handleSlashCancel = useCallback(() => {
+    setSlashPickerOpen(false);
+  }, []);
+
   const handleQuestionAnswer = useCallback((answer:string) => {
     if (questionState) { questionState.resolve(answer); setQuestionState(null); setQuestionAnswer(''); }
   }, [questionState]);
@@ -997,7 +999,6 @@ export function App() {
     {liveSpinner && mode !== 'chat' && <SpinnerBlock message={liveSpinner.message} color={liveSpinner.color} />}
     {!enginePickerOpen && !modelPickerOpen && !cesarPickerOpen && (
       <Box flexDirection="column" paddingX={1} marginTop={1}>
-        {slashPickerOpen && <SlashPicker commands={allSlashCommands} onSelect={handleSlashSelect} onCancel={() => setSlashPickerOpen(false)} />}
         {pendingImages.length > 0 && (<Box><Text color="#22d3ee">{icons().image + ' '}</Text>{pendingImages.map((img: any, i: number) => (<Text key={i} dimColor>{img.filename}{i < pendingImages.length - 1 ? ', ' : ''}</Text>))}</Box>)}
         {inputQueue.length > 0 && (<Box><Text dimColor>{icons().queue + ' '}{inputQueue.length} queued: </Text><Text dimColor italic>{inputQueue[0].length > 40 ? inputQueue[0].slice(0, 40) + '…' : inputQueue[0]}</Text></Box>)}
         {liveSpinner && mode === 'chat' && (
@@ -1007,35 +1008,24 @@ export function App() {
             </Text>
           </Box>
         )}
-        {!questionState && (
-          <Box borderStyle={mode === 'chat' ? 'round' : 'single'} borderColor={mode === 'chat' ? '#585858' : 'gray'} borderLeft={mode !== 'chat'} borderRight={mode !== 'chat'} borderTop borderBottom paddingX={1} width="100%">
-            {mode !== 'chat' && (<Text><Text color={mode === 'campfire' ? '#f97316' : mode === 'brainstorm' ? '#22d3ee' : '#a78bfa'} bold>{mode === 'campfire' ? icons().campfire : mode === 'brainstorm' ? icons().brainstorm : icons().tribunal}{' '}{mode}</Text><Text dimColor>{' │ '}</Text></Text>)}
-            <Text color={mode === 'chat' ? (planModeQueued || (activePlan && activePlan.state === 'planning') ? '#c084fc' : '#585858') : '#fbbf24'}>{mode === 'chat' ? (planModeQueued ? '◈ ' : '> ') : icons().prompt + ' '}</Text>
-            <Box flexGrow={1}>
-              {slashPickerOpen ? (
-                <Text dimColor>{inputValue || '/'}</Text>
-              ) : (
-                <><MemoTextInput key={inputKey} value={inputValue} onChange={handleInputChange} onSubmit={handleSubmit}
-                  placeholder={replState === 'idle' ? mode === 'chat' ? '' : mode === 'campfire' ? 'What should we think about?' : mode === 'brainstorm' ? 'What question for the engines?' : 'What should they debate?' : ''} />
-                {(() => { const ghost = getGhostCompletion(inputValue, allSlashCommands, availableEngines); return ghost ? <Text dimColor>{ghost}</Text> : null; })()}</>
-              )}
-            </Box>
-          </Box>
-        )}
-        {questionState && (
-          <Box flexDirection="column" paddingLeft={1} marginTop={0} borderLeft borderColor={questionState.choices ? '#fbbf24' : '#585858'}>
-            <Text bold color="#fbbf24">{questionState.choices ? ` ${icons().warning} ` : ' '}{questionState.prompt}</Text>
-            {questionState.choices ? (
-              <Box flexDirection="column" paddingLeft={2}>
-                {(questionState.choices as {key:string,label:string,color?:string}[]).map((c: any, i: number) => (
-                  <Text key={i}><Text color={c.color ?? '#6b7280'} bold>  [{i + 1}/{c.key}] </Text><Text>{c.label}</Text></Text>
-                ))}
-              </Box>
-            ) : (
-              <Box paddingLeft={2}><MemoTextInput value={questionAnswer} onChange={setQuestionAnswer} onSubmit={handleQuestionAnswer} /></Box>
-            )}
-          </Box>
-        )}
+        <ComposerView
+          mode={mode}
+          replState={replState}
+          planModeQueued={planModeQueued}
+          activePlanState={activePlan?.state ?? null}
+          slashPickerOpen={slashPickerOpen}
+          inputValue={inputValue}
+          inputKey={inputKey}
+          handleInputChange={handleInputChange}
+          handleSubmit={handleSubmit}
+          allSlashCommands={allSlashCommands}
+          availableEngines={availableEngines}
+          onSlashSelect={handleSlashSelect}
+          onSlashCancel={handleSlashCancel}
+          questionState={questionState}
+          questionAnswer={questionAnswer}
+          onQuestionAnswerChange={setQuestionAnswer}
+          onQuestionAnswerSubmit={handleQuestionAnswer} />
         {(() => {
           const _cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
           return (<>

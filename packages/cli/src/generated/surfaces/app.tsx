@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Box, Text, render, useApp, useInput } from 'ink';
 
 // ── Core ───────────────────────────────────────────────
-import TextInput from 'ink-text-input';
+import { MemoTextInput } from '../../components.js';
 
 import { EngineRegistry, loadConfig, ensureAgonHome, ensureCurrentWorkspace, startChatSession, getRatings, getActiveWorkspace, RUNS_DIR, extractImagesFromInput, resolveWorkingDir, currentBranch, configSet, createCesarMemory, modelEntryToEngineDef, appendMessage } from '@agon/core';
 
@@ -1015,7 +1015,7 @@ export function App() {
               {slashPickerOpen ? (
                 <Text dimColor>{inputValue || '/'}</Text>
               ) : (
-                <><TextInput key={inputKey} value={inputValue} onChange={handleInputChange} onSubmit={handleSubmit}
+                <><MemoTextInput key={inputKey} value={inputValue} onChange={handleInputChange} onSubmit={handleSubmit}
                   placeholder={replState === 'idle' ? mode === 'chat' ? '' : mode === 'campfire' ? 'What should we think about?' : mode === 'brainstorm' ? 'What question for the engines?' : 'What should they debate?' : ''} />
                 {(() => { const ghost = getGhostCompletion(inputValue, allSlashCommands, availableEngines); return ghost ? <Text dimColor>{ghost}</Text> : null; })()}</>
               )}
@@ -1032,7 +1032,7 @@ export function App() {
                 ))}
               </Box>
             ) : (
-              <Box paddingLeft={2}><TextInput value={questionAnswer} onChange={setQuestionAnswer} onSubmit={handleQuestionAnswer} /></Box>
+              <Box paddingLeft={2}><MemoTextInput value={questionAnswer} onChange={setQuestionAnswer} onSubmit={handleQuestionAnswer} /></Box>
             )}
           </Box>
         )}

@@ -1,0 +1,83 @@
+// ── Composer View — memoized text-input subtree ────────────────────
+// Extracted from app.kern so that streaming-driven App re-renders
+// (~11x/sec via throttle=90 streamingText) don't reach the TextInput.
+// React.memo's shallow-equal rejects the re-render entirely because none
+// of these props depend on streamingText / liveSpinner / liveProgress /
+// cesarConfidence — the composer subtree stays still while Cesar streams.
+//
+// Keep this screen narrow: only props that legitimately change between
+// keystrokes/mode toggles. If you add a streaming-derived prop here, the
+// memo will start firing on every chunk and the lag returns.
+
+import from="react" default="React"
+import from="ink" names="Box,Text"
+import from="../../components.js" names="MemoTextInput,SlashPicker"
+import from="../signals/icons.js" names="icons"
+import from="../../ghost-text.js" names="getGhostCompletion"
+
+screen name=ComposerView target=ink memo=true
+  prop name=mode type="'chat'|'campfire'|'brainstorm'|'tribunal'"
+  prop name=replState type=string
+  prop name=planModeQueued type=boolean
+  prop name=activePlanState type="string|null"
+  prop name=slashPickerOpen type=boolean
+  prop name=inputValue type=string
+  prop name=inputKey type=number
+  prop name=handleInputChange type="(value:string) => void"
+  prop name=handleSubmit type="(value:string) => void"
+  prop name=allSlashCommands type="any[]"
+  prop name=availableEngines type="string[]"
+  prop name=onSlashSelect type="(cmd:string) => void"
+  prop name=onSlashCancel type="() => void"
+  prop name=questionState type=any
+  prop name=questionAnswer type=string
+  prop name=onQuestionAnswerChange type="(value:string) => void"
+  prop name=onQuestionAnswerSubmit type="(value:string) => void"
+  render
+    handler <<<
+      const placeholder = replState === 'idle'
+        ? (mode === 'chat'
+            ? ''
+            : mode === 'campfire'
+              ? 'What should we think about?'
+              : mode === 'brainstorm'
+                ? 'What question for the engines?'
+                : 'What should they debate?')
+        : '';
+      const ghost = getGhostCompletion(inputValue, allSlashCommands, availableEngines);
+      return (
+        <>
+          {slashPickerOpen && <SlashPicker commands={allSlashCommands} onSelect={onSlashSelect} onCancel={onSlashCancel} />}
+          {!questionState && (
+            <Box borderStyle={mode === 'chat' ? 'round' : 'single'} borderColor={mode === 'chat' ? '#585858' : 'gray'} borderLeft={mode !== 'chat'} borderRight={mode !== 'chat'} borderTop borderBottom paddingX={1} width="100%">
+              {mode !== 'chat' && (<Text><Text color={mode === 'campfire' ? '#f97316' : mode === 'brainstorm' ? '#22d3ee' : '#a78bfa'} bold>{mode === 'campfire' ? icons().campfire : mode === 'brainstorm' ? icons().brainstorm : icons().tribunal}{' '}{mode}</Text><Text dimColor>{' \u2502 '}</Text></Text>)}
+              <Text color={mode === 'chat' ? (planModeQueued || activePlanState === 'planning' ? '#c084fc' : '#585858') : '#fbbf24'}>{mode === 'chat' ? (planModeQueued ? '\u25c8 ' : '> ') : icons().prompt + ' '}</Text>
+              <Box flexGrow={1}>
+                {slashPickerOpen ? (
+                  <Text dimColor>{inputValue || '/'}</Text>
+                ) : (
+                  <>
+                    <MemoTextInput key={inputKey} value={inputValue} onChange={handleInputChange} onSubmit={handleSubmit} placeholder={placeholder} />
+                    {ghost && <Text dimColor>{ghost}</Text>}
+                  </>
+                )}
+              </Box>
+            </Box>
+          )}
+          {questionState && (
+            <Box flexDirection="column" paddingLeft={1} marginTop={0} borderLeft borderColor={questionState.choices ? '#fbbf24' : '#585858'}>
+              <Text bold color="#fbbf24">{questionState.choices ? ` ${icons().warning} ` : ' '}{questionState.prompt}</Text>
+              {questionState.choices ? (
+                <Box flexDirection="column" paddingLeft={2}>
+                  {(questionState.choices as {key:string,label:string,color?:string}[]).map((c: any, i: number) => (
+                    <Text key={i}><Text color={c.color ?? '#6b7280'} bold>  [{i + 1}/{c.key}] </Text><Text>{c.label}</Text></Text>
+                  ))}
+                </Box>
+              ) : (
+                <Box paddingLeft={2}><MemoTextInput value={questionAnswer} onChange={onQuestionAnswerChange} onSubmit={onQuestionAnswerSubmit} /></Box>
+              )}
+            </Box>
+          )}
+        </>
+      );
+    >>>

@@ -27,6 +27,10 @@ export {
 } from './generated/blocks/controls.js';
 export type { ReviewEvent, ModelPickerEntry } from './generated/blocks/controls.js';
 
+// Composer (memoized) — extracted from app.kern so streaming-driven re-renders
+// don't reach the TextInput. See blocks/composer.kern.
+export { ComposerView } from './generated/blocks/composer.js';
+
 // Status
 export {
   SpinnerBlock, TokenGauge, StatusBar, StatusLine, BackgroundJobRail,

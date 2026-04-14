@@ -14,7 +14,7 @@
 // user messages is deferred — when it's needed, wrap the body below
 // in a while-loop keyed on AgentState.phase.
 
-import from="@agon/core" names="AgentSession,AgentTeam,createAgentState,beginTurn,completeTurn,cancelAgent,completeAgent,failAgent,checkBudget,isTerminal,resolveWorkingDir,determineWinner,scoreAgentTeamResult,estimatedTokensToCost,worktreeChangedDiff,worktreeChangedShortstat,spawnWithTimeout,RUNS_DIR,runAgentTeamSynthesis,runAgentInvestigateSynthesis"
+import from="@agon/core" names="AgentSession,AgentTeam,createAgentState,beginTurn,completeTurn,cancelAgent,completeAgent,failAgent,checkBudget,isTerminal,resolveWorkingDir,determineWinner,scoreAgentTeamResult,estimatedTokensToCost,worktreeChangedDiff,worktreeChangedShortstat,spawnWithTimeout,RUNS_DIR,runAgentTeamSynthesis,runAgentInvestigateSynthesis,runPostSynthesisFitnessCheck,detectSynthesisInsightMention"
 import from="@agon/core" names="AgentBudget,AgentState,AgentStepResult,AgentEvent,AgentTeamConfig,AgentTeamMemberConfig,AgentTeamResult,EngineDefinition,EngineResult,AgentSynthesisLoser" types=true
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 import from="node:fs" names="writeFileSync,mkdirSync,existsSync"
@@ -747,38 +747,45 @@ fn name=runAgentTeam params="input:string,dispatch:Dispatch,ctx:HandlerContext,o
                   if (synthResult.changed) {
                     synthesisChanged = true;
                     winnerDiff = synthResult.synthesizedDiff;
-                    // Codex H1: post-synthesis fitness re-check. If the
-                    // winner's edits broke the fitness gate, revert
-                    // winnerDiff to the pre-synthesis value.
-                    const fitnessCmd = opts?.fitnessCmd ?? 'npm run typecheck';
-                    try {
-                      const refit = await spawnWithTimeout({
-                        command: 'sh',
-                        args: ['-c', fitnessCmd],
-                        cwd: winnerMember.worktreePath,
-                        timeout: 90,
-                      });
-                      if (refit.exitCode !== 0) {
-                        synthesisFitnessRegressed = true;
-                        winnerDiff = preSynthesisWinnerDiff;
-                        synthesisChanged = false;
-                        dispatch({
-                          type: 'warning',
-                          message: `Synthesis broke fitness gate (exit ${refit.exitCode}); reverted to original winner diff.`,
-                        });
-                      } else {
-                        dispatch({
-                          type: 'success',
-                          message: `Synthesis complete (diff updated, fitness re-verified)${synthResult.responseExcerpt ? ': ' + synthResult.responseExcerpt.slice(0, 160) : ''}`,
-                        });
-                      }
-                    } catch (refitErr: any) {
+                    // Codex H1: post-synthesis fitness re-check via the
+                    // extracted helper (testable). Reverts winnerDiff to
+                    // the pre-synthesis value if fitness regressed.
+                    const refit = await runPostSynthesisFitnessCheck({
+                      worktreePath: winnerMember.worktreePath,
+                      fitnessCmd: opts?.fitnessCmd ?? 'npm run typecheck',
+                      timeoutSec: 90,
+                      signal: abort.signal,
+                    });
+                    if (!refit.passed) {
                       synthesisFitnessRegressed = true;
                       winnerDiff = preSynthesisWinnerDiff;
                       synthesisChanged = false;
+                      const why = refit.error
+                        ? `re-check errored (${refit.error})`
+                        : `fitness gate failed (exit ${refit.exitCode})`;
                       dispatch({
                         type: 'warning',
-                        message: `Post-synthesis fitness re-check errored (${refitErr?.message ?? String(refitErr)}); reverted to original winner diff.`,
+                        message: `Synthesis ${why}; reverted to original winner diff.`,
+                      });
+                    } else {
+                      // OpenCode #5 prompt-bias signal: scan response excerpt
+                      // for loser engineId mentions. Zero mentions + non-no-op
+                      // diff suggests the model may have polished its own
+                      // answer instead of incorporating loser insights.
+                      const loserIds = losers.map((l) => l.engineId);
+                      const biasSignal = detectSynthesisInsightMention({
+                        responseExcerpt: synthResult.responseExcerpt,
+                        loserEngineIds: loserIds,
+                      });
+                      if (!biasSignal.hasAnyMention && loserIds.length > 0) {
+                        dispatch({
+                          type: 'info',
+                          message: `Synthesis summary did not explicitly mention any other engine by name (${loserIds.join(', ')}); the refinement may not have incorporated their insights directly.`,
+                        });
+                      }
+                      dispatch({
+                        type: 'success',
+                        message: `Synthesis complete (diff updated, fitness re-verified${biasSignal.hasAnyMention ? ', cites ' + biasSignal.mentionedEngineIds.join('+') : ''})${synthResult.responseExcerpt ? ': ' + synthResult.responseExcerpt.slice(0, 160) : ''}`,
                       });
                     }
                   } else {
@@ -808,6 +815,16 @@ fn name=runAgentTeam params="input:string,dispatch:Dispatch,ctx:HandlerContext,o
               }
             }
           } else if (taskKind === 'investigate' && winnerAnalysis !== null && winnerAnalysis.trim()) {
+            // OpenCode #4 defensive check: the team-mode path always isolates
+            // (so worktreePath should be set), but if the invariant broke we
+            // fall back to cwd and log a warning so the drift is visible.
+            const invCwd = winnerMember.worktreePath ?? cwd;
+            if (!winnerMember.worktreePath) {
+              dispatch({
+                type: 'warning',
+                message: `Team-mode invariant broke: winner ${winnerInfo.winner} has no worktreePath. Reconciliation running in ${cwd} (main repo) instead — edits here would affect the user's working tree. Consider this a bug signal.`,
+              });
+            }
             dispatch({
               type: 'info',
               message: `Reconciling: ${winnerInfo.winner} merging ${losers.length} other analys${losers.length === 1 ? 'is' : 'es'}...`,
@@ -817,7 +834,7 @@ fn name=runAgentTeam params="input:string,dispatch:Dispatch,ctx:HandlerContext,o
                 task: input,
                 winnerEngineId: winnerInfo.winner,
                 winnerApi,
-                winnerCwd: winnerMember.worktreePath ?? cwd,
+                winnerCwd: invCwd,
                 winnerResponse: winnerAnalysis,
                 losers,
                 timeout: opts?.synthesisTimeoutSec ?? 180,
@@ -861,6 +878,39 @@ fn name=runAgentTeam params="input:string,dispatch:Dispatch,ctx:HandlerContext,o
               synthesisChanged = false;
             }
           }
+        }
+      }
+
+      // ── Persistent synthesis log (OpenCode #7) ───────────
+      // Write a machine-parseable log of the synthesis outcome so users
+      // can trace what happened post-mortem without relying on scrollback.
+      // Lives alongside the winner patch at RUNS_DIR/team-agent-<id>/.
+      if (synthesisRan) {
+        try {
+          const logDir = join(RUNS_DIR, `team-agent-${teamId}`);
+          mkdirSync(logDir, { recursive: true });
+          const logPath = join(logDir, 'synthesis.log');
+          const logContent = JSON.stringify({
+            teamId,
+            timestamp: new Date().toISOString(),
+            winner: winnerInfo.winner,
+            taskKind,
+            losersConsidered: teamResult.members
+              .filter((m) => m.engineId !== winnerInfo.winner && m.stepResult)
+              .map((m) => m.engineId),
+            synthesisRan: true,
+            synthesisChanged,
+            synthesisFitnessRegressed,
+            synthesisCostUsd,
+            preSynthesisDiffLen: preSynthesisWinnerDiff?.length ?? 0,
+            postSynthesisDiffLen: winnerDiff?.length ?? 0,
+            preSynthesisAnalysisLen: preSynthesisWinnerAnalysis?.length ?? 0,
+            postSynthesisAnalysisLen: winnerAnalysis?.length ?? 0,
+          }, null, 2);
+          writeFileSync(logPath, logContent);
+        } catch (logErr) {
+          // Log-write failure is non-fatal; just warn.
+          console.warn(`[agon] failed to write synthesis log: ${logErr instanceof Error ? logErr.message : String(logErr)}`);
         }
       }
 

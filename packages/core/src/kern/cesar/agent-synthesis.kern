@@ -21,6 +21,7 @@
 import from="../api/agent-loop.js" names="runApiAgentLoop"
 import from="../api/dispatch.js" names="ApiConfig" types=true
 import from="../blocks/git.js" names="worktreeChangedDiff"
+import from="../blocks/process.js" names="spawnWithTimeout"
 import from="../blocks/semaphore.js" names="Semaphore" types=true
 
 // ── Loser context ─────────────────────────────────────────────────
@@ -471,4 +472,62 @@ fn name=runAgentInvestigateSynthesis async=true params="opts:AgentInvestigateSyn
         skipped: false,
       };
     }
+  >>>
+
+// ── Post-synthesis fitness re-check helper ──────────────────────
+
+interface name=PostSynthesisFitnessResult
+  doc "Outcome of re-running the project's fitness command against the winner's worktree after synthesis edits. passed=true means the refinement did not regress; passed=false means the caller must revert to the pre-synthesis diff. error is populated for unexpected spawn failures separate from normal non-zero exits."
+  field name=passed type=boolean
+  field name=exitCode type=number
+  field name=error type="string|null"
+  field name=durationMs type=number
+
+fn name=runPostSynthesisFitnessCheck async=true params="opts:{worktreePath:string, fitnessCmd:string, timeoutSec?:number, signal?:AbortSignal}" returns="Promise<PostSynthesisFitnessResult>" export=true
+  doc "Re-run the project's fitness command (e.g. 'npm run typecheck') against the winner's worktree after synthesis edits. Used by runAgentTeam to decide whether to keep the synthesized diff or revert to the pre-synthesis winner diff. Extracted from the caller into a standalone helper so it can be unit-tested against a mocked spawn. Swallows spawn errors into the result rather than throwing — the caller must NOT crash the team run on a fitness tool hiccup."
+  handler <<<
+    const start = Date.now();
+    try {
+      const result = await spawnWithTimeout({
+        command: 'sh',
+        args: ['-c', opts.fitnessCmd],
+        cwd: opts.worktreePath,
+        timeout: opts.timeoutSec ?? 90,
+        signal: opts.signal,
+      });
+      return {
+        passed: result.exitCode === 0,
+        exitCode: result.exitCode,
+        error: null,
+        durationMs: Date.now() - start,
+      };
+    } catch (err) {
+      return {
+        passed: false,
+        exitCode: -1,
+        error: err instanceof Error ? err.message : String(err),
+        durationMs: Date.now() - start,
+      };
+    }
+  >>>
+
+// ── Prompt-bias runtime signal (OpenCode #5) ────────────────────
+
+interface name=SynthesisBiasSignal
+  doc "Weak runtime heuristic for detecting whether the synthesis winner actually engaged with loser insights or just polished its own answer. mentionedEngineIds lists the loser engineIds that appeared in the response excerpt; hasAnyMention is the top-level flag used for dispatch."
+  field name=hasAnyMention type=boolean
+  field name=mentionedEngineIds type="string[]"
+
+fn name=detectSynthesisInsightMention params="opts:{responseExcerpt:string, loserEngineIds:string[]}" returns=SynthesisBiasSignal export=true
+  doc "Scan the synthesis response excerpt for mentions of the loser engineIds. This is a WEAK heuristic — the model might paraphrase (e.g. 'codex's approach' → 'the alternative factoring') without naming the engine — but non-zero mentions is a positive signal that the humility frame was followed. Zero mentions combined with a non-no-op diff is the bias warning signal the caller surfaces."
+  handler <<<
+    const excerpt = opts.responseExcerpt.toLowerCase();
+    const mentioned: string[] = [];
+    for (const id of opts.loserEngineIds) {
+      if (excerpt.includes(id.toLowerCase())) mentioned.push(id);
+    }
+    return {
+      hasAnyMention: mentioned.length > 0,
+      mentionedEngineIds: mentioned,
+    };
   >>>

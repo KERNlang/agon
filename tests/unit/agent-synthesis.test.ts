@@ -16,22 +16,39 @@ vi.mock('../../packages/core/src/generated/blocks/git.js', async () => {
   };
 });
 
+// Mock spawnWithTimeout so runPostSynthesisFitnessCheck tests don't actually
+// spawn subprocesses. Must preserve the other exports from process.js.
+vi.mock('../../packages/core/src/generated/blocks/process.js', async () => {
+  const actual = await vi.importActual<typeof import('../../packages/core/src/generated/blocks/process.js')>(
+    '../../packages/core/src/generated/blocks/process.js',
+  );
+  return {
+    ...actual,
+    spawnWithTimeout: vi.fn(),
+  };
+});
+
 import {
   buildAgentSynthesisPrompt,
   buildAgentInvestigateSynthesisPrompt,
   runAgentTeamSynthesis,
   runAgentInvestigateSynthesis,
+  runPostSynthesisFitnessCheck,
+  detectSynthesisInsightMention,
 } from '../../packages/core/src/generated/cesar/agent-synthesis.js';
 import type { AgentSynthesisLoser } from '../../packages/core/src/generated/cesar/agent-synthesis.js';
 import { runApiAgentLoop } from '../../packages/core/src/generated/api/agent-loop.js';
 import { worktreeChangedDiff } from '../../packages/core/src/generated/blocks/git.js';
+import { spawnWithTimeout } from '../../packages/core/src/generated/blocks/process.js';
 
 const mockRun = runApiAgentLoop as unknown as ReturnType<typeof vi.fn>;
 const mockDiff = worktreeChangedDiff as unknown as ReturnType<typeof vi.fn>;
+const mockSpawn = spawnWithTimeout as unknown as ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   mockRun.mockReset();
   mockDiff.mockReset();
+  mockSpawn.mockReset();
 });
 
 function loser(engineId: string, diff = 'diff content', response = 'reasoning'): AgentSynthesisLoser {
@@ -308,5 +325,120 @@ describe('runAgentInvestigateSynthesis — fallback paths', () => {
     expect(mockRun).toHaveBeenCalledWith(
       expect.objectContaining({ systemPrompt: 'SAFETY: do not expose secrets' }),
     );
+  });
+});
+
+describe('runPostSynthesisFitnessCheck', () => {
+  it('returns passed=true when fitness command exits 0', async () => {
+    mockSpawn.mockResolvedValueOnce({ exitCode: 0, stdout: '', stderr: '', durationMs: 100, timedOut: false });
+    const r = await runPostSynthesisFitnessCheck({
+      worktreePath: '/tmp/wt',
+      fitnessCmd: 'npm run typecheck',
+    });
+    expect(r.passed).toBe(true);
+    expect(r.exitCode).toBe(0);
+    expect(r.error).toBeNull();
+  });
+
+  it('returns passed=false when fitness command exits non-zero', async () => {
+    mockSpawn.mockResolvedValueOnce({ exitCode: 1, stdout: 'errors', stderr: 'tsc error TS2345', durationMs: 2_000, timedOut: false });
+    const r = await runPostSynthesisFitnessCheck({
+      worktreePath: '/tmp/wt',
+      fitnessCmd: 'npm run typecheck',
+    });
+    expect(r.passed).toBe(false);
+    expect(r.exitCode).toBe(1);
+    expect(r.error).toBeNull();
+  });
+
+  it('returns passed=false with error when spawn rejects', async () => {
+    mockSpawn.mockRejectedValueOnce(new Error('ENOENT: command not found'));
+    const r = await runPostSynthesisFitnessCheck({
+      worktreePath: '/tmp/wt',
+      fitnessCmd: 'nosuchcmd',
+    });
+    expect(r.passed).toBe(false);
+    expect(r.error).toMatch(/ENOENT/);
+    expect(r.exitCode).toBe(-1);
+  });
+
+  it('forwards the abort signal to spawnWithTimeout', async () => {
+    const ac = new AbortController();
+    mockSpawn.mockResolvedValueOnce({ exitCode: 0, stdout: '', stderr: '', durationMs: 10, timedOut: false });
+    await runPostSynthesisFitnessCheck({
+      worktreePath: '/tmp/wt',
+      fitnessCmd: 'noop',
+      signal: ac.signal,
+    });
+    expect(mockSpawn).toHaveBeenCalledWith(
+      expect.objectContaining({ signal: ac.signal, cwd: '/tmp/wt', timeout: 90 }),
+    );
+  });
+
+  it('uses custom timeoutSec when provided', async () => {
+    mockSpawn.mockResolvedValueOnce({ exitCode: 0, stdout: '', stderr: '', durationMs: 10, timedOut: false });
+    await runPostSynthesisFitnessCheck({
+      worktreePath: '/tmp/wt',
+      fitnessCmd: 'x',
+      timeoutSec: 30,
+    });
+    expect(mockSpawn).toHaveBeenCalledWith(
+      expect.objectContaining({ timeout: 30 }),
+    );
+  });
+});
+
+describe('detectSynthesisInsightMention — prompt-bias signal', () => {
+  it('hasAnyMention=true when response mentions a loser engineId', () => {
+    const r = detectSynthesisInsightMention({
+      responseExcerpt: 'I incorporated codex\'s approach to null handling',
+      loserEngineIds: ['codex', 'gemini'],
+    });
+    expect(r.hasAnyMention).toBe(true);
+    expect(r.mentionedEngineIds).toEqual(['codex']);
+  });
+
+  it('matches case-insensitively', () => {
+    const r = detectSynthesisInsightMention({
+      responseExcerpt: 'I adopted CODEX-style factoring and Gemini\'s error path',
+      loserEngineIds: ['codex', 'gemini'],
+    });
+    expect(r.mentionedEngineIds).toContain('codex');
+    expect(r.mentionedEngineIds).toContain('gemini');
+  });
+
+  it('hasAnyMention=false when response does not mention any loser', () => {
+    const r = detectSynthesisInsightMention({
+      responseExcerpt: 'Polished my own answer a bit.',
+      loserEngineIds: ['codex', 'gemini'],
+    });
+    expect(r.hasAnyMention).toBe(false);
+    expect(r.mentionedEngineIds).toEqual([]);
+  });
+
+  it('handles empty loserEngineIds gracefully', () => {
+    const r = detectSynthesisInsightMention({
+      responseExcerpt: 'anything',
+      loserEngineIds: [],
+    });
+    expect(r.hasAnyMention).toBe(false);
+    expect(r.mentionedEngineIds).toEqual([]);
+  });
+
+  it('handles empty response gracefully', () => {
+    const r = detectSynthesisInsightMention({
+      responseExcerpt: '',
+      loserEngineIds: ['codex'],
+    });
+    expect(r.hasAnyMention).toBe(false);
+  });
+
+  it('returns unique mentions (each engineId at most once)', () => {
+    const r = detectSynthesisInsightMention({
+      responseExcerpt: 'codex did X, and codex also did Y, so following codex...',
+      loserEngineIds: ['codex'],
+    });
+    expect(r.mentionedEngineIds).toEqual(['codex']);
+    expect(r.mentionedEngineIds.length).toBe(1);
   });
 });

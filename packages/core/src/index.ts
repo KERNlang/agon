@@ -139,10 +139,12 @@ export {
 export {
   buildAgentSynthesisPrompt, buildAgentInvestigateSynthesisPrompt,
   runAgentTeamSynthesis, runAgentInvestigateSynthesis,
+  runPostSynthesisFitnessCheck, detectSynthesisInsightMention,
 } from './generated/cesar/agent-synthesis.js';
 export type {
   AgentSynthesisLoser, AgentSynthesisOptions, AgentSynthesisResult,
   AgentInvestigateSynthesisOptions, AgentInvestigateSynthesisResult,
+  PostSynthesisFitnessResult, SynthesisBiasSignal,
 } from './generated/cesar/agent-synthesis.js';
 export {
   tokensToCost, estimatedTokensToCost, getEnginePricing,

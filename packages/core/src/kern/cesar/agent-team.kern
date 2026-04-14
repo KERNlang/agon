@@ -35,6 +35,7 @@ import from="./agent-session.js" names="AgentSession"
 import from="./agent-session.js" names="AgentBudget,AgentStepResult,AgentSessionConfig" types=true
 import from="../api/dispatch.js" names="ApiConfig" types=true
 import from="../models/agent-event.js" names="AgentEvent" types=true
+import from="./context-thread.js" names="ContextThread" types=true
 
 // ── Errors ────────────────────────────────────────────────────────
 
@@ -73,7 +74,7 @@ interface name=AgentTeamBudget
 // ── Team configuration ────────────────────────────────────────────
 
 interface name=AgentTeamConfig
-  doc "Configuration for an AgentTeam run. cwd is the repo root the user invoked from; isolate controls whether each member gets its own worktree. teamBudget+costFn enable runtime cost-ceiling enforcement (RT-12)."
+  doc "Configuration for an AgentTeam run. cwd is the repo root the user invoked from; isolate controls whether each member gets its own worktree. teamBudget+costFn enable runtime cost-ceiling enforcement (RT-12). thread is the shared ContextThread — when provided, all members read prior conversation history from it and write their per-turn output back into it so the next step (or a re-routed engine) has full context."
   field name=members type="AgentTeamMemberConfig[]"
   field name=cwd type=string
   field name=budget type=AgentBudget
@@ -82,6 +83,7 @@ interface name=AgentTeamConfig
   field name=heavyToolSemaphorePermits type=number optional=true
   field name=teamBudget type=AgentTeamBudget optional=true
   field name=costFn type="(engineId: string, tokensUsed: number) => number" optional=true
+  field name=thread type=ContextThread optional=true
 
 // ── Member result ────────────────────────────────────────────────
 
@@ -268,6 +270,14 @@ service name=AgentTeam export=true
             budget: this.config.budget,
             teamId: this.runId,
             heavyToolSemaphore: this.sharedSemaphore,
+            // Shared ContextThread: all team members read prior history from
+            // the same thread and write their output back into it. Appends
+            // during parallel step() execution are in-memory (synchronous),
+            // so JS's single-threaded event loop prevents data races within
+            // a single step. The team flushes once after Promise.allSettled
+            // via the individual session.step() calls which each call
+            // thread.save() on completion (agent-session.kern).
+            thread: this.config.thread,
           };
           this.members[m.engineId] = new AgentSession(sessionConfig);
         }

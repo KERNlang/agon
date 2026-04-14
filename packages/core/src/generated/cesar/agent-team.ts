@@ -16,6 +16,8 @@ import type { ApiConfig } from '../api/dispatch.js';
 
 import type { AgentEvent } from '../models/agent-event.js';
 
+import type { ContextThread } from './context-thread.js';
+
 /**
  * Typed error for AgentTeam initialization or runtime failures.
  */
@@ -53,7 +55,7 @@ export interface AgentTeamBudget {
 }
 
 /**
- * Configuration for an AgentTeam run. cwd is the repo root the user invoked from; isolate controls whether each member gets its own worktree. teamBudget+costFn enable runtime cost-ceiling enforcement (RT-12).
+ * Configuration for an AgentTeam run. cwd is the repo root the user invoked from; isolate controls whether each member gets its own worktree. teamBudget+costFn enable runtime cost-ceiling enforcement (RT-12). thread is the shared ContextThread — when provided, all members read prior conversation history from it and write their per-turn output back into it so the next step (or a re-routed engine) has full context.
  */
 export interface AgentTeamConfig {
   members: AgentTeamMemberConfig[];
@@ -64,6 +66,7 @@ export interface AgentTeamConfig {
   heavyToolSemaphorePermits?: number;
   teamBudget?: AgentTeamBudget;
   costFn?: (engineId: string, tokensUsed: number) => number;
+  thread?: ContextThread;
 }
 
 /**
@@ -240,6 +243,14 @@ export class AgentTeam {
           budget: this.config.budget,
           teamId: this.runId,
           heavyToolSemaphore: this.sharedSemaphore,
+          // Shared ContextThread: all team members read prior history from
+          // the same thread and write their output back into it. Appends
+          // during parallel step() execution are in-memory (synchronous),
+          // so JS's single-threaded event loop prevents data races within
+          // a single step. The team flushes once after Promise.allSettled
+          // via the individual session.step() calls which each call
+          // thread.save() on completion (agent-session.kern).
+          thread: this.config.thread,
         };
         this.members[m.engineId] = new AgentSession(sessionConfig);
       }

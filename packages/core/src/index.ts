@@ -114,8 +114,26 @@ export {
 export type {
   PersistentSession, PersistentSessionConfig, SessionChunk, SessionSendOptions,
 } from './persistent-session.js';
+export { StreamBridge, createStreamBridge } from './generated/cesar/stream-bridge.js';
+export type { EngineSwitch } from './generated/cesar/stream-bridge.js';
+export {
+  VirtualFS, createFileSnapshot, applyEffectPackage, effectPackageDiff, scoreEffectPackage, snapshotRead, snapshotList,
+} from './generated/forge/virtual-fs.js';
+export type {
+  FileEffect, EffectPackage, FileSnapshot as VfsSnapshot,
+} from './generated/forge/virtual-fs.js';
+export { Speculator, createSpeculator } from './generated/cesar/speculator.js';
+export type {
+  SpeculatorMemberConfig, SpeculatorOptions, SpeculatorResult,
+} from './generated/cesar/speculator.js';
 export { createCesarMemory } from './generated/cesar/memory.js';
 export type { CesarMemory, MemoryEntry } from './generated/cesar/memory.js';
+export {
+  ContextThread, loadOrCreateActiveThread, forkActiveThread, listThreadsForProject, deleteThread, projectHash16, projectSha8,
+} from './generated/cesar/context-thread.js';
+export type {
+  ThreadMessage, ThreadCheckpoint, FileTouch, LoopMessage, ContextThreadConfig, ThreadSize,
+} from './generated/cesar/context-thread.js';
 export { createCesarPlan, approveCesarPlan, advanceCesarStep, cancelCesarPlan, saveCesarPlan, loadCesarPlan, listCesarPlans } from './generated/cesar/plan.js';
 export type { CesarPlan, CesarPlanStep, CesarStepResult } from './generated/cesar/plan.js';
 export { planCostEstimator } from './generated/cesar/plan-cost-estimator.js';

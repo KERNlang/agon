@@ -27,6 +27,39 @@ import from="../cesar/routing.js" names="shouldUseAgentTeam"
 import from="@agon/core" names="createSpeculator,loadOrCreateActiveThread"
 import from="@agon/core" names="SpeculatorMemberConfig" types=true
 
+// ── Thread outcome capture helper ─────────────────────────────────────
+// After any non-trivial slash command (forge, brainstorm, tribunal, etc.),
+// append a structured outcome summary to the ContextThread so Cesar has
+// full session-wide memory — not just chat + /agent turns.
+
+fn name=withThreadOutcome params="cwd:string,jobType:string,label:string,fn:()=>Promise<any>" returns="()=>Promise<void>"
+  doc "Wraps a runAsJob callback with ContextThread outcome capture. After fn completes (success or failure), appends a one-line summary as an assistant message so all slash commands feed back into Cesar's context."
+  handler <<<
+    return async () => {
+      const startedAt = Date.now();
+      let success = true;
+      let errorMsg = '';
+      try {
+        await fn();
+      } catch (err: any) {
+        success = false;
+        errorMsg = err?.message ?? String(err);
+        throw err; // re-throw so runAsJob can handle the error normally
+      } finally {
+        const durationSec = ((Date.now() - startedAt) / 1000).toFixed(0);
+        const status = success ? 'completed' : `failed: ${errorMsg.slice(0, 100)}`;
+        try {
+          const thread = loadOrCreateActiveThread(cwd);
+          thread.append({
+            role: 'assistant',
+            content: `[${jobType}] ${label.slice(0, 80)} — ${status} (${durationSec}s)`,
+          });
+          await thread.save();
+        } catch { /* thread capture is always non-fatal */ }
+      }
+    };
+  >>>
+
 interface name=DispatchCallbacks
   field name=dispatch type=Dispatch
   field name=ctx type=HandlerContext
@@ -246,17 +279,20 @@ fn name=routeWithCesar async=true params="input:string, images:ImageAttachment[]
           case 'build':
             cb.runAsJob('build', label, () => handleBuild(taskInput, cb.dispatch, cb.ctx));
             return true;
-          case 'forge':
-            cb.runAsJob('forge', label, () => handleForge(taskInput, fitnessCmd, cb.dispatch, cb.ctx, undefined, hardened));
+          case 'forge': {
+            const _cwdForge = resolveWorkingDir();
+            cb.runAsJob('forge', label, withThreadOutcome(_cwdForge, 'forge', label, () => handleForge(taskInput, fitnessCmd, cb.dispatch, cb.ctx, undefined, hardened)));
             return true;
+          }
           case 'team-forge': {
             const tfFitness = fitnessCmd ?? await cb.askQuestion('What command tests this?');
             if (!tfFitness.trim()) { cb.dispatch({ type: 'warning', message: 'Team-forge needs a test command.' }); break; }
-            cb.runAsJob('team-forge', label, () => handleTeamForge(taskInput, tfFitness.trim(), cb.dispatch, cb.ctx, undefined));
+            const _cwdTForge = resolveWorkingDir();
+            cb.runAsJob('team-forge', label, withThreadOutcome(_cwdTForge, 'team-forge', label, () => handleTeamForge(taskInput, tfFitness.trim(), cb.dispatch, cb.ctx, undefined)));
             return true;
           }
           case 'brainstorm':
-            cb.runAsJob('brainstorm', label, async () => {
+            cb.runAsJob('brainstorm', label, withThreadOutcome(resolveWorkingDir(), 'brainstorm', label, async () => {
               const bsResult = await handleBrainstorm(taskInput, cb.dispatch, cb.ctx);
               // Cesar absorbs the brainstorm result via persistent session
               if (cb.ctx.cesarSession && bsResult) {
@@ -265,53 +301,54 @@ fn name=routeWithCesar async=true params="input:string, images:ImageAttachment[]
                 const cesarMsg = `Brainstorm complete. Winner: ${bsResult.winner}.\n\n## Engine Bids\n${bidSummary}\n\n## Winner's Full Response\n${bsResult.response}\n\nSynthesize the winning approach into a concrete plan. Be direct — the brainstorm already validated the ideas.`;
                 await absorbIntoCesar(cesarMsg, cb.dispatch, cb.ctx);
               }
-            });
+            }));
             return true;
           case 'team-brainstorm':
-            cb.runAsJob('team-brainstorm', label, async () => {
+            cb.runAsJob('team-brainstorm', label, withThreadOutcome(resolveWorkingDir(), 'team-brainstorm', label, async () => {
               await handleTeamBrainstorm(taskInput, cb.dispatch, cb.ctx);
               if (cb.ctx.cesarSession) {
                 cb.dispatch({ type: 'info', message: 'Cesar absorbing brainstorm results…' });
-                // Team brainstorm doesn't return results — ask Cesar to synthesize from chat history
                 const recentChat = cb.ctx.chatSession?.messages?.slice(-10) ?? [];
                 const chatContext = recentChat.filter((m: any) => m.role === 'engine').map((m: any) => `[${m.engineId}]: ${m.content.slice(0, 1500)}`).join('\n\n');
                 await absorbIntoCesar(`Team brainstorm completed. Here are the engine responses:\n\n${chatContext}\n\nSynthesize the winning approach into a concrete plan.`, cb.dispatch, cb.ctx);
               }
-            });
+            }));
             return true;
           case 'tribunal':
-            cb.runAsJob('tribunal', label, async () => {
+            cb.runAsJob('tribunal', label, withThreadOutcome(resolveWorkingDir(), 'tribunal', label, async () => {
               await handleTribunal(taskInput, cb.dispatch, cb.ctx, tMode);
               if (cb.ctx.cesarSession?.alive) {
                 const recentChat = cb.ctx.chatSession?.messages?.slice(-12) ?? [];
                 const chatContext = recentChat.filter((m: any) => m.role === 'engine').map((m: any) => `[${m.engineId}]: ${m.content.slice(0, 1500)}`).join('\n\n');
                 if (chatContext) await absorbIntoCesar(`Tribunal${tMode ? ` (${tMode})` : ''} concluded on: "${taskInput.slice(0, 200)}"\n\n${chatContext}\n\nSummarize the verdict and key takeaways.`, cb.dispatch, cb.ctx);
               }
-            });
+            }));
             return true;
           case 'team-tribunal':
-            cb.runAsJob('team-tribunal', label, async () => {
+            cb.runAsJob('team-tribunal', label, withThreadOutcome(resolveWorkingDir(), 'team-tribunal', label, async () => {
               await handleTeamTribunal(taskInput, cb.dispatch, cb.ctx, tMode);
               if (cb.ctx.cesarSession?.alive) {
                 const recentChat = cb.ctx.chatSession?.messages?.slice(-12) ?? [];
                 const chatContext = recentChat.filter((m: any) => m.role === 'engine').map((m: any) => `[${m.engineId}]: ${m.content.slice(0, 1500)}`).join('\n\n');
                 if (chatContext) await absorbIntoCesar(`Team tribunal${tMode ? ` (${tMode})` : ''} concluded on: "${taskInput.slice(0, 200)}"\n\n${chatContext}\n\nSummarize the verdict and key takeaways.`, cb.dispatch, cb.ctx);
               }
-            });
+            }));
             return true;
           case 'campfire':
-            cb.runAsJob('campfire', label, async () => {
+            cb.runAsJob('campfire', label, withThreadOutcome(resolveWorkingDir(), 'campfire', label, async () => {
               await handleCampfire(taskInput, cb.dispatch, cb.ctx);
               if (cb.ctx.cesarSession?.alive) {
                 const recentChat = cb.ctx.chatSession?.messages?.slice(-12) ?? [];
                 const chatContext = recentChat.filter((m: any) => m.role === 'engine').map((m: any) => `[${m.engineId}]: ${m.content.slice(0, 1500)}`).join('\n\n');
                 if (chatContext) await absorbIntoCesar(`Campfire discussion on: "${taskInput.slice(0, 200)}"\n\n${chatContext}\n\nSummarize the key insights and any consensus reached.`, cb.dispatch, cb.ctx);
               }
-            });
+            }));
             return true;
-          case 'pipeline':
-            cb.runAsJob('pipeline', label, () => handlePipeline(taskInput, cb.dispatch, cb.ctx, fitnessCmd ?? undefined));
+          case 'pipeline': {
+            const _cwdPipe = resolveWorkingDir();
+            cb.runAsJob('pipeline', label, withThreadOutcome(_cwdPipe, 'pipeline', label, () => handlePipeline(taskInput, cb.dispatch, cb.ctx, fitnessCmd ?? undefined)));
             return true;
+          }
           case 'review':
             cb.runAsJob('review', label, () => handleReview(cb.dispatch, cb.ctx, result.target as string | undefined, result.engineId as string | undefined));
             return true;
@@ -542,60 +579,80 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
     switch (intent.type) {
       // ── Job-dispatched commands (return immediately, don't hit finally) ──
       case 'forge': {
-        cb.runAsJob('forge', intent.task?.slice(0, 40) ?? 'forge', async () => {
-          if (cb.eventBus) await cb.eventBus.emit('pre:forge', { task: intent.task, cwd: resolveWorkingDir() });
+        const _fCwd = resolveWorkingDir();
+        const _fLabel = intent.task?.slice(0, 40) ?? 'forge';
+        cb.runAsJob('forge', _fLabel, withThreadOutcome(_fCwd, 'forge', _fLabel, async () => {
+          if (cb.eventBus) await cb.eventBus.emit('pre:forge', { task: intent.task, cwd: _fCwd });
           await handleForge(intent.task, intent.fitnessCmd, cb.dispatch, cb.ctx, undefined, intent.hardened);
-          if (cb.eventBus) cb.eventBus.emit('post:forge', { task: intent.task, cwd: resolveWorkingDir() }).catch(() => {});
-        });
+          if (cb.eventBus) cb.eventBus.emit('post:forge', { task: intent.task, cwd: _fCwd }).catch(() => {});
+        }));
         return { handled: true, ranAsJob: true };
       }
-      case 'brainstorm':
-        cb.runAsJob('brainstorm', intent.question?.slice(0, 40) ?? 'brainstorm', async () => {
-          if (cb.eventBus) await cb.eventBus.emit('pre:brainstorm', { question: intent.question, cwd: resolveWorkingDir() });
+      case 'brainstorm': {
+        const _bCwd = resolveWorkingDir();
+        const _bLabel = intent.question?.slice(0, 40) ?? 'brainstorm';
+        cb.runAsJob('brainstorm', _bLabel, withThreadOutcome(_bCwd, 'brainstorm', _bLabel, async () => {
+          if (cb.eventBus) await cb.eventBus.emit('pre:brainstorm', { question: intent.question, cwd: _bCwd });
           await handleBrainstorm(intent.question, cb.dispatch, cb.ctx);
-          if (cb.eventBus) cb.eventBus.emit('post:brainstorm', { question: intent.question, cwd: resolveWorkingDir() }).catch(() => {});
-        });
+          if (cb.eventBus) cb.eventBus.emit('post:brainstorm', { question: intent.question, cwd: _bCwd }).catch(() => {});
+        }));
         return { handled: true, ranAsJob: true };
-      case 'tribunal':
-        cb.runAsJob('tribunal', intent.question?.slice(0, 40) ?? 'tribunal', async () => {
-          if (cb.eventBus) await cb.eventBus.emit('pre:tribunal', { question: intent.question, mode: intent.tribunalMode, cwd: resolveWorkingDir() });
+      }
+      case 'tribunal': {
+        const _tCwd = resolveWorkingDir();
+        const _tLabel = intent.question?.slice(0, 40) ?? 'tribunal';
+        cb.runAsJob('tribunal', _tLabel, withThreadOutcome(_tCwd, 'tribunal', _tLabel, async () => {
+          if (cb.eventBus) await cb.eventBus.emit('pre:tribunal', { question: intent.question, mode: intent.tribunalMode, cwd: _tCwd });
           await handleTribunal(intent.question, cb.dispatch, cb.ctx, intent.tribunalMode);
-          if (cb.eventBus) cb.eventBus.emit('post:tribunal', { question: intent.question, cwd: resolveWorkingDir() }).catch(() => {});
+          if (cb.eventBus) cb.eventBus.emit('post:tribunal', { question: intent.question, cwd: _tCwd }).catch(() => {});
           if (cb.ctx.cesarSession?.alive) {
             const recentChat = cb.ctx.chatSession?.messages?.slice(-12) ?? [];
             const chatContext = recentChat.filter((m: any) => m.role === 'engine').map((m: any) => `[${m.engineId}]: ${m.content.slice(0, 1500)}`).join('\n\n');
             if (chatContext) await absorbIntoCesar(`Tribunal concluded on: "${(intent.question ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize the verdict and key takeaways.`, cb.dispatch, cb.ctx);
           }
-        });
+        }));
         return { handled: true, ranAsJob: true };
-      case 'campfire':
-        cb.runAsJob('campfire', intent.topic?.slice(0, 40) ?? 'campfire', async () => {
-          if (cb.eventBus) await cb.eventBus.emit('pre:campfire', { topic: intent.topic, cwd: resolveWorkingDir() });
+      }
+      case 'campfire': {
+        const _cCwd = resolveWorkingDir();
+        const _cLabel = intent.topic?.slice(0, 40) ?? 'campfire';
+        cb.runAsJob('campfire', _cLabel, withThreadOutcome(_cCwd, 'campfire', _cLabel, async () => {
+          if (cb.eventBus) await cb.eventBus.emit('pre:campfire', { topic: intent.topic, cwd: _cCwd });
           await handleCampfire(intent.topic, cb.dispatch, cb.ctx);
-          if (cb.eventBus) cb.eventBus.emit('post:campfire', { topic: intent.topic, cwd: resolveWorkingDir() }).catch(() => {});
+          if (cb.eventBus) cb.eventBus.emit('post:campfire', { topic: intent.topic, cwd: _cCwd }).catch(() => {});
           if (cb.ctx.cesarSession?.alive) {
             const recentChat = cb.ctx.chatSession?.messages?.slice(-12) ?? [];
             const chatContext = recentChat.filter((m: any) => m.role === 'engine').map((m: any) => `[${m.engineId}]: ${m.content.slice(0, 1500)}`).join('\n\n');
             if (chatContext) await absorbIntoCesar(`Campfire discussion on: "${(intent.topic ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize the key insights and any consensus reached.`, cb.dispatch, cb.ctx);
           }
-        });
+        }));
         return { handled: true, ranAsJob: true };
-      case 'team-tribunal':
-        cb.runAsJob('team-tribunal', intent.question?.slice(0, 40) ?? 'team-tribunal', async () => {
+      }
+      case 'team-tribunal': {
+        const _ttCwd = resolveWorkingDir();
+        const _ttLabel = intent.question?.slice(0, 40) ?? 'team-tribunal';
+        cb.runAsJob('team-tribunal', _ttLabel, withThreadOutcome(_ttCwd, 'team-tribunal', _ttLabel, async () => {
           await handleTeamTribunal(intent.question, cb.dispatch, cb.ctx, intent.tribunalMode, intent.membersPerSide);
           if (cb.ctx.cesarSession?.alive) {
             const recentChat = cb.ctx.chatSession?.messages?.slice(-12) ?? [];
             const chatContext = recentChat.filter((m: any) => m.role === 'engine').map((m: any) => `[${m.engineId}]: ${m.content.slice(0, 1500)}`).join('\n\n');
             if (chatContext) await absorbIntoCesar(`Team tribunal concluded on: "${(intent.question ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize the verdict and key takeaways.`, cb.dispatch, cb.ctx);
           }
-        });
+        }));
         return { handled: true, ranAsJob: true };
-      case 'team-forge':
-        cb.runAsJob('team-forge', intent.task?.slice(0, 40) ?? 'team-forge', () => handleTeamForge(intent.task, intent.fitnessCmd, cb.dispatch, cb.ctx, intent.membersPerSide));
+      }
+      case 'team-forge': {
+        const _tfCwd = resolveWorkingDir();
+        const _tfLabel = intent.task?.slice(0, 40) ?? 'team-forge';
+        cb.runAsJob('team-forge', _tfLabel, withThreadOutcome(_tfCwd, 'team-forge', _tfLabel, () => handleTeamForge(intent.task, intent.fitnessCmd, cb.dispatch, cb.ctx, intent.membersPerSide)));
         return { handled: true, ranAsJob: true };
-      case 'team-brainstorm':
-        cb.runAsJob('team-brainstorm', intent.question?.slice(0, 40) ?? 'team-brainstorm', () => handleTeamBrainstorm(intent.question, cb.dispatch, cb.ctx, intent.membersPerSide));
+      }
+      case 'team-brainstorm': {
+        const _tbCwd = resolveWorkingDir();
+        const _tbLabel = intent.question?.slice(0, 40) ?? 'team-brainstorm';
+        cb.runAsJob('team-brainstorm', _tbLabel, withThreadOutcome(_tbCwd, 'team-brainstorm', _tbLabel, () => handleTeamBrainstorm(intent.question, cb.dispatch, cb.ctx, intent.membersPerSide)));
         return { handled: true, ranAsJob: true };
+      }
       case 'build':
         cb.runAsJob('build', intent.input?.slice(0, 40) ?? 'build', () => handleBuild(intent.input, cb.dispatch, cb.ctx));
         return { handled: true, ranAsJob: true };
@@ -635,6 +692,11 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
               mode: 'solo',
               engines: [firstEngine],
               reason: `shadow worker active (${apiEngines[1]} running silently in background)`,
+            });
+            cb.dispatch({
+              type: 'shadow-active',
+              foregroundEngineId: firstEngine,
+              shadowEngineId: apiEngines[1],
             });
             cb.runAsJob('agent', input?.slice(0, 40) ?? 'agent', () => runAgentTeam(input, cb.dispatch, cb.ctx, {
               engines: apiEngines.slice(0, 2),
@@ -728,9 +790,12 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
         });
         return { handled: true, ranAsJob: true };
       }
-      case 'pipeline':
-        cb.runAsJob('pipeline', intent.task?.slice(0, 40) ?? 'pipeline', () => handlePipeline(intent.task, cb.dispatch, cb.ctx, intent.fitnessCmd ?? undefined));
+      case 'pipeline': {
+        const _pCwd = resolveWorkingDir();
+        const _pLabel = intent.task?.slice(0, 40) ?? 'pipeline';
+        cb.runAsJob('pipeline', _pLabel, withThreadOutcome(_pCwd, 'pipeline', _pLabel, () => handlePipeline(intent.task, cb.dispatch, cb.ctx, intent.fitnessCmd ?? undefined)));
         return { handled: true, ranAsJob: true };
+      }
       case 'review':
         cb.runAsJob('review', intent.target?.slice(0, 40) ?? 'review', async () => {
           if (cb.eventBus) await cb.eventBus.emit('pre:review', { target: intent.target, cwd: resolveWorkingDir() });

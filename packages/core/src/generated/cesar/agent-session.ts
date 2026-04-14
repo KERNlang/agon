@@ -350,7 +350,7 @@ export class AgentSession {
     if (thread) {
       try {
         thread.markSeen(this.config.engineId);
-        thread.save();
+        await thread.save();
       } catch (err) {
         // Non-fatal — thread persistence failure must never kill the
         // agent step itself.
@@ -390,7 +390,9 @@ export class AgentSession {
     if (this.config.thread) {
       try {
         this.config.thread.markSeen(this.config.engineId);
-        this.config.thread.save();
+        // Use saveSync() — cancel() may be called from a sync abort handler
+        // where we can't await. saveSync() skips the lock but persists.
+        this.config.thread.saveSync();
       } catch { /* never let flush failure block abort */ }
     }
     if (!this.abortController.signal.aborted) {

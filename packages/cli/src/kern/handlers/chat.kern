@@ -1,7 +1,7 @@
 import from="node:path" names="join"
 import from="node:fs" names="mkdirSync"
 import from="@agon/core" names="ImageAttachment,DispatchResult" types=true
-import from="@agon/core" names="RUNS_DIR,appendMessage,tracker,StreamParser,loadConfig,sessionContext,resolveWorkingDir,loadOrCreateActiveThread"
+import from="@agon/core" names="RUNS_DIR,appendMessage,tracker,StreamParser,loadConfig,sessionContext,resolveWorkingDir,loadOrCreateActiveThread,createStreamBridge"
 import from="../blocks/output-format.js" names="ENGINE_COLORS"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 import from="../cesar/brain.js" names="yieldToInk"
@@ -102,6 +102,14 @@ fn name=handleChat params="input:string, dispatch:Dispatch, ctx:HandlerContext, 
 
     dispatch({ type: 'spinner-start', message: `${engineId} thinking…`, color });
 
+    // Phase C: StreamBridge for chat — tracks engine attribution so the UI
+    // emits engine-switch on the cold-start of this chat turn. Single-engine
+    // chat doesn't switch mid-turn but the bridge ensures consistent event
+    // shape and initializes attribution tracking for future multi-engine chat.
+    const chatBridge = createStreamBridge(dispatch as (e: Record<string,unknown>) => void, {
+      initialEngineId: engineId,
+    });
+
     let response = '';
     let streaming = false;
     let dispatchResult: DispatchResult | undefined;
@@ -143,7 +151,7 @@ fn name=handleChat params="input:string, dispatch:Dispatch, ctx:HandlerContext, 
                 dispatch({ type: 'spinner-stop' });
                 streaming = true;
               }
-              dispatch({ type: 'streaming-chunk', engineId, chunk: parsed.content });
+              chatBridge.bridge({ kind: 'assistant_chunk', engineId, text: parsed.content });
               response += parsed.content;
             }
           }
@@ -191,7 +199,7 @@ fn name=handleChat params="input:string, dispatch:Dispatch, ctx:HandlerContext, 
                 dispatch({ type: 'spinner-stop' });
                 streaming = true;
               }
-              dispatch({ type: 'streaming-chunk', engineId, chunk: parsed.content });
+              chatBridge.bridge({ kind: 'assistant_chunk', engineId, text: parsed.content });
               response += parsed.content;
             }
           }
@@ -286,7 +294,7 @@ fn name=handleChat params="input:string, dispatch:Dispatch, ctx:HandlerContext, 
         const chatThread = loadOrCreateActiveThread(cwd);
         chatThread.append({ role: 'user', content: input });
         chatThread.append({ role: 'assistant', content: response, engineId });
-        chatThread.save();
+        await chatThread.save();
       } catch (threadErr) {
         console.warn(`[agon] context-thread: chat turn not persisted: ${threadErr instanceof Error ? threadErr.message : String(threadErr)}`);
       }

@@ -374,6 +374,13 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
         actions.addBlock({ type: 'info', message: `${modeIcon} Routing: ${e.mode} (${engineList}) \u2014 ${e.reason}` } as any);
         return;
       }
+      case 'shadow-active': {
+        // Phase D: subtle shadow-worker indicator. Shown once when shadow starts.
+        // Deliberately low-key — user's attention is on the foreground stream.
+        const e = event as any;
+        actions.addBlock({ type: 'info', message: `\u26A1 ${e.foregroundEngineId} (foreground) \u2014 ${e.shadowEngineId} racing silently in background` } as any);
+        return;
+      }
       case 'agent-team-complete': {
         const e = event as any;
         const memberSummary = (e.memberOutcomes as Array<{engineId:string,outcome:string,diffLines:number,passedFitness:boolean}>)

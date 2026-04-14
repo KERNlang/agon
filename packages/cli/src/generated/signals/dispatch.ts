@@ -95,27 +95,34 @@ export function withThreadOutcome(cwd: string, jobType: string, label: string, f
       try {
         const thread = loadOrCreateActiveThread(cwd);
   
-        // ── Capture engine responses produced by this job ────────────
+        // ── Capture ALL engine responses produced by this job ────────
         // forge, brainstorm, tribunal, campfire all write to chatSession.
         // Slicing from priorChatLength gives us exactly what this job produced.
+        // We capture FULL content — no 1200-char truncation. With 1M windows,
+        // losing the forge winner's full diff or brainstorm's complete reasoning
+        // means Cesar is making the next routing decision on crumbs. The value
+        // IS the complete decision trail, not a summary.
         const newMessages = (ctx?.chatSession?.messages ?? []).slice(priorChatLength);
         const engineOutputs = newMessages
           .filter((m: any) => m.role === 'engine' && m.content)
-          .map((m: any) => `[${m.engineId ?? 'engine'}]: ${(m.content as string).slice(0, 1200)}`)
+          .map((m: any) => `[${m.engineId ?? 'engine'}]:\n${m.content as string}`)
           .join('\n\n---\n\n');
   
         // ── Capture return value if handler returned something useful ─
-        // handleBrainstorm returns { winner, bids, response }
+        // handleBrainstorm returns { winner, bids, response } — capture fully
         let returnSummary = '';
         if (returnValue && typeof returnValue === 'object') {
           if ('winner' in returnValue && 'response' in returnValue) {
-            returnSummary = `\nWinner: ${returnValue.winner}\nWinner approach: ${String(returnValue.response ?? '').slice(0, 600)}`;
+            const bidsDetail = Array.isArray((returnValue as any).bids)
+              ? (returnValue as any).bids.map((b: any) => `  ${b.engineId} (score ${b.score ?? '?'}): ${b.reasoning ?? b.approach ?? ''}`).join('\n')
+              : '';
+            returnSummary = `Winner: ${returnValue.winner}\nWinner full response:\n${String(returnValue.response ?? '')}${bidsDetail ? `\n\nAll bids:\n${bidsDetail}` : ''}`;
           }
         }
   
-        const parts: string[] = [`[${jobType}] "${label.slice(0, 80)}" — ${status}`];
+        const parts: string[] = [`[${jobType}] "${label.slice(0, 120)}" — ${status}`];
         if (returnSummary) parts.push(returnSummary);
-        if (engineOutputs) parts.push(`\nEngine outputs:\n${engineOutputs}`);
+        if (engineOutputs) parts.push(`\nEngine outputs (full):\n${engineOutputs}`);
   
         thread.append({
           role: 'assistant',
@@ -127,7 +134,7 @@ export function withThreadOutcome(cwd: string, jobType: string, label: string, f
   };
 }
 
-// @kern-source: dispatch:90
+// @kern-source: dispatch:97
 export interface DispatchCallbacks {
   dispatch: Dispatch;
   ctx: HandlerContext;
@@ -165,13 +172,13 @@ export interface DispatchCallbacks {
   setWorkspacePath?: (path: string) => void;
 }
 
-// @kern-source: dispatch:126
+// @kern-source: dispatch:133
 export interface DispatchResult {
   handled: boolean;
   ranAsJob: boolean;
 }
 
-// @kern-source: dispatch:130
+// @kern-source: dispatch:137
 /**
  * Handle mode-switching intents. Returns true if consumed.
  */
@@ -201,7 +208,7 @@ export function handleModeSwitch(intentType: string, topic: string|undefined, qu
   return false;
 }
 
-// @kern-source: dispatch:158
+// @kern-source: dispatch:165
 /**
  * Extract a fitness command from conversational execution input while keeping the task clean.
  */
@@ -214,7 +221,7 @@ export function extractExecutionSpec(input: string): { task:string; fitnessCmd:s
   return { task, fitnessCmd };
 }
 
-// @kern-source: dispatch:169
+// @kern-source: dispatch:176
 /**
  * Send a message directly into Cesar's persistent session and stream the response. Returns the response text.
  */
@@ -263,7 +270,7 @@ export async function absorbIntoCesar(message: string, dispatch: Dispatch, ctx: 
   return response;
 }
 
-// @kern-source: dispatch:216
+// @kern-source: dispatch:223
 /**
  * Unified Cesar brain routing. Returns true if a background job was dispatched.
  */
@@ -495,6 +502,10 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
         }
       }
     }
+    if (!result.delegated && result.responded && result.mode) {
+      const localLabel = result.mode === 'self-nero' ? 'self + nero' : result.mode;
+      cb.dispatch({ type: 'info', message: `Cesar → ${localLabel}` });
+    }
     if (result.responded) return false;
   } catch (e) { console.warn(`[agon] dispatch: Cesar brain threw: ${e instanceof Error ? e.message : String(e)}`); }
   
@@ -639,7 +650,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
   return false;
 }
 
-// @kern-source: dispatch:590
+// @kern-source: dispatch:597
 /**
  * Route a parsed intent to the correct handler. Registry-first, switch as fallback.
  */
@@ -1512,7 +1523,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
   return { handled: true, ranAsJob: false };
 }
 
-// @kern-source: dispatch:1466
+// @kern-source: dispatch:1473
 /**
  * Build executor callbacks. Holds a closure on the latest plan reference (mutated via onPlanUpdate) so step lookups always see appended steps like the auto-review cycle (tribunal fix #10). FU-3: persistence is debounced 300ms to avoid the sync-write storm Doppelganger flagged — onPlanUpdate fires once per step in a hot loop, but the disk write happens at most ~3x/sec. Terminal states (done/paused/cancelled) flush immediately so the .md/.json on disk reflect the final state. Callers should invoke .flush() before exit to drain any pending write.
  */
@@ -1589,7 +1600,7 @@ export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks
   };
 }
 
-// @kern-source: dispatch:1541
+// @kern-source: dispatch:1548
 /**
  * FU-4: shared executor for the auto-approve, manual-approve, and plan-resume paths. Wires the abort controller, builds callbacks (with debounced persistence), runs executePlan, runs finalizePlanWithReviewGate, and dispatches the terminal status. Eliminates the ~60 lines of triplication that lived in dispatch.kern and forced future changes (e.g., new callback hooks, new finalize behavior) to be applied to all three sites.
  */
@@ -1626,7 +1637,7 @@ export async function executeApprovedPlan(approved: CesarPlan, cb: DispatchCallb
   }
 }
 
-// @kern-source: dispatch:1576
+// @kern-source: dispatch:1583
 /**
  * Single source of truth for the post-execution self-review gate. Called from BOTH the plan-task and plan-resume terminal paths so resume cannot bypass the gate or the cycle cap (tribunal fix #4).
  */
@@ -1720,4 +1731,3 @@ export async function finalizePlanWithReviewGate(finalPlan: CesarPlan, executors
   
   return reviewedPlan;
 }
-

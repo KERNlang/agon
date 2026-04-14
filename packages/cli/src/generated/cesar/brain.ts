@@ -12,7 +12,7 @@ import type { ToolContext, ToolCallResult } from '@agon/core';
 
 import { ENGINE_COLORS } from '../blocks/output-format.js';
 
-import type { Dispatch, HandlerContext, PendingDelegation } from '../../handlers/types.js';
+import type { Dispatch, HandlerContext, PendingDelegation, CesarTurnOutcome } from '../../handlers/types.js';
 
 import { CONFIDENCE_TIERS, parseConfidence, confidenceBadge } from './confidence.js';
 
@@ -53,7 +53,7 @@ export function extractDelegation(toolName: string, args: Record<string,unknown>
   };
 }
 
-export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input: string, response: string, cesarEngineId: string, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, fitnessCmd?:string, hardened?:boolean, tribunalMode?:string, team?:boolean, target?:string, engineId?:string, engines?:string[], taskKind?:'edit'|'investigate', maxTurns?:number}> {
+export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input: string, response: string, cesarEngineId: string, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext): Promise<CesarTurnOutcome> {
   if (streaming) dispatch({ type: 'streaming-end', engineId: cesarEngineId });
   if (!streaming) dispatch({ type: 'spinner-stop' });
   await yieldToInk();
@@ -65,12 +65,12 @@ export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input
     const finalAction = delResult.action ?? pendingDel.action;
     const action = pendingDel.team ? `team-${finalAction}` : finalAction;
     const reasoning = delResult.userContext ? `${pendingDel.reasoning ?? ''}\n\nUser context: ${delResult.userContext}` : pendingDel.reasoning;
-    return { delegated: true, responded: true, action, reasoning, fitnessCmd: pendingDel.fitnessCmd, hardened: delResult.hardened ?? pendingDel.hardened, tribunalMode: delResult.tribunalMode ?? pendingDel.tribunalMode, team: delResult.team ?? pendingDel.team, target: pendingDel.target, engineId: pendingDel.engineId, engines: pendingDel.engines, taskKind: pendingDel.taskKind, maxTurns: pendingDel.maxTurns };
+    return { mode: action as any, delegated: true, responded: true, action, reasoning, decisionReason: 'tool-delegation', fitnessCmd: pendingDel.fitnessCmd, hardened: delResult.hardened ?? pendingDel.hardened, tribunalMode: delResult.tribunalMode ?? pendingDel.tribunalMode, team: delResult.team ?? pendingDel.team, target: pendingDel.target, engineId: pendingDel.engineId, engines: pendingDel.engines, taskKind: pendingDel.taskKind, maxTurns: pendingDel.maxTurns };
   }
-  return { delegated: false, responded: true };
+  return { delegated: false, responded: true, decisionReason: 'delegation-cancelled' };
 }
 
-export async function commitTurnAndSuggest(suggestion: {action:string, rest?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}, input: string, response: string, cesarEngineId: string, color: number, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}> {
+export async function commitTurnAndSuggest(suggestion: {action:string, rest?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}, input: string, response: string, cesarEngineId: string, color: number, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext): Promise<CesarTurnOutcome> {
   if (streaming) dispatch({ type: 'streaming-end', engineId: cesarEngineId });
   if (!streaming) dispatch({ type: 'spinner-stop' });
   await yieldToInk();
@@ -82,12 +82,12 @@ export async function commitTurnAndSuggest(suggestion: {action:string, rest?:str
   if (delResult.approved) {
     const finalAction = delResult.action ?? suggestion.action;
     const reasoning = delResult.userContext ? `${suggestion.rest ?? ''}\n\nUser context: ${delResult.userContext}` : suggestion.rest;
-    return { delegated: true, responded: true, action: finalAction, reasoning, hardened: delResult.hardened ?? suggestion.hardened, tribunalMode: delResult.tribunalMode ?? suggestion.tribunalMode, team: delResult.team ?? suggestion.team };
+    return { mode: finalAction as any, delegated: true, responded: true, action: finalAction, reasoning, decisionReason: 'suggestion-marker', hardened: delResult.hardened ?? suggestion.hardened, tribunalMode: delResult.tribunalMode ?? suggestion.tribunalMode, team: delResult.team ?? suggestion.team };
   }
-  return { delegated: false, responded: true };
+  return { delegated: false, responded: true, decisionReason: 'suggestion-cancelled' };
 }
 
-export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, fitnessCmd?:string, hardened?:boolean, tribunalMode?:string, team?:boolean, target?:string, engineId?:string, engines?:string[], taskKind?:'edit'|'investigate', maxTurns?:number}> {
+export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<CesarTurnOutcome> {
   const abort = new AbortController();
   const _turnStart = Date.now();
   const _toolsUsed: string[] = [];
@@ -201,7 +201,8 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
     let confidenceParsed = false;
     let insideThinkBlock = false;
     let hadToolActivity = false; // tracks if native tool calls were shown to user
-    let secondOpinionPromise: Promise<any> | null = null;
+  let secondOpinionPromise: Promise<any> | null = null;
+  let usedQuickNero = false;
     const eagerPromises: Promise<ToolCallResult>[] = [];
     let eagerToolCtx: ToolContext | null = null;
   
@@ -452,7 +453,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         // Fall through to process whatever response we have
       } else {
         dispatch({ type: 'warning', message: 'Cesar session error — will restart on next message' });
-        return { delegated: false, responded: false };
+        return { delegated: false, responded: false, decisionReason: 'stream-error' };
       }
     }
   
@@ -464,9 +465,9 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       const elapsed = Math.round((Date.now() - _turnStart) / 1000);
       if (elapsed >= cesarTimeout) {
         dispatch({ type: 'warning', message: `Cesar timed out after ${elapsed}s. Try a simpler question, or use /forge for complex tasks.` });
-        return { delegated: false, responded: true };
-      }
-      return { delegated: false, responded: false };
+      return { mode: 'self', delegated: false, responded: true, decisionReason: 'timeout-preserved-partial' };
+    }
+    return { delegated: false, responded: false, decisionReason: 'aborted' };
     }
   
     response = response.trim();
@@ -716,10 +717,11 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       await yieldToInk();
       const qnResult = await fireQuickNero(session, response, input, parsedConfidence, dispatch, abort.signal, ctx);
       dispatch({ type: 'spinner-stop' });
-      if (qnResult.challenged && qnResult.challengeText) {
-        dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: `**Self-challenge:**\n${qnResult.challengeText}` });
-        _deferredChallenges.push({ engineId: cesarEngineId, content: `[quick-nero] ${qnResult.challengeText}` });
-      }
+    if (qnResult.challenged && qnResult.challengeText) {
+      dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: `**Self-challenge:**\n${qnResult.challengeText}` });
+      _deferredChallenges.push({ engineId: cesarEngineId, content: `[quick-nero] ${qnResult.challengeText}` });
+    }
+    usedQuickNero = true;
       if (qnResult.newConfidence !== null && qnResult.newConfidence !== parsedConfidence) {
         parsedConfidence = qnResult.newConfidence;
         dispatch({ type: 'info', message: confidenceBadge(parsedConfidence) + (qnResult.newConfidence < parsedConfidence ? ' Confidence adjusted' : ' Confidence confirmed') });
@@ -837,7 +839,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         if (ctx.cesar!.proposedPlan) {
           appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
           appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
-          return { delegated: false, responded: true };
+          return { mode: 'plan', delegated: false, responded: true, decisionReason: 'plan-proposed' };
         }
         if (planResponse.trim()) {
           dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: planResponse.trim() });
@@ -879,13 +881,14 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       try {
         const tracePath = join(RUNS_DIR, 'cesar-trace.jsonl');
         const taskClass = classifyTask(input);
-        appendFileSync(tracePath, JSON.stringify({
-          ts: new Date().toISOString(), engineId: cesarEngineId, backend: (config as any).cesarBackend ?? 'auto',
-          durationMs: Date.now() - _turnStart, inputLen: input.length, responseLen: response.length, taskClass,
-          toolsUsed: _toolsUsed.length > 0 ? _toolsUsed : undefined, toolCount: _toolsUsed.length, delegated: false,
-          confidence: parsedConfidence,
-          tokens: tokenUsage ? { prompt: tokenUsage.promptTokens, response: tokenUsage.responseTokens, cost: tokenUsage.costUsd } : undefined,
-        }) + '\n');
+      appendFileSync(tracePath, JSON.stringify({
+        ts: new Date().toISOString(), engineId: cesarEngineId, backend: (config as any).cesarBackend ?? 'auto',
+        durationMs: Date.now() - _turnStart, inputLen: input.length, responseLen: response.length, taskClass,
+        mode: usedQuickNero ? 'self-nero' : 'self', decisionReason: usedQuickNero ? 'self-challenge' : 'self-executed',
+        toolsUsed: _toolsUsed.length > 0 ? _toolsUsed : undefined, toolCount: _toolsUsed.length, delegated: false,
+        confidence: parsedConfidence,
+        tokens: tokenUsage ? { prompt: tokenUsage.promptTokens, response: tokenUsage.responseTokens, cost: tokenUsage.costUsd } : undefined,
+      }) + '\n');
       } catch { /* tracing is best-effort */ }
   
       // Auto-remember
@@ -920,13 +923,13 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         }
       }
   
-      return { delegated: false, responded: true };
+      return { mode: usedQuickNero ? 'self-nero' : 'self', delegated: false, responded: true, decisionReason: usedQuickNero ? 'self-challenge' : 'self-executed' };
     } else {
       dispatch({ type: 'spinner-stop' });
     }
   
     // Native tool activity counts as a response — the user saw tool calls in the UI
-    return { delegated: false, responded: hadToolActivity || ranToolLoop };
+    return { mode: usedQuickNero ? 'self-nero' : 'self', delegated: false, responded: hadToolActivity || ranToolLoop, decisionReason: hadToolActivity || ranToolLoop ? (usedQuickNero ? 'tool-loop-self-challenge' : 'tool-loop-self') : 'empty-turn' };
   } finally {
     ctx.eventBus?.emit('post:cesar-brain', { durationMs: Date.now() - _brainStartMs }).catch(() => {});
     ctx.cesar!.busy = false;

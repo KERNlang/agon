@@ -92,24 +92,33 @@ export function buildRoutingContext(input: string, ctx: HandlerContext): string 
   try {
     const thread = loadOrCreateActiveThread(resolveWorkingDir());
     const allMsgs = thread.getAllMessages().filter((m: any) => m.role !== 'system');
-    const recent = allMsgs.slice(-8); // last 8 messages covers several turns
+    // Give the routing brain a substantial view of the session — at minimum
+    // the last 20 messages, with full content for forge/brainstorm/tribunal
+    // outcomes so routing decisions are informed by actual prior results.
+    // With 1M windows, the routing brain can afford this context.
+    const recent = allMsgs.slice(-20);
     if (recent.length > 0) {
       const summary = recent.map((m: any) => {
         const who = m.role === 'user' ? 'User' : (m.engineId ?? 'Assistant');
-        const content = (m.content ?? '').replace(/\s+/g, ' ');
+        const content = (m.content ?? '').replace(/\n{3,}/g, '\n\n'); // collapse excess newlines
+        // Outcome messages (forge/brainstorm/tribunal results) get full content —
+        // these are the most important for intelligent routing decisions.
         const isOutcome = /^\[(forge|brainstorm|tribunal|campfire|agent|pipeline|team-\w+)/.test(content);
-        const maxLen = isOutcome ? 400 : 150;
+        const isTool = m.role === 'tool';
+        // Tool results in routing context: include but cap at 2k (they exist
+        // for completeness; the full version is in agent historyMessages).
+        const maxLen = isOutcome ? 8000 : isTool ? 2000 : 600;
         const snippet = content.slice(0, maxLen);
-        return `${who}: ${snippet}${content.length > maxLen ? '…' : ''}`;
+        return `${who}: ${snippet}${content.length > maxLen ? `\n[... ${content.length - maxLen} chars omitted]` : ''}`;
       }).join('\n---\n');
-      parts.push(`SESSION CONTEXT (last ${recent.length} messages incl. slash command outcomes):\n${summary}`);
+      parts.push(`SESSION CONTEXT (last ${recent.length} messages — forge/agent/brainstorm outcomes included fully):\n${summary}`);
     }
   } catch { /* non-fatal — routing works without thread context */ }
   
   return parts.join('\n');
 }
 
-// @kern-source: routing:105
+// @kern-source: routing:114
 /**
  * Pure, zero-LLM-cost classification: should this /agent request run as a team (parallel engines) rather than solo? Returns true when the task pattern suggests cross-module fan-out AND at least 2 API engines are available. Based on the same FANOUT_RE/scopeDirSpread signals that buildRoutingContext includes in the Cesar prompt — but exported so dispatch can use them without a full brain call.
  */

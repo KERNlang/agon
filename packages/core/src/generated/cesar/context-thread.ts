@@ -212,25 +212,25 @@ export interface ThreadSnapshot {
 // @kern-source: context-thread:220
 export const SCHEMA_VERSION: number = 1;
 
-// @kern-source: context-thread:229
-export const MAX_MESSAGES_HARD_CAP: number = 500;
+// @kern-source: context-thread:230
+export const MAX_MESSAGES_HARD_CAP: number = 2000;
 
-// @kern-source: context-thread:234
-export const EVICT_TO: number = 400;
+// @kern-source: context-thread:235
+export const EVICT_TO: number = 1800;
 
-// @kern-source: context-thread:242
-export const MAX_PER_MESSAGE_TOKENS: number = 4000;
+// @kern-source: context-thread:245
+export const MAX_PER_MESSAGE_TOKENS: number = 30000;
 
-// @kern-source: context-thread:250
-export const KEEP_LAST_K: number = 10;
+// @kern-source: context-thread:253
+export const KEEP_LAST_K: number = 30;
 
-// @kern-source: context-thread:259
-export const TOKEN_BUDGET_SAFETY_FACTOR: number = 0.75;
+// @kern-source: context-thread:261
+export const TOKEN_BUDGET_SAFETY_FACTOR: number = 0.85;
 
-// @kern-source: context-thread:267
-export const MAX_THREAD_FILE_BYTES: number = 10 * 1024 * 1024;
+// @kern-source: context-thread:270
+export const MAX_THREAD_FILE_BYTES: number = 100 * 1024 * 1024;
 
-// @kern-source: context-thread:282
+// @kern-source: context-thread:285
 export const SECRET_PATTERNS: RegExp[] = [
   // AWS access keys
   /\b(AKIA|ASIA)[0-9A-Z]{16}\b/g,
@@ -254,7 +254,7 @@ export const SECRET_PATTERNS: RegExp[] = [
   /-----BEGIN [A-Z ]+PRIVATE KEY-----[\s\S]+?-----END [A-Z ]+PRIVATE KEY-----/g,
 ] as RegExp[];
 
-// @kern-source: context-thread:308
+// @kern-source: context-thread:311
 export const SECRET_PATH_BLOCKLIST: string[] = [
   '.env', '.env.local', '.env.production', '.env.staging', '.env.development',
   'credentials.json', 'secrets.json', 'auth.json',
@@ -263,7 +263,7 @@ export const SECRET_PATH_BLOCKLIST: string[] = [
   '.netrc', '.pgpass', '.my.cnf',
 ] as string[];
 
-// @kern-source: context-thread:319
+// @kern-source: context-thread:322
 /**
  * Check if a file path is known to contain secrets. Used by redactSecrets to replace tool-output of forbidden files with a stub before it ever lands in the thread.
  */
@@ -276,7 +276,7 @@ export function isSecretPath(path: string): boolean {
   return false;
 }
 
-// @kern-source: context-thread:330
+// @kern-source: context-thread:333
 /**
  * Apply the secret-pattern regex set to content, replacing any matches with a '[REDACTED-SECRET]' marker. O(n) per pattern; cheap relative to an LLM call.
  */
@@ -289,7 +289,7 @@ export function redactSecrets(content: string): string {
   return out;
 }
 
-// @kern-source: context-thread:341
+// @kern-source: context-thread:344
 /**
  * Redact-in-place pass for a ThreadMessage before it's appended to the thread. Handles content, toolOutput, and path-blocklist short-circuit for Read tool results.
  */
@@ -311,7 +311,7 @@ export function redactMessage(msg: ThreadMessage): ThreadMessage {
   return { ...msg, content: redacted };
 }
 
-// @kern-source: context-thread:363
+// @kern-source: context-thread:366
 /**
  * Rough token estimate for a ThreadMessage. 1 token ~= 4 chars. Intentionally conservative — we'd rather fit under budget than overshoot.
  */
@@ -329,7 +329,7 @@ export function estimateMessageTokens(msg: ThreadMessage): number {
   return Math.ceil(chars / 4) + 8; // +8 for role+framing overhead
 }
 
-// @kern-source: context-thread:379
+// @kern-source: context-thread:382
 /**
  * Truncate a string so it fits in maxTokens (at ~4 chars/token). Appends a marker so the reader knows truncation happened.
  */
@@ -344,7 +344,7 @@ export function truncateContent(content: string, maxTokens: number): string {
     + content.slice(content.length - tail);
 }
 
-// @kern-source: context-thread:394
+// @kern-source: context-thread:397
 /**
  * Convert a ThreadMessage into the loop's native {role,content,tool_calls?,tool_call_id?} shape. If budgetTokens is set and msg would overflow it, content is truncated inline.
  */
@@ -369,7 +369,7 @@ export function threadMessageToLoop(msg: ThreadMessage, budgetTokens?: number): 
   return out;
 }
 
-// @kern-source: context-thread:417
+// @kern-source: context-thread:420
 /**
  * Convert a runApiAgentLoop history entry ({role,content,tool_calls?,tool_call_id?}) into a ThreadMessage with provenance. Used by the onHistoryEntry callback.
  */
@@ -394,7 +394,7 @@ export function loopEntryToThreadMessage(entry: Record<string,unknown>, engineId
   return msg;
 }
 
-// @kern-source: context-thread:442
+// @kern-source: context-thread:445
 /**
  * One persistent conversation thread scoped to a project. Per-instance state — no singleton. Multiple instances pointing at the same file will race on save(); caller is responsible for serialization in v1.
  */
@@ -986,12 +986,12 @@ export class ContextThread {
   }
 }
 
-// @kern-source: context-thread:1069
+// @kern-source: context-thread:1072
 export interface ActivePointerMap {
   byProject: Record<string,string>;
 }
 
-// @kern-source: context-thread:1072
+// @kern-source: context-thread:1075
 export function loadActivePointer(): ActivePointerMap {
   try {
     const path = activePointerPath();
@@ -1008,7 +1008,7 @@ export function loadActivePointer(): ActivePointerMap {
   return { byProject: {} };
 }
 
-// @kern-source: context-thread:1089
+// @kern-source: context-thread:1092
 export function saveActivePointer(pointer: ActivePointerMap): void {
   ensureAgonHome();
   const path = activePointerPath();
@@ -1018,13 +1018,13 @@ export function saveActivePointer(pointer: ActivePointerMap): void {
   renameSync(tmpPath, path);
 }
 
-// @kern-source: context-thread:1104
+// @kern-source: context-thread:1107
 export const _exitFlushRegistry: Set<WeakRef<any>> = new Set<WeakRef<any>>();
 
-// @kern-source: context-thread:1109
+// @kern-source: context-thread:1112
 export const _exitHandlerRegistered: {value:boolean} = { value: false };
 
-// @kern-source: context-thread:1114
+// @kern-source: context-thread:1117
 export function _registerExitFlush(thread: ContextThread): void {
   _exitFlushRegistry.add(new WeakRef(thread));
   if (_exitHandlerRegistered.value) return;
@@ -1058,7 +1058,7 @@ export function _registerExitFlush(thread: ContextThread): void {
   });
 }
 
-// @kern-source: context-thread:1148
+// @kern-source: context-thread:1151
 /**
  * The canonical entry point for callers. Reads the active-pointer map, finds the current thread for this project (or creates one), hydrates it, and writes the pointer back if a new thread was created. Returns a ready-to-use ContextThread. Phase A.5: registers the thread with the process-exit flush registry so Ctrl+C saves partial work.
  */
@@ -1075,7 +1075,7 @@ export function loadOrCreateActiveThread(projectPath: string, systemPrompt?: str
   return thread;
 }
 
-// @kern-source: context-thread:1163
+// @kern-source: context-thread:1166
 /**
  * Start a new thread for a project (abandoning the previous active pointer). Used when the user explicitly wants a fresh context — e.g. a /agent --new-thread flag. The old thread file remains on disk for history.
  */
@@ -1088,7 +1088,7 @@ export function forkActiveThread(projectPath: string, systemPrompt?: string): Co
   return thread;
 }
 
-// @kern-source: context-thread:1174
+// @kern-source: context-thread:1177
 /**
  * List every thread-file uuid that exists on disk for this project. Used by a future /threads command to let the user browse or fork past conversations.
  */
@@ -1105,7 +1105,7 @@ export function listThreadsForProject(projectPath: string): string[] {
   }
 }
 
-// @kern-source: context-thread:1202
+// @kern-source: context-thread:1205
 export interface SummarizeOptions {
   thread: ContextThread;
   api: any;
@@ -1113,7 +1113,7 @@ export interface SummarizeOptions {
   label?: string;
 }
 
-// @kern-source: context-thread:1208
+// @kern-source: context-thread:1211
 /**
  * Summarize the oldest N messages in the thread using a single cheap LLM call. Records the result as a ThreadCheckpoint. Non-destructive — original messages are preserved. Returns the checkpoint on success, null on API failure.
  */
@@ -1156,7 +1156,7 @@ export async function summarizeOlderMessages(opts: SummarizeOptions): Promise<Th
   }
 }
 
-// @kern-source: context-thread:1249
+// @kern-source: context-thread:1252
 /**
  * Delete a thread file from disk. Idempotent — returns false if the file didn't exist. Does NOT update active.json; caller must fork a new thread if deleting the currently active one.
  */

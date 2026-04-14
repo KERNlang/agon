@@ -33,6 +33,7 @@ screen name=ComposerView target=ink memo=true
   prop name=questionAnswer type=string
   prop name=onQuestionAnswerChange type="(value:string) => void"
   prop name=onQuestionAnswerSubmit type="(value:string) => void"
+  prop name=onCtrlShortcut type="(shortcut:string) => void"
   render
     handler <<<
       const placeholder = replState === 'idle'
@@ -57,7 +58,7 @@ screen name=ComposerView target=ink memo=true
                   <Text dimColor>{inputValue || '/'}</Text>
                 ) : (
                   <>
-                    <MemoTextInput key={inputKey} value={inputValue} onChange={handleInputChange} onSubmit={handleSubmit} placeholder={placeholder} />
+                    <MemoTextInput key={inputKey} value={inputValue} onChange={handleInputChange} onSubmit={handleSubmit} onCtrlShortcut={onCtrlShortcut} placeholder={placeholder} />
                     {ghost && <Text dimColor>{ghost}</Text>}
                   </>
                 )}
@@ -74,7 +75,7 @@ screen name=ComposerView target=ink memo=true
                   ))}
                 </Box>
               ) : (
-                <Box paddingLeft={2}><MemoTextInput value={questionAnswer} onChange={onQuestionAnswerChange} onSubmit={onQuestionAnswerSubmit} /></Box>
+                <Box paddingLeft={2}><MemoTextInput value={questionAnswer} onChange={onQuestionAnswerChange} onSubmit={onQuestionAnswerSubmit} onCtrlShortcut={onCtrlShortcut} /></Box>
               )}
             </Box>
           )}

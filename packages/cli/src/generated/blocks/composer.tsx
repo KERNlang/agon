@@ -10,7 +10,7 @@ import { icons } from '../signals/icons.js';
 
 import { getGhostCompletion } from '../../ghost-text.js';
 
-const ComposerView = React.memo(function ComposerView({ mode, replState, planModeQueued, activePlanState, slashPickerOpen, inputValue, inputKey, handleInputChange, handleSubmit, allSlashCommands, availableEngines, onSlashSelect, onSlashCancel, questionState, questionAnswer, onQuestionAnswerChange, onQuestionAnswerSubmit }: { mode:'chat'|'campfire'|'brainstorm'|'tribunal'; replState:string; planModeQueued:boolean; activePlanState:string|null; slashPickerOpen:boolean; inputValue:string; inputKey:number; handleInputChange:(value:string) => void; handleSubmit:(value:string) => void; allSlashCommands:any[]; availableEngines:string[]; onSlashSelect:(cmd:string) => void; onSlashCancel:() => void; questionState:any; questionAnswer:string; onQuestionAnswerChange:(value:string) => void; onQuestionAnswerSubmit:(value:string) => void }) {
+const ComposerView = React.memo(function ComposerView({ mode, replState, planModeQueued, activePlanState, slashPickerOpen, inputValue, inputKey, handleInputChange, handleSubmit, allSlashCommands, availableEngines, onSlashSelect, onSlashCancel, questionState, questionAnswer, onQuestionAnswerChange, onQuestionAnswerSubmit, onCtrlShortcut }: { mode:'chat'|'campfire'|'brainstorm'|'tribunal'; replState:string; planModeQueued:boolean; activePlanState:string|null; slashPickerOpen:boolean; inputValue:string; inputKey:number; handleInputChange:(value:string) => void; handleSubmit:(value:string) => void; allSlashCommands:any[]; availableEngines:string[]; onSlashSelect:(cmd:string) => void; onSlashCancel:() => void; questionState:any; questionAnswer:string; onQuestionAnswerChange:(value:string) => void; onQuestionAnswerSubmit:(value:string) => void; onCtrlShortcut:(shortcut:string) => void }) {
   const placeholder = replState === 'idle'
     ? (mode === 'chat'
         ? ''
@@ -33,7 +33,7 @@ const ComposerView = React.memo(function ComposerView({ mode, replState, planMod
               <Text dimColor>{inputValue || '/'}</Text>
             ) : (
               <>
-                <MemoTextInput key={inputKey} value={inputValue} onChange={handleInputChange} onSubmit={handleSubmit} placeholder={placeholder} />
+                <MemoTextInput key={inputKey} value={inputValue} onChange={handleInputChange} onSubmit={handleSubmit} onCtrlShortcut={onCtrlShortcut} placeholder={placeholder} />
                 {ghost && <Text dimColor>{ghost}</Text>}
               </>
             )}
@@ -50,7 +50,7 @@ const ComposerView = React.memo(function ComposerView({ mode, replState, planMod
               ))}
             </Box>
           ) : (
-            <Box paddingLeft={2}><MemoTextInput value={questionAnswer} onChange={onQuestionAnswerChange} onSubmit={onQuestionAnswerSubmit} /></Box>
+            <Box paddingLeft={2}><MemoTextInput value={questionAnswer} onChange={onQuestionAnswerChange} onSubmit={onQuestionAnswerSubmit} onCtrlShortcut={onCtrlShortcut} /></Box>
           )}
         </Box>
       )}

@@ -18,7 +18,7 @@ import { setAuthKey, getAuthKey, loadConfig, configSet } from '@agon/core';
 
 import type { CliModelEntry, CliProviderGroup } from '@agon/core';
 
-import { getCliModelsGrouped } from '@agon/core';
+import { buildCliModelGroups } from '@agon/core';
 
 export interface ReviewEvent {
   winnerId: string;
@@ -54,6 +54,8 @@ export function SlashPicker({ commands, onSelect, onCancel }: { commands:typeof 
   const currentIndex = filtered.length === 0 ? 0 : Math.min(selectedIndex, filtered.length - 1);
   
   useInput((input: string, key: any) => {
+    const isForwardDelete = input === '\x1b[3~';
+    const isBackspace = !isForwardDelete && (key.backspace || key.delete || input === '\x7f' || input === '\b' || input === '\x08');
     if (key.escape || (key.ctrl && input === 'c')) { onCancel(); return; }
     if (key.return) {
       if (filtered[currentIndex]) onSelect(filtered[currentIndex].cmd);
@@ -61,7 +63,7 @@ export function SlashPicker({ commands, onSelect, onCancel }: { commands:typeof 
     }
     if (key.upArrow) { setSelectedIndex(movePickerCursor('up', currentIndex, filtered.length)); return; }
     if (key.downArrow) { setSelectedIndex(movePickerCursor('down', currentIndex, filtered.length)); return; }
-    if (key.backspace || key.delete) {
+    if (isBackspace || isForwardDelete) {
       if (!filter) { onCancel(); return; }
       setFilter((f: string) => f.slice(0, -1));
       setSelectedIndex(0);
@@ -136,6 +138,8 @@ export function EnginePicker({ available, initialSelected, userEngines, modelOve
   ), [available, selected, userEngines, hidden]);
   
   useInput((input: string, key: any) => {
+    const isForwardDelete = input === '\x1b[3~';
+    const isBackspace = !isForwardDelete && (key.backspace || key.delete || input === '\x7f' || input === '\b' || input === '\x08');
     if (phase === 'type-model') {
       const id = visible[cursor];
       if (!id) { setPhase('select'); setModelInput(''); return; }
@@ -146,7 +150,7 @@ export function EnginePicker({ available, initialSelected, userEngines, modelOve
         setModelInput('');
         return;
       }
-      if (key.backspace || key.delete) { setModelInput((v: string) => v.slice(0, -1)); return; }
+      if (isBackspace || isForwardDelete) { setModelInput((v: string) => v.slice(0, -1)); return; }
       if (input && !key.ctrl && !key.meta && input.length === 1 && input >= ' ') {
         setModelInput((v: string) => v + input);
       }
@@ -320,6 +324,8 @@ export function ModelPicker({ entries, onSelect, onCancel, loading, initialFilte
   }, [entries, filter]);
   
   useInput((input: string, key: any) => {
+    const isForwardDelete = input === '\x1b[3~';
+    const isBackspace = !isForwardDelete && (key.backspace || key.delete || input === '\x7f' || input === '\b' || input === '\x08');
     if (phase === 'apikey') {
       if (key.escape) { setPhase('search'); setSelectedEntry(null); setApiKeyInput(''); return; }
       if (key.return && apiKeyInput.trim()) {
@@ -334,7 +340,7 @@ export function ModelPicker({ entries, onSelect, onCancel, loading, initialFilte
         onSelect(selectedEntry!);
         return;
       }
-      if (key.backspace || key.delete) { setApiKeyInput((v: string) => v.slice(0, -1)); return; }
+      if (isBackspace || isForwardDelete) { setApiKeyInput((v: string) => v.slice(0, -1)); return; }
       if (input && !key.ctrl && !key.meta) {
         // Strip bracketed paste escape sequences (\e[200~ and \e[201~)
         const clean = input.replace(/\x1b\[200~/g, '').replace(/\x1b\[201~/g, '').replace(/\[200~/g, '').replace(/\[201~/g, '');
@@ -360,7 +366,7 @@ export function ModelPicker({ entries, onSelect, onCancel, loading, initialFilte
     }
     if (key.upArrow) { setCursor((i: number) => Math.max(0, i - 1)); return; }
     if (key.downArrow) { setCursor((i: number) => Math.min(filtered.length - 1, i + 1)); return; }
-    if (key.backspace || key.delete) {
+    if (isBackspace || isForwardDelete) {
       setFilter((f: string) => f.slice(0, -1));
       setCursor(0);
       return;
@@ -513,6 +519,8 @@ export function CesarPicker({ engines, currentCesar, onSelect, onCancel }: { eng
   }, [engines, filter]);
   
   useInput((input: string, key: any) => {
+    const isForwardDelete = input === '\x1b[3~';
+    const isBackspace = !isForwardDelete && (key.backspace || key.delete || input === '\x7f' || input === '\b' || input === '\x08');
     if (key.escape || (key.ctrl && input === 'c')) { onCancel(); return; }
     if (key.return) {
       if (filtered[cursor]) onSelect(filtered[cursor]);
@@ -520,7 +528,7 @@ export function CesarPicker({ engines, currentCesar, onSelect, onCancel }: { eng
     }
     if (key.upArrow) { setCursor((i: number) => Math.max(0, i - 1)); return; }
     if (key.downArrow) { setCursor((i: number) => Math.min(filtered.length - 1, i + 1)); return; }
-    if (key.backspace || key.delete) {
+    if (isBackspace || isForwardDelete) {
       setFilter((f: string) => f.slice(0, -1));
       setCursor(0);
       return;

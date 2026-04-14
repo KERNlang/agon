@@ -109,12 +109,12 @@ export function getSlashMatches(filter: string, commands: any[]): any[] {
 }
 
 /**
- * Move a picker cursor within bounds.
+ * Move a picker cursor with wrap-around.
  */
 export function movePickerCursor(direction: 'up'|'down', currentIndex: number, itemCount: number): number {
   if (itemCount <= 0) return 0;
-  if (direction === 'up') return Math.max(0, currentIndex - 1);
-  return Math.min(itemCount - 1, currentIndex + 1);
+  if (direction === 'up') return currentIndex <= 0 ? itemCount - 1 : currentIndex - 1;
+  return currentIndex >= itemCount - 1 ? 0 : currentIndex + 1;
 }
 
 /**

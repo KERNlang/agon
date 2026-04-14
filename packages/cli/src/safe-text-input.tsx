@@ -36,6 +36,7 @@ type Props = {
   showCursor?: boolean;
   onChange: (value: string) => void;
   onSubmit?: (value: string) => void;
+  onCtrlShortcut?: (shortcut: string) => void;
 };
 
 function isWordChar(char: string | undefined): boolean {
@@ -98,6 +99,7 @@ function SafeTextInputImpl({
   showCursor = true,
   onChange,
   onSubmit,
+  onCtrlShortcut,
 }: Props) {
   const [state, setState] = useState({
     cursorOffset: (originalValue || '').length,
@@ -140,6 +142,8 @@ function SafeTextInputImpl({
 
   useInput(
     (input, key) => {
+      const isForwardDelete = input === '\x1b[3~';
+      const isBackspace = !isForwardDelete && (key.backspace || key.delete || input === '\x7f' || input === '\b' || input === '\x08');
       const extendedKey = key as typeof key & { home?: boolean; end?: boolean };
       const normalizedCtrlInput = key.ctrl
         ? ({
@@ -155,19 +159,23 @@ function SafeTextInputImpl({
             '\x17': 'w',
           } as Record<string, string>)[input] ?? input
         : input;
-      const isReservedCtrlShortcut = key.ctrl && ['c', 'e', 'j', 'l', 'r', 't'].includes(normalizedCtrlInput);
+      const isReservedCtrlShortcut = key.ctrl && ['e', 'j', 'l', 'r', 't'].includes(normalizedCtrlInput);
       const isSupportedCtrlEditShortcut = key.ctrl && ['a', 'k', 'u', 'w'].includes(normalizedCtrlInput);
-      const isWordLeft = key.meta && (key.leftArrow || input === 'b');
-      const isWordRight = key.meta && (key.rightArrow || input === 'f');
-      const isDeleteWordBackward = (key.ctrl && normalizedCtrlInput === 'w') || (key.meta && key.backspace);
+      const isWordLeft = (key.meta && (key.leftArrow || input === 'b')) || input === '\x1bb';
+      const isWordRight = (key.meta && (key.rightArrow || input === 'f')) || input === '\x1bf';
+      const isDeleteWordBackward = (key.ctrl && normalizedCtrlInput === 'w') || (key.meta && isBackspace) || input === '\x1b\x7f';
 
       // Skip non-text navigation/control keys — let the parent App handle them.
+      if (isReservedCtrlShortcut) {
+        onCtrlShortcut?.(normalizedCtrlInput);
+        return;
+      }
+
       if (
         key.upArrow ||
         key.downArrow ||
         key.pageUp ||
         key.pageDown ||
-        isReservedCtrlShortcut ||
         key.tab ||
         (key.shift && key.tab)
       ) {
@@ -218,14 +226,14 @@ function SafeTextInputImpl({
       } else if (key.ctrl && normalizedCtrlInput === 'k') {
         const lineEnd = findLineEnd(originalValue, cursorOffset);
         nextValue = originalValue.slice(0, cursorOffset) + originalValue.slice(lineEnd);
-      } else if (key.backspace) {
+      } else if (isBackspace) {
         if (cursorOffset > 0) {
           nextValue =
             originalValue.slice(0, cursorOffset - 1) +
             originalValue.slice(cursorOffset, originalValue.length);
           nextCursorOffset--;
         }
-      } else if (key.delete) {
+      } else if (isForwardDelete) {
         if (cursorOffset < originalValue.length) {
           nextValue =
             originalValue.slice(0, cursorOffset) +

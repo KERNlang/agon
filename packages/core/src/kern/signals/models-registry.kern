@@ -1,5 +1,5 @@
 import from="node:fs" names="readFileSync,writeFileSync,mkdirSync,existsSync,statSync"
-import from="node:path" names="join"
+import from="node:path" names="join,resolve"
 import from="node:os" names="homedir"
 
 interface name=ModelsDevModel
@@ -35,14 +35,11 @@ interface name=ModelEntry
   field name=costOutput type=number optional=true
   field name=toolCall type=boolean optional=true
 
-const name=CACHE_DIR type=string
+fn name=getCacheDir returns=string export=false
   handler <<<
-    join(homedir(), '.agon', 'cache')
-  >>>
-
-const name=CACHE_FILE type=string
-  handler <<<
-    join(CACHE_DIR, 'models-dev.json')
+    const override = process.env.AGON_HOME?.trim();
+    const home = override ? resolve(override) : join(homedir(), '.agon');
+    return join(home, 'cache');
   >>>
 
 const name=CACHE_TTL_MS type=number value=3600000
@@ -54,13 +51,15 @@ const name=MODELS_DEV_URL type=string
 
 fn name=fetchModelsRegistry async=true returns="Promise<Record<string, ModelsDevProvider>>"
   handler <<<
+    const cacheDir = getCacheDir();
+    const cacheFile = join(cacheDir, 'models-dev.json');
     // Check cache first
-    if (existsSync(CACHE_FILE)) {
+    if (existsSync(cacheFile)) {
       try {
-        const stat = statSync(CACHE_FILE);
+        const stat = statSync(cacheFile);
         const age = Date.now() - stat.mtimeMs;
         if (age < CACHE_TTL_MS) {
-          return JSON.parse(readFileSync(CACHE_FILE, 'utf-8'));
+          return JSON.parse(readFileSync(cacheFile, 'utf-8'));
         }
       } catch (_e) { console.warn(`[agon] models-registry: cache read failed, refetching: ${_e instanceof Error ? _e.message : String(_e)}`); }
     }
@@ -69,8 +68,8 @@ fn name=fetchModelsRegistry async=true returns="Promise<Record<string, ModelsDev
     const response = await fetch(MODELS_DEV_URL);
     if (!response.ok) {
       // If fetch fails and cache exists (even stale), use it
-      if (existsSync(CACHE_FILE)) {
-        return JSON.parse(readFileSync(CACHE_FILE, 'utf-8'));
+      if (existsSync(cacheFile)) {
+        return JSON.parse(readFileSync(cacheFile, 'utf-8'));
       }
       throw new Error(`Failed to fetch models registry: ${response.status}`);
     }
@@ -78,8 +77,8 @@ fn name=fetchModelsRegistry async=true returns="Promise<Record<string, ModelsDev
     const data = await response.json() as Record<string, ModelsDevProvider>;
 
     // Write cache
-    mkdirSync(CACHE_DIR, { recursive: true });
-    writeFileSync(CACHE_FILE, JSON.stringify(data));
+    mkdirSync(cacheDir, { recursive: true });
+    writeFileSync(cacheFile, JSON.stringify(data));
 
     return data;
   >>>

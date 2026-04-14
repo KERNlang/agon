@@ -1,10 +1,17 @@
 import from="node:fs" names="readFileSync,writeFileSync,mkdirSync,readdirSync"
-import from="node:path" names="join"
-import from="./config.js" names="AGON_HOME"
+import from="node:path" names="join,resolve"
+import from="node:os" names="homedir"
+
+fn name=getFlowsDir returns=string export=false
+  handler <<<
+    const override = process.env.AGON_HOME?.trim();
+    const home = override ? resolve(override) : join(homedir(), '.agon');
+    return join(home, 'flows');
+  >>>
 
 const name=FLOWS_DIR type=string
   handler <<<
-    join(AGON_HOME, 'flows')
+    getFlowsDir()
   >>>
 
 const name=FRICTION_TAGS type="readonly string[]"
@@ -51,14 +58,14 @@ interface name=FlowRecord
 
 fn name=ensureFlowsDir params="" returns=void export=false
   handler <<<
-    mkdirSync(FLOWS_DIR, { recursive: true });
+    mkdirSync(getFlowsDir(), { recursive: true });
   >>>
 
 fn name=logFlow params="record:FlowRecord" returns=string
   handler <<<
     ensureFlowsDir();
     const filename = `flow-${record.id}.json`;
-    const filepath = join(FLOWS_DIR, filename);
+    const filepath = join(getFlowsDir(), filename);
     writeFileSync(filepath, JSON.stringify(record, null, 2));
     return filepath;
   >>>
@@ -68,7 +75,7 @@ fn name=readFlows params="limit?:number" returns="FlowRecord[]"
     ensureFlowsDir();
     let files: string[];
     try {
-      files = readdirSync(FLOWS_DIR)
+      files = readdirSync(getFlowsDir())
         .filter((f: string) => f.startsWith('flow-') && f.endsWith('.json'))
         .sort()
         .reverse();
@@ -82,7 +89,7 @@ fn name=readFlows params="limit?:number" returns="FlowRecord[]"
     const records: FlowRecord[] = [];
     for (const file of files) {
       try {
-        const data = JSON.parse(readFileSync(join(FLOWS_DIR, file), 'utf-8')) as FlowRecord;
+        const data = JSON.parse(readFileSync(join(getFlowsDir(), file), 'utf-8')) as FlowRecord;
         records.push(data);
       } catch (err) {
         console.warn(`[agon] skipping malformed flow record ${file}: ${err instanceof Error ? err.message : String(err)}`);

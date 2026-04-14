@@ -2,7 +2,7 @@
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync } from 'node:fs';
 
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 import { homedir } from 'node:os';
 
@@ -42,22 +42,26 @@ export interface ModelEntry {
   toolCall?: boolean;
 }
 
-export const CACHE_DIR: string = join(homedir(), '.agon', 'cache');
-
-export const CACHE_FILE: string = join(CACHE_DIR, 'models-dev.json');
+function getCacheDir(): string {
+  const override = process.env.AGON_HOME?.trim();
+  const home = override ? resolve(override) : join(homedir(), '.agon');
+  return join(home, 'cache');
+}
 
 export const CACHE_TTL_MS: number = 3600000;
 
 export const MODELS_DEV_URL: string = 'https://models.dev/api.json';
 
 export async function fetchModelsRegistry(): Promise<Record<string, ModelsDevProvider>> {
+  const cacheDir = getCacheDir();
+  const cacheFile = join(cacheDir, 'models-dev.json');
   // Check cache first
-  if (existsSync(CACHE_FILE)) {
+  if (existsSync(cacheFile)) {
     try {
-      const stat = statSync(CACHE_FILE);
+      const stat = statSync(cacheFile);
       const age = Date.now() - stat.mtimeMs;
       if (age < CACHE_TTL_MS) {
-        return JSON.parse(readFileSync(CACHE_FILE, 'utf-8'));
+        return JSON.parse(readFileSync(cacheFile, 'utf-8'));
       }
     } catch (_e) { console.warn(`[agon] models-registry: cache read failed, refetching: ${_e instanceof Error ? _e.message : String(_e)}`); }
   }
@@ -66,8 +70,8 @@ export async function fetchModelsRegistry(): Promise<Record<string, ModelsDevPro
   const response = await fetch(MODELS_DEV_URL);
   if (!response.ok) {
     // If fetch fails and cache exists (even stale), use it
-    if (existsSync(CACHE_FILE)) {
-      return JSON.parse(readFileSync(CACHE_FILE, 'utf-8'));
+    if (existsSync(cacheFile)) {
+      return JSON.parse(readFileSync(cacheFile, 'utf-8'));
     }
     throw new Error(`Failed to fetch models registry: ${response.status}`);
   }
@@ -75,8 +79,8 @@ export async function fetchModelsRegistry(): Promise<Record<string, ModelsDevPro
   const data = await response.json() as Record<string, ModelsDevProvider>;
   
   // Write cache
-  mkdirSync(CACHE_DIR, { recursive: true });
-  writeFileSync(CACHE_FILE, JSON.stringify(data));
+  mkdirSync(cacheDir, { recursive: true });
+  writeFileSync(cacheFile, JSON.stringify(data));
   
   return data;
 }

@@ -2,11 +2,17 @@
 
 import { readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
 
-import { dirname } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+
+import { homedir } from 'node:os';
 
 import type { GlickoRating, RatingRecord, EngineMeta, TaskClass } from '../models/types.js';
 
-import { RATINGS_PATH } from './config.js';
+function ratingsPath(): string {
+  const override = process.env.AGON_HOME?.trim();
+  const home = override ? resolve(override) : join(homedir(), '.agon');
+  return join(home, 'ratings.json');
+}
 
 export const GLICKO_SCALE: number = 173.7178;
 
@@ -47,7 +53,7 @@ export function defaultEngineMeta(): EngineMeta {
 
 export function loadRatings(): RatingRecord {
   try {
-    return JSON.parse(readFileSync(RATINGS_PATH, 'utf-8')) as RatingRecord;
+    return JSON.parse(readFileSync(ratingsPath(), 'utf-8')) as RatingRecord;
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
       console.warn(`[agon] failed to load ratings: ${err instanceof Error ? err.message : String(err)}`);
@@ -63,11 +69,12 @@ export function loadRatings(): RatingRecord {
 }
 
 export function saveRatings(record: RatingRecord): void {
-  mkdirSync(dirname(RATINGS_PATH), { recursive: true });
+  const path = ratingsPath();
+  mkdirSync(dirname(path), { recursive: true });
   record.lastUpdated = new Date().toISOString();
-  const tmpPath = RATINGS_PATH + '.tmp';
+  const tmpPath = path + '.tmp';
   writeFileSync(tmpPath, JSON.stringify(record, null, 2) + '\n');
-  renameSync(tmpPath, RATINGS_PATH);
+  renameSync(tmpPath, path);
 }
 
 /**

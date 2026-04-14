@@ -1,6 +1,6 @@
 import from="node:fs" names="writeFileSync,mkdirSync"
 import from="node:path" names="join"
-import from="@agon/core" names="createCesarPlan,formatCesarPlanMarkdown,planCostEstimator,resolveWorkingDir,RUNS_DIR,tracker,AGON_HOME,readPatchFromPath,applyPatchToTree"
+import from="@agon/core" names="createCesarPlan,formatCesarPlanMarkdown,planCostEstimator,resolveWorkingDir,RUNS_DIR,tracker,getAgonHome,readPatchFromPath,applyPatchToTree"
 import from="@agon/core" names="CesarPlan,CesarPlanStep,CesarStepResult,StepExecutor" types=true
 import from="@agon/forge" names="runForge,runBrainstorm,runTribunal,runCampfire,runDelegate"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext,EngineProgress" types=true
@@ -51,7 +51,7 @@ fn name=handleProposePlan params="args:any, dispatch:Dispatch, ctx:HandlerContex
     };
 
     const slug = args.intent.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40);
-    const plansDir = join(AGON_HOME, 'plans');
+    const plansDir = join(getAgonHome(), 'plans');
     const filePath = join(plansDir, `cesar-${Date.now()}-${slug}.md`);
     mkdirSync(plansDir, { recursive: true });
     writeFileSync(filePath, formatCesarPlanMarkdown(plan));

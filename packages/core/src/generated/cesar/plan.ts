@@ -2,7 +2,15 @@
 
 import { mkdirSync, writeFileSync, readFileSync, readdirSync, renameSync, unlinkSync } from 'node:fs';
 
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+
+import { homedir } from 'node:os';
+
+function runtimeAgonPath(...parts: string[]): string {
+  const override = process.env.AGON_HOME?.trim();
+  const home = override ? resolve(override) : join(homedir(), '.agon');
+  return join(home, ...parts);
+}
 
 export type CesarPlanState = 'planning' | 'awaiting_approval' | 'running' | 'paused' | 'done' | 'cancelled';
 
@@ -169,7 +177,7 @@ export function cancelCesarPlan(plan: CesarPlan): CesarPlan {
  * Persist a CesarPlan to ~/.agon/runs/<id>.json atomically. FU-8: write to a .tmp file then renameSync, so concurrent Agon sessions reading the same path observe either the old complete file or the new complete file — never a partial. POSIX rename within the same directory is atomic.
  */
 export function saveCesarPlan(plan: CesarPlan): void {
-  const dir = join(process.env.HOME ?? '', '.agon', 'runs');
+  const dir = runtimeAgonPath('runs');
   mkdirSync(dir, { recursive: true });
   const finalPath = join(dir, `${plan.id}.json`);
   // Unique tmp suffix so parallel saves of the SAME plan from different
@@ -188,7 +196,7 @@ export function saveCesarPlan(plan: CesarPlan): void {
  * Load a persisted CesarPlan from ~/.agon/runs/<id>.json.
  */
 export function loadCesarPlan(planId: string): CesarPlan|null {
-  const filePath = join(process.env.HOME ?? '', '.agon', 'runs', `${planId}.json`);
+  const filePath = runtimeAgonPath('runs', `${planId}.json`);
   try {
     return JSON.parse(readFileSync(filePath, 'utf-8'));
   } catch {
@@ -200,7 +208,7 @@ export function loadCesarPlan(planId: string): CesarPlan|null {
  * List all persisted CesarPlans from ~/.agon/runs/.
  */
 export function listCesarPlans(): CesarPlan[] {
-  const dir = join(process.env.HOME ?? '', '.agon', 'runs');
+  const dir = runtimeAgonPath('runs');
   try {
     const files = readdirSync(dir).filter((f: string) => f.startsWith('cplan-') && f.endsWith('.json'));
     return files.map((f: string) => {

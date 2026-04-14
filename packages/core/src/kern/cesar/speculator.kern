@@ -25,14 +25,15 @@
 //   - Build speculation "diff at any point" so streaming clients see a live
 //     preview of what an engine has changed so far.
 
-import from="node:crypto" names="randomUUID"
+import from="node:crypto" names="randomUUID,randomBytes"
 import from="../api/agent-loop.js" names="runApiAgentLoop"
 import from="../api/agent-loop.js" names="ApiAgentOptions,ApiAgentResult" types=true
 import from="../api/dispatch.js" names="ApiConfig" types=true
 import from="./context-thread.js" names="ContextThread" types=true
 import from="../forge/virtual-fs.js" names="VirtualFS,createFileSnapshot,scoreEffectPackage,applyEffectPackage"
 import from="../forge/virtual-fs.js" names="EffectPackage,FileSnapshot,FileEffect" types=true
-import from="node:path" names="resolve"
+import from="node:path" names="resolve,join"
+import from="../blocks/git.js" names="repoRoot,worktreeCreate,worktreeRemoveBestEffort,stashSnapshot"
 
 // ── Speculator configuration ──────────────────────────────────────────
 
@@ -54,6 +55,7 @@ interface name=SpeculatorOptions export=true
   field name=taskKeywords type="string[]" optional=true
   field name=onMemberStart type="(engineId:string)=>void" optional=true
   field name=onMemberComplete type="(pkg:EffectPackage,score:number)=>void" optional=true
+  field name=isolate type=boolean optional=true
 
 // ── Speculator result ─────────────────────────────────────────────────
 
@@ -81,18 +83,38 @@ service name=Speculator export=true
     >>>
 
   method name=run params="opts:SpeculatorOptions" returns="Promise<SpeculatorResult>" async=true
-    doc "Execute the speculative run. Creates a base snapshot, fans out to N parallel agent calls (each with its own VirtualFS), scores all EffectPackages, applies the winner's overlay to the real filesystem."
+    doc "Execute the speculative run. When isolate=true (default), each member gets its own git worktree so concurrent tool calls can't clobber each other. Creates a base snapshot, fans out to N parallel agent calls (each with its own VirtualFS), scores all EffectPackages, applies winner's diff to real filesystem via worktree."
     handler <<<
       const cwd = resolve(opts.cwd);
+      const isolate = opts.isolate !== false; // default true — critical for filesystem safety
+      const root = isolate ? repoRoot(cwd) : cwd;
       // Build the shared read-only snapshot once, shared by all members.
       this.snapshot = createFileSnapshot(cwd);
 
       const tokenBudget = 100_000;
       const candidates: EffectPackage[] = [];
       const scores: Record<string, number> = {};
+      const worktreesByEngine: Record<string, string> = {};
+
+      // Pre-create worktrees before fanning out so each agent has an isolated
+      // filesystem. If worktree creation fails for a member, skip that member
+      // rather than letting it write to the shared cwd.
+      if (isolate) {
+        const baseSha = stashSnapshot(root);
+        for (const member of opts.members) {
+          const wtPath = join(root, `.agon/speculate-worktrees/${this.runId}/${member.engineId}`);
+          try {
+            await worktreeCreate(root, wtPath, baseSha);
+            worktreesByEngine[member.engineId] = wtPath;
+          } catch (err: any) {
+            console.warn(`[agon] speculator: failed to create worktree for ${member.engineId}: ${err.message ?? err}`);
+          }
+        }
+      }
 
       // Fan out: run all members in parallel.
       const memberPromises = opts.members.map(async (member) => {
+        const memberCwd = worktreesByEngine[member.engineId] ?? cwd;
         if (opts.onMemberStart) opts.onMemberStart(member.engineId);
 
         const vfs = new VirtualFS(this.snapshot!, member.engineId, this.runId);
@@ -113,7 +135,7 @@ service name=Speculator export=true
             api: member.api,
             prompt: opts.prompt,
             systemPrompt: member.systemPrompt,
-            cwd,
+            cwd: memberCwd,
             timeout: opts.timeoutSec ?? 120,
             signal: opts.signal,
             maxSteps: opts.maxSteps ?? 10,
@@ -127,7 +149,9 @@ service name=Speculator export=true
 
         // Phase E v1: build EffectPackage from response text only.
         // In v2, tool calls will have mutated vfs.overlay and we'll get
-        // real file changes. For now, pkg.effects is always empty.
+        // real file changes. For now, pkg.effects is always empty because
+        // the tools write to the worktree (real disk), not the VirtualFS overlay.
+        // Phase E v2 will wire ToolContext.virtualFs to capture those writes.
         const pkg = vfs.toEffectPackage(
           result.response,
           result.toolCalls,
@@ -138,11 +162,11 @@ service name=Speculator export=true
         candidates.push(pkg);
 
         if (opts.onMemberComplete) opts.onMemberComplete(pkg, score);
-        return { pkg, vfs, score };
+        return { pkg, vfs, score, memberCwd };
       });
 
       // Wait for all members, collect successful results as plain objects.
-      interface MemberOutcome { pkg: EffectPackage; vfs: VirtualFS; score: number; }
+      interface MemberOutcome { pkg: EffectPackage; vfs: VirtualFS; score: number; memberCwd: string; }
       const outcomes: MemberOutcome[] = [];
       const settled = await Promise.allSettled(memberPromises);
       for (const r of settled) {
@@ -161,13 +185,38 @@ service name=Speculator export=true
         }
       }
 
-      // Apply winner's overlay to real disk.
+      // Apply winner's changes to real disk.
       let appliedFiles: string[] = [];
-      if (winnerOutcome && winnerOutcome.pkg.effects.length > 0) {
+      if (winnerOutcome) {
+        const winnerCwd = winnerOutcome.memberCwd;
         try {
-          appliedFiles = applyEffectPackage(winnerOutcome.pkg, cwd);
+          if (isolate && winnerCwd !== cwd) {
+            // Phase E v1 (worktree mode): apply the winner's worktree diff to
+            // the real cwd using git's patch mechanism. This is the correct
+            // "commit the winning branch" step — equivalent to `git checkout winner`.
+            // Phase E v2 will use applyEffectPackage(vfs.toEffectPackage()) instead.
+            const { applyPatch, worktreeDiff } = await import('../blocks/git.js');
+            const diff = worktreeDiff(winnerCwd);
+            if (diff && diff.trim()) {
+              applyPatch(cwd, diff);
+              appliedFiles = diff
+                .split('\n')
+                .filter((l: string) => l.startsWith('+++ b/'))
+                .map((l: string) => l.slice(6));
+            }
+          } else if (winnerOutcome.pkg.effects.length > 0) {
+            // Phase E v2 (VirtualFS mode): apply overlay directly.
+            appliedFiles = applyEffectPackage(winnerOutcome.pkg, cwd);
+          }
         } catch (err: any) {
           console.warn(`[agon] speculator: failed to apply winner ${winnerOutcome.pkg.engineId}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+
+      // Clean up all worktrees — best effort, non-fatal.
+      if (isolate && root) {
+        for (const [eid, wtPath] of Object.entries(worktreesByEngine)) {
+          try { worktreeRemoveBestEffort(root, wtPath); } catch { /* ignore */ }
         }
       }
 

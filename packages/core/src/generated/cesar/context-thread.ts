@@ -8,15 +8,24 @@ import { join, resolve, basename } from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
 
 // @kern-source: context-thread:39
-import { AGON_HOME, ensureAgonHome } from '../signals/config.js';
+import { homedir } from 'node:os';
 
-// @kern-source: context-thread:43
-export const THREADS_DIR: string = join(AGON_HOME, 'threads');
+// @kern-source: context-thread:40
+import { ensureAgonHome } from '../signals/config.js';
 
-// @kern-source: context-thread:48
-export const ACTIVE_POINTER_PATH: string = join(AGON_HOME, 'threads', 'active.json');
+// @kern-source: context-thread:44
+function threadsDir(): string {
+  const override = process.env.AGON_HOME?.trim();
+  const home = override ? resolve(override) : join(homedir(), '.agon');
+  return join(home, 'threads');
+}
 
-// @kern-source: context-thread:53
+// @kern-source: context-thread:51
+function activePointerPath(): string {
+  return join(threadsDir(), 'active.json');
+}
+
+// @kern-source: context-thread:56
 /**
  * 16-hex-char SHA256 prefix of an absolute project path. Keys threads per project. 16 chars = 64 bits, ~4B projects before 1% collision chance (red-team finding 11: 8 hex collides at 65k projects).
  */
@@ -24,7 +33,7 @@ export function projectHash16(projectPath: string): string {
   return createHash('sha256').update(projectPath).digest('hex').slice(0, 16);
 }
 
-// @kern-source: context-thread:60
+// @kern-source: context-thread:63
 /**
  * DEPRECATED — use projectHash16. Kept as a thin alias for migration.
  */
@@ -32,18 +41,18 @@ export function projectSha8(projectPath: string): string {
   return projectHash16(projectPath);
 }
 
-// @kern-source: context-thread:66
+// @kern-source: context-thread:69
 /**
  * Absolute directory where threads for this project are stored.
  */
 export function threadDirFor(projectPath: string): string {
-  return join(THREADS_DIR, projectHash16(projectPath));
+  return join(threadsDir(), projectHash16(projectPath));
 }
 
-// @kern-source: context-thread:73
+// @kern-source: context-thread:76
 export const THREAD_ID_RE: RegExp = /^(thread_\d{10,16}_[0-9a-f]{8}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
 
-// @kern-source: context-thread:78
+// @kern-source: context-thread:81
 /**
  * Path to the JSONL append journal for fast O(1) per-message writes. Parallel to the main JSON snapshot. On next full save(), the journal is merged and compacted.
  */
@@ -51,28 +60,33 @@ export function threadJournalPath(projectPath: string, threadId: string): string
   return threadFilePath(projectPath, threadId).replace(/\.json$/, '.journal.jsonl');
 }
 
-// @kern-source: context-thread:84
+// @kern-source: context-thread:87
 /**
- * Absolute path for a thread's JSON file. Strictly validates threadId shape and asserts the resolved path stays inside the project's thread directory. Refuses any path traversal attempt or malformed id (red-team findings 2 + 3).
+ * Absolute path for a thread's JSON file. Strictly validates threadId shape and asserts the resolved path stays inside the project's thread directory. Refuses any path traversal attempt or malformed id (red-team findings 2 + 3). Codex P1: uses path.sep alongside '/' so containment check works on Windows.
  */
 export function threadFilePath(projectPath: string, threadId: string): string {
   if (!THREAD_ID_RE.test(threadId)) throw new Error(`Invalid threadId: ${threadId}`);
   const dir = threadDirFor(projectPath);
   const full = resolve(dir, `${threadId}.json`);
   const resolvedDir = resolve(dir);
-  if (!full.startsWith(resolvedDir + '/') && full !== resolvedDir) {
+  // Codex P1 fix: check both separators — '/' on POSIX, path.sep on Windows.
+  const nativeSep = join('a', 'b')[1]; // extracts the OS separator at runtime
+  const isContained = full === resolvedDir
+    || full.startsWith(resolvedDir + '/')
+    || full.startsWith(resolvedDir + nativeSep);
+  if (!isContained) {
     throw new Error(`Invalid thread path (traversal attempt): ${threadId}`);
   }
   return full;
 }
 
-// @kern-source: context-thread:97
+// @kern-source: context-thread:105
 export function ensureThreadDir(projectPath: string): void {
   ensureAgonHome();
   mkdirSync(threadDirFor(projectPath), { recursive: true });
 }
 
-// @kern-source: context-thread:105
+// @kern-source: context-thread:113
 /**
  * One entry in the thread. Maps 1:1 onto runApiAgentLoop's internal message shape with extra provenance.
  */
@@ -89,7 +103,7 @@ export interface ThreadMessage {
   tokens?: number;
 }
 
-// @kern-source: context-thread:118
+// @kern-source: context-thread:126
 /**
  * A compaction point. Records a summary of messages up to a given message id so older content can be replaced with a cheaper representation during messagesFor().
  */
@@ -102,7 +116,7 @@ export interface ThreadCheckpoint {
   approxTokensSaved: number;
 }
 
-// @kern-source: context-thread:127
+// @kern-source: context-thread:135
 /**
  * Record of a file read during a thread. Used to detect stale content when the same file is later modified and a re-routed engine would otherwise act on obsolete state.
  */
@@ -113,7 +127,7 @@ export interface FileTouch {
   lastReadAt: number;
 }
 
-// @kern-source: context-thread:134
+// @kern-source: context-thread:142
 /**
  * The exact shape runApiAgentLoop's messageHistory array carries. Must match what apiStreamDispatchWithHistory expects.
  */
@@ -124,7 +138,7 @@ export interface LoopMessage {
   tool_call_id?: string;
 }
 
-// @kern-source: context-thread:141
+// @kern-source: context-thread:149
 /**
  * Config for constructing a ContextThread. When threadId is present and a matching file exists, the instance hydrates from disk. Otherwise a fresh thread is created with a new uuid.
  */
@@ -134,7 +148,7 @@ export interface ContextThreadConfig {
   systemPrompt?: string;
 }
 
-// @kern-source: context-thread:147
+// @kern-source: context-thread:155
 export interface ThreadSize {
   messages: number;
   checkpoints: number;
@@ -142,7 +156,7 @@ export interface ThreadSize {
   bytesOnDisk: number;
 }
 
-// @kern-source: context-thread:155
+// @kern-source: context-thread:163
 /**
  * JSON-serializable full-state snapshot. Written to disk via save(), read via load().
  */
@@ -158,28 +172,28 @@ export interface ThreadSnapshot {
   fileTouches: Record<string,FileTouch>;
 }
 
-// @kern-source: context-thread:167
+// @kern-source: context-thread:175
 export const SCHEMA_VERSION: number = 1;
 
-// @kern-source: context-thread:176
+// @kern-source: context-thread:184
 export const MAX_MESSAGES_HARD_CAP: number = 500;
 
-// @kern-source: context-thread:181
+// @kern-source: context-thread:189
 export const EVICT_TO: number = 400;
 
-// @kern-source: context-thread:189
+// @kern-source: context-thread:197
 export const MAX_PER_MESSAGE_TOKENS: number = 4000;
 
-// @kern-source: context-thread:197
+// @kern-source: context-thread:205
 export const KEEP_LAST_K: number = 10;
 
-// @kern-source: context-thread:206
+// @kern-source: context-thread:214
 export const TOKEN_BUDGET_SAFETY_FACTOR: number = 0.75;
 
-// @kern-source: context-thread:214
+// @kern-source: context-thread:222
 export const MAX_THREAD_FILE_BYTES: number = 10 * 1024 * 1024;
 
-// @kern-source: context-thread:229
+// @kern-source: context-thread:237
 export const SECRET_PATTERNS: RegExp[] = [
   // AWS access keys
   /\b(AKIA|ASIA)[0-9A-Z]{16}\b/g,
@@ -203,7 +217,7 @@ export const SECRET_PATTERNS: RegExp[] = [
   /-----BEGIN [A-Z ]+PRIVATE KEY-----[\s\S]+?-----END [A-Z ]+PRIVATE KEY-----/g,
 ] as RegExp[];
 
-// @kern-source: context-thread:255
+// @kern-source: context-thread:263
 export const SECRET_PATH_BLOCKLIST: string[] = [
   '.env', '.env.local', '.env.production', '.env.staging', '.env.development',
   'credentials.json', 'secrets.json', 'auth.json',
@@ -212,7 +226,7 @@ export const SECRET_PATH_BLOCKLIST: string[] = [
   '.netrc', '.pgpass', '.my.cnf',
 ] as string[];
 
-// @kern-source: context-thread:266
+// @kern-source: context-thread:274
 /**
  * Check if a file path is known to contain secrets. Used by redactSecrets to replace tool-output of forbidden files with a stub before it ever lands in the thread.
  */
@@ -225,7 +239,7 @@ export function isSecretPath(path: string): boolean {
   return false;
 }
 
-// @kern-source: context-thread:277
+// @kern-source: context-thread:285
 /**
  * Apply the secret-pattern regex set to content, replacing any matches with a '[REDACTED-SECRET]' marker. O(n) per pattern; cheap relative to an LLM call.
  */
@@ -238,7 +252,7 @@ export function redactSecrets(content: string): string {
   return out;
 }
 
-// @kern-source: context-thread:288
+// @kern-source: context-thread:296
 /**
  * Redact-in-place pass for a ThreadMessage before it's appended to the thread. Handles content, toolOutput, and path-blocklist short-circuit for Read tool results.
  */
@@ -260,7 +274,7 @@ export function redactMessage(msg: ThreadMessage): ThreadMessage {
   return { ...msg, content: redacted };
 }
 
-// @kern-source: context-thread:310
+// @kern-source: context-thread:318
 /**
  * Rough token estimate for a ThreadMessage. 1 token ~= 4 chars. Intentionally conservative — we'd rather fit under budget than overshoot.
  */
@@ -278,7 +292,7 @@ export function estimateMessageTokens(msg: ThreadMessage): number {
   return Math.ceil(chars / 4) + 8; // +8 for role+framing overhead
 }
 
-// @kern-source: context-thread:326
+// @kern-source: context-thread:334
 /**
  * Truncate a string so it fits in maxTokens (at ~4 chars/token). Appends a marker so the reader knows truncation happened.
  */
@@ -293,7 +307,7 @@ export function truncateContent(content: string, maxTokens: number): string {
     + content.slice(content.length - tail);
 }
 
-// @kern-source: context-thread:341
+// @kern-source: context-thread:349
 /**
  * Convert a ThreadMessage into the loop's native {role,content,tool_calls?,tool_call_id?} shape. If budgetTokens is set and msg would overflow it, content is truncated inline.
  */
@@ -318,7 +332,7 @@ export function threadMessageToLoop(msg: ThreadMessage, budgetTokens?: number): 
   return out;
 }
 
-// @kern-source: context-thread:364
+// @kern-source: context-thread:372
 /**
  * Convert a runApiAgentLoop history entry ({role,content,tool_calls?,tool_call_id?}) into a ThreadMessage with provenance. Used by the onHistoryEntry callback.
  */
@@ -343,7 +357,7 @@ export function loopEntryToThreadMessage(entry: Record<string,unknown>, engineId
   return msg;
 }
 
-// @kern-source: context-thread:389
+// @kern-source: context-thread:397
 /**
  * One persistent conversation thread scoped to a project. Per-instance state — no singleton. Multiple instances pointing at the same file will race on save(); caller is responsible for serialization in v1.
  */
@@ -418,6 +432,35 @@ export class ContextThread {
             this.engineHead = snap.engineHead ?? {};
             this.fileTouches = snap.fileTouches ?? {};
             this.hydrated = true;
+    
+            // Codex P1 fix: merge the JSONL journal immediately after loading
+            // the snapshot so messages appended since the last save() (e.g.
+            // after an unclean exit between append and save) are recovered.
+            // This is the crash-safe recovery path the journal was designed for.
+            const jPathOnLoad = threadFilePath(this.projectPath, this.threadId).replace(/\.json$/, '.journal.jsonl');
+            if (existsSync(jPathOnLoad)) {
+              try {
+                const journalLines = readFileSync(jPathOnLoad, 'utf-8').split('\n').filter(Boolean);
+                const knownOnLoad = new Set(this.messages.map((m: ThreadMessage) => m.id));
+                let merged = false;
+                for (const line of journalLines) {
+                  try {
+                    const obj = JSON.parse(line);
+                    if (obj._kind === 'msg' && obj.id && !knownOnLoad.has(obj.id) && obj.role !== 'system') {
+                      const { _kind: _k, ...msg } = obj;
+                      this.messages.push(msg as ThreadMessage);
+                      this.journaledIds.add(msg.id);
+                      knownOnLoad.add(msg.id);
+                      merged = true;
+                    }
+                  } catch { /* skip malformed lines */ }
+                }
+                if (merged) {
+                  this.messages.sort((a: ThreadMessage, b: ThreadMessage) => a.timestamp - b.timestamp);
+                  this.dirty = true; // mark dirty so next save() compacts the journal
+                }
+              } catch { /* journal read failure is non-fatal */ }
+            }
             return;
           }
         } catch (err) {
@@ -852,16 +895,17 @@ export class ContextThread {
   }
 }
 
-// @kern-source: context-thread:931
+// @kern-source: context-thread:968
 export interface ActivePointerMap {
   byProject: Record<string,string>;
 }
 
-// @kern-source: context-thread:934
+// @kern-source: context-thread:971
 export function loadActivePointer(): ActivePointerMap {
   try {
-    if (existsSync(ACTIVE_POINTER_PATH)) {
-      const raw = readFileSync(ACTIVE_POINTER_PATH, 'utf-8');
+    const path = activePointerPath();
+    if (existsSync(path)) {
+      const raw = readFileSync(path, 'utf-8');
       const parsed = JSON.parse(raw) as ActivePointerMap;
       if (parsed && typeof parsed === 'object' && parsed.byProject) {
         return parsed;
@@ -873,22 +917,23 @@ export function loadActivePointer(): ActivePointerMap {
   return { byProject: {} };
 }
 
-// @kern-source: context-thread:950
+// @kern-source: context-thread:988
 export function saveActivePointer(pointer: ActivePointerMap): void {
   ensureAgonHome();
-  mkdirSync(THREADS_DIR, { recursive: true });
-  const tmpPath = ACTIVE_POINTER_PATH + '.tmp';
+  const path = activePointerPath();
+  mkdirSync(threadsDir(), { recursive: true });
+  const tmpPath = path + '.tmp';
   writeFileSync(tmpPath, JSON.stringify(pointer, null, 2) + '\n', 'utf-8');
-  renameSync(tmpPath, ACTIVE_POINTER_PATH);
+  renameSync(tmpPath, path);
 }
 
-// @kern-source: context-thread:964
+// @kern-source: context-thread:1003
 export const _exitFlushRegistry: Set<WeakRef<any>> = new Set<WeakRef<any>>();
 
-// @kern-source: context-thread:969
+// @kern-source: context-thread:1008
 export const _exitHandlerRegistered: {value:boolean} = { value: false };
 
-// @kern-source: context-thread:974
+// @kern-source: context-thread:1013
 export function _registerExitFlush(thread: ContextThread): void {
   _exitFlushRegistry.add(new WeakRef(thread));
   if (_exitHandlerRegistered.value) return;
@@ -922,7 +967,7 @@ export function _registerExitFlush(thread: ContextThread): void {
   });
 }
 
-// @kern-source: context-thread:1008
+// @kern-source: context-thread:1047
 /**
  * The canonical entry point for callers. Reads the active-pointer map, finds the current thread for this project (or creates one), hydrates it, and writes the pointer back if a new thread was created. Returns a ready-to-use ContextThread. Phase A.5: registers the thread with the process-exit flush registry so Ctrl+C saves partial work.
  */
@@ -939,7 +984,7 @@ export function loadOrCreateActiveThread(projectPath: string, systemPrompt?: str
   return thread;
 }
 
-// @kern-source: context-thread:1023
+// @kern-source: context-thread:1062
 /**
  * Start a new thread for a project (abandoning the previous active pointer). Used when the user explicitly wants a fresh context — e.g. a /agent --new-thread flag. The old thread file remains on disk for history.
  */
@@ -952,7 +997,7 @@ export function forkActiveThread(projectPath: string, systemPrompt?: string): Co
   return thread;
 }
 
-// @kern-source: context-thread:1034
+// @kern-source: context-thread:1073
 /**
  * List every thread-file uuid that exists on disk for this project. Used by a future /threads command to let the user browse or fork past conversations.
  */
@@ -969,7 +1014,7 @@ export function listThreadsForProject(projectPath: string): string[] {
   }
 }
 
-// @kern-source: context-thread:1049
+// @kern-source: context-thread:1088
 /**
  * Delete a thread file from disk. Idempotent — returns false if the file didn't exist. Does NOT update active.json; caller must fork a new thread if deleting the currently active one.
  */

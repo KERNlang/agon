@@ -6,9 +6,15 @@ import { join, dirname, relative, resolve } from 'node:path';
 
 import { randomUUID } from 'node:crypto';
 
-import { AGON_HOME, ensureAgonHome } from '../signals/config.js';
+import { homedir } from 'node:os';
 
-export const SNAPSHOTS_DIR: string = join(AGON_HOME, 'snapshots');
+import { ensureAgonHome } from '../signals/config.js';
+
+function snapshotsDir(): string {
+  const override = process.env.AGON_HOME?.trim();
+  const home = override ? resolve(override) : join(homedir(), '.agon');
+  return join(home, 'snapshots');
+}
 
 export const MAX_SNAPSHOTS: number = 50;
 
@@ -28,7 +34,7 @@ export interface HistoryEntry {
 
 function ensureSnapshotsDir(): void {
   ensureAgonHome();
-  mkdirSync(SNAPSHOTS_DIR, { recursive: true });
+  mkdirSync(snapshotsDir(), { recursive: true });
 }
 
 /**
@@ -61,7 +67,7 @@ export function takeSnapshot(label: string, cwd: string, filePaths: string[]): H
     createdAt: new Date().toISOString(),
   };
   
-  const entryPath = join(SNAPSHOTS_DIR, `${entry.id}.json`);
+  const entryPath = join(snapshotsDir(), `${entry.id}.json`);
   writeFileSync(entryPath, JSON.stringify(entry, null, 2) + '\n');
   
   // Prune old snapshots
@@ -75,7 +81,7 @@ export function takeSnapshot(label: string, cwd: string, filePaths: string[]): H
  */
 export function revertSnapshot(id: string): {ok:boolean, error?:string, filesReverted:number} {
   ensureSnapshotsDir();
-  const entryPath = join(SNAPSHOTS_DIR, `${id}.json`);
+  const entryPath = join(snapshotsDir(), `${id}.json`);
   if (!existsSync(entryPath)) {
     return { ok: false, error: `Snapshot ${id} not found`, filesReverted: 0 };
   }
@@ -116,10 +122,10 @@ export function revertSnapshot(id: string): {ok:boolean, error?:string, filesRev
 export function listSnapshots(): HistoryEntry[] {
   ensureSnapshotsDir();
   try {
-    const files = readdirSync(SNAPSHOTS_DIR).filter((f: string) => f.endsWith('.json')).sort().reverse();
+    const files = readdirSync(snapshotsDir()).filter((f: string) => f.endsWith('.json')).sort().reverse();
     return files.slice(0, 10).map((f: string) => {
       try {
-        return JSON.parse(readFileSync(join(SNAPSHOTS_DIR, f), 'utf-8')) as HistoryEntry;
+        return JSON.parse(readFileSync(join(snapshotsDir(), f), 'utf-8')) as HistoryEntry;
       } catch {
         return null;
       }
@@ -131,11 +137,11 @@ export function listSnapshots(): HistoryEntry[] {
 
 function pruneSnapshots(): void {
   try {
-    const files = readdirSync(SNAPSHOTS_DIR).filter((f: string) => f.endsWith('.json')).sort();
+    const files = readdirSync(snapshotsDir()).filter((f: string) => f.endsWith('.json')).sort();
     if (files.length > MAX_SNAPSHOTS) {
       const toDelete = files.slice(0, files.length - MAX_SNAPSHOTS);
       for (const f of toDelete) {
-        try { unlinkSync(join(SNAPSHOTS_DIR, f)); } catch { /* snapshot already deleted or inaccessible */ }
+        try { unlinkSync(join(snapshotsDir(), f)); } catch { /* snapshot already deleted or inaccessible */ }
       }
     }
   } catch (err) { console.warn('[file-history] failed to save snapshot:', (err as Error).message ?? err); }
@@ -144,7 +150,7 @@ function pruneSnapshots(): void {
 export function getLatestSnapshotId(): string|null {
   ensureSnapshotsDir();
   try {
-    const files = readdirSync(SNAPSHOTS_DIR).filter((f: string) => f.endsWith('.json')).sort().reverse();
+    const files = readdirSync(snapshotsDir()).filter((f: string) => f.endsWith('.json')).sort().reverse();
     if (files.length === 0) return null;
     return files[0].replace('.json', '');
   } catch {

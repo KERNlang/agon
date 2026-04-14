@@ -3,9 +3,16 @@
 // Reference: Mark Glickman, "Example of the Glicko-2 system" (2013)
 
 import from="node:fs" names="readFileSync,writeFileSync,mkdirSync,renameSync"
-import from="node:path" names="dirname"
+import from="node:path" names="dirname,join,resolve"
+import from="node:os" names="homedir"
 import from="../models/types.js" names="GlickoRating,RatingRecord,EngineMeta,TaskClass" types=true
-import from="./config.js" names="RATINGS_PATH"
+
+fn name=ratingsPath returns=string export=false
+  handler <<<
+    const override = process.env.AGON_HOME?.trim();
+    const home = override ? resolve(override) : join(homedir(), '.agon');
+    return join(home, 'ratings.json');
+  >>>
 
 const name=GLICKO_SCALE type=number
   handler <<< 173.7178 >>>
@@ -53,7 +60,7 @@ fn name=defaultEngineMeta returns=EngineMeta
 fn name=loadRatings returns=RatingRecord
   handler <<<
     try {
-      return JSON.parse(readFileSync(RATINGS_PATH, 'utf-8')) as RatingRecord;
+      return JSON.parse(readFileSync(ratingsPath(), 'utf-8')) as RatingRecord;
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
         console.warn(`[agon] failed to load ratings: ${err instanceof Error ? err.message : String(err)}`);
@@ -70,11 +77,12 @@ fn name=loadRatings returns=RatingRecord
 
 fn name=saveRatings params="record:RatingRecord" returns=void
   handler <<<
-    mkdirSync(dirname(RATINGS_PATH), { recursive: true });
+    const path = ratingsPath();
+    mkdirSync(dirname(path), { recursive: true });
     record.lastUpdated = new Date().toISOString();
-    const tmpPath = RATINGS_PATH + '.tmp';
+    const tmpPath = path + '.tmp';
     writeFileSync(tmpPath, JSON.stringify(record, null, 2) + '\n');
-    renameSync(tmpPath, RATINGS_PATH);
+    renameSync(tmpPath, path);
   >>>
 
 fn name=getRatings returns=RatingRecord

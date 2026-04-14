@@ -36,18 +36,21 @@
 import from="node:fs" names="readFileSync,writeFileSync,mkdirSync,renameSync,existsSync,readdirSync,unlinkSync,statSync,chmodSync,openSync,fsyncSync,closeSync,appendFileSync"
 import from="node:path" names="join,resolve,basename"
 import from="node:crypto" names="randomUUID,createHash"
-import from="../signals/config.js" names="AGON_HOME,ensureAgonHome"
+import from="node:os" names="homedir"
+import from="../signals/config.js" names="ensureAgonHome"
 
 // ── Path helpers ─────────────────────────────────────────────────────
 
-const name=THREADS_DIR type=string
+fn name=threadsDir returns=string export=false
   handler <<<
-    join(AGON_HOME, 'threads')
+    const override = process.env.AGON_HOME?.trim();
+    const home = override ? resolve(override) : join(homedir(), '.agon');
+    return join(home, 'threads');
   >>>
 
-const name=ACTIVE_POINTER_PATH type=string
+fn name=activePointerPath returns=string export=false
   handler <<<
-    join(AGON_HOME, 'threads', 'active.json')
+    return join(threadsDir(), 'active.json');
   >>>
 
 fn name=projectHash16 params="projectPath:string" returns=string export=true
@@ -66,7 +69,7 @@ fn name=projectSha8 params="projectPath:string" returns=string export=true
 fn name=threadDirFor params="projectPath:string" returns=string
   doc "Absolute directory where threads for this project are stored."
   handler <<<
-    return join(THREADS_DIR, projectHash16(projectPath));
+    return join(threadsDir(), projectHash16(projectPath));
   >>>
 
 // Red-team finding 3: strict threadId regex. The only legal forms are 'thread_<ms>_<hex8>' (fresh IDs from the constructor) or a canonical uuid v4. Everything else is refused before the path is ever resolved.
@@ -82,13 +85,18 @@ fn name=threadJournalPath params="projectPath:string,threadId:string" returns=st
   >>>
 
 fn name=threadFilePath params="projectPath:string,threadId:string" returns=string
-  doc "Absolute path for a thread's JSON file. Strictly validates threadId shape and asserts the resolved path stays inside the project's thread directory. Refuses any path traversal attempt or malformed id (red-team findings 2 + 3)."
+  doc "Absolute path for a thread's JSON file. Strictly validates threadId shape and asserts the resolved path stays inside the project's thread directory. Refuses any path traversal attempt or malformed id (red-team findings 2 + 3). Codex P1: uses path.sep alongside '/' so containment check works on Windows."
   handler <<<
     if (!THREAD_ID_RE.test(threadId)) throw new Error(`Invalid threadId: ${threadId}`);
     const dir = threadDirFor(projectPath);
     const full = resolve(dir, `${threadId}.json`);
     const resolvedDir = resolve(dir);
-    if (!full.startsWith(resolvedDir + '/') && full !== resolvedDir) {
+    // Codex P1 fix: check both separators — '/' on POSIX, path.sep on Windows.
+    const nativeSep = join('a', 'b')[1]; // extracts the OS separator at runtime
+    const isContained = full === resolvedDir
+      || full.startsWith(resolvedDir + '/')
+      || full.startsWith(resolvedDir + nativeSep);
+    if (!isContained) {
       throw new Error(`Invalid thread path (traversal attempt): ${threadId}`);
     }
     return full;
@@ -460,6 +468,35 @@ service name=ContextThread export=true
               this.engineHead = snap.engineHead ?? {};
               this.fileTouches = snap.fileTouches ?? {};
               this.hydrated = true;
+
+              // Codex P1 fix: merge the JSONL journal immediately after loading
+              // the snapshot so messages appended since the last save() (e.g.
+              // after an unclean exit between append and save) are recovered.
+              // This is the crash-safe recovery path the journal was designed for.
+              const jPathOnLoad = threadFilePath(this.projectPath, this.threadId).replace(/\.json$/, '.journal.jsonl');
+              if (existsSync(jPathOnLoad)) {
+                try {
+                  const journalLines = readFileSync(jPathOnLoad, 'utf-8').split('\n').filter(Boolean);
+                  const knownOnLoad = new Set(this.messages.map((m: ThreadMessage) => m.id));
+                  let merged = false;
+                  for (const line of journalLines) {
+                    try {
+                      const obj = JSON.parse(line);
+                      if (obj._kind === 'msg' && obj.id && !knownOnLoad.has(obj.id) && obj.role !== 'system') {
+                        const { _kind: _k, ...msg } = obj;
+                        this.messages.push(msg as ThreadMessage);
+                        this.journaledIds.add(msg.id);
+                        knownOnLoad.add(msg.id);
+                        merged = true;
+                      }
+                    } catch { /* skip malformed lines */ }
+                  }
+                  if (merged) {
+                    this.messages.sort((a: ThreadMessage, b: ThreadMessage) => a.timestamp - b.timestamp);
+                    this.dirty = true; // mark dirty so next save() compacts the journal
+                  }
+                } catch { /* journal read failure is non-fatal */ }
+              }
               return;
             }
           } catch (err) {
@@ -934,8 +971,9 @@ interface name=ActivePointerMap
 fn name=loadActivePointer returns=ActivePointerMap
   handler <<<
     try {
-      if (existsSync(ACTIVE_POINTER_PATH)) {
-        const raw = readFileSync(ACTIVE_POINTER_PATH, 'utf-8');
+      const path = activePointerPath();
+      if (existsSync(path)) {
+        const raw = readFileSync(path, 'utf-8');
         const parsed = JSON.parse(raw) as ActivePointerMap;
         if (parsed && typeof parsed === 'object' && parsed.byProject) {
           return parsed;
@@ -950,10 +988,11 @@ fn name=loadActivePointer returns=ActivePointerMap
 fn name=saveActivePointer params="pointer:ActivePointerMap" returns=void
   handler <<<
     ensureAgonHome();
-    mkdirSync(THREADS_DIR, { recursive: true });
-    const tmpPath = ACTIVE_POINTER_PATH + '.tmp';
+    const path = activePointerPath();
+    mkdirSync(threadsDir(), { recursive: true });
+    const tmpPath = path + '.tmp';
     writeFileSync(tmpPath, JSON.stringify(pointer, null, 2) + '\n', 'utf-8');
-    renameSync(tmpPath, ACTIVE_POINTER_PATH);
+    renameSync(tmpPath, path);
   >>>
 
 // ── Phase A.5: process-exit flush registry ───────────────────────────

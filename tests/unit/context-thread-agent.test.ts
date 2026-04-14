@@ -23,10 +23,12 @@ import {
 } from '@agon/core';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { cleanupTestAgonHome, setupTestAgonHome } from '../helpers/agon-home.js';
 
 const mockRun = runApiAgentLoop as unknown as ReturnType<typeof vi.fn>;
 
 const cleanupIds: Array<{ projectPath: string; threadId: string }> = [];
+let testHome = '';
 
 function makeProject(label: string): string {
   return join(tmpdir(), `agon-ct-int-${label}-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -36,12 +38,17 @@ function trackThread(thread: ContextThread) {
   cleanupIds.push({ projectPath: thread.getProjectPath(), threadId: thread.getThreadId() });
 }
 
+beforeEach(() => {
+  testHome = setupTestAgonHome('context-thread-agent');
+});
+
 afterEach(() => {
   mockRun.mockReset();
   for (const { projectPath, threadId } of cleanupIds) {
     try { deleteThread(projectPath, threadId); } catch { /* ignore */ }
   }
   cleanupIds.splice(0);
+  cleanupTestAgonHome(testHome);
 });
 
 function makeConfig(overrides: Partial<AgentSessionConfig> = {}): AgentSessionConfig {

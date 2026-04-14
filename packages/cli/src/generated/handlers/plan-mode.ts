@@ -4,7 +4,7 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 
 import { join } from 'node:path';
 
-import { createCesarPlan, formatCesarPlanMarkdown, planCostEstimator, resolveWorkingDir, RUNS_DIR, tracker, AGON_HOME, readPatchFromPath, applyPatchToTree } from '@agon/core';
+import { createCesarPlan, formatCesarPlanMarkdown, planCostEstimator, resolveWorkingDir, RUNS_DIR, tracker, getAgonHome, readPatchFromPath, applyPatchToTree } from '@agon/core';
 
 import type { CesarPlan, CesarPlanStep, CesarStepResult, StepExecutor } from '@agon/core';
 
@@ -59,7 +59,7 @@ export async function handleProposePlan(args: any, dispatch: Dispatch, ctx: Hand
   };
   
   const slug = args.intent.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40);
-  const plansDir = join(AGON_HOME, 'plans');
+  const plansDir = join(getAgonHome(), 'plans');
   const filePath = join(plansDir, `cesar-${Date.now()}-${slug}.md`);
   mkdirSync(plansDir, { recursive: true });
   writeFileSync(filePath, formatCesarPlanMarkdown(plan));

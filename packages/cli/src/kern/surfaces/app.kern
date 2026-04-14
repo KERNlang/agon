@@ -3,7 +3,7 @@
 
 import from="react" names="useState,useCallback,useEffect,useRef,useMemo"
 import from="ink" names="Box,Text,render,useApp,useInput"
-import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,ensureCurrentWorkspace,startChatSession,getRatings,getActiveWorkspace,RUNS_DIR,extractImagesFromInput,resolveWorkingDir,currentBranch,configSet,createCesarMemory,modelEntryToEngineDef,appendMessage"
+import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,ensureCurrentWorkspace,startChatSession,getRatings,getActiveWorkspace,RUNS_DIR,extractImagesFromInput,resolveWorkingDir,currentBranch,configSet,createCesarMemory,modelEntryToEngineDef,appendMessage,getAgonHome"
 import from="@agon/core" names="Plan,ChatSession,Skill,PersistentSession,ImageAttachment" types=true
 import from="../../handlers/types.js" names="EngineProgress" types=true
 import from="@agon/adapter-cli" names="createCliAdapter"
@@ -35,7 +35,7 @@ import from="../../components.js" names="OutputBlock,ReviewEvent" types=true
 import from="node:path" names="join,dirname"
 import from="node:url" names="fileURLToPath"
 import from="node:fs" names="readdirSync,writeFileSync,mkdirSync,unlinkSync"
-import from="node:os" names="homedir,tmpdir"
+import from="node:os" names="tmpdir"
 import from="node:child_process" names="spawnSync"
 import from="../models/session-results.js" names="sessionResultStore"
 import from="../blocks/results-formatter.js" names="formatSessionResults,formatChatTranscript"
@@ -975,7 +975,7 @@ screen name=App target=ink
             onConfirm={(selected: string[]) => { setEnginePickerOpen(false); setSessionEngines(selected); configSet('forgeEnabledEngines', selected); setConfigVersion((v: number) => v + 1); dispatch({ type: 'success', message: `Active engines: ${selected.join(', ')}` } as any); }}
             onCancel={() => setEnginePickerOpen(false)}
             onRemove={(engineId: string) => {
-              const engPath = join(homedir(), '.agon', 'engines', `${engineId}.json`);
+              const engPath = join(getAgonHome(), 'engines', `${engineId}.json`);
               try { unlinkSync(engPath); } catch (_e) {}
               const nextModels = { ...((loadConfig() as any).engineModels ?? {}) };
               delete nextModels[engineId];
@@ -1014,7 +1014,7 @@ screen name=App target=ink
               }
               setModelPickerOpen(false);
               const def = modelEntryToEngineDef(entry);
-              const dir = join(homedir(), '.agon', 'engines');
+              const dir = join(getAgonHome(), 'engines');
               mkdirSync(dir, { recursive: true });
               writeFileSync(join(dir, `${def.id}.json`), JSON.stringify(def, null, 2) + '\n');
               registry.register(def as any);

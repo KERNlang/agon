@@ -11,16 +11,22 @@ import {
   projectHash16,
   projectSha8,
 } from '@agon/core';
+import { agonHomePath, cleanupTestAgonHome, setupTestAgonHome } from '../helpers/agon-home.js';
 
 // Use unique per-test project paths so tests never collide in ~/.agon/threads.
 let testProjects: string[] = [];
 let createdThreadIds: Array<{ projectPath: string; threadId: string }> = [];
+let testHome = '';
 
 function makeTestProject(label: string): string {
   const p = join(tmpdir(), `agon-ct-test-${label}-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   testProjects.push(p);
   return p;
 }
+
+beforeEach(() => {
+  testHome = setupTestAgonHome('context-thread');
+});
 
 afterEach(() => {
   // Clean up all threads created during this test.
@@ -29,6 +35,7 @@ afterEach(() => {
   }
   createdThreadIds = [];
   testProjects = [];
+  cleanupTestAgonHome(testHome);
 });
 
 function makeThread(label = 'test'): { thread: ContextThread; projectPath: string } {
@@ -190,7 +197,7 @@ describe('ContextThread persistence', () => {
     // Use deleteThread to verify file exists (it returns true if it did).
     // We can read it first to verify permissions.
     const hash = projectHash16(projectPath);
-    const threadFile = join(require('os').homedir(), '.agon', 'threads', hash, threadId + '.json');
+    const threadFile = agonHomePath('threads', hash, threadId + '.json');
     if (existsSync(threadFile)) {
       const stat = statSync(threadFile);
       const mode = stat.mode & 0o777;
@@ -204,7 +211,7 @@ describe('ContextThread persistence', () => {
     thread.save(); // create the dir
     const hash = projectHash16(projectPath);
     const threadId = thread.getThreadId();
-    const threadFile = join(require('os').homedir(), '.agon', 'threads', hash, threadId + '.json');
+    const threadFile = agonHomePath('threads', hash, threadId + '.json');
     if (existsSync(threadFile)) {
       const snap = JSON.parse(readFileSync(threadFile, 'utf-8'));
       snap.messages.push({
@@ -239,7 +246,7 @@ describe('ContextThread persistence', () => {
     thread.save(); // create the file
     const hash = projectHash16(projectPath);
     const threadId = thread.getThreadId();
-    const threadFile = join(require('os').homedir(), '.agon', 'threads', hash, threadId + '.json');
+    const threadFile = agonHomePath('threads', hash, threadId + '.json');
     if (existsSync(threadFile)) {
       // Overwrite with a huge file
       require('fs').writeFileSync(threadFile, 'x'.repeat(11 * 1024 * 1024));

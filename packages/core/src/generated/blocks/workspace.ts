@@ -4,7 +4,9 @@ import { readFileSync, writeFileSync, existsSync, renameSync } from 'node:fs';
 
 import { join, resolve, basename } from 'node:path';
 
-import { AGON_HOME, ensureAgonHome } from '../signals/config.js';
+import { homedir } from 'node:os';
+
+import { ensureAgonHome } from '../signals/config.js';
 
 import { isKernProject } from './context-scanner.js';
 
@@ -25,8 +27,14 @@ export interface WorkspaceState {
   active: string;
 }
 
+function getWorkspacesPath(): string {
+  const override = process.env.AGON_HOME?.trim();
+  const home = override ? resolve(override) : join(homedir(), '.agon');
+  return join(home, 'workspaces.json');
+}
+
 function loadState(): WorkspaceState {
-  const WORKSPACES_PATH = join(AGON_HOME, 'workspaces.json');
+  const WORKSPACES_PATH = getWorkspacesPath();
   ensureAgonHome();
   try { return JSON.parse(readFileSync(WORKSPACES_PATH, 'utf-8')) as WorkspaceState; }
   catch (err) {
@@ -38,7 +46,7 @@ function loadState(): WorkspaceState {
 }
 
 function saveState(state: WorkspaceState): void {
-  const WORKSPACES_PATH = join(AGON_HOME, 'workspaces.json');
+  const WORKSPACES_PATH = getWorkspacesPath();
   const tmpPath = WORKSPACES_PATH + '.tmp';
   writeFileSync(tmpPath, JSON.stringify(state, null, 2) + '\n');
   renameSync(tmpPath, WORKSPACES_PATH);

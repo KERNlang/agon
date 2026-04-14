@@ -2,9 +2,11 @@
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
-import { ensureAgonHome, AGON_HOME } from '../signals/config.js';
+import { homedir } from 'node:os';
+
+import { ensureAgonHome } from '../signals/config.js';
 
 export const MAX_SESSION_ENTRIES: number = 50;
 
@@ -35,7 +37,9 @@ export interface CesarMemory {
 export function createCesarMemory(): CesarMemory {
   const session = new Map<string, MemoryEntry>();
   let persistent: MemoryEntry[] = [];
-  const persistPath = join(AGON_HOME, 'cesar-memory.json');
+  const override = process.env.AGON_HOME?.trim();
+  const home = override ? resolve(override) : join(homedir(), '.agon');
+  const persistPath = join(home, 'cesar-memory.json');
   
   const memory: CesarMemory = {
     session,

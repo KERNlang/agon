@@ -4,7 +4,7 @@
 
 import from="node:path" names="join"
 import from="node:fs" names="mkdirSync,writeFileSync,readFileSync"
-import from="@agon/core" names="resolveWorkingDir,extractImagesFromInput,buildImageAttachment,undoPatch,resumeChatSession,findSkill,renderSkillPrompt,configSet,startChatSession,currentBranch,gitChangedFiles,buildExtensionContext,sessionContext,RUNS_DIR"
+import from="@agon/core" names="resolveWorkingDir,extractImagesFromInput,buildImageAttachment,undoPatch,resumeChatSession,findSkill,renderSkillPrompt,configSet,startChatSession,currentBranch,gitChangedFiles,buildExtensionContext,sessionContext,RUNS_DIR,getAgonHome"
 import from="../handlers/chat.js" names="invalidateCwdCache"
 import from="@agon/core" names="ImageAttachment,ChatSession" types=true
 import from="@agon/core" names="approveCesarPlan,cancelCesarPlan,saveCesarPlan,loadCesarPlan,listCesarPlans,executePlan,formatCesarPlanMarkdown,planCostEstimator"
@@ -654,6 +654,13 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
         }
         return { handled: true, ranAsJob: true };
       }
+      case 'agent-solo': {
+        // Explicit opt-out of shadow workers — always runs pure solo.
+        const soloInput = intent.input;
+        cb.dispatch({ type: 'agent-routing', mode: 'solo', engines: [cb.ctx.activeEngines()[0] ?? 'default'], reason: 'explicit /agent-solo — shadow mode disabled' });
+        cb.runAsJob('agent', soloInput?.slice(0, 40) ?? 'agent', () => runAgentMode(soloInput, cb.dispatch, cb.ctx, { maxTurns: intent.maxTurns }));
+        return { handled: true, ranAsJob: true };
+      }
       case 'team-agent':
         cb.runAsJob('team-agent', intent.input?.slice(0, 40) ?? 'team-agent', () => runAgentTeam(intent.input, cb.dispatch, cb.ctx, {
           engines: intent.engines,
@@ -1200,7 +1207,7 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
           } else {
             // Look up in .mcp.json (project) or ~/.agon/mcp.json (global)
             let found: any = null;
-            for (const configPath of [join(resolveWorkingDir(), '.mcp.json'), join(process.env.HOME ?? '', '.agon', 'mcp.json')]) {
+            for (const configPath of [join(resolveWorkingDir(), '.mcp.json'), join(getAgonHome(), 'mcp.json')]) {
               try {
                 const raw = JSON.parse(readFileSync(configPath, 'utf-8'));
                 const servers = raw.mcpServers ?? raw.servers ?? raw;

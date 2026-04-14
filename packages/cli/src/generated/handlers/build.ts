@@ -12,6 +12,8 @@ import { ENGINE_COLORS } from '../blocks/output-format.js';
 
 import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 
+import { buildAgentApprovalCallback } from './agent.js';
+
 function injectFileReferences(input: string, cwd: string): string {
   const FILE_REF = /(?:^|\s)([\w./-]+\.\w{1,10})\b/g;
   let result = input;
@@ -140,6 +142,10 @@ export async function handleBuild(input: string, dispatch: Dispatch, ctx: Handle
       timeout: config.agentTimeout ?? 600,
       outputDir,
       signal: abort.signal,
+      onApproval: buildAgentApprovalCallback(dispatch, ctx, engineId),
+      permissionMode: (config as any).permissionMode ?? 'ask',
+      allowedCommands: (config as any).allowedCommands ?? [],
+      toolPermissions: (config as any).toolPermissions ?? {},
     };
     
     dispatch({ type: 'spinner-start', message: `${engineId} building…`, color });

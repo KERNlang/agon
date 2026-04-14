@@ -68,6 +68,10 @@ export interface AgentTeamConfig {
   teamBudget?: AgentTeamBudget;
   costFn?: (engineId: string, tokensUsed: number) => number;
   thread?: ContextThread;
+  permissionMode?: 'auto'|'ask'|'deny-all';
+  allowedCommands?: string[];
+  toolPermissions?: Record<string,'allow'|'ask'|'deny'>;
+  onPermissionAsk?: (engineId:string, tool:string, command:string, reason:string)=>Promise<boolean|string>;
 }
 
 /**
@@ -236,17 +240,23 @@ export class AgentTeam {
     try {
       for (const { m, wt } of settled) {
         const memberCwd = wt ?? this.config.cwd;
-        const sessionConfig: AgentSessionConfig = {
-          engineId: m.engineId,
-          api: m.api,
-          cwd: memberCwd,
-          systemPrompt: m.systemPrompt,
-          budget: this.config.budget,
-          teamId: this.runId,
-          heavyToolSemaphore: this.sharedSemaphore,
-          contextWindowTokens: m.contextWindowTokens,
-          // Shared ContextThread: all team members read prior history from
-          // the same thread and write their output back into it. Appends
+          const sessionConfig: AgentSessionConfig = {
+            engineId: m.engineId,
+            api: m.api,
+            cwd: memberCwd,
+            systemPrompt: m.systemPrompt,
+            budget: this.config.budget,
+            teamId: this.runId,
+            heavyToolSemaphore: this.sharedSemaphore,
+            contextWindowTokens: m.contextWindowTokens,
+            permissionMode: this.config.permissionMode,
+            allowedCommands: this.config.allowedCommands,
+            toolPermissions: this.config.toolPermissions,
+            onPermissionAsk: this.config.onPermissionAsk
+              ? (tool: string, command: string, reason: string) => this.config.onPermissionAsk!(m.engineId, tool, command, reason)
+              : undefined,
+            // Shared ContextThread: all team members read prior history from
+            // the same thread and write their output back into it. Appends
           // during parallel step() execution are in-memory (synchronous),
           // so JS's single-threaded event loop prevents data races within
           // a single step. The team flushes once after Promise.allSettled

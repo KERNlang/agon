@@ -214,6 +214,10 @@ export class CliAdapter implements EngineAdapter {
           timeout: options.timeout,
           signal: options.signal,
           maxSteps: 15,
+          permissionMode: options.permissionMode,
+          allowedCommands: options.allowedCommands,
+          toolPermissions: options.toolPermissions,
+          onPermissionAsk: options.onApproval,
         });
     
         const postDiff = readOnlyDiff(cwd);
@@ -269,6 +273,7 @@ export class CliAdapter implements EngineAdapter {
         mode: 'agent',
         model: resolveModel(options.engine, options.cwd) ?? undefined,
         signal: options.signal,
+        onApproval: options.onApproval,
       });
         if (companionResult.exitCode !== 2 && companionResult.stdout.trim()) {
           const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);

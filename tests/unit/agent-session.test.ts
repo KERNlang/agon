@@ -189,4 +189,25 @@ describe('AgentSession', () => {
     expect(result.error).toContain('terminal state');
     expect(mockRun).not.toHaveBeenCalled();
   });
+
+  it('threads approval settings to the inner API agent loop', async () => {
+    mockRun.mockResolvedValue({ response: 'ok', toolCalls: 1, steps: 1 });
+    const onPermissionAsk = vi.fn(async () => true);
+    const session = new AgentSession(makeConfig({
+      permissionMode: 'ask',
+      allowedCommands: ['npm test'],
+      toolPermissions: { Bash: 'ask' },
+      onPermissionAsk,
+    }));
+
+    await session.step('do the thing');
+
+    expect(mockRun).toHaveBeenCalledTimes(1);
+    expect(mockRun.mock.calls[0]?.[0]).toMatchObject({
+      permissionMode: 'ask',
+      allowedCommands: ['npm test'],
+      toolPermissions: { Bash: 'ask' },
+      onPermissionAsk,
+    });
+  });
 });

@@ -10,6 +10,8 @@ import { ENGINE_COLORS } from '../blocks/output-format.js';
 
 import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 
+import { buildAgentApprovalCallback } from './agent.js';
+
 export async function handlePipeline(input: string, dispatch: Dispatch, ctx: HandlerContext, fitnessCmd?: string, opts?: {quiet?:boolean}): Promise<void> {
   const abort = new AbortController();
   try {
@@ -78,6 +80,10 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
             timeout: config.agentTimeout ?? 600,
             outputDir,
             signal: abort.signal,
+            onApproval: buildAgentApprovalCallback(dispatch, ctx, buildEngine),
+            permissionMode: (config as any).permissionMode ?? 'ask',
+            allowedCommands: (config as any).allowedCommands ?? [],
+            toolPermissions: (config as any).toolPermissions ?? {},
           });
         } else {
           await ctx.adapter.dispatch({

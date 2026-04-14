@@ -22,7 +22,7 @@ export interface CompanionResult {
   commands: Array<{command:string,exitCode:number,output:string}>;
 }
 
-export async function companionDispatch(opts: {config:CompanionConfig, binaryPath:string, prompt:string, cwd:string, timeout:number, mode:'exec'|'review'|'agent', model?:string, signal?:AbortSignal, systemPrompt?:string}): Promise<DispatchResult> {
+export async function companionDispatch(opts: {config:CompanionConfig, binaryPath:string, prompt:string, cwd:string, timeout:number, mode:'exec'|'review'|'agent', model?:string, signal?:AbortSignal, systemPrompt?:string, onApproval?:(tool:string, command:string, reason?:string)=>Promise<boolean|string>}): Promise<DispatchResult> {
   if (opts.config.protocol !== 'jsonrpc' && opts.config.protocol !== 'acp' && opts.config.protocol !== 'stream-json') {
     return { exitCode: 2, stdout: '', stderr: `Protocol "${opts.config.protocol}" not supported for one-shot dispatch`, durationMs: 0, timedOut: false };
   }
@@ -69,6 +69,63 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
     if (!line.trim()) return;
     let msg: JsonRpcMessage;
     try { msg = JSON.parse(line); } catch { return; }
+  
+    // Server REQUEST: has both id and method, expects a response.
+    if (msg.id !== undefined && msg.method) {
+      const m = msg.method;
+    
+      if (isAcp && m === 'session/request_permission') {
+        const options: any[] = (msg.params as any)?.options ?? [];
+        const toolCall = (msg.params as any)?.toolCall ?? {};
+        const tName = toolCall.name ?? toolCall.functionDeclaration?.name ?? (msg.params as any)?.name ?? 'tool';
+        const tCmd = toolCall.args?.command ?? toolCall.args?.file_path ?? (toolCall.args ? JSON.stringify(toolCall.args) : (msg.params as any)?.description ?? m);
+        const allowOpt = options.find((o: any) => o.kind === 'allow_once') ?? options.find((o: any) => o.optionId?.includes('proceed_once'));
+        const alwaysOpt = options.find((o: any) => o.kind === 'allow_always' || o.optionId?.includes('proceed_always'));
+        const rejectOpt = options.find((o: any) => o.kind === 'reject_once') ?? options.find((o: any) => o.optionId?.includes('reject'));
+    
+        if (opts.onApproval) {
+          opts.onApproval(String(tName), String(tCmd), 'Agent tool approval requested').then((result: boolean | string) => {
+            const approved = typeof result === 'string' ? false : result;
+            const optionId = approved
+              ? (allowOpt?.optionId ?? alwaysOpt?.optionId ?? 'proceed_once')
+              : (rejectOpt?.optionId ?? 'reject');
+            if (proc) proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { optionId } }) + '\n');
+          }).catch(() => {
+            const optionId = rejectOpt?.optionId ?? 'reject';
+            if (proc) proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { optionId } }) + '\n');
+          });
+        } else {
+          const optionId = allowOpt?.optionId ?? alwaysOpt?.optionId ?? 'proceed_once';
+          proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { optionId } }) + '\n');
+        }
+        return;
+      }
+    
+      const methodToolMap: Record<string, string> = {
+        'item/commandExecution/requestApproval': 'Bash',
+        'item/fileChange/requestApproval': 'Edit',
+        'item/permissions/requestApproval': 'Permission',
+      };
+      const toolName = methodToolMap[m] ?? (msg.params as any)?.tool ?? (msg.params as any)?.command?.type ?? (msg.params as any)?.name ?? m;
+      const toolCmd = (msg.params as any)?.command?.command ?? (msg.params as any)?.command ?? (msg.params as any)?.description ?? (msg.params as any)?.path ?? JSON.stringify(msg.params ?? {});
+      const isV2 = m.startsWith('item/');
+      const buildResult = (approved: boolean) => isV2 ? { decision: approved ? 'accept' : 'decline' } : { approved };
+    
+      if (opts.onApproval) {
+        opts.onApproval(String(toolName), String(toolCmd), 'Agent tool approval requested').then((result: boolean | string) => {
+          if (typeof result === 'string') {
+            if (proc) proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, error: { code: -32001, message: result } }) + '\n');
+          } else {
+            if (proc) proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: buildResult(result) }) + '\n');
+          }
+        }).catch(() => {
+          if (proc) proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: buildResult(false) }) + '\n');
+        });
+      } else {
+        proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: buildResult(true) }) + '\n');
+      }
+      return;
+    }
   
     // Response to a request we sent
     if (msg.id !== undefined && pending.has(msg.id)) {
@@ -191,7 +248,10 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
       // ACP protocol (OpenCode/Gemini)
       await send('initialize', {
         protocolVersion: 1,
-        clientCapabilities: { fs: { readTextFile: true, writeTextFile: false }, terminal: false },
+        clientCapabilities: {
+          fs: { readTextFile: true, writeTextFile: opts.mode === 'agent' },
+          terminal: opts.mode === 'agent',
+        },
         clientInfo: { name: 'agon-ai', title: 'Agon AI', version: '0.2.0' },
       });
   
@@ -219,7 +279,7 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
   
       const threadParams: Record<string, unknown> = {
         cwd: opts.cwd,
-        approvalPolicy: 'never',
+        approvalPolicy: opts.onApproval ? 'on-request' : 'never',
         // Only use engine-declared sandbox for agent mode. Exec/review stay read-only for safety.
         sandbox: opts.mode === 'agent' ? (opts.config.sandbox ?? 'workspace-write') : 'read-only',
         ephemeral: true,

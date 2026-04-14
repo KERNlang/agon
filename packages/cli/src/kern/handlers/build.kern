@@ -4,6 +4,7 @@ import from="@agon/core" names="ensureAgonHome,RUNS_DIR,appendMessage,tracker,St
 import from="@agon/core" names="Plan,PlanStepInput,ApprovalLevel" types=true
 import from="../blocks/output-format.js" names="ENGINE_COLORS"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
+import from="./agent.js" names="buildAgentApprovalCallback"
 
 fn name=injectFileReferences params="input:string, cwd:string" returns=string export=false
   handler <<<
@@ -134,6 +135,10 @@ fn name=handleBuild params="input:string, dispatch:Dispatch, ctx:HandlerContext,
       timeout: config.agentTimeout ?? 600,
       outputDir,
       signal: abort.signal,
+      onApproval: buildAgentApprovalCallback(dispatch, ctx, engineId),
+      permissionMode: (config as any).permissionMode ?? 'ask',
+      allowedCommands: (config as any).allowedCommands ?? [],
+      toolPermissions: (config as any).toolPermissions ?? {},
     };
 
     dispatch({ type: 'spinner-start', message: `${engineId} building…`, color });

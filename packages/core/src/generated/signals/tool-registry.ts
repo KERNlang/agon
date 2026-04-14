@@ -38,7 +38,7 @@ export class ToolRegistry {
 /**
  * Three-phase pipeline: validate → permission → execute
  */
-export async function executeToolCall(call: ToolCall, ctx: ToolContext, registry: ToolRegistry, onPermissionAsk?: (tool:string,message:string)=>Promise<boolean>): Promise<ToolCallResult> {
+export async function executeToolCall(call: ToolCall, ctx: ToolContext, registry: ToolRegistry, onPermissionAsk?: (tool:string,message:string)=>Promise<boolean|string>): Promise<ToolCallResult> {
   const start = Date.now();
   const handler = registry.get(call.name);
   
@@ -86,6 +86,14 @@ export async function executeToolCall(call: ToolCall, ctx: ToolContext, registry
   if (permission.behavior === 'ask') {
     if (onPermissionAsk) {
       const allowed = await onPermissionAsk(call.name, permission.message ?? `Allow ${call.name}?`);
+      if (typeof allowed === 'string') {
+        return {
+          toolCallId: call.id,
+          toolName: call.name,
+          result: { ok: false, content: '', error: allowed },
+          durationMs: Date.now() - start,
+        };
+      }
       if (!allowed) {
         return {
           toolCallId: call.id,
@@ -133,7 +141,7 @@ export async function executeToolCall(call: ToolCall, ctx: ToolContext, registry
 /**
  * Execute multiple tool calls, partitioned into concurrent/serial batches.
  */
-export async function executeToolCalls(calls: ToolCall[], ctx: ToolContext, registry: ToolRegistry, onPermissionAsk?: (tool:string,message:string)=>Promise<boolean>, onProgress?: (result:ToolCallResult)=>void): Promise<ToolCallResult[]> {
+export async function executeToolCalls(calls: ToolCall[], ctx: ToolContext, registry: ToolRegistry, onPermissionAsk?: (tool:string,message:string)=>Promise<boolean|string>, onProgress?: (result:ToolCallResult)=>void): Promise<ToolCallResult[]> {
   const results: ToolCallResult[] = [];
   
   // Partition into batches with metadata: consecutive concurrency-safe tools run in parallel

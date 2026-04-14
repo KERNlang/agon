@@ -25,6 +25,23 @@ export function formatCesarPlanMarkdown(plan: CesarPlan): string {
     lines.push(`> Planning cost: ~${plan.planningCost.tokens.toLocaleString()} tokens${costStr}`);
     lines.push('');
   }
+  // OpenCode add#2: surface every fitnessCmd verbatim BEFORE the per-step
+  // detail so the user reading the markdown sees every shell command they
+  // are about to run before they type Y. fitnessCmd is LLM-controlled and
+  // executes via `/bin/sh -c` — this is the user's last opportunity to
+  // catch a malicious or wrong command.
+  const stepsWithFitness = plan.steps.filter((s: CesarPlanStep) => s.fitnessCmd && s.fitnessCmd.trim().length > 0);
+  if (stepsWithFitness.length > 0) {
+    lines.push('## ⚠ Shell Commands');
+    lines.push('');
+    lines.push('The following shell commands will be executed by this plan. Read them carefully before approving:');
+    lines.push('');
+    for (const s of stepsWithFitness) {
+      lines.push(`- **${s.id}** (${s.type}): \`${s.fitnessCmd}\``);
+    }
+    lines.push('');
+  }
+  
   lines.push('## Steps');
   lines.push('');
   

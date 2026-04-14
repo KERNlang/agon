@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 
 import { join } from 'node:path';
 
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync, statSync } from 'node:fs';
 
 import { ensureAgonHome, RUNS_DIR, appendMessage, tracker, StreamParser, scanProjectContext, resolveWorkingDir } from '@agon/core';
 
@@ -24,25 +24,40 @@ export function resolveReviewTarget(target: string|undefined, cwd: string): {dif
       // (covers both staged and unstaged changes against the same base)
       diff = execFileSync('git', ['diff', 'HEAD'], { cwd, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 }).trim();
   
-      // Also include untracked files so new files aren't silently omitted
+      // Also include untracked files so new files aren't silently omitted.
+      // FU-6: read each untracked file directly via fs.readFileSync and
+      // synthesize a git-style diff in memory, instead of spawning a
+      // `git diff --no-index` process per file. The old path was O(N)
+      // sync spawns with a 5MB ExecFileSync buffer per file — both
+      // ENOBUFS-prone on large refactors and a hard event-loop stall.
       const untrackedRaw = execFileSync('git', ['ls-files', '--others', '--exclude-standard'], { cwd, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 }).trim();
       if (untrackedRaw) {
+        const MAX_UNTRACKED_FILE_BYTES = 512 * 1024;   // skip files > 512KB
         const untrackedFiles = untrackedRaw.split('\n').filter(Boolean);
         const untrackedDiffs: string[] = [];
         for (const f of untrackedFiles) {
           try {
-            const content = execFileSync('git', ['diff', '--no-index', '/dev/null', f], { cwd, encoding: 'utf-8', maxBuffer: 5 * 1024 * 1024 }).trim();
-            if (content) untrackedDiffs.push(content);
-          } catch {
-            // git diff --no-index exits non-zero when files differ, that's expected
-            try {
-              const content = execFileSync('git', ['diff', '--no-index', '--', '/dev/null', f], { cwd, encoding: 'utf-8', maxBuffer: 5 * 1024 * 1024 }).trim();
-              if (content) untrackedDiffs.push(content);
-            } catch (e2: any) {
-              // exit code 1 means diff found (expected), capture stdout
-              if (e2.stdout) untrackedDiffs.push(String(e2.stdout).trim());
+            const fullPath = join(cwd, f);
+            const stat = statSync(fullPath);
+            if (!stat.isFile()) continue;
+            if (stat.size > MAX_UNTRACKED_FILE_BYTES) {
+              untrackedDiffs.push(`diff --git a/${f} b/${f}\nnew file mode 100644\nindex 0000000..0000000\n--- /dev/null\n+++ b/${f}\n@@ [untracked file ${f} skipped — ${stat.size} bytes exceeds ${MAX_UNTRACKED_FILE_BYTES} byte cap] @@`);
+              continue;
             }
-          }
+            let content: string;
+            try {
+              content = readFileSync(fullPath, 'utf-8');
+            } catch {
+              untrackedDiffs.push(`diff --git a/${f} b/${f}\nnew file mode 100644\nindex 0000000..0000000\n--- /dev/null\n+++ b/${f}\n@@ [binary or unreadable] @@`);
+              continue;
+            }
+            const lines = content.split('\n');
+            // Drop a trailing empty line from the final newline so the
+            // synthesized diff doesn't show a phantom blank-line addition.
+            if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+            const plusBlock = lines.map((l) => `+${l}`).join('\n');
+            untrackedDiffs.push(`diff --git a/${f} b/${f}\nnew file mode 100644\nindex 0000000..0000000\n--- /dev/null\n+++ b/${f}\n@@ -0,0 +1,${lines.length} @@\n${plusBlock}`);
+          } catch { /* skip files we can't stat */ }
         }
         if (untrackedDiffs.length > 0) {
           diff = diff ? `${diff}\n\n${untrackedDiffs.join('\n\n')}` : untrackedDiffs.join('\n\n');
@@ -137,9 +152,10 @@ export function parseReviewBlocking(response: string): {blocking:boolean, parseF
   if (!tail) return { blocking: true, parseFailed: true };
   
   // The tail should be a JSON array — possibly wrapped in a fenced code
-  // block. Strip the fence first if present, then parse.
+  // block. Strip the fence first if present, then parse. OpenCode fix
+  // (b1): \r?\n? handles CRLF as well as LF line endings.
   let jsonStr = tail;
-  const fenceMatch = tail.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?```\s*$/);
+  const fenceMatch = tail.match(/^```(?:json)?\s*\r?\n?([\s\S]*?)\r?\n?```\s*$/);
   if (fenceMatch) jsonStr = fenceMatch[1].trim();
   
   if (!jsonStr.startsWith('[')) return { blocking: true, parseFailed: true };
@@ -155,9 +171,9 @@ export function parseReviewBlocking(response: string): {blocking:boolean, parseF
 }
 
 /**
- * Core review flow with no ctx side effects. Used by both handleReview (with streaming dispatch) and the plan executor's review step (silent). Does NOT touch ctx.setActiveAbort, ctx.lastReviewResult, ctx.chatSession, or tracker.
+ * Core review flow with no ctx side effects. Used by both handleReview (with streaming dispatch) and the plan executor's review step (silent). Does NOT touch ctx.setActiveAbort, ctx.lastReviewResult, ctx.chatSession, or tracker. signal is optional: callers that don't have an abort controller can pass undefined.
  */
-export async function runReviewCore(diff: string, label: string, engineId: string, ctx: HandlerContext, signal: AbortSignal, onProgress?: (chunk:string)=>void): Promise<ReviewCoreResult> {
+export async function runReviewCore(diff: string, label: string, engineId: string, ctx: HandlerContext, signal?: AbortSignal, onProgress?: (chunk:string)=>void): Promise<ReviewCoreResult> {
   const cwd = resolveWorkingDir();
   const config = ctx.config;
   const projectCtx = scanProjectContext(cwd, config.projectContext || undefined, config.contextFormat as 'plain' | 'kern');
@@ -193,7 +209,8 @@ export async function runReviewCore(diff: string, label: string, engineId: strin
     while (true) {
       const iter = await gen.next();
       if (iter.done) break;
-      if (signal.aborted) break;
+      // OpenCode fix (f2): signal is optional; tolerate undefined.
+      if (signal?.aborted) break;
       const chunk = iter.value as string;
   
       if (chunk.startsWith('\x00')) continue;

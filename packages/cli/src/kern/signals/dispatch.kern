@@ -741,34 +741,10 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
             cb.setActivePlan(approved);
             cb.dispatch({ type: 'success', message: 'Plan auto-approved — executing...' });
             saveCesarPlan(approved);
-
-            const executors = buildStepExecutors(cb.ctx);
-            const abortController = new AbortController();
-            cb.ctx.setActiveAbort?.(abortController);
-            const callbacks = buildPlanCallbacks(approved, cb);
-
-            try {
-              let finalPlan = await executePlan(approved, executors, callbacks, abortController.signal);
-              cb.setActivePlan(finalPlan);
-              saveCesarPlan(finalPlan);
-              if (finalPlan.planFilePath) {
-                try {
-                  writeFileSync(finalPlan.planFilePath, formatCesarPlanMarkdown(finalPlan));
-                } catch (err) { console.warn('[plan] failed to write plan file:', (err as Error).message ?? err); }
-              }
-              finalPlan = await finalizePlanWithReviewGate(finalPlan, executors, abortController.signal, cb);
-              if (finalPlan.state === 'done') {
-                cb.dispatch({ type: 'success', message: `Plan complete — ${finalPlan.steps.length} steps, $${finalPlan.totalActualCostUsd.toFixed(4)} actual cost` });
-              } else if (finalPlan.state === 'paused') {
-                const failedStep = finalPlan.steps.find((s: any) => s.state === 'failed');
-                cb.dispatch({ type: 'warning', message: `Plan paused — step "${failedStep?.description}" failed: ${failedStep?.result?.error ?? 'unknown'}` });
-                cb.dispatch({ type: 'info', message: 'Use /plan resume to retry, or /cancel to abort' });
-              }
-            } catch (err) {
-              cb.dispatch({ type: 'error', message: `Plan execution failed: ${err instanceof Error ? err.message : String(err)}` });
-            } finally {
-              cb.ctx.setActiveAbort?.(null);
-            }
+            // FU-4: shared helper handles abort wiring, executor build,
+            // executePlan, finalizePlanWithReviewGate, terminal-status
+            // dispatch, and debounced-write flush.
+            await executeApprovedPlan(approved, cb);
             decided = true;
           } else if (proposed.autoApprove === true) {
             cb.dispatch({ type: 'info', message: `Plan requested autoApprove but policy rejected: ${policy.reason}` });
@@ -786,36 +762,8 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
               cb.dispatch({ type: 'success', message: 'Plan approved — executing...' });
               saveCesarPlan(approved);
 
-              const executors = buildStepExecutors(cb.ctx);
-              const abortController = new AbortController();
-              cb.ctx.setActiveAbort?.(abortController);
-
-              const callbacks = buildPlanCallbacks(approved, cb);
-
-              try {
-                let finalPlan = await executePlan(approved, executors, callbacks, abortController.signal);
-                cb.setActivePlan(finalPlan);
-                saveCesarPlan(finalPlan);
-                if (finalPlan.planFilePath) {
-                  try {
-                    writeFileSync(finalPlan.planFilePath, formatCesarPlanMarkdown(finalPlan));
-                  } catch (err) { console.warn('[plan] failed to write plan file:', (err as Error).message ?? err); }
-                }
-                // Tribunal fix #4: shared self-review gate. Single source of
-                // truth for both the plan-task and plan-resume terminal paths.
-                finalPlan = await finalizePlanWithReviewGate(finalPlan, executors, abortController.signal, cb);
-                if (finalPlan.state === 'done') {
-                  cb.dispatch({ type: 'success', message: `Plan complete — ${finalPlan.steps.length} steps, $${finalPlan.totalActualCostUsd.toFixed(4)} actual cost` });
-                } else if (finalPlan.state === 'paused') {
-                  const failedStep = finalPlan.steps.find((s: any) => s.state === 'failed');
-                  cb.dispatch({ type: 'warning', message: `Plan paused — step "${failedStep?.description}" failed: ${failedStep?.result?.error ?? 'unknown'}` });
-                  cb.dispatch({ type: 'info', message: 'Use /plan resume to retry, or /cancel to abort' });
-                }
-              } catch (err) {
-                cb.dispatch({ type: 'error', message: `Plan execution failed: ${err instanceof Error ? err.message : String(err)}` });
-              } finally {
-                cb.ctx.setActiveAbort?.(null);
-              }
+              // FU-4: shared executor helper.
+              await executeApprovedPlan(approved, cb);
               decided = true;
 
             } else if (trimmed === 'n' || trimmed === 'no') {
@@ -835,7 +783,16 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
                   const editedContent = readFileSync(filePath, 'utf-8');
                   cb.dispatch({ type: 'info', message: 'Re-reading edited plan and revising...' });
                   const reviseInput = `[PLAN REVISION] The user manually edited the plan file. Here is the updated content:\n\n${editedContent}\n\nParse the user's edits, incorporate them, and call ProposePlan IMMEDIATELY with the revised steps. Do NOT re-investigate.`;
-                  await routeWithCesar(reviseInput, [], cb);
+                  // OpenCode fix (f1): if routeWithCesar throws (LLM API
+                  // failure, network error), surface it and stay in the
+                  // approval loop with the original proposal so the user
+                  // can retry, type N to reject, or type 'e' again.
+                  try {
+                    await routeWithCesar(reviseInput, [], cb);
+                  } catch (err) {
+                    cb.dispatch({ type: 'warning', message: `Cesar revision failed: ${err instanceof Error ? err.message : String(err)}. Try again, type N to reject, or type 'e' to re-edit.` });
+                    continue;
+                  }
                   const revised: CesarPlan | undefined = cb.ctx.cesar?.proposedPlan;
                   if (revised && revised.state === 'awaiting_approval') {
                     if (cb.ctx.cesar) cb.ctx.cesar.proposedPlan = undefined;
@@ -861,7 +818,14 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
               // ── Feedback — send to Cesar for revision ──
               cb.dispatch({ type: 'info', message: 'Revising plan with your feedback...' });
               const reviseInput = `[PLAN REVISION] The user wants these changes: ${answer}\n\nRevise the plan and call ProposePlan IMMEDIATELY with the updated steps. Do NOT re-investigate. Do NOT respond with text. Just call ProposePlan with the revised plan.`;
-              await routeWithCesar(reviseInput, [], cb);
+              // OpenCode fix (f1): wrap routeWithCesar so an LLM error
+              // doesn't escape the approval loop.
+              try {
+                await routeWithCesar(reviseInput, [], cb);
+              } catch (err) {
+                cb.dispatch({ type: 'warning', message: `Cesar revision failed: ${err instanceof Error ? err.message : String(err)}. Try again, type Y to approve the original, or N to reject.` });
+                continue;
+              }
               const revised: CesarPlan | undefined = cb.ctx.cesar?.proposedPlan;
               if (revised && revised.state === 'awaiting_approval') {
                 if (cb.ctx.cesar) cb.ctx.cesar.proposedPlan = undefined;
@@ -910,41 +874,9 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
         });
         const runningPlan: CesarPlan = { ...resumePlan, steps: resetSteps, state: 'running' as any };
         cb.setActivePlan(runningPlan);
-
-        const executors = buildStepExecutors(cb.ctx);
-        const abortController = new AbortController();
-        cb.ctx.setActiveAbort?.(abortController);
-
-        const callbacks = buildPlanCallbacks(runningPlan, cb);
-
-        try {
-          let finalPlan = await executePlan(runningPlan, executors, callbacks, abortController.signal);
-          cb.setActivePlan(finalPlan);
-          saveCesarPlan(finalPlan);
-          // Gemini fix (f2): mirror plan-task path's belt-and-suspenders
-          // markdown write so the .md on disk reflects the final state.
-          // onPlanUpdate already covers the common case but symmetry is cheap.
-          if (finalPlan.planFilePath) {
-            try {
-              writeFileSync(finalPlan.planFilePath, formatCesarPlanMarkdown(finalPlan));
-            } catch (err) { console.warn('[plan] failed to write plan file:', (err as Error).message ?? err); }
-          }
-          // Tribunal fix #4: shared self-review gate. Resume must run the
-          // gate too — otherwise mutating plans that paused on a non-review
-          // failure could land 'done' without ever being reviewed.
-          finalPlan = await finalizePlanWithReviewGate(finalPlan, executors, abortController.signal, cb);
-          if (finalPlan.state === 'done') {
-            cb.dispatch({ type: 'success', message: `Plan complete — ${finalPlan.steps.length} steps, $${finalPlan.totalActualCostUsd.toFixed(4)} actual cost` });
-          } else if (finalPlan.state === 'paused') {
-            const failedStep = finalPlan.steps.find((s: any) => s.state === 'failed');
-            cb.dispatch({ type: 'warning', message: `Plan paused — step "${failedStep?.description}" failed: ${failedStep?.result?.error ?? 'unknown'}` });
-            cb.dispatch({ type: 'info', message: 'Use /plan resume to retry, or /cancel to abort' });
-          }
-        } catch (err) {
-          cb.dispatch({ type: 'error', message: `Plan resume failed: ${err instanceof Error ? err.message : String(err)}` });
-        } finally {
-          cb.ctx.setActiveAbort?.(null);
-        }
+        // FU-4: shared executor helper handles both the original execute
+        // and the self-review gate, so resume cannot diverge from task.
+        await executeApprovedPlan(runningPlan, cb);
         break;
       }
       case 'plans': handlePlansList(cb.dispatch); break;
@@ -1307,9 +1239,25 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
 // these two functions, so the gate cannot be bypassed by resume.
 
 fn name=buildPlanCallbacks params="initialPlan:CesarPlan, cb:DispatchCallbacks" returns="any" export=true
-  doc "Build executor callbacks. Holds a closure on the latest plan reference (mutated via onPlanUpdate) so step lookups always see appended steps like the auto-review cycle (tribunal fix #10)."
+  doc "Build executor callbacks. Holds a closure on the latest plan reference (mutated via onPlanUpdate) so step lookups always see appended steps like the auto-review cycle (tribunal fix #10). FU-3: persistence is debounced 300ms to avoid the sync-write storm Doppelganger flagged — onPlanUpdate fires once per step in a hot loop, but the disk write happens at most ~3x/sec. Terminal states (done/paused/cancelled) flush immediately so the .md/.json on disk reflect the final state. Callers should invoke .flush() before exit to drain any pending write."
   handler <<<
     let currentPlan = initialPlan;
+    let pendingWriteTimer: ReturnType<typeof setTimeout> | null = null;
+    const DEBOUNCE_MS = 300;
+
+    const flushPersist = () => {
+      if (pendingWriteTimer) {
+        clearTimeout(pendingWriteTimer);
+        pendingWriteTimer = null;
+      }
+      try { saveCesarPlan(currentPlan); } catch (err) { console.warn('[plan] saveCesarPlan failed:', (err as Error).message ?? err); }
+      if (currentPlan.planFilePath) {
+        try {
+          writeFileSync(currentPlan.planFilePath, formatCesarPlanMarkdown(currentPlan));
+        } catch (err) { console.warn('[plan] failed to write plan file:', (err as Error).message ?? err); }
+      }
+    };
+
     return {
       onStepStart: (stepId: string) => {
         const step = currentPlan.steps.find((s: any) => s.id === stepId);
@@ -1340,13 +1288,16 @@ fn name=buildPlanCallbacks params="initialPlan:CesarPlan, cb:DispatchCallbacks" 
       onPlanUpdate: (updated: CesarPlan) => {
         currentPlan = updated;
         cb.setActivePlan(updated);
-        saveCesarPlan(updated);
         cb.dispatch({ type: 'plan-execution', plan: updated } as any);
-        if (updated.planFilePath) {
-          try {
-            writeFileSync(updated.planFilePath, formatCesarPlanMarkdown(updated));
-          } catch (err) { console.warn('[plan] failed to write plan file:', (err as Error).message ?? err); }
+        // Terminal states flush immediately so disk reflects the final
+        // state without waiting on the debounce window.
+        const isTerminal = updated.state === 'done' || updated.state === 'paused' || updated.state === 'cancelled';
+        if (isTerminal) {
+          flushPersist();
+          return;
         }
+        if (pendingWriteTimer) clearTimeout(pendingWriteTimer);
+        pendingWriteTimer = setTimeout(flushPersist, DEBOUNCE_MS);
       },
       onBudgetWarning: (actual: number, estimated: number) => {
         cb.dispatch({ type: 'warning', message: `Budget warning: $${actual.toFixed(2)} actual vs $${estimated.toFixed(2)} estimated` });
@@ -1355,7 +1306,46 @@ fn name=buildPlanCallbacks params="initialPlan:CesarPlan, cb:DispatchCallbacks" 
         if (output.length <= 500) return output;
         return output.slice(0, 500) + `\n\n[... truncated from ${output.length} chars. Full output in step ${stepId}]`;
       },
+      // FU-3: exposed so executeApprovedPlan can drain pending writes
+      // before the helper exits (otherwise the final state could be lost
+      // if the caller exits within the 300ms debounce window).
+      flush: flushPersist,
     };
+  >>>
+
+fn name=executeApprovedPlan async=true params="approved:CesarPlan, cb:DispatchCallbacks" returns="Promise<void>" export=true
+  doc "FU-4: shared executor for the auto-approve, manual-approve, and plan-resume paths. Wires the abort controller, builds callbacks (with debounced persistence), runs executePlan, runs finalizePlanWithReviewGate, and dispatches the terminal status. Eliminates the ~60 lines of triplication that lived in dispatch.kern and forced future changes (e.g., new callback hooks, new finalize behavior) to be applied to all three sites."
+  handler <<<
+    const executors = buildStepExecutors(cb.ctx);
+    const abortController = new AbortController();
+    cb.ctx.setActiveAbort?.(abortController);
+    const callbacks = buildPlanCallbacks(approved, cb);
+
+    try {
+      let finalPlan = await executePlan(approved, executors, callbacks, abortController.signal);
+      cb.setActivePlan(finalPlan);
+      saveCesarPlan(finalPlan);
+      if (finalPlan.planFilePath) {
+        try {
+          writeFileSync(finalPlan.planFilePath, formatCesarPlanMarkdown(finalPlan));
+        } catch (err) { console.warn('[plan] failed to write plan file:', (err as Error).message ?? err); }
+      }
+      finalPlan = await finalizePlanWithReviewGate(finalPlan, executors, abortController.signal, cb);
+      if (finalPlan.state === 'done') {
+        cb.dispatch({ type: 'success', message: `Plan complete \u2014 ${finalPlan.steps.length} steps, $${finalPlan.totalActualCostUsd.toFixed(4)} actual cost` });
+      } else if (finalPlan.state === 'paused') {
+        const failedStep = finalPlan.steps.find((s: any) => s.state === 'failed');
+        cb.dispatch({ type: 'warning', message: `Plan paused \u2014 step "${failedStep?.description}" failed: ${failedStep?.result?.error ?? 'unknown'}` });
+        cb.dispatch({ type: 'info', message: 'Use /plan resume to retry, or /cancel to abort' });
+      }
+    } catch (err) {
+      cb.dispatch({ type: 'error', message: `Plan execution failed: ${err instanceof Error ? err.message : String(err)}` });
+    } finally {
+      // FU-3: drain debounced markdown/JSON writes before clearing the
+      // abort handle so on-disk state matches in-memory state.
+      try { (callbacks as any).flush?.(); } catch { /* ignore */ }
+      cb.ctx.setActiveAbort?.(null);
+    }
   >>>
 
 fn name=finalizePlanWithReviewGate async=true params="finalPlan:CesarPlan, executors:Record<string,StepExecutor>, abortSignal:AbortSignal, cb:DispatchCallbacks" returns="Promise<CesarPlan>" export=true
@@ -1420,7 +1410,22 @@ fn name=finalizePlanWithReviewGate async=true params="finalPlan:CesarPlan, execu
     saveCesarPlan(replanned);
     cb.setActivePlan(replanned);
 
-    const reviewedPlan = await executePlan(replanned, executors, callbacks, abortSignal);
+    // OpenCode add#1: wrap the gate's own executePlan in try/catch so
+    // a thrown error inside the review cycle doesn't escape the gate
+    // with corrupted plan state. On throw, mark the plan paused with
+    // the error attached and persist before returning.
+    let reviewedPlan: CesarPlan;
+    try {
+      reviewedPlan = await executePlan(replanned, executors, callbacks, abortSignal);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      cb.dispatch({ type: 'error', message: `Self-review cycle failed mid-execution: ${msg}` });
+      reviewedPlan = { ...replanned, state: 'paused' as any };
+      cb.setActivePlan(reviewedPlan);
+      saveCesarPlan(reviewedPlan);
+      return reviewedPlan;
+    }
+
     cb.setActivePlan(reviewedPlan);
     saveCesarPlan(reviewedPlan);
     if (reviewedPlan.planFilePath) {

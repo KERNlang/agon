@@ -14,10 +14,10 @@
 // user messages is deferred — when it's needed, wrap the body below
 // in a while-loop keyed on AgentState.phase.
 
-import from="@agon/core" names="AgentSession,AgentTeam,createAgentState,beginTurn,completeTurn,cancelAgent,completeAgent,failAgent,checkBudget,isTerminal,resolveWorkingDir,determineWinner,scoreAgentTeamResult,estimatedTokensToCost,worktreeChangedDiff,worktreeChangedShortstat,spawnWithTimeout,RUNS_DIR"
-import from="@agon/core" names="AgentBudget,AgentState,AgentStepResult,AgentEvent,AgentTeamConfig,AgentTeamMemberConfig,AgentTeamResult,EngineDefinition,EngineResult" types=true
+import from="@agon/core" names="AgentSession,AgentTeam,createAgentState,beginTurn,completeTurn,cancelAgent,completeAgent,failAgent,checkBudget,isTerminal,resolveWorkingDir,determineWinner,scoreAgentTeamResult,estimatedTokensToCost,worktreeChangedDiff,worktreeChangedShortstat,spawnWithTimeout,RUNS_DIR,runAgentTeamSynthesis,runAgentInvestigateSynthesis"
+import from="@agon/core" names="AgentBudget,AgentState,AgentStepResult,AgentEvent,AgentTeamConfig,AgentTeamMemberConfig,AgentTeamResult,EngineDefinition,EngineResult,AgentSynthesisLoser" types=true
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
-import from="node:fs" names="writeFileSync,mkdirSync"
+import from="node:fs" names="writeFileSync,mkdirSync,existsSync"
 import from="node:path" names="join"
 
 interface name=RunAgentOptions
@@ -307,6 +307,8 @@ interface name=RunAgentTeamOptions
   field name=fitnessCmd type=string optional=true
   field name=systemPrompt type=string optional=true
   field name=parentSignal type=AbortSignal optional=true
+  field name=synthesize type=boolean optional=true
+  field name=synthesisTimeoutSec type=number optional=true
 
 fn name=runAgentTeam params="input:string,dispatch:Dispatch,ctx:HandlerContext,opts?:RunAgentTeamOptions" returns="Promise<void>" async=true export=true
   signal name=abort
@@ -578,7 +580,15 @@ fn name=runAgentTeam params="input:string,dispatch:Dispatch,ctx:HandlerContext,o
       // (each typecheck is ~45s on a real codebase) AFTER the agents finish.
       const fitnessPassed = new Map<string, boolean>();
       if (taskKind === 'edit') {
-        const fitnessCmd = opts?.fitnessCmd ?? 'npm run typecheck';
+        // FU-2: default to 'npm run typecheck' but warn when used so the
+        // user knows the team-agent picked an arbitrary command. A real
+        // project-aware default lands in a follow-up — for now an explicit
+        // warning is much better than silently running an unrelated command.
+        let fitnessCmd = opts?.fitnessCmd;
+        if (!fitnessCmd || fitnessCmd.trim().length === 0) {
+          fitnessCmd = 'npm run typecheck';
+          dispatch({ type: 'warning', message: `team-agent: no fitnessCmd provided; defaulting to '${fitnessCmd}'. Pass an explicit fitnessCmd to verify the right thing.` });
+        }
         const fitnessPromises = teamResult.members.map(async (m): Promise<{engineId:string, passed:boolean}> => {
           if (!m.stepResult || m.error || !m.worktreePath) {
             return { engineId: m.engineId, passed: false };
@@ -610,16 +620,11 @@ fn name=runAgentTeam params="input:string,dispatch:Dispatch,ctx:HandlerContext,o
       const scored: Map<string, EngineResult> = scoreAgentTeamResult(teamResult, cwd, taskKind, fitnessPassed);
       const winnerInfo = determineWinner(scored, 8);
 
-      // ── Synthesis (Phase 3 wrapper, simplified for v1) ───
-      // For now: pick the winner, surface their diff/response. The full
-      // winner-refines-with-elevated-loser-insights synthesis prompt is
-      // documented in the plan but not implemented in this Phase — that
-      // requires routing through the ApiAdapter to issue an extra LLM call
-      // and is best left as a follow-up enhancement once the core loop is
-      // proven. For v1 the user gets the deterministic best member's work
-      // directly, with a transcript summary that lists all members.
+      // ── Pick winner's initial diff/response ──────────────
       let winnerDiff: string | null = null;
       let winnerAnalysis: string | null = null;
+      let synthesisRan = false;
+      let synthesisChanged = false;
       if (winnerInfo.winner) {
         const winnerMember = teamResult.members.find((m) => m.engineId === winnerInfo.winner);
         if (winnerMember && winnerMember.worktreePath && taskKind === 'edit') {
@@ -630,8 +635,239 @@ fn name=runAgentTeam params="input:string,dispatch:Dispatch,ctx:HandlerContext,o
         }
       }
 
+      // ── RT-25 synthesis: winner-refines-with-elevated-loser-insights ──
+      // Re-invoke the winner with full tool access against their worktree,
+      // giving them the losers' diffs/reasoning framed so they look for
+      // what they MISSED rather than defending what they have. Default-on;
+      // opt out with opts.synthesize=false. Cost IS metered now (Codex M4):
+      // we estimate tokens from response length and add to teamCost before
+      // the team-complete event is emitted. Post-synthesis fitness re-check
+      // (Codex H1): if the winner broke the fitness gate mid-synthesis, we
+      // revert winnerDiff to its pre-synthesis value.
+      let synthesisCostUsd = 0;
+      let synthesisFitnessRegressed = false;
+      const preSynthesisWinnerDiff = winnerDiff;  // Codex H1: save for rollback
+      const preSynthesisWinnerAnalysis = winnerAnalysis;
+      const synthesizeOn = opts?.synthesize !== false;
+      if (
+        synthesizeOn &&
+        winnerInfo.winner &&
+        !teamCancelled &&
+        !abort.signal.aborted
+      ) {
+        const winnerIdx = memberEngineIds.indexOf(winnerInfo.winner);
+        const winnerEngine = winnerIdx >= 0 ? memberEngines[winnerIdx] : null;
+        const winnerApi = winnerEngine?.api ?? null;
+        const winnerMember = teamResult.members.find((m) => m.engineId === winnerInfo.winner);
+
+        // OpenCode 8.1: explicit dispatch if winner is non-API.
+        if (!winnerApi) {
+          dispatch({
+            type: 'info',
+            message: `Synthesis skipped: winner ${winnerInfo.winner} has no API config (non-API engine).`,
+          });
+        } else if (!winnerMember) {
+          // Defensive: should never happen given determineWinner uses scored map from teamResult.
+          dispatch({ type: 'info', message: `Synthesis skipped: winner member not found in team result.` });
+        } else {
+          // Build loser contexts from the worktrees that survived.
+          const losers: AgentSynthesisLoser[] = [];
+          for (const m of teamResult.members) {
+            if (m.engineId === winnerInfo.winner) continue;
+            if (!m.stepResult) continue;  // errored or never ran
+            let loserDiff = '';
+            if (m.worktreePath && taskKind === 'edit') {
+              try { loserDiff = worktreeChangedDiff(m.worktreePath, teamResult.baseSha); } catch { /* empty */ }
+            }
+            losers.push({
+              engineId: m.engineId,
+              diff: loserDiff,
+              response: m.stepResult.response ?? '',
+              passedFitness: fitnessPassed.get(m.engineId) ?? false,
+            });
+          }
+
+          // OpenCode 8.2: explicit dispatch when all losers errored.
+          if (losers.length === 0) {
+            dispatch({
+              type: 'info',
+              message: `Synthesis skipped: no other engines have usable results (all errored or no response).`,
+            });
+          } else if (taskKind === 'edit' && winnerMember.worktreePath && winnerDiff !== null) {
+            // OpenCode 8.3: existsSync check before synthesis — worktree
+            // may have been cleaned up by a race with external processes.
+            if (!existsSync(winnerMember.worktreePath)) {
+              dispatch({
+                type: 'warning',
+                message: `Synthesis skipped: winner's worktree ${winnerMember.worktreePath} no longer exists.`,
+              });
+            } else {
+              dispatch({
+                type: 'info',
+                message: `Synthesizing: ${winnerInfo.winner} refining with ${losers.length} other engine${losers.length === 1 ? '' : 's'}' insights...`,
+              });
+              try {
+                const synthResult = await runAgentTeamSynthesis({
+                  task: input,
+                  winnerEngineId: winnerInfo.winner,
+                  winnerApi,
+                  winnerWorktreePath: winnerMember.worktreePath,
+                  winnerDiff,
+                  losers,
+                  baseSha: teamResult.baseSha,
+                  timeout: opts?.synthesisTimeoutSec ?? 180,
+                  signal: abort.signal,
+                  maxSteps: 6,
+                  // Codex M5: thread winner's systemPrompt so refinement
+                  // keeps repo-specific constraints and safety rules.
+                  systemPrompt: opts?.systemPrompt,
+                });
+                synthesisRan = true;
+                // OpenCode H1: re-check abort.signal.aborted after synthesis
+                // returns. runAgentTeamSynthesis also does this, but we
+                // double-check here in case the caller aborted between the
+                // runner's post-abort check and this handler regaining control.
+                if (teamCancelled || abort.signal.aborted) {
+                  dispatch({
+                    type: 'warning',
+                    message: `Synthesis cancelled mid-flight; falling back to winner's original diff.`,
+                  });
+                  winnerDiff = preSynthesisWinnerDiff;
+                  synthesisChanged = false;
+                } else if (synthResult.ok) {
+                  // Codex M4: meter synthesis cost. runApiAgentLoop doesn't
+                  // expose token counts, so estimate from response length
+                  // (~4 chars/token). This is an under-estimate since it
+                  // misses tool-use output, but it's better than zero and
+                  // is capped by the synthesis timeout.
+                  const estTokens = Math.ceil((synthResult.responseExcerpt.length * 4) / 4) + 800;
+                  synthesisCostUsd = winnerEngine
+                    ? estimatedTokensToCost(winnerEngine, estTokens)
+                    : 0;
+                  if (synthResult.changed) {
+                    synthesisChanged = true;
+                    winnerDiff = synthResult.synthesizedDiff;
+                    // Codex H1: post-synthesis fitness re-check. If the
+                    // winner's edits broke the fitness gate, revert
+                    // winnerDiff to the pre-synthesis value.
+                    const fitnessCmd = opts?.fitnessCmd ?? 'npm run typecheck';
+                    try {
+                      const refit = await spawnWithTimeout({
+                        command: 'sh',
+                        args: ['-c', fitnessCmd],
+                        cwd: winnerMember.worktreePath,
+                        timeout: 90,
+                      });
+                      if (refit.exitCode !== 0) {
+                        synthesisFitnessRegressed = true;
+                        winnerDiff = preSynthesisWinnerDiff;
+                        synthesisChanged = false;
+                        dispatch({
+                          type: 'warning',
+                          message: `Synthesis broke fitness gate (exit ${refit.exitCode}); reverted to original winner diff.`,
+                        });
+                      } else {
+                        dispatch({
+                          type: 'success',
+                          message: `Synthesis complete (diff updated, fitness re-verified)${synthResult.responseExcerpt ? ': ' + synthResult.responseExcerpt.slice(0, 160) : ''}`,
+                        });
+                      }
+                    } catch (refitErr: any) {
+                      synthesisFitnessRegressed = true;
+                      winnerDiff = preSynthesisWinnerDiff;
+                      synthesisChanged = false;
+                      dispatch({
+                        type: 'warning',
+                        message: `Post-synthesis fitness re-check errored (${refitErr?.message ?? String(refitErr)}); reverted to original winner diff.`,
+                      });
+                    }
+                  } else {
+                    dispatch({
+                      type: 'info',
+                      message: `Synthesis reviewed and kept original diff (no incorporable insights)`,
+                    });
+                  }
+                } else {
+                  // Codex H2/H3: runAgentTeamSynthesis now detects
+                  // empty-diff corruption + error-as-response + abort
+                  // races, so ok=false is a real failure signal.
+                  dispatch({
+                    type: 'warning',
+                    message: `Synthesis failed (${synthResult.error ?? 'unknown'}); falling back to winner's original diff.`,
+                  });
+                  winnerDiff = preSynthesisWinnerDiff;
+                  synthesisChanged = false;
+                }
+              } catch (synthErr: any) {
+                dispatch({
+                  type: 'warning',
+                  message: `Synthesis errored (${synthErr?.message ?? String(synthErr)}); falling back to winner's original diff.`,
+                });
+                winnerDiff = preSynthesisWinnerDiff;
+                synthesisChanged = false;
+              }
+            }
+          } else if (taskKind === 'investigate' && winnerAnalysis !== null && winnerAnalysis.trim()) {
+            dispatch({
+              type: 'info',
+              message: `Reconciling: ${winnerInfo.winner} merging ${losers.length} other analys${losers.length === 1 ? 'is' : 'es'}...`,
+            });
+            try {
+              const invResult = await runAgentInvestigateSynthesis({
+                task: input,
+                winnerEngineId: winnerInfo.winner,
+                winnerApi,
+                winnerCwd: winnerMember.worktreePath ?? cwd,
+                winnerResponse: winnerAnalysis,
+                losers,
+                timeout: opts?.synthesisTimeoutSec ?? 180,
+                signal: abort.signal,
+                maxSteps: 4,
+                systemPrompt: opts?.systemPrompt,
+              });
+              synthesisRan = true;
+              if (teamCancelled || abort.signal.aborted) {
+                dispatch({
+                  type: 'warning',
+                  message: `Reconciliation cancelled mid-flight; falling back to winner's original report.`,
+                });
+                winnerAnalysis = preSynthesisWinnerAnalysis;
+                synthesisChanged = false;
+              } else if (invResult.ok) {
+                const estTokens = Math.ceil(invResult.report.length) + 800;
+                synthesisCostUsd = winnerEngine
+                  ? estimatedTokensToCost(winnerEngine, estTokens)
+                  : 0;
+                synthesisChanged = invResult.report !== winnerAnalysis;
+                winnerAnalysis = invResult.report;
+                dispatch({
+                  type: 'success',
+                  message: `Reconciliation complete (${invResult.report.length} chars).`,
+                });
+              } else {
+                dispatch({
+                  type: 'warning',
+                  message: `Reconciliation failed (${invResult.error ?? 'unknown'}); falling back to winner's original report.`,
+                });
+                winnerAnalysis = preSynthesisWinnerAnalysis;
+                synthesisChanged = false;
+              }
+            } catch (synthErr: any) {
+              dispatch({
+                type: 'warning',
+                message: `Reconciliation errored (${synthErr?.message ?? String(synthErr)}); falling back to winner's original report.`,
+              });
+              winnerAnalysis = preSynthesisWinnerAnalysis;
+              synthesisChanged = false;
+            }
+          }
+        }
+      }
+
       // ── Compute team cost ────────────────────────────────
-      let teamCost = 0;
+      // Includes synthesis cost (Codex M4) so teamCostUsd in the event
+      // reflects true spend.
+      let teamCost = synthesisCostUsd;
       for (const m of teamResult.members) {
         teamCost += costFn(m.engineId, m.stepResult?.tokensUsed ?? 0);
       }
@@ -657,6 +893,10 @@ fn name=runAgentTeam params="input:string,dispatch:Dispatch,ctx:HandlerContext,o
         memberOutcomes,
         teamCostUsd: teamCost,
         teamDurationMs: teamResult.durationMs,
+        synthesisRan,
+        synthesisChanged,
+        synthesisCostUsd,
+        synthesisFitnessRegressed,
       });
 
       // ── Surface the result to the user ────────────────────

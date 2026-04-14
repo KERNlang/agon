@@ -154,6 +154,10 @@ union name=OutputEvent discriminant=type
     field name=memberOutcomes type="Array<{engineId:string,outcome:string,diffLines:number,passedFitness:boolean}>"
     field name=teamCostUsd type=number
     field name=teamDurationMs type=number
+    field name=synthesisRan type=boolean optional=true
+    field name=synthesisChanged type=boolean optional=true
+    field name=synthesisCostUsd type=number optional=true
+    field name=synthesisFitnessRegressed type=boolean optional=true
 
 interface name=PendingDelegation
   field name=action type=string

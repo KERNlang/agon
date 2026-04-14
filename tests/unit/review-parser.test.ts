@@ -84,6 +84,22 @@ describe('parseReviewBlocking — sentinel-anchored, fail-closed (Tribunal #9 + 
       expect(r.blocking).toBe(false);
       expect(r.parseFailed).toBe(false);
     });
+
+    it('tolerates CRLF line endings inside the fenced block (OpenCode b1)', () => {
+      const r = parseReviewBlocking(
+        `${SENTINEL}\r\n\`\`\`json\r\n[{"severity":"nit","blocking":false}]\r\n\`\`\``,
+      );
+      expect(r.blocking).toBe(false);
+      expect(r.parseFailed).toBe(false);
+    });
+
+    it('tolerates a bare fenced block (no json language tag)', () => {
+      const r = parseReviewBlocking(
+        `${SENTINEL}\n\`\`\`\n[]\n\`\`\``,
+      );
+      expect(r.blocking).toBe(false);
+      expect(r.parseFailed).toBe(false);
+    });
   });
 
   describe('prompt-injection resistance (Gemini fix b)', () => {

@@ -4,7 +4,7 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 
 import { join } from 'node:path';
 
-import { createCesarPlan, formatCesarPlanMarkdown, planCostEstimator, resolveWorkingDir, RUNS_DIR, tracker, AGON_HOME } from '@agon/core';
+import { createCesarPlan, formatCesarPlanMarkdown, planCostEstimator, resolveWorkingDir, RUNS_DIR, tracker, AGON_HOME, readPatchFromPath, applyPatchToTree } from '@agon/core';
 
 import type { CesarPlan, CesarPlanStep, CesarStepResult, StepExecutor } from '@agon/core';
 
@@ -74,7 +74,7 @@ export function buildStepExecutors(ctx: HandlerContext): Record<string,StepExecu
   const outputDir = join(RUNS_DIR, `plan-exec-${Date.now()}`);
   mkdirSync(outputDir, { recursive: true });
   
-  const wrap = (fn: (step: CesarPlanStep, context: Record<string,string>, signal?: AbortSignal) => Promise<{result: CesarStepResult, contextExport?: string}>): StepExecutor => ({ execute: fn });
+  const wrap = (fn: (step: CesarPlanStep, context: Record<string,string|undefined>, signal?: AbortSignal) => Promise<{result: CesarStepResult, contextExport?: string}>): StepExecutor => ({ execute: fn });
   
   // Helper: extract token/cost from tracker delta
   const snapshotTokens = () => {
@@ -82,9 +82,30 @@ export function buildStepExecutors(ctx: HandlerContext): Record<string,StepExecu
     return { tokens: s.totalTokens, cost: s.totalCostUsd };
   };
   
-  const buildContext = (step: CesarPlanStep, context: Record<string, string>) => {
+  const buildContext = (step: CesarPlanStep, context: Record<string, string | undefined>) => {
     const contextStr = (step.imports ?? []).map((k: string) => context[k] ? `## ${k}\n${context[k]}` : '').filter(Boolean).join('\n\n');
     return contextStr ? `${step.description}\n\n${contextStr}` : step.description;
+  };
+  
+  // FU-9: applyForgeWinnerToCwd — shared helper that reads the winning
+  // patch from the manifest and applies it to cwd via git apply. This
+  // closes the tribunal fix #2 loop: before, runForge produced a winner
+  // in the forgeDir worktree but never modified cwd, so the self-review
+  // gate saw an empty diff and the plan-paused fallback fired on every
+  // forge plan. Now the autonomous plan path applies the winner directly.
+  // The user-facing /forge command keeps its interactive preflight flow
+  // (via handleForge) — this only changes the plan-step execution path.
+  const applyForgeWinnerToCwd = (manifest: any): { ok: boolean; error?: string } => {
+    if (!manifest.winner) return { ok: false, error: 'No winner' };
+    const patchPath: string | undefined = manifest.patches?.[manifest.winner];
+    if (!patchPath) return { ok: false, error: `Winner ${manifest.winner} has no patchPath in manifest` };
+    const patch = readPatchFromPath(patchPath);
+    if (!patch) return { ok: false, error: `Failed to read patch at ${patchPath}` };
+    if (!patch.content || patch.content.trim().length === 0) {
+      // Winner produced an empty diff — not an error, just nothing to apply.
+      return { ok: true };
+    }
+    return applyPatchToTree(cwd, patch.content);
   };
   
   return {
@@ -126,8 +147,18 @@ export function buildStepExecutors(ctx: HandlerContext): Record<string,StepExecu
             result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: `No winner.\n${engineSummaries}`, error: 'No winner' },
           };
         }
+  
+        // FU-9: apply the winning patch to cwd so downstream review/
+        // verify steps see real changes. Failure to apply = step failure.
+        const applied = applyForgeWinnerToCwd(manifest);
+        if (!applied.ok) {
+          return {
+            result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: `Winner ${manifest.winner} but patch apply failed: ${applied.error}`, error: `patch apply failed: ${applied.error}` },
+          };
+        }
+  
         return {
-          result: { status: 'success', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: `Winner: ${manifest.winner}` },
+          result: { status: 'success', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: `Winner: ${manifest.winner} (patch applied to cwd)` },
           contextExport: `Forge winner: ${manifest.winner}`,
         };
       } catch (err) {
@@ -146,9 +177,21 @@ export function buildStepExecutors(ctx: HandlerContext): Record<string,StepExecu
           ctx.registry, ctx.adapter,
         );
         const after = snapshotTokens();
+        if (!manifest.winner) {
+          return {
+            result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: 'No winner' },
+          };
+        }
+        // FU-9: apply winning patch to cwd.
+        const applied = applyForgeWinnerToCwd(manifest);
+        if (!applied.ok) {
+          return {
+            result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: `Winner ${manifest.winner} but patch apply failed: ${applied.error}`, error: `patch apply failed: ${applied.error}` },
+          };
+        }
         return {
-          result: { status: manifest.winner ? 'success' : 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: manifest.winner ? `Winner: ${manifest.winner}` : 'No winner' },
-          contextExport: manifest.winner ? `TeamForge winner: ${manifest.winner}` : undefined,
+          result: { status: 'success', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: `Winner: ${manifest.winner} (patch applied to cwd)` },
+          contextExport: `TeamForge winner: ${manifest.winner}`,
         };
       } catch (err) {
         const after = snapshotTokens();
@@ -173,12 +216,14 @@ export function buildStepExecutors(ctx: HandlerContext): Record<string,StepExecu
       }
     }),
   
-    tribunal: wrap(async (step, context, _signal) => {
+    tribunal: wrap(async (step, context, signal) => {
       const startTime = Date.now();
       const before = snapshotTokens();
       const question = buildContext(step, context);
       try {
-        const result = await runTribunal({ question, engines: step.engines ?? [], rounds: 2, mode: step.tribunalMode as any, registry: ctx.registry, adapter: ctx.adapter, timeout: 120, outputDir: join(outputDir, step.id) });
+        // FU-1: thread signal so plan-level cancel propagates into the
+        // tribunal's per-round dispatch loop.
+        const result = await runTribunal({ question, engines: step.engines ?? [], rounds: 2, mode: step.tribunalMode as any, registry: ctx.registry, adapter: ctx.adapter, timeout: 120, outputDir: join(outputDir, step.id), signal });
         const after = snapshotTokens();
         return {
           result: { status: 'success', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: result.summary },
@@ -288,10 +333,15 @@ export function buildStepExecutors(ctx: HandlerContext): Record<string,StepExecu
         // Tribunal fix #5b: thread plan.intent through stepContext.
         // finalizePlanWithReviewGate injects __plan_intent before
         // re-entering executePlan for the review cycle.
-        const intent = (context as any)['__plan_intent'] ?? step.description;
+        // FU-5: StepExecutor's context type is now Record<string,string|undefined>
+        // so the optional read no longer needs an `as any` cast.
+        const intent = context['__plan_intent'] ?? step.description;
         const enrichedLabel = `${label} (verifying intent: ${String(intent).slice(0, 200)})`;
-        const effectiveSignal = signal ?? new AbortController().signal;
-        const { response, blocking, parseFailed } = await runReviewCore(diff, enrichedLabel, engineId, ctx, effectiveSignal);
+        // OpenCode fix (f2): pass signal as-is (may be undefined). The
+        // dummy `new AbortController().signal` fallback was a never-
+        // abortable signal that could hang the plan if the runtime ever
+        // omitted the executor signal.
+        const { response, blocking, parseFailed } = await runReviewCore(diff, enrichedLabel, engineId, ctx, signal);
         const after = snapshotTokens();
         if (blocking || parseFailed) {
           return {

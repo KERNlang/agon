@@ -10,9 +10,6 @@
 import from="react" default="React" names="useState,useEffect"
 import from="ink" names="Box,Text"
 import from="ink-spinner" default="Spinner"
-import from="@agon/core" names="resolveWorkingDir,currentBranch,tracker"
-import from="@agon/core" names="ChatSession" types=true
-import from="@agon/core" names="loadConfig"
 import from="../blocks/output-format.js" names="ENGINE_COLORS"
 import from="../blocks/rendering.js" names="color256toHex,engineColor"
 import from="../signals/job-manager.js" names="Job" types=true
@@ -103,26 +100,23 @@ screen name=AgonTip target=ink export=false
 
 // ── Screen: StatusBar ───────────────────────────────────────────────
 
-// NOTE: no memo=true on StatusBar — see KERN-GAP above. Body reads globals.
+// NOTE: no memo=true on StatusBar — see KERN-GAP above.
 screen name=StatusBar target=ink
-  prop name=config type="ReturnType<typeof loadConfig>"
-  prop name=chatSession type=ChatSession
+  prop name=cesarId type=string
+  prop name=chatMessageCount type=number
+  prop name=totalTokens type=number
+  prop name=totalCostUsd type=number
+  prop name=cwd type=string
+  prop name=branch type=string optional=true
   prop name=explorationMode type=boolean optional=true
   prop name=toolOutputExpanded type=boolean optional=true
   prop name=thinkingExpanded type=boolean optional=true
   prop name=isActive type=boolean optional=true
   render
     handler <<<
-      const cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
-      const cesarColor = color256toHex(ENGINE_COLORS[cesarId] ?? 124);
-      const workDir = resolveWorkingDir();
-      let branch = '';
-      try { branch = currentBranch(workDir); } catch { /* not a git repo */ }
-      const cwd = workDir.replace(process.env.HOME ?? '', '~');
-      const stats = tracker.getStats();
-      const cost = stats.totalCostUsd > 0 ? `$${stats.totalCostUsd.toFixed(2)}` : '';
-      const msgs = chatSession.messages.length;
-      const tokens = stats.totalTokens;
+      const cost = totalCostUsd > 0 ? `$${totalCostUsd.toFixed(2)}` : '';
+      const msgs = chatMessageCount;
+      const tokens = totalTokens;
       const contextWindows: Record<string, number> = {
         claude: 1000000, codex: 200000, gemini: 1000000, opencode: 200000,
       };
@@ -141,8 +135,12 @@ screen name=StatusBar target=ink
             {tokens > 0 ? <Text dimColor>{` | ${(tokens / 1000).toFixed(1)}k tok`}</Text> : null}
             {msgs > 0 ? <Text dimColor>{` \u00b7 ${msgs} msgs`}</Text> : null}
             {cost ? <Text dimColor>{` \u00b7 ${cost}`}</Text> : null}
-            {toolOutputExpanded !== undefined && <Text dimColor>{' \u00b7 ^E '}{toolOutputExpanded ? '\u25be' : '\u25b8'}</Text>}
-            {thinkingExpanded !== undefined && <Text dimColor>{' \u00b7 ^T '}{thinkingExpanded ? '\u25be' : '\u25b8'}</Text>}
+            {toolOutputExpanded !== undefined && <Text dimColor>{' \u00b7 '}{toolOutputExpanded ? 'tools expanded (' : 'tools collapsed ('}</Text>}
+            {toolOutputExpanded !== undefined && <Text color="#f59e0b">{'Ctrl+E'}</Text>}
+            {toolOutputExpanded !== undefined && <Text dimColor>{')'}</Text>}
+            {thinkingExpanded !== undefined && <Text dimColor>{' \u00b7 '}{thinkingExpanded ? 'thinking shown (' : 'thinking hidden ('}</Text>}
+            {thinkingExpanded !== undefined && <Text color="#f59e0b">{'Ctrl+T'}</Text>}
+            {thinkingExpanded !== undefined && <Text dimColor>{')'}</Text>}
             {isActive ? <Text dimColor>{' \u00b7 /btw ask'}</Text> : null}
           </Text>
         </Box>

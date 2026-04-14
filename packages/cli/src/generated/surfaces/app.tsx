@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Box, Text, render, useApp, useInput } from 'ink';
 
 // ── Core ───────────────────────────────────────────────
-import { EngineRegistry, loadConfig, ensureAgonHome, ensureCurrentWorkspace, startChatSession, getRatings, getActiveWorkspace, RUNS_DIR, extractImagesFromInput, resolveWorkingDir, currentBranch, configSet, createCesarMemory, modelEntryToEngineDef, appendMessage, getAgonHome } from '@agon/core';
+import { EngineRegistry, loadConfig, ensureAgonHome, ensureCurrentWorkspace, startChatSession, getRatings, getActiveWorkspace, RUNS_DIR, extractImagesFromInput, resolveWorkingDir, currentBranch, configSet, createCesarMemory, modelEntryToEngineDef, appendMessage, getAgonHome, tracker } from '@agon/core';
 
 import type { Plan, ChatSession, Skill, PersistentSession, ImageAttachment } from '@agon/core';
 
@@ -270,13 +270,19 @@ export function App() {
   const activeAbortRef = useRef<AbortController|null>(null);
   const lastActivityTimeRef = useRef<number>(Date.now());
   const blockArchivePathRef = useRef<string>(makeBlockArchivePath(Date.now()));
+  const nestedCtrlShortcutRef = useRef<{ key: string; at: number }>({ key: '', at: 0 });
+  const scrollOffsetRef = useRef<number>(0);
+  const outputBlockCountRef = useRef<number>(0);
+  const mouseInputBufferRef = useRef<string>('');
 
   const allSlashCommands = useMemo(() => {
           const builtinCmds = SLASH_COMMANDS;
           const registryCmds = commandRegistry.listForHelp();
           const skillCmds = [...dynamicSkills, ...extensionSkills].map((s: any) => ({ cmd: s.trigger, desc: s.description || s.name }));
           // Dedupe across builtins, registry-provided commands, and dynamic skills.
-          const mergedBase = [...builtinCmds, ...registryCmds];
+          const mergedBase = [...builtinCmds, ...registryCmds].filter((cmd: any, index: number, all: any[]) =>
+            all.findIndex((other: any) => other.cmd === cmd.cmd) === index
+          );
           const seen = new Set(mergedBase.map((c: any) => c.cmd));
           const uniqueSkills = skillCmds.filter((s: any) => !seen.has(s.cmd));
           return [...mergedBase, ...uniqueSkills];
@@ -289,6 +295,25 @@ export function App() {
   const config = useMemo(() => {
           return loadConfig();
   }, [configVersion]);
+
+  const statusCwd = useMemo(() => {
+          return workspacePath.replace(process.env.HOME ?? '', '~');
+  }, [workspacePath]);
+
+  const statusBranch = useMemo(() => {
+          try { return currentBranch(workspacePath); } catch { return ''; }
+  }, [workspacePath]);
+
+  const statusStats = useMemo(() => {
+          const stats = tracker.getStats();
+          const cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
+          return {
+            cesarId,
+            chatMessageCount: chatSession.messages.length,
+            totalTokens: stats.totalTokens,
+            totalCostUsd: stats.totalCostUsd,
+          };
+  }, [outputBlocks,chatSession,replState,config]);
 
   const activeStream = useMemo(() => {
           // Pick the most-recently-started entry across all in-flight streams.
@@ -329,10 +354,15 @@ export function App() {
           while (idx < visibleBlocks.length) {
             const t = visibleBlocks[idx].event.type;
             if (t === 'tool-call') {
+              if (isMutatingToolCall(visibleBlocks[idx].event)) {
+                groups.push(visibleBlocks[idx]);
+                idx++;
+                continue;
+              }
               const group: OutputBlock[] = [];
               while (idx < visibleBlocks.length) {
                 const tt = visibleBlocks[idx].event.type;
-                if (tt === 'tool-call') { group.push(visibleBlocks[idx]); idx++; }
+                if (tt === 'tool-call' && !isMutatingToolCall(visibleBlocks[idx].event)) { group.push(visibleBlocks[idx]); idx++; }
                 else if (minorTypes.has(tt) && idx + 1 < visibleBlocks.length && visibleBlocks[idx + 1].event.type === 'tool-call') { idx++; }
                 else break;
               }
@@ -370,11 +400,11 @@ export function App() {
               setStreamingText(next);
             },
             addBlock: (event: any) => {
-              setScrollOffset(0);
+              if (scrollOffsetRef.current === 0) setScrollOffset(0);
               setOutputBlocks((prev: any) => appendBlockWithCap(prev, { id: Date.now() + Math.random(), event }, blockArchivePathRef.current));
             },
             replaceBlocksOfType: (eventType: string, event: any) => {
-              setScrollOffset(0);
+              if (scrollOffsetRef.current === 0) setScrollOffset(0);
               setOutputBlocks((prev: any) => {
                 const filtered = prev.filter((b: any) => b.event.type !== eventType);
                 return appendBlockWithCap(filtered, { id: Date.now() + Math.random(), event }, blockArchivePathRef.current);
@@ -473,6 +503,13 @@ export function App() {
     setStreamingText({});
     clearPermissionQueue();
     clearThinkingBuffer();
+    setQuestionState(null);
+    setQuestionAnswer('');
+    setSlashPickerOpen(false);
+    setEnginePickerOpen(false);
+    setModelPickerOpen(false);
+    setCesarPickerOpen(false);
+    setReviewEvent(null);
     
     if (replState !== 'idle') {
       if (message) dispatch({ type: 'warning', message } as any);
@@ -787,8 +824,60 @@ export function App() {
     if (questionState) { questionState.resolve(answer); setQuestionState(null); setQuestionAnswer(''); }
   }, [questionState]);
 
+  const handleComposerCtrlShortcut = useCallback((shortcut:string) => {
+    nestedCtrlShortcutRef.current = { key: shortcut, at: Date.now() };
+    switch (shortcut) {
+      case 'e':
+        ctrlKeyHandledRef.current = true;
+        setScrollOffset(0);
+        setInputKey((k: number) => k + 1);
+        setToolOutputExpanded((prev: boolean) => !prev);
+        return;
+      case 't':
+        ctrlKeyHandledRef.current = true;
+        setThinkingExpanded((prev: boolean) => !prev);
+        return;
+      case 'l':
+        ctrlKeyHandledRef.current = true;
+        handleSubmit('/clear');
+        return;
+      case 'r':
+        ctrlKeyHandledRef.current = true;
+        openResultsPager();
+        return;
+      case 'j':
+        ctrlKeyHandledRef.current = true;
+        setInputValue((prev: string) => prev + '\n');
+        return;
+      default:
+        return;
+    }
+  }, []);
+
   const _inputHandlerRef = useRef<(input: string, key: any) => void>(() => {});
   _inputHandlerRef.current = (input: string, key: any) => {
+    const normalizedCtrlInput = key.ctrl
+      ? ({
+          '\x01': 'a',
+          '\x03': 'c',
+          '\x05': 'e',
+          '\x0a': 'j',
+          '\x0b': 'k',
+          '\x0c': 'l',
+          '\x12': 'r',
+          '\x14': 't',
+          '\x15': 'u',
+          '\x17': 'w',
+        } as Record<string, string>)[input] ?? input
+      : input;
+    if (key.ctrl && normalizedCtrlInput) {
+      const nested = nestedCtrlShortcutRef.current;
+      if (nested.key === normalizedCtrlInput && Date.now() - nested.at < 120) {
+        nestedCtrlShortcutRef.current = { key: '', at: 0 };
+        return;
+      }
+    }
+    
     const action = resolveKeyboardInput({
       input, key,
       modelPickerOpen, cesarPickerOpen, slashPickerOpen, enginePickerOpen,
@@ -822,6 +911,8 @@ export function App() {
         return;
       case 'toggleToolExpand':
         ctrlKeyHandledRef.current = true;
+        setScrollOffset(0);
+        setInputKey((k: number) => k + 1);
         setToolOutputExpanded((prev: boolean) => !prev); return;
       case 'toggleThinking':
         ctrlKeyHandledRef.current = true;
@@ -853,7 +944,20 @@ export function App() {
         if (questionState) { questionState.resolve(''); setQuestionState(null); setQuestionAnswer(''); }
         if (replState !== 'idle') {
           interruptActiveRun(activeAbortRef.current ? 'Cancelled.' : 'Interrupted.', false);
-        } else { process.exit(0); }
+        } else {
+          const now = Date.now();
+          if (inputValue) {
+            _lastSigintAt.value = now;
+            setInputValue('');
+            dispatch({ type: 'info', message: 'Input cleared. Press Ctrl+C again to exit.' } as any);
+            return;
+          }
+          if (now - _lastSigintAt.value < 1200) {
+            process.exit(0);
+          }
+          _lastSigintAt.value = now;
+          dispatch({ type: 'info', message: 'Press Ctrl+C again to exit.' } as any);
+        }
         return;
     }
   };
@@ -872,6 +976,51 @@ export function App() {
   useEffect(() => {
     modeRef.current = mode;
   }, [mode]);
+
+  useEffect(() => {
+    scrollOffsetRef.current = scrollOffset;
+  }, [scrollOffset]);
+
+  useEffect(() => {
+    outputBlockCountRef.current = outputBlocks.length;
+  }, [outputBlocks]);
+
+  useEffect(() => {
+    if (!process.stdin.isTTY || !process.stdout.isTTY) return;
+    
+    const onData = (buf: Buffer | string) => {
+      const chunk = typeof buf === 'string' ? buf : buf.toString('utf8');
+      if (!chunk.includes('\x1b[<')) return;
+    
+      let buffer = mouseInputBufferRef.current + chunk;
+      const sgrPattern = /\x1b\[<(\d+);(\d+);(\d+)([mM])/g;
+      let match: RegExpExecArray | null;
+      let lastIndex = 0;
+    
+      while ((match = sgrPattern.exec(buffer)) !== null) {
+        lastIndex = sgrPattern.lastIndex;
+        const code = Number(match[1]);
+        if (Number.isNaN(code)) continue;
+    
+        // 64/65 are wheel up/down in xterm SGR mouse mode.
+        if (code === 64) {
+          setScrollOffset((prev: number) => Math.min(prev + 3, Math.max(0, outputBlockCountRef.current - 1)));
+        } else if (code === 65) {
+          setScrollOffset((prev: number) => Math.max(0, prev - 3));
+        }
+      }
+    
+      mouseInputBufferRef.current = lastIndex > 0 ? buffer.slice(lastIndex) : buffer.slice(-32);
+    };
+    
+    process.stdout.write('\x1b[?1000h\x1b[?1006h');
+    process.stdin.on('data', onData);
+    
+    return () => {
+      process.stdin.off('data', onData);
+      process.stdout.write('\x1b[?1000l\x1b[?1006l');
+    };
+  }, []);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -897,10 +1046,11 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    if (!eventBus) return;
     const modes = ['brainstorm', 'forge', 'tribunal', 'campfire'] as const;
-    const offs: (() => void)[] = [];
+    const listeners: Array<{ mode: string; handler: () => void }> = [];
     for (const mode of modes) {
-      const off = eventBus.on(`post:${mode}`, () => {
+      const handler = () => {
         const result = sessionResultStore.getLatest();
         if (!result || result.type !== mode) return;
         const winner = result.winner ?? 'none';
@@ -927,10 +1077,15 @@ export function App() {
         // Narrate to UI
         const label = winner !== 'none' ? `${mode} complete — winner: ${winner}` : `${mode} complete`;
         dispatch({ type: 'info', message: label } as any);
-      });
-      offs.push(off);
+      };
+      eventBus.on(`post:${mode}`, handler);
+      listeners.push({ mode, handler });
     }
-    return () => { for (const off of offs) off(); };
+    return () => {
+      for (const listener of listeners) {
+        eventBus.off(`post:${listener.mode}`, listener.handler);
+      }
+    };
   }, [eventBus,dispatch,chatSession]);
 
   useEffect(() => {
@@ -991,6 +1146,13 @@ export function App() {
       setAgentProgress({});
       clearPermissionQueue();
       clearThinkingBuffer();
+      setQuestionState(null);
+      setQuestionAnswer('');
+      setSlashPickerOpen(false);
+      setEnginePickerOpen(false);
+      setModelPickerOpen(false);
+      setCesarPickerOpen(false);
+      setReviewEvent(null);
       setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state);
     };
   }, [setActiveAbort]);
@@ -1132,12 +1294,13 @@ export function App() {
           questionState={questionState}
           questionAnswer={questionAnswer}
           onQuestionAnswerChange={setQuestionAnswer}
-          onQuestionAnswerSubmit={handleQuestionAnswer} />
+          onQuestionAnswerSubmit={handleQuestionAnswer}
+          onCtrlShortcut={handleComposerCtrlShortcut} />
         {(() => {
           const _cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
           return (<>
             <CesarStatusStrip cesarId={_cesarId} confidence={cesarConfidence} spinner={liveSpinner} engines={liveProgress} startTime={chatStartTimeRef.current || 0} streamSnippet={streamSnippet} isActive={replState !== 'idle' || runningJobs.length > 0} planModeQueued={planModeQueued} activePlanState={activePlan?.state ?? null} />
-            {mode === 'chat' && <StatusBar config={config} chatSession={chatSession} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} thinkingExpanded={thinkingExpanded} isActive={replState !== 'idle'} />}
+            {mode === 'chat' && <StatusBar cesarId={statusStats.cesarId} chatMessageCount={statusStats.chatMessageCount} totalTokens={statusStats.totalTokens} totalCostUsd={statusStats.totalCostUsd} cwd={statusCwd} branch={statusBranch} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} thinkingExpanded={thinkingExpanded} isActive={replState !== 'idle'} />}
           </>);
         })()}
       </Box>
@@ -1146,24 +1309,54 @@ export function App() {
   );
 }
 
+export function isMutatingToolCall(event: any): boolean {
+  if (!event || event.type !== 'tool-call') return false;
+  const toolKey = String(event.tool ?? '').toLowerCase();
+  if (['edit', 'write', 'update', 'applypatch', 'apply_patch'].includes(toolKey)) return true;
+  if (typeof event.input !== 'string' || !event.input.trim().startsWith('{')) return false;
+  try {
+    const parsed = JSON.parse(event.input);
+    return !!(
+      parsed.file_path ||
+      parsed.filePath ||
+      (parsed.path && (parsed.content || parsed.new_string || parsed.newString || parsed.old_string || parsed.oldString))
+    );
+  } catch {
+    return false;
+  }
+}
+
 export const _activeAborts: Set<AbortController> = new Set<AbortController>();
 
 export const _cancelCallback: { fn: (() => void) | null } = { fn: null };
 
 export const _cesarSessionRef: { session: PersistentSession | null } = { session: null };
 
+export const _lastSigintAt: { value: number } = { value: 0 };
+
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());
   process.on('SIGINT', () => {
-    if (_activeAborts.size > 0) {
-      for (const abort of _activeAborts) abort.abort();
-      _activeAborts.clear();
-      if (_cancelCallback.fn) _cancelCallback.fn();
-    } else {
+    const now = Date.now();
+    if (now - _lastSigintAt.value < 1200) {
       if (_cesarSessionRef.session) { try { _cesarSessionRef.session.close(); } catch { /* session already closed or errored */ } _cesarSessionRef.session = null; }
       process.exit(0);
     }
+    if (_activeAborts.size > 0) {
+      for (const abort of _activeAborts) abort.abort();
+      _activeAborts.clear();
+      _lastSigintAt.value = now;
+      if (_cancelCallback.fn) _cancelCallback.fn();
+      return;
+    }
+    _lastSigintAt.value = now;
   });
+  if (process.stdout.isTTY) {
+    process.stdout.write('\x1b[?1049h');
+    process.on('exit', () => {
+      try { process.stdout.write('\x1b[?1049l'); } catch { /* stdout gone */ }
+    });
+  }
   render(<App />, { exitOnCtrlC: false });
 }

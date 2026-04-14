@@ -35,11 +35,11 @@ export { ChromeBar };
 const HistoryView = React.memo(function HistoryView({ visibleBlocks, groupedBlocks, mode, scrollOffset, thinkingExpanded }: { visibleBlocks:OutputBlock[]; groupedBlocks:(OutputBlock | OutputBlock[])[] | null; mode:string; scrollOffset:number; thinkingExpanded:boolean }) {
   return (
     <>
-      {scrollOffset > 0 && (
-        <Box paddingX={1}>
-          <Text dimColor>{`\u2191 ${scrollOffset} block${scrollOffset > 1 ? 's' : ''} above \u2014 Shift+\u2191 to scroll`}</Text>
-        </Box>
-      )}
+  {scrollOffset > 0 && (
+    <Box paddingX={1}>
+      <Text dimColor>{`\u2191 ${scrollOffset} block${scrollOffset > 1 ? 's' : ''} above \u2014 mouse wheel or Shift+\u2191/\u2193`}</Text>
+    </Box>
+  )}
       {groupedBlocks === null
         ? visibleBlocks.map((block: OutputBlock) => (<OutputBlockView key={block.id} event={block.event} mode={mode} toolOutputExpanded={true} thinkingExpanded={thinkingExpanded} />))
         : groupedBlocks.map((item: OutputBlock | OutputBlock[]) => {

@@ -6,12 +6,6 @@ import { Box, Text } from 'ink';
 // ── Core ───────────────────────────────────────────────
 import Spinner from 'ink-spinner';
 
-import { resolveWorkingDir, currentBranch, tracker } from '@agon/core';
-
-import type { ChatSession } from '@agon/core';
-
-import { loadConfig } from '@agon/core';
-
 import { ENGINE_COLORS } from '../blocks/output-format.js';
 
 import { color256toHex, engineColor } from '../blocks/rendering.js';
@@ -62,17 +56,10 @@ export function AgonTip() {
   );
 }
 
-export function StatusBar({ config, chatSession, explorationMode, toolOutputExpanded, thinkingExpanded, isActive }: { config:ReturnType<typeof loadConfig>; chatSession:ChatSession; explorationMode?:boolean; toolOutputExpanded?:boolean; thinkingExpanded?:boolean; isActive?:boolean }) {
-  const cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
-  const cesarColor = color256toHex(ENGINE_COLORS[cesarId] ?? 124);
-  const workDir = resolveWorkingDir();
-  let branch = '';
-  try { branch = currentBranch(workDir); } catch { /* not a git repo */ }
-  const cwd = workDir.replace(process.env.HOME ?? '', '~');
-  const stats = tracker.getStats();
-  const cost = stats.totalCostUsd > 0 ? `$${stats.totalCostUsd.toFixed(2)}` : '';
-  const msgs = chatSession.messages.length;
-  const tokens = stats.totalTokens;
+export function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd, cwd, branch, explorationMode, toolOutputExpanded, thinkingExpanded, isActive }: { cesarId:string; chatMessageCount:number; totalTokens:number; totalCostUsd:number; cwd:string; branch?:string; explorationMode?:boolean; toolOutputExpanded?:boolean; thinkingExpanded?:boolean; isActive?:boolean }) {
+  const cost = totalCostUsd > 0 ? `$${totalCostUsd.toFixed(2)}` : '';
+  const msgs = chatMessageCount;
+  const tokens = totalTokens;
   const contextWindows: Record<string, number> = {
     claude: 1000000, codex: 200000, gemini: 1000000, opencode: 200000,
   };
@@ -91,8 +78,12 @@ export function StatusBar({ config, chatSession, explorationMode, toolOutputExpa
         {tokens > 0 ? <Text dimColor>{` | ${(tokens / 1000).toFixed(1)}k tok`}</Text> : null}
         {msgs > 0 ? <Text dimColor>{` \u00b7 ${msgs} msgs`}</Text> : null}
         {cost ? <Text dimColor>{` \u00b7 ${cost}`}</Text> : null}
-        {toolOutputExpanded !== undefined && <Text dimColor>{' \u00b7 ^E '}{toolOutputExpanded ? '\u25be' : '\u25b8'}</Text>}
-        {thinkingExpanded !== undefined && <Text dimColor>{' \u00b7 ^T '}{thinkingExpanded ? '\u25be' : '\u25b8'}</Text>}
+        {toolOutputExpanded !== undefined && <Text dimColor>{' \u00b7 '}{toolOutputExpanded ? 'tools expanded (' : 'tools collapsed ('}</Text>}
+        {toolOutputExpanded !== undefined && <Text color="#f59e0b">{'Ctrl+E'}</Text>}
+        {toolOutputExpanded !== undefined && <Text dimColor>{')'}</Text>}
+        {thinkingExpanded !== undefined && <Text dimColor>{' \u00b7 '}{thinkingExpanded ? 'thinking shown (' : 'thinking hidden ('}</Text>}
+        {thinkingExpanded !== undefined && <Text color="#f59e0b">{'Ctrl+T'}</Text>}
+        {thinkingExpanded !== undefined && <Text dimColor>{')'}</Text>}
         {isActive ? <Text dimColor>{' \u00b7 /btw ask'}</Text> : null}
       </Text>
     </Box>

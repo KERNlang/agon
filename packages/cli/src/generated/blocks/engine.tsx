@@ -294,7 +294,7 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
           {preview.map((line: string, i: number) => (
             <Text key={`think-${i}`} italic dimColor color="#8b8b8b">{'  \u25B9 '}{line}</Text>
           ))}
-          {lines.length > 3 && <Text italic dimColor color="#8b8b8b">{'  \u25B9 \u2026'}{lines.length - 3}{' more lines  '}<Text color="#f59e0b">{'^T'}</Text></Text>}
+          {lines.length > 3 && <Text italic dimColor color="#8b8b8b">{'  \u25B9 \u2026'}{lines.length - 3}{' more lines  '}<Text color="#f59e0b">{'Ctrl+T'}</Text></Text>}
         </Box>
       );
     }
@@ -404,7 +404,10 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
         if (rawInput.startsWith('{')) parsed = JSON.parse(rawInput);
       } catch { /* not JSON — rawInput used as fallback */ }
       const toolKey = event.tool.toLowerCase();
-      const collapsedHint = !toolOutputExpanded ? <Text color="#f59e0b">{' \u25b8 Ctrl+E'}</Text> : null;
+      const forceExpanded = ['edit', 'write', 'update', 'applypatch', 'apply_patch'].includes(toolKey);
+      const collapsedHint = !toolOutputExpanded
+        ? <Text dimColor>{' \u00b7 '}<Text color="#f59e0b">{'Ctrl+E expand tools'}</Text></Text>
+        : null;
   
       // ── Bash / Run ──
       if (toolKey === 'bash' || toolKey === 'run') {
@@ -467,7 +470,7 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
                 <>
                   <Text> </Text>
                   {headLines.map((line: string, i: number) => renderLine(line, i, 'head'))}
-                  {skipped > 0 && <Text dimColor>{'    \u2026 '}{skipped}{' more lines \u2026 (^E to expand all)'}</Text>}
+                  {skipped > 0 && <Text dimColor>{'    \u2026 '}{skipped}{' more lines \u2026 (Ctrl+E to expand all)'}</Text>}
                   {tailLines.map((line: string, i: number) => renderLine(line, i, 'tail'))}
                 </>
               );
@@ -477,7 +480,7 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
       }
   
       // ── Edit ──
-      if (toolKey === 'edit') {
+      if (toolKey === 'edit' || toolKey === 'update') {
         const filePath = (parsed.file_path as string) || (parsed.filePath as string) || '';
         const oldStr = (parsed.old_string as string) || (parsed.oldString as string) || '';
         const newStr = (parsed.new_string as string) || (parsed.newString as string) || '';
@@ -485,11 +488,11 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
         const addedCount = newStr ? newStr.split('\n').length : 0;
         const removedCount = oldStr ? oldStr.split('\n').length : 0;
         // Collapsed: single-line summary.
-        if (!toolOutputExpanded) {
+        if (!toolOutputExpanded && !forceExpanded) {
           return (
             <Box paddingLeft={2}>
               <Text>
-                {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().edit + ' Update'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}{' '}<Text dimColor>\u00b7 </Text><Text color="#ef4444">-{removedCount}</Text><Text dimColor>{' '}</Text><Text color="#4ade80">+{addedCount}</Text>{' lines'}{' '}<Text color="#f59e0b">\u25b8 Ctrl+E</Text>
+                {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().edit + ' Update'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}{' '}<Text dimColor>\u00b7 </Text><Text color="#ef4444">-{removedCount}</Text><Text dimColor>{' '}</Text><Text color="#4ade80">+{addedCount}</Text>{' lines'}<Text dimColor>{' \u00b7 '}</Text><Text color="#f59e0b">{'Ctrl+E expand tools'}</Text>
               </Text>
             </Box>
           );
@@ -535,11 +538,11 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
         const shortPath = filePath.replace(process.cwd() + '/', '').replace(process.env.HOME ?? '', '~');
         const lineCount = content ? content.split('\n').length : 0;
         // Collapsed: single-line summary.
-        if (!toolOutputExpanded) {
+        if (!toolOutputExpanded && !forceExpanded) {
           return (
             <Box paddingLeft={2}>
               <Text>
-                {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().write + ' Write'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}{lineCount > 0 && <><Text dimColor>{' \u00b7 '}</Text><Text color="#4ade80">+{lineCount}</Text><Text dimColor>{' lines'}</Text></>}{' '}<Text color="#f59e0b">\u25b8 Ctrl+E</Text>
+                {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().write + ' Write'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}{lineCount > 0 && <><Text dimColor>{' \u00b7 '}</Text><Text color="#4ade80">+{lineCount}</Text><Text dimColor>{' lines'}</Text></>}<Text dimColor>{' \u00b7 '}</Text><Text color="#f59e0b">{'Ctrl+E expand tools'}</Text>
               </Text>
             </Box>
           );
@@ -662,7 +665,7 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
       const label = toolLabels[event.tool] ?? `${ic.tool} ${event.tool}`;
       const inputPreview = event.input.length > 80 ? event.input.slice(0, 80) + '\u2026' : event.input;
       // Collapsed: 1-line summary for generic tools
-      if (!toolOutputExpanded) {
+      if (!toolOutputExpanded && !forceExpanded) {
         const outLines = event.output ? event.output.split('\n').length : 0;
         return (
           <Box paddingLeft={2}>
@@ -735,6 +738,7 @@ const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:Out
   let errors = 0;
   let running = 0;
   let groupEngineId = '';
+  const changedFiles: string[] = [];
   for (const b of blocks) {
     const ev = b.event as any;
     groupEngineId = ev.engineId || groupEngineId;
@@ -742,6 +746,17 @@ const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:Out
     toolCounts[name] = (toolCounts[name] || 0) + 1;
     if (ev.status === 'error') errors++;
     if (ev.status === 'running') running++;
+    const toolKey = String(name).toLowerCase();
+    if ((toolKey === 'edit' || toolKey === 'write') && typeof ev.input === 'string' && ev.input.trim().startsWith('{')) {
+      try {
+        const parsed = JSON.parse(ev.input);
+        const filePath = (parsed.file_path as string) || (parsed.filePath as string) || '';
+        if (filePath) {
+          const shortPath = filePath.replace(process.cwd() + '/', '').replace(process.env.HOME ?? '', '~');
+          if (!changedFiles.includes(shortPath)) changedFiles.push(shortPath);
+        }
+      } catch { /* ignore malformed tool input */ }
+    }
   }
   const summary = Object.entries(toolCounts)
     .map(([name, count]: [string, number]) => count > 1 ? `${name}\u00d7${count}` : name)
@@ -749,6 +764,9 @@ const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:Out
   const eColor = engineColor(groupEngineId);
   const statusColor = errors > 0 ? '#ef4444' : running > 0 ? '#fbbf24' : '#4ade80';
   const statusIcon = errors > 0 ? icons().fail : running > 0 ? '\u27f3' : icons().success;
+  const changedSummary = changedFiles.length > 0
+    ? ` \u00b7 changed ${changedFiles.length} file${changedFiles.length > 1 ? 's' : ''}: ${changedFiles.slice(0, 2).join(', ')}${changedFiles.length > 2 ? ', \u2026' : ''}`
+    : '';
   
   return (
     <Box paddingLeft={2}>
@@ -757,7 +775,8 @@ const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:Out
         <Text color={statusColor}>{statusIcon}</Text>
         <Text bold>{` ${blocks.length} tool calls`}</Text>
         <Text dimColor>{` (${summary})`}</Text>
-        <Text color="#f59e0b">{' \u25b8 ^E'}</Text>
+        {changedSummary && <Text color="#a78bfa">{changedSummary}</Text>}
+        <Text color="#f59e0b">{' \u25b8 Ctrl+E'}</Text>
       </Text>
     </Box>
   );
@@ -783,7 +802,7 @@ const DebateGroup = React.memo(function DebateGroup({ blocks }: { blocks:OutputB
           </Text>
         );
       })}
-      <Text color="#a78bfa">{'\u2514'}<Text color="#f59e0b">{' \u25b8 ^E expand'}</Text></Text>
+      <Text color="#a78bfa">{'\u2514'}<Text color="#f59e0b">{' \u25b8 Ctrl+E expand'}</Text></Text>
     </Box>
   );
 });
@@ -812,7 +831,7 @@ const BidGroup = React.memo(function BidGroup({ blocks }: { blocks:OutputBlock[]
           </Text>
         );
       })}
-      <Text color="#22d3ee">{'\u2514'}<Text color="#f59e0b">{' \u25b8 ^E expand'}</Text></Text>
+      <Text color="#22d3ee">{'\u2514'}<Text color="#f59e0b">{' \u25b8 Ctrl+E expand'}</Text></Text>
     </Box>
   );
 });

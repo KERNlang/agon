@@ -18,7 +18,7 @@ import { CONFIDENCE_TIERS, parseConfidence, confidenceBadge } from './confidence
 
 import { parseSuggestion } from './suggestion.js';
 
-import { ensureCesarSession, CESAR_SYSTEM_PROMPT } from './session.js';
+import { ensureCesarSession, CESAR_SYSTEM_PROMPT, buildCesarSystemPrompt } from './session.js';
 
 import { createCesarToolRegistry, createEagerToolContext, executeEagerTool } from './tools.js';
 
@@ -104,7 +104,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       ctx.cesar = {
         busy: false, busySince: null, queue: null,
         toolRegistry: null, hasNativeTools: false, lastDispatch: null,
-        pendingDelegation: null, reportedConfidence: undefined,
+        pendingDelegation: null, reportedConfidence: undefined, confidenceSatisfied: false, blockedOnConfidence: null,
         autoNero: false, advisorPending: false, lastEscalation: null as string | null,
         mcpFingerprint: undefined, planDispatch: null, proposedPlan: undefined,
         sessionMcpServers: [],
@@ -139,6 +139,9 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
     ctx.cesar!.busy = true;
     ctx.cesar!.busySince = Date.now();
     ctx.cesar!.lastEscalation = null;
+    ctx.cesar!.reportedConfidence = undefined;
+    ctx.cesar!.confidenceSatisfied = false;
+    ctx.cesar!.blockedOnConfidence = null;
     const _brainStartMs = Date.now();
     if (ctx.eventBus) await ctx.eventBus.emit('pre:cesar-brain', { input });
   
@@ -177,7 +180,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           mkdirSync(outputDir, { recursive: true });
           const freshResult = await ctx.adapter.dispatch({
             engine, prompt: input, cwd: resolveWorkingDir(), mode: 'exec' as any,
-            timeout: config.timeout ?? 120, outputDir, signal: abort.signal, systemPrompt: CESAR_SYSTEM_PROMPT,
+            timeout: config.timeout ?? 120, outputDir, signal: abort.signal, systemPrompt: buildCesarSystemPrompt(ctx),
           });
           dispatch({ type: 'spinner-stop' });
           if (freshResult.stdout.trim()) {
@@ -378,6 +381,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 if (conf.value !== null) {
                   parsedConfidence = conf.value;
                   confidenceParsed = true;
+                  ctx.cesar!.confidenceSatisfied = true;
                   dispatch({ type: 'info', message: confidenceBadge(conf.value) + ` Cesar` });
                   dispatch({ type: 'confidence-update', value: conf.value });
                   ctx.eventBus?.emit('cesar:confidence', { value: conf.value, source: 'stream' }).catch(() => {});
@@ -558,6 +562,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 const value = typeof signal.args?.value === 'number' ? signal.args.value : null;
                 if (value !== null && value >= 0 && value <= 100) {
                   ctx.cesar!.reportedConfidence = value;
+                  ctx.cesar!.confidenceSatisfied = true;
                   parsedConfidence = value;
                   dispatch({ type: 'info', message: confidenceBadge(value) + ` Cesar (via MCP)` });
                   dispatch({ type: 'confidence-update', value });

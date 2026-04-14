@@ -460,24 +460,24 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
     return estimatedTokensToCost(eng, tokensUsed);
   };
   
-    const teamConfig: AgentTeamConfig = {
-      members,
-      cwd,
-      budget,
-      isolate: true,  // always isolate for team mode — concurrent file edits would clobber
+  const teamConfig: AgentTeamConfig = {
+    members,
+    cwd,
+    budget,
+    isolate: true,  // always isolate for team mode — concurrent file edits would clobber
     teamBudget: {
       maxTeamCostUsd: opts?.maxTeamCostUsd ?? 3.00,  // hard ceiling
       maxTeamWallClockMs: 15 * 60 * 1000,            // 15 min
     },
-      costFn,
-      heavyToolSemaphorePermits: 1,  // serialize heavy tools across members (RT-26)
-      thread: teamThread,  // shared ContextThread — all members share the same history
-      permissionMode: (ctx.config as any).permissionMode ?? 'ask',
-      allowedCommands: (ctx.config as any).allowedCommands ?? [],
-      toolPermissions: (ctx.config as any).toolPermissions ?? {},
-      onPermissionAsk: (engineId: string, tool: string, command: string, reason: string) =>
-        buildAgentApprovalCallback(dispatch, ctx, engineId)(tool, command, reason),
-    };
+    costFn,
+    heavyToolSemaphorePermits: 1,  // serialize heavy tools across members (RT-26)
+    thread: teamThread,  // shared ContextThread — all members share the same history
+    permissionMode: (ctx.config as any).permissionMode ?? 'ask',
+    allowedCommands: (ctx.config as any).allowedCommands ?? [],
+    toolPermissions: (ctx.config as any).toolPermissions ?? {},
+    onPermissionAsk: (engineId: string, tool: string, command: string, reason: string) =>
+      buildAgentApprovalCallback(dispatch, ctx, engineId)(tool, command, reason),
+  };
   
   // ── Wire abort BEFORE creating team — RT-11 fix ───────────
   // The original /agent had a race between the early abort.signal.aborted

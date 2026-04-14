@@ -73,7 +73,7 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
     // Server REQUEST: has both id and method, expects a response.
     if (msg.id !== undefined && msg.method) {
       const m = msg.method;
-    
+  
       if (isAcp && m === 'session/request_permission') {
         const options: any[] = (msg.params as any)?.options ?? [];
         const toolCall = (msg.params as any)?.toolCall ?? {};
@@ -82,7 +82,7 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
         const allowOpt = options.find((o: any) => o.kind === 'allow_once') ?? options.find((o: any) => o.optionId?.includes('proceed_once'));
         const alwaysOpt = options.find((o: any) => o.kind === 'allow_always' || o.optionId?.includes('proceed_always'));
         const rejectOpt = options.find((o: any) => o.kind === 'reject_once') ?? options.find((o: any) => o.optionId?.includes('reject'));
-    
+  
         if (opts.onApproval) {
           opts.onApproval(String(tName), String(tCmd), 'Agent tool approval requested').then((result: boolean | string) => {
             const approved = typeof result === 'string' ? false : result;
@@ -100,7 +100,7 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
         }
         return;
       }
-    
+  
       const methodToolMap: Record<string, string> = {
         'item/commandExecution/requestApproval': 'Bash',
         'item/fileChange/requestApproval': 'Edit',
@@ -110,7 +110,7 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
       const toolCmd = (msg.params as any)?.command?.command ?? (msg.params as any)?.command ?? (msg.params as any)?.description ?? (msg.params as any)?.path ?? JSON.stringify(msg.params ?? {});
       const isV2 = m.startsWith('item/');
       const buildResult = (approved: boolean) => isV2 ? { decision: approved ? 'accept' : 'decline' } : { approved };
-    
+  
       if (opts.onApproval) {
         opts.onApproval(String(toolName), String(toolCmd), 'Agent tool approval requested').then((result: boolean | string) => {
           if (typeof result === 'string') {

@@ -175,7 +175,7 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
       const now = Date.now();
       if ((handleOutputEvent as any)._lastSpinnerUpdate && now - (handleOutputEvent as any)._lastSpinnerUpdate < 200) return;
       (handleOutputEvent as any)._lastSpinnerUpdate = now;
-      actions.setLiveSpinner((prev: any) => prev ? { ...prev, message: event.message } : null);
+      actions.setLiveSpinner((prev: any) => prev ? { ...prev, message: (event as any).message } : null);
       return;
     }
     case 'progress-update':

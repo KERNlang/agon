@@ -267,35 +267,35 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
         // across all members of an AgentTeam (created once in initialize)
         // and passed via opts.heavyToolSemaphore. Solo /agent runs leave
         // it undefined → no semaphore overhead.
-      const isHeavyBash = opts.heavyToolSemaphore != null
-        && tc.name === 'Bash'
-        && typeof args.command === 'string'
-        && isHeavyTool(args.command);
+        const isHeavyBash = opts.heavyToolSemaphore != null
+          && tc.name === 'Bash'
+          && typeof args.command === 'string'
+          && isHeavyTool(args.command);
   
-      let result: string;
-      const permissionAsk = opts.onPermissionAsk
-        ? (tool: string, message: string) => opts.onPermissionAsk!(
-            tool,
-            typeof args.command === 'string'
-              ? args.command
-              : typeof args.file_path === 'string'
-                ? args.file_path
-                : JSON.stringify(args),
-            message,
-          )
-        : undefined;
-      const runToolCall = async () => {
-        try {
-          const callResult = await executeToolCall(
-            { id: tc.id, name: tc.name, input: args },
-            toolCtx,
-            registry,
-            permissionAsk,
-          );
-          return callResult.result.ok ? callResult.result.content : (callResult.result.error ?? 'Tool execution failed');
-        } catch (err: any) {
-          return `Error: ${err.message ?? String(err)}`;
-        }
+        let result: string;
+        const permissionAsk = opts.onPermissionAsk
+          ? (tool: string, message: string) => opts.onPermissionAsk!(
+              tool,
+              typeof args.command === 'string'
+                ? args.command
+                : typeof args.file_path === 'string'
+                  ? args.file_path
+                  : JSON.stringify(args),
+              message,
+            )
+          : undefined;
+        const runToolCall = async () => {
+          try {
+            const callResult = await executeToolCall(
+              { id: tc.id, name: tc.name, input: args },
+              toolCtx,
+              registry,
+              permissionAsk,
+            );
+            return callResult.result.ok ? callResult.result.content : (callResult.result.error ?? 'Tool execution failed');
+          } catch (err: any) {
+            return `Error: ${err.message ?? String(err)}`;
+          }
         };
   
         if (isHeavyBash && opts.heavyToolSemaphore) {

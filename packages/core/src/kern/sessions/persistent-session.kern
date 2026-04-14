@@ -1415,6 +1415,12 @@ Respond with ONLY the summary, no preamble.`;
           const READ_TOOLS = new Set(['Read', 'Grep', 'Glob', 'RetrieveResult']);
           const WRITE_TOOLS = new Set(['Edit', 'Write']);
           const ORCH_TOOLS = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Delegate']);
+          const hasHistoryToolCall = (toolNames: Set<string>) => messageHistory.some((msg: any) =>
+            Array.isArray(msg?.tool_calls) && msg.tool_calls.some((tc: any) => {
+              const fnName = tc?.function?.name ?? tc?.name;
+              return typeof fnName === 'string' && toolNames.has(fnName);
+            })
+          );
           // Detect task complexity from the user's message
           const userMsg = opts.message.toLowerCase();
           const isComplexTask = (
@@ -1531,7 +1537,9 @@ Respond with ONLY the summary, no preamble.`;
               // forge context (workers should code), or if reads happened this turn.
               const hasWrites = parsedCalls.some(tc => WRITE_TOOLS.has(tc.name));
               const hasReads = parsedCalls.some(tc => READ_TOOLS.has(tc.name));
-              if (hasWrites && readCount === 0 && orchCount === 0 && step <= 2 && !isSingleFileMention && isComplexTask) {
+              const investigatedAlready = readCount > 0 || hasHistoryToolCall(READ_TOOLS);
+              const orchestratedAlready = orchCount > 0 || hasHistoryToolCall(ORCH_TOOLS);
+              if (hasWrites && !investigatedAlready && !orchestratedAlready && step <= 2 && !isSingleFileMention && isComplexTask) {
                 // Cowboy detected: writing without investigating on a complex task
                 yield { type: 'status' as const, content: 'solo-coding gate: forcing investigation first…' };
                 // Don't execute the writes — return error feedback for write tools only

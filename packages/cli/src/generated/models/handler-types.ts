@@ -104,6 +104,8 @@ export interface CesarState {
   lastDispatch: ((event: any) => void) | null;
   pendingDelegation: PendingDelegation | null;
   reportedConfidence: number | undefined;
+  confidenceSatisfied: boolean;
+  blockedOnConfidence: { name:string; args:Record<string,unknown> } | null;
   autoNero: boolean;
   advisorPending: boolean;
   mcpFingerprint: string | undefined;

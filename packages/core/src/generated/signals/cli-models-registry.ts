@@ -119,3 +119,36 @@ export function getBinaryVersion(binary: string, versionCmd: string[]): string|n
     return result || null;
   } catch { return null; }
 }
+
+/**
+ * Build CLI provider groups with installed/version status for the unified /models picker.
+ */
+export function buildCliModelGroups(): CliProviderGroup[] {
+  const groups: CliProviderGroup[] = [];
+  for (const [key, prov] of Object.entries(CLI_MODELS_REGISTRY)) {
+    const binaryPath = findBinary(prov.engineBinary);
+    const installed = binaryPath !== null;
+    const version = installed ? getBinaryVersion(prov.engineBinary, prov.versionCmd) : null;
+    const models: CliModelEntry[] = prov.models.map((m: any) => ({
+      id: m.id,
+      name: m.name,
+      providerId: prov.providerId,
+      providerName: prov.providerName,
+      engineId: prov.engineId,
+      engineBinary: prov.engineBinary,
+      contextWindow: m.contextWindow,
+      toolCall: m.toolCall,
+      reasoning: m.reasoning,
+    }));
+    groups.push({
+      providerId: prov.providerId,
+      providerName: prov.providerName,
+      engineId: prov.engineId,
+      engineBinary: prov.engineBinary,
+      installed,
+      version,
+      models,
+    });
+  }
+  return groups;
+}

@@ -6,7 +6,7 @@
 
 // Re-export types and data (the generated file has no cache declaration)
 export type { CliModelEntry, CliProviderGroup } from './generated/signals/cli-models-registry.js';
-export { CLI_MODELS_REGISTRY, findBinary, getBinaryVersion } from './generated/signals/cli-models-registry.js';
+export { CLI_MODELS_REGISTRY, buildCliModelGroups, findBinary, getBinaryVersion } from './generated/signals/cli-models-registry.js';
 
 // The generated discoverCliModels/refreshCliModels/getCliModelsGrouped reference
 // `cliModelsCache` which the KERN compiler omits. We need to ensure it exists

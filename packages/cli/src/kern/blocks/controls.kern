@@ -9,7 +9,7 @@ import from="./output-format.js" names="ENGINE_COLORS"
 import from="../signals/icons.js" names="icons"
 import from="@agon/core" names="setAuthKey,getAuthKey,loadConfig,configSet"
 import from="@agon/core" names="CliModelEntry,CliProviderGroup" types=true
-import from="@agon/core" names="getCliModelsGrouped"
+import from="@agon/core" names="buildCliModelGroups"
 
 // ── Interface: ReviewEvent ──────────────────────────────────────────
 
@@ -32,6 +32,8 @@ screen name=SlashPicker target=ink
       const currentIndex = filtered.length === 0 ? 0 : Math.min(selectedIndex, filtered.length - 1);
 
       useInput((input: string, key: any) => {
+        const isForwardDelete = input === '\x1b[3~';
+        const isBackspace = !isForwardDelete && (key.backspace || key.delete || input === '\x7f' || input === '\b' || input === '\x08');
         if (key.escape || (key.ctrl && input === 'c')) { onCancel(); return; }
         if (key.return) {
           if (filtered[currentIndex]) onSelect(filtered[currentIndex].cmd);
@@ -39,7 +41,7 @@ screen name=SlashPicker target=ink
         }
         if (key.upArrow) { setSelectedIndex(movePickerCursor('up', currentIndex, filtered.length)); return; }
         if (key.downArrow) { setSelectedIndex(movePickerCursor('down', currentIndex, filtered.length)); return; }
-        if (key.backspace || key.delete) {
+        if (isBackspace || isForwardDelete) {
           if (!filter) { onCancel(); return; }
           setFilter((f: string) => f.slice(0, -1));
           setSelectedIndex(0);
@@ -116,6 +118,8 @@ screen name=EnginePicker target=ink
       ), [available, selected, userEngines, hidden]);
 
       useInput((input: string, key: any) => {
+        const isForwardDelete = input === '\x1b[3~';
+        const isBackspace = !isForwardDelete && (key.backspace || key.delete || input === '\x7f' || input === '\b' || input === '\x08');
         if (phase === 'type-model') {
           const id = visible[cursor];
           if (!id) { setPhase('select'); setModelInput(''); return; }
@@ -126,7 +130,7 @@ screen name=EnginePicker target=ink
             setModelInput('');
             return;
           }
-          if (key.backspace || key.delete) { setModelInput((v: string) => v.slice(0, -1)); return; }
+          if (isBackspace || isForwardDelete) { setModelInput((v: string) => v.slice(0, -1)); return; }
           if (input && !key.ctrl && !key.meta && input.length === 1 && input >= ' ') {
             setModelInput((v: string) => v + input);
           }
@@ -311,6 +315,8 @@ screen name=ModelPicker target=ink
       }, [entries, filter]);
 
       useInput((input: string, key: any) => {
+        const isForwardDelete = input === '\x1b[3~';
+        const isBackspace = !isForwardDelete && (key.backspace || key.delete || input === '\x7f' || input === '\b' || input === '\x08');
         if (phase === 'apikey') {
           if (key.escape) { setPhase('search'); setSelectedEntry(null); setApiKeyInput(''); return; }
           if (key.return && apiKeyInput.trim()) {
@@ -325,7 +331,7 @@ screen name=ModelPicker target=ink
             onSelect(selectedEntry!);
             return;
           }
-          if (key.backspace || key.delete) { setApiKeyInput((v: string) => v.slice(0, -1)); return; }
+          if (isBackspace || isForwardDelete) { setApiKeyInput((v: string) => v.slice(0, -1)); return; }
           if (input && !key.ctrl && !key.meta) {
             // Strip bracketed paste escape sequences (\e[200~ and \e[201~)
             const clean = input.replace(/\x1b\[200~/g, '').replace(/\x1b\[201~/g, '').replace(/\[200~/g, '').replace(/\[201~/g, '');
@@ -351,7 +357,7 @@ screen name=ModelPicker target=ink
         }
         if (key.upArrow) { setCursor((i: number) => Math.max(0, i - 1)); return; }
         if (key.downArrow) { setCursor((i: number) => Math.min(filtered.length - 1, i + 1)); return; }
-        if (key.backspace || key.delete) {
+        if (isBackspace || isForwardDelete) {
           setFilter((f: string) => f.slice(0, -1));
           setCursor(0);
           return;
@@ -508,6 +514,8 @@ screen name=CesarPicker target=ink
       }, [engines, filter]);
 
       useInput((input: string, key: any) => {
+        const isForwardDelete = input === '\x1b[3~';
+        const isBackspace = !isForwardDelete && (key.backspace || key.delete || input === '\x7f' || input === '\b' || input === '\x08');
         if (key.escape || (key.ctrl && input === 'c')) { onCancel(); return; }
         if (key.return) {
           if (filtered[cursor]) onSelect(filtered[cursor]);
@@ -515,7 +523,7 @@ screen name=CesarPicker target=ink
         }
         if (key.upArrow) { setCursor((i: number) => Math.max(0, i - 1)); return; }
         if (key.downArrow) { setCursor((i: number) => Math.min(filtered.length - 1, i + 1)); return; }
-        if (key.backspace || key.delete) {
+        if (isBackspace || isForwardDelete) {
           setFilter((f: string) => f.slice(0, -1));
           setCursor(0);
           return;

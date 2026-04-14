@@ -49,6 +49,8 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { cmd: '/tokens',      desc: '                        — show token usage & costs' },
   { cmd: '/engines',     desc: '                        — select active engines' },
   { cmd: '/leaderboard', desc: '                        — ELO rankings' },
+  { cmd: '/cesar-report', desc: '                      — Cesar routing calibration report' },
+  { cmd: '/cesar-hints', desc: '<task>                 — inspect Cesar routing hints for a prompt' },
   { cmd: '/history',     desc: '[id]                    — past forge runs' },
   { cmd: '/config',      desc: '[list|get|set]          — settings' },
   { cmd: '/plan',        desc: '<task> or no args    — plan mode or show plan' },
@@ -211,6 +213,12 @@ function parseSlashCommand(input: string, commandRegistry?: any): Intent {
     case 'leaderboard':
     case 'elo':
       return { type: 'leaderboard' } as Intent;
+    case 'cesar-report':
+    case 'cesar-stats':
+      return { type: 'cesar-report' } as Intent;
+    case 'cesar-hints':
+    case 'cesar-debug':
+      return { type: 'cesar-hints', input: rest } as Intent;
     case 'history':
       return { type: 'history', id: rest || undefined } as Intent;
     case 'engines':

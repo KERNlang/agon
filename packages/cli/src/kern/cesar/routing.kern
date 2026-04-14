@@ -1,52 +1,165 @@
-import from="@agon/core" names="classifyTask,getRatings,getEngineProfile,rankByTaskClass,diffFileCount,resolveWorkingDir,gitChangedFiles,currentBranch,loadOrCreateActiveThread"
-import from="@agon/core" names="TaskClass,EngineRole,EngineProfile" types=true
+import from="@agon/core" names="classifyTask,getRatings,getEngineProfile,rankByTaskClass,resolveWorkingDir,gitChangedFiles,currentBranch,loadOrCreateActiveThread"
+import from="@agon/core" names="TaskClass,EngineRole" types=true
 import from="../../handlers/types.js" names="HandlerContext" types=true
+
+type name=CesarUncertaintyFamily values="none|challenge|tradeoff|open|fuzzy|specialist|implementation|review"
+type name=CesarEscalationHint values="self|self-nero|delegate|tribunal|brainstorm|campfire|forge|review"
+type name=CesarBreadthHint values="solo|team"
+type name=CesarForgeScopeHint values="none|slice|full"
+
+interface name=CesarRoutingHints
+  field name=taskClass type=TaskClass
+  field name=scopeFileCount type=number
+  field name=scopeDirSpread type=number
+  field name=inputTokens type=number
+  field name=complexityHint type=string
+  field name=uncertaintyFamily type=CesarUncertaintyFamily
+  field name=escalationHint type=CesarEscalationHint
+  field name=recommendedBreadth type=CesarBreadthHint
+  field name=recommendedForgeScope type=CesarForgeScopeHint
+  field name=fanoutLikely type=boolean
+  field name=reviewLikely type=boolean
+  field name=explicitEngineMention type=boolean
+
+fn name=deriveRoutingHints params="input:string, ctx:HandlerContext" returns="CesarRoutingHints" export=true
+  doc "Cheap, deterministic routing hints for Cesar: uncertainty family, escalation shape, breadth, and forge scope."
+  handler <<<
+    const taskClass = classifyTask(input);
+    const inputTokens = Math.ceil(input.length / 4);
+    const lower = input.toLowerCase();
+
+    let scopeFileCount = 0;
+    let scopeDirSpread = 0;
+    try {
+      const cwd = resolveWorkingDir();
+      const changedFiles = gitChangedFiles(cwd);
+      scopeFileCount = changedFiles.length;
+      const dirs = new Set(changedFiles.map((f: string) => f.split('/').slice(0, 2).join('/')));
+      scopeDirSpread = dirs.size;
+    } catch { /* best-effort only */ }
+
+    const activeEngines = ctx.activeEngines();
+    const explicitEngineMention = activeEngines.some((id: string) => lower.includes(id.toLowerCase()));
+
+    const REVIEW_RE = /\b(?:review|audit|regression|bug hunt|security review|code review|look for issues|find bugs)\b/i;
+    const CHALLENGE_RE = /\b(?:double-?check|sanity check|poke holes|stress[-\s]?test|challenge this|am i missing|may be missing|maybe wrong|overconfident|edge case)\b/i;
+    const TRADEOFF_RE = /\b(?:vs\.?|versus|trade-?off|worth it|should we|choose between|decision|architecture|architectur(?:e|al)|rest or graphql|sse or websockets)\b/i;
+    const FUZZY_RE = /\b(?:how should .*feel|fuzzy|ambiguous|explore the space|shape this|figure out what|not sure what problem|open-ended|directionally)\b/i;
+    const OPEN_RE = /\b(?:ideas|approaches|options|brainstorm|possible ways|what are some ways|different directions)\b/i;
+    const IMPLEMENT_RE = /\b(?:implement|build|refactor|rewrite|migrate|fix|wire|add|remove|change|update|optimi[sz]e)\b/i;
+    const FANOUT_RE = /\b(?:refactor|rewrite|migrate|architect|across|all of|every|throughout|module|layer|architecture|repo-wide|whole codebase)\b/i;
+    const HARD_SLICE_RE = /\b(?:hard part|risky part|core logic|core implementation|algorithm|parser|scheduler|middleware|orchestrator|auth flow|critical path)\b/i;
+    const TINY_EDIT_RE = /\b(?:typo|readme|comment|spelling|wording|docs?)\b/i;
+    const SINGLE_FILE_RE = /(?:^|\s)(?:[\w./-]+\.(?:ts|tsx|js|jsx|py|rs|go|sh|md|json|yaml|yml|toml))(?:\s|$)/i;
+
+    const reviewLikely = REVIEW_RE.test(input);
+    const challengeLikely = CHALLENGE_RE.test(input);
+    const tradeoffLikely = TRADEOFF_RE.test(input);
+    const fuzzyLikely = FUZZY_RE.test(input);
+    const openLikely = OPEN_RE.test(input);
+    const implementationLikely = IMPLEMENT_RE.test(input) || taskClass === 'feature' || taskClass === 'refactor' || taskClass === 'bugfix';
+    const tinyEditLikely = inputTokens <= 20 && (TINY_EDIT_RE.test(input) || SINGLE_FILE_RE.test(input));
+    const repoScopeSuggestsFanout = implementationLikely && inputTokens >= 24 && (scopeDirSpread > 2 || scopeFileCount >= 8);
+    const fanoutLikely = FANOUT_RE.test(input) || repoScopeSuggestsFanout;
+
+    let complexityHint = 'plain-chat';
+    if (tinyEditLikely) {
+      complexityHint = 'tiny-edit (stay local)';
+    } else if (inputTokens > 80 || (scopeFileCount > 0 && implementationLikely && inputTokens >= 24)) {
+      complexityHint = 'multi-step (consider agent or live staged execution)';
+    }
+    if (fanoutLikely) {
+      complexityHint = 'multi-step-fanout (team breadth may help)';
+    }
+
+    let uncertaintyFamily: CesarUncertaintyFamily = 'none';
+    if (reviewLikely) uncertaintyFamily = 'review';
+    else if (explicitEngineMention) uncertaintyFamily = 'specialist';
+    else if (tradeoffLikely) uncertaintyFamily = 'tradeoff';
+    else if (challengeLikely) uncertaintyFamily = 'challenge';
+    else if (fuzzyLikely) uncertaintyFamily = 'fuzzy';
+    else if (openLikely) uncertaintyFamily = 'open';
+    else if (implementationLikely) uncertaintyFamily = 'implementation';
+
+    let escalationHint: CesarEscalationHint = 'self';
+    switch (uncertaintyFamily) {
+      case 'review': escalationHint = 'review'; break;
+      case 'specialist': escalationHint = 'delegate'; break;
+      case 'tradeoff': escalationHint = 'tribunal'; break;
+      case 'challenge': escalationHint = 'self-nero'; break;
+      case 'fuzzy': escalationHint = 'campfire'; break;
+      case 'open': escalationHint = 'brainstorm'; break;
+      case 'implementation': {
+        if (tinyEditLikely) {
+          escalationHint = 'self';
+          break;
+        }
+        const substantialImplementation = fanoutLikely || inputTokens >= 40 || (inputTokens >= 24 && scopeFileCount >= 2);
+        escalationHint = substantialImplementation ? 'forge' : 'self';
+        break;
+      }
+      default: escalationHint = 'self';
+    }
+
+    const explicitTeamRequest = /\b(?:team|all engines|multiple engines|everyone|several models)\b/i.test(input);
+    const recommendedBreadth: CesarBreadthHint = (explicitTeamRequest || fanoutLikely || (implementationLikely && inputTokens >= 24 && (scopeDirSpread >= 4 || scopeFileCount >= 10)))
+      ? 'team'
+      : 'solo';
+
+    let recommendedForgeScope: CesarForgeScopeHint = 'none';
+    if (escalationHint === 'forge') {
+      const fullForge = recommendedBreadth === 'team'
+        || scopeDirSpread >= 4
+        || scopeFileCount >= 12
+        || /\b(?:entire|whole|across the repo|repo-wide|full rewrite|migrate everything)\b/i.test(input);
+      const sliceForge = HARD_SLICE_RE.test(input)
+        || (scopeFileCount >= 2 && scopeFileCount <= 8 && scopeDirSpread <= 3)
+        || (inputTokens >= 40 && inputTokens <= 180 && !fullForge);
+      recommendedForgeScope = fullForge ? 'full' : (sliceForge ? 'slice' : 'none');
+    }
+
+    return {
+      taskClass,
+      scopeFileCount,
+      scopeDirSpread,
+      inputTokens,
+      complexityHint,
+      uncertaintyFamily,
+      escalationHint,
+      recommendedBreadth,
+      recommendedForgeScope,
+      fanoutLikely,
+      reviewLikely,
+      explicitEngineMention,
+    };
+  >>>
 
 fn name=buildRoutingContext params="input:string, ctx:HandlerContext" returns=string
   doc "Build a lightweight routing context (~200-500 tokens) for Cesar to make intelligent mode + team decisions."
   handler <<<
     const parts: string[] = [];
 
-    // ── Task classification (pure regex, zero cost) ──
-    const taskClass = classifyTask(input);
-    parts.push(`TASK CLASS: ${taskClass}`);
-
-    // ── Scope: changed files + branch (cheap git calls) ──
-    let scopeFileCount = 0;
-    let scopeDirSpread = 0;
+    const hints = deriveRoutingHints(input, ctx);
+    parts.push(`TASK CLASS: ${hints.taskClass}`);
     try {
       const cwd = resolveWorkingDir();
       const branch = currentBranch(cwd);
-      const changedFiles = gitChangedFiles(cwd);
-      scopeFileCount = changedFiles.length;
-      // Count distinct directories to estimate module spread
-      const dirs = new Set(changedFiles.map((f: string) => f.split('/').slice(0, 2).join('/')));
-      scopeDirSpread = dirs.size;
-      parts.push(`SCOPE: ${scopeFileCount} changed file${scopeFileCount !== 1 ? 's' : ''} across ${scopeDirSpread} dir${scopeDirSpread !== 1 ? 's' : ''} on ${branch}`);
+      parts.push(`SCOPE: ${hints.scopeFileCount} changed file${hints.scopeFileCount !== 1 ? 's' : ''} across ${hints.scopeDirSpread} dir${hints.scopeDirSpread !== 1 ? 's' : ''} on ${branch}`);
     } catch {
       parts.push(`SCOPE: unknown (not a git repo or no changes)`);
     }
 
-    // ── Complexity hint for delegation routing (advisory, Cesar still decides) ──
-    // Lightweight signal that helps Cesar pick between plain-chat / agent-solo /
-    // agent-team / forge / brainstorm without needing a separate LLM call. The
-    // hint is purely advisory — Cesar can override based on the actual task.
-    const inputTokens = Math.ceil(input.length / 4);
-    const FANOUT_RE = /\b(?:refactor|rewrite|migrate|implement|build|architect|across|all of|every|throughout|module|layer|architecture)\b/i;
-    const MULTISTEP_RE = /\b(?:fix|investigate|trace|find|debug|wire|setup|configure|add|extend)\b/i;
-    let complexityHint = 'plain-chat';
-    if (inputTokens > 80 || (scopeFileCount > 0 && MULTISTEP_RE.test(input))) {
-      complexityHint = 'multi-step (consider Agent solo)';
+    parts.push(`COMPLEXITY HINT: ${hints.complexityHint}`);
+    parts.push(`UNCERTAINTY FAMILY: ${hints.uncertaintyFamily}`);
+    parts.push(`IF ESCALATING: prefer ${hints.escalationHint} (${hints.recommendedBreadth})`);
+    if (hints.recommendedForgeScope !== 'none') {
+      parts.push(`FORGE SHAPE: prefer ${hints.recommendedForgeScope} ${hints.recommendedBreadth === 'team' ? 'with team breadth' : 'solo unless you need more diversity'}`);
     }
-    if (FANOUT_RE.test(input) || scopeDirSpread > 2) {
-      complexityHint = 'multi-step-fanout (consider Agent team:true)';
-    }
-    parts.push(`COMPLEXITY HINT: ${complexityHint}`);
 
     // ── Engine rankings for this task class (in-memory, O(n log n)) ──
     const activeEngines = ctx.activeEngines();
     if (activeEngines.length > 1) {
-      const rankings = rankByTaskClass(activeEngines, taskClass);
+      const rankings = rankByTaskClass(activeEngines, hints.taskClass);
       if (rankings.length > 0) {
         const lines = rankings.map((r: EngineRole) => {
           const profile = getEngineProfile(r.engineId);
@@ -55,7 +168,7 @@ fn name=buildRoutingContext params="input:string, ctx:HandlerContext" returns=st
           const winRate = r.confidence > 0 ? ` (${r.confidence}% win rate)` : '';
           return `  ${r.engineId}: ${r.role}${winRate} — strengths: ${strengths} | weak: ${weaknesses}`;
         });
-        parts.push(`ENGINES (${taskClass}):\n${lines.join('\n')}`);
+        parts.push(`ENGINES (${hints.taskClass}):\n${lines.join('\n')}`);
       }
     } else {
       parts.push(`ENGINES: ${activeEngines[0] ?? 'none'} (solo — only 1 available)`);
@@ -64,14 +177,14 @@ fn name=buildRoutingContext params="input:string, ctx:HandlerContext" returns=st
     // ── Rating summary for this task class ──
     try {
       const ratings = getRatings();
-      const taskRatings = ratings.byTaskClass?.[taskClass];
+      const taskRatings = ratings.byTaskClass?.[hints.taskClass];
       if (taskRatings && Object.keys(taskRatings).length > 0) {
         const sorted = Object.entries(taskRatings)
           .filter(([id]) => activeEngines.includes(id))
           .sort(([, a], [, b]) => (b as any).mu - (a as any).mu);
         if (sorted.length > 0) {
           const ratingLine = sorted.map(([id, r]) => `${id}:${Math.round((r as any).mu)}+-${Math.round((r as any).phi)}`).join(' > ');
-          parts.push(`Rating (${taskClass}): ${ratingLine}`);
+          parts.push(`Rating (${hints.taskClass}): ${ratingLine}`);
         }
       }
     } catch { /* no rating data yet */ }
@@ -117,17 +230,6 @@ fn name=shouldUseAgentTeam params="input:string, ctx:HandlerContext" returns=boo
     // Need at least 2 active engines for team mode to make sense.
     const available = ctx.activeEngines();
     if (available.length < 2) return false;
-
-    const FANOUT_RE = /\b(?:refactor|rewrite|migrate|architect|across|all of|every|throughout|module|layer|architecture)\b/i;
-    if (FANOUT_RE.test(input)) return true;
-
-    // Large scope (files spread across many dirs) → fan-out.
-    try {
-      const cwd = resolveWorkingDir();
-      const changedFiles = gitChangedFiles(cwd);
-      const dirs = new Set(changedFiles.map((f: string) => f.split('/').slice(0, 2).join('/')));
-      if (dirs.size > 2) return true;
-    } catch { /* not a git repo — skip scope check */ }
-
-    return false;
+    const hints = deriveRoutingHints(input, ctx);
+    return hints.recommendedBreadth === 'team';
   >>>

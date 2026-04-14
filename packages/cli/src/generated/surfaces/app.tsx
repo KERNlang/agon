@@ -272,12 +272,14 @@ export function App() {
   const blockArchivePathRef = useRef<string>(makeBlockArchivePath(Date.now()));
 
   const allSlashCommands = useMemo(() => {
+          const builtinCmds = SLASH_COMMANDS;
           const registryCmds = commandRegistry.listForHelp();
           const skillCmds = [...dynamicSkills, ...extensionSkills].map((s: any) => ({ cmd: s.trigger, desc: s.description || s.name }));
-          // Dedupe: registry already has builtins, skills add on top
-          const seen = new Set(registryCmds.map((c: any) => c.cmd));
+          // Dedupe across builtins, registry-provided commands, and dynamic skills.
+          const mergedBase = [...builtinCmds, ...registryCmds];
+          const seen = new Set(mergedBase.map((c: any) => c.cmd));
           const uniqueSkills = skillCmds.filter((s: any) => !seen.has(s.cmd));
-          return [...registryCmds, ...uniqueSkills];
+          return [...mergedBase, ...uniqueSkills];
   }, [dynamicSkills, extensionSkills, commandRegistry]);
 
   const availableEngines = useMemo(() => {

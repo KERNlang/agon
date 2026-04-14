@@ -6,6 +6,8 @@ export { handleCampfire } from './campfire.js';
 export { handleTribunal } from './tribunal.js';
 export {
   handleLeaderboard,
+  handleCesarReport,
+  handleCesarHints,
   handleHistory,
   handleEngines,
   handleDiscover,

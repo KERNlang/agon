@@ -929,7 +929,7 @@ service name=ContextThread export=true
     >>>
 
   method name=save returns="Promise<void>" async=true
-    doc "Persist to disk atomically under an O_EXCL lockfile so concurrent /agent processes can't clobber each other (JSONL proper lockfile — deferred item now complete). Acquires the lock, merges JSONL journal, reads on-disk state, merges deltas, writes snapshot, releases lock. Falls back to best-effort write if lock cannot be acquired after retries."
+    doc "Persist to disk atomically under an O_EXCL lockfile. When the lock cannot be acquired after LOCK_MAX_RETRIES, falls back to JSONL journal-only persistence (POSIX-atomic appends) instead of a blind rewrite — this prevents the race where two contending processes both lose the lock and then clobber each other's work. The lock is released in a top-level finally so any exception in the write path doesn't leak a stale .lock file (review findings #3, #6)."
     handler <<<
       if (!this.dirty && this.hydrated) return;
       ensureThreadDir(this.projectPath);
@@ -941,112 +941,137 @@ service name=ContextThread export=true
       try {
         const attempt = await acquireLock(lockPath);
         lockAcquired = attempt !== null;
-        if (!lockAcquired) {
-          console.warn(`[agon] context-thread: could not acquire lock for ${this.threadId} after ${LOCK_MAX_RETRIES} retries — saving without lock (best-effort)`);
-        }
       } catch (lockErr) {
-        console.warn(`[agon] context-thread: lock error (continuing without lock): ${lockErr instanceof Error ? lockErr.message : String(lockErr)}`);
+        console.warn(`[agon] context-thread: lock acquisition error: ${lockErr instanceof Error ? lockErr.message : String(lockErr)}`);
       }
 
-      // Phase A.5 — JSONL journal merge. Before the full JSON rewrite, absorb
-      // any messages that were fast-appended to the journal since the last
-      // save(). This handles cross-process appends (another agon window wrote
-      // to the journal) and ensures the compacted snapshot is always complete.
-      const jPath = threadJournalPath(this.projectPath, this.threadId);
-      if (existsSync(jPath)) {
+      // Fallback: if we couldn't acquire the lock, fall back to journal-only
+      // persistence. Per-message appendFileSync with 'a' flag is POSIX-atomic
+      // for small writes and never clobbers another process's writes. The
+      // next successful save() will merge the journal. This is strictly
+      // safer than doing a full rewrite without the lock (which can silently
+      // drop another process's messages).
+      if (!lockAcquired) {
+        console.warn(`[agon] context-thread: lock held by another process after ${LOCK_MAX_RETRIES} retries — falling back to journal-only append for ${this.threadId}. Next successful save will merge.`);
+        // Every dirty message that isn't already journaled gets written now.
         try {
-          const journalLines = readFileSync(jPath, 'utf-8').split('\n').filter(Boolean);
-          const known = new Set(this.messages.map(m => m.id));
-          for (const line of journalLines) {
-            try {
-              const obj = JSON.parse(line);
-              if (obj._kind === 'msg' && obj.id && !known.has(obj.id) && obj.role !== 'system') {
-                const { _kind: _k, ...msg } = obj;
-                this.messages.push(msg as ThreadMessage);
-                known.add(msg.id);
-                this.journaledIds.add(msg.id);
-              }
-            } catch { /* skip malformed journal lines */ }
+          for (const msg of this.messages) {
+            if (!this.journaledIds.has(msg.id) && msg.role !== 'system') {
+              this.journalMessage(msg);
+            }
           }
-          // Re-sort by timestamp after merge.
-          this.messages.sort((a: ThreadMessage, b: ThreadMessage) => a.timestamp - b.timestamp);
-        } catch (err) {
-          console.warn(`[agon] context-thread: journal merge failed (will overwrite): ${err instanceof Error ? err.message : String(err)}`);
+          // Don't clear dirty — next save() should still try the full rewrite.
+        } catch (journalErr) {
+          console.warn(`[agon] context-thread: journal fallback failed: ${journalErr instanceof Error ? journalErr.message : String(journalErr)}`);
         }
+        return;
       }
 
-      // Read-before-write merge (multi-process best-effort)
-      if (existsSync(target)) {
-        try {
-          const stat = statSync(target);
-          if (stat.size <= MAX_THREAD_FILE_BYTES) {
-            const raw = readFileSync(target, 'utf-8');
-            const onDisk = JSON.parse(raw) as ThreadSnapshot;
-            if (onDisk && Array.isArray(onDisk.messages)) {
-              const known = new Set(this.messages.map(m => m.id));
-              // Also strip role:'system' during merge — defense in depth.
-              const foreign = onDisk.messages.filter(m => m && m.role !== 'system' && !known.has(m.id));
-              if (foreign.length > 0) {
-                const merged = [...this.messages, ...foreign].sort((a, b) => a.timestamp - b.timestamp);
-                this.messages = merged;
-                for (const [eng, head] of Object.entries(onDisk.engineHead ?? {})) {
-                  if (!this.engineHead[eng]) this.engineHead[eng] = head;
+      // We hold the lock. Wrap the entire write path in try/finally so any
+      // throw from readFileSync / JSON.parse / openSync / writeFileSync /
+      // renameSync releases the lock instead of leaking a stale .lock file
+      // that would burn future save retries.
+      try {
+        // Phase A.5 — JSONL journal merge. Before the full JSON rewrite, absorb
+        // any messages that were fast-appended to the journal since the last
+        // save(). This handles cross-process appends (another agon window wrote
+        // to the journal) and ensures the compacted snapshot is always complete.
+        const jPath = threadJournalPath(this.projectPath, this.threadId);
+        if (existsSync(jPath)) {
+          try {
+            const journalLines = readFileSync(jPath, 'utf-8').split('\n').filter(Boolean);
+            const known = new Set(this.messages.map(m => m.id));
+            for (const line of journalLines) {
+              try {
+                const obj = JSON.parse(line);
+                if (obj._kind === 'msg' && obj.id && !known.has(obj.id) && obj.role !== 'system') {
+                  const { _kind: _k, ...msg } = obj;
+                  this.messages.push(msg as ThreadMessage);
+                  known.add(msg.id);
+                  this.journaledIds.add(msg.id);
                 }
-                for (const [p, t] of Object.entries(onDisk.fileTouches ?? {})) {
-                  if (!this.fileTouches[p]) this.fileTouches[p] = t;
+              } catch { /* skip malformed journal lines */ }
+            }
+            // Re-sort by timestamp after merge.
+            this.messages.sort((a: ThreadMessage, b: ThreadMessage) => a.timestamp - b.timestamp);
+          } catch (err) {
+            console.warn(`[agon] context-thread: journal merge failed (will overwrite): ${err instanceof Error ? err.message : String(err)}`);
+          }
+        }
+
+        // Read-before-write merge (safe under lock — no other process can
+        // concurrently write because they'll hit the same O_EXCL lock first).
+        if (existsSync(target)) {
+          try {
+            const stat = statSync(target);
+            if (stat.size <= MAX_THREAD_FILE_BYTES) {
+              const raw = readFileSync(target, 'utf-8');
+              const onDisk = JSON.parse(raw) as ThreadSnapshot;
+              if (onDisk && Array.isArray(onDisk.messages)) {
+                const known = new Set(this.messages.map(m => m.id));
+                const foreign = onDisk.messages.filter(m => m && m.role !== 'system' && !known.has(m.id));
+                if (foreign.length > 0) {
+                  const merged = [...this.messages, ...foreign].sort((a, b) => a.timestamp - b.timestamp);
+                  this.messages = merged;
+                  for (const [eng, head] of Object.entries(onDisk.engineHead ?? {})) {
+                    if (!this.engineHead[eng]) this.engineHead[eng] = head;
+                  }
+                  for (const [p, t] of Object.entries(onDisk.fileTouches ?? {})) {
+                    if (!this.fileTouches[p]) this.fileTouches[p] = t;
+                  }
                 }
               }
             }
+          } catch (err) {
+            console.warn(`[agon] context-thread: read-before-write merge failed (will overwrite): ${err instanceof Error ? err.message : String(err)}`);
           }
-        } catch (err) {
-          console.warn(`[agon] context-thread: read-before-write merge failed (will overwrite): ${err instanceof Error ? err.message : String(err)}`);
         }
-      }
 
-      // Final defense-in-depth strip of any role:'system' that snuck in.
-      const cleanMessages = this.messages.filter(m => m.role !== 'system');
-      this.messages = cleanMessages;
+        // Final defense-in-depth strip of any role:'system' that snuck in.
+        const cleanMessages = this.messages.filter(m => m.role !== 'system');
+        this.messages = cleanMessages;
 
-      const snapshot: ThreadSnapshot = {
-        schemaVersion: SCHEMA_VERSION,
-        threadId: this.threadId,
-        projectPath: this.projectPath,
-        createdAt: this.createdAt,
-        updatedAt: Date.now(),
-        messages: cleanMessages,
-        checkpoints: this.checkpoints,
-        engineHead: this.engineHead,
-        fileTouches: this.fileTouches,
-      };
+        const snapshot: ThreadSnapshot = {
+          schemaVersion: SCHEMA_VERSION,
+          threadId: this.threadId,
+          projectPath: this.projectPath,
+          createdAt: this.createdAt,
+          updatedAt: Date.now(),
+          messages: cleanMessages,
+          checkpoints: this.checkpoints,
+          engineHead: this.engineHead,
+          fileTouches: this.fileTouches,
+        };
 
-      // Durable atomic write: openSync → writeSync → fsyncSync → closeSync → rename.
-      const tmpPath = target + '.tmp';
-      const body = JSON.stringify(snapshot, null, 2) + '\n';
-      let fd = -1;
-      try {
-        fd = openSync(tmpPath, 'w', 0o600);
-        writeFileSync(fd, body, 'utf-8');
-        fsyncSync(fd);
+        // Durable atomic write: openSync → writeSync → fsyncSync → closeSync → rename.
+        const tmpPath = target + '.tmp';
+        const body = JSON.stringify(snapshot, null, 2) + '\n';
+        let fd = -1;
+        try {
+          fd = openSync(tmpPath, 'w', 0o600);
+          writeFileSync(fd, body, 'utf-8');
+          fsyncSync(fd);
+        } finally {
+          if (fd >= 0) {
+            try { closeSync(fd); } catch { /* ignore */ }
+          }
+        }
+        renameSync(tmpPath, target);
+        try { chmodSync(target, 0o600); } catch { /* non-POSIX best effort */ }
+        this.updatedAt = snapshot.updatedAt;
+        this.dirty = false;
+        this.hydrated = true;
+        // Journal compaction. Snapshot is on disk and includes all journal
+        // entries, delete the journal so it doesn't grow unboundedly.
+        try {
+          if (existsSync(jPath)) unlinkSync(jPath);
+          this.journaledIds.clear();
+        } catch { /* best-effort — stale journal is harmless */ }
       } finally {
-        if (fd >= 0) {
-          try { closeSync(fd); } catch { /* ignore */ }
-        }
-      }
-      renameSync(tmpPath, target);
-      try { chmodSync(target, 0o600); } catch { /* non-POSIX best effort */ }
-      this.updatedAt = snapshot.updatedAt;
-      this.dirty = false;
-      this.hydrated = true;
-      // Phase A.5: journal compaction. Now that the full snapshot is on disk
-      // and includes all journal entries, delete the journal so it doesn't
-      // grow unboundedly and cause O(n²) reads on next load.
-      try {
-        const jPath = threadJournalPath(this.projectPath, this.threadId);
-        if (existsSync(jPath)) unlinkSync(jPath);
-        this.journaledIds.clear();
-      } catch { /* best-effort — stale journal is harmless */ } finally {
-        // Release lock unconditionally so future saves are never blocked by a
-        // failed save. The lock is scoped to this process + run; we always own it.
+        // Always release the lock — whether the write succeeded, threw, or
+        // was swallowed by a catch. This is the #6 fix: previously the lock
+        // release was in a nested finally that didn't run on openSync/rename
+        // exceptions, leaving stale .lock files that burned future retries.
         if (lockAcquired) releaseLock(lockPath);
       }
     >>>
@@ -1163,11 +1188,16 @@ fn name=loadOrCreateActiveThread params="projectPath:string,systemPrompt?:string
     return thread;
   >>>
 
-fn name=forkActiveThread params="projectPath:string,systemPrompt?:string" returns=ContextThread export=true
-  doc "Start a new thread for a project (abandoning the previous active pointer). Used when the user explicitly wants a fresh context — e.g. a /agent --new-thread flag. The old thread file remains on disk for history."
+fn name=forkActiveThread params="projectPath:string,systemPrompt?:string" returns="Promise<ContextThread>" async=true export=true
+  doc "Start a new thread for a project (abandoning the previous active pointer). Used when the user explicitly wants a fresh context — e.g. a /agent --new-thread flag. The old thread file remains on disk for history. Review finding #5: await save() fully before updating active.json — otherwise a concurrent loadOrCreateActiveThread could see the new pointer but no file, and fork again, losing the original fork."
   handler <<<
     const thread = new ContextThread({ projectPath, systemPrompt });
-    thread.save(); // write the new thread file before updating the pointer
+    // Ensure the thread file exists on disk BEFORE we repoint active.json.
+    // Fresh threads are !dirty && !hydrated so save() bails early. Force the
+    // initial save by writing an empty snapshot first via saveSync (no lock
+    // needed — file doesn't exist yet).
+    (thread as any).dirty = true;
+    await thread.save();
     const pointer = loadActivePointer();
     pointer.byProject[projectSha8(projectPath)] = thread.getThreadId();
     saveActivePointer(pointer);

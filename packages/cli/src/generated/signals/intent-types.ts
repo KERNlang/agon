@@ -8,6 +8,8 @@ export type Intent =
   | { type: 'team-forge'; task: string; fitnessCmd: string | null; membersPerSide?: number }
   | { type: 'team-brainstorm'; question: string; membersPerSide?: number }
   | { type: 'leaderboard' }
+  | { type: 'cesar-report' }
+  | { type: 'cesar-hints'; input: string }
   | { type: 'history'; id?: string }
   | { type: 'engines' }
   | { type: 'config'; action?: string; key?: string; value?: string }
@@ -59,6 +61,8 @@ export type Intent =
   | { type: 'extensions' }
   | { type: 'extension-command'; commandName: string; args: string }
   | { type: 'unknown'; input: string };
+
+
 
 
 

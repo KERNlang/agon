@@ -24,7 +24,7 @@ import { createCesarToolRegistry, createEagerToolContext, executeEagerTool } fro
 
 import { fireQuickNero, fireNero, fireAdvisor, handleSecondOpinion, activateNero, deactivateNero, promptDelegation, promptProtocolEnforcement } from './escalation.js';
 
-import { buildRoutingContext } from './routing.js';
+import { buildRoutingContext, deriveRoutingHints } from './routing.js';
 
 export const yieldToInk: () => Promise<void> = () => new Promise<void>(resolve => setImmediate(resolve));
 
@@ -209,6 +209,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
     let usedQuickNero = false;
       const eagerPromises: Promise<ToolCallResult>[] = [];
       let eagerToolCtx: ToolContext | null = null;
+      const routingHints = deriveRoutingHints(input, ctx);
   
       // ── Build routing context (cheap: ~500ms, ~200 tokens) ──
       let enrichedInput = input;
@@ -889,6 +890,8 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           ts: new Date().toISOString(), engineId: cesarEngineId, backend: (config as any).cesarBackend ?? 'auto',
           durationMs: Date.now() - _turnStart, inputLen: input.length, responseLen: response.length, taskClass,
           mode: usedQuickNero ? 'self-nero' : 'self', decisionReason: usedQuickNero ? 'self-challenge' : 'self-executed',
+          uncertaintyFamily: routingHints.uncertaintyFamily, escalationHint: routingHints.escalationHint,
+          breadthHint: routingHints.recommendedBreadth, forgeScopeHint: routingHints.recommendedForgeScope,
           toolsUsed: _toolsUsed.length > 0 ? _toolsUsed : undefined, toolCount: _toolsUsed.length, delegated: false,
           confidence: parsedConfidence,
           tokens: tokenUsage ? { prompt: tokenUsage.promptTokens, response: tokenUsage.responseTokens, cost: tokenUsage.costUsd } : undefined,

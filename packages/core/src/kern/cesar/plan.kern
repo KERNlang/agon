@@ -1,6 +1,6 @@
 // ── CesarPlan — type system + state machine for Cesar execution plans ──
 
-import from="node:fs" names="mkdirSync,writeFileSync,readFileSync,readdirSync"
+import from="node:fs" names="mkdirSync,writeFileSync,readFileSync,readdirSync,renameSync,unlinkSync"
 import from="node:path" names="join"
 
 type name=CesarPlanState values="planning|awaiting_approval|running|paused|done|cancelled"
@@ -156,11 +156,21 @@ fn name=cancelCesarPlan params="plan:CesarPlan" returns=CesarPlan
   >>>
 
 fn name=saveCesarPlan params="plan:CesarPlan" returns=void export=true
-  doc "Persist a CesarPlan to ~/.agon/runs/<id>.json."
+  doc "Persist a CesarPlan to ~/.agon/runs/<id>.json atomically. FU-8: write to a .tmp file then renameSync, so concurrent Agon sessions reading the same path observe either the old complete file or the new complete file — never a partial. POSIX rename within the same directory is atomic."
   handler <<<
     const dir = join(process.env.HOME ?? '', '.agon', 'runs');
     mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, `${plan.id}.json`), JSON.stringify(plan, null, 2));
+    const finalPath = join(dir, `${plan.id}.json`);
+    // Unique tmp suffix so parallel saves of the SAME plan from different
+    // sessions don't overwrite each other's tmp file before rename.
+    const tmpPath = `${finalPath}.${process.pid}.${Date.now()}.tmp`;
+    try {
+      writeFileSync(tmpPath, JSON.stringify(plan, null, 2));
+      renameSync(tmpPath, finalPath);
+    } catch (err) {
+      try { unlinkSync(tmpPath); } catch { /* tmp may not exist */ }
+      throw err;
+    }
   >>>
 
 fn name=loadCesarPlan params="planId:string" returns="CesarPlan|null" export=true

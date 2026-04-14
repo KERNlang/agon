@@ -35,8 +35,9 @@ export function buildFallbackSummary(positions: TribunalPosition[]): string {
     .join('\n\n');
 }
 
-export async function runTribunal(opts: {question:string, engines:string[], rounds:number, mode?:TribunalMode, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, onEvent?:(event:ForgeEvent)=>void}): Promise<TribunalResult> {
+export async function runTribunal(opts: {question:string, engines:string[], rounds:number, mode?:TribunalMode, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, onEvent?:(event:ForgeEvent)=>void, signal?: AbortSignal}): Promise<TribunalResult> {
   const { question, engines, rounds, registry, adapter, timeout, outputDir } = opts;
+  const signal = opts.signal;
   const mode = opts.mode ?? 'adversarial';
   const modeConfig = getModeConfig(mode, engines.length);
   
@@ -66,6 +67,12 @@ export async function runTribunal(opts: {question:string, engines:string[], roun
   const allRounds: TribunalRound[] = [];
   
   for (let round = 1; round <= effectiveRounds; round++) {
+    // Doppelganger fix: respect cancellation between rounds. Without
+    // this the tribunal runs to completion even after the user cancels.
+    if (signal?.aborted) {
+      sidechain.log('tribunal:aborted', undefined, { round });
+      break;
+    }
     opts.onEvent?.({
       type: 'synthesis:start',
       data: { round, totalRounds: effectiveRounds, mode },
@@ -104,6 +111,7 @@ export async function runTribunal(opts: {question:string, engines:string[], roun
           mode: 'exec',
           timeout,
           outputDir,
+          signal,
         });
         const cleaned = result.stdout.trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, '');
         return { engineId: pos.engineId, argument: cleaned };

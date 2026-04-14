@@ -372,7 +372,18 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
         .join('\n  ');
       const cost = (e.teamCostUsd as number).toFixed(2);
       const dur = ((e.teamDurationMs as number) / 1000).toFixed(0);
-      actions.addBlock({ type: 'engine-block', engineId: 'cesar', color: 0x9333ea, content: `\u{1F3C1} Agent team complete \u2014 winner: ${e.winner ?? 'none'} | $${cost} | ${dur}s\n  ${memberSummary}` } as any);
+      // Synthesis summary line if synthesis ran
+      let synthLine = '';
+      if (e.synthesisRan) {
+        const synthCost = typeof e.synthesisCostUsd === 'number' ? `+$${e.synthesisCostUsd.toFixed(2)} synth` : '';
+        const synthStatus = e.synthesisFitnessRegressed
+          ? '\u2717 reverted (fitness regression)'
+          : e.synthesisChanged
+            ? '\u2713 applied'
+            : '\u2713 reviewed (no change)';
+        synthLine = `\n  Synthesis: ${synthStatus}${synthCost ? ' | ' + synthCost : ''}`;
+      }
+      actions.addBlock({ type: 'engine-block', engineId: 'cesar', color: 0x9333ea, content: `\u{1F3C1} Agent team complete \u2014 winner: ${e.winner ?? 'none'} | $${cost} | ${dur}s\n  ${memberSummary}${synthLine}` } as any);
       // RT-15: explicit "team is done, wipe its panels" path. Faster than waiting for the TTL pruner.
       actions.clearAgentProgressByTeam(e.teamId as string);
       return;

@@ -137,6 +137,14 @@ export {
   determineWinner, scoreAgentTeamResult,
 } from './generated/cesar/synthesis-utils.js';
 export {
+  buildAgentSynthesisPrompt, buildAgentInvestigateSynthesisPrompt,
+  runAgentTeamSynthesis, runAgentInvestigateSynthesis,
+} from './generated/cesar/agent-synthesis.js';
+export type {
+  AgentSynthesisLoser, AgentSynthesisOptions, AgentSynthesisResult,
+  AgentInvestigateSynthesisOptions, AgentInvestigateSynthesisResult,
+} from './generated/cesar/agent-synthesis.js';
+export {
   tokensToCost, estimatedTokensToCost, getEnginePricing,
 } from './generated/blocks/pricing.js';
 export type { PricingEntry } from './generated/blocks/pricing.js';

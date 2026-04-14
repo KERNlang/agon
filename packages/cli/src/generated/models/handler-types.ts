@@ -53,7 +53,7 @@ export type OutputEvent =
   | { type: 'agent-budget-warning'; engineId: string; kind: 'turns'|'tokens'|'duration'; used: number; limit: number; remaining: number }
   | { type: 'agent-step-start'; engineId: string; turnIndex: number; userPrompt: string; maxTurns: number; maxDurationMs: number; maxTokens?: number|null; teamId?: string }
   | { type: 'agent-team-start'; teamId: string; engineIds: string[]; task: string; taskKind: 'edit'|'investigate' }
-  | { type: 'agent-team-complete'; teamId: string; winner: string|null; synthesizedPatch?: string|null; synthesizedAnalysis?: string|null; memberOutcomes: Array<{engineId:string,outcome:string,diffLines:number,passedFitness:boolean}>; teamCostUsd: number; teamDurationMs: number };
+  | { type: 'agent-team-complete'; teamId: string; winner: string|null; synthesizedPatch?: string|null; synthesizedAnalysis?: string|null; memberOutcomes: Array<{engineId:string,outcome:string,diffLines:number,passedFitness:boolean}>; teamCostUsd: number; teamDurationMs: number; synthesisRan?: boolean; synthesisChanged?: boolean; synthesisCostUsd?: number; synthesisFitnessRegressed?: boolean };
 
 export interface PendingDelegation {
   action: string;

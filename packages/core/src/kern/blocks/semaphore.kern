@@ -1,0 +1,117 @@
+// ── semaphore — async permit limiter for heavy tool serialization ──
+// Phase 3 of agent-team work. Used by AgentTeam to serialize "heavy" tool
+// invocations (npm test, tsc, cargo build, pytest) across N parallel
+// members so 3 simultaneous npm-installs don't saturate disk I/O and
+// trigger false-positive budget timeouts on all three. (RT-26 fix.)
+//
+// Tool classification: cheap tools (read, edit, grep, glob) are NOT
+// gated — they benefit from full parallelism. Only commands matching the
+// HEAVY_TOOL_PATTERN regex acquire the semaphore.
+
+const name=HEAVY_TOOL_PATTERN type="RegExp"
+  doc "Bash commands that should be serialized across team members. Anything matching this pattern goes through the semaphore. Tuned to be conservative — if in doubt, NOT a match (better to over-parallelize than to under-utilize)."
+  handler <<<
+    /^(?:npm|yarn|pnpm)\s+(?:test|run\s+test|run\s+typecheck|run\s+build|install|ci)\b|^(?:tsc|cargo\s+(?:test|build|check)|pytest|go\s+test|mvn\s+(?:test|package)|gradle\s+(?:test|build))\b/
+  >>>
+
+fn name=isHeavyTool params="command:string" returns=boolean export=true
+  doc "Return true if the given bash command should be serialized across team members."
+  handler <<<
+    return HEAVY_TOOL_PATTERN.test(command.trim());
+  >>>
+
+// ── The semaphore primitive ───────────────────────────────────────
+
+service name=Semaphore export=true
+  doc "Async semaphore with a fixed permit count + abort-aware acquire. Multiple acquires queue; acquire() resolves when a permit is available; release() lets the next waiter in. Use within an AgentTeam to throttle heavy tool invocations across N members. OpenCode review fix: acquire() and runWith() now accept an optional AbortSignal so a cancelled team can wake queued waiters and reject them instead of running the heavy tool after the user already hit Ctrl-C."
+
+  field name=permits type=number private=true
+  field name=waiters type="Array<{resolve:()=>void, reject:(err:Error)=>void, onAbort?:()=>void, signal?:AbortSignal}>" private=true
+
+  constructor params="permits:number"
+    handler <<<
+      if (permits < 1) throw new Error(`Semaphore permits must be >= 1 (got ${permits})`);
+      this.permits = permits;
+      this.waiters = [];
+    >>>
+
+  method name=acquire async=true params="signal?:AbortSignal" returns="Promise<void>"
+    doc "Block until a permit is available. Returns when one has been granted (caller MUST call release() exactly once after the gated work completes — wrap in try/finally). If signal is provided and aborts while waiting, the promise rejects with an AbortError and the waiter is removed from the queue."
+    handler <<<
+      // Check abort BEFORE queueing — if the caller's signal is already
+      // aborted, fail immediately instead of consuming a permit.
+      if (signal?.aborted) {
+        const err = new Error('Semaphore acquire aborted');
+        err.name = 'AbortError';
+        throw err;
+      }
+      if (this.permits > 0) {
+        this.permits -= 1;
+        return;
+      }
+      return new Promise<void>((resolve, reject) => {
+        const entry: {resolve:()=>void, reject:(err:Error)=>void, onAbort?:()=>void, signal?:AbortSignal} = {
+          resolve: () => {
+            // When release() hands us a permit, detach the abort listener.
+            if (entry.onAbort && entry.signal) {
+              try { entry.signal.removeEventListener('abort', entry.onAbort); } catch { /* ignore */ }
+            }
+            resolve();
+          },
+          reject: (err: Error) => {
+            if (entry.onAbort && entry.signal) {
+              try { entry.signal.removeEventListener('abort', entry.onAbort); } catch { /* ignore */ }
+            }
+            reject(err);
+          },
+          signal,
+        };
+        this.waiters.push(entry);
+        if (signal) {
+          entry.onAbort = () => {
+            // Find and remove this waiter from the queue, then reject.
+            const idx = this.waiters.indexOf(entry);
+            if (idx >= 0) this.waiters.splice(idx, 1);
+            const err = new Error('Semaphore acquire aborted while waiting in queue');
+            err.name = 'AbortError';
+            entry.reject(err);
+          };
+          signal.addEventListener('abort', entry.onAbort, { once: true });
+        }
+      });
+    >>>
+
+  method name=release returns=void
+    doc "Return a permit. If anyone is waiting, hand it directly to them (FIFO). Idempotent in the sense that release() is always safe — but each acquire() must be paired with exactly one release()."
+    handler <<<
+      const next = this.waiters.shift();
+      if (next) {
+        // Hand the permit directly to the next waiter without incrementing permits.
+        next.resolve();
+      } else {
+        this.permits += 1;
+      }
+    >>>
+
+  method name=available returns=number
+    doc "Diagnostic: current free permit count."
+    handler <<<
+      return this.permits;
+    >>>
+
+  method name=queueDepth returns=number
+    doc "Diagnostic: how many acquirers are blocked waiting for a permit."
+    handler <<<
+      return this.waiters.length;
+    >>>
+
+  method name=runWith async=true params="fn:() => Promise<unknown>, signal?:AbortSignal" returns="Promise<unknown>"
+    doc "Convenience: acquire, run the fn, release in finally — even if fn throws. Forwards the optional signal to acquire() so a cancelled caller is rejected from the queue immediately."
+    handler <<<
+      await this.acquire(signal);
+      try {
+        return await fn();
+      } finally {
+        this.release();
+      }
+    >>>

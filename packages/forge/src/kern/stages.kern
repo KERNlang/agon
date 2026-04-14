@@ -1,6 +1,6 @@
 import from="node:path" names="join"
 import from="@agon/core" names="EngineAdapter,EngineResult,ForgeOptions,AgonConfig,DispatchMetric,StageContext" types=true
-import from="@agon/core" names="EngineRegistry,worktreeCreate,worktreeRemove,headSha,repoRoot,worktreeDiff,estimateTokens,estimateCost,buildStageContext,renderStageContext"
+import from="@agon/core" names="EngineRegistry,worktreeCreate,worktreeRemoveBestEffort,headSha,repoRoot,worktreeDiff,estimateTokens,estimateCost,buildStageContext,renderStageContext"
 import from="./fitness.js" names="runFitness"
 import from="../types.js" names="StageResult,ForgeEventCallback,WorktreeEntry" types=true
 
@@ -25,7 +25,7 @@ fn name=runBaseline async=true params="opts:{cwd:string, fitnessCmd:string, fitn
       opts.onEvent?.({ type: 'baseline:done', data: { passes: result.pass } });
       return result.pass;
     } finally {
-      worktreeRemove(root, baselineWt);
+      worktreeRemoveBestEffort(root, baselineWt);
     }
   >>>
 
@@ -195,15 +195,19 @@ fn name=runStage2 async=true params="opts:{challengers:string[], forgePrompt:str
       return result;
     });
 
-    // Use Promise.allSettled — one slow/broken engine must NOT stall the others
+    // Use Promise.allSettled — one slow/broken engine must NOT stall the others.
+    // Promise.allSettled preserves input order, so settled[i] corresponds to opts.challengers[i].
+    // Index-based correlation avoids the O(n²) settled.indexOf(outcome) lookup and is robust to
+    // duplicate rejection objects.
     const settled = await Promise.allSettled(challengerPromises);
 
     const allResults = new Map(opts.existingResults);
-    for (const outcome of settled) {
+    for (let i = 0; i < settled.length; i++) {
+      const outcome = settled[i];
       if (outcome.status === 'fulfilled') {
         allResults.set(outcome.value.engineId, outcome.value);
       } else {
-        const failedId = opts.challengers[settled.indexOf(outcome)];
+        const failedId = opts.challengers[i];
         console.warn(`[agon] forge stage2: engine ${failedId} failed: ${outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason)}`);
         metrics.push({
           engineId: failedId,
@@ -358,16 +362,18 @@ fn name=runStage2WithPeek async=true params="opts:{challengers:string[], forgePr
       return result;
     });
 
-    // Use Promise.allSettled — one slow/broken engine must NOT stall the others
+    // Use Promise.allSettled — one slow/broken engine must NOT stall the others.
+    // Index-based correlation: settled[i] corresponds to followers[i].
     const settled = await Promise.allSettled(followerPromises);
 
     const allResults = new Map(opts.existingResults);
     allResults.set(scoutId, scoutResult);
-    for (const outcome of settled) {
+    for (let i = 0; i < settled.length; i++) {
+      const outcome = settled[i];
       if (outcome.status === 'fulfilled') {
         allResults.set(outcome.value.engineId, outcome.value);
       } else {
-        const failedId = followers[settled.indexOf(outcome)];
+        const failedId = followers[i];
         console.warn(`[agon] forge stage2-peek: engine ${failedId} failed: ${outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason)}`);
         metrics.push({
           engineId: failedId,
@@ -384,26 +390,6 @@ fn name=runStage2WithPeek async=true params="opts:{challengers:string[], forgePr
     return { engineResults: allResults, accepted: false, winner: null, metrics };
   >>>
 
-fn name=determineWinner params="results:Map<string,EngineResult>, spread:number" returns="{winner:string|null, closeCall:boolean, bestScore:number, secondScore:number}"
-  handler <<<
-    const passing = [...results.entries()]
-      .filter(([_, r]) => r.pass && r.score > 0)
-      .sort(([_aId, a], [_bId, b]) => {
-        if (a.score !== b.score) return b.score - a.score;
-        if (a.lintWarnings !== b.lintWarnings) return a.lintWarnings - b.lintWarnings;
-        if (a.styleScore !== b.styleScore) return b.styleScore - a.styleScore;
-        if (a.diffLines !== b.diffLines) return a.diffLines - b.diffLines;
-        if (a.filesChanged !== b.filesChanged) return a.filesChanged - b.filesChanged;
-        return a.durationSec - b.durationSec;
-      });
-
-    if (passing.length === 0) {
-      return { winner: null, closeCall: false, bestScore: 0, secondScore: 0 };
-    }
-
-    const bestScore = passing[0][1].score;
-    const secondScore = passing.length > 1 ? passing[1][1].score : 0;
-    const closeCall = passing.length > 1 && (bestScore - secondScore) < spread;
-
-    return { winner: passing[0][0], closeCall, bestScore, secondScore };
-  >>>
+// determineWinner moved to @agon/core packages/core/src/kern/cesar/synthesis-utils.kern
+// in Phase 3 so AgentTeam and forge share the same canonical scoring path.
+// forge.kern now imports it directly from @agon/core.

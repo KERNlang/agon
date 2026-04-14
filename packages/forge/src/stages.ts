@@ -3,9 +3,11 @@
 export { runBaseline, runStage1, runStage2 } from './generated/stages.js';
 
 import type { EngineResult } from '@agon/core';
-import { determineWinner as determineWinnerKern } from './generated/stages.js';
+import { determineWinner as determineWinnerKern } from '@agon/core';
 
-// KERN fn params don't support default values — add the spread=8 default here
+// determineWinner moved to @agon/core in Phase 3 of agent-team work so AgentTeam
+// and forge share the canonical scoring path. KERN fn params don't support
+// default values, so this thin facade adds the spread=8 default.
 export function determineWinner(
   results: Map<string, EngineResult>,
   spread = 8,

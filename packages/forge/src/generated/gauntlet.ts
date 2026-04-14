@@ -8,7 +8,7 @@ import { join } from 'node:path';
 
 import type { EngineAdapter, EngineResult, ForgeEvent, BreakerArtifact, GauntletResult, TaskClass } from '@agon/core';
 
-import { EngineRegistry, loadConfig, worktreeCreate, worktreeRemove, worktreeDiff, headSha, repoRoot, spawnWithTimeout, createSidechainLogger } from '@agon/core';
+import { EngineRegistry, loadConfig, worktreeCreate, worktreeRemoveBestEffort, worktreeDiff, headSha, repoRoot, spawnWithTimeout, createSidechainLogger } from '@agon/core';
 
 import { runFitness } from './fitness.js';
 
@@ -215,7 +215,7 @@ export async function runGauntlet(opts: {winnerId:string, losers:string[], task:
       }
     }
   } finally {
-    worktreeRemove(root, cleanWtPath);
+    worktreeRemoveBestEffort(root, cleanWtPath);
   }
   
   const attacksLanded = validatedArtifacts.length;

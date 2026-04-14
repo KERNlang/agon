@@ -1,8 +1,11 @@
 // ── CesarPlan — type system + state machine for Cesar execution plans ──
 
+import from="node:fs" names="mkdirSync,writeFileSync,readFileSync,readdirSync"
+import from="node:path" names="join"
+
 type name=CesarPlanState values="planning|awaiting_approval|running|paused|done|cancelled"
 type name=CesarStepState values="pending|blocked|running|done|failed|skipped|cancelled"
-type name=CesarStepType values="self|forge|teamforge|delegate|brainstorm|campfire|tribunal|pipeline"
+type name=CesarStepType values="self|forge|teamforge|delegate|brainstorm|campfire|tribunal|pipeline|review|agent|team-agent"
 
 interface name=CesarStepResult
   field name=status type="'success'|'failure'"
@@ -46,6 +49,9 @@ interface name=CesarPlan
   field name=approvedAt type=string optional=true
   field name=completedAt type=string optional=true
   field name=planFilePath type=string optional=true
+  field name=autoApprove type=boolean optional=true
+  field name=selfReview type=boolean optional=true
+  field name=reviewCyclesUsed type=number optional=true
 
 fn name=createCesarPlan params="intent:string,steps:CesarPlanStep[]" returns=CesarPlan
   doc "Create a new CesarPlan in 'planning' state. Steps with dependsOn are marked 'blocked', others 'pending'."
@@ -152,8 +158,6 @@ fn name=cancelCesarPlan params="plan:CesarPlan" returns=CesarPlan
 fn name=saveCesarPlan params="plan:CesarPlan" returns=void export=true
   doc "Persist a CesarPlan to ~/.agon/runs/<id>.json."
   handler <<<
-    const { mkdirSync, writeFileSync } = require('node:fs');
-    const { join } = require('node:path');
     const dir = join(process.env.HOME ?? '', '.agon', 'runs');
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, `${plan.id}.json`), JSON.stringify(plan, null, 2));
@@ -162,8 +166,6 @@ fn name=saveCesarPlan params="plan:CesarPlan" returns=void export=true
 fn name=loadCesarPlan params="planId:string" returns="CesarPlan|null" export=true
   doc "Load a persisted CesarPlan from ~/.agon/runs/<id>.json."
   handler <<<
-    const { readFileSync } = require('node:fs');
-    const { join } = require('node:path');
     const filePath = join(process.env.HOME ?? '', '.agon', 'runs', `${planId}.json`);
     try {
       return JSON.parse(readFileSync(filePath, 'utf-8'));
@@ -175,8 +177,6 @@ fn name=loadCesarPlan params="planId:string" returns="CesarPlan|null" export=tru
 fn name=listCesarPlans params="" returns="CesarPlan[]" export=true
   doc "List all persisted CesarPlans from ~/.agon/runs/."
   handler <<<
-    const { readdirSync, readFileSync } = require('node:fs');
-    const { join } = require('node:path');
     const dir = join(process.env.HOME ?? '', '.agon', 'runs');
     try {
       const files = readdirSync(dir).filter((f: string) => f.startsWith('cplan-') && f.endsWith('.json'));

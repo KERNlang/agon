@@ -5,25 +5,20 @@ fn name=createProposePlanTool returns=ToolHandler export=true
   handler <<<
     const definition: ToolDefinition = {
       name: 'ProposePlan',
-      description: 'Propose a structured execution plan for user approval. Use this in plan mode to present your strategy with steps, engine assignments, and cost estimates.',
+      description: 'Propose a structured execution plan. By default plans require explicit user approval; set autoApprove=true if the user clearly described a multi-stage workflow you have high confidence in. The runtime applies a layered safety policy (mode + step-type whitelist + cost ceiling) and may still ask the user. Set selfReview=false ONLY if the plan is purely advisory and you do not want the auto-review gate to run after mutating steps.',
       inputSchema: {
         type: 'object',
         properties: {
           intent: { type: 'string', description: 'What the user asked for.' },
-          planningCost: {
-            type: 'object',
-            properties: {
-              tokens: { type: 'number' },
-              costUsd: { type: 'number' },
-            },
-          },
+          autoApprove: { type: 'boolean', description: 'Set true ONLY when the user clearly described a multi-stage workflow ("plan it, build it, review it"; "investigate then forge it") AND you have high confidence in the steps. Defaults to false. The runtime auto-approve policy still gates execution.' },
+          selfReview: { type: 'boolean', description: 'Whether to auto-append a review step after mutating steps. Defaults to true. Set false only for advisory plans that already include their own verification.' },
           steps: {
             type: 'array',
             items: {
               type: 'object',
               properties: {
                 id: { type: 'string' },
-                type: { type: 'string', enum: ['self', 'forge', 'teamforge', 'delegate', 'brainstorm', 'campfire', 'tribunal', 'pipeline'] },
+                type: { type: 'string', enum: ['self', 'forge', 'teamforge', 'delegate', 'brainstorm', 'campfire', 'tribunal', 'pipeline', 'review', 'agent', 'team-agent'] },
                 description: { type: 'string' },
                 engines: { type: 'array', items: { type: 'string' } },
                 engine: { type: 'string' },

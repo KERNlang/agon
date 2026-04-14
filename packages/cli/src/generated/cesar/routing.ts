@@ -17,17 +17,36 @@ export function buildRoutingContext(input: string, ctx: HandlerContext): string 
   parts.push(`TASK CLASS: ${taskClass}`);
   
   // ── Scope: changed files + branch (cheap git calls) ──
+  let scopeFileCount = 0;
+  let scopeDirSpread = 0;
   try {
     const cwd = resolveWorkingDir();
     const branch = currentBranch(cwd);
     const changedFiles = gitChangedFiles(cwd);
-    const fileCount = changedFiles.length;
+    scopeFileCount = changedFiles.length;
     // Count distinct directories to estimate module spread
     const dirs = new Set(changedFiles.map((f: string) => f.split('/').slice(0, 2).join('/')));
-    parts.push(`SCOPE: ${fileCount} changed file${fileCount !== 1 ? 's' : ''} across ${dirs.size} dir${dirs.size !== 1 ? 's' : ''} on ${branch}`);
+    scopeDirSpread = dirs.size;
+    parts.push(`SCOPE: ${scopeFileCount} changed file${scopeFileCount !== 1 ? 's' : ''} across ${scopeDirSpread} dir${scopeDirSpread !== 1 ? 's' : ''} on ${branch}`);
   } catch {
     parts.push(`SCOPE: unknown (not a git repo or no changes)`);
   }
+  
+  // ── Complexity hint for delegation routing (advisory, Cesar still decides) ──
+  // Lightweight signal that helps Cesar pick between plain-chat / agent-solo /
+  // agent-team / forge / brainstorm without needing a separate LLM call. The
+  // hint is purely advisory — Cesar can override based on the actual task.
+  const inputTokens = Math.ceil(input.length / 4);
+  const FANOUT_RE = /\b(?:refactor|rewrite|migrate|implement|build|architect|across|all of|every|throughout|module|layer|architecture)\b/i;
+  const MULTISTEP_RE = /\b(?:fix|investigate|trace|find|debug|wire|setup|configure|add|extend)\b/i;
+  let complexityHint = 'plain-chat';
+  if (inputTokens > 80 || (scopeFileCount > 0 && MULTISTEP_RE.test(input))) {
+    complexityHint = 'multi-step (consider Agent solo)';
+  }
+  if (FANOUT_RE.test(input) || scopeDirSpread > 2) {
+    complexityHint = 'multi-step-fanout (consider Agent team:true)';
+  }
+  parts.push(`COMPLEXITY HINT: ${complexityHint}`);
   
   // ── Engine rankings for this task class (in-memory, O(n log n)) ──
   const activeEngines = ctx.activeEngines();

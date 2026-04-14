@@ -19,6 +19,7 @@ import from="../api/dispatch.js" names="ApiConfig" types=true
 import from="../signals/token-tracker.js" names="estimateTokens,estimateCost"
 import from="../models/agent-event.js" names="AgentEvent" types=true
 import from="../models/agent-event.js" names="makeAssistantChunk,makeToolCall"
+import from="../blocks/semaphore.js" names="Semaphore" types=true
 
 // ── Budget definition ─────────────────────────────────────────────
 
@@ -61,6 +62,8 @@ interface name=AgentSessionConfig
   field name=budget type=AgentBudget
   field name=perStepTimeoutSec type=number optional=true
   field name=maxInnerSteps type=number optional=true
+  field name=teamId type=string optional=true
+  field name=heavyToolSemaphore type=Semaphore optional=true
 
 // ── Typed budget error ────────────────────────────────────────────
 
@@ -207,6 +210,12 @@ service name=AgentSession export=true
         maxSteps: this.config.maxInnerSteps,
         onChunk: onEvent ? (text: string) => onEvent(makeAssistantChunk(this.config.engineId, text)) : undefined,
         onToolCall: onEvent ? (name: string, args: Record<string,unknown>) => onEvent(makeToolCall(this.config.engineId, name, 'running', { input: args })) : undefined,
+        // RT-26 fix (Gemini): thread the team-shared semaphore through to the
+        // inner loop's tool execution. Solo /agent runs leave this undefined
+        // → no semaphore overhead. Team runs share ONE Semaphore instance
+        // across all members so heavy tools (npm test, tsc, cargo build) are
+        // serialized across the team.
+        heavyToolSemaphore: this.config.heavyToolSemaphore,
       };
 
       let result: ApiAgentResult;
@@ -300,6 +309,26 @@ service name=AgentSession export=true
         };
       }
 
+      // RT-16 fix: state guard against cancel-vs-complete race. If cancel()
+      // landed during step execution (microtask interleaving) it set state to
+      // 'cancelled' and aborted the controller. Without this guard, the final
+      // 'idle' write would silently overwrite that, and the session would
+      // appear successful — its diff would even be eligible to win a team
+      // round and land a patch from a session the user explicitly killed.
+      // The cancel() method is the source of truth: if it ran, it wins.
+      // Cast to string to defeat TS narrowing — TS doesn't know that cancel()
+      // can mutate this.state from a parallel microtask context.
+      const stateAsString = this.state as string;
+      if (stateAsString === 'cancelled' || stateAsString === 'failed') {
+        return {
+          response: result.response,
+          toolCalls: result.toolCalls,
+          innerSteps: result.steps,
+          tokensUsed: stepTokens,
+          costUsd: stepCost,
+          stopReason: stateAsString === 'cancelled' ? 'cancelled' : 'error',
+        };
+      }
       this.state = 'idle';
       return {
         response: result.response,

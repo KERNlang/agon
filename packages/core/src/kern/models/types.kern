@@ -166,6 +166,10 @@ config name=AgonConfig
   field name=cesarBackend type="'cli'|'api'|'auto'" default=auto
   field name=cesarMcpEnabled type=boolean default=false
   field name=cesarMcpConfigPath type=string default=""
+  field name=cesarAutoApproveMode type="'off'|'safe-only'|'cost-bounded'|'always'" default="'safe-only'"
+    doc "Autonomous plan approval policy. 'off'=always prompt, 'safe-only'=only non-mutating plans, 'cost-bounded'=plans under cesarAutoApproveMaxCostUsd, 'always'=any plan with autoApprove=true."
+  field name=cesarAutoApproveMaxCostUsd type=number optional=true
+    doc "When cesarAutoApproveMode is 'cost-bounded' or 'always', the maximum estimated USD cost (including 2× review cycle estimate for mutating plans) that can be auto-approved without user confirmation."
   field name=campfireObserverStrategy type="'lead-first'|'all-respond'" default=lead-first
   field name=hooks type="Record<string,Array<{command:string,engines?:string[],timeout?:number}>>" optional=true
   field name=permissionMode type="'auto'|'ask'|'deny-all'" default=ask

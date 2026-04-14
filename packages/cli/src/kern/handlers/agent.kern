@@ -14,9 +14,11 @@
 // user messages is deferred — when it's needed, wrap the body below
 // in a while-loop keyed on AgentState.phase.
 
-import from="@agon/core" names="AgentSession,createAgentState,beginTurn,completeTurn,cancelAgent,completeAgent,failAgent,checkBudget,isTerminal,resolveWorkingDir"
-import from="@agon/core" names="AgentBudget,AgentState,AgentStepResult,AgentEvent" types=true
+import from="@agon/core" names="AgentSession,AgentTeam,createAgentState,beginTurn,completeTurn,cancelAgent,completeAgent,failAgent,checkBudget,isTerminal,resolveWorkingDir,determineWinner,scoreAgentTeamResult,estimatedTokensToCost,worktreeChangedDiff,worktreeChangedShortstat,spawnWithTimeout,RUNS_DIR"
+import from="@agon/core" names="AgentBudget,AgentState,AgentStepResult,AgentEvent,AgentTeamConfig,AgentTeamMemberConfig,AgentTeamResult,EngineDefinition,EngineResult" types=true
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
+import from="node:fs" names="writeFileSync,mkdirSync"
+import from="node:path" names="join"
 
 interface name=RunAgentOptions
   field name=engineId type=string optional=true
@@ -24,6 +26,7 @@ interface name=RunAgentOptions
   field name=maxDurationMs type=number optional=true
   field name=maxTokens type=number optional=true
   field name=systemPrompt type=string optional=true
+  field name=parentSignal type=AbortSignal optional=true
 
 fn name=runAgentMode params="input:string,dispatch:Dispatch,ctx:HandlerContext,opts?:RunAgentOptions" returns="Promise<void>" async=true export=true
   signal name=abort
@@ -102,6 +105,12 @@ fn name=runAgentMode params="input:string,dispatch:Dispatch,ctx:HandlerContext,o
       budget,
     });
 
+    // Gemini fix (a): build state BEFORE any listener / active-abort
+    // registration. A throw here (or in any prior step) cannot leak
+    // listeners or stale ctx.activeAbort because nothing has been
+    // registered yet.
+    let state: AgentState = createAgentState(engineId, budget, opts?.systemPrompt);
+
     // Bridge the handler's KERN-generated abort to the session.
     // If abort fired before we got here, cancel immediately.
     if (abort.signal.aborted) {
@@ -110,11 +119,23 @@ fn name=runAgentMode params="input:string,dispatch:Dispatch,ctx:HandlerContext,o
     const onAbort = () => session.cancel();
     abort.signal.addEventListener('abort', onAbort);
 
-    // Register the abort controller with the CLI so Ctrl+C reaches it.
-    ctx.setActiveAbort(abort);
-
-    // ── Initialize event-sourced state ─────────────────────────
-    let state: AgentState = createAgentState(engineId, budget, opts?.systemPrompt);
+    // Codex P1: when called from a plan step, the caller passes an outer
+    // parentSignal. Bridge it to our internal abort so plan-level Ctrl-C
+    // reaches the session, and DO NOT touch ctx.setActiveAbort — the plan
+    // executor is the active abort controller and we must not clobber it.
+    const parentSignal = opts?.parentSignal;
+    let onParentAbort: (() => void) | null = null;
+    if (parentSignal) {
+      if (parentSignal.aborted) {
+        try { abort.abort(); } catch { /* ignore */ }
+      } else {
+        onParentAbort = () => { try { abort.abort(); } catch { /* ignore */ } };
+        parentSignal.addEventListener('abort', onParentAbort);
+      }
+    } else {
+      // Standalone /agent path — register our abort with the CLI so Ctrl+C reaches it.
+      ctx.setActiveAbort(abort);
+    }
 
     try {
       // Pre-step budget check — surface budget exhaustion before we
@@ -260,6 +281,444 @@ fn name=runAgentMode params="input:string,dispatch:Dispatch,ctx:HandlerContext,o
       dispatch({ type: 'error', message: err?.message ?? String(err) });
     } finally {
       abort.signal.removeEventListener('abort', onAbort);
-      ctx.setActiveAbort(null);
+      if (onParentAbort && parentSignal) {
+        try { parentSignal.removeEventListener('abort', onParentAbort); } catch { /* ignore */ }
+      }
+      // Codex P1: don't null the active abort if a parent owns it (plan step).
+      if (!parentSignal) {
+        ctx.setActiveAbort(null);
+      }
+    }
+  >>>
+
+// ── runAgentTeam — N parallel autonomous agents with synthesis ────
+// Phase 4 of the Cesar-driven autonomous parallel agents work.
+// Wraps the AgentTeam primitive with the CLI's dispatch loop, abort wiring,
+// fitness gate (typecheck-or-fail), scoring, and synthesis. Invoked via
+// dispatch.kern's `case 'team-agent'` which is hit when Cesar calls the
+// Agent tool with team:true (or via the explicit /agent-team slash command).
+
+interface name=RunAgentTeamOptions
+  field name=engines type="string[]" optional=true
+  field name=taskKind type="'edit'|'investigate'" optional=true
+  field name=maxTurns type=number optional=true
+  field name=maxDurationMs type=number optional=true
+  field name=maxTeamCostUsd type=number optional=true
+  field name=fitnessCmd type=string optional=true
+  field name=systemPrompt type=string optional=true
+  field name=parentSignal type=AbortSignal optional=true
+
+fn name=runAgentTeam params="input:string,dispatch:Dispatch,ctx:HandlerContext,opts?:RunAgentTeamOptions" returns="Promise<void>" async=true export=true
+  signal name=abort
+  doc "Run an autonomous agent team: N AgentSession instances in N worktrees with shared budget, synthesis, and explicit transcript events. Used by Cesar-driven team mode and by /agent-team slash command. Wraps AgentTeam from core/cesar/agent-team.kern."
+  handler <<<
+    // ── Resolve members ───────────────────────────────────────
+    const available = ctx.activeEngines();
+    if (available.length === 0) {
+      dispatch({ type: 'error', message: 'No engines available for agent team mode.' });
+      return;
+    }
+
+    // Pick engines: caller-specified or auto-select first 3 active API engines.
+    const requestedEngines = opts?.engines ?? null;
+    const memberEngineIds: string[] = [];
+    const memberEngines: EngineDefinition[] = [];
+
+    if (requestedEngines && requestedEngines.length > 0) {
+      for (const id of requestedEngines) {
+        if (!available.includes(id)) {
+          dispatch({ type: 'error', message: `Engine ${id} is not active. Available: ${available.join(', ')}` });
+          return;
+        }
+        try {
+          const eng = ctx.registry.get(id);
+          if (!eng.api) {
+            dispatch({ type: 'error', message: `Engine ${id} has no API config — agent team mode requires API engines.` });
+            return;
+          }
+          memberEngineIds.push(id);
+          memberEngines.push(eng);
+        } catch (err) {
+          dispatch({ type: 'error', message: `Engine ${id}: ${err instanceof Error ? err.message : String(err)}` });
+          return;
+        }
+      }
+    } else {
+      const MAX_AUTO = 3;
+      for (const id of available) {
+        if (memberEngines.length >= MAX_AUTO) break;
+        try {
+          const eng = ctx.registry.get(id);
+          if (eng.api) {
+            memberEngineIds.push(id);
+            memberEngines.push(eng);
+          }
+        } catch { /* skip */ }
+      }
+      if (memberEngines.length === 0) {
+        dispatch({ type: 'error', message: `Agent team mode requires API engines. Active: ${available.join(', ')}` });
+        return;
+      }
+      if (memberEngines.length === 1) {
+        // Only one API engine available — fall back to solo agent mode.
+        dispatch({ type: 'warning', message: `Only one API engine available (${memberEngineIds[0]}); falling back to solo agent mode.` });
+        return await runAgentMode(input, dispatch, ctx, { engineId: memberEngineIds[0], maxTurns: opts?.maxTurns, maxDurationMs: opts?.maxDurationMs, systemPrompt: opts?.systemPrompt });
+      }
+    }
+
+    // RT-22: complexity floor for auto-fanout. If the input is suspiciously
+    // small for team mode, downgrade to solo. Cesar might over-fan-out via
+    // the playbook; this is the runtime backstop.
+    if (input.length < 30 && requestedEngines === null) {
+      dispatch({ type: 'warning', message: `Input too short for team mode (${input.length} chars); falling back to solo agent.` });
+      return await runAgentMode(input, dispatch, ctx, { maxTurns: opts?.maxTurns, maxDurationMs: opts?.maxDurationMs, systemPrompt: opts?.systemPrompt });
+    }
+
+    // ── Build team config ─────────────────────────────────────
+    const budget: AgentBudget = {
+      maxTurns: opts?.maxTurns ?? 10,
+      maxDurationMs: opts?.maxDurationMs ?? 600_000,
+    };
+    const cwd = resolveWorkingDir();
+    const taskKind: 'edit'|'investigate' = opts?.taskKind ?? 'edit';
+
+    const members: AgentTeamMemberConfig[] = memberEngines.map((eng, i) => ({
+      engineId: memberEngineIds[i],
+      api: eng.api!,
+      systemPrompt: opts?.systemPrompt,
+    }));
+
+    // RT-12 cost guard: build a costFn that maps engineId → tokens → USD.
+    const enginesById = new Map<string, EngineDefinition>(memberEngineIds.map((id, i) => [id, memberEngines[i]]));
+    const costFn = (engineId: string, tokensUsed: number): number => {
+      const eng = enginesById.get(engineId);
+      if (!eng) return 0;
+      return estimatedTokensToCost(eng, tokensUsed);
+    };
+
+    const teamConfig: AgentTeamConfig = {
+      members,
+      cwd,
+      budget,
+      isolate: true,  // always isolate for team mode — concurrent file edits would clobber
+      teamBudget: {
+        maxTeamCostUsd: opts?.maxTeamCostUsd ?? 3.00,  // hard ceiling
+        maxTeamWallClockMs: 15 * 60 * 1000,            // 15 min
+      },
+      costFn,
+      heavyToolSemaphorePermits: 1,  // serialize heavy tools across members (RT-26)
+    };
+
+    // ── Wire abort BEFORE creating team — RT-11 fix ───────────
+    // The original /agent had a race between the early abort.signal.aborted
+    // check and addEventListener. Here we do the listener first, then the
+    // early check — there's no window where an abort can be missed.
+    let team: AgentTeam | null = null;
+    let teamCancelled = false;
+    const onAbort = () => {
+      teamCancelled = true;
+      if (team) team.cancel();
+    };
+    abort.signal.addEventListener('abort', onAbort);
+
+    // Codex P1: when called from a plan step, the caller owns the active
+    // abort. Bridge parentSignal → internal abort and DO NOT touch
+    // ctx.setActiveAbort so the plan executor's controller stays intact.
+    const parentSignal = opts?.parentSignal;
+    let onParentAbort: (() => void) | null = null;
+    if (parentSignal) {
+      if (parentSignal.aborted) {
+        try { abort.abort(); } catch { /* ignore */ }
+      } else {
+        onParentAbort = () => { try { abort.abort(); } catch { /* ignore */ } };
+        parentSignal.addEventListener('abort', onParentAbort);
+      }
+    } else {
+      ctx.setActiveAbort(abort);
+    }
+
+    if (abort.signal.aborted) {
+      // Already cancelled before we even got here.
+      if (!parentSignal) ctx.setActiveAbort(null);
+      if (onParentAbort && parentSignal) {
+        try { parentSignal.removeEventListener('abort', onParentAbort); } catch { /* ignore */ }
+      }
+      abort.signal.removeEventListener('abort', onAbort);
+      return;
+    }
+
+    try {
+      // ── Create + initialize team ──────────────────────────
+      team = new AgentTeam(teamConfig);
+      await team.initialize();
+
+      if (teamCancelled || abort.signal.aborted) {
+        // OpenCode review fix #1: dispatch a user-visible event so the user
+        // knows the cancel landed during initialize. Otherwise the run would
+        // silently disappear with no transcript record. Worktrees may have
+        // been created (consuming disk + git activity) so the user should
+        // see "team cancelled before start" rather than nothing.
+        dispatch({ type: 'warning', message: `Agent team cancelled during initialize \u2014 worktrees rolled back` });
+        await team.cleanup();
+        return;
+      }
+
+      const teamId = team.getRunId();
+
+      // ── Emit team-start ───────────────────────────────────
+      dispatch({
+        type: 'agent-team-start',
+        teamId,
+        engineIds: memberEngineIds,
+        task: input,
+        taskKind,
+      });
+
+      // Pre-emit step-start for each member so the UI shows N panels
+      // immediately, before the first AgentEvent arrives.
+      for (const id of memberEngineIds) {
+        dispatch({
+          type: 'agent-step-start',
+          engineId: id,
+          turnIndex: 0,
+          userPrompt: input,
+          maxTurns: budget.maxTurns,
+          maxDurationMs: budget.maxDurationMs,
+          maxTokens: budget.maxTokens ?? null,
+          teamId,
+        });
+      }
+
+      // ── onEvent: forward agent events to dispatch as OutputEvents ──
+      const onEvent = (event: AgentEvent) => {
+        if (event.kind === 'assistant_chunk') {
+          dispatch({ type: 'streaming-chunk', engineId: event.engineId, chunk: event.text });
+        } else if (event.kind === 'tool_call') {
+          dispatch({
+            type: 'tool-call',
+            engineId: event.engineId,
+            tool: event.toolName,
+            input: event.input ? JSON.stringify(event.input) : '',
+            status: event.status === 'ok' ? 'done' : event.status === 'error' || event.status === 'rejected' ? 'error' : 'running',
+            output: event.output,
+          });
+        }
+      };
+
+      // ── Run the team ──────────────────────────────────────
+      const teamResult = await team.step(input, { onEvent });
+
+      // Codex review fix (P1): post-step cancellation guard. If the user
+      // cancelled mid-run (via Ctrl-C → onAbort → team.cancel()), the team
+      // returns with whatever partial results it has. We must NOT proceed
+      // to fitness gate, scoring, or patch-review — that would surface a
+      // patch from a run the user explicitly aborted.
+      if (teamCancelled || abort.signal.aborted) {
+        // Emit cancelled step-end events for transcript/UI consistency,
+        // then a team-complete with winner=null so the panels clear.
+        for (const m of teamResult.members) {
+          dispatch({
+            type: 'agent-step-end',
+            engineId: m.engineId,
+            turnIndex: 0,
+            outcome: 'cancelled',
+            toolCalls: m.stepResult?.toolCalls ?? 0,
+            tokensUsed: m.stepResult?.tokensUsed ?? 0,
+            stopReason: 'cancelled',
+          });
+          dispatch({ type: 'streaming-end', engineId: m.engineId });
+        }
+        let cancelCost = 0;
+        for (const m of teamResult.members) {
+          cancelCost += costFn(m.engineId, m.stepResult?.tokensUsed ?? 0);
+        }
+        dispatch({
+          type: 'agent-team-complete',
+          teamId,
+          winner: null,
+          synthesizedPatch: null,
+          synthesizedAnalysis: null,
+          memberOutcomes: teamResult.members.map((m) => ({
+            engineId: m.engineId,
+            outcome: 'cancelled',
+            diffLines: 0,
+            passedFitness: false,
+          })),
+          teamCostUsd: cancelCost,
+          teamDurationMs: teamResult.durationMs,
+        });
+        dispatch({ type: 'warning', message: `Agent team cancelled by user \u2014 $${cancelCost.toFixed(2)} spent before cancel` });
+        return;
+      }
+
+      // ── Emit step-end for each member ─────────────────────
+      for (const m of teamResult.members) {
+        const outcome: 'completed'|'cancelled'|'failed' =
+          !m.stepResult ? 'failed'
+          : m.stepResult.stopReason === 'completed' ? 'completed'
+          : m.stepResult.stopReason === 'cancelled' ? 'cancelled'
+          : 'failed';
+        dispatch({
+          type: 'agent-step-end',
+          engineId: m.engineId,
+          turnIndex: 0,
+          outcome,
+          toolCalls: m.stepResult?.toolCalls ?? 0,
+          tokensUsed: m.stepResult?.tokensUsed ?? 0,
+          stopReason: m.stepResult?.stopReason ?? 'error',
+        });
+        dispatch({ type: 'streaming-end', engineId: m.engineId });
+      }
+
+      // ── Phase 3 scoring ──────────────────────────────────
+      // RT-3 fix: typecheck-or-fail fitness gate before scoring.
+      // Gemini code review fix #2: parallelize the fitness gate. Each member
+      // has an isolated worktree so the typecheck runs can safely overlap.
+      // Sequential for a 3-member team would add ~2 minutes of wall-clock
+      // (each typecheck is ~45s on a real codebase) AFTER the agents finish.
+      const fitnessPassed = new Map<string, boolean>();
+      if (taskKind === 'edit') {
+        const fitnessCmd = opts?.fitnessCmd ?? 'npm run typecheck';
+        const fitnessPromises = teamResult.members.map(async (m): Promise<{engineId:string, passed:boolean}> => {
+          if (!m.stepResult || m.error || !m.worktreePath) {
+            return { engineId: m.engineId, passed: false };
+          }
+          try {
+            const fitnessResult = await spawnWithTimeout({
+              command: 'sh',
+              args: ['-c', fitnessCmd],
+              cwd: m.worktreePath,
+              timeout: 60,
+            });
+            return { engineId: m.engineId, passed: fitnessResult.exitCode === 0 };
+          } catch {
+            return { engineId: m.engineId, passed: false };
+          }
+        });
+        const settledFitness = await Promise.allSettled(fitnessPromises);
+        for (let i = 0; i < settledFitness.length; i++) {
+          const outcome = settledFitness[i];
+          const id = teamResult.members[i].engineId;
+          if (outcome.status === 'fulfilled') {
+            fitnessPassed.set(outcome.value.engineId, outcome.value.passed);
+          } else {
+            fitnessPassed.set(id, false);
+          }
+        }
+      }
+
+      const scored: Map<string, EngineResult> = scoreAgentTeamResult(teamResult, cwd, taskKind, fitnessPassed);
+      const winnerInfo = determineWinner(scored, 8);
+
+      // ── Synthesis (Phase 3 wrapper, simplified for v1) ───
+      // For now: pick the winner, surface their diff/response. The full
+      // winner-refines-with-elevated-loser-insights synthesis prompt is
+      // documented in the plan but not implemented in this Phase — that
+      // requires routing through the ApiAdapter to issue an extra LLM call
+      // and is best left as a follow-up enhancement once the core loop is
+      // proven. For v1 the user gets the deterministic best member's work
+      // directly, with a transcript summary that lists all members.
+      let winnerDiff: string | null = null;
+      let winnerAnalysis: string | null = null;
+      if (winnerInfo.winner) {
+        const winnerMember = teamResult.members.find((m) => m.engineId === winnerInfo.winner);
+        if (winnerMember && winnerMember.worktreePath && taskKind === 'edit') {
+          try { winnerDiff = worktreeChangedDiff(winnerMember.worktreePath, teamResult.baseSha); } catch { /* leave null */ }
+        }
+        if (winnerMember && winnerMember.stepResult && taskKind === 'investigate') {
+          winnerAnalysis = winnerMember.stepResult.response;
+        }
+      }
+
+      // ── Compute team cost ────────────────────────────────
+      let teamCost = 0;
+      for (const m of teamResult.members) {
+        teamCost += costFn(m.engineId, m.stepResult?.tokensUsed ?? 0);
+      }
+
+      // ── Build member outcomes for the team-complete event ─
+      const memberOutcomes = teamResult.members.map((m) => {
+        const sr = scored.get(m.engineId);
+        return {
+          engineId: m.engineId,
+          outcome: !m.stepResult ? 'failed' : m.stepResult.stopReason,
+          diffLines: sr?.diffLines ?? 0,
+          passedFitness: fitnessPassed.get(m.engineId) ?? false,
+        };
+      });
+
+      // ── Emit team-complete ───────────────────────────────
+      dispatch({
+        type: 'agent-team-complete',
+        teamId,
+        winner: winnerInfo.winner,
+        synthesizedPatch: winnerDiff,
+        synthesizedAnalysis: winnerAnalysis,
+        memberOutcomes,
+        teamCostUsd: teamCost,
+        teamDurationMs: teamResult.durationMs,
+      });
+
+      // ── Surface the result to the user ────────────────────
+      if (winnerInfo.winner) {
+        if (winnerDiff) {
+          // Codex P3: persist the winning patch to a real file so
+          // handleReviewAction('edit') opens the patch instead of an
+          // empty buffer.
+          let patchPath = '';
+          try {
+            const patchDir = join(RUNS_DIR, `team-agent-${teamId}`);
+            mkdirSync(patchDir, { recursive: true });
+            patchPath = join(patchDir, `${winnerInfo.winner}.patch`);
+            writeFileSync(patchPath, winnerDiff);
+          } catch (err) {
+            const errMsg = err instanceof Error ? err.message : String(err);
+            console.warn(`[agon] failed to persist team-agent winner patch: ${errMsg}`);
+            patchPath = '';
+            // Gemini fix (e): tell the user the [E]dit action is unavailable
+            // so they don't hit an empty-buffer surprise on disk-full.
+            dispatch({ type: 'warning', message: `Could not persist winning patch (${errMsg}). [E]dit action will be unavailable; the patch is still shown below.` });
+          }
+          dispatch({
+            type: 'patch-review',
+            winnerId: winnerInfo.winner,
+            patchPath,
+            patchContent: winnerDiff,
+          } as any);
+        } else if (winnerAnalysis) {
+          dispatch({ type: 'engine-block', engineId: winnerInfo.winner, color: 0x9333ea, content: winnerAnalysis } as any);
+        }
+        dispatch({
+          type: 'success',
+          message: `Agent team complete \u2014 winner: ${winnerInfo.winner} | $${teamCost.toFixed(2)} | ${(teamResult.durationMs/1000).toFixed(0)}s`,
+        });
+      } else {
+        // No winner — present all member responses inline so user can pick.
+        for (const m of teamResult.members) {
+          if (m.stepResult?.response) {
+            dispatch({ type: 'engine-block', engineId: m.engineId, color: 0, content: m.stepResult.response } as any);
+          }
+        }
+        dispatch({
+          type: 'warning',
+          message: `Agent team finished with no winner (no member passed the fitness gate). All ${teamResult.members.length} responses shown above.`,
+        });
+      }
+    } catch (err: any) {
+      dispatch({ type: 'error', message: `Agent team failed: ${err?.message ?? String(err)}` });
+    } finally {
+      abort.signal.removeEventListener('abort', onAbort);
+      if (onParentAbort && parentSignal) {
+        try { parentSignal.removeEventListener('abort', onParentAbort); } catch { /* ignore */ }
+      }
+      // Codex P1: don't null the active abort if a parent owns it (plan step).
+      if (!parentSignal) {
+        ctx.setActiveAbort(null);
+      }
+      if (team) {
+        try { await team.cleanup(); } catch (cleanupErr) {
+          console.warn(`[agon] AgentTeam cleanup failed: ${cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr)}`);
+        }
+      }
     }
   >>>

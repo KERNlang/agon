@@ -70,6 +70,10 @@ export interface DispatchOptions {
   signal?: AbortSignal;
   images?: ImageAttachment[];
   systemPrompt?: string;
+  onApproval?: (tool:string, command:string, reason?:string) => Promise<boolean|string>;
+  permissionMode?: 'auto'|'ask'|'deny-all';
+  allowedCommands?: string[];
+  toolPermissions?: Record<string,'allow'|'ask'|'deny'>;
 }
 
 /**

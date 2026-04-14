@@ -43,7 +43,7 @@ service name=ToolRegistry singleton=true
 
 // ── Executor Pipeline ─────────────────────────────────────────────
 
-fn name=executeToolCall async=true params="call:ToolCall, ctx:ToolContext, registry:ToolRegistry, onPermissionAsk?:(tool:string,message:string)=>Promise<boolean>" returns="Promise<ToolCallResult>"
+fn name=executeToolCall async=true params="call:ToolCall, ctx:ToolContext, registry:ToolRegistry, onPermissionAsk?:(tool:string,message:string)=>Promise<boolean|string>" returns="Promise<ToolCallResult>"
   doc "Three-phase pipeline: validate → permission → execute"
   handler <<<
     const start = Date.now();
@@ -93,6 +93,14 @@ fn name=executeToolCall async=true params="call:ToolCall, ctx:ToolContext, regis
     if (permission.behavior === 'ask') {
       if (onPermissionAsk) {
         const allowed = await onPermissionAsk(call.name, permission.message ?? `Allow ${call.name}?`);
+        if (typeof allowed === 'string') {
+          return {
+            toolCallId: call.id,
+            toolName: call.name,
+            result: { ok: false, content: '', error: allowed },
+            durationMs: Date.now() - start,
+          };
+        }
         if (!allowed) {
           return {
             toolCallId: call.id,
@@ -137,7 +145,7 @@ fn name=executeToolCall async=true params="call:ToolCall, ctx:ToolContext, regis
     }
   >>>
 
-fn name=executeToolCalls async=true params="calls:ToolCall[], ctx:ToolContext, registry:ToolRegistry, onPermissionAsk?:(tool:string,message:string)=>Promise<boolean>, onProgress?:(result:ToolCallResult)=>void" returns="Promise<ToolCallResult[]>"
+fn name=executeToolCalls async=true params="calls:ToolCall[], ctx:ToolContext, registry:ToolRegistry, onPermissionAsk?:(tool:string,message:string)=>Promise<boolean|string>, onProgress?:(result:ToolCallResult)=>void" returns="Promise<ToolCallResult[]>"
   doc "Execute multiple tool calls, partitioned into concurrent/serial batches."
   handler <<<
     const results: ToolCallResult[] = [];

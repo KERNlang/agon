@@ -56,6 +56,10 @@ export interface AgentSessionConfig {
   heavyToolSemaphore?: Semaphore;
   thread?: ContextThread;
   contextWindowTokens?: number;
+  permissionMode?: 'auto'|'ask'|'deny-all';
+  allowedCommands?: string[];
+  toolPermissions?: Record<string,'allow'|'ask'|'deny'>;
+  onPermissionAsk?: (tool:string, command:string, reason:string)=>Promise<boolean|string>;
 }
 
 /**
@@ -231,6 +235,10 @@ export class AgentSession {
       heavyToolSemaphore: this.config.heavyToolSemaphore,
       historyMessages: historyMessages as Array<Record<string,unknown>> | undefined,
       onHistoryEntry,
+      permissionMode: this.config.permissionMode,
+      allowedCommands: this.config.allowedCommands,
+      toolPermissions: this.config.toolPermissions,
+      onPermissionAsk: this.config.onPermissionAsk,
     };
     
     let result: ApiAgentResult;

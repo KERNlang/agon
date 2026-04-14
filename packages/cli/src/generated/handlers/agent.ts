@@ -20,6 +20,54 @@ export interface RunAgentOptions {
 }
 
 /**
+ * Shared approval callback for delegated agent runs. Applies config-level allow/deny rules first, then falls back to the UI permission prompt.
+ */
+export function buildAgentApprovalCallback(dispatch: Dispatch, ctx: HandlerContext, engineId: string): (tool:string, command:string, reason?:string)=>Promise<boolean|string> {
+  return async (tool: string, command: string, reason?: string): Promise<boolean | string> => {
+    const cfg = ctx.config;
+    const perms = (cfg as any).toolPermissions ?? {};
+    const allowed = (cfg as any).allowedCommands ?? [];
+    const mode = (cfg as any).permissionMode ?? 'ask';
+    const toolMap: Record<string, string> = { shell: 'Bash', bash: 'Bash', edit: 'Edit', write: 'Write', read: 'Read', grep: 'Grep', glob: 'Glob' };
+    const agonTool = toolMap[tool.toLowerCase()] ?? tool;
+    const perm = perms[agonTool];
+  
+    if (ctx.explorationMode) {
+      const WRITE_TOOLS = ['Edit', 'Write', 'Bash'];
+      if (WRITE_TOOLS.includes(agonTool)) {
+        return 'BLOCKED: Exploration mode is read-only. Use Read, Grep, Glob tools only.';
+      }
+    }
+  
+    const activePlan = ctx.activePlan;
+    if (activePlan && ['planning', 'awaiting_approval'].includes(activePlan.state)) {
+      const WRITE_TOOLS = ['Edit', 'Write'];
+      if (WRITE_TOOLS.includes(agonTool)) {
+        return 'BLOCKED: Plan mode — no code changes allowed until the plan is approved.';
+      }
+    }
+  
+    if (perm === 'deny' || mode === 'deny-all') return false;
+    if (perm === 'allow' || mode === 'auto') return true;
+  
+    if (agonTool === 'Bash' && allowed.length > 0) {
+      const cmdLower = command.toLowerCase();
+      if (allowed.some((a: string) => cmdLower.startsWith(a.toLowerCase()))) return true;
+    }
+  
+    return new Promise<boolean>((resolve) => {
+      dispatch({
+        type: 'permission-ask',
+        tool: agonTool,
+        command,
+        reason: reason ?? `${engineId} wants to execute`,
+        resolve,
+      } as any);
+    });
+  };
+}
+
+/**
  * Run one autonomous agent invocation. Creates a session, calls session.step() once (which internally loops up to maxInnerSteps tool calls), emits OutputEvents throughout, handles Ctrl+C via the KERN-generated abort signal bridged to session.cancel().
  */
 export async function runAgentMode(input: string, dispatch: Dispatch, ctx: HandlerContext, opts?: RunAgentOptions): Promise<void> {
@@ -116,6 +164,10 @@ export async function runAgentMode(input: string, dispatch: Dispatch, ctx: Handl
     budget,
     thread: agentThread,
     contextWindowTokens: engineWindow,
+    permissionMode: (ctx.config as any).permissionMode ?? 'ask',
+    allowedCommands: (ctx.config as any).allowedCommands ?? [],
+    toolPermissions: (ctx.config as any).toolPermissions ?? {},
+    onPermissionAsk: buildAgentApprovalCallback(dispatch, ctx, engineId),
   });
   
   // Gemini fix (a): build state BEFORE any listener / active-abort
@@ -408,19 +460,24 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
     return estimatedTokensToCost(eng, tokensUsed);
   };
   
-  const teamConfig: AgentTeamConfig = {
-    members,
-    cwd,
-    budget,
-    isolate: true,  // always isolate for team mode — concurrent file edits would clobber
+    const teamConfig: AgentTeamConfig = {
+      members,
+      cwd,
+      budget,
+      isolate: true,  // always isolate for team mode — concurrent file edits would clobber
     teamBudget: {
       maxTeamCostUsd: opts?.maxTeamCostUsd ?? 3.00,  // hard ceiling
       maxTeamWallClockMs: 15 * 60 * 1000,            // 15 min
     },
-    costFn,
-    heavyToolSemaphorePermits: 1,  // serialize heavy tools across members (RT-26)
-    thread: teamThread,  // shared ContextThread — all members share the same history
-  };
+      costFn,
+      heavyToolSemaphorePermits: 1,  // serialize heavy tools across members (RT-26)
+      thread: teamThread,  // shared ContextThread — all members share the same history
+      permissionMode: (ctx.config as any).permissionMode ?? 'ask',
+      allowedCommands: (ctx.config as any).allowedCommands ?? [],
+      toolPermissions: (ctx.config as any).toolPermissions ?? {},
+      onPermissionAsk: (engineId: string, tool: string, command: string, reason: string) =>
+        buildAgentApprovalCallback(dispatch, ctx, engineId)(tool, command, reason),
+    };
   
   // ── Wire abort BEFORE creating team — RT-11 fix ───────────
   // The original /agent had a race between the early abort.signal.aborted

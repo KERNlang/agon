@@ -85,6 +85,10 @@ interface name=AgentTeamConfig
   field name=teamBudget type=AgentTeamBudget optional=true
   field name=costFn type="(engineId: string, tokensUsed: number) => number" optional=true
   field name=thread type=ContextThread optional=true
+  field name=permissionMode type="'auto'|'ask'|'deny-all'" optional=true
+  field name=allowedCommands type="string[]" optional=true
+  field name=toolPermissions type="Record<string,'allow'|'ask'|'deny'>" optional=true
+  field name=onPermissionAsk type="(engineId:string, tool:string, command:string, reason:string)=>Promise<boolean|string>" optional=true
 
 // ── Member result ────────────────────────────────────────────────
 
@@ -272,6 +276,12 @@ service name=AgentTeam export=true
             teamId: this.runId,
             heavyToolSemaphore: this.sharedSemaphore,
             contextWindowTokens: m.contextWindowTokens,
+            permissionMode: this.config.permissionMode,
+            allowedCommands: this.config.allowedCommands,
+            toolPermissions: this.config.toolPermissions,
+            onPermissionAsk: this.config.onPermissionAsk
+              ? (tool: string, command: string, reason: string) => this.config.onPermissionAsk!(m.engineId, tool, command, reason)
+              : undefined,
             // Shared ContextThread: all team members read prior history from
             // the same thread and write their output back into it. Appends
             // during parallel step() execution are in-memory (synchronous),

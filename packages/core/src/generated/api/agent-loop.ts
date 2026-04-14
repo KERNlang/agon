@@ -50,6 +50,10 @@ export interface ApiAgentOptions {
   historyMessages?: Array<Record<string,unknown>>;
   onHistoryEntry?: (entry:Record<string,unknown>)=>void;
   virtualFs?: any;
+  permissionMode?: 'auto'|'ask'|'deny-all';
+  allowedCommands?: string[];
+  toolPermissions?: Record<string,'allow'|'ask'|'deny'>;
+  onPermissionAsk?: (tool:string, command:string, reason:string)=>Promise<boolean|string>;
 }
 
 export interface ApiAgentResult {
@@ -136,10 +140,10 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
     cwd: opts.cwd,
     readFileState: (fsc as any).cache,
     abortSignal: opts.signal,
-    permissionMode: 'auto', // Agentic: auto-allow all in forge/brainstorm context
+    permissionMode: opts.permissionMode ?? 'auto',
     explorationMode: false,
-    allowedCommands: [],
-    toolPermissions: {},
+    allowedCommands: opts.allowedCommands ?? [],
+    toolPermissions: opts.toolPermissions ?? {},
     virtualFs: opts.virtualFs,
   };
   
@@ -263,23 +267,35 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
         // across all members of an AgentTeam (created once in initialize)
         // and passed via opts.heavyToolSemaphore. Solo /agent runs leave
         // it undefined → no semaphore overhead.
-        const isHeavyBash = opts.heavyToolSemaphore != null
-          && tc.name === 'Bash'
-          && typeof args.command === 'string'
-          && isHeavyTool(args.command);
+      const isHeavyBash = opts.heavyToolSemaphore != null
+        && tc.name === 'Bash'
+        && typeof args.command === 'string'
+        && isHeavyTool(args.command);
   
-        let result: string;
-        const runToolCall = async () => {
-          try {
-            const callResult = await executeToolCall(
-              { id: tc.id, name: tc.name, input: args },
-              toolCtx,
-              registry,
-            );
-            return callResult.result.ok ? callResult.result.content : (callResult.result.error ?? 'Tool execution failed');
-          } catch (err: any) {
-            return `Error: ${err.message ?? String(err)}`;
-          }
+      let result: string;
+      const permissionAsk = opts.onPermissionAsk
+        ? (tool: string, message: string) => opts.onPermissionAsk!(
+            tool,
+            typeof args.command === 'string'
+              ? args.command
+              : typeof args.file_path === 'string'
+                ? args.file_path
+                : JSON.stringify(args),
+            message,
+          )
+        : undefined;
+      const runToolCall = async () => {
+        try {
+          const callResult = await executeToolCall(
+            { id: tc.id, name: tc.name, input: args },
+            toolCtx,
+            registry,
+            permissionAsk,
+          );
+          return callResult.result.ok ? callResult.result.content : (callResult.result.error ?? 'Tool execution failed');
+        } catch (err: any) {
+          return `Error: ${err.message ?? String(err)}`;
+        }
         };
   
         if (isHeavyBash && opts.heavyToolSemaphore) {

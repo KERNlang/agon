@@ -61,6 +61,10 @@ interface name=DispatchOptions
   field name=signal type=AbortSignal optional=true
   field name=images type="ImageAttachment[]" optional=true
   field name=systemPrompt type=string optional=true
+  field name=onApproval type="(tool:string, command:string, reason?:string) => Promise<boolean|string>" optional=true
+  field name=permissionMode type="'auto'|'ask'|'deny-all'" optional=true
+  field name=allowedCommands type="string[]" optional=true
+  field name=toolPermissions type="Record<string,'allow'|'ask'|'deny'>" optional=true
 
 interface name=DispatchResult
   field name=exitCode type=number

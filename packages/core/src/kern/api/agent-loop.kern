@@ -36,6 +36,10 @@ interface name=ApiAgentOptions
   field name=historyMessages type="Array<Record<string,unknown>>" optional=true
   field name=onHistoryEntry type="(entry:Record<string,unknown>)=>void" optional=true
   field name=virtualFs type="any" optional=true
+  field name=permissionMode type="'auto'|'ask'|'deny-all'" optional=true
+  field name=allowedCommands type="string[]" optional=true
+  field name=toolPermissions type="Record<string,'allow'|'ask'|'deny'>" optional=true
+  field name=onPermissionAsk type="(tool:string, command:string, reason:string)=>Promise<boolean|string>" optional=true
 
 interface name=ApiAgentResult
   field name=response type=string
@@ -117,10 +121,10 @@ fn name=runApiAgentLoop async=true params="opts:ApiAgentOptions" returns="Promis
       cwd: opts.cwd,
       readFileState: (fsc as any).cache,
       abortSignal: opts.signal,
-      permissionMode: 'auto', // Agentic: auto-allow all in forge/brainstorm context
+      permissionMode: opts.permissionMode ?? 'auto',
       explorationMode: false,
-      allowedCommands: [],
-      toolPermissions: {},
+      allowedCommands: opts.allowedCommands ?? [],
+      toolPermissions: opts.toolPermissions ?? {},
       virtualFs: opts.virtualFs,
     };
 
@@ -250,12 +254,24 @@ fn name=runApiAgentLoop async=true params="opts:ApiAgentOptions" returns="Promis
             && isHeavyTool(args.command);
 
           let result: string;
+          const permissionAsk = opts.onPermissionAsk
+            ? (tool: string, message: string) => opts.onPermissionAsk!(
+                tool,
+                typeof args.command === 'string'
+                  ? args.command
+                  : typeof args.file_path === 'string'
+                    ? args.file_path
+                    : JSON.stringify(args),
+                message,
+              )
+            : undefined;
           const runToolCall = async () => {
             try {
               const callResult = await executeToolCall(
                 { id: tc.id, name: tc.name, input: args },
                 toolCtx,
                 registry,
+                permissionAsk,
               );
               return callResult.result.ok ? callResult.result.content : (callResult.result.error ?? 'Tool execution failed');
             } catch (err: any) {

@@ -1068,13 +1068,13 @@ export function App() {
             setModelPickerOpen(false);
             setEnginePickerOpen(true);
             return;
-              }
-              setModelPickerOpen(false);
-              const def = modelEntryToEngineDef(entry);
-              const dir = join(getAgonHome(), 'engines');
-              mkdirSync(dir, { recursive: true });
-              writeFileSync(join(dir, `${def.id}.json`), JSON.stringify(def, null, 2) + '\n');
-              registry.register(def as any);
+          }
+          setModelPickerOpen(false);
+          const def = modelEntryToEngineDef(entry);
+          const dir = join(getAgonHome(), 'engines');
+          mkdirSync(dir, { recursive: true });
+          writeFileSync(join(dir, `${def.id}.json`), JSON.stringify(def, null, 2) + '\n');
+          registry.register(def as any);
           setRegistryVersion((v: number) => v + 1);
           dispatch({ type: 'success', message: `Added: ${entry.providerName} \u2014 ${entry.modelName}` } as any);
         }}

@@ -8,13 +8,13 @@ import { createHash } from 'node:crypto';
 
 import { homedir } from 'node:os';
 
+import type { CompactionSummaryPart, ToolCacheEntry } from '../models/context-parts.js';
+
 function runtimeAgonPath(...parts: string[]): string {
   const override = process.env.AGON_HOME?.trim();
   const home = override ? resolve(override) : join(homedir(), '.agon');
   return join(home, ...parts);
 }
-
-import type { CompactionSummaryPart, ToolCacheEntry } from '../models/context-parts.js';
 
 export const SESSION_SCHEMA_VERSION: number = 2;
 

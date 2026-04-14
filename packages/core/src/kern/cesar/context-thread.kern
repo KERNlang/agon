@@ -1231,7 +1231,7 @@ fn name=summarizeOlderMessages params="opts:SummarizeOptions" returns="Promise<T
     try {
       // Reuse apiStreamDispatchWithHistory for a single-turn summary call.
       // We use the caller-supplied api config (should be a fast/cheap model).
-      const { apiStreamDispatch } = await import('./api-dispatch.js');
+      const { apiStreamDispatch } = await import('../api/dispatch.js');
       let summary = '';
       const gen = apiStreamDispatch(opts.api, prompt, 30, undefined);
       for await (const chunk of gen) {

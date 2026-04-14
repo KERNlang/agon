@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 
 import type { RoutingDecision, ScoutBid } from '@agon/core';
 
-import { EngineRegistry } from '@agon/core';
+import { EngineRegistry, resolveWorkingDir, gitChangedFiles } from '@agon/core';
 
 import { runScout } from '@agon/forge';
 
@@ -120,6 +120,21 @@ export async function routeViaCesar(input: string, dispatch: Dispatch, ctx: Hand
   let action: RoutingDecision['action'];
   let reasoning: string;
   
+  // Check if the lead engine is an API engine (supports the new Cesar-driven
+  // agent path with ContextThread, StreamBridge, shadow workers). If so, we
+  // prefer routing complex multi-step tasks to 'agent' or 'team-agent' rather
+  // than 'build' (which uses CLI agent mode without ContextThread).
+  const leadHasApiAgent = leadHasAgent && !!(ctx.registry.get(leadEngine) as any).api;
+  const AGENT_FANOUT_RE = /\b(?:refactor|rewrite|migrate|architect|across|all of|every|throughout|module|layer|architecture|implement|build.*feature)\b/i;
+  let scopeDirSpread = 0;
+  try {
+    const cwd = resolveWorkingDir();
+    const changedFiles = gitChangedFiles(cwd);
+    const dirs = new Set(changedFiles.map((f: string) => f.split('/').slice(0, 2).join('/')));
+    scopeDirSpread = dirs.size;
+  } catch { /* best-effort fanout hint */ }
+  const isFanout = AGENT_FANOUT_RE.test(input) || scopeDirSpread > 2;
+  
   if (needsCompetition) {
     action = 'forge';
     reasoning = `Bids suggest competitive testing needed`;
@@ -127,6 +142,15 @@ export async function routeViaCesar(input: string, dispatch: Dispatch, ctx: Hand
     // High disagreement: debate for questions, open discussion for code/ambiguous
     action = (hintClass === 'question') ? 'tribunal' : 'campfire';
     reasoning = `Engines disagree (spread ${disagreementSpread}): ${rankedBids.map((b: ScoutBid) => `${b.engineId} ${b.confidence}%`).join(' vs ')}`;
+  } else if (topConfidence >= threshold && leadHasApiAgent && isFanout) {
+    // High confidence + API engine + fan-out task → Cesar-driven team agent
+    // so the task gets ContextThread, shadow workers, and synthesis.
+    action = 'team-agent' as RoutingDecision['action'];
+    reasoning = `High confidence (${topConfidence}%), ${leadEngine} API agent — multi-step fanout`;
+  } else if (topConfidence >= threshold && leadHasApiAgent && hintClass === 'code') {
+    // High confidence + API engine + code task → Cesar-driven solo/shadow agent
+    action = 'agent' as RoutingDecision['action'];
+    reasoning = `High confidence (${topConfidence}%), ${leadEngine} API agent — code task`;
   } else if (topConfidence >= threshold && leadHasAgent) {
     const hasReviewer = observerEngines.some((id: string) => agentIds.includes(id));
     if (autoPipeline && hasReviewer && topConfidence >= pipelineThreshold) {
@@ -134,7 +158,7 @@ export async function routeViaCesar(input: string, dispatch: Dispatch, ctx: Hand
       reasoning = `Very high confidence (${topConfidence}%), build + silent cross-engine review`;
     } else {
       action = 'build';
-      reasoning = `High confidence (${topConfidence}%), ${leadEngine} has agent mode`;
+      reasoning = `High confidence (${topConfidence}%), ${leadEngine} CLI agent mode`;
     }
   } else if (topConfidence >= threshold) {
     action = 'chat';

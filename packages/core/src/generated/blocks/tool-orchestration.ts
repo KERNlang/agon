@@ -13,6 +13,7 @@ export function createForgeTool(): ToolHandler {
       type: 'object',
       properties: {
         task: { type: 'string', description: 'Brief description of the task to forge' },
+        scope: { type: 'string', description: 'Use "slice" when only one hard subpart deserves forge and Cesar will integrate the rest. Use "full" for whole-task forge. Optional.' },
         fitnessCmd: { type: 'string', description: 'Optional test or fitness command to preserve when routing to forge.' },
         hardened: { type: 'boolean', description: 'Set true for forge-hardened (gauntlet verification). Optional.' },
         team: { type: 'boolean', description: 'Solo (false) or team-forge (true). Choose based on task scope: single-file = solo, multi-file/architecture = team. Defaults to false if omitted.' },
@@ -27,6 +28,9 @@ export function createForgeTool(): ToolHandler {
   const validate = (input: Record<string, unknown>, _ctx: ToolContext): string | null => {
     if (!input.task || typeof input.task !== 'string' || !(input.task as string).trim()) {
       return 'Missing required parameter: task';
+    }
+    if (input.scope !== undefined && input.scope !== 'slice' && input.scope !== 'full') {
+      return 'scope must be "slice" or "full"';
     }
     return null;
   };

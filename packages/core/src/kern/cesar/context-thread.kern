@@ -36,7 +36,7 @@
 import from="node:fs" names="readFileSync,writeFileSync,mkdirSync,renameSync,existsSync,readdirSync,unlinkSync,statSync,chmodSync,openSync,fsyncSync,closeSync,appendFileSync"
 import from="node:path" names="join,resolve,basename"
 import from="node:crypto" names="randomUUID,createHash"
-import from="node:os" names="homedir"
+import from="node:os" names="homedir,tmpdir"
 import from="../signals/config.js" names="ensureAgonHome"
 
 // ── Path helpers ─────────────────────────────────────────────────────
@@ -106,6 +106,51 @@ fn name=ensureThreadDir params="projectPath:string" returns=void
   handler <<<
     ensureAgonHome();
     mkdirSync(threadDirFor(projectPath), { recursive: true });
+  >>>
+
+// ── O_EXCL lockfile helpers ──────────────────────────────────────────
+// Proper cross-process mutual exclusion for thread saves. Each save()
+// acquires an exclusive lock via O_EXCL (atomic on POSIX and Windows),
+// does the read-merge-write cycle, then releases. Concurrent writers
+// retry with exponential backoff rather than silently clobbering.
+
+const name=LOCK_MAX_RETRIES type=number
+  handler <<<
+    8
+  >>>
+
+const name=LOCK_BASE_DELAY_MS type=number
+  handler <<<
+    20
+  >>>
+
+fn name=threadLockPath params="projectPath:string,threadId:string" returns=string
+  handler <<<
+    return threadFilePath(projectPath, threadId) + '.lock';
+  >>>
+
+fn name=acquireLock params="lockPath:string" returns="Promise<number|null>" async=true
+  doc "Try to acquire an O_EXCL lock file. Returns the fd on success, null after LOCK_MAX_RETRIES attempts. Exponential backoff with jitter between retries."
+  handler <<<
+    for (let attempt = 0; attempt < LOCK_MAX_RETRIES; attempt++) {
+      try {
+        const fd = openSync(lockPath, 'wx', 0o600); // O_WRONLY | O_CREAT | O_EXCL
+        writeFileSync(fd, String(process.pid));
+        closeSync(fd);
+        return attempt; // return attempt count (0 = uncontested)
+      } catch (err: any) {
+        if (err?.code !== 'EEXIST') throw err; // unexpected error, propagate
+        // Lock held — wait with exponential backoff + jitter
+        const delay = Math.min(LOCK_BASE_DELAY_MS * Math.pow(2, attempt) + Math.random() * 10, 500);
+        await new Promise<void>(res => setTimeout(res, delay));
+      }
+    }
+    return null; // give up after max retries
+  >>>
+
+fn name=releaseLock params="lockPath:string" returns=void
+  handler <<<
+    try { unlinkSync(lockPath); } catch { /* already gone — ok */ }
   >>>
 
 // ── Data types ───────────────────────────────────────────────────────
@@ -841,12 +886,64 @@ service name=ContextThread export=true
       };
     >>>
 
-  method name=save returns=void
-    doc "Persist to disk atomically. No-op if nothing changed since load. Filters role:'system' messages before writing (defense in depth — append/appendLoopEntry already reject them, but a Phase A.5 migration could import them). Fsyncs the temp file before rename so a power loss doesn't yield an empty file (red-team finding 15). chmods 0600 after rename so secrets in tool outputs can't be read by other local users (red-team finding 1). Read-before-write merge: if the file on disk has more messages than we have in memory, we merge the delta. Best-effort — not a lockfile."
+  method name=saveSync returns=void
+    doc "Synchronous best-effort persist — NO lockfile. Used by process-exit handlers where async is forbidden. Falls back to the old sync write path. For normal saves, use save() which acquires the O_EXCL lock."
+    handler <<<
+      if (!this.dirty && this.hydrated) return;
+      try {
+        ensureThreadDir(this.projectPath);
+        const target = threadFilePath(this.projectPath, this.threadId);
+        const cleanMessages = this.messages.filter((m: ThreadMessage) => m.role !== 'system');
+        const snapshot: ThreadSnapshot = {
+          schemaVersion: SCHEMA_VERSION,
+          threadId: this.threadId,
+          projectPath: this.projectPath,
+          createdAt: this.createdAt,
+          updatedAt: Date.now(),
+          messages: cleanMessages,
+          checkpoints: this.checkpoints,
+          engineHead: this.engineHead,
+          fileTouches: this.fileTouches,
+        };
+        const body = JSON.stringify(snapshot, null, 2) + '\n';
+        const tmpPath = target + '.tmp';
+        let fd = -1;
+        try {
+          fd = openSync(tmpPath, 'w', 0o600);
+          writeFileSync(fd, body, 'utf-8');
+          fsyncSync(fd);
+        } finally {
+          if (fd >= 0) try { closeSync(fd); } catch { /* ignore */ }
+        }
+        renameSync(tmpPath, target);
+        try { chmodSync(target, 0o600); } catch { /* non-POSIX */ }
+        this.dirty = false;
+        this.hydrated = true;
+        const jPath = threadJournalPath(this.projectPath, this.threadId);
+        if (existsSync(jPath)) unlinkSync(jPath);
+        this.journaledIds.clear();
+      } catch { /* never let sync flush failure throw in exit handlers */ }
+    >>>
+
+  method name=save returns="Promise<void>" async=true
+    doc "Persist to disk atomically under an O_EXCL lockfile so concurrent /agent processes can't clobber each other (JSONL proper lockfile — deferred item now complete). Acquires the lock, merges JSONL journal, reads on-disk state, merges deltas, writes snapshot, releases lock. Falls back to best-effort write if lock cannot be acquired after retries."
     handler <<<
       if (!this.dirty && this.hydrated) return;
       ensureThreadDir(this.projectPath);
       const target = threadFilePath(this.projectPath, this.threadId);
+      const lockPath = threadLockPath(this.projectPath, this.threadId);
+
+      // Acquire O_EXCL lock before touching the snapshot.
+      let lockAcquired = false;
+      try {
+        const attempt = await acquireLock(lockPath);
+        lockAcquired = attempt !== null;
+        if (!lockAcquired) {
+          console.warn(`[agon] context-thread: could not acquire lock for ${this.threadId} after ${LOCK_MAX_RETRIES} retries — saving without lock (best-effort)`);
+        }
+      } catch (lockErr) {
+        console.warn(`[agon] context-thread: lock error (continuing without lock): ${lockErr instanceof Error ? lockErr.message : String(lockErr)}`);
+      }
 
       // Phase A.5 — JSONL journal merge. Before the full JSON rewrite, absorb
       // any messages that were fast-appended to the journal since the last
@@ -944,7 +1041,11 @@ service name=ContextThread export=true
         const jPath = threadJournalPath(this.projectPath, this.threadId);
         if (existsSync(jPath)) unlinkSync(jPath);
         this.journaledIds.clear();
-      } catch { /* best-effort — stale journal is harmless */ }
+      } catch { /* best-effort — stale journal is harmless */ } finally {
+        // Release lock unconditionally so future saves are never blocked by a
+        // failed save. The lock is scoped to this process + run; we always own it.
+        if (lockAcquired) releaseLock(lockPath);
+      }
     >>>
 
   method name=getAllMessages returns="ThreadMessage[]"
@@ -1021,7 +1122,7 @@ fn name=_registerExitFlush params="thread:ContextThread" returns=void
         const t = ref.deref();
         if (!t) { _exitFlushRegistry.delete(ref); continue; }
         try {
-          if ((t as any).dirty) (t as any).save();
+          if ((t as any).dirty) (t as any).saveSync(); // exit handlers can't await
         } catch { /* never let flush block exit */ }
       }
     };
@@ -1082,6 +1183,66 @@ fn name=listThreadsForProject params="projectPath:string" returns="string[]" exp
     } catch (err) {
       console.warn(`[agon] context-thread: failed to list threads: ${err instanceof Error ? err.message : String(err)}`);
       return [];
+    }
+  >>>
+
+// ── LLM-powered checkpoint summarization ────────────────────────────
+// Summarize older thread messages using a cheap API call so messagesFor()
+// can reference a dense summary instead of a terse "[N messages trimmed]"
+// stub. This replaces the greedy-trim compaction from Phase A with a
+// semantic summary that preserves intent, decisions, and file-edit outcomes.
+//
+// Design: caller provides the API config and the number of messages to
+// summarize. The function slices the oldest N messages, builds a compact
+// prompt, calls the API once, and records the result as a ThreadCheckpoint.
+// The original messages are NOT removed — the checkpoint is metadata that
+// messagesFor() can opt into. Hard deletion is a future Phase A.5.5 option
+// for users who want to aggressively cap thread size.
+
+interface name=SummarizeOptions export=true
+  field name=thread type=ContextThread
+  field name=api type="any"
+  field name=messagesToSummarize type=number optional=true
+  field name=label type=string optional=true
+
+fn name=summarizeOlderMessages params="opts:SummarizeOptions" returns="Promise<ThreadCheckpoint|null>" async=true export=true
+  doc "Summarize the oldest N messages in the thread using a single cheap LLM call. Records the result as a ThreadCheckpoint. Non-destructive — original messages are preserved. Returns the checkpoint on success, null on API failure."
+  handler <<<
+    const messages = opts.thread.getAllMessages().filter((m: any) => m.role !== 'system');
+    const n = Math.min(opts.messagesToSummarize ?? 30, messages.length - KEEP_LAST_K);
+    if (n <= 0) return null;
+
+    const toSummarize = messages.slice(0, n);
+    const lastId = toSummarize[toSummarize.length - 1]?.id;
+    if (!lastId) return null;
+
+    // Build a compact representation of the messages to summarize.
+    const body = toSummarize.map((m: any) => {
+      const who = m.engineId ?? m.role;
+      const snippet = (m.content ?? '').slice(0, 400);
+      return `[${who}/${m.role}]: ${snippet}`;
+    }).join('\n---\n');
+
+    const prompt = `Summarize the following conversation turns concisely (max 300 words). Focus on: what was asked, what files were read/edited, what decisions were made, what the final outcome was. Do NOT reproduce code. Write in past tense.\n\n${body}`;
+
+    try {
+      // Reuse apiStreamDispatchWithHistory for a single-turn summary call.
+      // We use the caller-supplied api config (should be a fast/cheap model).
+      const { apiStreamDispatch } = await import('./api-dispatch.js');
+      let summary = '';
+      const gen = apiStreamDispatch(opts.api, prompt, 30, undefined);
+      for await (const chunk of gen) {
+        if (typeof chunk === 'string') summary += chunk;
+      }
+      summary = summary.trim();
+      if (!summary) return null;
+
+      const cp = opts.thread.checkpoint(summary, opts.label ?? `llm-summary-${n}-msgs`, lastId);
+      await opts.thread.save();
+      return cp;
+    } catch (err) {
+      console.warn(`[agon] context-thread: LLM summarization failed: ${err instanceof Error ? err.message : String(err)}`);
+      return null;
     }
   >>>
 

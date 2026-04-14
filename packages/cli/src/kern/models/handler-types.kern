@@ -152,6 +152,10 @@ union name=OutputEvent discriminant=type
     field name=to type=string
     field name=reason type="'auto-fanout'|'cesar-route'|'team-member'|'synthesis'|'fallback'"
     field name=confidence type=number optional=true
+  variant name=shadow-active
+    doc "Emitted once when shadow mode starts — a secondary engine is racing in a background worktree. Lets the UI show a subtle 'shadow running' indicator without cluttering the foreground stream."
+    field name=shadowEngineId type=string
+    field name=foregroundEngineId type=string
   variant name=agent-routing
     doc "Emitted when Cesar decides between solo and team mode before dispatch. Gives the user visibility into the routing decision."
     field name=mode type="'solo'|'team'"

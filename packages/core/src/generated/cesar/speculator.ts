@@ -222,7 +222,7 @@ export class Speculator {
     // Flush thread with winner marked.
     if (opts.thread && winnerOutcome) {
       opts.thread.markSeen(winnerOutcome.pkg.engineId);
-      opts.thread.save();
+      await opts.thread.save();
     }
     
     return {

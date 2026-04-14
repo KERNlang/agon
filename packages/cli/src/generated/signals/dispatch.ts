@@ -46,6 +46,8 @@ import { deriveRoutingHints } from '../cesar/routing.js';
 
 import { shouldUseAgentTeam } from '../cesar/routing.js';
 
+import { buildCesarSystemPrompt } from '../cesar/session.js';
+
 import { createSpeculator, loadOrCreateActiveThread } from '@agon/core';
 
 import type { SpeculatorMemberConfig } from '@agon/core';
@@ -582,6 +584,30 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
       const cesarConfig = cb.ctx.config;
       const cesarId = (cesarConfig as any).cesarEngine ?? 'claude';
       try {
+        if (cb.ctx.cesarSession) {
+          try { cb.ctx.cesarSession.close(); } catch {}
+          cb.ctx.setCesarSession(null);
+        }
+        cb.dispatch({ type: 'warning', message: `Cesar session unavailable — rebuilding ${cesarId} session…` });
+        const retried = await handleCesarBrain(input, cb.dispatch, cb.ctx, []);
+        const retriedPlan: CesarPlan | undefined = cb.ctx.cesar?.proposedPlan;
+        if (retriedPlan && retriedPlan.state === 'awaiting_approval') {
+          cb.setActivePlan(retriedPlan);
+          await handleProposedCesarPlan(retriedPlan, cb);
+          return false;
+        }
+        if (retried.delegated && retried.responded) {
+          return true;
+        }
+        if (retried.responded) {
+          return false;
+        }
+      } catch (e) {
+        console.warn(`[agon] dispatch: Cesar session rebuild failed: ${e instanceof Error ? e.message : String(e)}`);
+      }
+  
+      // Cesar truly didn't respond — last fallback is plain one-shot dispatch
+      try {
         const cesarEngine = cb.ctx.registry.get(cesarId);
         const { join } = await import('node:path');
         const { mkdirSync } = await import('node:fs');
@@ -596,7 +622,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
           mode: 'exec' as any,
           timeout: (cesarConfig as any).timeout ?? 120,
           outputDir: outDir,
-          systemPrompt: CESAR_SYSTEM_PROMPT,
+          systemPrompt: buildCesarSystemPrompt(cb.ctx),
         });
         if (freshResult.stdout.trim()) {
           const freshText = freshResult.stdout.trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
@@ -665,7 +691,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
           mode: 'exec' as any,
           timeout: (cesarConfig as any).timeout ?? 120,
           outputDir: outDir,
-          systemPrompt: CESAR_SYSTEM_PROMPT,
+          systemPrompt: buildCesarSystemPrompt(cb.ctx),
         });
         if (actingResult.stdout.trim()) {
           const actingText = actingResult.stdout.trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
@@ -1014,7 +1040,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
         cb.ctx.cesar = {
           busy: false, busySince: null, queue: null,
           toolRegistry: null, hasNativeTools: false, lastDispatch: null,
-          pendingDelegation: null, reportedConfidence: undefined,
+          pendingDelegation: null, reportedConfidence: undefined, confidenceSatisfied: false, blockedOnConfidence: null,
           autoNero: false, advisorPending: false, lastEscalation: null,
           mcpFingerprint: undefined, mcpSignalPath: undefined, planDispatch: null, proposedPlan: undefined, sessionMcpServers: [],
         };
@@ -1240,7 +1266,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
         cb.ctx.cesar = {
           busy: false, busySince: null, queue: null,
           toolRegistry: null, hasNativeTools: false, lastDispatch: null,
-          pendingDelegation: null, reportedConfidence: undefined,
+          pendingDelegation: null, reportedConfidence: undefined, confidenceSatisfied: false, blockedOnConfidence: null,
           autoNero: false, advisorPending: false, lastEscalation: null,
           mcpFingerprint: undefined, mcpSignalPath: undefined, planDispatch: null, proposedPlan: undefined, sessionMcpServers: [],
         };

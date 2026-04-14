@@ -118,7 +118,7 @@ RULE 7 — NO NARRATION: NEVER narrate your research process. Do not write "Read
 RULE 8 — AUTONOMOUS PLANS: Plan mode is optional, not the default. Stay live unless staged execution is genuinely useful. Switch to planning when the task needs multiple dependent steps, expensive orchestration, resumability, explicit approval, or cost visibility. When you call ProposePlan, decide whether to set autoApprove=true. Set it ONLY when (a) the user clearly described a multi-stage workflow ("plan it, build it, review it"; "investigate then forge it"; "do the whole thing autonomously") AND (b) you have HIGH confidence in the steps after investigation (not before). The runtime applies a layered policy and may still ask the user — your autoApprove=true is permission, not a guarantee. Default to autoApprove=false (or omit it) whenever you are uncertain or when the plan touches mutating steps and the user did not explicitly invite autonomous execution. selfReview defaults to true for mutating plans — only set selfReview=false for purely advisory plans (brainstorm/tribunal/research only) where a code-review gate would have nothing to review.`
   >>>
 
-fn name=buildCesarSystemPrompt params="ctx:HandlerContext" returns=string
+fn name=buildCesarSystemPrompt params="ctx:HandlerContext" returns=string export=true
   doc "Build the full Cesar system prompt with project context, engine list, and mode flags."
   handler <<<
     const config = ctx.config;
@@ -404,13 +404,23 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
         const value = typeof (args as any).value === 'number' ? (args as any).value : null;
         if (value !== null && value >= 0 && value <= 100) {
           ctx.cesar!.reportedConfidence = value;
+          ctx.cesar!.confidenceSatisfied = true;
+          const blocked = ctx.cesar!.blockedOnConfidence;
+          ctx.cesar!.blockedOnConfidence = null;
+          if (blocked) {
+            return `Confidence ${value}% recorded. Immediately retry the blocked ${blocked.name} tool call with the SAME arguments. Do not narrate or explain anything first.`;
+          }
+          return value >= 93
+            ? `Confidence ${value}% recorded. High confidence. Proceed.`
+            : `Confidence ${value}% recorded. Proceed.`;
         }
       }
 
       // R1 enforcement: block all non-read tools until confidence is reported
       const READ_TOOLS = new Set(['Read', 'Grep', 'Glob', 'ReportConfidence', 'Delegate']);
-      if (ctx.cesar!.reportedConfidence === undefined && !READ_TOOLS.has(name)) {
-        return `[BLOCKED] Report confidence first. Call ReportConfidence(value) before using ${name}. Read/Grep/Glob are allowed for investigation.`;
+      if (!ctx.cesar!.confidenceSatisfied && !READ_TOOLS.has(name)) {
+        ctx.cesar!.blockedOnConfidence = { name, args };
+        return `[BLOCKED] Report confidence first. Call ReportConfidence(value) before using ${name}. After ReportConfidence succeeds, retry the SAME ${name} call immediately with the same arguments. Read/Grep/Glob are allowed for investigation.`;
       }
 
       // Dedup: if exact same tool+args was called before, return cached result
@@ -440,6 +450,7 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
         toolResultCache.set(cacheKey, output);
       } else if (['Edit', 'Write', 'Bash'].includes(name)) {
         toolResultCache.clear();
+        ctx.cesar!.blockedOnConfidence = null;
       }
       return output;
     };
@@ -464,7 +475,7 @@ fn name=buildOnApproval params="ctx:HandlerContext, engineId:string" returns="(t
       if (ctx.explorationMode) {
         const WRITE_TOOLS = ['Edit', 'Write', 'Bash'];
         if (WRITE_TOOLS.includes(agonTool)) {
-          return 'BLOCKED: Exploration mode is read-only. Use Read, Grep, Glob tools only.';
+          return 'BLOCKED: Exploration mode is read-only. Use Read, Grep, Glob tools only. Do not narrate around this. Either keep investigating, or wait for the user to disable exploration mode before retrying the same tool.';
         }
       }
 
@@ -473,7 +484,7 @@ fn name=buildOnApproval params="ctx:HandlerContext, engineId:string" returns="(t
       if (activePlan && ['planning', 'awaiting_approval'].includes(activePlan.state)) {
         const WRITE_TOOLS = ['Edit', 'Write'];
         if (WRITE_TOOLS.includes(agonTool)) {
-          return 'BLOCKED: Plan mode — no code changes allowed. Use ProposePlan to propose your plan, then wait for approval before implementing.';
+          return 'BLOCKED: Plan mode — no code changes allowed. Call ProposePlan with the execution plan now, then wait for approval before retrying the same tool. Do not narrate instead of acting.';
         }
       }
 
@@ -488,10 +499,10 @@ fn name=buildOnApproval params="ctx:HandlerContext, engineId:string" returns="(t
 
       // R1 enforcement for companion engines: block file writes until confidence is reported
       // Bash commands flow through to the normal permission UI — user's settings.json controls approval
-      if (ctx.cesar!.reportedConfidence === undefined) {
+      if (!ctx.cesar!.confidenceSatisfied) {
         const WRITE_TOOLS = ['Edit', 'Write'];
         if (WRITE_TOOLS.includes(agonTool)) {
-          return 'BLOCKED: Report confidence first via ReportConfidence MCP tool before writing files.';
+          return `BLOCKED: Report confidence first via ReportConfidence MCP tool before writing files. After ReportConfidence succeeds, retry the SAME ${agonTool} tool immediately. Do not narrate or explain the block.`;
         }
       }
 
@@ -613,7 +624,7 @@ fn name=ensureCesarSession async=true params="ctx:HandlerContext" returns="Promi
       ctx.cesar = {
         busy: false, busySince: null, queue: null,
         toolRegistry: null, hasNativeTools: false, lastDispatch: null,
-        pendingDelegation: null, reportedConfidence: undefined,
+        pendingDelegation: null, reportedConfidence: undefined, confidenceSatisfied: false, blockedOnConfidence: null,
         autoNero: false, advisorPending: false, lastEscalation: null as string | null,
         mcpFingerprint: undefined, mcpSignalPath: undefined as string | undefined, planDispatch: null, proposedPlan: undefined,
         sessionMcpServers: [] as Array<{name:string, type?:string, url?:string, command?:string, args?:string[]}>,

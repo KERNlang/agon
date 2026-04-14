@@ -416,13 +416,23 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
       const value = typeof (args as any).value === 'number' ? (args as any).value : null;
       if (value !== null && value >= 0 && value <= 100) {
         ctx.cesar!.reportedConfidence = value;
+        ctx.cesar!.confidenceSatisfied = true;
+        const blocked = ctx.cesar!.blockedOnConfidence;
+        ctx.cesar!.blockedOnConfidence = null;
+        if (blocked) {
+          return `Confidence ${value}% recorded. Immediately retry the blocked ${blocked.name} tool call with the SAME arguments. Do not narrate or explain anything first.`;
+        }
+        return value >= 93
+          ? `Confidence ${value}% recorded. High confidence. Proceed.`
+          : `Confidence ${value}% recorded. Proceed.`;
       }
     }
   
     // R1 enforcement: block all non-read tools until confidence is reported
     const READ_TOOLS = new Set(['Read', 'Grep', 'Glob', 'ReportConfidence', 'Delegate']);
-    if (ctx.cesar!.reportedConfidence === undefined && !READ_TOOLS.has(name)) {
-      return `[BLOCKED] Report confidence first. Call ReportConfidence(value) before using ${name}. Read/Grep/Glob are allowed for investigation.`;
+    if (!ctx.cesar!.confidenceSatisfied && !READ_TOOLS.has(name)) {
+      ctx.cesar!.blockedOnConfidence = { name, args };
+      return `[BLOCKED] Report confidence first. Call ReportConfidence(value) before using ${name}. After ReportConfidence succeeds, retry the SAME ${name} call immediately with the same arguments. Read/Grep/Glob are allowed for investigation.`;
     }
   
     // Dedup: if exact same tool+args was called before, return cached result
@@ -452,6 +462,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
       toolResultCache.set(cacheKey, output);
     } else if (['Edit', 'Write', 'Bash'].includes(name)) {
       toolResultCache.clear();
+      ctx.cesar!.blockedOnConfidence = null;
     }
     return output;
   };
@@ -477,7 +488,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
     if (ctx.explorationMode) {
       const WRITE_TOOLS = ['Edit', 'Write', 'Bash'];
       if (WRITE_TOOLS.includes(agonTool)) {
-        return 'BLOCKED: Exploration mode is read-only. Use Read, Grep, Glob tools only.';
+        return 'BLOCKED: Exploration mode is read-only. Use Read, Grep, Glob tools only. Do not narrate around this. Either keep investigating, or wait for the user to disable exploration mode before retrying the same tool.';
       }
     }
   
@@ -486,7 +497,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
     if (activePlan && ['planning', 'awaiting_approval'].includes(activePlan.state)) {
       const WRITE_TOOLS = ['Edit', 'Write'];
       if (WRITE_TOOLS.includes(agonTool)) {
-        return 'BLOCKED: Plan mode — no code changes allowed. Use ProposePlan to propose your plan, then wait for approval before implementing.';
+        return 'BLOCKED: Plan mode — no code changes allowed. Call ProposePlan with the execution plan now, then wait for approval before retrying the same tool. Do not narrate instead of acting.';
       }
     }
   
@@ -501,10 +512,10 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
   
     // R1 enforcement for companion engines: block file writes until confidence is reported
     // Bash commands flow through to the normal permission UI — user's settings.json controls approval
-    if (ctx.cesar!.reportedConfidence === undefined) {
+    if (!ctx.cesar!.confidenceSatisfied) {
       const WRITE_TOOLS = ['Edit', 'Write'];
       if (WRITE_TOOLS.includes(agonTool)) {
-        return 'BLOCKED: Report confidence first via ReportConfidence MCP tool before writing files.';
+        return `BLOCKED: Report confidence first via ReportConfidence MCP tool before writing files. After ReportConfidence succeeds, retry the SAME ${agonTool} tool immediately. Do not narrate or explain the block.`;
       }
     }
   
@@ -623,7 +634,7 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
       ctx.cesar = {
         busy: false, busySince: null, queue: null,
         toolRegistry: null, hasNativeTools: false, lastDispatch: null,
-        pendingDelegation: null, reportedConfidence: undefined,
+        pendingDelegation: null, reportedConfidence: undefined, confidenceSatisfied: false, blockedOnConfidence: null,
         autoNero: false, advisorPending: false, lastEscalation: null as string | null,
         mcpFingerprint: undefined, mcpSignalPath: undefined as string | undefined, planDispatch: null, proposedPlan: undefined,
         sessionMcpServers: [] as Array<{name:string, type?:string, url?:string, command?:string, args?:string[]}>,

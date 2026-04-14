@@ -56,18 +56,18 @@ screen name=App target=ink
   // ── State ──
   state name=replState type="ReplStateState" initial="'idle'"
   state name=outputBlocks type="OutputBlock[]" initial="[]"
-  state name=inputValue type=string initial="''"
+  state name=inputValue type=string initial="''" safe=false
   state name=inputHistory type="string[]" initial="[]"
   state name=inputQueue type="string[]" initial="[]"
-  state name=historyIndex type=number initial=-1
+  state name=historyIndex type=number initial=-1 safe=false
   state name=mode type="'chat'|'campfire'|'brainstorm'|'tribunal'" initial="'chat'"
   state name=sessionStartTime type=number initial="Date.now()"
   state name=liveSpinner type=any initial="null"
   state name=liveProgress type="EngineProgress[]|null" initial="null"
-  state name=slashPickerOpen type=boolean initial=false
-  state name=inputKey type=number initial=0
+  state name=slashPickerOpen type=boolean initial=false safe=false
+  state name=inputKey type=number initial=0 safe=false
   state name=questionState type=any initial="null"
-  state name=questionAnswer type=string initial="''"
+  state name=questionAnswer type=string initial="''" safe=false
   state name=enginePickerOpen type=boolean initial=false
   state name=modelPickerOpen type=boolean initial=false
   state name=modelPickerEntries type="any[]" initial="[]"
@@ -94,7 +94,7 @@ screen name=App target=ink
   state name=thinkingExpanded type=boolean initial=true
   state name=cesarConfidence type="number|null" initial="null" throttle=200
   state name=agentProgress type="Record<string,AgentProgressSnapshot>" initial="{}"
-  state name=planModeQueued type=boolean initial=false
+  state name=planModeQueued type=boolean initial=false safe=false
   state name=cesarMemory type=any initial="() => createCesarMemory()"
   state name=sessionMcpServers type="Array<Record<string,unknown>>" initial="[]"
 
@@ -922,6 +922,7 @@ screen name=App target=ink
           setHistoryIndex(action.index);
           // value is always a string — empty string means "return to blank composer".
           setInputValue(action.value);
+          setInputKey((k: number) => k + 1);
           return;
         case 'cancelOrExit':
           if (questionState) { questionState.resolve(''); setQuestionState(null); setQuestionAnswer(''); }

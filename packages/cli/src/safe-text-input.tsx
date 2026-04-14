@@ -1,5 +1,5 @@
 // ── SafeTextInput ────────────────────────────────────────────────
-// Forked from ink-text-input@6.0.0 with two changes:
+// Forked from ink-text-input@6.0.0 with local fixes:
 //
 //   1. Ignore Ctrl-modified keystrokes (key.ctrl === true). The upstream
 //      package processes Ctrl+E, Ctrl+T, Ctrl+L, etc. as plain text and
@@ -14,6 +14,10 @@
 //      streams doesn't force the input to reconcile against stdin. With
 //      stable handler refs from useCallback in app.kern, shallow-equal
 //      props let React skip the re-render entirely.
+//
+//   3. Added shell-style editing primitives so the composer feels closer to
+//      Codex / Claude Code: Home/End, Ctrl+A, word-wise Alt+Left/Right or
+//      Alt+B/F, plus Ctrl+W/U/K for deleting word/start/end of line.
 //
 // Source of truth: ink-text-input GitHub
 // (https://github.com/vadimdemedes/ink-text-input). When upstream gains
@@ -33,6 +37,57 @@ type Props = {
   onChange: (value: string) => void;
   onSubmit?: (value: string) => void;
 };
+
+function isWordChar(char: string | undefined): boolean {
+  return !!char && /[A-Za-z0-9_]/.test(char);
+}
+
+function charClass(char: string | undefined): 'space' | 'word' | 'punct' | 'none' {
+  if (!char) return 'none';
+  if (/\s/.test(char)) return 'space';
+  if (isWordChar(char)) return 'word';
+  return 'punct';
+}
+
+export function findLineStart(value: string, cursorOffset: number): number {
+  const bounded = Math.max(0, Math.min(cursorOffset, value.length));
+  const lineBreak = value.lastIndexOf('\n', bounded - 1);
+  return lineBreak === -1 ? 0 : lineBreak + 1;
+}
+
+export function findLineEnd(value: string, cursorOffset: number): number {
+  const bounded = Math.max(0, Math.min(cursorOffset, value.length));
+  const lineBreak = value.indexOf('\n', bounded);
+  return lineBreak === -1 ? value.length : lineBreak;
+}
+
+export function findWordBoundaryLeft(value: string, cursorOffset: number): number {
+  let nextOffset = Math.max(0, Math.min(cursorOffset, value.length));
+  while (nextOffset > 0 && charClass(value[nextOffset - 1]) === 'space') nextOffset--;
+  const cls = charClass(value[nextOffset - 1]);
+  while (nextOffset > 0 && charClass(value[nextOffset - 1]) === cls) nextOffset--;
+  return nextOffset;
+}
+
+export function findWordBoundaryRight(value: string, cursorOffset: number): number {
+  let nextOffset = Math.max(0, Math.min(cursorOffset, value.length));
+  while (nextOffset < value.length && charClass(value[nextOffset]) === 'space') nextOffset++;
+  const cls = charClass(value[nextOffset]);
+  while (nextOffset < value.length && charClass(value[nextOffset]) === cls) nextOffset++;
+  return nextOffset;
+}
+
+export function deleteWordBackward(value: string, cursorOffset: number): { value: string; cursorOffset: number } {
+  const nextCursorOffset = findWordBoundaryLeft(value, cursorOffset);
+  let deleteEnd = cursorOffset;
+  if (deleteEnd > 0 && /\s/.test(value[deleteEnd] ?? '') && !/\s/.test(value[deleteEnd - 1] ?? '')) {
+    while (deleteEnd < value.length && /\s/.test(value[deleteEnd] ?? '')) deleteEnd++;
+  }
+  return {
+    value: value.slice(0, nextCursorOffset) + value.slice(deleteEnd),
+    cursorOffset: nextCursorOffset,
+  };
+}
 
 function SafeTextInputImpl({
   value: originalValue,
@@ -85,21 +140,47 @@ function SafeTextInputImpl({
 
   useInput(
     (input, key) => {
+      const extendedKey = key as typeof key & { home?: boolean; end?: boolean };
+      const normalizedCtrlInput = key.ctrl
+        ? ({
+            '\x01': 'a',
+            '\x03': 'c',
+            '\x05': 'e',
+            '\x0a': 'j',
+            '\x0b': 'k',
+            '\x0c': 'l',
+            '\x12': 'r',
+            '\x14': 't',
+            '\x15': 'u',
+            '\x17': 'w',
+          } as Record<string, string>)[input] ?? input
+        : input;
+      const isReservedCtrlShortcut = key.ctrl && ['c', 'e', 'j', 'l', 'r', 't'].includes(normalizedCtrlInput);
+      const isSupportedCtrlEditShortcut = key.ctrl && ['a', 'k', 'u', 'w'].includes(normalizedCtrlInput);
+      const isWordLeft = key.meta && (key.leftArrow || input === 'b');
+      const isWordRight = key.meta && (key.rightArrow || input === 'f');
+      const isDeleteWordBackward = (key.ctrl && normalizedCtrlInput === 'w') || (key.meta && key.backspace);
+
       // Skip non-text navigation/control keys — let the parent App handle them.
       if (
         key.upArrow ||
         key.downArrow ||
-        (key.ctrl && input === 'c') ||
+        key.pageUp ||
+        key.pageDown ||
+        isReservedCtrlShortcut ||
         key.tab ||
         (key.shift && key.tab)
       ) {
         return;
       }
 
-      // CRITICAL FIX vs upstream: drop Ctrl-modified keystrokes entirely.
-      // Without this, Ctrl+E/Ctrl+T/Ctrl+L append 'e'/'t'/'l' before the
-      // App's own useInput ever runs.
-      if (key.ctrl) {
+      if (key.ctrl && !isSupportedCtrlEditShortcut) {
+        return;
+      }
+
+      // Ignore unrecognized Meta combos so Alt-based navigation doesn't leak
+      // raw escape-prefixed text into the composer.
+      if (key.meta && !isWordLeft && !isWordRight && !isDeleteWordBackward) {
         return;
       }
 
@@ -112,16 +193,43 @@ function SafeTextInputImpl({
       let nextValue = originalValue;
       let nextCursorWidth = 0;
 
-      if (key.leftArrow) {
+      if (extendedKey.home || (key.ctrl && normalizedCtrlInput === 'a')) {
+        if (showCursor) nextCursorOffset = findLineStart(originalValue, cursorOffset);
+      } else if (extendedKey.end) {
+        if (showCursor) nextCursorOffset = findLineEnd(originalValue, cursorOffset);
+      } else if (isWordLeft) {
+        if (showCursor) nextCursorOffset = findWordBoundaryLeft(originalValue, cursorOffset);
+      } else if (isWordRight) {
+        if (showCursor) nextCursorOffset = findWordBoundaryRight(originalValue, cursorOffset);
+      } else if (key.leftArrow) {
         if (showCursor) nextCursorOffset--;
       } else if (key.rightArrow) {
         if (showCursor) nextCursorOffset++;
-      } else if (key.backspace || key.delete) {
+      } else if (isDeleteWordBackward) {
+        if (cursorOffset > 0) {
+          const updated = deleteWordBackward(originalValue, cursorOffset);
+          nextValue = updated.value;
+          nextCursorOffset = updated.cursorOffset;
+        }
+      } else if (key.ctrl && normalizedCtrlInput === 'u') {
+        const lineStart = findLineStart(originalValue, cursorOffset);
+        nextValue = originalValue.slice(0, lineStart) + originalValue.slice(cursorOffset);
+        nextCursorOffset = lineStart;
+      } else if (key.ctrl && normalizedCtrlInput === 'k') {
+        const lineEnd = findLineEnd(originalValue, cursorOffset);
+        nextValue = originalValue.slice(0, cursorOffset) + originalValue.slice(lineEnd);
+      } else if (key.backspace) {
         if (cursorOffset > 0) {
           nextValue =
             originalValue.slice(0, cursorOffset - 1) +
             originalValue.slice(cursorOffset, originalValue.length);
           nextCursorOffset--;
+        }
+      } else if (key.delete) {
+        if (cursorOffset < originalValue.length) {
+          nextValue =
+            originalValue.slice(0, cursorOffset) +
+            originalValue.slice(cursorOffset + 1, originalValue.length);
         }
       } else {
         nextValue =
@@ -132,8 +240,8 @@ function SafeTextInputImpl({
         if (input.length > 1) nextCursorWidth = input.length;
       }
 
-      if (cursorOffset < 0) nextCursorOffset = 0;
-      if (cursorOffset > originalValue.length) nextCursorOffset = originalValue.length;
+      if (nextCursorOffset < 0) nextCursorOffset = 0;
+      if (nextCursorOffset > nextValue.length) nextCursorOffset = nextValue.length;
 
       setState({ cursorOffset: nextCursorOffset, cursorWidth: nextCursorWidth });
 

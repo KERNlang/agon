@@ -59,10 +59,11 @@ fn name=makeAgentTeamDisposedError returns=Error export=true
 // ── Member configuration ──────────────────────────────────────────
 
 interface name=AgentTeamMemberConfig
-  doc "One member of an agent team. The api config carries the engine credentials, model, and base URL."
+  doc "One member of an agent team. The api config carries the engine credentials, model, and base URL. contextWindowTokens (optional) comes from the engine/model registry — enables per-engine budget sizing so small-window engines don't get 700k history."
   field name=engineId type=string
   field name=api type=ApiConfig
   field name=systemPrompt type=string optional=true
+  field name=contextWindowTokens type=number optional=true
 
 // ── Team budget (RT-12) ──────────────────────────────────────────
 
@@ -270,6 +271,7 @@ service name=AgentTeam export=true
             budget: this.config.budget,
             teamId: this.runId,
             heavyToolSemaphore: this.sharedSemaphore,
+            contextWindowTokens: m.contextWindowTokens,
             // Shared ContextThread: all team members read prior history from
             // the same thread and write their output back into it. Appends
             // during parallel step() execution are in-memory (synchronous),

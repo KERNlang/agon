@@ -175,8 +175,9 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
         }
       } catch { /* plan history unavailable — not critical */ }
   
-      // Always present — Cesar should suggest plan mode for complex tasks
-      systemParts.push(`RULE 8 — SUGGEST PLANNING: For complex tasks that would require multi-engine orchestration (forge, brainstorm + forge, or multiple delegations), suggest plan mode to the user BEFORE executing. Say: "This looks like it needs a plan. Want me to plan it first? Use /plan <task> to enter plan mode." Do NOT auto-enter plan mode — the user decides. Simple questions and single-engine tasks do not need plans.`);
+      // Always present — planning is available, but Cesar should choose it when it
+      // actually helps instead of treating it as a mandatory gateway.
+      systemParts.push(`RULE 8 — LIVE VS PLAN: Plan mode is available, but it is not a gateway. Stay live by default. Switch into planning yourself only when staged execution is genuinely useful: multiple dependent steps, expensive orchestration, resumability, explicit approvals, or cost visibility. If the task can stay coherent live, keep it live. Do NOT ask the user to type /plan first unless they explicitly want manual planning control.`);
   
       if (ctx.activePlan && ['planning', 'awaiting_approval'].includes(ctx.activePlan.state)) {
         const stats = tracker.getStats();

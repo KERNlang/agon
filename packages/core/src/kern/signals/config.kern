@@ -72,7 +72,11 @@ fn name=loadConfig params="cwd?:string" returns="Required<AgonConfig>"
         return null;
       }
     }
-    const global = readJsonSafe<Partial<AgonConfig>>(GLOBAL_CONFIG_PATH) ?? {};
+    // Review #10: use agonPath() so setupTestAgonHome() env override works.
+    // The GLOBAL_CONFIG_PATH const is frozen at module load time and would
+    // point at the real ~/.agon even after process.env.AGON_HOME is set.
+    const globalConfigPath = agonPath('config.json');
+    const global = readJsonSafe<Partial<AgonConfig>>(globalConfigPath) ?? {};
     const local = cwd
       ? readJsonSafe<Partial<AgonConfig>>(join(cwd, LOCAL_CONFIG_NAME)) ?? {}
       : {};
@@ -120,22 +124,28 @@ fn name=configSet params="key:keyof AgonConfig,value:AgonConfig[keyof AgonConfig
         return null;
       }
     }
-    const existing = readJsonSafe<Partial<AgonConfig>>(GLOBAL_CONFIG_PATH) ?? {};
+    // Review #10: dynamic path lookup so env override in tests is respected.
+    const globalConfigPath = agonPath('config.json');
+    const existing = readJsonSafe<Partial<AgonConfig>>(globalConfigPath) ?? {};
     (existing as any)[key] = value;
-    mkdirSync(dirname(GLOBAL_CONFIG_PATH), { recursive: true });
-    const tmpPath = GLOBAL_CONFIG_PATH + '.tmp';
+    mkdirSync(dirname(globalConfigPath), { recursive: true });
+    const tmpPath = globalConfigPath + '.tmp';
     writeFileSync(tmpPath, JSON.stringify(existing, null, 2) + '\n');
-    renameSync(tmpPath, GLOBAL_CONFIG_PATH);
+    renameSync(tmpPath, globalConfigPath);
   >>>
 
 fn name=pruneRuns returns=void
   doc "Remove old run directories beyond retention limit. Keeps the 100 most recent."
   handler <<<
+    // Review #10: dynamic runs dir via agonPath() — otherwise the frozen
+    // RUNS_DIR const would prune the real ~/.agon/runs even in tests that
+    // set process.env.AGON_HOME.
+    const runsDir = agonPath('runs');
     try {
-      const entries = readdirSync(RUNS_DIR)
+      const entries = readdirSync(runsDir)
         .map((name: string) => {
           try {
-            const fullPath = join(RUNS_DIR, name);
+            const fullPath = join(runsDir, name);
             return { name, mtime: statSync(fullPath).mtimeMs };
           } catch { return null; }
         })
@@ -146,7 +156,7 @@ fn name=pruneRuns returns=void
 
       const toRemove = entries.slice(100);
       for (const e of toRemove) {
-        try { rmSync(join(RUNS_DIR, e.name), { recursive: true, force: true }); } catch { /* best effort */ }
+        try { rmSync(join(runsDir, e.name), { recursive: true, force: true }); } catch { /* best effort */ }
       }
     } catch { /* dir doesn't exist yet — not critical */ }
   >>>

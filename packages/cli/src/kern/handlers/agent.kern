@@ -109,6 +109,13 @@ fn name=runAgentMode params="input:string,dispatch:Dispatch,ctx:HandlerContext,o
       console.warn(`[agon] context-thread: failed to load active thread (running without context): ${threadErr instanceof Error ? threadErr.message : String(threadErr)}`);
     }
 
+    // Resolve the engine's context window from its definition so history
+    // budgeting matches the actual model capacity (fixes: 700k fallback
+    // breaking Claude Sonnet 200k, GPT-4o 128k).
+    const engineWindow = (engine.api as any)?.contextWindow
+      ?? (engine as any).contextWindow
+      ?? undefined;
+
     const session = new AgentSession({
       engineId,
       api: engine.api,
@@ -116,6 +123,7 @@ fn name=runAgentMode params="input:string,dispatch:Dispatch,ctx:HandlerContext,o
       systemPrompt: opts?.systemPrompt,
       budget,
       thread: agentThread,
+      contextWindowTokens: engineWindow,
     });
 
     // Gemini fix (a): build state BEFORE any listener / active-abort
@@ -368,7 +376,7 @@ fn name=runAgentTeam params="input:string,dispatch:Dispatch,ctx:HandlerContext,o
       if (memberEngines.length === 1) {
         // Only one API engine available — fall back to solo agent mode.
         dispatch({ type: 'warning', message: `Only one API engine available (${memberEngineIds[0]}); falling back to solo agent mode.` });
-        return await runAgentMode(input, dispatch, ctx, { engineId: memberEngineIds[0], maxTurns: opts?.maxTurns, maxDurationMs: opts?.maxDurationMs, systemPrompt: opts?.systemPrompt });
+        return await runAgentMode(input, dispatch, ctx, { engineId: memberEngineIds[0], maxTurns: opts?.maxTurns, maxDurationMs: opts?.maxDurationMs, systemPrompt: opts?.systemPrompt, parentSignal: opts?.parentSignal });
       }
     }
 
@@ -377,7 +385,9 @@ fn name=runAgentTeam params="input:string,dispatch:Dispatch,ctx:HandlerContext,o
     // the playbook; this is the runtime backstop.
     if (input.length < 30 && requestedEngines === null) {
       dispatch({ type: 'warning', message: `Input too short for team mode (${input.length} chars); falling back to solo agent.` });
-      return await runAgentMode(input, dispatch, ctx, { maxTurns: opts?.maxTurns, maxDurationMs: opts?.maxDurationMs, systemPrompt: opts?.systemPrompt });
+      // Review #7: thread parentSignal through so plan-mode Ctrl+C reaches
+      // the solo fallback. Previously the signal was dropped here.
+      return await runAgentMode(input, dispatch, ctx, { maxTurns: opts?.maxTurns, maxDurationMs: opts?.maxDurationMs, systemPrompt: opts?.systemPrompt, parentSignal: opts?.parentSignal });
     }
 
     // ── Build team config ─────────────────────────────────────
@@ -400,6 +410,7 @@ fn name=runAgentTeam params="input:string,dispatch:Dispatch,ctx:HandlerContext,o
       engineId: memberEngineIds[i],
       api: eng.api!,
       systemPrompt: opts?.systemPrompt,
+      contextWindowTokens: (eng.api as any)?.contextWindow ?? (eng as any).contextWindow,
     }));
 
     // RT-12 cost guard: build a costFn that maps engineId → tokens → USD.
@@ -992,8 +1003,10 @@ fn name=runAgentTeam params="input:string,dispatch:Dispatch,ctx:HandlerContext,o
       // the shared thread the team members were already writing into.
       if (teamThread && winnerInfo.winner && winnerDiff) {
         try {
-          const capped = winnerDiff.length > 50000
-            ? winnerDiff.slice(0, 50000) + `\n\n[... ${winnerDiff.length - 50000} more chars truncated]`
+          // Review #8: 90k chars aligns with MAX_PER_MESSAGE_TOKENS=30000
+          // (≈ 120k chars cap, leave 25% headroom for surrounding text).
+          const capped = winnerDiff.length > 90000
+            ? winnerDiff.slice(0, 90000) + `\n\n[... ${winnerDiff.length - 90000} more chars truncated]`
             : winnerDiff;
           teamThread.append({
             role: 'assistant',
@@ -1001,7 +1014,8 @@ fn name=runAgentTeam params="input:string,dispatch:Dispatch,ctx:HandlerContext,o
           });
           await teamThread.save();
         } catch (err) {
-          console.warn(`[agon] agent-team: thread diff append failed: ${err instanceof Error ? err.message : String(err)}`);
+          // Surface to user — silent degradation of memory is worse than noise.
+          dispatch({ type: 'warning', message: `Team diff NOT persisted to thread: ${err instanceof Error ? err.message : String(err)}` });
         }
       } else if (teamThread && winnerAnalysis && taskKind === 'investigate') {
         // For investigate mode, the "diff" is the analysis text.

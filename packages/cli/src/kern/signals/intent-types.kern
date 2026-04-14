@@ -19,6 +19,9 @@ union name=Intent discriminant=type
     field name=question type=string
     field name=membersPerSide type=number optional=true
   variant name=leaderboard
+  variant name=cesar-report
+  variant name=cesar-hints
+    field name=input type=string
   variant name=history
     field name=id type=string optional=true
   variant name=engines

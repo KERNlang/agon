@@ -26,7 +26,7 @@ import { icons } from './icons.js';
 
 import { ENGINE_COLORS } from '../blocks/output-format.js';
 
-import { handleForge, handleChat, handleBrainstorm, handleCampfire, handleTribunal, handleLeaderboard, handleHistory, handleEngines, handleDiscover, handleConfig, handleUse, handleCesar, handleTokens, handleModels, handleWorkspace, handleChats, handlePlanShow, handlePlansList, handleApprove, handleRetry, handleCancel, handleApplyPatch, handleCp, handleCommit, handleFlowReport, handleFlowAnalysis, handleBuild, handleRun, handleReview, runAgentMode, runAgentTeam } from '../../handlers/index.js';
+import { handleForge, handleChat, handleBrainstorm, handleCampfire, handleTribunal, handleLeaderboard, handleCesarReport, handleCesarHints, handleHistory, handleEngines, handleDiscover, handleConfig, handleUse, handleCesar, handleTokens, handleModels, handleWorkspace, handleChats, handlePlanShow, handlePlansList, handleApprove, handleRetry, handleCancel, handleApplyPatch, handleCp, handleCommit, handleFlowReport, handleFlowAnalysis, handleBuild, handleRun, handleReview, runAgentMode, runAgentTeam } from '../../handlers/index.js';
 
 import { handleTeamTribunal } from '../handlers/team-tribunal.js';
 
@@ -42,6 +42,8 @@ import { handlePipeline } from '../handlers/pipeline.js';
 
 import { handleProvider } from '../handlers/provider.js';
 
+import { deriveRoutingHints } from '../cesar/routing.js';
+
 import { shouldUseAgentTeam } from '../cesar/routing.js';
 
 import { createSpeculator, loadOrCreateActiveThread } from '@agon/core';
@@ -49,14 +51,21 @@ import { createSpeculator, loadOrCreateActiveThread } from '@agon/core';
 import type { SpeculatorMemberConfig } from '@agon/core';
 
 /**
- * Wraps a runAsJob callback with rich ContextThread outcome capture. After fn completes, appends: (1) a structured header with job type, label, duration, status; (2) the last few engine responses from chatSession (where forge/brainstorm/tribunal write their verdicts/winners) so Cesar has the actual outcome, not just a completion marker.
+ * Wraps a runAsJob callback with rich ContextThread outcome capture. Uses a message-ID snapshot (not index) so concurrent jobs don't pick up each other's messages in the slice (review finding from OpenCode + Gemini). After fn completes, appends: (1) a structured header with job type, label, duration, status; (2) engine responses added to chatSession DURING this job's execution (by ID diff), so forge/brainstorm/tribunal results land in Cesar's memory.
  */
 export function withThreadOutcome(cwd: string, jobType: string, label: string, fn: ()=>Promise<any>, ctx?: HandlerContext): ()=>Promise<void> {
   return async () => {
     const startedAt = Date.now();
-    // Snapshot chat session length before the job starts — lets us capture
-    // only the messages that THIS job produced, not prior history.
-    const priorChatLength = ctx?.chatSession?.messages?.length ?? 0;
+    // Snapshot message IDs (not index) so concurrent jobs don't confuse
+    // each other's capture. When the job finishes we diff against the ID
+    // set — any message not present at start is a new one produced during
+    // this job. For messages that lack an id (defensive), fall back to an
+    // index-based tail slice to avoid dropping them entirely.
+    const priorMessageIds: Set<string> = new Set();
+    for (const m of (ctx?.chatSession?.messages ?? [])) {
+      if (typeof (m as any).id === 'string') priorMessageIds.add((m as any).id);
+    }
+    const priorChatLength = (ctx?.chatSession?.messages?.length ?? 0);
     let success = true;
     let errorMsg = '';
     let returnValue: any;
@@ -72,14 +81,15 @@ export function withThreadOutcome(cwd: string, jobType: string, label: string, f
       try {
         const thread = loadOrCreateActiveThread(cwd);
   
-        // ── Capture ALL engine responses produced by this job ────────
-        // forge, brainstorm, tribunal, campfire all write to chatSession.
-        // Slicing from priorChatLength gives us exactly what this job produced.
-        // We capture FULL content — no 1200-char truncation. With 1M windows,
-        // losing the forge winner's full diff or brainstorm's complete reasoning
-        // means Cesar is making the next routing decision on crumbs. The value
-        // IS the complete decision trail, not a summary.
-        const newMessages = (ctx?.chatSession?.messages ?? []).slice(priorChatLength);
+        // ── Capture engine responses added DURING this job ───────────
+        // ID-based filter is robust to concurrent job interleaving. Messages
+        // without an id (legacy) fall back to the index-based tail so we
+        // don't lose them entirely.
+        const allCurrent = ctx?.chatSession?.messages ?? [];
+        const newMessages = allCurrent.filter((m: any, idx: number) => {
+          if (typeof m.id === 'string') return !priorMessageIds.has(m.id);
+          return idx >= priorChatLength;
+        });
         const engineOutputs = newMessages
           .filter((m: any) => m.role === 'engine' && m.content)
           .map((m: any) => `[${m.engineId ?? 'engine'}]:\n${m.content as string}`)
@@ -248,18 +258,28 @@ export async function absorbIntoCesar(message: string, dispatch: Dispatch, ctx: 
 export async function routeWithCesar(input: string, images: ImageAttachment[], cb: DispatchCallbacks): Promise<boolean> {
   cb.setPendingImages(() => []);
   try {
+    const routingHints = deriveRoutingHints(input, cb.ctx);
     const result = await handleCesarBrain(input, cb.dispatch, cb.ctx, images);
     try {
       const tracePath = join(RUNS_DIR, 'cesar-decisions.jsonl');
+      const actualMode = result.mode ?? result.action ?? 'unknown';
       appendFileSync(tracePath, JSON.stringify({
         ts: new Date().toISOString(),
-        mode: result.mode ?? result.action ?? 'unknown',
+        mode: actualMode,
         delegated: result.delegated,
         responded: result.responded,
         decisionReason: result.decisionReason,
         scope: (result as any).scope,
         confidence: cb.ctx.cesar?.reportedConfidence,
-        taskClass: detectIntent(input).type,
+        taskClass: routingHints.taskClass,
+        uncertaintyFamily: routingHints.uncertaintyFamily,
+        escalationHint: routingHints.escalationHint,
+        breadthHint: routingHints.recommendedBreadth,
+        forgeScopeHint: routingHints.recommendedForgeScope,
+        matchedEscalationHint: routingHints.escalationHint === actualMode || (routingHints.escalationHint === 'forge' && actualMode === 'forge-slice'),
+        matchedBreadthHint: routingHints.recommendedBreadth === 'team'
+          ? actualMode.startsWith('team-')
+          : !actualMode.startsWith('team-'),
         inputLen: input.length,
       }) + '\n');
     } catch { /* decision logging is best-effort */ }
@@ -302,35 +322,9 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
       let taskInput = userContext ? `${baseTask}\n\n${userContext}` : baseTask;
       const fitnessCmd = result.fitnessCmd ?? executionSpec.fitnessCmd;
   
-      // R8 enforcement: suggest planning for truly complex execution tasks when no
-      // plan exists. When the user opts in, recursively dispatch a plan-task
-      // intent so Cesar enters plan mode, investigates, and calls ProposePlan.
-      // Do NOT force a brainstorm-as-research phase; that confused users who
-      // saw brainstorm running and expected forge, and it duplicates Cesar's
-      // own agent loop.
-      const EXECUTION_ACTIONS_R8 = ['forge', 'team-forge', 'pipeline', 'build'];
-      if (!_planActive && EXECUTION_ACTIONS_R8.includes(routeAction)) {
-        try {
-          const cwd = resolveWorkingDir();
-          const changedFiles = gitChangedFiles(cwd);
-          const dirs = new Set(changedFiles.map((f: string) => f.split('/').slice(0, 2).join('/')));
-          // Raised thresholds: small/medium refactors go straight to the chosen
-          // route. Only genuinely sprawling tasks trigger the plan suggestion.
-          const isComplex = changedFiles.length >= 10 || dirs.size >= 5 || input.length > 600;
-          if (isComplex) {
-            const planAnswer = await cb.askQuestion(`Complex task (${changedFiles.length} files, ${dirs.size} dirs). Plan first? [Y/n]`);
-            if (planAnswer === 'y' || planAnswer === '1' || planAnswer === '') {
-              cb.dispatch({ type: 'info', message: 'Entering plan mode — Cesar will investigate and propose a plan.' });
-              // Recursively dispatch a plan-task intent — this triggers the
-              // full plan-mode + approval loop in dispatchIntent's case
-              // 'plan-task' block.
-              const planIntent = { type: 'plan-task' as const, task: taskInput };
-              const planResult = await dispatchIntent(planIntent, taskInput, cb);
-              return planResult.handled || !!planResult.ranAsJob;
-            }
-          }
-        } catch { /* git calls failed — skip complexity check */ }
-      }
+      // Cesar now owns live-vs-plan selection. The runtime no longer intercepts
+      // forge/build/pipeline with a heuristic "plan first?" prompt. If planning
+      // is worth it, Cesar should switch intentionally by proposing a plan.
   
       // Enrich delegation context — Cesar's investigation should flow to brainstorm/tribunal/campfire
       const THINKING_ACTIONS = ['brainstorm', 'tribunal', 'campfire', 'team-brainstorm', 'team-tribunal'];
@@ -910,6 +904,8 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
   
     // ── Info commands ──
     case 'leaderboard': handleLeaderboard(cb.dispatch); break;
+    case 'cesar-report': handleCesarReport(cb.dispatch); break;
+    case 'cesar-hints': handleCesarHints(intent.input, cb.dispatch, cb.ctx); break;
     case 'history': handleHistory(cb.dispatch, intent.id); break;
     case 'engines': cb.setEnginePickerOpen(true); break;
     case 'discover': await handleDiscover(cb.dispatch, cb.ctx); break;

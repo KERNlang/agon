@@ -10,7 +10,7 @@ import from="./suggestion.js" names="parseSuggestion"
 import from="./session.js" names="ensureCesarSession,CESAR_SYSTEM_PROMPT"
 import from="./tools.js" names="createCesarToolRegistry,createEagerToolContext,executeEagerTool"
 import from="./escalation.js" names="fireQuickNero,fireNero,fireAdvisor,handleSecondOpinion,activateNero,deactivateNero,promptDelegation,promptProtocolEnforcement"
-import from="./routing.js" names="buildRoutingContext"
+import from="./routing.js" names="buildRoutingContext,deriveRoutingHints"
 
 // Yield a macrotask so Ink can paint — await Promise.resolve() is NOT enough
 const name=yieldToInk type="() => Promise<void>"
@@ -201,6 +201,7 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
     let usedQuickNero = false;
       const eagerPromises: Promise<ToolCallResult>[] = [];
       let eagerToolCtx: ToolContext | null = null;
+      const routingHints = deriveRoutingHints(input, ctx);
 
       // ── Build routing context (cheap: ~500ms, ~200 tokens) ──
       let enrichedInput = input;
@@ -881,6 +882,8 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
           ts: new Date().toISOString(), engineId: cesarEngineId, backend: (config as any).cesarBackend ?? 'auto',
           durationMs: Date.now() - _turnStart, inputLen: input.length, responseLen: response.length, taskClass,
           mode: usedQuickNero ? 'self-nero' : 'self', decisionReason: usedQuickNero ? 'self-challenge' : 'self-executed',
+          uncertaintyFamily: routingHints.uncertaintyFamily, escalationHint: routingHints.escalationHint,
+          breadthHint: routingHints.recommendedBreadth, forgeScopeHint: routingHints.recommendedForgeScope,
           toolsUsed: _toolsUsed.length > 0 ? _toolsUsed : undefined, toolCount: _toolsUsed.length, delegated: false,
           confidence: parsedConfidence,
           tokens: tokenUsage ? { prompt: tokenUsage.promptTokens, response: tokenUsage.responseTokens, cost: tokenUsage.costUsd } : undefined,

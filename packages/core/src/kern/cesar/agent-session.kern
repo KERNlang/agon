@@ -66,6 +66,7 @@ interface name=AgentSessionConfig
   field name=teamId type=string optional=true
   field name=heavyToolSemaphore type=Semaphore optional=true
   field name=thread type=ContextThread optional=true
+  field name=contextWindowTokens type=number optional=true
 
 // ── Typed budget error ────────────────────────────────────────────
 
@@ -205,17 +206,17 @@ service name=AgentSession export=true
       const thread = this.config.thread;
 
       // ── ContextThread integration ─────────────────────────────────
-      // Pre-load: give this engine the full session history up to its
-      // context budget. All major engines (Codex, Claude, Gemini,
-      // OpenCode+GLM) now ship with 1M token context windows. We budget
-      // 700k for history — leaving 300k for the task, tool calls, and
-      // response within the current step. This means the engine sees
-      // COMPLETE prior forge results, brainstorm decisions, agent tool
-      // call outcomes, and user decisions — not a compressed stub.
-      // If a specific engine has a smaller window, messagesFor() will
-      // compact further via TOKEN_BUDGET_SAFETY_FACTOR; we don't cap
-      // here because the engine registry doesn't yet expose window size.
-      const engineTokenBudget = 700_000;
+      // Pre-load: give this engine the session history up to its budget.
+      // Budget is derived from the engine's actual context window:
+      //   - Known window → 70% of it (leaves 30% for prompt + response + tools)
+      //   - Unknown window → 100k conservative default
+      //   - Max cap at 700k even for 1M+ windows (hard safety ceiling)
+      // Review finding: 700k unconditionally breaks Claude Sonnet (200k) and
+      // GPT-4o (128k) with 400 context-length-exceeded errors.
+      const windowTokens = this.config.contextWindowTokens;
+      const engineTokenBudget = windowTokens
+        ? Math.min(Math.floor(windowTokens * 0.70), 700_000)
+        : 100_000;
       const historyMessages = thread
         ? thread.messagesFor(this.config.engineId, engineTokenBudget)
         : undefined;

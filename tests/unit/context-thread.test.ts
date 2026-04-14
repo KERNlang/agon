@@ -173,13 +173,13 @@ describe('ContextThread.appendLoopEntry', () => {
 // ── save / load round-trip ────────────────────────────────────────────
 
 describe('ContextThread persistence', () => {
-  it('round-trips messages + engineHead + fileTouches', () => {
+  it('round-trips messages + engineHead + fileTouches', async () => {
     const { thread, projectPath } = makeThread('roundtrip');
     thread.append({ role: 'user', content: 'initial question' });
     thread.appendLoopEntry({ role: 'assistant', content: 'answer' }, 'claude');
     thread.touchFile('/src/foo.ts', 'abc123hash');
     thread.markSeen('claude');
-    thread.save();
+    await thread.save();
 
     const reloaded = new ContextThread({ projectPath, threadId: thread.getThreadId() });
     expect(reloaded.getAllMessages()).toHaveLength(2);
@@ -187,10 +187,10 @@ describe('ContextThread persistence', () => {
     expect(reloaded.getEngineHead('claude')).toBe(thread.getEngineHead('claude'));
   });
 
-  it('writes 0o600 permissions (no world-read)', () => {
+  it('writes 0o600 permissions (no world-read)', async () => {
     const { thread } = makeThread('chmod');
     thread.append({ role: 'user', content: 'test' });
-    thread.save();
+    await thread.save();
     // Find the thread file — threadId is unique per test
     const threadId = thread.getThreadId();
     const projectPath = thread.getProjectPath();
@@ -205,10 +205,11 @@ describe('ContextThread persistence', () => {
     }
   });
 
-  it('strips role=system messages on load (prompt injection guard)', () => {
+  it('strips role=system messages on load (prompt injection guard)', async () => {
     const { thread, projectPath } = makeThread('sysload');
     // Manually write a thread file containing a system message.
-    thread.save(); // create the dir
+    thread.append({ role: 'user', content: 'seed' });
+    await thread.save(); // create the dir
     const hash = projectHash16(projectPath);
     const threadId = thread.getThreadId();
     const threadFile = agonHomePath('threads', hash, threadId + '.json');
@@ -241,9 +242,10 @@ describe('ContextThread persistence', () => {
     expect(thread.getAllMessages()).toHaveLength(0);
   });
 
-  it('refuses files larger than 10MB (DoS guard)', () => {
+  it('refuses files larger than 10MB (DoS guard)', async () => {
     const { thread, projectPath } = makeThread('toobig');
-    thread.save(); // create the file
+    thread.append({ role: 'user', content: 'seed' });
+    await thread.save(); // create the file
     const hash = projectHash16(projectPath);
     const threadId = thread.getThreadId();
     const threadFile = agonHomePath('threads', hash, threadId + '.json');
@@ -381,11 +383,11 @@ describe('loadOrCreateActiveThread', () => {
     expect(thread.getAllMessages()).toHaveLength(0);
   });
 
-  it('returns the same threadId on second call', () => {
+  it('returns the same threadId on second call', async () => {
     const projectPath = makeTestProject('load-stable');
     const t1 = loadOrCreateActiveThread(projectPath);
     t1.append({ role: 'user', content: 'persistent' });
-    t1.save();
+    await t1.save();
     createdThreadIds.push({ projectPath, threadId: t1.getThreadId() });
 
     const t2 = loadOrCreateActiveThread(projectPath);
@@ -394,13 +396,14 @@ describe('loadOrCreateActiveThread', () => {
     expect(t2.getAllMessages()[0].content).toBe('persistent');
   });
 
-  it('forkActiveThread creates a fresh thread with new id', () => {
+  it('forkActiveThread creates a fresh thread with new id', async () => {
     const projectPath = makeTestProject('fork');
     const t1 = loadOrCreateActiveThread(projectPath);
-    t1.save();
+    t1.append({ role: 'user', content: 'seed' });
+    await t1.save();
     createdThreadIds.push({ projectPath, threadId: t1.getThreadId() });
 
-    const t2 = forkActiveThread(projectPath);
+    const t2 = await forkActiveThread(projectPath);
     createdThreadIds.push({ projectPath, threadId: t2.getThreadId() });
     expect(t2.getThreadId()).not.toBe(t1.getThreadId());
     expect(t2.getAllMessages()).toHaveLength(0);
@@ -410,19 +413,21 @@ describe('loadOrCreateActiveThread', () => {
 // ── listThreadsForProject / deleteThread ─────────────────────────────
 
 describe('thread management', () => {
-  it('listThreadsForProject returns created thread ids', () => {
+  it('listThreadsForProject returns created thread ids', async () => {
     const projectPath = makeTestProject('list');
     const t = loadOrCreateActiveThread(projectPath);
-    t.save();
+    t.append({ role: 'user', content: 'seed' });
+    await t.save();
     createdThreadIds.push({ projectPath, threadId: t.getThreadId() });
     const ids = listThreadsForProject(projectPath);
     expect(ids).toContain(t.getThreadId());
   });
 
-  it('deleteThread removes the file and returns true', () => {
+  it('deleteThread removes the file and returns true', async () => {
     const projectPath = makeTestProject('delete');
     const t = new ContextThread({ projectPath });
-    t.save();
+    t.append({ role: 'user', content: 'seed' });
+    await t.save();
     const tid = t.getThreadId();
     const result = deleteThread(projectPath, tid);
     expect(result).toBe(true);
@@ -438,12 +443,12 @@ describe('thread management', () => {
 // ── checkpoint ───────────────────────────────────────────────────────
 
 describe('ContextThread.checkpoint', () => {
-  it('creates a checkpoint and persists it', () => {
+  it('creates a checkpoint and persists it', async () => {
     const { thread, projectPath } = makeThread('cp');
     thread.append({ role: 'user', content: 'turn 1' });
     const m = thread.append({ role: 'assistant', content: 'turn 1 reply', engineId: 'claude' });
     thread.checkpoint('Summarized first exchange', 'cp-1', m.id);
-    thread.save();
+    await thread.save();
 
     const reloaded = new ContextThread({ projectPath, threadId: thread.getThreadId() });
     expect(reloaded.getCheckpoints()).toHaveLength(1);

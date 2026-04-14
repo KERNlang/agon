@@ -1,6 +1,6 @@
 import from="node:os" names="tmpdir"
 import from="@agon/core" names="RoutingDecision,ScoutBid" types=true
-import from="@agon/core" names="EngineRegistry"
+import from="@agon/core" names="EngineRegistry,resolveWorkingDir,gitChangedFiles"
 import from="@agon/forge" names="runScout"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 
@@ -122,6 +122,13 @@ fn name=routeViaCesar params="input:string, dispatch:Dispatch, ctx:HandlerContex
     // than 'build' (which uses CLI agent mode without ContextThread).
     const leadHasApiAgent = leadHasAgent && !!(ctx.registry.get(leadEngine) as any).api;
     const AGENT_FANOUT_RE = /\b(?:refactor|rewrite|migrate|architect|across|all of|every|throughout|module|layer|architecture|implement|build.*feature)\b/i;
+    let scopeDirSpread = 0;
+    try {
+      const cwd = resolveWorkingDir();
+      const changedFiles = gitChangedFiles(cwd);
+      const dirs = new Set(changedFiles.map((f: string) => f.split('/').slice(0, 2).join('/')));
+      scopeDirSpread = dirs.size;
+    } catch { /* best-effort fanout hint */ }
     const isFanout = AGENT_FANOUT_RE.test(input) || scopeDirSpread > 2;
 
     if (needsCompetition) {

@@ -1,6 +1,6 @@
 import from="node:path" names="join"
 import from="node:fs" names="mkdirSync,readFileSync"
-import from="@agon/core" names="ensureAgonHome,RUNS_DIR,createPlan,approvePlan,startPlan,mergeStepResult,cancelPlan,failPlan,savePlan,scanProjectContext,getActiveWorkspace,snapshotWorkspace,tracker,resolveWorkingDir"
+import from="@agon/core" names="ensureAgonHome,RUNS_DIR,createPlan,approvePlan,startPlan,mergeStepResult,cancelPlan,failPlan,savePlan,scanProjectContext,getActiveWorkspace,snapshotWorkspace,tracker,resolveWorkingDir,loadOrCreateActiveThread"
 import from="@agon/core" names="Plan,PlanStepInput,ApprovalLevel" types=true
 import from="@agon/forge" names="runForge"
 import from="../blocks/output-format.js" names="ENGINE_COLORS"
@@ -304,6 +304,28 @@ fn name=handleForge params="task:string, fitnessCmd:string|null, dispatch:Dispat
         try {
           const patchContent = readFileSync(patchPath, 'utf-8');
           dispatch({ type: 'patch-review' as any, winnerId: finalWinner, patchPath, patchContent });
+
+          // Append winning diff directly to ContextThread so Cesar has the
+          // full line-by-line change trail, not just a text summary of what
+          // forge did. This is the missing piece from the outcome capture —
+          // chatSession has engine descriptions, thread now gets actual code.
+          try {
+            const cwd = resolveWorkingDir();
+            const forgeThread = loadOrCreateActiveThread(cwd);
+            // Truncate enormous patches at 50k chars to stay under MAX_PER_MESSAGE_TOKENS
+            // cap (30k tokens ~= 120k chars — we reserve headroom for the surrounding
+            // text). Most forge patches are well under 10k.
+            const capped = patchContent.length > 50000
+              ? patchContent.slice(0, 50000) + `\n\n[... ${patchContent.length - 50000} more chars truncated — full patch at ${patchPath}]`
+              : patchContent;
+            forgeThread.append({
+              role: 'assistant',
+              content: `[forge-diff] winner: ${finalWinner}\npatch path: ${patchPath}\n\n${capped}`,
+            });
+            await forgeThread.save();
+          } catch (threadErr) {
+            console.warn(`[agon] forge: thread diff append failed (non-fatal): ${threadErr instanceof Error ? threadErr.message : String(threadErr)}`);
+          }
         } catch (err) {
           console.warn(`[agon] failed to read winning patch ${patchPath}: ${err instanceof Error ? err.message : String(err)}`);
         }

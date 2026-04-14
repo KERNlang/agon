@@ -24,6 +24,7 @@ fn name=extractDelegation params="toolName:string, args:Record<string,unknown>" 
     return {
       action: toolName.toLowerCase(),
       reasoning: (argsRecord.task ?? argsRecord.question ?? argsRecord.topic ?? argsRecord.target ?? '') as string,
+      scope: (argsRecord.scope === 'slice' || argsRecord.scope === 'full') ? argsRecord.scope as 'slice' | 'full' : undefined,
       fitnessCmd: typeof argsRecord.fitnessCmd === 'string'
         ? (argsRecord.fitnessCmd as string)
         : typeof argsRecord.fitness === 'string'
@@ -54,8 +55,11 @@ fn name=commitTurnAndDelegate async=true params="pendingDel:PendingDelegation, i
     if (delResult.approved) {
       const finalAction = delResult.action ?? pendingDel.action;
       const action = pendingDel.team ? `team-${finalAction}` : finalAction;
+      const mode = finalAction === 'forge' && pendingDel.scope === 'slice' && !(delResult.team ?? pendingDel.team)
+        ? 'forge-slice'
+        : action;
       const reasoning = delResult.userContext ? `${pendingDel.reasoning ?? ''}\n\nUser context: ${delResult.userContext}` : pendingDel.reasoning;
-      return { mode: action as any, delegated: true, responded: true, action, reasoning, decisionReason: 'tool-delegation', fitnessCmd: pendingDel.fitnessCmd, hardened: delResult.hardened ?? pendingDel.hardened, tribunalMode: delResult.tribunalMode ?? pendingDel.tribunalMode, team: delResult.team ?? pendingDel.team, target: pendingDel.target, engineId: pendingDel.engineId, engines: pendingDel.engines, taskKind: pendingDel.taskKind, maxTurns: pendingDel.maxTurns };
+      return { mode: mode as any, delegated: true, responded: true, action, reasoning, decisionReason: 'tool-delegation', scope: pendingDel.scope, fitnessCmd: pendingDel.fitnessCmd, hardened: delResult.hardened ?? pendingDel.hardened, tribunalMode: delResult.tribunalMode ?? pendingDel.tribunalMode, team: delResult.team ?? pendingDel.team, target: pendingDel.target, engineId: pendingDel.engineId, engines: pendingDel.engines, taskKind: pendingDel.taskKind, maxTurns: pendingDel.maxTurns };
     }
     return { delegated: false, responded: true, decisionReason: 'delegation-cancelled' };
   >>>

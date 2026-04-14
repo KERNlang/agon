@@ -271,7 +271,7 @@ export interface ScoutBid {
 }
 
 export interface RoutingDecision {
-  action: 'chat'|'build'|'pipeline'|'campfire'|'forge'|'brainstorm'|'tribunal';
+  action: 'chat'|'build'|'pipeline'|'campfire'|'forge'|'brainstorm'|'tribunal'|'agent'|'team-agent';
   leadEngine: string;
   confidence: number;
   reasoning: string;

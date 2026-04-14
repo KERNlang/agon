@@ -3,7 +3,7 @@
 // No JSX, no React — just decides what handler to call for each intent.
 
 import from="node:path" names="join"
-import from="node:fs" names="mkdirSync,writeFileSync,readFileSync"
+import from="node:fs" names="mkdirSync,writeFileSync,readFileSync,appendFileSync"
 import from="@agon/core" names="resolveWorkingDir,extractImagesFromInput,buildImageAttachment,undoPatch,resumeChatSession,findSkill,renderSkillPrompt,configSet,startChatSession,currentBranch,gitChangedFiles,buildExtensionContext,sessionContext,RUNS_DIR,getAgonHome"
 import from="../handlers/chat.js" names="invalidateCwdCache"
 import from="@agon/core" names="ImageAttachment,ChatSession" types=true
@@ -226,6 +226,20 @@ fn name=routeWithCesar async=true params="input:string, images:ImageAttachment[]
     cb.setPendingImages(() => []);
     try {
       const result = await handleCesarBrain(input, cb.dispatch, cb.ctx, images);
+      try {
+        const tracePath = join(RUNS_DIR, 'cesar-decisions.jsonl');
+        appendFileSync(tracePath, JSON.stringify({
+          ts: new Date().toISOString(),
+          mode: result.mode ?? result.action ?? 'unknown',
+          delegated: result.delegated,
+          responded: result.responded,
+          decisionReason: result.decisionReason,
+          scope: (result as any).scope,
+          confidence: cb.ctx.cesar?.reportedConfidence,
+          taskClass: detectIntent(input).type,
+          inputLen: input.length,
+        }) + '\n');
+      } catch { /* decision logging is best-effort */ }
       if (result.delegated && result.action) {
         // Use Cesar's reasoning as the label when available — much better than raw user input
         const label = (result.reasoning && !result.reasoning.includes('User context:'))
@@ -308,7 +322,8 @@ fn name=routeWithCesar async=true params="input:string, images:ImageAttachment[]
           }
         }
 
-        cb.dispatch({ type: 'info', message: `Cesar → ${routeAction}${hardened ? ' (hardened)' : ''}${tMode ? ` [${tMode}]` : ''}` });
+        const displayMode = result.mode ?? routeAction;
+        cb.dispatch({ type: 'info', message: `Cesar → ${displayMode}${hardened ? ' (hardened)' : ''}${tMode ? ` [${tMode}]` : ''}` });
         switch (routeAction) {
           case 'build':
             cb.runAsJob('build', label, () => handleBuild(taskInput, cb.dispatch, cb.ctx));

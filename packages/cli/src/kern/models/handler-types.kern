@@ -177,6 +177,7 @@ union name=OutputEvent discriminant=type
 interface name=PendingDelegation
   field name=action type=string
   field name=reasoning type=string
+  field name=scope type="'slice'|'full'" optional=true
   field name=fitnessCmd type=string optional=true
   field name=hardened type=boolean
   field name=tribunalMode type=string optional=true
@@ -188,7 +189,7 @@ interface name=PendingDelegation
   field name=maxTurns type=number optional=true
   field name=createdAt type=number
 
-type name=CesarLiveMode values="self|self-nero|delegate|forge|team-forge|brainstorm|team-brainstorm|campfire|tribunal|team-tribunal|pipeline|review|agent|team-agent|plan"
+type name=CesarLiveMode values="self|self-nero|delegate|forge|forge-slice|team-forge|brainstorm|team-brainstorm|campfire|tribunal|team-tribunal|pipeline|review|agent|team-agent|plan"
 
 interface name=CesarTurnOutcome
   field name=mode type=CesarLiveMode optional=true
@@ -197,6 +198,7 @@ interface name=CesarTurnOutcome
   field name=action type=string optional=true
   field name=reasoning type=string optional=true
   field name=decisionReason type=string optional=true
+  field name=scope type="'slice'|'full'" optional=true
   field name=fitnessCmd type=string optional=true
   field name=hardened type=boolean optional=true
   field name=tribunalMode type=string optional=true

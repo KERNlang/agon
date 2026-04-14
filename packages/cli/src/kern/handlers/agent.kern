@@ -987,6 +987,33 @@ fn name=runAgentTeam params="input:string,dispatch:Dispatch,ctx:HandlerContext,o
         synthesisFitnessRegressed,
       });
 
+      // Append winning team diff to the shared ContextThread so Cesar has
+      // the full line-by-line trail of what the team built. teamThread is
+      // the shared thread the team members were already writing into.
+      if (teamThread && winnerInfo.winner && winnerDiff) {
+        try {
+          const capped = winnerDiff.length > 50000
+            ? winnerDiff.slice(0, 50000) + `\n\n[... ${winnerDiff.length - 50000} more chars truncated]`
+            : winnerDiff;
+          teamThread.append({
+            role: 'assistant',
+            content: `[agent-team-diff] winner: ${winnerInfo.winner} (score ${winnerInfo.bestScore})\n${capped}`,
+          });
+          await teamThread.save();
+        } catch (err) {
+          console.warn(`[agon] agent-team: thread diff append failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      } else if (teamThread && winnerAnalysis && taskKind === 'investigate') {
+        // For investigate mode, the "diff" is the analysis text.
+        try {
+          teamThread.append({
+            role: 'assistant',
+            content: `[agent-team-analysis] winner: ${winnerInfo.winner}\n${winnerAnalysis}`,
+          });
+          await teamThread.save();
+        } catch { /* non-fatal */ }
+      }
+
       // ── Surface the result to the user ────────────────────
       if (winnerInfo.winner) {
         if (winnerDiff) {

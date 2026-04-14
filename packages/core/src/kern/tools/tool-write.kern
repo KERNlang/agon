@@ -66,6 +66,13 @@ fn name=createWriteTool returns=ToolHandler
       const content = input.content as string;
       const relPath = relative(ctx.cwd, filePath);
       const cache = fileStateCache;
+
+      // Phase E v2: route through VirtualFS overlay when present.
+      if (ctx.virtualFs) {
+        ctx.virtualFs.write(filePath, content);
+        return { ok: true, content: `Wrote ${filePath} in VirtualFS (${content.split('\n').length} lines)` };
+      }
+
       const fileExists = existsSync(filePath);
 
       if (fileExists) {

@@ -31,6 +31,7 @@ export type Intent =
   | { type: 'chats'; sessionId?: string }
   | { type: 'build'; input: string }
   | { type: 'agent'; input: string }
+  | { type: 'agent-solo'; input: string; maxTurns?: number }
   | { type: 'speculate'; input: string; engines?: string[]; maxTurns?: number }
   | { type: 'team-agent'; input: string; engines?: string[]; taskKind?: 'edit'|'investigate'; maxTurns?: number }
   | { type: 'pipeline'; task: string; fitnessCmd: string | null }
@@ -122,53 +123,55 @@ export type Intent =
 
 // @kern-source: intent-types:65
 
-// @kern-source: intent-types:69
+// @kern-source: intent-types:68
 
-// @kern-source: intent-types:74
+// @kern-source: intent-types:72
 
 // @kern-source: intent-types:77
 
 // @kern-source: intent-types:80
 
-// @kern-source: intent-types:82
+// @kern-source: intent-types:83
 
-// @kern-source: intent-types:84
-
-// @kern-source: intent-types:86
+// @kern-source: intent-types:85
 
 // @kern-source: intent-types:87
 
-// @kern-source: intent-types:88
+// @kern-source: intent-types:89
 
 // @kern-source: intent-types:90
 
 // @kern-source: intent-types:91
 
-// @kern-source: intent-types:92
+// @kern-source: intent-types:93
 
 // @kern-source: intent-types:94
+
+// @kern-source: intent-types:95
 
 // @kern-source: intent-types:97
 
 // @kern-source: intent-types:100
 
-// @kern-source: intent-types:104
-
-// @kern-source: intent-types:105
-
-// @kern-source: intent-types:106
+// @kern-source: intent-types:103
 
 // @kern-source: intent-types:107
 
 // @kern-source: intent-types:108
 
+// @kern-source: intent-types:109
+
+// @kern-source: intent-types:110
+
 // @kern-source: intent-types:111
 
 // @kern-source: intent-types:114
 
-// @kern-source: intent-types:116
-
 // @kern-source: intent-types:117
 
+// @kern-source: intent-types:119
+
 // @kern-source: intent-types:120
+
+// @kern-source: intent-types:123
 

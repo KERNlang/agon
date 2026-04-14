@@ -141,6 +141,11 @@ service name=Speculator export=true
             maxSteps: opts.maxSteps ?? 10,
             historyMessages,
             onHistoryEntry,
+            // Phase E v2: inject VirtualFS so Read/Edit/Write calls from the
+            // inner loop's tool execution route through the overlay rather than
+            // touching the shared real filesystem. This gives each member true
+            // speculative isolation at the tool-call level.
+            virtualFs: vfs,
           });
         } catch (err: any) {
           // Failed engine contributes an empty package — will score 0 and lose.

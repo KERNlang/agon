@@ -44,7 +44,7 @@ export async function routeViaCesar(input: string, dispatch: Dispatch, ctx: Hand
   const isQuestion = hintClass === 'question' || /^(what|how|why|when|where|who|is|are|can|do|does|should|would|could|will|explain|describe|tell|show|list|help)\b/i.test(trimmed);
   const isGreeting = /^(hi|hey|hello|yo|sup|thanks|thank you|ok|okay|sure|yes|no|yep|nope|cool|nice|great)\b/i.test(trimmed);
   const isSlashLike = trimmed.startsWith('/') || trimmed.startsWith('!');
-  const codeFastPathChars = config.cesarCodeFastPathChars ?? 180;
+  const codeFastPathChars = (config as any).cesarCodeFastPathChars ?? 180;
   const isCodeTask = hintClass === 'code';
   const hasSingleFileHint = /(?:^|\s)(?:[\w./-]+\.(?:ts|tsx|js|jsx|py|rs|go|sh|md|json|yaml|yml|toml))(?:\s|$)/i.test(trimmed);
   const isSmallEditIntent = /\b(?:fix|change|update|rename|edit|tweak|adjust|add|remove|wire)\b/i.test(trimmed);
@@ -62,7 +62,9 @@ export async function routeViaCesar(input: string, dispatch: Dispatch, ctx: Hand
       confidence: 95,
       reasoning: isTinyCodeTask
         ? 'Tiny code task — skip scouts and build directly'
-        : isGreeting ? 'Greeting — direct response' : 'Simple question — skip scouts',
+        : isGreeting
+          ? 'Greeting — direct response'
+          : 'Simple question — skip scouts',
       observerEngines: [],
       bids: [],
     } as RoutingDecision;

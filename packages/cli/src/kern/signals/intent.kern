@@ -59,8 +59,9 @@ const name=SLASH_COMMANDS type="SlashCommand[]"
       { cmd: '/flows',       desc: '                        — flow analytics dashboard' },
       { cmd: '/chats',       desc: '[id|resume <id>]        — chat history or resume session' },
       { cmd: '/build',       desc: '<task>                   — agent builds in cwd (reads/edits/tests)' },
-      { cmd: '/agent',       desc: '<task>                   — autonomous agent loop (API engines, budget-enforced)' },
-      { cmd: '/speculate',   desc: '<task>                   — parallel VirtualFS speculation: N engines race, winner applied' },
+      { cmd: '/agent',       desc: '<task>                   — autonomous agent loop (solo or shadow, auto-routed)' },
+      { cmd: '/agent-solo',  desc: '<task>                   — force solo agent mode, no shadow worker' },
+      { cmd: '/speculate',   desc: '<task>                   — parallel speculation: N engines race in worktrees, winner applied' },
       { cmd: '/team-forge',      desc: '[2v2|3v3] <task> test with <cmd> — team code competition' },
       { cmd: '/team-tribunal',   desc: '[2v2|3v3] [mode] <question>    — team debate' },
       { cmd: '/team-brainstorm', desc: '[2v2|3v3] <question>            — team ideation' },
@@ -334,6 +335,8 @@ fn name=parseSlashCommand params="input:string, commandRegistry?:any" returns=In
         return { type: 'build', input: rest } as Intent;
       case 'agent':
         return { type: 'agent', input: rest } as Intent;
+      case 'agent-solo':
+        return { type: 'agent-solo', input: rest } as unknown as Intent;
       case 'speculate': {
         // /speculate [with engine1,engine2] <task>
         // Optional: /speculate with claude,gemini refactor auth module

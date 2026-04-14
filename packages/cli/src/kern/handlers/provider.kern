@@ -1,11 +1,13 @@
 import from="node:fs" names="writeFileSync,mkdirSync,unlinkSync,readdirSync,readFileSync,existsSync"
-import from="node:path" names="join"
+import from="node:path" names="join,resolve"
 import from="node:os" names="homedir"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 
 fn name=enginesDir returns=string export=false
   handler <<<
-    return join(homedir(), '.agon', 'engines');
+    const override = process.env.AGON_HOME?.trim();
+    const home = override ? resolve(override) : join(homedir(), '.agon');
+    return join(home, 'engines');
   >>>
 
 fn name=handleProviderAdd params="dispatch:Dispatch, ctx:HandlerContext, args:string" returns="Promise<void>" async=true

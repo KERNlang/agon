@@ -1,6 +1,13 @@
 import from="node:fs" names="mkdirSync,appendFileSync,readFileSync,readdirSync,statSync,writeFileSync,unlinkSync"
-import from="node:path" names="join"
-import from="./config.js" names="AGON_HOME"
+import from="node:path" names="join,resolve"
+import from="node:os" names="homedir"
+
+fn name=runtimeAgonPath params="...parts:string[]" returns="string" export=false
+  handler <<<
+    const override = process.env.AGON_HOME?.trim();
+    const home = override ? resolve(override) : join(homedir(), '.agon');
+    return join(home, ...parts);
+  >>>
 
 interface name=ChatMessage
   field name=role type="'user'|'engine'"
@@ -19,7 +26,7 @@ interface name=ChatSession
 
 fn name=chatsDir returns="string"
   handler <<<
-    return join(AGON_HOME, 'chats');
+    return runtimeAgonPath('chats');
   >>>
 
 fn name=ensureChatsDir returns="void"

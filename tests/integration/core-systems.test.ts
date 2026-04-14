@@ -1,7 +1,18 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { cleanupTestAgonHome, setupTestAgonHome } from '../helpers/agon-home.js';
+
+let testHome = '';
+
+beforeEach(() => {
+  testHome = setupTestAgonHome('core-systems');
+});
+
+afterEach(() => {
+  cleanupTestAgonHome(testHome);
+});
 
 // ── 1. Plan State Machine ─────────────────────────────────────────
 describe('Plan State Machine', () => {

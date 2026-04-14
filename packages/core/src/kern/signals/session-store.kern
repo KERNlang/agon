@@ -3,10 +3,17 @@
 // v2: Rich state with compaction summaries, tool cache manifests, and schema migration.
 
 import from="node:fs" names="writeFileSync,readFileSync,existsSync,mkdirSync,unlinkSync,readdirSync,statSync,rmdirSync,renameSync"
-import from="node:path" names="join,dirname"
+import from="node:path" names="join,dirname,resolve"
 import from="node:crypto" names="createHash"
-import from="./config.js" names="AGON_HOME"
+import from="node:os" names="homedir"
 import from="../models/context-parts.js" names="CompactionSummaryPart,ToolCacheEntry" types=true
+
+fn name=runtimeAgonPath params="...parts:string[]" returns="string" export=false
+  handler <<<
+    const override = process.env.AGON_HOME?.trim();
+    const home = override ? resolve(override) : join(homedir(), '.agon');
+    return join(home, ...parts);
+  >>>
 
 const name=SESSION_SCHEMA_VERSION type=number value=2
 const name=SESSION_MAX_MESSAGES type=number value=80
@@ -27,14 +34,14 @@ fn name=sessionStorePath params="engineId:string" returns="string"
   doc "Session path scoped by engine + workspace to prevent context leaking across repos."
   handler <<<
     const cwdHash = createHash('md5').update(process.cwd()).digest('hex').slice(0, 8);
-    return join(AGON_HOME, 'sessions', `${engineId}-${cwdHash}.json`);
+    return runtimeAgonPath('sessions', `${engineId}-${cwdHash}.json`);
   >>>
 
 fn name=sessionCacheDir params="engineId:string" returns="string"
   doc "Directory for disk-backed tool result cache files."
   handler <<<
     const cwdHash = createHash('md5').update(process.cwd()).digest('hex').slice(0, 8);
-    return join(AGON_HOME, 'sessions', `${engineId}-${cwdHash}-cache`);
+    return runtimeAgonPath('sessions', `${engineId}-${cwdHash}-cache`);
   >>>
 
 fn name=saveToolResultToDisk params="engineId:string, toolCallId:string, toolName:string, content:string" returns="ToolCacheEntry|null"
@@ -92,7 +99,7 @@ fn name=pruneToolCache params="engineId:string, keepIds:Set<string>" returns="vo
 fn name=saveSessionState params="engineId:string, state:{ messageHistory: Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>, confidence:number|null, compactionSummary?:CompactionSummaryPart|null, toolCacheManifest?:ToolCacheEntry[] }" returns="void"
   doc "Persist API session state to disk (v2 schema)."
   handler <<<
-    const dir = join(AGON_HOME, 'sessions');
+    const dir = runtimeAgonPath('sessions');
     mkdirSync(dir, { recursive: true });
     const path = sessionStorePath(engineId);
     // Keep last SESSION_MAX_MESSAGES to avoid unbounded growth

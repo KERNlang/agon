@@ -2,13 +2,19 @@
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, unlinkSync, statSync } from 'node:fs';
 
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 import { createHash } from 'node:crypto';
 
-import { AGON_HOME, ensureAgonHome } from './config.js';
+import { homedir } from 'node:os';
 
-export const PASTE_STORE_DIR: string = join(AGON_HOME, 'paste-cache');
+import { ensureAgonHome } from './config.js';
+
+function getPasteStoreDir(): string {
+  const override = process.env.AGON_HOME?.trim();
+  const home = override ? resolve(override) : join(homedir(), '.agon');
+  return join(home, 'paste-cache');
+}
 
 /**
  * Max age in ms before cleanup removes a paste (7 days)
@@ -23,7 +29,7 @@ export interface PasteStoreResult {
 
 function ensurePasteDir(): void {
   ensureAgonHome();
-  mkdirSync(PASTE_STORE_DIR, { recursive: true });
+  mkdirSync(getPasteStoreDir(), { recursive: true });
 }
 
 /**
@@ -34,7 +40,7 @@ export class PasteStore {
   store(text: string): PasteStoreResult {
     ensurePasteDir();
     const hash = createHash('sha256').update(text).digest('hex');
-    const filePath = join(PASTE_STORE_DIR, `${hash}.txt`);
+    const filePath = join(getPasteStoreDir(), `${hash}.txt`);
     if (!existsSync(filePath)) {
       writeFileSync(filePath, text);
     }
@@ -44,7 +50,7 @@ export class PasteStore {
   }
 
   retrieve(hash: string): string|null {
-    const filePath = join(PASTE_STORE_DIR, `${hash}.txt`);
+    const filePath = join(getPasteStoreDir(), `${hash}.txt`);
     if (!existsSync(filePath)) return null;
     return readFileSync(filePath, 'utf-8');
   }
@@ -55,9 +61,10 @@ export class PasteStore {
     let deleted = 0;
     ensurePasteDir();
     try {
-      const files = readdirSync(PASTE_STORE_DIR).filter((f: string) => f.endsWith('.txt'));
+      const pasteStoreDir = getPasteStoreDir();
+      const files = readdirSync(pasteStoreDir).filter((f: string) => f.endsWith('.txt'));
       for (const f of files) {
-        const fp = join(PASTE_STORE_DIR, f);
+        const fp = join(pasteStoreDir, f);
         try {
           const stat = statSync(fp);
           if (now - stat.mtimeMs > age) {

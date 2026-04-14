@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 
 // @kern-source: dispatch:7
-import { resolveWorkingDir, extractImagesFromInput, buildImageAttachment, undoPatch, resumeChatSession, findSkill, renderSkillPrompt, configSet, startChatSession, currentBranch, gitChangedFiles, buildExtensionContext, sessionContext, RUNS_DIR } from '@agon/core';
+import { resolveWorkingDir, extractImagesFromInput, buildImageAttachment, undoPatch, resumeChatSession, findSkill, renderSkillPrompt, configSet, startChatSession, currentBranch, gitChangedFiles, buildExtensionContext, sessionContext, RUNS_DIR, getAgonHome } from '@agon/core';
 
 // @kern-source: dispatch:8
 import { invalidateCwdCache } from '../handlers/chat.js';
@@ -711,6 +711,13 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
       }
       return { handled: true, ranAsJob: true };
     }
+    case 'agent-solo': {
+      // Explicit opt-out of shadow workers — always runs pure solo.
+      const soloInput = intent.input;
+      cb.dispatch({ type: 'agent-routing', mode: 'solo', engines: [cb.ctx.activeEngines()[0] ?? 'default'], reason: 'explicit /agent-solo — shadow mode disabled' });
+      cb.runAsJob('agent', soloInput?.slice(0, 40) ?? 'agent', () => runAgentMode(soloInput, cb.dispatch, cb.ctx, { maxTurns: intent.maxTurns }));
+      return { handled: true, ranAsJob: true };
+    }
     case 'team-agent':
       cb.runAsJob('team-agent', intent.input?.slice(0, 40) ?? 'team-agent', () => runAgentTeam(intent.input, cb.dispatch, cb.ctx, {
         engines: intent.engines,
@@ -1257,7 +1264,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
         } else {
           // Look up in .mcp.json (project) or ~/.agon/mcp.json (global)
           let found: any = null;
-          for (const configPath of [join(resolveWorkingDir(), '.mcp.json'), join(process.env.HOME ?? '', '.agon', 'mcp.json')]) {
+          for (const configPath of [join(resolveWorkingDir(), '.mcp.json'), join(getAgonHome(), 'mcp.json')]) {
             try {
               const raw = JSON.parse(readFileSync(configPath, 'utf-8'));
               const servers = raw.mcpServers ?? raw.servers ?? raw;
@@ -1405,7 +1412,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
   return { handled: true, ranAsJob: false };
 }
 
-// @kern-source: dispatch:1356
+// @kern-source: dispatch:1363
 /**
  * Build executor callbacks. Holds a closure on the latest plan reference (mutated via onPlanUpdate) so step lookups always see appended steps like the auto-review cycle (tribunal fix #10). FU-3: persistence is debounced 300ms to avoid the sync-write storm Doppelganger flagged — onPlanUpdate fires once per step in a hot loop, but the disk write happens at most ~3x/sec. Terminal states (done/paused/cancelled) flush immediately so the .md/.json on disk reflect the final state. Callers should invoke .flush() before exit to drain any pending write.
  */
@@ -1482,7 +1489,7 @@ export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks
   };
 }
 
-// @kern-source: dispatch:1431
+// @kern-source: dispatch:1438
 /**
  * FU-4: shared executor for the auto-approve, manual-approve, and plan-resume paths. Wires the abort controller, builds callbacks (with debounced persistence), runs executePlan, runs finalizePlanWithReviewGate, and dispatches the terminal status. Eliminates the ~60 lines of triplication that lived in dispatch.kern and forced future changes (e.g., new callback hooks, new finalize behavior) to be applied to all three sites.
  */
@@ -1519,7 +1526,7 @@ export async function executeApprovedPlan(approved: CesarPlan, cb: DispatchCallb
   }
 }
 
-// @kern-source: dispatch:1466
+// @kern-source: dispatch:1473
 /**
  * Single source of truth for the post-execution self-review gate. Called from BOTH the plan-task and plan-resume terminal paths so resume cannot bypass the gate or the cycle cap (tribunal fix #4).
  */
@@ -1613,4 +1620,3 @@ export async function finalizePlanWithReviewGate(finalPlan: CesarPlan, executors
   
   return reviewedPlan;
 }
-

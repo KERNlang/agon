@@ -4,6 +4,8 @@ import { join, resolve } from 'node:path';
 
 import { readdirSync, readFileSync, existsSync, statSync } from 'node:fs';
 
+import { homedir } from 'node:os';
+
 import { validateManifest } from '../models/extension-manifest.js';
 
 import type { ExtensionManifest, LoadedExtension, CommandContribution } from '../models/extension-manifest.js';
@@ -13,8 +15,6 @@ import { CommandRegistry } from '../signals/command-registry.js';
 import type { CommandHandler } from '../signals/command-registry.js';
 
 import { EngineRegistry } from '../signals/engine-registry.js';
-
-import { AGON_HOME } from '../signals/config.js';
 
 import type { Skill } from './skill-loader.js';
 
@@ -27,7 +27,9 @@ export function discoverExtensionDirs(cwd: string): { dir: string; source: 'user
   const results: { dir: string; source: 'user' | 'repo' }[] = [];
   
   // User-level extensions
-  const userDir = join(AGON_HOME, 'extensions');
+  const override = process.env.AGON_HOME?.trim();
+  const home = override ? resolve(override) : join(homedir(), '.agon');
+  const userDir = join(home, 'extensions');
   if (existsSync(userDir)) {
     try {
       const entries = readdirSync(userDir, { withFileTypes: true });

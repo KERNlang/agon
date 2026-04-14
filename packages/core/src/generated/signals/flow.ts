@@ -2,11 +2,17 @@
 
 import { readFileSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs';
 
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
-import { AGON_HOME } from './config.js';
+import { homedir } from 'node:os';
 
-export const FLOWS_DIR: string = join(AGON_HOME, 'flows');
+function getFlowsDir(): string {
+  const override = process.env.AGON_HOME?.trim();
+  const home = override ? resolve(override) : join(homedir(), '.agon');
+  return join(home, 'flows');
+}
+
+export const FLOWS_DIR: string = getFlowsDir();
 
 export const FRICTION_TAGS: readonly string[] = ['slow', 'wrong-mode', 'engine-error', 'unclear-output', 'timeout', 'context-lost', 'other'] as const;
 
@@ -52,13 +58,13 @@ export interface FlowRecord {
 }
 
 function ensureFlowsDir(): void {
-  mkdirSync(FLOWS_DIR, { recursive: true });
+  mkdirSync(getFlowsDir(), { recursive: true });
 }
 
 export function logFlow(record: FlowRecord): string {
   ensureFlowsDir();
   const filename = `flow-${record.id}.json`;
-  const filepath = join(FLOWS_DIR, filename);
+  const filepath = join(getFlowsDir(), filename);
   writeFileSync(filepath, JSON.stringify(record, null, 2));
   return filepath;
 }
@@ -67,7 +73,7 @@ export function readFlows(limit?: number): FlowRecord[] {
   ensureFlowsDir();
   let files: string[];
   try {
-    files = readdirSync(FLOWS_DIR)
+    files = readdirSync(getFlowsDir())
       .filter((f: string) => f.startsWith('flow-') && f.endsWith('.json'))
       .sort()
       .reverse();
@@ -81,7 +87,7 @@ export function readFlows(limit?: number): FlowRecord[] {
   const records: FlowRecord[] = [];
   for (const file of files) {
     try {
-      const data = JSON.parse(readFileSync(join(FLOWS_DIR, file), 'utf-8')) as FlowRecord;
+      const data = JSON.parse(readFileSync(join(getFlowsDir(), file), 'utf-8')) as FlowRecord;
       records.push(data);
     } catch (err) {
       console.warn(`[agon] skipping malformed flow record ${file}: ${err instanceof Error ? err.message : String(err)}`);

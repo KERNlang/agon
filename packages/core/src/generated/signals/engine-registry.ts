@@ -2,7 +2,7 @@
 
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
 
-import { join, dirname } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
 
 import { homedir } from 'node:os';
 
@@ -14,7 +14,11 @@ import { EngineNotFoundError } from '../models/errors.js';
 
 import { validateEngineConfig } from '../../schemas/engine-schema.js';
 
-export const AGON_ENGINES_DIR: string = join(homedir(), '.agon', 'engines');
+function getAgonEnginesDir(): string {
+  const override = process.env.AGON_HOME?.trim();
+  const home = override ? resolve(override) : join(homedir(), '.agon');
+  return join(home, 'engines');
+}
 
 export class EngineRegistry {
   private engines: Map<string, EngineDefinition> = new Map();
@@ -67,7 +71,8 @@ export class EngineRegistry {
 
   load(builtinDir: string): void {
     this.loadDir(this.resolveBuiltinDir(builtinDir), 'builtin');
-    if (existsSync(AGON_ENGINES_DIR)) this.loadDir(AGON_ENGINES_DIR, 'user');
+    const agonEnginesDir = getAgonEnginesDir();
+    if (existsSync(agonEnginesDir)) this.loadDir(agonEnginesDir, 'user');
   }
 
   register(engine: EngineDefinition): void {

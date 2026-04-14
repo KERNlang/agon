@@ -2,14 +2,16 @@
 
 import { writeFileSync, mkdirSync, unlinkSync, readdirSync, readFileSync, existsSync } from 'node:fs';
 
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 import { homedir } from 'node:os';
 
 import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 
 function enginesDir(): string {
-  return join(homedir(), '.agon', 'engines');
+  const override = process.env.AGON_HOME?.trim();
+  const home = override ? resolve(override) : join(homedir(), '.agon');
+  return join(home, 'engines');
 }
 
 export async function handleProviderAdd(dispatch: Dispatch, ctx: HandlerContext, args: string): Promise<void> {

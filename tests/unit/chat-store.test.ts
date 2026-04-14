@@ -1,24 +1,16 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { startChatSession, appendMessage, loadChatSession, resumeChatSession, listChatSessions } from '@agon/core';
-import { mkdirSync, rmSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
-
-// Override AGON_HOME for test isolation
-const TEST_HOME = join(import.meta.dirname, '../../.agon-test-chat');
+import { cleanupTestAgonHome, setupTestAgonHome } from '../helpers/agon-home.js';
 
 describe('chat-store', () => {
+  let testHome = '';
+
   beforeEach(() => {
-    // Set test home before any chat operations
-    process.env.AGON_HOME = TEST_HOME;
-    mkdirSync(join(TEST_HOME, 'chats'), { recursive: true });
+    testHome = setupTestAgonHome('chat-store');
   });
 
   afterEach(() => {
-    // Clean up
-    if (existsSync(TEST_HOME)) {
-      rmSync(TEST_HOME, { recursive: true, force: true });
-    }
-    delete process.env.AGON_HOME;
+    cleanupTestAgonHome(testHome);
   });
 
   it('starts a session and returns valid ChatSession', () => {

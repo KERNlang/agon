@@ -1,7 +1,15 @@
 // ── CesarPlan — type system + state machine for Cesar execution plans ──
 
 import from="node:fs" names="mkdirSync,writeFileSync,readFileSync,readdirSync,renameSync,unlinkSync"
-import from="node:path" names="join"
+import from="node:path" names="join,resolve"
+import from="node:os" names="homedir"
+
+fn name=runtimeAgonPath params="...parts:string[]" returns="string" export=false
+  handler <<<
+    const override = process.env.AGON_HOME?.trim();
+    const home = override ? resolve(override) : join(homedir(), '.agon');
+    return join(home, ...parts);
+  >>>
 
 type name=CesarPlanState values="planning|awaiting_approval|running|paused|done|cancelled"
 type name=CesarStepState values="pending|blocked|running|done|failed|skipped|cancelled"
@@ -158,7 +166,7 @@ fn name=cancelCesarPlan params="plan:CesarPlan" returns=CesarPlan
 fn name=saveCesarPlan params="plan:CesarPlan" returns=void export=true
   doc "Persist a CesarPlan to ~/.agon/runs/<id>.json atomically. FU-8: write to a .tmp file then renameSync, so concurrent Agon sessions reading the same path observe either the old complete file or the new complete file — never a partial. POSIX rename within the same directory is atomic."
   handler <<<
-    const dir = join(process.env.HOME ?? '', '.agon', 'runs');
+    const dir = runtimeAgonPath('runs');
     mkdirSync(dir, { recursive: true });
     const finalPath = join(dir, `${plan.id}.json`);
     // Unique tmp suffix so parallel saves of the SAME plan from different
@@ -176,7 +184,7 @@ fn name=saveCesarPlan params="plan:CesarPlan" returns=void export=true
 fn name=loadCesarPlan params="planId:string" returns="CesarPlan|null" export=true
   doc "Load a persisted CesarPlan from ~/.agon/runs/<id>.json."
   handler <<<
-    const filePath = join(process.env.HOME ?? '', '.agon', 'runs', `${planId}.json`);
+    const filePath = runtimeAgonPath('runs', `${planId}.json`);
     try {
       return JSON.parse(readFileSync(filePath, 'utf-8'));
     } catch {
@@ -187,7 +195,7 @@ fn name=loadCesarPlan params="planId:string" returns="CesarPlan|null" export=tru
 fn name=listCesarPlans params="" returns="CesarPlan[]" export=true
   doc "List all persisted CesarPlans from ~/.agon/runs/."
   handler <<<
-    const dir = join(process.env.HOME ?? '', '.agon', 'runs');
+    const dir = runtimeAgonPath('runs');
     try {
       const files = readdirSync(dir).filter((f: string) => f.startsWith('cplan-') && f.endsWith('.json'));
       return files.map((f: string) => {

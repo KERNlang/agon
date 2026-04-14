@@ -1,5 +1,5 @@
 import from="node:fs" names="readFileSync,writeFileSync,mkdirSync,existsSync,chmodSync"
-import from="node:path" names="join,dirname"
+import from="node:path" names="join,dirname,resolve"
 import from="node:os" names="homedir"
 
 interface name=AuthEntry
@@ -10,18 +10,21 @@ interface name=AuthEntry
 interface name=AuthStore
   field name=entries type="Record<string, AuthEntry>"
 
-const name=AUTH_FILE type=string
+fn name=getAuthFile returns=string export=false
   handler <<<
-    join(homedir(), '.agon', 'auth.json')
+    const override = process.env.AGON_HOME?.trim();
+    const home = override ? resolve(override) : join(homedir(), '.agon');
+    return join(home, 'auth.json');
   >>>
 
 fn name=loadAuthStore returns=AuthStore
   handler <<<
-    if (!existsSync(AUTH_FILE)) {
+    const authFile = getAuthFile();
+    if (!existsSync(authFile)) {
       return { entries: {} };
     }
     try {
-      const data = JSON.parse(readFileSync(AUTH_FILE, 'utf-8'));
+      const data = JSON.parse(readFileSync(authFile, 'utf-8'));
       return { entries: data ?? {} };
     } catch (_e) {
       return { entries: {} };
@@ -30,10 +33,11 @@ fn name=loadAuthStore returns=AuthStore
 
 fn name=saveAuthStore params="store:AuthStore" returns=void
   handler <<<
-    const dir = dirname(AUTH_FILE);
+    const authFile = getAuthFile();
+    const dir = dirname(authFile);
     mkdirSync(dir, { recursive: true });
-    writeFileSync(AUTH_FILE, JSON.stringify(store.entries, null, 2) + '\n', { mode: 0o600 });
-    try { chmodSync(AUTH_FILE, 0o600); } catch (_e) { /* best effort */ }
+    writeFileSync(authFile, JSON.stringify(store.entries, null, 2) + '\n', { mode: 0o600 });
+    try { chmodSync(authFile, 0o600); } catch (_e) { /* best effort */ }
   >>>
 
 fn name=setAuthKey params="envVar:string, key:string, providerName?:string" returns=void

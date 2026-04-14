@@ -2,9 +2,9 @@
 
 import { readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
 
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
-import { AGON_HOME } from '../signals/config.js';
+import { homedir } from 'node:os';
 
 import type { TaskClass } from '../models/types.js';
 
@@ -27,10 +27,14 @@ export interface EngineMemoryRecord {
   lastUpdated: string;
 }
 
-export const MEMORY_PATH: string = join(AGON_HOME, 'engine-memory.json');
+function memoryPath(): string {
+  const override = process.env.AGON_HOME?.trim();
+  const home = override ? resolve(override) : join(homedir(), '.agon');
+  return join(home, 'engine-memory.json');
+}
 
 export function loadEngineMemory(): EngineMemoryRecord {
-  try { return JSON.parse(readFileSync(MEMORY_PATH, 'utf-8')) as EngineMemoryRecord; }
+  try { return JSON.parse(readFileSync(memoryPath(), 'utf-8')) as EngineMemoryRecord; }
   catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
       console.warn(`[agon] failed to load engine memory: ${err instanceof Error ? err.message : String(err)}`);
@@ -40,11 +44,14 @@ export function loadEngineMemory(): EngineMemoryRecord {
 }
 
 function saveEngineMemory(record: EngineMemoryRecord): void {
-  mkdirSync(AGON_HOME, { recursive: true });
+  const override = process.env.AGON_HOME?.trim();
+  const home = override ? resolve(override) : join(homedir(), '.agon');
+  mkdirSync(home, { recursive: true });
   record.lastUpdated = new Date().toISOString();
-  const tmpPath = MEMORY_PATH + '.tmp';
+  const path = memoryPath();
+  const tmpPath = path + '.tmp';
   writeFileSync(tmpPath, JSON.stringify(record, null, 2) + '\n');
-  renameSync(tmpPath, MEMORY_PATH);
+  renameSync(tmpPath, path);
 }
 
 function ensureProfile(record: EngineMemoryRecord, engineId: string): EngineProfile {

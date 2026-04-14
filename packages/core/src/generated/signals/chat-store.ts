@@ -2,9 +2,15 @@
 
 import { mkdirSync, appendFileSync, readFileSync, readdirSync, statSync, writeFileSync, unlinkSync } from 'node:fs';
 
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
-import { AGON_HOME } from './config.js';
+import { homedir } from 'node:os';
+
+function runtimeAgonPath(...parts: string[]): string {
+  const override = process.env.AGON_HOME?.trim();
+  const home = override ? resolve(override) : join(homedir(), '.agon');
+  return join(home, ...parts);
+}
 
 export interface ChatMessage {
   role: 'user'|'engine';
@@ -24,7 +30,7 @@ export interface ChatSession {
 }
 
 export function chatsDir(): string {
-  return join(AGON_HOME, 'chats');
+  return runtimeAgonPath('chats');
 }
 
 export function ensureChatsDir(): void {

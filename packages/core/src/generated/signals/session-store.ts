@@ -2,11 +2,17 @@
 
 import { writeFileSync, readFileSync, existsSync, mkdirSync, unlinkSync, readdirSync, statSync, rmdirSync, renameSync } from 'node:fs';
 
-import { join, dirname } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
 
 import { createHash } from 'node:crypto';
 
-import { AGON_HOME } from './config.js';
+import { homedir } from 'node:os';
+
+function runtimeAgonPath(...parts: string[]): string {
+  const override = process.env.AGON_HOME?.trim();
+  const home = override ? resolve(override) : join(homedir(), '.agon');
+  return join(home, ...parts);
+}
 
 import type { CompactionSummaryPart, ToolCacheEntry } from '../models/context-parts.js';
 
@@ -38,7 +44,7 @@ export interface SessionStateV2 {
  */
 export function sessionStorePath(engineId: string): string {
   const cwdHash = createHash('md5').update(process.cwd()).digest('hex').slice(0, 8);
-  return join(AGON_HOME, 'sessions', `${engineId}-${cwdHash}.json`);
+  return runtimeAgonPath('sessions', `${engineId}-${cwdHash}.json`);
 }
 
 /**
@@ -46,7 +52,7 @@ export function sessionStorePath(engineId: string): string {
  */
 export function sessionCacheDir(engineId: string): string {
   const cwdHash = createHash('md5').update(process.cwd()).digest('hex').slice(0, 8);
-  return join(AGON_HOME, 'sessions', `${engineId}-${cwdHash}-cache`);
+  return runtimeAgonPath('sessions', `${engineId}-${cwdHash}-cache`);
 }
 
 /**
@@ -108,7 +114,7 @@ export function pruneToolCache(engineId: string, keepIds: Set<string>): void {
  * Persist API session state to disk (v2 schema).
  */
 export function saveSessionState(engineId: string, state: { messageHistory: Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>, confidence:number|null, compactionSummary?:CompactionSummaryPart|null, toolCacheManifest?:ToolCacheEntry[] }): void {
-  const dir = join(AGON_HOME, 'sessions');
+  const dir = runtimeAgonPath('sessions');
   mkdirSync(dir, { recursive: true });
   const path = sessionStorePath(engineId);
   // Keep last SESSION_MAX_MESSAGES to avoid unbounded growth

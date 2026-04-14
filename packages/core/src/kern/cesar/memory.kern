@@ -3,8 +3,9 @@
 // Injected into Cesar's system prompt for context continuity.
 
 import from="node:fs" names="readFileSync,writeFileSync,mkdirSync,existsSync"
-import from="node:path" names="join"
-import from="../signals/config.js" names="ensureAgonHome,AGON_HOME"
+import from="node:path" names="join,resolve"
+import from="node:os" names="homedir"
+import from="../signals/config.js" names="ensureAgonHome"
 
 const name=MAX_SESSION_ENTRIES type=number
   handler <<<
@@ -38,7 +39,9 @@ fn name=createCesarMemory params="" returns=CesarMemory
   handler <<<
     const session = new Map<string, MemoryEntry>();
     let persistent: MemoryEntry[] = [];
-    const persistPath = join(AGON_HOME, 'cesar-memory.json');
+    const override = process.env.AGON_HOME?.trim();
+    const home = override ? resolve(override) : join(homedir(), '.agon');
+    const persistPath = join(home, 'cesar-memory.json');
 
     const memory: CesarMemory = {
       session,

@@ -4,21 +4,28 @@ import { readFileSync, writeFileSync, mkdirSync, readdirSync, unlinkSync, rename
 
 import { join, resolve } from 'node:path';
 
-import { AGON_HOME, ensureAgonHome } from './config.js';
+import { homedir } from 'node:os';
+
+import { ensureAgonHome } from './config.js';
 
 import type { Plan } from '../blocks/plan.js';
 
-export const PLANS_DIR: string = join(AGON_HOME, 'plans');
+function getPlansDir(): string {
+  const override = process.env.AGON_HOME?.trim();
+  const home = override ? resolve(override) : join(homedir(), '.agon');
+  return join(home, 'plans');
+}
 
 function ensurePlansDir(): void {
   ensureAgonHome();
-  mkdirSync(PLANS_DIR, { recursive: true });
+  mkdirSync(getPlansDir(), { recursive: true });
 }
 
 function safePlanPath(id: string): string {
   const sanitized = id.replace(/[^a-zA-Z0-9_-]/g, '');
-  const full = resolve(PLANS_DIR, `${sanitized}.json`);
-  if (!full.startsWith(resolve(PLANS_DIR))) throw new Error(`Invalid plan ID: ${id}`);
+  const plansDir = getPlansDir();
+  const full = resolve(plansDir, `${sanitized}.json`);
+  if (!full.startsWith(resolve(plansDir))) throw new Error(`Invalid plan ID: ${id}`);
   return full;
 }
 
@@ -43,9 +50,10 @@ export function loadPlan(id: string): Plan|null {
 export function listPlans(limit?: number): Plan[] {
   ensurePlansDir();
   try {
-    const files = readdirSync(PLANS_DIR).filter((f: string) => f.endsWith('.json'));
+    const plansDir = getPlansDir();
+    const files = readdirSync(plansDir).filter((f: string) => f.endsWith('.json'));
     return files
-      .map((f: string) => JSON.parse(readFileSync(join(PLANS_DIR, f), 'utf-8')) as Plan)
+      .map((f: string) => JSON.parse(readFileSync(join(plansDir, f), 'utf-8')) as Plan)
       .sort((a: any, b: any) => b.updatedAt.localeCompare(a.updatedAt))
       .slice(0, limit ?? 20);
   } catch (err) {

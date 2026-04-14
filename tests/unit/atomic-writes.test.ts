@@ -1,11 +1,19 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { saveSessionState, loadSessionState, clearSessionState, saveToolResultToDisk } from '@agon/core';
+import { cleanupTestAgonHome, setupTestAgonHome } from '../helpers/agon-home.js';
 
 const TEST_ENGINE = `test-atomic-${Date.now()}`;
 
 describe('session-store — atomic writes', () => {
+  let testHome = '';
+
+  beforeEach(() => {
+    testHome = setupTestAgonHome('atomic-writes');
+  });
+
   afterEach(() => {
     try { clearSessionState(TEST_ENGINE); } catch { /* may not exist */ }
+    cleanupTestAgonHome(testHome);
   });
 
   it('saveSessionState writes to disk without corruption', () => {

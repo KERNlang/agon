@@ -2,11 +2,11 @@
 
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 
-import { join, dirname } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
+
+import { homedir } from 'node:os';
 
 import { fileURLToPath } from 'node:url';
-
-import { AGON_HOME } from '../signals/config.js';
 
 export interface Skill {
   name: string;
@@ -73,13 +73,15 @@ function loadSkillsFromDir(dir: string, source: string): Skill[] {
 
 export function loadSkills(cwd?: string): Skill[] {
   const skills: Skill[] = [];
+  const override = process.env.AGON_HOME?.trim();
+  const home = override ? resolve(override) : join(homedir(), '.agon');
   
   // 1. Built-in skills (shipped with Agon)
   const builtinDir = join(dirname(fileURLToPath(import.meta.url)), '../../skills');
   skills.push(...loadSkillsFromDir(builtinDir, 'builtin'));
   
   // 2. Global skills (~/.agon/skills/)
-  skills.push(...loadSkillsFromDir(join(AGON_HOME, 'skills'), 'global'));
+  skills.push(...loadSkillsFromDir(join(home, 'skills'), 'global'));
   
   // 3. Project-level skills (.agon/skills/)
   if (cwd) {

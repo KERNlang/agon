@@ -2,13 +2,13 @@
 
 import { readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
 
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 import { execSync } from 'node:child_process';
 
-import type { ForgeManifest } from '../models/types.js';
+import { homedir } from 'node:os';
 
-import { AGON_HOME } from '../signals/config.js';
+import type { ForgeManifest } from '../models/types.js';
 
 import { invertPatch } from './patch-parser.js';
 
@@ -24,6 +24,12 @@ export interface ApplyPreflight {
   error?: string;
   patch?: PatchInfo;
   dirtyTree: boolean;
+}
+
+function getUndoDir(): string {
+  const override = process.env.AGON_HOME?.trim();
+  const home = override ? resolve(override) : join(homedir(), '.agon');
+  return join(home, 'undo');
 }
 
 export function readPatchFromManifest(manifestPath: string): PatchInfo|null {
@@ -118,7 +124,7 @@ export function preflightApply(cwd: string, patchPath: string|null, manifestPath
  * Apply patch and save an inverse for undo.
  */
 export function applyPatchWithUndo(cwd: string, patchContent: string): { ok:boolean, error?:string, undoToken?:string } {
-  const undoDir = join(AGON_HOME, 'undo');
+  const undoDir = getUndoDir();
   mkdirSync(undoDir, { recursive: true });
   
   // Compute inverse before applying
@@ -146,7 +152,7 @@ export function applyPatchWithUndo(cwd: string, patchContent: string): { ok:bool
  * Apply the saved inverse patch to undo a previous apply.
  */
 export function undoPatch(cwd: string, undoToken: string): { ok:boolean, error?:string } {
-  const undoDir = join(AGON_HOME, 'undo');
+  const undoDir = getUndoDir();
   const inversePath = join(undoDir, `${undoToken}.patch`);
   
   let inverse: string;

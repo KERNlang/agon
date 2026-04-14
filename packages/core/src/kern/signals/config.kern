@@ -1,13 +1,26 @@
 import from="node:fs" names="readFileSync,writeFileSync,mkdirSync,renameSync,readdirSync,statSync,rmSync"
-import from="node:path" names="join,dirname"
+import from="node:path" names="join,dirname,resolve"
 import from="node:os" names="homedir"
 import from="../models/types.js" names="AgonConfig" types=true
 import from="../models/types.js" names="DEFAULT_AGON_CONFIG"
 import from="../models/errors.js" names="ConfigError"
 
+fn name=getAgonHome returns=string
+  doc "Resolve Agon's storage root at runtime. AGON_HOME overrides ~/.agon and is primarily used for test isolation and sandbox-safe runs."
+  handler <<<
+    const override = process.env.AGON_HOME?.trim();
+    return override ? resolve(override) : join(homedir(), '.agon');
+  >>>
+
+fn name=agonPath params="...parts:string[]" returns=string
+  doc "Build a path inside the active Agon storage root."
+  handler <<<
+    return join(getAgonHome(), ...parts);
+  >>>
+
 const name=AGON_HOME type=string
   handler <<<
-    join(homedir(), '.agon')
+    getAgonHome()
   >>>
 
 const name=GLOBAL_CONFIG_PATH type=string
@@ -140,7 +153,7 @@ fn name=pruneRuns returns=void
 
 fn name=ensureAgonHome returns=void
   handler <<<
-    mkdirSync(AGON_HOME, { recursive: true });
-    mkdirSync(RUNS_DIR, { recursive: true });
+    mkdirSync(getAgonHome(), { recursive: true });
+    mkdirSync(agonPath('runs'), { recursive: true });
     pruneRuns();
   >>>

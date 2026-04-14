@@ -6,9 +6,11 @@ import { mkdirSync } from 'node:fs';
 
 import type { ForgeOptions, ForgeManifest, EngineAdapter, ForgeEvent, AgonConfig, DispatchMetric } from '@agon/core';
 
-import { EngineRegistry, loadConfig, buildForgePrompt, repoRoot, headSha, worktreeRemove, updateGlickoRanked, classifyTask, createSidechainLogger, assignForgeRoles, buildSpecializedPrompt, recordForgeOutcome, tracker } from '@agon/core';
+import { EngineRegistry, loadConfig, buildForgePrompt, repoRoot, headSha, worktreeRemoveBestEffort, updateGlickoRanked, classifyTask, createSidechainLogger, assignForgeRoles, buildSpecializedPrompt, recordForgeOutcome, tracker } from '@agon/core';
 
-import { runBaseline, runStage1, runStage2, runStage2WithPeek, determineWinner } from './stages.js';
+import { runBaseline, runStage1, runStage2, runStage2WithPeek } from './stages.js';
+
+import { determineWinner } from '@agon/core';
 
 import { runSynthesis } from './synthesis.js';
 
@@ -335,7 +337,7 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
     return manifest;
   } finally {
     for (const wt of worktrees) {
-      worktreeRemove(wt.repoRoot, wt.path);
+      worktreeRemoveBestEffort(wt.repoRoot, wt.path);
     }
   }
 }

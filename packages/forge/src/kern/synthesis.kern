@@ -1,6 +1,6 @@
 import from="node:fs" names="readFileSync,existsSync"
 import from="@agon/core" names="EngineAdapter,EngineResult,ForgeManifest,Critique,StageContext" types=true
-import from="@agon/core" names="EngineRegistry,FitnessError,buildCritiquePrompt,buildSynthesisPrompt,worktreeCreate,worktreeRemove,applyPatch,buildStageContext,renderStageContext"
+import from="@agon/core" names="EngineRegistry,FitnessError,buildCritiquePrompt,buildSynthesisPrompt,worktreeCreate,worktreeRemoveBestEffort,applyPatch,buildStageContext,renderStageContext"
 import from="./fitness.js" names="runFitness"
 import from="../types.js" names="SynthesisResult,ForgeEventCallback" types=true
 
@@ -181,6 +181,6 @@ fn name=runSynthesis async=true params="opts:{manifest:ForgeManifest, winner:str
         critiques: allCritiques,
       };
     } finally {
-      worktreeRemove(opts.repoRoot, synthWtPath);
+      worktreeRemoveBestEffort(opts.repoRoot, synthWtPath);
     }
   >>>

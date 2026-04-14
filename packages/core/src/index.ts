@@ -6,7 +6,9 @@ export { updateGlicko, updateGlickoRanked, getRatings, getEngineGlickoRating, ad
 export { classifyTask } from './task-classifier.js';
 export {
   repoRoot, headSha, worktreePrune, worktreeCreate, worktreeRemove,
-  worktreeDiff, readOnlyDiff, diffLineCount, diffFileCount, applyPatch, recentCommits,
+  worktreeRemoveBestEffort, worktreePruneAll, stashSnapshot,
+  worktreeDiff, worktreeChangedDiff, worktreeChangedShortstat,
+  readOnlyDiff, diffLineCount, diffFileCount, applyPatch, recentCommits,
   currentBranch, isDirty,
   gitStatusShort, gitDiffStat, gitChangedFiles, gitTruncatedDiff,
 } from './git.js';
@@ -78,7 +80,7 @@ export type { ToolResult, ToolContext, ToolHandler, ToolDefinition, ToolCall, To
 export { FileStateCache, fileStateCache } from './file-state-cache.js';
 export { ToolRegistry, executeToolCall, executeToolCalls } from './tool-registry.js';
 export { checkBashPermission, checkFileReadPermission, checkFileWritePermission, isDangerousCommand, isReadOnlyCommand, isPathUnderCwd } from './tool-permissions.js';
-export { createReadTool, createEditTool, createWriteTool, createBashTool, createGrepTool, createGlobTool, createForgeTool, createBrainstormTool, createTribunalTool, createCampfireTool, createReportConfidenceTool, createDelegateTool, createPipelineTool, createReviewTool, createProposePlanTool, createListPlansTool, createRetrieveResultTool } from './tools.js';
+export { createReadTool, createEditTool, createWriteTool, createBashTool, createGrepTool, createGlobTool, createForgeTool, createBrainstormTool, createTribunalTool, createCampfireTool, createReportConfidenceTool, createDelegateTool, createPipelineTool, createReviewTool, createAgentTool, createProposePlanTool, createListPlansTool, createRetrieveResultTool } from './tools.js';
 export { formatCesarPlanMarkdown } from './generated/cesar/plan-formatter.js';
 export { generateToolPrompt, toolsToOpenAIFormat } from './generated/tools/tool-prompt.js';
 export { parseToolCalls, toolCallsToApiFormat, formatToolResults, formatToolResult } from './generated/tools/tool-parser.js';
@@ -124,6 +126,23 @@ export { AgentSession, makeBudgetError } from './generated/cesar/agent-session.j
 export type {
   AgentBudget, AgentStepResult, AgentSessionStats, AgentSessionConfig,
 } from './generated/cesar/agent-session.js';
+export {
+  AgentTeam, makeAgentTeamError, makeAgentTeamDisposedError,
+} from './generated/cesar/agent-team.js';
+export type {
+  AgentTeamConfig, AgentTeamMemberConfig, AgentTeamMemberResult, AgentTeamResult,
+  AgentTeamBudget,
+} from './generated/cesar/agent-team.js';
+export {
+  determineWinner, scoreAgentTeamResult,
+} from './generated/cesar/synthesis-utils.js';
+export {
+  tokensToCost, estimatedTokensToCost, getEnginePricing,
+} from './generated/blocks/pricing.js';
+export type { PricingEntry } from './generated/blocks/pricing.js';
+export {
+  Semaphore, isHeavyTool,
+} from './generated/blocks/semaphore.js';
 export {
   createAgentState, beginTurn, completeTurn, requestApproval, approveTool, rejectTool,
   cancelAgent, failAgent, completeAgent, checkBudget, isTerminal,

@@ -8,7 +8,7 @@ import from="../../code-buffer.js" names="codeBlockBuffer"
 import from="@agon/core" names="loadConfig,configSet"
 
 interface name=AgentProgressSnapshot
-  doc "Live state for a running autonomous agent session. Fed by agent-* OutputEvents, rendered by surfaces/agent.kern::AgentProgressView."
+  doc "Live state for a running autonomous agent session. Fed by agent-* OutputEvents, rendered by surfaces/agent.kern::AgentProgressView. teamId groups members of a single AgentTeam run for explicit clear-by-team. completedAt is set by agent-step-end and consumed by the TTL pruner in app.kern."
   field name=engineId type=string
   field name=turnIndex type=number
   field name=phase type="'running'|'awaiting_approval'|'completed'|'failed'|'cancelled'"
@@ -24,17 +24,25 @@ interface name=AgentProgressSnapshot
   field name=tokensRemaining type="number|null" optional=true
   field name=maxTokens type="number|null" optional=true
   field name=error type=string optional=true
+  field name=teamId type=string optional=true
+  field name=completedAt type=number optional=true
+
+interface name=StreamingEntry
+  doc "Per-engine streaming buffer. Sharding on engineId prevents N concurrent agents from clobbering each other's in-flight tokens."
+  field name=engineId type=string
+  field name=content type=string
+  field name=startedAt type=number
 
 interface name=OutputState
   field name=liveSpinner type="{message:string,color?:number,engineId?:string}|null"
   field name=liveProgress type="EngineProgress[]|null"
-  field name=streamingText type="{engineId:string,content:string}|null"
-  field name=agentProgress type="AgentProgressSnapshot|null"
+  field name=streamingText type="Record<string,StreamingEntry>"
+  field name=agentProgress type="Record<string,AgentProgressSnapshot>"
 
 interface name=OutputActions
   field name=setLiveSpinner type="(val:any) => void"
   field name=setLiveProgress type="(val:EngineProgress[]|null) => void"
-  field name=setStreamingText type="(val:{engineId:string,content:string}|null) => void"
+  field name=setStreamingText type="(updater:Record<string,StreamingEntry> | ((prev:Record<string,StreamingEntry>) => Record<string,StreamingEntry>)) => void"
   field name=addBlock type="(event:OutputEvent) => void"
   field name=replaceBlocksOfType type="(eventType:string, event:OutputEvent) => void"
   field name=clearBlocks type="() => void"
@@ -44,7 +52,8 @@ interface name=OutputActions
   field name=flushStream type="() => void"
   field name=getEngineColor type="(engineId:string) => number"
   field name=setCesarConfidence type="(val:number|null) => void"
-  field name=setAgentProgress type="(val:AgentProgressSnapshot|null) => void"
+  field name=setAgentProgress type="(updater:Record<string,AgentProgressSnapshot> | ((prev:Record<string,AgentProgressSnapshot>) => Record<string,AgentProgressSnapshot>)) => void"
+  field name=clearAgentProgressByTeam type="(teamId:string) => void"
 
 // ── Thinking buffer — coalesces thinking-chunk events into a single block ────
 const name=_thinkingBuffer type="{engineId:string,content:string}"
@@ -179,20 +188,36 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
         return;
       }
       case 'streaming-chunk': {
-        const prev = state.streamingText;
-        if (prev && prev.engineId === event.engineId) {
-          actions.setStreamingText({ engineId: event.engineId, content: prev.content + event.chunk });
-        } else {
-          actions.setStreamingText({ engineId: event.engineId, content: event.chunk });
-        }
+        // Functional setter form: read-modify-write happens atomically inside the
+        // action setter, so concurrent dispatches from N engines don't clobber each
+        // other's buffers (RT-7 fix). Each engine owns its own keyed entry.
+        const eid = event.engineId;
+        const chunk = event.chunk;
+        actions.setStreamingText((prev) => {
+          const existing = prev[eid];
+          return {
+            ...prev,
+            [eid]: {
+              engineId: eid,
+              content: existing ? existing.content + chunk : chunk,
+              startedAt: existing ? existing.startedAt : Date.now(),
+            },
+          };
+        });
         return;
       }
       case 'streaming-end': {
-        const st = state.streamingText;
+        const eid = event.engineId;
+        const st = state.streamingText[eid];
         if (st) {
           const color = actions.getEngineColor(st.engineId);
           const cleaned = cleanEngineOutput(st.content);
-          actions.setStreamingText(null);
+          // Remove only this engine's entry; other engines' in-flight streams stay.
+          actions.setStreamingText((prev) => {
+            const next: Record<string, StreamingEntry> = { ...prev };
+            delete next[eid];
+            return next;
+          });
           if (cleaned.trim()) {
             const segments = parseMarkdownBlocks(cleaned);
             codeBlockBuffer.recordFromSegments(segments);
@@ -206,7 +231,8 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
       }
       case 'clear':
         actions.clearBlocks();
-        actions.setStreamingText(null);
+        actions.setStreamingText({});
+        actions.setAgentProgress({});
         codeBlockBuffer.clear();
         _thinkingBuffer.engineId = '';
         _thinkingBuffer.content = '';
@@ -259,89 +285,127 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
         return;
       }
       case 'agent-step-start': {
+        // Functional setter: atomic Read-Modify-Write at the ref level (RT-6 fix).
+        // Concurrent dispatches from N engines all see the latest state via the
+        // updater closure rather than capturing stale refs.
         const e = event as any;
-        actions.setAgentProgress({
-          engineId: e.engineId,
-          turnIndex: e.turnIndex,
-          phase: 'running',
-          userPrompt: e.userPrompt,
-          toolCalls: 0,
-          tokensUsed: 0,
-          elapsedMs: 0,
-          startedAt: Date.now(),
-          turnsRemaining: e.maxTurns,
-          maxTurns: e.maxTurns,
-          tokensRemaining: e.maxTokens ?? null,
-          maxTokens: e.maxTokens ?? null,
-        });
+        const eid = e.engineId as string;
+        actions.setAgentProgress((prev) => ({
+          ...prev,
+          [eid]: {
+            engineId: eid,
+            turnIndex: e.turnIndex,
+            phase: 'running',
+            userPrompt: e.userPrompt,
+            toolCalls: 0,
+            tokensUsed: 0,
+            elapsedMs: 0,
+            startedAt: Date.now(),
+            turnsRemaining: e.maxTurns,
+            maxTurns: e.maxTurns,
+            tokensRemaining: e.maxTokens ?? null,
+            maxTokens: e.maxTokens ?? null,
+            teamId: e.teamId,
+          },
+        }));
         return;
       }
       case 'agent-step-end': {
         const e = event as any;
-        const prev = state.agentProgress;
-        if (prev) {
-          actions.setAgentProgress({
+        const eid = e.engineId as string;
+        actions.setAgentProgress((prev) => {
+          const existing = prev[eid];
+          if (!existing) return prev;
+          return {
             ...prev,
-            phase: e.outcome, // 'completed'|'cancelled'|'failed'
-            toolCalls: e.toolCalls,
-            tokensUsed: e.tokensUsed,
-            elapsedMs: Date.now() - prev.startedAt,
-            error: e.outcome !== 'completed' ? e.stopReason : undefined,
-          });
-        }
-        // Also keep a permanent transcript record.
+            [eid]: {
+              ...existing,
+              phase: e.outcome,
+              toolCalls: e.toolCalls,
+              tokensUsed: e.tokensUsed,
+              elapsedMs: Date.now() - existing.startedAt,
+              error: e.outcome !== 'completed' ? e.stopReason : undefined,
+              completedAt: Date.now(),
+            },
+          };
+        });
         actions.addBlock(event);
         return;
       }
       case 'agent-turn-summary': {
         const e = event as any;
-        const prev = state.agentProgress;
-        if (prev) {
-          actions.setAgentProgress({
+        const eid = e.engineId as string;
+        actions.setAgentProgress((prev) => {
+          const existing = prev[eid];
+          if (!existing) return prev;
+          return {
             ...prev,
-            toolCalls: e.cumulativeToolCalls,
-            tokensUsed: e.cumulativeTokens,
-            elapsedMs: e.elapsedMs,
-            turnsRemaining: e.turnsRemaining,
-          });
-        }
+            [eid]: {
+              ...existing,
+              toolCalls: e.cumulativeToolCalls,
+              tokensUsed: e.cumulativeTokens,
+              elapsedMs: e.elapsedMs,
+              turnsRemaining: e.turnsRemaining,
+            },
+          };
+        });
+        return;
+      }
+      case 'agent-team-start': {
+        const e = event as any;
+        const engineList = (e.engineIds as string[]).join(', ');
+        actions.addBlock({ type: 'engine-block', engineId: 'cesar', color: 0x9333ea, content: `\u{1F680} Agent team started \u2014 ${e.engineIds.length} engines (${engineList}) on: "${(e.task as string).slice(0, 80)}"` } as any);
+        return;
+      }
+      case 'agent-team-complete': {
+        const e = event as any;
+        const memberSummary = (e.memberOutcomes as Array<{engineId:string,outcome:string,diffLines:number,passedFitness:boolean}>)
+          .map((o) => `${o.engineId}: ${o.outcome}${o.outcome === 'completed' ? ` (${o.diffLines} lines, ${o.passedFitness ? '\u2713' : '\u2717'} fitness)` : ''}`)
+          .join('\n  ');
+        const cost = (e.teamCostUsd as number).toFixed(2);
+        const dur = ((e.teamDurationMs as number) / 1000).toFixed(0);
+        actions.addBlock({ type: 'engine-block', engineId: 'cesar', color: 0x9333ea, content: `\u{1F3C1} Agent team complete \u2014 winner: ${e.winner ?? 'none'} | $${cost} | ${dur}s\n  ${memberSummary}` } as any);
+        // RT-15: explicit "team is done, wipe its panels" path. Faster than waiting for the TTL pruner.
+        actions.clearAgentProgressByTeam(e.teamId as string);
         return;
       }
       case 'agent-budget-warning': {
         const e = event as any;
-        const prev = state.agentProgress;
-        if (prev) {
-          const next = { ...prev } as AgentProgressSnapshot;
-          if (e.kind === 'turns') {
-            next.turnsRemaining = e.remaining;
-          } else if (e.kind === 'tokens') {
-            next.tokensRemaining = e.remaining;
-          }
-          actions.setAgentProgress(next);
-        }
-        // Surface the warning in the transcript too so it's visible after the session ends.
+        const eid = e.engineId as string;
+        actions.setAgentProgress((prev) => {
+          const existing = prev[eid];
+          if (!existing) return prev;
+          const next: AgentProgressSnapshot = { ...existing };
+          if (e.kind === 'turns') next.turnsRemaining = e.remaining;
+          else if (e.kind === 'tokens') next.tokensRemaining = e.remaining;
+          return { ...prev, [eid]: next };
+        });
         actions.addBlock({ type: 'warning', message: `Agent ${e.kind} budget: ${e.remaining}/${e.limit} remaining` } as any);
         return;
       }
       case 'tool-call': {
-        // If an agent session is active, mirror the tool call into the live
-        // progress snapshot — so AgentProgressView can show the current activity.
-        const prev = state.agentProgress;
-        if (prev) {
-          const te = event as any;
+        // Mirror tool-call into the live progress snapshot for the relevant engine
+        // (only if that engine has an active agent session — non-agent tool calls pass through).
+        const te = event as any;
+        const eid = te.engineId as string;
+        actions.setAgentProgress((prev) => {
+          const existing = prev[eid];
+          if (!existing) return prev;
           const mappedStatus: 'running'|'ok'|'error'|'rejected' =
             te.status === 'done' ? 'ok'
             : te.status === 'error' ? 'error'
             : 'running';
           const displayInput = te.input ? (te.input.length > 30 ? te.input.slice(0, 27) + '\u2026' : te.input) : '';
-          actions.setAgentProgress({
+          return {
             ...prev,
-            lastTool: displayInput ? `${te.tool}(${displayInput})` : te.tool,
-            lastToolStatus: mappedStatus,
-            toolCalls: mappedStatus === 'ok' ? prev.toolCalls + 1 : prev.toolCalls,
-          });
-        }
-        // Always add to transcript for history.
+            [eid]: {
+              ...existing,
+              lastTool: displayInput ? `${te.tool}(${displayInput})` : te.tool,
+              lastToolStatus: mappedStatus,
+              toolCalls: mappedStatus === 'ok' ? existing.toolCalls + 1 : existing.toolCalls,
+            },
+          };
+        });
         actions.addBlock(event);
         return;
       }

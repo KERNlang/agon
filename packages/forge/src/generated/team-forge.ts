@@ -8,7 +8,7 @@ import type { ForgeOptions, EngineAdapter, EngineResult, ForgeEvent, TaskClass }
 
 import type { TeamSpec, TeamFormat, TeamComposeMode, TeamMember, TeamRoundTrace, TeamSubmission, TeamScoreCard, TeamMatchResult, TeamEvent } from '@agon/core';
 
-import { EngineRegistry, loadConfig, buildForgePrompt, repoRoot, headSha, worktreeCreate, worktreeRemove, classifyTask, createSidechainLogger, composeTeams, makeFormat, computeContributionWeights } from '@agon/core';
+import { EngineRegistry, loadConfig, buildForgePrompt, repoRoot, headSha, worktreeCreate, worktreeRemoveBestEffort, classifyTask, createSidechainLogger, composeTeams, makeFormat, computeContributionWeights } from '@agon/core';
 
 import { updateTeamElo } from '@agon/core';
 
@@ -359,7 +359,7 @@ export async function runTeamForge(options: TeamForgeOptions, registry: EngineRe
     return matchResult;
   } finally {
     for (const wt of worktrees) {
-      worktreeRemove(wt.repoRoot, wt.path);
+      worktreeRemoveBestEffort(wt.repoRoot, wt.path);
     }
   }
 }

@@ -29,24 +29,31 @@ import { buildRoutingContext } from './routing.js';
 export const yieldToInk: () => Promise<void> = () => new Promise<void>(resolve => setImmediate(resolve));
 
 export function extractDelegation(toolName: string, args: Record<string,unknown>): PendingDelegation {
+  const argsRecord = args as Record<string, unknown>;
+  const taskKindRaw = argsRecord.taskKind;
+  const enginesRaw = argsRecord.engines;
   return {
     action: toolName.toLowerCase(),
-    reasoning: (args as any)?.task ?? (args as any)?.question ?? (args as any)?.topic ?? (args as any)?.target ?? '',
-    fitnessCmd: typeof (args as any)?.fitnessCmd === 'string'
-      ? (args as any).fitnessCmd
-      : typeof (args as any)?.fitness === 'string'
-        ? (args as any).fitness
+    reasoning: (argsRecord.task ?? argsRecord.question ?? argsRecord.topic ?? argsRecord.target ?? '') as string,
+    fitnessCmd: typeof argsRecord.fitnessCmd === 'string'
+      ? (argsRecord.fitnessCmd as string)
+      : typeof argsRecord.fitness === 'string'
+        ? (argsRecord.fitness as string)
         : undefined,
-    hardened: (args as any)?.hardened ?? false,
-    tribunalMode: (args as any)?.mode,
-    team: (args as any)?.team ?? false,
-    target: (args as any)?.target,
-    engineId: (args as any)?.engine,
+    hardened: (argsRecord.hardened as boolean) ?? false,
+    tribunalMode: argsRecord.mode as string | undefined,
+    team: (argsRecord.team as boolean) ?? false,
+    target: argsRecord.target as string | undefined,
+    engineId: argsRecord.engine as string | undefined,
+    // Phase 4: Agent tool args
+    engines: Array.isArray(enginesRaw) ? (enginesRaw as string[]) : undefined,
+    taskKind: (taskKindRaw === 'investigate' ? 'investigate' : (taskKindRaw === 'edit' ? 'edit' : undefined)) as 'edit' | 'investigate' | undefined,
+    maxTurns: typeof argsRecord.maxTurns === 'number' ? (argsRecord.maxTurns as number) : undefined,
     createdAt: Date.now(),
   };
 }
 
-export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input: string, response: string, cesarEngineId: string, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, fitnessCmd?:string, hardened?:boolean, tribunalMode?:string, team?:boolean, target?:string, engineId?:string}> {
+export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input: string, response: string, cesarEngineId: string, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, fitnessCmd?:string, hardened?:boolean, tribunalMode?:string, team?:boolean, target?:string, engineId?:string, engines?:string[], taskKind?:'edit'|'investigate', maxTurns?:number}> {
   if (streaming) dispatch({ type: 'streaming-end', engineId: cesarEngineId });
   if (!streaming) dispatch({ type: 'spinner-stop' });
   await yieldToInk();
@@ -58,7 +65,7 @@ export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input
     const finalAction = delResult.action ?? pendingDel.action;
     const action = pendingDel.team ? `team-${finalAction}` : finalAction;
     const reasoning = delResult.userContext ? `${pendingDel.reasoning ?? ''}\n\nUser context: ${delResult.userContext}` : pendingDel.reasoning;
-    return { delegated: true, responded: true, action, reasoning, fitnessCmd: pendingDel.fitnessCmd, hardened: delResult.hardened ?? pendingDel.hardened, tribunalMode: delResult.tribunalMode ?? pendingDel.tribunalMode, team: delResult.team ?? pendingDel.team, target: pendingDel.target, engineId: pendingDel.engineId };
+    return { delegated: true, responded: true, action, reasoning, fitnessCmd: pendingDel.fitnessCmd, hardened: delResult.hardened ?? pendingDel.hardened, tribunalMode: delResult.tribunalMode ?? pendingDel.tribunalMode, team: delResult.team ?? pendingDel.team, target: pendingDel.target, engineId: pendingDel.engineId, engines: pendingDel.engines, taskKind: pendingDel.taskKind, maxTurns: pendingDel.maxTurns };
   }
   return { delegated: false, responded: true };
 }
@@ -80,7 +87,7 @@ export async function commitTurnAndSuggest(suggestion: {action:string, rest?:str
   return { delegated: false, responded: true };
 }
 
-export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, fitnessCmd?:string, hardened?:boolean, tribunalMode?:string, team?:boolean, target?:string, engineId?:string}> {
+export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string, fitnessCmd?:string, hardened?:boolean, tribunalMode?:string, team?:boolean, target?:string, engineId?:string, engines?:string[], taskKind?:'edit'|'investigate', maxTurns?:number}> {
   const abort = new AbortController();
   const _turnStart = Date.now();
   const _toolsUsed: string[] = [];
@@ -286,14 +293,30 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           } else if (toolStatus === 'native') {
             dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'running' } as any);
           } else if (toolStatus === 'running' && meta.input && toolRegistry && !ctx.cesar!.hasNativeTools) {
-            // Intercept orchestration signal tools — don't execute as workspace tools
-            const EAGER_ORCH = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review']);
+            // Codex review fix (P2): after orchestration delegation has been
+            // set, suppress ALL subsequent tool calls in the same stream — not
+            // just orchestration ones. Otherwise the model can emit a Read or
+            // Edit AFTER calling Agent and that tool runs in the current
+            // workspace before the delegated job starts, racing the agents'
+            // worktrees and triggering permission prompts.
+            if (ctx.cesar!.pendingDelegation) {
+              dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'done' } as any);
+              continue;
+            }
+            // Intercept orchestration signal tools — don't execute as workspace tools.
+            // 'Agent' is in the set; without it the Agent tool falls through to executeEagerTool
+            // which calls the noop handler and silently no-ops (PFB-1, RT-1).
+            const EAGER_ORCH = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent']);
             if (EAGER_ORCH.has(toolName)) {
               ctx.cesar!.pendingDelegation = extractDelegation(toolName, (meta.input ?? {}) as Record<string, unknown>);
               ctx.eventBus?.emit('cesar:delegation', { action: toolName.toLowerCase(), source: 'stream' }).catch(() => {});
               dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'done' } as any);
-              // Break stream immediately — Cesar must stop after delegation (RULE 6)
-              break;
+              // RT-24: do NOT break the stream. Let it drain naturally so the model can
+              // emit any post-tool-call narration (the "I'm delegating because..." hand-off
+              // context). The dedup-and-suppress guard above gates ALL further tool calls
+              // in this stream (orch and non-orch), preventing workspace edits that would
+              // race the delegated job.
+              continue;
             }
             dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'running' } as any);
             if (!eagerToolCtx) eagerToolCtx = createEagerToolContext(ctx, config, abort.signal, dispatch);
@@ -602,10 +625,15 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               _lastToolInputs[name] = JSON.stringify(inp);
               _toolsUsed.push(name);
               dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: name, input: JSON.stringify(inp), status: 'running' });
-              // Intercept orchestration signal tools — set _pendingDelegation
-              const LOOP_ORCH = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review']);
+              // Intercept orchestration signal tools — set _pendingDelegation.
+              // 'Agent' is in the set so Cesar can spawn autonomous parallel agents
+              // from a chat turn without requiring the user to type /agent (PFB-1, RT-1).
+              const LOOP_ORCH = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent']);
               if (LOOP_ORCH.has(name)) {
-                ctx.cesar!.pendingDelegation = extractDelegation(name, (inp as Record<string, unknown>) ?? {});
+                // Per-turn dedup guard (RT-13): first delegation wins.
+                if (!ctx.cesar!.pendingDelegation) {
+                  ctx.cesar!.pendingDelegation = extractDelegation(name, (inp as Record<string, unknown>) ?? {});
+                }
               }
               // Stash ProposePlan args for onToolResult to wire up
               if (name === 'ProposePlan') {

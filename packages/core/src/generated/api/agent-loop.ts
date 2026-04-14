@@ -8,6 +8,8 @@ import type { ToolHandler, ToolContext, ToolResult, ToolDefinition } from '../mo
 
 import { ToolRegistry, executeToolCall } from '../signals/tool-registry.js';
 
+import { Semaphore, isHeavyTool } from '../blocks/semaphore.js';
+
 import { toolsToOpenAIFormat } from '../tools/tool-prompt.js';
 
 import { buildToolSystemPrompt } from '../tools/tool-loop.js';
@@ -44,6 +46,7 @@ export interface ApiAgentOptions {
   maxSteps?: number;
   onChunk?: (text:string)=>void;
   onToolCall?: (name:string,args:Record<string,unknown>)=>void;
+  heavyToolSemaphore?: Semaphore;
 }
 
 export interface ApiAgentResult {
@@ -225,16 +228,48 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
   
         if (opts.onToolCall) opts.onToolCall(tc.name, args);
   
+        // RT-26 fix (Gemini code review): heavy-tool semaphore. When N
+        // parallel agent sessions are running in N worktrees, we serialize
+        // disk-/CPU-heavy commands (npm test, tsc, cargo build) across the
+        // team so 3 simultaneous npm-install runs don't saturate I/O and
+        // cause false-positive budget timeouts. The semaphore is shared
+        // across all members of an AgentTeam (created once in initialize)
+        // and passed via opts.heavyToolSemaphore. Solo /agent runs leave
+        // it undefined → no semaphore overhead.
+        const isHeavyBash = opts.heavyToolSemaphore != null
+          && tc.name === 'Bash'
+          && typeof args.command === 'string'
+          && isHeavyTool(args.command);
+  
         let result: string;
-        try {
-          const callResult = await executeToolCall(
-            { id: tc.id, name: tc.name, input: args },
-            toolCtx,
-            registry,
-          );
-          result = callResult.result.ok ? callResult.result.content : (callResult.result.error ?? 'Tool execution failed');
-        } catch (err: any) {
-          result = `Error: ${err.message ?? String(err)}`;
+        const runToolCall = async () => {
+          try {
+            const callResult = await executeToolCall(
+              { id: tc.id, name: tc.name, input: args },
+              toolCtx,
+              registry,
+            );
+            return callResult.result.ok ? callResult.result.content : (callResult.result.error ?? 'Tool execution failed');
+          } catch (err: any) {
+            return `Error: ${err.message ?? String(err)}`;
+          }
+        };
+  
+        if (isHeavyBash && opts.heavyToolSemaphore) {
+          // OpenCode review fix: pass opts.signal so a cancelled session
+          // wakes up its waiter from the semaphore queue and rejects it
+          // rather than running the heavy tool after the user hit Ctrl-C.
+          try {
+            result = (await opts.heavyToolSemaphore.runWith(runToolCall, opts.signal)) as string;
+          } catch (err: any) {
+            if (err?.name === 'AbortError') {
+              result = `Tool execution cancelled while waiting for heavy-tool semaphore`;
+            } else {
+              throw err;
+            }
+          }
+        } else {
+          result = await runToolCall();
         }
   
         let histContent = result;

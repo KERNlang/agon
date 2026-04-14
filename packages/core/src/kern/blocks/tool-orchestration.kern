@@ -291,6 +291,58 @@ fn name=createReviewTool returns=ToolHandler
     return { definition, validate, checkPermission, execute };
   >>>
 
+fn name=createAgentTool returns=ToolHandler
+  doc "Signal tool — delegates to the autonomous agent loop. Solo mode runs one engine in an autonomous tool-use loop. team:true mode spawns multiple parallel AgentSession instances in isolated worktrees and synthesizes the best result. Choose taskKind:edit for code changes (gets a typecheck-or-fail fitness gate) or taskKind:investigate for analysis tasks (no diff scoring). Always set taskKind explicitly. After calling, STOP and wait."
+  handler <<<
+    const definition: ToolDefinition = {
+      name: 'Agent',
+      description: 'Run an autonomous agent that takes multi-step actions on the codebase. Use for tasks that require open-ended exploration with tools (read/edit/grep/bash) over multiple turns. Set team:true and provide engines to fan out across multiple engines in parallel worktrees and synthesize the best result. Always set taskKind: "edit" for code-change tasks (gets a typecheck-or-fail fitness gate) or "investigate" for analysis tasks (audit, tracing, root-cause hunts that produce text reports, not patches). After calling, STOP and wait.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          task: { type: 'string', description: 'The task for the agent to perform. Be specific.' },
+          team: { type: 'boolean', description: 'If true, run multiple engines in parallel worktrees and synthesize. Default false (single agent).' },
+          engines: { type: 'array', items: { type: 'string' }, description: 'Engine IDs to use when team:true. Omit for auto-selection of all available API engines (capped at 3 by default).' },
+          taskKind: { type: 'string', description: 'Either "edit" (code-change task with diff scoring + fitness gate) or "investigate" (analysis task with text-output scoring). Default "edit".' },
+          maxTurns: { type: 'number', description: 'Optional turn budget per engine. Defaults to project default.' },
+        },
+        required: ['task'],
+      },
+      maxResultSizeChars: 500,
+      isReadOnly: false,
+      isConcurrencySafe: false,
+    };
+
+    const validate = (input: Record<string, unknown>, _ctx: ToolContext): string | null => {
+      if (!input.task || typeof input.task !== 'string' || !(input.task as string).trim()) {
+        return 'Missing required parameter: task';
+      }
+      if (input.taskKind !== undefined) {
+        const valid = ['edit', 'investigate'];
+        if (!valid.includes(input.taskKind as string)) {
+          return `Invalid taskKind: ${input.taskKind}. Must be one of: ${valid.join(', ')}`;
+        }
+      }
+      if (input.engines !== undefined && !Array.isArray(input.engines)) {
+        return 'engines must be an array of engine IDs (string[])';
+      }
+      return null;
+    };
+
+    const checkPermission = (_input: Record<string, unknown>, _ctx: ToolContext): PermissionDecision => {
+      return { behavior: 'allow' };
+    };
+
+    // Actual execution is intercepted by brain.kern's EAGER_ORCH/LOOP_ORCH gate
+    // (PFB-1) and routed via dispatch.kern → runAgentMode / runAgentTeam.
+    // This execute is a fallback that should never run in practice.
+    const execute = async (_input: Record<string, unknown>, _ctx: ToolContext): Promise<ToolResult> => {
+      return { ok: true, content: 'Delegation accepted. STOP responding now. The orchestrator will handle the rest.' };
+    };
+
+    return { definition, validate, checkPermission, execute };
+  >>>
+
 fn name=createPipelineTool returns=ToolHandler
   doc "Signal tool — delegates to full pipeline (brainstorm → forge → tribunal)."
   handler <<<

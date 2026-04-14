@@ -6,7 +6,7 @@ import from="node:crypto" names="randomUUID"
 import from="node:fs" names="mkdirSync"
 import from="@agon/core" names="ForgeOptions,EngineAdapter,EngineResult,ForgeEvent,TaskClass" types=true
 import from="@agon/core" names="TeamSpec,TeamFormat,TeamComposeMode,TeamMember,TeamRoundTrace,TeamSubmission,TeamScoreCard,TeamMatchResult,TeamEvent" types=true
-import from="@agon/core" names="EngineRegistry,loadConfig,buildForgePrompt,repoRoot,headSha,worktreeCreate,worktreeRemove,classifyTask,createSidechainLogger,composeTeams,makeFormat,computeContributionWeights"
+import from="@agon/core" names="EngineRegistry,loadConfig,buildForgePrompt,repoRoot,headSha,worktreeCreate,worktreeRemoveBestEffort,classifyTask,createSidechainLogger,composeTeams,makeFormat,computeContributionWeights"
 import from="@agon/core" names="updateTeamElo"
 import from="./fitness.js" names="runFitness"
 import from="../types.js" names="WorktreeEntry" types=true
@@ -355,7 +355,7 @@ fn name=runTeamForge async=true params="options:TeamForgeOptions, registry:Engin
       return matchResult;
     } finally {
       for (const wt of worktrees) {
-        worktreeRemove(wt.repoRoot, wt.path);
+        worktreeRemoveBestEffort(wt.repoRoot, wt.path);
       }
     }
   >>>

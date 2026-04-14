@@ -113,13 +113,6 @@ union name=OutputEvent discriminant=type
     field name=totalForges type=number
     field name=workspace type="{ name: string; path: string; isKern?: boolean }" optional=true
     field name=runCount type=number
-  variant name=agent-step-start
-    field name=engineId type=string
-    field name=turnIndex type=number
-    field name=userPrompt type=string
-    field name=maxTurns type=number
-    field name=maxDurationMs type=number
-    field name=maxTokens type="number|null" optional=true
   variant name=agent-step-end
     field name=engineId type=string
     field name=turnIndex type=number
@@ -140,6 +133,27 @@ union name=OutputEvent discriminant=type
     field name=used type=number
     field name=limit type=number
     field name=remaining type=number
+  variant name=agent-step-start
+    field name=engineId type=string
+    field name=turnIndex type=number
+    field name=userPrompt type=string
+    field name=maxTurns type=number
+    field name=maxDurationMs type=number
+    field name=maxTokens type="number|null" optional=true
+    field name=teamId type=string optional=true
+  variant name=agent-team-start
+    field name=teamId type=string
+    field name=engineIds type="string[]"
+    field name=task type=string
+    field name=taskKind type="'edit'|'investigate'"
+  variant name=agent-team-complete
+    field name=teamId type=string
+    field name=winner type="string|null"
+    field name=synthesizedPatch type="string|null" optional=true
+    field name=synthesizedAnalysis type="string|null" optional=true
+    field name=memberOutcomes type="Array<{engineId:string,outcome:string,diffLines:number,passedFitness:boolean}>"
+    field name=teamCostUsd type=number
+    field name=teamDurationMs type=number
 
 interface name=PendingDelegation
   field name=action type=string
@@ -150,6 +164,9 @@ interface name=PendingDelegation
   field name=team type=boolean
   field name=target type=string optional=true
   field name=engineId type=string optional=true
+  field name=engines type="string[]" optional=true
+  field name=taskKind type="'edit'|'investigate'" optional=true
+  field name=maxTurns type=number optional=true
   field name=createdAt type=number
 
 interface name=CesarState

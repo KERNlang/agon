@@ -4,7 +4,7 @@ import { readFileSync, existsSync } from 'node:fs';
 
 import type { EngineAdapter, EngineResult, ForgeManifest, Critique, StageContext } from '@agon/core';
 
-import { EngineRegistry, FitnessError, buildCritiquePrompt, buildSynthesisPrompt, worktreeCreate, worktreeRemove, applyPatch, buildStageContext, renderStageContext } from '@agon/core';
+import { EngineRegistry, FitnessError, buildCritiquePrompt, buildSynthesisPrompt, worktreeCreate, worktreeRemoveBestEffort, applyPatch, buildStageContext, renderStageContext } from '@agon/core';
 
 import { runFitness } from './fitness.js';
 
@@ -185,6 +185,6 @@ export async function runSynthesis(opts: {manifest:ForgeManifest, winner:string,
       critiques: allCritiques,
     };
   } finally {
-    worktreeRemove(opts.repoRoot, synthWtPath);
+    worktreeRemoveBestEffort(opts.repoRoot, synthWtPath);
   }
 }

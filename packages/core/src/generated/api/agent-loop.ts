@@ -47,6 +47,8 @@ export interface ApiAgentOptions {
   onChunk?: (text:string)=>void;
   onToolCall?: (name:string,args:Record<string,unknown>)=>void;
   heavyToolSemaphore?: Semaphore;
+  historyMessages?: Array<Record<string,unknown>>;
+  onHistoryEntry?: (entry:Record<string,unknown>)=>void;
 }
 
 export interface ApiAgentResult {
@@ -144,11 +146,31 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
   systemParts.push(toolPrompt);
   const fullSystemPrompt = systemParts.join('\n\n');
   
-  // Build message history
-  const messageHistory: Array<{role: string, content: string}> = [
-    { role: 'system', content: fullSystemPrompt },
-    { role: 'user', content: opts.prompt },
-  ];
+  // Build message history. When historyMessages is provided (ContextThread
+  // integration), we seed from it rather than starting blank. The first
+  // entry must always be role:'system' with the current fullSystemPrompt
+  // (never trust a persisted system message — red-team finding 2). Then
+  // we append opts.prompt as the new user turn so the model sees both
+  // the prior conversation AND the new instruction.
+  const messageHistory: Array<Record<string,unknown>> = [];
+  messageHistory.push({ role: 'system', content: fullSystemPrompt });
+  
+  // Splice in prior history (skipping any persisted role:'system' entries —
+  // they were already filtered by ContextThread but we enforce again here).
+  if (opts.historyMessages && opts.historyMessages.length > 0) {
+    for (const m of opts.historyMessages) {
+      if (m && m.role !== 'system') messageHistory.push(m);
+    }
+  }
+  
+  // Current user turn.
+  messageHistory.push({ role: 'user', content: opts.prompt });
+  
+  // Helper: push to history and notify ContextThread listener.
+  const pushHistory = (entry: Record<string,unknown>) => {
+    messageHistory.push(entry);
+    if (opts.onHistoryEntry) opts.onHistoryEntry(entry);
+  };
   
   const MAX_STEPS = opts.maxSteps ?? 10;
   const totalDeadline = Date.now() + opts.timeout * 1000; // Total timeout for entire loop
@@ -167,7 +189,7 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
       return { response: finalResponse || '[Timeout — ran out of time]', toolCalls: totalToolCalls, steps: step };
     }
   
-    const gen = apiStreamDispatchWithHistory(opts.api, messageHistory, remaining, opts.signal, nativeTools);
+    const gen = apiStreamDispatchWithHistory(opts.api, messageHistory as any, remaining, opts.signal, nativeTools);
     try {
       while (true) {
         const { value, done } = await gen.next();
@@ -197,10 +219,10 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
   
     if (extractedCalls.length > 0) {
       const cleanText = fullResponse.replace(/<tool\s+name="[^"]+">[\s\S]*?<\/tool>/g, '').trim();
-      messageHistory.push({
+      pushHistory({
         role: 'assistant', content: cleanText || null,
         tool_calls: extractedCalls.map(tc => ({ id: tc.id, type: 'function', function: { name: tc.name, arguments: tc.arguments } })),
-      } as any);
+      });
   
       // Execute tools with repair for malformed args
       for (const tc of extractedCalls) {
@@ -214,7 +236,7 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
             args = repaired;
           } else {
             // Still broken — send error feedback to model instead of silently passing { raw: ... }
-            messageHistory.push({ role: 'tool', content: `Error: Malformed JSON arguments for tool "${tc.name}". Got: ${tc.arguments.slice(0, 200)}. Please retry with valid JSON.`, tool_call_id: tc.id } as any);
+            pushHistory({ role: 'tool', content: `Error: Malformed JSON arguments for tool "${tc.name}". Got: ${tc.arguments.slice(0, 200)}. Please retry with valid JSON.`, tool_call_id: tc.id });
             totalToolCalls++;
             continue;
           }
@@ -284,7 +306,7 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
             histContent = result.slice(0, 2048) + '\n...\n[truncated]';
           }
         }
-        messageHistory.push({ role: 'tool', content: histContent, tool_call_id: tc.id } as any);
+        pushHistory({ role: 'tool', content: histContent, tool_call_id: tc.id });
         totalToolCalls++;
       }
       continue;
@@ -294,7 +316,7 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
     const tail = fullResponse.slice(-300);
     const readIntent = tail.match(/\b(?:let me |i(?:'ll| need to| want to| should| will) )(?:read|check|look at|examine|open)\s+[`"']?([a-zA-Z0-9_./-]+\.[a-zA-Z]{1,6})[`"']?/i);
     if (readIntent) {
-      messageHistory.push({ role: 'assistant', content: fullResponse });
+      pushHistory({ role: 'assistant', content: fullResponse });
       // Auto-execute the intent
       const callId = `auto_${Date.now()}`;
       let result: string;
@@ -314,18 +336,18 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
         const ce = saveToolResultToDisk(engineId, callId, 'Read', result);
         histContent = ce ? result.slice(0, 2048) + `\n...\n[cached — ${callId}]` : result.slice(0, 2048) + '\n...\n[truncated]';
       }
-      messageHistory.push({
+      pushHistory({
         role: 'assistant', content: null,
         tool_calls: [{ id: callId, type: 'function', function: { name: 'Read', arguments: JSON.stringify({ file_path: readIntent[1] }) } }],
-      } as any);
-      messageHistory.push({ role: 'tool', content: histContent, tool_call_id: callId } as any);
+      });
+      pushHistory({ role: 'tool', content: histContent, tool_call_id: callId });
       totalToolCalls++;
       continue;
     }
   
     // Final response
     finalResponse = fullResponse;
-    messageHistory.push({ role: 'assistant', content: fullResponse });
+    pushHistory({ role: 'assistant', content: fullResponse });
     break;
   }
   

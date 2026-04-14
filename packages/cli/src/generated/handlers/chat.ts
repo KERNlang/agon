@@ -6,7 +6,7 @@ import { mkdirSync } from 'node:fs';
 
 import type { ImageAttachment, DispatchResult } from '@agon/core';
 
-import { RUNS_DIR, appendMessage, tracker, StreamParser, loadConfig, sessionContext, resolveWorkingDir } from '@agon/core';
+import { RUNS_DIR, appendMessage, tracker, StreamParser, loadConfig, sessionContext, resolveWorkingDir, loadOrCreateActiveThread } from '@agon/core';
 
 import { ENGINE_COLORS } from '../blocks/output-format.js';
 
@@ -279,6 +279,23 @@ export async function handleChat(input: string, dispatch: Dispatch, ctx: Handler
     if (response) {
       appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString(), images: images?.map(img => img.path) });
       appendMessage(ctx.chatSession, { role: 'engine', engineId, content: response, timestamp: new Date().toISOString() });
+    
+      // ── ContextThread: record chat turn ───────────────────────
+      // Chat turns feed into the same persistent thread as /agent so
+      // the next agent run can see prior conversation context, and
+      // chat can see what prior agent runs produced. We only record
+      // the user prompt + final reply (not per-tool-call detail —
+      // that's captured by the agent-session path when in agent mode).
+      // Non-fatal: thread failures must never break the chat response.
+      try {
+        const chatThread = loadOrCreateActiveThread(cwd);
+        chatThread.append({ role: 'user', content: input });
+        chatThread.append({ role: 'assistant', content: response, engineId });
+        chatThread.save();
+      } catch (threadErr) {
+        console.warn(`[agon] context-thread: chat turn not persisted: ${threadErr instanceof Error ? threadErr.message : String(threadErr)}`);
+      }
+    
       if (dispatchResult?.usage) {
         tracker.record(engineId, { usage: dispatchResult.usage, model: engine.api?.model });
       } else {

@@ -14,6 +14,8 @@ import { makeAssistantChunk, makeToolCall } from '../models/agent-event.js';
 
 import type { Semaphore } from '../blocks/semaphore.js';
 
+import type { ContextThread } from './context-thread.js';
+
 export interface AgentBudget {
   maxTurns: number;
   maxTokens?: number;
@@ -52,6 +54,7 @@ export interface AgentSessionConfig {
   maxInnerSteps?: number;
   teamId?: string;
   heavyToolSemaphore?: Semaphore;
+  thread?: ContextThread;
 }
 
 /**
@@ -184,6 +187,28 @@ export class AgentSession {
     const promptTokens = estimateTokens(prompt);
     
     const onEvent = opts?.onEvent;
+    const thread = this.config.thread;
+    
+    // ── ContextThread integration ─────────────────────────────────
+    // Pre-load: give this engine the prior conversation history
+    // compacted to fit within the token budget. The budget is rough
+    // (we don't know the engine's exact context limit here), so we
+    // pass a conservative 100k-token default for large engines and
+    // let messagesFor() further apply its 0.75 safety factor.
+    // The caller (runAgentMode / AgentTeam) should override this by
+    // setting a per-engine budget in config if available.
+    const engineTokenBudget = 100_000;
+    const historyMessages = thread
+      ? thread.messagesFor(this.config.engineId, engineTokenBudget)
+      : undefined;
+    
+    // Post-emit: each entry produced during the inner loop feeds back
+    // into the shared thread so the next step (or a different engine)
+    // picks it up automatically.
+    const onHistoryEntry = thread
+      ? (entry: Record<string,unknown>) => { thread.appendLoopEntry(entry, this.config.engineId); }
+      : undefined;
+    
     const innerOpts: ApiAgentOptions = {
       api: this.config.api,
       prompt,
@@ -200,6 +225,8 @@ export class AgentSession {
       // across all members so heavy tools (npm test, tsc, cargo build) are
       // serialized across the team.
       heavyToolSemaphore: this.config.heavyToolSemaphore,
+      historyMessages: historyMessages as Array<Record<string,unknown>> | undefined,
+      onHistoryEntry,
     };
     
     let result: ApiAgentResult;
@@ -302,6 +329,23 @@ export class AgentSession {
     // The cancel() method is the source of truth: if it ran, it wins.
     // Cast to string to defeat TS narrowing — TS doesn't know that cancel()
     // can mutate this.state from a parallel microtask context.
+    // ── Flush ContextThread ───────────────────────────────────────
+    // The onHistoryEntry callback already appended entries in-memory
+    // during the step. Now mark this engine as caught up and persist.
+    // We do this regardless of stopReason so partial work from a
+    // cancelled or budget-exceeded step is still recorded for the
+    // next run. (Full synchronous flush on abort is a Phase A.5 item.)
+    if (thread) {
+      try {
+        thread.markSeen(this.config.engineId);
+        thread.save();
+      } catch (err) {
+        // Non-fatal — thread persistence failure must never kill the
+        // agent step itself.
+        console.warn(`[agon] context-thread: failed to flush after step: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    
     const stateAsString = this.state as string;
     if (stateAsString === 'cancelled' || stateAsString === 'failed') {
       return {

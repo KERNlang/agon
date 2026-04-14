@@ -365,6 +365,23 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
       actions.addBlock({ type: 'engine-block', engineId: 'cesar', color: 0x9333ea, content: `\u{1F680} Agent team started \u2014 ${e.engineIds.length} engines (${engineList}) on: "${(e.task as string).slice(0, 80)}"` } as any);
       return;
     }
+    case 'engine-switch': {
+      // Phase C: subtle attribution badge. Only shown in blocks, not spinner,
+      // so it doesn't interrupt the streaming flow. Empty from = cold start.
+      const e = event as any;
+      const fromLabel = e.from ? `${e.from} \u2192 ` : '';
+      const reasonLabel = e.reason === 'auto-fanout' ? ' (auto-routed)' : e.reason === 'synthesis' ? ' (synthesis winner)' : '';
+      actions.addBlock({ type: 'info', message: `${fromLabel}${e.to}${reasonLabel}` } as any);
+      return;
+    }
+    case 'agent-routing': {
+      // Phase C: inform user of Cesar's routing decision before the step starts.
+      const e = event as any;
+      const modeIcon = e.mode === 'team' ? '\u{1F465}' : '\u{1F9E0}';
+      const engineList = (e.engines as string[]).join(', ');
+      actions.addBlock({ type: 'info', message: `${modeIcon} Routing: ${e.mode} (${engineList}) \u2014 ${e.reason}` } as any);
+      return;
+    }
     case 'agent-team-complete': {
       const e = event as any;
       const memberSummary = (e.memberOutcomes as Array<{engineId:string,outcome:string,diffLines:number,passedFitness:boolean}>)

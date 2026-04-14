@@ -83,3 +83,25 @@ export function buildRoutingContext(input: string, ctx: HandlerContext): string 
   
   return parts.join('\n');
 }
+
+/**
+ * Pure, zero-LLM-cost classification: should this /agent request run as a team (parallel engines) rather than solo? Returns true when the task pattern suggests cross-module fan-out AND at least 2 API engines are available. Based on the same FANOUT_RE/scopeDirSpread signals that buildRoutingContext includes in the Cesar prompt — but exported so dispatch can use them without a full brain call.
+ */
+export function shouldUseAgentTeam(input: string, ctx: HandlerContext): boolean {
+  // Need at least 2 active engines for team mode to make sense.
+  const available = ctx.activeEngines();
+  if (available.length < 2) return false;
+  
+  const FANOUT_RE = /\b(?:refactor|rewrite|migrate|architect|across|all of|every|throughout|module|layer|architecture)\b/i;
+  if (FANOUT_RE.test(input)) return true;
+  
+  // Large scope (files spread across many dirs) → fan-out.
+  try {
+    const cwd = resolveWorkingDir();
+    const changedFiles = gitChangedFiles(cwd);
+    const dirs = new Set(changedFiles.map((f: string) => f.split('/').slice(0, 2).join('/')));
+    if (dirs.size > 2) return true;
+  } catch { /* not a git repo — skip scope check */ }
+  
+  return false;
+}

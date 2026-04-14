@@ -146,6 +146,17 @@ union name=OutputEvent discriminant=type
     field name=engineIds type="string[]"
     field name=task type=string
     field name=taskKind type="'edit'|'investigate'"
+  variant name=engine-switch
+    doc "Emitted when the active engine changes — either Cesar re-routes, team synthesis selects a winner, or Phase B auto-upgrades solo→team. Enables the UI to show a subtle attribution badge."
+    field name=from type=string optional=true
+    field name=to type=string
+    field name=reason type="'auto-fanout'|'cesar-route'|'team-member'|'synthesis'|'fallback'"
+    field name=confidence type=number optional=true
+  variant name=agent-routing
+    doc "Emitted when Cesar decides between solo and team mode before dispatch. Gives the user visibility into the routing decision."
+    field name=mode type="'solo'|'team'"
+    field name=engines type="string[]"
+    field name=reason type=string
   variant name=agent-team-complete
     field name=teamId type=string
     field name=winner type="string|null"

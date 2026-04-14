@@ -33,7 +33,7 @@
 //     at v1 thread sizes (< 500 messages). JSONL is Phase A.5 if telemetry
 //     shows I/O becoming a latency tax.
 
-import from="node:fs" names="readFileSync,writeFileSync,mkdirSync,renameSync,existsSync,readdirSync,unlinkSync,statSync,chmodSync,openSync,fsyncSync,closeSync"
+import from="node:fs" names="readFileSync,writeFileSync,mkdirSync,renameSync,existsSync,readdirSync,unlinkSync,statSync,chmodSync,openSync,fsyncSync,closeSync,appendFileSync"
 import from="node:path" names="join,resolve,basename"
 import from="node:crypto" names="randomUUID,createHash"
 import from="../signals/config.js" names="AGON_HOME,ensureAgonHome"
@@ -73,6 +73,12 @@ fn name=threadDirFor params="projectPath:string" returns=string
 const name=THREAD_ID_RE type=RegExp
   handler <<<
     /^(thread_\d{10,16}_[0-9a-f]{8}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/
+  >>>
+
+fn name=threadJournalPath params="projectPath:string,threadId:string" returns=string
+  doc "Path to the JSONL append journal for fast O(1) per-message writes. Parallel to the main JSON snapshot. On next full save(), the journal is merged and compacted."
+  handler <<<
+    return threadFilePath(projectPath, threadId).replace(/\.json$/, '.journal.jsonl');
   >>>
 
 fn name=threadFilePath params="projectPath:string,threadId:string" returns=string
@@ -163,10 +169,18 @@ const name=SCHEMA_VERSION type=number
     1
   >>>
 
-// Soft caps. Compaction kicks in via messagesFor() before these bite.
-const name=MAX_MESSAGES_BEFORE_AUTOCOMPACT type=number
+// Phase A.5: hard message cap. When append() pushes the count over this,
+// the oldest (count - EVICT_TO) messages are dropped and replaced with a
+// synthetic checkpoint summarising what was evicted. This bounds memory
+// growth for long-running /agent sessions and caps JSON rewrite size.
+const name=MAX_MESSAGES_HARD_CAP type=number
   handler <<<
     500
+  >>>
+
+const name=EVICT_TO type=number
+  handler <<<
+    400
   >>>
 
 // Per-message truncation — if a single message alone exceeds this in
@@ -386,6 +400,7 @@ service name=ContextThread export=true
   field name=fileTouches type="Record<string,FileTouch>" private=true
   field name=dirty type=boolean private=true default="false"
   field name=hydrated type=boolean private=true default="false"
+  field name=journaledIds type="Set<string>" private=true
 
   constructor params="config:ContextThreadConfig"
     handler <<<
@@ -403,6 +418,7 @@ service name=ContextThread export=true
       this.fileTouches = {};
       this.dirty = false;
       this.hydrated = false;
+      this.journaledIds = new Set();
 
       // Load-or-create
       const now = Date.now();
@@ -480,6 +496,16 @@ service name=ContextThread export=true
       const full: ThreadMessage = redactMessage({ ...msg, id, timestamp: now });
       full.tokens = estimateMessageTokens(full);
       this.messages.push(full);
+      // Phase A.5: fast O(1) journal write — append one line to the JSONL
+      // journal so this message is durable even before the next full save().
+      // Concurrent appends are safe: POSIX guarantees atomicity for O_APPEND
+      // writes up to PIPE_BUF bytes (~4KB). Messages larger than that should
+      // be rare (redaction caps content, cache stubs replace large tool results).
+      this.journalMessage(full);
+      // Hard cap with eviction.
+      if (this.messages.length > MAX_MESSAGES_HARD_CAP) {
+        this.evictOldest();
+      }
       this.updatedAt = now;
       this.dirty = true;
       if (full.engineId) {
@@ -488,8 +514,41 @@ service name=ContextThread export=true
       return full;
     >>>
 
+  method name=evictOldest returns=void private=true
+    doc "Drop the oldest messages down to EVICT_TO, recording a synthetic checkpoint for what was dropped. Called automatically when MAX_MESSAGES_HARD_CAP is exceeded."
+    handler <<<
+      const dropCount = this.messages.length - EVICT_TO;
+      if (dropCount <= 0) return;
+      const dropped = this.messages.slice(0, dropCount);
+      this.messages = this.messages.slice(dropCount);
+      // Build a cheap stub checkpoint for the dropped range.
+      const summary = this.renderTrimMarker(dropCount, dropped);
+      const cp: ThreadCheckpoint = {
+        id: `cp_evict_${Date.now()}_${randomUUID().slice(0, 6)}`,
+        timestamp: Date.now(),
+        label: `auto-evict-${this.checkpoints.length + 1}`,
+        summary,
+        messagesUpToId: this.messages[0]?.id ?? '',
+        approxTokensSaved: dropped.reduce((s: number, m: ThreadMessage) => s + estimateMessageTokens(m), 0),
+      };
+      this.checkpoints.push(cp);
+    >>>
+
+  method name=journalMessage params="msg:ThreadMessage" returns=void private=true
+    doc "Append one ThreadMessage as a JSONL line to the side-car journal file. O(1) write, crash-safe. Called by append() and appendLoopEntry() before the full save() cycle."
+    handler <<<
+      if (this.journaledIds.has(msg.id)) return; // idempotent
+      try {
+        ensureThreadDir(this.projectPath);
+        const jPath = threadJournalPath(this.projectPath, this.threadId);
+        const line = JSON.stringify({ _kind: 'msg', ...msg }) + '\n';
+        appendFileSync(jPath, line, { encoding: 'utf-8', mode: 0o600, flag: 'a' });
+        this.journaledIds.add(msg.id);
+      } catch { /* never let journal failures block append — fall through to full save() */ }
+    >>>
+
   method name=appendLoopEntry params="entry:Record<string,unknown>,engineId:string" returns="ThreadMessage|null"
-    doc "Bridge a runApiAgentLoop history entry directly into the thread. Used by the onHistoryEntry callback wired in AgentSession. Returns null (and skips the append) for role:'system' entries — those must never cross into persistent storage. Runs secret redaction (red-team findings 1 + 2)."
+    doc "Bridge a runApiAgentLoop history entry directly into the thread. Used by the onHistoryEntry callback wired in AgentSession. Returns null (and skips the append) for role:'system' entries — those must never cross into persistent storage. Runs secret redaction (red-team findings 1 + 2). Phase A.5: strips stale runCacheId cache-reference stubs so old Retrieve markers from prior runApiAgentLoop calls don't confuse new engine calls."
     handler <<<
       const rawRole = entry.role;
       if (rawRole === 'system') {
@@ -497,8 +556,28 @@ service name=ContextThread export=true
         // its own next time via runApiAgentLoop's fullSystemPrompt builder.
         return null;
       }
-      const msg = redactMessage(loopEntryToThreadMessage(entry, engineId));
+      let msg = redactMessage(loopEntryToThreadMessage(entry, engineId));
+      // Phase A.5 — red-team finding 14: strip stale runCacheId references.
+      // runApiAgentLoop creates a per-call cache ID (`${model}-${uuid8}`) used
+      // by the Retrieve tool. When history is replayed in a new call, old
+      // "[N lines ... cached — call_XXXXX]" markers reference a cache that no
+      // longer exists → model tries Retrieve, gets "not found", hallucinates.
+      // Replace these stubs with a plain "(truncated)" marker so the model
+      // knows the content was large but doesn't try to retrieve it.
+      if (msg.content && msg.role === 'tool') {
+        msg = {
+          ...msg,
+          content: msg.content.replace(
+            /\[(\d+ lines?, \d+ chars?) — cached — [a-zA-Z0-9_-]+\]/g,
+            '[$1 — (truncated, not retrievable in this session)]',
+          ),
+        };
+      }
       this.messages.push(msg);
+      this.journalMessage(msg);
+      if (this.messages.length > MAX_MESSAGES_HARD_CAP) {
+        this.evictOldest();
+      }
       this.updatedAt = msg.timestamp;
       this.dirty = true;
       this.engineHead[engineId] = msg.id;
@@ -732,6 +811,33 @@ service name=ContextThread export=true
       ensureThreadDir(this.projectPath);
       const target = threadFilePath(this.projectPath, this.threadId);
 
+      // Phase A.5 — JSONL journal merge. Before the full JSON rewrite, absorb
+      // any messages that were fast-appended to the journal since the last
+      // save(). This handles cross-process appends (another agon window wrote
+      // to the journal) and ensures the compacted snapshot is always complete.
+      const jPath = threadJournalPath(this.projectPath, this.threadId);
+      if (existsSync(jPath)) {
+        try {
+          const journalLines = readFileSync(jPath, 'utf-8').split('\n').filter(Boolean);
+          const known = new Set(this.messages.map(m => m.id));
+          for (const line of journalLines) {
+            try {
+              const obj = JSON.parse(line);
+              if (obj._kind === 'msg' && obj.id && !known.has(obj.id) && obj.role !== 'system') {
+                const { _kind: _k, ...msg } = obj;
+                this.messages.push(msg as ThreadMessage);
+                known.add(msg.id);
+                this.journaledIds.add(msg.id);
+              }
+            } catch { /* skip malformed journal lines */ }
+          }
+          // Re-sort by timestamp after merge.
+          this.messages.sort((a: ThreadMessage, b: ThreadMessage) => a.timestamp - b.timestamp);
+        } catch (err) {
+          console.warn(`[agon] context-thread: journal merge failed (will overwrite): ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+
       // Read-before-write merge (multi-process best-effort)
       if (existsSync(target)) {
         try {
@@ -794,6 +900,14 @@ service name=ContextThread export=true
       this.updatedAt = snapshot.updatedAt;
       this.dirty = false;
       this.hydrated = true;
+      // Phase A.5: journal compaction. Now that the full snapshot is on disk
+      // and includes all journal entries, delete the journal so it doesn't
+      // grow unboundedly and cause O(n²) reads on next load.
+      try {
+        const jPath = threadJournalPath(this.projectPath, this.threadId);
+        if (existsSync(jPath)) unlinkSync(jPath);
+        this.journaledIds.clear();
+      } catch { /* best-effort — stale journal is harmless */ }
     >>>
 
   method name=getAllMessages returns="ThreadMessage[]"
@@ -842,8 +956,57 @@ fn name=saveActivePointer params="pointer:ActivePointerMap" returns=void
     renameSync(tmpPath, ACTIVE_POINTER_PATH);
   >>>
 
+// ── Phase A.5: process-exit flush registry ───────────────────────────
+// Keep a WeakRef set of ContextThread instances that were created via
+// loadOrCreateActiveThread so we can flush them on process exit / SIGINT.
+// WeakRef prevents this registry from keeping threads alive past their
+// natural lifetime. The exit handler is registered once.
+const name=_exitFlushRegistry type="Set<WeakRef<any>>"
+  handler <<<
+    new Set<WeakRef<any>>()
+  >>>
+
+const name=_exitHandlerRegistered type="{value:boolean}"
+  handler <<<
+    { value: false }
+  >>>
+
+fn name=_registerExitFlush params="thread:ContextThread" returns=void
+  handler <<<
+    _exitFlushRegistry.add(new WeakRef(thread));
+    if (_exitHandlerRegistered.value) return;
+    _exitHandlerRegistered.value = true;
+
+    const flush = () => {
+      for (const ref of _exitFlushRegistry) {
+        const t = ref.deref();
+        if (!t) { _exitFlushRegistry.delete(ref); continue; }
+        try {
+          if ((t as any).dirty) (t as any).save();
+        } catch { /* never let flush block exit */ }
+      }
+    };
+
+    // Flush on clean exit (covers normal process termination).
+    process.on('exit', flush);
+
+    // Flush on SIGINT (Ctrl+C) — gives the thread a chance to persist
+    // partial work before the process is killed. Re-raise after flush so
+    // the process terminates normally with exit code 130.
+    process.on('SIGINT', () => {
+      flush();
+      process.exit(130);
+    });
+
+    // SIGTERM (e.g. kill from CI or container scheduler).
+    process.on('SIGTERM', () => {
+      flush();
+      process.exit(143);
+    });
+  >>>
+
 fn name=loadOrCreateActiveThread params="projectPath:string,systemPrompt?:string" returns=ContextThread export=true
-  doc "The canonical entry point for callers. Reads the active-pointer map, finds the current thread for this project (or creates one), hydrates it, and writes the pointer back if a new thread was created. Returns a ready-to-use ContextThread."
+  doc "The canonical entry point for callers. Reads the active-pointer map, finds the current thread for this project (or creates one), hydrates it, and writes the pointer back if a new thread was created. Returns a ready-to-use ContextThread. Phase A.5: registers the thread with the process-exit flush registry so Ctrl+C saves partial work."
   handler <<<
     const pointer = loadActivePointer();
     const sha = projectSha8(projectPath);
@@ -853,6 +1016,7 @@ fn name=loadOrCreateActiveThread params="projectPath:string,systemPrompt?:string
       pointer.byProject[sha] = thread.getThreadId();
       saveActivePointer(pointer);
     }
+    _registerExitFlush(thread);
     return thread;
   >>>
 
@@ -887,6 +1051,8 @@ fn name=deleteThread params="projectPath:string,threadId:string" returns=boolean
   handler <<<
     try {
       unlinkSync(threadFilePath(projectPath, threadId));
+      // Also clean up the journal sidecar if it exists.
+      try { unlinkSync(threadJournalPath(projectPath, threadId)); } catch { /* ok */ }
       return true;
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {

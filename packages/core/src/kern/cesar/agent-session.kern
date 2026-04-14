@@ -384,10 +384,20 @@ service name=AgentSession export=true
     >>>
 
   method name=cancel returns=void
-    doc "Abort any in-flight step() and mark the session cancelled. Idempotent."
+    doc "Abort any in-flight step() and mark the session cancelled. Idempotent. Phase A.5: synchronously flushes the ContextThread before aborting so partial work from the cancelled step is not silently lost on process exit."
     handler <<<
       if (this.state === 'completed' || this.state === 'failed') return;
       this.state = 'cancelled';
+      // Flush thread BEFORE aborting so onHistoryEntry entries appended
+      // during the in-flight step make it to disk. The abort signal fires
+      // after this flush, which is the correct order: save what we have,
+      // THEN signal cancellation to the inner loop.
+      if (this.config.thread) {
+        try {
+          this.config.thread.markSeen(this.config.engineId);
+          this.config.thread.save();
+        } catch { /* never let flush failure block abort */ }
+      }
       if (!this.abortController.signal.aborted) {
         this.abortController.abort();
       }

@@ -24,12 +24,12 @@ import from="../signals/paste-handler.js" names="processPasteContent,expandPaste
 import from="../signals/dispatch.js" names="dispatchIntent,handleModeSwitch"
 import from="../signals/dispatch.js" names="DispatchCallbacks" types=true
 import from="../signals/output.js" names="handleOutputEvent,clearPermissionQueue,clearThinkingBuffer"
-import from="../signals/output.js" names="OutputActions,OutputState" types=true
+import from="../signals/output.js" names="OutputActions,OutputState,AgentProgressSnapshot" types=true
 import from="../signals/app-input.js" names="cleanInputValue,cleanSubmitValue,findInputChange,navigateHistory,resolveEscapeAction,shouldQueuePlanModeOnTab"
 import from="../signals/keyboard.js" names="resolveKeyboardInput"
 import from="../signals/block-archive.js" names="makeBlockArchivePath,appendBlockWithCap"
 import from="../blocks/review.js" names="handleReviewAction"
-import from="../../components.js" names="SpinnerBlock,StatusBar,CesarStatusStrip,EnginePicker,ModelPicker,ReviewBlock,BackgroundJobRail,CesarPicker,ComposerView"
+import from="../../components.js" names="SpinnerBlock,StatusBar,CesarStatusStrip,EnginePicker,ModelPicker,ReviewBlock,BackgroundJobRail,CesarPicker,ComposerView,AgentProgressView"
 import from="./app-views.js" names="ChromeBar,HistoryView,StreamingView"
 import from="../../components.js" names="OutputBlock,ReviewEvent" types=true
 import from="node:path" names="join,dirname"
@@ -93,6 +93,7 @@ screen name=App target=ink
   state name=toolOutputExpanded type=boolean initial=false
   state name=thinkingExpanded type=boolean initial=true
   state name=cesarConfidence type="number|null" initial="null" throttle=200
+  state name=agentProgress type="AgentProgressSnapshot|null" initial="null"
   state name=planModeQueued type=boolean initial=false
   state name=cesarMemory type=any initial="() => createCesarMemory()"
   state name=sessionMcpServers type="Array<Record<string,unknown>>" initial="[]"
@@ -101,6 +102,7 @@ screen name=App target=ink
   ref name=chatStartTimeRef type=number initial=0
   ref name=currentPlanRef type="Plan|null" initial="null"
   ref name=streamingTextRef type=any initial="null"
+  ref name=agentProgressRef type="AgentProgressSnapshot|null" initial="null"
   ref name=modeRef type="'chat'|'campfire'|'brainstorm'|'tribunal'" initial="'chat'"
   ref name=inputValueRef type=string initial="''"
   ref name=ctrlKeyHandledRef type=boolean initial=false
@@ -349,6 +351,15 @@ screen name=App target=ink
         },
         getEngineColor: (engineId: string) => ENGINE_COLORS[engineId] ?? 124,
         setCesarConfidence,
+        // Sync mirror: the dispatch callback is memoized on `mode`, so it
+        // captures agentProgress at creation time and misses later updates.
+        // Writing to the ref lets handleOutputEvent read the latest snapshot
+        // for its merge-update cases (agent-step-end, agent-turn-summary,
+        // agent-budget-warning, tool-call). Same pattern as streamingTextRef.
+        setAgentProgress: (val: AgentProgressSnapshot|null) => {
+          agentProgressRef.current = val;
+          setAgentProgress(val);
+        },
       };
     >>>
 
@@ -358,7 +369,7 @@ screen name=App target=ink
       if (et === 'streaming-chunk' || et === 'thinking-chunk' || et === 'progress-update' || et === 'tool-call' || et === 'spinner-start' || et === 'spinner-update') {
         lastActivityTimeRef.current = Date.now();
       }
-      const state: OutputState = { liveSpinner: null, liveProgress: null, streamingText: streamingTextRef.current };
+      const state: OutputState = { liveSpinner: null, liveProgress: null, streamingText: streamingTextRef.current, agentProgress: agentProgressRef.current };
       handleOutputEvent(event, state, outputActions, mode, chatStartTimeRef.current);
     >>>
 
@@ -768,6 +779,8 @@ screen name=App target=ink
         activeAbortRef.current = null;
         streamingTextRef.current = null;
         setActiveAbort(null); setLiveSpinner(null); setLiveProgress(null); setStreamingText(null);
+        agentProgressRef.current = null;
+        setAgentProgress(null);
         clearPermissionQueue();
         clearThinkingBuffer();
         setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state);
@@ -855,6 +868,24 @@ screen name=App target=ink
         <Box flexDirection="column">
           <HistoryView visibleBlocks={visibleBlocks} groupedBlocks={groupedBlocks} mode={mode} scrollOffset={scrollOffset} thinkingExpanded={thinkingExpanded} />
           <StreamingView streamingText={streamingText} mode={mode} liveProgress={liveProgress} />
+          {agentProgress && (
+            <AgentProgressView
+              engineId={agentProgress.engineId}
+              turnIndex={agentProgress.turnIndex}
+              phase={agentProgress.phase}
+              userPrompt={agentProgress.userPrompt}
+              toolCalls={agentProgress.toolCalls}
+              lastTool={agentProgress.lastTool}
+              lastToolStatus={agentProgress.lastToolStatus}
+              tokensUsed={agentProgress.tokensUsed}
+              elapsedMs={agentProgress.elapsedMs}
+              turnsRemaining={agentProgress.turnsRemaining}
+              maxTurns={agentProgress.maxTurns}
+              tokensRemaining={agentProgress.tokensRemaining}
+              maxTokens={agentProgress.maxTokens}
+              error={agentProgress.error}
+            />
+          )}
         </Box>
         {reviewEvent && <ReviewBlock event={reviewEvent} onAction={handleReviewActionCb} />}
         {enginePickerOpen && (

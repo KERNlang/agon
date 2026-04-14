@@ -2,7 +2,7 @@
 
 ## ALL IN KERN — No Exceptions
 
-**Every new function, type, constant, and handler MUST be written in KERN.** No hand-maintained TypeScript unless it's physically impossible (React/Ink JSX until `--target=ink` ships, or external library bindings like `@huggingface/transformers`).
+**Every new function, type, constant, and handler MUST be written in KERN.** No hand-maintained TypeScript unless it's physically impossible (external library bindings like `@huggingface/transformers`, or hand-TS facades over generated DUs with function-typed fields).
 
 The workflow:
 1. Write `.kern` source in `packages/*/src/kern/<category>/` (surfaces, blocks, signals, models, or a feature domain like cesar/, tools/, handlers/)
@@ -15,12 +15,12 @@ The workflow:
    - `union` — discriminated unions with variants
    - `const` — constants including regex, arrays, records
    - `interface` — type definitions
-   - `screen target=ink` — Ink/React components (pending `--target=ink` CLI integration)
+   - `screen target=ink` — Ink/React components. **FULLY SUPPORTED** via `kern/packages/terminal/src/transpiler-ink.ts` (dispatched from `kern/packages/cli/src/shared.ts:465`). Agon already has 30+ ink screens (`surfaces/app.kern`, `surfaces/status.kern`, `blocks/arena.kern`, `blocks/composer.kern`, `blocks/rendering.kern`, etc.). Write new UI in `.kern`, not `.tsx`.
 
 ### What stays TypeScript (and why)
-- `app.tsx` — React/Ink REPL with JSX, hooks, state. Blocked on `--target=ink` in kern-lang CLI.
-- `handlers/types.ts` — OutputEvent DU with function-typed fields (`resolve: (answer: string) => void`).
+- `handlers/types.ts` — OutputEvent DU facade adding `Dispatch = (event: OutputEvent) => void` type alias (KERN `type` node can't generate function type aliases) and `readonly` on `currentPlan`. The union itself is generated from `handler-types.kern`.
 - Thin facade files that re-export from `generated/` with tighter DU types.
+- External library bindings where the JSX/API is dynamic enough that KERN's static surface can't help.
 
 ### NEVER edit `packages/*/src/generated/` directly
 These are compiled output. Edit the `.kern` source, recompile.
@@ -49,7 +49,7 @@ npm run typecheck      # tsc -b (type check only)
 ## Architecture — KERN Coverage
 
 - **packages/core** — 69 .kern files in `models/`, `signals/`, `blocks/`, `cesar/`, `tools/`, `api/`, `sessions/`, `teams/`. **100% KERN.**
-- **packages/cli** — 60 .kern files in `surfaces/`, `blocks/`, `signals/`, `models/`, `cesar/`, `handlers/`, `commands/`. **~95% KERN.** Remaining: `app.tsx` (Ink target pending).
+- **packages/cli** — 60+ .kern files in `surfaces/`, `blocks/`, `signals/`, `models/`, `cesar/`, `handlers/`, `commands/`. **~99% KERN.** `app.tsx` is the last hand-TS file; it's a composition shell around generated screens and can be ported incrementally.
 - **packages/forge** — 17 .kern files. **100% KERN.** Forge, brainstorm, tribunal, campfire orchestration.
 - **packages/adapter-cli** — 2 .kern files. **100% KERN.** CliAdapter (`service implements EngineAdapter`).
 

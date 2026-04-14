@@ -68,7 +68,7 @@ import type { DispatchCallbacks } from '../signals/dispatch.js';
 import { handleOutputEvent, clearPermissionQueue, clearThinkingBuffer } from '../signals/output.js';
 
 // @kern-source: app:27
-import type { OutputActions, OutputState } from '../signals/output.js';
+import type { OutputActions, OutputState, AgentProgressSnapshot } from '../signals/output.js';
 
 // @kern-source: app:28
 import { cleanInputValue, cleanSubmitValue, findInputChange, navigateHistory, resolveEscapeAction, shouldQueuePlanModeOnTab } from '../signals/app-input.js';
@@ -83,7 +83,7 @@ import { makeBlockArchivePath, appendBlockWithCap } from '../signals/block-archi
 import { handleReviewAction } from '../blocks/review.js';
 
 // @kern-source: app:32
-import { SpinnerBlock, StatusBar, CesarStatusStrip, EnginePicker, ModelPicker, ReviewBlock, BackgroundJobRail, CesarPicker, ComposerView } from '../../components.js';
+import { SpinnerBlock, StatusBar, CesarStatusStrip, EnginePicker, ModelPicker, ReviewBlock, BackgroundJobRail, CesarPicker, ComposerView, AgentProgressView } from '../../components.js';
 
 // @kern-source: app:33
 import { ChromeBar, HistoryView, StreamingView } from './app-views.js';
@@ -166,6 +166,7 @@ export function App({  }: {  }) {
   const [toolOutputExpanded, setToolOutputExpanded] = useState<boolean>(false);
   const [thinkingExpanded, setThinkingExpanded] = useState<boolean>(true);
   const [cesarConfidence, setCesarConfidence] = useState<number|null>(null);
+  const [agentProgress, setAgentProgress] = useState<AgentProgressSnapshot|null>(null);
   const [planModeQueued, setPlanModeQueued] = useState<boolean>(false);
   const [cesarMemory, setCesarMemory] = useState<any>(() => createCesarMemory());
   const [sessionMcpServers, setSessionMcpServers] = useState<Array<Record<string,unknown>>>([]);
@@ -185,6 +186,7 @@ export function App({  }: {  }) {
   const chatStartTimeRef = useRef<number>(0);
   const currentPlanRef = useRef<Plan|null>(null);
   const streamingTextRef = useRef<any>(null);
+  const agentProgressRef = useRef<AgentProgressSnapshot|null>(null);
   const modeRef = useRef<'chat'|'campfire'|'brainstorm'|'tribunal'>('chat');
   const inputValueRef = useRef<string>('');
   const ctrlKeyHandledRef = useRef<boolean>(false);
@@ -298,6 +300,15 @@ export function App({  }: {  }) {
             },
             getEngineColor: (engineId: string) => ENGINE_COLORS[engineId] ?? 124,
             setCesarConfidence,
+            // Sync mirror: the dispatch callback is memoized on `mode`, so it
+            // captures agentProgress at creation time and misses later updates.
+            // Writing to the ref lets handleOutputEvent read the latest snapshot
+            // for its merge-update cases (agent-step-end, agent-turn-summary,
+            // agent-budget-warning, tool-call). Same pattern as streamingTextRef.
+            setAgentProgress: (val: AgentProgressSnapshot|null) => {
+              agentProgressRef.current = val;
+              setAgentProgress(val);
+            },
           };
   }, []);
 
@@ -331,7 +342,7 @@ export function App({  }: {  }) {
           if (et === 'streaming-chunk' || et === 'thinking-chunk' || et === 'progress-update' || et === 'tool-call' || et === 'spinner-start' || et === 'spinner-update') {
             lastActivityTimeRef.current = Date.now();
           }
-          const state: OutputState = { liveSpinner: null, liveProgress: null, streamingText: streamingTextRef.current };
+          const state: OutputState = { liveSpinner: null, liveProgress: null, streamingText: streamingTextRef.current, agentProgress: agentProgressRef.current };
           handleOutputEvent(event, state, outputActions, mode, chatStartTimeRef.current);
   }, [mode]);
 
@@ -761,6 +772,8 @@ export function App({  }: {  }) {
             activeAbortRef.current = null;
             streamingTextRef.current = null;
             setActiveAbort(null); setLiveSpinner(null); setLiveProgress(null); setStreamingText(null);
+            agentProgressRef.current = null;
+            setAgentProgress(null);
             clearPermissionQueue();
             clearThinkingBuffer();
             setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state);
@@ -845,6 +858,24 @@ export function App({  }: {  }) {
           <Box flexDirection="column">
             <HistoryView visibleBlocks={visibleBlocks} groupedBlocks={groupedBlocks} mode={mode} scrollOffset={scrollOffset} thinkingExpanded={thinkingExpanded} />
             <StreamingView streamingText={streamingText} mode={mode} liveProgress={liveProgress} />
+            {agentProgress && (
+              <AgentProgressView
+                engineId={agentProgress.engineId}
+                turnIndex={agentProgress.turnIndex}
+                phase={agentProgress.phase}
+                userPrompt={agentProgress.userPrompt}
+                toolCalls={agentProgress.toolCalls}
+                lastTool={agentProgress.lastTool}
+                lastToolStatus={agentProgress.lastToolStatus}
+                tokensUsed={agentProgress.tokensUsed}
+                elapsedMs={agentProgress.elapsedMs}
+                turnsRemaining={agentProgress.turnsRemaining}
+                maxTurns={agentProgress.maxTurns}
+                tokensRemaining={agentProgress.tokensRemaining}
+                maxTokens={agentProgress.maxTokens}
+                error={agentProgress.error}
+              />
+            )}
           </Box>
           {reviewEvent && <ReviewBlock event={reviewEvent} onAction={handleReviewActionCb} />}
           {enginePickerOpen && (
@@ -967,7 +998,7 @@ export function App({  }: {  }) {
 }
 
 
-// @kern-source: app:980
+// @kern-source: app:1011
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

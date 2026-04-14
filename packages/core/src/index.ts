@@ -120,6 +120,22 @@ export { planCostEstimator } from './generated/cesar/plan-cost-estimator.js';
 export type { CostEstimate } from './generated/cesar/plan-cost-estimator.js';
 export { executePlan, getReadySteps } from './generated/cesar/plan-executor.js';
 export type { StepExecutor, PlanExecutorCallbacks } from './generated/cesar/plan-executor.js';
+export { AgentSession, makeBudgetError } from './generated/cesar/agent-session.js';
+export type {
+  AgentBudget, AgentStepResult, AgentSessionStats, AgentSessionConfig,
+} from './generated/cesar/agent-session.js';
+export {
+  createAgentState, beginTurn, completeTurn, requestApproval, approveTool, rejectTool,
+  cancelAgent, failAgent, completeAgent, checkBudget, isTerminal,
+} from './generated/cesar/agent-state.js';
+export type {
+  AgentMessage, AgentTurn, AgentContext, AgentPhase, AgentState,
+} from './generated/cesar/agent-state.js';
+export {
+  makeAssistantChunk, makeToolCall, makeTurnComplete, makeError,
+  normalizeSessionChunk, buildApiTurnEvents, unavailableUsage, estimatedUsage,
+} from './generated/models/agent-event.js';
+export type { AgentEvent, AgentUsage, RawSessionChunk } from './generated/models/agent-event.js';
 export { runHooks, hooksFailed, hooksOutput } from './hooks.js';
 export type { HookEvent, HookDef, HookResult } from './hooks.js';
 export { loadSkills, findSkill, renderSkillPrompt } from './skill-loader.js';

@@ -14,7 +14,7 @@ import from="./intent.js" names="detectIntent,FITNESS_PATTERN"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 import from="./icons.js" names="icons"
 import from="../blocks/output-format.js" names="ENGINE_COLORS"
-import from="../../handlers/index.js" names="handleForge,handleChat,handleBrainstorm,handleCampfire,handleTribunal,handleLeaderboard,handleHistory,handleEngines,handleDiscover,handleConfig,handleUse,handleCesar,handleTokens,handleModels,handleWorkspace,handleChats,handlePlanShow,handlePlansList,handleApprove,handleRetry,handleCancel,handleApplyPatch,handleCp,handleCommit,handleFlowReport,handleFlowAnalysis,handleBuild,handleRun,handleReview"
+import from="../../handlers/index.js" names="handleForge,handleChat,handleBrainstorm,handleCampfire,handleTribunal,handleLeaderboard,handleHistory,handleEngines,handleDiscover,handleConfig,handleUse,handleCesar,handleTokens,handleModels,handleWorkspace,handleChats,handlePlanShow,handlePlansList,handleApprove,handleRetry,handleCancel,handleApplyPatch,handleCp,handleCommit,handleFlowReport,handleFlowAnalysis,handleBuild,handleRun,handleReview,runAgentMode"
 import from="../handlers/team-tribunal.js" names="handleTeamTribunal"
 import from="../handlers/team-forge.js" names="handleTeamForge"
 import from="../handlers/team-brainstorm.js" names="handleTeamBrainstorm"
@@ -574,6 +574,9 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
         return { handled: true, ranAsJob: true };
       case 'build':
         cb.runAsJob('build', intent.input?.slice(0, 40) ?? 'build', () => handleBuild(intent.input, cb.dispatch, cb.ctx));
+        return { handled: true, ranAsJob: true };
+      case 'agent':
+        cb.runAsJob('agent', intent.input?.slice(0, 40) ?? 'agent', () => runAgentMode(intent.input, cb.dispatch, cb.ctx));
         return { handled: true, ranAsJob: true };
       case 'pipeline':
         cb.runAsJob('pipeline', intent.task?.slice(0, 40) ?? 'pipeline', () => handlePipeline(intent.task, cb.dispatch, cb.ctx, intent.fitnessCmd ?? undefined));

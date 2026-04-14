@@ -33,7 +33,7 @@ import from="./context-thread.js" names="ContextThread" types=true
 import from="../forge/virtual-fs.js" names="VirtualFS,createFileSnapshot,scoreEffectPackage,applyEffectPackage"
 import from="../forge/virtual-fs.js" names="EffectPackage,FileSnapshot,FileEffect" types=true
 import from="node:path" names="resolve,join"
-import from="../blocks/git.js" names="repoRoot,worktreeCreate,worktreeRemoveBestEffort,stashSnapshot"
+import from="../blocks/git.js" names="repoRoot,worktreeCreate,worktreeRemoveBestEffort,stashSnapshot,worktreeDiff,applyPatch"
 
 // ── Speculator configuration ──────────────────────────────────────────
 
@@ -195,7 +195,6 @@ service name=Speculator export=true
             // the real cwd using git's patch mechanism. This is the correct
             // "commit the winning branch" step — equivalent to `git checkout winner`.
             // Phase E v2 will use applyEffectPackage(vfs.toEffectPackage()) instead.
-            const { applyPatch, worktreeDiff } = await import('../blocks/git.js');
             const diff = worktreeDiff(winnerCwd);
             if (diff && diff.trim()) {
               applyPatch(cwd, diff);

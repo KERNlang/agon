@@ -7,6 +7,7 @@ interface name=EngineProgress
   field name=done type=boolean
   field name=failed type=boolean
   field name=score type=string optional=true
+  field name=isAgent type=boolean optional=true
 
 union name=OutputEvent discriminant=type
   variant name=text
@@ -112,6 +113,33 @@ union name=OutputEvent discriminant=type
     field name=totalForges type=number
     field name=workspace type="{ name: string; path: string; isKern?: boolean }" optional=true
     field name=runCount type=number
+  variant name=agent-step-start
+    field name=engineId type=string
+    field name=turnIndex type=number
+    field name=userPrompt type=string
+    field name=maxTurns type=number
+    field name=maxDurationMs type=number
+    field name=maxTokens type="number|null" optional=true
+  variant name=agent-step-end
+    field name=engineId type=string
+    field name=turnIndex type=number
+    field name=outcome type="'completed'|'cancelled'|'failed'"
+    field name=toolCalls type=number
+    field name=tokensUsed type=number
+    field name=stopReason type=string
+  variant name=agent-turn-summary
+    field name=engineId type=string
+    field name=turnsUsed type=number
+    field name=turnsRemaining type=number
+    field name=cumulativeTokens type=number
+    field name=cumulativeToolCalls type=number
+    field name=elapsedMs type=number
+  variant name=agent-budget-warning
+    field name=engineId type=string
+    field name=kind type="'turns'|'tokens'|'duration'"
+    field name=used type=number
+    field name=limit type=number
+    field name=remaining type=number
 
 interface name=PendingDelegation
   field name=action type=string

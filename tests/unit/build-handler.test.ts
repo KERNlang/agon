@@ -18,10 +18,10 @@ describe('Build Handler', () => {
       if (r.type === 'build') expect(r.input).toBe('');
     });
 
-    it('/agent is an alias for /build', () => {
+    it('/agent parses into its own agent intent (split from /build in Phase 5a)', () => {
       const r = detectIntent('/agent fix the login');
-      expect(r.type).toBe('build');
-      if (r.type === 'build') expect(r.input).toBe('fix the login');
+      expect(r.type).toBe('agent');
+      if (r.type === 'agent') expect(r.input).toBe('fix the login');
     });
   });
 

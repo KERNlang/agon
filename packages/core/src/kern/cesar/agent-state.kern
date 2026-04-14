@@ -1,0 +1,287 @@
+// ── AgentState — event-sourced agent conversation + phase union ──
+// Phase 2 of agent-mode. Mirrors plan.kern's pattern: type definitions
+// (interfaces + union) co-located with pure fn reducers that advance
+// the state on discrete events.
+//
+// ── Why a union + reducers, not a `machine` primitive ──────────────
+//
+// KERN's `machine` primitive today generates transitions as
+//   function tnameMachine<T extends {state: StateType}>(entity: T): T
+// (see kern/packages/core/src/codegen/machines.ts:52-86). This is
+// insufficient for agent-mode in two concrete ways:
+//
+// KERN-GAP: machine — transitions need parameterized signatures.
+//   Agent-mode events carry payloads: userPrompt string, tool_call
+//   object, tool_result string, error string, deadline timestamp.
+//   The current `(entity: T) => T` signature has nowhere to put them.
+//   A parameterized variant like
+//     function transition<T, P>(entity: T, payload: P): T
+//   would unblock modeling these events in machine form.
+//
+// KERN-GAP: machine — transitions need guard predicates.
+//   Agent-mode gates transitions on runtime conditions: turn budget
+//   remaining, token budget remaining, wall-clock deadline. Today
+//   these are if-throws inside handler code. A language-level
+//   `guard=predicate` would let the compiler enforce them at call
+//   sites and surface budget-exceeded as a typed rejection rather
+//   than an imperative branch.
+//
+// Until those gaps are addressed, this file uses the same union+fn
+// pattern as plan.kern (which its authors explicitly called a state
+// machine in its header comment, then implemented as reducers for
+// the same reason).
+
+import from="./agent-session.js" names="AgentBudget,AgentStepResult" types=true
+
+// ── Message history ──────────────────────────────────────────────
+
+interface name=AgentMessage
+  field name=role type="'system'|'user'|'assistant'|'tool'"
+  field name=content type=string
+  field name=toolCallId type=string optional=true
+  field name=toolName type=string optional=true
+  field name=timestamp type=number
+
+// ── Per-turn record ──────────────────────────────────────────────
+
+interface name=AgentTurn
+  field name=index type=number
+  field name=userPrompt type=string
+  field name=assistantResponse type=string
+  field name=toolCalls type=number
+  field name=innerSteps type=number
+  field name=tokensUsed type=number
+  field name=costUsd type=number
+  field name=startedAt type=number
+  field name=completedAt type=number
+  field name=outcome type="'completed'|'cancelled'|'failed'"
+  field name=error type=string optional=true
+
+// ── Shared context (fat field, lives outside the variant union) ──
+
+interface name=AgentContext
+  field name=engineId type=string
+  field name=systemPrompt type=string optional=true
+  field name=budget type=AgentBudget
+  field name=startedAt type=number
+  field name=history type="AgentMessage[]"
+  field name=turns type="AgentTurn[]"
+  field name=cumulativeTokens type=number
+  field name=cumulativeToolCalls type=number
+  field name=cumulativeCostUsd type=number
+
+// ── Phase union (thin discriminator + variant-specific fields) ───
+
+union name=AgentPhase discriminant=kind
+  variant name=idle
+  variant name=running
+    field name=turnIndex type=number
+    field name=turnStartedAt type=number
+  variant name=awaiting_approval
+    field name=turnIndex type=number
+    field name=pendingToolName type=string
+    field name=pendingToolInput type="Record<string,unknown>"
+    field name=pendingToolCallId type=string
+  variant name=completed
+    field name=finalResponse type=string
+  variant name=failed
+    field name=reason type="'budget_turns'|'budget_tokens'|'budget_duration'|'error'|'rejected'"
+    field name=errorMessage type=string optional=true
+  variant name=cancelled
+    field name=reason type=string
+
+// ── Outer AgentState wrapper ─────────────────────────────────────
+
+interface name=AgentState
+  field name=context type=AgentContext
+  field name=phase type=AgentPhase
+
+// ── Reducers ─────────────────────────────────────────────────────
+
+fn name=createAgentState params="engineId:string,budget:AgentBudget,systemPrompt?:string,now?:number" returns=AgentState export=true
+  doc "Create a fresh agent state in 'idle' phase with empty history."
+  handler <<<
+    const startedAt = now ?? Date.now();
+    const history: AgentMessage[] = [];
+    if (systemPrompt) {
+      history.push({ role: 'system', content: systemPrompt, timestamp: startedAt });
+    }
+    return {
+      context: {
+        engineId,
+        systemPrompt,
+        budget,
+        startedAt,
+        history,
+        turns: [],
+        cumulativeTokens: 0,
+        cumulativeToolCalls: 0,
+        cumulativeCostUsd: 0,
+      },
+      phase: { kind: 'idle' },
+    };
+  >>>
+
+fn name=beginTurn params="state:AgentState,userPrompt:string,now?:number" returns=AgentState export=true
+  doc "Transition idle → running. Appends the user message to history. No-op if already terminal."
+  handler <<<
+    if (state.phase.kind === 'completed' || state.phase.kind === 'failed' || state.phase.kind === 'cancelled') {
+      return state;
+    }
+    if (state.phase.kind !== 'idle') {
+      // Already running/awaiting — callers should not call beginTurn in these phases.
+      return state;
+    }
+    const timestamp = now ?? Date.now();
+    const turnIndex = state.context.turns.length;
+    const nextHistory: AgentMessage[] = [
+      ...state.context.history,
+      { role: 'user', content: userPrompt, timestamp },
+    ];
+    return {
+      context: { ...state.context, history: nextHistory },
+      phase: { kind: 'running', turnIndex, turnStartedAt: timestamp },
+    };
+  >>>
+
+fn name=completeTurn params="state:AgentState,userPrompt:string,result:AgentStepResult,now?:number" returns=AgentState export=true
+  doc "Transition running → idle on a completed step. Appends assistant message, records the turn, updates cumulative stats."
+  handler <<<
+    if (state.phase.kind !== 'running') return state;
+    const completedAt = now ?? Date.now();
+    const turn: AgentTurn = {
+      index: state.phase.turnIndex,
+      userPrompt,
+      assistantResponse: result.response,
+      toolCalls: result.toolCalls,
+      innerSteps: result.innerSteps,
+      tokensUsed: result.tokensUsed,
+      costUsd: result.costUsd,
+      startedAt: state.phase.turnStartedAt,
+      completedAt,
+      outcome: result.stopReason === 'completed' ? 'completed' : (result.stopReason === 'cancelled' ? 'cancelled' : 'failed'),
+      error: result.error,
+    };
+    const nextHistory: AgentMessage[] = result.response
+      ? [...state.context.history, { role: 'assistant', content: result.response, timestamp: completedAt }]
+      : state.context.history;
+    const nextContext: AgentContext = {
+      ...state.context,
+      history: nextHistory,
+      turns: [...state.context.turns, turn],
+      cumulativeTokens: state.context.cumulativeTokens + result.tokensUsed,
+      cumulativeToolCalls: state.context.cumulativeToolCalls + result.toolCalls,
+      cumulativeCostUsd: state.context.cumulativeCostUsd + result.costUsd,
+    };
+    // If the inner step reported cancelled/error/budget_exceeded, surface that as a terminal phase.
+    if (result.stopReason === 'cancelled') {
+      return { context: nextContext, phase: { kind: 'cancelled', reason: result.error ?? 'cancelled mid-turn' } };
+    }
+    if (result.stopReason === 'error') {
+      return { context: nextContext, phase: { kind: 'failed', reason: 'error', errorMessage: result.error } };
+    }
+    if (result.stopReason === 'budget_exceeded') {
+      const kind = (result.error ?? '').includes('Turn') ? 'budget_turns'
+                 : (result.error ?? '').includes('Token') ? 'budget_tokens'
+                 : 'budget_duration';
+      return { context: nextContext, phase: { kind: 'failed', reason: kind, errorMessage: result.error } };
+    }
+    return { context: nextContext, phase: { kind: 'idle' } };
+  >>>
+
+fn name=requestApproval params="state:AgentState,toolName:string,toolInput:Record<string,unknown>,toolCallId:string" returns=AgentState export=true
+  doc "Transition running → awaiting_approval. Caller (Phase 4 handler) resumes via approveTool/rejectTool."
+  handler <<<
+    if (state.phase.kind !== 'running') return state;
+    return {
+      context: state.context,
+      phase: {
+        kind: 'awaiting_approval',
+        turnIndex: state.phase.turnIndex,
+        pendingToolName: toolName,
+        pendingToolInput: toolInput,
+        pendingToolCallId: toolCallId,
+      },
+    };
+  >>>
+
+fn name=approveTool params="state:AgentState,now?:number" returns=AgentState export=true
+  doc "Transition awaiting_approval → running. Tool call proceeds."
+  handler <<<
+    if (state.phase.kind !== 'awaiting_approval') return state;
+    const turnStartedAt = now ?? Date.now();
+    return {
+      context: state.context,
+      phase: { kind: 'running', turnIndex: state.phase.turnIndex, turnStartedAt },
+    };
+  >>>
+
+fn name=rejectTool params="state:AgentState,reason:string,now?:number" returns=AgentState export=true
+  doc "Transition awaiting_approval → running. Tool call rejected; caller should feed the refusal back to the model."
+  handler <<<
+    if (state.phase.kind !== 'awaiting_approval') return state;
+    const turnStartedAt = now ?? Date.now();
+    const timestamp = turnStartedAt;
+    const refusal: AgentMessage = {
+      role: 'tool',
+      content: `Tool rejected by user: ${reason}`,
+      toolCallId: state.phase.pendingToolCallId,
+      toolName: state.phase.pendingToolName,
+      timestamp,
+    };
+    return {
+      context: { ...state.context, history: [...state.context.history, refusal] },
+      phase: { kind: 'running', turnIndex: state.phase.turnIndex, turnStartedAt },
+    };
+  >>>
+
+fn name=cancelAgent params="state:AgentState,reason:string" returns=AgentState export=true
+  doc "Transition any non-terminal phase → cancelled. Idempotent over terminal phases."
+  handler <<<
+    if (state.phase.kind === 'completed' || state.phase.kind === 'failed' || state.phase.kind === 'cancelled') {
+      return state;
+    }
+    return { context: state.context, phase: { kind: 'cancelled', reason } };
+  >>>
+
+fn name=failAgent params="state:AgentState,reason:'budget_turns'|'budget_tokens'|'budget_duration'|'error'|'rejected',errorMessage?:string" returns=AgentState export=true
+  doc "Transition any non-terminal phase → failed."
+  handler <<<
+    if (state.phase.kind === 'completed' || state.phase.kind === 'failed' || state.phase.kind === 'cancelled') {
+      return state;
+    }
+    return { context: state.context, phase: { kind: 'failed', reason, errorMessage } };
+  >>>
+
+fn name=completeAgent params="state:AgentState,finalResponse:string" returns=AgentState export=true
+  doc "Transition idle → completed. Terminal success state."
+  handler <<<
+    if (state.phase.kind !== 'idle') return state;
+    return { context: state.context, phase: { kind: 'completed', finalResponse } };
+  >>>
+
+fn name=checkBudget params="state:AgentState,now?:number" returns="AgentState|null" export=true
+  doc "Returns a new failed state if any budget is exhausted, or null if the state is still within budget. Pure — does not mutate."
+  handler <<<
+    if (state.phase.kind === 'completed' || state.phase.kind === 'failed' || state.phase.kind === 'cancelled') {
+      return null;
+    }
+    const budget = state.context.budget;
+    if (state.context.turns.length >= budget.maxTurns) {
+      return { context: state.context, phase: { kind: 'failed', reason: 'budget_turns', errorMessage: `Turn budget exceeded: ${state.context.turns.length}/${budget.maxTurns}` } };
+    }
+    if (budget.maxTokens != null && state.context.cumulativeTokens >= budget.maxTokens) {
+      return { context: state.context, phase: { kind: 'failed', reason: 'budget_tokens', errorMessage: `Token budget exceeded: ${state.context.cumulativeTokens}/${budget.maxTokens}` } };
+    }
+    const elapsed = (now ?? Date.now()) - state.context.startedAt;
+    if (elapsed >= budget.maxDurationMs) {
+      return { context: state.context, phase: { kind: 'failed', reason: 'budget_duration', errorMessage: `Duration budget exceeded: ${elapsed}ms/${budget.maxDurationMs}ms` } };
+    }
+    return null;
+  >>>
+
+fn name=isTerminal params="state:AgentState" returns=boolean export=true
+  doc "True if the state is in a terminal phase (completed/failed/cancelled)."
+  handler <<<
+    return state.phase.kind === 'completed' || state.phase.kind === 'failed' || state.phase.kind === 'cancelled';
+  >>>

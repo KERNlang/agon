@@ -60,6 +60,8 @@ union name=Intent discriminant=type
     field name=sessionId type=string optional=true
   variant name=build
     field name=input type=string
+  variant name=agent
+    field name=input type=string
   variant name=pipeline
     field name=task type=string
     field name=fitnessCmd type="string | null"

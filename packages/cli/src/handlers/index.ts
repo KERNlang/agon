@@ -33,3 +33,4 @@ export { handlePipeline } from './pipeline.js';
 export { handleFlowReport, handleFlowAnalysis, autoLogFlow } from './flow.js';
 export { handleCommit } from './commit.js';
 export { handleReview } from './review.js';
+export { runAgentMode } from '../generated/handlers/agent.js';

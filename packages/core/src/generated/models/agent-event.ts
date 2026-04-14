@@ -1,0 +1,189 @@
+// @kern-source: agent-event:34
+export interface AgentUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  source: 'sdk'|'cli-reported'|'estimated'|'unavailable';
+}
+
+// @kern-source: agent-event:35
+
+// @kern-source: agent-event:36
+
+// @kern-source: agent-event:37
+
+// @kern-source: agent-event:38
+
+// @kern-source: agent-event:42
+export type AgentEvent =
+  | { kind: 'assistant_chunk'; engineId: string; text: string }
+  | { kind: 'tool_call'; engineId: string; toolName: string; status: 'running'|'ok'|'error'|'rejected'; toolCallId?: string; input?: Record<string,unknown>; output?: string; error?: string }
+  | { kind: 'turn_complete'; engineId: string; stopReason: string; usage: AgentUsage|null }
+  | { kind: 'error'; engineId: string; message: string; recoverable: boolean };
+
+// @kern-source: agent-event:67
+export interface RawSessionChunk {
+  type: 'text'|'status'|'tool_call'|'error'|'done';
+  content: string;
+  metadata?: Record<string,unknown>;
+}
+
+// @kern-source: agent-event:74
+/**
+ * Build an assistant_chunk event — streaming text from the model.
+ */
+export function makeAssistantChunk(engineId: string, text: string): AgentEvent {
+  return { kind: 'assistant_chunk', engineId, text };
+}
+
+// @kern-source: agent-event:80
+/**
+ * Build a tool_call event. Status semantics: running=started, ok=completed successfully, error=tool threw, rejected=user or permission system blocked.
+ */
+export function makeToolCall(engineId: string, toolName: string, status: 'running'|'ok'|'error'|'rejected', opts?: {toolCallId?:string,input?:Record<string,unknown>,output?:string,error?:string}): AgentEvent {
+  return {
+    kind: 'tool_call',
+    engineId,
+    toolName,
+    status,
+    toolCallId: opts?.toolCallId,
+    input: opts?.input,
+    output: opts?.output,
+    error: opts?.error,
+  };
+}
+
+// @kern-source: agent-event:95
+/**
+ * Build a turn_complete event. Usage is null for CLI engines that don't report it, or an AgentUsage struct for API engines with SDK usage.
+ */
+export function makeTurnComplete(engineId: string, stopReason: string, usage?: AgentUsage|null): AgentEvent {
+  return { kind: 'turn_complete', engineId, stopReason, usage: usage ?? null };
+}
+
+// @kern-source: agent-event:101
+/**
+ * Build an error event. Recoverable=true for retryable errors (network blip), false for terminal failures.
+ */
+export function makeError(engineId: string, message: string, recoverable?: boolean): AgentEvent {
+  return { kind: 'error', engineId, message, recoverable: recoverable ?? false };
+}
+
+// @kern-source: agent-event:109
+/**
+ * Map a SessionChunk from any CLI-engine protocol (stream-json / JSONRPC / ACP) to a canonical AgentEvent. Returns null for chunks that don't carry agent-mode semantics (e.g. 'status' notifications). CLI engines never carry usage, so turn_complete.usage is always null here.
+ */
+export function normalizeSessionChunk(chunk: RawSessionChunk, engineId: string): AgentEvent|null {
+  const meta = chunk.metadata ?? {};
+  
+  switch (chunk.type) {
+    case 'text': {
+      return { kind: 'assistant_chunk', engineId, text: chunk.content };
+    }
+  
+    case 'tool_call': {
+      // Extract toolName — prefer explicit metadata.toolName, fall back to chunk.content
+      // (Claude stream-json puts the tool name in chunk.content).
+      const toolName = (typeof meta.toolName === 'string' && meta.toolName) || chunk.content || 'unknown';
+  
+      // Extract status — protocols vary:
+      //   Claude stream-json: 'native' (tool_use) or 'done' (tool_result)
+      //   Codex JSONRPC: 'running' (approval) or 'done' (item/completed)
+      //   Gemini/OpenCode ACP: 'in_progress' | 'completed' | 'failed'
+      const rawStatus = typeof meta.status === 'string' ? meta.status : 'done';
+      let status: 'running'|'ok'|'error'|'rejected';
+      if (rawStatus === 'native' || rawStatus === 'running' || rawStatus === 'in_progress' || rawStatus === 'pending') {
+        status = 'running';
+      } else if (rawStatus === 'failed' || rawStatus === 'error') {
+        status = 'error';
+      } else if (rawStatus === 'rejected' || rawStatus === 'denied') {
+        status = 'rejected';
+      } else {
+        // 'done', 'completed', 'success', unknown — treat as ok
+        status = 'ok';
+      }
+  
+      const toolCallId = typeof meta.toolCallId === 'string' ? meta.toolCallId : undefined;
+      const input = (meta.input && typeof meta.input === 'object') ? meta.input as Record<string,unknown> : undefined;
+      const output = typeof meta.output === 'string' ? meta.output : undefined;
+      const errMsg = typeof meta.error === 'string' ? meta.error : undefined;
+  
+      return {
+        kind: 'tool_call',
+        engineId,
+        toolName,
+        status,
+        toolCallId,
+        input,
+        output,
+        error: errMsg,
+      };
+    }
+  
+    case 'done': {
+      // CLI engines never carry usage — map to null.
+      return { kind: 'turn_complete', engineId, stopReason: chunk.content || 'end_turn', usage: null };
+    }
+  
+    case 'error': {
+      return { kind: 'error', engineId, message: chunk.content, recoverable: false };
+    }
+  
+    case 'status':
+    default:
+      // Status notifications and unknown types don't map to agent-mode semantics.
+      return null;
+  }
+}
+
+// @kern-source: agent-event:185
+/**
+ * Build a canonical event sequence from an ApiAgentResult. Used when real-time callbacks weren't wired and we need to reconstruct the turn post-hoc.
+ */
+export function buildApiTurnEvents(engineId: string, response: string, toolCalls: number, stopReason: string, usage?: AgentUsage|null): AgentEvent[] {
+  const events: AgentEvent[] = [];
+  if (response) {
+    events.push({ kind: 'assistant_chunk', engineId, text: response });
+  }
+  // We don't know per-tool details from the aggregated result; emit a
+  // single summary event. Real-time callers should use makeToolCall directly.
+  if (toolCalls > 0) {
+    events.push({
+      kind: 'tool_call',
+      engineId,
+      toolName: `<${toolCalls} tool calls>`,
+      status: 'ok',
+    });
+  }
+  events.push({
+    kind: 'turn_complete',
+    engineId,
+    stopReason,
+    usage: usage ?? null,
+  });
+  return events;
+}
+
+// @kern-source: agent-event:213
+/**
+ * Build a sentinel AgentUsage for CLI engines that report nothing. Use this in turn_complete events when source='unavailable' is semantically clearer than null.
+ */
+export function unavailableUsage(): AgentUsage {
+  return { promptTokens: 0, completionTokens: 0, totalTokens: 0, source: 'unavailable' };
+}
+
+// @kern-source: agent-event:219
+/**
+ * Build an estimated AgentUsage using the char/4 heuristic (matches TokenTracker.estimateTokens). Phase 1 AgentSession uses this for CLI engines until Phase 3 protocol parsers emit real usage.
+ */
+export function estimatedUsage(promptText: string, responseText: string): AgentUsage {
+  const promptTokens = Math.ceil(promptText.length / 4);
+  const completionTokens = Math.ceil(responseText.length / 4);
+  return {
+    promptTokens,
+    completionTokens,
+    totalTokens: promptTokens + completionTokens,
+    source: 'estimated',
+  };
+}
+

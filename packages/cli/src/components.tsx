@@ -51,6 +51,9 @@ export const TokenGauge = _Status.TokenGauge;
 export const StatusLine = _Status.StatusLine;
 export const AGON_TIPS = _Status.AGON_TIPS;
 
+// Agent progress surface — Phase 5b
+export { AgentProgressView } from './generated/surfaces/agent.js';
+
 // Re-export ENGINE_COLORS from output for backward compat
 export { ENGINE_COLORS } from './output.js';
 

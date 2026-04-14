@@ -7,10 +7,29 @@ import from="../blocks/markdown.js" names="parseMarkdownBlocks,cleanEngineOutput
 import from="../../code-buffer.js" names="codeBlockBuffer"
 import from="@agon/core" names="loadConfig,configSet"
 
+interface name=AgentProgressSnapshot
+  doc "Live state for a running autonomous agent session. Fed by agent-* OutputEvents, rendered by surfaces/agent.kern::AgentProgressView."
+  field name=engineId type=string
+  field name=turnIndex type=number
+  field name=phase type="'running'|'awaiting_approval'|'completed'|'failed'|'cancelled'"
+  field name=userPrompt type=string optional=true
+  field name=toolCalls type=number
+  field name=lastTool type=string optional=true
+  field name=lastToolStatus type="'running'|'ok'|'error'|'rejected'" optional=true
+  field name=tokensUsed type=number
+  field name=elapsedMs type=number
+  field name=startedAt type=number
+  field name=turnsRemaining type=number
+  field name=maxTurns type=number
+  field name=tokensRemaining type="number|null" optional=true
+  field name=maxTokens type="number|null" optional=true
+  field name=error type=string optional=true
+
 interface name=OutputState
   field name=liveSpinner type="{message:string,color?:number,engineId?:string}|null"
   field name=liveProgress type="EngineProgress[]|null"
   field name=streamingText type="{engineId:string,content:string}|null"
+  field name=agentProgress type="AgentProgressSnapshot|null"
 
 interface name=OutputActions
   field name=setLiveSpinner type="(val:any) => void"
@@ -25,6 +44,7 @@ interface name=OutputActions
   field name=flushStream type="() => void"
   field name=getEngineColor type="(engineId:string) => number"
   field name=setCesarConfidence type="(val:number|null) => void"
+  field name=setAgentProgress type="(val:AgentProgressSnapshot|null) => void"
 
 // ── Thinking buffer — coalesces thinking-chunk events into a single block ────
 const name=_thinkingBuffer type="{engineId:string,content:string}"
@@ -236,6 +256,93 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
       }
       case 'confidence-update': {
         actions.setCesarConfidence((event as any).value);
+        return;
+      }
+      case 'agent-step-start': {
+        const e = event as any;
+        actions.setAgentProgress({
+          engineId: e.engineId,
+          turnIndex: e.turnIndex,
+          phase: 'running',
+          userPrompt: e.userPrompt,
+          toolCalls: 0,
+          tokensUsed: 0,
+          elapsedMs: 0,
+          startedAt: Date.now(),
+          turnsRemaining: e.maxTurns,
+          maxTurns: e.maxTurns,
+          tokensRemaining: e.maxTokens ?? null,
+          maxTokens: e.maxTokens ?? null,
+        });
+        return;
+      }
+      case 'agent-step-end': {
+        const e = event as any;
+        const prev = state.agentProgress;
+        if (prev) {
+          actions.setAgentProgress({
+            ...prev,
+            phase: e.outcome, // 'completed'|'cancelled'|'failed'
+            toolCalls: e.toolCalls,
+            tokensUsed: e.tokensUsed,
+            elapsedMs: Date.now() - prev.startedAt,
+            error: e.outcome !== 'completed' ? e.stopReason : undefined,
+          });
+        }
+        // Also keep a permanent transcript record.
+        actions.addBlock(event);
+        return;
+      }
+      case 'agent-turn-summary': {
+        const e = event as any;
+        const prev = state.agentProgress;
+        if (prev) {
+          actions.setAgentProgress({
+            ...prev,
+            toolCalls: e.cumulativeToolCalls,
+            tokensUsed: e.cumulativeTokens,
+            elapsedMs: e.elapsedMs,
+            turnsRemaining: e.turnsRemaining,
+          });
+        }
+        return;
+      }
+      case 'agent-budget-warning': {
+        const e = event as any;
+        const prev = state.agentProgress;
+        if (prev) {
+          const next = { ...prev } as AgentProgressSnapshot;
+          if (e.kind === 'turns') {
+            next.turnsRemaining = e.remaining;
+          } else if (e.kind === 'tokens') {
+            next.tokensRemaining = e.remaining;
+          }
+          actions.setAgentProgress(next);
+        }
+        // Surface the warning in the transcript too so it's visible after the session ends.
+        actions.addBlock({ type: 'warning', message: `Agent ${e.kind} budget: ${e.remaining}/${e.limit} remaining` } as any);
+        return;
+      }
+      case 'tool-call': {
+        // If an agent session is active, mirror the tool call into the live
+        // progress snapshot — so AgentProgressView can show the current activity.
+        const prev = state.agentProgress;
+        if (prev) {
+          const te = event as any;
+          const mappedStatus: 'running'|'ok'|'error'|'rejected' =
+            te.status === 'done' ? 'ok'
+            : te.status === 'error' ? 'error'
+            : 'running';
+          const displayInput = te.input ? (te.input.length > 30 ? te.input.slice(0, 27) + '\u2026' : te.input) : '';
+          actions.setAgentProgress({
+            ...prev,
+            lastTool: displayInput ? `${te.tool}(${displayInput})` : te.tool,
+            lastToolStatus: mappedStatus,
+            toolCalls: mappedStatus === 'ok' ? prev.toolCalls + 1 : prev.toolCalls,
+          });
+        }
+        // Always add to transcript for history.
+        actions.addBlock(event);
         return;
       }
       default:

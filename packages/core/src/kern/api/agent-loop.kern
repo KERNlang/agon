@@ -300,6 +300,12 @@ fn name=runApiAgentLoop async=true params="opts:ApiAgentOptions" returns="Promis
 
       // No tool calls — check for stall intent
       const tail = fullResponse.slice(-300);
+      const fakeGate = /\b(?:need (?:user )?(?:permission|approval)|await(?:ing)? approval|tool (?:keeps )?blocking me|(?:edit|write|bash|command) tool (?:keeps )?blocking me|blocked by (?:the )?(?:edit|write|bash) tool|let me try writing|try writing the full file)\b/i;
+      if (fakeGate.test(fullResponse)) {
+        pushHistory({ role: 'assistant', content: fullResponse });
+        pushHistory({ role: 'user', content: 'Do not narrate that a tool is blocked. If you need to read, edit, write, or run a command, call the tool now. Do not explain the tool system — use it.' });
+        continue;
+      }
       const readIntent = tail.match(/\b(?:let me |i(?:'ll| need to| want to| should| will) )(?:read|check|look at|examine|open)\s+[`"']?([a-zA-Z0-9_./-]+\.[a-zA-Z]{1,6})[`"']?/i);
       if (readIntent) {
         pushHistory({ role: 'assistant', content: fullResponse });

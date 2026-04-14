@@ -1682,6 +1682,24 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
               if (config.onToolCall && step < budget - 1) {
                 const tail = fullResponse.slice(-300);
   
+                // ── Fake approval / fake tool-blocking narration ──
+                // Some API models narrate "the Edit tool keeps blocking me" or
+                // "I need permission" instead of actually calling Edit/Write/Bash.
+                // That creates a fake approval gate in the UI: the user sees the
+                // model talk about needing approval, but Agon never gets a real
+                // tool call, so no prompt can be shown. Bounce the model back
+                // into the tool loop and force a real tool invocation instead.
+                const FAKE_GATE_RE = /\b(?:need (?:user )?(?:permission|approval)|await(?:ing)? approval|tool (?:keeps )?blocking me|(?:edit|write|bash|command) tool (?:keeps )?blocking me|blocked by (?:the )?(?:edit|write|bash) tool|let me try writing|try writing the full file|since i(?:'ve| have) already read it)\b/i;
+                if (FAKE_GATE_RE.test(fullResponse)) {
+                  yield { type: 'status' as const, content: 'forcing real approval gate…' };
+                  messageHistory.push({ role: 'assistant', content: fullResponse });
+                  messageHistory.push({
+                    role: 'user',
+                    content: 'Do not narrate that a tool is blocked or that you need permission. If you need to edit files, write files, or run shell commands, call Edit/Write/Bash now. Agon will show the real approval prompt if needed. Do not explain the permission system — use the tool.',
+                  });
+                  continue;
+                }
+  
                 // Extract file paths from narration: "let me read/check/look at packages/foo/bar.ts"
                 const readIntent = tail.match(/\b(?:let me |i(?:'ll| need to| want to| should| will) )(?:read|check|look at|examine|see|review|open|view)\s+[`"']?([a-zA-Z0-9_./-]+\.[a-zA-Z]{1,6})[`"']?/i);
                 // Extract search intent: "let me search/grep for X", "find X in Y"
@@ -1749,7 +1767,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                 if (STALL_RE.test(tail)) {
                   yield { type: 'status' as const, content: 'nudging stalled model…' };
                   messageHistory.push({ role: 'assistant', content: fullResponse });
-                  messageHistory.push({ role: 'user', content: 'Continue. Call the tools you need — do not narrate, just act. If you have enough context, delegate to Forge/Brainstorm/Tribunal now.' });
+                  messageHistory.push({ role: 'user', content: 'Continue. Call the tools you need — do not narrate, just act. If a write or command needs approval, call the tool and Agon will prompt the user. If you have enough context, delegate to Forge/Brainstorm/Tribunal now.' });
                   continue;
                 }
               }
@@ -1762,7 +1780,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                 if (UNFINISHED_RE.test(tail)) {
                   yield { type: 'status' as const, content: 'model paused mid-thought, nudging…' };
                   messageHistory.push({ role: 'assistant', content: fullResponse });
-                  messageHistory.push({ role: 'user', content: 'You stopped mid-thought. Either call the tools you need NOW, or delegate to Forge/Brainstorm/Tribunal. Do not narrate — act.' });
+                  messageHistory.push({ role: 'user', content: 'You stopped mid-thought. Either call the tools you need NOW, or delegate to Forge/Brainstorm/Tribunal. If a tool needs approval, call it and Agon will handle the prompt. Do not narrate — act.' });
                   continue;
                 }
               }

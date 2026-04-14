@@ -6,6 +6,8 @@ import type { ApiConfig } from '../api/dispatch.js';
 
 import { worktreeChangedDiff } from '../blocks/git.js';
 
+import { spawnWithTimeout } from '../blocks/process.js';
+
 import type { Semaphore } from '../blocks/semaphore.js';
 
 /**
@@ -457,4 +459,66 @@ export async function runAgentInvestigateSynthesis(opts: AgentInvestigateSynthes
       skipped: false,
     };
   }
+}
+
+/**
+ * Outcome of re-running the project's fitness command against the winner's worktree after synthesis edits. passed=true means the refinement did not regress; passed=false means the caller must revert to the pre-synthesis diff. error is populated for unexpected spawn failures separate from normal non-zero exits.
+ */
+export interface PostSynthesisFitnessResult {
+  passed: boolean;
+  exitCode: number;
+  error: string|null;
+  durationMs: number;
+}
+
+/**
+ * Re-run the project's fitness command (e.g. 'npm run typecheck') against the winner's worktree after synthesis edits. Used by runAgentTeam to decide whether to keep the synthesized diff or revert to the pre-synthesis winner diff. Extracted from the caller into a standalone helper so it can be unit-tested against a mocked spawn. Swallows spawn errors into the result rather than throwing — the caller must NOT crash the team run on a fitness tool hiccup.
+ */
+export async function runPostSynthesisFitnessCheck(opts: {worktreePath:string, fitnessCmd:string, timeoutSec?:number, signal?:AbortSignal}): Promise<PostSynthesisFitnessResult> {
+  const start = Date.now();
+  try {
+    const result = await spawnWithTimeout({
+      command: 'sh',
+      args: ['-c', opts.fitnessCmd],
+      cwd: opts.worktreePath,
+      timeout: opts.timeoutSec ?? 90,
+      signal: opts.signal,
+    });
+    return {
+      passed: result.exitCode === 0,
+      exitCode: result.exitCode,
+      error: null,
+      durationMs: Date.now() - start,
+    };
+  } catch (err) {
+    return {
+      passed: false,
+      exitCode: -1,
+      error: err instanceof Error ? err.message : String(err),
+      durationMs: Date.now() - start,
+    };
+  }
+}
+
+/**
+ * Weak runtime heuristic for detecting whether the synthesis winner actually engaged with loser insights or just polished its own answer. mentionedEngineIds lists the loser engineIds that appeared in the response excerpt; hasAnyMention is the top-level flag used for dispatch.
+ */
+export interface SynthesisBiasSignal {
+  hasAnyMention: boolean;
+  mentionedEngineIds: string[];
+}
+
+/**
+ * Scan the synthesis response excerpt for mentions of the loser engineIds. This is a WEAK heuristic — the model might paraphrase (e.g. 'codex's approach' → 'the alternative factoring') without naming the engine — but non-zero mentions is a positive signal that the humility frame was followed. Zero mentions combined with a non-no-op diff is the bias warning signal the caller surfaces.
+ */
+export function detectSynthesisInsightMention(opts: {responseExcerpt:string, loserEngineIds:string[]}): SynthesisBiasSignal {
+  const excerpt = opts.responseExcerpt.toLowerCase();
+  const mentioned: string[] = [];
+  for (const id of opts.loserEngineIds) {
+    if (excerpt.includes(id.toLowerCase())) mentioned.push(id);
+  }
+  return {
+    hasAnyMention: mentioned.length > 0,
+    mentionedEngineIds: mentioned,
+  };
 }

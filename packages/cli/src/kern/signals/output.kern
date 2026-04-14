@@ -233,6 +233,8 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
         actions.clearBlocks();
         actions.setStreamingText({});
         actions.setAgentProgress({});
+        actions.setQuestionState(null);
+        actions.setReviewEvent(null);
         codeBlockBuffer.clear();
         _thinkingBuffer.engineId = '';
         _thinkingBuffer.content = '';

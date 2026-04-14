@@ -111,7 +111,14 @@ export function deriveRoutingHints(input: string, ctx: HandlerContext): CesarRou
   }
   
   const explicitTeamRequest = /\b(?:team|all engines|multiple engines|everyone|several models)\b/i.test(input);
-  const recommendedBreadth: CesarBreadthHint = (explicitTeamRequest || fanoutLikely || (implementationLikely && inputTokens >= 24 && (scopeDirSpread >= 4 || scopeFileCount >= 10)))
+  const teamForImplementation = implementationLikely && (
+    scopeDirSpread >= 4
+    || scopeFileCount >= 10
+    || (fanoutLikely && inputTokens >= 28)
+  );
+  const teamForReview = reviewLikely && (scopeFileCount >= 8 || scopeDirSpread >= 4);
+  const teamForDecisionWork = (tradeoffLikely || openLikely || fuzzyLikely) && explicitTeamRequest;
+  const recommendedBreadth: CesarBreadthHint = (explicitTeamRequest || teamForImplementation || teamForReview || teamForDecisionWork)
     ? 'team'
     : 'solo';
   

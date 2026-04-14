@@ -72,14 +72,14 @@ function handleForgeEvent(event: any, plan: Plan, engineStatus: Record<string,st
   return plan;
 }
 
-export async function handleForge(task: string, fitnessCmd: string|null, dispatch: Dispatch, ctx: HandlerContext, existingPlan?: Plan, hardened?: boolean): Promise<void> {
+export async function handleForge(task: string, fitnessCmd: string|null, dispatch: Dispatch, ctx: HandlerContext, existingPlan?: Plan, hardened?: boolean): Promise<{winner:string|null, patchPath:string|null, manifestPath:string, task:string, fitnessCmd:string}|null> {
   const forgeAbort = new AbortController();
   try {
     ensureAgonHome();
     
     if (!task) {
       dispatch({ type: 'warning', message: 'No task provided. Usage: "fix the auth bug, test with npm test"' });
-      return;
+      return null;
     }
     
     let fitness = fitnessCmd;
@@ -88,14 +88,14 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
       fitness = fitness.trim();
       if (!fitness) {
         dispatch({ type: 'warning', message: 'Forge needs a test command. Try again with: "fix X, test with npm test"' });
-        return;
+        return null;
       }
     }
     
     const engines = ctx.activeEngines();
     if (engines.length === 0) {
       dispatch({ type: 'error', message: 'No engines available. Install at least one AI CLI tool.' });
-      return;
+      return null;
     }
     
     const config = ctx.config;
@@ -138,7 +138,7 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
           ctx.setCurrentPlan(plan);
           savePlan(plan);
           dispatch({ type: 'info', message: 'Plan cancelled.' });
-          return;
+          return null;
         }
       }
     
@@ -297,8 +297,8 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
             plan = mergeStepResult(plan, 'winner', { state: 'completed', artifacts: winnerArtifacts });
             ctx.setCurrentPlan(plan);
             savePlan(plan);
-            dispatch({ type: 'info', message: `Plan: ${plan.id}` });
-            sessionResultStore.add({
+          dispatch({ type: 'info', message: `Plan: ${plan.id}` });
+          sessionResultStore.add({
               type: 'forge',
               timestamp: new Date().toISOString(),
               question: task,
@@ -316,7 +316,13 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
             for (const [id, r] of Object.entries(manifest.results) as [string, any][]) {
               tracker.record(id, { prompt: task, response: `score:${r.score} diff:${r.diffLines}` });
             }
-            return; // Early return — convergence handled everything
+            return {
+              winner: 'convergence',
+              patchPath: convergedPath,
+              manifestPath: `${forgeDir}/manifest.json`,
+              task,
+              fitnessCmd: fitness!,
+            }; // Early return — convergence handled everything
           }
         } catch (err) {
           dispatch({ type: 'warning', message: `Convergence failed: ${err instanceof Error ? err.message : String(err)}. Falling back to winner.` });
@@ -408,6 +414,14 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
     for (const [id, r] of Object.entries(manifest.results) as [string, any][]) {
       tracker.record(id, { prompt: task, response: `score:${r.score} diff:${r.diffLines}` });
     }
+    
+    return {
+      winner: finalWinner ?? null,
+      patchPath: finalWinner && manifest.patches[finalWinner] ? manifest.patches[finalWinner] : null,
+      manifestPath: `${forgeDir}/manifest.json`,
+      task,
+      fitnessCmd: fitness!,
+    };
   } finally {
     ctx.setActiveAbort(null);
   }

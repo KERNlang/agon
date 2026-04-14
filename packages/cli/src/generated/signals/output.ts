@@ -241,6 +241,8 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
       actions.clearBlocks();
       actions.setStreamingText({});
       actions.setAgentProgress({});
+      actions.setQuestionState(null);
+      actions.setReviewEvent(null);
       codeBlockBuffer.clear();
       _thinkingBuffer.engineId = '';
       _thinkingBuffer.content = '';

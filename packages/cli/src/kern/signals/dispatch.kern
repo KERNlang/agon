@@ -86,6 +86,8 @@ fn name=withThreadOutcome params="cwd:string,jobType:string,label:string,fn:()=>
                 ? (returnValue as any).bids.map((b: any) => `  ${b.engineId} (score ${b.score ?? '?'}): ${b.reasoning ?? b.approach ?? ''}`).join('\n')
                 : '';
               returnSummary = `Winner: ${returnValue.winner}\nWinner full response:\n${String(returnValue.response ?? '')}${bidsDetail ? `\n\nAll bids:\n${bidsDetail}` : ''}`;
+            } else if ('winner' in returnValue && 'manifestPath' in returnValue) {
+              returnSummary = `Winner: ${String((returnValue as any).winner ?? 'none')}\nPatch: ${String((returnValue as any).patchPath ?? 'none')}\nManifest: ${String((returnValue as any).manifestPath ?? 'none')}`;
             }
           }
 
@@ -236,6 +238,12 @@ fn name=routeWithCesar async=true params="input:string, images:ImageAttachment[]
     try {
       const routingHints = deriveRoutingHints(input, cb.ctx);
       const result = await handleCesarBrain(input, cb.dispatch, cb.ctx, images);
+      const proposedPlan: CesarPlan | undefined = cb.ctx.cesar?.proposedPlan;
+      if (proposedPlan && proposedPlan.state === 'awaiting_approval') {
+        cb.setActivePlan(proposedPlan);
+        await handleProposedCesarPlan(proposedPlan, cb);
+        return false;
+      }
       try {
         const tracePath = join(RUNS_DIR, 'cesar-decisions.jsonl');
         const actualMode = result.mode ?? result.action ?? 'unknown';
@@ -297,6 +305,16 @@ fn name=routeWithCesar async=true params="input:string, images:ImageAttachment[]
             : input);
         let taskInput = userContext ? `${baseTask}\n\n${userContext}` : baseTask;
         const fitnessCmd = result.fitnessCmd ?? executionSpec.fitnessCmd;
+        const isForgeSlice = routeAction === 'forge' && result.scope === 'slice';
+        if (isForgeSlice) {
+          taskInput = `Scoped forge only. Solve only the hard subpart below. Do not rewrite the whole task. Cesar will integrate wiring, cleanup, and final verification locally.
+
+## Hard Slice
+${taskInput}
+
+## Full User Task
+${input}`;
+        }
 
         // Cesar now owns live-vs-plan selection. The runtime no longer intercepts
         // forge/build/pipeline with a heuristic "plan first?" prompt. If planning
@@ -315,25 +333,51 @@ fn name=routeWithCesar async=true params="input:string, images:ImageAttachment[]
           }
         }
 
-        const displayMode = result.mode ?? routeAction;
-        cb.dispatch({ type: 'info', message: `Cesar → ${displayMode}${hardened ? ' (hardened)' : ''}${tMode ? ` [${tMode}]` : ''}` });
         switch (routeAction) {
           case 'build':
+            cb.dispatch({ type: 'info', message: `Cesar → build${hardened ? ' (hardened)' : ''}${tMode ? ` [${tMode}]` : ''}` });
             cb.runAsJob('build', label, () => handleBuild(taskInput, cb.dispatch, cb.ctx));
             return true;
           case 'forge': {
+            const displayMode = result.mode ?? routeAction;
+            cb.dispatch({ type: 'info', message: `Cesar → ${displayMode}${hardened ? ' (hardened)' : ''}${tMode ? ` [${tMode}]` : ''}` });
             const _cwdForge = resolveWorkingDir();
-            cb.runAsJob('forge', label, withThreadOutcome(_cwdForge, 'forge', label, () => handleForge(taskInput, fitnessCmd, cb.dispatch, cb.ctx, undefined, hardened), cb.ctx));
+            cb.runAsJob('forge', label, withThreadOutcome(_cwdForge, isForgeSlice ? 'forge-slice' : 'forge', label, async () => {
+              const forgeResult = await handleForge(taskInput, fitnessCmd, cb.dispatch, cb.ctx, undefined, hardened);
+              if (isForgeSlice && forgeResult && cb.ctx.cesarSession?.alive) {
+                cb.dispatch({ type: 'info', message: 'Cesar integrating forge slice…' });
+                await routeWithCesar(`[forge-slice integration]
+
+A scoped forge run completed for one hard slice.
+
+## Full User Task
+${input}
+
+## Scoped Slice That Was Forged
+${taskInput}
+
+## Forge Result
+Winner: ${forgeResult.winner ?? 'none'}
+Patch: ${forgeResult.patchPath ?? 'none'}
+Manifest: ${forgeResult.manifestPath}
+
+You still own the overall task. Integrate the forged slice with the rest of the work, keep the scope tight, and use your local tools directly if more edits or verification are needed. Avoid sending the same slice to forge again unless integration reveals a genuinely new hard subproblem.`, [], cb);
+              }
+              return forgeResult;
+            }, cb.ctx));
             return true;
           }
           case 'team-forge': {
             const tfFitness = fitnessCmd ?? await cb.askQuestion('What command tests this?');
             if (!tfFitness.trim()) { cb.dispatch({ type: 'warning', message: 'Team-forge needs a test command.' }); break; }
+            const displayMode = result.mode ?? routeAction;
+            cb.dispatch({ type: 'info', message: `Cesar → ${displayMode}${hardened ? ' (hardened)' : ''}${tMode ? ` [${tMode}]` : ''}` });
             const _cwdTForge = resolveWorkingDir();
             cb.runAsJob('team-forge', label, withThreadOutcome(_cwdTForge, 'team-forge', label, () => handleTeamForge(taskInput, tfFitness.trim(), cb.dispatch, cb.ctx, undefined), cb.ctx));
             return true;
           }
           case 'brainstorm': {
+            cb.dispatch({ type: 'info', message: `Cesar → brainstorm${hardened ? ' (hardened)' : ''}${tMode ? ` [${tMode}]` : ''}` });
             const _cwdBs = resolveWorkingDir();
             cb.runAsJob('brainstorm', label, withThreadOutcome(_cwdBs, 'brainstorm', label, async () => {
               const bsResult = await handleBrainstorm(taskInput, cb.dispatch, cb.ctx);
@@ -348,6 +392,7 @@ fn name=routeWithCesar async=true params="input:string, images:ImageAttachment[]
             return true;
           }
           case 'team-brainstorm': {
+            cb.dispatch({ type: 'info', message: `Cesar → team-brainstorm${hardened ? ' (hardened)' : ''}${tMode ? ` [${tMode}]` : ''}` });
             const _cwdTBs = resolveWorkingDir();
             cb.runAsJob('team-brainstorm', label, withThreadOutcome(_cwdTBs, 'team-brainstorm', label, async () => {
               await handleTeamBrainstorm(taskInput, cb.dispatch, cb.ctx);
@@ -361,6 +406,7 @@ fn name=routeWithCesar async=true params="input:string, images:ImageAttachment[]
             return true;
           }
           case 'tribunal': {
+            cb.dispatch({ type: 'info', message: `Cesar → tribunal${hardened ? ' (hardened)' : ''}${tMode ? ` [${tMode}]` : ''}` });
             const _cwdTrib = resolveWorkingDir();
             cb.runAsJob('tribunal', label, withThreadOutcome(_cwdTrib, 'tribunal', label, async () => {
               await handleTribunal(taskInput, cb.dispatch, cb.ctx, tMode);
@@ -373,6 +419,7 @@ fn name=routeWithCesar async=true params="input:string, images:ImageAttachment[]
             return true;
           }
           case 'team-tribunal': {
+            cb.dispatch({ type: 'info', message: `Cesar → team-tribunal${hardened ? ' (hardened)' : ''}${tMode ? ` [${tMode}]` : ''}` });
             const _cwdTTrib = resolveWorkingDir();
             cb.runAsJob('team-tribunal', label, withThreadOutcome(_cwdTTrib, 'team-tribunal', label, async () => {
               await handleTeamTribunal(taskInput, cb.dispatch, cb.ctx, tMode);
@@ -385,6 +432,7 @@ fn name=routeWithCesar async=true params="input:string, images:ImageAttachment[]
             return true;
           }
           case 'campfire': {
+            cb.dispatch({ type: 'info', message: `Cesar → campfire${hardened ? ' (hardened)' : ''}${tMode ? ` [${tMode}]` : ''}` });
             const _cwdCamp = resolveWorkingDir();
             cb.runAsJob('campfire', label, withThreadOutcome(_cwdCamp, 'campfire', label, async () => {
               await handleCampfire(taskInput, cb.dispatch, cb.ctx);
@@ -397,14 +445,17 @@ fn name=routeWithCesar async=true params="input:string, images:ImageAttachment[]
             return true;
           }
           case 'pipeline': {
+            cb.dispatch({ type: 'info', message: `Cesar → pipeline${hardened ? ' (hardened)' : ''}${tMode ? ` [${tMode}]` : ''}` });
             const _cwdPipe = resolveWorkingDir();
             cb.runAsJob('pipeline', label, withThreadOutcome(_cwdPipe, 'pipeline', label, () => handlePipeline(taskInput, cb.dispatch, cb.ctx, fitnessCmd ?? undefined), cb.ctx));
             return true;
           }
           case 'review':
+            cb.dispatch({ type: 'info', message: `Cesar → review${hardened ? ' (hardened)' : ''}` });
             cb.runAsJob('review', label, () => handleReview(cb.dispatch, cb.ctx, result.target as string | undefined, result.engineId as string | undefined));
             return true;
           case 'agent':
+            cb.dispatch({ type: 'info', message: `Cesar → agent${hardened ? ' (hardened)' : ''}` });
             // Cesar called the Agent tool with team:false (or omitted). Solo agent.
             cb.runAsJob('agent', label, () => runAgentMode(taskInput, cb.dispatch, cb.ctx, {
               maxTurns: result.maxTurns as number | undefined,
@@ -412,6 +463,7 @@ fn name=routeWithCesar async=true params="input:string, images:ImageAttachment[]
             }));
             return true;
           case 'team-agent':
+            cb.dispatch({ type: 'info', message: `Cesar → team-agent${hardened ? ' (hardened)' : ''}` });
             // Cesar called the Agent tool with team:true. Spawn AgentTeam with the
             // engines list (or auto-pick) and the taskKind discriminator.
             cb.runAsJob('team-agent', label, () => runAgentTeam(taskInput, cb.dispatch, cb.ctx, {
@@ -487,17 +539,16 @@ fn name=routeWithCesar async=true params="input:string, images:ImageAttachment[]
           ? executionSpec.task || input
           : input;
         const recoveredFitness = crashDel.fitnessCmd ?? executionSpec.fitnessCmd;
-        cb.dispatch({ type: 'info', message: `Cesar → ${action} (recovered)` });
         switch (action) {
-          case 'forge': cb.runAsJob('forge', label, () => handleForge(recoveredTask, recoveredFitness, cb.dispatch, cb.ctx, undefined, crashDel.hardened ?? false)); return true;
-          case 'brainstorm': cb.runAsJob('brainstorm', label, async () => { await handleBrainstorm(recoveredTask, cb.dispatch, cb.ctx); }); return true;
-          case 'tribunal': cb.runAsJob('tribunal', label, () => handleTribunal(recoveredTask, cb.dispatch, cb.ctx, crashDel.tribunalMode)); return true;
-          case 'campfire': cb.runAsJob('campfire', label, () => handleCampfire(recoveredTask, cb.dispatch, cb.ctx)); return true;
-          case 'pipeline': cb.runAsJob('pipeline', label, () => handlePipeline(recoveredTask, cb.dispatch, cb.ctx, recoveredFitness ?? undefined)); return true;
-          case 'review': cb.runAsJob('review', label, () => handleReview(cb.dispatch, cb.ctx, crashDel.target, crashDel.engineId)); return true;
-          case 'team-forge': { const tf = recoveredFitness ?? await cb.askQuestion('What command tests this?'); if (tf.trim()) { cb.runAsJob('team-forge', label, () => handleTeamForge(recoveredTask, tf.trim(), cb.dispatch, cb.ctx, undefined)); return true; } break; }
-          case 'team-brainstorm': cb.runAsJob('team-brainstorm', label, () => handleTeamBrainstorm(recoveredTask, cb.dispatch, cb.ctx)); return true;
-          case 'team-tribunal': cb.runAsJob('team-tribunal', label, () => handleTeamTribunal(recoveredTask, cb.dispatch, cb.ctx, crashDel.tribunalMode)); return true;
+          case 'forge': cb.dispatch({ type: 'info', message: 'Cesar → forge (recovered)' }); cb.runAsJob('forge', label, async () => { await handleForge(recoveredTask, recoveredFitness, cb.dispatch, cb.ctx, undefined, crashDel.hardened ?? false); }); return true;
+          case 'brainstorm': cb.dispatch({ type: 'info', message: 'Cesar → brainstorm (recovered)' }); cb.runAsJob('brainstorm', label, async () => { await handleBrainstorm(recoveredTask, cb.dispatch, cb.ctx); }); return true;
+          case 'tribunal': cb.dispatch({ type: 'info', message: `Cesar → tribunal (recovered)${crashDel.tribunalMode ? ` [${crashDel.tribunalMode}]` : ''}` }); cb.runAsJob('tribunal', label, () => handleTribunal(recoveredTask, cb.dispatch, cb.ctx, crashDel.tribunalMode)); return true;
+          case 'campfire': cb.dispatch({ type: 'info', message: 'Cesar → campfire (recovered)' }); cb.runAsJob('campfire', label, () => handleCampfire(recoveredTask, cb.dispatch, cb.ctx)); return true;
+          case 'pipeline': cb.dispatch({ type: 'info', message: 'Cesar → pipeline (recovered)' }); cb.runAsJob('pipeline', label, () => handlePipeline(recoveredTask, cb.dispatch, cb.ctx, recoveredFitness ?? undefined)); return true;
+          case 'review': cb.dispatch({ type: 'info', message: 'Cesar → review (recovered)' }); cb.runAsJob('review', label, () => handleReview(cb.dispatch, cb.ctx, crashDel.target, crashDel.engineId)); return true;
+          case 'team-forge': { const tf = recoveredFitness ?? await cb.askQuestion('What command tests this?'); if (tf.trim()) { cb.dispatch({ type: 'info', message: 'Cesar → team-forge (recovered)' }); cb.runAsJob('team-forge', label, () => handleTeamForge(recoveredTask, tf.trim(), cb.dispatch, cb.ctx, undefined)); return true; } break; }
+          case 'team-brainstorm': cb.dispatch({ type: 'info', message: 'Cesar → team-brainstorm (recovered)' }); cb.runAsJob('team-brainstorm', label, () => handleTeamBrainstorm(recoveredTask, cb.dispatch, cb.ctx)); return true;
+          case 'team-tribunal': cb.dispatch({ type: 'info', message: `Cesar → team-tribunal (recovered)${crashDel.tribunalMode ? ` [${crashDel.tribunalMode}]` : ''}` }); cb.runAsJob('team-tribunal', label, () => handleTeamTribunal(recoveredTask, cb.dispatch, cb.ctx, crashDel.tribunalMode)); return true;
         }
       }
     }
@@ -543,17 +594,16 @@ fn name=routeWithCesar async=true params="input:string, images:ImageAttachment[]
               ? executionSpec.task || input
               : input;
             const fallbackFitness = executionSpec.fitnessCmd;
-            cb.dispatch({ type: 'info', message: `Cesar → ${action}` });
             switch (action) {
-              case 'forge': cb.runAsJob('forge', label, () => handleForge(fallbackTask, fallbackFitness, cb.dispatch, cb.ctx, undefined, fallbackSuggestion.hardened ?? false)); return true;
-              case 'brainstorm': cb.runAsJob('brainstorm', label, async () => { await handleBrainstorm(fallbackTask, cb.dispatch, cb.ctx); }); return true;
-              case 'tribunal': cb.runAsJob('tribunal', label, () => handleTribunal(fallbackTask, cb.dispatch, cb.ctx, fallbackSuggestion.tribunalMode)); return true;
-              case 'campfire': cb.runAsJob('campfire', label, () => handleCampfire(fallbackTask, cb.dispatch, cb.ctx)); return true;
-              case 'pipeline': cb.runAsJob('pipeline', label, () => handlePipeline(fallbackTask, cb.dispatch, cb.ctx, fallbackFitness ?? undefined)); return true;
-              case 'review': cb.runAsJob('review', label, () => handleReview(cb.dispatch, cb.ctx)); return true;
-              case 'team-forge': { const tf = fallbackFitness ?? await cb.askQuestion('What command tests this?'); if (tf.trim()) { cb.runAsJob('team-forge', label, () => handleTeamForge(fallbackTask, tf.trim(), cb.dispatch, cb.ctx, undefined)); return true; } break; }
-              case 'team-brainstorm': cb.runAsJob('team-brainstorm', label, () => handleTeamBrainstorm(fallbackTask, cb.dispatch, cb.ctx)); return true;
-              case 'team-tribunal': cb.runAsJob('team-tribunal', label, () => handleTeamTribunal(fallbackTask, cb.dispatch, cb.ctx, fallbackSuggestion.tribunalMode)); return true;
+                case 'forge': cb.dispatch({ type: 'info', message: 'Cesar → forge' }); cb.runAsJob('forge', label, async () => { await handleForge(fallbackTask, fallbackFitness, cb.dispatch, cb.ctx, undefined, fallbackSuggestion.hardened ?? false); }); return true;
+              case 'brainstorm': cb.dispatch({ type: 'info', message: 'Cesar → brainstorm' }); cb.runAsJob('brainstorm', label, async () => { await handleBrainstorm(fallbackTask, cb.dispatch, cb.ctx); }); return true;
+              case 'tribunal': cb.dispatch({ type: 'info', message: `Cesar → tribunal${fallbackSuggestion.tribunalMode ? ` [${fallbackSuggestion.tribunalMode}]` : ''}` }); cb.runAsJob('tribunal', label, () => handleTribunal(fallbackTask, cb.dispatch, cb.ctx, fallbackSuggestion.tribunalMode)); return true;
+              case 'campfire': cb.dispatch({ type: 'info', message: 'Cesar → campfire' }); cb.runAsJob('campfire', label, () => handleCampfire(fallbackTask, cb.dispatch, cb.ctx)); return true;
+              case 'pipeline': cb.dispatch({ type: 'info', message: 'Cesar → pipeline' }); cb.runAsJob('pipeline', label, () => handlePipeline(fallbackTask, cb.dispatch, cb.ctx, fallbackFitness ?? undefined)); return true;
+              case 'review': cb.dispatch({ type: 'info', message: 'Cesar → review' }); cb.runAsJob('review', label, () => handleReview(cb.dispatch, cb.ctx)); return true;
+              case 'team-forge': { const tf = fallbackFitness ?? await cb.askQuestion('What command tests this?'); if (tf.trim()) { cb.dispatch({ type: 'info', message: 'Cesar → team-forge' }); cb.runAsJob('team-forge', label, () => handleTeamForge(fallbackTask, tf.trim(), cb.dispatch, cb.ctx, undefined)); return true; } break; }
+              case 'team-brainstorm': cb.dispatch({ type: 'info', message: 'Cesar → team-brainstorm' }); cb.runAsJob('team-brainstorm', label, () => handleTeamBrainstorm(fallbackTask, cb.dispatch, cb.ctx)); return true;
+              case 'team-tribunal': cb.dispatch({ type: 'info', message: `Cesar → team-tribunal${fallbackSuggestion.tribunalMode ? ` [${fallbackSuggestion.tribunalMode}]` : ''}` }); cb.runAsJob('team-tribunal', label, () => handleTeamTribunal(fallbackTask, cb.dispatch, cb.ctx, fallbackSuggestion.tribunalMode)); return true;
             }
           }
           return false;
@@ -951,140 +1001,7 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
         // After routeWithCesar, check if Cesar proposed a plan
         const proposed: CesarPlan | undefined = cb.ctx.cesar?.proposedPlan;
         if (proposed && proposed.state === 'awaiting_approval') {
-          // Clear the stash
-          if (cb.ctx.cesar) cb.ctx.cesar.proposedPlan = undefined;
-
-          // Show plan file path
-          if (proposed.planFilePath) {
-            cb.dispatch({ type: 'info', message: `Plan saved: ${proposed.planFilePath}` });
-          }
-
-          // Tribunal fix #12 anti-escalation note:
-          // The auto-approve policy is intentionally evaluated ONCE per turn,
-          // BEFORE the approval loop. Do NOT relocate this check inside the
-          // while(!decided) loop without re-thinking the edit/revise
-          // escalation surface — the user's 'e' (edit) action would
-          // otherwise become a one-shot auto-approve via Cesar setting
-          // autoApprove=true on the revised plan under brain-prompt
-          // guidance. The 'e' branch below also force-clears
-          // currentProposal.autoApprove for defense in depth.
-          const policy = applyAutoApprovePolicy(proposed, cb.ctx.config as any);
-          let currentProposal = proposed;
-          let decided = false;
-
-          if (policy.approve) {
-            cb.dispatch({ type: 'info', message: `Plan auto-approved (${policy.reason})` });
-            // Surface every fitnessCmd verbatim — only reachable under
-            // 'always' mode (other modes are blocked by interlock), but
-            // the user must SEE every shell command they're about to run.
-            for (const s of currentProposal.steps) {
-              if (s.fitnessCmd && s.fitnessCmd.trim().length > 0) {
-                cb.dispatch({ type: 'warning', message: `fitnessCmd: ${s.fitnessCmd}` });
-              }
-            }
-
-            const approved = approveCesarPlan(currentProposal);
-            cb.setActivePlan(approved);
-            cb.dispatch({ type: 'success', message: 'Plan auto-approved — executing...' });
-            saveCesarPlan(approved);
-            // FU-4: shared helper handles abort wiring, executor build,
-            // executePlan, finalizePlanWithReviewGate, terminal-status
-            // dispatch, and debounced-write flush.
-            await executeApprovedPlan(approved, cb);
-            decided = true;
-          } else if (proposed.autoApprove === true) {
-            cb.dispatch({ type: 'info', message: `Plan requested autoApprove but policy rejected: ${policy.reason}` });
-          }
-
-          // Approval loop — ask user, handle Y/N/feedback/edit
-          while (!decided) {
-            const answer = await cb.askQuestion('Approve plan? [Y/n/e(dit)] or give feedback to revise');
-            const trimmed = answer.trim().toLowerCase();
-
-            if (trimmed === 'y' || trimmed === 'yes' || trimmed === '') {
-              // ── Approve and execute ──
-              const approved = approveCesarPlan(currentProposal);
-              cb.setActivePlan(approved);
-              cb.dispatch({ type: 'success', message: 'Plan approved — executing...' });
-              saveCesarPlan(approved);
-
-              // FU-4: shared executor helper.
-              await executeApprovedPlan(approved, cb);
-              decided = true;
-
-            } else if (trimmed === 'n' || trimmed === 'no') {
-              // ── Reject ──
-              cb.setActivePlan(cancelCesarPlan(currentProposal));
-              cb.dispatch({ type: 'info', message: 'Plan rejected.' });
-              decided = true;
-
-            } else if (trimmed === 'edit' || trimmed === 'e') {
-              // ── Edit — open plan file for manual editing ──
-              const filePath = currentProposal.planFilePath;
-              if (filePath) {
-                cb.dispatch({ type: 'info', message: `Plan file: ${filePath}` });
-                cb.dispatch({ type: 'info', message: 'Edit the file in your editor, then press Enter to re-read and revise.' });
-                await cb.askQuestion('Press Enter when done editing...');
-                try {
-                  const editedContent = readFileSync(filePath, 'utf-8');
-                  cb.dispatch({ type: 'info', message: 'Re-reading edited plan and revising...' });
-                  const reviseInput = `[PLAN REVISION] The user manually edited the plan file. Here is the updated content:\n\n${editedContent}\n\nParse the user's edits, incorporate them, and call ProposePlan IMMEDIATELY with the revised steps. Do NOT re-investigate.`;
-                  // OpenCode fix (f1): if routeWithCesar throws (LLM API
-                  // failure, network error), surface it and stay in the
-                  // approval loop with the original proposal so the user
-                  // can retry, type N to reject, or type 'e' again.
-                  try {
-                    await routeWithCesar(reviseInput, [], cb);
-                  } catch (err) {
-                    cb.dispatch({ type: 'warning', message: `Cesar revision failed: ${err instanceof Error ? err.message : String(err)}. Try again, type N to reject, or type 'e' to re-edit.` });
-                    continue;
-                  }
-                  const revised: CesarPlan | undefined = cb.ctx.cesar?.proposedPlan;
-                  if (revised && revised.state === 'awaiting_approval') {
-                    if (cb.ctx.cesar) cb.ctx.cesar.proposedPlan = undefined;
-                    // Tribunal fix #12: edits NEVER auto-approve, by code.
-                    // Even if Cesar tries to flip autoApprove=true on the
-                    // revised plan (which it might under brain-prompt
-                    // guidance to be confident post-edit), the user's
-                    // 'e' click meant 'inspect', not 'execute'.
-                    currentProposal = { ...revised, autoApprove: false };
-                  } else {
-                    cb.dispatch({ type: 'warning', message: 'Cesar did not produce a revised plan from your edits. Try giving text feedback instead.' });
-                    decided = true;
-                  }
-                } catch (err) {
-                  cb.dispatch({ type: 'warning', message: `Could not read plan file: ${(err as Error).message}. Use /plan <task> to start over.` });
-                  decided = true;
-                }
-              } else {
-                cb.dispatch({ type: 'warning', message: 'No plan file path available. Type feedback as text instead.' });
-              }
-
-            } else {
-              // ── Feedback — send to Cesar for revision ──
-              cb.dispatch({ type: 'info', message: 'Revising plan with your feedback...' });
-              const reviseInput = `[PLAN REVISION] The user wants these changes: ${answer}\n\nRevise the plan and call ProposePlan IMMEDIATELY with the updated steps. Do NOT re-investigate. Do NOT respond with text. Just call ProposePlan with the revised plan.`;
-              // OpenCode fix (f1): wrap routeWithCesar so an LLM error
-              // doesn't escape the approval loop.
-              try {
-                await routeWithCesar(reviseInput, [], cb);
-              } catch (err) {
-                cb.dispatch({ type: 'warning', message: `Cesar revision failed: ${err instanceof Error ? err.message : String(err)}. Try again, type Y to approve the original, or N to reject.` });
-                continue;
-              }
-              const revised: CesarPlan | undefined = cb.ctx.cesar?.proposedPlan;
-              if (revised && revised.state === 'awaiting_approval') {
-                if (cb.ctx.cesar) cb.ctx.cesar.proposedPlan = undefined;
-                // Tribunal fix #12: revised plans never inherit autoApprove.
-                // The user is engaged in dialogue — they will be re-prompted.
-                currentProposal = { ...revised, autoApprove: false };
-                // Loop continues — user will be asked again
-              } else {
-                cb.dispatch({ type: 'warning', message: 'Cesar did not produce a revised plan. Use /plan <task> to start over.' });
-                decided = true;
-              }
-            }
-          }
+          await handleProposedCesarPlan(proposed, cb);
         } else if (wasJob) {
           return { handled: true, ranAsJob: true };
         } else {
@@ -1208,7 +1125,7 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
         const si = intent as any;
         const answer = await cb.askQuestion('Forge — engines compete to build? (y/n)');
         if (answer.toLowerCase().startsWith('y')) {
-          cb.runAsJob('forge', si.task?.slice(0, 40) ?? 'forge', () => handleForge(si.task ?? si.input, si.fitnessCmd, cb.dispatch, cb.ctx));
+          cb.runAsJob('forge', si.task?.slice(0, 40) ?? 'forge', async () => { await handleForge(si.task ?? si.input, si.fitnessCmd, cb.dispatch, cb.ctx); });
           return { handled: true, ranAsJob: true };
         }
         await handleChat(si.input, cb.dispatch, cb.ctx, cb.allImages);
@@ -1421,6 +1338,9 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
           cb.ctx.cesarSession.close();
           cb.ctx.setCesarSession(null);
         }
+        try {
+          cb.ctx.cesarMemory?.clearSession?.();
+        } catch { /* best-effort */ }
 
         // 2. Clear visual output (blocks, streaming, clipboard)
         cb.dispatch({ type: 'clear' });
@@ -1477,6 +1397,107 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
 
     _emitPost();
     return { handled: true, ranAsJob: false };
+  >>>
+
+fn name=handleProposedCesarPlan async=true params="proposed:CesarPlan, cb:DispatchCallbacks" returns="Promise<void>" export=true
+  doc "Shared approval loop for plans proposed by Cesar, whether from explicit /plan mode or a normal chat turn."
+  handler <<<
+    if (cb.ctx.cesar) cb.ctx.cesar.proposedPlan = undefined;
+
+    if (proposed.planFilePath) {
+      cb.dispatch({ type: 'info', message: `Plan saved: ${proposed.planFilePath}` });
+    }
+
+    const policy = applyAutoApprovePolicy(proposed, cb.ctx.config as any);
+    let currentProposal = proposed;
+    let decided = false;
+
+    if (policy.approve) {
+      cb.dispatch({ type: 'info', message: `Plan auto-approved (${policy.reason})` });
+      for (const s of currentProposal.steps) {
+        if (s.fitnessCmd && s.fitnessCmd.trim().length > 0) {
+          cb.dispatch({ type: 'warning', message: `fitnessCmd: ${s.fitnessCmd}` });
+        }
+      }
+
+      const approved = approveCesarPlan(currentProposal);
+      cb.setActivePlan(approved);
+      cb.dispatch({ type: 'success', message: 'Plan auto-approved — executing...' });
+      saveCesarPlan(approved);
+      await executeApprovedPlan(approved, cb);
+      decided = true;
+    } else if (proposed.autoApprove === true) {
+      cb.dispatch({ type: 'info', message: `Plan requested autoApprove but policy rejected: ${policy.reason}` });
+    }
+
+    while (!decided) {
+      const answer = await cb.askQuestion('Approve plan? [Y/n/e(dit)] or give feedback to revise');
+      const trimmed = answer.trim().toLowerCase();
+
+      if (trimmed === 'y' || trimmed === 'yes' || trimmed === '') {
+        const approved = approveCesarPlan(currentProposal);
+        cb.setActivePlan(approved);
+        cb.dispatch({ type: 'success', message: 'Plan approved — executing...' });
+        saveCesarPlan(approved);
+        await executeApprovedPlan(approved, cb);
+        decided = true;
+
+      } else if (trimmed === 'n' || trimmed === 'no') {
+        cb.setActivePlan(cancelCesarPlan(currentProposal));
+        cb.dispatch({ type: 'info', message: 'Plan rejected.' });
+        decided = true;
+
+      } else if (trimmed === 'edit' || trimmed === 'e') {
+        const filePath = currentProposal.planFilePath;
+        if (filePath) {
+          cb.dispatch({ type: 'info', message: `Plan file: ${filePath}` });
+          cb.dispatch({ type: 'info', message: 'Edit the file in your editor, then press Enter to re-read and revise.' });
+          await cb.askQuestion('Press Enter when done editing...');
+          try {
+            const editedContent = readFileSync(filePath, 'utf-8');
+            cb.dispatch({ type: 'info', message: 'Re-reading edited plan and revising...' });
+            const reviseInput = `[PLAN REVISION] The user manually edited the plan file. Here is the updated content:\n\n${editedContent}\n\nParse the user's edits, incorporate them, and call ProposePlan IMMEDIATELY with the revised steps. Do NOT re-investigate.`;
+            try {
+              await routeWithCesar(reviseInput, [], cb);
+            } catch (err) {
+              cb.dispatch({ type: 'warning', message: `Cesar revision failed: ${err instanceof Error ? err.message : String(err)}. Try again, type N to reject, or type 'e' to re-edit.` });
+              continue;
+            }
+            const revised: CesarPlan | undefined = cb.ctx.cesar?.proposedPlan;
+            if (revised && revised.state === 'awaiting_approval') {
+              if (cb.ctx.cesar) cb.ctx.cesar.proposedPlan = undefined;
+              currentProposal = { ...revised, autoApprove: false };
+            } else {
+              cb.dispatch({ type: 'warning', message: 'Cesar did not produce a revised plan from your edits. Try giving text feedback instead.' });
+              decided = true;
+            }
+          } catch (err) {
+            cb.dispatch({ type: 'warning', message: `Could not read plan file: ${(err as Error).message}. Use /plan <task> to start over.` });
+            decided = true;
+          }
+        } else {
+          cb.dispatch({ type: 'warning', message: 'No plan file path available. Type feedback as text instead.' });
+        }
+
+      } else {
+        cb.dispatch({ type: 'info', message: 'Revising plan with your feedback...' });
+        const reviseInput = `[PLAN REVISION] The user wants these changes: ${answer}\n\nRevise the plan and call ProposePlan IMMEDIATELY with the updated steps. Do NOT re-investigate. Do NOT respond with text. Just call ProposePlan with the revised plan.`;
+        try {
+          await routeWithCesar(reviseInput, [], cb);
+        } catch (err) {
+          cb.dispatch({ type: 'warning', message: `Cesar revision failed: ${err instanceof Error ? err.message : String(err)}. Try again, type Y to approve the original, or N to reject.` });
+          continue;
+        }
+        const revised: CesarPlan | undefined = cb.ctx.cesar?.proposedPlan;
+        if (revised && revised.state === 'awaiting_approval') {
+          if (cb.ctx.cesar) cb.ctx.cesar.proposedPlan = undefined;
+          currentProposal = { ...revised, autoApprove: false };
+        } else {
+          cb.dispatch({ type: 'warning', message: 'Cesar did not produce a revised plan. Use /plan <task> to start over.' });
+          decided = true;
+        }
+      }
+    }
   >>>
 
 // ── Plan execution helpers (Tribunal fixes #2, #4, #8, #10) ──────────

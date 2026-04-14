@@ -40,22 +40,34 @@ fn name=routeViaCesar params="input:string, dispatch:Dispatch, ctx:HandlerContex
     const isQuestion = hintClass === 'question' || /^(what|how|why|when|where|who|is|are|can|do|does|should|would|could|will|explain|describe|tell|show|list|help)\b/i.test(trimmed);
     const isGreeting = /^(hi|hey|hello|yo|sup|thanks|thank you|ok|okay|sure|yes|no|yep|nope|cool|nice|great)\b/i.test(trimmed);
     const isSlashLike = trimmed.startsWith('/') || trimmed.startsWith('!');
+    const codeFastPathChars = (config as any).cesarCodeFastPathChars ?? 180;
+    const isCodeTask = hintClass === 'code';
+    const hasSingleFileHint = /(?:^|\s)(?:[\w./-]+\.(?:ts|tsx|js|jsx|py|rs|go|sh|md|json|yaml|yml|toml))(?:\s|$)/i.test(trimmed);
+    const isSmallEditIntent = /\b(?:fix|change|update|rename|edit|tweak|adjust|add|remove|wire)\b/i.test(trimmed);
+    const isTinyCodeTask = isCodeTask && trimmed.length <= codeFastPathChars && (hasSingleFileHint || isSmallEditIntent);
     const needsScout = !isSlashLike && !isGreeting && !(isShort && isQuestion);
 
-    if (!needsScout) {
+    if (!needsScout || isTinyCodeTask) {
       const lead = (config as any).cesarEngine ?? config.forgeFixedStarter ?? engines[0] ?? 'claude';
-      dispatch({ type: 'info', message: `Cesar → chat (${lead}, direct)` });
+      const leadHasAgent = agentIds.includes(lead);
+      const directAction = isTinyCodeTask && leadHasAgent ? 'build' as const : 'chat' as const;
+      dispatch({ type: 'info', message: `Cesar → ${directAction} (${lead}, direct)` });
       return {
-        action: 'chat' as const,
+        action: directAction,
         leadEngine: lead,
         confidence: 95,
-        reasoning: isGreeting ? 'Greeting — direct response' : 'Simple question — skip scouts',
+        reasoning: isTinyCodeTask
+          ? 'Tiny code task — skip scouts and build directly'
+          : isGreeting
+            ? 'Greeting — direct response'
+            : 'Simple question — skip scouts',
         observerEngines: [],
         bids: [],
       } as RoutingDecision;
     }
 
     const scoutCount = config.cesarScoutCount ?? 2;
+    const scoutTimeout = (config as any).cesarScoutTimeout ?? 18;
     dispatch({ type: 'spinner-start', message: 'Cesar routing…' });
 
     let rankedBids: ScoutBid[];
@@ -70,7 +82,7 @@ fn name=routeViaCesar params="input:string, dispatch:Dispatch, ctx:HandlerContex
         scoutCount,
         registry: ctx.registry,
         adapter: ctx.adapter,
-        timeout: 30,
+        timeout: scoutTimeout,
         outputDir: tmpdir(),
       });
       rankedBids = result.rankedBids;
@@ -98,6 +110,8 @@ fn name=routeViaCesar params="input:string, dispatch:Dispatch, ctx:HandlerContex
     const needsCompetition = rankedBids.some((b: ScoutBid) => b.needsCompetition);
     const observerEngines = engines.filter((id: string) => id !== leadEngine);
     const seedPlan = rankedBids[0]?.approach ?? undefined;
+    const autoPipeline = (config as any).cesarAutoPipeline === true;
+    const pipelineThreshold = (config as any).cesarPipelineThreshold ?? 93;
 
     let action: RoutingDecision['action'];
     let reasoning: string;
@@ -110,12 +124,14 @@ fn name=routeViaCesar params="input:string, dispatch:Dispatch, ctx:HandlerContex
       action = (hintClass === 'question') ? 'tribunal' : 'campfire';
       reasoning = `Engines disagree (spread ${disagreementSpread}): ${rankedBids.map((b: ScoutBid) => `${b.engineId} ${b.confidence}%`).join(' vs ')}`;
     } else if (topConfidence >= threshold && leadHasAgent) {
-      // Upgrade to pipeline if a second agent-capable engine exists for review
       const hasReviewer = observerEngines.some((id: string) => agentIds.includes(id));
-      action = hasReviewer ? 'pipeline' as any : 'build';
-      reasoning = hasReviewer
-        ? `High confidence (${topConfidence}%), build + silent cross-engine review`
-        : `High confidence (${topConfidence}%), ${leadEngine} has agent mode`;
+      if (autoPipeline && hasReviewer && topConfidence >= pipelineThreshold) {
+        action = 'pipeline' as any;
+        reasoning = `Very high confidence (${topConfidence}%), build + silent cross-engine review`;
+      } else {
+        action = 'build';
+        reasoning = `High confidence (${topConfidence}%), ${leadEngine} has agent mode`;
+      }
     } else if (topConfidence >= threshold) {
       action = 'chat';
       reasoning = `High confidence (${topConfidence}%), direct response`;

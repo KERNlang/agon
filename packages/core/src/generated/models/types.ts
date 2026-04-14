@@ -181,8 +181,12 @@ export interface AgonConfig {
   skillSynthesisThreshold?: number;
   cesarEnabled?: boolean;
   cesarScoutCount?: number;
+  cesarScoutTimeout?: number;
   cesarDirectThreshold?: number;
   cesarDisagreementSpread?: number;
+  cesarCodeFastPathChars?: number;
+  cesarAutoPipeline?: boolean;
+  cesarPipelineThreshold?: number;
   cesarEngine?: string;
   cesarBackend?: 'cli'|'api'|'auto';
   cesarMcpEnabled?: boolean;
@@ -231,8 +235,12 @@ export const DEFAULT_AGON_CONFIG: Required<AgonConfig> = {
   skillSynthesisThreshold: 3,
   cesarEnabled: true,
   cesarScoutCount: 2,
+  cesarScoutTimeout: 18,
   cesarDirectThreshold: 85,
   cesarDisagreementSpread: 20,
+  cesarCodeFastPathChars: 180,
+  cesarAutoPipeline: false,
+  cesarPipelineThreshold: 93,
   cesarEngine: 'claude',
   cesarBackend: 'auto',
   cesarMcpEnabled: false,

@@ -160,8 +160,12 @@ config name=AgonConfig
   field name=skillSynthesisThreshold type=number default=3
   field name=cesarEnabled type=boolean default=true
   field name=cesarScoutCount type=number default=2
+  field name=cesarScoutTimeout type=number default=18
   field name=cesarDirectThreshold type=number default=85
   field name=cesarDisagreementSpread type=number default=20
+  field name=cesarCodeFastPathChars type=number default=180
+  field name=cesarAutoPipeline type=boolean default=false
+  field name=cesarPipelineThreshold type=number default=93
   field name=cesarEngine type=string default=claude
   field name=cesarBackend type="'cli'|'api'|'auto'" default=auto
   field name=cesarMcpEnabled type=boolean default=false

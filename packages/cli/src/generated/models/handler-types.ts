@@ -76,6 +76,28 @@ export interface PendingDelegation {
 }
 
 // @kern-source: handler-types:191
+export type CesarLiveMode = 'self'|'self-nero'|'delegate'|'forge'|'team-forge'|'brainstorm'|'team-brainstorm'|'campfire'|'tribunal'|'team-tribunal'|'pipeline'|'review'|'agent'|'team-agent'|'plan';
+
+// @kern-source: handler-types:193
+export interface CesarTurnOutcome {
+  mode?: CesarLiveMode;
+  delegated: boolean;
+  responded: boolean;
+  action?: string;
+  reasoning?: string;
+  decisionReason?: string;
+  fitnessCmd?: string;
+  hardened?: boolean;
+  tribunalMode?: string;
+  team?: boolean;
+  target?: string;
+  engineId?: string;
+  engines?: string[];
+  taskKind?: 'edit'|'investigate';
+  maxTurns?: number;
+}
+
+// @kern-source: handler-types:209
 export interface CesarState {
   busy: boolean;
   busySince: number | null;
@@ -95,7 +117,7 @@ export interface CesarState {
   sessionMcpServers: Array<{name:string, type?:string, url?:string, command?:string, args?:string[]}>;
 }
 
-// @kern-source: handler-types:209
+// @kern-source: handler-types:225
 export interface HandlerContext {
   registry: EngineRegistry;
   adapter: EngineAdapter;
@@ -122,4 +144,3 @@ export interface HandlerContext {
   sessionMcpServers?: Array<Record<string,unknown>>;
   setSessionMcpServers?: ((servers: Array<Record<string,unknown>>) => void) | undefined;
 }
-

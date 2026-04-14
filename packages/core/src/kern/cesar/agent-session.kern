@@ -205,14 +205,17 @@ service name=AgentSession export=true
       const thread = this.config.thread;
 
       // ── ContextThread integration ─────────────────────────────────
-      // Pre-load: give this engine the prior conversation history
-      // compacted to fit within the token budget. The budget is rough
-      // (we don't know the engine's exact context limit here), so we
-      // pass a conservative 100k-token default for large engines and
-      // let messagesFor() further apply its 0.75 safety factor.
-      // The caller (runAgentMode / AgentTeam) should override this by
-      // setting a per-engine budget in config if available.
-      const engineTokenBudget = 100_000;
+      // Pre-load: give this engine the full session history up to its
+      // context budget. All major engines (Codex, Claude, Gemini,
+      // OpenCode+GLM) now ship with 1M token context windows. We budget
+      // 700k for history — leaving 300k for the task, tool calls, and
+      // response within the current step. This means the engine sees
+      // COMPLETE prior forge results, brainstorm decisions, agent tool
+      // call outcomes, and user decisions — not a compressed stub.
+      // If a specific engine has a smaller window, messagesFor() will
+      // compact further via TOKEN_BUDGET_SAFETY_FACTOR; we don't cap
+      // here because the engine registry doesn't yet expose window size.
+      const engineTokenBudget = 700_000;
       const historyMessages = thread
         ? thread.messagesFor(this.config.engineId, engineTokenBudget)
         : undefined;

@@ -188,6 +188,25 @@ interface name=PendingDelegation
   field name=maxTurns type=number optional=true
   field name=createdAt type=number
 
+type name=CesarLiveMode values="self|self-nero|delegate|forge|team-forge|brainstorm|team-brainstorm|campfire|tribunal|team-tribunal|pipeline|review|agent|team-agent|plan"
+
+interface name=CesarTurnOutcome
+  field name=mode type=CesarLiveMode optional=true
+  field name=delegated type=boolean
+  field name=responded type=boolean
+  field name=action type=string optional=true
+  field name=reasoning type=string optional=true
+  field name=decisionReason type=string optional=true
+  field name=fitnessCmd type=string optional=true
+  field name=hardened type=boolean optional=true
+  field name=tribunalMode type=string optional=true
+  field name=team type=boolean optional=true
+  field name=target type=string optional=true
+  field name=engineId type=string optional=true
+  field name=engines type="string[]" optional=true
+  field name=taskKind type="'edit'|'investigate'" optional=true
+  field name=maxTurns type=number optional=true
+
 interface name=CesarState
   field name=busy type=boolean
   field name=busySince type="number | null"

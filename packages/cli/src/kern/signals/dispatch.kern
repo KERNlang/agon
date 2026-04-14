@@ -55,27 +55,34 @@ fn name=withThreadOutcome params="cwd:string,jobType:string,label:string,fn:()=>
         try {
           const thread = loadOrCreateActiveThread(cwd);
 
-          // ── Capture engine responses produced by this job ────────────
+          // ── Capture ALL engine responses produced by this job ────────
           // forge, brainstorm, tribunal, campfire all write to chatSession.
           // Slicing from priorChatLength gives us exactly what this job produced.
+          // We capture FULL content — no 1200-char truncation. With 1M windows,
+          // losing the forge winner's full diff or brainstorm's complete reasoning
+          // means Cesar is making the next routing decision on crumbs. The value
+          // IS the complete decision trail, not a summary.
           const newMessages = (ctx?.chatSession?.messages ?? []).slice(priorChatLength);
           const engineOutputs = newMessages
             .filter((m: any) => m.role === 'engine' && m.content)
-            .map((m: any) => `[${m.engineId ?? 'engine'}]: ${(m.content as string).slice(0, 1200)}`)
+            .map((m: any) => `[${m.engineId ?? 'engine'}]:\n${m.content as string}`)
             .join('\n\n---\n\n');
 
           // ── Capture return value if handler returned something useful ─
-          // handleBrainstorm returns { winner, bids, response }
+          // handleBrainstorm returns { winner, bids, response } — capture fully
           let returnSummary = '';
           if (returnValue && typeof returnValue === 'object') {
             if ('winner' in returnValue && 'response' in returnValue) {
-              returnSummary = `\nWinner: ${returnValue.winner}\nWinner approach: ${String(returnValue.response ?? '').slice(0, 600)}`;
+              const bidsDetail = Array.isArray((returnValue as any).bids)
+                ? (returnValue as any).bids.map((b: any) => `  ${b.engineId} (score ${b.score ?? '?'}): ${b.reasoning ?? b.approach ?? ''}`).join('\n')
+                : '';
+              returnSummary = `Winner: ${returnValue.winner}\nWinner full response:\n${String(returnValue.response ?? '')}${bidsDetail ? `\n\nAll bids:\n${bidsDetail}` : ''}`;
             }
           }
 
-          const parts: string[] = [`[${jobType}] "${label.slice(0, 80)}" — ${status}`];
+          const parts: string[] = [`[${jobType}] "${label.slice(0, 120)}" — ${status}`];
           if (returnSummary) parts.push(returnSummary);
-          if (engineOutputs) parts.push(`\nEngine outputs:\n${engineOutputs}`);
+          if (engineOutputs) parts.push(`\nEngine outputs (full):\n${engineOutputs}`);
 
           thread.append({
             role: 'assistant',
@@ -442,6 +449,10 @@ fn name=routeWithCesar async=true params="input:string, images:ImageAttachment[]
             return true;
           }
         }
+      }
+      if (!result.delegated && result.responded && result.mode) {
+        const localLabel = result.mode === 'self-nero' ? 'self + nero' : result.mode;
+        cb.dispatch({ type: 'info', message: `Cesar → ${localLabel}` });
       }
       if (result.responded) return false;
     } catch (e) { console.warn(`[agon] dispatch: Cesar brain threw: ${e instanceof Error ? e.message : String(e)}`); }

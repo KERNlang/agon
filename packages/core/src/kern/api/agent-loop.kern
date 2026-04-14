@@ -35,6 +35,7 @@ interface name=ApiAgentOptions
   field name=heavyToolSemaphore type=Semaphore optional=true
   field name=historyMessages type="Array<Record<string,unknown>>" optional=true
   field name=onHistoryEntry type="(entry:Record<string,unknown>)=>void" optional=true
+  field name=virtualFs type="any" optional=true
 
 interface name=ApiAgentResult
   field name=response type=string
@@ -107,7 +108,10 @@ fn name=runApiAgentLoop async=true params="opts:ApiAgentOptions" returns="Promis
 
     const nativeTools = toolsToOpenAIFormat(registry);
 
-    // Build tool context — auto-allow read-only tools, ask for writes
+    // Build tool context — auto-allow read-only tools, ask for writes.
+    // Phase E v2: when virtualFs is provided (Speculator mode), inject it so
+    // Read/Edit/Write tool calls route through the in-memory VirtualFS overlay
+    // instead of touching the real filesystem.
     const fsc = new FileStateCache();
     const toolCtx: ToolContext = {
       cwd: opts.cwd,
@@ -117,6 +121,7 @@ fn name=runApiAgentLoop async=true params="opts:ApiAgentOptions" returns="Promis
       explorationMode: false,
       allowedCommands: [],
       toolPermissions: {},
+      virtualFs: opts.virtualFs,
     };
 
     // Build system prompt with tool definitions

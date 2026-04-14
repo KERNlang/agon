@@ -23,7 +23,7 @@ import type { EffectPackage, FileSnapshot, FileEffect } from '../forge/virtual-f
 import { resolve, join } from 'node:path';
 
 // @kern-source: speculator:36
-import { repoRoot, worktreeCreate, worktreeRemoveBestEffort, stashSnapshot } from '../blocks/git.js';
+import { repoRoot, worktreeCreate, worktreeRemoveBestEffort, stashSnapshot, worktreeDiff, applyPatch } from '../blocks/git.js';
 
 // @kern-source: speculator:40
 /**
@@ -136,6 +136,11 @@ export class Speculator {
           maxSteps: opts.maxSteps ?? 10,
           historyMessages,
           onHistoryEntry,
+          // Phase E v2: inject VirtualFS so Read/Edit/Write calls from the
+          // inner loop's tool execution route through the overlay rather than
+          // touching the shared real filesystem. This gives each member true
+          // speculative isolation at the tool-call level.
+          virtualFs: vfs,
         });
       } catch (err: any) {
         // Failed engine contributes an empty package — will score 0 and lose.
@@ -190,7 +195,6 @@ export class Speculator {
           // the real cwd using git's patch mechanism. This is the correct
           // "commit the winning branch" step — equivalent to `git checkout winner`.
           // Phase E v2 will use applyEffectPackage(vfs.toEffectPackage()) instead.
-          const { applyPatch, worktreeDiff } = await import('../blocks/git.js');
           const diff = worktreeDiff(winnerCwd);
           if (diff && diff.trim()) {
             applyPatch(cwd, diff);
@@ -236,10 +240,11 @@ export class Speculator {
   }
 }
 
-// @kern-source: speculator:246
+// @kern-source: speculator:250
 /**
  * Create a fresh Speculator instance. One per agent invocation.
  */
 export function createSpeculator(): Speculator {
   return new Speculator();
 }
+

@@ -68,6 +68,22 @@ fn name=createReadTool returns=ToolHandler
     const execute = async (input: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> => {
       const filePath = resolve(ctx.cwd, input.file_path as string);
 
+      // Phase E v2: route through VirtualFS overlay when present.
+      // VirtualFS.read() checks the in-memory overlay first, then falls
+      // through to the real snapshot. This lets the Speculator capture which
+      // files each agent reads without touching the real filesystem.
+      if (ctx.virtualFs) {
+        const vfsContent = ctx.virtualFs.read(filePath);
+        if (vfsContent === null) {
+          return { ok: false, content: '', error: `File not found in VirtualFS: ${filePath}` };
+        }
+        const lines = vfsContent.split('\n');
+        const offset = (input.offset as number | undefined) ?? 0;
+        const limit = (input.limit as number | undefined) ?? undefined;
+        const sliced = limit !== undefined ? lines.slice(offset, offset + limit) : lines.slice(offset);
+        return { ok: true, content: sliced.join('\n') };
+      }
+
       // Check if file exists
       if (!existsSync(filePath)) {
         return { ok: false, content: '', error: `File not found: ${filePath}` };

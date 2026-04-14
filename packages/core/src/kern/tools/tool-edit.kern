@@ -97,6 +97,22 @@ fn name=createEditTool returns=ToolHandler
       const newString = input.new_string as string;
       const replaceAll = (input.replace_all as boolean) ?? false;
 
+      // Phase E v2: route through VirtualFS overlay when present.
+      if (ctx.virtualFs) {
+        const currentContent = ctx.virtualFs.read(filePath);
+        if (currentContent === null) {
+          return { ok: false, content: '', error: `File not found in VirtualFS: ${filePath}` };
+        }
+        const updated = replaceAll
+          ? currentContent.split(oldString).join(newString)
+          : currentContent.replace(oldString, newString);
+        if (updated === currentContent) {
+          return { ok: false, content: '', error: `old_string not found in VirtualFS file: ${filePath}` };
+        }
+        ctx.virtualFs.write(filePath, updated);
+        return { ok: true, content: `Edited ${filePath} in VirtualFS` };
+      }
+
       // File must exist
       if (!existsSync(filePath)) {
         return { ok: false, content: '', error: `File not found: ${filePath}` };

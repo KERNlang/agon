@@ -62,6 +62,9 @@ union name=Intent discriminant=type
     field name=input type=string
   variant name=agent
     field name=input type=string
+  variant name=agent-solo
+    field name=input type=string
+    field name=maxTurns type=number optional=true
   variant name=speculate
     field name=input type=string
     field name=engines type="string[]" optional=true

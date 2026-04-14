@@ -291,8 +291,18 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             const toolInput = typeof meta.input === 'string' ? meta.input : meta.input ? JSON.stringify(meta.input) : '';
             const toolName = chunk.content || 'tool';
             const toolStatus = (meta.status as string) ?? 'running';
+            const STREAM_ORCH = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent']);
             hadToolActivity = true;
             dispatch({ type: 'spinner-update', message: `Cesar: ${toolName}…` });
+  
+            if (meta.input && STREAM_ORCH.has(toolName)) {
+              if (!ctx.cesar!.pendingDelegation) {
+                ctx.cesar!.pendingDelegation = extractDelegation(toolName, (meta.input ?? {}) as Record<string, unknown>);
+                ctx.eventBus?.emit('cesar:delegation', { action: toolName.toLowerCase(), source: `stream-${toolStatus}` }).catch(() => {});
+              }
+              dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'done', output: typeof meta.output === 'string' ? meta.output : undefined } as any);
+              continue;
+            }
   
             if (toolStatus === 'done') {
               dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'done', output: typeof meta.output === 'string' ? meta.output : undefined } as any);
@@ -312,7 +322,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               // Intercept orchestration signal tools — don't execute as workspace tools.
               // 'Agent' is in the set; without it the Agent tool falls through to executeEagerTool
               // which calls the noop handler and silently no-ops (PFB-1, RT-1).
-              const EAGER_ORCH = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent']);
+              const EAGER_ORCH = STREAM_ORCH;
               if (EAGER_ORCH.has(toolName)) {
                 ctx.cesar!.pendingDelegation = extractDelegation(toolName, (meta.input ?? {}) as Record<string, unknown>);
                 ctx.eventBus?.emit('cesar:delegation', { action: toolName.toLowerCase(), source: 'stream' }).catch(() => {});
@@ -714,23 +724,66 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         }
       }
   
-      // ── Quick Nero: gentle self-check (only when confidence genuinely warrants it) ──
-      // Not a gate — just a nudge. Fires rarely, stays in flow.
-      if (parsedConfidence !== null && parsedConfidence < 90 && !secondOpinionPromise && !ctx.cesar!.advisorPending && !_isFollowUp && !abort.signal.aborted) {
+      // ── Quick Nero: structured self-check before Cesar commits to staying local ──
+      const shouldQuickNero = parsedConfidence !== null
+        && !secondOpinionPromise
+        && !ctx.cesar!.advisorPending
+        && !_isFollowUp
+        && !abort.signal.aborted
+        && !ctx.cesar!.pendingDelegation
+        && (
+          routingHints.uncertaintyFamily === 'challenge'
+          || routingHints.uncertaintyFamily === 'tradeoff'
+          || (routingHints.uncertaintyFamily === 'implementation' && parsedConfidence < 86)
+          || (mutationDeferred && parsedConfidence < 90)
+        );
+      if (shouldQuickNero) {
+        const quickNeroConfidence = parsedConfidence as number;
         if (streaming) { dispatch({ type: 'streaming-end', engineId: cesarEngineId }); streaming = false; }
-        dispatch({ type: 'spinner-start', message: confidenceBadge(parsedConfidence) + ' Quick Nero — self-challenge…', color });
+        dispatch({ type: 'spinner-start', message: confidenceBadge(quickNeroConfidence) + ' Quick Nero — self-challenge…', color });
         await yieldToInk();
-        const qnResult = await fireQuickNero(session, response, input, parsedConfidence, dispatch, abort.signal, ctx);
+        const qnResult = await fireQuickNero(session, response, input, quickNeroConfidence, dispatch, abort.signal, ctx);
         dispatch({ type: 'spinner-stop' });
-      if (qnResult.challenged && qnResult.challengeText) {
-        dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: `**Self-challenge:**\n${qnResult.challengeText}` });
-        _deferredChallenges.push({ engineId: cesarEngineId, content: `[quick-nero] ${qnResult.challengeText}` });
-      }
-      usedQuickNero = true;
-      if (qnResult.newConfidence !== null && qnResult.newConfidence !== parsedConfidence) {
+        if (qnResult.challenged && qnResult.challengeText) {
+          dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: `**Self-challenge:**\n${qnResult.challengeText}` });
+          _deferredChallenges.push({ engineId: cesarEngineId, content: `[quick-nero] ${qnResult.challengeText}` });
+        }
+        usedQuickNero = true;
+        const previousConfidence = quickNeroConfidence;
+        if (qnResult.newConfidence !== null && qnResult.newConfidence !== quickNeroConfidence) {
           parsedConfidence = qnResult.newConfidence;
-          dispatch({ type: 'info', message: confidenceBadge(parsedConfidence) + (qnResult.newConfidence < parsedConfidence ? ' Confidence adjusted' : ' Confidence confirmed') });
+          dispatch({ type: 'info', message: confidenceBadge(parsedConfidence) + (qnResult.newConfidence < previousConfidence ? ' Confidence adjusted' : ' Confidence confirmed') });
           dispatch({ type: 'confidence-update', value: parsedConfidence });
+        }
+        const quickNeroWantsEscalation = qnResult.decision !== 'self'
+          && (routingHints.uncertaintyFamily === 'challenge'
+            || routingHints.uncertaintyFamily === 'tradeoff'
+            || ((qnResult.newConfidence ?? previousConfidence) <= Math.max(74, previousConfidence - 8)));
+        if (quickNeroWantsEscalation) {
+          const escalationAction = qnResult.team ? `team-${qnResult.decision}` : qnResult.decision;
+          const escalationContext = [
+            `Quick Nero escalation from ${previousConfidence}% confidence.`,
+            qnResult.rationale ? `Why: ${qnResult.rationale}` : '',
+            qnResult.challengeText ? `Self-check notes:\n${qnResult.challengeText}` : '',
+          ].filter(Boolean).join('\n\n');
+          appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
+          appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
+          if (_deferredChallenges && _deferredChallenges.length > 0) {
+            for (const ch of _deferredChallenges) {
+              appendMessage(ctx.chatSession, { role: 'engine', engineId: ch.engineId, content: ch.content, timestamp: new Date().toISOString() });
+            }
+          }
+          tracker.record(cesarEngineId, { prompt: input, response });
+          return {
+            mode: escalationAction as any,
+            delegated: true,
+            responded: true,
+            action: escalationAction,
+            scope: qnResult.decision === 'forge' && qnResult.scope !== 'none' ? qnResult.scope : undefined,
+            team: qnResult.team,
+            reasoning: `User context: ${escalationContext}`,
+            decisionReason: 'quick-nero-escalation',
+          };
         }
       }
   
@@ -858,6 +911,44 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       // Cesar decides all delegations. The system never forces brainstorm/tribunal on the user.
       // If Cesar wants to delegate, he calls the tool. If he doesn't, that's his call.
       // Quick Nero (self-challenge) handles low-confidence nudging without user interaction.
+  
+      // ── Final-answer guard: tool-heavy turns must close with an actual answer ──
+      // Some engines stop after investigation chatter ("let me check", "I've read the file")
+      // and the runtime previously treated that as a completed self turn.
+      const _trimmedResponse = response.trim();
+      const TOOL_PROGRESS_RE = /\b(?:let me|i(?:'| a)m going to|i'll|now let me|checking|looking|read the|scanning|investigating|next i'?ll|i've read|good[,—-])\b/i;
+      const ANSWERISH_RE = /\b(?:here'?s|here is|the issue|the fix|you should|we should|i found|recommend|conclusion|summary|in short|answer)\b/i;
+      const likelyIncompleteAfterTools = !inPlanMode
+        && !ctx.cesar!.pendingDelegation
+        && session.alive
+        && !abort.signal.aborted
+        && (hadToolActivity || ranToolLoop)
+        && (_trimmedResponse.length < 180 || TOOL_PROGRESS_RE.test(_trimmedResponse))
+        && !ANSWERISH_RE.test(_trimmedResponse);
+      if (likelyIncompleteAfterTools) {
+        dispatch({ type: 'spinner-start', message: 'Cesar finishing the answer…', color });
+        try {
+          let finalAnswer = '';
+          const finishGen = session.send({
+            message: 'You finished investigating. Now answer the user directly in 2-6 sentences. Do not narrate your process, do not say "let me check", and do not continue exploring. Give the actual answer or recommendation now.',
+            signal: abort.signal,
+          });
+          for await (const chunk of finishGen) {
+            if (chunk.type === 'text') finalAnswer += chunk.content;
+            if (chunk.type === 'done' || chunk.type === 'error') break;
+          }
+          dispatch({ type: 'spinner-stop' });
+          const cleanFinalAnswer = finalAnswer.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
+          if (cleanFinalAnswer) {
+            dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: cleanFinalAnswer });
+            response = _trimmedResponse ? `${_trimmedResponse}\n\n${cleanFinalAnswer}` : cleanFinalAnswer;
+            wasStreamed = false;
+            streaming = false;
+          }
+        } catch {
+          dispatch({ type: 'spinner-stop' });
+        }
+      }
   
       // ── Display final response (skip if already displayed via streaming or tool loop) ──
       if (!streaming && response && !ranToolLoop && !wasStreamed) {

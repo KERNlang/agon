@@ -16,6 +16,24 @@ import { CONFIDENCE_TIERS, confidenceBadge, parseConfidence } from './confidence
 
 import { CESAR_SYSTEM_PROMPT } from './session.js';
 
+export type QuickNeroDecision = 'self' | 'tribunal' | 'brainstorm' | 'campfire' | 'forge';
+
+/**
+ * Parse structured guidance from Quick Nero self-check output.
+ */
+export function parseQuickNeroDecision(text: string): {decision:QuickNeroDecision, team:boolean, scope:'slice'|'full'|'none', rationale:string} {
+  const cleaned = text.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
+  const decisionMatch = cleaned.match(/(?:^|\n)\s*DECISION:\s*(self|tribunal|brainstorm|campfire|forge)\b/i);
+  const breadthMatch = cleaned.match(/(?:^|\n)\s*BREADTH:\s*(solo|team)\b/i);
+  const scopeMatch = cleaned.match(/(?:^|\n)\s*(?:FORGE_SCOPE|SCOPE):\s*(none|slice|full)\b/i);
+  const whyMatch = cleaned.match(/(?:^|\n)\s*WHY:\s*([\s\S]*?)(?:\n[A-Z_]+:|$)/i);
+  const decision = (decisionMatch?.[1]?.toLowerCase() ?? 'self') as QuickNeroDecision;
+  const breadth = (breadthMatch?.[1]?.toLowerCase() ?? 'solo') === 'team';
+  const scope = (scopeMatch?.[1]?.toLowerCase() ?? 'none') as 'slice' | 'full' | 'none';
+  const rationale = (whyMatch?.[1] ?? cleaned).trim();
+  return { decision, team: breadth, scope, rationale };
+}
+
 /**
  * Pick the highest-ELO engine for this task class (excluding Cesar) as advisor.
  */
@@ -73,10 +91,18 @@ export async function fireAdvisor(input: string, cesarResponse: string, parsedCo
 /**
  * Same-session self-challenge: inject a challenge message into the existing Cesar session. Fast — no engine spawn.
  */
-export async function fireQuickNero(session: any, response: string, input: string, confidence: number, dispatch: Dispatch, signal: AbortSignal, ctx: HandlerContext): Promise<{ challenged: boolean; newConfidence: number|null; challengeText: string }> {
+export async function fireQuickNero(session: any, response: string, input: string, confidence: number, dispatch: Dispatch, signal: AbortSignal, ctx: HandlerContext): Promise<{ challenged: boolean; newConfidence: number|null; challengeText: string; decision: QuickNeroDecision; team: boolean; scope: 'slice'|'full'|'none'; rationale: string }> {
   const challengePrompt = `[SELF-CHECK] You responded at ${confidence}% confidence.
   
-  Take a breath. Anything you'd reconsider about your answer? Any assumption worth double-checking? If something feels off, say so briefly (1-2 sentences). If it holds up, just confirm. Start with ~X% for your revised confidence.`;
+  Take a breath and challenge your own plan. If you still think self-execution is right, say so. If not, choose the cheapest escalation that matches the uncertainty.
+  
+  Reply in this exact shape:
+  CONFIDENCE: ~X%
+  DECISION: self | tribunal | brainstorm | campfire | forge
+  BREADTH: solo | team
+  FORGE_SCOPE: none | slice | full
+  WHY: one concise sentence explaining the decision
+  CHECK: the main flaw, risk, or confirmation`;
   
       try {
         let challengeText = '';
@@ -86,19 +112,21 @@ export async function fireQuickNero(session: any, response: string, input: strin
           if (chunk.type === 'text') challengeText += chunk.content;
           if (chunk.type === 'done') break;
         }
-        if (!challengeText.trim()) return { challenged: false, newConfidence: null, challengeText: '' };
+        if (!challengeText.trim()) return { challenged: false, newConfidence: null, challengeText: '', decision: 'self', team: false, scope: 'none', rationale: '' };
   
         // Check tool-reported confidence first (API/native-tool backends use ReportConfidence)
         if (ctx.cesar!.reportedConfidence !== undefined) {
           const toolConf = ctx.cesar!.reportedConfidence as number;
           ctx.cesar!.reportedConfidence = undefined;
-          return { challenged: true, newConfidence: toolConf, challengeText };
+          const parsed = parseQuickNeroDecision(challengeText);
+          return { challenged: true, newConfidence: toolConf, challengeText, decision: parsed.decision, team: parsed.team, scope: parsed.scope, rationale: parsed.rationale };
         }
         // Fall back to parsing ~X% from text
         const conf = parseConfidence(challengeText);
-        return { challenged: true, newConfidence: conf.value, challengeText: conf.rest || challengeText };
+        const parsed = parseQuickNeroDecision(challengeText);
+        return { challenged: true, newConfidence: conf.value, challengeText: conf.rest || challengeText, decision: parsed.decision, team: parsed.team, scope: parsed.scope, rationale: parsed.rationale };
       } catch {
-        return { challenged: false, newConfidence: null, challengeText: '' };
+        return { challenged: false, newConfidence: null, challengeText: '', decision: 'self', team: false, scope: 'none', rationale: '' };
       }
 }
 

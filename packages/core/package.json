@@ -16,7 +16,7 @@
   "scripts": {
     "kern:compile": "if command -v kern >/dev/null 2>&1; then kern compile src/kern/ --outdir=src/generated/ --target=auto --recursive && bash scripts/kern-postcompile.sh; else echo '  [kern:compile skipped — kern CLI not installed; using checked-in generated output]'; fi",
     "prebuild": "npm run kern:compile",
-    "build": "tsup",
+    "build": "tsup && tsc -b tsconfig.json --force",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

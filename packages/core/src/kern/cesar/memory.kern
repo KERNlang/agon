@@ -1,20 +1,9 @@
-// ── Cesar Memory — session + persistent ──────────────────────────────
-// Two-tier memory: session Map (ephemeral) + persistent JSON on disk.
-// Injected into Cesar's system prompt for context continuity.
-
-import from="node:fs" names="readFileSync,writeFileSync,mkdirSync,existsSync"
-import from="node:path" names="join,resolve"
-import from="node:os" names="homedir"
-import from="../signals/config.js" names="ensureAgonHome"
+// ── Cesar Memory — session only ──────────────────────────────────────
+// Ephemeral memory scoped to the current Agon session. New sessions start clean.
 
 const name=MAX_SESSION_ENTRIES type=number
   handler <<<
     50
-  >>>
-
-const name=MAX_PERSISTENT_ENTRIES type=number
-  handler <<<
-    30
   >>>
 
 interface name=MemoryEntry
@@ -25,27 +14,19 @@ interface name=MemoryEntry
 
 interface name=CesarMemory
   field name=session type="Map<string, MemoryEntry>"
-  field name=persistent type="MemoryEntry[]"
   field name=remember type="(key: string, value: string, category: MemoryEntry['category']) => void"
   field name=recall type="(key: string) => string | null"
   field name=forget type="(key: string) => void"
-  field name=savePersistent type="(entry: MemoryEntry) => void"
+  field name=clearSession type="() => void"
   field name=toPromptContext type="() => string"
-  field name=load type="() => void"
-  field name=save type="() => void"
 
 fn name=createCesarMemory params="" returns=CesarMemory
-  doc "Create a two-tier Cesar memory: session Map + persistent JSON."
+  doc "Create session-scoped Cesar memory. It does not persist across sessions."
   handler <<<
     const session = new Map<string, MemoryEntry>();
-    let persistent: MemoryEntry[] = [];
-    const override = process.env.AGON_HOME?.trim();
-    const home = override ? resolve(override) : join(homedir(), '.agon');
-    const persistPath = join(home, 'cesar-memory.json');
 
     const memory: CesarMemory = {
       session,
-      persistent,
 
       remember(key: string, value: string, category: MemoryEntry['category']) {
         const entry: MemoryEntry = { key, value, timestamp: new Date().toISOString(), category };
@@ -59,30 +40,15 @@ fn name=createCesarMemory params="" returns=CesarMemory
 
       recall(key: string): string | null {
         const s = session.get(key);
-        if (s) return s.value;
-        const p = persistent.find(e => e.key === key);
-        return p?.value ?? null;
+        return s?.value ?? null;
       },
 
       forget(key: string) {
         session.delete(key);
-        persistent = persistent.filter(e => e.key !== key);
       },
 
-      savePersistent(entry: MemoryEntry) {
-        // Upsert: replace if key exists
-        const idx = persistent.findIndex(e => e.key === entry.key);
-        if (idx >= 0) {
-          persistent[idx] = entry;
-        } else {
-          persistent.push(entry);
-        }
-        // Evict oldest if over limit
-        if (persistent.length > MAX_PERSISTENT_ENTRIES) {
-          persistent.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-          persistent = persistent.slice(-MAX_PERSISTENT_ENTRIES);
-        }
-        memory.save();
+      clearSession() {
+        session.clear();
       },
 
       toPromptContext(): string {
@@ -97,37 +63,9 @@ fn name=createCesarMemory params="" returns=CesarMemory
           parts.push(`## SESSION MEMORY (this conversation)\n${sessionLines.join('\n')}`);
         }
 
-        // Persistent memory
-        if (persistent.length > 0) {
-          const persistLines = persistent
-            .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
-            .slice(0, 10)
-            .map(e => `- [${e.category}] ${e.key}: ${e.value}`);
-          parts.push(`## PERSISTENT MEMORY (across sessions)\n${persistLines.join('\n')}`);
-        }
-
         return parts.length > 0 ? parts.join('\n\n') : '';
       },
-
-      load() {
-        try {
-          if (existsSync(persistPath)) {
-            const raw = readFileSync(persistPath, 'utf-8');
-            persistent = JSON.parse(raw);
-          }
-        } catch (e) { console.warn(`[agon] cesar-memory: failed to load persistent memory, resetting: ${e instanceof Error ? e.message : String(e)}`); persistent = []; }
-      },
-
-      save() {
-        try {
-          ensureAgonHome();
-          writeFileSync(persistPath, JSON.stringify(persistent, null, 2), 'utf-8');
-        } catch (e) { console.warn(`[agon] cesar-memory: failed to persist memory: ${e instanceof Error ? e.message : String(e)}`); }
-      },
     };
-
-    // Load persistent on creation
-    memory.load();
 
     return memory;
   >>>

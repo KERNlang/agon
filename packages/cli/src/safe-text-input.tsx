@@ -39,6 +39,29 @@ type Props = {
   onCtrlShortcut?: (shortcut: string) => void;
 };
 
+function isMouseReportInput(input: string): boolean {
+  if (!input) return false;
+
+  // xterm SGR mouse mode: full sequence or truncated fragments that sometimes
+  // leak through Ink/input parsing when wheel scrolling is enabled.
+  if (/\x1b\[<\d+;\d+;\d+[mM]/.test(input)) return true;
+  if (/\[<\d+;\d+;\d+[mM]/.test(input)) return true;
+  if (/^<\d+;\d+;\d+[mM]$/.test(input)) return true;
+  if (/^\[<\d+;\d+;\d+[mM]$/.test(input)) return true;
+  if (/^(?:\x1b\[)?<\d+;\d+;\d*$/.test(input)) return true;
+  if (/^(?:\x1b\[|\[)?<\d+;\d+;\d*$/.test(input)) return true;
+
+  return false;
+}
+
+function stripMouseReportInput(input: string): string {
+  if (!input) return input;
+  return input
+    .replace(/\x1b\[<\d+;\d+;\d+[mM]/g, '')
+    .replace(/\[<\d+;\d+;\d+[mM]/g, '')
+    .replace(/(?:\x1b\[|\[)?<\d+;\d+;\d*(?:[mM])?/g, '');
+}
+
 function isWordChar(char: string | undefined): boolean {
   return !!char && /[A-Za-z0-9_]/.test(char);
 }
@@ -142,6 +165,10 @@ function SafeTextInputImpl({
 
   useInput(
     (input, key) => {
+      if (isMouseReportInput(input)) return;
+      input = stripMouseReportInput(input);
+      if (!input) return;
+
       const isForwardDelete = input === '\x1b[3~';
       const isBackspace = !isForwardDelete && (key.backspace || key.delete || input === '\x7f' || input === '\b' || input === '\x08');
       const extendedKey = key as typeof key & { home?: boolean; end?: boolean };

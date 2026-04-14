@@ -229,7 +229,7 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
         if (cleaned.trim()) {
           const segments = parseMarkdownBlocks(cleaned);
           codeBlockBuffer.recordFromSegments(segments);
-          actions.addBlock({ type: 'engine-block', engineId: st.engineId, color, content: st.content } as any);
+          actions.addBlock({ type: 'engine-block', engineId: st.engineId, color, content: cleaned } as any);
           if (mode === 'chat' && chatStartTime > 0) {
             actions.addBlock({ type: 'response-meta', engineId: st.engineId, elapsed: Date.now() - chatStartTime } as any);
           }
@@ -460,6 +460,7 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
         const cleaned = cleanEngineOutput((event as any).content);
         const segments = parseMarkdownBlocks(cleaned);
         codeBlockBuffer.recordFromSegments(segments);
+        event = { ...(event as any), content: cleaned } as any;
       }
       // Flush any pending stream before adding non-stream events
       if (event.type === 'text' || event.type === 'engine-block' || event.type === 'separator') {

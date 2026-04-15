@@ -982,7 +982,16 @@ export function App() {
   }, [scrollOffset]);
 
   useEffect(() => {
-    outputBlockCountRef.current = outputBlocks.length;
+    const prev = outputBlockCountRef.current;
+    const next = outputBlocks.length;
+    outputBlockCountRef.current = next;
+    if (next === prev) return;
+    const max = Math.max(0, next - 1);
+    if (next > prev && scrollOffsetRef.current > 0) {
+      setScrollOffset((s: number) => Math.min(s + (next - prev), max));
+    } else if (scrollOffsetRef.current > max) {
+      setScrollOffset(max);
+    }
   }, [outputBlocks]);
 
   useEffect(() => {

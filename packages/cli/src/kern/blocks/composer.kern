@@ -22,7 +22,6 @@ screen name=ComposerView target=ink memo=true
   prop name=activePlanState type="string|null"
   prop name=slashPickerOpen type=boolean
   prop name=inputValue type=string
-  prop name=inputKey type=number
   prop name=handleInputChange type="(value:string) => void"
   prop name=handleSubmit type="(value:string) => void"
   prop name=allSlashCommands type="any[]"
@@ -58,7 +57,7 @@ screen name=ComposerView target=ink memo=true
                   <Text dimColor>{inputValue || '/'}</Text>
                 ) : (
                   <>
-                    <MemoTextInput key={inputKey} value={inputValue} onChange={handleInputChange} onSubmit={handleSubmit} onCtrlShortcut={onCtrlShortcut} placeholder={placeholder} />
+                    <MemoTextInput value={inputValue} onChange={handleInputChange} onSubmit={handleSubmit} onCtrlShortcut={onCtrlShortcut} placeholder={placeholder} />
                     {ghost && <Text dimColor>{ghost}</Text>}
                   </>
                 )}

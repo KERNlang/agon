@@ -23,9 +23,11 @@
 // (https://github.com/vadimdemedes/ink-text-input). When upstream gains
 // the ctrl-skip, we can drop this fork.
 
-import React, { useState, useEffect } from 'react';
-import { Text, useInput } from 'ink';
+import React, { useEffect, useRef, useState } from 'react';
+import { Text } from 'ink';
 import chalk from 'chalk';
+import { stripTerminalInputMarkers } from './input-utils.js';
+import { useStableInput } from './stable-input.js';
 
 type Props = {
   value: string;
@@ -159,6 +161,28 @@ export function applyInlineInputEdits(
   };
 }
 
+export function syncControlledInputCursor(
+  previousState: { cursorOffset: number; cursorWidth: number },
+  value: string,
+  opts: { focus: boolean; showCursor: boolean; lastCommittedValue: string },
+): { cursorOffset: number; cursorWidth: number } {
+  if (!opts.focus || !opts.showCursor) return previousState;
+
+  if (value !== opts.lastCommittedValue) {
+    return { cursorOffset: value.length, cursorWidth: 0 };
+  }
+
+  if (previousState.cursorOffset > value.length) {
+    return { cursorOffset: value.length, cursorWidth: 0 };
+  }
+
+  if (previousState.cursorWidth !== 0) {
+    return { ...previousState, cursorWidth: 0 };
+  }
+
+  return previousState;
+}
+
 function SafeTextInputImpl({
   value: originalValue,
   placeholder = '',
@@ -175,20 +199,18 @@ function SafeTextInputImpl({
     cursorWidth: 0,
   });
   const { cursorOffset, cursorWidth } = state;
+  const lastCommittedValueRef = useRef(originalValue || '');
 
   useEffect(() => {
+    const newValue = originalValue || '';
     setState((previousState) => {
-      if (!focus || !showCursor) return previousState;
-      const newValue = originalValue || '';
-      // Sync cursor when value shrinks past cursor position.
-      // Was `> newValue.length - 1` which failed on single-char delete
-      // (cursor 5, value "hello" → "hell" length 4: 5 > 3 ✓ but
-      // cursor 5 on "hello" → "hell" should become 4, not wait until 5 > 3).
-      if (previousState.cursorOffset > newValue.length) {
-        return { cursorOffset: newValue.length, cursorWidth: 0 };
-      }
-      return previousState;
+      return syncControlledInputCursor(previousState, newValue, {
+        focus,
+        showCursor,
+        lastCommittedValue: lastCommittedValueRef.current,
+      });
     });
+    lastCommittedValueRef.current = newValue;
   }, [originalValue, focus, showCursor]);
 
   const cursorActualWidth = highlightPastedText ? cursorWidth : 0;
@@ -213,10 +235,10 @@ function SafeTextInputImpl({
     }
   }
 
-  useInput(
+  useStableInput(
     (input, key) => {
       if (isMouseReportInput(input)) return;
-      input = stripMouseReportInput(input);
+      input = stripTerminalInputMarkers(stripMouseReportInput(input));
       const deleteMode = classifyDeleteInput(input, key);
       const isForwardDelete = deleteMode === 'forward';
       const isBackspace = deleteMode === 'backward';
@@ -347,6 +369,7 @@ function SafeTextInputImpl({
       setState({ cursorOffset: nextCursorOffset, cursorWidth: nextCursorWidth });
 
       if (nextValue !== originalValue) {
+        lastCommittedValueRef.current = nextValue;
         onChange(nextValue);
       }
     },

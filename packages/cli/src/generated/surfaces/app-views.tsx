@@ -32,12 +32,17 @@ const ChromeBar = React.memo(function ChromeBar({ mode, cwdLabel, engineCount, r
 });
 export { ChromeBar };
 
-const HistoryView = React.memo(function HistoryView({ visibleBlocks, groupedBlocks, mode, scrollOffset, thinkingExpanded }: { visibleBlocks:OutputBlock[]; groupedBlocks:(OutputBlock | OutputBlock[])[] | null; mode:string; scrollOffset:number; thinkingExpanded:boolean }) {
+const HistoryView = React.memo(function HistoryView({ visibleBlocks, groupedBlocks, mode, blocksAbove, blocksBelow, thinkingExpanded }: { visibleBlocks:OutputBlock[]; groupedBlocks:(OutputBlock | OutputBlock[])[] | null; mode:string; blocksAbove:number; blocksBelow:number; thinkingExpanded:boolean }) {
   return (
     <>
-  {scrollOffset > 0 && (
+  {(blocksAbove > 0 || blocksBelow > 0) && (
     <Box paddingX={1}>
-      <Text dimColor>{`\u2191 ${scrollOffset} block${scrollOffset > 1 ? 's' : ''} above \u2014 Shift+\u2191/\u2193`}</Text>
+      <Text dimColor>
+        {blocksAbove > 0 ? `\u2191 ${blocksAbove} block${blocksAbove > 1 ? 's' : ''} above` : ''}
+        {blocksAbove > 0 && blocksBelow > 0 ? '  \u00b7  ' : ''}
+        {blocksBelow > 0 ? `\u2193 ${blocksBelow} block${blocksBelow > 1 ? 's' : ''} below` : ''}
+        {' \u2014 mouse wheel or Shift+\u2191/\u2193'}
+      </Text>
     </Box>
   )}
       {groupedBlocks === null

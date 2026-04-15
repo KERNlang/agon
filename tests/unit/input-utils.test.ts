@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { parseMouseScrollChunk, stripBracketedPasteMarkers } from '../../packages/cli/src/input-utils.js';
+import {
+  isTerminalFocusReport,
+  parseMouseScrollChunk,
+  stripBracketedPasteMarkers,
+  stripTerminalInputMarkers,
+} from '../../packages/cli/src/input-utils.js';
 
 describe('stripBracketedPasteMarkers', () => {
   it('removes ANSI bracketed paste markers', () => {
@@ -12,6 +17,18 @@ describe('stripBracketedPasteMarkers', () => {
 
   it('preserves tabs and newlines in pasted content', () => {
     expect(stripBracketedPasteMarkers('\x1b[200~\tif true:\n\t\tpass\x1b[201~')).toBe('\tif true:\n\t\tpass');
+  });
+});
+
+describe('terminal control markers', () => {
+  it('strips focus and paste markers before input handling', () => {
+    expect(stripTerminalInputMarkers('\x1b[I\x1b[200~hello\x1b[201~\x1b[O')).toBe('hello');
+  });
+
+  it('detects terminal focus reports', () => {
+    expect(isTerminalFocusReport('\x1b[I')).toBe(true);
+    expect(isTerminalFocusReport('[O')).toBe(true);
+    expect(isTerminalFocusReport('hello')).toBe(false);
   });
 });
 

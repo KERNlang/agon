@@ -82,8 +82,9 @@ export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
   // Ctrl+L: clear
   if (key.ctrl && input === 'l') return { type: 'submit', value: '/clear' };
   
-  // Shift+Up/Down: scroll
-  if (key.shift && key.upArrow) return { type: 'scroll', delta: Math.min(3, Math.max(0, ctx.outputBlockCount - 1)) };
+  // Shift+Up/Down: scroll by 3 blocks. The dispatcher already clamps to
+  // the valid range, so the keyboard layer emits a constant delta.
+  if (key.shift && key.upArrow) return { type: 'scroll', delta: 3 };
   if (key.shift && key.downArrow) return { type: 'scroll', delta: -3 };
   
   // Ctrl+E: toggle tool output expansion

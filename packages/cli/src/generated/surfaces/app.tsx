@@ -56,6 +56,8 @@ import { makeBlockArchivePath, appendBlockWithCap } from '../signals/block-archi
 
 import { handleReviewAction } from '../blocks/review.js';
 
+import { saveCesarConversationSnapshot } from '../cesar/session.js';
+
 import { SpinnerBlock, StatusBar, CesarStatusStrip, EnginePicker, ModelPicker, ReviewBlock, BackgroundJobRail, CesarPicker, ComposerView, AgentProgressView } from '../../components.js';
 
 import { ChromeBar, HistoryView, StreamingView } from './app-views.js';
@@ -512,9 +514,13 @@ export function App() {
   }, []);
 
   const setCesarSessionWrapped = useCallback((session:PersistentSession|null) => {
+    const previous = _cesarSessionRef.session;
+    if (previous && previous !== session) {
+      saveCesarConversationSnapshot(previous, chatSession);
+    }
     _cesarSessionRef.session = session;
     setCesarSession(session);
-  }, []);
+  }, [chatSession]);
 
   const activeEngines = useCallback(() => {
     const available = registry.availableIds();

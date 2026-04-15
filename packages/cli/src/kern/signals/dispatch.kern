@@ -4,7 +4,7 @@
 
 import from="node:path" names="join"
 import from="node:fs" names="mkdirSync,writeFileSync,readFileSync,appendFileSync"
-import from="@agon/core" names="resolveWorkingDir,extractImagesFromInput,buildImageAttachment,undoPatch,resumeChatSession,findSkill,renderSkillPrompt,configSet,startChatSession,currentBranch,gitChangedFiles,buildExtensionContext,sessionContext,RUNS_DIR,getAgonHome"
+import from="@agon/core" names="resolveWorkingDir,extractImagesFromInput,buildImageAttachment,undoPatch,resumeChatSession,findSkill,renderSkillPrompt,configSet,startChatSession,currentBranch,gitChangedFiles,buildExtensionContext,sessionContext,RUNS_DIR,getAgonHome,clearConversation"
 import from="../handlers/chat.js" names="invalidateCwdCache"
 import from="@agon/core" names="ImageAttachment,ChatSession" types=true
 import from="@agon/core" names="approveCesarPlan,cancelCesarPlan,saveCesarPlan,loadCesarPlan,listCesarPlans,executePlan,formatCesarPlanMarkdown,planCostEstimator"
@@ -1099,6 +1099,11 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
         if (!sid) { cb.dispatch({ type: 'error', message: 'Usage: /chats resume <session-id>' }); break; }
         const resumed = resumeChatSession(sid);
         if (resumed) {
+          if (cb.ctx.cesarSession) {
+            cb.ctx.cesarSession.close();
+            cb.ctx.setCesarSession(null);
+          }
+          clearConversation();
           cb.setChatSession(resumed);
           cb.dispatch({ type: 'success', message: `Resumed session: ${resumed.id}` });
         } else {
@@ -1367,6 +1372,7 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
           cb.ctx.cesarSession.close();
           cb.ctx.setCesarSession(null);
         }
+        clearConversation();
         try {
           cb.ctx.cesarMemory?.clearSession?.();
         } catch { /* best-effort */ }

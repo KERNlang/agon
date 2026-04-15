@@ -135,7 +135,7 @@ export function saveSessionState(engineId: string, state: { messageHistory: Arra
 /**
  * Load persisted API session state from disk. Handles v1→v2 migration transparently.
  */
-export function loadSessionState(engineId: string): { messageHistory: Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>, confidence:number|null, compactionSummary:CompactionSummaryPart|null, toolCacheManifest:ToolCacheEntry[] } | null {
+export function loadSessionState(engineId: string): { messageHistory: Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>, confidence:number|null, compactionSummary:CompactionSummaryPart|null, toolCacheManifest:ToolCacheEntry[], savedAt: number } | null {
   const path = sessionStorePath(engineId);
   if (!existsSync(path)) return null;
   try {
@@ -153,6 +153,7 @@ export function loadSessionState(engineId: string): { messageHistory: Array<{rol
         confidence: data.confidence ?? null,
         compactionSummary: null,
         toolCacheManifest: [],
+        savedAt: data.savedAt ?? 0,
       };
     }
   
@@ -161,6 +162,7 @@ export function loadSessionState(engineId: string): { messageHistory: Array<{rol
       confidence: data.confidence ?? null,
       compactionSummary: data.compactionSummary ?? null,
       toolCacheManifest: data.toolCacheManifest ?? [],
+      savedAt: data.savedAt ?? 0,
     };
   } catch {
     return null;
@@ -182,4 +184,101 @@ export function clearSessionState(engineId: string): void {
       rmdirSync(cacheDir);
     }
   } catch { /* cache dir cleanup is best-effort */ }
+}
+
+export const CONVERSATION_SCHEMA_VERSION: number = 1;
+
+export interface ConversationState {
+  schemaVersion: number;
+  messageHistory: Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>;
+  savedAt: number;
+  sourceEngine: string|null;
+}
+
+/**
+ * Conversation path scoped by workspace only — shared across all engines.
+ */
+export function conversationStorePath(): string {
+  const cwdHash = createHash('md5').update(process.cwd()).digest('hex').slice(0, 8);
+  return runtimeAgonPath('sessions', `conversation-${cwdHash}.json`);
+}
+
+/**
+ * Strip engine-specific artifacts (tool call IDs, internal markers) for clean replay into a different engine.
+ */
+export function stripEngineArtifacts(messages: Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>): Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}> {
+  return messages.map((msg: any) => {
+    const clean: any = { role: msg.role };
+    if (typeof msg.content === 'string') {
+      clean.content = msg.content;
+    } else if (Array.isArray(msg.content)) {
+      // Multimodal content blocks — keep as-is
+      clean.content = msg.content;
+    } else if (msg.role === 'assistant' && Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0) {
+      const toolNames = msg.tool_calls
+        .map((tc: any) => tc?.function?.name ?? tc?.name ?? '')
+        .filter(Boolean);
+      clean.content = toolNames.length > 0
+        ? `[Tool calls omitted during engine handoff: ${toolNames.join(', ')}]`
+        : '[Tool calls omitted during engine handoff]';
+    } else {
+      try {
+        clean.content = msg.content == null ? '' : JSON.stringify(msg.content);
+      } catch {
+        clean.content = String(msg.content ?? '');
+      }
+    }
+    return clean;
+  });
+}
+
+/**
+ * Save conversation history to the workspace-scoped conversation store. Called before engine switch.
+ */
+export function saveConversation(messages: Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>, sourceEngineId: string|null): void {
+  const dir = runtimeAgonPath('sessions');
+  mkdirSync(dir, { recursive: true });
+  const path = conversationStorePath();
+  // Only keep last SESSION_MAX_MESSAGES to avoid unbounded growth
+  const trimmed = messages.slice(-SESSION_MAX_MESSAGES);
+  const clean = stripEngineArtifacts(trimmed);
+  const data: ConversationState = {
+    schemaVersion: CONVERSATION_SCHEMA_VERSION,
+    messageHistory: clean,
+    savedAt: Date.now(),
+    sourceEngine: sourceEngineId,
+  };
+  const tmpPath = path + '.tmp';
+  writeFileSync(tmpPath, JSON.stringify(data), 'utf-8');
+  renameSync(tmpPath, path);
+}
+
+/**
+ * Load conversation history from the workspace-scoped store. Used when booting a new engine after a switch.
+ */
+export function loadConversation(): { messageHistory: Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>, sourceEngine: string|null, savedAt: number } | null {
+  const path = conversationStorePath();
+  if (!existsSync(path)) return null;
+  try {
+    const raw = readFileSync(path, 'utf-8');
+    const data = JSON.parse(raw);
+    // TTL: discard conversations older than SESSION_TTL_MS
+    if (data.savedAt && Date.now() - data.savedAt > SESSION_TTL_MS) return null;
+    if (!Array.isArray(data.messageHistory)) return null;
+    return {
+      messageHistory: data.messageHistory,
+      sourceEngine: data.sourceEngine ?? null,
+      savedAt: data.savedAt ?? 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Delete the workspace-scoped conversation store.
+ */
+export function clearConversation(): void {
+  const path = conversationStorePath();
+  try { if (existsSync(path)) unlinkSync(path); } catch { /* already removed */ }
 }

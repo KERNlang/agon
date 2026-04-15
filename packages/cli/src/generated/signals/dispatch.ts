@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { mkdirSync, writeFileSync, readFileSync, appendFileSync } from 'node:fs';
 
-import { resolveWorkingDir, extractImagesFromInput, buildImageAttachment, undoPatch, resumeChatSession, findSkill, renderSkillPrompt, configSet, startChatSession, currentBranch, gitChangedFiles, buildExtensionContext, sessionContext, RUNS_DIR, getAgonHome } from '@agon/core';
+import { resolveWorkingDir, extractImagesFromInput, buildImageAttachment, undoPatch, resumeChatSession, findSkill, renderSkillPrompt, configSet, startChatSession, currentBranch, gitChangedFiles, buildExtensionContext, sessionContext, RUNS_DIR, getAgonHome, clearConversation } from '@agon/core';
 
 import { invalidateCwdCache } from '../handlers/chat.js';
 
@@ -1125,6 +1125,11 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
       if (!sid) { cb.dispatch({ type: 'error', message: 'Usage: /chats resume <session-id>' }); break; }
       const resumed = resumeChatSession(sid);
       if (resumed) {
+        if (cb.ctx.cesarSession) {
+          cb.ctx.cesarSession.close();
+          cb.ctx.setCesarSession(null);
+        }
+        clearConversation();
         cb.setChatSession(resumed);
         cb.dispatch({ type: 'success', message: `Resumed session: ${resumed.id}` });
       } else {
@@ -1389,13 +1394,14 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
       const oldChatId = cb.ctx.chatSession?.id ?? null;
   
       // 1. Kill Cesar's brain subprocess
-      if (cb.ctx.cesarSession) {
-        cb.ctx.cesarSession.close();
-        cb.ctx.setCesarSession(null);
-      }
-      try {
-        cb.ctx.cesarMemory?.clearSession?.();
-      } catch { /* best-effort */ }
+        if (cb.ctx.cesarSession) {
+          cb.ctx.cesarSession.close();
+          cb.ctx.setCesarSession(null);
+        }
+        clearConversation();
+        try {
+          cb.ctx.cesarMemory?.clearSession?.();
+        } catch { /* best-effort */ }
   
       // 2. Clear visual output (blocks, streaming, clipboard)
       cb.dispatch({ type: 'clear' });

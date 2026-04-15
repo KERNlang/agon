@@ -64,6 +64,7 @@ export {
   saveSessionState, loadSessionState, clearSessionState,
   saveToolResultToDisk, loadToolResultFromDisk, pruneToolCache,
   sessionCacheDir,
+  saveConversation, loadConversation, clearConversation, stripEngineArtifacts,
 } from './session-store.js';
 // ── Context Parts (structured message parts + StageContext) ──
 export {

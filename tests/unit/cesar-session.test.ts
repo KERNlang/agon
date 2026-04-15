@@ -2,7 +2,7 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
-import { canUseCesarMcp, loadCesarMcpServers, normalizeCesarMcpServers } from '../../packages/cli/src/generated/cesar/session.js';
+import { buildCesarConversationSnapshot, canUseCesarMcp, loadCesarMcpServers, normalizeCesarMcpServers } from '../../packages/cli/src/generated/cesar/session.js';
 
 const testDirs: string[] = [];
 
@@ -90,5 +90,43 @@ describe('cesar MCP session config', () => {
     expect(canUseCesarMcp({ companion: { protocol: 'jsonrpc' } }, '/usr/local/bin/codex')).toBe(true);
     expect(canUseCesarMcp({ companion: { protocol: 'structured-cli' } }, '/usr/local/bin/other')).toBe(false);
     expect(canUseCesarMcp({ companion: { protocol: 'jsonrpc' } }, '')).toBe(false);
+  });
+
+  it('prefers direct session history for continuity snapshots', () => {
+    const snapshot = buildCesarConversationSnapshot({
+      engineId: 'claude',
+      getMessageHistory: () => [
+        { role: 'user', content: 'from session' },
+        { role: 'assistant', content: 'session answer' },
+      ],
+    } as any, {
+      messages: [
+        { role: 'user', content: 'from chat transcript' },
+      ],
+    });
+
+    expect(snapshot).toEqual([
+      { role: 'user', content: 'from session' },
+      { role: 'assistant', content: 'session answer' },
+    ]);
+  });
+
+  it('falls back to the chat transcript when companion sessions have no local history', () => {
+    const snapshot = buildCesarConversationSnapshot({
+      engineId: 'codex',
+      getMessageHistory: () => [],
+    } as any, {
+      messages: [
+        { role: 'user', content: 'user prompt' },
+        { role: 'engine', engineId: 'codex', content: 'other engine reply' },
+        { role: 'engine', engineId: 'cesar', content: 'cesar reply' },
+      ],
+    });
+
+    expect(snapshot).toEqual([
+      { role: 'user', content: 'user prompt' },
+      { role: 'assistant', content: '[codex] other engine reply' },
+      { role: 'assistant', content: 'cesar reply' },
+    ]);
   });
 });

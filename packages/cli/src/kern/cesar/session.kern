@@ -4,7 +4,7 @@ import from="node:path" names="join"
 import from="node:fs" names="mkdirSync"
 import from="node:url" names="fileURLToPath"
 import from="@agon/core" names="PersistentSession,PersistentSessionConfig" types=true
-import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,getAgonHome,resolveWorkingDir,scanProjectContext,createPersistentSession,ToolRegistry,FileStateCache,buildToolSystemPrompt,toolsToOpenAIFormat,executeToolCall,RUNS_DIR,tracker,discoverMcpServers,mcpDiscoveryFingerprint,mcpServersToWireFormat,listCesarPlans"
+import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,getAgonHome,resolveWorkingDir,scanProjectContext,createPersistentSession,ToolRegistry,FileStateCache,buildToolSystemPrompt,toolsToOpenAIFormat,executeToolCall,RUNS_DIR,tracker,discoverMcpServers,mcpDiscoveryFingerprint,mcpServersToWireFormat,listCesarPlans,saveConversation"
 import from="@agon/core" names="ToolContext,ToolCallResult" types=true
 import from="../../handlers/types.js" names="HandlerContext" types=true
 import from="./tools.js" names="createCesarToolRegistry"
@@ -265,6 +265,43 @@ HARD RULE: Your turn MUST end with a ProposePlan call. If you respond with text 
     }
 
     return systemParts.join('\n\n');
+  >>>
+
+fn name=buildCesarConversationSnapshot params="session:PersistentSession|null, chatSession:any" returns="Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>" export=true
+  doc "Build a normalized continuity snapshot. Prefer the session's internal history; fall back to the visible chat transcript."
+  handler <<<
+    const directHistory = session?.getMessageHistory?.() ?? [];
+    if (directHistory.length > 0) {
+      return directHistory.filter((msg: any) => msg && typeof msg.role === 'string');
+    }
+
+    const transcript = Array.isArray(chatSession?.messages) ? chatSession.messages : [];
+    const snapshot: Array<{role:string,content:any}> = [];
+    for (const msg of transcript.slice(-80)) {
+      if (!msg || typeof msg.content !== 'string' || !msg.content.trim()) continue;
+      if (msg.role === 'user') {
+        snapshot.push({ role: 'user', content: msg.content });
+        continue;
+      }
+      if (msg.role === 'engine') {
+        const prefix = msg.engineId && msg.engineId !== 'cesar' ? `[${msg.engineId}] ` : '';
+        snapshot.push({ role: 'assistant', content: `${prefix}${msg.content}` });
+      }
+    }
+    return snapshot;
+  >>>
+
+fn name=saveCesarConversationSnapshot params="session:PersistentSession|null, chatSession:any" returns=void export=true
+  doc "Persist the active Cesar conversation before the session is discarded."
+  handler <<<
+    if (!session) return;
+    const snapshot = buildCesarConversationSnapshot(session, chatSession);
+    if (snapshot.length === 0) return;
+    try {
+      saveConversation(snapshot, session.engineId);
+    } catch (err) {
+      console.warn(`[agon] failed to save Cesar conversation snapshot: ${err instanceof Error ? err.message : String(err)}`);
+    }
   >>>
 
 fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, config:any" returns="((name:string, args:Record<string,unknown>, callId:string) => Promise<string>) | undefined"

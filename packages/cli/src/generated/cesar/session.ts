@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 
 import type { PersistentSession, PersistentSessionConfig } from '@agon/core';
 
-import { EngineRegistry, loadConfig, ensureAgonHome, getAgonHome, resolveWorkingDir, scanProjectContext, createPersistentSession, ToolRegistry, FileStateCache, buildToolSystemPrompt, toolsToOpenAIFormat, executeToolCall, RUNS_DIR, tracker, discoverMcpServers, mcpDiscoveryFingerprint, mcpServersToWireFormat, listCesarPlans } from '@agon/core';
+import { EngineRegistry, loadConfig, ensureAgonHome, getAgonHome, resolveWorkingDir, scanProjectContext, createPersistentSession, ToolRegistry, FileStateCache, buildToolSystemPrompt, toolsToOpenAIFormat, executeToolCall, RUNS_DIR, tracker, discoverMcpServers, mcpDiscoveryFingerprint, mcpServersToWireFormat, listCesarPlans, saveConversation } from '@agon/core';
 
 import type { ToolContext, ToolCallResult } from '@agon/core';
 
@@ -276,6 +276,45 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
       }
   
       return systemParts.join('\n\n');
+}
+
+/**
+ * Build a normalized continuity snapshot. Prefer the session's internal history; fall back to the visible chat transcript.
+ */
+export function buildCesarConversationSnapshot(session: PersistentSession|null, chatSession: any): Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}> {
+  const directHistory = session?.getMessageHistory?.() ?? [];
+  if (directHistory.length > 0) {
+    return directHistory.filter((msg: any) => msg && typeof msg.role === 'string');
+  }
+
+  const transcript = Array.isArray(chatSession?.messages) ? chatSession.messages : [];
+  const snapshot: Array<{role:string,content:any}> = [];
+  for (const msg of transcript.slice(-80)) {
+    if (!msg || typeof msg.content !== 'string' || !msg.content.trim()) continue;
+    if (msg.role === 'user') {
+      snapshot.push({ role: 'user', content: msg.content });
+      continue;
+    }
+    if (msg.role === 'engine') {
+      const prefix = msg.engineId && msg.engineId !== 'cesar' ? `[${msg.engineId}] ` : '';
+      snapshot.push({ role: 'assistant', content: `${prefix}${msg.content}` });
+    }
+  }
+  return snapshot;
+}
+
+/**
+ * Persist the active Cesar conversation before the session is discarded.
+ */
+export function saveCesarConversationSnapshot(session: PersistentSession|null, chatSession: any): void {
+  if (!session) return;
+  const snapshot = buildCesarConversationSnapshot(session, chatSession);
+  if (snapshot.length === 0) return;
+  try {
+    saveConversation(snapshot, session.engineId);
+  } catch (err) {
+    console.warn(`[agon] failed to save Cesar conversation snapshot: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 /**

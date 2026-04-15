@@ -29,6 +29,7 @@ import from="../signals/app-input.js" names="cleanInputValue,cleanSubmitValue,fi
 import from="../signals/keyboard.js" names="resolveKeyboardInput"
 import from="../signals/block-archive.js" names="makeBlockArchivePath,appendBlockWithCap"
 import from="../blocks/review.js" names="handleReviewAction"
+import from="../cesar/session.js" names="saveCesarConversationSnapshot"
 import from="../../components.js" names="SpinnerBlock,StatusBar,CesarStatusStrip,EnginePicker,ModelPicker,ReviewBlock,BackgroundJobRail,CesarPicker,ComposerView,AgentProgressView"
 import from="./app-views.js" names="ChromeBar,HistoryView,StreamingView"
 import from="../../components.js" names="OutputBlock,ReviewEvent" types=true
@@ -527,8 +528,12 @@ screen name=App target=ink
       setActiveAbort(abort);
     >>>
 
-  callback name=setCesarSessionWrapped params="session:PersistentSession|null"
+  callback name=setCesarSessionWrapped params="session:PersistentSession|null" deps="chatSession"
     handler <<<
+      const previous = _cesarSessionRef.session;
+      if (previous && previous !== session) {
+        saveCesarConversationSnapshot(previous, chatSession);
+      }
       _cesarSessionRef.session = session;
       setCesarSession(session);
     >>>

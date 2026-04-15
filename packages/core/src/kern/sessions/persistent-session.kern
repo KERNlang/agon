@@ -3,7 +3,7 @@ import from="node:child_process" names="ChildProcess" types=true
 import from="node:readline" names="createInterface"
 import from="../models/types.js" names="EngineDefinition,CompanionConfig" types=true
 import from="../api/dispatch.js" names="apiStreamDispatch,apiStreamDispatchWithHistory"
-import from="../signals/session-store.js" names="saveSessionState,loadSessionState,saveToolResultToDisk,loadToolResultFromDisk,pruneToolCache,sessionCacheDir"
+import from="../signals/session-store.js" names="saveSessionState,loadSessionState,saveToolResultToDisk,loadToolResultFromDisk,pruneToolCache,sessionCacheDir,loadConversation"
 import from="../signals/config.js" names="loadConfig"
 import from="../models/context-parts.js" names="CompactionSummaryPart,ToolCacheEntry" types=true
 import from="../tools/tool-parser.js" names="parseToolCalls,toolCallsToApiFormat"
@@ -37,6 +37,7 @@ interface name=PersistentSession
   field name=start type="() => Promise<void>"
   field name=send type="(opts: SessionSendOptions) => AsyncGenerator<SessionChunk, void, void>"
   field name=close type="() => void"
+  field name=getMessageHistory type="() => Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>"
 
 fn name=createPersistentSession params="config:PersistentSessionConfig" returns="PersistentSession"
   doc "Factory: picks the right session implementation based on engine config."
@@ -421,6 +422,11 @@ fn name=createCompanionSession params="config:PersistentSessionConfig" returns="
         pending.clear();
         killProc();
       },
+
+      getMessageHistory() {
+        // Companion sessions manage threads externally — no local history to extract
+        return [];
+      },
     };
 
     return session;
@@ -764,6 +770,11 @@ fn name=createAcpSession params="config:PersistentSessionConfig" returns="Persis
         pending.clear();
         killProc();
       },
+
+      getMessageHistory() {
+        // ACP sessions manage threads externally — no local history to extract
+        return [];
+      },
     };
 
     return session;
@@ -1065,6 +1076,11 @@ fn name=createStreamJsonSession params="config:PersistentSessionConfig" returns=
         }
         setTimeout(() => killProc(), 1000);
       },
+
+      getMessageHistory() {
+        // Stream-json sessions manage conversation via Claude CLI threads — no local history
+        return [];
+      },
     };
 
     return session;
@@ -1095,12 +1111,33 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
         // Preserve messageHistory across restarts — API is stateless, history IS the context.
         if (messageHistory.length === 0) {
           firstTurn = true;
-          // Try loading persisted state from disk (survives process restart)
+          // Prefer the freshest context source:
+          // 1. workspace-scoped conversation continuity (latest cross-engine turn)
+          // 2. engine-scoped persisted state (same-engine restart)
           const saved = loadSessionState(config.engine.id);
-          if (saved && saved.messageHistory.length > 0) {
-            messageHistory.push(...saved.messageHistory);
-            compactionSummary = saved.compactionSummary ?? null;
-            toolCacheManifest = saved.toolCacheManifest ?? [];
+          const conversation = loadConversation();
+
+          const hasSavedState = !!(saved && saved.messageHistory.length > 0);
+          const hasConversation = !!(conversation && conversation.messageHistory.length > 0);
+          const shouldUseConversation = !!(
+            hasConversation && (
+              !hasSavedState ||
+              (conversation!.savedAt ?? 0) >= (saved?.savedAt ?? 0)
+            )
+          );
+
+          if (shouldUseConversation) {
+            // Strip system prompts — the new engine gets its own identity prompt.
+            const replayMessages = conversation!.messageHistory.filter((m: any) => m.role !== 'system');
+            if (replayMessages.length > 0) {
+              messageHistory.push(...replayMessages);
+              firstTurn = false;
+              console.log(`[agon] conversation continuity: loaded ${replayMessages.length} messages from ${conversation!.sourceEngine ?? 'previous engine'}`);
+            }
+          } else if (hasSavedState) {
+            messageHistory.push(...saved!.messageHistory);
+            compactionSummary = saved!.compactionSummary ?? null;
+            toolCacheManifest = saved!.toolCacheManifest ?? [];
             firstTurn = false; // Not a fresh session — system prompt already in history
           }
         }
@@ -1914,6 +1951,10 @@ Respond with ONLY the summary, no preamble.`;
 
       close() {
         alive = false;
+      },
+
+      getMessageHistory() {
+        return [...messageHistory];
       },
     };
 

@@ -4,13 +4,13 @@ import React from 'react';
 import { Box, Text } from 'ink';
 
 // ── Core ───────────────────────────────────────────────
-import { MemoTextInput, SlashPicker } from '../../components.js';
+import { MemoTextInput, PromptTextInput, SlashPicker } from '../../components.js';
 
 import { icons } from '../signals/icons.js';
 
 import { getGhostCompletion } from '../../ghost-text.js';
 
-const ComposerView = React.memo(function ComposerView({ mode, replState, planModeQueued, activePlanState, slashPickerOpen, inputValue, handleInputChange, handleSubmit, allSlashCommands, availableEngines, onSlashSelect, onSlashCancel, questionState, questionAnswer, onQuestionAnswerChange, onQuestionAnswerSubmit, onCtrlShortcut }: { mode:'chat'|'campfire'|'brainstorm'|'tribunal'; replState:string; planModeQueued:boolean; activePlanState:string|null; slashPickerOpen:boolean; inputValue:string; handleInputChange:(value:string) => void; handleSubmit:(value:string) => void; allSlashCommands:any[]; availableEngines:string[]; onSlashSelect:(cmd:string) => void; onSlashCancel:() => void; questionState:any; questionAnswer:string; onQuestionAnswerChange:(value:string) => void; onQuestionAnswerSubmit:(value:string) => void; onCtrlShortcut:(shortcut:string) => void }) {
+const ComposerView = React.memo(function ComposerView({ mode, replState, planModeQueued, activePlanState, slashPickerOpen, inputValue, handleInputChange, handleSubmit, allSlashCommands, availableEngines, onSlashSelect, onSlashCancel, questionState, questionAnswer, onQuestionAnswerChange, onQuestionAnswerSubmit, onCtrlShortcut, termWidth, termHeight }: { mode:'chat'|'campfire'|'brainstorm'|'tribunal'; replState:string; planModeQueued:boolean; activePlanState:string|null; slashPickerOpen:boolean; inputValue:string; handleInputChange:(value:string) => void; handleSubmit:(value:string) => void; allSlashCommands:any[]; availableEngines:string[]; onSlashSelect:(cmd:string) => void; onSlashCancel:() => void; questionState:any; questionAnswer:string; onQuestionAnswerChange:(value:string) => void; onQuestionAnswerSubmit:(value:string) => void; onCtrlShortcut:(shortcut:string) => void; termWidth:number; termHeight:number }) {
   const placeholder = replState === 'idle'
     ? (mode === 'chat'
         ? ''
@@ -21,6 +21,8 @@ const ComposerView = React.memo(function ComposerView({ mode, replState, planMod
             : 'What should they debate?')
     : '';
   const ghost = getGhostCompletion(inputValue, allSlashCommands, availableEngines);
+  const promptWidth = Math.max(12, termWidth - (mode === 'chat' ? 10 : 22));
+  const promptMaxLines = Math.max(3, Math.min(8, Math.floor(termHeight / 4)));
   return (
     <>
       {slashPickerOpen && <SlashPicker commands={allSlashCommands} onSelect={onSlashSelect} onCancel={onSlashCancel} />}
@@ -32,10 +34,15 @@ const ComposerView = React.memo(function ComposerView({ mode, replState, planMod
             {slashPickerOpen ? (
               <Text dimColor>{inputValue || '/'}</Text>
             ) : (
-              <>
-                <MemoTextInput value={inputValue} onChange={handleInputChange} onSubmit={handleSubmit} onCtrlShortcut={onCtrlShortcut} placeholder={placeholder} />
-                {ghost && <Text dimColor>{ghost}</Text>}
-              </>
+              <PromptTextInput
+                value={inputValue}
+                onChange={handleInputChange}
+                onSubmit={handleSubmit}
+                onCtrlShortcut={onCtrlShortcut}
+                placeholder={placeholder}
+                ghostText={ghost ?? undefined}
+                width={promptWidth}
+                maxVisibleLines={promptMaxLines} />
             )}
           </Box>
         </Box>

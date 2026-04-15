@@ -5,7 +5,6 @@ import from="react" names="useState,useCallback,useEffect,useRef,useMemo"
 import from="ink" names="Box,Text,render"
 import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,ensureCurrentWorkspace,startChatSession,getRatings,getActiveWorkspace,RUNS_DIR,extractImagesFromInput,resolveWorkingDir,currentBranch,configSet,createCesarMemory,modelEntryToEngineDef,appendMessage,getAgonHome,tracker"
 import from="@agon/core" names="Plan,ChatSession,Skill,PersistentSession,ImageAttachment" types=true
-import from="../../handlers/types.js" names="EngineProgress" types=true
 import from="@agon/adapter-cli" names="createCliAdapter"
 import from="@agon/core" names="EngineAdapter" types=true
 import from="../signals/intent.js" names="detectIntent,SLASH_COMMANDS"
@@ -14,10 +13,8 @@ import from="../signals/job-manager.js" names="JobManager"
 import from="../signals/job-manager.js" names="Job" types=true
 import from="../blocks/output-format.js" names="ENGINE_COLORS"
 import from="../signals/icons.js" names="icons"
-import from="../blocks/markdown.js" names="cleanEngineOutput"
 import from="../../handlers/types.js" names="OutputEvent,HandlerContext" types=true
 import from="../../code-buffer.js" names="codeBlockBuffer"
-import from="../signals/ghost-text.js" names="getGhostCompletion"
 import from="../signals/app-state.js" names="startCommandReplState,finishReplState,cancelReplState"
 import from="../signals/app-state.js" names="ReplStateState" types=true
 import from="../signals/paste-handler.js" names="processPasteContent,expandPastePlaceholders"
@@ -30,8 +27,8 @@ import from="../signals/keyboard.js" names="resolveKeyboardInput"
 import from="../signals/block-archive.js" names="makeBlockArchivePath,appendBlockWithCap"
 import from="../blocks/review.js" names="handleReviewAction"
 import from="../cesar/session.js" names="saveCesarConversationSnapshot"
-import from="../../components.js" names="SpinnerBlock,StatusBar,CesarStatusStrip,EnginePicker,ModelPicker,ReviewBlock,BackgroundJobRail,CesarPicker,ComposerView,AgentProgressView"
-import from="./app-views.js" names="ChromeBar,HistoryView,StreamingView"
+import from="../../components.js" names="StatusBar,EnginePicker,ModelPicker,ReviewBlock,BackgroundJobRail,CesarPicker,ComposerView"
+import from="./app-views.js" names="ChromeBar,HistoryView"
 import from="../../components.js" names="OutputBlock,ReviewEvent" types=true
 import from="node:path" names="join,dirname"
 import from="node:url" names="fileURLToPath"
@@ -44,6 +41,7 @@ import from="../blocks/results-formatter.js" names="formatSessionResults,formatC
 import from="@agon/core" names="loadSkills"
 import from="../../input-utils.js" names="parseMouseScrollChunk,isTerminalFocusReport"
 import from="../../stable-input.js" names="useStableInput"
+import from="../../live-runtime.js" names="LiveTranscriptPane,LiveTopSpinner,LiveInlineSpinner,LiveStatusRegion,getLiveRuntimeState,setLiveSpinnerState,setLiveProgressState,updateStreamingTextState,updateAgentProgressState,clearAgentProgressByTeamState,pruneCompletedAgentProgressState,setCesarConfidenceState,setChatStartTimeState,resetLiveRuntimeState"
 
 fn name=isMutatingToolCall params="event:any" returns=boolean
   handler <<<
@@ -142,8 +140,6 @@ screen name=App target=ink
   state name=historyIndex type=number initial=-1 safe=false
   state name=mode type="'chat'|'campfire'|'brainstorm'|'tribunal'" initial="'chat'"
   state name=sessionStartTime type=number initial="Date.now()"
-  state name=liveSpinner type=any initial="null"
-  state name=liveProgress type="EngineProgress[]|null" initial="null"
   state name=slashPickerOpen type=boolean initial=false safe=false
   state name=questionState type=any initial="null"
   state name=questionAnswer type=string initial="''" safe=false
@@ -155,7 +151,6 @@ screen name=App target=ink
   state name=modelPickerTitle type=string initial="'Select model'"
   state name=modelPickerTargetEngine type="string|null" initial="null"
   state name=cesarPickerOpen type=boolean initial=false
-  state name=streamingText type="Record<string,StreamingEntry>" initial="{}" throttle=90
   state name=pendingImages type="ImageAttachment[]" initial="[]"
   state name=reviewEvent type="ReviewEvent|null" initial="null"
   state name=jobManager type=any initial="new JobManager()"
@@ -171,17 +166,12 @@ screen name=App target=ink
   state name=neroMode type=boolean initial=false
   state name=toolOutputExpanded type=boolean initial=false
   state name=thinkingExpanded type=boolean initial=true
-  state name=cesarConfidence type="number|null" initial="null" throttle=200
-  state name=agentProgress type="Record<string,AgentProgressSnapshot>" initial="{}"
   state name=planModeQueued type=boolean initial=false safe=false
   state name=cesarMemory type=any initial="() => createCesarMemory()"
   state name=sessionMcpServers type="Array<Record<string,unknown>>" initial="[]"
 
   // ── Refs ──
-  ref name=chatStartTimeRef type=number initial=0
   ref name=currentPlanRef type="Plan|null" initial="null"
-  ref name=streamingTextRef type="Record<string,StreamingEntry>" initial="{}"
-  ref name=agentProgressRef type="Record<string,AgentProgressSnapshot>" initial="{}"
   ref name=modeRef type="'chat'|'campfire'|'brainstorm'|'tribunal'" initial="'chat'"
   ref name=inputValueRef type=string initial="''"
   ref name=ctrlKeyHandledRef type=boolean initial=false
@@ -273,35 +263,6 @@ screen name=App target=ink
         totalTokens: stats.totalTokens,
         totalCostUsd: stats.totalCostUsd,
       };
-    >>>
-
-  // Memoized stream snippet — passing a fresh `{engineId, line}` object per
-  // render to CesarStatusStrip defeats its React.memo shallow-equal, causing
-  // the whole status strip (and children) to re-render on every composer
-  // keystroke. Memoize on the raw streamingText reference.
-  memo name=activeStream deps="streamingText"
-    handler <<<
-      // Pick the most-recently-started entry across all in-flight streams.
-      // For solo /agent or single-engine chat this is the only entry; for
-      // a 3-engine team run, AgentProgressView shows per-engine status
-      // panels (one per engineId) and StreamingView shows the freshest
-      // narration. This avoids the clutter of N stacked stream blocks.
-      const entries = Object.values(streamingText);
-      if (entries.length === 0) return null;
-      let latest: StreamingEntry | null = null;
-      for (const e of entries) {
-        if (!latest || e.startedAt > latest.startedAt) latest = e;
-      }
-      return latest;
-    >>>
-
-  memo name=streamSnippet deps="activeStream"
-    handler <<<
-      if (!activeStream || !activeStream.content) return null;
-      const cleaned = cleanEngineOutput(activeStream.content);
-      const lines = cleaned.split('\n').filter((l: string) => l.trim());
-      if (lines.length === 0) return null;
-      return { engineId: activeStream.engineId, line: lines[lines.length - 1].trim() };
     >>>
 
   memo name=runningJobs deps="jobList"
@@ -435,9 +396,6 @@ screen name=App target=ink
       };
     >>>
 
-  // Streaming rate-limiting is handled by `state name=streamingText throttle=90` —
-  // no manual timer to clean up.
-
   // ── TTL pruner for completed agentProgress snapshots ──
   // After an agent-step-end event sets `completedAt`, leave the panel visible
   // for 5 seconds so the user sees the final state, then prune. Runs every 1s.
@@ -446,23 +404,7 @@ screen name=App target=ink
   effect deps=""
     handler <<<
       const interval = setInterval(() => {
-        const prev = agentProgressRef.current;
-        if (!prev || Object.keys(prev).length === 0) return;
-        const now = Date.now();
-        let changed = false;
-        const next: Record<string, AgentProgressSnapshot> = {};
-        for (const eid of Object.keys(prev)) {
-          const snap = prev[eid];
-          if (snap.completedAt && now - snap.completedAt > 5000) {
-            changed = true;
-            continue; // skip — pruned
-          }
-          next[eid] = snap;
-        }
-        if (changed) {
-          agentProgressRef.current = next;
-          setAgentProgress(next);
-        }
+        pruneCompletedAgentProgressState(5000, Date.now());
       }, 1000);
       return () => clearInterval(interval);
     >>>
@@ -549,17 +491,10 @@ screen name=App target=ink
   memo name=outputActions deps=""
     handler <<<
       return {
-        setLiveSpinner,
-        setLiveProgress,
+        setLiveSpinner: setLiveSpinnerState,
+        setLiveProgress: setLiveProgressState,
         setStreamingText: (updater: Record<string,StreamingEntry> | ((prev: Record<string,StreamingEntry>) => Record<string,StreamingEntry>)) => {
-          // Functional setter form (RT-7 fix): the read-modify-write happens
-          // synchronously inside this function body, so concurrent dispatches
-          // never race the ref. typeof check supports both wholesale-replace
-          // (val: Record) and atomic update (val: prev => Record).
-          const prev = streamingTextRef.current;
-          const next = typeof updater === 'function' ? (updater as (p: Record<string,StreamingEntry>) => Record<string,StreamingEntry>)(prev) : updater;
-          streamingTextRef.current = next;
-          setStreamingText(next);
+          updateStreamingTextState(updater);
         },
         addBlock: (event: any) => {
           if (scrollOffsetRef.current === 0) setScrollOffset(0);
@@ -575,44 +510,27 @@ screen name=App target=ink
         clearBlocks: () => setOutputBlocks([]),
         setReviewEvent,
         setQuestionState,
-        setChatStartTime: (val: number) => { chatStartTimeRef.current = val; },
+        setChatStartTime: setChatStartTimeState,
         flushStream: () => {
           // Flush every in-flight engine's stream to the transcript. Multi-agent
           // teams may have N concurrent streams when flush is requested (e.g.,
           // permission-ask interrupts mid-stream).
-          const prev = streamingTextRef.current;
+          const prev = getLiveRuntimeState().streamingText;
           for (const eid of Object.keys(prev)) {
             const entry = prev[eid];
             if (!entry) continue;
             const color = ENGINE_COLORS[entry.engineId] ?? 124;
             setOutputBlocks((blocks: any) => appendBlockWithCap(blocks, { id: Date.now() - 1 + Math.random(), event: { type: 'engine-block', engineId: entry.engineId, color, content: entry.content } }, blockArchivePathRef.current));
           }
-          streamingTextRef.current = {};
-          setStreamingText({});
+          updateStreamingTextState({});
         },
         getEngineColor: (engineId: string) => ENGINE_COLORS[engineId] ?? 124,
-        setCesarConfidence,
-        // Sync mirror with functional setter (RT-6 fix): the read-modify-write
-        // is atomic inside this function so concurrent dispatches from N agents
-        // can't clobber each other's keyed entries. Mirrors the streamingText
-        // pattern above.
+        setCesarConfidence: setCesarConfidenceState,
         setAgentProgress: (updater: Record<string,AgentProgressSnapshot> | ((prev: Record<string,AgentProgressSnapshot>) => Record<string,AgentProgressSnapshot>)) => {
-          const prev = agentProgressRef.current;
-          const next = typeof updater === 'function' ? (updater as (p: Record<string,AgentProgressSnapshot>) => Record<string,AgentProgressSnapshot>)(prev) : updater;
-          agentProgressRef.current = next;
-          setAgentProgress(next);
+          updateAgentProgressState(updater);
         },
         clearAgentProgressByTeam: (teamId: string) => {
-          // Explicit "team is done, wipe its panels" path. Used by agent-team-complete.
-          // Faster than waiting for the TTL pruner.
-          const prev = agentProgressRef.current;
-          const next: Record<string, AgentProgressSnapshot> = {};
-          for (const eid of Object.keys(prev)) {
-            const entry = prev[eid];
-            if (entry && entry.teamId !== teamId) next[eid] = entry;
-          }
-          agentProgressRef.current = next;
-          setAgentProgress(next);
+          clearAgentProgressByTeamState(teamId);
         },
       };
     >>>
@@ -623,8 +541,8 @@ screen name=App target=ink
       if (et === 'streaming-chunk' || et === 'thinking-chunk' || et === 'progress-update' || et === 'tool-call' || et === 'spinner-start' || et === 'spinner-update') {
         lastActivityTimeRef.current = Date.now();
       }
-      const state: OutputState = { liveSpinner: null, liveProgress: null, streamingText: streamingTextRef.current ?? {}, agentProgress: agentProgressRef.current ?? {} };
-      handleOutputEvent(event, state, outputActions, mode, chatStartTimeRef.current);
+      const state: OutputState = getLiveRuntimeState();
+      handleOutputEvent(event, state, outputActions, mode, getLiveRuntimeState().chatStartTime);
     >>>
 
   callback name=askQuestion params="prompt:string" deps="dispatch"
@@ -637,10 +555,7 @@ screen name=App target=ink
       const abort = activeAbortRef.current;
       if (abort) abort.abort();
       trackAbort(null);
-      setLiveSpinner(null);
-      setLiveProgress(null);
-      streamingTextRef.current = {};
-      setStreamingText({});
+      resetLiveRuntimeState({ preserveConfidence: true });
       clearPermissionQueue();
       clearThinkingBuffer();
       setQuestionState(null);
@@ -868,7 +783,7 @@ screen name=App target=ink
 
           // Build context from streaming output (pick the most recent in-flight stream)
           let streamCtx = '';
-          const streamEntries = Object.values(streamingTextRef.current ?? {});
+          const streamEntries = Object.values(getLiveRuntimeState().streamingText);
           if (streamEntries.length > 0) {
             let latest: StreamingEntry | null = null;
             for (const e of streamEntries) {
@@ -1100,10 +1015,8 @@ screen name=App target=ink
         for (const abort of _activeAborts) abort.abort();
         _activeAborts.clear();
         activeAbortRef.current = null;
-        streamingTextRef.current = {};
-        setActiveAbort(null); setLiveSpinner(null); setLiveProgress(null); setStreamingText({});
-        agentProgressRef.current = {};
-        setAgentProgress({});
+        setActiveAbort(null);
+        resetLiveRuntimeState({ preserveConfidence: true });
         clearPermissionQueue();
         clearThinkingBuffer();
         setQuestionState(null);
@@ -1239,30 +1152,7 @@ screen name=App target=ink
         <BackgroundJobRail jobs={runningJobs} />
         <Box flexDirection="column" flexGrow={1} flexShrink={1}>
           <HistoryView visibleBlocks={visibleBlocks} groupedBlocks={groupedBlocks} mode={mode} blocksAbove={visibleWindow.blocksAbove} blocksBelow={visibleWindow.blocksBelow} thinkingExpanded={thinkingExpanded} />
-          <StreamingView streamingText={activeStream} mode={mode} liveProgress={liveProgress} />
-          {Object.keys(agentProgress).length > 0 && (
-            <Box flexDirection="column">
-              {Object.values(agentProgress).map((snap: AgentProgressSnapshot) => (
-                <AgentProgressView
-                  key={snap.engineId}
-                  engineId={snap.engineId}
-                  turnIndex={snap.turnIndex}
-                  phase={snap.phase}
-                  userPrompt={snap.userPrompt}
-                  toolCalls={snap.toolCalls}
-                  lastTool={snap.lastTool}
-                  lastToolStatus={snap.lastToolStatus}
-                  tokensUsed={snap.tokensUsed}
-                  elapsedMs={snap.elapsedMs}
-                  turnsRemaining={snap.turnsRemaining}
-                  maxTurns={snap.maxTurns}
-                  tokensRemaining={snap.tokensRemaining}
-                  maxTokens={snap.maxTokens}
-                  error={snap.error}
-                />
-              ))}
-            </Box>
-          )}
+          <LiveTranscriptPane mode={mode} />
         </Box>
         {reviewEvent && <ReviewBlock event={reviewEvent} onAction={handleReviewActionCb} />}
         {enginePickerOpen && (
@@ -1341,18 +1231,12 @@ screen name=App target=ink
             }}
             onCancel={() => setCesarPickerOpen(false)} />
         )}
-        {liveSpinner && mode !== 'chat' && <SpinnerBlock message={liveSpinner.message} color={liveSpinner.color} />}
+        <LiveTopSpinner mode={mode} />
         {!enginePickerOpen && !modelPickerOpen && !cesarPickerOpen && (
           <Box flexDirection="column" paddingX={1} marginTop={1}>
             {pendingImages.length > 0 && (<Box><Text color="#22d3ee">{icons().image + ' '}</Text>{pendingImages.map((img: any, i: number) => (<Text key={i} dimColor>{img.filename}{i < pendingImages.length - 1 ? ', ' : ''}</Text>))}</Box>)}
             {inputQueue.length > 0 && (<Box><Text dimColor>{icons().queue + ' '}{inputQueue.length} queued: </Text><Text dimColor italic>{inputQueue[0].length > 40 ? inputQueue[0].slice(0, 40) + '…' : inputQueue[0]}</Text></Box>)}
-            {liveSpinner && mode === 'chat' && (
-              <Box paddingLeft={1}>
-                <Text color={questionState && questionState.choices ? '#ef4444' : '#fbbf24'}>
-                  {questionState && questionState.choices ? `${icons().warning} PERMISSION REQUIRED \u2014 respond below` : liveSpinner.message}
-                </Text>
-              </Box>
-            )}
+            {mode === 'chat' && <LiveInlineSpinner questionState={questionState} />}
             <ComposerView
               mode={mode}
               replState={replState}
@@ -1370,11 +1254,13 @@ screen name=App target=ink
               questionAnswer={questionAnswer}
               onQuestionAnswerChange={setQuestionAnswer}
               onQuestionAnswerSubmit={handleQuestionAnswer}
-              onCtrlShortcut={handleComposerCtrlShortcut} />
+              onCtrlShortcut={handleComposerCtrlShortcut}
+              termWidth={termWidth}
+              termHeight={termHeight} />
             {(() => {
               const _cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
               return (<>
-                <CesarStatusStrip cesarId={_cesarId} confidence={cesarConfidence} spinner={liveSpinner} engines={liveProgress} startTime={chatStartTimeRef.current || 0} streamSnippet={streamSnippet} isActive={replState !== 'idle' || runningJobs.length > 0} planModeQueued={planModeQueued} activePlanState={activePlan?.state ?? null} />
+                <LiveStatusRegion cesarId={_cesarId} isActive={replState !== 'idle' || runningJobs.length > 0} planModeQueued={planModeQueued} activePlanState={activePlan?.state ?? null} />
                 {mode === 'chat' && <StatusBar cesarId={statusStats.cesarId} chatMessageCount={statusStats.chatMessageCount} totalTokens={statusStats.totalTokens} totalCostUsd={statusStats.totalCostUsd} cwd={statusCwd} branch={statusBranch} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} thinkingExpanded={thinkingExpanded} isActive={replState !== 'idle'} />}
               </>);
             })()}
@@ -1389,6 +1275,7 @@ fn name=startRepl async=true returns="Promise<void>"
   handler <<<
     ensureAgonHome();
     ensureCurrentWorkspace(process.cwd());
+    resetLiveRuntimeState({ preserveConfidence: false });
     const inkStdout = createInkStdoutProxy();
     process.on('SIGINT', () => {
       const now = Date.now();

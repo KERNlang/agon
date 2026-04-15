@@ -353,7 +353,7 @@ function buildPlaceholderLines(placeholder: string, width: number, opts: {focus:
   
   if (!placeholder) {
     if (opts.focus && opts.showCursor) {
-      pushToken({ kind: 'cursor', text: ' ', highlighted: true, isCursor: true });
+      pushToken({ kind: 'cursor', text: ' ', dimmed: false, highlighted: true, isCursor: true });
     }
     return { lines, cursorLine };
   }
@@ -399,12 +399,12 @@ function buildValueLines(value: string, width: number, opts: {cursorOffset:numbe
   
   const maybePushSyntheticCursor = (offset: number) => {
     if (!needsSyntheticCursor || offset !== boundedCursorOffset) return;
-    pushToken({ kind: 'cursor', text: ' ', highlighted: true, isCursor: true });
+    pushToken({ kind: 'cursor', text: ' ', dimmed: false, highlighted: true, isCursor: true });
   };
   
   if (!value) {
     if (showCursor) {
-      pushToken({ kind: 'cursor', text: ' ', highlighted: true, isCursor: true });
+      pushToken({ kind: 'cursor', text: ' ', dimmed: false, highlighted: true, isCursor: true });
     }
     return { lines, cursorLine };
   }
@@ -421,6 +421,7 @@ function buildValueLines(value: string, width: number, opts: {cursorOffset:numbe
     pushToken({
       kind: 'char',
       text: char,
+      dimmed: false,
       highlighted: isCursorChar || isSelectionChar,
       isCursor: isCursorChar,
     });

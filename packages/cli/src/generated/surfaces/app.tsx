@@ -8,6 +8,8 @@ import { EngineRegistry, loadConfig, ensureAgonHome, ensureCurrentWorkspace, sta
 
 import type { Plan, ChatSession, Skill, PersistentSession, ImageAttachment } from '@agon/core';
 
+import type { EngineProgress } from '../../handlers/types.js';
+
 import { createCliAdapter } from '@agon/adapter-cli';
 
 import type { EngineAdapter } from '@agon/core';
@@ -23,6 +25,8 @@ import type { Job } from '../signals/job-manager.js';
 import { ENGINE_COLORS } from '../blocks/output-format.js';
 
 import { icons } from '../signals/icons.js';
+
+import { cleanEngineOutput } from '../blocks/markdown.js';
 
 import type { OutputEvent, HandlerContext } from '../../handlers/types.js';
 
@@ -52,9 +56,9 @@ import { handleReviewAction } from '../blocks/review.js';
 
 import { saveCesarConversationSnapshot } from '../cesar/session.js';
 
-import { StatusBar, EnginePicker, ModelPicker, ReviewBlock, BackgroundJobRail, CesarPicker, ComposerView } from '../../components.js';
+import { SpinnerBlock, StatusBar, CesarStatusStrip, EnginePicker, ModelPicker, ReviewBlock, BackgroundJobRail, CesarPicker, ComposerView, AgentProgressView } from '../../components.js';
 
-import { ChromeBar, HistoryView } from './app-views.js';
+import { ChromeBar, HistoryView, StreamingView } from './app-views.js';
 
 import type { OutputBlock, ReviewEvent } from '../../components.js';
 
@@ -80,8 +84,6 @@ import { parseMouseScrollChunk, isTerminalFocusReport } from '../../input-utils.
 
 import { useStableInput } from '../../stable-input.js';
 
-import { LiveTranscriptPane, LiveTopSpinner, LiveInlineSpinner, LiveStatusRegion, getLiveRuntimeState, setLiveSpinnerState, setLiveProgressState, updateStreamingTextState, updateAgentProgressState, clearAgentProgressByTeamState, pruneCompletedAgentProgressState, setCesarConfidenceState, setChatStartTimeState, resetLiveRuntimeState } from '../../live-runtime.js';
-
 export function App() {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -102,6 +104,10 @@ export function App() {
   const setMode = useMemo(() => __inkSafe(_setModeRaw), [_setModeRaw]);
   const [sessionStartTime, _setSessionStartTimeRaw] = useState<number>(Date.now());
   const setSessionStartTime = useMemo(() => __inkSafe(_setSessionStartTimeRaw), [_setSessionStartTimeRaw]);
+  const [liveSpinner, _setLiveSpinnerRaw] = useState<any>(null);
+  const setLiveSpinner = useMemo(() => __inkSafe(_setLiveSpinnerRaw), [_setLiveSpinnerRaw]);
+  const [liveProgress, _setLiveProgressRaw] = useState<EngineProgress[]|null>(null);
+  const setLiveProgress = useMemo(() => __inkSafe(_setLiveProgressRaw), [_setLiveProgressRaw]);
   const [slashPickerOpen, setSlashPickerOpen] = useState<boolean>(false);
   const [questionState, _setQuestionStateRaw] = useState<any>(null);
   const setQuestionState = useMemo(() => __inkSafe(_setQuestionStateRaw), [_setQuestionStateRaw]);
@@ -122,6 +128,30 @@ export function App() {
   const setModelPickerTargetEngine = useMemo(() => __inkSafe(_setModelPickerTargetEngineRaw), [_setModelPickerTargetEngineRaw]);
   const [cesarPickerOpen, _setCesarPickerOpenRaw] = useState<boolean>(false);
   const setCesarPickerOpen = useMemo(() => __inkSafe(_setCesarPickerOpenRaw), [_setCesarPickerOpenRaw]);
+  const [streamingText, _setStreamingTextRaw] = useState<Record<string,StreamingEntry>>({});
+  const setStreamingText = useMemo(() => {
+    let _lastCall = 0;
+    let _pendingValue: React.SetStateAction<Record<string,StreamingEntry>>;
+    let _pendingTimer: ReturnType<typeof setTimeout> | null = null;
+    return (value: React.SetStateAction<Record<string,StreamingEntry>>) => {
+      const now = Date.now();
+      const elapsed = now - _lastCall;
+      if (elapsed >= 90) {
+        _lastCall = now;
+        if (_pendingTimer) { clearTimeout(_pendingTimer); _pendingTimer = null; }
+        setTimeout(() => _setStreamingTextRaw(value), 0);
+      } else {
+        _pendingValue = value;
+        if (!_pendingTimer) {
+          _pendingTimer = setTimeout(() => {
+            _lastCall = Date.now();
+            _pendingTimer = null;
+            _setStreamingTextRaw(_pendingValue);
+          }, 90 - elapsed);
+        }
+      }
+    };
+  }, []);
   const [pendingImages, _setPendingImagesRaw] = useState<ImageAttachment[]>([]);
   const setPendingImages = useMemo(() => __inkSafe(_setPendingImagesRaw), [_setPendingImagesRaw]);
   const [reviewEvent, _setReviewEventRaw] = useState<ReviewEvent|null>(null);
@@ -152,6 +182,32 @@ export function App() {
   const setToolOutputExpanded = useMemo(() => __inkSafe(_setToolOutputExpandedRaw), [_setToolOutputExpandedRaw]);
   const [thinkingExpanded, _setThinkingExpandedRaw] = useState<boolean>(true);
   const setThinkingExpanded = useMemo(() => __inkSafe(_setThinkingExpandedRaw), [_setThinkingExpandedRaw]);
+  const [cesarConfidence, _setCesarConfidenceRaw] = useState<number|null>(null);
+  const setCesarConfidence = useMemo(() => {
+    let _lastCall = 0;
+    let _pendingValue: React.SetStateAction<number|null>;
+    let _pendingTimer: ReturnType<typeof setTimeout> | null = null;
+    return (value: React.SetStateAction<number|null>) => {
+      const now = Date.now();
+      const elapsed = now - _lastCall;
+      if (elapsed >= 200) {
+        _lastCall = now;
+        if (_pendingTimer) { clearTimeout(_pendingTimer); _pendingTimer = null; }
+        setTimeout(() => _setCesarConfidenceRaw(value), 0);
+      } else {
+        _pendingValue = value;
+        if (!_pendingTimer) {
+          _pendingTimer = setTimeout(() => {
+            _lastCall = Date.now();
+            _pendingTimer = null;
+            _setCesarConfidenceRaw(_pendingValue);
+          }, 200 - elapsed);
+        }
+      }
+    };
+  }, []);
+  const [agentProgress, _setAgentProgressRaw] = useState<Record<string,AgentProgressSnapshot>>({});
+  const setAgentProgress = useMemo(() => __inkSafe(_setAgentProgressRaw), [_setAgentProgressRaw]);
   const [planModeQueued, setPlanModeQueued] = useState<boolean>(false);
   const [cesarMemory, _setCesarMemoryRaw] = useState<any>(() => createCesarMemory());
   const setCesarMemory = useMemo(() => __inkSafe(_setCesarMemoryRaw), [_setCesarMemoryRaw]);
@@ -230,7 +286,10 @@ export function App() {
   const [configVersion, _setConfigVersionRaw] = useState<number>(0);
   const setConfigVersion = useMemo(() => __inkSafe(_setConfigVersionRaw), [_setConfigVersionRaw]);
 
+  const chatStartTimeRef = useRef<number>(0);
   const currentPlanRef = useRef<Plan|null>(null);
+  const streamingTextRef = useRef<Record<string,StreamingEntry>>({});
+  const agentProgressRef = useRef<Record<string,AgentProgressSnapshot>>({});
   const modeRef = useRef<'chat'|'campfire'|'brainstorm'|'tribunal'>('chat');
   const inputValueRef = useRef<string>('');
   const ctrlKeyHandledRef = useRef<boolean>(false);
@@ -290,6 +349,24 @@ export function App() {
           return jobList.filter((j: Job) => j.state === 'running');
   }, [jobList]);
 
+  const activeStream = useMemo(() => {
+          const entries = Object.values(streamingText);
+          if (entries.length === 0) return null;
+          let latest: StreamingEntry | null = null;
+          for (const e of entries) {
+            if (!latest || e.startedAt > latest.startedAt) latest = e;
+          }
+          return latest;
+  }, [streamingText]);
+
+  const streamSnippet = useMemo(() => {
+          if (!activeStream || !activeStream.content) return null;
+          const cleaned = cleanEngineOutput(activeStream.content);
+          const lines = cleaned.split('\n').filter((l: string) => l.trim());
+          if (lines.length === 0) return null;
+          return { engineId: activeStream.engineId, line: lines[lines.length - 1].trim() };
+  }, [activeStream]);
+
   const visibleWindow = useMemo(() => {
           const overlayActive = enginePickerOpen || modelPickerOpen || cesarPickerOpen || !!reviewEvent;
           const blockBudget = estimateVisibleBlockBudget(termHeight, mode, overlayActive);
@@ -347,10 +424,13 @@ export function App() {
 
   const outputActions = useMemo(() => {
           return {
-            setLiveSpinner: setLiveSpinnerState,
-            setLiveProgress: setLiveProgressState,
+            setLiveSpinner,
+            setLiveProgress,
             setStreamingText: (updater: Record<string,StreamingEntry> | ((prev: Record<string,StreamingEntry>) => Record<string,StreamingEntry>)) => {
-              updateStreamingTextState(updater);
+              const prev = streamingTextRef.current;
+              const next = typeof updater === 'function' ? (updater as (p: Record<string,StreamingEntry>) => Record<string,StreamingEntry>)(prev) : updater;
+              streamingTextRef.current = next;
+              setStreamingText(next);
             },
             addBlock: (event: any) => {
               if (scrollOffsetRef.current === 0) setScrollOffset(0);
@@ -366,27 +446,38 @@ export function App() {
             clearBlocks: () => setOutputBlocks([]),
             setReviewEvent,
             setQuestionState,
-            setChatStartTime: setChatStartTimeState,
+            setChatStartTime: (val: number) => { chatStartTimeRef.current = val; },
             flushStream: () => {
               // Flush every in-flight engine's stream to the transcript. Multi-agent
               // teams may have N concurrent streams when flush is requested (e.g.,
               // permission-ask interrupts mid-stream).
-              const prev = getLiveRuntimeState().streamingText;
+              const prev = streamingTextRef.current;
               for (const eid of Object.keys(prev)) {
                 const entry = prev[eid];
                 if (!entry) continue;
                 const color = ENGINE_COLORS[entry.engineId] ?? 124;
                 setOutputBlocks((blocks: any) => appendBlockWithCap(blocks, { id: Date.now() - 1 + Math.random(), event: { type: 'engine-block', engineId: entry.engineId, color, content: entry.content } }, blockArchivePathRef.current));
               }
-              updateStreamingTextState({});
+              streamingTextRef.current = {};
+              setStreamingText({});
             },
             getEngineColor: (engineId: string) => ENGINE_COLORS[engineId] ?? 124,
-            setCesarConfidence: setCesarConfidenceState,
+            setCesarConfidence,
             setAgentProgress: (updater: Record<string,AgentProgressSnapshot> | ((prev: Record<string,AgentProgressSnapshot>) => Record<string,AgentProgressSnapshot>)) => {
-              updateAgentProgressState(updater);
+              const prev = agentProgressRef.current;
+              const next = typeof updater === 'function' ? (updater as (p: Record<string,AgentProgressSnapshot>) => Record<string,AgentProgressSnapshot>)(prev) : updater;
+              agentProgressRef.current = next;
+              setAgentProgress(next);
             },
             clearAgentProgressByTeam: (teamId: string) => {
-              clearAgentProgressByTeamState(teamId);
+              const prev = agentProgressRef.current;
+              const next: Record<string, AgentProgressSnapshot> = {};
+              for (const eid of Object.keys(prev)) {
+                const entry = prev[eid];
+                if (entry && entry.teamId !== teamId) next[eid] = entry;
+              }
+              agentProgressRef.current = next;
+              setAgentProgress(next);
             },
           };
   }, []);
@@ -425,8 +516,8 @@ export function App() {
     if (et === 'streaming-chunk' || et === 'thinking-chunk' || et === 'progress-update' || et === 'tool-call' || et === 'spinner-start' || et === 'spinner-update') {
       lastActivityTimeRef.current = Date.now();
     }
-    const state: OutputState = getLiveRuntimeState();
-    handleOutputEvent(event, state, outputActions, mode, getLiveRuntimeState().chatStartTime);
+    const state: OutputState = { liveSpinner: null, liveProgress: null, streamingText: streamingTextRef.current ?? {}, agentProgress: agentProgressRef.current ?? {} };
+    handleOutputEvent(event, state, outputActions, mode, chatStartTimeRef.current);
   }, [mode]);
 
   const askQuestion = useCallback((prompt:string) => {
@@ -437,7 +528,10 @@ export function App() {
     const abort = activeAbortRef.current;
     if (abort) abort.abort();
     trackAbort(null);
-    resetLiveRuntimeState({ preserveConfidence: true });
+    setLiveSpinner(null);
+    setLiveProgress(null);
+    streamingTextRef.current = {};
+    setStreamingText({});
     clearPermissionQueue();
     clearThinkingBuffer();
     setQuestionState(null);
@@ -572,7 +666,7 @@ export function App() {
     
         // Build context from streaming output (pick the most recent in-flight stream)
         let streamCtx = '';
-        const streamEntries = Object.values(getLiveRuntimeState().streamingText);
+        const streamEntries = Object.values(streamingTextRef.current ?? {});
         if (streamEntries.length > 0) {
           let latest: StreamingEntry | null = null;
           for (const e of streamEntries) {
@@ -956,7 +1050,23 @@ export function App() {
 
   useEffect(() => {
     const interval = setInterval(() => {
-      pruneCompletedAgentProgressState(5000, Date.now());
+      const prev = agentProgressRef.current;
+      if (!prev || Object.keys(prev).length === 0) return;
+      const now = Date.now();
+      let changed = false;
+      const next: Record<string, AgentProgressSnapshot> = {};
+      for (const eid of Object.keys(prev)) {
+        const snap = prev[eid];
+        if (snap.completedAt && now - snap.completedAt > 5000) {
+          changed = true;
+          continue;
+        }
+        next[eid] = snap;
+      }
+      if (changed) {
+        agentProgressRef.current = next;
+        setAgentProgress(next);
+      }
     }, 1000);
     return () => clearInterval(interval);
   }, []);
@@ -1084,7 +1194,12 @@ export function App() {
       _activeAborts.clear();
       activeAbortRef.current = null;
       setActiveAbort(null);
-      resetLiveRuntimeState({ preserveConfidence: true });
+      setLiveSpinner(null);
+      setLiveProgress(null);
+      streamingTextRef.current = {};
+      setStreamingText({});
+      agentProgressRef.current = {};
+      setAgentProgress({});
       clearPermissionQueue();
       clearThinkingBuffer();
       setQuestionState(null);
@@ -1105,7 +1220,30 @@ export function App() {
     <BackgroundJobRail jobs={runningJobs} />
     <Box flexDirection="column" flexGrow={1} flexShrink={1}>
       <HistoryView visibleBlocks={visibleBlocks} groupedBlocks={groupedBlocks} mode={mode} blocksAbove={visibleWindow.blocksAbove} blocksBelow={visibleWindow.blocksBelow} thinkingExpanded={thinkingExpanded} />
-      <LiveTranscriptPane mode={mode} />
+      <StreamingView streamingText={activeStream} mode={mode} liveProgress={liveProgress} />
+      {Object.keys(agentProgress).length > 0 && (
+        <Box flexDirection="column">
+          {Object.values(agentProgress).map((snap: AgentProgressSnapshot) => (
+            <AgentProgressView
+              key={snap.engineId}
+              engineId={snap.engineId}
+              turnIndex={snap.turnIndex}
+              phase={snap.phase}
+              userPrompt={snap.userPrompt}
+              toolCalls={snap.toolCalls}
+              lastTool={snap.lastTool}
+              lastToolStatus={snap.lastToolStatus}
+              tokensUsed={snap.tokensUsed}
+              elapsedMs={snap.elapsedMs}
+              turnsRemaining={snap.turnsRemaining}
+              maxTurns={snap.maxTurns}
+              tokensRemaining={snap.tokensRemaining}
+              maxTokens={snap.maxTokens}
+              error={snap.error}
+            />
+          ))}
+        </Box>
+      )}
     </Box>
     {reviewEvent && <ReviewBlock event={reviewEvent} onAction={handleReviewActionCb} />}
     {enginePickerOpen && (
@@ -1184,17 +1322,23 @@ export function App() {
         }}
         onCancel={() => setCesarPickerOpen(false)} />
     )}
-    <LiveTopSpinner mode={mode} />
+    {liveSpinner && mode !== 'chat' && <SpinnerBlock message={liveSpinner.message} color={liveSpinner.color} />}
     {!enginePickerOpen && !modelPickerOpen && !cesarPickerOpen && (
       <Box flexDirection="column" paddingX={1} marginTop={1}>
         {pendingImages.length > 0 && (<Box><Text color="#22d3ee">{icons().image + ' '}</Text>{pendingImages.map((img: any, i: number) => (<Text key={i} dimColor>{img.filename}{i < pendingImages.length - 1 ? ', ' : ''}</Text>))}</Box>)}
         {inputQueue.length > 0 && (<Box><Text dimColor>{icons().queue + ' '}{inputQueue.length} queued: </Text><Text dimColor italic>{inputQueue[0].length > 40 ? inputQueue[0].slice(0, 40) + '…' : inputQueue[0]}</Text></Box>)}
-        {mode === 'chat' && <LiveInlineSpinner questionState={questionState} />}
-        <ComposerView
-          mode={mode}
-          replState={replState}
-          planModeQueued={planModeQueued}
-          activePlanState={activePlan?.state ?? null}
+        {liveSpinner && mode === 'chat' && (
+          <Box paddingLeft={1}>
+            <Text color={questionState && questionState.choices ? '#ef4444' : '#fbbf24'}>
+              {questionState && questionState.choices ? `${icons().warning} PERMISSION REQUIRED — respond below` : liveSpinner.message}
+            </Text>
+          </Box>
+        )}
+    <ComposerView
+      mode={mode}
+      replState={replState}
+      planModeQueued={planModeQueued}
+      activePlanState={activePlan?.state ?? null}
           slashPickerOpen={slashPickerOpen}
           inputValue={inputValue}
           handleInputChange={handleInputChange}
@@ -1203,17 +1347,17 @@ export function App() {
           availableEngines={availableEngines}
           onSlashSelect={handleSlashSelect}
           onSlashCancel={handleSlashCancel}
-          questionState={questionState}
-          questionAnswer={questionAnswer}
-          onQuestionAnswerChange={setQuestionAnswer}
-          onQuestionAnswerSubmit={handleQuestionAnswer}
-          onCtrlShortcut={handleComposerCtrlShortcut}
-          termWidth={termWidth}
-          termHeight={termHeight} />
+      questionState={questionState}
+      questionAnswer={questionAnswer}
+      onQuestionAnswerChange={setQuestionAnswer}
+      onQuestionAnswerSubmit={handleQuestionAnswer}
+      termWidth={termWidth}
+      termHeight={termHeight}
+      onCtrlShortcut={handleComposerCtrlShortcut} />
         {(() => {
           const _cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
           return (<>
-            <LiveStatusRegion cesarId={_cesarId} isActive={replState !== 'idle' || runningJobs.length > 0} planModeQueued={planModeQueued} activePlanState={activePlan?.state ?? null} />
+            <CesarStatusStrip cesarId={_cesarId} confidence={cesarConfidence} spinner={liveSpinner} engines={liveProgress} startTime={chatStartTimeRef.current || 0} streamSnippet={streamSnippet} isActive={replState !== 'idle' || runningJobs.length > 0} planModeQueued={planModeQueued} activePlanState={activePlan?.state ?? null} />
             {mode === 'chat' && <StatusBar cesarId={statusStats.cesarId} chatMessageCount={statusStats.chatMessageCount} totalTokens={statusStats.totalTokens} totalCostUsd={statusStats.totalCostUsd} cwd={statusCwd} branch={statusBranch} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} thinkingExpanded={thinkingExpanded} isActive={replState !== 'idle'} />}
           </>);
         })()}
@@ -1299,7 +1443,6 @@ export function estimateVisibleBlockBudget(rows: number, mode: string, overlayAc
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());
-  resetLiveRuntimeState({ preserveConfidence: false });
   const inkStdout = createInkStdoutProxy();
   process.on('SIGINT', () => {
     const now = Date.now();

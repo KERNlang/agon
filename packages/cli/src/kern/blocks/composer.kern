@@ -66,6 +66,9 @@ screen name=ComposerView target=ink memo=true
                     onSubmit={handleSubmit}
                     onCtrlShortcut={onCtrlShortcut}
                     placeholder={placeholder}
+                    focus={true}
+                    showCursor={true}
+                    highlightPastedText={true}
                     ghostText={ghost ?? undefined}
                     width={promptWidth}
                     maxVisibleLines={promptMaxLines} />

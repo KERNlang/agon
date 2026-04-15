@@ -63,7 +63,7 @@ fn name=handleForgeEvent params="event:any, plan:Plan, engineStatus:Record<strin
     return plan;
   >>>
 
-fn name=handleForge params="task:string, fitnessCmd:string|null, dispatch:Dispatch, ctx:HandlerContext, existingPlan?:Plan, hardened?:boolean" returns="Promise<{winner:string|null, patchPath:string|null, manifestPath:string, task:string, fitnessCmd:string}|null>" async=true
+fn name=handleForge params="task:string, fitnessCmd:string|null, dispatch:Dispatch, ctx:HandlerContext, existingPlan?:Plan, hardened?:boolean, skipPlanApproval?:boolean" returns="Promise<{winner:string|null, patchPath:string|null, manifestPath:string, task:string, fitnessCmd:string}|null>" async=true
   signal name=forgeAbort
   handler <<<
     ensureAgonHome();
@@ -122,7 +122,7 @@ fn name=handleForge params="task:string, fitnessCmd:string|null, dispatch:Dispat
       dispatch({ type: 'plan', plan });
 
       const approvalLevel = (config.approvalLevel ?? 'plan') as ApprovalLevel;
-      if (approvalLevel !== 'auto') {
+      if (!skipPlanApproval && approvalLevel !== 'auto') {
         const answer = await ctx.askQuestion('Approve plan? [Y/n]');
         if (answer.trim().toLowerCase() === 'n') {
           plan = cancelPlan(plan);

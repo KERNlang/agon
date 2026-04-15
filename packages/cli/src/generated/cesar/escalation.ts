@@ -172,7 +172,7 @@ export async function fireNero(input: string, response: string, confidence: numb
 /**
  * Display advisor opinion and present escalation menu. At <70%, advisor replaces STOP.
  */
-export async function handleSecondOpinion(secondResult: {stdout:string, engineId:string, color:number}|null, input: string, response: string, parsedConfidence: number|null, cesarEngineId: string, dispatch: Dispatch, ctx: HandlerContext, abortSignal?: AbortSignal): Promise<{delegated:boolean, responded:boolean, action?:string, reasoning?:string}|null> {
+export async function handleSecondOpinion(secondResult: {stdout:string, engineId:string, color:number}|null, input: string, response: string, parsedConfidence: number|null, cesarEngineId: string, dispatch: Dispatch, ctx: HandlerContext, abortSignal?: AbortSignal): Promise<{delegated:boolean, responded:boolean, action?:string, task?:string, reasoning?:string}|null> {
   if (!secondResult || !secondResult.stdout.trim()) return null;
   
   // Strip <think> blocks from advisor response
@@ -221,14 +221,12 @@ export async function handleSecondOpinion(secondResult: {stdout:string, engineId
     const escAnswer = await new Promise<string>((resolve) => {
       dispatch({ type: 'question', prompt: `${secondResult.engineId} recommends ${advisorRecommendation} — go?`, choices: [
         { key: 'y', label: `Yes, ${advisorRecommendation}`, color: modeColors[advisorRecommendation!] ?? '#4ade80' },
-        { key: 'a', label: 'Accept Cesar instead', color: '#4ade80' },
-        { key: 'm', label: 'Other mode', color: '#6b7280' },
+        { key: 'n', label: 'No', color: '#ef4444' },
       ], resolve } as any);
     });
   
-    if (escAnswer === 'y') return { delegated: true, responded: true, action: advisorRecommendation, reasoning: response };
-    if (escAnswer === 'a') return null; // Continue normal brain flow — Cesar proceeds
-    // 'm' falls through to full menu below
+    if (escAnswer === 'y') return { delegated: true, responded: true, action: advisorRecommendation, task: input, reasoning: response };
+    return null;
   }
   
   // Full menu — either no advisor recommendation or user chose 'Other mode'
@@ -242,10 +240,10 @@ export async function handleSecondOpinion(secondResult: {stdout:string, engineId
     ], resolve } as any);
   });
   
-  if (escAnswer === 'c') return { delegated: true, responded: true, action: 'campfire', reasoning: response };
-  if (escAnswer === 'b') return { delegated: true, responded: true, action: 'brainstorm', reasoning: response };
-  if (escAnswer === 't') return { delegated: true, responded: true, action: 'tribunal', reasoning: response };
-  if (escAnswer === 'f') return { delegated: true, responded: true, action: 'forge', reasoning: response };
+  if (escAnswer === 'c') return { delegated: true, responded: true, action: 'campfire', task: input, reasoning: response };
+  if (escAnswer === 'b') return { delegated: true, responded: true, action: 'brainstorm', task: input, reasoning: response };
+  if (escAnswer === 't') return { delegated: true, responded: true, action: 'tribunal', task: input, reasoning: response };
+  if (escAnswer === 'f') return { delegated: true, responded: true, action: 'forge', task: input, reasoning: response };
   return { delegated: false, responded: true };
 }
 
@@ -276,67 +274,18 @@ export function deactivateNero(ctx: HandlerContext, dispatch: Dispatch): void {
 }
 
 /**
- * Ask user to confirm a suggested delegation with rich options.
+ * Ask user to confirm a suggested delegation with a simple yes/no prompt.
  */
 export async function promptDelegation(action: string, dispatch: Dispatch, hardened?: boolean, tribunalMode?: string, team?: boolean): Promise<{approved:boolean, action?:string, hardened?:boolean, tribunalMode?:string, team?:boolean, userContext?:string}> {
-  // Check session auto-approve cache
-  const autoApproved = (promptDelegation as any)._autoApprove as Set<string> | undefined;
-  if (autoApproved?.has(action)) {
-    dispatch({ type: 'info', message: `Auto-approved: ${action} (always mode)` });
-    return { approved: true };
-  }
-  
   const confirmLabel = hardened ? `${action} (hardened)` : action;
   const answer = await new Promise<string>((resolve) => {
     dispatch({ type: 'question', prompt: `\n━━━ Cesar suggests: ${confirmLabel}${tribunalMode ? ` [${tribunalMode}]` : ''} ━━━`, choices: [
       { key: 'y', label: 'Yes', color: '#4ade80' },
       { key: 'n', label: 'No', color: '#ef4444' },
-      { key: 'a', label: 'Always', color: '#60a5fa' },
-      { key: 'o', label: 'Other mode', color: '#f59e0b' },
-      { key: 'w', label: 'Add context', color: '#a78bfa' },
     ], resolve } as any);
   });
   
-  if (answer === 'n') return { approved: false };
-  
-  if (answer === 'a') {
-    // Auto-approve this mode for rest of session
-    if (!(promptDelegation as any)._autoApprove) {
-      (promptDelegation as any)._autoApprove = new Set<string>();
-    }
-    ((promptDelegation as any)._autoApprove as Set<string>).add(action);
-    dispatch({ type: 'info', message: `Will auto-approve "${action}" for this session` });
-    return { approved: true };
-  }
-  
-  if (answer === 'o') {
-    // Let user pick a different mode
-    const modeAnswer = await new Promise<string>((resolve) => {
-      dispatch({ type: 'question', prompt: 'Pick mode:', choices: [
-        { key: 'f', label: 'Forge', color: '#a78bfa' },
-        { key: 'b', label: 'Brainstorm', color: '#60a5fa' },
-        { key: 't', label: 'Tribunal', color: '#f59e0b' },
-        { key: 'c', label: 'Campfire', color: '#facc15' },
-        { key: 'p', label: 'Pipeline', color: '#f472b6' },
-        { key: 'x', label: 'Cancel', color: '#ef4444' },
-      ], resolve } as any);
-    });
-    const modeMap: Record<string, string> = { f: 'forge', b: 'brainstorm', t: 'tribunal', c: 'campfire', p: 'pipeline' };
-    if (modeAnswer === 'x' || !modeMap[modeAnswer]) return { approved: false };
-    return { approved: true, action: modeMap[modeAnswer], team };
-  }
-  
-  if (answer === 'w') {
-    // Let user add context/instructions
-    const userInput = await new Promise<string>((resolve) => {
-      dispatch({ type: 'question', prompt: 'Add context (will be appended to the task):', resolve } as any);
-    });
-    if (!userInput?.trim()) return { approved: true }; // empty = just approve
-    return { approved: true, userContext: userInput.trim() };
-  }
-  
-  // 'y' — approve as-is
-  return { approved: true };
+  return { approved: answer === 'y' };
 }
 
 /**

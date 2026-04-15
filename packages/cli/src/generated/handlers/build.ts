@@ -38,7 +38,7 @@ function injectFileReferences(input: string, cwd: string): string {
   return result;
 }
 
-export async function handleBuild(input: string, dispatch: Dispatch, ctx: HandlerContext, existingPlan?: Plan): Promise<void> {
+export async function handleBuild(input: string, dispatch: Dispatch, ctx: HandlerContext, existingPlan?: Plan, skipPlanApproval?: boolean): Promise<void> {
   const abort = new AbortController();
   try {
     ensureAgonHome();
@@ -115,7 +115,7 @@ export async function handleBuild(input: string, dispatch: Dispatch, ctx: Handle
       dispatch({ type: 'plan', plan });
     
       const approvalLevel = (config.approvalLevel ?? 'plan') as ApprovalLevel;
-      if (approvalLevel !== 'auto') {
+      if (!skipPlanApproval && approvalLevel !== 'auto') {
         const answer = await ctx.askQuestion('Approve build plan? [Y/n]');
         if (answer.trim().toLowerCase() === 'n') {
           plan = cancelPlan(plan);

@@ -31,7 +31,7 @@ fn name=injectFileReferences params="input:string, cwd:string" returns=string ex
     return result;
   >>>
 
-fn name=handleBuild params="input:string, dispatch:Dispatch, ctx:HandlerContext, existingPlan?:Plan" returns="Promise<void>" async=true
+fn name=handleBuild params="input:string, dispatch:Dispatch, ctx:HandlerContext, existingPlan?:Plan, skipPlanApproval?:boolean" returns="Promise<void>" async=true
   signal name=abort
   handler <<<
     ensureAgonHome();
@@ -108,7 +108,7 @@ fn name=handleBuild params="input:string, dispatch:Dispatch, ctx:HandlerContext,
       dispatch({ type: 'plan', plan });
 
       const approvalLevel = (config.approvalLevel ?? 'plan') as ApprovalLevel;
-      if (approvalLevel !== 'auto') {
+      if (!skipPlanApproval && approvalLevel !== 'auto') {
         const answer = await ctx.askQuestion('Approve build plan? [Y/n]');
         if (answer.trim().toLowerCase() === 'n') {
           plan = cancelPlan(plan);

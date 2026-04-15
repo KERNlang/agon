@@ -294,10 +294,12 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
           }) + '\n');
         } catch { /* decision logging is best-effort */ }
         if (result.delegated && result.action) {
-          // Use Cesar's reasoning as the label when available — much better than raw user input
-          const label = (result.reasoning && !result.reasoning.includes('User context:'))
-            ? result.reasoning.slice(0, 60).trim()
-            : input.slice(0, 40);
+          const labelSource = (result.task && result.task.trim())
+            ? result.task
+            : (result.reasoning && !result.reasoning.includes('User context:')
+              ? result.reasoning
+              : input);
+          const label = labelSource.slice(0, 60).trim();
           const hardened = result.hardened ?? false;
           const tMode = result.tribunalMode;
           // P2 fix: normalize team prefix — brain may return action='forge' + team=true
@@ -319,18 +321,20 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
           }
   
           const executionSpec = extractExecutionSpec(input);
+          const delegatedSpec = extractExecutionSpec((result.task ?? '').trim());
           const userContext = result.reasoning && result.reasoning.includes('User context:')
             ? result.reasoning.slice(result.reasoning.indexOf('User context:')).trim()
             : '';
           const reasoningTask = result.reasoning && !result.reasoning.includes('User context:')
             ? result.reasoning.trim()
             : '';
-          const baseTask = reasoningTask
+          const baseTask = delegatedSpec.task
+            || reasoningTask
             || ((routeAction === 'forge' || routeAction === 'team-forge' || routeAction === 'pipeline')
               ? (executionSpec.task || input).trim()
               : input);
           let taskInput = userContext ? `${baseTask}\n\n${userContext}` : baseTask;
-          const fitnessCmd = result.fitnessCmd ?? executionSpec.fitnessCmd;
+          const fitnessCmd = result.fitnessCmd ?? delegatedSpec.fitnessCmd ?? executionSpec.fitnessCmd;
           const isForgeSlice = routeAction === 'forge' && result.scope === 'slice';
           if (isForgeSlice) {
             taskInput = `Scoped forge only. Solve only the hard subpart below. Do not rewrite the whole task. Cesar will integrate wiring, cleanup, and final verification locally.
@@ -362,14 +366,14 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
           switch (routeAction) {
             case 'build':
               cb.dispatch({ type: 'info', message: `Cesar → build${hardened ? ' (hardened)' : ''}${tMode ? ` [${tMode}]` : ''}` });
-              cb.runAsJob('build', label, () => handleBuild(taskInput, cb.dispatch, cb.ctx));
+              cb.runAsJob('build', label, () => handleBuild(taskInput, cb.dispatch, cb.ctx, undefined, true));
               return true;
             case 'forge': {
               const displayMode = result.mode ?? routeAction;
               cb.dispatch({ type: 'info', message: `Cesar → ${displayMode}${hardened ? ' (hardened)' : ''}${tMode ? ` [${tMode}]` : ''}` });
               const _cwdForge = resolveWorkingDir();
               cb.runAsJob('forge', label, withThreadOutcome(_cwdForge, isForgeSlice ? 'forge-slice' : 'forge', label, async () => {
-                const forgeResult = await handleForge(taskInput, fitnessCmd, cb.dispatch, cb.ctx, undefined, hardened);
+                const forgeResult = await handleForge(taskInput, fitnessCmd, cb.dispatch, cb.ctx, undefined, hardened, true);
                 if (isForgeSlice && forgeResult && cb.ctx.cesarSession?.alive) {
                   cb.dispatch({ type: 'info', message: 'Cesar integrating forge slice…' });
                   await routeWithCesar(`[forge-slice integration]
@@ -566,7 +570,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
             : input;
           const recoveredFitness = crashDel.fitnessCmd ?? executionSpec.fitnessCmd;
           switch (action) {
-            case 'forge': cb.dispatch({ type: 'info', message: 'Cesar → forge (recovered)' }); cb.runAsJob('forge', label, async () => { await handleForge(recoveredTask, recoveredFitness, cb.dispatch, cb.ctx, undefined, crashDel.hardened ?? false); }); return true;
+            case 'forge': cb.dispatch({ type: 'info', message: 'Cesar → forge (recovered)' }); cb.runAsJob('forge', label, async () => { await handleForge(recoveredTask, recoveredFitness, cb.dispatch, cb.ctx, undefined, crashDel.hardened ?? false, true); }); return true;
             case 'brainstorm': cb.dispatch({ type: 'info', message: 'Cesar → brainstorm (recovered)' }); cb.runAsJob('brainstorm', label, async () => { await handleBrainstorm(recoveredTask, cb.dispatch, cb.ctx); }); return true;
             case 'tribunal': cb.dispatch({ type: 'info', message: `Cesar → tribunal (recovered)${crashDel.tribunalMode ? ` [${crashDel.tribunalMode}]` : ''}` }); cb.runAsJob('tribunal', label, () => handleTribunal(recoveredTask, cb.dispatch, cb.ctx, crashDel.tribunalMode)); return true;
             case 'campfire': cb.dispatch({ type: 'info', message: 'Cesar → campfire (recovered)' }); cb.runAsJob('campfire', label, () => handleCampfire(recoveredTask, cb.dispatch, cb.ctx)); return true;
@@ -645,7 +649,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
                 : input;
               const fallbackFitness = executionSpec.fitnessCmd;
               switch (action) {
-                  case 'forge': cb.dispatch({ type: 'info', message: 'Cesar → forge' }); cb.runAsJob('forge', label, async () => { await handleForge(fallbackTask, fallbackFitness, cb.dispatch, cb.ctx, undefined, fallbackSuggestion.hardened ?? false); }); return true;
+                  case 'forge': cb.dispatch({ type: 'info', message: 'Cesar → forge' }); cb.runAsJob('forge', label, async () => { await handleForge(fallbackTask, fallbackFitness, cb.dispatch, cb.ctx, undefined, fallbackSuggestion.hardened ?? false, true); }); return true;
                 case 'brainstorm': cb.dispatch({ type: 'info', message: 'Cesar → brainstorm' }); cb.runAsJob('brainstorm', label, async () => { await handleBrainstorm(fallbackTask, cb.dispatch, cb.ctx); }); return true;
                 case 'tribunal': cb.dispatch({ type: 'info', message: `Cesar → tribunal${fallbackSuggestion.tribunalMode ? ` [${fallbackSuggestion.tribunalMode}]` : ''}` }); cb.runAsJob('tribunal', label, () => handleTribunal(fallbackTask, cb.dispatch, cb.ctx, fallbackSuggestion.tribunalMode)); return true;
                 case 'campfire': cb.dispatch({ type: 'info', message: 'Cesar → campfire' }); cb.runAsJob('campfire', label, () => handleCampfire(fallbackTask, cb.dispatch, cb.ctx)); return true;
@@ -1176,7 +1180,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
       const si = intent as any;
       const answer = await cb.askQuestion('Forge — engines compete to build? (y/n)');
       if (answer.toLowerCase().startsWith('y')) {
-        cb.runAsJob('forge', si.task?.slice(0, 40) ?? 'forge', async () => { await handleForge(si.task ?? si.input, si.fitnessCmd, cb.dispatch, cb.ctx); });
+        cb.runAsJob('forge', si.task?.slice(0, 40) ?? 'forge', async () => { await handleForge(si.task ?? si.input, si.fitnessCmd, cb.dispatch, cb.ctx, undefined, undefined, true); });
         return { handled: true, ranAsJob: true };
       }
       await handleChat(si.input, cb.dispatch, cb.ctx, cb.allImages);

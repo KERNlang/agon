@@ -72,7 +72,7 @@ function handleForgeEvent(event: any, plan: Plan, engineStatus: Record<string,st
   return plan;
 }
 
-export async function handleForge(task: string, fitnessCmd: string|null, dispatch: Dispatch, ctx: HandlerContext, existingPlan?: Plan, hardened?: boolean): Promise<{winner:string|null, patchPath:string|null, manifestPath:string, task:string, fitnessCmd:string}|null> {
+export async function handleForge(task: string, fitnessCmd: string|null, dispatch: Dispatch, ctx: HandlerContext, existingPlan?: Plan, hardened?: boolean, skipPlanApproval?: boolean): Promise<{winner:string|null, patchPath:string|null, manifestPath:string, task:string, fitnessCmd:string}|null> {
   const forgeAbort = new AbortController();
   try {
     ensureAgonHome();
@@ -131,7 +131,7 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
       dispatch({ type: 'plan', plan });
     
       const approvalLevel = (config.approvalLevel ?? 'plan') as ApprovalLevel;
-      if (approvalLevel !== 'auto') {
+      if (!skipPlanApproval && approvalLevel !== 'auto') {
         const answer = await ctx.askQuestion('Approve plan? [Y/n]');
         if (answer.trim().toLowerCase() === 'n') {
           plan = cancelPlan(plan);

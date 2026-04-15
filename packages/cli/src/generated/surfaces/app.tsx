@@ -911,7 +911,11 @@ export function App() {
       case 'submit':
         handleSubmit(action.value); return;
       case 'scroll':
-        setScrollOffset((prev: number) => action.delta > 0 ? Math.min(prev + action.delta, Math.max(0, outputBlocks.length - 1)) : Math.max(0, prev + action.delta));
+        // Floor: always show at least 2 blocks so scroll never hides everything.
+        setScrollOffset((prev: number) => {
+          const max = Math.max(0, outputBlocks.length - 2);
+          return action.delta > 0 ? Math.min(prev + action.delta, max) : Math.max(0, prev + action.delta);
+        });
         return;
       case 'toggleToolExpand':
         ctrlKeyHandledRef.current = true;
@@ -942,7 +946,11 @@ export function App() {
         setHistoryIndex(action.index);
         // value is always a string — empty string means "return to blank composer".
         setInputValue(action.value);
-        setInputKey((k: number) => k + 1);
+        // Skip remount if value unchanged — avoids cursor reset on arrow-up
+        // through history when the entry matches current input.
+        if (action.value !== inputValue) {
+          setInputKey((k: number) => k + 1);
+        }
         return;
       case 'cancelOrExit':
         if (questionState) { questionState.resolve(''); setQuestionState(null); setQuestionAnswer(''); }

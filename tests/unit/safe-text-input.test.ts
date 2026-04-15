@@ -8,6 +8,7 @@ import {
   findLineStart,
   findWordBoundaryLeft,
   findWordBoundaryRight,
+  syncControlledInputCursor,
 } from '../../packages/cli/src/safe-text-input.js';
 
 describe('safe text input helpers', () => {
@@ -48,5 +49,29 @@ describe('safe text input helpers', () => {
     const value = 'first line\nsecond line\nthird';
     expect(findLineStart(value, 18)).toBe(11);
     expect(findLineEnd(value, 18)).toBe(22);
+  });
+
+  it('keeps the cursor stable for internal echoes but snaps to end for external changes', () => {
+    expect(
+      syncControlledInputCursor(
+        { cursorOffset: 3, cursorWidth: 1 },
+        'abc',
+        { focus: true, showCursor: true, lastCommittedValue: 'abc' },
+      ),
+    ).toEqual({
+      cursorOffset: 3,
+      cursorWidth: 0,
+    });
+
+    expect(
+      syncControlledInputCursor(
+        { cursorOffset: 3, cursorWidth: 0 },
+        '/forge fix this',
+        { focus: true, showCursor: true, lastCommittedValue: 'abc' },
+      ),
+    ).toEqual({
+      cursorOffset: 15,
+      cursorWidth: 0,
+    });
   });
 });

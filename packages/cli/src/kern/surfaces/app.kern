@@ -2,7 +2,7 @@
 // Replaces app.tsx monolith. All logic in KERN modules; this is the wiring.
 
 import from="react" names="useState,useCallback,useEffect,useRef,useMemo"
-import from="ink" names="Box,Text,render,useApp,useInput"
+import from="ink" names="Box,Text,render"
 import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,ensureCurrentWorkspace,startChatSession,getRatings,getActiveWorkspace,RUNS_DIR,extractImagesFromInput,resolveWorkingDir,currentBranch,configSet,createCesarMemory,modelEntryToEngineDef,appendMessage,getAgonHome,tracker"
 import from="@agon/core" names="Plan,ChatSession,Skill,PersistentSession,ImageAttachment" types=true
 import from="../../handlers/types.js" names="EngineProgress" types=true
@@ -41,7 +41,8 @@ import from="node:stream" names="PassThrough"
 import from="../models/session-results.js" names="sessionResultStore"
 import from="../blocks/results-formatter.js" names="formatSessionResults,formatChatTranscript"
 import from="@agon/core" names="loadSkills"
-import from="../../input-utils.js" names="parseMouseScrollChunk"
+import from="../../input-utils.js" names="parseMouseScrollChunk,isTerminalFocusReport"
+import from="../../stable-input.js" names="useStableInput"
 
 fn name=isMutatingToolCall params="event:any" returns=boolean
   handler <<<
@@ -92,6 +93,43 @@ fn name=createInkStdoutProxy returns=any
     return proxy;
   >>>
 
+fn name=isMouseTrackingEnabled returns=boolean
+  handler <<<
+    if (process.env.AGON_DISABLE_MOUSE === '1' || process.env.AGON_DISABLE_MOUSE_SCROLL === '1') return false;
+    if (process.env.AGON_ENABLE_MOUSE_SCROLL === '0') return false;
+    return true;
+  >>>
+
+fn name=terminalEnterSequence params="useAltScreen:boolean, useMouse:boolean" returns=string
+  handler <<<
+    return `${useAltScreen ? '\x1b[?1049h' : ''}\x1b[?2004h${useMouse ? '\x1b[?1000h\x1b[?1006h' : ''}`;
+  >>>
+
+fn name=terminalExitSequence params="useAltScreen:boolean" returns=string
+  handler <<<
+    return `\x1b[?1000l\x1b[?1006l\x1b[?2004l${useAltScreen ? '\x1b[?1049l' : ''}`;
+  >>>
+
+fn name=drainStdinBuffer returns=void
+  handler <<<
+    if (!process.stdin.isTTY || typeof process.stdin.read !== 'function') return;
+    let chunk: string | Buffer | null;
+    do {
+      chunk = process.stdin.read();
+    } while (chunk !== null);
+  >>>
+
+fn name=maxScrollOffsetForBlockCount params="blockCount:number" returns=number
+  handler <<<
+    return Math.max(0, blockCount - 1);
+  >>>
+
+fn name=estimateVisibleBlockBudget params="rows:number, mode:string, overlayActive:boolean" returns=number
+  handler <<<
+    const reservedRows = (mode === 'chat' ? 12 : 10) + (overlayActive ? 6 : 0);
+    return Math.max(1, rows - reservedRows);
+  >>>
+
 
 screen name=App target=ink
   // ── State ──
@@ -106,7 +144,6 @@ screen name=App target=ink
   state name=liveSpinner type=any initial="null"
   state name=liveProgress type="EngineProgress[]|null" initial="null"
   state name=slashPickerOpen type=boolean initial=false safe=false
-  state name=inputKey type=number initial=0 safe=false
   state name=questionState type=any initial="null"
   state name=questionAnswer type=string initial="''" safe=false
   state name=enginePickerOpen type=boolean initial=false
@@ -157,6 +194,7 @@ screen name=App target=ink
   ref name=scrollOffsetRef type=number initial=0
   ref name=outputBlockCountRef type=number initial=0
   ref name=mouseInputBufferRef type=string initial="''"
+  ref name=lastTerminalInputAtRef type=number initial="Date.now()"
 
   // ── Init-once state (registry, adapter, skills) ──
   // engines dir is at packages/cli/engines from the bundled dist/index.js
@@ -173,6 +211,7 @@ screen name=App target=ink
   state name=loadedExtensions type="any[]" initial="[]"
   state name=workspacePath type=string initial="resolveWorkingDir()"
   state name=termWidth type=number initial="process.stdout.columns || 100" throttle=100
+  state name=termHeight type=number initial="process.stdout.rows || 24" throttle=100
   state name=scrollOffset type=number initial="0"
   // Bumped whenever the EngineRegistry is mutated (register/unregister) so the
   // availableEngines memo invalidates. Without this, memoing on `registry` alone
@@ -269,9 +308,22 @@ screen name=App target=ink
       return jobList.filter((j: Job) => j.state === 'running');
     >>>
 
-  memo name=visibleBlocks deps="outputBlocks, scrollOffset"
+  memo name=visibleWindow deps="outputBlocks, scrollOffset, termHeight, mode, enginePickerOpen, modelPickerOpen, cesarPickerOpen, reviewEvent"
     handler <<<
-      return scrollOffset > 0 ? outputBlocks.slice(0, outputBlocks.length - scrollOffset) : outputBlocks;
+      const overlayActive = enginePickerOpen || modelPickerOpen || cesarPickerOpen || !!reviewEvent;
+      const blockBudget = estimateVisibleBlockBudget(termHeight, mode, overlayActive);
+      const end = Math.max(0, outputBlocks.length - scrollOffset);
+      const start = Math.max(0, end - blockBudget);
+      return {
+        blocksAbove: start,
+        blocksBelow: Math.max(0, outputBlocks.length - end),
+        visible: outputBlocks.slice(start, end),
+      };
+    >>>
+
+  memo name=visibleBlocks deps="visibleWindow"
+    handler <<<
+      return visibleWindow.visible;
     >>>
 
   // Group consecutive tool-call / debate-round / kern-draft blocks.
@@ -340,15 +392,15 @@ screen name=App target=ink
     >>>
 
   // Track block count and preserve the user's scroll anchor when the list
-  // changes. Without this, streaming new content drags the visible slice
-  // forward and /clear can leave scrollOffset past the end.
+  // changes. Without this, streaming new content drags the transcript
+  // window forward and /clear can leave scrollOffset past the end.
   effect deps="outputBlocks"
     handler <<<
       const prev = outputBlockCountRef.current;
       const next = outputBlocks.length;
       outputBlockCountRef.current = next;
       if (next === prev) return;
-      const max = Math.max(0, next - 1);
+      const max = maxScrollOffsetForBlockCount(next);
       if (next > prev && scrollOffsetRef.current > 0) {
         setScrollOffset((s: number) => Math.min(s + (next - prev), max));
       } else if (scrollOffsetRef.current > max) {
@@ -359,27 +411,26 @@ screen name=App target=ink
   effect deps=""
     handler <<<
       if (!process.stdin.isTTY || !process.stdout.isTTY) return;
-      if (process.env.AGON_ENABLE_MOUSE_SCROLL !== '1') return;
+      if (!isMouseTrackingEnabled()) return;
 
       const onData = (buf: Buffer | string) => {
         const chunk = typeof buf === 'string' ? buf : buf.toString('utf8');
         const parsed = parseMouseScrollChunk(mouseInputBufferRef.current, chunk);
         mouseInputBufferRef.current = parsed.nextBuffer;
+        const max = maxScrollOffsetForBlockCount(outputBlockCountRef.current);
 
         if (parsed.scrollUpEvents > 0) {
-          setScrollOffset((prev: number) => Math.min(prev + (parsed.scrollUpEvents * 3), Math.max(0, outputBlockCountRef.current - 1)));
+          setScrollOffset((prev: number) => Math.min(prev + (parsed.scrollUpEvents * 3), max));
         }
         if (parsed.scrollDownEvents > 0) {
           setScrollOffset((prev: number) => Math.max(0, prev - (parsed.scrollDownEvents * 3)));
         }
       };
 
-      process.stdout.write('\x1b[?1000h\x1b[?1006h');
       process.stdin.on('data', onData);
 
       return () => {
         process.stdin.off('data', onData);
-        process.stdout.write('\x1b[?1000l\x1b[?1006l');
       };
     >>>
 
@@ -623,7 +674,10 @@ screen name=App target=ink
   // ── Terminal resize handling ──
   effect deps="[]"
     handler <<<
-      const onResize = () => setTermWidth(process.stdout.columns || 100);
+      const onResize = () => {
+        setTermWidth(process.stdout.columns || 100);
+        setTermHeight(process.stdout.rows || 24);
+      };
       process.stdout.on('resize', onResize);
       return () => { process.stdout.off('resize', onResize); };
     >>>
@@ -631,10 +685,34 @@ screen name=App target=ink
 
   effect
     handler <<<
-      const stdin = process.stdin;
-      if (!stdin.isTTY) return;
-      process.stdout.write('\x1b[?2004h');
-      return () => { process.stdout.write('\x1b[?2004l'); };
+      if (!process.stdin.isTTY || !process.stdout.isTTY) return;
+
+      const reassertModes = (includeAltScreen = false) => {
+        process.stdout.write(terminalEnterSequence(includeAltScreen, isMouseTrackingEnabled()));
+      };
+
+      const onData = () => {
+        const now = Date.now();
+        if (now - lastTerminalInputAtRef.current > 5000) {
+          reassertModes(false);
+        }
+        lastTerminalInputAtRef.current = now;
+      };
+
+      const onResume = () => {
+        lastTerminalInputAtRef.current = Date.now();
+        reassertModes(true);
+      };
+
+      process.stdin.on('data', onData);
+      process.on('SIGCONT', onResume);
+
+      return () => {
+        process.stdin.off('data', onData);
+        process.off('SIGCONT', onResume);
+        drainStdinBuffer();
+        process.stdout.write(terminalExitSequence(false));
+      };
     >>>
 
   // ── Dashboard on mount ──
@@ -685,10 +763,11 @@ screen name=App target=ink
   // ── Input handlers ──
   callback name=handleInputChange params="value:string" deps="slashPickerOpen,enginePickerOpen,modelPickerOpen,questionState,planModeQueued"
     handler <<<
-      // Swallow input while a choice question is active — useInput handles keypress
+      // Swallow input while a choice question is active — the keyboard handler
+      // resolves the choice on a single keypress.
       if (questionState && questionState.choices) return;
 
-      // Reject value changes caused by Ctrl+key shortcuts (useInput already handled them,
+      // Reject value changes caused by Ctrl+key shortcuts (the input hooks already handled them,
       // but TextInput still fires onChange with the raw character)
       if (ctrlKeyHandledRef.current) {
         ctrlKeyHandledRef.current = false;
@@ -702,7 +781,6 @@ screen name=App target=ink
       if (!prevValue && nextValue === '/' && !slashPickerOpen && !enginePickerOpen && !modelPickerOpen && !questionState && !justPastedRef.current) {
         if (planModeQueued) setPlanModeQueued(false);
         setSlashPickerOpen(true);
-        setInputKey((k: number) => k + 1);
         return;
       }
 
@@ -741,7 +819,6 @@ screen name=App target=ink
       const replacement = result.type === 'stored' ? result.placeholder : result.content;
       const updatedValue = nextValue.slice(0, change.start) + replacement + nextValue.slice(change.start + change.inserted.length);
       setInputValue(updatedValue);
-      setInputKey((k: number) => k + 1);
     >>>
 
   callback name=handleSubmit async=true params="value:string" deps="replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,planModeQueued"
@@ -967,7 +1044,6 @@ screen name=App target=ink
       setPlanModeQueued(false);
       setSlashPickerOpen(false);
       setInputValue(cmd + ' ');
-      setInputKey((k: number) => k + 1);
     >>>
 
   // Stable ref for ComposerView's slash-cancel — without this, an inline
@@ -989,7 +1065,6 @@ screen name=App target=ink
         case 'e':
           ctrlKeyHandledRef.current = true;
           setScrollOffset(0);
-          setInputKey((k: number) => k + 1);
           setToolOutputExpanded((prev: boolean) => !prev);
           return;
         case 't':
@@ -1038,8 +1113,10 @@ screen name=App target=ink
     >>>
 
   // ── Keyboard handling — pure decision tree + thin dispatcher ──
-  on event=input
+  callback name=handleKeyboardInput params="input:string,key:any" deps="modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,activePlan,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openResultsPager"
     handler <<<
+      if (isTerminalFocusReport(input)) return;
+
       const normalizedCtrlInput = key.ctrl
         ? ({
             '\x01': 'a',
@@ -1085,22 +1162,20 @@ screen name=App target=ink
         case 'swallow': return;
         case 'ghostComplete':
           setInputValue(inputValue + action.ghost + ' ');
-          setInputKey((k: number) => k + 1); return;
+          return;
         case 'togglePlanQueued':
           setPlanModeQueued((prev: boolean) => !prev); return;
         case 'submit':
           handleSubmit(action.value); return;
         case 'scroll':
-          // Floor: always show at least 2 blocks so scroll never hides everything.
           setScrollOffset((prev: number) => {
-            const max = Math.max(0, outputBlocks.length - 2);
+            const max = maxScrollOffsetForBlockCount(outputBlocks.length);
             return action.delta > 0 ? Math.min(prev + action.delta, max) : Math.max(0, prev + action.delta);
           });
           return;
         case 'toggleToolExpand':
           ctrlKeyHandledRef.current = true;
           setScrollOffset(0);
-          setInputKey((k: number) => k + 1);
           setToolOutputExpanded((prev: boolean) => !prev); return;
         case 'toggleThinking':
           ctrlKeyHandledRef.current = true;
@@ -1126,11 +1201,6 @@ screen name=App target=ink
           setHistoryIndex(action.index);
           // value is always a string — empty string means "return to blank composer".
           setInputValue(action.value);
-          // Skip remount if value unchanged — avoids cursor reset on arrow-up
-          // through history when the entry matches current input.
-          if (action.value !== inputValue) {
-            setInputKey((k: number) => k + 1);
-          }
           return;
         case 'cancelOrExit':
           if (questionState) { questionState.resolve(''); setQuestionState(null); setQuestionAnswer(''); }
@@ -1157,12 +1227,13 @@ screen name=App target=ink
   // ── Render ──
   render
     handler <<<
+      useStableInput(handleKeyboardInput);
       return (
-      <Box flexDirection="column">
+      <Box flexDirection="column" height={Math.max(8, termHeight)} width="100%" flexShrink={0}>
         <ChromeBar mode={mode} cwdLabel={resolveWorkingDir().split('/').pop() ?? ''} engineCount={availableEngines.length} replState={replState} runningJobs={runningJobs} />
         <BackgroundJobRail jobs={runningJobs} />
-        <Box flexDirection="column">
-          <HistoryView visibleBlocks={visibleBlocks} groupedBlocks={groupedBlocks} mode={mode} scrollOffset={scrollOffset} thinkingExpanded={thinkingExpanded} />
+        <Box flexDirection="column" flexGrow={1} flexShrink={1}>
+          <HistoryView visibleBlocks={visibleBlocks} groupedBlocks={groupedBlocks} mode={mode} blocksAbove={visibleWindow.blocksAbove} blocksBelow={visibleWindow.blocksBelow} thinkingExpanded={thinkingExpanded} />
           <StreamingView streamingText={activeStream} mode={mode} liveProgress={liveProgress} />
           {Object.keys(agentProgress).length > 0 && (
             <Box flexDirection="column">
@@ -1284,7 +1355,6 @@ screen name=App target=ink
               activePlanState={activePlan?.state ?? null}
               slashPickerOpen={slashPickerOpen}
               inputValue={inputValue}
-              inputKey={inputKey}
               handleInputChange={handleInputChange}
               handleSubmit={handleSubmit}
               allSlashCommands={allSlashCommands}
@@ -1331,9 +1401,12 @@ fn name=startRepl async=true returns="Promise<void>"
       _lastSigintAt.value = now;
     });
     if (process.stdout.isTTY) {
-      process.stdout.write('\x1b[?1049h');
+      process.stdout.write(terminalEnterSequence(true, isMouseTrackingEnabled()));
       process.on('exit', () => {
-        try { process.stdout.write('\x1b[?1049l'); } catch { /* stdout gone */ }
+        try {
+          drainStdinBuffer();
+          process.stdout.write(terminalExitSequence(true));
+        } catch { /* stdout gone */ }
       });
     }
     render(<App />, { exitOnCtrlC: false, stdout: inkStdout });

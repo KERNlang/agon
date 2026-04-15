@@ -73,6 +73,17 @@ function charClass(char: string | undefined): 'space' | 'word' | 'punct' | 'none
   return 'punct';
 }
 
+export function classifyDeleteInput(
+  input: string,
+  key: { backspace?: boolean; delete?: boolean },
+): 'none' | 'backward' | 'forward' {
+  if (input === '\x1b[3~') return 'forward';
+  if (key.backspace || key.delete || input === '\x7f' || input === '\b' || input === '\x08') {
+    return 'backward';
+  }
+  return 'none';
+}
+
 export function findLineStart(value: string, cursorOffset: number): number {
   const bounded = Math.max(0, Math.min(cursorOffset, value.length));
   const lineBreak = value.lastIndexOf('\n', bounded - 1);
@@ -110,6 +121,41 @@ export function deleteWordBackward(value: string, cursorOffset: number): { value
   return {
     value: value.slice(0, nextCursorOffset) + value.slice(deleteEnd),
     cursorOffset: nextCursorOffset,
+  };
+}
+
+export function applyInlineInputEdits(
+  value: string,
+  cursorOffset: number,
+  input: string,
+): { value: string; cursorOffset: number; cursorWidth: number } {
+  let nextValue = value;
+  let nextCursorOffset = cursorOffset;
+  let insertedChars = 0;
+
+  for (const char of input) {
+    if (char === '\x7f' || char === '\b' || char === '\x08') {
+      if (nextCursorOffset > 0) {
+        nextValue =
+          nextValue.slice(0, nextCursorOffset - 1) +
+          nextValue.slice(nextCursorOffset, nextValue.length);
+        nextCursorOffset--;
+      }
+      continue;
+    }
+
+    nextValue =
+      nextValue.slice(0, nextCursorOffset) +
+      char +
+      nextValue.slice(nextCursorOffset, nextValue.length);
+    nextCursorOffset += char.length;
+    insertedChars += char.length;
+  }
+
+  return {
+    value: nextValue,
+    cursorOffset: nextCursorOffset,
+    cursorWidth: insertedChars > 1 ? insertedChars : 0,
   };
 }
 
@@ -167,10 +213,9 @@ function SafeTextInputImpl({
     (input, key) => {
       if (isMouseReportInput(input)) return;
       input = stripMouseReportInput(input);
-      if (!input) return;
-
-      const isForwardDelete = input === '\x1b[3~';
-      const isBackspace = !isForwardDelete && (key.backspace || key.delete || input === '\x7f' || input === '\b' || input === '\x08');
+      const deleteMode = classifyDeleteInput(input, key);
+      const isForwardDelete = deleteMode === 'forward';
+      const isBackspace = deleteMode === 'backward';
       const extendedKey = key as typeof key & { home?: boolean; end?: boolean };
       const normalizedCtrlInput = key.ctrl
         ? ({
@@ -191,6 +236,25 @@ function SafeTextInputImpl({
       const isWordLeft = (key.meta && (key.leftArrow || input === 'b')) || input === '\x1bb';
       const isWordRight = (key.meta && (key.rightArrow || input === 'f')) || input === '\x1bf';
       const isDeleteWordBackward = (key.ctrl && normalizedCtrlInput === 'w') || (key.meta && isBackspace) || input === '\x1b\x7f';
+      const hasSpecialKeySignal =
+        isBackspace ||
+        isForwardDelete ||
+        key.return ||
+        key.leftArrow ||
+        key.rightArrow ||
+        key.upArrow ||
+        key.downArrow ||
+        key.pageUp ||
+        key.pageDown ||
+        key.tab ||
+        (key.shift && key.tab) ||
+        isWordLeft ||
+        isWordRight ||
+        isDeleteWordBackward ||
+        extendedKey.home ||
+        extendedKey.end;
+
+      if (!input && !hasSpecialKeySignal) return;
 
       // Skip non-text navigation/control keys — let the parent App handle them.
       if (isReservedCtrlShortcut) {
@@ -267,12 +331,10 @@ function SafeTextInputImpl({
             originalValue.slice(cursorOffset + 1, originalValue.length);
         }
       } else {
-        nextValue =
-          originalValue.slice(0, cursorOffset) +
-          input +
-          originalValue.slice(cursorOffset, originalValue.length);
-        nextCursorOffset += input.length;
-        if (input.length > 1) nextCursorWidth = input.length;
+        const updated = applyInlineInputEdits(originalValue, cursorOffset, input);
+        nextValue = updated.value;
+        nextCursorOffset = updated.cursorOffset;
+        nextCursorWidth = updated.cursorWidth;
       }
 
       if (nextCursorOffset < 0) nextCursorOffset = 0;

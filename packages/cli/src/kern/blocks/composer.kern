@@ -11,7 +11,7 @@
 
 import from="react" default="React"
 import from="ink" names="Box,Text"
-import from="../../components.js" names="MemoTextInput,SlashPicker"
+import from="../../components.js" names="MemoTextInput,PromptTextInput,SlashPicker"
 import from="../signals/icons.js" names="icons"
 import from="../../ghost-text.js" names="getGhostCompletion"
 
@@ -33,6 +33,8 @@ screen name=ComposerView target=ink memo=true
   prop name=onQuestionAnswerChange type="(value:string) => void"
   prop name=onQuestionAnswerSubmit type="(value:string) => void"
   prop name=onCtrlShortcut type="(shortcut:string) => void"
+  prop name=termWidth type=number
+  prop name=termHeight type=number
   render
     handler <<<
       const placeholder = replState === 'idle'
@@ -45,6 +47,8 @@ screen name=ComposerView target=ink memo=true
                 : 'What should they debate?')
         : '';
       const ghost = getGhostCompletion(inputValue, allSlashCommands, availableEngines);
+      const promptWidth = Math.max(12, termWidth - (mode === 'chat' ? 10 : 22));
+      const promptMaxLines = Math.max(3, Math.min(8, Math.floor(termHeight / 4)));
       return (
         <>
           {slashPickerOpen && <SlashPicker commands={allSlashCommands} onSelect={onSlashSelect} onCancel={onSlashCancel} />}
@@ -56,10 +60,15 @@ screen name=ComposerView target=ink memo=true
                 {slashPickerOpen ? (
                   <Text dimColor>{inputValue || '/'}</Text>
                 ) : (
-                  <>
-                    <MemoTextInput value={inputValue} onChange={handleInputChange} onSubmit={handleSubmit} onCtrlShortcut={onCtrlShortcut} placeholder={placeholder} />
-                    {ghost && <Text dimColor>{ghost}</Text>}
-                  </>
+                  <PromptTextInput
+                    value={inputValue}
+                    onChange={handleInputChange}
+                    onSubmit={handleSubmit}
+                    onCtrlShortcut={onCtrlShortcut}
+                    placeholder={placeholder}
+                    ghostText={ghost ?? undefined}
+                    width={promptWidth}
+                    maxVisibleLines={promptMaxLines} />
                 )}
               </Box>
             </Box>

@@ -61,3 +61,4 @@ export { ENGINE_COLORS } from './output.js';
 // ink-text-input that drops Ctrl-modified keystrokes at the source so they
 // don't leak into the composer. See safe-text-input.tsx for the rationale.
 export { SafeTextInput as MemoTextInput } from './safe-text-input.js';
+export { PromptTextInput } from './generated/blocks/prompt-input.js';

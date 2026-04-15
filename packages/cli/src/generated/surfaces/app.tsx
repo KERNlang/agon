@@ -1372,5 +1372,11 @@ export async function startRepl(): Promise<void> {
     }
     _lastSigintAt.value = now;
   });
+  if (process.stdout.isTTY) {
+    process.stdout.write('\x1b[?1049h');
+    process.on('exit', () => {
+      try { process.stdout.write('\x1b[?1049l'); } catch { /* stdout gone */ }
+    });
+  }
   render(<App />, { exitOnCtrlC: false, stdout: inkStdout });
 }

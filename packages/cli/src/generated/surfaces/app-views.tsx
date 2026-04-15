@@ -37,7 +37,7 @@ const HistoryView = React.memo(function HistoryView({ visibleBlocks, groupedBloc
     <>
   {scrollOffset > 0 && (
     <Box paddingX={1}>
-      <Text dimColor>{`\u2191 ${scrollOffset} block${scrollOffset > 1 ? 's' : ''} above \u2014 mouse wheel or Shift+\u2191/\u2193`}</Text>
+      <Text dimColor>{`\u2191 ${scrollOffset} block${scrollOffset > 1 ? 's' : ''} above \u2014 Shift+\u2191/\u2193`}</Text>
     </Box>
   )}
       {groupedBlocks === null

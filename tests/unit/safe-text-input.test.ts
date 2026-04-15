@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  applyInlineInputEdits,
+  classifyDeleteInput,
   deleteWordBackward,
   findLineEnd,
   findLineStart,
@@ -9,6 +11,20 @@ import {
 } from '../../packages/cli/src/safe-text-input.js';
 
 describe('safe text input helpers', () => {
+  it('classifies delete keys even when Ink emits an empty input string', () => {
+    expect(classifyDeleteInput('', { delete: true })).toBe('backward');
+    expect(classifyDeleteInput('', { backspace: true })).toBe('backward');
+    expect(classifyDeleteInput('\x1b[3~', {})).toBe('forward');
+  });
+
+  it('applies buffered inline deletions inside a multi-character chunk', () => {
+    expect(applyInlineInputEdits('', 0, 'abc\x7f')).toEqual({
+      value: 'ab',
+      cursorOffset: 2,
+      cursorWidth: 3,
+    });
+  });
+
   it('moves to the previous word boundary', () => {
     expect(findWordBoundaryLeft('hello brave new world', 15)).toBe(12);
     expect(findWordBoundaryLeft('hello, brave', 7)).toBe(5);

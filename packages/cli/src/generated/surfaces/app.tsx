@@ -72,11 +72,15 @@ import { tmpdir } from 'node:os';
 
 import { spawnSync } from 'node:child_process';
 
+import { PassThrough } from 'node:stream';
+
 import { sessionResultStore } from '../models/session-results.js';
 
 import { formatSessionResults, formatChatTranscript } from '../blocks/results-formatter.js';
 
 import { loadSkills } from '@agon/core';
+
+import { parseMouseScrollChunk } from '../../input-utils.js';
 
 export function App() {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
@@ -996,30 +1000,19 @@ export function App() {
 
   useEffect(() => {
     if (!process.stdin.isTTY || !process.stdout.isTTY) return;
+    if (process.env.AGON_ENABLE_MOUSE_SCROLL !== '1') return;
     
     const onData = (buf: Buffer | string) => {
       const chunk = typeof buf === 'string' ? buf : buf.toString('utf8');
-      if (!chunk.includes('\x1b[<')) return;
+      const parsed = parseMouseScrollChunk(mouseInputBufferRef.current, chunk);
+      mouseInputBufferRef.current = parsed.nextBuffer;
     
-      let buffer = mouseInputBufferRef.current + chunk;
-      const sgrPattern = /\x1b\[<(\d+);(\d+);(\d+)([mM])/g;
-      let match: RegExpExecArray | null;
-      let lastIndex = 0;
-    
-      while ((match = sgrPattern.exec(buffer)) !== null) {
-        lastIndex = sgrPattern.lastIndex;
-        const code = Number(match[1]);
-        if (Number.isNaN(code)) continue;
-    
-        // 64/65 are wheel up/down in xterm SGR mouse mode.
-        if (code === 64) {
-          setScrollOffset((prev: number) => Math.min(prev + 3, Math.max(0, outputBlockCountRef.current - 1)));
-        } else if (code === 65) {
-          setScrollOffset((prev: number) => Math.max(0, prev - 3));
-        }
+      if (parsed.scrollUpEvents > 0) {
+        setScrollOffset((prev: number) => Math.min(prev + (parsed.scrollUpEvents * 3), Math.max(0, outputBlockCountRef.current - 1)));
       }
-    
-      mouseInputBufferRef.current = lastIndex > 0 ? buffer.slice(lastIndex) : buffer.slice(-32);
+      if (parsed.scrollDownEvents > 0) {
+        setScrollOffset((prev: number) => Math.max(0, prev - (parsed.scrollDownEvents * 3)));
+      }
     };
     
     process.stdout.write('\x1b[?1000h\x1b[?1006h');
@@ -1343,9 +1336,27 @@ export const _cesarSessionRef: { session: PersistentSession | null } = { session
 
 export const _lastSigintAt: { value: number } = { value: 0 };
 
+export function createInkStdoutProxy(): any {
+  const proxy = new PassThrough();
+  (proxy as any).isTTY = process.stdout.isTTY;
+  (proxy as any).columns = process.stdout.columns || 100;
+  // Keep Ink off its clearTerminal fallback path. That path emits ESC[3J,
+  // which clears terminal scrollback and makes native scroll/copy unusable.
+  (proxy as any).rows = 10000;
+  proxy.pipe(process.stdout);
+  
+  process.stdout.on('resize', () => {
+    (proxy as any).columns = process.stdout.columns || 100;
+    proxy.emit('resize');
+  });
+  
+  return proxy;
+}
+
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());
+  const inkStdout = createInkStdoutProxy();
   process.on('SIGINT', () => {
     const now = Date.now();
     if (now - _lastSigintAt.value < 1200) {
@@ -1361,11 +1372,5 @@ export async function startRepl(): Promise<void> {
     }
     _lastSigintAt.value = now;
   });
-  if (process.stdout.isTTY) {
-    process.stdout.write('\x1b[?1049h');
-    process.on('exit', () => {
-      try { process.stdout.write('\x1b[?1049l'); } catch { /* stdout gone */ }
-    });
-  }
-  render(<App />, { exitOnCtrlC: false });
+  render(<App />, { exitOnCtrlC: false, stdout: inkStdout });
 }

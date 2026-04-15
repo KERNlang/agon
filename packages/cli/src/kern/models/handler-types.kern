@@ -176,6 +176,7 @@ union name=OutputEvent discriminant=type
 
 interface name=PendingDelegation
   field name=action type=string
+  field name=task type=string optional=true
   field name=reasoning type=string
   field name=scope type="'slice'|'full'" optional=true
   field name=fitnessCmd type=string optional=true
@@ -196,6 +197,7 @@ interface name=CesarTurnOutcome
   field name=delegated type=boolean
   field name=responded type=boolean
   field name=action type=string optional=true
+  field name=task type=string optional=true
   field name=reasoning type=string optional=true
   field name=decisionReason type=string optional=true
   field name=scope type="'slice'|'full'" optional=true

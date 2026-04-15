@@ -60,6 +60,7 @@ export type OutputEvent =
 
 export interface PendingDelegation {
   action: string;
+  task?: string;
   reasoning: string;
   scope?: 'slice'|'full';
   fitnessCmd?: string;
@@ -81,6 +82,7 @@ export interface CesarTurnOutcome {
   delegated: boolean;
   responded: boolean;
   action?: string;
+  task?: string;
   reasoning?: string;
   decisionReason?: string;
   scope?: 'slice'|'full';

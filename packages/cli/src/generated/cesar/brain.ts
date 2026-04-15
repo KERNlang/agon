@@ -32,9 +32,11 @@ export function extractDelegation(toolName: string, args: Record<string,unknown>
   const argsRecord = args as Record<string, unknown>;
   const taskKindRaw = argsRecord.taskKind;
   const enginesRaw = argsRecord.engines;
+  const delegatedTask = (argsRecord.task ?? argsRecord.question ?? argsRecord.topic ?? argsRecord.target ?? '') as string;
   return {
     action: toolName.toLowerCase(),
-    reasoning: (argsRecord.task ?? argsRecord.question ?? argsRecord.topic ?? argsRecord.target ?? '') as string,
+    task: delegatedTask,
+    reasoning: delegatedTask,
     scope: (argsRecord.scope === 'slice' || argsRecord.scope === 'full') ? argsRecord.scope as 'slice' | 'full' : undefined,
     fitnessCmd: typeof argsRecord.fitnessCmd === 'string'
       ? (argsRecord.fitnessCmd as string)
@@ -56,37 +58,37 @@ export function extractDelegation(toolName: string, args: Record<string,unknown>
 
 export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input: string, response: string, cesarEngineId: string, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext): Promise<CesarTurnOutcome> {
   if (streaming) dispatch({ type: 'streaming-end', engineId: cesarEngineId });
-  if (!streaming) dispatch({ type: 'spinner-stop' });
-  await yieldToInk();
-  appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
-  appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
-  tracker.record(cesarEngineId, { prompt: input, response });
-  const delResult = await promptDelegation(pendingDel.action, dispatch, pendingDel.hardened, pendingDel.tribunalMode, pendingDel.team);
-  if (delResult.approved) {
-    const finalAction = delResult.action ?? pendingDel.action;
-    const action = pendingDel.team ? `team-${finalAction}` : finalAction;
+    if (!streaming) dispatch({ type: 'spinner-stop' });
+    await yieldToInk();
+    appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
+    appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
+    tracker.record(cesarEngineId, { prompt: input, response });
+    const delResult = await promptDelegation(pendingDel.action, dispatch, pendingDel.hardened, pendingDel.tribunalMode, pendingDel.team);
+    if (delResult.approved) {
+      const finalAction = delResult.action ?? pendingDel.action;
+      const action = pendingDel.team ? `team-${finalAction}` : finalAction;
     const mode = finalAction === 'forge' && pendingDel.scope === 'slice' && !(delResult.team ?? pendingDel.team)
       ? 'forge-slice'
       : action;
     const reasoning = delResult.userContext ? `${pendingDel.reasoning ?? ''}\n\nUser context: ${delResult.userContext}` : pendingDel.reasoning;
-    return { mode: mode as any, delegated: true, responded: true, action, reasoning, decisionReason: 'tool-delegation', scope: pendingDel.scope, fitnessCmd: pendingDel.fitnessCmd, hardened: delResult.hardened ?? pendingDel.hardened, tribunalMode: delResult.tribunalMode ?? pendingDel.tribunalMode, team: delResult.team ?? pendingDel.team, target: pendingDel.target, engineId: pendingDel.engineId, engines: pendingDel.engines, taskKind: pendingDel.taskKind, maxTurns: pendingDel.maxTurns };
+    return { mode: mode as any, delegated: true, responded: true, action, task: pendingDel.task, reasoning, decisionReason: 'tool-delegation', scope: pendingDel.scope, fitnessCmd: pendingDel.fitnessCmd, hardened: delResult.hardened ?? pendingDel.hardened, tribunalMode: delResult.tribunalMode ?? pendingDel.tribunalMode, team: delResult.team ?? pendingDel.team, target: pendingDel.target, engineId: pendingDel.engineId, engines: pendingDel.engines, taskKind: pendingDel.taskKind, maxTurns: pendingDel.maxTurns };
   }
   return { delegated: false, responded: true, decisionReason: 'delegation-cancelled' };
 }
 
 export async function commitTurnAndSuggest(suggestion: {action:string, rest?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}, input: string, response: string, cesarEngineId: string, color: number, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext): Promise<CesarTurnOutcome> {
   if (streaming) dispatch({ type: 'streaming-end', engineId: cesarEngineId });
-  if (!streaming) dispatch({ type: 'spinner-stop' });
-  await yieldToInk();
-  appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
-  appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
-  tracker.record(cesarEngineId, { prompt: input, response });
-  if (suggestion.rest) dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: suggestion.rest });
+    if (!streaming) dispatch({ type: 'spinner-stop' });
+    await yieldToInk();
+    appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
+    appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
+    tracker.record(cesarEngineId, { prompt: input, response });
+    if (suggestion.rest) dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: suggestion.rest });
   const delResult = await promptDelegation(suggestion.action, dispatch, suggestion.hardened, suggestion.tribunalMode, suggestion.team);
   if (delResult.approved) {
     const finalAction = delResult.action ?? suggestion.action;
     const reasoning = delResult.userContext ? `${suggestion.rest ?? ''}\n\nUser context: ${delResult.userContext}` : suggestion.rest;
-    return { mode: finalAction as any, delegated: true, responded: true, action: finalAction, reasoning, decisionReason: 'suggestion-marker', hardened: delResult.hardened ?? suggestion.hardened, tribunalMode: delResult.tribunalMode ?? suggestion.tribunalMode, team: delResult.team ?? suggestion.team };
+    return { mode: finalAction as any, delegated: true, responded: true, action: finalAction, task: input, reasoning, decisionReason: 'suggestion-marker', hardened: delResult.hardened ?? suggestion.hardened, tribunalMode: delResult.tribunalMode ?? suggestion.tribunalMode, team: delResult.team ?? suggestion.team };
   }
   return { delegated: false, responded: true, decisionReason: 'suggestion-cancelled' };
 }
@@ -784,6 +786,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             delegated: true,
             responded: true,
             action: escalationAction,
+            task: input,
             scope: qnResult.decision === 'forge' && qnResult.scope !== 'none' ? qnResult.scope : undefined,
             team: qnResult.team,
             reasoning: `User context: ${escalationContext}`,

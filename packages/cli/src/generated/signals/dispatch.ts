@@ -1394,14 +1394,14 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
       const oldChatId = cb.ctx.chatSession?.id ?? null;
   
       // 1. Kill Cesar's brain subprocess
-        if (cb.ctx.cesarSession) {
-          cb.ctx.cesarSession.close();
-          cb.ctx.setCesarSession(null);
-        }
-        clearConversation();
-        try {
-          cb.ctx.cesarMemory?.clearSession?.();
-        } catch { /* best-effort */ }
+      if (cb.ctx.cesarSession) {
+        cb.ctx.cesarSession.close();
+        cb.ctx.setCesarSession(null);
+      }
+      clearConversation();
+      try {
+        cb.ctx.cesarMemory?.clearSession?.();
+      } catch { /* best-effort */ }
   
       // 2. Clear visual output (blocks, streaming, clipboard)
       cb.dispatch({ type: 'clear' });

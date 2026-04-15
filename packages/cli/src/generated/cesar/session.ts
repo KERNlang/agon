@@ -286,7 +286,7 @@ export function buildCesarConversationSnapshot(session: PersistentSession|null, 
   if (directHistory.length > 0) {
     return directHistory.filter((msg: any) => msg && typeof msg.role === 'string');
   }
-
+  
   const transcript = Array.isArray(chatSession?.messages) ? chatSession.messages : [];
   const snapshot: Array<{role:string,content:any}> = [];
   for (const msg of transcript.slice(-80)) {

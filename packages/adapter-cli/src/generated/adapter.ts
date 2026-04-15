@@ -206,11 +206,11 @@ export class CliAdapter implements EngineAdapter {
     
       const startTime = Date.now();
       const baselineDiff = readOnlyDiff(cwd);
-      const result = await runApiAgentLoop({
-        api: apiConfig,
-        prompt: options.prompt,
-        systemPrompt,
-        cwd,
+        const result = await runApiAgentLoop({
+          api: apiConfig,
+          prompt: options.prompt,
+          systemPrompt,
+          cwd,
           timeout: options.timeout,
           signal: options.signal,
           maxSteps: 15,

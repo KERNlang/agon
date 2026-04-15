@@ -180,7 +180,11 @@ function SafeTextInputImpl({
     setState((previousState) => {
       if (!focus || !showCursor) return previousState;
       const newValue = originalValue || '';
-      if (previousState.cursorOffset > newValue.length - 1) {
+      // Sync cursor when value shrinks past cursor position.
+      // Was `> newValue.length - 1` which failed on single-char delete
+      // (cursor 5, value "hello" → "hell" length 4: 5 > 3 ✓ but
+      // cursor 5 on "hello" → "hell" should become 4, not wait until 5 > 3).
+      if (previousState.cursorOffset > newValue.length) {
         return { cursorOffset: newValue.length, cursorWidth: 0 };
       }
       return previousState;

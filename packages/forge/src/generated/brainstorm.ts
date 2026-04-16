@@ -6,9 +6,9 @@ import type { EngineAdapter, BrainstormBid, BrainstormResult, ScoutBid } from '@
 
 import { EngineRegistry, buildBrainstormPrompt, getRatings, loadConfig, createSidechainLogger, updateGlickoRanked, classifyTask } from '@agon/core';
 
-import { buildKernDraftPrompt, parseKernDraft, buildKernRankPrompt } from '../kern-draft.js';
+import { buildKernDraftPrompt, parseKernDraft, buildKernRankPrompt } from '@kernlang/protocol';
 
-import type { KernDraft } from '../kern-draft.js';
+import type { KernDraft } from '@kernlang/protocol';
 
 export function calibrateConfidence(engineId: string, rawBid: number): number {
   // Use Glicko-2 brainstorm ratings for calibration, fall back to global

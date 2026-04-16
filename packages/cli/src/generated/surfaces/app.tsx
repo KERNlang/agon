@@ -391,9 +391,9 @@ export function App() {
           return enginePickerOpen || modelPickerOpen || cesarPickerOpen || !!reviewEvent ? 4 : 0;
   }, [enginePickerOpen, modelPickerOpen, cesarPickerOpen, reviewEvent, toolDetailEvent, termHeight]);
 
-  const questionReservedRows = useMemo(() => {
-          return estimateQuestionReservedRows(questionState, termWidth);
-  }, [questionState,termWidth]);
+  const bottomChromeReservedRows = useMemo(() => {
+          return estimateBottomChromeExtraRows(mode, questionState, termWidth, pendingImages.length, inputQueue.length, !!liveSpinner);
+  }, [mode,questionState,termWidth,pendingImages,inputQueue,liveSpinner]);
 
   const overlayActive = useMemo(() => {
           return enginePickerOpen || modelPickerOpen || cesarPickerOpen || !!reviewEvent || !!toolDetailEvent;
@@ -429,8 +429,8 @@ export function App() {
             ? estimatePinnedLiveRows(mode, !!activeStream, !!liveProgress, Object.keys(agentProgress).length)
             : 0;
           const viewportRows = Math.max(1, termHeight - pinnedLiveRows);
-          return estimateVisibleBlockBudget(viewportRows, mode, overlayReservedRows + questionReservedRows);
-  }, [termHeight, mode, overlayReservedRows, questionReservedRows, livePaneVisible, activeStream, liveProgress, agentProgress]);
+          return estimateVisibleBlockBudget(viewportRows, mode, overlayReservedRows + bottomChromeReservedRows);
+  }, [termHeight, mode, overlayReservedRows, bottomChromeReservedRows, livePaneVisible, activeStream, liveProgress, agentProgress]);
 
   const displayRows = useMemo(() => {
           return buildTranscriptRows(displayBlocks, mode, toolOutputExpanded, thinkingExpanded);
@@ -1739,11 +1739,9 @@ export function App() {
       <Box flexDirection="column" paddingX={1} marginTop={1}>
         {pendingImages.length > 0 && (<Box><Text color="#22d3ee">{icons().image + ' '}</Text>{pendingImages.map((img: any, i: number) => (<Text key={i} dimColor>{img.filename}{i < pendingImages.length - 1 ? ', ' : ''}</Text>))}</Box>)}
         {inputQueue.length > 0 && (<Box><Text dimColor>{icons().queue + ' '}{inputQueue.length} queued: </Text><Text dimColor italic>{inputQueue[0].length > 40 ? inputQueue[0].slice(0, 40) + '…' : inputQueue[0]}</Text></Box>)}
-        {liveSpinner && mode === 'chat' && questionState?.kind !== 'permission' && (
+        {liveSpinner && mode === 'chat' && !questionState && (
           <Box paddingLeft={1}>
-            <Text color={questionState && questionState.choices ? '#ef4444' : '#fbbf24'}>
-              {questionState && questionState.choices ? `${icons().warning} PERMISSION REQUIRED — respond below` : liveSpinner.message}
-            </Text>
+            <Text color="#fbbf24">{liveSpinner.message}</Text>
           </Box>
         )}
     <ComposerView
@@ -2319,12 +2317,24 @@ export function estimateVisibleBlockBudget(rows: number, mode: string, overlayRe
   return Math.max(1, rows - reservedRows);
 }
 
+export function estimateWrappedRowCount(text: string, wrapWidth: number): number {
+  const safeWidth = Math.max(1, wrapWidth);
+  const lines = String(text ?? '').split('\n');
+  let rowCount = 0;
+  for (const line of lines) {
+    rowCount += Math.max(1, Math.ceil(stringDisplayWidth(line) / safeWidth));
+  }
+  return Math.max(1, rowCount);
+}
+
 /**
  * Reserve extra transcript rows when the bottom composer is showing a multi-line question or permission card, so short terminals do not clip the actionable keys.
  */
 export function estimateQuestionReservedRows(questionState: any, termWidth: number): number {
   if (!questionState) return 0;
   const safeWidth = Math.max(24, termWidth - 12);
+  const prompt = String(questionState.prompt ?? '').trim();
+  const promptRows = estimateWrappedRowCount(prompt, safeWidth);
   const hasChoices = Array.isArray(questionState.choices) && questionState.choices.length > 0;
   if (questionState.kind === 'permission') {
     const command = String(questionState.command ?? '').trim();
@@ -2333,8 +2343,35 @@ export function estimateQuestionReservedRows(questionState: any, termWidth: numb
     const summaryIsLong = summary.length > safeWidth;
     return commandIsLong || summaryIsLong ? 4 : 3;
   }
-  if (hasChoices) return 2;
-  return 1;
+  if (hasChoices) {
+    const inlineChoiceWidth = questionState.choices.reduce((sum: number, choice: any, index: number) => {
+      const key = String(choice?.key ?? '').toUpperCase();
+      const label = String(choice?.label ?? '').trim();
+      return sum + stringDisplayWidth(`[${key}] ${label}`.trim()) + (index > 0 ? 2 : 0);
+    }, 0);
+    if (questionState.choices.length <= 3 && inlineChoiceWidth <= safeWidth) {
+      return promptRows + 1;
+    }
+    const choiceRows = questionState.choices.reduce((sum: number, choice: any) => {
+      const key = String(choice?.key ?? '').toUpperCase();
+      const label = String(choice?.label ?? '').trim();
+      return sum + estimateWrappedRowCount(`[${key}] ${label}`.trim(), safeWidth);
+    }, 0);
+    return promptRows + Math.max(1, choiceRows);
+  }
+  return promptRows + 1;
+}
+
+/**
+ * Reserve extra rows above the base composer/status chrome for stacked prompt cards, queued-input badges, and chat spinner rows.
+ */
+export function estimateBottomChromeExtraRows(mode: string, questionState: any, termWidth: number, pendingImageCount: number, inputQueueCount: number, hasLiveSpinner: boolean): number {
+  let extraRows = 0;
+  if (pendingImageCount > 0) extraRows += 1;
+  if (inputQueueCount > 0) extraRows += 1;
+  if (mode === 'chat' && hasLiveSpinner && !questionState) extraRows += 1;
+  extraRows += estimateQuestionReservedRows(questionState, termWidth);
+  return extraRows;
 }
 
 export function buildDashboardBlock(enabledOverride: string[]|null): OutputBlock {

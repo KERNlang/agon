@@ -121,6 +121,13 @@ export function describeCandidate(label, command, commandArgs, packageVersion, e
   };
 }
 
+export function withPrepare(candidate, prepare) {
+  return {
+    ...candidate,
+    prepare,
+  };
+}
+
 export function isNodeEntrypoint(filePath) {
   return /\.(c|m)?js$/i.test(filePath);
 }
@@ -130,17 +137,23 @@ export function collectCandidates(repoRoot) {
   const requiredVersion = normalizeRequirement(rootPackageJson.optionalDependencies?.['@kernlang/cli']);
   const envBin = process.env.KERN_BIN?.trim();
   const envPath = resolveOverridePath(envBin, repoRoot);
+  const envRepo = process.env.KERN_REPO?.trim();
   const installedCli = path.join(repoRoot, 'node_modules/.bin/kern');
   const installedPkg = path.join(repoRoot, 'node_modules/@kernlang/cli/package.json');
 
   const candidates = [];
 
+  const makePrepare = (kernRepo) => ({
+    label: `local kern-lang build (${kernRepo})`,
+    command: 'pnpm',
+    args: ['-C', kernRepo, 'exec', 'tsc', '-b', 'packages/cli'],
+  });
+
   if (envBin) {
     if (envPath && existsSync(envPath)) {
       const envIsNodeEntrypoint = isNodeEntrypoint(envPath);
       const cliPackageRoot = findPackageRoot(envPath);
-      candidates.push(
-        describeCandidate(
+      const baseCandidate = describeCandidate(
           `KERN_BIN (${envPath})`,
           envIsNodeEntrypoint ? process.execPath : envPath,
           envIsNodeEntrypoint ? [envPath] : [],
@@ -153,7 +166,12 @@ export function collectCandidates(repoRoot) {
           ),
           readEffectiveKernVersion(cliPackageRoot),
           true,
-        ),
+        );
+      const kernRepo = cliPackageRoot ? path.resolve(cliPackageRoot, '../..') : null;
+      candidates.push(
+        kernRepo && existsSync(path.join(kernRepo, 'packages/cli/tsconfig.json'))
+          ? withPrepare(baseCandidate, makePrepare(kernRepo))
+          : baseCandidate,
       );
     } else {
       candidates.push(
@@ -165,6 +183,26 @@ export function collectCandidates(repoRoot) {
           null,
           true,
         ),
+      );
+    }
+  }
+
+  const localRepo = envRepo ? resolveOverridePath(envRepo, repoRoot) : null;
+
+  if (localRepo) {
+    const localCli = path.join(localRepo, 'packages/cli/dist/cli.js');
+    if (existsSync(localCli)) {
+      const cliPackageRoot = findPackageRoot(localCli);
+      const baseCandidate = describeCandidate(
+        `local kern-lang (${localCli})`,
+        process.execPath,
+        [localCli],
+        readPackageVersion(path.join(localRepo, 'packages/cli/package.json')),
+        readEffectiveKernVersion(cliPackageRoot),
+        true,
+      );
+      candidates.push(
+        withPrepare(baseCandidate, makePrepare(localRepo)),
       );
     }
   }
@@ -192,7 +230,12 @@ export function collectCandidates(repoRoot) {
     ),
   );
 
-  return { candidates, requiredVersion };
+  return {
+    candidates,
+    requiredVersion,
+    localRequested: Boolean(envRepo),
+    localResolved: Boolean(localRepo),
+  };
 }
 
 export function selectCandidate(candidates, requiredVersion) {
@@ -227,7 +270,14 @@ export function selectCandidate(candidates, requiredVersion) {
 }
 
 export function resolveKernCli(repoRoot) {
-  const { candidates, requiredVersion } = collectCandidates(repoRoot);
+  const { candidates, requiredVersion, localRequested, localResolved } = collectCandidates(repoRoot);
+
+  if (localRequested && !localResolved) {
+    console.error('  [kern] local Kern mode was requested but no local Kern checkout was found');
+    console.error('  [kern] set KERN_REPO=/path/to/kern-lang');
+    process.exit(1);
+  }
+
   const selection = selectCandidate(candidates, requiredVersion);
 
   if (!selection.candidate) {
@@ -257,6 +307,26 @@ export function printResolution(prefix, selection, requiredVersion) {
     }
   } else if (selection.version !== 'unknown') {
     console.log(`  [${prefix}] resolved ${selection.version}`);
+  }
+}
+
+export function prepareCandidate(prefix, candidate) {
+  if (!candidate?.prepare) return;
+  if (process.env.KERN_SKIP_LOCAL_SYNC === '1') return;
+
+  console.log(`  [${prefix}] syncing ${candidate.prepare.label}`);
+  const result = spawnSync(candidate.prepare.command, candidate.prepare.args, {
+    cwd: process.cwd(),
+    stdio: 'inherit',
+  });
+
+  if (result.error) {
+    console.error(`  [${prefix}] failed to sync ${candidate.prepare.label}: ${result.error.message}`);
+    process.exit(1);
+  }
+
+  if (typeof result.status === 'number' && result.status !== 0) {
+    process.exit(result.status);
   }
 }
 

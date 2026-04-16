@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   isTerminalFocusReport,
+  parseMouseChunk,
   parseMouseScrollChunk,
   stripBracketedPasteMarkers,
   stripTerminalInputMarkers,
@@ -53,6 +54,35 @@ describe('parseMouseScrollChunk', () => {
       nextBuffer: '',
       scrollUpEvents: 0,
       scrollDownEvents: 1,
+    });
+  });
+
+  it('counts wheel events even when xterm modifier bits are present', () => {
+    expect(parseMouseScrollChunk('', '\x1b[<68;12;34M\x1b[<69;12;35M')).toEqual({
+      nextBuffer: '',
+      scrollUpEvents: 1,
+      scrollDownEvents: 1,
+    });
+  });
+});
+
+describe('parseMouseChunk', () => {
+  it('parses left-button drag gestures alongside wheel packets', () => {
+    expect(
+      parseMouseChunk(
+        '',
+        '\x1b[<0;10;7M\x1b[<32;10;8M\x1b[<32;10;9M\x1b[<0;10;9m\x1b[<64;10;10M',
+      ),
+    ).toEqual({
+      nextBuffer: '',
+      scrollUpEvents: 1,
+      scrollDownEvents: 0,
+      pointerEvents: [
+        { kind: 'down', button: 'left', x: 10, y: 7 },
+        { kind: 'drag', button: 'left', x: 10, y: 8 },
+        { kind: 'drag', button: 'left', x: 10, y: 9 },
+        { kind: 'up', button: 'left', x: 10, y: 9 },
+      ],
     });
   });
 });

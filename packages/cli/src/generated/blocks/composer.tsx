@@ -4,7 +4,7 @@ import React from 'react';
 import { Box, Text } from 'ink';
 
 // ── Core ───────────────────────────────────────────────
-import { MemoTextInput, PromptTextInput, SlashPicker } from '../../components.js';
+import { PromptTextInput, SlashPicker } from '../../components.js';
 
 import { icons } from '../signals/icons.js';
 
@@ -23,6 +23,12 @@ const ComposerView = React.memo(function ComposerView({ mode, replState, planMod
   const ghost = getGhostCompletion(inputValue, allSlashCommands, availableEngines);
   const promptWidth = Math.max(12, termWidth - (mode === 'chat' ? 10 : 22));
   const promptMaxLines = Math.max(3, Math.min(8, Math.floor(termHeight / 4)));
+  const choiceList = Array.isArray(questionState?.choices)
+    ? questionState.choices as {key:string,label:string,color?:string}[]
+    : [];
+  const questionPrompt = typeof questionState?.prompt === 'string'
+    ? questionState.prompt.trim()
+    : questionState?.prompt;
   return (
     <>
       {slashPickerOpen && <SlashPicker commands={allSlashCommands} onSelect={onSlashSelect} onCancel={onSlashCancel} />}
@@ -52,15 +58,35 @@ const ComposerView = React.memo(function ComposerView({ mode, replState, planMod
       )}
       {questionState && (
         <Box flexDirection="column" paddingLeft={1} marginTop={0} borderLeft borderColor={questionState.choices ? '#fbbf24' : '#585858'}>
-          <Text bold color="#fbbf24">{questionState.choices ? ` ${icons().warning} ` : ' '}{questionState.prompt}</Text>
-          {questionState.choices ? (
-            <Box flexDirection="column" paddingLeft={2}>
-              {(questionState.choices as {key:string,label:string,color?:string}[]).map((c: any, i: number) => (
-                <Text key={i}><Text color={c.color ?? '#6b7280'} bold>  [{i + 1}/{c.key}] </Text><Text>{c.label}</Text></Text>
-              ))}
+          <Text bold color="#fbbf24">{questionState.choices ? ` ${icons().warning} ` : ' '}{questionPrompt}</Text>
+          {choiceList.length > 0 ? (
+            <Box paddingLeft={2} width="100%">
+              <Text>
+                {choiceList.map((c: any, i: number) => (
+                  <React.Fragment key={i}>
+                    {i > 0 ? '   ' : ''}
+                    <Text color={c.color ?? '#6b7280'} bold>{i + 1}.</Text>
+                    <Text>{' '}{c.label}</Text>
+                    <Text dimColor>{' ['}{c.key}{']'}</Text>
+                  </React.Fragment>
+                ))}
+              </Text>
             </Box>
           ) : (
-            <Box paddingLeft={2}><MemoTextInput value={questionAnswer} onChange={onQuestionAnswerChange} onSubmit={onQuestionAnswerSubmit} onCtrlShortcut={onCtrlShortcut} /></Box>
+            <Box paddingLeft={2} width="100%">
+              <PromptTextInput
+                value={questionAnswer}
+                onChange={onQuestionAnswerChange}
+                onSubmit={onQuestionAnswerSubmit}
+                onCtrlShortcut={onCtrlShortcut}
+                placeholder=""
+                focus={true}
+                showCursor={true}
+                highlightPastedText={true}
+                ghostText={undefined}
+                width={Math.max(12, termWidth - 8)}
+                maxVisibleLines={Math.max(2, Math.min(4, promptMaxLines))} />
+            </Box>
           )}
         </Box>
       )}

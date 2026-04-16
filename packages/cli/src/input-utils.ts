@@ -5,6 +5,13 @@ const MOUSE_REPORT_PREFIX = '\x1b[<';
 const MOUSE_REPORT_RE = /\x1b\[<(\d+);(\d+);(\d+)([mM])/g;
 const MAX_MOUSE_BUFFER_CHARS = 64;
 
+function normalizeMouseButtonCode(code: number): number {
+  if (!Number.isFinite(code)) return -1;
+  const baseButton = code & 0b11;
+  const isWheel = (code & 0b1000000) !== 0;
+  return isWheel ? 64 + baseButton : baseButton;
+}
+
 export function stripBracketedPasteMarkers(value: string): string {
   return value.replace(BRACKETED_PASTE_MARKER_RE, '');
 }
@@ -23,23 +30,56 @@ export interface MouseScrollParseResult {
   scrollDownEvents: number;
 }
 
-export function parseMouseScrollChunk(previousBuffer: string, chunk: string): MouseScrollParseResult {
+export interface MousePointerEvent {
+  kind: 'down' | 'drag' | 'up';
+  button: 'left' | 'middle' | 'right' | 'unknown';
+  x: number;
+  y: number;
+}
+
+export interface MouseParseResult extends MouseScrollParseResult {
+  pointerEvents: MousePointerEvent[];
+}
+
+function mouseButtonName(code: number): MousePointerEvent['button'] {
+  if (code === 0) return 'left';
+  if (code === 1) return 'middle';
+  if (code === 2) return 'right';
+  return 'unknown';
+}
+
+export function parseMouseChunk(previousBuffer: string, chunk: string): MouseParseResult {
   const buffer = previousBuffer + chunk;
   if (!buffer) {
-    return { nextBuffer: '', scrollUpEvents: 0, scrollDownEvents: 0 };
+    return { nextBuffer: '', scrollUpEvents: 0, scrollDownEvents: 0, pointerEvents: [] };
   }
 
   let scrollUpEvents = 0;
   let scrollDownEvents = 0;
+  const pointerEvents: MousePointerEvent[] = [];
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
   MOUSE_REPORT_RE.lastIndex = 0;
   while ((match = MOUSE_REPORT_RE.exec(buffer)) !== null) {
     lastIndex = MOUSE_REPORT_RE.lastIndex;
-    const code = Number(match[1]);
+    const rawCode = Number(match[1]);
+    const code = normalizeMouseButtonCode(rawCode);
+    const x = Number(match[2]);
+    const y = Number(match[3]);
+    const suffix = match[4];
     if (code === 64) scrollUpEvents++;
     else if (code === 65) scrollDownEvents++;
+    else if (Number.isFinite(x) && Number.isFinite(y)) {
+      const baseButton = rawCode & 0b11;
+      const isMotion = (rawCode & 0b100000) !== 0;
+      pointerEvents.push({
+        kind: suffix === 'm' ? 'up' : isMotion ? 'drag' : 'down',
+        button: mouseButtonName(baseButton),
+        x,
+        y,
+      });
+    }
   }
 
   let nextBuffer = '';
@@ -55,5 +95,14 @@ export function parseMouseScrollChunk(previousBuffer: string, chunk: string): Mo
     nextBuffer = nextBuffer.slice(-MAX_MOUSE_BUFFER_CHARS);
   }
 
-  return { nextBuffer, scrollUpEvents, scrollDownEvents };
+  return { nextBuffer, scrollUpEvents, scrollDownEvents, pointerEvents };
+}
+
+export function parseMouseScrollChunk(previousBuffer: string, chunk: string): MouseScrollParseResult {
+  const parsed = parseMouseChunk(previousBuffer, chunk);
+  return {
+    nextBuffer: parsed.nextBuffer,
+    scrollUpEvents: parsed.scrollUpEvents,
+    scrollDownEvents: parsed.scrollDownEvents,
+  };
 }

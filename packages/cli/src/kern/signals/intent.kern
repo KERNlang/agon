@@ -78,6 +78,7 @@ const name=SLASH_COMMANDS type="SlashCommand[]"
       { cmd: '/nero',        desc: '                        — toggle Nero mode (adversarial devil\'s advocate)' },
       { cmd: '/btw',         desc: '<question>               — ask something while engines work (side-channel)' },
       { cmd: '/mcp',         desc: 'connect <name|url> | disconnect <name> | list — manage session MCP servers' },
+      { cmd: '/init',        desc: '                        — create AGON.md config wizard' },
       { cmd: '/create-skill', desc: '<name>                  — scaffold a new skill (.agon/skills/)' },
       { cmd: '/clear',       desc: '                        — reset session (saves chat, clears brain)' },
       { cmd: '/extensions',  desc: '                        — list installed extensions' },
@@ -391,6 +392,8 @@ fn name=parseSlashCommand params="input:string, commandRegistry?:any" returns=In
       case 'devil':
       case 'adversarial':
         return { type: 'nero' } as Intent;
+      case 'init':
+        return { type: 'init' as const, scope: rest || undefined } as unknown as Intent;
       case 'create-skill': {
         const skillName = rest.trim() || 'my-skill';
         return { type: 'create-skill' as const, skillName } as unknown as Intent;

@@ -117,6 +117,8 @@ union name=Intent discriminant=type
   variant name=mcp
     field name=action type="'connect'|'disconnect'|'list'"
     field name=server type=string optional=true
+  variant name=init
+    field name=scope type="string | undefined" optional=true
   variant name=create-skill
     field name=skillName type=string
   variant name=extensions

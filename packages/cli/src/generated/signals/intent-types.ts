@@ -57,10 +57,12 @@ export type Intent =
   | { type: 'exit' }
   | { type: 'auto'; input: string; taskClass: 'code' | 'question' | 'ambiguous' }
   | { type: 'mcp'; action: 'connect'|'disconnect'|'list'; server?: string }
+  | { type: 'init'; scope?: string | undefined }
   | { type: 'create-skill'; skillName: string }
   | { type: 'extensions' }
   | { type: 'extension-command'; commandName: string; args: string }
   | { type: 'unknown'; input: string };
+
 
 
 

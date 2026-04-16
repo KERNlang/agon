@@ -4,7 +4,8 @@ import { navigateHistory, resolveEscapeAction, shouldQueuePlanModeOnTab, tryGhos
 
 export interface KeyboardCtx {
   input: string;
-  key: { ctrl?:boolean, shift?:boolean, escape?:boolean, tab?:boolean, upArrow?:boolean, downArrow?:boolean };
+  key: { ctrl?:boolean, shift?:boolean, escape?:boolean, tab?:boolean, upArrow?:boolean, downArrow?:boolean, pageUp?:boolean, pageDown?:boolean, home?:boolean, end?:boolean };
+  textInputActive: boolean;
   modelPickerOpen: boolean;
   cesarPickerOpen: boolean;
   slashPickerOpen: boolean;
@@ -32,9 +33,13 @@ export type KeyboardAction =
   | { type: 'togglePlanQueued' }
   | { type: 'submit'; value: string }
   | { type: 'scroll'; delta: number }
+  | { type: 'scrollToTop' }
+  | { type: 'scrollToBottom' }
   | { type: 'toggleToolExpand' }
   | { type: 'toggleThinking' }
+  | { type: 'toggleSelectionMode' }
   | { type: 'openResults' }
+  | { type: 'copyTranscript' }
   | { type: 'closeSlash' }
   | { type: 'closeEnginePicker' }
   | { type: 'cancelQuestion' }
@@ -50,10 +55,22 @@ export type KeyboardAction =
  */
 export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
   const { input, key } = ctx;
+  const normalizedCtrlInput = key.ctrl
+    ? ({
+        '\x03': 'c',
+        '\x05': 'e',
+        '\x0c': 'l',
+        '\x12': 'r',
+        '\x14': 't',
+        '\x07': 'g',
+        '\x19': 'y',
+      } as Record<string, string>)[input] ?? input
+    : input;
+  const delegatedCtrlShortcuts = new Set(['e', 'j', 'l', 'r', 't', 'y']);
   
   // Model/cesar picker open: only Ctrl+C gets through
   if (ctx.modelPickerOpen || ctx.cesarPickerOpen) {
-    if (input === '\x03' || (key.ctrl && input === 'c')) return { type: 'exit' };
+    if (input === '\x03' || (key.ctrl && normalizedCtrlInput === 'c')) return { type: 'exit' };
     return { type: 'none' };
   }
   
@@ -69,6 +86,13 @@ export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
     return { type: 'swallow' };
   }
   
+  // When a child text input is focused, it owns the reserved Ctrl shortcuts.
+  // Otherwise App and the child can both react to the same keypress and
+  // toggle features twice (expand immediately collapses, etc.).
+  if (ctx.textInputActive && key.ctrl && delegatedCtrlShortcuts.has(normalizedCtrlInput)) {
+    return { type: 'none' };
+  }
+  
   // Tab: ghost-complete or queue plan mode
   if ((key.tab || input === '\t') && !ctx.slashPickerOpen && !ctx.enginePickerOpen && !ctx.questionState && !ctx.reviewEventOpen) {
     const ghost = tryGhostComplete(ctx.inputValue, ctx.commands, ctx.engineIds);
@@ -80,21 +104,32 @@ export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
   }
   
   // Ctrl+L: clear
-  if (key.ctrl && input === 'l') return { type: 'submit', value: '/clear' };
+  if (key.ctrl && normalizedCtrlInput === 'l') return { type: 'submit', value: '/clear' };
   
-  // Shift+Up/Down: scroll by 3 blocks. The dispatcher already clamps to
-  // the valid range, so the keyboard layer emits a constant delta.
+  // Shift+Up/Down: fine-grained scroll.
   if (key.shift && key.upArrow) return { type: 'scroll', delta: 3 };
   if (key.shift && key.downArrow) return { type: 'scroll', delta: -3 };
   
+  // Page navigation for long transcripts.
+  if (key.pageUp) return { type: 'scroll', delta: 12 };
+  if (key.pageDown) return { type: 'scroll', delta: -12 };
+  if (key.home) return { type: 'scrollToTop' };
+  if (key.end) return { type: 'scrollToBottom' };
+  
   // Ctrl+E: toggle tool output expansion
-  if ((key.ctrl && input === 'e') || input === '\x05') return { type: 'toggleToolExpand' };
+  if (key.ctrl && normalizedCtrlInput === 'e') return { type: 'toggleToolExpand' };
   
   // Ctrl+T: toggle thinking expansion
-  if ((key.ctrl && input === 't') || input === '\x14') return { type: 'toggleThinking' };
+  if (key.ctrl && normalizedCtrlInput === 't') return { type: 'toggleThinking' };
+  
+  // Ctrl+G: toggle mouse selection mode
+  if (key.ctrl && normalizedCtrlInput === 'g') return { type: 'toggleSelectionMode' };
   
   // Ctrl+R: open results pager
-  if (key.ctrl && input === 'r') return { type: 'openResults' };
+  if (key.ctrl && normalizedCtrlInput === 'r') return { type: 'openResults' };
+  
+  // Ctrl+Y: copy current transcript/results to clipboard
+  if (key.ctrl && normalizedCtrlInput === 'y') return { type: 'copyTranscript' };
   
   // Escape: delegate to resolveEscapeAction
   if (key.escape) {
@@ -132,7 +167,7 @@ export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
   }
   
   // Ctrl+C: cancel or exit
-  if (input === '\x03' || (key.ctrl && input === 'c')) return { type: 'cancelOrExit' };
+  if (input === '\x03' || (key.ctrl && normalizedCtrlInput === 'c')) return { type: 'cancelOrExit' };
   
   return { type: 'none' };
 }

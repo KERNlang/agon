@@ -56,7 +56,7 @@ export function AgonTip() {
   );
 }
 
-export function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd, cwd, branch, explorationMode, toolOutputExpanded, thinkingExpanded, isActive }: { cesarId:string; chatMessageCount:number; totalTokens:number; totalCostUsd:number; cwd:string; branch?:string; explorationMode?:boolean; toolOutputExpanded?:boolean; thinkingExpanded?:boolean; isActive?:boolean }) {
+export function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd, cwd, branch, explorationMode, toolOutputExpanded, thinkingExpanded, isActive, fullscreenEnabled, selectionMode }: { cesarId:string; chatMessageCount:number; totalTokens:number; totalCostUsd:number; cwd:string; branch?:string; explorationMode?:boolean; toolOutputExpanded?:boolean; thinkingExpanded?:boolean; isActive?:boolean; fullscreenEnabled?:boolean; selectionMode?:boolean }) {
   const cost = totalCostUsd > 0 ? `$${totalCostUsd.toFixed(2)}` : '';
   const msgs = chatMessageCount;
   const tokens = totalTokens;
@@ -84,6 +84,11 @@ export function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd
         {thinkingExpanded !== undefined && <Text dimColor>{' \u00b7 '}{thinkingExpanded ? 'thinking shown (' : 'thinking hidden ('}</Text>}
         {thinkingExpanded !== undefined && <Text color="#f59e0b">{'Ctrl+T'}</Text>}
         {thinkingExpanded !== undefined && <Text dimColor>{')'}</Text>}
+        {fullscreenEnabled !== undefined && <Text dimColor>{' \u00b7 '}{fullscreenEnabled ? (selectionMode ? 'select mode' : 'fullscreen') : 'native terminal'}</Text>}
+        <Text dimColor>{' \u00b7 copy ('}</Text>
+        <Text color="#f59e0b">{'Ctrl+Y'}</Text>
+        <Text dimColor>{')'}</Text>
+        {fullscreenEnabled ? <><Text dimColor>{' \u00b7 mouse select ('}</Text><Text color="#f59e0b">{'Ctrl+G'}</Text><Text dimColor>{')'}</Text></> : null}
         {isActive ? <Text dimColor>{' \u00b7 /btw ask'}</Text> : null}
       </Text>
     </Box>

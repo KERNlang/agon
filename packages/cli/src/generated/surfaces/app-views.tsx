@@ -4,9 +4,7 @@ import React from 'react';
 import { Box, Text } from 'ink';
 
 // ── Core ───────────────────────────────────────────────
-import { OutputBlockView, ToolCallGroup, DebateGroup, BidGroup, EngineProgressView, RenderedSegments, contentWidth, engineColor } from '../../components.js';
-
-import type { OutputBlock } from '../../components.js';
+import { EngineProgressView, RenderedSegments, contentWidth, engineColor, RichLineView, DiffLine, SyntaxLine, AnsiLine, GradientLine, BRAND } from '../../components.js';
 
 import type { EngineProgress } from '../../handlers/types.js';
 
@@ -32,32 +30,154 @@ const ChromeBar = React.memo(function ChromeBar({ mode, cwdLabel, engineCount, r
 });
 export { ChromeBar };
 
-const HistoryView = React.memo(function HistoryView({ visibleBlocks, groupedBlocks, mode, blocksAbove, blocksBelow, thinkingExpanded }: { visibleBlocks:OutputBlock[]; groupedBlocks:(OutputBlock | OutputBlock[])[] | null; mode:string; blocksAbove:number; blocksBelow:number; thinkingExpanded:boolean }) {
-  return (
-    <>
-  {(blocksAbove > 0 || blocksBelow > 0) && (
-    <Box paddingX={1}>
-      <Text dimColor>
-        {blocksAbove > 0 ? `\u2191 ${blocksAbove} block${blocksAbove > 1 ? 's' : ''} above` : ''}
-        {blocksAbove > 0 && blocksBelow > 0 ? '  \u00b7  ' : ''}
-        {blocksBelow > 0 ? `\u2193 ${blocksBelow} block${blocksBelow > 1 ? 's' : ''} below` : ''}
-        {' \u2014 mouse wheel or Shift+\u2191/\u2193'}
-      </Text>
+const TranscriptRowView = React.memo(function TranscriptRowView({ row }: { row:any }) {
+  const borderPrefix = row.borderColor ? <Text color={row.borderColor}>{'\u2502 '}</Text> : null;
+  const selectionRail = <Text color={row.selected ? '#60a5fa' : '#2b2b2b'}>{row.selected ? '\u258c' : ' '}</Text>;
+  const prefix = row.prefixText
+    ? row.prefixDimColor
+      ? <Text dimColor>{row.prefixText}</Text>
+      : <Text color={row.prefixColor}>{row.prefixText}</Text>
+    : null;
+  const wrap = (child: any) => (
+    <Box paddingLeft={row.paddingLeft ?? 0}>
+      {selectionRail}
+      {borderPrefix}
+      {child}
     </Box>
-  )}
-      {groupedBlocks === null
-        ? visibleBlocks.map((block: OutputBlock) => (<OutputBlockView key={block.id} event={block.event} mode={mode} toolOutputExpanded={true} thinkingExpanded={thinkingExpanded} />))
-        : groupedBlocks.map((item: OutputBlock | OutputBlock[]) => {
-            if (Array.isArray(item)) {
-              const firstType = item[0].event.type;
-              if (item.length === 1) return <OutputBlockView key={item[0].id} event={item[0].event} mode={mode} toolOutputExpanded={false} thinkingExpanded={thinkingExpanded} />;
-              if (firstType === 'debate-round') return <DebateGroup key={`dg-${item[0].id}`} blocks={item} />;
-              if (firstType === 'kern-draft') return <BidGroup key={`bg-${item[0].id}`} blocks={item} />;
-              return <ToolCallGroup key={`tg-${item[0].id}`} blocks={item} />;
-            }
-            return <OutputBlockView key={item.id} event={item.event} mode={mode} toolOutputExpanded={false} thinkingExpanded={thinkingExpanded} />;
-          })}
-    </>
+  );
+  const selectedText = row.selected ? renderSelectedText(
+    row.selectionText ?? '',
+    row.selectionStart ?? 0,
+    row.selectionEnd ?? String(row.selectionText ?? '').length,
+    row.key,
+  ) : null;
+  
+  if (row.kind === 'spacer') {
+    return (
+      <Box paddingLeft={row.paddingLeft ?? 0}>
+        {selectionRail}
+        <Text>{' '}</Text>
+      </Box>
+    );
+  }
+  
+  if (row.kind === 'gradient') {
+    if (selectedText) {
+      return (
+        <Box paddingLeft={row.paddingLeft ?? 0}>
+          {selectionRail}
+          {selectedText}
+        </Box>
+      );
+    }
+    return (
+      <Box paddingLeft={row.paddingLeft ?? 0}>
+        {selectionRail}
+        <GradientLine text={row.text} colors={row.colors ?? BRAND} />
+      </Box>
+    );
+  }
+  
+  if (row.kind === 'rich') {
+    if (selectedText) {
+      return (
+        <Box paddingLeft={row.paddingLeft ?? 0}>
+          {selectionRail}
+          {borderPrefix}
+          {selectedText}
+        </Box>
+      );
+    }
+    return (
+      <Box paddingLeft={row.paddingLeft ?? 0}>
+        {selectionRail}
+        <RichLineView line={row.richLine} borderColor={row.borderColor || undefined} />
+      </Box>
+    );
+  }
+  
+  if (row.kind === 'segments') {
+    if (selectedText) {
+      return wrap(selectedText);
+    }
+    return wrap(
+      <Text>
+        {(row.segments ?? []).map((segment: any, index: number) => {
+          if (!segment || !segment.text) return null;
+          return (
+            <Text
+              key={`${row.key}-segment-${index}`}
+              color={segment.color}
+              bold={segment.bold}
+              dimColor={segment.dimColor}
+              italic={segment.italic}
+              backgroundColor={segment.backgroundColor}
+            >
+              {segment.text}
+            </Text>
+          );
+        })}
+      </Text>,
+    );
+  }
+  
+  if (row.kind === 'ansi') {
+    if (selectedText) {
+      return wrap(selectedText);
+    }
+    return wrap(
+      <>
+        {prefix}
+        <AnsiLine text={row.text} maxWidth={row.maxWidth} fallbackDim={row.fallbackDim} />
+      </>,
+    );
+  }
+  
+  if (row.kind === 'diff') {
+    if (selectedText) {
+      return wrap(selectedText);
+    }
+    return wrap(
+      <>
+        {prefix}
+        <DiffLine line={row.text} maxWidth={row.maxWidth} />
+      </>,
+    );
+  }
+  
+  if (row.kind === 'syntax') {
+    if (selectedText) {
+      return wrap(selectedText);
+    }
+    return wrap(
+      <>
+        {prefix}
+        <SyntaxLine line={row.text} maxWidth={row.maxWidth} />
+      </>,
+    );
+  }
+  
+  return null;
+});
+export { TranscriptRowView };
+
+const HistoryView = React.memo(function HistoryView({ visibleRows, rowsAbove, rowsBelow, stickToBottom }: { visibleRows:any[]; rowsAbove:number; rowsBelow:number; stickToBottom:boolean|undefined }) {
+  return (
+    <Box flexDirection="column" flexGrow={1} justifyContent={stickToBottom ? 'flex-end' : 'flex-start'}>
+      {(rowsAbove > 0 || rowsBelow > 0) && (
+        <Box paddingX={1} flexShrink={0}>
+          <Text dimColor>
+            {rowsAbove > 0 ? `\u2191 ${rowsAbove} line${rowsAbove > 1 ? 's' : ''} above` : ''}
+            {rowsAbove > 0 && rowsBelow > 0 ? '  \u00b7  ' : ''}
+            {rowsBelow > 0 ? `\u2193 ${rowsBelow} line${rowsBelow > 1 ? 's' : ''} below` : ''}
+            {' \u2014 mouse wheel or Shift+\u2191/\u2193'}
+          </Text>
+        </Box>
+      )}
+      {visibleRows.map((row: any) => (
+        <TranscriptRowView key={row.key} row={row} />
+      ))}
+    </Box>
   );
 });
 export { HistoryView };
@@ -95,3 +215,19 @@ const StreamingView = React.memo(function StreamingView({ streamingText, mode, l
   );
 });
 export { StreamingView };
+
+export function renderSelectedText(text: string, start: number, end: number, keyPrefix: string): any {
+  const safeText = String(text ?? '');
+  const startIndex = Math.max(0, Math.min(safeText.length, Number.isFinite(start) ? start : 0));
+  const endIndex = Math.max(startIndex, Math.min(safeText.length, Number.isFinite(end) ? end : safeText.length));
+  const before = safeText.slice(0, startIndex);
+  const middle = safeText.slice(startIndex, endIndex);
+  const after = safeText.slice(endIndex);
+  return (
+    <Text>
+      {before ? <Text key={`${keyPrefix}-before`}>{before}</Text> : null}
+      {middle ? <Text key={`${keyPrefix}-middle`} backgroundColor="#2563eb" color="white">{middle}</Text> : null}
+      {after ? <Text key={`${keyPrefix}-after`}>{after}</Text> : null}
+    </Text>
+  );
+}

@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Box, Text, render } from 'ink';
 
 // ── Core ───────────────────────────────────────────────
-import { EngineRegistry, loadConfig, ensureAgonHome, ensureCurrentWorkspace, startChatSession, getRatings, getActiveWorkspace, RUNS_DIR, extractImagesFromInput, resolveWorkingDir, currentBranch, configSet, createCesarMemory, modelEntryToEngineDef, appendMessage, getAgonHome, tracker } from '@agon/core';
+import { EngineRegistry, loadConfig, ensureAgonHome, ensureCurrentWorkspace, startChatSession, getRatings, getActiveWorkspace, RUNS_DIR, extractImagesFromInput, resolveWorkingDir, currentBranch, configSet, createCesarMemory, modelEntryToEngineDef, appendMessage, getAgonHome, tracker, copyToClipboard } from '@agon/core';
 
 import type { Plan, ChatSession, Skill, PersistentSession, ImageAttachment } from '@agon/core';
 
@@ -26,7 +26,7 @@ import { ENGINE_COLORS } from '../blocks/output-format.js';
 
 import { icons } from '../signals/icons.js';
 
-import { cleanEngineOutput } from '../blocks/markdown.js';
+import { cleanEngineOutput, parseMarkdownBlocks, truncateCodeLine } from '../blocks/markdown.js';
 
 import type { OutputEvent, HandlerContext } from '../../handlers/types.js';
 
@@ -56,7 +56,7 @@ import { handleReviewAction } from '../blocks/review.js';
 
 import { saveCesarConversationSnapshot } from '../cesar/session.js';
 
-import { SpinnerBlock, StatusBar, CesarStatusStrip, EnginePicker, ModelPicker, ReviewBlock, BackgroundJobRail, CesarPicker, ComposerView, AgentProgressView } from '../../components.js';
+import { SpinnerBlock, StatusBar, CesarStatusStrip, EnginePicker, ModelPicker, ReviewBlock, BackgroundJobRail, CesarPicker, ComposerView, AgentProgressView, contentWidth, color256toHex, engineColor, CODE_RAIL, CODE_RAIL_COLOR, MAX_CODE_LINES, LOGO_LINES, VERSION, BRAND } from '../../components.js';
 
 import { ChromeBar, HistoryView, StreamingView } from './app-views.js';
 
@@ -80,9 +80,11 @@ import { formatSessionResults, formatChatTranscript } from '../blocks/results-fo
 
 import { loadSkills } from '@agon/core';
 
-import { parseMouseScrollChunk, isTerminalFocusReport } from '../../input-utils.js';
+import { parseMouseChunk, isTerminalFocusReport } from '../../input-utils.js';
 
 import { useStableInput } from '../../stable-input.js';
+
+import { parseProseToRichLines } from '../blocks/rich-text.js';
 
 export function App() {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
@@ -92,7 +94,7 @@ export function App() {
 
   const [replState, _setReplStateRaw] = useState<ReplStateState>('idle');
   const setReplState = useMemo(() => __inkSafe(_setReplStateRaw), [_setReplStateRaw]);
-  const [outputBlocks, _setOutputBlocksRaw] = useState<OutputBlock[]>([]);
+  const [outputBlocks, _setOutputBlocksRaw] = useState<OutputBlock[]>(() => { const cfg = loadConfig(); const saved = cfg.forgeEnabledEngines; return [buildDashboardBlock(saved && saved.length > 0 ? saved : null)]; });
   const setOutputBlocks = useMemo(() => __inkSafe(_setOutputBlocksRaw), [_setOutputBlocksRaw]);
   const [inputValue, setInputValue] = useState<string>('');
   const [inputHistory, _setInputHistoryRaw] = useState<string[]>([]);
@@ -213,7 +215,7 @@ export function App() {
   const setCesarMemory = useMemo(() => __inkSafe(_setCesarMemoryRaw), [_setCesarMemoryRaw]);
   const [sessionMcpServers, _setSessionMcpServersRaw] = useState<Array<Record<string,unknown>>>([]);
   const setSessionMcpServers = useMemo(() => __inkSafe(_setSessionMcpServersRaw), [_setSessionMcpServersRaw]);
-  const [registry, _setRegistryRaw] = useState<EngineRegistry>(() => (() => { const reg = new EngineRegistry(); const engDir = join(dirname(fileURLToPath(import.meta.url)), '../../../engines'); reg.load(engDir); return reg; })());
+  const [registry, _setRegistryRaw] = useState<EngineRegistry>(createInitialRegistry());
   const setRegistry = useMemo(() => __inkSafe(_setRegistryRaw), [_setRegistryRaw]);
   const [adapter, _setAdapterRaw] = useState<EngineAdapter>(createCliAdapter(registry));
   const setAdapter = useMemo(() => __inkSafe(_setAdapterRaw), [_setAdapterRaw]);
@@ -281,6 +283,10 @@ export function App() {
   }, []);
   const [scrollOffset, _setScrollOffsetRaw] = useState<number>(0);
   const setScrollOffset = useMemo(() => __inkSafe(_setScrollOffsetRaw), [_setScrollOffsetRaw]);
+  const [selectionMode, _setSelectionModeRaw] = useState<boolean>(false);
+  const setSelectionMode = useMemo(() => __inkSafe(_setSelectionModeRaw), [_setSelectionModeRaw]);
+  const [mouseSelection, _setMouseSelectionRaw] = useState<{ anchorRow: number | null; anchorCol: number | null; focusRow: number | null; focusCol: number | null; active: boolean; moved: boolean }>({ anchorRow: null, anchorCol: null, focusRow: null, focusCol: null, active: false, moved: false });
+  const setMouseSelection = useMemo(() => __inkSafe(_setMouseSelectionRaw), [_setMouseSelectionRaw]);
   const [registryVersion, _setRegistryVersionRaw] = useState<number>(0);
   const setRegistryVersion = useMemo(() => __inkSafe(_setRegistryVersionRaw), [_setRegistryVersionRaw]);
   const [configVersion, _setConfigVersionRaw] = useState<number>(0);
@@ -301,8 +307,11 @@ export function App() {
   const blockArchivePathRef = useRef<string>(makeBlockArchivePath(Date.now()));
   const nestedCtrlShortcutRef = useRef<{ key: string; at: number }>({ key: '', at: 0 });
   const scrollOffsetRef = useRef<number>(0);
-  const outputBlockCountRef = useRef<number>(0);
+  const displayRowCountRef = useRef<number>(0);
   const mouseInputBufferRef = useRef<string>('');
+  const wheelDeltaRef = useRef<number>(0);
+  const wheelFlushTimerRef = useRef<ReturnType<typeof setTimeout>|null>(null);
+  const mouseSelectionRef = useRef<{ anchorRow: number | null; anchorCol: number | null; focusRow: number | null; focusCol: number | null; active: boolean; moved: boolean }>({ anchorRow: null, anchorCol: null, focusRow: null, focusCol: null, active: false, moved: false });
   const lastTerminalInputAtRef = useRef<number>(Date.now());
 
   const allSlashCommands = useMemo(() => {
@@ -367,60 +376,125 @@ export function App() {
           return { engineId: activeStream.engineId, line: lines[lines.length - 1].trim() };
   }, [activeStream]);
 
+  const overlayActive = useMemo(() => {
+          return enginePickerOpen || modelPickerOpen || cesarPickerOpen || !!reviewEvent;
+  }, [enginePickerOpen, modelPickerOpen, cesarPickerOpen, reviewEvent]);
+
+  const startupOnly = useMemo(() => {
+          return outputBlocks.length === 1
+            && outputBlocks[0]?.event?.type === 'dashboard'
+            && !activeStream
+            && !liveProgress
+            && Object.keys(agentProgress).length === 0;
+  }, [outputBlocks,activeStream,liveProgress,agentProgress]);
+
+  const historyBlocks = useMemo(() => {
+          return historyBlocksForTranscript(outputBlocks);
+  }, [outputBlocks]);
+
+  const displayBlocks = useMemo(() => {
+          return startupOnly ? outputBlocks : historyBlocks;
+  }, [startupOnly,outputBlocks,historyBlocks]);
+
+  const livePaneVisible = useMemo(() => {
+          if (startupOnly) return false;
+          return scrollOffset === 0 && (!!activeStream || !!liveProgress || Object.keys(agentProgress).length > 0);
+  }, [scrollOffset, activeStream, liveProgress, agentProgress, startupOnly]);
+
+  const currentVisibleRowBudget = useMemo(() => {
+          const pinnedLiveRows = livePaneVisible
+            ? estimatePinnedLiveRows(mode, !!activeStream, !!liveProgress, Object.keys(agentProgress).length)
+            : 0;
+          const viewportRows = Math.max(1, termHeight - pinnedLiveRows);
+          return estimateVisibleBlockBudget(viewportRows, mode, overlayActive);
+  }, [termHeight, mode, overlayActive, livePaneVisible, activeStream, liveProgress, agentProgress]);
+
+  const displayRows = useMemo(() => {
+          return buildTranscriptRows(displayBlocks, mode, toolOutputExpanded, thinkingExpanded);
+  }, [displayBlocks, mode, toolOutputExpanded, thinkingExpanded]);
+
+  const totalDisplayRows = useMemo(() => {
+          return displayRows.length;
+  }, [displayRows]);
+
+  const maxScrollOffset = useMemo(() => {
+          return maxScrollOffsetForRowCount(totalDisplayRows, currentVisibleRowBudget);
+  }, [totalDisplayRows, currentVisibleRowBudget]);
+
+  const selectedRowRange = useMemo(() => {
+          const range = normalizeTextSelection(
+            mouseSelection.anchorRow,
+            mouseSelection.anchorCol,
+            mouseSelection.focusRow,
+            mouseSelection.focusCol,
+          );
+          return range ? { start: range.startRow, end: range.endRow } : null;
+  }, [mouseSelection]);
+
+  const selectedTextRange = useMemo(() => {
+          return normalizeTextSelection(
+            mouseSelection.anchorRow,
+            mouseSelection.anchorCol,
+            mouseSelection.focusRow,
+            mouseSelection.focusCol,
+          );
+  }, [mouseSelection]);
+
   const visibleWindow = useMemo(() => {
-          const overlayActive = enginePickerOpen || modelPickerOpen || cesarPickerOpen || !!reviewEvent;
-          const blockBudget = estimateVisibleBlockBudget(termHeight, mode, overlayActive);
-          const end = Math.max(0, outputBlocks.length - scrollOffset);
-          const start = Math.max(0, end - blockBudget);
-          return {
-            blocksAbove: start,
-            blocksBelow: Math.max(0, outputBlocks.length - end),
-            visible: outputBlocks.slice(start, end),
+          const decorateVisibleRows = (rows: any[], startIndex: number) => {
+            const range = selectedRowRange;
+            const textRange = selectedTextRange;
+            return rows.map((row: any, index: number) => {
+              const rowIndex = startIndex + index;
+              if (!range || rowIndex < range.start || rowIndex > range.end) return row;
+              const selectionText = transcriptRowToPlainText(row);
+              const selectionStart = textRange && rowIndex === textRange.startRow ? textRange.startCol : 0;
+              const selectionEnd = textRange && rowIndex === textRange.endRow ? textRange.endCol : selectionText.length;
+              return {
+                ...row,
+                selected: true,
+                selectionText,
+                selectionStart,
+                selectionEnd,
+              };
+            });
           };
-  }, [outputBlocks, scrollOffset, termHeight, mode, enginePickerOpen, modelPickerOpen, cesarPickerOpen, reviewEvent]);
-
-  const visibleBlocks = useMemo(() => {
-          return visibleWindow.visible;
-  }, [visibleWindow]);
-
-  const groupedBlocks = useMemo(() => {
-          if (toolOutputExpanded) return null;
-          const minorTypes = new Set(['info', 'warning', 'success', 'separator', 'thinking-chunk', 'streaming-chunk', 'confidence-update', 'spinner-update', 'spinner-start', 'spinner-stop', 'progress-update', 'progress-clear']);
-          const groups: (OutputBlock | OutputBlock[])[] = [];
-          let idx = 0;
-          while (idx < visibleBlocks.length) {
-            const t = visibleBlocks[idx].event.type;
-            if (t === 'tool-call') {
-              if (isMutatingToolCall(visibleBlocks[idx].event)) {
-                groups.push(visibleBlocks[idx]);
-                idx++;
-                continue;
-              }
-              const group: OutputBlock[] = [];
-              while (idx < visibleBlocks.length) {
-                const tt = visibleBlocks[idx].event.type;
-                if (tt === 'tool-call' && !isMutatingToolCall(visibleBlocks[idx].event)) { group.push(visibleBlocks[idx]); idx++; }
-                else if (minorTypes.has(tt) && idx + 1 < visibleBlocks.length && visibleBlocks[idx + 1].event.type === 'tool-call') { idx++; }
-                else break;
-              }
-              groups.push(group);
-            } else if (t === 'debate-round') {
-              const group: OutputBlock[] = [];
-              const round = (visibleBlocks[idx].event as any).round;
-              while (idx < visibleBlocks.length && visibleBlocks[idx].event.type === 'debate-round' && (visibleBlocks[idx].event as any).round === round) {
-                group.push(visibleBlocks[idx]); idx++;
-              }
-              groups.push(group);
-            } else if (t === 'kern-draft') {
-              const group: OutputBlock[] = [];
-              while (idx < visibleBlocks.length && visibleBlocks[idx].event.type === 'kern-draft') {
-                group.push(visibleBlocks[idx]); idx++;
-              }
-              groups.push(group);
-            } else { groups.push(visibleBlocks[idx]); idx++; }
+          
+          if (startupOnly) {
+            const start = clampNumber(scrollOffset, 0, maxScrollOffset);
+            const end = Math.min(displayRows.length, start + currentVisibleRowBudget);
+            const visibleRows = decorateVisibleRows(displayRows.slice(start, end), start);
+            return {
+              startIndex: start,
+              endIndex: end,
+              rowsAbove: 0,
+              rowsBelow: Math.max(0, displayRows.length - end),
+              visible: visibleRows,
+            };
           }
-          return groups;
-  }, [visibleBlocks, toolOutputExpanded]);
+          
+          const end = Math.max(0, displayRows.length - Math.max(0, scrollOffset));
+          const start = Math.max(0, end - currentVisibleRowBudget);
+          const visibleRows = decorateVisibleRows(displayRows.slice(start, end), start);
+          return {
+            startIndex: start,
+            endIndex: end,
+            rowsAbove: start,
+            rowsBelow: Math.max(0, displayRows.length - end),
+            visible: visibleRows,
+          };
+  }, [displayRows, scrollOffset, currentVisibleRowBudget, selectedRowRange, selectedTextRange, startupOnly, maxScrollOffset]);
+
+  const historyViewportTop = useMemo(() => {
+          return transcriptViewportTopLine(
+            mode,
+            runningJobs.length > 0,
+            currentVisibleRowBudget,
+            visibleWindow.visible.length,
+            visibleWindow.rowsAbove > 0 || visibleWindow.rowsBelow > 0,
+            !startupOnly && scrollOffset === 0,
+          );
+  }, [mode, runningJobs, currentVisibleRowBudget, visibleWindow, startupOnly, scrollOffset]);
 
   const outputActions = useMemo(() => {
           return {
@@ -839,6 +913,68 @@ export function App() {
     }
   }, [dispatch,mode,chatSession]);
 
+  const copyCurrentTranscript = useCallback(() => {
+    const selectedContent = transcriptRowsToPlainText(
+      displayRows,
+      mouseSelection.anchorRow,
+      mouseSelection.anchorCol,
+      mouseSelection.focusRow,
+      mouseSelection.focusCol,
+    );
+    if (selectedContent) {
+      try {
+        copyToClipboard(selectedContent);
+        const range = normalizeTextSelection(
+          mouseSelection.anchorRow,
+          mouseSelection.anchorCol,
+          mouseSelection.focusRow,
+          mouseSelection.focusCol,
+        );
+        const lineCount = range ? range.endRow - range.startRow + 1 : 0;
+        dispatch({
+          type: 'success',
+          message: `Copied ${lineCount} selected line${lineCount === 1 ? '' : 's'} to clipboard`,
+        } as any);
+      } catch (err) {
+        dispatch({ type: 'error', message: `Copy failed: ${err instanceof Error ? err.message : String(err)}` } as any);
+      }
+      return;
+    }
+    
+    let content = '';
+    if (mode === 'chat') {
+      if (chatSession.messages.length === 0) {
+        dispatch({ type: 'info', message: 'No chat messages yet.' } as any);
+        return;
+      }
+      content = formatChatTranscript(chatSession);
+    } else {
+      if (!sessionResultStore.hasResults()) {
+        dispatch({ type: 'info', message: 'No results yet — run /brainstorm, /campfire, /tribunal, or /forge first' } as any);
+        return;
+      }
+      content = formatSessionResults(sessionResultStore.getResults());
+    }
+    
+    try {
+      copyToClipboard(content);
+      dispatch({ type: 'success', message: mode === 'chat' ? 'Chat transcript copied to clipboard' : 'Results copied to clipboard' } as any);
+    } catch (err) {
+      dispatch({ type: 'error', message: `Copy failed: ${err instanceof Error ? err.message : String(err)}` } as any);
+    }
+  }, [dispatch,mode,chatSession,displayRows,mouseSelection]);
+
+  const toggleSelectionMode = useCallback(() => {
+    const next = !selectionMode;
+    setSelectionMode(next);
+    dispatch({
+      type: 'info',
+      message: next
+        ? 'Native selection mode on — mouse capture off. Use the terminal to select/copy. Press Ctrl+G to resume app scroll.'
+        : 'Selection mode off — app scroll restored.',
+    } as any);
+  }, [selectionMode,dispatch]);
+
   const handleSlashSelect = useCallback((cmd:string) => {
     setPlanModeQueued(false);
     setSlashPickerOpen(false);
@@ -853,12 +989,42 @@ export function App() {
     if (questionState) { questionState.resolve(answer); setQuestionState(null); setQuestionAnswer(''); }
   }, [questionState]);
 
+  const handleCancelOrExit = useCallback(() => {
+    if (questionState) { questionState.resolve(''); setQuestionState(null); setQuestionAnswer(''); }
+    if (replState !== 'idle') {
+      interruptActiveRun(activeAbortRef.current ? 'Cancelled.' : 'Interrupted.', false);
+      return;
+    }
+    
+    const now = Date.now();
+    if (inputValue) {
+      _lastSigintAt.value = now;
+      setInputValue('');
+      dispatch({ type: 'info', message: 'Input cleared. Press Ctrl+C again to exit.' } as any);
+      return;
+    }
+    
+    if (now - _lastSigintAt.value < 1200) {
+      process.exit(0);
+    }
+    
+    _lastSigintAt.value = now;
+    dispatch({ type: 'info', message: 'Press Ctrl+C again to exit.' } as any);
+  }, [questionState,replState,inputValue,dispatch]);
+
   const handleComposerCtrlShortcut = useCallback((shortcut:string) => {
     nestedCtrlShortcutRef.current = { key: shortcut, at: Date.now() };
     switch (shortcut) {
+      case 'c':
+        ctrlKeyHandledRef.current = true;
+        handleCancelOrExit();
+        return;
+      case 'y':
+        ctrlKeyHandledRef.current = true;
+        copyCurrentTranscript();
+        return;
       case 'e':
         ctrlKeyHandledRef.current = true;
-        setScrollOffset(0);
         setToolOutputExpanded((prev: boolean) => !prev);
         return;
       case 't':
@@ -880,7 +1046,7 @@ export function App() {
       default:
         return;
     }
-  }, []);
+  }, [handleCancelOrExit,handleSubmit,openResultsPager,copyCurrentTranscript]);
 
   const handleKeyboardInput = useCallback((input:string,key:any) => {
     if (isTerminalFocusReport(input)) return;
@@ -909,6 +1075,7 @@ export function App() {
     
     const action = resolveKeyboardInput({
       input, key,
+      textInputActive: !modelPickerOpen && !cesarPickerOpen && !enginePickerOpen && !reviewEvent && !slashPickerOpen && (!questionState || !questionState.choices),
       modelPickerOpen, cesarPickerOpen, slashPickerOpen, enginePickerOpen,
       reviewEventOpen: !!reviewEvent,
       questionState, replState, inputValue, inputHistory, historyIndex,
@@ -937,19 +1104,32 @@ export function App() {
         handleSubmit(action.value); return;
       case 'scroll':
         setScrollOffset((prev: number) => {
-          const max = maxScrollOffsetForBlockCount(outputBlocks.length);
-          return action.delta > 0 ? Math.min(prev + action.delta, max) : Math.max(0, prev + action.delta);
+          if (startupOnly) {
+            return action.delta > 0
+              ? Math.max(0, prev - action.delta)
+              : Math.min(maxScrollOffset, prev - action.delta);
+          }
+          return action.delta > 0 ? Math.min(prev + action.delta, maxScrollOffset) : Math.max(0, prev + action.delta);
         });
+        return;
+      case 'scrollToTop':
+        setScrollOffset(startupOnly ? 0 : maxScrollOffset);
+        return;
+      case 'scrollToBottom':
+        setScrollOffset(startupOnly ? maxScrollOffset : 0);
         return;
       case 'toggleToolExpand':
         ctrlKeyHandledRef.current = true;
-        setScrollOffset(0);
         setToolOutputExpanded((prev: boolean) => !prev); return;
       case 'toggleThinking':
         ctrlKeyHandledRef.current = true;
         setThinkingExpanded((prev: boolean) => !prev); return;
+      case 'toggleSelectionMode':
+        toggleSelectionMode(); return;
       case 'openResults':
         openResultsPager(); return;
+      case 'copyTranscript':
+        copyCurrentTranscript(); return;
       case 'unqueuePlan':
         setPlanModeQueued(false); return;
       case 'closeSlash':
@@ -971,26 +1151,10 @@ export function App() {
         setInputValue(action.value);
         return;
       case 'cancelOrExit':
-        if (questionState) { questionState.resolve(''); setQuestionState(null); setQuestionAnswer(''); }
-        if (replState !== 'idle') {
-          interruptActiveRun(activeAbortRef.current ? 'Cancelled.' : 'Interrupted.', false);
-        } else {
-          const now = Date.now();
-          if (inputValue) {
-            _lastSigintAt.value = now;
-            setInputValue('');
-            dispatch({ type: 'info', message: 'Input cleared. Press Ctrl+C again to exit.' } as any);
-            return;
-          }
-          if (now - _lastSigintAt.value < 1200) {
-            process.exit(0);
-          }
-          _lastSigintAt.value = now;
-          dispatch({ type: 'info', message: 'Press Ctrl+C again to exit.' } as any);
-        }
+        handleCancelOrExit();
         return;
     }
-  }, [modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,activePlan,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openResultsPager]);
+  }, [modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,activePlan,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openResultsPager,copyCurrentTranscript,toggleSelectionMode,maxScrollOffset,startupOnly]);
 
   useEffect(() => {
     initExtensions(workspacePath, commandRegistry, registry, eventBus).then(({ extensions, skills: extSkills, systemPromptFragments }) => {
@@ -1011,42 +1175,196 @@ export function App() {
   }, [scrollOffset]);
 
   useEffect(() => {
-    const prev = outputBlockCountRef.current;
-    const next = outputBlocks.length;
-    outputBlockCountRef.current = next;
-    if (next === prev) return;
-    const max = maxScrollOffsetForBlockCount(next);
-    if (next > prev && scrollOffsetRef.current > 0) {
-      setScrollOffset((s: number) => Math.min(s + (next - prev), max));
-    } else if (scrollOffsetRef.current > max) {
-      setScrollOffset(max);
+    mouseSelectionRef.current = mouseSelection;
+  }, [mouseSelection]);
+
+  useEffect(() => {
+    if (!selectionMode && !startupOnly) return;
+    if (
+      mouseSelectionRef.current.anchorRow === null
+      && mouseSelectionRef.current.anchorCol === null
+      && mouseSelectionRef.current.focusRow === null
+      && mouseSelectionRef.current.focusCol === null
+      && mouseSelectionRef.current.active === false
+      && mouseSelectionRef.current.moved === false
+    ) {
+      return;
     }
-  }, [outputBlocks]);
+    mouseSelectionRef.current = { anchorRow: null, anchorCol: null, focusRow: null, focusCol: null, active: false, moved: false };
+    setMouseSelection({ anchorRow: null, anchorCol: null, focusRow: null, focusCol: null, active: false, moved: false });
+  }, [selectionMode,startupOnly]);
+
+  useEffect(() => {
+    const prev = displayRowCountRef.current;
+    const next = totalDisplayRows;
+    displayRowCountRef.current = next;
+    if (next === prev) return;
+    if (next > prev && scrollOffsetRef.current > 0) {
+      setScrollOffset((s: number) => Math.min(s + (next - prev), maxScrollOffset));
+    } else if (scrollOffsetRef.current > maxScrollOffset) {
+      setScrollOffset(maxScrollOffset);
+    }
+  }, [totalDisplayRows, maxScrollOffset]);
 
   useEffect(() => {
     if (!process.stdin.isTTY || !process.stdout.isTTY) return;
-    if (!isMouseTrackingEnabled()) return;
+    const mouseTrackingActive = isMouseTrackingEnabled() && !selectionMode && !startupOnly;
+    if (!mouseTrackingActive) return;
+    const indicatorRows = visibleWindow.rowsAbove > 0 || visibleWindow.rowsBelow > 0 ? 1 : 0;
+    const visibleRowCount = visibleWindow.visible.length;
+    const firstVisibleRow = visibleWindow.startIndex;
+    const firstRenderableLine = historyViewportTop + indicatorRows;
+    
+    const setSelection = (next: { anchorRow: number | null; anchorCol: number | null; focusRow: number | null; focusCol: number | null; active: boolean; moved: boolean }) => {
+      mouseSelectionRef.current = next;
+      setMouseSelection(next);
+    };
+    
+    const clearSelection = () => {
+      if (
+        mouseSelectionRef.current.anchorRow === null
+        && mouseSelectionRef.current.anchorCol === null
+        && mouseSelectionRef.current.focusRow === null
+        && mouseSelectionRef.current.focusCol === null
+        && mouseSelectionRef.current.active === false
+        && mouseSelectionRef.current.moved === false
+      ) {
+        return;
+      }
+      setSelection({ anchorRow: null, anchorCol: null, focusRow: null, focusCol: null, active: false, moved: false });
+    };
+    
+    const isWithinTranscriptRows = (mouseY: number) => {
+      return visibleRowCount > 0 && mouseY >= firstRenderableLine && mouseY < firstRenderableLine + visibleRowCount;
+    };
+    
+    const resolvePointerRow = (mouseY: number) => {
+      return resolveTranscriptRowFromMouse(mouseY, firstRenderableLine, firstVisibleRow, visibleRowCount);
+    };
+    
+    const resolvePointerColumn = (mouseX: number, rowIndex: number | null) => {
+      if (rowIndex === null) return null;
+      const row = displayRows[rowIndex];
+      if (!row) return null;
+      return resolveTranscriptColumnFromMouse(mouseX, row);
+    };
+    
+    const copySelection = (
+      anchorRow: number | null,
+      anchorCol: number | null,
+      focusRow: number | null,
+      focusCol: number | null,
+    ) => {
+      const content = transcriptRowsToPlainText(displayRows, anchorRow, anchorCol, focusRow, focusCol);
+      if (!content) return;
+      try {
+        copyToClipboard(content);
+        const range = normalizeTextSelection(anchorRow, anchorCol, focusRow, focusCol);
+        const lineCount = range ? range.endRow - range.startRow + 1 : 0;
+        dispatch({
+          type: 'success',
+          message: `Copied ${lineCount} transcript line${lineCount === 1 ? '' : 's'} to clipboard`,
+        } as any);
+      } catch (err) {
+        dispatch({ type: 'error', message: `Copy failed: ${err instanceof Error ? err.message : String(err)}` } as any);
+      }
+    };
+    
+    const flushWheelDelta = () => {
+      wheelFlushTimerRef.current = null;
+      const pending = wheelDeltaRef.current;
+      if (pending === 0) return;
+      const { step, remaining } = nextWheelAnimationStep(pending);
+      wheelDeltaRef.current = remaining;
+      if (step === 0) return;
+      clearSelection();
+      const max = maxScrollOffset;
+      setScrollOffset((prev: number) => {
+        if (step > 0) return Math.min(prev + step, max);
+        return Math.max(0, prev + step);
+      });
+      if (wheelDeltaRef.current !== 0) scheduleWheelFlush();
+    };
+    
+    const scheduleWheelFlush = () => {
+      if (wheelFlushTimerRef.current) return;
+      wheelFlushTimerRef.current = setTimeout(flushWheelDelta, 10);
+    };
     
     const onData = (buf: Buffer | string) => {
       const chunk = typeof buf === 'string' ? buf : buf.toString('utf8');
-      const parsed = parseMouseScrollChunk(mouseInputBufferRef.current, chunk);
+      const parsed = parseMouseChunk(mouseInputBufferRef.current, chunk);
       mouseInputBufferRef.current = parsed.nextBuffer;
-      const max = maxScrollOffsetForBlockCount(outputBlockCountRef.current);
-    
-      if (parsed.scrollUpEvents > 0) {
-        setScrollOffset((prev: number) => Math.min(prev + (parsed.scrollUpEvents * 3), max));
+      const delta = parsed.scrollUpEvents - parsed.scrollDownEvents;
+      if (delta !== 0) {
+        wheelDeltaRef.current += delta;
+        scheduleWheelFlush();
       }
-      if (parsed.scrollDownEvents > 0) {
-        setScrollOffset((prev: number) => Math.max(0, prev - (parsed.scrollDownEvents * 3)));
+      for (const event of parsed.pointerEvents) {
+        if (event.kind === 'down') {
+          if (event.button !== 'left') continue;
+          if (!isWithinTranscriptRows(event.y)) {
+            clearSelection();
+            continue;
+          }
+          const row = resolvePointerRow(event.y);
+          const col = resolvePointerColumn(event.x, row);
+          if (row === null || col === null) continue;
+          setSelection({ anchorRow: row, anchorCol: col, focusRow: row, focusCol: col, active: true, moved: false });
+          continue;
+        }
+    
+        if (event.kind === 'drag') {
+          if (!mouseSelectionRef.current.active) continue;
+          const focusRow = resolvePointerRow(event.y);
+          const focusCol = resolvePointerColumn(event.x, focusRow);
+          if (focusRow === null || focusCol === null) continue;
+          const current = mouseSelectionRef.current;
+          if (current.focusRow === focusRow && current.focusCol === focusCol) continue;
+          setSelection({
+            anchorRow: current.anchorRow ?? focusRow,
+            anchorCol: current.anchorCol ?? focusCol,
+            focusRow,
+            focusCol,
+            active: true,
+            moved: true,
+          });
+          continue;
+        }
+    
+        if (event.kind === 'up') {
+          if (mouseSelectionRef.current.anchorRow === null || mouseSelectionRef.current.anchorCol === null) continue;
+          if (!mouseSelectionRef.current.moved) {
+            clearSelection();
+            continue;
+          }
+          const focusRow = resolvePointerRow(event.y) ?? mouseSelectionRef.current.focusRow ?? mouseSelectionRef.current.anchorRow;
+          const focusCol = resolvePointerColumn(event.x, focusRow) ?? mouseSelectionRef.current.focusCol ?? mouseSelectionRef.current.anchorCol;
+          const finalSelection = {
+            anchorRow: mouseSelectionRef.current.anchorRow,
+            anchorCol: mouseSelectionRef.current.anchorCol,
+            focusRow,
+            focusCol,
+            active: false,
+            moved: true,
+          };
+          setSelection(finalSelection);
+          copySelection(finalSelection.anchorRow, finalSelection.anchorCol, finalSelection.focusRow, finalSelection.focusCol);
+        }
       }
     };
     
     process.stdin.on('data', onData);
     
     return () => {
+      if (wheelFlushTimerRef.current) {
+        clearTimeout(wheelFlushTimerRef.current);
+        wheelFlushTimerRef.current = null;
+      }
+      wheelDeltaRef.current = 0;
       process.stdin.off('data', onData);
     };
-  }, []);
+  }, [maxScrollOffset,selectionMode,startupOnly,historyViewportTop,visibleWindow,displayRows,dispatch]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -1125,9 +1443,11 @@ export function App() {
 
   useEffect(() => {
     if (!process.stdin.isTTY || !process.stdout.isTTY) return;
+    const fullscreenEnabled = isFullscreenEnabled();
+    const mouseTrackingActive = isMouseTrackingEnabled() && !selectionMode && !startupOnly;
     
     const reassertModes = (includeAltScreen = false) => {
-      process.stdout.write(terminalEnterSequence(includeAltScreen, isMouseTrackingEnabled()));
+      process.stdout.write(terminalEnterSequence(fullscreenEnabled && includeAltScreen, mouseTrackingActive));
     };
     
     const onData = () => {
@@ -1143,6 +1463,7 @@ export function App() {
       reassertModes(true);
     };
     
+    reassertModes(false);
     process.stdin.on('data', onData);
     process.on('SIGCONT', onResume);
     
@@ -1152,29 +1473,7 @@ export function App() {
       drainStdinBuffer();
       process.stdout.write(terminalExitSequence(false));
     };
-  }, []);
-
-  useEffect(() => {
-    const available = registry.availableIds();
-    const config = loadConfig();
-    const ratings = getRatings();
-    const defaultEngine = config.forgeFixedStarter ?? available[0] ?? 'none';
-    const activeWs = getActiveWorkspace();
-    const totalMatches = Object.values(ratings.global).reduce((sum: number, r: any) => sum + r.wins + r.losses, 0);
-    const sorted = Object.entries(ratings.global)
-      .map(([id, r]: any) => [id, { rating: Math.round(r.mu - 2 * r.phi) }] as const)
-      .sort(([, a], [, b]) => b.rating - a.rating);
-    const enabled = sessionEngines ?? available;
-    let runCount = 0;
-    try { runCount = readdirSync(RUNS_DIR).filter((f: string) => f.endsWith('.json')).length; } catch { /* runs dir missing — first run */ }
-    setOutputBlocks([{ id: 0, event: {
-      type: 'dashboard' as const, available, enabled, defaultEngine,
-      eloTop: sorted.length > 0 ? { id: sorted[0][0], rating: (sorted[0][1] as any).rating } : undefined,
-      totalForges: Math.floor(totalMatches / 2),
-      workspace: activeWs ? { name: activeWs.name, path: activeWs.path, isKern: activeWs.isKern } : undefined,
-      runCount,
-    }}]);
-  }, []);
+  }, [selectionMode,maxScrollOffset,startupOnly]);
 
   useEffect(() => {
     if (replState === 'idle' && inputQueue.length > 0) {
@@ -1219,31 +1518,37 @@ export function App() {
     <ChromeBar mode={mode} cwdLabel={resolveWorkingDir().split('/').pop() ?? ''} engineCount={availableEngines.length} replState={replState} runningJobs={runningJobs} />
     <BackgroundJobRail jobs={runningJobs} />
     <Box flexDirection="column" flexGrow={1} flexShrink={1}>
-      <HistoryView visibleBlocks={visibleBlocks} groupedBlocks={groupedBlocks} mode={mode} blocksAbove={visibleWindow.blocksAbove} blocksBelow={visibleWindow.blocksBelow} thinkingExpanded={thinkingExpanded} />
-      <StreamingView streamingText={activeStream} mode={mode} liveProgress={liveProgress} />
-      {Object.keys(agentProgress).length > 0 && (
-        <Box flexDirection="column">
-          {Object.values(agentProgress).map((snap: AgentProgressSnapshot) => (
-            <AgentProgressView
-              key={snap.engineId}
-              engineId={snap.engineId}
-              turnIndex={snap.turnIndex}
-              phase={snap.phase}
-              userPrompt={snap.userPrompt}
-              toolCalls={snap.toolCalls}
-              lastTool={snap.lastTool}
-              lastToolStatus={snap.lastToolStatus}
-              tokensUsed={snap.tokensUsed}
-              elapsedMs={snap.elapsedMs}
-              turnsRemaining={snap.turnsRemaining}
-              maxTurns={snap.maxTurns}
-              tokensRemaining={snap.tokensRemaining}
-              maxTokens={snap.maxTokens}
-              error={snap.error}
-            />
-          ))}
-        </Box>
-      )}
+      <>
+        <HistoryView visibleRows={visibleWindow.visible} rowsAbove={visibleWindow.rowsAbove} rowsBelow={visibleWindow.rowsBelow} stickToBottom={!startupOnly && scrollOffset === 0} />
+        {livePaneVisible && (
+          <>
+            <StreamingView streamingText={activeStream} mode={mode} liveProgress={liveProgress} />
+            {Object.keys(agentProgress).length > 0 && (
+              <Box flexDirection="column">
+                {Object.values(agentProgress).map((snap: AgentProgressSnapshot) => (
+                  <AgentProgressView
+                    key={snap.engineId}
+                    engineId={snap.engineId}
+                    turnIndex={snap.turnIndex}
+                    phase={snap.phase}
+                    userPrompt={snap.userPrompt}
+                    toolCalls={snap.toolCalls}
+                    lastTool={snap.lastTool}
+                    lastToolStatus={snap.lastToolStatus}
+                    tokensUsed={snap.tokensUsed}
+                    elapsedMs={snap.elapsedMs}
+                    turnsRemaining={snap.turnsRemaining}
+                    maxTurns={snap.maxTurns}
+                    tokensRemaining={snap.tokensRemaining}
+                    maxTokens={snap.maxTokens}
+                    error={snap.error}
+                  />
+                ))}
+              </Box>
+            )}
+          </>
+        )}
+      </>
     </Box>
     {reviewEvent && <ReviewBlock event={reviewEvent} onAction={handleReviewActionCb} />}
     {enginePickerOpen && (
@@ -1358,7 +1663,7 @@ export function App() {
           const _cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
           return (<>
             <CesarStatusStrip cesarId={_cesarId} confidence={cesarConfidence} spinner={liveSpinner} engines={liveProgress} startTime={chatStartTimeRef.current || 0} streamSnippet={streamSnippet} isActive={replState !== 'idle' || runningJobs.length > 0} planModeQueued={planModeQueued} activePlanState={activePlan?.state ?? null} />
-            {mode === 'chat' && <StatusBar cesarId={statusStats.cesarId} chatMessageCount={statusStats.chatMessageCount} totalTokens={statusStats.totalTokens} totalCostUsd={statusStats.totalCostUsd} cwd={statusCwd} branch={statusBranch} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} thinkingExpanded={thinkingExpanded} isActive={replState !== 'idle'} />}
+            {mode === 'chat' && <StatusBar cesarId={statusStats.cesarId} chatMessageCount={statusStats.chatMessageCount} totalTokens={statusStats.totalTokens} totalCostUsd={statusStats.totalCostUsd} cwd={statusCwd} branch={statusBranch} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} thinkingExpanded={thinkingExpanded} isActive={replState !== 'idle'} fullscreenEnabled={isFullscreenEnabled()} selectionMode={selectionMode} />}
           </>);
         })()}
       </Box>
@@ -1409,18 +1714,32 @@ export function createInkStdoutProxy(): any {
   return proxy;
 }
 
-export function isMouseTrackingEnabled(): boolean {
-  if (process.env.AGON_DISABLE_MOUSE === '1' || process.env.AGON_DISABLE_MOUSE_SCROLL === '1') return false;
-  if (process.env.AGON_ENABLE_MOUSE_SCROLL === '0') return false;
+export function createInitialRegistry(): EngineRegistry {
+  const reg = new EngineRegistry();
+  const engDir = join(dirname(fileURLToPath(import.meta.url)), '../../../engines');
+  reg.load(engDir);
+  return reg;
+}
+
+export function isFullscreenEnabled(): boolean {
+  if (process.env.AGON_DISABLE_FULLSCREEN === '1' || process.env.AGON_NATIVE_TERMINAL === '1') return false;
+  if (process.env.AGON_FULLSCREEN === '0' || process.env.AGON_ALT_SCREEN === '0') return false;
   return true;
 }
 
+export function isMouseTrackingEnabled(): boolean {
+  if (process.env.AGON_DISABLE_MOUSE === '1' || process.env.AGON_DISABLE_MOUSE_SCROLL === '1') return false;
+  if (process.env.AGON_ENABLE_MOUSE_SCROLL === '0') return false;
+  if (process.env.AGON_ENABLE_MOUSE_SCROLL === '1') return true;
+  return isFullscreenEnabled();
+}
+
 export function terminalEnterSequence(useAltScreen: boolean, useMouse: boolean): string {
-  return `${useAltScreen ? '\x1b[?1049h' : ''}\x1b[?2004h${useMouse ? '\x1b[?1000h\x1b[?1006h' : ''}`;
+  return `${useAltScreen ? '\x1b[?1049h' : ''}\x1b[?2004h${useMouse ? '\x1b[?1000h\x1b[?1002h\x1b[?1006h' : ''}`;
 }
 
 export function terminalExitSequence(useAltScreen: boolean): string {
-  return `\x1b[?1000l\x1b[?1006l\x1b[?2004l${useAltScreen ? '\x1b[?1049l' : ''}`;
+  return `\x1b[?1000l\x1b[?1002l\x1b[?1006l\x1b[?2004l${useAltScreen ? '\x1b[?1049l' : ''}`;
 }
 
 export function drainStdinBuffer(): void {
@@ -1431,13 +1750,1305 @@ export function drainStdinBuffer(): void {
   } while (chunk !== null);
 }
 
-export function maxScrollOffsetForBlockCount(blockCount: number): number {
-  return Math.max(0, blockCount - 1);
+export function maxScrollOffsetForBlockCount(blockCount: number, blockBudget: number): number {
+  return Math.max(0, blockCount - Math.max(1, blockBudget));
+}
+
+export function maxScrollOffsetForRowCount(rowCount: number, rowBudget: number): number {
+  return Math.max(0, rowCount - Math.max(1, rowBudget));
+}
+
+export function nextWheelAnimationStep(pending: number): {step:number,remaining:number} {
+  if (!Number.isFinite(pending) || pending === 0) return { step: 0, remaining: 0 };
+  const direction = pending > 0 ? 1 : -1;
+  const magnitude = Math.abs(pending);
+  const stepSize = magnitude >= 6 ? 3 : magnitude >= 3 ? 2 : 1;
+  const step = direction * Math.min(stepSize, magnitude);
+  return { step, remaining: pending - step };
+}
+
+export function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+export function charDisplayWidth(char: string): number {
+  if (!char) return 0;
+  const codePoint = char.codePointAt(0) ?? 0;
+  if (codePoint === 0) return 0;
+  if (codePoint < 32 || (codePoint >= 0x7f && codePoint < 0xa0)) return 0;
+  if (
+    (codePoint >= 0x0300 && codePoint <= 0x036f)
+    || (codePoint >= 0x1ab0 && codePoint <= 0x1aff)
+    || (codePoint >= 0x1dc0 && codePoint <= 0x1dff)
+    || (codePoint >= 0x20d0 && codePoint <= 0x20ff)
+    || (codePoint >= 0xfe20 && codePoint <= 0xfe2f)
+  ) {
+    return 0;
+  }
+  if (
+    codePoint === 0x2329
+    || codePoint === 0x232a
+    || (codePoint >= 0x1100 && codePoint <= 0x115f)
+    || (codePoint >= 0x2e80 && codePoint <= 0xa4cf && codePoint !== 0x303f)
+    || (codePoint >= 0xac00 && codePoint <= 0xd7a3)
+    || (codePoint >= 0xf900 && codePoint <= 0xfaff)
+    || (codePoint >= 0xfe10 && codePoint <= 0xfe19)
+    || (codePoint >= 0xfe30 && codePoint <= 0xfe6f)
+    || (codePoint >= 0xff00 && codePoint <= 0xff60)
+    || (codePoint >= 0xffe0 && codePoint <= 0xffe6)
+    || (codePoint >= 0x1f300 && codePoint <= 0x1f64f)
+    || (codePoint >= 0x1f900 && codePoint <= 0x1f9ff)
+    || (codePoint >= 0x20000 && codePoint <= 0x3fffd)
+  ) {
+    return 2;
+  }
+  return 1;
+}
+
+export function stringDisplayWidth(text: string): number {
+  let width = 0;
+  for (const char of Array.from(String(text ?? ''))) {
+    width += charDisplayWidth(char);
+  }
+  return width;
+}
+
+export function displayColumnToStringIndex(text: string, targetColumn: number): number {
+  const value = String(text ?? '');
+  if (!Number.isFinite(targetColumn) || targetColumn <= 0) return 0;
+  let displayColumn = 0;
+  let stringIndex = 0;
+  for (const char of Array.from(value)) {
+    const width = charDisplayWidth(char);
+    const nextDisplayColumn = displayColumn + width;
+    if (targetColumn < nextDisplayColumn) return stringIndex;
+    stringIndex += char.length;
+    if (targetColumn === nextDisplayColumn) return stringIndex;
+    displayColumn = nextDisplayColumn;
+  }
+  return value.length;
+}
+
+export function normalizeRowSelection(anchor: number|null, focus: number|null): {start:number,end:number}|null {
+  if (anchor === null || focus === null) return null;
+  return { start: Math.min(anchor, focus), end: Math.max(anchor, focus) };
+}
+
+export function normalizeTextSelection(anchorRow: number|null, anchorCol: number|null, focusRow: number|null, focusCol: number|null): {startRow:number,startCol:number,endRow:number,endCol:number}|null {
+  if (anchorRow === null || anchorCol === null || focusRow === null || focusCol === null) return null;
+  if (anchorRow < focusRow) return { startRow: anchorRow, startCol: anchorCol, endRow: focusRow, endCol: focusCol };
+  if (anchorRow > focusRow) return { startRow: focusRow, startCol: focusCol, endRow: anchorRow, endCol: anchorCol };
+  if (anchorCol <= focusCol) return { startRow: anchorRow, startCol: anchorCol, endRow: focusRow, endCol: focusCol };
+  return { startRow: focusRow, startCol: focusCol, endRow: anchorRow, endCol: anchorCol };
+}
+
+export function richLineToPlainText(line: any): string {
+  if (!line) return '';
+  if (line.kind === 'blank') return '';
+  if (line.kind === 'hr') return '─'.repeat(40);
+  
+  const spanText = Array.isArray(line.spans)
+    ? line.spans.map((span: any) => `${span.text ?? ''}${span?.style?.linkUrl ? ` (${span.style.linkUrl})` : ''}`).join('')
+    : '';
+  const indent = line.indent > 0 ? '  '.repeat(line.indent) : '';
+  
+  if (line.kind === 'h1') return `${indent}# ${spanText}`;
+  if (line.kind === 'h2') return `${indent}## ${spanText}`;
+  if (line.kind === 'h3') return `${indent}### ${spanText}`;
+  if (line.kind === 'blockquote') return `${indent}| ${spanText}`;
+  
+  const marker = line.marker ?? '';
+  const listIndent = (line.kind === 'bullet' || line.kind === 'ordered') && !indent ? ' ' : '';
+  return `${indent}${listIndent}${marker}${spanText}`;
+}
+
+export function transcriptRowToPlainText(row: any): string {
+  if (!row) return '';
+  if (row.kind === 'spacer') return '';
+  if (row.kind === 'gradient') return String(row.text ?? '');
+  if (row.kind === 'rich') return richLineToPlainText(row.richLine);
+  if (row.kind === 'segments') {
+    return Array.isArray(row.segments) ? row.segments.map((segment: any) => segment?.text ?? '').join('') : '';
+  }
+  
+  const prefix = String(row.prefixText ?? '');
+  const text = String(row.text ?? '');
+  return `${prefix}${text}`;
+}
+
+export function transcriptRowTextStartColumn(row: any): number {
+  const paddingLeft = Math.max(0, Number(row?.paddingLeft ?? 0));
+  const borderColumns = row?.borderColor ? 2 : 0;
+  return paddingLeft + borderColumns + 2;
+}
+
+export function resolveTranscriptColumnFromMouse(mouseX: number, row: any): number {
+  const text = transcriptRowToPlainText(row);
+  const startColumn = transcriptRowTextStartColumn(row);
+  if (!Number.isFinite(mouseX) || !text) return 0;
+  const targetColumn = clampNumber(mouseX - startColumn, 0, stringDisplayWidth(text));
+  return displayColumnToStringIndex(text, targetColumn);
+}
+
+export function transcriptRowsToPlainText(rows: any[], anchorRow: number|null, anchorCol: number|null, focusRow: number|null, focusCol: number|null): string {
+  const range = normalizeTextSelection(anchorRow, anchorCol, focusRow, focusCol);
+  if (!range) return '';
+  const lines: string[] = [];
+  for (let rowIndex = range.startRow; rowIndex <= range.endRow; rowIndex += 1) {
+    const row = rows[rowIndex];
+    const text = transcriptRowToPlainText(row);
+    if (rowIndex === range.startRow && rowIndex === range.endRow) {
+      lines.push(text.slice(range.startCol, range.endCol));
+      continue;
+    }
+    if (rowIndex === range.startRow) {
+      lines.push(text.slice(range.startCol));
+      continue;
+    }
+    if (rowIndex === range.endRow) {
+      lines.push(text.slice(0, range.endCol));
+      continue;
+    }
+    lines.push(text);
+  }
+  return lines.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd();
+}
+
+export function transcriptViewportTopLine(mode: string, hasJobs: boolean, rowBudget: number, visibleRowCount: number, hasIndicator: boolean, stickToBottom: boolean): number {
+  let top = 1;
+  if (mode !== 'chat') top += 1;
+  if (hasJobs) top += 1;
+  const contentRows = visibleRowCount + (hasIndicator ? 1 : 0);
+  const slack = stickToBottom ? Math.max(0, rowBudget - contentRows) : 0;
+  return top + slack;
+}
+
+export function resolveTranscriptRowFromMouse(mouseY: number, viewportTopLine: number, firstVisibleRow: number, visibleRowCount: number): number|null {
+  if (visibleRowCount <= 0) return null;
+  const offset = mouseY - viewportTopLine;
+  if (!Number.isFinite(offset)) return null;
+  const clamped = clampNumber(offset, 0, visibleRowCount - 1);
+  return firstVisibleRow + clamped;
 }
 
 export function estimateVisibleBlockBudget(rows: number, mode: string, overlayActive: boolean): number {
-  const reservedRows = (mode === 'chat' ? 12 : 10) + (overlayActive ? 6 : 0);
+  // Chat mode keeps 7 rows for the composer/status chrome at minimum:
+  // margin + bordered composer (3) + Cesar strip + two-line status bar.
+  // Using 6 makes the startup dashboard overflow by one line.
+  const reservedRows = (mode === 'chat' ? 7 : 8) + (overlayActive ? 4 : 0);
   return Math.max(1, rows - reservedRows);
+}
+
+export function buildDashboardBlock(enabledOverride: string[]|null): OutputBlock {
+  const registry = createInitialRegistry();
+  const available = registry.availableIds();
+  const config = loadConfig();
+  const ratings = getRatings();
+  const defaultEngine = config.forgeFixedStarter ?? available[0] ?? 'none';
+  const activeWs = getActiveWorkspace();
+  const totalMatches = Object.values(ratings.global).reduce((sum: number, r: any) => sum + r.wins + r.losses, 0);
+  const sorted = Object.entries(ratings.global)
+    .map(([id, r]: any) => [id, { rating: Math.round(r.mu - 2 * r.phi) }] as const)
+    .sort(([, a], [, b]) => b.rating - a.rating);
+  const enabled = enabledOverride ?? available;
+  let runCount = 0;
+  try { runCount = readdirSync(RUNS_DIR).filter((f: string) => f.endsWith('.json')).length; } catch { /* runs dir missing — first run */ }
+  
+  return {
+    id: 0,
+    event: {
+      type: 'dashboard' as const,
+      available,
+      enabled,
+      defaultEngine,
+      eloTop: sorted.length > 0 ? { id: sorted[0][0], rating: (sorted[0][1] as any).rating } : undefined,
+      totalForges: Math.floor(totalMatches / 2),
+      workspace: activeWs ? { name: activeWs.name, path: activeWs.path, isKern: activeWs.isKern } : undefined,
+      runCount,
+    },
+  };
+}
+
+export function estimatePinnedLiveRows(mode: string, hasStream: boolean, hasProgress: boolean, agentCount: number): number {
+  const streamRows = hasStream ? (mode === 'chat' ? 3 : 6) : 0;
+  const progressRows = hasProgress ? (mode === 'chat' ? 3 : 5) : 0;
+  const agentRows = agentCount > 0 ? Math.min(18, agentCount * 7) : 0;
+  return streamRows + progressRows + agentRows;
+}
+
+export function estimateWrappedRows(text: string, width: number): number {
+  const safeWidth = Math.max(1, width);
+  if (!text) return 0;
+  return text.split('\n').reduce((total: number, rawLine: string) => {
+    const line = rawLine.replace(/\u001b\[[0-9;]*m/g, '').replace(/\t/g, '    ');
+    return total + Math.max(1, Math.ceil(Math.max(1, line.length) / safeWidth));
+  }, 0);
+}
+
+export function estimateToolCallRows(event: any, toolOutputExpanded: boolean, codeWidth: number): number {
+  if (!event || event.type !== 'tool-call') return 0;
+  if (!event.input && !event.output && (event.tool === 'Delegate' || event.tool === 'delegate')) return 0;
+  
+  const rawInput = event.input || '';
+  let parsed: Record<string, unknown> = {};
+  try {
+    if (typeof rawInput === 'string' && rawInput.trim().startsWith('{')) parsed = JSON.parse(rawInput);
+  } catch {
+    parsed = {};
+  }
+  
+  const toolKey = String(event.tool ?? '').toLowerCase();
+  const forceExpanded = ['edit', 'write', 'update', 'applypatch', 'apply_patch'].includes(toolKey);
+  if (!toolOutputExpanded && !forceExpanded) return 1;
+  
+  if (toolKey === 'bash' || toolKey === 'run') {
+    const cmd = (parsed.command as string) || rawInput || '';
+    const cmdLineCount = cmd ? cmd.split('\n').length : 0;
+    let rows = 1;
+    if (cmdLineCount > 0) rows += Math.min(3, cmdLineCount) + (cmdLineCount > 3 ? 1 : 0) + 1;
+    if (event.output && event.status !== 'running') {
+      const outputLineCount = event.output.split('\n').length;
+      const maxHead = outputLineCount > 80 ? 30 : 50;
+      const tailCount = 5;
+      const showTail = outputLineCount > maxHead + tailCount;
+      rows += 1 + Math.min(outputLineCount, maxHead);
+      if (showTail) rows += 1 + tailCount;
+    }
+    return rows;
+  }
+  
+  if (toolKey === 'edit' || toolKey === 'update') {
+    const oldStr = (parsed.old_string as string) || (parsed.oldString as string) || '';
+    const newStr = (parsed.new_string as string) || (parsed.newString as string) || '';
+    return 1 + ((oldStr || newStr) && event.status !== 'running' ? 1 + oldStr.split('\n').length + newStr.split('\n').length : 0);
+  }
+  
+  if (toolKey === 'write') {
+    const content = (parsed.content as string) || '';
+    return 1 + (content && event.status !== 'running' ? 1 + content.split('\n').length : 0);
+  }
+  
+  if (toolKey === 'read' || toolKey === 'grep' || toolKey === 'search' || toolKey === 'glob' || toolKey === 'find') {
+    return 2;
+  }
+  
+  let rows = 1;
+  if (rawInput) rows += Math.min(3, estimateWrappedRows(rawInput, codeWidth));
+  if (event.output && event.status === 'done') rows += 1 + Math.min(6, estimateWrappedRows(event.output, codeWidth));
+  return rows;
+}
+
+export function estimateOutputEventRows(event: OutputEvent, mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean): number {
+  const proseWidth = contentWidth(4);
+  const chatWidth = contentWidth(2);
+  const engineWidth = contentWidth(8);
+  const codeWidth = contentWidth(10);
+  
+  switch (event.type) {
+    case 'text':
+      return Math.max(1, estimateWrappedRows(event.content, proseWidth));
+    case 'user-message':
+      return Math.max(1, estimateWrappedRows(event.content, proseWidth));
+    case 'engine-block':
+      return mode === 'chat'
+        ? 2 + estimateWrappedRows(cleanEngineOutput(event.content), chatWidth)
+        : 4 + estimateWrappedRows(cleanEngineOutput(event.content), engineWidth);
+    case 'separator':
+      return 1;
+    case 'header':
+      return 2;
+    case 'success':
+    case 'warning':
+    case 'info':
+      return Math.max(1, estimateWrappedRows(event.message, proseWidth));
+    case 'error': {
+      const errLines = event.message.split('\n');
+      if (errLines.length <= 1) return 1;
+      return Math.min(7, errLines.length + 1);
+    }
+    case 'permission-ask': {
+      const commandRows = Math.min(6, String((event as any).command ?? '').split('\n').length);
+      const descriptionRows = (event as any).description ? 2 : 0;
+      return 6 + commandRows + descriptionRows;
+    }
+    case 'thinking-chunk':
+      if (thinkingExpanded === false) return 0;
+      return Math.min(4, Math.max(1, String(event.chunk ?? '').split('\n').filter((line: string) => line.trim()).length));
+    case 'streaming-chunk': {
+      const chunkText = String(event.chunk ?? '');
+      const isThinking = /^~?\d{1,3}%\s/.test(chunkText.trim());
+      if (isThinking && thinkingExpanded === false) return 0;
+      return Math.max(1, estimateWrappedRows(chunkText, proseWidth));
+    }
+    case 'kern-draft':
+      return 4 + estimateWrappedRows(cleanEngineOutput(event.content), engineWidth);
+    case 'debate-round':
+      return 4 + estimateWrappedRows(cleanEngineOutput(event.argument), engineWidth);
+    case 'verdict':
+      return Math.max(1, estimateWrappedRows(cleanEngineOutput(event.summary), proseWidth));
+    case 'scoreboard':
+      return 3 + event.metrics.length + (event.winner ? 1 : 0);
+    case 'plan':
+      return 4 + event.plan.steps.length + (event.plan.state === 'draft' ? 1 : 0);
+    case 'plan-list':
+      return Math.max(1, event.plans.length);
+    case 'plan-proposal':
+      return Math.max(4, estimateWrappedRows(String((event as any).markdown ?? ''), proseWidth));
+    case 'plan-execution':
+      return 6;
+    case 'table':
+      return 2 + event.rows.length;
+    case 'tool-call':
+      return estimateToolCallRows(event as any, toolOutputExpanded, codeWidth);
+    case 'response-meta':
+      return 1;
+    case 'file-changes':
+      return 1 + (((event as any).files as any[])?.length ?? 0);
+    case 'dashboard':
+      return 17;
+    case 'agent-step-start':
+    case 'agent-step-end':
+    case 'agent-turn-summary':
+    case 'agent-budget-warning':
+    case 'engine-switch':
+    case 'shadow-active':
+    case 'agent-routing':
+    case 'agent-team-start':
+    case 'agent-team-complete':
+      return 1;
+    case 'spinner-start':
+    case 'spinner-stop':
+    case 'spinner-update':
+    case 'progress-update':
+    case 'progress-clear':
+    case 'confidence-update':
+    case 'streaming-end':
+    case 'clear':
+    case 'question':
+    case 'patch-review':
+      return 0;
+    default:
+      return 1;
+  }
+}
+
+export function buildDisplayItems(blocks: OutputBlock[], toolOutputExpanded: boolean): OutputBlock[] {
+  // Keep collapse as a per-block display concern, not a synthetic grouped
+  // scroll unit. Grouped tool summaries make wheel scrolling jump because
+  // one collapsed row can stand in for many logical rows.
+  return blocks;
+}
+
+export function estimateDisplayItemRows(item: OutputBlock, mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean): number {
+  return estimateOutputEventRows(item.event, mode, toolOutputExpanded, thinkingExpanded);
+}
+
+export function historyBlocksForTranscript(blocks: OutputBlock[]): OutputBlock[] {
+  if (blocks.length === 1 && blocks[0]?.event?.type === 'dashboard') return [];
+  return blocks;
+}
+
+export function parseMarkdownToRows(baseKey: string, text: string, wrapWidth: number, paddingLeft: number, borderColor: string): any[] {
+  const rows: any[] = [];
+  const cleaned = String(text ?? '').trim();
+  if (!cleaned) return rows;
+  
+  const codeWidth = contentWidth(8);
+  const segments = parseMarkdownBlocks(cleaned);
+  let rowIndex = 0;
+  
+  for (const segment of segments as any[]) {
+    if (segment.type === 'prose') {
+      const richLines = parseProseToRichLines(segment.text ?? '', wrapWidth);
+      for (const richLine of richLines) {
+        rows.push({
+          key: `${baseKey}-rich-${rowIndex++}`,
+          kind: 'rich',
+          paddingLeft,
+          richLine,
+          borderColor,
+        });
+      }
+      continue;
+    }
+  
+    if (segment.type === 'code') {
+      const codeLines = String(segment.code ?? '').split('\n');
+      const shownLines = codeLines.slice(0, MAX_CODE_LINES);
+      const overflow = codeLines.length - shownLines.length;
+      const isDiff = segment.language === 'diff' || codeLines.some((line: string) => /^[+\-@]/.test(line));
+  
+      rows.push({
+        key: `${baseKey}-code-meta-${rowIndex++}`,
+        kind: 'segments',
+        paddingLeft,
+        borderColor,
+        segments: [
+          { text: CODE_RAIL, color: CODE_RAIL_COLOR },
+          { text: ' ' },
+          { text: segment.language || 'code', dimColor: true },
+          segment.index !== undefined ? { text: ` [${segment.index}]`, color: '#585858' } : null,
+        ].filter(Boolean),
+      });
+  
+      shownLines.forEach((line: string, index: number) => {
+        rows.push({
+          key: `${baseKey}-code-${rowIndex++}-${index}`,
+          kind: isDiff ? 'diff' : 'syntax',
+          paddingLeft,
+          borderColor,
+          prefixText: `${CODE_RAIL} `,
+          prefixColor: CODE_RAIL_COLOR,
+          text: line,
+          maxWidth: codeWidth,
+        });
+      });
+  
+      if (overflow > 0) {
+        rows.push({
+          key: `${baseKey}-code-overflow-${rowIndex++}`,
+          kind: 'segments',
+          paddingLeft,
+          borderColor,
+          segments: [
+            { text: CODE_RAIL, color: CODE_RAIL_COLOR },
+            { text: ' ' },
+            { text: `… ${overflow} more lines`, dimColor: true },
+          ],
+        });
+      }
+      continue;
+    }
+  
+    if (segment.type === 'table') {
+      const headers = (segment.headers ?? []) as string[];
+      const tableRows = (segment.rows ?? []) as string[][];
+      const headerLine = headers.join(' │ ');
+      const ruleWidth = Math.max(12, Math.min(wrapWidth, headerLine.length));
+  
+      rows.push({
+        key: `${baseKey}-table-head-${rowIndex++}`,
+        kind: 'segments',
+        paddingLeft,
+        borderColor,
+        segments: [{ text: headerLine, bold: true }],
+      });
+      rows.push({
+        key: `${baseKey}-table-rule-${rowIndex++}`,
+        kind: 'segments',
+        paddingLeft,
+        borderColor,
+        segments: [{ text: '─'.repeat(ruleWidth), dimColor: true }],
+      });
+      tableRows.forEach((tableRow: string[], index: number) => {
+        rows.push({
+          key: `${baseKey}-table-row-${rowIndex++}-${index}`,
+          kind: 'segments',
+          paddingLeft,
+          borderColor,
+          segments: [{ text: tableRow.join(' │ ') }],
+        });
+      });
+    }
+  }
+  
+  return rows;
+}
+
+export function buildToolCallRows(baseKey: string, event: any, toolOutputExpanded: boolean): any[] {
+  if (!event.input && !event.output && (event.tool === 'Delegate' || event.tool === 'delegate')) return [];
+  
+  const rows: any[] = [];
+  const ic = icons();
+  const toolColor = event.status === 'error' ? '#ef4444' : event.status === 'done' ? '#4ade80' : '#fbbf24';
+  const icon = event.status === 'error' ? ic.fail : event.status === 'done' ? ic.success : '⟳';
+  const eColor = engineColor(event.engineId ?? '');
+  const codeWidth = contentWidth(10);
+  const rawInput = String(event.input ?? '');
+  let parsed: Record<string, unknown> = {};
+  try {
+    if (rawInput.trim().startsWith('{')) parsed = JSON.parse(rawInput);
+  } catch {
+    parsed = {};
+  }
+  
+  const toolKey = String(event.tool ?? '').toLowerCase();
+  const forceExpanded = ['edit', 'write', 'update', 'applypatch', 'apply_patch'].includes(toolKey);
+  const collapsed = !toolOutputExpanded && !forceExpanded;
+  const collapsedHint = collapsed ? [{ text: ' · ', dimColor: true }, { text: 'Ctrl+E expand tools', color: '#f59e0b' }] : [];
+  const nestSegment = { text: ' ⏿ ', color: eColor };
+  const pushSegmentsRow = (suffix: string, segments: any[], paddingLeft = 2) => {
+    rows.push({ key: `${baseKey}-${suffix}`, kind: 'segments', paddingLeft, segments });
+  };
+  
+  if (toolKey === 'bash' || toolKey === 'run') {
+    const cmd = String((parsed.command as string) || rawInput || '');
+    const desc = parsed.description as string | undefined;
+    if (collapsed) {
+      const outputLines = event.output ? String(event.output).split('\n').length : 0;
+      const previewSource = desc || cmd.split('\n')[0] || '';
+      const preview = previewSource.length > 60 ? `${previewSource.slice(0, 59)}…` : previewSource;
+      pushSegmentsRow('bash-collapsed', [
+        nestSegment,
+        { text: `${icon} Bash`, color: toolColor, bold: true },
+        preview ? { text: desc ? ' · ' : ' $ ', dimColor: true } : null,
+        preview ? { text: preview, dimColor: true } : null,
+        outputLines > 0 && event.status !== 'running' ? { text: ` → ${outputLines} lines`, dimColor: true } : null,
+        ...collapsedHint,
+      ].filter(Boolean));
+      return rows;
+    }
+  
+    pushSegmentsRow('bash-head', [
+      nestSegment,
+      { text: `${icon} Bash`, color: toolColor, bold: true },
+      desc ? { text: ` · ${desc}`, dimColor: true } : null,
+    ].filter(Boolean));
+  
+    const cmdLines = cmd ? cmd.split('\n') : [];
+    cmdLines.slice(0, 3).forEach((line: string, index: number) => {
+      pushSegmentsRow(`bash-cmd-${index}`, [
+        { text: `    ${index === 0 ? '$ ' : '  '}`, dimColor: true },
+        { text: truncateCodeLine(line, codeWidth) },
+      ]);
+    });
+    if (cmdLines.length > 3) {
+      pushSegmentsRow('bash-cmd-more', [{ text: '      …', dimColor: true }]);
+    }
+  
+    if (event.output && event.status !== 'running') {
+      const outputLines = String(event.output).split('\n');
+      const maxHead = outputLines.length > 80 ? 30 : 50;
+      const tailCount = 5;
+      const showTail = outputLines.length > maxHead + tailCount;
+      const headLines = outputLines.slice(0, showTail ? maxHead : outputLines.length);
+      const tailLines = showTail ? outputLines.slice(-tailCount) : [];
+      const skipped = outputLines.length - headLines.length - tailLines.length;
+  
+      pushSegmentsRow('bash-output-gap', [{ text: ' ', dimColor: true }]);
+      headLines.forEach((line: string, index: number) => {
+        if (event.status === 'error') {
+          pushSegmentsRow(`bash-err-${index}`, [
+            { text: '    ', dimColor: true },
+            { text: truncateCodeLine(line, codeWidth), color: '#ef4444' },
+          ]);
+          return;
+        }
+        rows.push({
+          key: `${baseKey}-bash-out-${index}`,
+          kind: 'ansi',
+          paddingLeft: 2,
+          prefixText: '    ',
+          prefixDimColor: true,
+          text: line,
+          maxWidth: codeWidth,
+          fallbackDim: true,
+        });
+      });
+      if (skipped > 0) {
+        pushSegmentsRow('bash-skip', [{ text: `    … ${skipped} more lines …`, dimColor: true }]);
+      }
+      tailLines.forEach((line: string, index: number) => {
+        if (event.status === 'error') {
+          pushSegmentsRow(`bash-tail-err-${index}`, [
+            { text: '    ', dimColor: true },
+            { text: truncateCodeLine(line, codeWidth), color: '#ef4444' },
+          ]);
+          return;
+        }
+        rows.push({
+          key: `${baseKey}-bash-tail-${index}`,
+          kind: 'ansi',
+          paddingLeft: 2,
+          prefixText: '    ',
+          prefixDimColor: true,
+          text: line,
+          maxWidth: codeWidth,
+          fallbackDim: true,
+        });
+      });
+    }
+    return rows;
+  }
+  
+  if (toolKey === 'edit' || toolKey === 'update') {
+    const filePath = String((parsed.file_path as string) || (parsed.filePath as string) || '');
+    const oldStr = String((parsed.old_string as string) || (parsed.oldString as string) || '');
+    const newStr = String((parsed.new_string as string) || (parsed.newString as string) || '');
+    const shortPath = filePath ? filePath.replace(`${process.cwd()}/`, '').replace(process.env.HOME ?? '', '~') : '';
+    const oldLines = oldStr ? oldStr.split('\n') : [];
+    const newLines = newStr ? newStr.split('\n') : [];
+  
+    if (collapsed) {
+      pushSegmentsRow('edit-collapsed', [
+        nestSegment,
+        { text: `${icon} ${ic.edit} Update`, color: toolColor, bold: true },
+        shortPath ? { text: ` (${shortPath})`, color: '#a78bfa' } : null,
+        { text: ' · ', dimColor: true },
+        { text: `-${oldLines.length}`, color: '#ef4444' },
+        { text: ' ', dimColor: true },
+        { text: `+${newLines.length}`, color: '#4ade80' },
+        { text: ' lines', dimColor: true },
+        ...collapsedHint,
+      ].filter(Boolean));
+      return rows;
+    }
+  
+    pushSegmentsRow('edit-head', [
+      nestSegment,
+      { text: `${icon} ${ic.edit} Update`, color: toolColor, bold: true },
+      shortPath ? { text: ` (${shortPath})`, color: '#a78bfa' } : null,
+    ].filter(Boolean));
+    pushSegmentsRow('edit-summary', [
+      { text: '    ', dimColor: true },
+      { text: `-${oldLines.length}`, color: '#ef4444' },
+      { text: ' ', dimColor: true },
+      { text: `+${newLines.length}`, color: '#4ade80' },
+      { text: ' lines', dimColor: true },
+    ]);
+    oldLines.forEach((line: string, index: number) => {
+      rows.push({
+        key: `${baseKey}-edit-old-${index}`,
+        kind: 'diff',
+        paddingLeft: 2,
+        text: `-${line}`,
+        maxWidth: codeWidth,
+      });
+    });
+    newLines.forEach((line: string, index: number) => {
+      rows.push({
+        key: `${baseKey}-edit-new-${index}`,
+        kind: 'diff',
+        paddingLeft: 2,
+        text: `+${line}`,
+        maxWidth: codeWidth,
+      });
+    });
+    return rows;
+  }
+  
+  if (toolKey === 'write') {
+    const filePath = String((parsed.file_path as string) || (parsed.filePath as string) || '');
+    const content = String((parsed.content as string) || '');
+    const shortPath = filePath ? filePath.replace(`${process.cwd()}/`, '').replace(process.env.HOME ?? '', '~') : '';
+    const lines = content ? content.split('\n') : [];
+  
+    if (collapsed) {
+      pushSegmentsRow('write-collapsed', [
+        nestSegment,
+        { text: `${icon} ${ic.write} Write`, color: toolColor, bold: true },
+        shortPath ? { text: ` (${shortPath})`, color: '#a78bfa' } : null,
+        lines.length > 0 ? { text: ` · +${lines.length} lines`, color: '#4ade80' } : null,
+        ...collapsedHint,
+      ].filter(Boolean));
+      return rows;
+    }
+  
+    pushSegmentsRow('write-head', [
+      nestSegment,
+      { text: `${icon} ${ic.write} Write`, color: toolColor, bold: true },
+      shortPath ? { text: ` (${shortPath})`, color: '#a78bfa' } : null,
+    ].filter(Boolean));
+    pushSegmentsRow('write-summary', [
+      { text: '    ', dimColor: true },
+      { text: `+${lines.length}`, color: '#4ade80' },
+      { text: ' lines', dimColor: true },
+    ]);
+    lines.forEach((line: string, index: number) => {
+      rows.push({
+        key: `${baseKey}-write-${index}`,
+        kind: 'diff',
+        paddingLeft: 2,
+        text: `+${line}`,
+        maxWidth: codeWidth,
+      });
+    });
+    return rows;
+  }
+  
+  if (toolKey === 'read') {
+    const filePath = String((parsed.file_path as string) || (parsed.filePath as string) || '');
+    const shortPath = filePath ? filePath.replace(`${process.cwd()}/`, '').replace(process.env.HOME ?? '', '~') : '';
+    const lineCount = event.output ? String(event.output).split('\n').length : 0;
+    if (collapsed) {
+      pushSegmentsRow('read-collapsed', [
+        nestSegment,
+        { text: `${icon} ${ic.read} Read`, color: toolColor, bold: true },
+        shortPath ? { text: ` (${shortPath})`, color: '#a78bfa' } : null,
+        lineCount > 0 && event.status === 'done' ? { text: ` ${lineCount} lines`, dimColor: true } : null,
+        ...collapsedHint,
+      ].filter(Boolean));
+      return rows;
+    }
+  
+    pushSegmentsRow('read-head', [
+      nestSegment,
+      { text: `${icon} ${ic.read} Read`, color: toolColor, bold: true },
+      shortPath ? { text: ` (${shortPath})`, color: '#a78bfa' } : null,
+      lineCount > 0 && event.status === 'done' ? { text: ` · ${lineCount} lines`, dimColor: true } : null,
+    ].filter(Boolean));
+  
+    if (event.output && event.status !== 'running') {
+      const outputLines = String(event.output).split('\n');
+      const shownLines = outputLines.slice(0, 12);
+      shownLines.forEach((line: string, index: number) => {
+        rows.push({
+          key: `${baseKey}-read-${index}`,
+          kind: 'syntax',
+          paddingLeft: 2,
+          prefixText: '    ',
+          prefixDimColor: true,
+          text: line,
+          maxWidth: codeWidth,
+        });
+      });
+      if (outputLines.length > shownLines.length) {
+        pushSegmentsRow('read-more', [
+          { text: `    … ${outputLines.length - shownLines.length} more lines`, dimColor: true },
+          { text: ' · ', dimColor: true },
+          { text: 'Ctrl+E collapse tools', color: '#f59e0b' },
+        ]);
+      }
+    }
+    return rows;
+  }
+  
+  if (toolKey === 'grep' || toolKey === 'search') {
+    const pattern = String((parsed.pattern as string) || rawInput || '');
+    const path = String((parsed.path as string) || '');
+    const shortPath = path ? path.replace(`${process.cwd()}/`, '').replace(process.env.HOME ?? '', '~') : '';
+    const matchCount = event.output ? String(event.output).split('\n').filter((line: string) => line.trim()).length : 0;
+    if (collapsed) {
+      pushSegmentsRow('search-collapsed', [
+        nestSegment,
+        { text: `${icon} ${ic.search} Search`, color: toolColor, bold: true },
+        pattern ? { text: ` ${pattern}`, color: '#a78bfa' } : null,
+        matchCount > 0 && event.status === 'done' ? { text: ` → ${matchCount} matches`, dimColor: true } : null,
+        ...collapsedHint,
+      ].filter(Boolean));
+      return rows;
+    }
+  
+    pushSegmentsRow('search-head', [
+      nestSegment,
+      { text: `${icon} ${ic.search} Search`, color: toolColor, bold: true },
+      pattern ? { text: ` ${pattern}`, color: '#a78bfa' } : null,
+      shortPath ? { text: ` in ${shortPath}`, dimColor: true } : null,
+      matchCount > 0 && event.status === 'done' ? { text: ` → ${matchCount} matches`, dimColor: true } : null,
+    ].filter(Boolean));
+  
+    if (event.output && event.status !== 'running') {
+      const matchLines = String(event.output).split('\n').filter((line: string) => line.trim());
+      const shownLines = matchLines.slice(0, 10);
+      shownLines.forEach((line: string, index: number) => {
+        rows.push({
+          key: `${baseKey}-search-${index}`,
+          kind: 'ansi',
+          paddingLeft: 2,
+          prefixText: '    ',
+          prefixDimColor: true,
+          text: line,
+          maxWidth: codeWidth,
+          fallbackDim: true,
+        });
+      });
+      if (matchLines.length > shownLines.length) {
+        pushSegmentsRow('search-more', [{ text: `    … ${matchLines.length - shownLines.length} more matches`, dimColor: true }]);
+      }
+    }
+    return rows;
+  }
+  
+  if (toolKey === 'glob' || toolKey === 'find') {
+    const pattern = String((parsed.pattern as string) || rawInput || '');
+    const fileCount = event.output ? String(event.output).split('\n').filter((line: string) => line.trim()).length : 0;
+    if (collapsed) {
+      pushSegmentsRow('find-collapsed', [
+        nestSegment,
+        { text: `${icon} ${ic.find} Find`, color: toolColor, bold: true },
+        pattern ? { text: ` ${pattern}`, color: '#a78bfa' } : null,
+        fileCount > 0 && event.status === 'done' ? { text: ` → ${fileCount} files`, dimColor: true } : null,
+        ...collapsedHint,
+      ].filter(Boolean));
+      return rows;
+    }
+  
+    pushSegmentsRow('find-head', [
+      nestSegment,
+      { text: `${icon} ${ic.find} Find`, color: toolColor, bold: true },
+      pattern ? { text: ` ${pattern}`, color: '#a78bfa' } : null,
+      fileCount > 0 && event.status === 'done' ? { text: ` → ${fileCount} files`, dimColor: true } : null,
+    ].filter(Boolean));
+  
+    if (event.output && event.status !== 'running') {
+      const files = String(event.output).split('\n').filter((line: string) => line.trim());
+      const shownFiles = files.slice(0, 10);
+      shownFiles.forEach((file: string, index: number) => {
+        pushSegmentsRow(`find-file-${index}`, [{ text: `    ${truncateCodeLine(file, codeWidth)}`, dimColor: true }]);
+      });
+      if (files.length > shownFiles.length) {
+        pushSegmentsRow('find-more', [{ text: `    … ${files.length - shownFiles.length} more files`, dimColor: true }]);
+      }
+    }
+    return rows;
+  }
+  
+  const label = (() => {
+    if (event.tool === 'Read') return `${ic.read} Read`;
+    if (event.tool === 'Edit') return `${ic.edit} Edit`;
+    if (event.tool === 'Write') return `${ic.write} Write`;
+    if (event.tool === 'Bash') return `${ic.bash} Bash`;
+    if (event.tool === 'Grep') return `${ic.search} Search`;
+    if (event.tool === 'Glob') return `${ic.find} Find`;
+    return `${ic.tool} ${event.tool}`;
+  })();
+  const inputPreview = rawInput.length > 80 ? `${rawInput.slice(0, 79)}…` : rawInput;
+  const outLines = event.output ? String(event.output).split('\n').length : 0;
+  
+  pushSegmentsRow('generic', [
+    nestSegment,
+    { text: `${icon} ${label}`, color: toolColor, bold: true },
+    inputPreview ? { text: ` ${inputPreview}`, dimColor: true } : null,
+    outLines > 0 && event.status === 'done' ? { text: ` → ${outLines} lines`, dimColor: true } : null,
+    ...(collapsed ? collapsedHint : []),
+  ].filter(Boolean));
+  
+  return rows;
+}
+
+export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any[] {
+  if (!events || events.length === 0) return [];
+  
+  const rows: any[] = [];
+  const accent = engineColor(events[0]?.engineId ?? '');
+  const counts = new Map<string, number>();
+  const previews: string[] = [];
+  
+  const labelFor = (event: any) => {
+    const toolKey = String(event.tool ?? '').toLowerCase();
+    if (toolKey === 'bash' || toolKey === 'run') return 'Bash';
+    if (toolKey === 'read') return 'Read';
+    if (toolKey === 'grep' || toolKey === 'search') return 'Search';
+    if (toolKey === 'glob' || toolKey === 'find') return 'Find';
+    if (toolKey === 'edit' || toolKey === 'update') return 'Update';
+    if (toolKey === 'write') return 'Write';
+    return String(event.tool ?? 'Tool');
+  };
+  
+  const previewFor = (event: any) => {
+    const rawInput = String(event.input ?? '');
+    let parsed: Record<string, unknown> = {};
+    try {
+      if (rawInput.trim().startsWith('{')) parsed = JSON.parse(rawInput);
+    } catch {
+      parsed = {};
+    }
+  
+    const toolKey = String(event.tool ?? '').toLowerCase();
+    if (toolKey === 'bash' || toolKey === 'run') {
+      const command = String((parsed.command as string) || rawInput || '').split('\n')[0] ?? '';
+      return truncateCodeLine(command, contentWidth(20));
+    }
+    if (toolKey === 'read' || toolKey === 'edit' || toolKey === 'update' || toolKey === 'write') {
+      const filePath = String((parsed.file_path as string) || (parsed.filePath as string) || '');
+      return filePath ? filePath.replace(`${process.cwd()}/`, '').replace(process.env.HOME ?? '', '~') : labelFor(event);
+    }
+    if (toolKey === 'grep' || toolKey === 'search' || toolKey === 'glob' || toolKey === 'find') {
+      const pattern = String((parsed.pattern as string) || rawInput || '');
+      return truncateCodeLine(pattern, contentWidth(20));
+    }
+    return truncateCodeLine(rawInput, contentWidth(20));
+  };
+  
+  for (const event of events) {
+    const label = labelFor(event);
+    counts.set(label, (counts.get(label) ?? 0) + 1);
+    if (previews.length < 3) previews.push(previewFor(event));
+  }
+  
+  const countSummary = Array.from(counts.entries())
+    .map(([label, count]) => `${label}${count > 1 ? `×${count}` : ''}`)
+    .join(' · ');
+  
+  rows.push({
+    key: `${baseKey}-tool-group-head`,
+    kind: 'segments',
+    paddingLeft: 2,
+    segments: [
+      { text: '⏿ ', color: accent },
+      { text: `${events.length} tool calls`, bold: true },
+      countSummary ? { text: ' · ', dimColor: true } : null,
+      countSummary ? { text: countSummary, dimColor: true } : null,
+      { text: ' · ', dimColor: true },
+      { text: 'Ctrl+E expand tools', color: '#f59e0b' },
+    ].filter(Boolean),
+  });
+  
+  if (previews.length > 0) {
+    rows.push({
+      key: `${baseKey}-tool-group-preview`,
+      kind: 'segments',
+      paddingLeft: 2,
+      segments: previews.flatMap((preview: string, index: number) => ([
+        { text: index === 0 ? '    ' : ' • ', dimColor: true },
+        { text: preview, dimColor: true },
+      ])),
+    });
+  }
+  
+  return rows;
+}
+
+export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean): any[] {
+  const rows: any[] = [];
+  const proseWidth = contentWidth(4);
+  const chatWidth = contentWidth(2);
+  const engineWidth = contentWidth(8);
+  const pushSpacer = (key: string) => {
+    rows.push({ key, kind: 'spacer' });
+  };
+  const pushSegmentsRow = (key: string, paddingLeft: number, segments: any[], borderColor = '') => {
+    rows.push({ key, kind: 'segments', paddingLeft, segments, borderColor });
+  };
+  const pushRichText = (baseKey: string, text: string, paddingLeft: number, wrapWidth: number, borderColor = '') => {
+    const richLines = parseProseToRichLines(String(text ?? ''), wrapWidth);
+    richLines.forEach((richLine: any, index: number) => {
+      rows.push({
+        key: `${baseKey}-rich-${index}`,
+        kind: 'rich',
+        paddingLeft,
+        richLine,
+        borderColor,
+      });
+    });
+  };
+  
+  let skippedUntil = -1;
+  blocks.forEach((block: OutputBlock, blockIndex: number) => {
+    if (blockIndex < skippedUntil) return;
+    const event = block.event as any;
+    const baseKey = `block-${block.id}`;
+  
+    if (!toolOutputExpanded && event.type === 'tool-call' && !isMutatingToolCall(event)) {
+      const groupedEvents = [event];
+      let nextIndex = blockIndex + 1;
+      while (nextIndex < blocks.length) {
+        const nextEvent = blocks[nextIndex].event as any;
+        if (nextEvent.type !== 'tool-call' || isMutatingToolCall(nextEvent)) break;
+        groupedEvents.push(nextEvent);
+        nextIndex += 1;
+      }
+  
+      if (groupedEvents.length > 1) {
+        rows.push(...buildCollapsedToolGroupRows(baseKey, groupedEvents));
+        skippedUntil = nextIndex;
+        return;
+      }
+    }
+  
+    switch (event.type) {
+      case 'text':
+        pushRichText(baseKey, event.content, 2, proseWidth);
+        return;
+      case 'user-message':
+        if (rows.length > 0) pushSpacer(`${baseKey}-gap`);
+        pushSegmentsRow(`${baseKey}-user`, 1, [
+          { text: '❯ ', color: '#f97316', bold: true },
+          { text: event.content, bold: true },
+        ]);
+        return;
+      case 'engine-block': {
+        const cleaned = cleanEngineOutput(event.content);
+        if (!cleaned.trim()) return;
+        const accentColor = color256toHex(event.color ?? (ENGINE_COLORS[event.engineId] ?? 124));
+        if (rows.length > 0) pushSpacer(`${baseKey}-gap`);
+        if (mode === 'chat') {
+          pushSegmentsRow(`${baseKey}-chat-head`, 1, [{ text: `${icons().dotOn} ${event.engineId}`, color: accentColor, bold: true }]);
+          pushSpacer(`${baseKey}-chat-space`);
+          rows.push(...parseMarkdownToRows(baseKey, cleaned, chatWidth, 1, ''));
+          return;
+        }
+        pushSegmentsRow(`${baseKey}-engine-head`, 2, [
+          { text: '┌── ', color: accentColor },
+          { text: event.engineId, color: accentColor, bold: true },
+        ]);
+        pushSegmentsRow(`${baseKey}-engine-rule`, 2, [{ text: '│', color: accentColor }]);
+        rows.push(...parseMarkdownToRows(baseKey, cleaned, engineWidth, 2, accentColor));
+        pushSegmentsRow(`${baseKey}-engine-foot`, 2, [{ text: '└──', color: accentColor }]);
+        return;
+      }
+      case 'separator':
+        pushSpacer(`${baseKey}-separator`);
+        return;
+      case 'header':
+        pushSpacer(`${baseKey}-header-gap`);
+        pushSegmentsRow(`${baseKey}-header`, 0, [
+          { text: '  ', dimColor: true },
+          { text: `${icons().header} ${event.title}`, color: 'cyan', bold: true },
+        ]);
+        return;
+      case 'success':
+        pushSegmentsRow(`${baseKey}-success`, 0, [
+          { text: '  ' },
+          { text: icons().success, color: '#4ade80' },
+          { text: ` ${event.message}` },
+        ]);
+        return;
+      case 'warning':
+        pushSegmentsRow(`${baseKey}-warning`, 0, [
+          { text: '  ' },
+          { text: icons().warning, color: '#fbbf24' },
+          { text: ` ${event.message}` },
+        ]);
+        return;
+      case 'info':
+        pushSegmentsRow(`${baseKey}-info`, 0, [{ text: `  ${event.message}`, dimColor: true }]);
+        return;
+      case 'error': {
+        const errLines = String(event.message ?? '').split('\n');
+        const firstLine = errLines[0] || 'Error';
+        pushSegmentsRow(`${baseKey}-error-main`, 0, [
+          { text: '  ' },
+          { text: icons().fail, color: '#ef4444' },
+          { text: ` ${firstLine}`, color: '#ef4444' },
+        ]);
+        errLines.slice(1, 5).forEach((line: string, index: number) => {
+          pushSegmentsRow(`${baseKey}-error-${index}`, 0, [{ text: `    ${line.trim()}`, dimColor: true }]);
+        });
+        if (errLines.length > 5) {
+          pushSegmentsRow(`${baseKey}-error-more`, 0, [{ text: `    … ${errLines.length - 5} more lines`, dimColor: true }]);
+        }
+        return;
+      }
+      case 'permission-ask': {
+        pushSegmentsRow(`${baseKey}-perm-head`, 1, [{ text: `${event.tool} — APPROVAL REQUIRED`, color: '#fbbf24', bold: true }]);
+        String(event.command ?? '').split('\n').slice(0, 6).forEach((line: string, index: number) => {
+          pushSegmentsRow(`${baseKey}-perm-cmd-${index}`, 1, [
+            { text: `  ${index === 0 ? '$ ' : '  '}`, dimColor: true },
+            { text: line },
+          ]);
+        });
+        if (event.description) {
+          pushSegmentsRow(`${baseKey}-perm-desc`, 1, [{ text: `  ${event.description}`, dimColor: true }]);
+        }
+        pushSegmentsRow(`${baseKey}-perm-reason`, 1, [{ text: String(event.reason ?? ''), color: '#fbbf24' }]);
+        pushSegmentsRow(`${baseKey}-perm-hint`, 1, [{ text: 'Press Y to approve, N to deny, A to always allow', dimColor: true }]);
+        return;
+      }
+      case 'thinking-chunk': {
+        if (thinkingExpanded === false) return;
+        const lines = String(event.chunk ?? '').split('\n').filter((line: string) => line.trim());
+        const preview = lines.length > 3 ? lines.slice(0, 3) : lines;
+        preview.forEach((line: string, index: number) => {
+          pushSegmentsRow(`${baseKey}-thinking-${index}`, 2, [{ text: `▹ ${line}`, color: '#8b8b8b', dimColor: true, italic: true }]);
+        });
+        if (lines.length > 3) {
+          pushSegmentsRow(`${baseKey}-thinking-more`, 2, [
+            { text: `▹ … ${lines.length - 3} more lines  `, color: '#8b8b8b', dimColor: true, italic: true },
+            { text: 'Ctrl+T', color: '#f59e0b' },
+          ]);
+        }
+        return;
+      }
+      case 'streaming-chunk': {
+        const chunkText = String(event.chunk ?? '');
+        const isThinking = /^~?\d{1,3}%\s/.test(chunkText.trim());
+        if (isThinking && thinkingExpanded === false) return;
+        pushSegmentsRow(`${baseKey}-stream`, 2, [{ text: chunkText, dimColor: isThinking, italic: isThinking }]);
+        return;
+      }
+      case 'kern-draft': {
+        const borderColor = engineColor(event.engineId);
+        if (rows.length > 0) pushSpacer(`${baseKey}-gap`);
+        pushSegmentsRow(`${baseKey}-draft-head`, 2, [
+          { text: '┌── ', color: borderColor },
+          { text: event.engineId, color: borderColor, bold: true },
+          event.critique ? { text: ` ${event.critique}`, color: 'green' } : null,
+        ].filter(Boolean));
+        pushSegmentsRow(`${baseKey}-draft-rule`, 2, [{ text: '│', color: borderColor }]);
+        rows.push(...parseMarkdownToRows(baseKey, cleanEngineOutput(event.content), engineWidth, 2, borderColor));
+        pushSegmentsRow(`${baseKey}-draft-foot`, 2, [{ text: '└──', color: borderColor }]);
+        return;
+      }
+      case 'debate-round': {
+        const borderColor = engineColor(event.engineId);
+        if (rows.length > 0) pushSpacer(`${baseKey}-gap`);
+        pushSegmentsRow(`${baseKey}-debate-head`, 2, [
+          { text: '┌── ', color: borderColor },
+          { text: event.engineId, color: borderColor, bold: true },
+          { text: ` (${event.position})`, dimColor: true },
+        ]);
+        pushSegmentsRow(`${baseKey}-debate-rule`, 2, [{ text: '│', color: borderColor }]);
+        rows.push(...parseMarkdownToRows(baseKey, cleanEngineOutput(event.argument), engineWidth, 2, borderColor));
+        pushSegmentsRow(`${baseKey}-debate-foot`, 2, [{ text: '└──', color: borderColor }]);
+        return;
+      }
+      case 'verdict':
+        pushRichText(baseKey, cleanEngineOutput(event.summary), 2, proseWidth);
+        return;
+      case 'scoreboard':
+        pushSegmentsRow(`${baseKey}-score-title`, 2, [{ text: event.title, bold: true }]);
+        if (event.winner) pushSegmentsRow(`${baseKey}-score-winner`, 2, [{ text: `★ Winner: ${event.winner}`, color: 'green', bold: true }]);
+        pushSegmentsRow(`${baseKey}-score-rule`, 2, [{ text: '─'.repeat(46), dimColor: true }]);
+        (event.metrics ?? []).forEach((metric: any, index: number) => {
+          pushSegmentsRow(`${baseKey}-score-${index}`, 2, [{ text: `${metric.label}: ${metric.values.join(' │ ')}` }]);
+        });
+        return;
+      case 'plan':
+        pushSegmentsRow(`${baseKey}-plan-id`, 2, [{ text: `▸ Plan: ${event.plan.id.slice(0, 12)}`, color: 'cyan', bold: true }]);
+        pushSegmentsRow(`${baseKey}-plan-state`, 2, [{ text: `State: ${event.plan.state}` }]);
+        pushSegmentsRow(`${baseKey}-plan-task`, 2, [{ text: `Task: ${event.plan.action.task}` }]);
+        pushSegmentsRow(`${baseKey}-plan-rule`, 2, [{ text: '─'.repeat(46), dimColor: true }]);
+        (event.plan.steps ?? []).forEach((step: any, index: number) => {
+          const state = step.result?.state ?? 'pending';
+          const icon = state === 'completed' ? icons().success : state === 'failed' ? icons().fail : state === 'running' ? icons().dotOn : icons().dotOff;
+          const color = state === 'completed' ? 'green' : state === 'failed' ? 'red' : state === 'running' ? 'yellow' : undefined;
+          pushSegmentsRow(`${baseKey}-plan-step-${index}`, 2, [
+            { text: icon, color },
+            { text: ` ${step.label}` },
+          ]);
+        });
+        if (event.plan.state === 'draft') {
+          pushSegmentsRow(`${baseKey}-plan-draft`, 2, [{ text: 'Awaiting approval — Y accept  N cancel', dimColor: true }]);
+        }
+        return;
+      case 'plan-list':
+        (event.plans ?? []).forEach((plan: any, index: number) => {
+          pushSegmentsRow(`${baseKey}-plan-list-${index}`, 2, [{ text: `${plan.id.slice(0, 12)}  ${plan.state}  ${plan.action.task}` }]);
+        });
+        return;
+      case 'plan-proposal':
+        pushRichText(baseKey, String(event.markdown ?? ''), 2, proseWidth);
+        return;
+      case 'plan-execution':
+        pushSegmentsRow(`${baseKey}-plan-exec`, 2, [{ text: `Executing plan ${event.plan?.id?.slice?.(0, 12) ?? ''}`, bold: true }]);
+        pushSegmentsRow(`${baseKey}-plan-exec-state`, 2, [{ text: `State: ${event.plan?.state ?? 'running'}`, dimColor: true }]);
+        return;
+      case 'table': {
+        pushSegmentsRow(`${baseKey}-table-head`, 2, [{ text: (event.headers ?? []).join(' │ '), bold: true }]);
+        pushSegmentsRow(`${baseKey}-table-rule`, 2, [{ text: '─'.repeat(Math.max(12, (event.headers ?? []).join(' │ ').length)), dimColor: true }]);
+        (event.rows ?? []).forEach((row: string[], index: number) => {
+          pushSegmentsRow(`${baseKey}-table-row-${index}`, 2, [{ text: row.join(' │ ') }]);
+        });
+        return;
+      }
+      case 'tool-call':
+        rows.push(...buildToolCallRows(baseKey, event, toolOutputExpanded));
+        return;
+      case 'response-meta': {
+        const totalTokens = (event.inputTokens ?? 0) + (event.outputTokens ?? 0);
+        const parts = [
+          event.engineId,
+          `${(event.elapsed / 1000).toFixed(1)}s`,
+          totalTokens > 0 ? `${totalTokens} tok` : '',
+          event.cost ? `$${event.cost.toFixed(4)}` : '',
+        ].filter(Boolean);
+        pushSegmentsRow(`${baseKey}-meta`, 2, [{ text: parts.join(' · '), dimColor: true }]);
+        return;
+      }
+      case 'file-changes':
+        pushSegmentsRow(`${baseKey}-files-head`, 2, [{ text: 'Files changed', bold: true }]);
+        (event.files ?? []).forEach((file: any, index: number) => {
+          const shortPath = String(file.path ?? '').replace(`${process.cwd()}/`, '');
+          pushSegmentsRow(`${baseKey}-file-${index}`, 2, [{
+            text: `${file.status === 'created' ? icons().dotOn : file.status === 'deleted' ? '⊖' : icons().success} ${shortPath} +${file.additions} -${file.deletions}`,
+            color: file.status === 'created' ? '#22d3ee' : file.status === 'deleted' ? '#ef4444' : '#4ade80',
+          }]);
+        });
+        return;
+      case 'dashboard':
+        LOGO_LINES.forEach((line: string, index: number) => {
+          rows.push({
+            key: `${baseKey}-logo-${index}`,
+            kind: 'gradient',
+            paddingLeft: 1,
+            text: line,
+            colors: BRAND,
+          });
+        });
+        pushSpacer(`${baseKey}-dash-gap-1`);
+        pushSegmentsRow(`${baseKey}-dash-tag`, 0, [{ text: '     Any AI can join. They compete. You ship.', color: '#d4a041', italic: true }]);
+        pushSegmentsRow(`${baseKey}-dash-version`, 0, [
+          { text: `     v${VERSION}  Powered by `, dimColor: true },
+          { text: 'KERNlang', color: '#fbbf24', bold: true },
+        ]);
+        pushSegmentsRow(`${baseKey}-dash-engines`, 0, [
+          { text: '  Engines: ', color: '#f97316' },
+          ...((event.enabled ?? []) as string[]).flatMap((engineId: string, index: number, list: string[]) => ([
+            { text: engineId, color: engineColor(engineId), bold: true },
+            index < list.length - 1 ? { text: ' ', dimColor: true } : null,
+          ].filter(Boolean))),
+        ].filter(Boolean));
+        if (event.eloTop) {
+          pushSegmentsRow(`${baseKey}-dash-elo`, 0, [
+            { text: '  ' },
+            { text: '♛ ', color: '#fbbf24' },
+            { text: event.eloTop.id, color: engineColor(event.eloTop.id), bold: true },
+            { text: ` ${event.eloTop.rating} ELO`, dimColor: true },
+          ]);
+        }
+        [
+          { prompt: '"explain the auth flow"', target: 'chat', color: '#fbbf24' },
+          { prompt: '"codex how would you do this?"', target: 'codex', color: '#60a5fa' },
+          { prompt: '"fix login bug, test with npm test"', target: 'forge', color: '#f97316' },
+          { prompt: '"should we use REST or GraphQL?"', target: 'tribunal', color: '#a78bfa' },
+        ].forEach((example: any, index: number) => pushSegmentsRow(`${baseKey}-dash-example-${index}`, 0, [
+          { text: '  ', dimColor: true },
+          { text: example.prompt, dimColor: true, italic: true },
+          { text: '  →  ', dimColor: true },
+          { text: example.target, color: example.color },
+        ]));
+        pushSpacer(`${baseKey}-dash-gap-4`);
+        pushSegmentsRow(`${baseKey}-dash-help`, 0, [
+          { text: '  Just talk, or type ', dimColor: true },
+          { text: '/', color: '#f97316' },
+          { text: ' for commands.', dimColor: true },
+        ]);
+        return;
+      case 'agent-step-start':
+        pushSegmentsRow(`${baseKey}-agent-start`, 2, [{ text: `${event.engineId} turn ${event.turnIndex + 1} started`, dimColor: true }]);
+        return;
+      case 'agent-step-end':
+        pushSegmentsRow(`${baseKey}-agent-end`, 2, [{ text: `${event.engineId} ${event.outcome} · ${event.toolCalls} tools · ${event.tokensUsed} tok`, dimColor: true }]);
+        return;
+      case 'agent-turn-summary':
+        pushSegmentsRow(`${baseKey}-agent-summary`, 2, [{ text: `${event.engineId} summary · ${event.turnsRemaining} turns left · ${event.cumulativeTokens} tok`, dimColor: true }]);
+        return;
+      case 'agent-budget-warning':
+        pushSegmentsRow(`${baseKey}-agent-budget`, 2, [{ text: `${event.engineId} ${event.kind} budget warning · ${event.remaining} remaining`, color: '#fbbf24' }]);
+        return;
+      case 'engine-switch':
+        pushSegmentsRow(`${baseKey}-engine-switch`, 2, [{ text: `Engine switch: ${event.from ?? 'auto'} → ${event.to}`, dimColor: true }]);
+        return;
+      case 'shadow-active':
+        pushSegmentsRow(`${baseKey}-shadow`, 2, [{ text: `Shadow active: ${event.shadowEngineId} behind ${event.foregroundEngineId}`, dimColor: true }]);
+        return;
+      case 'agent-routing':
+        pushSegmentsRow(`${baseKey}-routing`, 2, [{ text: `Routing: ${event.mode} · ${event.engines.join(', ')}`, dimColor: true }]);
+        return;
+      case 'agent-team-start':
+        pushSegmentsRow(`${baseKey}-team-start`, 2, [{ text: `Team ${event.teamId}: ${event.engineIds.join(', ')} · ${event.taskKind}`, dimColor: true }]);
+        return;
+      case 'agent-team-complete':
+        pushSegmentsRow(`${baseKey}-team-complete`, 2, [{ text: `Team ${event.teamId} complete · winner ${event.winner ?? 'none'} · $${event.teamCostUsd.toFixed(2)}`, dimColor: true }]);
+        return;
+      case 'spinner-start':
+      case 'spinner-stop':
+      case 'spinner-update':
+      case 'progress-update':
+      case 'progress-clear':
+      case 'confidence-update':
+      case 'streaming-end':
+      case 'clear':
+      case 'question':
+      case 'patch-review':
+        return;
+      default:
+        pushSegmentsRow(`${baseKey}-fallback`, 2, [{ text: `[${event.type}]`, dimColor: true }]);
+    }
+  });
+  
+  return rows;
 }
 
 export async function startRepl(): Promise<void> {
@@ -1460,11 +3071,12 @@ export async function startRepl(): Promise<void> {
     _lastSigintAt.value = now;
   });
   if (process.stdout.isTTY) {
-    process.stdout.write(terminalEnterSequence(true, isMouseTrackingEnabled()));
+    const fullscreenEnabled = isFullscreenEnabled();
+    process.stdout.write(terminalEnterSequence(fullscreenEnabled, false));
     process.on('exit', () => {
       try {
         drainStdinBuffer();
-        process.stdout.write(terminalExitSequence(true));
+        process.stdout.write(terminalExitSequence(fullscreenEnabled));
       } catch { /* stdout gone */ }
     });
   }

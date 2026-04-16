@@ -238,6 +238,9 @@ fn name=lineLength params="line:PromptLine" returns=number export=false
 fn name=pluralizeLines params="count:number" returns=string export=false
   handler <<< return count === 1 ? 'line' : 'lines'; >>>
 
+fn name=isDelegatedCtrlShortcut params="input:string" returns=boolean export=true
+  handler <<< return ['c', 'e', 'j', 'l', 'r', 't', 'y'].includes(input); >>>
+
 screen name=PromptTextInput target=ink memo=true export=named
   prop name=value type=string
   prop name=placeholder type="string|undefined"
@@ -338,11 +341,12 @@ screen name=PromptTextInput target=ink memo=true export=named
               '\x0c': 'l',
               '\x12': 'r',
               '\x14': 't',
+              '\x19': 'y',
               '\x15': 'u',
               '\x17': 'w',
             } as Record<string, string>)[input] ?? input
           : input;
-        const isReservedCtrlShortcut = key.ctrl && ['e', 'j', 'l', 'r', 't'].includes(normalizedCtrlInput);
+        const isReservedCtrlShortcut = key.ctrl && isDelegatedCtrlShortcut(normalizedCtrlInput);
         const isSupportedCtrlEditShortcut = key.ctrl && ['a', 'k', 'u', 'w'].includes(normalizedCtrlInput);
         const isWordLeft = (key.meta && (key.leftArrow || input === 'b')) || input === '\x1bb';
         const isWordRight = (key.meta && (key.rightArrow || input === 'f')) || input === '\x1bf';

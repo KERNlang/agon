@@ -279,7 +279,7 @@ export function deactivateNero(ctx: HandlerContext, dispatch: Dispatch): void {
 export async function promptDelegation(action: string, dispatch: Dispatch, hardened?: boolean, tribunalMode?: string, team?: boolean): Promise<{approved:boolean, action?:string, hardened?:boolean, tribunalMode?:string, team?:boolean, userContext?:string}> {
   const confirmLabel = hardened ? `${action} (hardened)` : action;
   const answer = await new Promise<string>((resolve) => {
-    dispatch({ type: 'question', prompt: `\n━━━ Cesar suggests: ${confirmLabel}${tribunalMode ? ` [${tribunalMode}]` : ''} ━━━`, choices: [
+    dispatch({ type: 'question', prompt: `Cesar suggests: ${confirmLabel}${tribunalMode ? ` [${tribunalMode}]` : ''}`, choices: [
       { key: 'y', label: 'Yes', color: '#4ade80' },
       { key: 'n', label: 'No', color: '#ef4444' },
     ], resolve } as any);

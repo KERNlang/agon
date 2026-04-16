@@ -54,11 +54,11 @@
   "test": { "args": ["--version"] },
 
   "cliModels": {
-    "default": "claude-sonnet-4-20250514",
+    "default": "claude-sonnet-4-6",
     "list": [
-      { "id": "claude-opus-4-20250514", "name": "Opus 4" },
-      { "id": "claude-sonnet-4-20250514", "name": "Sonnet 4" },
-      { "id": "claude-haiku-3-5-20241022", "name": "Haiku 3.5" }
+      { "id": "claude-opus-4-6", "name": "Opus 4.6" },
+      { "id": "claude-sonnet-4-6", "name": "Sonnet 4.6" },
+      { "id": "claude-haiku-4-5", "name": "Haiku 4.5" }
     ]
   },
 

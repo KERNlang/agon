@@ -116,15 +116,10 @@ export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
   // Ctrl+L: clear
   if (key.ctrl && normalizedCtrlInput === 'l') return { type: 'submit', value: '/clear' };
   
-  // Shift+Up/Down: fine-grained scroll.
-  if (key.shift && key.upArrow) return { type: 'scroll', delta: 3 };
-  if (key.shift && key.downArrow) return { type: 'scroll', delta: -3 };
-  
-  // Page navigation for long transcripts.
-  if (key.pageUp) return { type: 'scroll', delta: 12 };
-  if (key.pageDown) return { type: 'scroll', delta: -12 };
-  if (key.home) return { type: 'scrollToTop' };
-  if (key.end) return { type: 'scrollToBottom' };
+  // Scroll keys (Shift+Up/Down, PageUp/Down, Home/End) are intentionally
+  // unbound. Terminal scrollback is native now (Ink Static commits history
+  // to the emulator), so the terminal owns wheel + keyboard scroll. Leaving
+  // these bound would swallow the keys and produce a no-op.
   
   // Ctrl+E: toggle tool output expansion
   if (key.ctrl && normalizedCtrlInput === 'e') return { type: 'toggleToolExpand' };

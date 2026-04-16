@@ -54,6 +54,7 @@ export interface OutputActions {
   addBlock: (event:OutputEvent) => void;
   replaceBlocksOfType: (eventType:string, event:OutputEvent) => void;
   clearBlocks: () => void;
+  setPendingPlanProposal: (val:OutputEvent|null) => void;
   setReviewEvent: (val:any) => void;
   setQuestionState: (val:any) => void;
   setChatStartTime: (val:number) => void;
@@ -247,6 +248,7 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
       actions.setStreamingText({});
       actions.setAgentProgress({});
       actions.setQuestionState(null);
+      actions.setPendingPlanProposal(null);
       actions.setReviewEvent(null);
       codeBlockBuffer.clear();
       _thinkingBuffer.engineId = '';
@@ -286,14 +288,25 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
       return;
     }
     case 'plan-proposal': {
-      // Cesar may emit several ProposePlan calls in one turn (revisions,
-      // multi-step edits). Only the latest one is interactive — replace any
-      // prior plan-proposal blocks so the user sees a single source of truth.
-      actions.replaceBlocksOfType('plan-proposal', event);
+      // Plan-proposals live in the live-pane (dynamic zone) rather than
+      // outputBlocks. Cesar may revise them mid-turn; the live-pane slot
+      // updates in place. On user confirm, plan-execution takes over as
+      // the permanent scrollback record. See kern/surfaces/app.kern.
+      actions.setPendingPlanProposal(event);
       return;
     }
     case 'plan-execution': {
+      // Plan approved — clear the live-pane proposal and commit the
+      // execution event as the permanent record.
+      actions.setPendingPlanProposal(null);
       actions.addBlock(event);
+      return;
+    }
+    case 'plan-cancelled': {
+      // Plan rejected at approval prompt — just clear the live slot.
+      // The subsequent 'info: Plan rejected.' dispatch provides the
+      // scrollback record; no plan block needed.
+      actions.setPendingPlanProposal(null);
       return;
     }
     case 'confidence-update': {

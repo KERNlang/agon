@@ -2,7 +2,7 @@
 // Replaces app.tsx monolith. All logic in KERN modules; this is the wiring.
 
 import from="react" names="useState,useCallback,useEffect,useRef,useMemo"
-import from="ink" names="Box,Text,render"
+import from="ink" names="Box,Text,render,Static"
 import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,ensureCurrentWorkspace,startChatSession,getRatings,getActiveWorkspace,RUNS_DIR,extractImagesFromInput,resolveWorkingDir,currentBranch,configSet,createCesarMemory,modelEntryToEngineDef,appendMessage,getAgonHome,tracker,copyToClipboard"
 import from="@agon/core" names="Plan,ChatSession,Skill,PersistentSession,ImageAttachment" types=true
 import from="../../handlers/types.js" names="EngineProgress" types=true
@@ -28,7 +28,8 @@ import from="../signals/app-input.js" names="cleanInputValue,cleanSubmitValue,fi
 import from="../signals/keyboard.js" names="resolveKeyboardInput"
 import from="../signals/block-archive.js" names="makeBlockArchivePath,appendBlockWithCap"
 import from="../blocks/review.js" names="handleReviewAction"
-import from="../blocks/engine.js" names="DashboardView"
+import from="../blocks/engine.js" names="DashboardView,OutputBlockView"
+import from="../blocks/plan-view.js" names="PlanProposalView"
 import from="../cesar/session.js" names="saveCesarConversationSnapshot"
 import from="../../components.js" names="SpinnerBlock,StatusBar,CesarStatusStrip,EnginePicker,ModelPicker,ReviewBlock,BackgroundJobRail,CesarPicker,ComposerView,AgentProgressView,contentWidth,color256toHex,engineColor,CODE_RAIL,CODE_RAIL_COLOR,MAX_CODE_LINES,LOGO_LINES,VERSION,BRAND"
 import from="./app-views.js" names="ChromeBar,HistoryView,StreamingView,ToolDetailBlock"
@@ -1821,6 +1822,7 @@ screen name=App target=ink
   state name=streamingText type="Record<string,StreamingEntry>" initial="{}" throttle=90
   state name=pendingImages type="ImageAttachment[]" initial="[]"
   state name=reviewEvent type="ReviewEvent|null" initial="null"
+  state name=pendingPlanProposal type="OutputEvent|null" initial="null"
   state name=lastReviewResult type="{ engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number } | null" initial="null"
   state name=toolDetailEvent type="any|null" initial="null"
   state name=jobManager type=any initial="new JobManager()"
@@ -2204,7 +2206,10 @@ screen name=App target=ink
   effect deps="maxScrollOffset,selectionMode,startupOnly,historyViewportTop,visibleWindow,displayRows,dispatch,config"
     handler <<<
       if (!process.stdin.isTTY || !process.stdout.isTTY) return;
-      const mouseTrackingActive = isMouseTrackingEnabled(config) && !selectionMode && !startupOnly;
+      // Mouse tracking permanently disabled: native terminal scrollback owns
+      // the wheel, drag-select is delegated to the terminal emulator. See
+      // commit notes for the Static-scrollback migration.
+      const mouseTrackingActive = false;
       if (!mouseTrackingActive) return;
       const indicatorRows = visibleWindow.rowsAbove > 0 || visibleWindow.rowsBelow > 0 ? 1 : 0;
       const visibleRowCount = visibleWindow.visible.length;
@@ -2497,6 +2502,7 @@ screen name=App target=ink
           });
         },
         clearBlocks: () => setOutputBlocks([]),
+        setPendingPlanProposal: (val: OutputEvent | null) => setPendingPlanProposal(val),
         setReviewEvent,
         setQuestionState,
         setChatStartTime: (val: number) => { chatStartTimeRef.current = val; },
@@ -2615,7 +2621,9 @@ screen name=App target=ink
     handler <<<
       if (!process.stdin.isTTY || !process.stdout.isTTY) return;
       const fullscreenEnabled = isFullscreenEnabled(config);
-      const mouseTrackingActive = isMouseTrackingEnabled(config) && !selectionMode && !startupOnly;
+      // Mouse tracking permanently disabled (see handler above). Terminal
+      // keeps ownership of wheel scroll + native selection/copy.
+      const mouseTrackingActive = false;
 
       const reassertModes = (includeAltScreen = false) => {
         process.stdout.write(terminalEnterSequence(fullscreenEnabled && includeAltScreen, mouseTrackingActive));
@@ -3267,13 +3275,18 @@ screen name=App target=ink
                 <DashboardView event={outputBlocks[0]?.event as any} />
               </Box>
             ) : (
-              <HistoryView
-                visibleRows={visibleWindow.visible}
-                rowsAbove={visibleWindow.rowsAbove}
-                rowsBelow={visibleWindow.rowsBelow}
-                stickToBottom={!startupOnly && scrollOffset === 0 && historyNeedsViewportFill}
-                centerContent={false}
-              />
+              <Static items={outputBlocks.filter((b: any) => b.event?.type !== 'dashboard')}>
+                {(item: any) => (
+                  <Box key={item.id} flexDirection="column">
+                    <OutputBlockView
+                      event={item.event}
+                      mode={mode}
+                      toolOutputExpanded={toolOutputExpanded}
+                      thinkingExpanded={thinkingExpanded}
+                    />
+                  </Box>
+                )}
+              </Static>
             )}
             
             {livePaneVisible && (
@@ -3303,6 +3316,9 @@ screen name=App target=ink
                   </Box>
                 )}
               </>
+            )}
+            {pendingPlanProposal && (
+              <PlanProposalView plan={(pendingPlanProposal as any).plan} />
             )}
           </>
         </Box>

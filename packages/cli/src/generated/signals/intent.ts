@@ -380,6 +380,8 @@ function parseSlashCommand(input: string, commandRegistry?: any): Intent {
     case 'devil':
     case 'adversarial':
       return { type: 'nero' } as Intent;
+    case 'init':
+      return { type: 'init' as const, scope: rest || undefined } as unknown as Intent;
     case 'create-skill': {
       const skillName = rest.trim() || 'my-skill';
       return { type: 'create-skill' as const, skillName } as unknown as Intent;

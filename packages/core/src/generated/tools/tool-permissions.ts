@@ -32,6 +32,7 @@ export const READONLY_COMMANDS: Set<string> = new Set([
   'git status', 'git log', 'git diff', 'git branch', 'git show', 'git blame',
   'npm test', 'npm run test', 'npx vitest', 'npx tsc',
   'node --version', 'npm --version', 'python --version',
+  'agon --help', 'agon config --help', 'agon config list', 'agon config get',
   'tree', 'du', 'df',
 ]);
 
@@ -63,6 +64,13 @@ export function extractBaseCommand(command: string): string {
   return parts[0] ?? '';
 }
 
+export function stripShellRedirections(command: string): string {
+  return command
+    .replace(/\s+\d*(?:>>?|<<?)\s*\S+/g, '')
+    .replace(/\s+\d*(?:>&|<&)\s*\S+/g, '')
+    .trim();
+}
+
 export function isDangerousCommand(command: string): boolean {
   const lower = command.toLowerCase().trim();
   for (const dangerous of DANGEROUS_COMMANDS) {
@@ -75,7 +83,7 @@ export function isDangerousCommand(command: string): boolean {
 }
 
 export function isReadOnlyCommand(command: string): boolean {
-  const stripped = stripShellWrappers(command).trim();
+  const stripped = stripShellRedirections(stripShellWrappers(command)).trim();
   // Split on compound operators FIRST: &&, ||, ;, &  (but NOT single |)
   if (/&&|\|\||;|&(?!&)/.test(stripped) && !/^\|/.test(stripped)) {
     const parts = stripped.split(/\s*(?:&&|\|\||;|&(?!&))\s*/);

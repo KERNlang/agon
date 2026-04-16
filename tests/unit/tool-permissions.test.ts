@@ -29,6 +29,9 @@ describe('tool-permissions', () => {
     it('handles pipe chains of safe commands', () => {
       expect(isReadOnlyCommand('cat file.txt | grep pattern')).toBe(true);
     });
+    it('treats agon config inspection with redirection and chaining as read-only', () => {
+      expect(isReadOnlyCommand('agon config --help 2>/dev/null && echo "---" && agon config list 2>/dev/null')).toBe(true);
+    });
     it('rejects standalone unsafe command', () => {
       expect(isReadOnlyCommand('npm install express')).toBe(false);
     });
@@ -49,6 +52,11 @@ describe('tool-permissions', () => {
 
     it('allows read-only commands', () => {
       const result = checkBashPermission('git status', makeCtx());
+      expect(result.behavior).toBe('allow');
+    });
+
+    it('auto-allows chained agon config inspection commands', () => {
+      const result = checkBashPermission('agon config --help 2>/dev/null && echo "---" && agon config list 2>/dev/null', makeCtx());
       expect(result.behavior).toBe('allow');
     });
 

@@ -1821,7 +1821,7 @@ screen name=App target=ink
   state name=streamingText type="Record<string,StreamingEntry>" initial="{}" throttle=90
   state name=pendingImages type="ImageAttachment[]" initial="[]"
   state name=reviewEvent type="ReviewEvent|null" initial="null"
-  state name=lastReviewResult type="{ engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number } | undefined" initial="undefined"
+  state name=lastReviewResult type="{ engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number } | null" initial="null"
   state name=toolDetailEvent type="any|null" initial="null"
   state name=jobManager type=any initial="new JobManager()"
   state name=jobList type="Job[]" initial="[]"
@@ -1847,7 +1847,7 @@ screen name=App target=ink
   ref name=currentPlanRef type="Plan|null" initial="null"
   ref name=streamingTextRef type="Record<string,StreamingEntry>" initial="{}"
   ref name=agentProgressRef type="Record<string,AgentProgressSnapshot>" initial="{}"
-  ref name=lastReviewResultRef type="{ engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number } | undefined" initial="undefined"
+  ref name=lastReviewResultRef type="{ engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number } | null" initial="null"
   ref name=modeRef type="'chat'|'campfire'|'brainstorm'|'tribunal'" initial="'chat'"
   ref name=inputEpochRef type=number initial=0
   ref name=inputValueRef type=string initial="''"

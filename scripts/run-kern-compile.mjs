@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, realpathSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -34,9 +34,21 @@ function compareVersions(left, right) {
   return 0;
 }
 
-function resolvePath(input) {
+function resolvePath(input, baseDir = process.cwd()) {
   if (!input) return null;
-  return path.isAbsolute(input) ? input : path.resolve(process.cwd(), input);
+  return path.isAbsolute(input) ? input : path.resolve(baseDir, input);
+}
+
+function resolveOverridePath(input) {
+  if (!input) return null;
+  if (path.isAbsolute(input)) return input;
+
+  const fromRepoRoot = path.resolve(repoRoot, input);
+  if (existsSync(fromRepoRoot)) {
+    return fromRepoRoot;
+  }
+
+  return path.resolve(process.cwd(), input);
 }
 
 function readPackageVersion(filePath) {
@@ -63,12 +75,55 @@ function inspectCommandVersion(command, args = []) {
   return result.stdout.trim() || result.stderr.trim() || null;
 }
 
-function describeCandidate(label, command, commandArgs, packageVersion, allowStale = false) {
+function findPackageRoot(startPath) {
+  let current = startPath;
+
+  try {
+    current = realpathSync(startPath);
+  } catch {
+    current = startPath;
+  }
+
+  let dir = path.extname(current) ? path.dirname(current) : current;
+
+  while (dir && dir !== path.dirname(dir)) {
+    const packageJson = path.join(dir, 'package.json');
+    if (existsSync(packageJson)) {
+      return dir;
+    }
+    dir = path.dirname(dir);
+  }
+
+  return null;
+}
+
+function readEffectiveKernVersion(cliPackageRoot) {
+  if (!cliPackageRoot) return null;
+
+  const probePaths = [
+    path.resolve(cliPackageRoot, '../core/dist/spec.js'),
+    path.resolve(cliPackageRoot, '../core/src/spec.ts'),
+  ];
+
+  for (const probePath of probePaths) {
+    if (!existsSync(probePath)) continue;
+    const source = readFileSync(probePath, 'utf8');
+    const match = source.match(/KERN_VERSION\s*=\s*['"](\d+\.\d+\.\d+)['"]/);
+    if (match) {
+      return match[1];
+    }
+  }
+
+  return null;
+}
+
+function describeCandidate(label, command, commandArgs, packageVersion, effectiveVersion = null, allowStale = false) {
   return {
     label,
     command,
     commandArgs,
     packageVersion,
+    effectiveVersion,
     allowStale,
   };
 }
@@ -81,9 +136,7 @@ function collectCandidates() {
   const rootPackageJson = readJson(path.join(repoRoot, 'package.json'));
   const requiredVersion = normalizeRequirement(rootPackageJson.optionalDependencies?.['@kernlang/cli']);
   const envBin = process.env.KERN_BIN?.trim();
-  const envPath = resolvePath(envBin);
-  const siblingCli = path.resolve(repoRoot, '../kern-lang/packages/cli/dist/cli.js');
-  const siblingPkg = path.resolve(repoRoot, '../kern-lang/packages/cli/package.json');
+  const envPath = resolveOverridePath(envBin);
   const installedCli = path.join(repoRoot, 'node_modules/.bin/kern');
   const installedPkg = path.join(repoRoot, 'node_modules/@kernlang/cli/package.json');
 
@@ -92,6 +145,7 @@ function collectCandidates() {
   if (envBin) {
     if (envPath && existsSync(envPath)) {
       const envIsNodeEntrypoint = isNodeEntrypoint(envPath);
+      const cliPackageRoot = findPackageRoot(envPath);
       candidates.push(
         describeCandidate(
           `KERN_BIN (${envPath})`,
@@ -104,6 +158,7 @@ function collectCandidates() {
               ? inspectCommandVersion(process.execPath, [envPath])
               : inspectCommandVersion(envPath)
           ),
+          readEffectiveKernVersion(cliPackageRoot),
           true,
         ),
       );
@@ -114,21 +169,11 @@ function collectCandidates() {
           envBin,
           [],
           inspectCommandVersion(envBin),
+          null,
           true,
         ),
       );
     }
-  }
-
-  if (existsSync(siblingCli)) {
-    candidates.push(
-      describeCandidate(
-        `sibling kern-lang checkout (${siblingCli})`,
-        process.execPath,
-        [siblingCli],
-        readPackageVersion(siblingPkg),
-      ),
-    );
   }
 
   if (existsSync(installedCli)) {
@@ -138,6 +183,7 @@ function collectCandidates() {
         installedCli,
         [],
         readPackageVersion(installedPkg),
+        readEffectiveKernVersion(path.join(repoRoot, 'node_modules/@kernlang/cli')),
       ),
     );
   }
@@ -148,6 +194,7 @@ function collectCandidates() {
       'kern',
       [],
       inspectCommandVersion('kern'),
+      null,
       false,
     ),
   );
@@ -160,15 +207,18 @@ function selectCandidate(candidates, requiredVersion) {
   const rejected = [];
 
   for (const candidate of candidates) {
-    const version = candidate.packageVersion;
+    const version = candidate.effectiveVersion ?? candidate.packageVersion;
     const parsedVersion = parseVersion(version);
 
     if (!candidate.allowStale && requiredParts && parsedVersion && compareVersions(parsedVersion, requiredParts) < 0) {
-      rejected.push(`${candidate.label} -> ${version}`);
+      const versionNote = candidate.effectiveVersion && candidate.packageVersion && candidate.effectiveVersion !== candidate.packageVersion
+        ? `${candidate.effectiveVersion} (declares ${candidate.packageVersion})`
+        : version;
+      rejected.push(`${candidate.label} -> ${versionNote}`);
       continue;
     }
 
-    if (!candidate.allowStale && requiredParts && !parsedVersion && candidate.command === 'kern') {
+    if (!candidate.allowStale && requiredParts && !parsedVersion) {
       rejected.push(`${candidate.label} -> unknown version`);
       continue;
     }
@@ -229,12 +279,19 @@ if (!selection.candidate) {
   if (selection.rejected.length > 0) {
     console.error(`  [kern:compile rejected stale candidates: ${selection.rejected.join('; ')}]`);
   }
-  console.error('  [kern:compile set KERN_BIN to a current kern build or install the pinned @kernlang/cli family]');
+  console.error('  [kern:compile install the pinned @kernlang/cli family or set KERN_BIN to an explicit override]');
   process.exit(1);
 }
 
 if (requiredVersion && !selection.candidate.allowStale && selection.version !== 'unknown') {
-  console.log(`  [kern:compile resolved ${selection.version}; required >= ${requiredVersion}]`);
+  const declaredVersion = selection.candidate.packageVersion;
+  if (selection.candidate.effectiveVersion && declaredVersion && selection.candidate.effectiveVersion !== declaredVersion) {
+    console.log(
+      `  [kern:compile resolved effective ${selection.candidate.effectiveVersion}; package declares ${declaredVersion}; required >= ${requiredVersion}]`,
+    );
+  } else {
+    console.log(`  [kern:compile resolved ${selection.version}; required >= ${requiredVersion}]`);
+  }
 } else if (selection.version !== 'unknown') {
   console.log(`  [kern:compile resolved ${selection.version}]`);
 }

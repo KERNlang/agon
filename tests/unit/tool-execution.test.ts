@@ -3,10 +3,12 @@ import { ToolRegistry, executeToolCall, FileStateCache, createReadTool, createGr
 import type { ToolContext, ToolCall, ToolHandler } from '@agon/core';
 import { join } from 'node:path';
 
+const REPO_ROOT = join(import.meta.dirname, '../..');
+
 function makeCtx(cwd?: string): ToolContext {
   const cache = new FileStateCache();
   return {
-    cwd: cwd ?? process.cwd(),
+    cwd: cwd ?? REPO_ROOT,
     readFileState: (cache as any).cache,
     permissionMode: 'auto',
   } as ToolContext;

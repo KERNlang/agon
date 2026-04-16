@@ -354,8 +354,12 @@ export function ModelPicker({ entries, onSelect, onCancel, loading, initialFilte
     const isBackspace = !isForwardDelete && (key.backspace || key.delete || input === '\x7f' || input === '\b' || input === '\x08');
   
     // Tab switching (any phase)
-    if (input === '<' || input === '>') {
-      setActiveTab((t: string) => t === 'api' ? 'cli' : 'api');
+    if (key.leftArrow) {
+      setActiveTab('api');
+      return;
+    }
+    if (key.rightArrow) {
+      setActiveTab('cli');
       return;
     }
   
@@ -569,7 +573,7 @@ export function ModelPicker({ entries, onSelect, onCancel, loading, initialFilte
         )
       )}
       <Text dimColor>{'\u2500'.repeat(48)}</Text>
-      <Text dimColor>{activeTab === 'cli' ? `${cliFiltered.length} CLI models` : `${filtered.length} API models`}{'  \u2191\u2193 navigate  Enter select  < > tab  Esc cancel'}</Text>
+      <Text dimColor>{activeTab === 'cli' ? `${cliFiltered.length} CLI models` : `${filtered.length} API models`}{'  \u2191\u2193 navigate  \u2190\u2192 tab  Enter select  Esc cancel'}</Text>
     </Box>
   );
 }

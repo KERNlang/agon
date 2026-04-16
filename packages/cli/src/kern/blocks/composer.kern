@@ -70,10 +70,16 @@ screen name=ComposerView target=ink memo=true
         ? questionState.reason.trim()
         : '';
       const permissionLinesAll = permissionCommand ? permissionCommand.split('\n') : [];
-      const permissionLines = permissionLinesAll.slice(0, 2);
-      const permissionHasMoreLines = permissionLinesAll.length > permissionLines.length;
       const permissionLineWidth = Math.max(24, termWidth - 24);
+      const permissionPreview = permissionLinesAll[0]
+        ? truncateCodeLine(permissionLinesAll[0], permissionLineWidth)
+        : '';
+      const permissionHasMoreLines = permissionLinesAll.length > 1;
       const permissionNeedsDetail = permissionHasMoreLines || permissionCommand.length > permissionLineWidth;
+      const permissionSummary = permissionReason || permissionDescription;
+      const yesChoice = choiceList.find((choice: any) => String(choice.key ?? '').toLowerCase() === 'y');
+      const noChoice = choiceList.find((choice: any) => String(choice.key ?? '').toLowerCase() === 'n');
+      const alwaysChoice = choiceList.find((choice: any) => String(choice.key ?? '').toLowerCase() === 'a');
       return (
         <>
           {slashPickerOpen && <SlashPicker commands={allSlashCommands} onSelect={onSlashSelect} onCancel={onSlashCancel} />}
@@ -106,33 +112,22 @@ screen name=ComposerView target=ink memo=true
               <Box flexDirection="column" width="100%" marginTop={1}>
                 <Box borderStyle="round" borderColor="#fbbf24" paddingX={1} flexDirection="column" width="100%">
                   <Text bold color="#fbbf24">{icons().warning}{' '}{permissionTool}{' approval required'}</Text>
-                  {questionPrompt ? <Text dimColor>{'  '}{questionPrompt}</Text> : null}
-                  {permissionLines.length > 0 ? <Text>{' '}</Text> : null}
-                  {permissionLines.length > 0 && (
-                    <Box flexDirection="column" paddingLeft={1}>
-                      {permissionLines.map((line: string, index: number) => (
-                        <Text key={`perm-line-${index}`}>
-                          <Text dimColor>{index === 0 ? '$ ' : '  '}</Text>
-                          <Text>{truncateCodeLine(line, permissionLineWidth)}</Text>
-                        </Text>
-                      ))}
-                      {permissionHasMoreLines && <Text dimColor>{'  …'}</Text>}
-                    </Box>
-                  )}
-                  {permissionDescription ? <Text dimColor>{'  '}{permissionDescription}</Text> : null}
-                  {permissionReason ? <Text color="#fbbf24">{'  '}{permissionReason}</Text> : null}
-                  {permissionNeedsDetail ? <Text color="#a78bfa">{'  Ctrl+O opens the full command view.'}</Text> : null}
-                  <Text>{' '}</Text>
-                  <Box flexDirection="column" paddingLeft={1}>
-                    {choiceList.map((c: any, i: number) => (
-                      <Text key={`perm-choice-${i}`}>
-                        <Text color={c.color ?? '#6b7280'} bold>{'['}{String(c.key ?? '').toUpperCase()}{']'}</Text>
-                        <Text>{' '}{c.label}</Text>
-                        {c.key === 'a' ? <Text dimColor>{' for this command prefix'}</Text> : null}
-                      </Text>
-                    ))}
-                    <Text dimColor>{'Esc cancels the prompt.'}</Text>
-                  </Box>
+                  <Text>
+                    {yesChoice ? <Text color={yesChoice.color ?? '#4ade80'} bold>{'[Y] '}{yesChoice.label}</Text> : null}
+                    {yesChoice && (noChoice || alwaysChoice || permissionNeedsDetail) ? <Text dimColor>{'  '}</Text> : null}
+                    {noChoice ? <Text color={noChoice.color ?? '#ef4444'} bold>{'[N] '}{noChoice.label}</Text> : null}
+                    {noChoice && (alwaysChoice || permissionNeedsDetail) ? <Text dimColor>{'  '}</Text> : null}
+                    {alwaysChoice ? <Text color={alwaysChoice.color ?? '#60a5fa'} bold>{'[A] '}{alwaysChoice.label}</Text> : null}
+                    {alwaysChoice && permissionNeedsDetail ? <Text dimColor>{'  '}</Text> : null}
+                    {permissionNeedsDetail ? <Text color="#a78bfa" bold>{'[Ctrl+O] Open'}</Text> : null}
+                  </Text>
+                  {permissionPreview ? (
+                    <Text dimColor>{'  $ '}{permissionPreview}{permissionHasMoreLines ? ' …' : ''}</Text>
+                  ) : questionPrompt ? (
+                    <Text dimColor>{'  '}{questionPrompt}</Text>
+                  ) : null}
+                  {permissionSummary ? <Text dimColor>{'  '}{truncateCodeLine(permissionSummary, Math.max(24, termWidth - 10))}</Text> : null}
+                  <Text dimColor>{'  Esc cancels the prompt.'}</Text>
                 </Box>
               </Box>
             ) : (

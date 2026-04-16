@@ -55,6 +55,15 @@ const ComposerView = React.memo(function ComposerView({ mode, replState, planMod
   const yesChoice = choiceList.find((choice: any) => String(choice.key ?? '').toLowerCase() === 'y');
   const noChoice = choiceList.find((choice: any) => String(choice.key ?? '').toLowerCase() === 'n');
   const alwaysChoice = choiceList.find((choice: any) => String(choice.key ?? '').toLowerCase() === 'a');
+  const inlineChoiceText = choiceList.map((choice: any) => {
+    const key = String(choice?.key ?? '').toUpperCase();
+    const label = String(choice?.label ?? '').trim();
+    return `[${key}] ${label}`.trim();
+  }).join('  ');
+  const useInlineChoices = choiceList.length > 0
+    && choiceList.length <= 3
+    && inlineChoiceText.length <= Math.max(24, termWidth - 10);
+  const questionAccent = choiceList.length > 0 ? '#60a5fa' : '#d1d5db';
   return (
     <>
       {slashPickerOpen && <SlashPicker commands={allSlashCommands} onSelect={onSlashSelect} onCancel={onSlashCancel} />}
@@ -107,17 +116,30 @@ const ComposerView = React.memo(function ComposerView({ mode, replState, planMod
           </Box>
         ) : (
           <Box flexDirection="column" width="100%" marginTop={1}>
-            <Box borderStyle="round" borderColor={questionState.choices ? '#fbbf24' : '#585858'} paddingX={1} flexDirection="column" width="100%">
-              <Text bold color={questionState.choices ? '#fbbf24' : '#d1d5db'}>{questionState.choices ? ` ${icons().warning} ` : ' '}{questionPrompt}</Text>
+            <Box borderStyle="round" borderColor={choiceList.length > 0 ? questionAccent : '#585858'} paddingX={1} flexDirection="column" width="100%">
+              <Text bold color={questionAccent}>{choiceList.length > 0 ? '? ' : ' '}{questionPrompt}</Text>
               {choiceList.length > 0 ? (
-                <Box flexDirection="column" paddingLeft={1}>
-                  {choiceList.map((c: any, i: number) => (
-                    <Text key={`choice-${i}`}>
-                      <Text color={c.color ?? '#6b7280'} bold>{'['}{String(c.key ?? '').toUpperCase()}{']'}</Text>
-                      <Text>{' '}{c.label}</Text>
+                useInlineChoices ? (
+                  <Box paddingLeft={1}>
+                    <Text>
+                      {choiceList.map((c: any, i: number) => (
+                        <React.Fragment key={`choice-inline-${i}`}>
+                          {i > 0 ? <Text dimColor>{'  '}</Text> : null}
+                          <Text color={c.color ?? questionAccent} bold>{'['}{String(c.key ?? '').toUpperCase()}{'] '}{c.label}</Text>
+                        </React.Fragment>
+                      ))}
                     </Text>
-                  ))}
-                </Box>
+                  </Box>
+                ) : (
+                  <Box flexDirection="column" paddingLeft={1}>
+                    {choiceList.map((c: any, i: number) => (
+                      <Text key={`choice-${i}`}>
+                        <Text color={c.color ?? questionAccent} bold>{'['}{String(c.key ?? '').toUpperCase()}{']'}</Text>
+                        <Text>{' '}{c.label}</Text>
+                      </Text>
+                    ))}
+                  </Box>
+                )
               ) : (
                 <Box paddingLeft={1} width="100%">
                   <PromptTextInput

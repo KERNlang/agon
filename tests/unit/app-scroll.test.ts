@@ -4,6 +4,7 @@ import { configSet } from '@agon/core';
 import {
   buildTranscriptRows,
   displayColumnToStringIndex,
+  estimateBottomChromeExtraRows,
   estimateQuestionReservedRows,
   findLatestToolDetailEvent,
   historyBlocksForTranscript,
@@ -174,6 +175,59 @@ describe('app scroll helpers', () => {
         60,
       ),
     ).toBe(4);
+  });
+
+  it('reserves enough rows for generic yes/no questions so choices do not clip', () => {
+    expect(
+      estimateQuestionReservedRows(
+        {
+          prompt: 'Want me to commit and push it?',
+          choices: [{ key: 'y', label: 'Yes' }, { key: 'n', label: 'No' }],
+        },
+        100,
+      ),
+    ).toBe(2);
+  });
+
+  it('accounts for wrapped prompt and choice labels in generic question cards', () => {
+    expect(
+      estimateQuestionReservedRows(
+        {
+          prompt: 'This is a deliberately long confirmation prompt that should wrap on a narrow terminal before the choices render underneath it.',
+          choices: [
+            { key: 'y', label: 'Yes, commit and push the generated script' },
+            { key: 'n', label: 'No, leave it uncommitted for now' },
+          ],
+        },
+        44,
+      ),
+    ).toBeGreaterThanOrEqual(5);
+  });
+
+  it('reserves an extra input row for freeform questions after the prompt', () => {
+    expect(
+      estimateQuestionReservedRows(
+        { prompt: 'Project name?' },
+        80,
+      ),
+    ).toBe(2);
+  });
+
+  it('counts queued badges and chat spinner rows in the bottom chrome budget', () => {
+    expect(estimateBottomChromeExtraRows('chat', null, 100, 1, 1, true)).toBe(3);
+    expect(
+      estimateBottomChromeExtraRows(
+        'chat',
+        {
+          prompt: 'Want me to commit and push it?',
+          choices: [{ key: 'y', label: 'Yes' }, { key: 'n', label: 'No' }],
+        },
+        100,
+        0,
+        0,
+        true,
+      ),
+    ).toBe(2);
   });
 
   it('treats expanded bash output as multi-row transcript history', () => {

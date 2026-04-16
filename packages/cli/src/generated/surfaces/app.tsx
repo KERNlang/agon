@@ -54,6 +54,8 @@ import { makeBlockArchivePath, appendBlockWithCap } from '../signals/block-archi
 
 import { handleReviewAction } from '../blocks/review.js';
 
+import { DashboardView } from '../blocks/engine.js';
+
 import { saveCesarConversationSnapshot } from '../cesar/session.js';
 
 import { SpinnerBlock, StatusBar, CesarStatusStrip, EnginePicker, ModelPicker, ReviewBlock, BackgroundJobRail, CesarPicker, ComposerView, AgentProgressView, contentWidth, color256toHex, engineColor, CODE_RAIL, CODE_RAIL_COLOR, MAX_CODE_LINES, LOGO_LINES, VERSION, BRAND } from '../../components.js';
@@ -495,6 +497,18 @@ export function App() {
             !startupOnly && scrollOffset === 0,
           );
   }, [mode, runningJobs, currentVisibleRowBudget, visibleWindow, startupOnly, scrollOffset]);
+
+  const startupFitsViewport = useMemo(() => {
+          return startupOnly && visibleWindow.rowsAbove === 0 && visibleWindow.rowsBelow === 0;
+  }, [startupOnly, visibleWindow]);
+
+  const startupUseDashboardView = useMemo(() => {
+          return startupFitsViewport && termWidth >= 100;
+  }, [startupFitsViewport, termWidth]);
+
+  const historyNeedsViewportFill = useMemo(() => {
+          return visibleWindow.rowsAbove > 0 || visibleWindow.rowsBelow > 0;
+  }, [visibleWindow]);
 
   const outputActions = useMemo(() => {
           return {
@@ -1517,9 +1531,22 @@ export function App() {
   <Box flexDirection="column" height={Math.max(8, termHeight)} width="100%" flexShrink={0}>
     <ChromeBar mode={mode} cwdLabel={resolveWorkingDir().split('/').pop() ?? ''} engineCount={availableEngines.length} replState={replState} runningJobs={runningJobs} />
     <BackgroundJobRail jobs={runningJobs} />
-    <Box flexDirection="column" flexGrow={1} flexShrink={1}>
+    <Box flexDirection="column" flexGrow={historyNeedsViewportFill ? 1 : 0} flexShrink={1}>
       <>
-        <HistoryView visibleRows={visibleWindow.visible} rowsAbove={visibleWindow.rowsAbove} rowsBelow={visibleWindow.rowsBelow} stickToBottom={!startupOnly && scrollOffset === 0} />
+        {startupUseDashboardView ? (
+          <Box flexDirection="column">
+            <DashboardView event={outputBlocks[0]?.event as any} />
+          </Box>
+        ) : (
+          <HistoryView
+            visibleRows={visibleWindow.visible}
+            rowsAbove={visibleWindow.rowsAbove}
+            rowsBelow={visibleWindow.rowsBelow}
+            stickToBottom={!startupOnly && scrollOffset === 0 && historyNeedsViewportFill}
+            centerContent={false}
+          />
+        )}
+        
         {livePaneVisible && (
           <>
             <StreamingView streamingText={activeStream} mode={mode} liveProgress={liveProgress} />

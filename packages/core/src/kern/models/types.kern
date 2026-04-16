@@ -25,6 +25,15 @@ interface name=CompanionConfig
   field name=sandbox type="'read-only'|'workspace-write'|'danger-full-access'" optional=true
   field name=features type="{threadResume?:boolean, nativeReview?:boolean, structuredOutput?:boolean}" optional=true
 
+interface name=CliModelEntry
+  field name=id type=string
+  field name=name type=string optional=true
+
+interface name=EngineCliModelConfig
+  field name=default type=string optional=true
+  field name=list type="CliModelEntry[]" optional=true
+  field name=dynamicListCmd type="string[]" optional=true
+
 interface name=EngineDefinition
   field name=schemaVersion type="1|2|3"
   field name=id type=string
@@ -50,6 +59,7 @@ interface name=EngineDefinition
   field name=agent type=EngineModeConfig optional=true
   field name=api type="{baseUrl:string, apiKeyEnv:string, model:string, maxTokens?:number, format?:'openai'|'anthropic', firstChunkTimeoutMs?:number, idleTimeoutMs?:number}" optional=true
   field name=companion type=CompanionConfig optional=true
+  field name=cliModels type=EngineCliModelConfig optional=true
 
 interface name=DispatchOptions
   field name=engine type=EngineDefinition

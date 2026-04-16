@@ -1490,6 +1490,7 @@ screen name=App target=ink
   state name=modelPickerInitialFilter type=string initial="''"
   state name=modelPickerTitle type=string initial="'Select model'"
   state name=modelPickerTargetEngine type="string|null" initial="null"
+  state name=modelPickerCliGroups type="any[]" initial="[]"
   state name=cesarPickerOpen type=boolean initial=false
   state name=streamingText type="Record<string,StreamingEntry>" initial="{}" throttle=90
   state name=pendingImages type="ImageAttachment[]" initial="[]"
@@ -2478,7 +2479,7 @@ screen name=App target=ink
             .catch((err: any) => { jobManager.fail(job.id, err instanceof Error ? err.message : String(err)); setJobList([...jobManager.list()]); dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); });
         },
         setMode, setPendingImages, setSessionEngines, setEnginePickerOpen, setModelPickerOpen, setModelPickerEntries, setModelPickerLoading, setCesarPickerOpen, setChatSession, setLastUndoToken, askQuestion, exit: () => process.exit(0),
-        setModelPickerTargetEngine, setModelPickerInitialFilter, setModelPickerTitle,
+        setModelPickerTargetEngine, setModelPickerInitialFilter, setModelPickerTitle, setModelPickerCliGroups,
         allImages, allSlashCommands: allSlashCommands, dynamicSkills: [...dynamicSkills, ...extensionSkills], mode, lastUndoToken, sessionStartTime, jobManager,
         explorationMode, setExplorationMode,
         neroMode, setNeroMode,
@@ -2537,7 +2538,8 @@ screen name=App target=ink
       setEnginePickerOpen(false);
       setModelPickerOpen(true);
 
-      import('@agon/core').then(({ fetchModelsRegistry, buildModelEntries }) => {
+      import('@agon/core').then(({ fetchModelsRegistry, buildModelEntries, buildCliModelGroups }) => {
+        setModelPickerCliGroups(buildCliModelGroups());
         fetchModelsRegistry().then((reg: any) => {
           setModelPickerEntries(buildModelEntries(reg));
           setModelPickerLoading(false);
@@ -2949,7 +2951,7 @@ screen name=App target=ink
             onBrowseModel={(engineId: string) => openCliModelPicker(engineId)} />
         )}
         {modelPickerOpen && (
-          <ModelPicker entries={modelPickerEntries} loading={modelPickerLoading} initialFilter={modelPickerInitialFilter} title={modelPickerTitle}
+          <ModelPicker entries={modelPickerEntries} loading={modelPickerLoading} initialFilter={modelPickerInitialFilter} title={modelPickerTitle} cliGroups={modelPickerCliGroups}
             onSelect={(entry: any) => {
               if (modelPickerTargetEngine) {
                 const nextModels = { ...((loadConfig() as any).engineModels ?? {}) };
@@ -2962,6 +2964,17 @@ screen name=App target=ink
                 setModelPickerTitle('Select model');
                 setModelPickerOpen(false);
                 setEnginePickerOpen(true);
+                return;
+              }
+              // CLI-sourced entry (no baseUrl): set model override on matching engine
+              if (!entry.baseUrl) {
+                const engineId = entry.providerId;
+                const nextModels = { ...((loadConfig() as any).engineModels ?? {}) };
+                nextModels[engineId] = entry.modelId;
+                configSet('engineModels', nextModels as any);
+                setConfigVersion((v: number) => v + 1);
+                setModelPickerOpen(false);
+                dispatch({ type: 'success', message: `CLI model set: ${engineId} → ${entry.modelId}` } as any);
                 return;
               }
               setModelPickerOpen(false);

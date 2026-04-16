@@ -130,6 +130,8 @@ export function App() {
   const setModelPickerTitle = useMemo(() => __inkSafe(_setModelPickerTitleRaw), [_setModelPickerTitleRaw]);
   const [modelPickerTargetEngine, _setModelPickerTargetEngineRaw] = useState<string|null>(null);
   const setModelPickerTargetEngine = useMemo(() => __inkSafe(_setModelPickerTargetEngineRaw), [_setModelPickerTargetEngineRaw]);
+  const [modelPickerCliGroups, _setModelPickerCliGroupsRaw] = useState<any[]>([]);
+  const setModelPickerCliGroups = useMemo(() => __inkSafe(_setModelPickerCliGroupsRaw), [_setModelPickerCliGroupsRaw]);
   const [cesarPickerOpen, _setCesarPickerOpenRaw] = useState<boolean>(false);
   const setCesarPickerOpen = useMemo(() => __inkSafe(_setCesarPickerOpenRaw), [_setCesarPickerOpenRaw]);
   const [streamingText, _setStreamingTextRaw] = useState<Record<string,StreamingEntry>>({});
@@ -824,7 +826,7 @@ export function App() {
           .catch((err: any) => { jobManager.fail(job.id, err instanceof Error ? err.message : String(err)); setJobList([...jobManager.list()]); dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); });
       },
       setMode, setPendingImages, setSessionEngines, setEnginePickerOpen, setModelPickerOpen, setModelPickerEntries, setModelPickerLoading, setCesarPickerOpen, setChatSession, setLastUndoToken, askQuestion, exit: () => process.exit(0),
-      setModelPickerTargetEngine, setModelPickerInitialFilter, setModelPickerTitle,
+      setModelPickerTargetEngine, setModelPickerInitialFilter, setModelPickerTitle, setModelPickerCliGroups,
       allImages, allSlashCommands: allSlashCommands, dynamicSkills: [...dynamicSkills, ...extensionSkills], mode, lastUndoToken, sessionStartTime, jobManager,
       explorationMode, setExplorationMode,
       neroMode, setNeroMode,
@@ -881,7 +883,8 @@ export function App() {
     setEnginePickerOpen(false);
     setModelPickerOpen(true);
     
-    import('@agon/core').then(({ fetchModelsRegistry, buildModelEntries }) => {
+    import('@agon/core').then(({ fetchModelsRegistry, buildModelEntries, buildCliModelGroups }) => {
+      setModelPickerCliGroups(buildCliModelGroups());
       fetchModelsRegistry().then((reg: any) => {
         setModelPickerEntries(buildModelEntries(reg));
         setModelPickerLoading(false);
@@ -1607,7 +1610,7 @@ export function App() {
         onBrowseModel={(engineId: string) => openCliModelPicker(engineId)} />
     )}
     {modelPickerOpen && (
-      <ModelPicker entries={modelPickerEntries} loading={modelPickerLoading} initialFilter={modelPickerInitialFilter} title={modelPickerTitle}
+      <ModelPicker entries={modelPickerEntries} loading={modelPickerLoading} initialFilter={modelPickerInitialFilter} title={modelPickerTitle} cliGroups={modelPickerCliGroups}
         onSelect={(entry: any) => {
           if (modelPickerTargetEngine) {
             const nextModels = { ...((loadConfig() as any).engineModels ?? {}) };
@@ -1620,6 +1623,17 @@ export function App() {
             setModelPickerTitle('Select model');
             setModelPickerOpen(false);
             setEnginePickerOpen(true);
+            return;
+          }
+          // CLI-sourced entry (no baseUrl): set model override on matching engine
+          if (!entry.baseUrl) {
+            const engineId = entry.providerId;
+            const nextModels = { ...((loadConfig() as any).engineModels ?? {}) };
+            nextModels[engineId] = entry.modelId;
+            configSet('engineModels', nextModels as any);
+            setConfigVersion((v: number) => v + 1);
+            setModelPickerOpen(false);
+            dispatch({ type: 'success', message: `CLI model set: ${engineId} → ${entry.modelId}` } as any);
             return;
           }
           setModelPickerOpen(false);

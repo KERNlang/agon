@@ -1,6 +1,7 @@
 import from="node:fs" names="readFileSync,writeFileSync,mkdirSync,existsSync,statSync"
 import from="node:path" names="join,resolve"
 import from="node:os" names="homedir"
+import from="../models/types.js" names="EngineDefinition" types=true
 
 interface name=ModelsDevModel
   field name=id type=string
@@ -34,6 +35,7 @@ interface name=ModelEntry
   field name=costInput type=number optional=true
   field name=costOutput type=number optional=true
   field name=toolCall type=boolean optional=true
+  field name=source type="'api'|'cli'" optional=true
 
 fn name=getCacheDir returns=string export=false
   handler <<<
@@ -252,4 +254,38 @@ fn name=modelEntryToEngineDef params="entry:ModelEntry" returns="Record<string, 
         format: entry.format ?? 'openai',
       },
     };
+  >>>
+
+fn name=buildCliModelEntries params="engines:EngineDefinition[], findBinary:(engine:EngineDefinition) => string|null" returns="ModelEntry[]"
+  doc "Build model entries from installed CLI engines. Only includes engines whose binary is found on PATH."
+  handler <<<
+    const entries: ModelEntry[] = [];
+
+    for (const engine of engines) {
+      if (!engine.cliModels) continue;
+      if (!findBinary(engine)) continue;
+
+      const models = engine.cliModels.list ?? [];
+      for (const m of models) {
+        entries.push({
+          providerId: engine.id,
+          providerName: engine.displayName,
+          modelId: m.id,
+          modelName: m.name ?? m.id,
+          baseUrl: engine.api?.baseUrl ?? '',
+          apiKeyEnv: engine.api?.apiKeyEnv ?? '',
+          format: (engine.api?.format as 'openai'|'anthropic') ?? 'openai',
+          source: 'cli',
+        });
+      }
+    }
+
+    // Sort by provider display name, then model name
+    entries.sort((a, b) => {
+      const provCmp = a.providerName.localeCompare(b.providerName);
+      if (provCmp !== 0) return provCmp;
+      return a.modelName.localeCompare(b.modelName);
+    });
+
+    return entries;
   >>>

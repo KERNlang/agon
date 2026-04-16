@@ -33,6 +33,17 @@ export interface CompanionConfig {
   features?: {threadResume?:boolean, nativeReview?:boolean, structuredOutput?:boolean};
 }
 
+export interface CliModelEntry {
+  id: string;
+  name?: string;
+}
+
+export interface EngineCliModelConfig {
+  default?: string;
+  list?: CliModelEntry[];
+  dynamicListCmd?: string[];
+}
+
 export interface EngineDefinition {
   schemaVersion: 1|2|3;
   id: string;
@@ -58,6 +69,7 @@ export interface EngineDefinition {
   agent?: EngineModeConfig;
   api?: {baseUrl:string, apiKeyEnv:string, model:string, maxTokens?:number, format?:'openai'|'anthropic', firstChunkTimeoutMs?:number, idleTimeoutMs?:number};
   companion?: CompanionConfig;
+  cliModels?: EngineCliModelConfig;
 }
 
 export interface DispatchOptions {

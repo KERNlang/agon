@@ -20,7 +20,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@agon/core": "*"
+    "@agon/core": "*",
+    "@kernlang/protocol": "*"
   },
   "optionalDependencies": {}
 }

@@ -11,7 +11,7 @@ export function createProposePlanTool(): ToolHandler {
     inputSchema: {
       type: 'object',
       properties: {
-        intent: { type: 'string', description: 'What the user asked for.' },
+        intent: { type: 'string', description: 'REQUIRED. 1-3 sentences describing what the user asked for AND your overall approach. Not a one-word title. Example: "Refactor the scroll viewport in packages/cli to use Ink Static for native terminal scrollback. Approach: move plan-proposal to live-pane state first, then swap HistoryView for Static in phase 2."' },
         autoApprove: { type: 'boolean', description: 'Set true ONLY when the user clearly described a multi-stage workflow ("plan it, build it, review it"; "investigate then forge it") AND you have high confidence in the steps. Defaults to false. The runtime auto-approve policy still gates execution.' },
         selfReview: { type: 'boolean', description: 'Whether to auto-append a review step after mutating steps. Defaults to true. Set false only for advisory plans that already include their own verification.' },
         steps: {
@@ -19,21 +19,21 @@ export function createProposePlanTool(): ToolHandler {
           items: {
             type: 'object',
             properties: {
-              id: { type: 'string' },
+              id: { type: 'string', description: 'Short stable id like "step-1" or "refactor-viewport". Used by dependsOn/imports/exports.' },
               type: { type: 'string', enum: ['self', 'forge', 'teamforge', 'delegate', 'brainstorm', 'campfire', 'tribunal', 'pipeline', 'review', 'agent', 'team-agent'] },
-              description: { type: 'string' },
-              engines: { type: 'array', items: { type: 'string' } },
-              engine: { type: 'string' },
-              fitnessCmd: { type: 'string' },
+              description: { type: 'string', description: 'REQUIRED. 2-4 sentences. Describe concretely WHAT this step does — the actual work, files, or question. For delegate/forge/brainstorm/tribunal, include the EXACT prompt/task you will hand to the engine(s), not a summary. A reader who has not seen the code should be able to understand the step from this field alone. Avoid 3-word stubs like "refactor scroll" — write the full instruction.' },
+              engines: { type: 'array', items: { type: 'string' }, description: 'Engine ids for non-self steps. Forge/teamforge/pipeline: pass the FULL active pool. Brainstorm/tribunal/campfire: full active pool.' },
+              engine: { type: 'string', description: 'Single engine id for delegate steps — the ONE engine best suited for this subtask.' },
+              fitnessCmd: { type: 'string', description: 'REQUIRED for forge/teamforge/pipeline. Shell command that scores candidate patches (e.g., "npm test", "npm run typecheck"). Executed via /bin/sh -c.' },
               tribunalMode: { type: 'string' },
               parallel: { type: 'boolean' },
-              dependsOn: { type: 'array', items: { type: 'string' } },
+              dependsOn: { type: 'array', items: { type: 'string' }, description: 'Step ids that must complete before this step runs.' },
               exports: { type: 'array', items: { type: 'string' }, description: 'Export keys — what this step produces for downstream steps' },
               imports: { type: 'array', items: { type: 'string' } },
               estimatedTokens: { type: 'number' },
               estimatedCostUsd: { type: 'number' },
-              rationale: { type: 'string', description: 'Why this engine/approach was chosen for this step' },
-              verifyCmd: { type: 'string', description: 'Bash command to verify step output (e.g., npm test, npm run typecheck)' },
+              rationale: { type: 'string', description: 'REQUIRED in practice (the UI surfaces this to the user). 1-2 sentences explaining WHY this engine/approach was chosen over alternatives. Reference engine strengths, win rates, or task characteristics from ROUTING CONTEXT. Example: "gemini has 92% win rate on TypeScript refactors and this is pure type surgery; self would be slower and forge is overkill."' },
+              verifyCmd: { type: 'string', description: 'Bash command to verify step output (e.g., npm test, npm run typecheck). Include for any step that produces testable output.' },
             },
             required: ['id', 'type', 'description', 'estimatedTokens', 'estimatedCostUsd'],
           },

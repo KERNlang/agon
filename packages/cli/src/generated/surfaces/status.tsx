@@ -84,7 +84,7 @@ export function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd
         {thinkingExpanded !== undefined && <Text dimColor>{' \u00b7 '}{thinkingExpanded ? 'thinking shown (' : 'thinking hidden ('}</Text>}
         {thinkingExpanded !== undefined && <Text color="#f59e0b">{'Ctrl+T'}</Text>}
         {thinkingExpanded !== undefined && <Text dimColor>{')'}</Text>}
-        {fullscreenEnabled !== undefined && <Text dimColor>{' \u00b7 '}{fullscreenEnabled ? (selectionMode ? 'select mode' : 'fullscreen') : 'native terminal'}</Text>}
+        {fullscreenEnabled !== undefined && <Text dimColor>{' \u00b7 '}{fullscreenEnabled ? (selectionMode ? 'select mode' : 'app scroll') : 'native scroll'}</Text>}
         <Text dimColor>{' \u00b7 copy ('}</Text>
         <Text color="#f59e0b">{'Ctrl+Y'}</Text>
         <Text dimColor>{')'}</Text>

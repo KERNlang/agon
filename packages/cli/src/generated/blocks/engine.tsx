@@ -113,7 +113,7 @@ const ConversationalResponse = React.memo(function ConversationalResponse({ engi
 });
 export { ConversationalResponse };
 
-function DashboardView({ event }: { event:OutputEvent & { type: 'dashboard' } }) {
+export function DashboardView({ event }: { event:OutputEvent & { type: 'dashboard' } }) {
   return (
     <Box flexDirection="column" paddingX={1} paddingY={1}>
       {LOGO_LINES.map((line: string, i: number) => (

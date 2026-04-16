@@ -216,6 +216,7 @@ export interface AgonConfig {
   toolPermissions: Record<string,'allow'|'ask'|'deny'>;
   hiddenEngines: string[];
   engineModels: Record<string,string>;
+  terminalMode?: 'native'|'fullscreen';
   iconTheme?: 'roman'|'classic';
   autoReviewAfterForge?: boolean;
   autoReviewAfterImpl?: boolean;
@@ -270,6 +271,7 @@ export const DEFAULT_AGON_CONFIG: Required<AgonConfig> = {
   toolPermissions: {} as any,
   hiddenEngines: [],
   engineModels: {} as any,
+  terminalMode: 'fullscreen',
   iconTheme: 'roman',
   autoReviewAfterForge: true,
   autoReviewAfterImpl: true,

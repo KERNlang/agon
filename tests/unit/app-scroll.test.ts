@@ -1,16 +1,40 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import { configSet } from '@agon/core';
 
 import {
   buildTranscriptRows,
   displayColumnToStringIndex,
+  estimateQuestionReservedRows,
   findLatestToolDetailEvent,
   historyBlocksForTranscript,
+  isFullscreenEnabled,
+  isMouseTrackingEnabled,
   maxScrollOffsetForRowCount,
   nextWheelAnimationStep,
+  resetViewportSequence,
   stringDisplayWidth,
   transcriptRowsToPlainText,
 } from '../../packages/cli/src/generated/surfaces/app.js';
 import { buildHistoryScrollbarCells } from '../../packages/cli/src/generated/surfaces/app-views.js';
+import { cleanupTestAgonHome, setupTestAgonHome } from '../helpers/agon-home.js';
+
+const TERMINAL_ENV_KEYS = [
+  'AGON_DISABLE_FULLSCREEN',
+  'AGON_NATIVE_TERMINAL',
+  'AGON_FULLSCREEN',
+  'AGON_ALT_SCREEN',
+  'AGON_DISABLE_MOUSE',
+  'AGON_DISABLE_MOUSE_SCROLL',
+  'AGON_ENABLE_MOUSE_SCROLL',
+];
+
+let testHome: string | undefined;
+
+afterEach(() => {
+  for (const key of TERMINAL_ENV_KEYS) delete process.env[key];
+  cleanupTestAgonHome(testHome);
+  testHome = undefined;
+});
 
 describe('app scroll helpers', () => {
   it('does not allow scroll when every rendered row fits in the viewport budget', () => {
@@ -34,6 +58,36 @@ describe('app scroll helpers', () => {
     expect(buildHistoryScrollbarCells(0, 5, 10)).toEqual(['thumb', 'thumb', 'track', 'track', 'track']);
     expect(buildHistoryScrollbarCells(5, 5, 5)).toEqual(['track', 'track', 'thumb', 'thumb', 'track']);
     expect(buildHistoryScrollbarCells(10, 5, 0)).toEqual(['track', 'track', 'track', 'thumb', 'thumb']);
+  });
+
+  it('resets the native viewport without clearing scrollback', () => {
+    expect(resetViewportSequence()).toBe('\x1b[2J\x1b[H');
+  });
+
+  it('defaults to fullscreen app scroll and lets config opt into native terminal scrolling', () => {
+    testHome = setupTestAgonHome('app-scroll-terminal-mode');
+
+    expect(isFullscreenEnabled()).toBe(true);
+    expect(isMouseTrackingEnabled()).toBe(true);
+
+    configSet('terminalMode', 'native' as any);
+
+    expect(isFullscreenEnabled()).toBe(false);
+    expect(isMouseTrackingEnabled()).toBe(false);
+  });
+
+  it('lets env vars override terminal mode and mouse capture', () => {
+    testHome = setupTestAgonHome('app-scroll-terminal-mode-env');
+    configSet('terminalMode', 'fullscreen' as any);
+
+    process.env.AGON_ALT_SCREEN = '0';
+    expect(isFullscreenEnabled()).toBe(false);
+    expect(isMouseTrackingEnabled()).toBe(false);
+
+    delete process.env.AGON_ALT_SCREEN;
+    configSet('terminalMode', 'native' as any);
+    process.env.AGON_ENABLE_MOUSE_SCROLL = '1';
+    expect(isMouseTrackingEnabled()).toBe(true);
   });
 
   it('keeps the startup dashboard hidden while idle and preserves it once real chat exists', () => {
@@ -101,9 +155,25 @@ describe('app scroll helpers', () => {
     ] as any, 'chat', false, true);
 
     expect(rows.some((row: any) => row.key.includes('perm-head'))).toBe(true);
+    expect(rows.some((row: any) => row.key.includes('perm-actions'))).toBe(true);
     expect(rows.some((row: any) => row.key.includes('perm-cmd'))).toBe(true);
-    expect(rows.some((row: any) => row.key.includes('perm-hint'))).toBe(true);
     expect(rows.length).toBeLessThanOrEqual(3);
+  });
+
+  it('reserves extra viewport rows while a permission prompt is open', () => {
+    expect(estimateQuestionReservedRows(null, 100)).toBe(0);
+    expect(estimateQuestionReservedRows({ kind: 'permission', command: 'npm test', choices: [] }, 100)).toBe(3);
+    expect(
+      estimateQuestionReservedRows(
+        {
+          kind: 'permission',
+          command: 'cd /repo && kern compile packages/core/src/kern/signals/cli-models-registry.kern --outdir=packages/core/src/generated/signals',
+          reason: 'needs approval',
+          choices: [{ key: 'y' }, { key: 'n' }, { key: 'a' }],
+        },
+        60,
+      ),
+    ).toBe(4);
   });
 
   it('treats expanded bash output as multi-row transcript history', () => {

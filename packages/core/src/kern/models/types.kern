@@ -195,6 +195,8 @@ config name=AgonConfig
   field name=toolPermissions type="Record<string,'allow'|'ask'|'deny'>" optional=true
   field name=hiddenEngines type="string[]" optional=true
   field name=engineModels type="Record<string,string>" optional=true
+  field name=terminalMode type="'native'|'fullscreen'" default=fullscreen
+    doc "Terminal scroll behavior. 'fullscreen' matches Codex/Claude-style app-captured scrolling. 'native' uses the terminal's own scrollback and OS scrollbar."
   field name=iconTheme type="'roman'|'classic'" default=roman
   field name=autoReviewAfterForge type=boolean default=true
     doc "Auto-run review on forge winner's patch before presenting to user. Data: 79% bug catch rate."

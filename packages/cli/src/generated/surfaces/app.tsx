@@ -391,6 +391,10 @@ export function App() {
           return enginePickerOpen || modelPickerOpen || cesarPickerOpen || !!reviewEvent ? 4 : 0;
   }, [enginePickerOpen, modelPickerOpen, cesarPickerOpen, reviewEvent, toolDetailEvent, termHeight]);
 
+  const questionReservedRows = useMemo(() => {
+          return estimateQuestionReservedRows(questionState, termWidth);
+  }, [questionState,termWidth]);
+
   const overlayActive = useMemo(() => {
           return enginePickerOpen || modelPickerOpen || cesarPickerOpen || !!reviewEvent || !!toolDetailEvent;
   }, [enginePickerOpen, modelPickerOpen, cesarPickerOpen, reviewEvent, toolDetailEvent]);
@@ -425,8 +429,8 @@ export function App() {
             ? estimatePinnedLiveRows(mode, !!activeStream, !!liveProgress, Object.keys(agentProgress).length)
             : 0;
           const viewportRows = Math.max(1, termHeight - pinnedLiveRows);
-          return estimateVisibleBlockBudget(viewportRows, mode, overlayReservedRows);
-  }, [termHeight, mode, overlayReservedRows, livePaneVisible, activeStream, liveProgress, agentProgress]);
+          return estimateVisibleBlockBudget(viewportRows, mode, overlayReservedRows + questionReservedRows);
+  }, [termHeight, mode, overlayReservedRows, questionReservedRows, livePaneVisible, activeStream, liveProgress, agentProgress]);
 
   const displayRows = useMemo(() => {
           return buildTranscriptRows(displayBlocks, mode, toolOutputExpanded, thinkingExpanded);
@@ -1272,7 +1276,7 @@ export function App() {
 
   useEffect(() => {
     if (!process.stdin.isTTY || !process.stdout.isTTY) return;
-    const mouseTrackingActive = isMouseTrackingEnabled() && !selectionMode && !startupOnly;
+    const mouseTrackingActive = isMouseTrackingEnabled(config) && !selectionMode && !startupOnly;
     if (!mouseTrackingActive) return;
     const indicatorRows = visibleWindow.rowsAbove > 0 || visibleWindow.rowsBelow > 0 ? 1 : 0;
     const visibleRowCount = visibleWindow.visible.length;
@@ -1432,7 +1436,7 @@ export function App() {
       wheelDeltaRef.current = 0;
       process.stdin.off('data', onData);
     };
-  }, [maxScrollOffset,selectionMode,startupOnly,historyViewportTop,visibleWindow,displayRows,dispatch]);
+  }, [maxScrollOffset,selectionMode,startupOnly,historyViewportTop,visibleWindow,displayRows,dispatch,config]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -1511,8 +1515,8 @@ export function App() {
 
   useEffect(() => {
     if (!process.stdin.isTTY || !process.stdout.isTTY) return;
-    const fullscreenEnabled = isFullscreenEnabled();
-    const mouseTrackingActive = isMouseTrackingEnabled() && !selectionMode && !startupOnly;
+    const fullscreenEnabled = isFullscreenEnabled(config);
+    const mouseTrackingActive = isMouseTrackingEnabled(config) && !selectionMode && !startupOnly;
     
     const reassertModes = (includeAltScreen = false) => {
       process.stdout.write(terminalEnterSequence(fullscreenEnabled && includeAltScreen, mouseTrackingActive));
@@ -1541,7 +1545,7 @@ export function App() {
       drainStdinBuffer();
       process.stdout.write(terminalExitSequence(false));
     };
-  }, [selectionMode,maxScrollOffset,startupOnly]);
+  }, [selectionMode,maxScrollOffset,startupOnly,config]);
 
   useEffect(() => {
     if (replState === 'idle' && inputQueue.length > 0) {
@@ -1766,7 +1770,7 @@ export function App() {
           const _cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
           return (<>
             <CesarStatusStrip cesarId={_cesarId} confidence={cesarConfidence} spinner={liveSpinner} engines={liveProgress} startTime={chatStartTimeRef.current || 0} streamSnippet={streamSnippet} isActive={replState !== 'idle' || runningJobs.length > 0} planModeQueued={planModeQueued} activePlanState={activePlan?.state ?? null} />
-            {mode === 'chat' && <StatusBar cesarId={statusStats.cesarId} chatMessageCount={statusStats.chatMessageCount} totalTokens={statusStats.totalTokens} totalCostUsd={statusStats.totalCostUsd} cwd={statusCwd} branch={statusBranch} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} thinkingExpanded={thinkingExpanded} isActive={replState !== 'idle'} fullscreenEnabled={isFullscreenEnabled()} selectionMode={selectionMode} />}
+            {mode === 'chat' && <StatusBar cesarId={statusStats.cesarId} chatMessageCount={statusStats.chatMessageCount} totalTokens={statusStats.totalTokens} totalCostUsd={statusStats.totalCostUsd} cwd={statusCwd} branch={statusBranch} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} thinkingExpanded={thinkingExpanded} isActive={replState !== 'idle'} fullscreenEnabled={isFullscreenEnabled(config)} selectionMode={selectionMode} />}
           </>);
         })()}
       </Box>
@@ -2086,17 +2090,22 @@ export function createInitialRegistry(): EngineRegistry {
   return reg;
 }
 
-export function isFullscreenEnabled(): boolean {
-  if (process.env.AGON_DISABLE_FULLSCREEN === '1' || process.env.AGON_NATIVE_TERMINAL === '1') return false;
-  if (process.env.AGON_FULLSCREEN === '0' || process.env.AGON_ALT_SCREEN === '0') return false;
-  return true;
+export function resolveTerminalMode(config?: any): 'native'|'fullscreen' {
+  if (process.env.AGON_DISABLE_FULLSCREEN === '1' || process.env.AGON_NATIVE_TERMINAL === '1') return 'native';
+  if (process.env.AGON_FULLSCREEN === '0' || process.env.AGON_ALT_SCREEN === '0') return 'native';
+  if (process.env.AGON_FULLSCREEN === '1' || process.env.AGON_ALT_SCREEN === '1') return 'fullscreen';
+  return String(config?.terminalMode ?? loadConfig().terminalMode ?? 'fullscreen') === 'fullscreen' ? 'fullscreen' : 'native';
 }
 
-export function isMouseTrackingEnabled(): boolean {
+export function isFullscreenEnabled(config?: any): boolean {
+  return resolveTerminalMode(config) === 'fullscreen';
+}
+
+export function isMouseTrackingEnabled(config?: any): boolean {
   if (process.env.AGON_DISABLE_MOUSE === '1' || process.env.AGON_DISABLE_MOUSE_SCROLL === '1') return false;
   if (process.env.AGON_ENABLE_MOUSE_SCROLL === '0') return false;
   if (process.env.AGON_ENABLE_MOUSE_SCROLL === '1') return true;
-  return isFullscreenEnabled();
+  return isFullscreenEnabled(config);
 }
 
 export function terminalEnterSequence(useAltScreen: boolean, useMouse: boolean): string {
@@ -2105,6 +2114,12 @@ export function terminalEnterSequence(useAltScreen: boolean, useMouse: boolean):
 
 export function terminalExitSequence(useAltScreen: boolean): string {
   return `\x1b[?1000l\x1b[?1002l\x1b[?1006l\x1b[?2004l${useAltScreen ? '\x1b[?1049l' : ''}`;
+}
+
+export function resetViewportSequence(): string {
+  // Clear only the visible viewport and home the cursor. Unlike ESC[3J,
+  // this preserves terminal scrollback for native scrolling.
+  return '\x1b[2J\x1b[H';
 }
 
 export function drainStdinBuffer(): void {
@@ -2302,6 +2317,24 @@ export function estimateVisibleBlockBudget(rows: number, mode: string, overlayRe
   // Using 6 makes the startup dashboard overflow by one line.
   const reservedRows = (mode === 'chat' ? 7 : 8) + Math.max(0, overlayReservedRows);
   return Math.max(1, rows - reservedRows);
+}
+
+/**
+ * Reserve extra transcript rows when the bottom composer is showing a multi-line question or permission card, so short terminals do not clip the actionable keys.
+ */
+export function estimateQuestionReservedRows(questionState: any, termWidth: number): number {
+  if (!questionState) return 0;
+  const safeWidth = Math.max(24, termWidth - 12);
+  const hasChoices = Array.isArray(questionState.choices) && questionState.choices.length > 0;
+  if (questionState.kind === 'permission') {
+    const command = String(questionState.command ?? '').trim();
+    const summary = String(questionState.reason ?? questionState.description ?? '').trim();
+    const commandIsLong = command.includes('\n') || command.length > safeWidth;
+    const summaryIsLong = summary.length > safeWidth;
+    return commandIsLong || summaryIsLong ? 4 : 3;
+  }
+  if (hasChoices) return 2;
+  return 1;
 }
 
 export function buildDashboardBlock(enabledOverride: string[]|null): OutputBlock {
@@ -3170,21 +3203,21 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
           { text: icons().warning, color: '#fbbf24' },
           { text: ` ${event.tool} approval requested`, color: '#fbbf24', bold: true },
         ]);
-        if (preview) {
-          pushSegmentsRow(`${baseKey}-perm-cmd`, 1, [
-            { text: '  $ ', dimColor: true },
-            { text: preview, dimColor: true },
-          ]);
-        }
-        pushSegmentsRow(`${baseKey}-perm-hint`, 1, [
-          { text: '  respond below', dimColor: true },
-          { text: ' · ', dimColor: true },
-          { text: 'Y yes', color: '#4ade80' },
+        pushSegmentsRow(`${baseKey}-perm-actions`, 1, [
+          { text: '  [Y] Yes', color: '#4ade80', bold: true },
           { text: '  ', dimColor: true },
-          { text: 'N no', color: '#ef4444' },
+          { text: '[N] No', color: '#ef4444', bold: true },
           { text: '  ', dimColor: true },
-          { text: 'A always', color: '#60a5fa' },
-        ]);
+          { text: '[A] Always', color: '#60a5fa', bold: true },
+          detailViewerSupportsEvent(event) ? { text: '  ', dimColor: true } : null,
+          detailViewerSupportsEvent(event) ? { text: '[Ctrl+O] Open', color: '#a78bfa', bold: true } : null,
+        ].filter(Boolean));
+        pushSegmentsRow(`${baseKey}-perm-cmd`, 1, preview
+          ? [
+              { text: '  $ ', dimColor: true },
+              { text: preview, dimColor: true },
+            ]
+          : [{ text: '  respond below', dimColor: true }]);
         return;
       }
       case 'thinking-chunk': {
@@ -3423,7 +3456,8 @@ export async function startRepl(): Promise<void> {
     _lastSigintAt.value = now;
   });
   if (process.stdout.isTTY) {
-    const fullscreenEnabled = isFullscreenEnabled();
+    const fullscreenEnabled = isFullscreenEnabled(loadConfig());
+    if (!fullscreenEnabled) process.stdout.write(resetViewportSequence());
     process.stdout.write(terminalEnterSequence(fullscreenEnabled, false));
     process.on('exit', () => {
       try {

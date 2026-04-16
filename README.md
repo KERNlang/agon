@@ -28,7 +28,7 @@ agon leaderboard                                  # ELO rankings
 
 Requires **Node.js >= 22**, at least one AI CLI installed, and a git repo to work in.
 
-`npm run kern:compile` and `npm run build:cli` use the root-installed `@kernlang/*` family pinned in `package.json`, so every workspace package follows the same version. If you want to temporarily compile against a sibling checkout, use `npm run kern:compile:local`, `npm run build:cli:local`, or set `KERN_BIN=/abs/path/to/kern`.
+`npm run kern:compile` and `npm run build:cli` use the root-installed `@kernlang/*` family pinned in `package.json`, so every workspace package follows the same version.
 
 If you only want to refresh the runnable local binary without relinking it, use:
 
@@ -56,14 +56,16 @@ Change your brain engine anytime: `/cesar codex`
 
 ### Interactive REPL
 
-The REPL runs in a fullscreen terminal UI by default. Startup content and early chat history render from the top, and the composer stays directly under the content while everything still fits on screen. Once the transcript grows past the available height, the history becomes the scrollable region and the composer stays pinned underneath it.
+The REPL uses app-captured fullscreen scrolling by default, matching Codex and Claude Code more closely. Startup content and early chat history render from the top, the composer stays anchored, and the transcript scrolls inside Agon with the mouse wheel.
+
+If you prefer the terminal's own scrollbar and scrollback instead, switch to native mode with `agon config set terminalMode native`.
 
 Useful controls:
 
 - `Ctrl+E` toggle expanded tool output
 - `Ctrl+T` toggle thinking visibility
 - `Ctrl+Y` copy the current selection or transcript
-- `Ctrl+G` enter mouse-selection mode for native terminal copy
+- `Ctrl+G` enter mouse-selection mode for native terminal copy in fullscreen mode
 - `PageUp` / `PageDown` / `Home` / `End` navigate long transcripts
 
 Mouse drag selection is supported in fullscreen mode, and transcript copy is character-precise for normal text rows.

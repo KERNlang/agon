@@ -141,7 +141,7 @@ screen name=ConversationalResponse target=ink memo=true
 
 // ── Screen: DashboardView ───────────────────────────────────────────
 
-screen name=DashboardView target=ink export=false
+screen name=DashboardView target=ink export=true
   prop name=event type="OutputEvent & { type: 'dashboard' }"
   render
     handler <<<

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   locatePromptCursor,
   selectPromptViewport,
+  shouldAdoptPromptValue,
   wrapPromptText,
 } from '../../packages/cli/src/generated/blocks/prompt-input.js';
 
@@ -40,5 +41,17 @@ describe('prompt text input helpers', () => {
       hiddenAbove: 0,
       hiddenBelow: 0,
     });
+  });
+
+  it('ignores stale parent echoes while a newer local value is pending', () => {
+    expect(shouldAdoptPromptValue('a', 'ab')).toBe(false);
+    expect(shouldAdoptPromptValue('abc', 'abcd')).toBe(false);
+  });
+
+  it('adopts caught-up and external prompt values', () => {
+    expect(shouldAdoptPromptValue('ab', 'ab')).toBe(true);
+    expect(shouldAdoptPromptValue('', 'ab')).toBe(true);
+    expect(shouldAdoptPromptValue('/history', 'ab')).toBe(true);
+    expect(shouldAdoptPromptValue('ab', null)).toBe(true);
   });
 });

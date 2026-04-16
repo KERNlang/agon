@@ -29,6 +29,25 @@ fn name=renderSelectedText params="text:string,start:number,end:number,keyPrefix
     );
   >>>
 
+fn name=buildHistoryScrollbarCells params="rowsAbove:number,visibleCount:number,rowsBelow:number" returns="string[]" export=true
+  handler <<<
+    const viewportRows = Math.max(0, visibleCount);
+    if (viewportRows === 0) return [];
+
+    const totalRows = Math.max(viewportRows, rowsAbove + viewportRows + rowsBelow);
+    if (totalRows <= viewportRows) return [];
+
+    const thumbSize = Math.max(1, Math.round((viewportRows * viewportRows) / totalRows));
+    const maxOffset = Math.max(1, totalRows - viewportRows);
+    const travel = Math.max(0, viewportRows - thumbSize);
+    const unclampedThumbTop = travel === 0 ? 0 : Math.round((Math.max(0, rowsAbove) / maxOffset) * travel);
+    const thumbTop = Math.max(0, Math.min(travel, unclampedThumbTop));
+
+    return Array.from({ length: viewportRows }, (_, index: number) =>
+      index >= thumbTop && index < thumbTop + thumbSize ? 'thumb' : 'track'
+    );
+  >>>
+
 // ── ChromeBar — mode indicator strip (non-chat modes only) ──
 screen name=ChromeBar target=ink memo=true
   prop name=mode type="string"
@@ -223,11 +242,27 @@ screen name=HistoryView target=ink memo=true
               </Text>
             </Box>
           )}
-          <Box flexDirection="column">
-            {visibleRows.map((row: any) => (
-              <TranscriptRowView key={row.key} row={row} />
-            ))}
-          </Box>
+          {(() => {
+            const scrollbarCells = buildHistoryScrollbarCells(rowsAbove, visibleRows.length, rowsBelow);
+            return (
+              <Box flexDirection="row">
+                <Box flexDirection="column" flexGrow={1}>
+                  {visibleRows.map((row: any) => (
+                    <TranscriptRowView key={row.key} row={row} />
+                  ))}
+                </Box>
+                {scrollbarCells.length > 0 && (
+                  <Box flexDirection="column" flexShrink={0} marginLeft={1}>
+                    {scrollbarCells.map((cell: string, index: number) => (
+                      <Text key={`history-scrollbar-${index}`} color={cell === 'thumb' ? '#60a5fa' : '#30363d'}>
+                        {cell === 'thumb' ? '\u2590' : '\u2502'}
+                      </Text>
+                    ))}
+                  </Box>
+                )}
+              </Box>
+            );
+          })()}
         </Box>
       );
     >>>

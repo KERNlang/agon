@@ -113,7 +113,7 @@ const ConversationalResponse = React.memo(function ConversationalResponse({ engi
 });
 export { ConversationalResponse };
 
-export function DashboardView({ event }: { event:OutputEvent & { type: 'dashboard' } }) {
+function DashboardView({ event }: { event:OutputEvent & { type: 'dashboard' } }) {
   return (
     <Box flexDirection="column" paddingX={1} paddingY={1}>
       {LOGO_LINES.map((line: string, i: number) => (
@@ -176,7 +176,7 @@ export function DashboardView({ event }: { event:OutputEvent & { type: 'dashboar
   );
 }
 
-export function TableView({ headers, rows }: { headers:string[]; rows:string[][] }) {
+function TableView({ headers, rows }: { headers:string[]; rows:string[][] }) {
   const widths = headers.map((h: string, i: number) =>
     Math.max(h.length, ...rows.map((r: string[]) => (r[i] ?? '').length)) + 2,
   );

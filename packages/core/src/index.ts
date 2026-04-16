@@ -104,7 +104,7 @@ export { companionDispatch } from './companion-dispatch.js';
 export type { CompanionResult } from './companion-dispatch.js';
 export { fetchModelsRegistry, buildModelEntries, searchModels, modelEntryToEngineDef } from './models-registry.js';
 export type { ModelEntry, ModelsDevProvider, ModelsDevModel } from './models-registry.js';
-export { buildCliModelGroups, findBinary, getBinaryVersion } from './cli-models-registry.js';
+export { buildCliModelGroups, buildCliModelGroupsAsync, discoverCliModelsAsync, findBinary, getBinaryVersion } from './cli-models-registry.js';
 export type { CliModelEntry, CliProviderGroup } from './cli-models-registry.js';
 export { loadAuthStore, saveAuthStore, setAuthKey, removeAuthKey, getAuthKey, loadAllAuthKeys, listStoredProviders } from './auth-store.js';
 export type { AuthEntry, AuthStore } from './auth-store.js';

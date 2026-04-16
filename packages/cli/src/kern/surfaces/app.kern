@@ -422,7 +422,7 @@ fn name=nextWheelAnimationStep params="pending:number" returns="{step:number,rem
     if (!Number.isFinite(pending) || pending === 0) return { step: 0, remaining: 0 };
     const direction = pending > 0 ? 1 : -1;
     const magnitude = Math.abs(pending);
-    const stepSize = magnitude >= 6 ? 3 : magnitude >= 3 ? 2 : 1;
+    const stepSize = magnitude >= 16 ? 6 : magnitude >= 10 ? 5 : magnitude >= 6 ? 4 : magnitude >= 3 ? 2 : 1;
     const step = direction * Math.min(stepSize, magnitude);
     return { step, remaining: pending - step };
   >>>
@@ -2210,7 +2210,7 @@ screen name=App target=ink
 
       const scheduleWheelFlush = () => {
         if (wheelFlushTimerRef.current) return;
-        wheelFlushTimerRef.current = setTimeout(flushWheelDelta, 10);
+        wheelFlushTimerRef.current = setTimeout(flushWheelDelta, 6);
       };
 
       const onData = (buf: Buffer | string) => {
@@ -2220,7 +2220,11 @@ screen name=App target=ink
         const delta = parsed.scrollUpEvents - parsed.scrollDownEvents;
         if (delta !== 0) {
           wheelDeltaRef.current += delta;
-          scheduleWheelFlush();
+          if (wheelFlushTimerRef.current) {
+            scheduleWheelFlush();
+          } else {
+            flushWheelDelta();
+          }
         }
         for (const event of parsed.pointerEvents) {
           if (event.kind === 'down') {
@@ -2822,8 +2826,12 @@ screen name=App target=ink
       setEnginePickerOpen(false);
       setModelPickerOpen(true);
 
-      import('@agon/core').then(({ fetchModelsRegistry, buildModelEntries, buildCliModelGroups }) => {
-        setModelPickerCliGroups(buildCliModelGroups());
+      setModelPickerCliGroups([]);
+
+      import('@agon/core').then(({ fetchModelsRegistry, buildModelEntries, buildCliModelGroupsAsync }) => {
+        buildCliModelGroupsAsync().then((cliGroups: any) => {
+          setModelPickerCliGroups(cliGroups);
+        });
         fetchModelsRegistry().then((reg: any) => {
           setModelPickerEntries(buildModelEntries(reg));
           setModelPickerLoading(false);

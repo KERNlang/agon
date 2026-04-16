@@ -41,8 +41,7 @@ fn name=registerBuiltinCommands params="registry:CommandRegistry" returns=void
       // Config
       { name: 'workspace', desc: 'add|remove|list|switch   — manage project repos', category: 'config', aliases: ['ws'] },
       { name: 'cesar',     desc: '<engine>                — set Cesar brain engine', category: 'config' },
-      { name: 'models',    desc: '                        — browse & add provider models', category: 'config' },
-      { name: 'cli-models', desc: '                        — choose active CLI engines + model overrides', category: 'config', aliases: ['cli-model'] },
+      { name: 'models',    desc: '                        — browse & add provider models + CLI models', category: 'config' },
       { name: 'engines',   desc: '                        — select active engines', category: 'config' },
       { name: 'config',    desc: '[list|get|set]          — settings', category: 'config' },
       { name: 'provider',  desc: 'add|remove|list          — manage API providers', category: 'config' },

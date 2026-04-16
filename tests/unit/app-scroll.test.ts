@@ -10,6 +10,7 @@ import {
   stringDisplayWidth,
   transcriptRowsToPlainText,
 } from '../../packages/cli/src/generated/surfaces/app.js';
+import { buildHistoryScrollbarCells } from '../../packages/cli/src/generated/surfaces/app-views.js';
 
 describe('app scroll helpers', () => {
   it('does not allow scroll when every rendered row fits in the viewport budget', () => {
@@ -24,7 +25,15 @@ describe('app scroll helpers', () => {
   it('consumes large wheel bursts over a few animation steps instead of one jump', () => {
     expect(nextWheelAnimationStep(1)).toEqual({ step: 1, remaining: 0 });
     expect(nextWheelAnimationStep(4)).toEqual({ step: 2, remaining: 2 });
-    expect(nextWheelAnimationStep(-7)).toEqual({ step: -3, remaining: -4 });
+    expect(nextWheelAnimationStep(-7)).toEqual({ step: -4, remaining: -3 });
+    expect(nextWheelAnimationStep(18)).toEqual({ step: 6, remaining: 12 });
+  });
+
+  it('builds a persistent history scrollbar thumb for the visible viewport', () => {
+    expect(buildHistoryScrollbarCells(0, 5, 0)).toEqual([]);
+    expect(buildHistoryScrollbarCells(0, 5, 10)).toEqual(['thumb', 'thumb', 'track', 'track', 'track']);
+    expect(buildHistoryScrollbarCells(5, 5, 5)).toEqual(['track', 'track', 'thumb', 'thumb', 'track']);
+    expect(buildHistoryScrollbarCells(10, 5, 0)).toEqual(['track', 'track', 'track', 'thumb', 'thumb']);
   });
 
   it('keeps the startup dashboard hidden while idle and preserves it once real chat exists', () => {

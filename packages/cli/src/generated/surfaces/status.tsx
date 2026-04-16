@@ -39,7 +39,7 @@ export function TokenGauge({ tokens, maxTokens }: { tokens:number; maxTokens:num
   );
 }
 
-export function AgonTip() {
+function AgonTip() {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
     return (value) => setTimeout(() => setter(value), 0);
@@ -264,7 +264,7 @@ export const AGON_TIPS: string[] = [
   'Run /brainstorm to get confidence bids from all engines',
   'Run /tribunal to start a multi-AI debate',
   'Run /cesar <engine> to change your Cesar brain engine',
-  'Run /cli-models to pick active engines and CLI model overrides',
+  'Run /models to browse & add provider models, or /engines to pick active engines',
   'Run /campfire for collaborative multi-engine thinking',
   'Run /leaderboard to see engine ELO ratings',
   'Run /history to browse past forge runs',

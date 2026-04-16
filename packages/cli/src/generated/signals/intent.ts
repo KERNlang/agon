@@ -44,8 +44,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { cmd: '/workspace',   desc: 'add|remove|list|switch   — manage project repos' },
   { cmd: '/ws',          desc: '                          — list workspaces (shortcut)' },
   { cmd: '/cesar',       desc: '<engine>                — set Cesar brain engine (e.g. /cesar codex)' },
-  { cmd: '/models',      desc: '                        — browse & add provider models' },
-  { cmd: '/cli-models',  desc: '                        — choose active CLI engines + model overrides' },
+  { cmd: '/models',      desc: '                        — browse & add provider models + CLI models' },
   { cmd: '/tokens',      desc: '                        — show token usage & costs' },
   { cmd: '/engines',     desc: '                        — select active engines' },
   { cmd: '/leaderboard', desc: '                        — ELO rankings' },
@@ -251,9 +250,6 @@ function parseSlashCommand(input: string, commandRegistry?: any): Intent {
       return { type: 'models' } as Intent;
     }
     case 'setup':
-      return { type: 'models' } as Intent;
-    case 'cli-models':
-    case 'cli-model':
       return { type: 'models' } as Intent;
     case 'tokens':
     case 'usage':

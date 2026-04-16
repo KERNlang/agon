@@ -2,9 +2,9 @@
 
 import { execSync } from 'node:child_process';
 
-import { existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync } from 'node:fs';
 
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 import { homedir } from 'node:os';
 
@@ -30,68 +30,80 @@ export interface CliProviderGroup {
   models: CliModelEntry[];
 }
 
-export const CLI_MODELS_REGISTRY: Record<string, {providerId:string, providerName:string, engineId:string, engineBinary:string, versionCmd:string[], models:{id:string, name:string, contextWindow?:number, toolCall?:boolean, reasoning?:boolean}[]}> = ({
-  anthropic: {
-    providerId: 'anthropic',
-    providerName: 'Anthropic',
-    engineId: 'claude',
-    engineBinary: 'claude',
-    versionCmd: ['--version'],
-    models: [
-      { id: 'claude-opus-4-20250514', name: 'Claude Opus 4', contextWindow: 200000, toolCall: true, reasoning: true },
-      { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4', contextWindow: 200000, toolCall: true, reasoning: true },
-      { id: 'claude-haiku-3-5-20241022', name: 'Claude 3.5 Haiku', contextWindow: 200000, toolCall: true, reasoning: false },
-    ],
-  },
-  openai: {
-    providerId: 'openai',
-    providerName: 'OpenAI',
-    engineId: 'codex',
-    engineBinary: 'codex',
-    versionCmd: ['--version'],
-    models: [
-      { id: 'gpt-4o', name: 'GPT-4o', contextWindow: 128000, toolCall: true, reasoning: false },
-      { id: 'gpt-4o-mini', name: 'GPT-4o Mini', contextWindow: 128000, toolCall: true, reasoning: false },
-      { id: 'o3', name: 'o3', contextWindow: 200000, toolCall: true, reasoning: true },
-      { id: 'o4-mini', name: 'o4-mini', contextWindow: 200000, toolCall: true, reasoning: true },
-      { id: 'gpt-5.3-codex', name: 'GPT-5.3 Codex', contextWindow: 200000, toolCall: true, reasoning: true },
-    ],
-  },
-  google: {
-    providerId: 'google',
-    providerName: 'Google',
-    engineId: 'gemini',
-    engineBinary: 'gemini',
-    versionCmd: ['--version'],
-    models: [
-      { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', contextWindow: 1048576, toolCall: true, reasoning: true },
-      { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', contextWindow: 1048576, toolCall: true, reasoning: true },
-      { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', contextWindow: 1048576, toolCall: true, reasoning: false },
-    ],
-  },
-  mistral: {
-    providerId: 'mistral',
-    providerName: 'Mistral',
-    engineId: 'mistral',
-    engineBinary: 'mistral',
-    versionCmd: ['--version'],
-    models: [
-      { id: 'mistral-large-latest', name: 'Mistral Large', contextWindow: 128000, toolCall: true, reasoning: false },
-      { id: 'mistral-medium-latest', name: 'Mistral Medium', contextWindow: 32000, toolCall: true, reasoning: false },
-      { id: 'codestral-latest', name: 'Codestral', contextWindow: 256000, toolCall: true, reasoning: false },
-    ],
-  },
-  openrouter: {
-    providerId: 'openrouter',
-    providerName: 'OpenRouter',
-    engineId: 'openrouter',
-    engineBinary: 'openrouter',
-    versionCmd: [],
-    models: [
-      { id: 'auto', name: 'Auto (best for task)', toolCall: true, reasoning: false },
-    ],
-  },
+export const ENGINE_PROVIDER_MAP: Record<string, {providerId:string, engineId:string, engineBinary:string, versionCmd:string[]}> = ({
+  anthropic: { providerId: 'anthropic', engineId: 'claude', engineBinary: 'claude', versionCmd: ['--version'] },
+  openai:    { providerId: 'openai',    engineId: 'codex',  engineBinary: 'codex',  versionCmd: ['--version'] },
+  google:    { providerId: 'google',    engineId: 'gemini', engineBinary: 'gemini', versionCmd: ['--version'] },
+  mistral:   { providerId: 'mistral',   engineId: 'mistral',engineBinary: 'mistral', versionCmd: ['--version'] },
+  openrouter:{ providerId: 'openrouter',engineId: 'openrouter', engineBinary: 'openrouter', versionCmd: [] },
 });
+
+export const FALLBACK_MODELS: Record<string, {id:string, name:string, contextWindow?:number, toolCall?:boolean, reasoning?:boolean}[]> = ({
+  anthropic: [
+    { id: 'claude-sonnet-4-5-20250929', name: 'Claude Sonnet 4.5', contextWindow: 200000, toolCall: true, reasoning: true },
+    { id: 'claude-haiku-4-5-20251001', name: 'Claude Haiku 4.5', contextWindow: 200000, toolCall: true, reasoning: true },
+  ],
+  openai: [
+    { id: 'gpt-4o', name: 'GPT-4o', contextWindow: 128000, toolCall: true, reasoning: false },
+    { id: 'o4-mini', name: 'o4-mini', contextWindow: 200000, toolCall: true, reasoning: true },
+  ],
+  google: [
+    { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', contextWindow: 1048576, toolCall: true, reasoning: true },
+    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', contextWindow: 1048576, toolCall: true, reasoning: true },
+  ],
+  mistral: [
+    { id: 'mistral-large-latest', name: 'Mistral Large', contextWindow: 128000, toolCall: true, reasoning: false },
+    { id: 'codestral-latest', name: 'Codestral', contextWindow: 256000, toolCall: true, reasoning: false },
+  ],
+  openrouter: [
+    { id: 'auto', name: 'Auto (best for task)', toolCall: true, reasoning: false },
+  ],
+});
+
+export function getCacheDir(): string {
+  const override = process.env.AGON_HOME?.trim();
+  const home = override ? resolve(override) : join(homedir(), '.agon');
+  return join(home, 'cache');
+}
+
+export const CACHE_TTL_MS: number = 3600000;
+
+export async function fetchCliModelsRegistry(): Promise<Record<string, any> | null> {
+  const cacheDir = getCacheDir();
+  const cacheFile = join(cacheDir, 'models-dev.json');
+  try {
+    if (existsSync(cacheFile)) {
+      const stat = statSync(cacheFile);
+      const age = Date.now() - stat.mtimeMs;
+      if (age < CACHE_TTL_MS) {
+        return JSON.parse(readFileSync(cacheFile, 'utf-8'));
+      }
+    }
+  } catch { /* cache read failed, refetch */ }
+  
+  try {
+    const response = await fetch('https://models.dev/api.json');
+    if (!response.ok) {
+      // Try stale cache
+      if (existsSync(cacheFile)) {
+        return JSON.parse(readFileSync(cacheFile, 'utf-8'));
+      }
+      return null;
+    }
+    const data = await response.json();
+    mkdirSync(cacheDir, { recursive: true });
+    writeFileSync(cacheFile, JSON.stringify(data));
+    return data;
+  } catch {
+    // Stale cache fallback
+    try {
+      if (existsSync(cacheFile)) {
+        return JSON.parse(readFileSync(cacheFile, 'utf-8'));
+      }
+    } catch { /* give up */ }
+    return null;
+  }
+}
 
 export function findBinary(binary: string): string|null {
   try {
@@ -121,30 +133,98 @@ export function getBinaryVersion(binary: string, versionCmd: string[]): string|n
 }
 
 /**
- * Build CLI provider groups with installed/version status for the unified /models picker.
+ * Build CLI provider groups synchronously from fallback models. For async version use buildCliModelGroupsAsync.
  */
 export function buildCliModelGroups(): CliProviderGroup[] {
   const groups: CliProviderGroup[] = [];
-  for (const [key, prov] of Object.entries(CLI_MODELS_REGISTRY)) {
-    const binaryPath = findBinary(prov.engineBinary);
+  for (const [key, eng] of Object.entries(ENGINE_PROVIDER_MAP)) {
+    const binaryPath = findBinary(eng.engineBinary);
     const installed = binaryPath !== null;
-    const version = installed ? getBinaryVersion(prov.engineBinary, prov.versionCmd) : null;
-    const models: CliModelEntry[] = prov.models.map((m: any) => ({
+    const version = installed ? getBinaryVersion(eng.engineBinary, eng.versionCmd) : null;
+    const fallbackModels = FALLBACK_MODELS[key] ?? [];
+    const models: CliModelEntry[] = fallbackModels.map((m: any) => ({
       id: m.id,
       name: m.name,
-      providerId: prov.providerId,
-      providerName: prov.providerName,
-      engineId: prov.engineId,
-      engineBinary: prov.engineBinary,
+      providerId: eng.providerId,
+      providerName: key.charAt(0).toUpperCase() + key.slice(1),
+      engineId: eng.engineId,
+      engineBinary: eng.engineBinary,
       contextWindow: m.contextWindow,
       toolCall: m.toolCall,
       reasoning: m.reasoning,
     }));
     groups.push({
-      providerId: prov.providerId,
-      providerName: prov.providerName,
-      engineId: prov.engineId,
-      engineBinary: prov.engineBinary,
+      providerId: eng.providerId,
+      providerName: key.charAt(0).toUpperCase() + key.slice(1),
+      engineId: eng.engineId,
+      engineBinary: eng.engineBinary,
+      installed,
+      version,
+      models,
+    });
+  }
+  return groups;
+}
+
+/**
+ * Build CLI provider groups with latest models from models.dev API. Falls back to static list on failure.
+ */
+export async function buildCliModelGroupsAsync(): Promise<CliProviderGroup[]> {
+  let registry: Record<string, any> | null = null;
+  try {
+    registry = await fetchCliModelsRegistry();
+  } catch { registry = null; }
+  
+  const groups: CliProviderGroup[] = [];
+  for (const [key, eng] of Object.entries(ENGINE_PROVIDER_MAP)) {
+    const binaryPath = findBinary(eng.engineBinary);
+    const installed = binaryPath !== null;
+    const version = installed ? getBinaryVersion(eng.engineBinary, eng.versionCmd) : null;
+  
+    let models: CliModelEntry[] = [];
+  
+    // Try to get models from the API registry
+    if (registry && registry[eng.providerId]) {
+      const provider = registry[eng.providerId];
+      const providerName = provider.name ?? (key.charAt(0).toUpperCase() + key.slice(1));
+      const apiModels = provider.models ?? {};
+      models = Object.values(apiModels).map((m: any) => ({
+        id: m.id,
+        name: m.name,
+        providerId: eng.providerId,
+        providerName,
+        engineId: eng.engineId,
+        engineBinary: eng.engineBinary,
+        contextWindow: m.limit?.context,
+        toolCall: m.tool_call ?? false,
+        reasoning: m.reasoning ?? false,
+      }));
+    }
+  
+    // Fallback to static list
+    if (models.length === 0) {
+      const fallbackModels = FALLBACK_MODELS[key] ?? [];
+      models = fallbackModels.map((m: any) => ({
+        id: m.id,
+        name: m.name,
+        providerId: eng.providerId,
+        providerName: key.charAt(0).toUpperCase() + key.slice(1),
+        engineId: eng.engineId,
+        engineBinary: eng.engineBinary,
+        contextWindow: m.contextWindow,
+        toolCall: m.toolCall,
+        reasoning: m.reasoning,
+      }));
+    }
+  
+    // Determine display name
+    const displayName = registry?.[eng.providerId]?.name ?? (key.charAt(0).toUpperCase() + key.slice(1));
+  
+    groups.push({
+      providerId: eng.providerId,
+      providerName: displayName,
+      engineId: eng.engineId,
+      engineBinary: eng.engineBinary,
       installed,
       version,
       models,

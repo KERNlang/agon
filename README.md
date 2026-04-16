@@ -194,8 +194,7 @@ Each team runs: Architect -> Implementers (parallel) -> Reviewer -> Finalize. Bo
 | `/team-brainstorm [2v2\|3v3] <question>` | Team ideation |
 | `/cesar <engine>` | Set the brain engine |
 | `/use <engines>` | Set active engines |
-| `/models` | Browse and add provider models |
-| `/cli-models` | Choose active CLI engines and model overrides |
+| `/models` | Browse provider models, CLI models, and engine overrides |
 | `/engine discover` | Auto-detect installed engines |
 | `/provider [add\|remove\|list]` | Manage API providers |
 | `/apply [path] [--force]` | Apply winning forge patch |

@@ -1,11 +1,9 @@
 // ── UI Status: status bar, status line, token gauge, tips, jobs rail, spinner ──
-// KERN-GAP: memo — kern-lang 3.1.7 honors `memo=true` on block screens only, not
-// on surface screens. BackgroundJobRail / CesarStatusStrip below declare
-// `memo=true` (intent), but the generated status.tsx exports them as plain
-// functions. Until KERN fixes this, we wrap them at the facade in
-// components.tsx. StatusBar is NOT memoized — its body reads global mutable
-// state (tracker, chatSession.messages, resolveWorkingDir, currentBranch) that
-// is not in its props, so shallow-equal would make it go stale.
+// Note: Kern 3.2.3 now honors `memo=true` on these surface screens.
+// BackgroundJobRail / CesarStatusStrip can stay memoized in generated output.
+// StatusBar is intentionally NOT memoized — it reads global mutable state
+// (tracker, chatSession.messages, resolveWorkingDir, currentBranch) that is not
+// in its props, so shallow-equal would make it go stale.
 
 import from="react" default="React" names="useState,useEffect"
 import from="ink" names="Box,Text"
@@ -100,7 +98,7 @@ screen name=AgonTip target=ink export=false
 
 // ── Screen: StatusBar ───────────────────────────────────────────────
 
-// NOTE: no memo=true on StatusBar — see KERN-GAP above.
+// NOTE: no memo=true on StatusBar — see rationale above.
 screen name=StatusBar target=ink
   prop name=cesarId type=string
   prop name=chatMessageCount type=number

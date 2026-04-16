@@ -6,7 +6,7 @@
 
 The workflow:
 1. Write `.kern` source in `packages/*/src/kern/<category>/` (surfaces, blocks, signals, models, or a feature domain like cesar/, tools/, handlers/)
-2. Compile: `npx kern compile src/kern/<category> --outdir=src/generated/<category>` (or use `npm run kern:compile`)
+2. Compile: `npm run kern:compile` (preferred) or `KERN_BIN=/abs/path/to/kern npm run kern:compile -w packages/<name>`
 3. The hand-maintained `.ts` file becomes a thin re-export facade
 4. If the type needs a discriminated union, use KERN's `union` node. If it needs a class, use `service`. If it needs async with abort, use `signal` + `cleanup`.
 5. **NEVER write logic in TypeScript that KERN can express.** If you think KERN can't do it, check these primitives first:
@@ -28,12 +28,12 @@ These are compiled output. Edit the `.kern` source, recompile.
 ## KERN Compiler
 
 ```bash
-npx kern compile src/kern/<category> --outdir=src/generated/<category>
-# Or compile all at once:
 npm run kern:compile
+# Or target one package while pinning a specific compiler:
+KERN_BIN=/abs/path/to/kern npm run kern:compile -w packages/cli
 ```
 
-Installed via `kern-lang` npm package (^3.1.7). Available in all packages via `node_modules/.bin/kern`.
+Agon's compiler wrapper prefers a sibling `../kern-lang` checkout, then `KERN_BIN`, then the installed `@kernlang/cli` binary. Stale installed versions are rejected instead of being used silently.
 Available primitives: `fn`, `service`, `union`, `interface`, `const`, `import`, `machine`, `event`, `screen`
 
 **KERN MCP**: Add `https://kernlang.dev/api/mcp` to your `.mcp.json`. Provides compile, validate, review, schema, and 11 tools total — including autonomous compile→fix loops. See `.mcp.json.example` in this repo.

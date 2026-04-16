@@ -1,5 +1,15 @@
 # KERN Compiler Gaps — What Blocks Full Agon-in-KERN
 
+> **Superseded on 2026-04-16.**
+> This document reflects an older Kern baseline and now overstates what is
+> missing. In current Kern, `service`/class generation, `implements`,
+> `singleton`, discriminated unions, default params, and `signal` + `cleanup`
+> are already available, and the specific Ink gaps called out here have been
+> closed in regenerated Agon output. The remaining real blocker is narrower:
+> `machine` transitions still need typed payload parameters and first-class
+> guards. See `kern-lang/docs/superpowers/specs/2026-04-16-agon-gap-closure-backlog.md`
+> for the current backlog.
+>
 > This document is input for Agon engines. Each gap is a concrete problem
 > with test cases. Engines should propose KERN syntax + compiler output.
 > Confidence: 0.4 on the right syntax for each — that's why this is here.

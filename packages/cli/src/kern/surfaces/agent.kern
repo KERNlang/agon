@@ -8,14 +8,9 @@
 // app shell by subscribing to OutputEvents and passing the current
 // snapshot as props.
 //
-// KERN-GAP: transpiler-ink — a single-screen file with no React hooks
-// (no useState/useEffect/useMemo) requires an explicit
-// `import from="react" default="React"` to trigger the ink import
-// tracker; without it, the compiler auto-emits `import React` but
-// drops any `import from="ink"` declarations silently, producing a
-// .tsx that references Box/Text without importing them. Expected:
-// the Ink transpiler should always emit tracked ink imports when the
-// file has target=ink screens, regardless of hooks usage.
+// Note: Kern 3.2.3 correctly emits Ink imports for this hookless surface.
+// The explicit React import is kept for clarity and consistency with other
+// Ink surfaces, not as a compiler workaround.
 
 import from="react" default="React"
 import from="ink" names="Box,Text"

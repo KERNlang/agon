@@ -43,6 +43,20 @@ Type `agon` to start. **Cesar** — a persistent AI brain — receives everythin
 
 Change your brain engine anytime: `/cesar codex`
 
+### Interactive REPL
+
+The REPL runs in a fullscreen terminal UI by default. Startup content and early chat history render from the top, and the composer stays directly under the content while everything still fits on screen. Once the transcript grows past the available height, the history becomes the scrollable region and the composer stays pinned underneath it.
+
+Useful controls:
+
+- `Ctrl+E` toggle expanded tool output
+- `Ctrl+T` toggle thinking visibility
+- `Ctrl+Y` copy the current selection or transcript
+- `Ctrl+G` enter mouse-selection mode for native terminal copy
+- `PageUp` / `PageDown` / `Home` / `End` navigate long transcripts
+
+Mouse drag selection is supported in fullscreen mode, and transcript copy is character-precise for normal text rows.
+
 ---
 
 ## Forge — competitive code generation

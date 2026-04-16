@@ -161,7 +161,23 @@ const TranscriptRowView = React.memo(function TranscriptRowView({ row }: { row:a
 });
 export { TranscriptRowView };
 
-const HistoryView = React.memo(function HistoryView({ visibleRows, rowsAbove, rowsBelow, stickToBottom }: { visibleRows:any[]; rowsAbove:number; rowsBelow:number; stickToBottom:boolean|undefined }) {
+const HistoryView = React.memo(function HistoryView({ visibleRows, rowsAbove, rowsBelow, stickToBottom, centerContent }: { visibleRows:any[]; rowsAbove:number; rowsBelow:number; stickToBottom:boolean|undefined; centerContent:boolean|undefined }) {
+  if (centerContent) {
+    return (
+      <Box flexDirection="column" flexGrow={1}>
+        <Box flexGrow={5} />
+        <Box alignItems="center">
+          <Box flexDirection="column">
+            {visibleRows.map((row: any) => (
+              <TranscriptRowView key={row.key} row={row} />
+            ))}
+          </Box>
+        </Box>
+        <Box flexGrow={3} />
+      </Box>
+    );
+  }
+  
   return (
     <Box flexDirection="column" flexGrow={1} justifyContent={stickToBottom ? 'flex-end' : 'flex-start'}>
       {(rowsAbove > 0 || rowsBelow > 0) && (
@@ -174,9 +190,11 @@ const HistoryView = React.memo(function HistoryView({ visibleRows, rowsAbove, ro
           </Text>
         </Box>
       )}
-      {visibleRows.map((row: any) => (
-        <TranscriptRowView key={row.key} row={row} />
-      ))}
+      <Box flexDirection="column">
+        {visibleRows.map((row: any) => (
+          <TranscriptRowView key={row.key} row={row} />
+        ))}
+      </Box>
     </Box>
   );
 });

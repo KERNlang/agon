@@ -60,8 +60,8 @@ const name=_thinkingBuffer type="{engineId:string,content:string}"
   handler <<< { engineId: '', content: '' } >>>
 
 // ── Permission queue — ensures prompts don't overwrite each other ────
-const name=_permissionQueue type="Array<{tool:string,command:string,reason:string,resolve:(approved:boolean)=>void}>"
-  handler <<< [] as Array<{tool:string,command:string,reason:string,resolve:(approved:boolean)=>void}> >>>
+const name=_permissionQueue type="Array<{tool:string,command:string,description?:string,reason:string,resolve:(approved:boolean)=>void}>"
+  handler <<< [] as Array<{tool:string,command:string,description?:string,reason:string,resolve:(approved:boolean)=>void}> >>>
 
 fn name=clearPermissionQueue returns=void
   doc "Reject all queued permissions and clear the queue. Called on interrupt/cancel."
@@ -104,11 +104,16 @@ fn name=_showNextPermission params="actions:OutputActions" returns=void export=f
     _drainAutoApproved(actions);
     if (_permissionQueue.length === 0) return;
     const next = _permissionQueue[0];
-    actions.addBlock({ type: 'permission-ask', tool: next.tool, command: next.command, reason: next.reason, resolve: next.resolve } as any);
+    actions.addBlock({ type: 'permission-ask', tool: next.tool, command: next.command, description: next.description, reason: next.reason, resolve: next.resolve } as any);
     const permResolve = next.resolve;
     const permCommand = next.command;
     actions.setQuestionState({
-      prompt: `${next.tool}: ${permCommand.length > 60 ? permCommand.slice(0, 60) + '\u2026' : permCommand}`,
+      kind: 'permission',
+      prompt: `Approve ${next.tool}`,
+      tool: next.tool,
+      command: permCommand,
+      description: next.description,
+      reason: next.reason,
       choices: [
         { key: 'y', label: 'Yes', color: '#4ade80' },
         { key: 'n', label: 'No', color: '#ef4444' },
@@ -261,6 +266,7 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
         const entry = {
           tool: (event as any).tool as string,
           command: (event as any).command as string,
+          description: (event as any).description as string | undefined,
           reason: (event as any).reason as string,
           resolve: (event as any).resolve as (approved: boolean) => void,
         };

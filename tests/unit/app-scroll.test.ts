@@ -76,6 +76,26 @@ describe('app scroll helpers', () => {
     expect(previewRow).toBeTruthy();
   });
 
+  it('renders permission requests as compact transcript rows', () => {
+    const rows = buildTranscriptRows([
+      {
+        id: 1,
+        event: {
+          type: 'permission-ask',
+          tool: 'Bash',
+          command: 'npm install some-package --save-dev',
+          reason: 'needs approval',
+          resolve: () => {},
+        },
+      },
+    ] as any, 'chat', false, true);
+
+    expect(rows.some((row: any) => row.key.includes('perm-head'))).toBe(true);
+    expect(rows.some((row: any) => row.key.includes('perm-cmd'))).toBe(true);
+    expect(rows.some((row: any) => row.key.includes('perm-hint'))).toBe(true);
+    expect(rows.length).toBeLessThanOrEqual(3);
+  });
+
   it('treats expanded bash output as multi-row transcript history', () => {
     const block = {
       id: 1,

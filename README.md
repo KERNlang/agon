@@ -28,6 +28,8 @@ agon leaderboard                                  # ELO rankings
 
 Requires **Node.js >= 22**, at least one AI CLI installed, and a git repo to work in.
 
+If you are hacking on Agon alongside a local `../kern-lang` checkout, `npm run kern:compile` will use that compiler automatically instead of the installed `node_modules/.bin/kern`. Set `KERN_BIN=/abs/path/to/kern` to override it explicitly.
+
 If you only want to refresh the runnable local binary without relinking it, use:
 
 ```bash

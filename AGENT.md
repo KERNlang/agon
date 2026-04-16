@@ -20,6 +20,11 @@ Workflow:
 2. Compile: `npm run kern:compile`
 3. The `.ts` facade re-exports from `generated/`
 
+Compiler resolution:
+- `npm run kern:compile` prefers a sibling `../kern-lang` checkout when present.
+- Set `KERN_BIN=/abs/path/to/kern` to override the compiler explicitly.
+- Agon rejects stale installed `@kernlang/cli` versions instead of silently compiling with them.
+
 CLI runtime note:
 - For changes under `packages/cli/src/kern/`, `npm run kern:compile -w packages/cli` only updates `packages/cli/src/generated/`.
 - The actual `agon` binary runs from `packages/cli/dist/index.js`, so rebuild it with `npm run build -w packages/cli` before verifying runtime behavior.

@@ -23,6 +23,11 @@ The `@kernlang/cli` binary you invoke is 3.2.3, but it `import`s
 `transpileInk` from `@kernlang/terminal@3.1.7`, which doesn't emit any of the
 features Agon needs. Result: silent regression on every recompile.
 
+Current mitigation:
+- `npm run kern:compile` now prefers a sibling `../kern-lang` checkout when present.
+- `KERN_BIN=/abs/path/to/kern npm run kern:compile` forces a specific compiler.
+- Agon rejects stale installed `@kernlang/cli` versions instead of silently using them.
+
 ## Fix (30 minutes, zero code risk)
 
 ```bash

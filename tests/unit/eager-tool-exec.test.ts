@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import { join } from 'node:path';
 
 /**
  * Fitness tests for streaming eager tool execution.
@@ -17,6 +18,8 @@ import { describe, it, expect, vi } from 'vitest';
  */
 
 // ── Helpers ──────────────────────────────────────────────────
+
+const REPO_ROOT = join(import.meta.dirname, '../..');
 
 /** Simulate a persistent session that yields chunks */
 function createMockSession(chunks: Array<{ type: string; content: string; metadata?: any }>) {
@@ -158,7 +161,7 @@ describe('Eager Tool Execution', () => {
     registry.register(createGlobTool());
 
     const ctx: any = {
-      cwd: process.cwd(),
+      cwd: REPO_ROOT,
       readFileState: new Map(),
       permissionMode: 'auto',
     };

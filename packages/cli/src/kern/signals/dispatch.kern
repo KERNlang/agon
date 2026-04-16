@@ -186,6 +186,72 @@ fn name=extractExecutionSpec params="input:string" returns="{ task:string; fitne
     return { task, fitnessCmd };
   >>>
 
+fn name=countTrackedUserTurns params="ctx:HandlerContext" returns=number
+  handler <<<
+    const messages = ctx.chatSession?.messages ?? [];
+    return messages.filter((m: any) => m.role === 'user').length;
+  >>>
+
+fn name=shouldAutoResumeAgentResult params="result:any, launchInputEpoch:number, launchUserTurns:number, ctx:HandlerContext" returns=boolean export=true
+  handler <<<
+    if (!result || typeof result !== 'object') return false;
+    const status = String((result as any).status ?? '').trim();
+    if (!status || status === 'cancelled') return false;
+    if ((ctx.inputEpoch ?? 0) !== launchInputEpoch) return false;
+    if (countTrackedUserTurns(ctx) !== launchUserTurns) return false;
+    return true;
+  >>>
+
+fn name=buildAgentAutoResumePrompt params="originalTask:string, result:any" returns=string export=true
+  handler <<<
+    if (!result || typeof result !== 'object') return '';
+    const kind = String((result as any).kind ?? 'agent');
+    const status = String((result as any).status ?? 'completed');
+    if (!status || status === 'cancelled') return '';
+    const summary = String((result as any).summary ?? '').trim();
+    const taskKind = String((result as any).taskKind ?? 'unknown').trim();
+    const patchPath = String((result as any).patchPath ?? '').trim();
+    const modeLabel = kind === 'team-agent' ? 'team-agent' : 'solo agent';
+    const lines = [
+      `AUTOMATIC FOLLOW-UP: your delegated ${modeLabel} run has finished.`,
+      `Do not ask the user what happened, whether the agent finished, or what needs fixing. Continue from this result.`,
+      '',
+      `Original delegated task:\n${originalTask.trim().slice(0, 4000)}`,
+      '',
+      `Completion status: ${status}`,
+      `Delegation mode: ${modeLabel}`,
+    ];
+    if (taskKind && taskKind !== 'unknown') lines.push(`Task kind: ${taskKind}`);
+    if (summary) lines.push(`Result summary:\n${summary.slice(0, 8000)}`);
+    if (kind === 'team-agent') {
+      lines.push(patchPath
+        ? `Winner patch path (not applied to the main workspace yet): ${patchPath}`
+        : `Important: team-agent edit runs do not automatically modify the main workspace.`);
+      lines.push(`If you need to continue from the team result, inspect/apply the winner patch or use the latest [team-agent] / [agent-team-diff] context instead of asking the user to repeat themselves.`);
+    } else {
+      lines.push(`Important: solo agent runs work directly in the main workspace. Inspect the current files/diff before follow-up edits.`);
+    }
+    lines.push('', `Continue autonomously now. If the task is already complete, summarize the concrete outcome and remaining risk. If more work is needed, do it now.`);
+    return lines.join('\n');
+  >>>
+
+fn name=resumeCesarAfterAgent async=true params="originalTask:string, launchInputEpoch:number, launchUserTurns:number, result:any, cb:DispatchCallbacks" returns="Promise<void>"
+  handler <<<
+    if (!shouldAutoResumeAgentResult(result, launchInputEpoch, launchUserTurns, cb.ctx)) return;
+    const prompt = buildAgentAutoResumePrompt(originalTask, result);
+    if (!prompt.trim()) return;
+    cb.dispatch({ type: 'info', message: `Cesar continuing after ${String((result as any).kind ?? 'agent')} completion` });
+    await routeWithCesar(prompt, [], cb);
+  >>>
+
+fn name=runAgentJobWithAutoResume async=true params="originalTask:string, cb:DispatchCallbacks, runner:()=>Promise<any>" returns="Promise<void>"
+  handler <<<
+    const launchInputEpoch = cb.ctx.inputEpoch ?? 0;
+    const launchUserTurns = countTrackedUserTurns(cb.ctx);
+    const result = await runner();
+    await resumeCesarAfterAgent(originalTask, launchInputEpoch, launchUserTurns, result, cb);
+  >>>
+
 fn name=absorbIntoCesar async=true params="message:string, dispatch:Dispatch, ctx:HandlerContext" returns="Promise<string>"
   doc "Send a message directly into Cesar's persistent session and stream the response. Returns the response text."
   handler <<<
@@ -463,20 +529,20 @@ You still own the overall task. Integrate the forged slice with the rest of the 
           case 'agent':
             cb.dispatch({ type: 'info', message: `Cesar → agent${hardened ? ' (hardened)' : ''}` });
             // Cesar called the Agent tool with team:false (or omitted). Solo agent.
-            cb.runAsJob('agent', label, () => runAgentMode(taskInput, cb.dispatch, cb.ctx, {
+            cb.runAsJob('agent', label, () => runAgentJobWithAutoResume(taskInput, cb, () => runAgentMode(taskInput, cb.dispatch, cb.ctx, {
               maxTurns: result.maxTurns as number | undefined,
               systemPrompt: undefined,
-            }));
+            })));
             return true;
           case 'team-agent':
             cb.dispatch({ type: 'info', message: `Cesar → team-agent${hardened ? ' (hardened)' : ''}` });
             // Cesar called the Agent tool with team:true. Spawn AgentTeam with the
             // engines list (or auto-pick) and the taskKind discriminator.
-            cb.runAsJob('team-agent', label, () => runAgentTeam(taskInput, cb.dispatch, cb.ctx, {
+            cb.runAsJob('team-agent', label, () => runAgentJobWithAutoResume(taskInput, cb, () => runAgentTeam(taskInput, cb.dispatch, cb.ctx, {
               engines: result.engines as string[] | undefined,
               taskKind: result.taskKind as 'edit' | 'investigate' | undefined,
               maxTurns: result.maxTurns as number | undefined,
-            }));
+            })));
             return true;
           case 'delegate': {
             // Delegate: execute subtask on target engine, feed result back to Cesar
@@ -810,9 +876,9 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
             engines: teamEngines,
             reason: 'complexity hint: multi-step-fanout — task pattern suggests cross-module work',
           });
-          cb.runAsJob('team-agent', input?.slice(0, 40) ?? 'team-agent', () => runAgentTeam(input, cb.dispatch, cb.ctx, {
+          cb.runAsJob('team-agent', input?.slice(0, 40) ?? 'team-agent', () => runAgentJobWithAutoResume(input, cb, () => runAgentTeam(input, cb.dispatch, cb.ctx, {
             taskKind: 'edit',
-          }));
+          })));
         } else {
           // Phase D: check for a second API engine to run as a silent shadow.
           // If available, use runAgentTeam with shadowMode=true so the user
@@ -835,12 +901,12 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
               foregroundEngineId: firstEngine,
               shadowEngineId: apiEngines[1],
             });
-            cb.runAsJob('agent', input?.slice(0, 40) ?? 'agent', () => runAgentTeam(input, cb.dispatch, cb.ctx, {
+            cb.runAsJob('agent', input?.slice(0, 40) ?? 'agent', () => runAgentJobWithAutoResume(input, cb, () => runAgentTeam(input, cb.dispatch, cb.ctx, {
               engines: apiEngines.slice(0, 2),
               shadowMode: true,
               foregroundEngineId: firstEngine,
               taskKind: 'edit',
-            }));
+            })));
           } else {
             cb.dispatch({
               type: 'agent-routing',
@@ -848,7 +914,7 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
               engines: [firstEngine],
               reason: 'single engine — no shadow available',
             });
-            cb.runAsJob('agent', input?.slice(0, 40) ?? 'agent', () => runAgentMode(input, cb.dispatch, cb.ctx));
+            cb.runAsJob('agent', input?.slice(0, 40) ?? 'agent', () => runAgentJobWithAutoResume(input, cb, () => runAgentMode(input, cb.dispatch, cb.ctx)));
           }
         }
         return { handled: true, ranAsJob: true };
@@ -857,15 +923,15 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
         // Explicit opt-out of shadow workers — always runs pure solo.
         const soloInput = intent.input;
         cb.dispatch({ type: 'agent-routing', mode: 'solo', engines: [cb.ctx.activeEngines()[0] ?? 'default'], reason: 'explicit /agent-solo — shadow mode disabled' });
-        cb.runAsJob('agent', soloInput?.slice(0, 40) ?? 'agent', () => runAgentMode(soloInput, cb.dispatch, cb.ctx, { maxTurns: intent.maxTurns }));
+        cb.runAsJob('agent', soloInput?.slice(0, 40) ?? 'agent', () => runAgentJobWithAutoResume(soloInput, cb, () => runAgentMode(soloInput, cb.dispatch, cb.ctx, { maxTurns: intent.maxTurns })));
         return { handled: true, ranAsJob: true };
       }
       case 'team-agent':
-        cb.runAsJob('team-agent', intent.input?.slice(0, 40) ?? 'team-agent', () => runAgentTeam(intent.input, cb.dispatch, cb.ctx, {
+        cb.runAsJob('team-agent', intent.input?.slice(0, 40) ?? 'team-agent', () => runAgentJobWithAutoResume(intent.input, cb, () => runAgentTeam(intent.input, cb.dispatch, cb.ctx, {
           engines: intent.engines,
           taskKind: intent.taskKind,
           maxTurns: intent.maxTurns,
-        }));
+        })));
         return { handled: true, ranAsJob: true };
       case 'speculate': {
         const specInput = intent.input;
@@ -983,9 +1049,11 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
         cb.setModelPickerTitle?.('Select model');
         cb.setModelPickerLoading(true);
         cb.setModelPickerOpen(true);
-        import('@agon/core').then(({ fetchModelsRegistry, buildModelEntries, buildCliModelGroups }) => {
-          // Load CLI groups immediately (synchronous)
-          cb.setModelPickerCliGroups?.(buildCliModelGroups());
+        import('@agon/core').then(({ fetchModelsRegistry, buildModelEntries, buildCliModelGroupsAsync }) => {
+          // Load CLI models async from models.dev (with fallback)
+          buildCliModelGroupsAsync().then((cliGroups: any) => {
+            cb.setModelPickerCliGroups?.(cliGroups);
+          });
           // Load API models async
           fetchModelsRegistry().then((reg: any) => {
             cb.setModelPickerEntries(buildModelEntries(reg));
@@ -1376,6 +1444,7 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
           cb.ctx.cesarSession.close();
           cb.ctx.setCesarSession(null);
         }
+        cb.ctx.lastReviewResult = undefined;
         clearConversation();
         try {
           cb.ctx.cesarMemory?.clearSession?.();

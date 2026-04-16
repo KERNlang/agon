@@ -70,9 +70,10 @@ screen name=ComposerView target=ink memo=true
         ? questionState.reason.trim()
         : '';
       const permissionLinesAll = permissionCommand ? permissionCommand.split('\n') : [];
-      const permissionLines = permissionLinesAll.slice(0, 5);
+      const permissionLines = permissionLinesAll.slice(0, 2);
       const permissionHasMoreLines = permissionLinesAll.length > permissionLines.length;
-      const permissionLineWidth = Math.max(24, termWidth - 18);
+      const permissionLineWidth = Math.max(24, termWidth - 24);
+      const permissionNeedsDetail = permissionHasMoreLines || permissionCommand.length > permissionLineWidth;
       return (
         <>
           {slashPickerOpen && <SlashPicker commands={allSlashCommands} onSelect={onSlashSelect} onCancel={onSlashCancel} />}
@@ -120,6 +121,7 @@ screen name=ComposerView target=ink memo=true
                   )}
                   {permissionDescription ? <Text dimColor>{'  '}{permissionDescription}</Text> : null}
                   {permissionReason ? <Text color="#fbbf24">{'  '}{permissionReason}</Text> : null}
+                  {permissionNeedsDetail ? <Text color="#a78bfa">{'  Ctrl+O opens the full command view.'}</Text> : null}
                   <Text>{' '}</Text>
                   <Box flexDirection="column" paddingLeft={1}>
                     {choiceList.map((c: any, i: number) => (

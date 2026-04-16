@@ -4,7 +4,8 @@
 // shallow-equal — e.g. streaming a chunk shouldn't re-render ChromeBar.
 
 import from="react" default="React"
-import from="ink" names="Box,Text"
+import from="react" names="useEffect,useMemo,useState"
+import from="ink" names="Box,Text,useInput"
 import from="../../components.js" names="EngineProgressView,RenderedSegments,contentWidth,engineColor,RichLineView,DiffLine,SyntaxLine,AnsiLine,GradientLine,BRAND"
 import from="../../handlers/types.js" names="EngineProgress" types=true
 import from="../signals/job-manager.js" names="Job" types=true
@@ -227,6 +228,84 @@ screen name=HistoryView target=ink memo=true
               <TranscriptRowView key={row.key} row={row} />
             ))}
           </Box>
+        </Box>
+      );
+    >>>
+
+// ── ToolDetailBlock — focused viewer for large tool output ──
+screen name=ToolDetailBlock target=ink
+  prop name=title type=string
+  prop name=subtitle type=string
+  prop name=accentColor type=string
+  prop name=rows type="any[]"
+  prop name=maxVisibleRows type=number
+  prop name=onClose type="() => void"
+  state name=offset type=number initial="0"
+  render
+    handler <<<
+      const totalRows = rows.length;
+      const visibleCount = Math.max(6, Math.min(Math.max(1, maxVisibleRows), Math.max(1, totalRows)));
+      const maxOffset = Math.max(0, totalRows - visibleCount);
+      const visibleRows = useMemo(() => rows.slice(offset, offset + visibleCount), [rows, offset, visibleCount]);
+
+      useEffect(() => {
+        setOffset(0);
+      }, [title, subtitle, totalRows, visibleCount]);
+
+      useInput((input: string, key: any) => {
+        const lower = input.toLowerCase();
+        if (key.escape || (key.ctrl && lower === 'o')) {
+          onClose();
+          return;
+        }
+        if (key.upArrow || lower === 'k') {
+          setOffset((prev: number) => Math.max(0, prev - 1));
+          return;
+        }
+        if (key.downArrow || lower === 'j') {
+          setOffset((prev: number) => Math.min(maxOffset, prev + 1));
+          return;
+        }
+        if (key.pageUp) {
+          setOffset((prev: number) => Math.max(0, prev - visibleCount));
+          return;
+        }
+        if (key.pageDown) {
+          setOffset((prev: number) => Math.min(maxOffset, prev + visibleCount));
+          return;
+        }
+        if (key.home) {
+          setOffset(0);
+          return;
+        }
+        if (key.end) {
+          setOffset(maxOffset);
+        }
+      });
+
+      return (
+        <Box flexDirection="column" borderStyle="round" borderColor={accentColor} paddingX={1} marginY={1} width="100%">
+          <Box justifyContent="space-between">
+            <Text bold color={accentColor}>{title}</Text>
+            <Text dimColor>{'Esc / Ctrl+O close'}</Text>
+          </Box>
+          {subtitle ? <Text dimColor>{subtitle}</Text> : null}
+          <Text dimColor>{'↑↓ or j/k scroll  PgUp/PgDn page  Home/End jump'}</Text>
+          <Text dimColor>{'\u2500'.repeat(48)}</Text>
+          {visibleRows.length === 0 ? (
+            <Text dimColor>{'No detailed output available.'}</Text>
+          ) : (
+            <Box flexDirection="column">
+              {visibleRows.map((row: any, index: number) => (
+                <TranscriptRowView key={`${row.key ?? 'tool-detail'}-${index}`} row={row} />
+              ))}
+            </Box>
+          )}
+          <Text dimColor>
+            {totalRows === 0
+              ? '0 lines'
+              : `lines ${offset + 1}-${Math.min(totalRows, offset + visibleCount)} of ${totalRows}`}
+          </Text>
         </Box>
       );
     >>>

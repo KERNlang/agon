@@ -1,8 +1,44 @@
 import { describe, it, expect } from 'vitest';
-import { parseSuggestion, parseConfidence, confidenceBadge, CONFIDENCE_TIERS, CESAR_SYSTEM_PROMPT } from '../../packages/cli/src/handlers/cesar-brain.js';
+import { parseSuggestion, parseConfidence, confidenceBadge, CONFIDENCE_TIERS, CESAR_SYSTEM_PROMPT, buildReviewFollowupPrompt } from '../../packages/cli/src/handlers/cesar-brain.js';
 import { createReportConfidenceTool, createForgeTool, createBrainstormTool, createTribunalTool, createCampfireTool, createPipelineTool } from '../../packages/core/src/tools.js';
 
 describe('Cesar Brain', () => {
+  describe('buildReviewFollowupPrompt', () => {
+    it('grounds bare "fix it" in the latest review findings', () => {
+      const result = buildReviewFollowupPrompt('fix it with codex?', {
+        lastReviewResult: {
+          engineId: 'minimax',
+          target: 'uncommitted',
+          label: 'uncommitted changes',
+          diff: 'diff --git a/a.ts b/a.ts',
+          reviewOutput: '1. Blocking bug in status timer\n2. Missing export on AgonTip',
+          timestamp: Date.now(),
+        },
+      } as any);
+
+      expect(result.matched).toBe(true);
+      expect(result.prompt).toContain('MOST RECENT code review');
+      expect(result.prompt).toContain('Review engine: minimax');
+      expect(result.prompt).toContain('Preferred implementation engine: codex');
+      expect(result.prompt).toContain('Blocking bug in status timer');
+    });
+
+    it('ignores stale review results for generic follow-ups', () => {
+      const result = buildReviewFollowupPrompt('fix it', {
+        lastReviewResult: {
+          engineId: 'minimax',
+          target: 'uncommitted',
+          label: 'uncommitted changes',
+          diff: '',
+          reviewOutput: 'old review',
+          timestamp: Date.now() - (31 * 60 * 1000),
+        },
+      } as any);
+
+      expect(result).toEqual({ matched: false, prompt: 'fix it' });
+    });
+  });
+
   describe('parseSuggestion', () => {
     // Legacy [DELEGATE:] format still works
     it('detects [DELEGATE:build]', () => {

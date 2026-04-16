@@ -235,6 +235,7 @@ interface name=HandlerContext
   field name=registry type=EngineRegistry
   field name=adapter type=EngineAdapter
   field name=activeEngines type="() => string[]"
+  field name=inputEpoch type=number optional=true
   field name=config type=AgonConfig
   field name=chatSession type=ChatSession
   field name=currentPlan type="Plan | null"

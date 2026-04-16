@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildTranscriptRows,
   displayColumnToStringIndex,
+  findLatestToolDetailEvent,
   historyBlocksForTranscript,
   maxScrollOffsetForRowCount,
   nextWheelAnimationStep,
@@ -159,6 +160,47 @@ describe('app scroll helpers', () => {
     expect(expandedRows.some((row: any) => row.key.includes('-read-'))).toBe(true);
     expect(expandedRows.some((row: any) => row.key.includes('-search-'))).toBe(true);
     expect(expandedRows.some((row: any) => row.key.includes('find-file-'))).toBe(true);
+  });
+
+  it('keeps edit previews compact in the transcript and points large changes to the focused viewer', () => {
+    const block = {
+      id: 1,
+      event: {
+        type: 'tool-call',
+        engineId: 'cesar',
+        tool: 'Update',
+        input: JSON.stringify({
+          file_path: 'packages/cli/src/app.ts',
+          old_string: Array.from({ length: 8 }, (_, index) => `old ${index + 1}`).join('\n'),
+          new_string: Array.from({ length: 9 }, (_, index) => `new ${index + 1}`).join('\n'),
+        }),
+        status: 'done',
+      },
+    } as any;
+
+    const rows = buildTranscriptRows([block], 'chat', false, true);
+
+    expect(rows.some((row: any) => row.kind === 'diff')).toBe(true);
+    expect(rows.some((row: any) =>
+      row.kind === 'segments' && (row.segments ?? []).some((segment: any) => segment?.text === 'Ctrl+O full view'),
+    )).toBe(true);
+  });
+
+  it('finds the latest approval command or large tool output for the focused viewer', () => {
+    const blocks = [
+      { id: 1, event: { type: 'tool-call', engineId: 'cesar', tool: 'Read', input: '{"file_path":"a.ts"}', status: 'done', output: 'line 1' } },
+      {
+        id: 2,
+        event: {
+          type: 'permission-ask',
+          tool: 'Bash',
+          command: 'npm run build\nnpm test\nnpm run lint\nnpm run typecheck\nnpm run release',
+          reason: 'needs approval',
+        },
+      },
+    ] as any;
+
+    expect(findLatestToolDetailEvent(blocks)).toEqual(blocks[1].event);
   });
 
   it('turns selected transcript rows back into plain text for clipboard copy', () => {

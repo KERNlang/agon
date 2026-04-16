@@ -16,6 +16,45 @@ import from="./routing.js" names="buildRoutingContext,deriveRoutingHints"
 const name=yieldToInk type="() => Promise<void>"
   handler <<< () => new Promise<void>(resolve => setImmediate(resolve)) >>>
 
+fn name=buildReviewFollowupPrompt params="input:string, ctx:HandlerContext" returns="{ matched: boolean; prompt: string }" export=true
+  doc "Expand a bare 'fix it' follow-up into an explicit prompt grounded in the most recent stored review result. This avoids making Cesar guess which reviewer findings the user means, especially because /review runs outside Cesar's live session history."
+  handler <<<
+    const trimmed = input.trim();
+    const match = trimmed.match(/^fix it(?:\s+with\s+([a-z0-9._-]+))?[\s?!.,;:]*$/i);
+    const review = ctx.lastReviewResult;
+    if (!match || !review) return { matched: false, prompt: input };
+
+    const ageMs = Date.now() - Number(review.timestamp ?? 0);
+    const maxAgeMs = 30 * 60 * 1000;
+    if (!Number.isFinite(ageMs) || ageMs < 0 || ageMs > maxAgeMs) {
+      return { matched: false, prompt: input };
+    }
+
+    const requestedEngine = match[1]?.toLowerCase();
+    const reviewOutput = String(review.reviewOutput ?? '').trim();
+    const cappedReview = reviewOutput.length > 8_000
+      ? `${reviewOutput.slice(0, 8_000)}\n… [review output truncated]`
+      : reviewOutput;
+    const label = String(review.label ?? review.target ?? 'uncommitted changes').trim() || 'uncommitted changes';
+
+    const prompt = [
+      '[REVIEW FOLLOW-UP]',
+      'The user\'s "fix it" refers to the MOST RECENT code review below.',
+      `Review target: ${label}`,
+      `Review engine: ${String(review.engineId ?? 'unknown')}`,
+      requestedEngine ? `Preferred implementation engine: ${requestedEngine}` : null,
+      'Do not ask which findings they mean. Address the review findings in the current workspace, prioritizing blocking and important issues first.',
+      '',
+      '## REVIEW FINDINGS',
+      cappedReview || '(review output missing)',
+      '',
+      '## USER FOLLOW-UP',
+      trimmed,
+    ].filter(Boolean).join('\n');
+
+    return { matched: true, prompt };
+  >>>
+
 fn name=extractDelegation params="toolName:string, args:Record<string,unknown>" returns="PendingDelegation"
   handler <<<
     const argsRecord = args as Record<string, unknown>;
@@ -195,6 +234,7 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
       }
       const toolRegistry = ctx.cesar!.toolRegistry as ToolRegistry;
 
+      const reviewFollowup = buildReviewFollowupPrompt(input, ctx);
       let response = '';
       let streaming = false;
       let wasStreamed = false; // tracks if response was already shown via streaming chunks
@@ -209,11 +249,11 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
       const routingHints = deriveRoutingHints(input, ctx);
 
       // ── Build routing context (cheap: ~500ms, ~200 tokens) ──
-      let enrichedInput = input;
+      let enrichedInput = reviewFollowup.prompt;
       try {
         const routingCtx = buildRoutingContext(input, ctx);
         if (routingCtx) {
-          enrichedInput = `[ROUTING CONTEXT — use this to decide mode + team]\n${routingCtx}\n\n${input}`;
+          enrichedInput = `[ROUTING CONTEXT — use this to decide mode + team]\n${routingCtx}\n\n${reviewFollowup.prompt}`;
         }
       } catch { /* routing context is best-effort */ }
 

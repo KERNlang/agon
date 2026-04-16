@@ -24,9 +24,10 @@ The `@kernlang/cli` binary you invoke is 3.2.3, but it `import`s
 features Agon needs. Result: silent regression on every recompile.
 
 Current mitigation:
-- `npm run kern:compile` now prefers a sibling `../kern-lang` checkout when present.
+- `npm run kern:compile` now uses the root-installed `@kernlang/*` family pinned in `package.json`.
 - `KERN_BIN=/abs/path/to/kern npm run kern:compile` forces a specific compiler.
-- Agon rejects stale installed `@kernlang/cli` versions instead of silently using them.
+- `npm run kern:compile:local` and `npm run build:cli:local` switch the whole repo to a sibling `../kern-lang` checkout for one command.
+- Agon validates the compiler's effective `KERN_VERSION` and rejects stale installs instead of trusting package metadata alone.
 
 ## Fix (30 minutes, zero code risk)
 

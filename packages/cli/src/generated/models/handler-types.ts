@@ -33,6 +33,7 @@ export type OutputEvent =
   | { type: 'plan-list'; plans: Plan[] }
   | { type: 'plan-proposal'; plan: any; markdown: string }
   | { type: 'plan-execution'; plan: any }
+  | { type: 'plan-cancelled'; plan: any }
   | { type: 'scoreboard'; title: string; winner?: string; engineIds: string[]; metrics: { label: string; values: string[] }[] }
   | { type: 'table'; headers: string[]; rows: string[][] }
   | { type: 'clear' }

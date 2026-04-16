@@ -46,6 +46,7 @@ interface name=OutputActions
   field name=addBlock type="(event:OutputEvent) => void"
   field name=replaceBlocksOfType type="(eventType:string, event:OutputEvent) => void"
   field name=clearBlocks type="() => void"
+  field name=setPendingPlanProposal type="(val:OutputEvent|null) => void"
   field name=setReviewEvent type="(val:any) => void"
   field name=setQuestionState type="(val:any) => void"
   field name=setChatStartTime type="(val:number) => void"
@@ -239,6 +240,7 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
         actions.setStreamingText({});
         actions.setAgentProgress({});
         actions.setQuestionState(null);
+        actions.setPendingPlanProposal(null);
         actions.setReviewEvent(null);
         codeBlockBuffer.clear();
         _thinkingBuffer.engineId = '';
@@ -278,14 +280,25 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
         return;
       }
       case 'plan-proposal': {
-        // Cesar may emit several ProposePlan calls in one turn (revisions,
-        // multi-step edits). Only the latest one is interactive — replace any
-        // prior plan-proposal blocks so the user sees a single source of truth.
-        actions.replaceBlocksOfType('plan-proposal', event);
+        // Plan-proposals live in the live-pane (dynamic zone) rather than
+        // outputBlocks. Cesar may revise them mid-turn; the live-pane slot
+        // updates in place. On user confirm, plan-execution takes over as
+        // the permanent scrollback record. See kern/surfaces/app.kern.
+        actions.setPendingPlanProposal(event);
         return;
       }
       case 'plan-execution': {
+        // Plan approved — clear the live-pane proposal and commit the
+        // execution event as the permanent record.
+        actions.setPendingPlanProposal(null);
         actions.addBlock(event);
+        return;
+      }
+      case 'plan-cancelled': {
+        // Plan rejected at approval prompt — just clear the live slot.
+        // The subsequent 'info: Plan rejected.' dispatch provides the
+        // scrollback record; no plan block needed.
+        actions.setPendingPlanProposal(null);
         return;
       }
       case 'confidence-update': {

@@ -54,6 +54,9 @@ union name=OutputEvent discriminant=type
     field name=markdown type=string
   variant name=plan-execution
     field name=plan type=any
+  variant name=plan-cancelled
+    doc "Fired when the user rejects a plan-proposal at the approval prompt. Clears the live-pane proposal slot; does not add a scrollback block."
+    field name=plan type=any
   variant name=scoreboard
     field name=title type=string
     field name=winner type=string optional=true

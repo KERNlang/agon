@@ -1695,7 +1695,9 @@ fn name=handleProposedCesarPlan async=true params="proposed:CesarPlan, cb:Dispat
         decided = true;
 
       } else if (trimmed === 'n' || trimmed === 'no') {
-        cb.setActivePlan(cancelCesarPlan(currentProposal));
+        const cancelled = cancelCesarPlan(currentProposal);
+        cb.setActivePlan(cancelled);
+        cb.dispatch({ type: 'plan-cancelled', plan: cancelled } as any);
         cb.dispatch({ type: 'info', message: 'Plan rejected.' });
         decided = true;
 

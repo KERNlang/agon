@@ -82,6 +82,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { cmd: '/nero',        desc: '                        — toggle Nero mode (adversarial devil\'s advocate)' },
   { cmd: '/btw',         desc: '<question>               — ask something while engines work (side-channel)' },
   { cmd: '/mcp',         desc: 'connect <name|url> | disconnect <name> | list — manage session MCP servers' },
+  { cmd: '/init',        desc: '                        — create AGON.md config wizard' },
   { cmd: '/create-skill', desc: '<name>                  — scaffold a new skill (.agon/skills/)' },
   { cmd: '/clear',       desc: '                        — reset session (saves chat, clears brain)' },
   { cmd: '/extensions',  desc: '                        — list installed extensions' },

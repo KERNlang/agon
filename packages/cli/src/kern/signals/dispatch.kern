@@ -1275,6 +1275,150 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
         break;
       }
 
+      // ── AGON.md init wizard ──
+      case 'init': {
+        const { homedir } = await import('node:os');
+        const home = homedir();
+        const scopeArg = (intent as any).scope as string | undefined;
+
+        // Determine target path
+        let targets: { label: string; path: string }[] = [];
+        if (scopeArg === 'global' || scopeArg === 'agon') {
+          targets = [{ label: 'Global (~/.agon/AGON.md)', path: join(getAgonHome(), 'AGON.md') }];
+        } else if (scopeArg === 'user' || scopeArg === 'home') {
+          targets = [{ label: 'User home (~/AGON.md)', path: join(home, 'AGON.md') }];
+        } else if (scopeArg === 'project' || scopeArg === 'cwd') {
+          targets = [{ label: 'Project (./AGON.md)', path: join(resolveWorkingDir(), 'AGON.md') }];
+        } else {
+          // No scope arg — show options
+          targets = [
+            { label: 'Global (~/.agon/AGON.md)', path: join(getAgonHome(), 'AGON.md') },
+            { label: 'User home (~/AGON.md)', path: join(home, 'AGON.md') },
+            { label: 'Project (./AGON.md)', path: join(resolveWorkingDir(), 'AGON.md') },
+          ];
+        }
+
+        if (targets.length > 1) {
+          cb.dispatch({ type: 'header', title: 'AGON.md Setup' });
+          cb.dispatch({ type: 'info', message: 'Choose where to create your AGON.md:' });
+          const rows = targets.map((t: any, i: number) => [String(i + 1), t.label, t.path]);
+          cb.dispatch({ type: 'table', headers: ['#', 'Scope', 'Path'], rows });
+          cb.dispatch({ type: 'info', message: 'Usage: /init global | /init user | /init project' });
+          break;
+        }
+
+        const target = targets[0];
+        const targetPath = target.path;
+
+        // Check if file already exists
+        const { existsSync, mkdirSync, writeFileSync } = await import('node:fs');
+        if (existsSync(targetPath)) {
+          cb.dispatch({ type: 'warning', message: `AGON.md already exists: ${targetPath}` });
+          cb.dispatch({ type: 'info', message: 'Edit it directly or delete it first to regenerate.' });
+          break;
+        }
+
+        // Ensure parent directory exists
+        const { dirname } = await import('node:path');
+        mkdirSync(dirname(targetPath), { recursive: true });
+
+        // Detect context for smart defaults
+        const cwd = resolveWorkingDir();
+        const shellVar = process.env.SHELL ?? '/bin/zsh';
+        const isZsh = shellVar.includes('zsh');
+        const gitConfigName = await import('node:child_process').then(cp => {
+          try { return cp.execSync('git config user.name', { encoding: 'utf-8' }).trim(); } catch { return 'YourName'; }
+        });
+
+        // Build AGON.md content based on scope
+        let content = '';
+        const isGlobal = targetPath.includes('.agon');
+        const isUserHome = targetPath === join(home, 'AGON.md');
+
+        if (isGlobal) {
+          content = [
+            '# AGON.md — Personal (global)',
+            '',
+            'Applies to every workspace. Project-specific overrides go in `PROJECT_ROOT/AGON.md`.',
+            '',
+            '## User',
+            '',
+            `- Name: ${gitConfigName}`,
+            '- Language: adapts to input',
+            `- Shell: ${isZsh ? 'zsh' : 'bash'} (${process.platform})`,
+            '',
+            '## Orchestration Defaults',
+            '',
+            '- **Default: self.** Investigate first, escalate only when genuinely uncertain.',
+            '- **Solo bias.** Team only for multi-file refactors or architecture decisions.',
+            '- **Tribunal** → tradeoffs, breaking changes, controversial choices.',
+            '- **Forge** → complex implementations, quality matters.',
+            '- **Brainstorm** → rarely, only when genuinely stuck on direction.',
+            '- **Campfire** → fuzzy exploration, ambiguous requirements.',
+            '',
+            '## Confidence Thresholds',
+            '',
+            '- 96%+ → just do it',
+            '- 80-95% → quick self-check, then proceed',
+            '- <80% → investigate first (read files before dispatching engines)',
+            '',
+            '## Style',
+            '',
+            '- Direct. No hedging, no fortune-cookie wisdom.',
+            '- Show work briefly — say why, what you found. No play-by-play.',
+            '- Cross-references beat duplication — point, don\'t copy.',
+            '',
+            '## Tool Conventions',
+            '',
+            '- Claude Code: `.claude/` dirs, `CLAUDE.md`',
+            '- Codex: `.codex-plugin/` dirs',
+            '- Handoffs: `.remembrall/handoffs/`',
+            '',
+          ].join('\n');
+        } else if (isUserHome) {
+          content = [
+            '# AGON.md — User Home',
+            '',
+            'Personal context loaded for every project. Global config: `~/.agon/AGON.md`',
+            '',
+            '## Workspace',
+            '',
+            '- TODO: list your main workspaces and projects',
+            '',
+            '## Cross-References',
+            '',
+            '- Claude Code: `.claude/settings.local.json`, per-project `.claude/`',
+            '- Codex: `.codex-plugin/` per project',
+            '',
+          ].join('\n');
+        } else {
+          content = [
+            '# AGON.md — Project',
+            '',
+            'Project-specific instructions. Global config: `~/.agon/AGON.md`',
+            '',
+            '## Project',
+            '',
+            '- TODO: describe this project',
+            '',
+            '## Architecture',
+            '',
+            '- TODO: key directories and patterns',
+            '',
+            '## Conventions',
+            '',
+            '- TODO: coding standards, naming, testing approach',
+            '',
+          ].join('\n');
+        }
+
+        writeFileSync(targetPath, content, 'utf-8');
+        cb.dispatch({ type: 'success', message: `Created ${target.label}` });
+        cb.dispatch({ type: 'info', message: targetPath });
+        cb.dispatch({ type: 'info', message: 'Edit it to customize — Agon reads it on every session start.' });
+        break;
+      }
+
       // ── Skill scaffolding ──
       case 'create-skill': {
         const csIntent = intent as any;

@@ -12,6 +12,8 @@
   "scripts": {
     "kern:compile": "npm run kern:compile -w packages/core && npm run kern:compile -w packages/forge && npm run kern:compile -w packages/adapter-cli && npm run kern:compile -w packages/cli && npm run kern:compile -w packages/mcp",
     "kern:compile:local": "KERN_BIN=../kern-lang/packages/cli/dist/cli.js npm run kern:compile",
+    "kern-gaps": "node scripts/run-kern-gaps.mjs",
+    "kern-gaps:local": "KERN_BIN=../kern-lang/packages/cli/dist/cli.js pnpm kern-gaps",
     "build": "tsc -b --force",
     "build:cli": "npm run build -w packages/core && npm run build -w packages/forge && npm run build -w packages/adapter-cli && npm run build -w packages/cli",
     "build:cli:local": "KERN_BIN=../kern-lang/packages/cli/dist/cli.js npm run build:cli",

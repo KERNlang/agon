@@ -266,7 +266,7 @@ fn name=parseSlashCommand params="input:string, commandRegistry?:any" returns=In
         return { type: 'models' } as Intent;
       case 'cli-models':
       case 'cli-model':
-        return { type: 'engines' } as Intent;
+        return { type: 'models' } as Intent;
       case 'tokens':
       case 'usage':
       case 'cost':

@@ -141,9 +141,9 @@ describe('Intent Detection — Slash Commands', () => {
     expect(detectIntent('/setup').type).toBe('models');
   });
 
-  it('/cli-models opens engine/model picker', () => {
-    expect(detectIntent('/cli-models').type).toBe('engines');
-    expect(detectIntent('/cli-model').type).toBe('engines');
+  it('/cli-models opens unified model picker', () => {
+    expect(detectIntent('/cli-models').type).toBe('models');
+    expect(detectIntent('/cli-model').type).toBe('models');
   });
 
   it('/models cli routes to engine/model picker', () => {

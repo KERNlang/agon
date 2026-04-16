@@ -18,7 +18,7 @@ Every other multi-AI framework is cooperative. LangChain, CrewAI, AutoGen — th
 
 ```bash
 git clone https://github.com/cukas/Agon-AI.git
-cd Agon-AI && npm install && npm run build
+cd Agon-AI && npm install && npm run install:cli
 
 agon                                              # launch interactive REPL
 agon forge "add validation" --test "npm test"     # one-shot forge
@@ -27,6 +27,15 @@ agon leaderboard                                  # ELO rankings
 ```
 
 Requires **Node.js >= 22**, at least one AI CLI installed, and a git repo to work in.
+
+If you only want to refresh the runnable local binary without relinking it, use:
+
+```bash
+npm run build:cli
+```
+
+This builds the CLI in the right dependency order:
+`@agon/core` -> `@agon/forge` -> `@agon/adapter-cli` -> `@agon/cli`
 
 ---
 

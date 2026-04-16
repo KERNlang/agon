@@ -32,7 +32,7 @@ fn name=isKernProject params="cwd:string" returns=boolean
 fn name=buildFileTree params="cwd:string,maxDepth?:number" returns=string export=false
   doc "Read-only file tree, 2 levels deep, excluding noise directories."
   handler <<<
-    const IGNORE = new Set(['node_modules', '.git', 'dist', '.next', '.cache', '.turbo', '__pycache__', '.venv', 'coverage']);
+    const IGNORE = new Set(['node_modules', '.git', 'dist', '.next', '.cache', '.turbo', '__pycache__', '.venv', 'coverage', '.kern-gaps', '.kern']);
     const depth = maxDepth ?? 2;
     const lines: string[] = [];
 
@@ -86,7 +86,7 @@ fn name=detectProjectType params="cwd:string" returns=string export=false
 
 fn name=scanProjectContext params="cwd:string,extraContext?:string,format?:ContextFormat" returns=string
   handler <<<
-    const MAX_CHARS = 4000;
+    const MAX_CHARS = 6000;
     const sections: string[] = [];
 
     // Branch + status

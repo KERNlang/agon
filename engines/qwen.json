@@ -27,5 +27,14 @@
     "default": "qwen-coder-plus"
   },
 
-  "test": { "args": ["--version"] }
+  "test": { "args": ["--version"] },
+
+  "cliModels": {
+    "default": "qwen-coder-plus",
+    "list": [
+      { "id": "qwen-coder-plus", "name": "Qwen Coder Plus" },
+      { "id": "qwen-max", "name": "Qwen Max" },
+      { "id": "qwen-plus", "name": "Qwen Plus" }
+    ]
+  }
 }

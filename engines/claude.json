@@ -53,6 +53,15 @@
 
   "test": { "args": ["--version"] },
 
+  "cliModels": {
+    "default": "claude-sonnet-4-20250514",
+    "list": [
+      { "id": "claude-opus-4-20250514", "name": "Opus 4" },
+      { "id": "claude-sonnet-4-20250514", "name": "Sonnet 4" },
+      { "id": "claude-haiku-3-5-20241022", "name": "Haiku 3.5" }
+    ]
+  },
+
   "capabilities": ["vision"],
   "imageFlag": "--image",
   "systemPromptFlag": "--system-prompt"

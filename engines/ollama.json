@@ -26,5 +26,10 @@
     "default": "codellama"
   },
 
-  "test": { "args": ["list"] }
+  "test": { "args": ["list"] },
+
+  "cliModels": {
+    "default": "codellama",
+    "dynamicListCmd": ["list", "--format", "json"]
+  }
 }

@@ -6,6 +6,8 @@ import { join, resolve } from 'node:path';
 
 import { homedir } from 'node:os';
 
+import type { EngineDefinition } from '../models/types.js';
+
 export interface ModelsDevModel {
   id: string;
   name: string;
@@ -40,6 +42,7 @@ export interface ModelEntry {
   costInput?: number;
   costOutput?: number;
   toolCall?: boolean;
+  source?: 'api'|'cli';
 }
 
 function getCacheDir(): string {
@@ -245,4 +248,39 @@ export function modelEntryToEngineDef(entry: ModelEntry): Record<string, any> {
       format: entry.format ?? 'openai',
     },
   };
+}
+
+/**
+ * Build model entries from installed CLI engines. Only includes engines whose binary is found on PATH.
+ */
+export function buildCliModelEntries(engines: EngineDefinition[], findBinary: (engine:EngineDefinition) => string|null): ModelEntry[] {
+  const entries: ModelEntry[] = [];
+  
+  for (const engine of engines) {
+    if (!engine.cliModels) continue;
+    if (!findBinary(engine)) continue;
+  
+    const models = engine.cliModels.list ?? [];
+    for (const m of models) {
+      entries.push({
+        providerId: engine.id,
+        providerName: engine.displayName,
+        modelId: m.id,
+        modelName: m.name ?? m.id,
+        baseUrl: engine.api?.baseUrl ?? '',
+        apiKeyEnv: engine.api?.apiKeyEnv ?? '',
+        format: (engine.api?.format as 'openai'|'anthropic') ?? 'openai',
+        source: 'cli',
+      });
+    }
+  }
+  
+  // Sort by provider display name, then model name
+  entries.sort((a, b) => {
+    const provCmp = a.providerName.localeCompare(b.providerName);
+    if (provCmp !== 0) return provCmp;
+    return a.modelName.localeCompare(b.modelName);
+  });
+  
+  return entries;
 }

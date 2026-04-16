@@ -36,7 +36,7 @@ export function isKernProject(cwd: string): boolean {
  * Read-only file tree, 2 levels deep, excluding noise directories.
  */
 function buildFileTree(cwd: string, maxDepth?: number): string {
-  const IGNORE = new Set(['node_modules', '.git', 'dist', '.next', '.cache', '.turbo', '__pycache__', '.venv', 'coverage']);
+  const IGNORE = new Set(['node_modules', '.git', 'dist', '.next', '.cache', '.turbo', '__pycache__', '.venv', 'coverage', '.kern-gaps', '.kern']);
   const depth = maxDepth ?? 2;
   const lines: string[] = [];
   
@@ -88,7 +88,7 @@ function detectProjectType(cwd: string): string {
 }
 
 export function scanProjectContext(cwd: string, extraContext?: string, format?: ContextFormat): string {
-  const MAX_CHARS = 4000;
+  const MAX_CHARS = 6000;
       const sections: string[] = [];
   
       // Branch + status

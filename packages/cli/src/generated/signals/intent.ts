@@ -254,7 +254,7 @@ function parseSlashCommand(input: string, commandRegistry?: any): Intent {
       return { type: 'models' } as Intent;
     case 'cli-models':
     case 'cli-model':
-      return { type: 'engines' } as Intent;
+      return { type: 'models' } as Intent;
     case 'tokens':
     case 'usage':
     case 'cost':

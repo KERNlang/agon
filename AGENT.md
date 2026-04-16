@@ -4,6 +4,13 @@
 
 Agon is a multi-AI orchestration framework. Engines (Claude, Codex, Gemini, MiniMax, Qwen, etc.) compete via forge, debate via tribunal, ideate via brainstorm. Cesar orchestrates — delegates based on confidence, ELO ratings, and task classification.
 
+## Confidence First
+
+When answering, always state confidence clearly enough that the user can tell whether the claim is certain, likely, or tentative.
+- Do this for diagnoses, implementation claims, verification results, and recommendations.
+- If confidence is low or mixed, say why.
+- Do not hide uncertainty behind confident wording.
+
 ## ALL IN KERN — No Exceptions
 
 Every new function, type, constant, and handler MUST be written in KERN. No hand-maintained TypeScript unless physically impossible (React/Ink JSX, external library bindings).
@@ -12,6 +19,11 @@ Workflow:
 1. Write `.kern` source in `packages/*/src/kern/<category>/`
 2. Compile: `npm run kern:compile`
 3. The `.ts` facade re-exports from `generated/`
+
+CLI runtime note:
+- For changes under `packages/cli/src/kern/`, `npm run kern:compile -w packages/cli` only updates `packages/cli/src/generated/`.
+- The actual `agon` binary runs from `packages/cli/dist/index.js`, so rebuild it with `npm run build -w packages/cli` before verifying runtime behavior.
+- A running `agon` session will not hot-reload compiled KERN changes. Restart the process after rebuilding.
 
 **NEVER edit `packages/*/src/generated/` directly.** These are compiled output.
 

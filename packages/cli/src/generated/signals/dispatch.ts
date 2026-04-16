@@ -139,6 +139,7 @@ export interface DispatchCallbacks {
   setModelPickerTargetEngine?: (engineId:string|null) => void;
   setModelPickerInitialFilter?: (filter:string) => void;
   setModelPickerTitle?: (title:string) => void;
+  setModelPickerCliGroups?: (groups:any[]) => void;
   setCesarPickerOpen: (open:boolean) => void;
   setChatSession: (session:ChatSession) => void;
   setLastUndoToken: (token:string|null) => void;
@@ -1008,7 +1009,10 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
       cb.setModelPickerTitle?.('Select model');
       cb.setModelPickerLoading(true);
       cb.setModelPickerOpen(true);
-      import('@agon/core').then(({ fetchModelsRegistry, buildModelEntries }) => {
+      import('@agon/core').then(({ fetchModelsRegistry, buildModelEntries, buildCliModelGroups }) => {
+        // Load CLI groups immediately (synchronous)
+        cb.setModelPickerCliGroups?.(buildCliModelGroups());
+        // Load API models async
         fetchModelsRegistry().then((reg: any) => {
           cb.setModelPickerEntries(buildModelEntries(reg));
           cb.setModelPickerLoading(false);

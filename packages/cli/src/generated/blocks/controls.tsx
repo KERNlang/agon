@@ -253,7 +253,7 @@ export function EnginePicker({ available, initialSelected, userEngines, modelOve
   );
 }
 
-export function ModelPicker({ entries, onSelect, onCancel, loading, initialFilter, title }: { entries:ModelPickerEntry[]; onSelect:(entry: ModelPickerEntry) => void; onCancel:() => void; loading?:boolean; initialFilter?:string; title?:string }) {
+export function ModelPicker({ entries, onSelect, onCancel, loading, initialFilter, title, cliGroups }: { entries:ModelPickerEntry[]; onSelect:(entry: ModelPickerEntry) => void; onCancel:() => void; loading?:boolean; initialFilter?:string; title?:string; cliGroups?:CliProviderGroup[] }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
     return (value) => setTimeout(() => setter(value), 0);
@@ -263,19 +263,45 @@ export function ModelPicker({ entries, onSelect, onCancel, loading, initialFilte
   const setCursor = useMemo(() => __inkSafe(_setCursorRaw), [_setCursorRaw]);
   const [filter, _setFilterRaw] = useState<string>('');
   const setFilter = useMemo(() => __inkSafe(_setFilterRaw), [_setFilterRaw]);
-  const [phase, _setPhaseRaw] = useState<'search'|'apikey'>('search');
+  const [phase, _setPhaseRaw] = useState<'search'|'apikey'|'cli'>('search');
   const setPhase = useMemo(() => __inkSafe(_setPhaseRaw), [_setPhaseRaw]);
   const [selectedEntry, _setSelectedEntryRaw] = useState<ModelPickerEntry|null>(null);
   const setSelectedEntry = useMemo(() => __inkSafe(_setSelectedEntryRaw), [_setSelectedEntryRaw]);
   const [apiKeyInput, _setApiKeyInputRaw] = useState<string>('');
   const setApiKeyInput = useMemo(() => __inkSafe(_setApiKeyInputRaw), [_setApiKeyInputRaw]);
+  const [activeTab, _setActiveTabRaw] = useState<'api'|'cli'>('api');
+  const setActiveTab = useMemo(() => __inkSafe(_setActiveTabRaw), [_setActiveTabRaw]);
 
   const panelTitle = title ?? 'Select model';
+  const groups = cliGroups ?? [];
   
   useEffect(() => {
     setFilter(initialFilter ?? '');
     setCursor(0);
   }, [initialFilter]);
+  
+  // Tab switch resets cursor + filter
+  useEffect(() => { setCursor(0); setFilter(''); }, [activeTab]);
+  
+  // ── CLI tab: flat list from CliProviderGroup models (installed only) ──
+  const cliFlat = useMemo(() => {
+    const items: { group: CliProviderGroup; model: CliModelEntry }[] = [];
+    for (const g of groups) {
+      if (!g.installed) continue;
+      for (const m of g.models) {
+        items.push({ group: g, model: m });
+      }
+    }
+    return items;
+  }, [groups]);
+  
+  const cliFiltered = useMemo(() => {
+    if (!filter.trim()) return cliFlat;
+    const q = filter.toLowerCase();
+    return cliFlat.filter(({ group, model }) =>
+      `${group.providerName} ${model.name} ${model.id}`.toLowerCase().includes(q)
+    );
+  }, [cliFlat, filter]);
   
   const filtered = useMemo(() => {
     if (!filter.trim()) return entries.slice(0, 50);
@@ -326,30 +352,62 @@ export function ModelPicker({ entries, onSelect, onCancel, loading, initialFilte
   useInput((input: string, key: any) => {
     const isForwardDelete = input === '\x1b[3~';
     const isBackspace = !isForwardDelete && (key.backspace || key.delete || input === '\x7f' || input === '\b' || input === '\x08');
+  
+    // Tab switching (any phase)
+    if (input === '<' || input === '>') {
+      setActiveTab((t: string) => t === 'api' ? 'cli' : 'api');
+      return;
+    }
+  
     if (phase === 'apikey') {
       if (key.escape) { setPhase('search'); setSelectedEntry(null); setApiKeyInput(''); return; }
       if (key.return && apiKeyInput.trim()) {
-        // Store key and select
         const entry = selectedEntry!;
         setAuthKey(entry.apiKeyEnv, apiKeyInput.trim(), entry.providerName);
         onSelect(entry);
         return;
       }
       if (key.return && !apiKeyInput.trim()) {
-        // Skip key, select anyway
         onSelect(selectedEntry!);
         return;
       }
       if (isBackspace || isForwardDelete) { setApiKeyInput((v: string) => v.slice(0, -1)); return; }
       if (input && !key.ctrl && !key.meta) {
-        // Strip bracketed paste escape sequences (\e[200~ and \e[201~)
         const clean = input.replace(/\x1b\[200~/g, '').replace(/\x1b\[201~/g, '').replace(/\[200~/g, '').replace(/\[201~/g, '');
         if (clean) setApiKeyInput((v: string) => v + clean);
       }
       return;
     }
   
-    // Search phase
+    // ── CLI tab input ──
+    if (activeTab === 'cli') {
+      if (key.escape || (key.ctrl && input === 'c')) { onCancel(); return; }
+      if (key.return) {
+        const item = cliFiltered[cursor];
+        if (item) {
+          onSelect({
+            providerId: item.group.providerId,
+            providerName: item.group.providerName,
+            modelId: item.model.id,
+            modelName: item.model.name,
+            baseUrl: '',
+            apiKeyEnv: '',
+            format: 'openai',
+          });
+        }
+        return;
+      }
+      if (key.upArrow) { setCursor((i: number) => Math.max(0, i - 1)); return; }
+      if (key.downArrow) { setCursor((i: number) => Math.min(cliFiltered.length - 1, i + 1)); return; }
+      if (isBackspace || isForwardDelete) { setFilter((f: string) => f.slice(0, -1)); setCursor(0); return; }
+      if (input && !key.ctrl && !key.meta && input.length === 1 && input >= ' ') {
+        setFilter((f: string) => f + input);
+        setCursor(0);
+      }
+      return;
+    }
+  
+    // ── API tab input (original) ──
     if (key.escape || (key.ctrl && input === 'c')) { onCancel(); return; }
     if (key.return) {
       if (filtered[cursor]) {
@@ -418,47 +476,100 @@ export function ModelPicker({ entries, onSelect, onCancel, loading, initialFilte
   return (
     <Box flexDirection="column" borderStyle="round" borderColor="magenta" paddingX={1}>
       <Box justifyContent="space-between">
-        <Text bold color="magenta">{panelTitle}</Text>
+        <Box>
+          <Text bold color="magenta">{panelTitle}</Text>
+          <Text>{'  '}</Text>
+          <Text color={activeTab === 'api' ? 'magenta' : 'gray'} bold={activeTab === 'api'}>{'API'}</Text>
+          <Text dimColor>{'/'}</Text>
+          <Text color={activeTab === 'cli' ? 'cyan' : 'gray'} bold={activeTab === 'cli'}>{'CLI'}</Text>
+          <Text dimColor>{'  < > switch'}</Text>
+        </Box>
         <Text dimColor>{'esc'}</Text>
       </Box>
       <Box>
         <Text dimColor>{'\u2588'}</Text>
-        <Text color="magenta">{'search '}</Text>
+        <Text color={activeTab === 'api' ? 'magenta' : 'cyan'}>{'search '}</Text>
         <Text>{filter}</Text>
         <Text dimColor>{filter ? '' : 'type to filter'}</Text>
       </Box>
       <Text dimColor>{'\u2500'.repeat(48)}</Text>
-      {filtered.length === 0 ? (
-        <Text dimColor>{'  No matching models'}</Text>
-      ) : (
-        visible.map((entry: ModelPickerEntry, vi: number) => {
-          const i = start + vi;
-          const showHeader = entry.providerName !== lastProvider;
-          lastProvider = entry.providerName;
-          const ctx = entry.contextWindow ? `${Math.round(entry.contextWindow / 1024)}k` : '';
-          const cost = entry.costInput != null ? `$${entry.costInput}/${entry.costOutput}` : '';
-          return (
-            <Box key={`${entry.providerId}-${entry.modelId}`} flexDirection="column">
-              {showHeader && <Text bold color="white">{'\n  '}{entry.providerName}</Text>}
-              <Box>
-                <Text color={i === cursor ? 'magenta' : undefined} bold={i === cursor}>
-                  {i === cursor ? ' \u276f ' : '   '}
-                </Text>
-                <Text color={i === cursor ? 'magenta' : undefined} bold={i === cursor}>
-                  {entry.modelName}
-                </Text>
-                {ctx ? <Text dimColor>{'  '}{ctx}</Text> : null}
-                {cost ? <Text dimColor>{'  '}{cost}</Text> : null}
+      {activeTab === 'cli' ? (
+        cliFiltered.length === 0 ? (
+          <Box flexDirection="column">
+            <Text dimColor>{'  No CLI engines detected'}</Text>
+            <Text dimColor>{'  Install: claude, codex, gemini, etc.'}</Text>
+          </Box>
+        ) : (
+          (() => {
+            const maxVis = 16;
+            const start = Math.max(0, Math.min(cursor - Math.floor(maxVis / 2), cliFiltered.length - maxVis));
+            const vis = cliFiltered.slice(start, start + maxVis);
+            let lastProv = '';
+            return (
+              <Box flexDirection="column">
+                {vis.map(({ group, model }: any, vi: number) => {
+                  const i = start + vi;
+                  const showHeader = group.providerName !== lastProv;
+                  lastProv = group.providerName;
+                  const ctx = model.contextWindow ? `${Math.round(model.contextWindow / 1024)}k` : '';
+                  return (
+                    <Box key={`${group.providerId}-${model.id}`} flexDirection="column">
+                      {showHeader && (
+                        <Box>
+                          <Text bold color="white">{'\n  '}{group.providerName}</Text>
+                          <Text dimColor>{' via '}{group.engineBinary}{group.version ? ` v${group.version.split('\n')[0]}` : ''}</Text>
+                        </Box>
+                      )}
+                      <Box>
+                        <Text color={i === cursor ? 'cyan' : undefined} bold={i === cursor}>
+                          {i === cursor ? ' \u276f ' : '   '}
+                        </Text>
+                        <Text color={i === cursor ? 'cyan' : undefined} bold={i === cursor}>
+                          {model.name}
+                        </Text>
+                        {ctx ? <Text dimColor>{'  '}{ctx}</Text> : null}
+                        {model.reasoning ? <Text dimColor>{' \u2728'}</Text> : null}
+                      </Box>
+                    </Box>
+                  );
+                })}
+                {cliFiltered.length > maxVis && (
+                  <Text dimColor>{'  ... '}{cliFiltered.length - maxVis}{' more'}</Text>
+                )}
               </Box>
-            </Box>
-          );
-        })
-      )}
-      {filtered.length > maxVisible && (
-        <Text dimColor>{'  ... '}{filtered.length - maxVisible}{' more \u2014 narrow search'}</Text>
+            );
+          })()
+        )
+      ) : (
+        filtered.length === 0 ? (
+          <Text dimColor>{'  No matching models'}</Text>
+        ) : (
+          visible.map((entry: ModelPickerEntry, vi: number) => {
+            const i = start + vi;
+            const showHeader = entry.providerName !== lastProvider;
+            lastProvider = entry.providerName;
+            const ctx = entry.contextWindow ? `${Math.round(entry.contextWindow / 1024)}k` : '';
+            const cost = entry.costInput != null ? `${entry.costInput}/${entry.costOutput}` : '';
+            return (
+              <Box key={`${entry.providerId}-${entry.modelId}`} flexDirection="column">
+                {showHeader && <Text bold color="white">{'\n  '}{entry.providerName}</Text>}
+                <Box>
+                  <Text color={i === cursor ? 'magenta' : undefined} bold={i === cursor}>
+                    {i === cursor ? ' \u276f ' : '   '}
+                  </Text>
+                  <Text color={i === cursor ? 'magenta' : undefined} bold={i === cursor}>
+                    {entry.modelName}
+                  </Text>
+                  {ctx ? <Text dimColor>{'  '}{ctx}</Text> : null}
+                  {cost ? <Text dimColor>{'  '}{cost}</Text> : null}
+                </Box>
+              </Box>
+            );
+          })
+        )
       )}
       <Text dimColor>{'\u2500'.repeat(48)}</Text>
-      <Text dimColor>{filtered.length}{' models  \u2191\u2193 navigate  Enter select  Esc cancel'}</Text>
+      <Text dimColor>{activeTab === 'cli' ? `${cliFiltered.length} CLI models` : `${filtered.length} API models`}{'  \u2191\u2193 navigate  Enter select  < > tab  Esc cancel'}</Text>
     </Box>
   );
 }

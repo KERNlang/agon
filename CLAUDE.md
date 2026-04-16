@@ -29,13 +29,9 @@ These are compiled output. Edit the `.kern` source, recompile.
 
 ```bash
 npm run kern:compile
-# Or target one package while pinning a specific compiler:
-KERN_BIN=/abs/path/to/kern npm run kern:compile -w packages/cli
-# Or switch the whole repo to a sibling checkout for one command:
-npm run kern:compile:local
 ```
 
-Agon's compiler wrapper uses the root-installed `@kernlang/cli` family by default. Use `KERN_BIN` or the `*:local` scripts to override it for one top-level command. It validates the compiler's effective `KERN_VERSION` and rejects stale installs instead of trusting package metadata alone.
+Agon's compiler wrapper uses the root-installed `@kernlang/cli` family by default and validates the compiler's effective `KERN_VERSION` instead of trusting package metadata alone.
 Available primitives: `fn`, `service`, `union`, `interface`, `const`, `import`, `machine`, `event`, `screen`
 
 **KERN MCP**: Add `https://kernlang.dev/api/mcp` to your `.mcp.json`. Provides compile, validate, review, schema, and 11 tools total — including autonomous compile→fix loops. See `.mcp.json.example` in this repo.

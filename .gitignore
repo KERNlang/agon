@@ -6,6 +6,7 @@ dist-tsc/
 coverage/
 .agon/
 .agon.local.json
+.kern-dev.local.json
 .CLAUDE.md
 .CLAUDE
 .Agent.md

@@ -3,7 +3,7 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { printResolution, resolveKernCli, resolvePath, runCommand } from './kern-cli-resolver.mjs';
+import { prepareCandidate, printResolution, resolveKernCli, resolvePath, runCommand } from './kern-cli-resolver.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -29,6 +29,7 @@ for (const arg of rawArgs) {
 
 const selection = resolveKernCli(repoRoot);
 printResolution('kern:compile', selection, selection.requiredVersion);
+prepareCandidate('kern:compile', selection.candidate);
 
 runCommand(
   'kern:compile',

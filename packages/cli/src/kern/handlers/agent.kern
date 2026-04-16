@@ -28,6 +28,26 @@ interface name=RunAgentOptions
   field name=systemPrompt type=string optional=true
   field name=parentSignal type=AbortSignal optional=true
 
+interface name=AgentContinuationResult
+  field name=kind type=string
+  field name=status type=string
+  field name=task type=string
+  field name=taskKind type=string
+  field name=summary type=string
+  field name=engineId type="string | null"
+  field name=winnerId type="string | null"
+  field name=response type="string | null"
+  field name=patchPath type="string | null"
+  field name=patchAvailable type=boolean
+  field name=workspaceChangedInPlace type=boolean
+
+fn name=clipAgentText params="text:string|null|undefined, limit:number" returns=string
+  handler <<<
+    const raw = String(text ?? '').trim();
+    if (!raw) return '';
+    return raw.length > limit ? raw.slice(0, limit) + `\n\n[... ${raw.length - limit} more chars truncated]` : raw;
+  >>>
+
 fn name=buildAgentApprovalCallback params="dispatch:Dispatch, ctx:HandlerContext, engineId:string" returns="(tool:string, command:string, reason?:string)=>Promise<boolean|string>" export=true
   doc "Shared approval callback for delegated agent runs. Applies config-level allow/deny rules first, then falls back to the UI permission prompt."
   handler <<<
@@ -75,7 +95,7 @@ fn name=buildAgentApprovalCallback params="dispatch:Dispatch, ctx:HandlerContext
     };
   >>>
 
-fn name=runAgentMode params="input:string,dispatch:Dispatch,ctx:HandlerContext,opts?:RunAgentOptions" returns="Promise<void>" async=true export=true
+fn name=runAgentMode params="input:string,dispatch:Dispatch,ctx:HandlerContext,opts?:RunAgentOptions" returns="Promise<AgentContinuationResult|null>" async=true export=true
   signal name=abort
   doc "Run one autonomous agent invocation. Creates a session, calls session.step() once (which internally loops up to maxInnerSteps tool calls), emits OutputEvents throughout, handles Ctrl+C via the KERN-generated abort signal bridged to session.cancel()."
   handler <<<
@@ -89,7 +109,7 @@ fn name=runAgentMode params="input:string,dispatch:Dispatch,ctx:HandlerContext,o
     const available = ctx.activeEngines();
     if (available.length === 0) {
       dispatch({ type: 'error', message: 'No engines available for agent mode.' });
-      return;
+      return null;
     }
 
     let engineId: string | null = null;
@@ -99,21 +119,21 @@ fn name=runAgentMode params="input:string,dispatch:Dispatch,ctx:HandlerContext,o
       // Caller explicitly picked an engine — use it, no search.
       if (!available.includes(opts.engineId)) {
         dispatch({ type: 'error', message: `${opts.engineId} is not available. Active: ${available.join(', ')}` });
-        return;
+        return null;
       }
       try {
         engine = ctx.registry.get(opts.engineId);
         engineId = opts.engineId;
       } catch (err) {
         dispatch({ type: 'error', message: `${opts.engineId}: ${err instanceof Error ? err.message : String(err)}` });
-        return;
+        return null;
       }
       if (!engine.api) {
         dispatch({
           type: 'error',
           message: `Agent mode requires an API engine; ${engineId} has no API config. (CLI-binary agent mode lands in a follow-up.)`,
         });
-        return;
+        return null;
       }
     } else {
       // No engine specified — find the first active API engine.
@@ -132,7 +152,7 @@ fn name=runAgentMode params="input:string,dispatch:Dispatch,ctx:HandlerContext,o
           type: 'error',
           message: `Agent mode requires an API engine, and none of the active engines have an API config. Active: ${available.join(', ')}. (CLI-binary agent mode lands in a follow-up.)`,
         });
-        return;
+        return null;
       }
     }
 
@@ -209,6 +229,8 @@ fn name=runAgentMode params="input:string,dispatch:Dispatch,ctx:HandlerContext,o
       ctx.setActiveAbort(abort);
     }
 
+    let followUp: AgentContinuationResult | null = null;
+
     try {
       // Pre-step budget check — surface budget exhaustion before we
       // even spin up the inner loop, with a typed warning.
@@ -228,7 +250,30 @@ fn name=runAgentMode params="input:string,dispatch:Dispatch,ctx:HandlerContext,o
           });
           dispatch({ type: 'error', message: state.phase.errorMessage ?? 'budget exceeded before start' });
         }
-        return;
+        const summary = [
+          `[agent] "${input.slice(0, 120)}" — failed before start`,
+          `Engine: ${engineId}`,
+          `Reason: ${state.phase.kind === 'failed' ? (state.phase.errorMessage ?? 'budget exceeded before start') : 'budget blocked before start'}`,
+        ].join('\n');
+        if (agentThread) {
+          try {
+            agentThread.append({ role: 'assistant', content: summary });
+            await agentThread.save();
+          } catch { /* non-fatal */ }
+        }
+        return {
+          kind: 'agent',
+          status: 'failed',
+          task: input,
+          taskKind: 'unknown',
+          summary,
+          engineId,
+          winnerId: engineId,
+          response: null,
+          patchPath: null,
+          patchAvailable: false,
+          workspaceChangedInPlace: true,
+        };
       }
 
       // Transition idle → running and emit step-start with budget context
@@ -318,6 +363,26 @@ fn name=runAgentMode params="input:string,dispatch:Dispatch,ctx:HandlerContext,o
         });
       }
 
+      const normalizedStatus = stepResult.stopReason === 'error' ? 'failed' : stepResult.stopReason;
+      const responseExcerpt = clipAgentText(stepResult.response ?? '', 4000);
+      const summaryLines = [
+        `[agent] "${input.slice(0, 120)}" — ${normalizedStatus}`,
+        `Engine: ${engineId}`,
+        `Turns: ${stats.turnsUsed}`,
+        `Tool calls: ${stats.totalToolCalls}`,
+        `Tokens: ${stats.tokensUsed}`,
+        `Elapsed: ${(stats.elapsedMs / 1000).toFixed(0)}s`,
+      ];
+      if (stepResult.error && stepResult.stopReason !== 'completed') summaryLines.push(`Error: ${stepResult.error}`);
+      if (responseExcerpt) summaryLines.push(`Final response:\n${responseExcerpt}`);
+      const summary = summaryLines.join('\n');
+      if (agentThread && stepResult.stopReason !== 'cancelled') {
+        try {
+          agentThread.append({ role: 'assistant', content: summary });
+          await agentThread.save();
+        } catch { /* non-fatal */ }
+      }
+
       // ── Final disposition ─────────────────────────────────────
       if (stepResult.stopReason === 'completed') {
         if (stepResult.response) {
@@ -334,12 +399,50 @@ fn name=runAgentMode params="input:string,dispatch:Dispatch,ctx:HandlerContext,o
       } else {
         dispatch({ type: 'error', message: stepResult.error ?? 'Agent session failed' });
       }
+      followUp = {
+        kind: 'agent',
+        status: normalizedStatus,
+        task: input,
+        taskKind: 'unknown',
+        summary,
+        engineId,
+        winnerId: engineId,
+        response: responseExcerpt || null,
+        patchPath: null,
+        patchAvailable: false,
+        workspaceChangedInPlace: true,
+      };
     } catch (err: any) {
       // Shouldn't normally reach here — session.step() catches its own errors and
       // returns stopReason='error'. This is a belt-and-suspenders path for
       // exceptions in reducer code or in the dispatch callback.
       state = failAgent(state, 'error', err?.message ?? String(err));
       dispatch({ type: 'error', message: err?.message ?? String(err) });
+      const errMsg = err?.message ?? String(err);
+      const summary = [
+        `[agent] "${input.slice(0, 120)}" — failed`,
+        `Engine: ${engineId}`,
+        `Error: ${errMsg}`,
+      ].join('\n');
+      if (agentThread) {
+        try {
+          agentThread.append({ role: 'assistant', content: summary });
+          await agentThread.save();
+        } catch { /* non-fatal */ }
+      }
+      followUp = {
+        kind: 'agent',
+        status: 'failed',
+        task: input,
+        taskKind: 'unknown',
+        summary,
+        engineId,
+        winnerId: engineId,
+        response: null,
+        patchPath: null,
+        patchAvailable: false,
+        workspaceChangedInPlace: true,
+      };
     } finally {
       abort.signal.removeEventListener('abort', onAbort);
       if (onParentAbort && parentSignal) {
@@ -350,6 +453,7 @@ fn name=runAgentMode params="input:string,dispatch:Dispatch,ctx:HandlerContext,o
         ctx.setActiveAbort(null);
       }
     }
+    return followUp;
   >>>
 
 // ── runAgentTeam — N parallel autonomous agents with synthesis ────
@@ -373,7 +477,7 @@ interface name=RunAgentTeamOptions
   field name=shadowMode type=boolean optional=true
   field name=foregroundEngineId type=string optional=true
 
-fn name=runAgentTeam params="input:string,dispatch:Dispatch,ctx:HandlerContext,opts?:RunAgentTeamOptions" returns="Promise<void>" async=true export=true
+fn name=runAgentTeam params="input:string,dispatch:Dispatch,ctx:HandlerContext,opts?:RunAgentTeamOptions" returns="Promise<AgentContinuationResult|null>" async=true export=true
   signal name=abort
   doc "Run an autonomous agent team: N AgentSession instances in N worktrees with shared budget, synthesis, and explicit transcript events. Used by Cesar-driven team mode and by /agent-team slash command. Wraps AgentTeam from core/cesar/agent-team.kern."
   handler <<<
@@ -381,7 +485,7 @@ fn name=runAgentTeam params="input:string,dispatch:Dispatch,ctx:HandlerContext,o
     const available = ctx.activeEngines();
     if (available.length === 0) {
       dispatch({ type: 'error', message: 'No engines available for agent team mode.' });
-      return;
+      return null;
     }
 
     // Pick engines: caller-specified or auto-select first 3 active API engines.
@@ -393,19 +497,19 @@ fn name=runAgentTeam params="input:string,dispatch:Dispatch,ctx:HandlerContext,o
       for (const id of requestedEngines) {
         if (!available.includes(id)) {
           dispatch({ type: 'error', message: `Engine ${id} is not active. Available: ${available.join(', ')}` });
-          return;
+          return null;
         }
         try {
           const eng = ctx.registry.get(id);
           if (!eng.api) {
             dispatch({ type: 'error', message: `Engine ${id} has no API config — agent team mode requires API engines.` });
-            return;
+            return null;
           }
           memberEngineIds.push(id);
           memberEngines.push(eng);
         } catch (err) {
           dispatch({ type: 'error', message: `Engine ${id}: ${err instanceof Error ? err.message : String(err)}` });
-          return;
+          return null;
         }
       }
     } else {
@@ -422,7 +526,7 @@ fn name=runAgentTeam params="input:string,dispatch:Dispatch,ctx:HandlerContext,o
       }
       if (memberEngines.length === 0) {
         dispatch({ type: 'error', message: `Agent team mode requires API engines. Active: ${available.join(', ')}` });
-        return;
+        return null;
       }
       if (memberEngines.length === 1) {
         // Only one API engine available — fall back to solo agent mode.
@@ -448,6 +552,7 @@ fn name=runAgentTeam params="input:string,dispatch:Dispatch,ctx:HandlerContext,o
     };
     const cwd = resolveWorkingDir();
     const taskKind: 'edit'|'investigate' = opts?.taskKind ?? 'edit';
+    let followUp: AgentContinuationResult | null = null;
 
     // Load or create the active ContextThread — shared across all team members.
     let teamThread: import('@agon/core').ContextThread | undefined;
@@ -526,7 +631,19 @@ fn name=runAgentTeam params="input:string,dispatch:Dispatch,ctx:HandlerContext,o
         try { parentSignal.removeEventListener('abort', onParentAbort); } catch { /* ignore */ }
       }
       abort.signal.removeEventListener('abort', onAbort);
-      return;
+      return {
+        kind: 'team-agent',
+        status: 'cancelled',
+        task: input,
+        taskKind,
+        summary: `[team-agent] "${input.slice(0, 120)}" — cancelled before start`,
+        engineId: null,
+        winnerId: null,
+        response: null,
+        patchPath: null,
+        patchAvailable: false,
+        workspaceChangedInPlace: false,
+      };
     }
 
     try {
@@ -542,7 +659,19 @@ fn name=runAgentTeam params="input:string,dispatch:Dispatch,ctx:HandlerContext,o
         // see "team cancelled before start" rather than nothing.
         dispatch({ type: 'warning', message: `Agent team cancelled during initialize \u2014 worktrees rolled back` });
         await team.cleanup();
-        return;
+        return {
+          kind: 'team-agent',
+          status: 'cancelled',
+          task: input,
+          taskKind,
+          summary: `[team-agent] "${input.slice(0, 120)}" — cancelled during initialize`,
+          engineId: null,
+          winnerId: null,
+          response: null,
+          patchPath: null,
+          patchAvailable: false,
+          workspaceChangedInPlace: false,
+        };
       }
 
       const teamId = team.getRunId();
@@ -642,7 +771,19 @@ fn name=runAgentTeam params="input:string,dispatch:Dispatch,ctx:HandlerContext,o
           teamDurationMs: teamResult.durationMs,
         });
         dispatch({ type: 'warning', message: `Agent team cancelled by user \u2014 $${cancelCost.toFixed(2)} spent before cancel` });
-        return;
+        return {
+          kind: 'team-agent',
+          status: 'cancelled',
+          task: input,
+          taskKind,
+          summary: `[team-agent] "${input.slice(0, 120)}" — cancelled after ${teamResult.members.length} member run(s)`,
+          engineId: null,
+          winnerId: null,
+          response: null,
+          patchPath: null,
+          patchAvailable: false,
+          workspaceChangedInPlace: false,
+        };
       }
 
       // ── Emit step-end for each member ─────────────────────
@@ -1084,13 +1225,14 @@ fn name=runAgentTeam params="input:string,dispatch:Dispatch,ctx:HandlerContext,o
         } catch { /* non-fatal */ }
       }
 
+      let patchPath = '';
+
       // ── Surface the result to the user ────────────────────
       if (winnerInfo.winner) {
         if (winnerDiff) {
           // Codex P3: persist the winning patch to a real file so
           // handleReviewAction('edit') opens the patch instead of an
           // empty buffer.
-          let patchPath = '';
           try {
             const patchDir = join(RUNS_DIR, `team-agent-${teamId}`);
             mkdirSync(patchDir, { recursive: true });
@@ -1129,8 +1271,73 @@ fn name=runAgentTeam params="input:string,dispatch:Dispatch,ctx:HandlerContext,o
           message: `Agent team finished with no winner (no member passed the fitness gate). All ${teamResult.members.length} responses shown above.`,
         });
       }
+      const memberSummary = memberOutcomes
+        .map((m) => `${m.engineId}:${m.outcome}${m.passedFitness ? ' pass' : ' fail'}`)
+        .join(', ');
+      const teamSummaryLines = [
+        `[team-agent] "${input.slice(0, 120)}" — ${winnerInfo.winner ? 'completed' : 'no-winner'}`,
+        `Task kind: ${taskKind}`,
+        `Winner: ${winnerInfo.winner ?? 'none'}`,
+        `Members: ${memberSummary || 'none'}`,
+        `Cost: $${teamCost.toFixed(2)}`,
+        `Duration: ${(teamResult.durationMs / 1000).toFixed(0)}s`,
+      ];
+      if (taskKind === 'edit') {
+        teamSummaryLines.push(
+          winnerInfo.winner
+            ? `Main workspace not changed automatically. Winner patch${patchPath ? `: ${patchPath}` : ' was not persisted to disk; use the patch-review block or thread diff.'}`
+            : 'No winner patch available.'
+        );
+      } else if (winnerAnalysis) {
+        teamSummaryLines.push(`Winning analysis:\n${clipAgentText(winnerAnalysis, 4000)}`);
+      }
+      const teamSummary = teamSummaryLines.join('\n');
+      if (teamThread) {
+        try {
+          teamThread.append({ role: 'assistant', content: teamSummary });
+          await teamThread.save();
+        } catch { /* non-fatal */ }
+      }
+      followUp = {
+        kind: 'team-agent',
+        status: winnerInfo.winner ? 'completed' : 'no-winner',
+        task: input,
+        taskKind,
+        summary: teamSummary,
+        engineId: winnerInfo.winner ?? null,
+        winnerId: winnerInfo.winner ?? null,
+        response: taskKind === 'investigate' ? (clipAgentText(winnerAnalysis ?? '', 4000) || null) : null,
+        patchPath: patchPath || null,
+        patchAvailable: !!patchPath,
+        workspaceChangedInPlace: false,
+      };
     } catch (err: any) {
       dispatch({ type: 'error', message: `Agent team failed: ${err?.message ?? String(err)}` });
+      const errMsg = err?.message ?? String(err);
+      const summary = [
+        `[team-agent] "${input.slice(0, 120)}" — failed`,
+        `Task kind: ${taskKind}`,
+        `Error: ${errMsg}`,
+      ].join('\n');
+      if (teamThread) {
+        try {
+          teamThread.append({ role: 'assistant', content: summary });
+          await teamThread.save();
+        } catch { /* non-fatal */ }
+      }
+      followUp = {
+        kind: 'team-agent',
+        status: 'failed',
+        task: input,
+        taskKind,
+        summary,
+        engineId: null,
+        winnerId: null,
+        response: null,
+        patchPath: null,
+        patchAvailable: false,
+        workspaceChangedInPlace: false,
+      };
     } finally {
       abort.signal.removeEventListener('abort', onAbort);
       if (onParentAbort && parentSignal) {
@@ -1146,4 +1353,5 @@ fn name=runAgentTeam params="input:string,dispatch:Dispatch,ctx:HandlerContext,o
         }
       }
     }
+    return followUp;
   >>>

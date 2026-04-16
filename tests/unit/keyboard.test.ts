@@ -12,6 +12,7 @@ function baseCtx(overrides: Record<string, unknown> = {}) {
     slashPickerOpen: false,
     enginePickerOpen: false,
     reviewEventOpen: false,
+    toolDetailOpen: false,
     questionState: null,
     replState: 'idle',
     inputValue: '',
@@ -67,6 +68,14 @@ describe('resolveKeyboardInput', () => {
     }))).toEqual({ type: 'openResults' });
   });
 
+  it('routes ctrl+o to the focused tool detail viewer', () => {
+    expect(resolveKeyboardInput(baseCtx({
+      input: '\x0f',
+      key: { ctrl: true },
+      textInputActive: false,
+    }))).toEqual({ type: 'openToolDetail' });
+  });
+
   it('keeps ctrl+c routed to cancel/exit even while text input is active', () => {
     expect(resolveKeyboardInput(baseCtx({
       input: '\x03',
@@ -99,5 +108,12 @@ describe('resolveKeyboardInput', () => {
     expect(resolveKeyboardInput(baseCtx({
       key: { end: true },
     }))).toEqual({ type: 'scrollToBottom' });
+  });
+
+  it('keeps navigation keys owned by the focused tool detail overlay', () => {
+    expect(resolveKeyboardInput(baseCtx({
+      toolDetailOpen: true,
+      key: { pageDown: true },
+    }))).toEqual({ type: 'none' });
   });
 });

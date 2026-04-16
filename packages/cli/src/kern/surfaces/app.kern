@@ -31,7 +31,7 @@ import from="../blocks/review.js" names="handleReviewAction"
 import from="../blocks/engine.js" names="DashboardView"
 import from="../cesar/session.js" names="saveCesarConversationSnapshot"
 import from="../../components.js" names="SpinnerBlock,StatusBar,CesarStatusStrip,EnginePicker,ModelPicker,ReviewBlock,BackgroundJobRail,CesarPicker,ComposerView,AgentProgressView,contentWidth,color256toHex,engineColor,CODE_RAIL,CODE_RAIL_COLOR,MAX_CODE_LINES,LOGO_LINES,VERSION,BRAND"
-import from="./app-views.js" names="ChromeBar,HistoryView,StreamingView"
+import from="./app-views.js" names="ChromeBar,HistoryView,StreamingView,ToolDetailBlock"
 import from="../../components.js" names="OutputBlock,ReviewEvent" types=true
 import from="node:path" names="join,dirname"
 import from="node:url" names="fileURLToPath"
@@ -62,6 +62,276 @@ fn name=isMutatingToolCall params="event:any" returns=boolean
     } catch {
       return false;
     }
+  >>>
+
+fn name=shortToolPath params="filePath:string" returns=string
+  handler <<<
+    return String(filePath ?? '').replace(`${process.cwd()}/`, '').replace(process.env.HOME ?? '', '~');
+  >>>
+
+fn name=parseToolCallPayload params="event:any" returns=any
+  handler <<<
+    const rawInput = String(event?.input ?? '');
+    let parsed: Record<string, unknown> = {};
+    try {
+      if (rawInput.trim().startsWith('{')) parsed = JSON.parse(rawInput);
+    } catch {
+      parsed = {};
+    }
+    return {
+      rawInput,
+      parsed,
+      toolKey: String(event?.tool ?? '').toLowerCase(),
+    };
+  >>>
+
+fn name=toolPreviewWindow params="lineCount:number, expanded:boolean" returns=any
+  handler <<<
+    if (lineCount <= 0) return { head: 0, tail: 0, skipped: 0 };
+    const headLimit = expanded ? 10 : 3;
+    const tailLimit = expanded && lineCount > 18 ? 4 : 0;
+    const showTail = tailLimit > 0 && lineCount > headLimit + tailLimit;
+    const head = expanded
+      ? Math.min(lineCount, showTail ? headLimit : lineCount)
+      : Math.min(lineCount, headLimit);
+    const tail = showTail ? tailLimit : 0;
+    return {
+      head,
+      tail,
+      skipped: Math.max(0, lineCount - head - tail),
+    };
+  >>>
+
+fn name=toolCallSupportsDetailView params="event:any" returns=boolean
+  handler <<<
+    if (!event || event.type !== 'tool-call') return false;
+    const { rawInput, parsed, toolKey } = parseToolCallPayload(event);
+    if (['edit', 'update', 'write', 'applypatch', 'apply_patch'].includes(toolKey)) return true;
+
+    const outputText = String(event.output ?? '');
+    const outputLines = outputText ? outputText.split('\n').length : 0;
+
+    if (toolKey === 'bash' || toolKey === 'run') {
+      const command = String((parsed.command as string) || rawInput || '');
+      return command.split('\n').length > 3 || outputLines > 12 || outputText.length > 500;
+    }
+    if (toolKey === 'read') return outputLines > 12 || outputText.length > 500;
+    if (toolKey === 'grep' || toolKey === 'search' || toolKey === 'glob' || toolKey === 'find') {
+      return outputLines > 10 || outputText.length > 400;
+    }
+    return rawInput.length > 160 || outputText.length > 400;
+  >>>
+
+fn name=detailViewerSupportsEvent params="event:any" returns=boolean
+  handler <<<
+    if (!event) return false;
+    if (event.type === 'permission-ask') {
+      const command = String(event.command ?? '');
+      return command.split('\n').length > 4 || command.length > 180;
+    }
+    return toolCallSupportsDetailView(event);
+  >>>
+
+fn name=toolDetailViewportRows params="termHeight:number" returns=number
+  handler <<<
+    return Math.max(8, Math.min(18, termHeight - 14));
+  >>>
+
+fn name=findLatestToolDetailEvent params="blocks:OutputBlock[]" returns=any
+  handler <<<
+    for (let index = blocks.length - 1; index >= 0; index -= 1) {
+      const event = blocks[index]?.event as any;
+      if (!detailViewerSupportsEvent(event)) continue;
+      return event;
+    }
+    return null;
+  >>>
+
+fn name=buildToolDetailView params="event:any" returns=any
+  handler <<<
+    if (!event) {
+      return { title: 'Detail viewer', subtitle: '', accentColor: '#a78bfa', rows: [] };
+    }
+
+    const ic = icons();
+    const accentColor = engineColor(event.engineId ?? '') || '#a78bfa';
+    const codeWidth = contentWidth(12);
+    const rows: any[] = [];
+    const pushSegmentsRow = (suffix: string, segments: any[], paddingLeft = 1) => {
+      rows.push({ key: `tool-detail-${suffix}`, kind: 'segments', paddingLeft, segments });
+    };
+    const pushSyntaxLines = (suffix: string, lines: string[], prefixText = '    ') => {
+      lines.forEach((line: string, index: number) => {
+        rows.push({
+          key: `tool-detail-${suffix}-${index}`,
+          kind: 'syntax',
+          paddingLeft: 1,
+          prefixText,
+          prefixDimColor: true,
+          text: line,
+          maxWidth: codeWidth,
+        });
+      });
+    };
+    const pushAnsiLines = (suffix: string, lines: string[], color = '') => {
+      lines.forEach((line: string, index: number) => {
+        if (color) {
+          pushSegmentsRow(`${suffix}-${index}`, [
+            { text: '    ', dimColor: true },
+            { text: truncateCodeLine(line, codeWidth), color },
+          ]);
+          return;
+        }
+        rows.push({
+          key: `tool-detail-${suffix}-${index}`,
+          kind: 'ansi',
+          paddingLeft: 1,
+          prefixText: '    ',
+          prefixDimColor: true,
+          text: line,
+          maxWidth: codeWidth,
+          fallbackDim: true,
+        });
+      });
+    };
+
+    if (event.type === 'permission-ask') {
+      const command = String(event.command ?? '');
+      const commandLines = command ? command.split('\n') : [];
+      const description = String(event.description ?? '').trim();
+      const reason = String(event.reason ?? '').trim();
+      if (description) pushSegmentsRow('permission-description', [{ text: description, dimColor: true }]);
+      if (reason) pushSegmentsRow('permission-reason', [{ text: reason, color: '#fbbf24' }]);
+      if (commandLines.length > 0) {
+        pushSegmentsRow('permission-command-label', [{ text: 'Command', color: '#f59e0b', bold: true }]);
+        commandLines.forEach((line: string, index: number) => {
+          rows.push({
+            key: `tool-detail-permission-${index}`,
+            kind: 'syntax',
+            paddingLeft: 1,
+            prefixText: index === 0 ? '    $ ' : '      ',
+            prefixDimColor: true,
+            text: line,
+            maxWidth: codeWidth,
+          });
+        });
+      }
+      return {
+        title: `${String(event.tool ?? 'Command')} approval`,
+        subtitle: `${commandLines.length || 1} command line${commandLines.length === 1 ? '' : 's'}`,
+        accentColor: '#fbbf24',
+        rows,
+      };
+    }
+
+    const { rawInput, parsed, toolKey } = parseToolCallPayload(event);
+    const outputLines = String(event.output ?? '').split('\n').filter((line: string, index: number, all: string[]) => line.length > 0 || all.length === 1);
+    const defaultLabel = (() => {
+      if (toolKey === 'bash' || toolKey === 'run') return `${ic.bash} Bash`;
+      if (toolKey === 'edit' || toolKey === 'update') return `${ic.edit} Update`;
+      if (toolKey === 'write') return `${ic.write} Write`;
+      if (toolKey === 'read') return `${ic.read} Read`;
+      if (toolKey === 'grep' || toolKey === 'search') return `${ic.search} Search`;
+      if (toolKey === 'glob' || toolKey === 'find') return `${ic.find} Find`;
+      return `${ic.tool} ${event.tool ?? 'Tool'}`;
+    })();
+    let title = defaultLabel;
+    const subtitleParts: string[] = [];
+    if (event.engineId) subtitleParts.push(String(event.engineId));
+    if (event.status) subtitleParts.push(String(event.status));
+
+    if (toolKey === 'bash' || toolKey === 'run') {
+      const command = String((parsed.command as string) || rawInput || '');
+      const desc = String((parsed.description as string) || '').trim();
+      const commandLines = command ? command.split('\n') : [];
+      title = `${defaultLabel}${desc ? ` · ${truncateCodeLine(desc, 48)}` : commandLines[0] ? ` · ${truncateCodeLine(commandLines[0], 48)}` : ''}`;
+      subtitleParts.push(`${commandLines.length || 1} command line${commandLines.length === 1 ? '' : 's'}`);
+      if (outputLines.length > 0) subtitleParts.push(`${outputLines.length} output line${outputLines.length === 1 ? '' : 's'}`);
+      if (desc) pushSegmentsRow('bash-desc', [{ text: desc, dimColor: true }]);
+      if (commandLines.length > 0) {
+        pushSegmentsRow('bash-command-label', [{ text: 'Command', color: '#f59e0b', bold: true }]);
+        commandLines.forEach((line: string, index: number) => {
+          rows.push({
+            key: `tool-detail-bash-command-${index}`,
+            kind: 'syntax',
+            paddingLeft: 1,
+            prefixText: index === 0 ? '    $ ' : '      ',
+            prefixDimColor: true,
+            text: line,
+            maxWidth: codeWidth,
+          });
+        });
+      }
+      if (outputLines.length > 0) {
+        pushSegmentsRow('bash-output-label', [{ text: 'Output', color: event.status === 'error' ? '#ef4444' : '#9ca3af', bold: true }]);
+        pushAnsiLines('bash-output', outputLines, event.status === 'error' ? '#ef4444' : '');
+      }
+    } else if (toolKey === 'edit' || toolKey === 'update') {
+      const filePath = String((parsed.file_path as string) || (parsed.filePath as string) || '');
+      const oldLines = String((parsed.old_string as string) || (parsed.oldString as string) || '').split('\n');
+      const newLines = String((parsed.new_string as string) || (parsed.newString as string) || '').split('\n');
+      title = `${defaultLabel}${filePath ? ` · ${shortToolPath(filePath)}` : ''}`;
+      subtitleParts.push(`-${oldLines.length} +${newLines.length} lines`);
+      pushSegmentsRow('edit-summary', [
+        { text: `-${oldLines.length}`, color: '#ef4444' },
+        { text: ' ', dimColor: true },
+        { text: `+${newLines.length}`, color: '#4ade80' },
+        { text: ' lines', dimColor: true },
+      ]);
+      oldLines.filter((line: string, index: number, all: string[]) => line.length > 0 || all.length === 1).forEach((line: string, index: number) => {
+        rows.push({ key: `tool-detail-edit-old-${index}`, kind: 'diff', paddingLeft: 1, text: `-${line}`, maxWidth: codeWidth });
+      });
+      newLines.filter((line: string, index: number, all: string[]) => line.length > 0 || all.length === 1).forEach((line: string, index: number) => {
+        rows.push({ key: `tool-detail-edit-new-${index}`, kind: 'diff', paddingLeft: 1, text: `+${line}`, maxWidth: codeWidth });
+      });
+    } else if (toolKey === 'write') {
+      const filePath = String((parsed.file_path as string) || (parsed.filePath as string) || '');
+      const lines = String((parsed.content as string) || '').split('\n');
+      title = `${defaultLabel}${filePath ? ` · ${shortToolPath(filePath)}` : ''}`;
+      subtitleParts.push(`+${lines.length} lines`);
+      pushSegmentsRow('write-summary', [
+        { text: `+${lines.length}`, color: '#4ade80' },
+        { text: ' lines', dimColor: true },
+      ]);
+      lines.filter((line: string, index: number, all: string[]) => line.length > 0 || all.length === 1).forEach((line: string, index: number) => {
+        rows.push({ key: `tool-detail-write-${index}`, kind: 'diff', paddingLeft: 1, text: `+${line}`, maxWidth: codeWidth });
+      });
+    } else if (toolKey === 'read') {
+      const filePath = String((parsed.file_path as string) || (parsed.filePath as string) || '');
+      title = `${defaultLabel}${filePath ? ` · ${shortToolPath(filePath)}` : ''}`;
+      if (outputLines.length > 0) subtitleParts.push(`${outputLines.length} lines`);
+      pushSyntaxLines('read', outputLines);
+    } else if (toolKey === 'grep' || toolKey === 'search') {
+      const pattern = String((parsed.pattern as string) || rawInput || '');
+      const path = String((parsed.path as string) || '');
+      title = `${defaultLabel}${pattern ? ` · ${truncateCodeLine(pattern, 42)}` : ''}`;
+      if (path) subtitleParts.push(shortToolPath(path));
+      if (outputLines.length > 0) subtitleParts.push(`${outputLines.length} matches`);
+      pushAnsiLines('search', outputLines);
+    } else if (toolKey === 'glob' || toolKey === 'find') {
+      const pattern = String((parsed.pattern as string) || rawInput || '');
+      title = `${defaultLabel}${pattern ? ` · ${truncateCodeLine(pattern, 42)}` : ''}`;
+      if (outputLines.length > 0) subtitleParts.push(`${outputLines.length} files`);
+      pushSyntaxLines('find', outputLines);
+    } else {
+      const inputLines = rawInput ? rawInput.split('\n') : [];
+      title = defaultLabel;
+      if (inputLines.length > 0) {
+        pushSegmentsRow('generic-input-label', [{ text: 'Input', color: '#9ca3af', bold: true }]);
+        pushSyntaxLines('generic-input', inputLines);
+      }
+      if (outputLines.length > 0) {
+        pushSegmentsRow('generic-output-label', [{ text: 'Output', color: '#9ca3af', bold: true }]);
+        pushSyntaxLines('generic-output', outputLines);
+      }
+    }
+
+    return {
+      title,
+      subtitle: subtitleParts.join(' · '),
+      accentColor,
+      rows,
+    };
   >>>
 
 // ── Module-level mutable refs for SIGINT ──
@@ -334,12 +604,12 @@ fn name=resolveTranscriptRowFromMouse params="mouseY:number, viewportTopLine:num
     return firstVisibleRow + clamped;
   >>>
 
-fn name=estimateVisibleBlockBudget params="rows:number, mode:string, overlayActive:boolean" returns=number
+fn name=estimateVisibleBlockBudget params="rows:number, mode:string, overlayReservedRows:number" returns=number
   handler <<<
     // Chat mode keeps 7 rows for the composer/status chrome at minimum:
     // margin + bordered composer (3) + Cesar strip + two-line status bar.
     // Using 6 makes the startup dashboard overflow by one line.
-    const reservedRows = (mode === 'chat' ? 7 : 8) + (overlayActive ? 4 : 0);
+    const reservedRows = (mode === 'chat' ? 7 : 8) + Math.max(0, overlayReservedRows);
     return Math.max(1, rows - reservedRows);
   >>>
 
@@ -397,17 +667,9 @@ fn name=estimateToolCallRows params="event:any, toolOutputExpanded:boolean, code
     if (!event || event.type !== 'tool-call') return 0;
     if (!event.input && !event.output && (event.tool === 'Delegate' || event.tool === 'delegate')) return 0;
 
-    const rawInput = event.input || '';
-    let parsed: Record<string, unknown> = {};
-    try {
-      if (typeof rawInput === 'string' && rawInput.trim().startsWith('{')) parsed = JSON.parse(rawInput);
-    } catch {
-      parsed = {};
-    }
-
-    const toolKey = String(event.tool ?? '').toLowerCase();
-    const forceExpanded = ['edit', 'write', 'update', 'applypatch', 'apply_patch'].includes(toolKey);
-    if (!toolOutputExpanded && !forceExpanded) return 1;
+    const { rawInput, parsed, toolKey } = parseToolCallPayload(event);
+    const collapsed = !toolOutputExpanded;
+    if (collapsed && !['edit', 'write', 'update'].includes(toolKey)) return 1;
 
     if (toolKey === 'bash' || toolKey === 'run') {
       const cmd = (parsed.command as string) || rawInput || '';
@@ -428,16 +690,34 @@ fn name=estimateToolCallRows params="event:any, toolOutputExpanded:boolean, code
     if (toolKey === 'edit' || toolKey === 'update') {
       const oldStr = (parsed.old_string as string) || (parsed.oldString as string) || '';
       const newStr = (parsed.new_string as string) || (parsed.newString as string) || '';
-      return 1 + ((oldStr || newStr) && event.status !== 'running' ? 1 + oldStr.split('\n').length + newStr.split('\n').length : 0);
+      const oldLines = oldStr ? oldStr.split('\n') : [];
+      const newLines = newStr ? newStr.split('\n') : [];
+      const oldWindow = toolPreviewWindow(oldLines.length, !collapsed);
+      const newWindow = toolPreviewWindow(newLines.length, !collapsed);
+      return 1
+        + oldWindow.head + oldWindow.tail + (oldWindow.skipped > 0 ? 1 : 0)
+        + newWindow.head + newWindow.tail + (newWindow.skipped > 0 ? 1 : 0);
     }
 
     if (toolKey === 'write') {
       const content = (parsed.content as string) || '';
-      return 1 + (content && event.status !== 'running' ? 1 + content.split('\n').length : 0);
+      const lines = content ? content.split('\n') : [];
+      const window = toolPreviewWindow(lines.length, !collapsed);
+      return 1 + window.head + window.tail + (window.skipped > 0 ? 1 : 0);
     }
 
-    if (toolKey === 'read' || toolKey === 'grep' || toolKey === 'search' || toolKey === 'glob' || toolKey === 'find') {
-      return 2;
+    if (toolKey === 'read') {
+      if (collapsed) return 1;
+      const lineCount = event.output ? String(event.output).split('\n').length : 0;
+      const shown = Math.min(12, lineCount);
+      return 1 + shown + (lineCount > shown ? 1 : 0);
+    }
+
+    if (toolKey === 'grep' || toolKey === 'search' || toolKey === 'glob' || toolKey === 'find') {
+      if (collapsed) return 1;
+      const lineCount = event.output ? String(event.output).split('\n').filter((line: string) => line.trim()).length : 0;
+      const shown = Math.min(10, lineCount);
+      return 1 + shown + (lineCount > shown ? 1 : 0);
     }
 
     let rows = 1;
@@ -678,21 +958,46 @@ fn name=buildToolCallRows params="baseKey:string, event:any, toolOutputExpanded:
     const icon = event.status === 'error' ? ic.fail : event.status === 'done' ? ic.success : '⟳';
     const eColor = engineColor(event.engineId ?? '');
     const codeWidth = contentWidth(10);
-    const rawInput = String(event.input ?? '');
-    let parsed: Record<string, unknown> = {};
-    try {
-      if (rawInput.trim().startsWith('{')) parsed = JSON.parse(rawInput);
-    } catch {
-      parsed = {};
-    }
-
-    const toolKey = String(event.tool ?? '').toLowerCase();
-    const forceExpanded = ['edit', 'write', 'update', 'applypatch', 'apply_patch'].includes(toolKey);
-    const collapsed = !toolOutputExpanded && !forceExpanded;
+    const { rawInput, parsed, toolKey } = parseToolCallPayload(event);
+    const collapsed = !toolOutputExpanded;
     const collapsedHint = collapsed ? [{ text: ' · ', dimColor: true }, { text: 'Ctrl+E expand tools', color: '#f59e0b' }] : [];
     const nestSegment = { text: ' ⏿ ', color: eColor };
     const pushSegmentsRow = (suffix: string, segments: any[], paddingLeft = 2) => {
       rows.push({ key: `${baseKey}-${suffix}`, kind: 'segments', paddingLeft, segments });
+    };
+    const pushOpenHintRow = (suffix: string, text: string) => {
+      pushSegmentsRow(suffix, [
+        { text, dimColor: true },
+        { text: ' · ', dimColor: true },
+        { text: 'Ctrl+O full view', color: '#a78bfa' },
+      ]);
+    };
+    const pushDiffPreview = (suffix: string, lines: string[], sign: string, expanded: boolean, label: string) => {
+      if (!lines.length) return;
+      const window = toolPreviewWindow(lines.length, expanded);
+      const headLines = lines.slice(0, window.head);
+      const tailLines = window.tail > 0 ? lines.slice(-window.tail) : [];
+      headLines.forEach((line: string, index: number) => {
+        rows.push({
+          key: `${baseKey}-${suffix}-head-${index}`,
+          kind: 'diff',
+          paddingLeft: 2,
+          text: `${sign}${line}`,
+          maxWidth: codeWidth,
+        });
+      });
+      if (window.skipped > 0) {
+        pushOpenHintRow(`${suffix}-skip`, `    … ${window.skipped} more ${label} lines`);
+      }
+      tailLines.forEach((line: string, index: number) => {
+        rows.push({
+          key: `${baseKey}-${suffix}-tail-${index}`,
+          kind: 'diff',
+          paddingLeft: 2,
+          text: `${sign}${line}`,
+          maxWidth: codeWidth,
+        });
+      });
     };
 
     if (toolKey === 'bash' || toolKey === 'run') {
@@ -760,7 +1065,7 @@ fn name=buildToolCallRows params="baseKey:string, event:any, toolOutputExpanded:
           });
         });
         if (skipped > 0) {
-          pushSegmentsRow('bash-skip', [{ text: `    … ${skipped} more lines …`, dimColor: true }]);
+          pushOpenHintRow('bash-skip', `    … ${skipped} more lines …`);
         }
         tailLines.forEach((line: string, index: number) => {
           if (event.status === 'error') {
@@ -789,100 +1094,48 @@ fn name=buildToolCallRows params="baseKey:string, event:any, toolOutputExpanded:
       const filePath = String((parsed.file_path as string) || (parsed.filePath as string) || '');
       const oldStr = String((parsed.old_string as string) || (parsed.oldString as string) || '');
       const newStr = String((parsed.new_string as string) || (parsed.newString as string) || '');
-      const shortPath = filePath ? filePath.replace(`${process.cwd()}/`, '').replace(process.env.HOME ?? '', '~') : '';
+      const shortPath = filePath ? shortToolPath(filePath) : '';
       const oldLines = oldStr ? oldStr.split('\n') : [];
       const newLines = newStr ? newStr.split('\n') : [];
-
-      if (collapsed) {
-        pushSegmentsRow('edit-collapsed', [
-          nestSegment,
-          { text: `${icon} ${ic.edit} Update`, color: toolColor, bold: true },
-          shortPath ? { text: ` (${shortPath})`, color: '#a78bfa' } : null,
-          { text: ' · ', dimColor: true },
-          { text: `-${oldLines.length}`, color: '#ef4444' },
-          { text: ' ', dimColor: true },
-          { text: `+${newLines.length}`, color: '#4ade80' },
-          { text: ' lines', dimColor: true },
-          ...collapsedHint,
-        ].filter(Boolean));
-        return rows;
-      }
 
       pushSegmentsRow('edit-head', [
         nestSegment,
         { text: `${icon} ${ic.edit} Update`, color: toolColor, bold: true },
         shortPath ? { text: ` (${shortPath})`, color: '#a78bfa' } : null,
-      ].filter(Boolean));
-      pushSegmentsRow('edit-summary', [
-        { text: '    ', dimColor: true },
+        { text: ' · ', dimColor: true },
         { text: `-${oldLines.length}`, color: '#ef4444' },
         { text: ' ', dimColor: true },
         { text: `+${newLines.length}`, color: '#4ade80' },
         { text: ' lines', dimColor: true },
-      ]);
-      oldLines.forEach((line: string, index: number) => {
-        rows.push({
-          key: `${baseKey}-edit-old-${index}`,
-          kind: 'diff',
-          paddingLeft: 2,
-          text: `-${line}`,
-          maxWidth: codeWidth,
-        });
-      });
-      newLines.forEach((line: string, index: number) => {
-        rows.push({
-          key: `${baseKey}-edit-new-${index}`,
-          kind: 'diff',
-          paddingLeft: 2,
-          text: `+${line}`,
-          maxWidth: codeWidth,
-        });
-      });
+        ...collapsedHint,
+      ].filter(Boolean));
+      pushDiffPreview('edit-old', oldLines, '-', !collapsed, 'removed');
+      pushDiffPreview('edit-new', newLines, '+', !collapsed, 'added');
       return rows;
     }
 
     if (toolKey === 'write') {
       const filePath = String((parsed.file_path as string) || (parsed.filePath as string) || '');
       const content = String((parsed.content as string) || '');
-      const shortPath = filePath ? filePath.replace(`${process.cwd()}/`, '').replace(process.env.HOME ?? '', '~') : '';
+      const shortPath = filePath ? shortToolPath(filePath) : '';
       const lines = content ? content.split('\n') : [];
-
-      if (collapsed) {
-        pushSegmentsRow('write-collapsed', [
-          nestSegment,
-          { text: `${icon} ${ic.write} Write`, color: toolColor, bold: true },
-          shortPath ? { text: ` (${shortPath})`, color: '#a78bfa' } : null,
-          lines.length > 0 ? { text: ` · +${lines.length} lines`, color: '#4ade80' } : null,
-          ...collapsedHint,
-        ].filter(Boolean));
-        return rows;
-      }
 
       pushSegmentsRow('write-head', [
         nestSegment,
         { text: `${icon} ${ic.write} Write`, color: toolColor, bold: true },
         shortPath ? { text: ` (${shortPath})`, color: '#a78bfa' } : null,
+        lines.length > 0 ? { text: ' · ', dimColor: true } : null,
+        lines.length > 0 ? { text: `+${lines.length}`, color: '#4ade80' } : null,
+        lines.length > 0 ? { text: ' lines', dimColor: true } : null,
+        ...collapsedHint,
       ].filter(Boolean));
-      pushSegmentsRow('write-summary', [
-        { text: '    ', dimColor: true },
-        { text: `+${lines.length}`, color: '#4ade80' },
-        { text: ' lines', dimColor: true },
-      ]);
-      lines.forEach((line: string, index: number) => {
-        rows.push({
-          key: `${baseKey}-write-${index}`,
-          kind: 'diff',
-          paddingLeft: 2,
-          text: `+${line}`,
-          maxWidth: codeWidth,
-        });
-      });
+      pushDiffPreview('write', lines, '+', !collapsed, 'added');
       return rows;
     }
 
     if (toolKey === 'read') {
       const filePath = String((parsed.file_path as string) || (parsed.filePath as string) || '');
-      const shortPath = filePath ? filePath.replace(`${process.cwd()}/`, '').replace(process.env.HOME ?? '', '~') : '';
+      const shortPath = filePath ? shortToolPath(filePath) : '';
       const lineCount = event.output ? String(event.output).split('\n').length : 0;
       if (collapsed) {
         pushSegmentsRow('read-collapsed', [
@@ -917,11 +1170,7 @@ fn name=buildToolCallRows params="baseKey:string, event:any, toolOutputExpanded:
           });
         });
         if (outputLines.length > shownLines.length) {
-          pushSegmentsRow('read-more', [
-            { text: `    … ${outputLines.length - shownLines.length} more lines`, dimColor: true },
-            { text: ' · ', dimColor: true },
-            { text: 'Ctrl+E collapse tools', color: '#f59e0b' },
-          ]);
+          pushOpenHintRow('read-more', `    … ${outputLines.length - shownLines.length} more lines`);
         }
       }
       return rows;
@@ -930,7 +1179,7 @@ fn name=buildToolCallRows params="baseKey:string, event:any, toolOutputExpanded:
     if (toolKey === 'grep' || toolKey === 'search') {
       const pattern = String((parsed.pattern as string) || rawInput || '');
       const path = String((parsed.path as string) || '');
-      const shortPath = path ? path.replace(`${process.cwd()}/`, '').replace(process.env.HOME ?? '', '~') : '';
+      const shortPath = path ? shortToolPath(path) : '';
       const matchCount = event.output ? String(event.output).split('\n').filter((line: string) => line.trim()).length : 0;
       if (collapsed) {
         pushSegmentsRow('search-collapsed', [
@@ -967,7 +1216,7 @@ fn name=buildToolCallRows params="baseKey:string, event:any, toolOutputExpanded:
           });
         });
         if (matchLines.length > shownLines.length) {
-          pushSegmentsRow('search-more', [{ text: `    … ${matchLines.length - shownLines.length} more matches`, dimColor: true }]);
+          pushOpenHintRow('search-more', `    … ${matchLines.length - shownLines.length} more matches`);
         }
       }
       return rows;
@@ -1001,7 +1250,7 @@ fn name=buildToolCallRows params="baseKey:string, event:any, toolOutputExpanded:
           pushSegmentsRow(`find-file-${index}`, [{ text: `    ${truncateCodeLine(file, codeWidth)}`, dimColor: true }]);
         });
         if (files.length > shownFiles.length) {
-          pushSegmentsRow('find-more', [{ text: `    … ${files.length - shownFiles.length} more files`, dimColor: true }]);
+          pushOpenHintRow('find-more', `    … ${files.length - shownFiles.length} more files`);
         }
       }
       return rows;
@@ -1503,6 +1752,8 @@ screen name=App target=ink
   state name=streamingText type="Record<string,StreamingEntry>" initial="{}" throttle=90
   state name=pendingImages type="ImageAttachment[]" initial="[]"
   state name=reviewEvent type="ReviewEvent|null" initial="null"
+  state name=lastReviewResult type="{ engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number } | undefined" initial="undefined"
+  state name=toolDetailEvent type="any|null" initial="null"
   state name=jobManager type=any initial="new JobManager()"
   state name=jobList type="Job[]" initial="[]"
   state name=lastUndoToken type="string|null" initial="null"
@@ -1527,7 +1778,9 @@ screen name=App target=ink
   ref name=currentPlanRef type="Plan|null" initial="null"
   ref name=streamingTextRef type="Record<string,StreamingEntry>" initial="{}"
   ref name=agentProgressRef type="Record<string,AgentProgressSnapshot>" initial="{}"
+  ref name=lastReviewResultRef type="{ engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number } | undefined" initial="undefined"
   ref name=modeRef type="'chat'|'campfire'|'brainstorm'|'tribunal'" initial="'chat'"
+  ref name=inputEpochRef type=number initial=0
   ref name=inputValueRef type=string initial="''"
   ref name=ctrlKeyHandledRef type=boolean initial=false
   ref name=justPastedRef type=boolean initial=false
@@ -1650,9 +1903,20 @@ screen name=App target=ink
       return { engineId: activeStream.engineId, line: lines[lines.length - 1].trim() };
     >>>
 
-  memo name=overlayActive deps="enginePickerOpen, modelPickerOpen, cesarPickerOpen, reviewEvent"
+  memo name=overlayReservedRows deps="enginePickerOpen, modelPickerOpen, cesarPickerOpen, reviewEvent, toolDetailEvent, termHeight"
     handler <<<
-      return enginePickerOpen || modelPickerOpen || cesarPickerOpen || !!reviewEvent;
+      if (toolDetailEvent) return toolDetailViewportRows(termHeight) + 5;
+      return enginePickerOpen || modelPickerOpen || cesarPickerOpen || !!reviewEvent ? 4 : 0;
+    >>>
+
+  memo name=overlayActive deps="enginePickerOpen, modelPickerOpen, cesarPickerOpen, reviewEvent, toolDetailEvent"
+    handler <<<
+      return enginePickerOpen || modelPickerOpen || cesarPickerOpen || !!reviewEvent || !!toolDetailEvent;
+    >>>
+
+  memo name=toolDetailView deps="toolDetailEvent, termWidth"
+    handler <<<
+      return toolDetailEvent ? buildToolDetailView(toolDetailEvent) : null;
     >>>
 
   memo name=startupOnly deps="outputBlocks,activeStream,liveProgress,agentProgress"
@@ -1680,13 +1944,13 @@ screen name=App target=ink
       return scrollOffset === 0 && (!!activeStream || !!liveProgress || Object.keys(agentProgress).length > 0);
     >>>
 
-  memo name=currentVisibleRowBudget deps="termHeight, mode, overlayActive, livePaneVisible, activeStream, liveProgress, agentProgress"
+  memo name=currentVisibleRowBudget deps="termHeight, mode, overlayReservedRows, livePaneVisible, activeStream, liveProgress, agentProgress"
     handler <<<
       const pinnedLiveRows = livePaneVisible
         ? estimatePinnedLiveRows(mode, !!activeStream, !!liveProgress, Object.keys(agentProgress).length)
         : 0;
       const viewportRows = Math.max(1, termHeight - pinnedLiveRows);
-      return estimateVisibleBlockBudget(viewportRows, mode, overlayActive);
+      return estimateVisibleBlockBudget(viewportRows, mode, overlayReservedRows);
     >>>
 
   memo name=displayRows deps="displayBlocks, mode, toolOutputExpanded, thinkingExpanded"
@@ -1823,6 +2087,11 @@ screen name=App target=ink
   effect deps="mouseSelection"
     handler <<<
       mouseSelectionRef.current = mouseSelection;
+    >>>
+
+  effect deps="lastReviewResult"
+    handler <<<
+      lastReviewResultRef.current = lastReviewResult;
     >>>
 
   effect deps="selectionMode,startupOnly"
@@ -2234,8 +2503,14 @@ screen name=App target=ink
     handler <<<
       return {
         registry, adapter, activeEngines,
+        get inputEpoch() { return inputEpochRef.current; },
         config: loadConfig(), chatSession,
         get currentPlan() { return currentPlanRef.current; },
+        get lastReviewResult() { return lastReviewResultRef.current; },
+        set lastReviewResult(value: any) {
+          lastReviewResultRef.current = value;
+          setLastReviewResult(value);
+        },
         setCurrentPlan, setActiveAbort: trackAbort,
         askQuestion, cesarSession, setCesarSession: setCesarSessionWrapped,
         explorationMode, setExplorationMode,
@@ -2377,6 +2652,7 @@ screen name=App target=ink
 
   callback name=handleSubmit async=true params="value:string" deps="replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,planModeQueued"
     handler <<<
+      inputEpochRef.current += 1;
       let input = cleanSubmitValue(value);
       if (!input) return;
       // Bare "/" → open slash picker flyout, don't dump text list
@@ -2594,6 +2870,16 @@ screen name=App target=ink
       }
     >>>
 
+  callback name=openLatestToolDetail params="" deps="outputBlocks,dispatch"
+    handler <<<
+      const event = findLatestToolDetailEvent(outputBlocks);
+      if (!event) {
+        dispatch({ type: 'info', message: 'No large tool output or approval command to open yet.' } as any);
+        return;
+      }
+      setToolDetailEvent(event);
+    >>>
+
   callback name=copyCurrentTranscript params="" deps="dispatch,mode,chatSession,displayRows,mouseSelection"
     handler <<<
       const selectedContent = transcriptRowsToPlainText(
@@ -2701,7 +2987,7 @@ screen name=App target=ink
       dispatch({ type: 'info', message: 'Press Ctrl+C again to exit.' } as any);
     >>>
 
-  callback name=handleComposerCtrlShortcut params="shortcut:string" deps="handleCancelOrExit,handleSubmit,openResultsPager,copyCurrentTranscript"
+  callback name=handleComposerCtrlShortcut params="shortcut:string" deps="handleCancelOrExit,handleSubmit,openLatestToolDetail,openResultsPager,copyCurrentTranscript"
     handler <<<
       nestedCtrlShortcutRef.current = { key: shortcut, at: Date.now() };
       switch (shortcut) {
@@ -2716,6 +3002,10 @@ screen name=App target=ink
         case 'e':
           ctrlKeyHandledRef.current = true;
           setToolOutputExpanded((prev: boolean) => !prev);
+          return;
+        case 'o':
+          ctrlKeyHandledRef.current = true;
+          openLatestToolDetail();
           return;
         case 't':
           ctrlKeyHandledRef.current = true;
@@ -2761,12 +3051,13 @@ screen name=App target=ink
         setModelPickerOpen(false);
         setCesarPickerOpen(false);
         setReviewEvent(null);
+        setToolDetailEvent(null);
         setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state);
       };
     >>>
 
   // ── Keyboard handling — pure decision tree + thin dispatcher ──
-  callback name=handleKeyboardInput params="input:string,key:any" deps="modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,activePlan,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openResultsPager,copyCurrentTranscript,toggleSelectionMode,maxScrollOffset,startupOnly"
+  callback name=handleKeyboardInput params="input:string,key:any" deps="modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,activePlan,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,copyCurrentTranscript,toggleSelectionMode,maxScrollOffset,startupOnly"
     handler <<<
       if (isTerminalFocusReport(input)) return;
 
@@ -2775,6 +3066,7 @@ screen name=App target=ink
             '\x01': 'a',
             '\x03': 'c',
             '\x05': 'e',
+            '\x0f': 'o',
             '\x0a': 'j',
             '\x0b': 'k',
             '\x0c': 'l',
@@ -2794,9 +3086,10 @@ screen name=App target=ink
 
       const action = resolveKeyboardInput({
         input, key,
-        textInputActive: !modelPickerOpen && !cesarPickerOpen && !enginePickerOpen && !reviewEvent && !slashPickerOpen && (!questionState || !questionState.choices),
+        textInputActive: !modelPickerOpen && !cesarPickerOpen && !enginePickerOpen && !reviewEvent && !toolDetailEvent && !slashPickerOpen && (!questionState || !questionState.choices),
         modelPickerOpen, cesarPickerOpen, slashPickerOpen, enginePickerOpen,
         reviewEventOpen: !!reviewEvent,
+        toolDetailOpen: !!toolDetailEvent,
         questionState, replState, inputValue, inputHistory, historyIndex,
         planModeQueued, activePlanState: activePlan?.state ?? null,
         outputBlockCount: outputBlocks.length,
@@ -2845,6 +3138,8 @@ screen name=App target=ink
           setThinkingExpanded((prev: boolean) => !prev); return;
         case 'toggleSelectionMode':
           toggleSelectionMode(); return;
+        case 'openToolDetail':
+          openLatestToolDetail(); return;
         case 'openResults':
           openResultsPager(); return;
         case 'copyTranscript':
@@ -2929,6 +3224,16 @@ screen name=App target=ink
             )}
           </>
         </Box>
+        {toolDetailView && (
+          <ToolDetailBlock
+            title={toolDetailView.title}
+            subtitle={toolDetailView.subtitle}
+            accentColor={toolDetailView.accentColor}
+            rows={toolDetailView.rows}
+            maxVisibleRows={toolDetailViewportRows(termHeight)}
+            onClose={() => setToolDetailEvent(null)}
+          />
+        )}
         {reviewEvent && <ReviewBlock event={reviewEvent} onAction={handleReviewActionCb} />}
         {enginePickerOpen && (
           <EnginePicker available={availableEngines} initialSelected={sessionEngines ?? availableEngines}

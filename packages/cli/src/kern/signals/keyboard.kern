@@ -13,6 +13,7 @@ interface name=KeyboardCtx
   field name=slashPickerOpen type=boolean
   field name=enginePickerOpen type=boolean
   field name=reviewEventOpen type=boolean
+  field name=toolDetailOpen type=boolean
   field name=questionState type=any
   field name=replState type=string
   field name=inputValue type=string
@@ -43,6 +44,7 @@ union name=KeyboardAction
   variant name=toggleToolExpand
   variant name=toggleThinking
   variant name=toggleSelectionMode
+  variant name=openToolDetail
   variant name=openResults
   variant name=copyTranscript
   variant name=closeSlash
@@ -65,6 +67,7 @@ fn name=resolveKeyboardInput params="ctx:KeyboardCtx" returns="KeyboardAction"
       ? ({
           '\x03': 'c',
           '\x05': 'e',
+          '\x0f': 'o',
           '\x0c': 'l',
           '\x12': 'r',
           '\x14': 't',
@@ -72,7 +75,7 @@ fn name=resolveKeyboardInput params="ctx:KeyboardCtx" returns="KeyboardAction"
           '\x19': 'y',
         } as Record<string, string>)[input] ?? input
       : input;
-    const delegatedCtrlShortcuts = new Set(['e', 'j', 'l', 'r', 't', 'y']);
+    const delegatedCtrlShortcuts = new Set(['e', 'j', 'l', 'o', 'r', 't', 'y']);
 
     // Model/cesar picker open: only Ctrl+C gets through
     if (ctx.modelPickerOpen || ctx.cesarPickerOpen) {
@@ -80,8 +83,15 @@ fn name=resolveKeyboardInput params="ctx:KeyboardCtx" returns="KeyboardAction"
       return { type: 'none' };
     }
 
+    // Focused tool detail viewer owns navigation keys while open.
+    if (ctx.toolDetailOpen) {
+      if (input === '\x03' || (key.ctrl && normalizedCtrlInput === 'c')) return { type: 'cancelOrExit' };
+      return { type: 'none' };
+    }
+
     // Choice-based question: single keypress resolves immediately
     if (ctx.questionState && ctx.questionState.choices) {
+      if (key.ctrl && normalizedCtrlInput === 'o') return { type: 'openToolDetail' };
       const pressed = input.toLowerCase();
       const choices = ctx.questionState.choices as { key: string; label: string }[];
       const match = choices.find((c) => c.key.toLowerCase() === pressed);
@@ -130,6 +140,9 @@ fn name=resolveKeyboardInput params="ctx:KeyboardCtx" returns="KeyboardAction"
 
     // Ctrl+G: toggle mouse selection mode
     if (key.ctrl && normalizedCtrlInput === 'g') return { type: 'toggleSelectionMode' };
+
+    // Ctrl+O: open focused tool detail view
+    if (key.ctrl && normalizedCtrlInput === 'o') return { type: 'openToolDetail' };
 
     // Ctrl+R: open results pager
     if (key.ctrl && normalizedCtrlInput === 'r') return { type: 'openResults' };

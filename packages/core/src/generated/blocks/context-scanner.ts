@@ -89,93 +89,64 @@ function detectProjectType(cwd: string): string {
 
 export function scanProjectContext(cwd: string, extraContext?: string, format?: ContextFormat): string {
   const MAX_CHARS = 6000;
-      const sections: string[] = [];
+  const sections: string[] = [];
   
-      // Branch + status
-      let branch = 'unknown';
-      try { branch = currentBranch(cwd); } catch (err) {
-        console.warn(`[agon] failed to detect branch: ${err instanceof Error ? err.message : String(err)}`);
-      }
+  // Branch + status
+  let branch = 'unknown';
+  try { branch = currentBranch(cwd); } catch (err) {
+    console.warn(`[agon] failed to detect branch: ${err instanceof Error ? err.message : String(err)}`);
+  }
   
-      const status = gitStatusShort(cwd);
-      const changed = gitChangedFiles(cwd);
-      const projectType = detectProjectType(cwd);
-      const isKern = isKernProject(cwd);
+  const status = gitStatusShort(cwd);
+  const changed = gitChangedFiles(cwd);
+  const projectType = detectProjectType(cwd);
+  const isKern = isKernProject(cwd);
   
-      // Header
-      sections.push(`Project: ${basename(cwd)} (${projectType}${isKern ? ', KERN' : ''})`);
-      sections.push(`Branch: ${branch}`);
+  // Header
+  sections.push(`Project: ${basename(cwd)} (${projectType}${isKern ? ', KERN' : ''})`);
+  sections.push(`Branch: ${branch}`);
   
-      if (changed.length > 0) {
-        sections.push(`Changed files (${changed.length}): ${changed.slice(0, 10).join(', ')}${changed.length > 10 ? ` (+${changed.length - 10} more)` : ''}`);
-      }
+  if (changed.length > 0) {
+    sections.push(`Changed files (${changed.length}): ${changed.slice(0, 10).join(', ')}${changed.length > 10 ? ` (+${changed.length - 10} more)` : ''}`);
+  }
   
-      // Recent commits (compact)
-      let commits = '';
-      try { commits = recentCommits(cwd, 5); } catch (err) {
-        console.warn(`[agon] failed to read recent commits: ${err instanceof Error ? err.message : String(err)}`);
-      }
-      if (commits) {
-        sections.push(`Recent commits:\n${commits}`);
-      }
+  // Recent commits (compact)
+  let commits = '';
+  try { commits = recentCommits(cwd, 5); } catch (err) {
+    console.warn(`[agon] failed to read recent commits: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  if (commits) {
+    sections.push(`Recent commits:\n${commits}`);
+  }
   
-      // File tree (compact)
-      const tree = buildFileTree(cwd, 1);
-      if (tree) {
-        sections.push(`File tree:\n${tree}`);
-      }
+  // File tree (compact)
+  const tree = buildFileTree(cwd, 1);
+  if (tree) {
+    sections.push(`File tree:\n${tree}`);
+  }
   
-      // Diff excerpt (if dirty)
-      if (status) {
-        const diff = gitTruncatedDiff(cwd, 100);
-        if (diff) {
-          sections.push(`Diff excerpt:\n${diff}`);
+  // Diff excerpt (if dirty)
+  if (status) {
+    const diff = gitTruncatedDiff(cwd, 100);
+    if (diff) {
+      sections.push(`Diff excerpt:\n${diff}`);
+    }
+  }
+  
+  // Project instructions — cascade: first match wins (AGON.md > AGENT.md > CLAUDE.md > CODEX.md)
+  const instructionFiles = ["AGON.md", "AGENT.md", "CLAUDE.md", "CODEX.md"];
+  for (const file of instructionFiles) {
+    try {
+      const path = join(cwd, file);
+      if (existsSync(path)) {
+        const content = readFileSync(path, "utf-8").trim();
+        if (content) {
+          // Cap at 2000 chars to stay within budget
+          const capped = content.length > 2000 ? content.slice(0, 2000) + "\n... (truncated)" : content;
+          sections.push(`Project instructions (${file}):\n${capped}`);
+          break; // first match wins — stop looking
         }
       }
-  
-      // Project instructions (AGENT.md, CLAUDE.md, CODEX.md)
-      const instructionFiles = ['AGENT.md', 'CLAUDE.md', 'CODEX.md'];
-      for (const file of instructionFiles) {
-        try {
-          const path = join(cwd, file);
-          if (existsSync(path)) {
-            const content = readFileSync(path, 'utf-8').trim();
-            if (content) {
-              // Cap each file at 2000 chars to stay within budget
-              const capped = content.length > 2000 ? content.slice(0, 2000) + '\n... (truncated)' : content;
-              sections.push(`Project instructions (${file}):\n${capped}`);
-            }
-          }
-        } catch {}
-      }
-  
-      // KERN workflow rules — injected when project uses KERN language
-      if (isKern) {
-        sections.push(`KERN WORKFLOW (MANDATORY):
-  - This project uses KERN language. Source files are .kern, compiled output is in src/generated/.
-  - NEVER edit files in src/generated/ — they are compiler output and will be overwritten.
-  - Edit .kern source files, then run: npx kern compile src/kern/<category> --outdir=src/generated/<category>
-  - After compiling, run: npm run build
-  - .kern files live in src/kern/<category>/ (surfaces, blocks, signals, models, cesar, handlers, commands, etc.)
-  - If you edit a generated file, your changes WILL be destroyed on next compile. This is not optional.`);
-      }
-  
-      // Extra context from user
-      if (extraContext) {
-        sections.push(`Additional context:\n${extraContext}`);
-      }
-  
-      let result: string;
-      if (format === 'kern') {
-        result = sections.map((s) => `context {\n  ${s.replace(/\n/g, '\n  ')}\n}`).join('\n');
-      } else {
-        result = sections.join('\n\n');
-      }
-  
-      // Cap at MAX_CHARS
-      if (result.length > MAX_CHARS) {
-        result = result.slice(0, MAX_CHARS - 20) + '\n... (truncated)';
-      }
-  
-      return result;
+    } catch {}
+  }
 }

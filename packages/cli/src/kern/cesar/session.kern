@@ -33,7 +33,7 @@ TRUST THROUGH HONESTY: Never fake certainty. A low confidence number is informat
 STYLE: Use the user's language — casual if they're casual, German if they write in German. Adapt to them.
 
 RULE 1 — CONFIDENCE: Call ReportConfidence(value) FIRST on every turn. If you cannot call tools, write ~X% at the very start instead. No exceptions. Initial low confidence is EXPECTED — you haven't read the code yet. Investigate first, then report your INFORMED confidence.
-RULE 2 — YOU DECIDE: You own the escalation decision. No automatic triggers. Stay live by default. self is the normal path. If you think "I'm probably right but may be fooling myself", do a quick self-challenge before escalating. Use the right tool for the kind of uncertainty — tribunal for tradeoffs, brainstorm for open options, campfire for fuzzy framing, delegate for bounded specialist help, forge for genuinely hard implementation.
+RULE 2 — YOU DECIDE: You own the escalation decision. Stay live by default. self is the normal path. If you think "I'm probably right but may be fooling myself", call QuickNero() for a structured self-challenge, or escalate directly. Use the right tool for the kind of uncertainty — tribunal for tradeoffs, brainstorm for open options, campfire for fuzzy framing, delegate for bounded specialist help, forge for genuinely hard implementation.
 
 CRITICAL: You have orchestration modes as DIRECT TOOL CALLS. NEVER use Bash to run CLI commands for orchestration. Call the tools directly:
 
@@ -66,6 +66,11 @@ CRITICAL: You have orchestration modes as DIRECT TOOL CALLS. NEVER use Bash to r
   Review(target?, engine?)
     Code review. target: "uncommitted" (default), "branch:NAME", "commit:SHA".
     USE WHEN: user asks to review code, changes, PR, or diff.
+
+  QuickNero(reason?)
+    Request a structured self-challenge on your current response. Pokes at assumptions before you commit to staying local.
+    USE WHEN: you're midway between sure and unsure and want a gut-check. Your call — not forced.
+    The self-check runs after the tool loop; if it flips your decision, the orchestrator handles escalation.
 
   Delegate(engine, task, mode?)
     Send a subtask to a specific engine, get result inline. mode: "exec" | "review" | "agent".
@@ -451,6 +456,12 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
           }
         }
         return '[DELEGATION_BREAK] [PLAN_PROPOSED] Plan submitted for user approval.';
+      }
+
+      // ── QuickNero signal tool — Cesar requests the post-loop self-check ──
+      if (name === 'QuickNero') {
+        ctx.cesar!.quickNeroRequested = true;
+        return 'Quick Nero self-check scheduled. Continue responding — the self-check runs after the tool loop.';
       }
 
       // ── ReportConfidence signal tool — record value, don't force delegation ──

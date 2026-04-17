@@ -405,9 +405,10 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
       } catch { /* not JSON — rawInput used as fallback */ }
       const toolKey = event.tool.toLowerCase();
       const forceExpanded = ['edit', 'write', 'update', 'applypatch', 'apply_patch'].includes(toolKey);
-      const collapsedHint = !toolOutputExpanded
-        ? <Text dimColor>{' \u00b7 '}<Text color="#f59e0b">{'Ctrl+E expand tools'}</Text></Text>
-        : null;
+      // Tool blocks are committed into native terminal scrollback via
+      // <Static> once finalized — so a per-block "Ctrl+E expand" hint
+      // would be misleading (Ink cannot re-render past Static items).
+      const collapsedHint = null;
   
       // ── Bash / Run ──
       if (toolKey === 'bash' || toolKey === 'run') {
@@ -492,7 +493,7 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
           return (
             <Box paddingLeft={2}>
               <Text>
-                {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().edit + ' Update'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}{' '}<Text dimColor>\u00b7 </Text><Text color="#ef4444">-{removedCount}</Text><Text dimColor>{' '}</Text><Text color="#4ade80">+{addedCount}</Text>{' lines'}<Text dimColor>{' \u00b7 '}</Text><Text color="#f59e0b">{'Ctrl+E expand tools'}</Text>
+                {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().edit + ' Update'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}{' '}<Text dimColor>\u00b7 </Text><Text color="#ef4444">-{removedCount}</Text><Text dimColor>{' '}</Text><Text color="#4ade80">+{addedCount}</Text>{' lines'}<Text dimColor>{''}</Text>
               </Text>
             </Box>
           );
@@ -542,7 +543,7 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
           return (
             <Box paddingLeft={2}>
               <Text>
-                {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().write + ' Write'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}{lineCount > 0 && <><Text dimColor>{' \u00b7 '}</Text><Text color="#4ade80">+{lineCount}</Text><Text dimColor>{' lines'}</Text></>}<Text dimColor>{' \u00b7 '}</Text><Text color="#f59e0b">{'Ctrl+E expand tools'}</Text>
+                {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().write + ' Write'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}{lineCount > 0 && <><Text dimColor>{' \u00b7 '}</Text><Text color="#4ade80">+{lineCount}</Text><Text dimColor>{' lines'}</Text></>}<Text dimColor>{''}</Text>
               </Text>
             </Box>
           );
@@ -728,6 +729,7 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
     case 'dashboard': return <DashboardView event={event as OutputEvent & { type: 'dashboard' }} />;
     case 'plan-proposal': return <PlanProposalView plan={event.plan} />;
     case 'plan-execution': return <PlanExecutionView plan={(event as any).plan} />;
+    case 'tool-call-group': return <ToolCallGroup blocks={(event as any).blocks} />;
     default: return null;
   }
 });
@@ -802,7 +804,7 @@ const DebateGroup = React.memo(function DebateGroup({ blocks }: { blocks:OutputB
           </Text>
         );
       })}
-      <Text color="#a78bfa">{'\u2514'}<Text color="#f59e0b">{' \u25b8 Ctrl+E expand'}</Text></Text>
+      <Text color="#a78bfa">{'\u2514'}<Text color="#f59e0b">{''}</Text></Text>
     </Box>
   );
 });
@@ -831,7 +833,7 @@ const BidGroup = React.memo(function BidGroup({ blocks }: { blocks:OutputBlock[]
           </Text>
         );
       })}
-      <Text color="#22d3ee">{'\u2514'}<Text color="#f59e0b">{' \u25b8 Ctrl+E expand'}</Text></Text>
+      <Text color="#22d3ee">{'\u2514'}<Text color="#f59e0b">{''}</Text></Text>
     </Box>
   );
 });

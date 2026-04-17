@@ -96,6 +96,9 @@ union name=OutputEvent discriminant=type
     field name=input type=string
     field name=status type="'running'|'done'|'error'"
     field name=output type=string optional=true
+  variant name=tool-call-group
+    doc "A compacted group of consecutive tool-call blocks, committed to Static as a single summary row a-la Claude Code. Built by output.kern's pending buffer on non-tool events or /clear."
+    field name=blocks type="any[]"
   variant name=user-message
     field name=content type=string
   variant name=response-meta

@@ -44,6 +44,7 @@ export type OutputEvent =
   | { type: 'permission-ask'; tool: string; command: string; description?: string; reason: string; resolve: (approved: boolean) => void }
   | { type: 'patch-review'; winnerId: string; patchPath: string; patchContent: string }
   | { type: 'tool-call'; engineId: string; tool: string; input: string; status: 'running'|'done'|'error'; output?: string }
+  | { type: 'tool-call-group'; blocks: any[] }
   | { type: 'user-message'; content: string }
   | { type: 'response-meta'; engineId: string; elapsed: number; inputTokens?: number; outputTokens?: number; cost?: number }
   | { type: 'confidence-update'; value: number|null }

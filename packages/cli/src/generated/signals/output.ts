@@ -87,6 +87,36 @@ export function clearThinkingBuffer(): void {
   _thinkingBuffer.content = '';
 }
 
+export const _pendingToolCalls: any[] = [] as any[];
+
+export const _pendingFlushTimer: { timer: any, actions: any } = ({ timer: null, actions: null }) as any;
+
+/**
+ * Emit any buffered tool-call events as a single tool-call-group block.
+ */
+export function flushPendingToolCalls(actions: OutputActions): void {
+  if (_pendingFlushTimer.timer) {
+    clearTimeout(_pendingFlushTimer.timer);
+    _pendingFlushTimer.timer = null;
+  }
+  if (_pendingToolCalls.length === 0) return;
+  const blocks = _pendingToolCalls.map((event: any) => ({ id: Date.now() + Math.random(), event }));
+  _pendingToolCalls.length = 0;
+  actions.addBlock({ type: 'tool-call-group', blocks } as any);
+}
+
+/**
+ * Debounce-flush pending tool-calls 300ms after the last one — covers turns that end on a tool-call without any trailing event.
+ */
+export function schedulePendingFlush(actions: OutputActions): void {
+  _pendingFlushTimer.actions = actions;
+  if (_pendingFlushTimer.timer) clearTimeout(_pendingFlushTimer.timer);
+  _pendingFlushTimer.timer = setTimeout(() => {
+    _pendingFlushTimer.timer = null;
+    if (_pendingFlushTimer.actions) flushPendingToolCalls(_pendingFlushTimer.actions);
+  }, 300);
+}
+
 /**
  * Auto-approve queued permissions whose base command is already in allowedCommands.
  */
@@ -163,6 +193,12 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
     actions.addBlock({ type: 'thinking-chunk', engineId: _thinkingBuffer.engineId, chunk: _thinkingBuffer.content } as any);
     _thinkingBuffer.engineId = '';
     _thinkingBuffer.content = '';
+  }
+  
+  // Flush buffered tool-calls as one tool-call-group block when any other
+  // event arrives. /clear drops them without committing (handled in case).
+  if (event.type !== 'tool-call' && event.type !== 'clear' && _pendingToolCalls.length > 0) {
+    flushPendingToolCalls(actions);
   }
   
   switch (event.type) {
@@ -249,6 +285,7 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
       actions.setAgentProgress({});
       actions.setQuestionState(null);
       actions.setPendingPlanProposal(null);
+      _pendingToolCalls.length = 0;
       actions.setReviewEvent(null);
       codeBlockBuffer.clear();
       _thinkingBuffer.engineId = '';
@@ -470,7 +507,15 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
           },
         };
       });
-      actions.addBlock(event);
+      // Buffer finalized tool-calls only. 'running' events only update
+      // the live progress view above — committing them here would double-
+      // count in the group summary (running + done for the same tool).
+      // The group flushes on the next non-tool event OR after a 300ms
+      // quiet period so terminal-tool-call turns still render eventually.
+      if (te.status === 'done' || te.status === 'error') {
+        _pendingToolCalls.push(event);
+        schedulePendingFlush(actions);
+      }
       return;
     }
     default:

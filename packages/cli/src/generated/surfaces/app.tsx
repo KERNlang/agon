@@ -1597,30 +1597,34 @@ export function App() {
 
   useStableInput(handleKeyboardInput);
   return (
-  <Box flexDirection="column" height={Math.max(8, termHeight)} width="100%" flexShrink={0}>
+  <>
+  {/* Static committed history — MUST be a sibling of the dynamic tree,
+      not nested inside a Box. Ink's <Static> uses position:absolute and
+      breaks scrollback if wrapped. When startup dashboard is visible we
+      feed it an empty items list so nothing commits prematurely. */}
+  <Static items={startupUseDashboardView ? [] : outputBlocks.filter((b: any) => b.event?.type !== 'dashboard')}>
+    {(item: any) => (
+      <Box key={item.id} flexDirection="column">
+        <OutputBlockView
+          event={item.event}
+          mode={mode}
+          toolOutputExpanded={toolOutputExpanded}
+          thinkingExpanded={thinkingExpanded}
+        />
+      </Box>
+    )}
+  </Static>
+  <Box flexDirection="column" width="100%" flexShrink={0}>
     <ChromeBar mode={mode} cwdLabel={resolveWorkingDir().split('/').pop() ?? ''} engineCount={availableEngines.length} replState={replState} runningJobs={runningJobs} />
     <BackgroundJobRail jobs={runningJobs} />
-    <Box flexDirection="column" flexGrow={historyNeedsViewportFill ? 1 : 0} flexShrink={1}>
+    <Box flexDirection="column">
       <>
-        {startupUseDashboardView ? (
+        {startupUseDashboardView && (
           <Box flexDirection="column">
             <DashboardView event={outputBlocks[0]?.event as any} />
           </Box>
-        ) : (
-          <Static items={outputBlocks.filter((b: any) => b.event?.type !== 'dashboard')}>
-            {(item: any) => (
-              <Box key={item.id} flexDirection="column">
-                <OutputBlockView
-                  event={item.event}
-                  mode={mode}
-                  toolOutputExpanded={toolOutputExpanded}
-                  thinkingExpanded={thinkingExpanded}
-                />
-              </Box>
-            )}
-          </Static>
         )}
-        
+  
         {livePaneVisible && (
           <>
             <StreamingView streamingText={activeStream} mode={mode} liveProgress={liveProgress} />
@@ -1792,6 +1796,7 @@ export function App() {
       </Box>
     )}
   </Box>
+  </>
   );
 }
 
@@ -1882,6 +1887,16 @@ export function toolDetailViewportRows(termHeight: number): number {
 export function findLatestToolDetailEvent(blocks: OutputBlock[]): any {
   for (let index = blocks.length - 1; index >= 0; index -= 1) {
     const event = blocks[index]?.event as any;
+    // Tool-calls are bundled into tool-call-group blocks once finalized.
+    // Dig into the group to find the latest individual tool event so
+    // Ctrl+O (openLatestToolDetail) still works on grouped history.
+    if (event?.type === 'tool-call-group' && Array.isArray(event.blocks)) {
+      for (let g = event.blocks.length - 1; g >= 0; g -= 1) {
+        const inner = event.blocks[g]?.event;
+        if (detailViewerSupportsEvent(inner)) return inner;
+      }
+      continue;
+    }
     if (!detailViewerSupportsEvent(event)) continue;
     return event;
   }

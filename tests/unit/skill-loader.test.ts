@@ -3,12 +3,15 @@ import { loadSkillFile, findSkill, renderSkillPrompt, parseFrontmatter } from '.
 import { writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { randomUUID } from 'node:crypto';
 
 describe('SkillLoader', () => {
-  const testDir = join(tmpdir(), `skill-test-${Date.now()}`);
+  let testDir: string;
 
   afterEach(() => {
-    try { rmSync(testDir, { recursive: true, force: true }); } catch {}
+    if (testDir) {
+      try { rmSync(testDir, { recursive: true, force: true }); } catch (e) { console.warn('cleanup failed:', e); }
+    }
   });
 
   describe('parseFrontmatter', () => {
@@ -30,6 +33,7 @@ describe('SkillLoader', () => {
 
   describe('loadSkillFile', () => {
     it('loads a valid skill file', () => {
+      testDir = join(tmpdir(), `skill-test-${randomUUID()}`);
       mkdirSync(testDir, { recursive: true });
       const filePath = join(testDir, 'test.md');
       writeFileSync(filePath, '---\nname: Test Skill\ntrigger: /test\ndescription: A test\n---\nDo {input}');
@@ -43,6 +47,7 @@ describe('SkillLoader', () => {
     });
 
     it('returns null for file without name', () => {
+      testDir = join(tmpdir(), `skill-test-${randomUUID()}`);
       mkdirSync(testDir, { recursive: true });
       const filePath = join(testDir, 'bad.md');
       writeFileSync(filePath, '---\ntrigger: /bad\n---\nBody');
@@ -52,6 +57,7 @@ describe('SkillLoader', () => {
     });
 
     it('returns null for file without trigger', () => {
+      testDir = join(tmpdir(), `skill-test-${randomUUID()}`);
       mkdirSync(testDir, { recursive: true });
       const filePath = join(testDir, 'notrigger.md');
       writeFileSync(filePath, '---\nname: No Trigger\n---\nBody');
@@ -61,6 +67,7 @@ describe('SkillLoader', () => {
     });
 
     it('adds / prefix to trigger if missing', () => {
+      testDir = join(tmpdir(), `skill-test-${randomUUID()}`);
       mkdirSync(testDir, { recursive: true });
       const filePath = join(testDir, 'noslash.md');
       writeFileSync(filePath, '---\nname: No Slash\ntrigger: mycommand\n---\nBody');

@@ -36,3 +36,25 @@ npm run typecheck      # tsc -b
 - verbatimModuleSyntax: import type for type-only
 - Vitest testing, tsc type checking
 - Engine defs: engines/*.json
+
+## Error Handling Philosophy
+
+- Silent `catch {}` is **intentional** for: feature detection (file probes), optional metadata reads (package.json, Cargo.toml), best-effort cleanup (unlinkSync temp files), JSON parse fallbacks
+- **Do log** (`console.warn`) for: session close failures, process kill failures, state persistence errors — anything where silent failure could corrupt state or leak resources
+- Pattern: `console.warn(\`[agon] context: \${e instanceof Error ? e.message : String(e)}\`)`
+
+## Known State
+
+- All listed bugs in task-a-bugs.md have been verified as already fixed
+- The generated/ catch blocks are intentionally silent — do not flag as issues
+
+## Error Handling Philosophy
+
+- Silent `catch {}` is **intentional** for: feature detection (file probes), optional metadata reads (package.json, Cargo.toml), best-effort cleanup (unlinkSync temp files), JSON parse fallbacks
+- **Do log** (`console.warn`) for: session close failures, process kill failures, state persistence errors — anything where silent failure could corrupt state or leak resources
+- Pattern: `console.warn(\`[agon] context: \${e instanceof Error ? e.message : String(e)}\`)`
+
+## Known State
+
+- All listed bugs in task-a-bugs.md have been verified as already fixed
+- The generated/ catch blocks are intentionally silent — do not flag as issues

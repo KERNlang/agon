@@ -1654,7 +1654,7 @@ export function App() {
           </>
         )}
         {pendingPlanProposal && (
-          <PlanProposalView plan={(pendingPlanProposal as any).plan} />
+          <PlanProposalView plan={(pendingPlanProposal as any).plan} markdown={(pendingPlanProposal as any).markdown} />
         )}
       </>
     </Box>

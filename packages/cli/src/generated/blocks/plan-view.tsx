@@ -4,11 +4,13 @@ import React from 'react';
 import { Box, Text } from 'ink';
 
 // ── Core ───────────────────────────────────────────────
-import { contentWidth, engineColor } from './rendering.js';
+import { contentWidth, engineColor, RenderedSegments } from './rendering.js';
+
+import { parseMarkdownBlocks } from './markdown.js';
 
 import { icons } from '../signals/icons.js';
 
-export function PlanProposalView({ plan }: { plan:any }) {
+export function PlanProposalView({ plan, markdown }: { plan:any; markdown?:string }) {
   const steps = plan.steps ?? [];
   const totalTokens = plan.totalEstimatedTokens ?? steps.reduce((sum: number, s: any) => sum + (s.estimatedTokens ?? 0), 0);
   const totalCost = plan.totalEstimatedCostUsd ?? steps.reduce((sum: number, s: any) => sum + (s.estimatedCostUsd ?? 0), 0);
@@ -18,6 +20,37 @@ export function PlanProposalView({ plan }: { plan:any }) {
   const bar = '\u2550'.repeat(barWidth);
   const thinBar = '\u2500'.repeat(barWidth);
   const planColor = '#c084fc';
+  
+  // Claude-Code-style markdown rendering for the plan body. The
+  // structured step boxes below are kept as a fallback when no
+  // markdown was provided — otherwise the markdown is the source
+  // of truth and the user sees the same rich plan Cesar wrote to
+  // ~/.agon/plans/cesar-*.md.
+  if (markdown && markdown.trim()) {
+    const wrapWidth = contentWidth(6);
+    const segments = parseMarkdownBlocks(markdown);
+    return (
+      <Box flexDirection="column" paddingLeft={2} marginY={1}>
+        <Text color={planColor} bold>{'\u2554'}{bar}{'\u2557'}</Text>
+        <Text color={planColor}>{'\u2551 '}<Text bold color="white">{'\u25b8 PLAN'}</Text></Text>
+        <Text color={planColor}>{'\u2551 '}<Text dimColor>{steps.length}{' steps \u00b7 ~'}{totalTokens.toLocaleString()}{' tokens \u00b7 $'}{totalCost.toFixed(2)}{' est'}</Text></Text>
+        {allEngines.length > 0 && (
+          <Box>
+            <Text color={planColor}>{'\u2551 '}<Text dimColor>{'Engines: '}</Text></Text>
+            {allEngines.map((id: string, i: number) => (
+              <Box key={id}>
+                <Text bold color={engineColor(id)}>{id}</Text>
+                {i < allEngines.length - 1 && <Text dimColor>{', '}</Text>}
+              </Box>
+            ))}
+          </Box>
+        )}
+        <Text color={planColor}>{'\u255f'}{thinBar}{'\u2562'}</Text>
+        <RenderedSegments segments={segments} borderColor={planColor} wrapWidth={wrapWidth} />
+        <Text color={planColor} bold>{'\u255a'}{bar}{'\u255d'}</Text>
+      </Box>
+    );
+  }
   
   return (
     <Box flexDirection="column" paddingLeft={2} marginY={1}>

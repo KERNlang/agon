@@ -141,11 +141,9 @@ screen name=StatusBar target=ink
             {thinkingExpanded !== undefined && <Text dimColor>{' \u00b7 '}{thinkingExpanded ? 'thinking shown (' : 'thinking hidden ('}</Text>}
             {thinkingExpanded !== undefined && <Text color="#f59e0b">{'Ctrl+T'}</Text>}
             {thinkingExpanded !== undefined && <Text dimColor>{')'}</Text>}
-            {fullscreenEnabled !== undefined && <Text dimColor>{' \u00b7 '}{fullscreenEnabled ? (selectionMode ? 'select mode' : 'app scroll') : 'native scroll'}</Text>}
             <Text dimColor>{' \u00b7 copy ('}</Text>
             <Text color="#f59e0b">{'Ctrl+Y'}</Text>
             <Text dimColor>{')'}</Text>
-            {fullscreenEnabled ? <><Text dimColor>{' \u00b7 mouse select ('}</Text><Text color="#f59e0b">{'Ctrl+G'}</Text><Text dimColor>{')'}</Text></> : null}
             {isActive ? <Text dimColor>{' \u00b7 /btw ask'}</Text> : null}
           </Text>
         </Box>

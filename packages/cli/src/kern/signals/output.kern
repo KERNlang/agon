@@ -80,6 +80,42 @@ fn name=clearThinkingBuffer returns=void
     _thinkingBuffer.content = '';
   >>>
 
+// ── Tool-call grouping buffer — bundles consecutive finalized tool-call
+// events into a single compact tool-call-group block, Claude-Code style.
+// Flushed when a non-tool event arrives OR after a 300ms quiet period so
+// turns that end on a tool-call (e.g., /run) don't leave the final row
+// stranded. Only status=done/error events are buffered — the running
+// event only updates AgentProgressView live.
+const name=_pendingToolCalls type="any[]"
+  handler <<< [] as any[] >>>
+
+const name=_pendingFlushTimer type="{ timer: any, actions: any }"
+  handler <<< ({ timer: null, actions: null }) as any >>>
+
+fn name=flushPendingToolCalls params="actions:OutputActions" returns=void export=true
+  doc "Emit any buffered tool-call events as a single tool-call-group block."
+  handler <<<
+    if (_pendingFlushTimer.timer) {
+      clearTimeout(_pendingFlushTimer.timer);
+      _pendingFlushTimer.timer = null;
+    }
+    if (_pendingToolCalls.length === 0) return;
+    const blocks = _pendingToolCalls.map((event: any) => ({ id: Date.now() + Math.random(), event }));
+    _pendingToolCalls.length = 0;
+    actions.addBlock({ type: 'tool-call-group', blocks } as any);
+  >>>
+
+fn name=schedulePendingFlush params="actions:OutputActions" returns=void
+  doc "Debounce-flush pending tool-calls 300ms after the last one — covers turns that end on a tool-call without any trailing event."
+  handler <<<
+    _pendingFlushTimer.actions = actions;
+    if (_pendingFlushTimer.timer) clearTimeout(_pendingFlushTimer.timer);
+    _pendingFlushTimer.timer = setTimeout(() => {
+      _pendingFlushTimer.timer = null;
+      if (_pendingFlushTimer.actions) flushPendingToolCalls(_pendingFlushTimer.actions);
+    }, 300);
+  >>>
+
 fn name=_drainAutoApproved params="actions:OutputActions" returns=void export=false
   doc "Auto-approve queued permissions whose base command is already in allowedCommands."
   handler <<<
@@ -155,6 +191,12 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
       actions.addBlock({ type: 'thinking-chunk', engineId: _thinkingBuffer.engineId, chunk: _thinkingBuffer.content } as any);
       _thinkingBuffer.engineId = '';
       _thinkingBuffer.content = '';
+    }
+
+    // Flush buffered tool-calls as one tool-call-group block when any other
+    // event arrives. /clear drops them without committing (handled in case).
+    if (event.type !== 'tool-call' && event.type !== 'clear' && _pendingToolCalls.length > 0) {
+      flushPendingToolCalls(actions);
     }
 
     switch (event.type) {
@@ -241,6 +283,7 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
         actions.setAgentProgress({});
         actions.setQuestionState(null);
         actions.setPendingPlanProposal(null);
+        _pendingToolCalls.length = 0;
         actions.setReviewEvent(null);
         codeBlockBuffer.clear();
         _thinkingBuffer.engineId = '';
@@ -462,7 +505,15 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
             },
           };
         });
-        actions.addBlock(event);
+        // Buffer finalized tool-calls only. 'running' events only update
+        // the live progress view above — committing them here would double-
+        // count in the group summary (running + done for the same tool).
+        // The group flushes on the next non-tool event OR after a 300ms
+        // quiet period so terminal-tool-call turns still render eventually.
+        if (te.status === 'done' || te.status === 'error') {
+          _pendingToolCalls.push(event);
+          schedulePendingFlush(actions);
+        }
         return;
       }
       default:

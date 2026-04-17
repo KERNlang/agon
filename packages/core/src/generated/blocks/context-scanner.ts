@@ -149,4 +149,14 @@ export function scanProjectContext(cwd: string, extraContext?: string, format?: 
       }
     } catch {}
   }
+  
+  let result = sections.join('\n\n');
+  if (result.length > MAX_CHARS) {
+    result = result.slice(0, MAX_CHARS) + '\n... (truncated)';
+  }
+  
+  if (format === 'kern') {
+    return `context {\n${result}\n}`;
+  }
+  return result;
 }

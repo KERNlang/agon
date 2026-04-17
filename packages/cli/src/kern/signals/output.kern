@@ -193,9 +193,26 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
       _thinkingBuffer.content = '';
     }
 
-    // Flush buffered tool-calls as one tool-call-group block when any other
-    // event arrives. /clear drops them without committing (handled in case).
-    if (event.type !== 'tool-call' && event.type !== 'clear' && _pendingToolCalls.length > 0) {
+    // Flush buffered tool-calls only when an event that actually emits a
+    // transcript row arrives (or on /clear). Ephemeral UI updates like
+    // spinner-*, progress-*, confidence-update, streaming-chunk, thinking-*
+    // fire constantly between tool calls and would otherwise break the
+    // bundle into per-tool groups — which is exactly how Claude Code's
+    // single "N tool calls" summary differs from Agon's current render.
+    // Events kept out of this set DO flush the buffer so tool bundles
+    // commit before the next transcript row. Notable: streaming-end,
+    // question, and patch-review MUST flush — their handlers commit
+    // transcript blocks and we need tools → answer order preserved
+    // (codex/gemini/opencode review).
+    const _nonFlushing = new Set([
+      'tool-call', 'clear',
+      'spinner-start', 'spinner-stop', 'spinner-update',
+      'progress-update', 'progress-clear',
+      'confidence-update',
+      'streaming-chunk', 'streaming-start',
+      'thinking-chunk', 'thinking-start', 'thinking-stop',
+    ]);
+    if (!_nonFlushing.has(event.type) && _pendingToolCalls.length > 0) {
       flushPendingToolCalls(actions);
     }
 

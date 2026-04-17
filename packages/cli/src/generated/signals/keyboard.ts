@@ -116,10 +116,11 @@ export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
   // Ctrl+L: clear
   if (key.ctrl && normalizedCtrlInput === 'l') return { type: 'submit', value: '/clear' };
   
-  // Scroll keys (Shift+Up/Down, PageUp/Down, Home/End) are intentionally
-  // unbound. Terminal scrollback is native now (Ink Static commits history
-  // to the emulator), so the terminal owns wheel + keyboard scroll. Leaving
-  // these bound would swallow the keys and produce a no-op.
+  // Scroll keys (Shift+Up/Down, PageUp/Down, Home/End) intentionally
+  // unbound: the terminal owns scrollback until we have a proper KERN
+  // <scroll-box> primitive that matches Claude Code's forked-Ink pattern
+  // (overflow:scroll + viewport culling + DOM-level scrollTop). See
+  // docs/KERN-GAP-scroll-box.md for the primitive spec.
   
   // Ctrl+E: toggle tool output expansion
   if (key.ctrl && normalizedCtrlInput === 'e') return { type: 'toggleToolExpand' };

@@ -190,27 +190,16 @@ const HistoryView = React.memo(function HistoryView({ visibleRows, rowsAbove, ro
           </Text>
         </Box>
       )}
-      {(() => {
-        const scrollbarCells = buildHistoryScrollbarCells(rowsAbove, visibleRows.length, rowsBelow);
-        return (
-          <Box flexDirection="row">
-            <Box flexDirection="column" flexGrow={1}>
-              {visibleRows.map((row: any) => (
-                <TranscriptRowView key={row.key} row={row} />
-              ))}
-            </Box>
-            {scrollbarCells.length > 0 && (
-              <Box flexDirection="column" flexShrink={0} marginLeft={1}>
-                {scrollbarCells.map((cell: string, index: number) => (
-                  <Text key={`history-scrollbar-${index}`} color={cell === 'thumb' ? '#60a5fa' : '#30363d'}>
-                    {cell === 'thumb' ? '\u2590' : '\u2502'}
-                  </Text>
-                ))}
-              </Box>
-            )}
-          </Box>
-        );
-      })()}
+      {/* KERN-GAP: scroll-box primitive. Until that lands, HistoryView
+          renders just the sliced rows without its own scrollbar so the
+          terminal's native scrollbar is the only one visible. The cells
+          helper (buildHistoryScrollbarCells) and the row above/below
+          indicator text remain available for the future primitive. */}
+      <Box flexDirection="column">
+        {visibleRows.map((row: any) => (
+          <TranscriptRowView key={row.key} row={row} />
+        ))}
+      </Box>
     </Box>
   );
 });

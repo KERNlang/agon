@@ -471,7 +471,7 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
                 <>
                   <Text> </Text>
                   {headLines.map((line: string, i: number) => renderLine(line, i, 'head'))}
-                  {skipped > 0 && <Text dimColor>{'    \u2026 '}{skipped}{' more lines \u2026 (Ctrl+E to expand all)'}</Text>}
+                  {skipped > 0 && <Text dimColor>{'    \u2026 '}{skipped}{' more lines \u2026'}</Text>}
                   {tailLines.map((line: string, i: number) => renderLine(line, i, 'tail'))}
                 </>
               );
@@ -778,7 +778,6 @@ const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:Out
         <Text bold>{` ${blocks.length} tool calls`}</Text>
         <Text dimColor>{` (${summary})`}</Text>
         {changedSummary && <Text color="#a78bfa">{changedSummary}</Text>}
-        <Text color="#f59e0b">{' \u25b8 Ctrl+E'}</Text>
       </Text>
     </Box>
   );

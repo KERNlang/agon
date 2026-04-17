@@ -228,6 +228,7 @@ interface name=CesarState
   field name=reportedConfidence type="number | undefined"
   field name=confidenceSatisfied type=boolean
   field name=blockedOnConfidence type="{ name:string; args:Record<string,unknown> } | null"
+  field name=quickNeroRequested type=boolean optional=true
   field name=autoNero type=boolean
   field name=advisorPending type=boolean
   field name=mcpFingerprint type="string | undefined"

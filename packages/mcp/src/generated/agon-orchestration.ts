@@ -108,6 +108,16 @@ export const ORCHESTRATION_TOOLS: Array<{name:string,description:string,inputSch
     },
   },
   {
+    name: 'QuickNero',
+    description: 'Request a structured self-challenge on your current response. Pokes at assumptions before you commit to staying local. Use when you are midway between sure and unsure and want a gut-check. The self-check runs after the tool loop. Does NOT stop your turn — continue after calling.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        reason: { type: 'string', description: 'Brief reason for requesting the self-check. Optional.' },
+      },
+    },
+  },
+  {
     name: 'AgonBash',
     description: 'Execute a shell command. Agon manages permissions — the user will be asked to approve write commands (git commit, npm install, etc.). Read-only commands are auto-approved. Use this instead of your native Bash tool for all shell commands.',
     inputSchema: {
@@ -169,10 +179,13 @@ export function writeSignal(tool: string, args: Record<string,unknown>) {
  * Handle an MCP tool call — write signal and return delegation message.
  */
 export function handleToolCall(name: string, args: Record<string,unknown>): string {
-  const NON_BREAKING = new Set(['ReportConfidence']);
+  const NON_BREAKING = new Set(['ReportConfidence', 'QuickNero']);
   const BREAK_AND_RESUME = new Set(['Delegate']);
   writeSignal(name, args);
   if (NON_BREAKING.has(name)) {
+    if (name === 'QuickNero') {
+      return 'Quick Nero self-check scheduled. Continue responding — the self-check runs after the tool loop.';
+    }
     return `Confidence ${(args as any).value}% recorded. Continue responding.`;
   }
   if (BREAK_AND_RESUME.has(name)) {

@@ -125,7 +125,7 @@ export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatc
   CONVERGE: {yes|no}
   CONVERGENCE:
   - file:{path} fn:{name} from:{engineId} reason:{why}
-  SUMMARY: {1-2 sentence judgment}`;
+  SUMMARY: {your read — as long or as short as it actually deserves}`;
   
       dispatch({ type: 'spinner-start', message: 'Cesar judging forge results…', color });
   

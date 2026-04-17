@@ -352,6 +352,40 @@ export function createAgentTool(): ToolHandler {
 }
 
 /**
+ * Signal tool — Cesar requests a structured self-challenge (Quick Nero) after the tool loop.
+ */
+export function createQuickNeroTool(): ToolHandler {
+  const definition: ToolDefinition = {
+    name: 'QuickNero',
+    description: 'Request a structured self-challenge on your current response. Calls out assumptions and weak spots before you commit to staying local. Use when you are midway between sure and unsure and want a gut-check. Adds the self-check as an OR-branch to the existing auto-gate — auto-gate still fires on its own triggers. After calling, keep responding; the self-check runs after the tool loop completes.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        reason: { type: 'string', description: 'Brief reason for requesting the self-check. Optional.' },
+      },
+      required: [],
+    },
+    maxResultSizeChars: 200,
+    isReadOnly: true,
+    isConcurrencySafe: true,
+  };
+  
+  const validate = (_input: Record<string, unknown>, _ctx: ToolContext): string | null => {
+    return null;
+  };
+  
+  const checkPermission = (_input: Record<string, unknown>, _ctx: ToolContext): PermissionDecision => {
+    return { behavior: 'allow' };
+  };
+  
+  const execute = async (_input: Record<string, unknown>, _ctx: ToolContext): Promise<ToolResult> => {
+    return { ok: true, content: 'Quick Nero self-check scheduled. Continue responding — the self-check runs after the tool loop.' };
+  };
+  
+  return { definition, validate, checkPermission, execute };
+}
+
+/**
  * Signal tool — delegates to full pipeline (brainstorm → forge → tribunal).
  */
 export function createPipelineTool(): ToolHandler {

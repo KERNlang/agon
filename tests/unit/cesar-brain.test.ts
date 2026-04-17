@@ -143,80 +143,22 @@ describe('Cesar Brain', () => {
       expect(result.hardened).toBe(true);
     });
 
-    // ── Keyword fallback: natural language delegation ──
-    it('keyword fallback: "I\'ll forge this"', () => {
-      const result = parseSuggestion("~88% I'll forge this complex auth refactor for you.");
-      expect(result.action).toBe('forge');
+    // NL-phrase fallback was removed — parser now only honors explicit [SUGGEST:mode] / [DELEGATE:mode] markers.
+    it('does not match natural-language intent without an explicit marker', () => {
+      expect(parseSuggestion("~88% I'll forge this refactor for you.").action).toBeNull();
+      expect(parseSuggestion("~87% Let me brainstorm on this.").action).toBeNull();
+      expect(parseSuggestion("~86% This needs a tribunal.").action).toBeNull();
+      expect(parseSuggestion("~85% I suggest we launch a campfire.").action).toBeNull();
     });
 
-    it('keyword fallback: "let me brainstorm"', () => {
-      const result = parseSuggestion("~87% Let me brainstorm on this architecture question.");
-      expect(result.action).toBe('brainstorm');
+    it('ignores bare mode words in descriptive prose', () => {
+      expect(parseSuggestion("~95% The forge pattern is common in metallurgy.").action).toBeNull();
+      expect(parseSuggestion("~95% Team-forge pits two teams against each other.").action).toBeNull();
     });
 
-    it('keyword fallback: "this needs a tribunal"', () => {
-      const result = parseSuggestion("~86% This needs a tribunal to settle the debate.");
-      expect(result.action).toBe('tribunal');
-    });
-
-    it('keyword fallback: "launch a campfire"', () => {
-      const result = parseSuggestion("~85% I suggest we launch a campfire discussion.");
-      expect(result.action).toBe('campfire');
-    });
-
-    it('keyword fallback: "delegate to forge"', () => {
-      const result = parseSuggestion("~89% I should delegate to forge for this task.");
-      expect(result.action).toBe('forge');
-    });
-
-    it('keyword fallback: forge-hardened', () => {
-      const result = parseSuggestion("~87% This warrants a forge-hardened run.");
-      expect(result.action).toBe('forge');
-      expect(result.hardened).toBe(true);
-    });
-
-    it('keyword fallback: team-forge', () => {
-      const result = parseSuggestion("~86% Let me set up a team-forge competition.");
-      expect(result.action).toBe('team-forge');
-      expect(result.team).toBe(true);
-    });
-
-    it('keyword fallback: tribunal-adversarial', () => {
-      const result = parseSuggestion("~85% I suggest a tribunal-adversarial debate would help here.");
-      expect(result.action).toBe('tribunal');
-      expect(result.tribunalMode).toBe('adversarial');
-    });
-
-    it('keyword fallback: does NOT match bare "forge" without intent', () => {
-      const result = parseSuggestion("~95% The forge pattern is common in metallurgy and blacksmithing.");
-      expect(result.action).toBeNull();
-    });
-
-    it('keyword fallback: does NOT match bare "team-forge" description', () => {
-      const result = parseSuggestion("~95% Team-forge pits two teams of models against each other.");
-      expect(result.action).toBeNull();
-    });
-
-    it('keyword fallback: does NOT match bare "tribunal-adversarial" description', () => {
-      const result = parseSuggestion("~95% The tribunal-adversarial mode enables heated debate.");
-      expect(result.action).toBeNull();
-    });
-
-    it('keyword fallback: matches delegation in last 600 chars', () => {
-      const padding = 'x'.repeat(400);
-      const result = parseSuggestion(`${padding} I'll forge this task.`);
-      expect(result.action).toBe('forge');
-    });
-
-    it('keyword fallback: does NOT match beyond 600 chars from end', () => {
-      const padding = 'x'.repeat(700);
-      const result = parseSuggestion(`I'll forge this task. ${padding}`);
-      expect(result.action).toBeNull();
-    });
-
-    it('[SUGGEST:mode] takes priority over keyword fallback', () => {
+    it('explicit [SUGGEST:mode] still parses even when the rest mentions other modes', () => {
       const result = parseSuggestion("[SUGGEST:brainstorm] I'll forge this.");
-      expect(result.action).toBe('brainstorm'); // marker wins, not keyword
+      expect(result.action).toBe('brainstorm');
     });
   });
 

@@ -110,6 +110,7 @@ export interface CesarState {
   reportedConfidence: number | undefined;
   confidenceSatisfied: boolean;
   blockedOnConfidence: { name:string; args:Record<string,unknown> } | null;
+  quickNeroRequested?: boolean;
   autoNero: boolean;
   advisorPending: boolean;
   mcpFingerprint: string | undefined;

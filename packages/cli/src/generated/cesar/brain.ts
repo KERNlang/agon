@@ -610,8 +610,11 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                   dispatch({ type: 'info', message: confidenceBadge(value) + ` Cesar (via MCP)` });
                   dispatch({ type: 'confidence-update', value });
                 }
+              } else if (signal.tool === 'QuickNero') {
+                // Non-breaking signal: companion-engine Cesar scheduled a self-check
+                ctx.cesar!.quickNeroRequested = true;
               } else {
-                // First non-confidence signal becomes the delegation
+                // First non-confidence, non-quicknero signal becomes the delegation
                 ctx.cesar!.pendingDelegation = extractDelegation(signal.tool, signal.args ?? {});
                 break; // Only one delegation per turn
               }
@@ -773,6 +776,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       }
   
       // ── Quick Nero: structured self-check before Cesar commits to staying local ──
+      // Auto-gate fires on uncertainty-family signals OR when Cesar calls QuickNero() himself.
       const shouldQuickNero = parsedConfidence !== null
         && !secondOpinionPromise
         && !ctx.cesar!.advisorPending
@@ -780,11 +784,14 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         && !abort.signal.aborted
         && !ctx.cesar!.pendingDelegation
         && (
-          routingHints.uncertaintyFamily === 'challenge'
+          ctx.cesar!.quickNeroRequested === true
+          || routingHints.uncertaintyFamily === 'challenge'
           || routingHints.uncertaintyFamily === 'tradeoff'
           || (routingHints.uncertaintyFamily === 'implementation' && parsedConfidence < 86)
           || (mutationDeferred && parsedConfidence < 90)
         );
+      // Consume the flag whether or not we fire — follow-up/aborted cases clear it too
+      if (ctx.cesar!.quickNeroRequested) ctx.cesar!.quickNeroRequested = false;
       if (shouldQuickNero) {
         const quickNeroConfidence = parsedConfidence as number;
         if (streaming) { dispatch({ type: 'streaming-end', engineId: cesarEngineId }); streaming = false; }
@@ -803,10 +810,11 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           dispatch({ type: 'info', message: confidenceBadge(parsedConfidence) + (qnResult.newConfidence < previousConfidence ? ' Confidence adjusted' : ' Confidence confirmed') });
           dispatch({ type: 'confidence-update', value: parsedConfidence });
         }
-        const quickNeroWantsEscalation = qnResult.decision !== 'self'
-          && (routingHints.uncertaintyFamily === 'challenge'
-            || routingHints.uncertaintyFamily === 'tradeoff'
-            || ((qnResult.newConfidence ?? previousConfidence) <= Math.max(74, previousConfidence - 8)));
+        // If Quick Nero explicitly votes to escalate, honor it. The previous
+        // family/confidence filter silently dropped verdicts (e.g. DECISION:tribunal
+        // on an 'implementation' turn with only a small confidence move), which
+        // defeated the self-check's purpose. Trust the decision the self-check emitted.
+        const quickNeroWantsEscalation = qnResult.decision !== 'self';
         if (quickNeroWantsEscalation) {
           const escalationAction = qnResult.team ? `team-${qnResult.decision}` : qnResult.decision;
           const escalationContext = [

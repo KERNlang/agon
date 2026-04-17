@@ -2,7 +2,7 @@
 // Replaces app.tsx monolith. All logic in KERN modules; this is the wiring.
 
 import from="react" names="useState,useCallback,useEffect,useRef,useMemo"
-import from="ink" names="Box,Text,render,Static"
+import from="ink" names="Box,Text,render"
 import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,ensureCurrentWorkspace,startChatSession,getRatings,getActiveWorkspace,RUNS_DIR,extractImagesFromInput,resolveWorkingDir,currentBranch,configSet,createCesarMemory,modelEntryToEngineDef,appendMessage,getAgonHome,tracker,copyToClipboard"
 import from="@agon/core" names="Plan,ChatSession,Skill,PersistentSession,ImageAttachment" types=true
 import from="../../handlers/types.js" names="EngineProgress" types=true
@@ -363,10 +363,17 @@ fn name=createInkStdoutProxy returns=any
     const proxy = new PassThrough();
     (proxy as any).isTTY = process.stdout.isTTY;
     (proxy as any).columns = process.stdout.columns || 100;
-    // Keep Ink off its clearTerminal fallback path. That path emits ESC[3J,
-    // which clears terminal scrollback and makes native scroll/copy unusable.
+    // Keep Ink off its clearTerminal fallback path (ink.js:121). Primary
+    // defense: rows=10000 makes outputHeight >= rows impossible to hit.
+    // Secondary defense: strip ESC[3J (the scrollback-destroying part of
+    // ansi-escapes.clearTerminal) from anything that flows through, so a
+    // future Ink change or any other caller can't wipe native scrollback.
     (proxy as any).rows = 10000;
-    proxy.pipe(process.stdout);
+    proxy.on('data', (chunk: Buffer | string) => {
+      const s = typeof chunk === 'string' ? chunk : chunk.toString('utf8');
+      const cleaned = s.includes('\x1b[3J') ? s.replace(/\x1b\[3J/g, '') : s;
+      process.stdout.write(cleaned);
+    });
 
     process.stdout.on('resize', () => {
       (proxy as any).columns = process.stdout.columns || 100;
@@ -407,7 +414,13 @@ fn name=isMouseTrackingEnabled params="config?:any" returns=boolean
 
 fn name=terminalEnterSequence params="useAltScreen:boolean, useMouse:boolean" returns=string
   handler <<<
-    return `${useAltScreen ? '\x1b[?1049h' : ''}\x1b[?2004h${useMouse ? '\x1b[?1000h\x1b[?1002h\x1b[?1006h' : ''}`;
+    // On alt-screen enter, follow ESC[?1049h with ESC[2J ESC[H so Ink starts
+    // rendering at row 1 instead of wherever the shell left the cursor. Some
+    // terminals (or shell configs that emit content before agon launches)
+    // leave the cursor mid-screen even after alt-screen activation, which
+    // made the dashboard appear ~50% down the viewport with a large blank
+    // region above. Fix verified by codex via TTY capture.
+    return `${useAltScreen ? '\x1b[?1049h\x1b[2J\x1b[H' : ''}\x1b[?2004h${useMouse ? '\x1b[?1000h\x1b[?1002h\x1b[?1006h' : ''}`;
   >>>
 
 fn name=terminalExitSequence params="useAltScreen:boolean" returns=string
@@ -1040,7 +1053,7 @@ fn name=buildToolCallRows params="baseKey:string, event:any, toolOutputExpanded:
     const codeWidth = contentWidth(10);
     const { rawInput, parsed, toolKey } = parseToolCallPayload(event);
     const collapsed = !toolOutputExpanded;
-    const collapsedHint = collapsed ? [{ text: ' · ', dimColor: true }, { text: 'Ctrl+E expand tools', color: '#f59e0b' }] : [];
+    const collapsedHint: any[] = [];
     const nestSegment = { text: ' ⏿ ', color: eColor };
     const pushSegmentsRow = (suffix: string, segments: any[], paddingLeft = 2) => {
       rows.push({ key: `${baseKey}-${suffix}`, kind: 'segments', paddingLeft, segments });
@@ -1423,8 +1436,6 @@ fn name=buildCollapsedToolGroupRows params="baseKey:string, events:any[]" return
         { text: `${events.length} tool calls`, bold: true },
         countSummary ? { text: ' · ', dimColor: true } : null,
         countSummary ? { text: countSummary, dimColor: true } : null,
-        { text: ' · ', dimColor: true },
-        { text: 'Ctrl+E expand tools', color: '#f59e0b' },
       ].filter(Boolean),
     });
 
@@ -1688,6 +1699,61 @@ fn name=buildTranscriptRows params="blocks:OutputBlock[], mode:string, toolOutpu
         case 'tool-call':
           rows.push(...buildToolCallRows(baseKey, event, toolOutputExpanded));
           return;
+        case 'tool-call-group': {
+          const groupBlocks = Array.isArray((event as any).blocks) ? (event as any).blocks : [];
+          // Expanded: unpack every inner tool call so Ctrl+E reveals full
+          // output. Collapsed (default): one compact summary row, matching
+          // the Static-era ToolCallGroup renderer — preserves the bundling
+          // that output.kern emits (codex review P3).
+          if (toolOutputExpanded) {
+            groupBlocks.forEach((child: any, index: number) => {
+              const childEvent = child?.event;
+              if (childEvent && childEvent.type === 'tool-call') {
+                rows.push(...buildToolCallRows(`${baseKey}-g-${index}`, childEvent, toolOutputExpanded));
+              }
+            });
+            return;
+          }
+          const counts: Record<string, number> = {};
+          let errors = 0;
+          let running = 0;
+          let firstEngineId = '';
+          const changedFiles: string[] = [];
+          groupBlocks.forEach((child: any) => {
+            const ev = child?.event;
+            if (!ev || ev.type !== 'tool-call') return;
+            const tool = String(ev.tool || 'tool');
+            counts[tool] = (counts[tool] || 0) + 1;
+            if (ev.status === 'error') errors += 1;
+            if (ev.status === 'running') running += 1;
+            if (!firstEngineId && ev.engineId) firstEngineId = String(ev.engineId);
+            const tk = tool.toLowerCase();
+            if ((tk === 'edit' || tk === 'write') && typeof ev.input === 'string' && ev.input.trim().startsWith('{')) {
+              try {
+                const parsed = JSON.parse(ev.input);
+                const filePath = (parsed.file_path as string) || (parsed.filePath as string) || '';
+                if (filePath) {
+                  const shortPath = filePath.replace(process.cwd() + '/', '').replace(process.env.HOME ?? '', '~');
+                  if (!changedFiles.includes(shortPath)) changedFiles.push(shortPath);
+                }
+              } catch { /* ignore malformed tool input */ }
+            }
+          });
+          const summary = Object.entries(counts).map(([t, n]) => n > 1 ? `${t}\u00d7${n}` : t).join(', ');
+          const statusIcon = errors > 0 ? icons().fail : running > 0 ? '\u27f3' : icons().success;
+          const statusColor = errors > 0 ? '#ef4444' : running > 0 ? '#fbbf24' : '#4ade80';
+          const changedSummary = changedFiles.length > 0
+            ? ` \u00b7 changed ${changedFiles.length} file${changedFiles.length > 1 ? 's' : ''}: ${changedFiles.slice(0, 2).join(', ')}${changedFiles.length > 2 ? ', \u2026' : ''}`
+            : '';
+          pushSegmentsRow(`${baseKey}-group`, 2, [
+            { text: ' \u23bf ', color: engineColor(firstEngineId) },
+            { text: statusIcon, color: statusColor },
+            { text: ` ${groupBlocks.length} tool calls`, bold: true },
+            summary ? { text: ` (${summary})`, dimColor: true } : null,
+            changedSummary ? { text: changedSummary, color: '#a78bfa' } : null,
+          ].filter(Boolean));
+          return;
+        }
         case 'response-meta': {
           const totalTokens = (event.inputTokens ?? 0) + (event.outputTokens ?? 0);
           const parts = [
@@ -3275,32 +3341,23 @@ screen name=App target=ink
     handler <<<
       useStableInput(handleKeyboardInput);
       return (
-      <>
-      {/* Static committed history — MUST be a sibling of the dynamic tree,
-          not nested inside a Box. Ink's <Static> uses position:absolute and
-          breaks scrollback if wrapped. When startup dashboard is visible we
-          feed it an empty items list so nothing commits prematurely. */}
-      <Static items={startupUseDashboardView ? [] : outputBlocks.filter((b: any) => b.event?.type !== 'dashboard')}>
-        {(item: any) => (
-          <Box key={item.id} flexDirection="column">
-            <OutputBlockView
-              event={item.event}
-              mode={mode}
-              toolOutputExpanded={toolOutputExpanded}
-              thinkingExpanded={thinkingExpanded}
-            />
-          </Box>
-        )}
-      </Static>
-      <Box flexDirection="column" width="100%" flexShrink={0}>
+      <Box flexDirection="column" height={Math.max(8, termHeight)} width="100%" flexShrink={0}>
         <ChromeBar mode={mode} cwdLabel={resolveWorkingDir().split('/').pop() ?? ''} engineCount={availableEngines.length} replState={replState} runningJobs={runningJobs} />
         <BackgroundJobRail jobs={runningJobs} />
-        <Box flexDirection="column">
+        <Box flexDirection="column" flexShrink={0}>
           <>
-            {startupUseDashboardView && (
+            {startupUseDashboardView ? (
               <Box flexDirection="column">
                 <DashboardView event={outputBlocks[0]?.event as any} />
               </Box>
+            ) : (
+              <HistoryView
+                visibleRows={visibleWindow.visible}
+                rowsAbove={visibleWindow.rowsAbove}
+                rowsBelow={visibleWindow.rowsBelow}
+                stickToBottom={false}
+                centerContent={false}
+              />
             )}
 
             {livePaneVisible && (
@@ -3336,6 +3393,11 @@ screen name=App target=ink
             )}
           </>
         </Box>
+        {/* Spacer: fills remaining terminal height so content clusters at the
+            top and composer stays pinned to the bottom. Without it, content
+            container flexGrows and the live streaming indicator gets pushed
+            down far from the history rows. */}
+        <Box flexGrow={1} flexShrink={1} />
         {toolDetailView && (
           <ToolDetailBlock
             title={toolDetailView.title}
@@ -3474,7 +3536,6 @@ screen name=App target=ink
           </Box>
         )}
       </Box>
-      </>
       );
     >>>
 
@@ -3501,7 +3562,11 @@ fn name=startRepl async=true returns="Promise<void>"
     });
     if (process.stdout.isTTY) {
       const fullscreenEnabled = isFullscreenEnabled(loadConfig());
-      if (!fullscreenEnabled) process.stdout.write(resetViewportSequence());
+      // In native mode we used to ESC[2J here to clear the viewport before
+      // Ink started rendering. That painted blank rows above the first
+      // <Static> commit in the terminal's scrollback — scrolling up landed
+      // in that empty region. Trust the terminal state; let Ink flow its
+      // output naturally into scrollback.
       process.stdout.write(terminalEnterSequence(fullscreenEnabled, false));
       process.on('exit', () => {
         try {

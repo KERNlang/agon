@@ -958,13 +958,16 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
       const _trimmedResponse = response.trim();
       const TOOL_PROGRESS_RE = /\b(?:let me|i(?:'| a)m going to|i'll|now let me|checking|looking|read the|scanning|investigating|next i'?ll|i've read|good[,—-])\b/i;
       const ANSWERISH_RE = /\b(?:here'?s|here is|the issue|the fix|you should|we should|i found|recommend|conclusion|summary|in short|answer)\b/i;
+      // Don't fire if the response signals intent to continue working
+      const CONTINUE_RE = /\b(?:edit|fix|write|apply|making|doing|now|replace|insert|update|patch|refactor)\b/i;
       const likelyIncompleteAfterTools = !inPlanMode
         && !ctx.cesar!.pendingDelegation
         && session.alive
         && !abort.signal.aborted
         && (hadToolActivity || ranToolLoop)
         && (_trimmedResponse.length < 180 || TOOL_PROGRESS_RE.test(_trimmedResponse))
-        && !ANSWERISH_RE.test(_trimmedResponse);
+        && !ANSWERISH_RE.test(_trimmedResponse)
+        && !CONTINUE_RE.test(_trimmedResponse);
       if (likelyIncompleteAfterTools) {
         dispatch({ type: 'spinner-start', message: 'Cesar finishing the answer…', color });
         try {

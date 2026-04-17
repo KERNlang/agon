@@ -1424,6 +1424,45 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
           const hasTs = existsSync2(join(cwd, 'tsconfig.json'));
           const hasVitest = existsSync2(join(cwd, 'vitest.config.ts')) || existsSync2(join(cwd, 'vitest.config.mts'));
 
+          // Detect Python signals
+          const hasPyproject = existsSync2(join(cwd, 'pyproject.toml'));
+          const hasSetupPy = existsSync2(join(cwd, 'setup.py'));
+          const hasPython = hasPyproject || hasSetupPy || existsSync2(join(cwd, 'requirements.txt'));
+          let pythonMgr = '';
+          if (hasPyproject) {
+            try {
+              const pyproject = readSync(join(cwd, 'pyproject.toml'), 'utf-8');
+              if (/\[tool\.poetry\]/.test(pyproject)) pythonMgr = 'poetry';
+              else if (/\[tool\.pdm\]/.test(pyproject)) pythonMgr = 'pdm';
+              else if (/\[tool\.uv\]/.test(pyproject)) pythonMgr = 'uv';
+              else if (/\[tool\.setuptools\]/.test(pyproject)) pythonMgr = 'pip';
+            } catch {}
+          }
+          if (!pythonMgr && hasSetupPy) pythonMgr = 'pip';
+          const hasPytest = existsSync2(join(cwd, 'pytest.ini')) || existsSync2(join(cwd, 'conftest.py')) || (hasPyproject && (() => { try { return /pytest/.test(readSync(join(cwd, 'pyproject.toml'), 'utf-8')); } catch { return false; } })());
+
+          // Detect Rust signals
+          const hasCargo = existsSync2(join(cwd, 'Cargo.toml'));
+          let cargoBin = '';
+          if (hasCargo) {
+            try {
+              const cargo = readSync(join(cwd, 'Cargo.toml'), 'utf-8');
+              if (/\[workspace\]/.test(cargo)) cargoBin = 'workspace';
+            } catch {}
+          }
+          const hasRustTests = hasCargo; // cargo test is always available
+
+          // Detect Go signals
+          const hasGoMod = existsSync2(join(cwd, 'go.mod'));
+          let goModule = '';
+          if (hasGoMod) {
+            try {
+              const gomod = readSync(join(cwd, 'go.mod'), 'utf-8');
+              const m = gomod.match(/^module\s+(\S+)/m);
+              if (m) goModule = m[1];
+            } catch {}
+          }
+
           // Detect test and typecheck scripts independently so we don't
           // emit `npm run test` for packages that only define typecheck —
           // that command would fail and send every future session down a
@@ -1454,6 +1493,17 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
             } catch {}
           }
           if (hasEngines) archLines.push('  engines/ -- engine definitions');
+          if (hasCargo && cargoBin === 'workspace') {
+            try {
+              const cargo = readSync(join(cwd, 'Cargo.toml'), 'utf-8');
+              const members = cargo.match(/members\s*=\s*\[([^\]]+)\]/);
+              if (members) archLines.push(`  crates/ -- ${members[1].replace(/["\s]/g, '').split(',').length} workspace crates`);
+            } catch {}
+          }
+          if (hasGoMod) archLines.push(`  Go module: ${goModule || '(detected)'}`);
+          if (hasPython && topDirs.some((d: string) => ['src', 'lib', 'app'].includes(d))) {
+            archLines.push(`  Python project (${pythonMgr || 'pip'})`);
+          }
 
           // Build lines
           const lines: string[] = [
@@ -1487,19 +1537,67 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
           // in the package's scripts. Emitting a non-existent command here
           // sends every future session down a wrong path.
           lines.push('## Build & Test', '');
+          // KERN / Node
           if (hasKern) lines.push('npm run kern:compile   # Compile KERN');
           if (hasTs) lines.push('npm run build          # tsc -b --force');
           if (testCmd) lines.push(`npm run test           # ${testCmd.split(' ')[0] || 'vitest'}`);
           if (hasTypecheckScript) lines.push('npm run typecheck      # tsc -b');
+          // Python
+          if (pythonMgr === 'poetry') {
+            lines.push('poetry install          # Install deps');
+            lines.push('poetry run pytest       # Run tests');
+          } else if (pythonMgr === 'uv') {
+            lines.push('uv sync                 # Install deps');
+            lines.push('uv run pytest           # Run tests');
+          } else if (pythonMgr === 'pdm') {
+            lines.push('pdm install             # Install deps');
+            lines.push('pdm run pytest          # Run tests');
+          } else if (hasPython) {
+            lines.push('pip install -e .        # Install editable');
+            if (hasPytest) lines.push('pytest                  # Run tests');
+          }
+          // Rust
+          if (hasCargo) {
+            lines.push('cargo build             # Compile');
+            lines.push('cargo test              # Run tests');
+            lines.push('cargo clippy            # Lint');
+          }
+          // Go
+          if (hasGoMod) {
+            lines.push('go build ./...          # Compile');
+            lines.push('go test ./...           # Run tests');
+            lines.push('go vet ./...            # Lint');
+          }
           lines.push('');
 
           // Conventions
           lines.push('## Conventions', '');
+          // Node / TypeScript
           if (hasTs) {
             lines.push('- ESM only, .js extensions in imports');
             lines.push('- verbatimModuleSyntax: import type for type-only');
           }
           if (hasVitest) lines.push('- Vitest for testing, tsc for type checking');
+          // Python
+          if (hasPython) {
+            lines.push('- Python 3.10+ with type hints');
+            if (hasPyproject) lines.push('- pyproject.toml for project metadata');
+            if (hasPytest) lines.push('- pytest for testing');
+            lines.push('- Follow PEP 8 style guide');
+          }
+          // Rust
+          if (hasCargo) {
+            lines.push('- cargo fmt before commits');
+            lines.push('- cargo clippy -- -D warnings');
+            lines.push('- idiomatic Rust: Result, Option, no unwrap in library code');
+          }
+          // Go
+          if (hasGoMod) {
+            lines.push('- gofmt / goimports for formatting');
+            lines.push('- Table-driven tests in *_test.go');
+            lines.push('- interfaces defined where they are used, not implemented');
+          }
+          // General
           if (testsDir) lines.push(`- Tests: ${testsDir}/`);
           lines.push('');
 

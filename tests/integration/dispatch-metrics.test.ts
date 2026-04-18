@@ -1,5 +1,16 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { DispatchMetric, EngineResult, TokenUsage } from '../../packages/core/src/types.js';
+import { cleanupTestAgonHome, setupTestAgonHome } from '../helpers/agon-home.js';
+
+let testHome = '';
+
+beforeEach(() => {
+  testHome = setupTestAgonHome('dispatch-metrics');
+});
+
+afterEach(() => {
+  cleanupTestAgonHome(testHome);
+});
 
 // ── 1. DispatchMetric Type Shape ──────────────────────────────────
 describe('DispatchMetric Type', () => {

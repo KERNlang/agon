@@ -1,15 +1,12 @@
 #!/bin/bash
-# Post-compile fixup for KERN compiler bugs.
-# KERN generator=true emits "async function" instead of "async function*".
-# This patches the generated output until the compiler is fixed.
+# Post-compile cleanup for kern-lang output quirks.
 
 GENERATED="$(dirname "$0")/../src/generated"
 
-# Fix: spawnStream needs to be an async generator function
-perl -i -pe 's/export async function spawnStream/export async function* spawnStream/' "$GENERATED/blocks/process.ts"
+# KERN-GAP: `error name=X` nodes in models/errors.kern are correctly emitted
+# to models/errors.ts as plain TypeScript error classes, but the Next.js
+# transpiler also spuriously emits a models/error.tsx page-level error
+# boundary component. The latter is dead code Agon never imports.
+rm -f "$GENERATED/models/error.tsx"
 
-# Fix: api-dispatch generator functions
-perl -i -pe 's/export async function apiStreamDispatch/export async function* apiStreamDispatch/' "$GENERATED/api/dispatch.ts"
-perl -i -pe 's/export async function apiStreamDispatchWithHistory/export async function* apiStreamDispatchWithHistory/' "$GENERATED/api/dispatch.ts"
-
-echo "  kern-postcompile: patched generator functions"
+echo "  kern-postcompile: cleaned spurious error.tsx"

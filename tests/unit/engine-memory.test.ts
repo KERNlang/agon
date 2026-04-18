@@ -5,47 +5,27 @@ import {
   buildRolePrompt, recordForgeOutcome,
 } from '../../packages/core/src/generated/blocks/engine-memory.js';
 import { rmSync } from 'node:fs';
-import { join } from 'node:path';
-import { homedir } from 'node:os';
-
-// Engine memory writes to ~/.agon/engine-memory.json
-// We'll test with real file ops but clean up after
-const MEMORY_PATH = join(homedir(), '.agon', 'engine-memory.json');
-const BACKUP_PATH = MEMORY_PATH + '.test-backup';
+import { agonHomePath, cleanupTestAgonHome, setupTestAgonHome } from '../helpers/agon-home.js';
 
 describe('EngineMemory', () => {
-  let hadExistingFile = false;
+  let testHome = '';
 
   beforeEach(() => {
-    try {
-      const { copyFileSync, existsSync } = require('node:fs');
-      if (existsSync(MEMORY_PATH)) {
-        hadExistingFile = true;
-        copyFileSync(MEMORY_PATH, BACKUP_PATH);
-      }
-    } catch {}
+    testHome = setupTestAgonHome('engine-memory');
   });
 
   afterEach(() => {
-    try {
-      if (hadExistingFile) {
-        const { copyFileSync } = require('node:fs');
-        copyFileSync(BACKUP_PATH, MEMORY_PATH);
-        rmSync(BACKUP_PATH, { force: true });
-      } else {
-        rmSync(MEMORY_PATH, { force: true });
-      }
-    } catch {}
+    cleanupTestAgonHome(testHome);
   });
 
   it('loadEngineMemory returns empty record when no file', () => {
-    rmSync(MEMORY_PATH, { force: true });
+    rmSync(agonHomePath('engine-memory.json'), { force: true });
     const record = loadEngineMemory();
     expect(record.engines).toEqual({});
   });
 
   it('addEngineNote creates profile and stores note', () => {
-    rmSync(MEMORY_PATH, { force: true });
+    rmSync(agonHomePath('engine-memory.json'), { force: true });
     addEngineNote('claude', 'bugfix', 'Fixed auth issue quickly');
     const profile = getEngineProfile('claude');
     expect(profile).not.toBeNull();
@@ -55,21 +35,21 @@ describe('EngineMemory', () => {
   });
 
   it('setEngineStrengths persists', () => {
-    rmSync(MEMORY_PATH, { force: true });
+    rmSync(agonHomePath('engine-memory.json'), { force: true });
     setEngineStrengths('codex', ['fast execution', 'good at refactoring']);
     const profile = getEngineProfile('codex');
     expect(profile!.strengths).toEqual(['fast execution', 'good at refactoring']);
   });
 
   it('setEngineWeaknesses persists', () => {
-    rmSync(MEMORY_PATH, { force: true });
+    rmSync(agonHomePath('engine-memory.json'), { force: true });
     setEngineWeaknesses('gemini', ['slow responses', 'misses edge cases']);
     const profile = getEngineProfile('gemini');
     expect(profile!.weaknesses).toEqual(['slow responses', 'misses edge cases']);
   });
 
   it('addEngineTendency deduplicates', () => {
-    rmSync(MEMORY_PATH, { force: true });
+    rmSync(agonHomePath('engine-memory.json'), { force: true });
     addEngineTendency('codex', 'over-engineers');
     addEngineTendency('codex', 'over-engineers');
     addEngineTendency('codex', 'good tests');
@@ -78,12 +58,12 @@ describe('EngineMemory', () => {
   });
 
   it('buildRolePrompt returns empty for unknown engine', () => {
-    rmSync(MEMORY_PATH, { force: true });
+    rmSync(agonHomePath('engine-memory.json'), { force: true });
     expect(buildRolePrompt('unknown-engine', 'bugfix')).toBe('');
   });
 
   it('buildRolePrompt includes strengths and notes', () => {
-    rmSync(MEMORY_PATH, { force: true });
+    rmSync(agonHomePath('engine-memory.json'), { force: true });
     setEngineStrengths('claude', ['architecture', 'debugging']);
     addEngineNote('claude', 'refactor', 'Clean refactoring approach');
     const prompt = buildRolePrompt('claude', 'refactor');
@@ -92,7 +72,7 @@ describe('EngineMemory', () => {
   });
 
   it('recordForgeOutcome logs winner and losers', () => {
-    rmSync(MEMORY_PATH, { force: true });
+    rmSync(agonHomePath('engine-memory.json'), { force: true });
     recordForgeOutcome('claude', ['codex', 'gemini'], 'feature', 'forge-123', 92, { codex: 78, gemini: 0 });
 
     const claudeProfile = getEngineProfile('claude');
@@ -106,7 +86,7 @@ describe('EngineMemory', () => {
   });
 
   it('caps notes at 50 per engine', () => {
-    rmSync(MEMORY_PATH, { force: true });
+    rmSync(agonHomePath('engine-memory.json'), { force: true });
     for (let i = 0; i < 60; i++) {
       addEngineNote('claude', 'bugfix', `Note ${i}`);
     }

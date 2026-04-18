@@ -6,6 +6,8 @@ export { handleCampfire } from './campfire.js';
 export { handleTribunal } from './tribunal.js';
 export {
   handleLeaderboard,
+  handleCesarReport,
+  handleCesarHints,
   handleHistory,
   handleEngines,
   handleDiscover,
@@ -33,3 +35,4 @@ export { handlePipeline } from './pipeline.js';
 export { handleFlowReport, handleFlowAnalysis, autoLogFlow } from './flow.js';
 export { handleCommit } from './commit.js';
 export { handleReview } from './review.js';
+export { runAgentMode, runAgentTeam } from '../generated/handlers/agent.js';

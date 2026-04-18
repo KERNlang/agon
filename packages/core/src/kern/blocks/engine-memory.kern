@@ -1,6 +1,6 @@
 import from="node:fs" names="readFileSync,writeFileSync,mkdirSync,renameSync"
-import from="node:path" names="join"
-import from="../signals/config.js" names="AGON_HOME"
+import from="node:path" names="join,resolve"
+import from="node:os" names="homedir"
 import from="../models/types.js" names="TaskClass" types=true
 
 interface name=EngineNote
@@ -19,14 +19,16 @@ interface name=EngineMemoryRecord
   field name=engines type="Record<string,EngineProfile>"
   field name=lastUpdated type=string
 
-const name=MEMORY_PATH type=string
+fn name=memoryPath returns=string export=false
   handler <<<
-    join(AGON_HOME, 'engine-memory.json')
+    const override = process.env.AGON_HOME?.trim();
+    const home = override ? resolve(override) : join(homedir(), '.agon');
+    return join(home, 'engine-memory.json');
   >>>
 
 fn name=loadEngineMemory returns=EngineMemoryRecord
   handler <<<
-    try { return JSON.parse(readFileSync(MEMORY_PATH, 'utf-8')) as EngineMemoryRecord; }
+    try { return JSON.parse(readFileSync(memoryPath(), 'utf-8')) as EngineMemoryRecord; }
     catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
         console.warn(`[agon] failed to load engine memory: ${err instanceof Error ? err.message : String(err)}`);
@@ -37,11 +39,14 @@ fn name=loadEngineMemory returns=EngineMemoryRecord
 
 fn name=saveEngineMemory params="record:EngineMemoryRecord" returns=void export=false
   handler <<<
-    mkdirSync(AGON_HOME, { recursive: true });
+    const override = process.env.AGON_HOME?.trim();
+    const home = override ? resolve(override) : join(homedir(), '.agon');
+    mkdirSync(home, { recursive: true });
     record.lastUpdated = new Date().toISOString();
-    const tmpPath = MEMORY_PATH + '.tmp';
+    const path = memoryPath();
+    const tmpPath = path + '.tmp';
     writeFileSync(tmpPath, JSON.stringify(record, null, 2) + '\n');
-    renameSync(tmpPath, MEMORY_PATH);
+    renameSync(tmpPath, path);
   >>>
 
 fn name=ensureProfile params="record:EngineMemoryRecord, engineId:string" returns=EngineProfile export=false

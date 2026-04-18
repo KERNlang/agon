@@ -1,12 +1,14 @@
 export * from './types.js';
 export * from './errors.js';
-export { loadConfig, configGet, configSet, ensureAgonHome, AGON_HOME, RATINGS_PATH, TEAM_ELO_PATH, CORPUS_PATH, SKILLS_DIR, RUNS_DIR } from './config.js';
+export { loadConfig, configGet, configSet, ensureAgonHome, getAgonHome, agonPath, AGON_HOME, RATINGS_PATH, TEAM_ELO_PATH, CORPUS_PATH, SKILLS_DIR, RUNS_DIR } from './config.js';
 export { computeScore, tiebreak, DEFAULT_WEIGHTS } from './scoring.js';
 export { updateGlicko, updateGlickoRanked, getRatings, getEngineGlickoRating, advisorScore } from './glicko.js';
 export { classifyTask } from './task-classifier.js';
 export {
   repoRoot, headSha, worktreePrune, worktreeCreate, worktreeRemove,
-  worktreeDiff, readOnlyDiff, diffLineCount, diffFileCount, applyPatch, recentCommits,
+  worktreeRemoveBestEffort, worktreePruneAll, stashSnapshot,
+  worktreeDiff, worktreeChangedDiff, worktreeChangedShortstat,
+  readOnlyDiff, diffLineCount, diffFileCount, applyPatch, recentCommits,
   currentBranch, isDirty,
   gitStatusShort, gitDiffStat, gitChangedFiles, gitTruncatedDiff,
 } from './git.js';
@@ -62,6 +64,7 @@ export {
   saveSessionState, loadSessionState, clearSessionState,
   saveToolResultToDisk, loadToolResultFromDisk, pruneToolCache,
   sessionCacheDir,
+  saveConversation, loadConversation, clearConversation, stripEngineArtifacts,
 } from './session-store.js';
 // ── Context Parts (structured message parts + StageContext) ──
 export {
@@ -78,7 +81,7 @@ export type { ToolResult, ToolContext, ToolHandler, ToolDefinition, ToolCall, To
 export { FileStateCache, fileStateCache } from './file-state-cache.js';
 export { ToolRegistry, executeToolCall, executeToolCalls } from './tool-registry.js';
 export { checkBashPermission, checkFileReadPermission, checkFileWritePermission, isDangerousCommand, isReadOnlyCommand, isPathUnderCwd } from './tool-permissions.js';
-export { createReadTool, createEditTool, createWriteTool, createBashTool, createGrepTool, createGlobTool, createForgeTool, createBrainstormTool, createTribunalTool, createCampfireTool, createReportConfidenceTool, createDelegateTool, createPipelineTool, createReviewTool, createProposePlanTool, createListPlansTool, createRetrieveResultTool } from './tools.js';
+export { createReadTool, createEditTool, createWriteTool, createBashTool, createGrepTool, createGlobTool, createForgeTool, createBrainstormTool, createTribunalTool, createCampfireTool, createReportConfidenceTool, createDelegateTool, createPipelineTool, createReviewTool, createAgentTool, createProposePlanTool, createListPlansTool, createRetrieveResultTool, createQuickNeroTool } from './tools.js';
 export { formatCesarPlanMarkdown } from './generated/cesar/plan-formatter.js';
 export { generateToolPrompt, toolsToOpenAIFormat } from './generated/tools/tool-prompt.js';
 export { parseToolCalls, toolCallsToApiFormat, formatToolResults, formatToolResult } from './generated/tools/tool-parser.js';
@@ -101,6 +104,8 @@ export { companionDispatch } from './companion-dispatch.js';
 export type { CompanionResult } from './companion-dispatch.js';
 export { fetchModelsRegistry, buildModelEntries, searchModels, modelEntryToEngineDef } from './models-registry.js';
 export type { ModelEntry, ModelsDevProvider, ModelsDevModel } from './models-registry.js';
+export { buildCliModelGroups, buildCliModelGroupsAsync, discoverCliModelsAsync, findBinary, getBinaryVersion } from './cli-models-registry.js';
+export type { CliModelEntry, CliProviderGroup } from './cli-models-registry.js';
 export { loadAuthStore, saveAuthStore, setAuthKey, removeAuthKey, getAuthKey, loadAllAuthKeys, listStoredProviders } from './auth-store.js';
 export type { AuthEntry, AuthStore } from './auth-store.js';
 export {
@@ -110,14 +115,75 @@ export {
 export type {
   PersistentSession, PersistentSessionConfig, SessionChunk, SessionSendOptions,
 } from './persistent-session.js';
+export { StreamBridge, createStreamBridge } from './generated/cesar/stream-bridge.js';
+export type { EngineSwitch } from './generated/cesar/stream-bridge.js';
+export {
+  VirtualFS, createFileSnapshot, applyEffectPackage, effectPackageDiff, scoreEffectPackage, snapshotRead, snapshotList,
+} from './generated/forge/virtual-fs.js';
+export type {
+  FileEffect, EffectPackage, FileSnapshot as VfsSnapshot,
+} from './generated/forge/virtual-fs.js';
+export { Speculator, createSpeculator } from './generated/cesar/speculator.js';
+export type {
+  SpeculatorMemberConfig, SpeculatorOptions, SpeculatorResult,
+} from './generated/cesar/speculator.js';
 export { createCesarMemory } from './generated/cesar/memory.js';
 export type { CesarMemory, MemoryEntry } from './generated/cesar/memory.js';
+export {
+  ContextThread, loadOrCreateActiveThread, forkActiveThread, listThreadsForProject, deleteThread, projectHash16, projectSha8,
+} from './generated/cesar/context-thread.js';
+export type {
+  ThreadMessage, ThreadCheckpoint, FileTouch, LoopMessage, ContextThreadConfig, ThreadSize,
+} from './generated/cesar/context-thread.js';
 export { createCesarPlan, approveCesarPlan, advanceCesarStep, cancelCesarPlan, saveCesarPlan, loadCesarPlan, listCesarPlans } from './generated/cesar/plan.js';
 export type { CesarPlan, CesarPlanStep, CesarStepResult } from './generated/cesar/plan.js';
 export { planCostEstimator } from './generated/cesar/plan-cost-estimator.js';
 export type { CostEstimate } from './generated/cesar/plan-cost-estimator.js';
 export { executePlan, getReadySteps } from './generated/cesar/plan-executor.js';
 export type { StepExecutor, PlanExecutorCallbacks } from './generated/cesar/plan-executor.js';
+export { AgentSession, makeBudgetError } from './generated/cesar/agent-session.js';
+export type {
+  AgentBudget, AgentStepResult, AgentSessionStats, AgentSessionConfig,
+} from './generated/cesar/agent-session.js';
+export {
+  AgentTeam, makeAgentTeamError, makeAgentTeamDisposedError,
+} from './generated/cesar/agent-team.js';
+export type {
+  AgentTeamConfig, AgentTeamMemberConfig, AgentTeamMemberResult, AgentTeamResult,
+  AgentTeamBudget,
+} from './generated/cesar/agent-team.js';
+export {
+  determineWinner, scoreAgentTeamResult,
+} from './generated/cesar/synthesis-utils.js';
+export {
+  buildAgentSynthesisPrompt, buildAgentInvestigateSynthesisPrompt,
+  runAgentTeamSynthesis, runAgentInvestigateSynthesis,
+  runPostSynthesisFitnessCheck, detectSynthesisInsightMention,
+} from './generated/cesar/agent-synthesis.js';
+export type {
+  AgentSynthesisLoser, AgentSynthesisOptions, AgentSynthesisResult,
+  AgentInvestigateSynthesisOptions, AgentInvestigateSynthesisResult,
+  PostSynthesisFitnessResult, SynthesisBiasSignal,
+} from './generated/cesar/agent-synthesis.js';
+export {
+  tokensToCost, estimatedTokensToCost, getEnginePricing,
+} from './generated/blocks/pricing.js';
+export type { PricingEntry } from './generated/blocks/pricing.js';
+export {
+  Semaphore, isHeavyTool,
+} from './generated/blocks/semaphore.js';
+export {
+  createAgentState, beginTurn, completeTurn, requestApproval, approveTool, rejectTool,
+  cancelAgent, failAgent, completeAgent, checkBudget, isTerminal,
+} from './generated/cesar/agent-state.js';
+export type {
+  AgentMessage, AgentTurn, AgentContext, AgentPhase, AgentState,
+} from './generated/cesar/agent-state.js';
+export {
+  makeAssistantChunk, makeToolCall, makeTurnComplete, makeError,
+  normalizeSessionChunk, buildApiTurnEvents, unavailableUsage, estimatedUsage,
+} from './generated/models/agent-event.js';
+export type { AgentEvent, AgentUsage, RawSessionChunk } from './generated/models/agent-event.js';
 export { runHooks, hooksFailed, hooksOutput } from './hooks.js';
 export type { HookEvent, HookDef, HookResult } from './hooks.js';
 export { loadSkills, findSkill, renderSkillPrompt } from './skill-loader.js';

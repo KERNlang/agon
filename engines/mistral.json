@@ -31,5 +31,14 @@
     "MISTRAL_API_KEY": { "required": true }
   },
 
-  "test": { "args": ["--version"] }
+  "test": { "args": ["--version"] },
+
+  "cliModels": {
+    "default": "codestral-latest",
+    "list": [
+      { "id": "codestral-latest", "name": "Codestral" },
+      { "id": "mistral-large-latest", "name": "Mistral Large" },
+      { "id": "mistral-medium-latest", "name": "Mistral Medium" }
+    ]
+  }
 }

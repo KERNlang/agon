@@ -64,7 +64,8 @@ screen name=ForgeArena target=ink
                   {e.done ? '\u2713' : e.failed ? '\u2717' : isLead ? '\u2694' : '\u00b7'}
                 </Text>
                 <Text>{' '}</Text>
-                <Box width={14}>
+                <Box width={16}>
+                  {e.isAgent ? <Text color="#fbbf24">{'\u26a1 '}</Text> : null}
                   <Text bold color={engineColor(e.id)}>{e.id}</Text>
                 </Box>
                 <Text color={e.done ? '#22c55e' : e.failed ? '#ef4444' : '#f97316'}>{bar}</Text>

@@ -1,10 +1,11 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   createRetrieveResultTool,
   saveToolResultToDisk,
   clearSessionState,
 } from '@agon/core';
 import type { ToolContext } from '@agon/core';
+import { cleanupTestAgonHome, setupTestAgonHome } from '../helpers/agon-home.js';
 
 const TEST_ENGINE = `retrieve-test-${Date.now()}`;
 
@@ -19,8 +20,15 @@ const mockCtx: ToolContext = {
 };
 
 describe('RetrieveResult tool', () => {
+  let testHome = '';
+
+  beforeEach(() => {
+    testHome = setupTestAgonHome('tool-retrieve');
+  });
+
   afterEach(() => {
     try { clearSessionState(TEST_ENGINE); } catch { /* clean */ }
+    cleanupTestAgonHome(testHome);
   });
 
   it('has correct tool definition', () => {

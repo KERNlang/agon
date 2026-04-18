@@ -10,14 +10,19 @@
     "packages/mcp"
   ],
   "scripts": {
-    "kern:compile": "npm run kern:compile -w packages/core && npm run kern:compile -w packages/forge && npm run kern:compile -w packages/adapter-cli && npm run kern:compile -w packages/cli && npm run kern:compile -w packages/mcp",
+    "kern:compile": "node scripts/run-agon-script.mjs kern:compile:workspaces",
+    "kern:compile:workspaces": "npm run kern:compile -w packages/core && npm run kern:compile -w packages/forge && npm run kern:compile -w packages/adapter-cli && npm run kern:compile -w packages/cli && npm run kern:compile -w packages/mcp",
+    "kern-gaps": "node scripts/run-kern-gaps.mjs",
     "build": "tsc -b --force",
+    "build:cli": "node scripts/run-agon-script.mjs build:cli:workspaces",
+    "build:cli:workspaces": "npm run build -w packages/core && npm run build -w packages/forge && npm run build -w packages/adapter-cli && npm run build -w packages/cli",
+    "install:cli": "npm run build:cli && cd packages/cli && npm link",
     "typecheck": "tsc -b",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=20.19.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
@@ -28,5 +33,20 @@
   },
   "dependencies": {
     "zod": "^4.3.6"
+  },
+  "optionalDependencies": {
+    "@kernlang/cli": "~3.2.3",
+    "@kernlang/core": "~3.2.3",
+    "@kernlang/terminal": "~3.2.3",
+    "@kernlang/native": "~3.2.3",
+    "@kernlang/react": "~3.2.3",
+    "@kernlang/vue": "~3.2.3",
+    "@kernlang/evolve": "~3.2.3",
+    "@kernlang/express": "~3.2.3",
+    "@kernlang/fastapi": "~3.2.3",
+    "@kernlang/mcp": "~3.2.3",
+    "@kernlang/metrics": "~3.2.3",
+    "@kernlang/review": "~3.2.3",
+    "@kernlang/review-mcp": "~3.2.3"
   }
 }

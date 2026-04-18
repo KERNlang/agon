@@ -1,0 +1,199 @@
+// ── Keyboard Input Resolver ──────────────────────────────────────────
+// Pure decision tree for keyboard input — no React, no state mutation.
+// Returns an action descriptor that the caller executes on React state.
+
+import from="./app-input.js" names="navigateHistory,resolveEscapeAction,shouldQueuePlanModeOnTab,tryGhostComplete"
+
+interface name=KeyboardCtx
+  field name=input type=string
+  field name=key type="{ ctrl?:boolean, shift?:boolean, escape?:boolean, tab?:boolean, upArrow?:boolean, downArrow?:boolean, pageUp?:boolean, pageDown?:boolean, home?:boolean, end?:boolean }"
+  field name=textInputActive type=boolean
+  field name=modelPickerOpen type=boolean
+  field name=cesarPickerOpen type=boolean
+  field name=slashPickerOpen type=boolean
+  field name=enginePickerOpen type=boolean
+  field name=reviewEventOpen type=boolean
+  field name=toolDetailOpen type=boolean
+  field name=questionState type=any
+  field name=replState type=string
+  field name=inputValue type=string
+  field name=inputHistory type="string[]"
+  field name=historyIndex type=number
+  field name=planModeQueued type=boolean
+  field name=activePlanState type="string|null"
+  field name=outputBlockCount type=number
+  field name=commands type="any[]"
+  field name=engineIds type="string[]"
+
+union name=KeyboardAction
+  variant name=none
+  variant name=exit
+  variant name=resolveChoice
+    field name=choiceKey type=string
+  variant name=cancelChoice
+  variant name=swallow
+  variant name=ghostComplete
+    field name=ghost type=string
+  variant name=togglePlanQueued
+  variant name=submit
+    field name=value type=string
+  variant name=scroll
+    field name=delta type=number
+  variant name=scrollToTop
+  variant name=scrollToBottom
+  variant name=toggleToolExpand
+  variant name=toggleThinking
+  variant name=toggleSelectionMode
+  variant name=openToolDetail
+  variant name=openResults
+  variant name=copyTranscript
+  variant name=closeSlash
+  variant name=closeEnginePicker
+  variant name=cancelQuestion
+  variant name=interrupt
+  variant name=clearInput
+  variant name=unqueuePlan
+  variant name=insertNewline
+  variant name=historySet
+    field name=index type=number
+    field name=value type=string
+  variant name=cancelOrExit
+
+fn name=resolveKeyboardInput params="ctx:KeyboardCtx" returns="KeyboardAction"
+  doc "Pure keyboard decision tree. Takes current state, returns action to execute."
+  handler <<<
+    const { input, key } = ctx;
+    const normalizedCtrlInput = key.ctrl
+      ? ({
+          '\x03': 'c',
+          '\x05': 'e',
+          '\x0f': 'o',
+          '\x0c': 'l',
+          '\x12': 'r',
+          '\x14': 't',
+          '\x07': 'g',
+          '\x19': 'y',
+        } as Record<string, string>)[input] ?? input
+      : input;
+    const delegatedCtrlShortcuts = new Set(['e', 'j', 'l', 'o', 'r', 't', 'y']);
+
+    // Model/cesar picker open: only Ctrl+C gets through
+    if (ctx.modelPickerOpen || ctx.cesarPickerOpen) {
+      if (input === '\x03' || (key.ctrl && normalizedCtrlInput === 'c')) return { type: 'exit' };
+      return { type: 'none' };
+    }
+
+    // Focused tool detail viewer owns navigation keys while open.
+    if (ctx.toolDetailOpen) {
+      if (input === '\x03' || (key.ctrl && normalizedCtrlInput === 'c')) return { type: 'cancelOrExit' };
+      return { type: 'none' };
+    }
+
+    // Choice-based question: single keypress resolves immediately
+    if (ctx.questionState && ctx.questionState.choices) {
+      if (key.ctrl && normalizedCtrlInput === 'o') return { type: 'openToolDetail' };
+      const pressed = input.toLowerCase();
+      const choices = ctx.questionState.choices as { key: string; label: string }[];
+      const match = choices.find((c) => c.key.toLowerCase() === pressed);
+      const numIdx = /^[1-9]$/.test(pressed) ? parseInt(pressed, 10) - 1 : -1;
+      const resolved = match ?? (numIdx >= 0 && numIdx < choices.length ? choices[numIdx] : null);
+      if (resolved) return { type: 'resolveChoice', choiceKey: resolved.key };
+      if (key.escape) return { type: 'cancelChoice' };
+      return { type: 'swallow' };
+    }
+
+    // When a child text input is focused, it owns the reserved Ctrl shortcuts.
+    // Otherwise App and the child can both react to the same keypress and
+    // toggle features twice (expand immediately collapses, etc.).
+    if (ctx.textInputActive && key.ctrl && delegatedCtrlShortcuts.has(normalizedCtrlInput)) {
+      return { type: 'none' };
+    }
+
+    // Tab: ghost-complete or queue plan mode
+    if ((key.tab || input === '\t') && !ctx.slashPickerOpen && !ctx.enginePickerOpen && !ctx.questionState && !ctx.reviewEventOpen) {
+      const ghost = tryGhostComplete(ctx.inputValue, ctx.commands, ctx.engineIds);
+      if (ghost) return { type: 'ghostComplete', ghost };
+      if (shouldQueuePlanModeOnTab({ replState: ctx.replState, inputValue: ctx.inputValue, activePlanState: ctx.activePlanState })) {
+        return { type: 'togglePlanQueued' };
+      }
+      return { type: 'none' };
+    }
+
+    // Ctrl+L: clear
+    if (key.ctrl && normalizedCtrlInput === 'l') return { type: 'submit', value: '/clear' };
+
+    // Scroll keys move HistoryView's sliced window forward/back. The full
+    // transcript lives in outputBlocks; HistoryView only renders a sliced
+    // subset for performance. These keybinds let the user reach older
+    // content. Home/End are gated on composer focus so the caret stays
+    // usable. Shift+Up/Down and PageUp/Down fire always — composer
+    // doesn't claim those combos. Proper scrolling (no sliced window,
+    // real viewport culling) lands when KERN ships <scroll-box> per
+    // docs/KERN-GAP-scroll-box.md.
+    if (key.shift && key.upArrow) return { type: 'scroll', delta: 3 };
+    if (key.shift && key.downArrow) return { type: 'scroll', delta: -3 };
+    if (key.pageUp) return { type: 'scroll', delta: 12 };
+    if (key.pageDown) return { type: 'scroll', delta: -12 };
+    if (!ctx.textInputActive) {
+      if (key.home) return { type: 'scrollToTop' };
+      if (key.end) return { type: 'scrollToBottom' };
+    }
+
+    // Ctrl+E: toggle tool output expansion
+    if (key.ctrl && normalizedCtrlInput === 'e') return { type: 'toggleToolExpand' };
+
+    // Ctrl+T: toggle thinking expansion
+    if (key.ctrl && normalizedCtrlInput === 't') return { type: 'toggleThinking' };
+
+    // Ctrl+G: toggle mouse selection mode
+    if (key.ctrl && normalizedCtrlInput === 'g') return { type: 'toggleSelectionMode' };
+
+    // Ctrl+O: open focused tool detail view
+    if (key.ctrl && normalizedCtrlInput === 'o') return { type: 'openToolDetail' };
+
+    // Ctrl+R: open results pager
+    if (key.ctrl && normalizedCtrlInput === 'r') return { type: 'openResults' };
+
+    // Ctrl+Y: copy current transcript/results to clipboard
+    if (key.ctrl && normalizedCtrlInput === 'y') return { type: 'copyTranscript' };
+
+    // Escape: delegate to resolveEscapeAction
+    if (key.escape) {
+      if (ctx.planModeQueued) return { type: 'unqueuePlan' };
+      const decision = resolveEscapeAction({
+        replState: ctx.replState,
+        inputValue: ctx.inputValue,
+        slashPickerOpen: ctx.slashPickerOpen,
+        enginePickerOpen: ctx.enginePickerOpen,
+        questionOpen: !!ctx.questionState,
+      });
+      switch (decision.action) {
+        case 'close-slash': return { type: 'closeSlash' };
+        case 'close-engine-picker': return { type: 'closeEnginePicker' };
+        case 'cancel-question': return { type: 'cancelQuestion' };
+        case 'interrupt': return { type: 'interrupt' };
+        case 'clear-input': return { type: 'clearInput' };
+        case 'noop': return { type: 'none' };
+      }
+    }
+
+    // Ctrl+J: insert newline
+    if (key.ctrl && input === 'j') return { type: 'insertNewline' };
+
+    // Arrow keys: navigate history
+    if (!ctx.enginePickerOpen && !ctx.questionState) {
+      if (key.upArrow && ctx.inputHistory.length > 0 && !ctx.slashPickerOpen) {
+        const r = navigateHistory('up', ctx.historyIndex, ctx.inputHistory);
+        return { type: 'historySet', index: r.index, value: r.value || ctx.inputValue };
+      }
+      if (key.downArrow && ctx.historyIndex >= 0 && !ctx.slashPickerOpen) {
+        const r = navigateHistory('down', ctx.historyIndex, ctx.inputHistory);
+        return { type: 'historySet', index: r.index, value: r.value };
+      }
+    }
+
+    // Ctrl+C: cancel or exit
+    if (input === '\x03' || (key.ctrl && normalizedCtrlInput === 'c')) return { type: 'cancelOrExit' };
+
+    return { type: 'none' };
+  >>>

@@ -3,7 +3,7 @@ import from="./plan.js" names="advanceCesarStep"
 import from="./plan-cost-estimator.js" names="planCostEstimator"
 
 interface name=StepExecutor export=true
-  field name=execute type="(step:CesarPlanStep, context:Record<string,string>, signal?:AbortSignal)=>Promise<{result:CesarStepResult,contextExport?:string}>"
+  field name=execute type="(step:CesarPlanStep, context:Record<string,string|undefined>, signal?:AbortSignal)=>Promise<{result:CesarStepResult,contextExport?:string}>"
 
 interface name=PlanExecutorCallbacks export=true
   field name=onStepStart type="(stepId:string)=>void"
@@ -33,6 +33,12 @@ fn name=executePlan async=true params="plan:CesarPlan, executors:Record<string,S
       // Execute parallel steps concurrently
       if (parallelSteps.length > 0) {
         const results = await Promise.all(parallelSteps.map(async (step) => {
+          // FU-3: per-task abort check. Without this the parallel batch
+          // is uninterruptible — a Ctrl-C mid-batch waits for the slowest
+          // task before propagating. Now each task short-circuits immediately.
+          if (signal?.aborted) {
+            return { stepId: step.id, result: { status: 'failure' as const, actualTokens: 0, actualCostUsd: 0, durationMs: 0, output: '', error: 'cancelled before start' } as CesarStepResult };
+          }
           callbacks.onStepStart(step.id);
           const executor = executors[step.type];
           if (!executor) {

@@ -7,6 +7,7 @@ import from="./dispatch.js" names="apiStreamDispatchWithHistory"
 import from="./dispatch.js" names="ApiConfig" types=true
 import from="../models/tool-types.js" names="ToolHandler,ToolContext,ToolResult,ToolDefinition" types=true
 import from="../signals/tool-registry.js" names="ToolRegistry,executeToolCall"
+import from="../blocks/semaphore.js" names="Semaphore,isHeavyTool"
 import from="../tools/tool-prompt.js" names="toolsToOpenAIFormat"
 import from="../tools/tool-loop.js" names="buildToolSystemPrompt"
 import from="../tools/tool-read.js" names="createReadTool"
@@ -31,6 +32,14 @@ interface name=ApiAgentOptions
   field name=maxSteps type=number optional=true
   field name=onChunk type="(text:string)=>void" optional=true
   field name=onToolCall type="(name:string,args:Record<string,unknown>)=>void" optional=true
+  field name=heavyToolSemaphore type=Semaphore optional=true
+  field name=historyMessages type="Array<Record<string,unknown>>" optional=true
+  field name=onHistoryEntry type="(entry:Record<string,unknown>)=>void" optional=true
+  field name=virtualFs type="any" optional=true
+  field name=permissionMode type="'auto'|'ask'|'deny-all'" optional=true
+  field name=allowedCommands type="string[]" optional=true
+  field name=toolPermissions type="Record<string,'allow'|'ask'|'deny'>" optional=true
+  field name=onPermissionAsk type="(tool:string, command:string, reason:string)=>Promise<boolean|string>" optional=true
 
 interface name=ApiAgentResult
   field name=response type=string
@@ -103,16 +112,20 @@ fn name=runApiAgentLoop async=true params="opts:ApiAgentOptions" returns="Promis
 
     const nativeTools = toolsToOpenAIFormat(registry);
 
-    // Build tool context — auto-allow read-only tools, ask for writes
+    // Build tool context — auto-allow read-only tools, ask for writes.
+    // Phase E v2: when virtualFs is provided (Speculator mode), inject it so
+    // Read/Edit/Write tool calls route through the in-memory VirtualFS overlay
+    // instead of touching the real filesystem.
     const fsc = new FileStateCache();
     const toolCtx: ToolContext = {
       cwd: opts.cwd,
       readFileState: (fsc as any).cache,
       abortSignal: opts.signal,
-      permissionMode: 'auto', // Agentic: auto-allow all in forge/brainstorm context
+      permissionMode: opts.permissionMode ?? 'auto',
       explorationMode: false,
-      allowedCommands: [],
-      toolPermissions: {},
+      allowedCommands: opts.allowedCommands ?? [],
+      toolPermissions: opts.toolPermissions ?? {},
+      virtualFs: opts.virtualFs,
     };
 
     // Build system prompt with tool definitions
@@ -123,11 +136,31 @@ fn name=runApiAgentLoop async=true params="opts:ApiAgentOptions" returns="Promis
     systemParts.push(toolPrompt);
     const fullSystemPrompt = systemParts.join('\n\n');
 
-    // Build message history
-    const messageHistory: Array<{role: string, content: string}> = [
-      { role: 'system', content: fullSystemPrompt },
-      { role: 'user', content: opts.prompt },
-    ];
+    // Build message history. When historyMessages is provided (ContextThread
+    // integration), we seed from it rather than starting blank. The first
+    // entry must always be role:'system' with the current fullSystemPrompt
+    // (never trust a persisted system message — red-team finding 2). Then
+    // we append opts.prompt as the new user turn so the model sees both
+    // the prior conversation AND the new instruction.
+    const messageHistory: Array<Record<string,unknown>> = [];
+    messageHistory.push({ role: 'system', content: fullSystemPrompt });
+
+    // Splice in prior history (skipping any persisted role:'system' entries —
+    // they were already filtered by ContextThread but we enforce again here).
+    if (opts.historyMessages && opts.historyMessages.length > 0) {
+      for (const m of opts.historyMessages) {
+        if (m && m.role !== 'system') messageHistory.push(m);
+      }
+    }
+
+    // Current user turn.
+    messageHistory.push({ role: 'user', content: opts.prompt });
+
+    // Helper: push to history and notify ContextThread listener.
+    const pushHistory = (entry: Record<string,unknown>) => {
+      messageHistory.push(entry);
+      if (opts.onHistoryEntry) opts.onHistoryEntry(entry);
+    };
 
     const MAX_STEPS = opts.maxSteps ?? 10;
     const totalDeadline = Date.now() + opts.timeout * 1000; // Total timeout for entire loop
@@ -146,7 +179,7 @@ fn name=runApiAgentLoop async=true params="opts:ApiAgentOptions" returns="Promis
         return { response: finalResponse || '[Timeout — ran out of time]', toolCalls: totalToolCalls, steps: step };
       }
 
-      const gen = apiStreamDispatchWithHistory(opts.api, messageHistory, remaining, opts.signal, nativeTools);
+      const gen = apiStreamDispatchWithHistory(opts.api, messageHistory as any, remaining, opts.signal, nativeTools);
       try {
         while (true) {
           const { value, done } = await gen.next();
@@ -176,10 +209,10 @@ fn name=runApiAgentLoop async=true params="opts:ApiAgentOptions" returns="Promis
 
       if (extractedCalls.length > 0) {
         const cleanText = fullResponse.replace(/<tool\s+name="[^"]+">[\s\S]*?<\/tool>/g, '').trim();
-        messageHistory.push({
+        pushHistory({
           role: 'assistant', content: cleanText || null,
           tool_calls: extractedCalls.map(tc => ({ id: tc.id, type: 'function', function: { name: tc.name, arguments: tc.arguments } })),
-        } as any);
+        });
 
         // Execute tools with repair for malformed args
         for (const tc of extractedCalls) {
@@ -193,7 +226,7 @@ fn name=runApiAgentLoop async=true params="opts:ApiAgentOptions" returns="Promis
               args = repaired;
             } else {
               // Still broken — send error feedback to model instead of silently passing { raw: ... }
-              messageHistory.push({ role: 'tool', content: `Error: Malformed JSON arguments for tool "${tc.name}". Got: ${tc.arguments.slice(0, 200)}. Please retry with valid JSON.`, tool_call_id: tc.id } as any);
+              pushHistory({ role: 'tool', content: `Error: Malformed JSON arguments for tool "${tc.name}". Got: ${tc.arguments.slice(0, 200)}. Please retry with valid JSON.`, tool_call_id: tc.id });
               totalToolCalls++;
               continue;
             }
@@ -207,31 +240,75 @@ fn name=runApiAgentLoop async=true params="opts:ApiAgentOptions" returns="Promis
 
           if (opts.onToolCall) opts.onToolCall(tc.name, args);
 
+          // RT-26 fix (Gemini code review): heavy-tool semaphore. When N
+          // parallel agent sessions are running in N worktrees, we serialize
+          // disk-/CPU-heavy commands (npm test, tsc, cargo build) across the
+          // team so 3 simultaneous npm-install runs don't saturate I/O and
+          // cause false-positive budget timeouts. The semaphore is shared
+          // across all members of an AgentTeam (created once in initialize)
+          // and passed via opts.heavyToolSemaphore. Solo /agent runs leave
+          // it undefined → no semaphore overhead.
+          const isHeavyBash = opts.heavyToolSemaphore != null
+            && tc.name === 'Bash'
+            && typeof args.command === 'string'
+            && isHeavyTool(args.command);
+
           let result: string;
-          try {
-            const callResult = await executeToolCall(
-              { id: tc.id, name: tc.name, input: args },
-              toolCtx,
-              registry,
-            );
-            result = callResult.result.ok ? callResult.result.content : (callResult.result.error ?? 'Tool execution failed');
-          } catch (err: any) {
-            result = `Error: ${err.message ?? String(err)}`;
+          const permissionAsk = opts.onPermissionAsk
+            ? (tool: string, message: string) => opts.onPermissionAsk!(
+                tool,
+                typeof args.command === 'string'
+                  ? args.command
+                  : typeof args.file_path === 'string'
+                    ? args.file_path
+                    : JSON.stringify(args),
+                message,
+              )
+            : undefined;
+          const runToolCall = async () => {
+            try {
+              const callResult = await executeToolCall(
+                { id: tc.id, name: tc.name, input: args },
+                toolCtx,
+                registry,
+                permissionAsk,
+              );
+              return callResult.result.ok ? callResult.result.content : (callResult.result.error ?? 'Tool execution failed');
+            } catch (err: any) {
+              return `Error: ${err.message ?? String(err)}`;
+            }
+          };
+
+          if (isHeavyBash && opts.heavyToolSemaphore) {
+            // OpenCode review fix: pass opts.signal so a cancelled session
+            // wakes up its waiter from the semaphore queue and rejects it
+            // rather than running the heavy tool after the user hit Ctrl-C.
+            try {
+              result = (await opts.heavyToolSemaphore.runWith(runToolCall, opts.signal)) as string;
+            } catch (err: any) {
+              if (err?.name === 'AbortError') {
+                result = `Tool execution cancelled while waiting for heavy-tool semaphore`;
+              } else {
+                throw err;
+              }
+            }
+          } else {
+            result = await runToolCall();
           }
 
           let histContent = result;
-          if (histContent.length > 800) {
+          if (histContent.length > 8192) {
             // Disk-backed cache: save full result, keep preview + ref
             const engineId = runCacheId;
             const cacheEntry = saveToolResultToDisk(engineId, tc.id, tc.name, result);
             if (cacheEntry) {
               const lines = result.split('\n').length;
-              histContent = result.slice(0, 400) + `\n...\n[${lines} lines, ${result.length} chars — cached — ${tc.id}]`;
+              histContent = result.slice(0, 2048) + `\n...\n[${lines} lines, ${result.length} chars — cached — ${tc.id}]`;
             } else {
-              histContent = result.slice(0, 600) + '\n...\n[truncated]';
+              histContent = result.slice(0, 2048) + '\n...\n[truncated]';
             }
           }
-          messageHistory.push({ role: 'tool', content: histContent, tool_call_id: tc.id } as any);
+          pushHistory({ role: 'tool', content: histContent, tool_call_id: tc.id });
           totalToolCalls++;
         }
         continue;
@@ -239,9 +316,15 @@ fn name=runApiAgentLoop async=true params="opts:ApiAgentOptions" returns="Promis
 
       // No tool calls — check for stall intent
       const tail = fullResponse.slice(-300);
+      const fakeGate = /\b(?:need (?:user )?(?:permission|approval)|await(?:ing)? approval|tool (?:keeps )?blocking me|(?:edit|write|bash|command) tool (?:keeps )?blocking me|blocked by (?:the )?(?:edit|write|bash) tool|let me try writing|try writing the full file)\b/i;
+      if (fakeGate.test(fullResponse)) {
+        pushHistory({ role: 'assistant', content: fullResponse });
+        pushHistory({ role: 'user', content: 'Do not narrate that a tool is blocked. If you need to read, edit, write, or run a command, call the tool now. Do not explain the tool system — use it.' });
+        continue;
+      }
       const readIntent = tail.match(/\b(?:let me |i(?:'ll| need to| want to| should| will) )(?:read|check|look at|examine|open)\s+[`"']?([a-zA-Z0-9_./-]+\.[a-zA-Z]{1,6})[`"']?/i);
       if (readIntent) {
-        messageHistory.push({ role: 'assistant', content: fullResponse });
+        pushHistory({ role: 'assistant', content: fullResponse });
         // Auto-execute the intent
         const callId = `auto_${Date.now()}`;
         let result: string;
@@ -256,23 +339,23 @@ fn name=runApiAgentLoop async=true params="opts:ApiAgentOptions" returns="Promis
           result = `Error: ${err.message ?? String(err)}`;
         }
         let histContent = result;
-        if (histContent.length > 800) {
+        if (histContent.length > 8192) {
           const engineId = runCacheId;
           const ce = saveToolResultToDisk(engineId, callId, 'Read', result);
-          histContent = ce ? result.slice(0, 400) + `\n...\n[cached — ${callId}]` : result.slice(0, 600) + '\n...\n[truncated]';
+          histContent = ce ? result.slice(0, 2048) + `\n...\n[cached — ${callId}]` : result.slice(0, 2048) + '\n...\n[truncated]';
         }
-        messageHistory.push({
+        pushHistory({
           role: 'assistant', content: null,
           tool_calls: [{ id: callId, type: 'function', function: { name: 'Read', arguments: JSON.stringify({ file_path: readIntent[1] }) } }],
-        } as any);
-        messageHistory.push({ role: 'tool', content: histContent, tool_call_id: callId } as any);
+        });
+        pushHistory({ role: 'tool', content: histContent, tool_call_id: callId });
         totalToolCalls++;
         continue;
       }
 
       // Final response
       finalResponse = fullResponse;
-      messageHistory.push({ role: 'assistant', content: fullResponse });
+      pushHistory({ role: 'assistant', content: fullResponse });
       break;
     }
 

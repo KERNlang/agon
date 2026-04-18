@@ -12,7 +12,7 @@
     "prebuild": "npm run kern:compile",
     "build": "tsup",
     "typecheck": "tsc --noEmit",
-    "kern:compile": "for d in surfaces blocks signals models cesar handlers commands; do kern compile src/kern/$d --outdir=src/generated/$d; done"
+    "kern:compile": "node ../../scripts/run-kern-compile.mjs src/kern/ src/generated/ --target=auto --recursive"
   },
   "dependencies": {
     "@agon/adapter-cli": "*",

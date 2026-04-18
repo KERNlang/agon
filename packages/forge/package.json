@@ -14,13 +14,14 @@
     "dist"
   ],
   "scripts": {
-    "kern:compile": "kern compile src/kern --outdir=src/generated",
+    "kern:compile": "node ../../scripts/run-kern-compile.mjs src/kern/ src/generated/ --target=auto --recursive",
     "prebuild": "npm run kern:compile",
     "build": "tsup",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@agon/core": "*",
-    "kern-lang": "^3.1.8"
-  }
+    "@kernlang/protocol": "*"
+  },
+  "optionalDependencies": {}
 }

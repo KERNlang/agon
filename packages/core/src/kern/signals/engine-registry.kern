@@ -1,14 +1,16 @@
 import from="node:fs" names="readdirSync,readFileSync,existsSync"
-import from="node:path" names="join,dirname"
+import from="node:path" names="join,dirname,resolve"
 import from="node:os" names="homedir"
 import from="node:child_process" names="execFileSync"
 import from="../models/types.js" names="EngineDefinition,EngineMode" types=true
 import from="../models/errors.js" names="EngineNotFoundError"
 import from="../../schemas/engine-schema.js" names="validateEngineConfig"
 
-const name=AGON_ENGINES_DIR type=string
+fn name=getAgonEnginesDir returns=string export=false
   handler <<<
-    join(homedir(), '.agon', 'engines')
+    const override = process.env.AGON_HOME?.trim();
+    const home = override ? resolve(override) : join(homedir(), '.agon');
+    return join(home, 'engines');
   >>>
 
 service name=EngineRegistry
@@ -65,7 +67,8 @@ service name=EngineRegistry
   method name=load params="builtinDir:string" returns=void
     handler <<<
       this.loadDir(this.resolveBuiltinDir(builtinDir), 'builtin');
-      if (existsSync(AGON_ENGINES_DIR)) this.loadDir(AGON_ENGINES_DIR, 'user');
+      const agonEnginesDir = getAgonEnginesDir();
+      if (existsSync(agonEnginesDir)) this.loadDir(agonEnginesDir, 'user');
     >>>
 
   method name=register params="engine:EngineDefinition" returns=void

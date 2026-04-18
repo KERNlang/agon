@@ -14,15 +14,15 @@
     "dist"
   ],
   "scripts": {
-    "kern:compile": "for d in models signals blocks cesar tools api sessions teams; do kern compile src/kern/$d --outdir=src/generated/$d; done && bash scripts/kern-postcompile.sh",
+    "kern:compile": "node ../../scripts/run-kern-compile.mjs src/kern/ src/generated/ --target=auto --recursive --postcompile=scripts/kern-postcompile.sh",
     "prebuild": "npm run kern:compile",
-    "build": "tsup",
+    "build": "tsup && tsc -b tsconfig.json --force",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.67",
     "@ai-sdk/openai-compatible": "^2.0.40",
-    "ai": "^6.0.149",
-    "kern-lang": "^3.1.8"
-  }
+    "ai": "^6.0.149"
+  },
+  "optionalDependencies": {}
 }

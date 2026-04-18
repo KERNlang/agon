@@ -2,6 +2,8 @@
 // Source of truth: kern/handlers-info.kern → generated/handlers-info.ts
 export {
   handleLeaderboard,
+  handleCesarReport,
+  handleCesarHints,
   handleHistory,
   handleEngines,
   handleDiscover,

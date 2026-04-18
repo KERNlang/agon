@@ -1,0 +1,190 @@
+// ── Composer View — memoized text-input subtree ────────────────────
+// Extracted from app.kern so that streaming-driven App re-renders
+// (~11x/sec via throttle=90 streamingText) don't reach the TextInput.
+// React.memo's shallow-equal rejects the re-render entirely because none
+// of these props depend on streamingText / liveSpinner / liveProgress /
+// cesarConfidence — the composer subtree stays still while Cesar streams.
+//
+// Keep this screen narrow: only props that legitimately change between
+// keystrokes/mode toggles. If you add a streaming-derived prop here, the
+// memo will start firing on every chunk and the lag returns.
+
+import from="react" default="React"
+import from="ink" names="Box,Text"
+import from="../../components.js" names="PromptTextInput,SlashPicker"
+import from="../signals/icons.js" names="icons"
+import from="../../ghost-text.js" names="getGhostCompletion"
+import from="./markdown.js" names="truncateCodeLine"
+
+screen name=ComposerView target=ink memo=true
+  prop name=mode type="'chat'|'campfire'|'brainstorm'|'tribunal'"
+  prop name=replState type=string
+  prop name=planModeQueued type=boolean
+  prop name=activePlanState type="string|null"
+  prop name=slashPickerOpen type=boolean
+  prop name=inputValue type=string
+  prop name=handleInputChange type="(value:string) => void"
+  prop name=handleSubmit type="(value:string) => void"
+  prop name=allSlashCommands type="any[]"
+  prop name=availableEngines type="string[]"
+  prop name=onSlashSelect type="(cmd:string) => void"
+  prop name=onSlashCancel type="() => void"
+  prop name=questionState type=any
+  prop name=questionAnswer type=string
+  prop name=onQuestionAnswerChange type="(value:string) => void"
+  prop name=onQuestionAnswerSubmit type="(value:string) => void"
+  prop name=onCtrlShortcut type="(shortcut:string) => void"
+  prop name=termWidth type=number
+  prop name=termHeight type=number
+  render
+    handler <<<
+      const placeholder = replState === 'idle'
+        ? (mode === 'chat'
+            ? ''
+            : mode === 'campfire'
+              ? 'What should we think about?'
+              : mode === 'brainstorm'
+                ? 'What question for the engines?'
+                : 'What should they debate?')
+        : '';
+      const ghost = getGhostCompletion(inputValue, allSlashCommands, availableEngines);
+      const promptWidth = Math.max(12, termWidth - (mode === 'chat' ? 10 : 22));
+      const promptMaxLines = Math.max(3, Math.min(8, Math.floor(termHeight / 4)));
+      const choiceList = Array.isArray(questionState?.choices)
+        ? questionState.choices as {key:string,label:string,color?:string}[]
+        : [];
+      const questionPrompt = typeof questionState?.prompt === 'string'
+        ? questionState.prompt.trim()
+        : questionState?.prompt;
+      const isPermissionQuestion = questionState?.kind === 'permission';
+      const permissionTool = typeof questionState?.tool === 'string'
+        ? questionState.tool
+        : 'Command';
+      const permissionCommand = typeof questionState?.command === 'string'
+        ? questionState.command
+        : '';
+      const permissionDescription = typeof questionState?.description === 'string'
+        ? questionState.description.trim()
+        : '';
+      const permissionReason = typeof questionState?.reason === 'string'
+        ? questionState.reason.trim()
+        : '';
+      const permissionLinesAll = permissionCommand ? permissionCommand.split('\n') : [];
+      const permissionLineWidth = Math.max(24, termWidth - 24);
+      const permissionPreview = permissionLinesAll[0]
+        ? truncateCodeLine(permissionLinesAll[0], permissionLineWidth)
+        : '';
+      const permissionHasMoreLines = permissionLinesAll.length > 1;
+      const permissionNeedsDetail = permissionHasMoreLines || permissionCommand.length > permissionLineWidth;
+      const permissionSummary = permissionReason || permissionDescription;
+      const yesChoice = choiceList.find((choice: any) => String(choice.key ?? '').toLowerCase() === 'y');
+      const noChoice = choiceList.find((choice: any) => String(choice.key ?? '').toLowerCase() === 'n');
+      const alwaysChoice = choiceList.find((choice: any) => String(choice.key ?? '').toLowerCase() === 'a');
+      const inlineChoiceText = choiceList.map((choice: any) => {
+        const key = String(choice?.key ?? '').toUpperCase();
+        const label = String(choice?.label ?? '').trim();
+        return `[${key}] ${label}`.trim();
+      }).join('  ');
+      const useInlineChoices = choiceList.length > 0
+        && choiceList.length <= 3
+        && inlineChoiceText.length <= Math.max(24, termWidth - 10);
+      const questionAccent = choiceList.length > 0 ? '#60a5fa' : '#d1d5db';
+      return (
+        <>
+          {slashPickerOpen && <SlashPicker commands={allSlashCommands} onSelect={onSlashSelect} onCancel={onSlashCancel} />}
+          {!questionState && (
+            <Box borderStyle={mode === 'chat' ? 'round' : 'single'} borderColor={mode === 'chat' ? '#585858' : 'gray'} borderLeft={mode !== 'chat'} borderRight={mode !== 'chat'} borderTop borderBottom paddingX={1} width="100%">
+              {mode !== 'chat' && (<Text><Text color={mode === 'campfire' ? '#f97316' : mode === 'brainstorm' ? '#22d3ee' : '#a78bfa'} bold>{mode === 'campfire' ? icons().campfire : mode === 'brainstorm' ? icons().brainstorm : icons().tribunal}{' '}{mode}</Text><Text dimColor>{' \u2502 '}</Text></Text>)}
+              <Text color={mode === 'chat' ? (planModeQueued || activePlanState === 'planning' ? '#c084fc' : '#585858') : '#fbbf24'}>{mode === 'chat' ? (planModeQueued ? '\u25c8 ' : '> ') : icons().prompt + ' '}</Text>
+              <Box flexGrow={1}>
+                {slashPickerOpen ? (
+                  <Text dimColor>{inputValue || '/'}</Text>
+                ) : (
+                  <PromptTextInput
+                    value={inputValue}
+                    onChange={handleInputChange}
+                    onSubmit={handleSubmit}
+                    onCtrlShortcut={onCtrlShortcut}
+                    placeholder={placeholder}
+                    focus={true}
+                    showCursor={true}
+                    highlightPastedText={true}
+                    ghostText={ghost ?? undefined}
+                    width={promptWidth}
+                    maxVisibleLines={promptMaxLines} />
+                )}
+              </Box>
+            </Box>
+          )}
+          {questionState && (
+            isPermissionQuestion ? (
+              <Box flexDirection="column" width="100%" marginTop={1}>
+                <Box borderStyle="round" borderColor="#fbbf24" paddingX={1} flexDirection="column" width="100%">
+                  <Text bold color="#fbbf24">{icons().warning}{' '}{permissionTool}{' approval required'}</Text>
+                  <Text>
+                    {yesChoice ? <Text color={yesChoice.color ?? '#4ade80'} bold>{'[Y] '}{yesChoice.label}</Text> : null}
+                    {yesChoice && (noChoice || alwaysChoice || permissionNeedsDetail) ? <Text dimColor>{'  '}</Text> : null}
+                    {noChoice ? <Text color={noChoice.color ?? '#ef4444'} bold>{'[N] '}{noChoice.label}</Text> : null}
+                    {noChoice && (alwaysChoice || permissionNeedsDetail) ? <Text dimColor>{'  '}</Text> : null}
+                    {alwaysChoice ? <Text color={alwaysChoice.color ?? '#60a5fa'} bold>{'[A] '}{alwaysChoice.label}</Text> : null}
+                    {alwaysChoice && permissionNeedsDetail ? <Text dimColor>{'  '}</Text> : null}
+                    {permissionNeedsDetail ? <Text color="#a78bfa" bold>{'[Ctrl+O] Open'}</Text> : null}
+                  </Text>
+                  {permissionPreview ? (
+                    <Text dimColor>{'  $ '}{permissionPreview}{permissionHasMoreLines ? ' …' : ''}</Text>
+                  ) : questionPrompt ? (
+                    <Text dimColor>{'  '}{questionPrompt}</Text>
+                  ) : null}
+                  {permissionSummary ? <Text dimColor>{'  '}{truncateCodeLine(permissionSummary, Math.max(24, termWidth - 10))}</Text> : null}
+                  <Text dimColor>{'  Esc cancels the prompt.'}</Text>
+                </Box>
+              </Box>
+            ) : (
+              <Box flexDirection="column" width="100%" marginTop={1}>
+                <Box borderStyle="round" borderColor={choiceList.length > 0 ? questionAccent : '#585858'} paddingX={1} flexDirection="column" width="100%">
+                  <Text bold color={questionAccent}>{choiceList.length > 0 ? '? ' : ' '}{questionPrompt}</Text>
+                  {choiceList.length > 0 ? (
+                    useInlineChoices ? (
+                      <Box paddingLeft={1}>
+                        <Text>
+                          {choiceList.map((c: any, i: number) => (
+                            <React.Fragment key={`choice-inline-${i}`}>
+                              {i > 0 ? <Text dimColor>{'  '}</Text> : null}
+                              <Text color={c.color ?? questionAccent} bold>{'['}{String(c.key ?? '').toUpperCase()}{'] '}{c.label}</Text>
+                            </React.Fragment>
+                          ))}
+                        </Text>
+                      </Box>
+                    ) : (
+                      <Box flexDirection="column" paddingLeft={1}>
+                        {choiceList.map((c: any, i: number) => (
+                          <Text key={`choice-${i}`}>
+                            <Text color={c.color ?? questionAccent} bold>{'['}{String(c.key ?? '').toUpperCase()}{']'}</Text>
+                            <Text>{' '}{c.label}</Text>
+                          </Text>
+                        ))}
+                      </Box>
+                    )
+                  ) : (
+                    <Box paddingLeft={1} width="100%">
+                      <PromptTextInput
+                        value={questionAnswer}
+                        onChange={onQuestionAnswerChange}
+                        onSubmit={onQuestionAnswerSubmit}
+                        onCtrlShortcut={onCtrlShortcut}
+                        placeholder=""
+                        focus={true}
+                        showCursor={true}
+                        highlightPastedText={true}
+                        ghostText={undefined}
+                        width={Math.max(12, termWidth - 10)}
+                        maxVisibleLines={Math.max(2, Math.min(4, promptMaxLines))} />
+                    </Box>
+                  )}
+                </Box>
+              </Box>
+            )
+          )}
+        </>
+      );
+    >>>

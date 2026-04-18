@@ -19,6 +19,9 @@ union name=Intent discriminant=type
     field name=question type=string
     field name=membersPerSide type=number optional=true
   variant name=leaderboard
+  variant name=cesar-report
+  variant name=cesar-hints
+    field name=input type=string
   variant name=history
     field name=id type=string optional=true
   variant name=engines
@@ -60,6 +63,20 @@ union name=Intent discriminant=type
     field name=sessionId type=string optional=true
   variant name=build
     field name=input type=string
+  variant name=agent
+    field name=input type=string
+  variant name=agent-solo
+    field name=input type=string
+    field name=maxTurns type=number optional=true
+  variant name=speculate
+    field name=input type=string
+    field name=engines type="string[]" optional=true
+    field name=maxTurns type=number optional=true
+  variant name=team-agent
+    field name=input type=string
+    field name=engines type="string[]" optional=true
+    field name=taskKind type="'edit'|'investigate'" optional=true
+    field name=maxTurns type=number optional=true
   variant name=pipeline
     field name=task type=string
     field name=fitnessCmd type="string | null"
@@ -100,6 +117,8 @@ union name=Intent discriminant=type
   variant name=mcp
     field name=action type="'connect'|'disconnect'|'list'"
     field name=server type=string optional=true
+  variant name=init
+    field name=scope type="string | undefined" optional=true
   variant name=create-skill
     field name=skillName type=string
   variant name=extensions

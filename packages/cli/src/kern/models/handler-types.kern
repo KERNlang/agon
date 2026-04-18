@@ -7,6 +7,7 @@ interface name=EngineProgress
   field name=done type=boolean
   field name=failed type=boolean
   field name=score type=string optional=true
+  field name=isAgent type=boolean optional=true
 
 union name=OutputEvent discriminant=type
   variant name=text
@@ -53,6 +54,9 @@ union name=OutputEvent discriminant=type
     field name=markdown type=string
   variant name=plan-execution
     field name=plan type=any
+  variant name=plan-cancelled
+    doc "Fired when the user rejects a plan-proposal at the approval prompt. Clears the live-pane proposal slot; does not add a scrollback block."
+    field name=plan type=any
   variant name=scoreboard
     field name=title type=string
     field name=winner type=string optional=true
@@ -92,6 +96,9 @@ union name=OutputEvent discriminant=type
     field name=input type=string
     field name=status type="'running'|'done'|'error'"
     field name=output type=string optional=true
+  variant name=tool-call-group
+    doc "A compacted group of consecutive tool-call blocks, committed to Static as a single summary row a-la Claude Code. Built by output.kern's pending buffer on non-tool events or /clear."
+    field name=blocks type="any[]"
   variant name=user-message
     field name=content type=string
   variant name=response-meta
@@ -112,17 +119,103 @@ union name=OutputEvent discriminant=type
     field name=totalForges type=number
     field name=workspace type="{ name: string; path: string; isKern?: boolean }" optional=true
     field name=runCount type=number
+  variant name=agent-step-end
+    field name=engineId type=string
+    field name=turnIndex type=number
+    field name=outcome type="'completed'|'cancelled'|'failed'"
+    field name=toolCalls type=number
+    field name=tokensUsed type=number
+    field name=stopReason type=string
+  variant name=agent-turn-summary
+    field name=engineId type=string
+    field name=turnsUsed type=number
+    field name=turnsRemaining type=number
+    field name=cumulativeTokens type=number
+    field name=cumulativeToolCalls type=number
+    field name=elapsedMs type=number
+  variant name=agent-budget-warning
+    field name=engineId type=string
+    field name=kind type="'turns'|'tokens'|'duration'"
+    field name=used type=number
+    field name=limit type=number
+    field name=remaining type=number
+  variant name=agent-step-start
+    field name=engineId type=string
+    field name=turnIndex type=number
+    field name=userPrompt type=string
+    field name=maxTurns type=number
+    field name=maxDurationMs type=number
+    field name=maxTokens type="number|null" optional=true
+    field name=teamId type=string optional=true
+  variant name=agent-team-start
+    field name=teamId type=string
+    field name=engineIds type="string[]"
+    field name=task type=string
+    field name=taskKind type="'edit'|'investigate'"
+  variant name=engine-switch
+    doc "Emitted when the active engine changes — either Cesar re-routes, team synthesis selects a winner, or Phase B auto-upgrades solo→team. Enables the UI to show a subtle attribution badge."
+    field name=from type=string optional=true
+    field name=to type=string
+    field name=reason type="'auto-fanout'|'cesar-route'|'team-member'|'synthesis'|'fallback'"
+    field name=confidence type=number optional=true
+  variant name=shadow-active
+    doc "Emitted once when shadow mode starts — a secondary engine is racing in a background worktree. Lets the UI show a subtle 'shadow running' indicator without cluttering the foreground stream."
+    field name=shadowEngineId type=string
+    field name=foregroundEngineId type=string
+  variant name=agent-routing
+    doc "Emitted when Cesar decides between solo and team mode before dispatch. Gives the user visibility into the routing decision."
+    field name=mode type="'solo'|'team'"
+    field name=engines type="string[]"
+    field name=reason type=string
+  variant name=agent-team-complete
+    field name=teamId type=string
+    field name=winner type="string|null"
+    field name=synthesizedPatch type="string|null" optional=true
+    field name=synthesizedAnalysis type="string|null" optional=true
+    field name=memberOutcomes type="Array<{engineId:string,outcome:string,diffLines:number,passedFitness:boolean}>"
+    field name=teamCostUsd type=number
+    field name=teamDurationMs type=number
+    field name=synthesisRan type=boolean optional=true
+    field name=synthesisChanged type=boolean optional=true
+    field name=synthesisCostUsd type=number optional=true
+    field name=synthesisFitnessRegressed type=boolean optional=true
 
 interface name=PendingDelegation
   field name=action type=string
+  field name=task type=string optional=true
   field name=reasoning type=string
+  field name=scope type="'slice'|'full'" optional=true
   field name=fitnessCmd type=string optional=true
   field name=hardened type=boolean
   field name=tribunalMode type=string optional=true
   field name=team type=boolean
   field name=target type=string optional=true
   field name=engineId type=string optional=true
+  field name=engines type="string[]" optional=true
+  field name=taskKind type="'edit'|'investigate'" optional=true
+  field name=maxTurns type=number optional=true
   field name=createdAt type=number
+
+type name=CesarLiveMode values="self|self-nero|delegate|forge|forge-slice|team-forge|brainstorm|team-brainstorm|campfire|tribunal|team-tribunal|pipeline|review|agent|team-agent|plan"
+
+interface name=CesarTurnOutcome
+  field name=mode type=CesarLiveMode optional=true
+  field name=delegated type=boolean
+  field name=responded type=boolean
+  field name=action type=string optional=true
+  field name=task type=string optional=true
+  field name=reasoning type=string optional=true
+  field name=decisionReason type=string optional=true
+  field name=scope type="'slice'|'full'" optional=true
+  field name=fitnessCmd type=string optional=true
+  field name=hardened type=boolean optional=true
+  field name=tribunalMode type=string optional=true
+  field name=team type=boolean optional=true
+  field name=target type=string optional=true
+  field name=engineId type=string optional=true
+  field name=engines type="string[]" optional=true
+  field name=taskKind type="'edit'|'investigate'" optional=true
+  field name=maxTurns type=number optional=true
 
 interface name=CesarState
   field name=busy type=boolean
@@ -133,6 +226,9 @@ interface name=CesarState
   field name=lastDispatch type="((event: any) => void) | null"
   field name=pendingDelegation type="PendingDelegation | null"
   field name=reportedConfidence type="number | undefined"
+  field name=confidenceSatisfied type=boolean
+  field name=blockedOnConfidence type="{ name:string; args:Record<string,unknown> } | null"
+  field name=quickNeroRequested type=boolean optional=true
   field name=autoNero type=boolean
   field name=advisorPending type=boolean
   field name=mcpFingerprint type="string | undefined"
@@ -146,6 +242,7 @@ interface name=HandlerContext
   field name=registry type=EngineRegistry
   field name=adapter type=EngineAdapter
   field name=activeEngines type="() => string[]"
+  field name=inputEpoch type=number optional=true
   field name=config type=AgonConfig
   field name=chatSession type=ChatSession
   field name=currentPlan type="Plan | null"

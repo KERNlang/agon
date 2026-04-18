@@ -1,0 +1,487 @@
+import from="react" default="React" names="useEffect,useMemo,useRef,useState"
+import from="ink" names="Box,Text"
+import from="chalk" default="chalk"
+import from="../../input-utils.js" names="stripTerminalInputMarkers"
+import from="../../safe-text-input.js" names="applyInlineInputEdits,classifyDeleteInput,deleteWordBackward,findLineEnd,findLineStart,findWordBoundaryLeft,findWordBoundaryRight,syncControlledInputCursor"
+import from="../../stable-input.js" names="useStableInput"
+
+interface name=PromptToken
+  field name=dimmed type="boolean|undefined"
+  field name=highlighted type=boolean
+  field name=isCursor type=boolean
+  field name=kind type="'char'|'cursor'"
+  field name=text type=string
+
+interface name=PromptLine
+  field name=tokens type="PromptToken[]"
+
+interface name=PromptViewport
+  field name=start type=number
+  field name=end type=number
+  field name=hiddenAbove type=number
+  field name=hiddenBelow type=number
+
+fn name=isMouseReportInput params="input:string" returns=boolean export=false
+  handler <<<
+    if (!input) return false;
+    if (/\x1b\[<\d+;\d+;\d+[mM]/.test(input)) return true;
+    if (/\[<\d+;\d+;\d+[mM]/.test(input)) return true;
+    if (/^<\d+;\d+;\d+[mM]$/.test(input)) return true;
+    if (/^\[<\d+;\d+;\d+[mM]$/.test(input)) return true;
+    if (/^(?:\x1b\[)?<\d+;\d+;\d*$/.test(input)) return true;
+    if (/^(?:\x1b\[|\[)?<\d+;\d+;\d*$/.test(input)) return true;
+    return false;
+  >>>
+
+fn name=stripMouseReportInput params="input:string" returns=string export=false
+  handler <<<
+    if (!input) return input;
+    return input
+      .replace(/\x1b\[<\d+;\d+;\d+[mM]/g, '')
+      .replace(/\[<\d+;\d+;\d+[mM]/g, '')
+      .replace(/(?:\x1b\[|\[)?<\d+;\d+;\d*(?:[mM])?/g, '');
+  >>>
+
+fn name=wrapPromptText params="value:string, width:number" returns="string[]"
+  handler <<<
+    const safeWidth = Math.max(1, width);
+    const lines = [''];
+    let col = 0;
+    for (const char of value) {
+      if (char === '\n') {
+        lines.push('');
+        col = 0;
+        continue;
+      }
+      if (col === safeWidth) {
+        lines.push('');
+        col = 0;
+      }
+      lines[lines.length - 1] += char;
+      col += 1;
+    }
+    return lines;
+  >>>
+
+fn name=locatePromptCursor params="value:string, width:number, cursorOffset:number" returns="{column:number, line:number, synthetic:boolean}"
+  handler <<<
+    const safeWidth = Math.max(1, width);
+    const boundedOffset = Math.max(0, Math.min(cursorOffset, value.length));
+    const needsSyntheticCursor = boundedOffset === value.length || value[boundedOffset] === '\n';
+    let line = 0;
+    let col = 0;
+
+    for (let index = 0; index < value.length; index++) {
+      const char = value[index];
+      if (needsSyntheticCursor && index === boundedOffset) {
+        return col === safeWidth ? { line: line + 1, column: 0, synthetic: true } : { line, column: col, synthetic: true };
+      }
+      if (char === '\n') {
+        if (!needsSyntheticCursor && index === boundedOffset) {
+          return { line, column: col, synthetic: true };
+        }
+        line += 1;
+        col = 0;
+        continue;
+      }
+      if (col === safeWidth) {
+        line += 1;
+        col = 0;
+      }
+      if (!needsSyntheticCursor && index === boundedOffset) {
+        return { line, column: col, synthetic: false };
+      }
+      col += 1;
+    }
+
+    if (col === safeWidth) return { line: line + 1, column: 0, synthetic: true };
+    return { line, column: col, synthetic: true };
+  >>>
+
+fn name=selectPromptViewport params="totalLines:number, cursorLine:number, maxVisibleLines:number" returns=PromptViewport
+  handler <<<
+    const safeVisibleLines = Math.max(1, maxVisibleLines);
+    const boundedCursor = Math.max(0, Math.min(cursorLine, Math.max(0, totalLines - 1)));
+    if (totalLines <= safeVisibleLines) {
+      return { start: 0, end: totalLines, hiddenAbove: 0, hiddenBelow: 0 };
+    }
+    const headroom = Math.floor((safeVisibleLines - 1) / 2);
+    let start = boundedCursor - headroom;
+    if (start < 0) start = 0;
+    const maxStart = totalLines - safeVisibleLines;
+    if (start > maxStart) start = maxStart;
+    const end = start + safeVisibleLines;
+    return {
+      start,
+      end,
+      hiddenAbove: start,
+      hiddenBelow: totalLines - end,
+    };
+  >>>
+
+fn name=renderToken params="token:PromptToken" returns=string export=false
+  handler <<<
+    if (token.kind === 'cursor') return chalk.inverse(' ');
+    if (token.highlighted) return chalk.inverse(token.text);
+    if (token.dimmed) return chalk.grey(token.text);
+    return token.text;
+  >>>
+
+fn name=buildPlaceholderLines params="placeholder:string, width:number, opts:{focus:boolean, showCursor:boolean}" returns="{cursorLine:number, lines:PromptLine[]}" export=false
+  handler <<<
+    const safeWidth = Math.max(1, width);
+    const lines: PromptLine[] = [{ tokens: [] }];
+    let col = 0;
+    let cursorLine = 0;
+
+    const pushLine = () => {
+      lines.push({ tokens: [] });
+      col = 0;
+    };
+
+    const pushToken = (token: PromptToken) => {
+      if (col === safeWidth) pushLine();
+      lines[lines.length - 1].tokens.push(token);
+      if (token.isCursor) cursorLine = lines.length - 1;
+      col += 1;
+    };
+
+    if (!placeholder) {
+      if (opts.focus && opts.showCursor) {
+        pushToken({ kind: 'cursor', text: ' ', dimmed: false, highlighted: true, isCursor: true });
+      }
+      return { lines, cursorLine };
+    }
+
+    for (let index = 0; index < placeholder.length; index++) {
+      pushToken({
+        kind: 'char',
+        text: placeholder[index]!,
+        dimmed: !(opts.focus && opts.showCursor && index === 0),
+        highlighted: opts.focus && opts.showCursor && index === 0,
+        isCursor: opts.focus && opts.showCursor && index === 0,
+      });
+    }
+
+    return { lines, cursorLine };
+  >>>
+
+fn name=buildValueLines params="value:string, width:number, opts:{cursorOffset:number, cursorWidth:number, focus:boolean, highlightPastedText:boolean, showCursor:boolean}" returns="{cursorLine:number, lines:PromptLine[]}" export=false
+  handler <<<
+    const safeWidth = Math.max(1, width);
+    const lines: PromptLine[] = [{ tokens: [] }];
+    const boundedCursorOffset = Math.max(0, Math.min(opts.cursorOffset, value.length));
+    const selectionStart = opts.highlightPastedText ? Math.max(0, boundedCursorOffset - opts.cursorWidth) : boundedCursorOffset;
+    const showCursor = opts.focus && opts.showCursor;
+    const needsSyntheticCursor = showCursor && (value.length === 0 || boundedCursorOffset === value.length || value[boundedCursorOffset] === '\n');
+    let col = 0;
+    let cursorLine = 0;
+    let cursorPlaced = false;
+
+    const pushLine = () => {
+      lines.push({ tokens: [] });
+      col = 0;
+    };
+
+    const pushToken = (token: PromptToken) => {
+      if (col === safeWidth) pushLine();
+      lines[lines.length - 1].tokens.push(token);
+      if (token.isCursor) {
+        cursorPlaced = true;
+        cursorLine = lines.length - 1;
+      }
+      col += 1;
+    };
+
+    const maybePushSyntheticCursor = (offset: number) => {
+      if (!needsSyntheticCursor || offset !== boundedCursorOffset) return;
+      pushToken({ kind: 'cursor', text: ' ', dimmed: false, highlighted: true, isCursor: true });
+    };
+
+    if (!value) {
+      if (showCursor) {
+        pushToken({ kind: 'cursor', text: ' ', dimmed: false, highlighted: true, isCursor: true });
+      }
+      return { lines, cursorLine };
+    }
+
+    for (let index = 0; index < value.length; index++) {
+      maybePushSyntheticCursor(index);
+      const char = value[index]!;
+      if (char === '\n') {
+        pushLine();
+        continue;
+      }
+      const isCursorChar = showCursor && !needsSyntheticCursor && index === boundedCursorOffset;
+      const isSelectionChar = showCursor && opts.highlightPastedText && index >= selectionStart && index < boundedCursorOffset;
+      pushToken({
+        kind: 'char',
+        text: char,
+        dimmed: false,
+        highlighted: isCursorChar || isSelectionChar,
+        isCursor: isCursorChar,
+      });
+    }
+
+    maybePushSyntheticCursor(value.length);
+
+    if (!cursorPlaced) {
+      cursorLine = locatePromptCursor(value, safeWidth, boundedCursorOffset).line;
+    }
+
+    return { lines, cursorLine };
+  >>>
+
+fn name=lineLength params="line:PromptLine" returns=number export=false
+  handler <<< return line.tokens.length; >>>
+
+fn name=pluralizeLines params="count:number" returns=string export=false
+  handler <<< return count === 1 ? 'line' : 'lines'; >>>
+
+fn name=isDelegatedCtrlShortcut params="input:string" returns=boolean export=true
+  handler <<< return ['c', 'e', 'j', 'l', 'r', 't', 'y'].includes(input); >>>
+
+fn name=shouldAdoptPromptValue params="originalValue:string, pendingEchoValue:string|null" returns=boolean export=true
+  handler <<<
+    if (pendingEchoValue === null) return true;
+    if (originalValue === pendingEchoValue) return true;
+    if (!originalValue) return true;
+    if (pendingEchoValue.startsWith(originalValue) && originalValue.length < pendingEchoValue.length) return false;
+    return true;
+  >>>
+
+screen name=PromptTextInput target=ink memo=true export=named
+  prop name=value type=string
+  prop name=placeholder type="string|undefined"
+  prop name=focus type="boolean|undefined"
+  prop name=showCursor type="boolean|undefined"
+  prop name=highlightPastedText type="boolean|undefined"
+  prop name=ghostText type="string|undefined"
+  prop name=width type=number
+  prop name=maxVisibleLines type="number|undefined"
+  prop name=onChange type="(value:string) => void"
+  prop name=onSubmit type="((value:string) => void)|undefined"
+  prop name=onCtrlShortcut type="((shortcut:string) => void)|undefined"
+  render
+    handler <<<
+      const originalValue = value;
+      const resolvedPlaceholder = placeholder ?? '';
+      const resolvedFocus = focus ?? true;
+      const resolvedShowCursor = showCursor ?? true;
+      const resolvedHighlightPastedText = highlightPastedText ?? true;
+      const resolvedMaxVisibleLines = maxVisibleLines ?? 6;
+      const [bufferedValue, setBufferedValue] = useState(originalValue);
+      const [state, setState] = useState({
+        cursorOffset: originalValue.length,
+        cursorWidth: 0,
+      });
+      const { cursorOffset, cursorWidth } = state;
+      const bufferedValueRef = useRef(originalValue);
+      const cursorStateRef = useRef({ cursorOffset: originalValue.length, cursorWidth: 0 });
+      const pendingEchoValueRef = useRef<string|null>(null);
+      const lastCommittedValueRef = useRef(originalValue);
+
+      useEffect(() => {
+        const shouldAdopt = shouldAdoptPromptValue(originalValue, pendingEchoValueRef.current);
+        const effectiveValue = shouldAdopt ? originalValue : bufferedValueRef.current;
+        const syncedState = syncControlledInputCursor(cursorStateRef.current, effectiveValue, {
+          focus: resolvedFocus,
+          showCursor: resolvedShowCursor,
+          lastCommittedValue: lastCommittedValueRef.current,
+        });
+        cursorStateRef.current = syncedState;
+        setState(syncedState);
+        if (bufferedValueRef.current !== effectiveValue) {
+          bufferedValueRef.current = effectiveValue;
+          setBufferedValue(effectiveValue);
+        }
+        if (shouldAdopt) {
+          pendingEchoValueRef.current = null;
+          lastCommittedValueRef.current = originalValue;
+        }
+      }, [originalValue, resolvedFocus, resolvedShowCursor]);
+
+      const safeWidth = Math.max(12, width);
+
+      const layout = useMemo(() => {
+        const baseLayout = bufferedValue
+          ? buildValueLines(bufferedValue, safeWidth, {
+              cursorOffset,
+              cursorWidth,
+              focus: resolvedFocus,
+              highlightPastedText: resolvedHighlightPastedText,
+              showCursor: resolvedShowCursor,
+            })
+          : buildPlaceholderLines(resolvedPlaceholder, safeWidth, { focus: resolvedFocus, showCursor: resolvedShowCursor });
+        const viewport = selectPromptViewport(baseLayout.lines.length, baseLayout.cursorLine, resolvedMaxVisibleLines);
+        const renderedLines = baseLayout.lines
+          .slice(viewport.start, viewport.end)
+          .map((line: PromptLine) => line.tokens.map(renderToken).join('') || ' ');
+
+        if (
+          ghostText &&
+          bufferedValue.length > 0 &&
+          baseLayout.lines.length === 1 &&
+          renderedLines.length === 1 &&
+          lineLength(baseLayout.lines[0]!) + ghostText.length <= safeWidth
+        ) {
+          renderedLines[0] += chalk.dim(ghostText);
+        }
+
+        return {
+          renderedLines,
+          hiddenAbove: viewport.hiddenAbove,
+          hiddenBelow: viewport.hiddenBelow,
+        };
+      }, [
+        cursorOffset,
+        cursorWidth,
+        ghostText,
+        bufferedValue,
+        resolvedFocus,
+        resolvedHighlightPastedText,
+        resolvedMaxVisibleLines,
+        resolvedPlaceholder,
+        resolvedShowCursor,
+        safeWidth,
+      ]);
+
+      useStableInput((input: string, key: any) => {
+        if (isMouseReportInput(input)) return;
+        input = stripTerminalInputMarkers(stripMouseReportInput(input));
+        const deleteMode = classifyDeleteInput(input, key);
+        const isForwardDelete = deleteMode === 'forward';
+        const isBackspace = deleteMode === 'backward';
+        const extendedKey = key as typeof key & { home?: boolean; end?: boolean };
+        const normalizedCtrlInput = key.ctrl
+          ? ({
+              '\x01': 'a',
+              '\x03': 'c',
+              '\x05': 'e',
+              '\x0a': 'j',
+              '\x0b': 'k',
+              '\x0c': 'l',
+              '\x12': 'r',
+              '\x14': 't',
+              '\x19': 'y',
+              '\x15': 'u',
+              '\x17': 'w',
+            } as Record<string, string>)[input] ?? input
+          : input;
+        const isReservedCtrlShortcut = key.ctrl && isDelegatedCtrlShortcut(normalizedCtrlInput);
+        const isSupportedCtrlEditShortcut = key.ctrl && ['a', 'k', 'u', 'w'].includes(normalizedCtrlInput);
+        const isWordLeft = (key.meta && (key.leftArrow || input === 'b')) || input === '\x1bb';
+        const isWordRight = (key.meta && (key.rightArrow || input === 'f')) || input === '\x1bf';
+        const isDeleteWordBackward = (key.ctrl && normalizedCtrlInput === 'w') || (key.meta && isBackspace) || input === '\x1b\x7f';
+        const hasSpecialKeySignal =
+          isBackspace ||
+          isForwardDelete ||
+          key.return ||
+          key.leftArrow ||
+          key.rightArrow ||
+          key.upArrow ||
+          key.downArrow ||
+          key.pageUp ||
+          key.pageDown ||
+          key.tab ||
+          (key.shift && key.tab) ||
+          isWordLeft ||
+          isWordRight ||
+          isDeleteWordBackward ||
+          extendedKey.home ||
+          extendedKey.end;
+
+        if (!input && !hasSpecialKeySignal) return;
+
+        if (isReservedCtrlShortcut) {
+          onCtrlShortcut?.(normalizedCtrlInput);
+          return;
+        }
+
+        if (key.upArrow || key.downArrow || key.pageUp || key.pageDown || key.tab || (key.shift && key.tab)) return;
+        if (key.ctrl && !isSupportedCtrlEditShortcut) return;
+        if (key.meta && !isWordLeft && !isWordRight && !isDeleteWordBackward) return;
+
+        if (key.return) {
+          pendingEchoValueRef.current = null;
+          onSubmit?.(bufferedValueRef.current);
+          return;
+        }
+
+        const currentValue = bufferedValueRef.current;
+        const currentCursor = cursorStateRef.current;
+        let nextCursorOffset = currentCursor.cursorOffset;
+        let nextValue = currentValue;
+        let nextCursorWidth = 0;
+
+        if (extendedKey.home || (key.ctrl && normalizedCtrlInput === 'a')) {
+          if (resolvedShowCursor) nextCursorOffset = findLineStart(currentValue, currentCursor.cursorOffset);
+        } else if (extendedKey.end) {
+          if (resolvedShowCursor) nextCursorOffset = findLineEnd(currentValue, currentCursor.cursorOffset);
+        } else if (isWordLeft) {
+          if (resolvedShowCursor) nextCursorOffset = findWordBoundaryLeft(currentValue, currentCursor.cursorOffset);
+        } else if (isWordRight) {
+          if (resolvedShowCursor) nextCursorOffset = findWordBoundaryRight(currentValue, currentCursor.cursorOffset);
+        } else if (key.leftArrow) {
+          if (resolvedShowCursor) nextCursorOffset -= 1;
+        } else if (key.rightArrow) {
+          if (resolvedShowCursor) nextCursorOffset += 1;
+        } else if (isDeleteWordBackward) {
+          if (currentCursor.cursorOffset > 0) {
+            const updated = deleteWordBackward(currentValue, currentCursor.cursorOffset);
+            nextValue = updated.value;
+            nextCursorOffset = updated.cursorOffset;
+          }
+        } else if (key.ctrl && normalizedCtrlInput === 'u') {
+          const lineStart = findLineStart(currentValue, currentCursor.cursorOffset);
+          nextValue = currentValue.slice(0, lineStart) + currentValue.slice(currentCursor.cursorOffset);
+          nextCursorOffset = lineStart;
+        } else if (key.ctrl && normalizedCtrlInput === 'k') {
+          const lineEnd = findLineEnd(currentValue, currentCursor.cursorOffset);
+          nextValue = currentValue.slice(0, currentCursor.cursorOffset) + currentValue.slice(lineEnd);
+        } else if (isBackspace) {
+          if (currentCursor.cursorOffset > 0) {
+            nextValue = currentValue.slice(0, currentCursor.cursorOffset - 1) + currentValue.slice(currentCursor.cursorOffset);
+            nextCursorOffset -= 1;
+          }
+        } else if (isForwardDelete) {
+          if (currentCursor.cursorOffset < currentValue.length) {
+            nextValue = currentValue.slice(0, currentCursor.cursorOffset) + currentValue.slice(currentCursor.cursorOffset + 1);
+          }
+        } else {
+          const updated = applyInlineInputEdits(currentValue, currentCursor.cursorOffset, input);
+          nextValue = updated.value;
+          nextCursorOffset = updated.cursorOffset;
+          nextCursorWidth = updated.cursorWidth;
+        }
+
+        if (nextCursorOffset < 0) nextCursorOffset = 0;
+        if (nextCursorOffset > nextValue.length) nextCursorOffset = nextValue.length;
+
+        const nextState = { cursorOffset: nextCursorOffset, cursorWidth: nextCursorWidth };
+        cursorStateRef.current = nextState;
+        setState(nextState);
+
+        if (nextValue !== currentValue) {
+          pendingEchoValueRef.current = nextValue;
+          bufferedValueRef.current = nextValue;
+          setBufferedValue(nextValue);
+          lastCommittedValueRef.current = nextValue;
+          onChange(nextValue);
+        }
+      }, { isActive: resolvedFocus });
+
+      return (
+        <Box flexDirection="column" width="100%">
+          {layout.hiddenAbove > 0 && (
+            <Text dimColor>{`^ ${layout.hiddenAbove} more ${pluralizeLines(layout.hiddenAbove)}`}</Text>
+          )}
+          {layout.renderedLines.map((line: string, index: number) => (
+            <Text key={index}>{line}</Text>
+          ))}
+          {layout.hiddenBelow > 0 && (
+            <Text dimColor>{`v ${layout.hiddenBelow} more ${pluralizeLines(layout.hiddenBelow)}`}</Text>
+          )}
+        </Box>
+      );
+    >>>

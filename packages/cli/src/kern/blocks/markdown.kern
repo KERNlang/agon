@@ -433,6 +433,9 @@ fn name=cleanEngineOutput params="raw:string" returns=string
     result = result.replace(/<tool_result[\s\S]*?<\/tool_result>/g, '');
     result = result.replace(/<\/minimax:tool_call>/g, '');
     result = result.replace(/<parameter\s+name="[^"]*">[^<]*<\/parameter>/g, '');
+    result = result.replace(/<tool_calls>[\s\S]*?<\/tool_calls>/gi, '');
+    result = result.replace(/<(Read|Write|Edit|Bash|Grep|Glob|LS|ListPlans|Retrieve)\b[\s\S]*?<\/\1>/g, '');
+    result = result.replace(/<\/?(file_path|path|pattern|command|query|content|old_string|new_string|start_line|end_line|id)>\s*/g, '');
 
     // Strip reasoning tags from models that use <think>...</think> (MiniMax, DeepSeek, Qwen, etc.)
     result = result.replace(/<think>[\s\S]*?<\/think>\s*/gi, '');

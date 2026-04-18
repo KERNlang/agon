@@ -34,7 +34,7 @@ export const brainstormCommand = defineCommand({
     ensureAgonHome();
 
     const registry = new EngineRegistry();
-    registry.load(join(dirname(fileURLToPath(import.meta.url)), '../../../../engines'));
+    registry.load(join(dirname(fileURLToPath(import.meta.url)), '../../../engines'));
 
     const adapter = createCliAdapter(registry);
     const available = args.engines

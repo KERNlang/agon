@@ -86,7 +86,7 @@ screen name=EngineProgressView target=ink
 
 // ── Screen: EngineBlock ─────────────────────────────────────────────
 
-screen name=EngineBlock target=ink
+screen name=EngineBlock target=ink memo=true
   prop name=engineId type=string
   prop name=color type=number
   prop name=content type=string
@@ -120,7 +120,7 @@ screen name=EngineBlock target=ink
 
 // ── Screen: ConversationalResponse ──────────────────────────────────
 
-screen name=ConversationalResponse target=ink
+screen name=ConversationalResponse target=ink memo=true
   prop name=engineId type=string
   prop name=content type=string
   render
@@ -141,7 +141,7 @@ screen name=ConversationalResponse target=ink
 
 // ── Screen: DashboardView ───────────────────────────────────────────
 
-screen name=DashboardView target=ink export=false
+screen name=DashboardView target=ink export=true
   prop name=event type="OutputEvent & { type: 'dashboard' }"
   render
     handler <<<
@@ -238,7 +238,7 @@ screen name=TableView target=ink export=false
 
 // ── Screen: OutputBlockView ─────────────────────────────────────────
 
-screen name=OutputBlockView target=ink
+screen name=OutputBlockView target=ink memo=true
   prop name=event type=OutputEvent
   prop name=mode type=string
   prop name=toolOutputExpanded type=boolean optional=true
@@ -339,7 +339,7 @@ screen name=OutputBlockView target=ink
               {preview.map((line: string, i: number) => (
                 <Text key={`think-${i}`} italic dimColor color="#8b8b8b">{'  \u25B9 '}{line}</Text>
               ))}
-              {lines.length > 3 && <Text italic dimColor color="#8b8b8b">{'  \u25B9 \u2026'}{lines.length - 3}{' more lines  '}<Text color="#f59e0b">{'^T'}</Text></Text>}
+              {lines.length > 3 && <Text italic dimColor color="#8b8b8b">{'  \u25B9 \u2026'}{lines.length - 3}{' more lines  '}<Text color="#f59e0b">{'Ctrl+T'}</Text></Text>}
             </Box>
           );
         }
@@ -449,7 +449,11 @@ screen name=OutputBlockView target=ink
             if (rawInput.startsWith('{')) parsed = JSON.parse(rawInput);
           } catch { /* not JSON — rawInput used as fallback */ }
           const toolKey = event.tool.toLowerCase();
-          const collapsedHint = !toolOutputExpanded ? <Text color="#f59e0b">{' \u25b8 Ctrl+E'}</Text> : null;
+          const forceExpanded = ['edit', 'write', 'update', 'applypatch', 'apply_patch'].includes(toolKey);
+          // Tool blocks are committed into native terminal scrollback via
+          // <Static> once finalized — so a per-block "Ctrl+E expand" hint
+          // would be misleading (Ink cannot re-render past Static items).
+          const collapsedHint = null;
 
           // ── Bash / Run ──
           if (toolKey === 'bash' || toolKey === 'run') {
@@ -512,7 +516,7 @@ screen name=OutputBlockView target=ink
                     <>
                       <Text> </Text>
                       {headLines.map((line: string, i: number) => renderLine(line, i, 'head'))}
-                      {skipped > 0 && <Text dimColor>{'    \u2026 '}{skipped}{' more lines \u2026 (^E to expand all)'}</Text>}
+                      {skipped > 0 && <Text dimColor>{'    \u2026 '}{skipped}{' more lines \u2026'}</Text>}
                       {tailLines.map((line: string, i: number) => renderLine(line, i, 'tail'))}
                     </>
                   );
@@ -522,32 +526,31 @@ screen name=OutputBlockView target=ink
           }
 
           // ── Edit ──
-          if (toolKey === 'edit') {
+          if (toolKey === 'edit' || toolKey === 'update') {
             const filePath = (parsed.file_path as string) || (parsed.filePath as string) || '';
             const oldStr = (parsed.old_string as string) || (parsed.oldString as string) || '';
             const newStr = (parsed.new_string as string) || (parsed.newString as string) || '';
             const shortPath = filePath ? filePath.replace(process.cwd() + '/', '').replace(process.env.HOME ?? '', '~') : '';
             const addedCount = newStr ? newStr.split('\n').length : 0;
             const removedCount = oldStr ? oldStr.split('\n').length : 0;
-            // Collapsed: 1-line summary
-            if (!toolOutputExpanded) {
+            // Collapsed: single-line summary.
+            if (!toolOutputExpanded && !forceExpanded) {
               return (
                 <Box paddingLeft={2}>
                   <Text>
-                    {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().edit + ' Update'}</Text></Text>
-                    {shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}
-                    <Text dimColor>{' '}<Text color="#ef4444">{'-'}{removedCount}</Text>{' '}<Text color="#4ade80">{'+'}{addedCount}</Text></Text>
-                    {collapsedHint}
+                    {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().edit + ' Update'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}{' '}<Text dimColor>\u00b7 </Text><Text color="#ef4444">-{removedCount}</Text><Text dimColor>{' '}</Text><Text color="#4ade80">+{addedCount}</Text>{' lines'}<Text dimColor>{''}</Text>
                   </Text>
                 </Box>
               );
             }
+            // When expanded: show all lines.
+            const maxLines = Infinity;
             return (
               <Box paddingLeft={2} flexDirection="column">
                 <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().edit + ' Update'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}</Text>
                 {(oldStr || newStr) && event.status !== 'running' && (() => {
-                  const oldLines = oldStr.split('\n').slice(0, 20);
-                  const newLines = newStr.split('\n').slice(0, 20);
+                  const oldLines = oldStr.split('\n').slice(0, maxLines);
+                  const newLines = newStr.split('\n').slice(0, maxLines);
                   const gutterW = Math.max(String(Math.max(removedCount, addedCount)).length, 2);
                   const pad = (n: number) => String(n).padStart(gutterW);
                   return (
@@ -559,14 +562,14 @@ screen name=OutputBlockView target=ink
                           <DiffLine line={`-${line}`} maxWidth={codeWidth - gutterW - 2} />
                         </Text>
                       ))}
-                      {removedCount > 20 && <Text dimColor>{'    \u2026 '}{removedCount - 20}{' more removed'}</Text>}
+                      {removedCount > maxLines && <Text dimColor>{'    \u2026 '}{removedCount - maxLines}{' more removed'}</Text>}
                       {newLines.map((line: string, i: number) => (
                         <Text key={`new-${i}`}>
                           <Text color="#6b7280">{' '}{pad(i + 1)}{' '}</Text>
                           <DiffLine line={`+${line}`} maxWidth={codeWidth - gutterW - 2} />
                         </Text>
                       ))}
-                      {addedCount > 20 && <Text dimColor>{'    \u2026 '}{addedCount - 20}{' more added'}</Text>}
+                      {addedCount > maxLines && <Text dimColor>{'    \u2026 '}{addedCount - maxLines}{' more added'}</Text>}
                     </>
                   );
                 })()}
@@ -580,26 +583,39 @@ screen name=OutputBlockView target=ink
             const content = (parsed.content as string) || '';
             const shortPath = filePath.replace(process.cwd() + '/', '').replace(process.env.HOME ?? '', '~');
             const lineCount = content ? content.split('\n').length : 0;
-            // Collapsed: 1-line summary
-            if (!toolOutputExpanded) {
+            // Collapsed: single-line summary.
+            if (!toolOutputExpanded && !forceExpanded) {
               return (
                 <Box paddingLeft={2}>
                   <Text>
-                    {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().write + ' Write'}</Text></Text>
-                    {shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}
-                    {lineCount > 0 && <Text dimColor>{' '}{lineCount}{' lines'}</Text>}
-                    {collapsedHint}
+                    {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().write + ' Write'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}{lineCount > 0 && <><Text dimColor>{' \u00b7 '}</Text><Text color="#4ade80">+{lineCount}</Text><Text dimColor>{' lines'}</Text></>}<Text dimColor>{''}</Text>
                   </Text>
                 </Box>
               );
             }
+            // When expanded: show all lines.
+            const maxLines = Infinity;
             return (
               <Box paddingLeft={2} flexDirection="column">
                 <Text>{nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().write + ' Write'}</Text></Text>{shortPath ? <Text>{'('}<Text color="#a78bfa">{shortPath}</Text>{')'}</Text> : ''}</Text>
-                {lineCount > 0 && <Text dimColor>{'  '}{lineCount}{' lines'}</Text>}
-                {event.output && event.status === 'done' && (
-                  <Text dimColor>{'  '}{event.output.length > 80 ? event.output.slice(0, 80) + '\u2026' : event.output}</Text>
-                )}
+                {content && event.status !== 'running' && (() => {
+                  const allLines = content.split('\n');
+                  const shown = allLines.slice(0, maxLines);
+                  const gutterW = Math.max(String(lineCount).length, 2);
+                  const pad = (n: number) => String(n).padStart(gutterW);
+                  return (
+                    <>
+                      <Text dimColor>{'    '}<Text color="#4ade80">{'+'}{lineCount}</Text>{' lines'}</Text>
+                      {shown.map((line: string, i: number) => (
+                        <Text key={`w-${i}`}>
+                          <Text color="#6b7280">{' '}{pad(i + 1)}{' '}</Text>
+                          <DiffLine line={`+${line}`} maxWidth={codeWidth - gutterW - 2} />
+                        </Text>
+                      ))}
+                      {lineCount > maxLines && <Text dimColor>{'    \u2026 '}{lineCount - maxLines}{' more lines'}</Text>}
+                    </>
+                  );
+                })()}
               </Box>
             );
           }
@@ -695,7 +711,7 @@ screen name=OutputBlockView target=ink
           const label = toolLabels[event.tool] ?? `${ic.tool} ${event.tool}`;
           const inputPreview = event.input.length > 80 ? event.input.slice(0, 80) + '\u2026' : event.input;
           // Collapsed: 1-line summary for generic tools
-          if (!toolOutputExpanded) {
+          if (!toolOutputExpanded && !forceExpanded) {
             const outLines = event.output ? event.output.split('\n').length : 0;
             return (
               <Box paddingLeft={2}>
@@ -756,15 +772,16 @@ screen name=OutputBlockView target=ink
           );
         }
         case 'dashboard': return <DashboardView event={event as OutputEvent & { type: 'dashboard' }} />;
-        case 'plan-proposal': return <PlanProposalView plan={event.plan} />;
+        case 'plan-proposal': return <PlanProposalView plan={event.plan} markdown={(event as any).markdown} />;
         case 'plan-execution': return <PlanExecutionView plan={(event as any).plan} />;
+        case 'tool-call-group': return <ToolCallGroup blocks={(event as any).blocks} />;
         default: return null;
       }
     >>>
 
 // ── Screen: ToolCallGroup — collapsed summary for consecutive tool calls ──
 
-screen name=ToolCallGroup target=ink
+screen name=ToolCallGroup target=ink memo=true
   prop name=blocks type="OutputBlock[]"
   render
     handler <<<
@@ -772,6 +789,7 @@ screen name=ToolCallGroup target=ink
       let errors = 0;
       let running = 0;
       let groupEngineId = '';
+      const changedFiles: string[] = [];
       for (const b of blocks) {
         const ev = b.event as any;
         groupEngineId = ev.engineId || groupEngineId;
@@ -779,6 +797,17 @@ screen name=ToolCallGroup target=ink
         toolCounts[name] = (toolCounts[name] || 0) + 1;
         if (ev.status === 'error') errors++;
         if (ev.status === 'running') running++;
+        const toolKey = String(name).toLowerCase();
+        if ((toolKey === 'edit' || toolKey === 'write') && typeof ev.input === 'string' && ev.input.trim().startsWith('{')) {
+          try {
+            const parsed = JSON.parse(ev.input);
+            const filePath = (parsed.file_path as string) || (parsed.filePath as string) || '';
+            if (filePath) {
+              const shortPath = filePath.replace(process.cwd() + '/', '').replace(process.env.HOME ?? '', '~');
+              if (!changedFiles.includes(shortPath)) changedFiles.push(shortPath);
+            }
+          } catch { /* ignore malformed tool input */ }
+        }
       }
       const summary = Object.entries(toolCounts)
         .map(([name, count]: [string, number]) => count > 1 ? `${name}\u00d7${count}` : name)
@@ -786,6 +815,9 @@ screen name=ToolCallGroup target=ink
       const eColor = engineColor(groupEngineId);
       const statusColor = errors > 0 ? '#ef4444' : running > 0 ? '#fbbf24' : '#4ade80';
       const statusIcon = errors > 0 ? icons().fail : running > 0 ? '\u27f3' : icons().success;
+      const changedSummary = changedFiles.length > 0
+        ? ` \u00b7 changed ${changedFiles.length} file${changedFiles.length > 1 ? 's' : ''}: ${changedFiles.slice(0, 2).join(', ')}${changedFiles.length > 2 ? ', \u2026' : ''}`
+        : '';
 
       return (
         <Box paddingLeft={2}>
@@ -794,7 +826,7 @@ screen name=ToolCallGroup target=ink
             <Text color={statusColor}>{statusIcon}</Text>
             <Text bold>{` ${blocks.length} tool calls`}</Text>
             <Text dimColor>{` (${summary})`}</Text>
-            <Text color="#f59e0b">{' \u25b8 ^E'}</Text>
+            {changedSummary && <Text color="#a78bfa">{changedSummary}</Text>}
           </Text>
         </Box>
       );
@@ -816,7 +848,7 @@ fn name=extractSummary params="text:string, maxLen:number" returns=string
 
 // ── Screen: DebateGroup — collapsed summary for tribunal rounds ──
 
-screen name=DebateGroup target=ink
+screen name=DebateGroup target=ink memo=true
   prop name=blocks type="OutputBlock[]"
   render
     handler <<<
@@ -838,14 +870,14 @@ screen name=DebateGroup target=ink
               </Text>
             );
           })}
-          <Text color="#a78bfa">{'\u2514'}<Text color="#f59e0b">{' \u25b8 ^E expand'}</Text></Text>
+          <Text color="#a78bfa">{'\u2514'}<Text color="#f59e0b">{''}</Text></Text>
         </Box>
       );
     >>>
 
 // ── Screen: BidGroup — collapsed summary for brainstorm bids ──
 
-screen name=BidGroup target=ink
+screen name=BidGroup target=ink memo=true
   prop name=blocks type="OutputBlock[]"
   render
     handler <<<
@@ -871,7 +903,7 @@ screen name=BidGroup target=ink
               </Text>
             );
           })}
-          <Text color="#22d3ee">{'\u2514'}<Text color="#f59e0b">{' \u25b8 ^E expand'}</Text></Text>
+          <Text color="#22d3ee">{'\u2514'}<Text color="#f59e0b">{''}</Text></Text>
         </Box>
       );
     >>>

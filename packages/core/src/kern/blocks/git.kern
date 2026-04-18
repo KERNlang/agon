@@ -229,15 +229,25 @@ fn name=stashSnapshot params="cwd:string" returns=string
 
 fn name=worktreeDiff params="cwd:string" returns=string
   handler <<<
-    git(['add', '-A'], cwd);
-    return git(['diff', '--cached'], cwd);
+    try {
+      git(['add', '-A'], cwd);
+      return git(['diff', '--cached'], cwd);
+    } catch (err) {
+      console.warn(`[agon] worktreeDiff failed: ${err instanceof Error ? err.message : String(err)}`);
+      return '';
+    }
   >>>
 
 fn name=readOnlyDiff params="cwd:string" returns=string
   handler <<<
-    const staged = git(['diff', '--cached'], cwd);
-    const unstaged = git(['diff'], cwd);
-    return staged + (staged && unstaged ? '\n' : '') + unstaged;
+    try {
+      const staged = git(['diff', '--cached'], cwd);
+      const unstaged = git(['diff'], cwd);
+      return staged + (staged && unstaged ? '\n' : '') + unstaged;
+    } catch (err) {
+      console.warn(`[agon] readOnlyDiff failed: ${err instanceof Error ? err.message : String(err)}`);
+      return '';
+    }
   >>>
 
 fn name=diffLineCount params="diff:string" returns=number

@@ -1112,6 +1112,17 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
       // Disk-backed tool result cache manifest
       let toolCacheManifest: ToolCacheEntry[] = [];
   
+      // ── In-session tool result deduplication ──
+      // Avoids re-reading the same file/grep when the engine asks twice.
+      // Keyed by (toolName, serialized args). Values are results.
+      const toolResultCache = new Map<string, { result: string; callId: string }>();
+      const CACHEABLE_TOOLS = new Set(['Read', 'Grep', 'Glob']);
+      const cacheKey = (name: string, args: Record<string, unknown>) => {
+        // Normalize: sort keys for stable hashing
+        const sorted = Object.keys(args).sort().map(k => `${k}=${JSON.stringify(args[k])}`).join('&');
+        return `${name}:${sorted}`;
+      };
+  
       const session: PersistentSession = {
         get alive() { return alive; },
         get sessionId() { return sessionId; },
@@ -1598,10 +1609,19 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                       gateResults.push({ ...tc, result: `[BLOCKED] You haven't investigated the codebase yet. Call Read/Grep to understand the code first, then decide if this needs Forge or Brainstorm. Do not write code without reading what exists.` });
                       yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, status: 'error', output: 'Blocked: investigate first' } };
                     } else if (READ_TOOLS.has(tc.name)) {
-                      // Allow reads through — let the model investigate
+                      // Allow reads through — let the model investigate (with dedup)
                       let result: string;
                       try {
-                        if (tc.name === 'RetrieveResult' && tc.args.id) {
+                        if (CACHEABLE_TOOLS.has(tc.name)) {
+                          const ck = cacheKey(tc.name, tc.args);
+                          const prev = toolResultCache.get(ck);
+                          if (prev) {
+                            result = prev.result;
+                          } else {
+                            result = await config.onToolCall!(tc.name, tc.args, tc.id);
+                            toolResultCache.set(ck, { result, callId: tc.id });
+                          }
+                        } else if (tc.name === 'RetrieveResult' && tc.args.id) {
                           const cached = loadToolResultFromDisk(config.engine.id, tc.args.id as string);
                           result = cached ?? `No cached result found for id "${tc.args.id}".`;
                         } else {
@@ -1645,8 +1665,18 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                 const results = await Promise.all(parsedCalls.map(async (tc) => {
                   let result: string;
                   try {
-                    // RetrieveResult: read from local disk cache, no need for external tool handler
-                    if (tc.name === 'RetrieveResult' && tc.args.id) {
+                    // In-session dedup: skip re-executing cacheable reads we already have
+                    if (CACHEABLE_TOOLS.has(tc.name)) {
+                      const ck = cacheKey(tc.name, tc.args);
+                      const prev = toolResultCache.get(ck);
+                      if (prev) {
+                        result = prev.result;
+                      } else {
+                        result = await config.onToolCall!(tc.name, tc.args, tc.id);
+                        toolResultCache.set(ck, { result, callId: tc.id });
+                      }
+                    } else if (tc.name === 'RetrieveResult' && tc.args.id) {
+                      // RetrieveResult: read from local disk cache, no need for external tool handler
                       const cached = loadToolResultFromDisk(config.engine.id, tc.args.id as string);
                       result = cached ?? `No cached result found for id "${tc.args.id}". Try re-running the original tool.`;
                     } else {

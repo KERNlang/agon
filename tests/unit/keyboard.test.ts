@@ -23,6 +23,7 @@ function baseCtx(overrides: Record<string, unknown> = {}) {
     outputBlockCount: 0,
     commands: [],
     engineIds: [],
+    fullscreenEnabled: true,
     ...overrides,
   };
 }
@@ -115,5 +116,21 @@ describe('resolveKeyboardInput', () => {
       toolDetailOpen: true,
       key: { pageDown: true },
     }))).toEqual({ type: 'none' });
+  });
+
+  it('suppresses in-app scroll keys in native mode so the terminal owns scrollback', () => {
+    for (const key of [
+      { pageUp: true },
+      { pageDown: true },
+      { home: true },
+      { end: true },
+      { shift: true, upArrow: true },
+      { shift: true, downArrow: true },
+    ]) {
+      expect(resolveKeyboardInput(baseCtx({
+        fullscreenEnabled: false,
+        key,
+      }))).toEqual({ type: 'none' });
+    }
   });
 });

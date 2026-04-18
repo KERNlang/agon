@@ -22,6 +22,7 @@ export interface KeyboardCtx {
   outputBlockCount: number;
   commands: any[];
   engineIds: string[];
+  fullscreenEnabled: boolean;
 }
 
 export type KeyboardAction =
@@ -116,21 +117,20 @@ export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
   // Ctrl+L: clear
   if (key.ctrl && normalizedCtrlInput === 'l') return { type: 'submit', value: '/clear' };
   
-  // Scroll keys move HistoryView's sliced window forward/back. The full
-  // transcript lives in outputBlocks; HistoryView only renders a sliced
-  // subset for performance. These keybinds let the user reach older
-  // content. Home/End are gated on composer focus so the caret stays
-  // usable. Shift+Up/Down and PageUp/Down fire always — composer
-  // doesn't claim those combos. Proper scrolling (no sliced window,
-  // real viewport culling) lands when KERN ships <scroll-box> per
-  // docs/KERN-GAP-scroll-box.md.
-  if (key.shift && key.upArrow) return { type: 'scroll', delta: 3 };
-  if (key.shift && key.downArrow) return { type: 'scroll', delta: -3 };
-  if (key.pageUp) return { type: 'scroll', delta: 12 };
-  if (key.pageDown) return { type: 'scroll', delta: -12 };
-  if (!ctx.textInputActive) {
-    if (key.home) return { type: 'scrollToTop' };
-    if (key.end) return { type: 'scrollToBottom' };
+  // Scroll keys move HistoryView's sliced window forward/back — only
+  // meaningful in fullscreen (alt-screen) mode. In native mode the
+  // terminal's own scrollback owns the scroll UI; the app doesn't slice
+  // a window, so these keys are intentionally no-ops to let the terminal
+  // bindings pass through.
+  if (ctx.fullscreenEnabled) {
+    if (key.shift && key.upArrow) return { type: 'scroll', delta: 3 };
+    if (key.shift && key.downArrow) return { type: 'scroll', delta: -3 };
+    if (key.pageUp) return { type: 'scroll', delta: 12 };
+    if (key.pageDown) return { type: 'scroll', delta: -12 };
+    if (!ctx.textInputActive) {
+      if (key.home) return { type: 'scrollToTop' };
+      if (key.end) return { type: 'scrollToBottom' };
+    }
   }
   
   // Ctrl+E: toggle tool output expansion

@@ -396,7 +396,11 @@ fn name=resolveTerminalMode params="config?:any" returns="'native'|'fullscreen'"
     if (process.env.AGON_DISABLE_FULLSCREEN === '1' || process.env.AGON_NATIVE_TERMINAL === '1') return 'native';
     if (process.env.AGON_FULLSCREEN === '0' || process.env.AGON_ALT_SCREEN === '0') return 'native';
     if (process.env.AGON_FULLSCREEN === '1' || process.env.AGON_ALT_SCREEN === '1') return 'fullscreen';
-    return String(config?.terminalMode ?? loadConfig().terminalMode ?? 'fullscreen') === 'fullscreen' ? 'fullscreen' : 'native';
+    // Default to 'native' so past transcript rows commit to the terminal's
+    // own scrollback (mouse-wheel/Shift+PageUp reach full history). Users
+    // can opt into the legacy alt-screen experience via AGON_FULLSCREEN=1
+    // or `terminalMode: 'fullscreen'` in config.
+    return String(config?.terminalMode ?? loadConfig().terminalMode ?? 'native') === 'fullscreen' ? 'fullscreen' : 'native';
   >>>
 
 fn name=isFullscreenEnabled params="config?:any" returns=boolean
@@ -2632,15 +2636,18 @@ screen name=App target=ink
       return new Promise<string>((resolve) => { dispatch({ type: 'question', prompt, resolve } as any); });
     >>>
 
-  callback name=interruptActiveRun params="message:string, clearChat:boolean" deps="replState,dispatch,trackAbort"
+  callback name=interruptActiveRun params="message:string, clearChat:boolean" deps="replState,dispatch,trackAbort,outputActions"
     handler <<<
       const abort = activeAbortRef.current;
       if (abort) abort.abort();
       trackAbort(null);
       setLiveSpinner(null);
       setLiveProgress(null);
-      streamingTextRef.current = {};
-      setStreamingText({});
+      // Commit any in-flight streams before wiping. In main-buffer mode the
+      // partial text has already been written to the terminal; dropping it
+      // from React state without flushing causes logUpdate.eraseLines to
+      // wipe visible output the user was just reading.
+      outputActions.flushStream();
       clearPermissionQueue();
       clearThinkingBuffer();
       setQuestionState(null);
@@ -3195,7 +3202,7 @@ screen name=App target=ink
     >>>
 
   // ── Register cancel callback for SIGINT ──
-  effect deps="setActiveAbort"
+  effect deps="setActiveAbort,outputActions"
     handler <<<
       _cancelCallback.fn = () => {
         for (const abort of _activeAborts) abort.abort();
@@ -3204,8 +3211,8 @@ screen name=App target=ink
         setActiveAbort(null);
         setLiveSpinner(null);
         setLiveProgress(null);
-        streamingTextRef.current = {};
-        setStreamingText({});
+        // Commit any in-flight streams before wiping — see interruptActiveRun.
+        outputActions.flushStream();
         agentProgressRef.current = {};
         setAgentProgress({});
         clearPermissionQueue();
@@ -3261,6 +3268,7 @@ screen name=App target=ink
         outputBlockCount: outputBlocks.length,
         commands: allSlashCommands,
         engineIds: availableEngines,
+        fullscreenEnabled: isFullscreenEnabled(config),
       });
 
       switch (action.type) {
@@ -3352,11 +3360,12 @@ screen name=App target=ink
               </Box>
             ) : (
               <HistoryView
-                visibleRows={visibleWindow.visible}
+                visibleRows={isFullscreenEnabled(config) ? visibleWindow.visible : displayRows}
                 rowsAbove={visibleWindow.rowsAbove}
                 rowsBelow={visibleWindow.rowsBelow}
                 stickToBottom={false}
                 centerContent={false}
+                useStaticCommit={!isFullscreenEnabled(config)}
               />
             )}
 

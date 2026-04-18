@@ -644,8 +644,11 @@ export function App() {
     trackAbort(null);
     setLiveSpinner(null);
     setLiveProgress(null);
-    streamingTextRef.current = {};
-    setStreamingText({});
+    // Commit any in-flight streams before wiping. In main-buffer mode the
+    // partial text has already been written to the terminal; dropping it
+    // from React state without flushing causes logUpdate.eraseLines to
+    // wipe visible output the user was just reading.
+    outputActions.flushStream();
     clearPermissionQueue();
     clearThinkingBuffer();
     setQuestionState(null);
@@ -662,7 +665,7 @@ export function App() {
     }
     
     if (clearChat) dispatch({ type: 'clear' } as any);
-  }, [replState,dispatch,trackAbort]);
+  }, [replState,dispatch,trackAbort,outputActions]);
 
   const buildContext = useCallback(() => {
     return {
@@ -1150,6 +1153,7 @@ export function App() {
       outputBlockCount: outputBlocks.length,
       commands: allSlashCommands,
       engineIds: availableEngines,
+      fullscreenEnabled: isFullscreenEnabled(config),
     });
     
     switch (action.type) {
@@ -1577,8 +1581,8 @@ export function App() {
       setActiveAbort(null);
       setLiveSpinner(null);
       setLiveProgress(null);
-      streamingTextRef.current = {};
-      setStreamingText({});
+      // Commit any in-flight streams before wiping — see interruptActiveRun.
+      outputActions.flushStream();
       agentProgressRef.current = {};
       setAgentProgress({});
       clearPermissionQueue();
@@ -1593,7 +1597,7 @@ export function App() {
       setToolDetailEvent(null);
       setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state);
     };
-  }, [setActiveAbort]);
+  }, [setActiveAbort,outputActions]);
 
   useStableInput(handleKeyboardInput);
   return (
@@ -1608,11 +1612,12 @@ export function App() {
           </Box>
         ) : (
           <HistoryView
-            visibleRows={visibleWindow.visible}
+            visibleRows={isFullscreenEnabled(config) ? visibleWindow.visible : displayRows}
             rowsAbove={visibleWindow.rowsAbove}
             rowsBelow={visibleWindow.rowsBelow}
             stickToBottom={false}
             centerContent={false}
+            useStaticCommit={!isFullscreenEnabled(config)}
           />
         )}
   
@@ -2127,7 +2132,11 @@ export function resolveTerminalMode(config?: any): 'native'|'fullscreen' {
   if (process.env.AGON_DISABLE_FULLSCREEN === '1' || process.env.AGON_NATIVE_TERMINAL === '1') return 'native';
   if (process.env.AGON_FULLSCREEN === '0' || process.env.AGON_ALT_SCREEN === '0') return 'native';
   if (process.env.AGON_FULLSCREEN === '1' || process.env.AGON_ALT_SCREEN === '1') return 'fullscreen';
-  return String(config?.terminalMode ?? loadConfig().terminalMode ?? 'fullscreen') === 'fullscreen' ? 'fullscreen' : 'native';
+  // Default to 'native' so past transcript rows commit to the terminal's
+  // own scrollback (mouse-wheel/Shift+PageUp reach full history). Users
+  // can opt into the legacy alt-screen experience via AGON_FULLSCREEN=1
+  // or `terminalMode: 'fullscreen'` in config.
+  return String(config?.terminalMode ?? loadConfig().terminalMode ?? 'native') === 'fullscreen' ? 'fullscreen' : 'native';
 }
 
 export function isFullscreenEnabled(config?: any): boolean {

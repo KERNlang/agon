@@ -5,7 +5,7 @@
 
 import from="react" default="React"
 import from="react" names="useEffect,useMemo,useState"
-import from="ink" names="Box,Text,useInput"
+import from="ink" names="Box,Text,Static,useInput"
 import from="../../components.js" names="EngineProgressView,RenderedSegments,contentWidth,engineColor,RichLineView,DiffLine,SyntaxLine,AnsiLine,GradientLine,BRAND"
 import from="../../handlers/types.js" names="EngineProgress" types=true
 import from="../signals/job-manager.js" names="Job" types=true
@@ -212,6 +212,7 @@ screen name=HistoryView target=ink memo=true
   prop name=rowsBelow type="number"
   prop name=stickToBottom type="boolean|undefined"
   prop name=centerContent type="boolean|undefined"
+  prop name=useStaticCommit type="boolean|undefined"
   render
     handler <<<
       if (centerContent) {
@@ -227,6 +228,17 @@ screen name=HistoryView target=ink memo=true
             </Box>
             <Box flexGrow={3} />
           </Box>
+        );
+      }
+
+      // Native-mode commit path: Ink <Static> writes each row to stdout
+      // exactly once, so the terminal's native scrollback keeps the full
+      // transcript. Each subsequent render only emits newly-appended rows.
+      if (useStaticCommit) {
+        return (
+          <Static items={visibleRows}>
+            {(row: any) => <TranscriptRowView key={row.key} row={row} />}
+          </Static>
         );
       }
 

@@ -32,7 +32,7 @@ fn name=isKernProject params="cwd:string" returns=boolean
 fn name=buildFileTree params="cwd:string,maxDepth?:number" returns=string export=false
   doc "Read-only file tree, 2 levels deep, excluding noise directories."
   handler <<<
-    const IGNORE = new Set(['node_modules', '.git', 'dist', '.next', '.cache', '.turbo', '__pycache__', '.venv', 'coverage']);
+    const IGNORE = new Set(['node_modules', '.git', 'dist', '.next', '.cache', '.turbo', '__pycache__', '.venv', 'coverage', '.kern-gaps', '.kern']);
     const depth = maxDepth ?? 2;
     const lines: string[] = [];
 
@@ -86,7 +86,7 @@ fn name=detectProjectType params="cwd:string" returns=string export=false
 
 fn name=scanProjectContext params="cwd:string,extraContext?:string,format?:ContextFormat" returns=string
   handler <<<
-    const MAX_CHARS = 4000;
+    const MAX_CHARS = 6000;
     const sections: string[] = [];
 
     // Branch + status
@@ -131,49 +131,30 @@ fn name=scanProjectContext params="cwd:string,extraContext?:string,format?:Conte
       }
     }
 
-    // Project instructions (AGENT.md, CLAUDE.md, CODEX.md)
-    const instructionFiles = ['AGENT.md', 'CLAUDE.md', 'CODEX.md'];
+    // Project instructions — cascade: first match wins (AGON.md > AGENT.md > CLAUDE.md > CODEX.md)
+    const instructionFiles = ["AGON.md", "AGENT.md", "CLAUDE.md", "CODEX.md"];
     for (const file of instructionFiles) {
       try {
         const path = join(cwd, file);
         if (existsSync(path)) {
-          const content = readFileSync(path, 'utf-8').trim();
+          const content = readFileSync(path, "utf-8").trim();
           if (content) {
-            // Cap each file at 2000 chars to stay within budget
-            const capped = content.length > 2000 ? content.slice(0, 2000) + '\n... (truncated)' : content;
+            // Cap at 2000 chars to stay within budget
+            const capped = content.length > 2000 ? content.slice(0, 2000) + "\n... (truncated)" : content;
             sections.push(`Project instructions (${file}):\n${capped}`);
+            break; // first match wins — stop looking
           }
         }
       } catch {}
     }
 
-    // KERN workflow rules — injected when project uses KERN language
-    if (isKern) {
-      sections.push(`KERN WORKFLOW (MANDATORY):
-- This project uses KERN language. Source files are .kern, compiled output is in src/generated/.
-- NEVER edit files in src/generated/ — they are compiler output and will be overwritten.
-- Edit .kern source files, then run: npx kern compile src/kern/<category> --outdir=src/generated/<category>
-- After compiling, run: npm run build
-- .kern files live in src/kern/<category>/ (surfaces, blocks, signals, models, cesar, handlers, commands, etc.)
-- If you edit a generated file, your changes WILL be destroyed on next compile. This is not optional.`);
-    }
-
-    // Extra context from user
-    if (extraContext) {
-      sections.push(`Additional context:\n${extraContext}`);
-    }
-
-    let result: string;
-    if (format === 'kern') {
-      result = sections.map((s) => `context {\n  ${s.replace(/\n/g, '\n  ')}\n}`).join('\n');
-    } else {
-      result = sections.join('\n\n');
-    }
-
-    // Cap at MAX_CHARS
+    let result = sections.join('\n\n');
     if (result.length > MAX_CHARS) {
-      result = result.slice(0, MAX_CHARS - 20) + '\n... (truncated)';
+      result = result.slice(0, MAX_CHARS) + '\n... (truncated)';
     }
 
+    if (format === 'kern') {
+      return `context {\n${result}\n}`;
+    }
     return result;
   >>>

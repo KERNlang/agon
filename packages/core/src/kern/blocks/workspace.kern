@@ -1,6 +1,7 @@
 import from="node:fs" names="readFileSync,writeFileSync,existsSync,renameSync"
 import from="node:path" names="join,resolve,basename"
-import from="../signals/config.js" names="AGON_HOME,ensureAgonHome"
+import from="node:os" names="homedir"
+import from="../signals/config.js" names="ensureAgonHome"
 import from="./context-scanner.js" names="isKernProject"
 import from="./git.js" names="headSha,currentBranch,isDirty"
 import from="./plan.js" names="WorkspaceSnapshot" types=true
@@ -16,9 +17,16 @@ interface name=WorkspaceState
   field name=workspaces type="Workspace[]"
   field name=active type=string
 
+fn name=getWorkspacesPath returns=string export=false
+  handler <<<
+    const override = process.env.AGON_HOME?.trim();
+    const home = override ? resolve(override) : join(homedir(), '.agon');
+    return join(home, 'workspaces.json');
+  >>>
+
 fn name=loadState returns=WorkspaceState export=false
   handler <<<
-    const WORKSPACES_PATH = join(AGON_HOME, 'workspaces.json');
+    const WORKSPACES_PATH = getWorkspacesPath();
     ensureAgonHome();
     try { return JSON.parse(readFileSync(WORKSPACES_PATH, 'utf-8')) as WorkspaceState; }
     catch (err) {
@@ -31,7 +39,7 @@ fn name=loadState returns=WorkspaceState export=false
 
 fn name=saveState params="state:WorkspaceState" returns=void export=false
   handler <<<
-    const WORKSPACES_PATH = join(AGON_HOME, 'workspaces.json');
+    const WORKSPACES_PATH = getWorkspacesPath();
     const tmpPath = WORKSPACES_PATH + '.tmp';
     writeFileSync(tmpPath, JSON.stringify(state, null, 2) + '\n');
     renameSync(tmpPath, WORKSPACES_PATH);

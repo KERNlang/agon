@@ -20,9 +20,11 @@ function simulateOnToolCall(
   inp: Record<string, unknown>,
 ) {
   if (ORCHESTRATION_TOOLS.has(name)) {
+    const task = (inp as any).task ?? (inp as any).question ?? (inp as any).topic ?? '';
     (ctx as any)._pendingDelegation = {
       action: name.toLowerCase(),
-      reasoning: (inp as any).task ?? (inp as any).question ?? (inp as any).topic ?? '',
+      task,
+      reasoning: task,
       fitnessCmd: typeof (inp as any).fitnessCmd === 'string'
         ? (inp as any).fitnessCmd
         : typeof (inp as any).fitness === 'string'
@@ -44,6 +46,7 @@ describe('delegation intercept', () => {
     expect(ctx._pendingDelegation).toBeDefined();
     const del = ctx._pendingDelegation as any;
     expect(del.action).toBe('forge');
+    expect(del.task).toBe('fix auth bug');
     expect(del.reasoning).toBe('fix auth bug');
     expect(del.fitnessCmd).toBe('npm test');
     expect(del.hardened).toBe(false);
@@ -57,6 +60,7 @@ describe('delegation intercept', () => {
 
     const del = ctx._pendingDelegation as any;
     expect(del.action).toBe('brainstorm');
+    expect(del.task).toBe('auth architecture');
     expect(del.reasoning).toBe('auth architecture');
   });
 
@@ -66,6 +70,7 @@ describe('delegation intercept', () => {
 
     const del = ctx._pendingDelegation as any;
     expect(del.action).toBe('tribunal');
+    expect(del.task).toBe('REST vs GraphQL');
     expect(del.reasoning).toBe('REST vs GraphQL');
     expect(del.tribunalMode).toBe('adversarial');
   });
@@ -76,6 +81,7 @@ describe('delegation intercept', () => {
 
     const del = ctx._pendingDelegation as any;
     expect(del.action).toBe('campfire');
+    expect(del.task).toBe('monorepo structure');
     expect(del.reasoning).toBe('monorepo structure');
     expect(del.team).toBe(true);
   });
@@ -86,6 +92,7 @@ describe('delegation intercept', () => {
 
     const del = ctx._pendingDelegation as any;
     expect(del.action).toBe('pipeline');
+    expect(del.task).toBe('deploy staging');
     expect(del.reasoning).toBe('deploy staging');
   });
 
@@ -128,18 +135,22 @@ describe('delegation intercept', () => {
   it('uses task field for reasoning, falling back to question then topic', () => {
     const ctx1: Record<string, unknown> = {};
     simulateOnToolCall(ctx1, 'Forge', { task: 'primary', question: 'fallback', topic: 'last' });
+    expect((ctx1._pendingDelegation as any).task).toBe('primary');
     expect((ctx1._pendingDelegation as any).reasoning).toBe('primary');
 
     const ctx2: Record<string, unknown> = {};
     simulateOnToolCall(ctx2, 'Tribunal', { question: 'fallback', topic: 'last' });
+    expect((ctx2._pendingDelegation as any).task).toBe('fallback');
     expect((ctx2._pendingDelegation as any).reasoning).toBe('fallback');
 
     const ctx3: Record<string, unknown> = {};
     simulateOnToolCall(ctx3, 'Campfire', { topic: 'last' });
+    expect((ctx3._pendingDelegation as any).task).toBe('last');
     expect((ctx3._pendingDelegation as any).reasoning).toBe('last');
 
     const ctx4: Record<string, unknown> = {};
     simulateOnToolCall(ctx4, 'Brainstorm', {});
+    expect((ctx4._pendingDelegation as any).task).toBe('');
     expect((ctx4._pendingDelegation as any).reasoning).toBe('');
   });
 });

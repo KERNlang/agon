@@ -1,4 +1,4 @@
-import from="@agon/core" names="ToolRegistry,FileStateCache,createReadTool,createEditTool,createWriteTool,createBashTool,createGrepTool,createGlobTool,createForgeTool,createBrainstormTool,createTribunalTool,createCampfireTool,createPipelineTool,createReviewTool,createDelegateTool,createReportConfidenceTool,createProposePlanTool,createListPlansTool,createRetrieveResultTool,executeToolCall,resolveWorkingDir"
+import from="@agon/core" names="ToolRegistry,FileStateCache,createReadTool,createEditTool,createWriteTool,createBashTool,createGrepTool,createGlobTool,createForgeTool,createBrainstormTool,createTribunalTool,createCampfireTool,createPipelineTool,createReviewTool,createDelegateTool,createAgentTool,createReportConfidenceTool,createProposePlanTool,createListPlansTool,createRetrieveResultTool,createQuickNeroTool,executeToolCall,resolveWorkingDir"
 import from="@agon/core" names="ToolContext,ToolCallResult" types=true
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 
@@ -19,7 +19,9 @@ fn name=createCesarToolRegistry params="engineId?:string" returns="ToolRegistry"
     toolRegistry.register(createPipelineTool());
     toolRegistry.register(createReviewTool());
     toolRegistry.register(createDelegateTool());
+    toolRegistry.register(createAgentTool());
     toolRegistry.register(createReportConfidenceTool());
+    toolRegistry.register(createQuickNeroTool());
     toolRegistry.register(createProposePlanTool());
     toolRegistry.register(createListPlansTool());
     toolRegistry.register(createRetrieveResultTool(engineId));

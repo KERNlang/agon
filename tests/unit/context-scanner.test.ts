@@ -51,10 +51,10 @@ describe('context-scanner', () => {
       expect(ctx).not.toContain('context {');
     });
 
-    it('caps output length at ~4000 chars for large repos', () => {
-      // The Agon repo itself should be under 4000, but let's verify the cap exists
+    it('caps output length at ~6000 chars for large repos', () => {
+      // The Agon repo itself should be under 6000, but let's verify the cap exists
       const ctx = scanProjectContext(REPO_ROOT);
-      expect(ctx.length).toBeLessThanOrEqual(4100); // small buffer for truncation message
+      expect(ctx.length).toBeLessThanOrEqual(6100); // small buffer for truncation message
     });
 
     it('handles non-git directory gracefully', () => {

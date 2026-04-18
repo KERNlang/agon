@@ -1,11 +1,13 @@
 // ── UI Status: status bar, status line, token gauge, tips, jobs rail, spinner ──
+// Note: Kern 3.2.3 now honors `memo=true` on these surface screens.
+// BackgroundJobRail / CesarStatusStrip can stay memoized in generated output.
+// StatusBar is intentionally NOT memoized — it reads global mutable state
+// (tracker, chatSession.messages, resolveWorkingDir, currentBranch) that is not
+// in its props, so shallow-equal would make it go stale.
 
 import from="react" default="React" names="useState,useEffect"
 import from="ink" names="Box,Text"
 import from="ink-spinner" default="Spinner"
-import from="@agon/core" names="resolveWorkingDir,currentBranch,tracker"
-import from="@agon/core" names="ChatSession" types=true
-import from="@agon/core" names="loadConfig"
 import from="../blocks/output-format.js" names="ENGINE_COLORS"
 import from="../blocks/rendering.js" names="color256toHex,engineColor"
 import from="../signals/job-manager.js" names="Job" types=true
@@ -20,7 +22,7 @@ const name=AGON_TIPS type="string[]"
       'Run /brainstorm to get confidence bids from all engines',
       'Run /tribunal to start a multi-AI debate',
       'Run /cesar <engine> to change your Cesar brain engine',
-      'Run /cli-models to pick active engines and CLI model overrides',
+      'Run /models to browse & add provider models, or /engines to pick active engines',
       'Run /campfire for collaborative multi-engine thinking',
       'Run /leaderboard to see engine ELO ratings',
       'Run /history to browse past forge runs',
@@ -96,25 +98,25 @@ screen name=AgonTip target=ink export=false
 
 // ── Screen: StatusBar ───────────────────────────────────────────────
 
+// NOTE: no memo=true on StatusBar — see rationale above.
 screen name=StatusBar target=ink
-  prop name=config type="ReturnType<typeof loadConfig>"
-  prop name=chatSession type=ChatSession
+  prop name=cesarId type=string
+  prop name=chatMessageCount type=number
+  prop name=totalTokens type=number
+  prop name=totalCostUsd type=number
+  prop name=cwd type=string
+  prop name=branch type=string optional=true
   prop name=explorationMode type=boolean optional=true
   prop name=toolOutputExpanded type=boolean optional=true
   prop name=thinkingExpanded type=boolean optional=true
   prop name=isActive type=boolean optional=true
+  prop name=fullscreenEnabled type=boolean optional=true
+  prop name=selectionMode type=boolean optional=true
   render
     handler <<<
-      const cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
-      const cesarColor = color256toHex(ENGINE_COLORS[cesarId] ?? 124);
-      const workDir = resolveWorkingDir();
-      let branch = '';
-      try { branch = currentBranch(workDir); } catch { /* not a git repo */ }
-      const cwd = workDir.replace(process.env.HOME ?? '', '~');
-      const stats = tracker.getStats();
-      const cost = stats.totalCostUsd > 0 ? `$${stats.totalCostUsd.toFixed(2)}` : '';
-      const msgs = chatSession.messages.length;
-      const tokens = stats.totalTokens;
+      const cost = totalCostUsd > 0 ? `$${totalCostUsd.toFixed(2)}` : '';
+      const msgs = chatMessageCount;
+      const tokens = totalTokens;
       const contextWindows: Record<string, number> = {
         claude: 1000000, codex: 200000, gemini: 1000000, opencode: 200000,
       };
@@ -133,8 +135,15 @@ screen name=StatusBar target=ink
             {tokens > 0 ? <Text dimColor>{` | ${(tokens / 1000).toFixed(1)}k tok`}</Text> : null}
             {msgs > 0 ? <Text dimColor>{` \u00b7 ${msgs} msgs`}</Text> : null}
             {cost ? <Text dimColor>{` \u00b7 ${cost}`}</Text> : null}
-            {toolOutputExpanded !== undefined && <Text dimColor>{' \u00b7 ^E '}{toolOutputExpanded ? '\u25be' : '\u25b8'}</Text>}
-            {thinkingExpanded !== undefined && <Text dimColor>{' \u00b7 ^T '}{thinkingExpanded ? '\u25be' : '\u25b8'}</Text>}
+            {toolOutputExpanded !== undefined && <Text dimColor>{' \u00b7 '}{toolOutputExpanded ? 'tools expanded (' : 'tools collapsed ('}</Text>}
+            {toolOutputExpanded !== undefined && <Text color="#f59e0b">{'Ctrl+E'}</Text>}
+            {toolOutputExpanded !== undefined && <Text dimColor>{')'}</Text>}
+            {thinkingExpanded !== undefined && <Text dimColor>{' \u00b7 '}{thinkingExpanded ? 'thinking shown (' : 'thinking hidden ('}</Text>}
+            {thinkingExpanded !== undefined && <Text color="#f59e0b">{'Ctrl+T'}</Text>}
+            {thinkingExpanded !== undefined && <Text dimColor>{')'}</Text>}
+            <Text dimColor>{' \u00b7 copy ('}</Text>
+            <Text color="#f59e0b">{'Ctrl+Y'}</Text>
+            <Text dimColor>{')'}</Text>
             {isActive ? <Text dimColor>{' \u00b7 /btw ask'}</Text> : null}
           </Text>
         </Box>
@@ -148,11 +157,7 @@ screen name=StatusLine target=ink
   prop name=engineId type=string optional=true
   prop name=color type=number optional=true
   state name=now type=number initial="Date.now()"
-  effect
-    handler <<<
-      const t = setInterval(() => setNow(Date.now()), 1000);
-      return () => clearInterval(t);
-    >>>
+  animation name=now interval=1000 update="Date.now()"
   render
     handler <<<
 
@@ -176,7 +181,7 @@ screen name=StatusLine target=ink
 
 // ── Screen: BackgroundJobRail ───────────────────────────────────────
 
-screen name=BackgroundJobRail target=ink
+screen name=BackgroundJobRail target=ink memo=true
   prop name=jobs type="Job[]"
   render
     handler <<<
@@ -199,7 +204,7 @@ screen name=BackgroundJobRail target=ink
 
 // ── Screen: CesarStatusStrip — always-visible compact status ────────
 
-screen name=CesarStatusStrip target=ink
+screen name=CesarStatusStrip target=ink memo=true export=named
   prop name=cesarId type=string
   prop name=confidence type="number|null" optional=true
   prop name=spinner type="{ message: string; engineId?: string } | null"
@@ -210,12 +215,7 @@ screen name=CesarStatusStrip target=ink
   prop name=planModeQueued type=boolean optional=true
   prop name=activePlanState type="string|null" optional=true
   state name=now type=number initial="Date.now()"
-  effect deps="isActive"
-    handler <<<
-      if (!isActive) return;
-      const t = setInterval(() => setNow(Date.now()), 1000);
-      return () => clearInterval(t);
-    >>>
+  animation name=now interval=1000 update="Date.now()" active="isActive"
   render
     handler <<<
       // Plan badge (shared between idle and active)

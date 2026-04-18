@@ -41,10 +41,10 @@ describe('app input helpers', () => {
     ]).map((cmd) => cmd.cmd)).toEqual(['/apply', '/map']);
   });
 
-  it('moves slash picker selection with arrow keys without leaving bounds', () => {
-    expect(movePickerCursor('up', 0, 3)).toBe(0);
+  it('moves slash picker selection with arrow keys with wrap-around', () => {
+    expect(movePickerCursor('up', 0, 3)).toBe(2);
     expect(movePickerCursor('down', 0, 3)).toBe(1);
-    expect(movePickerCursor('down', 2, 3)).toBe(2);
+    expect(movePickerCursor('down', 2, 3)).toBe(0);
     expect(movePickerCursor('down', 0, 0)).toBe(0);
   });
 });

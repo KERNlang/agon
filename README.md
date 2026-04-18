@@ -18,7 +18,7 @@ Every other multi-AI framework is cooperative. LangChain, CrewAI, AutoGen — th
 
 ```bash
 git clone https://github.com/cukas/Agon-AI.git
-cd Agon-AI && npm install && npm run build
+cd Agon-AI && npm install && npm run install:cli
 
 agon                                              # launch interactive REPL
 agon forge "add validation" --test "npm test"     # one-shot forge
@@ -27,6 +27,17 @@ agon leaderboard                                  # ELO rankings
 ```
 
 Requires **Node.js >= 22**, at least one AI CLI installed, and a git repo to work in.
+
+`npm run kern:compile` and `npm run build:cli` use the root-installed `@kernlang/*` family pinned in `package.json`, so every workspace package follows the same version.
+
+If you only want to refresh the runnable local binary without relinking it, use:
+
+```bash
+npm run build:cli
+```
+
+This builds the CLI in the right dependency order:
+`@agon/core` -> `@agon/forge` -> `@agon/adapter-cli` -> `@agon/cli`
 
 ---
 
@@ -42,6 +53,22 @@ Type `agon` to start. **Cesar** — a persistent AI brain — receives everythin
 ```
 
 Change your brain engine anytime: `/cesar codex`
+
+### Interactive REPL
+
+The REPL uses app-captured fullscreen scrolling by default, matching Codex and Claude Code more closely. Startup content and early chat history render from the top, the composer stays anchored, and the transcript scrolls inside Agon with the mouse wheel.
+
+If you prefer the terminal's own scrollbar and scrollback instead, switch to native mode with `agon config set terminalMode native`.
+
+Useful controls:
+
+- `Ctrl+E` toggle expanded tool output
+- `Ctrl+T` toggle thinking visibility
+- `Ctrl+Y` copy the current selection or transcript
+- `Ctrl+G` enter mouse-selection mode for native terminal copy in fullscreen mode
+- `PageUp` / `PageDown` / `Home` / `End` navigate long transcripts
+
+Mouse drag selection is supported in fullscreen mode, and transcript copy is character-precise for normal text rows.
 
 ---
 
@@ -169,8 +196,7 @@ Each team runs: Architect -> Implementers (parallel) -> Reviewer -> Finalize. Bo
 | `/team-brainstorm [2v2\|3v3] <question>` | Team ideation |
 | `/cesar <engine>` | Set the brain engine |
 | `/use <engines>` | Set active engines |
-| `/models` | Browse and add provider models |
-| `/cli-models` | Choose active CLI engines and model overrides |
+| `/models` | Browse provider models, CLI models, and engine overrides |
 | `/engine discover` | Auto-detect installed engines |
 | `/provider [add\|remove\|list]` | Manage API providers |
 | `/apply [path] [--force]` | Apply winning forge patch |

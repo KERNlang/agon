@@ -1,0 +1,43 @@
+// ── pricing — token-to-USD conversion using engine pricing config ──
+// Phase 3 of agent-team work. Used by AgentTeamBudget runtime polling
+// to enforce a hard cost ceiling across N parallel members. Reads from
+// the per-engine `pricing.input` / `pricing.output` (per-1k-token) fields
+// in engines/*.json that already exist for API engines.
+
+import from="../models/types.js" names="EngineDefinition" types=true
+
+interface name=PricingEntry
+  doc "Per-engine input/output rates in USD per 1k tokens. Sourced from EngineDefinition.api.pricing if present, otherwise defaults to a conservative midmarket rate."
+  field name=inputPer1k type=number
+  field name=outputPer1k type=number
+
+const name=DEFAULT_PRICING type=PricingEntry
+  doc "Conservative midmarket fallback when an engine has no pricing.input/output configured. Tuned to slightly overestimate cost so the AgentTeamBudget hard ceiling errs on the side of stopping early rather than overrunning."
+  handler <<<
+    { inputPer1k: 0.003, outputPer1k: 0.015 } as PricingEntry
+  >>>
+
+fn name=getEnginePricing params="engine:EngineDefinition" returns=PricingEntry export=true
+  doc "Return per-engine pricing or the conservative default. Reads from engine.api.pricing if available."
+  handler <<<
+    const api = (engine as any).api;
+    if (api && api.pricing && typeof api.pricing.input === 'number' && typeof api.pricing.output === 'number') {
+      return { inputPer1k: api.pricing.input, outputPer1k: api.pricing.output };
+    }
+    return DEFAULT_PRICING;
+  >>>
+
+fn name=tokensToCost params="engine:EngineDefinition,inputTokens:number,outputTokens:number" returns=number export=true
+  doc "Convert raw token counts to USD cost using the engine's per-1k pricing. inputTokens and outputTokens are absolute counts (not in 1k units). Returns dollars."
+  handler <<<
+    const p = getEnginePricing(engine);
+    return (inputTokens / 1000) * p.inputPer1k + (outputTokens / 1000) * p.outputPer1k;
+  >>>
+
+fn name=estimatedTokensToCost params="engine:EngineDefinition,totalTokens:number" returns=number export=true
+  doc "Rough cost estimate when only a single combined token count is available (input vs output split unknown). Assumes 80% input / 20% output as a conservative split for chat-style usage. Used by AgentTeamBudget polling where AgentSession only reports cumulative tokens, not split."
+  handler <<<
+    const inputTokens = Math.round(totalTokens * 0.8);
+    const outputTokens = totalTokens - inputTokens;
+    return tokensToCost(engine, inputTokens, outputTokens);
+  >>>

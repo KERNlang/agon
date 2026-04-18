@@ -3,6 +3,7 @@ import from="node:fs" names="mkdirSync"
 import from="@agon/core" names="ensureAgonHome,RUNS_DIR,appendMessage,tracker,scanProjectContext,readOnlyDiff,diffLineCount,diffFileCount,buildCritiquePrompt,spawnWithTimeout,resolveWorkingDir"
 import from="../blocks/output-format.js" names="ENGINE_COLORS"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
+import from="./agent.js" names="buildAgentApprovalCallback"
 
 fn name=handlePipeline params="input:string, dispatch:Dispatch, ctx:HandlerContext, fitnessCmd?:string, opts?:{quiet?:boolean}" returns="Promise<void>" async=true
   signal name=abort
@@ -72,6 +73,10 @@ fn name=handlePipeline params="input:string, dispatch:Dispatch, ctx:HandlerConte
             timeout: config.agentTimeout ?? 600,
             outputDir,
             signal: abort.signal,
+            onApproval: buildAgentApprovalCallback(dispatch, ctx, buildEngine),
+            permissionMode: (config as any).permissionMode ?? 'ask',
+            allowedCommands: (config as any).allowedCommands ?? [],
+            toolPermissions: (config as any).toolPermissions ?? {},
           });
         } else {
           await ctx.adapter.dispatch({

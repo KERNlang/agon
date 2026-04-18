@@ -7,31 +7,62 @@ import from="../blocks/markdown.js" names="parseMarkdownBlocks,cleanEngineOutput
 import from="../../code-buffer.js" names="codeBlockBuffer"
 import from="@agon/core" names="loadConfig,configSet"
 
+interface name=AgentProgressSnapshot
+  doc "Live state for a running autonomous agent session. Fed by agent-* OutputEvents, rendered by surfaces/agent.kern::AgentProgressView. teamId groups members of a single AgentTeam run for explicit clear-by-team. completedAt is set by agent-step-end and consumed by the TTL pruner in app.kern."
+  field name=engineId type=string
+  field name=turnIndex type=number
+  field name=phase type="'running'|'awaiting_approval'|'completed'|'failed'|'cancelled'"
+  field name=userPrompt type=string optional=true
+  field name=toolCalls type=number
+  field name=lastTool type=string optional=true
+  field name=lastToolStatus type="'running'|'ok'|'error'|'rejected'" optional=true
+  field name=tokensUsed type=number
+  field name=elapsedMs type=number
+  field name=startedAt type=number
+  field name=turnsRemaining type=number
+  field name=maxTurns type=number
+  field name=tokensRemaining type="number|null" optional=true
+  field name=maxTokens type="number|null" optional=true
+  field name=error type=string optional=true
+  field name=teamId type=string optional=true
+  field name=completedAt type=number optional=true
+
+interface name=StreamingEntry
+  doc "Per-engine streaming buffer. Sharding on engineId prevents N concurrent agents from clobbering each other's in-flight tokens."
+  field name=engineId type=string
+  field name=content type=string
+  field name=startedAt type=number
+
 interface name=OutputState
   field name=liveSpinner type="{message:string,color?:number,engineId?:string}|null"
   field name=liveProgress type="EngineProgress[]|null"
-  field name=streamingText type="{engineId:string,content:string}|null"
+  field name=streamingText type="Record<string,StreamingEntry>"
+  field name=agentProgress type="Record<string,AgentProgressSnapshot>"
 
 interface name=OutputActions
   field name=setLiveSpinner type="(val:any) => void"
   field name=setLiveProgress type="(val:EngineProgress[]|null) => void"
-  field name=setStreamingText type="(val:{engineId:string,content:string}|null) => void"
+  field name=setStreamingText type="(updater:Record<string,StreamingEntry> | ((prev:Record<string,StreamingEntry>) => Record<string,StreamingEntry>)) => void"
   field name=addBlock type="(event:OutputEvent) => void"
+  field name=replaceBlocksOfType type="(eventType:string, event:OutputEvent) => void"
   field name=clearBlocks type="() => void"
+  field name=setPendingPlanProposal type="(val:OutputEvent|null) => void"
   field name=setReviewEvent type="(val:any) => void"
   field name=setQuestionState type="(val:any) => void"
   field name=setChatStartTime type="(val:number) => void"
   field name=flushStream type="() => void"
   field name=getEngineColor type="(engineId:string) => number"
   field name=setCesarConfidence type="(val:number|null) => void"
+  field name=setAgentProgress type="(updater:Record<string,AgentProgressSnapshot> | ((prev:Record<string,AgentProgressSnapshot>) => Record<string,AgentProgressSnapshot>)) => void"
+  field name=clearAgentProgressByTeam type="(teamId:string) => void"
 
 // ── Thinking buffer — coalesces thinking-chunk events into a single block ────
 const name=_thinkingBuffer type="{engineId:string,content:string}"
   handler <<< { engineId: '', content: '' } >>>
 
 // ── Permission queue — ensures prompts don't overwrite each other ────
-const name=_permissionQueue type="Array<{tool:string,command:string,reason:string,resolve:(approved:boolean)=>void}>"
-  handler <<< [] as Array<{tool:string,command:string,reason:string,resolve:(approved:boolean)=>void}> >>>
+const name=_permissionQueue type="Array<{tool:string,command:string,description?:string,reason:string,resolve:(approved:boolean)=>void}>"
+  handler <<< [] as Array<{tool:string,command:string,description?:string,reason:string,resolve:(approved:boolean)=>void}> >>>
 
 fn name=clearPermissionQueue returns=void
   doc "Reject all queued permissions and clear the queue. Called on interrupt/cancel."
@@ -40,6 +71,49 @@ fn name=clearPermissionQueue returns=void
       const entry = _permissionQueue.shift()!;
       entry.resolve(false);
     }
+  >>>
+
+fn name=clearThinkingBuffer returns=void
+  doc "Drop any buffered thinking-chunk content. Called on interrupt / clear / SIGINT so the next turn doesn't emit stale content as a fresh block."
+  handler <<<
+    _thinkingBuffer.engineId = '';
+    _thinkingBuffer.content = '';
+  >>>
+
+// ── Tool-call grouping buffer — bundles consecutive finalized tool-call
+// events into a single compact tool-call-group block, Claude-Code style.
+// Flushed when a non-tool event arrives OR after a 300ms quiet period so
+// turns that end on a tool-call (e.g., /run) don't leave the final row
+// stranded. Only status=done/error events are buffered — the running
+// event only updates AgentProgressView live.
+const name=_pendingToolCalls type="any[]"
+  handler <<< [] as any[] >>>
+
+const name=_pendingFlushTimer type="{ timer: any, actions: any }"
+  handler <<< ({ timer: null, actions: null }) as any >>>
+
+fn name=flushPendingToolCalls params="actions:OutputActions" returns=void export=true
+  doc "Emit any buffered tool-call events as a single tool-call-group block."
+  handler <<<
+    if (_pendingFlushTimer.timer) {
+      clearTimeout(_pendingFlushTimer.timer);
+      _pendingFlushTimer.timer = null;
+    }
+    if (_pendingToolCalls.length === 0) return;
+    const blocks = _pendingToolCalls.map((event: any) => ({ id: Date.now() + Math.random(), event }));
+    _pendingToolCalls.length = 0;
+    actions.addBlock({ type: 'tool-call-group', blocks } as any);
+  >>>
+
+fn name=schedulePendingFlush params="actions:OutputActions" returns=void
+  doc "Debounce-flush pending tool-calls 300ms after the last one — covers turns that end on a tool-call without any trailing event."
+  handler <<<
+    _pendingFlushTimer.actions = actions;
+    if (_pendingFlushTimer.timer) clearTimeout(_pendingFlushTimer.timer);
+    _pendingFlushTimer.timer = setTimeout(() => {
+      _pendingFlushTimer.timer = null;
+      if (_pendingFlushTimer.actions) flushPendingToolCalls(_pendingFlushTimer.actions);
+    }, 300);
   >>>
 
 fn name=_drainAutoApproved params="actions:OutputActions" returns=void export=false
@@ -67,11 +141,16 @@ fn name=_showNextPermission params="actions:OutputActions" returns=void export=f
     _drainAutoApproved(actions);
     if (_permissionQueue.length === 0) return;
     const next = _permissionQueue[0];
-    actions.addBlock({ type: 'permission-ask', tool: next.tool, command: next.command, reason: next.reason, resolve: next.resolve } as any);
+    actions.addBlock({ type: 'permission-ask', tool: next.tool, command: next.command, description: next.description, reason: next.reason, resolve: next.resolve } as any);
     const permResolve = next.resolve;
     const permCommand = next.command;
     actions.setQuestionState({
-      prompt: `${next.tool}: ${permCommand.length > 60 ? permCommand.slice(0, 60) + '\u2026' : permCommand}`,
+      kind: 'permission',
+      prompt: `Approve ${next.tool}`,
+      tool: next.tool,
+      command: permCommand,
+      description: next.description,
+      reason: next.reason,
       choices: [
         { key: 'y', label: 'Yes', color: '#4ade80' },
         { key: 'n', label: 'No', color: '#ef4444' },
@@ -114,6 +193,29 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
       _thinkingBuffer.content = '';
     }
 
+    // Flush buffered tool-calls only when an event that actually emits a
+    // transcript row arrives (or on /clear). Ephemeral UI updates like
+    // spinner-*, progress-*, confidence-update, streaming-chunk, thinking-*
+    // fire constantly between tool calls and would otherwise break the
+    // bundle into per-tool groups — which is exactly how Claude Code's
+    // single "N tool calls" summary differs from Agon's current render.
+    // Events kept out of this set DO flush the buffer so tool bundles
+    // commit before the next transcript row. Notable: streaming-end,
+    // question, and patch-review MUST flush — their handlers commit
+    // transcript blocks and we need tools → answer order preserved
+    // (codex/gemini/opencode review).
+    const _nonFlushing = new Set([
+      'tool-call', 'clear',
+      'spinner-start', 'spinner-stop', 'spinner-update',
+      'progress-update', 'progress-clear',
+      'confidence-update',
+      'streaming-chunk', 'streaming-start',
+      'thinking-chunk', 'thinking-start', 'thinking-stop',
+    ]);
+    if (!_nonFlushing.has(event.type) && _pendingToolCalls.length > 0) {
+      flushPendingToolCalls(actions);
+    }
+
     switch (event.type) {
       case 'spinner-start':
         actions.setChatStartTime(Date.now());
@@ -130,7 +232,7 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
         const now = Date.now();
         if ((handleOutputEvent as any)._lastSpinnerUpdate && now - (handleOutputEvent as any)._lastSpinnerUpdate < 200) return;
         (handleOutputEvent as any)._lastSpinnerUpdate = now;
-        actions.setLiveSpinner((prev: any) => prev ? { ...prev, message: event.message } : null);
+        actions.setLiveSpinner((prev: any) => prev ? { ...prev, message: (event as any).message } : null);
         return;
       }
       case 'progress-update':
@@ -151,24 +253,40 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
         return;
       }
       case 'streaming-chunk': {
-        const prev = state.streamingText;
-        if (prev && prev.engineId === event.engineId) {
-          actions.setStreamingText({ engineId: event.engineId, content: prev.content + event.chunk });
-        } else {
-          actions.setStreamingText({ engineId: event.engineId, content: event.chunk });
-        }
+        // Functional setter form: read-modify-write happens atomically inside the
+        // action setter, so concurrent dispatches from N engines don't clobber each
+        // other's buffers (RT-7 fix). Each engine owns its own keyed entry.
+        const eid = event.engineId;
+        const chunk = event.chunk;
+        actions.setStreamingText((prev) => {
+          const existing = prev[eid];
+          return {
+            ...prev,
+            [eid]: {
+              engineId: eid,
+              content: existing ? existing.content + chunk : chunk,
+              startedAt: existing ? existing.startedAt : Date.now(),
+            },
+          };
+        });
         return;
       }
       case 'streaming-end': {
-        const st = state.streamingText;
+        const eid = event.engineId;
+        const st = state.streamingText[eid];
         if (st) {
           const color = actions.getEngineColor(st.engineId);
           const cleaned = cleanEngineOutput(st.content);
-          actions.setStreamingText(null);
+          // Remove only this engine's entry; other engines' in-flight streams stay.
+          actions.setStreamingText((prev) => {
+            const next: Record<string, StreamingEntry> = { ...prev };
+            delete next[eid];
+            return next;
+          });
           if (cleaned.trim()) {
             const segments = parseMarkdownBlocks(cleaned);
             codeBlockBuffer.recordFromSegments(segments);
-            actions.addBlock({ type: 'engine-block', engineId: st.engineId, color, content: st.content } as any);
+            actions.addBlock({ type: 'engine-block', engineId: st.engineId, color, content: cleaned } as any);
             if (mode === 'chat' && chatStartTime > 0) {
               actions.addBlock({ type: 'response-meta', engineId: st.engineId, elapsed: Date.now() - chatStartTime } as any);
             }
@@ -178,8 +296,15 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
       }
       case 'clear':
         actions.clearBlocks();
-        actions.setStreamingText(null);
+        actions.setStreamingText({});
+        actions.setAgentProgress({});
+        actions.setQuestionState(null);
+        actions.setPendingPlanProposal(null);
+        _pendingToolCalls.length = 0;
+        actions.setReviewEvent(null);
         codeBlockBuffer.clear();
+        _thinkingBuffer.engineId = '';
+        _thinkingBuffer.content = '';
         return;
       case 'patch-review':
         actions.setReviewEvent({ winnerId: (event as any).winnerId, patchPath: (event as any).patchPath, patchContent: (event as any).patchContent });
@@ -203,6 +328,7 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
         const entry = {
           tool: (event as any).tool as string,
           command: (event as any).command as string,
+          description: (event as any).description as string | undefined,
           reason: (event as any).reason as string,
           resolve: (event as any).resolve as (approved: boolean) => void,
         };
@@ -214,15 +340,197 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
         return;
       }
       case 'plan-proposal': {
-        actions.addBlock(event);
+        // Plan-proposals live in the live-pane (dynamic zone) rather than
+        // outputBlocks. Cesar may revise them mid-turn; the live-pane slot
+        // updates in place. On user confirm, plan-execution takes over as
+        // the permanent scrollback record. See kern/surfaces/app.kern.
+        actions.setPendingPlanProposal(event);
         return;
       }
       case 'plan-execution': {
+        // Plan approved — clear the live-pane proposal and commit the
+        // execution event as the permanent record.
+        actions.setPendingPlanProposal(null);
         actions.addBlock(event);
+        return;
+      }
+      case 'plan-cancelled': {
+        // Plan rejected at approval prompt — just clear the live slot.
+        // The subsequent 'info: Plan rejected.' dispatch provides the
+        // scrollback record; no plan block needed.
+        actions.setPendingPlanProposal(null);
         return;
       }
       case 'confidence-update': {
         actions.setCesarConfidence((event as any).value);
+        return;
+      }
+      case 'agent-step-start': {
+        // Functional setter: atomic Read-Modify-Write at the ref level (RT-6 fix).
+        // Concurrent dispatches from N engines all see the latest state via the
+        // updater closure rather than capturing stale refs.
+        const e = event as any;
+        const eid = e.engineId as string;
+        actions.setAgentProgress((prev) => ({
+          ...prev,
+          [eid]: {
+            engineId: eid,
+            turnIndex: e.turnIndex,
+            phase: 'running',
+            userPrompt: e.userPrompt,
+            toolCalls: 0,
+            tokensUsed: 0,
+            elapsedMs: 0,
+            startedAt: Date.now(),
+            turnsRemaining: e.maxTurns,
+            maxTurns: e.maxTurns,
+            tokensRemaining: e.maxTokens ?? null,
+            maxTokens: e.maxTokens ?? null,
+            teamId: e.teamId,
+          },
+        }));
+        return;
+      }
+      case 'agent-step-end': {
+        const e = event as any;
+        const eid = e.engineId as string;
+        actions.setAgentProgress((prev) => {
+          const existing = prev[eid];
+          if (!existing) return prev;
+          return {
+            ...prev,
+            [eid]: {
+              ...existing,
+              phase: e.outcome,
+              toolCalls: e.toolCalls,
+              tokensUsed: e.tokensUsed,
+              elapsedMs: Date.now() - existing.startedAt,
+              error: e.outcome !== 'completed' ? e.stopReason : undefined,
+              completedAt: Date.now(),
+            },
+          };
+        });
+        actions.addBlock(event);
+        return;
+      }
+      case 'agent-turn-summary': {
+        const e = event as any;
+        const eid = e.engineId as string;
+        actions.setAgentProgress((prev) => {
+          const existing = prev[eid];
+          if (!existing) return prev;
+          return {
+            ...prev,
+            [eid]: {
+              ...existing,
+              toolCalls: e.cumulativeToolCalls,
+              tokensUsed: e.cumulativeTokens,
+              elapsedMs: e.elapsedMs,
+              turnsRemaining: e.turnsRemaining,
+            },
+          };
+        });
+        return;
+      }
+      case 'agent-team-start': {
+        const e = event as any;
+        const engineList = (e.engineIds as string[]).join(', ');
+        actions.addBlock({ type: 'engine-block', engineId: 'cesar', color: 0x9333ea, content: `\u{1F680} Agent team started \u2014 ${e.engineIds.length} engines (${engineList}) on: "${(e.task as string).slice(0, 80)}"` } as any);
+        return;
+      }
+      case 'engine-switch': {
+        // Phase C: subtle attribution badge. Only shown in blocks, not spinner,
+        // so it doesn't interrupt the streaming flow. Empty from = cold start.
+        const e = event as any;
+        const fromLabel = e.from ? `${e.from} \u2192 ` : '';
+        const reasonLabel = e.reason === 'auto-fanout' ? ' (auto-routed)' : e.reason === 'synthesis' ? ' (synthesis winner)' : '';
+        actions.addBlock({ type: 'info', message: `${fromLabel}${e.to}${reasonLabel}` } as any);
+        return;
+      }
+      case 'agent-routing': {
+        // Phase C: inform user of Cesar's routing decision before the step starts.
+        const e = event as any;
+        const modeIcon = e.mode === 'team' ? '\u{1F465}' : '\u{1F9E0}';
+        const engineList = (e.engines as string[]).join(', ');
+        actions.addBlock({ type: 'info', message: `${modeIcon} Routing: ${e.mode} (${engineList}) \u2014 ${e.reason}` } as any);
+        return;
+      }
+      case 'shadow-active': {
+        // Phase D: subtle shadow-worker indicator. Shown once when shadow starts.
+        // Deliberately low-key — user's attention is on the foreground stream.
+        const e = event as any;
+        actions.addBlock({ type: 'info', message: `\u26A1 ${e.foregroundEngineId} (foreground) \u2014 ${e.shadowEngineId} racing silently in background` } as any);
+        return;
+      }
+      case 'agent-team-complete': {
+        const e = event as any;
+        const memberSummary = (e.memberOutcomes as Array<{engineId:string,outcome:string,diffLines:number,passedFitness:boolean}>)
+          .map((o) => `${o.engineId}: ${o.outcome}${o.outcome === 'completed' ? ` (${o.diffLines} lines, ${o.passedFitness ? '\u2713' : '\u2717'} fitness)` : ''}`)
+          .join('\n  ');
+        const cost = (e.teamCostUsd as number).toFixed(2);
+        const dur = ((e.teamDurationMs as number) / 1000).toFixed(0);
+        // Synthesis summary line if synthesis ran
+        let synthLine = '';
+        if (e.synthesisRan) {
+          const synthCost = typeof e.synthesisCostUsd === 'number' ? `+$${e.synthesisCostUsd.toFixed(2)} synth` : '';
+          const synthStatus = e.synthesisFitnessRegressed
+            ? '\u2717 reverted (fitness regression)'
+            : e.synthesisChanged
+              ? '\u2713 applied'
+              : '\u2713 reviewed (no change)';
+          synthLine = `\n  Synthesis: ${synthStatus}${synthCost ? ' | ' + synthCost : ''}`;
+        }
+        actions.addBlock({ type: 'engine-block', engineId: 'cesar', color: 0x9333ea, content: `\u{1F3C1} Agent team complete \u2014 winner: ${e.winner ?? 'none'} | $${cost} | ${dur}s\n  ${memberSummary}${synthLine}` } as any);
+        // RT-15: explicit "team is done, wipe its panels" path. Faster than waiting for the TTL pruner.
+        actions.clearAgentProgressByTeam(e.teamId as string);
+        return;
+      }
+      case 'agent-budget-warning': {
+        const e = event as any;
+        const eid = e.engineId as string;
+        actions.setAgentProgress((prev) => {
+          const existing = prev[eid];
+          if (!existing) return prev;
+          const next: AgentProgressSnapshot = { ...existing };
+          if (e.kind === 'turns') next.turnsRemaining = e.remaining;
+          else if (e.kind === 'tokens') next.tokensRemaining = e.remaining;
+          return { ...prev, [eid]: next };
+        });
+        actions.addBlock({ type: 'warning', message: `Agent ${e.kind} budget: ${e.remaining}/${e.limit} remaining` } as any);
+        return;
+      }
+      case 'tool-call': {
+        // Mirror tool-call into the live progress snapshot for the relevant engine
+        // (only if that engine has an active agent session — non-agent tool calls pass through).
+        const te = event as any;
+        const eid = te.engineId as string;
+        actions.setAgentProgress((prev) => {
+          const existing = prev[eid];
+          if (!existing) return prev;
+          const mappedStatus: 'running'|'ok'|'error'|'rejected' =
+            te.status === 'done' ? 'ok'
+            : te.status === 'error' ? 'error'
+            : 'running';
+          const displayInput = te.input ? (te.input.length > 30 ? te.input.slice(0, 27) + '\u2026' : te.input) : '';
+          return {
+            ...prev,
+            [eid]: {
+              ...existing,
+              lastTool: displayInput ? `${te.tool}(${displayInput})` : te.tool,
+              lastToolStatus: mappedStatus,
+              toolCalls: mappedStatus === 'ok' ? existing.toolCalls + 1 : existing.toolCalls,
+            },
+          };
+        });
+        // Buffer finalized tool-calls only. 'running' events only update
+        // the live progress view above — committing them here would double-
+        // count in the group summary (running + done for the same tool).
+        // The group flushes on the next non-tool event OR after a 300ms
+        // quiet period so terminal-tool-call turns still render eventually.
+        if (te.status === 'done' || te.status === 'error') {
+          _pendingToolCalls.push(event);
+          schedulePendingFlush(actions);
+        }
         return;
       }
       default:
@@ -231,6 +539,7 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
           const cleaned = cleanEngineOutput((event as any).content);
           const segments = parseMarkdownBlocks(cleaned);
           codeBlockBuffer.recordFromSegments(segments);
+          event = { ...(event as any), content: cleaned } as any;
         }
         // Flush any pending stream before adding non-stream events
         if (event.type === 'text' || event.type === 'engine-block' || event.type === 'separator') {

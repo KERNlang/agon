@@ -1,0 +1,454 @@
+// ── AgentTeam — N parallel AgentSession instances with worktree isolation ──
+// Phase 2 of the Cesar-driven autonomous parallel agents work.
+//
+// AgentTeam wraps N AgentSession instances, each running in its own git
+// worktree with a shared budget, so Cesar (or a /agent-team slash command)
+// can spawn a fleet of autonomous agents in parallel and synthesize the
+// best result. The architecture deliberately mirrors forge's parallel
+// engine pattern (Promise.allSettled, worktree-per-engine) but applies
+// it to multi-turn autonomous loops instead of one-shot patches.
+//
+// Key invariants:
+//   - Per-instance state. No singletons. Multiple AgentTeam instances can
+//     coexist. (Verified by PFB-5 KERN-compile probe.)
+//   - Per-engine isolation. Each member runs in its own worktree (when
+//     isolate=true) so concurrent file edits don't clobber each other.
+//   - Per-engine abort. cancel(engineId) only cancels that one; cancel()
+//     cancels all. AgentSession's per-instance AbortController makes this
+//     free.
+//   - Run-scoped paths. Worktree paths are .agon/agent-worktrees/<runId>/
+//     <engineId>/ where runId is a fresh per-construction nonce. Two
+//     concurrent runs never collide. (PFB-3 fix.)
+//   - Dirty-tree handling. The base SHA is captured via stashSnapshot,
+//     which preserves the user's uncommitted edits in the worktree base
+//     so synthesized patches apply cleanly against the user's actual
+//     working state. (PFB-4 fix.)
+//   - Disposed guard. After cleanup() runs, every public method throws
+//     AgentTeamDisposedError. Catches the "callers forgot to await
+//     cleanup" leak at runtime instead of orphaning sessions.
+
+import from="node:path" names="join"
+import from="node:crypto" names="randomBytes"
+import from="../blocks/git.js" names="repoRoot,worktreeCreate,worktreeRemove,worktreeRemoveBestEffort,worktreePruneAll,stashSnapshot"
+import from="../blocks/semaphore.js" names="Semaphore"
+import from="./agent-session.js" names="AgentSession"
+import from="./agent-session.js" names="AgentBudget,AgentStepResult,AgentSessionConfig" types=true
+import from="../api/dispatch.js" names="ApiConfig" types=true
+import from="../models/agent-event.js" names="AgentEvent" types=true
+import from="./context-thread.js" names="ContextThread" types=true
+
+// ── Errors ────────────────────────────────────────────────────────
+
+fn name=makeAgentTeamError params="message:string,cause?:unknown" returns=Error export=true
+  doc "Typed error for AgentTeam initialization or runtime failures."
+  handler <<<
+    const err = new Error(`AgentTeam: ${message}`);
+    err.name = 'AgentTeamError';
+    if (cause !== undefined) (err as any).cause = cause;
+    return err;
+  >>>
+
+fn name=makeAgentTeamDisposedError returns=Error export=true
+  doc "Thrown by every AgentTeam method after cleanup() runs."
+  handler <<<
+    const err = new Error('AgentTeam: instance has been disposed (cleanup() already ran). Construct a new AgentTeam for further work.');
+    err.name = 'AgentTeamDisposedError';
+    return err;
+  >>>
+
+// ── Member configuration ──────────────────────────────────────────
+
+interface name=AgentTeamMemberConfig
+  doc "One member of an agent team. The api config carries the engine credentials, model, and base URL. contextWindowTokens (optional) comes from the engine/model registry — enables per-engine budget sizing so small-window engines don't get 700k history."
+  field name=engineId type=string
+  field name=api type=ApiConfig
+  field name=systemPrompt type=string optional=true
+  field name=contextWindowTokens type=number optional=true
+
+// ── Team budget (RT-12) ──────────────────────────────────────────
+
+interface name=AgentTeamBudget
+  doc "Hard team-level budget enforced via runtime polling in step(). Per-member AgentBudget covers turns/tokens-per-member; AgentTeamBudget covers the pooled across-team total."
+  field name=maxTeamCostUsd type=number
+  field name=maxTeamWallClockMs type=number
+
+// ── Team configuration ────────────────────────────────────────────
+
+interface name=AgentTeamConfig
+  doc "Configuration for an AgentTeam run. cwd is the repo root the user invoked from; isolate controls whether each member gets its own worktree. teamBudget+costFn enable runtime cost-ceiling enforcement (RT-12). thread is the shared ContextThread — when provided, all members read prior conversation history from it and write their per-turn output back into it so the next step (or a re-routed engine) has full context."
+  field name=members type="AgentTeamMemberConfig[]"
+  field name=cwd type=string
+  field name=budget type=AgentBudget
+  field name=isolate type=boolean
+  field name=workspaceLabel type=string optional=true
+  field name=heavyToolSemaphorePermits type=number optional=true
+  field name=teamBudget type=AgentTeamBudget optional=true
+  field name=costFn type="(engineId: string, tokensUsed: number) => number" optional=true
+  field name=thread type=ContextThread optional=true
+  field name=permissionMode type="'auto'|'ask'|'deny-all'" optional=true
+  field name=allowedCommands type="string[]" optional=true
+  field name=toolPermissions type="Record<string,'allow'|'ask'|'deny'>" optional=true
+  field name=onPermissionAsk type="(engineId:string, tool:string, command:string, reason:string)=>Promise<boolean|string>" optional=true
+
+// ── Member result ────────────────────────────────────────────────
+
+interface name=AgentTeamMemberResult
+  doc "Per-member outcome from a single AgentTeam.step() invocation."
+  field name=engineId type=string
+  field name=worktreePath type="string|null"
+  field name=stepResult type="AgentStepResult|null"
+  field name=error type="Error|null"
+
+// ── Team result ──────────────────────────────────────────────────
+
+interface name=AgentTeamResult
+  doc "Aggregate outcome of an AgentTeam.step() call. members preserves the input order."
+  field name=members type="AgentTeamMemberResult[]"
+  field name=runId type=string
+  field name=baseSha type=string
+  field name=durationMs type=number
+  field name=succeeded type=number
+  field name=failed type=number
+
+// ── Random run ID helper ─────────────────────────────────────────
+
+fn name=makeRunId returns=string export=false
+  doc "Generate a per-team run ID. Format: team-<base36 ts>-<4 hex>. Two concurrent constructions never collide (4 hex = 65k entropy)."
+  handler <<<
+    const ts = Date.now().toString(36);
+    const rand = randomBytes(2).toString('hex');
+    return `team-${ts}-${rand}`;
+  >>>
+
+// ── The service ──────────────────────────────────────────────────
+
+service name=AgentTeam export=true
+  doc "Wraps N AgentSession instances in N worktrees with parallel step() and shared budget. Created with a config; call initialize() once before step()."
+
+  field name=config type=AgentTeamConfig private=true
+  field name=members type="Record<string, AgentSession>" private=true
+  field name=worktrees type="Record<string, string>" private=true
+  field name=runId type=string private=true default="''"
+  field name=baseSha type=string private=true default="''"
+  field name=startedAt type=number private=true default="0"
+  field name=initialized type=boolean private=true default="false"
+  field name=disposed type=boolean private=true default="false"
+  field name=sharedSemaphore type="Semaphore|null" private=true default="null"
+
+  constructor params="config:AgentTeamConfig"
+    handler <<<
+      this.config = config;
+      this.members = {};
+      this.worktrees = {};
+      this.runId = makeRunId();
+      this.baseSha = '';
+      this.startedAt = 0;
+      this.initialized = false;
+      this.disposed = false;
+      this.sharedSemaphore = null;
+    >>>
+
+  method name=getRunId returns=string
+    doc "Return the per-construction run ID. Used to scope worktree paths and tag agentProgress snapshots."
+    handler <<<
+      if (this.disposed) throw makeAgentTeamDisposedError();
+      return this.runId;
+    >>>
+
+  method name=getBaseSha returns=string
+    doc "Return the base SHA captured at initialize() time. Used by Phase 3 scoring to compute per-member diffs."
+    handler <<<
+      if (this.disposed) throw makeAgentTeamDisposedError();
+      return this.baseSha;
+    >>>
+
+  method name=getMemberEngineIds returns="string[]"
+    doc "Return engineIds in input order. Used by callers to iterate members for event correlation."
+    handler <<<
+      if (this.disposed) throw makeAgentTeamDisposedError();
+      return this.config.members.map((m: AgentTeamMemberConfig) => m.engineId);
+    >>>
+
+  method name=getWorktreePath params="engineId:string" returns="string|null"
+    doc "Return the worktree path for a given member, or null if isolate=false or the member doesn't exist."
+    handler <<<
+      if (this.disposed) throw makeAgentTeamDisposedError();
+      return this.worktrees[engineId] ?? null;
+    >>>
+
+  method name=initialize async=true returns="Promise<void>"
+    doc "One-time setup: capture base SHA, create worktrees in parallel, instantiate AgentSessions. Throws AgentTeamError on any failure (with rollback of partial state)."
+    handler <<<
+      if (this.disposed) throw makeAgentTeamDisposedError();
+      if (this.initialized) return;
+
+      // PFB-4: capture the user's dirty working tree as a stash-like SHA
+      // WITHOUT mutating their working tree. Agents work against this snapshot
+      // so synthesized patches apply cleanly against the user's current state.
+      try {
+        this.baseSha = stashSnapshot(this.config.cwd);
+      } catch (err) {
+        throw makeAgentTeamError(`failed to capture working-tree snapshot: ${err instanceof Error ? err.message : String(err)}`, err);
+      }
+
+      // PFB-3: janitor sweep — remove any orphaned worktrees from cancelled
+      // or crashed prior runs older than 1 hour. Idempotent and cheap.
+      try {
+        worktreePruneAll(this.config.cwd, 60 * 60 * 1000);
+      } catch (err) {
+        // Janitor failure is non-fatal; log and continue.
+        console.warn(`[agon] AgentTeam janitor sweep failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+
+      // RT-17: parallelize worktreeCreate via Promise.allSettled instead of
+      // sequential. Sequential would block ~1.5-2.5s wall-clock for N=3 (each
+      // git worktree add --detach is ~500-800ms cold).
+      //
+      // Codex review fix: use Promise.allSettled (NOT Promise.all) so we can
+      // see which individual creates succeeded and which failed. The previous
+      // Promise.all + try/catch pattern had a hidden bug — `created` was only
+      // populated AFTER the await resolved, so on failure the rollback array
+      // was empty and successful worktrees from earlier members leaked.
+      const root = repoRoot(this.config.cwd);
+      const createPromises = this.config.members.map(async (m: AgentTeamMemberConfig): Promise<{m: AgentTeamMemberConfig, wt: string|null}> => {
+        if (!this.config.isolate) {
+          return { m, wt: null };
+        }
+        const wt = join(this.config.cwd, '.agon', 'agent-worktrees', this.runId, m.engineId);
+        // worktreeCreate is currently sync (uses execFileSync internally); the
+        // async wrapper here is for parallelism via microtask scheduling.
+        worktreeCreate(root, wt, this.baseSha);
+        return { m, wt };
+      });
+
+      const createResults = await Promise.allSettled(createPromises);
+      const successes: Array<{m: AgentTeamMemberConfig, wt: string|null}> = [];
+      const failures: Error[] = [];
+      for (const r of createResults) {
+        if (r.status === 'fulfilled') {
+          successes.push(r.value);
+        } else {
+          failures.push(r.reason instanceof Error ? r.reason : new Error(String(r.reason)));
+        }
+      }
+
+      if (failures.length > 0) {
+        // RT-14: rollback every worktree that DID get created before another failed.
+        // Best-effort removal — we're already in an error path and don't want to
+        // mask the original error with cleanup failures.
+        for (const s of successes) {
+          if (s.wt) worktreeRemoveBestEffort(root, s.wt);
+        }
+        throw makeAgentTeamError(
+          `failed to create ${failures.length}/${this.config.members.length} worktrees: ${failures[0].message}`,
+          failures[0],
+        );
+      }
+
+      // Track the successful creations BEFORE constructing sessions so that
+      // a session-construction failure can clean up.
+      for (const entry of successes) {
+        if (entry.wt) this.worktrees[entry.m.engineId] = entry.wt;
+      }
+      const settled = successes;
+
+      // RT-26 fix (Gemini): construct ONE shared Semaphore for the whole team.
+      // Heavy tools (npm test, tsc, cargo build) acquire this semaphore before
+      // running so 3 parallel members can't saturate disk I/O. A solo /agent
+      // run never touches this code path because runAgentTeam only fires for
+      // team mode. Default to 1 permit (full serialization) which is the
+      // safest choice for I/O contention; configurable via heavyToolSemaphorePermits.
+      const permits = this.config.heavyToolSemaphorePermits ?? 1;
+      this.sharedSemaphore = new Semaphore(permits);
+
+      // Instantiate AgentSession for each member with the right cwd and the
+      // SAME Semaphore instance so the serialization actually happens across
+      // members (one Semaphore-per-member would defeat the purpose).
+      try {
+        for (const { m, wt } of settled) {
+          const memberCwd = wt ?? this.config.cwd;
+          const sessionConfig: AgentSessionConfig = {
+            engineId: m.engineId,
+            api: m.api,
+            cwd: memberCwd,
+            systemPrompt: m.systemPrompt,
+            budget: this.config.budget,
+            teamId: this.runId,
+            heavyToolSemaphore: this.sharedSemaphore,
+            contextWindowTokens: m.contextWindowTokens,
+            permissionMode: this.config.permissionMode,
+            allowedCommands: this.config.allowedCommands,
+            toolPermissions: this.config.toolPermissions,
+            onPermissionAsk: this.config.onPermissionAsk
+              ? (tool: string, command: string, reason: string) => this.config.onPermissionAsk!(m.engineId, tool, command, reason)
+              : undefined,
+            // Shared ContextThread: all team members read prior history from
+            // the same thread and write their output back into it. Appends
+            // during parallel step() execution are in-memory (synchronous),
+            // so JS's single-threaded event loop prevents data races within
+            // a single step. The team flushes once after Promise.allSettled
+            // via the individual session.step() calls which each call
+            // thread.save() on completion (agent-session.kern).
+            thread: this.config.thread,
+          };
+          this.members[m.engineId] = new AgentSession(sessionConfig);
+        }
+      } catch (err) {
+        // Roll back every worktree we created.
+        const rootForCleanup = repoRoot(this.config.cwd);
+        for (const eid of Object.keys(this.worktrees)) {
+          worktreeRemoveBestEffort(rootForCleanup, this.worktrees[eid]);
+        }
+        this.worktrees = {};
+        this.members = {};
+        throw makeAgentTeamError(`failed to instantiate AgentSession for one or more members: ${err instanceof Error ? err.message : String(err)}`, err);
+      }
+
+      this.initialized = true;
+    >>>
+
+  method name=step async=true params="prompt:string,opts?:{onEvent?:(event:AgentEvent)=>void}" returns="Promise<AgentTeamResult>"
+    doc "Run all members in parallel via Promise.allSettled. Each member's onEvent callback is forwarded to opts.onEvent (with engineId already tagged on every AgentEvent variant). Returns aggregated results — one slow/failed engine never stalls or fails the others."
+    handler <<<
+      if (this.disposed) throw makeAgentTeamDisposedError();
+      if (!this.initialized) throw makeAgentTeamError('step() called before initialize()');
+
+      this.startedAt = Date.now();
+      const onEvent = opts?.onEvent;
+
+      // RT-12: team budget polling. Wrap the user's onEvent callback so that
+      // after every dispatched AgentEvent, we sum the current cumulative cost
+      // and wall-clock across all members and call team.cancel() if either
+      // ceiling is breached. Per-member budgets stay enforced inside each
+      // AgentSession; this polling catches the across-team aggregate which
+      // no per-session check can see.
+      const teamBudget = this.config.teamBudget;
+      const costFn = this.config.costFn;
+      const startedAt = this.startedAt;
+      const self = this;
+      const wrappedOnEvent = (teamBudget && costFn)
+        ? (event: AgentEvent) => {
+            try { onEvent?.(event); } catch { /* swallow */ }
+            // Poll: sum cost across members. AgentSession.getStats() is cheap.
+            let totalCost = 0;
+            for (const eid of Object.keys(self.members)) {
+              try {
+                const stats = self.members[eid].getStats();
+                totalCost += costFn(eid, stats.tokensUsed);
+              } catch { /* skip */ }
+            }
+            const elapsed = Date.now() - startedAt;
+            if (totalCost > teamBudget.maxTeamCostUsd) {
+              console.warn(`[agon] AgentTeam: cost ceiling breached ($${totalCost.toFixed(2)} > $${teamBudget.maxTeamCostUsd}) — cancelling all members`);
+              self.cancel();
+            } else if (elapsed > teamBudget.maxTeamWallClockMs) {
+              console.warn(`[agon] AgentTeam: wall-clock ceiling breached (${elapsed}ms > ${teamBudget.maxTeamWallClockMs}ms) — cancelling all members`);
+              self.cancel();
+            }
+          }
+        : onEvent;
+
+      // Build a parallel-array form so the result can be correlated by index
+      // (mirrors PFB-2's positional pattern in stages.kern). We avoid relying
+      // on Map iteration order for correlation.
+      const memberConfigs = this.config.members;
+      const stepPromises = memberConfigs.map(async (m: AgentTeamMemberConfig): Promise<AgentTeamMemberResult> => {
+        const session = this.members[m.engineId];
+        if (!session) {
+          return {
+            engineId: m.engineId,
+            worktreePath: this.worktrees[m.engineId] ?? null,
+            stepResult: null,
+            error: makeAgentTeamError(`member ${m.engineId} has no AgentSession (initialize() did not run cleanly)`),
+          };
+        }
+        try {
+          const stepResult = await session.step(prompt, { onEvent: wrappedOnEvent });
+          return {
+            engineId: m.engineId,
+            worktreePath: this.worktrees[m.engineId] ?? null,
+            stepResult,
+            error: null,
+          };
+        } catch (err) {
+          return {
+            engineId: m.engineId,
+            worktreePath: this.worktrees[m.engineId] ?? null,
+            stepResult: null,
+            error: err instanceof Error ? err : new Error(String(err)),
+          };
+        }
+      });
+
+      const settled = await Promise.allSettled(stepPromises);
+
+      // Each stepPromise above already catches its own errors and returns an
+      // AgentTeamMemberResult; Promise.allSettled wrapping is belt-and-braces
+      // for any unexpected throws from the wrapper itself.
+      const results: AgentTeamMemberResult[] = [];
+      for (let i = 0; i < settled.length; i++) {
+        const outcome = settled[i];
+        if (outcome.status === 'fulfilled') {
+          results.push(outcome.value);
+        } else {
+          results.push({
+            engineId: memberConfigs[i].engineId,
+            worktreePath: this.worktrees[memberConfigs[i].engineId] ?? null,
+            stepResult: null,
+            error: outcome.reason instanceof Error ? outcome.reason : new Error(String(outcome.reason)),
+          });
+        }
+      }
+
+      let succeeded = 0;
+      let failed = 0;
+      for (const r of results) {
+        if (r.stepResult && !r.error) succeeded++;
+        else failed++;
+      }
+
+      return {
+        members: results,
+        runId: this.runId,
+        baseSha: this.baseSha,
+        durationMs: Date.now() - this.startedAt,
+        succeeded,
+        failed,
+      };
+    >>>
+
+  method name=cancel params="engineId?:string" returns=void
+    doc "Cancel one member by engineId, or all members if no engineId given. Idempotent. Each AgentSession owns its own AbortController so per-engine cancel never bleeds across members."
+    handler <<<
+      if (this.disposed) return; // already torn down — nothing to cancel
+      if (engineId) {
+        const session = this.members[engineId];
+        if (session) session.cancel();
+        return;
+      }
+      for (const eid of Object.keys(this.members)) {
+        try { this.members[eid].cancel(); } catch { /* swallow */ }
+      }
+    >>>
+
+  method name=cleanup async=true returns="Promise<void>"
+    doc "Tear down: cancel any in-flight members, remove worktrees, mark disposed. Idempotent. Caller is responsible for calling this — runAgentTeam wires it into a try/finally so the work happens even on error paths."
+    handler <<<
+      if (this.disposed) return;
+      this.disposed = true;
+
+      // Cancel any in-flight sessions first so they release their abort
+      // signals before we yank their worktrees.
+      for (const eid of Object.keys(this.members)) {
+        try { this.members[eid].cancel(); } catch { /* swallow */ }
+      }
+
+      // Remove worktrees. Use best-effort so a single failure doesn't strand
+      // the others — the next janitor sweep will catch any stragglers.
+      const root = repoRoot(this.config.cwd);
+      for (const eid of Object.keys(this.worktrees)) {
+        worktreeRemoveBestEffort(root, this.worktrees[eid]);
+      }
+      this.worktrees = {};
+      this.members = {};
+    >>>

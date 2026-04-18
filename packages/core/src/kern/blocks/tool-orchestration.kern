@@ -16,6 +16,7 @@ fn name=createForgeTool returns=ToolHandler
         type: 'object',
         properties: {
           task: { type: 'string', description: 'Brief description of the task to forge' },
+          scope: { type: 'string', description: 'Use "slice" when only one hard subpart deserves forge and Cesar will integrate the rest. Use "full" for whole-task forge. Optional.' },
           fitnessCmd: { type: 'string', description: 'Optional test or fitness command to preserve when routing to forge.' },
           hardened: { type: 'boolean', description: 'Set true for forge-hardened (gauntlet verification). Optional.' },
           team: { type: 'boolean', description: 'Solo (false) or team-forge (true). Choose based on task scope: single-file = solo, multi-file/architecture = team. Defaults to false if omitted.' },
@@ -30,6 +31,9 @@ fn name=createForgeTool returns=ToolHandler
     const validate = (input: Record<string, unknown>, _ctx: ToolContext): string | null => {
       if (!input.task || typeof input.task !== 'string' || !(input.task as string).trim()) {
         return 'Missing required parameter: task';
+      }
+      if (input.scope !== undefined && input.scope !== 'slice' && input.scope !== 'full') {
+        return 'scope must be "slice" or "full"';
       }
       return null;
     };
@@ -286,6 +290,91 @@ fn name=createReviewTool returns=ToolHandler
 
     const execute = async (_input: Record<string, unknown>, _ctx: ToolContext): Promise<ToolResult> => {
       return { ok: true, content: 'Delegation accepted. STOP responding now. The orchestrator will handle the rest.' };
+    };
+
+    return { definition, validate, checkPermission, execute };
+  >>>
+
+fn name=createAgentTool returns=ToolHandler
+  doc "Signal tool — delegates to the autonomous agent loop. Solo mode runs one engine in an autonomous tool-use loop. team:true mode spawns multiple parallel AgentSession instances in isolated worktrees and synthesizes the best result. Choose taskKind:edit for code changes (gets a typecheck-or-fail fitness gate) or taskKind:investigate for analysis tasks (no diff scoring). Always set taskKind explicitly. After calling, STOP and wait."
+  handler <<<
+    const definition: ToolDefinition = {
+      name: 'Agent',
+      description: 'Run an autonomous agent that takes multi-step actions on the codebase. Use for tasks that require open-ended exploration with tools (read/edit/grep/bash) over multiple turns. Set team:true and provide engines to fan out across multiple engines in parallel worktrees and synthesize the best result. Always set taskKind: "edit" for code-change tasks (gets a typecheck-or-fail fitness gate) or "investigate" for analysis tasks (audit, tracing, root-cause hunts that produce text reports, not patches). After calling, STOP and wait.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          task: { type: 'string', description: 'The task for the agent to perform. Be specific.' },
+          team: { type: 'boolean', description: 'If true, run multiple engines in parallel worktrees and synthesize. Default false (single agent).' },
+          engines: { type: 'array', items: { type: 'string' }, description: 'Engine IDs to use when team:true. Omit for auto-selection of all available API engines (capped at 3 by default).' },
+          taskKind: { type: 'string', description: 'Either "edit" (code-change task with diff scoring + fitness gate) or "investigate" (analysis task with text-output scoring). Default "edit".' },
+          maxTurns: { type: 'number', description: 'Optional turn budget per engine. Defaults to project default.' },
+        },
+        required: ['task'],
+      },
+      maxResultSizeChars: 500,
+      isReadOnly: false,
+      isConcurrencySafe: false,
+    };
+
+    const validate = (input: Record<string, unknown>, _ctx: ToolContext): string | null => {
+      if (!input.task || typeof input.task !== 'string' || !(input.task as string).trim()) {
+        return 'Missing required parameter: task';
+      }
+      if (input.taskKind !== undefined) {
+        const valid = ['edit', 'investigate'];
+        if (!valid.includes(input.taskKind as string)) {
+          return `Invalid taskKind: ${input.taskKind}. Must be one of: ${valid.join(', ')}`;
+        }
+      }
+      if (input.engines !== undefined && !Array.isArray(input.engines)) {
+        return 'engines must be an array of engine IDs (string[])';
+      }
+      return null;
+    };
+
+    const checkPermission = (_input: Record<string, unknown>, _ctx: ToolContext): PermissionDecision => {
+      return { behavior: 'allow' };
+    };
+
+    // Actual execution is intercepted by brain.kern's EAGER_ORCH/LOOP_ORCH gate
+    // (PFB-1) and routed via dispatch.kern → runAgentMode / runAgentTeam.
+    // This execute is a fallback that should never run in practice.
+    const execute = async (_input: Record<string, unknown>, _ctx: ToolContext): Promise<ToolResult> => {
+      return { ok: true, content: 'Delegation accepted. STOP responding now. The orchestrator will handle the rest.' };
+    };
+
+    return { definition, validate, checkPermission, execute };
+  >>>
+
+fn name=createQuickNeroTool returns=ToolHandler
+  doc "Signal tool — Cesar requests a structured self-challenge (Quick Nero) after the tool loop."
+  handler <<<
+    const definition: ToolDefinition = {
+      name: 'QuickNero',
+      description: 'Request a structured self-challenge on your current response. Calls out assumptions and weak spots before you commit to staying local. Use when you are midway between sure and unsure and want a gut-check. Adds the self-check as an OR-branch to the existing auto-gate — auto-gate still fires on its own triggers. After calling, keep responding; the self-check runs after the tool loop completes.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          reason: { type: 'string', description: 'Brief reason for requesting the self-check. Optional.' },
+        },
+        required: [],
+      },
+      maxResultSizeChars: 200,
+      isReadOnly: true,
+      isConcurrencySafe: true,
+    };
+
+    const validate = (_input: Record<string, unknown>, _ctx: ToolContext): string | null => {
+      return null;
+    };
+
+    const checkPermission = (_input: Record<string, unknown>, _ctx: ToolContext): PermissionDecision => {
+      return { behavior: 'allow' };
+    };
+
+    const execute = async (_input: Record<string, unknown>, _ctx: ToolContext): Promise<ToolResult> => {
+      return { ok: true, content: 'Quick Nero self-check scheduled. Continue responding — the self-check runs after the tool loop.' };
     };
 
     return { definition, validate, checkPermission, execute };

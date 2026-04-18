@@ -1,12 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { ToolRegistry, executeToolCall, FileStateCache, createReadTool, createGrepTool, createGlobTool } from '@agon/core';
-import type { ToolContext, ToolCall } from '@agon/core';
+import type { ToolContext, ToolCall, ToolHandler } from '@agon/core';
 import { join } from 'node:path';
+
+const REPO_ROOT = join(import.meta.dirname, '../..');
 
 function makeCtx(cwd?: string): ToolContext {
   const cache = new FileStateCache();
   return {
-    cwd: cwd ?? process.cwd(),
+    cwd: cwd ?? REPO_ROOT,
     readFileState: (cache as any).cache,
     permissionMode: 'auto',
   } as ToolContext;
@@ -101,6 +103,29 @@ describe('tool-execution', () => {
       const result = await executeToolCall(call, makeCtx(), registry);
       expect(result.result.ok).toBe(true);
       expect(result.result.content).toContain('vitest');
+    });
+
+    it('propagates string denials from the permission handler', async () => {
+      const { ToolRegistry: GeneratedToolRegistry, executeToolCall: generatedExecuteToolCall } = await import('../../packages/core/src/generated/signals/tool-registry.js');
+      const registry = new GeneratedToolRegistry();
+      const tool: ToolHandler = {
+        definition: {
+          name: 'AskTool',
+          description: 'asks for permission',
+          inputSchema: { type: 'object', properties: {}, required: [] },
+          maxResultSizeChars: 1000,
+          isReadOnly: false,
+          isConcurrencySafe: true,
+        },
+        validate: () => null,
+        checkPermission: () => ({ behavior: 'ask', message: 'Need approval' }),
+        execute: async () => ({ ok: true, content: 'ran' }),
+      };
+      registry.register(tool);
+      const call: ToolCall = { id: 'tc_ask', name: 'AskTool', input: {} };
+      const result = await generatedExecuteToolCall(call, makeCtx(), registry, async () => 'BLOCKED: test denial');
+      expect(result.result.ok).toBe(false);
+      expect(result.result.error).toBe('BLOCKED: test denial');
     });
   });
 });

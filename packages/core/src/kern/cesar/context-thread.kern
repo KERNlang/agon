@@ -1,0 +1,1296 @@
+// ── ContextThread — persistent cross-engine conversation history ────────
+// Phase A of the Cesar unified-mind work. The missing memory layer that
+// turns Cesar from "every call starts blind" into one coherent conversation
+// across engines, /agent runs, team members, and chat turns.
+//
+// Why this exists:
+//   - runApiAgentLoop (api/agent-loop.kern:129-132) builds messageHistory
+//     from scratch every call — the accumulated conversation is thrown away
+//     on return.
+//   - AgentSession.step() passes only `prompt` to the inner loop; no history
+//     carryover between step() calls.
+//   - AgentTeam creates N independent AgentSession instances with no shared
+//     conversation state.
+//   - CesarMemory is key/value, not a replayable message thread.
+//
+// What ContextThread gives you:
+//   - One growing message log per project (keyed by projectPath SHA8).
+//   - Per-engine head pointers so re-routing mid-task doesn't repeat work.
+//   - Token-budget-aware compaction per engine (Claude 200k ≠ Codex 8k).
+//   - File-touch staleness tracking — know when a past file read is stale.
+//   - Atomic persistence (temp+rename) to ~/.agon/threads/<projectSha>/.
+//   - Bridge methods to/from runApiAgentLoop's {role,content,tool_calls}
+//     format so plumbing in is a one-line caller change.
+//
+// What it deliberately does NOT do in v1:
+//   - LLM-powered summarization. Compaction is greedy (last-K verbatim,
+//     checkpoint references for older). Phase A.5 adds summarization.
+//   - Cross-process locking. Multiple agon instances editing the same
+//     project will race on save(); last writer wins. Tolerable because
+//     users rarely run two /agent at once on the same repo. If/when it
+//     bites, Phase A.5 adds a proper lockfile.
+//   - CRDTs or append-only journaling. JSON rewrite per save() is fine
+//     at v1 thread sizes (< 500 messages). JSONL is Phase A.5 if telemetry
+//     shows I/O becoming a latency tax.
+
+import from="node:fs" names="readFileSync,writeFileSync,mkdirSync,renameSync,existsSync,readdirSync,unlinkSync,statSync,chmodSync,openSync,fsyncSync,closeSync,appendFileSync"
+import from="node:path" names="join,resolve,basename"
+import from="node:crypto" names="randomUUID,createHash"
+import from="node:os" names="homedir,tmpdir"
+import from="../signals/config.js" names="ensureAgonHome"
+
+// ── Path helpers ─────────────────────────────────────────────────────
+
+fn name=threadsDir returns=string export=false
+  handler <<<
+    const override = process.env.AGON_HOME?.trim();
+    const home = override ? resolve(override) : join(homedir(), '.agon');
+    return join(home, 'threads');
+  >>>
+
+fn name=activePointerPath returns=string export=false
+  handler <<<
+    return join(threadsDir(), 'active.json');
+  >>>
+
+fn name=projectHash16 params="projectPath:string" returns=string export=true
+  doc "16-hex-char SHA256 prefix of an absolute project path. Keys threads per project. 16 chars = 64 bits, ~4B projects before 1% collision chance (red-team finding 11: 8 hex collides at 65k projects)."
+  handler <<<
+    return createHash('sha256').update(projectPath).digest('hex').slice(0, 16);
+  >>>
+
+// Deprecated alias kept for one release to allow external callers to migrate.
+fn name=projectSha8 params="projectPath:string" returns=string export=true
+  doc "DEPRECATED — use projectHash16. Kept as a thin alias for migration."
+  handler <<<
+    return projectHash16(projectPath);
+  >>>
+
+fn name=threadDirFor params="projectPath:string" returns=string
+  doc "Absolute directory where threads for this project are stored."
+  handler <<<
+    return join(threadsDir(), projectHash16(projectPath));
+  >>>
+
+// Red-team finding 3: strict threadId regex. The only legal forms are 'thread_<ms>_<hex8>' (fresh IDs from the constructor) or a canonical uuid v4. Everything else is refused before the path is ever resolved.
+const name=THREAD_ID_RE type=RegExp
+  handler <<<
+    /^(thread_\d{10,16}_[0-9a-f]{8}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/
+  >>>
+
+fn name=threadJournalPath params="projectPath:string,threadId:string" returns=string
+  doc "Path to the JSONL append journal for fast O(1) per-message writes. Parallel to the main JSON snapshot. On next full save(), the journal is merged and compacted."
+  handler <<<
+    return threadFilePath(projectPath, threadId).replace(/\.json$/, '.journal.jsonl');
+  >>>
+
+fn name=threadFilePath params="projectPath:string,threadId:string" returns=string
+  doc "Absolute path for a thread's JSON file. Strictly validates threadId shape and asserts the resolved path stays inside the project's thread directory. Refuses any path traversal attempt or malformed id (red-team findings 2 + 3). Codex P1: uses path.sep alongside '/' so containment check works on Windows."
+  handler <<<
+    if (!THREAD_ID_RE.test(threadId)) throw new Error(`Invalid threadId: ${threadId}`);
+    const dir = threadDirFor(projectPath);
+    const full = resolve(dir, `${threadId}.json`);
+    const resolvedDir = resolve(dir);
+    // Codex P1 fix: check both separators — '/' on POSIX, path.sep on Windows.
+    const nativeSep = join('a', 'b')[1]; // extracts the OS separator at runtime
+    const isContained = full === resolvedDir
+      || full.startsWith(resolvedDir + '/')
+      || full.startsWith(resolvedDir + nativeSep);
+    if (!isContained) {
+      throw new Error(`Invalid thread path (traversal attempt): ${threadId}`);
+    }
+    return full;
+  >>>
+
+fn name=ensureThreadDir params="projectPath:string" returns=void
+  handler <<<
+    ensureAgonHome();
+    mkdirSync(threadDirFor(projectPath), { recursive: true });
+  >>>
+
+// ── O_EXCL lockfile helpers ──────────────────────────────────────────
+// Proper cross-process mutual exclusion for thread saves. Each save()
+// acquires an exclusive lock via O_EXCL (atomic on POSIX and Windows),
+// does the read-merge-write cycle, then releases. Concurrent writers
+// retry with exponential backoff rather than silently clobbering.
+
+const name=LOCK_MAX_RETRIES type=number
+  handler <<<
+    8
+  >>>
+
+const name=LOCK_BASE_DELAY_MS type=number
+  handler <<<
+    20
+  >>>
+
+fn name=threadLockPath params="projectPath:string,threadId:string" returns=string
+  handler <<<
+    return threadFilePath(projectPath, threadId) + '.lock';
+  >>>
+
+fn name=acquireLock params="lockPath:string" returns="Promise<number|null>" async=true
+  doc "Try to acquire an O_EXCL lock file. Returns the fd on success, null after LOCK_MAX_RETRIES attempts. Exponential backoff with jitter between retries."
+  handler <<<
+    for (let attempt = 0; attempt < LOCK_MAX_RETRIES; attempt++) {
+      try {
+        const fd = openSync(lockPath, 'wx', 0o600); // O_WRONLY | O_CREAT | O_EXCL
+        writeFileSync(fd, String(process.pid));
+        closeSync(fd);
+        return attempt; // return attempt count (0 = uncontested)
+      } catch (err: any) {
+        if (err?.code !== 'EEXIST') throw err; // unexpected error, propagate
+        // Lock held — wait with exponential backoff + jitter
+        const delay = Math.min(LOCK_BASE_DELAY_MS * Math.pow(2, attempt) + Math.random() * 10, 500);
+        await new Promise<void>(res => setTimeout(res, delay));
+      }
+    }
+    return null; // give up after max retries
+  >>>
+
+fn name=releaseLock params="lockPath:string" returns=void
+  handler <<<
+    try { unlinkSync(lockPath); } catch { /* already gone — ok */ }
+  >>>
+
+// ── Data types ───────────────────────────────────────────────────────
+
+interface name=ThreadMessage export=true
+  doc "One entry in the thread. Maps 1:1 onto runApiAgentLoop's internal message shape with extra provenance."
+  field name=id type=string
+  field name=role type="'system'|'user'|'assistant'|'tool'"
+  field name=content type=string
+  field name=engineId type=string optional=true
+  field name=toolCallId type=string optional=true
+  field name=toolName type=string optional=true
+  field name=toolInput type="Record<string,unknown>" optional=true
+  field name=toolCalls type="Array<{id:string,name:string,arguments:string}>" optional=true
+  field name=timestamp type=number
+  field name=tokens type=number optional=true
+
+interface name=ThreadCheckpoint export=true
+  doc "A compaction point. Records a summary of messages up to a given message id so older content can be replaced with a cheaper representation during messagesFor()."
+  field name=id type=string
+  field name=timestamp type=number
+  field name=label type=string
+  field name=summary type=string
+  field name=messagesUpToId type=string
+  field name=approxTokensSaved type=number
+
+interface name=FileTouch export=true
+  doc "Record of a file read during a thread. Used to detect stale content when the same file is later modified and a re-routed engine would otherwise act on obsolete state."
+  field name=path type=string
+  field name=contentHash type=string
+  field name=firstReadAt type=number
+  field name=lastReadAt type=number
+
+interface name=LoopMessage export=true
+  doc "The exact shape runApiAgentLoop's messageHistory array carries. Must match what apiStreamDispatchWithHistory expects."
+  field name=role type=string
+  field name=content type="string|null"
+  field name=tool_calls type="Array<{id:string,type:'function',function:{name:string,arguments:string}}>" optional=true
+  field name=tool_call_id type=string optional=true
+
+interface name=ContextThreadConfig export=true
+  doc "Config for constructing a ContextThread. When threadId is present and a matching file exists, the instance hydrates from disk. Otherwise a fresh thread is created with a new uuid."
+  field name=projectPath type=string
+  field name=threadId type=string optional=true
+  field name=systemPrompt type=string optional=true
+
+interface name=ThreadSize export=true
+  field name=messages type=number
+  field name=checkpoints type=number
+  field name=approxTokens type=number
+  field name=bytesOnDisk type=number
+
+// ── Persistent snapshot schema ───────────────────────────────────────
+
+interface name=ThreadSnapshot
+  doc "JSON-serializable full-state snapshot. Written to disk via save(), read via load()."
+  field name=schemaVersion type=number
+  field name=threadId type=string
+  field name=projectPath type=string
+  field name=createdAt type=number
+  field name=updatedAt type=number
+  field name=messages type="ThreadMessage[]"
+  field name=checkpoints type="ThreadCheckpoint[]"
+  field name=engineHead type="Record<string,string>"
+  field name=fileTouches type="Record<string,FileTouch>"
+
+const name=SCHEMA_VERSION type=number
+  handler <<<
+    1
+  >>>
+
+// Hard message cap. With 1M context windows now standard across Codex,
+// Claude, Gemini, OpenCode+GLM, a day of coding with Cesar generates
+// ~200-400k tokens of session history — well within budget. Raised from
+// 500 to 2000 so full forge/brainstorm/tribunal decision trails survive
+// across a full working session without eviction.
+const name=MAX_MESSAGES_HARD_CAP type=number
+  handler <<<
+    2000
+  >>>
+
+const name=EVICT_TO type=number
+  handler <<<
+    1800
+  >>>
+
+// Per-message truncation cap. Raised from 4000 to 30000 tokens so that
+// tool results (forge diffs, file reads, brainstorm reasoning) survive
+// verbatim in thread. With 1M context windows, truncating to 4k was
+// throwing away the most valuable information Cesar needs to not repeat
+// prior decisions or waste expensive runs.
+const name=MAX_PER_MESSAGE_TOKENS type=number
+  handler <<<
+    30000
+  >>>
+
+// Keep-last-K: always include at least K recent messages verbatim.
+// Raised from 10 to 30 — with 1M windows and rich content per message,
+// there is room to give the engine far more recent context.
+const name=KEEP_LAST_K type=number
+  handler <<<
+    30
+  >>>
+
+// Safety factor for token budget. Kept at 0.85 (slightly looser than 0.75)
+// since all engines now have 1M context and over-truncation is the greater
+// risk vs. marginally exceeding the rough estimate.
+const name=TOKEN_BUDGET_SAFETY_FACTOR type=number
+  handler <<<
+    0.85
+  >>>
+
+// Thread file size limit. Raised from 10MB to 100MB — with 30k tokens/msg
+// and 2000 message cap, a full day's session can legitimately reach 50MB.
+// At 100MB we're looking at pathological cases (binary content leaked in
+// despite redaction). Node's JSON.parse handles 100MB in ~300ms — acceptable.
+const name=MAX_THREAD_FILE_BYTES type=number
+  handler <<<
+    100 * 1024 * 1024
+  >>>
+
+// ── Secret redaction (red-team finding 1) ────────────────────────────
+//
+// Problem: tool outputs containing .env contents, API keys, credential
+// files, and SSH keys get serialized verbatim into the thread JSON and
+// re-sent to every future engine. Fix: redact on append with a
+// conservative regex set + path blocklist. This is NOT a defense against
+// determined exfiltration — that requires per-tool permission policies —
+// but it catches the common accidental cases that the red-team flagged
+// (AWS keys in `env` output, GitHub tokens in `gh auth status`, etc.).
+
+const name=SECRET_PATTERNS type="RegExp[]"
+  handler <<<
+    [
+      // AWS access keys
+      /\b(AKIA|ASIA)[0-9A-Z]{16}\b/g,
+      // AWS secret keys (40-char base64)
+      /\b(?:aws_secret_access_key|aws_secret|AWS_SECRET_ACCESS_KEY)[\s:=]+['"]?([A-Za-z0-9/+=]{40})['"]?/g,
+      // GitHub / ghp tokens
+      /\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9_]{30,}\b/g,
+      // GitHub fine-grained PATs
+      /\bgithub_pat_[A-Za-z0-9_]{60,}\b/g,
+      // OpenAI API keys
+      /\bsk-(?:proj-)?[A-Za-z0-9_\-]{30,}\b/g,
+      // Anthropic API keys
+      /\bsk-ant-(?:api|admin)[0-9]{2}-[A-Za-z0-9_\-]{80,}\b/g,
+      // Google API keys
+      /\bAIza[0-9A-Za-z_\-]{35}\b/g,
+      // Slack tokens
+      /\bxox[baprs]-[0-9A-Za-z\-]{10,}\b/g,
+      // Generic bearer tokens in env-like lines
+      /\b([A-Z][A-Z0-9_]{2,}(?:TOKEN|SECRET|PASSWORD|API_KEY|PRIVATE_KEY))[\s:=]+['"]?([^\s'"]{12,})['"]?/g,
+      // Private key headers
+      /-----BEGIN [A-Z ]+PRIVATE KEY-----[\s\S]+?-----END [A-Z ]+PRIVATE KEY-----/g,
+    ] as RegExp[]
+  >>>
+
+const name=SECRET_PATH_BLOCKLIST type="string[]"
+  handler <<<
+    [
+      '.env', '.env.local', '.env.production', '.env.staging', '.env.development',
+      'credentials.json', 'secrets.json', 'auth.json',
+      '.ssh/id_rsa', '.ssh/id_ed25519', '.ssh/id_ecdsa',
+      '.aws/credentials', '.docker/config.json',
+      '.netrc', '.pgpass', '.my.cnf',
+    ] as string[]
+  >>>
+
+fn name=isSecretPath params="path:string" returns=boolean
+  doc "Check if a file path is known to contain secrets. Used by redactSecrets to replace tool-output of forbidden files with a stub before it ever lands in the thread."
+  handler <<<
+    const lower = path.toLowerCase();
+    const name = basename(lower);
+    for (const needle of SECRET_PATH_BLOCKLIST) {
+      if (name === needle || lower.endsWith('/' + needle) || lower.endsWith('\\' + needle)) return true;
+    }
+    return false;
+  >>>
+
+fn name=redactSecrets params="content:string" returns=string
+  doc "Apply the secret-pattern regex set to content, replacing any matches with a '[REDACTED-SECRET]' marker. O(n) per pattern; cheap relative to an LLM call."
+  handler <<<
+    if (!content) return content;
+    let out = content;
+    for (const re of SECRET_PATTERNS) {
+      out = out.replace(re, '[REDACTED-SECRET]');
+    }
+    return out;
+  >>>
+
+fn name=redactMessage params="msg:ThreadMessage" returns=ThreadMessage
+  doc "Redact-in-place pass for a ThreadMessage before it's appended to the thread. Handles content, toolOutput, and path-blocklist short-circuit for Read tool results."
+  handler <<<
+    // Short-circuit: if this is a tool-result for a Read of a blocklisted
+    // file, drop the content entirely and replace with a refusal stub.
+    if (msg.role === 'tool' && msg.toolName === 'Read' && msg.toolInput) {
+      const fp = (msg.toolInput as Record<string,unknown>).file_path;
+      if (typeof fp === 'string' && isSecretPath(fp)) {
+        return {
+          ...msg,
+          content: `[REDACTED — file ${fp} is on the secret-path blocklist; its content is never persisted to thread history]`,
+        };
+      }
+    }
+    // Otherwise run the pattern-based redaction over content.
+    const redacted = redactSecrets(msg.content);
+    if (redacted === msg.content) return msg;
+    return { ...msg, content: redacted };
+  >>>
+
+// ── Token estimation ─────────────────────────────────────────────────
+
+fn name=estimateMessageTokens params="msg:ThreadMessage" returns=number
+  doc "Rough token estimate for a ThreadMessage. 1 token ~= 4 chars. Intentionally conservative — we'd rather fit under budget than overshoot."
+  handler <<<
+    if (typeof msg.tokens === 'number') return msg.tokens;
+    let chars = (msg.content ?? '').length;
+    if (msg.toolCalls) {
+      for (const tc of msg.toolCalls) {
+        chars += (tc.name?.length ?? 0) + (tc.arguments?.length ?? 0);
+      }
+    }
+    if (msg.toolInput) {
+      try { chars += JSON.stringify(msg.toolInput).length; } catch { /* ignore */ }
+    }
+    return Math.ceil(chars / 4) + 8; // +8 for role+framing overhead
+  >>>
+
+fn name=truncateContent params="content:string,maxTokens:number" returns=string
+  doc "Truncate a string so it fits in maxTokens (at ~4 chars/token). Appends a marker so the reader knows truncation happened."
+  handler <<<
+    const maxChars = Math.max(400, maxTokens * 4);
+    if (content.length <= maxChars) return content;
+    const head = Math.floor(maxChars * 0.7);
+    const tail = Math.floor(maxChars * 0.2);
+    const omitted = content.length - head - tail;
+    return content.slice(0, head)
+      + `\n\n[... ${omitted} chars truncated for context budget ...]\n\n`
+      + content.slice(content.length - tail);
+  >>>
+
+// ── Format conversions ──────────────────────────────────────────────
+
+fn name=threadMessageToLoop params="msg:ThreadMessage,budgetTokens?:number" returns=LoopMessage
+  doc "Convert a ThreadMessage into the loop's native {role,content,tool_calls?,tool_call_id?} shape. If budgetTokens is set and msg would overflow it, content is truncated inline."
+  handler <<<
+    const cap = budgetTokens ?? MAX_PER_MESSAGE_TOKENS;
+    let content: string | null = msg.content ?? '';
+    const est = estimateMessageTokens(msg);
+    if (est > cap && content) {
+      content = truncateContent(content, cap);
+    }
+    const out: LoopMessage = { role: msg.role, content };
+    if (msg.toolCalls && msg.toolCalls.length > 0) {
+      out.tool_calls = msg.toolCalls.map(tc => ({
+        id: tc.id,
+        type: 'function' as const,
+        function: { name: tc.name, arguments: tc.arguments },
+      }));
+      // Assistant messages with tool_calls use content=null per OpenAI convention
+      if (!out.content) out.content = null as any;
+    }
+    if (msg.toolCallId) out.tool_call_id = msg.toolCallId;
+    return out;
+  >>>
+
+fn name=loopEntryToThreadMessage params="entry:Record<string,unknown>,engineId:string,now?:number" returns=ThreadMessage
+  doc "Convert a runApiAgentLoop history entry ({role,content,tool_calls?,tool_call_id?}) into a ThreadMessage with provenance. Used by the onHistoryEntry callback."
+  handler <<<
+    const ts = now ?? Date.now();
+    const id = `msg_${ts}_${randomUUID().slice(0, 8)}`;
+    const role = (entry.role as ThreadMessage['role']) ?? 'assistant';
+    const content = typeof entry.content === 'string' ? entry.content : (entry.content == null ? '' : String(entry.content));
+    const msg: ThreadMessage = { id, role, content, engineId, timestamp: ts };
+    const tc = entry.tool_calls as Array<{id:string,type:string,function:{name:string,arguments:string}}> | undefined;
+    if (tc && Array.isArray(tc) && tc.length > 0) {
+      msg.toolCalls = tc.map(x => ({ id: x.id, name: x.function?.name ?? 'unknown', arguments: x.function?.arguments ?? '{}' }));
+    }
+    if (typeof entry.tool_call_id === 'string') {
+      msg.toolCallId = entry.tool_call_id as string;
+      // Try to lift tool_name / tool result role
+      if (role === 'tool') {
+        // content IS the tool result on the 'tool' role
+      }
+    }
+    msg.tokens = estimateMessageTokens(msg);
+    return msg;
+  >>>
+
+// ── The service ──────────────────────────────────────────────────────
+
+service name=ContextThread export=true
+  doc "One persistent conversation thread scoped to a project. Per-instance state — no singleton. Multiple instances pointing at the same file will race on save(); caller is responsible for serialization in v1."
+
+  field name=threadId type=string private=true
+  field name=projectPath type=string private=true
+  field name=systemPrompt type="string|undefined" private=true
+  field name=createdAt type=number private=true default="0"
+  field name=updatedAt type=number private=true default="0"
+  field name=messages type="ThreadMessage[]" private=true
+  field name=checkpoints type="ThreadCheckpoint[]" private=true
+  field name=engineHead type="Record<string,string>" private=true
+  field name=fileTouches type="Record<string,FileTouch>" private=true
+  field name=dirty type=boolean private=true default="false"
+  field name=hydrated type=boolean private=true default="false"
+  field name=journaledIds type="Set<string>" private=true
+
+  constructor params="config:ContextThreadConfig"
+    handler <<<
+      this.projectPath = config.projectPath;
+      // Red-team finding 2: the systemPrompt is NEVER persisted into the thread
+      // messages array. The caller rebuilds it fresh every call (runApiAgentLoop
+      // does exactly this at agent-loop.kern:126). Keeping it only as a field
+      // lets messagesFor() still surface it as a transient system message at
+      // render time without it ever touching disk where an attacker could
+      // tamper with it.
+      this.systemPrompt = config.systemPrompt;
+      this.messages = [];
+      this.checkpoints = [];
+      this.engineHead = {};
+      this.fileTouches = {};
+      this.dirty = false;
+      this.hydrated = false;
+      this.journaledIds = new Set();
+
+      // Load-or-create
+      const now = Date.now();
+      if (config.threadId) {
+        // Will throw on malformed id — we WANT that, it means the caller
+        // passed an untrusted value from active.json that didn't pass the
+        // strict regex. Do not swallow.
+        const candidatePath = threadFilePath(this.projectPath, config.threadId);
+        if (existsSync(candidatePath)) {
+          try {
+            // Red-team finding 10: reject files larger than the DoS threshold.
+            const stat = statSync(candidatePath);
+            if (stat.size > MAX_THREAD_FILE_BYTES) {
+              console.warn(`[agon] context-thread: ${candidatePath} is ${stat.size} bytes (> ${MAX_THREAD_FILE_BYTES}), refusing to load. Run /thread compact or /thread fork.`);
+              throw new Error('thread file too large');
+            }
+            const raw = readFileSync(candidatePath, 'utf-8');
+            const snap = JSON.parse(raw) as ThreadSnapshot;
+            if (snap && typeof snap === 'object' && Array.isArray(snap.messages)) {
+              // Red-team finding 2: filter out any role:'system' messages on
+              // load — a committed/symlinked/tampered thread file could inject
+              // attacker-controlled system messages that then flow into
+              // runApiAgentLoop.messageHistory and override the real system
+              // prompt. The only legit way for a system message to appear is
+              // via this.systemPrompt set from the caller, which is handled
+              // at render time in messagesFor().
+              const filteredMessages = (snap.messages ?? []).filter(m => m && m.role !== 'system');
+              // Schema version guard — refuse newer schema than we understand.
+              const ver = typeof (snap as any).schemaVersion === 'number' ? (snap as any).schemaVersion : 1;
+              if (ver > SCHEMA_VERSION) {
+                console.warn(`[agon] context-thread: ${candidatePath} has schemaVersion=${ver}, runtime understands up to ${SCHEMA_VERSION}. Starting fresh.`);
+                throw new Error('unsupported schema version');
+              }
+              this.threadId = snap.threadId;
+              this.createdAt = snap.createdAt ?? now;
+              this.updatedAt = snap.updatedAt ?? now;
+              this.messages = filteredMessages;
+              this.checkpoints = snap.checkpoints ?? [];
+              this.engineHead = snap.engineHead ?? {};
+              this.fileTouches = snap.fileTouches ?? {};
+              this.hydrated = true;
+
+              // Codex P1 fix: merge the JSONL journal immediately after loading
+              // the snapshot so messages appended since the last save() (e.g.
+              // after an unclean exit between append and save) are recovered.
+              // This is the crash-safe recovery path the journal was designed for.
+              const jPathOnLoad = threadFilePath(this.projectPath, this.threadId).replace(/\.json$/, '.journal.jsonl');
+              if (existsSync(jPathOnLoad)) {
+                try {
+                  const journalLines = readFileSync(jPathOnLoad, 'utf-8').split('\n').filter(Boolean);
+                  const knownOnLoad = new Set(this.messages.map((m: ThreadMessage) => m.id));
+                  let merged = false;
+                  for (const line of journalLines) {
+                    try {
+                      const obj = JSON.parse(line);
+                      if (obj._kind === 'msg' && obj.id && !knownOnLoad.has(obj.id) && obj.role !== 'system') {
+                        const { _kind: _k, ...msg } = obj;
+                        this.messages.push(msg as ThreadMessage);
+                        this.journaledIds.add(msg.id);
+                        knownOnLoad.add(msg.id);
+                        merged = true;
+                      }
+                    } catch { /* skip malformed lines */ }
+                  }
+                  if (merged) {
+                    this.messages.sort((a: ThreadMessage, b: ThreadMessage) => a.timestamp - b.timestamp);
+                    this.dirty = true; // mark dirty so next save() compacts the journal
+                  }
+                } catch { /* journal read failure is non-fatal */ }
+              }
+              return;
+            }
+          } catch (err) {
+            console.warn(`[agon] context-thread: failed to hydrate ${candidatePath}, starting fresh: ${err instanceof Error ? err.message : String(err)}`);
+          }
+        }
+        this.threadId = config.threadId;
+      } else {
+        this.threadId = `thread_${now}_${randomUUID().slice(0, 8)}`;
+      }
+
+      this.createdAt = now;
+      this.updatedAt = now;
+    >>>
+
+  method name=getThreadId returns=string
+    handler <<<
+      return this.threadId;
+    >>>
+
+  method name=getProjectPath returns=string
+    handler <<<
+      return this.projectPath;
+    >>>
+
+  method name=append params="msg:Omit<ThreadMessage,'id'|'timestamp'|'tokens'>" returns=ThreadMessage
+    doc "Append a message. Assigns id + timestamp. Estimates tokens. Marks the thread dirty. Caller must call save() to flush. The message's engineId (if set) updates engineHead so that engine is considered caught up through this message. Rejects role:'system' (red-team finding 2) and runs secret redaction (red-team finding 1)."
+    handler <<<
+      if (msg.role === 'system') {
+        throw new Error('ContextThread: role="system" messages must not be persisted. Pass systemPrompt via constructor config instead.');
+      }
+      const now = Date.now();
+      const id = `msg_${now}_${randomUUID().slice(0, 8)}`;
+      const full: ThreadMessage = redactMessage({ ...msg, id, timestamp: now });
+      full.tokens = estimateMessageTokens(full);
+      this.messages.push(full);
+      // Phase A.5: fast O(1) journal write — append one line to the JSONL
+      // journal so this message is durable even before the next full save().
+      // Concurrent appends are safe: POSIX guarantees atomicity for O_APPEND
+      // writes up to PIPE_BUF bytes (~4KB). Messages larger than that should
+      // be rare (redaction caps content, cache stubs replace large tool results).
+      this.journalMessage(full);
+      // Hard cap with eviction.
+      if (this.messages.length > MAX_MESSAGES_HARD_CAP) {
+        this.evictOldest();
+      }
+      this.updatedAt = now;
+      this.dirty = true;
+      if (full.engineId) {
+        this.engineHead[full.engineId] = full.id;
+      }
+      return full;
+    >>>
+
+  method name=evictOldest returns=void private=true
+    doc "Drop the oldest messages down to EVICT_TO, recording a synthetic checkpoint for what was dropped. Called automatically when MAX_MESSAGES_HARD_CAP is exceeded."
+    handler <<<
+      const dropCount = this.messages.length - EVICT_TO;
+      if (dropCount <= 0) return;
+      const dropped = this.messages.slice(0, dropCount);
+      this.messages = this.messages.slice(dropCount);
+      // Build a cheap stub checkpoint for the dropped range.
+      const summary = this.renderTrimMarker(dropCount, dropped);
+      const cp: ThreadCheckpoint = {
+        id: `cp_evict_${Date.now()}_${randomUUID().slice(0, 6)}`,
+        timestamp: Date.now(),
+        label: `auto-evict-${this.checkpoints.length + 1}`,
+        summary,
+        messagesUpToId: this.messages[0]?.id ?? '',
+        approxTokensSaved: dropped.reduce((s: number, m: ThreadMessage) => s + estimateMessageTokens(m), 0),
+      };
+      this.checkpoints.push(cp);
+    >>>
+
+  method name=journalMessage params="msg:ThreadMessage" returns=void private=true
+    doc "Append one ThreadMessage as a JSONL line to the side-car journal file. O(1) write, crash-safe. Called by append() and appendLoopEntry() before the full save() cycle."
+    handler <<<
+      if (this.journaledIds.has(msg.id)) return; // idempotent
+      try {
+        ensureThreadDir(this.projectPath);
+        const jPath = threadJournalPath(this.projectPath, this.threadId);
+        const line = JSON.stringify({ _kind: 'msg', ...msg }) + '\n';
+        appendFileSync(jPath, line, { encoding: 'utf-8', mode: 0o600, flag: 'a' });
+        this.journaledIds.add(msg.id);
+      } catch { /* never let journal failures block append — fall through to full save() */ }
+    >>>
+
+  method name=appendLoopEntry params="entry:Record<string,unknown>,engineId:string" returns="ThreadMessage|null"
+    doc "Bridge a runApiAgentLoop history entry directly into the thread. Used by the onHistoryEntry callback wired in AgentSession. Returns null (and skips the append) for role:'system' entries — those must never cross into persistent storage. Runs secret redaction (red-team findings 1 + 2). Phase A.5: strips stale runCacheId cache-reference stubs so old Retrieve markers from prior runApiAgentLoop calls don't confuse new engine calls."
+    handler <<<
+      const rawRole = entry.role;
+      if (rawRole === 'system') {
+        // Silently skip — the inner loop will re-supply the system prompt on
+        // its own next time via runApiAgentLoop's fullSystemPrompt builder.
+        return null;
+      }
+      let msg = redactMessage(loopEntryToThreadMessage(entry, engineId));
+      // Phase A.5 — red-team finding 14: strip stale runCacheId references.
+      // runApiAgentLoop creates a per-call cache ID (`${model}-${uuid8}`) used
+      // by the Retrieve tool. When history is replayed in a new call, old
+      // "[N lines ... cached — call_XXXXX]" markers reference a cache that no
+      // longer exists → model tries Retrieve, gets "not found", hallucinates.
+      // Replace these stubs with a plain "(truncated)" marker so the model
+      // knows the content was large but doesn't try to retrieve it.
+      if (msg.content && msg.role === 'tool') {
+        msg = {
+          ...msg,
+          content: msg.content.replace(
+            /\[(\d+ lines?, \d+ chars?) — cached — [a-zA-Z0-9_-]+\]/g,
+            '[$1 — (truncated, not retrievable in this session)]',
+          ),
+        };
+      }
+      this.messages.push(msg);
+      this.journalMessage(msg);
+      if (this.messages.length > MAX_MESSAGES_HARD_CAP) {
+        this.evictOldest();
+      }
+      this.updatedAt = msg.timestamp;
+      this.dirty = true;
+      this.engineHead[engineId] = msg.id;
+      return msg;
+    >>>
+
+  method name=markSeen params="engineId:string,msgId?:string" returns=void
+    doc "Mark the given engine as having seen up to msgId (or the latest message if absent). Used when an engine completes a step to advance its head pointer."
+    handler <<<
+      if (this.messages.length === 0) return;
+      const target = msgId ?? this.messages[this.messages.length - 1].id;
+      if (this.engineHead[engineId] !== target) {
+        this.engineHead[engineId] = target;
+        this.dirty = true;
+      }
+    >>>
+
+  method name=messagesSince params="engineId:string" returns="ThreadMessage[]"
+    doc "Return messages the given engine has NOT yet seen. Empty if engine is caught up. Used when re-routing mid-task so the new engine only processes the delta."
+    handler <<<
+      const head = this.engineHead[engineId];
+      if (!head) return [...this.messages];
+      const idx = this.messages.findIndex(m => m.id === head);
+      if (idx < 0) return [...this.messages];
+      return this.messages.slice(idx + 1);
+    >>>
+
+  method name=messagesFor params="engineId:string,tokenBudget:number,staleFileChecker?:(path:string) => string|null" returns="LoopMessage[]"
+    doc "Build a runApiAgentLoop-compatible message array for this engine, compacted to fit within tokenBudget. Applies TOKEN_BUDGET_SAFETY_FACTOR (0.75) against tokenizer-estimator drift (red-team finding 13). Never emits persisted role:'system' messages — only transient systemPrompt (red-team finding 2). Optionally accepts a staleFileChecker callback: if provided, prior Read tool-results pointing at files whose current hash no longer matches get rewritten with a 'file has been modified, re-read' stub (red-team finding 9)."
+    handler <<<
+      const TOKENS_RESERVED_FOR_PROMPT = 512;
+      const effectiveBudget = Math.max(1024, Math.floor((tokenBudget - TOKENS_RESERVED_FOR_PROMPT) * TOKEN_BUDGET_SAFETY_FACTOR));
+
+      // Stale-file annotation pass — O(n) over messages, O(k) touches where k is small.
+      const staleAnnotations: Map<string, string> = new Map();
+      if (staleFileChecker) {
+        for (const touch of Object.values(this.fileTouches)) {
+          const current = staleFileChecker(touch.path);
+          if (current != null && current !== touch.contentHash) {
+            staleAnnotations.set(touch.path, `[STALE — file ${touch.path} has been modified since turn ${touch.firstReadAt}; prior Read result shown below is OUT OF DATE. Call Read again before acting on this file.]`);
+          }
+        }
+      }
+
+      // Only non-system messages are persisted; system is rebuilt transiently below.
+      const nonSystem = this.messages.filter(m => m.role !== 'system');
+
+      // Build the transient system prompt prefix from the constructor config.
+      let used = 0;
+      const transientPrefix: LoopMessage[] = [];
+      if (this.systemPrompt) {
+        const sysCost = Math.ceil(this.systemPrompt.length / 4);
+        used += sysCost;
+        transientPrefix.push({ role: 'system', content: this.systemPrompt });
+      }
+      if (nonSystem.length === 0) return transientPrefix;
+
+      // Keep-last-K guaranteed tail slice.
+      const keepK = Math.min(KEEP_LAST_K, nonSystem.length);
+      const tailStart = nonSystem.length - keepK;
+      const tail = nonSystem.slice(tailStart);
+
+      // Compute a per-message cap such that K tail messages × cap fits in the
+      // remaining budget. This is the core defense against the token-bomb
+      // scenario from red-team finding 4: a single huge tool output gets
+      // truncated to its share rather than starving the rest of the tail.
+      const tailBudget = Math.max(1024, effectiveBudget - used);
+      const perMessageCap = Math.max(256, Math.min(MAX_PER_MESSAGE_TOKENS, Math.floor(tailBudget / Math.max(1, keepK))));
+
+      // Reserve tail budget — each tail message always makes it in, but at the
+      // capped size. estimateMessageTokens gives an upper bound on a capped
+      // message; threadMessageToLoop does the real truncation when we render.
+      let tailUsed = 0;
+      for (const m of tail) {
+        tailUsed += Math.min(estimateMessageTokens(m), perMessageCap);
+      }
+      used += tailUsed;
+
+      // Walk backwards from tailStart, adding older messages while we still have
+      // budget. Stale file-read messages get replaced with an annotation stub.
+      const older: ThreadMessage[] = [];
+      for (let i = tailStart - 1; i >= 0; i--) {
+        const m = nonSystem[i];
+        const cost = Math.min(estimateMessageTokens(m), perMessageCap);
+        if (used + cost > effectiveBudget) break;
+        older.unshift(this.annotateStale(m, staleAnnotations));
+        used += cost;
+      }
+
+      // If we couldn't fit everything, inject a trim marker summarizing the
+      // dropped range at the front.
+      const droppedCount = tailStart - older.length;
+      const prefix: LoopMessage[] = [];
+      if (droppedCount > 0) {
+        const dropped = nonSystem.slice(0, tailStart - older.length);
+        prefix.push({
+          role: 'user',
+          content: this.renderTrimMarker(droppedCount, dropped),
+        });
+      }
+
+      // Also annotate tail messages.
+      const annotatedTail = tail.map(m => this.annotateStale(m, staleAnnotations));
+
+      // Convert to LoopMessage with per-message truncation.
+      const body: LoopMessage[] = [
+        ...older.map(m => threadMessageToLoop(m, perMessageCap)),
+        ...annotatedTail.map(m => threadMessageToLoop(m, perMessageCap)),
+      ];
+
+      return [...transientPrefix, ...prefix, ...body];
+    >>>
+
+  method name=annotateStale params="msg:ThreadMessage,staleAnnotations:Map<string,string>" returns=ThreadMessage private=true
+    doc "If this message is a Read tool-result for a file listed in the stale map, return a clone with a prefixed stale marker. Otherwise return the original."
+    handler <<<
+      if (staleAnnotations.size === 0) return msg;
+      if (msg.role !== 'tool' || msg.toolName !== 'Read' || !msg.toolInput) return msg;
+      const fp = (msg.toolInput as Record<string,unknown>).file_path;
+      if (typeof fp !== 'string') return msg;
+      const note = staleAnnotations.get(fp);
+      if (!note) return msg;
+      return { ...msg, content: `${note}\n\n--- prior content (stale) ---\n${msg.content}` };
+    >>>
+
+  method name=renderTrimMarker params="droppedCount:number,dropped:ThreadMessage[]" returns=string private=true
+    doc "Render a human-readable stub for messages that got trimmed out of messagesFor(). Summarizes tool calls + file reads without calling an LLM. This is the 'dumb but cheap' summarization from the design-call question."
+    handler <<<
+      const fileReads = new Set<string>();
+      const toolCalls: Record<string, number> = {};
+      const engines = new Set<string>();
+      for (const m of dropped) {
+        if (m.engineId) engines.add(m.engineId);
+        if (m.toolCalls) {
+          for (const tc of m.toolCalls) {
+            toolCalls[tc.name] = (toolCalls[tc.name] ?? 0) + 1;
+            if (tc.name === 'Read') {
+              try {
+                const args = JSON.parse(tc.arguments) as { file_path?: string };
+                if (args.file_path) fileReads.add(args.file_path);
+              } catch { /* ignore */ }
+            }
+          }
+        }
+      }
+      const parts: string[] = [`[Context: ${droppedCount} earlier message${droppedCount === 1 ? '' : 's'} trimmed to fit budget.`];
+      if (engines.size > 0) parts.push(`Participating engines: ${[...engines].join(', ')}.`);
+      if (fileReads.size > 0) parts.push(`Files previously read: ${[...fileReads].slice(0, 10).join(', ')}${fileReads.size > 10 ? ` (+${fileReads.size - 10} more)` : ''}.`);
+      const toolSummary = Object.entries(toolCalls).map(([n, c]) => `${n}x${c}`).join(', ');
+      if (toolSummary) parts.push(`Prior tool calls: ${toolSummary}.`);
+      parts.push('Continue from the most recent exchange below.]');
+      return parts.join(' ');
+    >>>
+
+  method name=touchFile params="path:string,contentHash:string" returns=void
+    doc "Record that a file was read (or re-read) during this thread. Used by hasStaleFiles() to warn when a later engine is about to act on content that has since changed on disk."
+    handler <<<
+      const now = Date.now();
+      const existing = this.fileTouches[path];
+      if (existing && existing.contentHash === contentHash) {
+        existing.lastReadAt = now;
+        this.dirty = true;
+        return;
+      }
+      this.fileTouches[path] = {
+        path,
+        contentHash,
+        firstReadAt: existing?.firstReadAt ?? now,
+        lastReadAt: now,
+      };
+      this.dirty = true;
+    >>>
+
+  method name=staleFiles params="getCurrentHash:(path:string) => string|null" returns="FileTouch[]"
+    doc "Return every touched file whose on-disk content hash no longer matches the hash recorded when it was last read. Caller supplies a getCurrentHash callback (async work lives in the caller)."
+    handler <<<
+      const stale: FileTouch[] = [];
+      for (const touch of Object.values(this.fileTouches)) {
+        const current = getCurrentHash(touch.path);
+        if (current != null && current !== touch.contentHash) {
+          stale.push(touch);
+        }
+      }
+      return stale;
+    >>>
+
+  method name=checkpoint params="summary:string,label?:string,messagesUpToId?:string" returns=ThreadCheckpoint
+    doc "Create a compaction checkpoint. Older messages are NOT removed from the thread — the checkpoint is metadata that messagesFor() can reference to cheapen older context. Phase A.5 will support hard compaction that drops covered messages."
+    handler <<<
+      const now = Date.now();
+      const upTo = messagesUpToId ?? (this.messages.length > 0 ? this.messages[this.messages.length - 1].id : '');
+      const idx = this.messages.findIndex(m => m.id === upTo);
+      const covered = idx >= 0 ? this.messages.slice(0, idx + 1) : [];
+      const savedTokens = covered.reduce((s, m) => s + estimateMessageTokens(m), 0);
+      const cp: ThreadCheckpoint = {
+        id: `cp_${now}_${randomUUID().slice(0, 6)}`,
+        timestamp: now,
+        label: label ?? `checkpoint-${this.checkpoints.length + 1}`,
+        summary,
+        messagesUpToId: upTo,
+        approxTokensSaved: savedTokens,
+      };
+      this.checkpoints.push(cp);
+      this.dirty = true;
+      return cp;
+    >>>
+
+  method name=size returns=ThreadSize
+    handler <<<
+      let approx = 0;
+      for (const m of this.messages) approx += estimateMessageTokens(m);
+      let bytes = 0;
+      try {
+        const path = threadFilePath(this.projectPath, this.threadId);
+        if (existsSync(path)) {
+          bytes = readFileSync(path, 'utf-8').length;
+        }
+      } catch { /* ignore */ }
+      return {
+        messages: this.messages.length,
+        checkpoints: this.checkpoints.length,
+        approxTokens: approx,
+        bytesOnDisk: bytes,
+      };
+    >>>
+
+  method name=saveSync returns=void
+    doc "Synchronous best-effort persist — NO lockfile. Used by process-exit handlers where async is forbidden. Falls back to the old sync write path. For normal saves, use save() which acquires the O_EXCL lock."
+    handler <<<
+      if (!this.dirty && this.hydrated) return;
+      try {
+        ensureThreadDir(this.projectPath);
+        const target = threadFilePath(this.projectPath, this.threadId);
+        const cleanMessages = this.messages.filter((m: ThreadMessage) => m.role !== 'system');
+        const snapshot: ThreadSnapshot = {
+          schemaVersion: SCHEMA_VERSION,
+          threadId: this.threadId,
+          projectPath: this.projectPath,
+          createdAt: this.createdAt,
+          updatedAt: Date.now(),
+          messages: cleanMessages,
+          checkpoints: this.checkpoints,
+          engineHead: this.engineHead,
+          fileTouches: this.fileTouches,
+        };
+        const body = JSON.stringify(snapshot, null, 2) + '\n';
+        const tmpPath = target + '.tmp';
+        let fd = -1;
+        try {
+          fd = openSync(tmpPath, 'w', 0o600);
+          writeFileSync(fd, body, 'utf-8');
+          fsyncSync(fd);
+        } finally {
+          if (fd >= 0) try { closeSync(fd); } catch { /* ignore */ }
+        }
+        renameSync(tmpPath, target);
+        try { chmodSync(target, 0o600); } catch { /* non-POSIX */ }
+        this.dirty = false;
+        this.hydrated = true;
+        const jPath = threadJournalPath(this.projectPath, this.threadId);
+        if (existsSync(jPath)) unlinkSync(jPath);
+        this.journaledIds.clear();
+      } catch { /* never let sync flush failure throw in exit handlers */ }
+    >>>
+
+  method name=save returns="Promise<void>" async=true
+    doc "Persist to disk atomically under an O_EXCL lockfile. When the lock cannot be acquired after LOCK_MAX_RETRIES, falls back to JSONL journal-only persistence (POSIX-atomic appends) instead of a blind rewrite — this prevents the race where two contending processes both lose the lock and then clobber each other's work. The lock is released in a top-level finally so any exception in the write path doesn't leak a stale .lock file (review findings #3, #6)."
+    handler <<<
+      if (!this.dirty && this.hydrated) return;
+      ensureThreadDir(this.projectPath);
+      const target = threadFilePath(this.projectPath, this.threadId);
+      const lockPath = threadLockPath(this.projectPath, this.threadId);
+
+      // Acquire O_EXCL lock before touching the snapshot.
+      let lockAcquired = false;
+      try {
+        const attempt = await acquireLock(lockPath);
+        lockAcquired = attempt !== null;
+      } catch (lockErr) {
+        console.warn(`[agon] context-thread: lock acquisition error: ${lockErr instanceof Error ? lockErr.message : String(lockErr)}`);
+      }
+
+      // Fallback: if we couldn't acquire the lock, fall back to journal-only
+      // persistence. Per-message appendFileSync with 'a' flag is POSIX-atomic
+      // for small writes and never clobbers another process's writes. The
+      // next successful save() will merge the journal. This is strictly
+      // safer than doing a full rewrite without the lock (which can silently
+      // drop another process's messages).
+      if (!lockAcquired) {
+        console.warn(`[agon] context-thread: lock held by another process after ${LOCK_MAX_RETRIES} retries — falling back to journal-only append for ${this.threadId}. Next successful save will merge.`);
+        // Every dirty message that isn't already journaled gets written now.
+        try {
+          for (const msg of this.messages) {
+            if (!this.journaledIds.has(msg.id) && msg.role !== 'system') {
+              this.journalMessage(msg);
+            }
+          }
+          // Don't clear dirty — next save() should still try the full rewrite.
+        } catch (journalErr) {
+          console.warn(`[agon] context-thread: journal fallback failed: ${journalErr instanceof Error ? journalErr.message : String(journalErr)}`);
+        }
+        return;
+      }
+
+      // We hold the lock. Wrap the entire write path in try/finally so any
+      // throw from readFileSync / JSON.parse / openSync / writeFileSync /
+      // renameSync releases the lock instead of leaking a stale .lock file
+      // that would burn future save retries.
+      try {
+        // Phase A.5 — JSONL journal merge. Before the full JSON rewrite, absorb
+        // any messages that were fast-appended to the journal since the last
+        // save(). This handles cross-process appends (another agon window wrote
+        // to the journal) and ensures the compacted snapshot is always complete.
+        const jPath = threadJournalPath(this.projectPath, this.threadId);
+        if (existsSync(jPath)) {
+          try {
+            const journalLines = readFileSync(jPath, 'utf-8').split('\n').filter(Boolean);
+            const known = new Set(this.messages.map(m => m.id));
+            for (const line of journalLines) {
+              try {
+                const obj = JSON.parse(line);
+                if (obj._kind === 'msg' && obj.id && !known.has(obj.id) && obj.role !== 'system') {
+                  const { _kind: _k, ...msg } = obj;
+                  this.messages.push(msg as ThreadMessage);
+                  known.add(msg.id);
+                  this.journaledIds.add(msg.id);
+                }
+              } catch { /* skip malformed journal lines */ }
+            }
+            // Re-sort by timestamp after merge.
+            this.messages.sort((a: ThreadMessage, b: ThreadMessage) => a.timestamp - b.timestamp);
+          } catch (err) {
+            console.warn(`[agon] context-thread: journal merge failed (will overwrite): ${err instanceof Error ? err.message : String(err)}`);
+          }
+        }
+
+        // Read-before-write merge (safe under lock — no other process can
+        // concurrently write because they'll hit the same O_EXCL lock first).
+        if (existsSync(target)) {
+          try {
+            const stat = statSync(target);
+            if (stat.size <= MAX_THREAD_FILE_BYTES) {
+              const raw = readFileSync(target, 'utf-8');
+              const onDisk = JSON.parse(raw) as ThreadSnapshot;
+              if (onDisk && Array.isArray(onDisk.messages)) {
+                const known = new Set(this.messages.map(m => m.id));
+                const foreign = onDisk.messages.filter(m => m && m.role !== 'system' && !known.has(m.id));
+                if (foreign.length > 0) {
+                  const merged = [...this.messages, ...foreign].sort((a, b) => a.timestamp - b.timestamp);
+                  this.messages = merged;
+                  for (const [eng, head] of Object.entries(onDisk.engineHead ?? {})) {
+                    if (!this.engineHead[eng]) this.engineHead[eng] = head;
+                  }
+                  for (const [p, t] of Object.entries(onDisk.fileTouches ?? {})) {
+                    if (!this.fileTouches[p]) this.fileTouches[p] = t;
+                  }
+                }
+              }
+            }
+          } catch (err) {
+            console.warn(`[agon] context-thread: read-before-write merge failed (will overwrite): ${err instanceof Error ? err.message : String(err)}`);
+          }
+        }
+
+        // Final defense-in-depth strip of any role:'system' that snuck in.
+        const cleanMessages = this.messages.filter(m => m.role !== 'system');
+        this.messages = cleanMessages;
+
+        const snapshot: ThreadSnapshot = {
+          schemaVersion: SCHEMA_VERSION,
+          threadId: this.threadId,
+          projectPath: this.projectPath,
+          createdAt: this.createdAt,
+          updatedAt: Date.now(),
+          messages: cleanMessages,
+          checkpoints: this.checkpoints,
+          engineHead: this.engineHead,
+          fileTouches: this.fileTouches,
+        };
+
+        // Durable atomic write: openSync → writeSync → fsyncSync → closeSync → rename.
+        const tmpPath = target + '.tmp';
+        const body = JSON.stringify(snapshot, null, 2) + '\n';
+        let fd = -1;
+        try {
+          fd = openSync(tmpPath, 'w', 0o600);
+          writeFileSync(fd, body, 'utf-8');
+          fsyncSync(fd);
+        } finally {
+          if (fd >= 0) {
+            try { closeSync(fd); } catch { /* ignore */ }
+          }
+        }
+        renameSync(tmpPath, target);
+        try { chmodSync(target, 0o600); } catch { /* non-POSIX best effort */ }
+        this.updatedAt = snapshot.updatedAt;
+        this.dirty = false;
+        this.hydrated = true;
+        // Journal compaction. Snapshot is on disk and includes all journal
+        // entries, delete the journal so it doesn't grow unboundedly.
+        try {
+          if (existsSync(jPath)) unlinkSync(jPath);
+          this.journaledIds.clear();
+        } catch { /* best-effort — stale journal is harmless */ }
+      } finally {
+        // Always release the lock — whether the write succeeded, threw, or
+        // was swallowed by a catch. This is the #6 fix: previously the lock
+        // release was in a nested finally that didn't run on openSync/rename
+        // exceptions, leaving stale .lock files that burned future retries.
+        if (lockAcquired) releaseLock(lockPath);
+      }
+    >>>
+
+  method name=getAllMessages returns="ThreadMessage[]"
+    doc "Return a shallow copy of the full message list. For tests and introspection — do not mutate."
+    handler <<<
+      return [...this.messages];
+    >>>
+
+  method name=getCheckpoints returns="ThreadCheckpoint[]"
+    handler <<<
+      return [...this.checkpoints];
+    >>>
+
+  method name=getEngineHead params="engineId:string" returns="string|undefined"
+    handler <<<
+      return this.engineHead[engineId];
+    >>>
+
+// ── Active-thread pointer management ─────────────────────────────────
+
+interface name=ActivePointerMap
+  field name=byProject type="Record<string,string>"
+
+fn name=loadActivePointer returns=ActivePointerMap
+  handler <<<
+    try {
+      const path = activePointerPath();
+      if (existsSync(path)) {
+        const raw = readFileSync(path, 'utf-8');
+        const parsed = JSON.parse(raw) as ActivePointerMap;
+        if (parsed && typeof parsed === 'object' && parsed.byProject) {
+          return parsed;
+        }
+      }
+    } catch (err) {
+      console.warn(`[agon] context-thread: failed to load active pointer: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    return { byProject: {} };
+  >>>
+
+fn name=saveActivePointer params="pointer:ActivePointerMap" returns=void
+  handler <<<
+    ensureAgonHome();
+    const path = activePointerPath();
+    mkdirSync(threadsDir(), { recursive: true });
+    const tmpPath = path + '.tmp';
+    writeFileSync(tmpPath, JSON.stringify(pointer, null, 2) + '\n', 'utf-8');
+    renameSync(tmpPath, path);
+  >>>
+
+// ── Phase A.5: process-exit flush registry ───────────────────────────
+// Keep a WeakRef set of ContextThread instances that were created via
+// loadOrCreateActiveThread so we can flush them on process exit / SIGINT.
+// WeakRef prevents this registry from keeping threads alive past their
+// natural lifetime. The exit handler is registered once.
+const name=_exitFlushRegistry type="Set<WeakRef<any>>"
+  handler <<<
+    new Set<WeakRef<any>>()
+  >>>
+
+const name=_exitHandlerRegistered type="{value:boolean}"
+  handler <<<
+    { value: false }
+  >>>
+
+fn name=_registerExitFlush params="thread:ContextThread" returns=void
+  handler <<<
+    _exitFlushRegistry.add(new WeakRef(thread));
+    if (_exitHandlerRegistered.value) return;
+    _exitHandlerRegistered.value = true;
+
+    const flush = () => {
+      for (const ref of _exitFlushRegistry) {
+        const t = ref.deref();
+        if (!t) { _exitFlushRegistry.delete(ref); continue; }
+        try {
+          if ((t as any).dirty) (t as any).saveSync(); // exit handlers can't await
+        } catch { /* never let flush block exit */ }
+      }
+    };
+
+    // Flush on clean exit (covers normal process termination).
+    process.on('exit', flush);
+
+    // Flush on SIGINT (Ctrl+C) — gives the thread a chance to persist
+    // partial work before the process is killed. Re-raise after flush so
+    // the process terminates normally with exit code 130.
+    process.on('SIGINT', () => {
+      flush();
+      process.exit(130);
+    });
+
+    // SIGTERM (e.g. kill from CI or container scheduler).
+    process.on('SIGTERM', () => {
+      flush();
+      process.exit(143);
+    });
+  >>>
+
+fn name=loadOrCreateActiveThread params="projectPath:string,systemPrompt?:string" returns=ContextThread export=true
+  doc "The canonical entry point for callers. Reads the active-pointer map, finds the current thread for this project (or creates one), hydrates it, and writes the pointer back if a new thread was created. Returns a ready-to-use ContextThread. Phase A.5: registers the thread with the process-exit flush registry so Ctrl+C saves partial work."
+  handler <<<
+    const pointer = loadActivePointer();
+    const sha = projectSha8(projectPath);
+    const existingId = pointer.byProject[sha];
+    const thread = new ContextThread({ projectPath, threadId: existingId, systemPrompt });
+    if (!existingId || existingId !== thread.getThreadId()) {
+      pointer.byProject[sha] = thread.getThreadId();
+      saveActivePointer(pointer);
+    }
+    _registerExitFlush(thread);
+    return thread;
+  >>>
+
+fn name=forkActiveThread params="projectPath:string,systemPrompt?:string" returns="Promise<ContextThread>" async=true export=true
+  doc "Start a new thread for a project (abandoning the previous active pointer). Used when the user explicitly wants a fresh context — e.g. a /agent --new-thread flag. The old thread file remains on disk for history. Review finding #5: await save() fully before updating active.json — otherwise a concurrent loadOrCreateActiveThread could see the new pointer but no file, and fork again, losing the original fork."
+  handler <<<
+    const thread = new ContextThread({ projectPath, systemPrompt });
+    // Ensure the thread file exists on disk BEFORE we repoint active.json.
+    // Fresh threads are !dirty && !hydrated so save() bails early. Force the
+    // initial save by writing an empty snapshot first via saveSync (no lock
+    // needed — file doesn't exist yet).
+    (thread as any).dirty = true;
+    await thread.save();
+    const pointer = loadActivePointer();
+    pointer.byProject[projectSha8(projectPath)] = thread.getThreadId();
+    saveActivePointer(pointer);
+    return thread;
+  >>>
+
+fn name=listThreadsForProject params="projectPath:string" returns="string[]" export=true
+  doc "List every thread-file uuid that exists on disk for this project. Used by a future /threads command to let the user browse or fork past conversations."
+  handler <<<
+    const dir = threadDirFor(projectPath);
+    if (!existsSync(dir)) return [];
+    try {
+      return readdirSync(dir)
+        .filter((f: string) => f.endsWith('.json'))
+        .map((f: string) => f.slice(0, -5));
+    } catch (err) {
+      console.warn(`[agon] context-thread: failed to list threads: ${err instanceof Error ? err.message : String(err)}`);
+      return [];
+    }
+  >>>
+
+// ── LLM-powered checkpoint summarization ────────────────────────────
+// Summarize older thread messages using a cheap API call so messagesFor()
+// can reference a dense summary instead of a terse "[N messages trimmed]"
+// stub. This replaces the greedy-trim compaction from Phase A with a
+// semantic summary that preserves intent, decisions, and file-edit outcomes.
+//
+// Design: caller provides the API config and the number of messages to
+// summarize. The function slices the oldest N messages, builds a compact
+// prompt, calls the API once, and records the result as a ThreadCheckpoint.
+// The original messages are NOT removed — the checkpoint is metadata that
+// messagesFor() can opt into. Hard deletion is a future Phase A.5.5 option
+// for users who want to aggressively cap thread size.
+
+interface name=SummarizeOptions export=true
+  field name=thread type=ContextThread
+  field name=api type="any"
+  field name=messagesToSummarize type=number optional=true
+  field name=label type=string optional=true
+
+fn name=summarizeOlderMessages params="opts:SummarizeOptions" returns="Promise<ThreadCheckpoint|null>" async=true export=true
+  doc "Summarize the oldest N messages in the thread using a single cheap LLM call. Records the result as a ThreadCheckpoint. Non-destructive — original messages are preserved. Returns the checkpoint on success, null on API failure."
+  handler <<<
+    const messages = opts.thread.getAllMessages().filter((m: any) => m.role !== 'system');
+    const n = Math.min(opts.messagesToSummarize ?? 30, messages.length - KEEP_LAST_K);
+    if (n <= 0) return null;
+
+    const toSummarize = messages.slice(0, n);
+    const lastId = toSummarize[toSummarize.length - 1]?.id;
+    if (!lastId) return null;
+
+    // Build a compact representation of the messages to summarize.
+    const body = toSummarize.map((m: any) => {
+      const who = m.engineId ?? m.role;
+      const snippet = (m.content ?? '').slice(0, 400);
+      return `[${who}/${m.role}]: ${snippet}`;
+    }).join('\n---\n');
+
+    const prompt = `Summarize the following conversation turns concisely (max 300 words). Focus on: what was asked, what files were read/edited, what decisions were made, what the final outcome was. Do NOT reproduce code. Write in past tense.\n\n${body}`;
+
+    try {
+      // Reuse apiStreamDispatchWithHistory for a single-turn summary call.
+      // We use the caller-supplied api config (should be a fast/cheap model).
+      const { apiStreamDispatch } = await import('../api/dispatch.js');
+      let summary = '';
+      const gen = apiStreamDispatch(opts.api, prompt, 30, undefined);
+      for await (const chunk of gen) {
+        if (typeof chunk === 'string') summary += chunk;
+      }
+      summary = summary.trim();
+      if (!summary) return null;
+
+      const cp = opts.thread.checkpoint(summary, opts.label ?? `llm-summary-${n}-msgs`, lastId);
+      await opts.thread.save();
+      return cp;
+    } catch (err) {
+      console.warn(`[agon] context-thread: LLM summarization failed: ${err instanceof Error ? err.message : String(err)}`);
+      return null;
+    }
+  >>>
+
+fn name=deleteThread params="projectPath:string,threadId:string" returns=boolean export=true
+  doc "Delete a thread file from disk. Idempotent — returns false if the file didn't exist. Does NOT update active.json; caller must fork a new thread if deleting the currently active one."
+  handler <<<
+    try {
+      unlinkSync(threadFilePath(projectPath, threadId));
+      // Also clean up the journal sidecar if it exists.
+      try { unlinkSync(threadJournalPath(projectPath, threadId)); } catch { /* ok */ }
+      return true;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+        console.warn(`[agon] context-thread: failed to delete ${threadId}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      return false;
+    }
+  >>>

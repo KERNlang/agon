@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
+import { cleanupTestAgonHome, setupTestAgonHome } from '../helpers/agon-home.js';
 
 // We need to test the actual functions, but they use AGON_HOME which reads from config.
 // Import the generated code directly to test the logic.
@@ -11,15 +12,26 @@ import {
   saveSessionState,
   loadSessionState,
   clearSessionState,
+  saveConversation,
+  loadConversation,
+  clearConversation,
+  stripEngineArtifacts,
 } from '@agon/core';
 
 // Use a unique engine ID per test run to avoid cross-test pollution
 const TEST_ENGINE = `test-engine-${Date.now()}`;
+let testHome = '';
 
 describe('session-store v2: disk-backed tool cache', () => {
+  beforeEach(() => {
+    testHome = setupTestAgonHome('session-store-cache');
+  });
+
   afterEach(() => {
     // Clean up test session data
     try { clearSessionState(TEST_ENGINE); } catch { /* may not exist */ }
+    try { clearConversation(); } catch { /* may not exist */ }
+    cleanupTestAgonHome(testHome);
   });
 
   it('saveToolResultToDisk writes file and returns manifest entry', () => {
@@ -71,8 +83,14 @@ describe('session-store v2: disk-backed tool cache', () => {
 describe('session-store v2: state persistence', () => {
   const ENGINE_ID = `persist-test-${Date.now()}`;
 
+  beforeEach(() => {
+    testHome = setupTestAgonHome('session-store-state');
+  });
+
   afterEach(() => {
     try { clearSessionState(ENGINE_ID); } catch { /* clean */ }
+    try { clearConversation(); } catch { /* clean */ }
+    cleanupTestAgonHome(testHome);
   });
 
   it('saves and loads session state with v2 schema', () => {
@@ -150,5 +168,52 @@ describe('session-store v2: state persistence', () => {
 
     clearSessionState(ENGINE_ID);
     expect(loadSessionState(ENGINE_ID)).toBeNull();
+  });
+});
+
+describe('session-store v2.1: conversation continuity store', () => {
+  beforeEach(() => {
+    testHome = setupTestAgonHome('conversation-store');
+  });
+
+  afterEach(() => {
+    try { clearConversation(); } catch { /* clean */ }
+    cleanupTestAgonHome(testHome);
+  });
+
+  it('strips engine-specific tool artifacts during handoff', () => {
+    const stripped = stripEngineArtifacts([
+      {
+        role: 'assistant',
+        content: null,
+        tool_calls: [{ id: 'call_1', function: { name: 'Read', arguments: '{"path":"src/app.ts"}' } }],
+      },
+      {
+        role: 'tool',
+        content: { ok: true, lines: 42 },
+        tool_call_id: 'call_1',
+      },
+    ]);
+
+    expect(stripped).toEqual([
+      { role: 'assistant', content: '[Tool calls omitted during engine handoff: Read]' },
+      { role: 'tool', content: JSON.stringify({ ok: true, lines: 42 }) },
+    ]);
+  });
+
+  it('saves and loads the latest workspace conversation with timestamp metadata', () => {
+    saveConversation([
+      { role: 'user', content: 'hello' },
+      { role: 'assistant', content: 'hi' },
+    ], 'claude');
+
+    const loaded = loadConversation();
+    expect(loaded).not.toBeNull();
+    expect(loaded!.sourceEngine).toBe('claude');
+    expect(loaded!.savedAt).toBeGreaterThan(0);
+    expect(loaded!.messageHistory).toEqual([
+      { role: 'user', content: 'hello' },
+      { role: 'assistant', content: 'hi' },
+    ]);
   });
 });

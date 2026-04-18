@@ -1,0 +1,171 @@
+// ── StreamBridge — canonical AgentEvent → OutputEvent normalization ──
+// Phase C of the Cesar unified-mind work. One codepath from every engine's
+// raw event stream to the OutputEvent union consumed by the Ink surface.
+//
+// Problem: handlers/agent.kern has two near-identical inline onEvent
+// callbacks (solo path line 189, team path line 517) that each manually
+// map AgentEvent → OutputEvent. Neither tracks engine transitions, so
+// the UI never knows when the active engine changes — a silent seam.
+//
+// StreamBridge fixes this:
+//   1. Holds the "activeEngineId" pointer. When it changes, emits
+//      engine-switch before the content event so the UI can show an
+//      attribution badge.
+//   2. Converts AgentEvent → OutputEvent in ONE place. Every handler
+//      that calls bridge.bridge(event) gets attribution tracking for
+//      free, without duplicating the conversion logic.
+//   3. Exposes a makeOnEvent() factory so callers can drop in the
+//      bridge without changing the AgentSession.step() interface.
+//
+// What it doesn't do:
+//   - Shadow-worker racing or foreground/background lane management
+//     (Phase D).
+//   - Virtual FS or speculative branch management (Phase E).
+//   - Thinking chunk accumulation (deferred — the UI already has a
+//     thinking buffer in output.kern; the bridge surfaces raw chunks).
+
+import from="../models/agent-event.js" names="AgentEvent" types=true
+
+// Re-export the Dispatch type via a lightweight bridge interface so
+// core doesn't need to import from cli (would create a circular dep).
+// Callers pass any function that accepts an OutputEvent-shaped object.
+interface name=BridgeDispatch
+  doc "Minimal dispatch contract for StreamBridge. Compatible with the full Dispatch from handlers/types.ts — callers can pass it directly."
+  field name=call type="(event: Record<string,unknown>) => void"
+
+interface name=EngineSwitch export=true
+  doc "Fired by StreamBridge when the active engine changes. Mirrors the engine-switch OutputEvent variant."
+  field name=from type="string|undefined"
+  field name=to type=string
+  field name=reason type="'auto-fanout'|'cesar-route'|'team-member'|'synthesis'|'fallback'"
+  field name=confidence type=number optional=true
+
+// ── StreamBridge service ─────────────────────────────────────────────
+
+service name=StreamBridge export=true
+  doc "Converts AgentEvent → OutputEvent with engine-switch tracking. Construct one per agent invocation (solo or team) and call bridge(event) for every AgentEvent the inner loop emits."
+
+  field name=activeEngineId type="string|undefined" private
+  field name=dispatch type="(event: Record<string,unknown>) => void" private
+  field name=onSwitch type="((sw: EngineSwitch) => void)|undefined" private
+
+  constructor params="dispatch:(event:Record<string,unknown>)=>void,opts?:{initialEngineId?:string,onSwitch?:(sw:EngineSwitch)=>void}"
+    handler <<<
+      this.dispatch = dispatch;
+      this.activeEngineId = opts?.initialEngineId;
+      this.onSwitch = opts?.onSwitch;
+    >>>
+
+  method name=bridge params="event:AgentEvent" returns=void
+    doc "Convert one AgentEvent to its OutputEvent equivalent. Emits engine-switch before the content event whenever the active engine changes."
+    handler <<<
+      const engineId = event.engineId;
+
+      // ── Engine-switch detection ───────────────────────────────
+      if (engineId && engineId !== this.activeEngineId) {
+        const sw: EngineSwitch = {
+          from: this.activeEngineId,
+          to: engineId,
+          reason: this.activeEngineId ? 'team-member' : 'cesar-route',
+        };
+        this.dispatch({
+          type: 'engine-switch',
+          from: sw.from,
+          to: sw.to,
+          reason: sw.reason,
+        });
+        if (this.onSwitch) this.onSwitch(sw);
+        this.activeEngineId = engineId;
+      }
+
+      // ── Event conversion ──────────────────────────────────────
+      switch (event.kind) {
+        case 'assistant_chunk':
+          this.dispatch({
+            type: 'streaming-chunk',
+            engineId: event.engineId,
+            chunk: event.text,
+          });
+          break;
+
+        case 'tool_call': {
+          const toolStatus =
+            event.status === 'ok' ? 'done'
+            : (event.status === 'error' || event.status === 'rejected') ? 'error'
+            : 'running';
+          this.dispatch({
+            type: 'tool-call',
+            engineId: event.engineId,
+            tool: event.toolName,
+            input: event.input ? JSON.stringify(event.input) : '',
+            status: toolStatus,
+            output: event.output,
+          });
+          break;
+        }
+
+        case 'error':
+          this.dispatch({
+            type: 'error',
+            message: `[${event.engineId}] ${event.message}`,
+          });
+          break;
+
+        case 'turn_complete':
+          // Handled post-step via agent-step-end. No real-time OutputEvent needed.
+          break;
+
+        default:
+          break;
+      }
+    >>>
+
+  method name=makeOnEvent returns="(event:AgentEvent)=>void"
+    doc "Factory: return an onEvent callback compatible with AgentSession.step({ onEvent }) and AgentTeam.step({ onEvent }). This is the drop-in replacement for the inline callbacks in handlers/agent.kern."
+    handler <<<
+      return (event: AgentEvent) => this.bridge(event);
+    >>>
+
+  method name=emitSwitch params="sw:EngineSwitch" returns=void
+    doc "Manually emit an engine-switch event without a triggering AgentEvent — used by dispatch when Phase B auto-upgrades solo→team before any step runs."
+    handler <<<
+      this.dispatch({
+        type: 'engine-switch',
+        from: sw.from,
+        to: sw.to,
+        reason: sw.reason,
+        confidence: sw.confidence,
+      });
+      if (this.onSwitch) this.onSwitch(sw);
+      this.activeEngineId = sw.to;
+    >>>
+
+  method name=emitRouting params="mode:'solo'|'team',engines:string[],reason:string" returns=void
+    doc "Emit an agent-routing event to show the user what Cesar decided before the step starts."
+    handler <<<
+      this.dispatch({
+        type: 'agent-routing',
+        mode,
+        engines,
+        reason,
+      });
+    >>>
+
+  method name=reset params="newEngineId?:string" returns=void
+    doc "Reset active engine tracking. Call at the start of a new session to avoid stale switch events from a prior run."
+    handler <<<
+      this.activeEngineId = newEngineId;
+    >>>
+
+  method name=getActiveEngineId returns="string|undefined"
+    handler <<<
+      return this.activeEngineId;
+    >>>
+
+// ── Factory ───────────────────────────────────────────────────────────
+
+fn name=createStreamBridge params="dispatch:(event:Record<string,unknown>)=>void,opts?:{initialEngineId?:string,onSwitch?:(sw:EngineSwitch)=>void}" returns=StreamBridge export=true
+  doc "Create a StreamBridge for one agent invocation. Pass the same Dispatch function used by the handler."
+  handler <<<
+    return new StreamBridge(dispatch, opts);
+  >>>

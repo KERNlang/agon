@@ -25,6 +25,15 @@ interface name=CompanionConfig
   field name=sandbox type="'read-only'|'workspace-write'|'danger-full-access'" optional=true
   field name=features type="{threadResume?:boolean, nativeReview?:boolean, structuredOutput?:boolean}" optional=true
 
+interface name=CliModelEntry
+  field name=id type=string
+  field name=name type=string optional=true
+
+interface name=EngineCliModelConfig
+  field name=default type=string optional=true
+  field name=list type="CliModelEntry[]" optional=true
+  field name=dynamicListCmd type="string[]" optional=true
+
 interface name=EngineDefinition
   field name=schemaVersion type="1|2|3"
   field name=id type=string
@@ -50,6 +59,7 @@ interface name=EngineDefinition
   field name=agent type=EngineModeConfig optional=true
   field name=api type="{baseUrl:string, apiKeyEnv:string, model:string, maxTokens?:number, format?:'openai'|'anthropic', firstChunkTimeoutMs?:number, idleTimeoutMs?:number}" optional=true
   field name=companion type=CompanionConfig optional=true
+  field name=cliModels type=EngineCliModelConfig optional=true
 
 interface name=DispatchOptions
   field name=engine type=EngineDefinition
@@ -61,6 +71,10 @@ interface name=DispatchOptions
   field name=signal type=AbortSignal optional=true
   field name=images type="ImageAttachment[]" optional=true
   field name=systemPrompt type=string optional=true
+  field name=onApproval type="(tool:string, command:string, reason?:string) => Promise<boolean|string>" optional=true
+  field name=permissionMode type="'auto'|'ask'|'deny-all'" optional=true
+  field name=allowedCommands type="string[]" optional=true
+  field name=toolPermissions type="Record<string,'allow'|'ask'|'deny'>" optional=true
 
 interface name=DispatchResult
   field name=exitCode type=number
@@ -160,12 +174,20 @@ config name=AgonConfig
   field name=skillSynthesisThreshold type=number default=3
   field name=cesarEnabled type=boolean default=true
   field name=cesarScoutCount type=number default=2
+  field name=cesarScoutTimeout type=number default=18
   field name=cesarDirectThreshold type=number default=85
   field name=cesarDisagreementSpread type=number default=20
+  field name=cesarCodeFastPathChars type=number default=180
+  field name=cesarAutoPipeline type=boolean default=false
+  field name=cesarPipelineThreshold type=number default=93
   field name=cesarEngine type=string default=claude
   field name=cesarBackend type="'cli'|'api'|'auto'" default=auto
   field name=cesarMcpEnabled type=boolean default=false
   field name=cesarMcpConfigPath type=string default=""
+  field name=cesarAutoApproveMode type="'off'|'safe-only'|'cost-bounded'|'always'" default="'safe-only'"
+    doc "Autonomous plan approval policy. 'off'=always prompt, 'safe-only'=only non-mutating plans, 'cost-bounded'=plans under cesarAutoApproveMaxCostUsd, 'always'=any plan with autoApprove=true."
+  field name=cesarAutoApproveMaxCostUsd type=number optional=true
+    doc "When cesarAutoApproveMode is 'cost-bounded' or 'always', the maximum estimated USD cost (including 2× review cycle estimate for mutating plans) that can be auto-approved without user confirmation."
   field name=campfireObserverStrategy type="'lead-first'|'all-respond'" default=lead-first
   field name=hooks type="Record<string,Array<{command:string,engines?:string[],timeout?:number}>>" optional=true
   field name=permissionMode type="'auto'|'ask'|'deny-all'" default=ask
@@ -173,6 +195,8 @@ config name=AgonConfig
   field name=toolPermissions type="Record<string,'allow'|'ask'|'deny'>" optional=true
   field name=hiddenEngines type="string[]" optional=true
   field name=engineModels type="Record<string,string>" optional=true
+  field name=terminalMode type="'native'|'fullscreen'" default=fullscreen
+    doc "Terminal scroll behavior. 'fullscreen' matches Codex/Claude-style app-captured scrolling. 'native' uses the terminal's own scrollback and OS scrollbar."
   field name=iconTheme type="'roman'|'classic'" default=roman
   field name=autoReviewAfterForge type=boolean default=true
     doc "Auto-run review on forge winner's patch before presenting to user. Data: 79% bug catch rate."
@@ -191,7 +215,7 @@ interface name=ScoutBid
   field name=needsCompetition type=boolean
 
 interface name=RoutingDecision
-  field name=action type="'chat'|'build'|'pipeline'|'campfire'|'forge'|'brainstorm'|'tribunal'"
+  field name=action type="'chat'|'build'|'pipeline'|'campfire'|'forge'|'brainstorm'|'tribunal'|'agent'|'team-agent'"
   field name=leadEngine type=string
   field name=confidence type=number
   field name=reasoning type=string

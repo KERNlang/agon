@@ -1,11 +1,14 @@
 import from="node:fs" names="readFileSync,writeFileSync,mkdirSync,existsSync,readdirSync,unlinkSync,statSync"
-import from="node:path" names="join"
+import from="node:path" names="join,resolve"
 import from="node:crypto" names="createHash"
-import from="./config.js" names="AGON_HOME,ensureAgonHome"
+import from="node:os" names="homedir"
+import from="./config.js" names="ensureAgonHome"
 
-const name=PASTE_STORE_DIR type=string
+fn name=getPasteStoreDir returns=string export=false
   handler <<<
-    join(AGON_HOME, 'paste-cache')
+    const override = process.env.AGON_HOME?.trim();
+    const home = override ? resolve(override) : join(homedir(), '.agon');
+    return join(home, 'paste-cache');
   >>>
 
 const name=PASTE_MAX_AGE type=number
@@ -20,7 +23,7 @@ interface name=PasteStoreResult
 fn name=ensurePasteDir returns=void export=false
   handler <<<
     ensureAgonHome();
-    mkdirSync(PASTE_STORE_DIR, { recursive: true });
+    mkdirSync(getPasteStoreDir(), { recursive: true });
   >>>
 
 service name=PasteStore singleton=true
@@ -31,7 +34,7 @@ service name=PasteStore singleton=true
     handler <<<
       ensurePasteDir();
       const hash = createHash('sha256').update(text).digest('hex');
-      const filePath = join(PASTE_STORE_DIR, `${hash}.txt`);
+      const filePath = join(getPasteStoreDir(), `${hash}.txt`);
       if (!existsSync(filePath)) {
         writeFileSync(filePath, text);
       }
@@ -43,7 +46,7 @@ service name=PasteStore singleton=true
   method name=retrieve params="hash:string" returns="string|null"
     doc "Retrieve a stored paste by hash. Returns null if missing."
     handler <<<
-      const filePath = join(PASTE_STORE_DIR, `${hash}.txt`);
+      const filePath = join(getPasteStoreDir(), `${hash}.txt`);
       if (!existsSync(filePath)) return null;
       return readFileSync(filePath, 'utf-8');
     >>>
@@ -56,9 +59,10 @@ service name=PasteStore singleton=true
       let deleted = 0;
       ensurePasteDir();
       try {
-        const files = readdirSync(PASTE_STORE_DIR).filter((f: string) => f.endsWith('.txt'));
+        const pasteStoreDir = getPasteStoreDir();
+        const files = readdirSync(pasteStoreDir).filter((f: string) => f.endsWith('.txt'));
         for (const f of files) {
-          const fp = join(PASTE_STORE_DIR, f);
+          const fp = join(pasteStoreDir, f);
           try {
             const stat = statSync(fp);
             if (now - stat.mtimeMs > age) {
@@ -70,4 +74,3 @@ service name=PasteStore singleton=true
       } catch (err) { console.warn(`[agon] paste cleanup failed: ${err instanceof Error ? err.message : String(err)}`); }
       return deleted;
     >>>
-

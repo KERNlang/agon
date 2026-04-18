@@ -10,7 +10,8 @@
 
 import from="react" default="React"
 import from="ink" names="Box,Text"
-import from="./rendering.js" names="contentWidth,engineColor"
+import from="./rendering.js" names="contentWidth,engineColor,RenderedSegments"
+import from="./markdown.js" names="parseMarkdownBlocks"
 import from="../signals/icons.js" names="icons"
 
 // ── Step type icons ─────────────────────────────────────────────────
@@ -46,6 +47,7 @@ const name=STEP_STATE_ICONS type="Record<string, {icon:string,color:string}>"
 
 screen name=PlanProposalView target=ink
   prop name=plan type=any
+  prop name=markdown type=string optional=true
   render
     handler <<<
       const steps = plan.steps ?? [];
@@ -57,6 +59,37 @@ screen name=PlanProposalView target=ink
       const bar = '\u2550'.repeat(barWidth);
       const thinBar = '\u2500'.repeat(barWidth);
       const planColor = '#c084fc';
+
+      // Claude-Code-style markdown rendering for the plan body. The
+      // structured step boxes below are kept as a fallback when no
+      // markdown was provided — otherwise the markdown is the source
+      // of truth and the user sees the same rich plan Cesar wrote to
+      // ~/.agon/plans/cesar-*.md.
+      if (markdown && markdown.trim()) {
+        const wrapWidth = contentWidth(6);
+        const segments = parseMarkdownBlocks(markdown);
+        return (
+          <Box flexDirection="column" paddingLeft={2} marginY={1}>
+            <Text color={planColor} bold>{'\u2554'}{bar}{'\u2557'}</Text>
+            <Text color={planColor}>{'\u2551 '}<Text bold color="white">{'\u25b8 PLAN'}</Text></Text>
+            <Text color={planColor}>{'\u2551 '}<Text dimColor>{steps.length}{' steps \u00b7 ~'}{totalTokens.toLocaleString()}{' tokens \u00b7 $'}{totalCost.toFixed(2)}{' est'}</Text></Text>
+            {allEngines.length > 0 && (
+              <Box>
+                <Text color={planColor}>{'\u2551 '}<Text dimColor>{'Engines: '}</Text></Text>
+                {allEngines.map((id: string, i: number) => (
+                  <Box key={id}>
+                    <Text bold color={engineColor(id)}>{id}</Text>
+                    {i < allEngines.length - 1 && <Text dimColor>{', '}</Text>}
+                  </Box>
+                ))}
+              </Box>
+            )}
+            <Text color={planColor}>{'\u255f'}{thinBar}{'\u2562'}</Text>
+            <RenderedSegments segments={segments} borderColor={planColor} wrapWidth={wrapWidth} />
+            <Text color={planColor} bold>{'\u255a'}{bar}{'\u255d'}</Text>
+          </Box>
+        );
+      }
 
       return (
         <Box flexDirection="column" paddingLeft={2} marginY={1}>
@@ -175,9 +208,11 @@ screen name=PlanProposalView target=ink
           })}
 
           {/* ── Footer ── */}
+          {/* No key hints here on purpose: the actual approval prompt is
+              shown by askQuestion() below this block once Cesar finishes.
+              Showing keys here while the composer is still active misleads
+              the user into typing "y/n/e" into chat instead of the prompt. */}
           <Text color={planColor}>{'\u2551'}</Text>
-          <Text color={planColor}>{'\u255f'}{thinBar}{'\u2562'}</Text>
-          <Text color={planColor}>{'\u2551 '}<Text dimColor>{'Approve: '}</Text><Text bold color="green">{'Y'}</Text><Text dimColor>{' \u00b7 Reject: '}</Text><Text bold color="red">{'N'}</Text><Text dimColor>{' \u00b7 Edit: '}</Text><Text bold color="#fbbf24">{'E'}</Text><Text dimColor>{' \u00b7 Or type feedback to revise'}</Text></Text>
           <Text color={planColor} bold>{'\u255a'}{bar}{'\u255d'}</Text>
         </Box>
       );

@@ -1,6 +1,6 @@
 import from="node:path" names="join"
 import from="node:fs" names="mkdirSync,readFileSync"
-import from="@agon/core" names="ensureAgonHome,RUNS_DIR,createPlan,approvePlan,startPlan,mergeStepResult,cancelPlan,failPlan,savePlan,scanProjectContext,getActiveWorkspace,snapshotWorkspace,tracker,resolveWorkingDir"
+import from="@agon/core" names="ensureAgonHome,RUNS_DIR,createPlan,approvePlan,startPlan,mergeStepResult,cancelPlan,failPlan,savePlan,scanProjectContext,getActiveWorkspace,snapshotWorkspace,tracker,resolveWorkingDir,loadOrCreateActiveThread"
 import from="@agon/core" names="Plan,PlanStepInput,ApprovalLevel" types=true
 import from="@agon/forge" names="runForge"
 import from="../blocks/output-format.js" names="ENGINE_COLORS"
@@ -63,14 +63,14 @@ fn name=handleForgeEvent params="event:any, plan:Plan, engineStatus:Record<strin
     return plan;
   >>>
 
-fn name=handleForge params="task:string, fitnessCmd:string|null, dispatch:Dispatch, ctx:HandlerContext, existingPlan?:Plan, hardened?:boolean" returns="Promise<void>" async=true
+fn name=handleForge params="task:string, fitnessCmd:string|null, dispatch:Dispatch, ctx:HandlerContext, existingPlan?:Plan, hardened?:boolean, skipPlanApproval?:boolean" returns="Promise<{winner:string|null, patchPath:string|null, manifestPath:string, task:string, fitnessCmd:string}|null>" async=true
   signal name=forgeAbort
   handler <<<
     ensureAgonHome();
 
     if (!task) {
       dispatch({ type: 'warning', message: 'No task provided. Usage: "fix the auth bug, test with npm test"' });
-      return;
+      return null;
     }
 
     let fitness = fitnessCmd;
@@ -79,14 +79,14 @@ fn name=handleForge params="task:string, fitnessCmd:string|null, dispatch:Dispat
       fitness = fitness.trim();
       if (!fitness) {
         dispatch({ type: 'warning', message: 'Forge needs a test command. Try again with: "fix X, test with npm test"' });
-        return;
+        return null;
       }
     }
 
     const engines = ctx.activeEngines();
     if (engines.length === 0) {
       dispatch({ type: 'error', message: 'No engines available. Install at least one AI CLI tool.' });
-      return;
+      return null;
     }
 
     const config = ctx.config;
@@ -122,14 +122,14 @@ fn name=handleForge params="task:string, fitnessCmd:string|null, dispatch:Dispat
       dispatch({ type: 'plan', plan });
 
       const approvalLevel = (config.approvalLevel ?? 'plan') as ApprovalLevel;
-      if (approvalLevel !== 'auto') {
+      if (!skipPlanApproval && approvalLevel !== 'auto') {
         const answer = await ctx.askQuestion('Approve plan? [Y/n]');
         if (answer.trim().toLowerCase() === 'n') {
           plan = cancelPlan(plan);
           ctx.setCurrentPlan(plan);
           savePlan(plan);
           dispatch({ type: 'info', message: 'Plan cancelled.' });
-          return;
+          return null;
         }
       }
 
@@ -148,6 +148,16 @@ fn name=handleForge params="task:string, fitnessCmd:string|null, dispatch:Dispat
     const engineStatus: Record<string, string> = {};
     const startTime = Date.now();
 
+    // Phase 5c: pre-compute which engines have agent-mode config, so the
+    // progress tick (called every 250ms) doesn't re-query the registry.
+    const agentEngineIds = new Set<string>();
+    for (const id of engines) {
+      try {
+        const eng = ctx.registry.get(id);
+        if ((eng as any).agent) agentEngineIds.add(id);
+      } catch { /* engine not resolvable — treat as non-agent */ }
+    }
+
     const progressInterval = setInterval(() => {
       const elapsed = Math.floor((Date.now() - startTime) / 1000);
       const progress: EngineProgress[] = engines.map((id: string) => {
@@ -159,6 +169,7 @@ fn name=handleForge params="task:string, fitnessCmd:string|null, dispatch:Dispat
           done: status === 'done',
           failed: false,
           score: engineStatus[`${id}:score`],
+          isAgent: agentEngineIds.has(id),
         };
       });
       dispatch({ type: 'progress-update', engines: progress });
@@ -243,6 +254,25 @@ fn name=handleForge params="task:string, fitnessCmd:string|null, dispatch:Dispat
             dispatch({ type: 'success', message: 'Convergence complete — merged patch ready' });
             const convergedContent = readFileSync(convergedPath, 'utf-8');
             dispatch({ type: 'patch-review' as any, winnerId: 'convergence', patchPath: convergedPath, patchContent: convergedContent });
+
+            // Review finding #4 (Gemini): convergence path had early-return
+            // without thread append, so Cesar forgot converged patches. Append
+            // the converged diff to the active thread the same way the normal
+            // winner path does below.
+            try {
+              const convergeThread = loadOrCreateActiveThread(resolveWorkingDir());
+              const capped = convergedContent.length > 90000
+                ? convergedContent.slice(0, 90000) + `\n\n[... ${convergedContent.length - 90000} more chars truncated — full patch at ${convergedPath}]`
+                : convergedContent;
+              convergeThread.append({
+                role: 'assistant',
+                content: `[forge-convergence-diff] winner: convergence (best-of-breed)\npatch path: ${convergedPath}\n\n${capped}`,
+              });
+              await convergeThread.save();
+            } catch (threadErr) {
+              dispatch({ type: 'warning', message: `Convergence diff NOT persisted to thread: ${threadErr instanceof Error ? threadErr.message : String(threadErr)}` });
+            }
+
             // Skip normal winner patch — convergence replaces it
             dispatch({ type: 'info', message: `Manifest: ${forgeDir}/manifest.json` });
 
@@ -258,8 +288,8 @@ fn name=handleForge params="task:string, fitnessCmd:string|null, dispatch:Dispat
             plan = mergeStepResult(plan, 'winner', { state: 'completed', artifacts: winnerArtifacts });
             ctx.setCurrentPlan(plan);
             savePlan(plan);
-            dispatch({ type: 'info', message: `Plan: ${plan.id}` });
-            sessionResultStore.add({
+          dispatch({ type: 'info', message: `Plan: ${plan.id}` });
+          sessionResultStore.add({
               type: 'forge',
               timestamp: new Date().toISOString(),
               question: task,
@@ -277,7 +307,13 @@ fn name=handleForge params="task:string, fitnessCmd:string|null, dispatch:Dispat
             for (const [id, r] of Object.entries(manifest.results) as [string, any][]) {
               tracker.record(id, { prompt: task, response: `score:${r.score} diff:${r.diffLines}` });
             }
-            return; // Early return — convergence handled everything
+            return {
+              winner: 'convergence',
+              patchPath: convergedPath,
+              manifestPath: `${forgeDir}/manifest.json`,
+              task,
+              fitnessCmd: fitness!,
+            }; // Early return — convergence handled everything
           }
         } catch (err) {
           dispatch({ type: 'warning', message: `Convergence failed: ${err instanceof Error ? err.message : String(err)}. Falling back to winner.` });
@@ -293,6 +329,30 @@ fn name=handleForge params="task:string, fitnessCmd:string|null, dispatch:Dispat
         try {
           const patchContent = readFileSync(patchPath, 'utf-8');
           dispatch({ type: 'patch-review' as any, winnerId: finalWinner, patchPath, patchContent });
+
+          // Append winning diff directly to ContextThread so Cesar has the
+          // full line-by-line change trail, not just a text summary of what
+          // forge did. This is the missing piece from the outcome capture —
+          // chatSession has engine descriptions, thread now gets actual code.
+          try {
+            const cwd = resolveWorkingDir();
+            const forgeThread = loadOrCreateActiveThread(cwd);
+            // Review #8: 90k chars aligns with MAX_PER_MESSAGE_TOKENS=30000
+            // (≈ 4 chars/token × 30000 = 120k chars, leave 25% headroom for
+            // surrounding text). Most forge patches are well under 10k anyway.
+            const capped = patchContent.length > 90000
+              ? patchContent.slice(0, 90000) + `\n\n[... ${patchContent.length - 90000} more chars truncated — full patch at ${patchPath}]`
+              : patchContent;
+            forgeThread.append({
+              role: 'assistant',
+              content: `[forge-diff] winner: ${finalWinner}\npatch path: ${patchPath}\n\n${capped}`,
+            });
+            await forgeThread.save();
+          } catch (threadErr) {
+            // Review #9: surface failure to user instead of silent console.warn
+            // so they know memory is degraded if thread persistence broke.
+            dispatch({ type: 'warning', message: `Winner diff NOT persisted to thread: ${threadErr instanceof Error ? threadErr.message : String(threadErr)}` });
+          }
         } catch (err) {
           console.warn(`[agon] failed to read winning patch ${patchPath}: ${err instanceof Error ? err.message : String(err)}`);
         }
@@ -345,6 +405,14 @@ fn name=handleForge params="task:string, fitnessCmd:string|null, dispatch:Dispat
     for (const [id, r] of Object.entries(manifest.results) as [string, any][]) {
       tracker.record(id, { prompt: task, response: `score:${r.score} diff:${r.diffLines}` });
     }
+
+    return {
+      winner: finalWinner ?? null,
+      patchPath: finalWinner && manifest.patches[finalWinner] ? manifest.patches[finalWinner] : null,
+      manifestPath: `${forgeDir}/manifest.json`,
+      task,
+      fitnessCmd: fitness!,
+    };
   >>>
   cleanup <<<
     ctx.setActiveAbort(null);

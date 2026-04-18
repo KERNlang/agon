@@ -2,9 +2,8 @@
 // Replaces app.tsx monolith. All logic in KERN modules; this is the wiring.
 
 import from="react" names="useState,useCallback,useEffect,useRef,useMemo"
-import from="ink" names="Box,Text,render,useApp,useInput"
-import from="ink-text-input" default="TextInput"
-import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,ensureCurrentWorkspace,startChatSession,getRatings,getActiveWorkspace,RUNS_DIR,extractImagesFromInput,resolveWorkingDir,currentBranch,configSet,createCesarMemory,modelEntryToEngineDef,appendMessage"
+import from="ink" names="Box,Text,render"
+import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,ensureCurrentWorkspace,startChatSession,getRatings,getActiveWorkspace,RUNS_DIR,extractImagesFromInput,resolveWorkingDir,currentBranch,configSet,createCesarMemory,modelEntryToEngineDef,appendMessage,getAgonHome,tracker,copyToClipboard"
 import from="@agon/core" names="Plan,ChatSession,Skill,PersistentSession,ImageAttachment" types=true
 import from="../../handlers/types.js" names="EngineProgress" types=true
 import from="@agon/adapter-cli" names="createCliAdapter"
@@ -15,29 +14,336 @@ import from="../signals/job-manager.js" names="JobManager"
 import from="../signals/job-manager.js" names="Job" types=true
 import from="../blocks/output-format.js" names="ENGINE_COLORS"
 import from="../signals/icons.js" names="icons"
-import from="../blocks/markdown.js" names="parseMarkdownBlocks,cleanEngineOutput"
+import from="../blocks/markdown.js" names="cleanEngineOutput,parseMarkdownBlocks,truncateCodeLine"
 import from="../../handlers/types.js" names="OutputEvent,HandlerContext" types=true
 import from="../../code-buffer.js" names="codeBlockBuffer"
-import from="../signals/ghost-text.js" names="getGhostCompletion"
 import from="../signals/app-state.js" names="startCommandReplState,finishReplState,cancelReplState"
 import from="../signals/app-state.js" names="ReplStateState" types=true
 import from="../signals/paste-handler.js" names="processPasteContent,expandPastePlaceholders"
 import from="../signals/dispatch.js" names="dispatchIntent,handleModeSwitch"
 import from="../signals/dispatch.js" names="DispatchCallbacks" types=true
-import from="../signals/output.js" names="handleOutputEvent,clearPermissionQueue"
-import from="../signals/output.js" names="OutputActions,OutputState" types=true
+import from="../signals/output.js" names="handleOutputEvent,clearPermissionQueue,clearThinkingBuffer"
+import from="../signals/output.js" names="OutputActions,OutputState,AgentProgressSnapshot,StreamingEntry" types=true
 import from="../signals/app-input.js" names="cleanInputValue,cleanSubmitValue,findInputChange,navigateHistory,resolveEscapeAction,shouldQueuePlanModeOnTab"
+import from="../signals/keyboard.js" names="resolveKeyboardInput"
+import from="../signals/block-archive.js" names="makeBlockArchivePath,appendBlockWithCap"
 import from="../blocks/review.js" names="handleReviewAction"
-import from="../../components.js" names="SpinnerBlock,EngineProgressView,StatusBar,CesarStatusStrip,OutputBlockView,ToolCallGroup,DebateGroup,BidGroup,SlashPicker,EnginePicker,ModelPicker,ReviewBlock,BackgroundJobRail,RenderedSegments,CesarPicker,contentWidth,engineColor"
+import from="../blocks/engine.js" names="DashboardView,OutputBlockView"
+import from="../blocks/plan-view.js" names="PlanProposalView"
+import from="../cesar/session.js" names="saveCesarConversationSnapshot"
+import from="../../components.js" names="SpinnerBlock,StatusBar,CesarStatusStrip,EnginePicker,ModelPicker,ReviewBlock,BackgroundJobRail,CesarPicker,ComposerView,AgentProgressView,contentWidth,color256toHex,engineColor,CODE_RAIL,CODE_RAIL_COLOR,MAX_CODE_LINES,LOGO_LINES,VERSION,BRAND"
+import from="./app-views.js" names="ChromeBar,HistoryView,StreamingView,ToolDetailBlock"
 import from="../../components.js" names="OutputBlock,ReviewEvent" types=true
 import from="node:path" names="join,dirname"
 import from="node:url" names="fileURLToPath"
 import from="node:fs" names="readdirSync,writeFileSync,mkdirSync,unlinkSync"
-import from="node:os" names="homedir,tmpdir"
+import from="node:os" names="tmpdir"
 import from="node:child_process" names="spawnSync"
+import from="node:stream" names="PassThrough"
 import from="../models/session-results.js" names="sessionResultStore"
 import from="../blocks/results-formatter.js" names="formatSessionResults,formatChatTranscript"
 import from="@agon/core" names="loadSkills"
+import from="../../input-utils.js" names="parseMouseChunk,isTerminalFocusReport"
+import from="../../stable-input.js" names="useStableInput"
+import from="../blocks/rich-text.js" names="parseProseToRichLines"
+
+fn name=isMutatingToolCall params="event:any" returns=boolean
+  handler <<<
+    if (!event || event.type !== 'tool-call') return false;
+    const toolKey = String(event.tool ?? '').toLowerCase();
+    if (['edit', 'write', 'update', 'applypatch', 'apply_patch'].includes(toolKey)) return true;
+    if (typeof event.input !== 'string' || !event.input.trim().startsWith('{')) return false;
+    try {
+      const parsed = JSON.parse(event.input);
+      return !!(
+        parsed.file_path ||
+        parsed.filePath ||
+        (parsed.path && (parsed.content || parsed.new_string || parsed.newString || parsed.old_string || parsed.oldString))
+      );
+    } catch {
+      return false;
+    }
+  >>>
+
+fn name=shortToolPath params="filePath:string" returns=string
+  handler <<<
+    return String(filePath ?? '').replace(`${process.cwd()}/`, '').replace(process.env.HOME ?? '', '~');
+  >>>
+
+fn name=parseToolCallPayload params="event:any" returns=any
+  handler <<<
+    const rawInput = String(event?.input ?? '');
+    let parsed: Record<string, unknown> = {};
+    try {
+      if (rawInput.trim().startsWith('{')) parsed = JSON.parse(rawInput);
+    } catch {
+      parsed = {};
+    }
+    return {
+      rawInput,
+      parsed,
+      toolKey: String(event?.tool ?? '').toLowerCase(),
+    };
+  >>>
+
+fn name=toolPreviewWindow params="lineCount:number, expanded:boolean" returns=any
+  handler <<<
+    if (lineCount <= 0) return { head: 0, tail: 0, skipped: 0 };
+    const headLimit = expanded ? 10 : 3;
+    const tailLimit = expanded && lineCount > 18 ? 4 : 0;
+    const showTail = tailLimit > 0 && lineCount > headLimit + tailLimit;
+    const head = expanded
+      ? Math.min(lineCount, showTail ? headLimit : lineCount)
+      : Math.min(lineCount, headLimit);
+    const tail = showTail ? tailLimit : 0;
+    return {
+      head,
+      tail,
+      skipped: Math.max(0, lineCount - head - tail),
+    };
+  >>>
+
+fn name=toolCallSupportsDetailView params="event:any" returns=boolean
+  handler <<<
+    if (!event || event.type !== 'tool-call') return false;
+    const { rawInput, parsed, toolKey } = parseToolCallPayload(event);
+    if (['edit', 'update', 'write', 'applypatch', 'apply_patch'].includes(toolKey)) return true;
+
+    const outputText = String(event.output ?? '');
+    const outputLines = outputText ? outputText.split('\n').length : 0;
+
+    if (toolKey === 'bash' || toolKey === 'run') {
+      const command = String((parsed.command as string) || rawInput || '');
+      return command.split('\n').length > 3 || outputLines > 12 || outputText.length > 500;
+    }
+    if (toolKey === 'read') return outputLines > 12 || outputText.length > 500;
+    if (toolKey === 'grep' || toolKey === 'search' || toolKey === 'glob' || toolKey === 'find') {
+      return outputLines > 10 || outputText.length > 400;
+    }
+    return rawInput.length > 160 || outputText.length > 400;
+  >>>
+
+fn name=detailViewerSupportsEvent params="event:any" returns=boolean
+  handler <<<
+    if (!event) return false;
+    if (event.type === 'permission-ask') {
+      const command = String(event.command ?? '');
+      return command.split('\n').length > 4 || command.length > 180;
+    }
+    return toolCallSupportsDetailView(event);
+  >>>
+
+fn name=toolDetailViewportRows params="termHeight:number" returns=number
+  handler <<<
+    return Math.max(8, Math.min(18, termHeight - 14));
+  >>>
+
+fn name=findLatestToolDetailEvent params="blocks:OutputBlock[]" returns=any
+  handler <<<
+    for (let index = blocks.length - 1; index >= 0; index -= 1) {
+      const event = blocks[index]?.event as any;
+      // Tool-calls are bundled into tool-call-group blocks once finalized.
+      // Dig into the group to find the latest individual tool event so
+      // Ctrl+O (openLatestToolDetail) still works on grouped history.
+      if (event?.type === 'tool-call-group' && Array.isArray(event.blocks)) {
+        for (let g = event.blocks.length - 1; g >= 0; g -= 1) {
+          const inner = event.blocks[g]?.event;
+          if (detailViewerSupportsEvent(inner)) return inner;
+        }
+        continue;
+      }
+      if (!detailViewerSupportsEvent(event)) continue;
+      return event;
+    }
+    return null;
+  >>>
+
+fn name=buildToolDetailView params="event:any" returns=any
+  handler <<<
+    if (!event) {
+      return { title: 'Detail viewer', subtitle: '', accentColor: '#a78bfa', rows: [] };
+    }
+
+    const ic = icons();
+    const accentColor = engineColor(event.engineId ?? '') || '#a78bfa';
+    const codeWidth = contentWidth(12);
+    const rows: any[] = [];
+    const pushSegmentsRow = (suffix: string, segments: any[], paddingLeft = 1) => {
+      rows.push({ key: `tool-detail-${suffix}`, kind: 'segments', paddingLeft, segments });
+    };
+    const pushSyntaxLines = (suffix: string, lines: string[], prefixText = '    ') => {
+      lines.forEach((line: string, index: number) => {
+        rows.push({
+          key: `tool-detail-${suffix}-${index}`,
+          kind: 'syntax',
+          paddingLeft: 1,
+          prefixText,
+          prefixDimColor: true,
+          text: line,
+          maxWidth: codeWidth,
+        });
+      });
+    };
+    const pushAnsiLines = (suffix: string, lines: string[], color = '') => {
+      lines.forEach((line: string, index: number) => {
+        if (color) {
+          pushSegmentsRow(`${suffix}-${index}`, [
+            { text: '    ', dimColor: true },
+            { text: truncateCodeLine(line, codeWidth), color },
+          ]);
+          return;
+        }
+        rows.push({
+          key: `tool-detail-${suffix}-${index}`,
+          kind: 'ansi',
+          paddingLeft: 1,
+          prefixText: '    ',
+          prefixDimColor: true,
+          text: line,
+          maxWidth: codeWidth,
+          fallbackDim: true,
+        });
+      });
+    };
+
+    if (event.type === 'permission-ask') {
+      const command = String(event.command ?? '');
+      const commandLines = command ? command.split('\n') : [];
+      const description = String(event.description ?? '').trim();
+      const reason = String(event.reason ?? '').trim();
+      if (description) pushSegmentsRow('permission-description', [{ text: description, dimColor: true }]);
+      if (reason) pushSegmentsRow('permission-reason', [{ text: reason, color: '#fbbf24' }]);
+      if (commandLines.length > 0) {
+        pushSegmentsRow('permission-command-label', [{ text: 'Command', color: '#f59e0b', bold: true }]);
+        commandLines.forEach((line: string, index: number) => {
+          rows.push({
+            key: `tool-detail-permission-${index}`,
+            kind: 'syntax',
+            paddingLeft: 1,
+            prefixText: index === 0 ? '    $ ' : '      ',
+            prefixDimColor: true,
+            text: line,
+            maxWidth: codeWidth,
+          });
+        });
+      }
+      return {
+        title: `${String(event.tool ?? 'Command')} approval`,
+        subtitle: `${commandLines.length || 1} command line${commandLines.length === 1 ? '' : 's'}`,
+        accentColor: '#fbbf24',
+        rows,
+      };
+    }
+
+    const { rawInput, parsed, toolKey } = parseToolCallPayload(event);
+    const outputLines = String(event.output ?? '').split('\n').filter((line: string, index: number, all: string[]) => line.length > 0 || all.length === 1);
+    const defaultLabel = (() => {
+      if (toolKey === 'bash' || toolKey === 'run') return `${ic.bash} Bash`;
+      if (toolKey === 'edit' || toolKey === 'update') return `${ic.edit} Update`;
+      if (toolKey === 'write') return `${ic.write} Write`;
+      if (toolKey === 'read') return `${ic.read} Read`;
+      if (toolKey === 'grep' || toolKey === 'search') return `${ic.search} Search`;
+      if (toolKey === 'glob' || toolKey === 'find') return `${ic.find} Find`;
+      return `${ic.tool} ${event.tool ?? 'Tool'}`;
+    })();
+    let title = defaultLabel;
+    const subtitleParts: string[] = [];
+    if (event.engineId) subtitleParts.push(String(event.engineId));
+    if (event.status) subtitleParts.push(String(event.status));
+
+    if (toolKey === 'bash' || toolKey === 'run') {
+      const command = String((parsed.command as string) || rawInput || '');
+      const desc = String((parsed.description as string) || '').trim();
+      const commandLines = command ? command.split('\n') : [];
+      title = `${defaultLabel}${desc ? ` · ${truncateCodeLine(desc, 48)}` : commandLines[0] ? ` · ${truncateCodeLine(commandLines[0], 48)}` : ''}`;
+      subtitleParts.push(`${commandLines.length || 1} command line${commandLines.length === 1 ? '' : 's'}`);
+      if (outputLines.length > 0) subtitleParts.push(`${outputLines.length} output line${outputLines.length === 1 ? '' : 's'}`);
+      if (desc) pushSegmentsRow('bash-desc', [{ text: desc, dimColor: true }]);
+      if (commandLines.length > 0) {
+        pushSegmentsRow('bash-command-label', [{ text: 'Command', color: '#f59e0b', bold: true }]);
+        commandLines.forEach((line: string, index: number) => {
+          rows.push({
+            key: `tool-detail-bash-command-${index}`,
+            kind: 'syntax',
+            paddingLeft: 1,
+            prefixText: index === 0 ? '    $ ' : '      ',
+            prefixDimColor: true,
+            text: line,
+            maxWidth: codeWidth,
+          });
+        });
+      }
+      if (outputLines.length > 0) {
+        pushSegmentsRow('bash-output-label', [{ text: 'Output', color: event.status === 'error' ? '#ef4444' : '#9ca3af', bold: true }]);
+        pushAnsiLines('bash-output', outputLines, event.status === 'error' ? '#ef4444' : '');
+      }
+    } else if (toolKey === 'edit' || toolKey === 'update') {
+      const filePath = String((parsed.file_path as string) || (parsed.filePath as string) || '');
+      const oldLines = String((parsed.old_string as string) || (parsed.oldString as string) || '').split('\n');
+      const newLines = String((parsed.new_string as string) || (parsed.newString as string) || '').split('\n');
+      title = `${defaultLabel}${filePath ? ` · ${shortToolPath(filePath)}` : ''}`;
+      subtitleParts.push(`-${oldLines.length} +${newLines.length} lines`);
+      pushSegmentsRow('edit-summary', [
+        { text: `-${oldLines.length}`, color: '#ef4444' },
+        { text: ' ', dimColor: true },
+        { text: `+${newLines.length}`, color: '#4ade80' },
+        { text: ' lines', dimColor: true },
+      ]);
+      oldLines.filter((line: string, index: number, all: string[]) => line.length > 0 || all.length === 1).forEach((line: string, index: number) => {
+        rows.push({ key: `tool-detail-edit-old-${index}`, kind: 'diff', paddingLeft: 1, text: `-${line}`, maxWidth: codeWidth });
+      });
+      newLines.filter((line: string, index: number, all: string[]) => line.length > 0 || all.length === 1).forEach((line: string, index: number) => {
+        rows.push({ key: `tool-detail-edit-new-${index}`, kind: 'diff', paddingLeft: 1, text: `+${line}`, maxWidth: codeWidth });
+      });
+    } else if (toolKey === 'write') {
+      const filePath = String((parsed.file_path as string) || (parsed.filePath as string) || '');
+      const lines = String((parsed.content as string) || '').split('\n');
+      title = `${defaultLabel}${filePath ? ` · ${shortToolPath(filePath)}` : ''}`;
+      subtitleParts.push(`+${lines.length} lines`);
+      pushSegmentsRow('write-summary', [
+        { text: `+${lines.length}`, color: '#4ade80' },
+        { text: ' lines', dimColor: true },
+      ]);
+      lines.filter((line: string, index: number, all: string[]) => line.length > 0 || all.length === 1).forEach((line: string, index: number) => {
+        rows.push({ key: `tool-detail-write-${index}`, kind: 'diff', paddingLeft: 1, text: `+${line}`, maxWidth: codeWidth });
+      });
+    } else if (toolKey === 'read') {
+      const filePath = String((parsed.file_path as string) || (parsed.filePath as string) || '');
+      title = `${defaultLabel}${filePath ? ` · ${shortToolPath(filePath)}` : ''}`;
+      if (outputLines.length > 0) subtitleParts.push(`${outputLines.length} lines`);
+      pushSyntaxLines('read', outputLines);
+    } else if (toolKey === 'grep' || toolKey === 'search') {
+      const pattern = String((parsed.pattern as string) || rawInput || '');
+      const path = String((parsed.path as string) || '');
+      title = `${defaultLabel}${pattern ? ` · ${truncateCodeLine(pattern, 42)}` : ''}`;
+      if (path) subtitleParts.push(shortToolPath(path));
+      if (outputLines.length > 0) subtitleParts.push(`${outputLines.length} matches`);
+      pushAnsiLines('search', outputLines);
+    } else if (toolKey === 'glob' || toolKey === 'find') {
+      const pattern = String((parsed.pattern as string) || rawInput || '');
+      title = `${defaultLabel}${pattern ? ` · ${truncateCodeLine(pattern, 42)}` : ''}`;
+      if (outputLines.length > 0) subtitleParts.push(`${outputLines.length} files`);
+      pushSyntaxLines('find', outputLines);
+    } else {
+      const inputLines = rawInput ? rawInput.split('\n') : [];
+      title = defaultLabel;
+      if (inputLines.length > 0) {
+        pushSegmentsRow('generic-input-label', [{ text: 'Input', color: '#9ca3af', bold: true }]);
+        pushSyntaxLines('generic-input', inputLines);
+      }
+      if (outputLines.length > 0) {
+        pushSegmentsRow('generic-output-label', [{ text: 'Output', color: '#9ca3af', bold: true }]);
+        pushSyntaxLines('generic-output', outputLines);
+      }
+    }
+
+    return {
+      title,
+      subtitle: subtitleParts.join(' · '),
+      accentColor,
+      rows,
+    };
+  >>>
 
 // ── Module-level mutable refs for SIGINT ──
 const name=_activeAborts type="Set<AbortController>"
@@ -49,22 +355,1537 @@ const name=_cancelCallback type="{ fn: (() => void) | null }"
 const name=_cesarSessionRef type="{ session: PersistentSession | null }"
   handler <<< { session: null } >>>
 
+const name=_lastSigintAt type="{ value: number }"
+  handler <<< { value: 0 } >>>
+
+fn name=createInkStdoutProxy returns=any
+  handler <<<
+    const proxy = new PassThrough();
+    (proxy as any).isTTY = process.stdout.isTTY;
+    (proxy as any).columns = process.stdout.columns || 100;
+    // Keep Ink off its clearTerminal fallback path (ink.js:121). Primary
+    // defense: rows=10000 makes outputHeight >= rows impossible to hit.
+    // Secondary defense: strip ESC[3J (the scrollback-destroying part of
+    // ansi-escapes.clearTerminal) from anything that flows through, so a
+    // future Ink change or any other caller can't wipe native scrollback.
+    (proxy as any).rows = 10000;
+    proxy.on('data', (chunk: Buffer | string) => {
+      const s = typeof chunk === 'string' ? chunk : chunk.toString('utf8');
+      const cleaned = s.includes('\x1b[3J') ? s.replace(/\x1b\[3J/g, '') : s;
+      process.stdout.write(cleaned);
+    });
+
+    process.stdout.on('resize', () => {
+      (proxy as any).columns = process.stdout.columns || 100;
+      proxy.emit('resize');
+    });
+
+    return proxy;
+  >>>
+
+fn name=createInitialRegistry returns=EngineRegistry
+  handler <<<
+    const reg = new EngineRegistry();
+    const engDir = join(dirname(fileURLToPath(import.meta.url)), '../../../engines');
+    reg.load(engDir);
+    return reg;
+  >>>
+
+fn name=resolveTerminalMode params="config?:any" returns="'native'|'fullscreen'"
+  handler <<<
+    if (process.env.AGON_DISABLE_FULLSCREEN === '1' || process.env.AGON_NATIVE_TERMINAL === '1') return 'native';
+    if (process.env.AGON_FULLSCREEN === '0' || process.env.AGON_ALT_SCREEN === '0') return 'native';
+    if (process.env.AGON_FULLSCREEN === '1' || process.env.AGON_ALT_SCREEN === '1') return 'fullscreen';
+    return String(config?.terminalMode ?? loadConfig().terminalMode ?? 'fullscreen') === 'fullscreen' ? 'fullscreen' : 'native';
+  >>>
+
+fn name=isFullscreenEnabled params="config?:any" returns=boolean
+  handler <<<
+    return resolveTerminalMode(config) === 'fullscreen';
+  >>>
+
+fn name=isMouseTrackingEnabled params="config?:any" returns=boolean
+  handler <<<
+    if (process.env.AGON_DISABLE_MOUSE === '1' || process.env.AGON_DISABLE_MOUSE_SCROLL === '1') return false;
+    if (process.env.AGON_ENABLE_MOUSE_SCROLL === '0') return false;
+    if (process.env.AGON_ENABLE_MOUSE_SCROLL === '1') return true;
+    return isFullscreenEnabled(config);
+  >>>
+
+fn name=terminalEnterSequence params="useAltScreen:boolean, useMouse:boolean" returns=string
+  handler <<<
+    // On alt-screen enter, follow ESC[?1049h with ESC[2J ESC[H so Ink starts
+    // rendering at row 1 instead of wherever the shell left the cursor. Some
+    // terminals (or shell configs that emit content before agon launches)
+    // leave the cursor mid-screen even after alt-screen activation, which
+    // made the dashboard appear ~50% down the viewport with a large blank
+    // region above. Fix verified by codex via TTY capture.
+    return `${useAltScreen ? '\x1b[?1049h\x1b[2J\x1b[H' : ''}\x1b[?2004h${useMouse ? '\x1b[?1000h\x1b[?1002h\x1b[?1006h' : ''}`;
+  >>>
+
+fn name=terminalExitSequence params="useAltScreen:boolean" returns=string
+  handler <<<
+    return `\x1b[?1000l\x1b[?1002l\x1b[?1006l\x1b[?2004l${useAltScreen ? '\x1b[?1049l' : ''}`;
+  >>>
+
+fn name=resetViewportSequence returns=string export=true
+  handler <<<
+    // Clear only the visible viewport and home the cursor. Unlike ESC[3J,
+    // this preserves terminal scrollback for native scrolling.
+    return '\x1b[2J\x1b[H';
+  >>>
+
+fn name=drainStdinBuffer returns=void
+  handler <<<
+    if (!process.stdin.isTTY || typeof process.stdin.read !== 'function') return;
+    let chunk: string | Buffer | null;
+    do {
+      chunk = process.stdin.read();
+    } while (chunk !== null);
+  >>>
+
+fn name=maxScrollOffsetForBlockCount params="blockCount:number, blockBudget:number" returns=number
+  handler <<<
+    return Math.max(0, blockCount - Math.max(1, blockBudget));
+  >>>
+
+fn name=maxScrollOffsetForRowCount params="rowCount:number, rowBudget:number" returns=number
+  handler <<<
+    return Math.max(0, rowCount - Math.max(1, rowBudget));
+  >>>
+
+fn name=nextWheelAnimationStep params="pending:number" returns="{step:number,remaining:number}" export=true
+  handler <<<
+    if (!Number.isFinite(pending) || pending === 0) return { step: 0, remaining: 0 };
+    const direction = pending > 0 ? 1 : -1;
+    const magnitude = Math.abs(pending);
+    const stepSize = magnitude >= 16 ? 6 : magnitude >= 10 ? 5 : magnitude >= 6 ? 4 : magnitude >= 3 ? 2 : 1;
+    const step = direction * Math.min(stepSize, magnitude);
+    return { step, remaining: pending - step };
+  >>>
+
+fn name=clampNumber params="value:number, min:number, max:number" returns=number
+  handler <<<
+    return Math.min(max, Math.max(min, value));
+  >>>
+
+fn name=charDisplayWidth params="char:string" returns=number
+  handler <<<
+    if (!char) return 0;
+    const codePoint = char.codePointAt(0) ?? 0;
+    if (codePoint === 0) return 0;
+    if (codePoint < 32 || (codePoint >= 0x7f && codePoint < 0xa0)) return 0;
+    if (
+      (codePoint >= 0x0300 && codePoint <= 0x036f)
+      || (codePoint >= 0x1ab0 && codePoint <= 0x1aff)
+      || (codePoint >= 0x1dc0 && codePoint <= 0x1dff)
+      || (codePoint >= 0x20d0 && codePoint <= 0x20ff)
+      || (codePoint >= 0xfe20 && codePoint <= 0xfe2f)
+    ) {
+      return 0;
+    }
+    if (
+      codePoint === 0x2329
+      || codePoint === 0x232a
+      || (codePoint >= 0x1100 && codePoint <= 0x115f)
+      || (codePoint >= 0x2e80 && codePoint <= 0xa4cf && codePoint !== 0x303f)
+      || (codePoint >= 0xac00 && codePoint <= 0xd7a3)
+      || (codePoint >= 0xf900 && codePoint <= 0xfaff)
+      || (codePoint >= 0xfe10 && codePoint <= 0xfe19)
+      || (codePoint >= 0xfe30 && codePoint <= 0xfe6f)
+      || (codePoint >= 0xff00 && codePoint <= 0xff60)
+      || (codePoint >= 0xffe0 && codePoint <= 0xffe6)
+      || (codePoint >= 0x1f300 && codePoint <= 0x1f64f)
+      || (codePoint >= 0x1f900 && codePoint <= 0x1f9ff)
+      || (codePoint >= 0x20000 && codePoint <= 0x3fffd)
+    ) {
+      return 2;
+    }
+    return 1;
+  >>>
+
+fn name=stringDisplayWidth params="text:string" returns=number export=true
+  handler <<<
+    let width = 0;
+    for (const char of Array.from(String(text ?? ''))) {
+      width += charDisplayWidth(char);
+    }
+    return width;
+  >>>
+
+fn name=displayColumnToStringIndex params="text:string, targetColumn:number" returns=number export=true
+  handler <<<
+    const value = String(text ?? '');
+    if (!Number.isFinite(targetColumn) || targetColumn <= 0) return 0;
+    let displayColumn = 0;
+    let stringIndex = 0;
+    for (const char of Array.from(value)) {
+      const width = charDisplayWidth(char);
+      const nextDisplayColumn = displayColumn + width;
+      if (targetColumn < nextDisplayColumn) return stringIndex;
+      stringIndex += char.length;
+      if (targetColumn === nextDisplayColumn) return stringIndex;
+      displayColumn = nextDisplayColumn;
+    }
+    return value.length;
+  >>>
+
+fn name=normalizeRowSelection params="anchor:number|null, focus:number|null" returns="{start:number,end:number}|null"
+  handler <<<
+    if (anchor === null || focus === null) return null;
+    return { start: Math.min(anchor, focus), end: Math.max(anchor, focus) };
+  >>>
+
+fn name=normalizeTextSelection params="anchorRow:number|null, anchorCol:number|null, focusRow:number|null, focusCol:number|null" returns="{startRow:number,startCol:number,endRow:number,endCol:number}|null"
+  handler <<<
+    if (anchorRow === null || anchorCol === null || focusRow === null || focusCol === null) return null;
+    if (anchorRow < focusRow) return { startRow: anchorRow, startCol: anchorCol, endRow: focusRow, endCol: focusCol };
+    if (anchorRow > focusRow) return { startRow: focusRow, startCol: focusCol, endRow: anchorRow, endCol: anchorCol };
+    if (anchorCol <= focusCol) return { startRow: anchorRow, startCol: anchorCol, endRow: focusRow, endCol: focusCol };
+    return { startRow: focusRow, startCol: focusCol, endRow: anchorRow, endCol: anchorCol };
+  >>>
+
+fn name=richLineToPlainText params="line:any" returns=string
+  handler <<<
+    if (!line) return '';
+    if (line.kind === 'blank') return '';
+    if (line.kind === 'hr') return '─'.repeat(40);
+
+    const spanText = Array.isArray(line.spans)
+      ? line.spans.map((span: any) => `${span.text ?? ''}${span?.style?.linkUrl ? ` (${span.style.linkUrl})` : ''}`).join('')
+      : '';
+    const indent = line.indent > 0 ? '  '.repeat(line.indent) : '';
+
+    if (line.kind === 'h1') return `${indent}# ${spanText}`;
+    if (line.kind === 'h2') return `${indent}## ${spanText}`;
+    if (line.kind === 'h3') return `${indent}### ${spanText}`;
+    if (line.kind === 'blockquote') return `${indent}| ${spanText}`;
+
+    const marker = line.marker ?? '';
+    const listIndent = (line.kind === 'bullet' || line.kind === 'ordered') && !indent ? ' ' : '';
+    return `${indent}${listIndent}${marker}${spanText}`;
+  >>>
+
+fn name=transcriptRowToPlainText params="row:any" returns=string
+  handler <<<
+    if (!row) return '';
+    if (row.kind === 'spacer') return '';
+    if (row.kind === 'gradient') return String(row.text ?? '');
+    if (row.kind === 'rich') return richLineToPlainText(row.richLine);
+    if (row.kind === 'segments') {
+      return Array.isArray(row.segments) ? row.segments.map((segment: any) => segment?.text ?? '').join('') : '';
+    }
+
+    const prefix = String(row.prefixText ?? '');
+    const text = String(row.text ?? '');
+    return `${prefix}${text}`;
+  >>>
+
+fn name=transcriptRowTextStartColumn params="row:any" returns=number
+  handler <<<
+    const paddingLeft = Math.max(0, Number(row?.paddingLeft ?? 0));
+    const borderColumns = row?.borderColor ? 2 : 0;
+    return paddingLeft + borderColumns + 2;
+  >>>
+
+fn name=resolveTranscriptColumnFromMouse params="mouseX:number, row:any" returns=number
+  handler <<<
+    const text = transcriptRowToPlainText(row);
+    const startColumn = transcriptRowTextStartColumn(row);
+    if (!Number.isFinite(mouseX) || !text) return 0;
+    const targetColumn = clampNumber(mouseX - startColumn, 0, stringDisplayWidth(text));
+    return displayColumnToStringIndex(text, targetColumn);
+  >>>
+
+fn name=transcriptRowsToPlainText params="rows:any[], anchorRow:number|null, anchorCol:number|null, focusRow:number|null, focusCol:number|null" returns=string export=true
+  handler <<<
+    const range = normalizeTextSelection(anchorRow, anchorCol, focusRow, focusCol);
+    if (!range) return '';
+    const lines: string[] = [];
+    for (let rowIndex = range.startRow; rowIndex <= range.endRow; rowIndex += 1) {
+      const row = rows[rowIndex];
+      const text = transcriptRowToPlainText(row);
+      if (rowIndex === range.startRow && rowIndex === range.endRow) {
+        lines.push(text.slice(range.startCol, range.endCol));
+        continue;
+      }
+      if (rowIndex === range.startRow) {
+        lines.push(text.slice(range.startCol));
+        continue;
+      }
+      if (rowIndex === range.endRow) {
+        lines.push(text.slice(0, range.endCol));
+        continue;
+      }
+      lines.push(text);
+    }
+    return lines.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd();
+  >>>
+
+fn name=transcriptViewportTopLine params="mode:string, hasJobs:boolean, rowBudget:number, visibleRowCount:number, hasIndicator:boolean, stickToBottom:boolean" returns=number
+  handler <<<
+    let top = 1;
+    if (mode !== 'chat') top += 1;
+    if (hasJobs) top += 1;
+    const contentRows = visibleRowCount + (hasIndicator ? 1 : 0);
+    const slack = stickToBottom ? Math.max(0, rowBudget - contentRows) : 0;
+    return top + slack;
+  >>>
+
+fn name=resolveTranscriptRowFromMouse params="mouseY:number, viewportTopLine:number, firstVisibleRow:number, visibleRowCount:number" returns="number|null"
+  handler <<<
+    if (visibleRowCount <= 0) return null;
+    const offset = mouseY - viewportTopLine;
+    if (!Number.isFinite(offset)) return null;
+    const clamped = clampNumber(offset, 0, visibleRowCount - 1);
+    return firstVisibleRow + clamped;
+  >>>
+
+fn name=estimateVisibleBlockBudget params="rows:number, mode:string, overlayReservedRows:number" returns=number
+  handler <<<
+    // Chat mode keeps 7 rows for the composer/status chrome at minimum:
+    // margin + bordered composer (3) + Cesar strip + two-line status bar.
+    // Using 6 makes the startup dashboard overflow by one line.
+    const reservedRows = (mode === 'chat' ? 7 : 8) + Math.max(0, overlayReservedRows);
+    return Math.max(1, rows - reservedRows);
+  >>>
+
+fn name=estimateWrappedRowCount params="text:string, wrapWidth:number" returns=number export=true
+  handler <<<
+    const safeWidth = Math.max(1, wrapWidth);
+    const lines = String(text ?? '').split('\n');
+    let rowCount = 0;
+    for (const line of lines) {
+      rowCount += Math.max(1, Math.ceil(stringDisplayWidth(line) / safeWidth));
+    }
+    return Math.max(1, rowCount);
+  >>>
+
+fn name=estimateQuestionReservedRows params="questionState:any, termWidth:number" returns=number export=true
+  doc "Reserve extra transcript rows when the bottom composer is showing a multi-line question or permission card, so short terminals do not clip the actionable keys."
+  handler <<<
+    if (!questionState) return 0;
+    const safeWidth = Math.max(24, termWidth - 12);
+    const prompt = String(questionState.prompt ?? '').trim();
+    const promptRows = estimateWrappedRowCount(prompt, safeWidth);
+    const hasChoices = Array.isArray(questionState.choices) && questionState.choices.length > 0;
+    if (questionState.kind === 'permission') {
+      const command = String(questionState.command ?? '').trim();
+      const summary = String(questionState.reason ?? questionState.description ?? '').trim();
+      const commandIsLong = command.includes('\n') || command.length > safeWidth;
+      const summaryIsLong = summary.length > safeWidth;
+      return commandIsLong || summaryIsLong ? 4 : 3;
+    }
+    if (hasChoices) {
+      const inlineChoiceWidth = questionState.choices.reduce((sum: number, choice: any, index: number) => {
+        const key = String(choice?.key ?? '').toUpperCase();
+        const label = String(choice?.label ?? '').trim();
+        return sum + stringDisplayWidth(`[${key}] ${label}`.trim()) + (index > 0 ? 2 : 0);
+      }, 0);
+      if (questionState.choices.length <= 3 && inlineChoiceWidth <= safeWidth) {
+        return promptRows + 1;
+      }
+      const choiceRows = questionState.choices.reduce((sum: number, choice: any) => {
+        const key = String(choice?.key ?? '').toUpperCase();
+        const label = String(choice?.label ?? '').trim();
+        return sum + estimateWrappedRowCount(`[${key}] ${label}`.trim(), safeWidth);
+      }, 0);
+      return promptRows + Math.max(1, choiceRows);
+    }
+    return promptRows + 1;
+  >>>
+
+fn name=estimateBottomChromeExtraRows params="mode:string, questionState:any, termWidth:number, pendingImageCount:number, inputQueueCount:number, hasLiveSpinner:boolean" returns=number export=true
+  doc "Reserve extra rows above the base composer/status chrome for stacked prompt cards, queued-input badges, and chat spinner rows."
+  handler <<<
+    let extraRows = 0;
+    if (pendingImageCount > 0) extraRows += 1;
+    if (inputQueueCount > 0) extraRows += 1;
+    if (mode === 'chat' && hasLiveSpinner && !questionState) extraRows += 1;
+    extraRows += estimateQuestionReservedRows(questionState, termWidth);
+    return extraRows;
+  >>>
+
+fn name=buildDashboardBlock params="enabledOverride:string[]|null" returns=OutputBlock
+  handler <<<
+    const registry = createInitialRegistry();
+    const available = registry.availableIds();
+    const config = loadConfig();
+    const ratings = getRatings();
+    const defaultEngine = config.forgeFixedStarter ?? available[0] ?? 'none';
+    const activeWs = getActiveWorkspace();
+    const totalMatches = Object.values(ratings.global).reduce((sum: number, r: any) => sum + r.wins + r.losses, 0);
+    const sorted = Object.entries(ratings.global)
+      .map(([id, r]: any) => [id, { rating: Math.round(r.mu - 2 * r.phi) }] as const)
+      .sort(([, a], [, b]) => b.rating - a.rating);
+    const enabled = enabledOverride ?? available;
+    let runCount = 0;
+    try { runCount = readdirSync(RUNS_DIR).filter((f: string) => f.endsWith('.json')).length; } catch { /* runs dir missing — first run */ }
+
+    return {
+      id: 0,
+      event: {
+        type: 'dashboard' as const,
+        available,
+        enabled,
+        defaultEngine,
+        eloTop: sorted.length > 0 ? { id: sorted[0][0], rating: (sorted[0][1] as any).rating } : undefined,
+        totalForges: Math.floor(totalMatches / 2),
+        workspace: activeWs ? { name: activeWs.name, path: activeWs.path, isKern: activeWs.isKern } : undefined,
+        runCount,
+      },
+    };
+  >>>
+
+fn name=estimatePinnedLiveRows params="mode:string, hasStream:boolean, hasProgress:boolean, agentCount:number" returns=number
+  handler <<<
+    const streamRows = hasStream ? (mode === 'chat' ? 3 : 6) : 0;
+    const progressRows = hasProgress ? (mode === 'chat' ? 3 : 5) : 0;
+    const agentRows = agentCount > 0 ? Math.min(18, agentCount * 7) : 0;
+    return streamRows + progressRows + agentRows;
+  >>>
+
+fn name=estimateWrappedRows params="text:string, width:number" returns=number
+  handler <<<
+    const safeWidth = Math.max(1, width);
+    if (!text) return 0;
+    return text.split('\n').reduce((total: number, rawLine: string) => {
+      const line = rawLine.replace(/\u001b\[[0-9;]*m/g, '').replace(/\t/g, '    ');
+      return total + Math.max(1, Math.ceil(Math.max(1, line.length) / safeWidth));
+    }, 0);
+  >>>
+
+fn name=estimateToolCallRows params="event:any, toolOutputExpanded:boolean, codeWidth:number" returns=number
+  handler <<<
+    if (!event || event.type !== 'tool-call') return 0;
+    if (!event.input && !event.output && (event.tool === 'Delegate' || event.tool === 'delegate')) return 0;
+
+    const { rawInput, parsed, toolKey } = parseToolCallPayload(event);
+    const collapsed = !toolOutputExpanded;
+    if (collapsed && !['edit', 'write', 'update'].includes(toolKey)) return 1;
+
+    if (toolKey === 'bash' || toolKey === 'run') {
+      const cmd = (parsed.command as string) || rawInput || '';
+      const cmdLineCount = cmd ? cmd.split('\n').length : 0;
+      let rows = 1;
+      if (cmdLineCount > 0) rows += Math.min(3, cmdLineCount) + (cmdLineCount > 3 ? 1 : 0) + 1;
+      if (event.output && event.status !== 'running') {
+        const outputLineCount = event.output.split('\n').length;
+        const maxHead = outputLineCount > 80 ? 30 : 50;
+        const tailCount = 5;
+        const showTail = outputLineCount > maxHead + tailCount;
+        rows += 1 + Math.min(outputLineCount, maxHead);
+        if (showTail) rows += 1 + tailCount;
+      }
+      return rows;
+    }
+
+    if (toolKey === 'edit' || toolKey === 'update') {
+      const oldStr = (parsed.old_string as string) || (parsed.oldString as string) || '';
+      const newStr = (parsed.new_string as string) || (parsed.newString as string) || '';
+      const oldLines = oldStr ? oldStr.split('\n') : [];
+      const newLines = newStr ? newStr.split('\n') : [];
+      const oldWindow = toolPreviewWindow(oldLines.length, !collapsed);
+      const newWindow = toolPreviewWindow(newLines.length, !collapsed);
+      return 1
+        + oldWindow.head + oldWindow.tail + (oldWindow.skipped > 0 ? 1 : 0)
+        + newWindow.head + newWindow.tail + (newWindow.skipped > 0 ? 1 : 0);
+    }
+
+    if (toolKey === 'write') {
+      const content = (parsed.content as string) || '';
+      const lines = content ? content.split('\n') : [];
+      const window = toolPreviewWindow(lines.length, !collapsed);
+      return 1 + window.head + window.tail + (window.skipped > 0 ? 1 : 0);
+    }
+
+    if (toolKey === 'read') {
+      if (collapsed) return 1;
+      const lineCount = event.output ? String(event.output).split('\n').length : 0;
+      const shown = Math.min(12, lineCount);
+      return 1 + shown + (lineCount > shown ? 1 : 0);
+    }
+
+    if (toolKey === 'grep' || toolKey === 'search' || toolKey === 'glob' || toolKey === 'find') {
+      if (collapsed) return 1;
+      const lineCount = event.output ? String(event.output).split('\n').filter((line: string) => line.trim()).length : 0;
+      const shown = Math.min(10, lineCount);
+      return 1 + shown + (lineCount > shown ? 1 : 0);
+    }
+
+    let rows = 1;
+    if (rawInput) rows += Math.min(3, estimateWrappedRows(rawInput, codeWidth));
+    if (event.output && event.status === 'done') rows += 1 + Math.min(6, estimateWrappedRows(event.output, codeWidth));
+    return rows;
+  >>>
+
+fn name=estimateOutputEventRows params="event:OutputEvent, mode:string, toolOutputExpanded:boolean, thinkingExpanded:boolean" returns=number
+  handler <<<
+    const proseWidth = contentWidth(4);
+    const chatWidth = contentWidth(2);
+    const engineWidth = contentWidth(8);
+    const codeWidth = contentWidth(10);
+
+    switch (event.type) {
+      case 'text':
+        return Math.max(1, estimateWrappedRows(event.content, proseWidth));
+      case 'user-message':
+        return Math.max(1, estimateWrappedRows(event.content, proseWidth));
+      case 'engine-block':
+        return mode === 'chat'
+          ? 2 + estimateWrappedRows(cleanEngineOutput(event.content), chatWidth)
+          : 4 + estimateWrappedRows(cleanEngineOutput(event.content), engineWidth);
+      case 'separator':
+        return 1;
+      case 'header':
+        return 2;
+      case 'success':
+      case 'warning':
+      case 'info':
+        return Math.max(1, estimateWrappedRows(event.message, proseWidth));
+      case 'error': {
+        const errLines = event.message.split('\n');
+        if (errLines.length <= 1) return 1;
+        return Math.min(7, errLines.length + 1);
+      }
+      case 'permission-ask': {
+        const commandRows = Math.min(6, String((event as any).command ?? '').split('\n').length);
+        const descriptionRows = (event as any).description ? 2 : 0;
+        return 6 + commandRows + descriptionRows;
+      }
+      case 'thinking-chunk':
+        if (thinkingExpanded === false) return 0;
+        return Math.min(4, Math.max(1, String(event.chunk ?? '').split('\n').filter((line: string) => line.trim()).length));
+      case 'streaming-chunk': {
+        const chunkText = String(event.chunk ?? '');
+        const isThinking = /^~?\d{1,3}%\s/.test(chunkText.trim());
+        if (isThinking && thinkingExpanded === false) return 0;
+        return Math.max(1, estimateWrappedRows(chunkText, proseWidth));
+      }
+      case 'kern-draft':
+        return 4 + estimateWrappedRows(cleanEngineOutput(event.content), engineWidth);
+      case 'debate-round':
+        return 4 + estimateWrappedRows(cleanEngineOutput(event.argument), engineWidth);
+      case 'verdict':
+        return Math.max(1, estimateWrappedRows(cleanEngineOutput(event.summary), proseWidth));
+      case 'scoreboard':
+        return 3 + event.metrics.length + (event.winner ? 1 : 0);
+      case 'plan':
+        return 4 + event.plan.steps.length + (event.plan.state === 'draft' ? 1 : 0);
+      case 'plan-list':
+        return Math.max(1, event.plans.length);
+      case 'plan-proposal':
+        return Math.max(4, estimateWrappedRows(String((event as any).markdown ?? ''), proseWidth));
+      case 'plan-execution':
+        return 6;
+      case 'table':
+        return 2 + event.rows.length;
+      case 'tool-call':
+        return estimateToolCallRows(event as any, toolOutputExpanded, codeWidth);
+      case 'response-meta':
+        return 1;
+      case 'file-changes':
+        return 1 + (((event as any).files as any[])?.length ?? 0);
+      case 'dashboard':
+        return 17;
+      case 'agent-step-start':
+      case 'agent-step-end':
+      case 'agent-turn-summary':
+      case 'agent-budget-warning':
+      case 'engine-switch':
+      case 'shadow-active':
+      case 'agent-routing':
+      case 'agent-team-start':
+      case 'agent-team-complete':
+        return 1;
+      case 'spinner-start':
+      case 'spinner-stop':
+      case 'spinner-update':
+      case 'progress-update':
+      case 'progress-clear':
+      case 'confidence-update':
+      case 'streaming-end':
+      case 'clear':
+      case 'question':
+      case 'patch-review':
+        return 0;
+      default:
+        return 1;
+    }
+  >>>
+
+fn name=buildDisplayItems params="blocks:OutputBlock[], toolOutputExpanded:boolean" returns="OutputBlock[]"
+  handler <<<
+    // Keep collapse as a per-block display concern, not a synthetic grouped
+    // scroll unit. Grouped tool summaries make wheel scrolling jump because
+    // one collapsed row can stand in for many logical rows.
+    return blocks;
+  >>>
+
+fn name=estimateDisplayItemRows params="item:OutputBlock, mode:string, toolOutputExpanded:boolean, thinkingExpanded:boolean" returns=number
+  handler <<<
+    return estimateOutputEventRows(item.event, mode, toolOutputExpanded, thinkingExpanded);
+  >>>
+
+fn name=historyBlocksForTranscript params="blocks:OutputBlock[]" returns="OutputBlock[]"
+  handler <<<
+    if (blocks.length === 1 && blocks[0]?.event?.type === 'dashboard') return [];
+    return blocks;
+  >>>
+
+fn name=parseMarkdownToRows params="baseKey:string, text:string, wrapWidth:number, paddingLeft:number, borderColor:string" returns="any[]"
+  handler <<<
+    const rows: any[] = [];
+    const cleaned = String(text ?? '').trim();
+    if (!cleaned) return rows;
+
+    const codeWidth = contentWidth(8);
+    const segments = parseMarkdownBlocks(cleaned);
+    let rowIndex = 0;
+
+    for (const segment of segments as any[]) {
+      if (segment.type === 'prose') {
+        const richLines = parseProseToRichLines(segment.text ?? '', wrapWidth);
+        for (const richLine of richLines) {
+          rows.push({
+            key: `${baseKey}-rich-${rowIndex++}`,
+            kind: 'rich',
+            paddingLeft,
+            richLine,
+            borderColor,
+          });
+        }
+        continue;
+      }
+
+      if (segment.type === 'code') {
+        const codeLines = String(segment.code ?? '').split('\n');
+        const shownLines = codeLines.slice(0, MAX_CODE_LINES);
+        const overflow = codeLines.length - shownLines.length;
+        const isDiff = segment.language === 'diff' || codeLines.some((line: string) => /^[+\-@]/.test(line));
+
+        rows.push({
+          key: `${baseKey}-code-meta-${rowIndex++}`,
+          kind: 'segments',
+          paddingLeft,
+          borderColor,
+          segments: [
+            { text: CODE_RAIL, color: CODE_RAIL_COLOR },
+            { text: ' ' },
+            { text: segment.language || 'code', dimColor: true },
+            segment.index !== undefined ? { text: ` [${segment.index}]`, color: '#585858' } : null,
+          ].filter(Boolean),
+        });
+
+        shownLines.forEach((line: string, index: number) => {
+          rows.push({
+            key: `${baseKey}-code-${rowIndex++}-${index}`,
+            kind: isDiff ? 'diff' : 'syntax',
+            paddingLeft,
+            borderColor,
+            prefixText: `${CODE_RAIL} `,
+            prefixColor: CODE_RAIL_COLOR,
+            text: line,
+            maxWidth: codeWidth,
+          });
+        });
+
+        if (overflow > 0) {
+          rows.push({
+            key: `${baseKey}-code-overflow-${rowIndex++}`,
+            kind: 'segments',
+            paddingLeft,
+            borderColor,
+            segments: [
+              { text: CODE_RAIL, color: CODE_RAIL_COLOR },
+              { text: ' ' },
+              { text: `… ${overflow} more lines`, dimColor: true },
+            ],
+          });
+        }
+        continue;
+      }
+
+      if (segment.type === 'table') {
+        const headers = (segment.headers ?? []) as string[];
+        const tableRows = (segment.rows ?? []) as string[][];
+        const headerLine = headers.join(' │ ');
+        const ruleWidth = Math.max(12, Math.min(wrapWidth, headerLine.length));
+
+        rows.push({
+          key: `${baseKey}-table-head-${rowIndex++}`,
+          kind: 'segments',
+          paddingLeft,
+          borderColor,
+          segments: [{ text: headerLine, bold: true }],
+        });
+        rows.push({
+          key: `${baseKey}-table-rule-${rowIndex++}`,
+          kind: 'segments',
+          paddingLeft,
+          borderColor,
+          segments: [{ text: '─'.repeat(ruleWidth), dimColor: true }],
+        });
+        tableRows.forEach((tableRow: string[], index: number) => {
+          rows.push({
+            key: `${baseKey}-table-row-${rowIndex++}-${index}`,
+            kind: 'segments',
+            paddingLeft,
+            borderColor,
+            segments: [{ text: tableRow.join(' │ ') }],
+          });
+        });
+      }
+    }
+
+    return rows;
+  >>>
+
+fn name=buildToolCallRows params="baseKey:string, event:any, toolOutputExpanded:boolean" returns="any[]"
+  handler <<<
+    if (!event.input && !event.output && (event.tool === 'Delegate' || event.tool === 'delegate')) return [];
+
+    const rows: any[] = [];
+    const ic = icons();
+    const toolColor = event.status === 'error' ? '#ef4444' : event.status === 'done' ? '#4ade80' : '#fbbf24';
+    const icon = event.status === 'error' ? ic.fail : event.status === 'done' ? ic.success : '⟳';
+    const eColor = engineColor(event.engineId ?? '');
+    const codeWidth = contentWidth(10);
+    const { rawInput, parsed, toolKey } = parseToolCallPayload(event);
+    const collapsed = !toolOutputExpanded;
+    const collapsedHint: any[] = [];
+    const nestSegment = { text: ' ⏿ ', color: eColor };
+    const pushSegmentsRow = (suffix: string, segments: any[], paddingLeft = 2) => {
+      rows.push({ key: `${baseKey}-${suffix}`, kind: 'segments', paddingLeft, segments });
+    };
+    const pushOpenHintRow = (suffix: string, text: string) => {
+      pushSegmentsRow(suffix, [
+        { text, dimColor: true },
+        { text: ' · ', dimColor: true },
+        { text: 'Ctrl+O full view', color: '#a78bfa' },
+      ]);
+    };
+    const pushDiffPreview = (suffix: string, lines: string[], sign: string, expanded: boolean, label: string) => {
+      if (!lines.length) return;
+      const window = toolPreviewWindow(lines.length, expanded);
+      const headLines = lines.slice(0, window.head);
+      const tailLines = window.tail > 0 ? lines.slice(-window.tail) : [];
+      headLines.forEach((line: string, index: number) => {
+        rows.push({
+          key: `${baseKey}-${suffix}-head-${index}`,
+          kind: 'diff',
+          paddingLeft: 2,
+          text: `${sign}${line}`,
+          maxWidth: codeWidth,
+        });
+      });
+      if (window.skipped > 0) {
+        pushOpenHintRow(`${suffix}-skip`, `    … ${window.skipped} more ${label} lines`);
+      }
+      tailLines.forEach((line: string, index: number) => {
+        rows.push({
+          key: `${baseKey}-${suffix}-tail-${index}`,
+          kind: 'diff',
+          paddingLeft: 2,
+          text: `${sign}${line}`,
+          maxWidth: codeWidth,
+        });
+      });
+    };
+
+    if (toolKey === 'bash' || toolKey === 'run') {
+      const cmd = String((parsed.command as string) || rawInput || '');
+      const desc = parsed.description as string | undefined;
+      if (collapsed) {
+        const outputLines = event.output ? String(event.output).split('\n').length : 0;
+        const previewSource = desc || cmd.split('\n')[0] || '';
+        const preview = previewSource.length > 60 ? `${previewSource.slice(0, 59)}…` : previewSource;
+        pushSegmentsRow('bash-collapsed', [
+          nestSegment,
+          { text: `${icon} Bash`, color: toolColor, bold: true },
+          preview ? { text: desc ? ' · ' : ' $ ', dimColor: true } : null,
+          preview ? { text: preview, dimColor: true } : null,
+          outputLines > 0 && event.status !== 'running' ? { text: ` → ${outputLines} lines`, dimColor: true } : null,
+          ...collapsedHint,
+        ].filter(Boolean));
+        return rows;
+      }
+
+      pushSegmentsRow('bash-head', [
+        nestSegment,
+        { text: `${icon} Bash`, color: toolColor, bold: true },
+        desc ? { text: ` · ${desc}`, dimColor: true } : null,
+      ].filter(Boolean));
+
+      const cmdLines = cmd ? cmd.split('\n') : [];
+      cmdLines.slice(0, 3).forEach((line: string, index: number) => {
+        pushSegmentsRow(`bash-cmd-${index}`, [
+          { text: `    ${index === 0 ? '$ ' : '  '}`, dimColor: true },
+          { text: truncateCodeLine(line, codeWidth) },
+        ]);
+      });
+      if (cmdLines.length > 3) {
+        pushSegmentsRow('bash-cmd-more', [{ text: '      …', dimColor: true }]);
+      }
+
+      if (event.output && event.status !== 'running') {
+        const outputLines = String(event.output).split('\n');
+        const maxHead = outputLines.length > 80 ? 30 : 50;
+        const tailCount = 5;
+        const showTail = outputLines.length > maxHead + tailCount;
+        const headLines = outputLines.slice(0, showTail ? maxHead : outputLines.length);
+        const tailLines = showTail ? outputLines.slice(-tailCount) : [];
+        const skipped = outputLines.length - headLines.length - tailLines.length;
+
+        pushSegmentsRow('bash-output-gap', [{ text: ' ', dimColor: true }]);
+        headLines.forEach((line: string, index: number) => {
+          if (event.status === 'error') {
+            pushSegmentsRow(`bash-err-${index}`, [
+              { text: '    ', dimColor: true },
+              { text: truncateCodeLine(line, codeWidth), color: '#ef4444' },
+            ]);
+            return;
+          }
+          rows.push({
+            key: `${baseKey}-bash-out-${index}`,
+            kind: 'ansi',
+            paddingLeft: 2,
+            prefixText: '    ',
+            prefixDimColor: true,
+            text: line,
+            maxWidth: codeWidth,
+            fallbackDim: true,
+          });
+        });
+        if (skipped > 0) {
+          pushOpenHintRow('bash-skip', `    … ${skipped} more lines …`);
+        }
+        tailLines.forEach((line: string, index: number) => {
+          if (event.status === 'error') {
+            pushSegmentsRow(`bash-tail-err-${index}`, [
+              { text: '    ', dimColor: true },
+              { text: truncateCodeLine(line, codeWidth), color: '#ef4444' },
+            ]);
+            return;
+          }
+          rows.push({
+            key: `${baseKey}-bash-tail-${index}`,
+            kind: 'ansi',
+            paddingLeft: 2,
+            prefixText: '    ',
+            prefixDimColor: true,
+            text: line,
+            maxWidth: codeWidth,
+            fallbackDim: true,
+          });
+        });
+      }
+      return rows;
+    }
+
+    if (toolKey === 'edit' || toolKey === 'update') {
+      const filePath = String((parsed.file_path as string) || (parsed.filePath as string) || '');
+      const oldStr = String((parsed.old_string as string) || (parsed.oldString as string) || '');
+      const newStr = String((parsed.new_string as string) || (parsed.newString as string) || '');
+      const shortPath = filePath ? shortToolPath(filePath) : '';
+      const oldLines = oldStr ? oldStr.split('\n') : [];
+      const newLines = newStr ? newStr.split('\n') : [];
+
+      pushSegmentsRow('edit-head', [
+        nestSegment,
+        { text: `${icon} ${ic.edit} Update`, color: toolColor, bold: true },
+        shortPath ? { text: ` (${shortPath})`, color: '#a78bfa' } : null,
+        { text: ' · ', dimColor: true },
+        { text: `-${oldLines.length}`, color: '#ef4444' },
+        { text: ' ', dimColor: true },
+        { text: `+${newLines.length}`, color: '#4ade80' },
+        { text: ' lines', dimColor: true },
+        ...collapsedHint,
+      ].filter(Boolean));
+      pushDiffPreview('edit-old', oldLines, '-', !collapsed, 'removed');
+      pushDiffPreview('edit-new', newLines, '+', !collapsed, 'added');
+      return rows;
+    }
+
+    if (toolKey === 'write') {
+      const filePath = String((parsed.file_path as string) || (parsed.filePath as string) || '');
+      const content = String((parsed.content as string) || '');
+      const shortPath = filePath ? shortToolPath(filePath) : '';
+      const lines = content ? content.split('\n') : [];
+
+      pushSegmentsRow('write-head', [
+        nestSegment,
+        { text: `${icon} ${ic.write} Write`, color: toolColor, bold: true },
+        shortPath ? { text: ` (${shortPath})`, color: '#a78bfa' } : null,
+        lines.length > 0 ? { text: ' · ', dimColor: true } : null,
+        lines.length > 0 ? { text: `+${lines.length}`, color: '#4ade80' } : null,
+        lines.length > 0 ? { text: ' lines', dimColor: true } : null,
+        ...collapsedHint,
+      ].filter(Boolean));
+      pushDiffPreview('write', lines, '+', !collapsed, 'added');
+      return rows;
+    }
+
+    if (toolKey === 'read') {
+      const filePath = String((parsed.file_path as string) || (parsed.filePath as string) || '');
+      const shortPath = filePath ? shortToolPath(filePath) : '';
+      const lineCount = event.output ? String(event.output).split('\n').length : 0;
+      if (collapsed) {
+        pushSegmentsRow('read-collapsed', [
+          nestSegment,
+          { text: `${icon} ${ic.read} Read`, color: toolColor, bold: true },
+          shortPath ? { text: ` (${shortPath})`, color: '#a78bfa' } : null,
+          lineCount > 0 && event.status === 'done' ? { text: ` ${lineCount} lines`, dimColor: true } : null,
+          ...collapsedHint,
+        ].filter(Boolean));
+        return rows;
+      }
+
+      pushSegmentsRow('read-head', [
+        nestSegment,
+        { text: `${icon} ${ic.read} Read`, color: toolColor, bold: true },
+        shortPath ? { text: ` (${shortPath})`, color: '#a78bfa' } : null,
+        lineCount > 0 && event.status === 'done' ? { text: ` · ${lineCount} lines`, dimColor: true } : null,
+      ].filter(Boolean));
+
+      if (event.output && event.status !== 'running') {
+        const outputLines = String(event.output).split('\n');
+        const shownLines = outputLines.slice(0, 12);
+        shownLines.forEach((line: string, index: number) => {
+          rows.push({
+            key: `${baseKey}-read-${index}`,
+            kind: 'syntax',
+            paddingLeft: 2,
+            prefixText: '    ',
+            prefixDimColor: true,
+            text: line,
+            maxWidth: codeWidth,
+          });
+        });
+        if (outputLines.length > shownLines.length) {
+          pushOpenHintRow('read-more', `    … ${outputLines.length - shownLines.length} more lines`);
+        }
+      }
+      return rows;
+    }
+
+    if (toolKey === 'grep' || toolKey === 'search') {
+      const pattern = String((parsed.pattern as string) || rawInput || '');
+      const path = String((parsed.path as string) || '');
+      const shortPath = path ? shortToolPath(path) : '';
+      const matchCount = event.output ? String(event.output).split('\n').filter((line: string) => line.trim()).length : 0;
+      if (collapsed) {
+        pushSegmentsRow('search-collapsed', [
+          nestSegment,
+          { text: `${icon} ${ic.search} Search`, color: toolColor, bold: true },
+          pattern ? { text: ` ${pattern}`, color: '#a78bfa' } : null,
+          matchCount > 0 && event.status === 'done' ? { text: ` → ${matchCount} matches`, dimColor: true } : null,
+          ...collapsedHint,
+        ].filter(Boolean));
+        return rows;
+      }
+
+      pushSegmentsRow('search-head', [
+        nestSegment,
+        { text: `${icon} ${ic.search} Search`, color: toolColor, bold: true },
+        pattern ? { text: ` ${pattern}`, color: '#a78bfa' } : null,
+        shortPath ? { text: ` in ${shortPath}`, dimColor: true } : null,
+        matchCount > 0 && event.status === 'done' ? { text: ` → ${matchCount} matches`, dimColor: true } : null,
+      ].filter(Boolean));
+
+      if (event.output && event.status !== 'running') {
+        const matchLines = String(event.output).split('\n').filter((line: string) => line.trim());
+        const shownLines = matchLines.slice(0, 10);
+        shownLines.forEach((line: string, index: number) => {
+          rows.push({
+            key: `${baseKey}-search-${index}`,
+            kind: 'ansi',
+            paddingLeft: 2,
+            prefixText: '    ',
+            prefixDimColor: true,
+            text: line,
+            maxWidth: codeWidth,
+            fallbackDim: true,
+          });
+        });
+        if (matchLines.length > shownLines.length) {
+          pushOpenHintRow('search-more', `    … ${matchLines.length - shownLines.length} more matches`);
+        }
+      }
+      return rows;
+    }
+
+    if (toolKey === 'glob' || toolKey === 'find') {
+      const pattern = String((parsed.pattern as string) || rawInput || '');
+      const fileCount = event.output ? String(event.output).split('\n').filter((line: string) => line.trim()).length : 0;
+      if (collapsed) {
+        pushSegmentsRow('find-collapsed', [
+          nestSegment,
+          { text: `${icon} ${ic.find} Find`, color: toolColor, bold: true },
+          pattern ? { text: ` ${pattern}`, color: '#a78bfa' } : null,
+          fileCount > 0 && event.status === 'done' ? { text: ` → ${fileCount} files`, dimColor: true } : null,
+          ...collapsedHint,
+        ].filter(Boolean));
+        return rows;
+      }
+
+      pushSegmentsRow('find-head', [
+        nestSegment,
+        { text: `${icon} ${ic.find} Find`, color: toolColor, bold: true },
+        pattern ? { text: ` ${pattern}`, color: '#a78bfa' } : null,
+        fileCount > 0 && event.status === 'done' ? { text: ` → ${fileCount} files`, dimColor: true } : null,
+      ].filter(Boolean));
+
+      if (event.output && event.status !== 'running') {
+        const files = String(event.output).split('\n').filter((line: string) => line.trim());
+        const shownFiles = files.slice(0, 10);
+        shownFiles.forEach((file: string, index: number) => {
+          pushSegmentsRow(`find-file-${index}`, [{ text: `    ${truncateCodeLine(file, codeWidth)}`, dimColor: true }]);
+        });
+        if (files.length > shownFiles.length) {
+          pushOpenHintRow('find-more', `    … ${files.length - shownFiles.length} more files`);
+        }
+      }
+      return rows;
+    }
+
+    const label = (() => {
+      if (event.tool === 'Read') return `${ic.read} Read`;
+      if (event.tool === 'Edit') return `${ic.edit} Edit`;
+      if (event.tool === 'Write') return `${ic.write} Write`;
+      if (event.tool === 'Bash') return `${ic.bash} Bash`;
+      if (event.tool === 'Grep') return `${ic.search} Search`;
+      if (event.tool === 'Glob') return `${ic.find} Find`;
+      return `${ic.tool} ${event.tool}`;
+    })();
+    const inputPreview = rawInput.length > 80 ? `${rawInput.slice(0, 79)}…` : rawInput;
+    const outLines = event.output ? String(event.output).split('\n').length : 0;
+
+    pushSegmentsRow('generic', [
+      nestSegment,
+      { text: `${icon} ${label}`, color: toolColor, bold: true },
+      inputPreview ? { text: ` ${inputPreview}`, dimColor: true } : null,
+      outLines > 0 && event.status === 'done' ? { text: ` → ${outLines} lines`, dimColor: true } : null,
+      ...(collapsed ? collapsedHint : []),
+    ].filter(Boolean));
+
+    return rows;
+  >>>
+
+fn name=buildCollapsedToolGroupRows params="baseKey:string, events:any[]" returns="any[]"
+  handler <<<
+    if (!events || events.length === 0) return [];
+
+    const rows: any[] = [];
+    const accent = engineColor(events[0]?.engineId ?? '');
+    const counts = new Map<string, number>();
+    const previews: string[] = [];
+
+    const labelFor = (event: any) => {
+      const toolKey = String(event.tool ?? '').toLowerCase();
+      if (toolKey === 'bash' || toolKey === 'run') return 'Bash';
+      if (toolKey === 'read') return 'Read';
+      if (toolKey === 'grep' || toolKey === 'search') return 'Search';
+      if (toolKey === 'glob' || toolKey === 'find') return 'Find';
+      if (toolKey === 'edit' || toolKey === 'update') return 'Update';
+      if (toolKey === 'write') return 'Write';
+      return String(event.tool ?? 'Tool');
+    };
+
+    const previewFor = (event: any) => {
+      const rawInput = String(event.input ?? '');
+      let parsed: Record<string, unknown> = {};
+      try {
+        if (rawInput.trim().startsWith('{')) parsed = JSON.parse(rawInput);
+      } catch {
+        parsed = {};
+      }
+
+      const toolKey = String(event.tool ?? '').toLowerCase();
+      if (toolKey === 'bash' || toolKey === 'run') {
+        const command = String((parsed.command as string) || rawInput || '').split('\n')[0] ?? '';
+        return truncateCodeLine(command, contentWidth(20));
+      }
+      if (toolKey === 'read' || toolKey === 'edit' || toolKey === 'update' || toolKey === 'write') {
+        const filePath = String((parsed.file_path as string) || (parsed.filePath as string) || '');
+        return filePath ? filePath.replace(`${process.cwd()}/`, '').replace(process.env.HOME ?? '', '~') : labelFor(event);
+      }
+      if (toolKey === 'grep' || toolKey === 'search' || toolKey === 'glob' || toolKey === 'find') {
+        const pattern = String((parsed.pattern as string) || rawInput || '');
+        return truncateCodeLine(pattern, contentWidth(20));
+      }
+      return truncateCodeLine(rawInput, contentWidth(20));
+    };
+
+    for (const event of events) {
+      const label = labelFor(event);
+      counts.set(label, (counts.get(label) ?? 0) + 1);
+      if (previews.length < 3) previews.push(previewFor(event));
+    }
+
+    const countSummary = Array.from(counts.entries())
+      .map(([label, count]) => `${label}${count > 1 ? `×${count}` : ''}`)
+      .join(' · ');
+
+    rows.push({
+      key: `${baseKey}-tool-group-head`,
+      kind: 'segments',
+      paddingLeft: 2,
+      segments: [
+        { text: '⏿ ', color: accent },
+        { text: `${events.length} tool calls`, bold: true },
+        countSummary ? { text: ' · ', dimColor: true } : null,
+        countSummary ? { text: countSummary, dimColor: true } : null,
+      ].filter(Boolean),
+    });
+
+    if (previews.length > 0) {
+      rows.push({
+        key: `${baseKey}-tool-group-preview`,
+        kind: 'segments',
+        paddingLeft: 2,
+        segments: previews.flatMap((preview: string, index: number) => ([
+          { text: index === 0 ? '    ' : ' • ', dimColor: true },
+          { text: preview, dimColor: true },
+        ])),
+      });
+    }
+
+    return rows;
+  >>>
+
+fn name=buildTranscriptRows params="blocks:OutputBlock[], mode:string, toolOutputExpanded:boolean, thinkingExpanded:boolean" returns="any[]"
+  handler <<<
+    const rows: any[] = [];
+    const proseWidth = contentWidth(4);
+    const chatWidth = contentWidth(2);
+    const engineWidth = contentWidth(8);
+    const pushSpacer = (key: string) => {
+      rows.push({ key, kind: 'spacer' });
+    };
+    const pushSegmentsRow = (key: string, paddingLeft: number, segments: any[], borderColor = '') => {
+      rows.push({ key, kind: 'segments', paddingLeft, segments, borderColor });
+    };
+    const pushRichText = (baseKey: string, text: string, paddingLeft: number, wrapWidth: number, borderColor = '') => {
+      const richLines = parseProseToRichLines(String(text ?? ''), wrapWidth);
+      richLines.forEach((richLine: any, index: number) => {
+        rows.push({
+          key: `${baseKey}-rich-${index}`,
+          kind: 'rich',
+          paddingLeft,
+          richLine,
+          borderColor,
+        });
+      });
+    };
+
+    let skippedUntil = -1;
+    blocks.forEach((block: OutputBlock, blockIndex: number) => {
+      if (blockIndex < skippedUntil) return;
+      const event = block.event as any;
+      const baseKey = `block-${block.id}`;
+
+      if (!toolOutputExpanded && event.type === 'tool-call' && !isMutatingToolCall(event)) {
+        const groupedEvents = [event];
+        let nextIndex = blockIndex + 1;
+        while (nextIndex < blocks.length) {
+          const nextEvent = blocks[nextIndex].event as any;
+          if (nextEvent.type !== 'tool-call' || isMutatingToolCall(nextEvent)) break;
+          groupedEvents.push(nextEvent);
+          nextIndex += 1;
+        }
+
+        if (groupedEvents.length > 1) {
+          rows.push(...buildCollapsedToolGroupRows(baseKey, groupedEvents));
+          skippedUntil = nextIndex;
+          return;
+        }
+      }
+
+      switch (event.type) {
+        case 'text':
+          pushRichText(baseKey, event.content, 2, proseWidth);
+          return;
+        case 'user-message':
+          if (rows.length > 0) pushSpacer(`${baseKey}-gap`);
+          pushSegmentsRow(`${baseKey}-user`, 1, [
+            { text: '❯ ', color: '#f97316', bold: true },
+            { text: event.content, bold: true },
+          ]);
+          return;
+        case 'engine-block': {
+          const cleaned = cleanEngineOutput(event.content);
+          if (!cleaned.trim()) return;
+          const accentColor = color256toHex(event.color ?? (ENGINE_COLORS[event.engineId] ?? 124));
+          if (rows.length > 0) pushSpacer(`${baseKey}-gap`);
+          if (mode === 'chat') {
+            pushSegmentsRow(`${baseKey}-chat-head`, 1, [{ text: `${icons().dotOn} ${event.engineId}`, color: accentColor, bold: true }]);
+            pushSpacer(`${baseKey}-chat-space`);
+            rows.push(...parseMarkdownToRows(baseKey, cleaned, chatWidth, 1, ''));
+            return;
+          }
+          pushSegmentsRow(`${baseKey}-engine-head`, 2, [
+            { text: '┌── ', color: accentColor },
+            { text: event.engineId, color: accentColor, bold: true },
+          ]);
+          pushSegmentsRow(`${baseKey}-engine-rule`, 2, [{ text: '│', color: accentColor }]);
+          rows.push(...parseMarkdownToRows(baseKey, cleaned, engineWidth, 2, accentColor));
+          pushSegmentsRow(`${baseKey}-engine-foot`, 2, [{ text: '└──', color: accentColor }]);
+          return;
+        }
+        case 'separator':
+          pushSpacer(`${baseKey}-separator`);
+          return;
+        case 'header':
+          pushSpacer(`${baseKey}-header-gap`);
+          pushSegmentsRow(`${baseKey}-header`, 0, [
+            { text: '  ', dimColor: true },
+            { text: `${icons().header} ${event.title}`, color: 'cyan', bold: true },
+          ]);
+          return;
+        case 'success':
+          pushSegmentsRow(`${baseKey}-success`, 0, [
+            { text: '  ' },
+            { text: icons().success, color: '#4ade80' },
+            { text: ` ${event.message}` },
+          ]);
+          return;
+        case 'warning':
+          pushSegmentsRow(`${baseKey}-warning`, 0, [
+            { text: '  ' },
+            { text: icons().warning, color: '#fbbf24' },
+            { text: ` ${event.message}` },
+          ]);
+          return;
+        case 'info':
+          pushSegmentsRow(`${baseKey}-info`, 0, [{ text: `  ${event.message}`, dimColor: true }]);
+          return;
+        case 'error': {
+          const errLines = String(event.message ?? '').split('\n');
+          const firstLine = errLines[0] || 'Error';
+          pushSegmentsRow(`${baseKey}-error-main`, 0, [
+            { text: '  ' },
+            { text: icons().fail, color: '#ef4444' },
+            { text: ` ${firstLine}`, color: '#ef4444' },
+          ]);
+          errLines.slice(1, 5).forEach((line: string, index: number) => {
+            pushSegmentsRow(`${baseKey}-error-${index}`, 0, [{ text: `    ${line.trim()}`, dimColor: true }]);
+          });
+          if (errLines.length > 5) {
+            pushSegmentsRow(`${baseKey}-error-more`, 0, [{ text: `    … ${errLines.length - 5} more lines`, dimColor: true }]);
+          }
+          return;
+        }
+        case 'permission-ask': {
+          const preview = truncateCodeLine(String(event.command ?? '').split('\n')[0] ?? '', contentWidth(26));
+          pushSegmentsRow(`${baseKey}-perm-head`, 1, [
+            { text: icons().warning, color: '#fbbf24' },
+            { text: ` ${event.tool} approval requested`, color: '#fbbf24', bold: true },
+          ]);
+          pushSegmentsRow(`${baseKey}-perm-actions`, 1, [
+            { text: '  [Y] Yes', color: '#4ade80', bold: true },
+            { text: '  ', dimColor: true },
+            { text: '[N] No', color: '#ef4444', bold: true },
+            { text: '  ', dimColor: true },
+            { text: '[A] Always', color: '#60a5fa', bold: true },
+            detailViewerSupportsEvent(event) ? { text: '  ', dimColor: true } : null,
+            detailViewerSupportsEvent(event) ? { text: '[Ctrl+O] Open', color: '#a78bfa', bold: true } : null,
+          ].filter(Boolean));
+          pushSegmentsRow(`${baseKey}-perm-cmd`, 1, preview
+            ? [
+                { text: '  $ ', dimColor: true },
+                { text: preview, dimColor: true },
+              ]
+            : [{ text: '  respond below', dimColor: true }]);
+          return;
+        }
+        case 'thinking-chunk': {
+          if (thinkingExpanded === false) return;
+          const lines = String(event.chunk ?? '').split('\n').filter((line: string) => line.trim());
+          const preview = lines.length > 3 ? lines.slice(0, 3) : lines;
+          preview.forEach((line: string, index: number) => {
+            pushSegmentsRow(`${baseKey}-thinking-${index}`, 2, [{ text: `▹ ${line}`, color: '#8b8b8b', dimColor: true, italic: true }]);
+          });
+          if (lines.length > 3) {
+            pushSegmentsRow(`${baseKey}-thinking-more`, 2, [
+              { text: `▹ … ${lines.length - 3} more lines  `, color: '#8b8b8b', dimColor: true, italic: true },
+              { text: 'Ctrl+T', color: '#f59e0b' },
+            ]);
+          }
+          return;
+        }
+        case 'streaming-chunk': {
+          const chunkText = String(event.chunk ?? '');
+          const isThinking = /^~?\d{1,3}%\s/.test(chunkText.trim());
+          if (isThinking && thinkingExpanded === false) return;
+          pushSegmentsRow(`${baseKey}-stream`, 2, [{ text: chunkText, dimColor: isThinking, italic: isThinking }]);
+          return;
+        }
+        case 'kern-draft': {
+          const borderColor = engineColor(event.engineId);
+          if (rows.length > 0) pushSpacer(`${baseKey}-gap`);
+          pushSegmentsRow(`${baseKey}-draft-head`, 2, [
+            { text: '┌── ', color: borderColor },
+            { text: event.engineId, color: borderColor, bold: true },
+            event.critique ? { text: ` ${event.critique}`, color: 'green' } : null,
+          ].filter(Boolean));
+          pushSegmentsRow(`${baseKey}-draft-rule`, 2, [{ text: '│', color: borderColor }]);
+          rows.push(...parseMarkdownToRows(baseKey, cleanEngineOutput(event.content), engineWidth, 2, borderColor));
+          pushSegmentsRow(`${baseKey}-draft-foot`, 2, [{ text: '└──', color: borderColor }]);
+          return;
+        }
+        case 'debate-round': {
+          const borderColor = engineColor(event.engineId);
+          if (rows.length > 0) pushSpacer(`${baseKey}-gap`);
+          pushSegmentsRow(`${baseKey}-debate-head`, 2, [
+            { text: '┌── ', color: borderColor },
+            { text: event.engineId, color: borderColor, bold: true },
+            { text: ` (${event.position})`, dimColor: true },
+          ]);
+          pushSegmentsRow(`${baseKey}-debate-rule`, 2, [{ text: '│', color: borderColor }]);
+          rows.push(...parseMarkdownToRows(baseKey, cleanEngineOutput(event.argument), engineWidth, 2, borderColor));
+          pushSegmentsRow(`${baseKey}-debate-foot`, 2, [{ text: '└──', color: borderColor }]);
+          return;
+        }
+        case 'verdict':
+          pushRichText(baseKey, cleanEngineOutput(event.summary), 2, proseWidth);
+          return;
+        case 'scoreboard':
+          pushSegmentsRow(`${baseKey}-score-title`, 2, [{ text: event.title, bold: true }]);
+          if (event.winner) pushSegmentsRow(`${baseKey}-score-winner`, 2, [{ text: `★ Winner: ${event.winner}`, color: 'green', bold: true }]);
+          pushSegmentsRow(`${baseKey}-score-rule`, 2, [{ text: '─'.repeat(46), dimColor: true }]);
+          (event.metrics ?? []).forEach((metric: any, index: number) => {
+            pushSegmentsRow(`${baseKey}-score-${index}`, 2, [{ text: `${metric.label}: ${metric.values.join(' │ ')}` }]);
+          });
+          return;
+        case 'plan':
+          pushSegmentsRow(`${baseKey}-plan-id`, 2, [{ text: `▸ Plan: ${event.plan.id.slice(0, 12)}`, color: 'cyan', bold: true }]);
+          pushSegmentsRow(`${baseKey}-plan-state`, 2, [{ text: `State: ${event.plan.state}` }]);
+          pushSegmentsRow(`${baseKey}-plan-task`, 2, [{ text: `Task: ${event.plan.action.task}` }]);
+          pushSegmentsRow(`${baseKey}-plan-rule`, 2, [{ text: '─'.repeat(46), dimColor: true }]);
+          (event.plan.steps ?? []).forEach((step: any, index: number) => {
+            const state = step.result?.state ?? 'pending';
+            const icon = state === 'completed' ? icons().success : state === 'failed' ? icons().fail : state === 'running' ? icons().dotOn : icons().dotOff;
+            const color = state === 'completed' ? 'green' : state === 'failed' ? 'red' : state === 'running' ? 'yellow' : undefined;
+            pushSegmentsRow(`${baseKey}-plan-step-${index}`, 2, [
+              { text: icon, color },
+              { text: ` ${step.label}` },
+            ]);
+          });
+          if (event.plan.state === 'draft') {
+            pushSegmentsRow(`${baseKey}-plan-draft`, 2, [{ text: 'Awaiting approval — Y accept  N cancel', dimColor: true }]);
+          }
+          return;
+        case 'plan-list':
+          (event.plans ?? []).forEach((plan: any, index: number) => {
+            pushSegmentsRow(`${baseKey}-plan-list-${index}`, 2, [{ text: `${plan.id.slice(0, 12)}  ${plan.state}  ${plan.action.task}` }]);
+          });
+          return;
+        case 'plan-proposal':
+          pushRichText(baseKey, String(event.markdown ?? ''), 2, proseWidth);
+          return;
+        case 'plan-execution':
+          pushSegmentsRow(`${baseKey}-plan-exec`, 2, [{ text: `Executing plan ${event.plan?.id?.slice?.(0, 12) ?? ''}`, bold: true }]);
+          pushSegmentsRow(`${baseKey}-plan-exec-state`, 2, [{ text: `State: ${event.plan?.state ?? 'running'}`, dimColor: true }]);
+          return;
+        case 'table': {
+          pushSegmentsRow(`${baseKey}-table-head`, 2, [{ text: (event.headers ?? []).join(' │ '), bold: true }]);
+          pushSegmentsRow(`${baseKey}-table-rule`, 2, [{ text: '─'.repeat(Math.max(12, (event.headers ?? []).join(' │ ').length)), dimColor: true }]);
+          (event.rows ?? []).forEach((row: string[], index: number) => {
+            pushSegmentsRow(`${baseKey}-table-row-${index}`, 2, [{ text: row.join(' │ ') }]);
+          });
+          return;
+        }
+        case 'tool-call':
+          rows.push(...buildToolCallRows(baseKey, event, toolOutputExpanded));
+          return;
+        case 'tool-call-group': {
+          const groupBlocks = Array.isArray((event as any).blocks) ? (event as any).blocks : [];
+          // Expanded: unpack every inner tool call so Ctrl+E reveals full
+          // output. Collapsed (default): one compact summary row, matching
+          // the Static-era ToolCallGroup renderer — preserves the bundling
+          // that output.kern emits (codex review P3).
+          if (toolOutputExpanded) {
+            groupBlocks.forEach((child: any, index: number) => {
+              const childEvent = child?.event;
+              if (childEvent && childEvent.type === 'tool-call') {
+                rows.push(...buildToolCallRows(`${baseKey}-g-${index}`, childEvent, toolOutputExpanded));
+              }
+            });
+            return;
+          }
+          const counts: Record<string, number> = {};
+          let errors = 0;
+          let running = 0;
+          let firstEngineId = '';
+          const changedFiles: string[] = [];
+          groupBlocks.forEach((child: any) => {
+            const ev = child?.event;
+            if (!ev || ev.type !== 'tool-call') return;
+            const tool = String(ev.tool || 'tool');
+            counts[tool] = (counts[tool] || 0) + 1;
+            if (ev.status === 'error') errors += 1;
+            if (ev.status === 'running') running += 1;
+            if (!firstEngineId && ev.engineId) firstEngineId = String(ev.engineId);
+            const tk = tool.toLowerCase();
+            if ((tk === 'edit' || tk === 'write') && typeof ev.input === 'string' && ev.input.trim().startsWith('{')) {
+              try {
+                const parsed = JSON.parse(ev.input);
+                const filePath = (parsed.file_path as string) || (parsed.filePath as string) || '';
+                if (filePath) {
+                  const shortPath = filePath.replace(process.cwd() + '/', '').replace(process.env.HOME ?? '', '~');
+                  if (!changedFiles.includes(shortPath)) changedFiles.push(shortPath);
+                }
+              } catch { /* ignore malformed tool input */ }
+            }
+          });
+          const summary = Object.entries(counts).map(([t, n]) => n > 1 ? `${t}\u00d7${n}` : t).join(', ');
+          const statusIcon = errors > 0 ? icons().fail : running > 0 ? '\u27f3' : icons().success;
+          const statusColor = errors > 0 ? '#ef4444' : running > 0 ? '#fbbf24' : '#4ade80';
+          const changedSummary = changedFiles.length > 0
+            ? ` \u00b7 changed ${changedFiles.length} file${changedFiles.length > 1 ? 's' : ''}: ${changedFiles.slice(0, 2).join(', ')}${changedFiles.length > 2 ? ', \u2026' : ''}`
+            : '';
+          pushSegmentsRow(`${baseKey}-group`, 2, [
+            { text: ' \u23bf ', color: engineColor(firstEngineId) },
+            { text: statusIcon, color: statusColor },
+            { text: ` ${groupBlocks.length} tool calls`, bold: true },
+            summary ? { text: ` (${summary})`, dimColor: true } : null,
+            changedSummary ? { text: changedSummary, color: '#a78bfa' } : null,
+          ].filter(Boolean));
+          return;
+        }
+        case 'response-meta': {
+          const totalTokens = (event.inputTokens ?? 0) + (event.outputTokens ?? 0);
+          const parts = [
+            event.engineId,
+            `${(event.elapsed / 1000).toFixed(1)}s`,
+            totalTokens > 0 ? `${totalTokens} tok` : '',
+            event.cost ? `$${event.cost.toFixed(4)}` : '',
+          ].filter(Boolean);
+          pushSegmentsRow(`${baseKey}-meta`, 2, [{ text: parts.join(' · '), dimColor: true }]);
+          return;
+        }
+        case 'file-changes':
+          pushSegmentsRow(`${baseKey}-files-head`, 2, [{ text: 'Files changed', bold: true }]);
+          (event.files ?? []).forEach((file: any, index: number) => {
+            const shortPath = String(file.path ?? '').replace(`${process.cwd()}/`, '');
+            pushSegmentsRow(`${baseKey}-file-${index}`, 2, [{
+              text: `${file.status === 'created' ? icons().dotOn : file.status === 'deleted' ? '⊖' : icons().success} ${shortPath} +${file.additions} -${file.deletions}`,
+              color: file.status === 'created' ? '#22d3ee' : file.status === 'deleted' ? '#ef4444' : '#4ade80',
+            }]);
+          });
+          return;
+        case 'dashboard':
+          LOGO_LINES.forEach((line: string, index: number) => {
+            rows.push({
+              key: `${baseKey}-logo-${index}`,
+              kind: 'gradient',
+              paddingLeft: 1,
+              text: line,
+              colors: BRAND,
+            });
+          });
+          pushSpacer(`${baseKey}-dash-gap-1`);
+          pushSegmentsRow(`${baseKey}-dash-tag`, 0, [{ text: '     Any AI can join. They compete. You ship.', color: '#d4a041', italic: true }]);
+          pushSegmentsRow(`${baseKey}-dash-version`, 0, [
+            { text: `     v${VERSION}  Powered by `, dimColor: true },
+            { text: 'KERNlang', color: '#fbbf24', bold: true },
+          ]);
+          pushSegmentsRow(`${baseKey}-dash-engines`, 0, [
+            { text: '  Engines: ', color: '#f97316' },
+            ...((event.enabled ?? []) as string[]).flatMap((engineId: string, index: number, list: string[]) => ([
+              { text: engineId, color: engineColor(engineId), bold: true },
+              index < list.length - 1 ? { text: ' ', dimColor: true } : null,
+            ].filter(Boolean))),
+          ].filter(Boolean));
+          if (event.eloTop) {
+            pushSegmentsRow(`${baseKey}-dash-elo`, 0, [
+              { text: '  ' },
+              { text: '♛ ', color: '#fbbf24' },
+              { text: event.eloTop.id, color: engineColor(event.eloTop.id), bold: true },
+              { text: ` ${event.eloTop.rating} ELO`, dimColor: true },
+            ]);
+          }
+          [
+            { prompt: '"explain the auth flow"', target: 'chat', color: '#fbbf24' },
+            { prompt: '"codex how would you do this?"', target: 'codex', color: '#60a5fa' },
+            { prompt: '"fix login bug, test with npm test"', target: 'forge', color: '#f97316' },
+            { prompt: '"should we use REST or GraphQL?"', target: 'tribunal', color: '#a78bfa' },
+          ].forEach((example: any, index: number) => pushSegmentsRow(`${baseKey}-dash-example-${index}`, 0, [
+            { text: '  ', dimColor: true },
+            { text: example.prompt, dimColor: true, italic: true },
+            { text: '  →  ', dimColor: true },
+            { text: example.target, color: example.color },
+          ]));
+          pushSpacer(`${baseKey}-dash-gap-4`);
+          pushSegmentsRow(`${baseKey}-dash-help`, 0, [
+            { text: '  Just talk, or type ', dimColor: true },
+            { text: '/', color: '#f97316' },
+            { text: ' for commands.', dimColor: true },
+          ]);
+          return;
+        case 'agent-step-start':
+          pushSegmentsRow(`${baseKey}-agent-start`, 2, [{ text: `${event.engineId} turn ${event.turnIndex + 1} started`, dimColor: true }]);
+          return;
+        case 'agent-step-end':
+          pushSegmentsRow(`${baseKey}-agent-end`, 2, [{ text: `${event.engineId} ${event.outcome} · ${event.toolCalls} tools · ${event.tokensUsed} tok`, dimColor: true }]);
+          return;
+        case 'agent-turn-summary':
+          pushSegmentsRow(`${baseKey}-agent-summary`, 2, [{ text: `${event.engineId} summary · ${event.turnsRemaining} turns left · ${event.cumulativeTokens} tok`, dimColor: true }]);
+          return;
+        case 'agent-budget-warning':
+          pushSegmentsRow(`${baseKey}-agent-budget`, 2, [{ text: `${event.engineId} ${event.kind} budget warning · ${event.remaining} remaining`, color: '#fbbf24' }]);
+          return;
+        case 'engine-switch':
+          pushSegmentsRow(`${baseKey}-engine-switch`, 2, [{ text: `Engine switch: ${event.from ?? 'auto'} → ${event.to}`, dimColor: true }]);
+          return;
+        case 'shadow-active':
+          pushSegmentsRow(`${baseKey}-shadow`, 2, [{ text: `Shadow active: ${event.shadowEngineId} behind ${event.foregroundEngineId}`, dimColor: true }]);
+          return;
+        case 'agent-routing':
+          pushSegmentsRow(`${baseKey}-routing`, 2, [{ text: `Routing: ${event.mode} · ${event.engines.join(', ')}`, dimColor: true }]);
+          return;
+        case 'agent-team-start':
+          pushSegmentsRow(`${baseKey}-team-start`, 2, [{ text: `Team ${event.teamId}: ${event.engineIds.join(', ')} · ${event.taskKind}`, dimColor: true }]);
+          return;
+        case 'agent-team-complete':
+          pushSegmentsRow(`${baseKey}-team-complete`, 2, [{ text: `Team ${event.teamId} complete · winner ${event.winner ?? 'none'} · $${event.teamCostUsd.toFixed(2)}`, dimColor: true }]);
+          return;
+        case 'spinner-start':
+        case 'spinner-stop':
+        case 'spinner-update':
+        case 'progress-update':
+        case 'progress-clear':
+        case 'confidence-update':
+        case 'streaming-end':
+        case 'clear':
+        case 'question':
+        case 'patch-review':
+          return;
+        default:
+          pushSegmentsRow(`${baseKey}-fallback`, 2, [{ text: `[${event.type}]`, dimColor: true }]);
+      }
+    });
+
+    return rows;
+  >>>
+
+
 screen name=App target=ink
   // ── State ──
   state name=replState type="ReplStateState" initial="'idle'"
-  state name=outputBlocks type="OutputBlock[]" initial="[]"
-  state name=inputValue type=string initial="''"
+  state name=outputBlocks type="OutputBlock[]" initial="() => { const cfg = loadConfig(); const saved = cfg.forgeEnabledEngines; return [buildDashboardBlock(saved && saved.length > 0 ? saved : null)]; }"
+  state name=inputValue type=string initial="''" safe=false
   state name=inputHistory type="string[]" initial="[]"
   state name=inputQueue type="string[]" initial="[]"
-  state name=historyIndex type=number initial=-1
+  state name=historyIndex type=number initial=-1 safe=false
   state name=mode type="'chat'|'campfire'|'brainstorm'|'tribunal'" initial="'chat'"
   state name=sessionStartTime type=number initial="Date.now()"
   state name=liveSpinner type=any initial="null"
   state name=liveProgress type="EngineProgress[]|null" initial="null"
-  state name=slashPickerOpen type=boolean initial=false
-  state name=inputKey type=number initial=0
+  state name=slashPickerOpen type=boolean initial=false safe=false
   state name=questionState type=any initial="null"
-  state name=questionAnswer type=string initial="''"
+  state name=questionAnswer type=string initial="''" safe=false
   state name=enginePickerOpen type=boolean initial=false
   state name=modelPickerOpen type=boolean initial=false
   state name=modelPickerEntries type="any[]" initial="[]"
@@ -72,10 +1893,14 @@ screen name=App target=ink
   state name=modelPickerInitialFilter type=string initial="''"
   state name=modelPickerTitle type=string initial="'Select model'"
   state name=modelPickerTargetEngine type="string|null" initial="null"
+  state name=modelPickerCliGroups type="any[]" initial="[]"
   state name=cesarPickerOpen type=boolean initial=false
-  state name=streamingText type=any initial="null"
+  state name=streamingText type="Record<string,StreamingEntry>" initial="{}" throttle=90
   state name=pendingImages type="ImageAttachment[]" initial="[]"
   state name=reviewEvent type="ReviewEvent|null" initial="null"
+  state name=pendingPlanProposal type="OutputEvent|null" initial="null"
+  state name=lastReviewResult type="{ engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number } | null" initial="null"
+  state name=toolDetailEvent type="any|null" initial="null"
   state name=jobManager type=any initial="new JobManager()"
   state name=jobList type="Job[]" initial="[]"
   state name=lastUndoToken type="string|null" initial="null"
@@ -89,27 +1914,43 @@ screen name=App target=ink
   state name=neroMode type=boolean initial=false
   state name=toolOutputExpanded type=boolean initial=false
   state name=thinkingExpanded type=boolean initial=true
-  state name=cesarConfidence type="number|null" initial="null"
-  state name=planModeQueued type=boolean initial=false
+  state name=cesarConfidence type="number|null" initial="null" throttle=200
+  state name=agentProgress type="Record<string,AgentProgressSnapshot>" initial="{}"
+  state name=planModeQueued type=boolean initial=false safe=false
   state name=cesarMemory type=any initial="() => createCesarMemory()"
   state name=sessionMcpServers type="Array<Record<string,unknown>>" initial="[]"
 
   // ── Refs ──
   ref name=chatStartTimeRef type=number initial=0
   ref name=currentPlanRef type="Plan|null" initial="null"
-  ref name=streamingTextRef type=any initial="null"
-  ref name=streamingBufferRef type=any initial="null"
-  ref name=streamingFlushTimerRef type=any initial="null"
+  ref name=streamingTextRef type="Record<string,StreamingEntry>" initial="{}"
+  ref name=agentProgressRef type="Record<string,AgentProgressSnapshot>" initial="{}"
+  ref name=lastReviewResultRef type="{ engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number } | null" initial="null"
   ref name=modeRef type="'chat'|'campfire'|'brainstorm'|'tribunal'" initial="'chat'"
+  ref name=inputEpochRef type=number initial=0
+  ref name=inputValueRef type=string initial="''"
   ref name=ctrlKeyHandledRef type=boolean initial=false
   ref name=justPastedRef type=boolean initial=false
   ref name=pasteHashesRef type="Map<string,string>" initial="new Map()"
   ref name=pasteCountRef type=number initial=0
   ref name=activeAbortRef type="AbortController|null" initial="null"
   ref name=lastActivityTimeRef type=number initial="Date.now()"
+  ref name=blockArchivePathRef type=string initial="makeBlockArchivePath(Date.now())"
+  ref name=nestedCtrlShortcutRef type="{ key: string; at: number }" initial="{ key: '', at: 0 }"
+  ref name=scrollOffsetRef type=number initial=0
+  ref name=displayRowCountRef type=number initial=0
+  ref name=mouseInputBufferRef type=string initial="''"
+  ref name=wheelDeltaRef type=number initial=0
+  ref name=wheelFlushTimerRef type="ReturnType<typeof setTimeout>|null" initial="null"
+  ref name=mouseSelectionRef type="{ anchorRow: number | null; anchorCol: number | null; focusRow: number | null; focusCol: number | null; active: boolean; moved: boolean }" initial="{ anchorRow: null, anchorCol: null, focusRow: null, focusCol: null, active: false, moved: false }"
+  ref name=lastTerminalInputAtRef type=number initial="Date.now()"
 
   // ── Init-once state (registry, adapter, skills) ──
-  state name=registry type=EngineRegistry initial="(() => { const reg = new EngineRegistry(); const engDir = join(dirname(fileURLToPath(import.meta.url)), '../../../../engines'); reg.load(engDir); return reg; })()"
+  // engines dir is at packages/cli/engines from the bundled dist/index.js
+  // (3 `..` up from dist/). For source-mode execution the path points into
+  // src/, which doesn't exist — EngineRegistry.resolveBuiltinDir walks up
+  // from there and finds the real engines/ at the repo root.
+  state name=registry type=EngineRegistry initial="createInitialRegistry()"
   state name=adapter type=EngineAdapter initial="createCliAdapter(registry)"
   state name=dynamicSkills type="Skill[]" initial="() => loadSkills(resolveWorkingDir())"
   state name=commandRegistry type="any" initial="(() => { const reg = new CommandRegistry(); registerBuiltinCommands(reg); return reg; })()"
@@ -118,18 +1959,259 @@ screen name=App target=ink
   state name=extensionPromptFragments type="string[]" initial="[]"
   state name=loadedExtensions type="any[]" initial="[]"
   state name=workspacePath type=string initial="resolveWorkingDir()"
-  state name=termWidth type=number initial="process.stdout.columns || 100"
+  state name=termWidth type=number initial="process.stdout.columns || 100" throttle=100
+  state name=termHeight type=number initial="process.stdout.rows || 24" throttle=100
   state name=scrollOffset type=number initial="0"
+  state name=selectionMode type=boolean initial="false"
+  state name=mouseSelection type="{ anchorRow: number | null; anchorCol: number | null; focusRow: number | null; focusCol: number | null; active: boolean; moved: boolean }" initial="{ anchorRow: null, anchorCol: null, focusRow: null, focusCol: null, active: false, moved: false }"
+  // Bumped whenever the EngineRegistry is mutated (register/unregister) so the
+  // availableEngines memo invalidates. Without this, memoing on `registry` alone
+  // freezes the list (the registry object identity never changes).
+  state name=registryVersion type=number initial="0"
+
+  // Bumped whenever configSet(...) is called from this component. Drives the
+  // `config` memo so inline loadConfig() disk reads don't run on every keystroke.
+  state name=configVersion type=number initial="0"
 
   // ── Derived ──
   memo name=allSlashCommands deps="dynamicSkills, extensionSkills, commandRegistry"
     handler <<<
+      const builtinCmds = SLASH_COMMANDS;
       const registryCmds = commandRegistry.listForHelp();
       const skillCmds = [...dynamicSkills, ...extensionSkills].map((s: any) => ({ cmd: s.trigger, desc: s.description || s.name }));
-      // Dedupe: registry already has builtins, skills add on top
-      const seen = new Set(registryCmds.map((c: any) => c.cmd));
+      // Dedupe across builtins, registry-provided commands, and dynamic skills.
+      const mergedBase = [...builtinCmds, ...registryCmds].filter((cmd: any, index: number, all: any[]) =>
+        all.findIndex((other: any) => other.cmd === cmd.cmd) === index
+      );
+      const seen = new Set(mergedBase.map((c: any) => c.cmd));
       const uniqueSkills = skillCmds.filter((s: any) => !seen.has(s.cmd));
-      return [...registryCmds, ...uniqueSkills];
+      return [...mergedBase, ...uniqueSkills];
+    >>>
+
+  memo name=availableEngines deps="registry, registryVersion"
+    handler <<<
+      return registry.availableIds();
+    >>>
+
+  // Memoized loadConfig() — without this, every inline `loadConfig()` call in
+  // the render tree runs 3× readFileSync + JSON.parse per keystroke (composer
+  // input lag). Keyed on configVersion so all configSet() callsites in this
+  // component trigger a re-read; external configSet() won't, but the render
+  // tree doesn't need to reflect those mid-interaction.
+  memo name=config deps="configVersion"
+    handler <<<
+      return loadConfig();
+    >>>
+
+  memo name=statusCwd deps="workspacePath"
+    handler <<<
+      return workspacePath.replace(process.env.HOME ?? '', '~');
+    >>>
+
+  memo name=statusBranch deps="workspacePath"
+    handler <<<
+      try { return currentBranch(workspacePath); } catch { return ''; }
+    >>>
+
+  memo name=statusStats deps="outputBlocks,chatSession,replState,config"
+    handler <<<
+      const stats = tracker.getStats();
+      const cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
+      return {
+        cesarId,
+        chatMessageCount: chatSession.messages.length,
+        totalTokens: stats.totalTokens,
+        totalCostUsd: stats.totalCostUsd,
+      };
+    >>>
+
+  memo name=runningJobs deps="jobList"
+    handler <<<
+      return jobList.filter((j: Job) => j.state === 'running');
+    >>>
+
+  memo name=activeStream deps="streamingText"
+    handler <<<
+      const entries = Object.values(streamingText);
+      if (entries.length === 0) return null;
+      let latest: StreamingEntry | null = null;
+      for (const e of entries) {
+        if (!latest || e.startedAt > latest.startedAt) latest = e;
+      }
+      return latest;
+    >>>
+
+  memo name=streamSnippet deps="activeStream"
+    handler <<<
+      if (!activeStream || !activeStream.content) return null;
+      const cleaned = cleanEngineOutput(activeStream.content);
+      const lines = cleaned.split('\n').filter((l: string) => l.trim());
+      if (lines.length === 0) return null;
+      return { engineId: activeStream.engineId, line: lines[lines.length - 1].trim() };
+    >>>
+
+  memo name=overlayReservedRows deps="enginePickerOpen, modelPickerOpen, cesarPickerOpen, reviewEvent, toolDetailEvent, termHeight"
+    handler <<<
+      if (toolDetailEvent) return toolDetailViewportRows(termHeight) + 5;
+      return enginePickerOpen || modelPickerOpen || cesarPickerOpen || !!reviewEvent ? 4 : 0;
+    >>>
+
+  memo name=bottomChromeReservedRows deps="mode,questionState,termWidth,pendingImages,inputQueue,liveSpinner"
+    handler <<<
+      return estimateBottomChromeExtraRows(mode, questionState, termWidth, pendingImages.length, inputQueue.length, !!liveSpinner);
+    >>>
+
+  memo name=overlayActive deps="enginePickerOpen, modelPickerOpen, cesarPickerOpen, reviewEvent, toolDetailEvent"
+    handler <<<
+      return enginePickerOpen || modelPickerOpen || cesarPickerOpen || !!reviewEvent || !!toolDetailEvent;
+    >>>
+
+  memo name=toolDetailView deps="toolDetailEvent, termWidth"
+    handler <<<
+      return toolDetailEvent ? buildToolDetailView(toolDetailEvent) : null;
+    >>>
+
+  memo name=startupOnly deps="outputBlocks,activeStream,liveProgress,agentProgress"
+    handler <<<
+      return outputBlocks.length === 1
+        && outputBlocks[0]?.event?.type === 'dashboard'
+        && !activeStream
+        && !liveProgress
+        && Object.keys(agentProgress).length === 0;
+    >>>
+
+  memo name=historyBlocks deps="outputBlocks"
+    handler <<<
+      return historyBlocksForTranscript(outputBlocks);
+    >>>
+
+  memo name=displayBlocks deps="startupOnly,outputBlocks,historyBlocks"
+    handler <<<
+      return startupOnly ? outputBlocks : historyBlocks;
+    >>>
+
+  memo name=livePaneVisible deps="scrollOffset, activeStream, liveProgress, agentProgress, startupOnly"
+    handler <<<
+      if (startupOnly) return false;
+      return scrollOffset === 0 && (!!activeStream || !!liveProgress || Object.keys(agentProgress).length > 0);
+    >>>
+
+  memo name=currentVisibleRowBudget deps="termHeight, mode, overlayReservedRows, bottomChromeReservedRows, livePaneVisible, activeStream, liveProgress, agentProgress"
+    handler <<<
+      const pinnedLiveRows = livePaneVisible
+        ? estimatePinnedLiveRows(mode, !!activeStream, !!liveProgress, Object.keys(agentProgress).length)
+        : 0;
+      const viewportRows = Math.max(1, termHeight - pinnedLiveRows);
+      return estimateVisibleBlockBudget(viewportRows, mode, overlayReservedRows + bottomChromeReservedRows);
+    >>>
+
+  memo name=displayRows deps="displayBlocks, mode, toolOutputExpanded, thinkingExpanded"
+    handler <<<
+      return buildTranscriptRows(displayBlocks, mode, toolOutputExpanded, thinkingExpanded);
+    >>>
+
+  memo name=totalDisplayRows deps="displayRows"
+    handler <<<
+      return displayRows.length;
+    >>>
+
+  memo name=maxScrollOffset deps="totalDisplayRows, currentVisibleRowBudget"
+    handler <<<
+      return maxScrollOffsetForRowCount(totalDisplayRows, currentVisibleRowBudget);
+    >>>
+
+  memo name=selectedRowRange deps="mouseSelection"
+    handler <<<
+      const range = normalizeTextSelection(
+        mouseSelection.anchorRow,
+        mouseSelection.anchorCol,
+        mouseSelection.focusRow,
+        mouseSelection.focusCol,
+      );
+      return range ? { start: range.startRow, end: range.endRow } : null;
+    >>>
+
+  memo name=selectedTextRange deps="mouseSelection"
+    handler <<<
+      return normalizeTextSelection(
+        mouseSelection.anchorRow,
+        mouseSelection.anchorCol,
+        mouseSelection.focusRow,
+        mouseSelection.focusCol,
+      );
+    >>>
+
+  memo name=visibleWindow deps="displayRows, scrollOffset, currentVisibleRowBudget, selectedRowRange, selectedTextRange, startupOnly, maxScrollOffset"
+    handler <<<
+      const decorateVisibleRows = (rows: any[], startIndex: number) => {
+        const range = selectedRowRange;
+        const textRange = selectedTextRange;
+        return rows.map((row: any, index: number) => {
+          const rowIndex = startIndex + index;
+          if (!range || rowIndex < range.start || rowIndex > range.end) return row;
+          const selectionText = transcriptRowToPlainText(row);
+          const selectionStart = textRange && rowIndex === textRange.startRow ? textRange.startCol : 0;
+          const selectionEnd = textRange && rowIndex === textRange.endRow ? textRange.endCol : selectionText.length;
+          return {
+            ...row,
+            selected: true,
+            selectionText,
+            selectionStart,
+            selectionEnd,
+          };
+        });
+      };
+
+      if (startupOnly) {
+        const start = clampNumber(scrollOffset, 0, maxScrollOffset);
+        const end = Math.min(displayRows.length, start + currentVisibleRowBudget);
+        const visibleRows = decorateVisibleRows(displayRows.slice(start, end), start);
+        return {
+          startIndex: start,
+          endIndex: end,
+          rowsAbove: 0,
+          rowsBelow: Math.max(0, displayRows.length - end),
+          visible: visibleRows,
+        };
+      }
+
+      const end = Math.max(0, displayRows.length - Math.max(0, scrollOffset));
+      const start = Math.max(0, end - currentVisibleRowBudget);
+      const visibleRows = decorateVisibleRows(displayRows.slice(start, end), start);
+      return {
+        startIndex: start,
+        endIndex: end,
+        rowsAbove: start,
+        rowsBelow: Math.max(0, displayRows.length - end),
+        visible: visibleRows,
+      };
+    >>>
+
+  memo name=historyViewportTop deps="mode, runningJobs, currentVisibleRowBudget, visibleWindow, startupOnly, scrollOffset"
+    handler <<<
+      return transcriptViewportTopLine(
+        mode,
+        runningJobs.length > 0,
+        currentVisibleRowBudget,
+        visibleWindow.visible.length,
+        visibleWindow.rowsAbove > 0 || visibleWindow.rowsBelow > 0,
+        !startupOnly && scrollOffset === 0,
+      );
+    >>>
+
+  memo name=startupFitsViewport deps="startupOnly, visibleWindow"
+    handler <<<
+      return startupOnly && visibleWindow.rowsAbove === 0 && visibleWindow.rowsBelow === 0;
+    >>>
+
+  memo name=startupUseDashboardView deps="startupFitsViewport, termWidth"
+    handler <<<
+      return startupFitsViewport && termWidth >= 100;
+    >>>
+
+  memo name=historyNeedsViewportFill deps="visibleWindow"
+    handler <<<
+      return visibleWindow.rowsAbove > 0 || visibleWindow.rowsBelow > 0;
     >>>
 
   // ── Load extensions on startup + workspace switch ──
@@ -149,20 +2231,259 @@ screen name=App target=ink
       modeRef.current = mode;
     >>>
 
+  effect deps="scrollOffset"
+    handler <<<
+      scrollOffsetRef.current = scrollOffset;
+    >>>
+
+  effect deps="mouseSelection"
+    handler <<<
+      mouseSelectionRef.current = mouseSelection;
+    >>>
+
+  effect deps="lastReviewResult"
+    handler <<<
+      lastReviewResultRef.current = lastReviewResult;
+    >>>
+
+  effect deps="selectionMode,startupOnly"
+    handler <<<
+      if (!selectionMode && !startupOnly) return;
+      if (
+        mouseSelectionRef.current.anchorRow === null
+        && mouseSelectionRef.current.anchorCol === null
+        && mouseSelectionRef.current.focusRow === null
+        && mouseSelectionRef.current.focusCol === null
+        && mouseSelectionRef.current.active === false
+        && mouseSelectionRef.current.moved === false
+      ) {
+        return;
+      }
+      mouseSelectionRef.current = { anchorRow: null, anchorCol: null, focusRow: null, focusCol: null, active: false, moved: false };
+      setMouseSelection({ anchorRow: null, anchorCol: null, focusRow: null, focusCol: null, active: false, moved: false });
+    >>>
+
+  // Track rendered row count and preserve the user's scroll anchor when the
+  // list changes. Without this, streaming new content drags the transcript
+  // window forward and /clear can leave scrollOffset past the end.
+  effect deps="totalDisplayRows, maxScrollOffset"
+    handler <<<
+      const prev = displayRowCountRef.current;
+      const next = totalDisplayRows;
+      displayRowCountRef.current = next;
+      if (next === prev) return;
+      if (next > prev && scrollOffsetRef.current > 0) {
+        setScrollOffset((s: number) => Math.min(s + (next - prev), maxScrollOffset));
+      } else if (scrollOffsetRef.current > maxScrollOffset) {
+        setScrollOffset(maxScrollOffset);
+      }
+    >>>
+
+  effect deps="maxScrollOffset,selectionMode,startupOnly,historyViewportTop,visibleWindow,displayRows,dispatch,config"
+    handler <<<
+      if (!process.stdin.isTTY || !process.stdout.isTTY) return;
+      // Mouse tracking permanently disabled: native terminal scrollback owns
+      // the wheel, drag-select is delegated to the terminal emulator. See
+      // commit notes for the Static-scrollback migration.
+      const mouseTrackingActive = false;
+      if (!mouseTrackingActive) return;
+      const indicatorRows = visibleWindow.rowsAbove > 0 || visibleWindow.rowsBelow > 0 ? 1 : 0;
+      const visibleRowCount = visibleWindow.visible.length;
+      const firstVisibleRow = visibleWindow.startIndex;
+      const firstRenderableLine = historyViewportTop + indicatorRows;
+
+      const setSelection = (next: { anchorRow: number | null; anchorCol: number | null; focusRow: number | null; focusCol: number | null; active: boolean; moved: boolean }) => {
+        mouseSelectionRef.current = next;
+        setMouseSelection(next);
+      };
+
+      const clearSelection = () => {
+        if (
+          mouseSelectionRef.current.anchorRow === null
+          && mouseSelectionRef.current.anchorCol === null
+          && mouseSelectionRef.current.focusRow === null
+          && mouseSelectionRef.current.focusCol === null
+          && mouseSelectionRef.current.active === false
+          && mouseSelectionRef.current.moved === false
+        ) {
+          return;
+        }
+        setSelection({ anchorRow: null, anchorCol: null, focusRow: null, focusCol: null, active: false, moved: false });
+      };
+
+      const isWithinTranscriptRows = (mouseY: number) => {
+        return visibleRowCount > 0 && mouseY >= firstRenderableLine && mouseY < firstRenderableLine + visibleRowCount;
+      };
+
+      const resolvePointerRow = (mouseY: number) => {
+        return resolveTranscriptRowFromMouse(mouseY, firstRenderableLine, firstVisibleRow, visibleRowCount);
+      };
+
+      const resolvePointerColumn = (mouseX: number, rowIndex: number | null) => {
+        if (rowIndex === null) return null;
+        const row = displayRows[rowIndex];
+        if (!row) return null;
+        return resolveTranscriptColumnFromMouse(mouseX, row);
+      };
+
+      const copySelection = (
+        anchorRow: number | null,
+        anchorCol: number | null,
+        focusRow: number | null,
+        focusCol: number | null,
+      ) => {
+        const content = transcriptRowsToPlainText(displayRows, anchorRow, anchorCol, focusRow, focusCol);
+        if (!content) return;
+        try {
+          copyToClipboard(content);
+          const range = normalizeTextSelection(anchorRow, anchorCol, focusRow, focusCol);
+          const lineCount = range ? range.endRow - range.startRow + 1 : 0;
+          dispatch({
+            type: 'success',
+            message: `Copied ${lineCount} transcript line${lineCount === 1 ? '' : 's'} to clipboard`,
+          } as any);
+        } catch (err) {
+          dispatch({ type: 'error', message: `Copy failed: ${err instanceof Error ? err.message : String(err)}` } as any);
+        }
+      };
+
+      const flushWheelDelta = () => {
+        wheelFlushTimerRef.current = null;
+        const pending = wheelDeltaRef.current;
+        if (pending === 0) return;
+        const { step, remaining } = nextWheelAnimationStep(pending);
+        wheelDeltaRef.current = remaining;
+        if (step === 0) return;
+        clearSelection();
+        const max = maxScrollOffset;
+        setScrollOffset((prev: number) => {
+          if (step > 0) return Math.min(prev + step, max);
+          return Math.max(0, prev + step);
+        });
+        if (wheelDeltaRef.current !== 0) scheduleWheelFlush();
+      };
+
+      const scheduleWheelFlush = () => {
+        if (wheelFlushTimerRef.current) return;
+        wheelFlushTimerRef.current = setTimeout(flushWheelDelta, 6);
+      };
+
+      const onData = (buf: Buffer | string) => {
+        const chunk = typeof buf === 'string' ? buf : buf.toString('utf8');
+        const parsed = parseMouseChunk(mouseInputBufferRef.current, chunk);
+        mouseInputBufferRef.current = parsed.nextBuffer;
+        const delta = parsed.scrollUpEvents - parsed.scrollDownEvents;
+        if (delta !== 0) {
+          wheelDeltaRef.current += delta;
+          if (wheelFlushTimerRef.current) {
+            scheduleWheelFlush();
+          } else {
+            flushWheelDelta();
+          }
+        }
+        for (const event of parsed.pointerEvents) {
+          if (event.kind === 'down') {
+            if (event.button !== 'left') continue;
+            if (!isWithinTranscriptRows(event.y)) {
+              clearSelection();
+              continue;
+            }
+            const row = resolvePointerRow(event.y);
+            const col = resolvePointerColumn(event.x, row);
+            if (row === null || col === null) continue;
+            setSelection({ anchorRow: row, anchorCol: col, focusRow: row, focusCol: col, active: true, moved: false });
+            continue;
+          }
+
+          if (event.kind === 'drag') {
+            if (!mouseSelectionRef.current.active) continue;
+            const focusRow = resolvePointerRow(event.y);
+            const focusCol = resolvePointerColumn(event.x, focusRow);
+            if (focusRow === null || focusCol === null) continue;
+            const current = mouseSelectionRef.current;
+            if (current.focusRow === focusRow && current.focusCol === focusCol) continue;
+            setSelection({
+              anchorRow: current.anchorRow ?? focusRow,
+              anchorCol: current.anchorCol ?? focusCol,
+              focusRow,
+              focusCol,
+              active: true,
+              moved: true,
+            });
+            continue;
+          }
+
+          if (event.kind === 'up') {
+            if (mouseSelectionRef.current.anchorRow === null || mouseSelectionRef.current.anchorCol === null) continue;
+            if (!mouseSelectionRef.current.moved) {
+              clearSelection();
+              continue;
+            }
+            const focusRow = resolvePointerRow(event.y) ?? mouseSelectionRef.current.focusRow ?? mouseSelectionRef.current.anchorRow;
+            const focusCol = resolvePointerColumn(event.x, focusRow) ?? mouseSelectionRef.current.focusCol ?? mouseSelectionRef.current.anchorCol;
+            const finalSelection = {
+              anchorRow: mouseSelectionRef.current.anchorRow,
+              anchorCol: mouseSelectionRef.current.anchorCol,
+              focusRow,
+              focusCol,
+              active: false,
+              moved: true,
+            };
+            setSelection(finalSelection);
+            copySelection(finalSelection.anchorRow, finalSelection.anchorCol, finalSelection.focusRow, finalSelection.focusCol);
+          }
+        }
+      };
+
+      process.stdin.on('data', onData);
+
+      return () => {
+        if (wheelFlushTimerRef.current) {
+          clearTimeout(wheelFlushTimerRef.current);
+          wheelFlushTimerRef.current = null;
+        }
+        wheelDeltaRef.current = 0;
+        process.stdin.off('data', onData);
+      };
+    >>>
+
+  // ── TTL pruner for completed agentProgress snapshots ──
+  // After an agent-step-end event sets `completedAt`, leave the panel visible
+  // for 5 seconds so the user sees the final state, then prune. Runs every 1s.
+  // For team runs, the team-complete event also calls clearAgentProgressByTeam
+  // for an immediate wipe.
   effect deps=""
     handler <<<
-      return () => {
-        if (streamingFlushTimerRef.current) clearTimeout(streamingFlushTimerRef.current);
-      };
+      const interval = setInterval(() => {
+        const prev = agentProgressRef.current;
+        if (!prev || Object.keys(prev).length === 0) return;
+        const now = Date.now();
+        let changed = false;
+        const next: Record<string, AgentProgressSnapshot> = {};
+        for (const eid of Object.keys(prev)) {
+          const snap = prev[eid];
+          if (snap.completedAt && now - snap.completedAt > 5000) {
+            changed = true;
+            continue;
+          }
+          next[eid] = snap;
+        }
+        if (changed) {
+          agentProgressRef.current = next;
+          setAgentProgress(next);
+        }
+      }, 1000);
+      return () => clearInterval(interval);
     >>>
 
   // ── Feed orchestration results back to Cesar's chat history ──
   effect deps="eventBus,dispatch,chatSession"
     handler <<<
+      if (!eventBus) return;
       const modes = ['brainstorm', 'forge', 'tribunal', 'campfire'] as const;
-      const offs: (() => void)[] = [];
+      const listeners: Array<{ mode: string; handler: () => void }> = [];
       for (const mode of modes) {
-        const off = eventBus.on(`post:${mode}`, () => {
+        const handler = () => {
           const result = sessionResultStore.getLatest();
           if (!result || result.type !== mode) return;
           const winner = result.winner ?? 'none';
@@ -189,10 +2510,15 @@ screen name=App target=ink
           // Narrate to UI
           const label = winner !== 'none' ? `${mode} complete — winner: ${winner}` : `${mode} complete`;
           dispatch({ type: 'info', message: label } as any);
-        });
-        offs.push(off);
+        };
+        eventBus.on(`post:${mode}`, handler);
+        listeners.push({ mode, handler });
       }
-      return () => { for (const off of offs) off(); };
+      return () => {
+        for (const listener of listeners) {
+          eventBus.off(`post:${listener.mode}`, listener.handler);
+        }
+      };
     >>>
 
   callback name=transition params="fn:any"
@@ -211,8 +2537,12 @@ screen name=App target=ink
       setActiveAbort(abort);
     >>>
 
-  callback name=setCesarSessionWrapped params="session:PersistentSession|null"
+  callback name=setCesarSessionWrapped params="session:PersistentSession|null" deps="chatSession"
     handler <<<
+      const previous = _cesarSessionRef.session;
+      if (previous && previous !== session) {
+        saveCesarConversationSnapshot(previous, chatSession);
+      }
       _cesarSessionRef.session = session;
       setCesarSession(session);
     >>>
@@ -230,64 +2560,60 @@ screen name=App target=ink
       return {
         setLiveSpinner,
         setLiveProgress,
-        setStreamingText: (val: any) => {
-          streamingBufferRef.current = val;
-          if (modeRef.current !== 'chat') {
-            if (streamingFlushTimerRef.current) {
-              clearTimeout(streamingFlushTimerRef.current);
-              streamingFlushTimerRef.current = null;
-            }
-            streamingTextRef.current = val;
-            setStreamingText(val);
-            return;
-          }
-          if (!val) {
-            if (streamingFlushTimerRef.current) {
-              clearTimeout(streamingFlushTimerRef.current);
-              streamingFlushTimerRef.current = null;
-            }
-            streamingTextRef.current = null;
-            setStreamingText(null);
-            return;
-          }
-          const needsImmediatePaint = !streamingTextRef.current || streamingTextRef.current.engineId !== val.engineId;
-          if (needsImmediatePaint) {
-            if (streamingFlushTimerRef.current) {
-              clearTimeout(streamingFlushTimerRef.current);
-              streamingFlushTimerRef.current = null;
-            }
-            streamingTextRef.current = val;
-            setStreamingText(val);
-            return;
-          }
-          if (streamingFlushTimerRef.current) return;
-          streamingFlushTimerRef.current = setTimeout(() => {
-            streamingFlushTimerRef.current = null;
-            streamingTextRef.current = streamingBufferRef.current;
-            setStreamingText(streamingBufferRef.current);
-          }, 90);
+        setStreamingText: (updater: Record<string,StreamingEntry> | ((prev: Record<string,StreamingEntry>) => Record<string,StreamingEntry>)) => {
+          const prev = streamingTextRef.current;
+          const next = typeof updater === 'function' ? (updater as (p: Record<string,StreamingEntry>) => Record<string,StreamingEntry>)(prev) : updater;
+          streamingTextRef.current = next;
+          setStreamingText(next);
         },
-        addBlock: (event: any) => { setScrollOffset(0); setOutputBlocks((prev: any) => [...prev, { id: Date.now() + Math.random(), event }]); },
+        addBlock: (event: any) => {
+          if (scrollOffsetRef.current === 0) setScrollOffset(0);
+          setOutputBlocks((prev: any) => appendBlockWithCap(prev, { id: Date.now() + Math.random(), event }, blockArchivePathRef.current));
+        },
+        replaceBlocksOfType: (eventType: string, event: any) => {
+          if (scrollOffsetRef.current === 0) setScrollOffset(0);
+          setOutputBlocks((prev: any) => {
+            const filtered = prev.filter((b: any) => b.event.type !== eventType);
+            return appendBlockWithCap(filtered, { id: Date.now() + Math.random(), event }, blockArchivePathRef.current);
+          });
+        },
         clearBlocks: () => setOutputBlocks([]),
+        setPendingPlanProposal: (val: OutputEvent | null) => setPendingPlanProposal(val),
         setReviewEvent,
         setQuestionState,
         setChatStartTime: (val: number) => { chatStartTimeRef.current = val; },
         flushStream: () => {
-          const prev = streamingBufferRef.current ?? streamingTextRef.current;
-          if (streamingFlushTimerRef.current) {
-            clearTimeout(streamingFlushTimerRef.current);
-            streamingFlushTimerRef.current = null;
+          // Flush every in-flight engine's stream to the transcript. Multi-agent
+          // teams may have N concurrent streams when flush is requested (e.g.,
+          // permission-ask interrupts mid-stream).
+          const prev = streamingTextRef.current;
+          for (const eid of Object.keys(prev)) {
+            const entry = prev[eid];
+            if (!entry) continue;
+            const color = ENGINE_COLORS[entry.engineId] ?? 124;
+            setOutputBlocks((blocks: any) => appendBlockWithCap(blocks, { id: Date.now() - 1 + Math.random(), event: { type: 'engine-block', engineId: entry.engineId, color, content: entry.content } }, blockArchivePathRef.current));
           }
-          if (prev) {
-            const color = ENGINE_COLORS[prev.engineId] ?? 124;
-            setOutputBlocks((blocks: any) => [...blocks, { id: Date.now() - 1, event: { type: 'engine-block', engineId: prev.engineId, color, content: prev.content } }]);
-          }
-          streamingBufferRef.current = null;
-          streamingTextRef.current = null;
-          setStreamingText(null);
+          streamingTextRef.current = {};
+          setStreamingText({});
         },
         getEngineColor: (engineId: string) => ENGINE_COLORS[engineId] ?? 124,
         setCesarConfidence,
+        setAgentProgress: (updater: Record<string,AgentProgressSnapshot> | ((prev: Record<string,AgentProgressSnapshot>) => Record<string,AgentProgressSnapshot>)) => {
+          const prev = agentProgressRef.current;
+          const next = typeof updater === 'function' ? (updater as (p: Record<string,AgentProgressSnapshot>) => Record<string,AgentProgressSnapshot>)(prev) : updater;
+          agentProgressRef.current = next;
+          setAgentProgress(next);
+        },
+        clearAgentProgressByTeam: (teamId: string) => {
+          const prev = agentProgressRef.current;
+          const next: Record<string, AgentProgressSnapshot> = {};
+          for (const eid of Object.keys(prev)) {
+            const entry = prev[eid];
+            if (entry && entry.teamId !== teamId) next[eid] = entry;
+          }
+          agentProgressRef.current = next;
+          setAgentProgress(next);
+        },
       };
     >>>
 
@@ -297,7 +2623,7 @@ screen name=App target=ink
       if (et === 'streaming-chunk' || et === 'thinking-chunk' || et === 'progress-update' || et === 'tool-call' || et === 'spinner-start' || et === 'spinner-update') {
         lastActivityTimeRef.current = Date.now();
       }
-      const state: OutputState = { liveSpinner: null, liveProgress: null, streamingText: streamingBufferRef.current ?? streamingTextRef.current };
+      const state: OutputState = { liveSpinner: null, liveProgress: null, streamingText: streamingTextRef.current ?? {}, agentProgress: agentProgressRef.current ?? {} };
       handleOutputEvent(event, state, outputActions, mode, chatStartTimeRef.current);
     >>>
 
@@ -313,14 +2639,17 @@ screen name=App target=ink
       trackAbort(null);
       setLiveSpinner(null);
       setLiveProgress(null);
-      if (streamingFlushTimerRef.current) {
-        clearTimeout(streamingFlushTimerRef.current);
-        streamingFlushTimerRef.current = null;
-      }
-      streamingBufferRef.current = null;
-      streamingTextRef.current = null;
-      setStreamingText(null);
+      streamingTextRef.current = {};
+      setStreamingText({});
       clearPermissionQueue();
+      clearThinkingBuffer();
+      setQuestionState(null);
+      setQuestionAnswer('');
+      setSlashPickerOpen(false);
+      setEnginePickerOpen(false);
+      setModelPickerOpen(false);
+      setCesarPickerOpen(false);
+      setReviewEvent(null);
 
       if (replState !== 'idle') {
         if (message) dispatch({ type: 'warning', message } as any);
@@ -334,8 +2663,14 @@ screen name=App target=ink
     handler <<<
       return {
         registry, adapter, activeEngines,
+        get inputEpoch() { return inputEpochRef.current; },
         config: loadConfig(), chatSession,
         get currentPlan() { return currentPlanRef.current; },
+        get lastReviewResult() { return lastReviewResultRef.current; },
+        set lastReviewResult(value: any) {
+          lastReviewResultRef.current = value;
+          setLastReviewResult(value);
+        },
         setCurrentPlan, setActiveAbort: trackAbort,
         askQuestion, cesarSession, setCesarSession: setCesarSessionWrapped,
         explorationMode, setExplorationMode,
@@ -350,41 +2685,49 @@ screen name=App target=ink
   // ── Terminal resize handling ──
   effect deps="[]"
     handler <<<
-      const onResize = () => setTermWidth(process.stdout.columns || 100);
+      const onResize = () => {
+        setTermWidth(process.stdout.columns || 100);
+        setTermHeight(process.stdout.rows || 24);
+      };
       process.stdout.on('resize', onResize);
       return () => { process.stdout.off('resize', onResize); };
     >>>
 
-  effect
+  effect deps="selectionMode,maxScrollOffset,startupOnly,config"
     handler <<<
-      const stdin = process.stdin;
-      if (!stdin.isTTY) return;
-      process.stdout.write('\x1b[?2004h');
-      return () => { process.stdout.write('\x1b[?2004l'); };
-    >>>
+      if (!process.stdin.isTTY || !process.stdout.isTTY) return;
+      const fullscreenEnabled = isFullscreenEnabled(config);
+      // Mouse tracking permanently disabled (see handler above). Terminal
+      // keeps ownership of wheel scroll + native selection/copy.
+      const mouseTrackingActive = false;
 
-  // ── Dashboard on mount ──
-  effect
-    handler <<<
-      const available = registry.availableIds();
-      const config = loadConfig();
-      const ratings = getRatings();
-      const defaultEngine = config.forgeFixedStarter ?? available[0] ?? 'none';
-      const activeWs = getActiveWorkspace();
-      const totalMatches = Object.values(ratings.global).reduce((sum: number, r: any) => sum + r.wins + r.losses, 0);
-      const sorted = Object.entries(ratings.global)
-        .map(([id, r]: any) => [id, { rating: Math.round(r.mu - 2 * r.phi) }] as const)
-        .sort(([, a], [, b]) => b.rating - a.rating);
-      const enabled = sessionEngines ?? available;
-      let runCount = 0;
-      try { runCount = readdirSync(RUNS_DIR).filter((f: string) => f.endsWith('.json')).length; } catch { /* runs dir missing — first run */ }
-      setOutputBlocks([{ id: 0, event: {
-        type: 'dashboard' as const, available, enabled, defaultEngine,
-        eloTop: sorted.length > 0 ? { id: sorted[0][0], rating: (sorted[0][1] as any).rating } : undefined,
-        totalForges: Math.floor(totalMatches / 2),
-        workspace: activeWs ? { name: activeWs.name, path: activeWs.path, isKern: activeWs.isKern } : undefined,
-        runCount,
-      }}]);
+      const reassertModes = (includeAltScreen = false) => {
+        process.stdout.write(terminalEnterSequence(fullscreenEnabled && includeAltScreen, mouseTrackingActive));
+      };
+
+      const onData = () => {
+        const now = Date.now();
+        if (now - lastTerminalInputAtRef.current > 5000) {
+          reassertModes(false);
+        }
+        lastTerminalInputAtRef.current = now;
+      };
+
+      const onResume = () => {
+        lastTerminalInputAtRef.current = Date.now();
+        reassertModes(true);
+      };
+
+      reassertModes(false);
+      process.stdin.on('data', onData);
+      process.on('SIGCONT', onResume);
+
+      return () => {
+        process.stdin.off('data', onData);
+        process.off('SIGCONT', onResume);
+        drainStdinBuffer();
+        process.stdout.write(terminalExitSequence(false));
+      };
     >>>
 
   // ── Queue processing ──
@@ -397,13 +2740,25 @@ screen name=App target=ink
       }
     >>>
 
-  // ── Input handlers ──
-  callback name=handleInputChange params="value:string" deps="inputValue,slashPickerOpen,enginePickerOpen,modelPickerOpen,questionState,planModeQueued"
+  // Sync inputValue → inputValueRef so handleInputChange can read the
+  // latest value without a reactive dep on inputValue (which would
+  // rebuild the callback and break ComposerView's React.memo every
+  // keystroke). The ref tracks the same value, one microtask late, which
+  // is fine because every call into handleInputChange reads it before
+  // React applies the next setInputValue anyway.
+  effect deps="inputValue"
     handler <<<
-      // Swallow input while a choice question is active — useInput handles keypress
+      inputValueRef.current = inputValue;
+    >>>
+
+  // ── Input handlers ──
+  callback name=handleInputChange params="value:string" deps="slashPickerOpen,enginePickerOpen,modelPickerOpen,questionState,planModeQueued"
+    handler <<<
+      // Swallow input while a choice question is active — the keyboard handler
+      // resolves the choice on a single keypress.
       if (questionState && questionState.choices) return;
 
-      // Reject value changes caused by Ctrl+key shortcuts (useInput already handled them,
+      // Reject value changes caused by Ctrl+key shortcuts (the input hooks already handled them,
       // but TextInput still fires onChange with the raw character)
       if (ctrlKeyHandledRef.current) {
         ctrlKeyHandledRef.current = false;
@@ -411,12 +2766,12 @@ screen name=App target=ink
       }
 
       const nextValue = cleanInputValue(value);
+      const prevValue = inputValueRef.current;
 
       // "/" typed into empty input → open slash picker, swallow the character
-      if (!inputValue && nextValue === '/' && !slashPickerOpen && !enginePickerOpen && !modelPickerOpen && !questionState && !justPastedRef.current) {
+      if (!prevValue && nextValue === '/' && !slashPickerOpen && !enginePickerOpen && !modelPickerOpen && !questionState && !justPastedRef.current) {
         if (planModeQueued) setPlanModeQueued(false);
         setSlashPickerOpen(true);
-        setInputKey((k: number) => k + 1);
         return;
       }
 
@@ -430,7 +2785,7 @@ screen name=App target=ink
         return;
       }
 
-      const change = findInputChange(inputValue, nextValue);
+      const change = findInputChange(prevValue, nextValue);
       const looksLikePaste = value !== nextValue || change.inserted.length > 1;
 
       if (!looksLikePaste || !change.inserted) {
@@ -455,11 +2810,11 @@ screen name=App target=ink
       const replacement = result.type === 'stored' ? result.placeholder : result.content;
       const updatedValue = nextValue.slice(0, change.start) + replacement + nextValue.slice(change.start + change.inserted.length);
       setInputValue(updatedValue);
-      setInputKey((k: number) => k + 1);
     >>>
 
   callback name=handleSubmit async=true params="value:string" deps="replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,planModeQueued"
     handler <<<
+      inputEpochRef.current += 1;
       let input = cleanSubmitValue(value);
       if (!input) return;
       // Bare "/" → open slash picker flyout, don't dump text list
@@ -498,11 +2853,18 @@ screen name=App target=ink
           const color = ENGINE_COLORS[cesarId] ?? 124;
           dispatch({ type: 'info', message: 'btw\u2026' } as any);
 
-          // Build context from streaming output
+          // Build context from streaming output (pick the most recent in-flight stream)
           let streamCtx = '';
-          if (streamingTextRef.current && streamingTextRef.current.content) {
-            const lines = streamingTextRef.current.content.split('\n').filter((l: string) => l.trim());
-            streamCtx = lines.slice(-10).join('\n');
+          const streamEntries = Object.values(streamingTextRef.current ?? {});
+          if (streamEntries.length > 0) {
+            let latest: StreamingEntry | null = null;
+            for (const e of streamEntries) {
+              if (!latest || e.startedAt > latest.startedAt) latest = e;
+            }
+            if (latest && latest.content) {
+              const lines = latest.content.split('\n').filter((l: string) => l.trim());
+              streamCtx = lines.slice(-10).join('\n');
+            }
           }
 
           const prompt = `The user asks while you are working on another task:\n\n${btwQuestion}\n\n${streamCtx ? '--- Recent output from the running task ---\n' + streamCtx + '\n---\n\n' : ''}Answer briefly and concisely. Keep it short.`;
@@ -563,7 +2925,7 @@ screen name=App target=ink
             .catch((err: any) => { jobManager.fail(job.id, err instanceof Error ? err.message : String(err)); setJobList([...jobManager.list()]); dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); });
         },
         setMode, setPendingImages, setSessionEngines, setEnginePickerOpen, setModelPickerOpen, setModelPickerEntries, setModelPickerLoading, setCesarPickerOpen, setChatSession, setLastUndoToken, askQuestion, exit: () => process.exit(0),
-        setModelPickerTargetEngine, setModelPickerInitialFilter, setModelPickerTitle,
+        setModelPickerTargetEngine, setModelPickerInitialFilter, setModelPickerTitle, setModelPickerCliGroups,
         allImages, allSlashCommands: allSlashCommands, dynamicSkills: [...dynamicSkills, ...extensionSkills], mode, lastUndoToken, sessionStartTime, jobManager,
         explorationMode, setExplorationMode,
         neroMode, setNeroMode,
@@ -622,7 +2984,12 @@ screen name=App target=ink
       setEnginePickerOpen(false);
       setModelPickerOpen(true);
 
-      import('@agon/core').then(({ fetchModelsRegistry, buildModelEntries }) => {
+      setModelPickerCliGroups([]);
+
+      import('@agon/core').then(({ fetchModelsRegistry, buildModelEntries, buildCliModelGroupsAsync }) => {
+        buildCliModelGroupsAsync().then((cliGroups: any) => {
+          setModelPickerCliGroups(cliGroups);
+        });
         fetchModelsRegistry().then((reg: any) => {
           setModelPickerEntries(buildModelEntries(reg));
           setModelPickerLoading(false);
@@ -669,17 +3036,162 @@ screen name=App target=ink
       }
     >>>
 
+  callback name=openLatestToolDetail params="" deps="outputBlocks,dispatch"
+    handler <<<
+      const event = findLatestToolDetailEvent(outputBlocks);
+      if (!event) {
+        dispatch({ type: 'info', message: 'No large tool output or approval command to open yet.' } as any);
+        return;
+      }
+      setToolDetailEvent(event);
+    >>>
+
+  callback name=copyCurrentTranscript params="" deps="dispatch,mode,chatSession,displayRows,mouseSelection"
+    handler <<<
+      const selectedContent = transcriptRowsToPlainText(
+        displayRows,
+        mouseSelection.anchorRow,
+        mouseSelection.anchorCol,
+        mouseSelection.focusRow,
+        mouseSelection.focusCol,
+      );
+      if (selectedContent) {
+        try {
+          copyToClipboard(selectedContent);
+          const range = normalizeTextSelection(
+            mouseSelection.anchorRow,
+            mouseSelection.anchorCol,
+            mouseSelection.focusRow,
+            mouseSelection.focusCol,
+          );
+          const lineCount = range ? range.endRow - range.startRow + 1 : 0;
+          dispatch({
+            type: 'success',
+            message: `Copied ${lineCount} selected line${lineCount === 1 ? '' : 's'} to clipboard`,
+          } as any);
+        } catch (err) {
+          dispatch({ type: 'error', message: `Copy failed: ${err instanceof Error ? err.message : String(err)}` } as any);
+        }
+        return;
+      }
+
+      let content = '';
+      if (mode === 'chat') {
+        if (chatSession.messages.length === 0) {
+          dispatch({ type: 'info', message: 'No chat messages yet.' } as any);
+          return;
+        }
+        content = formatChatTranscript(chatSession);
+      } else {
+        if (!sessionResultStore.hasResults()) {
+          dispatch({ type: 'info', message: 'No results yet — run /brainstorm, /campfire, /tribunal, or /forge first' } as any);
+          return;
+        }
+        content = formatSessionResults(sessionResultStore.getResults());
+      }
+
+      try {
+        copyToClipboard(content);
+        dispatch({ type: 'success', message: mode === 'chat' ? 'Chat transcript copied to clipboard' : 'Results copied to clipboard' } as any);
+      } catch (err) {
+        dispatch({ type: 'error', message: `Copy failed: ${err instanceof Error ? err.message : String(err)}` } as any);
+      }
+    >>>
+
+  callback name=toggleSelectionMode params="" deps="selectionMode,dispatch"
+    handler <<<
+      const next = !selectionMode;
+      setSelectionMode(next);
+      dispatch({
+        type: 'info',
+        message: next
+          ? 'Native selection mode on — mouse capture off. Use the terminal to select/copy. Press Ctrl+G to resume app scroll.'
+          : 'Selection mode off — app scroll restored.',
+      } as any);
+    >>>
+
   callback name=handleSlashSelect params="cmd:string"
     handler <<<
       setPlanModeQueued(false);
       setSlashPickerOpen(false);
       setInputValue(cmd + ' ');
-      setInputKey((k: number) => k + 1);
+    >>>
+
+  // Stable ref for ComposerView's slash-cancel — without this, an inline
+  // arrow would create a new function each App render, defeating the memo.
+  callback name=handleSlashCancel
+    handler <<<
+      setSlashPickerOpen(false);
     >>>
 
   callback name=handleQuestionAnswer params="answer:string" deps="questionState"
     handler <<<
       if (questionState) { questionState.resolve(answer); setQuestionState(null); setQuestionAnswer(''); }
+    >>>
+
+  callback name=handleCancelOrExit deps="questionState,replState,inputValue,dispatch"
+    handler <<<
+      if (questionState) { questionState.resolve(''); setQuestionState(null); setQuestionAnswer(''); }
+      if (replState !== 'idle') {
+        interruptActiveRun(activeAbortRef.current ? 'Cancelled.' : 'Interrupted.', false);
+        return;
+      }
+
+      const now = Date.now();
+      if (inputValue) {
+        _lastSigintAt.value = now;
+        setInputValue('');
+        dispatch({ type: 'info', message: 'Input cleared. Press Ctrl+C again to exit.' } as any);
+        return;
+      }
+
+      if (now - _lastSigintAt.value < 1200) {
+        process.exit(0);
+      }
+
+      _lastSigintAt.value = now;
+      dispatch({ type: 'info', message: 'Press Ctrl+C again to exit.' } as any);
+    >>>
+
+  callback name=handleComposerCtrlShortcut params="shortcut:string" deps="handleCancelOrExit,handleSubmit,openLatestToolDetail,openResultsPager,copyCurrentTranscript"
+    handler <<<
+      nestedCtrlShortcutRef.current = { key: shortcut, at: Date.now() };
+      switch (shortcut) {
+        case 'c':
+          ctrlKeyHandledRef.current = true;
+          handleCancelOrExit();
+          return;
+        case 'y':
+          ctrlKeyHandledRef.current = true;
+          copyCurrentTranscript();
+          return;
+        case 'e':
+          ctrlKeyHandledRef.current = true;
+          setToolOutputExpanded((prev: boolean) => !prev);
+          return;
+        case 'o':
+          ctrlKeyHandledRef.current = true;
+          openLatestToolDetail();
+          return;
+        case 't':
+          ctrlKeyHandledRef.current = true;
+          setThinkingExpanded((prev: boolean) => !prev);
+          return;
+        case 'l':
+          ctrlKeyHandledRef.current = true;
+          handleSubmit('/clear');
+          return;
+        case 'r':
+          ctrlKeyHandledRef.current = true;
+          openResultsPager();
+          return;
+        case 'j':
+          ctrlKeyHandledRef.current = true;
+          setInputValue((prev: string) => prev + '\n');
+          return;
+        default:
+          return;
+      }
     >>>
 
   // ── Register cancel callback for SIGINT ──
@@ -689,245 +3201,229 @@ screen name=App target=ink
         for (const abort of _activeAborts) abort.abort();
         _activeAborts.clear();
         activeAbortRef.current = null;
-        if (streamingFlushTimerRef.current) {
-          clearTimeout(streamingFlushTimerRef.current);
-          streamingFlushTimerRef.current = null;
-        }
-        streamingBufferRef.current = null;
-        streamingTextRef.current = null;
-        setActiveAbort(null); setLiveSpinner(null); setLiveProgress(null); setStreamingText(null);
+        setActiveAbort(null);
+        setLiveSpinner(null);
+        setLiveProgress(null);
+        streamingTextRef.current = {};
+        setStreamingText({});
+        agentProgressRef.current = {};
+        setAgentProgress({});
         clearPermissionQueue();
+        clearThinkingBuffer();
+        setQuestionState(null);
+        setQuestionAnswer('');
+        setSlashPickerOpen(false);
+        setEnginePickerOpen(false);
+        setModelPickerOpen(false);
+        setCesarPickerOpen(false);
+        setReviewEvent(null);
+        setToolDetailEvent(null);
         setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state);
       };
     >>>
 
-  // ── Keyboard handling ──
-  on event=input
+  // ── Keyboard handling — pure decision tree + thin dispatcher ──
+  callback name=handleKeyboardInput params="input:string,key:any" deps="modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,activePlan,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,copyCurrentTranscript,toggleSelectionMode,maxScrollOffset,startupOnly"
     handler <<<
-      // When model picker is open, let it handle all input (except Ctrl+C)
-      if (modelPickerOpen || cesarPickerOpen) {
-        if (input === '\x03' || (key.ctrl && input === 'c')) { process.exit(0); }
-        return;
-      }
-      // Choice-based question: single keypress resolves immediately (letter key OR 1/2/3 numeric shortcut)
-      if (questionState && questionState.choices) {
-        const pressed = input.toLowerCase();
-        const choices = questionState.choices as {key:string,label:string}[];
-        const match = choices.find((c: any) => c.key.toLowerCase() === pressed);
-        // Also accept 1-based numeric index: 1 = first choice, 2 = second, 3 = third, etc.
-        const numIdx = /^[1-9]$/.test(pressed) ? parseInt(pressed, 10) - 1 : -1;
-        const resolved = match ?? (numIdx >= 0 && numIdx < choices.length ? choices[numIdx] : null);
-        if (resolved) {
-          questionState.resolve(resolved.key);
-          setQuestionState(null);
-          setQuestionAnswer('');
-          return;
-        }
-        if (key.escape) {
-          questionState.resolve('n');
-          setQuestionState(null);
-          setQuestionAnswer('');
-          return;
-        }
-        return; // Swallow other keys while choices are shown
-      }
-      if ((key.tab || input === '\t') && !slashPickerOpen && !enginePickerOpen && !questionState && !reviewEvent) {
-        const ghost = getGhostCompletion(inputValue, allSlashCommands, registry.availableIds());
-        if (ghost) { setInputValue(inputValue + ghost + ' '); setInputKey((k: number) => k + 1); return; }
-        if (shouldQueuePlanModeOnTab({ replState, inputValue, activePlanState: activePlan?.state ?? null })) {
-          setPlanModeQueued((prev: boolean) => !prev);
-          return;
-        }
-        return;
-      }
-      if (key.ctrl && input === 'l') {
-        handleSubmit('/clear'); return;
-      }
-      // Scroll output: Shift+Up/Down for 5 blocks, Ctrl+U/D for full page
-      if (key.shift && key.upArrow) {
-        setScrollOffset((prev: number) => Math.min(prev + 3, Math.max(0, outputBlocks.length - 1)));
-        return;
-      }
-      if (key.shift && key.downArrow) {
-        setScrollOffset((prev: number) => Math.max(0, prev - 3));
-        return;
-      }
-      if ((key.ctrl && input === 'e') || input === '\x05') {
-        ctrlKeyHandledRef.current = true;
-        setToolOutputExpanded((prev: boolean) => !prev); return;
-      }
-      if ((key.ctrl && input === 't') || input === '\x14') {
-        ctrlKeyHandledRef.current = true;
-        setThinkingExpanded((prev: boolean) => !prev); return;
-      }
-      if (key.ctrl && input === 'r') {
-        openResultsPager();
-        return;
-      }
-      if (key.escape) {
-        if (planModeQueued) { setPlanModeQueued(false); return; }
-        const decision = resolveEscapeAction({
-          replState,
-          inputValue,
-          slashPickerOpen,
-          enginePickerOpen,
-          questionOpen: !!questionState,
-        });
+      if (isTerminalFocusReport(input)) return;
 
-        switch (decision.action) {
-          case 'close-slash':
-            setSlashPickerOpen(false);
-            return;
-          case 'close-engine-picker':
-            setEnginePickerOpen(false);
-            return;
-          case 'cancel-question':
-            if (questionState) { questionState.resolve(''); setQuestionState(null); setQuestionAnswer(''); }
-            return;
-          case 'interrupt':
-            interruptActiveRun('Interrupted.', false);
-            return;
-          case 'clear-input':
-            setInputValue('');
-            return;
-          case 'noop':
-            return;
+      const normalizedCtrlInput = key.ctrl
+        ? ({
+            '\x01': 'a',
+            '\x03': 'c',
+            '\x05': 'e',
+            '\x0f': 'o',
+            '\x0a': 'j',
+            '\x0b': 'k',
+            '\x0c': 'l',
+            '\x12': 'r',
+            '\x14': 't',
+            '\x15': 'u',
+            '\x17': 'w',
+          } as Record<string, string>)[input] ?? input
+        : input;
+      if (key.ctrl && normalizedCtrlInput) {
+        const nested = nestedCtrlShortcutRef.current;
+        if (nested.key === normalizedCtrlInput && Date.now() - nested.at < 120) {
+          nestedCtrlShortcutRef.current = { key: '', at: 0 };
+          return;
         }
       }
-      if (key.ctrl && input === 'j') {
-        setInputValue((prev: string) => prev + '\n'); return;
-      }
-      if (!enginePickerOpen && !questionState) {
-        if (key.upArrow && inputHistory.length > 0 && !slashPickerOpen) {
-          const r = navigateHistory('up', historyIndex, inputHistory);
-          setHistoryIndex(r.index); if (r.value) setInputValue(r.value);
-        }
-        if (key.downArrow && historyIndex >= 0 && !slashPickerOpen) {
-          const r = navigateHistory('down', historyIndex, inputHistory);
-          setHistoryIndex(r.index); setInputValue(r.value);
-        }
-      }
-      if (input === '\x03' || (key.ctrl && input === 'c')) {
-        if (questionState) { questionState.resolve(''); setQuestionState(null); setQuestionAnswer(''); }
-        if (replState !== 'idle') {
-          interruptActiveRun(activeAbortRef.current ? 'Cancelled.' : 'Interrupted.', false);
-        } else { process.exit(0); }
+
+      const action = resolveKeyboardInput({
+        input, key,
+        textInputActive: !modelPickerOpen && !cesarPickerOpen && !enginePickerOpen && !reviewEvent && !toolDetailEvent && !slashPickerOpen && (!questionState || !questionState.choices),
+        modelPickerOpen, cesarPickerOpen, slashPickerOpen, enginePickerOpen,
+        reviewEventOpen: !!reviewEvent,
+        toolDetailOpen: !!toolDetailEvent,
+        questionState, replState, inputValue, inputHistory, historyIndex,
+        planModeQueued, activePlanState: activePlan?.state ?? null,
+        outputBlockCount: outputBlocks.length,
+        commands: allSlashCommands,
+        engineIds: availableEngines,
+      });
+
+      switch (action.type) {
+        case 'none': return;
+        case 'exit': process.exit(0); return;
+        case 'resolveChoice':
+          questionState.resolve(action.choiceKey);
+          setQuestionState(null); setQuestionAnswer(''); return;
+        case 'cancelChoice':
+          questionState.resolve('n');
+          setQuestionState(null); setQuestionAnswer(''); return;
+        case 'swallow': return;
+        case 'ghostComplete':
+          setInputValue(inputValue + action.ghost + ' ');
+          return;
+        case 'togglePlanQueued':
+          setPlanModeQueued((prev: boolean) => !prev); return;
+        case 'submit':
+          handleSubmit(action.value); return;
+        case 'scroll':
+          setScrollOffset((prev: number) => {
+            if (startupOnly) {
+              return action.delta > 0
+                ? Math.max(0, prev - action.delta)
+                : Math.min(maxScrollOffset, prev - action.delta);
+            }
+            return action.delta > 0 ? Math.min(prev + action.delta, maxScrollOffset) : Math.max(0, prev + action.delta);
+          });
+          return;
+        case 'scrollToTop':
+          setScrollOffset(startupOnly ? 0 : maxScrollOffset);
+          return;
+        case 'scrollToBottom':
+          setScrollOffset(startupOnly ? maxScrollOffset : 0);
+          return;
+        case 'toggleToolExpand':
+          ctrlKeyHandledRef.current = true;
+          setToolOutputExpanded((prev: boolean) => !prev); return;
+        case 'toggleThinking':
+          ctrlKeyHandledRef.current = true;
+          setThinkingExpanded((prev: boolean) => !prev); return;
+        case 'toggleSelectionMode':
+          toggleSelectionMode(); return;
+        case 'openToolDetail':
+          openLatestToolDetail(); return;
+        case 'openResults':
+          openResultsPager(); return;
+        case 'copyTranscript':
+          copyCurrentTranscript(); return;
+        case 'unqueuePlan':
+          setPlanModeQueued(false); return;
+        case 'closeSlash':
+          setSlashPickerOpen(false); return;
+        case 'closeEnginePicker':
+          setEnginePickerOpen(false); return;
+        case 'cancelQuestion':
+          if (questionState) { questionState.resolve(''); setQuestionState(null); setQuestionAnswer(''); }
+          return;
+        case 'interrupt':
+          interruptActiveRun('Interrupted.', false); return;
+        case 'clearInput':
+          setInputValue(''); return;
+        case 'insertNewline':
+          setInputValue((prev: string) => prev + '\n'); return;
+        case 'historySet':
+          setHistoryIndex(action.index);
+          // value is always a string — empty string means "return to blank composer".
+          setInputValue(action.value);
+          return;
+        case 'cancelOrExit':
+          handleCancelOrExit();
+          return;
       }
     >>>
 
   // ── Render ──
   render
     handler <<<
+      useStableInput(handleKeyboardInput);
       return (
-      <Box flexDirection="column">
-        {mode !== 'chat' && (
-          <Box paddingX={1}>
-            <Text dimColor>{icons().find + ' '}{resolveWorkingDir().split('/').pop()}</Text>
-            <Text dimColor>{' \u2502 '}</Text>
-            <Text color={mode === 'campfire' ? '#f97316' : mode === 'brainstorm' ? '#22d3ee' : '#a78bfa'}>{mode}</Text>
-            <Text dimColor>{' \u2502 '}</Text>
-            <Text dimColor>{registry.availableIds().length}{' engines'}</Text>
-            {replState !== 'idle' && (<><Text dimColor>{' \u2502 '}</Text><Text color="yellow">{replState}</Text></>)}
-            {(() => {
-              const running = jobList.filter((j: Job) => j.state === 'running');
-              if (running.length === 0) return null;
-              return (<><Text dimColor>{' \u203a '}</Text><Text color="#facc15">{running.map((j: Job) => `${j.type}: ${j.label.slice(0, 20)}`).join(', ')}</Text></>);
-            })()}
-          </Box>
-        )}
-        <BackgroundJobRail jobs={jobList.filter((j: Job) => j.state === 'running')} />
-        <Box flexDirection="column">
-          {scrollOffset > 0 && <Box paddingX={1}><Text dimColor>{`↑ ${scrollOffset} block${scrollOffset > 1 ? 's' : ''} above — Shift+↑ to scroll`}</Text></Box>}
-          {(() => {
-            const visibleBlocks = scrollOffset > 0 ? outputBlocks.slice(0, outputBlocks.length - scrollOffset) : outputBlocks;
-            if (toolOutputExpanded) {
-              return visibleBlocks.map((block: OutputBlock) => (<OutputBlockView key={block.id} event={block.event} mode={mode} toolOutputExpanded={true} thinkingExpanded={thinkingExpanded} />));
-            }
-            // Group consecutive blocks: tool-call → ToolCallGroup, debate-round → DebateGroup, kern-draft → BidGroup
-            const minorTypes = new Set(['info', 'warning', 'success', 'separator']);
-            const groups: (OutputBlock | OutputBlock[])[] = [];
-            let idx = 0;
-            while (idx < visibleBlocks.length) {
-              const t = visibleBlocks[idx].event.type;
-              if (t === 'tool-call') {
-                const group: OutputBlock[] = [];
-                while (idx < visibleBlocks.length) {
-                  const tt = visibleBlocks[idx].event.type;
-                  if (tt === 'tool-call') { group.push(visibleBlocks[idx]); idx++; }
-                  else if (minorTypes.has(tt) && idx + 1 < visibleBlocks.length && visibleBlocks[idx + 1].event.type === 'tool-call') { idx++; }
-                  else break;
-                }
-                groups.push(group);
-              } else if (t === 'debate-round') {
-                // Group consecutive debate-round blocks (same round)
-                const group: OutputBlock[] = [];
-                const round = (visibleBlocks[idx].event as any).round;
-                while (idx < visibleBlocks.length && visibleBlocks[idx].event.type === 'debate-round' && (visibleBlocks[idx].event as any).round === round) {
-                  group.push(visibleBlocks[idx]); idx++;
-                }
-                groups.push(group);
-              } else if (t === 'kern-draft') {
-                // Group consecutive kern-draft blocks (brainstorm bids)
-                const group: OutputBlock[] = [];
-                while (idx < visibleBlocks.length && visibleBlocks[idx].event.type === 'kern-draft') {
-                  group.push(visibleBlocks[idx]); idx++;
-                }
-                groups.push(group);
-              } else { groups.push(visibleBlocks[idx]); idx++; }
-            }
-            return groups.map((item: OutputBlock | OutputBlock[], gi: number) => {
-              if (Array.isArray(item)) {
-                const firstType = item[0].event.type;
-                if (item.length === 1) return <OutputBlockView key={item[0].id} event={item[0].event} mode={mode} toolOutputExpanded={false} thinkingExpanded={thinkingExpanded} />;
-                if (firstType === 'debate-round') return <DebateGroup key={`dg-${item[0].id}`} blocks={item} />;
-                if (firstType === 'kern-draft') return <BidGroup key={`bg-${item[0].id}`} blocks={item} />;
-                return <ToolCallGroup key={`tg-${item[0].id}`} blocks={item} />;
-              }
-              return <OutputBlockView key={item.id} event={item.event} mode={mode} toolOutputExpanded={false} thinkingExpanded={thinkingExpanded} />;
-            });
-          })()}
-          {streamingText && (() => {
-            const c = engineColor(streamingText.engineId);
-            const cleaned = cleanEngineOutput(streamingText.content);
-            const wrapWidth = contentWidth(mode === 'chat' ? 6 : 8);
-            const segments = parseMarkdownBlocks(cleaned);
-            return mode === 'chat' ? (
-              (() => {
-                const lines = cleaned.split('\n').filter((line: string) => line.trim());
-                const lastLine = lines.length > 0 ? lines[lines.length - 1].trim() : '';
-                const previewLimit = Math.max(24, wrapWidth - streamingText.engineId.length - 6);
-                const preview = lastLine.length > previewLimit ? lastLine.slice(0, previewLimit - 1) + '…' : lastLine;
-                return (
-                  <Box marginY={1} paddingLeft={1}>
-                    <Text color={c} bold>{icons().dotOn + ' '}{streamingText.engineId}</Text>
-                    <Text dimColor>{preview ? ` ${preview}` : ' streaming…'}</Text>
-                  </Box>
-                );
-              })()
-            ) : (
-              <Box flexDirection="column" marginY={1} paddingLeft={2}>
-                <Text color={c} bold>{'┌── '}{streamingText.engineId}</Text>
-                <Text color={c}>{'│'}</Text>
-                <RenderedSegments segments={segments} borderColor={c} wrapWidth={wrapWidth} />
+      <Box flexDirection="column" height={Math.max(8, termHeight)} width="100%" flexShrink={0}>
+        <ChromeBar mode={mode} cwdLabel={resolveWorkingDir().split('/').pop() ?? ''} engineCount={availableEngines.length} replState={replState} runningJobs={runningJobs} />
+        <BackgroundJobRail jobs={runningJobs} />
+        <Box flexDirection="column" flexShrink={0}>
+          <>
+            {startupUseDashboardView ? (
+              <Box flexDirection="column">
+                <DashboardView event={outputBlocks[0]?.event as any} />
               </Box>
-            );
-          })()}
-          {liveProgress && <EngineProgressView engines={liveProgress} mode={mode} />}
+            ) : (
+              <HistoryView
+                visibleRows={visibleWindow.visible}
+                rowsAbove={visibleWindow.rowsAbove}
+                rowsBelow={visibleWindow.rowsBelow}
+                stickToBottom={false}
+                centerContent={false}
+              />
+            )}
+
+            {livePaneVisible && (
+              <>
+                <StreamingView streamingText={activeStream} mode={mode} liveProgress={liveProgress} />
+                {Object.keys(agentProgress).length > 0 && (
+                  <Box flexDirection="column">
+                    {Object.values(agentProgress).map((snap: AgentProgressSnapshot) => (
+                      <AgentProgressView
+                        key={snap.engineId}
+                        engineId={snap.engineId}
+                        turnIndex={snap.turnIndex}
+                        phase={snap.phase}
+                        userPrompt={snap.userPrompt}
+                        toolCalls={snap.toolCalls}
+                        lastTool={snap.lastTool}
+                        lastToolStatus={snap.lastToolStatus}
+                        tokensUsed={snap.tokensUsed}
+                        elapsedMs={snap.elapsedMs}
+                        turnsRemaining={snap.turnsRemaining}
+                        maxTurns={snap.maxTurns}
+                        tokensRemaining={snap.tokensRemaining}
+                        maxTokens={snap.maxTokens}
+                        error={snap.error}
+                      />
+                    ))}
+                  </Box>
+                )}
+              </>
+            )}
+            {pendingPlanProposal && (
+              <PlanProposalView plan={(pendingPlanProposal as any).plan} markdown={(pendingPlanProposal as any).markdown} />
+            )}
+          </>
         </Box>
+        {/* Spacer: fills remaining terminal height so content clusters at the
+            top and composer stays pinned to the bottom. Without it, content
+            container flexGrows and the live streaming indicator gets pushed
+            down far from the history rows. */}
+        <Box flexGrow={1} flexShrink={1} />
+        {toolDetailView && (
+          <ToolDetailBlock
+            title={toolDetailView.title}
+            subtitle={toolDetailView.subtitle}
+            accentColor={toolDetailView.accentColor}
+            rows={toolDetailView.rows}
+            maxVisibleRows={toolDetailViewportRows(termHeight)}
+            onClose={() => setToolDetailEvent(null)}
+          />
+        )}
         {reviewEvent && <ReviewBlock event={reviewEvent} onAction={handleReviewActionCb} />}
         {enginePickerOpen && (
-          <EnginePicker available={registry.availableIds()} initialSelected={sessionEngines ?? registry.availableIds()}
+          <EnginePicker available={availableEngines} initialSelected={sessionEngines ?? availableEngines}
             userEngines={new Set(registry.list().filter((e: any) => e.tier === 'user').map((e: any) => e.id))}
-            modelOverrides={(loadConfig() as any).engineModels ?? {}}
-            onConfirm={(selected: string[]) => { setEnginePickerOpen(false); setSessionEngines(selected); configSet('forgeEnabledEngines', selected); dispatch({ type: 'success', message: `Active engines: ${selected.join(', ')}` } as any); }}
+            modelOverrides={(config as any).engineModels ?? {}}
+            onConfirm={(selected: string[]) => { setEnginePickerOpen(false); setSessionEngines(selected); configSet('forgeEnabledEngines', selected); setConfigVersion((v: number) => v + 1); dispatch({ type: 'success', message: `Active engines: ${selected.join(', ')}` } as any); }}
             onCancel={() => setEnginePickerOpen(false)}
             onRemove={(engineId: string) => {
-              const engPath = join(homedir(), '.agon', 'engines', `${engineId}.json`);
+              const engPath = join(getAgonHome(), 'engines', `${engineId}.json`);
               try { unlinkSync(engPath); } catch (_e) {}
               const nextModels = { ...((loadConfig() as any).engineModels ?? {}) };
               delete nextModels[engineId];
               configSet('engineModels', nextModels as any);
+              setConfigVersion((v: number) => v + 1);
               registry.unregister(engineId);
+              setRegistryVersion((v: number) => v + 1);
               setSessionEngines((prev: string[]|null) => prev ? prev.filter((id: string) => id !== engineId) : null);
               dispatch({ type: 'success', message: `Removed: ${engineId}` } as any);
             }}
@@ -936,17 +3432,19 @@ screen name=App target=ink
               if (model) nextModels[engineId] = model;
               else delete nextModels[engineId];
               configSet('engineModels', nextModels as any);
+              setConfigVersion((v: number) => v + 1);
               dispatch({ type: 'success', message: model ? `Model override set: ${engineId} → ${model}` : `Model override cleared: ${engineId}` } as any);
             }}
             onBrowseModel={(engineId: string) => openCliModelPicker(engineId)} />
         )}
         {modelPickerOpen && (
-          <ModelPicker entries={modelPickerEntries} loading={modelPickerLoading} initialFilter={modelPickerInitialFilter} title={modelPickerTitle}
+          <ModelPicker entries={modelPickerEntries} loading={modelPickerLoading} initialFilter={modelPickerInitialFilter} title={modelPickerTitle} cliGroups={modelPickerCliGroups}
             onSelect={(entry: any) => {
               if (modelPickerTargetEngine) {
                 const nextModels = { ...((loadConfig() as any).engineModels ?? {}) };
                 nextModels[modelPickerTargetEngine] = entry.modelId;
                 configSet('engineModels', nextModels as any);
+                setConfigVersion((v: number) => v + 1);
                 dispatch({ type: 'success', message: `Model override set: ${modelPickerTargetEngine} → ${entry.modelId}` } as any);
                 setModelPickerTargetEngine(null);
                 setModelPickerInitialFilter('');
@@ -955,12 +3453,24 @@ screen name=App target=ink
                 setEnginePickerOpen(true);
                 return;
               }
+              // CLI-sourced entry (no baseUrl): set model override on matching engine
+              if (!entry.baseUrl) {
+                const engineId = entry.providerId;
+                const nextModels = { ...((loadConfig() as any).engineModels ?? {}) };
+                nextModels[engineId] = entry.modelId;
+                configSet('engineModels', nextModels as any);
+                setConfigVersion((v: number) => v + 1);
+                setModelPickerOpen(false);
+                dispatch({ type: 'success', message: `CLI model set: ${engineId} → ${entry.modelId}` } as any);
+                return;
+              }
               setModelPickerOpen(false);
               const def = modelEntryToEngineDef(entry);
-              const dir = join(homedir(), '.agon', 'engines');
+              const dir = join(getAgonHome(), 'engines');
               mkdirSync(dir, { recursive: true });
               writeFileSync(join(dir, `${def.id}.json`), JSON.stringify(def, null, 2) + '\n');
               registry.register(def as any);
+              setRegistryVersion((v: number) => v + 1);
               dispatch({ type: 'success', message: `Added: ${entry.providerName} \u2014 ${entry.modelName}` } as any);
             }}
             onCancel={() => {
@@ -974,11 +3484,12 @@ screen name=App target=ink
         )}
         {cesarPickerOpen && (
           <CesarPicker
-            engines={registry.availableIds()}
-            currentCesar={(loadConfig() as any).cesarEngine ?? loadConfig().forgeFixedStarter ?? 'claude'}
+            engines={availableEngines}
+            currentCesar={(config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude'}
             onSelect={(engineId: string) => {
               setCesarPickerOpen(false);
               configSet('cesarEngine', engineId);
+              setConfigVersion((v: number) => v + 1);
               if (cesarSession) { cesarSession.close(); setCesarSession(null); }
               dispatch({ type: 'success', message: `Cesar brain set to: ${engineId}` } as any);
               dispatch({ type: 'info', message: 'Conversation context + memory preserved.' } as any);
@@ -988,56 +3499,38 @@ screen name=App target=ink
         {liveSpinner && mode !== 'chat' && <SpinnerBlock message={liveSpinner.message} color={liveSpinner.color} />}
         {!enginePickerOpen && !modelPickerOpen && !cesarPickerOpen && (
           <Box flexDirection="column" paddingX={1} marginTop={1}>
-            {slashPickerOpen && <SlashPicker commands={allSlashCommands} onSelect={handleSlashSelect} onCancel={() => setSlashPickerOpen(false)} />}
             {pendingImages.length > 0 && (<Box><Text color="#22d3ee">{icons().image + ' '}</Text>{pendingImages.map((img: any, i: number) => (<Text key={i} dimColor>{img.filename}{i < pendingImages.length - 1 ? ', ' : ''}</Text>))}</Box>)}
             {inputQueue.length > 0 && (<Box><Text dimColor>{icons().queue + ' '}{inputQueue.length} queued: </Text><Text dimColor italic>{inputQueue[0].length > 40 ? inputQueue[0].slice(0, 40) + '…' : inputQueue[0]}</Text></Box>)}
-            {liveSpinner && mode === 'chat' && (
+            {liveSpinner && mode === 'chat' && !questionState && (
               <Box paddingLeft={1}>
-                <Text color={questionState && questionState.choices ? '#ef4444' : '#fbbf24'}>
-                  {questionState && questionState.choices ? `${icons().warning} PERMISSION REQUIRED \u2014 respond below` : liveSpinner.message}
-                </Text>
+                <Text color="#fbbf24">{liveSpinner.message}</Text>
               </Box>
             )}
-            <Box borderStyle={mode === 'chat' ? 'round' : 'single'} borderColor={mode === 'chat' ? (questionState ? '#fbbf24' : '#585858') : 'gray'} borderLeft={mode !== 'chat'} borderRight={mode !== 'chat'} borderTop borderBottom paddingX={1} width="100%">
-              {mode !== 'chat' && (<Text><Text color={mode === 'campfire' ? '#f97316' : mode === 'brainstorm' ? '#22d3ee' : '#a78bfa'} bold>{mode === 'campfire' ? icons().campfire : mode === 'brainstorm' ? icons().brainstorm : icons().tribunal}{' '}{mode}</Text><Text dimColor>{' │ '}</Text></Text>)}
-              <Text color={mode === 'chat' ? (planModeQueued || (activePlan && activePlan.state === 'planning') ? '#c084fc' : '#585858') : '#fbbf24'}>{mode === 'chat' ? (planModeQueued ? '◈ ' : '> ') : icons().prompt + ' '}</Text>
-              <Box flexGrow={1}>
-                {slashPickerOpen ? (
-                  <Text dimColor>{inputValue || '/'}</Text>
-                ) : (
-                  <><TextInput key={inputKey} value={inputValue} onChange={handleInputChange} onSubmit={handleSubmit}
-                    placeholder={replState === 'idle' ? mode === 'chat' ? '' : mode === 'campfire' ? 'What should we think about?' : mode === 'brainstorm' ? 'What question for the engines?' : 'What should they debate?' : ''} />
-                  {(() => { const ghost = getGhostCompletion(inputValue, allSlashCommands, registry.availableIds()); return ghost ? <Text dimColor>{ghost}</Text> : null; })()}</>
-                )}
-              </Box>
-            </Box>
-            {questionState && (
-              <Box flexDirection="column" paddingLeft={1} marginTop={0} borderLeft borderColor={questionState.choices ? '#fbbf24' : '#585858'}>
-                <Text bold color="#fbbf24">{questionState.choices ? ` ${icons().warning} ` : ' '}{questionState.prompt}</Text>
-                {questionState.choices ? (
-                  <Box flexDirection="column" paddingLeft={2}>
-                    {(questionState.choices as {key:string,label:string,color?:string}[]).map((c: any, i: number) => (
-                      <Text key={i}><Text color={c.color ?? '#6b7280'} bold>  [{i + 1}/{c.key}] </Text><Text>{c.label}</Text></Text>
-                    ))}
-                  </Box>
-                ) : (
-                  <Box paddingLeft={2}><TextInput value={questionAnswer} onChange={setQuestionAnswer} onSubmit={handleQuestionAnswer} /></Box>
-                )}
-              </Box>
-            )}
+        <ComposerView
+          mode={mode}
+          replState={replState}
+          planModeQueued={planModeQueued}
+          activePlanState={activePlan?.state ?? null}
+              slashPickerOpen={slashPickerOpen}
+              inputValue={inputValue}
+              handleInputChange={handleInputChange}
+              handleSubmit={handleSubmit}
+              allSlashCommands={allSlashCommands}
+              availableEngines={availableEngines}
+              onSlashSelect={handleSlashSelect}
+              onSlashCancel={handleSlashCancel}
+          questionState={questionState}
+          questionAnswer={questionAnswer}
+          onQuestionAnswerChange={setQuestionAnswer}
+          onQuestionAnswerSubmit={handleQuestionAnswer}
+          termWidth={termWidth}
+          termHeight={termHeight}
+          onCtrlShortcut={handleComposerCtrlShortcut} />
             {(() => {
-              const _cfg = loadConfig();
-              const _cesarId = (_cfg as any).cesarEngine ?? _cfg.forgeFixedStarter ?? 'claude';
-              // Extract last non-empty line from streaming text for status strip
-              let snippet: { engineId: string; line: string } | null = null;
-              if (streamingText && streamingText.content) {
-                const cleaned = cleanEngineOutput(streamingText.content);
-                const lines = cleaned.split('\n').filter((l: string) => l.trim());
-                if (lines.length > 0) snippet = { engineId: streamingText.engineId, line: lines[lines.length - 1].trim() };
-              }
+              const _cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
               return (<>
-                <CesarStatusStrip cesarId={_cesarId} confidence={cesarConfidence} spinner={liveSpinner} engines={liveProgress} startTime={chatStartTimeRef.current || 0} streamSnippet={snippet} isActive={replState !== 'idle' || jobList.some((j: Job) => j.state === 'running')} planModeQueued={planModeQueued} activePlanState={activePlan?.state ?? null} />
-                {mode === 'chat' && <StatusBar config={_cfg} chatSession={chatSession} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} thinkingExpanded={thinkingExpanded} isActive={replState !== 'idle'} />}
+                <CesarStatusStrip cesarId={_cesarId} confidence={cesarConfidence} spinner={liveSpinner} engines={liveProgress} startTime={chatStartTimeRef.current || 0} streamSnippet={streamSnippet} isActive={replState !== 'idle' || runningJobs.length > 0} planModeQueued={planModeQueued} activePlanState={activePlan?.state ?? null} />
+                {mode === 'chat' && <StatusBar cesarId={statusStats.cesarId} chatMessageCount={statusStats.chatMessageCount} totalTokens={statusStats.totalTokens} totalCostUsd={statusStats.totalCostUsd} cwd={statusCwd} branch={statusBranch} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} thinkingExpanded={thinkingExpanded} isActive={replState !== 'idle'} fullscreenEnabled={isFullscreenEnabled(config)} selectionMode={selectionMode} />}
               </>);
             })()}
           </Box>
@@ -1051,15 +3544,36 @@ fn name=startRepl async=true returns="Promise<void>"
   handler <<<
     ensureAgonHome();
     ensureCurrentWorkspace(process.cwd());
+    const inkStdout = createInkStdoutProxy();
     process.on('SIGINT', () => {
-      if (_activeAborts.size > 0) {
-        for (const abort of _activeAborts) abort.abort();
-        _activeAborts.clear();
-        if (_cancelCallback.fn) _cancelCallback.fn();
-      } else {
+      const now = Date.now();
+      if (now - _lastSigintAt.value < 1200) {
         if (_cesarSessionRef.session) { try { _cesarSessionRef.session.close(); } catch { /* session already closed or errored */ } _cesarSessionRef.session = null; }
         process.exit(0);
       }
+      if (_activeAborts.size > 0) {
+        for (const abort of _activeAborts) abort.abort();
+        _activeAborts.clear();
+        _lastSigintAt.value = now;
+        if (_cancelCallback.fn) _cancelCallback.fn();
+        return;
+      }
+      _lastSigintAt.value = now;
     });
-    render(<App />, { exitOnCtrlC: false });
+    if (process.stdout.isTTY) {
+      const fullscreenEnabled = isFullscreenEnabled(loadConfig());
+      // In native mode we used to ESC[2J here to clear the viewport before
+      // Ink started rendering. That painted blank rows above the first
+      // <Static> commit in the terminal's scrollback — scrolling up landed
+      // in that empty region. Trust the terminal state; let Ink flow its
+      // output naturally into scrollback.
+      process.stdout.write(terminalEnterSequence(fullscreenEnabled, false));
+      process.on('exit', () => {
+        try {
+          drainStdinBuffer();
+          process.stdout.write(terminalExitSequence(fullscreenEnabled));
+        } catch { /* stdout gone */ }
+      });
+    }
+    render(<App />, { exitOnCtrlC: false, stdout: inkStdout });
   >>>

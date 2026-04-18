@@ -95,7 +95,10 @@ describe('permission queue', () => {
 
     expect(actions.calls.setQuestionState).toHaveLength(1);
     expect(actions.calls.setQuestionState[0][0]).toMatchObject({
-      prompt: expect.stringContaining('npm test'),
+      kind: 'permission',
+      tool: 'Bash',
+      command: 'npm test',
+      prompt: 'Approve Bash',
     });
   });
 
@@ -109,7 +112,11 @@ describe('permission queue', () => {
 
     // Only the first permission triggered setQuestionState
     expect(actions.calls.setQuestionState).toHaveLength(1);
-    expect(actions.calls.setQuestionState[0][0].prompt).toContain('rm -rf');
+    expect(actions.calls.setQuestionState[0][0]).toMatchObject({
+      kind: 'permission',
+      tool: 'Bash',
+      command: 'rm -rf /tmp/x',
+    });
     // Second is still in the queue
     expect(_permissionQueue).toHaveLength(2);
   });
@@ -134,7 +141,11 @@ describe('permission queue', () => {
     await new Promise(r => setTimeout(r, 100));
 
     expect(actions.calls.setQuestionState).toHaveLength(2);
-    expect(actions.calls.setQuestionState[1][0].prompt).toContain('npm build');
+    expect(actions.calls.setQuestionState[1][0]).toMatchObject({
+      kind: 'permission',
+      tool: 'Bash',
+      command: 'npm build',
+    });
   });
 
   it('"Always" auto-resolves next queued permission with same base command', async () => {

@@ -234,14 +234,24 @@ export function stashSnapshot(cwd: string): string {
 }
 
 export function worktreeDiff(cwd: string): string {
-  git(['add', '-A'], cwd);
-  return git(['diff', '--cached'], cwd);
+  try {
+    git(['add', '-A'], cwd);
+    return git(['diff', '--cached'], cwd);
+  } catch (err) {
+    console.warn(`[agon] worktreeDiff failed: ${err instanceof Error ? err.message : String(err)}`);
+    return '';
+  }
 }
 
 export function readOnlyDiff(cwd: string): string {
-  const staged = git(['diff', '--cached'], cwd);
-  const unstaged = git(['diff'], cwd);
-  return staged + (staged && unstaged ? '\n' : '') + unstaged;
+  try {
+    const staged = git(['diff', '--cached'], cwd);
+    const unstaged = git(['diff'], cwd);
+    return staged + (staged && unstaged ? '\n' : '') + unstaged;
+  } catch (err) {
+    console.warn(`[agon] readOnlyDiff failed: ${err instanceof Error ? err.message : String(err)}`);
+    return '';
+  }
 }
 
 export function diffLineCount(diff: string): number {

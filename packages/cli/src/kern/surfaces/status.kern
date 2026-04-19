@@ -141,9 +141,15 @@ screen name=StatusBar target=ink
             {thinkingExpanded !== undefined && <Text dimColor>{' \u00b7 '}{thinkingExpanded ? 'thinking shown (' : 'thinking hidden ('}</Text>}
             {thinkingExpanded !== undefined && <Text color="#f59e0b">{'Ctrl+T'}</Text>}
             {thinkingExpanded !== undefined && <Text dimColor>{')'}</Text>}
+            <Text dimColor>{' \u00b7 files ('}</Text>
+            <Text color="#f59e0b">{'Ctrl+B'}</Text>
+            <Text dimColor>{')'}</Text>
             <Text dimColor>{' \u00b7 copy ('}</Text>
             <Text color="#f59e0b">{'Ctrl+Y'}</Text>
             <Text dimColor>{')'}</Text>
+            {selectionMode !== undefined && <Text dimColor>{' \u00b7 '}{selectionMode ? 'select' : 'scroll'}{' ('}</Text>}
+            {selectionMode !== undefined && <Text color="#f59e0b">{'Ctrl+G'}</Text>}
+            {selectionMode !== undefined && <Text dimColor>{')'}</Text>}
             {isActive ? <Text dimColor>{' \u00b7 /btw ask'}</Text> : null}
           </Text>
         </Box>

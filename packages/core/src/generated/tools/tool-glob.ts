@@ -62,6 +62,15 @@ export function createGlobTool(): ToolHandler {
       signal: ctx.abortSignal,
     });
   
+    if (result.exitCode === 1 && /\bENOENT\b/.test(result.stderr)) {
+      return {
+        ok: false,
+        content: '',
+        error: 'ripgrep (rg) is required for Glob but was not found on PATH',
+        metadata: { exitCode: result.exitCode, durationMs: result.durationMs },
+      };
+    }
+  
     // rg --files exits 1 when no files match — not an error
     if (result.exitCode > 1) {
       return {

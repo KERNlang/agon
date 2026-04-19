@@ -12,9 +12,15 @@ interface name=FileEntry export=true
   field name=lastTouchedAt type=number
   field name=touchCount type=number
 
-const name=EDIT_TOOLS type="Set<string>" value={{ new Set(['Edit','Write','MultiEdit','NotebookEdit']) }}
+const name=EDIT_TOOLS type="Set<string>"
+  handler <<<
+    new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit'])
+  >>>
 
-const name=READ_TOOLS type="Set<string>" value={{ new Set(['Read','Glob','Grep']) }}
+const name=READ_TOOLS type="Set<string>"
+  handler <<<
+    new Set(['Read', 'Glob', 'Grep'])
+  >>>
 
 fn name=extractFilePath params="input:string" returns="string|null" export=true
   handler <<<
@@ -70,7 +76,10 @@ fn name=clearFileTracker returns=void export=true
     _fileTrackerState.version += 1;
   >>>
 
-const name=_fileTrackerState type="{ files: Map<string, FileEntry>; version: number }" value={{ { files: new Map<string, FileEntry>(), version: 0 } }}
+const name=_fileTrackerState type="{ files: Map<string, FileEntry>; version: number }"
+  handler <<<
+    { files: new Map<string, FileEntry>(), version: 0 }
+  >>>
 
 fn name=getFileDiff params="absPath:string, maxLines?:number" returns=string export=true
   handler <<<

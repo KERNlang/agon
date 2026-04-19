@@ -1,0 +1,96 @@
+// ── File Tracker — session-scoped record of files touched by tool calls ──
+// Populated by app.kern's dispatch callback when a tool-call event fires.
+// Surfaces in the sidebar (blocks/file-rail.kern). Cleared on /clear.
+
+import from="node:path" names="relative,isAbsolute,resolve,dirname"
+import from="node:child_process" names="spawnSync"
+
+interface name=FileEntry export=true
+  field name=path type=string
+  field name=relPath type=string
+  field name=status type="'edited'|'created'|'read'"
+  field name=lastTouchedAt type=number
+  field name=touchCount type=number
+
+const name=EDIT_TOOLS type="Set<string>" value={{ new Set(['Edit','Write','MultiEdit','NotebookEdit']) }}
+
+const name=READ_TOOLS type="Set<string>" value={{ new Set(['Read','Glob','Grep']) }}
+
+fn name=extractFilePath params="input:string" returns="string|null" export=true
+  handler <<<
+    if (!input) return null;
+    try {
+      const parsed = JSON.parse(input);
+      const raw = (parsed as any).file_path ?? (parsed as any).path ?? (parsed as any).filePath;
+      return typeof raw === 'string' && raw.length > 0 ? raw : null;
+    } catch {
+      return null;
+    }
+  >>>
+
+fn name=recordToolCall params="tool:string, input:string, status:string" returns=void export=true
+  handler <<<
+    const raw = extractFilePath(input);
+    if (!raw) return;
+    const abs = isAbsolute(raw) ? raw : resolve(process.cwd(), raw);
+    const rel = relative(process.cwd(), abs) || abs;
+    const now = Date.now();
+    const existing = _fileTrackerState.files.get(abs);
+    let nextStatus: 'edited'|'created'|'read';
+    if (EDIT_TOOLS.has(tool)) {
+      nextStatus = existing && existing.status !== 'read' ? 'edited' : (tool === 'Write' && !existing ? 'created' : 'edited');
+    } else if (READ_TOOLS.has(tool)) {
+      nextStatus = existing && existing.status !== 'read' ? existing.status : 'read';
+    } else {
+      return;
+    }
+    _fileTrackerState.files.set(abs, {
+      path: abs,
+      relPath: rel,
+      status: nextStatus,
+      lastTouchedAt: now,
+      touchCount: (existing?.touchCount ?? 0) + 1,
+    });
+    _fileTrackerState.version += 1;
+  >>>
+
+fn name=listFiles returns="FileEntry[]" export=true
+  handler <<<
+    return Array.from(_fileTrackerState.files.values()).sort((a: FileEntry, b: FileEntry) => b.lastTouchedAt - a.lastTouchedAt);
+  >>>
+
+fn name=getFileTrackerVersion returns=number export=true
+  handler <<<
+    return _fileTrackerState.version;
+  >>>
+
+fn name=clearFileTracker returns=void export=true
+  handler <<<
+    _fileTrackerState.files.clear();
+    _fileTrackerState.version += 1;
+  >>>
+
+const name=_fileTrackerState type="{ files: Map<string, FileEntry>; version: number }" value={{ { files: new Map<string, FileEntry>(), version: 0 } }}
+
+fn name=getFileDiff params="absPath:string, maxLines?:number" returns=string export=true
+  handler <<<
+    // Runs `git diff HEAD -- <path>` and returns the raw unified-diff text,
+    // capped at maxLines (default 40) to keep the rail panel tight. Falls
+    // back to empty string on any git error (untracked file, no repo, etc.).
+    try {
+      const cap = maxLines ?? 40;
+      const result = spawnSync('git', ['diff', '--no-color', 'HEAD', '--', absPath], {
+        cwd: dirname(absPath),
+        encoding: 'utf8',
+        timeout: 1500,
+      });
+      if (result.status !== 0 && !result.stdout) return '';
+      const out = (result.stdout ?? '').trim();
+      if (!out) return '';
+      const lines = out.split('\n');
+      if (lines.length <= cap) return out;
+      return lines.slice(0, cap).join('\n') + `\n\u2026 (${lines.length - cap} more)`;
+    } catch {
+      return '';
+    }
+  >>>

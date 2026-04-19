@@ -6,7 +6,7 @@ import from="./app-input.js" names="navigateHistory,resolveEscapeAction,shouldQu
 
 interface name=KeyboardCtx
   field name=input type=string
-  field name=key type="{ ctrl?:boolean, shift?:boolean, escape?:boolean, tab?:boolean, upArrow?:boolean, downArrow?:boolean, pageUp?:boolean, pageDown?:boolean, home?:boolean, end?:boolean }"
+  field name=key type="{ ctrl?:boolean, shift?:boolean, escape?:boolean, tab?:boolean, upArrow?:boolean, downArrow?:boolean, leftArrow?:boolean, rightArrow?:boolean, pageUp?:boolean, pageDown?:boolean, home?:boolean, end?:boolean, return?:boolean }"
   field name=textInputActive type=boolean
   field name=modelPickerOpen type=boolean
   field name=cesarPickerOpen type=boolean
@@ -24,7 +24,8 @@ interface name=KeyboardCtx
   field name=outputBlockCount type=number
   field name=commands type="any[]"
   field name=engineIds type="string[]"
-  field name=fullscreenEnabled type=boolean
+  field name=fileRailFocused type=boolean
+  field name=fileRailExpanded type=boolean
 
 union name=KeyboardAction
   variant name=none
@@ -38,16 +39,17 @@ union name=KeyboardAction
   variant name=togglePlanQueued
   variant name=submit
     field name=value type=string
-  variant name=scroll
-    field name=delta type=number
-  variant name=scrollToTop
-  variant name=scrollToBottom
   variant name=toggleToolExpand
   variant name=toggleThinking
   variant name=toggleSelectionMode
   variant name=openToolDetail
   variant name=openResults
   variant name=copyTranscript
+  variant name=toggleFileRail
+  variant name=fileRailSelectPrev
+  variant name=fileRailSelectNext
+  variant name=fileRailToggleExpand
+  variant name=fileRailClose
   variant name=closeSlash
   variant name=closeEnginePicker
   variant name=cancelQuestion
@@ -74,6 +76,7 @@ fn name=resolveKeyboardInput params="ctx:KeyboardCtx" returns="KeyboardAction"
           '\x14': 't',
           '\x07': 'g',
           '\x19': 'y',
+          '\x02': 'b',
         } as Record<string, string>)[input] ?? input
       : input;
     const delegatedCtrlShortcuts = new Set(['e', 'j', 'l', 'o', 'r', 't', 'y']);
@@ -123,21 +126,28 @@ fn name=resolveKeyboardInput params="ctx:KeyboardCtx" returns="KeyboardAction"
     // Ctrl+L: clear
     if (key.ctrl && normalizedCtrlInput === 'l') return { type: 'submit', value: '/clear' };
 
+    // ── File rail navigation (only when rail is open AND composer is empty) ──
+    // Arrows belong to the rail; Enter stays the composer's property so chat
+    // submit never accidentally fires. Use →/← to expand/collapse.
+    if (ctx.fileRailFocused) {
+      if (key.upArrow) return { type: 'fileRailSelectPrev' };
+      if (key.downArrow) return { type: 'fileRailSelectNext' };
+      if (key.rightArrow && !ctx.fileRailExpanded) return { type: 'fileRailToggleExpand' };
+      if (key.leftArrow && ctx.fileRailExpanded) return { type: 'fileRailToggleExpand' };
+      if (key.escape) {
+        if (ctx.fileRailExpanded) return { type: 'fileRailToggleExpand' };
+        return { type: 'fileRailClose' };
+      }
+    }
+
     // Scroll keys move HistoryView's sliced window forward/back — only
     // meaningful in fullscreen (alt-screen) mode. In native mode the
     // terminal's own scrollback owns the scroll UI; the app doesn't slice
     // a window, so these keys are intentionally no-ops to let the terminal
     // bindings pass through.
-    if (ctx.fullscreenEnabled) {
-      if (key.shift && key.upArrow) return { type: 'scroll', delta: 3 };
-      if (key.shift && key.downArrow) return { type: 'scroll', delta: -3 };
-      if (key.pageUp) return { type: 'scroll', delta: 12 };
-      if (key.pageDown) return { type: 'scroll', delta: -12 };
-      if (!ctx.textInputActive) {
-        if (key.home) return { type: 'scrollToTop' };
-        if (key.end) return { type: 'scrollToBottom' };
-      }
-    }
+    // Scroll is owned by the terminal's native scrollback (main-buffer mode).
+    // No in-app scroll handler — PgUp/PgDn/Shift+↑/↓/Home/End flow through to
+    // terminal/composer as the user expects from a normal REPL.
 
     // Ctrl+E: toggle tool output expansion
     if (key.ctrl && normalizedCtrlInput === 'e') return { type: 'toggleToolExpand' };
@@ -156,6 +166,9 @@ fn name=resolveKeyboardInput params="ctx:KeyboardCtx" returns="KeyboardAction"
 
     // Ctrl+Y: copy current transcript/results to clipboard
     if (key.ctrl && normalizedCtrlInput === 'y') return { type: 'copyTranscript' };
+
+    // Ctrl+B: toggle Files rail (right-side sidebar of session-touched files)
+    if (key.ctrl && normalizedCtrlInput === 'b') return { type: 'toggleFileRail' };
 
     // Escape: delegate to resolveEscapeAction
     if (key.escape) {

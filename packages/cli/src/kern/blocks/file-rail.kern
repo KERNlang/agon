@@ -1,0 +1,126 @@
+// ── File Rail — right-side sidebar listing files touched this session ──
+// Populated by FileTracker (signals/file-tracker.kern). Toggled via Ctrl+B.
+// When focused (rail open + composer empty), arrows/Enter/Esc navigate.
+
+import from="react" default="React"
+import from="ink" names="Box,Text"
+import from="../signals/file-tracker.js" names="FileEntry" types=true
+import from="../signals/file-tracker.js" names="getFileDiff"
+
+fn name=statusGlyph params="status:string" returns=string export=true
+  handler <<<
+    if (status === 'edited') return 'M';
+    if (status === 'created') return '+';
+    return 'r';
+  >>>
+
+fn name=statusColor params="status:string" returns=string export=true
+  handler <<<
+    if (status === 'edited') return '#22d3ee';
+    if (status === 'created') return '#4ade80';
+    return 'gray';
+  >>>
+
+fn name=truncateLeft params="s:string, max:number" returns=string export=true
+  handler <<<
+    if (s.length <= max) return s;
+    return '\u2026' + s.slice(s.length - max + 1);
+  >>>
+
+fn name=formatRelativeTime params="ms:number" returns=string export=true
+  handler <<<
+    const diff = Date.now() - ms;
+    const s = Math.floor(diff / 1000);
+    if (s < 5) return 'just now';
+    if (s < 60) return `${s}s ago`;
+    const m = Math.floor(s / 60);
+    if (m < 60) return `${m}m ago`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h}h ago`;
+    return `${Math.floor(h / 24)}d ago`;
+  >>>
+
+screen name=FileRail target=ink memo=true
+  prop name=files type="FileEntry[]"
+  prop name=maxRows type=number
+  prop name=width type=number optional=true
+  prop name=focused type=boolean optional=true
+  prop name=selectedIndex type=number optional=true
+  prop name=expandedPath type="string|null" optional=true
+  render
+    handler <<<
+      const w = width ?? 36;
+      const sel = Math.max(0, Math.min(files.length - 1, selectedIndex ?? 0));
+      const expandedFile = expandedPath ? files.find((f: FileEntry) => f.path === expandedPath) : null;
+      const borderColor = focused ? '#22d3ee' : 'gray';
+      if (files.length === 0) {
+        return (
+          <Box flexDirection="column" flexShrink={0} width={w} paddingLeft={1} borderStyle="single" borderColor={borderColor}>
+            <Text dimColor bold>FILES</Text>
+            <Text dimColor>{'(none yet)'}</Text>
+            <Text dimColor>{'Edit/Read/Write'}</Text>
+            <Text dimColor>{'will show up'}</Text>
+            <Text> </Text>
+            <Text dimColor>{'\u2325 Ctrl+B toggles'}</Text>
+          </Box>
+        );
+      }
+      const pathMax = Math.max(4, w - 5);
+      // Reserve space for detail pane (if expanded) within maxRows.
+      const detailRows = expandedFile ? 6 : 0;
+      const headerRows = 2;
+      const listBudget = Math.max(1, maxRows - detailRows - headerRows);
+      // Scroll the list so `sel` is visible.
+      const start = Math.max(0, Math.min(files.length - listBudget, sel - Math.floor(listBudget / 2)));
+      const visible = files.slice(start, start + listBudget);
+      return (
+        <Box flexDirection="column" flexShrink={0} width={w} paddingLeft={1} borderStyle="single" borderColor={borderColor}>
+          <Text dimColor bold>{`FILES (${files.length})`}{focused ? <Text color="#22d3ee">{' \u25c6'}</Text> : null}</Text>
+          {focused && <Text dimColor>{'\u2191\u2193 select  \u2192 expand  \u2190 collapse  esc close'}</Text>}
+          {!focused && <Text dimColor>{'\u2191\u2193 focus with empty composer'}</Text>}
+          {visible.map((f: FileEntry, i: number) => {
+            const idx = start + i;
+            const isSel = focused && idx === sel;
+            return (
+              <Box key={f.path}>
+                <Text color={isSel ? '#22d3ee' : 'gray'}>{isSel ? '\u25b8' : ' '}</Text>
+                <Text color={statusColor(f.status)} bold={f.status !== 'read'}>{statusGlyph(f.status)}</Text>
+                <Text> </Text>
+                <Text dimColor={f.status === 'read' && !isSel} bold={isSel}>
+                  {truncateLeft(f.relPath, pathMax)}
+                </Text>
+              </Box>
+            );
+          })}
+          {start + listBudget < files.length && (
+            <Text dimColor>{`+${files.length - start - listBudget} more`}</Text>
+          )}
+          {expandedFile && (() => {
+            const diffText = expandedFile.status !== 'read' ? getFileDiff(expandedFile.path, Math.max(6, maxRows - 10)) : '';
+            const diffLines = diffText ? diffText.split('\n') : [];
+            return (
+              <Box flexDirection="column" marginTop={1}>
+                <Text bold color={statusColor(expandedFile.status)}>{expandedFile.status.toUpperCase()}</Text>
+                <Text dimColor wrap="truncate-middle">{expandedFile.path}</Text>
+                <Text dimColor>{`touches: ${expandedFile.touchCount} \u2022 ${formatRelativeTime(expandedFile.lastTouchedAt)}`}</Text>
+                {diffLines.length === 0 && expandedFile.status !== 'read' && (
+                  <Text dimColor italic>{'(no tracked diff)'}</Text>
+                )}
+                {diffLines.length > 0 && (
+                  <Box flexDirection="column" marginTop={1}>
+                    {diffLines.slice(0, Math.max(4, maxRows - 10)).map((ln: string, i: number) => {
+                      const color = ln.startsWith('+') && !ln.startsWith('+++') ? '#4ade80'
+                        : ln.startsWith('-') && !ln.startsWith('---') ? '#f87171'
+                        : ln.startsWith('@@') ? '#a78bfa'
+                        : undefined;
+                      const dim = !color;
+                      return <Text key={`d-${i}`} color={color} dimColor={dim} wrap="truncate">{ln}</Text>;
+                    })}
+                  </Box>
+                )}
+              </Box>
+            );
+          })()}
+        </Box>
+      );
+    >>>

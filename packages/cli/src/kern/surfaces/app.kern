@@ -3,6 +3,7 @@
 
 import from="react" names="useState,useCallback,useEffect,useRef,useMemo"
 import from="ink" names="Box,Text,Static,render"
+import from="@kernlang/terminal/runtime" names="ScrollBox"
 import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,ensureCurrentWorkspace,startChatSession,getRatings,getActiveWorkspace,RUNS_DIR,extractImagesFromInput,resolveWorkingDir,currentBranch,configSet,createCesarMemory,modelEntryToEngineDef,appendMessage,getAgonHome,tracker,copyToClipboard"
 import from="@agon/core" names="Plan,ChatSession,Skill,PersistentSession,ImageAttachment" types=true
 import from="../../handlers/types.js" names="EngineProgress" types=true
@@ -1889,7 +1890,7 @@ screen name=App target=ink
   state name=termWidth type=number initial="process.stdout.columns || 100" throttle=100
   state name=termHeight type=number initial="process.stdout.rows || 24" throttle=100
   state name=scrollOffset type=number initial="0"
-  state name=selectionMode type=boolean initial="false"
+  state name=selectionMode type=boolean initial="true"
   state name=fileRailOpen type=boolean initial="false"
   state name=fileRailVersion type=number initial="0"
   state name=fileRailSelectedIdx type=number initial="0"
@@ -2038,6 +2039,8 @@ screen name=App target=ink
 
   memo name=displayRows deps="displayBlocks, mode, toolOutputExpanded, thinkingExpanded"
     handler <<<
+      // Ink 7 + ScrollBox: re-rendering on state change is supported, so
+      // Ctrl+E/Ctrl+T can actually toggle past tool/thinking rows.
       return buildTranscriptRows(displayBlocks, mode, toolOutputExpanded, thinkingExpanded);
     >>>
 
@@ -2467,19 +2470,26 @@ screen name=App target=ink
       return () => { process.stdout.off('resize', onResize); };
     >>>
 
-  effect deps=""
+  effect deps="selectionMode"
     handler <<<
       if (!process.stdin.isTTY || !process.stdout.isTTY) return;
-      // Enable bracketed paste. Mouse tracking is owned by the
-      // <AlternateScreen> primitive — it enables SGR mouse so ScrollBox can
-      // receive wheel events. Native select still works with Option+drag on
-      // macOS Terminal.app / iTerm2 (standard terminal bypass).
+      // Bracketed paste + SGR mouse tracking. Ink 7 owns alt-screen entry via
+      // render({alternateScreen:true}); we just layer mouse tracking on top so
+      // ScrollBox can receive wheel events. Disabled in selectionMode so
+      // Cmd+C drag-select works (standard terminal bypass).
       process.stdout.write('\x1b[?2004h');
-      const onResume = () => { process.stdout.write('\x1b[?2004h'); };
+      const enableMouse = '\x1b[?1000h\x1b[?1002h\x1b[?1006h';
+      const disableMouse = '\x1b[?1006l\x1b[?1002l\x1b[?1000l';
+      if (!selectionMode) process.stdout.write(enableMouse);
+      const onResume = () => {
+        process.stdout.write('\x1b[?2004h');
+        if (!selectionMode) process.stdout.write(enableMouse);
+      };
       process.on('SIGCONT', onResume);
       return () => {
         process.off('SIGCONT', onResume);
         drainStdinBuffer();
+        if (!selectionMode) process.stdout.write(disableMouse);
         process.stdout.write('\x1b[?2004l');
       };
     >>>
@@ -2859,8 +2869,8 @@ screen name=App target=ink
       dispatch({
         type: 'info',
         message: next
-          ? 'Native selection mode on — mouse capture off. Use the terminal to select/copy. Press Ctrl+G to resume app scroll.'
-          : 'Selection mode off — app scroll restored.',
+          ? 'Selection mode on — drag to select, Cmd+C to copy. Ctrl+G again for wheel scroll.'
+          : 'Wheel scroll on — mouse captured. Ctrl+G to select/copy with mouse again.',
       } as any);
     >>>
 
@@ -3115,10 +3125,12 @@ screen name=App target=ink
       // contains only live streaming, conditional panels, composer, status.
       // Terminal owns mouse → plain drag selects, wheel scrolls scrollback.
       return (
-      <>
-      <Static items={displayRows}>
-        {(row: any) => <TranscriptRowView key={row.key} row={row} />}
-      </Static>
+      <Box flexDirection="column" flexGrow={1} width={termWidth} height={termHeight}>
+      <Box flexDirection="row" flexGrow={1} width="100%">
+      <Box flexDirection="column" flexGrow={1} minWidth={0}>
+      <ScrollBox stickyScroll flexGrow={1}>
+        {displayRows.map((row: any) => <TranscriptRowView key={row.key} row={row} />)}
+      </ScrollBox>
       <Box flexDirection="column" flexShrink={0}>
         <ChromeBar mode={mode} cwdLabel={resolveWorkingDir().split('/').pop() ?? ''} engineCount={availableEngines.length} replState={replState} runningJobs={runningJobs} />
         <BackgroundJobRail jobs={runningJobs} />
@@ -3157,9 +3169,6 @@ screen name=App target=ink
         )}
         {pendingPlanProposal && (
           <PlanProposalView plan={(pendingPlanProposal as any).plan} markdown={(pendingPlanProposal as any).markdown} />
-        )}
-        {showFileRail && (
-          <FileRail files={fileRailFiles} maxRows={Math.max(4, Math.floor(termHeight / 2))} width={Math.max(28, Math.floor(termWidth / 2))} focused={fileRailOpen && inputValue.trim().length === 0} selectedIndex={fileRailSelectedIdx} expandedPath={fileRailExpandedPath} />
         )}
         {toolDetailView && (
           <ToolDetailBlock
@@ -3299,7 +3308,12 @@ screen name=App target=ink
           </Box>
         )}
       </Box>
-      </>
+      </Box>
+      {showFileRail && (
+        <FileRail files={fileRailFiles} maxRows={fileRailExpandedPath ? Math.max(20, termHeight - 6) : Math.max(6, Math.min(12, 10))} width={Math.max(32, Math.floor(termWidth / 3))} focused={fileRailOpen && inputValue.trim().length === 0} selectedIndex={fileRailSelectedIdx} expandedPath={fileRailExpandedPath} />
+      )}
+      </Box>
+      </Box>
       );
     >>>
 
@@ -3328,5 +3342,5 @@ fn name=startRepl async=true returns="Promise<void>"
         try { drainStdinBuffer(); } catch { /* stdout gone */ }
       });
     }
-    render(<App />, { exitOnCtrlC: false });
+    render(<App />, { exitOnCtrlC: false, alternateScreen: true });
   >>>

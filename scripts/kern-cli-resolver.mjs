@@ -202,6 +202,14 @@ export function readEffectiveKernVersion(cliPackageRoot) {
   return null;
 }
 
+/**
+ * @param {string} label
+ * @param {string} command
+ * @param {string[]} commandArgs
+ * @param {string} packageVersion
+ * @param {string | null} [effectiveVersion]
+ * @param {boolean} [allowStale]
+ */
 export function describeCandidate(label, command, commandArgs, packageVersion, effectiveVersion = null, allowStale = false) {
   return {
     label,

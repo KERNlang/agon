@@ -34,7 +34,7 @@ fn name=extractFilePath params="input:string" returns="string|null" export=true
     }
   >>>
 
-fn name=recordToolCall params="tool:string, input:string, status:string" returns=void export=true
+fn name=recordToolCall params="tool:string, input:string, status:string" returns=void export=true confidence=0.9
   handler <<<
     const raw = extractFilePath(input);
     if (!raw) return;
@@ -78,7 +78,7 @@ fn name=clearFileTracker returns=void export=true
 
 const name=_fileTrackerState type="{ files: Map<string, FileEntry>; version: number }"
   handler <<<
-    { files: new Map<string, FileEntry>(), version: 0 }
+    ({ files: new Map<string, FileEntry>(), version: 0 })
   >>>
 
 fn name=getFileDiff params="absPath:string, maxLines?:number" returns=string export=true

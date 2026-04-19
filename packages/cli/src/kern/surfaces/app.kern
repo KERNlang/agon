@@ -72,7 +72,7 @@ fn name=shortToolPath params="filePath:string" returns=string
     return String(filePath ?? '').replace(`${process.cwd()}/`, '').replace(process.env.HOME ?? '', '~');
   >>>
 
-fn name=parseToolCallPayload params="event:any" returns=any
+fn name=parseToolCallPayload params="event:any" returns=any confidence=0.85
   handler <<<
     const rawInput = String(event?.input ?? '');
     let parsed: Record<string, unknown> = {};

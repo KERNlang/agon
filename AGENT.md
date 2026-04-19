@@ -22,7 +22,7 @@ Workflow:
 
 Compiler resolution:
 - `npm run kern:compile` uses the root-installed `@kernlang/*` family pinned in `package.json`.
-- Agon validates the compiler's effective `KERN_VERSION` and rejects stale installs instead of trusting package metadata alone.
+- Agon validates the resolved `@kernlang/*` package family and rejects stale installs instead of trusting the CLI package alone.
 
 CLI runtime note:
 - For changes under `packages/cli/src/kern/`, `npm run kern:compile -w packages/cli` only updates `packages/cli/src/generated/`.

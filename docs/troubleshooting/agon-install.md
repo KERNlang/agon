@@ -27,7 +27,7 @@ Current mitigation:
 - `npm run kern:compile` now uses the root-installed `@kernlang/*` family pinned in `package.json`.
 - `KERN_BIN=/abs/path/to/kern npm run kern:compile` forces a specific compiler.
 - `npm run kern:compile:local` and `npm run build:cli:local` switch the whole repo to a sibling `../kern-lang` checkout for one command.
-- Agon validates the compiler's effective `KERN_VERSION` and rejects stale installs instead of trusting package metadata alone.
+- Agon validates the resolved `@kernlang/*` package family and rejects stale installs instead of trusting the CLI package alone.
 
 ## Fix (30 minutes, zero code risk)
 

@@ -1,0 +1,12 @@
+diff --git a/node_modules/@kernlang/review/dist/rules/kern-source.js b/node_modules/@kernlang/review/dist/rules/kern-source.js
+index f426163..4faad85 100644
+--- a/node_modules/@kernlang/review/dist/rules/kern-source.js
++++ b/node_modules/@kernlang/review/dist/rules/kern-source.js
+@@ -53,6 +53,7 @@ const DIRECT_BINDING_NODE_TYPES = new Set([
+     'method',
+     'arg',
+     'flag',
++    'prop',
+     // Top-level declaration types (visible to all handlers in the file)
+     'screen',
+     'type',

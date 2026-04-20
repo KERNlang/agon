@@ -2,6 +2,10 @@ import { defineCommand, runMain } from 'citty';
 import { forgeCommand } from './commands/forge.js';
 import { brainstormCommand } from './commands/brainstorm.js';
 import { tribunalCommand } from './commands/tribunal.js';
+import { campfireCommand } from './commands/campfire.js';
+import { teamForgeCommand } from './commands/team-forge.js';
+import { teamBrainstormCommand } from './commands/team-brainstorm.js';
+import { teamTribunalCommand } from './commands/team-tribunal.js';
 import { leaderboardCommand } from './commands/leaderboard.js';
 import { historyCommand } from './commands/history.js';
 import { engineCommand } from './commands/engine.js';
@@ -25,6 +29,10 @@ const main = defineCommand({
     forge: forgeCommand,
     brainstorm: brainstormCommand,
     tribunal: tribunalCommand,
+    campfire: campfireCommand,
+    'team-forge': teamForgeCommand,
+    'team-brainstorm': teamBrainstormCommand,
+    'team-tribunal': teamTribunalCommand,
     leaderboard: leaderboardCommand,
     history: historyCommand,
     engine: engineCommand,

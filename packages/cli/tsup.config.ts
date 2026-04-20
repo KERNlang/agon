@@ -6,7 +6,12 @@ export default defineConfig({
   dts: false,
   sourcemap: true,
   clean: true,
-  external: ['@agon/core', '@agon/forge', '@agon/adapter-cli', '@huggingface/transformers', 'onnxruntime-node', 'ink', 'react', 'ink-text-input', 'ink-spinner', 'ink-select-input'],
+  external: [
+    '@agon/core', '@agon/forge', '@agon/adapter-cli',
+    '@huggingface/transformers', 'onnxruntime-node',
+    'ink', 'react', 'ink-text-input', 'ink-spinner', 'ink-select-input',
+    'chalk', 'supports-color',
+  ],
   banner: {
     js: '#!/usr/bin/env node',
   },

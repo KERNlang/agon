@@ -46,6 +46,7 @@
     "@kernlang/mcp": "~3.3.4",
     "@kernlang/metrics": "~3.3.4",
     "@kernlang/native": "~3.3.4",
+    "@kernlang/protocol": "~3.3.4",
     "@kernlang/react": "~3.3.4",
     "@kernlang/review": "~3.3.4",
     "@kernlang/review-mcp": "~3.3.4",

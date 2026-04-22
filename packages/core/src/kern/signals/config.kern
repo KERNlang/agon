@@ -101,7 +101,7 @@ fn name=loadConfig params="cwd?:string" returns="Required<AgonConfig>"
         Bash: 'ask',
       };
     }
-    if (!(merged as any).permissionMode) (merged as any).permissionMode = 'ask';
+    if (!(merged as any).permissionMode) (merged as any).permissionMode = 'smart';
     return merged;
   >>>
 

@@ -56,7 +56,7 @@ export interface AgentSessionConfig {
   heavyToolSemaphore?: Semaphore;
   thread?: ContextThread;
   contextWindowTokens?: number;
-  permissionMode?: 'auto'|'ask'|'deny-all';
+  permissionMode?: 'auto'|'smart'|'ask'|'deny-all';
   allowedCommands?: string[];
   toolPermissions?: Record<string,'allow'|'ask'|'deny'>;
   onPermissionAsk?: (tool:string, command:string, reason:string)=>Promise<boolean|string>;

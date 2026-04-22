@@ -68,7 +68,7 @@ export interface AgentTeamConfig {
   teamBudget?: AgentTeamBudget;
   costFn?: (engineId: string, tokensUsed: number) => number;
   thread?: ContextThread;
-  permissionMode?: 'auto'|'ask'|'deny-all';
+  permissionMode?: 'auto'|'smart'|'ask'|'deny-all';
   allowedCommands?: string[];
   toolPermissions?: Record<string,'allow'|'ask'|'deny'>;
   onPermissionAsk?: (engineId:string, tool:string, command:string, reason:string)=>Promise<boolean|string>;

@@ -348,6 +348,8 @@ export function App() {
   const wheelFlushTimerRef = useRef<ReturnType<typeof setTimeout>|null>(null);
   const mouseSelectionRef = useRef<{ anchorRow: number | null; anchorCol: number | null; focusRow: number | null; focusCol: number | null; active: boolean; moved: boolean }>({ anchorRow: null, anchorCol: null, focusRow: null, focusCol: null, active: false, moved: false });
   const lastTerminalInputAtRef = useRef<number>(Date.now());
+  const scrollBoxRef = useRef<any>(null);
+  const blockRowCacheRef = useRef<Map<string, any[]>>(new Map());
 
   const allSlashCommands = useMemo(() => {
           const builtinCmds = SLASH_COMMANDS;
@@ -460,7 +462,28 @@ export function App() {
   const displayRows = useMemo(() => {
           // Ink 7 + ScrollBox: re-rendering on state change is supported, so
           // Ctrl+E/Ctrl+T can actually toggle past tool/thinking rows.
-          return buildTranscriptRows(displayBlocks, mode, toolOutputExpanded, thinkingExpanded);
+          const cache = blockRowCacheRef.current;
+          const rows: any[] = [];
+          for (const block of displayBlocks) {
+            const eventJson = JSON.stringify(block.event);
+            const cacheKey = `${block.id}::${eventJson}::${mode}::${toolOutputExpanded}::${thinkingExpanded}`;
+            const cached = cache.get(cacheKey);
+            if (cached) {
+              rows.push(...cached);
+              continue;
+            }
+            const blockRows = buildTranscriptRows([block], mode, toolOutputExpanded, thinkingExpanded);
+            // Adjust keys to include block id so they stay unique across blocks
+            const keyedRows = blockRows.map((r: any) => ({ ...r, key: `${block.id}-${r.key}` }));
+            cache.set(cacheKey, keyedRows);
+            rows.push(...keyedRows);
+          }
+          // Prune stale entries (blocks no longer in displayBlocks)
+          const validKeys = new Set(displayBlocks.map((b: any) => `${b.id}::${JSON.stringify(b.event)}::${mode}::${toolOutputExpanded}::${thinkingExpanded}`));
+          for (const key of Array.from(cache.keys())) {
+            if (!validKeys.has(key)) cache.delete(key);
+          }
+          return rows;
   }, [displayBlocks, mode, toolOutputExpanded, thinkingExpanded]);
 
   const totalDisplayRows = useMemo(() => {
@@ -1083,6 +1106,26 @@ export function App() {
   const handleKeyboardInput = useCallback((input:string,key:any) => {
     if (isTerminalFocusReport(input)) return;
     
+    // ScrollBox keyboard shortcuts (only when no modal is open)
+    if (!modelPickerOpen && !cesarPickerOpen && !enginePickerOpen && !reviewEvent && !toolDetailEvent && !slashPickerOpen && !questionState) {
+      if (key.shift && key.name === 'pageup') {
+        scrollBoxRef.current?.scrollBy(-Math.max(1, Math.floor(currentVisibleRowBudget / 2)));
+        return;
+      }
+      if (key.shift && key.name === 'pagedown') {
+        scrollBoxRef.current?.scrollBy(Math.max(1, Math.floor(currentVisibleRowBudget / 2)));
+        return;
+      }
+      if (key.name === 'home') {
+        scrollBoxRef.current?.scrollTo(0);
+        return;
+      }
+      if (key.name === 'end') {
+        scrollBoxRef.current?.scrollToBottom?.();
+        return;
+      }
+    }
+    
     const normalizedCtrlInput = key.ctrl
       ? ({
           '\x01': 'a',
@@ -1390,7 +1433,7 @@ export function App() {
   <Box flexDirection="column" flexGrow={1} width={termWidth} height={termHeight}>
   <Box flexDirection="row" flexGrow={1} width="100%">
   <Box flexDirection="column" flexGrow={1} minWidth={0}>
-  <ScrollBox stickyScroll flexGrow={1}>
+  <ScrollBox ref={scrollBoxRef} stickyScroll flexGrow={1}>
     {transcriptElements}
   </ScrollBox>
   <Box flexDirection="column" flexShrink={0}>

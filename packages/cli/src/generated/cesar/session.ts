@@ -20,6 +20,8 @@ import type { HandlerContext } from '../../handlers/types.js';
 
 import { createCesarToolRegistry } from './tools.js';
 
+import { getSessionAllowList } from '../signals/output.js';
+
 import { buildRoutingContext } from './routing.js';
 
 import { extractDelegation } from './brain.js';
@@ -350,10 +352,12 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
     cwd: resolveWorkingDir(),
     readFileState: (fsc as any).cache,
     abortSignal: undefined,
-    permissionMode: (config as any).permissionMode ?? 'ask',
+    permissionMode: (config as any).permissionMode ?? 'smart',
     explorationMode,
     allowedCommands: (config as any).allowedCommands ?? [],
     toolPermissions: (config as any).toolPermissions ?? {},
+    sessionAllowList: getSessionAllowList(),
+    source: 'orchestrator' as const,
   };
   return async (name: string, args: Record<string, unknown>, callId: string) => {
     // Plan mode: block execution tools
@@ -591,6 +595,19 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
   
     // allow → auto-approve
     if (perm === 'allow' || mode === 'auto') return true;
+  
+    // smart → auto-approve orchestrator context and session allowlist, ask otherwise
+    if (mode === 'smart') {
+      // Session allowlist check
+      const sessionList = getSessionAllowList();
+      if (agonTool === 'Bash' && sessionList.length > 0) {
+        const cmdLower = command.toLowerCase();
+        const base = command.trim().split(/\s+/)[0];
+        if (sessionList.some((a: string) => cmdLower.startsWith(a.toLowerCase()) || base === a)) return true;
+      }
+      // Cesar tool loop is always orchestrator — auto-approve non-dangerous
+      return true;
+    }
   
     // For Bash: check allowedCommands whitelist
     if (agonTool === 'Bash' && allowed.length > 0) {

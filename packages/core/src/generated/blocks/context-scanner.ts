@@ -150,6 +150,10 @@ export function scanProjectContext(cwd: string, extraContext?: string, format?: 
     } catch {}
   }
   
+  if (extraContext && extraContext.trim()) {
+    sections.push(`Extra context:\n${extraContext.trim()}`);
+  }
+  
   let result = sections.join('\n\n');
   if (result.length > MAX_CHARS) {
     result = result.slice(0, MAX_CHARS) + '\n... (truncated)';

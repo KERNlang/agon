@@ -22,13 +22,15 @@ export interface ToolContext {
   cwd: string;
   readFileState: Map<string, FileState>;
   abortSignal?: AbortSignal;
-  permissionMode?: 'auto'|'ask'|'deny-all';
+  permissionMode?: 'auto'|'smart'|'ask'|'deny-all';
   explorationMode?: boolean;
   allowedCommands?: string[];
   toolPermissions?: Record<string,'allow'|'ask'|'deny'>;
   onProgress?: ((message: string) => void);
   readOnlyMode?: boolean;
   virtualFs?: any;
+  sessionAllowList?: string[];
+  source?: 'user'|'orchestrator';
 }
 
 export interface FileState {

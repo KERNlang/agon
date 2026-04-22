@@ -50,9 +50,10 @@ export interface ApiAgentOptions {
   historyMessages?: Array<Record<string,unknown>>;
   onHistoryEntry?: (entry:Record<string,unknown>)=>void;
   virtualFs?: any;
-  permissionMode?: 'auto'|'ask'|'deny-all';
+  permissionMode?: 'auto'|'smart'|'ask'|'deny-all';
   allowedCommands?: string[];
   toolPermissions?: Record<string,'allow'|'ask'|'deny'>;
+  sessionAllowList?: string[];
   onPermissionAsk?: (tool:string, command:string, reason:string)=>Promise<boolean|string>;
 }
 
@@ -145,6 +146,8 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
     allowedCommands: opts.allowedCommands ?? [],
     toolPermissions: opts.toolPermissions ?? {},
     virtualFs: opts.virtualFs,
+    sessionAllowList: opts.sessionAllowList ?? [],
+    source: 'orchestrator' as const,
   };
   
   // Build system prompt with tool definitions

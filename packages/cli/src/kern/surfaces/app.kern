@@ -1867,8 +1867,7 @@ screen name=App target=ink
   ref name=wheelFlushTimerRef type="ReturnType<typeof setTimeout>|null" initial="null"
   ref name=mouseSelectionRef type="{ anchorRow: number | null; anchorCol: number | null; focusRow: number | null; focusCol: number | null; active: boolean; moved: boolean }" initial="{ anchorRow: null, anchorCol: null, focusRow: null, focusCol: null, active: false, moved: false }"
   ref name=lastTerminalInputAtRef type=number initial="Date.now()"
-
-  // ── Init-once state (registry, adapter, skills) ──
+  ref name=scrollBoxRef type="any" initial="null"
   // engines dir is at packages/cli/engines from the bundled dist/index.js
   // (3 `..` up from dist/). For source-mode execution the path points into
   // src/, which doesn't exist — EngineRegistry.resolveBuiltinDir walks up
@@ -2031,11 +2030,36 @@ screen name=App target=ink
       return estimateVisibleBlockBudget(viewportRows, mode, overlayReservedRows + bottomChromeReservedRows);
     >>>
 
+  // Per-block row cache: only re-parse blocks whose content changed.
+  // Key = block.id + stable hash of event JSON; value = parsed rows.
+  ref name=blockRowCacheRef type="Map<string, any[]>" initial="new Map()"
+
   memo name=displayRows deps="displayBlocks, mode, toolOutputExpanded, thinkingExpanded"
     handler <<<
       // Ink 7 + ScrollBox: re-rendering on state change is supported, so
       // Ctrl+E/Ctrl+T can actually toggle past tool/thinking rows.
-      return buildTranscriptRows(displayBlocks, mode, toolOutputExpanded, thinkingExpanded);
+      const cache = blockRowCacheRef.current;
+      const rows: any[] = [];
+      for (const block of displayBlocks) {
+        const eventJson = JSON.stringify(block.event);
+        const cacheKey = `${block.id}::${eventJson}::${mode}::${toolOutputExpanded}::${thinkingExpanded}`;
+        const cached = cache.get(cacheKey);
+        if (cached) {
+          rows.push(...cached);
+          continue;
+        }
+        const blockRows = buildTranscriptRows([block], mode, toolOutputExpanded, thinkingExpanded);
+        // Adjust keys to include block id so they stay unique across blocks
+        const keyedRows = blockRows.map((r: any) => ({ ...r, key: `${block.id}-${r.key}` }));
+        cache.set(cacheKey, keyedRows);
+        rows.push(...keyedRows);
+      }
+      // Prune stale entries (blocks no longer in displayBlocks)
+      const validKeys = new Set(displayBlocks.map((b: any) => `${b.id}::${JSON.stringify(b.event)}::${mode}::${toolOutputExpanded}::${thinkingExpanded}`));
+      for (const key of Array.from(cache.keys())) {
+        if (!validKeys.has(key)) cache.delete(key);
+      }
+      return rows;
     >>>
 
   memo name=totalDisplayRows deps="displayRows"
@@ -2887,6 +2911,26 @@ screen name=App target=ink
     handler <<<
       if (isTerminalFocusReport(input)) return;
 
+      // ScrollBox keyboard shortcuts (only when no modal is open)
+      if (!modelPickerOpen && !cesarPickerOpen && !enginePickerOpen && !reviewEvent && !toolDetailEvent && !slashPickerOpen && !questionState) {
+        if (key.shift && key.name === 'pageup') {
+          scrollBoxRef.current?.scrollBy(-Math.max(1, Math.floor(currentVisibleRowBudget / 2)));
+          return;
+        }
+        if (key.shift && key.name === 'pagedown') {
+          scrollBoxRef.current?.scrollBy(Math.max(1, Math.floor(currentVisibleRowBudget / 2)));
+          return;
+        }
+        if (key.name === 'home') {
+          scrollBoxRef.current?.scrollTo(0);
+          return;
+        }
+        if (key.name === 'end') {
+          scrollBoxRef.current?.scrollToBottom?.();
+          return;
+        }
+      }
+
       const normalizedCtrlInput = key.ctrl
         ? ({
             '\x01': 'a',
@@ -3029,7 +3073,7 @@ screen name=App target=ink
       <Box flexDirection="column" flexGrow={1} width={termWidth} height={termHeight}>
       <Box flexDirection="row" flexGrow={1} width="100%">
       <Box flexDirection="column" flexGrow={1} minWidth={0}>
-      <ScrollBox stickyScroll flexGrow={1}>
+      <ScrollBox ref={scrollBoxRef} stickyScroll flexGrow={1}>
         {transcriptElements}
       </ScrollBox>
       <Box flexDirection="column" flexShrink={0}>

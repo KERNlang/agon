@@ -3,7 +3,7 @@
 
 import from="react" names="useState,useCallback,useEffect,useRef,useMemo"
 import from="ink" names="Box,Text,Static,render"
-import from="@kernlang/terminal/runtime" names="ScrollBox"
+import from="@kernlang/terminal/runtime" names="ScrollBox,AlternateScreen"
 import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,ensureCurrentWorkspace,startChatSession,getRatings,getActiveWorkspace,RUNS_DIR,extractImagesFromInput,resolveWorkingDir,currentBranch,configSet,createCesarMemory,modelEntryToEngineDef,appendMessage,getAgonHome,tracker,copyToClipboard"
 import from="@agon/core" names="Plan,ChatSession,Skill,PersistentSession,ImageAttachment" types=true
 import from="../../handlers/types.js" names="EngineProgress" types=true
@@ -32,11 +32,17 @@ import from="../blocks/review.js" names="handleReviewAction"
 import from="../blocks/engine.js" names="DashboardView,OutputBlockView"
 import from="../blocks/plan-view.js" names="PlanProposalView"
 import from="../cesar/session.js" names="saveCesarConversationSnapshot"
-import from="../../components.js" names="SpinnerBlock,StatusBar,CesarStatusStrip,EnginePicker,ModelPicker,ReviewBlock,BackgroundJobRail,CesarPicker,ComposerView,AgentProgressView,contentWidth,color256toHex,engineColor,CODE_RAIL,CODE_RAIL_COLOR,MAX_CODE_LINES,LOGO_LINES,VERSION,BRAND"
+import from="../../generated/surfaces/status.js" names="SpinnerBlock,StatusBar,CesarStatusStrip,BackgroundJobRail"
+import from="../../generated/blocks/controls.js" names="EnginePicker,ModelPicker,ReviewBlock,CesarPicker"
+import from="../../generated/blocks/composer.js" names="ComposerView"
+import from="../../generated/surfaces/agent.js" names="AgentProgressView"
+import from="../../generated/blocks/rendering.js" names="contentWidth,color256toHex,engineColor,CODE_RAIL,CODE_RAIL_COLOR,MAX_CODE_LINES"
+import from="../../generated/blocks/engine.js" names="LOGO_LINES,VERSION,BRAND"
 import from="./app-views.js" names="ChromeBar,StreamingView,ToolDetailBlock,TranscriptRowView"
 import from="../signals/file-tracker.js" names="recordToolCall,listFiles,getFileTrackerVersion,clearFileTracker"
 import from="../blocks/file-rail.js" names="FileRail"
-import from="../../components.js" names="OutputBlock,ReviewEvent" types=true
+import from="../../generated/blocks/engine.js" names="OutputBlock" types=true
+import from="../../generated/blocks/controls.js" names="ReviewEvent" types=true
 import from="node:path" names="join,dirname"
 import from="node:url" names="fileURLToPath"
 import from="node:fs" names="readdirSync,writeFileSync,mkdirSync,unlinkSync"
@@ -548,16 +554,6 @@ fn name=transcriptRowsToPlainText params="rows:any[], anchorRow:number|null, anc
       lines.push(text);
     }
     return lines.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd();
-  >>>
-
-fn name=transcriptViewportTopLine params="mode:string, hasJobs:boolean, rowBudget:number, visibleRowCount:number, hasIndicator:boolean, stickToBottom:boolean" returns=number
-  handler <<<
-    let top = 1;
-    if (mode !== 'chat') top += 1;
-    if (hasJobs) top += 1;
-    const contentRows = visibleRowCount + (hasIndicator ? 1 : 0);
-    const slack = stickToBottom ? Math.max(0, rowBudget - contentRows) : 0;
-    return top + slack;
   >>>
 
 fn name=resolveTranscriptRowFromMouse params="mouseY:number, viewportTopLine:number, firstVisibleRow:number, visibleRowCount:number" returns="number|null"
@@ -1865,7 +1861,6 @@ screen name=App target=ink
   ref name=lastActivityTimeRef type=number initial="Date.now()"
   ref name=blockArchivePathRef type=string initial="makeBlockArchivePath(Date.now())"
   ref name=nestedCtrlShortcutRef type="{ key: string; at: number }" initial="{ key: '', at: 0 }"
-  ref name=scrollOffsetRef type=number initial=0
   ref name=displayRowCountRef type=number initial=0
   ref name=mouseInputBufferRef type=string initial="''"
   ref name=wheelDeltaRef type=number initial=0
@@ -1889,8 +1884,7 @@ screen name=App target=ink
   state name=workspacePath type=string initial="resolveWorkingDir()"
   state name=termWidth type=number initial="process.stdout.columns || 100" throttle=100
   state name=termHeight type=number initial="process.stdout.rows || 24" throttle=100
-  state name=scrollOffset type=number initial="0"
-  state name=selectionMode type=boolean initial="true"
+  state name=selectionMode type=boolean initial="false"
   state name=fileRailOpen type=boolean initial="false"
   state name=fileRailVersion type=number initial="0"
   state name=fileRailSelectedIdx type=number initial="0"
@@ -2022,10 +2016,10 @@ screen name=App target=ink
       return startupOnly ? outputBlocks : historyBlocks;
     >>>
 
-  memo name=livePaneVisible deps="scrollOffset, activeStream, liveProgress, agentProgress, startupOnly"
+  memo name=livePaneVisible deps="activeStream, liveProgress, agentProgress, startupOnly"
     handler <<<
       if (startupOnly) return false;
-      return scrollOffset === 0 && (!!activeStream || !!liveProgress || Object.keys(agentProgress).length > 0);
+      return !!activeStream || !!liveProgress || Object.keys(agentProgress).length > 0;
     >>>
 
   memo name=currentVisibleRowBudget deps="termHeight, mode, overlayReservedRows, bottomChromeReservedRows, livePaneVisible, activeStream, liveProgress, agentProgress"
@@ -2049,11 +2043,6 @@ screen name=App target=ink
       return displayRows.length;
     >>>
 
-  memo name=maxScrollOffset deps="totalDisplayRows, currentVisibleRowBudget"
-    handler <<<
-      return maxScrollOffsetForRowCount(totalDisplayRows, currentVisibleRowBudget);
-    >>>
-
   memo name=selectedRowRange deps="mouseSelection"
     handler <<<
       const range = normalizeTextSelection(
@@ -2075,77 +2064,14 @@ screen name=App target=ink
       );
     >>>
 
-  memo name=visibleWindow deps="displayRows, scrollOffset, currentVisibleRowBudget, selectedRowRange, selectedTextRange, startupOnly, maxScrollOffset"
+  memo name=startupFitsViewport deps="startupOnly, totalDisplayRows, currentVisibleRowBudget"
     handler <<<
-      const decorateVisibleRows = (rows: any[], startIndex: number) => {
-        const range = selectedRowRange;
-        const textRange = selectedTextRange;
-        return rows.map((row: any, index: number) => {
-          const rowIndex = startIndex + index;
-          if (!range || rowIndex < range.start || rowIndex > range.end) return row;
-          const selectionText = transcriptRowToPlainText(row);
-          const selectionStart = textRange && rowIndex === textRange.startRow ? textRange.startCol : 0;
-          const selectionEnd = textRange && rowIndex === textRange.endRow ? textRange.endCol : selectionText.length;
-          return {
-            ...row,
-            selected: true,
-            selectionText,
-            selectionStart,
-            selectionEnd,
-          };
-        });
-      };
-
-      if (startupOnly) {
-        const start = clampNumber(scrollOffset, 0, maxScrollOffset);
-        const end = Math.min(displayRows.length, start + currentVisibleRowBudget);
-        const visibleRows = decorateVisibleRows(displayRows.slice(start, end), start);
-        return {
-          startIndex: start,
-          endIndex: end,
-          rowsAbove: 0,
-          rowsBelow: Math.max(0, displayRows.length - end),
-          visible: visibleRows,
-        };
-      }
-
-      const end = Math.max(0, displayRows.length - Math.max(0, scrollOffset));
-      const start = Math.max(0, end - currentVisibleRowBudget);
-      const visibleRows = decorateVisibleRows(displayRows.slice(start, end), start);
-      return {
-        startIndex: start,
-        endIndex: end,
-        rowsAbove: start,
-        rowsBelow: Math.max(0, displayRows.length - end),
-        visible: visibleRows,
-      };
-    >>>
-
-  memo name=historyViewportTop deps="mode, runningJobs, currentVisibleRowBudget, visibleWindow, startupOnly, scrollOffset"
-    handler <<<
-      return transcriptViewportTopLine(
-        mode,
-        runningJobs.length > 0,
-        currentVisibleRowBudget,
-        visibleWindow.visible.length,
-        visibleWindow.rowsAbove > 0 || visibleWindow.rowsBelow > 0,
-        !startupOnly && scrollOffset === 0,
-      );
-    >>>
-
-  memo name=startupFitsViewport deps="startupOnly, visibleWindow"
-    handler <<<
-      return startupOnly && visibleWindow.rowsAbove === 0 && visibleWindow.rowsBelow === 0;
+      return startupOnly && totalDisplayRows <= currentVisibleRowBudget;
     >>>
 
   memo name=startupUseDashboardView deps="startupFitsViewport, termWidth"
     handler <<<
       return startupFitsViewport && termWidth >= 100;
-    >>>
-
-  memo name=historyNeedsViewportFill deps="visibleWindow"
-    handler <<<
-      return visibleWindow.rowsAbove > 0 || visibleWindow.rowsBelow > 0;
     >>>
 
   // ── Load extensions on startup + workspace switch ──
@@ -2163,11 +2089,6 @@ screen name=App target=ink
   effect deps="mode"
     handler <<<
       modeRef.current = mode;
-    >>>
-
-  effect deps="scrollOffset"
-    handler <<<
-      scrollOffsetRef.current = scrollOffset;
     >>>
 
   effect deps="mouseSelection"
@@ -2196,23 +2117,6 @@ screen name=App target=ink
       mouseSelectionRef.current = { anchorRow: null, anchorCol: null, focusRow: null, focusCol: null, active: false, moved: false };
       setMouseSelection({ anchorRow: null, anchorCol: null, focusRow: null, focusCol: null, active: false, moved: false });
     >>>
-
-  // Track rendered row count and preserve the user's scroll anchor when the
-  // list changes. Without this, streaming new content drags the transcript
-  // window forward and /clear can leave scrollOffset past the end.
-  effect deps="totalDisplayRows, maxScrollOffset"
-    handler <<<
-      const prev = displayRowCountRef.current;
-      const next = totalDisplayRows;
-      displayRowCountRef.current = next;
-      if (next === prev) return;
-      if (next > prev && scrollOffsetRef.current > 0) {
-        setScrollOffset((s: number) => Math.min(s + (next - prev), maxScrollOffset));
-      } else if (scrollOffsetRef.current > maxScrollOffset) {
-        setScrollOffset(maxScrollOffset);
-      }
-    >>>
-
 
   // ── TTL pruner for completed agentProgress snapshots ──
   // After an agent-step-end event sets `completedAt`, leave the panel visible
@@ -2334,11 +2238,9 @@ screen name=App target=ink
           setStreamingText(next);
         },
         addBlock: (event: any) => {
-          if (scrollOffsetRef.current === 0) setScrollOffset(0);
           setOutputBlocks((prev: any) => appendBlockWithCap(prev, { id: Date.now() + Math.random(), event }, blockArchivePathRef.current));
         },
         replaceBlocksOfType: (eventType: string, event: any) => {
-          if (scrollOffsetRef.current === 0) setScrollOffset(0);
           setOutputBlocks((prev: any) => {
             const filtered = prev.filter((b: any) => b.event.type !== eventType);
             return appendBlockWithCap(filtered, { id: Date.now() + Math.random(), event }, blockArchivePathRef.current);
@@ -2470,26 +2372,20 @@ screen name=App target=ink
       return () => { process.stdout.off('resize', onResize); };
     >>>
 
-  effect deps="selectionMode"
+  effect deps=""
     handler <<<
       if (!process.stdin.isTTY || !process.stdout.isTTY) return;
-      // Bracketed paste + SGR mouse tracking. Ink 7 owns alt-screen entry via
-      // render({alternateScreen:true}); we just layer mouse tracking on top so
-      // ScrollBox can receive wheel events. Disabled in selectionMode so
-      // Cmd+C drag-select works (standard terminal bypass).
+      // Bracketed paste only. Mouse tracking is handled by <AlternateScreen
+      // mouseTracking={!selectionMode}> — toggling selectionMode re-acquires
+      // the alt-screen with mouse enable/disable via the runtime's deps.
       process.stdout.write('\x1b[?2004h');
-      const enableMouse = '\x1b[?1000h\x1b[?1002h\x1b[?1006h';
-      const disableMouse = '\x1b[?1006l\x1b[?1002l\x1b[?1000l';
-      if (!selectionMode) process.stdout.write(enableMouse);
       const onResume = () => {
         process.stdout.write('\x1b[?2004h');
-        if (!selectionMode) process.stdout.write(enableMouse);
       };
       process.on('SIGCONT', onResume);
       return () => {
         process.off('SIGCONT', onResume);
         drainStdinBuffer();
-        if (!selectionMode) process.stdout.write(disableMouse);
         process.stdout.write('\x1b[?2004l');
       };
     >>>
@@ -2987,7 +2883,7 @@ screen name=App target=ink
     >>>
 
   // ── Keyboard handling — pure decision tree + thin dispatcher ──
-  callback name=handleKeyboardInput params="input:string,key:any" deps="modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,activePlan,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,copyCurrentTranscript,toggleSelectionMode,maxScrollOffset,startupOnly"
+  callback name=handleKeyboardInput params="input:string,key:any" deps="modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,activePlan,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,copyCurrentTranscript,toggleSelectionMode,startupOnly"
     handler <<<
       if (isTerminalFocusReport(input)) return;
 
@@ -3120,16 +3016,21 @@ screen name=App target=ink
       useStableInput(handleKeyboardInput);
       const showFileRail = fileRailOpen;
       const fileRailFiles = useMemo(() => listFiles(), [fileRailVersion]);
-      // Claude Code-style architecture (no alt-screen): past transcript rows
-      // commit to terminal scrollback via <Static>. Dynamic region below
-      // contains only live streaming, conditional panels, composer, status.
-      // Terminal owns mouse → plain drag selects, wheel scrolls scrollback.
+      // Stable element array — without useMemo, every keystroke rebuilds N
+      // React elements even though `displayRows` only changes on stream/mode.
+      // ScrollBox also does React.Children.toArray on children; a stable ref
+      // lets its internal memo bail too.
+      const transcriptElements = useMemo(
+        () => displayRows.map((row: any) => <TranscriptRowView key={row.key} row={row} />),
+        [displayRows],
+      );
       return (
+      <AlternateScreen mouseTracking={!selectionMode}>
       <Box flexDirection="column" flexGrow={1} width={termWidth} height={termHeight}>
       <Box flexDirection="row" flexGrow={1} width="100%">
       <Box flexDirection="column" flexGrow={1} minWidth={0}>
       <ScrollBox stickyScroll flexGrow={1}>
-        {displayRows.map((row: any) => <TranscriptRowView key={row.key} row={row} />)}
+        {transcriptElements}
       </ScrollBox>
       <Box flexDirection="column" flexShrink={0}>
         <ChromeBar mode={mode} cwdLabel={resolveWorkingDir().split('/').pop() ?? ''} engineCount={availableEngines.length} replState={replState} runningJobs={runningJobs} />
@@ -3314,6 +3215,7 @@ screen name=App target=ink
       )}
       </Box>
       </Box>
+      </AlternateScreen>
       );
     >>>
 
@@ -3342,5 +3244,5 @@ fn name=startRepl async=true returns="Promise<void>"
         try { drainStdinBuffer(); } catch { /* stdout gone */ }
       });
     }
-    render(<App />, { exitOnCtrlC: false, alternateScreen: true });
+    render(<App />, { exitOnCtrlC: false });
   >>>

@@ -40,6 +40,68 @@ fn name=formatRelativeTime params="ms:number" returns=string export=true confide
     return `${Math.floor(h / 24)}d ago`;
   >>>
 
+// Empty-state content — Fragment only, no wrapper Box (parent supplies it).
+screen name=FileRailEmpty target=ink export=false
+  render
+    handler <<<
+      <>
+        <Text dimColor bold>FILES</Text>
+        <Text dimColor>{'(none yet)'}</Text>
+        <Text dimColor>{'Edit/Read/Write'}</Text>
+        <Text dimColor>{'will show up'}</Text>
+        <Text> </Text>
+        <Text dimColor>{'\u2325 Ctrl+B toggles'}</Text>
+      </>
+    >>>
+
+// Expanded-file detail pane — computes rawDiff/filtered/diffBudget internally.
+screen name=FileRailDetail target=ink export=false
+  prop name=expandedFile type=FileEntry
+  prop name=maxRows type=number
+  render
+    handler <<<
+      const rawDiff = expandedFile.status !== 'read' ? getFileDiff(expandedFile.path, 400) : '';
+      // Strip noisy git header lines — we already show the file path
+      // and status above. What the user wants is the colored hunks.
+      const filtered = rawDiff
+        ? rawDiff.split('\n').filter((ln: string) =>
+            !ln.startsWith('diff --git') &&
+            !ln.startsWith('index ') &&
+            !ln.startsWith('--- ') &&
+            !ln.startsWith('+++ ') &&
+            !ln.startsWith('\\ No newline'))
+        : [];
+      const diffBudget = Math.max(4, maxRows - 6);
+      const visibleDiff = filtered.slice(0, diffBudget);
+      const omitted = Math.max(0, filtered.length - visibleDiff.length);
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Text bold color={statusColor(expandedFile.status)}>{expandedFile.status.toUpperCase()}</Text>
+          <Text dimColor wrap="truncate-middle">{expandedFile.path}</Text>
+          <Text dimColor>{`touches: ${expandedFile.touchCount} \u2022 ${formatRelativeTime(expandedFile.lastTouchedAt)}`}</Text>
+          {filtered.length === 0 && expandedFile.status !== 'read' && (
+            <Text dimColor italic>{'(no tracked diff)'}</Text>
+          )}
+          {filtered.length > 0 && (
+            <Box flexDirection="column" marginTop={1}>
+              {visibleDiff.map((ln: string, i: number) => {
+                const color = ln.startsWith('+') ? '#4ade80'
+                  : ln.startsWith('-') ? '#f87171'
+                  : ln.startsWith('@@') ? '#a78bfa'
+                  : undefined;
+                const dim = !color;
+                return <Text key={`d-${i}`} color={color} dimColor={dim} wrap="truncate">{ln}</Text>;
+              })}
+              {omitted > 0 && (
+                <Text dimColor italic>{`\u2026 (${omitted} more lines)`}</Text>
+              )}
+            </Box>
+          )}
+        </Box>
+      );
+    >>>
+
+// Orchestrator — uses composed-mode: wrapper + locals + conditionals + each + sub-screens.
 screen name=FileRail target=ink memo=true
   prop name=files type="FileEntry[]"
   prop name=maxRows type=number
@@ -47,95 +109,50 @@ screen name=FileRail target=ink memo=true
   prop name=focused type=boolean optional=true
   prop name=selectedIndex type=number optional=true
   prop name=expandedPath type="string|null" optional=true
-  render
-    handler <<<
-      const w = width ?? 36;
-      const sel = Math.max(0, Math.min(files.length - 1, selectedIndex ?? 0));
-      const expandedFile = expandedPath ? files.find((f: FileEntry) => f.path === expandedPath) : null;
-      const borderColor = focused ? '#22d3ee' : 'gray';
-      if (files.length === 0) {
-        return (
-          <Box flexDirection="column" flexShrink={0} width={w} paddingLeft={1} borderStyle="single" borderColor={borderColor}>
-            <Text dimColor bold>FILES</Text>
-            <Text dimColor>{'(none yet)'}</Text>
-            <Text dimColor>{'Edit/Read/Write'}</Text>
-            <Text dimColor>{'will show up'}</Text>
-            <Text> </Text>
-            <Text dimColor>{'\u2325 Ctrl+B toggles'}</Text>
-          </Box>
-        );
-      }
-      const pathMax = Math.max(4, w - 5);
-      // Reserve space for detail pane (if expanded) within maxRows.
-      const detailRows = expandedFile ? 6 : 0;
-      const headerRows = 2;
-      const listBudget = Math.max(1, maxRows - detailRows - headerRows);
-      // Scroll the list so `sel` is visible.
-      const start = Math.max(0, Math.min(files.length - listBudget, sel - Math.floor(listBudget / 2)));
-      const visible = files.slice(start, start + listBudget);
-      return (
-        <Box flexDirection="column" flexShrink={0} width={w} paddingLeft={1} borderStyle="single" borderColor={borderColor}>
-          <Text dimColor bold>{`FILES (${files.length})`}{focused ? <Text color="#22d3ee">{' \u25c6'}</Text> : null}</Text>
-          {focused && <Text dimColor>{'\u2191\u2193 select  \u2192 expand  \u2190 collapse  esc close'}</Text>}
-          {!focused && <Text dimColor>{'\u2191\u2193 focus with empty composer'}</Text>}
-          {visible.map((f: FileEntry, i: number) => {
-            const idx = start + i;
-            const isSel = focused && idx === sel;
-            return (
-              <Box key={f.path}>
-                <Text color={isSel ? '#22d3ee' : 'gray'}>{isSel ? '\u25b8' : ' '}</Text>
-                <Text color={statusColor(f.status)} bold={f.status !== 'read'}>{statusGlyph(f.status)}</Text>
-                <Text> </Text>
-                <Text dimColor={f.status === 'read' && !isSel} bold={isSel}>
-                  {truncateLeft(f.relPath, pathMax)}
-                </Text>
-              </Box>
-            );
-          })}
-          {start + listBudget < files.length && (
-            <Text dimColor>{`+${files.length - start - listBudget} more`}</Text>
-          )}
-          {expandedFile && (() => {
-            const rawDiff = expandedFile.status !== 'read' ? getFileDiff(expandedFile.path, 400) : '';
-            // Strip noisy git header lines — we already show the file path
-            // and status above. What the user wants is the colored hunks.
-            const filtered = rawDiff
-              ? rawDiff.split('\n').filter((ln: string) =>
-                  !ln.startsWith('diff --git') &&
-                  !ln.startsWith('index ') &&
-                  !ln.startsWith('--- ') &&
-                  !ln.startsWith('+++ ') &&
-                  !ln.startsWith('\\ No newline'))
-              : [];
-            const diffBudget = Math.max(4, maxRows - 6);
-            const visibleDiff = filtered.slice(0, diffBudget);
-            const omitted = Math.max(0, filtered.length - visibleDiff.length);
-            return (
-              <Box flexDirection="column" marginTop={1}>
-                <Text bold color={statusColor(expandedFile.status)}>{expandedFile.status.toUpperCase()}</Text>
-                <Text dimColor wrap="truncate-middle">{expandedFile.path}</Text>
-                <Text dimColor>{`touches: ${expandedFile.touchCount} \u2022 ${formatRelativeTime(expandedFile.lastTouchedAt)}`}</Text>
-                {filtered.length === 0 && expandedFile.status !== 'read' && (
-                  <Text dimColor italic>{'(no tracked diff)'}</Text>
-                )}
-                {filtered.length > 0 && (
-                  <Box flexDirection="column" marginTop={1}>
-                    {visibleDiff.map((ln: string, i: number) => {
-                      const color = ln.startsWith('+') ? '#4ade80'
-                        : ln.startsWith('-') ? '#f87171'
-                        : ln.startsWith('@@') ? '#a78bfa'
-                        : undefined;
-                      const dim = !color;
-                      return <Text key={`d-${i}`} color={color} dimColor={dim} wrap="truncate">{ln}</Text>;
-                    })}
-                    {omitted > 0 && (
-                      <Text dimColor italic>{`\u2026 (${omitted} more lines)`}</Text>
-                    )}
-                  </Box>
-                )}
-              </Box>
-            );
-          })()}
+  render wrapper="<Box flexDirection=\"column\" flexShrink={0} width={w} paddingLeft={1} borderStyle=\"single\" borderColor={borderColor}>"
+    local name=w expr="width ?? 36"
+    local name=sel expr="Math.max(0, Math.min(files.length - 1, selectedIndex ?? 0))"
+    local name=expandedFile type="FileEntry | undefined" expr="expandedPath ? files.find((f: FileEntry) => f.path === expandedPath) : undefined"
+    local name=borderColor expr="focused ? '#22d3ee' : 'gray'"
+    local name=pathMax expr="Math.max(4, w - 5)"
+    local name=detailRows expr="expandedFile ? 6 : 0"
+    local name=listBudget expr="Math.max(1, maxRows - detailRows - 2)"
+    local name=start expr="Math.max(0, Math.min(files.length - listBudget, sel - Math.floor(listBudget / 2)))"
+    local name=visible type="FileEntry[]" expr="files.slice(start, start + listBudget)"
+    conditional if="files.length === 0"
+      handler <<<
+        <FileRailEmpty />
+      >>>
+    conditional if="files.length > 0"
+      handler <<<
+        <Text dimColor bold>{`FILES (${files.length})`}{focused ? <Text color="#22d3ee">{' \u25c6'}</Text> : null}</Text>
+      >>>
+    conditional if="files.length > 0 && !!focused"
+      handler <<<
+        <Text dimColor>{'\u2191\u2193 select  \u2192 expand  \u2190 collapse  esc close'}</Text>
+      >>>
+    conditional if="files.length > 0 && !focused"
+      handler <<<
+        <Text dimColor>{'\u2191\u2193 focus with empty composer'}</Text>
+      >>>
+    each name=f in=visible index=i key="f.path"
+      let name=idx expr="start + i"
+      let name=isSel expr="(focused ?? false) && idx === sel"
+      handler <<<
+        <Box key={f.path}>
+          <Text color={isSel ? '#22d3ee' : 'gray'}>{isSel ? '\u25b8' : ' '}</Text>
+          <Text color={statusColor(f.status)} bold={f.status !== 'read'}>{statusGlyph(f.status)}</Text>
+          <Text> </Text>
+          <Text dimColor={f.status === 'read' && !isSel} bold={isSel}>
+            {truncateLeft(f.relPath, pathMax)}
+          </Text>
         </Box>
-      );
-    >>>
+      >>>
+    conditional if="files.length > 0 && start + listBudget < files.length"
+      handler <<<
+        <Text dimColor>{`+${files.length - start - listBudget} more`}</Text>
+      >>>
+    conditional if="expandedFile != null"
+      handler <<<
+        <FileRailDetail expandedFile={expandedFile as FileEntry} maxRows={maxRows} />
+      >>>

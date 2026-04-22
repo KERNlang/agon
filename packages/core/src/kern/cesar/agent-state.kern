@@ -5,31 +5,21 @@
 //
 // ── Why a union + reducers, not a `machine` primitive ──────────────
 //
-// KERN's `machine` primitive today generates transitions as
-//   function tnameMachine<T extends {state: StateType}>(entity: T): T
-// (see kern/packages/core/src/codegen/machines.ts:52-86). This is
-// insufficient for agent-mode in two concrete ways:
+// Two prior KERN-GAPs here (transition params, guard predicates) were
+// closed in kern v3.3.6 (70afb9be). The remaining blocker is
+// different:
 //
-// KERN-GAP: machine — transitions need parameterized signatures.
-//   Agent-mode events carry payloads: userPrompt string, tool_call
-//   object, tool_result string, error string, deadline timestamp.
-//   The current `(entity: T) => T` signature has nowhere to put them.
-//   A parameterized variant like
-//     function transition<T, P>(entity: T, payload: P): T
-//   would unblock modeling these events in machine form.
+// KERN-GAP: machine — states need per-variant data fields.
+//   `machine` emits `state: 'a' | 'b' | 'c'` — a flat literal union.
+//   Agent-mode phases carry per-phase data: `awaiting_approval` holds
+//   `pendingToolName`/`pendingToolInput`/`pendingToolCallId`;
+//   `running` holds `turnIndex`/`turnStartedAt`; `failed` holds
+//   `reason`/`errorMessage`. A discriminated-union state shape
+//   like `state awaiting_approval fields="pendingToolName:string,..."` would unblock machine form here.
 //
-// KERN-GAP: machine — transitions need guard predicates.
-//   Agent-mode gates transitions on runtime conditions: turn budget
-//   remaining, token budget remaining, wall-clock deadline. Today
-//   these are if-throws inside handler code. A language-level
-//   `guard=predicate` would let the compiler enforce them at call
-//   sites and surface budget-exceeded as a typed rejection rather
-//   than an imperative branch.
-//
-// Until those gaps are addressed, this file uses the same union+fn
-// pattern as plan.kern (which its authors explicitly called a state
-// machine in its header comment, then implemented as reducers for
-// the same reason).
+// Until that lands, this file keeps the union+fn pattern, same as
+// plan.kern. It's idiomatic, type-safe, and each transition is a
+// pure reducer — nothing a machine would add today.
 
 import from="./agent-session.js" names="AgentBudget,AgentStepResult" types=true
 

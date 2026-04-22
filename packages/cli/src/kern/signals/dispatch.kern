@@ -20,7 +20,7 @@ import from="../handlers/team-tribunal.js" names="handleTeamTribunal"
 import from="../handlers/team-forge.js" names="handleTeamForge"
 import from="../handlers/team-brainstorm.js" names="handleTeamBrainstorm"
 import from="../../handlers/cesar-brain.js" names="handleCesarBrain,parseSuggestion,CESAR_SYSTEM_PROMPT,yieldToInk"
-import from="@agon/core" names="appendMessage"
+import from="@agon/core" names="appendMessage,buildHistoryPrimedPrompt"
 import from="../handlers/pipeline.js" names="handlePipeline"
 import from="../handlers/provider.js" names="handleProvider"
 import from="../cesar/routing.js" names="deriveRoutingHints"
@@ -661,9 +661,10 @@ You still own the overall task. Integrate the forged slice with the rest of the 
       const outDir = join(RUNS_DIR, `cesar-fallback-${Date.now()}`);
       mkdirSync(outDir, { recursive: true });
       cb.dispatch({ type: 'warning', message: `Cesar session unavailable — retrying ${cesarId} with fresh dispatch…` });
+      const primedPrompt = buildHistoryPrimedPrompt(cb.ctx.chatSession, input);
       const freshResult = await cb.ctx.adapter.dispatch({
         engine: cesarEngine,
-        prompt: input,
+        prompt: primedPrompt,
         cwd: resolveWorkingDir(),
         mode: 'exec' as any,
         timeout: (cesarConfig as any).timeout ?? 120,

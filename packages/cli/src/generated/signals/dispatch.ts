@@ -36,7 +36,7 @@ import { handleTeamBrainstorm } from '../handlers/team-brainstorm.js';
 
 import { handleCesarBrain, parseSuggestion, CESAR_SYSTEM_PROMPT, yieldToInk } from '../../handlers/cesar-brain.js';
 
-import { appendMessage } from '@agon/core';
+import { appendMessage, buildHistoryPrimedPrompt } from '@agon/core';
 
 import { handlePipeline } from '../handlers/pipeline.js';
 
@@ -681,9 +681,10 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
         const outDir = join(RUNS_DIR, `cesar-fallback-${Date.now()}`);
         mkdirSync(outDir, { recursive: true });
         cb.dispatch({ type: 'warning', message: `Cesar session unavailable — retrying ${cesarId} with fresh dispatch…` });
+        const primedPrompt = buildHistoryPrimedPrompt(cb.ctx.chatSession, input);
         const freshResult = await cb.ctx.adapter.dispatch({
           engine: cesarEngine,
-          prompt: input,
+          prompt: primedPrompt,
           cwd: resolveWorkingDir(),
           mode: 'exec' as any,
           timeout: (cesarConfig as any).timeout ?? 120,

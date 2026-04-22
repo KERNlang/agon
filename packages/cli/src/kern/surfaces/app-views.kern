@@ -4,9 +4,10 @@
 // shallow-equal — e.g. streaming a chunk shouldn't re-render ChromeBar.
 
 import from="react" default="React"
-import from="react" names="useEffect,useMemo,useState"
+import from="react" names="useEffect,useMemo,useState,useRef"
 import from="ink" names="Box,Text,useInput"
-import from="../../components.js" names="EngineProgressView,RenderedSegments,contentWidth,engineColor,RichLineView,DiffLine,SyntaxLine,AnsiLine,GradientLine,BRAND"
+import from="../../generated/blocks/engine.js" names="EngineProgressView,BRAND"
+import from="../../generated/blocks/rendering.js" names="RenderedSegments,contentWidth,engineColor,RichLineView,DiffLine,SyntaxLine,AnsiLine,GradientLine"
 import from="../../handlers/types.js" names="EngineProgress" types=true
 import from="../signals/job-manager.js" names="Job" types=true
 import from="../blocks/markdown.js" names="parseMarkdownBlocks,cleanEngineOutput"
@@ -26,25 +27,6 @@ fn name=renderSelectedText params="text:string,start:number,end:number,keyPrefix
         {middle ? <Text key={`${keyPrefix}-middle`} backgroundColor="#2563eb" color="white">{middle}</Text> : null}
         {after ? <Text key={`${keyPrefix}-after`}>{after}</Text> : null}
       </Text>
-    );
-  >>>
-
-fn name=buildHistoryScrollbarCells params="rowsAbove:number,visibleCount:number,rowsBelow:number" returns="string[]" export=true
-  handler <<<
-    const viewportRows = Math.max(0, visibleCount);
-    if (viewportRows === 0) return [];
-
-    const totalRows = Math.max(viewportRows, rowsAbove + viewportRows + rowsBelow);
-    if (totalRows <= viewportRows) return [];
-
-    const thumbSize = Math.max(1, Math.round((viewportRows * viewportRows) / totalRows));
-    const maxOffset = Math.max(1, totalRows - viewportRows);
-    const travel = Math.max(0, viewportRows - thumbSize);
-    const unclampedThumbTop = travel === 0 ? 0 : Math.round((Math.max(0, rowsAbove) / maxOffset) * travel);
-    const thumbTop = Math.max(0, Math.min(travel, unclampedThumbTop));
-
-    return Array.from({ length: viewportRows }, (_, index: number) =>
-      index >= thumbTop && index < thumbTop + thumbSize ? 'thumb' : 'track'
     );
   >>>
 
@@ -203,57 +185,6 @@ screen name=TranscriptRowView target=ink memo=true
       }
 
       return null;
-    >>>
-
-// ── HistoryView — visible transcript rows ──
-screen name=HistoryView target=ink memo=true
-  prop name=visibleRows type="any[]"
-  prop name=rowsAbove type="number"
-  prop name=rowsBelow type="number"
-  prop name=stickToBottom type="boolean|undefined"
-  prop name=centerContent type="boolean|undefined"
-  render
-    handler <<<
-      if (centerContent) {
-        return (
-          <Box flexDirection="column" flexGrow={1}>
-            <Box flexGrow={5} />
-            <Box alignItems="center">
-              <Box flexDirection="column">
-                {visibleRows.map((row: any) => (
-                  <TranscriptRowView key={row.key} row={row} />
-                ))}
-              </Box>
-            </Box>
-            <Box flexGrow={3} />
-          </Box>
-        );
-      }
-
-      return (
-        <Box flexDirection="column" flexGrow={1} justifyContent={stickToBottom ? 'flex-end' : 'flex-start'}>
-          {(rowsAbove > 0 || rowsBelow > 0) && (
-            <Box paddingX={1} flexShrink={0}>
-              <Text dimColor>
-                {rowsAbove > 0 ? `\u2191 ${rowsAbove} line${rowsAbove > 1 ? 's' : ''} above` : ''}
-                {rowsAbove > 0 && rowsBelow > 0 ? '  \u00b7  ' : ''}
-                {rowsBelow > 0 ? `\u2193 ${rowsBelow} line${rowsBelow > 1 ? 's' : ''} below` : ''}
-                {' \u2014 mouse wheel or Shift+\u2191/\u2193'}
-              </Text>
-            </Box>
-          )}
-          {/* KERN-GAP: scroll-box primitive. Until that lands, HistoryView
-              renders just the sliced rows without its own scrollbar so the
-              terminal's native scrollbar is the only one visible. The cells
-              helper (buildHistoryScrollbarCells) and the row above/below
-              indicator text remain available for the future primitive. */}
-          <Box flexDirection="column">
-            {visibleRows.map((row: any) => (
-              <TranscriptRowView key={row.key} row={row} />
-            ))}
-          </Box>
-        </Box>
-      );
     >>>
 
 // ── ToolDetailBlock — focused viewer for large tool output ──

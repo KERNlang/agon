@@ -141,9 +141,15 @@ screen name=StatusBar target=ink
             {thinkingExpanded !== undefined && <Text dimColor>{' \u00b7 '}{thinkingExpanded ? 'thinking shown (' : 'thinking hidden ('}</Text>}
             {thinkingExpanded !== undefined && <Text color="#f59e0b">{'Ctrl+T'}</Text>}
             {thinkingExpanded !== undefined && <Text dimColor>{')'}</Text>}
+            <Text dimColor>{' \u00b7 files ('}</Text>
+            <Text color="#f59e0b">{'Ctrl+B'}</Text>
+            <Text dimColor>{')'}</Text>
             <Text dimColor>{' \u00b7 copy ('}</Text>
             <Text color="#f59e0b">{'Ctrl+Y'}</Text>
             <Text dimColor>{')'}</Text>
+            {selectionMode !== undefined && <Text dimColor>{' \u00b7 '}{selectionMode ? 'select' : 'scroll'}{' ('}</Text>}
+            {selectionMode !== undefined && <Text color="#f59e0b">{'Ctrl+G'}</Text>}
+            {selectionMode !== undefined && <Text dimColor>{')'}</Text>}
             {isActive ? <Text dimColor>{' \u00b7 /btw ask'}</Text> : null}
           </Text>
         </Box>
@@ -183,24 +189,21 @@ screen name=StatusLine target=ink
 
 screen name=BackgroundJobRail target=ink memo=true
   prop name=jobs type="Job[]"
-  render
-    handler <<<
-      if (jobs.length === 0) return null;
-      return (
-        <Box paddingX={1}>
-          <Text dimColor>{'jobs: '}</Text>
-          {jobs.map((job: Job, i: number) => (
-            <Text key={job.id}>
-              <Text color={job.state === 'running' ? 'yellow' : job.state === 'done' ? 'green' : 'red'}>
-                {'['}{job.id}{'] '}{job.type}{' '}
-                {job.state === 'running' ? '...' : job.state === 'done' ? 'done' : 'failed'}
-              </Text>
-              {i < jobs.length - 1 && <Text dimColor>{'  '}</Text>}
-            </Text>
-          ))}
-        </Box>
-      );
-    >>>
+  render wrapper="<Box paddingX={1}>"
+    conditional if="jobs.length > 0"
+      handler <<<
+        <Text dimColor>{'jobs: '}</Text>
+      >>>
+    each name=job in=jobs index=i key="job.id"
+      handler <<<
+        <Text key={job.id}>
+          <Text color={job.state === 'running' ? 'yellow' : job.state === 'done' ? 'green' : 'red'}>
+            {'['}{job.id}{'] '}{job.type}{' '}
+            {job.state === 'running' ? '...' : job.state === 'done' ? 'done' : 'failed'}
+          </Text>
+          {i < jobs.length - 1 && <Text dimColor>{'  '}</Text>}
+        </Text>
+      >>>
 
 // ── Screen: CesarStatusStrip — always-visible compact status ────────
 

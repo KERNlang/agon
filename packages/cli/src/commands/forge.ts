@@ -3,6 +3,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdirSync } from 'node:fs';
 import { EngineRegistry, ensureAgonHome, loadConfig, RUNS_DIR } from '@agon/core';
+import type { EngineResult, ForgeEvent } from '@agon/core';
 import { createCliAdapter } from '@agon/adapter-cli';
 import { runForge } from '@agon/forge';
 import { header, success, fail, warn, info, table, green, red, yellow, bold, cyan } from '../output.js';
@@ -92,7 +93,7 @@ export const forgeCommand = defineCommand({
       },
       registry,
       adapter,
-      (event) => {
+      (event: ForgeEvent) => {
         switch (event.type) {
           case 'baseline:start':
             info('Running baseline preflight...');
@@ -136,7 +137,7 @@ export const forgeCommand = defineCommand({
     console.log('');
     header('Results');
 
-    const rows = Object.entries(manifest.results).map(([id, r]) => [
+    const rows = (Object.entries(manifest.results) as [string, EngineResult][]).map(([id, r]) => [
       id === manifest.winner ? green(`${icons().winner} ${id}`) : id,
       r.pass ? green('PASS') : red('FAIL'),
       String(r.score),

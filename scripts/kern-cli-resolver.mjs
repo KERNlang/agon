@@ -1,5 +1,6 @@
 import { readFileSync, existsSync, realpathSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 
 export function readJson(filePath) {
@@ -54,6 +55,24 @@ export function readPackageVersion(filePath) {
   }
 }
 
+function formatVersion(parts) {
+  return parts.join('.');
+}
+
+function minVersion(versions) {
+  const parsed = versions.map((version) => parseVersion(version));
+  if (parsed.some((version) => !version)) return null;
+
+  let lowest = parsed[0];
+  for (const version of parsed.slice(1)) {
+    if (compareVersions(version, lowest) < 0) {
+      lowest = version;
+    }
+  }
+
+  return formatVersion(lowest);
+}
+
 export function inspectCommandVersion(command, args = []) {
   const result = spawnSync(command, [...args, '--version'], {
     cwd: process.cwd(),
@@ -90,8 +109,81 @@ export function findPackageRoot(startPath) {
   return null;
 }
 
+export function resolveKernPackageRoot(cliPackageRoot, packageName) {
+  if (!cliPackageRoot || !packageName.startsWith('@kernlang/')) return null;
+  if (packageName === '@kernlang/cli') return cliPackageRoot;
+
+  const packageLeaf = packageName.slice('@kernlang/'.length);
+  const packageJson = path.join(cliPackageRoot, 'package.json');
+
+  try {
+    const requireFromCli = createRequire(packageJson);
+    const entrypoint = requireFromCli.resolve(packageName);
+    const packageRoot = findPackageRoot(entrypoint);
+    if (packageRoot) return packageRoot;
+  } catch {
+    // Fall through to monorepo sibling resolution below.
+  }
+
+  const siblingRoot = path.resolve(cliPackageRoot, `../${packageLeaf}`);
+  if (existsSync(path.join(siblingRoot, 'package.json'))) {
+    return siblingRoot;
+  }
+
+  return null;
+}
+
+export function collectKernFamilyVersions(cliPackageRoot) {
+  if (!cliPackageRoot) return { versions: [], missing: [] };
+
+  const cliPackageJson = path.join(cliPackageRoot, 'package.json');
+  const cliVersion = readPackageVersion(cliPackageJson);
+  const versions = [];
+  const missing = [];
+
+  if (cliVersion) {
+    versions.push({ packageName: '@kernlang/cli', version: cliVersion, packageRoot: cliPackageRoot });
+  } else {
+    missing.push('@kernlang/cli');
+  }
+
+  let dependencyNames = [];
+  try {
+    const cliPackage = readJson(cliPackageJson);
+    dependencyNames = Object.keys(cliPackage.dependencies ?? {})
+      .filter((dependencyName) => dependencyName.startsWith('@kernlang/'))
+      .sort();
+  } catch {
+    return { versions, missing };
+  }
+
+  for (const dependencyName of dependencyNames) {
+    const dependencyRoot = resolveKernPackageRoot(cliPackageRoot, dependencyName);
+    const dependencyVersion = dependencyRoot
+      ? readPackageVersion(path.join(dependencyRoot, 'package.json'))
+      : null;
+
+    if (dependencyVersion) {
+      versions.push({ packageName: dependencyName, version: dependencyVersion, packageRoot: dependencyRoot });
+    } else {
+      missing.push(dependencyName);
+    }
+  }
+
+  return { versions, missing };
+}
+
 export function readEffectiveKernVersion(cliPackageRoot) {
   if (!cliPackageRoot) return null;
+
+  const family = collectKernFamilyVersions(cliPackageRoot);
+  if (family.missing.length > 0) {
+    return null;
+  }
+
+  if (family.versions.length > 0) {
+    return minVersion(family.versions.map((entry) => entry.version));
+  }
 
   const probePaths = [
     path.resolve(cliPackageRoot, '../core/dist/spec.js'),
@@ -110,6 +202,14 @@ export function readEffectiveKernVersion(cliPackageRoot) {
   return null;
 }
 
+/**
+ * @param {string} label
+ * @param {string} command
+ * @param {string[]} commandArgs
+ * @param {string} packageVersion
+ * @param {string | null} [effectiveVersion]
+ * @param {boolean} [allowStale]
+ */
 export function describeCandidate(label, command, commandArgs, packageVersion, effectiveVersion = null, allowStale = false) {
   return {
     label,

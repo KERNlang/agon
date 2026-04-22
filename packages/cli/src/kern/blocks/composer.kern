@@ -11,7 +11,8 @@
 
 import from="react" default="React"
 import from="ink" names="Box,Text"
-import from="../../components.js" names="PromptTextInput,SlashPicker"
+import from="../../generated/blocks/prompt-input.js" names="PromptTextInput"
+import from="../../generated/blocks/controls.js" names="SlashPicker"
 import from="../signals/icons.js" names="icons"
 import from="../../ghost-text.js" names="getGhostCompletion"
 import from="./markdown.js" names="truncateCodeLine"

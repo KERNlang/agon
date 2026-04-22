@@ -2,7 +2,8 @@
 // Replaces app.tsx monolith. All logic in KERN modules; this is the wiring.
 
 import from="react" names="useState,useCallback,useEffect,useRef,useMemo"
-import from="ink" names="Box,Text,render"
+import from="ink" names="Box,Text,Static,render"
+import from="@kernlang/terminal/runtime" names="ScrollBox,AlternateScreen"
 import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,ensureCurrentWorkspace,startChatSession,getRatings,getActiveWorkspace,RUNS_DIR,extractImagesFromInput,resolveWorkingDir,currentBranch,configSet,createCesarMemory,modelEntryToEngineDef,appendMessage,getAgonHome,tracker,copyToClipboard"
 import from="@agon/core" names="Plan,ChatSession,Skill,PersistentSession,ImageAttachment" types=true
 import from="../../handlers/types.js" names="EngineProgress" types=true
@@ -31,19 +32,26 @@ import from="../blocks/review.js" names="handleReviewAction"
 import from="../blocks/engine.js" names="DashboardView,OutputBlockView"
 import from="../blocks/plan-view.js" names="PlanProposalView"
 import from="../cesar/session.js" names="saveCesarConversationSnapshot"
-import from="../../components.js" names="SpinnerBlock,StatusBar,CesarStatusStrip,EnginePicker,ModelPicker,ReviewBlock,BackgroundJobRail,CesarPicker,ComposerView,AgentProgressView,contentWidth,color256toHex,engineColor,CODE_RAIL,CODE_RAIL_COLOR,MAX_CODE_LINES,LOGO_LINES,VERSION,BRAND"
-import from="./app-views.js" names="ChromeBar,HistoryView,StreamingView,ToolDetailBlock"
-import from="../../components.js" names="OutputBlock,ReviewEvent" types=true
+import from="../../generated/surfaces/status.js" names="SpinnerBlock,StatusBar,CesarStatusStrip,BackgroundJobRail"
+import from="../../generated/blocks/controls.js" names="EnginePicker,ModelPicker,ReviewBlock,CesarPicker"
+import from="../../generated/blocks/composer.js" names="ComposerView"
+import from="../../generated/surfaces/agent.js" names="AgentProgressView"
+import from="../../generated/blocks/rendering.js" names="contentWidth,color256toHex,engineColor,CODE_RAIL,CODE_RAIL_COLOR,MAX_CODE_LINES"
+import from="../../generated/blocks/engine.js" names="LOGO_LINES,VERSION,BRAND"
+import from="./app-views.js" names="ChromeBar,StreamingView,ToolDetailBlock,TranscriptRowView"
+import from="../signals/file-tracker.js" names="recordToolCall,listFiles,getFileTrackerVersion,clearFileTracker"
+import from="../blocks/file-rail.js" names="FileRail"
+import from="../../generated/blocks/engine.js" names="OutputBlock" types=true
+import from="../../generated/blocks/controls.js" names="ReviewEvent" types=true
 import from="node:path" names="join,dirname"
 import from="node:url" names="fileURLToPath"
 import from="node:fs" names="readdirSync,writeFileSync,mkdirSync,unlinkSync"
 import from="node:os" names="tmpdir"
 import from="node:child_process" names="spawnSync"
-import from="node:stream" names="PassThrough"
 import from="../models/session-results.js" names="sessionResultStore"
 import from="../blocks/results-formatter.js" names="formatSessionResults,formatChatTranscript"
 import from="@agon/core" names="loadSkills"
-import from="../../input-utils.js" names="parseMouseChunk,isTerminalFocusReport"
+import from="../../input-utils.js" names="isTerminalFocusReport"
 import from="../../stable-input.js" names="useStableInput"
 import from="../blocks/rich-text.js" names="parseProseToRichLines"
 
@@ -70,7 +78,7 @@ fn name=shortToolPath params="filePath:string" returns=string
     return String(filePath ?? '').replace(`${process.cwd()}/`, '').replace(process.env.HOME ?? '', '~');
   >>>
 
-fn name=parseToolCallPayload params="event:any" returns=any
+fn name=parseToolCallPayload params="event:any" returns=any confidence=0.85
   handler <<<
     const rawInput = String(event?.input ?? '');
     let parsed: Record<string, unknown> = {};
@@ -358,81 +366,12 @@ const name=_cesarSessionRef type="{ session: PersistentSession | null }"
 const name=_lastSigintAt type="{ value: number }"
   handler <<< { value: 0 } >>>
 
-fn name=createInkStdoutProxy returns=any
-  handler <<<
-    const proxy = new PassThrough();
-    (proxy as any).isTTY = process.stdout.isTTY;
-    (proxy as any).columns = process.stdout.columns || 100;
-    // Keep Ink off its clearTerminal fallback path (ink.js:121). Primary
-    // defense: rows=10000 makes outputHeight >= rows impossible to hit.
-    // Secondary defense: strip ESC[3J (the scrollback-destroying part of
-    // ansi-escapes.clearTerminal) from anything that flows through, so a
-    // future Ink change or any other caller can't wipe native scrollback.
-    (proxy as any).rows = 10000;
-    proxy.on('data', (chunk: Buffer | string) => {
-      const s = typeof chunk === 'string' ? chunk : chunk.toString('utf8');
-      const cleaned = s.includes('\x1b[3J') ? s.replace(/\x1b\[3J/g, '') : s;
-      process.stdout.write(cleaned);
-    });
-
-    process.stdout.on('resize', () => {
-      (proxy as any).columns = process.stdout.columns || 100;
-      proxy.emit('resize');
-    });
-
-    return proxy;
-  >>>
-
 fn name=createInitialRegistry returns=EngineRegistry
   handler <<<
     const reg = new EngineRegistry();
     const engDir = join(dirname(fileURLToPath(import.meta.url)), '../../../engines');
     reg.load(engDir);
     return reg;
-  >>>
-
-fn name=resolveTerminalMode params="config?:any" returns="'native'|'fullscreen'"
-  handler <<<
-    if (process.env.AGON_DISABLE_FULLSCREEN === '1' || process.env.AGON_NATIVE_TERMINAL === '1') return 'native';
-    if (process.env.AGON_FULLSCREEN === '0' || process.env.AGON_ALT_SCREEN === '0') return 'native';
-    if (process.env.AGON_FULLSCREEN === '1' || process.env.AGON_ALT_SCREEN === '1') return 'fullscreen';
-    return String(config?.terminalMode ?? loadConfig().terminalMode ?? 'fullscreen') === 'fullscreen' ? 'fullscreen' : 'native';
-  >>>
-
-fn name=isFullscreenEnabled params="config?:any" returns=boolean
-  handler <<<
-    return resolveTerminalMode(config) === 'fullscreen';
-  >>>
-
-fn name=isMouseTrackingEnabled params="config?:any" returns=boolean
-  handler <<<
-    if (process.env.AGON_DISABLE_MOUSE === '1' || process.env.AGON_DISABLE_MOUSE_SCROLL === '1') return false;
-    if (process.env.AGON_ENABLE_MOUSE_SCROLL === '0') return false;
-    if (process.env.AGON_ENABLE_MOUSE_SCROLL === '1') return true;
-    return isFullscreenEnabled(config);
-  >>>
-
-fn name=terminalEnterSequence params="useAltScreen:boolean, useMouse:boolean" returns=string
-  handler <<<
-    // On alt-screen enter, follow ESC[?1049h with ESC[2J ESC[H so Ink starts
-    // rendering at row 1 instead of wherever the shell left the cursor. Some
-    // terminals (or shell configs that emit content before agon launches)
-    // leave the cursor mid-screen even after alt-screen activation, which
-    // made the dashboard appear ~50% down the viewport with a large blank
-    // region above. Fix verified by codex via TTY capture.
-    return `${useAltScreen ? '\x1b[?1049h\x1b[2J\x1b[H' : ''}\x1b[?2004h${useMouse ? '\x1b[?1000h\x1b[?1002h\x1b[?1006h' : ''}`;
-  >>>
-
-fn name=terminalExitSequence params="useAltScreen:boolean" returns=string
-  handler <<<
-    return `\x1b[?1000l\x1b[?1002l\x1b[?1006l\x1b[?2004l${useAltScreen ? '\x1b[?1049l' : ''}`;
-  >>>
-
-fn name=resetViewportSequence returns=string export=true
-  handler <<<
-    // Clear only the visible viewport and home the cursor. Unlike ESC[3J,
-    // this preserves terminal scrollback for native scrolling.
-    return '\x1b[2J\x1b[H';
   >>>
 
 fn name=drainStdinBuffer returns=void
@@ -442,11 +381,6 @@ fn name=drainStdinBuffer returns=void
     do {
       chunk = process.stdin.read();
     } while (chunk !== null);
-  >>>
-
-fn name=maxScrollOffsetForBlockCount params="blockCount:number, blockBudget:number" returns=number
-  handler <<<
-    return Math.max(0, blockCount - Math.max(1, blockBudget));
   >>>
 
 fn name=maxScrollOffsetForRowCount params="rowCount:number, rowBudget:number" returns=number
@@ -620,16 +554,6 @@ fn name=transcriptRowsToPlainText params="rows:any[], anchorRow:number|null, anc
       lines.push(text);
     }
     return lines.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd();
-  >>>
-
-fn name=transcriptViewportTopLine params="mode:string, hasJobs:boolean, rowBudget:number, visibleRowCount:number, hasIndicator:boolean, stickToBottom:boolean" returns=number
-  handler <<<
-    let top = 1;
-    if (mode !== 'chat') top += 1;
-    if (hasJobs) top += 1;
-    const contentRows = visibleRowCount + (hasIndicator ? 1 : 0);
-    const slack = stickToBottom ? Math.max(0, rowBudget - contentRows) : 0;
-    return top + slack;
   >>>
 
 fn name=resolveTranscriptRowFromMouse params="mouseY:number, viewportTopLine:number, firstVisibleRow:number, visibleRowCount:number" returns="number|null"
@@ -1937,15 +1861,13 @@ screen name=App target=ink
   ref name=lastActivityTimeRef type=number initial="Date.now()"
   ref name=blockArchivePathRef type=string initial="makeBlockArchivePath(Date.now())"
   ref name=nestedCtrlShortcutRef type="{ key: string; at: number }" initial="{ key: '', at: 0 }"
-  ref name=scrollOffsetRef type=number initial=0
   ref name=displayRowCountRef type=number initial=0
   ref name=mouseInputBufferRef type=string initial="''"
   ref name=wheelDeltaRef type=number initial=0
   ref name=wheelFlushTimerRef type="ReturnType<typeof setTimeout>|null" initial="null"
   ref name=mouseSelectionRef type="{ anchorRow: number | null; anchorCol: number | null; focusRow: number | null; focusCol: number | null; active: boolean; moved: boolean }" initial="{ anchorRow: null, anchorCol: null, focusRow: null, focusCol: null, active: false, moved: false }"
   ref name=lastTerminalInputAtRef type=number initial="Date.now()"
-
-  // ── Init-once state (registry, adapter, skills) ──
+  ref name=scrollBoxRef type="any" initial="null"
   // engines dir is at packages/cli/engines from the bundled dist/index.js
   // (3 `..` up from dist/). For source-mode execution the path points into
   // src/, which doesn't exist — EngineRegistry.resolveBuiltinDir walks up
@@ -1961,8 +1883,11 @@ screen name=App target=ink
   state name=workspacePath type=string initial="resolveWorkingDir()"
   state name=termWidth type=number initial="process.stdout.columns || 100" throttle=100
   state name=termHeight type=number initial="process.stdout.rows || 24" throttle=100
-  state name=scrollOffset type=number initial="0"
   state name=selectionMode type=boolean initial="false"
+  state name=fileRailOpen type=boolean initial="false"
+  state name=fileRailVersion type=number initial="0"
+  state name=fileRailSelectedIdx type=number initial="0"
+  state name=fileRailExpandedPath type="string|null" initial="null"
   state name=mouseSelection type="{ anchorRow: number | null; anchorCol: number | null; focusRow: number | null; focusCol: number | null; active: boolean; moved: boolean }" initial="{ anchorRow: null, anchorCol: null, focusRow: null, focusCol: null, active: false, moved: false }"
   // Bumped whenever the EngineRegistry is mutated (register/unregister) so the
   // availableEngines memo invalidates. Without this, memoing on `registry` alone
@@ -2090,10 +2015,10 @@ screen name=App target=ink
       return startupOnly ? outputBlocks : historyBlocks;
     >>>
 
-  memo name=livePaneVisible deps="scrollOffset, activeStream, liveProgress, agentProgress, startupOnly"
+  memo name=livePaneVisible deps="activeStream, liveProgress, agentProgress, startupOnly"
     handler <<<
       if (startupOnly) return false;
-      return scrollOffset === 0 && (!!activeStream || !!liveProgress || Object.keys(agentProgress).length > 0);
+      return !!activeStream || !!liveProgress || Object.keys(agentProgress).length > 0;
     >>>
 
   memo name=currentVisibleRowBudget deps="termHeight, mode, overlayReservedRows, bottomChromeReservedRows, livePaneVisible, activeStream, liveProgress, agentProgress"
@@ -2105,19 +2030,41 @@ screen name=App target=ink
       return estimateVisibleBlockBudget(viewportRows, mode, overlayReservedRows + bottomChromeReservedRows);
     >>>
 
+  // Per-block row cache: only re-parse blocks whose content changed.
+  // Key = block.id + stable hash of event JSON; value = parsed rows.
+  ref name=blockRowCacheRef type="Map<string, any[]>" initial="new Map()"
+
   memo name=displayRows deps="displayBlocks, mode, toolOutputExpanded, thinkingExpanded"
     handler <<<
-      return buildTranscriptRows(displayBlocks, mode, toolOutputExpanded, thinkingExpanded);
+      // Ink 7 + ScrollBox: re-rendering on state change is supported, so
+      // Ctrl+E/Ctrl+T can actually toggle past tool/thinking rows.
+      const cache = blockRowCacheRef.current;
+      const rows: any[] = [];
+      for (const block of displayBlocks) {
+        const eventJson = JSON.stringify(block.event);
+        const cacheKey = `${block.id}::${eventJson}::${mode}::${toolOutputExpanded}::${thinkingExpanded}`;
+        const cached = cache.get(cacheKey);
+        if (cached) {
+          rows.push(...cached);
+          continue;
+        }
+        const blockRows = buildTranscriptRows([block], mode, toolOutputExpanded, thinkingExpanded);
+        // Adjust keys to include block id so they stay unique across blocks
+        const keyedRows = blockRows.map((r: any) => ({ ...r, key: `${block.id}-${r.key}` }));
+        cache.set(cacheKey, keyedRows);
+        rows.push(...keyedRows);
+      }
+      // Prune stale entries (blocks no longer in displayBlocks)
+      const validKeys = new Set(displayBlocks.map((b: any) => `${b.id}::${JSON.stringify(b.event)}::${mode}::${toolOutputExpanded}::${thinkingExpanded}`));
+      for (const key of Array.from(cache.keys())) {
+        if (!validKeys.has(key)) cache.delete(key);
+      }
+      return rows;
     >>>
 
   memo name=totalDisplayRows deps="displayRows"
     handler <<<
       return displayRows.length;
-    >>>
-
-  memo name=maxScrollOffset deps="totalDisplayRows, currentVisibleRowBudget"
-    handler <<<
-      return maxScrollOffsetForRowCount(totalDisplayRows, currentVisibleRowBudget);
     >>>
 
   memo name=selectedRowRange deps="mouseSelection"
@@ -2141,77 +2088,14 @@ screen name=App target=ink
       );
     >>>
 
-  memo name=visibleWindow deps="displayRows, scrollOffset, currentVisibleRowBudget, selectedRowRange, selectedTextRange, startupOnly, maxScrollOffset"
+  memo name=startupFitsViewport deps="startupOnly, totalDisplayRows, currentVisibleRowBudget"
     handler <<<
-      const decorateVisibleRows = (rows: any[], startIndex: number) => {
-        const range = selectedRowRange;
-        const textRange = selectedTextRange;
-        return rows.map((row: any, index: number) => {
-          const rowIndex = startIndex + index;
-          if (!range || rowIndex < range.start || rowIndex > range.end) return row;
-          const selectionText = transcriptRowToPlainText(row);
-          const selectionStart = textRange && rowIndex === textRange.startRow ? textRange.startCol : 0;
-          const selectionEnd = textRange && rowIndex === textRange.endRow ? textRange.endCol : selectionText.length;
-          return {
-            ...row,
-            selected: true,
-            selectionText,
-            selectionStart,
-            selectionEnd,
-          };
-        });
-      };
-
-      if (startupOnly) {
-        const start = clampNumber(scrollOffset, 0, maxScrollOffset);
-        const end = Math.min(displayRows.length, start + currentVisibleRowBudget);
-        const visibleRows = decorateVisibleRows(displayRows.slice(start, end), start);
-        return {
-          startIndex: start,
-          endIndex: end,
-          rowsAbove: 0,
-          rowsBelow: Math.max(0, displayRows.length - end),
-          visible: visibleRows,
-        };
-      }
-
-      const end = Math.max(0, displayRows.length - Math.max(0, scrollOffset));
-      const start = Math.max(0, end - currentVisibleRowBudget);
-      const visibleRows = decorateVisibleRows(displayRows.slice(start, end), start);
-      return {
-        startIndex: start,
-        endIndex: end,
-        rowsAbove: start,
-        rowsBelow: Math.max(0, displayRows.length - end),
-        visible: visibleRows,
-      };
-    >>>
-
-  memo name=historyViewportTop deps="mode, runningJobs, currentVisibleRowBudget, visibleWindow, startupOnly, scrollOffset"
-    handler <<<
-      return transcriptViewportTopLine(
-        mode,
-        runningJobs.length > 0,
-        currentVisibleRowBudget,
-        visibleWindow.visible.length,
-        visibleWindow.rowsAbove > 0 || visibleWindow.rowsBelow > 0,
-        !startupOnly && scrollOffset === 0,
-      );
-    >>>
-
-  memo name=startupFitsViewport deps="startupOnly, visibleWindow"
-    handler <<<
-      return startupOnly && visibleWindow.rowsAbove === 0 && visibleWindow.rowsBelow === 0;
+      return startupOnly && totalDisplayRows <= currentVisibleRowBudget;
     >>>
 
   memo name=startupUseDashboardView deps="startupFitsViewport, termWidth"
     handler <<<
       return startupFitsViewport && termWidth >= 100;
-    >>>
-
-  memo name=historyNeedsViewportFill deps="visibleWindow"
-    handler <<<
-      return visibleWindow.rowsAbove > 0 || visibleWindow.rowsBelow > 0;
     >>>
 
   // ── Load extensions on startup + workspace switch ──
@@ -2229,11 +2113,6 @@ screen name=App target=ink
   effect deps="mode"
     handler <<<
       modeRef.current = mode;
-    >>>
-
-  effect deps="scrollOffset"
-    handler <<<
-      scrollOffsetRef.current = scrollOffset;
     >>>
 
   effect deps="mouseSelection"
@@ -2261,190 +2140,6 @@ screen name=App target=ink
       }
       mouseSelectionRef.current = { anchorRow: null, anchorCol: null, focusRow: null, focusCol: null, active: false, moved: false };
       setMouseSelection({ anchorRow: null, anchorCol: null, focusRow: null, focusCol: null, active: false, moved: false });
-    >>>
-
-  // Track rendered row count and preserve the user's scroll anchor when the
-  // list changes. Without this, streaming new content drags the transcript
-  // window forward and /clear can leave scrollOffset past the end.
-  effect deps="totalDisplayRows, maxScrollOffset"
-    handler <<<
-      const prev = displayRowCountRef.current;
-      const next = totalDisplayRows;
-      displayRowCountRef.current = next;
-      if (next === prev) return;
-      if (next > prev && scrollOffsetRef.current > 0) {
-        setScrollOffset((s: number) => Math.min(s + (next - prev), maxScrollOffset));
-      } else if (scrollOffsetRef.current > maxScrollOffset) {
-        setScrollOffset(maxScrollOffset);
-      }
-    >>>
-
-  effect deps="maxScrollOffset,selectionMode,startupOnly,historyViewportTop,visibleWindow,displayRows,dispatch,config"
-    handler <<<
-      if (!process.stdin.isTTY || !process.stdout.isTTY) return;
-      // Mouse tracking permanently disabled: native terminal scrollback owns
-      // the wheel, drag-select is delegated to the terminal emulator. See
-      // commit notes for the Static-scrollback migration.
-      const mouseTrackingActive = false;
-      if (!mouseTrackingActive) return;
-      const indicatorRows = visibleWindow.rowsAbove > 0 || visibleWindow.rowsBelow > 0 ? 1 : 0;
-      const visibleRowCount = visibleWindow.visible.length;
-      const firstVisibleRow = visibleWindow.startIndex;
-      const firstRenderableLine = historyViewportTop + indicatorRows;
-
-      const setSelection = (next: { anchorRow: number | null; anchorCol: number | null; focusRow: number | null; focusCol: number | null; active: boolean; moved: boolean }) => {
-        mouseSelectionRef.current = next;
-        setMouseSelection(next);
-      };
-
-      const clearSelection = () => {
-        if (
-          mouseSelectionRef.current.anchorRow === null
-          && mouseSelectionRef.current.anchorCol === null
-          && mouseSelectionRef.current.focusRow === null
-          && mouseSelectionRef.current.focusCol === null
-          && mouseSelectionRef.current.active === false
-          && mouseSelectionRef.current.moved === false
-        ) {
-          return;
-        }
-        setSelection({ anchorRow: null, anchorCol: null, focusRow: null, focusCol: null, active: false, moved: false });
-      };
-
-      const isWithinTranscriptRows = (mouseY: number) => {
-        return visibleRowCount > 0 && mouseY >= firstRenderableLine && mouseY < firstRenderableLine + visibleRowCount;
-      };
-
-      const resolvePointerRow = (mouseY: number) => {
-        return resolveTranscriptRowFromMouse(mouseY, firstRenderableLine, firstVisibleRow, visibleRowCount);
-      };
-
-      const resolvePointerColumn = (mouseX: number, rowIndex: number | null) => {
-        if (rowIndex === null) return null;
-        const row = displayRows[rowIndex];
-        if (!row) return null;
-        return resolveTranscriptColumnFromMouse(mouseX, row);
-      };
-
-      const copySelection = (
-        anchorRow: number | null,
-        anchorCol: number | null,
-        focusRow: number | null,
-        focusCol: number | null,
-      ) => {
-        const content = transcriptRowsToPlainText(displayRows, anchorRow, anchorCol, focusRow, focusCol);
-        if (!content) return;
-        try {
-          copyToClipboard(content);
-          const range = normalizeTextSelection(anchorRow, anchorCol, focusRow, focusCol);
-          const lineCount = range ? range.endRow - range.startRow + 1 : 0;
-          dispatch({
-            type: 'success',
-            message: `Copied ${lineCount} transcript line${lineCount === 1 ? '' : 's'} to clipboard`,
-          } as any);
-        } catch (err) {
-          dispatch({ type: 'error', message: `Copy failed: ${err instanceof Error ? err.message : String(err)}` } as any);
-        }
-      };
-
-      const flushWheelDelta = () => {
-        wheelFlushTimerRef.current = null;
-        const pending = wheelDeltaRef.current;
-        if (pending === 0) return;
-        const { step, remaining } = nextWheelAnimationStep(pending);
-        wheelDeltaRef.current = remaining;
-        if (step === 0) return;
-        clearSelection();
-        const max = maxScrollOffset;
-        setScrollOffset((prev: number) => {
-          if (step > 0) return Math.min(prev + step, max);
-          return Math.max(0, prev + step);
-        });
-        if (wheelDeltaRef.current !== 0) scheduleWheelFlush();
-      };
-
-      const scheduleWheelFlush = () => {
-        if (wheelFlushTimerRef.current) return;
-        wheelFlushTimerRef.current = setTimeout(flushWheelDelta, 6);
-      };
-
-      const onData = (buf: Buffer | string) => {
-        const chunk = typeof buf === 'string' ? buf : buf.toString('utf8');
-        const parsed = parseMouseChunk(mouseInputBufferRef.current, chunk);
-        mouseInputBufferRef.current = parsed.nextBuffer;
-        const delta = parsed.scrollUpEvents - parsed.scrollDownEvents;
-        if (delta !== 0) {
-          wheelDeltaRef.current += delta;
-          if (wheelFlushTimerRef.current) {
-            scheduleWheelFlush();
-          } else {
-            flushWheelDelta();
-          }
-        }
-        for (const event of parsed.pointerEvents) {
-          if (event.kind === 'down') {
-            if (event.button !== 'left') continue;
-            if (!isWithinTranscriptRows(event.y)) {
-              clearSelection();
-              continue;
-            }
-            const row = resolvePointerRow(event.y);
-            const col = resolvePointerColumn(event.x, row);
-            if (row === null || col === null) continue;
-            setSelection({ anchorRow: row, anchorCol: col, focusRow: row, focusCol: col, active: true, moved: false });
-            continue;
-          }
-
-          if (event.kind === 'drag') {
-            if (!mouseSelectionRef.current.active) continue;
-            const focusRow = resolvePointerRow(event.y);
-            const focusCol = resolvePointerColumn(event.x, focusRow);
-            if (focusRow === null || focusCol === null) continue;
-            const current = mouseSelectionRef.current;
-            if (current.focusRow === focusRow && current.focusCol === focusCol) continue;
-            setSelection({
-              anchorRow: current.anchorRow ?? focusRow,
-              anchorCol: current.anchorCol ?? focusCol,
-              focusRow,
-              focusCol,
-              active: true,
-              moved: true,
-            });
-            continue;
-          }
-
-          if (event.kind === 'up') {
-            if (mouseSelectionRef.current.anchorRow === null || mouseSelectionRef.current.anchorCol === null) continue;
-            if (!mouseSelectionRef.current.moved) {
-              clearSelection();
-              continue;
-            }
-            const focusRow = resolvePointerRow(event.y) ?? mouseSelectionRef.current.focusRow ?? mouseSelectionRef.current.anchorRow;
-            const focusCol = resolvePointerColumn(event.x, focusRow) ?? mouseSelectionRef.current.focusCol ?? mouseSelectionRef.current.anchorCol;
-            const finalSelection = {
-              anchorRow: mouseSelectionRef.current.anchorRow,
-              anchorCol: mouseSelectionRef.current.anchorCol,
-              focusRow,
-              focusCol,
-              active: false,
-              moved: true,
-            };
-            setSelection(finalSelection);
-            copySelection(finalSelection.anchorRow, finalSelection.anchorCol, finalSelection.focusRow, finalSelection.focusCol);
-          }
-        }
-      };
-
-      process.stdin.on('data', onData);
-
-      return () => {
-        if (wheelFlushTimerRef.current) {
-          clearTimeout(wheelFlushTimerRef.current);
-          wheelFlushTimerRef.current = null;
-        }
-        wheelDeltaRef.current = 0;
-        process.stdin.off('data', onData);
-      };
     >>>
 
   // ── TTL pruner for completed agentProgress snapshots ──
@@ -2567,11 +2262,9 @@ screen name=App target=ink
           setStreamingText(next);
         },
         addBlock: (event: any) => {
-          if (scrollOffsetRef.current === 0) setScrollOffset(0);
           setOutputBlocks((prev: any) => appendBlockWithCap(prev, { id: Date.now() + Math.random(), event }, blockArchivePathRef.current));
         },
         replaceBlocksOfType: (eventType: string, event: any) => {
-          if (scrollOffsetRef.current === 0) setScrollOffset(0);
           setOutputBlocks((prev: any) => {
             const filtered = prev.filter((b: any) => b.event.type !== eventType);
             return appendBlockWithCap(filtered, { id: Date.now() + Math.random(), event }, blockArchivePathRef.current);
@@ -2623,6 +2316,13 @@ screen name=App target=ink
       if (et === 'streaming-chunk' || et === 'thinking-chunk' || et === 'progress-update' || et === 'tool-call' || et === 'spinner-start' || et === 'spinner-update') {
         lastActivityTimeRef.current = Date.now();
       }
+      // Feed FileTracker: only tool-call events with file-touching tools
+      // actually populate it (others are no-ops inside the tracker).
+      if (et === 'tool-call') {
+        const tc = event as any;
+        recordToolCall(tc.tool, tc.input, tc.status);
+        setFileRailVersion(getFileTrackerVersion());
+      }
       const state: OutputState = { liveSpinner: null, liveProgress: null, streamingText: streamingTextRef.current ?? {}, agentProgress: agentProgressRef.current ?? {} };
       handleOutputEvent(event, state, outputActions, mode, chatStartTimeRef.current);
     >>>
@@ -2632,15 +2332,18 @@ screen name=App target=ink
       return new Promise<string>((resolve) => { dispatch({ type: 'question', prompt, resolve } as any); });
     >>>
 
-  callback name=interruptActiveRun params="message:string, clearChat:boolean" deps="replState,dispatch,trackAbort"
+  callback name=interruptActiveRun params="message:string, clearChat:boolean" deps="replState,dispatch,trackAbort,outputActions"
     handler <<<
       const abort = activeAbortRef.current;
       if (abort) abort.abort();
       trackAbort(null);
       setLiveSpinner(null);
       setLiveProgress(null);
-      streamingTextRef.current = {};
-      setStreamingText({});
+      // Commit any in-flight streams before wiping. In main-buffer mode the
+      // partial text has already been written to the terminal; dropping it
+      // from React state without flushing causes logUpdate.eraseLines to
+      // wipe visible output the user was just reading.
+      outputActions.flushStream();
       clearPermissionQueue();
       clearThinkingBuffer();
       setQuestionState(null);
@@ -2693,40 +2396,21 @@ screen name=App target=ink
       return () => { process.stdout.off('resize', onResize); };
     >>>
 
-  effect deps="selectionMode,maxScrollOffset,startupOnly,config"
+  effect deps=""
     handler <<<
       if (!process.stdin.isTTY || !process.stdout.isTTY) return;
-      const fullscreenEnabled = isFullscreenEnabled(config);
-      // Mouse tracking permanently disabled (see handler above). Terminal
-      // keeps ownership of wheel scroll + native selection/copy.
-      const mouseTrackingActive = false;
-
-      const reassertModes = (includeAltScreen = false) => {
-        process.stdout.write(terminalEnterSequence(fullscreenEnabled && includeAltScreen, mouseTrackingActive));
-      };
-
-      const onData = () => {
-        const now = Date.now();
-        if (now - lastTerminalInputAtRef.current > 5000) {
-          reassertModes(false);
-        }
-        lastTerminalInputAtRef.current = now;
-      };
-
+      // Bracketed paste only. Mouse tracking is handled by <AlternateScreen
+      // mouseTracking={!selectionMode}> — toggling selectionMode re-acquires
+      // the alt-screen with mouse enable/disable via the runtime's deps.
+      process.stdout.write('\x1b[?2004h');
       const onResume = () => {
-        lastTerminalInputAtRef.current = Date.now();
-        reassertModes(true);
+        process.stdout.write('\x1b[?2004h');
       };
-
-      reassertModes(false);
-      process.stdin.on('data', onData);
       process.on('SIGCONT', onResume);
-
       return () => {
-        process.stdin.off('data', onData);
         process.off('SIGCONT', onResume);
         drainStdinBuffer();
-        process.stdout.write(terminalExitSequence(false));
+        process.stdout.write('\x1b[?2004l');
       };
     >>>
 
@@ -3105,8 +2789,8 @@ screen name=App target=ink
       dispatch({
         type: 'info',
         message: next
-          ? 'Native selection mode on — mouse capture off. Use the terminal to select/copy. Press Ctrl+G to resume app scroll.'
-          : 'Selection mode off — app scroll restored.',
+          ? 'Selection mode on — drag to select, Cmd+C to copy. Ctrl+G again for wheel scroll.'
+          : 'Wheel scroll on — mouse captured. Ctrl+G to select/copy with mouse again.',
       } as any);
     >>>
 
@@ -3195,7 +2879,7 @@ screen name=App target=ink
     >>>
 
   // ── Register cancel callback for SIGINT ──
-  effect deps="setActiveAbort"
+  effect deps="setActiveAbort,outputActions"
     handler <<<
       _cancelCallback.fn = () => {
         for (const abort of _activeAborts) abort.abort();
@@ -3204,8 +2888,8 @@ screen name=App target=ink
         setActiveAbort(null);
         setLiveSpinner(null);
         setLiveProgress(null);
-        streamingTextRef.current = {};
-        setStreamingText({});
+        // Commit any in-flight streams before wiping — see interruptActiveRun.
+        outputActions.flushStream();
         agentProgressRef.current = {};
         setAgentProgress({});
         clearPermissionQueue();
@@ -3223,9 +2907,29 @@ screen name=App target=ink
     >>>
 
   // ── Keyboard handling — pure decision tree + thin dispatcher ──
-  callback name=handleKeyboardInput params="input:string,key:any" deps="modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,activePlan,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,copyCurrentTranscript,toggleSelectionMode,maxScrollOffset,startupOnly"
+  callback name=handleKeyboardInput params="input:string,key:any" deps="modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,activePlan,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,copyCurrentTranscript,toggleSelectionMode,startupOnly"
     handler <<<
       if (isTerminalFocusReport(input)) return;
+
+      // ScrollBox keyboard shortcuts (only when no modal is open)
+      if (!modelPickerOpen && !cesarPickerOpen && !enginePickerOpen && !reviewEvent && !toolDetailEvent && !slashPickerOpen && !questionState) {
+        if (key.shift && key.name === 'pageup') {
+          scrollBoxRef.current?.scrollBy(-Math.max(1, Math.floor(currentVisibleRowBudget / 2)));
+          return;
+        }
+        if (key.shift && key.name === 'pagedown') {
+          scrollBoxRef.current?.scrollBy(Math.max(1, Math.floor(currentVisibleRowBudget / 2)));
+          return;
+        }
+        if (key.name === 'home') {
+          scrollBoxRef.current?.scrollTo(0);
+          return;
+        }
+        if (key.name === 'end') {
+          scrollBoxRef.current?.scrollToBottom?.();
+          return;
+        }
+      }
 
       const normalizedCtrlInput = key.ctrl
         ? ({
@@ -3261,6 +2965,8 @@ screen name=App target=ink
         outputBlockCount: outputBlocks.length,
         commands: allSlashCommands,
         engineIds: availableEngines,
+        fileRailFocused: fileRailOpen && inputValue.trim().length === 0,
+        fileRailExpanded: fileRailExpandedPath !== null,
       });
 
       switch (action.type) {
@@ -3280,22 +2986,6 @@ screen name=App target=ink
           setPlanModeQueued((prev: boolean) => !prev); return;
         case 'submit':
           handleSubmit(action.value); return;
-        case 'scroll':
-          setScrollOffset((prev: number) => {
-            if (startupOnly) {
-              return action.delta > 0
-                ? Math.max(0, prev - action.delta)
-                : Math.min(maxScrollOffset, prev - action.delta);
-            }
-            return action.delta > 0 ? Math.min(prev + action.delta, maxScrollOffset) : Math.max(0, prev + action.delta);
-          });
-          return;
-        case 'scrollToTop':
-          setScrollOffset(startupOnly ? 0 : maxScrollOffset);
-          return;
-        case 'scrollToBottom':
-          setScrollOffset(startupOnly ? maxScrollOffset : 0);
-          return;
         case 'toggleToolExpand':
           ctrlKeyHandledRef.current = true;
           setToolOutputExpanded((prev: boolean) => !prev); return;
@@ -3310,6 +3000,34 @@ screen name=App target=ink
           openResultsPager(); return;
         case 'copyTranscript':
           copyCurrentTranscript(); return;
+        case 'toggleFileRail':
+          setFileRailOpen((prev: boolean) => !prev);
+          setFileRailExpandedPath(null);
+          return;
+        case 'fileRailSelectPrev': {
+          const files = listFiles();
+          const last = Math.max(0, files.length - 1);
+          setFileRailSelectedIdx((i: number) => Math.max(0, Math.min(last, i) - 1));
+          return;
+        }
+        case 'fileRailSelectNext': {
+          const files = listFiles();
+          const last = Math.max(0, files.length - 1);
+          setFileRailSelectedIdx((i: number) => Math.min(last, Math.max(0, i) + 1));
+          return;
+        }
+        case 'fileRailToggleExpand': {
+          const files = listFiles();
+          if (files.length === 0) return;
+          const idx = Math.max(0, Math.min(files.length - 1, fileRailSelectedIdx));
+          const target = files[idx];
+          setFileRailExpandedPath((prev: string|null) => prev === target.path ? null : target.path);
+          return;
+        }
+        case 'fileRailClose':
+          setFileRailOpen(false);
+          setFileRailExpandedPath(null);
+          return;
         case 'unqueuePlan':
           setPlanModeQueued(false); return;
         case 'closeSlash':
@@ -3340,64 +3058,63 @@ screen name=App target=ink
   render
     handler <<<
       useStableInput(handleKeyboardInput);
+      const showFileRail = fileRailOpen;
+      const fileRailFiles = useMemo(() => listFiles(), [fileRailVersion]);
+      // Stable element array — without useMemo, every keystroke rebuilds N
+      // React elements even though `displayRows` only changes on stream/mode.
+      // ScrollBox also does React.Children.toArray on children; a stable ref
+      // lets its internal memo bail too.
+      const transcriptElements = useMemo(
+        () => displayRows.map((row: any) => <TranscriptRowView key={row.key} row={row} />),
+        [displayRows],
+      );
       return (
-      <Box flexDirection="column" height={Math.max(8, termHeight)} width="100%" flexShrink={0}>
+      <AlternateScreen mouseTracking={!selectionMode}>
+      <Box flexDirection="column" flexGrow={1} width={termWidth} height={termHeight}>
+      <Box flexDirection="row" flexGrow={1} width="100%">
+      <Box flexDirection="column" flexGrow={1} minWidth={0}>
+      <ScrollBox ref={scrollBoxRef} stickyScroll flexGrow={1}>
+        {transcriptElements}
+      </ScrollBox>
+      <Box flexDirection="column" flexShrink={0}>
         <ChromeBar mode={mode} cwdLabel={resolveWorkingDir().split('/').pop() ?? ''} engineCount={availableEngines.length} replState={replState} runningJobs={runningJobs} />
         <BackgroundJobRail jobs={runningJobs} />
-        <Box flexDirection="column" flexShrink={0}>
+        {startupUseDashboardView && displayRows.length === 0 && (
+          <Box flexDirection="column">
+            <DashboardView event={outputBlocks[0]?.event as any} />
+          </Box>
+        )}
+        {livePaneVisible && (
           <>
-            {startupUseDashboardView ? (
+            <StreamingView streamingText={activeStream} mode={mode} liveProgress={liveProgress} />
+            {Object.keys(agentProgress).length > 0 && (
               <Box flexDirection="column">
-                <DashboardView event={outputBlocks[0]?.event as any} />
+                {Object.values(agentProgress).map((snap: AgentProgressSnapshot) => (
+                  <AgentProgressView
+                    key={snap.engineId}
+                    engineId={snap.engineId}
+                    turnIndex={snap.turnIndex}
+                    phase={snap.phase}
+                    userPrompt={snap.userPrompt}
+                    toolCalls={snap.toolCalls}
+                    lastTool={snap.lastTool}
+                    lastToolStatus={snap.lastToolStatus}
+                    tokensUsed={snap.tokensUsed}
+                    elapsedMs={snap.elapsedMs}
+                    turnsRemaining={snap.turnsRemaining}
+                    maxTurns={snap.maxTurns}
+                    tokensRemaining={snap.tokensRemaining}
+                    maxTokens={snap.maxTokens}
+                    error={snap.error}
+                  />
+                ))}
               </Box>
-            ) : (
-              <HistoryView
-                visibleRows={visibleWindow.visible}
-                rowsAbove={visibleWindow.rowsAbove}
-                rowsBelow={visibleWindow.rowsBelow}
-                stickToBottom={false}
-                centerContent={false}
-              />
-            )}
-
-            {livePaneVisible && (
-              <>
-                <StreamingView streamingText={activeStream} mode={mode} liveProgress={liveProgress} />
-                {Object.keys(agentProgress).length > 0 && (
-                  <Box flexDirection="column">
-                    {Object.values(agentProgress).map((snap: AgentProgressSnapshot) => (
-                      <AgentProgressView
-                        key={snap.engineId}
-                        engineId={snap.engineId}
-                        turnIndex={snap.turnIndex}
-                        phase={snap.phase}
-                        userPrompt={snap.userPrompt}
-                        toolCalls={snap.toolCalls}
-                        lastTool={snap.lastTool}
-                        lastToolStatus={snap.lastToolStatus}
-                        tokensUsed={snap.tokensUsed}
-                        elapsedMs={snap.elapsedMs}
-                        turnsRemaining={snap.turnsRemaining}
-                        maxTurns={snap.maxTurns}
-                        tokensRemaining={snap.tokensRemaining}
-                        maxTokens={snap.maxTokens}
-                        error={snap.error}
-                      />
-                    ))}
-                  </Box>
-                )}
-              </>
-            )}
-            {pendingPlanProposal && (
-              <PlanProposalView plan={(pendingPlanProposal as any).plan} markdown={(pendingPlanProposal as any).markdown} />
             )}
           </>
-        </Box>
-        {/* Spacer: fills remaining terminal height so content clusters at the
-            top and composer stays pinned to the bottom. Without it, content
-            container flexGrows and the live streaming indicator gets pushed
-            down far from the history rows. */}
-        <Box flexGrow={1} flexShrink={1} />
+        )}
+        {pendingPlanProposal && (
+          <PlanProposalView plan={(pendingPlanProposal as any).plan} markdown={(pendingPlanProposal as any).markdown} />
+        )}
         {toolDetailView && (
           <ToolDetailBlock
             title={toolDetailView.title}
@@ -3530,12 +3247,19 @@ screen name=App target=ink
               const _cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
               return (<>
                 <CesarStatusStrip cesarId={_cesarId} confidence={cesarConfidence} spinner={liveSpinner} engines={liveProgress} startTime={chatStartTimeRef.current || 0} streamSnippet={streamSnippet} isActive={replState !== 'idle' || runningJobs.length > 0} planModeQueued={planModeQueued} activePlanState={activePlan?.state ?? null} />
-                {mode === 'chat' && <StatusBar cesarId={statusStats.cesarId} chatMessageCount={statusStats.chatMessageCount} totalTokens={statusStats.totalTokens} totalCostUsd={statusStats.totalCostUsd} cwd={statusCwd} branch={statusBranch} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} thinkingExpanded={thinkingExpanded} isActive={replState !== 'idle'} fullscreenEnabled={isFullscreenEnabled(config)} selectionMode={selectionMode} />}
+                {mode === 'chat' && <StatusBar cesarId={statusStats.cesarId} chatMessageCount={statusStats.chatMessageCount} totalTokens={statusStats.totalTokens} totalCostUsd={statusStats.totalCostUsd} cwd={statusCwd} branch={statusBranch} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} thinkingExpanded={thinkingExpanded} isActive={replState !== 'idle'} fullscreenEnabled={false} selectionMode={selectionMode} />}
               </>);
             })()}
           </Box>
         )}
       </Box>
+      </Box>
+      {showFileRail && (
+        <FileRail files={fileRailFiles} maxRows={fileRailExpandedPath ? Math.max(20, termHeight - 6) : Math.max(6, Math.min(12, 10))} width={Math.max(32, Math.floor(termWidth / 3))} focused={fileRailOpen && inputValue.trim().length === 0} selectedIndex={fileRailSelectedIdx} expandedPath={fileRailExpandedPath} />
+      )}
+      </Box>
+      </Box>
+      </AlternateScreen>
       );
     >>>
 
@@ -3544,7 +3268,6 @@ fn name=startRepl async=true returns="Promise<void>"
   handler <<<
     ensureAgonHome();
     ensureCurrentWorkspace(process.cwd());
-    const inkStdout = createInkStdoutProxy();
     process.on('SIGINT', () => {
       const now = Date.now();
       if (now - _lastSigintAt.value < 1200) {
@@ -3561,19 +3284,9 @@ fn name=startRepl async=true returns="Promise<void>"
       _lastSigintAt.value = now;
     });
     if (process.stdout.isTTY) {
-      const fullscreenEnabled = isFullscreenEnabled(loadConfig());
-      // In native mode we used to ESC[2J here to clear the viewport before
-      // Ink started rendering. That painted blank rows above the first
-      // <Static> commit in the terminal's scrollback — scrolling up landed
-      // in that empty region. Trust the terminal state; let Ink flow its
-      // output naturally into scrollback.
-      process.stdout.write(terminalEnterSequence(fullscreenEnabled, false));
       process.on('exit', () => {
-        try {
-          drainStdinBuffer();
-          process.stdout.write(terminalExitSequence(fullscreenEnabled));
-        } catch { /* stdout gone */ }
+        try { drainStdinBuffer(); } catch { /* stdout gone */ }
       });
     }
-    render(<App />, { exitOnCtrlC: false, stdout: inkStdout });
+    render(<App />, { exitOnCtrlC: false });
   >>>

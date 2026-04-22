@@ -23,6 +23,8 @@ function baseCtx(overrides: Record<string, unknown> = {}) {
     outputBlockCount: 0,
     commands: [],
     engineIds: [],
+    fileRailFocused: false,
+    fileRailExpanded: false,
     ...overrides,
   };
 }
@@ -92,28 +94,19 @@ describe('resolveKeyboardInput', () => {
     }))).toEqual({ type: 'none' });
   });
 
-  it('supports page and boundary scrolling keys for long transcripts', () => {
-    expect(resolveKeyboardInput(baseCtx({
-      key: { pageUp: true },
-    }))).toEqual({ type: 'scroll', delta: 12 });
-
-    expect(resolveKeyboardInput(baseCtx({
-      key: { pageDown: true },
-    }))).toEqual({ type: 'scroll', delta: -12 });
-
-    expect(resolveKeyboardInput(baseCtx({
-      key: { home: true },
-    }))).toEqual({ type: 'scrollToTop' });
-
-    expect(resolveKeyboardInput(baseCtx({
-      key: { end: true },
-    }))).toEqual({ type: 'scrollToBottom' });
-  });
-
   it('keeps navigation keys owned by the focused tool detail overlay', () => {
     expect(resolveKeyboardInput(baseCtx({
       toolDetailOpen: true,
       key: { pageDown: true },
     }))).toEqual({ type: 'none' });
+  });
+
+  it('leaves PgUp/PgDn/Home/End to the terminal — main-buffer + native scrollback owns scroll', () => {
+    // In Agon's current architecture (no alt-screen, transcript rows committed
+    // to Static → terminal scrollback), the app has no in-app scroll surface.
+    // Scroll keys fall through; the keyboard resolver emits no scroll actions.
+    for (const key of [{ pageUp: true }, { pageDown: true }, { home: true }, { end: true }, { shift: true, upArrow: true }, { shift: true, downArrow: true }]) {
+      expect(resolveKeyboardInput(baseCtx({ key }))).toEqual({ type: 'none' });
+    }
   });
 });

@@ -215,9 +215,15 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         session = await ensureCesarSession(ctx);
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err);
-        dispatch({ type: 'spinner-update', message: `Cesar session error: ${errMsg.slice(0, 80)}` });
+        // API-only engines (no CLI binary) fall back to per-turn dispatch — not an error, just their normal path.
+        let engine: any = null;
+        try { engine = ctx.registry.get(cesarEngineId); } catch {}
+        const isApiOnly = !!(engine?.api && !engine?.binary);
+        if (!isApiOnly) {
+          dispatch({ type: 'spinner-update', message: `Cesar session error: ${errMsg.slice(0, 80)}` });
+        }
         try {
-          const engine = ctx.registry.get(cesarEngineId);
+          if (!engine) engine = ctx.registry.get(cesarEngineId);
           const outputDir = join(RUNS_DIR, `cesar-fallback-${Date.now()}`);
           mkdirSync(outputDir, { recursive: true });
           const primedPrompt = buildHistoryPrimedPrompt(ctx.chatSession, input);

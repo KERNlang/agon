@@ -1,7 +1,7 @@
 import from="node:path" names="join"
 import from="node:fs" names="mkdirSync,appendFileSync,existsSync,readFileSync,unlinkSync,readdirSync,writeFileSync"
 import from="@agon/core" names="ImageAttachment,PersistentSession,ForgeManifest,ForgeJudgment" types=true
-import from="@agon/core" names="ensureAgonHome,RUNS_DIR,appendMessage,tracker,resolveWorkingDir,ToolRegistry,FileStateCache,parseToolCalls,formatToolResults,runToolLoop,classifyTask,loadConfig,configSet"
+import from="@agon/core" names="ensureAgonHome,RUNS_DIR,appendMessage,buildHistoryPrimedPrompt,tracker,resolveWorkingDir,ToolRegistry,FileStateCache,parseToolCalls,formatToolResults,runToolLoop,classifyTask,loadConfig,configSet"
 import from="@agon/core" names="ToolContext,ToolCallResult" types=true
 import from="../blocks/output-format.js" names="ENGINE_COLORS"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext,PendingDelegation,CesarTurnOutcome" types=true
@@ -211,8 +211,9 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
           const engine = ctx.registry.get(cesarEngineId);
           const outputDir = join(RUNS_DIR, `cesar-fallback-${Date.now()}`);
           mkdirSync(outputDir, { recursive: true });
+          const primedPrompt = buildHistoryPrimedPrompt(ctx.chatSession, input);
           const freshResult = await ctx.adapter.dispatch({
-            engine, prompt: input, cwd: resolveWorkingDir(), mode: 'exec' as any,
+            engine, prompt: primedPrompt, cwd: resolveWorkingDir(), mode: 'exec' as any,
             timeout: config.timeout ?? 120, outputDir, signal: abort.signal, systemPrompt: buildCesarSystemPrompt(ctx),
           });
           dispatch({ type: 'spinner-stop' });

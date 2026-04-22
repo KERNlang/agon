@@ -94,6 +94,24 @@ export function appendMessage(session: ChatSession, msg: ChatMessage): void {
   appendFileSync(filePath, JSON.stringify(msg) + '\n');
 }
 
+/**
+ * Concatenate recent conversation history with the current input so one-shot dispatches keep continuity. Used by fallback paths that bypass PersistentSession — API-only engines (no CLI binary) still get multi-turn context this way. Default: last 10 turns (20 messages).
+ */
+export function buildHistoryPrimedPrompt(session: ChatSession, input: string, maxTurns?: number): string {
+  const limit = (maxTurns ?? 10) * 2;
+  const recent = session.messages.slice(-limit);
+  if (recent.length === 0) return input;
+  const lines: string[] = ['[Prior conversation]'];
+  for (const m of recent) {
+    const speaker = m.role === 'user' ? 'User' : (m.engineId ? m.engineId : 'Assistant');
+    lines.push(`${speaker}: ${m.content}`);
+  }
+  lines.push('');
+  lines.push(`[Current turn]`);
+  lines.push(`User: ${input}`);
+  return lines.join('\n');
+}
+
 export function loadChatSession(id: string): ChatSession|null {
   try {
     const filePath = join(chatsDir(), `${id}.ndjson`);

@@ -67,7 +67,7 @@ interface name=AgentSessionConfig
   field name=heavyToolSemaphore type=Semaphore optional=true
   field name=thread type=ContextThread optional=true
   field name=contextWindowTokens type=number optional=true
-  field name=permissionMode type="'auto'|'ask'|'deny-all'" optional=true
+  field name=permissionMode type="'auto'|'smart'|'ask'|'deny-all'" optional=true
   field name=allowedCommands type="string[]" optional=true
   field name=toolPermissions type="Record<string,'allow'|'ask'|'deny'>" optional=true
   field name=onPermissionAsk type="(tool:string, command:string, reason:string)=>Promise<boolean|string>" optional=true

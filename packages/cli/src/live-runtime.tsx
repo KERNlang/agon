@@ -5,7 +5,7 @@ import type { EngineProgress } from './handlers/types.js';
 import type { AgentProgressSnapshot, StreamingEntry } from './generated/signals/output.js';
 import { StreamingView } from './generated/surfaces/app-views.js';
 import { AgentProgressView } from './generated/surfaces/agent.js';
-import { CesarStatusStrip, SpinnerBlock } from './components.js';
+import { CesarStatusStrip, SpinnerBlock } from './generated/surfaces/status.js';
 import { cleanEngineOutput } from './generated/blocks/markdown.js';
 import { icons } from './generated/signals/icons.js';
 

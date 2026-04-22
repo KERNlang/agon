@@ -18,13 +18,14 @@
     "@agon/adapter-cli": "*",
     "@agon/core": "*",
     "@agon/forge": "*",
+    "@kernlang/terminal": "~3.3.7",
     "citty": "^0.1.6",
-    "ink": "^5.2.0",
+    "ink": "^7.0.1",
     "ink-spinner": "^5.0.0",
     "ink-text-input": "^6.0.0",
-    "react": "^18.3.0"
+    "react": "^19.2.0"
   },
   "devDependencies": {
-    "@types/react": "^18.3.0"
+    "@types/react": "^19.2.0"
   }
 }

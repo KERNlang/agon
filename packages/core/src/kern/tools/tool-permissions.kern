@@ -120,6 +120,58 @@ fn name=isReadOnlyCommand params="command:string" returns=boolean
     return false;
   >>>
 
+// ── Git-Dirty File Cache (for smart mode) ─────────────────────────
+
+const name=_gitDirtyCache type="{files:Set<string>|null,cwd:string|null,expiry:number}"
+  handler <<< { files: null as Set<string>|null, cwd: null as string|null, expiry: 0 } >>>
+
+const name=GIT_DIRTY_CACHE_TTL type=number
+  handler <<<
+    2000  // 2 seconds
+  >>>
+
+fn name=getGitDirtyFiles params="cwd:string" returns="Set<string>" export=true
+  handler <<<
+    const now = Date.now();
+    if (_gitDirtyCache.files && _gitDirtyCache.cwd === cwd && now < _gitDirtyCache.expiry) return _gitDirtyCache.files;
+    try {
+      const { execSync } = require('node:child_process');
+      const raw = execSync('git diff --name-only HEAD 2>/dev/null && git diff --cached --name-only 2>/dev/null', { cwd, encoding: 'utf-8', timeout: 2000 });
+      _gitDirtyCache.files = new Set(raw.split('\n').filter(Boolean));
+      _gitDirtyCache.cwd = cwd;
+      _gitDirtyCache.expiry = now + GIT_DIRTY_CACHE_TTL;
+    } catch {
+      _gitDirtyCache.files = new Set();
+      _gitDirtyCache.cwd = cwd;
+      _gitDirtyCache.expiry = now + GIT_DIRTY_CACHE_TTL;
+    }
+    return _gitDirtyCache.files;
+  >>>
+
+fn name=invalidateGitDirtyCache export=true
+  handler <<<
+    _gitDirtyCache.files = null;
+    _gitDirtyCache.cwd = null;
+    _gitDirtyCache.expiry = 0;
+  >>>
+
+fn name=isSessionAllowed params="command:string, ctx:ToolContext" returns=boolean
+  handler <<<
+    if (!ctx.sessionAllowList || ctx.sessionAllowList.length === 0) return false;
+    const base = command.trim().split(/\s+/)[0];
+    return ctx.sessionAllowList.some(ac => command.startsWith(ac) || base === ac);
+  >>>
+
+fn name=isGitDirtyFile params="filePath:string, cwd:string" returns=boolean
+  handler <<<
+    const dirty = getGitDirtyFiles(cwd);
+    const name = filePath.split('/').pop() ?? filePath;
+    for (const dirtyPath of dirty) {
+      if (filePath.endsWith(dirtyPath) || dirtyPath.endsWith(name)) return true;
+    }
+    return false;
+  >>>
+
 fn name=checkBashPermission params="command:string, ctx:ToolContext" returns=PermissionDecision
   handler <<<
     if (isDangerousCommand(command)) {
@@ -145,6 +197,12 @@ fn name=checkBashPermission params="command:string, ctx:ToolContext" returns=Per
       if (ctx.allowedCommands.some(ac => command.startsWith(ac) || base === ac)) {
         return { behavior: 'allow' };
       }
+    }
+    // Smart mode: auto-approve orchestrator-generated commands and session allowlist
+    if (ctx.permissionMode === 'smart') {
+      if (isSessionAllowed(command, ctx)) return { behavior: 'allow' };
+      if (ctx.source === 'orchestrator') return { behavior: 'allow' };
+      return { behavior: 'ask', message: `This command requires approval`, reason: 'bash_mutating' };
     }
     if (ctx.permissionMode === 'auto') {
       return { behavior: 'allow' };
@@ -220,6 +278,12 @@ fn name=checkFileWritePermission params="filePath:string, ctx:ToolContext" retur
 
     if (isPathUnderCwd(resolved, ctx.cwd)) {
       return { behavior: 'allow' };
+    }
+    // Smart mode: auto-approve git-dirty files, orchestrator edits
+    if (ctx.permissionMode === 'smart') {
+      if (isGitDirtyFile(resolved, ctx.cwd)) return { behavior: 'allow' };
+      if (ctx.source === 'orchestrator') return { behavior: 'allow' };
+      return { behavior: 'ask', message: `Write to new file requires approval: ${resolved}` };
     }
     return { behavior: 'ask', message: `Write file outside workspace: ${resolved}` };
   >>>

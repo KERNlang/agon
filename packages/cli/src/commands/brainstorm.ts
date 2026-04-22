@@ -3,6 +3,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdirSync } from 'node:fs';
 import { EngineRegistry, ensureAgonHome, RUNS_DIR } from '@agon/core';
+import type { BrainstormBid } from '@agon/core';
 import { createCliAdapter } from '@agon/adapter-cli';
 import { runBrainstorm } from '@agon/forge';
 import { header, success, info, table, bold, cyan, green } from '../output.js';
@@ -58,7 +59,7 @@ export const brainstormCommand = defineCommand({
 
     console.log('');
     header('Bids');
-    const rows = result.bids.map((b) => [
+    const rows = result.bids.map((b: BrainstormBid) => [
       b.engineId === result.winner ? green(`${icons().winner} ${b.engineId}`) : b.engineId,
       String(b.confidence),
       b.reasoning.slice(0, 60),

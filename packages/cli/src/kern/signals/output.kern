@@ -64,6 +64,12 @@ const name=_thinkingBuffer type="{engineId:string,content:string}"
 const name=_permissionQueue type="Array<{tool:string,command:string,description?:string,reason:string,resolve:(approved:boolean)=>void}>"
   handler <<< [] as Array<{tool:string,command:string,description?:string,reason:string,resolve:(approved:boolean)=>void}> >>>
 
+const name=_sessionAllowList type="string[]"
+  handler <<< [] as string[] >>>
+
+fn name=getSessionAllowList returns="string[]" export=true
+  handler <<< return _sessionAllowList; >>>
+
 fn name=clearPermissionQueue returns=void
   doc "Reject all queued permissions and clear the queue. Called on interrupt/cancel."
   handler <<<
@@ -170,6 +176,15 @@ fn name=_showNextPermission params="actions:OutputActions" returns=void export=f
           permResolve(true);
           actions.addBlock({ type: 'success', message: `Always allowed: ${base}` } as any);
         } else if (lower === 'y') {
+          // Smart mode: add to session allowlist (memory-only, not persisted)
+          const cfg = loadConfig();
+          const mode = (cfg as any).permissionMode ?? 'smart';
+          if (mode === 'smart') {
+            const base = permCommand.trim().split(/\s+/)[0];
+            if (base && !_sessionAllowList.includes(base)) {
+              _sessionAllowList.push(base);
+            }
+          }
           permResolve(true);
         } else {
           permResolve(false);

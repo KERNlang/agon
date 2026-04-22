@@ -10,6 +10,7 @@
     "packages/mcp"
   ],
   "scripts": {
+    "postinstall": "patch-package",
     "kern:compile": "node scripts/run-agon-script.mjs kern:compile:workspaces",
     "kern:compile:workspaces": "npm run kern:compile -w packages/core && npm run kern:compile -w packages/forge && npm run kern:compile -w packages/adapter-cli && npm run kern:compile -w packages/cli && npm run kern:compile -w packages/mcp",
     "kern-gaps": "node scripts/run-kern-gaps.mjs",
@@ -22,11 +23,13 @@
     "test:watch": "vitest"
   },
   "engines": {
-    "node": ">=20.19.0"
+    "node": ">=22"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@vitest/coverage-v8": "^3.2.4",
+    "patch-package": "^8.0.1",
+    "postinstall-postinstall": "^2.1.0",
     "tsup": "^8.4.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
@@ -35,18 +38,19 @@
     "zod": "^4.3.6"
   },
   "optionalDependencies": {
-    "@kernlang/cli": "~3.2.3",
-    "@kernlang/core": "~3.2.3",
-    "@kernlang/terminal": "~3.2.3",
-    "@kernlang/native": "~3.2.3",
-    "@kernlang/react": "~3.2.3",
-    "@kernlang/vue": "~3.2.3",
-    "@kernlang/evolve": "~3.2.3",
-    "@kernlang/express": "~3.2.3",
-    "@kernlang/fastapi": "~3.2.3",
-    "@kernlang/mcp": "~3.2.3",
-    "@kernlang/metrics": "~3.2.3",
-    "@kernlang/review": "~3.2.3",
-    "@kernlang/review-mcp": "~3.2.3"
+    "@kernlang/cli": "~3.3.7",
+    "@kernlang/core": "~3.3.7",
+    "@kernlang/evolve": "~3.3.7",
+    "@kernlang/express": "~3.3.7",
+    "@kernlang/fastapi": "~3.3.7",
+    "@kernlang/mcp": "~3.3.7",
+    "@kernlang/metrics": "~3.3.7",
+    "@kernlang/native": "~3.3.7",
+    "@kernlang/protocol": "~3.3.7",
+    "@kernlang/react": "~3.3.7",
+    "@kernlang/review": "~3.3.7",
+    "@kernlang/review-mcp": "~3.3.7",
+    "@kernlang/terminal": "~3.3.7",
+    "@kernlang/vue": "~3.3.7"
   }
 }

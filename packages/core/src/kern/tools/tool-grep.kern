@@ -130,6 +130,15 @@ fn name=createGrepTool returns=ToolHandler
         signal: ctx.abortSignal,
       });
 
+      if (result.exitCode === 1 && /\bENOENT\b/.test(result.stderr)) {
+        return {
+          ok: false,
+          content: '',
+          error: 'ripgrep (rg) is required for Grep but was not found on PATH',
+          metadata: { exitCode: result.exitCode, durationMs: result.durationMs },
+        };
+      }
+
       // rg exits 1 for "no matches" — that's not an error
       if (result.exitCode > 1) {
         return {

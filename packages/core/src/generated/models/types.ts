@@ -83,7 +83,7 @@ export interface DispatchOptions {
   images?: ImageAttachment[];
   systemPrompt?: string;
   onApproval?: (tool:string, command:string, reason?:string) => Promise<boolean|string>;
-  permissionMode?: 'auto'|'ask'|'deny-all';
+  permissionMode?: 'auto'|'smart'|'ask'|'deny-all';
   allowedCommands?: string[];
   toolPermissions?: Record<string,'allow'|'ask'|'deny'>;
 }
@@ -211,7 +211,7 @@ export interface AgonConfig {
   cesarAutoApproveMaxCostUsd: number;
   campfireObserverStrategy?: 'lead-first'|'all-respond';
   hooks: Record<string,Array<{command:string,engines?:string[],timeout?:number}>>;
-  permissionMode?: 'auto'|'ask'|'deny-all';
+  permissionMode?: 'auto'|'smart'|'ask'|'deny-all';
   allowedCommands: string[];
   toolPermissions: Record<string,'allow'|'ask'|'deny'>;
   hiddenEngines: string[];
@@ -266,7 +266,7 @@ export const DEFAULT_AGON_CONFIG: Required<AgonConfig> = {
   cesarAutoApproveMaxCostUsd: 0,
   campfireObserverStrategy: 'lead-first',
   hooks: {} as any,
-  permissionMode: 'ask',
+  permissionMode: 'smart',
   allowedCommands: [],
   toolPermissions: {} as any,
   hiddenEngines: [],

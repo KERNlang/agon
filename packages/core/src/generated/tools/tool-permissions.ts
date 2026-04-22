@@ -101,6 +101,48 @@ export function isReadOnlyCommand(command: string): boolean {
   return false;
 }
 
+export const _gitDirtyCache: {files:Set<string>|null,cwd:string|null,expiry:number} = { files: null as Set<string>|null, cwd: null as string|null, expiry: 0 };
+
+export const GIT_DIRTY_CACHE_TTL: number = 2000  // 2 seconds;
+
+export function getGitDirtyFiles(cwd: string): Set<string> {
+  const now = Date.now();
+  if (_gitDirtyCache.files && _gitDirtyCache.cwd === cwd && now < _gitDirtyCache.expiry) return _gitDirtyCache.files;
+  try {
+    const { execSync } = require('node:child_process');
+    const raw = execSync('git diff --name-only HEAD 2>/dev/null && git diff --cached --name-only 2>/dev/null', { cwd, encoding: 'utf-8', timeout: 2000 });
+    _gitDirtyCache.files = new Set(raw.split('\n').filter(Boolean));
+    _gitDirtyCache.cwd = cwd;
+    _gitDirtyCache.expiry = now + GIT_DIRTY_CACHE_TTL;
+  } catch {
+    _gitDirtyCache.files = new Set();
+    _gitDirtyCache.cwd = cwd;
+    _gitDirtyCache.expiry = now + GIT_DIRTY_CACHE_TTL;
+  }
+  return _gitDirtyCache.files;
+}
+
+export function invalidateGitDirtyCache() {
+  _gitDirtyCache.files = null;
+  _gitDirtyCache.cwd = null;
+  _gitDirtyCache.expiry = 0;
+}
+
+export function isSessionAllowed(command: string, ctx: ToolContext): boolean {
+  if (!ctx.sessionAllowList || ctx.sessionAllowList.length === 0) return false;
+  const base = command.trim().split(/\s+/)[0];
+  return ctx.sessionAllowList.some(ac => command.startsWith(ac) || base === ac);
+}
+
+export function isGitDirtyFile(filePath: string, cwd: string): boolean {
+  const dirty = getGitDirtyFiles(cwd);
+  const name = filePath.split('/').pop() ?? filePath;
+  for (const dirtyPath of dirty) {
+    if (filePath.endsWith(dirtyPath) || dirtyPath.endsWith(name)) return true;
+  }
+  return false;
+}
+
 export function checkBashPermission(command: string, ctx: ToolContext): PermissionDecision {
   if (isDangerousCommand(command)) {
     return { behavior: 'deny', message: `Dangerous command blocked: ${command.slice(0, 50)}`, reason: 'dangerous_pattern' };
@@ -125,6 +167,12 @@ export function checkBashPermission(command: string, ctx: ToolContext): Permissi
     if (ctx.allowedCommands.some(ac => command.startsWith(ac) || base === ac)) {
       return { behavior: 'allow' };
     }
+  }
+  // Smart mode: auto-approve orchestrator-generated commands and session allowlist
+  if (ctx.permissionMode === 'smart') {
+    if (isSessionAllowed(command, ctx)) return { behavior: 'allow' };
+    if (ctx.source === 'orchestrator') return { behavior: 'allow' };
+    return { behavior: 'ask', message: `This command requires approval`, reason: 'bash_mutating' };
   }
   if (ctx.permissionMode === 'auto') {
     return { behavior: 'allow' };
@@ -197,6 +245,12 @@ export function checkFileWritePermission(filePath: string, ctx: ToolContext): Pe
   
   if (isPathUnderCwd(resolved, ctx.cwd)) {
     return { behavior: 'allow' };
+  }
+  // Smart mode: auto-approve git-dirty files, orchestrator edits
+  if (ctx.permissionMode === 'smart') {
+    if (isGitDirtyFile(resolved, ctx.cwd)) return { behavior: 'allow' };
+    if (ctx.source === 'orchestrator') return { behavior: 'allow' };
+    return { behavior: 'ask', message: `Write to new file requires approval: ${resolved}` };
   }
   return { behavior: 'ask', message: `Write file outside workspace: ${resolved}` };
 }

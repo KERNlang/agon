@@ -3,6 +3,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdirSync } from 'node:fs';
 import { EngineRegistry, ensureAgonHome, RUNS_DIR } from '@agon/core';
+import type { ForgeEvent } from '@agon/core';
 import { createCliAdapter } from '@agon/adapter-cli';
 import { runTribunal } from '@agon/forge';
 import { header, success, fail, info, bold, cyan, dim, green, yellow } from '../output.js';
@@ -71,7 +72,7 @@ export const tribunalCommand = defineCommand({
       adapter,
       timeout: parseInt(args.timeout, 10),
       outputDir,
-      onEvent: (event) => {
+      onEvent: (event: ForgeEvent) => {
         if (event.data?.round) {
           const engineId = event.engineId;
           const position = event.data?.position;

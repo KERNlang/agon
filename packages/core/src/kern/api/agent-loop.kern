@@ -36,9 +36,10 @@ interface name=ApiAgentOptions
   field name=historyMessages type="Array<Record<string,unknown>>" optional=true
   field name=onHistoryEntry type="(entry:Record<string,unknown>)=>void" optional=true
   field name=virtualFs type="any" optional=true
-  field name=permissionMode type="'auto'|'ask'|'deny-all'" optional=true
+  field name=permissionMode type="'auto'|'smart'|'ask'|'deny-all'" optional=true
   field name=allowedCommands type="string[]" optional=true
   field name=toolPermissions type="Record<string,'allow'|'ask'|'deny'>" optional=true
+  field name=sessionAllowList type="string[]" optional=true
   field name=onPermissionAsk type="(tool:string, command:string, reason:string)=>Promise<boolean|string>" optional=true
 
 interface name=ApiAgentResult
@@ -126,6 +127,8 @@ fn name=runApiAgentLoop async=true params="opts:ApiAgentOptions" returns="Promis
       allowedCommands: opts.allowedCommands ?? [],
       toolPermissions: opts.toolPermissions ?? {},
       virtualFs: opts.virtualFs,
+      sessionAllowList: opts.sessionAllowList ?? [],
+      source: 'orchestrator' as const,
     };
 
     // Build system prompt with tool definitions

@@ -10,6 +10,8 @@ import { writeFileSync, mkdirSync, existsSync } from 'node:fs';
 
 import { join } from 'node:path';
 
+import { getSessionAllowList } from '../signals/output.js';
+
 export interface RunAgentOptions {
   engineId?: string;
   maxTurns?: number;
@@ -69,6 +71,18 @@ export function buildAgentApprovalCallback(dispatch: Dispatch, ctx: HandlerConte
   
     if (perm === 'deny' || mode === 'deny-all') return false;
     if (perm === 'allow' || mode === 'auto') return true;
+  
+    // smart mode: auto-approve session allowlist, ask for user-sourced mutating ops
+    if (mode === 'smart') {
+      const sessionList = getSessionAllowList();
+      if (agonTool === 'Bash' && sessionList.length > 0) {
+        const cmdLower = command.toLowerCase();
+        const base = command.trim().split(/\s+/)[0];
+        if (sessionList.some((a: string) => cmdLower.startsWith(a.toLowerCase()) || base === a)) return true;
+      }
+      // Delegated agent runs are orchestrator context — auto-approve
+      return true;
+    }
   
     if (agonTool === 'Bash' && allowed.length > 0) {
       const cmdLower = command.toLowerCase();

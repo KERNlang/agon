@@ -72,7 +72,7 @@ interface name=DispatchOptions
   field name=images type="ImageAttachment[]" optional=true
   field name=systemPrompt type=string optional=true
   field name=onApproval type="(tool:string, command:string, reason?:string) => Promise<boolean|string>" optional=true
-  field name=permissionMode type="'auto'|'ask'|'deny-all'" optional=true
+  field name=permissionMode type="'auto'|'smart'|'ask'|'deny-all'" optional=true
   field name=allowedCommands type="string[]" optional=true
   field name=toolPermissions type="Record<string,'allow'|'ask'|'deny'>" optional=true
 
@@ -190,7 +190,7 @@ config name=AgonConfig
     doc "When cesarAutoApproveMode is 'cost-bounded' or 'always', the maximum estimated USD cost (including 2× review cycle estimate for mutating plans) that can be auto-approved without user confirmation."
   field name=campfireObserverStrategy type="'lead-first'|'all-respond'" default=lead-first
   field name=hooks type="Record<string,Array<{command:string,engines?:string[],timeout?:number}>>" optional=true
-  field name=permissionMode type="'auto'|'ask'|'deny-all'" default=ask
+  field name=permissionMode type="'auto'|'smart'|'ask'|'deny-all'" default=smart
   field name=allowedCommands type="string[]" optional=true
   field name=toolPermissions type="Record<string,'allow'|'ask'|'deny'>" optional=true
   field name=hiddenEngines type="string[]" optional=true

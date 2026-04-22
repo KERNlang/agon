@@ -86,7 +86,7 @@ export function loadConfig(cwd?: string): Required<AgonConfig> {
       Bash: 'ask',
     };
   }
-  if (!(merged as any).permissionMode) (merged as any).permissionMode = 'ask';
+  if (!(merged as any).permissionMode) (merged as any).permissionMode = 'smart';
   return merged;
 }
 

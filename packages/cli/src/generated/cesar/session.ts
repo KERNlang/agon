@@ -708,174 +708,178 @@ export function mcpConfigFingerprint(config: any): string {
   return `${enabled}:${configPath}:${mtime}:${discoveryFp}`;
 }
 
+/**
+ * Single source of truth for which backend a Cesar engine will actually use. Honours config.cesarBackend preference ('auto' | 'cli' | 'api'). Pure — no side effects beyond registry lookups. Returns backend='none' when the engine has neither a usable binary nor an API key; callers decide how to handle that.
+ */
+export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { backend: 'cli'|'api'|'none', binaryPath: string, hasBinary: boolean, hasApi: boolean, engine: any } {
+  const config = ctx.config;
+  const cesarEngineId = engineId ?? (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
+  let engine: any = null;
+  try { engine = ctx.registry.get(cesarEngineId); } catch {}
+  if (!engine) return { backend: 'none', binaryPath: '', hasBinary: false, hasApi: false, engine: null };
+  
+  const binaryPathResolved = engine.binary ? ctx.registry.findBinary(engine) : null;
+  const hasBinary = !!(engine.binary && binaryPathResolved);
+  const hasApi = !!(engine.api && process.env[engine.api?.apiKeyEnv]);
+  const preference = (config as any).cesarBackend ?? 'auto';
+  
+  if (preference === 'api' && hasApi) {
+    return { backend: 'api', binaryPath: '', hasBinary, hasApi, engine };
+  }
+  if (preference === 'cli' && hasBinary) {
+    return { backend: 'cli', binaryPath: binaryPathResolved as string, hasBinary, hasApi, engine };
+  }
+  // 'auto' or unsatisfiable preference — prefer CLI, fall back to API
+  if (hasBinary) return { backend: 'cli', binaryPath: binaryPathResolved as string, hasBinary, hasApi, engine };
+  if (hasApi) return { backend: 'api', binaryPath: '', hasBinary, hasApi, engine };
+  return { backend: 'none', binaryPath: '', hasBinary, hasApi, engine };
+}
+
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
-    const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
-    const cwd = resolveWorkingDir();
+  const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
+  const cwd = resolveWorkingDir();
   
-    // Ensure cesar state bag exists
-    if (!ctx.cesar) {
-      ctx.cesar = {
-        busy: false, busySince: null, queue: null,
-        toolRegistry: null, hasNativeTools: false, lastDispatch: null,
-        pendingDelegation: null, reportedConfidence: undefined, confidenceSatisfied: false, blockedOnConfidence: null,
-        autoNero: false, advisorPending: false, lastEscalation: null as string | null,
-        mcpFingerprint: undefined, mcpSignalPath: undefined as string | undefined, planDispatch: null, proposedPlan: undefined,
-        sessionMcpServers: [] as Array<{name:string, type?:string, url?:string, command?:string, args?:string[]}>,
-      };
-    }
-  
-    // Return existing alive session IF it's for the same engine AND MCP config hasn't changed
-    const currentMcpFp = mcpConfigFingerprint(config);
-    if (ctx.cesarSession && ctx.cesarSession.alive && ctx.cesarSession.engineId === cesarEngineId) {
-      const storedFp = ctx.cesar!.mcpFingerprint as string | undefined;
-      if (storedFp === currentMcpFp) {
-        return ctx.cesarSession;
-      }
-      // MCP config changed — close stale session and recreate
-      ctx.cesarSession.close();
-      ctx.setCesarSession(null);
-    }
-  
-    // Wrong engine or dead session — close old one
-    if (ctx.cesarSession && ctx.cesarSession.engineId !== cesarEngineId) {
-      ctx.cesarSession.close();
-      ctx.setCesarSession(null);
-    }
-  
-    // Session exists but died — try restarting it before creating a new one
-    if (ctx.cesarSession && !ctx.cesarSession.alive) {
-      try {
-        await ctx.cesarSession.start();
-        if (ctx.cesarSession.alive) return ctx.cesarSession;
-      } catch {
-        // Restart failed — fall through to create fresh session
-      }
-    }
-  
-    let engine;
-  try {
-    engine = ctx.registry.get(cesarEngineId);
-  } catch {
-    throw new Error(`Cesar engine "${cesarEngineId}" not found`);
+  // Ensure cesar state bag exists
+  if (!ctx.cesar) {
+    ctx.cesar = {
+      busy: false, busySince: null, queue: null,
+      toolRegistry: null, hasNativeTools: false, lastDispatch: null,
+      pendingDelegation: null, reportedConfidence: undefined, confidenceSatisfied: false, blockedOnConfidence: null,
+      autoNero: false, advisorPending: false, lastEscalation: null as string | null,
+      mcpFingerprint: undefined, mcpSignalPath: undefined as string | undefined, planDispatch: null, proposedPlan: undefined,
+      sessionMcpServers: [] as Array<{name:string, type?:string, url?:string, command?:string, args?:string[]}>,
+    };
   }
+  
+  // Return existing alive session IF it's for the same engine AND MCP config hasn't changed
+  const currentMcpFp = mcpConfigFingerprint(config);
+  if (ctx.cesarSession && ctx.cesarSession.alive && ctx.cesarSession.engineId === cesarEngineId) {
+    const storedFp = ctx.cesar!.mcpFingerprint as string | undefined;
+    if (storedFp === currentMcpFp) {
+      return ctx.cesarSession;
+    }
+    // MCP config changed — close stale session and recreate
+    ctx.cesarSession.close();
+    ctx.setCesarSession(null);
+  }
+  
+  // Wrong engine or dead session — close old one
+  if (ctx.cesarSession && ctx.cesarSession.engineId !== cesarEngineId) {
+    ctx.cesarSession.close();
+    ctx.setCesarSession(null);
+  }
+  
+  // Session exists but died — try restarting it before creating a new one
+  if (ctx.cesarSession && !ctx.cesarSession.alive) {
+    try {
+      await ctx.cesarSession.start();
+      if (ctx.cesarSession.alive) return ctx.cesarSession;
+    } catch {
+      // Restart failed — fall through to create fresh session
+    }
+  }
+  
+  const resolved = resolveCesarBackend(ctx, cesarEngineId);
+  if (!resolved.engine) throw new Error(`Cesar engine "${cesarEngineId}" not found`);
+  if (resolved.backend === 'none') {
+    throw new Error(`No backend for "${cesarEngineId}" — install CLI or set ${resolved.engine.api?.apiKeyEnv ?? 'API key'}`);
+  }
+  let engine = resolved.engine;
   const engineModelOverride = (config as any).engineModels?.[cesarEngineId] as string | undefined;
   if (engineModelOverride && engine.api) {
     engine = { ...engine, api: { ...engine.api, model: engineModelOverride } };
   }
-  
-    // Resolve backend: user preference → auto (CLI first, API fallback)
-    const cesarBackend = (config as any).cesarBackend ?? 'auto';
-    const hasBinary = !!(engine.binary && ctx.registry.findBinary(engine));
-    const hasApi = !!(engine.api && process.env[engine.api?.apiKeyEnv]);
-  
-    let binaryPath = '';
-    if (cesarBackend === 'api' && hasApi) {
-      binaryPath = ''; // force API path
-    } else if (cesarBackend === 'cli' && hasBinary) {
-      binaryPath = ctx.registry.findBinary(engine)!;
-    } else if (cesarBackend === 'auto') {
-      if (hasBinary) {
-        binaryPath = ctx.registry.findBinary(engine)!;
-      } else if (hasApi) {
-        binaryPath = '';
-      } else {
-        throw new Error(`No backend for "${cesarEngineId}" — install CLI or set ${engine.api?.apiKeyEnv ?? 'API key'}`);
-      }
-    } else {
-      if (hasBinary) binaryPath = ctx.registry.findBinary(engine)!;
-      else if (hasApi) binaryPath = '';
-      else throw new Error(`No backend for "${cesarEngineId}"`);
-    }
-    const usingApi = !binaryPath;
-    // MCP servers: manual config takes priority, then auto-discovery from standard paths
-    let mcpServers: Array<Record<string, unknown>> | undefined;
-    if (canUseCesarMcp(engine, binaryPath)) {
-      // Manual config (cesarMcpEnabled + cesarMcpConfigPath)
-      mcpServers = loadCesarMcpServers(config, cwd);
-      if (!mcpServers || mcpServers.length === 0) {
-        // Auto-discover from ~/.claude/settings.json, .vscode/mcp.json, .agon.json, etc.
-        const discovered = discoverMcpServers(cwd);
-        if (discovered.length > 0) {
-          mcpServers = mcpServersToWireFormat(discovered);
-        }
+  const binaryPath = resolved.binaryPath;
+  const usingApi = resolved.backend === 'api';
+  // MCP servers: manual config takes priority, then auto-discovery from standard paths
+  let mcpServers: Array<Record<string, unknown>> | undefined;
+  if (canUseCesarMcp(engine, binaryPath)) {
+    // Manual config (cesarMcpEnabled + cesarMcpConfigPath)
+    mcpServers = loadCesarMcpServers(config, cwd);
+    if (!mcpServers || mcpServers.length === 0) {
+      // Auto-discover from ~/.claude/settings.json, .vscode/mcp.json, .agon.json, etc.
+      const discovered = discoverMcpServers(cwd);
+      if (discovered.length > 0) {
+        mcpServers = mcpServersToWireFormat(discovered);
       }
     }
+  }
   
-    // ── Inject session-scoped MCP servers (from /mcp connect) ──
-    const sessionMcp = (ctx as any).sessionMcpServers ?? [];
-    if (sessionMcp.length > 0) {
-      const sessionMcpWired = sessionMcp.map((s: any) => {
-        if (s.url) return { name: s.name, type: s.type ?? 'http', url: s.url, ...(s.env ? { env: s.env } : {}) };
-        return { name: s.name, command: s.command, args: s.args ?? [], ...(s.env ? { env: s.env } : {}) };
-      });
-      mcpServers = mcpServers ? [...mcpServers, ...sessionMcpWired] : sessionMcpWired;
-    }
+  // ── Inject session-scoped MCP servers (from /mcp connect) ──
+  const sessionMcp = (ctx as any).sessionMcpServers ?? [];
+  if (sessionMcp.length > 0) {
+    const sessionMcpWired = sessionMcp.map((s: any) => {
+      if (s.url) return { name: s.name, type: s.type ?? 'http', url: s.url, ...(s.env ? { env: s.env } : {}) };
+      return { name: s.name, command: s.command, args: s.args ?? [], ...(s.env ? { env: s.env } : {}) };
+    });
+    mcpServers = mcpServers ? [...mcpServers, ...sessionMcpWired] : sessionMcpWired;
+  }
   
-    // ── Inject Agon orchestration MCP server for CLI companion engines ──
-    // Gives Codex/Gemini/OpenCode real MCP tools for Tribunal, Brainstorm, etc.
-    // instead of XML prose that they can't actually call.
-    const isCompanion = binaryPath && (engine.companion?.protocol === 'jsonrpc' || engine.companion?.protocol === 'acp');
-    if (isCompanion) {
-      ensureAgonHome();
-      const signalDir = join(getAgonHome(), 'signals');
-      mkdirSync(signalDir, { recursive: true });
-      const sessionSignalId = `cesar-${Date.now()}`;
-      const mcpServerPath = join(dirname(fileURLToPath(import.meta.url)), '../../../../mcp/dist/index.js');
-      const agonMcpServer: Record<string, unknown> = {
-        name: 'agon-orchestration',
-        command: 'node',
-        args: [mcpServerPath],
-        env: { AGON_SIGNAL_DIR: signalDir, AGON_SESSION_ID: sessionSignalId },
-      };
-      mcpServers = mcpServers ? [...mcpServers, agonMcpServer] : [agonMcpServer];
-      ctx.cesar!.mcpSignalPath = join(signalDir, `${sessionSignalId}.json`);
-    }
-  
-    // Build system prompt and tool registry
-    const systemPrompt = buildCesarSystemPrompt(ctx);
-    const toolRegistry = createCesarToolRegistry(cesarEngineId);
-  
-    // Store registry on context for tool execution during responses
-    ctx.cesar!.toolRegistry = toolRegistry;
-  
-    // Build native function calling tools for API engines (OpenAI-compatible)
-    const nativeTools = (!binaryPath && engine.api) ? toolsToOpenAIFormat(toolRegistry) : undefined;
-    ctx.cesar!.hasNativeTools = !!nativeTools;
-  
-    // Prompt strategy: API → native tools, companion → MCP tools, fallback → XML
-    let fullPrompt = systemPrompt;
-    if (nativeTools) {
-      // API engine: function calling, no XML
-      fullPrompt += '\n\nYou have tools available via function calling. Call them directly — do NOT describe them in XML or narrate what you would call. Just call the function.';
-    } else if (isCompanion) {
-      // CLI companion with MCP orchestration: reference MCP tools, no XML for orchestration
-      fullPrompt += '\n\nYou have tools available via the agon-orchestration MCP server:\n- Orchestration: Tribunal, Brainstorm, Campfire, Forge, Pipeline, Review, Delegate, ReportConfidence\n- Write operations: AgonBash (shell commands), AgonEdit (file edits), AgonWrite (file creation)\n\nCall them as MCP tools — NEVER via your native Bash/Edit/Write. Your native write tools are disabled. Use AgonBash for ALL shell commands (git, npm, etc.), AgonEdit for file edits, AgonWrite for new files. The user will be asked to approve write operations. After calling any orchestration tool (except Delegate and ReportConfidence): STOP and wait.';
-    } else {
-      // Fallback: XML tool descriptions for engines without native tools or MCP
-      const toolPrompt = buildToolSystemPrompt(toolRegistry);
-      fullPrompt += '\n\nTOOLS: XML format below. Never ask permission — just call. Never describe changes when you can execute.\n\n' + toolPrompt;
-    }
-    if (mcpServers && mcpServers.length > 0 && !isCompanion) {
-      // Only add generic MCP guidance for non-companion engines (companion already got specific MCP guidance above)
-      fullPrompt += '\n\nMCP is enabled for this session. Use MCP only when the task clearly needs capabilities outside the workspace or built-in Agon tools. Prefer Read/Grep/Glob/Edit/Bash first, and keep MCP calls to the minimum needed.';
-    }
-  
-    const sessionConfig: PersistentSessionConfig = {
-      engine,
-      binaryPath,
-      cwd,
-      systemPrompt: fullPrompt,
-      nativeTools,
-      mcpServers,
-      onToolCall: buildOnToolCall(ctx, toolRegistry, config),
-      onApproval: buildOnApproval(ctx, cesarEngineId),
+  // ── Inject Agon orchestration MCP server for CLI companion engines ──
+  // Gives Codex/Gemini/OpenCode real MCP tools for Tribunal, Brainstorm, etc.
+  // instead of XML prose that they can't actually call.
+  const isCompanion = binaryPath && (engine.companion?.protocol === 'jsonrpc' || engine.companion?.protocol === 'acp');
+  if (isCompanion) {
+    ensureAgonHome();
+    const signalDir = join(getAgonHome(), 'signals');
+    mkdirSync(signalDir, { recursive: true });
+    const sessionSignalId = `cesar-${Date.now()}`;
+    const mcpServerPath = join(dirname(fileURLToPath(import.meta.url)), '../../../../mcp/dist/index.js');
+    const agonMcpServer: Record<string, unknown> = {
+      name: 'agon-orchestration',
+      command: 'node',
+      args: [mcpServerPath],
+      env: { AGON_SIGNAL_DIR: signalDir, AGON_SESSION_ID: sessionSignalId },
     };
+    mcpServers = mcpServers ? [...mcpServers, agonMcpServer] : [agonMcpServer];
+    ctx.cesar!.mcpSignalPath = join(signalDir, `${sessionSignalId}.json`);
+  }
   
-    const session = createPersistentSession(sessionConfig);
-    await session.start();
-    ctx.setCesarSession(session);
-    // Store MCP config fingerprint so we can detect changes on next reuse check
-    ctx.cesar!.mcpFingerprint = currentMcpFp;
-    return session;
+  // Build system prompt and tool registry
+  const systemPrompt = buildCesarSystemPrompt(ctx);
+  const toolRegistry = createCesarToolRegistry(cesarEngineId);
+  
+  // Store registry on context for tool execution during responses
+  ctx.cesar!.toolRegistry = toolRegistry;
+  
+  // Build native function calling tools for API engines (OpenAI-compatible)
+  const nativeTools = (!binaryPath && engine.api) ? toolsToOpenAIFormat(toolRegistry) : undefined;
+  ctx.cesar!.hasNativeTools = !!nativeTools;
+  
+  // Prompt strategy: API → native tools, companion → MCP tools, fallback → XML
+  let fullPrompt = systemPrompt;
+  if (nativeTools) {
+    // API engine: function calling, no XML
+    fullPrompt += '\n\nYou have tools available via function calling. Call them directly — do NOT describe them in XML or narrate what you would call. Just call the function.';
+  } else if (isCompanion) {
+    // CLI companion with MCP orchestration: reference MCP tools, no XML for orchestration
+    fullPrompt += '\n\nYou have tools available via the agon-orchestration MCP server:\n- Orchestration: Tribunal, Brainstorm, Campfire, Forge, Pipeline, Review, Delegate, ReportConfidence\n- Write operations: AgonBash (shell commands), AgonEdit (file edits), AgonWrite (file creation)\n\nCall them as MCP tools — NEVER via your native Bash/Edit/Write. Your native write tools are disabled. Use AgonBash for ALL shell commands (git, npm, etc.), AgonEdit for file edits, AgonWrite for new files. The user will be asked to approve write operations. After calling any orchestration tool (except Delegate and ReportConfidence): STOP and wait.';
+  } else {
+    // Fallback: XML tool descriptions for engines without native tools or MCP
+    const toolPrompt = buildToolSystemPrompt(toolRegistry);
+    fullPrompt += '\n\nTOOLS: XML format below. Never ask permission — just call. Never describe changes when you can execute.\n\n' + toolPrompt;
+  }
+  if (mcpServers && mcpServers.length > 0 && !isCompanion) {
+    // Only add generic MCP guidance for non-companion engines (companion already got specific MCP guidance above)
+    fullPrompt += '\n\nMCP is enabled for this session. Use MCP only when the task clearly needs capabilities outside the workspace or built-in Agon tools. Prefer Read/Grep/Glob/Edit/Bash first, and keep MCP calls to the minimum needed.';
+  }
+  
+  const sessionConfig: PersistentSessionConfig = {
+    engine,
+    binaryPath,
+    cwd,
+    systemPrompt: fullPrompt,
+    nativeTools,
+    mcpServers,
+    onToolCall: buildOnToolCall(ctx, toolRegistry, config),
+    onApproval: buildOnApproval(ctx, cesarEngineId),
+  };
+  
+  const session = createPersistentSession(sessionConfig);
+  await session.start();
+  ctx.setCesarSession(session);
+  // Store MCP config fingerprint so we can detect changes on next reuse check
+  ctx.cesar!.mcpFingerprint = currentMcpFp;
+  return session;
 }

@@ -95,6 +95,22 @@ export function appendMessage(session: ChatSession, msg: ChatMessage): void {
 }
 
 /**
+ * Idempotently persist a user turn. If the last message is already an identical user message, do nothing and return false. Otherwise append and return true. Used by the Cesar fallback ladder — brain, dispatch, and acting-Cesar all try to save the user's message on empty responses, and this helper prevents double-persist when multiple layers fire for the same turn.
+ */
+export function appendUserTurnIfAbsent(session: ChatSession|null|undefined, input: string): boolean {
+  if (!session) return false;
+  if (!session.messages) session.messages = [];
+  const messages = session.messages;
+  const last = messages.length > 0 ? messages[messages.length - 1] : null;
+  if (last && last.role === 'user' && last.content === input) return false;
+  const msg: ChatMessage = { role: 'user', content: input, timestamp: new Date().toISOString() };
+  session.messages.push(msg);
+  const filePath = join(chatsDir(), `${session.id}.ndjson`);
+  appendFileSync(filePath, JSON.stringify(msg) + '\n');
+  return true;
+}
+
+/**
  * Concatenate recent conversation history with the current input so one-shot dispatches keep continuity. Used by fallback paths that bypass PersistentSession — API-only engines (no CLI binary) still get multi-turn context this way. Default: last 10 turns (20 messages).
  */
 export function buildHistoryPrimedPrompt(session: ChatSession, input: string, maxTurns?: number): string {

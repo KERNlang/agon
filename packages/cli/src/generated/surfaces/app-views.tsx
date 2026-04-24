@@ -17,7 +17,17 @@ import { parseMarkdownBlocks, cleanEngineOutput } from '../blocks/markdown.js';
 import { icons } from '../signals/icons.js';
 
 const ChromeBar = React.memo(function ChromeBar({ mode, cwdLabel, engineCount, replState, runningJobs }: { mode:string; cwdLabel:string; engineCount:number; replState:string; runningJobs:Job[] }) {
-  if (mode === 'chat') return null;
+  if (mode === 'chat') {
+    return (
+      <Box paddingX={1}>
+        <Text color="#f97316" bold>{'AGON'}</Text>
+        <Text dimColor>{' \u2502 '}{cwdLabel}</Text>
+        <Text dimColor>{' \u2502 '}{engineCount}{' engines'}</Text>
+        {replState !== 'idle' && (<><Text dimColor>{' \u2502 '}</Text><Text color="yellow">{replState}</Text></>)}
+        {runningJobs.length > 0 && (<><Text dimColor>{' \u203a '}</Text><Text color="#facc15">{runningJobs.map((j: Job) => `${j.type}: ${j.label.slice(0, 20)}`).join(', ')}</Text></>)}
+      </Box>
+    );
+  }
   return (
     <Box paddingX={1}>
       <Text dimColor>{icons().find + ' '}{cwdLabel}</Text>

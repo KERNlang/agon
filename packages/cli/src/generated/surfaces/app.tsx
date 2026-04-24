@@ -311,6 +311,10 @@ export function App() {
   }, []);
   const [selectionMode, _setSelectionModeRaw] = useState<boolean>(false);
   const setSelectionMode = useMemo(() => __inkSafe(_setSelectionModeRaw), [_setSelectionModeRaw]);
+  const [nativeStaticEpoch, _setNativeStaticEpochRaw] = useState<number>(0);
+  const setNativeStaticEpoch = useMemo(() => __inkSafe(_setNativeStaticEpochRaw), [_setNativeStaticEpochRaw]);
+  const [nativeArchiveCount, _setNativeArchiveCountRaw] = useState<number>(0);
+  const setNativeArchiveCount = useMemo(() => __inkSafe(_setNativeArchiveCountRaw), [_setNativeArchiveCountRaw]);
   const [fileRailOpen, _setFileRailOpenRaw] = useState<boolean>(false);
   const setFileRailOpen = useMemo(() => __inkSafe(_setFileRailOpenRaw), [_setFileRailOpenRaw]);
   const [fileRailVersion, _setFileRailVersionRaw] = useState<number>(0);
@@ -349,6 +353,7 @@ export function App() {
   const mouseSelectionRef = useRef<{ anchorRow: number | null; anchorCol: number | null; focusRow: number | null; focusCol: number | null; active: boolean; moved: boolean }>({ anchorRow: null, anchorCol: null, focusRow: null, focusCol: null, active: false, moved: false });
   const lastTerminalInputAtRef = useRef<number>(Date.now());
   const scrollBoxRef = useRef<any>(null);
+  const nativeTranscriptBlockCountRef = useRef<number>(0);
   const blockRowCacheRef = useRef<Map<string, any[]>>(new Map());
 
   const allSlashCommands = useMemo(() => {
@@ -371,6 +376,14 @@ export function App() {
   const config = useMemo(() => {
           return loadConfig();
   }, [configVersion]);
+
+  const terminalMode = useMemo(() => {
+          return normalizeTerminalMode((config as any).terminalMode);
+  }, [config]);
+
+  const nativeTranscriptBlocks = useMemo(() => {
+          return nativeTranscriptBlocksForStatic(outputBlocks);
+  }, [outputBlocks]);
 
   const statusCwd = useMemo(() => {
           return workspacePath.replace(process.env.HOME ?? '', '~');
@@ -459,6 +472,23 @@ export function App() {
           return estimateVisibleBlockBudget(viewportRows, mode, overlayReservedRows + bottomChromeReservedRows);
   }, [termHeight, mode, overlayReservedRows, bottomChromeReservedRows, livePaneVisible, activeStream, liveProgress, agentProgress]);
 
+  const nativeArchiveTarget = useMemo(() => {
+          return nativeArchiveBlockCount(nativeTranscriptBlocks, mode, currentVisibleRowBudget, toolOutputExpanded, thinkingExpanded);
+  }, [nativeTranscriptBlocks,mode,currentVisibleRowBudget,toolOutputExpanded,thinkingExpanded]);
+
+  const effectiveNativeArchiveCount = useMemo(() => {
+          const baseArchiveCount = nativeTranscriptBlocks.length < nativeTranscriptBlockCountRef.current ? 0 : nativeArchiveCount;
+          return Math.max(0, Math.min(nativeTranscriptBlocks.length, Math.max(baseArchiveCount, nativeArchiveTarget)));
+  }, [nativeArchiveCount,nativeArchiveTarget,nativeTranscriptBlocks]);
+
+  const nativeArchiveBlocks = useMemo(() => {
+          return nativeTranscriptBlocks.slice(0, effectiveNativeArchiveCount);
+  }, [nativeTranscriptBlocks,effectiveNativeArchiveCount]);
+
+  const nativeLiveBlocks = useMemo(() => {
+          return nativeTranscriptBlocks.slice(effectiveNativeArchiveCount);
+  }, [nativeTranscriptBlocks,effectiveNativeArchiveCount]);
+
   const displayRows = useMemo(() => {
           // Ink 7 + ScrollBox: re-rendering on state change is supported, so
           // Ctrl+E/Ctrl+T can actually toggle past tool/thinking rows.
@@ -485,6 +515,15 @@ export function App() {
           }
           return rows;
   }, [displayBlocks, mode, toolOutputExpanded, thinkingExpanded]);
+
+  const nativeLiveRows = useMemo(() => {
+          const rows: any[] = [];
+          for (const block of nativeLiveBlocks) {
+            const blockRows = buildTranscriptRows([block], mode, toolOutputExpanded, thinkingExpanded);
+            rows.push(...blockRows.map((row: any) => ({ ...row, key: `native-live-${block.id}-${row.key}` })));
+          }
+          return rows;
+  }, [nativeLiveBlocks,mode,toolOutputExpanded,thinkingExpanded]);
 
   const totalDisplayRows = useMemo(() => {
           return displayRows.length;
@@ -645,12 +684,12 @@ export function App() {
     setModelPickerOpen(false);
     setCesarPickerOpen(false);
     setReviewEvent(null);
-    
+
     if (replState !== 'idle') {
       if (message) dispatch({ type: 'warning', message } as any);
       setReplState((prev: any) => prev === 'idle' ? prev : cancelReplState({ state: prev }).state);
     }
-    
+
     if (clearChat) dispatch({ type: 'clear' } as any);
   }, [replState,dispatch,trackAbort,outputActions]);
 
@@ -680,56 +719,56 @@ export function App() {
     // Swallow input while a choice question is active — the keyboard handler
     // resolves the choice on a single keypress.
     if (questionState && questionState.choices) return;
-    
+
     // Reject value changes caused by Ctrl+key shortcuts (the input hooks already handled them,
     // but TextInput still fires onChange with the raw character)
     if (ctrlKeyHandledRef.current) {
       ctrlKeyHandledRef.current = false;
       return;
     }
-    
+
     const nextValue = cleanInputValue(value);
     const prevValue = inputValueRef.current;
-    
+
     // "/" typed into empty input → open slash picker, swallow the character
     if (!prevValue && nextValue === '/' && !slashPickerOpen && !enginePickerOpen && !modelPickerOpen && !questionState && !justPastedRef.current) {
       if (planModeQueued) setPlanModeQueued(false);
       setSlashPickerOpen(true);
       return;
     }
-    
+
     // When slash picker is open, don't update inputValue — picker manages its own filter
     if (slashPickerOpen) {
       return;
     }
-    
+
     if (justPastedRef.current) {
       setInputValue(nextValue);
       return;
     }
-    
+
     const change = findInputChange(prevValue, nextValue);
     const looksLikePaste = value !== nextValue || change.inserted.length > 1;
-    
+
     if (!looksLikePaste || !change.inserted) {
       setInputValue(nextValue);
       return;
     }
-    
+
     justPastedRef.current = true;
     setTimeout(() => { justPastedRef.current = false; }, 100);
-    
+
     pasteCountRef.current += 1;
     const result = processPasteContent(change.inserted, pasteCountRef.current);
     if (result.type === 'empty') {
       setInputValue(nextValue);
       return;
     }
-    
+
     if (result.type === 'stored') {
       pasteHashesRef.current.set(String(pasteCountRef.current), result.fullHash);
     }
-    
+
     const replacement = result.type === 'stored' ? result.placeholder : result.content;
     const updatedValue = nextValue.slice(0, change.start) + replacement + nextValue.slice(change.start + change.inserted.length);
     setInputValue(updatedValue);
@@ -761,20 +800,20 @@ export function App() {
         // Fire side-dispatch — don't interrupt main task
         dispatch({ type: 'separator' } as any);
         dispatch({ type: 'user-message', content: `/btw ${btwQuestion}` } as any);
-    
+
         const ctx = buildContext();
         const cesarId = (ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude';
         let engineDef: any;
         try { engineDef = ctx.registry.get(cesarId); } catch { /* cesar engine not registered */ }
-    
+
         if (!engineDef) {
           dispatch({ type: 'error', message: `btw: engine ${cesarId} not available` } as any);
           return;
         }
-    
+
         const color = ENGINE_COLORS[cesarId] ?? 124;
         dispatch({ type: 'info', message: 'btw\u2026' } as any);
-    
+
         // Build context from streaming output (pick the most recent in-flight stream)
         let streamCtx = '';
         const streamEntries = Object.values(streamingTextRef.current ?? {});
@@ -788,9 +827,9 @@ export function App() {
             streamCtx = lines.slice(-10).join('\n');
           }
         }
-    
+
         const prompt = `The user asks while you are working on another task:\n\n${btwQuestion}\n\n${streamCtx ? '--- Recent output from the running task ---\n' + streamCtx + '\n---\n\n' : ''}Answer briefly and concisely. Keep it short.`;
-    
+
         const btwOutputDir = join(RUNS_DIR, `btw-${Date.now()}`);
         try { mkdirSync(btwOutputDir, { recursive: true }); } catch { /* dir already exists or parent missing */ }
         ctx.adapter.dispatch({
@@ -880,12 +919,12 @@ export function App() {
   const openCliModelPicker = useCallback((engineId:string) => {
     let engine: any = null;
     try { engine = registry.get(engineId); } catch { /* not found, fallback to id */ }
-    
+
     const env = (engine?.api?.apiKeyEnv ?? '').toLowerCase();
     const baseUrl = (engine?.api?.baseUrl ?? '').toLowerCase();
     const display = (engine?.displayName ?? '').toLowerCase();
     const defaultModel = (engine?.api?.model ?? '').toLowerCase();
-    
+
     let providerFilter = '';
     if (engineId === 'claude' || env.includes('anthropic') || baseUrl.includes('anthropic') || display.includes('anthropic')) providerFilter = 'provider:anthropic';
     else if (engineId === 'codex' || env.includes('openai') || baseUrl.includes('openai') || display.includes('openai')) providerFilter = 'provider:openai';
@@ -895,7 +934,7 @@ export function App() {
     else if (engineId === 'qwen' || display.includes('qwen')) providerFilter = 'provider:qwen';
     else if (engineId === 'minimax' || display.includes('minimax')) providerFilter = 'provider:minimax';
     else providerFilter = defaultModel;
-    
+
     setModelPickerTargetEngine(engineId);
     setModelPickerTitle(`Select model for ${engineId}`);
     setModelPickerInitialFilter(providerFilter);
@@ -903,9 +942,9 @@ export function App() {
     setModelPickerLoading(true);
     setEnginePickerOpen(false);
     setModelPickerOpen(true);
-    
+
     setModelPickerCliGroups([]);
-    
+
     import('@agon/core').then(({ fetchModelsRegistry, buildModelEntries, buildCliModelGroupsAsync }) => {
       buildCliModelGroupsAsync().then((cliGroups: any) => {
         setModelPickerCliGroups(cliGroups);
@@ -991,7 +1030,7 @@ export function App() {
       }
       return;
     }
-    
+
     let content = '';
     if (mode === 'chat') {
       if (chatSession.messages.length === 0) {
@@ -1006,7 +1045,7 @@ export function App() {
       }
       content = formatSessionResults(sessionResultStore.getResults());
     }
-    
+
     try {
       copyToClipboard(content);
       dispatch({ type: 'success', message: mode === 'chat' ? 'Chat transcript copied to clipboard' : 'Results copied to clipboard' } as any);
@@ -1016,6 +1055,10 @@ export function App() {
   }, [dispatch,mode,chatSession,displayRows,mouseSelection]);
 
   const toggleSelectionMode = useCallback(() => {
+    if (terminalMode !== 'fullscreen') {
+      dispatch({ type: 'info', message: 'Native scrollback is active — select and copy directly in your terminal. Ctrl+Y still copies the transcript.' } as any);
+      return;
+    }
     const next = !selectionMode;
     setSelectionMode(next);
     dispatch({
@@ -1024,7 +1067,7 @@ export function App() {
         ? 'Selection mode on — drag to select, Cmd+C to copy. Ctrl+G again for wheel scroll.'
         : 'Wheel scroll on — mouse captured. Ctrl+G to select/copy with mouse again.',
     } as any);
-  }, [selectionMode,dispatch]);
+  }, [selectionMode,dispatch,terminalMode]);
 
   const handleSlashSelect = useCallback((cmd:string) => {
     setPlanModeQueued(false);
@@ -1046,7 +1089,7 @@ export function App() {
       interruptActiveRun(activeAbortRef.current ? 'Cancelled.' : 'Interrupted.', false);
       return;
     }
-    
+
     const now = Date.now();
     if (inputValue) {
       _lastSigintAt.value = now;
@@ -1054,11 +1097,11 @@ export function App() {
       dispatch({ type: 'info', message: 'Input cleared. Press Ctrl+C again to exit.' } as any);
       return;
     }
-    
+
     if (now - _lastSigintAt.value < 1200) {
       process.exit(0);
     }
-    
+
     _lastSigintAt.value = now;
     dispatch({ type: 'info', message: 'Press Ctrl+C again to exit.' } as any);
   }, [questionState,replState,inputValue,dispatch]);
@@ -1105,9 +1148,9 @@ export function App() {
 
   const handleKeyboardInput = useCallback((input:string,key:any) => {
     if (isTerminalFocusReport(input)) return;
-    
-    // ScrollBox keyboard shortcuts (only when no modal is open)
-    if (!modelPickerOpen && !cesarPickerOpen && !enginePickerOpen && !reviewEvent && !toolDetailEvent && !slashPickerOpen && !questionState) {
+
+    // ScrollBox keyboard shortcuts (only when fullscreen owns the viewport and no modal is open).
+    if (terminalMode === 'fullscreen' && !modelPickerOpen && !cesarPickerOpen && !enginePickerOpen && !reviewEvent && !toolDetailEvent && !slashPickerOpen && !questionState) {
       if (key.shift && key.name === 'pageup') {
         scrollBoxRef.current?.scrollBy(-Math.max(1, Math.floor(currentVisibleRowBudget / 2)));
         return;
@@ -1125,7 +1168,7 @@ export function App() {
         return;
       }
     }
-    
+
     const normalizedCtrlInput = key.ctrl
       ? ({
           '\x01': 'a',
@@ -1148,7 +1191,7 @@ export function App() {
         return;
       }
     }
-    
+
     const action = resolveKeyboardInput({
       input, key,
       textInputActive: !modelPickerOpen && !cesarPickerOpen && !enginePickerOpen && !reviewEvent && !toolDetailEvent && !slashPickerOpen && (!questionState || !questionState.choices),
@@ -1163,7 +1206,7 @@ export function App() {
       fileRailFocused: fileRailOpen && inputValue.trim().length === 0,
       fileRailExpanded: fileRailExpandedPath !== null,
     });
-    
+
     switch (action.type) {
       case 'none': return;
       case 'exit': process.exit(0); return;
@@ -1247,7 +1290,7 @@ export function App() {
         handleCancelOrExit();
         return;
     }
-  }, [modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,activePlan,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,copyCurrentTranscript,toggleSelectionMode,startupOnly]);
+  }, [modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,activePlan,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,copyCurrentTranscript,toggleSelectionMode,startupOnly,terminalMode]);
 
   useEffect(() => {
     initExtensions(workspacePath, commandRegistry, registry, eventBus).then(({ extensions, skills: extSkills, systemPromptFragments }) => {
@@ -1266,6 +1309,27 @@ export function App() {
   useEffect(() => {
     mouseSelectionRef.current = mouseSelection;
   }, [mouseSelection]);
+
+  useEffect(() => {
+    const nextCount = nativeTranscriptBlocks.length;
+    if (terminalMode !== 'native') {
+      nativeTranscriptBlockCountRef.current = nextCount;
+      return;
+    }
+    const previousCount = nativeTranscriptBlockCountRef.current;
+    if (nextCount < previousCount) {
+      setNativeStaticEpoch((epoch: number) => epoch + 1);
+      setNativeArchiveCount(0);
+    }
+    nativeTranscriptBlockCountRef.current = nextCount;
+  }, [terminalMode,nativeTranscriptBlocks]);
+
+  useEffect(() => {
+    if (terminalMode !== 'native') return;
+    if (effectiveNativeArchiveCount !== nativeArchiveCount) {
+      setNativeArchiveCount(effectiveNativeArchiveCount);
+    }
+  }, [terminalMode,effectiveNativeArchiveCount,nativeArchiveCount]);
 
   useEffect(() => {
     lastReviewResultRef.current = lastReviewResult;
@@ -1364,9 +1428,8 @@ export function App() {
 
   useEffect(() => {
     if (!process.stdin.isTTY || !process.stdout.isTTY) return;
-    // Bracketed paste only. Mouse tracking is handled by <AlternateScreen
-    // mouseTracking={!selectionMode}> — toggling selectionMode re-acquires
-    // the alt-screen with mouse enable/disable via the runtime's deps.
+    // Bracketed paste only. Fullscreen mode handles mouse tracking through
+    // <AlternateScreen mouseTracking={!selectionMode}>.
     process.stdout.write('\x1b[?2004h');
     const onResume = () => {
       process.stdout.write('\x1b[?2004h');
@@ -1420,6 +1483,8 @@ export function App() {
   useStableInput(handleKeyboardInput);
   const showFileRail = fileRailOpen;
   const fileRailFiles = useMemo(() => listFiles(), [fileRailVersion]);
+  const fileRailWidth = fileRailWidthForTerminal(termWidth, !!fileRailExpandedPath);
+  const fileRailMaxRows = fileRailMaxRowsForTerminal(termHeight, terminalMode, !!fileRailExpandedPath);
   // Stable element array — without useMemo, every keystroke rebuilds N
   // React elements even though `displayRows` only changes on stream/mode.
   // ScrollBox also does React.Children.toArray on children; a stable ref
@@ -1428,20 +1493,27 @@ export function App() {
     () => displayRows.map((row: any) => <TranscriptRowView key={row.key} row={row} />),
     [displayRows],
   );
-  return (
-  <AlternateScreen mouseTracking={!selectionMode}>
-  <Box flexDirection="column" flexGrow={1} width={termWidth} height={termHeight}>
-  <Box flexDirection="row" flexGrow={1} width="100%">
-  <Box flexDirection="column" flexGrow={1} minWidth={0}>
-  <ScrollBox ref={scrollBoxRef} stickyScroll flexGrow={1}>
-    {transcriptElements}
-  </ScrollBox>
+  const nativeLiveTranscriptElements = useMemo(
+    () => nativeLiveRows.map((row: any) => <TranscriptRowView key={row.key} row={row} />),
+    [nativeLiveRows],
+  );
+  const lowerPanel = (
   <Box flexDirection="column" flexShrink={0}>
     <ChromeBar mode={mode} cwdLabel={resolveWorkingDir().split('/').pop() ?? ''} engineCount={availableEngines.length} replState={replState} runningJobs={runningJobs} />
     <BackgroundJobRail jobs={runningJobs} />
-    {startupUseDashboardView && displayRows.length === 0 && (
+    {startupUseDashboardView && (displayRows.length === 0 || terminalMode === 'native') && (
       <Box flexDirection="column">
         <DashboardView event={outputBlocks[0]?.event as any} />
+      </Box>
+    )}
+    {terminalMode === 'native' && startupOnly && !startupUseDashboardView && (
+      <Box flexDirection="column">
+        {transcriptElements}
+      </Box>
+    )}
+    {terminalMode === 'native' && !startupOnly && nativeLiveTranscriptElements.length > 0 && (
+      <Box flexDirection="column">
+        {nativeLiveTranscriptElements}
       </Box>
     )}
     {livePaneVisible && (
@@ -1607,15 +1679,44 @@ export function App() {
           const _cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
           return (<>
             <CesarStatusStrip cesarId={_cesarId} confidence={cesarConfidence} spinner={liveSpinner} engines={liveProgress} startTime={chatStartTimeRef.current || 0} streamSnippet={streamSnippet} isActive={replState !== 'idle' || runningJobs.length > 0} planModeQueued={planModeQueued} activePlanState={activePlan?.state ?? null} />
-            {mode === 'chat' && <StatusBar cesarId={statusStats.cesarId} chatMessageCount={statusStats.chatMessageCount} totalTokens={statusStats.totalTokens} totalCostUsd={statusStats.totalCostUsd} cwd={statusCwd} branch={statusBranch} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} thinkingExpanded={thinkingExpanded} isActive={replState !== 'idle'} fullscreenEnabled={false} selectionMode={selectionMode} />}
+            {mode === 'chat' && <StatusBar cesarId={statusStats.cesarId} chatMessageCount={statusStats.chatMessageCount} totalTokens={statusStats.totalTokens} totalCostUsd={statusStats.totalCostUsd} cwd={statusCwd} branch={statusBranch} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} thinkingExpanded={thinkingExpanded} isActive={replState !== 'idle'} fullscreenEnabled={terminalMode === 'fullscreen'} selectionMode={terminalMode === 'fullscreen' ? selectionMode : undefined} />}
           </>);
         })()}
       </Box>
     )}
   </Box>
+  );
+
+  if (terminalMode === 'native') return (
+  <>
+    <Static key={`native-static-${nativeStaticEpoch}`} items={nativeArchiveBlocks}>
+      {(block: any) => (
+        <OutputBlockView key={block.id} event={block.event} mode={mode} toolOutputExpanded={toolOutputExpanded} thinkingExpanded={thinkingExpanded} />
+      )}
+    </Static>
+    <Box flexDirection="row" width={termWidth}>
+      <Box flexDirection="column" flexGrow={1} minWidth={0} overflowX="hidden">
+        {lowerPanel}
+      </Box>
+      {showFileRail && (
+        <FileRail files={fileRailFiles} maxRows={fileRailMaxRows} width={fileRailWidth} focused={fileRailOpen && inputValue.trim().length === 0} selectedIndex={fileRailSelectedIdx} expandedPath={fileRailExpandedPath} />
+      )}
+    </Box>
+  </>
+  );
+
+  return (
+  <AlternateScreen mouseTracking={!selectionMode}>
+  <Box flexDirection="column" flexGrow={1} width={termWidth} height={termHeight}>
+  <Box flexDirection="row" flexGrow={1} width="100%">
+  <Box flexDirection="column" flexGrow={1} minWidth={0} overflowX="hidden">
+  <ScrollBox ref={scrollBoxRef} stickyScroll flexGrow={1}>
+    {transcriptElements}
+  </ScrollBox>
+  {lowerPanel}
   </Box>
   {showFileRail && (
-    <FileRail files={fileRailFiles} maxRows={fileRailExpandedPath ? Math.max(20, termHeight - 6) : Math.max(6, Math.min(12, 10))} width={Math.max(32, Math.floor(termWidth / 3))} focused={fileRailOpen && inputValue.trim().length === 0} selectedIndex={fileRailSelectedIdx} expandedPath={fileRailExpandedPath} />
+    <FileRail files={fileRailFiles} maxRows={fileRailMaxRows} width={fileRailWidth} focused={fileRailOpen && inputValue.trim().length === 0} selectedIndex={fileRailSelectedIdx} expandedPath={fileRailExpandedPath} />
   )}
   </Box>
   </Box>
@@ -1679,10 +1780,10 @@ export function toolCallSupportsDetailView(event: any): boolean {
   if (!event || event.type !== 'tool-call') return false;
   const { rawInput, parsed, toolKey } = parseToolCallPayload(event);
   if (['edit', 'update', 'write', 'applypatch', 'apply_patch'].includes(toolKey)) return true;
-  
+
   const outputText = String(event.output ?? '');
   const outputLines = outputText ? outputText.split('\n').length : 0;
-  
+
   if (toolKey === 'bash' || toolKey === 'run') {
     const command = String((parsed.command as string) || rawInput || '');
     return command.split('\n').length > 3 || outputLines > 12 || outputText.length > 500;
@@ -1730,7 +1831,7 @@ export function buildToolDetailView(event: any): any {
   if (!event) {
     return { title: 'Detail viewer', subtitle: '', accentColor: '#a78bfa', rows: [] };
   }
-  
+
   const ic = icons();
   const accentColor = engineColor(event.engineId ?? '') || '#a78bfa';
   const codeWidth = contentWidth(12);
@@ -1772,7 +1873,7 @@ export function buildToolDetailView(event: any): any {
       });
     });
   };
-  
+
   if (event.type === 'permission-ask') {
     const command = String(event.command ?? '');
     const commandLines = command ? command.split('\n') : [];
@@ -1801,7 +1902,7 @@ export function buildToolDetailView(event: any): any {
       rows,
     };
   }
-  
+
   const { rawInput, parsed, toolKey } = parseToolCallPayload(event);
   const outputLines = String(event.output ?? '').split('\n').filter((line: string, index: number, all: string[]) => line.length > 0 || all.length === 1);
   const defaultLabel = (() => {
@@ -1817,7 +1918,7 @@ export function buildToolDetailView(event: any): any {
   const subtitleParts: string[] = [];
   if (event.engineId) subtitleParts.push(String(event.engineId));
   if (event.status) subtitleParts.push(String(event.status));
-  
+
   if (toolKey === 'bash' || toolKey === 'run') {
     const command = String((parsed.command as string) || rawInput || '');
     const desc = String((parsed.description as string) || '').trim();
@@ -1903,7 +2004,7 @@ export function buildToolDetailView(event: any): any {
       pushSyntaxLines('generic-output', outputLines);
     }
   }
-  
+
   return {
     title,
     subtitle: subtitleParts.join(' · '),
@@ -2027,17 +2128,17 @@ export function richLineToPlainText(line: any): string {
   if (!line) return '';
   if (line.kind === 'blank') return '';
   if (line.kind === 'hr') return '─'.repeat(40);
-  
+
   const spanText = Array.isArray(line.spans)
     ? line.spans.map((span: any) => `${span.text ?? ''}${span?.style?.linkUrl ? ` (${span.style.linkUrl})` : ''}`).join('')
     : '';
   const indent = line.indent > 0 ? '  '.repeat(line.indent) : '';
-  
+
   if (line.kind === 'h1') return `${indent}# ${spanText}`;
   if (line.kind === 'h2') return `${indent}## ${spanText}`;
   if (line.kind === 'h3') return `${indent}### ${spanText}`;
   if (line.kind === 'blockquote') return `${indent}| ${spanText}`;
-  
+
   const marker = line.marker ?? '';
   const listIndent = (line.kind === 'bullet' || line.kind === 'ordered') && !indent ? ' ' : '';
   return `${indent}${listIndent}${marker}${spanText}`;
@@ -2051,7 +2152,7 @@ export function transcriptRowToPlainText(row: any): string {
   if (row.kind === 'segments') {
     return Array.isArray(row.segments) ? row.segments.map((segment: any) => segment?.text ?? '').join('') : '';
   }
-  
+
   const prefix = String(row.prefixText ?? '');
   const text = String(row.text ?? '');
   return `${prefix}${text}`;
@@ -2182,7 +2283,7 @@ export function buildDashboardBlock(enabledOverride: string[]|null): OutputBlock
   const enabled = enabledOverride ?? available;
   let runCount = 0;
   try { runCount = readdirSync(RUNS_DIR).filter((f: string) => f.endsWith('.json')).length; } catch { /* runs dir missing — first run */ }
-  
+
   return {
     id: 0,
     event: {
@@ -2217,11 +2318,11 @@ export function estimateWrappedRows(text: string, width: number): number {
 export function estimateToolCallRows(event: any, toolOutputExpanded: boolean, codeWidth: number): number {
   if (!event || event.type !== 'tool-call') return 0;
   if (!event.input && !event.output && (event.tool === 'Delegate' || event.tool === 'delegate')) return 0;
-  
+
   const { rawInput, parsed, toolKey } = parseToolCallPayload(event);
   const collapsed = !toolOutputExpanded;
   if (collapsed && !['edit', 'write', 'update'].includes(toolKey)) return 1;
-  
+
   if (toolKey === 'bash' || toolKey === 'run') {
     const cmd = (parsed.command as string) || rawInput || '';
     const cmdLineCount = cmd ? cmd.split('\n').length : 0;
@@ -2237,7 +2338,7 @@ export function estimateToolCallRows(event: any, toolOutputExpanded: boolean, co
     }
     return rows;
   }
-  
+
   if (toolKey === 'edit' || toolKey === 'update') {
     const oldStr = (parsed.old_string as string) || (parsed.oldString as string) || '';
     const newStr = (parsed.new_string as string) || (parsed.newString as string) || '';
@@ -2249,28 +2350,28 @@ export function estimateToolCallRows(event: any, toolOutputExpanded: boolean, co
       + oldWindow.head + oldWindow.tail + (oldWindow.skipped > 0 ? 1 : 0)
       + newWindow.head + newWindow.tail + (newWindow.skipped > 0 ? 1 : 0);
   }
-  
+
   if (toolKey === 'write') {
     const content = (parsed.content as string) || '';
     const lines = content ? content.split('\n') : [];
     const window = toolPreviewWindow(lines.length, !collapsed);
     return 1 + window.head + window.tail + (window.skipped > 0 ? 1 : 0);
   }
-  
+
   if (toolKey === 'read') {
     if (collapsed) return 1;
     const lineCount = event.output ? String(event.output).split('\n').length : 0;
     const shown = Math.min(12, lineCount);
     return 1 + shown + (lineCount > shown ? 1 : 0);
   }
-  
+
   if (toolKey === 'grep' || toolKey === 'search' || toolKey === 'glob' || toolKey === 'find') {
     if (collapsed) return 1;
     const lineCount = event.output ? String(event.output).split('\n').filter((line: string) => line.trim()).length : 0;
     const shown = Math.min(10, lineCount);
     return 1 + shown + (lineCount > shown ? 1 : 0);
   }
-  
+
   let rows = 1;
   if (rawInput) rows += Math.min(3, estimateWrappedRows(rawInput, codeWidth));
   if (event.output && event.status === 'done') rows += 1 + Math.min(6, estimateWrappedRows(event.output, codeWidth));
@@ -2282,7 +2383,7 @@ export function estimateOutputEventRows(event: OutputEvent, mode: string, toolOu
   const chatWidth = contentWidth(2);
   const engineWidth = contentWidth(8);
   const codeWidth = contentWidth(10);
-  
+
   switch (event.type) {
     case 'text':
       return Math.max(1, estimateWrappedRows(event.content, proseWidth));
@@ -2387,15 +2488,75 @@ export function historyBlocksForTranscript(blocks: OutputBlock[]): OutputBlock[]
   return blocks;
 }
 
+/**
+ * Native transcript history. The startup dashboard is live chrome, not transcript history, so it must not consume Static's append index.
+ */
+export function nativeTranscriptBlocksForStatic(blocks: OutputBlock[]): OutputBlock[] {
+  return blocks.filter((block: any) => block?.event?.type !== 'dashboard');
+}
+
+/**
+ * Choose how many native transcript blocks are sealed into Static. The remaining tail stays live so recent rows can rerender for Ctrl+E/Ctrl+T while older rows remain in terminal scrollback.
+ */
+export function nativeArchiveBlockCount(blocks: OutputBlock[], mode: string, rowBudget: number, toolOutputExpanded: boolean, thinkingExpanded: boolean): number {
+  if (!Array.isArray(blocks) || blocks.length === 0) return 0;
+
+  const safeBudget = Math.max(1, Math.floor(Number(rowBudget) || 1));
+  const maxLiveBlocks = 80;
+  let rows = 0;
+  let liveStart = blocks.length;
+
+  for (let index = blocks.length - 1; index >= 0; index -= 1) {
+    const block = blocks[index];
+    const event = block?.event as OutputEvent;
+    const estimatedRows = Math.max(1, estimateOutputEventRows(event, mode, toolOutputExpanded, thinkingExpanded));
+    const liveCountWithBlock = blocks.length - index;
+
+    if (estimatedRows > safeBudget && rows === 0) {
+      liveStart = index + 1;
+      break;
+    }
+
+    if (rows > 0 && (rows + estimatedRows > safeBudget || liveCountWithBlock > maxLiveBlocks)) {
+      break;
+    }
+
+    rows += estimatedRows;
+    liveStart = index;
+  }
+
+  return Math.max(0, Math.min(blocks.length, liveStart));
+}
+
+export function normalizeTerminalMode(value: any): 'native'|'fullscreen' {
+  return value === 'fullscreen' ? 'fullscreen' : 'native';
+}
+
+export function fileRailWidthForTerminal(termWidth: number, expanded: boolean): number {
+  const safeWidth = Math.max(40, Math.floor(Number(termWidth) || 100));
+  if (expanded) return Math.max(36, Math.min(64, Math.floor(safeWidth * 0.3)));
+  return Math.max(28, Math.min(42, Math.floor(safeWidth * 0.22)));
+}
+
+export function fileRailMaxRowsForTerminal(termHeight: number, terminalMode: string, expanded: boolean): number {
+  const safeHeight = Math.max(8, Math.floor(Number(termHeight) || 24));
+  if (terminalMode === 'native') {
+    if (expanded) return Math.max(8, Math.min(18, safeHeight - 8));
+    return Math.max(5, Math.min(10, safeHeight - 10));
+  }
+  if (expanded) return Math.max(12, safeHeight - 6);
+  return Math.max(6, Math.min(12, 10));
+}
+
 export function parseMarkdownToRows(baseKey: string, text: string, wrapWidth: number, paddingLeft: number, borderColor: string): any[] {
   const rows: any[] = [];
   const cleaned = String(text ?? '').trim();
   if (!cleaned) return rows;
-  
+
   const codeWidth = contentWidth(8);
   const segments = parseMarkdownBlocks(cleaned);
   let rowIndex = 0;
-  
+
   for (const segment of segments as any[]) {
     if (segment.type === 'prose') {
       const richLines = parseProseToRichLines(segment.text ?? '', wrapWidth);
@@ -2410,13 +2571,13 @@ export function parseMarkdownToRows(baseKey: string, text: string, wrapWidth: nu
       }
       continue;
     }
-  
+
     if (segment.type === 'code') {
       const codeLines = String(segment.code ?? '').split('\n');
       const shownLines = codeLines.slice(0, MAX_CODE_LINES);
       const overflow = codeLines.length - shownLines.length;
       const isDiff = segment.language === 'diff' || codeLines.some((line: string) => /^[+\-@]/.test(line));
-  
+
       rows.push({
         key: `${baseKey}-code-meta-${rowIndex++}`,
         kind: 'segments',
@@ -2429,7 +2590,7 @@ export function parseMarkdownToRows(baseKey: string, text: string, wrapWidth: nu
           segment.index !== undefined ? { text: ` [${segment.index}]`, color: '#585858' } : null,
         ].filter(Boolean),
       });
-  
+
       shownLines.forEach((line: string, index: number) => {
         rows.push({
           key: `${baseKey}-code-${rowIndex++}-${index}`,
@@ -2442,7 +2603,7 @@ export function parseMarkdownToRows(baseKey: string, text: string, wrapWidth: nu
           maxWidth: codeWidth,
         });
       });
-  
+
       if (overflow > 0) {
         rows.push({
           key: `${baseKey}-code-overflow-${rowIndex++}`,
@@ -2458,13 +2619,13 @@ export function parseMarkdownToRows(baseKey: string, text: string, wrapWidth: nu
       }
       continue;
     }
-  
+
     if (segment.type === 'table') {
       const headers = (segment.headers ?? []) as string[];
       const tableRows = (segment.rows ?? []) as string[][];
       const headerLine = headers.join(' │ ');
       const ruleWidth = Math.max(12, Math.min(wrapWidth, headerLine.length));
-  
+
       rows.push({
         key: `${baseKey}-table-head-${rowIndex++}`,
         kind: 'segments',
@@ -2490,13 +2651,13 @@ export function parseMarkdownToRows(baseKey: string, text: string, wrapWidth: nu
       });
     }
   }
-  
+
   return rows;
 }
 
 export function buildToolCallRows(baseKey: string, event: any, toolOutputExpanded: boolean): any[] {
   if (!event.input && !event.output && (event.tool === 'Delegate' || event.tool === 'delegate')) return [];
-  
+
   const rows: any[] = [];
   const ic = icons();
   const toolColor = event.status === 'error' ? '#ef4444' : event.status === 'done' ? '#4ade80' : '#fbbf24';
@@ -2544,7 +2705,7 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
       });
     });
   };
-  
+
   if (toolKey === 'bash' || toolKey === 'run') {
     const cmd = String((parsed.command as string) || rawInput || '');
     const desc = parsed.description as string | undefined;
@@ -2562,13 +2723,13 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
       ].filter(Boolean));
       return rows;
     }
-  
+
     pushSegmentsRow('bash-head', [
       nestSegment,
       { text: `${icon} Bash`, color: toolColor, bold: true },
       desc ? { text: ` · ${desc}`, dimColor: true } : null,
     ].filter(Boolean));
-  
+
     const cmdLines = cmd ? cmd.split('\n') : [];
     cmdLines.slice(0, 3).forEach((line: string, index: number) => {
       pushSegmentsRow(`bash-cmd-${index}`, [
@@ -2579,7 +2740,7 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
     if (cmdLines.length > 3) {
       pushSegmentsRow('bash-cmd-more', [{ text: '      …', dimColor: true }]);
     }
-  
+
     if (event.output && event.status !== 'running') {
       const outputLines = String(event.output).split('\n');
       const maxHead = outputLines.length > 80 ? 30 : 50;
@@ -2588,7 +2749,7 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
       const headLines = outputLines.slice(0, showTail ? maxHead : outputLines.length);
       const tailLines = showTail ? outputLines.slice(-tailCount) : [];
       const skipped = outputLines.length - headLines.length - tailLines.length;
-  
+
       pushSegmentsRow('bash-output-gap', [{ text: ' ', dimColor: true }]);
       headLines.forEach((line: string, index: number) => {
         if (event.status === 'error') {
@@ -2634,7 +2795,7 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
     }
     return rows;
   }
-  
+
   if (toolKey === 'edit' || toolKey === 'update') {
     const filePath = String((parsed.file_path as string) || (parsed.filePath as string) || '');
     const oldStr = String((parsed.old_string as string) || (parsed.oldString as string) || '');
@@ -2642,7 +2803,7 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
     const shortPath = filePath ? shortToolPath(filePath) : '';
     const oldLines = oldStr ? oldStr.split('\n') : [];
     const newLines = newStr ? newStr.split('\n') : [];
-  
+
     pushSegmentsRow('edit-head', [
       nestSegment,
       { text: `${icon} ${ic.edit} Update`, color: toolColor, bold: true },
@@ -2658,13 +2819,13 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
     pushDiffPreview('edit-new', newLines, '+', !collapsed, 'added');
     return rows;
   }
-  
+
   if (toolKey === 'write') {
     const filePath = String((parsed.file_path as string) || (parsed.filePath as string) || '');
     const content = String((parsed.content as string) || '');
     const shortPath = filePath ? shortToolPath(filePath) : '';
     const lines = content ? content.split('\n') : [];
-  
+
     pushSegmentsRow('write-head', [
       nestSegment,
       { text: `${icon} ${ic.write} Write`, color: toolColor, bold: true },
@@ -2677,7 +2838,7 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
     pushDiffPreview('write', lines, '+', !collapsed, 'added');
     return rows;
   }
-  
+
   if (toolKey === 'read') {
     const filePath = String((parsed.file_path as string) || (parsed.filePath as string) || '');
     const shortPath = filePath ? shortToolPath(filePath) : '';
@@ -2692,14 +2853,14 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
       ].filter(Boolean));
       return rows;
     }
-  
+
     pushSegmentsRow('read-head', [
       nestSegment,
       { text: `${icon} ${ic.read} Read`, color: toolColor, bold: true },
       shortPath ? { text: ` (${shortPath})`, color: '#a78bfa' } : null,
       lineCount > 0 && event.status === 'done' ? { text: ` · ${lineCount} lines`, dimColor: true } : null,
     ].filter(Boolean));
-  
+
     if (event.output && event.status !== 'running') {
       const outputLines = String(event.output).split('\n');
       const shownLines = outputLines.slice(0, 12);
@@ -2720,7 +2881,7 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
     }
     return rows;
   }
-  
+
   if (toolKey === 'grep' || toolKey === 'search') {
     const pattern = String((parsed.pattern as string) || rawInput || '');
     const path = String((parsed.path as string) || '');
@@ -2736,7 +2897,7 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
       ].filter(Boolean));
       return rows;
     }
-  
+
     pushSegmentsRow('search-head', [
       nestSegment,
       { text: `${icon} ${ic.search} Search`, color: toolColor, bold: true },
@@ -2744,7 +2905,7 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
       shortPath ? { text: ` in ${shortPath}`, dimColor: true } : null,
       matchCount > 0 && event.status === 'done' ? { text: ` → ${matchCount} matches`, dimColor: true } : null,
     ].filter(Boolean));
-  
+
     if (event.output && event.status !== 'running') {
       const matchLines = String(event.output).split('\n').filter((line: string) => line.trim());
       const shownLines = matchLines.slice(0, 10);
@@ -2766,7 +2927,7 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
     }
     return rows;
   }
-  
+
   if (toolKey === 'glob' || toolKey === 'find') {
     const pattern = String((parsed.pattern as string) || rawInput || '');
     const fileCount = event.output ? String(event.output).split('\n').filter((line: string) => line.trim()).length : 0;
@@ -2780,14 +2941,14 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
       ].filter(Boolean));
       return rows;
     }
-  
+
     pushSegmentsRow('find-head', [
       nestSegment,
       { text: `${icon} ${ic.find} Find`, color: toolColor, bold: true },
       pattern ? { text: ` ${pattern}`, color: '#a78bfa' } : null,
       fileCount > 0 && event.status === 'done' ? { text: ` → ${fileCount} files`, dimColor: true } : null,
     ].filter(Boolean));
-  
+
     if (event.output && event.status !== 'running') {
       const files = String(event.output).split('\n').filter((line: string) => line.trim());
       const shownFiles = files.slice(0, 10);
@@ -2800,7 +2961,7 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
     }
     return rows;
   }
-  
+
   const label = (() => {
     if (event.tool === 'Read') return `${ic.read} Read`;
     if (event.tool === 'Edit') return `${ic.edit} Edit`;
@@ -2812,7 +2973,7 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
   })();
   const inputPreview = rawInput.length > 80 ? `${rawInput.slice(0, 79)}…` : rawInput;
   const outLines = event.output ? String(event.output).split('\n').length : 0;
-  
+
   pushSegmentsRow('generic', [
     nestSegment,
     { text: `${icon} ${label}`, color: toolColor, bold: true },
@@ -2820,18 +2981,18 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
     outLines > 0 && event.status === 'done' ? { text: ` → ${outLines} lines`, dimColor: true } : null,
     ...(collapsed ? collapsedHint : []),
   ].filter(Boolean));
-  
+
   return rows;
 }
 
 export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any[] {
   if (!events || events.length === 0) return [];
-  
+
   const rows: any[] = [];
   const accent = engineColor(events[0]?.engineId ?? '');
   const counts = new Map<string, number>();
   const previews: string[] = [];
-  
+
   const labelFor = (event: any) => {
     const toolKey = String(event.tool ?? '').toLowerCase();
     if (toolKey === 'bash' || toolKey === 'run') return 'Bash';
@@ -2842,7 +3003,7 @@ export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any
     if (toolKey === 'write') return 'Write';
     return String(event.tool ?? 'Tool');
   };
-  
+
   const previewFor = (event: any) => {
     const rawInput = String(event.input ?? '');
     let parsed: Record<string, unknown> = {};
@@ -2851,7 +3012,7 @@ export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any
     } catch {
       parsed = {};
     }
-  
+
     const toolKey = String(event.tool ?? '').toLowerCase();
     if (toolKey === 'bash' || toolKey === 'run') {
       const command = String((parsed.command as string) || rawInput || '').split('\n')[0] ?? '';
@@ -2867,17 +3028,17 @@ export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any
     }
     return truncateCodeLine(rawInput, contentWidth(20));
   };
-  
+
   for (const event of events) {
     const label = labelFor(event);
     counts.set(label, (counts.get(label) ?? 0) + 1);
     if (previews.length < 3) previews.push(previewFor(event));
   }
-  
+
   const countSummary = Array.from(counts.entries())
     .map(([label, count]) => `${label}${count > 1 ? `×${count}` : ''}`)
     .join(' · ');
-  
+
   rows.push({
     key: `${baseKey}-tool-group-head`,
     kind: 'segments',
@@ -2889,7 +3050,7 @@ export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any
       countSummary ? { text: countSummary, dimColor: true } : null,
     ].filter(Boolean),
   });
-  
+
   if (previews.length > 0) {
     rows.push({
       key: `${baseKey}-tool-group-preview`,
@@ -2901,7 +3062,7 @@ export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any
       ])),
     });
   }
-  
+
   return rows;
 }
 
@@ -2928,13 +3089,13 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
       });
     });
   };
-  
+
   let skippedUntil = -1;
   blocks.forEach((block: OutputBlock, blockIndex: number) => {
     if (blockIndex < skippedUntil) return;
     const event = block.event as any;
     const baseKey = `block-${block.id}`;
-  
+
     if (!toolOutputExpanded && event.type === 'tool-call' && !isMutatingToolCall(event)) {
       const groupedEvents = [event];
       let nextIndex = blockIndex + 1;
@@ -2944,14 +3105,14 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
         groupedEvents.push(nextEvent);
         nextIndex += 1;
       }
-  
+
       if (groupedEvents.length > 1) {
         rows.push(...buildCollapsedToolGroupRows(baseKey, groupedEvents));
         skippedUntil = nextIndex;
         return;
       }
     }
-  
+
     switch (event.type) {
       case 'text':
         pushRichText(baseKey, event.content, 2, proseWidth);
@@ -3316,7 +3477,7 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
         pushSegmentsRow(`${baseKey}-fallback`, 2, [{ text: `[${event.type}]`, dimColor: true }]);
     }
   });
-  
+
   return rows;
 }
 

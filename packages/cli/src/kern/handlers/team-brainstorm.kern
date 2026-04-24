@@ -59,6 +59,9 @@ fn name=handleTeamBrainstorm params="question:string, dispatch:Dispatch, ctx:Han
           if (event.type === 'team:member-dispatch' && event.data) {
             dispatch({ type: 'spinner-update', message: `${String(event.data.engineId)} (${String(event.data.role)}) working...` });
           }
+          if (event.type === 'engine:failed' && event.data) {
+            dispatch({ type: 'warning', message: `${String(event.data.engineId ?? event.engineId)} failed during ${String(event.data.phase ?? 'team brainstorm')}` });
+          }
         },
       });
     } catch (err) {

@@ -5,9 +5,14 @@ import {
   displayColumnToStringIndex,
   estimateBottomChromeExtraRows,
   estimateQuestionReservedRows,
+  fileRailMaxRowsForTerminal,
+  fileRailWidthForTerminal,
   findLatestToolDetailEvent,
   historyBlocksForTranscript,
   maxScrollOffsetForRowCount,
+  nativeArchiveBlockCount,
+  nativeTranscriptBlocksForStatic,
+  normalizeTerminalMode,
   nextWheelAnimationStep,
   stringDisplayWidth,
   transcriptRowsToPlainText,
@@ -49,6 +54,54 @@ describe('app scroll helpers', () => {
 
     expect(historyBlocksForTranscript(dashboardOnly)).toEqual([]);
     expect(historyBlocksForTranscript(mixed).map((block: any) => block.event.type)).toEqual(['dashboard', 'user-message']);
+  });
+
+  it('keeps native Static history append-only by excluding the startup dashboard', () => {
+    const blocks = [
+      { id: 0, event: { type: 'dashboard', available: [], enabled: [], defaultEngine: 'claude', totalForges: 0, runCount: 0 } },
+      { id: 1, event: { type: 'separator' } },
+      { id: 2, event: { type: 'user-message', content: 'hello' } },
+    ] as any;
+
+    expect(nativeTranscriptBlocksForStatic(blocks).map((block: any) => block.event.type)).toEqual(['separator', 'user-message']);
+  });
+
+  it('archives old native transcript blocks while keeping the recent tail live', () => {
+    const blocks = Array.from({ length: 5 }, (_, index) => ({
+      id: index + 1,
+      event: { type: 'separator' },
+    })) as any;
+
+    expect(nativeArchiveBlockCount(blocks, 'chat', 2, false, true)).toBe(3);
+  });
+
+  it('archives a native block immediately when it cannot fit in the live row budget', () => {
+    const blocks = [
+      {
+        id: 1,
+        event: {
+          type: 'engine-block',
+          engineId: 'cesar',
+          color: 124,
+          content: Array.from({ length: 12 }, (_, index) => `line ${index + 1}`).join('\n'),
+        },
+      },
+    ] as any;
+
+    expect(nativeArchiveBlockCount(blocks, 'chat', 3, false, true)).toBe(1);
+  });
+
+  it('defaults unknown terminal mode values to native scrollback', () => {
+    expect(normalizeTerminalMode(undefined)).toBe('native');
+    expect(normalizeTerminalMode('native')).toBe('native');
+    expect(normalizeTerminalMode('fullscreen')).toBe('fullscreen');
+  });
+
+  it('keeps the file rail compact on wide native terminals', () => {
+    expect(fileRailWidthForTerminal(220, false)).toBe(42);
+    expect(fileRailWidthForTerminal(220, true)).toBeLessThanOrEqual(64);
+    expect(fileRailMaxRowsForTerminal(80, 'native', false)).toBe(10);
+    expect(fileRailMaxRowsForTerminal(80, 'native', true)).toBe(18);
   });
 
   it('renders the dashboard through transcript rows when it is the only visible block', () => {

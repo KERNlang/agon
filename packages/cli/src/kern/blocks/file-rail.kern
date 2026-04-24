@@ -109,8 +109,9 @@ screen name=FileRail target=ink memo=true
   prop name=focused type=boolean optional=true
   prop name=selectedIndex type=number optional=true
   prop name=expandedPath type="string|null" optional=true
-  render wrapper="<Box flexDirection=\"column\" flexShrink={0} width={w} paddingLeft={1} borderStyle=\"single\" borderColor={borderColor}>"
+  render wrapper="<Box flexDirection=\"column\" flexShrink={0} width={w} height={h} paddingLeft={1} borderStyle=\"single\" borderColor={borderColor} overflow=\"hidden\">"
     local name=w expr="width ?? 36"
+    local name=h expr="Math.max(4, maxRows + 2)"
     local name=sel expr="Math.max(0, Math.min(files.length - 1, selectedIndex ?? 0))"
     local name=expandedFile type="FileEntry | undefined" expr="expandedPath ? files.find((f: FileEntry) => f.path === expandedPath) : undefined"
     local name=borderColor expr="focused ? '#22d3ee' : 'gray'"

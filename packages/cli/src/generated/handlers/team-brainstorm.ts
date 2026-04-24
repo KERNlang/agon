@@ -65,6 +65,9 @@ export async function handleTeamBrainstorm(question: string, dispatch: Dispatch,
           if (event.type === 'team:member-dispatch' && event.data) {
             dispatch({ type: 'spinner-update', message: `${String(event.data.engineId)} (${String(event.data.role)}) working...` });
           }
+          if (event.type === 'engine:failed' && event.data) {
+            dispatch({ type: 'warning', message: `${String(event.data.engineId ?? event.engineId)} failed during ${String(event.data.phase ?? 'team brainstorm')}` });
+          }
         },
       });
     } catch (err) {

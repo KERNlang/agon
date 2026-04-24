@@ -1,7 +1,18 @@
 import { describe, it, expect } from 'vitest';
-import { parseReviewBlocking } from '../../packages/cli/src/generated/handlers/review.js';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { afterEach } from 'vitest';
+import { join } from 'node:path';
+import { parseReviewBlocking, selectReviewEngine } from '../../packages/cli/src/generated/handlers/review.js';
+import { cleanupTestAgonHome, setupTestAgonHome } from '../helpers/agon-home.js';
 
 const SENTINEL = '<!--AGON_REVIEW_FINDINGS_v1-->';
+
+let agonHome: string | undefined;
+
+afterEach(() => {
+  cleanupTestAgonHome(agonHome);
+  agonHome = undefined;
+});
 
 describe('parseReviewBlocking — sentinel-anchored, fail-closed (Tribunal #9 + Gemini b)', () => {
   describe('fail-closed (no sentinel = blocking)', () => {
@@ -134,5 +145,72 @@ describe('parseReviewBlocking — sentinel-anchored, fail-closed (Tribunal #9 + 
       expect(r.blocking).toBe(true);
       expect(r.parseFailed).toBe(true);
     });
+  });
+});
+
+describe('selectReviewEngine', () => {
+  const rating = (mu: number, phi = 50) => ({
+    mu,
+    phi,
+    sigma: 0.06,
+    wins: 5,
+    losses: 1,
+    lastActive: new Date().toISOString(),
+  });
+
+  function makeCtx(config: Record<string, unknown> = {}) {
+    return {
+      config,
+      activeEngines: () => ['claude', 'codex', 'gemini'],
+      registry: {
+        get: (id: string) => ({ id, review: { args: [] } }),
+      },
+    } as any;
+  }
+
+  function writeRatings() {
+    agonHome = setupTestAgonHome('review-engine-selection');
+    mkdirSync(agonHome, { recursive: true });
+    writeFileSync(join(agonHome, 'ratings.json'), JSON.stringify({
+      global: {
+        claude: rating(1500),
+        codex: rating(1600),
+        gemini: rating(1700),
+      },
+      byMode: { forge: {}, brainstorm: {}, tribunal: {} },
+      byTaskClass: {
+        bugfix: {
+          claude: rating(1500),
+          codex: rating(1600),
+          gemini: rating(1800),
+        },
+      },
+      engineMeta: {},
+      lastUpdated: new Date().toISOString(),
+    }));
+  }
+
+  it('does not inherit forgeFixedStarter for review auto-selection', () => {
+    writeRatings();
+
+    const engine = selectReviewEngine(undefined, makeCtx({ forgeFixedStarter: 'codex' }));
+
+    expect(engine).toBe('gemini');
+  });
+
+  it('honors explicit reviewDefaultEngine when configured', () => {
+    writeRatings();
+
+    const engine = selectReviewEngine(undefined, makeCtx({ forgeFixedStarter: 'codex', reviewDefaultEngine: 'claude' }));
+
+    expect(engine).toBe('claude');
+  });
+
+  it('honors a user-requested engine even when rankings differ', () => {
+    writeRatings();
+
+    const engine = selectReviewEngine('codex', makeCtx({ reviewDefaultEngine: 'claude' }));
+
+    expect(engine).toBe('codex');
   });
 });

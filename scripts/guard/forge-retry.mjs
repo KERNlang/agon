@@ -22,17 +22,23 @@ async function runWithRetry() {
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     const result = spawnSync(args[0], args.slice(1), {
       cwd: process.cwd(),
-      stdio: 'inherit',
+      stdio: ['inherit', 'inherit', 'pipe'],
       env: process.env,
     });
 
+    const stderr = result.stderr?.toString?.() ?? '';
     const isGitLockError =
-      result.stderr?.toString?.().includes?.('index.lock') ||
+      stderr.includes('index.lock') ||
       result.error?.message?.includes?.('index.lock') ||
       false;
 
     if (result.status === 0) {
       process.exit(0);
+    }
+
+    // Print captured stderr so user sees the actual error
+    if (stderr) {
+      process.stderr.write(stderr);
     }
 
     if (attempt < MAX_RETRIES && isGitLockError) {

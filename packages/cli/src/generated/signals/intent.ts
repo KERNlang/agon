@@ -134,6 +134,54 @@ function parseForgeInput(input: string): Intent {
   return { type: 'forge', task, fitnessCmd, hardened } as Intent;
 }
 
+function parseReviewInput(input: string): Intent {
+  const reviewParts = input.split(/\s+/).filter(Boolean);
+  let engineId: string | undefined;
+  let target: string | undefined;
+  const targetParts: string[] = [];
+  for (let i = 0; i < reviewParts.length; i += 1) {
+    const part = reviewParts[i];
+    if (part.toLowerCase() === 'with' && reviewParts[i + 1] && !engineId) {
+      engineId = reviewParts[i + 1].toLowerCase();
+      i += 1;
+      continue;
+    }
+    targetParts.push(part);
+  }
+  if (targetParts[0]) target = targetParts[0];
+  return { type: 'review', engineId, target } as Intent;
+}
+
+function parseReviewShortcut(input: string): Intent|null {
+  const match = input.match(/^(?:review|cr)(?:\s+([\s\S]+))?$/i);
+  if (!match) return null;
+
+  const rest = (match[1] ?? '').trim();
+  if (!rest) return parseReviewInput('');
+
+  const parts = rest.split(/\s+/).filter(Boolean);
+  let sawWith = false;
+  const targetParts: string[] = [];
+  for (let i = 0; i < parts.length; i += 1) {
+    const part = parts[i];
+    if (part.toLowerCase() === 'with' && parts[i + 1]) {
+      sawWith = true;
+      i += 1;
+      continue;
+    }
+    targetParts.push(part);
+  }
+
+  const target = targetParts[0]?.toLowerCase();
+  const hasExtraTargetText = targetParts.length > 1;
+  const validTarget = !target || target === 'uncommitted' || target.startsWith('branch:') || target.startsWith('commit:');
+  if (!hasExtraTargetText && (sawWith || validTarget)) return parseReviewInput(rest);
+
+  // Let natural-language review requests go through Cesar instead of
+  // mis-parsing "review this code" as an invalid target named "this".
+  return null;
+}
+
 function parseSlashCommand(input: string, commandRegistry?: any): Intent {
   const stripped = input.slice(1).trim();
   if (!stripped) return { type: 'slash-list' } as Intent;
@@ -351,16 +399,7 @@ function parseSlashCommand(input: string, commandRegistry?: any): Intent {
     }
     case 'review':
     case 'cr': {
-      const reviewParts = rest.split(/\s+/).filter(Boolean);
-      let engineId: string | undefined;
-      let target: string | undefined;
-      let i = 0;
-      if (reviewParts[i] === 'with' && reviewParts[i + 1]) {
-        engineId = reviewParts[i + 1].toLowerCase();
-        i += 2;
-      }
-      if (reviewParts[i]) target = reviewParts[i];
-      return { type: 'review', engineId, target } as Intent;
+      return parseReviewInput(rest);
     }
     case 'run':
     case 'exec':
@@ -426,6 +465,9 @@ export function detectIntent(raw: string, commandRegistry?: any): Intent {
 
   if (EXIT_KEYWORDS.test(input)) return { type: 'exit' } as Intent;
   if (HELP_KEYWORDS.test(input)) return { type: 'help' } as Intent;
+
+  const reviewShortcut = parseReviewShortcut(input);
+  if (reviewShortcut) return reviewShortcut;
 
   // Only match keyword shortcuts for short, command-like inputs.
   // Skip if input looks like a natural language sentence (question words, pronouns, >4 words).

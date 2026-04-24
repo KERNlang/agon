@@ -27,7 +27,14 @@ export function report() {
     return;
   }
   const lines = fs.readFileSync(DB_PATH, 'utf8').trim().split('\n').filter(Boolean);
-  const records = lines.map((l) => JSON.parse(l));
+  const records = [];
+  for (const [i, line] of lines.entries()) {
+    try {
+      records.push(JSON.parse(line));
+    } catch {
+      console.warn(`  Skipping malformed line ${i + 1}: ${line.slice(0, 60)}...`);
+    }
+  }
 
   const buckets = {};
   for (const r of records) {

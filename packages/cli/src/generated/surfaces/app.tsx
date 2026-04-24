@@ -3048,6 +3048,10 @@ export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any
   const accent = engineColor(events[0]?.engineId ?? '');
   const counts = new Map<string, number>();
   const previews: string[] = [];
+  const changedFiles: string[] = [];
+  const changeEvents: any[] = [];
+  let errors = 0;
+  let running = 0;
 
   const labelFor = (event: any) => {
     const toolKey = String(event.tool ?? '').toLowerCase();
@@ -3089,11 +3093,27 @@ export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any
     const label = labelFor(event);
     counts.set(label, (counts.get(label) ?? 0) + 1);
     if (previews.length < 3) previews.push(previewFor(event));
+    if (event.status === 'error') errors += 1;
+    if (event.status === 'running') running += 1;
+    if (isMutatingToolCall(event)) {
+      changeEvents.push(event);
+      const parsed = parseToolCallPayload(event).parsed;
+      const filePath = String((parsed.file_path as string) || (parsed.filePath as string) || '');
+      if (filePath) {
+        const shortPath = shortToolPath(filePath);
+        if (!changedFiles.includes(shortPath)) changedFiles.push(shortPath);
+      }
+    }
   }
 
   const countSummary = Array.from(counts.entries())
     .map(([label, count]) => `${label}${count > 1 ? `×${count}` : ''}`)
     .join(' · ');
+  const statusIcon = errors > 0 ? icons().fail : running > 0 ? '⟳' : icons().success;
+  const statusColor = errors > 0 ? '#ef4444' : running > 0 ? '#fbbf24' : '#4ade80';
+  const changedSummary = changedFiles.length > 0
+    ? ` · changed ${changedFiles.length} file${changedFiles.length > 1 ? 's' : ''}: ${changedFiles.slice(0, 2).join(', ')}${changedFiles.length > 2 ? ', …' : ''}`
+    : '';
 
   rows.push({
     key: `${baseKey}-tool-group-head`,
@@ -3101,9 +3121,12 @@ export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any
     paddingLeft: 2,
     segments: [
       { text: '⏿ ', color: accent },
+      { text: statusIcon, color: statusColor },
+      { text: ' ' },
       { text: `${events.length} tool calls`, bold: true },
       countSummary ? { text: ' · ', dimColor: true } : null,
       countSummary ? { text: countSummary, dimColor: true } : null,
+      changedSummary ? { text: changedSummary, color: '#a78bfa' } : null,
     ].filter(Boolean),
   });
 
@@ -3118,6 +3141,10 @@ export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any
       ])),
     });
   }
+
+  changeEvents.forEach((event: any, index: number) => {
+    rows.push(...buildToolCallRows(`${baseKey}-change-${index}`, event, false));
+  });
 
   return rows;
 }
@@ -3152,12 +3179,12 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
     const event = block.event as any;
     const baseKey = `block-${block.id}`;
 
-    if (!toolOutputExpanded && event.type === 'tool-call' && !isMutatingToolCall(event)) {
+    if (!toolOutputExpanded && event.type === 'tool-call') {
       const groupedEvents = [event];
       let nextIndex = blockIndex + 1;
       while (nextIndex < blocks.length) {
         const nextEvent = blocks[nextIndex].event as any;
-        if (nextEvent.type !== 'tool-call' || isMutatingToolCall(nextEvent)) break;
+        if (nextEvent.type !== 'tool-call') break;
         groupedEvents.push(nextEvent);
         nextIndex += 1;
       }
@@ -3381,44 +3408,31 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
           });
           return;
         }
-        const counts: Record<string, number> = {};
-        let errors = 0;
-        let running = 0;
-        let firstEngineId = '';
-        const changedFiles: string[] = [];
-        groupBlocks.forEach((child: any) => {
-          const ev = child?.event;
-          if (!ev || ev.type !== 'tool-call') return;
-          const tool = String(ev.tool || 'tool');
-          counts[tool] = (counts[tool] || 0) + 1;
-          if (ev.status === 'error') errors += 1;
-          if (ev.status === 'running') running += 1;
-          if (!firstEngineId && ev.engineId) firstEngineId = String(ev.engineId);
-          const tk = tool.toLowerCase();
-          if ((tk === 'edit' || tk === 'write') && typeof ev.input === 'string' && ev.input.trim().startsWith('{')) {
-            try {
-              const parsed = JSON.parse(ev.input);
-              const filePath = (parsed.file_path as string) || (parsed.filePath as string) || '';
-              if (filePath) {
-                const shortPath = filePath.replace(process.cwd() + '/', '').replace(process.env.HOME ?? '', '~');
-                if (!changedFiles.includes(shortPath)) changedFiles.push(shortPath);
-              }
-            } catch { /* ignore malformed tool input */ }
+        const groupedEvents: any[] = [];
+        const appendGroup = (blocksToAppend: any[]) => {
+          blocksToAppend.forEach((child: any) => {
+            const childEvent = child?.event;
+            if (childEvent && childEvent.type === 'tool-call') groupedEvents.push(childEvent);
+          });
+        };
+        appendGroup(groupBlocks);
+        let nextIndex = blockIndex + 1;
+        while (nextIndex < blocks.length) {
+          const nextEvent = blocks[nextIndex].event as any;
+          if (nextEvent?.type === 'tool-call-group') {
+            appendGroup(Array.isArray(nextEvent.blocks) ? nextEvent.blocks : []);
+            nextIndex += 1;
+            continue;
           }
-        });
-        const summary = Object.entries(counts).map(([t, n]) => n > 1 ? `${t}\u00d7${n}` : t).join(', ');
-        const statusIcon = errors > 0 ? icons().fail : running > 0 ? '\u27f3' : icons().success;
-        const statusColor = errors > 0 ? '#ef4444' : running > 0 ? '#fbbf24' : '#4ade80';
-        const changedSummary = changedFiles.length > 0
-          ? ` \u00b7 changed ${changedFiles.length} file${changedFiles.length > 1 ? 's' : ''}: ${changedFiles.slice(0, 2).join(', ')}${changedFiles.length > 2 ? ', \u2026' : ''}`
-          : '';
-        pushSegmentsRow(`${baseKey}-group`, 2, [
-          { text: ' \u23bf ', color: engineColor(firstEngineId) },
-          { text: statusIcon, color: statusColor },
-          { text: ` ${groupBlocks.length} tool calls`, bold: true },
-          summary ? { text: ` (${summary})`, dimColor: true } : null,
-          changedSummary ? { text: changedSummary, color: '#a78bfa' } : null,
-        ].filter(Boolean));
+          if (nextEvent?.type === 'tool-call') {
+            groupedEvents.push(nextEvent);
+            nextIndex += 1;
+            continue;
+          }
+          break;
+        }
+        rows.push(...buildCollapsedToolGroupRows(baseKey, groupedEvents));
+        skippedUntil = nextIndex;
         return;
       }
       case 'response-meta': {

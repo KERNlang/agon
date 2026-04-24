@@ -34,6 +34,9 @@ vi.mock('@agon/core', async () => ({
   snapshotWorkspace: vi.fn(() => ({ id: 'cwd', path: '/repo', headSha: 'abc', branch: 'main', dirty: false })),
   resolveWorkingDir: vi.fn(() => '/repo'),
   loadOrCreateActiveThread: vi.fn(() => ({ append: vi.fn(), save: vi.fn() })),
+  formatChatHistoryForPrompt: vi.fn(() => ''),
+  formatChatContextForPrompt: vi.fn(() => ''),
+  updateChatSummary: vi.fn(() => false),
 }));
 
 vi.mock('../../packages/cli/src/generated/cesar/brain.js', () => ({

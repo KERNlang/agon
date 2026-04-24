@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 
 import type { PersistentSession, PersistentSessionConfig } from '@agon/core';
 
-import { EngineRegistry, loadConfig, ensureAgonHome, getAgonHome, resolveWorkingDir, scanProjectContext, createPersistentSession, ToolRegistry, FileStateCache, buildToolSystemPrompt, toolsToOpenAIFormat, executeToolCall, RUNS_DIR, tracker, discoverMcpServers, mcpDiscoveryFingerprint, mcpServersToWireFormat, listCesarPlans, saveConversation, formatChatHistoryForPrompt } from '@agon/core';
+import { EngineRegistry, loadConfig, ensureAgonHome, getAgonHome, resolveWorkingDir, scanProjectContext, createPersistentSession, ToolRegistry, FileStateCache, buildToolSystemPrompt, toolsToOpenAIFormat, executeToolCall, RUNS_DIR, tracker, discoverMcpServers, mcpDiscoveryFingerprint, mcpServersToWireFormat, listCesarPlans, saveConversation, formatChatContextForPrompt } from '@agon/core';
 
 import type { ToolContext, ToolCallResult } from '@agon/core';
 
@@ -285,12 +285,13 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
       // of the CURRENT conversation as fits in a reasonable prompt budget instead of
       // a tiny fixed window, but do not resurrect prior cleared sessions.
       if (ctx.chatSession && ctx.chatSession.messages && ctx.chatSession.messages.length > 0) {
-        const history = formatChatHistoryForPrompt(ctx.chatSession.messages, {
+        const context = formatChatContextForPrompt(ctx.chatSession, {
           maxMessages: 24,
           maxChars: 8_000,
           maxMessageChars: 600,
+          maxSummaryChars: 5_000,
         });
-        if (history) systemParts.push(`HISTORY:\n${history}`);
+        if (context) systemParts.push(`CHAT CONTEXT:\n${context}`);
       }
 
       return systemParts.join('\n\n');

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { mkdirSync, readFileSync, existsSync } from 'node:fs';
 
-import { ensureAgonHome, RUNS_DIR, appendMessage, tracker, StreamParser, scanProjectContext, resolveWorkingDir, createPlan, approvePlan, startPlan, mergeStepResult, cancelPlan, failPlan, savePlan, getActiveWorkspace, snapshotWorkspace, formatChatHistoryForPrompt } from '@agon/core';
+import { ensureAgonHome, RUNS_DIR, appendMessage, tracker, StreamParser, scanProjectContext, resolveWorkingDir, createPlan, approvePlan, startPlan, mergeStepResult, cancelPlan, failPlan, savePlan, getActiveWorkspace, snapshotWorkspace, formatChatContextForPrompt } from '@agon/core';
 
 import type { Plan, PlanStepInput, ApprovalLevel } from '@agon/core';
 
@@ -72,10 +72,11 @@ export async function handleBuild(input: string, dispatch: Dispatch, ctx: Handle
     const projectCtx = scanProjectContext(cwd, config.projectContext || undefined, config.contextFormat as 'plain' | 'kern');
     const enriched = injectFileReferences(message, cwd);
 
-    const sessionHistory = formatChatHistoryForPrompt(ctx.chatSession.messages, {
+    const sessionHistory = formatChatContextForPrompt(ctx.chatSession, {
       maxMessages: 10,
       maxChars: 6_000,
       maxMessageChars: 700,
+      maxSummaryChars: 3_000,
     });
 
     const parts: string[] = [];

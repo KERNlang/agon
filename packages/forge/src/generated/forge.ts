@@ -6,7 +6,7 @@ import { mkdirSync } from 'node:fs';
 
 import type { ForgeOptions, ForgeManifest, EngineAdapter, ForgeEvent, AgonConfig, DispatchMetric } from '@agon/core';
 
-import { EngineRegistry, loadConfig, buildForgePrompt, repoRoot, headSha, worktreeRemoveBestEffort, updateGlickoRanked, classifyTask, createSidechainLogger, assignForgeRoles, buildSpecializedPrompt, recordForgeOutcome, tracker } from '@agon/core';
+import { EngineRegistry, loadConfig, buildForgePrompt, repoRoot, stashSnapshot, worktreeRemoveBestEffort, updateGlickoRanked, classifyTask, createSidechainLogger, assignForgeRoles, buildSpecializedPrompt, recordForgeOutcome, tracker } from '@agon/core';
 
 import { runBaseline, runStage1, runStage2, runStage2WithPeek } from './stages.js';
 
@@ -23,7 +23,12 @@ import { writeManifest } from './manifest.js';
 import type { WorktreeEntry } from '../types.js';
 
 export async function runForge(options: ForgeOptions, registry: EngineRegistry, adapter: EngineAdapter, onEvent?: (event:ForgeEvent)=>void): Promise<ForgeManifest> {
-  const config = loadConfig(options.cwd);
+  const loadedConfig = loadConfig(options.cwd);
+  const config = {
+    ...loadedConfig,
+    forgeTimeout: options.timeout ?? loadedConfig.forgeTimeout,
+    forgeFitnessTimeout: options.fitnessTimeout ?? loadedConfig.forgeFitnessTimeout,
+  } as Required<AgonConfig>;
   const forgeId = randomUUID();
   const forgeDir = options.forgeDir;
   const worktrees: WorktreeEntry[] = [];
@@ -39,7 +44,7 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
   sidechain.log('forge:init', undefined, { task: options.task, fitnessCmd: options.fitnessCmd });
   
   const root = repoRoot(options.cwd);
-  const sha = headSha(options.cwd);
+  const sha = stashSnapshot(options.cwd);
   
   const enabledEngines = options.engines ?? config.forgeEnabledEngines;
   const available = enabledEngines.filter((id: string) => {
@@ -56,7 +61,7 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
   });
   
   if (available.length === 0) {
-    throw new Error(`No CLI-capable engines available for forge. API-only engines cannot participate. Enabled: ${enabledEngines.join(', ')}`);
+    throw new Error(`No available engines for forge. Install/configure at least one CLI or API engine. Enabled: ${enabledEngines.join(', ')}`);
   }
   
   const starter = options.starter
@@ -124,6 +129,7 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
     if (config.forgeRequireBaselineCheck) {
       manifest.baselinePasses = await runBaseline({
         cwd: options.cwd,
+        baseSha: sha,
         fitnessCmd: options.fitnessCmd,
         fitnessTimeout: config.forgeFitnessTimeout,
         forgeDir,
@@ -139,6 +145,7 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
       registry,
       adapter,
       cwd: options.cwd,
+      baseSha: sha,
       forgeDir,
       worktrees,
       onEvent,
@@ -179,6 +186,7 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
         registry,
         adapter,
         cwd: options.cwd,
+        baseSha: sha,
         forgeDir,
         existingResults: stage1.engineResults,
         worktrees,
@@ -302,6 +310,7 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
             maxBreakers: config.gauntletMaxBreakers,
             repairTimeout: config.gauntletRepairTimeout,
             cwd: options.cwd,
+            baseSha: sha,
             onEvent,
             signal: options.signal,
           });

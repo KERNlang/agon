@@ -857,6 +857,67 @@ fn name=historyBlocksForTranscript params="blocks:OutputBlock[]" returns="Output
     return blocks;
   >>>
 
+fn name=nativeTranscriptBlocksForStatic params="blocks:OutputBlock[]" returns="OutputBlock[]" export=true
+  doc "Native transcript history. The startup dashboard is live chrome, not transcript history, so it must not consume Static's append index."
+  handler <<<
+    return blocks.filter((block: any) => block?.event?.type !== 'dashboard');
+  >>>
+
+fn name=nativeArchiveBlockCount params="blocks:OutputBlock[], mode:string, rowBudget:number, toolOutputExpanded:boolean, thinkingExpanded:boolean" returns=number export=true
+  doc "Choose how many native transcript blocks are sealed into Static. The remaining tail stays live so recent rows can rerender for Ctrl+E/Ctrl+T while older rows remain in terminal scrollback."
+  handler <<<
+    if (!Array.isArray(blocks) || blocks.length === 0) return 0;
+
+    const safeBudget = Math.max(1, Math.floor(Number(rowBudget) || 1));
+    const maxLiveBlocks = 80;
+    let rows = 0;
+    let liveStart = blocks.length;
+
+    for (let index = blocks.length - 1; index >= 0; index -= 1) {
+      const block = blocks[index];
+      const event = block?.event as OutputEvent;
+      const estimatedRows = Math.max(1, estimateOutputEventRows(event, mode, toolOutputExpanded, thinkingExpanded));
+      const liveCountWithBlock = blocks.length - index;
+
+      if (estimatedRows > safeBudget && rows === 0) {
+        liveStart = index + 1;
+        break;
+      }
+
+      if (rows > 0 && (rows + estimatedRows > safeBudget || liveCountWithBlock > maxLiveBlocks)) {
+        break;
+      }
+
+      rows += estimatedRows;
+      liveStart = index;
+    }
+
+    return Math.max(0, Math.min(blocks.length, liveStart));
+  >>>
+
+fn name=normalizeTerminalMode params="value:any" returns="'native'|'fullscreen'" export=true
+  handler <<<
+    return value === 'fullscreen' ? 'fullscreen' : 'native';
+  >>>
+
+fn name=fileRailWidthForTerminal params="termWidth:number, expanded:boolean" returns=number export=true
+  handler <<<
+    const safeWidth = Math.max(40, Math.floor(Number(termWidth) || 100));
+    if (expanded) return Math.max(36, Math.min(64, Math.floor(safeWidth * 0.3)));
+    return Math.max(28, Math.min(42, Math.floor(safeWidth * 0.22)));
+  >>>
+
+fn name=fileRailMaxRowsForTerminal params="termHeight:number, terminalMode:string, expanded:boolean" returns=number export=true
+  handler <<<
+    const safeHeight = Math.max(8, Math.floor(Number(termHeight) || 24));
+    if (terminalMode === 'native') {
+      if (expanded) return Math.max(8, Math.min(18, safeHeight - 8));
+      return Math.max(5, Math.min(10, safeHeight - 10));
+    }
+    if (expanded) return Math.max(12, safeHeight - 6);
+    return Math.max(6, Math.min(12, 10));
+  >>>
+
 fn name=parseMarkdownToRows params="baseKey:string, text:string, wrapWidth:number, paddingLeft:number, borderColor:string" returns="any[]"
   handler <<<
     const rows: any[] = [];
@@ -1868,6 +1929,7 @@ screen name=App target=ink
   ref name=mouseSelectionRef type="{ anchorRow: number | null; anchorCol: number | null; focusRow: number | null; focusCol: number | null; active: boolean; moved: boolean }" initial="{ anchorRow: null, anchorCol: null, focusRow: null, focusCol: null, active: false, moved: false }"
   ref name=lastTerminalInputAtRef type=number initial="Date.now()"
   ref name=scrollBoxRef type="any" initial="null"
+  ref name=nativeTranscriptBlockCountRef type=number initial=0
   // engines dir is at packages/cli/engines from the bundled dist/index.js
   // (3 `..` up from dist/). For source-mode execution the path points into
   // src/, which doesn't exist — EngineRegistry.resolveBuiltinDir walks up
@@ -1884,6 +1946,8 @@ screen name=App target=ink
   state name=termWidth type=number initial="process.stdout.columns || 100" throttle=100
   state name=termHeight type=number initial="process.stdout.rows || 24" throttle=100
   state name=selectionMode type=boolean initial="false"
+  state name=nativeStaticEpoch type=number initial=0
+  state name=nativeArchiveCount type=number initial=0
   state name=fileRailOpen type=boolean initial="false"
   state name=fileRailVersion type=number initial="0"
   state name=fileRailSelectedIdx type=number initial="0"
@@ -1926,6 +1990,16 @@ screen name=App target=ink
   memo name=config deps="configVersion"
     handler <<<
       return loadConfig();
+    >>>
+
+  memo name=terminalMode deps="config"
+    handler <<<
+      return normalizeTerminalMode((config as any).terminalMode);
+    >>>
+
+  memo name=nativeTranscriptBlocks deps="outputBlocks"
+    handler <<<
+      return nativeTranscriptBlocksForStatic(outputBlocks);
     >>>
 
   memo name=statusCwd deps="workspacePath"
@@ -2030,6 +2104,27 @@ screen name=App target=ink
       return estimateVisibleBlockBudget(viewportRows, mode, overlayReservedRows + bottomChromeReservedRows);
     >>>
 
+  memo name=nativeArchiveTarget deps="nativeTranscriptBlocks,mode,currentVisibleRowBudget,toolOutputExpanded,thinkingExpanded"
+    handler <<<
+      return nativeArchiveBlockCount(nativeTranscriptBlocks, mode, currentVisibleRowBudget, toolOutputExpanded, thinkingExpanded);
+    >>>
+
+  memo name=effectiveNativeArchiveCount deps="nativeArchiveCount,nativeArchiveTarget,nativeTranscriptBlocks"
+    handler <<<
+      const baseArchiveCount = nativeTranscriptBlocks.length < nativeTranscriptBlockCountRef.current ? 0 : nativeArchiveCount;
+      return Math.max(0, Math.min(nativeTranscriptBlocks.length, Math.max(baseArchiveCount, nativeArchiveTarget)));
+    >>>
+
+  memo name=nativeArchiveBlocks deps="nativeTranscriptBlocks,effectiveNativeArchiveCount"
+    handler <<<
+      return nativeTranscriptBlocks.slice(0, effectiveNativeArchiveCount);
+    >>>
+
+  memo name=nativeLiveBlocks deps="nativeTranscriptBlocks,effectiveNativeArchiveCount"
+    handler <<<
+      return nativeTranscriptBlocks.slice(effectiveNativeArchiveCount);
+    >>>
+
   // Per-block row cache: only re-parse blocks whose content changed.
   // Key = block.id + stable hash of event JSON; value = parsed rows.
   ref name=blockRowCacheRef type="Map<string, any[]>" initial="new Map()"
@@ -2058,6 +2153,16 @@ screen name=App target=ink
       const validKeys = new Set(displayBlocks.map((b: any) => `${b.id}::${JSON.stringify(b.event)}::${mode}::${toolOutputExpanded}::${thinkingExpanded}`));
       for (const key of Array.from(cache.keys())) {
         if (!validKeys.has(key)) cache.delete(key);
+      }
+      return rows;
+    >>>
+
+  memo name=nativeLiveRows deps="nativeLiveBlocks,mode,toolOutputExpanded,thinkingExpanded"
+    handler <<<
+      const rows: any[] = [];
+      for (const block of nativeLiveBlocks) {
+        const blockRows = buildTranscriptRows([block], mode, toolOutputExpanded, thinkingExpanded);
+        rows.push(...blockRows.map((row: any) => ({ ...row, key: `native-live-${block.id}-${row.key}` })));
       }
       return rows;
     >>>
@@ -2118,6 +2223,29 @@ screen name=App target=ink
   effect deps="mouseSelection"
     handler <<<
       mouseSelectionRef.current = mouseSelection;
+    >>>
+
+  effect deps="terminalMode,nativeTranscriptBlocks"
+    handler <<<
+      const nextCount = nativeTranscriptBlocks.length;
+      if (terminalMode !== 'native') {
+        nativeTranscriptBlockCountRef.current = nextCount;
+        return;
+      }
+      const previousCount = nativeTranscriptBlockCountRef.current;
+      if (nextCount < previousCount) {
+        setNativeStaticEpoch((epoch: number) => epoch + 1);
+        setNativeArchiveCount(0);
+      }
+      nativeTranscriptBlockCountRef.current = nextCount;
+    >>>
+
+  effect deps="terminalMode,effectiveNativeArchiveCount,nativeArchiveCount"
+    handler <<<
+      if (terminalMode !== 'native') return;
+      if (effectiveNativeArchiveCount !== nativeArchiveCount) {
+        setNativeArchiveCount(effectiveNativeArchiveCount);
+      }
     >>>
 
   effect deps="lastReviewResult"
@@ -2399,9 +2527,8 @@ screen name=App target=ink
   effect deps=""
     handler <<<
       if (!process.stdin.isTTY || !process.stdout.isTTY) return;
-      // Bracketed paste only. Mouse tracking is handled by <AlternateScreen
-      // mouseTracking={!selectionMode}> — toggling selectionMode re-acquires
-      // the alt-screen with mouse enable/disable via the runtime's deps.
+      // Bracketed paste only. Fullscreen mode handles mouse tracking through
+      // <AlternateScreen mouseTracking={!selectionMode}>.
       process.stdout.write('\x1b[?2004h');
       const onResume = () => {
         process.stdout.write('\x1b[?2004h');
@@ -2782,8 +2909,12 @@ screen name=App target=ink
       }
     >>>
 
-  callback name=toggleSelectionMode params="" deps="selectionMode,dispatch"
+  callback name=toggleSelectionMode params="" deps="selectionMode,dispatch,terminalMode"
     handler <<<
+      if (terminalMode !== 'fullscreen') {
+        dispatch({ type: 'info', message: 'Native scrollback is active — select and copy directly in your terminal. Ctrl+Y still copies the transcript.' } as any);
+        return;
+      }
       const next = !selectionMode;
       setSelectionMode(next);
       dispatch({
@@ -2907,12 +3038,12 @@ screen name=App target=ink
     >>>
 
   // ── Keyboard handling — pure decision tree + thin dispatcher ──
-  callback name=handleKeyboardInput params="input:string,key:any" deps="modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,activePlan,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,copyCurrentTranscript,toggleSelectionMode,startupOnly"
+  callback name=handleKeyboardInput params="input:string,key:any" deps="modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,activePlan,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,copyCurrentTranscript,toggleSelectionMode,startupOnly,terminalMode"
     handler <<<
       if (isTerminalFocusReport(input)) return;
 
-      // ScrollBox keyboard shortcuts (only when no modal is open)
-      if (!modelPickerOpen && !cesarPickerOpen && !enginePickerOpen && !reviewEvent && !toolDetailEvent && !slashPickerOpen && !questionState) {
+      // ScrollBox keyboard shortcuts (only when fullscreen owns the viewport and no modal is open).
+      if (terminalMode === 'fullscreen' && !modelPickerOpen && !cesarPickerOpen && !enginePickerOpen && !reviewEvent && !toolDetailEvent && !slashPickerOpen && !questionState) {
         if (key.shift && key.name === 'pageup') {
           scrollBoxRef.current?.scrollBy(-Math.max(1, Math.floor(currentVisibleRowBudget / 2)));
           return;
@@ -3060,6 +3191,8 @@ screen name=App target=ink
       useStableInput(handleKeyboardInput);
       const showFileRail = fileRailOpen;
       const fileRailFiles = useMemo(() => listFiles(), [fileRailVersion]);
+      const fileRailWidth = fileRailWidthForTerminal(termWidth, !!fileRailExpandedPath);
+      const fileRailMaxRows = fileRailMaxRowsForTerminal(termHeight, terminalMode, !!fileRailExpandedPath);
       // Stable element array — without useMemo, every keystroke rebuilds N
       // React elements even though `displayRows` only changes on stream/mode.
       // ScrollBox also does React.Children.toArray on children; a stable ref
@@ -3068,20 +3201,27 @@ screen name=App target=ink
         () => displayRows.map((row: any) => <TranscriptRowView key={row.key} row={row} />),
         [displayRows],
       );
-      return (
-      <AlternateScreen mouseTracking={!selectionMode}>
-      <Box flexDirection="column" flexGrow={1} width={termWidth} height={termHeight}>
-      <Box flexDirection="row" flexGrow={1} width="100%">
-      <Box flexDirection="column" flexGrow={1} minWidth={0}>
-      <ScrollBox ref={scrollBoxRef} stickyScroll flexGrow={1}>
-        {transcriptElements}
-      </ScrollBox>
+      const nativeLiveTranscriptElements = useMemo(
+        () => nativeLiveRows.map((row: any) => <TranscriptRowView key={row.key} row={row} />),
+        [nativeLiveRows],
+      );
+      const lowerPanel = (
       <Box flexDirection="column" flexShrink={0}>
         <ChromeBar mode={mode} cwdLabel={resolveWorkingDir().split('/').pop() ?? ''} engineCount={availableEngines.length} replState={replState} runningJobs={runningJobs} />
         <BackgroundJobRail jobs={runningJobs} />
-        {startupUseDashboardView && displayRows.length === 0 && (
+        {startupUseDashboardView && (displayRows.length === 0 || terminalMode === 'native') && (
           <Box flexDirection="column">
             <DashboardView event={outputBlocks[0]?.event as any} />
+          </Box>
+        )}
+        {terminalMode === 'native' && startupOnly && !startupUseDashboardView && (
+          <Box flexDirection="column">
+            {transcriptElements}
+          </Box>
+        )}
+        {terminalMode === 'native' && !startupOnly && nativeLiveTranscriptElements.length > 0 && (
+          <Box flexDirection="column">
+            {nativeLiveTranscriptElements}
           </Box>
         )}
         {livePaneVisible && (
@@ -3247,15 +3387,44 @@ screen name=App target=ink
               const _cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
               return (<>
                 <CesarStatusStrip cesarId={_cesarId} confidence={cesarConfidence} spinner={liveSpinner} engines={liveProgress} startTime={chatStartTimeRef.current || 0} streamSnippet={streamSnippet} isActive={replState !== 'idle' || runningJobs.length > 0} planModeQueued={planModeQueued} activePlanState={activePlan?.state ?? null} />
-                {mode === 'chat' && <StatusBar cesarId={statusStats.cesarId} chatMessageCount={statusStats.chatMessageCount} totalTokens={statusStats.totalTokens} totalCostUsd={statusStats.totalCostUsd} cwd={statusCwd} branch={statusBranch} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} thinkingExpanded={thinkingExpanded} isActive={replState !== 'idle'} fullscreenEnabled={false} selectionMode={selectionMode} />}
+                {mode === 'chat' && <StatusBar cesarId={statusStats.cesarId} chatMessageCount={statusStats.chatMessageCount} totalTokens={statusStats.totalTokens} totalCostUsd={statusStats.totalCostUsd} cwd={statusCwd} branch={statusBranch} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} thinkingExpanded={thinkingExpanded} isActive={replState !== 'idle'} fullscreenEnabled={terminalMode === 'fullscreen'} selectionMode={terminalMode === 'fullscreen' ? selectionMode : undefined} />}
               </>);
             })()}
           </Box>
         )}
       </Box>
+      );
+
+      if (terminalMode === 'native') return (
+      <>
+        <Static key={`native-static-${nativeStaticEpoch}`} items={nativeArchiveBlocks}>
+          {(block: any) => (
+            <OutputBlockView key={block.id} event={block.event} mode={mode} toolOutputExpanded={toolOutputExpanded} thinkingExpanded={thinkingExpanded} />
+          )}
+        </Static>
+        <Box flexDirection="row" width={termWidth}>
+          <Box flexDirection="column" flexGrow={1} minWidth={0} overflowX="hidden">
+            {lowerPanel}
+          </Box>
+          {showFileRail && (
+            <FileRail files={fileRailFiles} maxRows={fileRailMaxRows} width={fileRailWidth} focused={fileRailOpen && inputValue.trim().length === 0} selectedIndex={fileRailSelectedIdx} expandedPath={fileRailExpandedPath} />
+          )}
+        </Box>
+      </>
+      );
+
+      return (
+      <AlternateScreen mouseTracking={!selectionMode}>
+      <Box flexDirection="column" flexGrow={1} width={termWidth} height={termHeight}>
+      <Box flexDirection="row" flexGrow={1} width="100%">
+      <Box flexDirection="column" flexGrow={1} minWidth={0} overflowX="hidden">
+      <ScrollBox ref={scrollBoxRef} stickyScroll flexGrow={1}>
+        {transcriptElements}
+      </ScrollBox>
+      {lowerPanel}
       </Box>
       {showFileRail && (
-        <FileRail files={fileRailFiles} maxRows={fileRailExpandedPath ? Math.max(20, termHeight - 6) : Math.max(6, Math.min(12, 10))} width={Math.max(32, Math.floor(termWidth / 3))} focused={fileRailOpen && inputValue.trim().length === 0} selectedIndex={fileRailSelectedIdx} expandedPath={fileRailExpandedPath} />
+        <FileRail files={fileRailFiles} maxRows={fileRailMaxRows} width={fileRailWidth} focused={fileRailOpen && inputValue.trim().length === 0} selectedIndex={fileRailSelectedIdx} expandedPath={fileRailExpandedPath} />
       )}
       </Box>
       </Box>

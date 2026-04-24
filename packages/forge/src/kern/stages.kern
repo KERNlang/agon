@@ -1,18 +1,37 @@
 import from="node:path" names="join"
 import from="@agon/core" names="EngineAdapter,EngineResult,ForgeOptions,AgonConfig,DispatchMetric,StageContext" types=true
-import from="@agon/core" names="EngineRegistry,worktreeCreate,worktreeRemoveBestEffort,headSha,repoRoot,worktreeDiff,estimateTokens,estimateCost,buildStageContext,renderStageContext"
+import from="@agon/core" names="EngineRegistry,worktreeCreate,worktreeRemoveBestEffort,repoRoot,worktreeDiff,estimateTokens,estimateCost,buildStageContext,renderStageContext"
 import from="./fitness.js" names="runFitness"
 import from="../types.js" names="StageResult,ForgeEventCallback,WorktreeEntry" types=true
 
-fn name=runBaseline async=true params="opts:{cwd:string, fitnessCmd:string, fitnessTimeout:number, forgeDir:string, onEvent?:ForgeEventCallback}" returns="Promise<boolean>"
+fn name=formatDispatchError params="err:unknown" returns=string export=false
+  handler <<<
+    return err instanceof Error ? err.message : String(err);
+  >>>
+
+fn name=makeFailedResult params="engineId:string,error:string,durationMs?:number" returns=EngineResult export=false
+  handler <<<
+    return {
+      engineId,
+      pass: false,
+      score: 0,
+      diffLines: 0,
+      filesChanged: 0,
+      durationSec: Math.max(0, Math.round((durationMs ?? 0) / 1000)),
+      lintWarnings: 0,
+      styleScore: 0,
+      dispatchStdout: `ERROR: ${error}`,
+    };
+  >>>
+
+fn name=runBaseline async=true params="opts:{cwd:string, baseSha:string, fitnessCmd:string, fitnessTimeout:number, forgeDir:string, onEvent?:ForgeEventCallback}" returns="Promise<boolean>"
   handler <<<
     opts.onEvent?.({ type: 'baseline:start' });
 
     const root = repoRoot(opts.cwd);
-    const sha = headSha(opts.cwd);
     const baselineWt = join(opts.forgeDir, 'baseline-worktree');
 
-    worktreeCreate(root, baselineWt, sha);
+    worktreeCreate(root, baselineWt, opts.baseSha);
     try {
       const result = await runFitness({
         engineId: 'baseline',
@@ -29,42 +48,64 @@ fn name=runBaseline async=true params="opts:{cwd:string, fitnessCmd:string, fitn
     }
   >>>
 
-fn name=runStage1 async=true params="opts:{starter:string, forgePrompt:string, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, forgeDir:string, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal}" returns="Promise<StageResult>"
+fn name=runStage1 async=true params="opts:{starter:string, forgePrompt:string, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal}" returns="Promise<StageResult>"
   handler <<<
     opts.onEvent?.({ type: 'stage1:start', engineId: opts.starter });
 
     const root = repoRoot(opts.cwd);
-    const sha = headSha(opts.cwd);
     const engine = opts.registry.get(opts.starter);
 
     const wtPath = join(opts.forgeDir, `wt-${opts.starter}`);
-    worktreeCreate(root, wtPath, sha);
-    opts.worktrees.push({ engineId: opts.starter, path: wtPath, repoRoot: root });
 
-    opts.onEvent?.({ type: 'stage1:dispatch', engineId: opts.starter });
     const dispatchStart = Date.now();
-    const useAgent = !!engine.agent && !!opts.adapter.dispatchAgent;
     let dispatchResult: any;
-    if (useAgent) {
-      dispatchResult = await opts.adapter.dispatchAgent!({
-        engine,
-        prompt: opts.forgePrompt,
-        cwd: wtPath,
-        mode: 'agent',
-        timeout: engine.timeout,
-        outputDir: opts.forgeDir,
-        signal: opts.signal,
-      });
-    } else {
-      dispatchResult = await opts.adapter.dispatch({
-        engine,
-        prompt: opts.forgePrompt,
-        cwd: wtPath,
-        mode: 'exec',
-        timeout: engine.timeout,
-        outputDir: opts.forgeDir,
-        signal: opts.signal,
-      });
+    try {
+      worktreeCreate(root, wtPath, opts.baseSha);
+      opts.worktrees.push({ engineId: opts.starter, path: wtPath, repoRoot: root });
+
+      opts.onEvent?.({ type: 'stage1:dispatch', engineId: opts.starter });
+      const useAgent = !!engine.agent && !!opts.adapter.dispatchAgent;
+      if (useAgent) {
+        dispatchResult = await opts.adapter.dispatchAgent!({
+          engine,
+          prompt: opts.forgePrompt,
+          cwd: wtPath,
+          mode: 'agent',
+          timeout: opts.config.forgeTimeout,
+          outputDir: opts.forgeDir,
+          signal: opts.signal,
+        });
+      } else {
+        dispatchResult = await opts.adapter.dispatch({
+          engine,
+          prompt: opts.forgePrompt,
+          cwd: wtPath,
+          mode: 'exec',
+          timeout: opts.config.forgeTimeout,
+          outputDir: opts.forgeDir,
+          signal: opts.signal,
+        });
+      }
+    } catch (err) {
+      const error = formatDispatchError(err);
+      const elapsed = Date.now() - dispatchStart;
+      console.warn(`[agon] forge stage1: engine ${opts.starter} failed: ${error}`);
+      opts.onEvent?.({ type: 'engine:failed' as any, engineId: opts.starter, data: { engineId: opts.starter, phase: 'stage1', error } });
+      const failed = makeFailedResult(opts.starter, error, elapsed);
+      const engineResults = new Map<string, EngineResult>();
+      engineResults.set(opts.starter, failed);
+      return {
+        engineResults,
+        accepted: false,
+        winner: null,
+        metrics: [{
+          engineId: opts.starter,
+          phase: 'stage1',
+          dispatchDurationMs: elapsed,
+          totalDurationMs: elapsed,
+          error,
+        }],
+      };
     }
     const dispatchDurationMs = Date.now() - dispatchStart;
 
@@ -117,12 +158,11 @@ fn name=runStage1 async=true params="opts:{starter:string, forgePrompt:string, f
     return { engineResults, accepted, winner: result.pass ? opts.starter : null, metrics: [metric] };
   >>>
 
-fn name=runStage2 async=true params="opts:{challengers:string[], forgePrompt:string, enginePrompts?:Map<string,string>, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal}" returns="Promise<StageResult>"
+fn name=runStage2 async=true params="opts:{challengers:string[], forgePrompt:string, enginePrompts?:Map<string,string>, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal}" returns="Promise<StageResult>"
   handler <<<
     opts.onEvent?.({ type: 'stage2:start' });
 
     const root = repoRoot(opts.cwd);
-    const sha = headSha(opts.cwd);
 
     const metrics: DispatchMetric[] = [];
 
@@ -130,7 +170,7 @@ fn name=runStage2 async=true params="opts:{challengers:string[], forgePrompt:str
       const engine = opts.registry.get(engineId);
       const wtPath = join(opts.forgeDir, `wt-${engineId}`);
 
-      worktreeCreate(root, wtPath, sha);
+      worktreeCreate(root, wtPath, opts.baseSha);
       opts.worktrees.push({ engineId, path: wtPath, repoRoot: root });
 
       opts.onEvent?.({ type: 'stage2:dispatch', engineId });
@@ -147,7 +187,7 @@ fn name=runStage2 async=true params="opts:{challengers:string[], forgePrompt:str
           prompt,
           cwd: wtPath,
           mode: 'agent',
-          timeout: engine.timeout,
+          timeout: opts.config.forgeTimeout,
           outputDir: opts.forgeDir,
           signal: opts.signal,
         });
@@ -157,7 +197,7 @@ fn name=runStage2 async=true params="opts:{challengers:string[], forgePrompt:str
           prompt,
           cwd: wtPath,
           mode: 'review',
-          timeout: engine.timeout,
+          timeout: opts.config.forgeTimeout,
           outputDir: opts.forgeDir,
           signal: opts.signal,
         });
@@ -208,13 +248,16 @@ fn name=runStage2 async=true params="opts:{challengers:string[], forgePrompt:str
         allResults.set(outcome.value.engineId, outcome.value);
       } else {
         const failedId = opts.challengers[i];
-        console.warn(`[agon] forge stage2: engine ${failedId} failed: ${outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason)}`);
+        const error = formatDispatchError(outcome.reason);
+        console.warn(`[agon] forge stage2: engine ${failedId} failed: ${error}`);
+        opts.onEvent?.({ type: 'engine:failed' as any, engineId: failedId, data: { engineId: failedId, phase: 'stage2', error } });
+        allResults.set(failedId, makeFailedResult(failedId, error));
         metrics.push({
           engineId: failedId,
           phase: 'stage2-follower',
           dispatchDurationMs: 0,
           totalDurationMs: 0,
-          error: outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason),
+          error,
         });
       }
     }
@@ -224,7 +267,7 @@ fn name=runStage2 async=true params="opts:{challengers:string[], forgePrompt:str
     return { engineResults: allResults, accepted: false, winner: null, metrics };
   >>>
 
-fn name=runStage2WithPeek async=true params="opts:{challengers:string[], forgePrompt:string, enginePrompts?:Map<string,string>, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal}" returns="Promise<StageResult>"
+fn name=runStage2WithPeek async=true params="opts:{challengers:string[], forgePrompt:string, enginePrompts?:Map<string,string>, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal}" returns="Promise<StageResult>"
   handler <<<
     if (opts.challengers.length <= 1) {
       // Only one challenger — no peek possible, use normal stage2
@@ -234,7 +277,6 @@ fn name=runStage2WithPeek async=true params="opts:{challengers:string[], forgePr
     opts.onEvent?.({ type: 'stage2:start', data: { strategy: 'peek' } });
 
     const root = repoRoot(opts.cwd);
-    const sha = headSha(opts.cwd);
 
     // Phase 1: dispatch the scout (first challenger) alone
     const scoutId = opts.challengers[0];
@@ -242,76 +284,94 @@ fn name=runStage2WithPeek async=true params="opts:{challengers:string[], forgePr
 
     const scoutEngine = opts.registry.get(scoutId);
     const scoutWt = join(opts.forgeDir, `wt-${scoutId}`);
-    worktreeCreate(root, scoutWt, sha);
-    opts.worktrees.push({ engineId: scoutId, path: scoutWt, repoRoot: root });
 
-    opts.onEvent?.({ type: 'stage2:dispatch', engineId: scoutId, data: { phase: 'scout' } });
     const metrics: DispatchMetric[] = [];
 
     const scoutPrompt = opts.enginePrompts?.get(scoutId) ?? opts.forgePrompt;
     const scoutDispatchStart = Date.now();
     let scoutDispatchResult: any;
-    const useScoutAgent = !!scoutEngine.agent && !!opts.adapter.dispatchAgent;
-    if (useScoutAgent) {
-      scoutDispatchResult = await opts.adapter.dispatchAgent!({
-        engine: scoutEngine, prompt: scoutPrompt, cwd: scoutWt,
-        mode: 'agent', timeout: scoutEngine.timeout, outputDir: opts.forgeDir, signal: opts.signal,
+    let scoutResult: EngineResult;
+    let peekContext = '';
+    try {
+      worktreeCreate(root, scoutWt, opts.baseSha);
+      opts.worktrees.push({ engineId: scoutId, path: scoutWt, repoRoot: root });
+
+      opts.onEvent?.({ type: 'stage2:dispatch', engineId: scoutId, data: { phase: 'scout' } });
+      const useScoutAgent = !!scoutEngine.agent && !!opts.adapter.dispatchAgent;
+      if (useScoutAgent) {
+        scoutDispatchResult = await opts.adapter.dispatchAgent!({
+          engine: scoutEngine, prompt: scoutPrompt, cwd: scoutWt,
+          mode: 'agent', timeout: opts.config.forgeTimeout, outputDir: opts.forgeDir, signal: opts.signal,
+        });
+      } else {
+        scoutDispatchResult = await opts.adapter.dispatch({
+          engine: scoutEngine, prompt: scoutPrompt, cwd: scoutWt,
+          mode: 'review', timeout: opts.config.forgeTimeout, outputDir: opts.forgeDir, signal: opts.signal,
+        });
+      }
+      const scoutDispatchDurationMs = Date.now() - scoutDispatchStart;
+
+      // Build typed StageContext from scout's results (replaces raw diff slice)
+      const scoutDiff = worktreeDiff(scoutWt);
+      const scoutStdout = scoutDispatchResult?.stdout ?? '';
+
+      // Score the scout first so StageContext has the score
+      opts.onEvent?.({ type: 'stage2:score', engineId: scoutId });
+      const scoutFitnessStart = Date.now();
+      scoutResult = await runFitness({
+        engineId: scoutId, worktreePath: scoutWt,
+        fitnessCmd: opts.fitnessCmd, timeout: opts.config.forgeFitnessTimeout, forgeDir: opts.forgeDir,
       });
-    } else {
-      scoutDispatchResult = await opts.adapter.dispatch({
-        engine: scoutEngine, prompt: scoutPrompt, cwd: scoutWt,
-        mode: 'review', timeout: scoutEngine.timeout, outputDir: opts.forgeDir, signal: opts.signal,
+      const scoutFitnessDurationMs = Date.now() - scoutFitnessStart;
+
+      // Build StageContext — structured learnings for followers
+      const stageCtx: StageContext = buildStageContext({
+        engineId: scoutId,
+        pass: scoutResult.pass,
+        score: scoutResult.score,
+        prompt: scoutPrompt,
+        diff: scoutDiff,
+        fitnessLogPath: scoutResult.fitnessLogPath,
+        dispatchStdout: scoutStdout,
+      });
+
+      peekContext = scoutDiff
+        ? `\n\n${renderStageContext(stageCtx)}`
+        : '';
+
+      const scoutPromptTokens = estimateTokens(scoutPrompt);
+      const scoutResponseTokens = scoutDispatchResult?.stdout ? estimateTokens(scoutDispatchResult.stdout) : 0;
+      metrics.push({
+        engineId: scoutId,
+        phase: 'stage2-scout',
+        dispatchDurationMs: scoutDispatchDurationMs,
+        fitnessDurationMs: scoutFitnessDurationMs,
+        totalDurationMs: scoutDispatchDurationMs + scoutFitnessDurationMs,
+        pass: scoutResult.pass,
+        score: scoutResult.score,
+        timedOut: scoutDispatchResult?.timedOut ?? false,
+        tokens: { prompt: scoutPromptTokens, response: scoutResponseTokens, costUsd: estimateCost(scoutId, scoutPromptTokens + scoutResponseTokens) },
+      });
+    } catch (err) {
+      const error = formatDispatchError(err);
+      const elapsed = Date.now() - scoutDispatchStart;
+      console.warn(`[agon] forge stage2-peek scout ${scoutId} failed: ${error}`);
+      opts.onEvent?.({ type: 'engine:failed' as any, engineId: scoutId, data: { engineId: scoutId, phase: 'stage2-scout', error } });
+      scoutResult = makeFailedResult(scoutId, error, elapsed);
+      metrics.push({
+        engineId: scoutId,
+        phase: 'stage2-scout',
+        dispatchDurationMs: elapsed,
+        totalDurationMs: elapsed,
+        error,
       });
     }
-    const scoutDispatchDurationMs = Date.now() - scoutDispatchStart;
-
-    // Build typed StageContext from scout's results (replaces raw diff slice)
-    const scoutDiff = worktreeDiff(scoutWt);
-    const scoutStdout = scoutDispatchResult?.stdout ?? '';
-
-    // Score the scout first so StageContext has the score
-    opts.onEvent?.({ type: 'stage2:score', engineId: scoutId });
-    const scoutFitnessStart = Date.now();
-    const scoutResult = await runFitness({
-      engineId: scoutId, worktreePath: scoutWt,
-      fitnessCmd: opts.fitnessCmd, timeout: opts.config.forgeFitnessTimeout, forgeDir: opts.forgeDir,
-    });
-    const scoutFitnessDurationMs = Date.now() - scoutFitnessStart;
-
-    // Build StageContext — structured learnings for followers
-    const stageCtx: StageContext = buildStageContext({
-      engineId: scoutId,
-      pass: scoutResult.pass,
-      score: scoutResult.score,
-      prompt: scoutPrompt,
-      diff: scoutDiff,
-      fitnessLogPath: scoutResult.fitnessLogPath,
-      dispatchStdout: scoutStdout,
-    });
-
-    const peekContext = scoutDiff
-      ? `\n\n${renderStageContext(stageCtx)}`
-      : '';
-
-    const scoutPromptTokens = estimateTokens(scoutPrompt);
-    const scoutResponseTokens = scoutDispatchResult?.stdout ? estimateTokens(scoutDispatchResult.stdout) : 0;
-    metrics.push({
-      engineId: scoutId,
-      phase: 'stage2-scout',
-      dispatchDurationMs: scoutDispatchDurationMs,
-      fitnessDurationMs: scoutFitnessDurationMs,
-      totalDurationMs: scoutDispatchDurationMs + scoutFitnessDurationMs,
-      pass: scoutResult.pass,
-      score: scoutResult.score,
-      timedOut: scoutDispatchResult?.timedOut ?? false,
-      tokens: { prompt: scoutPromptTokens, response: scoutResponseTokens, costUsd: estimateCost(scoutId, scoutPromptTokens + scoutResponseTokens) },
-    });
 
     // Phase 2: dispatch followers with peek context
     const followerPromises = followers.map(async (engineId: string) => {
       const engine = opts.registry.get(engineId);
       const wtPath = join(opts.forgeDir, `wt-${engineId}`);
-      worktreeCreate(root, wtPath, sha);
+      worktreeCreate(root, wtPath, opts.baseSha);
       opts.worktrees.push({ engineId, path: wtPath, repoRoot: root });
 
       opts.onEvent?.({ type: 'stage2:dispatch', engineId, data: { phase: 'follower', hasPeek: !!peekContext } });
@@ -325,12 +385,12 @@ fn name=runStage2WithPeek async=true params="opts:{challengers:string[], forgePr
       if (useAgent) {
         followerDispatchResult = await opts.adapter.dispatchAgent!({
           engine, prompt, cwd: wtPath, mode: 'agent',
-          timeout: engine.timeout, outputDir: opts.forgeDir, signal: opts.signal,
+          timeout: opts.config.forgeTimeout, outputDir: opts.forgeDir, signal: opts.signal,
         });
       } else {
         followerDispatchResult = await opts.adapter.dispatch({
           engine, prompt, cwd: wtPath, mode: 'review',
-          timeout: engine.timeout, outputDir: opts.forgeDir, signal: opts.signal,
+          timeout: opts.config.forgeTimeout, outputDir: opts.forgeDir, signal: opts.signal,
         });
       }
       const followerDispatchDurationMs = Date.now() - followerDispatchStart;
@@ -374,13 +434,16 @@ fn name=runStage2WithPeek async=true params="opts:{challengers:string[], forgePr
         allResults.set(outcome.value.engineId, outcome.value);
       } else {
         const failedId = followers[i];
-        console.warn(`[agon] forge stage2-peek: engine ${failedId} failed: ${outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason)}`);
+        const error = formatDispatchError(outcome.reason);
+        console.warn(`[agon] forge stage2-peek: engine ${failedId} failed: ${error}`);
+        opts.onEvent?.({ type: 'engine:failed' as any, engineId: failedId, data: { engineId: failedId, phase: 'stage2-follower', error } });
+        allResults.set(failedId, makeFailedResult(failedId, error));
         metrics.push({
           engineId: failedId,
           phase: 'stage2-follower',
           dispatchDurationMs: 0,
           totalDurationMs: 0,
-          error: outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason),
+          error,
         });
       }
     }

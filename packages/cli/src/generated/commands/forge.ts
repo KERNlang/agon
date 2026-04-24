@@ -121,6 +121,9 @@ export const forgeCommand: any = defineCommand({
           case 'stage2:dispatch':
             info(`Stage 2: dispatching ${bold(event.engineId ?? 'challenger')}...`);
             break;
+          case 'engine:failed':
+            warn(`Engine failed: ${bold(String(event.engineId ?? event.data?.engineId ?? 'unknown'))} (${event.data?.phase ?? 'dispatch'})`);
+            break;
           case 'winner:determined':
             if (event.data?.winner) {
               success(`Winner: ${bold(String(event.data.winner))} (score: ${event.data.bestScore})`);

@@ -74,6 +74,7 @@ export const teamForgeCommand = defineCommand({
         forgeDir,
         engines,
         membersPerSide,
+        timeout: parseInt(args.timeout, 10),
       },
       registry,
       adapter,
@@ -83,8 +84,8 @@ export const teamForgeCommand = defineCommand({
           info(`Team A: ${teams[0]?.members?.map((m: any) => m.engineId).join(', ') ?? '?'}`);
           info(`Team B: ${teams[1]?.members?.map((m: any) => m.engineId).join(', ') ?? '?'}`);
         }
-        if (event.type === 'team:member-dispatch' && 'engineId' in event) {
-          info(`  Dispatching ${(event as any).engineId}...`);
+        if (event.type === 'team:member-dispatch' && 'data' in event && (event as any).data?.engineId) {
+          info(`  Dispatching ${(event as any).data.engineId}...`);
         }
       },
     );

@@ -70,6 +70,9 @@ export async function handleTeamForge(task: string, fitnessCmd: string|null, dis
         if (event.type === 'team:score' && event.data) {
           dispatch({ type: 'info', message: `Team scored: ${String(event.data.score)}` });
         }
+        if (event.type === 'engine:failed' && event.data) {
+          dispatch({ type: 'warning', message: `${String(event.data.engineId ?? event.engineId)} failed during ${String(event.data.phase ?? 'team forge')}` });
+        }
       });
     } catch (err) {
       dispatch({ type: 'spinner-stop' });

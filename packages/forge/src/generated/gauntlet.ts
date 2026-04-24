@@ -8,7 +8,7 @@ import { join } from 'node:path';
 
 import type { EngineAdapter, EngineResult, ForgeEvent, BreakerArtifact, GauntletResult, TaskClass } from '@agon/core';
 
-import { EngineRegistry, loadConfig, worktreeCreate, worktreeRemoveBestEffort, worktreeDiff, headSha, repoRoot, spawnWithTimeout, createSidechainLogger } from '@agon/core';
+import { EngineRegistry, loadConfig, worktreeCreate, worktreeRemoveBestEffort, worktreeDiff, repoRoot, spawnWithTimeout, createSidechainLogger } from '@agon/core';
 
 import { runFitness } from './fitness.js';
 
@@ -125,7 +125,7 @@ export async function validateBreakerArtifact(opts: {artifact:BreakerArtifact, w
   return { ...artifact, validated: true, deterministic: true, testPath: winnerTestPath };
 }
 
-export async function runGauntlet(opts: {winnerId:string, losers:string[], task:string, winnerWorktree:string, fitnessCmd:string, taskClass:TaskClass, forgeDir:string, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, fitnessTimeout:number, maxBreakers:number, repairTimeout:number, cwd:string, onEvent?:(event:ForgeEvent)=>void, signal?: AbortSignal}): Promise<GauntletResult> {
+export async function runGauntlet(opts: {winnerId:string, losers:string[], task:string, winnerWorktree:string, fitnessCmd:string, taskClass:TaskClass, forgeDir:string, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, fitnessTimeout:number, maxBreakers:number, repairTimeout:number, cwd:string, baseSha:string, onEvent?:(event:ForgeEvent)=>void, signal?: AbortSignal}): Promise<GauntletResult> {
   const { winnerId, losers, task, winnerWorktree, fitnessCmd, taskClass, forgeDir, registry, adapter, timeout, fitnessTimeout, maxBreakers, repairTimeout, cwd } = opts;
   
   const sidechain = createSidechainLogger({
@@ -189,11 +189,10 @@ export async function runGauntlet(opts: {winnerId:string, losers:string[], task:
   
   // --- Validate each breaker artifact ---
   const root = repoRoot(cwd);
-  const sha = headSha(cwd);
   
   // Create a clean worktree (no patch) for validation comparison
   const cleanWtPath = join(forgeDir, 'gauntlet-clean');
-  worktreeCreate(root, cleanWtPath, sha);
+  worktreeCreate(root, cleanWtPath, opts.baseSha);
   
   const validatedArtifacts: BreakerArtifact[] = [];
   try {

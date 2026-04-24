@@ -216,6 +216,14 @@ export async function runBrainstorm(opts: {question:string, context?:string, eng
   });
   
   const winner = ranked[0];
+  if (!winner) {
+    return {
+      question: opts.question,
+      bids,
+      winner: 'none',
+      response: 'No engines were available to brainstorm this question.',
+    };
+  }
   
   // Update Glicko-2 ratings for all ranked engines
   if (bids.length >= 2) {
@@ -243,26 +251,39 @@ export async function runBrainstorm(opts: {question:string, context?:string, eng
     'Be specific and actionable. Include file paths where relevant.',
   ].join('\n');
   
-  const answerResult = await opts.adapter.dispatch({
-    engine: winnerEngine,
-    prompt: expandPrompt,
-    systemPrompt: 'You are expanding on a winning brainstorm approach. Respond directly with your detailed analysis as plain text. Do NOT use tools, read files, or run commands.',
-    cwd: process.cwd(),
-    mode: 'exec',
-    timeout: opts.timeout,
-    outputDir: opts.outputDir,
-    signal: opts.signal,
-  });
+  let response: string;
+  try {
+    const answerResult = await opts.adapter.dispatch({
+      engine: winnerEngine,
+      prompt: expandPrompt,
+      systemPrompt: 'You are expanding on a winning brainstorm approach. Respond directly with your detailed analysis as plain text. Do NOT use tools, read files, or run commands.',
+      cwd: process.cwd(),
+      mode: 'exec',
+      timeout: opts.timeout,
+      outputDir: opts.outputDir,
+      signal: opts.signal,
+    });
+    response = answerResult.stdout;
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    console.warn(`[agon] brainstorm synthesis (${winner.engineId}) failed: ${error}`);
+    response = [
+      `Brainstorm synthesis failed for ${winner.engineId}: ${error}`,
+      '',
+      'Raw ranked drafts:',
+      allDrafts || '(no draft text)',
+    ].join('\n');
+  }
   
   sidechain.log('brainstorm:done', winner.engineId, {
     bids: bids.map((b: BrainstormBid) => ({ engineId: b.engineId, confidence: b.confidence })),
-    responseLength: answerResult.stdout.length,
+    responseLength: response.length,
   });
   
   return {
     question: opts.question,
     bids,
     winner: winner.engineId,
-    response: answerResult.stdout.replace(/<think>[\s\S]*?<\/think>\s*/gi, ''),
+    response: response.replace(/<think>[\s\S]*?<\/think>\s*/gi, ''),
   };
 }

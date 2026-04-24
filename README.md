@@ -56,19 +56,19 @@ Change your brain engine anytime: `/cesar codex`
 
 ### Interactive REPL
 
-The REPL uses app-captured fullscreen scrolling by default, matching Codex and Claude Code more closely. Startup content and early chat history render from the top, the composer stays anchored, and the transcript scrolls inside Agon with the mouse wheel.
+The REPL uses the terminal's native scrollbar and scrollback by default, so normal mouse selection and OS copy work without switching modes. Recent output stays live for expand/collapse shortcuts; older output is sealed into terminal scrollback for stable native copy.
 
-If you prefer the terminal's own scrollbar and scrollback instead, switch to native mode with `agon config set terminalMode native`.
+If you prefer app-captured fullscreen scrolling, switch with `agon config set terminalMode fullscreen`.
 
 Useful controls:
 
 - `Ctrl+E` toggle expanded tool output
 - `Ctrl+T` toggle thinking visibility
 - `Ctrl+Y` copy the current selection or transcript
-- `Ctrl+G` enter mouse-selection mode for native terminal copy in fullscreen mode
-- `PageUp` / `PageDown` / `Home` / `End` navigate long transcripts
+- `Ctrl+G` enter mouse-selection mode for terminal copy in fullscreen mode
+- Native mode uses your terminal's own scroll keys and scrollbar; fullscreen mode uses `Shift+PageUp` / `Shift+PageDown` / `Home` / `End`
 
-Mouse drag selection is supported in fullscreen mode, and transcript copy is character-precise for normal text rows.
+Native terminal copy is the primary path. Fullscreen mode also supports mouse drag selection, and transcript copy is character-precise for normal text rows.
 
 ---
 

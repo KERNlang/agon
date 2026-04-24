@@ -8,7 +8,7 @@ import type { ForgeOptions, EngineAdapter, EngineResult, ForgeEvent, TaskClass }
 
 import type { TeamSpec, TeamFormat, TeamComposeMode, TeamMember, TeamRoundTrace, TeamSubmission, TeamScoreCard, TeamMatchResult, TeamEvent } from '@agon/core';
 
-import { EngineRegistry, loadConfig, buildForgePrompt, repoRoot, headSha, worktreeCreate, worktreeRemoveBestEffort, classifyTask, createSidechainLogger, composeTeams, makeFormat, computeContributionWeights } from '@agon/core';
+import { EngineRegistry, loadConfig, buildForgePrompt, repoRoot, stashSnapshot, worktreeCreate, worktreeRemoveBestEffort, classifyTask, createSidechainLogger, composeTeams, makeFormat, computeContributionWeights } from '@agon/core';
 
 import { updateTeamElo } from '@agon/core';
 
@@ -27,65 +27,74 @@ export interface TeamForgeOptions {
   explicitTeams?: [string[],string[]];
   engines?: string[];
   maxReviewLoops?: number;
+  timeout?: number;
   signal?: AbortSignal;
 }
 
-export async function runTeamCoopForge(team: TeamSpec, task: string, fitnessCmd: string, forgePrompt: string, registry: EngineRegistry, adapter: EngineAdapter, cwd: string, forgeDir: string, worktrees: WorktreeEntry[], timeout: number, fitnessTimeout: number, maxReviewLoops: number, onEvent?: (event:ForgeEvent|TeamEvent)=>void, signal?: AbortSignal): Promise<TeamSubmission> {
+export async function runTeamCoopForge(team: TeamSpec, task: string, fitnessCmd: string, forgePrompt: string, registry: EngineRegistry, adapter: EngineAdapter, cwd: string, baseSha: string, forgeDir: string, worktrees: WorktreeEntry[], timeout: number, fitnessTimeout: number, maxReviewLoops: number, onEvent?: (event:ForgeEvent|TeamEvent)=>void, signal?: AbortSignal): Promise<TeamSubmission> {
   const trace: TeamRoundTrace[] = [];
   const start = Date.now();
   let round = 0;
   let tokenSum = 0;
-  
+
   const architect = team.members.find((m) => m.role === 'architect') ?? team.members[0];
   const implementers = team.members.filter((m) => m.role === 'implementer');
   const reviewer = team.members.find((m) => m.role === 'reviewer');
-  
+
   // If 2-member team, architect also acts as reviewer
   const actualReviewer = reviewer ?? architect;
   const actualImplementers = implementers.length > 0 ? implementers : [team.members[team.members.length - 1]];
-  
+
   // --- Phase 1: Architect plans ---
   round++;
   onEvent?.({ type: 'team:member-dispatch' as any, data: { teamId: team.teamId, engineId: architect.engineId, role: 'architect' } });
-  
+
   const planEngine = registry.get(architect.engineId);
   const planPrompt = `${forgePrompt}\n\n## YOUR ROLE: ARCHITECT\nYou are the architect for your team. Produce a detailed implementation plan. Do NOT write code yet — describe exactly what files to change, what approach to take, and what edge cases to handle.\n\nTask: ${task}`;
-  
-  const planResult = await adapter.dispatch({
-    engine: planEngine,
-    prompt: planPrompt,
-    cwd,
-    mode: 'review',
-    timeout,
-    outputDir: forgeDir,
-    signal,
-  });
-  
-  tokenSum += planResult.usage?.totalTokens ?? 0;
-  const plan = planResult.stdout.trim();
-  trace.push({ round, actor: architect.engineId, role: 'architect', action: 'planned', artifactSummary: plan.slice(0, 200), durationMs: planResult.durationMs });
-  
-  onEvent?.({ type: 'team:member-done' as any, data: { teamId: team.teamId, engineId: architect.engineId } });
-  
+
+  let plan = '';
+  try {
+    const planResult = await adapter.dispatch({
+      engine: planEngine,
+      prompt: planPrompt,
+      systemPrompt: 'Produce a plan only. Do not edit files, run tools, or execute commands.',
+      cwd,
+      mode: 'review',
+      timeout,
+      outputDir: forgeDir,
+      signal,
+    });
+
+    tokenSum += planResult.usage?.totalTokens ?? 0;
+    plan = planResult.stdout.trim();
+    trace.push({ round, actor: architect.engineId, role: 'architect', action: 'planned', artifactSummary: plan.slice(0, 200), durationMs: planResult.durationMs });
+    onEvent?.({ type: 'team:member-done' as any, data: { teamId: team.teamId, engineId: architect.engineId } });
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    console.warn(`[agon] team forge architect ${architect.engineId} failed: ${error}`);
+    plan = `Architect ${architect.engineId} failed (${error}). Implement the task directly using the base instructions.`;
+    trace.push({ round, actor: architect.engineId, role: 'architect', action: 'failed' as any, artifactSummary: error.slice(0, 200), durationMs: 0 });
+    onEvent?.({ type: 'engine:failed' as any, engineId: architect.engineId, data: { teamId: team.teamId, engineId: architect.engineId, phase: 'team-architect', error } });
+  }
+
   // --- Phase 2: Implementers build (parallel if multiple) ---
   let bestPatch = '';
   let bestImplResult: EngineResult | null = null;
-  
+
   const implPromises = actualImplementers.map(async (impl) => {
     round++;
     const implRound = round;
     onEvent?.({ type: 'team:member-dispatch' as any, data: { teamId: team.teamId, engineId: impl.engineId, role: 'implementer' } });
-  
+
     const root = repoRoot(cwd);
-    const sha = headSha(cwd);
     const wtPath = `${forgeDir}/${team.teamId}-${impl.engineId}`;
-    worktreeCreate(root, wtPath, sha);
+    worktreeCreate(root, wtPath, baseSha);
     const wt: WorktreeEntry = { engineId: impl.engineId, path: wtPath, repoRoot: root };
     worktrees.push(wt);
-  
+
     const implEngine = registry.get(impl.engineId);
     const implPrompt = `${forgePrompt}\n\n## YOUR ROLE: IMPLEMENTER\nYou are implementing code based on the architect's plan below. Write the actual code changes.\n\n## ARCHITECT'S PLAN:\n${plan}\n\nTask: ${task}`;
-  
+
     const hasAgent = !!implEngine.agent;
     let implResult;
     if (hasAgent && adapter.dispatchAgent) {
@@ -109,36 +118,70 @@ export async function runTeamCoopForge(team: TeamSpec, task: string, fitnessCmd:
         signal,
       });
     }
-  
+
     tokenSum += implResult.usage?.totalTokens ?? 0;
-  
+
     // Score this implementation
     const fitness = await runFitness({ engineId: impl.engineId, worktreePath: wt.path, fitnessCmd, timeout: fitnessTimeout, forgeDir });
-  
+
     trace.push({ round: implRound, actor: impl.engineId, role: 'implementer', action: 'implemented', artifactSummary: `score=${fitness.score}`, durationMs: implResult.durationMs });
-  
+
     onEvent?.({ type: 'team:member-done' as any, data: { teamId: team.teamId, engineId: impl.engineId } });
-  
+
     return { engineId: impl.engineId, fitness, worktree: wt, durationMs: implResult.durationMs };
   });
-  
-  const implResults = await Promise.all(implPromises);
-  
+
+  const settledImpls = await Promise.allSettled(implPromises);
+  const implResults: Array<{ engineId: string; fitness: EngineResult; worktree: WorktreeEntry; durationMs: number }> = [];
+  for (let i = 0; i < settledImpls.length; i++) {
+    const outcome = settledImpls[i];
+    if (outcome.status === 'fulfilled') {
+      implResults.push(outcome.value);
+    } else {
+      const failed = actualImplementers[i];
+      const error = outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason);
+      console.warn(`[agon] team forge implementer ${failed.engineId} failed: ${error}`);
+      trace.push({ round, actor: failed.engineId, role: 'implementer', action: 'failed' as any, artifactSummary: error.slice(0, 200), durationMs: 0 });
+      onEvent?.({ type: 'engine:failed' as any, engineId: failed.engineId, data: { teamId: team.teamId, engineId: failed.engineId, phase: 'team-implementer', error } });
+    }
+  }
+
+  if (implResults.length === 0) {
+    const finalResult: EngineResult = {
+      engineId: `team:${team.teamId}`,
+      pass: false,
+      score: 0,
+      diffLines: 0,
+      filesChanged: 0,
+      durationSec: (Date.now() - start) / 1000,
+      lintWarnings: 0,
+      styleScore: 0,
+    };
+    return {
+      teamId: team.teamId,
+      finalOutput: finalResult,
+      trace,
+      totalTokens: tokenSum,
+      wallClockMs: Date.now() - start,
+      collaborationLift: 0,
+    };
+  }
+
   // Pick best implementation
   const bestImpl = implResults.sort((a, b) => b.fitness.score - a.fitness.score)[0];
-  
+
   // --- Phase 3: Review loop ---
   let currentWorktree = bestImpl.worktree;
   let currentScore = bestImpl.fitness.score;
   let reviewLoops = 0;
-  
+
   while (reviewLoops < maxReviewLoops && actualReviewer.engineId !== bestImpl.engineId) {
     round++;
     reviewLoops++;
     onEvent?.({ type: 'team:member-dispatch' as any, data: { teamId: team.teamId, engineId: actualReviewer.engineId, role: 'reviewer' } });
-  
+
     const reviewEngine = registry.get(actualReviewer.engineId);
-  
+
     // Generate diff for review
     const { execSync } = await import('node:child_process');
     let diff: string;
@@ -147,11 +190,11 @@ export async function runTeamCoopForge(team: TeamSpec, task: string, fitnessCmd:
     } catch {
       diff = '(unable to generate diff)';
     }
-  
+
     if (!diff || diff.trim().length === 0) break;
-  
+
     const reviewPrompt = `## YOUR ROLE: REVIEWER\nReview this code change for the task below. If the code is good, respond with exactly "APPROVED". If it needs changes, describe the specific issues.\n\nTask: ${task}\n\n## DIFF:\n\`\`\`diff\n${diff.slice(0, 5000)}\n\`\`\``;
-  
+
     const reviewResult = await adapter.dispatch({
       engine: reviewEngine,
       prompt: reviewPrompt,
@@ -161,11 +204,11 @@ export async function runTeamCoopForge(team: TeamSpec, task: string, fitnessCmd:
       outputDir: forgeDir,
       signal,
     });
-  
+
     tokenSum += reviewResult.usage?.totalTokens ?? 0;
     const reviewText = reviewResult.stdout.trim();
     const approved = /\bAPPROVED\b/i.test(reviewText) && reviewText.length < 200;
-  
+
     trace.push({
       round,
       actor: actualReviewer.engineId,
@@ -174,16 +217,16 @@ export async function runTeamCoopForge(team: TeamSpec, task: string, fitnessCmd:
       artifactSummary: reviewText.slice(0, 200),
       durationMs: reviewResult.durationMs,
     });
-  
+
     onEvent?.({ type: 'team:member-done' as any, data: { teamId: team.teamId, engineId: actualReviewer.engineId } });
-  
+
     if (approved) break;
-  
+
     // Implementer revises based on review feedback
     onEvent?.({ type: 'team:member-dispatch' as any, data: { teamId: team.teamId, engineId: bestImpl.engineId, role: 'implementer' } });
-  
+
     const revisePrompt = `${forgePrompt}\n\n## REVISION REQUIRED\nThe reviewer found issues with your implementation. Fix them.\n\n## REVIEW FEEDBACK:\n${reviewText}\n\nTask: ${task}`;
-  
+
     const reviseEngine = registry.get(bestImpl.engineId);
     if (reviseEngine.agent && adapter.dispatchAgent) {
       await adapter.dispatchAgent({
@@ -206,19 +249,19 @@ export async function runTeamCoopForge(team: TeamSpec, task: string, fitnessCmd:
         signal,
       });
     }
-  
+
     // Re-score after revision
     const revisedFitness = await runFitness({ engineId: bestImpl.engineId, worktreePath: currentWorktree.path, fitnessCmd, timeout: fitnessTimeout, forgeDir });
     currentScore = revisedFitness.score;
-  
+
     trace.push({ round, actor: bestImpl.engineId, role: 'implementer', action: 'implemented', artifactSummary: `revised score=${currentScore}`, durationMs: 0 });
-  
+
     onEvent?.({ type: 'team:member-done' as any, data: { teamId: team.teamId, engineId: bestImpl.engineId } });
   }
-  
+
   // --- Final scoring ---
   const finalFitness = await runFitness({ engineId: `team:${team.teamId}`, worktreePath: currentWorktree.path, fitnessCmd, timeout: fitnessTimeout, forgeDir });
-  
+
   const finalResult: EngineResult = {
     engineId: `team:${team.teamId}`,
     pass: finalFitness.pass,
@@ -228,11 +271,13 @@ export async function runTeamCoopForge(team: TeamSpec, task: string, fitnessCmd:
     durationSec: (Date.now() - start) / 1000,
     lintWarnings: finalFitness.lintWarnings,
     styleScore: finalFitness.styleScore,
+    patchPath: finalFitness.patchPath,
     worktreePath: currentWorktree.path,
+    fitnessLogPath: finalFitness.fitnessLogPath,
   };
-  
+
   const collaborationLift = finalResult.score - bestImpl.fitness.score;
-  
+
   return {
     teamId: team.teamId,
     finalOutput: finalResult,
@@ -248,15 +293,15 @@ export async function runTeamForge(options: TeamForgeOptions, registry: EngineRe
   const matchId = randomUUID().slice(0, 8);
   const forgeDir = options.forgeDir;
   const worktrees: WorktreeEntry[] = [];
-  
+
   mkdirSync(forgeDir, { recursive: true });
-  
+
   const sidechain = createSidechainLogger({
     sessionId: matchId,
     sessionType: 'team-forge',
     outputDir: forgeDir,
   });
-  
+
   const enabledEngines = options.engines ?? config.forgeEnabledEngines;
   const available = enabledEngines.filter((id: string) => {
     try {
@@ -264,17 +309,17 @@ export async function runTeamForge(options: TeamForgeOptions, registry: EngineRe
       return registry.isAvailable(engine);
     } catch { return false; }
   });
-  
+
   // Engines can appear on both teams — minimum is 2 engines
   // Forge doesn't need a judge (fitness scoring is objective)
   if (available.length < 2) {
     throw new Error(`Team forge requires at least 2 available engines, only ${available.length} available: ${available.join(', ')}`);
   }
-  
+
   const taskClass = classifyTask(options.task);
   const format = makeFormat(options.membersPerSide);
   const composeMode = options.composeMode ?? 'auto-balanced';
-  
+
   const [teamA, teamB] = composeTeams(
     available,
     options.membersPerSide,
@@ -282,45 +327,46 @@ export async function runTeamForge(options: TeamForgeOptions, registry: EngineRe
     taskClass,
     options.explicitTeams,
   );
-  
+
   sidechain.log('team:compose', undefined, {
     format: format.label,
     teamA: teamA.members.map((m) => `${m.engineId}:${m.role}`),
     teamB: teamB.members.map((m) => `${m.engineId}:${m.role}`),
   });
-  
+
   onEvent?.({ type: 'team:compose' as any, data: { teams: [teamA, teamB] } });
-  
+
   const forgePrompt = buildForgePrompt({
     task: options.task,
     fitnessCmd: options.fitnessCmd,
     context: options.context,
     agentMode: true,
   });
-  
+
   const maxLoops = options.maxReviewLoops ?? 2;
-  const timeout = config.forgeTimeout;
+  const timeout = options.timeout ?? config.forgeTimeout;
   const fitnessTimeout = config.forgeFitnessTimeout;
-  
+  const baseSha = stashSnapshot(options.cwd);
+
   // Run both teams in parallel
   try {
     const [subA, subB] = await Promise.all([
-      runTeamCoopForge(teamA, options.task, options.fitnessCmd, forgePrompt, registry, adapter, options.cwd, forgeDir, worktrees, timeout, fitnessTimeout, maxLoops, onEvent, options.signal),
-      runTeamCoopForge(teamB, options.task, options.fitnessCmd, forgePrompt, registry, adapter, options.cwd, forgeDir, worktrees, timeout, fitnessTimeout, maxLoops, onEvent, options.signal),
+      runTeamCoopForge(teamA, options.task, options.fitnessCmd, forgePrompt, registry, adapter, options.cwd, baseSha, forgeDir, worktrees, timeout, fitnessTimeout, maxLoops, onEvent, options.signal),
+      runTeamCoopForge(teamB, options.task, options.fitnessCmd, forgePrompt, registry, adapter, options.cwd, baseSha, forgeDir, worktrees, timeout, fitnessTimeout, maxLoops, onEvent, options.signal),
     ]);
-  
+
     onEvent?.({ type: 'team:submit' as any, data: { teamId: teamA.teamId } });
     onEvent?.({ type: 'team:submit' as any, data: { teamId: teamB.teamId } });
-  
+
     const resultA = subA.finalOutput as EngineResult;
     const resultB = subB.finalOutput as EngineResult;
-  
+
     const scoreA: TeamScoreCard = { teamId: teamA.teamId, score: resultA.score, breakdown: { pass: resultA.pass ? 1 : 0, fitness: resultA.score, diffLines: resultA.diffLines } };
     const scoreB: TeamScoreCard = { teamId: teamB.teamId, score: resultB.score, breakdown: { pass: resultB.pass ? 1 : 0, fitness: resultB.score, diffLines: resultB.diffLines } };
-  
+
     onEvent?.({ type: 'team:score' as any, data: { teamId: teamA.teamId, score: resultA.score } });
     onEvent?.({ type: 'team:score' as any, data: { teamId: teamB.teamId, score: resultB.score } });
-  
+
     // Determine winner
     let winnerTeamId: string | null = null;
     if (resultA.pass && !resultB.pass) winnerTeamId = teamA.teamId;
@@ -328,9 +374,9 @@ export async function runTeamForge(options: TeamForgeOptions, registry: EngineRe
     else if (resultA.score > resultB.score) winnerTeamId = teamA.teamId;
     else if (resultB.score > resultA.score) winnerTeamId = teamB.teamId;
     // else draw — winnerTeamId stays null
-  
+
     onEvent?.({ type: 'team:winner' as any, data: { winnerTeamId } });
-  
+
     const matchResult: TeamMatchResult = {
       matchId,
       mode: 'forge',
@@ -342,20 +388,20 @@ export async function runTeamForge(options: TeamForgeOptions, registry: EngineRe
       winnerTeamId,
       timestamp: new Date().toISOString(),
     };
-  
+
     // Update team ELO
     if (config.ratingsEnabled) {
       updateTeamElo(matchResult, 32);
     }
-  
+
     sidechain.log('team-forge:done', winnerTeamId ?? undefined, {
       scoreA: resultA.score,
       scoreB: resultB.score,
       winnerTeamId,
     });
-  
+
     onEvent?.({ type: 'team:match-done' as any, data: {} });
-  
+
     return matchResult;
   } finally {
     for (const wt of worktrees) {

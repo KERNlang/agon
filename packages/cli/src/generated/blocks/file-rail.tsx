@@ -65,6 +65,7 @@ function FileRailDetail({ expandedFile, maxRows }: { expandedFile:FileEntry; max
 
 const FileRail = React.memo(function FileRail({ files, maxRows, width, focused, selectedIndex, expandedPath }: { files:FileEntry[]; maxRows:number; width?:number; focused?:boolean; selectedIndex?:number; expandedPath?:string|null }) {
   const w = width ?? 36;
+  const h = Math.max(4, maxRows + 2);
   const sel = Math.max(0, Math.min(files.length - 1, selectedIndex ?? 0));
   const expandedFile: FileEntry | undefined = expandedPath ? files.find((f: FileEntry) => f.path === expandedPath) : undefined;
   const borderColor = focused ? '#22d3ee' : 'gray';
@@ -74,7 +75,7 @@ const FileRail = React.memo(function FileRail({ files, maxRows, width, focused, 
   const start = Math.max(0, Math.min(files.length - listBudget, sel - Math.floor(listBudget / 2)));
   const visible: FileEntry[] = files.slice(start, start + listBudget);
   return (
-    <Box flexDirection="column" flexShrink={0} width={w} paddingLeft={1} borderStyle="single" borderColor={borderColor}>
+    <Box flexDirection="column" flexShrink={0} width={w} height={h} paddingLeft={1} borderStyle="single" borderColor={borderColor} overflow="hidden">
       {files.length === 0 && (
                 <FileRailEmpty />
       )}

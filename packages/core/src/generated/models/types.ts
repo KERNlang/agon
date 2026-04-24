@@ -271,7 +271,7 @@ export const DEFAULT_AGON_CONFIG: Required<AgonConfig> = {
   toolPermissions: {} as any,
   hiddenEngines: [],
   engineModels: {} as any,
-  terminalMode: 'fullscreen',
+  terminalMode: 'native',
   iconTheme: 'roman',
   autoReviewAfterForge: true,
   autoReviewAfterImpl: true,
@@ -384,7 +384,7 @@ export interface ForgeJudgment {
   shouldConverge: boolean;
 }
 
-export type ForgeEventType = 'baseline:start' | 'baseline:done' | 'stage1:start' | 'stage1:dispatch' | 'stage1:score' | 'stage1:accepted' | 'stage2:start' | 'stage2:dispatch' | 'stage2:score' | 'stage2:done' | 'winner:determined' | 'synthesis:start' | 'synthesis:critique' | 'synthesis:refine' | 'synthesis:score' | 'synthesis:done' | 'elo:update' | 'gauntlet:start' | 'gauntlet:breaker-dispatch' | 'gauntlet:breaker-done' | 'gauntlet:attack-landed' | 'gauntlet:repair-start' | 'gauntlet:repair-done' | 'gauntlet:corpus-save' | 'gauntlet:done' | 'forge:done';
+export type ForgeEventType = 'baseline:start' | 'baseline:done' | 'stage1:start' | 'stage1:dispatch' | 'stage1:score' | 'stage1:accepted' | 'stage2:start' | 'stage2:dispatch' | 'stage2:score' | 'stage2:done' | 'engine:failed' | 'winner:determined' | 'synthesis:start' | 'synthesis:critique' | 'synthesis:refine' | 'synthesis:score' | 'synthesis:done' | 'elo:update' | 'gauntlet:start' | 'gauntlet:breaker-dispatch' | 'gauntlet:breaker-done' | 'gauntlet:attack-landed' | 'gauntlet:repair-start' | 'gauntlet:repair-done' | 'gauntlet:corpus-save' | 'gauntlet:done' | 'forge:done';
 
 export interface ForgeEvent {
   type: ForgeEventType;
@@ -403,6 +403,7 @@ export interface ForgeEventMap {
   'stage2:dispatch': { engineId: string };
   'stage2:score': { engineId: string };
   'stage2:done': Record<string, unknown>;
+  'engine:failed': { engineId: string, phase: string, error: string };
   'winner:determined': { winner: string, bestScore: number };
   'synthesis:start': Record<string, unknown>;
   'synthesis:critique': { engineId: string };

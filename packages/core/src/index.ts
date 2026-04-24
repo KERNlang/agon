@@ -90,7 +90,7 @@ export { discoverMcpServers, mcpDiscoveryFingerprint, mcpServersToWireFormat } f
 export type { McpServerConfig } from './generated/tools/mcp-discovery.js';
 export { buildToolSystemPrompt, processToolResponse, runToolLoop } from './generated/tools/tool-loop.js';
 export type { ToolLoopCallbacks, ToolLoopResult } from './generated/tools/tool-loop.js';
-export { startChatSession, appendMessage, appendUserTurnIfAbsent, buildHistoryPrimedPrompt, loadChatSession, resumeChatSession, listChatSessions, latestChatSession } from './chat-store.js';
+export { startChatSession, appendMessage, appendUserTurnIfAbsent, updateChatSummary, formatChatHistoryForPrompt, formatChatContextForPrompt, buildHistoryPrimedPrompt, loadChatSession, resumeChatSession, listChatSessions, latestChatSession } from './chat-store.js';
 export type { ChatMessage as StoredChatMessage, ChatSession } from './chat-store.js';
 export {
   isImagePath, mimeFromExt, resolveImagePath,
@@ -189,9 +189,10 @@ export type { HookEvent, HookDef, HookResult } from './hooks.js';
 export { loadSkills, findSkill, renderSkillPrompt } from './skill-loader.js';
 export {
   loadEngineMemory, addEngineNote, setEngineStrengths, setEngineWeaknesses,
-  addEngineTendency, getEngineProfile, buildRolePrompt, recordForgeOutcome,
+  addEngineTendency, getEngineProfile, buildRolePrompt, filePathToMemoryPattern,
+  extractPatchFilePatterns, recordForgeOutcome, recordForgeJudgment,
 } from './engine-memory.js';
-export type { EngineNote, EngineProfile, EngineMemoryRecord } from './engine-memory.js';
+export type { EngineNote, EngineProfile, EngineMemoryRecord, EngineStrengthObservation } from './engine-memory.js';
 export { rankByTaskClass, buildSpecializedPrompt, assignForgeRoles } from './role-specialization.js';
 export type { EngineRole } from './role-specialization.js';
 export type { Skill } from './skill-loader.js';

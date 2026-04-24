@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   loadEngineMemory, addEngineNote, setEngineStrengths,
   setEngineWeaknesses, addEngineTendency, getEngineProfile,
-  buildRolePrompt, recordForgeOutcome,
+  buildRolePrompt, filePathToMemoryPattern, extractPatchFilePatterns,
+  recordForgeOutcome, recordForgeJudgment,
 } from '../../packages/core/src/generated/blocks/engine-memory.js';
 import { rmSync } from 'node:fs';
 import { agonHomePath, cleanupTestAgonHome, setupTestAgonHome } from '../helpers/agon-home.js';
@@ -71,18 +72,52 @@ describe('EngineMemory', () => {
     expect(prompt).toContain('Clean refactoring approach');
   });
 
+  it('extractPatchFilePatterns collapses touched paths into reusable scopes', () => {
+    const patch = [
+      'diff --git a/packages/cli/src/generated/handlers/build.ts b/packages/cli/src/generated/handlers/build.ts',
+      '--- a/packages/core/src/kern/blocks/engine-memory.kern',
+      '+++ b/packages/core/src/kern/blocks/engine-memory.kern',
+      '+++ /dev/null',
+    ].join('\n');
+
+    expect(filePathToMemoryPattern('packages/cli/src/generated/handlers/build.ts')).toBe('packages/cli/src/generated/**/*.ts');
+    expect(extractPatchFilePatterns(patch)).toEqual([
+      'packages/cli/src/generated/**/*.ts',
+      'packages/core/**/*.kern',
+    ]);
+  });
+
   it('recordForgeOutcome logs winner and losers', () => {
     rmSync(agonHomePath('engine-memory.json'), { force: true });
-    recordForgeOutcome('claude', ['codex', 'gemini'], 'feature', 'forge-123', 92, { codex: 78, gemini: 0 });
+    recordForgeOutcome('claude', ['codex', 'gemini'], 'feature', 'forge-123', 92, { codex: 78, gemini: 0 }, ['packages/cli/src/generated/**/*.ts']);
 
     const claudeProfile = getEngineProfile('claude');
     expect(claudeProfile!.notes.some(n => n.observation.includes('Won'))).toBe(true);
+    expect(claudeProfile!.notes[0].filePatterns).toEqual(['packages/cli/src/generated/**/*.ts']);
 
     const codexProfile = getEngineProfile('codex');
     expect(codexProfile!.notes.some(n => n.observation.includes('Lost'))).toBe(true);
 
     const geminiProfile = getEngineProfile('gemini');
     expect(geminiProfile!.notes.some(n => n.observation.includes('Failed'))).toBe(true);
+  });
+
+  it('recordForgeJudgment stores Cesar overrides and per-engine strengths', () => {
+    rmSync(agonHomePath('engine-memory.json'), { force: true });
+    recordForgeJudgment(
+      'codex',
+      'claude',
+      ['claude', 'codex', 'gemini'],
+      'bugfix',
+      'forge-456',
+      'Codex fixed the edge case and kept the patch smaller.',
+      [{ engineId: 'gemini', category: 'tests', reason: 'added the missing regression case' }],
+      ['packages/core/**/*.kern'],
+    );
+
+    expect(getEngineProfile('codex')!.notes.some(n => n.observation.includes('overrode automatic winner claude'))).toBe(true);
+    expect(getEngineProfile('claude')!.notes.some(n => n.observation.includes('overrode this automatic forge winner'))).toBe(true);
+    expect(getEngineProfile('gemini')!.notes.some(n => n.observation.includes('Cesar noted strength (tests)'))).toBe(true);
   });
 
   it('caps notes at 50 per engine', () => {

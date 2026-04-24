@@ -211,7 +211,47 @@ describe('persistent session streaming dedupe', () => {
     expect(text).toBe('Hey. What do you need help with in Agon-AI?');
   });
 
-  it('prefers newer workspace conversation continuity over stale per-engine state', async () => {
+  it('starts clean by default even when persisted continuity exists', async () => {
+    const testHome = setupTestAgonHome('persistent-session-continuity-default-off');
+    try {
+      const { saveSessionState, saveConversation, clearSessionState, clearConversation } = await import('@agon/core');
+      const { createResumeSession } = await import('../../packages/core/src/generated/sessions/persistent-session.js');
+
+      saveSessionState('gemini', {
+        messageHistory: [
+          { role: 'system', content: 'You are Cesar.' },
+          { role: 'user', content: 'old question' },
+          { role: 'assistant', content: 'old answer' },
+        ],
+        confidence: null,
+      });
+
+      saveConversation([
+        { role: 'user', content: 'latest question' },
+        { role: 'assistant', content: 'latest answer' },
+      ], 'claude');
+
+      const session = createResumeSession({
+        engine: {
+          id: 'gemini',
+          api: { baseURL: 'https://example.invalid', apiKeyEnv: 'TEST_KEY', model: 'gemini-test' },
+        } as any,
+        binaryPath: '',
+        cwd: process.cwd(),
+        systemPrompt: 'You are Cesar.',
+      });
+
+      await session.start();
+      expect(session.getMessageHistory()).toEqual([]);
+
+      clearSessionState('gemini');
+      clearConversation();
+    } finally {
+      cleanupTestAgonHome(testHome);
+    }
+  });
+
+  it('prefers newer workspace conversation continuity over stale per-engine state when enabled', async () => {
     const testHome = setupTestAgonHome('persistent-session-continuity');
     try {
       const { saveSessionState, saveConversation, clearSessionState, clearConversation } = await import('@agon/core');
@@ -239,6 +279,7 @@ describe('persistent session streaming dedupe', () => {
         binaryPath: '',
         cwd: process.cwd(),
         systemPrompt: 'You are Cesar.',
+        sessionContinuity: true,
       });
 
       await session.start();

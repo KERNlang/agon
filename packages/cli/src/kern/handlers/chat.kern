@@ -1,7 +1,7 @@
 import from="node:path" names="join"
 import from="node:fs" names="mkdirSync"
 import from="@agon/core" names="ImageAttachment,DispatchResult" types=true
-import from="@agon/core" names="RUNS_DIR,appendMessage,tracker,StreamParser,loadConfig,sessionContext,resolveWorkingDir,loadOrCreateActiveThread,createStreamBridge"
+import from="@agon/core" names="RUNS_DIR,appendMessage,tracker,StreamParser,loadConfig,sessionContext,resolveWorkingDir,loadOrCreateActiveThread,createStreamBridge,formatChatContextForPrompt"
 import from="../blocks/output-format.js" names="ENGINE_COLORS"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 import from="../cesar/brain.js" names="yieldToInk"
@@ -69,10 +69,12 @@ fn name=handleChat params="input:string, dispatch:Dispatch, ctx:HandlerContext, 
       return;
     }
 
-    const recent = ctx.chatSession.messages.slice(-20);
-    const history = recent.length > 0
-      ? recent.map((m: any) => m.role === 'user' ? `User: ${m.content}` : `${m.engineId ?? 'engine'}: ${m.content}`).join('\n\n')
-      : '';
+    const history = formatChatContextForPrompt(ctx.chatSession, {
+      maxMessages: 12,
+      maxChars: 8_000,
+      maxMessageChars: 900,
+      maxSummaryChars: 4_000,
+    });
     const cwd = cachedCwd();
     const projectCtx = sessionContext.get(cwd, config.projectContext || undefined, config.contextFormat);
     const parts: string[] = [];
@@ -283,20 +285,17 @@ fn name=handleChat params="input:string, dispatch:Dispatch, ctx:HandlerContext, 
       appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString(), images: images?.map(img => img.path) });
       appendMessage(ctx.chatSession, { role: 'engine', engineId, content: response, timestamp: new Date().toISOString() });
 
-      // ── ContextThread: record chat turn ───────────────────────
-      // Chat turns feed into the same persistent thread as /agent so
-      // the next agent run can see prior conversation context, and
-      // chat can see what prior agent runs produced. We only record
-      // the user prompt + final reply (not per-tool-call detail —
-      // that's captured by the agent-session path when in agent mode).
-      // Non-fatal: thread failures must never break the chat response.
-      try {
-        const chatThread = loadOrCreateActiveThread(cwd);
-        chatThread.append({ role: 'user', content: input });
-        chatThread.append({ role: 'assistant', content: response, engineId });
-        await chatThread.save();
-      } catch (threadErr) {
-        console.warn(`[agon] context-thread: chat turn not persisted: ${threadErr instanceof Error ? threadErr.message : String(threadErr)}`);
+      // Optional ContextThread continuity: off by default so new Agon
+      // processes do not inherit stale chat/agent attempts.
+      if ((config as any).sessionContinuity === true) {
+        try {
+          const chatThread = loadOrCreateActiveThread(cwd);
+          chatThread.append({ role: 'user', content: input });
+          chatThread.append({ role: 'assistant', content: response, engineId });
+          await chatThread.save();
+        } catch (threadErr) {
+          console.warn(`[agon] context-thread: chat turn not persisted: ${threadErr instanceof Error ? threadErr.message : String(threadErr)}`);
+        }
       }
 
       if (dispatchResult?.usage) {

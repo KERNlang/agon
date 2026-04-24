@@ -36,7 +36,7 @@ import { handleTeamBrainstorm } from '../handlers/team-brainstorm.js';
 
 import { handleCesarBrain, parseSuggestion, CESAR_SYSTEM_PROMPT, yieldToInk } from '../../handlers/cesar-brain.js';
 
-import { appendMessage, buildHistoryPrimedPrompt } from '@agon/core';
+import { appendMessage, appendUserTurnIfAbsent, buildHistoryPrimedPrompt } from '@agon/core';
 
 import { handlePipeline } from '../handlers/pipeline.js';
 
@@ -46,7 +46,7 @@ import { deriveRoutingHints } from '../cesar/routing.js';
 
 import { shouldUseAgentTeam } from '../cesar/routing.js';
 
-import { buildCesarSystemPrompt } from '../cesar/session.js';
+import { buildCesarSystemPrompt, resolveCesarBackend } from '../cesar/session.js';
 
 import { createSpeculator, loadOrCreateActiveThread } from '@agon/core';
 
@@ -649,13 +649,15 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
       // Cesar truly didn't respond — try fresh CLI dispatch
       const cesarConfig = cb.ctx.config;
       const cesarId = (cesarConfig as any).cesarEngine ?? 'claude';
-      // API-only engines (no CLI binary) hit stream errors in the resume path
-      // regularly — rebuilding the session won't help. Skip the rebuild +
-      // noisy warning, go straight to history-primed one-shot dispatch.
-      let cesarEngineDef: any = null;
-      try { cesarEngineDef = cb.ctx.registry.get(cesarId); } catch {}
-      const isApiOnly = !!(cesarEngineDef?.api && !cesarEngineDef?.binary);
-      if (!isApiOnly) {
+      // Gate the rebuild/retry warnings on the backend we're actually going to
+      // use, not on what the engine *could* use. Engines that declare both binary
+      // and api but are currently running on the API path (CLI absent, or
+      // cesarBackend='api') would otherwise surface noisy rebuild warnings every
+      // turn even though the rebuild would just re-hit the same API dispatcher.
+      const resolvedBackend = resolveCesarBackend(cb.ctx, cesarId);
+      const cesarEngineDef: any = resolvedBackend.engine;
+      const usingApiBackend = resolvedBackend.backend === 'api';
+      if (!usingApiBackend) {
         try {
           if (cb.ctx.cesarSession) {
             try { cb.ctx.cesarSession.close(); } catch {}
@@ -680,17 +682,19 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
         }
       }
   
-      // Cesar truly didn't respond — last fallback is plain one-shot dispatch
-      try {
+      // Cesar truly didn't respond — last fallback is plain one-shot dispatch.
+      // Skip this for API backends: brain.kern's fallback path already ran the
+      // same history-primed adapter.dispatch against the same engine, and
+      // returning here just re-bills the user for an identical failure. Go
+      // straight to acting-Cesar instead.
+      if (!usingApiBackend) try {
         const cesarEngine = cesarEngineDef ?? cb.ctx.registry.get(cesarId);
         const { join } = await import('node:path');
         const { mkdirSync } = await import('node:fs');
         const { resolveWorkingDir, RUNS_DIR, appendMessage } = await import('@agon/core');
         const outDir = join(RUNS_DIR, `cesar-fallback-${Date.now()}`);
         mkdirSync(outDir, { recursive: true });
-        if (!isApiOnly) {
-          cb.dispatch({ type: 'warning', message: `Cesar session unavailable — retrying ${cesarId} with fresh dispatch…` });
-        }
+        cb.dispatch({ type: 'warning', message: `Cesar session unavailable — retrying ${cesarId} with fresh dispatch…` });
         const primedPrompt = buildHistoryPrimedPrompt(cb.ctx.chatSession, input);
         const freshResult = await cb.ctx.adapter.dispatch({
           engine: cesarEngine,
@@ -740,6 +744,19 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
           cb.dispatch({ type: 'engine-block', engineId: cesarId, color: 81, content: freshText });
           return false;
         }
+        // Empty stdout — persist the user turn (idempotently: brain.kern's
+        // earlier fallback path may have already saved it) so the next call to
+        // buildHistoryPrimedPrompt still sees this message. Without this,
+        // every failed API turn silently drops the user's input and Cesar
+        // keeps waking up blind (the Kimi-style context-loss bug). DON'T
+        // return here — fall through to the acting-Cesar recovery path below
+        // so a healthy alternate engine still gets a chance to answer this
+        // turn. The idempotent append prevents acting-Cesar from saving a
+        // second copy.
+        // brain.kern's fallback already surfaced a warning for this turn's
+        // empty result, so don't duplicate the toast — just keep the user
+        // turn persistent and fall through to acting-Cesar.
+        appendUserTurnIfAbsent(cb.ctx.chatSession, input);
       } catch (e) { console.warn(`[agon] dispatch: Cesar fallback failed: ${e instanceof Error ? e.message : String(e)}`); }
   
       // Cesar completely unavailable — pick next best engine as acting Cesar with full context
@@ -773,7 +790,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
         if (actingResult.stdout.trim()) {
           const actingText = actingResult.stdout.trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
           cb.dispatch({ type: 'engine-block', engineId: actingCesar, color: 208, content: actingText });
-          appendMessage(cb.ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
+          appendUserTurnIfAbsent(cb.ctx.chatSession, input);
           appendMessage(cb.ctx.chatSession, { role: 'engine', engineId: actingCesar, content: `[acting-cesar] ${actingText}`, timestamp: new Date().toISOString() });
           return false;
         }

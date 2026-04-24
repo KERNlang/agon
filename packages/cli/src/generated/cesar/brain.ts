@@ -6,7 +6,7 @@ import { mkdirSync, appendFileSync, existsSync, readFileSync, unlinkSync, readdi
 
 import type { ImageAttachment, PersistentSession, ForgeManifest, ForgeJudgment } from '@agon/core';
 
-import { ensureAgonHome, RUNS_DIR, appendMessage, buildHistoryPrimedPrompt, tracker, resolveWorkingDir, ToolRegistry, FileStateCache, parseToolCalls, formatToolResults, runToolLoop, classifyTask, loadConfig, configSet } from '@agon/core';
+import { ensureAgonHome, RUNS_DIR, appendMessage, appendUserTurnIfAbsent, buildHistoryPrimedPrompt, tracker, resolveWorkingDir, ToolRegistry, FileStateCache, parseToolCalls, formatToolResults, runToolLoop, classifyTask, loadConfig, configSet } from '@agon/core';
 
 import type { ToolContext, ToolCallResult } from '@agon/core';
 
@@ -18,7 +18,7 @@ import { CONFIDENCE_TIERS, parseConfidence, confidenceBadge } from './confidence
 
 import { parseSuggestion } from './suggestion.js';
 
-import { ensureCesarSession, CESAR_SYSTEM_PROMPT, buildCesarSystemPrompt } from './session.js';
+import { ensureCesarSession, CESAR_SYSTEM_PROMPT, buildCesarSystemPrompt, resolveCesarBackend } from './session.js';
 
 import { createCesarToolRegistry, createEagerToolContext, executeEagerTool } from './tools.js';
 
@@ -215,13 +215,23 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         session = await ensureCesarSession(ctx);
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err);
-        // API-only engines (no CLI binary) fall back to per-turn dispatch — not an error, just their normal path.
-        let engine: any = null;
-        try { engine = ctx.registry.get(cesarEngineId); } catch {}
-        const isApiOnly = !!(engine?.api && !engine?.binary);
-        if (!isApiOnly) {
+        // Gate the spinner error on the backend we're actually using.
+        // Engines on the API path (no CLI binary chosen) don't need a noisy
+        // "session error" — this is just their normal per-turn path.
+        const resolvedBackend = resolveCesarBackend(ctx, cesarEngineId);
+        let engine: any = resolvedBackend.engine;
+        const usingApiBackend = resolvedBackend.backend === 'api';
+        if (!usingApiBackend) {
           dispatch({ type: 'spinner-update', message: `Cesar session error: ${errMsg.slice(0, 80)}` });
         }
+        // Eagerly persist the user turn before any downstream dispatch.
+        // If the fallback adapter.dispatch throws, routeWithCesar's
+        // recovery ladder runs — but acting-Cesar may also fail, and we
+        // don't want to lose the user's input on that crash path. The
+        // idempotent helper means if brain's fallback *does* succeed, the
+        // success path below uses the same idempotent call — no double
+        // append, and the engine response still lands.
+        appendUserTurnIfAbsent(ctx.chatSession, input);
         try {
           if (!engine) engine = ctx.registry.get(cesarEngineId);
           const outputDir = join(RUNS_DIR, `cesar-fallback-${Date.now()}`);
@@ -234,11 +244,24 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           dispatch({ type: 'spinner-stop' });
           if (freshResult.stdout.trim()) {
             dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: freshResult.stdout.trim() });
-            appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
             appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: freshResult.stdout.trim(), timestamp: new Date().toISOString() });
             tracker.record(cesarEngineId, { prompt: input, response: freshResult.stdout.trim() });
             return { delegated: false, responded: true };
           }
+          // Empty stdout — persist the user turn idempotently so the next
+          // history-primed prompt still includes this message. Without this,
+          // every failed turn silently drops the user's input and Cesar
+          // wakes up blind. Return responded=false (not true) so the caller
+          // in routeWithCesar still runs its recovery ladder — acting-Cesar
+          // may be able to answer even when the primary engine returned
+          // empty. The idempotent helper prevents that ladder from saving a
+          // second copy of this message. Surface the first-attempt error
+          // once here so the user sees what went wrong with the primary
+          // engine before acting-Cesar takes over.
+          appendUserTurnIfAbsent(ctx.chatSession, input);
+          const brainHint = (freshResult.stderr || '').split('\n')[0].slice(0, 200).trim();
+          if (brainHint) dispatch({ type: 'warning', message: `Cesar (${cesarEngineId}) returned no response: ${brainHint}` });
+          return { delegated: false, responded: false };
         } catch { /* truly failed */ }
         dispatch({ type: 'spinner-stop' });
         return { delegated: false, responded: false };

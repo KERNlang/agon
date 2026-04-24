@@ -232,14 +232,18 @@ export async function* apiStreamDispatch(config: ApiConfig, prompt: string, time
   return yield* apiStreamDispatchWithHistory(config, messages, timeout, signal);
 }
 
+export const _formatHintEmitted: Set<string> = new Set<string>();
+
 /**
- * Detect a common misconfiguration: format='anthropic' on a non-Anthropic base URL. Moonshot/Kimi/Groq/Together/DeepInfra etc. claim Anthropic compatibility loosely but actually serve OpenAI-shaped /chat/completions. When the Anthropic SDK stalls or fails on such a baseURL, return a one-line hint the user can act on. Null otherwise.
+ * Detect a common misconfiguration: format='anthropic' on a non-Anthropic base URL. Moonshot/Kimi/Groq/Together/DeepInfra etc. claim Anthropic compatibility loosely but actually serve OpenAI-shaped /chat/completions. Returns a one-line hint the first time we hit it for a given host, then null on subsequent calls for that host.
  */
 function formatMismatchHint(config: ApiConfig): string|null {
   if (config.format !== 'anthropic') return null;
   try {
     const host = new URL(config.baseUrl).host.toLowerCase();
     if (host === 'api.anthropic.com' || host.endsWith('.anthropic.com')) return null;
+    if (_formatHintEmitted.has(host)) return null;
+    _formatHintEmitted.add(host);
     return `tip: format='anthropic' on '${host}' — many OpenAI-compat providers (Moonshot/Kimi, Groq, Together, DeepInfra) claim Anthropic but serve OpenAI /chat/completions. Try format='openai' (or remove the field) in the engine config.`;
   } catch {
     return null;

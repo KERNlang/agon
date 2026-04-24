@@ -20,6 +20,40 @@ function getAgonEnginesDir(): string {
   return join(home, 'engines');
 }
 
+export const _formatNormalizedSet: Set<string> = new Set<string>();
+
+export const _OPENAI_COMPAT_ONLY_HOST_SUFFIXES: string[] = [
+  'api.kimi.com',
+  'moonshot.cn',
+  'moonshot.ai',
+  'api.groq.com',
+  'together.xyz',
+  'together.ai',
+  'api.deepinfra.com',
+  'openrouter.ai',
+  'api.deepseek.com',
+  'api.perplexity.ai',
+];
+
+/**
+ * Narrow normalization: if api.format='anthropic' but the baseUrl host is on the known-OpenAI-compat-only allowlist (Kimi/Moonshot, Groq, Together, DeepInfra, OpenRouter), rewrite to 'openai'. Every other non-Anthropic host is left alone — arbitrary Anthropic-compatible proxies are valid configurations and must not be silently coerced. Mutates raw in place; logs once per engine id.
+ */
+function normalizeEngineFormat(raw: any, fileLabel: string): void {
+  const api = raw?.api;
+  if (!api || api.format !== 'anthropic' || typeof api.baseUrl !== 'string') return;
+  let host = '';
+  try { host = new URL(api.baseUrl).host.toLowerCase(); } catch { return; }
+  if (host === 'api.anthropic.com' || host.endsWith('.anthropic.com')) return;
+  const matched = _OPENAI_COMPAT_ONLY_HOST_SUFFIXES.some((suffix: string) => host === suffix || host.endsWith('.' + suffix));
+  if (!matched) return;
+  api.format = 'openai';
+  const key = typeof raw.id === 'string' ? raw.id : fileLabel;
+  if (!_formatNormalizedSet.has(key)) {
+    _formatNormalizedSet.add(key);
+    console.log(`[agon] engine '${key}': api.format 'anthropic' on known OpenAI-compat host '${host}' normalized to 'openai'.`);
+  }
+}
+
 export class EngineRegistry {
   private engines: Map<string, EngineDefinition> = new Map();
   private binaryCache: Map<string, string | null> = new Map();
@@ -51,6 +85,7 @@ export class EngineRegistry {
     for (const file of files) {
       try {
         const raw = JSON.parse(readFileSync(join(dir, file), 'utf-8'));
+        normalizeEngineFormat(raw, file);
         const validation = validateEngineConfig(raw, file);
         if (!validation.ok) {
           console.warn(`[agon] ${validation.error}`);
@@ -76,6 +111,7 @@ export class EngineRegistry {
   }
 
   register(engine: EngineDefinition): void {
+    normalizeEngineFormat(engine, engine.id);
     this.engines.set(engine.id, engine);
   }
 

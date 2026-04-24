@@ -30,7 +30,7 @@ export function TokenGauge({ tokens, maxTokens }: { tokens:number; maxTokens:num
   const empty = barWidth - filled;
   const bar = '\u2588'.repeat(filled) + '\u2591'.repeat(empty);
   const barColor = pct > 80 ? '#ef4444' : pct > 60 ? '#fbbf24' : '#4ade80';
-  
+
   return (
     <Text>
       <Text color={barColor}>{bar}</Text>
@@ -64,7 +64,7 @@ export function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd
     claude: 1000000, codex: 200000, gemini: 1000000, opencode: 200000,
   };
   const contextBudget = contextWindows[cesarId] ?? 200000;
-  
+
   return (
     <Box paddingTop={0}>
       <Text>
@@ -180,7 +180,7 @@ const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confide
   else if (activePlanState === 'awaiting_approval') planLabel = 'review';
   else if (activePlanState === 'running') planLabel = 'executing';
   else if (activePlanState === 'paused') planLabel = 'paused';
-  
+
   // Idle: single dimmed line (no colored nesting issues)
   if (!isActive) {
     const confPart = (confidence !== null && confidence !== undefined) ? ` ${confidence}%` : '';
@@ -191,10 +191,10 @@ const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confide
       </Box>
     );
   }
-  
+
   // Active: full colored strip
   const cesarColor = color256toHex(ENGINE_COLORS[cesarId] ?? 124);
-  
+
   // Confidence badge with tier coloring
   let confStr = '';
   let confColor = '#6b7280';
@@ -202,14 +202,14 @@ const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confide
     confStr = ` ${confidence}%`;
     confColor = confidence >= 96 ? '#4ade80' : confidence >= 88 ? '#fbbf24' : confidence >= 72 ? '#f97316' : '#ef4444';
   }
-  
+
   // Activity segment
   let activityStr = 'working';
   if (spinner) {
     const msg = spinner.message.replace(/\u2026$/, '').trim();
     activityStr = msg.length > 50 ? msg.slice(0, 50) + '\u2026' : msg;
   }
-  
+
   // Elapsed time (from operation start, not last activity)
   let elapsedStr = '';
   if (startTime > 0) {
@@ -220,7 +220,7 @@ const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confide
       elapsedStr = mins > 0 ? ` ${mins}m ${secs}s` : ` ${elapsed}s`;
     }
   }
-  
+
   // Engine dots
   const engineDots: React.ReactNode[] = [];
   if (engines && engines.length > 0) {
@@ -238,14 +238,14 @@ const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confide
       );
     }
   }
-  
+
   // Stream snippet
   let snippetStr = '';
   if (streamSnippet) {
     const maxLen = 40;
     snippetStr = streamSnippet.line.length > maxLen ? streamSnippet.line.slice(0, maxLen) + '\u2026' : streamSnippet.line;
   }
-  
+
   return (
     <Box paddingTop={0}>
       <Text>

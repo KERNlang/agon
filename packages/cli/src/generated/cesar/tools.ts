@@ -59,11 +59,11 @@ export async function executeEagerTool(toolName: string, meta: Record<string,unk
   try {
     parsedInput = typeof meta.input === 'string' ? JSON.parse(meta.input) : (meta.input as Record<string, unknown>);
   } catch { parsedInput = { raw: meta.input }; }
-  
+
   const callId = (meta.toolCallId as string) ?? `eager-${Date.now()}`;
   const toolInput = typeof meta.input === 'string' ? meta.input
     : meta.input ? JSON.stringify(meta.input) : '';
-  
+
   const result = await executeToolCall(
     { id: callId, name: toolName, input: parsedInput },
     toolCtx,
@@ -79,7 +79,7 @@ export async function executeEagerTool(toolName: string, meta: Record<string,unk
       });
     },
   );
-  
+
   const out = result.result.ok ? result.result.content : result.result.error;
   dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: result.result.ok ? 'done' : 'error', output: out } as any);
   return result;

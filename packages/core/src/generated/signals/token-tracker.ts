@@ -62,7 +62,7 @@ export class TokenTracker {
 
   record(engineId: string, inputOrPrompt: string|{prompt:string,response:string}|{usage:{promptTokens:number,completionTokens:number,totalTokens:number,source:'sdk'|'cli-reported'|'estimated'},model?:string}, responseText?: string): TokenUsage {
     let promptTokens: number, responseTokens: number, totalTokens: number, source: TokenUsage['source'], model: string | undefined, costUsd: number;
-    
+
     // Legacy 3-arg form: record(engineId, promptText, responseText)
     if (typeof inputOrPrompt === 'string') {
       promptTokens = estimateTokens(inputOrPrompt);
@@ -86,7 +86,7 @@ export class TokenTracker {
       model = undefined;
       costUsd = estimateCost(engineId, totalTokens);
     }
-    
+
     const usage: TokenUsage = { engineId, promptTokens, responseTokens, totalTokens, costUsd, timestamp: Date.now(), source, model };
     this.usages.push(usage);
     return usage;

@@ -213,7 +213,7 @@ export function stashSnapshot(cwd: string): string {
     // The -u flag is silently ignored by git stash create (it only works
     // for git stash push). Untracked files are NOT captured.
     const sha = git(['stash', 'create'], cwd);
-  
+
     // Warn if there are untracked files that the snapshot is missing.
     try {
       const untracked = git(['ls-files', '--others', '--exclude-standard'], cwd);
@@ -222,7 +222,7 @@ export function stashSnapshot(cwd: string): string {
         console.warn(`[agon] stashSnapshot: ${untrackedFiles.length} untracked file(s) NOT included in agent base SHA. The first few: ${untrackedFiles.slice(0, 3).join(', ')}. Agents will operate on tracked changes only — \`git add\` these files first if you need them in the agent's view.`);
       }
     } catch { /* untracked check is informational only */ }
-  
+
     if (sha.trim()) return sha.trim();
     // Empty result = clean working tree (no tracked modifications), just use HEAD
     return git(['rev-parse', 'HEAD'], cwd);

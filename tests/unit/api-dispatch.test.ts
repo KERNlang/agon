@@ -134,6 +134,34 @@ describe('api-dispatch — AI SDK message conversion', () => {
     const result = convertMessagesForSdk(messages);
     expect(result[1].content[0].input).toEqual({ pattern: 'foo', path: '/tmp' });
   });
+
+  it('recovers orphan tool results as plain context instead of invalid tool messages', () => {
+    const messages = [
+      { role: 'user', content: 'continue' },
+      { role: 'tool', content: 'old file contents' },
+    ];
+
+    const result = convertMessagesForSdk(messages);
+
+    expect(result).toEqual([
+      { role: 'user', content: 'continue' },
+      { role: 'user', content: '[Recovered orphan tool result omitted from native tool channel]\nold file contents' },
+    ]);
+  });
+
+  it('recovers tool results whose tool_call_id has no matching assistant tool call', () => {
+    const messages = [
+      { role: 'assistant', content: 'done' },
+      { role: 'tool', content: 'stale result', tool_call_id: 'missing_call' },
+    ];
+
+    const result = convertMessagesForSdk(messages);
+
+    expect(result[1]).toEqual({
+      role: 'user',
+      content: '[Recovered orphan tool result omitted from native tool channel]\nstale result',
+    });
+  });
 });
 
 describe('api-dispatch — AI SDK tool conversion', () => {

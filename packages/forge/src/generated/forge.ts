@@ -2,7 +2,7 @@
 
 import { randomUUID } from 'node:crypto';
 
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 
 import type { ForgeOptions, ForgeManifest, EngineAdapter, ForgeEvent, AgonConfig, DispatchMetric } from '@agon/core';
 
@@ -22,6 +22,94 @@ import { writeManifest } from './manifest.js';
 
 import type { WorktreeEntry } from '../types.js';
 
+export function shellQuoteForForge(value: string): string {
+  const s = String(value ?? '');
+  if (/^[A-Za-z0-9_@%+=:,./-]+$/.test(s)) return s;
+  return `'${s.replace(/'/g, `'\\''`)}'`;
+}
+
+export function buildForgeCleanupCommand(repoRootPath: string, forgeDir: string): string {
+  return `git -C ${shellQuoteForForge(repoRootPath)} worktree prune && rm -rf ${shellQuoteForForge(forgeDir)}`;
+}
+
+/**
+ * Persist a compact run bundle so every forge leaves an inspectable result, failure list, logs, worktree paths, exact fitness command, and cleanup command.
+ */
+export function writeForgeResultBundle(manifest: ForgeManifest, worktrees: WorktreeEntry[], options: ForgeOptions, repoRootPath: string, baseSha: string, sidechainPath: string, errorMessage?: string): string {
+  const cleanupCommand = buildForgeCleanupCommand(repoRootPath, manifest.forgeDir);
+  const bundlePath = `${manifest.forgeDir}/result.json`;
+  const readmePath = `${manifest.forgeDir}/README.md`;
+  const failedEngines = manifest.engines.filter((id: string) => {
+    const result = manifest.results[id];
+    return !result || !result.pass;
+  });
+  const engineSummaries = Object.fromEntries(
+    Object.entries(manifest.results).map(([id, r]: [string, any]) => [id, {
+      pass: r.pass,
+      score: r.score,
+      patchPath: r.patchPath,
+      fitnessLogPath: r.fitnessLogPath,
+      worktreePath: r.worktreePath,
+      diffLines: r.diffLines,
+      filesChanged: r.filesChanged,
+      durationSec: r.durationSec,
+    }]),
+  );
+  const bundle = {
+    type: 'forge',
+    forgeId: manifest.forgeId,
+    status: errorMessage ? 'failed' : (manifest.winner ? 'completed' : 'no-winner'),
+    winner: manifest.winner,
+    failedEngines,
+    task: manifest.task,
+    cwd: options.cwd,
+    repoRoot: repoRootPath,
+    baseSha,
+    forgeDir: manifest.forgeDir,
+    exactFitnessCommand: manifest.fitnessCmd,
+    engines: manifest.engines,
+    enginesDispatched: manifest.enginesDispatched,
+    baselinePasses: manifest.baselinePasses,
+    starter: manifest.starter,
+    patches: manifest.patches,
+    results: engineSummaries,
+    worktrees: worktrees.map((wt: WorktreeEntry) => ({ engineId: wt.engineId, path: wt.path, repoRoot: wt.repoRoot, cleanupPlanned: true, cleanupMode: 'best-effort-after-bundle' })),
+    logs: {
+      manifest: `${manifest.forgeDir}/manifest.json`,
+      result: bundlePath,
+      sidechain: sidechainPath,
+      dispatch: manifest.dispatchLog ?? [],
+    },
+    cleanupCommand,
+    error: errorMessage,
+    timestamp: new Date().toISOString(),
+  };
+  manifest.resultBundlePath = bundlePath;
+  manifest.cleanupCommand = cleanupCommand;
+  writeFileSync(bundlePath, JSON.stringify(bundle, null, 2));
+  writeFileSync(readmePath, [
+    `# Forge Result ${manifest.forgeId}`,
+    '',
+    `Status: ${bundle.status}`,
+    `Winner: ${manifest.winner ?? 'none'}`,
+    `Task: ${manifest.task}`,
+    `Fitness: ${manifest.fitnessCmd}`,
+    `Manifest: ${manifest.forgeDir}/manifest.json`,
+    `Result bundle: ${bundlePath}`,
+    `Sidechain log: ${sidechainPath}`,
+    '',
+    '## Failed Engines',
+    failedEngines.length ? failedEngines.map((id: string) => `- ${id}`).join('\n') : '- none',
+    '',
+    '## Cleanup',
+    '```sh',
+    cleanupCommand,
+    '```',
+    '',
+  ].join('\n'));
+  return bundlePath;
+}
+
 export async function runForge(options: ForgeOptions, registry: EngineRegistry, adapter: EngineAdapter, onEvent?: (event:ForgeEvent)=>void): Promise<ForgeManifest> {
   const loadedConfig = loadConfig(options.cwd);
   const config = {
@@ -32,9 +120,9 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
   const forgeId = randomUUID();
   const forgeDir = options.forgeDir;
   const worktrees: WorktreeEntry[] = [];
-  
+
   mkdirSync(forgeDir, { recursive: true });
-  
+
   // Sidechain audit trail — every forge event logged as JSONL
   const sidechain = createSidechainLogger({
     sessionId: forgeId,
@@ -42,10 +130,40 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
     outputDir: forgeDir,
   });
   sidechain.log('forge:init', undefined, { task: options.task, fitnessCmd: options.fitnessCmd });
-  
-  const root = repoRoot(options.cwd);
-  const sha = stashSnapshot(options.cwd);
-  
+
+  let root = options.cwd;
+  let sha = 'unknown';
+  try {
+    root = repoRoot(options.cwd);
+    sha = stashSnapshot(options.cwd);
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    const manifest: ForgeManifest = {
+      forgeId,
+      forgeDir,
+      task: options.task,
+      fitnessCmd: options.fitnessCmd,
+      timestamp: new Date().toISOString(),
+      engines: [],
+      results: {},
+      patches: {},
+      winner: null,
+      closeCall: false,
+      stage1Accepted: false,
+      baselinePasses: false,
+      starter: 'none',
+      enginesDispatched: 0,
+    };
+    try {
+      writeForgeResultBundle(manifest, worktrees, options, root, sha, sidechain.path, error);
+      writeManifest(manifest);
+      sidechain.log('forge:error', undefined, { error, phase: 'preflight' });
+    } catch (bundleErr) {
+      console.warn(`[agon] forge result bundle write failed: ${bundleErr instanceof Error ? bundleErr.message : String(bundleErr)}`);
+    }
+    throw err;
+  }
+
   const enabledEngines = options.engines ?? config.forgeEnabledEngines;
   const available = enabledEngines.filter((id: string) => {
     try {
@@ -59,16 +177,40 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
       return false;
     }
   });
-  
+
   if (available.length === 0) {
-    throw new Error(`No available engines for forge. Install/configure at least one CLI or API engine. Enabled: ${enabledEngines.join(', ')}`);
+    const error = `No available engines for forge. Install/configure at least one CLI or API engine. Enabled: ${enabledEngines.join(', ')}`;
+    const manifest: ForgeManifest = {
+      forgeId,
+      forgeDir,
+      task: options.task,
+      fitnessCmd: options.fitnessCmd,
+      timestamp: new Date().toISOString(),
+      engines: [],
+      results: {},
+      patches: {},
+      winner: null,
+      closeCall: false,
+      stage1Accepted: false,
+      baselinePasses: false,
+      starter: 'none',
+      enginesDispatched: 0,
+    };
+    try {
+      writeForgeResultBundle(manifest, worktrees, options, root, sha, sidechain.path, error);
+      writeManifest(manifest);
+      sidechain.log('forge:error', undefined, { error, phase: 'availability' });
+    } catch (bundleErr) {
+      console.warn(`[agon] forge result bundle write failed: ${bundleErr instanceof Error ? bundleErr.message : String(bundleErr)}`);
+    }
+    throw new Error(error);
   }
-  
+
   const starter = options.starter
     ?? registry.pickStarter(available, config.forgeStarterStrategy, config.forgeFixedStarter);
-  
+
   const challengers = available.filter((id: string) => id !== starter);
-  
+
   const hasAgentEngines = available.some((id: string) => {
     try { return !!registry.get(id).agent; } catch (_e) { return false; }
   });
@@ -84,7 +226,7 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
     context: fullContext || undefined,
     agentMode: hasAgentEngines,
   });
-  
+
   // Role specialization — assign roles based on ELO per-task-class
   const taskClass = classifyTask(options.task);
   const roles = assignForgeRoles(available, taskClass);
@@ -102,7 +244,7 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
     taskClass,
     roles: Object.fromEntries([...roles.entries()].map(([id, r]) => [id, r.role])),
   });
-  
+
   const manifest: ForgeManifest = {
     forgeId,
     forgeDir,
@@ -119,12 +261,12 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
     starter,
     enginesDispatched: 0,
   };
-  
+
   if (options.dryRun) {
     onEvent?.({ type: 'forge:done', data: { dryRun: true, engines: available, starter } });
     return manifest;
   }
-  
+
   try {
     if (config.forgeRequireBaselineCheck) {
       manifest.baselinePasses = await runBaseline({
@@ -136,7 +278,7 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
         onEvent,
       });
     }
-  
+
     const stage1 = await runStage1({
       starter,
       forgePrompt: enginePrompts.get(starter) ?? forgePrompt,
@@ -151,7 +293,7 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
       onEvent,
       signal: options.signal,
     });
-  
+
     manifest.enginesDispatched = 1;
     const allMetrics: DispatchMetric[] = [...(stage1.metrics ?? [])];
     for (const [id, result] of stage1.engineResults) {
@@ -163,16 +305,18 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
       if (m.tokens) tracker.record(m.engineId, { usage: { promptTokens: m.tokens.prompt, completionTokens: m.tokens.response, totalTokens: m.tokens.prompt + m.tokens.response, source: 'cli-reported' as const } });
       sidechain.log('dispatch:complete', m.engineId, { phase: m.phase, durationMs: m.dispatchDurationMs, score: m.score, pass: m.pass, tokens: m.tokens });
     }
-  
+
     if (stage1.accepted) {
       manifest.stage1Accepted = true;
       manifest.winner = starter;
+      manifest.dispatchLog = allMetrics;
+      writeForgeResultBundle(manifest, worktrees, options, root, sha, sidechain.path);
       writeManifest(manifest);
       sidechain.log('stage1:accepted', starter, { score: stage1.engineResults.get(starter)?.score });
       onEvent?.({ type: 'forge:done', engineId: starter, data: { stage1Accepted: true, score: stage1.engineResults.get(starter)?.score } });
       return manifest;
     }
-  
+
     if (challengers.length > 0) {
       // Use peek strategy when multiple challengers — first finisher's
       // approach is shared as context to followers
@@ -193,7 +337,7 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
         onEvent,
         signal: options.signal,
       });
-  
+
       manifest.enginesDispatched = available.length;
       allMetrics.push(...(stage2.metrics ?? []));
       for (const [id, result] of stage2.engineResults) {
@@ -205,25 +349,25 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
         if (m.tokens) tracker.record(m.engineId, { usage: { promptTokens: m.tokens.prompt, completionTokens: m.tokens.response, totalTokens: m.tokens.prompt + m.tokens.response, source: 'cli-reported' as const } });
         sidechain.log('dispatch:complete', m.engineId, { phase: m.phase, durationMs: m.dispatchDurationMs, score: m.score, pass: m.pass, tokens: m.tokens, error: m.error });
       }
-  
+
       const { winner, closeCall, bestScore, secondScore } = determineWinner(
         stage2.engineResults,
         config.forgeClearWinnerSpread,
       );
       manifest.winner = winner;
       manifest.closeCall = closeCall;
-  
+
       sidechain.log('winner:determined', winner ?? undefined, { closeCall, bestScore, secondScore });
       onEvent?.({
         type: 'winner:determined',
         engineId: winner ?? undefined,
         data: { winner: winner ?? null, closeCall, bestScore, secondScore },
       });
-  
+
       const passingCount = [...stage2.engineResults.values()].filter((r) => r.pass).length;
       if (closeCall && config.forgeEnableSynthesis && passingCount >= 2 && winner) {
         const losers = [...stage2.engineResults.keys()].filter((id) => id !== winner);
-  
+
         const synthResult = await runSynthesis({
           manifest,
           winner,
@@ -239,7 +383,7 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
           headSha: sha,
           onEvent,
         });
-  
+
         manifest.synthesis = {
           pass: synthResult.pass,
           score: synthResult.score,
@@ -247,7 +391,7 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
           patchPath: synthResult.patchPath,
           originalWinnerScore: synthResult.originalWinnerScore,
         };
-  
+
         if (synthResult.wins) {
           manifest.winner = 'synthesis';
         }
@@ -255,27 +399,27 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
     } else {
       manifest.winner = stage1.winner;
     }
-  
+
     const eloWinner = manifest.winner === 'synthesis'
       ? Object.entries(manifest.results)
           .filter(([id, r]) => id !== 'synthesis' && r.pass)
           .sort(([, a], [, b]) => b.score - a.score)[0]?.[0] ?? null
       : manifest.winner;
-  
+
     if (config.ratingsEnabled) {
       // Ranked ELO: all engines that produced results get pairwise updates
       const ranked = Object.entries(manifest.results)
         .filter(([id]) => id !== 'synthesis')
         .map(([id, r]) => ({ engineId: id, score: r.pass ? r.score : -1 }))
         .sort((a, b) => b.score - a.score);
-  
+
       if (ranked.length >= 2) {
         updateGlickoRanked(ranked, taskClass, 'forge');
         for (const entry of ranked) {
           onEvent?.({ type: 'elo:update', data: { engineId: entry.engineId, score: entry.score, rank: ranked.indexOf(entry) + 1, taskClass } });
         }
       }
-  
+
       // Record qualitative engine memory from forge outcome
       if (eloWinner) {
         const losers = available.filter(
@@ -286,13 +430,13 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
         recordForgeOutcome(eloWinner, losers, taskClass, forgeId, manifest.results[eloWinner]?.score ?? 0, loserScores);
       }
     }
-  
+
     // --- Gauntlet: losers try to break the winner ---
     const gauntletActive = options.hardened || config.gauntletEnabled;
     if (gauntletActive && eloWinner && manifest.winner) {
       const gauntletLosers = available.filter((id: string) => id !== eloWinner);
       const winnerWt = worktrees.find((wt) => wt.engineId === eloWinner || wt.engineId === manifest.winner);
-  
+
       if (gauntletLosers.length > 0 && winnerWt) {
         try {
           const gauntletResult = await runGauntlet({
@@ -314,9 +458,9 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
             onEvent,
             signal: options.signal,
           });
-  
+
           manifest.gauntlet = gauntletResult;
-  
+
           // Save validated attacks to corpus
           if (gauntletResult.attacksLanded > 0) {
             const saved = addToCorpus(forgeId, taskClass, gauntletResult.breakerArtifacts);
@@ -329,8 +473,9 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
         }
       }
     }
-  
+
     manifest.dispatchLog = allMetrics;
+    writeForgeResultBundle(manifest, worktrees, options, root, sha, sidechain.path);
     writeManifest(manifest);
     const stats = tracker.getStats();
     sidechain.log('forge:done', manifest.winner ?? undefined, {
@@ -342,8 +487,18 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
       ),
     });
     onEvent?.({ type: 'forge:done', data: { winner: manifest.winner } });
-  
+
     return manifest;
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    try {
+      writeForgeResultBundle(manifest, worktrees, options, root, sha, sidechain.path, error);
+      writeManifest(manifest);
+      sidechain.log('forge:error', undefined, { error });
+    } catch (bundleErr) {
+      console.warn(`[agon] forge result bundle write failed: ${bundleErr instanceof Error ? bundleErr.message : String(bundleErr)}`);
+    }
+    throw err;
   } finally {
     for (const wt of worktrees) {
       worktreeRemoveBestEffort(wt.repoRoot, wt.path);

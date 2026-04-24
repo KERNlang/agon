@@ -80,7 +80,7 @@ export async function fetchCliModelsRegistry(): Promise<Record<string, any> | nu
       }
     }
   } catch { /* cache read failed, refetch */ }
-  
+
   try {
     const response = await fetch('https://models.dev/api.json');
     if (!response.ok) {
@@ -110,7 +110,7 @@ export function findBinary(binary: string): string|null {
     const result = execSync(`which ${binary}`, { encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }).trim();
     if (result) return result;
   } catch { /* not found via which */ }
-  
+
   const home = homedir();
   const searchPaths = [
     join(home, '.local', 'bin'),
@@ -174,15 +174,15 @@ export async function buildCliModelGroupsAsync(): Promise<CliProviderGroup[]> {
   try {
     registry = await fetchCliModelsRegistry();
   } catch { registry = null; }
-  
+
   const groups: CliProviderGroup[] = [];
   for (const [key, eng] of Object.entries(ENGINE_PROVIDER_MAP)) {
     const binaryPath = findBinary(eng.engineBinary);
     const installed = binaryPath !== null;
     const version = installed ? getBinaryVersion(eng.engineBinary, eng.versionCmd) : null;
-  
+
     let models: CliModelEntry[] = [];
-  
+
     // Try to get models from the API registry
     if (registry && registry[eng.providerId]) {
       const provider = registry[eng.providerId];
@@ -200,7 +200,7 @@ export async function buildCliModelGroupsAsync(): Promise<CliProviderGroup[]> {
         reasoning: m.reasoning ?? false,
       }));
     }
-  
+
     // Fallback to static list
     if (models.length === 0) {
       const fallbackModels = FALLBACK_MODELS[key] ?? [];
@@ -216,10 +216,10 @@ export async function buildCliModelGroupsAsync(): Promise<CliProviderGroup[]> {
         reasoning: m.reasoning,
       }));
     }
-  
+
     // Determine display name
     const displayName = registry?.[eng.providerId]?.name ?? (key.charAt(0).toUpperCase() + key.slice(1));
-  
+
     groups.push({
       providerId: eng.providerId,
       providerName: displayName,

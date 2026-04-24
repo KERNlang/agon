@@ -35,7 +35,7 @@ export class StreamBridge {
 
   bridge(event: AgentEvent): void {
     const engineId = event.engineId;
-    
+
     // ── Engine-switch detection ───────────────────────────────
     if (engineId && engineId !== this.activeEngineId) {
       const sw: EngineSwitch = {
@@ -52,7 +52,7 @@ export class StreamBridge {
       if (this.onSwitch) this.onSwitch(sw);
       this.activeEngineId = engineId;
     }
-    
+
     // ── Event conversion ──────────────────────────────────────
     switch (event.kind) {
       case 'assistant_chunk':
@@ -62,7 +62,7 @@ export class StreamBridge {
           chunk: event.text,
         });
         break;
-    
+
       case 'tool_call': {
         const toolStatus =
           event.status === 'ok' ? 'done'
@@ -78,18 +78,18 @@ export class StreamBridge {
         });
         break;
       }
-    
+
       case 'error':
         this.dispatch({
           type: 'error',
           message: `[${event.engineId}] ${event.message}`,
         });
         break;
-    
+
       case 'turn_complete':
         // Handled post-step via agent-step-end. No real-time OutputEvent needed.
         break;
-    
+
       default:
         break;
     }

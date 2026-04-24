@@ -154,7 +154,7 @@ export class AgentTeam {
   async initialize(): Promise<void> {
     if (this.disposed) throw makeAgentTeamDisposedError();
     if (this.initialized) return;
-    
+
     // PFB-4: capture the user's dirty working tree as a stash-like SHA
     // WITHOUT mutating their working tree. Agents work against this snapshot
     // so synthesized patches apply cleanly against the user's current state.
@@ -163,7 +163,7 @@ export class AgentTeam {
     } catch (err) {
       throw makeAgentTeamError(`failed to capture working-tree snapshot: ${err instanceof Error ? err.message : String(err)}`, err);
     }
-    
+
     // PFB-3: janitor sweep — remove any orphaned worktrees from cancelled
     // or crashed prior runs older than 1 hour. Idempotent and cheap.
     try {
@@ -172,7 +172,7 @@ export class AgentTeam {
       // Janitor failure is non-fatal; log and continue.
       console.warn(`[agon] AgentTeam janitor sweep failed: ${err instanceof Error ? err.message : String(err)}`);
     }
-    
+
     // RT-17: parallelize worktreeCreate via Promise.allSettled instead of
     // sequential. Sequential would block ~1.5-2.5s wall-clock for N=3 (each
     // git worktree add --detach is ~500-800ms cold).
@@ -193,7 +193,7 @@ export class AgentTeam {
       worktreeCreate(root, wt, this.baseSha);
       return { m, wt };
     });
-    
+
     const createResults = await Promise.allSettled(createPromises);
     const successes: Array<{m: AgentTeamMemberConfig, wt: string|null}> = [];
     const failures: Error[] = [];
@@ -204,7 +204,7 @@ export class AgentTeam {
         failures.push(r.reason instanceof Error ? r.reason : new Error(String(r.reason)));
       }
     }
-    
+
     if (failures.length > 0) {
       // RT-14: rollback every worktree that DID get created before another failed.
       // Best-effort removal — we're already in an error path and don't want to
@@ -217,14 +217,14 @@ export class AgentTeam {
         failures[0],
       );
     }
-    
+
     // Track the successful creations BEFORE constructing sessions so that
     // a session-construction failure can clean up.
     for (const entry of successes) {
       if (entry.wt) this.worktrees[entry.m.engineId] = entry.wt;
     }
     const settled = successes;
-    
+
     // RT-26 fix (Gemini): construct ONE shared Semaphore for the whole team.
     // Heavy tools (npm test, tsc, cargo build) acquire this semaphore before
     // running so 3 parallel members can't saturate disk I/O. A solo /agent
@@ -233,7 +233,7 @@ export class AgentTeam {
     // safest choice for I/O contention; configurable via heavyToolSemaphorePermits.
     const permits = this.config.heavyToolSemaphorePermits ?? 1;
     this.sharedSemaphore = new Semaphore(permits);
-    
+
     // Instantiate AgentSession for each member with the right cwd and the
     // SAME Semaphore instance so the serialization actually happens across
     // members (one Semaphore-per-member would defeat the purpose).
@@ -276,17 +276,17 @@ export class AgentTeam {
       this.members = {};
       throw makeAgentTeamError(`failed to instantiate AgentSession for one or more members: ${err instanceof Error ? err.message : String(err)}`, err);
     }
-    
+
     this.initialized = true;
   }
 
   async step(prompt: string, opts?: {onEvent?:(event:AgentEvent)=>void}): Promise<AgentTeamResult> {
     if (this.disposed) throw makeAgentTeamDisposedError();
     if (!this.initialized) throw makeAgentTeamError('step() called before initialize()');
-    
+
     this.startedAt = Date.now();
     const onEvent = opts?.onEvent;
-    
+
     // RT-12: team budget polling. Wrap the user's onEvent callback so that
     // after every dispatched AgentEvent, we sum the current cumulative cost
     // and wall-clock across all members and call team.cancel() if either
@@ -318,7 +318,7 @@ export class AgentTeam {
           }
         }
       : onEvent;
-    
+
     // Build a parallel-array form so the result can be correlated by index
     // (mirrors PFB-2's positional pattern in stages.kern). We avoid relying
     // on Map iteration order for correlation.
@@ -350,9 +350,9 @@ export class AgentTeam {
         };
       }
     });
-    
+
     const settled = await Promise.allSettled(stepPromises);
-    
+
     // Each stepPromise above already catches its own errors and returns an
     // AgentTeamMemberResult; Promise.allSettled wrapping is belt-and-braces
     // for any unexpected throws from the wrapper itself.
@@ -370,14 +370,14 @@ export class AgentTeam {
         });
       }
     }
-    
+
     let succeeded = 0;
     let failed = 0;
     for (const r of results) {
       if (r.stepResult && !r.error) succeeded++;
       else failed++;
     }
-    
+
     return {
       members: results,
       runId: this.runId,
@@ -403,13 +403,13 @@ export class AgentTeam {
   async cleanup(): Promise<void> {
     if (this.disposed) return;
     this.disposed = true;
-    
+
     // Cancel any in-flight sessions first so they release their abort
     // signals before we yank their worktrees.
     for (const eid of Object.keys(this.members)) {
       try { this.members[eid].cancel(); } catch { /* swallow */ }
     }
-    
+
     // Remove worktrees. Use best-effort so a single failure doesn't strand
     // the others — the next janitor sweep will catch any stragglers.
     const root = repoRoot(this.config.cwd);

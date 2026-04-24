@@ -135,9 +135,9 @@ export function pruneRuns(): void {
       })
       .filter((e: any): e is {name:string, mtime:number} => e !== null)
       .sort((a: {mtime:number}, b: {mtime:number}) => b.mtime - a.mtime);
-  
+
     if (entries.length <= 100) return;
-  
+
     const toRemove = entries.slice(100);
     for (const e of toRemove) {
       try { rmSync(join(runsDir, e.name), { recursive: true, force: true }); } catch { /* best effort */ }

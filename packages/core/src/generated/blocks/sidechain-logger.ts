@@ -32,7 +32,7 @@ export function createSidechainLogger(opts: {sessionId:string, sessionType:strin
   const filename = `${opts.sessionType}_${opts.sessionId}${suffix}.jsonl`;
   const logPath = join(opts.outputDir, filename);
   mkdirSync(opts.outputDir, { recursive: true });
-  
+
   function log(type: string, engineId?: string, data?: Record<string, unknown>): void {
     const event: SidechainEvent = {
       ts: new Date().toISOString(),
@@ -49,7 +49,7 @@ export function createSidechainLogger(opts: {sessionId:string, sessionType:strin
       console.warn(`[agon] sidechain write failed (${logPath}): ${err instanceof Error ? err.message : String(err)}`);
     }
   }
-  
+
   function child(childSessionId: string, childSessionType: string): SidechainLogger {
     return createSidechainLogger({
       sessionId: childSessionId,
@@ -58,6 +58,6 @@ export function createSidechainLogger(opts: {sessionId:string, sessionType:strin
       parentId: opts.sessionId,
     });
   }
-  
+
   return { log, child, path: logPath, sessionId: opts.sessionId };
 }

@@ -18,6 +18,7 @@ export type Intent =
   | { type: 'use'; engineIds: string[] }
   | { type: 'models' }
   | { type: 'tokens' }
+  | { type: 'doctor'; scope?: string }
   | { type: 'plan'; planId?: string }
   | { type: 'plans' }
   | { type: 'approve' }
@@ -62,64 +63,3 @@ export type Intent =
   | { type: 'extensions' }
   | { type: 'extension-command'; commandName: string; args: string }
   | { type: 'unknown'; input: string };
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

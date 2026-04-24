@@ -21,16 +21,16 @@ export class StreamParser {
     this.buffer += chunk;
     const results: ParsedChunk[] = [];
     const lines = this.buffer.split('\n');
-    
+
     // Keep the last element — it may be an incomplete line
     this.buffer = lines.pop() ?? '';
-    
+
     for (const line of lines) {
       const trimmed = line.trim();
       if (!trimmed) continue;
       results.push(...this._parseLine(trimmed));
     }
-    
+
     return results;
   }
 
@@ -38,7 +38,7 @@ export class StreamParser {
     const results: ParsedChunk[] = [];
     const remaining = this.buffer.trim();
     this.buffer = '';
-    
+
     if (!remaining) return results;
     results.push(...this._parseLine(remaining));
     return results;
@@ -46,10 +46,10 @@ export class StreamParser {
 
   private _parseLine(line: string): ParsedChunk[] {
     const results: ParsedChunk[] = [];
-    
+
     try {
       const msg = JSON.parse(line);
-    
+
       // Claude Code stream-json: assistant message with content blocks
       if (msg.type === 'assistant' && msg.message?.content) {
         for (const block of msg.message.content) {
@@ -59,7 +59,7 @@ export class StreamParser {
         }
         return results;
       }
-    
+
       // Claude Code stream-json: final result
       if (msg.type === 'result') {
         if (msg.result) {
@@ -71,13 +71,13 @@ export class StreamParser {
         }
         return results;
       }
-    
+
       // Claude Code stream-json: system status
       if (msg.type === 'system') {
         if (msg.message) results.push({ type: 'status', content: msg.message });
         return results;
       }
-    
+
       // Unknown JSON — skip
       return results;
     } catch {

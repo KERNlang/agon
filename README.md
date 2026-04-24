@@ -198,6 +198,7 @@ Each team runs: Architect -> Implementers (parallel) -> Reviewer -> Finalize. Bo
 | `/use <engines>` | Set active engines |
 | `/models` | Browse provider models, CLI models, and engine overrides |
 | `/engine discover` | Auto-detect installed engines |
+| `/doctor engines` | Diagnose engine auth, CLI/API backend, and git worktree health |
 | `/provider [add\|remove\|list]` | Manage API providers |
 | `/apply [path] [--force]` | Apply winning forge patch |
 | `/commit [message]` | Stage and commit |
@@ -256,6 +257,8 @@ Engines with a native protocol get faster dispatch via the companion field:
 | Mistral | Cloud | Mistral AI |
 
 Auto-detect what's installed: `/engine discover`
+
+Check engine + worktree health from the shell: `agon doctor engines`
 
 ---
 

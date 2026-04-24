@@ -23,6 +23,7 @@ import from="../../handlers/cesar-brain.js" names="handleCesarBrain,parseSuggest
 import from="@agon/core" names="appendMessage,appendUserTurnIfAbsent,buildHistoryPrimedPrompt"
 import from="../handlers/pipeline.js" names="handlePipeline"
 import from="../handlers/provider.js" names="handleProvider"
+import from="../commands/doctor.js" names="diagnoseEngineDoctorEntry,checkDoctorWorktree"
 import from="../cesar/routing.js" names="deriveRoutingHints"
 import from="../cesar/routing.js" names="shouldUseAgentTeam"
 import from="../cesar/session.js" names="buildCesarSystemPrompt,resolveCesarBackend"
@@ -184,6 +185,26 @@ fn name=extractExecutionSpec params="input:string" returns="{ task:string; fitne
       ? input.replace(FITNESS_PATTERN, '').trim()
       : input.trim();
     return { task, fitnessCmd };
+  >>>
+
+fn name=formatCesarRecoveryStatus params="stage:'delegation'|'rebuild'|'retry'|'acting'|'failed', subject:string, detail?:string" returns=string export=true
+  doc "Compact user-facing Cesar recovery messages. Keep these short because they render in the live status/transcript path during failure handling."
+  handler <<<
+    const suffix = detail ? ` - ${detail}` : '';
+    switch (stage) {
+      case 'delegation':
+        return `Cesar recovery: running ${subject}${suffix}`;
+      case 'rebuild':
+        return `Cesar recovery: rebuilding ${subject} session${suffix}`;
+      case 'retry':
+        return `Cesar recovery: retrying ${subject} with fresh dispatch${suffix}`;
+      case 'acting':
+        return `Cesar recovery: ${subject} acting as Cesar${suffix}`;
+      case 'failed':
+        return `Cesar recovery failed: ${subject}${suffix}`;
+      default:
+        return `Cesar recovery: ${subject}${suffix}`;
+    }
   >>>
 
 fn name=countTrackedUserTurns params="ctx:HandlerContext" returns=number
@@ -612,15 +633,15 @@ You still own the overall task. Integrate the forged slice with the rest of the 
           : input;
         const recoveredFitness = crashDel.fitnessCmd ?? executionSpec.fitnessCmd;
         switch (action) {
-          case 'forge': cb.dispatch({ type: 'info', message: 'Cesar → forge (recovered)' }); cb.runAsJob('forge', label, async () => { await handleForge(recoveredTask, recoveredFitness, cb.dispatch, cb.ctx, undefined, crashDel.hardened ?? false, true); }); return true;
-          case 'brainstorm': cb.dispatch({ type: 'info', message: 'Cesar → brainstorm (recovered)' }); cb.runAsJob('brainstorm', label, async () => { await handleBrainstorm(recoveredTask, cb.dispatch, cb.ctx); }); return true;
-          case 'tribunal': cb.dispatch({ type: 'info', message: `Cesar → tribunal (recovered)${crashDel.tribunalMode ? ` [${crashDel.tribunalMode}]` : ''}` }); cb.runAsJob('tribunal', label, () => handleTribunal(recoveredTask, cb.dispatch, cb.ctx, crashDel.tribunalMode)); return true;
-          case 'campfire': cb.dispatch({ type: 'info', message: 'Cesar → campfire (recovered)' }); cb.runAsJob('campfire', label, () => handleCampfire(recoveredTask, cb.dispatch, cb.ctx)); return true;
-          case 'pipeline': cb.dispatch({ type: 'info', message: 'Cesar → pipeline (recovered)' }); cb.runAsJob('pipeline', label, () => handlePipeline(recoveredTask, cb.dispatch, cb.ctx, recoveredFitness ?? undefined)); return true;
-          case 'review': cb.dispatch({ type: 'info', message: 'Cesar → review (recovered)' }); cb.runAsJob('review', label, () => handleReview(cb.dispatch, cb.ctx, crashDel.target, crashDel.engineId)); return true;
-          case 'team-forge': { const tf = recoveredFitness ?? await cb.askQuestion('What command tests this?'); if (tf.trim()) { cb.dispatch({ type: 'info', message: 'Cesar → team-forge (recovered)' }); cb.runAsJob('team-forge', label, () => handleTeamForge(recoveredTask, tf.trim(), cb.dispatch, cb.ctx, undefined)); return true; } break; }
-          case 'team-brainstorm': cb.dispatch({ type: 'info', message: 'Cesar → team-brainstorm (recovered)' }); cb.runAsJob('team-brainstorm', label, () => handleTeamBrainstorm(recoveredTask, cb.dispatch, cb.ctx)); return true;
-          case 'team-tribunal': cb.dispatch({ type: 'info', message: `Cesar → team-tribunal (recovered)${crashDel.tribunalMode ? ` [${crashDel.tribunalMode}]` : ''}` }); cb.runAsJob('team-tribunal', label, () => handleTeamTribunal(recoveredTask, cb.dispatch, cb.ctx, crashDel.tribunalMode)); return true;
+          case 'forge': cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'forge', 'recovered delegation') }); cb.runAsJob('forge', label, async () => { await handleForge(recoveredTask, recoveredFitness, cb.dispatch, cb.ctx, undefined, crashDel.hardened ?? false, true); }); return true;
+          case 'brainstorm': cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'brainstorm', 'recovered delegation') }); cb.runAsJob('brainstorm', label, async () => { await handleBrainstorm(recoveredTask, cb.dispatch, cb.ctx); }); return true;
+          case 'tribunal': cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'tribunal', crashDel.tribunalMode ? `recovered delegation [${crashDel.tribunalMode}]` : 'recovered delegation') }); cb.runAsJob('tribunal', label, () => handleTribunal(recoveredTask, cb.dispatch, cb.ctx, crashDel.tribunalMode)); return true;
+          case 'campfire': cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'campfire', 'recovered delegation') }); cb.runAsJob('campfire', label, () => handleCampfire(recoveredTask, cb.dispatch, cb.ctx)); return true;
+          case 'pipeline': cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'pipeline', 'recovered delegation') }); cb.runAsJob('pipeline', label, () => handlePipeline(recoveredTask, cb.dispatch, cb.ctx, recoveredFitness ?? undefined)); return true;
+          case 'review': cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'review', 'recovered delegation') }); cb.runAsJob('review', label, () => handleReview(cb.dispatch, cb.ctx, crashDel.target, crashDel.engineId)); return true;
+          case 'team-forge': { const tf = recoveredFitness ?? await cb.askQuestion('What command tests this?'); if (tf.trim()) { cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'team-forge', 'recovered delegation') }); cb.runAsJob('team-forge', label, () => handleTeamForge(recoveredTask, tf.trim(), cb.dispatch, cb.ctx, undefined)); return true; } break; }
+          case 'team-brainstorm': cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'team-brainstorm', 'recovered delegation') }); cb.runAsJob('team-brainstorm', label, () => handleTeamBrainstorm(recoveredTask, cb.dispatch, cb.ctx)); return true;
+          case 'team-tribunal': cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'team-tribunal', crashDel.tribunalMode ? `recovered delegation [${crashDel.tribunalMode}]` : 'recovered delegation') }); cb.runAsJob('team-tribunal', label, () => handleTeamTribunal(recoveredTask, cb.dispatch, cb.ctx, crashDel.tribunalMode)); return true;
         }
       }
     }
@@ -643,7 +664,7 @@ You still own the overall task. Integrate the forged slice with the rest of the 
           try { cb.ctx.cesarSession.close(); } catch {}
           cb.ctx.setCesarSession(null);
         }
-        cb.dispatch({ type: 'warning', message: `Cesar session unavailable — rebuilding ${cesarId} session…` });
+        cb.dispatch({ type: 'warning', message: formatCesarRecoveryStatus('rebuild', cesarId) });
         const retried = await handleCesarBrain(input, cb.dispatch, cb.ctx, []);
         const retriedPlan: CesarPlan | undefined = cb.ctx.cesar?.proposedPlan;
         if (retriedPlan && retriedPlan.state === 'awaiting_approval') {
@@ -674,7 +695,7 @@ You still own the overall task. Integrate the forged slice with the rest of the 
       const { resolveWorkingDir, RUNS_DIR, appendMessage } = await import('@agon/core');
       const outDir = join(RUNS_DIR, `cesar-fallback-${Date.now()}`);
       mkdirSync(outDir, { recursive: true });
-      cb.dispatch({ type: 'warning', message: `Cesar session unavailable — retrying ${cesarId} with fresh dispatch…` });
+      cb.dispatch({ type: 'warning', message: formatCesarRecoveryStatus('retry', cesarId, `log: ${outDir}`) });
       const primedPrompt = buildHistoryPrimedPrompt(cb.ctx.chatSession, input);
       const freshResult = await cb.ctx.adapter.dispatch({
         engine: cesarEngine,
@@ -742,7 +763,7 @@ You still own the overall task. Integrate the forged slice with the rest of the 
     // Cesar completely unavailable — pick next best engine as acting Cesar with full context
     const available = cb.ctx.registry.availableIds();
     const actingCesar = available.find((id: string) => id !== cesarId) ?? cesarId;
-    cb.dispatch({ type: 'warning', message: `Cesar (${cesarId}) unavailable — ${actingCesar} stepping in as acting Cesar` });
+    cb.dispatch({ type: 'warning', message: formatCesarRecoveryStatus('acting', actingCesar, `${cesarId} unavailable`) });
 
     // Build context so acting Cesar can lead
     const recentMessages = cb.ctx.chatSession?.messages?.slice(-10) ?? [];
@@ -758,6 +779,7 @@ You still own the overall task. Integrate the forged slice with the rest of the 
       const actingEngine = cb.ctx.registry.get(actingCesar);
       const outDir = join(RUNS_DIR, `acting-cesar-${Date.now()}`);
       mkdirSync(outDir, { recursive: true });
+      cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('acting', actingCesar, `log: ${outDir}`) });
       const actingResult = await cb.ctx.adapter.dispatch({
         engine: actingEngine,
         prompt: actingPrompt,
@@ -776,7 +798,7 @@ You still own the overall task. Integrate the forged slice with the rest of the 
       }
     } catch (e) { console.warn(`[agon] dispatch: acting Cesar failed: ${e instanceof Error ? e.message : String(e)}`); }
 
-    cb.dispatch({ type: 'error', message: 'All engines unavailable. Check /engines.' });
+    cb.dispatch({ type: 'error', message: formatCesarRecoveryStatus('failed', 'all engines unavailable', 'run agon doctor engines') });
     return false;
   >>>
 
@@ -1056,6 +1078,39 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
       case 'cesar-report': handleCesarReport(cb.dispatch); break;
       case 'cesar-hints': handleCesarHints(intent.input, cb.dispatch, cb.ctx); break;
       case 'history': handleHistory(cb.dispatch, intent.id); break;
+      case 'doctor': {
+        const scope = String(intent.scope ?? 'engines').trim() || 'engines';
+        if (scope !== 'engines') {
+          cb.dispatch({ type: 'error', message: `Unknown doctor scope: ${scope}` });
+          break;
+        }
+        const enabledIds = cb.ctx.config.forgeEnabledEngines ?? [];
+        const entries = cb.ctx.registry.list()
+          .map((engine: any) => diagnoseEngineDoctorEntry(engine, cb.ctx.registry, enabledIds))
+          .sort((a: any, b: any) => {
+            if (a.enabled !== b.enabled) return a.enabled ? -1 : 1;
+            return a.id.localeCompare(b.id);
+          });
+        cb.dispatch({ type: 'header', title: 'Engine Doctor' });
+        cb.dispatch({
+          type: 'table',
+          headers: ['Engine', 'Forge', 'Status', 'Backend', 'Modes', 'Detail'],
+          rows: entries.map((entry: any) => [
+            entry.id,
+            entry.enabled ? 'yes' : 'no',
+            entry.status,
+            entry.backend,
+            entry.modes,
+            entry.detail,
+          ]),
+        });
+        const worktree = checkDoctorWorktree(resolveWorkingDir());
+        cb.dispatch({ type: worktree.ok ? 'success' : 'warning', message: worktree.ok ? worktree.message : `worktree check failed: ${worktree.message}` });
+        const failing = entries.filter((entry: any) => entry.status === 'fail').length;
+        const warnings = entries.filter((entry: any) => entry.status === 'warn').length;
+        cb.dispatch({ type: 'info', message: `Summary: ${entries.length - failing - warnings} ok, ${warnings} warn, ${failing} fail` });
+        break;
+      }
       case 'engines': cb.setEnginePickerOpen(true); break;
       case 'discover': await handleDiscover(cb.dispatch, cb.ctx); break;
       case 'provider': await handleProvider(intent.action, intent.args, cb.dispatch, cb.ctx); break;

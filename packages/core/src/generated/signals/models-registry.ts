@@ -68,7 +68,7 @@ export async function fetchModelsRegistry(): Promise<Record<string, ModelsDevPro
       }
     } catch (_e) { console.warn(`[agon] models-registry: cache read failed, refetching: ${_e instanceof Error ? _e.message : String(_e)}`); }
   }
-  
+
   // Fetch from models.dev
   const response = await fetch(MODELS_DEV_URL);
   if (!response.ok) {
@@ -78,13 +78,13 @@ export async function fetchModelsRegistry(): Promise<Record<string, ModelsDevPro
     }
     throw new Error(`Failed to fetch models registry: ${response.status}`);
   }
-  
+
   const data = await response.json() as Record<string, ModelsDevProvider>;
-  
+
   // Write cache
   mkdirSync(cacheDir, { recursive: true });
   writeFileSync(cacheFile, JSON.stringify(data));
-  
+
   return data;
 }
 
@@ -116,16 +116,16 @@ export function resolveBaseUrl(provider: ModelsDevProvider, model?: ModelsDevMod
 
 export function buildModelEntries(registry: Record<string, ModelsDevProvider>): ModelEntry[] {
   const entries: ModelEntry[] = [];
-  
+
   for (const provider of Object.values(registry)) {
     for (const model of Object.values(provider.models)) {
       const format = resolveModelFormat(provider.npm, model);
       const baseUrl = resolveBaseUrl(provider, model);
       if (!baseUrl) continue; // Skip providers without API URL
-  
+
       const apiKeyEnv = provider.env[0];
       if (!apiKeyEnv) continue;
-  
+
       entries.push({
         providerId: provider.id,
         providerName: provider.name,
@@ -141,14 +141,14 @@ export function buildModelEntries(registry: Record<string, ModelsDevProvider>): 
       });
     }
   }
-  
+
   // Sort by provider name, then model name
   entries.sort((a, b) => {
     const provCmp = a.providerName.localeCompare(b.providerName);
     if (provCmp !== 0) return provCmp;
     return a.modelName.localeCompare(b.modelName);
   });
-  
+
   return entries;
 }
 
@@ -156,7 +156,7 @@ export function searchModels(entries: ModelEntry[], query: string): ModelEntry[]
   if (!query.trim()) return entries;
   const q = query.toLowerCase();
   const terms = q.split(/\s+/);
-  
+
   // Known model-brand → canonical provider mappings
   const canonicalProviders: Record<string, string[]> = {
     claude: ['anthropic'],
@@ -179,7 +179,7 @@ export function searchModels(entries: ModelEntry[], query: string): ModelEntry[]
     command: ['cohere'],
     grok: ['xai'],
   };
-  
+
   // Brand terms like "claude" or "gemini" are used to *boost* canonical
   // providers during scoring (below), not to hard-filter. Hard-filtering
   // breaks queries like "openrouter claude" that legitimately target a
@@ -188,13 +188,13 @@ export function searchModels(entries: ModelEntry[], query: string): ModelEntry[]
     const haystack = `${entry.providerName} ${entry.modelName} ${entry.modelId}`.toLowerCase();
     return terms.every((term: string) => haystack.includes(term));
   });
-  
+
   // Score and sort by relevance
   const scored = matched.map((entry) => {
     let score = 0;
     const pid = entry.providerId.toLowerCase();
     const pname = entry.providerName.toLowerCase();
-  
+
     for (const term of terms) {
       const canonical = canonicalProviders[term];
       if (canonical && canonical.some((c: string) => pid === c || pid.startsWith(c))) {
@@ -203,16 +203,16 @@ export function searchModels(entries: ModelEntry[], query: string): ModelEntry[]
       if (pname.includes(term)) score += 20;
       if (entry.modelName.toLowerCase().includes(term)) score += 10;
     }
-  
+
     return { entry, score };
   });
-  
+
   // Sort by score desc, then provider name asc for ties
   scored.sort((a, b) => {
     if (b.score !== a.score) return b.score - a.score;
     return a.entry.providerName.localeCompare(b.entry.providerName);
   });
-  
+
   return scored.map((s) => s.entry);
 }
 
@@ -255,11 +255,11 @@ export function modelEntryToEngineDef(entry: ModelEntry): Record<string, any> {
  */
 export function buildCliModelEntries(engines: EngineDefinition[], findBinary: (engine:EngineDefinition) => string|null): ModelEntry[] {
   const entries: ModelEntry[] = [];
-  
+
   for (const engine of engines) {
     if (!engine.cliModels) continue;
     if (!findBinary(engine)) continue;
-  
+
     const models = engine.cliModels.list ?? [];
     for (const m of models) {
       entries.push({
@@ -274,13 +274,13 @@ export function buildCliModelEntries(engines: EngineDefinition[], findBinary: (e
       });
     }
   }
-  
+
   // Sort by provider display name, then model name
   entries.sort((a, b) => {
     const provCmp = a.providerName.localeCompare(b.providerName);
     if (provCmp !== 0) return provCmp;
     return a.modelName.localeCompare(b.modelName);
   });
-  
+
   return entries;
 }

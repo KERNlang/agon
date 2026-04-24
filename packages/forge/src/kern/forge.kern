@@ -1,5 +1,5 @@
 import from="node:crypto" names="randomUUID"
-import from="node:fs" names="mkdirSync"
+import from="node:fs" names="mkdirSync,writeFileSync"
 import from="@agon/core" names="ForgeOptions,ForgeManifest,EngineAdapter,ForgeEvent,AgonConfig,DispatchMetric" types=true
 import from="@agon/core" names="EngineRegistry,loadConfig,buildForgePrompt,repoRoot,stashSnapshot,worktreeRemoveBestEffort,updateGlickoRanked,classifyTask,createSidechainLogger,assignForgeRoles,buildSpecializedPrompt,recordForgeOutcome,tracker"
 import from="./stages.js" names="runBaseline,runStage1,runStage2,runStage2WithPeek"
@@ -9,6 +9,95 @@ import from="./gauntlet.js" names="runGauntlet"
 import from="./corpus.js" names="addToCorpus"
 import from="./manifest.js" names="writeManifest"
 import from="../types.js" names="WorktreeEntry" types=true
+
+fn name=shellQuoteForForge params="value:string" returns=string export=true
+  handler <<<
+    const s = String(value ?? '');
+    if (/^[A-Za-z0-9_@%+=:,./-]+$/.test(s)) return s;
+    return `'${s.replace(/'/g, `'\\''`)}'`;
+  >>>
+
+fn name=buildForgeCleanupCommand params="repoRootPath:string,forgeDir:string" returns=string export=true
+  handler <<<
+    return `git -C ${shellQuoteForForge(repoRootPath)} worktree prune && rm -rf ${shellQuoteForForge(forgeDir)}`;
+  >>>
+
+fn name=writeForgeResultBundle params="manifest:ForgeManifest, worktrees:WorktreeEntry[], options:ForgeOptions, repoRootPath:string, baseSha:string, sidechainPath:string, errorMessage?:string" returns=string export=true
+  doc "Persist a compact run bundle so every forge leaves an inspectable result, failure list, logs, worktree paths, exact fitness command, and cleanup command."
+  handler <<<
+    const cleanupCommand = buildForgeCleanupCommand(repoRootPath, manifest.forgeDir);
+    const bundlePath = `${manifest.forgeDir}/result.json`;
+    const readmePath = `${manifest.forgeDir}/README.md`;
+    const failedEngines = manifest.engines.filter((id: string) => {
+      const result = manifest.results[id];
+      return !result || !result.pass;
+    });
+    const engineSummaries = Object.fromEntries(
+      Object.entries(manifest.results).map(([id, r]: [string, any]) => [id, {
+        pass: r.pass,
+        score: r.score,
+        patchPath: r.patchPath,
+        fitnessLogPath: r.fitnessLogPath,
+        worktreePath: r.worktreePath,
+        diffLines: r.diffLines,
+        filesChanged: r.filesChanged,
+        durationSec: r.durationSec,
+      }]),
+    );
+    const bundle = {
+      type: 'forge',
+      forgeId: manifest.forgeId,
+      status: errorMessage ? 'failed' : (manifest.winner ? 'completed' : 'no-winner'),
+      winner: manifest.winner,
+      failedEngines,
+      task: manifest.task,
+      cwd: options.cwd,
+      repoRoot: repoRootPath,
+      baseSha,
+      forgeDir: manifest.forgeDir,
+      exactFitnessCommand: manifest.fitnessCmd,
+      engines: manifest.engines,
+      enginesDispatched: manifest.enginesDispatched,
+      baselinePasses: manifest.baselinePasses,
+      starter: manifest.starter,
+      patches: manifest.patches,
+      results: engineSummaries,
+      worktrees: worktrees.map((wt: WorktreeEntry) => ({ engineId: wt.engineId, path: wt.path, repoRoot: wt.repoRoot, cleanupPlanned: true, cleanupMode: 'best-effort-after-bundle' })),
+      logs: {
+        manifest: `${manifest.forgeDir}/manifest.json`,
+        result: bundlePath,
+        sidechain: sidechainPath,
+        dispatch: manifest.dispatchLog ?? [],
+      },
+      cleanupCommand,
+      error: errorMessage,
+      timestamp: new Date().toISOString(),
+    };
+    manifest.resultBundlePath = bundlePath;
+    manifest.cleanupCommand = cleanupCommand;
+    writeFileSync(bundlePath, JSON.stringify(bundle, null, 2));
+    writeFileSync(readmePath, [
+      `# Forge Result ${manifest.forgeId}`,
+      '',
+      `Status: ${bundle.status}`,
+      `Winner: ${manifest.winner ?? 'none'}`,
+      `Task: ${manifest.task}`,
+      `Fitness: ${manifest.fitnessCmd}`,
+      `Manifest: ${manifest.forgeDir}/manifest.json`,
+      `Result bundle: ${bundlePath}`,
+      `Sidechain log: ${sidechainPath}`,
+      '',
+      '## Failed Engines',
+      failedEngines.length ? failedEngines.map((id: string) => `- ${id}`).join('\n') : '- none',
+      '',
+      '## Cleanup',
+      '```sh',
+      cleanupCommand,
+      '```',
+      '',
+    ].join('\n'));
+    return bundlePath;
+  >>>
 
 fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistry, adapter:EngineAdapter, onEvent?:(event:ForgeEvent)=>void" returns="Promise<ForgeManifest>"
   handler <<<
@@ -32,8 +121,38 @@ fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistr
     });
     sidechain.log('forge:init', undefined, { task: options.task, fitnessCmd: options.fitnessCmd });
 
-    const root = repoRoot(options.cwd);
-    const sha = stashSnapshot(options.cwd);
+    let root = options.cwd;
+    let sha = 'unknown';
+    try {
+      root = repoRoot(options.cwd);
+      sha = stashSnapshot(options.cwd);
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      const manifest: ForgeManifest = {
+        forgeId,
+        forgeDir,
+        task: options.task,
+        fitnessCmd: options.fitnessCmd,
+        timestamp: new Date().toISOString(),
+        engines: [],
+        results: {},
+        patches: {},
+        winner: null,
+        closeCall: false,
+        stage1Accepted: false,
+        baselinePasses: false,
+        starter: 'none',
+        enginesDispatched: 0,
+      };
+      try {
+        writeForgeResultBundle(manifest, worktrees, options, root, sha, sidechain.path, error);
+        writeManifest(manifest);
+        sidechain.log('forge:error', undefined, { error, phase: 'preflight' });
+      } catch (bundleErr) {
+        console.warn(`[agon] forge result bundle write failed: ${bundleErr instanceof Error ? bundleErr.message : String(bundleErr)}`);
+      }
+      throw err;
+    }
 
     const enabledEngines = options.engines ?? config.forgeEnabledEngines;
     const available = enabledEngines.filter((id: string) => {
@@ -50,7 +169,31 @@ fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistr
     });
 
     if (available.length === 0) {
-      throw new Error(`No available engines for forge. Install/configure at least one CLI or API engine. Enabled: ${enabledEngines.join(', ')}`);
+      const error = `No available engines for forge. Install/configure at least one CLI or API engine. Enabled: ${enabledEngines.join(', ')}`;
+      const manifest: ForgeManifest = {
+        forgeId,
+        forgeDir,
+        task: options.task,
+        fitnessCmd: options.fitnessCmd,
+        timestamp: new Date().toISOString(),
+        engines: [],
+        results: {},
+        patches: {},
+        winner: null,
+        closeCall: false,
+        stage1Accepted: false,
+        baselinePasses: false,
+        starter: 'none',
+        enginesDispatched: 0,
+      };
+      try {
+        writeForgeResultBundle(manifest, worktrees, options, root, sha, sidechain.path, error);
+        writeManifest(manifest);
+        sidechain.log('forge:error', undefined, { error, phase: 'availability' });
+      } catch (bundleErr) {
+        console.warn(`[agon] forge result bundle write failed: ${bundleErr instanceof Error ? bundleErr.message : String(bundleErr)}`);
+      }
+      throw new Error(error);
     }
 
     const starter = options.starter
@@ -156,6 +299,8 @@ fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistr
       if (stage1.accepted) {
         manifest.stage1Accepted = true;
         manifest.winner = starter;
+        manifest.dispatchLog = allMetrics;
+        writeForgeResultBundle(manifest, worktrees, options, root, sha, sidechain.path);
         writeManifest(manifest);
         sidechain.log('stage1:accepted', starter, { score: stage1.engineResults.get(starter)?.score });
         onEvent?.({ type: 'forge:done', engineId: starter, data: { stage1Accepted: true, score: stage1.engineResults.get(starter)?.score } });
@@ -320,6 +465,7 @@ fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistr
       }
 
       manifest.dispatchLog = allMetrics;
+      writeForgeResultBundle(manifest, worktrees, options, root, sha, sidechain.path);
       writeManifest(manifest);
       const stats = tracker.getStats();
       sidechain.log('forge:done', manifest.winner ?? undefined, {
@@ -333,6 +479,16 @@ fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistr
       onEvent?.({ type: 'forge:done', data: { winner: manifest.winner } });
 
       return manifest;
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      try {
+        writeForgeResultBundle(manifest, worktrees, options, root, sha, sidechain.path, error);
+        writeManifest(manifest);
+        sidechain.log('forge:error', undefined, { error });
+      } catch (bundleErr) {
+        console.warn(`[agon] forge result bundle write failed: ${bundleErr instanceof Error ? bundleErr.message : String(bundleErr)}`);
+      }
+      throw err;
     } finally {
       for (const wt of worktrees) {
         worktreeRemoveBestEffort(wt.repoRoot, wt.path);

@@ -109,14 +109,14 @@ export function approveCesarPlan(plan: CesarPlan): CesarPlan {
 export function advanceCesarStep(plan: CesarPlan, stepId: string, result: CesarStepResult): CesarPlan {
   const stepIdx = plan.steps.findIndex(s => s.id === stepId);
   if (stepIdx === -1) return plan;
-  
+
   const isSuccess = result.status === 'success';
   const stepState: CesarStepState = isSuccess ? 'done' : 'failed';
-  
+
   let newSteps = plan.steps.map((s, i) =>
     i === stepIdx ? { ...s, state: stepState, result } : s,
   );
-  
+
   // Unblock dependent steps if this step succeeded
   if (isSuccess) {
     newSteps = newSteps.map(s => {
@@ -129,15 +129,15 @@ export function advanceCesarStep(plan: CesarPlan, stepId: string, result: CesarS
       return allDepsDone ? { ...s, state: 'pending' as CesarStepState } : s;
     });
   }
-  
+
   // Accumulate actual costs
   const totalActualTokens = plan.totalActualTokens + result.actualTokens;
   const totalActualCostUsd = plan.totalActualCostUsd + result.actualCostUsd;
-  
+
   // Determine plan state
   let newState: CesarPlanState = plan.state;
   let completedAt = plan.completedAt;
-  
+
   if (!isSuccess) {
     newState = 'paused';
   } else {
@@ -147,7 +147,7 @@ export function advanceCesarStep(plan: CesarPlan, stepId: string, result: CesarS
       completedAt = new Date().toISOString();
     }
   }
-  
+
   return {
     ...plan,
     steps: newSteps,

@@ -66,7 +66,7 @@ export function validateManifest(raw: unknown, filePath: string): { ok: boolean;
     return { ok: false, error: `${filePath}: manifest is not an object` };
   }
   const obj = raw as Record<string, unknown>;
-  
+
   // Required fields
   if (typeof obj.id !== 'string' || !obj.id.trim()) {
     return { ok: false, error: `${filePath}: missing or empty 'id'` };
@@ -80,7 +80,7 @@ export function validateManifest(raw: unknown, filePath: string): { ok: boolean;
   if (typeof obj.description !== 'string') {
     return { ok: false, error: `${filePath}: missing 'description'` };
   }
-  
+
   // Validate contributes.commands if present
   if (obj.contributes && typeof obj.contributes === 'object') {
     const contrib = obj.contributes as Record<string, unknown>;
@@ -104,6 +104,6 @@ export function validateManifest(raw: unknown, filePath: string): { ok: boolean;
       }
     }
   }
-  
+
   return { ok: true, data: obj as unknown as ExtensionManifest };
 }

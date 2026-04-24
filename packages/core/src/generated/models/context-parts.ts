@@ -93,7 +93,7 @@ export function buildStageContext(opts: {engineId:string, pass:boolean, score:nu
   // Extract goal from prompt (first ## TASK section or first 300 chars)
   const taskMatch = opts.prompt.match(/## TASK\s*\n([\s\S]*?)(?=\n## |$)/);
   const goal = taskMatch ? taskMatch[1].trim().slice(0, 500) : opts.prompt.slice(0, 300);
-  
+
   // Extract files from diff
   const filesModified: string[] = [];
   const diffFileRe = /^diff --git a\/(.+?) b\//gm;
@@ -101,7 +101,7 @@ export function buildStageContext(opts: {engineId:string, pass:boolean, score:nu
   while ((fm = diffFileRe.exec(opts.diff)) !== null) {
     if (!filesModified.includes(fm[1])) filesModified.push(fm[1]);
   }
-  
+
   // Extract decisions from assistant output (lines with decision markers)
   const decisions: Array<{choice: string, reason: string}> = [];
   if (opts.dispatchStdout) {
@@ -113,7 +113,7 @@ export function buildStageContext(opts: {engineId:string, pass:boolean, score:nu
       }
     }
   }
-  
+
   // Extract patterns from dispatch output
   const patternsFound: string[] = [];
   if (opts.dispatchStdout) {
@@ -123,7 +123,7 @@ export function buildStageContext(opts: {engineId:string, pass:boolean, score:nu
       if (patternsFound.length < 5) patternsFound.push(pm[1].trim().slice(0, 150));
     }
   }
-  
+
   // Extract tool result refs from dispatch output (file paths mentioned in tool calls)
   const toolResultRefs: Array<{toolName: string, filePath?: string, summary: string}> = [];
   if (opts.dispatchStdout) {
@@ -139,7 +139,7 @@ export function buildStageContext(opts: {engineId:string, pass:boolean, score:nu
       } catch { /* skip malformed */ }
     }
   }
-  
+
   // Diff summary: first N lines of actual changes (skip headers)
   let diffSummary: string | null = null;
   if (opts.diff) {
@@ -147,7 +147,7 @@ export function buildStageContext(opts: {engineId:string, pass:boolean, score:nu
     const changeLines = lines.filter((l: string) => l.startsWith('+') || l.startsWith('-')).slice(0, 30);
     diffSummary = changeLines.join('\n').slice(0, 2000);
   }
-  
+
   return {
     goal,
     filesDiscovered: [...filesModified], // In simple case, discovered = modified
@@ -170,9 +170,9 @@ export function renderStageContext(ctx: StageContext): string {
   const sections: string[] = [
     `## PRIOR APPROACH (${ctx.engineId} — ${ctx.pass ? 'PASSED' : 'FAILED'}${ctx.score !== null ? `, score: ${ctx.score}` : ''})`,
   ];
-  
+
   sections.push(`**Goal:** ${ctx.goal}`);
-  
+
   if (ctx.filesModified.length > 0) {
     sections.push(`**Files modified:** ${ctx.filesModified.join(', ')}`);
   }
@@ -195,8 +195,8 @@ export function renderStageContext(ctx: StageContext): string {
   if (ctx.fitnessLogPath) {
     sections.push(`**Fitness log:** ${ctx.fitnessLogPath} (Read this file for test output details)`);
   }
-  
+
   sections.push(`\nUse this as context but find your own solution. You may improve on their approach or take a completely different path.`);
-  
+
   return sections.join('\n');
 }

@@ -268,6 +268,8 @@ fn name=parseSlashCommand params="input:string, commandRegistry?:any" returns=In
       case 'usage':
       case 'cost':
         return { type: 'tokens' } as Intent;
+      case 'doctor':
+        return { type: 'doctor', scope: rest || 'engines' } as unknown as Intent;
       case 'cesar': {
         const cesarIds = rest
           .split(/[,\s]+/)

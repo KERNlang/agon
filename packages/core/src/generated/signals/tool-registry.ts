@@ -41,7 +41,7 @@ export class ToolRegistry {
 export async function executeToolCall(call: ToolCall, ctx: ToolContext, registry: ToolRegistry, onPermissionAsk?: (tool:string,message:string)=>Promise<boolean|string>): Promise<ToolCallResult> {
   const start = Date.now();
   const handler = registry.get(call.name);
-  
+
   if (!handler) {
     return {
       toolCallId: call.id,
@@ -50,7 +50,7 @@ export async function executeToolCall(call: ToolCall, ctx: ToolContext, registry
       durationMs: Date.now() - start,
     };
   }
-  
+
   // Phase 0: Read-only gate — block mutating tools during investigation
   // Bash handles readOnlyMode in its own checkPermission (allows safe commands like ls, git diff)
   if (ctx.readOnlyMode && !handler.definition.isReadOnly && call.name !== 'Bash') {
@@ -61,7 +61,7 @@ export async function executeToolCall(call: ToolCall, ctx: ToolContext, registry
       durationMs: Date.now() - start,
     };
   }
-  
+
   // Phase 1: Validate input
   const validationError = handler.validate(call.input, ctx);
   if (validationError) {
@@ -72,7 +72,7 @@ export async function executeToolCall(call: ToolCall, ctx: ToolContext, registry
       durationMs: Date.now() - start,
     };
   }
-  
+
   // Phase 2: Permission check
   const permission = handler.checkPermission(call.input, ctx);
   if (permission.behavior === 'deny') {
@@ -112,16 +112,16 @@ export async function executeToolCall(call: ToolCall, ctx: ToolContext, registry
       };
     }
   }
-  
+
   // Phase 3: Execute
   try {
     const result = await handler.execute(call.input, ctx);
-  
+
     // Truncate if over maxResultSizeChars
     if (result.content.length > handler.definition.maxResultSizeChars) {
       result.content = result.content.slice(0, handler.definition.maxResultSizeChars) + `\n\n[Truncated: ${result.content.length - handler.definition.maxResultSizeChars} chars omitted]`;
     }
-  
+
     return {
       toolCallId: call.id,
       toolName: call.name,
@@ -143,16 +143,16 @@ export async function executeToolCall(call: ToolCall, ctx: ToolContext, registry
  */
 export async function executeToolCalls(calls: ToolCall[], ctx: ToolContext, registry: ToolRegistry, onPermissionAsk?: (tool:string,message:string)=>Promise<boolean|string>, onProgress?: (result:ToolCallResult)=>void): Promise<ToolCallResult[]> {
   const results: ToolCallResult[] = [];
-  
+
   // Partition into batches with metadata: consecutive concurrency-safe tools run in parallel
   const batchMeta: { calls: ToolCall[]; concurrent: boolean }[] = [];
   let currentBatch: ToolCall[] = [];
   let currentBatchConcurrent = false;
-  
+
   for (const call of calls) {
     const handler = registry.get(call.name);
     const isSafe = handler?.definition.isConcurrencySafe ?? false;
-  
+
     if (currentBatch.length === 0) {
       currentBatch.push(call);
       currentBatchConcurrent = isSafe;
@@ -165,7 +165,7 @@ export async function executeToolCalls(calls: ToolCall[], ctx: ToolContext, regi
     }
   }
   if (currentBatch.length > 0) batchMeta.push({ calls: currentBatch, concurrent: currentBatchConcurrent });
-  
+
   // Execute batches
   for (const { calls: batch, concurrent } of batchMeta) {
     if (batch.length === 1 || !concurrent) {
@@ -192,6 +192,6 @@ export async function executeToolCalls(calls: ToolCall[], ctx: ToolContext, regi
       }
     }
   }
-  
+
   return results;
 }

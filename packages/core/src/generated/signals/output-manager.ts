@@ -10,16 +10,16 @@ export function formatEngineBlock(engineId: string, color: number, lines: string
   const colorStart = `\x1b[38;5;${color}m`;
   const bold = '\x1b[1m';
   const reset = '\x1b[0m';
-  
+
   result.push(`  ${colorStart}\u250c\u2500\u2500${reset} ${colorStart}${bold}${engineId}${reset}`);
-  
+
   for (const line of lines) {
     // Truncate to maxWidth if needed (account for "  | " prefix = 4 visible chars)
     const available = maxWidth - 4;
     const trimmed = line.length > available ? line.slice(0, available - 1) + '\u2026' : line;
     result.push(`  ${colorStart}\u2502${reset} ${trimmed}`);
   }
-  
+
   result.push(`  ${colorStart}\u2514\u2500\u2500${reset}`);
   return result;
 }
@@ -30,9 +30,9 @@ export function formatStatusLine(engineId: string, color: number, status: string
   const dim = '\x1b[2m';
   const green = '\x1b[32m';
   const reset = '\x1b[0m';
-  
+
   const paddedId = engineId.padEnd(10);
-  
+
   if (status === 'done') {
     return `  ${green}\u2713${reset} ${colorStart}${bold}${paddedId}${reset} ${green}done${reset} ${dim}(${elapsed}s)${reset}`;
   }

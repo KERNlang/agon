@@ -15,7 +15,7 @@ export interface DiscoveryResult {
 
 export async function discoverEngines(registry: EngineRegistry, adapter: EngineAdapter): Promise<DiscoveryResult[]> {
   const engines = registry.list();
-  
+
   return Promise.all(
     engines.map(async (engine: EngineDefinition) => {
       const found = registry.isAvailable(engine);
@@ -27,7 +27,7 @@ export async function discoverEngines(registry: EngineRegistry, adapter: EngineA
           console.warn(`[agon] failed to get version for ${engine.id}: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
-  
+
       const missingEnv: string[] = [];
       if (engine.env) {
         for (const [envVar, config] of Object.entries(engine.env)) {
@@ -36,7 +36,7 @@ export async function discoverEngines(registry: EngineRegistry, adapter: EngineA
           }
         }
       }
-  
+
       return {
         id: engine.id,
         displayName: engine.displayName,

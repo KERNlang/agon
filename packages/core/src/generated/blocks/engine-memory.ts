@@ -109,16 +109,16 @@ export function getEngineProfile(engineId: string): EngineProfile|null {
 export function buildRolePrompt(engineId: string, taskClass: TaskClass): string {
   const profile = getEngineProfile(engineId);
   if (!profile) return '';
-  
+
   const parts: string[] = [];
-  
+
   if (profile.strengths.length > 0) {
     parts.push(`Your known strengths: ${profile.strengths.join(', ')}.`);
   }
   if (profile.weaknesses.length > 0) {
     parts.push(`Watch out for: ${profile.weaknesses.join(', ')}.`);
   }
-  
+
   // Recent notes for this task class
   const classNotes = profile.notes
     .filter((n) => n.taskClass === taskClass)
@@ -127,11 +127,11 @@ export function buildRolePrompt(engineId: string, taskClass: TaskClass): string 
   if (classNotes.length > 0) {
     parts.push(`Recent observations on ${taskClass} tasks: ${classNotes.join('; ')}.`);
   }
-  
+
   if (profile.tendencies.length > 0) {
     parts.push(`Known tendencies: ${profile.tendencies.join(', ')}.`);
   }
-  
+
   return parts.length > 0
     ? `\n## YOUR PROFILE (based on past performance)\n${parts.join('\n')}`
     : '';

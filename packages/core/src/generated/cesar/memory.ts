@@ -23,10 +23,10 @@ export interface CesarMemory {
  */
 export function createCesarMemory(): CesarMemory {
   const session = new Map<string, MemoryEntry>();
-  
+
   const memory: CesarMemory = {
     session,
-  
+
     remember(key: string, value: string, category: MemoryEntry['category']) {
       const entry: MemoryEntry = { key, value, timestamp: new Date().toISOString(), category };
       session.set(key, entry);
@@ -36,23 +36,23 @@ export function createCesarMemory(): CesarMemory {
         if (oldest) session.delete(oldest[0]);
       }
     },
-  
+
     recall(key: string): string | null {
       const s = session.get(key);
       return s?.value ?? null;
     },
-  
+
     forget(key: string) {
       session.delete(key);
     },
-  
+
     clearSession() {
       session.clear();
     },
-  
+
     toPromptContext(): string {
       const parts: string[] = [];
-  
+
       // Session memory (recent)
       if (session.size > 0) {
         const sessionLines = [...session.values()]
@@ -61,10 +61,10 @@ export function createCesarMemory(): CesarMemory {
           .map(e => `- [${e.category}] ${e.key}: ${e.value}`);
         parts.push(`## SESSION MEMORY (this conversation)\n${sessionLines.join('\n')}`);
       }
-  
+
       return parts.length > 0 ? parts.join('\n\n') : '';
     },
   };
-  
+
   return memory;
 }

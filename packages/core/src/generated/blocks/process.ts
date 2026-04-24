@@ -18,7 +18,7 @@ export async function spawnWithTimeout(opts: SpawnOptions): Promise<DispatchResu
   if (opts.signal?.aborted) {
     return { exitCode: 130, stdout: '', stderr: 'Aborted', durationMs: 0, timedOut: false };
   }
-  
+
   return new Promise((resolve) => {
     const startTime = Date.now();
     let timedOut = false;
@@ -26,7 +26,7 @@ export async function spawnWithTimeout(opts: SpawnOptions): Promise<DispatchResu
     let stdout = '';
     let stderr = '';
     let settled = false;
-  
+
     function finish(result: DispatchResult): void {
       if (settled) return;
       settled = true;
@@ -34,19 +34,19 @@ export async function spawnWithTimeout(opts: SpawnOptions): Promise<DispatchResu
       if (opts.signal) opts.signal.removeEventListener('abort', onAbort);
       resolve(result);
     }
-  
+
     const child = spawn(opts.command, opts.args, {
       cwd: opts.cwd,
       env: { ...process.env, ...opts.env },
       stdio: [opts.useStdin ? 'pipe' : 'ignore', 'pipe', 'pipe'],
       detached: true,
     });
-  
+
     const timer = setTimeout(() => {
       timedOut = true;
       killChild();
     }, opts.timeout);
-  
+
     function onAbort(): void {
       aborted = true;
       killChild();
@@ -54,7 +54,7 @@ export async function spawnWithTimeout(opts: SpawnOptions): Promise<DispatchResu
     if (opts.signal) {
       opts.signal.addEventListener('abort', onAbort, { once: true });
     }
-  
+
     function killChild(): void {
       try {
         if (child.pid) process.kill(-child.pid, 'SIGTERM');
@@ -65,10 +65,10 @@ export async function spawnWithTimeout(opts: SpawnOptions): Promise<DispatchResu
         }
       }
     }
-  
+
     child.stdout?.on('data', (data) => { stdout += String(data); });
     child.stderr?.on('data', (data) => { stderr += String(data); });
-  
+
     child.on('close', (code: number | null) => {
       finish({
         exitCode: code ?? (aborted ? 130 : timedOut ? 124 : 1),
@@ -77,7 +77,7 @@ export async function spawnWithTimeout(opts: SpawnOptions): Promise<DispatchResu
         timedOut,
       });
     });
-  
+
     child.on('error', (err: Error) => {
       finish({
         exitCode: 1,
@@ -94,25 +94,25 @@ export async function* spawnStream(opts: SpawnOptions): AsyncGenerator<string, D
   if (opts.signal?.aborted) {
     return { exitCode: 130, stdout: '', stderr: 'Aborted', durationMs: 0, timedOut: false };
   }
-  
+
   const startTime = Date.now();
   let timedOut = false;
   let aborted = false;
   let stdout = '';
   let stderr = '';
-  
+
   const child = spawn(opts.command, opts.args, {
     cwd: opts.cwd,
     env: { ...process.env, ...opts.env },
     stdio: [opts.useStdin ? 'pipe' : 'ignore', 'pipe', 'pipe'],
     detached: true,
   });
-  
+
   const timer = setTimeout(() => {
     timedOut = true;
     killChild();
   }, opts.timeout);
-  
+
   function onAbort(): void {
     aborted = true;
     killChild();
@@ -120,7 +120,7 @@ export async function* spawnStream(opts: SpawnOptions): AsyncGenerator<string, D
   if (opts.signal) {
     opts.signal.addEventListener('abort', onAbort, { once: true });
   }
-  
+
   function killChild(): void {
     try {
       if (child.pid) process.kill(-child.pid, 'SIGTERM');
@@ -131,19 +131,19 @@ export async function* spawnStream(opts: SpawnOptions): AsyncGenerator<string, D
       }
     }
   }
-  
+
   const chunks: string[] = [];
   let done = false;
   let resolveWait: (() => void) | null = null;
   let closeResult: DispatchResult | null = null;
-  
+
   child.stdout?.on('data', (data) => {
     const chunk = String(data);
     stdout += chunk;
     chunks.push(chunk);
     if (resolveWait) { resolveWait(); resolveWait = null; }
   });
-  
+
   child.stderr?.on('data', (data) => {
     const chunk = String(data);
     stderr += chunk;
@@ -151,7 +151,7 @@ export async function* spawnStream(opts: SpawnOptions): AsyncGenerator<string, D
     chunks.push('\x00' + chunk);
     if (resolveWait) { resolveWait(); resolveWait = null; }
   });
-  
+
   child.on('close', (code: number | null) => {
     clearTimeout(timer);
     if (opts.signal) opts.signal.removeEventListener('abort', onAbort);
@@ -164,7 +164,7 @@ export async function* spawnStream(opts: SpawnOptions): AsyncGenerator<string, D
     };
     if (resolveWait) { resolveWait(); resolveWait = null; }
   });
-  
+
   child.on('error', (err: Error) => {
     clearTimeout(timer);
     if (opts.signal) opts.signal.removeEventListener('abort', onAbort);
@@ -178,7 +178,7 @@ export async function* spawnStream(opts: SpawnOptions): AsyncGenerator<string, D
     };
     if (resolveWait) { resolveWait(); resolveWait = null; }
   });
-  
+
   try {
     while (!done || chunks.length > 0) {
       if (chunks.length > 0) {
@@ -195,6 +195,6 @@ export async function* spawnStream(opts: SpawnOptions): AsyncGenerator<string, D
       if (opts.signal) opts.signal.removeEventListener('abort', onAbort);
     }
   }
-  
+
   return closeResult!;
 }

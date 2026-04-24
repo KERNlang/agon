@@ -233,7 +233,7 @@ export function checkFileWritePermission(filePath: string, ctx: ToolContext): Pe
     if (tp === 'ask') return { behavior: 'ask', message: `Edit requires approval: ${filePath}` };
   }
   const resolved = isAbsolute(filePath) ? filePath : resolve(ctx.cwd, filePath);
-  
+
   // Block writing to sensitive files
   const basename = resolved.split('/').pop() ?? '';
   const sensitivePatterns = ['.env', 'credentials', 'secrets', '.pem', '.key', 'id_rsa'];
@@ -242,7 +242,7 @@ export function checkFileWritePermission(filePath: string, ctx: ToolContext): Pe
       return { behavior: 'ask', message: `Write to sensitive file: ${basename}` };
     }
   }
-  
+
   if (isPathUnderCwd(resolved, ctx.cwd)) {
     return { behavior: 'allow' };
   }

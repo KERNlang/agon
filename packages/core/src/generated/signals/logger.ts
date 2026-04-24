@@ -14,7 +14,7 @@ export interface Logger {
 export function createLogger(opts: {enabled:boolean;logDir:string}): Logger {
   const MAX_LOG_SIZE = 1_048_576;
   const logFile = join(opts.logDir, 'debug.log');
-  
+
   function write(level: string, message: string, data?: Record<string, unknown>): void {
     if (!opts.enabled) return;
     try { mkdirSync(opts.logDir, { recursive: true }); } catch (err) {
@@ -38,7 +38,7 @@ export function createLogger(opts: {enabled:boolean;logDir:string}): Logger {
       console.error(`[agon] logger: failed to write log: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
-  
+
   return {
     debug: (msg, data) => write('DEBUG', msg, data),
     info: (msg, data) => write('INFO', msg, data),

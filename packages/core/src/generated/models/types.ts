@@ -365,6 +365,8 @@ export interface ForgeManifest {
   starter: string;
   enginesDispatched: number;
   dispatchLog?: DispatchMetric[];
+  resultBundlePath?: string;
+  cleanupCommand?: string;
   synthesis?: {pass:boolean,score:number,wins:boolean,patchPath:string,originalWinnerScore:number};
   gauntlet?: GauntletResult;
 }

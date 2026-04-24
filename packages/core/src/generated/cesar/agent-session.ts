@@ -119,9 +119,9 @@ export class AgentSession {
         error: `Session is in terminal state: ${this.state}`,
       };
     }
-    
+
     const budget = this.config.budget;
-    
+
     if (this.turnsUsed >= budget.maxTurns) {
       this.state = 'failed';
       return {
@@ -134,7 +134,7 @@ export class AgentSession {
         error: `Turn budget exceeded: ${this.turnsUsed}/${budget.maxTurns}`,
       };
     }
-    
+
     if (budget.maxTokens != null && this.tokensUsed >= budget.maxTokens) {
       this.state = 'failed';
       return {
@@ -147,7 +147,7 @@ export class AgentSession {
         error: `Token budget exceeded: ${this.tokensUsed}/${budget.maxTokens}`,
       };
     }
-    
+
     const elapsed = Date.now() - this.startedAt;
     if (elapsed >= budget.maxDurationMs) {
       this.state = 'failed';
@@ -161,7 +161,7 @@ export class AgentSession {
         error: `Duration budget exceeded: ${elapsed}ms/${budget.maxDurationMs}ms`,
       };
     }
-    
+
     // ── Refuse to start a step we can't finish in budget ─────
     // runApiAgentLoop has a hardcoded 30s floor (agent-loop.kern:143).
     // If we started a step with <30s remaining, we'd let that floor
@@ -180,20 +180,20 @@ export class AgentSession {
         error: `Duration budget too small to start step: ${remainingMs}ms remaining, ${MIN_STEP_MS}ms minimum`,
       };
     }
-    
+
     // ── Run the inner loop ────────────────────────────────────
     this.state = 'running';
     const perStepSec = this.config.perStepTimeoutSec ?? Math.floor(remainingMs / 1000);
     const timeoutSec = Math.min(perStepSec, Math.floor(remainingMs / 1000));
-    
+
     // Phase 1: Token usage is ESTIMATED (source='estimated' in TokenTracker terms).
     // Phase 3 will wire real SDK usage once dispatch.kern:390-402 capturedParts
     // are normalized through the canonical AgentEvent surface.
     const promptTokens = estimateTokens(prompt);
-    
+
     const onEvent = opts?.onEvent;
     const thread = this.config.thread;
-    
+
     // ── ContextThread integration ─────────────────────────────────
     // Pre-load: give this engine the session history up to its budget.
     // Budget is derived from the engine's actual context window:
@@ -209,14 +209,14 @@ export class AgentSession {
     const historyMessages = thread
       ? thread.messagesFor(this.config.engineId, engineTokenBudget)
       : undefined;
-    
+
     // Post-emit: each entry produced during the inner loop feeds back
     // into the shared thread so the next step (or a different engine)
     // picks it up automatically.
     const onHistoryEntry = thread
       ? (entry: Record<string,unknown>) => { thread.appendLoopEntry(entry, this.config.engineId); }
       : undefined;
-    
+
     const innerOpts: ApiAgentOptions = {
       api: this.config.api,
       prompt,
@@ -240,7 +240,7 @@ export class AgentSession {
       toolPermissions: this.config.toolPermissions,
       onPermissionAsk: this.config.onPermissionAsk,
     };
-    
+
     let result: ApiAgentResult;
     try {
       result = await runApiAgentLoop(innerOpts);
@@ -269,7 +269,7 @@ export class AgentSession {
         error: err?.message ?? String(err),
       };
     }
-    
+
     // If abort fired mid-stream, runApiAgentLoop may have returned a partial
     // response without throwing. Detect that here.
     if (this.abortController.signal.aborted) {
@@ -289,17 +289,17 @@ export class AgentSession {
         stopReason: 'cancelled',
       };
     }
-    
+
     // ── Accumulate stats ──────────────────────────────────────
     const responseTokens = estimateTokens(result.response);
     const stepTokens = promptTokens + responseTokens;
     const stepCost = estimateCost(this.config.engineId, stepTokens, this.config.api.model);
-    
+
     this.turnsUsed += 1;
     this.tokensUsed += stepTokens;
     this.totalToolCalls += result.toolCalls;
     this.totalCostUsd += stepCost;
-    
+
     // ── Post-step budget enforcement (tokens + duration only) ─
     // Turns are a discrete cap that the pre-check already enforces (N steps
     // are allowed when maxTurns=N; the (N+1)-th is refused). But TOKENS and
@@ -318,7 +318,7 @@ export class AgentSession {
     } else if (postElapsed > budget.maxDurationMs) {
       overrunReason = `Duration budget overrun: ${postElapsed}ms/${budget.maxDurationMs}ms`;
     }
-    
+
     if (overrunReason) {
       this.state = 'failed';
       return {
@@ -331,7 +331,7 @@ export class AgentSession {
         error: overrunReason,
       };
     }
-    
+
     // RT-16 fix: state guard against cancel-vs-complete race. If cancel()
     // landed during step execution (microtask interleaving) it set state to
     // 'cancelled' and aborted the controller. Without this guard, the final
@@ -357,7 +357,7 @@ export class AgentSession {
         console.warn(`[agon] context-thread: failed to flush after step: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
-    
+
     const stateAsString = this.state as string;
     if (stateAsString === 'cancelled' || stateAsString === 'failed') {
       return {

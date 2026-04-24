@@ -17,7 +17,7 @@ export function rankByTaskClass(engineIds: string[], taskClass: TaskClass): Engi
   const ratings = getRatings();
   const classRatings = ratings.byTaskClass[taskClass] ?? {};
   const globalRatings = ratings.global;
-  
+
   const ranked = engineIds.map((id) => {
     const classGlicko = classRatings[id];
     const globalGlicko = globalRatings[id];
@@ -27,7 +27,7 @@ export function rankByTaskClass(engineIds: string[], taskClass: TaskClass): Engi
     const losses = (classGlicko?.losses ?? 0) + (globalGlicko?.losses ?? 0);
     const total = wins + losses;
     const winRate = total > 0 ? wins / total : 0.5;
-  
+
     return {
       engineId: id,
       classElo,
@@ -36,7 +36,7 @@ export function rankByTaskClass(engineIds: string[], taskClass: TaskClass): Engi
       total,
     };
   });
-  
+
   // Sort by Glicko-2 confidence floor. Shuffle ties randomly so no engine
   // is permanently favored when ratings are equal (e.g. fresh start).
   ranked.sort((a, b) => {
@@ -44,11 +44,11 @@ export function rankByTaskClass(engineIds: string[], taskClass: TaskClass): Engi
     if (a.globalElo !== b.globalElo) return b.globalElo - a.globalElo;
     return Math.random() - 0.5;
   });
-  
+
   return ranked.map((r, i) => {
     let role: string;
     let specialization: string;
-  
+
     if (i === 0 && r.total >= 3) {
       role = 'lead';
       specialization = `You are the top-rated engine for ${taskClass} tasks (${r.classElo} ELO, ${Math.round(r.winRate * 100)}% win rate). Lead with your best approach.`;
@@ -62,7 +62,7 @@ export function rankByTaskClass(engineIds: string[], taskClass: TaskClass): Engi
       role = 'specialist';
       specialization = `You have a ${Math.round(r.winRate * 100)}% win rate on ${taskClass} tasks. Focus on what you do best.`;
     }
-  
+
     return {
       engineId: r.engineId,
       role,

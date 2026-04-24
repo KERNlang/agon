@@ -26,7 +26,7 @@ export function parsePatch(content: string): PatchFile[] {
   const lines = content.split('\n');
   let currentFile: PatchFile | null = null;
   let currentHunk: PatchHunk | null = null;
-  
+
   for (const line of lines) {
     // File header: diff --git a/path b/path
     if (line.startsWith('diff --git')) {
@@ -38,19 +38,19 @@ export function parsePatch(content: string): PatchFile[] {
       currentHunk = null;
       continue;
     }
-  
+
     // Hunk header: @@ -start,count +start,count @@
     if (line.startsWith('@@')) {
       if (currentHunk && currentFile) currentFile.hunks.push(currentHunk);
       currentHunk = { header: line, lines: [], additions: 0, deletions: 0 };
       continue;
     }
-  
+
     // Skip metadata lines
     if (line.startsWith('---') || line.startsWith('+++') || line.startsWith('index ') || line.startsWith('new file') || line.startsWith('deleted file')) {
       continue;
     }
-  
+
     // Content lines
     if (currentHunk) {
       currentHunk.lines.push(line);
@@ -63,10 +63,10 @@ export function parsePatch(content: string): PatchFile[] {
       }
     }
   }
-  
+
   if (currentHunk && currentFile) currentFile.hunks.push(currentHunk);
   if (currentFile) files.push(currentFile);
-  
+
   return files;
 }
 
@@ -91,7 +91,7 @@ export function patchSummary(files: PatchFile[]): string {
 export function invertPatch(content: string): string {
   const lines = content.split('\n');
   const result: string[] = [];
-  
+
   for (const line of lines) {
     if (line.startsWith('--- a/')) {
       result.push(line.replace('--- a/', '--- b/'));
@@ -117,6 +117,6 @@ export function invertPatch(content: string): string {
       result.push(line);
     }
   }
-  
+
   return result.join('\n');
 }

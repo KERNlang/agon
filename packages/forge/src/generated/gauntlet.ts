@@ -56,15 +56,15 @@ export function buildRepairPrompt(task: string, breakerTests: string): string {
 export async function validateBreakerArtifact(opts: {artifact:BreakerArtifact, winnerWorktree:string, cleanWorktree:string, fitnessTimeout:number, fitnessCmd?:string}): Promise<BreakerArtifact> {
   const { artifact, winnerWorktree, cleanWorktree, fitnessTimeout, fitnessCmd } = opts;
   const testRunner = fitnessCmd ?? 'npx vitest run';
-  
+
   // Write test script to both worktrees
   const testFileName = `breaker-${artifact.engineId}-${Date.now()}.test.ts`;
   const winnerTestPath = join(winnerWorktree, testFileName);
   const cleanTestPath = join(cleanWorktree, testFileName);
-  
+
   writeFileSync(winnerTestPath, artifact.testScript);
   writeFileSync(cleanTestPath, artifact.testScript);
-  
+
   // Run 1: Must FAIL on winner's patched code
   const runCmd = `${testRunner} ${testFileName} 2>&1 || exit 1`;
   let failsOnWinner = false;
@@ -79,11 +79,11 @@ export async function validateBreakerArtifact(opts: {artifact:BreakerArtifact, w
   } catch {
     failsOnWinner = true;
   }
-  
+
   if (!failsOnWinner) {
     return { ...artifact, validated: false, deterministic: false };
   }
-  
+
   // Run 2: Determinism check — run again, must fail again
   let failsAgain = false;
   try {
@@ -97,11 +97,11 @@ export async function validateBreakerArtifact(opts: {artifact:BreakerArtifact, w
   } catch {
     failsAgain = true;
   }
-  
+
   if (!failsAgain) {
     return { ...artifact, validated: false, deterministic: false };
   }
-  
+
   // Run 3: Must PASS on clean (unpatched) code — proves the test targets the patch, not a pre-existing issue
   let passesOnClean = false;
   try {
@@ -115,28 +115,28 @@ export async function validateBreakerArtifact(opts: {artifact:BreakerArtifact, w
   } catch {
     passesOnClean = false;
   }
-  
+
   if (!passesOnClean) {
     // Test fails on clean code too — it's not targeting the patch, it's a false positive
     return { ...artifact, validated: false, deterministic: true };
   }
-  
+
   // Fails on winner, passes on clean, deterministic — validated
   return { ...artifact, validated: true, deterministic: true, testPath: winnerTestPath };
 }
 
 export async function runGauntlet(opts: {winnerId:string, losers:string[], task:string, winnerWorktree:string, fitnessCmd:string, taskClass:TaskClass, forgeDir:string, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, fitnessTimeout:number, maxBreakers:number, repairTimeout:number, cwd:string, baseSha:string, onEvent?:(event:ForgeEvent)=>void, signal?: AbortSignal}): Promise<GauntletResult> {
   const { winnerId, losers, task, winnerWorktree, fitnessCmd, taskClass, forgeDir, registry, adapter, timeout, fitnessTimeout, maxBreakers, repairTimeout, cwd } = opts;
-  
+
   const sidechain = createSidechainLogger({
     sessionId: randomUUID().slice(0, 8),
     sessionType: 'gauntlet',
     outputDir: forgeDir,
   });
-  
+
   opts.onEvent?.({ type: 'gauntlet:start' as any });
   sidechain.log('gauntlet:start', winnerId, { losers, taskClass });
-  
+
   // Get winner's diff for breaker prompt
   let winnerDiff: string;
   try {
@@ -144,14 +144,14 @@ export async function runGauntlet(opts: {winnerId:string, losers:string[], task:
   } catch {
     winnerDiff = '(unable to get diff)';
   }
-  
+
   // --- Dispatch breakers in parallel ---
   const breakerEngines = losers.slice(0, maxBreakers);
   const breakerPrompt = buildBreakerPrompt(task, winnerDiff, winnerId);
-  
+
   const breakerPromises = breakerEngines.map(async (engineId: string) => {
     opts.onEvent?.({ type: 'gauntlet:breaker-dispatch' as any, data: { engineId } });
-  
+
     try {
       const engine = registry.get(engineId);
       const result = await adapter.dispatch({
@@ -163,12 +163,12 @@ export async function runGauntlet(opts: {winnerId:string, losers:string[], task:
         outputDir: forgeDir,
         signal: opts.signal,
       });
-  
+
       const testScript = result.stdout.trim();
       if (!testScript || testScript.length < 20) {
         return null;
       }
-  
+
       const artifact: BreakerArtifact = {
         engineId,
         testScript,
@@ -177,23 +177,23 @@ export async function runGauntlet(opts: {winnerId:string, losers:string[], task:
         deterministic: false,
         validated: false,
       };
-  
+
       return artifact;
     } catch (err) {
       console.warn(`[agon] gauntlet breaker dispatch (${engineId}) failed: ${err instanceof Error ? err.message : String(err)}`);
       return null;
     }
   });
-  
+
   const rawArtifacts = (await Promise.all(breakerPromises)).filter((a): a is BreakerArtifact => a !== null);
-  
+
   // --- Validate each breaker artifact ---
   const root = repoRoot(cwd);
-  
+
   // Create a clean worktree (no patch) for validation comparison
   const cleanWtPath = join(forgeDir, 'gauntlet-clean');
   worktreeCreate(root, cleanWtPath, opts.baseSha);
-  
+
   const validatedArtifacts: BreakerArtifact[] = [];
   try {
     for (const artifact of rawArtifacts) {
@@ -204,10 +204,10 @@ export async function runGauntlet(opts: {winnerId:string, losers:string[], task:
         fitnessTimeout,
         fitnessCmd,
       });
-  
+
       opts.onEvent?.({ type: 'gauntlet:breaker-done' as any, data: { engineId: artifact.engineId, validated: validated.validated } });
       sidechain.log('breaker:validated', artifact.engineId, { validated: validated.validated, deterministic: validated.deterministic });
-  
+
       if (validated.validated) {
         validatedArtifacts.push(validated);
         opts.onEvent?.({ type: 'gauntlet:attack-landed' as any, data: { engineId: artifact.engineId, failureMessage: `Breaker test from ${artifact.engineId} breaks winner's patch` } });
@@ -216,34 +216,34 @@ export async function runGauntlet(opts: {winnerId:string, losers:string[], task:
   } finally {
     worktreeRemoveBestEffort(root, cleanWtPath);
   }
-  
+
   const attacksLanded = validatedArtifacts.length;
-  
+
   // --- Repair round (if attacks landed) ---
   let repairPass = false;
   let preRepairScore = 0;
   let postRepairScore = 0;
   let repairAttempted = false;
-  
+
   // Get pre-repair score
   const preRepair = await runFitness({ engineId: winnerId, worktreePath: winnerWorktree, fitnessCmd, timeout: fitnessTimeout, forgeDir });
   preRepairScore = preRepair.score;
-  
+
   if (attacksLanded > 0) {
     repairAttempted = true;
     opts.onEvent?.({ type: 'gauntlet:repair-start' as any });
-  
+
     // Build repair prompt with all validated breaker tests
     const breakerTestsText = validatedArtifacts
       .map((a, i) => `### Breaker ${i + 1} (from ${a.engineId}):\n\`\`\`\n${a.testScript}\n\`\`\``)
       .join('\n\n');
-  
+
     const repairPromptText = buildRepairPrompt(task, breakerTestsText);
-  
+
     // Dispatch winner for repair
     const winnerEngine = registry.get(winnerId);
     const hasAgent = !!winnerEngine.agent;
-  
+
     if (hasAgent && adapter.dispatchAgent) {
       await adapter.dispatchAgent({
         engine: winnerEngine,
@@ -265,19 +265,19 @@ export async function runGauntlet(opts: {winnerId:string, losers:string[], task:
         signal: opts.signal,
       });
     }
-  
+
     // Re-score after repair
     const postRepair = await runFitness({ engineId: winnerId, worktreePath: winnerWorktree, fitnessCmd, timeout: fitnessTimeout, forgeDir });
     postRepairScore = postRepair.score;
     repairPass = postRepair.pass;
-  
+
     opts.onEvent?.({ type: 'gauntlet:repair-done' as any, data: { pass: repairPass, score: postRepairScore } });
     sidechain.log('repair:done', winnerId, { pass: repairPass, preScore: preRepairScore, postScore: postRepairScore });
   } else {
     postRepairScore = preRepairScore;
     repairPass = preRepair.pass;
   }
-  
+
   const result: GauntletResult = {
     winnerId,
     breakerArtifacts: validatedArtifacts,
@@ -288,9 +288,9 @@ export async function runGauntlet(opts: {winnerId:string, losers:string[], task:
     postRepairScore,
     finalWinnerId: winnerId,
   };
-  
+
   opts.onEvent?.({ type: 'gauntlet:done' as any, data: { attacksLanded, repairPass } });
   sidechain.log('gauntlet:done', winnerId, { attacksLanded, repairPass, preRepairScore, postRepairScore });
-  
+
   return result;
 }

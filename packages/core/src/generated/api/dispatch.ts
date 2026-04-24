@@ -26,13 +26,13 @@ export const _modelCache: Map<string,{model:any, apiKey:string}> = new Map<strin
 export function buildModel(config: ApiConfig): any {
   const apiKey = process.env[config.apiKeyEnv];
   if (!apiKey) return null;
-  
+
   const cacheKey = `${config.baseUrl}|${config.model}|${config.format ?? 'openai'}`;
   const cached = _modelCache.get(cacheKey);
   if (cached && cached.apiKey === apiKey) return cached.model;
-  
+
   const base = config.baseUrl.replace(/\/$/, '');
-  
+
   let model: any;
   if (config.format === 'anthropic') {
     // createAnthropic baseURL should include /v1 — it appends /messages
@@ -48,7 +48,7 @@ export function buildModel(config: ApiConfig): any {
     });
     model = provider.chatModel(config.model);
   }
-  
+
   _modelCache.set(cacheKey, { model, apiKey });
   return model;
 }
@@ -103,7 +103,7 @@ export function convertMessagesForSdk(messages: Array<{role:string,content:any,t
       }
     }
   }
-  
+
   const result: any[] = [];
   for (const msg of messages) {
     if (msg.role === 'system') {
@@ -138,24 +138,32 @@ export function convertMessagesForSdk(messages: Array<{role:string,content:any,t
         result.push({ role: 'assistant', content: '' });
       }
     } else if (msg.role === 'tool') {
-      const originalId = (msg as any).tool_call_id ?? '';
-      const toolCallId = idMap.get(originalId) ?? normalizeToolCallId(originalId, format);
-      const toolName = toolNameMap.get(toolCallId) ?? 'unknown';
-      result.push({
-        role: 'tool',
-        content: [{
-          type: 'tool-result',
-          toolCallId,
-          toolName,
-          output: {
-            type: 'text' as const,
-            value: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
-          },
-        }],
-      });
+      const originalId = typeof (msg as any).tool_call_id === 'string' ? (msg as any).tool_call_id : '';
+      const toolCallId = originalId ? (idMap.get(originalId) ?? normalizeToolCallId(originalId, format)) : '';
+      const toolName = toolCallId ? toolNameMap.get(toolCallId) : undefined;
+      const outputValue = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
+      if (!toolCallId || !toolName) {
+        result.push({
+          role: 'user',
+          content: `[Recovered orphan tool result omitted from native tool channel]\n${outputValue}`,
+        });
+      } else {
+        result.push({
+          role: 'tool',
+          content: [{
+            type: 'tool-result',
+            toolCallId,
+            toolName,
+            output: {
+              type: 'text' as const,
+              value: outputValue,
+            },
+          }],
+        });
+      }
     }
   }
-  
+
   // Mistral quirk: needs a dummy assistant message after consecutive tool results
   if (format === 'mistral') {
     for (let i = 1; i < result.length; i++) {
@@ -165,7 +173,7 @@ export function convertMessagesForSdk(messages: Array<{role:string,content:any,t
       }
     }
   }
-  
+
   return result;
 }
 
@@ -180,19 +188,19 @@ export async function apiDispatch(config: ApiConfig, prompt: string, timeout: nu
       timedOut: false,
     };
   }
-  
+
   const startTime = Date.now();
   const messages: Array<{role: 'system'|'user', content: string}> = [];
   if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
   messages.push({ role: 'user', content: prompt });
-  
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout * 1000);
   if (signal) {
     if (signal.aborted) { clearTimeout(timer); return { exitCode: 130, stdout: '', stderr: 'Aborted', durationMs: 0, timedOut: false }; }
     signal.addEventListener('abort', () => controller.abort(), { once: true });
   }
-  
+
   try {
     const result = await generateText({
       model,
@@ -258,16 +266,16 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
   if (!model) {
     return { exitCode: 1, stdout: '', stderr: `Missing API key: set ${config.apiKeyEnv}`, durationMs: 0, timedOut: false };
   }
-  
+
   const startTime = Date.now();
-  
+
   // Convert messages to AI SDK CoreMessage format
   // Detect provider format for per-provider normalization
   const providerFormat = config.format === 'anthropic' ? 'anthropic'
     : config.baseUrl?.includes('mistral') ? 'mistral'
     : undefined;
   const coreMessages = convertMessagesForSdk(messages, providerFormat);
-  
+
   // Set up timeout + external abort
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout * 1000);
@@ -275,14 +283,14 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
     if (signal.aborted) { clearTimeout(timer); return { exitCode: 130, stdout: '', stderr: 'Aborted', durationMs: 0, timedOut: false }; }
     signal.addEventListener('abort', () => controller.abort(), { once: true });
   }
-  
+
   let stdout = '';
   // Capture structured parts at stream time — compaction folds over these
   // instead of doing fragile regex extraction on flat text
   const capturedParts: Array<{kind:'text',text:string}|{kind:'reasoning',text:string}|{kind:'tool_call',toolName:string,toolCallId:string,args:Record<string,unknown>}> = [];
   let currentTextBuf = '';
   let currentReasoningBuf = '';
-  
+
   try {
     const streamOpts: any = {
       model,
@@ -291,11 +299,11 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
       abortSignal: controller.signal,
       maxRetries: 5,
     };
-  
+
     if (tools && tools.length > 0) {
       streamOpts.tools = convertToolsForSdk(tools);
     }
-  
+
     // Apply Anthropic cache control: mark system + last 2 messages as ephemeral
     // This saves input tokens on multi-turn conversations
     if (config.format === 'anthropic' && coreMessages.length > 0) {
@@ -320,9 +328,9 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
         }
       }
     }
-  
+
     const result = streamText(streamOpts);
-  
+
     // Two-tier idle timeout: longer patience before first chunk (queuing/cold start),
     // tighter watchdog once streaming starts. Per-engine config overrides defaults.
     const FIRST_CHUNK_TIMEOUT = config.firstChunkTimeoutMs ?? 60_000;  // 60s default
@@ -330,7 +338,7 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
     const iterator = result.fullStream[Symbol.asyncIterator]();
     let iterDone = false;
     let gotFirstChunk = false;
-  
+
     while (!iterDone) {
       const timeoutMs = gotFirstChunk ? IDLE_TIMEOUT : FIRST_CHUNK_TIMEOUT;
       const next = iterator.next();
@@ -338,7 +346,7 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
         const t = setTimeout(() => reject(new Error('IDLE_TIMEOUT')), timeoutMs);
         next.then(() => clearTimeout(t), () => clearTimeout(t));
       });
-  
+
       let iterResult: IteratorResult<any>;
       try {
         iterResult = await Promise.race([next, idle]);
@@ -361,15 +369,15 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
         }
         throw err;
       }
-  
+
       if (iterResult.done) { iterDone = true; break; }
       const part = iterResult.value;
-  
+
       // Any productive event switches to tighter inter-chunk timeout
       if (!gotFirstChunk && (part.type === 'text-delta' || part.type === 'reasoning-delta' || part.type === 'tool-call')) {
         gotFirstChunk = true;
       }
-  
+
       switch (part.type) {
         case 'text-delta': {
           const text = (part as any).text;
@@ -402,7 +410,7 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
           const toolCallId = (part as any).toolCallId ?? `call_${Date.now()}`;
           const toolInput = (part as any).input ?? {};
           capturedParts.push({ kind: 'tool_call', toolName, toolCallId, args: toolInput });
-  
+
           // Emit as <tool> marker matching Agon's parseToolCalls regex
           const marker = `\n<tool name="${toolName}">${JSON.stringify(toolInput)}</tool>\n`;
           stdout += marker;
@@ -415,13 +423,13 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
         }
       }
     }
-  
+
     // Flush final text/reasoning buffers
     if (currentTextBuf) capturedParts.push({ kind: 'text', text: currentTextBuf });
     if (currentReasoningBuf) capturedParts.push({ kind: 'reasoning', text: currentReasoningBuf });
-  
+
     clearTimeout(timer);
-  
+
     let usage: DispatchResult['usage'] = undefined;
     try {
       const finalUsage = await (result as any).usage;

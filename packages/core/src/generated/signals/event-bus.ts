@@ -40,15 +40,15 @@ export class EventBus {
   async emit(event: string, data?: Record<string, unknown>): Promise<void> {
     const list = this.listeners.get(event);
     if (!list || list.length === 0) return;
-    
+
     const payload: EventPayload = {
       event,
       data: data ?? {},
       timestamp: Date.now(),
     };
-    
+
     const isPre = event.startsWith('pre:') || event.endsWith(':before');
-    
+
     if (isPre) {
       // Pre-events run sequentially — a failure can short-circuit
       for (const listener of list) {
@@ -98,7 +98,7 @@ export function bridgeShellHooks(bus: EventBus, hooks: Record<string, any[]>): v
     'session_start': 'session:start',
     'session_end': 'session:end',
   };
-  
+
   for (const [oldEvent, newEvent] of Object.entries(eventMap)) {
     if (hooks[oldEvent] && hooks[oldEvent].length > 0) {
       bus.on(newEvent, async (payload) => {

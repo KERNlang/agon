@@ -25,7 +25,7 @@ import { EventBus } from '../signals/event-bus.js';
  */
 export function discoverExtensionDirs(cwd: string): { dir: string; source: 'user' | 'repo' }[] {
   const results: { dir: string; source: 'user' | 'repo' }[] = [];
-  
+
   // User-level extensions
   const override = process.env.AGON_HOME?.trim();
   const home = override ? resolve(override) : join(homedir(), '.agon');
@@ -43,7 +43,7 @@ export function discoverExtensionDirs(cwd: string): { dir: string; source: 'user
       }
     } catch { /* permission denied or missing dir — skip extensions */ }
   }
-  
+
   // Repo-level extensions
   const repoDir = join(cwd, '.agon', 'extensions');
   if (existsSync(repoDir)) {
@@ -59,7 +59,7 @@ export function discoverExtensionDirs(cwd: string): { dir: string; source: 'user
       }
     } catch { /* permission denied or missing dir — skip extensions */ }
   }
-  
+
   return results;
 }
 
@@ -93,7 +93,7 @@ export function loadExtensionManifest(dir: string, source: 'builtin'|'user'|'rep
 export function loadExtensions(cwd: string): LoadedExtension[] {
   const dirs = discoverExtensionDirs(cwd);
   const byId = new Map<string, LoadedExtension>();
-  
+
   for (const { dir, source } of dirs) {
     const ext = loadExtensionManifest(dir, source);
     if (ext) {
@@ -103,7 +103,7 @@ export function loadExtensions(cwd: string): LoadedExtension[] {
       byId.set(ext.manifest.id, ext);
     }
   }
-  
+
   return Array.from(byId.values());
 }
 
@@ -114,17 +114,17 @@ export async function registerExtensionCommands(ext: LoadedExtension, commandReg
   const registered: string[] = [];
   const commands = ext.manifest.contributes?.commands;
   if (!commands || commands.length === 0) return registered;
-  
+
   for (const cmd of commands) {
     try {
       const handlerPath = resolve(ext.dir, cmd.handler);
       const mod = await import(handlerPath);
-  
+
       if (typeof mod.execute !== 'function') {
         console.warn(`[agon] extension '${ext.manifest.id}' command '${cmd.name}': handler missing execute() export`);
         continue;
       }
-  
+
       const handler: CommandHandler = {
         definition: {
           name: cmd.name,
@@ -138,7 +138,7 @@ export async function registerExtensionCommands(ext: LoadedExtension, commandReg
           : (rest: string) => ({ input: rest }),
         execute: mod.execute,
       };
-  
+
       commandRegistry.register(handler);
       registered.push(cmd.name);
     } catch (err) {
@@ -148,7 +148,7 @@ export async function registerExtensionCommands(ext: LoadedExtension, commandReg
       errorExt.errors.push(`command ${cmd.name}: ${(err as Error).message}`);
     }
   }
-  
+
   return registered;
 }
 
@@ -159,7 +159,7 @@ export function registerExtensionEngines(ext: LoadedExtension, engineRegistry: E
   const registered: string[] = [];
   const enginePaths = ext.manifest.contributes?.engines;
   if (!enginePaths || enginePaths.length === 0) return registered;
-  
+
   for (const enginePath of enginePaths) {
     try {
       const fullPath = resolve(ext.dir, enginePath);
@@ -172,7 +172,7 @@ export function registerExtensionEngines(ext: LoadedExtension, engineRegistry: E
       console.warn(`[agon] extension '${ext.manifest.id}' engine '${enginePath}': ${(err as Error).message}`);
     }
   }
-  
+
   return registered;
 }
 
@@ -183,7 +183,7 @@ export function registerExtensionSkills(ext: LoadedExtension): Skill[] {
   const skills: Skill[] = [];
   const skillContribs = ext.manifest.contributes?.skills;
   if (!skillContribs || skillContribs.length === 0) return skills;
-  
+
   for (const sc of skillContribs) {
     const skill: Skill = {
       name: sc.name || sc.trigger.replace(/^\//, ''),
@@ -193,7 +193,7 @@ export function registerExtensionSkills(ext: LoadedExtension): Skill[] {
       source: resolve(ext.dir, 'manifest.json'),
       tools: sc.tools,
     };
-  
+
     if (sc.handler) {
       try {
         const handlerPath = resolve(ext.dir, sc.handler);
@@ -213,10 +213,10 @@ export function registerExtensionSkills(ext: LoadedExtension): Skill[] {
         console.warn(`[agon] extension '${ext.manifest.id}' skill '${sc.trigger}': failed to set up handler: ${(err as Error).message}`);
       }
     }
-  
+
     skills.push(skill);
   }
-  
+
   return skills;
 }
 
@@ -227,7 +227,7 @@ export async function registerExtensionHooks(ext: LoadedExtension, eventBus: Eve
   const registered: string[] = [];
   const hookContribs = ext.manifest.contributes?.hooks;
   if (!hookContribs || hookContribs.length === 0) return registered;
-  
+
   for (const hook of hookContribs) {
     try {
       const handlerPath = resolve(ext.dir, hook.handler);
@@ -243,7 +243,7 @@ export async function registerExtensionHooks(ext: LoadedExtension, eventBus: Eve
       console.warn(`[agon] extension '${ext.manifest.id}' hook '${hook.event}': ${(err as Error).message}`);
     }
   }
-  
+
   return registered;
 }
 
@@ -254,24 +254,24 @@ export async function initExtensions(cwd: string, commandRegistry: CommandRegist
   const extensions = loadExtensions(cwd);
   const allSkills: Skill[] = [];
   const allFragments: string[] = [];
-  
+
   for (const ext of extensions) {
     // Commands
     const cmds = await registerExtensionCommands(ext, commandRegistry);
     if (cmds.length > 0) {
       console.log(`[agon] extension '${ext.manifest.id}': registered commands: ${cmds.join(', ')}`);
     }
-  
+
     // Engines
     const engines = registerExtensionEngines(ext, engineRegistry);
     if (engines.length > 0) {
       console.log(`[agon] extension '${ext.manifest.id}': registered engines: ${engines.join(', ')}`);
     }
-  
+
     // Skills
     const skills = registerExtensionSkills(ext);
     allSkills.push(...skills);
-  
+
     // Hooks
     if (eventBus) {
       const hooks = await registerExtensionHooks(ext, eventBus);
@@ -279,17 +279,17 @@ export async function initExtensions(cwd: string, commandRegistry: CommandRegist
         console.log(`[agon] extension '${ext.manifest.id}': registered hooks: ${hooks.join(', ')}`);
       }
     }
-  
+
     // System prompt fragments
     if (ext.manifest.contributes?.systemPromptFragments) {
       allFragments.push(...ext.manifest.contributes.systemPromptFragments);
     }
   }
-  
+
   if (extensions.length > 0) {
     console.log(`[agon] loaded ${extensions.length} extension(s)`);
   }
-  
+
   return { extensions, skills: allSkills, systemPromptFragments: allFragments };
 }
 

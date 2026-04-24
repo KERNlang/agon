@@ -28,9 +28,9 @@ function _readJsonSafe(path: string): unknown|null {
  */
 function _extractMcpServers(data: unknown): McpServerConfig[] {
   if (!data || typeof data !== 'object') return [];
-  
+
   const record = data as Record<string, unknown>;
-  
+
   // Claude Code / Cursor format: { mcpServers: { serverName: { command, args, env } } }
   const serversObj = record.mcpServers ?? record.mcp_servers ?? record.servers;
   if (serversObj && typeof serversObj === 'object' && !Array.isArray(serversObj)) {
@@ -50,7 +50,7 @@ function _extractMcpServers(data: unknown): McpServerConfig[] {
     }
     return result.filter(s => s.command || s.url);
   }
-  
+
   // Array format: [{ name, command, args, env }]
   if (Array.isArray(serversObj)) {
     return serversObj
@@ -64,7 +64,7 @@ function _extractMcpServers(data: unknown): McpServerConfig[] {
       }))
       .filter((s: McpServerConfig) => (s.command || s.url) && s.name);
   }
-  
+
   return [];
 }
 
@@ -74,9 +74,9 @@ function _extractMcpServers(data: unknown): McpServerConfig[] {
 export function discoverMcpServers(cwd: string): McpServerConfig[] {
   const home = homedir();
   const servers = new Map<string, McpServerConfig>();
-  
+
   // ── Global sources (lowest priority) ──
-  
+
   // 1. ~/.claude/settings.json
   const claudeSettings = _readJsonSafe(join(home, '.claude', 'settings.json'));
   if (claudeSettings) {
@@ -84,7 +84,7 @@ export function discoverMcpServers(cwd: string): McpServerConfig[] {
       servers.set(s.name, s);
     }
   }
-  
+
   // 2. ~/.claude/settings.local.json (overrides global)
   const claudeLocal = _readJsonSafe(join(home, '.claude', 'settings.local.json'));
   if (claudeLocal) {
@@ -92,9 +92,9 @@ export function discoverMcpServers(cwd: string): McpServerConfig[] {
       servers.set(s.name, s);
     }
   }
-  
+
   // ── Project-level sources (highest priority) ──
-  
+
   // 3. <cwd>/.vscode/mcp.json (VS Code MCP config)
   const vscodeMcp = _readJsonSafe(join(cwd, '.vscode', 'mcp.json'));
   if (vscodeMcp) {
@@ -102,7 +102,7 @@ export function discoverMcpServers(cwd: string): McpServerConfig[] {
       servers.set(s.name, s);
     }
   }
-  
+
   // 4. <cwd>/.cursor/mcp.json (Cursor IDE)
   const cursorMcp = _readJsonSafe(join(cwd, '.cursor', 'mcp.json'));
   if (cursorMcp) {
@@ -110,7 +110,7 @@ export function discoverMcpServers(cwd: string): McpServerConfig[] {
       servers.set(s.name, s);
     }
   }
-  
+
   // 5. <cwd>/.agon.json (Agon project config — highest priority)
   const agonProject = _readJsonSafe(join(cwd, '.agon.json'));
   if (agonProject) {
@@ -118,7 +118,7 @@ export function discoverMcpServers(cwd: string): McpServerConfig[] {
       servers.set(s.name, s);
     }
   }
-  
+
   return Array.from(servers.values());
 }
 
@@ -134,7 +134,7 @@ export function mcpDiscoveryFingerprint(cwd: string): string {
     join(cwd, '.cursor', 'mcp.json'),
     join(cwd, '.agon.json'),
   ];
-  
+
   const parts: string[] = [];
   for (const p of paths) {
     try {

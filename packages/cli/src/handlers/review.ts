@@ -1,1 +1,1 @@
-export { handleReview } from '../generated/handlers/review.js';
+export { handleReview, handleReviewMany } from '../generated/handlers/review.js';

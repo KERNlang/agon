@@ -39,7 +39,7 @@ export type Intent =
   | { type: 'speculate'; input: string; engines?: string[]; maxTurns?: number }
   | { type: 'team-agent'; input: string; engines?: string[]; taskKind?: 'edit'|'investigate'; maxTurns?: number }
   | { type: 'pipeline'; task: string; fitnessCmd: string | null }
-  | { type: 'review'; target?: string; engineId?: string }
+  | { type: 'review'; target?: string; engineId?: string; engineIds?: string[] }
   | { type: 'run'; input: string }
   | { type: 'cesar'; engineIds: string[] }
   | { type: 'commit'; input?: string }

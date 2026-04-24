@@ -115,32 +115,32 @@ export function glickoE(mu: number, muJ: number, phiJ: number): number {
 export function updateGlicko(winnerId: string, loserId: string, taskClass: TaskClass, mode: 'forge'|'brainstorm'|'tribunal'): {winnerMu:number, loserMu:number} {
   const record = loadRatings();
   const now = new Date().toISOString();
-  
+
   // Ensure all scopes exist
   record.byMode[mode] ??= {};
   record.byTaskClass[taskClass] ??= {};
   record.engineMeta[winnerId] ??= defaultEngineMeta();
   record.engineMeta[loserId] ??= defaultEngineMeta();
-  
+
   const scopes: Array<Record<string, GlickoRating>> = [
     record.global,
     record.byMode[mode],
     record.byTaskClass[taskClass],
   ];
-  
+
   for (const scope of scopes) {
     scope[winnerId] ??= defaultGlickoRating();
     scope[loserId] ??= defaultGlickoRating();
-  
+
     const w = scope[winnerId];
     const l = scope[loserId];
-  
+
     // Convert to Glicko-2 internal scale
     const muW = (w.mu - DEFAULT_MU) / GLICKO_SCALE;
     const phiW = w.phi / GLICKO_SCALE;
     const muL = (l.mu - DEFAULT_MU) / GLICKO_SCALE;
     const phiL = l.phi / GLICKO_SCALE;
-  
+
     // Winner update (score = 1)
     const gL = glickoG(phiL);
     const eW = glickoE(muW, muL, phiL);
@@ -150,7 +150,7 @@ export function updateGlicko(winnerId: string, loserId: string, taskClass: TaskC
     const phiStarW = Math.sqrt(phiW * phiW + sigmaW * sigmaW);
     const phiNewW = 1 / Math.sqrt(1 / (phiStarW * phiStarW) + 1 / vW);
     const muNewW = muW + phiNewW * phiNewW * gL * (1 - eW);
-  
+
     // Loser update (score = 0)
     const gW = glickoG(phiW);
     const eL = glickoE(muL, muW, phiW);
@@ -160,27 +160,27 @@ export function updateGlicko(winnerId: string, loserId: string, taskClass: TaskC
     const phiStarL = Math.sqrt(phiL * phiL + sigmaL * sigmaL);
     const phiNewL = 1 / Math.sqrt(1 / (phiStarL * phiStarL) + 1 / vL);
     const muNewL = muL + phiNewL * phiNewL * gW * (0 - eL);
-  
+
     // Convert back to display scale
     w.mu = Math.round(muNewW * GLICKO_SCALE + DEFAULT_MU);
     w.phi = Math.round(phiNewW * GLICKO_SCALE * 10) / 10;
     w.sigma = sigmaW;
     w.wins++;
     w.lastActive = now;
-  
+
     l.mu = Math.round(muNewL * GLICKO_SCALE + DEFAULT_MU);
     l.phi = Math.round(phiNewL * GLICKO_SCALE * 10) / 10;
     l.sigma = sigmaL;
     l.losses++;
     l.lastActive = now;
   }
-  
+
   // Update meta
   record.engineMeta[winnerId].lastActive = now;
   record.engineMeta[winnerId].matchCount++;
   record.engineMeta[loserId].lastActive = now;
   record.engineMeta[loserId].matchCount++;
-  
+
   saveRatings(record);
   return { winnerMu: record.global[winnerId].mu, loserMu: record.global[loserId].mu };
 }
@@ -191,7 +191,7 @@ export function updateGlicko(winnerId: string, loserId: string, taskClass: TaskC
 export function computeNewSigma(sigma: number, phi: number, v: number, delta: number): number {
   const a = Math.log(sigma * sigma);
   const tau2 = TAU * TAU;
-  
+
   function f(x: number): number {
     const ex = Math.exp(x);
     const phi2 = phi * phi;
@@ -199,7 +199,7 @@ export function computeNewSigma(sigma: number, phi: number, v: number, delta: nu
     const den1 = 2 * (phi2 + v + ex) * (phi2 + v + ex);
     return num1 / den1 - (x - a) / tau2;
   }
-  
+
   // Set initial bounds
   let A = a;
   let B: number;
@@ -210,7 +210,7 @@ export function computeNewSigma(sigma: number, phi: number, v: number, delta: nu
     while (f(a - k * TAU) < 0) k++;
     B = a - k * TAU;
   }
-  
+
   // Illinois algorithm to find root
   let fA = f(A);
   let fB = f(B);

@@ -75,19 +75,19 @@ export function loadSkills(cwd?: string): Skill[] {
   const skills: Skill[] = [];
   const override = process.env.AGON_HOME?.trim();
   const home = override ? resolve(override) : join(homedir(), '.agon');
-  
+
   // 1. Built-in skills (shipped with Agon)
   const builtinDir = join(dirname(fileURLToPath(import.meta.url)), '../../skills');
   skills.push(...loadSkillsFromDir(builtinDir, 'builtin'));
-  
+
   // 2. Global skills (~/.agon/skills/)
   skills.push(...loadSkillsFromDir(join(home, 'skills'), 'global'));
-  
+
   // 3. Project-level skills (.agon/skills/)
   if (cwd) {
     skills.push(...loadSkillsFromDir(join(cwd, '.agon', 'skills'), 'project'));
   }
-  
+
   // Deduplicate: project > global > builtin (later wins)
   const seen = new Map<string, Skill>();
   for (const skill of skills) {

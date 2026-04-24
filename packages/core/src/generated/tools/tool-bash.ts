@@ -60,58 +60,58 @@ export function createBashTool(): ToolHandler {
     isConcurrencySafe: false,
     isDestructive: true,
   };
-  
+
   function validate(input: Record<string, unknown>, _ctx: ToolContext): string | null {
     if (typeof input.command !== 'string' || input.command.trim() === '') {
       return 'command is required and must be a non-empty string';
     }
     return null;
   }
-  
+
   function checkPermission(input: Record<string, unknown>, _ctx: ToolContext): PermissionDecision {
     const command = input.command as string;
     const base = extractBaseCommand(command);
     const lower = base.toLowerCase();
-  
+
     // Check dangerous prefixes — deny immediately
     for (const prefix of DANGEROUS_PREFIXES) {
       if (lower.startsWith(prefix)) {
         return { behavior: 'deny', message: `Blocked dangerous command: ${prefix}`, reason: 'dangerous-prefix' };
       }
     }
-  
+
     // Check read-only commands — allow automatically
     const isReadOnly = READONLY_COMMANDS.some((safe: string) => lower === safe || lower.startsWith(safe + ' '));
-  
+
     // Investigation mode: allow read-only commands, block mutating ones
     if ((_ctx as any).readOnlyMode) {
       if (isReadOnly) return { behavior: 'allow' };
       return { behavior: 'deny', message: '[Investigation phase] Bash command skipped — mutating commands available after confidence check.', reason: 'read-only-mode' };
     }
-  
+
     // Exploration mode: allow read-only commands, block everything else
     if ((_ctx as any).explorationMode) {
       if (isReadOnly) return { behavior: 'allow' };
       return { behavior: 'deny', message: 'Bash blocked: exploration mode is active (read-only)', reason: 'exploration-mode' };
     }
-  
+
     if (isReadOnly) return { behavior: 'allow' };
-  
+
     // Auto mode: allow all non-dangerous commands without prompting
     if (_ctx.permissionMode === 'auto') {
       return { behavior: 'allow' };
     }
-  
+
     // Everything else needs user approval
     return { behavior: 'ask', message: `Allow Bash command: ${command}?` };
   }
-  
+
   // ── Runtime redirect: intercept cat/head/tail/grep → proper tools ──
   // Engines habitually use Bash for file reads. Redirect silently to Read/Grep
   // so it goes through the tool system (permissions, caching, history).
   const FILE_READ_RE = /^\s*(?:cat|head|tail)(?:\s+-[A-Za-z0-9]+)*\s+(.+)$/;
   const GREP_RE = /^\s*(?:grep|rg)\s+(.+)$/;
-  
+
   function tryRedirectToRead(command: string): { file: string; offset?: number; limit?: number } | null {
     const trimmed = command.trim();
     // cat file.ts | head -N  →  Read with limit
@@ -129,12 +129,12 @@ export function createBashTool(): ToolHandler {
     if (catN) return { file: catN[1] };
     return null;
   }
-  
+
   async function execute(input: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
     const command = input.command as string;
     const timeout = typeof input.timeout === 'number' ? input.timeout : 120000;
     const start = Date.now();
-  
+
     // Redirect file reads to Read tool — silent, engine never knows
     const readRedirect = tryRedirectToRead(command);
     if (readRedirect) {
@@ -156,11 +156,11 @@ export function createBashTool(): ToolHandler {
         // File doesn't exist or permission error — fall through to real Bash
       }
     }
-  
+
     if (ctx.onProgress) {
       ctx.onProgress(`Running: ${command}`);
     }
-  
+
     const result = await spawnWithTimeout({
       command: '/bin/sh',
       args: ['-c', command],
@@ -168,12 +168,12 @@ export function createBashTool(): ToolHandler {
       timeout,
       signal: ctx.abortSignal,
     });
-  
+
     const durationMs = Date.now() - start;
     const exitCode = result.exitCode;
     const stdout = result.stdout;
     const stderr = result.stderr;
-  
+
     if (result.timedOut) {
       return {
         ok: false,
@@ -182,7 +182,7 @@ export function createBashTool(): ToolHandler {
         metadata: { exitCode: 124, durationMs, timedOut: true },
       };
     }
-  
+
     if (exitCode !== 0) {
       return {
         ok: false,
@@ -191,13 +191,13 @@ export function createBashTool(): ToolHandler {
         metadata: { exitCode, durationMs, timedOut: false },
       };
     }
-  
+
     return {
       ok: true,
       content: stdout,
       metadata: { exitCode, durationMs, timedOut: false },
     };
   }
-  
+
   return { definition, validate, checkPermission, execute };
 }

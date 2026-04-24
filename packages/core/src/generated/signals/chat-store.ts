@@ -53,9 +53,9 @@ export function pruneChats(): void {
         return { name: f, ts: isNaN(ts) ? 0 : ts };
       })
       .sort((a: {ts:number}, b: {ts:number}) => b.ts - a.ts);
-  
+
     if (files.length <= CHAT_RETENTION) return;
-  
+
     const toRemove = files.slice(CHAT_RETENTION);
     for (const f of toRemove) {
       try { unlinkSync(join(dir, f.name)); } catch { /* best effort */ }
@@ -134,14 +134,14 @@ export function loadChatSession(id: string): ChatSession|null {
     const raw = readFileSync(filePath, 'utf-8');
     const lines = raw.trim().split('\n').filter(Boolean);
     if (lines.length === 0) return null;
-  
+
     const header = JSON.parse(lines[0]);
     const messages: ChatMessage[] = [];
     for (let i = 1; i < lines.length; i++) {
       const msg = JSON.parse(lines[i]);
       if (msg.role) messages.push(msg);
     }
-  
+
     return {
       id: header.id ?? id,
       startedAt: header.startedAt ?? '',
@@ -175,7 +175,7 @@ export function listChatSessions(limit: number): ChatSession[] {
       }))
       .sort((a: {mtime:number}, b: {mtime:number}) => b.mtime - a.mtime)
       .slice(0, limit);
-  
+
     return files.map((f: {name:string}) => {
       const id = f.name.replace('.ndjson', '');
       return loadChatSession(id);

@@ -29,7 +29,7 @@ export function createWriteTool(): ToolHandler {
     isReadOnly: false,
     isConcurrencySafe: false,
   };
-  
+
   const validate = (input: Record<string, unknown>, _ctx: ToolContext): string | null => {
     if (!input.file_path || typeof input.file_path !== 'string') {
       return 'Missing required parameter: file_path';
@@ -39,7 +39,7 @@ export function createWriteTool(): ToolHandler {
     }
     return null;
   };
-  
+
   const checkPermission = (input: Record<string, unknown>, ctx: ToolContext): PermissionDecision => {
     // Exploration mode blocks all writes
     if ((ctx as any).explorationMode) {
@@ -49,10 +49,10 @@ export function createWriteTool(): ToolHandler {
         reason: 'exploration-mode',
       };
     }
-  
+
     const filePath = resolve(ctx.cwd, input.file_path as string);
     const rel = relative(ctx.cwd, filePath);
-  
+
     if (rel.startsWith('..') || resolve(ctx.cwd, rel) !== filePath) {
       return {
         behavior: 'deny',
@@ -60,24 +60,24 @@ export function createWriteTool(): ToolHandler {
         reason: 'path-outside-cwd',
       };
     }
-  
+
     return { behavior: 'allow' };
   };
-  
+
   const execute = async (input: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> => {
     const filePath = resolve(ctx.cwd, input.file_path as string);
     const content = input.content as string;
     const relPath = relative(ctx.cwd, filePath);
     const cache = fileStateCache;
-  
+
     // Phase E v2: route through VirtualFS overlay when present.
     if (ctx.virtualFs) {
       ctx.virtualFs.write(filePath, content);
       return { ok: true, content: `Wrote ${filePath} in VirtualFS (${content.split('\n').length} lines)` };
     }
-  
+
     const fileExists = existsSync(filePath);
-  
+
     if (fileExists) {
       // Read-before-write check: existing files must have been read first
       if (!cache.has(filePath)) {
@@ -87,7 +87,7 @@ export function createWriteTool(): ToolHandler {
           error: 'File exists but has not been read yet. Use the Read tool first before overwriting.',
         };
       }
-  
+
       // Staleness check: compare current mtime vs cached timestamp
       let mtime: number;
       try {
@@ -96,7 +96,7 @@ export function createWriteTool(): ToolHandler {
       } catch (err) {
         return { ok: false, content: '', error: `Cannot stat file: ${err instanceof Error ? err.message : String(err)}` };
       }
-  
+
       if (cache.isStale(filePath, mtime)) {
         return {
           ok: false,
@@ -104,14 +104,14 @@ export function createWriteTool(): ToolHandler {
           error: 'File has been modified since last read. Re-read the file before writing.',
         };
       }
-  
+
       // Take snapshot of existing file before overwrite
       takeSnapshot(`Write: ${relPath}`, ctx.cwd, [relPath]);
     } else {
       // New file — take snapshot recording it as non-existent (for undo = delete)
       takeSnapshot(`Write (new): ${relPath}`, ctx.cwd, [relPath]);
     }
-  
+
     // Create parent directories if needed
     const parentDir = dirname(filePath);
     if (!existsSync(parentDir)) {
@@ -121,14 +121,14 @@ export function createWriteTool(): ToolHandler {
         return { ok: false, content: '', error: `Failed to create directory: ${err instanceof Error ? err.message : String(err)}` };
       }
     }
-  
+
     // Write file
     try {
       writeFileSync(filePath, content, 'utf-8');
     } catch (err) {
       return { ok: false, content: '', error: `Failed to write file: ${err instanceof Error ? err.message : String(err)}` };
     }
-  
+
     // Update cache with new content and fresh mtime
     const newMtime = statSync(filePath).mtimeMs;
     cache.set(filePath, {
@@ -138,15 +138,15 @@ export function createWriteTool(): ToolHandler {
       limit: undefined,
       isPartialView: false,
     });
-  
+
     // Build success message
     const lineCount = content.split('\n').length;
     const byteCount = Buffer.byteLength(content, 'utf-8');
     const action = fileExists ? 'Updated' : 'Created';
     const summary = `${action} ${relPath} (${lineCount} line${lineCount !== 1 ? 's' : ''}, ${byteCount} bytes)`;
-  
+
     return { ok: true, content: summary };
   };
-  
+
   return { definition, validate, checkPermission, execute };
 }

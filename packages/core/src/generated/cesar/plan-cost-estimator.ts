@@ -17,7 +17,7 @@ export class PlanCostEstimator {
       const avgCost = typeHistory.reduce((s, h) => s + h.costUsd, 0) / typeHistory.length;
       return { tokens: avgTokens, costUsd: avgCost };
     }
-    
+
     const DEFAULTS: Record<string, number> = {
       self: 2000, delegate: 5000, brainstorm: 8000, campfire: 6000,
       tribunal: 10000, forge: 15000, teamforge: 20000, pipeline: 30000,

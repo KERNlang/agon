@@ -40,22 +40,22 @@ export async function runTribunal(opts: {question:string, engines:string[], roun
   const signal = opts.signal;
   const mode = opts.mode ?? 'adversarial';
   const modeConfig = getModeConfig(mode, engines.length);
-  
+
   // Assign roles from mode config
   const roles = modeConfig.roles.slice(0, engines.length);
   // Pad with generic roles if more engines than roles
   while (roles.length < engines.length) {
     roles.push(`Participant ${roles.length + 1}`);
   }
-  
+
   const positions: TribunalPosition[] = engines.map((id: string, i: number) => ({
     engineId: id,
     position: roles[i],
     arguments: [],
   }));
-  
+
   const effectiveRounds = Math.min(rounds, modeConfig.maxRounds);
-  
+
   // Sidechain audit trail
   const tribunalId = randomUUID().slice(0, 8);
   const sidechain = createSidechainLogger({
@@ -65,7 +65,7 @@ export async function runTribunal(opts: {question:string, engines:string[], roun
   });
   sidechain.log('tribunal:init', undefined, { question, mode, engines, rounds: effectiveRounds });
   const allRounds: TribunalRound[] = [];
-  
+
   for (let round = 1; round <= effectiveRounds; round++) {
     // Doppelganger fix: respect cancellation between rounds. Without
     // this the tribunal runs to completion even after the user cancels.
@@ -77,13 +77,13 @@ export async function runTribunal(opts: {question:string, engines:string[], roun
       type: 'synthesis:start',
       data: { round, totalRounds: effectiveRounds, mode },
     });
-  
+
     const prevArgs = round > 1
       ? positions
           .map((p) => `**${p.engineId} (${p.position}):**\n${p.arguments[p.arguments.length - 1]}`)
           .join('\n\n---\n\n')
       : undefined;
-  
+
     // Build prompts using mode-aware prompt builder
     const roundPromises = positions.map(async (pos) => {
       const engine = registry.get(pos.engineId);
@@ -95,13 +95,13 @@ export async function runTribunal(opts: {question:string, engines:string[], roun
         totalRounds: effectiveRounds,
         previousArguments: prevArgs,
       });
-  
+
       opts.onEvent?.({
         type: 'synthesis:critique',
         engineId: pos.engineId,
         data: { round, position: pos.position, mode },
       });
-  
+
       try {
         const result = await adapter.dispatch({
           engine,
@@ -120,7 +120,7 @@ export async function runTribunal(opts: {question:string, engines:string[], roun
         return { engineId: pos.engineId, argument: '(failed to respond)' };
       }
     });
-  
+
     // Sequential protocol: wait for each in order
     let roundResults: { engineId: string; argument: string }[];
     if (modeConfig.protocol === 'sequential') {
@@ -131,13 +131,13 @@ export async function runTribunal(opts: {question:string, engines:string[], roun
     } else {
       roundResults = await Promise.all(roundPromises);
     }
-  
+
     for (const result of roundResults) {
       const pos = positions.find((p) => p.engineId === result.engineId);
       if (pos) pos.arguments.push(result.argument);
       sidechain.log('round:response', result.engineId, { round, argLength: result.argument.length });
     }
-  
+
     allRounds.push({
       round,
       positions: positions.map((p) => ({
@@ -146,7 +146,7 @@ export async function runTribunal(opts: {question:string, engines:string[], roun
       })),
     });
   }
-  
+
   // Summary using the configured Cesar engine when available, else first engine
   let summaryEngine;
   try {
@@ -154,7 +154,7 @@ export async function runTribunal(opts: {question:string, engines:string[], roun
     summaryEngine = registry.get(cesarId);
   } catch { summaryEngine = registry.get(engines[0]); }
   const summaryPrompt = buildModeSummaryPrompt({ mode, question, positions });
-  
+
   let summary: string;
   try {
     const summaryResult = await adapter.dispatch({
@@ -171,19 +171,19 @@ export async function runTribunal(opts: {question:string, engines:string[], roun
     console.warn(`[agon] tribunal summary failed: ${err instanceof Error ? err.message : String(err)}`);
     summary = buildFallbackSummary(positions);
   }
-  
+
   sidechain.log('tribunal:done', undefined, {
     rounds: allRounds.length,
     engines: engines.length,
     mode,
     summaryLength: summary.length,
   });
-  
+
   opts.onEvent?.({
     type: 'forge:done',
     data: { rounds: allRounds.length, engines: engines.length, mode },
   });
-  
+
   // Update Glicko-2 ratings — score by per-round substantive credit (not raw length)
   if (positions.length >= 2) {
     const taskClass = classifyTask(question);
@@ -199,6 +199,6 @@ export async function runTribunal(opts: {question:string, engines:string[], roun
       .sort((a: any, b: any) => b.score - a.score);
     updateGlickoRanked(tribunalRanked, taskClass, 'tribunal');
   }
-  
+
   return { question, rounds: allRounds, positions, summary, mode };
 }

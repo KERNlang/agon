@@ -45,7 +45,7 @@ export function createProposePlanTool(): ToolHandler {
     isReadOnly: true,
     isConcurrencySafe: true,
   };
-  
+
   const validate = (input: Record<string, unknown>, _ctx: ToolContext): string | null => {
     if (!input.intent || typeof input.intent !== 'string') return 'Missing required: intent';
     if (!Array.isArray(input.steps) || input.steps.length === 0) return 'Missing required: steps (non-empty array)';
@@ -90,14 +90,14 @@ export function createProposePlanTool(): ToolHandler {
     }
     return null;
   };
-  
+
   const checkPermission = (_input: Record<string, unknown>, _ctx: ToolContext): PermissionDecision => {
     return { behavior: 'allow' };
   };
-  
+
   const execute = async (_input: Record<string, unknown>, _ctx: ToolContext): Promise<ToolResult> => {
     return { ok: true, content: '[PLAN_PROPOSED] Plan submitted for user approval.' };
   };
-  
+
   return { definition, validate, checkPermission, execute };
 }

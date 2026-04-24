@@ -23,7 +23,7 @@ Keep going until the task is DONE. Don't stop after reading one file — chain t
 function describeSchemaProperty(key: string, spec: any, required: boolean): string {
   const opt = required ? '' : '?';
   const s = spec as any;
-  
+
   // Array of objects — show the item structure
   if (s.type === 'array' && s.items?.type === 'object' && s.items?.properties) {
     const itemProps = Object.entries(s.items.properties)
@@ -35,7 +35,7 @@ function describeSchemaProperty(key: string, spec: any, required: boolean): stri
       .join(', ');
     return `${key}${opt}:[{${itemProps}}]`;
   }
-  
+
   // Object with properties
   if (s.type === 'object' && s.properties) {
     const subProps = Object.entries(s.properties)
@@ -43,7 +43,7 @@ function describeSchemaProperty(key: string, spec: any, required: boolean): stri
       .join(', ');
     return `${key}${opt}:{${subProps}}`;
   }
-  
+
   const enumHint = s.enum ? ` (${s.enum.join('|')})` : '';
   return `${key}${opt}:${s.type ?? 'string'}${enumHint}`;
 }
@@ -68,13 +68,13 @@ function toolDefinitionToPrompt(def: ToolDefinition): string {
  */
 export function generateToolPrompt(handlers: ToolHandler[]): string {
   const sections: string[] = [TOOL_USE_FORMAT, '\n## Available Tools\n'];
-  
+
   for (const handler of handlers) {
     sections.push(toolDefinitionToPrompt(handler.definition));
   }
-  
+
   sections.push(`Rules: Read before Edit. Edit for changes, Write for new files. Grep/Glob to find files. One action per call.`);
-  
+
   return sections.join('\n\n');
 }
 
@@ -132,12 +132,12 @@ function convertSchemaProperty(spec: any): Record<string,unknown> {
   const result: Record<string, unknown> = { type: spec.type ?? 'string' };
   if (spec.description) result.description = spec.description;
   if (spec.enum) result.enum = spec.enum;
-  
+
   // Array with items — preserve the nested item schema
   if (spec.type === 'array' && spec.items) {
     result.items = convertSchemaProperty(spec.items);
   }
-  
+
   // Object with properties — recursively convert each property
   if (spec.type === 'object' && spec.properties) {
     const nested: Record<string, unknown> = {};
@@ -147,7 +147,7 @@ function convertSchemaProperty(spec: any): Record<string,unknown> {
     result.properties = nested;
     if (Array.isArray(spec.required)) result.required = spec.required;
   }
-  
+
   return result;
 }
 
@@ -161,7 +161,7 @@ export function toolsToOpenAIFormat(registry: ToolRegistry): Array<{type:string,
     const props = schema.properties ?? schema;
     const properties: Record<string, unknown> = {};
     const required: string[] = [];
-  
+
     for (const [key, spec] of Object.entries(props)) {
       if (key === 'type' || key === 'required' || key === 'properties') continue;
       const s = spec as any;
@@ -172,7 +172,7 @@ export function toolsToOpenAIFormat(registry: ToolRegistry): Array<{type:string,
     if (Array.isArray(schema.required)) {
       for (const r of schema.required) { if (!required.includes(r)) required.push(r); }
     }
-  
+
     return {
       type: 'function' as const,
       function: {

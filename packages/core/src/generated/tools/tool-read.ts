@@ -39,7 +39,7 @@ export function createReadTool(): ToolHandler {
     isReadOnly: true,
     isConcurrencySafe: true,
   };
-  
+
   const validate = (input: Record<string, unknown>, _ctx: ToolContext): string | null => {
     if (!input.file_path || typeof input.file_path !== 'string') {
       return 'Missing required parameter: file_path';
@@ -52,11 +52,11 @@ export function createReadTool(): ToolHandler {
     }
     return null;
   };
-  
+
   const checkPermission = (input: Record<string, unknown>, ctx: ToolContext): PermissionDecision => {
     const filePath = resolve(ctx.cwd, input.file_path as string);
     const rel = relative(ctx.cwd, filePath);
-  
+
     // Deny if path escapes cwd (starts with '..' or is absolute outside cwd)
     if (rel.startsWith('..') || resolve(ctx.cwd, rel) !== filePath) {
       return {
@@ -65,13 +65,13 @@ export function createReadTool(): ToolHandler {
         reason: 'path-outside-cwd',
       };
     }
-  
+
     return { behavior: 'allow' };
   };
-  
+
   const execute = async (input: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> => {
     const filePath = resolve(ctx.cwd, input.file_path as string);
-  
+
     // Phase E v2: route through VirtualFS overlay when present.
     // VirtualFS.read() checks the in-memory overlay first, then falls
     // through to the real snapshot. This lets the Speculator capture which
@@ -87,12 +87,12 @@ export function createReadTool(): ToolHandler {
       const sliced = limit !== undefined ? lines.slice(offset, offset + limit) : lines.slice(offset);
       return { ok: true, content: sliced.join('\n') };
     }
-  
+
     // Check if file exists
     if (!existsSync(filePath)) {
       return { ok: false, content: '', error: `File not found: ${filePath}` };
     }
-  
+
     // Stat the file for mtime
     let mtime: number;
     try {
@@ -101,7 +101,7 @@ export function createReadTool(): ToolHandler {
     } catch (err) {
       return { ok: false, content: '', error: `Cannot stat file: ${err instanceof Error ? err.message : String(err)}` };
     }
-  
+
     // Dedup check: if cache has it and mtime hasn't changed, return short message
     const cache = fileStateCache;
     const cached = cache.get(filePath);
@@ -113,7 +113,7 @@ export function createReadTool(): ToolHandler {
         return { ok: true, content: '[File unchanged since last read]' };
       }
     }
-  
+
     // Read file content
     let fullContent: string;
     try {
@@ -121,17 +121,17 @@ export function createReadTool(): ToolHandler {
     } catch (err) {
       return { ok: false, content: '', error: `Cannot read file: ${err instanceof Error ? err.message : String(err)}` };
     }
-  
+
     // Apply offset/limit
     const lines = fullContent.split('\n');
     const offset = (input.offset as number | undefined) ?? 0;
     const limit = (input.limit as number | undefined) ?? 2000;
     const sliced = lines.slice(offset, offset + limit);
     const isPartialView = offset > 0 || sliced.length < lines.length;
-  
+
     // Format with line numbers (1-based, like cat -n)
     const formatted = formatWithLineNumbers(sliced.join('\n'), offset + 1);
-  
+
     // Update cache
     const state: FileState = {
       content: fullContent,
@@ -141,16 +141,16 @@ export function createReadTool(): ToolHandler {
       isPartialView,
     };
     cache.set(filePath, state);
-  
+
     // Build result with metadata
     const totalLines = lines.length;
     let result = formatted;
     if (isPartialView) {
       result += `\n\n[Showing lines ${offset + 1}-${offset + sliced.length} of ${totalLines} total]`;
     }
-  
+
     return { ok: true, content: result };
   };
-  
+
   return { definition, validate, checkPermission, execute };
 }

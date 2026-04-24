@@ -32,7 +32,7 @@ export function writeTmuxClipboard(text: string): void {
   try {
     execSync('tmux load-buffer -w -', { input: text, timeout: 5000 });
   } catch { /* tmux clipboard unavailable */ }
-  
+
   // Also send OSC 52 wrapped in DCS passthrough for terminal clipboard
   const b64 = Buffer.from(text).toString('base64');
   process.stdout.write(`\x1bPtmux;\x1b\x1b]52;c;${b64}\x07\x1b\\`);
@@ -44,13 +44,13 @@ export function writeTmuxClipboard(text: string): void {
 export function probeLinuxHelper(): string|null {
   if (_linuxHelperCache.probed) return _linuxHelperCache.cmd;
   _linuxHelperCache.probed = true;
-  
+
   const candidates: Array<{ check: string; cmd: string }> = [
     { check: 'which wl-copy', cmd: 'wl-copy' },
     { check: 'which xclip', cmd: 'xclip -selection clipboard' },
     { check: 'which xsel', cmd: 'xsel --clipboard --input' },
   ];
-  
+
   for (const c of candidates) {
     try {
       execSync(c.check, { stdio: 'ignore', timeout: 2000 });
@@ -58,7 +58,7 @@ export function probeLinuxHelper(): string|null {
       return c.cmd;
     } catch { /* linux clipboard helper not found — try next candidate */ }
   }
-  
+
   return null;
 }
 
@@ -68,17 +68,17 @@ export function probeLinuxHelper(): string|null {
 export function copyToClipboard(text: string): void {
   const path = detectClipboardPath();
   const platform = process.platform;
-  
+
   if (path === 'tmux') {
     writeTmuxClipboard(text);
     return;
   }
-  
+
   if (path === 'osc52') {
     writeOsc52(text);
     return;
   }
-  
+
   // Native path — use platform tool + OSC 52 as bonus
   if (platform === 'darwin') {
     execSync('pbcopy', { input: text, timeout: 5000 });

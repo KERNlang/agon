@@ -279,6 +279,7 @@ fn name=handleForge params="task:string, fitnessCmd:string|null, dispatch:Dispat
 
             // Skip normal winner patch — convergence replaces it
             dispatch({ type: 'info', message: `Manifest: ${forgeDir}/manifest.json` });
+            dispatch({ type: 'info', message: `Result bundle: ${manifest.resultBundlePath ?? `${forgeDir}/result.json`}` });
 
             for (const step of plan.steps) {
               if (step.result.state === 'pending' || step.result.state === 'running') {
@@ -365,6 +366,7 @@ fn name=handleForge params="task:string, fitnessCmd:string|null, dispatch:Dispat
       dispatch({ type: 'error', message: 'No winner — all engines failed' });
     }
     dispatch({ type: 'info', message: `Manifest: ${forgeDir}/manifest.json` });
+    dispatch({ type: 'info', message: `Result bundle: ${manifest.resultBundlePath ?? `${forgeDir}/result.json`}` });
 
     for (const step of plan.steps) {
       if (step.result.state === 'pending' || step.result.state === 'running') {

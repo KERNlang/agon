@@ -102,7 +102,7 @@ export function assignTeamRoles(engineIds: string[], taskClass: TaskClass): Team
   const ratings = getRatings();
   const classRatings = ratings.byTaskClass[taskClass] ?? {};
   const globalRatings = ratings.global;
-  
+
   // Rank engines by Glicko-2 confidence floor
   const ranked = [...engineIds].sort((a, b) => {
     const aR = classRatings[a] ?? globalRatings[a];
@@ -112,10 +112,10 @@ export function assignTeamRoles(engineIds: string[], taskClass: TaskClass): Team
     if (aFloor !== bFloor) return bFloor - aFloor;
     return Math.random() - 0.5;
   });
-  
+
   const n = ranked.length;
   const members: TeamMember[] = [];
-  
+
   if (n === 1) {
     // Solo — engine does everything (captain)
     members.push({ engineId: ranked[0], role: 'captain', weight: 1.0 });
@@ -137,25 +137,25 @@ export function assignTeamRoles(engineIds: string[], taskClass: TaskClass): Team
     }
     members.push({ engineId: ranked[n - 1], role: 'reviewer', weight: 0.20 });
   }
-  
+
   return members;
 }
 
 export function composeTeams(engineIds: string[], membersPerSide: number, mode: TeamComposeMode, taskClass: TaskClass, explicitTeams?: [string[], string[]]): [TeamSpec, TeamSpec] {
   const ratings = getRatings();
-  
+
   function engineElo(id: string): number {
     const r = ratings.byTaskClass[taskClass]?.[id] ?? ratings.global[id];
     return r ? Math.round(r.mu - 2 * r.phi) : 100;
   }
-  
+
   let teamA: string[];
   let teamB: string[];
-  
+
   if (mode === 'explicit' && explicitTeams) {
     teamA = explicitTeams[0];
     teamB = explicitTeams[1];
-  
+
     // Validate explicit teams — engines CAN appear on both teams (different roles, independent dispatches)
     if (teamA.length === 0 || teamB.length === 0) {
       throw new Error('Explicit teams must each have at least one member');
@@ -169,7 +169,7 @@ export function composeTeams(engineIds: string[], membersPerSide: number, mode: 
     const sorted = [...engineIds].sort((a, b) => engineElo(b) - engineElo(a));
     teamA = [];
     teamB = [];
-  
+
     // Round-robin: alternate picks, wrapping around the engine pool
     for (let i = 0; i < membersPerSide; i++) {
       teamA.push(sorted[i % sorted.length]);
@@ -189,13 +189,13 @@ export function composeTeams(engineIds: string[], membersPerSide: number, mode: 
       teamB.push(reversed[i % reversed.length]);
     }
   }
-  
+
   const membersA = assignTeamRoles(teamA, taskClass);
   const membersB = assignTeamRoles(teamB, taskClass);
-  
+
   const aggA = membersA.reduce((sum, m) => sum + engineElo(m.engineId), 0) / membersA.length;
   const aggB = membersB.reduce((sum, m) => sum + engineElo(m.engineId), 0) / membersB.length;
-  
+
   const specA: TeamSpec = {
     teamId: randomUUID().slice(0, 8),
     name: `Team Alpha`,
@@ -204,7 +204,7 @@ export function composeTeams(engineIds: string[], membersPerSide: number, mode: 
     members: membersA,
     aggregateElo: Math.round(aggA),
   };
-  
+
   const specB: TeamSpec = {
     teamId: randomUUID().slice(0, 8),
     name: `Team Beta`,
@@ -213,7 +213,7 @@ export function composeTeams(engineIds: string[], membersPerSide: number, mode: 
     members: membersB,
     aggregateElo: Math.round(aggB),
   };
-  
+
   return [specA, specB];
 }
 
@@ -223,7 +223,7 @@ export function computeContributionWeights(team: TeamSpec, trace: TeamRoundTrace
   for (const m of team.members) {
     weights[m.engineId] = m.weight;
   }
-  
+
   // Adjust based on trace: penalize engines that needed review loops
   const rejectCounts: Record<string, number> = {};
   for (const t of trace) {
@@ -237,7 +237,7 @@ export function computeContributionWeights(team: TeamSpec, trace: TeamRoundTrace
       }
     }
   }
-  
+
   // Each rejection shifts 0.05 weight from implementer to reviewer
   for (const [engineId, rejections] of Object.entries(rejectCounts)) {
     const shift = Math.min(rejections * 0.05, weights[engineId] * 0.5);
@@ -248,7 +248,7 @@ export function computeContributionWeights(team: TeamSpec, trace: TeamRoundTrace
       weights[reviewer.engineId] = (weights[reviewer.engineId] ?? 0) + shift;
     }
   }
-  
+
   // Normalize to sum to 1.0
   const total = Object.values(weights).reduce((s, w) => s + w, 0);
   if (total > 0) {
@@ -256,6 +256,6 @@ export function computeContributionWeights(team: TeamSpec, trace: TeamRoundTrace
       weights[key] /= total;
     }
   }
-  
+
   return weights;
 }

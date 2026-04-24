@@ -141,11 +141,11 @@ export function loadSessionState(engineId: string): { messageHistory: Array<{rol
   try {
     const raw = readFileSync(path, 'utf-8');
     const data = JSON.parse(raw);
-  
+
     // TTL: discard state older than SESSION_TTL_MS
     if (data.savedAt && Date.now() - data.savedAt > SESSION_TTL_MS) return null;
     if (!Array.isArray(data.messageHistory)) return null;
-  
+
     // v1 migration: old format has no schemaVersion
     if (!data.schemaVersion || data.schemaVersion < 2) {
       return {
@@ -156,7 +156,7 @@ export function loadSessionState(engineId: string): { messageHistory: Array<{rol
         savedAt: data.savedAt ?? 0,
       };
     }
-  
+
     return {
       messageHistory: data.messageHistory,
       confidence: data.confidence ?? null,
@@ -207,26 +207,55 @@ export function conversationStorePath(): string {
  * Strip engine-specific artifacts (tool call IDs, internal markers) for clean replay into a different engine.
  */
 export function stripEngineArtifacts(messages: Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>): Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}> {
+  const stringifyContent = (content: any): any => {
+    if (typeof content === 'string') return content;
+    if (Array.isArray(content)) return content;
+    try {
+      return content == null ? '' : JSON.stringify(content);
+    } catch {
+      return String(content ?? '');
+    }
+  };
+
+  const toolNameById = new Map<string, string>();
+  for (const msg of messages as any[]) {
+    if (msg?.role !== 'assistant' || !Array.isArray(msg.tool_calls)) continue;
+    for (const tc of msg.tool_calls) {
+      const id = typeof tc?.id === 'string' ? tc.id : '';
+      const name = tc?.function?.name ?? tc?.name;
+      if (id && typeof name === 'string' && name.trim()) toolNameById.set(id, name.trim());
+    }
+  }
+
   return messages.map((msg: any) => {
-    const clean: any = { role: msg.role };
-    if (typeof msg.content === 'string') {
-      clean.content = msg.content;
-    } else if (Array.isArray(msg.content)) {
-      // Multimodal content blocks — keep as-is
-      clean.content = msg.content;
-    } else if (msg.role === 'assistant' && Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0) {
+    const role = msg?.role === 'assistant' || msg?.role === 'system' || msg?.role === 'user'
+      ? msg.role
+      : 'user';
+    const clean: any = { role };
+
+    if (msg?.role === 'tool') {
+      const id = typeof msg.tool_call_id === 'string' ? msg.tool_call_id : '';
+      const toolName = toolNameById.get(id) ?? 'tool';
+      const content = stringifyContent(msg.content);
+      clean.content = Array.isArray(content)
+        ? content
+        : `[Tool result from previous ${toolName} call]\n${content}`;
+    } else if (msg?.role === 'assistant' && Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0) {
       const toolNames = msg.tool_calls
         .map((tc: any) => tc?.function?.name ?? tc?.name ?? '')
         .filter(Boolean);
-      clean.content = toolNames.length > 0
+      const marker = toolNames.length > 0
         ? `[Tool calls omitted during engine handoff: ${toolNames.join(', ')}]`
         : '[Tool calls omitted during engine handoff]';
+      const content = typeof msg.content === 'string' ? msg.content.trim() : '';
+      clean.content = content ? `${content}\n${marker}` : marker;
+    } else if (typeof msg?.content === 'string') {
+      clean.content = msg.content;
+    } else if (Array.isArray(msg?.content)) {
+      // Multimodal content blocks: keep as-is.
+      clean.content = msg.content;
     } else {
-      try {
-        clean.content = msg.content == null ? '' : JSON.stringify(msg.content);
-      } catch {
-        clean.content = String(msg.content ?? '');
-      }
+      clean.content = stringifyContent(msg?.content);
     }
     return clean;
   });
@@ -266,7 +295,7 @@ export function loadConversation(): { messageHistory: Array<{role:string,content
     if (data.savedAt && Date.now() - data.savedAt > SESSION_TTL_MS) return null;
     if (!Array.isArray(data.messageHistory)) return null;
     return {
-      messageHistory: data.messageHistory,
+      messageHistory: stripEngineArtifacts(data.messageHistory),
       sourceEngine: data.sourceEngine ?? null,
       savedAt: data.savedAt ?? 0,
     };

@@ -22,19 +22,19 @@ export function createRetrieveResultTool(engineId?: string): ToolHandler {
     isReadOnly: true,
     isConcurrencySafe: true,
   };
-  
+
   const validate = (input: Record<string, unknown>, _ctx: ToolContext): string | null => {
     if (!input.id || typeof input.id !== 'string') {
       return 'Missing required parameter: id (the cache ID from [cached — {id}] marker)';
     }
     return null;
   };
-  
+
   const execute = async (input: Record<string, unknown>, _ctx: ToolContext): Promise<ToolResult> => {
     const id = input.id as string;
     const eid = engineId ?? 'api-agent';
     const content = loadToolResultFromDisk(eid, id);
-  
+
     if (content === null) {
       return {
         ok: false,
@@ -42,17 +42,17 @@ export function createRetrieveResultTool(engineId?: string): ToolHandler {
         error: `No cached result found for id "${id}". The cache entry may have expired or been pruned. Try re-running the original tool.`,
       };
     }
-  
+
     return {
       ok: true,
       content,
     };
   };
-  
+
   const checkPermission = (_input: Record<string, unknown>, _ctx: ToolContext): PermissionDecision => {
     // RetrieveResult is always allowed — it only reads from the local cache, no filesystem access
     return { behavior: 'allow' as const };
   };
-  
+
   return { definition, validate, checkPermission, execute };
 }

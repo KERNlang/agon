@@ -70,7 +70,7 @@ import { ComposerView } from '../../generated/blocks/composer.js';
 
 import { AgentProgressView } from '../../generated/surfaces/agent.js';
 
-import { contentWidth, color256toHex, engineColor, CODE_RAIL, CODE_RAIL_COLOR, MAX_CODE_LINES } from '../../generated/blocks/rendering.js';
+import { contentWidth, withContentWidthOverride, color256toHex, engineColor, CODE_RAIL, CODE_RAIL_COLOR, MAX_CODE_LINES } from '../../generated/blocks/rendering.js';
 
 import { LOGO_LINES, VERSION, BRAND } from '../../generated/blocks/engine.js';
 
@@ -2548,6 +2548,62 @@ export function fileRailMaxRowsForTerminal(termHeight: number, terminalMode: str
   return Math.max(6, Math.min(12, 10));
 }
 
+/**
+ * Pure terminal replay harness: summarizes the layout-sensitive parts of the REPL for fixed viewport sizes so unit tests can catch native/fullscreen regressions without launching an interactive TTY.
+ */
+export function buildTerminalReplaySnapshot(blocks: OutputBlock[], opts: any): {terminalMode:'native'|'fullscreen'; mode:string; termWidth:number; termHeight:number; visibleBudget:number; transcriptRowCount:number; staticBlockCount:number; liveBlockCount:number; fileRailWidth:number; fileRailRows:number; headerRows:number; lowerChromeRows:number} {
+  const terminalMode = normalizeTerminalMode(opts?.terminalMode);
+  const mode = String(opts?.mode ?? 'chat');
+  const termWidth = Math.max(40, Math.floor(Number(opts?.termWidth) || 100));
+  const termHeight = Math.max(8, Math.floor(Number(opts?.termHeight) || 24));
+  const toolOutputExpanded = opts?.toolOutputExpanded !== false;
+  const thinkingExpanded = opts?.thinkingExpanded !== false;
+  const questionState = opts?.questionState ?? null;
+  const pendingImageCount = Math.max(0, Math.floor(Number(opts?.pendingImageCount) || 0));
+  const inputQueueCount = Math.max(0, Math.floor(Number(opts?.inputQueueCount) || 0));
+  const hasLiveSpinner = !!opts?.hasLiveSpinner;
+  const hasStream = !!opts?.hasStream;
+  const hasProgress = !!opts?.hasProgress;
+  const agentCount = Math.max(0, Math.floor(Number(opts?.agentCount) || 0));
+  const bottomChromeExtraRows = estimateBottomChromeExtraRows(mode, questionState, termWidth, pendingImageCount, inputQueueCount, hasLiveSpinner);
+  const pinnedLiveRows = estimatePinnedLiveRows(mode, hasStream, hasProgress, agentCount);
+  const visibleBudget = estimateVisibleBlockBudget(termHeight, mode, bottomChromeExtraRows + pinnedLiveRows);
+
+  const transcriptBlocks = terminalMode === 'native'
+    ? nativeTranscriptBlocksForStatic(blocks)
+    : historyBlocksForTranscript(blocks);
+  const staticBlockCount = terminalMode === 'native'
+    ? nativeArchiveBlockCount(transcriptBlocks, mode, visibleBudget, toolOutputExpanded, thinkingExpanded)
+    : 0;
+  const liveBlocks = terminalMode === 'native'
+    ? transcriptBlocks.slice(staticBlockCount)
+    : transcriptBlocks;
+  const transcriptRowCount = withContentWidthOverride(
+    termWidth,
+    () => buildTranscriptRows(liveBlocks, mode, toolOutputExpanded, thinkingExpanded).length,
+  );
+
+  const fileRailOpen = !!opts?.fileRailOpen;
+  const fileRailExpanded = !!opts?.fileRailExpanded;
+  const fileRailWidth = fileRailOpen ? fileRailWidthForTerminal(termWidth, fileRailExpanded) : 0;
+  const fileRailRows = fileRailOpen ? fileRailMaxRowsForTerminal(termHeight, terminalMode, fileRailExpanded) : 0;
+
+  return {
+    terminalMode,
+    mode,
+    termWidth,
+    termHeight,
+    visibleBudget,
+    transcriptRowCount,
+    staticBlockCount,
+    liveBlockCount: liveBlocks.length,
+    fileRailWidth,
+    fileRailRows,
+    headerRows: 1,
+    lowerChromeRows: (mode === 'chat' ? 7 : 8) + bottomChromeExtraRows,
+  };
+}
+
 export function parseMarkdownToRows(baseKey: string, text: string, wrapWidth: number, paddingLeft: number, borderColor: string): any[] {
   const rows: any[] = [];
   const cleaned = String(text ?? '').trim();
@@ -2992,6 +3048,10 @@ export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any
   const accent = engineColor(events[0]?.engineId ?? '');
   const counts = new Map<string, number>();
   const previews: string[] = [];
+  const changedFiles: string[] = [];
+  const changeEvents: any[] = [];
+  let errors = 0;
+  let running = 0;
 
   const labelFor = (event: any) => {
     const toolKey = String(event.tool ?? '').toLowerCase();
@@ -3033,11 +3093,27 @@ export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any
     const label = labelFor(event);
     counts.set(label, (counts.get(label) ?? 0) + 1);
     if (previews.length < 3) previews.push(previewFor(event));
+    if (event.status === 'error') errors += 1;
+    if (event.status === 'running') running += 1;
+    if (isMutatingToolCall(event)) {
+      changeEvents.push(event);
+      const parsed = parseToolCallPayload(event).parsed;
+      const filePath = String((parsed.file_path as string) || (parsed.filePath as string) || '');
+      if (filePath) {
+        const shortPath = shortToolPath(filePath);
+        if (!changedFiles.includes(shortPath)) changedFiles.push(shortPath);
+      }
+    }
   }
 
   const countSummary = Array.from(counts.entries())
     .map(([label, count]) => `${label}${count > 1 ? `×${count}` : ''}`)
     .join(' · ');
+  const statusIcon = errors > 0 ? icons().fail : running > 0 ? '⟳' : icons().success;
+  const statusColor = errors > 0 ? '#ef4444' : running > 0 ? '#fbbf24' : '#4ade80';
+  const changedSummary = changedFiles.length > 0
+    ? ` · changed ${changedFiles.length} file${changedFiles.length > 1 ? 's' : ''}: ${changedFiles.slice(0, 2).join(', ')}${changedFiles.length > 2 ? ', …' : ''}`
+    : '';
 
   rows.push({
     key: `${baseKey}-tool-group-head`,
@@ -3045,9 +3121,12 @@ export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any
     paddingLeft: 2,
     segments: [
       { text: '⏿ ', color: accent },
+      { text: statusIcon, color: statusColor },
+      { text: ' ' },
       { text: `${events.length} tool calls`, bold: true },
       countSummary ? { text: ' · ', dimColor: true } : null,
       countSummary ? { text: countSummary, dimColor: true } : null,
+      changedSummary ? { text: changedSummary, color: '#a78bfa' } : null,
     ].filter(Boolean),
   });
 
@@ -3062,6 +3141,10 @@ export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any
       ])),
     });
   }
+
+  changeEvents.forEach((event: any, index: number) => {
+    rows.push(...buildToolCallRows(`${baseKey}-change-${index}`, event, false));
+  });
 
   return rows;
 }
@@ -3096,12 +3179,12 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
     const event = block.event as any;
     const baseKey = `block-${block.id}`;
 
-    if (!toolOutputExpanded && event.type === 'tool-call' && !isMutatingToolCall(event)) {
+    if (!toolOutputExpanded && event.type === 'tool-call') {
       const groupedEvents = [event];
       let nextIndex = blockIndex + 1;
       while (nextIndex < blocks.length) {
         const nextEvent = blocks[nextIndex].event as any;
-        if (nextEvent.type !== 'tool-call' || isMutatingToolCall(nextEvent)) break;
+        if (nextEvent.type !== 'tool-call') break;
         groupedEvents.push(nextEvent);
         nextIndex += 1;
       }
@@ -3325,44 +3408,31 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
           });
           return;
         }
-        const counts: Record<string, number> = {};
-        let errors = 0;
-        let running = 0;
-        let firstEngineId = '';
-        const changedFiles: string[] = [];
-        groupBlocks.forEach((child: any) => {
-          const ev = child?.event;
-          if (!ev || ev.type !== 'tool-call') return;
-          const tool = String(ev.tool || 'tool');
-          counts[tool] = (counts[tool] || 0) + 1;
-          if (ev.status === 'error') errors += 1;
-          if (ev.status === 'running') running += 1;
-          if (!firstEngineId && ev.engineId) firstEngineId = String(ev.engineId);
-          const tk = tool.toLowerCase();
-          if ((tk === 'edit' || tk === 'write') && typeof ev.input === 'string' && ev.input.trim().startsWith('{')) {
-            try {
-              const parsed = JSON.parse(ev.input);
-              const filePath = (parsed.file_path as string) || (parsed.filePath as string) || '';
-              if (filePath) {
-                const shortPath = filePath.replace(process.cwd() + '/', '').replace(process.env.HOME ?? '', '~');
-                if (!changedFiles.includes(shortPath)) changedFiles.push(shortPath);
-              }
-            } catch { /* ignore malformed tool input */ }
+        const groupedEvents: any[] = [];
+        const appendGroup = (blocksToAppend: any[]) => {
+          blocksToAppend.forEach((child: any) => {
+            const childEvent = child?.event;
+            if (childEvent && childEvent.type === 'tool-call') groupedEvents.push(childEvent);
+          });
+        };
+        appendGroup(groupBlocks);
+        let nextIndex = blockIndex + 1;
+        while (nextIndex < blocks.length) {
+          const nextEvent = blocks[nextIndex].event as any;
+          if (nextEvent?.type === 'tool-call-group') {
+            appendGroup(Array.isArray(nextEvent.blocks) ? nextEvent.blocks : []);
+            nextIndex += 1;
+            continue;
           }
-        });
-        const summary = Object.entries(counts).map(([t, n]) => n > 1 ? `${t}\u00d7${n}` : t).join(', ');
-        const statusIcon = errors > 0 ? icons().fail : running > 0 ? '\u27f3' : icons().success;
-        const statusColor = errors > 0 ? '#ef4444' : running > 0 ? '#fbbf24' : '#4ade80';
-        const changedSummary = changedFiles.length > 0
-          ? ` \u00b7 changed ${changedFiles.length} file${changedFiles.length > 1 ? 's' : ''}: ${changedFiles.slice(0, 2).join(', ')}${changedFiles.length > 2 ? ', \u2026' : ''}`
-          : '';
-        pushSegmentsRow(`${baseKey}-group`, 2, [
-          { text: ' \u23bf ', color: engineColor(firstEngineId) },
-          { text: statusIcon, color: statusColor },
-          { text: ` ${groupBlocks.length} tool calls`, bold: true },
-          summary ? { text: ` (${summary})`, dimColor: true } : null,
-          changedSummary ? { text: changedSummary, color: '#a78bfa' } : null,
-        ].filter(Boolean));
+          if (nextEvent?.type === 'tool-call') {
+            groupedEvents.push(nextEvent);
+            nextIndex += 1;
+            continue;
+          }
+          break;
+        }
+        rows.push(...buildCollapsedToolGroupRows(baseKey, groupedEvents));
+        skippedUntil = nextIndex;
         return;
       }
       case 'response-meta': {

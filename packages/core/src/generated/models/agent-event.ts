@@ -65,17 +65,17 @@ export function makeError(engineId: string, message: string, recoverable?: boole
  */
 export function normalizeSessionChunk(chunk: RawSessionChunk, engineId: string): AgentEvent|null {
   const meta = chunk.metadata ?? {};
-  
+
   switch (chunk.type) {
     case 'text': {
       return { kind: 'assistant_chunk', engineId, text: chunk.content };
     }
-  
+
     case 'tool_call': {
       // Extract toolName — prefer explicit metadata.toolName, fall back to chunk.content
       // (Claude stream-json puts the tool name in chunk.content).
       const toolName = (typeof meta.toolName === 'string' && meta.toolName) || chunk.content || 'unknown';
-  
+
       // Extract status — protocols vary:
       //   Claude stream-json: 'native' (tool_use) or 'done' (tool_result)
       //   Codex JSONRPC: 'running' (approval) or 'done' (item/completed)
@@ -92,12 +92,12 @@ export function normalizeSessionChunk(chunk: RawSessionChunk, engineId: string):
         // 'done', 'completed', 'success', unknown — treat as ok
         status = 'ok';
       }
-  
+
       const toolCallId = typeof meta.toolCallId === 'string' ? meta.toolCallId : undefined;
       const input = (meta.input && typeof meta.input === 'object') ? meta.input as Record<string,unknown> : undefined;
       const output = typeof meta.output === 'string' ? meta.output : undefined;
       const errMsg = typeof meta.error === 'string' ? meta.error : undefined;
-  
+
       return {
         kind: 'tool_call',
         engineId,
@@ -109,16 +109,16 @@ export function normalizeSessionChunk(chunk: RawSessionChunk, engineId: string):
         error: errMsg,
       };
     }
-  
+
     case 'done': {
       // CLI engines never carry usage — map to null.
       return { kind: 'turn_complete', engineId, stopReason: chunk.content || 'end_turn', usage: null };
     }
-  
+
     case 'error': {
       return { kind: 'error', engineId, message: chunk.content, recoverable: false };
     }
-  
+
     case 'status':
     default:
       // Status notifications and unknown types don't map to agent-mode semantics.

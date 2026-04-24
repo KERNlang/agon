@@ -12,7 +12,7 @@ import { runLint, runStyleCheck } from './quality.js';
 
 export async function runFitness(opts: {engineId:string, worktreePath:string, fitnessCmd:string, timeout:number, forgeDir:string}): Promise<EngineResult> {
   const startTime = Date.now();
-  
+
   let diff: string;
   let diffLines: number;
   let filesChanged: number;
@@ -26,20 +26,20 @@ export async function runFitness(opts: {engineId:string, worktreePath:string, fi
     diffLines = 0;
     filesChanged = 0;
   }
-  
+
   const patchPath = join(opts.forgeDir, `${opts.engineId}-patch.diff`);
   writeFileSync(patchPath, diff);
-  
+
   const fitnessResult = await spawnWithTimeout({
     command: '/bin/sh',
     args: ['-c', opts.fitnessCmd],
     cwd: opts.worktreePath,
     timeout: opts.timeout * 1000,
   });
-  
+
   const durationSec = Math.round((Date.now() - startTime) / 1000);
   const pass = fitnessResult.exitCode === 0 && !fitnessResult.timedOut;
-  
+
   // Persist fitness stdout/stderr to disk — followers + synthesis can read WHY tests failed
   let fitnessLogPath: string | undefined;
   try {
@@ -61,10 +61,10 @@ export async function runFitness(opts: {engineId:string, worktreePath:string, fi
   } catch (logErr) {
     console.warn(`[agon] fitness: failed to write log for ${opts.engineId}: ${logErr instanceof Error ? logErr.message : String(logErr)}`);
   }
-  
+
   const lintWarnings = await runLint(opts.worktreePath);
   const styleScore = await runStyleCheck(opts.worktreePath);
-  
+
   const fitness: FitnessResult = {
     pass,
     diffLines,
@@ -74,10 +74,10 @@ export async function runFitness(opts: {engineId:string, worktreePath:string, fi
     styleScore,
     compositeScore: 0,
   };
-  
+
   const components = computeScore(fitness);
   fitness.compositeScore = components.composite;
-  
+
   return {
     engineId: opts.engineId,
     pass,

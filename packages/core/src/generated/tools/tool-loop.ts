@@ -40,26 +40,26 @@ export function buildToolSystemPrompt(registry: ToolRegistry): string {
  */
 export async function processToolResponse(response: string, ctx: ToolContext, registry: ToolRegistry, callbacks?: ToolLoopCallbacks): Promise<{hasTools:boolean, textBefore:string, toolResults:string, textAfter:string}> {
   const parsed = parseToolCalls(response);
-  
+
   if (!parsed.hasToolCalls) {
     return { hasTools: false, textBefore: response, toolResults: '', textAfter: '' };
   }
-  
+
   // Notify about text before tools
   if (parsed.textBefore && callbacks?.onText) {
     callbacks.onText(parsed.textBefore);
   }
-  
+
   // Convert to ToolCall format
   const calls = toolCallsToApiFormat(parsed.toolCalls);
-  
+
   // Notify about each tool call
   for (const call of calls) {
     if (callbacks?.onToolCall) {
       callbacks.onToolCall(call.name, call.input);
     }
   }
-  
+
   // Execute all tool calls
   const results = await executeToolCalls(
     calls,
@@ -72,7 +72,7 @@ export async function processToolResponse(response: string, ctx: ToolContext, re
       }
     }
   );
-  
+
   // Format results for re-injection
   const formatted = formatToolResults(
     results.map(r => ({
@@ -81,7 +81,7 @@ export async function processToolResponse(response: string, ctx: ToolContext, re
       error: r.result.error,
     }))
   );
-  
+
   return {
     hasTools: true,
     textBefore: parsed.textBefore,
@@ -98,14 +98,14 @@ export async function runToolLoop(sendMessage: (message:string)=>Promise<string>
   let totalToolCalls = 0;
   let turn = 0;
   const allText: string[] = [];
-  
+
   while (turn < MAX_TOOL_TURNS) {
     if (ctx.abortSignal?.aborted) {
       return { finalText: allText.join('\n'), toolCallCount: totalToolCalls, turns: turn, aborted: true };
     }
-  
+
     const processed = await processToolResponse(currentResponse, ctx, registry, callbacks);
-  
+
     if (!processed.hasTools) {
       // No tool calls — we're done
       allText.push(processed.textBefore);
@@ -114,25 +114,25 @@ export async function runToolLoop(sendMessage: (message:string)=>Promise<string>
       }
       break;
     }
-  
+
     // Collect text
     if (processed.textBefore) allText.push(processed.textBefore);
     totalToolCalls += parseToolCalls(currentResponse).toolCalls.length;
     turn++;
-  
+
     if (callbacks?.onTurnComplete) {
       callbacks.onTurnComplete(turn);
     }
-  
+
     // Send tool results back to the engine and get next response
     const nextMessage = processed.toolResults + (processed.textAfter ? '\n\n' + processed.textAfter : '');
     currentResponse = await sendMessage(nextMessage);
   }
-  
+
   if (turn >= MAX_TOOL_TURNS) {
     allText.push(`\n[Tool loop reached maximum of ${MAX_TOOL_TURNS} turns]`);
   }
-  
+
   return {
     finalText: allText.join('\n'),
     toolCallCount: totalToolCalls,

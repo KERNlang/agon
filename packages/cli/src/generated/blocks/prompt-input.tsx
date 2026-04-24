@@ -48,7 +48,7 @@ const PromptTextInput = React.memo(function PromptTextInput({ value, placeholder
   const cursorStateRef = useRef({ cursorOffset: originalValue.length, cursorWidth: 0 });
   const pendingEchoValueRef = useRef<string|null>(null);
   const lastCommittedValueRef = useRef(originalValue);
-  
+
   useEffect(() => {
     const shouldAdopt = shouldAdoptPromptValue(originalValue, pendingEchoValueRef.current);
     const effectiveValue = shouldAdopt ? originalValue : bufferedValueRef.current;
@@ -68,9 +68,9 @@ const PromptTextInput = React.memo(function PromptTextInput({ value, placeholder
       lastCommittedValueRef.current = originalValue;
     }
   }, [originalValue, resolvedFocus, resolvedShowCursor]);
-  
+
   const safeWidth = Math.max(12, width);
-  
+
   const layout = useMemo(() => {
     const baseLayout = bufferedValue
       ? buildValueLines(bufferedValue, safeWidth, {
@@ -85,7 +85,7 @@ const PromptTextInput = React.memo(function PromptTextInput({ value, placeholder
     const renderedLines = baseLayout.lines
       .slice(viewport.start, viewport.end)
       .map((line: PromptLine) => line.tokens.map(renderToken).join('') || ' ');
-  
+
     if (
       ghostText &&
       bufferedValue.length > 0 &&
@@ -95,7 +95,7 @@ const PromptTextInput = React.memo(function PromptTextInput({ value, placeholder
     ) {
       renderedLines[0] += chalk.dim(ghostText);
     }
-  
+
     return {
       renderedLines,
       hiddenAbove: viewport.hiddenAbove,
@@ -113,7 +113,7 @@ const PromptTextInput = React.memo(function PromptTextInput({ value, placeholder
     resolvedShowCursor,
     safeWidth,
   ]);
-  
+
   useStableInput((input: string, key: any) => {
     if (isMouseReportInput(input)) return;
     input = stripTerminalInputMarkers(stripMouseReportInput(input));
@@ -158,30 +158,30 @@ const PromptTextInput = React.memo(function PromptTextInput({ value, placeholder
       isDeleteWordBackward ||
       extendedKey.home ||
       extendedKey.end;
-  
+
     if (!input && !hasSpecialKeySignal) return;
-  
+
     if (isReservedCtrlShortcut) {
       onCtrlShortcut?.(normalizedCtrlInput);
       return;
     }
-  
+
     if (key.upArrow || key.downArrow || key.pageUp || key.pageDown || key.tab || (key.shift && key.tab)) return;
     if (key.ctrl && !isSupportedCtrlEditShortcut) return;
     if (key.meta && !isWordLeft && !isWordRight && !isDeleteWordBackward) return;
-  
+
     if (key.return) {
       pendingEchoValueRef.current = null;
       onSubmit?.(bufferedValueRef.current);
       return;
     }
-  
+
     const currentValue = bufferedValueRef.current;
     const currentCursor = cursorStateRef.current;
     let nextCursorOffset = currentCursor.cursorOffset;
     let nextValue = currentValue;
     let nextCursorWidth = 0;
-  
+
     if (extendedKey.home || (key.ctrl && normalizedCtrlInput === 'a')) {
       if (resolvedShowCursor) nextCursorOffset = findLineStart(currentValue, currentCursor.cursorOffset);
     } else if (extendedKey.end) {
@@ -222,14 +222,14 @@ const PromptTextInput = React.memo(function PromptTextInput({ value, placeholder
       nextCursorOffset = updated.cursorOffset;
       nextCursorWidth = updated.cursorWidth;
     }
-  
+
     if (nextCursorOffset < 0) nextCursorOffset = 0;
     if (nextCursorOffset > nextValue.length) nextCursorOffset = nextValue.length;
-  
+
     const nextState = { cursorOffset: nextCursorOffset, cursorWidth: nextCursorWidth };
     cursorStateRef.current = nextState;
     setState(nextState);
-  
+
     if (nextValue !== currentValue) {
       pendingEchoValueRef.current = nextValue;
       bufferedValueRef.current = nextValue;
@@ -238,7 +238,7 @@ const PromptTextInput = React.memo(function PromptTextInput({ value, placeholder
       onChange(nextValue);
     }
   }, { isActive: resolvedFocus });
-  
+
   return (
     <Box flexDirection="column" width="100%">
       {layout.hiddenAbove > 0 && (
@@ -300,7 +300,7 @@ export function locatePromptCursor(value: string, width: number, cursorOffset: n
   const needsSyntheticCursor = boundedOffset === value.length || value[boundedOffset] === '\n';
   let line = 0;
   let col = 0;
-  
+
   for (let index = 0; index < value.length; index++) {
     const char = value[index];
     if (needsSyntheticCursor && index === boundedOffset) {
@@ -323,7 +323,7 @@ export function locatePromptCursor(value: string, width: number, cursorOffset: n
     }
     col += 1;
   }
-  
+
   if (col === safeWidth) return { line: line + 1, column: 0, synthetic: true };
   return { line, column: col, synthetic: true };
 }
@@ -360,26 +360,26 @@ function buildPlaceholderLines(placeholder: string, width: number, opts: {focus:
   const lines: PromptLine[] = [{ tokens: [] }];
   let col = 0;
   let cursorLine = 0;
-  
+
   const pushLine = () => {
     lines.push({ tokens: [] });
     col = 0;
   };
-  
+
   const pushToken = (token: PromptToken) => {
     if (col === safeWidth) pushLine();
     lines[lines.length - 1].tokens.push(token);
     if (token.isCursor) cursorLine = lines.length - 1;
     col += 1;
   };
-  
+
   if (!placeholder) {
     if (opts.focus && opts.showCursor) {
       pushToken({ kind: 'cursor', text: ' ', dimmed: false, highlighted: true, isCursor: true });
     }
     return { lines, cursorLine };
   }
-  
+
   for (let index = 0; index < placeholder.length; index++) {
     pushToken({
       kind: 'char',
@@ -389,7 +389,7 @@ function buildPlaceholderLines(placeholder: string, width: number, opts: {focus:
       isCursor: opts.focus && opts.showCursor && index === 0,
     });
   }
-  
+
   return { lines, cursorLine };
 }
 
@@ -403,12 +403,12 @@ function buildValueLines(value: string, width: number, opts: {cursorOffset:numbe
   let col = 0;
   let cursorLine = 0;
   let cursorPlaced = false;
-  
+
   const pushLine = () => {
     lines.push({ tokens: [] });
     col = 0;
   };
-  
+
   const pushToken = (token: PromptToken) => {
     if (col === safeWidth) pushLine();
     lines[lines.length - 1].tokens.push(token);
@@ -418,19 +418,19 @@ function buildValueLines(value: string, width: number, opts: {cursorOffset:numbe
     }
     col += 1;
   };
-  
+
   const maybePushSyntheticCursor = (offset: number) => {
     if (!needsSyntheticCursor || offset !== boundedCursorOffset) return;
     pushToken({ kind: 'cursor', text: ' ', dimmed: false, highlighted: true, isCursor: true });
   };
-  
+
   if (!value) {
     if (showCursor) {
       pushToken({ kind: 'cursor', text: ' ', dimmed: false, highlighted: true, isCursor: true });
     }
     return { lines, cursorLine };
   }
-  
+
   for (let index = 0; index < value.length; index++) {
     maybePushSyntheticCursor(index);
     const char = value[index]!;
@@ -448,13 +448,13 @@ function buildValueLines(value: string, width: number, opts: {cursorOffset:numbe
       isCursor: isCursorChar,
     });
   }
-  
+
   maybePushSyntheticCursor(value.length);
-  
+
   if (!cursorPlaced) {
     cursorLine = locatePromptCursor(value, safeWidth, boundedCursorOffset).line;
   }
-  
+
   return { lines, cursorLine };
 }
 

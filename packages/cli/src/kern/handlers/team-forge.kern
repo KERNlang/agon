@@ -114,6 +114,7 @@ fn name=handleTeamForge params="task:string, fitnessCmd:string|null, dispatch:Di
     }
 
     dispatch({ type: 'info', message: `Full results saved: ${forgeDir}` });
+    dispatch({ type: 'info', message: `Result bundle: ${forgeDir}/result.json` });
 
     appendMessage(ctx.chatSession, { role: 'user', content: `[team-forge:${size}v${size}] ${task}`, timestamp: new Date().toISOString() });
     appendMessage(ctx.chatSession, {

@@ -52,7 +52,7 @@ export function createEditTool(): ToolHandler {
     isReadOnly: false,
     isConcurrencySafe: false,
   };
-  
+
   const validate = (input: Record<string, unknown>, _ctx: ToolContext): string | null => {
     if (!input.file_path || typeof input.file_path !== 'string') {
       return 'Missing required parameter: file_path';
@@ -68,7 +68,7 @@ export function createEditTool(): ToolHandler {
     }
     return null;
   };
-  
+
   const checkPermission = (input: Record<string, unknown>, ctx: ToolContext): PermissionDecision => {
     // Exploration mode blocks all writes
     if ((ctx as any).explorationMode) {
@@ -78,10 +78,10 @@ export function createEditTool(): ToolHandler {
         reason: 'exploration-mode',
       };
     }
-  
+
     const filePath = resolve(ctx.cwd, input.file_path as string);
     const rel = relative(ctx.cwd, filePath);
-  
+
     if (rel.startsWith('..') || resolve(ctx.cwd, rel) !== filePath) {
       return {
         behavior: 'deny',
@@ -89,17 +89,17 @@ export function createEditTool(): ToolHandler {
         reason: 'path-outside-cwd',
       };
     }
-  
+
     // Auto-allow edits within CWD — agent mode (like Claude Code default)
     return { behavior: 'allow' };
   };
-  
+
   const execute = async (input: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> => {
     const filePath = resolve(ctx.cwd, input.file_path as string);
     const oldString = input.old_string as string;
     const newString = input.new_string as string;
     const replaceAll = (input.replace_all as boolean) ?? false;
-  
+
     // Phase E v2: route through VirtualFS overlay when present.
     if (ctx.virtualFs) {
       const currentContent = ctx.virtualFs.read(filePath);
@@ -115,12 +115,12 @@ export function createEditTool(): ToolHandler {
       ctx.virtualFs.write(filePath, updated);
       return { ok: true, content: `Edited ${filePath} in VirtualFS` };
     }
-  
+
     // File must exist
     if (!existsSync(filePath)) {
       return { ok: false, content: '', error: `File not found: ${filePath}` };
     }
-  
+
     // Read-before-write check: file must have been read via Read tool first
     const cache = fileStateCache;
     if (!cache.has(filePath)) {
@@ -130,7 +130,7 @@ export function createEditTool(): ToolHandler {
         error: 'File has not been read yet. Use the Read tool first before editing.',
       };
     }
-  
+
     // Staleness check: compare current mtime vs cached timestamp
     let mtime: number;
     try {
@@ -139,7 +139,7 @@ export function createEditTool(): ToolHandler {
     } catch (err) {
       return { ok: false, content: '', error: `Cannot stat file: ${err instanceof Error ? err.message : String(err)}` };
     }
-  
+
     if (cache.isStale(filePath, mtime)) {
       return {
         ok: false,
@@ -147,7 +147,7 @@ export function createEditTool(): ToolHandler {
         error: 'File has been modified since last read. Re-read the file before editing.',
       };
     }
-  
+
     // Read current content
     let content: string;
     try {
@@ -155,11 +155,11 @@ export function createEditTool(): ToolHandler {
     } catch (err) {
       return { ok: false, content: '', error: `Cannot read file: ${err instanceof Error ? err.message : String(err)}` };
     }
-  
+
     // Find old_string in content
     let searchString = oldString;
     let found = content.includes(searchString);
-  
+
     // If not found, try normalizing curly quotes
     if (!found) {
       const normalizedContent = normalizeCurlyQuotes(content);
@@ -172,7 +172,7 @@ export function createEditTool(): ToolHandler {
         found = true;
       }
     }
-  
+
     if (!found) {
       // Build a helpful error with context
       const preview = oldString.length > 80 ? oldString.slice(0, 80) + '...' : oldString;
@@ -182,7 +182,7 @@ export function createEditTool(): ToolHandler {
         error: `old_string not found in ${filePath}. Searched for: "${preview}"`,
       };
     }
-  
+
     // Uniqueness check (when not replace_all)
     if (!replaceAll) {
       const occurrences = countOccurrences(content, searchString);
@@ -194,23 +194,23 @@ export function createEditTool(): ToolHandler {
         };
       }
     }
-  
+
     // Take snapshot before modification
     const relPath = relative(ctx.cwd, filePath);
     takeSnapshot(`Edit: ${relPath}`, ctx.cwd, [relPath]);
-  
+
     // Perform replacement
     const newContent = replaceAll
       ? content.split(searchString).join(newString)
       : content.replace(searchString, newString);
-  
+
     // Write file
     try {
       writeFileSync(filePath, newContent, 'utf-8');
     } catch (err) {
       return { ok: false, content: '', error: `Failed to write file: ${err instanceof Error ? err.message : String(err)}` };
     }
-  
+
     // Update cache with new content and fresh mtime
     const newMtime = statSync(filePath).mtimeMs;
     cache.set(filePath, {
@@ -220,16 +220,16 @@ export function createEditTool(): ToolHandler {
       limit: undefined,
       isPartialView: false,
     });
-  
+
     // Build success message
     const replacements = replaceAll ? countOccurrences(content, searchString) : 1;
     const linesChanged = newString.split('\n').length;
     const summary = replaceAll
       ? `Replaced ${replacements} occurrence${replacements !== 1 ? 's' : ''} in ${relPath}`
       : `Applied edit to ${relPath} (${linesChanged} line${linesChanged !== 1 ? 's' : ''})`;
-  
+
     return { ok: true, content: summary };
   };
-  
+
   return { definition, validate, checkPermission, execute };
 }

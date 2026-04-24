@@ -1497,7 +1497,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
   
               // ── Status update so the UI shows activity during API tool loops ──
               if (step === 1) {
-                yield { type: 'status' as const, content: 'calling API…' };
+                yield { type: 'status' as const, content: 'dispatching engine…' };
               } else {
                 yield { type: 'status' as const, content: `tool loop turn ${step}/${budget}…` };
               }
@@ -1746,7 +1746,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                 }
   
                 // Continue loop — call API again with tool results
-                yield { type: 'status' as const, content: 'processing results, calling API again…' };
+                yield { type: 'status' as const, content: 'processing results, dispatching again…' };
                 continue;
               }
   

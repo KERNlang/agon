@@ -340,3 +340,46 @@ export async function handleReview(dispatch: Dispatch, ctx: HandlerContext, targ
     ctx.setActiveAbort(null);
   }
 }
+
+/**
+ * Run review for one or more explicitly requested engines. Multiple reviewers run sequentially so stream output stays readable; their findings are combined into ctx.lastReviewResult for Cesar follow-up/fix planning.
+ */
+export async function handleReviewMany(dispatch: Dispatch, ctx: HandlerContext, target?: string, requestedEngines?: string[]): Promise<void> {
+  const engineIds = Array.from(new Set((requestedEngines ?? [])
+    .map((id) => String(id ?? '').trim().toLowerCase())
+    .filter(Boolean)));
+
+  if (engineIds.length <= 1) {
+    await handleReview(dispatch, ctx, target, engineIds[0]);
+    return;
+  }
+
+  dispatch({ type: 'info', message: `Running review with ${engineIds.join(', ')}...` });
+  const collected: Array<{ engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number }> = [];
+
+  for (const engineId of engineIds) {
+    const before = ctx.lastReviewResult;
+    await handleReview(dispatch, ctx, target, engineId);
+    const after = ctx.lastReviewResult;
+    if (after && after !== before && after.engineId === engineId && String(after.reviewOutput ?? '').trim()) {
+      collected.push(after);
+    }
+  }
+
+  if (collected.length === 0) {
+    dispatch({ type: 'warning', message: `No review output returned from ${engineIds.join(', ')}.` });
+    return;
+  }
+
+  const base = collected[collected.length - 1];
+  ctx.lastReviewResult = {
+    engineId: collected.map((r) => r.engineId).join(', '),
+    target: base.target,
+    label: base.label,
+    diff: base.diff,
+    reviewOutput: collected.map((r) => `## ${r.engineId}\n\n${r.reviewOutput}`).join('\n\n---\n\n'),
+    timestamp: Date.now(),
+  };
+
+  dispatch({ type: 'info', message: `Multi-review complete (${collected.map((r) => r.engineId).join(', ')}). Say "fix it" or "fix it with <engine>" to address the findings.` });
+}

@@ -134,22 +134,45 @@ function parseForgeInput(input: string): Intent {
   return { type: 'forge', task, fitnessCmd, hardened } as Intent;
 }
 
+function splitReviewArgs(input: string): string[] {
+  return input
+    .split(/\s+/)
+    .flatMap((part) => part.split(','))
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function isReviewTargetArg(part: string): boolean {
+  const lower = part.toLowerCase();
+  return lower === 'uncommitted' || lower.startsWith('branch:') || lower.startsWith('commit:');
+}
+
 function parseReviewInput(input: string): Intent {
-  const reviewParts = input.split(/\s+/).filter(Boolean);
-  let engineId: string | undefined;
+  const reviewParts = splitReviewArgs(input);
+  const engineIds: string[] = [];
   let target: string | undefined;
-  const targetParts: string[] = [];
+  let collectingEngines = false;
+
   for (let i = 0; i < reviewParts.length; i += 1) {
     const part = reviewParts[i];
-    if (part.toLowerCase() === 'with' && reviewParts[i + 1] && !engineId) {
-      engineId = reviewParts[i + 1].toLowerCase();
-      i += 1;
+    const lower = part.toLowerCase();
+    if (lower === 'with') {
+      collectingEngines = true;
       continue;
     }
-    targetParts.push(part);
+    if (isReviewTargetArg(part)) {
+      if (!target) target = part;
+      continue;
+    }
+    if (collectingEngines) {
+      if (!engineIds.includes(lower)) engineIds.push(lower);
+      continue;
+    }
+    if (!target) target = part;
   }
-  if (targetParts[0]) target = targetParts[0];
-  return { type: 'review', engineId, target } as Intent;
+
+  const engineId = engineIds[0];
+  return { type: 'review', engineId, engineIds: engineIds.length > 0 ? engineIds : undefined, target } as Intent;
 }
 
 function parseReviewShortcut(input: string): Intent|null {
@@ -159,23 +182,11 @@ function parseReviewShortcut(input: string): Intent|null {
   const rest = (match[1] ?? '').trim();
   if (!rest) return parseReviewInput('');
 
-  const parts = rest.split(/\s+/).filter(Boolean);
-  let sawWith = false;
-  const targetParts: string[] = [];
-  for (let i = 0; i < parts.length; i += 1) {
-    const part = parts[i];
-    if (part.toLowerCase() === 'with' && parts[i + 1]) {
-      sawWith = true;
-      i += 1;
-      continue;
-    }
-    targetParts.push(part);
-  }
-
-  const target = targetParts[0]?.toLowerCase();
-  const hasExtraTargetText = targetParts.length > 1;
-  const validTarget = !target || target === 'uncommitted' || target.startsWith('branch:') || target.startsWith('commit:');
-  if (!hasExtraTargetText && (sawWith || validTarget)) return parseReviewInput(rest);
+  const parsed = parseReviewInput(rest) as any;
+  const target = String(parsed.target ?? '').toLowerCase();
+  const hasEngines = Array.isArray(parsed.engineIds) && parsed.engineIds.length > 0;
+  const validTarget = !target || isReviewTargetArg(target);
+  if (hasEngines || validTarget) return parsed;
 
   // Let natural-language review requests go through Cesar instead of
   // mis-parsing "review this code" as an invalid target named "this".

@@ -78,12 +78,13 @@ const name=ORCHESTRATION_TOOLS type="Array<{name:string,description:string,input
       },
       {
         name: 'Review',
-        description: 'Delegate to code review. Set engine only when the user explicitly names one; otherwise omit it and let Agon auto-select. After calling: STOP responding.',
+        description: 'Delegate to code review. Set engine only when the user explicitly names one; set engines when the user explicitly names multiple reviewers; otherwise omit both and let Agon auto-select. After calling: STOP responding.',
         inputSchema: {
           type: 'object',
           properties: {
             target: { type: 'string', description: 'Review target: "uncommitted", "branch:NAME", or "commit:SHA"' },
             engine: { type: 'string', description: 'Specific engine for review, only when explicitly requested by the user' },
+            engines: { type: 'array', items: { type: 'string' }, description: 'Multiple specific engines for review, only when explicitly requested by the user' },
           },
         },
       },

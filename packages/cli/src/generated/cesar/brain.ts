@@ -72,6 +72,13 @@ export function extractDelegation(toolName: string, args: Record<string,unknown>
   const argsRecord = args as Record<string, unknown>;
   const taskKindRaw = argsRecord.taskKind;
   const enginesRaw = argsRecord.engines;
+  const reviewEngines = toolName.toLowerCase() === 'review'
+    ? Array.isArray(enginesRaw)
+      ? (enginesRaw as unknown[]).map((id) => String(id).trim().toLowerCase()).filter(Boolean)
+      : typeof argsRecord.engine === 'string'
+        ? (argsRecord.engine as string).split(/[,\s]+/).map((id) => id.trim().toLowerCase()).filter(Boolean)
+        : []
+    : [];
   const delegatedTask = (argsRecord.task ?? argsRecord.question ?? argsRecord.topic ?? argsRecord.target ?? '') as string;
   return {
     action: toolName.toLowerCase(),
@@ -87,9 +94,9 @@ export function extractDelegation(toolName: string, args: Record<string,unknown>
     tribunalMode: argsRecord.mode as string | undefined,
     team: (argsRecord.team as boolean) ?? false,
     target: argsRecord.target as string | undefined,
-    engineId: argsRecord.engine as string | undefined,
+    engineId: reviewEngines[0] ?? argsRecord.engine as string | undefined,
     // Phase 4: Agent tool args
-    engines: Array.isArray(enginesRaw) ? (enginesRaw as string[]) : undefined,
+    engines: Array.isArray(enginesRaw) ? (enginesRaw as string[]) : reviewEngines.length > 0 ? reviewEngines : undefined,
     taskKind: (taskKindRaw === 'investigate' ? 'investigate' : (taskKindRaw === 'edit' ? 'edit' : undefined)) as 'edit' | 'investigate' | undefined,
     maxTurns: typeof argsRecord.maxTurns === 'number' ? (argsRecord.maxTurns as number) : undefined,
     createdAt: Date.now(),

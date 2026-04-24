@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { startChatSession, appendMessage, loadChatSession, resumeChatSession, listChatSessions } from '@agon/core';
+import { startChatSession, appendMessage, loadChatSession, resumeChatSession, listChatSessions, formatChatHistoryForPrompt, buildHistoryPrimedPrompt } from '@agon/core';
 import { cleanupTestAgonHome, setupTestAgonHome } from '../helpers/agon-home.js';
 
 describe('chat-store', () => {
@@ -86,5 +86,35 @@ describe('chat-store', () => {
     expect(loaded!.cwd).toBeUndefined();
     expect(loaded!.branch).toBeUndefined();
     expect(loaded!.engineIds).toBeUndefined();
+  });
+
+  it('formats prompt history with message and total caps', () => {
+    const session = startChatSession();
+    appendMessage(session, { role: 'user', content: 'short', timestamp: new Date().toISOString() });
+    appendMessage(session, { role: 'engine', engineId: 'claude', content: 'x'.repeat(500), timestamp: new Date().toISOString() });
+
+    const formatted = formatChatHistoryForPrompt(session.messages, {
+      maxMessages: 2,
+      maxChars: 220,
+      maxMessageChars: 120,
+    });
+
+    expect(formatted).toContain('User: short');
+    expect(formatted).toContain('claude:');
+    expect(formatted.length).toBeLessThanOrEqual(220);
+    expect(formatted).toContain('chars omitted');
+  });
+
+  it('buildHistoryPrimedPrompt does not replay oversized history in full', () => {
+    const session = startChatSession();
+    appendMessage(session, { role: 'engine', engineId: 'codex', content: 'large\n'.repeat(2000), timestamp: new Date().toISOString() });
+
+    const prompt = buildHistoryPrimedPrompt(session, 'current task');
+
+    expect(prompt).toContain('[Prior conversation]');
+    expect(prompt).toContain('[Current turn]');
+    expect(prompt).toContain('current task');
+    expect(prompt.length).toBeLessThan(14_000);
+    expect(prompt).toContain('chars omitted');
   });
 });

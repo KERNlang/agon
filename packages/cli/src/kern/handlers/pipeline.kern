@@ -1,6 +1,6 @@
 import from="node:path" names="join"
 import from="node:fs" names="mkdirSync"
-import from="@agon/core" names="ensureAgonHome,RUNS_DIR,appendMessage,tracker,scanProjectContext,readOnlyDiff,diffLineCount,diffFileCount,buildCritiquePrompt,spawnWithTimeout,resolveWorkingDir"
+import from="@agon/core" names="ensureAgonHome,RUNS_DIR,appendMessage,tracker,scanProjectContext,readOnlyDiff,diffLineCount,diffFileCount,buildCritiquePrompt,spawnWithTimeout,resolveWorkingDir,formatChatHistoryForPrompt"
 import from="../blocks/output-format.js" names="ENGINE_COLORS"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 import from="./agent.js" names="buildAgentApprovalCallback"
@@ -27,10 +27,11 @@ fn name=handlePipeline params="input:string, dispatch:Dispatch, ctx:HandlerConte
     const outputDir = join(RUNS_DIR, `pipeline-${Date.now()}`);
     mkdirSync(outputDir, { recursive: true });
 
-    const recent = ctx.chatSession.messages.slice(-10);
-    const sessionHistory = recent.length > 0
-      ? recent.map((m: any) => m.role === 'user' ? `User: ${m.content}` : `${m.engineId ?? 'engine'}: ${m.content.slice(0, 500)}`).join('\n\n')
-      : '';
+    const sessionHistory = formatChatHistoryForPrompt(ctx.chatSession.messages, {
+      maxMessages: 10,
+      maxChars: 6_000,
+      maxMessageChars: 700,
+    });
 
     const quiet = opts?.quiet ?? false;
 

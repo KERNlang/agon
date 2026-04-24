@@ -6,7 +6,7 @@ import { mkdirSync } from 'node:fs';
 
 import type { ImageAttachment, DispatchResult } from '@agon/core';
 
-import { RUNS_DIR, appendMessage, tracker, StreamParser, loadConfig, sessionContext, resolveWorkingDir, loadOrCreateActiveThread, createStreamBridge } from '@agon/core';
+import { RUNS_DIR, appendMessage, tracker, StreamParser, loadConfig, sessionContext, resolveWorkingDir, loadOrCreateActiveThread, createStreamBridge, formatChatHistoryForPrompt } from '@agon/core';
 
 import { ENGINE_COLORS } from '../blocks/output-format.js';
 
@@ -74,10 +74,11 @@ export async function handleChat(input: string, dispatch: Dispatch, ctx: Handler
       return;
     }
 
-    const recent = ctx.chatSession.messages.slice(-20);
-    const history = recent.length > 0
-      ? recent.map((m: any) => m.role === 'user' ? `User: ${m.content}` : `${m.engineId ?? 'engine'}: ${m.content}`).join('\n\n')
-      : '';
+    const history = formatChatHistoryForPrompt(ctx.chatSession.messages, {
+      maxMessages: 12,
+      maxChars: 8_000,
+      maxMessageChars: 900,
+    });
     const cwd = cachedCwd();
     const projectCtx = sessionContext.get(cwd, config.projectContext || undefined, config.contextFormat);
     const parts: string[] = [];

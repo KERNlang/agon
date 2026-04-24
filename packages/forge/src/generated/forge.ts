@@ -2,11 +2,11 @@
 
 import { randomUUID } from 'node:crypto';
 
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 
 import type { ForgeOptions, ForgeManifest, EngineAdapter, ForgeEvent, AgonConfig, DispatchMetric } from '@agon/core';
 
-import { EngineRegistry, loadConfig, buildForgePrompt, repoRoot, stashSnapshot, worktreeRemoveBestEffort, updateGlickoRanked, classifyTask, createSidechainLogger, assignForgeRoles, buildSpecializedPrompt, recordForgeOutcome, tracker } from '@agon/core';
+import { EngineRegistry, loadConfig, buildForgePrompt, repoRoot, stashSnapshot, worktreeRemoveBestEffort, updateGlickoRanked, classifyTask, createSidechainLogger, assignForgeRoles, buildSpecializedPrompt, recordForgeOutcome, extractPatchFilePatterns, tracker } from '@agon/core';
 
 import { runBaseline, runStage1, runStage2, runStage2WithPeek } from './stages.js';
 
@@ -30,6 +30,16 @@ export function shellQuoteForForge(value: string): string {
 
 export function buildForgeCleanupCommand(repoRootPath: string, forgeDir: string): string {
   return `git -C ${shellQuoteForForge(repoRootPath)} worktree prune && rm -rf ${shellQuoteForForge(forgeDir)}`;
+}
+
+function collectForgeFilePatterns(manifest: ForgeManifest): string[] {
+  const patchTexts: string[] = [];
+  for (const patchPath of Object.values(manifest.patches) as string[]) {
+    try {
+      patchTexts.push(readFileSync(patchPath, 'utf-8'));
+    } catch { /* ignore unreadable patch artifacts */ }
+  }
+  return extractPatchFilePatterns(patchTexts.join('\n'));
 }
 
 /**
@@ -427,7 +437,15 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
         );
         const loserScores: Record<string, number> = {};
         for (const id of losers) loserScores[id] = manifest.results[id]?.score ?? 0;
-        recordForgeOutcome(eloWinner, losers, taskClass, forgeId, manifest.results[eloWinner]?.score ?? 0, loserScores);
+        recordForgeOutcome(
+          eloWinner,
+          losers,
+          taskClass,
+          forgeId,
+          manifest.results[eloWinner]?.score ?? 0,
+          loserScores,
+          collectForgeFilePatterns(manifest),
+        );
       }
     }
 

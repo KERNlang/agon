@@ -189,9 +189,10 @@ export type { HookEvent, HookDef, HookResult } from './hooks.js';
 export { loadSkills, findSkill, renderSkillPrompt } from './skill-loader.js';
 export {
   loadEngineMemory, addEngineNote, setEngineStrengths, setEngineWeaknesses,
-  addEngineTendency, getEngineProfile, buildRolePrompt, recordForgeOutcome,
+  addEngineTendency, getEngineProfile, buildRolePrompt, filePathToMemoryPattern,
+  extractPatchFilePatterns, recordForgeOutcome, recordForgeJudgment,
 } from './engine-memory.js';
-export type { EngineNote, EngineProfile, EngineMemoryRecord } from './engine-memory.js';
+export type { EngineNote, EngineProfile, EngineMemoryRecord, EngineStrengthObservation } from './engine-memory.js';
 export { rankByTaskClass, buildSpecializedPrompt, assignForgeRoles } from './role-specialization.js';
 export type { EngineRole } from './role-specialization.js';
 export type { Skill } from './skill-loader.js';

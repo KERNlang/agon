@@ -20,7 +20,7 @@ import from="../handlers/team-tribunal.js" names="handleTeamTribunal"
 import from="../handlers/team-forge.js" names="handleTeamForge"
 import from="../handlers/team-brainstorm.js" names="handleTeamBrainstorm"
 import from="../../handlers/cesar-brain.js" names="handleCesarBrain,parseSuggestion,CESAR_SYSTEM_PROMPT,yieldToInk"
-import from="@agon/core" names="appendMessage,appendUserTurnIfAbsent,buildHistoryPrimedPrompt"
+import from="@agon/core" names="appendMessage,appendUserTurnIfAbsent,buildHistoryPrimedPrompt,formatChatContextForPrompt"
 import from="../handlers/pipeline.js" names="handlePipeline"
 import from="../handlers/provider.js" names="handleProvider"
 import from="../commands/doctor.js" names="diagnoseEngineDoctorEntry,checkDoctorWorktree"
@@ -833,10 +833,12 @@ You still own the overall task. Integrate the forged slice with the rest of the 
     cb.dispatch({ type: 'warning', message: formatCesarRecoveryStatus('acting', actingCesar, `${cesarId} unavailable`) });
 
     // Build context so acting Cesar can lead
-    const recentMessages = cb.ctx.chatSession?.messages?.slice(-10) ?? [];
-    const historyContext = recentMessages
-      .map((m: any) => `${m.role === 'user' ? 'User' : (m.engineId ?? 'engine')}: ${m.content}`)
-      .join('\n\n');
+    const historyContext = formatChatContextForPrompt(cb.ctx.chatSession, {
+      maxMessages: 10,
+      maxChars: 6_000,
+      maxMessageChars: 700,
+      maxSummaryChars: 4_000,
+    });
     const actingPrompt = `You are stepping in as acting Cesar (lead AI) for Agon AI because ${cesarId} is temporarily unavailable. You have full authority to answer, delegate, and lead.\n\n${historyContext ? `## RECENT CONVERSATION\n${historyContext}\n\n` : ''}## USER MESSAGE\n${input}`;
 
     try {

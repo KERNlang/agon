@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { startChatSession, appendMessage, loadChatSession, resumeChatSession, listChatSessions, formatChatHistoryForPrompt, buildHistoryPrimedPrompt } from '@agon/core';
+import { startChatSession, appendMessage, loadChatSession, resumeChatSession, listChatSessions, updateChatSummary, formatChatHistoryForPrompt, formatChatContextForPrompt, buildHistoryPrimedPrompt } from '@agon/core';
 import { cleanupTestAgonHome, setupTestAgonHome } from '../helpers/agon-home.js';
 
 describe('chat-store', () => {
@@ -116,5 +116,41 @@ describe('chat-store', () => {
     expect(prompt).toContain('current task');
     expect(prompt.length).toBeLessThan(14_000);
     expect(prompt).toContain('chars omitted');
+  });
+
+  it('keeps a rolling summary of older current-session messages', () => {
+    const session = startChatSession();
+    for (let i = 0; i < 20; i++) {
+      appendMessage(session, { role: i % 2 === 0 ? 'user' : 'engine', engineId: i % 2 === 0 ? undefined : 'codex', content: `message-${i} ` + 'detail '.repeat(20), timestamp: new Date().toISOString() });
+    }
+
+    expect(session.summary).toContain('message-0');
+    expect(session.summary).toContain('message-7');
+    expect(session.summarizedMessageCount).toBeGreaterThan(0);
+
+    const context = formatChatContextForPrompt(session, {
+      maxMessages: 4,
+      maxChars: 1000,
+      maxMessageChars: 120,
+      maxSummaryChars: 1000,
+    });
+    expect(context).toContain('[Earlier conversation summary]');
+    expect(context).toContain('[Recent conversation]');
+    expect(context).toContain('message-0');
+    expect(context).toContain('message-19');
+  });
+
+  it('persists rolling summary records for resumed chats', () => {
+    const session = startChatSession();
+    for (let i = 0; i < 18; i++) {
+      appendMessage(session, { role: 'user', content: `persisted-${i}`, timestamp: new Date().toISOString() });
+    }
+    updateChatSummary(session);
+
+    const loaded = loadChatSession(session.id);
+
+    expect(loaded?.summary).toBe(session.summary);
+    expect(loaded?.summarizedMessageCount).toBe(session.summarizedMessageCount);
+    expect(formatChatContextForPrompt(loaded, { maxMessages: 3 })).toContain('persisted-0');
   });
 });

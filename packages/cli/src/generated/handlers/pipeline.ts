@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { mkdirSync } from 'node:fs';
 
-import { ensureAgonHome, RUNS_DIR, appendMessage, tracker, scanProjectContext, readOnlyDiff, diffLineCount, diffFileCount, buildCritiquePrompt, spawnWithTimeout, resolveWorkingDir, formatChatHistoryForPrompt } from '@agon/core';
+import { ensureAgonHome, RUNS_DIR, appendMessage, tracker, scanProjectContext, readOnlyDiff, diffLineCount, diffFileCount, buildCritiquePrompt, spawnWithTimeout, resolveWorkingDir, formatChatContextForPrompt } from '@agon/core';
 
 import { ENGINE_COLORS } from '../blocks/output-format.js';
 
@@ -34,10 +34,11 @@ export async function handlePipeline(input: string, dispatch: Dispatch, ctx: Han
     const outputDir = join(RUNS_DIR, `pipeline-${Date.now()}`);
     mkdirSync(outputDir, { recursive: true });
 
-    const sessionHistory = formatChatHistoryForPrompt(ctx.chatSession.messages, {
+    const sessionHistory = formatChatContextForPrompt(ctx.chatSession, {
       maxMessages: 10,
       maxChars: 6_000,
       maxMessageChars: 700,
+      maxSummaryChars: 3_000,
     });
 
     const quiet = opts?.quiet ?? false;

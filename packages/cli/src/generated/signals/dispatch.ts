@@ -36,7 +36,7 @@ import { handleTeamBrainstorm } from '../handlers/team-brainstorm.js';
 
 import { handleCesarBrain, parseSuggestion, CESAR_SYSTEM_PROMPT, yieldToInk } from '../../handlers/cesar-brain.js';
 
-import { appendMessage, appendUserTurnIfAbsent, buildHistoryPrimedPrompt } from '@agon/core';
+import { appendMessage, appendUserTurnIfAbsent, buildHistoryPrimedPrompt, formatChatContextForPrompt } from '@agon/core';
 
 import { handlePipeline } from '../handlers/pipeline.js';
 
@@ -857,10 +857,12 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
       cb.dispatch({ type: 'warning', message: formatCesarRecoveryStatus('acting', actingCesar, `${cesarId} unavailable`) });
 
       // Build context so acting Cesar can lead
-      const recentMessages = cb.ctx.chatSession?.messages?.slice(-10) ?? [];
-      const historyContext = recentMessages
-        .map((m: any) => `${m.role === 'user' ? 'User' : (m.engineId ?? 'engine')}: ${m.content}`)
-        .join('\n\n');
+      const historyContext = formatChatContextForPrompt(cb.ctx.chatSession, {
+        maxMessages: 10,
+        maxChars: 6_000,
+        maxMessageChars: 700,
+        maxSummaryChars: 4_000,
+      });
       const actingPrompt = `You are stepping in as acting Cesar (lead AI) for Agon AI because ${cesarId} is temporarily unavailable. You have full authority to answer, delegate, and lead.\n\n${historyContext ? `## RECENT CONVERSATION\n${historyContext}\n\n` : ''}## USER MESSAGE\n${input}`;
 
       try {

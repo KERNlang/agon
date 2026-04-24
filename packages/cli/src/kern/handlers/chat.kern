@@ -1,7 +1,7 @@
 import from="node:path" names="join"
 import from="node:fs" names="mkdirSync"
 import from="@agon/core" names="ImageAttachment,DispatchResult" types=true
-import from="@agon/core" names="RUNS_DIR,appendMessage,tracker,StreamParser,loadConfig,sessionContext,resolveWorkingDir,loadOrCreateActiveThread,createStreamBridge,formatChatHistoryForPrompt"
+import from="@agon/core" names="RUNS_DIR,appendMessage,tracker,StreamParser,loadConfig,sessionContext,resolveWorkingDir,loadOrCreateActiveThread,createStreamBridge,formatChatContextForPrompt"
 import from="../blocks/output-format.js" names="ENGINE_COLORS"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 import from="../cesar/brain.js" names="yieldToInk"
@@ -69,10 +69,11 @@ fn name=handleChat params="input:string, dispatch:Dispatch, ctx:HandlerContext, 
       return;
     }
 
-    const history = formatChatHistoryForPrompt(ctx.chatSession.messages, {
+    const history = formatChatContextForPrompt(ctx.chatSession, {
       maxMessages: 12,
       maxChars: 8_000,
       maxMessageChars: 900,
+      maxSummaryChars: 4_000,
     });
     const cwd = cachedCwd();
     const projectCtx = sessionContext.get(cwd, config.projectContext || undefined, config.contextFormat);

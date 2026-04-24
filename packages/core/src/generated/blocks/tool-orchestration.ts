@@ -269,12 +269,12 @@ export function createDelegateTool(): ToolHandler {
 export function createReviewTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Review',
-    description: 'Delegate to code review — dispatches an engine to review uncommitted changes, a branch diff, or a specific commit. Use when the user asks for a code review, PR review, or diff review. After calling, STOP and wait.',
+    description: 'Delegate to code review — dispatches an engine to review uncommitted changes, a branch diff, or a specific commit. Use when the user asks for a code review, PR review, or diff review. Set engine only when the user explicitly names one (for example, "review with gemini"); otherwise omit engine and let the runtime auto-select. After calling, STOP and wait.',
     inputSchema: {
       type: 'object',
       properties: {
         target: { type: 'string', description: 'Review target: "uncommitted" (default), "branch:NAME", or "commit:SHA".' },
-        engine: { type: 'string', description: 'Specific engine for review. Omit to auto-select best available reviewer.' },
+        engine: { type: 'string', description: 'Specific engine for review. Set only when the user explicitly names an engine; otherwise omit to auto-select the best available reviewer.' },
       },
       required: [],
     },

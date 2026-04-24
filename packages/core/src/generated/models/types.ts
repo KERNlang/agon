@@ -178,6 +178,7 @@ export interface AgonConfig {
   forgeMaxCritiques?: number;
   forgeStarterStrategy?: 'fixed'|'rotate';
   forgeFixedStarter?: string;
+  reviewDefaultEngine?: string;
   forgeRequireBaselineCheck?: boolean;
   forgeEnabledEngines?: string[];
   forgeFitnessTimeout?: number;
@@ -233,6 +234,7 @@ export const DEFAULT_AGON_CONFIG: Required<AgonConfig> = {
   forgeMaxCritiques: 3,
   forgeStarterStrategy: 'fixed',
   forgeFixedStarter: 'claude',
+  reviewDefaultEngine: '',
   forgeRequireBaselineCheck: true,
   forgeEnabledEngines: ['claude','codex','gemini'],
   forgeFitnessTimeout: 120,

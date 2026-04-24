@@ -6,7 +6,7 @@ import { join } from 'node:path';
 
 import { mkdirSync, readFileSync, statSync } from 'node:fs';
 
-import { ensureAgonHome, RUNS_DIR, appendMessage, tracker, StreamParser, scanProjectContext, resolveWorkingDir } from '@agon/core';
+import { ensureAgonHome, RUNS_DIR, appendMessage, tracker, StreamParser, scanProjectContext, resolveWorkingDir, rankByTaskClass } from '@agon/core';
 
 import { ENGINE_COLORS } from '../blocks/output-format.js';
 
@@ -104,24 +104,33 @@ export function selectReviewEngine(requestedEngine: string|undefined, ctx: Handl
     return requestedEngine;
   }
 
-  // Preference order: reviewDefaultEngine > forgeFixedStarter > first active with review mode
+  // Preference order: explicit review default > ranked review-capable engine.
+  // Deliberately do not inherit forgeFixedStarter: starter choice is for
+  // forge seeding, not code-review routing.
   const config = ctx.config as any;
-  const preferred = config.reviewDefaultEngine ?? config.forgeFixedStarter ?? 'claude';
+  const preferred = typeof config.reviewDefaultEngine === 'string'
+    ? config.reviewDefaultEngine.trim()
+    : '';
 
   // Only use preferred if it's active AND supports review mode
-  if (active.includes(preferred)) {
+  if (preferred && active.includes(preferred)) {
     try {
       const prefEngine = ctx.registry.get(preferred);
       if (prefEngine.review) return preferred;
     } catch { /* fall through to capability scan */ }
   }
 
-  // Fall back to first available engine that has review mode
+  const reviewCapable: string[] = [];
   for (const id of active) {
     try {
       const engine = ctx.registry.get(id);
-      if (engine.review) return id;
+      if (engine.review) reviewCapable.push(id);
     } catch { /* skip unavailable */ }
+  }
+
+  if (reviewCapable.length > 0) {
+    const ranked = rankByTaskClass(reviewCapable, 'bugfix');
+    return ranked[0]?.engineId ?? reviewCapable[0];
   }
 
   // Last resort: first active engine

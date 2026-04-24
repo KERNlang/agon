@@ -39,6 +39,10 @@ function handleForgeEvent(event: any, plan: Plan, engineStatus: Record<string,st
     case 'stage2:dispatch':
       engineStatus[id] = 'building';
       break;
+    case 'engine:failed':
+      engineStatus[id] = 'failed';
+      engineStatus[`${id}:score`] = '0';
+      break;
     case 'stage1:accepted':
       engineStatus[id] = 'done';
       engineStatus[`${id}:score`] = String(event.data?.score ?? '?');
@@ -176,7 +180,7 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
           status: status === 'done' ? `done (${engineStatus[`${id}:score`] ?? '?'})` : status,
           elapsed,
           done: status === 'done',
-          failed: false,
+          failed: status === 'failed',
           score: engineStatus[`${id}:score`],
           isAgent: agentEngineIds.has(id),
         };

@@ -2,7 +2,7 @@ import from="node:crypto" names="randomUUID"
 import from="node:fs" names="writeFileSync,mkdirSync"
 import from="node:path" names="join"
 import from="@agon/core" names="EngineAdapter,EngineResult,ForgeEvent,BreakerArtifact,GauntletResult,TaskClass" types=true
-import from="@agon/core" names="EngineRegistry,loadConfig,worktreeCreate,worktreeRemoveBestEffort,worktreeDiff,headSha,repoRoot,spawnWithTimeout,createSidechainLogger"
+import from="@agon/core" names="EngineRegistry,loadConfig,worktreeCreate,worktreeRemoveBestEffort,worktreeDiff,repoRoot,spawnWithTimeout,createSidechainLogger"
 import from="./fitness.js" names="runFitness"
 
 fn name=buildBreakerPrompt params="task:string, winnerDiff:string, engineId:string" returns=string
@@ -121,7 +121,7 @@ fn name=validateBreakerArtifact async=true params="opts:{artifact:BreakerArtifac
     return { ...artifact, validated: true, deterministic: true, testPath: winnerTestPath };
   >>>
 
-fn name=runGauntlet async=true params="opts:{winnerId:string, losers:string[], task:string, winnerWorktree:string, fitnessCmd:string, taskClass:TaskClass, forgeDir:string, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, fitnessTimeout:number, maxBreakers:number, repairTimeout:number, cwd:string, onEvent?:(event:ForgeEvent)=>void, signal?:AbortSignal}" returns="Promise<GauntletResult>"
+fn name=runGauntlet async=true params="opts:{winnerId:string, losers:string[], task:string, winnerWorktree:string, fitnessCmd:string, taskClass:TaskClass, forgeDir:string, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, fitnessTimeout:number, maxBreakers:number, repairTimeout:number, cwd:string, baseSha:string, onEvent?:(event:ForgeEvent)=>void, signal?:AbortSignal}" returns="Promise<GauntletResult>"
   handler <<<
     const { winnerId, losers, task, winnerWorktree, fitnessCmd, taskClass, forgeDir, registry, adapter, timeout, fitnessTimeout, maxBreakers, repairTimeout, cwd } = opts;
 
@@ -186,11 +186,10 @@ fn name=runGauntlet async=true params="opts:{winnerId:string, losers:string[], t
 
     // --- Validate each breaker artifact ---
     const root = repoRoot(cwd);
-    const sha = headSha(cwd);
 
     // Create a clean worktree (no patch) for validation comparison
     const cleanWtPath = join(forgeDir, 'gauntlet-clean');
-    worktreeCreate(root, cleanWtPath, sha);
+    worktreeCreate(root, cleanWtPath, opts.baseSha);
 
     const validatedArtifacts: BreakerArtifact[] = [];
     try {

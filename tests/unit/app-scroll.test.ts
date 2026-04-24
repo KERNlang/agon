@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   buildTranscriptRows,
+  buildTerminalReplaySnapshot,
   displayColumnToStringIndex,
   estimateBottomChromeExtraRows,
   estimateQuestionReservedRows,
@@ -102,6 +103,61 @@ describe('app scroll helpers', () => {
     expect(fileRailWidthForTerminal(220, true)).toBeLessThanOrEqual(64);
     expect(fileRailMaxRowsForTerminal(80, 'native', false)).toBe(10);
     expect(fileRailMaxRowsForTerminal(80, 'native', true)).toBe(18);
+  });
+
+  it('replays terminal render snapshots across native and fullscreen sizes', () => {
+    const blocks = [
+      { id: 0, event: { type: 'dashboard', available: [], enabled: ['claude'], defaultEngine: 'claude', totalForges: 0, runCount: 0 } },
+      { id: 1, event: { type: 'separator' } },
+      { id: 2, event: { type: 'user-message', content: 'check api engines and render stability' } },
+      {
+        id: 3,
+        event: {
+          type: 'engine-block',
+          engineId: 'cesar',
+          color: 124,
+          content: Array.from({ length: 18 }, (_, index) => `render line ${index + 1}`).join('\n'),
+        },
+      },
+      { id: 4, event: { type: 'tool-call', engineId: 'cesar', tool: 'Read', input: '{"file_path":"packages/cli/src/kern/surfaces/app.kern"}', status: 'done', output: 'line 1\nline 2\nline 3' } },
+    ] as any;
+
+    const snapshots = [
+      buildTerminalReplaySnapshot(blocks, { terminalMode: 'native', mode: 'chat', termWidth: 72, termHeight: 24, fileRailOpen: false }),
+      buildTerminalReplaySnapshot(blocks, { terminalMode: 'native', mode: 'chat', termWidth: 220, termHeight: 80, fileRailOpen: true }),
+      buildTerminalReplaySnapshot(blocks, { terminalMode: 'fullscreen', mode: 'chat', termWidth: 120, termHeight: 36, fileRailOpen: true, fileRailExpanded: true }),
+    ];
+
+    for (const snapshot of snapshots) {
+      expect(snapshot.headerRows).toBe(1);
+      expect(snapshot.visibleBudget).toBeGreaterThan(0);
+      expect(snapshot.lowerChromeRows).toBeLessThan(snapshot.termHeight);
+      expect(snapshot.transcriptRowCount).toBeGreaterThan(0);
+      expect(snapshot.fileRailRows).toBeLessThanOrEqual(snapshot.termHeight - snapshot.headerRows);
+      expect(snapshot.fileRailWidth).toBeLessThanOrEqual(Math.floor(snapshot.termWidth * 0.35));
+    }
+
+    expect(snapshots[0].staticBlockCount).toBeGreaterThan(0);
+    expect(snapshots[2].staticBlockCount).toBe(0);
+  });
+
+  it('replays transcript wrapping with the supplied terminal width', () => {
+    const blocks = [
+      {
+        id: 1,
+        event: {
+          type: 'engine-block',
+          engineId: 'cesar',
+          color: 124,
+          content: 'This is one intentionally long render line that must wrap differently when replayed at a narrow terminal width versus a wide terminal width.',
+        },
+      },
+    ] as any;
+
+    const narrow = buildTerminalReplaySnapshot(blocks, { terminalMode: 'fullscreen', mode: 'chat', termWidth: 72, termHeight: 24 });
+    const wide = buildTerminalReplaySnapshot(blocks, { terminalMode: 'fullscreen', mode: 'chat', termWidth: 180, termHeight: 24 });
+
+    expect(narrow.transcriptRowCount).toBeGreaterThan(wide.transcriptRowCount);
   });
 
   it('renders the dashboard through transcript rows when it is the only visible block', () => {

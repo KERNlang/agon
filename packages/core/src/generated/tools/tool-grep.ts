@@ -48,44 +48,44 @@ export function createGrepTool(): ToolHandler {
     isReadOnly: true,
     isConcurrencySafe: true,
   };
-  
+
   function validate(input: Record<string, unknown>, _ctx: ToolContext): string | null {
     if (typeof input.pattern !== 'string' || input.pattern.trim() === '') {
       return 'pattern is required and must be a non-empty string';
     }
     return null;
   }
-  
+
   function checkPermission(_input: Record<string, unknown>, _ctx: ToolContext): PermissionDecision {
     return { behavior: 'allow' };
   }
-  
+
   async function execute(input: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
     const args: string[] = ['--hidden', '--glob', '!.git', '--max-columns', '500'];
-  
+
     // File type filter
     if (typeof input.type === 'string') {
       args.push('--type', input.type);
     }
-  
+
     // Glob filter
     if (typeof input.glob === 'string') {
       args.push('--glob', input.glob);
     }
-  
+
     // Multiline mode
     if (input.multiline === true) {
       args.push('-U', '--multiline-dotall');
     }
-  
+
     // Case insensitive
     if (input['-i'] === true) {
       args.push('-i');
     }
-  
+
     // Output mode
     const outputMode = typeof input.output_mode === 'string' ? input.output_mode : 'files_with_matches';
-  
+
     switch (outputMode) {
       case 'files_with_matches':
         args.push('-l');
@@ -97,12 +97,12 @@ export function createGrepTool(): ToolHandler {
         // Line numbers (default true for content mode)
         const showLineNumbers = input['-n'] !== false;
         if (showLineNumbers) args.push('-n');
-  
+
         // Context flags
         const contextLines = typeof input['-C'] === 'number' ? input['-C']
           : typeof input.context === 'number' ? input.context
           : undefined;
-  
+
         if (contextLines !== undefined) {
           args.push('-C', String(contextLines));
         } else {
@@ -116,12 +116,12 @@ export function createGrepTool(): ToolHandler {
         break;
       }
     }
-  
+
     // Pattern and path
     args.push(input.pattern as string);
     const searchPath = typeof input.path === 'string' ? input.path : ctx.cwd;
     args.push(searchPath);
-  
+
     const result = await spawnWithTimeout({
       command: 'rg',
       args,
@@ -129,7 +129,7 @@ export function createGrepTool(): ToolHandler {
       timeout: GREP_TIMEOUT,
       signal: ctx.abortSignal,
     });
-  
+
     if (result.exitCode === 1 && /\bENOENT\b/.test(result.stderr)) {
       return {
         ok: false,
@@ -138,7 +138,7 @@ export function createGrepTool(): ToolHandler {
         metadata: { exitCode: result.exitCode, durationMs: result.durationMs },
       };
     }
-  
+
     // rg exits 1 for "no matches" — that's not an error
     if (result.exitCode > 1) {
       return {
@@ -148,29 +148,29 @@ export function createGrepTool(): ToolHandler {
         metadata: { exitCode: result.exitCode, durationMs: result.durationMs },
       };
     }
-  
+
     let output = result.stdout;
-  
+
     // Apply offset
     if (typeof input.offset === 'number' && input.offset > 0) {
       const lines = output.split('\n');
       output = lines.slice(input.offset).join('\n');
     }
-  
+
     // Apply head_limit
     const headLimit = typeof input.head_limit === 'number' ? input.head_limit : DEFAULT_HEAD_LIMIT;
     if (headLimit > 0) {
       output = applyHeadLimit(output, headLimit);
     }
-  
+
     const noMatches = result.exitCode === 1 || output.trim() === '';
-  
+
     return {
       ok: true,
       content: noMatches ? 'No matches found.' : output,
       metadata: { exitCode: result.exitCode, durationMs: result.durationMs, matchCount: noMatches ? 0 : undefined },
     };
   }
-  
+
   return { definition, validate, checkPermission, execute };
 }

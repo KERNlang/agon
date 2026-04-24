@@ -387,7 +387,7 @@ export class ContextThread {
     this.dirty = false;
     this.hydrated = false;
     this.journaledIds = new Set();
-    
+
     // Load-or-create
     const now = Date.now();
     if (config.threadId) {
@@ -428,7 +428,7 @@ export class ContextThread {
             this.engineHead = snap.engineHead ?? {};
             this.fileTouches = snap.fileTouches ?? {};
             this.hydrated = true;
-    
+
             // Codex P1 fix: merge the JSONL journal immediately after loading
             // the snapshot so messages appended since the last save() (e.g.
             // after an unclean exit between append and save) are recovered.
@@ -467,7 +467,7 @@ export class ContextThread {
     } else {
       this.threadId = `thread_${now}_${randomUUID().slice(0, 8)}`;
     }
-    
+
     this.createdAt = now;
     this.updatedAt = now;
   }
@@ -591,7 +591,7 @@ export class ContextThread {
   messagesFor(engineId: string, tokenBudget: number, staleFileChecker?: (path:string) => string|null): LoopMessage[] {
     const TOKENS_RESERVED_FOR_PROMPT = 512;
     const effectiveBudget = Math.max(1024, Math.floor((tokenBudget - TOKENS_RESERVED_FOR_PROMPT) * TOKEN_BUDGET_SAFETY_FACTOR));
-    
+
     // Stale-file annotation pass — O(n) over messages, O(k) touches where k is small.
     const staleAnnotations: Map<string, string> = new Map();
     if (staleFileChecker) {
@@ -602,10 +602,10 @@ export class ContextThread {
         }
       }
     }
-    
+
     // Only non-system messages are persisted; system is rebuilt transiently below.
     const nonSystem = this.messages.filter(m => m.role !== 'system');
-    
+
     // Build the transient system prompt prefix from the constructor config.
     let used = 0;
     const transientPrefix: LoopMessage[] = [];
@@ -615,19 +615,19 @@ export class ContextThread {
       transientPrefix.push({ role: 'system', content: this.systemPrompt });
     }
     if (nonSystem.length === 0) return transientPrefix;
-    
+
     // Keep-last-K guaranteed tail slice.
     const keepK = Math.min(KEEP_LAST_K, nonSystem.length);
     const tailStart = nonSystem.length - keepK;
     const tail = nonSystem.slice(tailStart);
-    
+
     // Compute a per-message cap such that K tail messages × cap fits in the
     // remaining budget. This is the core defense against the token-bomb
     // scenario from red-team finding 4: a single huge tool output gets
     // truncated to its share rather than starving the rest of the tail.
     const tailBudget = Math.max(1024, effectiveBudget - used);
     const perMessageCap = Math.max(256, Math.min(MAX_PER_MESSAGE_TOKENS, Math.floor(tailBudget / Math.max(1, keepK))));
-    
+
     // Reserve tail budget — each tail message always makes it in, but at the
     // capped size. estimateMessageTokens gives an upper bound on a capped
     // message; threadMessageToLoop does the real truncation when we render.
@@ -636,7 +636,7 @@ export class ContextThread {
       tailUsed += Math.min(estimateMessageTokens(m), perMessageCap);
     }
     used += tailUsed;
-    
+
     // Walk backwards from tailStart, adding older messages while we still have
     // budget. Stale file-read messages get replaced with an annotation stub.
     const older: ThreadMessage[] = [];
@@ -647,7 +647,7 @@ export class ContextThread {
       older.unshift(this.annotateStale(m, staleAnnotations));
       used += cost;
     }
-    
+
     // If we couldn't fit everything, inject a trim marker summarizing the
     // dropped range at the front.
     const droppedCount = tailStart - older.length;
@@ -659,16 +659,16 @@ export class ContextThread {
         content: this.renderTrimMarker(droppedCount, dropped),
       });
     }
-    
+
     // Also annotate tail messages.
     const annotatedTail = tail.map(m => this.annotateStale(m, staleAnnotations));
-    
+
     // Convert to LoopMessage with per-message truncation.
     const body: LoopMessage[] = [
       ...older.map(m => threadMessageToLoop(m, perMessageCap)),
       ...annotatedTail.map(m => threadMessageToLoop(m, perMessageCap)),
     ];
-    
+
     return [...transientPrefix, ...prefix, ...body];
   }
 
@@ -816,7 +816,7 @@ export class ContextThread {
     ensureThreadDir(this.projectPath);
     const target = threadFilePath(this.projectPath, this.threadId);
     const lockPath = threadLockPath(this.projectPath, this.threadId);
-    
+
     // Acquire O_EXCL lock before touching the snapshot.
     let lockAcquired = false;
     try {
@@ -825,7 +825,7 @@ export class ContextThread {
     } catch (lockErr) {
       console.warn(`[agon] context-thread: lock acquisition error: ${lockErr instanceof Error ? lockErr.message : String(lockErr)}`);
     }
-    
+
     // Fallback: if we couldn't acquire the lock, fall back to journal-only
     // persistence. Per-message appendFileSync with 'a' flag is POSIX-atomic
     // for small writes and never clobbers another process's writes. The
@@ -847,7 +847,7 @@ export class ContextThread {
       }
       return;
     }
-    
+
     // We hold the lock. Wrap the entire write path in try/finally so any
     // throw from readFileSync / JSON.parse / openSync / writeFileSync /
     // renameSync releases the lock instead of leaking a stale .lock file
@@ -879,7 +879,7 @@ export class ContextThread {
           console.warn(`[agon] context-thread: journal merge failed (will overwrite): ${err instanceof Error ? err.message : String(err)}`);
         }
       }
-    
+
       // Read-before-write merge (safe under lock — no other process can
       // concurrently write because they'll hit the same O_EXCL lock first).
       if (existsSync(target)) {
@@ -907,11 +907,11 @@ export class ContextThread {
           console.warn(`[agon] context-thread: read-before-write merge failed (will overwrite): ${err instanceof Error ? err.message : String(err)}`);
         }
       }
-    
+
       // Final defense-in-depth strip of any role:'system' that snuck in.
       const cleanMessages = this.messages.filter(m => m.role !== 'system');
       this.messages = cleanMessages;
-    
+
       const snapshot: ThreadSnapshot = {
         schemaVersion: SCHEMA_VERSION,
         threadId: this.threadId,
@@ -923,7 +923,7 @@ export class ContextThread {
         engineHead: this.engineHead,
         fileTouches: this.fileTouches,
       };
-    
+
       // Durable atomic write: openSync → writeSync → fsyncSync → closeSync → rename.
       const tmpPath = target + '.tmp';
       const body = JSON.stringify(snapshot, null, 2) + '\n';
@@ -1007,7 +1007,7 @@ export function _registerExitFlush(thread: ContextThread): void {
   _exitFlushRegistry.add(new WeakRef(thread));
   if (_exitHandlerRegistered.value) return;
   _exitHandlerRegistered.value = true;
-  
+
   const flush = () => {
     for (const ref of _exitFlushRegistry) {
       const t = ref.deref();
@@ -1017,10 +1017,10 @@ export function _registerExitFlush(thread: ContextThread): void {
       } catch { /* never let flush block exit */ }
     }
   };
-  
+
   // Flush on clean exit (covers normal process termination).
   process.on('exit', flush);
-  
+
   // Flush on SIGINT (Ctrl+C) — gives the thread a chance to persist
   // partial work before the process is killed. Re-raise after flush so
   // the process terminates normally with exit code 130.
@@ -1028,7 +1028,7 @@ export function _registerExitFlush(thread: ContextThread): void {
     flush();
     process.exit(130);
   });
-  
+
   // SIGTERM (e.g. kill from CI or container scheduler).
   process.on('SIGTERM', () => {
     flush();
@@ -1099,20 +1099,20 @@ export async function summarizeOlderMessages(opts: SummarizeOptions): Promise<Th
   const messages = opts.thread.getAllMessages().filter((m: any) => m.role !== 'system');
   const n = Math.min(opts.messagesToSummarize ?? 30, messages.length - KEEP_LAST_K);
   if (n <= 0) return null;
-  
+
   const toSummarize = messages.slice(0, n);
   const lastId = toSummarize[toSummarize.length - 1]?.id;
   if (!lastId) return null;
-  
+
   // Build a compact representation of the messages to summarize.
   const body = toSummarize.map((m: any) => {
     const who = m.engineId ?? m.role;
     const snippet = (m.content ?? '').slice(0, 400);
     return `[${who}/${m.role}]: ${snippet}`;
   }).join('\n---\n');
-  
+
   const prompt = `Summarize the following conversation turns concisely (max 300 words). Focus on: what was asked, what files were read/edited, what decisions were made, what the final outcome was. Do NOT reproduce code. Write in past tense.\n\n${body}`;
-  
+
   try {
     // Reuse apiStreamDispatchWithHistory for a single-turn summary call.
     // We use the caller-supplied api config (should be a fast/cheap model).
@@ -1124,7 +1124,7 @@ export async function summarizeOlderMessages(opts: SummarizeOptions): Promise<Th
     }
     summary = summary.trim();
     if (!summary) return null;
-  
+
     const cp = opts.thread.checkpoint(summary, opts.label ?? `llm-summary-${n}-msgs`, lastId);
     await opts.thread.save();
     return cp;

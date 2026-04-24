@@ -26,7 +26,7 @@ export class CliAdapter implements EngineAdapter {
   async dispatch(options: DispatchOptions): Promise<DispatchResult> {
     // Prefer CLI binary when available — API is fallback for binary-less engines
     const binaryPath = options.engine.binary ? this.registry.findBinary(options.engine) : null;
-    
+
     if (!binaryPath) {
     // No CLI binary — use API if available, otherwise fail
     if (options.engine.api) {
@@ -49,18 +49,18 @@ export class CliAdapter implements EngineAdapter {
       }
       throw new EngineNotFoundError(options.engine.id, options.engine.installHint);
     }
-    
+
     const envError = checkEnvVars(options.engine);
     if (envError) {
       throw new EngineNotFoundError(options.engine.id, envError);
     }
-    
+
     // Run pre_dispatch hooks — abort if any fail
     const preHooks = runHooks('pre_dispatch', { AGON_ENGINE: options.engine.id, AGON_MODE: options.mode });
     if (hooksFailed(preHooks)) {
       return { exitCode: 1, stdout: '', stderr: `pre_dispatch hook blocked: ${preHooks.find((h: any) => !h.ok)?.stderr ?? 'unknown'}`, durationMs: 0, timedOut: false };
     }
-    
+
     // Try companion protocol (JSONRPC app-server) first — faster, more stable
     if (options.engine.companion) {
       const companionResult = await companionDispatch({
@@ -83,7 +83,7 @@ export class CliAdapter implements EngineAdapter {
         return companionResult;
       }
     }
-    
+
     // Resolve system prompt for CLI: native flag if available, else prepend to prompt
     let effectivePrompt = options.prompt;
     const sysFlag = options.engine.systemPromptFlag;
@@ -91,44 +91,44 @@ export class CliAdapter implements EngineAdapter {
       // Engine has no native system prompt flag — prepend (same as PersistentSession first-turn)
       effectivePrompt = `[System Instructions]\n${options.systemPrompt}\n\n[User Message]\n${options.prompt}`;
     }
-    
+
     const { command, args } = buildCommand(
       options.engine, options.mode, effectivePrompt,
       options.cwd, options.timeout, binaryPath, options.images,
     );
-    
+
     // Inject native system prompt flag if engine supports it (e.g. Claude --system-prompt)
     if (options.systemPrompt && sysFlag) {
       const promptIdx = args.indexOf(effectivePrompt);
       const insertAt = promptIdx >= 0 ? promptIdx : 0;
       args.splice(insertAt, 0, sysFlag, options.systemPrompt);
     }
-    
+
     const result = await spawnWithTimeout({
       command, args,
       cwd: options.cwd,
       timeout: options.timeout * 1000,
       signal: options.signal,
     });
-    
+
     // Strip NDJSON system/hook messages from stream-json engines (Claude)
     if (usesStreamJson(options.engine) && result.stdout.includes('{"type":')) {
       result.stdout = stripStreamJson(result.stdout);
     }
-    
+
     const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
     mkdirSync(dirname(outputPath), { recursive: true });
     writeFileSync(outputPath, result.stdout);
-    
+
     runHooks('post_dispatch', { AGON_ENGINE: options.engine.id, AGON_MODE: options.mode, AGON_EXIT_CODE: String(result.exitCode) });
-    
+
     return result;
   }
 
   async *dispatchStream(options: DispatchOptions): AsyncGenerator<string, DispatchResult, void> {
     // Prefer CLI binary when available — API is fallback for binary-less engines
     const binaryPath = options.engine.binary ? this.registry.findBinary(options.engine) : null;
-    
+
     if (!binaryPath) {
       if (options.engine.api) {
         const resolvedModel = resolveModel(options.engine, options.cwd);
@@ -147,33 +147,33 @@ export class CliAdapter implements EngineAdapter {
       }
       throw new EngineNotFoundError(options.engine.id, options.engine.installHint);
     }
-    
+
     // Resolve system prompt for CLI: native flag if available, else prepend
     let effectivePrompt = options.prompt;
     const sysFlag = options.engine.systemPromptFlag;
     if (options.systemPrompt && !sysFlag) {
       effectivePrompt = `[System Instructions]\n${options.systemPrompt}\n\n[User Message]\n${options.prompt}`;
     }
-    
+
     const { command, args } = buildCommand(
       options.engine, options.mode, effectivePrompt,
       options.cwd, options.timeout, binaryPath, options.images,
     );
-    
+
     // Inject native system prompt flag if supported
     if (options.systemPrompt && sysFlag) {
       const promptIdx = args.indexOf(effectivePrompt);
       const insertAt = promptIdx >= 0 ? promptIdx : 0;
       args.splice(insertAt, 0, sysFlag, options.systemPrompt);
     }
-    
+
     const gen = spawnStream({
       command, args,
       cwd: options.cwd,
       timeout: options.timeout * 1000,
       signal: options.signal,
     });
-    
+
     let result: DispatchResult;
     while (true) {
       const { value, done } = await gen.next();
@@ -183,11 +183,11 @@ export class CliAdapter implements EngineAdapter {
       }
       yield value;
     }
-    
+
     const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
     mkdirSync(dirname(outputPath), { recursive: true });
     writeFileSync(outputPath, result.stdout);
-    
+
     return result;
   }
 
@@ -203,7 +203,7 @@ export class CliAdapter implements EngineAdapter {
           options.systemPrompt ?? 'You are an AI coding assistant. Be direct and concise.',
           projectCtx ? `## PROJECT CONTEXT\n${projectCtx}` : '',
         ].filter(Boolean).join('\n\n');
-    
+
       const startTime = Date.now();
       const baselineDiff = readOnlyDiff(cwd);
         const result = await runApiAgentLoop({
@@ -219,7 +219,7 @@ export class CliAdapter implements EngineAdapter {
           toolPermissions: options.toolPermissions,
           onPermissionAsk: options.onApproval,
         });
-    
+
         const postDiff = readOnlyDiff(cwd);
         const baselineFiles = new Set(baselineDiff.split('\n').filter((l: string) => l.startsWith('diff --git')));
         const postLines = postDiff.split('\n');
@@ -232,11 +232,11 @@ export class CliAdapter implements EngineAdapter {
         const diff = newDiffLines.join('\n');
         const lines = diffLineCount(diff);
         const files = diff ? newDiffLines.filter((l: string) => l.startsWith('diff --git')).length : 0;
-    
+
         const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
         mkdirSync(dirname(outputPath), { recursive: true });
         writeFileSync(outputPath, result.response);
-    
+
         return {
           exitCode: 0,
           stdout: result.response,
@@ -248,20 +248,20 @@ export class CliAdapter implements EngineAdapter {
           filesChanged: files,
         };
       }
-    
+
       const binaryPath = this.registry.findBinary(options.engine);
       if (!binaryPath) {
         throw new EngineNotFoundError(options.engine.id, options.engine.installHint);
       }
-    
+
       const envError = checkEnvVars(options.engine);
       if (envError) {
         throw new EngineNotFoundError(options.engine.id, envError);
       }
-    
+
       // Capture baseline diff before agent runs to exclude pre-existing changes
       const baselineDiff = readOnlyDiff(options.cwd);
-    
+
       // Try companion protocol first
       if (options.engine.companion) {
       const companionResult = await companionDispatch({
@@ -279,7 +279,7 @@ export class CliAdapter implements EngineAdapter {
           const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
           mkdirSync(dirname(outputPath), { recursive: true });
           writeFileSync(outputPath, companionResult.stdout);
-    
+
           const postDiff = readOnlyDiff(options.cwd);
           const baselineFiles = new Set(baselineDiff.split('\n').filter((l: string) => l.startsWith('diff --git')));
           const postLines = postDiff.split('\n');
@@ -297,28 +297,28 @@ export class CliAdapter implements EngineAdapter {
           return { ...companionResult, diff, diffLines: lines, filesChanged: files };
         }
       }
-    
+
       const { command, args } = buildCommand(
         options.engine, options.mode, options.prompt,
         options.cwd, options.timeout, binaryPath, options.images,
       );
-    
+
       const result = await spawnWithTimeout({
         command, args,
         cwd: options.cwd,
         timeout: options.timeout * 1000,
         signal: options.signal,
       });
-    
+
       // Strip NDJSON system/hook messages from stream-json engines (Claude)
       if (usesStreamJson(options.engine) && result.stdout.includes('{"type":')) {
         result.stdout = stripStreamJson(result.stdout);
       }
-    
+
       const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
       mkdirSync(dirname(outputPath), { recursive: true });
       writeFileSync(outputPath, result.stdout);
-    
+
       const postDiff = readOnlyDiff(options.cwd);
       // Only count new changes by excluding baseline
       const baselineFiles = new Set(baselineDiff.split('\n').filter((l: string) => l.startsWith('diff --git')));
@@ -334,7 +334,7 @@ export class CliAdapter implements EngineAdapter {
       const diff = newDiffLines.join('\n');
       const lines = diffLineCount(diff);
       const files = diff ? newDiffLines.filter((l: string) => l.startsWith('diff --git')).length : 0;
-    
+
       return { ...result, diff, diffLines: lines, filesChanged: files };
   }
 
@@ -353,27 +353,27 @@ export class CliAdapter implements EngineAdapter {
         filesChanged: 0,
       };
     }
-    
+
     const binaryPath = this.registry.findBinary(options.engine);
     if (!binaryPath) {
       throw new EngineNotFoundError(options.engine.id, options.engine.installHint);
     }
-    
+
     const { command, args } = buildCommand(
       options.engine, options.mode, options.prompt,
       options.cwd, options.timeout, binaryPath, options.images,
     );
-    
+
     // Capture baseline before agent runs
     const baselineDiff = readOnlyDiff(options.cwd);
-    
+
     const gen = spawnStream({
       command, args,
       cwd: options.cwd,
       timeout: options.timeout * 1000,
       signal: options.signal,
     });
-    
+
     let result: DispatchResult;
     while (true) {
       const { value, done } = await gen.next();
@@ -383,11 +383,11 @@ export class CliAdapter implements EngineAdapter {
       }
       yield value;
     }
-    
+
     const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
     mkdirSync(dirname(outputPath), { recursive: true });
     writeFileSync(outputPath, result.stdout);
-    
+
     const postDiff = readOnlyDiff(options.cwd);
     const baselineFiles = new Set(baselineDiff.split('\n').filter((l: string) => l.startsWith('diff --git')));
     const postLines = postDiff.split('\n');
@@ -402,7 +402,7 @@ export class CliAdapter implements EngineAdapter {
     const diff = newDiffLines.join('\n');
     const lines = diffLineCount(diff);
     const files = diff ? newDiffLines.filter((l: string) => l.startsWith('diff --git')).length : 0;
-    
+
     return { ...result, diff, diffLines: lines, filesChanged: files };
   }
 
@@ -415,7 +415,7 @@ export class CliAdapter implements EngineAdapter {
       const binaryPath = this.registry.findBinary(engine);
       if (!binaryPath) return null;
       if (!engine.versionCmd) return null;
-    
+
       try {
         const result = await spawnWithTimeout({
           command: binaryPath,

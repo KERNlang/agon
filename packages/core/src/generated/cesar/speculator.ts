@@ -74,12 +74,12 @@ export class Speculator {
     const root = isolate ? repoRoot(cwd) : cwd;
     // Build the shared read-only snapshot once, shared by all members.
     this.snapshot = createFileSnapshot(cwd);
-    
+
     const tokenBudget = 100_000;
     const candidates: EffectPackage[] = [];
     const scores: Record<string, number> = {};
     const worktreesByEngine: Record<string, string> = {};
-    
+
     // Pre-create worktrees before fanning out so each agent has an isolated
     // filesystem. If worktree creation fails for a member, skip that member
     // rather than letting it write to the shared cwd.
@@ -95,24 +95,24 @@ export class Speculator {
         }
       }
     }
-    
+
     // Fan out: run all members in parallel.
     const memberPromises = opts.members.map(async (member) => {
       const memberCwd = worktreesByEngine[member.engineId] ?? cwd;
       if (opts.onMemberStart) opts.onMemberStart(member.engineId);
-    
+
       const vfs = new VirtualFS(this.snapshot!, member.engineId, this.runId);
       const startedAt = Date.now();
-    
+
       // Pre-load thread context.
       const historyMessages = opts.thread
         ? (opts.thread.messagesFor(member.engineId, tokenBudget) as unknown) as Array<Record<string,unknown>>
         : undefined;
-    
+
       const onHistoryEntry = opts.thread
         ? (entry: Record<string,unknown>) => { opts.thread!.appendLoopEntry(entry, member.engineId); }
         : undefined;
-    
+
       let result: ApiAgentResult;
       try {
         result = await runApiAgentLoop({
@@ -135,7 +135,7 @@ export class Speculator {
         // Failed engine contributes an empty package — will score 0 and lose.
         result = { response: '', toolCalls: 0, steps: 0 };
       }
-    
+
       // Phase E v1: build EffectPackage from response text only.
       // In v2, tool calls will have mutated vfs.overlay and we'll get
       // real file changes. For now, pkg.effects is always empty because
@@ -149,11 +149,11 @@ export class Speculator {
       const score = scoreEffectPackage(pkg, opts.taskKeywords);
       scores[member.engineId] = score;
       candidates.push(pkg);
-    
+
       if (opts.onMemberComplete) opts.onMemberComplete(pkg, score);
       return { pkg, vfs, score, memberCwd };
     });
-    
+
     // Wait for all members, collect successful results as plain objects.
     interface MemberOutcome { pkg: EffectPackage; vfs: VirtualFS; score: number; memberCwd: string; }
     const outcomes: MemberOutcome[] = [];
@@ -163,7 +163,7 @@ export class Speculator {
         outcomes.push(r.value as MemberOutcome);
       }
     }
-    
+
     // Select winner: highest score.
     let winnerOutcome: MemberOutcome | null = null;
     let winnerScore = -1;
@@ -173,7 +173,7 @@ export class Speculator {
         winnerScore = s.score;
       }
     }
-    
+
     // Apply winner's changes to real disk.
     let appliedFiles: string[] = [];
     if (winnerOutcome) {
@@ -200,20 +200,20 @@ export class Speculator {
         console.warn(`[agon] speculator: failed to apply winner ${winnerOutcome.pkg.engineId}: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
-    
+
     // Clean up all worktrees — best effort, non-fatal.
     if (isolate && root) {
       for (const [eid, wtPath] of Object.entries(worktreesByEngine)) {
         try { worktreeRemoveBestEffort(root, wtPath); } catch { /* ignore */ }
       }
     }
-    
+
     // Flush thread with winner marked.
     if (opts.thread && winnerOutcome) {
       opts.thread.markSeen(winnerOutcome.pkg.engineId);
       await opts.thread.save();
     }
-    
+
     return {
       candidates,
       scores,

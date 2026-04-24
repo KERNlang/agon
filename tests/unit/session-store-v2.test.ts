@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
 import { cleanupTestAgonHome, setupTestAgonHome } from '../helpers/agon-home.js';
 
 // We need to test the actual functions, but they use AGON_HOME which reads from config.
@@ -197,7 +198,28 @@ describe('session-store v2.1: conversation continuity store', () => {
 
     expect(stripped).toEqual([
       { role: 'assistant', content: '[Tool calls omitted during engine handoff: Read]' },
-      { role: 'tool', content: JSON.stringify({ ok: true, lines: 42 }) },
+      { role: 'user', content: `[Tool result from previous Read call]\n${JSON.stringify({ ok: true, lines: 42 })}` },
+    ]);
+  });
+
+  it('sanitizes legacy conversation stores with orphan tool messages on load', () => {
+    const cwdHash = createHash('md5').update(process.cwd()).digest('hex').slice(0, 8);
+    const sessionsDir = join(testHome, 'sessions');
+    mkdirSync(sessionsDir, { recursive: true });
+    writeFileSync(join(sessionsDir, `conversation-${cwdHash}.json`), JSON.stringify({
+      schemaVersion: 1,
+      savedAt: Date.now(),
+      sourceEngine: 'kimi',
+      messageHistory: [
+        { role: 'assistant', content: null, tool_calls: [{ id: 'call_1', function: { name: 'Read', arguments: '{}' } }] },
+        { role: 'tool', content: 'file contents', tool_call_id: 'call_1' },
+      ],
+    }), 'utf-8');
+
+    const loaded = loadConversation();
+    expect(loaded!.messageHistory).toEqual([
+      { role: 'assistant', content: '[Tool calls omitted during engine handoff: Read]' },
+      { role: 'user', content: '[Tool result from previous Read call]\nfile contents' },
     ]);
   });
 

@@ -70,7 +70,7 @@ import { ComposerView } from '../../generated/blocks/composer.js';
 
 import { AgentProgressView } from '../../generated/surfaces/agent.js';
 
-import { contentWidth, color256toHex, engineColor, CODE_RAIL, CODE_RAIL_COLOR, MAX_CODE_LINES } from '../../generated/blocks/rendering.js';
+import { contentWidth, withContentWidthOverride, color256toHex, engineColor, CODE_RAIL, CODE_RAIL_COLOR, MAX_CODE_LINES } from '../../generated/blocks/rendering.js';
 
 import { LOGO_LINES, VERSION, BRAND } from '../../generated/blocks/engine.js';
 
@@ -2546,6 +2546,62 @@ export function fileRailMaxRowsForTerminal(termHeight: number, terminalMode: str
   }
   if (expanded) return Math.max(12, safeHeight - 6);
   return Math.max(6, Math.min(12, 10));
+}
+
+/**
+ * Pure terminal replay harness: summarizes the layout-sensitive parts of the REPL for fixed viewport sizes so unit tests can catch native/fullscreen regressions without launching an interactive TTY.
+ */
+export function buildTerminalReplaySnapshot(blocks: OutputBlock[], opts: any): {terminalMode:'native'|'fullscreen'; mode:string; termWidth:number; termHeight:number; visibleBudget:number; transcriptRowCount:number; staticBlockCount:number; liveBlockCount:number; fileRailWidth:number; fileRailRows:number; headerRows:number; lowerChromeRows:number} {
+  const terminalMode = normalizeTerminalMode(opts?.terminalMode);
+  const mode = String(opts?.mode ?? 'chat');
+  const termWidth = Math.max(40, Math.floor(Number(opts?.termWidth) || 100));
+  const termHeight = Math.max(8, Math.floor(Number(opts?.termHeight) || 24));
+  const toolOutputExpanded = opts?.toolOutputExpanded !== false;
+  const thinkingExpanded = opts?.thinkingExpanded !== false;
+  const questionState = opts?.questionState ?? null;
+  const pendingImageCount = Math.max(0, Math.floor(Number(opts?.pendingImageCount) || 0));
+  const inputQueueCount = Math.max(0, Math.floor(Number(opts?.inputQueueCount) || 0));
+  const hasLiveSpinner = !!opts?.hasLiveSpinner;
+  const hasStream = !!opts?.hasStream;
+  const hasProgress = !!opts?.hasProgress;
+  const agentCount = Math.max(0, Math.floor(Number(opts?.agentCount) || 0));
+  const bottomChromeExtraRows = estimateBottomChromeExtraRows(mode, questionState, termWidth, pendingImageCount, inputQueueCount, hasLiveSpinner);
+  const pinnedLiveRows = estimatePinnedLiveRows(mode, hasStream, hasProgress, agentCount);
+  const visibleBudget = estimateVisibleBlockBudget(termHeight, mode, bottomChromeExtraRows + pinnedLiveRows);
+
+  const transcriptBlocks = terminalMode === 'native'
+    ? nativeTranscriptBlocksForStatic(blocks)
+    : historyBlocksForTranscript(blocks);
+  const staticBlockCount = terminalMode === 'native'
+    ? nativeArchiveBlockCount(transcriptBlocks, mode, visibleBudget, toolOutputExpanded, thinkingExpanded)
+    : 0;
+  const liveBlocks = terminalMode === 'native'
+    ? transcriptBlocks.slice(staticBlockCount)
+    : transcriptBlocks;
+  const transcriptRowCount = withContentWidthOverride(
+    termWidth,
+    () => buildTranscriptRows(liveBlocks, mode, toolOutputExpanded, thinkingExpanded).length,
+  );
+
+  const fileRailOpen = !!opts?.fileRailOpen;
+  const fileRailExpanded = !!opts?.fileRailExpanded;
+  const fileRailWidth = fileRailOpen ? fileRailWidthForTerminal(termWidth, fileRailExpanded) : 0;
+  const fileRailRows = fileRailOpen ? fileRailMaxRowsForTerminal(termHeight, terminalMode, fileRailExpanded) : 0;
+
+  return {
+    terminalMode,
+    mode,
+    termWidth,
+    termHeight,
+    visibleBudget,
+    transcriptRowCount,
+    staticBlockCount,
+    liveBlockCount: liveBlocks.length,
+    fileRailWidth,
+    fileRailRows,
+    headerRows: 1,
+    lowerChromeRows: (mode === 'chat' ? 7 : 8) + bottomChromeExtraRows,
+  };
 }
 
 export function parseMarkdownToRows(baseKey: string, text: string, wrapWidth: number, paddingLeft: number, borderColor: string): any[] {

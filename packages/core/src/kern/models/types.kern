@@ -286,6 +286,8 @@ interface name=ForgeManifest
   field name=starter type=string
   field name=enginesDispatched type=number
   field name=dispatchLog type="DispatchMetric[]" optional=true
+  field name=resultBundlePath type=string optional=true
+  field name=cleanupCommand type=string optional=true
   field name=synthesis type="{pass:boolean,score:number,wins:boolean,patchPath:string,originalWinnerScore:number}" optional=true
   field name=gauntlet type=GauntletResult optional=true
 

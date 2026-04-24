@@ -78,15 +78,15 @@ export function getModeConfig(mode: TribunalMode, engineCount: number): Tribunal
 export function buildModePrompt(opts: {mode:TribunalMode,role:string,question:string,round:number,totalRounds:number,previousArguments?:string}): string {
   const { mode, role, question, round, totalRounds, previousArguments } = opts;
   const parts: string[] = [];
-  
+
   parts.push(`## ROLE\nYou are: **${role}**`);
   parts.push(`## QUESTION\n${question}`);
   parts.push(`## ROUND\n${round} of ${totalRounds}`);
-  
+
   if (previousArguments) {
     parts.push(`## PREVIOUS ARGUMENTS\n${previousArguments}`);
   }
-  
+
   switch (mode) {
     case 'adversarial':
       parts.push(`## INSTRUCTIONS\nArgue your assigned position (${role}) with evidence and reasoning. Be specific. Reference code, files, or concrete examples where possible. Counter opposing arguments directly.`);
@@ -133,7 +133,7 @@ export function buildModePrompt(opts: {mode:TribunalMode,role:string,question:st
       }
       break;
   }
-  
+
   return parts.join('\n\n');
 }
 
@@ -145,28 +145,28 @@ export function buildModeSummaryPrompt(opts: {mode:TribunalMode,question:string,
       return `## ${p.engineId} (${p.position})\n${allArgs}`;
     })
     .join('\n\n---\n\n');
-  
+
   const base = `## QUESTION\n${question}\n\n## DEBATE\n${debateText}`;
-  
+
   switch (mode) {
     case 'adversarial':
       return `${base}\n\n## TASK\nSynthesize this debate into a clear verdict.\n\nProvide:\n1. **Verdict**: Which side has the stronger argument and why\n2. **Key insights**: 2-3 non-obvious points that emerged\n3. **Recommendation**: What should the user actually do?\n\nBe decisive. Don't hedge with "it depends" — pick a side and explain why.`;
-  
+
     case 'socratic':
       return `${base}\n\n## TASK\nSynthesize this Socratic inquiry.\n\nProvide:\n1. **Resolved questions**: What was adequately answered\n2. **Unresolved assumptions**: What remains unclear or untested\n3. **Key insight**: The most important thing this inquiry revealed\n4. **Recommended next steps**: What should be investigated further`;
-  
+
     case 'red-team':
       return `${base}\n\n## TASK\nProduce a risk register from this red-team exercise.\n\nFor each vulnerability found:\n| Risk | Severity | Likelihood | Impact | Mitigation |\n\nThen provide:\n1. **Critical risks**: Must address before proceeding\n2. **Accepted risks**: Acknowledged but acceptable\n3. **Overall assessment**: Is the proposal safe to proceed with?`;
-  
+
     case 'steelman':
       return `${base}\n\n## TASK\nJudge this steelman debate.\n\nProvide:\n1. **Verdict**: Which steelmanned case is stronger and why\n2. **The crux**: What is the core disagreement when both sides argue at their best?\n3. **Recommendation**: Given the strongest opposing case, should we proceed?`;
-  
+
     case 'synthesis':
       return `${base}\n\n## TASK\nEvaluate the proposals and hybrids.\n\nPresent a decision matrix:\n| Aspect | Proposal A | Proposal B | Hybrid |\n\nThen provide:\n1. **Best option**: Which proposal or hybrid wins and why\n2. **Key trade-offs**: What each option sacrifices\n3. **Recommendation**: Concrete next steps`;
-  
+
     case 'postmortem':
       return `${base}\n\n## TASK\nWrite the postmortem report.\n\nProvide:\n1. **Timeline**: Reconstructed sequence of events\n2. **Root cause**: The systemic issue (not just the trigger)\n3. **Detection gap**: Why wasn't this caught earlier?\n4. **Prevention plan**: Immediate, medium-term, and long-term measures\n5. **Action items**: Specific, assigned, with deadlines`;
-  
+
     default:
       return `${base}\n\n## TASK\nSynthesize this debate into a clear verdict.`;
   }

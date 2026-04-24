@@ -39,7 +39,7 @@ function buildFileTree(cwd: string, maxDepth?: number): string {
   const IGNORE = new Set(['node_modules', '.git', 'dist', '.next', '.cache', '.turbo', '__pycache__', '.venv', 'coverage', '.kern-gaps', '.kern']);
   const depth = maxDepth ?? 2;
   const lines: string[] = [];
-  
+
   function walk(dir: string, prefix: string, level: number): void {
     if (level > depth) return;
     try {
@@ -63,7 +63,7 @@ function buildFileTree(cwd: string, maxDepth?: number): string {
       console.warn(`[agon] failed to read directory ${dir}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
-  
+
   walk(cwd, '', 0);
   return lines.join('\n');
 }
@@ -90,26 +90,26 @@ function detectProjectType(cwd: string): string {
 export function scanProjectContext(cwd: string, extraContext?: string, format?: ContextFormat): string {
   const MAX_CHARS = 6000;
   const sections: string[] = [];
-  
+
   // Branch + status
   let branch = 'unknown';
   try { branch = currentBranch(cwd); } catch (err) {
     console.warn(`[agon] failed to detect branch: ${err instanceof Error ? err.message : String(err)}`);
   }
-  
+
   const status = gitStatusShort(cwd);
   const changed = gitChangedFiles(cwd);
   const projectType = detectProjectType(cwd);
   const isKern = isKernProject(cwd);
-  
+
   // Header
   sections.push(`Project: ${basename(cwd)} (${projectType}${isKern ? ', KERN' : ''})`);
   sections.push(`Branch: ${branch}`);
-  
+
   if (changed.length > 0) {
     sections.push(`Changed files (${changed.length}): ${changed.slice(0, 10).join(', ')}${changed.length > 10 ? ` (+${changed.length - 10} more)` : ''}`);
   }
-  
+
   // Recent commits (compact)
   let commits = '';
   try { commits = recentCommits(cwd, 5); } catch (err) {
@@ -118,13 +118,13 @@ export function scanProjectContext(cwd: string, extraContext?: string, format?: 
   if (commits) {
     sections.push(`Recent commits:\n${commits}`);
   }
-  
+
   // File tree (compact)
   const tree = buildFileTree(cwd, 1);
   if (tree) {
     sections.push(`File tree:\n${tree}`);
   }
-  
+
   // Diff excerpt (if dirty)
   if (status) {
     const diff = gitTruncatedDiff(cwd, 100);
@@ -132,7 +132,7 @@ export function scanProjectContext(cwd: string, extraContext?: string, format?: 
       sections.push(`Diff excerpt:\n${diff}`);
     }
   }
-  
+
   // Project instructions — cascade: first match wins (AGON.md > AGENT.md > CLAUDE.md > CODEX.md)
   const instructionFiles = ["AGON.md", "AGENT.md", "CLAUDE.md", "CODEX.md"];
   for (const file of instructionFiles) {
@@ -149,16 +149,16 @@ export function scanProjectContext(cwd: string, extraContext?: string, format?: 
       }
     } catch {}
   }
-  
+
   if (extraContext && extraContext.trim()) {
     sections.push(`Extra context:\n${extraContext.trim()}`);
   }
-  
+
   let result = sections.join('\n\n');
   if (result.length > MAX_CHARS) {
     result = result.slice(0, MAX_CHARS) + '\n... (truncated)';
   }
-  
+
   if (format === 'kern') {
     return `context {\n${result}\n}`;
   }

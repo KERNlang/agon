@@ -42,6 +42,8 @@ import { handlePipeline } from '../handlers/pipeline.js';
 
 import { handleProvider } from '../handlers/provider.js';
 
+import { diagnoseEngineDoctorEntry, checkDoctorWorktree } from '../commands/doctor.js';
+
 import { deriveRoutingHints } from '../cesar/routing.js';
 
 import { shouldUseAgentTeam } from '../cesar/routing.js';
@@ -82,7 +84,7 @@ export function withThreadOutcome(cwd: string, jobType: string, label: string, f
       const status = success ? `completed (${durationSec}s)` : `failed after ${durationSec}s: ${errorMsg.slice(0, 100)}`;
       try {
         const thread = loadOrCreateActiveThread(cwd);
-  
+
         // ── Capture engine responses added DURING this job ───────────
         // ID-based filter is robust to concurrent job interleaving. Messages
         // without an id (legacy) fall back to the index-based tail so we
@@ -96,7 +98,7 @@ export function withThreadOutcome(cwd: string, jobType: string, label: string, f
           .filter((m: any) => m.role === 'engine' && m.content)
           .map((m: any) => `[${m.engineId ?? 'engine'}]:\n${m.content as string}`)
           .join('\n\n---\n\n');
-  
+
         // ── Capture return value if handler returned something useful ─
         // handleBrainstorm returns { winner, bids, response } — capture fully
         let returnSummary = '';
@@ -110,11 +112,11 @@ export function withThreadOutcome(cwd: string, jobType: string, label: string, f
             returnSummary = `Winner: ${String((returnValue as any).winner ?? 'none')}\nPatch: ${String((returnValue as any).patchPath ?? 'none')}\nManifest: ${String((returnValue as any).manifestPath ?? 'none')}`;
           }
         }
-  
+
         const parts: string[] = [`[${jobType}] "${label.slice(0, 120)}" — ${status}`];
         if (returnSummary) parts.push(returnSummary);
         if (engineOutputs) parts.push(`\nEngine outputs (full):\n${engineOutputs}`);
-  
+
         thread.append({
           role: 'assistant',
           content: parts.join('\n'),
@@ -209,6 +211,27 @@ export function extractExecutionSpec(input: string): { task:string; fitnessCmd:s
   return { task, fitnessCmd };
 }
 
+/**
+ * Compact user-facing Cesar recovery messages. Keep these short because they render in the live status/transcript path during failure handling.
+ */
+export function formatCesarRecoveryStatus(stage: 'delegation'|'rebuild'|'retry'|'acting'|'failed', subject: string, detail?: string): string {
+  const suffix = detail ? ` - ${detail}` : '';
+  switch (stage) {
+    case 'delegation':
+      return `Cesar recovery: running ${subject}${suffix}`;
+    case 'rebuild':
+      return `Cesar recovery: rebuilding ${subject} session${suffix}`;
+    case 'retry':
+      return `Cesar recovery: retrying ${subject} with fresh dispatch${suffix}`;
+    case 'acting':
+      return `Cesar recovery: ${subject} acting as Cesar${suffix}`;
+    case 'failed':
+      return `Cesar recovery failed: ${subject}${suffix}`;
+    default:
+      return `Cesar recovery: ${subject}${suffix}`;
+  }
+}
+
 export function countTrackedUserTurns(ctx: HandlerContext): number {
   const messages = ctx.chatSession?.messages ?? [];
   return messages.filter((m: any) => m.role === 'user').length;
@@ -276,14 +299,14 @@ export async function runAgentJobWithAutoResume(originalTask: string, cb: Dispat
 export async function absorbIntoCesar(message: string, dispatch: Dispatch, ctx: HandlerContext): Promise<string> {
   const session = ctx.cesarSession;
   if (!session || !session.alive) return '';
-  
+
   const cesarEngineId = (ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude';
   const color = ENGINE_COLORS[cesarEngineId] ?? 124;
-  
+
   let response = '';
   let streaming = false;
   const gen = session.send({ message });
-  
+
   for await (const chunk of gen) {
     if (chunk.type === 'text') {
       if (!streaming) {
@@ -301,20 +324,20 @@ export async function absorbIntoCesar(message: string, dispatch: Dispatch, ctx: 
       break;
     }
   }
-  
+
   if (streaming) {
     dispatch({ type: 'streaming-end', engineId: cesarEngineId });
     await yieldToInk();
   } else {
     dispatch({ type: 'spinner-stop' });
   }
-  
+
   response = response.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
-  
+
   if (response) {
     appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
   }
-  
+
   return response;
 }
 
@@ -367,7 +390,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
           // P2 fix: normalize team prefix — brain may return action='forge' + team=true
           let routeAction = result.action;
           if (result.team && !routeAction.startsWith('team-')) routeAction = `team-${routeAction}`;
-  
+
           // Plan mode: block execution delegations, allow thinking delegations.
           // Codex review P1: 'agent' and 'team-agent' must also be downgraded
           // — without this, an Agent(...) delegation slips past the approval
@@ -381,7 +404,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
               routeAction = 'brainstorm';
             }
           }
-  
+
           const executionSpec = extractExecutionSpec(input);
           const delegatedSpec = extractExecutionSpec((result.task ?? '').trim());
           const userContext = result.reasoning && result.reasoning.includes('User context:')
@@ -400,18 +423,18 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
           const isForgeSlice = routeAction === 'forge' && result.scope === 'slice';
           if (isForgeSlice) {
             taskInput = `Scoped forge only. Solve only the hard subpart below. Do not rewrite the whole task. Cesar will integrate wiring, cleanup, and final verification locally.
-  
+
   ## Hard Slice
   ${taskInput}
-  
+
   ## Full User Task
   ${input}`;
           }
-  
+
           // Cesar now owns live-vs-plan selection. The runtime no longer intercepts
           // forge/build/pipeline with a heuristic "plan first?" prompt. If planning
           // is worth it, Cesar should switch intentionally by proposing a plan.
-  
+
           // Enrich delegation context — Cesar's investigation should flow to brainstorm/tribunal/campfire
           const THINKING_ACTIONS = ['brainstorm', 'tribunal', 'campfire', 'team-brainstorm', 'team-tribunal'];
           if (THINKING_ACTIONS.includes(routeAction) && cb.ctx.chatSession?.messages?.length > 0) {
@@ -424,7 +447,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
               taskInput = `${taskInput}\n\n## Cesar's Investigation Context\nCesar analyzed this before escalating:\n\n${cesarContext}`;
             }
           }
-  
+
           switch (routeAction) {
             case 'build':
               cb.dispatch({ type: 'info', message: `Cesar → build${hardened ? ' (hardened)' : ''}${tMode ? ` [${tMode}]` : ''}` });
@@ -439,20 +462,20 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
                 if (isForgeSlice && forgeResult && cb.ctx.cesarSession?.alive) {
                   cb.dispatch({ type: 'info', message: 'Cesar integrating forge slice…' });
                   await routeWithCesar(`[forge-slice integration]
-  
+
   A scoped forge run completed for one hard slice.
-  
+
   ## Full User Task
   ${input}
-  
+
   ## Scoped Slice That Was Forged
   ${taskInput}
-  
+
   ## Forge Result
   Winner: ${forgeResult.winner ?? 'none'}
   Patch: ${forgeResult.patchPath ?? 'none'}
   Manifest: ${forgeResult.manifestPath}
-  
+
   You still own the overall task. Integrate the forged slice with the rest of the work, keep the scope tight, and use your local tools directly if more edits or verification are needed. Avoid sending the same slice to forge again unless integration reveals a genuinely new hard subproblem.`, [], cb);
                 }
                 return forgeResult;
@@ -608,10 +631,10 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
         }
         if (result.responded) return false;
       } catch (e) { console.warn(`[agon] dispatch: Cesar brain threw: ${e instanceof Error ? e.message : String(e)}`); }
-  
+
       // If brain handler queued the message (responded=true), don't fall back
       // The queue auto-drains when the current turn finishes
-  
+
       // Check if a delegation was pending from the crashed session (with 60s TTL)
       const crashDel = cb.ctx.cesar?.pendingDelegation;
       if (crashDel) {
@@ -632,20 +655,20 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
             : input;
           const recoveredFitness = crashDel.fitnessCmd ?? executionSpec.fitnessCmd;
           switch (action) {
-            case 'forge': cb.dispatch({ type: 'info', message: 'Cesar → forge (recovered)' }); cb.runAsJob('forge', label, async () => { await handleForge(recoveredTask, recoveredFitness, cb.dispatch, cb.ctx, undefined, crashDel.hardened ?? false, true); }); return true;
-            case 'brainstorm': cb.dispatch({ type: 'info', message: 'Cesar → brainstorm (recovered)' }); cb.runAsJob('brainstorm', label, async () => { await handleBrainstorm(recoveredTask, cb.dispatch, cb.ctx); }); return true;
-            case 'tribunal': cb.dispatch({ type: 'info', message: `Cesar → tribunal (recovered)${crashDel.tribunalMode ? ` [${crashDel.tribunalMode}]` : ''}` }); cb.runAsJob('tribunal', label, () => handleTribunal(recoveredTask, cb.dispatch, cb.ctx, crashDel.tribunalMode)); return true;
-            case 'campfire': cb.dispatch({ type: 'info', message: 'Cesar → campfire (recovered)' }); cb.runAsJob('campfire', label, () => handleCampfire(recoveredTask, cb.dispatch, cb.ctx)); return true;
-            case 'pipeline': cb.dispatch({ type: 'info', message: 'Cesar → pipeline (recovered)' }); cb.runAsJob('pipeline', label, () => handlePipeline(recoveredTask, cb.dispatch, cb.ctx, recoveredFitness ?? undefined)); return true;
-            case 'review': cb.dispatch({ type: 'info', message: 'Cesar → review (recovered)' }); cb.runAsJob('review', label, () => handleReview(cb.dispatch, cb.ctx, crashDel.target, crashDel.engineId)); return true;
-            case 'team-forge': { const tf = recoveredFitness ?? await cb.askQuestion('What command tests this?'); if (tf.trim()) { cb.dispatch({ type: 'info', message: 'Cesar → team-forge (recovered)' }); cb.runAsJob('team-forge', label, () => handleTeamForge(recoveredTask, tf.trim(), cb.dispatch, cb.ctx, undefined)); return true; } break; }
-            case 'team-brainstorm': cb.dispatch({ type: 'info', message: 'Cesar → team-brainstorm (recovered)' }); cb.runAsJob('team-brainstorm', label, () => handleTeamBrainstorm(recoveredTask, cb.dispatch, cb.ctx)); return true;
-            case 'team-tribunal': cb.dispatch({ type: 'info', message: `Cesar → team-tribunal (recovered)${crashDel.tribunalMode ? ` [${crashDel.tribunalMode}]` : ''}` }); cb.runAsJob('team-tribunal', label, () => handleTeamTribunal(recoveredTask, cb.dispatch, cb.ctx, crashDel.tribunalMode)); return true;
+            case 'forge': cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'forge', 'recovered delegation') }); cb.runAsJob('forge', label, async () => { await handleForge(recoveredTask, recoveredFitness, cb.dispatch, cb.ctx, undefined, crashDel.hardened ?? false, true); }); return true;
+            case 'brainstorm': cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'brainstorm', 'recovered delegation') }); cb.runAsJob('brainstorm', label, async () => { await handleBrainstorm(recoveredTask, cb.dispatch, cb.ctx); }); return true;
+            case 'tribunal': cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'tribunal', crashDel.tribunalMode ? `recovered delegation [${crashDel.tribunalMode}]` : 'recovered delegation') }); cb.runAsJob('tribunal', label, () => handleTribunal(recoveredTask, cb.dispatch, cb.ctx, crashDel.tribunalMode)); return true;
+            case 'campfire': cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'campfire', 'recovered delegation') }); cb.runAsJob('campfire', label, () => handleCampfire(recoveredTask, cb.dispatch, cb.ctx)); return true;
+            case 'pipeline': cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'pipeline', 'recovered delegation') }); cb.runAsJob('pipeline', label, () => handlePipeline(recoveredTask, cb.dispatch, cb.ctx, recoveredFitness ?? undefined)); return true;
+            case 'review': cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'review', 'recovered delegation') }); cb.runAsJob('review', label, () => handleReview(cb.dispatch, cb.ctx, crashDel.target, crashDel.engineId)); return true;
+            case 'team-forge': { const tf = recoveredFitness ?? await cb.askQuestion('What command tests this?'); if (tf.trim()) { cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'team-forge', 'recovered delegation') }); cb.runAsJob('team-forge', label, () => handleTeamForge(recoveredTask, tf.trim(), cb.dispatch, cb.ctx, undefined)); return true; } break; }
+            case 'team-brainstorm': cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'team-brainstorm', 'recovered delegation') }); cb.runAsJob('team-brainstorm', label, () => handleTeamBrainstorm(recoveredTask, cb.dispatch, cb.ctx)); return true;
+            case 'team-tribunal': cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'team-tribunal', crashDel.tribunalMode ? `recovered delegation [${crashDel.tribunalMode}]` : 'recovered delegation') }); cb.runAsJob('team-tribunal', label, () => handleTeamTribunal(recoveredTask, cb.dispatch, cb.ctx, crashDel.tribunalMode)); return true;
           }
         }
       }
       }
-  
+
       // Cesar truly didn't respond — try fresh CLI dispatch
       const cesarConfig = cb.ctx.config;
       const cesarId = (cesarConfig as any).cesarEngine ?? 'claude';
@@ -663,7 +686,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
             try { cb.ctx.cesarSession.close(); } catch {}
             cb.ctx.setCesarSession(null);
           }
-          cb.dispatch({ type: 'warning', message: `Cesar session unavailable — rebuilding ${cesarId} session…` });
+          cb.dispatch({ type: 'warning', message: formatCesarRecoveryStatus('rebuild', cesarId) });
           const retried = await handleCesarBrain(input, cb.dispatch, cb.ctx, []);
           const retriedPlan: CesarPlan | undefined = cb.ctx.cesar?.proposedPlan;
           if (retriedPlan && retriedPlan.state === 'awaiting_approval') {
@@ -681,7 +704,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
           console.warn(`[agon] dispatch: Cesar session rebuild failed: ${e instanceof Error ? e.message : String(e)}`);
         }
       }
-  
+
       // Cesar truly didn't respond — last fallback is plain one-shot dispatch.
       // Skip this for API backends: brain.kern's fallback path already ran the
       // same history-primed adapter.dispatch against the same engine, and
@@ -694,7 +717,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
         const { resolveWorkingDir, RUNS_DIR, appendMessage } = await import('@agon/core');
         const outDir = join(RUNS_DIR, `cesar-fallback-${Date.now()}`);
         mkdirSync(outDir, { recursive: true });
-        cb.dispatch({ type: 'warning', message: `Cesar session unavailable — retrying ${cesarId} with fresh dispatch…` });
+        cb.dispatch({ type: 'warning', message: formatCesarRecoveryStatus('retry', cesarId, `log: ${outDir}`) });
         const primedPrompt = buildHistoryPrimedPrompt(cb.ctx.chatSession, input);
         const freshResult = await cb.ctx.adapter.dispatch({
           engine: cesarEngine,
@@ -709,7 +732,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
           const freshText = freshResult.stdout.trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
           appendMessage(cb.ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
           appendMessage(cb.ctx.chatSession, { role: 'engine', engineId: cesarId, content: freshText, timestamp: new Date().toISOString() });
-  
+
           // Parse fallback response for delegation — same logic as handleCesarBrain
           const fallbackSuggestion = parseSuggestion(freshText);
           if (fallbackSuggestion.action) {
@@ -739,7 +762,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
             }
             return false;
           }
-  
+
           // No delegation — show as plain response
           cb.dispatch({ type: 'engine-block', engineId: cesarId, color: 81, content: freshText });
           return false;
@@ -758,19 +781,19 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
         // turn persistent and fall through to acting-Cesar.
         appendUserTurnIfAbsent(cb.ctx.chatSession, input);
       } catch (e) { console.warn(`[agon] dispatch: Cesar fallback failed: ${e instanceof Error ? e.message : String(e)}`); }
-  
+
       // Cesar completely unavailable — pick next best engine as acting Cesar with full context
       const available = cb.ctx.registry.availableIds();
       const actingCesar = available.find((id: string) => id !== cesarId) ?? cesarId;
-      cb.dispatch({ type: 'warning', message: `Cesar (${cesarId}) unavailable — ${actingCesar} stepping in as acting Cesar` });
-  
+      cb.dispatch({ type: 'warning', message: formatCesarRecoveryStatus('acting', actingCesar, `${cesarId} unavailable`) });
+
       // Build context so acting Cesar can lead
       const recentMessages = cb.ctx.chatSession?.messages?.slice(-10) ?? [];
       const historyContext = recentMessages
         .map((m: any) => `${m.role === 'user' ? 'User' : (m.engineId ?? 'engine')}: ${m.content}`)
         .join('\n\n');
       const actingPrompt = `You are stepping in as acting Cesar (lead AI) for Agon AI because ${cesarId} is temporarily unavailable. You have full authority to answer, delegate, and lead.\n\n${historyContext ? `## RECENT CONVERSATION\n${historyContext}\n\n` : ''}## USER MESSAGE\n${input}`;
-  
+
       try {
         const { resolveWorkingDir, RUNS_DIR, appendMessage } = await import('@agon/core');
         const { join } = await import('node:path');
@@ -778,6 +801,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
         const actingEngine = cb.ctx.registry.get(actingCesar);
         const outDir = join(RUNS_DIR, `acting-cesar-${Date.now()}`);
         mkdirSync(outDir, { recursive: true });
+        cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('acting', actingCesar, `log: ${outDir}`) });
         const actingResult = await cb.ctx.adapter.dispatch({
           engine: actingEngine,
           prompt: actingPrompt,
@@ -795,8 +819,8 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
           return false;
         }
       } catch (e) { console.warn(`[agon] dispatch: acting Cesar failed: ${e instanceof Error ? e.message : String(e)}`); }
-  
-      cb.dispatch({ type: 'error', message: 'All engines unavailable. Check /engines.' });
+
+      cb.dispatch({ type: 'error', message: formatCesarRecoveryStatus('failed', 'all engines unavailable', 'run agon doctor engines') });
       return false;
 }
 
@@ -809,7 +833,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
     await cb.eventBus.emit('pre:dispatch', { input, intentType: intent.type, cwd: resolveWorkingDir() });
   }
   const _emitPost = () => { if (cb.eventBus) cb.eventBus.emit('post:dispatch', { input, intentType: intent.type, cwd: resolveWorkingDir() }).catch(() => {}); };
-  
+
   // ── Registry-first dispatch — extensions and real handlers get priority ──
   if (cb.commandRegistry) {
     const cmdName = intent.type === 'extension-command' ? intent.commandName : intent.type;
@@ -826,7 +850,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
       if (result.handled) return result;
     }
   }
-  
+
   switch (intent.type) {
     // ── Job-dispatched commands (return immediately, don't hit finally) ──
     case 'forge': {
@@ -1055,7 +1079,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
         if (cb.eventBus) cb.eventBus.emit('post:review', { target: intent.target, cwd: resolveWorkingDir() }).catch(() => {});
       });
       return { handled: true, ranAsJob: true };
-  
+
     // ── Inline commands ──
     case 'run': await handleRun(intent.input, cb.dispatch, cb.ctx); break;
     case 'chat': {
@@ -1071,12 +1095,45 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
       }
       break;
     }
-  
+
     // ── Info commands ──
     case 'leaderboard': handleLeaderboard(cb.dispatch); break;
     case 'cesar-report': handleCesarReport(cb.dispatch); break;
     case 'cesar-hints': handleCesarHints(intent.input, cb.dispatch, cb.ctx); break;
     case 'history': handleHistory(cb.dispatch, intent.id); break;
+    case 'doctor': {
+      const scope = String(intent.scope ?? 'engines').trim() || 'engines';
+      if (scope !== 'engines') {
+        cb.dispatch({ type: 'error', message: `Unknown doctor scope: ${scope}` });
+        break;
+      }
+      const enabledIds = cb.ctx.config.forgeEnabledEngines ?? [];
+      const entries = cb.ctx.registry.list()
+        .map((engine: any) => diagnoseEngineDoctorEntry(engine, cb.ctx.registry, enabledIds))
+        .sort((a: any, b: any) => {
+          if (a.enabled !== b.enabled) return a.enabled ? -1 : 1;
+          return a.id.localeCompare(b.id);
+        });
+      cb.dispatch({ type: 'header', title: 'Engine Doctor' });
+      cb.dispatch({
+        type: 'table',
+        headers: ['Engine', 'Forge', 'Status', 'Backend', 'Modes', 'Detail'],
+        rows: entries.map((entry: any) => [
+          entry.id,
+          entry.enabled ? 'yes' : 'no',
+          entry.status,
+          entry.backend,
+          entry.modes,
+          entry.detail,
+        ]),
+      });
+      const worktree = checkDoctorWorktree(resolveWorkingDir());
+      cb.dispatch({ type: worktree.ok ? 'success' : 'warning', message: worktree.ok ? worktree.message : `worktree check failed: ${worktree.message}` });
+      const failing = entries.filter((entry: any) => entry.status === 'fail').length;
+      const warnings = entries.filter((entry: any) => entry.status === 'warn').length;
+      cb.dispatch({ type: 'info', message: `Summary: ${entries.length - failing - warnings} ok, ${warnings} warn, ${failing} fail` });
+      break;
+    }
     case 'engines': cb.setEnginePickerOpen(true); break;
     case 'discover': await handleDiscover(cb.dispatch, cb.ctx); break;
     case 'provider': await handleProvider(intent.action, intent.args, cb.dispatch, cb.ctx); break;
@@ -1127,7 +1184,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
     case 'flow': await handleFlowReport(cb.dispatch, cb.ctx, cb.mode, cb.sessionStartTime); break;
     case 'flows': handleFlowAnalysis(cb.dispatch); break;
     case 'chats': handleChats(cb.dispatch, intent.sessionId); break;
-  
+
     // ── Plan commands ──
     case 'plan': await handlePlanShow(cb.dispatch, cb.ctx, intent.planId); break;
     case 'plan-task': {
@@ -1147,7 +1204,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
       cb.ctx.cesar.planDispatch = cb.dispatch;
       const cesarInput = `[PLAN MODE] ${intent.task}`;
       const wasJob = await routeWithCesar(cesarInput, [], cb);
-  
+
       // After routeWithCesar, check if Cesar proposed a plan
       const proposed: CesarPlan | undefined = cb.ctx.cesar?.proposedPlan;
       if (proposed && proposed.state === 'awaiting_approval') {
@@ -1165,15 +1222,15 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
       const resumable = plans
         .filter((p: CesarPlan) => p.state === 'paused' || p.state === 'running')
         .sort((a: CesarPlan, b: CesarPlan) => b.createdAt.localeCompare(a.createdAt));
-  
+
       if (resumable.length === 0) {
         cb.dispatch({ type: 'info', message: 'No paused plan found to resume.' });
         break;
       }
-  
+
       const resumePlan = resumable[0];
       cb.dispatch({ type: 'info', message: `Resuming plan: ${resumePlan.intent} (${resumePlan.id})` });
-  
+
       // Reset failed steps to pending so they can re-run.
       // Tribunal fix #4b: do NOT reset failed REVIEW steps once the
       // 2-cycle cap is exhausted — that would loop forever on
@@ -1199,7 +1256,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
     case 'apply': await handleApplyPatch(cb.dispatch, cb.ctx, intent.patchPath, intent.force); break;
     case 'cp': handleCp(intent.index, cb.dispatch); break;
     case 'commit': await handleCommit(intent.input, cb.dispatch, cb.ctx); break;
-  
+
     case 'undo': {
       if (!cb.lastUndoToken) {
         cb.dispatch({ type: 'warning', message: 'Nothing to undo. Apply a forge patch first.' });
@@ -1214,7 +1271,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
       }
       break;
     }
-  
+
     case 'chats-resume': {
       const sid = intent.sessionId;
       if (!sid) { cb.dispatch({ type: 'error', message: 'Usage: /chats resume <session-id>' }); break; }
@@ -1232,7 +1289,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
       }
       break;
     }
-  
+
     // ── Job commands ──
     case 'jobs': {
       const allJobs = (cb as any).jobManager?.list?.() ?? [];
@@ -1254,7 +1311,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
       if (job.error) cb.dispatch({ type: 'error', message: job.error });
       break;
     }
-  
+
     // ── Suggest commands (conversational escalation) ──
     case 'suggest-brainstorm': {
       const si = intent as any;
@@ -1286,7 +1343,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
       await handleChat(si.input, cb.dispatch, cb.ctx, cb.allImages);
       break;
     }
-  
+
     // ── Exploration mode toggle ──
     case 'explore': {
       const newMode = !cb.explorationMode;
@@ -1304,7 +1361,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
       }
       break;
     }
-  
+
     // ── Nero mode toggle ──
     case 'nero': {
       const newNero = !cb.neroMode;
@@ -1323,13 +1380,13 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
       }
       break;
     }
-  
+
     // ── AGON.md init wizard ──
     case 'init': {
       const { homedir } = await import('node:os');
       const home = homedir();
       const scopeArg = (intent as any).scope as string | undefined;
-  
+
       // Determine target path
       let targets: { label: string; path: string }[] = [];
       if (scopeArg === 'global' || scopeArg === 'agon') {
@@ -1346,7 +1403,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
           { label: 'Project (./AGON.md)', path: join(resolveWorkingDir(), 'AGON.md') },
         ];
       }
-  
+
       if (targets.length > 1) {
         cb.dispatch({ type: 'header', title: 'AGON.md Setup' });
         cb.dispatch({ type: 'info', message: 'Choose where to create your AGON.md:' });
@@ -1355,10 +1412,10 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
         cb.dispatch({ type: 'info', message: 'Usage: /init global | /init user | /init project' });
         break;
       }
-  
+
       const target = targets[0];
       const targetPath = target.path;
-  
+
       // Check if file already exists
       const { existsSync, mkdirSync, writeFileSync } = await import('node:fs');
       if (existsSync(targetPath)) {
@@ -1366,11 +1423,11 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
         cb.dispatch({ type: 'info', message: 'Edit it directly or delete it first to regenerate.' });
         break;
       }
-  
+
       // Ensure parent directory exists
       const { dirname } = await import('node:path');
       mkdirSync(dirname(targetPath), { recursive: true });
-  
+
       // Detect context for smart defaults
       const cwd = resolveWorkingDir();
       const shellVar = process.env.SHELL ?? '/bin/zsh';
@@ -1378,12 +1435,12 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
       const gitConfigName = await import('node:child_process').then(cp => {
         try { return cp.execSync('git config user.name', { encoding: 'utf-8' }).trim(); } catch { return 'YourName'; }
       });
-  
+
       // Build AGON.md content based on scope
       let content = '';
       const isGlobal = targetPath.includes('.agon');
       const isUserHome = targetPath === join(home, 'AGON.md');
-  
+
       if (isGlobal) {
         content = [
           '# AGON.md — Personal (global)',
@@ -1443,7 +1500,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
       } else {
         // ── Auto-detect project context ──
         const { readFileSync: readSync, existsSync: existsSync2, readdirSync } = await import('node:fs');
-  
+
         // Detect project name + description from package.json
         let projectName = basename(cwd);
         let projectDesc = '';
@@ -1452,7 +1509,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
           if (pkg.name) projectName = pkg.name;
           if (pkg.description) projectDesc = pkg.description;
         } catch {}
-  
+
         // Detect workspaces / key directories
         const topDirs = readdirSync(cwd, { withFileTypes: true })
           .filter((d: any) => d.isDirectory() && !d.name.startsWith('.') && d.name !== 'node_modules')
@@ -1460,7 +1517,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
         const hasPackages = topDirs.includes('packages');
         const hasEngines = topDirs.includes('engines');
         const testsDir = topDirs.includes('tests') ? 'tests' : topDirs.includes('test') ? 'test' : '';
-  
+
         // Detect language / framework signals. `src/kern` at cwd covers
         // package-level dirs (e.g. /init run from packages/core); the
         // topDirs probe below covers repo roots with workspace layout.
@@ -1472,7 +1529,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
         });
         const hasTs = existsSync2(join(cwd, 'tsconfig.json'));
         const hasVitest = existsSync2(join(cwd, 'vitest.config.ts')) || existsSync2(join(cwd, 'vitest.config.mts'));
-  
+
         // Detect Python signals
         const hasPyproject = existsSync2(join(cwd, 'pyproject.toml'));
         const hasSetupPy = existsSync2(join(cwd, 'setup.py'));
@@ -1489,7 +1546,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
         }
         if (!pythonMgr && hasSetupPy) pythonMgr = 'pip';
         const hasPytest = existsSync2(join(cwd, 'pytest.ini')) || existsSync2(join(cwd, 'conftest.py')) || (hasPyproject && (() => { try { return /pytest/.test(readSync(join(cwd, 'pyproject.toml'), 'utf-8')); } catch { return false; } })());
-  
+
         // Detect Rust signals
         const hasCargo = existsSync2(join(cwd, 'Cargo.toml'));
         let cargoBin = '';
@@ -1500,7 +1557,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
           } catch {}
         }
         const hasRustTests = hasCargo; // cargo test is always available
-  
+
         // Detect Go signals
         const hasGoMod = existsSync2(join(cwd, 'go.mod'));
         let goModule = '';
@@ -1511,7 +1568,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
             if (m) goModule = m[1];
           } catch {}
         }
-  
+
         // Detect test and typecheck scripts independently so we don't
         // emit `npm run test` for packages that only define typecheck —
         // that command would fail and send every future session down a
@@ -1523,7 +1580,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
           if (pkg.scripts?.test) testCmd = pkg.scripts.test;
           if (pkg.scripts?.typecheck) hasTypecheckScript = true;
         } catch {}
-  
+
         // Build architecture section
         const archLines: string[] = [];
         if (hasPackages) {
@@ -1553,7 +1610,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
         if (hasPython && topDirs.some((d: string) => ['src', 'lib', 'app'].includes(d))) {
           archLines.push(`  Python project (${pythonMgr || 'pip'})`);
         }
-  
+
         // Build lines
         const lines: string[] = [
           `# AGON.md -- ${projectName}`,
@@ -1561,7 +1618,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
         ];
         if (projectDesc) lines.push(projectDesc, '');
         lines.push(`Global config: \`~/.agon/AGON.md\``, '');
-  
+
         // KERN section (if detected)
         if (hasKern) {
           lines.push(
@@ -1576,12 +1633,12 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
             '',
           );
         }
-  
+
         // Architecture section
         if (archLines.length > 0) {
           lines.push('## Architecture', '', ...archLines, '');
         }
-  
+
         // Build & Test section — only emit commands that actually exist
         // in the package's scripts. Emitting a non-existent command here
         // sends every future session down a wrong path.
@@ -1618,7 +1675,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
           lines.push('go vet ./...            # Lint');
         }
         lines.push('');
-  
+
         // Conventions
         lines.push('## Conventions', '');
         // Node / TypeScript
@@ -1649,17 +1706,17 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
         // General
         if (testsDir) lines.push(`- Tests: ${testsDir}/`);
         lines.push('');
-  
+
         content = lines.join('\n');
       }
-  
+
       writeFileSync(targetPath, content, 'utf-8');
       cb.dispatch({ type: 'success', message: `Created ${target.label}` });
       cb.dispatch({ type: 'info', message: targetPath });
       cb.dispatch({ type: 'info', message: 'Edit it to customize — Agon reads it on every session start.' });
       break;
     }
-  
+
     // ── Skill scaffolding ──
     case 'create-skill': {
       const csIntent = intent as any;
@@ -1668,13 +1725,13 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
       const trigger = `/${slug}`;
       const skillDir = join(resolveWorkingDir(), '.agon', 'skills');
       const skillPath = join(skillDir, `${slug}.md`);
-  
+
       const { mkdirSync, existsSync, writeFileSync } = await import('node:fs');
       if (existsSync(skillPath)) {
         cb.dispatch({ type: 'warning', message: `Skill already exists: ${skillPath}` });
         break;
       }
-  
+
       mkdirSync(skillDir, { recursive: true });
       const template = [
         '---',
@@ -1693,13 +1750,13 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
         'Use {input} for the user\'s message after the trigger.',
         '',
       ].join('\n');
-  
+
       writeFileSync(skillPath, template);
       cb.dispatch({ type: 'success', message: `Created skill: ${skillPath}` });
       cb.dispatch({ type: 'info', message: `Edit the file, then use ${trigger} <args> to invoke it.` });
       break;
     }
-  
+
     // ── MCP management ──
     case 'mcp': {
       if (!cb.ctx.cesar) {
@@ -1713,7 +1770,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
       }
       const mcpIntent = intent as any;
       const sessionServers: Array<Record<string,unknown>> = cb.ctx.sessionMcpServers ?? [];
-  
+
       if (mcpIntent.action === 'list') {
         if (sessionServers.length === 0) {
           cb.dispatch({ type: 'info', message: 'No MCP servers connected. Use /mcp connect <name|url>' });
@@ -1723,14 +1780,14 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
         }
         break;
       }
-  
+
       if (mcpIntent.action === 'connect') {
         const serverInput = (mcpIntent.server ?? '').trim();
         if (!serverInput) {
           cb.dispatch({ type: 'warning', message: 'Usage: /mcp connect <name|url>' });
           break;
         }
-  
+
         // Resolve: URL or name lookup from .mcp.json
         let serverEntry: {name:string, type?:string, url?:string, command?:string, args?:string[]};
         if (serverInput.startsWith('http://') || serverInput.startsWith('https://')) {
@@ -1755,16 +1812,16 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
           }
           serverEntry = found;
         }
-  
+
         // Check if already connected
         if (sessionServers.some((s: any) => s.name === serverEntry.name)) {
           cb.dispatch({ type: 'info', message: `MCP server "${serverEntry.name}" already connected.` });
           break;
         }
-  
+
         sessionServers.push(serverEntry);
         if (cb.ctx.setSessionMcpServers) cb.ctx.setSessionMcpServers([...sessionServers]);
-  
+
         // Restart Cesar session to pick up new MCP server
         if (cb.ctx.cesarSession) {
           cb.ctx.cesarSession.close();
@@ -1773,7 +1830,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
         cb.dispatch({ type: 'success', message: `MCP connected: ${serverEntry.name}${serverEntry.url ? ` (${serverEntry.url})` : ''}. Cesar session restarting…` });
         break;
       }
-  
+
       if (mcpIntent.action === 'disconnect') {
         const serverName = (mcpIntent.server ?? '').trim();
         if (!serverName) {
@@ -1787,7 +1844,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
         }
         sessionServers.splice(idx, 1);
         if (cb.ctx.setSessionMcpServers) cb.ctx.setSessionMcpServers([...sessionServers]);
-  
+
         if (cb.ctx.cesarSession) {
           cb.ctx.cesarSession.close();
           cb.ctx.setCesarSession(null);
@@ -1797,7 +1854,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
       }
       break;
     }
-  
+
     // ── UI commands ──
     case 'extensions': {
       const exts = cb.loadedExtensions ?? [];
@@ -1823,7 +1880,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
     case 'clear': {
       // Option 3: Save context before clearing, kill brain, reset everything
       const oldChatId = cb.ctx.chatSession?.id ?? null;
-  
+
       // 1. Kill Cesar's brain subprocess
       if (cb.ctx.cesarSession) {
         cb.ctx.cesarSession.close();
@@ -1834,19 +1891,19 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
       try {
         cb.ctx.cesarMemory?.clearSession?.();
       } catch { /* best-effort */ }
-  
+
       // 2. Clear visual output (blocks, streaming, clipboard)
       cb.dispatch({ type: 'clear' });
-  
+
       // 3. Start fresh chat session (old one is already persisted to ~/.agon/chats/)
       const clearCwd = resolveWorkingDir();
       let clearBranch = 'unknown';
       try { clearBranch = currentBranch(clearCwd); } catch { /* git not available */ }
       cb.setChatSession(startChatSession({ cwd: clearCwd, branch: clearBranch }));
-  
+
       // 4. Reset mode back to chat
       cb.setMode('chat');
-  
+
       // 5. Confirm with saved session reference
       const clearMsg = oldChatId
         ? `Session cleared. Previous chat saved as ${oldChatId} — use /chats resume ${oldChatId} to recover.`
@@ -1856,7 +1913,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
     }
     case 'help': cb.dispatch({ type: 'text', content: cb.allSlashCommands.map((c: any) => `${c.cmd.padEnd(16)} ${c.desc}`).join('\n') }); break;
     case 'exit': cb.exit(); return { handled: true, ranAsJob: true };
-  
+
     // ── Cesar-routed intents ──
     case 'auto':
     case 'unknown': {
@@ -1883,11 +1940,11 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
       if (await routeWithCesar(intent.input ?? input, cb.allImages, cb)) return { handled: true, ranAsJob: true };
       break;
     }
-  
+
     default:
       cb.dispatch({ type: 'warning', message: `Unknown command: ${intent.type}` });
   }
-  
+
   _emitPost();
   return { handled: true, ranAsJob: false };
 }
@@ -1897,15 +1954,15 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
  */
 export async function handleProposedCesarPlan(proposed: CesarPlan, cb: DispatchCallbacks): Promise<void> {
   if (cb.ctx.cesar) cb.ctx.cesar.proposedPlan = undefined;
-  
+
   if (proposed.planFilePath) {
     cb.dispatch({ type: 'info', message: `Plan saved: ${proposed.planFilePath}` });
   }
-  
+
   const policy = applyAutoApprovePolicy(proposed, cb.ctx.config as any);
   let currentProposal = proposed;
   let decided = false;
-  
+
   if (policy.approve) {
     cb.dispatch({ type: 'info', message: `Plan auto-approved (${policy.reason})` });
     for (const s of currentProposal.steps) {
@@ -1913,7 +1970,7 @@ export async function handleProposedCesarPlan(proposed: CesarPlan, cb: DispatchC
         cb.dispatch({ type: 'warning', message: `fitnessCmd: ${s.fitnessCmd}` });
       }
     }
-  
+
     const approved = approveCesarPlan(currentProposal);
     cb.setActivePlan(approved);
     cb.dispatch({ type: 'success', message: 'Plan auto-approved — executing...' });
@@ -1923,11 +1980,11 @@ export async function handleProposedCesarPlan(proposed: CesarPlan, cb: DispatchC
   } else if (proposed.autoApprove === true) {
     cb.dispatch({ type: 'info', message: `Plan requested autoApprove but policy rejected: ${policy.reason}` });
   }
-  
+
   while (!decided) {
     const answer = await cb.askQuestion('Approve plan? [Y/n/e(dit)] or give feedback to revise');
     const trimmed = answer.trim().toLowerCase();
-  
+
     if (trimmed === 'y' || trimmed === 'yes' || trimmed === '') {
       const approved = approveCesarPlan(currentProposal);
       cb.setActivePlan(approved);
@@ -1935,14 +1992,14 @@ export async function handleProposedCesarPlan(proposed: CesarPlan, cb: DispatchC
       saveCesarPlan(approved);
       await executeApprovedPlan(approved, cb);
       decided = true;
-  
+
     } else if (trimmed === 'n' || trimmed === 'no') {
       const cancelled = cancelCesarPlan(currentProposal);
       cb.setActivePlan(cancelled);
       cb.dispatch({ type: 'plan-cancelled', plan: cancelled } as any);
       cb.dispatch({ type: 'info', message: 'Plan rejected.' });
       decided = true;
-  
+
     } else if (trimmed === 'edit' || trimmed === 'e') {
       const filePath = currentProposal.planFilePath;
       if (filePath) {
@@ -1974,7 +2031,7 @@ export async function handleProposedCesarPlan(proposed: CesarPlan, cb: DispatchC
       } else {
         cb.dispatch({ type: 'warning', message: 'No plan file path available. Type feedback as text instead.' });
       }
-  
+
     } else {
       cb.dispatch({ type: 'info', message: 'Revising plan with your feedback...' });
       const reviseInput = `[PLAN REVISION] The user wants these changes: ${answer}\n\nRevise the plan and call ProposePlan IMMEDIATELY with the updated steps. Do NOT re-investigate. Do NOT respond with text. Just call ProposePlan with the revised plan.`;
@@ -2003,7 +2060,7 @@ export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks
   let currentPlan = initialPlan;
   let pendingWriteTimer: ReturnType<typeof setTimeout> | null = null;
   const DEBOUNCE_MS = 300;
-  
+
   const flushPersist = () => {
     if (pendingWriteTimer) {
       clearTimeout(pendingWriteTimer);
@@ -2016,7 +2073,7 @@ export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks
       } catch (err) { console.warn('[plan] failed to write plan file:', (err as Error).message ?? err); }
     }
   };
-  
+
   return {
     onStepStart: (stepId: string) => {
       const step = currentPlan.steps.find((s: any) => s.id === stepId);
@@ -2080,7 +2137,7 @@ export async function executeApprovedPlan(approved: CesarPlan, cb: DispatchCallb
   const abortController = new AbortController();
   cb.ctx.setActiveAbort?.(abortController);
   const callbacks = buildPlanCallbacks(approved, cb);
-  
+
   try {
     let finalPlan = await executePlan(approved, executors, callbacks, abortController.signal);
     cb.setActivePlan(finalPlan);
@@ -2114,12 +2171,12 @@ export async function executeApprovedPlan(approved: CesarPlan, cb: DispatchCallb
 export async function finalizePlanWithReviewGate(finalPlan: CesarPlan, executors: Record<string,StepExecutor>, abortSignal: AbortSignal, cb: DispatchCallbacks): Promise<CesarPlan> {
   const MUTATING = new Set(['forge', 'teamforge', 'pipeline', 'agent', 'team-agent', 'delegate', 'self']);
   const planTouchedMutation = finalPlan.steps.some((s: any) => MUTATING.has(s.type) && (s.state === 'done' || s.state === 'failed'));
-  
+
   // Tribunal fix #2 + #8: source of truth is the actual cwd, not step state.
   const cwd = resolveWorkingDir();
   const changedFiles = gitChangedFiles(cwd);
   const hasUncommittedChanges = changedFiles.length > 0;
-  
+
   // Tribunal fix #2: if mutating steps ran but cwd is unchanged, the user
   // likely needs to apply forge winners manually. Force paused with an
   // actionable message instead of marking 'done' silently.
@@ -2130,16 +2187,16 @@ export async function finalizePlanWithReviewGate(finalPlan: CesarPlan, executors
     cb.setActivePlan(paused);
     return paused;
   }
-  
+
   const cyclesUsed = finalPlan.reviewCyclesUsed ?? 0;
   const wantsReview = (finalPlan.selfReview ?? true)
     && planTouchedMutation
     && hasUncommittedChanges
     && cyclesUsed < 2
     && finalPlan.state === 'done';
-  
+
   if (!wantsReview) return finalPlan;
-  
+
   const reviewEst = planCostEstimator.estimate('review', []);
   const reviewStep: CesarPlanStep = {
     id: `review-${Date.now().toString(36)}`,
@@ -2149,7 +2206,7 @@ export async function finalizePlanWithReviewGate(finalPlan: CesarPlan, executors
     estimatedCostUsd: reviewEst.costUsd,
     state: 'pending' as any,
   };
-  
+
   const replanned: CesarPlan = {
     ...finalPlan,
     state: 'running' as any,
@@ -2160,17 +2217,17 @@ export async function finalizePlanWithReviewGate(finalPlan: CesarPlan, executors
     stepContext: { ...finalPlan.stepContext, __plan_intent: finalPlan.intent },
     reviewCyclesUsed: cyclesUsed + 1,
   };
-  
+
   const cycleNum = replanned.reviewCyclesUsed ?? 1;
   cb.dispatch({ type: 'info', message: `Self-review gate: appending review step (cycle ${cycleNum}/2)` });
-  
+
   // Tribunal fix #10: build fresh callbacks against the replanned plan so
   // onStepStart/onStepDone find the new review step.
   const callbacks = buildPlanCallbacks(replanned, cb);
-  
+
   saveCesarPlan(replanned);
   cb.setActivePlan(replanned);
-  
+
   // OpenCode add#1: wrap the gate's own executePlan in try/catch so
   // a thrown error inside the review cycle doesn't escape the gate
   // with corrupted plan state. On throw, mark the plan paused with
@@ -2186,7 +2243,7 @@ export async function finalizePlanWithReviewGate(finalPlan: CesarPlan, executors
     saveCesarPlan(reviewedPlan);
     return reviewedPlan;
   }
-  
+
   cb.setActivePlan(reviewedPlan);
   saveCesarPlan(reviewedPlan);
   if (reviewedPlan.planFilePath) {
@@ -2194,10 +2251,10 @@ export async function finalizePlanWithReviewGate(finalPlan: CesarPlan, executors
       writeFileSync(reviewedPlan.planFilePath, formatCesarPlanMarkdown(reviewedPlan));
     } catch (err) { console.warn('[plan] failed to write plan file:', (err as Error).message ?? err); }
   }
-  
+
   if (reviewedPlan.state === 'paused' && (reviewedPlan.reviewCyclesUsed ?? 0) >= 2) {
     cb.dispatch({ type: 'error', message: 'Self-review cycle 2/2 still found blocking issues. Auto-review exhausted. Inspect the plan and decide manually.' });
   }
-  
+
   return reviewedPlan;
 }

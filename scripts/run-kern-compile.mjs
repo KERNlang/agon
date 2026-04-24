@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { prepareCandidate, printResolution, resolveKernCli, resolvePath, runCommand } from './kern-cli-resolver.mjs';
@@ -31,6 +31,42 @@ const selection = resolveKernCli(repoRoot);
 printResolution('kern:compile', selection, selection.requiredVersion);
 prepareCandidate('kern:compile', selection.candidate);
 
+function stripTrailingWhitespaceTree(rootDir) {
+  const resolvedRoot = resolvePath(rootDir);
+  if (!resolvedRoot || !existsSync(resolvedRoot)) return;
+  const stack = [resolvedRoot];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    let stat;
+    try {
+      stat = statSync(current);
+    } catch {
+      continue;
+    }
+    if (stat.isDirectory()) {
+      let children = [];
+      try {
+        children = readdirSync(current);
+      } catch {
+        continue;
+      }
+      for (const child of children) stack.push(path.join(current, child));
+      continue;
+    }
+    if (!stat.isFile() || !/\.(ts|tsx|js|jsx|mjs|cjs)$/.test(current)) continue;
+    let before;
+    try {
+      before = readFileSync(current, 'utf8');
+    } catch {
+      continue;
+    }
+    const after = before
+      .replace(/[ \t]+$/gm, '')
+      .replace(/\n{2,}$/g, '\n');
+    if (after !== before) writeFileSync(current, after);
+  }
+}
+
 runCommand(
   'kern:compile',
   selection.candidate.command,
@@ -46,3 +82,5 @@ if (postcompile) {
   }
   runCommand('kern:compile', '/bin/bash', [postcompilePath], `postcompile (${postcompilePath})`);
 }
+
+stripTrailingWhitespaceTree(outDir);

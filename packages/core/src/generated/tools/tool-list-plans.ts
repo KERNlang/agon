@@ -21,27 +21,27 @@ export function createListPlansTool(): ToolHandler {
     isReadOnly: true,
     isConcurrencySafe: true,
   };
-  
+
   const validate = (_input: Record<string, unknown>, _ctx: ToolContext): string | null => null;
-  
+
   const checkPermission = (_input: Record<string, unknown>, _ctx: ToolContext): PermissionDecision => {
     return { behavior: 'allow' };
   };
-  
+
   const execute = async (input: Record<string, unknown>, _ctx: ToolContext): Promise<ToolResult> => {
     const limit = typeof input.limit === 'number' ? input.limit : 10;
     const stateFilter = typeof input.state === 'string' ? input.state : undefined;
-  
+
     let plans = listCesarPlans();
     if (stateFilter) {
       plans = plans.filter((p: any) => p.state === stateFilter);
     }
     plans = plans.slice(0, limit);
-  
+
     if (plans.length === 0) {
       return { ok: true, content: 'No plans found.' };
     }
-  
+
     const lines = plans.map((p: any) => {
       const date = p.createdAt ? new Date(p.createdAt).toISOString().slice(0, 10) : '?';
       const stepCount = p.steps?.length ?? 0;
@@ -51,9 +51,9 @@ export function createListPlansTool(): ToolHandler {
       const engines = [...new Set(p.steps?.flatMap((s: any) => s.engines ?? (s.engine ? [s.engine] : [])) ?? [])] as string[];
       return `${p.id} | ${date} | ${p.state} | ${p.intent}\n  ${stepCount} steps (${doneSteps} done, ${failedSteps} failed) | cost: ${cost}${engines.length ? ` | engines: ${engines.join(', ')}` : ''}`;
     });
-  
+
     return { ok: true, content: `${plans.length} plan(s):\n\n${lines.join('\n\n')}` };
   };
-  
+
   return { definition, validate, checkPermission, execute };
 }

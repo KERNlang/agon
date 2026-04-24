@@ -24,16 +24,16 @@ export function getReadySteps(plan: CesarPlan): CesarPlanStep[] {
 
 export async function executePlan(plan: CesarPlan, executors: Record<string,StepExecutor>, callbacks: PlanExecutorCallbacks, signal?: AbortSignal): Promise<CesarPlan> {
   let current = plan;
-  
+
   while (current.state === 'running') {
     if (signal?.aborted) break;
-  
+
     const ready = getReadySteps(current);
     if (ready.length === 0) break;
-  
+
     const parallelSteps = ready.filter((s) => s.parallel);
     const sequentialSteps = ready.filter((s) => !s.parallel);
-  
+
     // Execute parallel steps concurrently
     if (parallelSteps.length > 0) {
       const results = await Promise.all(parallelSteps.map(async (step) => {
@@ -64,7 +64,7 @@ export async function executePlan(plan: CesarPlan, executors: Record<string,Step
           return { stepId: step.id, result: { status: 'failure' as const, actualTokens: 0, actualCostUsd: 0, durationMs: 0, output: '', error: err instanceof Error ? err.message : String(err) } as CesarStepResult };
         }
       }));
-  
+
       for (const { stepId, result } of results) {
         current = advanceCesarStep(current, stepId, result);
         callbacks.onStepDone(stepId, result);
@@ -72,7 +72,7 @@ export async function executePlan(plan: CesarPlan, executors: Record<string,Step
         planCostEstimator.recordStepCompletion(stepType, result.actualTokens, result.actualCostUsd);
       }
     }
-  
+
     // Execute first sequential step
     if (sequentialSteps.length > 0 && current.state === 'running') {
       const step = sequentialSteps[0];
@@ -104,7 +104,7 @@ export async function executePlan(plan: CesarPlan, executors: Record<string,Step
         callbacks.onStepDone(step.id, result);
       }
     }
-  
+
     // Budget check
     if (current.totalActualCostUsd > 0 && current.totalEstimatedCostUsd > 0) {
       const ratio = current.totalActualCostUsd / current.totalEstimatedCostUsd;
@@ -113,9 +113,9 @@ export async function executePlan(plan: CesarPlan, executors: Record<string,Step
         callbacks.onBudgetWarning(current.totalActualCostUsd, current.totalEstimatedCostUsd);
       }
     }
-  
+
     callbacks.onPlanUpdate(current);
   }
-  
+
   return current;
 }

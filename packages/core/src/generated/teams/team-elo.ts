@@ -77,11 +77,11 @@ export function predictTeamRating(members: TeamMember[], format: string): number
     // No history — use average default
     return 1500;
   }
-  
+
   // Blend composition rating (if exists) with weighted role ratings
   const lineupKey = [...members.map((m) => m.engineId)].sort().join('+');
   const compRating = formatData.compositions[lineupKey];
-  
+
   let roleSum = 0;
   let roleCount = 0;
   for (const m of members) {
@@ -95,12 +95,12 @@ export function predictTeamRating(members: TeamMember[], format: string): number
     }
   }
   const weightedRoleMean = roleSum; // weights already sum to ~1.0
-  
+
   if (!compRating || compRating.matches < 3) {
     // Not enough composition data — rely on role ratings
     return Math.round(weightedRoleMean);
   }
-  
+
   // Blend: more composition matches → more weight on composition rating
   const compWeight = Math.min(compRating.matches / 10, 0.6);
   const blended = compRating.rating * compWeight + weightedRoleMean * (1 - compWeight);
@@ -109,46 +109,46 @@ export function predictTeamRating(members: TeamMember[], format: string): number
 
 export function updateTeamElo(match: TeamMatchResult, kFactor?: number): void {
   if (!match.winnerTeamId) return; // draw — skip for now
-  
+
   const k = kFactor ?? 32;
   const record = loadTeamElo();
   const formatKey = match.format.label;
   record.byFormat[formatKey] ??= { compositions: {}, roles: {} };
   const fmt = record.byFormat[formatKey];
-  
+
   const [teamA, teamB] = match.teams;
   const winner = match.winnerTeamId === teamA.teamId ? teamA : teamB;
   const loser = match.winnerTeamId === teamA.teamId ? teamB : teamA;
-  
+
   // --- Composition ELO ---
   fmt.compositions[winner.lineupKey] ??= defaultCompositionRating(winner.lineupKey);
   fmt.compositions[loser.lineupKey] ??= defaultCompositionRating(loser.lineupKey);
-  
+
   const wComp = fmt.compositions[winner.lineupKey];
   const lComp = fmt.compositions[loser.lineupKey];
-  
+
   const expW = expectedScore(wComp.rating, lComp.rating);
   const expL = expectedScore(lComp.rating, wComp.rating);
-  
+
   wComp.rating = Math.round(wComp.rating + k * (1 - expW));
   lComp.rating = Math.round(lComp.rating + k * (0 - expL));
   wComp.wins++;
   wComp.matches++;
   lComp.losses++;
   lComp.matches++;
-  
+
   // --- Role ELO with contribution weights ---
   const winnerSubmission = match.submissions[winner.teamId];
   const loserSubmission = match.submissions[loser.teamId];
-  
+
   const winnerWeights = winnerSubmission
     ? computeContributionWeights(winner, winnerSubmission.trace)
     : Object.fromEntries(winner.members.map((m) => [m.engineId, m.weight]));
-  
+
   const loserWeights = loserSubmission
     ? computeContributionWeights(loser, loserSubmission.trace)
     : Object.fromEntries(loser.members.map((m) => [m.engineId, m.weight]));
-  
+
   for (const m of winner.members) {
     const roleKey = `${m.engineId}:${m.role}`;
     fmt.roles[roleKey] ??= defaultRoleRating(m.engineId, m.role);
@@ -159,7 +159,7 @@ export function updateTeamElo(match: TeamMatchResult, kFactor?: number): void {
     r.wins++;
     r.matches++;
   }
-  
+
   for (const m of loser.members) {
     const roleKey = `${m.engineId}:${m.role}`;
     fmt.roles[roleKey] ??= defaultRoleRating(m.engineId, m.role);
@@ -169,6 +169,6 @@ export function updateTeamElo(match: TeamMatchResult, kFactor?: number): void {
     r.losses++;
     r.matches++;
   }
-  
+
   saveTeamElo(record);
 }

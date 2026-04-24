@@ -13,10 +13,25 @@ import from="../signals/ansi-parse.js" names="AnsiSegment" types=true
 
 // ── Layout Constants ────────────────────────────────────────────────
 
+const name=CONTENT_WIDTH_OVERRIDE type="{value:number|null}"
+  handler <<< ({ value: null }) >>>
+
 fn name=contentWidth params="padding:number" returns=number
   handler <<<
-    const termWidth = process.stdout.columns || 100;
+    const termWidth = CONTENT_WIDTH_OVERRIDE.value ?? (process.stdout.columns || 100);
     return Math.max(termWidth - padding, 40);
+  >>>
+
+fn name=withContentWidthOverride params="termWidth:number, fn:()=>any" returns=any export=true
+  doc "Run pure render helpers against an explicit terminal width. Used by replay tests so wrapping is not tied to the current test runner TTY."
+  handler <<<
+    const previous = CONTENT_WIDTH_OVERRIDE.value;
+    CONTENT_WIDTH_OVERRIDE.value = Math.max(40, Math.floor(Number(termWidth) || 100));
+    try {
+      return fn();
+    } finally {
+      CONTENT_WIDTH_OVERRIDE.value = previous;
+    }
   >>>
 
 // ── Color Helpers ───────────────────────────────────────────────────

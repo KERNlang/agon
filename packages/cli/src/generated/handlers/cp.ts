@@ -12,7 +12,7 @@ export function handleCp(index: number|undefined, dispatch: Dispatch): void {
     dispatch({ type: 'warning', message: 'No code blocks to copy.' });
     return;
   }
-  
+
   if (index === undefined) {
     // Show available blocks AND copy the last one
     if (blocks.length > 1) {
@@ -31,14 +31,14 @@ export function handleCp(index: number|undefined, dispatch: Dispatch): void {
     }
     return;
   }
-  
+
   const block = codeBlockBuffer.get(index);
   if (!block) {
     const listing = blocks.map(b => `  [${b.index}] ${b.language || 'code'}  ${b.code.split('\n')[0]?.slice(0, 40) ?? ''}`).join('\n');
     dispatch({ type: 'warning', message: `No block [${index}]. Available:\n${listing}` });
     return;
   }
-  
+
   try {
     copyToClipboard(block.code);
     dispatch({ type: 'success', message: `Copied [${block.index}] (${block.language || 'code'}, ${block.code.split('\n').length} lines)` });

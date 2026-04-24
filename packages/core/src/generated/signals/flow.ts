@@ -81,9 +81,9 @@ export function readFlows(limit?: number): FlowRecord[] {
     console.warn(`[agon] failed to read flows directory: ${err instanceof Error ? err.message : String(err)}`);
     return [];
   }
-  
+
   if (limit) files = files.slice(0, limit);
-  
+
   const records: FlowRecord[] = [];
   for (const file of files) {
     try {
@@ -118,14 +118,14 @@ export function analyzeFlows(days?: number): FlowAnalysis {
   const cutoff = new Date(Date.now() - periodDays * 86400_000).toISOString();
   const all = readFlows();
   const recent = all.filter((r) => r.startedAt >= cutoff);
-  
+
   const modeMap = new Map<string, FlowRecord[]>();
   for (const r of recent) {
     const list = modeMap.get(r.mode) ?? [];
     list.push(r);
     modeMap.set(r.mode, list);
   }
-  
+
   const byMode: ModeStats[] = [];
   for (const [mode, records] of modeMap) {
     const withFeedback = records.filter((r) => r.feedback);
@@ -137,7 +137,7 @@ export function analyzeFlows(days?: number): FlowAnalysis {
       return sum + Object.values(r.telemetry.tokensByEngine).reduce((s, e) => s + e.prompt + e.response, 0);
     }, 0);
     const followups = withFeedback.filter((r) => r.feedback!.needsFollowup).length;
-  
+
     byMode.push({
       mode,
       count: records.length,
@@ -149,7 +149,7 @@ export function analyzeFlows(days?: number): FlowAnalysis {
     });
   }
   byMode.sort((a, b) => b.count - a.count);
-  
+
   const frictionCounts = new Map<string, number>();
   for (const r of recent) {
     if (r.feedback?.frictionTags) {
@@ -162,6 +162,6 @@ export function analyzeFlows(days?: number): FlowAnalysis {
     .map(([tag, count]) => ({ tag, count }))
     .sort((a, b) => b.count - a.count)
     .slice(0, 5);
-  
+
   return { totalFlows: recent.length, byMode, topFriction, periodDays };
 }

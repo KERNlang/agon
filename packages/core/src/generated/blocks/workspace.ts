@@ -57,7 +57,7 @@ export function addWorkspace(rawPath: string): Workspace {
   const state = loadState();
   const existing = state.workspaces.find((w) => w.path === path);
   if (existing) return existing;
-  
+
   const id = basename(path).toLowerCase().replace(/[^a-z0-9-]/g, '-');
   const name = basename(path);
   const ws: Workspace = { id, path, name, isKern: isKernProject(path), addedAt: Date.now() };

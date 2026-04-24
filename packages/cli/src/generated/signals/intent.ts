@@ -137,11 +137,11 @@ function parseForgeInput(input: string): Intent {
 function parseSlashCommand(input: string, commandRegistry?: any): Intent {
   const stripped = input.slice(1).trim();
   if (!stripped) return { type: 'slash-list' } as Intent;
-  
+
   const parts = stripped.split(/\s+/);
   const cmd = parts[0].toLowerCase();
   const rest = parts.slice(1).join(' ');
-  
+
   switch (cmd) {
     case 'forge':
       return parseForgeInput(rest || '');
@@ -256,6 +256,8 @@ function parseSlashCommand(input: string, commandRegistry?: any): Intent {
     case 'usage':
     case 'cost':
       return { type: 'tokens' } as Intent;
+    case 'doctor':
+      return { type: 'doctor', scope: rest || 'engines' } as unknown as Intent;
     case 'cesar': {
       const cesarIds = rest
         .split(/[,\s]+/)
@@ -417,14 +419,14 @@ function parseSlashCommand(input: string, commandRegistry?: any): Intent {
 export function detectIntent(raw: string, commandRegistry?: any): Intent {
   const input = raw.trim();
   if (!input) return { type: 'unknown', input: '' } as Intent;
-  
+
   if (input.startsWith('/')) {
     return parseSlashCommand(input, commandRegistry);
   }
-  
+
   if (EXIT_KEYWORDS.test(input)) return { type: 'exit' } as Intent;
   if (HELP_KEYWORDS.test(input)) return { type: 'help' } as Intent;
-  
+
   // Only match keyword shortcuts for short, command-like inputs.
   // Skip if input looks like a natural language sentence (question words, pronouns, >4 words).
   const isCommandLike = input.split(/\s+/).length <= 4 && !SENTENCE_PREFIX.test(input);
@@ -434,6 +436,6 @@ export function detectIntent(raw: string, commandRegistry?: any): Intent {
     if (ENGINES_KEYWORDS.test(input)) return { type: 'engines' } as Intent;
     if (CONFIG_KEYWORDS.test(input)) return { type: 'config' } as Intent;
   }
-  
+
   return { type: 'auto', input, taskClass: classifyTask(input) } as Intent;
 }

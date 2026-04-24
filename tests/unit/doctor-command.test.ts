@@ -1,0 +1,60 @@
+import { describe, expect, it } from 'vitest';
+
+import {
+  buildDoctorCleanupCommand,
+  diagnoseEngineDoctorEntry,
+  shellQuoteForDoctor,
+} from '../../packages/cli/src/generated/commands/doctor.js';
+
+describe('doctor command helpers', () => {
+  it('quotes cleanup paths safely', () => {
+    expect(shellQuoteForDoctor('/tmp/agon run')).toBe("'/tmp/agon run'");
+    expect(buildDoctorCleanupCommand('/repo/root', '/tmp/agon run')).toBe("git -C /repo/root worktree prune && rm -rf '/tmp/agon run'");
+  });
+
+  it('flags missing API-only engines as failed', () => {
+    delete process.env.AGON_DOCTOR_TEST_KEY_MISSING;
+    const entry = diagnoseEngineDoctorEntry({
+      id: 'api-only-test',
+      displayName: 'API Test',
+      schemaVersion: 3,
+      isLocal: false,
+      tier: 'user',
+      timeout: 30,
+      api: {
+        baseUrl: 'https://example.invalid/v1',
+        apiKeyEnv: 'AGON_DOCTOR_TEST_KEY_MISSING',
+        model: 'test-model',
+        format: 'openai',
+      },
+    } as any, { findBinary: () => null } as any, ['api-only-test']);
+
+    expect(entry.status).toBe('fail');
+    expect(entry.detail).toContain('AGON_DOCTOR_TEST_KEY_MISSING');
+    expect(entry.enabled).toBe(true);
+  });
+
+  it('warns when CLI fallback works but API auth is missing', () => {
+    delete process.env.AGON_DOCTOR_TEST_KEY_MISSING;
+    const entry = diagnoseEngineDoctorEntry({
+      id: 'hybrid-test',
+      displayName: 'Hybrid Test',
+      schemaVersion: 3,
+      binary: 'hybrid',
+      isLocal: false,
+      tier: 'user',
+      timeout: 30,
+      exec: { args: [], stdin: true },
+      api: {
+        baseUrl: 'https://example.invalid/v1',
+        apiKeyEnv: 'AGON_DOCTOR_TEST_KEY_MISSING',
+        model: 'test-model',
+        format: 'openai',
+      },
+    } as any, { findBinary: () => '/usr/local/bin/hybrid' } as any, []);
+
+    expect(entry.status).toBe('warn');
+    expect(entry.backend).toContain('cli:/usr/local/bin/hybrid');
+    expect(entry.detail).toContain('API key AGON_DOCTOR_TEST_KEY_MISSING not set');
+  });
+});

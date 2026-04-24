@@ -68,28 +68,28 @@ export interface ApiAgentResult {
  */
 export function repairToolArgs(raw: string): Record<string,unknown>|null {
   let cleaned = raw.trim();
-  
+
   // Strip markdown code fences: ```json ... ``` or ``` ... ```
   cleaned = cleaned.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/, '');
-  
+
   // Fix single quotes → double quotes (but not inside strings)
   // Only do this if there are no double quotes at all (simple case)
   if (!cleaned.includes('"') && cleaned.includes("'")) {
     cleaned = cleaned.replace(/'/g, '"');
   }
-  
+
   // Remove trailing commas before } or ]
   cleaned = cleaned.replace(/,\s*([}\]])/g, '$1');
-  
+
   // Try parsing the cleaned version
   try { return JSON.parse(cleaned); } catch { /* continue */ }
-  
+
   // Last resort: try to extract a JSON object from the string
   const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
   if (jsonMatch) {
     try { return JSON.parse(jsonMatch[0]); } catch { /* give up */ }
   }
-  
+
   return null;
 }
 
@@ -99,16 +99,16 @@ export function repairToolArgs(raw: string): Record<string,unknown>|null {
 export function repairToolName(name: string, registry: any): string {
   // Check if exact match exists
   if (registry.has?.(name) || registry.get?.(name)) return name;
-  
+
   // Try common case variants
   const lower = name.toLowerCase();
   const capitalized = lower.charAt(0).toUpperCase() + lower.slice(1);
-  
+
   // Known tool names in Agon
   const knownTools = ['Read', 'Edit', 'Write', 'Bash', 'Grep', 'Glob', 'Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Review', 'Delegate', 'Pipeline', 'ReportConfidence', 'ProposePlan'];
   const match = knownTools.find((t: string) => t.toLowerCase() === lower);
   if (match) return match;
-  
+
   // Fallback to capitalized
   return capitalized;
 }
@@ -119,7 +119,7 @@ export function repairToolName(name: string, registry: any): string {
 export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentResult> {
   // Run-scoped cache ID: prevents concurrent forge runs from colliding
   const runCacheId = `${opts.api.model || 'api-agent'}-${randomUUID().slice(0, 8)}`;
-  
+
   // Build tool registry with workspace tools — read-only permission for safety
   const registry = new ToolRegistry();
   registry.register(createReadTool());
@@ -129,9 +129,9 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
   registry.register(createGrepTool());
   registry.register(createGlobTool());
   registry.register(createRetrieveResultTool(runCacheId));
-  
+
   const nativeTools = toolsToOpenAIFormat(registry);
-  
+
   // Build tool context — auto-allow read-only tools, ask for writes.
   // Phase E v2: when virtualFs is provided (Speculator mode), inject it so
   // Read/Edit/Write tool calls route through the in-memory VirtualFS overlay
@@ -149,7 +149,7 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
     sessionAllowList: opts.sessionAllowList ?? [],
     source: 'orchestrator' as const,
   };
-  
+
   // Build system prompt with tool definitions
   const toolPrompt = buildToolSystemPrompt(registry);
   const systemParts: string[] = [];
@@ -157,7 +157,7 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
   systemParts.push('TOOLS: XML format below. Call tools to investigate the codebase. Use Read for files, Grep for search, Glob to find files.');
   systemParts.push(toolPrompt);
   const fullSystemPrompt = systemParts.join('\n\n');
-  
+
   // Build message history. When historyMessages is provided (ContextThread
   // integration), we seed from it rather than starting blank. The first
   // entry must always be role:'system' with the current fullSystemPrompt
@@ -166,7 +166,7 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
   // the prior conversation AND the new instruction.
   const messageHistory: Array<Record<string,unknown>> = [];
   messageHistory.push({ role: 'system', content: fullSystemPrompt });
-  
+
   // Splice in prior history (skipping any persisted role:'system' entries —
   // they were already filtered by ContextThread but we enforce again here).
   if (opts.historyMessages && opts.historyMessages.length > 0) {
@@ -174,33 +174,33 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
       if (m && m.role !== 'system') messageHistory.push(m);
     }
   }
-  
+
   // Current user turn.
   messageHistory.push({ role: 'user', content: opts.prompt });
-  
+
   // Helper: push to history and notify ContextThread listener.
   const pushHistory = (entry: Record<string,unknown>) => {
     messageHistory.push(entry);
     if (opts.onHistoryEntry) opts.onHistoryEntry(entry);
   };
-  
+
   const MAX_STEPS = opts.maxSteps ?? 10;
   const totalDeadline = Date.now() + opts.timeout * 1000; // Total timeout for entire loop
   let step = 0;
   let totalToolCalls = 0;
   let finalResponse = '';
-  
+
   while (step < MAX_STEPS) {
     step++;
     let fullResponse = '';
-  
+
     // Per-step timeout: remaining time, not the full configured timeout
     const remaining = Math.max(30, Math.floor((totalDeadline - Date.now()) / 1000));
     if (remaining <= 30) {
       // Less than 30s left — bail out with what we have
       return { response: finalResponse || '[Timeout — ran out of time]', toolCalls: totalToolCalls, steps: step };
     }
-  
+
     const gen = apiStreamDispatchWithHistory(opts.api, messageHistory as any, remaining, opts.signal, nativeTools);
     try {
       while (true) {
@@ -218,9 +218,9 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
     } catch (err: any) {
       return { response: fullResponse || `Error: ${err.message ?? String(err)}`, toolCalls: totalToolCalls, steps: step };
     }
-  
+
     if (!fullResponse) break;
-  
+
     // Extract tool calls
     const toolMarkerRe = /<tool\s+name="([^"]+)">([\s\S]*?)<\/tool>/g;
     const extractedCalls: Array<{id: string, name: string, arguments: string}> = [];
@@ -228,14 +228,14 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
     while ((tmMatch = toolMarkerRe.exec(fullResponse)) !== null) {
       extractedCalls.push({ id: `call_${Date.now()}_${extractedCalls.length}`, name: tmMatch[1], arguments: tmMatch[2] });
     }
-  
+
     if (extractedCalls.length > 0) {
       const cleanText = fullResponse.replace(/<tool\s+name="[^"]+">[\s\S]*?<\/tool>/g, '').trim();
       pushHistory({
         role: 'assistant', content: cleanText || null,
         tool_calls: extractedCalls.map(tc => ({ id: tc.id, type: 'function', function: { name: tc.name, arguments: tc.arguments } })),
       });
-  
+
       // Execute tools with repair for malformed args
       for (const tc of extractedCalls) {
         let args: Record<string, unknown> = {};
@@ -253,15 +253,15 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
             continue;
           }
         }
-  
+
         // Tool name repair — auto-correct case mismatches
         const canonicalName = repairToolName(tc.name, registry);
         if (canonicalName !== tc.name) {
           tc.name = canonicalName;
         }
-  
+
         if (opts.onToolCall) opts.onToolCall(tc.name, args);
-  
+
         // RT-26 fix (Gemini code review): heavy-tool semaphore. When N
         // parallel agent sessions are running in N worktrees, we serialize
         // disk-/CPU-heavy commands (npm test, tsc, cargo build) across the
@@ -274,7 +274,7 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
           && tc.name === 'Bash'
           && typeof args.command === 'string'
           && isHeavyTool(args.command);
-  
+
         let result: string;
         const permissionAsk = opts.onPermissionAsk
           ? (tool: string, message: string) => opts.onPermissionAsk!(
@@ -300,7 +300,7 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
             return `Error: ${err.message ?? String(err)}`;
           }
         };
-  
+
         if (isHeavyBash && opts.heavyToolSemaphore) {
           // OpenCode review fix: pass opts.signal so a cancelled session
           // wakes up its waiter from the semaphore queue and rejects it
@@ -317,7 +317,7 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
         } else {
           result = await runToolCall();
         }
-  
+
         let histContent = result;
         if (histContent.length > 8192) {
           // Disk-backed cache: save full result, keep preview + ref
@@ -335,7 +335,7 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
       }
       continue;
     }
-  
+
     // No tool calls — check for stall intent
     const tail = fullResponse.slice(-300);
     const fakeGate = /\b(?:need (?:user )?(?:permission|approval)|await(?:ing)? approval|tool (?:keeps )?blocking me|(?:edit|write|bash|command) tool (?:keeps )?blocking me|blocked by (?:the )?(?:edit|write|bash) tool|let me try writing|try writing the full file)\b/i;
@@ -374,12 +374,12 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
       totalToolCalls++;
       continue;
     }
-  
+
     // Final response
     finalResponse = fullResponse;
     pushHistory({ role: 'assistant', content: fullResponse });
     break;
   }
-  
+
   return { response: finalResponse, toolCalls: totalToolCalls, steps: step };
 }

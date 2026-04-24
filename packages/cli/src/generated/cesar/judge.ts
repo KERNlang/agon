@@ -28,37 +28,37 @@ function parseForgeJudgment(response: string, manifest: ForgeManifest): ForgeJud
   const convergencePlan: ConvergenceEntry[] = [];
   let summary = '';
   let shouldConverge = false;
-  
+
   for (const line of lines) {
     const trimmed = line.trim();
-  
+
     // WINNER: engineId
     const winnerMatch = trimmed.match(/^WINNER:\s*(.+)/i);
     if (winnerMatch) winner = winnerMatch[1].trim();
-  
+
     // CONVERGE: yes|no
     const convergeMatch = trimmed.match(/^CONVERGE:\s*(yes|no)/i);
     if (convergeMatch) shouldConverge = convergeMatch[1].toLowerCase() === 'yes';
-  
+
     // SUMMARY: text
     const summaryMatch = trimmed.match(/^SUMMARY:\s*(.+)/i);
     if (summaryMatch) summary = summaryMatch[1].trim();
-  
+
     // Strength: - engineId: category — reason
     const strengthMatch = trimmed.match(/^-\s+(\w+):\s+(.+?)\s+[—–-]\s+(.+)/);
     if (strengthMatch && !trimmed.startsWith('- file:')) {
       strengths.push({ engineId: strengthMatch[1], category: strengthMatch[2], reason: strengthMatch[3] });
     }
-  
+
     // Convergence: - file:path fn:name from:engineId reason:why
     const convMatch = trimmed.match(/^-\s+file:(\S+)\s+fn:(\S+)\s+from:(\S+)\s+reason:(.+)/);
     if (convMatch) {
       convergencePlan.push({ file: convMatch[1], fn: convMatch[2], from: convMatch[3], reason: convMatch[4].trim() });
     }
   }
-  
+
   if (!winner) return null;
-  
+
   return { winner, strengths, convergencePlan, summary, shouldConverge };
 }
 
@@ -74,10 +74,10 @@ export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatc
         return null; // No Cesar available — skip judgment
       }
       if (!session.alive) return null;
-  
+
       const cesarEngineId = ((ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude');
       const color = ENGINE_COLORS[cesarEngineId] ?? 124;
-  
+
       // Build structured judgment prompt with patch summaries
       const engineSummaries: string[] = [];
       for (const [id, result] of Object.entries(manifest.results) as [string, any][]) {
@@ -98,26 +98,26 @@ export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatc
           `\`\`\`diff\n${patchSummary}\n\`\`\``
         );
       }
-  
+
       const judgePrompt = `You are judging forge results. Multiple engines competed on this task.
-  
+
   TASK: ${manifest.task}
   FITNESS COMMAND: ${manifest.fitnessCmd}
   AUTOMATIC WINNER: ${manifest.winner ?? 'none'}
-  
+
   ## ENGINE RESULTS
-  
+
   ${engineSummaries.join('\n\n')}
-  
+
   ## YOUR JOB
-  
+
   Evaluate each engine's code. Identify:
   1. **Overall winner** — who produced the best result and why
   2. **Per-engine strengths** — where each engine did something BETTER than others (architecture, error handling, tests, edge cases, code style, performance)
   3. **Convergence plan** — if multiple engines have complementary strengths, list which parts from which engine should be merged. Only suggest convergence if it would genuinely improve the result.
-  
+
   Respond in this EXACT format:
-  
+
   WINNER: {engineId}
   STRENGTHS:
   - {engineId}: {category} — {reason}
@@ -126,9 +126,9 @@ export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatc
   CONVERGENCE:
   - file:{path} fn:{name} from:{engineId} reason:{why}
   SUMMARY: {your read — as long or as short as it actually deserves}`;
-  
+
       dispatch({ type: 'spinner-start', message: 'Cesar judging forge results…', color });
-  
+
       let judgeResponse = '';
       try {
         const gen = session.send({ message: judgePrompt, signal: undefined });
@@ -141,21 +141,21 @@ export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatc
         return null;
       }
       dispatch({ type: 'spinner-stop' });
-  
+
       // Parse structured judgment
       const judgment = parseForgeJudgment(judgeResponse, manifest);
-  
+
       // Show confidence badge if present
       const conf = parseConfidence(judgeResponse);
       if (conf.value !== null) {
         dispatch({ type: 'info', message: confidenceBadge(conf.value) + ' Cesar (judge)' });
       }
-  
+
       // Display judgment
       if (judgment) {
         dispatch({ type: 'header', title: 'Cesar\'s Judgment' });
         dispatch({ type: 'success', message: `Winner: ${judgment.winner}` });
-  
+
         if (judgment.strengths.length > 0) {
           dispatch({ type: 'info', message: 'Per-engine strengths:' });
           for (const s of judgment.strengths) {
@@ -163,9 +163,9 @@ export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatc
             dispatch({ type: 'engine-block', engineId: s.engineId, color: sColor, content: `${s.category} — ${s.reason}` });
           }
         }
-  
+
         dispatch({ type: 'info', message: judgment.summary });
-  
+
         if (judgment.shouldConverge && judgment.convergencePlan.length > 0) {
           dispatch({ type: 'header', title: 'Convergence Plan' });
           for (const entry of judgment.convergencePlan) {
@@ -174,7 +174,7 @@ export async function cesarJudgeForge(manifest: ForgeManifest, dispatch: Dispatc
           }
         }
       }
-  
+
       return judgment;
 }
 
@@ -187,10 +187,10 @@ export async function cesarConvergeForge(manifest: ForgeManifest, judgment: Forg
         session = await ensureCesarSession(ctx);
       } catch { return null; }
       if (!session.alive) return null;
-  
+
       const cesarEngineId = ((ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude');
       const color = ENGINE_COLORS[cesarEngineId] ?? 124;
-  
+
       // Collect relevant patches — always include the winner's patch as the base
       const patchContents: Record<string, string> = {};
       if (judgment.winner && manifest.patches[judgment.winner]) {
@@ -205,38 +205,38 @@ export async function cesarConvergeForge(manifest: ForgeManifest, judgment: Forg
           } catch { /* skip unreadable */ }
         }
       }
-  
+
       // Build the convergence synthesis prompt
       const patchSections = Object.entries(patchContents).map(([id, content]) => {
         const lines = content.split('\n');
         const summary = lines.slice(0, 200).join('\n');
         return `### ${id}'s patch\n\`\`\`diff\n${summary}\n\`\`\``;
       }).join('\n\n');
-  
+
       const planLines = judgment.convergencePlan.map(e =>
         `- Take ${e.fn} from ${e.from} (${e.file}) — ${e.reason}`
       ).join('\n');
-  
+
       const convergePrompt = `You are synthesizing a converged patch from multiple forge competitors.
-  
+
   TASK: ${manifest.task}
   WINNER: ${judgment.winner}
-  
+
   ## CONVERGENCE PLAN
   ${planLines}
-  
+
   ## PATCHES TO MERGE
   ${patchSections}
-  
+
   ## INSTRUCTIONS
   Create a single unified diff that takes the best parts from each engine according to the convergence plan above.
   - Start from the winner's patch as the base
   - Replace specific functions/sections with the better versions from other engines
   - Ensure the merged result is coherent — no duplicate functions, no conflicts
   - Output ONLY the unified diff, nothing else. Start with --- and +++ lines.`;
-  
+
       dispatch({ type: 'spinner-start', message: 'Cesar synthesizing converged patch…', color });
-  
+
       let convergedPatch = '';
       try {
         const gen = session.send({ message: convergePrompt, signal: undefined });
@@ -249,20 +249,20 @@ export async function cesarConvergeForge(manifest: ForgeManifest, judgment: Forg
         return null;
       }
       dispatch({ type: 'spinner-stop' });
-  
+
       // Extract diff from response (strip markdown fences if present)
       let patch = convergedPatch.trim();
       const fenceMatch = patch.match(/```(?:diff)?\n([\s\S]*?)```/);
       if (fenceMatch) patch = fenceMatch[1].trim();
-  
+
       if (!patch || !patch.includes('---')) {
         dispatch({ type: 'warning', message: 'Cesar could not produce a valid converged patch' });
         return null;
       }
-  
+
       // Write converged patch to forge directory
       const convergePath = join(manifest.forgeDir, 'convergence-patch.diff');
       writeFileSync(convergePath, patch, 'utf-8');
-  
+
       return convergePath;
 }

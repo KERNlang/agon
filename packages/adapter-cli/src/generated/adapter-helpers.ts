@@ -15,15 +15,15 @@ export function resolveArgs(template: string[], vars: Record<string,string>): st
 export function resolveModel(engine: EngineDefinition, cwd?: string): string|null {
   const modelConfig = engine.model;
   if (!modelConfig) return null;
-  
+
   if (modelConfig.configKey) {
     const envVal = process.env[modelConfig.configKey.toUpperCase()];
     if (envVal) return envVal;
   }
-  
+
   const configured = (loadConfig(cwd) as any).engineModels?.[engine.id];
   if (configured) return configured;
-  
+
   return modelConfig.default ?? null;
 }
 
@@ -37,20 +37,20 @@ export function buildCommand(engine: EngineDefinition, mode: EngineMode, prompt:
   const modeConfig = mode === 'agent' ? engine.agent
     : mode === 'exec' ? engine.exec
     : engine.review;
-  
+
   if (!modeConfig) {
     throw new EngineNotFoundError(
       engine.id,
       `Engine "${engine.id}" does not support mode "${mode}"`,
     );
   }
-  
+
   const model = resolveModel(engine, cwd);
-  
+
   let effectivePrompt = prompt;
   const hasImages = images && images.length > 0;
   const hasVision = hasImages && engine.capabilities?.includes('vision') && engine.imageFlag;
-  
+
   // Non-vision engines: prepend image info as text
   if (hasImages && !hasVision) {
     const labels = images.map((img) => {
@@ -63,16 +63,16 @@ export function buildCommand(engine: EngineDefinition, mode: EngineMode, prompt:
     });
     effectivePrompt = labels.join('\n') + '\n\nPlease read and analyze the image(s) above.\n\n' + prompt;
   }
-  
+
   const vars: Record<string, string> = {
     prompt: effectivePrompt,
     cwd,
     timeout: String(timeout),
     model: model ?? '',
   };
-  
+
   const args = resolveArgs(modeConfig.args, vars);
-  
+
   if (model && engine.model?.flag) {
     const promptIdx = args.indexOf(effectivePrompt);
     if (promptIdx >= 0) {
@@ -81,7 +81,7 @@ export function buildCommand(engine: EngineDefinition, mode: EngineMode, prompt:
       args.unshift(engine.model.flag, model);
     }
   }
-  
+
   // Vision engines: inject image flags before prompt
   if (hasVision) {
     const promptIdx = args.indexOf(effectivePrompt);
@@ -92,7 +92,7 @@ export function buildCommand(engine: EngineDefinition, mode: EngineMode, prompt:
     }
     args.splice(insertAt, 0, ...imageArgs);
   }
-  
+
   return { command: binaryPath, args };
 }
 
@@ -120,7 +120,7 @@ export function resolveAgentArgs(engine: EngineDefinition, permissionLevel: 'ful
 export function stripStreamJson(stdout: string): string {
   const lines = stdout.split('\n');
   const textParts: string[] = [];
-  
+
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed) continue;
@@ -142,7 +142,7 @@ export function stripStreamJson(stdout: string): string {
       textParts.push(trimmed);
     }
   }
-  
+
   return textParts.join('\n');
 }
 

@@ -58,7 +58,7 @@ export function buildImageAttachment(rawPath: string, cwd: string): ImageAttachm
 
 export function extractImagesFromInput(input: string, cwd: string): {text:string, images:ImageAttachment[]} {
   const images: ImageAttachment[] = [];
-  
+
   // Handle /img <path> command
   const imgCmdMatch = IMG_CMD_REGEX.exec(input.trim());
   if (imgCmdMatch) {
@@ -66,13 +66,13 @@ export function extractImagesFromInput(input: string, cwd: string): {text:string
     if (att) images.push(att);
     return { text: '', images };
   }
-  
+
   // Detect image paths in mixed text
   let text = input;
   const pathRegex = new RegExp(IMAGE_PATH_REGEX.source, 'gi');
   let match: RegExpExecArray | null;
   const paths: string[] = [];
-  
+
   while ((match = pathRegex.exec(input)) !== null) {
     const rawPath = match[1].trim();
     const att = buildImageAttachment(rawPath, cwd);
@@ -81,11 +81,11 @@ export function extractImagesFromInput(input: string, cwd: string): {text:string
       paths.push(match[0]);
     }
   }
-  
+
   for (const p of paths) {
     text = text.replace(p, '');
   }
   text = text.replace(/\s{2,}/g, ' ').trim();
-  
+
   return { text, images };
 }

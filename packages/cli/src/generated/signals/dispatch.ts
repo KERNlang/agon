@@ -26,7 +26,7 @@ import { icons } from './icons.js';
 
 import { ENGINE_COLORS } from '../blocks/output-format.js';
 
-import { handleForge, handleChat, handleBrainstorm, handleCampfire, handleTribunal, handleLeaderboard, handleCesarReport, handleCesarHints, handleHistory, handleEngines, handleDiscover, handleConfig, handleUse, handleCesar, handleTokens, handleModels, handleWorkspace, handleChats, handlePlanShow, handlePlansList, handleApprove, handleRetry, handleCancel, handleApplyPatch, handleCp, handleCommit, handleFlowReport, handleFlowAnalysis, handleBuild, handleRun, handleReview, runAgentMode, runAgentTeam } from '../../handlers/index.js';
+import { handleForge, handleChat, handleBrainstorm, handleCampfire, handleTribunal, handleLeaderboard, handleCesarReport, handleCesarHints, handleHistory, handleEngines, handleDiscover, handleConfig, handleUse, handleCesar, handleTokens, handleModels, handleWorkspace, handleChats, handlePlanShow, handlePlansList, handleApprove, handleRetry, handleCancel, handleApplyPatch, handleCp, handleCommit, handleFlowReport, handleFlowAnalysis, handleBuild, handleRun, handleReview, handleReviewMany, runAgentMode, runAgentTeam } from '../../handlers/index.js';
 
 import { handleTeamTribunal } from '../handlers/team-tribunal.js';
 
@@ -609,7 +609,10 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
               {
                 const _cwdReview = resolveWorkingDir();
                 cb.runAsJob('review', label, withThreadOutcome(_cwdReview, 'review', label, async () => {
-                  await handleReview(cb.dispatch, cb.ctx, result.target as string | undefined, result.engineId as string | undefined);
+                  const reviewEngines = Array.isArray(result.engines) && result.engines.length > 0
+                    ? result.engines
+                    : result.engineId ? [result.engineId as string] : undefined;
+                  await handleReviewMany(cb.dispatch, cb.ctx, result.target as string | undefined, reviewEngines as string[] | undefined);
                   await absorbReviewResultIntoCesar(taskInput, cb);
                 }, cb.ctx));
               }
@@ -709,7 +712,10 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
               cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'review', 'recovered delegation') });
               const _cwdReview = resolveWorkingDir();
               cb.runAsJob('review', label, withThreadOutcome(_cwdReview, 'review', label, async () => {
-                await handleReview(cb.dispatch, cb.ctx, crashDel.target, crashDel.engineId);
+                const reviewEngines = Array.isArray(crashDel.engines) && crashDel.engines.length > 0
+                  ? crashDel.engines
+                  : crashDel.engineId ? [crashDel.engineId] : undefined;
+                await handleReviewMany(cb.dispatch, cb.ctx, crashDel.target, reviewEngines);
                 await absorbReviewResultIntoCesar(recoveredTask, cb);
               }, cb.ctx));
               return true;
@@ -811,7 +817,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
                   cb.dispatch({ type: 'info', message: 'Cesar → review' });
                   const _cwdReview = resolveWorkingDir();
                   cb.runAsJob('review', label, withThreadOutcome(_cwdReview, 'review', label, async () => {
-                    await handleReview(cb.dispatch, cb.ctx);
+                    await handleReviewMany(cb.dispatch, cb.ctx);
                     await absorbReviewResultIntoCesar(input, cb);
                   }, cb.ctx));
                   return true;
@@ -1139,7 +1145,10 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
         const _cwdReview = resolveWorkingDir();
         cb.runAsJob('review', _reviewLabel, withThreadOutcome(_cwdReview, 'review', _reviewLabel, async () => {
         if (cb.eventBus) await cb.eventBus.emit('pre:review', { target: intent.target, cwd: resolveWorkingDir() });
-        await handleReview(cb.dispatch, cb.ctx, intent.target, intent.engineId);
+        const reviewEngines = Array.isArray(intent.engineIds) && intent.engineIds.length > 0
+          ? intent.engineIds
+          : intent.engineId ? [intent.engineId] : undefined;
+        await handleReviewMany(cb.dispatch, cb.ctx, intent.target, reviewEngines);
         await absorbReviewResultIntoCesar(input, cb);
         if (cb.eventBus) cb.eventBus.emit('post:review', { target: intent.target, cwd: resolveWorkingDir() }).catch(() => {});
         }, cb.ctx));

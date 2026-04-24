@@ -79,6 +79,7 @@ describe('Intent Detection — Slash Commands', () => {
     expect(engineFirst.type).toBe('review');
     if (engineFirst.type === 'review') {
       expect(engineFirst.engineId).toBe('gemini');
+      expect(engineFirst.engineIds).toEqual(['gemini']);
       expect(engineFirst.target).toBe('branch:main');
     }
 
@@ -86,7 +87,25 @@ describe('Intent Detection — Slash Commands', () => {
     expect(targetFirst.type).toBe('review');
     if (targetFirst.type === 'review') {
       expect(targetFirst.engineId).toBe('claude');
+      expect(targetFirst.engineIds).toEqual(['claude']);
       expect(targetFirst.target).toBe('commit:abc123');
+    }
+  });
+
+  it('/review keeps multiple explicit engines', () => {
+    const r = detectIntent('/review with codex gemini branch:main');
+    expect(r.type).toBe('review');
+    if (r.type === 'review') {
+      expect(r.engineId).toBe('codex');
+      expect(r.engineIds).toEqual(['codex', 'gemini']);
+      expect(r.target).toBe('branch:main');
+    }
+
+    const comma = detectIntent('/review branch:main with codex,gemini');
+    expect(comma.type).toBe('review');
+    if (comma.type === 'review') {
+      expect(comma.engineIds).toEqual(['codex', 'gemini']);
+      expect(comma.target).toBe('branch:main');
     }
   });
 
@@ -279,6 +298,7 @@ describe('Intent Detection — Natural Language', () => {
     expect(r.type).toBe('review');
     if (r.type === 'review') {
       expect(r.engineId).toBe('gemini');
+      expect(r.engineIds).toEqual(['gemini']);
       expect(r.target).toBeUndefined();
     }
 
@@ -286,7 +306,18 @@ describe('Intent Detection — Natural Language', () => {
     expect(branch.type).toBe('review');
     if (branch.type === 'review') {
       expect(branch.engineId).toBe('claude');
+      expect(branch.engineIds).toEqual(['claude']);
       expect(branch.target).toBe('branch:main');
+    }
+  });
+
+  it('parses command-like review shortcuts with multiple engines', () => {
+    const r = detectIntent('review with codex gemini');
+    expect(r.type).toBe('review');
+    if (r.type === 'review') {
+      expect(r.engineId).toBe('codex');
+      expect(r.engineIds).toEqual(['codex', 'gemini']);
+      expect(r.target).toBeUndefined();
     }
   });
 

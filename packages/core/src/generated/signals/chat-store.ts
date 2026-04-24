@@ -111,17 +111,58 @@ export function appendUserTurnIfAbsent(session: ChatSession|null|undefined, inpu
 }
 
 /**
+ * Format recent chat history for prompts with hard token-waste bounds. Keeps newest messages first and truncates oversized turns so fallback/chat prompts cannot replay a huge transcript forever.
+ */
+export function formatChatHistoryForPrompt(messages: ChatMessage[], opts?: {maxMessages?:number,maxChars?:number,maxMessageChars?:number}): string {
+  const source = Array.isArray(messages) ? messages : [];
+  const maxMessages = Math.max(0, opts?.maxMessages ?? 20);
+  const maxChars = Math.max(0, opts?.maxChars ?? 12_000);
+  const maxMessageChars = Math.max(80, opts?.maxMessageChars ?? 1_200);
+  if (source.length === 0 || maxMessages === 0 || maxChars === 0) return '';
+
+  const truncate = (value: string, limit: number): string => {
+    if (value.length <= limit) return value;
+    const marker = `\n[... ${value.length - limit} chars omitted]`;
+    const keep = Math.max(0, limit - marker.length);
+    return value.slice(0, keep) + marker;
+  };
+
+  const recent = source.slice(-maxMessages);
+  const lines: string[] = [];
+  let used = 0;
+  for (let i = recent.length - 1; i >= 0; i--) {
+    const m = recent[i] as any;
+    if (!m || typeof m.content !== 'string' || !m.content.trim()) continue;
+    const speaker = m.role === 'user' ? 'User' : (m.engineId ? String(m.engineId) : 'Assistant');
+    const content = truncate(m.content.replace(/\u0000/g, '').trim(), maxMessageChars);
+    const line = `${speaker}: ${content}`;
+    const sepCost = lines.length > 0 ? 2 : 0;
+    if (used + sepCost + line.length > maxChars) {
+      const remaining = maxChars - used - sepCost;
+      if (lines.length === 0 && remaining >= 80) {
+        lines.unshift(truncate(line, remaining));
+      }
+      break;
+    }
+    lines.unshift(line);
+    used += sepCost + line.length;
+  }
+  return lines.join('\n\n');
+}
+
+/**
  * Concatenate recent conversation history with the current input so one-shot dispatches keep continuity. Used by fallback paths that bypass PersistentSession — API-only engines (no CLI binary) still get multi-turn context this way. Default: last 10 turns (20 messages).
  */
 export function buildHistoryPrimedPrompt(session: ChatSession, input: string, maxTurns?: number): string {
   const limit = (maxTurns ?? 10) * 2;
-  const recent = session.messages.slice(-limit);
-  if (recent.length === 0) return input;
+  const history = formatChatHistoryForPrompt(session.messages, {
+    maxMessages: limit,
+    maxChars: 12_000,
+    maxMessageChars: 1_200,
+  });
+  if (!history) return input;
   const lines: string[] = ['[Prior conversation]'];
-  for (const m of recent) {
-    const speaker = m.role === 'user' ? 'User' : (m.engineId ? m.engineId : 'Assistant');
-    lines.push(`${speaker}: ${m.content}`);
-  }
+  lines.push(history);
   lines.push('');
   lines.push(`[Current turn]`);
   lines.push(`User: ${input}`);

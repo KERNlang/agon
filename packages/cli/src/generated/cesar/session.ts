@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 
 import type { PersistentSession, PersistentSessionConfig } from '@agon/core';
 
-import { EngineRegistry, loadConfig, ensureAgonHome, getAgonHome, resolveWorkingDir, scanProjectContext, createPersistentSession, ToolRegistry, FileStateCache, buildToolSystemPrompt, toolsToOpenAIFormat, executeToolCall, RUNS_DIR, tracker, discoverMcpServers, mcpDiscoveryFingerprint, mcpServersToWireFormat, listCesarPlans, saveConversation } from '@agon/core';
+import { EngineRegistry, loadConfig, ensureAgonHome, getAgonHome, resolveWorkingDir, scanProjectContext, createPersistentSession, ToolRegistry, FileStateCache, buildToolSystemPrompt, toolsToOpenAIFormat, executeToolCall, RUNS_DIR, tracker, discoverMcpServers, mcpDiscoveryFingerprint, mcpServersToWireFormat, listCesarPlans, saveConversation, formatChatHistoryForPrompt } from '@agon/core';
 
 import type { ToolContext, ToolCallResult } from '@agon/core';
 
@@ -285,19 +285,12 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
       // of the CURRENT conversation as fits in a reasonable prompt budget instead of
       // a tiny fixed window, but do not resurrect prior cleared sessions.
       if (ctx.chatSession && ctx.chatSession.messages && ctx.chatSession.messages.length > 0) {
-        const MAX_HISTORY_CHARS = 16_000;
-        const lines: string[] = [];
-        let used = 0;
-        for (let i = ctx.chatSession.messages.length - 1; i >= 0; i--) {
-          const msg = ctx.chatSession.messages[i];
-          const role = msg.role === 'user' ? 'U' : (msg.engineId ?? 'E');
-          const text = msg.content.length > 700 ? msg.content.slice(0, 700) + '…' : msg.content;
-          const line = `${role}: ${text}`;
-          if (used + line.length > MAX_HISTORY_CHARS && lines.length > 0) break;
-          lines.unshift(line);
-          used += line.length;
-        }
-        systemParts.push(`HISTORY:\n${lines.join('\n')}`);
+        const history = formatChatHistoryForPrompt(ctx.chatSession.messages, {
+          maxMessages: 24,
+          maxChars: 8_000,
+          maxMessageChars: 600,
+        });
+        if (history) systemParts.push(`HISTORY:\n${history}`);
       }
 
       return systemParts.join('\n\n');

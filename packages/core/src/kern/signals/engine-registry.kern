@@ -40,13 +40,18 @@ const name=_OPENAI_COMPAT_ONLY_HOST_SUFFIXES type="string[]"
   >>>
 
 fn name=normalizeEngineFormat params="raw:any, fileLabel:string" returns=void export=false
-  doc "Narrow normalization: if api.format='anthropic' but the baseUrl host is on the known-OpenAI-compat-only allowlist (Kimi/Moonshot, Groq, Together, DeepInfra, OpenRouter), rewrite to 'openai'. Every other non-Anthropic host is left alone — arbitrary Anthropic-compatible proxies are valid configurations and must not be silently coerced. Mutates raw in place; logs once per engine id."
+  doc "Narrow normalization: if api.format='anthropic' but the baseUrl host is on the known-OpenAI-compat-only allowlist (Kimi/Moonshot, Groq, Together, DeepInfra, OpenRouter), rewrite to 'openai'. Every other non-Anthropic host is left alone — arbitrary Anthropic-compatible proxies are valid configurations and must not be silently coerced. Skips /coding/ API paths which are specialised endpoints that choose their own wire format. Mutates raw in place; logs once per engine id."
   handler <<<
     const api = raw?.api;
     if (!api || api.format !== 'anthropic' || typeof api.baseUrl !== 'string') return;
-    let host = '';
-    try { host = new URL(api.baseUrl).host.toLowerCase(); } catch { return; }
+    let parsedUrl: URL;
+    try { parsedUrl = new URL(api.baseUrl); } catch { return; }
+    const host = parsedUrl.host.toLowerCase();
     if (host === 'api.anthropic.com' || host.endsWith('.anthropic.com')) return;
+    // Skip specialised /coding/ API paths — these are provider-specific endpoints
+    // (e.g. api.kimi.com/coding/v1, api.z.ai/api/coding/paas/v4) that declare their
+    // own wire format and should not be force-rewritten based on hostname alone.
+    if (parsedUrl.pathname.toLowerCase().includes('/coding/')) return;
     const matched = _OPENAI_COMPAT_ONLY_HOST_SUFFIXES.some((suffix: string) => host === suffix || host.endsWith('.' + suffix));
     if (!matched) return;
     api.format = 'openai';

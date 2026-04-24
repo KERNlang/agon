@@ -206,37 +206,29 @@ export function buildRoutingContext(input: string, ctx: HandlerContext): string 
     }
   } catch { /* no rating data yet */ }
 
-  // ── ContextThread summary (session-wide memory for routing) ──
-  // Inject a structured summary of recent session activity so Cesar's routing
-  // decisions are aware of what has been done — forge/brainstorm/tribunal/agent
-  // outcomes feed back here after withThreadOutcome() captures them.
-  // Outcome messages start with [forge], [brainstorm] etc. — give them more
-  // space (400 chars) since they contain the actual winner/verdict.
-  try {
-    const thread = loadOrCreateActiveThread(resolveWorkingDir());
-    const allMsgs = thread.getAllMessages().filter((m: any) => m.role !== 'system');
-    // Give the routing brain a substantial view of the session — at minimum
-    // the last 20 messages, with full content for forge/brainstorm/tribunal
-    // outcomes so routing decisions are informed by actual prior results.
-    // With 1M windows, the routing brain can afford this context.
-    const recent = allMsgs.slice(-20);
-    if (recent.length > 0) {
-      const summary = recent.map((m: any) => {
-        const who = m.role === 'user' ? 'User' : (m.engineId ?? 'Assistant');
-        const content = (m.content ?? '').replace(/\n{3,}/g, '\n\n'); // collapse excess newlines
-        // Outcome messages (forge/brainstorm/tribunal results) get full content —
-        // these are the most important for intelligent routing decisions.
-        const isOutcome = /^\[(forge|brainstorm|tribunal|campfire|agent|pipeline|team-\w+)/.test(content);
-        const isTool = m.role === 'tool';
-        // Tool results in routing context: include but cap at 2k (they exist
-        // for completeness; the full version is in agent historyMessages).
-        const maxLen = isOutcome ? 8000 : isTool ? 2000 : 600;
-        const snippet = content.slice(0, maxLen);
-        return `${who}: ${snippet}${content.length > maxLen ? `\n[... ${content.length - maxLen} chars omitted]` : ''}`;
-      }).join('\n---\n');
-      parts.push(`SESSION CONTEXT (last ${recent.length} messages — forge/agent/brainstorm outcomes included fully):\n${summary}`);
-    }
-  } catch { /* non-fatal — routing works without thread context */ }
+  if ((ctx.config as any).sessionContinuity === true) {
+    // ── ContextThread summary (session-wide memory for routing) ──
+    // Inject a structured summary of recent session activity so Cesar's routing
+    // decisions are aware of what has been done — forge/brainstorm/tribunal/agent
+    // outcomes feed back here after withThreadOutcome() captures them.
+    try {
+      const thread = loadOrCreateActiveThread(resolveWorkingDir());
+      const allMsgs = thread.getAllMessages().filter((m: any) => m.role !== 'system');
+      const recent = allMsgs.slice(-20);
+      if (recent.length > 0) {
+        const summary = recent.map((m: any) => {
+          const who = m.role === 'user' ? 'User' : (m.engineId ?? 'Assistant');
+          const content = (m.content ?? '').replace(/\n{3,}/g, '\n\n');
+          const isOutcome = /^\[(forge|brainstorm|tribunal|campfire|agent|pipeline|team-\w+)/.test(content);
+          const isTool = m.role === 'tool';
+          const maxLen = isOutcome ? 8000 : isTool ? 2000 : 600;
+          const snippet = content.slice(0, maxLen);
+          return `${who}: ${snippet}${content.length > maxLen ? `\n[... ${content.length - maxLen} chars omitted]` : ''}`;
+        }).join('\n---\n');
+        parts.push(`SESSION CONTEXT (last ${recent.length} messages — forge/agent/brainstorm outcomes included fully):\n${summary}`);
+      }
+    } catch { /* non-fatal — routing works without thread context */ }
+  }
 
   return parts.join('\n');
 }

@@ -185,6 +185,7 @@ export interface AgonConfig {
   forgeSynthesisTimeout?: number;
   ratingsEnabled?: boolean;
   contextSummary?: boolean;
+  sessionContinuity?: boolean;
   onboarded?: boolean;
   projectContext?: string;
   contextFormat?: 'plain'|'kern';
@@ -241,6 +242,7 @@ export const DEFAULT_AGON_CONFIG: Required<AgonConfig> = {
   forgeSynthesisTimeout: 300,
   ratingsEnabled: true,
   contextSummary: true,
+  sessionContinuity: false,
   onboarded: false,
   projectContext: '',
   contextFormat: 'plain',

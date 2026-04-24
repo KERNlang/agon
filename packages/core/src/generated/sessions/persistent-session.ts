@@ -41,6 +41,7 @@ export interface PersistentSessionConfig {
   onToolCall?: (name: string, args: Record<string,unknown>, callId: string) => Promise<string>;
   onTurnEnd?: (learnings: {filesRead:string[], filesModified:string[], decisions:string[], discoveries:string[], toolsUsed:string[]}) => void;
   mcpServers?: Array<Record<string,unknown>>;
+  sessionContinuity?: boolean;
 }
 
 export interface PersistentSession {
@@ -1130,8 +1131,10 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
 
         async start() {
           alive = true;
-          // Preserve messageHistory across restarts — API is stateless, history IS the context.
-          if (messageHistory.length === 0) {
+          // Preserve messageHistory in memory for the current process. Loading
+          // disk history is opt-in because stale cross-session context can make a
+          // fresh Agon run remember already-fixed attempts.
+          if (config.sessionContinuity === true && messageHistory.length === 0) {
             firstTurn = true;
             // Prefer the freshest context source:
             // 1. workspace-scoped conversation continuity (latest cross-engine turn)
@@ -1532,8 +1535,11 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                     await new Promise(r => setTimeout(r, 1000));
                     continue; // Retry the same step
                   }
-                  // Don't kill session — preserve history for next turn
-                  try { saveSessionState(config.engine.id, { messageHistory, confidence: null }); } catch (saveErr) { console.warn('[session] failed to save state on error:', (saveErr as Error).message ?? saveErr); }
+                  // Don't kill session — preserve history for next turn. Disk
+                  // persistence is opt-in so fresh processes stay clean by default.
+                  if (config.sessionContinuity === true) {
+                    try { saveSessionState(config.engine.id, { messageHistory, confidence: null }); } catch (saveErr) { console.warn('[session] failed to save state on error:', (saveErr as Error).message ?? saveErr); }
+                  }
                   yield { type: 'error' as const, content: err.message ?? String(err) };
                   break;
                 }
@@ -1869,20 +1875,22 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
               break;
             }
 
-            // Persist session state to disk after each turn — survives process restart
-            try { saveSessionState(config.engine.id, { messageHistory, confidence: null, compactionSummary, toolCacheManifest }); } catch (saveErr) { console.warn('[session] failed to persist turn:', (saveErr as Error).message ?? saveErr); }
+            if (config.sessionContinuity === true) {
+              // Persist session state to disk after each turn — survives process restart.
+              try { saveSessionState(config.engine.id, { messageHistory, confidence: null, compactionSummary, toolCacheManifest }); } catch (saveErr) { console.warn('[session] failed to persist turn:', (saveErr as Error).message ?? saveErr); }
 
-            // ── Cross-session memory: extract learnings for Cesar's brain ──
-            if (config.onTurnEnd && compactionSummary) {
-              try {
-                config.onTurnEnd({
-                  filesRead: compactionSummary.filesRead ?? [],
-                  filesModified: compactionSummary.filesModified ?? [],
-                  decisions: compactionSummary.decisions ?? [],
-                  discoveries: compactionSummary.discoveries ?? [],
-                  toolsUsed: compactionSummary.toolsSummary ?? [],
-                });
-              } catch { /* memory write is best-effort */ }
+              // ── Cross-session memory: extract learnings for Cesar's brain ──
+              if (config.onTurnEnd && compactionSummary) {
+                try {
+                  config.onTurnEnd({
+                    filesRead: compactionSummary.filesRead ?? [],
+                    filesModified: compactionSummary.filesModified ?? [],
+                    decisions: compactionSummary.decisions ?? [],
+                    discoveries: compactionSummary.discoveries ?? [],
+                    toolsUsed: compactionSummary.toolsSummary ?? [],
+                  });
+                } catch { /* memory write is best-effort */ }
+              }
             }
 
             yield { type: 'done' as const, content: 'end_turn' };

@@ -82,47 +82,49 @@ export function withThreadOutcome(cwd: string, jobType: string, label: string, f
     } finally {
       const durationSec = ((Date.now() - startedAt) / 1000).toFixed(0);
       const status = success ? `completed (${durationSec}s)` : `failed after ${durationSec}s: ${errorMsg.slice(0, 100)}`;
-      try {
-        const thread = loadOrCreateActiveThread(cwd);
+      if ((ctx?.config as any)?.sessionContinuity === true) {
+        try {
+          const thread = loadOrCreateActiveThread(cwd);
 
-        // ── Capture engine responses added DURING this job ───────────
-        // ID-based filter is robust to concurrent job interleaving. Messages
-        // without an id (legacy) fall back to the index-based tail so we
-        // don't lose them entirely.
-        const allCurrent = ctx?.chatSession?.messages ?? [];
-        const newMessages = allCurrent.filter((m: any, idx: number) => {
-          if (typeof m.id === 'string') return !priorMessageIds.has(m.id);
-          return idx >= priorChatLength;
-        });
-        const engineOutputs = newMessages
-          .filter((m: any) => m.role === 'engine' && m.content)
-          .map((m: any) => `[${m.engineId ?? 'engine'}]:\n${m.content as string}`)
-          .join('\n\n---\n\n');
+          // ── Capture engine responses added DURING this job ───────────
+          // ID-based filter is robust to concurrent job interleaving. Messages
+          // without an id (legacy) fall back to the index-based tail so we
+          // don't lose them entirely.
+          const allCurrent = ctx?.chatSession?.messages ?? [];
+          const newMessages = allCurrent.filter((m: any, idx: number) => {
+            if (typeof m.id === 'string') return !priorMessageIds.has(m.id);
+            return idx >= priorChatLength;
+          });
+          const engineOutputs = newMessages
+            .filter((m: any) => m.role === 'engine' && m.content)
+            .map((m: any) => `[${m.engineId ?? 'engine'}]:\n${m.content as string}`)
+            .join('\n\n---\n\n');
 
-        // ── Capture return value if handler returned something useful ─
-        // handleBrainstorm returns { winner, bids, response } — capture fully
-        let returnSummary = '';
-        if (returnValue && typeof returnValue === 'object') {
-          if ('winner' in returnValue && 'response' in returnValue) {
-            const bidsDetail = Array.isArray((returnValue as any).bids)
-              ? (returnValue as any).bids.map((b: any) => `  ${b.engineId} (score ${b.score ?? '?'}): ${b.reasoning ?? b.approach ?? ''}`).join('\n')
-              : '';
-            returnSummary = `Winner: ${returnValue.winner}\nWinner full response:\n${String(returnValue.response ?? '')}${bidsDetail ? `\n\nAll bids:\n${bidsDetail}` : ''}`;
-          } else if ('winner' in returnValue && 'manifestPath' in returnValue) {
-            returnSummary = `Winner: ${String((returnValue as any).winner ?? 'none')}\nPatch: ${String((returnValue as any).patchPath ?? 'none')}\nManifest: ${String((returnValue as any).manifestPath ?? 'none')}`;
+          // ── Capture return value if handler returned something useful ─
+          // handleBrainstorm returns { winner, bids, response } — capture fully
+          let returnSummary = '';
+          if (returnValue && typeof returnValue === 'object') {
+            if ('winner' in returnValue && 'response' in returnValue) {
+              const bidsDetail = Array.isArray((returnValue as any).bids)
+                ? (returnValue as any).bids.map((b: any) => `  ${b.engineId} (score ${b.score ?? '?'}): ${b.reasoning ?? b.approach ?? ''}`).join('\n')
+                : '';
+              returnSummary = `Winner: ${returnValue.winner}\nWinner full response:\n${String(returnValue.response ?? '')}${bidsDetail ? `\n\nAll bids:\n${bidsDetail}` : ''}`;
+            } else if ('winner' in returnValue && 'manifestPath' in returnValue) {
+              returnSummary = `Winner: ${String((returnValue as any).winner ?? 'none')}\nPatch: ${String((returnValue as any).patchPath ?? 'none')}\nManifest: ${String((returnValue as any).manifestPath ?? 'none')}`;
+            }
           }
-        }
 
-        const parts: string[] = [`[${jobType}] "${label.slice(0, 120)}" — ${status}`];
-        if (returnSummary) parts.push(returnSummary);
-        if (engineOutputs) parts.push(`\nEngine outputs (full):\n${engineOutputs}`);
+          const parts: string[] = [`[${jobType}] "${label.slice(0, 120)}" — ${status}`];
+          if (returnSummary) parts.push(returnSummary);
+          if (engineOutputs) parts.push(`\nEngine outputs (full):\n${engineOutputs}`);
 
-        thread.append({
-          role: 'assistant',
-          content: parts.join('\n'),
-        });
-        await thread.save();
-      } catch { /* thread capture is always non-fatal */ }
+          thread.append({
+            role: 'assistant',
+            content: parts.join('\n'),
+          });
+          await thread.save();
+        } catch { /* thread capture is always non-fatal */ }
+      }
     }
   };
 }
@@ -1102,7 +1104,9 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
           cb.dispatch({ type: 'agent-step-start', engineId: m.engineId, turnIndex: 0, userPrompt: specInput, maxTurns: 1, maxDurationMs: 120_000, maxTokens: null });
         }
         let thread;
-        try { thread = loadOrCreateActiveThread(cwd); } catch { /* non-fatal */ }
+        if ((cb.ctx.config as any).sessionContinuity === true) {
+          try { thread = loadOrCreateActiveThread(cwd); } catch { /* non-fatal */ }
+        }
         const speculator = createSpeculator();
         let result;
         try {

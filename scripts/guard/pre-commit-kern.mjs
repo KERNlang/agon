@@ -1,6 +1,16 @@
 #!/usr/bin/env node
+/**
+ * Pre-commit hook: compile .kern files without npm to avoid .git/index.lock races.
+ * Calls run-kern-compile.mjs directly per workspace.
+ */
 import { spawnSync } from 'node:child_process';
 import { execSync } from 'node:child_process';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const repoRoot = path.resolve(__dirname, '../..');
 
 // Check if any .kern files are staged (including renames and deletes)
 let stagedKern;
@@ -11,7 +21,6 @@ try {
   });
 } catch (err) {
   const stderr = err.stderr?.toString?.() ?? '';
-  // Only fail open for the benign "not a git repo" case
   if (stderr.includes('not a git repository') || err.status === 128) {
     process.exit(0);
   }
@@ -26,20 +35,41 @@ if (!stagedKern.trim()) {
 
 console.log('[kern-guard] Staged .kern files detected. Running kern:compile...');
 
-const result = spawnSync('npm', ['run', 'kern:compile'], {
-  cwd: process.cwd(),
-  stdio: 'inherit',
-  env: { ...process.env, KERN_SKIP_LOCAL_SYNC: '1' },
-});
+// Run each workspace compile directly via node (no npm → no index.lock contention)
+const workspaces = [
+  { name: 'core',    extra: '--postcompile=scripts/kern-postcompile.sh' },
+  { name: 'forge',   extra: '' },
+  { name: 'adapter-cli', extra: '' },
+  { name: 'cli',     extra: '' },
+  { name: 'mcp',     extra: '' },
+];
 
-if (result.status !== 0) {
-  console.error('[kern-guard] kern:compile failed. Commit aborted.');
-  process.exit(1);
+for (const ws of workspaces) {
+  const wsDir = path.join(repoRoot, 'packages', ws.name);
+  const args = [
+    '../../scripts/run-kern-compile.mjs',
+    'src/kern/',
+    'src/generated/',
+    '--target=auto',
+    '--recursive',
+  ];
+  if (ws.extra) args.push(ws.extra);
+
+  const result = spawnSync('node', args, {
+    cwd: wsDir,
+    stdio: 'inherit',
+    env: { ...process.env, KERN_SKIP_LOCAL_SYNC: '1' },
+  });
+
+  if (result.status !== 0) {
+    console.error(`[kern-guard] kern:compile failed in packages/${ws.name}. Commit aborted.`);
+    process.exit(1);
+  }
 }
 
 // Auto-stage generated files that changed during compile
 const generatedDiff = spawnSync('git', ['diff', '--name-only'], {
-  cwd: process.cwd(),
+  cwd: repoRoot,
   encoding: 'utf8',
   stdio: ['pipe', 'pipe', 'pipe'],
 });
@@ -54,7 +84,7 @@ if (generatedDiff.status === 0) {
   if (generatedToStage.length > 0) {
     console.log(`[kern-guard] Auto-staging ${generatedToStage.length} generated file(s)...`);
     const addResult = spawnSync('git', ['add', '--', ...generatedToStage], {
-      cwd: process.cwd(),
+      cwd: repoRoot,
       stdio: 'inherit',
     });
     if (addResult.status !== 0) {

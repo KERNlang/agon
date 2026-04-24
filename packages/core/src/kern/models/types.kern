@@ -163,6 +163,8 @@ config name=AgonConfig
   field name=forgeSynthesisTimeout type=number default=300
   field name=ratingsEnabled type=boolean default=true
   field name=contextSummary type=boolean default=true
+  field name=sessionContinuity type=boolean default=false
+    doc "Opt-in automatic cross-session memory. When false, new Agon processes start with clean engine context; explicit /chats resume and in-process chat history still work."
   field name=onboarded type=boolean default=false
   field name=projectContext type=string default=""
   field name=contextFormat type="'plain'|'kern'" default=plain

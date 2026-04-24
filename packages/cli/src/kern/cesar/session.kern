@@ -4,7 +4,7 @@ import from="node:path" names="join"
 import from="node:fs" names="mkdirSync"
 import from="node:url" names="fileURLToPath"
 import from="@agon/core" names="PersistentSession,PersistentSessionConfig" types=true
-import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,getAgonHome,resolveWorkingDir,scanProjectContext,createPersistentSession,ToolRegistry,FileStateCache,buildToolSystemPrompt,toolsToOpenAIFormat,executeToolCall,RUNS_DIR,tracker,discoverMcpServers,mcpDiscoveryFingerprint,mcpServersToWireFormat,listCesarPlans,saveConversation"
+import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,getAgonHome,resolveWorkingDir,scanProjectContext,createPersistentSession,ToolRegistry,FileStateCache,buildToolSystemPrompt,toolsToOpenAIFormat,executeToolCall,RUNS_DIR,tracker,discoverMcpServers,mcpDiscoveryFingerprint,mcpServersToWireFormat,listCesarPlans,saveConversation,formatChatContextForPrompt"
 import from="@agon/core" names="ToolContext,ToolCallResult" types=true
 import from="../../handlers/types.js" names="HandlerContext" types=true
 import from="./tools.js" names="createCesarToolRegistry"
@@ -273,19 +273,13 @@ HARD RULE: Your turn MUST end with a ProposePlan call. If you respond with text 
     // of the CURRENT conversation as fits in a reasonable prompt budget instead of
     // a tiny fixed window, but do not resurrect prior cleared sessions.
     if (ctx.chatSession && ctx.chatSession.messages && ctx.chatSession.messages.length > 0) {
-      const MAX_HISTORY_CHARS = 16_000;
-      const lines: string[] = [];
-      let used = 0;
-      for (let i = ctx.chatSession.messages.length - 1; i >= 0; i--) {
-        const msg = ctx.chatSession.messages[i];
-        const role = msg.role === 'user' ? 'U' : (msg.engineId ?? 'E');
-        const text = msg.content.length > 700 ? msg.content.slice(0, 700) + '…' : msg.content;
-        const line = `${role}: ${text}`;
-        if (used + line.length > MAX_HISTORY_CHARS && lines.length > 0) break;
-        lines.unshift(line);
-        used += line.length;
-      }
-      systemParts.push(`HISTORY:\n${lines.join('\n')}`);
+      const context = formatChatContextForPrompt(ctx.chatSession, {
+        maxMessages: 24,
+        maxChars: 8_000,
+        maxMessageChars: 600,
+        maxSummaryChars: 5_000,
+      });
+      if (context) systemParts.push(`CHAT CONTEXT:\n${context}`);
     }
 
     return systemParts.join('\n\n');
@@ -859,6 +853,7 @@ fn name=ensureCesarSession async=true params="ctx:HandlerContext" returns="Promi
       systemPrompt: fullPrompt,
       nativeTools,
       mcpServers,
+      sessionContinuity: (config as any).sessionContinuity === true,
       onToolCall: buildOnToolCall(ctx, toolRegistry, config),
       onApproval: buildOnApproval(ctx, cesarEngineId),
     };

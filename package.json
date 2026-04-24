@@ -38,19 +38,19 @@
     "zod": "^4.3.6"
   },
   "optionalDependencies": {
-    "@kernlang/cli": "~3.3.8",
-    "@kernlang/core": "~3.3.8",
-    "@kernlang/evolve": "~3.3.8",
-    "@kernlang/express": "~3.3.8",
-    "@kernlang/fastapi": "~3.3.8",
-    "@kernlang/mcp": "~3.3.8",
-    "@kernlang/metrics": "~3.3.8",
-    "@kernlang/native": "~3.3.8",
-    "@kernlang/protocol": "~3.3.8",
-    "@kernlang/react": "~3.3.8",
-    "@kernlang/review": "~3.3.8",
-    "@kernlang/review-mcp": "~3.3.8",
-    "@kernlang/terminal": "~3.3.8",
-    "@kernlang/vue": "~3.3.8"
+    "@kernlang/cli": "~3.3.9",
+    "@kernlang/core": "~3.3.9",
+    "@kernlang/evolve": "~3.3.9",
+    "@kernlang/express": "~3.3.9",
+    "@kernlang/fastapi": "~3.3.9",
+    "@kernlang/mcp": "~3.3.9",
+    "@kernlang/metrics": "~3.3.9",
+    "@kernlang/native": "~3.3.9",
+    "@kernlang/protocol": "~3.3.9",
+    "@kernlang/react": "~3.3.9",
+    "@kernlang/review": "~3.3.9",
+    "@kernlang/review-mcp": "~3.3.9",
+    "@kernlang/terminal": "~3.3.9",
+    "@kernlang/vue": "~3.3.9"
   }
 }

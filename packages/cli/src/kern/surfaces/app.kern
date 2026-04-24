@@ -858,9 +858,10 @@ fn name=historyBlocksForTranscript params="blocks:OutputBlock[]" returns="Output
   >>>
 
 fn name=nativeTranscriptBlocksForStatic params="blocks:OutputBlock[]" returns="OutputBlock[]" export=true
-  doc "Native transcript history. The startup dashboard is live chrome, not transcript history, so it must not consume Static's append index."
+  doc "Native transcript history. While idle, the startup dashboard is live chrome. Once the first real transcript row exists, keep the dashboard as the first chat-history block so the AGON header scrolls with the conversation instead of disappearing."
   handler <<<
-    return blocks.filter((block: any) => block?.event?.type !== 'dashboard');
+    if (blocks.length === 1 && blocks[0]?.event?.type === 'dashboard') return [];
+    return blocks;
   >>>
 
 fn name=nativeArchiveBlockCount params="blocks:OutputBlock[], mode:string, rowBudget:number, toolOutputExpanded:boolean, thinkingExpanded:boolean" returns=number export=true
@@ -2429,10 +2430,10 @@ screen name=App target=ink
       setActiveAbort(abort);
     >>>
 
-  callback name=setCesarSessionWrapped params="session:PersistentSession|null" deps="chatSession"
+  callback name=setCesarSessionWrapped params="session:PersistentSession|null" deps="chatSession,config"
     handler <<<
       const previous = _cesarSessionRef.session;
-      if (previous && previous !== session) {
+      if (previous && previous !== session && (config as any).sessionContinuity === true) {
         saveCesarConversationSnapshot(previous, chatSession);
       }
       _cesarSessionRef.session = session;

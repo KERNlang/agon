@@ -1,7 +1,7 @@
 import from="node:crypto" names="randomUUID"
-import from="node:fs" names="mkdirSync,writeFileSync"
+import from="node:fs" names="mkdirSync,writeFileSync,readFileSync"
 import from="@agon/core" names="ForgeOptions,ForgeManifest,EngineAdapter,ForgeEvent,AgonConfig,DispatchMetric" types=true
-import from="@agon/core" names="EngineRegistry,loadConfig,buildForgePrompt,repoRoot,stashSnapshot,worktreeRemoveBestEffort,updateGlickoRanked,classifyTask,createSidechainLogger,assignForgeRoles,buildSpecializedPrompt,recordForgeOutcome,tracker"
+import from="@agon/core" names="EngineRegistry,loadConfig,buildForgePrompt,repoRoot,stashSnapshot,worktreeRemoveBestEffort,updateGlickoRanked,classifyTask,createSidechainLogger,assignForgeRoles,buildSpecializedPrompt,recordForgeOutcome,extractPatchFilePatterns,tracker"
 import from="./stages.js" names="runBaseline,runStage1,runStage2,runStage2WithPeek"
 import from="@agon/core" names="determineWinner"
 import from="./synthesis.js" names="runSynthesis"
@@ -20,6 +20,17 @@ fn name=shellQuoteForForge params="value:string" returns=string export=true
 fn name=buildForgeCleanupCommand params="repoRootPath:string,forgeDir:string" returns=string export=true
   handler <<<
     return `git -C ${shellQuoteForForge(repoRootPath)} worktree prune && rm -rf ${shellQuoteForForge(forgeDir)}`;
+  >>>
+
+fn name=collectForgeFilePatterns params="manifest:ForgeManifest" returns="string[]" export=false
+  handler <<<
+    const patchTexts: string[] = [];
+    for (const patchPath of Object.values(manifest.patches) as string[]) {
+      try {
+        patchTexts.push(readFileSync(patchPath, 'utf-8'));
+      } catch { /* ignore unreadable patch artifacts */ }
+    }
+    return extractPatchFilePatterns(patchTexts.join('\n'));
   >>>
 
 fn name=writeForgeResultBundle params="manifest:ForgeManifest, worktrees:WorktreeEntry[], options:ForgeOptions, repoRootPath:string, baseSha:string, sidechainPath:string, errorMessage?:string" returns=string export=true
@@ -417,7 +428,15 @@ fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistr
           );
           const loserScores: Record<string, number> = {};
           for (const id of losers) loserScores[id] = manifest.results[id]?.score ?? 0;
-          recordForgeOutcome(eloWinner, losers, taskClass, forgeId, manifest.results[eloWinner]?.score ?? 0, loserScores);
+          recordForgeOutcome(
+            eloWinner,
+            losers,
+            taskClass,
+            forgeId,
+            manifest.results[eloWinner]?.score ?? 0,
+            loserScores,
+            collectForgeFilePatterns(manifest),
+          );
         }
       }
 

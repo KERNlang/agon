@@ -1,7 +1,7 @@
 import from="node:path" names="join"
 import from="node:fs" names="readFileSync,writeFileSync"
 import from="@agon/core" names="ForgeManifest,ForgeJudgment,ConvergenceEntry" types=true
-import from="@agon/core" names="RUNS_DIR"
+import from="@agon/core" names="RUNS_DIR,classifyTask,extractPatchFilePatterns,recordForgeJudgment"
 import from="../blocks/output-format.js" names="ENGINE_COLORS"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 import from="./confidence.js" names="parseConfidence,confidenceBadge"
@@ -69,12 +69,14 @@ fn name=cesarJudgeForge async=true params="manifest:ForgeManifest, dispatch:Disp
 
     // Build structured judgment prompt with patch summaries
     const engineSummaries: string[] = [];
+    const patchTexts: string[] = [];
     for (const [id, result] of Object.entries(manifest.results) as [string, any][]) {
       let patchSummary = '(no patch)';
       const patchPath = manifest.patches[id];
       if (patchPath) {
         try {
           const patch = readFileSync(patchPath, 'utf-8');
+          patchTexts.push(patch);
           // Include first 150 lines of patch for evaluation
           const lines = patch.split('\n');
           patchSummary = lines.slice(0, 150).join('\n');
@@ -142,6 +144,21 @@ SUMMARY: {your read — as long or as short as it actually deserves}`;
 
     // Display judgment
     if (judgment) {
+      try {
+        recordForgeJudgment(
+          judgment.winner,
+          manifest.winner ?? null,
+          Object.keys(manifest.results),
+          classifyTask(manifest.task),
+          manifest.forgeId,
+          judgment.summary,
+          judgment.strengths,
+          extractPatchFilePatterns(patchTexts.join('\n')),
+        );
+      } catch (err) {
+        console.warn(`[agon] failed to record Cesar forge judgment: ${err instanceof Error ? err.message : String(err)}`);
+      }
+
       dispatch({ type: 'header', title: 'Cesar\'s Judgment' });
       dispatch({ type: 'success', message: `Winner: ${judgment.winner}` });
 

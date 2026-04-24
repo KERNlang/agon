@@ -182,8 +182,16 @@ export function buildRoutingContext(input: string, ctx: HandlerContext): string 
         const profile = getEngineProfile(r.engineId);
         const strengths = profile?.strengths?.slice(0, 3).join(', ') ?? 'unknown';
         const weaknesses = profile?.weaknesses?.slice(0, 2).join(', ') ?? 'none noted';
+        const recentMemory = profile?.notes
+          ?.filter((n: any) => n.taskClass === hints.taskClass)
+          .slice(-2)
+          .map((n: any) => {
+            const scope = n.filePatterns?.length ? ` [${n.filePatterns.slice(0, 3).join(', ')}]` : '';
+            return `${n.observation}${scope}`;
+          })
+          .join('; ') || 'none yet';
         const winRate = r.confidence > 0 ? ` (${r.confidence}% win rate)` : '';
-        return `  ${r.engineId}: ${r.role}${winRate} — strengths: ${strengths} | weak: ${weaknesses}`;
+        return `  ${r.engineId}: ${r.role}${winRate} — strengths: ${strengths} | weak: ${weaknesses} | memory: ${recentMemory}`;
       });
       parts.push(`ENGINES (${hints.taskClass}):\n${lines.join('\n')}`);
     }

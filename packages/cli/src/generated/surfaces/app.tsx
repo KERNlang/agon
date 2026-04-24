@@ -631,12 +631,12 @@ export function App() {
 
   const setCesarSessionWrapped = useCallback((session:PersistentSession|null) => {
     const previous = _cesarSessionRef.session;
-    if (previous && previous !== session) {
+    if (previous && previous !== session && (config as any).sessionContinuity === true) {
       saveCesarConversationSnapshot(previous, chatSession);
     }
     _cesarSessionRef.session = session;
     setCesarSession(session);
-  }, [chatSession]);
+  }, [chatSession,config]);
 
   const activeEngines = useCallback(() => {
     const available = registry.availableIds();
@@ -2489,10 +2489,11 @@ export function historyBlocksForTranscript(blocks: OutputBlock[]): OutputBlock[]
 }
 
 /**
- * Native transcript history. The startup dashboard is live chrome, not transcript history, so it must not consume Static's append index.
+ * Native transcript history. While idle, the startup dashboard is live chrome. Once the first real transcript row exists, keep the dashboard as the first chat-history block so the AGON header scrolls with the conversation instead of disappearing.
  */
 export function nativeTranscriptBlocksForStatic(blocks: OutputBlock[]): OutputBlock[] {
-  return blocks.filter((block: any) => block?.event?.type !== 'dashboard');
+  if (blocks.length === 1 && blocks[0]?.event?.type === 'dashboard') return [];
+  return blocks;
 }
 
 /**

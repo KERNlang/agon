@@ -259,22 +259,20 @@ fn name=handleForge params="task:string, fitnessCmd:string|null, dispatch:Dispat
             const convergedContent = readFileSync(convergedPath, 'utf-8');
             dispatch({ type: 'patch-review' as any, winnerId: 'convergence', patchPath: convergedPath, patchContent: convergedContent });
 
-            // Review finding #4 (Gemini): convergence path had early-return
-            // without thread append, so Cesar forgot converged patches. Append
-            // the converged diff to the active thread the same way the normal
-            // winner path does below.
-            try {
-              const convergeThread = loadOrCreateActiveThread(resolveWorkingDir());
-              const capped = convergedContent.length > 90000
-                ? convergedContent.slice(0, 90000) + `\n\n[... ${convergedContent.length - 90000} more chars truncated — full patch at ${convergedPath}]`
-                : convergedContent;
-              convergeThread.append({
-                role: 'assistant',
-                content: `[forge-convergence-diff] winner: convergence (best-of-breed)\npatch path: ${convergedPath}\n\n${capped}`,
-              });
-              await convergeThread.save();
-            } catch (threadErr) {
-              dispatch({ type: 'warning', message: `Convergence diff NOT persisted to thread: ${threadErr instanceof Error ? threadErr.message : String(threadErr)}` });
+            if ((ctx.config as any).sessionContinuity === true) {
+              try {
+                const convergeThread = loadOrCreateActiveThread(resolveWorkingDir());
+                const capped = convergedContent.length > 90000
+                  ? convergedContent.slice(0, 90000) + `\n\n[... ${convergedContent.length - 90000} more chars truncated — full patch at ${convergedPath}]`
+                  : convergedContent;
+                convergeThread.append({
+                  role: 'assistant',
+                  content: `[forge-convergence-diff] winner: convergence (best-of-breed)\npatch path: ${convergedPath}\n\n${capped}`,
+                });
+                await convergeThread.save();
+              } catch (threadErr) {
+                dispatch({ type: 'warning', message: `Convergence diff NOT persisted to thread: ${threadErr instanceof Error ? threadErr.message : String(threadErr)}` });
+              }
             }
 
             // Skip normal winner patch — convergence replaces it
@@ -335,28 +333,21 @@ fn name=handleForge params="task:string, fitnessCmd:string|null, dispatch:Dispat
           const patchContent = readFileSync(patchPath, 'utf-8');
           dispatch({ type: 'patch-review' as any, winnerId: finalWinner, patchPath, patchContent });
 
-          // Append winning diff directly to ContextThread so Cesar has the
-          // full line-by-line change trail, not just a text summary of what
-          // forge did. This is the missing piece from the outcome capture —
-          // chatSession has engine descriptions, thread now gets actual code.
-          try {
-            const cwd = resolveWorkingDir();
-            const forgeThread = loadOrCreateActiveThread(cwd);
-            // Review #8: 90k chars aligns with MAX_PER_MESSAGE_TOKENS=30000
-            // (≈ 4 chars/token × 30000 = 120k chars, leave 25% headroom for
-            // surrounding text). Most forge patches are well under 10k anyway.
-            const capped = patchContent.length > 90000
-              ? patchContent.slice(0, 90000) + `\n\n[... ${patchContent.length - 90000} more chars truncated — full patch at ${patchPath}]`
-              : patchContent;
-            forgeThread.append({
-              role: 'assistant',
-              content: `[forge-diff] winner: ${finalWinner}\npatch path: ${patchPath}\n\n${capped}`,
-            });
-            await forgeThread.save();
-          } catch (threadErr) {
-            // Review #9: surface failure to user instead of silent console.warn
-            // so they know memory is degraded if thread persistence broke.
-            dispatch({ type: 'warning', message: `Winner diff NOT persisted to thread: ${threadErr instanceof Error ? threadErr.message : String(threadErr)}` });
+          if ((ctx.config as any).sessionContinuity === true) {
+            try {
+              const cwd = resolveWorkingDir();
+              const forgeThread = loadOrCreateActiveThread(cwd);
+              const capped = patchContent.length > 90000
+                ? patchContent.slice(0, 90000) + `\n\n[... ${patchContent.length - 90000} more chars truncated — full patch at ${patchPath}]`
+                : patchContent;
+              forgeThread.append({
+                role: 'assistant',
+                content: `[forge-diff] winner: ${finalWinner}\npatch path: ${patchPath}\n\n${capped}`,
+              });
+              await forgeThread.save();
+            } catch (threadErr) {
+              dispatch({ type: 'warning', message: `Winner diff NOT persisted to thread: ${threadErr instanceof Error ? threadErr.message : String(threadErr)}` });
+            }
           }
         } catch (err) {
           console.warn(`[agon] failed to read winning patch ${patchPath}: ${err instanceof Error ? err.message : String(err)}`);

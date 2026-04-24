@@ -57,14 +57,18 @@ describe('app scroll helpers', () => {
     expect(historyBlocksForTranscript(mixed).map((block: any) => block.event.type)).toEqual(['dashboard', 'user-message']);
   });
 
-  it('keeps native Static history append-only by excluding the startup dashboard', () => {
+  it('hides the idle-only native dashboard, then keeps it once chat starts', () => {
+    const dashboardOnly = [
+      { id: 0, event: { type: 'dashboard', available: [], enabled: [], defaultEngine: 'claude', totalForges: 0, runCount: 0 } },
+    ] as any;
     const blocks = [
       { id: 0, event: { type: 'dashboard', available: [], enabled: [], defaultEngine: 'claude', totalForges: 0, runCount: 0 } },
       { id: 1, event: { type: 'separator' } },
       { id: 2, event: { type: 'user-message', content: 'hello' } },
     ] as any;
 
-    expect(nativeTranscriptBlocksForStatic(blocks).map((block: any) => block.event.type)).toEqual(['separator', 'user-message']);
+    expect(nativeTranscriptBlocksForStatic(dashboardOnly)).toEqual([]);
+    expect(nativeTranscriptBlocksForStatic(blocks).map((block: any) => block.event.type)).toEqual(['dashboard', 'separator', 'user-message']);
   });
 
   it('archives old native transcript blocks while keeping the recent tail live', () => {

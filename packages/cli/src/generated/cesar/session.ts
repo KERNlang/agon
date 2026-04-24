@@ -873,6 +873,7 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
     systemPrompt: fullPrompt,
     nativeTools,
     mcpServers,
+    sessionContinuity: (config as any).sessionContinuity === true,
     onToolCall: buildOnToolCall(ctx, toolRegistry, config),
     onApproval: buildOnApproval(ctx, cesarEngineId),
   };

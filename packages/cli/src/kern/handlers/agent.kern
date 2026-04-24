@@ -177,16 +177,15 @@ fn name=runAgentMode params="input:string,dispatch:Dispatch,ctx:HandlerContext,o
     };
     const cwd = resolveWorkingDir();
 
-    // ── Load or create the active ContextThread for this project ──
-    // This is the persistent memory layer that makes Cesar remember
-    // prior /agent runs, tool calls, and decisions across sessions.
-    // Non-fatal: if the thread can't be loaded (corrupt file, disk
-    // issue), we log a warning and fall through without context.
+    // Optional ContextThread continuity. Disabled by default so new Agon
+    // processes do not preload stale prior /agent runs.
     let agentThread: import('@agon/core').ContextThread | undefined;
-    try {
-      agentThread = loadOrCreateActiveThread(cwd, opts?.systemPrompt);
-    } catch (threadErr) {
-      console.warn(`[agon] context-thread: failed to load active thread (running without context): ${threadErr instanceof Error ? threadErr.message : String(threadErr)}`);
+    if ((ctx.config as any).sessionContinuity === true) {
+      try {
+        agentThread = loadOrCreateActiveThread(cwd, opts?.systemPrompt);
+      } catch (threadErr) {
+        console.warn(`[agon] context-thread: failed to load active thread (running without context): ${threadErr instanceof Error ? threadErr.message : String(threadErr)}`);
+      }
     }
 
     // Resolve the engine's context window from its definition so history
@@ -567,12 +566,15 @@ fn name=runAgentTeam params="input:string,dispatch:Dispatch,ctx:HandlerContext,o
     const taskKind: 'edit'|'investigate' = opts?.taskKind ?? 'edit';
     let followUp: AgentContinuationResult | null = null;
 
-    // Load or create the active ContextThread — shared across all team members.
+    // Optional ContextThread continuity — shared across all team members only
+    // when the user opts into cross-session memory.
     let teamThread: import('@agon/core').ContextThread | undefined;
-    try {
-      teamThread = loadOrCreateActiveThread(cwd, opts?.systemPrompt);
-    } catch (threadErr) {
-      console.warn(`[agon] context-thread: failed to load active thread for team (running without context): ${threadErr instanceof Error ? threadErr.message : String(threadErr)}`);
+    if ((ctx.config as any).sessionContinuity === true) {
+      try {
+        teamThread = loadOrCreateActiveThread(cwd, opts?.systemPrompt);
+      } catch (threadErr) {
+        console.warn(`[agon] context-thread: failed to load active thread for team (running without context): ${threadErr instanceof Error ? threadErr.message : String(threadErr)}`);
+      }
     }
 
     const members: AgentTeamMemberConfig[] = memberEngines.map((eng, i) => ({

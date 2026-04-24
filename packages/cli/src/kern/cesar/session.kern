@@ -859,6 +859,7 @@ fn name=ensureCesarSession async=true params="ctx:HandlerContext" returns="Promi
       systemPrompt: fullPrompt,
       nativeTools,
       mcpServers,
+      sessionContinuity: (config as any).sessionContinuity === true,
       onToolCall: buildOnToolCall(ctx, toolRegistry, config),
       onApproval: buildOnApproval(ctx, cesarEngineId),
     };

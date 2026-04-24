@@ -130,21 +130,29 @@ fn name=convertMessagesForSdk params="messages:Array<{role:string,content:any,to
           result.push({ role: 'assistant', content: '' });
         }
       } else if (msg.role === 'tool') {
-        const originalId = (msg as any).tool_call_id ?? '';
-        const toolCallId = idMap.get(originalId) ?? normalizeToolCallId(originalId, format);
-        const toolName = toolNameMap.get(toolCallId) ?? 'unknown';
-        result.push({
-          role: 'tool',
-          content: [{
-            type: 'tool-result',
-            toolCallId,
-            toolName,
-            output: {
-              type: 'text' as const,
-              value: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
-            },
-          }],
-        });
+        const originalId = typeof (msg as any).tool_call_id === 'string' ? (msg as any).tool_call_id : '';
+        const toolCallId = originalId ? (idMap.get(originalId) ?? normalizeToolCallId(originalId, format)) : '';
+        const toolName = toolCallId ? toolNameMap.get(toolCallId) : undefined;
+        const outputValue = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
+        if (!toolCallId || !toolName) {
+          result.push({
+            role: 'user',
+            content: `[Recovered orphan tool result omitted from native tool channel]\n${outputValue}`,
+          });
+        } else {
+          result.push({
+            role: 'tool',
+            content: [{
+              type: 'tool-result',
+              toolCallId,
+              toolName,
+              output: {
+                type: 'text' as const,
+                value: outputValue,
+              },
+            }],
+          });
+        }
       }
     }
 

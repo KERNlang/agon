@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildAgentAutoResumePrompt, extractExecutionSpec, shouldAutoResumeAgentResult } from '../../packages/cli/src/generated/signals/dispatch.js';
+import { buildAgentAutoResumePrompt, buildReviewAbsorptionPrompt, extractExecutionSpec, formatCesarRecoveryStatus, shouldAutoResumeAgentResult } from '../../packages/cli/src/generated/signals/dispatch.js';
 
 describe('Dispatch routing helpers', () => {
   it('extracts forge fitness commands from conversational input', () => {
@@ -23,6 +23,12 @@ describe('Dispatch routing helpers', () => {
     });
   });
 
+  it('formats compact Cesar recovery statuses with log context', () => {
+    expect(formatCesarRecoveryStatus('rebuild', 'claude')).toBe('Cesar recovery: rebuilding claude session');
+    expect(formatCesarRecoveryStatus('retry', 'kimi', 'log: /tmp/run')).toBe('Cesar recovery: retrying kimi with fresh dispatch - log: /tmp/run');
+    expect(formatCesarRecoveryStatus('failed', 'all engines unavailable', 'run agon doctor engines')).toBe('Cesar recovery failed: all engines unavailable - run agon doctor engines');
+  });
+
   it('builds an auto-resume prompt for team-agent results with unapplied patch context', () => {
     const prompt = buildAgentAutoResumePrompt('fix the compiler output', {
       kind: 'team-agent',
@@ -34,6 +40,39 @@ describe('Dispatch routing helpers', () => {
     expect(prompt).toContain('Do not ask the user what happened');
     expect(prompt).toContain('/tmp/team-agent-123/winner.patch');
     expect(prompt).toContain('not applied to the main workspace yet');
+  });
+
+  it('builds a review absorption prompt that gives Cesar the findings and fix-plan task', () => {
+    const prompt = buildReviewAbsorptionPrompt('argon review with codex', {
+      engineId: 'codex',
+      target: 'main...dev',
+      label: 'main...dev',
+      diff: 'diff --git a/file.ts b/file.ts',
+      reviewOutput: 'Finding: handleReview stores findings but Cesar never sees them.',
+      timestamp: Date.now(),
+    });
+
+    expect(prompt).toContain('[REVIEW RESULT]');
+    expect(prompt).toContain('Original user request: argon review with codex');
+    expect(prompt).toContain('Review target: main...dev');
+    expect(prompt).toContain('Review engine: codex');
+    expect(prompt).toContain('Finding: handleReview stores findings but Cesar never sees them.');
+    expect(prompt).toContain('concrete fix plan');
+    expect(prompt).toContain('Do not say you lack the review output');
+  });
+
+  it('caps review absorption prompts so large reviews do not swamp Cesar context', () => {
+    const prompt = buildReviewAbsorptionPrompt('review', {
+      engineId: 'codex',
+      target: '',
+      label: '',
+      diff: '',
+      reviewOutput: 'x'.repeat(12_050),
+      timestamp: Date.now(),
+    });
+
+    expect(prompt).toContain('... [review output truncated]');
+    expect(prompt.length).toBeLessThan(12_700);
   });
 
   it('resumes only when the same user turn is still active', () => {

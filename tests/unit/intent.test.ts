@@ -74,6 +74,41 @@ describe('Intent Detection — Slash Commands', () => {
     if (r.type === 'campfire') expect(r.topic).toBe('the future of AI');
   });
 
+  it('/review parses explicit engine and target in either order', () => {
+    const engineFirst = detectIntent('/review with gemini branch:main');
+    expect(engineFirst.type).toBe('review');
+    if (engineFirst.type === 'review') {
+      expect(engineFirst.engineId).toBe('gemini');
+      expect(engineFirst.engineIds).toEqual(['gemini']);
+      expect(engineFirst.target).toBe('branch:main');
+    }
+
+    const targetFirst = detectIntent('/review commit:abc123 with claude');
+    expect(targetFirst.type).toBe('review');
+    if (targetFirst.type === 'review') {
+      expect(targetFirst.engineId).toBe('claude');
+      expect(targetFirst.engineIds).toEqual(['claude']);
+      expect(targetFirst.target).toBe('commit:abc123');
+    }
+  });
+
+  it('/review keeps multiple explicit engines', () => {
+    const r = detectIntent('/review with codex gemini branch:main');
+    expect(r.type).toBe('review');
+    if (r.type === 'review') {
+      expect(r.engineId).toBe('codex');
+      expect(r.engineIds).toEqual(['codex', 'gemini']);
+      expect(r.target).toBe('branch:main');
+    }
+
+    const comma = detectIntent('/review branch:main with codex,gemini');
+    expect(comma.type).toBe('review');
+    if (comma.type === 'review') {
+      expect(comma.engineIds).toEqual(['codex', 'gemini']);
+      expect(comma.target).toBe('branch:main');
+    }
+  });
+
   it('/leaderboard', () => {
     expect(detectIntent('/leaderboard').type).toBe('leaderboard');
     expect(detectIntent('/elo').type).toBe('leaderboard');
@@ -256,6 +291,39 @@ describe('Intent Detection — Natural Language', () => {
     const ambiguous = detectIntent('should we use Redis');
     expect(ambiguous.type).toBe('auto');
     if (ambiguous.type === 'auto') expect(ambiguous.taskClass).toBe('ambiguous');
+  });
+
+  it('parses command-like review shortcuts without routing through Cesar', () => {
+    const r = detectIntent('review with gemini');
+    expect(r.type).toBe('review');
+    if (r.type === 'review') {
+      expect(r.engineId).toBe('gemini');
+      expect(r.engineIds).toEqual(['gemini']);
+      expect(r.target).toBeUndefined();
+    }
+
+    const branch = detectIntent('review branch:main with claude');
+    expect(branch.type).toBe('review');
+    if (branch.type === 'review') {
+      expect(branch.engineId).toBe('claude');
+      expect(branch.engineIds).toEqual(['claude']);
+      expect(branch.target).toBe('branch:main');
+    }
+  });
+
+  it('parses command-like review shortcuts with multiple engines', () => {
+    const r = detectIntent('review with codex gemini');
+    expect(r.type).toBe('review');
+    if (r.type === 'review') {
+      expect(r.engineId).toBe('codex');
+      expect(r.engineIds).toEqual(['codex', 'gemini']);
+      expect(r.target).toBeUndefined();
+    }
+  });
+
+  it('leaves natural-language review requests to Cesar', () => {
+    const r = detectIntent('review this code for subtle bugs');
+    expect(r.type).toBe('auto');
   });
 
   it('leaderboard keywords', () => {

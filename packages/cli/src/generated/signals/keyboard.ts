@@ -75,19 +75,19 @@ export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
       } as Record<string, string>)[input] ?? input
     : input;
   const delegatedCtrlShortcuts = new Set(['e', 'j', 'l', 'o', 'r', 't', 'y']);
-  
+
   // Model/cesar picker open: only Ctrl+C gets through
   if (ctx.modelPickerOpen || ctx.cesarPickerOpen) {
     if (input === '\x03' || (key.ctrl && normalizedCtrlInput === 'c')) return { type: 'exit' };
     return { type: 'none' };
   }
-  
+
   // Focused tool detail viewer owns navigation keys while open.
   if (ctx.toolDetailOpen) {
     if (input === '\x03' || (key.ctrl && normalizedCtrlInput === 'c')) return { type: 'cancelOrExit' };
     return { type: 'none' };
   }
-  
+
   // Choice-based question: single keypress resolves immediately
   if (ctx.questionState && ctx.questionState.choices) {
     if (key.ctrl && normalizedCtrlInput === 'o') return { type: 'openToolDetail' };
@@ -100,14 +100,14 @@ export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
     if (key.escape) return { type: 'cancelChoice' };
     return { type: 'swallow' };
   }
-  
+
   // When a child text input is focused, it owns the reserved Ctrl shortcuts.
   // Otherwise App and the child can both react to the same keypress and
   // toggle features twice (expand immediately collapses, etc.).
   if (ctx.textInputActive && key.ctrl && delegatedCtrlShortcuts.has(normalizedCtrlInput)) {
     return { type: 'none' };
   }
-  
+
   // Tab: ghost-complete or queue plan mode
   if ((key.tab || input === '\t') && !ctx.slashPickerOpen && !ctx.enginePickerOpen && !ctx.questionState && !ctx.reviewEventOpen) {
     const ghost = tryGhostComplete(ctx.inputValue, ctx.commands, ctx.engineIds);
@@ -117,10 +117,10 @@ export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
     }
     return { type: 'none' };
   }
-  
+
   // Ctrl+L: clear
   if (key.ctrl && normalizedCtrlInput === 'l') return { type: 'submit', value: '/clear' };
-  
+
   // ── File rail navigation (only when rail is open AND composer is empty) ──
   // Arrows belong to the rail; Enter stays the composer's property so chat
   // submit never accidentally fires. Use →/← to expand/collapse.
@@ -134,7 +134,7 @@ export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
       return { type: 'fileRailClose' };
     }
   }
-  
+
   // Scroll keys move HistoryView's sliced window forward/back — only
   // meaningful in fullscreen (alt-screen) mode. In native mode the
   // terminal's own scrollback owns the scroll UI; the app doesn't slice
@@ -143,28 +143,28 @@ export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
   // Scroll is owned by the terminal's native scrollback (main-buffer mode).
   // No in-app scroll handler — PgUp/PgDn/Shift+↑/↓/Home/End flow through to
   // terminal/composer as the user expects from a normal REPL.
-  
+
   // Ctrl+E: toggle tool output expansion
   if (key.ctrl && normalizedCtrlInput === 'e') return { type: 'toggleToolExpand' };
-  
+
   // Ctrl+T: toggle thinking expansion
   if (key.ctrl && normalizedCtrlInput === 't') return { type: 'toggleThinking' };
-  
+
   // Ctrl+G: toggle mouse selection mode
   if (key.ctrl && normalizedCtrlInput === 'g') return { type: 'toggleSelectionMode' };
-  
+
   // Ctrl+O: open focused tool detail view
   if (key.ctrl && normalizedCtrlInput === 'o') return { type: 'openToolDetail' };
-  
+
   // Ctrl+R: open results pager
   if (key.ctrl && normalizedCtrlInput === 'r') return { type: 'openResults' };
-  
+
   // Ctrl+Y: copy current transcript/results to clipboard
   if (key.ctrl && normalizedCtrlInput === 'y') return { type: 'copyTranscript' };
-  
+
   // Ctrl+B: toggle Files rail (right-side sidebar of session-touched files)
   if (key.ctrl && normalizedCtrlInput === 'b') return { type: 'toggleFileRail' };
-  
+
   // Escape: delegate to resolveEscapeAction
   if (key.escape) {
     if (ctx.planModeQueued) return { type: 'unqueuePlan' };
@@ -184,10 +184,10 @@ export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
       case 'noop': return { type: 'none' };
     }
   }
-  
+
   // Ctrl+J: insert newline
   if (key.ctrl && input === 'j') return { type: 'insertNewline' };
-  
+
   // Arrow keys: navigate history
   if (!ctx.enginePickerOpen && !ctx.questionState) {
     if (key.upArrow && ctx.inputHistory.length > 0 && !ctx.slashPickerOpen) {
@@ -199,9 +199,9 @@ export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
       return { type: 'historySet', index: r.index, value: r.value };
     }
   }
-  
+
   // Ctrl+C: cancel or exit
   if (input === '\x03' || (key.ctrl && normalizedCtrlInput === 'c')) return { type: 'cancelOrExit' };
-  
+
   return { type: 'none' };
 }

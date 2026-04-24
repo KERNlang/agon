@@ -35,23 +35,23 @@ export async function runTeamCoopTribunal(team: TeamSpec, position: string, ques
   const start = Date.now();
   const allArguments: string[] = [];
   let tokenSum = 0;
-  
+
   const architect = team.members.find((m) => m.role === 'architect') ?? team.members[0];
   const implementers = team.members.filter((m) => m.role === 'implementer');
   const reviewer = team.members.find((m) => m.role === 'reviewer');
-  
+
   for (let round = 1; round <= rounds; round++) {
     onEvent?.({ type: 'team:round-start' as any, data: { teamId: team.teamId, round } });
-  
+
     // --- Architect frames the argument strategy ---
     onEvent?.({ type: 'team:member-dispatch' as any, data: { teamId: team.teamId, engineId: architect.engineId, role: 'architect' } });
-  
+
     const prevArgs = allArguments.length > 0
       ? `\n\n## YOUR PREVIOUS ARGUMENTS:\n${allArguments.map((a, i) => `Round ${i + 1}: ${a}`).join('\n\n')}`
       : '';
-  
+
     const strategyPrompt = `## TEAM ${position.toUpperCase()}\nYou are the strategist for your team arguing the "${position}" position in a ${mode} tribunal.\n\nQuestion: ${question}${prevArgs}\n\nOutline the key points your team should make in round ${round}. Be strategic — anticipate the opposing team's arguments and prepare counterpoints.`;
-  
+
     const stratResult = await adapter.dispatch({
       engine: registry.get(architect.engineId),
       prompt: strategyPrompt,
@@ -61,19 +61,19 @@ export async function runTeamCoopTribunal(team: TeamSpec, position: string, ques
       outputDir,
       signal,
     });
-  
+
     tokenSum += stratResult.usage?.totalTokens ?? 0;
     const strategy = stratResult.stdout.trim();
     trace.push({ round, actor: architect.engineId, role: 'architect', action: 'planned', artifactSummary: strategy.slice(0, 200), durationMs: stratResult.durationMs });
-  
+
     // --- Implementers contribute supporting arguments (parallel) ---
     const supportPromises = (implementers.length > 0 ? implementers : [team.members[team.members.length > 1 ? 1 : 0]]).map(async (impl) => {
       if (impl.engineId === architect.engineId) return '';
-  
+
       onEvent?.({ type: 'team:member-dispatch' as any, data: { teamId: team.teamId, engineId: impl.engineId, role: 'implementer' } });
-  
+
       const supportPrompt = `## TEAM ${position.toUpperCase()} — SUPPORTING ARGUMENT\nYou are building supporting evidence for your team's "${position}" position.\n\nQuestion: ${question}\n\n## TEAM STRATEGY (from your architect):\n${strategy}\n\nWrite a compelling supporting argument that strengthens the strategy above. Add evidence, examples, or angles the architect may have missed.`;
-  
+
       const supportResult = await adapter.dispatch({
         engine: registry.get(impl.engineId),
         prompt: supportPrompt,
@@ -83,22 +83,22 @@ export async function runTeamCoopTribunal(team: TeamSpec, position: string, ques
         outputDir,
         signal,
       });
-  
+
       tokenSum += supportResult.usage?.totalTokens ?? 0;
       trace.push({ round, actor: impl.engineId, role: 'implementer', action: 'implemented', artifactSummary: supportResult.stdout.trim().slice(0, 200), durationMs: supportResult.durationMs });
-  
+
       onEvent?.({ type: 'team:member-done' as any, data: { teamId: team.teamId, engineId: impl.engineId } });
       return supportResult.stdout.trim();
     });
-  
+
     const supports = (await Promise.all(supportPromises)).filter((s) => s.length > 0);
-  
+
     // --- Reviewer (or architect in 2v2) synthesizes final team argument ---
     const synthesizer = reviewer ?? architect;
     onEvent?.({ type: 'team:member-dispatch' as any, data: { teamId: team.teamId, engineId: synthesizer.engineId, role: synthesizer === reviewer ? 'reviewer' : 'architect' } });
-  
+
     const synthPrompt = `## TEAM ${position.toUpperCase()} — FINAL ARGUMENT FOR ROUND ${round}\nCombine the following into ONE strong, coherent argument for the "${position}" position.\n\nQuestion: ${question}\n\n## ARCHITECT'S STRATEGY:\n${strategy}\n\n${supports.length > 0 ? `## SUPPORTING ARGUMENTS:\n${supports.join('\n\n---\n\n')}` : ''}\n\nWrite the final unified team argument. Make it compelling, well-structured, and address likely counterarguments.`;
-  
+
     const synthResult = await adapter.dispatch({
       engine: registry.get(synthesizer.engineId),
       prompt: synthPrompt,
@@ -108,16 +108,16 @@ export async function runTeamCoopTribunal(team: TeamSpec, position: string, ques
       outputDir,
       signal,
     });
-  
+
     tokenSum += synthResult.usage?.totalTokens ?? 0;
     const finalArg = synthResult.stdout.trim();
     allArguments.push(finalArg);
-  
+
     trace.push({ round, actor: synthesizer.engineId, role: synthesizer === reviewer ? 'reviewer' : 'architect', action: 'finalized', artifactSummary: finalArg.slice(0, 200), durationMs: synthResult.durationMs });
-  
+
     onEvent?.({ type: 'team:round-done' as any, data: { teamId: team.teamId, round } });
   }
-  
+
   return {
     submission: {
       teamId: team.teamId,
@@ -136,13 +136,13 @@ export async function runTeamTribunal(options: TeamTribunalOptions): Promise<Tea
   const matchId = randomUUID().slice(0, 8);
   const mode = options.mode ?? 'adversarial';
   const modeConfig = getModeConfig(mode, options.membersPerSide * 2);
-  
+
   const sidechain = createSidechainLogger({
     sessionId: matchId,
     sessionType: 'team-tribunal',
     outputDir: options.outputDir,
   });
-  
+
   const enabledEngines = options.engines ?? config.forgeEnabledEngines;
   const available = enabledEngines.filter((id: string) => {
     try {
@@ -150,16 +150,16 @@ export async function runTeamTribunal(options: TeamTribunalOptions): Promise<Tea
       return options.registry.isAvailable(engine);
     } catch { return false; }
   });
-  
+
   // Engines can appear on both teams — minimum is 2 engines + Cesar as judge
   if (available.length < 2) {
     throw new Error(`Team tribunal requires at least 2 available engines, only ${available.length} available`);
   }
-  
+
   const taskClass = classifyTask(options.question);
   const format = makeFormat(options.membersPerSide);
   const composeMode = options.composeMode ?? 'auto-balanced';
-  
+
   // Cesar is the impartial judge — exclude from competing pool
   const cesarId = config.cesarEngine;
   let competitors = available.filter((id: string) => id !== cesarId);
@@ -169,7 +169,7 @@ export async function runTeamTribunal(options: TeamTribunalOptions): Promise<Tea
     competitors = [...available];
     cesarCompeting = true;
   }
-  
+
   const [teamA, teamB] = composeTeams(
     competitors,
     options.membersPerSide,
@@ -177,28 +177,28 @@ export async function runTeamTribunal(options: TeamTribunalOptions): Promise<Tea
     taskClass,
     options.explicitTeams,
   );
-  
+
   // Assign positions from tribunal mode roles
   const posA = modeConfig.roles[0] ?? 'Advocate';
   const posB = modeConfig.roles[1] ?? 'Skeptic';
-  
+
   sidechain.log('team-tribunal:init', undefined, {
     mode,
     format: format.label,
     teamA: { name: teamA.name, position: posA, members: teamA.members.map((m) => m.engineId) },
     teamB: { name: teamB.name, position: posB, members: teamB.members.map((m) => m.engineId) },
   });
-  
+
   options.onEvent?.({ type: 'team:compose' as any, data: { teams: [teamA, teamB] } });
-  
+
   const effectiveRounds = Math.min(options.rounds, modeConfig.maxRounds);
-  
+
   // Run both teams in parallel across all rounds
   const [resultA, resultB] = await Promise.all([
     runTeamCoopTribunal(teamA, posA, options.question, effectiveRounds, mode, options.registry, options.adapter, options.timeout, options.outputDir, options.onEvent, options.signal),
     runTeamCoopTribunal(teamB, posB, options.question, effectiveRounds, mode, options.registry, options.adapter, options.timeout, options.outputDir, options.onEvent, options.signal),
   ]);
-  
+
   // --- Pick impartial judge — must not be on either team ---
   const teamMemberIds = new Set([...teamA.members.map((m: any) => m.engineId), ...teamB.members.map((m: any) => m.engineId)]);
   let judgeId = cesarId;
@@ -212,7 +212,7 @@ export async function runTeamTribunal(options: TeamTribunalOptions): Promise<Tea
   }
   const judgeEngine = options.registry.get(judgeId);
   const judgePrompt = `## TRIBUNAL JUDGE\nYou are an impartial judge. Two teams debated the following question. Evaluate their arguments and declare a winner.\n\nQuestion: ${options.question}\n\n## TEAM ALPHA (${posA}):\n${resultA.arguments[resultA.arguments.length - 1]}\n\n## TEAM BETA (${posB}):\n${resultB.arguments[resultB.arguments.length - 1]}\n\nAnalyze each team's argument strengths and weaknesses.\nYou MUST end your response with exactly these two lines:\nSCORE_ALPHA: <number 0-100>\nSCORE_BETA: <number 0-100>\nThen declare: WINNER: "ALPHA" or "BETA" or "DRAW"`;
-  
+
   const judgeResult = await options.adapter.dispatch({
     engine: judgeEngine,
     prompt: judgePrompt,
@@ -222,27 +222,27 @@ export async function runTeamTribunal(options: TeamTribunalOptions): Promise<Tea
     outputDir: options.outputDir,
     signal: options.signal,
   });
-  
+
   const judgeText = judgeResult.stdout.trim();
-  
+
   // Parse winner from judge response
   let winnerTeamId: string | null = null;
   if (/WINNER.*ALPHA/i.test(judgeText)) winnerTeamId = teamA.teamId;
   else if (/WINNER.*BETA/i.test(judgeText)) winnerTeamId = teamB.teamId;
-  
+
   // Parse structured scores (SCORE_ALPHA: XX, SCORE_BETA: XX)
   const alphaMatch = judgeText.match(/SCORE_ALPHA\s*:\s*(\d{1,3})/i);
   const betaMatch = judgeText.match(/SCORE_BETA\s*:\s*(\d{1,3})/i);
   const scoreA = alphaMatch ? parseInt(alphaMatch[1], 10) : 50;
   const scoreB = betaMatch ? parseInt(betaMatch[1], 10) : 50;
-  
+
   const cardA: TeamScoreCard = { teamId: teamA.teamId, score: Math.min(scoreA, 100), breakdown: { position: posA as any } };
   const cardB: TeamScoreCard = { teamId: teamB.teamId, score: Math.min(scoreB, 100), breakdown: { position: posB as any } };
-  
+
   options.onEvent?.({ type: 'team:score' as any, data: { teamId: teamA.teamId, score: cardA.score } });
   options.onEvent?.({ type: 'team:score' as any, data: { teamId: teamB.teamId, score: cardB.score } });
   options.onEvent?.({ type: 'team:winner' as any, data: { winnerTeamId } });
-  
+
   const matchResult: TeamMatchResult = {
     matchId,
     mode: 'tribunal',
@@ -257,18 +257,18 @@ export async function runTeamTribunal(options: TeamTribunalOptions): Promise<Tea
     winnerTeamId,
     timestamp: new Date().toISOString(),
   };
-  
+
   if (config.ratingsEnabled) {
     updateTeamElo(matchResult, 32);
   }
-  
+
   sidechain.log('team-tribunal:done', winnerTeamId ?? undefined, {
     mode,
     rounds: effectiveRounds,
     judge: judgeText.slice(0, 500),
   });
-  
+
   options.onEvent?.({ type: 'team:match-done' as any, data: {} });
-  
+
   return matchResult;
 }

@@ -20,15 +20,15 @@ export function determineWinner(results: Map<string,EngineResult>, spread: numbe
       if (a.filesChanged !== b.filesChanged) return a.filesChanged - b.filesChanged;
       return a.durationSec - b.durationSec;
     });
-  
+
   if (passing.length === 0) {
     return { winner: null, closeCall: false, bestScore: 0, secondScore: 0 };
   }
-  
+
   const bestScore = passing[0][1].score;
   const secondScore = passing.length > 1 ? passing[1][1].score : 0;
   const closeCall = passing.length > 1 && (bestScore - secondScore) < spread;
-  
+
   return { winner: passing[0][0], closeCall, bestScore, secondScore };
 }
 
@@ -59,7 +59,7 @@ export function scoreAgentTeamResult(teamResult: AgentTeamResult, repoRoot: stri
       });
       continue;
     }
-  
+
     if (taskKind === 'edit') {
       // RT-3 fix: typecheck-or-fail is the fitness gate. Members that fail
       // typecheck score pass=false regardless of diff size, so stub-and-done

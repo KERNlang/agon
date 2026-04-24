@@ -93,14 +93,14 @@ export function createPlan(action: PlanAction, workspace: WorkspaceSnapshot, ste
 export function advanceStep(plan: Plan, stepId: string, result: StepResult): Plan {
   const stepIdx = plan.steps.findIndex((s) => s.id === stepId);
   if (stepIdx === -1) return plan;
-  
+
   const newSteps = plan.steps.map((s, i) =>
     i === stepIdx ? { ...s, result } : s,
   );
-  
+
   let newState = plan.state;
   let newCurrentStepId = plan.currentStepId;
-  
+
   if (result.state === 'failed') {
     newState = 'paused';
     newCurrentStepId = stepId;
@@ -114,7 +114,7 @@ export function advanceStep(plan: Plan, stepId: string, result: StepResult): Pla
       newState = 'completed';
     }
   }
-  
+
   return {
     ...plan,
     steps: newSteps,
@@ -133,7 +133,7 @@ export function canAutoApprove(step: PlanStep, level: ApprovalLevel): boolean {
 export function mergeStepResult(plan: Plan, stepId: string, partial: Partial<StepResult>): Plan {
   const stepIdx = plan.steps.findIndex((s) => s.id === stepId);
   if (stepIdx === -1) return plan;
-  
+
   const existing = plan.steps[stepIdx].result;
   const merged: StepResult = {
     state: partial.state ?? existing.state,
@@ -143,14 +143,14 @@ export function mergeStepResult(plan: Plan, stepId: string, partial: Partial<Ste
     score: partial.score ?? existing.score,
     durationMs: partial.durationMs ?? existing.durationMs,
   };
-  
+
   const newSteps = plan.steps.map((s, i) =>
     i === stepIdx ? { ...s, result: merged } : s,
   );
-  
+
   let newState = plan.state;
   let newCurrentStepId = plan.currentStepId;
-  
+
   if (merged.state === 'failed') {
     newState = 'paused';
     newCurrentStepId = stepId;
@@ -164,7 +164,7 @@ export function mergeStepResult(plan: Plan, stepId: string, partial: Partial<Ste
       newState = 'completed';
     }
   }
-  
+
   return {
     ...plan,
     steps: newSteps,
@@ -208,7 +208,7 @@ export function failPlan(plan: Plan, error?: string): Plan {
   if (plan.state !== 'running' && plan.state !== 'paused') {
     throw new PlanStateError(['running', 'paused'], plan.state);
   }
-  
+
   let steps = plan.steps;
   if (plan.currentStepId && error) {
     const stepIdx = plan.steps.findIndex((s) => s.id === plan.currentStepId);
@@ -231,17 +231,17 @@ export function failPlan(plan: Plan, error?: string): Plan {
       );
     }
   }
-  
+
   return { ...plan, steps, state: 'failed', updatedAt: new Date().toISOString() };
 }
 
 export function resetStepForRetry(plan: Plan, stepId: string): Plan {
   const stepIdx = plan.steps.findIndex((s) => s.id === stepId);
   if (stepIdx === -1) return plan;
-  
+
   const step = plan.steps[stepIdx];
   if (step.result.state !== 'failed') return plan;
-  
+
   const newSteps = plan.steps.map((s, i) => {
     if (i >= stepIdx) {
       return {
@@ -251,7 +251,7 @@ export function resetStepForRetry(plan: Plan, stepId: string): Plan {
     }
     return s;
   });
-  
+
   return {
     ...plan,
     steps: newSteps,

@@ -21,11 +21,11 @@ export async function runDelegate(opts: {engineId:string,task:string,mode?:strin
     outputDir: opts.outputDir,
     signal: opts.signal,
   });
-  
+
   if (!result.stdout.trim()) {
     return { engineId: opts.engineId, response: '', usage: result.usage };
   }
-  
+
   // Strip <think> blocks
   const cleaned = result.stdout.trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
   return { engineId: opts.engineId, response: cleaned, usage: result.usage };

@@ -22,7 +22,7 @@ export function splitPromptBlocks(prompt: string): PromptBlock[] {
   const STABLE_HEADERS = /^##\s*(CONSTRAINTS|INSTRUCTIONS|FITNESS TEST|REVIEW REQUEST)/i;
   const sections = prompt.split(/(?=^## )/m);
   const blocks: PromptBlock[] = [];
-  
+
   for (const section of sections) {
     const trimmed = section.trim();
     if (!trimmed) continue;
@@ -33,12 +33,12 @@ export function splitPromptBlocks(prompt: string): PromptBlock[] {
       cacheable: isStable,
     });
   }
-  
+
   // If no sections found, return whole prompt as a single user block
   if (blocks.length === 0) {
     blocks.push({ role: 'user', content: prompt, cacheable: false });
   }
-  
+
   return blocks;
 }
 
@@ -48,7 +48,7 @@ export function splitPromptBlocks(prompt: string): PromptBlock[] {
 export function mergeBlocksByRole(blocks: PromptBlock[]): {system:string, user:string} {
   const systemParts: string[] = [];
   const userParts: string[] = [];
-  
+
   for (const block of blocks) {
     if (block.role === 'system') {
       systemParts.push(block.content);
@@ -56,7 +56,7 @@ export function mergeBlocksByRole(blocks: PromptBlock[]): {system:string, user:s
       userParts.push(block.content);
     }
   }
-  
+
   return {
     system: systemParts.join('\n\n'),
     user: userParts.join('\n\n'),
@@ -119,13 +119,13 @@ export function buildForgePromptWithContext(opts: {task:string;fitnessCmd:string
     `## FITNESS TEST\nRun this command to verify your work passes:\n\`\`\`\n${opts.fitnessCmd}\n\`\`\``,
   ];
   if (opts.context) sections.push(`## CONTEXT\n${opts.context}`);
-  
+
   // Inject StageContexts from prior engine runs
   if (opts.stageContexts && opts.stageContexts.length > 0) {
     const ctxSections = opts.stageContexts.map((ctx: StageContext) => renderStageContext(ctx));
     sections.push(ctxSections.join('\n\n---\n\n'));
   }
-  
+
   if (opts.agentMode) {
     sections.push(
       `## CONSTRAINTS\n- You have full tool access. Read files, edit code, run commands directly.\n- Run the fitness test command to verify your work passes.\n- Iterate until the fitness test passes — read errors, fix them, re-run.\n- Modify only the files necessary to complete the task.\n- Exit when the fitness test passes.\n- Do not ask questions — make reasonable assumptions.`,

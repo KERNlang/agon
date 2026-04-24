@@ -57,32 +57,32 @@ export function runHooks(event: HookEvent, env?: Record<string,string>): HookRes
   const config = _cachedConfig();
   const hooks = (config as any).hooks as Record<string, HookDef[]> | undefined;
   if (!hooks || !hooks[event]) return [];
-  
+
   const defs = hooks[event];
   const engineId = env?.AGON_ENGINE ?? '';
   const results: HookResult[] = [];
-  
+
   for (const hook of defs) {
     // Filter by engine if specified
     if (hook.engines && hook.engines.length > 0 && engineId) {
       if (!hook.engines.includes(engineId)) continue;
     }
-  
+
     const hookEnv: Record<string, string> = {
       AGON_HOOK_EVENT: event,
       AGON_CWD: process.cwd(),
       ...env ?? {},
     };
-  
+
     const result = runHook(hook, hookEnv);
     results.push(result);
-  
+
     // If a pre-hook fails, stop processing remaining hooks
     if (!result.ok && event.startsWith('pre_')) {
       break;
     }
   }
-  
+
   return results;
 }
 

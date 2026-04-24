@@ -58,27 +58,27 @@ export interface PersistentSession {
  */
 export function createPersistentSession(config: PersistentSessionConfig): PersistentSession {
   const engine = config.engine;
-  
+
   // API path: engine has API config and no binary path provided → use stateless resume session
   if (engine.api && !config.binaryPath) {
     return createResumeSession(config);
   }
-  
+
   // Stream-JSON companion (Claude): bidirectional NDJSON pipe
   if ((engine.companion?.protocol === 'stream-json' || engine.id === 'claude' || engine.binary === 'claude') && config.binaryPath) {
     return createStreamJsonSession(config);
   }
-  
+
   // Engines with ACP protocol (OpenCode, Gemini)
   if (engine.companion && engine.companion.protocol === 'acp') {
     return createAcpSession(config);
   }
-  
+
   // Engines with JSONRPC companion (Codex)
   if (engine.companion && engine.companion.protocol === 'jsonrpc') {
     return createCompanionSession(config);
   }
-  
+
   // Fallback: resume-based (spawn per turn with --resume/--continue)
   return createResumeSession(config);
 }
@@ -98,22 +98,22 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
   let reconnecting = false;
   const pending = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }>();
   let notificationHandlers: Array<(method: string, params: any) => void> = [];
-  
+
   const resolveModel = (engine: EngineDefinition): string | null => {
     const modelConfig = engine.model;
     if (!modelConfig) return null;
-  
+
     if (modelConfig.configKey) {
       const envVal = process.env[modelConfig.configKey.toUpperCase()];
       if (envVal) return envVal;
     }
-  
+
     const configured = (loadConfig(config.cwd) as any).engineModels?.[engine.id];
     if (configured) return configured;
-  
+
     return modelConfig.default ?? null;
   };
-  
+
   function sendRpc(method: string, params: Record<string, unknown>): Promise<any> {
     const id = nextRpcId++;
     const timeoutMs = method === 'initialize' ? 8000 : 90000;
@@ -126,11 +126,11 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
       proc!.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
     });
   }
-  
+
   function notifyRpc(method: string): void {
     proc!.stdin!.write(JSON.stringify({ jsonrpc: '2.0', method }) + '\n');
   }
-  
+
   function killProc(): void {
     if (!proc) return;
     try {
@@ -142,7 +142,7 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
     proc = null;
     alive = false;
   }
-  
+
   async function tryReconnect(): Promise<boolean> {
     if (reconnecting) return false;
     if (reconnectAttempts >= 5) {
@@ -173,35 +173,35 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
       reconnecting = false;
     }
   }
-  
+
   const session: PersistentSession = {
     get alive() { return alive; },
     get sessionId() { return sessionId; },
     engineId: config.engine.id,
-  
+
     async start() {
       if (alive) return;
-  
+
       const companion = config.engine.companion!;
       proc = spawn(config.binaryPath, companion.serverCmd, {
         stdio: ['pipe', 'pipe', 'pipe'],
         cwd: config.cwd,
         detached: true,
       });
-  
+
       // Wire up JSONRPC line parser
       const rl = createInterface({ input: proc.stdout! });
       rl.on('line', (line: string) => {
         if (!line.trim()) return;
         let msg: any;
         try { msg = JSON.parse(line); } catch { return; }
-  
+
         // Server REQUEST: has both id AND method (server-initiated request expecting response)
         // MUST check before pending responses — IDs can collide between client and server counters
         if (msg.id !== undefined && msg.method) {
           const m = msg.method;
           console.error(`[cesar:companion] server request: ${m} id=${msg.id}`);
-  
+
           // Map Codex approval method names to tool categories
           const methodToolMap: Record<string, string> = {
             'item/commandExecution/requestApproval': 'Bash',
@@ -210,12 +210,12 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
           };
           const toolName = methodToolMap[m] ?? msg.params?.tool ?? msg.params?.command?.type ?? msg.params?.name ?? m;
           const toolCmd = msg.params?.command?.command ?? msg.params?.command ?? msg.params?.description ?? msg.params?.path ?? JSON.stringify(msg.params ?? {});
-  
+
           // Emit as tool_call for UI visibility
           for (const handler of notificationHandlers) {
             handler('tool/approval', { tool: toolName, command: toolCmd, rpcId: msg.id });
           }
-  
+
           // Route through Agon's permission callback for ALL server requests
           // Codex V2 uses { decision: "accept"|"decline" }, V1 uses { approved: boolean }
           const isV2 = m.startsWith('item/');
@@ -223,7 +223,7 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
             if (isV2) return { decision: approved ? 'accept' : 'decline' };
             return { approved };
           };
-  
+
           if (config.onApproval) {
             config.onApproval(String(toolName), String(toolCmd)).then((result: boolean | string) => {
               if (typeof result === 'string') {
@@ -241,7 +241,7 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
           }
           return;
         }
-  
+
         // Response to our request: has id but NO method
         if (msg.id !== undefined && pending.has(msg.id)) {
           const p = pending.get(msg.id)!;
@@ -254,7 +254,7 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
           }
           return;
         }
-  
+
         // Server notification — forward to active handlers
         if (msg.method) {
           for (const handler of notificationHandlers) {
@@ -262,12 +262,12 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
           }
         }
       });
-  
+
       proc.stderr?.on('data', (data: Buffer) => {
         const msg = String(data).trim();
         if (msg) console.error(`[cesar:companion:stderr] ${msg}`);
       });
-  
+
       proc.on('close', (code: number | null) => {
         console.error(`[cesar:companion] process exited code=${code}`);
         alive = false; proc = null;
@@ -276,21 +276,21 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
         console.error(`[cesar:companion] process error: ${err.message}`);
         alive = false; proc = null;
       });
-  
+
       // Wait for process startup
       await new Promise((r) => setTimeout(r, 200));
-  
+
       if (!proc) {
         throw new Error(`Companion process for ${config.engine.id} failed to start`);
       }
-  
+
       // Initialize handshake
       await sendRpc('initialize', {
         clientInfo: { name: 'agon-ai', title: 'Agon AI', version: '0.2.0' },
         capabilities: null,
       });
       notifyRpc('initialized');
-  
+
       // Start persistent thread — sandbox level from engine config, fallback to workspace-write + on-request
     const threadParams: Record<string, unknown> = {
       cwd: config.cwd,
@@ -314,7 +314,7 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
       sessionId = threadId;
       alive = true;
     },
-  
+
     async *send(opts: SessionSendOptions) {
       if (!alive || !proc) {
         const reconnected = await tryReconnect();
@@ -324,18 +324,18 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
         }
         yield { type: 'status' as const, content: `${config.engine.id} session reconnected` };
       }
-  
+
     const chunks: SessionChunk[] = [];
     let turnDone = false;
     let resolveWait: (() => void) | null = null;
     let emittedText = '';
-  
+
     const pushDelta = (text: string) => {
       if (!text) return;
       chunks.push({ type: 'text', content: text });
       emittedText += text;
     };
-  
+
     const pushSnapshot = (text: string) => {
       if (!text) return;
       let overlap = Math.min(emittedText.length, text.length);
@@ -347,7 +347,7 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
       chunks.push({ type: 'text', content: suffix });
       emittedText += suffix;
     };
-  
+
     // Abort signal — break out of wait loop on cancel
     const onAbort = () => {
       turnDone = true;
@@ -356,7 +356,7 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
       };
       if (opts.signal?.aborted) { yield { type: 'done' as const, content: 'cancelled' }; return; }
       opts.signal?.addEventListener('abort', onAbort, { once: true });
-  
+
       const handler = (method: string, params: any) => {
       if (method === 'turn/completed') {
         turnDone = true;
@@ -394,9 +394,9 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
       }
         if (resolveWait) { resolveWait(); resolveWait = null; }
       };
-  
+
       notificationHandlers.push(handler);
-  
+
       try {
         // On first turn, prepend system prompt ONLY if it wasn't already sent
         // via thread/start developerInstructions (to avoid duplicating the full prompt).
@@ -405,13 +405,13 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
           message = `[System Instructions]\n${config.systemPrompt}\n\n[User Message]\n${message}`;
         }
         firstTurn = false;
-  
+
         // Start turn on existing thread
         await sendRpc('turn/start', {
           threadId,
           input: [{ type: 'text', text: message, text_elements: [] }],
         });
-  
+
         // Yield chunks as they arrive
         while (!turnDone) {
           if (chunks.length > 0) {
@@ -430,19 +430,19 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
         if (idx >= 0) notificationHandlers.splice(idx, 1);
       }
     },
-  
+
     close() {
       for (const [, p] of pending) clearTimeout(p.timer);
       pending.clear();
       killProc();
     },
-  
+
     getMessageHistory() {
       // Companion sessions manage threads externally — no local history to extract
       return [];
     },
   };
-  
+
   return session;
 }
 
@@ -460,7 +460,7 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
   let reconnecting = false;
   const pending = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }>();
   let notificationHandlers: Array<(method: string, params: any) => void> = [];
-  
+
   function sendRpc(method: string, params: Record<string, unknown>): Promise<any> {
     const id = nextRpcId++;
     const timeoutMs = method === 'initialize' ? 8000 : 90000;
@@ -473,7 +473,7 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
       proc!.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
     });
   }
-  
+
   function killProc(): void {
     if (!proc) return;
     try {
@@ -485,7 +485,7 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
     proc = null;
     alive = false;
   }
-  
+
   async function tryReconnect(): Promise<boolean> {
     if (reconnecting) return false;
     if (reconnectAttempts >= 5) {
@@ -514,15 +514,15 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
       reconnecting = false;
     }
   }
-  
+
   const session: PersistentSession = {
     get alive() { return alive; },
     get sessionId() { return sessionId; },
     engineId: config.engine.id,
-  
+
     async start() {
       if (alive) return;
-  
+
       // Use companion serverCmd if available, else fall back to binary-specific defaults
       const companion = config.engine.companion;
       const acpArgs = companion?.serverCmd
@@ -532,19 +532,19 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
         cwd: config.cwd,
         detached: true,
       });
-  
+
       const rl = createInterface({ input: proc.stdout! });
       rl.on('line', (line: string) => {
         if (!line.trim()) return;
         let msg: any;
         try { msg = JSON.parse(line); } catch { return; }
-  
+
         // Server REQUEST: has both id AND method (server-initiated request expecting response)
         // MUST check before pending responses — IDs can collide between client and server counters
         if (msg.id !== undefined && msg.method) {
           const m = msg.method;
           console.error(`[cesar:acp] server request: ${m} id=${msg.id}`);
-  
+
           // Gemini session/request_permission — needs optionId response format
           if (m === 'session/request_permission') {
             const options: any[] = msg.params?.options ?? [];
@@ -554,11 +554,11 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
             const allowOpt = options.find((o: any) => o.kind === 'allow_once') ?? options.find((o: any) => o.optionId?.includes('proceed_once'));
             const alwaysOpt = options.find((o: any) => o.kind === 'allow_always' || o.optionId?.includes('proceed_always'));
             const rejectOpt = options.find((o: any) => o.kind === 'reject_once') ?? options.find((o: any) => o.optionId?.includes('reject'));
-  
+
             for (const handler of notificationHandlers) {
               handler('tool/approval', { tool: tName, command: tCmd, rpcId: msg.id });
             }
-  
+
             if (config.onApproval) {
               config.onApproval(String(tName), String(tCmd)).then((result: boolean | string) => {
                 const approved = typeof result === 'string' ? false : result;
@@ -576,18 +576,18 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
             }
             return;
           }
-  
+
           // Generic server request (other methods)
           const toolName = msg.params?.tool ?? msg.params?.name ?? msg.params?.type ?? m;
           const toolCmd = msg.params?.command ?? msg.params?.description ?? JSON.stringify(msg.params ?? {});
-  
+
           for (const handler of notificationHandlers) {
             handler('tool/approval', { tool: toolName, command: toolCmd, rpcId: msg.id });
           }
-  
+
           const isV2Generic = m.startsWith('item/');
           const buildGenericResult = (ok: boolean) => isV2Generic ? { decision: ok ? 'accept' : 'decline' } : { approved: ok };
-  
+
           if (config.onApproval) {
             config.onApproval(String(toolName), String(toolCmd)).then((result: boolean | string) => {
               if (typeof result === 'string') {
@@ -603,7 +603,7 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
           }
           return;
         }
-  
+
         // Response to our request: has id but NO method
         if (msg.id !== undefined && pending.has(msg.id)) {
           const p = pending.get(msg.id)!;
@@ -616,7 +616,7 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
           }
           return;
         }
-  
+
         // Server notification
         if (msg.method) {
           for (const handler of notificationHandlers) {
@@ -624,12 +624,12 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
           }
         }
       });
-  
+
       proc.stderr?.on('data', (data: Buffer) => {
         const msg = String(data).trim();
         if (msg) console.error(`[cesar:acp:stderr] ${msg}`);
       });
-  
+
       proc.on('close', (code: number | null) => {
         console.error(`[cesar:acp] process exited code=${code}`);
         alive = false; proc = null;
@@ -638,13 +638,13 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
         console.error(`[cesar:acp] process error: ${err.message}`);
         alive = false; proc = null;
       });
-  
+
       await new Promise((r) => setTimeout(r, 200));
-  
+
       if (!proc) {
         throw new Error(`ACP process for ${config.engine.id} failed to start`);
       }
-  
+
       // ACP initialize handshake — read-only, writes go through Agon's XML tool system
       await sendRpc('initialize', {
         protocolVersion: 1,
@@ -654,7 +654,7 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
         },
         clientInfo: { name: 'agon-ai', title: 'Agon AI', version: '0.2.0' },
       });
-  
+
       // Create session (pass system prompt if available)
       const sessParams: Record<string, unknown> = {
         cwd: config.cwd,
@@ -668,7 +668,7 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
       sessionId = sessResult?.sessionId ?? null;
       alive = true;
     },
-  
+
     async *send(opts: SessionSendOptions) {
       if (!alive || !proc || !sessionId) {
         const reconnected = await tryReconnect();
@@ -678,18 +678,18 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
         }
         yield { type: 'status' as const, content: `${config.engine.id} ACP session reconnected` };
       }
-  
+
     const chunks: SessionChunk[] = [];
     let turnDone = false;
     let resolveWait: (() => void) | null = null;
     let emittedText = '';
-  
+
     const pushDelta = (text: string) => {
       if (!text) return;
       chunks.push({ type: 'text', content: text });
       emittedText += text;
     };
-  
+
     const pushSnapshot = (text: string) => {
       if (!text) return;
       let overlap = Math.min(emittedText.length, text.length);
@@ -701,7 +701,7 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
       chunks.push({ type: 'text', content: suffix });
       emittedText += suffix;
     };
-  
+
     const onAbort = () => {
       turnDone = true;
       chunks.push({ type: 'done', content: 'cancelled' });
@@ -709,7 +709,7 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
       };
       if (opts.signal?.aborted) { yield { type: 'done' as const, content: 'cancelled' }; return; }
       opts.signal?.addEventListener('abort', onAbort, { once: true });
-  
+
       const handler = (method: string, params: any) => {
         if (method === 'tool/approval') {
           // Approval request routed from Agon — emit as tool_call chunk
@@ -732,9 +732,9 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
         }
         if (resolveWait) { resolveWait(); resolveWait = null; }
       };
-  
+
       notificationHandlers.push(handler);
-  
+
       try {
         // On first turn, prepend system prompt ONLY if it wasn't already sent
         // via session/new systemPrompt (to avoid duplicating the full prompt).
@@ -743,13 +743,13 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
           message = `[System Instructions]\n${config.systemPrompt}\n\n[User Message]\n${message}`;
         }
         firstTurn = false;
-  
+
         // session/prompt is a request — the response signals turn completion
         const promptPromise = sendRpc('session/prompt', {
           sessionId,
           prompt: [{ type: 'text', text: message }],
         });
-  
+
         // Yield streamed chunks while waiting for prompt response
         const donePromise = promptPromise.then((result: any) => {
           turnDone = true;
@@ -760,7 +760,7 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
           chunks.push({ type: 'error', content: err.message });
           if (resolveWait) { resolveWait(); resolveWait = null; }
         });
-  
+
         while (!turnDone) {
           if (chunks.length > 0) {
             yield chunks.shift()!;
@@ -777,19 +777,19 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
         if (idx >= 0) notificationHandlers.splice(idx, 1);
       }
     },
-  
+
     close() {
       for (const [, p] of pending) clearTimeout(p.timer);
       pending.clear();
       killProc();
     },
-  
+
     getMessageHistory() {
       // ACP sessions manage threads externally — no local history to extract
       return [];
     },
   };
-  
+
   return session;
 }
 
@@ -803,7 +803,7 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
   let lineHandlers: Array<(parsed: any) => void> = [];
   let reconnectAttempts = 0;
   let reconnecting = false;
-  
+
   function killProc(): void {
     if (!proc) return;
     try {
@@ -815,7 +815,7 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
     proc = null;
     alive = false;
   }
-  
+
   async function tryReconnect(): Promise<boolean> {
     if (reconnecting) return false;
     if (reconnectAttempts >= 5) {
@@ -840,15 +840,15 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
       reconnecting = false;
     }
   }
-  
+
   const session: PersistentSession = {
     get alive() { return alive; },
     get sessionId() { return sessionId; },
     engineId: config.engine.id,
-  
+
     async start() {
       if (alive) return;
-  
+
       const args = [
         '--print',
         '--verbose',
@@ -865,46 +865,46 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
         '--replay-user-messages',
         '--max-turns', '0',
       ];
-  
+
       // Pass Agon-configured MCP servers via --mcp-config (strict mode blocks auto-discovery)
       if (config.mcpServers && config.mcpServers.length > 0) {
         const mcpConfig = JSON.stringify({ mcpServers: Object.fromEntries(config.mcpServers.map((s: any) => [s.name ?? s.command ?? 'mcp', s])) });
         args.push('--mcp-config', mcpConfig);
       }
-  
+
       if (config.systemPrompt) {
         args.push('--system-prompt', config.systemPrompt);
       }
-  
+
       proc = spawn(config.binaryPath, args, {
         stdio: ['pipe', 'pipe', 'pipe'],
         cwd: config.cwd,
         detached: true,
       });
-  
+
       // Parse NDJSON from stdout
       const rl = createInterface({ input: proc.stdout! });
       rl.on('line', (line: string) => {
         if (!line.trim()) return;
         let parsed: any;
         try { parsed = JSON.parse(line); } catch { return; }
-  
+
         // Capture session ID from init event
         if (parsed.type === 'system' && parsed.session_id) {
           sessionId = parsed.session_id;
         }
-  
+
         for (const handler of lineHandlers) {
           handler(parsed);
         }
       });
-  
+
       // Log stderr for debugging startup issues
       proc.stderr?.on('data', (data: Buffer) => {
         const msg = String(data).trim();
         if (msg) console.error(`[cesar:claude:stderr] ${msg}`);
       });
-  
+
       proc.on('close', (code: number | null) => {
         console.error(`[cesar:claude] process exited code=${code}`);
         alive = false;
@@ -915,7 +915,7 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
         alive = false;
         proc = null;
       });
-  
+
       // Wait for first stdout line OR early process death
       const startOk = await new Promise<boolean>((resolve) => {
         const timeout = setTimeout(() => resolve(true), 5000);
@@ -932,7 +932,7 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
       }
       alive = true;
     },
-  
+
     async *send(opts: SessionSendOptions) {
       if (!alive || !proc) {
         const reconnected = await tryReconnect();
@@ -943,18 +943,18 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
         yield { type: 'status' as const, content: `${config.engine.id} session reconnected` };
       }
       if (!proc) { yield { type: 'error' as const, content: 'proc null after reconnect' }; return; }
-  
+
       const chunks: SessionChunk[] = [];
       let turnDone = false;
       let resolveWait: (() => void) | null = null;
       let emittedText = '';
-  
+
       const pushDelta = (text: string) => {
         if (!text) return;
         chunks.push({ type: 'text', content: text });
         emittedText += text;
       };
-  
+
       const pushSnapshot = (text: string) => {
         if (!text) return;
         let overlap = Math.min(emittedText.length, text.length);
@@ -966,7 +966,7 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
         chunks.push({ type: 'text', content: suffix });
         emittedText += suffix;
       };
-  
+
       const onAbort = () => {
         turnDone = true;
         chunks.push({ type: 'done', content: 'cancelled' });
@@ -974,7 +974,7 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
       };
       if (opts.signal?.aborted) { yield { type: 'done' as const, content: 'cancelled' }; return; }
       opts.signal?.addEventListener('abort', onAbort, { once: true });
-  
+
       const handler = (parsed: any) => {
         // Assistant text content
         if (parsed.type === 'assistant' && parsed.message?.content) {
@@ -997,12 +997,12 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
             chunks.push({ type: 'done', content: parsed.message.stop_reason });
           }
         }
-  
+
         // Content block delta (streaming partial text)
         if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
           pushDelta(parsed.delta.text);
         }
-  
+
         // Result event — marks turn completion (text already emitted by assistant/delta events)
         if (parsed.type === 'result') {
           turnDone = true;
@@ -1015,12 +1015,12 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
           }
           chunks.push({ type: 'done', content: 'end_turn' });
         }
-  
+
         // Message start with session info
         if (parsed.type === 'message_start' && parsed.session_id) {
           sessionId = parsed.session_id;
         }
-  
+
         // Tool use events — Claude handles execution internally (--dangerously-skip-permissions)
         if (parsed.type === 'tool_use') {
           chunks.push({
@@ -1029,7 +1029,7 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
             metadata: { input: parsed.input, status: 'native' },
           });
         }
-  
+
         // Tool result events — Claude completed a tool, show output
         if (parsed.type === 'tool_result') {
           chunks.push({
@@ -1038,18 +1038,18 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
             metadata: { output: parsed.content ?? parsed.output ?? '', status: 'done' },
           });
         }
-  
+
         // Error
         if (parsed.type === 'error') {
           chunks.push({ type: 'error', content: parsed.error?.message ?? 'Unknown error' });
           turnDone = true;
         }
-  
+
         if (resolveWait) { resolveWait(); resolveWait = null; }
       };
-  
+
       lineHandlers.push(handler);
-  
+
       try {
         // Send user message as NDJSON on stdin
         const envelope: Record<string, unknown> = {
@@ -1060,9 +1060,9 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
           },
         };
         if (sessionId) envelope.session_id = sessionId;
-  
+
         proc.stdin!.write(JSON.stringify(envelope) + '\n');
-  
+
         // Yield chunks as they arrive
         while (!turnDone) {
           if (chunks.length > 0) {
@@ -1080,7 +1080,7 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
         if (idx >= 0) lineHandlers.splice(idx, 1);
       }
     },
-  
+
     close() {
       // Close stdin to signal EOF, then kill
       if (proc?.stdin) {
@@ -1088,13 +1088,13 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
       }
       setTimeout(() => killProc(), 1000);
     },
-  
+
     getMessageHistory() {
       // Stream-json sessions manage conversation via Claude CLI threads — no local history
       return [];
     },
   };
-  
+
   return session;
 }
 
@@ -1111,7 +1111,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
       let compactionSummary: CompactionSummaryPart | null = null;
       // Disk-backed tool result cache manifest
       let toolCacheManifest: ToolCacheEntry[] = [];
-  
+
       // ── In-session tool result deduplication ──
       // Avoids re-reading the same file/grep when the engine asks twice.
       // Keyed by (toolName, serialized args). Values are results.
@@ -1122,12 +1122,12 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
         const sorted = Object.keys(args).sort().map(k => `${k}=${JSON.stringify(args[k])}`).join('&');
         return `${name}:${sorted}`;
       };
-  
+
       const session: PersistentSession = {
         get alive() { return alive; },
         get sessionId() { return sessionId; },
         engineId: config.engine.id,
-  
+
         async start() {
           alive = true;
           // Preserve messageHistory across restarts — API is stateless, history IS the context.
@@ -1138,7 +1138,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
             // 2. engine-scoped persisted state (same-engine restart)
             const saved = loadSessionState(config.engine.id);
             const conversation = loadConversation();
-  
+
             const hasSavedState = !!(saved && saved.messageHistory.length > 0);
             const hasConversation = !!(conversation && conversation.messageHistory.length > 0);
             const shouldUseConversation = !!(
@@ -1147,7 +1147,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                 (conversation!.savedAt ?? 0) >= (saved?.savedAt ?? 0)
               )
             );
-  
+
             if (shouldUseConversation) {
               // Strip system prompts — the new engine gets its own identity prompt.
               const replayMessages = conversation!.messageHistory.filter((m: any) => m.role !== 'system');
@@ -1164,13 +1164,13 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
             }
           }
         },
-  
+
         async *send(opts: SessionSendOptions) {
           if (!alive) {
             yield { type: 'error' as const, content: 'Session not started' };
             return;
           }
-  
+
           // API-only engines: use HTTP dispatch with conversation history
           if (config.engine.api && !config.binaryPath) {
             // Inject system prompt on first turn
@@ -1181,11 +1181,11 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
               }
               firstTurn = false;
             }
-  
+
             // All messages are user messages. Tool results are handled inside the
             // agentic loop (same turn), not across turns.
             messageHistory.push({ role: 'user', content: opts.message });
-  
+
             // ── Three-tier context compaction (OpenCode-inspired) ──
             // Tier 1: Replace old tool results with cached refs (disk-backed)
             // Tier 2: Incremental CompactionSummary — merges across cycles
@@ -1206,21 +1206,21 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                 }
                 return sum + (m as any)._tokenEstimate;
               }, 0);
-  
+
             // Context limit: use a sensible default per model family.
             // maxTokens is OUTPUT cap (4096-8192), NOT context window.
             // Most modern models have 128K-200K context windows.
             const CONTEXT_LIMIT = 128_000;
             const COMPACTION_BUFFER = 20_000;
             const PRUNE_PROTECT_TURNS = 6; // protect last 6 user-assistant exchanges (was 4)
-  
+
             const totalTokens = estimateTokens(messageHistory);
             // Fast path: skip all compaction tiers when well below threshold (<40% of context).
             // This eliminates regex extraction + merge + disk writes for short conversations.
             if (totalTokens > CONTEXT_LIMIT - COMPACTION_BUFFER) {
               const hasSystem = messageHistory[0].role === 'system';
               const startIdx = hasSystem ? 1 : 0;
-  
+
               // Count protected messages from the end
               let protectFrom = messageHistory.length;
               let turnsFound = 0;
@@ -1229,7 +1229,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                 if (turnsFound > PRUNE_PROTECT_TURNS) break;
                 protectFrom = i;
               }
-  
+
               // ── Tier 1: Replace old tool results with disk-cached refs ──
               for (let i = startIdx; i < protectFrom; i++) {
                 const msg = messageHistory[i] as any;
@@ -1248,26 +1248,26 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                   delete msg._tokenEstimate; // invalidate cache — content mutated
                 }
               }
-  
+
               // ── Tier 2: Incremental CompactionSummary if still over limit ──
               const afterTier1 = estimateTokens(messageHistory);
               if (afterTier1 > CONTEXT_LIMIT - COMPACTION_BUFFER) {
                 const old = messageHistory.slice(startIdx, protectFrom);
                 const recent = messageHistory.slice(protectFrom);
                 const system = hasSystem ? [messageHistory[0]] : [];
-  
+
                 if (old.length > 0) {
                   try {
                     const userMsgs = old.filter((m: any) => m.role === 'user' && typeof m.content === 'string');
                     const assistMsgs = old.filter((m: any) => m.role === 'assistant' && typeof m.content === 'string');
-  
+
                     // Extract structured data from old messages
                     const filesRead = new Set<string>();
                     const filesModified = new Set<string>();
                     const toolsSummary: string[] = [];
                     const discoveries: string[] = [];
                     const decisions: string[] = [];
-  
+
                     for (const m of old as any[]) {
                       // Prefer structured _parts (captured at stream time) over regex parsing
                       if (m._parts && Array.isArray(m._parts)) {
@@ -1291,7 +1291,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                             const toolName: string = tc.function?.name ?? '';
                             const args = JSON.parse(tc.function?.arguments ?? '{}');
                             const fp = args.file_path || args.path || '';
-  
+
                             if (fp) filesRead.add(fp);
                             if (toolName === 'Edit' || toolName === 'Write') {
                               if (fp) filesModified.add(fp);
@@ -1316,14 +1316,14 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                         }
                       }
                     }
-  
+
                     const goal = userMsgs.length > 0
                       ? (userMsgs[0].content as string).slice(0, 500)
                       : '';
                     const lastProgress = assistMsgs.length > 0
                       ? (assistMsgs[assistMsgs.length - 1].content as string).slice(0, 800)
                       : '';
-  
+
                     // Build new CompactionSummary — merge with existing if present
                     const prev = compactionSummary;
                     const newSummary: CompactionSummaryPart = {
@@ -1339,7 +1339,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                       messagesCompacted: (prev?.messagesCompacted ?? 0) + old.length,
                     };
                     compactionSummary = newSummary;
-  
+
                     // Render compaction as a structured context message
                     const compactedText = [
                       `[Context compacted — ${newSummary.messagesCompacted} messages total, ${old.length} this cycle]`,
@@ -1351,7 +1351,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                       newSummary.decisions.length > 0 ? `DECISIONS:\n${newSummary.decisions.map((d: string) => `  - ${d}`).join('\n')}` : '',
                       newSummary.progress ? `LATEST PROGRESS: ${newSummary.progress}` : '',
                     ].filter(Boolean).join('\n');
-  
+
                     const summary = { role: 'user' as const, content: compactedText };
                     messageHistory.length = 0;
                     messageHistory.push(...system, summary, ...recent);
@@ -1365,7 +1365,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                   }
                 }
               }
-  
+
               // ── Tier 3: LLM-based compaction as last resort ──
               // If Tier 1+2 weren't enough, call a cheap model to produce a refined summary.
               // Fires rarely (<5% of compactions). Uses the engine's own API config.
@@ -1375,12 +1375,12 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                   const { apiDispatch } = await import('../api/dispatch.js');
                   // Use same API config but request minimal tokens
                   const compactionPrompt = `Summarize this conversation context into a concise briefing. Preserve: the user's goal, key discoveries, files read/modified, important decisions, and current progress. Drop: verbose tool outputs, repeated attempts, and pleasantries.
-  
+
   CONTEXT TO SUMMARIZE:
   ${messageHistory.filter((m: any) => m.role !== 'system').map((m: any) => `[${m.role}] ${typeof m.content === 'string' ? m.content.slice(0, 500) : '(tool call)'}`).join('\n')}
-  
+
   Respond with ONLY the summary, no preamble.`;
-  
+
                   const compactionConfig = { ...config.engine.api, maxTokens: 2048 };
                   const compactionResult = await apiDispatch(compactionConfig, compactionPrompt, 30);
                   if (compactionResult.exitCode === 0 && compactionResult.stdout.length > 50) {
@@ -1400,7 +1400,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                   console.warn(`[agon] Tier 3 compaction failed (non-fatal): ${tier3Err instanceof Error ? tier3Err.message : String(tier3Err)}`);
                 }
               }
-  
+
               // Prune disk cache — keep only IDs still referenced in history
               const activeIds = new Set<string>();
               for (const m of messageHistory) {
@@ -1413,7 +1413,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
               pruneToolCache(config.engine.id, activeIds);
               toolCacheManifest = toolCacheManifest.filter((e: ToolCacheEntry) => activeIds.has(e.toolCallId));
             }
-  
+
             // ── Context awareness: tell the model its budget status ──
             {
               // Reuse totalTokens if compaction didn't fire; otherwise re-estimate
@@ -1421,7 +1421,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
               const ctxPct = Math.round((ctxTokens / CONTEXT_LIMIT) * 100);
               const cachedCount = toolCacheManifest.length;
               const compactedCount = compactionSummary?.messagesCompacted ?? 0;
-  
+
               if (ctxPct > 60 || compactedCount > 0) {
                 const statusParts: string[] = [
                   `[Context: ${ctxPct}% used (${ctxTokens}/${CONTEXT_LIMIT} tokens)]`,
@@ -1439,7 +1439,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                 messageHistory.push({ role: 'system', content: statusParts.join('\n') });
               }
             }
-  
+
             // ── Inject RetrieveResult tool so models can access cached results ──
             const retrieveToolDef = {
               type: 'function' as const,
@@ -1454,7 +1454,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
               },
             };
             const effectiveTools = config.nativeTools ? [...config.nativeTools, retrieveToolDef] : [retrieveToolDef];
-  
+
             // ── Agentic tool loop with dynamic budget ──
             // Productive steps (successful tool calls) extend the budget.
             // Failed steps shrink it. Models that work get more runway.
@@ -1465,7 +1465,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
             let step = 0;
             let productiveSteps = 0;
             let consecutiveErrors = 0;
-  
+
             // ── Solo-coding gate: track investigation vs write behavior ──
             // Architecture, not prompts: block writes that skip investigation
             let readCount = 0;   // Read, Grep, Glob calls this turn
@@ -1489,19 +1489,19 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
             // Simple task whitelist: if the user mentions a specific single file, it's probably simple
             const singleFileMatch = opts.message.match(/\b([a-zA-Z0-9_./-]+\.[a-zA-Z]{1,6})\b/);
             const isSingleFileMention = singleFileMatch && !opts.message.includes(' and ') && !isComplexTask;
-  
+
             while (step < budget) {
               step++;
               let fullResponse = '';
               let lastDispatchParts: any[] | undefined; // Structured parts from dispatch
-  
+
               // ── Status update so the UI shows activity during API tool loops ──
               if (step === 1) {
-                yield { type: 'status' as const, content: 'calling API…' };
+                yield { type: 'status' as const, content: 'dispatching engine…' };
               } else {
                 yield { type: 'status' as const, content: `tool loop turn ${step}/${budget}…` };
               }
-  
+
               const gen = apiStreamDispatchWithHistory(config.engine.api, messageHistory, config.engine.timeout ?? 180, opts.signal, effectiveTools);
               try {
                 while (true) {
@@ -1541,9 +1541,9 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                 console.warn(`[agon] API stream error after ${fullResponse.length} chars (preserved): ${(err.message ?? '').slice(0, 200)}`);
                 // Fall through to process fullResponse as if stream completed
               }
-  
+
               if (!fullResponse) break;
-  
+
               // Check for tool call markers — robust parser handles all formats:
               // <tool name="X">{json}</tool>, <tool_call>{json}</tool_call>,
               // <toolcall>{json}</toolcall>, <tool_call_tool>{json}</tool_call_tool>
@@ -1557,11 +1557,11 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                     parseError: false,
                   }))
                 : [];
-  
+
               if (extractedCalls.length > 0 && config.onToolCall) {
                 // Model requested tool calls — execute and loop
                 const cleanText = (parsed.textBefore + ' ' + parsed.textAfter).trim();
-  
+
                 // Add assistant message with tool_calls + structured parts to history
                 const assistToolMsg: any = {
                   role: 'assistant',
@@ -1575,10 +1575,10 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                   assistToolMsg._parts = lastDispatchParts;
                 }
                 messageHistory.push(assistToolMsg);
-  
+
                 // Execute tools in parallel (like Vercel AI SDK Promise.all pattern)
                 const INLINE_LIMIT = 8192;
-  
+
                 // Emit all as running
                 const parsedCalls = extractedCalls;
                 for (const tc of parsedCalls) {
@@ -1588,7 +1588,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                     yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, status: 'running' } };
                   }
                 }
-  
+
                 // ── Solo-coding gate: block writes without investigation ──
                 // Architecture enforcement: if the engine tries to write code without
                 // reading anything first, block the write and force investigation.
@@ -1652,14 +1652,14 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                   productiveSteps++;
                   continue; // Loop — model gets feedback and should investigate
                 }
-  
+
                 // Track tool usage for the solo-coding gate
                 for (const tc of parsedCalls) {
                   if (READ_TOOLS.has(tc.name)) readCount++;
                   if (WRITE_TOOLS.has(tc.name)) writeCount++;
                   if (ORCH_TOOLS.has(tc.name)) orchCount++;
                 }
-  
+
                 // Execute all in parallel — intercept RetrieveResult locally (cache is in-process)
                 yield { type: 'status' as const, content: `executing ${parsedCalls.length} tool${parsedCalls.length > 1 ? 's' : ''}…` };
                 const results = await Promise.all(parsedCalls.map(async (tc) => {
@@ -1687,7 +1687,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                   }
                   return { ...tc, result };
                 }));
-  
+
                 // Emit results and add to history — track errors for circuit breaker
                 // Large results are cached to disk; history keeps preview + ref
                 let stepErrors = 0;
@@ -1695,7 +1695,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                   const isError = tc.result.startsWith('Error:') || tc.result.startsWith('Unknown tool:');
                   if (isError) stepErrors++;
                   yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, output: tc.result, status: isError ? 'error' : 'done' } };
-  
+
                   let histContent = tc.result;
                   if (histContent.length > INLINE_LIMIT) {
                     // Disk-backed cache: save full result, keep preview + ref inline
@@ -1710,7 +1710,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                   }
                   messageHistory.push({ role: 'tool', content: histContent, tool_call_id: tc.id } as any);
                 }
-  
+
                 // ── Delegation break — onToolCall signaled the loop to stop ──
                 const delegationBreak = results.some(tc => tc.result.startsWith('[DELEGATION_BREAK]'));
                 if (delegationBreak) {
@@ -1725,7 +1725,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                   messageHistory.push({ role: 'assistant', content: '[Delegation — tool loop stopped]' });
                   break;
                 }
-  
+
                 // ── Dynamic budget + circuit breaker ──
                 if (stepErrors > 0 && stepErrors >= results.length) {
                   // ALL tools failed — shrink budget, count consecutive errors
@@ -1744,19 +1744,19 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                     budget = Math.min(budget + 2, MAX_BUDGET);
                   }
                 }
-  
+
                 // Continue loop — call API again with tool results
-                yield { type: 'status' as const, content: 'processing results, calling API again…' };
+                yield { type: 'status' as const, content: 'processing results, dispatching again…' };
                 continue;
               }
-  
+
               // ── Intent extraction from stalls ──
               // When a model narrates "let me read X" without calling tools,
               // Agon extracts the intent and executes it FOR the model.
               // Architecture, not prompts — the model narrates, Agon acts.
               if (config.onToolCall && step < budget - 1) {
                 const tail = fullResponse.slice(-300);
-  
+
                 // ── Fake approval / fake tool-blocking narration ──
                 // Some API models narrate "the Edit tool keeps blocking me" or
                 // "I need permission" instead of actually calling Edit/Write/Bash.
@@ -1774,17 +1774,17 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                   });
                   continue;
                 }
-  
+
                 // Extract file paths from narration: "let me read/check/look at packages/foo/bar.ts"
                 const readIntent = tail.match(/\b(?:let me |i(?:'ll| need to| want to| should| will) )(?:read|check|look at|examine|see|review|open|view)\s+[`"']?([a-zA-Z0-9_./-]+\.[a-zA-Z]{1,6})[`"']?/i);
                 // Extract search intent: "let me search/grep for X", "find X in Y"
                 const searchIntent = tail.match(/\b(?:let me |i(?:'ll| need to| want to| should| will) )(?:search|grep|find|look)\s+(?:for\s+)?[`"']?(.+?)[`"']?\s*(?:in\s+|$)/i);
                 // Extract directory listing: "let me check what's in packages/mcp/"
                 const dirIntent = tail.match(/\b(?:let me |i(?:'ll| need to| want to| should| will) )(?:check|see|look at|list|find)\s+(?:what's in |files in |the )?\s*[`"']?([a-zA-Z0-9_./-]+\/)[`"']?/i);
-  
+
                 if (readIntent || searchIntent || dirIntent) {
                   messageHistory.push({ role: 'assistant', content: fullResponse });
-  
+
                   // Build synthetic tool calls from extracted intent
                   const syntheticCalls: Array<{id: string, name: string, args: Record<string,unknown>}> = [];
                   if (readIntent) {
@@ -1796,7 +1796,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                   if (searchIntent && !readIntent && !dirIntent) {
                     syntheticCalls.push({ id: `auto_${Date.now()}_2`, name: 'Grep', args: { pattern: searchIntent[1].trim() } });
                   }
-  
+
                   if (syntheticCalls.length > 0) {
                     // Execute extracted intent — model narrated, Agon acts
                     yield { type: 'status' as const, content: `auto-executing ${syntheticCalls.map(s => s.name).join(', ')}…` };
@@ -1810,7 +1810,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                         result = `Error: ${err.message ?? String(err)}`;
                       }
                       yield { type: 'tool_call' as const, content: sc.name, metadata: { input: sc.args, output: result, status: 'done' } };
-  
+
                       // Add to history as proper tool call + result
                       messageHistory.push({
                         role: 'assistant', content: null,
@@ -1830,13 +1830,13 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                       messageHistory.push({ role: 'tool', content: histContent, tool_call_id: sc.id } as any);
                       autoResults.push(result);
                     }
-  
+
                     productiveSteps++;
                     if (productiveSteps % 3 === 0 && budget < MAX_BUDGET) budget = Math.min(budget + 2, MAX_BUDGET);
                     continue; // Loop — model gets tool results and can continue
                   }
                 }
-  
+
                 // No extractable intent — fallback to nudge
                 const STALL_RE = /\b(?:let me (?:check|look|examine|read|search|find|see|review|explore|investigate|understand|get|grab|continue)|i (?:need|want|should|will) (?:to )?(?:check|look|examine|read|search|find|see|review|explore|investigate|understand|get|grab|continue)|now (?:let me|i'll)|continu(?:e|ing)|keep (?:reading|investigating|looking)|next[,.]?\s*(?:i|let)|before (?:i can|proceeding|implementing|deciding))\b/i;
                 if (STALL_RE.test(tail)) {
@@ -1846,7 +1846,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                   continue;
                 }
               }
-  
+
               // ── Final check: if response ends mid-thought, auto-continue instead of breaking ──
               // Catches models that narrate plans without calling tools or delegating
               if (config.nativeTools && step < budget - 1) {
@@ -1859,7 +1859,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                   continue;
                 }
               }
-  
+
               // Final response. Add to history with structured parts for smarter compaction.
               const assistMsg: any = { role: 'assistant', content: fullResponse };
               if (lastDispatchParts && lastDispatchParts.length > 0) {
@@ -1868,10 +1868,10 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
               messageHistory.push(assistMsg);
               break;
             }
-  
+
             // Persist session state to disk after each turn — survives process restart
             try { saveSessionState(config.engine.id, { messageHistory, confidence: null, compactionSummary, toolCacheManifest }); } catch (saveErr) { console.warn('[session] failed to persist turn:', (saveErr as Error).message ?? saveErr); }
-  
+
             // ── Cross-session memory: extract learnings for Cesar's brain ──
             if (config.onTurnEnd && compactionSummary) {
               try {
@@ -1884,18 +1884,18 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                 });
               } catch { /* memory write is best-effort */ }
             }
-  
+
             yield { type: 'done' as const, content: 'end_turn' };
             return;
           }
-  
+
           const args: string[] = [];
           const engineExec = config.engine.exec;
           if (!engineExec) {
             yield { type: 'error' as const, content: `Engine ${config.engine.id} has no exec config` };
             return;
           }
-  
+
           // Build args from engine config
           for (const arg of engineExec.args) {
             if (arg === '{prompt}') {
@@ -1904,7 +1904,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
               args.push(arg);
             }
           }
-  
+
           // Add resume flag on subsequent turns
           if (!firstTurn && sessionId) {
             // Try common resume flags
@@ -1914,17 +1914,17 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
               args.unshift('--session', sessionId, '--continue');
             }
           }
-  
+
           const child = spawn(config.binaryPath, args, {
             stdio: ['ignore', 'pipe', 'pipe'],
             cwd: config.cwd,
             detached: true,
           });
-  
+
           const chunks: SessionChunk[] = [];
           let done = false;
           let resolveWait: (() => void) | null = null;
-  
+
           // Abort: kill spawned child process
           const onAbort = () => {
             done = true;
@@ -1934,7 +1934,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
           };
           if (opts.signal?.aborted) { yield { type: 'done' as const, content: 'cancelled' }; return; }
           opts.signal?.addEventListener('abort', onAbort, { once: true });
-  
+
           const rl = createInterface({ input: child.stdout! });
           rl.on('line', (line: string) => {
             // Try to parse as NDJSON
@@ -1960,19 +1960,19 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
             }
             if (resolveWait) { resolveWait(); resolveWait = null; }
           });
-  
+
           child.on('close', () => {
             done = true;
             chunks.push({ type: 'done', content: 'end_turn' });
             if (resolveWait) { resolveWait(); resolveWait = null; }
           });
-  
+
           child.on('error', (err: Error) => {
             done = true;
             chunks.push({ type: 'error', content: err.message });
             if (resolveWait) { resolveWait(); resolveWait = null; }
           });
-  
+
           try {
             while (!done) {
               if (chunks.length > 0) {
@@ -1989,15 +1989,15 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
             firstTurn = false;
           }
         },
-  
+
         close() {
           alive = false;
         },
-  
+
         getMessageHistory() {
           return [...messageHistory];
         },
       };
-  
+
       return session;
 }

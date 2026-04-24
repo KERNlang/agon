@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   buildTranscriptRows,
+  buildTerminalReplaySnapshot,
   displayColumnToStringIndex,
   estimateBottomChromeExtraRows,
   estimateQuestionReservedRows,
@@ -102,6 +103,61 @@ describe('app scroll helpers', () => {
     expect(fileRailWidthForTerminal(220, true)).toBeLessThanOrEqual(64);
     expect(fileRailMaxRowsForTerminal(80, 'native', false)).toBe(10);
     expect(fileRailMaxRowsForTerminal(80, 'native', true)).toBe(18);
+  });
+
+  it('replays terminal render snapshots across native and fullscreen sizes', () => {
+    const blocks = [
+      { id: 0, event: { type: 'dashboard', available: [], enabled: ['claude'], defaultEngine: 'claude', totalForges: 0, runCount: 0 } },
+      { id: 1, event: { type: 'separator' } },
+      { id: 2, event: { type: 'user-message', content: 'check api engines and render stability' } },
+      {
+        id: 3,
+        event: {
+          type: 'engine-block',
+          engineId: 'cesar',
+          color: 124,
+          content: Array.from({ length: 18 }, (_, index) => `render line ${index + 1}`).join('\n'),
+        },
+      },
+      { id: 4, event: { type: 'tool-call', engineId: 'cesar', tool: 'Read', input: '{"file_path":"packages/cli/src/kern/surfaces/app.kern"}', status: 'done', output: 'line 1\nline 2\nline 3' } },
+    ] as any;
+
+    const snapshots = [
+      buildTerminalReplaySnapshot(blocks, { terminalMode: 'native', mode: 'chat', termWidth: 72, termHeight: 24, fileRailOpen: false }),
+      buildTerminalReplaySnapshot(blocks, { terminalMode: 'native', mode: 'chat', termWidth: 220, termHeight: 80, fileRailOpen: true }),
+      buildTerminalReplaySnapshot(blocks, { terminalMode: 'fullscreen', mode: 'chat', termWidth: 120, termHeight: 36, fileRailOpen: true, fileRailExpanded: true }),
+    ];
+
+    for (const snapshot of snapshots) {
+      expect(snapshot.headerRows).toBe(1);
+      expect(snapshot.visibleBudget).toBeGreaterThan(0);
+      expect(snapshot.lowerChromeRows).toBeLessThan(snapshot.termHeight);
+      expect(snapshot.transcriptRowCount).toBeGreaterThan(0);
+      expect(snapshot.fileRailRows).toBeLessThanOrEqual(snapshot.termHeight - snapshot.headerRows);
+      expect(snapshot.fileRailWidth).toBeLessThanOrEqual(Math.floor(snapshot.termWidth * 0.35));
+    }
+
+    expect(snapshots[0].staticBlockCount).toBeGreaterThan(0);
+    expect(snapshots[2].staticBlockCount).toBe(0);
+  });
+
+  it('replays transcript wrapping with the supplied terminal width', () => {
+    const blocks = [
+      {
+        id: 1,
+        event: {
+          type: 'engine-block',
+          engineId: 'cesar',
+          color: 124,
+          content: 'This is one intentionally long render line that must wrap differently when replayed at a narrow terminal width versus a wide terminal width.',
+        },
+      },
+    ] as any;
+
+    const narrow = buildTerminalReplaySnapshot(blocks, { terminalMode: 'fullscreen', mode: 'chat', termWidth: 72, termHeight: 24 });
+    const wide = buildTerminalReplaySnapshot(blocks, { terminalMode: 'fullscreen', mode: 'chat', termWidth: 180, termHeight: 24 });
+
+    expect(narrow.transcriptRowCount).toBeGreaterThan(wide.transcriptRowCount);
   });
 
   it('renders the dashboard through transcript rows when it is the only visible block', () => {
@@ -317,6 +373,71 @@ describe('app scroll helpers', () => {
     expect(rows.some((row: any) =>
       row.kind === 'segments' && (row.segments ?? []).some((segment: any) => segment?.text === 'Ctrl+O full view'),
     )).toBe(true);
+  });
+
+  it('coalesces consecutive collapsed tool-call groups into one transcript row', () => {
+    const blocks = [
+      {
+        id: 1,
+        event: {
+          type: 'tool-call-group',
+          blocks: [
+            { id: 11, event: { type: 'tool-call', engineId: 'cesar', tool: 'Bash', input: '{"command":"pwd"}', status: 'done', output: '/tmp' } },
+          ],
+        },
+      },
+      {
+        id: 2,
+        event: {
+          type: 'tool-call-group',
+          blocks: [
+            { id: 21, event: { type: 'tool-call', engineId: 'cesar', tool: 'Read', input: '{"file_path":"a.ts"}', status: 'done', output: 'line 1' } },
+            { id: 22, event: { type: 'tool-call', engineId: 'cesar', tool: 'Bash', input: '{"command":"git status"}', status: 'done', output: '' } },
+          ],
+        },
+      },
+    ] as any;
+
+    const rows = buildTranscriptRows(blocks, 'chat', false, true);
+    const text = transcriptRowsToPlainText(rows, 0, 0, 0, 999);
+
+    expect(text).toContain('3 tool calls');
+    expect(text).not.toContain('1 tool calls');
+    expect(text).not.toContain('2 tool calls');
+  });
+
+  it('always shows mutating code-change previews inside collapsed tool-call groups', () => {
+    const blocks = [
+      {
+        id: 1,
+        event: {
+          type: 'tool-call-group',
+          blocks: [
+            {
+              id: 11,
+              event: {
+                type: 'tool-call',
+                engineId: 'cesar',
+                tool: 'Edit',
+                input: JSON.stringify({
+                  file_path: 'packages/cli/src/kern/surfaces/app.kern',
+                  old_string: 'old line',
+                  new_string: 'new line',
+                }),
+                status: 'done',
+              },
+            },
+          ],
+        },
+      },
+    ] as any;
+
+    const rows = buildTranscriptRows(blocks, 'chat', false, true);
+    const text = transcriptRowsToPlainText(rows, 0, 0, 0, 999);
+
+    expect(text).toContain('changed 1 file: packages/cli/src/kern/surfaces/app.kern');
+    expect(rows.some((row: any) => row.kind === 'diff' && row.text === '-old line')).toBe(true);
+    expect(rows.some((row: any) => row.kind === 'diff' && row.text === '+new line')).toBe(true);
   });
 
   it('finds the latest approval command or large tool output for the focused viewer', () => {

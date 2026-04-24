@@ -155,6 +155,8 @@ config name=AgonConfig
   field name=forgeMaxCritiques type=number default=3
   field name=forgeStarterStrategy type="'fixed'|'rotate'" default="'fixed'"
   field name=forgeFixedStarter type=string default=claude
+  field name=reviewDefaultEngine type=string default=""
+    doc "Optional preferred engine for /review and Review(). Empty means auto-select from active review-capable engines; this is intentionally separate from forgeFixedStarter."
   field name=forgeRequireBaselineCheck type=boolean default=true
   field name=forgeEnabledEngines type="string[]" default="['claude','codex','gemini']"
   field name=forgeFitnessTimeout type=number default=120
@@ -286,6 +288,8 @@ interface name=ForgeManifest
   field name=starter type=string
   field name=enginesDispatched type=number
   field name=dispatchLog type="DispatchMetric[]" optional=true
+  field name=resultBundlePath type=string optional=true
+  field name=cleanupCommand type=string optional=true
   field name=synthesis type="{pass:boolean,score:number,wins:boolean,patchPath:string,originalWinnerScore:number}" optional=true
   field name=gauntlet type=GauntletResult optional=true
 

@@ -28,9 +28,9 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
   }
   const isAcp = opts.config.protocol === 'acp';
   const isStreamJson = opts.config.protocol === 'stream-json';
-  
+
   const startTime = Date.now();
-  
+
   // Check if server mode is available (only needed for JSONRPC app-server)
   if (!isAcp && !isStreamJson) {
     const checkAvailable = (): Promise<boolean> => {
@@ -48,32 +48,32 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
       return { exitCode: 2, stdout: '', stderr: 'app-server not available', durationMs: Date.now() - startTime, timedOut: false };
     }
   }
-  
+
   // Spawn the app-server process
   const proc = spawn(opts.binaryPath, opts.config.serverCmd, {
     stdio: ['pipe', 'pipe', 'pipe'],
     cwd: opts.cwd,
     detached: true,
   });
-  
+
   let nextId = 1;
   const pending = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }>();
   const agentMessages: string[] = [];
   let turnCompleted: Record<string, unknown> | null = null;
   let turnError: Record<string, unknown> | null = null;
   let threadId: string | null = null;
-  
+
   // Parse line-delimited JSONRPC from stdout
   const rl = createInterface({ input: proc.stdout! });
   rl.on('line', (line: string) => {
     if (!line.trim()) return;
     let msg: JsonRpcMessage;
     try { msg = JSON.parse(line); } catch { return; }
-  
+
     // Server REQUEST: has both id and method, expects a response.
     if (msg.id !== undefined && msg.method) {
       const m = msg.method;
-  
+
       if (isAcp && m === 'session/request_permission') {
         const options: any[] = (msg.params as any)?.options ?? [];
         const toolCall = (msg.params as any)?.toolCall ?? {};
@@ -82,7 +82,7 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
         const allowOpt = options.find((o: any) => o.kind === 'allow_once') ?? options.find((o: any) => o.optionId?.includes('proceed_once'));
         const alwaysOpt = options.find((o: any) => o.kind === 'allow_always' || o.optionId?.includes('proceed_always'));
         const rejectOpt = options.find((o: any) => o.kind === 'reject_once') ?? options.find((o: any) => o.optionId?.includes('reject'));
-  
+
         if (opts.onApproval) {
           opts.onApproval(String(tName), String(tCmd), 'Agent tool approval requested').then((result: boolean | string) => {
             const approved = typeof result === 'string' ? false : result;
@@ -100,7 +100,7 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
         }
         return;
       }
-  
+
       const methodToolMap: Record<string, string> = {
         'item/commandExecution/requestApproval': 'Bash',
         'item/fileChange/requestApproval': 'Edit',
@@ -110,7 +110,7 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
       const toolCmd = (msg.params as any)?.command?.command ?? (msg.params as any)?.command ?? (msg.params as any)?.description ?? (msg.params as any)?.path ?? JSON.stringify(msg.params ?? {});
       const isV2 = m.startsWith('item/');
       const buildResult = (approved: boolean) => isV2 ? { decision: approved ? 'accept' : 'decline' } : { approved };
-  
+
       if (opts.onApproval) {
         opts.onApproval(String(toolName), String(toolCmd), 'Agent tool approval requested').then((result: boolean | string) => {
           if (typeof result === 'string') {
@@ -126,7 +126,7 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
       }
       return;
     }
-  
+
     // Response to a request we sent
     if (msg.id !== undefined && pending.has(msg.id)) {
       const p = pending.get(msg.id)!;
@@ -139,7 +139,7 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
       }
       return;
     }
-  
+
     // Stream-JSON events (Claude) — no method field, uses type field directly
     if (isStreamJson) {
       const raw = msg as any;
@@ -158,7 +158,7 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
       if (raw.type === 'error') { turnError = raw; }
       return;
     }
-  
+
     // Server notification — handle both JSONRPC and ACP protocols
     if (msg.method === 'turn/completed') {
       turnCompleted = (msg.params as Record<string, unknown>);
@@ -181,7 +181,7 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
       turnError = (msg.params as Record<string, unknown>);
     }
   });
-  
+
   function send(method: string, params: Record<string, unknown>): Promise<any> {
     const id = nextId++;
     const timeoutMs = method === 'initialize' ? 8000 : opts.timeout * 1000;
@@ -194,11 +194,11 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
       proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
     });
   }
-  
+
   function notify(method: string): void {
     proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', method }) + '\n');
   }
-  
+
   function killProc(): void {
     try {
       if (proc.pid) process.kill(-proc.pid, 'SIGTERM');
@@ -207,13 +207,13 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
       try { proc.kill('SIGTERM'); } catch (e2) { console.warn(`[agon] companion-dispatch: direct kill also failed: ${e2 instanceof Error ? e2.message : String(e2)}`); }
     }
   }
-  
+
   // Forward abort signal
   if (opts.signal) {
     if (opts.signal.aborted) { killProc(); return { exitCode: 130, stdout: '', stderr: 'Aborted', durationMs: 0, timedOut: false }; }
     opts.signal.addEventListener('abort', () => killProc(), { once: true });
   }
-  
+
   function waitForTurnComplete(): Promise<void> {
     const deadline = Date.now() + opts.timeout * 1000;
     return new Promise((resolve, reject) => {
@@ -227,11 +227,11 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
       check();
     });
   }
-  
+
   try {
     // Wait a tick for process startup
     await new Promise((r) => setTimeout(r, 100));
-  
+
     if (isStreamJson) {
       // Stream-JSON protocol (Claude Code) — NDJSON over stdio, no RPC handshake
       // Send user message as NDJSON on stdin, read events from stdout
@@ -241,7 +241,7 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
       });
       proc.stdin!.write(envelope + '\n');
       proc.stdin!.end(); // Signal EOF — --max-turns 1 will complete after first response
-  
+
       // Wait for result event or process exit
       await waitForTurnComplete();
     } else if (isAcp) {
@@ -254,18 +254,18 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
         },
         clientInfo: { name: 'agon-ai', title: 'Agon AI', version: '0.2.0' },
       });
-  
+
       const sessParams: Record<string, unknown> = { cwd: opts.cwd, mcpServers: [] };
       if (opts.systemPrompt) sessParams.systemPrompt = opts.systemPrompt;
       const sessResult = await send('session/new', sessParams) as any;
       const sessionId = sessResult?.sessionId ?? null;
-  
+
       // session/prompt is a request — response signals turn completion
       const promptResult = await send('session/prompt', {
         sessionId,
         prompt: [{ type: 'text', text: opts.prompt }],
       }) as any;
-  
+
       // ACP returns text directly in the prompt response
       if (promptResult?.text) agentMessages.push(promptResult.text);
       turnCompleted = promptResult ?? {};
@@ -276,7 +276,7 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
         capabilities: null,
       });
       notify('initialized');
-  
+
       const threadParams: Record<string, unknown> = {
         cwd: opts.cwd,
         approvalPolicy: opts.onApproval ? 'on-request' : 'never',
@@ -288,16 +288,16 @@ export async function companionDispatch(opts: {config:CompanionConfig, binaryPat
       if (opts.systemPrompt) threadParams.instructions = opts.systemPrompt;
       const threadResult = await send('thread/start', threadParams) as any;
       threadId = threadResult?.thread?.id ?? null;
-  
+
       if (opts.mode === 'review') {
         await send('review/start', { threadId, target: { type: 'uncommittedChanges' } });
       } else {
         await send('turn/start', { threadId, input: [{ type: 'text', text: opts.prompt, text_elements: [] }] });
       }
-  
+
       await waitForTurnComplete();
     }
-  
+
     const text = agentMessages.join('\n\n');
     return {
       exitCode: 0,

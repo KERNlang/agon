@@ -120,7 +120,7 @@ export function buildAgentSynthesisPrompt(opts: {task:string,winnerEngineId:stri
     lines.push(`*(your solution produced no diff — you may have answered in text only)*`);
   }
   lines.push(``);
-  
+
   const instructionsTail: string[] = [];
   instructionsTail.push(`## YOUR INSTRUCTIONS`);
   instructionsTail.push(`Edit files in your worktree (cwd) to refine your solution. Use Read first to confirm current state, then Edit/Write to apply changes.`);
@@ -129,7 +129,7 @@ export function buildAgentSynthesisPrompt(opts: {task:string,winnerEngineId:stri
   instructionsTail.push(`- What you changed and why`);
   instructionsTail.push(`- Which loser insights you incorporated`);
   instructionsTail.push(`- Which loser insights you rejected and why`);
-  
+
   // Render losers inside untrusted_data tags. Progressive trimming: start
   // with all losers, then if the composed prompt exceeds the cap, drop
   // content from the end of each loser (diff first, then response), then
@@ -169,7 +169,7 @@ export function buildAgentSynthesisPrompt(opts: {task:string,winnerEngineId:stri
     lines.push(`</untrusted_data>`);
     lines.push(``);
   }
-  
+
   lines.push(...instructionsTail);
   return lines.join('\n');
 }

@@ -12,13 +12,13 @@ const AgentProgressView = React.memo(function AgentProgressView({ engineId, turn
   const glyph = phaseGlyph(phase);
   const pColor = phaseColor(phase);
   const engineColor = '#' + (ENGINE_COLORS[engineId] ? ENGINE_COLORS[engineId].toString(16).padStart(6, '0') : '60a5fa');
-  
+
   // Turn budget bar
   const turnsUsed = maxTurns - turnsRemaining;
   const turnPct = maxTurns > 0 ? turnsUsed / maxTurns : 0;
   const turnBar = progressBar(turnPct, 10);
   const turnBarColor = turnPct > 0.8 ? '#ef4444' : turnPct > 0.6 ? '#fbbf24' : '#4ade80';
-  
+
   // Token budget bar (only when maxTokens is set)
   let tokBar: string | null = null;
   let tokBarColor = '#4ade80';
@@ -30,13 +30,13 @@ const AgentProgressView = React.memo(function AgentProgressView({ engineId, turn
     tokBarColor = tokPct > 0.8 ? '#ef4444' : tokPct > 0.6 ? '#fbbf24' : '#4ade80';
     tokPctLabel = ` ${Math.round(tokPct * 100)}%`;
   }
-  
+
   const lastToolDisplay = lastTool ? (lastTool.length > 42 ? lastTool.slice(0, 39) + '...' : lastTool) : null;
   const toolColor = lastToolStatus === 'error' ? '#ef4444'
                   : lastToolStatus === 'rejected' ? '#f97316'
                   : lastToolStatus === 'ok' ? '#22c55e'
                   : '#fbbf24';
-  
+
   return (
     <Box flexDirection="column" paddingLeft={1}>
       {/* Header line: engine, turn index, phase */}
@@ -51,7 +51,7 @@ const AgentProgressView = React.memo(function AgentProgressView({ engineId, turn
         <Text color={pColor}>{glyph}</Text>
         <Text color={pColor}>{' ' + phase}</Text>
       </Box>
-  
+
       {/* User prompt (truncated) */}
       {userPrompt ? (
         <Box>
@@ -59,7 +59,7 @@ const AgentProgressView = React.memo(function AgentProgressView({ engineId, turn
           <Text dimColor>{userPrompt.length > 60 ? userPrompt.slice(0, 57) + '...' : userPrompt}</Text>
         </Box>
       ) : null}
-  
+
       {/* Stats line: tool count, tokens, elapsed */}
       <Box>
         <Text dimColor>{'\u2502 '}</Text>
@@ -69,7 +69,7 @@ const AgentProgressView = React.memo(function AgentProgressView({ engineId, turn
         <Text dimColor>{' \u00b7 '}</Text>
         <Text>{formatElapsed(elapsedMs)}</Text>
       </Box>
-  
+
       {/* Current/last tool */}
       {lastToolDisplay ? (
         <Box>
@@ -78,7 +78,7 @@ const AgentProgressView = React.memo(function AgentProgressView({ engineId, turn
           <Text color={toolColor}>{lastToolDisplay}</Text>
         </Box>
       ) : null}
-  
+
       {/* Turn budget bar */}
       <Box>
         <Text dimColor>{'\u2502 '}</Text>
@@ -86,7 +86,7 @@ const AgentProgressView = React.memo(function AgentProgressView({ engineId, turn
         <Text color={turnBarColor}>{turnBar}</Text>
         <Text dimColor>{` ${turnsUsed}/${maxTurns}`}</Text>
       </Box>
-  
+
       {/* Token budget bar (conditional) */}
       {tokBar ? (
         <Box>
@@ -96,7 +96,7 @@ const AgentProgressView = React.memo(function AgentProgressView({ engineId, turn
           <Text dimColor>{tokPctLabel}</Text>
         </Box>
       ) : null}
-  
+
       {/* Error line when failed */}
       {error && (phase === 'failed' || phase === 'cancelled') ? (
         <Box>
@@ -104,7 +104,7 @@ const AgentProgressView = React.memo(function AgentProgressView({ engineId, turn
           <Text color="#ef4444">{error.length > 70 ? error.slice(0, 67) + '...' : error}</Text>
         </Box>
       ) : null}
-  
+
       <Text dimColor>{'\u2570\u2500'}</Text>
     </Box>
   );

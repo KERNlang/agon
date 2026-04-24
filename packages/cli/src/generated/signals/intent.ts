@@ -134,14 +134,73 @@ function parseForgeInput(input: string): Intent {
   return { type: 'forge', task, fitnessCmd, hardened } as Intent;
 }
 
+function splitReviewArgs(input: string): string[] {
+  return input
+    .split(/\s+/)
+    .flatMap((part) => part.split(','))
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function isReviewTargetArg(part: string): boolean {
+  const lower = part.toLowerCase();
+  return lower === 'uncommitted' || lower.startsWith('branch:') || lower.startsWith('commit:');
+}
+
+function parseReviewInput(input: string): Intent {
+  const reviewParts = splitReviewArgs(input);
+  const engineIds: string[] = [];
+  let target: string | undefined;
+  let collectingEngines = false;
+
+  for (let i = 0; i < reviewParts.length; i += 1) {
+    const part = reviewParts[i];
+    const lower = part.toLowerCase();
+    if (lower === 'with') {
+      collectingEngines = true;
+      continue;
+    }
+    if (isReviewTargetArg(part)) {
+      if (!target) target = part;
+      continue;
+    }
+    if (collectingEngines) {
+      if (!engineIds.includes(lower)) engineIds.push(lower);
+      continue;
+    }
+    if (!target) target = part;
+  }
+
+  const engineId = engineIds[0];
+  return { type: 'review', engineId, engineIds: engineIds.length > 0 ? engineIds : undefined, target } as Intent;
+}
+
+function parseReviewShortcut(input: string): Intent|null {
+  const match = input.match(/^(?:review|cr)(?:\s+([\s\S]+))?$/i);
+  if (!match) return null;
+
+  const rest = (match[1] ?? '').trim();
+  if (!rest) return parseReviewInput('');
+
+  const parsed = parseReviewInput(rest) as any;
+  const target = String(parsed.target ?? '').toLowerCase();
+  const hasEngines = Array.isArray(parsed.engineIds) && parsed.engineIds.length > 0;
+  const validTarget = !target || isReviewTargetArg(target);
+  if (hasEngines || validTarget) return parsed;
+
+  // Let natural-language review requests go through Cesar instead of
+  // mis-parsing "review this code" as an invalid target named "this".
+  return null;
+}
+
 function parseSlashCommand(input: string, commandRegistry?: any): Intent {
   const stripped = input.slice(1).trim();
   if (!stripped) return { type: 'slash-list' } as Intent;
-  
+
   const parts = stripped.split(/\s+/);
   const cmd = parts[0].toLowerCase();
   const rest = parts.slice(1).join(' ');
-  
+
   switch (cmd) {
     case 'forge':
       return parseForgeInput(rest || '');
@@ -256,6 +315,8 @@ function parseSlashCommand(input: string, commandRegistry?: any): Intent {
     case 'usage':
     case 'cost':
       return { type: 'tokens' } as Intent;
+    case 'doctor':
+      return { type: 'doctor', scope: rest || 'engines' } as unknown as Intent;
     case 'cesar': {
       const cesarIds = rest
         .split(/[,\s]+/)
@@ -349,16 +410,7 @@ function parseSlashCommand(input: string, commandRegistry?: any): Intent {
     }
     case 'review':
     case 'cr': {
-      const reviewParts = rest.split(/\s+/).filter(Boolean);
-      let engineId: string | undefined;
-      let target: string | undefined;
-      let i = 0;
-      if (reviewParts[i] === 'with' && reviewParts[i + 1]) {
-        engineId = reviewParts[i + 1].toLowerCase();
-        i += 2;
-      }
-      if (reviewParts[i]) target = reviewParts[i];
-      return { type: 'review', engineId, target } as Intent;
+      return parseReviewInput(rest);
     }
     case 'run':
     case 'exec':
@@ -417,14 +469,17 @@ function parseSlashCommand(input: string, commandRegistry?: any): Intent {
 export function detectIntent(raw: string, commandRegistry?: any): Intent {
   const input = raw.trim();
   if (!input) return { type: 'unknown', input: '' } as Intent;
-  
+
   if (input.startsWith('/')) {
     return parseSlashCommand(input, commandRegistry);
   }
-  
+
   if (EXIT_KEYWORDS.test(input)) return { type: 'exit' } as Intent;
   if (HELP_KEYWORDS.test(input)) return { type: 'help' } as Intent;
-  
+
+  const reviewShortcut = parseReviewShortcut(input);
+  if (reviewShortcut) return reviewShortcut;
+
   // Only match keyword shortcuts for short, command-like inputs.
   // Skip if input looks like a natural language sentence (question words, pronouns, >4 words).
   const isCommandLike = input.split(/\s+/).length <= 4 && !SENTENCE_PREFIX.test(input);
@@ -434,6 +489,6 @@ export function detectIntent(raw: string, commandRegistry?: any): Intent {
     if (ENGINES_KEYWORDS.test(input)) return { type: 'engines' } as Intent;
     if (CONFIG_KEYWORDS.test(input)) return { type: 'config' } as Intent;
   }
-  
+
   return { type: 'auto', input, taskClass: classifyTask(input) } as Intent;
 }

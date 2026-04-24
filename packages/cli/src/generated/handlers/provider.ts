@@ -24,19 +24,19 @@ export async function handleProviderAdd(dispatch: Dispatch, ctx: HandlerContext,
     dispatch({ type: 'info', message: 'Example: /provider add deepseek https://api.deepseek.com DEEPSEEK_API_KEY deepseek-chat' });
     return;
   }
-  
+
   const [id, baseUrl, apiKeyEnv, ...modelParts] = parts;
   if (!/^[a-zA-Z0-9._-]+$/.test(id)) {
     dispatch({ type: 'error', message: 'Provider ID must contain only letters, numbers, hyphens, and underscores' });
     return;
   }
   const model = modelParts.join(' ');
-  
+
   // Check if API key is set
   if (!process.env[apiKeyEnv]) {
     dispatch({ type: 'warning', message: `${apiKeyEnv} is not set. Set it before using this provider.` });
   }
-  
+
   const def = {
     schemaVersion: 3,
     id,
@@ -48,14 +48,14 @@ export async function handleProviderAdd(dispatch: Dispatch, ctx: HandlerContext,
     review: { args: [] },
     api: { baseUrl, apiKeyEnv, model, maxTokens: 4096 },
   };
-  
+
   const dir = enginesDir();
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, `${id}.json`), JSON.stringify(def, null, 2) + '\n');
-  
+
   // Register in current session
   ctx.registry.register(def as any);
-  
+
   dispatch({ type: 'success', message: `Provider added: ${id} (${model})` });
   dispatch({ type: 'info', message: `API: ${baseUrl}` });
   dispatch({ type: 'info', message: `Key: ${apiKeyEnv}${process.env[apiKeyEnv] ? ' (set)' : ' (not set!)'}` });
@@ -86,13 +86,13 @@ export function handleProviderList(dispatch: Dispatch): void {
     dispatch({ type: 'info', message: 'No custom providers. Add one with /provider add' });
     return;
   }
-  
+
   const files = readdirSync(dir).filter((f: string) => f.endsWith('.json'));
   if (files.length === 0) {
     dispatch({ type: 'info', message: 'No custom providers. Add one with /provider add' });
     return;
   }
-  
+
   dispatch({ type: 'header', title: 'Custom Providers' });
   const rows: string[][] = [];
   for (const file of files) {

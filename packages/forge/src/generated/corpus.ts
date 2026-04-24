@@ -35,16 +35,16 @@ export function saveCorpus(record: CorpusRecord): void {
 
 export function addToCorpus(forgeId: string, taskClass: TaskClass, artifacts: BreakerArtifact[]): number {
   if (artifacts.length === 0) return 0;
-  
+
   const record = loadCorpus();
   let added = 0;
-  
+
   for (const artifact of artifacts) {
     if (!artifact.validated) continue;
-  
+
     // Extract pattern from failure — normalize to a category
     const pattern = extractPattern(artifact.failureMessage, artifact.testScript);
-  
+
     const entry: CorpusEntry = {
       forgeId,
       taskClass,
@@ -53,10 +53,10 @@ export function addToCorpus(forgeId: string, taskClass: TaskClass, artifacts: Br
       replayCount: 0,
       pattern,
     };
-  
+
     record.entries.push(entry);
     added++;
-  
+
     // Update gap patterns
     if (pattern) {
       const existing = record.patterns.find(
@@ -77,12 +77,12 @@ export function addToCorpus(forgeId: string, taskClass: TaskClass, artifacts: Br
       }
     }
   }
-  
+
   // Prune old entries — keep last 200
   if (record.entries.length > 200) {
     record.entries = record.entries.slice(-200);
   }
-  
+
   saveCorpus(record);
   return added;
 }
@@ -90,7 +90,7 @@ export function addToCorpus(forgeId: string, taskClass: TaskClass, artifacts: Br
 export function extractPattern(failureMessage: string, testScript: string): string|undefined {
   // Normalize common failure patterns into categories
   const combined = (failureMessage + ' ' + testScript).toLowerCase();
-  
+
   const patterns: [RegExp, string][] = [
     [/null|undefined|cannot read prop/, 'null-handling'],
     [/boundary|edge.?case|off.?by.?one|overflow/, 'boundary-condition'],
@@ -103,23 +103,23 @@ export function extractPattern(failureMessage: string, testScript: string): stri
     [/permission|auth|forbidden|unauthorized/, 'auth-boundary'],
     [/large.?input|performance|memory|oom/, 'scale-handling'],
   ];
-  
+
   for (const [regex, label] of patterns) {
     if (regex.test(combined)) return label;
   }
-  
+
   return undefined;
 }
 
 export function getCorpusForReplay(taskClass: TaskClass, limit: number): CorpusEntry[] {
   const record = loadCorpus();
-  
+
   // Filter entries matching task class, sort by most recent
   const matching = record.entries
     .filter((e) => e.taskClass === taskClass && e.artifact.validated)
     .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
     .slice(0, limit);
-  
+
   // Increment replay counts
   for (const entry of matching) {
     const original = record.entries.find(
@@ -127,16 +127,16 @@ export function getCorpusForReplay(taskClass: TaskClass, limit: number): CorpusE
     );
     if (original) original.replayCount++;
   }
-  
+
   if (matching.length > 0) saveCorpus(record);
-  
+
   return matching;
 }
 
 export function getGapPatterns(taskClass?: TaskClass, threshold?: number): GapPattern[] {
   const record = loadCorpus();
   const minFreq = threshold ?? 3;
-  
+
   return record.patterns
     .filter((p) => p.frequency >= minFreq && !p.skillProposed)
     .filter((p) => !taskClass || p.taskClass === taskClass)

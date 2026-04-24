@@ -78,4 +78,3 @@ export class PlanStateError extends AgonError {
     this.name = 'PlanStateError';
   }
 }
-

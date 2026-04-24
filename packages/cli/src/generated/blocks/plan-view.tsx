@@ -20,7 +20,7 @@ export function PlanProposalView({ plan, markdown }: { plan:any; markdown?:strin
   const bar = '\u2550'.repeat(barWidth);
   const thinBar = '\u2500'.repeat(barWidth);
   const planColor = '#c084fc';
-  
+
   // Claude-Code-style markdown rendering for the plan body. The
   // structured step boxes below are kept as a fallback when no
   // markdown was provided — otherwise the markdown is the source
@@ -51,7 +51,7 @@ export function PlanProposalView({ plan, markdown }: { plan:any; markdown?:strin
       </Box>
     );
   }
-  
+
   return (
     <Box flexDirection="column" paddingLeft={2} marginY={1}>
       {/* ── Header ── */}
@@ -71,7 +71,7 @@ export function PlanProposalView({ plan, markdown }: { plan:any; markdown?:strin
       )}
       <Text color={planColor}>{'\u2551'}</Text>
       <Text color={planColor}>{'\u255f'}{thinBar}{'\u2562'}</Text>
-  
+
       {/* ── Steps ── */}
       {steps.map((s: any, i: number) => {
         const cfg = (STEP_TYPE_CONFIG as any)[s.type] ?? { icon: '?', color: '#888', label: s.type };
@@ -80,7 +80,7 @@ export function PlanProposalView({ plan, markdown }: { plan:any; markdown?:strin
         const hasDepends = s.dependsOn && s.dependsOn.length > 0;
         const hasFitness = s.fitnessCmd;
         const isParallel = s.parallel;
-  
+
         return (
           <Box key={s.id} flexDirection="column">
             {/* Step number + type icon + description */}
@@ -92,7 +92,7 @@ export function PlanProposalView({ plan, markdown }: { plan:any; markdown?:strin
               <Text color={cfg.color} bold>{cfg.icon}{' '}</Text>
               <Text>{s.description}</Text>
             </Box>
-  
+
             {/* Metadata line: type · engines · cost · flags */}
             <Box>
               <Text color={planColor}>{'\u2551   '}</Text>
@@ -114,7 +114,7 @@ export function PlanProposalView({ plan, markdown }: { plan:any; markdown?:strin
               )}
               {isParallel && <Text color="#34d399">{' \u00b7 parallel'}</Text>}
             </Box>
-  
+
             {/* Fitness command if present */}
             {hasFitness && (
               <Box>
@@ -123,7 +123,7 @@ export function PlanProposalView({ plan, markdown }: { plan:any; markdown?:strin
                 <Text color="#fbbf24">{s.fitnessCmd}</Text>
               </Box>
             )}
-  
+
             {/* Dependencies */}
             {hasDepends && (
               <Box>
@@ -132,7 +132,7 @@ export function PlanProposalView({ plan, markdown }: { plan:any; markdown?:strin
                 <Text color="#94a3b8">{s.dependsOn.join(', ')}</Text>
               </Box>
             )}
-  
+
             {/* Tribunal mode */}
             {s.tribunalMode && (
               <Box>
@@ -141,7 +141,7 @@ export function PlanProposalView({ plan, markdown }: { plan:any; markdown?:strin
                 <Text color="#c084fc">{s.tribunalMode}</Text>
               </Box>
             )}
-  
+
             {/* Rationale — why this engine/approach was chosen */}
             {s.rationale && (
               <Box>
@@ -150,7 +150,7 @@ export function PlanProposalView({ plan, markdown }: { plan:any; markdown?:strin
                 <Text color="#94a3b8">{s.rationale}</Text>
               </Box>
             )}
-  
+
             {/* Verify command */}
             {s.verifyCmd && (
               <Box>
@@ -159,7 +159,7 @@ export function PlanProposalView({ plan, markdown }: { plan:any; markdown?:strin
                 <Text color="#34d399">{s.verifyCmd}</Text>
               </Box>
             )}
-  
+
             {/* Separator between steps */}
             {i < steps.length - 1 && (
               <Text color={planColor}>{'\u2551'}</Text>
@@ -167,7 +167,7 @@ export function PlanProposalView({ plan, markdown }: { plan:any; markdown?:strin
           </Box>
         );
       })}
-  
+
       {/* ── Footer ── */}
       {/* No key hints here on purpose: the actual approval prompt is
           shown by askQuestion() below this block once Cesar finishes.

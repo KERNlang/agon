@@ -24,7 +24,7 @@ export function createForgeTool(): ToolHandler {
     isReadOnly: true,
     isConcurrencySafe: true,
   };
-  
+
   const validate = (input: Record<string, unknown>, _ctx: ToolContext): string | null => {
     if (!input.task || typeof input.task !== 'string' || !(input.task as string).trim()) {
       return 'Missing required parameter: task';
@@ -34,15 +34,15 @@ export function createForgeTool(): ToolHandler {
     }
     return null;
   };
-  
+
   const checkPermission = (_input: Record<string, unknown>, _ctx: ToolContext): PermissionDecision => {
     return { behavior: 'allow' };
   };
-  
+
   const execute = async (_input: Record<string, unknown>, _ctx: ToolContext): Promise<ToolResult> => {
     return { ok: true, content: 'Delegation accepted. STOP responding now. The orchestrator will handle the rest.' };
   };
-  
+
   return { definition, validate, checkPermission, execute };
 }
 
@@ -65,22 +65,22 @@ export function createBrainstormTool(): ToolHandler {
     isReadOnly: true,
     isConcurrencySafe: true,
   };
-  
+
   const validate = (input: Record<string, unknown>, _ctx: ToolContext): string | null => {
     if (!input.question || typeof input.question !== 'string' || !(input.question as string).trim()) {
       return 'Missing required parameter: question';
     }
     return null;
   };
-  
+
   const checkPermission = (_input: Record<string, unknown>, _ctx: ToolContext): PermissionDecision => {
     return { behavior: 'allow' };
   };
-  
+
   const execute = async (_input: Record<string, unknown>, _ctx: ToolContext): Promise<ToolResult> => {
     return { ok: true, content: 'Delegation accepted. STOP responding now. The orchestrator will handle the rest.' };
   };
-  
+
   return { definition, validate, checkPermission, execute };
 }
 
@@ -104,7 +104,7 @@ export function createTribunalTool(): ToolHandler {
     isReadOnly: true,
     isConcurrencySafe: true,
   };
-  
+
   const validate = (input: Record<string, unknown>, _ctx: ToolContext): string | null => {
     if (!input.question || typeof input.question !== 'string' || !(input.question as string).trim()) {
       return 'Missing required parameter: question';
@@ -117,15 +117,15 @@ export function createTribunalTool(): ToolHandler {
     }
     return null;
   };
-  
+
   const checkPermission = (_input: Record<string, unknown>, _ctx: ToolContext): PermissionDecision => {
     return { behavior: 'allow' };
   };
-  
+
   const execute = async (_input: Record<string, unknown>, _ctx: ToolContext): Promise<ToolResult> => {
     return { ok: true, content: 'Delegation accepted. STOP responding now. The orchestrator will handle the rest.' };
   };
-  
+
   return { definition, validate, checkPermission, execute };
 }
 
@@ -147,22 +147,22 @@ export function createCampfireTool(): ToolHandler {
     isReadOnly: true,
     isConcurrencySafe: true,
   };
-  
+
   const validate = (input: Record<string, unknown>, _ctx: ToolContext): string | null => {
     if (!input.topic || typeof input.topic !== 'string' || !(input.topic as string).trim()) {
       return 'Missing required parameter: topic';
     }
     return null;
   };
-  
+
   const checkPermission = (_input: Record<string, unknown>, _ctx: ToolContext): PermissionDecision => {
     return { behavior: 'allow' };
   };
-  
+
   const execute = async (_input: Record<string, unknown>, _ctx: ToolContext): Promise<ToolResult> => {
     return { ok: true, content: 'Delegation accepted. STOP responding now. The orchestrator will handle the rest.' };
   };
-  
+
   return { definition, validate, checkPermission, execute };
 }
 
@@ -185,7 +185,7 @@ export function createReportConfidenceTool(): ToolHandler {
     isReadOnly: true,
     isConcurrencySafe: true,
   };
-  
+
   const validate = (input: Record<string, unknown>, _ctx: ToolContext): string | null => {
     if (input.value === undefined || typeof input.value !== 'number') {
       return 'Missing required parameter: value (number 0-100)';
@@ -195,11 +195,11 @@ export function createReportConfidenceTool(): ToolHandler {
     }
     return null;
   };
-  
+
   const checkPermission = (_input: Record<string, unknown>, _ctx: ToolContext): PermissionDecision => {
     return { behavior: 'allow' };
   };
-  
+
   const execute = async (input: Record<string, unknown>, _ctx: ToolContext): Promise<ToolResult> => {
     const v = input.value as number;
     let guidance: string;
@@ -209,7 +209,7 @@ export function createReportConfidenceTool(): ToolHandler {
     else guidance = 'Low confidence. STOP. Investigate before implementing. Explain what is needed to raise confidence.';
     return { ok: true, content: `Confidence ${v}% recorded. ${guidance}` };
   };
-  
+
   return { definition, validate, checkPermission, execute };
 }
 
@@ -233,7 +233,7 @@ export function createDelegateTool(): ToolHandler {
     isReadOnly: true,
     isConcurrencySafe: false,
   };
-  
+
   const validate = (input: Record<string, unknown>, _ctx: ToolContext): string | null => {
     if (!input.engine || typeof input.engine !== 'string' || !(input.engine as string).trim()) {
       return 'Missing required parameter: engine (e.g., "claude", "codex", "gemini")';
@@ -249,17 +249,17 @@ export function createDelegateTool(): ToolHandler {
     }
     return null;
   };
-  
+
   const checkPermission = (_input: Record<string, unknown>, _ctx: ToolContext): PermissionDecision => {
     return { behavior: 'allow' };
   };
-  
+
   // Actual execution is handled by buildOnToolCall in cesar-session.kern
   // which has access to ctx.adapter and ctx.registry. This execute is a fallback.
   const execute = async (_input: Record<string, unknown>, _ctx: ToolContext): Promise<ToolResult> => {
     return { ok: false, content: '', error: 'Delegate must be executed via the session tool handler, not directly.' };
   };
-  
+
   return { definition, validate, checkPermission, execute };
 }
 
@@ -269,12 +269,13 @@ export function createDelegateTool(): ToolHandler {
 export function createReviewTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Review',
-    description: 'Delegate to code review — dispatches an engine to review uncommitted changes, a branch diff, or a specific commit. Use when the user asks for a code review, PR review, or diff review. After calling, STOP and wait.',
+    description: 'Delegate to code review — dispatches one or more engines to review uncommitted changes, a branch diff, or a specific commit. Use when the user asks for a code review, PR review, or diff review. Set engine only when the user explicitly names one (for example, "review with gemini"); set engines when the user names multiple reviewers (for example, "review with codex gemini"); otherwise omit engine/engines and let the runtime auto-select. After calling, STOP and wait.',
     inputSchema: {
       type: 'object',
       properties: {
         target: { type: 'string', description: 'Review target: "uncommitted" (default), "branch:NAME", or "commit:SHA".' },
-        engine: { type: 'string', description: 'Specific engine for review. Omit to auto-select best available reviewer.' },
+        engine: { type: 'string', description: 'Specific engine for review. Set only when the user explicitly names an engine; otherwise omit to auto-select the best available reviewer.' },
+        engines: { type: 'array', items: { type: 'string' }, description: 'Multiple specific engines for review. Set only when the user explicitly names multiple reviewers, e.g. ["codex","gemini"].' },
       },
       required: [],
     },
@@ -282,19 +283,19 @@ export function createReviewTool(): ToolHandler {
     isReadOnly: true,
     isConcurrencySafe: true,
   };
-  
+
   const validate = (_input: Record<string, unknown>, _ctx: ToolContext): string | null => {
     return null;
   };
-  
+
   const checkPermission = (_input: Record<string, unknown>, _ctx: ToolContext): PermissionDecision => {
     return { behavior: 'allow' };
   };
-  
+
   const execute = async (_input: Record<string, unknown>, _ctx: ToolContext): Promise<ToolResult> => {
     return { ok: true, content: 'Delegation accepted. STOP responding now. The orchestrator will handle the rest.' };
   };
-  
+
   return { definition, validate, checkPermission, execute };
 }
 
@@ -320,7 +321,7 @@ export function createAgentTool(): ToolHandler {
     isReadOnly: false,
     isConcurrencySafe: false,
   };
-  
+
   const validate = (input: Record<string, unknown>, _ctx: ToolContext): string | null => {
     if (!input.task || typeof input.task !== 'string' || !(input.task as string).trim()) {
       return 'Missing required parameter: task';
@@ -336,18 +337,18 @@ export function createAgentTool(): ToolHandler {
     }
     return null;
   };
-  
+
   const checkPermission = (_input: Record<string, unknown>, _ctx: ToolContext): PermissionDecision => {
     return { behavior: 'allow' };
   };
-  
+
   // Actual execution is intercepted by brain.kern's EAGER_ORCH/LOOP_ORCH gate
   // (PFB-1) and routed via dispatch.kern → runAgentMode / runAgentTeam.
   // This execute is a fallback that should never run in practice.
   const execute = async (_input: Record<string, unknown>, _ctx: ToolContext): Promise<ToolResult> => {
     return { ok: true, content: 'Delegation accepted. STOP responding now. The orchestrator will handle the rest.' };
   };
-  
+
   return { definition, validate, checkPermission, execute };
 }
 
@@ -369,19 +370,19 @@ export function createQuickNeroTool(): ToolHandler {
     isReadOnly: true,
     isConcurrencySafe: true,
   };
-  
+
   const validate = (_input: Record<string, unknown>, _ctx: ToolContext): string | null => {
     return null;
   };
-  
+
   const checkPermission = (_input: Record<string, unknown>, _ctx: ToolContext): PermissionDecision => {
     return { behavior: 'allow' };
   };
-  
+
   const execute = async (_input: Record<string, unknown>, _ctx: ToolContext): Promise<ToolResult> => {
     return { ok: true, content: 'Quick Nero self-check scheduled. Continue responding — the self-check runs after the tool loop.' };
   };
-  
+
   return { definition, validate, checkPermission, execute };
 }
 
@@ -404,21 +405,21 @@ export function createPipelineTool(): ToolHandler {
     isReadOnly: true,
     isConcurrencySafe: true,
   };
-  
+
   const validate = (input: Record<string, unknown>, _ctx: ToolContext): string | null => {
     if (!input.task || typeof input.task !== 'string' || !(input.task as string).trim()) {
       return 'Missing required parameter: task';
     }
     return null;
   };
-  
+
   const checkPermission = (_input: Record<string, unknown>, _ctx: ToolContext): PermissionDecision => {
     return { behavior: 'allow' };
   };
-  
+
   const execute = async (_input: Record<string, unknown>, _ctx: ToolContext): Promise<ToolResult> => {
     return { ok: true, content: 'Delegation accepted. STOP responding now. The orchestrator will handle the rest.' };
   };
-  
+
   return { definition, validate, checkPermission, execute };
 }

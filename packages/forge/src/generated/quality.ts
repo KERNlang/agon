@@ -10,7 +10,7 @@ export async function runLint(cwd: string): Promise<number> {
       cwd,
       timeout: 30_000,
     });
-  
+
     if (result.stdout) {
       try {
         const parsed = JSON.parse(result.stdout) as Array<{ warningCount: number }>;
@@ -34,7 +34,7 @@ export async function runStyleCheck(cwd: string): Promise<number> {
       cwd,
       timeout: 30_000,
     });
-  
+
     return result.exitCode === 0 ? 100 : 80;
   } catch (_prettierErr) {
     // Prettier not installed — assume style is fine

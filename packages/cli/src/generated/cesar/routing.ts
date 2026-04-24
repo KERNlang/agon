@@ -36,7 +36,7 @@ export function deriveRoutingHints(input: string, ctx: HandlerContext): CesarRou
   const taskClass = classifyTask(input);
   const inputTokens = Math.ceil(input.length / 4);
   const lower = input.toLowerCase();
-  
+
   let scopeFileCount = 0;
   let scopeDirSpread = 0;
   try {
@@ -46,10 +46,10 @@ export function deriveRoutingHints(input: string, ctx: HandlerContext): CesarRou
     const dirs = new Set(changedFiles.map((f: string) => f.split('/').slice(0, 2).join('/')));
     scopeDirSpread = dirs.size;
   } catch { /* best-effort only */ }
-  
+
   const activeEngines = ctx.activeEngines();
   const explicitEngineMention = activeEngines.some((id: string) => lower.includes(id.toLowerCase()));
-  
+
   const REVIEW_RE = /\b(?:review|audit|regression|bug hunt|security review|code review|look for issues|find bugs)\b/i;
   const CHALLENGE_RE = /\b(?:double-?check|sanity check|poke holes|stress[-\s]?test|challenge this|am i missing|may be missing|maybe wrong|overconfident|edge case)\b/i;
   const TRADEOFF_RE = /\b(?:vs\.?|versus|trade-?off|worth it|should we|choose between|decision|architecture|architectur(?:e|al)|rest or graphql|sse or websockets)\b/i;
@@ -60,7 +60,7 @@ export function deriveRoutingHints(input: string, ctx: HandlerContext): CesarRou
   const HARD_SLICE_RE = /\b(?:hard part|risky part|core logic|core implementation|algorithm|parser|scheduler|middleware|orchestrator|auth flow|critical path)\b/i;
   const TINY_EDIT_RE = /\b(?:typo|readme|comment|spelling|wording|docs?)\b/i;
   const SINGLE_FILE_RE = /(?:^|\s)(?:[\w./-]+\.(?:ts|tsx|js|jsx|py|rs|go|sh|md|json|yaml|yml|toml))(?:\s|$)/i;
-  
+
   const reviewLikely = REVIEW_RE.test(input);
   const challengeLikely = CHALLENGE_RE.test(input);
   const tradeoffLikely = TRADEOFF_RE.test(input);
@@ -70,7 +70,7 @@ export function deriveRoutingHints(input: string, ctx: HandlerContext): CesarRou
   const tinyEditLikely = inputTokens <= 20 && (TINY_EDIT_RE.test(input) || SINGLE_FILE_RE.test(input));
   const repoScopeSuggestsFanout = implementationLikely && inputTokens >= 24 && (scopeDirSpread > 2 || scopeFileCount >= 8);
   const fanoutLikely = FANOUT_RE.test(input) || repoScopeSuggestsFanout;
-  
+
   let complexityHint = 'plain-chat';
   if (tinyEditLikely) {
     complexityHint = 'tiny-edit (stay local)';
@@ -80,7 +80,7 @@ export function deriveRoutingHints(input: string, ctx: HandlerContext): CesarRou
   if (fanoutLikely) {
     complexityHint = 'multi-step-fanout (team breadth may help)';
   }
-  
+
   let uncertaintyFamily: CesarUncertaintyFamily = 'none';
   if (reviewLikely) uncertaintyFamily = 'review';
   else if (explicitEngineMention) uncertaintyFamily = 'specialist';
@@ -89,7 +89,7 @@ export function deriveRoutingHints(input: string, ctx: HandlerContext): CesarRou
   else if (fuzzyLikely) uncertaintyFamily = 'fuzzy';
   else if (openLikely) uncertaintyFamily = 'open';
   else if (implementationLikely) uncertaintyFamily = 'implementation';
-  
+
   let escalationHint: CesarEscalationHint = 'self';
   switch (uncertaintyFamily) {
     case 'review': escalationHint = 'review'; break;
@@ -109,7 +109,7 @@ export function deriveRoutingHints(input: string, ctx: HandlerContext): CesarRou
     }
     default: escalationHint = 'self';
   }
-  
+
   const explicitTeamRequest = /\b(?:team|all engines|multiple engines|everyone|several models)\b/i.test(input);
   const teamForImplementation = implementationLikely && (
     scopeDirSpread >= 4
@@ -121,7 +121,7 @@ export function deriveRoutingHints(input: string, ctx: HandlerContext): CesarRou
   const recommendedBreadth: CesarBreadthHint = (explicitTeamRequest || teamForImplementation || teamForReview || teamForDecisionWork)
     ? 'team'
     : 'solo';
-  
+
   let recommendedForgeScope: CesarForgeScopeHint = 'none';
   if (escalationHint === 'forge') {
     const fullForge = recommendedBreadth === 'team'
@@ -133,7 +133,7 @@ export function deriveRoutingHints(input: string, ctx: HandlerContext): CesarRou
       || (inputTokens >= 40 && inputTokens <= 180 && !fullForge);
     recommendedForgeScope = fullForge ? 'full' : (sliceForge ? 'slice' : 'none');
   }
-  
+
   return {
     taskClass,
     scopeFileCount,
@@ -155,7 +155,7 @@ export function deriveRoutingHints(input: string, ctx: HandlerContext): CesarRou
  */
 export function buildRoutingContext(input: string, ctx: HandlerContext): string {
   const parts: string[] = [];
-  
+
   const hints = deriveRoutingHints(input, ctx);
   parts.push(`TASK CLASS: ${hints.taskClass}`);
   try {
@@ -165,14 +165,14 @@ export function buildRoutingContext(input: string, ctx: HandlerContext): string 
   } catch {
     parts.push(`SCOPE: unknown (not a git repo or no changes)`);
   }
-  
+
   parts.push(`COMPLEXITY HINT: ${hints.complexityHint}`);
   parts.push(`UNCERTAINTY FAMILY: ${hints.uncertaintyFamily}`);
   parts.push(`IF ESCALATING: prefer ${hints.escalationHint} (${hints.recommendedBreadth})`);
   if (hints.recommendedForgeScope !== 'none') {
     parts.push(`FORGE SHAPE: prefer ${hints.recommendedForgeScope} ${hints.recommendedBreadth === 'team' ? 'with team breadth' : 'solo unless you need more diversity'}`);
   }
-  
+
   // ── Engine rankings for this task class (in-memory, O(n log n)) ──
   const activeEngines = ctx.activeEngines();
   if (activeEngines.length > 1) {
@@ -190,7 +190,7 @@ export function buildRoutingContext(input: string, ctx: HandlerContext): string 
   } else {
     parts.push(`ENGINES: ${activeEngines[0] ?? 'none'} (solo — only 1 available)`);
   }
-  
+
   // ── Rating summary for this task class ──
   try {
     const ratings = getRatings();
@@ -205,7 +205,7 @@ export function buildRoutingContext(input: string, ctx: HandlerContext): string 
       }
     }
   } catch { /* no rating data yet */ }
-  
+
   // ── ContextThread summary (session-wide memory for routing) ──
   // Inject a structured summary of recent session activity so Cesar's routing
   // decisions are aware of what has been done — forge/brainstorm/tribunal/agent
@@ -237,7 +237,7 @@ export function buildRoutingContext(input: string, ctx: HandlerContext): string 
       parts.push(`SESSION CONTEXT (last ${recent.length} messages — forge/agent/brainstorm outcomes included fully):\n${summary}`);
     }
   } catch { /* non-fatal — routing works without thread context */ }
-  
+
   return parts.join('\n');
 }
 

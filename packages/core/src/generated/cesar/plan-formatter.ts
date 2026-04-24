@@ -41,24 +41,24 @@ export function formatCesarPlanMarkdown(plan: CesarPlan): string {
     }
     lines.push('');
   }
-  
+
   lines.push('## Steps');
   lines.push('');
-  
+
   for (let i = 0; i < plan.steps.length; i++) {
     const s = plan.steps[i];
     const num = i + 1;
     const typeLabel = formatStepType(s);
     const stateIcon = s.state === 'done' ? '✓' : s.state === 'running' ? '●' : s.state === 'failed' ? '✗' : s.state === 'cancelled' ? '⊘' : '○';
     lines.push(`### Step ${num}: ${s.description} [${typeLabel}] ${stateIcon} ${s.state ?? 'pending'}`);
-  
+
     if (s.rationale) lines.push(`- Rationale: ${s.rationale}`);
     if (s.fitnessCmd) lines.push(`- Fitness: \`${s.fitnessCmd}\``);
     if (s.verifyCmd) lines.push(`- Verify: \`${s.verifyCmd}\``);
     if (s.dependsOn && s.dependsOn.length > 0) lines.push(`- Depends on: ${s.dependsOn.join(', ')}`);
     if (s.exports && s.exports.length > 0) lines.push(`- Exports: ${s.exports.join(', ')}`);
     if (s.imports && s.imports.length > 0) lines.push(`- Imports: ${s.imports.join(', ')}`);
-  
+
     if (s.result) {
       lines.push(`- Actual: ${s.result.actualTokens.toLocaleString()} tokens ($${s.result.actualCostUsd.toFixed(4)}) — ${(s.result.durationMs / 1000).toFixed(1)}s`);
     } else {
@@ -66,7 +66,7 @@ export function formatCesarPlanMarkdown(plan: CesarPlan): string {
     }
     lines.push('');
   }
-  
+
   lines.push('---');
   if (plan.totalActualTokens > 0) {
     lines.push(`**Planned: ~${plan.totalEstimatedTokens.toLocaleString()} tokens ($${plan.totalEstimatedCostUsd.toFixed(2)})**`);
@@ -79,6 +79,6 @@ export function formatCesarPlanMarkdown(plan: CesarPlan): string {
     lines.push(`**Engines: ${allEngines.join(', ')}**`);
   }
   lines.push(`**Status: ${plan.state}**`);
-  
+
   return lines.join('\n');
 }

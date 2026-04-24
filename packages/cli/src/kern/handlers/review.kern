@@ -4,7 +4,7 @@
 import from="node:child_process" names="execFileSync"
 import from="node:path" names="join"
 import from="node:fs" names="mkdirSync,readFileSync,statSync"
-import from="@agon/core" names="ensureAgonHome,RUNS_DIR,appendMessage,tracker,StreamParser,scanProjectContext,resolveWorkingDir"
+import from="@agon/core" names="ensureAgonHome,RUNS_DIR,appendMessage,tracker,StreamParser,scanProjectContext,resolveWorkingDir,rankByTaskClass"
 import from="../blocks/output-format.js" names="ENGINE_COLORS"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 
@@ -102,24 +102,33 @@ fn name=selectReviewEngine params="requestedEngine:string|undefined, ctx:Handler
       return requestedEngine;
     }
 
-    // Preference order: reviewDefaultEngine > forgeFixedStarter > first active with review mode
+    // Preference order: explicit review default > ranked review-capable engine.
+    // Deliberately do not inherit forgeFixedStarter: starter choice is for
+    // forge seeding, not code-review routing.
     const config = ctx.config as any;
-    const preferred = config.reviewDefaultEngine ?? config.forgeFixedStarter ?? 'claude';
+    const preferred = typeof config.reviewDefaultEngine === 'string'
+      ? config.reviewDefaultEngine.trim()
+      : '';
 
     // Only use preferred if it's active AND supports review mode
-    if (active.includes(preferred)) {
+    if (preferred && active.includes(preferred)) {
       try {
         const prefEngine = ctx.registry.get(preferred);
         if (prefEngine.review) return preferred;
       } catch { /* fall through to capability scan */ }
     }
 
-    // Fall back to first available engine that has review mode
+    const reviewCapable: string[] = [];
     for (const id of active) {
       try {
         const engine = ctx.registry.get(id);
-        if (engine.review) return id;
+        if (engine.review) reviewCapable.push(id);
       } catch { /* skip unavailable */ }
+    }
+
+    if (reviewCapable.length > 0) {
+      const ranked = rankByTaskClass(reviewCapable, 'bugfix');
+      return ranked[0]?.engineId ?? reviewCapable[0];
     }
 
     // Last resort: first active engine
@@ -325,4 +334,46 @@ fn name=handleReview params="dispatch:Dispatch, ctx:HandlerContext, target?:stri
   cleanup <<<
     dispatch({ type: 'spinner-stop' });
     ctx.setActiveAbort(null);
+  >>>
+
+fn name=handleReviewMany params="dispatch:Dispatch, ctx:HandlerContext, target?:string, requestedEngines?:string[]" returns="Promise<void>" async=true export=true
+  doc "Run review for one or more explicitly requested engines. Multiple reviewers run sequentially so stream output stays readable; their findings are combined into ctx.lastReviewResult for Cesar follow-up/fix planning."
+  handler <<<
+    const engineIds = Array.from(new Set((requestedEngines ?? [])
+      .map((id) => String(id ?? '').trim().toLowerCase())
+      .filter(Boolean)));
+
+    if (engineIds.length <= 1) {
+      await handleReview(dispatch, ctx, target, engineIds[0]);
+      return;
+    }
+
+    dispatch({ type: 'info', message: `Running review with ${engineIds.join(', ')}...` });
+    const collected: Array<{ engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number }> = [];
+
+    for (const engineId of engineIds) {
+      const before = ctx.lastReviewResult;
+      await handleReview(dispatch, ctx, target, engineId);
+      const after = ctx.lastReviewResult;
+      if (after && after !== before && after.engineId === engineId && String(after.reviewOutput ?? '').trim()) {
+        collected.push(after);
+      }
+    }
+
+    if (collected.length === 0) {
+      dispatch({ type: 'warning', message: `No review output returned from ${engineIds.join(', ')}.` });
+      return;
+    }
+
+    const base = collected[collected.length - 1];
+    ctx.lastReviewResult = {
+      engineId: collected.map((r) => r.engineId).join(', '),
+      target: base.target,
+      label: base.label,
+      diff: base.diff,
+      reviewOutput: collected.map((r) => `## ${r.engineId}\n\n${r.reviewOutput}`).join('\n\n---\n\n'),
+      timestamp: Date.now(),
+    };
+
+    dispatch({ type: 'info', message: `Multi-review complete (${collected.map((r) => r.engineId).join(', ')}). Say "fix it" or "fix it with <engine>" to address the findings.` });
   >>>

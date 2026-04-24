@@ -10,7 +10,7 @@ import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 
 export async function handlePlanShow(dispatch: Dispatch, ctx: HandlerContext, planId?: string): Promise<void> {
   let plan: Plan | null = null;
-  
+
   if (planId) {
     plan = loadPlan(planId);
     if (!plan) {
@@ -28,9 +28,9 @@ export async function handlePlanShow(dispatch: Dispatch, ctx: HandlerContext, pl
       return;
     }
   }
-  
+
   dispatch({ type: 'plan', plan });
-  
+
   // If draft, prompt for approval inline
   if (plan.state === 'draft') {
     const answer = await ctx.askQuestion('Approve plan? [Y/n]');
@@ -44,7 +44,7 @@ export async function handlePlanShow(dispatch: Dispatch, ctx: HandlerContext, pl
       ctx.setCurrentPlan(approved);
       savePlan(approved);
       dispatch({ type: 'success', message: 'Plan approved.' });
-  
+
       if (approved.action.type === 'forge') {
         const { handleForge } = await import('../handlers/forge.js');
         await handleForge(approved.action.task, approved.action.fitnessCmd ?? null, dispatch, ctx, approved, approved.action.hardened);
@@ -69,12 +69,12 @@ export async function handleApprove(dispatch: Dispatch, ctx: HandlerContext): Pr
     dispatch({ type: 'warning', message: `Plan is ${ctx.currentPlan.state}, not draft.` });
     return;
   }
-  
+
   let plan = approvePlan(ctx.currentPlan);
   ctx.setCurrentPlan(plan);
   savePlan(plan);
   dispatch({ type: 'success', message: 'Plan approved.' });
-  
+
   if (plan.action.type === 'forge') {
     const { handleForge } = await import('../handlers/forge.js');
     await handleForge(plan.action.task, plan.action.fitnessCmd ?? null, dispatch, ctx, plan, plan.action.hardened);
@@ -92,18 +92,18 @@ export async function handleRetry(dispatch: Dispatch, ctx: HandlerContext): Prom
     dispatch({ type: 'warning', message: `Plan is ${ctx.currentPlan.state} — only paused/failed plans can be retried.` });
     return;
   }
-  
+
   const failedStep = ctx.currentPlan.steps.find((s: any) => s.result.state === 'failed');
   if (!failedStep) {
     dispatch({ type: 'info', message: 'No failed step found. Re-run the command to restart.' });
     return;
   }
-  
+
   dispatch({ type: 'info', message: `Retrying from: ${failedStep.label}` });
   let plan = resetStepForRetry(ctx.currentPlan, failedStep.id);
   ctx.setCurrentPlan(plan);
   savePlan(plan);
-  
+
   if (plan.action.type === 'forge') {
     plan = startPlan(plan);
     ctx.setCurrentPlan(plan);
@@ -133,7 +133,7 @@ export function handleCancel(dispatch: Dispatch, ctx: HandlerContext): void {
 export async function handleApplyPatch(dispatch: Dispatch, ctx: HandlerContext, patchPath?: string, force?: boolean): Promise<void> {
   let resolvedPatchPath = patchPath;
   let manifestPath: string | null = null;
-  
+
   if (!resolvedPatchPath && ctx.currentPlan) {
     for (const step of ctx.currentPlan.steps) {
       const patchArtifact = step.result.artifacts?.find((a: any) => a.type === 'patch');
@@ -142,9 +142,9 @@ export async function handleApplyPatch(dispatch: Dispatch, ctx: HandlerContext, 
       if (manifestArtifact) { manifestPath = manifestArtifact.path; }
     }
   }
-  
+
   const preflight = preflightApply(resolveWorkingDir(), resolvedPatchPath ?? null, manifestPath);
-  
+
   if (!preflight.ok && preflight.dirtyTree && force) {
     if (!preflight.patch) {
       dispatch({ type: 'error', message: preflight.error ?? 'No patch found.' });
@@ -155,11 +155,11 @@ export async function handleApplyPatch(dispatch: Dispatch, ctx: HandlerContext, 
     dispatch({ type: 'error', message: preflight.error ?? 'Preflight failed.' });
     return;
   }
-  
+
   const patch = preflight.patch!;
   dispatch({ type: 'info', message: `Patch: ${patch.path}` });
   dispatch({ type: 'info', message: `Engine: ${patch.engineId}` });
-  
+
   // Show colored diff preview
   const diffLines = patch.content.split('\n');
   const previewLines = diffLines.slice(0, 80); // Cap preview at 80 lines
@@ -172,15 +172,15 @@ export async function handleApplyPatch(dispatch: Dispatch, ctx: HandlerContext, 
       dispatch({ type: 'info', message: `… ${diffLines.length - 80} more lines not shown` });
     }
   }
-  
+
   dispatch({ type: 'info', message: `Total: ~${patch.lineCount} lines changed` });
-  
+
   const answer = await ctx.askQuestion(`Apply to ${resolveWorkingDir()}? [Y/n]`);
   if (answer.trim().toLowerCase() === 'n') {
     dispatch({ type: 'info', message: 'Cancelled.' });
     return;
   }
-  
+
   const result = applyPatchToTree(resolveWorkingDir(), patch.content);
   if (result.ok) {
     dispatch({ type: 'success', message: 'Patch applied. Review changes with git diff.' });

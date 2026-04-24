@@ -47,7 +47,7 @@ export async function collectRankedDrafts(opts: {question:string, context?:strin
     context: opts.context,
     mode: 'brainstorm',
   });
-  
+
   const draftPromises = opts.engines.map(async (engineId: string) => {
     const engine = opts.registry.get(engineId);
     try {
@@ -61,12 +61,12 @@ export async function collectRankedDrafts(opts: {question:string, context?:strin
         outputDir: opts.outputDir,
         signal: opts.signal,
       });
-  
+
       const draft = parseKernDraft(result.stdout);
       if (draft) {
         return { engineId, draft, raw: result.stdout };
       }
-  
+
       return { engineId, draft: fallbackParse(result.stdout), raw: result.stdout };
     } catch (err) {
       console.warn(`[agon] brainstorm dispatch (${engineId}) failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -84,7 +84,7 @@ export async function collectRankedDrafts(opts: {question:string, context?:strin
       };
     }
   });
-  
+
   const drafts = await Promise.all(draftPromises);
   return rankDrafts(drafts);
 }
@@ -105,7 +105,7 @@ export function scoutScore(bid: ScoutBid): number {
 export async function runScout(opts: {question:string, context?:string, engines:string[], scoutCount?:number, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, signal?:AbortSignal}): Promise<{rankedBids:ScoutBid[], leadEngine:string, topConfidence:number, disagreementSpread:number}> {
   const count = opts.scoutCount ?? 2;
   const scouts = opts.engines.slice(0, count);
-  
+
   const ranked = await collectRankedDrafts({
     question: opts.question,
     context: opts.context,
@@ -116,7 +116,7 @@ export async function runScout(opts: {question:string, context?:string, engines:
     outputDir: opts.outputDir,
     signal: opts.signal,
   });
-  
+
   const bids: ScoutBid[] = ranked.map((d) => ({
     engineId: d.engineId,
     confidence: calibrateConfidence(d.engineId, d.draft.confidence),
@@ -126,14 +126,14 @@ export async function runScout(opts: {question:string, context?:string, engines:
     risk: d.draft.approach.toLowerCase().includes('risk') || d.draft.tradeoffs.length > 2 ? 'high' as const : d.draft.tradeoffs.length > 0 ? 'medium' as const : 'low' as const,
     needsCompetition: d.draft.tradeoffs.some((t: string) => /compet|test|verify|compar/i.test(t)),
   }));
-  
+
   // Sort by scoutScore
   bids.sort((a, b) => scoutScore(b) - scoutScore(a));
-  
+
   const topConfidence = bids.length > 0 ? bids[0].confidence : 0;
   const secondConfidence = bids.length > 1 ? bids[1].confidence : 0;
   const disagreementSpread = Math.abs(topConfidence - secondConfidence);
-  
+
   return {
     rankedBids: bids,
     leadEngine: bids.length > 0 ? bids[0].engineId : scouts[0],
@@ -146,7 +146,7 @@ export function fallbackParse(output: string): KernDraft {
   const stripped = output.replace(/\x60\x60\x60(?:json)?\s*/gi, '').replace(/\x60\x60\x60/g, '');
   let depth = 0;
   let start = -1;
-  
+
   for (let i = 0; i < stripped.length; i++) {
     if (stripped[i] === '{') {
       if (depth === 0) start = i;
@@ -171,7 +171,7 @@ export function fallbackParse(output: string): KernDraft {
       }
     }
   }
-  
+
   return {
     approach: output.slice(0, 200),
     reasoning: '',
@@ -190,7 +190,7 @@ export async function runBrainstorm(opts: {question:string, context?:string, eng
     outputDir: opts.outputDir,
   });
   sidechain.log('brainstorm:init', undefined, { question: opts.question, engines: opts.engines });
-  
+
   const ranked = await collectRankedDrafts({
     question: opts.question,
     context: opts.context,
@@ -201,7 +201,7 @@ export async function runBrainstorm(opts: {question:string, context?:string, eng
     outputDir: opts.outputDir,
     signal: opts.signal,
   });
-  
+
   const bids: BrainstormBid[] = ranked.map((d, i) => {
     const reasoning = d.draft.approach + (d.draft.reasoning ? ` — ${d.draft.reasoning}` : '');
     const approach = d.draft.steps.map((s: string, j: number) => `${j + 1}. ${s}`).join('\n');
@@ -214,7 +214,7 @@ export async function runBrainstorm(opts: {question:string, context?:string, eng
       score,
     };
   });
-  
+
   const winner = ranked[0];
   if (!winner) {
     return {
@@ -224,22 +224,22 @@ export async function runBrainstorm(opts: {question:string, context?:string, eng
       response: 'No engines were available to brainstorm this question.',
     };
   }
-  
+
   // Update Glicko-2 ratings for all ranked engines
   if (bids.length >= 2) {
     const taskClass = classifyTask(opts.question);
     const glickoRanked = bids.map(b => ({ engineId: b.engineId, score: b.score ?? 0 }));
     updateGlickoRanked(glickoRanked, taskClass, 'brainstorm');
   }
-  
+
   const winnerEngine = opts.registry.get(winner.engineId);
-  
+
   // Build synthesis prompt with ALL engines' drafts
   const allDrafts = ranked.map((d) => {
     const steps = d.draft.steps.map((s: string, j: number) => `  ${j + 1}. ${s}`).join('\n');
     return `## ${d.engineId} (confidence: ${d.draft.confidence}%)\nApproach: ${d.draft.approach}${d.draft.reasoning ? `\nReasoning: ${d.draft.reasoning}` : ''}${d.draft.tradeoffs?.length ? `\nTradeoffs: ${d.draft.tradeoffs.join('; ')}` : ''}${steps ? `\nSteps:\n${steps}` : ''}`;
   }).join('\n\n');
-  
+
   const expandPrompt = [
     opts.question,
     '',
@@ -250,7 +250,7 @@ export async function runBrainstorm(opts: {question:string, context?:string, eng
     'Now write the best possible answer by combining the strongest ideas from ALL drafts above. Don\'t just pick one — take the best parts from each.',
     'Be specific and actionable. Include file paths where relevant.',
   ].join('\n');
-  
+
   let response: string;
   try {
     const answerResult = await opts.adapter.dispatch({
@@ -274,12 +274,12 @@ export async function runBrainstorm(opts: {question:string, context?:string, eng
       allDrafts || '(no draft text)',
     ].join('\n');
   }
-  
+
   sidechain.log('brainstorm:done', winner.engineId, {
     bids: bids.map((b: BrainstormBid) => ({ engineId: b.engineId, confidence: b.confidence })),
     responseLength: response.length,
   });
-  
+
   return {
     question: opts.question,
     bids,

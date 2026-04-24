@@ -20,31 +20,31 @@ export async function handleBrainstorm(question: string, dispatch: Dispatch, ctx
   const bsAbort = new AbortController();
   try {
     ensureAgonHome();
-    
+
     if (!question) {
       dispatch({ type: 'warning', message: 'No question provided. Usage: "best approach for caching?" or /brainstorm <question>' });
       return null;
     }
-    
+
     const engines = ctx.activeEngines();
     if (engines.length === 0) {
       dispatch({ type: 'error', message: 'No engines available.' });
       return null;
     }
-    
+
     const outputDir = join(RUNS_DIR, `brainstorm-${Date.now()}`);
     mkdirSync(outputDir, { recursive: true });
-    
+
     const config = ctx.config;
     const bsCwd = resolveWorkingDir();
     const projectCtx = scanProjectContext(bsCwd, config.projectContext || undefined, config.contextFormat);
-    
+
     dispatch({ type: 'header', title: `Brainstorm: ${question}` });
     dispatch({ type: 'info', message: `Engines: ${engines.join(', ')}` });
     if (projectCtx) dispatch({ type: 'info', message: `Context: ${bsCwd}` });
-    
+
     ctx.setActiveAbort(bsAbort);
-    
+
     const startTime = Date.now();
     const progressInterval = setInterval(() => {
       const elapsed = Math.floor((Date.now() - startTime) / 1000);
@@ -57,7 +57,7 @@ export async function handleBrainstorm(question: string, dispatch: Dispatch, ctx
       }));
       dispatch({ type: 'progress-update', engines: progress });
     }, 250);
-    
+
     let result: any;
     try {
       result = await runBrainstorm({
@@ -76,10 +76,10 @@ export async function handleBrainstorm(question: string, dispatch: Dispatch, ctx
       ctx.setActiveAbort(null);
       throw err;
     }
-    
+
     clearInterval(progressInterval);
     dispatch({ type: 'progress-clear' });
-    
+
     const finalProgress: EngineProgress[] = engines.map((id: string) => {
       const bid = result.bids.find((b: any) => b.engineId === id);
       const isWinner = bid?.engineId === result.winner;
@@ -92,7 +92,7 @@ export async function handleBrainstorm(question: string, dispatch: Dispatch, ctx
       };
     });
     dispatch({ type: 'progress-update', engines: finalProgress });
-    
+
     dispatch({ type: 'separator' });
     for (let i = 0; i < result.bids.length; i++) {
       const bid = result.bids[i];
@@ -105,19 +105,19 @@ export async function handleBrainstorm(question: string, dispatch: Dispatch, ctx
         critique: isWinner ? `${icons().winner} best draft${scoreLabel}` : `${icons().success} done${scoreLabel}`,
       });
     }
-    
+
     dispatch({ type: 'separator' });
     dispatch({ type: 'engine-block', engineId: result.winner, color: ENGINE_COLORS[result.winner] ?? 124, content: result.response });
-    
+
     // Save to chat history so follow-up messages have context
     appendMessage(ctx.chatSession, { role: 'user', content: `[brainstorm] ${question}`, timestamp: new Date().toISOString() });
     appendMessage(ctx.chatSession, { role: 'engine', engineId: result.winner, content: result.response, timestamp: new Date().toISOString() });
-    
+
     for (const bid of result.bids) {
       tracker.record(bid.engineId, { prompt: question, response: bid.reasoning });
     }
     tracker.record(result.winner, { prompt: question, response: result.response });
-    
+
     sessionResultStore.add({
       type: 'brainstorm',
       timestamp: new Date().toISOString(),
@@ -129,10 +129,10 @@ export async function handleBrainstorm(question: string, dispatch: Dispatch, ctx
         response: result.response,
       },
     });
-    
+
     dispatch({ type: 'info', message: `Winner: ${result.winner} — ask follow-ups or "/forge" to implement` });
     dispatch({ type: 'progress-clear' });
-    
+
     return {
       winner: result.winner,
       bids: result.bids.map((b: any) => ({ engineId: b.engineId, reasoning: b.reasoning, approach: b.approach, score: b.score })),

@@ -2,7 +2,7 @@
 
 import { randomUUID } from 'node:crypto';
 
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 
 import type { ForgeOptions, EngineAdapter, EngineResult, ForgeEvent, TaskClass } from '@agon/core';
 
@@ -15,6 +15,86 @@ import { updateTeamElo } from '@agon/core';
 import { runFitness } from './fitness.js';
 
 import type { WorktreeEntry } from '../types.js';
+
+export function shellQuoteForTeamForge(value: string): string {
+  const s = String(value ?? '');
+  if (/^[A-Za-z0-9_@%+=:,./-]+$/.test(s)) return s;
+  return `'${s.replace(/'/g, `'\\''`)}'`;
+}
+
+export function buildTeamForgeCleanupCommand(repoRootPath: string, forgeDir: string): string {
+  return `git -C ${shellQuoteForTeamForge(repoRootPath)} worktree prune && rm -rf ${shellQuoteForTeamForge(forgeDir)}`;
+}
+
+export function writeTeamForgeResultBundle(matchId: string, options: TeamForgeOptions, worktrees: WorktreeEntry[], repoRootPath: string, baseSha: string, sidechainPath: string, result?: TeamMatchResult|null, errorMessage?: string): string {
+  const cleanupCommand = buildTeamForgeCleanupCommand(repoRootPath, options.forgeDir);
+  const bundlePath = `${options.forgeDir}/result.json`;
+  const readmePath = `${options.forgeDir}/README.md`;
+  const submissions = result?.submissions ?? {};
+  const teamSummaries = Object.fromEntries(
+    Object.entries(submissions).map(([teamId, sub]: [string, any]) => {
+      const finalOutput = sub.finalOutput as any;
+      return [teamId, {
+        pass: !!finalOutput?.pass,
+        score: finalOutput?.score ?? 0,
+        patchPath: finalOutput?.patchPath,
+        fitnessLogPath: finalOutput?.fitnessLogPath,
+        worktreePath: finalOutput?.worktreePath,
+        tokens: sub.totalTokens ?? 0,
+        wallClockMs: sub.wallClockMs ?? 0,
+        collaborationLift: sub.collaborationLift ?? 0,
+      }];
+    }),
+  );
+  const failedTeams = Object.entries(teamSummaries)
+    .filter(([, summary]: [string, any]) => !summary.pass)
+    .map(([teamId]) => teamId);
+  const bundle = {
+    type: 'team-forge',
+    matchId,
+    status: errorMessage ? 'failed' : (result?.winnerTeamId ? 'completed' : 'draw-or-no-winner'),
+    winnerTeamId: result?.winnerTeamId ?? null,
+    failedTeams,
+    task: options.task,
+    cwd: options.cwd,
+    repoRoot: repoRootPath,
+    baseSha,
+    forgeDir: options.forgeDir,
+    exactFitnessCommand: options.fitnessCmd,
+    teams: result?.teams ?? [],
+    scorecards: result?.scorecards ?? {},
+    submissions: teamSummaries,
+    worktrees: worktrees.map((wt: WorktreeEntry) => ({ engineId: wt.engineId, path: wt.path, repoRoot: wt.repoRoot, cleanupPlanned: true, cleanupMode: 'best-effort-after-bundle' })),
+    logs: {
+      result: bundlePath,
+      sidechain: sidechainPath,
+    },
+    cleanupCommand,
+    error: errorMessage,
+    timestamp: new Date().toISOString(),
+  };
+  writeFileSync(bundlePath, JSON.stringify(bundle, null, 2));
+  writeFileSync(readmePath, [
+    `# Team Forge Result ${matchId}`,
+    '',
+    `Status: ${bundle.status}`,
+    `Winner team: ${bundle.winnerTeamId ?? 'none'}`,
+    `Task: ${options.task}`,
+    `Fitness: ${options.fitnessCmd}`,
+    `Result bundle: ${bundlePath}`,
+    `Sidechain log: ${sidechainPath}`,
+    '',
+    '## Failed Teams',
+    failedTeams.length ? failedTeams.map((id: string) => `- ${id}`).join('\n') : '- none',
+    '',
+    '## Cleanup',
+    '```sh',
+    cleanupCommand,
+    '```',
+    '',
+  ].join('\n'));
+  return bundlePath;
+}
 
 export interface TeamForgeOptions {
   task: string;
@@ -313,7 +393,14 @@ export async function runTeamForge(options: TeamForgeOptions, registry: EngineRe
   // Engines can appear on both teams — minimum is 2 engines
   // Forge doesn't need a judge (fitness scoring is objective)
   if (available.length < 2) {
-    throw new Error(`Team forge requires at least 2 available engines, only ${available.length} available: ${available.join(', ')}`);
+    const error = `Team forge requires at least 2 available engines, only ${available.length} available: ${available.join(', ')}`;
+    try {
+      writeTeamForgeResultBundle(matchId, options, worktrees, options.cwd, 'unknown', sidechain.path, null, error);
+      sidechain.log('team-forge:error', undefined, { error, phase: 'availability' });
+    } catch (bundleErr) {
+      console.warn(`[agon] team forge result bundle write failed: ${bundleErr instanceof Error ? bundleErr.message : String(bundleErr)}`);
+    }
+    throw new Error(error);
   }
 
   const taskClass = classifyTask(options.task);
@@ -346,7 +433,21 @@ export async function runTeamForge(options: TeamForgeOptions, registry: EngineRe
   const maxLoops = options.maxReviewLoops ?? 2;
   const timeout = options.timeout ?? config.forgeTimeout;
   const fitnessTimeout = config.forgeFitnessTimeout;
-  const baseSha = stashSnapshot(options.cwd);
+  let baseSha = 'unknown';
+  let root = options.cwd;
+  try {
+    baseSha = stashSnapshot(options.cwd);
+    root = repoRoot(options.cwd);
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    try {
+      writeTeamForgeResultBundle(matchId, options, worktrees, root, baseSha, sidechain.path, null, error);
+      sidechain.log('team-forge:error', undefined, { error, phase: 'preflight' });
+    } catch (bundleErr) {
+      console.warn(`[agon] team forge result bundle write failed: ${bundleErr instanceof Error ? bundleErr.message : String(bundleErr)}`);
+    }
+    throw err;
+  }
 
   // Run both teams in parallel
   try {
@@ -402,7 +503,17 @@ export async function runTeamForge(options: TeamForgeOptions, registry: EngineRe
 
     onEvent?.({ type: 'team:match-done' as any, data: {} });
 
+    writeTeamForgeResultBundle(matchId, options, worktrees, root, baseSha, sidechain.path, matchResult);
     return matchResult;
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    try {
+      writeTeamForgeResultBundle(matchId, options, worktrees, root, baseSha, sidechain.path, null, error);
+      sidechain.log('team-forge:error', undefined, { error });
+    } catch (bundleErr) {
+      console.warn(`[agon] team forge result bundle write failed: ${bundleErr instanceof Error ? bundleErr.message : String(bundleErr)}`);
+    }
+    throw err;
   } finally {
     for (const wt of worktrees) {
       worktreeRemoveBestEffort(wt.repoRoot, wt.path);

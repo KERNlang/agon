@@ -11,11 +11,11 @@ import { RUNS_DIR } from '@agon/core';
 export function writeManifest(manifest: ForgeManifest): string {
   const manifestPath = join(manifest.forgeDir, 'manifest.json');
   writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
-  
+
   mkdirSync(RUNS_DIR, { recursive: true });
   const historyPath = join(RUNS_DIR, `${manifest.forgeId}.json`);
   writeFileSync(historyPath, JSON.stringify(manifest, null, 2) + '\n');
-  
+
   return manifestPath;
 }
 

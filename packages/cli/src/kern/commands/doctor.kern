@@ -1,0 +1,211 @@
+import from="citty" names="defineCommand"
+import from="node:fs" names="mkdtempSync,rmSync,writeFileSync"
+import from="node:os" names="tmpdir"
+import from="node:path" names="join,dirname"
+import from="node:url" names="fileURLToPath"
+import from="@agon/core" names="EngineRegistry,loadConfig,resolveWorkingDir,repoRoot,headSha,worktreeCreate,worktreeRemoveBestEffort"
+import from="@agon/core" names="EngineDefinition" types=true
+import from="@agon/adapter-cli" names="createCliAdapter"
+import from="../blocks/output-format.js" names="header,table,info,success,fail,warn,green,red,yellow,dim,bold"
+
+interface name=EngineDoctorEntry
+  field name=id type=string
+  field name=enabled type=boolean
+  field name=status type="'ok'|'warn'|'fail'"
+  field name=backend type=string
+  field name=modes type=string
+  field name=detail type=string
+
+fn name=shellQuoteForDoctor params="value:string" returns=string export=true
+  handler <<<
+    const s = String(value ?? '');
+    if (/^[A-Za-z0-9_@%+=:,./-]+$/.test(s)) return s;
+    return `'${s.replace(/'/g, `'\\''`)}'`;
+  >>>
+
+fn name=buildDoctorCleanupCommand params="repo:string,path:string" returns=string export=true
+  handler <<<
+    return `git -C ${shellQuoteForDoctor(repo)} worktree prune && rm -rf ${shellQuoteForDoctor(path)}`;
+  >>>
+
+fn name=formatDoctorStatus params="status:'ok'|'warn'|'fail'" returns=string export=true
+  handler <<<
+    if (status === 'ok') return green('ok');
+    if (status === 'warn') return yellow('warn');
+    return red('fail');
+  >>>
+
+fn name=diagnoseEngineDoctorEntry params="engine:EngineDefinition, registry:EngineRegistry, enabledIds:string[]" returns=EngineDoctorEntry export=true
+  handler <<<
+    const binaryPath = engine.binary ? registry.findBinary(engine) : null;
+    const hasApi = !!engine.api;
+    const apiKeyEnv = engine.api?.apiKeyEnv ?? '';
+    const apiKeySet = !!(hasApi && apiKeyEnv && process.env[apiKeyEnv]);
+    const hasCliBackend = !!binaryPath;
+    const hasApiBackend = hasApi && apiKeySet;
+    const enabled = enabledIds.includes(engine.id);
+
+    const backendParts: string[] = [];
+    if (engine.binary) backendParts.push(hasCliBackend ? `cli:${binaryPath}` : `cli missing:${engine.binary}`);
+    if (hasApi) {
+      const format = engine.api?.format ?? 'anthropic';
+      backendParts.push(apiKeySet ? `api:${format}:${engine.api?.model ?? 'model?'}` : `api key missing:${apiKeyEnv}`);
+    }
+    const backend = backendParts.join(' + ') || 'none';
+    const modes = [
+      engine.exec ? 'exec' : '',
+      engine.review ? 'review' : '',
+      engine.agent ? 'agent' : '',
+      engine.companion ? 'companion' : '',
+    ].filter(Boolean).join(', ') || 'none';
+
+    let status: 'ok'|'warn'|'fail' = 'ok';
+    const details: string[] = [];
+    if (!engine.binary && !hasApi) {
+      status = 'fail';
+      details.push('no CLI binary or API config');
+    } else if (!hasCliBackend && !hasApiBackend) {
+      status = enabled ? 'fail' : 'warn';
+      details.push(enabled
+        ? (hasApi ? `set ${apiKeyEnv} or install ${engine.binary ?? 'CLI'}` : `install ${engine.binary ?? 'CLI'}`)
+        : 'disabled; not installed/configured');
+    } else {
+      if (engine.binary && !hasCliBackend) {
+        status = 'warn';
+        details.push('CLI missing; API fallback available');
+      }
+      if (hasApi && !apiKeySet) {
+        status = 'warn';
+        details.push(`API key ${apiKeyEnv} not set`);
+      }
+      if (enabled && !engine.agent && !engine.exec) {
+        status = 'warn';
+        details.push('enabled for forge but no agent/exec mode');
+      }
+    }
+
+    if (enabled) details.push('forge-enabled');
+    if (engine.companion) details.push(`companion:${engine.companion.protocol}`);
+    if (!details.length) details.push('ready');
+
+    return {
+      id: engine.id,
+      enabled,
+      status,
+      backend,
+      modes,
+      detail: details.join('; '),
+    };
+  >>>
+
+fn name=checkDoctorWorktree params="cwd:string" returns="{ok:boolean; message:string; cleanupCommand:string}" export=true
+  handler <<<
+    let root = '';
+    let tempDir = '';
+    let worktreePath = '';
+    try {
+      root = repoRoot(cwd);
+      const sha = headSha(cwd);
+      tempDir = mkdtempSync(join(tmpdir(), 'agon-doctor-'));
+      worktreePath = join(tempDir, 'worktree');
+      worktreeCreate(root, worktreePath, sha);
+      writeFileSync(join(worktreePath, '.agon-doctor-write-test'), 'ok\n');
+      return {
+        ok: true,
+        message: `git worktree create/write/remove ok at ${root}`,
+        cleanupCommand: buildDoctorCleanupCommand(root, tempDir),
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return {
+        ok: false,
+        message,
+        cleanupCommand: root && tempDir ? buildDoctorCleanupCommand(root, tempDir) : '',
+      };
+    } finally {
+      if (root && worktreePath) {
+        try { worktreeRemoveBestEffort(root, worktreePath); } catch { /* best effort */ }
+      }
+      if (tempDir) {
+        try { rmSync(tempDir, { recursive: true, force: true }); } catch { /* best effort */ }
+      }
+    }
+  >>>
+
+const name=doctorCommand type="any"
+  handler <<<
+    defineCommand({
+      meta: {
+        name: 'doctor',
+        description: 'Diagnose Agon engine and worktree health',
+      },
+      args: {
+        scope: {
+          type: 'positional',
+          description: 'Scope: engines',
+          required: false,
+        },
+      },
+      async run({ args }) {
+        const scope = String(args.scope ?? 'engines').trim() || 'engines';
+        if (scope !== 'engines') {
+          fail(`Unknown doctor scope: ${scope}`);
+          info('Available: engines');
+          process.exit(1);
+        }
+
+        const registry = new EngineRegistry();
+        registry.load(join(dirname(fileURLToPath(import.meta.url)), '../../../engines'));
+        const adapter = createCliAdapter(registry);
+        const config = loadConfig(resolveWorkingDir());
+        const enabledIds = config.forgeEnabledEngines ?? [];
+
+        header('Engine Doctor');
+        const entries = registry.list()
+          .map((engine: EngineDefinition) => diagnoseEngineDoctorEntry(engine, registry, enabledIds))
+          .sort((a: EngineDoctorEntry, b: EngineDoctorEntry) => {
+            if (a.enabled !== b.enabled) return a.enabled ? -1 : 1;
+            return a.id.localeCompare(b.id);
+          });
+
+        const rows: string[][] = [];
+        for (const entry of entries) {
+          let version = '';
+          try {
+            const engine = registry.get(entry.id);
+            version = entry.status === 'fail' ? '' : (await adapter.getVersion(engine)) ?? '';
+            version = version.replace(/\s+/g, ' ').trim();
+            if (version.length > 80) version = version.slice(0, 77) + '...';
+          } catch {
+            version = '';
+          }
+          rows.push([
+            entry.enabled ? bold(entry.id) : dim(entry.id),
+            entry.enabled ? green('yes') : dim('no'),
+            formatDoctorStatus(entry.status),
+            entry.backend,
+            entry.modes,
+            version || dim('-'),
+            entry.detail,
+          ]);
+        }
+        table(['ID', 'Forge', 'Status', 'Backend', 'Modes', 'Version/Model', 'Detail'], rows);
+
+        const worktree = checkDoctorWorktree(resolveWorkingDir());
+        console.log('');
+        if (worktree.ok) {
+          success(worktree.message);
+        } else {
+          warn(`worktree check failed: ${worktree.message}`);
+          if (worktree.cleanupCommand) info(`Cleanup: ${worktree.cleanupCommand}`);
+        }
+
+        const failing = entries.filter((entry: EngineDoctorEntry) => entry.status === 'fail');
+        const warnings = entries.filter((entry: EngineDoctorEntry) => entry.status === 'warn');
+        console.log('');
+        info(`Summary: ${entries.length - failing.length - warnings.length} ok, ${warnings.length} warn, ${failing.length} fail`);
+        const enabledFailing = failing.filter((entry: EngineDoctorEntry) => entry.enabled);
+        if (enabledFailing.length > 0 || !worktree.ok) process.exitCode = 1;
+      },
+    })
+  >>>

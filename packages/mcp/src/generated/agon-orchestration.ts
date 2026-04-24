@@ -73,12 +73,13 @@ export const ORCHESTRATION_TOOLS: Array<{name:string,description:string,inputSch
   },
   {
     name: 'Review',
-    description: 'Delegate to code review. After calling: STOP responding.',
+    description: 'Delegate to code review. Set engine only when the user explicitly names one; set engines when the user explicitly names multiple reviewers; otherwise omit both and let Agon auto-select. After calling: STOP responding.',
     inputSchema: {
       type: 'object',
       properties: {
         target: { type: 'string', description: 'Review target: "uncommitted", "branch:NAME", or "commit:SHA"' },
-        engine: { type: 'string', description: 'Specific engine for review' },
+        engine: { type: 'string', description: 'Specific engine for review, only when explicitly requested by the user' },
+        engines: { type: 'array', items: { type: 'string' }, description: 'Multiple specific engines for review, only when explicitly requested by the user' },
       },
     },
   },
@@ -229,17 +230,17 @@ export async function handleWriteToolCall(name: string, args: Record<string,unkn
   const requestId = `pr-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   const toolMap: Record<string, string> = { AgonBash: 'Bash', AgonEdit: 'Edit', AgonWrite: 'Write' };
   const kernTool = toolMap[name] ?? name;
-  
+
   // Write permission request signal
   writePermissionRequest(requestId, kernTool, args);
-  
+
   // Poll for response (max 60 seconds)
   const response = await pollPermissionResponse(requestId, 60000);
-  
+
   if (!response.approved) {
     return `Permission denied: ${response.reason ?? 'User declined'}. Do NOT retry this command — ask the user what they want instead.`;
   }
-  
+
   // Execute the approved tool
   try {
     if (name === 'AgonBash') {
@@ -278,23 +279,23 @@ export async function handleWriteToolCall(name: string, args: Record<string,unkn
  */
 export function startMcpServer() {
   const rl = createInterface({ input: process.stdin, terminal: false });
-  
+
   function respond(id: number | string | null, result: unknown): void {
     if (id === null) return; // notification — no response
     process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id, result }) + '\n');
   }
-  
+
   function respondError(id: number | string | null, code: number, message: string): void {
     if (id === null) return;
     process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id, error: { code, message } }) + '\n');
   }
-  
+
   rl.on('line', (line: string) => {
     let msg: any;
     try { msg = JSON.parse(line); } catch { return; }
-  
+
     const { id, method, params } = msg;
-  
+
     if (method === 'initialize') {
       respond(id, {
         protocolVersion: '2024-11-05',
@@ -303,12 +304,12 @@ export function startMcpServer() {
       });
       return;
     }
-  
+
     if (method === 'notifications/initialized' || method === 'initialized') {
       // Client notification — no response needed
       return;
     }
-  
+
     if (method === 'tools/list') {
       respond(id, {
         tools: ORCHESTRATION_TOOLS.map(t => ({
@@ -319,7 +320,7 @@ export function startMcpServer() {
       });
       return;
     }
-  
+
     if (method === 'tools/call') {
       const toolName = params?.name as string;
       const toolArgs = (params?.arguments ?? {}) as Record<string, unknown>;
@@ -344,12 +345,12 @@ export function startMcpServer() {
       });
       return;
     }
-  
+
     // Unknown method — ignore notifications, error on requests
     if (id !== undefined && id !== null) {
       respondError(id, -32601, `Method not found: ${method}`);
     }
   });
-  
+
   rl.on('close', () => process.exit(0));
 }

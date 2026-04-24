@@ -24,7 +24,7 @@ export async function handleProposePlan(args: any, dispatch: Dispatch, ctx: Hand
     if (typeof raw === 'string' && SAFE_ID.test(raw)) return raw;
     return fallback;
   };
-  
+
   const steps: CesarPlanStep[] = (args.steps ?? []).map((s: any, i: number) => {
     // Tribunal fix #5: estimator is the only source of truth for cost.
     // Cesar cannot lie about cost to slip past the auto-approve ceiling.
@@ -47,7 +47,7 @@ export async function handleProposePlan(args: any, dispatch: Dispatch, ctx: Hand
       verifyCmd: s.verifyCmd,
     };
   });
-  
+
   let plan = createCesarPlan(args.intent, steps);
   plan = {
     ...plan,
@@ -57,14 +57,14 @@ export async function handleProposePlan(args: any, dispatch: Dispatch, ctx: Hand
     autoApprove: args.autoApprove === true ? true : undefined,
     selfReview: typeof args.selfReview === 'boolean' ? args.selfReview : undefined,
   };
-  
+
   const slug = args.intent.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40);
   const plansDir = join(getAgonHome(), 'plans');
   const filePath = join(plansDir, `cesar-${Date.now()}-${slug}.md`);
   mkdirSync(plansDir, { recursive: true });
   writeFileSync(filePath, formatCesarPlanMarkdown(plan));
   plan = { ...plan, planFilePath: filePath };
-  
+
   dispatch({ type: 'plan-proposal' as any, plan, markdown: formatCesarPlanMarkdown(plan) });
   return plan;
 }
@@ -73,20 +73,20 @@ export function buildStepExecutors(ctx: HandlerContext): Record<string,StepExecu
   const cwd = resolveWorkingDir();
   const outputDir = join(RUNS_DIR, `plan-exec-${Date.now()}`);
   mkdirSync(outputDir, { recursive: true });
-  
+
   const wrap = (fn: (step: CesarPlanStep, context: Record<string,string|undefined>, signal?: AbortSignal) => Promise<{result: CesarStepResult, contextExport?: string}>): StepExecutor => ({ execute: fn });
-  
+
   // Helper: extract token/cost from tracker delta
   const snapshotTokens = () => {
     const s = tracker.getStats();
     return { tokens: s.totalTokens, cost: s.totalCostUsd };
   };
-  
+
   const buildContext = (step: CesarPlanStep, context: Record<string, string | undefined>) => {
     const contextStr = (step.imports ?? []).map((k: string) => context[k] ? `## ${k}\n${context[k]}` : '').filter(Boolean).join('\n\n');
     return contextStr ? `${step.description}\n\n${contextStr}` : step.description;
   };
-  
+
   // FU-9: applyForgeWinnerToCwd — shared helper that reads the winning
   // patch from the manifest and applies it to cwd via git apply. This
   // closes the tribunal fix #2 loop: before, runForge produced a winner
@@ -107,7 +107,7 @@ export function buildStepExecutors(ctx: HandlerContext): Record<string,StepExecu
     }
     return applyPatchToTree(cwd, patch.content);
   };
-  
+
   return {
     self: wrap(async (step, context, signal) => {
       const startTime = Date.now();
@@ -127,7 +127,7 @@ export function buildStepExecutors(ctx: HandlerContext): Record<string,StepExecu
         return { result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: '', error: err instanceof Error ? err.message : String(err) } };
       }
     }),
-  
+
     forge: wrap(async (step, context, signal) => {
       const startTime = Date.now();
       const before = snapshotTokens();
@@ -138,7 +138,7 @@ export function buildStepExecutors(ctx: HandlerContext): Record<string,StepExecu
           ctx.registry, ctx.adapter,
         );
         const after = snapshotTokens();
-  
+
         if (!manifest.winner) {
           const engineSummaries = Object.entries(manifest.results ?? {}).map(([id, r]: [string, any]) => {
             return `  ${id}: ${r.pass ? 'PASS' : 'FAIL'} (score: ${r.score ?? 'N/A'}, ${r.diffLines ?? 0} lines)`;
@@ -147,7 +147,7 @@ export function buildStepExecutors(ctx: HandlerContext): Record<string,StepExecu
             result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: `No winner.\n${engineSummaries}`, error: 'No winner' },
           };
         }
-  
+
         // FU-9: apply the winning patch to cwd so downstream review/
         // verify steps see real changes. Failure to apply = step failure.
         const applied = applyForgeWinnerToCwd(manifest);
@@ -156,7 +156,7 @@ export function buildStepExecutors(ctx: HandlerContext): Record<string,StepExecu
             result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: `Winner ${manifest.winner} but patch apply failed: ${applied.error}`, error: `patch apply failed: ${applied.error}` },
           };
         }
-  
+
         return {
           result: { status: 'success', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: `Winner: ${manifest.winner} (patch applied to cwd)` },
           contextExport: `Forge winner: ${manifest.winner}`,
@@ -166,7 +166,7 @@ export function buildStepExecutors(ctx: HandlerContext): Record<string,StepExecu
         return { result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: '', error: err instanceof Error ? err.message : String(err) } };
       }
     }),
-  
+
     teamforge: wrap(async (step, context, signal) => {
       const startTime = Date.now();
       const before = snapshotTokens();
@@ -198,7 +198,7 @@ export function buildStepExecutors(ctx: HandlerContext): Record<string,StepExecu
         return { result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: '', error: err instanceof Error ? err.message : String(err) } };
       }
     }),
-  
+
     brainstorm: wrap(async (step, context, signal) => {
       const startTime = Date.now();
       const before = snapshotTokens();
@@ -215,7 +215,7 @@ export function buildStepExecutors(ctx: HandlerContext): Record<string,StepExecu
         return { result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: '', error: err instanceof Error ? err.message : String(err) } };
       }
     }),
-  
+
     tribunal: wrap(async (step, context, signal) => {
       const startTime = Date.now();
       const before = snapshotTokens();
@@ -234,7 +234,7 @@ export function buildStepExecutors(ctx: HandlerContext): Record<string,StepExecu
         return { result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: '', error: err instanceof Error ? err.message : String(err) } };
       }
     }),
-  
+
     campfire: wrap(async (step, context, signal) => {
       const startTime = Date.now();
       const before = snapshotTokens();
@@ -252,7 +252,7 @@ export function buildStepExecutors(ctx: HandlerContext): Record<string,StepExecu
         return { result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: '', error: err instanceof Error ? err.message : String(err) } };
       }
     }),
-  
+
     delegate: wrap(async (step, context, signal) => {
       const startTime = Date.now();
       const before = snapshotTokens();
@@ -269,7 +269,7 @@ export function buildStepExecutors(ctx: HandlerContext): Record<string,StepExecu
         return { result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: '', error: err instanceof Error ? err.message : String(err) } };
       }
     }),
-  
+
     pipeline: wrap(async (step, context, signal) => {
       // Pipeline = brainstorm → forge → tribunal chain
       const startTime = Date.now();
@@ -280,7 +280,7 @@ export function buildStepExecutors(ctx: HandlerContext): Record<string,StepExecu
         // 1. Brainstorm — get approach bids
         const bsResult = await runBrainstorm({ question: task, engines: step.engines ?? [], registry: ctx.registry, adapter: ctx.adapter, timeout: 120, outputDir: join(outputDir, step.id, 'brainstorm'), signal });
         pipelineContext = bsResult.response;
-  
+
         // 2. Forge — compete on implementation
         const forgeTask = `${task}\n\nBrainstorm winner approach:\n${pipelineContext}`;
         const manifest = await runForge(
@@ -291,11 +291,11 @@ export function buildStepExecutors(ctx: HandlerContext): Record<string,StepExecu
           const after = snapshotTokens();
           return { result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: 'Pipeline forge step: no winner', error: 'Forge produced no winner' } };
         }
-  
+
         // 3. Tribunal — review the forge winner
         const tribunalQ = `Review the implementation from forge winner ${manifest.winner} for: ${task}`;
         const tResult = await runTribunal({ question: tribunalQ, engines: (step.engines ?? []).slice(0, 3), rounds: 2, registry: ctx.registry, adapter: ctx.adapter, timeout: 120, outputDir: join(outputDir, step.id, 'tribunal') });
-  
+
         const after = snapshotTokens();
         return {
           result: { status: 'success', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: `Pipeline: brainstorm → forge (${manifest.winner}) → tribunal\n${tResult.summary}` },
@@ -306,7 +306,7 @@ export function buildStepExecutors(ctx: HandlerContext): Record<string,StepExecu
         return { result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: pipelineContext ? `Partial pipeline (brainstorm done): ${pipelineContext.slice(0, 200)}` : '', error: err instanceof Error ? err.message : String(err) } };
       }
     }),
-  
+
     // Tribunal fix #3: review step calls runReviewCore directly so it
     // does NOT touch ctx.setActiveAbort (which would nuke the plan
     // executor's own abort controller and silently break Ctrl-C for
@@ -380,7 +380,7 @@ export function buildStepExecutors(ctx: HandlerContext): Record<string,StepExecu
         };
       }
     }),
-  
+
     agent: wrap(async (step, context, signal) => {
       const startTime = Date.now();
       const before = snapshotTokens();
@@ -429,7 +429,7 @@ export function buildStepExecutors(ctx: HandlerContext): Record<string,StepExecu
         };
       }
     }),
-  
+
     // Codex P2: wire team-agent to the in-tree runAgentTeam. Same
     // capture-dispatch + parentSignal pattern as the agent executor.
     'team-agent': wrap(async (step, context, signal) => {

@@ -42,7 +42,7 @@ function ensureSnapshotsDir(): void {
  */
 export function takeSnapshot(label: string, cwd: string, filePaths: string[]): HistoryEntry {
   ensureSnapshotsDir();
-  
+
   const files: FileSnapshot[] = [];
   for (const fp of filePaths) {
     const fullPath = resolve(cwd, fp);
@@ -58,7 +58,7 @@ export function takeSnapshot(label: string, cwd: string, filePaths: string[]): H
       files.push({ path: fp, content: '', timestamp: Date.now() });
     }
   }
-  
+
   const entry: HistoryEntry = {
     id: randomUUID().slice(0, 8),
     label,
@@ -66,13 +66,13 @@ export function takeSnapshot(label: string, cwd: string, filePaths: string[]): H
     files,
     createdAt: new Date().toISOString(),
   };
-  
+
   const entryPath = join(snapshotsDir(), `${entry.id}.json`);
   writeFileSync(entryPath, JSON.stringify(entry, null, 2) + '\n');
-  
+
   // Prune old snapshots
   pruneSnapshots();
-  
+
   return entry;
 }
 
@@ -85,14 +85,14 @@ export function revertSnapshot(id: string): {ok:boolean, error?:string, filesRev
   if (!existsSync(entryPath)) {
     return { ok: false, error: `Snapshot ${id} not found`, filesReverted: 0 };
   }
-  
+
   let entry: HistoryEntry;
   try {
     entry = JSON.parse(readFileSync(entryPath, 'utf-8')) as HistoryEntry;
   } catch (err) {
     return { ok: false, error: `Corrupt snapshot: ${err instanceof Error ? err.message : String(err)}`, filesReverted: 0 };
   }
-  
+
   let reverted = 0;
   for (const snap of entry.files) {
     const fullPath = resolve(entry.cwd, snap.path);
@@ -112,10 +112,10 @@ export function revertSnapshot(id: string): {ok:boolean, error?:string, filesRev
       console.warn(`[agon] revert: failed on ${snap.path}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
-  
+
   // Remove the used snapshot
   try { unlinkSync(entryPath); } catch (e) { console.warn(`[agon] file-history: failed to remove snapshot ${entryPath}: ${e instanceof Error ? e.message : String(e)}`); }
-  
+
   return { ok: true, filesReverted: reverted };
 }
 

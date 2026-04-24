@@ -67,7 +67,7 @@ function parseGenericToolCallTags(text: string): ParseResult {
   let lastEnd = 0;
   let textBefore = '';
   let m;
-  
+
   while ((m = re.exec(text)) !== null) {
     const body = m[1].trim();
     if (!body) continue; // Skip empty tags
@@ -88,11 +88,11 @@ function parseGenericToolCallTags(text: string): ParseResult {
     if (typeof input === 'string') {
       try { input = JSON.parse(input); } catch { input = repairJsonArgs(input) ?? { raw: input }; }
     }
-  
+
     if (toolCalls.length === 0) {
       textBefore = text.slice(0, m.index).trim();
     }
-  
+
     toolCalls.push({
       name,
       input,
@@ -101,7 +101,7 @@ function parseGenericToolCallTags(text: string): ParseResult {
     });
     lastEnd = m.index + m[0].length;
   }
-  
+
   const textAfter = lastEnd > 0 ? text.slice(lastEnd).trim() : '';
   if (toolCalls.length === 0) {
     return { textBefore: text, toolCalls: [], textAfter: '', hasToolCalls: false };
@@ -118,7 +118,7 @@ function parseGeminiToolCalls(text: string): ParseResult {
   let lastEnd = 0;
   let textBefore = '';
   let gm;
-  
+
   while ((gm = geminiRe.exec(text)) !== null) {
     const body = gm[1].trim();
     let parsed: any;
@@ -139,11 +139,11 @@ function parseGeminiToolCalls(text: string): ParseResult {
       try { input = JSON.parse(input); } catch { input = repairJsonArgs(input) ?? { raw: input }; }
     }
     if (!name) continue;
-  
+
     if (toolCalls.length === 0) {
       textBefore = text.slice(0, gm.index).trim();
     }
-  
+
     toolCalls.push({
       name,
       input,
@@ -152,7 +152,7 @@ function parseGeminiToolCalls(text: string): ParseResult {
     });
     lastEnd = gm.index + gm[0].length;
   }
-  
+
   const textAfter = lastEnd > 0 ? text.slice(lastEnd).trim() : '';
   if (toolCalls.length === 0) {
     return { textBefore: text, toolCalls: [], textAfter: '', hasToolCalls: false };
@@ -169,7 +169,7 @@ function parseMistralToolCalls(text: string): ParseResult {
   let lastEnd = 0;
   let textBefore = '';
   let m;
-  
+
   while ((m = re.exec(text)) !== null) {
     let arr: any[];
     try {
@@ -181,11 +181,11 @@ function parseMistralToolCalls(text: string): ParseResult {
       } catch { continue; }
     }
     if (!Array.isArray(arr)) continue;
-  
+
     if (toolCalls.length === 0) {
       textBefore = text.slice(0, m.index).trim();
     }
-  
+
     for (const item of arr) {
       const name = item.name ?? item.function?.name;
       if (!name) continue;
@@ -202,7 +202,7 @@ function parseMistralToolCalls(text: string): ParseResult {
     }
     lastEnd = m.index + m[0].length;
   }
-  
+
   const textAfter = lastEnd > 0 ? text.slice(lastEnd).trim() : '';
   if (toolCalls.length === 0) {
     return { textBefore: text, toolCalls: [], textAfter: '', hasToolCalls: false };
@@ -219,7 +219,7 @@ function parseFunctionaryToolCalls(text: string): ParseResult {
   let lastEnd = 0;
   let textBefore = '';
   let m;
-  
+
   while ((m = re.exec(text)) !== null) {
     const name = m[1].trim();
     const body = m[2].trim();
@@ -234,11 +234,11 @@ function parseFunctionaryToolCalls(text: string): ParseResult {
         } catch { continue; }
       }
     }
-  
+
     if (toolCalls.length === 0) {
       textBefore = text.slice(0, m.index).trim();
     }
-  
+
     toolCalls.push({
       name,
       input,
@@ -247,7 +247,7 @@ function parseFunctionaryToolCalls(text: string): ParseResult {
     });
     lastEnd = m.index + m[0].length;
   }
-  
+
   const textAfter = lastEnd > 0 ? text.slice(lastEnd).trim() : '';
   if (toolCalls.length === 0) {
     return { textBefore: text, toolCalls: [], textAfter: '', hasToolCalls: false };
@@ -264,7 +264,7 @@ function parseCohereToolCalls(text: string): ParseResult {
   let lastEnd = 0;
   let textBefore = '';
   let m;
-  
+
   while ((m = re.exec(text)) !== null) {
     const body = m[1].trim();
     let items: any[];
@@ -272,11 +272,11 @@ function parseCohereToolCalls(text: string): ParseResult {
       const parsed = JSON.parse(body);
       items = Array.isArray(parsed) ? parsed : [parsed];
     } catch { continue; }
-  
+
     if (toolCalls.length === 0) {
       textBefore = text.slice(0, m.index).trim();
     }
-  
+
     for (const item of items) {
       const name = item.tool_name ?? item.name ?? item.function?.name;
       if (!name) continue;
@@ -293,7 +293,7 @@ function parseCohereToolCalls(text: string): ParseResult {
     }
     lastEnd = m.index + m[0].length;
   }
-  
+
   const textAfter = lastEnd > 0 ? text.slice(lastEnd).trim() : '';
   if (toolCalls.length === 0) {
     return { textBefore: text, toolCalls: [], textAfter: '', hasToolCalls: false };
@@ -310,11 +310,11 @@ export function parseToolCalls(text: string): ParseResult {
   let lastEnd = 0;
   let textBefore = '';
   let match;
-  
+
   while ((match = pattern.exec(text)) !== null) {
     const toolName = match[1];
     const contentStart = match.index + match[0].length;
-  
+
     // Find closing tag — try all known close tags
     let closeIdx = -1;
     let closeLen = 0;
@@ -340,15 +340,15 @@ export function parseToolCalls(text: string): ParseResult {
         continue;
       }
     }
-  
+
     // Capture text before this tool call
     if (toolCalls.length === 0) {
       textBefore = text.slice(0, match.index).trim();
     }
-  
+
     const contentStr = text.slice(contentStart, closeIdx).trim();
     let input: Record<string, unknown> = {};
-  
+
     // Try JSON first
     try {
       input = JSON.parse(contentStr);
@@ -371,24 +371,24 @@ export function parseToolCalls(text: string): ParseResult {
         if (Object.keys(input).length === 0) continue;
       }
     }
-  
+
     toolCalls.push({
       name: toolName,
       input,
       startIndex: match.index,
       endIndex: closeIdx + closeLen,
     });
-  
+
     lastEnd = closeIdx + closeLen;
     // Skip any trailing wrapper tags (e.g., </minimax:tool_call>)
     const trailing = text.slice(lastEnd).match(/^\s*<\/[a-zA-Z_:]+>/);
     if (trailing) lastEnd += trailing[0].length;
-  
+
     pattern.lastIndex = lastEnd;
   }
-  
+
   const textAfter = lastEnd > 0 ? text.slice(lastEnd).trim() : '';
-  
+
   if (toolCalls.length === 0) {
     // Fall through chain — try every known format
     const generic = parseGenericToolCallTags(text);        // <tool_call>/<toolcall> (Qwen, Hermes, DeepSeek)
@@ -401,7 +401,7 @@ export function parseToolCalls(text: string): ParseResult {
     if (functionary.hasToolCalls) return functionary;
     return parseCohereToolCalls(text);                     // Action: ```json [{...}] ``` (Cohere Command R)
   }
-  
+
   return { textBefore, toolCalls, textAfter, hasToolCalls: true };
 }
 

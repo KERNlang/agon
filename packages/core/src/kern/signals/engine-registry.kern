@@ -13,6 +13,50 @@ fn name=getAgonEnginesDir returns=string export=false
     return join(home, 'engines');
   >>>
 
+// One-time log guard so noisy configs don't spam on every load/reload.
+const name=_formatNormalizedSet type="Set<string>"
+  handler <<< new Set<string>() >>>
+
+// Hosts that are *known* to serve only OpenAI-shaped /chat/completions
+// despite being declared with format='anthropic' in the wild. A broader
+// rewrite (every non-Anthropic host) would regress valid setups like
+// Cloudflare AI Gateway, enterprise Anthropic proxies, or Bedrock's
+// Anthropic-compatible endpoints, so the list stays narrow — add
+// providers only after confirming they truly don't speak /messages.
+const name=_OPENAI_COMPAT_ONLY_HOST_SUFFIXES type="string[]"
+  handler <<<
+    [
+      'api.kimi.com',
+      'moonshot.cn',
+      'moonshot.ai',
+      'api.groq.com',
+      'together.xyz',
+      'together.ai',
+      'api.deepinfra.com',
+      'openrouter.ai',
+      'api.deepseek.com',
+      'api.perplexity.ai',
+    ]
+  >>>
+
+fn name=normalizeEngineFormat params="raw:any, fileLabel:string" returns=void export=false
+  doc "Narrow normalization: if api.format='anthropic' but the baseUrl host is on the known-OpenAI-compat-only allowlist (Kimi/Moonshot, Groq, Together, DeepInfra, OpenRouter), rewrite to 'openai'. Every other non-Anthropic host is left alone — arbitrary Anthropic-compatible proxies are valid configurations and must not be silently coerced. Mutates raw in place; logs once per engine id."
+  handler <<<
+    const api = raw?.api;
+    if (!api || api.format !== 'anthropic' || typeof api.baseUrl !== 'string') return;
+    let host = '';
+    try { host = new URL(api.baseUrl).host.toLowerCase(); } catch { return; }
+    if (host === 'api.anthropic.com' || host.endsWith('.anthropic.com')) return;
+    const matched = _OPENAI_COMPAT_ONLY_HOST_SUFFIXES.some((suffix: string) => host === suffix || host.endsWith('.' + suffix));
+    if (!matched) return;
+    api.format = 'openai';
+    const key = typeof raw.id === 'string' ? raw.id : fileLabel;
+    if (!_formatNormalizedSet.has(key)) {
+      _formatNormalizedSet.add(key);
+      console.log(`[agon] engine '${key}': api.format 'anthropic' on known OpenAI-compat host '${host}' normalized to 'openai'.`);
+    }
+  >>>
+
 service name=EngineRegistry
   field name=engines type="Map<string, EngineDefinition>" default="new Map()" private=true
   field name=binaryCache type="Map<string, string | null>" default="new Map()" private=true
@@ -46,6 +90,7 @@ service name=EngineRegistry
       for (const file of files) {
         try {
           const raw = JSON.parse(readFileSync(join(dir, file), 'utf-8'));
+          normalizeEngineFormat(raw, file);
           const validation = validateEngineConfig(raw, file);
           if (!validation.ok) {
             console.warn(`[agon] ${validation.error}`);
@@ -73,6 +118,7 @@ service name=EngineRegistry
 
   method name=register params="engine:EngineDefinition" returns=void
     handler <<<
+      normalizeEngineFormat(engine, engine.id);
       this.engines.set(engine.id, engine);
     >>>
 

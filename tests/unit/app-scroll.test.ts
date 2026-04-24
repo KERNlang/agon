@@ -375,6 +375,71 @@ describe('app scroll helpers', () => {
     )).toBe(true);
   });
 
+  it('coalesces consecutive collapsed tool-call groups into one transcript row', () => {
+    const blocks = [
+      {
+        id: 1,
+        event: {
+          type: 'tool-call-group',
+          blocks: [
+            { id: 11, event: { type: 'tool-call', engineId: 'cesar', tool: 'Bash', input: '{"command":"pwd"}', status: 'done', output: '/tmp' } },
+          ],
+        },
+      },
+      {
+        id: 2,
+        event: {
+          type: 'tool-call-group',
+          blocks: [
+            { id: 21, event: { type: 'tool-call', engineId: 'cesar', tool: 'Read', input: '{"file_path":"a.ts"}', status: 'done', output: 'line 1' } },
+            { id: 22, event: { type: 'tool-call', engineId: 'cesar', tool: 'Bash', input: '{"command":"git status"}', status: 'done', output: '' } },
+          ],
+        },
+      },
+    ] as any;
+
+    const rows = buildTranscriptRows(blocks, 'chat', false, true);
+    const text = transcriptRowsToPlainText(rows, 0, 0, 0, 999);
+
+    expect(text).toContain('3 tool calls');
+    expect(text).not.toContain('1 tool calls');
+    expect(text).not.toContain('2 tool calls');
+  });
+
+  it('always shows mutating code-change previews inside collapsed tool-call groups', () => {
+    const blocks = [
+      {
+        id: 1,
+        event: {
+          type: 'tool-call-group',
+          blocks: [
+            {
+              id: 11,
+              event: {
+                type: 'tool-call',
+                engineId: 'cesar',
+                tool: 'Edit',
+                input: JSON.stringify({
+                  file_path: 'packages/cli/src/kern/surfaces/app.kern',
+                  old_string: 'old line',
+                  new_string: 'new line',
+                }),
+                status: 'done',
+              },
+            },
+          ],
+        },
+      },
+    ] as any;
+
+    const rows = buildTranscriptRows(blocks, 'chat', false, true);
+    const text = transcriptRowsToPlainText(rows, 0, 0, 0, 999);
+
+    expect(text).toContain('changed 1 file: packages/cli/src/kern/surfaces/app.kern');
+    expect(rows.some((row: any) => row.kind === 'diff' && row.text === '-old line')).toBe(true);
+    expect(rows.some((row: any) => row.kind === 'diff' && row.text === '+new line')).toBe(true);
+  });
+
   it('finds the latest approval command or large tool output for the focused viewer', () => {
     const blocks = [
       { id: 1, event: { type: 'tool-call', engineId: 'cesar', tool: 'Read', input: '{"file_path":"a.ts"}', status: 'done', output: 'line 1' } },

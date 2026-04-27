@@ -361,7 +361,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
     let usedQuickNero = false;
       const eagerPromises: Promise<ToolCallResult>[] = [];
       let eagerToolCtx: ToolContext | null = null;
-      const routingHints = deriveRoutingHints(input, ctx);
+      let routingHints = deriveRoutingHints(input, ctx);
       let routeReliability: any = null;
       let routeDowngrade = false;
       try {

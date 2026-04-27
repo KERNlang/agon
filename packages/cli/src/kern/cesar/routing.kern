@@ -3,7 +3,7 @@ import from="@agon/core" names="TaskClass,EngineRole" types=true
 import from="../../handlers/types.js" names="HandlerContext" types=true
 import from="./reliability.js" names="readCesarToolReliability,formatCesarReliabilityLine,shouldDowngradeCesarToolWork"
 import from="@agon/core" names="planCostEstimator" types=false
-import from="@agon/core" names="CostEstimate" types=true
+import from="@agon/core" names="CostEstimate,AgonConfig" types=true
 
 type name=CesarUncertaintyFamily values="none|challenge|tradeoff|open|fuzzy|specialist|implementation|review"
 type name=CesarEscalationHint values="self|self-nero|delegate|tribunal|brainstorm|campfire|forge|review"

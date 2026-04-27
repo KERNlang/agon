@@ -24,7 +24,7 @@ import { createCesarToolRegistry, createEagerToolContext, executeEagerTool } fro
 
 import { fireQuickNero, fireNero, fireAdvisor, handleSecondOpinion, activateNero, deactivateNero, promptDelegation, promptProtocolEnforcement } from './escalation.js';
 
-import { buildRoutingContext, deriveRoutingHints } from './routing.js';
+import { buildRoutingContext, deriveRoutingHints, shouldSpeculate } from './routing.js';
 
 import { readCesarToolReliability, formatCesarReliabilityLine, shouldDowngradeCesarToolWork, buildWhatHappenedSummary } from './reliability.js';
 
@@ -742,6 +742,16 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
 
       // Plan mode flag — used below to block execution delegations while allowing thinking
       const inPlanMode = ctx.activePlan && ['planning', 'awaiting_approval'].includes(ctx.activePlan.state);
+
+      // ── Cost-aware speculation gate: override team→solo if speculation isn't worth it ──
+      const speculate = shouldSpeculate(routingHints, config as any);
+      if (!speculate && routingHints.recommendedBreadth === 'team') {
+        routingHints = { ...routingHints, recommendedBreadth: 'solo' as any };
+        // Also downgrade forge scope if it was team-driven
+        if (routingHints.recommendedForgeScope === 'full') {
+          routingHints = { ...routingHints, recommendedForgeScope: 'slice' as any };
+        }
+      }
 
       // Escalation moved to after investigation phase — see below.
 

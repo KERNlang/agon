@@ -10,7 +10,7 @@ import from="./suggestion.js" names="parseSuggestion"
 import from="./session.js" names="ensureCesarSession,CESAR_SYSTEM_PROMPT,buildCesarSystemPrompt,resolveCesarBackend"
 import from="./tools.js" names="createCesarToolRegistry,createEagerToolContext,executeEagerTool"
 import from="./escalation.js" names="fireQuickNero,fireNero,fireAdvisor,handleSecondOpinion,activateNero,deactivateNero,promptDelegation,promptProtocolEnforcement"
-import from="./routing.js" names="buildRoutingContext,deriveRoutingHints"
+import from="./routing.js" names="buildRoutingContext,deriveRoutingHints,shouldSpeculate"
 import from="./reliability.js" names="readCesarToolReliability,formatCesarReliabilityLine,shouldDowngradeCesarToolWork,buildWhatHappenedSummary"
 
 // Yield a macrotask so Ink can paint — await Promise.resolve() is NOT enough
@@ -731,6 +731,16 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
 
       // Plan mode flag — used below to block execution delegations while allowing thinking
       const inPlanMode = ctx.activePlan && ['planning', 'awaiting_approval'].includes(ctx.activePlan.state);
+
+      // ── Cost-aware speculation gate: override team→solo if speculation isn't worth it ──
+      const speculate = shouldSpeculate(routingHints, config as any);
+      if (!speculate && routingHints.recommendedBreadth === 'team') {
+        routingHints = { ...routingHints, recommendedBreadth: 'solo' as any };
+        // Also downgrade forge scope if it was team-driven
+        if (routingHints.recommendedForgeScope === 'full') {
+          routingHints = { ...routingHints, recommendedForgeScope: 'slice' as any };
+        }
+      }
 
       // Escalation moved to after investigation phase — see below.
 

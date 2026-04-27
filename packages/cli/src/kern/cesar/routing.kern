@@ -2,6 +2,8 @@ import from="@agon/core" names="classifyTask,getRatings,getEngineProfile,rankByT
 import from="@agon/core" names="TaskClass,EngineRole" types=true
 import from="../../handlers/types.js" names="HandlerContext" types=true
 import from="./reliability.js" names="readCesarToolReliability,formatCesarReliabilityLine,shouldDowngradeCesarToolWork"
+import from="@agon/core" names="planCostEstimator" types=false
+import from="@agon/core" names="CostEstimate" types=true
 
 type name=CesarUncertaintyFamily values="none|challenge|tradeoff|open|fuzzy|specialist|implementation|review"
 type name=CesarEscalationHint values="self|self-nero|delegate|tribunal|brainstorm|campfire|forge|review"
@@ -26,6 +28,8 @@ interface name=CesarRoutingHints
   field name=fanoutLikely type=boolean
   field name=reviewLikely type=boolean
   field name=explicitEngineMention type=boolean
+  field name=estimatedStepCost type=CostEstimate optional=true
+  field name=eloSpread type=number optional=true
 
 fn name=deriveRoutingHints params="input:string, ctx:HandlerContext" returns="CesarRoutingHints" export=true
   doc "Cheap, deterministic routing hints for Cesar: intake kind, flow recommendation, uncertainty family, escalation shape, breadth, and forge scope."
@@ -205,6 +209,27 @@ fn name=deriveRoutingHints params="input:string, ctx:HandlerContext" returns="Ce
       }
     }
 
+    // ── Cost estimation + ELO spread for speculation gating ──
+    let estimatedStepCost: CostEstimate | undefined;
+    let eloSpread: number | undefined;
+    try {
+      const stepType = recommendedBreadth === 'team' ? 'team-agent' : (escalationHint === 'forge' ? 'forge' : 'agent');
+      const engines = activeEngines.length > 0 ? activeEngines : ['claude'];
+      estimatedStepCost = planCostEstimator.estimate(stepType, engines);
+    } catch { /* cost estimation is advisory */ }
+    try {
+      const ratings = getRatings();
+      const taskRatings = ratings.byTaskClass?.[taskClass];
+      if (taskRatings && Object.keys(taskRatings).length >= 2) {
+        const sorted = Object.entries(taskRatings)
+          .filter(([id]) => activeEngines.includes(id))
+          .sort(([, a], [, b]) => (b as any).mu - (a as any).mu);
+        if (sorted.length >= 2) {
+          eloSpread = Math.round((sorted[0][1] as any).mu - (sorted[1][1] as any).mu);
+        }
+      }
+    } catch { /* ELO data is advisory */ }
+
     return {
       taskClass,
       intakeKind,
@@ -221,6 +246,8 @@ fn name=deriveRoutingHints params="input:string, ctx:HandlerContext" returns="Ce
       fanoutLikely,
       reviewLikely,
       explicitEngineMention,
+      estimatedStepCost,
+      eloSpread,
     };
   >>>
 
@@ -298,6 +325,17 @@ fn name=buildRoutingContext params="input:string, ctx:HandlerContext" returns=st
       }
     } catch { /* no rating data yet */ }
 
+    // ── Cost + ELO spread for speculation gating ──
+    if (hints.estimatedStepCost) {
+      const soloCost = hints.estimatedStepCost.costUsd;
+      const teamCost = hints.estimatedStepCost.costUsd * 2.5; // rough scout+parallel multiplier
+      parts.push(`ESTIMATED COST: ${soloCost.toFixed(2)} (solo) | ${teamCost.toFixed(2)} (team)`);
+    }
+    if (hints.eloSpread !== undefined) {
+      const spreadLabel = hints.eloSpread > 15 ? 'clear leader' : 'close race';
+      parts.push(`ELO SPREAD: ${hints.eloSpread} (${spreadLabel})`);
+    }
+
     if ((ctx.config as any).sessionContinuity === true) {
       // ── ContextThread summary (session-wide memory for routing) ──
       // Inject a structured summary of recent session activity so Cesar's routing
@@ -333,4 +371,17 @@ fn name=shouldUseAgentTeam params="input:string, ctx:HandlerContext" returns=boo
     if (available.length < 2) return false;
     const hints = deriveRoutingHints(input, ctx);
     return hints.recommendedBreadth === 'team';
+  >>>
+
+fn name=shouldSpeculate params="hints:CesarRoutingHints, config:Required<AgonConfig>" returns=boolean export=true
+  doc "Cost-aware speculation gate. Returns true only when: (1) estimated step cost exceeds speculativeThresholdUsd, (2) uncertainty is not 'none', (3) ELO spread between top engines is below speculativeEloSpreadThreshold. Prevents wasteful scout+parallel runs on cheap, sure, or lopsided tasks."
+  handler <<<
+    const threshold = (config as any).speculativeThresholdUsd ?? 0.50;
+    const eloThreshold = (config as any).speculativeEloSpreadThreshold ?? 15;
+
+    const cost = hints.estimatedStepCost;
+    if (!cost || cost.costUsd < threshold) return false; // too cheap to speculate
+    if (hints.uncertaintyFamily === 'none') return false; // too sure
+    if (hints.eloSpread !== undefined && hints.eloSpread > eloThreshold) return false; // clear leader
+    return true; // borderline + close engines + not trivially cheap
   >>>

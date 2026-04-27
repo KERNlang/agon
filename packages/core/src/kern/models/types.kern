@@ -208,6 +208,10 @@ config name=AgonConfig
     doc "Auto-run review after Cesar implements code (Edit/Write). Catches bugs before user sees 'done'."
   field name=buddyTimeout type=number default=420
     doc "Timeout for AI buddy dispatches (brainstorm/tribunal/forge). Codex needs 420s minimum."
+  field name=speculativeThresholdUsd type=number default=0.50
+    doc "Max estimated USD cost for a single plan step below which speculation (scout+parallel agents) is skipped. Tasks cheaper than this go solo."
+  field name=speculativeEloSpreadThreshold type=number default=15
+    doc "Min ELO spread between top two engines for a task class. Below this, engines are too close to call — speculation is worthwhile. Above it, the leader is clear enough to skip speculation."
 
 interface name=ScoutBid
   field name=engineId type=string

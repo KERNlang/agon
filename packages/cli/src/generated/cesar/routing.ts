@@ -14,12 +14,19 @@ export type CesarBreadthHint = 'solo' | 'team';
 
 export type CesarForgeScopeHint = 'none' | 'slice' | 'full';
 
+export type CesarIntakeKind = 'chat' | 'quick-fix' | 'bug' | 'feature' | 'big-feature' | 'spec' | 'review' | 'decision' | 'exploration';
+
+export type CesarFlowHint = 'answer' | 'quick-fix' | 'bug-fix' | 'spec-first' | 'plan-first' | 'forge-slice' | 'forge-full' | 'brainstorm' | 'tribunal' | 'campfire' | 'review';
+
 export interface CesarRoutingHints {
   taskClass: TaskClass;
+  intakeKind: CesarIntakeKind;
   scopeFileCount: number;
   scopeDirSpread: number;
   inputTokens: number;
   complexityHint: string;
+  recommendedFlow: CesarFlowHint;
+  flowReason: string;
   uncertaintyFamily: CesarUncertaintyFamily;
   escalationHint: CesarEscalationHint;
   recommendedBreadth: CesarBreadthHint;
@@ -30,7 +37,7 @@ export interface CesarRoutingHints {
 }
 
 /**
- * Cheap, deterministic routing hints for Cesar: uncertainty family, escalation shape, breadth, and forge scope.
+ * Cheap, deterministic routing hints for Cesar: intake kind, flow recommendation, uncertainty family, escalation shape, breadth, and forge scope.
  */
 export function deriveRoutingHints(input: string, ctx: HandlerContext): CesarRoutingHints {
   const taskClass = classifyTask(input);
@@ -60,6 +67,11 @@ export function deriveRoutingHints(input: string, ctx: HandlerContext): CesarRou
   const HARD_SLICE_RE = /\b(?:hard part|risky part|core logic|core implementation|algorithm|parser|scheduler|middleware|orchestrator|auth flow|critical path)\b/i;
   const TINY_EDIT_RE = /\b(?:typo|readme|comment|spelling|wording|docs?)\b/i;
   const SINGLE_FILE_RE = /(?:^|\s)(?:[\w./-]+\.(?:ts|tsx|js|jsx|py|rs|go|sh|md|json|yaml|yml|toml))(?:\s|$)/i;
+  const BUG_RE = /\b(?:bug|broken|fails?|failing|error|exception|crash|regression|flaky|not working|doesn'?t work|dont work|don't work|still hidden|still not|wrong|cannot|can't)\b/i;
+  const FEATURE_RE = /\b(?:feature|add|build|create|implement|support|wire|make|enable|new|i want|would love|can we)\b/i;
+  const BIG_FEATURE_RE = /\b(?:big feature|end[-\s]?to[-\s]?end|e2e|workflow|full flow|spec flow|plan flow|harness|orchestrat|multi[-\s]?step|multi[-\s]?stage|onboarding|dashboard|system|platform|repo-wide|across|open beta|wider beta|npm publish|release)\b/i;
+  const SPEC_RE = /\b(?:spec|requirements?|product|ux|flow|plan|roadmap|design|proposal|shape|beta|release|onboarding|how should|what is missing|what's missing|readiness)\b/i;
+  const QUICK_FIX_RE = /\b(?:quick fix|small fix|tiny fix|one[-\s]?line|single file|just fix|simple bug|low risk)\b/i;
 
   const reviewLikely = REVIEW_RE.test(input);
   const challengeLikely = CHALLENGE_RE.test(input);
@@ -70,6 +82,12 @@ export function deriveRoutingHints(input: string, ctx: HandlerContext): CesarRou
   const tinyEditLikely = inputTokens <= 20 && (TINY_EDIT_RE.test(input) || SINGLE_FILE_RE.test(input));
   const repoScopeSuggestsFanout = implementationLikely && inputTokens >= 24 && (scopeDirSpread > 2 || scopeFileCount >= 8);
   const fanoutLikely = FANOUT_RE.test(input) || repoScopeSuggestsFanout;
+  const bugLikely = BUG_RE.test(input) || taskClass === 'bugfix';
+  const featureLikely = FEATURE_RE.test(input) || taskClass === 'feature' || taskClass === 'refactor';
+  const specLikely = SPEC_RE.test(input);
+  const quickFixLikely = QUICK_FIX_RE.test(input) || tinyEditLikely;
+  const bigFeatureLikely = BIG_FEATURE_RE.test(input)
+    || (featureLikely && (fanoutLikely || inputTokens >= 70 || scopeDirSpread >= 4 || scopeFileCount >= 10));
 
   let complexityHint = 'plain-chat';
   if (tinyEditLikely) {
@@ -134,12 +152,78 @@ export function deriveRoutingHints(input: string, ctx: HandlerContext): CesarRou
     recommendedForgeScope = fullForge ? 'full' : (sliceForge ? 'slice' : 'none');
   }
 
+  let intakeKind: CesarIntakeKind = 'chat';
+  let recommendedFlow: CesarFlowHint = 'answer';
+  let flowReason = 'No mutation or orchestration signal; answer directly.';
+
+  if (reviewLikely) {
+    intakeKind = 'review';
+    recommendedFlow = 'review';
+    flowReason = 'User is asking to audit or review code/changes.';
+  } else if (tradeoffLikely) {
+    intakeKind = 'decision';
+    recommendedFlow = 'tribunal';
+    flowReason = 'Prompt asks for a decision or tradeoff; structured debate is the right escalation.';
+  } else if ((fuzzyLikely || openLikely) && !implementationLikely && !bigFeatureLikely) {
+    intakeKind = 'exploration';
+    recommendedFlow = fuzzyLikely ? 'campfire' : 'brainstorm';
+    flowReason = fuzzyLikely
+      ? 'Problem shape is ambiguous; collaborative framing should happen before execution.'
+      : 'Prompt asks for multiple options or approaches.';
+  } else if (bigFeatureLikely) {
+    intakeKind = 'big-feature';
+    if (specLikely || fuzzyLikely || openLikely) {
+      recommendedFlow = 'spec-first';
+      flowReason = 'Broad feature/request needs a crisp spec before editing.';
+    } else if (recommendedForgeScope === 'full') {
+      recommendedFlow = 'forge-full';
+      flowReason = 'Broad implementation with team-worthy scope; define plan, then use full forge if coding starts.';
+    } else if (recommendedForgeScope === 'slice') {
+      recommendedFlow = 'forge-slice';
+      flowReason = 'Substantial implementation with one hard slice; plan first, then forge the risky slice only.';
+    } else {
+      recommendedFlow = 'plan-first';
+      flowReason = 'Broad feature/request needs staged execution instead of a quick patch.';
+    }
+  } else if (specLikely && !implementationLikely) {
+    intakeKind = 'spec';
+    recommendedFlow = 'spec-first';
+    flowReason = 'User is shaping requirements, product behavior, or release readiness.';
+  } else if (bugLikely) {
+    if (quickFixLikely) {
+      intakeKind = 'quick-fix';
+      recommendedFlow = 'quick-fix';
+      flowReason = 'Bug/fix request appears small or single-file; solve live and verify.';
+    } else {
+      intakeKind = 'bug';
+      recommendedFlow = fanoutLikely || recommendedForgeScope === 'slice' ? 'forge-slice' : 'bug-fix';
+      flowReason = fanoutLikely || recommendedForgeScope === 'slice'
+        ? 'Bug spans enough surface that a focused forged slice may be worth it after reproduction.'
+        : 'Bug likely needs reproduce/read/patch/verify flow.';
+    }
+  } else if (featureLikely || implementationLikely) {
+    if (quickFixLikely) {
+      intakeKind = 'quick-fix';
+      recommendedFlow = 'quick-fix';
+      flowReason = 'Implementation request appears bounded and low-risk.';
+    } else {
+      intakeKind = 'feature';
+      recommendedFlow = inputTokens >= 36 || scopeFileCount >= 2 ? 'plan-first' : 'quick-fix';
+      flowReason = recommendedFlow === 'plan-first'
+        ? 'Feature request has enough moving parts to plan after a short investigation.'
+        : 'Small feature/edit can stay live without plan overhead.';
+    }
+  }
+
   return {
     taskClass,
+    intakeKind,
     scopeFileCount,
     scopeDirSpread,
     inputTokens,
     complexityHint,
+    recommendedFlow,
+    flowReason,
     uncertaintyFamily,
     escalationHint,
     recommendedBreadth,
@@ -151,13 +235,15 @@ export function deriveRoutingHints(input: string, ctx: HandlerContext): CesarRou
 }
 
 /**
- * Build a lightweight routing context (~200-500 tokens) for Cesar to make intelligent mode + team decisions.
+ * Build a lightweight routing context (~200-600 tokens) for Cesar to make intelligent intake, mode, and team decisions.
  */
 export function buildRoutingContext(input: string, ctx: HandlerContext): string {
   const parts: string[] = [];
 
   const hints = deriveRoutingHints(input, ctx);
   parts.push(`TASK CLASS: ${hints.taskClass}`);
+  parts.push(`INTAKE: ${hints.intakeKind}`);
+  parts.push(`RECOMMENDED FLOW: ${hints.recommendedFlow} — ${hints.flowReason}`);
   try {
     const cwd = resolveWorkingDir();
     const branch = currentBranch(cwd);
@@ -169,6 +255,7 @@ export function buildRoutingContext(input: string, ctx: HandlerContext): string 
   parts.push(`COMPLEXITY HINT: ${hints.complexityHint}`);
   parts.push(`UNCERTAINTY FAMILY: ${hints.uncertaintyFamily}`);
   parts.push(`IF ESCALATING: prefer ${hints.escalationHint} (${hints.recommendedBreadth})`);
+  parts.push(`FLOW RULE: quick-fix/bug-fix = read, patch, verify live; spec-first/plan-first = clarify scope and call ProposePlan before mutating; brainstorm/tribunal/campfire/review = call that orchestration tool directly when it fits.`);
   if (hints.recommendedForgeScope !== 'none') {
     parts.push(`FORGE SHAPE: prefer ${hints.recommendedForgeScope} ${hints.recommendedBreadth === 'team' ? 'with team breadth' : 'solo unless you need more diversity'}`);
   }

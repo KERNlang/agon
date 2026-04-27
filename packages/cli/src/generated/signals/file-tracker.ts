@@ -4,6 +4,8 @@ import { relative, isAbsolute, resolve, dirname } from 'node:path';
 
 import { spawnSync } from 'node:child_process';
 
+import { existsSync, readFileSync, statSync } from 'node:fs';
+
 export interface FileEntry {
   path: string;
   relPath: string;
@@ -12,44 +14,86 @@ export interface FileEntry {
   touchCount: number;
 }
 
-export const EDIT_TOOLS: Set<string> = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
+export const EDIT_TOOLS: Set<string> = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'AgonEdit', 'AgonWrite', 'apply_patch', 'applypatch', 'ApplyPatch']);
 
 export const READ_TOOLS: Set<string> = new Set(['Read', 'Glob', 'Grep']);
 
-export function extractFilePath(input: string): string|null {
-  if (!input) return null;
+export function extractFilePaths(tool: string, input: string): string[] {
+  if (!input) return [];
+  const paths: string[] = [];
+  const addPath = (raw: unknown) => {
+    if (typeof raw !== 'string') return;
+    const clean = raw.trim().replace(/^["']|["']$/g, '');
+    if (clean && clean !== '/dev/null' && !paths.includes(clean)) paths.push(clean);
+  };
+  const toolKey = String(tool ?? '').toLowerCase();
+  let parsed: any = null;
   try {
-    const parsed = JSON.parse(input);
-    const raw = (parsed as any).file_path ?? (parsed as any).path ?? (parsed as any).filePath;
-    return typeof raw === 'string' && raw.length > 0 ? raw : null;
-  } catch {
-    return null;
+    parsed = JSON.parse(input);
+    addPath(parsed?.file_path ?? parsed?.path ?? parsed?.filePath);
+  } catch { /* non-JSON tool input is common for apply_patch */ }
+
+  if (toolKey !== 'apply_patch' && toolKey !== 'applypatch') return paths;
+
+  const patchCandidates = [
+    parsed?.patch,
+    parsed?.content,
+    parsed?.diff,
+    parsed?.input,
+    input,
+  ].filter((value: unknown): value is string => typeof value === 'string' && value.trim().length > 0);
+  const patchText = patchCandidates.find((value: string) =>
+    value.includes('*** Begin Patch') ||
+    value.includes('diff --git') ||
+    value.split('\n').some((line: string) => line.startsWith('@@'))
+  ) ?? patchCandidates[0] ?? '';
+
+  for (const line of patchText.split('\n')) {
+    const customFile = line.match(/^\*\*\* (?:Update|Add|Delete) File: (.+)$/);
+    if (customFile) { addPath(customFile[1]); continue; }
+    const diffFile = line.match(/^diff --git a\/(.+?) b\/(.+)$/);
+    if (diffFile) { addPath(diffFile[2]); continue; }
+    if (line.startsWith('+++ b/')) { addPath(line.slice('+++ b/'.length)); continue; }
+    if (line.startsWith('--- a/')) { addPath(line.slice('--- a/'.length)); continue; }
   }
+
+  return paths;
+}
+
+export function extractFilePath(input: string): string|null {
+  return extractFilePaths('', input)[0] ?? null;
 }
 
 export function recordToolCall(tool: string, input: string, status: string): void {
-  const raw = extractFilePath(input);
-  if (!raw) return;
-  const abs = isAbsolute(raw) ? raw : resolve(process.cwd(), raw);
-  const rel = relative(process.cwd(), abs) || abs;
+  const rawPaths = extractFilePaths(tool, input);
+  if (rawPaths.length === 0) return;
+  const toolKey = String(tool ?? '').toLowerCase();
+  const isEditTool = EDIT_TOOLS.has(tool) || EDIT_TOOLS.has(toolKey);
+  const isReadTool = READ_TOOLS.has(tool);
+  if (!isEditTool && !isReadTool) return;
+
   const now = Date.now();
-  const existing = _fileTrackerState.files.get(abs);
-  let nextStatus: 'edited'|'created'|'read';
-  if (EDIT_TOOLS.has(tool)) {
-    nextStatus = existing && existing.status !== 'read' ? 'edited' : (tool === 'Write' && !existing ? 'created' : 'edited');
-  } else if (READ_TOOLS.has(tool)) {
-    nextStatus = existing && existing.status !== 'read' ? existing.status : 'read';
-  } else {
-    return;
+  let touched = 0;
+  for (const raw of rawPaths) {
+    const abs = isAbsolute(raw) ? raw : resolve(process.cwd(), raw);
+    const rel = relative(process.cwd(), abs) || abs;
+    const existing = _fileTrackerState.files.get(abs);
+    let nextStatus: 'edited'|'created'|'read';
+    if (isEditTool) {
+      nextStatus = existing && existing.status !== 'read' ? 'edited' : ((tool === 'Write' || tool === 'AgonWrite') && !existing ? 'created' : 'edited');
+    } else {
+      nextStatus = existing && existing.status !== 'read' ? existing.status : 'read';
+    }
+    _fileTrackerState.files.set(abs, {
+      path: abs,
+      relPath: rel,
+      status: nextStatus,
+      lastTouchedAt: now,
+      touchCount: (existing?.touchCount ?? 0) + 1,
+    });
+    touched += 1;
   }
-  _fileTrackerState.files.set(abs, {
-    path: abs,
-    relPath: rel,
-    status: nextStatus,
-    lastTouchedAt: now,
-    touchCount: (existing?.touchCount ?? 0) + 1,
-  });
-  _fileTrackerState.version += 1;
+  if (touched > 0) _fileTrackerState.version += 1;
 }
 
 export function listFiles(): FileEntry[] {
@@ -69,8 +113,9 @@ export const _fileTrackerState: { files: Map<string, FileEntry>; version: number
 
 export function getFileDiff(absPath: string, maxLines?: number): string {
   // Runs `git diff HEAD -- <path>` and returns the raw unified-diff text,
-  // capped at maxLines (default 40) to keep the rail panel tight. Falls
-  // back to empty string on any git error (untracked file, no repo, etc.).
+  // capped at maxLines (default 40) to keep the rail panel tight. For
+  // untracked files, return a small pseudo-diff so created files are not
+  // invisible in the expanded rail.
   try {
     const cap = maxLines ?? 40;
     const result = spawnSync('git', ['diff', '--no-color', 'HEAD', '--', absPath], {
@@ -78,9 +123,26 @@ export function getFileDiff(absPath: string, maxLines?: number): string {
       encoding: 'utf8',
       timeout: 1500,
     });
-    if (result.status !== 0 && !result.stdout) return '';
     const out = (result.stdout ?? '').trim();
-    if (!out) return '';
+    if (!out) {
+      const tracked = spawnSync('git', ['ls-files', '--error-unmatch', '--', absPath], {
+        cwd: dirname(absPath),
+        encoding: 'utf8',
+        timeout: 1500,
+      });
+      if (tracked.status === 0 || !existsSync(absPath)) return '';
+      const st = statSync(absPath);
+      if (!st.isFile()) return '';
+      const content = readFileSync(absPath, 'utf8');
+      const contentLines = content.split('\n');
+      const shown = contentLines.slice(0, Math.max(1, cap - 1)).map((line: string) => `+${line}`);
+      const omitted = Math.max(0, contentLines.length - shown.length);
+      return [
+        '@@ new file @@',
+        ...shown,
+        omitted > 0 ? `… (${omitted} more)` : '',
+      ].filter(Boolean).join('\n');
+    }
     const lines = out.split('\n');
     if (lines.length <= cap) return out;
     return lines.slice(0, cap).join('\n') + `\n\u2026 (${lines.length - cap} more)`;

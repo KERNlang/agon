@@ -355,11 +355,13 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
         return;
       }
       case 'plan-proposal': {
-        // Plan-proposals live in the live-pane (dynamic zone) rather than
-        // outputBlocks. Cesar may revise them mid-turn; the live-pane slot
-        // updates in place. On user confirm, plan-execution takes over as
-        // the permanent scrollback record. See kern/surfaces/app.kern.
+        // Plan-proposals render in the live-pane (dynamic zone) for immediate
+        // visibility while Cesar is still responding. They also commit to
+        // outputBlocks so the user can scroll back and see the full plan
+        // after the turn completes — fixing the "I can't see the plan" UX
+        // issue where the live-pane slot clears when the dynamic region updates.
         actions.setPendingPlanProposal(event);
+        actions.addBlock(event);
         return;
       }
       case 'plan-execution': {

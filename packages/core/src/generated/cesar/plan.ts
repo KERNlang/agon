@@ -41,6 +41,7 @@ export interface CesarPlanStep {
   imports?: string[];
   estimatedTokens: number;
   estimatedCostUsd: number;
+  eloSpread?: number;
   rationale?: string;
   verifyCmd?: string;
   state?: CesarStepState;

@@ -1,8 +1,23 @@
 import { describe, it, expect } from 'vitest';
-import { parseSuggestion, parseConfidence, confidenceBadge, CONFIDENCE_TIERS, CESAR_SYSTEM_PROMPT, buildReviewFollowupPrompt } from '../../packages/cli/src/handlers/cesar-brain.js';
+import { parseSuggestion, parseConfidence, confidenceBadge, CONFIDENCE_TIERS, CESAR_SYSTEM_PROMPT, buildReviewFollowupPrompt, detectNarratedToolStall } from '../../packages/cli/src/handlers/cesar-brain.js';
 import { createReportConfidenceTool, createForgeTool, createBrainstormTool, createTribunalTool, createCampfireTool, createPipelineTool } from '../../packages/core/src/tools.js';
 
 describe('Cesar Brain', () => {
+  describe('detectNarratedToolStall', () => {
+    it('detects read/search narration without a real tool call', () => {
+      expect(detectNarratedToolStall('Let me read packages/cli/src/kern/cesar/brain.kern first.')).toBe(true);
+      expect(detectNarratedToolStall('I should search for pendingDelegation in the codebase.')).toBe(true);
+    });
+
+    it('detects fake approval/tool-blocking narration', () => {
+      expect(detectNarratedToolStall('The Edit tool keeps blocking me, I need user approval.')).toBe(true);
+    });
+
+    it('does not flag normal answers', () => {
+      expect(detectNarratedToolStall('The tools are wired, but Kimi may be weak at native tool calls.')).toBe(false);
+    });
+  });
+
   describe('buildReviewFollowupPrompt', () => {
     it('grounds bare "fix it" in the latest review findings', () => {
       const result = buildReviewFollowupPrompt('fix it with codex?', {

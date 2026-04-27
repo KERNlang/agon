@@ -478,11 +478,20 @@ export function App() {
 
   const effectiveNativeArchiveCount = useMemo(() => {
           const baseArchiveCount = nativeTranscriptBlocks.length < nativeTranscriptBlockCountRef.current ? 0 : nativeArchiveCount;
-          return Math.max(0, Math.min(nativeTranscriptBlocks.length, Math.max(baseArchiveCount, nativeArchiveTarget)));
+          let count = Math.max(0, Math.min(nativeTranscriptBlocks.length, Math.max(baseArchiveCount, nativeArchiveTarget)));
+          while (
+            count > 0
+            && count < nativeTranscriptBlocks.length
+            && isToolCallLikeBlock(nativeTranscriptBlocks[count - 1])
+            && isToolCallLikeBlock(nativeTranscriptBlocks[count])
+          ) {
+            count -= 1;
+          }
+          return count;
   }, [nativeArchiveCount,nativeArchiveTarget,nativeTranscriptBlocks]);
 
   const nativeArchiveBlocks = useMemo(() => {
-          return nativeTranscriptBlocks.slice(0, effectiveNativeArchiveCount);
+          return coalesceToolCallBlocks(nativeTranscriptBlocks.slice(0, effectiveNativeArchiveCount));
   }, [nativeTranscriptBlocks,effectiveNativeArchiveCount]);
 
   const nativeLiveBlocks = useMemo(() => {
@@ -490,39 +499,15 @@ export function App() {
   }, [nativeTranscriptBlocks,effectiveNativeArchiveCount]);
 
   const displayRows = useMemo(() => {
-          // Ink 7 + ScrollBox: re-rendering on state change is supported, so
-          // Ctrl+E/Ctrl+T can actually toggle past tool/thinking rows.
-          const cache = blockRowCacheRef.current;
-          const rows: any[] = [];
-          for (const block of displayBlocks) {
-            const eventJson = JSON.stringify(block.event);
-            const cacheKey = `${block.id}::${eventJson}::${mode}::${toolOutputExpanded}::${thinkingExpanded}`;
-            const cached = cache.get(cacheKey);
-            if (cached) {
-              rows.push(...cached);
-              continue;
-            }
-            const blockRows = buildTranscriptRows([block], mode, toolOutputExpanded, thinkingExpanded);
-            // Adjust keys to include block id so they stay unique across blocks
-            const keyedRows = blockRows.map((r: any) => ({ ...r, key: `${block.id}-${r.key}` }));
-            cache.set(cacheKey, keyedRows);
-            rows.push(...keyedRows);
-          }
-          // Prune stale entries (blocks no longer in displayBlocks)
-          const validKeys = new Set(displayBlocks.map((b: any) => `${b.id}::${JSON.stringify(b.event)}::${mode}::${toolOutputExpanded}::${thinkingExpanded}`));
-          for (const key of Array.from(cache.keys())) {
-            if (!validKeys.has(key)) cache.delete(key);
-          }
-          return rows;
+          // Build the transcript in one pass so adjacent tool-call-group blocks
+          // can collapse together. Per-block rendering breaks that context and
+          // creates repeated "1 tool call / 2 tool calls" noise.
+          blockRowCacheRef.current.clear();
+          return buildTranscriptRows(displayBlocks, mode, toolOutputExpanded, thinkingExpanded);
   }, [displayBlocks, mode, toolOutputExpanded, thinkingExpanded]);
 
   const nativeLiveRows = useMemo(() => {
-          const rows: any[] = [];
-          for (const block of nativeLiveBlocks) {
-            const blockRows = buildTranscriptRows([block], mode, toolOutputExpanded, thinkingExpanded);
-            rows.push(...blockRows.map((row: any) => ({ ...row, key: `native-live-${block.id}-${row.key}` })));
-          }
-          return rows;
+          return buildTranscriptRows(nativeLiveBlocks, mode, toolOutputExpanded, thinkingExpanded);
   }, [nativeLiveBlocks,mode,toolOutputExpanded,thinkingExpanded]);
 
   const totalDisplayRows = useMemo(() => {
@@ -1240,7 +1225,6 @@ export function App() {
         copyCurrentTranscript(); return;
       case 'toggleFileRail':
         setFileRailOpen((prev: boolean) => !prev);
-        setFileRailExpandedPath(null);
         return;
       case 'fileRailSelectPrev': {
         const files = listFiles();
@@ -1483,8 +1467,8 @@ export function App() {
   useStableInput(handleKeyboardInput);
   const showFileRail = fileRailOpen;
   const fileRailFiles = useMemo(() => listFiles(), [fileRailVersion]);
-  const fileRailWidth = fileRailWidthForTerminal(termWidth, !!fileRailExpandedPath);
-  const fileRailMaxRows = fileRailMaxRowsForTerminal(termHeight, terminalMode, !!fileRailExpandedPath);
+  const fileRailWidth = fileRailWidthForTerminal(termWidth, true);
+  const fileRailMaxRows = fileRailMaxRowsForTerminal(termHeight, terminalMode, true);
   // Stable element array — without useMemo, every keystroke rebuilds N
   // React elements even though `displayRows` only changes on stream/mode.
   // ScrollBox also does React.Children.toArray on children; a stable ref
@@ -1727,13 +1711,17 @@ export function App() {
 export function isMutatingToolCall(event: any): boolean {
   if (!event || event.type !== 'tool-call') return false;
   const toolKey = String(event.tool ?? '').toLowerCase();
-  if (['edit', 'write', 'update', 'applypatch', 'apply_patch'].includes(toolKey)) return true;
+  if (['edit', 'write', 'update', 'agonedit', 'agonwrite', 'applypatch', 'apply_patch'].includes(toolKey)) return true;
+  if (['read', 'grep', 'search', 'glob', 'find', 'bash', 'run', 'agonbash', 'reportconfidence', 'quicknero'].includes(toolKey)) return false;
   if (typeof event.input !== 'string' || !event.input.trim().startsWith('{')) return false;
   try {
     const parsed = JSON.parse(event.input);
     return !!(
-      parsed.file_path ||
-      parsed.filePath ||
+      parsed.content ||
+      parsed.new_string ||
+      parsed.newString ||
+      parsed.old_string ||
+      parsed.oldString ||
       (parsed.path && (parsed.content || parsed.new_string || parsed.newString || parsed.old_string || parsed.oldString))
     );
   } catch {
@@ -1760,6 +1748,77 @@ export function parseToolCallPayload(event: any): any {
   };
 }
 
+export function extractPatchText(rawInput: string, parsed: any): string {
+  const values = [
+    parsed?.patch,
+    parsed?.content,
+    parsed?.diff,
+    parsed?.input,
+  ].filter((value: unknown): value is string => typeof value === 'string' && value.trim().length > 0);
+  const fromParsed = values.find((value: string) =>
+    value.includes('*** Begin Patch') ||
+    value.includes('diff --git') ||
+    value.split('\n').some((line: string) => line.startsWith('@@'))
+  );
+  if (fromParsed) return fromParsed;
+  if (
+    rawInput.includes('*** Begin Patch') ||
+    rawInput.includes('diff --git') ||
+    rawInput.split('\n').some((line: string) => line.startsWith('@@'))
+  ) {
+    return rawInput;
+  }
+  return values[0] ?? '';
+}
+
+export function parsePatchPreview(rawInput: string, parsed: any): { files:string[]; lines:string[]; additions:number; deletions:number } {
+  const patchText = extractPatchText(rawInput, parsed);
+  const files: string[] = [];
+  const lines: string[] = [];
+  let additions = 0;
+  let deletions = 0;
+  const addFile = (filePath: string) => {
+    const clean = filePath.trim().replace(/^["']|["']$/g, '');
+    if (clean && !files.includes(clean)) files.push(clean);
+  };
+
+  for (const line of patchText.split('\n')) {
+    const customFile = line.match(/^\*\*\* (?:Update|Add|Delete) File: (.+)$/);
+    if (customFile) {
+      addFile(customFile[1]);
+      continue;
+    }
+    const diffFile = line.match(/^diff --git a\/(.+?) b\/(.+)$/);
+    if (diffFile) {
+      addFile(diffFile[2]);
+      continue;
+    }
+    if (line.startsWith('+++ b/')) {
+      addFile(line.slice('+++ b/'.length));
+      continue;
+    }
+    if (line.startsWith('--- a/')) {
+      addFile(line.slice('--- a/'.length));
+      continue;
+    }
+    if (line.startsWith('@@')) {
+      lines.push(line);
+      continue;
+    }
+    if (line.startsWith('+') && !line.startsWith('+++')) {
+      additions += 1;
+      lines.push(line);
+      continue;
+    }
+    if (line.startsWith('-') && !line.startsWith('---')) {
+      deletions += 1;
+      lines.push(line);
+    }
+  }
+
+  return { files, lines, additions, deletions };
+}
+
 export function toolPreviewWindow(lineCount: number, expanded: boolean): any {
   if (lineCount <= 0) return { head: 0, tail: 0, skipped: 0 };
   const headLimit = expanded ? 10 : 3;
@@ -1779,12 +1838,12 @@ export function toolPreviewWindow(lineCount: number, expanded: boolean): any {
 export function toolCallSupportsDetailView(event: any): boolean {
   if (!event || event.type !== 'tool-call') return false;
   const { rawInput, parsed, toolKey } = parseToolCallPayload(event);
-  if (['edit', 'update', 'write', 'applypatch', 'apply_patch'].includes(toolKey)) return true;
+  if (['edit', 'update', 'write', 'agonedit', 'agonwrite', 'applypatch', 'apply_patch'].includes(toolKey)) return true;
 
   const outputText = String(event.output ?? '');
   const outputLines = outputText ? outputText.split('\n').length : 0;
 
-  if (toolKey === 'bash' || toolKey === 'run') {
+  if (toolKey === 'bash' || toolKey === 'run' || toolKey === 'agonbash') {
     const command = String((parsed.command as string) || rawInput || '');
     return command.split('\n').length > 3 || outputLines > 12 || outputText.length > 500;
   }
@@ -1906,9 +1965,10 @@ export function buildToolDetailView(event: any): any {
   const { rawInput, parsed, toolKey } = parseToolCallPayload(event);
   const outputLines = String(event.output ?? '').split('\n').filter((line: string, index: number, all: string[]) => line.length > 0 || all.length === 1);
   const defaultLabel = (() => {
-    if (toolKey === 'bash' || toolKey === 'run') return `${ic.bash} Bash`;
-    if (toolKey === 'edit' || toolKey === 'update') return `${ic.edit} Update`;
-    if (toolKey === 'write') return `${ic.write} Write`;
+    if (toolKey === 'bash' || toolKey === 'run' || toolKey === 'agonbash') return `${ic.bash} Bash`;
+    if (toolKey === 'edit' || toolKey === 'update' || toolKey === 'agonedit') return `${ic.edit} Update`;
+    if (toolKey === 'write' || toolKey === 'agonwrite') return `${ic.write} Write`;
+    if (toolKey === 'applypatch' || toolKey === 'apply_patch') return `${ic.edit} Patch`;
     if (toolKey === 'read') return `${ic.read} Read`;
     if (toolKey === 'grep' || toolKey === 'search') return `${ic.search} Search`;
     if (toolKey === 'glob' || toolKey === 'find') return `${ic.find} Find`;
@@ -1919,7 +1979,7 @@ export function buildToolDetailView(event: any): any {
   if (event.engineId) subtitleParts.push(String(event.engineId));
   if (event.status) subtitleParts.push(String(event.status));
 
-  if (toolKey === 'bash' || toolKey === 'run') {
+  if (toolKey === 'bash' || toolKey === 'run' || toolKey === 'agonbash') {
     const command = String((parsed.command as string) || rawInput || '');
     const desc = String((parsed.description as string) || '').trim();
     const commandLines = command ? command.split('\n') : [];
@@ -1945,7 +2005,7 @@ export function buildToolDetailView(event: any): any {
       pushSegmentsRow('bash-output-label', [{ text: 'Output', color: event.status === 'error' ? '#ef4444' : '#9ca3af', bold: true }]);
       pushAnsiLines('bash-output', outputLines, event.status === 'error' ? '#ef4444' : '');
     }
-  } else if (toolKey === 'edit' || toolKey === 'update') {
+  } else if (toolKey === 'edit' || toolKey === 'update' || toolKey === 'agonedit') {
     const filePath = String((parsed.file_path as string) || (parsed.filePath as string) || '');
     const oldLines = String((parsed.old_string as string) || (parsed.oldString as string) || '').split('\n');
     const newLines = String((parsed.new_string as string) || (parsed.newString as string) || '').split('\n');
@@ -1963,7 +2023,7 @@ export function buildToolDetailView(event: any): any {
     newLines.filter((line: string, index: number, all: string[]) => line.length > 0 || all.length === 1).forEach((line: string, index: number) => {
       rows.push({ key: `tool-detail-edit-new-${index}`, kind: 'diff', paddingLeft: 1, text: `+${line}`, maxWidth: codeWidth });
     });
-  } else if (toolKey === 'write') {
+  } else if (toolKey === 'write' || toolKey === 'agonwrite') {
     const filePath = String((parsed.file_path as string) || (parsed.filePath as string) || '');
     const lines = String((parsed.content as string) || '').split('\n');
     title = `${defaultLabel}${filePath ? ` · ${shortToolPath(filePath)}` : ''}`;
@@ -1975,6 +2035,20 @@ export function buildToolDetailView(event: any): any {
     lines.filter((line: string, index: number, all: string[]) => line.length > 0 || all.length === 1).forEach((line: string, index: number) => {
       rows.push({ key: `tool-detail-write-${index}`, kind: 'diff', paddingLeft: 1, text: `+${line}`, maxWidth: codeWidth });
     });
+  } else if (toolKey === 'applypatch' || toolKey === 'apply_patch') {
+    const patch = parsePatchPreview(rawInput, parsed);
+    title = `${defaultLabel}${patch.files.length > 0 ? ` · ${patch.files.slice(0, 2).map((filePath: string) => shortToolPath(filePath)).join(', ')}` : ''}`;
+    subtitleParts.push(`${patch.files.length || 1} file${patch.files.length === 1 ? '' : 's'} · -${patch.deletions} +${patch.additions} lines`);
+    if (patch.files.length > 0) {
+      pushSegmentsRow('patch-files', [{ text: patch.files.map((filePath: string) => shortToolPath(filePath)).join(', '), color: '#a78bfa' }]);
+    }
+    if (patch.lines.length > 0) {
+      patch.lines.forEach((line: string, index: number) => {
+        rows.push({ key: `tool-detail-patch-${index}`, kind: 'diff', paddingLeft: 1, text: line, maxWidth: codeWidth });
+      });
+    } else if (rawInput) {
+      pushSyntaxLines('patch-raw', rawInput.split('\n'));
+    }
   } else if (toolKey === 'read') {
     const filePath = String((parsed.file_path as string) || (parsed.filePath as string) || '');
     title = `${defaultLabel}${filePath ? ` · ${shortToolPath(filePath)}` : ''}`;
@@ -2321,9 +2395,9 @@ export function estimateToolCallRows(event: any, toolOutputExpanded: boolean, co
 
   const { rawInput, parsed, toolKey } = parseToolCallPayload(event);
   const collapsed = !toolOutputExpanded;
-  if (collapsed && !['edit', 'write', 'update'].includes(toolKey)) return 1;
+  if (collapsed && !['edit', 'write', 'update', 'agonedit', 'agonwrite', 'applypatch', 'apply_patch'].includes(toolKey)) return 1;
 
-  if (toolKey === 'bash' || toolKey === 'run') {
+  if (toolKey === 'bash' || toolKey === 'run' || toolKey === 'agonbash') {
     const cmd = (parsed.command as string) || rawInput || '';
     const cmdLineCount = cmd ? cmd.split('\n').length : 0;
     let rows = 1;
@@ -2339,7 +2413,7 @@ export function estimateToolCallRows(event: any, toolOutputExpanded: boolean, co
     return rows;
   }
 
-  if (toolKey === 'edit' || toolKey === 'update') {
+  if (toolKey === 'edit' || toolKey === 'update' || toolKey === 'agonedit') {
     const oldStr = (parsed.old_string as string) || (parsed.oldString as string) || '';
     const newStr = (parsed.new_string as string) || (parsed.newString as string) || '';
     const oldLines = oldStr ? oldStr.split('\n') : [];
@@ -2351,10 +2425,16 @@ export function estimateToolCallRows(event: any, toolOutputExpanded: boolean, co
       + newWindow.head + newWindow.tail + (newWindow.skipped > 0 ? 1 : 0);
   }
 
-  if (toolKey === 'write') {
+  if (toolKey === 'write' || toolKey === 'agonwrite') {
     const content = (parsed.content as string) || '';
     const lines = content ? content.split('\n') : [];
     const window = toolPreviewWindow(lines.length, !collapsed);
+    return 1 + window.head + window.tail + (window.skipped > 0 ? 1 : 0);
+  }
+
+  if (toolKey === 'applypatch' || toolKey === 'apply_patch') {
+    const patch = parsePatchPreview(rawInput, parsed);
+    const window = toolPreviewWindow(patch.lines.length, !collapsed);
     return 1 + window.head + window.tail + (window.skipped > 0 ? 1 : 0);
   }
 
@@ -2477,6 +2557,57 @@ export function buildDisplayItems(blocks: OutputBlock[], toolOutputExpanded: boo
   // scroll unit. Grouped tool summaries make wheel scrolling jump because
   // one collapsed row can stand in for many logical rows.
   return blocks;
+}
+
+export function isToolCallLikeBlock(block: OutputBlock): boolean {
+  const type = (block?.event as any)?.type;
+  return type === 'tool-call' || type === 'tool-call-group';
+}
+
+/**
+ * Merge adjacent tool-call and tool-call-group blocks into one group so native/live renderers do not show repeated collapsed tool summaries.
+ */
+export function coalesceToolCallBlocks(blocks: OutputBlock[]): OutputBlock[] {
+  if (!Array.isArray(blocks) || blocks.length === 0) return [];
+  const out: OutputBlock[] = [];
+  let index = 0;
+
+  const appendToolChildren = (block: OutputBlock, children: OutputBlock[]) => {
+    const event = block.event as any;
+    if (event?.type === 'tool-call') {
+      children.push(block);
+      return;
+    }
+    if (event?.type === 'tool-call-group' && Array.isArray(event.blocks)) {
+      for (const child of event.blocks) {
+        if (child?.event?.type === 'tool-call') children.push(child);
+      }
+    }
+  };
+
+  while (index < blocks.length) {
+    const block = blocks[index];
+    if (!isToolCallLikeBlock(block)) {
+      out.push(block);
+      index += 1;
+      continue;
+    }
+
+    const children: OutputBlock[] = [];
+    const first = block;
+    while (index < blocks.length && isToolCallLikeBlock(blocks[index])) {
+      appendToolChildren(blocks[index], children);
+      index += 1;
+    }
+
+    if (children.length === 1 && (first.event as any)?.type === 'tool-call') {
+      out.push(first);
+    } else {
+      out.push({ id: first.id, event: { type: 'tool-call-group', blocks: children } as any });
+    }
+  }
+
+  return out;
 }
 
 export function estimateDisplayItemRows(item: OutputBlock, mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean): number {
@@ -2724,6 +2855,12 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
   const { rawInput, parsed, toolKey } = parseToolCallPayload(event);
   const collapsed = !toolOutputExpanded;
   const collapsedHint: any[] = [];
+  const changeOpenHint = collapsed && isMutatingToolCall(event)
+    ? [
+        { text: ' · ', dimColor: true },
+        { text: '[Ctrl+O] Open', color: '#a78bfa', bold: true },
+      ]
+    : [];
   const nestSegment = { text: ' ⏿ ', color: eColor };
   const pushSegmentsRow = (suffix: string, segments: any[], paddingLeft = 2) => {
     rows.push({ key: `${baseKey}-${suffix}`, kind: 'segments', paddingLeft, segments });
@@ -2763,7 +2900,7 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
     });
   };
 
-  if (toolKey === 'bash' || toolKey === 'run') {
+  if (toolKey === 'bash' || toolKey === 'run' || toolKey === 'agonbash') {
     const cmd = String((parsed.command as string) || rawInput || '');
     const desc = parsed.description as string | undefined;
     if (collapsed) {
@@ -2853,7 +2990,7 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
     return rows;
   }
 
-  if (toolKey === 'edit' || toolKey === 'update') {
+  if (toolKey === 'edit' || toolKey === 'update' || toolKey === 'agonedit') {
     const filePath = String((parsed.file_path as string) || (parsed.filePath as string) || '');
     const oldStr = String((parsed.old_string as string) || (parsed.oldString as string) || '');
     const newStr = String((parsed.new_string as string) || (parsed.newString as string) || '');
@@ -2870,6 +3007,7 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
       { text: ' ', dimColor: true },
       { text: `+${newLines.length}`, color: '#4ade80' },
       { text: ' lines', dimColor: true },
+      ...changeOpenHint,
       ...collapsedHint,
     ].filter(Boolean));
     pushDiffPreview('edit-old', oldLines, '-', !collapsed, 'removed');
@@ -2877,7 +3015,7 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
     return rows;
   }
 
-  if (toolKey === 'write') {
+  if (toolKey === 'write' || toolKey === 'agonwrite') {
     const filePath = String((parsed.file_path as string) || (parsed.filePath as string) || '');
     const content = String((parsed.content as string) || '');
     const shortPath = filePath ? shortToolPath(filePath) : '';
@@ -2890,9 +3028,32 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
       lines.length > 0 ? { text: ' · ', dimColor: true } : null,
       lines.length > 0 ? { text: `+${lines.length}`, color: '#4ade80' } : null,
       lines.length > 0 ? { text: ' lines', dimColor: true } : null,
+      ...changeOpenHint,
       ...collapsedHint,
     ].filter(Boolean));
     pushDiffPreview('write', lines, '+', !collapsed, 'added');
+    return rows;
+  }
+
+  if (toolKey === 'applypatch' || toolKey === 'apply_patch') {
+    const patch = parsePatchPreview(rawInput, parsed);
+    const fileSummary = patch.files.length > 0
+      ? ` (${patch.files.slice(0, 2).map((filePath: string) => shortToolPath(filePath)).join(', ')}${patch.files.length > 2 ? ', …' : ''})`
+      : '';
+
+    pushSegmentsRow('patch-head', [
+      nestSegment,
+      { text: `${icon} ${ic.edit} Patch`, color: toolColor, bold: true },
+      fileSummary ? { text: fileSummary, color: '#a78bfa' } : null,
+      { text: ' · ', dimColor: true },
+      { text: `-${patch.deletions}`, color: '#ef4444' },
+      { text: ' ', dimColor: true },
+      { text: `+${patch.additions}`, color: '#4ade80' },
+      { text: ' lines', dimColor: true },
+      ...changeOpenHint,
+      ...collapsedHint,
+    ].filter(Boolean));
+    pushDiffPreview('patch', patch.lines, '', !collapsed, 'changed');
     return rows;
   }
 
@@ -3056,12 +3217,15 @@ export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any
 
   const labelFor = (event: any) => {
     const toolKey = String(event.tool ?? '').toLowerCase();
-    if (toolKey === 'bash' || toolKey === 'run') return 'Bash';
+    if (toolKey === 'bash' || toolKey === 'run' || toolKey === 'agonbash') return 'Bash';
     if (toolKey === 'read') return 'Read';
     if (toolKey === 'grep' || toolKey === 'search') return 'Search';
     if (toolKey === 'glob' || toolKey === 'find') return 'Find';
-    if (toolKey === 'edit' || toolKey === 'update') return 'Update';
-    if (toolKey === 'write') return 'Write';
+    if (toolKey === 'edit' || toolKey === 'update' || toolKey === 'agonedit') return 'Update';
+    if (toolKey === 'write' || toolKey === 'agonwrite') return 'Write';
+    if (toolKey === 'applypatch' || toolKey === 'apply_patch') return 'Patch';
+    if (toolKey === 'reportconfidence') return 'Confidence';
+    if (toolKey === 'quicknero') return 'QuickNero';
     return String(event.tool ?? 'Tool');
   };
 
@@ -3075,13 +3239,17 @@ export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any
     }
 
     const toolKey = String(event.tool ?? '').toLowerCase();
-    if (toolKey === 'bash' || toolKey === 'run') {
+    if (toolKey === 'bash' || toolKey === 'run' || toolKey === 'agonbash') {
       const command = String((parsed.command as string) || rawInput || '').split('\n')[0] ?? '';
       return truncateCodeLine(command, contentWidth(20));
     }
-    if (toolKey === 'read' || toolKey === 'edit' || toolKey === 'update' || toolKey === 'write') {
+    if (toolKey === 'read' || toolKey === 'edit' || toolKey === 'update' || toolKey === 'write' || toolKey === 'agonedit' || toolKey === 'agonwrite') {
       const filePath = String((parsed.file_path as string) || (parsed.filePath as string) || '');
       return filePath ? filePath.replace(`${process.cwd()}/`, '').replace(process.env.HOME ?? '', '~') : labelFor(event);
+    }
+    if (toolKey === 'applypatch' || toolKey === 'apply_patch') {
+      const patch = parsePatchPreview(rawInput, parsed);
+      return patch.files[0] ? shortToolPath(patch.files[0]) : 'Patch';
     }
     if (toolKey === 'grep' || toolKey === 'search' || toolKey === 'glob' || toolKey === 'find') {
       const pattern = String((parsed.pattern as string) || rawInput || '');
@@ -3103,6 +3271,13 @@ export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any
       if (filePath) {
         const shortPath = shortToolPath(filePath);
         if (!changedFiles.includes(shortPath)) changedFiles.push(shortPath);
+      }
+      const { rawInput, parsed: payload, toolKey } = parseToolCallPayload(event);
+      if (toolKey === 'applypatch' || toolKey === 'apply_patch') {
+        for (const patchFile of parsePatchPreview(rawInput, payload).files) {
+          const shortPath = shortToolPath(patchFile);
+          if (!changedFiles.includes(shortPath)) changedFiles.push(shortPath);
+        }
       }
     }
   }
@@ -3128,10 +3303,14 @@ export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any
       countSummary ? { text: ' · ', dimColor: true } : null,
       countSummary ? { text: countSummary, dimColor: true } : null,
       changedSummary ? { text: changedSummary, color: '#a78bfa' } : null,
+      changeEvents.length > 0 ? { text: ' · ', dimColor: true } : null,
+      changeEvents.length > 0 ? { text: '[Ctrl+O] Open', color: '#a78bfa', bold: true } : null,
     ].filter(Boolean),
   });
 
-  if (previews.length > 0) {
+  const previewWorthyLabels = new Set(['Bash', 'Update', 'Write', 'Patch', 'QuickNero']);
+  const shouldShowPreview = previews.length > 0 && events.some((event: any) => previewWorthyLabels.has(labelFor(event)));
+  if (shouldShowPreview) {
     rows.push({
       key: `${baseKey}-tool-group-preview`,
       kind: 'segments',

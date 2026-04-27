@@ -45,8 +45,18 @@ TRUST THROUGH HONESTY: Never fake certainty. A low confidence number is informat
 
 STYLE: Use the user's language — casual if they're casual, German if they write in German. Adapt to them.
 
+VISIBLE ANSWER CONTRACT: Hidden/controller thinking is not user-facing. Never output meta-analysis about "the user has not asked", "the system is waiting", "I need to provide my final response", prior assistant turns, tool result bookkeeping, or conversation-state confusion. Treat every turn as live: answer the user's latest message, using the conversation history as context. If you are unsure what the user wants, ask one concise clarifying question.
+
 RULE 1 — CONFIDENCE: Call ReportConfidence(value) FIRST on every turn. If you cannot call tools, write ~X% at the very start instead. No exceptions. Initial low confidence is EXPECTED — you haven't read the code yet. Investigate first, then report your INFORMED confidence.
 RULE 2 — YOU DECIDE: You own the escalation decision. Stay live by default. self is the normal path. If you think "I'm probably right but may be fooling myself", call QuickNero() for a structured self-challenge, or escalate directly. Use the right tool for the kind of uncertainty — tribunal for tradeoffs, brainstorm for open options, campfire for fuzzy framing, delegate for bounded specialist help, forge for genuinely hard implementation.
+RULE 2b — INTAKE FLOW: Every normal turn includes ROUTING CONTEXT with INTAKE and RECOMMENDED FLOW. Treat it as steering, not law, but do not ignore it. Map flows this way:
+  quick-fix: stay live, read the target, patch, verify. Do not propose a big plan for a tiny edit.
+  bug-fix: reproduce or inspect the failure path, patch the root cause, verify with the narrowest useful command.
+  spec-first: write or propose a compact behavioral spec before mutating files. If execution is next and staged work helps, call ProposePlan.
+  plan-first: investigate enough to name files/steps, then call ProposePlan before broad or risky edits.
+  forge-slice / forge-full: define the target clearly first; forge only the hard slice or full broad task that benefits from competing implementations.
+  brainstorm / tribunal / campfire / review: call the matching orchestration tool directly when that is the recommended flow.
+  answer: answer directly.
 
 CRITICAL: You have orchestration modes as DIRECT TOOL CALLS. NEVER use Bash to run CLI commands for orchestration. Call the tools directly:
 
@@ -275,7 +285,7 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
   is expensive and the user prefers Cesar self-execute unless there's a real reason
   not to.
 
-  BLOCKED: Forge, Pipeline, Edit, Write. No code execution until the plan is approved.
+  BLOCKED: Forge, Pipeline, Agent, Edit, Write. No code execution until the plan is approved.
   ALLOWED: Read, Grep, Glob, Bash (read-only), Delegate, Brainstorm, Tribunal, Campfire, ReportConfidence, ProposePlan.
 
   HARD RULE: Your turn MUST end with a ProposePlan call. If you respond with text only, the plan mode fails. Call ProposePlan.${budgetWarning}`);
@@ -358,7 +368,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
     // Plan mode: block execution tools
     const activePlan = ctx.activePlan;
     if (activePlan && ['planning', 'awaiting_approval'].includes(activePlan.state)) {
-      const BLOCKED_IN_PLAN = ['Forge', 'Pipeline', 'Edit', 'Write'];
+      const BLOCKED_IN_PLAN = ['Forge', 'Pipeline', 'Agent', 'Edit', 'Write'];
       if (BLOCKED_IN_PLAN.includes(name)) {
         return `[BLOCKED] Tool "${name}" is not available in plan mode. Use ProposePlan to propose your execution strategy.`;
       }
@@ -373,7 +383,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
     }
 
     // ── Orchestration signal tools — intercept before execution ──
-    const ORCH_TOOLS = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review']);
+    const ORCH_TOOLS = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent']);
     if (ORCH_TOOLS.has(name)) {
       ctx.cesar!.pendingDelegation = extractDelegation(name, args);
       // [DELEGATION_BREAK] prefix signals persistent-session to stop the tool loop
@@ -849,7 +859,7 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
     fullPrompt += '\n\nYou have tools available via function calling. Call them directly — do NOT describe them in XML or narrate what you would call. Just call the function.';
   } else if (isCompanion) {
     // CLI companion with MCP orchestration: reference MCP tools, no XML for orchestration
-    fullPrompt += '\n\nYou have tools available via the agon-orchestration MCP server:\n- Orchestration: Tribunal, Brainstorm, Campfire, Forge, Pipeline, Review, Delegate, ReportConfidence\n- Write operations: AgonBash (shell commands), AgonEdit (file edits), AgonWrite (file creation)\n\nCall them as MCP tools — NEVER via your native Bash/Edit/Write. Your native write tools are disabled. Use AgonBash for ALL shell commands (git, npm, etc.), AgonEdit for file edits, AgonWrite for new files. The user will be asked to approve write operations. After calling any orchestration tool (except Delegate and ReportConfidence): STOP and wait.';
+    fullPrompt += '\n\nYou have tools available via the agon-orchestration MCP server:\n- Orchestration: Tribunal, Brainstorm, Campfire, Forge, Pipeline, Review, Agent, Delegate, QuickNero, ReportConfidence, ProposePlan\n- Write operations: AgonBash (shell commands), AgonEdit (file edits), AgonWrite (file creation)\n\nCall them as MCP tools — NEVER via your native Bash/Edit/Write. Your native write tools are disabled. Use AgonBash for ALL shell commands (git, npm, etc.), AgonEdit for file edits, AgonWrite for new files. The user will be asked to approve write operations. After calling any orchestration tool except Delegate, QuickNero, and ReportConfidence: STOP and wait.';
   } else {
     // Fallback: XML tool descriptions for engines without native tools or MCP
     const toolPrompt = buildToolSystemPrompt(toolRegistry);

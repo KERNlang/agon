@@ -8,6 +8,7 @@ vi.mock('ai', async (importOriginal) => {
   return {
     ...actual,
     generateText: vi.fn(),
+    streamText: vi.fn(),
   };
 });
 vi.mock('@ai-sdk/openai-compatible', () => ({
@@ -198,10 +199,25 @@ describe('api-dispatch — provider creation', () => {
 
 // --- Usage capture from generateText ---
 
-import { generateText } from 'ai';
-import { apiDispatch } from '../../packages/core/src/generated/api/dispatch.js';
+import { generateText, streamText } from 'ai';
+import { apiDispatch, apiStreamDispatchWithHistory } from '../../packages/core/src/generated/api/dispatch.js';
 
 const mockGenerateText = vi.mocked(generateText);
+const mockStreamText = vi.mocked(streamText);
+
+async function collectApiStream(gen: AsyncGenerator<string, any, void>) {
+  const chunks: string[] = [];
+  let result: any;
+  while (true) {
+    const next = await gen.next();
+    if (next.done) {
+      result = next.value;
+      break;
+    }
+    chunks.push(next.value);
+  }
+  return { chunks, result };
+}
 
 describe('apiDispatch usage capture', () => {
   beforeEach(() => {
@@ -264,5 +280,53 @@ describe('apiDispatch usage capture', () => {
       totalTokens: 200,
       source: 'sdk',
     });
+  });
+
+  it('does not expose generateText reasoningText as visible output', async () => {
+    mockGenerateText.mockResolvedValueOnce({
+      text: '',
+      reasoningText: 'The user has not asked a new question.',
+    } as any);
+
+    const result = await apiDispatch(
+      { baseUrl: 'http://test', apiKeyEnv: 'TEST_API_KEY', model: 'test-model' },
+      'test prompt',
+      30,
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe('');
+  });
+});
+
+describe('apiStreamDispatchWithHistory reasoning visibility', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.TEST_API_KEY = 'test-key';
+  });
+
+  it('captures reasoning deltas without streaming them as assistant text', async () => {
+    async function* fullStream() {
+      yield { type: 'reasoning-delta', delta: 'The user has not asked a new question.' };
+      yield { type: 'text-delta', text: 'Visible answer.' };
+    }
+
+    mockStreamText.mockReturnValueOnce({
+      fullStream: fullStream(),
+      usage: Promise.resolve({ inputTokens: 10, outputTokens: 4 }),
+    } as any);
+
+    const { chunks, result } = await collectApiStream(apiStreamDispatchWithHistory(
+      { baseUrl: 'http://test', apiKeyEnv: 'TEST_API_KEY', model: 'test-model' },
+      [{ role: 'user', content: 'continue' }],
+      30,
+    ));
+
+    expect(chunks.join('')).toBe('Visible answer.');
+    expect(result.stdout).toBe('Visible answer.');
+    expect(result.parts).toEqual([
+      { kind: 'text', text: 'Visible answer.' },
+      { kind: 'reasoning', text: 'The user has not asked a new question.' },
+    ]);
   });
 });

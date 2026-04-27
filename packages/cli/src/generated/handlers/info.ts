@@ -102,6 +102,57 @@ export function handleCesarReport(dispatch: Dispatch): void {
     .map(([mode, count]) => [mode, String(count), `${Math.round((count / recent.length) * 100)}%`]);
   dispatch({ type: 'table', headers: ['Mode', 'Count', 'Share'], rows: modeRows });
 
+  const toolMap: Record<string, { turns: number; toolTurns: number; toolCount: number; eventCount: number; native: number; mcp: number; xml: number; stalls: number; auto: number; confidence: number; tools: Record<string, number> }> = {};
+  for (const r of recent) {
+    const engine = String(r.engineId ?? r.cesarEngineId ?? 'unknown');
+    const backend = String(r.backend ?? r.cesarBackend ?? 'unknown');
+    const key = `${engine} / ${backend}`;
+    toolMap[key] ??= { turns: 0, toolTurns: 0, toolCount: 0, eventCount: 0, native: 0, mcp: 0, xml: 0, stalls: 0, auto: 0, confidence: 0, tools: {} };
+    const bucket = toolMap[key];
+    const toolCount = Number(r.toolCount ?? 0);
+    bucket.turns++;
+    bucket.toolCount += toolCount;
+    bucket.eventCount += Number(r.toolEventCount ?? 0);
+    bucket.native += Number(r.nativeToolCalls ?? 0);
+    bucket.mcp += Number(r.mcpToolCalls ?? 0);
+    bucket.xml += Number(r.xmlToolCalls ?? 0);
+    bucket.stalls += Number(r.narratedToolStalls ?? 0);
+    bucket.auto += Number(r.autoToolExecutions ?? 0);
+    if (toolCount > 0) bucket.toolTurns++;
+    if (r.confidenceToolUsed === true) bucket.confidence++;
+    if (Array.isArray(r.toolsUsed)) {
+      for (const t of r.toolsUsed) {
+        const name = String(t);
+        bucket.tools[name] = (bucket.tools[name] ?? 0) + 1;
+      }
+    }
+  }
+  const toolRows = Object.entries(toolMap)
+    .sort((a, b) => b[1].turns - a[1].turns)
+    .map(([key, data]) => {
+      const topTools = Object.entries(data.tools)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 4)
+        .map(([name, count]) => `${name}:${count}`)
+        .join(', ') || '-';
+      const toolTurnPct = data.turns > 0 ? Math.round((data.toolTurns / data.turns) * 100) : 0;
+      const confidencePct = data.turns > 0 ? Math.round((data.confidence / data.turns) * 100) : 0;
+      const avgTools = data.turns > 0 ? (data.toolCount / data.turns).toFixed(1) : '0.0';
+      return [
+        key,
+        String(data.turns),
+        `${data.toolTurns} (${toolTurnPct}%)`,
+        avgTools,
+        `${data.native}/${data.mcp}/${data.xml}`,
+        `${data.confidence} (${confidencePct}%)`,
+        String(data.stalls),
+        String(data.auto),
+        topTools,
+      ];
+    });
+  dispatch({ type: 'separator' });
+  dispatch({ type: 'table', headers: ['Cesar Engine / Backend', 'Turns', 'Tool Turns', 'Avg Tools', 'Native/MCP/XML', 'Confidence Tool', 'Stalls', 'Auto', 'Top Tools'], rows: toolRows });
+
   const familyMap: Record<string, { count: number; matched: number; modes: Record<string, number> }> = {};
   for (const r of recent) {
     const family = r.uncertaintyFamily ?? 'unknown';
@@ -119,6 +170,26 @@ export function handleCesarReport(dispatch: Dispatch): void {
     });
   dispatch({ type: 'separator' });
   dispatch({ type: 'table', headers: ['Uncertainty', 'Count', 'Hint Match', 'Top Actual Mode'], rows: familyRows });
+
+  const intakeMap: Record<string, { count: number; flows: Record<string, number>; modes: Record<string, number> }> = {};
+  for (const r of recent) {
+    const intake = r.intakeKind ?? 'unknown';
+    intakeMap[intake] ??= { count: 0, flows: {}, modes: {} };
+    intakeMap[intake].count++;
+    const flow = r.recommendedFlow ?? 'unknown';
+    intakeMap[intake].flows[flow] = (intakeMap[intake].flows[flow] ?? 0) + 1;
+    const mode = r.mode ?? 'unknown';
+    intakeMap[intake].modes[mode] = (intakeMap[intake].modes[mode] ?? 0) + 1;
+  }
+  const intakeRows = Object.entries(intakeMap)
+    .sort((a, b) => b[1].count - a[1].count)
+    .map(([intake, data]) => {
+      const topFlow = Object.entries(data.flows).sort((a, b) => b[1] - a[1])[0]?.[0] ?? '-';
+      const topMode = Object.entries(data.modes).sort((a, b) => b[1] - a[1])[0]?.[0] ?? '-';
+      return [intake, String(data.count), topFlow, topMode];
+    });
+  dispatch({ type: 'separator' });
+  dispatch({ type: 'table', headers: ['Intake', 'Count', 'Top Flow Hint', 'Top Actual Mode'], rows: intakeRows });
 
   const miscalibrationRows: string[][] = [];
   const nonSelfSelfCount = recent.filter((r: any) => r.escalationHint && r.escalationHint !== 'self' && r.mode === 'self').length;
@@ -145,13 +216,17 @@ export function handleCesarReport(dispatch: Dispatch): void {
 
   const recentTail = recent.slice(-5).map((r: any) => [
     String(r.mode ?? 'unknown'),
+    String(r.intakeKind ?? '-'),
+    String(r.recommendedFlow ?? '-'),
+    String(r.toolCount ?? 0),
+    String(r.narratedToolStalls ?? 0),
     String(r.uncertaintyFamily ?? '-'),
     String(r.escalationHint ?? '-'),
     String(r.breadthHint ?? '-'),
     String(r.forgeScopeHint ?? '-'),
   ]);
   dispatch({ type: 'separator' });
-  dispatch({ type: 'table', headers: ['Recent Mode', 'Family', 'Hint', 'Breadth', 'Forge Scope'], rows: recentTail });
+  dispatch({ type: 'table', headers: ['Recent Mode', 'Intake', 'Flow', 'Tools', 'Stalls', 'Family', 'Hint', 'Breadth', 'Forge Scope'], rows: recentTail });
 }
 
 export function handleCesarHints(input: string, dispatch: Dispatch, ctx: HandlerContext): void {
@@ -166,24 +241,27 @@ export function handleCesarHints(input: string, dispatch: Dispatch, ctx: Handler
   dispatch({ type: 'text', content: trimmed });
   dispatch({
     type: 'table',
-    headers: ['Task Class', 'Uncertainty', 'Escalation', 'Breadth', 'Forge Scope', 'Complexity'],
+    headers: ['Task Class', 'Intake', 'Flow', 'Uncertainty', 'Escalation', 'Breadth'],
     rows: [[
       String(hints.taskClass),
+      String(hints.intakeKind),
+      String(hints.recommendedFlow),
       String(hints.uncertaintyFamily),
       String(hints.escalationHint),
       String(hints.recommendedBreadth),
-      String(hints.recommendedForgeScope),
-      String(hints.complexityHint),
     ]],
   });
 
+  dispatch({ type: 'text', content: `Flow reason: ${hints.flowReason}` });
+
   dispatch({
     type: 'table',
-    headers: ['Input Tokens', 'Changed Files', 'Dir Spread', 'Fanout', 'Review', 'Engine Mention'],
+    headers: ['Input Tokens', 'Changed Files', 'Dir Spread', 'Forge Scope', 'Fanout', 'Review', 'Engine Mention'],
     rows: [[
       String(hints.inputTokens),
       String(hints.scopeFileCount),
       String(hints.scopeDirSpread),
+      String(hints.recommendedForgeScope),
       hints.fanoutLikely ? 'yes' : 'no',
       hints.reviewLikely ? 'yes' : 'no',
       hints.explicitEngineMention ? 'yes' : 'no',

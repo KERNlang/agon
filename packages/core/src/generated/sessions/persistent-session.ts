@@ -1476,7 +1476,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
             let orchCount = 0;   // Forge, Brainstorm, Tribunal, etc. calls this turn
             const READ_TOOLS = new Set(['Read', 'Grep', 'Glob', 'RetrieveResult']);
             const WRITE_TOOLS = new Set(['Edit', 'Write']);
-            const ORCH_TOOLS = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Delegate']);
+            const ORCH_TOOLS = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'Delegate', 'ProposePlan']);
             const hasHistoryToolCall = (toolNames: Set<string>) => messageHistory.some((msg: any) =>
               Array.isArray(msg?.tool_calls) && msg.tool_calls.some((tc: any) => {
                 const fnName = tc?.function?.name ?? tc?.name;

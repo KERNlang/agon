@@ -84,6 +84,21 @@ export const ORCHESTRATION_TOOLS: Array<{name:string,description:string,inputSch
     },
   },
   {
+    name: 'Agent',
+    description: 'Delegate to autonomous agent mode. Solo runs one engine through a multi-turn tool loop; team:true runs multiple API engines in isolated worktrees and synthesizes the best result. Always set taskKind to edit or investigate. After calling: STOP responding.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        task: { type: 'string', description: 'The concrete task for the agent to perform' },
+        team: { type: 'boolean', description: 'Set true for parallel team-agent mode' },
+        engines: { type: 'array', items: { type: 'string' }, description: 'Optional engine IDs for team mode' },
+        taskKind: { type: 'string', description: 'edit or investigate', enum: ['edit', 'investigate'] },
+        maxTurns: { type: 'number', description: 'Optional turn budget per engine' },
+      },
+      required: ['task'],
+    },
+  },
+  {
     name: 'Delegate',
     description: 'Send a subtask to a specific engine and get the result back. After calling: STOP responding.',
     inputSchema: {
@@ -116,6 +131,43 @@ export const ORCHESTRATION_TOOLS: Array<{name:string,description:string,inputSch
       properties: {
         reason: { type: 'string', description: 'Brief reason for requesting the self-check. Optional.' },
       },
+    },
+  },
+  {
+    name: 'ProposePlan',
+    description: 'Submit a structured Cesar execution plan for user approval. Use in plan mode or when staged execution is genuinely useful. After calling: STOP responding.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        intent: { type: 'string', description: '1-3 sentences describing the user task and overall approach' },
+        autoApprove: { type: 'boolean', description: 'Set true only for clearly requested autonomous multi-stage workflows with high confidence' },
+        selfReview: { type: 'boolean', description: 'Whether to auto-append review after mutating steps. Defaults true.' },
+        steps: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              type: { type: 'string', enum: ['self', 'forge', 'teamforge', 'delegate', 'brainstorm', 'campfire', 'tribunal', 'pipeline', 'review', 'agent', 'team-agent'] },
+              description: { type: 'string' },
+              engines: { type: 'array', items: { type: 'string' } },
+              engine: { type: 'string' },
+              fitnessCmd: { type: 'string' },
+              tribunalMode: { type: 'string' },
+              parallel: { type: 'boolean' },
+              dependsOn: { type: 'array', items: { type: 'string' } },
+              exports: { type: 'array', items: { type: 'string' } },
+              imports: { type: 'array', items: { type: 'string' } },
+              estimatedTokens: { type: 'number' },
+              estimatedCostUsd: { type: 'number' },
+              rationale: { type: 'string' },
+              verifyCmd: { type: 'string' },
+            },
+            required: ['id', 'type', 'description', 'estimatedTokens', 'estimatedCostUsd'],
+          },
+        },
+      },
+      required: ['intent', 'steps'],
     },
   },
   {
@@ -204,10 +256,31 @@ function writePermissionRequest(id: string, tool: string, args: Record<string,un
   writeFileSync(requestPath, JSON.stringify({ type: 'permission-request', id, tool, args, timestamp: Date.now() }));
 }
 
+function writeToolCompletion(id: string, tool: string, args: Record<string,unknown>, status: string, output: string): void {
+  const signalDir = process.env.AGON_SIGNAL_DIR;
+  const sessionId = process.env.AGON_SESSION_ID;
+  if (!signalDir || !sessionId) return;
+  try {
+    mkdirSync(signalDir, { recursive: true });
+    const completionPath = join(signalDir, `${sessionId}-tool-${id}.json`);
+    const cappedOutput = String(output ?? '').slice(0, 12000);
+    writeFileSync(completionPath, JSON.stringify({
+      type: 'tool-completion',
+      id,
+      tool,
+      args,
+      status: status === 'error' ? 'error' : 'done',
+      output: cappedOutput,
+      timestamp: Date.now(),
+    }));
+  } catch { /* completion signal is best-effort */ }
+}
+
 async function pollPermissionResponse(id: string, timeoutMs: number): Promise<{approved:boolean,reason?:string}> {
   const signalDir = process.env.AGON_SIGNAL_DIR;
   const sessionId = process.env.AGON_SESSION_ID;
   if (!signalDir || !sessionId) return { approved: false, reason: 'No signal dir' };
+  const requestPath = join(signalDir, `${sessionId}-perm-${id}.json`);
   const responsePath = join(signalDir, `${sessionId}-perm-${id}-response.json`);
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
@@ -215,11 +288,13 @@ async function pollPermissionResponse(id: string, timeoutMs: number): Promise<{a
       try {
         const data = JSON.parse(readFileSync(responsePath, 'utf-8'));
         try { unlinkSync(responsePath); } catch { /* cleanup optional */ }
+        try { unlinkSync(requestPath); } catch { /* cleanup optional */ }
         return { approved: !!data.approved, reason: data.reason };
       } catch { /* parse error — keep polling */ }
     }
     await new Promise(r => setTimeout(r, 100));
   }
+  try { unlinkSync(requestPath); } catch { /* cleanup optional */ }
   return { approved: false, reason: 'Permission request timed out' };
 }
 
@@ -238,7 +313,9 @@ export async function handleWriteToolCall(name: string, args: Record<string,unkn
   const response = await pollPermissionResponse(requestId, 60000);
 
   if (!response.approved) {
-    return `Permission denied: ${response.reason ?? 'User declined'}. Do NOT retry this command — ask the user what they want instead.`;
+    const denied = `Permission denied: ${response.reason ?? 'User declined'}. Do NOT retry this command — ask the user what they want instead.`;
+    writeToolCompletion(requestId, name, args, 'error', denied);
+    return denied;
   }
 
   // Execute the approved tool
@@ -248,17 +325,25 @@ export async function handleWriteToolCall(name: string, args: Record<string,unkn
       const timeout = ((args as any).timeout ?? 30) * 1000;
       const cwd = process.env.AGON_CWD || process.cwd();
       const result = execSync(cmd, { cwd, timeout, encoding: 'utf-8', maxBuffer: 1024 * 1024, stdio: ['pipe', 'pipe', 'pipe'] });
-      return result || '(command completed with no output)';
+      const output = result || '(command completed with no output)';
+      writeToolCompletion(requestId, name, args, 'done', output);
+      return output;
     }
     if (name === 'AgonEdit') {
       const filePath = (args as any).file_path as string;
       const oldStr = (args as any).old_string as string;
       const newStr = (args as any).new_string as string;
       const content = readFileSync(filePath, 'utf-8');
-      if (!content.includes(oldStr)) return `Error: old_string not found in ${filePath}`;
+      if (!content.includes(oldStr)) {
+        const output = `Error: old_string not found in ${filePath}`;
+        writeToolCompletion(requestId, name, args, 'error', output);
+        return output;
+      }
       const updated = content.replace(oldStr, newStr);
       writeFileSync(filePath, updated);
-      return `File edited: ${filePath}`;
+      const output = `File edited: ${filePath}`;
+      writeToolCompletion(requestId, name, args, 'done', output);
+      return output;
     }
     if (name === 'AgonWrite') {
       const filePath = (args as any).file_path as string;
@@ -266,11 +351,16 @@ export async function handleWriteToolCall(name: string, args: Record<string,unkn
       const { dirname: dirFn } = require('node:path');
       mkdirSync(dirFn(filePath), { recursive: true });
       writeFileSync(filePath, fileContent);
-      return `File written: ${filePath}`;
+      const output = `File written: ${filePath}`;
+      writeToolCompletion(requestId, name, args, 'done', output);
+      return output;
     }
+    writeToolCompletion(requestId, name, args, 'error', 'Unknown write tool');
     return 'Unknown write tool';
   } catch (err: any) {
-    return `Error: ${err.message ?? String(err)}`;
+    const output = `Error: ${err.message ?? String(err)}`;
+    writeToolCompletion(requestId, name, args, 'error', output);
+    return output;
   }
 }
 

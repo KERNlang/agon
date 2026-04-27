@@ -18,6 +18,8 @@ import { EngineRegistry } from '@agon/core';
 
 import { deriveRoutingHints, buildRoutingContext } from '../cesar/routing.js';
 
+import { summarizeAllCesarToolReliability } from '../cesar/reliability.js';
+
 export function handleLeaderboard(dispatch: Dispatch): void {
   const ratings = getRatings();
   dispatch({ type: 'header', title: 'Global Leaderboard' });
@@ -127,9 +129,13 @@ export function handleCesarReport(dispatch: Dispatch): void {
       }
     }
   }
+  const reliabilityByKey = new Map(
+    summarizeAllCesarToolReliability(200).map((summary: any) => [`${summary.engineId} / ${summary.backend}`, summary])
+  );
   const toolRows = Object.entries(toolMap)
     .sort((a, b) => b[1].turns - a[1].turns)
     .map(([key, data]) => {
+      const reliability = reliabilityByKey.get(key) as any;
       const topTools = Object.entries(data.tools)
         .sort((a, b) => b[1] - a[1])
         .slice(0, 4)
@@ -140,6 +146,7 @@ export function handleCesarReport(dispatch: Dispatch): void {
       const avgTools = data.turns > 0 ? (data.toolCount / data.turns).toFixed(1) : '0.0';
       return [
         key,
+        reliability?.label ?? '-',
         String(data.turns),
         `${data.toolTurns} (${toolTurnPct}%)`,
         avgTools,
@@ -151,7 +158,7 @@ export function handleCesarReport(dispatch: Dispatch): void {
       ];
     });
   dispatch({ type: 'separator' });
-  dispatch({ type: 'table', headers: ['Cesar Engine / Backend', 'Turns', 'Tool Turns', 'Avg Tools', 'Native/MCP/XML', 'Confidence Tool', 'Stalls', 'Auto', 'Top Tools'], rows: toolRows });
+  dispatch({ type: 'table', headers: ['Cesar Engine / Backend', 'Reliability', 'Turns', 'Tool Turns', 'Avg Tools', 'Native/MCP/XML', 'Confidence Tool', 'Stalls', 'Auto', 'Top Tools'], rows: toolRows });
 
   const familyMap: Record<string, { count: number; matched: number; modes: Record<string, number> }> = {};
   for (const r of recent) {

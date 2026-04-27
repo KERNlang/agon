@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildHarnessDoctorReport,
   buildDoctorCleanupCommand,
   diagnoseEngineDoctorEntry,
   shellQuoteForDoctor,
@@ -56,5 +57,32 @@ describe('doctor command helpers', () => {
     expect(entry.status).toBe('warn');
     expect(entry.backend).toContain('cli:/usr/local/bin/hybrid');
     expect(entry.detail).toContain('API key AGON_DOCTOR_TEST_KEY_MISSING not set');
+  });
+
+  it('builds a harness doctor report for the selected Cesar engine', () => {
+    const registry = {
+      get: (id: string) => ({
+        id,
+        displayName: 'Claude',
+        schemaVersion: 3,
+        binary: 'claude',
+        exec: { args: [], stdin: true },
+        agent: { args: [], stdin: true },
+        companion: { protocol: 'mcp' },
+      }),
+      findBinary: () => '/usr/local/bin/claude',
+    } as any;
+
+    const report = buildHarnessDoctorReport(
+      registry,
+      { cesarEngine: 'claude', cesarBackend: 'auto' },
+      { hasNativeTools: true },
+    );
+
+    expect(report.headers).toEqual(['Check', 'Subject', 'Status', 'Detail']);
+    expect(report.rows.some((row) => row[0] === 'Capability profile' && row[3].includes('agent'))).toBe(true);
+    expect(report.rows.some((row) => row[0] === 'Native tools' && row[2] === 'ok')).toBe(true);
+    expect(report.rows.some((row) => row[0] === 'MCP side-channel' && row[2] === 'warn')).toBe(true);
+    expect(report.summary).toContain('warn');
   });
 });

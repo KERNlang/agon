@@ -6,6 +6,8 @@ import type { TaskClass, EngineRole } from '@agon/core';
 
 import type { HandlerContext } from '../../handlers/types.js';
 
+import { readCesarToolReliability, formatCesarReliabilityLine, shouldDowngradeCesarToolWork } from './reliability.js';
+
 export type CesarUncertaintyFamily = 'none' | 'challenge' | 'tradeoff' | 'open' | 'fuzzy' | 'specialist' | 'implementation' | 'review';
 
 export type CesarEscalationHint = 'self' | 'self-nero' | 'delegate' | 'tribunal' | 'brainstorm' | 'campfire' | 'forge' | 'review';
@@ -241,6 +243,7 @@ export function buildRoutingContext(input: string, ctx: HandlerContext): string 
   const parts: string[] = [];
 
   const hints = deriveRoutingHints(input, ctx);
+  const activeEngines = ctx.activeEngines();
   parts.push(`TASK CLASS: ${hints.taskClass}`);
   parts.push(`INTAKE: ${hints.intakeKind}`);
   parts.push(`RECOMMENDED FLOW: ${hints.recommendedFlow} — ${hints.flowReason}`);
@@ -256,12 +259,19 @@ export function buildRoutingContext(input: string, ctx: HandlerContext): string 
   parts.push(`UNCERTAINTY FAMILY: ${hints.uncertaintyFamily}`);
   parts.push(`IF ESCALATING: prefer ${hints.escalationHint} (${hints.recommendedBreadth})`);
   parts.push(`FLOW RULE: quick-fix/bug-fix = read, patch, verify live; spec-first/plan-first = clarify scope and call ProposePlan before mutating; brainstorm/tribunal/campfire/review = call that orchestration tool directly when it fits.`);
+  try {
+    const cesarId = (ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? activeEngines[0] ?? 'claude';
+    const reliability = readCesarToolReliability(cesarId, undefined, 200);
+    parts.push(`CESAR TOOL RELIABILITY: ${formatCesarReliabilityLine(reliability)}`);
+    if (shouldDowngradeCesarToolWork(reliability, hints.intakeKind, hints.recommendedFlow)) {
+      parts.push(`WEAK TOOL POLICY: current Cesar looks weak at direct tool work for tool-heavy turns. Prefer ProposePlan, Agent, Forge, Review, or a precise advisory answer over pretending self-tooling happened.`);
+    }
+  } catch { /* reliability is advisory only */ }
   if (hints.recommendedForgeScope !== 'none') {
     parts.push(`FORGE SHAPE: prefer ${hints.recommendedForgeScope} ${hints.recommendedBreadth === 'team' ? 'with team breadth' : 'solo unless you need more diversity'}`);
   }
 
   // ── Engine rankings for this task class (in-memory, O(n log n)) ──
-  const activeEngines = ctx.activeEngines();
   if (activeEngines.length > 1) {
     const rankings = rankByTaskClass(activeEngines, hints.taskClass);
     if (rankings.length > 0) {

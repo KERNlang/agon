@@ -26,6 +26,8 @@ import { fireQuickNero, fireNero, fireAdvisor, handleSecondOpinion, activateNero
 
 import { buildRoutingContext, deriveRoutingHints } from './routing.js';
 
+import { readCesarToolReliability, formatCesarReliabilityLine, shouldDowngradeCesarToolWork, buildWhatHappenedSummary } from './reliability.js';
+
 export const yieldToInk: () => Promise<void> = () => new Promise<void>(resolve => setImmediate(resolve));
 
 /**
@@ -126,6 +128,8 @@ export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input
     appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
     tracker.record(cesarEngineId, { prompt: input, response });
     const delResult = await promptDelegation(pendingDel.action, dispatch, pendingDel.hardened, pendingDel.tribunalMode, pendingDel.team);
+    const happened = buildWhatHappenedSummary(telemetry ?? {});
+    if (happened) dispatch({ type: 'info', message: happened });
     if (delResult.approved) {
       const finalAction = delResult.action ?? pendingDel.action;
       const action = pendingDel.team ? `team-${finalAction}` : finalAction;
@@ -147,6 +151,8 @@ export async function commitTurnAndSuggest(suggestion: {action:string, rest?:str
     tracker.record(cesarEngineId, { prompt: input, response });
     if (suggestion.rest) dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: suggestion.rest });
   const delResult = await promptDelegation(suggestion.action, dispatch, suggestion.hardened, suggestion.tribunalMode, suggestion.team);
+  const happened = buildWhatHappenedSummary(telemetry ?? {});
+  if (happened) dispatch({ type: 'info', message: happened });
   if (delResult.approved) {
     const finalAction = delResult.action ?? suggestion.action;
     const reasoning = delResult.userContext ? `${suggestion.rest ?? ''}\n\nUser context: ${delResult.userContext}` : suggestion.rest;
@@ -356,6 +362,19 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       const eagerPromises: Promise<ToolCallResult>[] = [];
       let eagerToolCtx: ToolContext | null = null;
       const routingHints = deriveRoutingHints(input, ctx);
+      let routeReliability: any = null;
+      let routeDowngrade = false;
+      try {
+        routeReliability = readCesarToolReliability(cesarEngineId, _actualCesarBackend === 'unknown' ? undefined : _actualCesarBackend, 200);
+        routeDowngrade = shouldDowngradeCesarToolWork(routeReliability, routingHints.intakeKind, routingHints.recommendedFlow);
+        const policy = routeDowngrade
+          ? ' | policy: route tool-heavy work through plan/orchestration'
+          : '';
+        dispatch({
+          type: 'info',
+          message: `Cesar route: ${routingHints.intakeKind} -> ${routingHints.recommendedFlow} | ${cesarEngineId}/${_actualCesarBackend} | tools: ${routeReliability.label}${policy}`,
+        });
+      } catch { /* route card is advisory only */ }
 
       // ── Build routing context (cheap: ~500ms, ~200 tokens) ──
       let enrichedInput = reviewFollowup.prompt;
@@ -365,6 +384,9 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           enrichedInput = `[ROUTING CONTEXT — use this to decide mode + team]\n${routingCtx}\n\n${reviewFollowup.prompt}`;
         }
       } catch { /* routing context is best-effort */ }
+      if (routeReliability && routeDowngrade) {
+        enrichedInput = `[CESAR TOOL RELIABILITY POLICY]\n${formatCesarReliabilityLine(routeReliability)}\nFor this tool-heavy task, do not pretend direct multi-step tooling happened. Prefer ProposePlan, Agent, Forge, Review, or another direct orchestration tool when execution is needed; if staying self, keep the answer advisory and explicit.\n\n${enrichedInput}`;
+      }
 
       // ── Heartbeat timer + turn timeout ──
       const cesarTimeout = (config as any).cesarTimeout ?? 300;
@@ -1227,6 +1249,9 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           if (ranToolLoop) mem.remember(`tools:${Date.now()}`, `Cesar used tools for: ${topic}`, 'file');
         }
 
+        const happened = buildWhatHappenedSummary(buildToolTelemetry());
+        if (happened) dispatch({ type: 'info', message: happened });
+
         // Detect yes/no question — show choice buttons
         const lastLine = response.split('\n').filter((l: string) => l.trim()).pop()?.trim() ?? '';
         const asksConfirmation = !ranToolLoop && /\?\s*$/.test(lastLine) && /\b(want|shall|should|ready|proceed|go ahead|dispatch|confirm|continue|implement)\b/i.test(lastLine);
@@ -1257,6 +1282,8 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
     }
 
     // Native tool activity counts as a response — the user saw tool calls in the UI
+    const happened = buildWhatHappenedSummary(buildToolTelemetry());
+    if (happened) dispatch({ type: 'info', message: happened });
     return { mode: usedQuickNero ? 'self-nero' : 'self', delegated: false, responded: hadToolActivity || ranToolLoop, decisionReason: hadToolActivity || ranToolLoop ? (usedQuickNero ? 'tool-loop-self-challenge' : 'tool-loop-self') : 'empty-turn', ...buildToolTelemetry() };
   } finally {
       ctx.eventBus?.emit('post:cesar-brain', { durationMs: Date.now() - _brainStartMs }).catch(() => {});

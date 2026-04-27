@@ -1,7 +1,54 @@
 import { describe, it, expect } from 'vitest';
 import { fenceSeedPlan } from '../../packages/cli/src/handlers/cesar.js';
+import { deriveRoutingHints, buildRoutingContext } from '../../packages/cli/src/generated/cesar/routing.js';
+
+const routingCtx = {
+  activeEngines: () => ['claude'],
+  config: { sessionContinuity: false },
+  registry: { get: (id: string) => ({ id }) },
+} as any;
 
 describe('César Routing', () => {
+  describe('intake flow hints', () => {
+    it('keeps tiny edits on quick-fix flow', () => {
+      const hints = deriveRoutingHints('fix typo in README.md', routingCtx);
+
+      expect(hints.intakeKind).toBe('quick-fix');
+      expect(hints.recommendedFlow).toBe('quick-fix');
+      expect(hints.flowReason).toContain('small');
+    });
+
+    it('routes broad harness UX work through spec-first flow', () => {
+      const hints = deriveRoutingHints('make harness spec flow plan flow for big feature', routingCtx);
+
+      expect(hints.intakeKind).toBe('big-feature');
+      expect(hints.recommendedFlow).toBe('spec-first');
+      expect(hints.flowReason).toContain('spec');
+    });
+
+    it('keeps broad harness intake prompts spec-first even in a dirty repo', () => {
+      const hints = deriveRoutingHints('can we check deeper in harness and when i type check if its bug feature big feature and propose spec flow plan flow or quick fix', routingCtx);
+
+      expect(hints.intakeKind).toBe('big-feature');
+      expect(hints.recommendedFlow).toBe('spec-first');
+    });
+
+    it('routes tradeoff questions to tribunal flow', () => {
+      const hints = deriveRoutingHints('should we use REST or GraphQL for the API', routingCtx);
+
+      expect(hints.intakeKind).toBe('decision');
+      expect(hints.recommendedFlow).toBe('tribunal');
+    });
+
+    it('injects intake and flow into the routing context', () => {
+      const context = buildRoutingContext('make harness spec flow plan flow for big feature', routingCtx);
+
+      expect(context).toContain('INTAKE: big-feature');
+      expect(context).toContain('RECOMMENDED FLOW: spec-first');
+      expect(context).toContain('FLOW RULE:');
+    });
+  });
+
   describe('fenceSeedPlan', () => {
     it('wraps plan in data tags with injection guard', () => {
       const plan = 'Fix the auth bug by updating token validation';

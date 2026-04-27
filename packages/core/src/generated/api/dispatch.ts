@@ -210,7 +210,7 @@ export async function apiDispatch(config: ApiConfig, prompt: string, timeout: nu
       maxRetries: 5,
     });
     clearTimeout(timer);
-    const text = result.text || (result as any).reasoningText || '';
+    const text = result.text || '';
     const usage = result.usage ? {
       promptTokens: result.usage.inputTokens ?? 0,
       completionTokens: result.usage.outputTokens ?? 0,
@@ -389,9 +389,7 @@ export async function* apiStreamDispatchWithHistory(config: ApiConfig, messages:
         case 'reasoning-delta': {
           const text = (part as any).delta ?? '';
           if (text) {
-            stdout += text;
             currentReasoningBuf += text;
-            yield text;
           }
           break;
         }

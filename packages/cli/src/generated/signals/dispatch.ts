@@ -176,7 +176,22 @@ export async function absorbReviewResultIntoCesar(sourceInput: string, cb: Dispa
   if (!cb.ctx.cesarSession?.alive) return;
   cb.dispatch({ type: 'info', message: 'Cesar absorbing review findings...' });
   const prompt = buildReviewAbsorptionPrompt(sourceInput, review);
-  await absorbIntoCesar(prompt, cb.dispatch, cb.ctx);
+  await continueCesarAfterResult(prompt, cb);
+}
+
+/**
+ * Feed a delegated result back through the full Cesar path, not the lightweight summarizer. This lets Cesar call tools, propose plans, or launch follow-up agents instead of being cut off after another model returns.
+ */
+export async function continueCesarAfterResult(message: string, cb: DispatchCallbacks): Promise<void> {
+  if (!cb.ctx.cesarSession?.alive) return;
+  const prompt = [
+    '[DELEGATED RESULT]',
+    message,
+    '',
+    '[CONTINUE]',
+    'Continue from this result. If more work is needed, use tools or delegate now. If the task is complete, summarize concrete outcome and remaining risk.',
+  ].join('\n');
+  await routeWithCesar(prompt, [], cb);
 }
 
 export interface DispatchResult {
@@ -308,54 +323,6 @@ export async function runAgentJobWithAutoResume(originalTask: string, cb: Dispat
 }
 
 /**
- * Send a message directly into Cesar's persistent session and stream the response. Returns the response text.
- */
-export async function absorbIntoCesar(message: string, dispatch: Dispatch, ctx: HandlerContext): Promise<string> {
-  const session = ctx.cesarSession;
-  if (!session || !session.alive) return '';
-
-  const cesarEngineId = (ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude';
-  const color = ENGINE_COLORS[cesarEngineId] ?? 124;
-
-  let response = '';
-  let streaming = false;
-  const gen = session.send({ message });
-
-  for await (const chunk of gen) {
-    if (chunk.type === 'text') {
-      if (!streaming) {
-        dispatch({ type: 'spinner-stop' });
-        streaming = true;
-      }
-      dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: chunk.content });
-      response += chunk.content;
-    } else if (chunk.type === 'status') {
-      dispatch({ type: 'spinner-update', message: `Cesar ${chunk.content}` });
-    } else if (chunk.type === 'error') {
-      dispatch({ type: 'error', message: chunk.content });
-      break;
-    } else if (chunk.type === 'done') {
-      break;
-    }
-  }
-
-  if (streaming) {
-    dispatch({ type: 'streaming-end', engineId: cesarEngineId });
-    await yieldToInk();
-  } else {
-    dispatch({ type: 'spinner-stop' });
-  }
-
-  response = response.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
-
-  if (response) {
-    appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
-  }
-
-  return response;
-}
-
-/**
  * Build the message used to feed completed review findings back into Cesar so the orchestrator knows what the reviewer found and can propose the fix path.
  */
 export function buildReviewAbsorptionPrompt(sourceInput: string, review: { engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number }): string {
@@ -407,7 +374,22 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
             decisionReason: result.decisionReason,
             scope: (result as any).scope,
             confidence: cb.ctx.cesar?.reportedConfidence,
+            engineId: (result as any).cesarEngineId ?? ((cb.ctx.config as any).cesarEngine ?? cb.ctx.config.forgeFixedStarter ?? 'claude'),
+            backend: (result as any).cesarBackend ?? ((cb.ctx.config as any).cesarBackend ?? 'auto'),
+            hasNativeTools: (result as any).hasNativeTools,
+            toolCount: (result as any).toolCount ?? 0,
+            toolEventCount: (result as any).toolEventCount ?? 0,
+            toolCallTurns: (result as any).toolCallTurns ?? 0,
+            toolsUsed: (result as any).toolsUsed,
+            nativeToolCalls: (result as any).nativeToolCalls ?? 0,
+            mcpToolCalls: (result as any).mcpToolCalls ?? 0,
+            xmlToolCalls: (result as any).xmlToolCalls ?? 0,
+            narratedToolStalls: (result as any).narratedToolStalls ?? 0,
+            autoToolExecutions: (result as any).autoToolExecutions ?? 0,
+            confidenceToolUsed: (result as any).confidenceToolUsed === true,
             taskClass: routingHints.taskClass,
+            intakeKind: routingHints.intakeKind,
+            recommendedFlow: routingHints.recommendedFlow,
             uncertaintyFamily: routingHints.uncertaintyFamily,
             escalationHint: routingHints.escalationHint,
             breadthHint: routingHints.recommendedBreadth,
@@ -541,7 +523,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
                   cb.dispatch({ type: 'info', message: 'Cesar absorbing brainstorm results…' });
                   const bidSummary = bsResult.bids.map((b: any) => `**${b.engineId}** (score: ${b.score}): ${b.reasoning.slice(0, 800)}`).join('\n\n');
                   const cesarMsg = `Brainstorm complete. Winner: ${bsResult.winner}.\n\n## Engine Bids\n${bidSummary}\n\n## Winner's Full Response\n${bsResult.response}\n\nSynthesize the winning approach into a concrete plan. Be direct — the brainstorm already validated the ideas.`;
-                  await absorbIntoCesar(cesarMsg, cb.dispatch, cb.ctx);
+                  await continueCesarAfterResult(cesarMsg, cb);
                 }
                 return bsResult; // returned value captured by withThreadOutcome for richer summary
               }, cb.ctx));
@@ -556,7 +538,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
                   cb.dispatch({ type: 'info', message: 'Cesar absorbing brainstorm results…' });
                   const recentChat = cb.ctx.chatSession?.messages?.slice(-10) ?? [];
                   const chatContext = recentChat.filter((m: any) => m.role === 'engine').map((m: any) => `[${m.engineId}]: ${m.content.slice(0, 1500)}`).join('\n\n');
-                  await absorbIntoCesar(`Team brainstorm completed. Here are the engine responses:\n\n${chatContext}\n\nSynthesize the winning approach into a concrete plan.`, cb.dispatch, cb.ctx);
+                  await continueCesarAfterResult(`Team brainstorm completed. Here are the engine responses:\n\n${chatContext}\n\nSynthesize the winning approach into a concrete plan.`, cb);
                 }
               }, cb.ctx));
               return true;
@@ -569,7 +551,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
                 if (cb.ctx.cesarSession?.alive) {
                   const recentChat = cb.ctx.chatSession?.messages?.slice(-12) ?? [];
                   const chatContext = recentChat.filter((m: any) => m.role === 'engine').map((m: any) => `[${m.engineId}]: ${m.content.slice(0, 1500)}`).join('\n\n');
-                  if (chatContext) await absorbIntoCesar(`Tribunal${tMode ? ` (${tMode})` : ''} concluded on: "${taskInput.slice(0, 200)}"\n\n${chatContext}\n\nSummarize the verdict and key takeaways.`, cb.dispatch, cb.ctx);
+                  if (chatContext) await continueCesarAfterResult(`Tribunal${tMode ? ` (${tMode})` : ''} concluded on: "${taskInput.slice(0, 200)}"\n\n${chatContext}\n\nSummarize the verdict and key takeaways.`, cb);
                 }
               }, cb.ctx));
               return true;
@@ -582,7 +564,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
                 if (cb.ctx.cesarSession?.alive) {
                   const recentChat = cb.ctx.chatSession?.messages?.slice(-12) ?? [];
                   const chatContext = recentChat.filter((m: any) => m.role === 'engine').map((m: any) => `[${m.engineId}]: ${m.content.slice(0, 1500)}`).join('\n\n');
-                  if (chatContext) await absorbIntoCesar(`Team tribunal${tMode ? ` (${tMode})` : ''} concluded on: "${taskInput.slice(0, 200)}"\n\n${chatContext}\n\nSummarize the verdict and key takeaways.`, cb.dispatch, cb.ctx);
+                  if (chatContext) await continueCesarAfterResult(`Team tribunal${tMode ? ` (${tMode})` : ''} concluded on: "${taskInput.slice(0, 200)}"\n\n${chatContext}\n\nSummarize the verdict and key takeaways.`, cb);
                 }
               }, cb.ctx));
               return true;
@@ -595,7 +577,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
                 if (cb.ctx.cesarSession?.alive) {
                   const recentChat = cb.ctx.chatSession?.messages?.slice(-12) ?? [];
                   const chatContext = recentChat.filter((m: any) => m.role === 'engine').map((m: any) => `[${m.engineId}]: ${m.content.slice(0, 1500)}`).join('\n\n');
-                  if (chatContext) await absorbIntoCesar(`Campfire discussion on: "${taskInput.slice(0, 200)}"\n\n${chatContext}\n\nSummarize the key insights and any consensus reached.`, cb.dispatch, cb.ctx);
+                  if (chatContext) await continueCesarAfterResult(`Campfire discussion on: "${taskInput.slice(0, 200)}"\n\n${chatContext}\n\nSummarize the key insights and any consensus reached.`, cb);
                 }
               }, cb.ctx));
               return true;
@@ -665,7 +647,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
                   // Feed result back to Cesar's persistent session so it can continue
                   if (cb.ctx.cesarSession) {
                     cb.dispatch({ type: 'info', message: `Feeding delegate result back to Cesar…` });
-                    await absorbIntoCesar(`[Delegate → ${targetEngineId}] Result:\n${answer || '(empty response)'}`, cb.dispatch, cb.ctx);
+                    await continueCesarAfterResult(`[Delegate → ${targetEngineId}] Result:\n${answer || '(empty response)'}`, cb);
                   }
                 } catch (err) {
                   cb.dispatch({ type: 'error', message: `Delegate to ${targetEngineId} failed: ${err instanceof Error ? err.message : String(err)}` });
@@ -955,7 +937,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
         if (cb.ctx.cesarSession?.alive) {
           const recentChat = cb.ctx.chatSession?.messages?.slice(-12) ?? [];
           const chatContext = recentChat.filter((m: any) => m.role === 'engine').map((m: any) => `[${m.engineId}]: ${m.content.slice(0, 1500)}`).join('\n\n');
-          if (chatContext) await absorbIntoCesar(`Tribunal concluded on: "${(intent.question ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize the verdict and key takeaways.`, cb.dispatch, cb.ctx);
+          if (chatContext) await continueCesarAfterResult(`Tribunal concluded on: "${(intent.question ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize the verdict and key takeaways.`, cb);
         }
       }, cb.ctx));
       return { handled: true, ranAsJob: true };
@@ -970,7 +952,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
         if (cb.ctx.cesarSession?.alive) {
           const recentChat = cb.ctx.chatSession?.messages?.slice(-12) ?? [];
           const chatContext = recentChat.filter((m: any) => m.role === 'engine').map((m: any) => `[${m.engineId}]: ${m.content.slice(0, 1500)}`).join('\n\n');
-          if (chatContext) await absorbIntoCesar(`Campfire discussion on: "${(intent.topic ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize the key insights and any consensus reached.`, cb.dispatch, cb.ctx);
+          if (chatContext) await continueCesarAfterResult(`Campfire discussion on: "${(intent.topic ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize the key insights and any consensus reached.`, cb);
         }
       }, cb.ctx));
       return { handled: true, ranAsJob: true };
@@ -983,7 +965,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
         if (cb.ctx.cesarSession?.alive) {
           const recentChat = cb.ctx.chatSession?.messages?.slice(-12) ?? [];
           const chatContext = recentChat.filter((m: any) => m.role === 'engine').map((m: any) => `[${m.engineId}]: ${m.content.slice(0, 1500)}`).join('\n\n');
-          if (chatContext) await absorbIntoCesar(`Team tribunal concluded on: "${(intent.question ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize the verdict and key takeaways.`, cb.dispatch, cb.ctx);
+          if (chatContext) await continueCesarAfterResult(`Team tribunal concluded on: "${(intent.question ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize the verdict and key takeaways.`, cb);
         }
       }, cb.ctx));
       return { handled: true, ranAsJob: true };
@@ -1818,7 +1800,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
         '---',
         `name: ${skillName}`,
         `trigger: ${trigger}`,
-        `description: TODO — describe what this skill does`,
+        `description: Describe what this skill does in one sentence.`,
         '---',
         '',
         'You are in {name} mode.',
@@ -1827,8 +1809,17 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
         '',
         '## Instructions',
         '',
-        'TODO — write the skill prompt here.',
-        'Use {input} for the user\'s message after the trigger.',
+        '1. Replace this list with concrete steps.',
+        '2. Use {input} for the user\'s message after the trigger.',
+        '3. Be specific about output format (e.g. "return a bulleted list").',
+        '4. Add any constraints (e.g. "never suggest regex for HTML parsing").',
+        '',
+        '## Example',
+        '',
+        'Input: "src/auth.ts"',
+        'Output:',
+        '- Issue: ...',
+        '- Suggested fix: ...',
         '',
       ].join('\n');
 

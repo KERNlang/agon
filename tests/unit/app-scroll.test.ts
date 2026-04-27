@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   buildTranscriptRows,
   buildTerminalReplaySnapshot,
+  coalesceToolCallBlocks,
   displayColumnToStringIndex,
   estimateBottomChromeExtraRows,
   estimateQuestionReservedRows,
@@ -410,6 +411,65 @@ describe('app scroll helpers', () => {
     expect(text).not.toContain('2 tool calls');
   });
 
+  it('coalesces adjacent tool-call blocks before native Static rendering', () => {
+    const blocks = [
+      {
+        id: 1,
+        event: {
+          type: 'tool-call-group',
+          blocks: [
+            { id: 11, event: { type: 'tool-call', engineId: 'cesar', tool: 'ReportConfidence', input: '{"value":70}', status: 'done', output: 'ok' } },
+          ],
+        },
+      },
+      {
+        id: 2,
+        event: {
+          type: 'tool-call-group',
+          blocks: [
+            { id: 21, event: { type: 'tool-call', engineId: 'cesar', tool: 'Grep', input: '{"pattern":"TODO"}', status: 'done', output: 'TODO' } },
+            { id: 22, event: { type: 'tool-call', engineId: 'cesar', tool: 'Read', input: '{"file_path":"a.ts"}', status: 'done', output: 'line 1' } },
+          ],
+        },
+      },
+      { id: 3, event: { type: 'engine-block', engineId: 'cesar', color: 124, content: 'done' } },
+    ] as any;
+
+    const coalesced = coalesceToolCallBlocks(blocks);
+
+    expect(coalesced).toHaveLength(2);
+    expect(coalesced[0].event.type).toBe('tool-call-group');
+    expect((coalesced[0].event as any).blocks).toHaveLength(3);
+  });
+
+  it('keeps read/search-only collapsed groups to one quiet summary row', () => {
+    const blocks = [
+      {
+        id: 1,
+        event: {
+          type: 'tool-call-group',
+          blocks: [
+            { id: 11, event: { type: 'tool-call', engineId: 'cesar', tool: 'Read', input: '{"file_path":"README.md"}', status: 'done', output: 'readme' } },
+            { id: 12, event: { type: 'tool-call', engineId: 'cesar', tool: 'Grep', input: '{"pattern":"TODO"}', status: 'done', output: 'TODO' } },
+            { id: 13, event: { type: 'tool-call', engineId: 'cesar', tool: 'Read', input: '{"file_path":"package.json"}', status: 'done', output: '{}' } },
+          ],
+        },
+      },
+    ] as any;
+
+    const rows = buildTranscriptRows(blocks, 'chat', false, true);
+    const text = transcriptRowsToPlainText(rows, 0, 0, 0, 999);
+
+    expect(rows).toHaveLength(1);
+    expect(text).toContain('3 tool calls');
+    expect(text).toContain('Read×2');
+    expect(text).toContain('Search');
+    expect(text).not.toContain('changed');
+    expect(text).not.toContain('[Ctrl+O] Open');
+    expect(text).not.toContain('README.md');
+    expect(text).not.toContain('package.json');
+  });
+
   it('always shows mutating code-change previews inside collapsed tool-call groups', () => {
     const blocks = [
       {
@@ -440,8 +500,82 @@ describe('app scroll helpers', () => {
     const text = transcriptRowsToPlainText(rows, 0, 0, 0, 999);
 
     expect(text).toContain('changed 1 file: packages/cli/src/kern/surfaces/app.kern');
+    expect(text).toContain('[Ctrl+O] Open');
     expect(rows.some((row: any) => row.kind === 'diff' && row.text === '-old line')).toBe(true);
     expect(rows.some((row: any) => row.kind === 'diff' && row.text === '+new line')).toBe(true);
+  });
+
+  it('shows MCP AgonEdit previews inside collapsed tool-call groups', () => {
+    const blocks = [
+      {
+        id: 1,
+        event: {
+          type: 'tool-call-group',
+          blocks: [
+            {
+              id: 11,
+              event: {
+                type: 'tool-call',
+                engineId: 'cesar',
+                tool: 'AgonEdit',
+                input: JSON.stringify({
+                  file_path: 'packages/cli/src/kern/cesar/session.kern',
+                  old_string: 'old mcp',
+                  new_string: 'new mcp',
+                }),
+                status: 'done',
+              },
+            },
+          ],
+        },
+      },
+    ] as any;
+
+    const rows = buildTranscriptRows(blocks, 'chat', false, true);
+    const text = transcriptRowsToPlainText(rows, 0, 0, 0, 999);
+
+    expect(text).toContain('changed 1 file: packages/cli/src/kern/cesar/session.kern');
+    expect(text).toContain('[Ctrl+O] Open');
+    expect(rows.some((row: any) => row.kind === 'diff' && row.text === '-old mcp')).toBe(true);
+    expect(rows.some((row: any) => row.kind === 'diff' && row.text === '+new mcp')).toBe(true);
+  });
+
+  it('shows patch-tool changes and open hint inside collapsed tool-call groups', () => {
+    const blocks = [
+      {
+        id: 1,
+        event: {
+          type: 'tool-call-group',
+          blocks: [
+            {
+              id: 11,
+              event: {
+                type: 'tool-call',
+                engineId: 'cesar',
+                tool: 'apply_patch',
+                input: [
+                  '*** Begin Patch',
+                  '*** Update File: packages/cli/src/kern/blocks/file-rail.kern',
+                  '@@',
+                  '-old rail',
+                  '+new rail',
+                  '*** End Patch',
+                ].join('\n'),
+                status: 'done',
+              },
+            },
+          ],
+        },
+      },
+    ] as any;
+
+    const rows = buildTranscriptRows(blocks, 'chat', false, true);
+    const text = transcriptRowsToPlainText(rows, 0, 0, 0, 999);
+
+    expect(text).toContain('changed 1 file: packages/cli/src/kern/blocks/file-rail.kern');
+    expect(text).toContain('[Ctrl+O] Open');
+    expect(rows.some((row: any) => row.kind === 'diff' && row.text === '-old rail')).toBe(true);
+    expect(rows.some((row: any) => row.kind === 'diff' && row.text === '+new rail')).toBe(true);
   });
 
   it('finds the latest approval command or large tool output for the focused viewer', () => {

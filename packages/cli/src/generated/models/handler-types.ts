@@ -74,6 +74,19 @@ export interface PendingDelegation {
   engines?: string[];
   taskKind?: 'edit'|'investigate';
   maxTurns?: number;
+  cesarEngineId?: string;
+  cesarBackend?: string;
+  hasNativeTools?: boolean;
+  toolCount?: number;
+  toolEventCount?: number;
+  toolCallTurns?: number;
+  toolsUsed?: string[];
+  nativeToolCalls?: number;
+  mcpToolCalls?: number;
+  xmlToolCalls?: number;
+  narratedToolStalls?: number;
+  autoToolExecutions?: number;
+  confidenceToolUsed?: boolean;
   createdAt: number;
 }
 

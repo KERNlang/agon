@@ -10,7 +10,7 @@ import { readCesarToolReliability, formatCesarReliabilityLine, shouldDowngradeCe
 
 import { planCostEstimator } from '@agon/core';
 
-import type { CostEstimate } from '@agon/core';
+import type { CostEstimate, AgonConfig } from '@agon/core';
 
 export type CesarUncertaintyFamily = 'none' | 'challenge' | 'tradeoff' | 'open' | 'fuzzy' | 'specialist' | 'implementation' | 'review';
 

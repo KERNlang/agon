@@ -860,9 +860,12 @@ const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:Out
 
   return (
     <Box paddingLeft={2} flexDirection="column">
-      <Text>
-        <Text italic dimColor color="#8b8b8b">{'  \u25B9 '}{confidenceLabel ? `${confidenceLabel} \u00b7 ` : ''}{blocks.length}{' tool calls'}{summary ? ` \u00b7 ${summary}` : ''}{statusSummary}{changedSummary}</Text>
-      </Text>
+      {confidenceLabel && (
+        <Text>
+          <Text italic dimColor color="#8b8b8b">{'  \u25B9 '}{confidenceLabel}</Text>
+        </Text>
+      )}
+      <Text dimColor>{'    '}{blocks.length}{' tool calls'}{summary ? ` \u00b7 ${summary}` : ''}{statusSummary}{changedSummary}{'  '}<Text color="#f59e0b">{'Ctrl+E'}</Text></Text>
       {changeRows.map((row: { key:string; text:string }) => (
         <DiffLine key={row.key} line={row.text} maxWidth={contentWidth(10)} />
       ))}
@@ -874,7 +877,7 @@ const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:Out
 });
 export { ToolCallGroup };
 
-// @kern-source: engine:1049
+// @kern-source: engine:1052
 const DebateGroup = React.memo(function DebateGroup({ blocks }: { blocks:OutputBlock[] }) {
   const round = (blocks[0]?.event as any)?.round ?? '?';
   const w = contentWidth(6);
@@ -900,7 +903,7 @@ const DebateGroup = React.memo(function DebateGroup({ blocks }: { blocks:OutputB
 });
 export { DebateGroup };
 
-// @kern-source: engine:1078
+// @kern-source: engine:1081
 const BidGroup = React.memo(function BidGroup({ blocks }: { blocks:OutputBlock[] }) {
   const w = contentWidth(6);
   return (
@@ -1062,7 +1065,7 @@ export function parsePatchPreview(rawInput: string, parsed: any): { files:string
   return { files, lines, additions, deletions };
 }
 
-// @kern-source: engine:1035
+// @kern-source: engine:1038
 export function extractSummary(text: string, maxLen: number): string {
   let s = text.replace(/<think>[\s\S]*?<\/think>\s*/gi, '');
   s = s.replace(/^#+\s+.+\n/gm, '');

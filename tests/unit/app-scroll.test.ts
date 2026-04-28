@@ -210,11 +210,15 @@ describe('app scroll helpers', () => {
     ] as any;
 
     const rows = buildTranscriptRows(blocks, 'chat', false, true);
+    const confidenceRow = rows.find((row: any) => row.key.includes('confidence'));
     const summaryRow = rows.find((row: any) => row.key.includes('tool-group-head'));
     const text = transcriptRowsToPlainText(rows, 0, 0, 999, 999);
 
+    expect(confidenceRow).toBeTruthy();
+    expect(confidenceRow.segments[0]).toMatchObject({ italic: true, dimColor: true });
     expect(summaryRow).toBeTruthy();
-    expect(summaryRow.segments[0]).toMatchObject({ italic: true, dimColor: true });
+    expect(summaryRow.paddingLeft).toBe(4);
+    expect(summaryRow.segments.some((segment: any) => segment.text === 'Ctrl+E')).toBe(true);
     expect(text).toContain('▹ 45% confidence');
     expect(text).toContain('inspect first');
     expect(text).toContain('3 tool calls');

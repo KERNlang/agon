@@ -10,6 +10,7 @@ import { buildKernDraftPrompt, parseKernDraft, buildKernRankPrompt } from '@kern
 
 import type { KernDraft } from '@kernlang/protocol';
 
+// @kern-source: brainstorm:7
 export function calibrateConfidence(engineId: string, rawBid: number): number {
   // Use Glicko-2 brainstorm ratings for calibration, fall back to global
   const ratings = getRatings();
@@ -20,6 +21,7 @@ export function calibrateConfidence(engineId: string, rawBid: number): number {
   return Math.round(rawBid * 0.3 + winRate * 100 * 0.7);
 }
 
+// @kern-source: brainstorm:18
 export function qualityScore(engineId: string, draft: KernDraft): number {
   let score = 0;
   if (draft.approach.length > 10) score += 20;
@@ -33,6 +35,7 @@ export function qualityScore(engineId: string, draft: KernDraft): number {
   return score;
 }
 
+// @kern-source: brainstorm:32
 export function rankDrafts(drafts: {engineId:string, draft:KernDraft, raw:string}[]): {engineId:string, draft:KernDraft, raw:string}[] {
   return [...drafts].sort((a, b) => {
     const scoreA = qualityScore(a.engineId, a.draft);
@@ -41,6 +44,7 @@ export function rankDrafts(drafts: {engineId:string, draft:KernDraft, raw:string
   });
 }
 
+// @kern-source: brainstorm:41
 export async function collectRankedDrafts(opts: {question:string, context?:string, engines:string[], registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, signal?:AbortSignal}): Promise<{engineId:string, draft:KernDraft, raw:string}[]> {
   const draftPrompt = buildKernDraftPrompt({
     question: opts.question,
@@ -89,6 +93,7 @@ export async function collectRankedDrafts(opts: {question:string, context?:strin
   return rankDrafts(drafts);
 }
 
+// @kern-source: brainstorm:90
 export function scoutScore(bid: ScoutBid): number {
   let score = 0;
   // Confidence: 40% weight (0-40 points)
@@ -102,6 +107,7 @@ export function scoutScore(bid: ScoutBid): number {
   return score;
 }
 
+// @kern-source: brainstorm:104
 export async function runScout(opts: {question:string, context?:string, engines:string[], scoutCount?:number, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, signal?:AbortSignal}): Promise<{rankedBids:ScoutBid[], leadEngine:string, topConfidence:number, disagreementSpread:number}> {
   const count = opts.scoutCount ?? 2;
   const scouts = opts.engines.slice(0, count);
@@ -142,6 +148,7 @@ export async function runScout(opts: {question:string, context?:string, engines:
   };
 }
 
+// @kern-source: brainstorm:145
 export function fallbackParse(output: string): KernDraft {
   const stripped = output.replace(/\x60\x60\x60(?:json)?\s*/gi, '').replace(/\x60\x60\x60/g, '');
   let depth = 0;
@@ -182,6 +189,7 @@ export function fallbackParse(output: string): KernDraft {
   };
 }
 
+// @kern-source: brainstorm:186
 export async function runBrainstorm(opts: {question:string, context?:string, engines:string[], registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, signal?:AbortSignal}): Promise<BrainstormResult> {
   const brainstormId = randomUUID().slice(0, 8);
   const sidechain = createSidechainLogger({

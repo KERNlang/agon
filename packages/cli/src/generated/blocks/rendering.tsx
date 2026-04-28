@@ -18,11 +18,13 @@ import { parseAnsiText, hasAnsiCodes, stripAnsi } from '../signals/ansi-parse.js
 
 import type { AnsiSegment } from '../signals/ansi-parse.js';
 
+// @kern-source: rendering:126
 export interface SyntaxToken {
   text: string;
   color?: string;
 }
 
+// @kern-source: rendering:184
 export function DiffLine({ line, maxWidth }: { line:string; maxWidth:number }) {
   const truncated = truncateCodeLine(line, maxWidth);
   if (line.startsWith('+')) {
@@ -37,6 +39,7 @@ export function DiffLine({ line, maxWidth }: { line:string; maxWidth:number }) {
   return <Text>{truncated}</Text>;
 }
 
+// @kern-source: rendering:204
 export function SyntaxLine({ line, maxWidth }: { line:string; maxWidth:number }) {
   if (line.length > maxWidth) {
     const visible = line.slice(0, maxWidth - 4);
@@ -57,6 +60,7 @@ export function SyntaxLine({ line, maxWidth }: { line:string; maxWidth:number })
   );
 }
 
+// @kern-source: rendering:230
 export function CodeBlockView({ segment, borderColor }: { segment:ContentSegment & { type: 'code' }; borderColor:string }) {
   const codeWidth = contentWidth(8);
   const lines = (segment.code ?? '').split('\n');
@@ -96,6 +100,7 @@ export function CodeBlockView({ segment, borderColor }: { segment:ContentSegment
   );
 }
 
+// @kern-source: rendering:275
 export function RichSpanView({ span }: { span:InlineSpan }) {
   if (span.style.code) {
     return <Text color="#a78bfa" backgroundColor="#1e1033">{span.text}</Text>;
@@ -112,6 +117,7 @@ export function RichSpanView({ span }: { span:InlineSpan }) {
   return el;
 }
 
+// @kern-source: rendering:296
 export function RichLineView({ line, borderColor }: { line:RichLine; borderColor?:string }) {
   const border = borderColor ? <Text color={borderColor}>{'\u2502 '}</Text> : null;
   const indent = line.indent > 0 ? '  '.repeat(line.indent) : '';
@@ -133,6 +139,7 @@ export function RichLineView({ line, borderColor }: { line:RichLine; borderColor
   return <Text>{border}{indent}{listIndent}{marker}{line.spans.map((s: InlineSpan, i: number) => <RichSpanView key={i} span={s} />)}</Text>;
 }
 
+// @kern-source: rendering:323
 export function MarkdownTableView({ headers, rows, alignments, borderColor }: { headers:string[]; rows:string[][]; alignments:('left' | 'center' | 'right')[]; borderColor:string }) {
   const colWidths = headers.map((h: string, i: number) => {
     let max = h.length;
@@ -168,6 +175,7 @@ export function MarkdownTableView({ headers, rows, alignments, borderColor }: { 
   );
 }
 
+// @kern-source: rendering:366
 export function RenderedSegments({ segments, borderColor, wrapWidth }: { segments:ContentSegment[]; borderColor:string; wrapWidth:number }) {
   return (
     <>
@@ -228,6 +236,7 @@ export function RenderedSegments({ segments, borderColor, wrapWidth }: { segment
   );
 }
 
+// @kern-source: rendering:433
 export function GradientLine({ text, colors }: { text:string; colors:readonly string[] }) {
   const step = Math.max(1, Math.ceil(text.length / colors.length));
   return (
@@ -240,6 +249,7 @@ export function GradientLine({ text, colors }: { text:string; colors:readonly st
   );
 }
 
+// @kern-source: rendering:449
 export function AnsiLine({ text, maxWidth, fallbackDim }: { text:string; maxWidth:number; fallbackDim?:boolean }) {
   if (!hasAnsiCodes(text)) {
     const display = text.length > maxWidth ? text.slice(0, maxWidth - 4) + '\u2026' : text;
@@ -262,8 +272,10 @@ export function AnsiLine({ text, maxWidth, fallbackDim }: { text:string; maxWidt
   );
 }
 
+// @kern-source: rendering:16
 export const CONTENT_WIDTH_OVERRIDE: {value:number|null} = ({ value: null });
 
+// @kern-source: rendering:19
 export function contentWidth(padding: number): number {
   const termWidth = CONTENT_WIDTH_OVERRIDE.value ?? (process.stdout.columns || 100);
   return Math.max(termWidth - padding, 40);
@@ -272,6 +284,7 @@ export function contentWidth(padding: number): number {
 /**
  * Run pure render helpers against an explicit terminal width. Used by replay tests so wrapping is not tied to the current test runner TTY.
  */
+// @kern-source: rendering:25
 export function withContentWidthOverride(termWidth: number, fn: ()=>any): any {
   const previous = CONTENT_WIDTH_OVERRIDE.value;
   CONTENT_WIDTH_OVERRIDE.value = Math.max(40, Math.floor(Number(termWidth) || 100));
@@ -282,6 +295,7 @@ export function withContentWidthOverride(termWidth: number, fn: ()=>any): any {
   }
 }
 
+// @kern-source: rendering:39
 export function color256toHex(code: number): string {
   const basic16: Record<number, string> = {
     0: '#000000', 1: '#aa0000', 2: '#00aa00', 3: '#aa5500', 4: '#0000aa',
@@ -302,32 +316,44 @@ export function color256toHex(code: number): string {
   return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
 }
 
+// @kern-source: rendering:60
 export function engineColor(id: string): string {
   // Match known engines by prefix (e.g. "zai-coding-plan-glm-5.1" → "zai")
   const prefix = id.split('-')[0];
   return color256toHex(ENGINE_COLORS[id] ?? ENGINE_COLORS[prefix] ?? 124);
 }
 
+// @kern-source: rendering:69
 export const CODE_RAIL: string = '\u258c';
 
+// @kern-source: rendering:72
 export const CODE_RAIL_COLOR: string = '#585858';
 
+// @kern-source: rendering:75
 export const MAX_CODE_LINES: number = 60;
 
+// @kern-source: rendering:80
 export const SYN_KEYWORD: string = '#c084fc';
 
+// @kern-source: rendering:83
 export const SYN_STRING: string = '#4ade80';
 
+// @kern-source: rendering:86
 export const SYN_COMMENT: string = '#6b7280';
 
+// @kern-source: rendering:89
 export const SYN_NUMBER: string = '#fb923c';
 
+// @kern-source: rendering:92
 export const SYN_TYPE: string = '#38bdf8';
 
+// @kern-source: rendering:95
 export const SYN_PUNCT: string = '#94a3b8';
 
+// @kern-source: rendering:98
 export const SYN_FN: string = '#fbbf24';
 
+// @kern-source: rendering:101
 export const KEYWORDS: Set<string> = new Set([
   'const','let','var','function','return','if','else','for','while','do','switch','case','break','continue',
   'class','extends','implements','new','this','super','import','export','from','default','async','await',
@@ -338,6 +364,7 @@ export const KEYWORDS: Set<string> = new Set([
   'true','false','null','undefined','nil','None','True','False',
 ]);
 
+// @kern-source: rendering:114
 export const TYPES: Set<string> = new Set([
   'string','number','boolean','object','any','void','never','unknown','bigint','symbol',
   'String','Number','Boolean','Object','Array','Map','Set','Promise','Record','Partial',
@@ -345,6 +372,7 @@ export const TYPES: Set<string> = new Set([
   'str','Vec','Option','Result','Box','Rc','Arc',
 ]);
 
+// @kern-source: rendering:130
 export function tokenizeLine(line: string): SyntaxToken[] {
   const tokens: SyntaxToken[] = [];
   const pattern = /\/\/.*$|\/\*.*?\*\/|#.*$|""".*?"""|'''.*?'''|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`|\b\d+(?:\.\d+)?\b|[a-zA-Z_$]\w*(?=\s*\()|[a-zA-Z_$]\w*|[{}()\[\];:,.<>=!&|?+\-*/%^~@]|\s+/g;

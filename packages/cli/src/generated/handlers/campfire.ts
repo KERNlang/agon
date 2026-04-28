@@ -14,6 +14,7 @@ import { sessionResultStore } from '../models/session-results.js';
 
 import type { Dispatch, HandlerContext, EngineProgress } from '../../handlers/types.js';
 
+// @kern-source: campfire:9
 export async function handleCampfire(topic: string, dispatch: Dispatch, ctx: HandlerContext, opts?: {seedPlan?:string, observerStrategy?:'lead-first'|'all-respond', leadEngine?:string}): Promise<void> {
   const cfAbort = new AbortController();
   try {

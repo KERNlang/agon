@@ -11,6 +11,7 @@ import { loadConfig, configSet } from '@agon/core';
 /**
  * Live state for a running autonomous agent session. Fed by agent-* OutputEvents, rendered by surfaces/agent.kern::AgentProgressView. teamId groups members of a single AgentTeam run for explicit clear-by-team. completedAt is set by agent-step-end and consumed by the TTL pruner in app.kern.
  */
+// @kern-source: output:10
 export interface AgentProgressSnapshot {
   engineId: string;
   turnIndex: number;
@@ -34,12 +35,14 @@ export interface AgentProgressSnapshot {
 /**
  * Per-engine streaming buffer. Sharding on engineId prevents N concurrent agents from clobbering each other's in-flight tokens.
  */
+// @kern-source: output:30
 export interface StreamingEntry {
   engineId: string;
   content: string;
   startedAt: number;
 }
 
+// @kern-source: output:36
 export interface OutputState {
   liveSpinner: {message:string,color?:number,engineId?:string}|null;
   liveProgress: EngineProgress[]|null;
@@ -47,6 +50,7 @@ export interface OutputState {
   agentProgress: Record<string,AgentProgressSnapshot>;
 }
 
+// @kern-source: output:42
 export interface OutputActions {
   setLiveSpinner: (val:any) => void;
   setLiveProgress: (val:EngineProgress[]|null) => void;
@@ -65,12 +69,16 @@ export interface OutputActions {
   clearAgentProgressByTeam: (teamId:string) => void;
 }
 
+// @kern-source: output:60
 export const _thinkingBuffer: {engineId:string,content:string} = { engineId: '', content: '' };
 
+// @kern-source: output:64
 export const _permissionQueue: Array<{tool:string,command:string,description?:string,reason:string,resolve:(approved:boolean)=>void}> = [] as Array<{tool:string,command:string,description?:string,reason:string,resolve:(approved:boolean)=>void}>;
 
+// @kern-source: output:67
 export const _sessionAllowList: string[] = [] as string[];
 
+// @kern-source: output:70
 export function getSessionAllowList(): string[] {
   return _sessionAllowList;
 }
@@ -78,6 +86,7 @@ export function getSessionAllowList(): string[] {
 /**
  * Reject all queued permissions and clear the queue. Called on interrupt/cancel.
  */
+// @kern-source: output:73
 export function clearPermissionQueue(): void {
   while (_permissionQueue.length > 0) {
     const entry = _permissionQueue.shift()!;
@@ -88,18 +97,22 @@ export function clearPermissionQueue(): void {
 /**
  * Drop any buffered thinking-chunk content. Called on interrupt / clear / SIGINT so the next turn doesn't emit stale content as a fresh block.
  */
+// @kern-source: output:82
 export function clearThinkingBuffer(): void {
   _thinkingBuffer.engineId = '';
   _thinkingBuffer.content = '';
 }
 
+// @kern-source: output:95
 export const _pendingToolCalls: any[] = [] as any[];
 
+// @kern-source: output:98
 export const _pendingFlushTimer: { timer: any, actions: any } = ({ timer: null, actions: null }) as any;
 
 /**
  * Emit any buffered tool-call events as a single tool-call-group block.
  */
+// @kern-source: output:101
 export function flushPendingToolCalls(actions: OutputActions): void {
   if (_pendingFlushTimer.timer) {
     clearTimeout(_pendingFlushTimer.timer);
@@ -114,6 +127,7 @@ export function flushPendingToolCalls(actions: OutputActions): void {
 /**
  * Debounce-flush pending tool-calls 300ms after the last one — covers turns that end on a tool-call without any trailing event.
  */
+// @kern-source: output:114
 export function schedulePendingFlush(actions: OutputActions): void {
   _pendingFlushTimer.actions = actions;
   if (_pendingFlushTimer.timer) clearTimeout(_pendingFlushTimer.timer);
@@ -126,6 +140,7 @@ export function schedulePendingFlush(actions: OutputActions): void {
 /**
  * Auto-approve queued permissions whose base command is already in allowedCommands.
  */
+// @kern-source: output:125
 function _drainAutoApproved(actions: OutputActions): void {
   const cfg = loadConfig();
   const allowed: string[] = (cfg as any).allowedCommands ?? [];
@@ -143,6 +158,7 @@ function _drainAutoApproved(actions: OutputActions): void {
   }
 }
 
+// @kern-source: output:144
 function _showNextPermission(actions: OutputActions): void {
   // First drain any that are now auto-approved (e.g. after "Always")
   _drainAutoApproved(actions);
@@ -202,6 +218,7 @@ function _showNextPermission(actions: OutputActions): void {
 /**
  * Process a single OutputEvent — updates spinner, streaming, and block state.
  */
+// @kern-source: output:201
 export function handleOutputEvent(event: OutputEvent, state: OutputState, actions: OutputActions, mode: string, chatStartTime: number): void {
   // Flush accumulated thinking buffer when any non-thinking event arrives
   if (event.type !== 'thinking-chunk' && _thinkingBuffer.content) {

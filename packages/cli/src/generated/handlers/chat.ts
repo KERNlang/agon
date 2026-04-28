@@ -14,8 +14,10 @@ import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 
 import { yieldToInk } from '../cesar/brain.js';
 
+// @kern-source: chat:10
 export const _cachedCwd: {value:string|null} = { value: null };
 
+// @kern-source: chat:13
 function cachedCwd(): string {
   if (_cachedCwd.value === null) {
     _cachedCwd.value = resolveWorkingDir();
@@ -26,10 +28,12 @@ function cachedCwd(): string {
 /**
  * Call when workspace changes (e.g. /workspace switch).
  */
+// @kern-source: chat:21
 export function invalidateCwdCache(): void {
   _cachedCwd.value = null;
 }
 
+// @kern-source: chat:27
 function detectTargetEngine(input: string, availableIds: string[]): {engineId:string|null,message:string} {
   const lower = input.toLowerCase();
   for (const id of availableIds) {
@@ -45,6 +49,7 @@ function detectTargetEngine(input: string, availableIds: string[]): {engineId:st
   return { engineId: null, message: input };
 }
 
+// @kern-source: chat:43
 export async function handleChat(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[], opts?: {toolPolicy?:'full'|'none'}): Promise<void> {
   const abort = new AbortController();
   try {

@@ -10,6 +10,7 @@ import { runTeamForge } from '@agon/forge';
 
 import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 
+// @kern-source: team-forge:7
 export async function handleTeamForge(task: string, fitnessCmd: string|null, dispatch: Dispatch, ctx: HandlerContext, membersPerSide?: number): Promise<void> {
   const teamAbort = new AbortController();
   try {

@@ -10,6 +10,7 @@ import { EngineRegistry, spawnWithTimeout, spawnStream, EngineNotFoundError, rea
 
 import { buildCommand, checkEnvVars, resolveModel, stripStreamJson, usesStreamJson } from './adapter-helpers.js';
 
+// @kern-source: adapter:7
 export class CliAdapter implements EngineAdapter {
   private registry: EngineRegistry;
 

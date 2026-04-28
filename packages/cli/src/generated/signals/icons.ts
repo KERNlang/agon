@@ -2,6 +2,7 @@
 
 import { loadConfig } from '@agon/core';
 
+// @kern-source: icons:3
 export interface IconSet {
   read: string;
   edit: string;
@@ -26,6 +27,7 @@ export interface IconSet {
   dotOff: string;
 }
 
+// @kern-source: icons:26
 export const ROMAN_ICONS: IconSet = ({
   read:      '\u039e',
   edit:      '\u270e',
@@ -50,6 +52,7 @@ export const ROMAN_ICONS: IconSet = ({
   dotOff:    '\u25c7',
 });
 
+// @kern-source: icons:53
 export const CLASSIC_ICONS: IconSet = ({
   read:      '\ud83d\udcc4',
   edit:      '\u270f\ufe0f',
@@ -77,6 +80,7 @@ export const CLASSIC_ICONS: IconSet = ({
 /**
  * Resolve icon set from config. Call once per render cycle.
  */
+// @kern-source: icons:80
 export function icons(): IconSet {
   const theme = loadConfig().iconTheme ?? 'roman';
   return theme === 'classic' ? CLASSIC_ICONS : ROMAN_ICONS;

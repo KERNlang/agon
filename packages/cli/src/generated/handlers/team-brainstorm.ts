@@ -10,6 +10,7 @@ import { runTeamBrainstorm } from '@agon/forge';
 
 import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 
+// @kern-source: team-brainstorm:7
 export async function handleTeamBrainstorm(question: string, dispatch: Dispatch, ctx: HandlerContext, membersPerSide?: number): Promise<void> {
   const teamAbort = new AbortController();
   try {

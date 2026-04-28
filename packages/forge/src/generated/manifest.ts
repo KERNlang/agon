@@ -8,6 +8,7 @@ import type { ForgeManifest } from '@agon/core';
 
 import { RUNS_DIR } from '@agon/core';
 
+// @kern-source: manifest:6
 export function writeManifest(manifest: ForgeManifest): string {
   const manifestPath = join(manifest.forgeDir, 'manifest.json');
   writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
@@ -19,11 +20,13 @@ export function writeManifest(manifest: ForgeManifest): string {
   return manifestPath;
 }
 
+// @kern-source: manifest:18
 export function readManifest(forgeDir: string): ForgeManifest {
   const manifestPath = join(forgeDir, 'manifest.json');
   return JSON.parse(readFileSync(manifestPath, 'utf-8')) as ForgeManifest;
 }
 
+// @kern-source: manifest:24
 export function updateManifest(forgeDir: string, updates: Partial<ForgeManifest>): ForgeManifest {
   const existing = readManifest(forgeDir);
   const merged = { ...existing, ...updates };

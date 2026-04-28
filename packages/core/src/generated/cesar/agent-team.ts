@@ -21,6 +21,7 @@ import type { ContextThread } from './context-thread.js';
 /**
  * Typed error for AgentTeam initialization or runtime failures.
  */
+// @kern-source: agent-team:42
 export function makeAgentTeamError(message: string, cause?: unknown): Error {
   const err = new Error(`AgentTeam: ${message}`);
   err.name = 'AgentTeamError';
@@ -31,6 +32,7 @@ export function makeAgentTeamError(message: string, cause?: unknown): Error {
 /**
  * Thrown by every AgentTeam method after cleanup() runs.
  */
+// @kern-source: agent-team:51
 export function makeAgentTeamDisposedError(): Error {
   const err = new Error('AgentTeam: instance has been disposed (cleanup() already ran). Construct a new AgentTeam for further work.');
   err.name = 'AgentTeamDisposedError';
@@ -40,6 +42,7 @@ export function makeAgentTeamDisposedError(): Error {
 /**
  * One member of an agent team. The api config carries the engine credentials, model, and base URL. contextWindowTokens (optional) comes from the engine/model registry — enables per-engine budget sizing so small-window engines don't get 700k history.
  */
+// @kern-source: agent-team:61
 export interface AgentTeamMemberConfig {
   engineId: string;
   api: ApiConfig;
@@ -50,6 +53,7 @@ export interface AgentTeamMemberConfig {
 /**
  * Hard team-level budget enforced via runtime polling in step(). Per-member AgentBudget covers turns/tokens-per-member; AgentTeamBudget covers the pooled across-team total.
  */
+// @kern-source: agent-team:70
 export interface AgentTeamBudget {
   maxTeamCostUsd: number;
   maxTeamWallClockMs: number;
@@ -58,6 +62,7 @@ export interface AgentTeamBudget {
 /**
  * Configuration for an AgentTeam run. cwd is the repo root the user invoked from; isolate controls whether each member gets its own worktree. teamBudget+costFn enable runtime cost-ceiling enforcement (RT-12). thread is the shared ContextThread — when provided, all members read prior conversation history from it and write their per-turn output back into it so the next step (or a re-routed engine) has full context.
  */
+// @kern-source: agent-team:77
 export interface AgentTeamConfig {
   members: AgentTeamMemberConfig[];
   cwd: string;
@@ -77,6 +82,7 @@ export interface AgentTeamConfig {
 /**
  * Per-member outcome from a single AgentTeam.step() invocation.
  */
+// @kern-source: agent-team:95
 export interface AgentTeamMemberResult {
   engineId: string;
   worktreePath: string|null;
@@ -87,6 +93,7 @@ export interface AgentTeamMemberResult {
 /**
  * Aggregate outcome of an AgentTeam.step() call. members preserves the input order.
  */
+// @kern-source: agent-team:104
 export interface AgentTeamResult {
   members: AgentTeamMemberResult[];
   runId: string;
@@ -99,6 +106,7 @@ export interface AgentTeamResult {
 /**
  * Generate a per-team run ID. Format: team-<base36 ts>-<4 hex>. Two concurrent constructions never collide (4 hex = 65k entropy).
  */
+// @kern-source: agent-team:115
 function makeRunId(): string {
   const ts = Date.now().toString(36);
   const rand = randomBytes(2).toString('hex');
@@ -108,6 +116,7 @@ function makeRunId(): string {
 /**
  * Wraps N AgentSession instances in N worktrees with parallel step() and shared budget. Created with a config; call initialize() once before step().
  */
+// @kern-source: agent-team:125
 export class AgentTeam {
   private config: AgentTeamConfig;
   private members: Record<string, AgentSession>;

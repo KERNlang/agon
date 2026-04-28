@@ -10,6 +10,7 @@ import { engineColor } from './rendering.js';
 
 import { icons } from '../signals/icons.js';
 
+// @kern-source: arena:33
 export function ForgeArena({ engines }: { engines:EngineProgress[] }) {
   const elapsed = engines[0]?.elapsed ?? 0;
   const frame = elapsed % FORGE_BORDERS.length;
@@ -51,6 +52,7 @@ export function ForgeArena({ engines }: { engines:EngineProgress[] }) {
   );
 }
 
+// @kern-source: arena:96
 export function BrainstormStorm({ engines }: { engines:EngineProgress[] }) {
   const elapsed = engines[0]?.elapsed ?? 0;
   const frame = elapsed % STORM_BOLTS.length;
@@ -88,6 +90,7 @@ export function BrainstormStorm({ engines }: { engines:EngineProgress[] }) {
   );
 }
 
+// @kern-source: arena:156
 export function CampfireFire({ engines }: { engines:EngineProgress[] }) {
   const elapsed = engines[0]?.elapsed ?? 0;
   const frame = elapsed % FIRE_FRAMES.length;
@@ -140,6 +143,7 @@ export function CampfireFire({ engines }: { engines:EngineProgress[] }) {
   );
 }
 
+// @kern-source: arena:222
 export function TribunalCourt({ engines }: { engines:EngineProgress[] }) {
   const elapsed = engines[0]?.elapsed ?? 0;
   const frame = elapsed % SCALES_FRAMES.length;
@@ -185,6 +189,7 @@ export function TribunalCourt({ engines }: { engines:EngineProgress[] }) {
   );
 }
 
+// @kern-source: arena:14
 export const FORGE_BORDERS: string[][] = [
   ['\u2694\u2550\u2550\u2550\u2550\u2550 T H E  F O R G E \u2550\u2550\u2550\u2550\u2550\u2694',
    '\u2694\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2694'],
@@ -194,12 +199,14 @@ export const FORGE_BORDERS: string[][] = [
    '\u2694\u2550\u2726\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2726\u2550\u2694'],
 ];
 
+// @kern-source: arena:26
 function forgeBar(pct: number, width: number): string {
   const filled = Math.round(pct * width);
   const half = pct > 0 && filled < width ? 1 : 0;
   return '\u2588'.repeat(filled) + (half ? '\u2592' : '') + '\u2591'.repeat(Math.max(0, width - filled - half));
 }
 
+// @kern-source: arena:78
 export const STORM_BOLTS: string[] = [
   '\u26a1    \u26a1      \u26a1',
   '   \u26a1      \u26a1   ',
@@ -207,11 +214,13 @@ export const STORM_BOLTS: string[] = [
   '  \u26a1   \u26a1      ',
 ];
 
+// @kern-source: arena:88
 export const STORM_CLOUDS: string[] = [
   '  \u2571\u2572\u2571\u2572\u2571\u2572\u2571\u2572\u2571\u2572\u2571\u2572',
   ' \u2572\u2571\u2572\u2571\u2572\u2571\u2572\u2571\u2572\u2571\u2572\u2571\u2572',
 ];
 
+// @kern-source: arena:138
 export const FIRE_FRAMES: string[][] = [
   ['       (  ) (  )  ',
    '      (    )(   ) ',
@@ -227,6 +236,7 @@ export const FIRE_FRAMES: string[][] = [
    '      \u2571\u2591\u2592\u2593\u2588\u2588\u2593\u2592\u2591\u2572 '],
 ];
 
+// @kern-source: arena:213
 export const SCALES_FRAMES: string[] = [
   '  \u2696\u2550\u2550\u2550\u2550 T R I B U N A L \u2550\u2550\u2550\u2550\u2696',
   '  \u2696\u2550\u2550\u2726\u2550 T R I B U N A L \u2550\u2726\u2550\u2550\u2696',

@@ -2,6 +2,7 @@
 
 import type { TaskClass } from '../models/types.js';
 
+// @kern-source: task-classifier:3
 export function classifyTask(description: string): TaskClass {
   const PATTERNS: [RegExp, TaskClass][] = [
     [/\b(tests?|spec|coverage|assert)\b/i, 'test'],

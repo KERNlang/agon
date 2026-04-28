@@ -8,13 +8,16 @@ import { RUNS_DIR } from '@agon/core';
 
 import type { OutputBlock } from '../blocks/engine.js';
 
+// @kern-source: block-archive:10
 export const MAX_LIVE_BLOCKS: number = 500;
 
+// @kern-source: block-archive:13
 export const ARCHIVE_BATCH: number = 100;
 
 /**
  * Per-session archive path under RUNS_DIR. Safe to call repeatedly — same sessionStartTime yields the same path.
  */
+// @kern-source: block-archive:16
 export function makeBlockArchivePath(sessionStartTime: number): string {
   const dir = join(RUNS_DIR, `live-${sessionStartTime}`);
   mkdirSync(dir, { recursive: true });
@@ -24,6 +27,7 @@ export function makeBlockArchivePath(sessionStartTime: number): string {
 /**
  * Append blocks as NDJSON. Fire-and-forget: logs a warning on failure but never throws.
  */
+// @kern-source: block-archive:24
 export function archiveBlocks(archivePath: string, blocks: OutputBlock[]): void {
   if (blocks.length === 0) return;
   try {
@@ -35,6 +39,7 @@ export function archiveBlocks(archivePath: string, blocks: OutputBlock[]): void 
   }
 }
 
+// @kern-source: block-archive:39
 export function appendBlockWithCap(prev: OutputBlock[], block: OutputBlock, archivePath: string): OutputBlock[] {
   const next = [...prev, block];
   if (next.length <= MAX_LIVE_BLOCKS) return next;

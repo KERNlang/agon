@@ -10,17 +10,20 @@ import type { TribunalMode, TribunalModeConfig } from './tribunal-modes.js';
 
 import { getModeConfig, buildModePrompt, buildModeSummaryPrompt } from './tribunal-modes.js';
 
+// @kern-source: tribunal:7
 export interface TribunalPosition {
   engineId: string;
   position: string;
   arguments: string[];
 }
 
+// @kern-source: tribunal:12
 export interface TribunalRound {
   round: number;
   positions: TribunalPosition[];
 }
 
+// @kern-source: tribunal:16
 export interface TribunalResult {
   question: string;
   rounds: TribunalRound[];
@@ -29,12 +32,14 @@ export interface TribunalResult {
   mode?: string;
 }
 
+// @kern-source: tribunal:23
 export function buildFallbackSummary(positions: TribunalPosition[]): string {
   return positions
     .map((p) => `**${p.engineId} (${p.position})**: ${p.arguments[p.arguments.length - 1]?.slice(0, 200) ?? '(no response)'}...`)
     .join('\n\n');
 }
 
+// @kern-source: tribunal:30
 export async function runTribunal(opts: {question:string, engines:string[], rounds:number, mode?:TribunalMode, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, outputDir:string, onEvent?:(event:ForgeEvent)=>void, signal?: AbortSignal}): Promise<TribunalResult> {
   const { question, engines, rounds, registry, adapter, timeout, outputDir } = opts;
   const signal = opts.signal;

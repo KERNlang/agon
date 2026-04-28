@@ -8,6 +8,7 @@ import type { FileEntry } from '../signals/file-tracker.js';
 
 import { getFileDiff } from '../signals/file-tracker.js';
 
+// @kern-source: file-rail:44
 function FileRailEmpty() {
   return (
     <>
@@ -21,6 +22,7 @@ function FileRailEmpty() {
   );
 }
 
+// @kern-source: file-rail:58
 function FileRailDetail({ expandedFile, maxRows }: { expandedFile:FileEntry; maxRows:number }) {
   const rawDiff = expandedFile.status !== 'read' ? getFileDiff(expandedFile.path, 400) : '';
   // Strip noisy git header lines — we already show the file path
@@ -63,6 +65,7 @@ function FileRailDetail({ expandedFile, maxRows }: { expandedFile:FileEntry; max
   );
 }
 
+// @kern-source: file-rail:105
 const FileRail = React.memo(function FileRail({ files, maxRows, width, focused, selectedIndex, expandedPath }: { files:FileEntry[]; maxRows:number; width?:number; focused?:boolean; selectedIndex?:number; expandedPath?:string|null }) {
   const w = width ?? 36;
   const h = Math.max(4, maxRows + 2);
@@ -115,23 +118,27 @@ const FileRail = React.memo(function FileRail({ files, maxRows, width, focused, 
 });
 export { FileRail };
 
+// @kern-source: file-rail:10
 export function statusGlyph(status: string): string {
   if (status === 'edited') return 'M';
   if (status === 'created') return '+';
   return 'r';
 }
 
+// @kern-source: file-rail:17
 export function statusColor(status: string): string {
   if (status === 'edited') return '#22d3ee';
   if (status === 'created') return '#4ade80';
   return 'gray';
 }
 
+// @kern-source: file-rail:24
 export function truncateLeft(s: string, max: number): string {
   if (s.length <= max) return s;
   return '\u2026' + s.slice(s.length - max + 1);
 }
 
+// @kern-source: file-rail:30
 export function formatRelativeTime(ms: number): string {
   const diff = Date.now() - ms;
   const s = Math.floor(diff / 1000);

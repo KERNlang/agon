@@ -4,12 +4,14 @@ import type { EngineRegistry, EngineAdapter, DispatchResult } from '@agon/core';
 
 import { resolveWorkingDir } from '@agon/core';
 
+// @kern-source: delegate:4
 export interface DelegateResult {
   engineId: string;
   response: string;
   usage?: DispatchResult['usage'];
 }
 
+// @kern-source: delegate:9
 export async function runDelegate(opts: {engineId:string,task:string,mode?:string,registry:EngineRegistry,adapter:EngineAdapter,timeout:number,outputDir:string,signal?:AbortSignal}): Promise<DelegateResult> {
   const engine = opts.registry.get(opts.engineId);
   const result = await opts.adapter.dispatch({

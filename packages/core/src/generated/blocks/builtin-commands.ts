@@ -7,6 +7,7 @@ import type { CommandHandler } from '../signals/command-registry.js';
 /**
  * Register all built-in slash commands as metadata-only handlers in the CommandRegistry.
  */
+// @kern-source: builtin-commands:9
 export function registerBuiltinCommands(registry: CommandRegistry): void {
   const noop = async () => ({ handled: false, ranAsJob: false });
   const passthrough = (rest: string) => ({ input: rest });

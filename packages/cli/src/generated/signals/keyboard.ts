@@ -2,6 +2,7 @@
 
 import { navigateHistory, resolveEscapeAction, shouldQueuePlanModeOnTab, tryGhostComplete } from './app-input.js';
 
+// @kern-source: keyboard:7
 export interface KeyboardCtx {
   input: string;
   key: { ctrl?:boolean, shift?:boolean, escape?:boolean, tab?:boolean, upArrow?:boolean, downArrow?:boolean, leftArrow?:boolean, rightArrow?:boolean, pageUp?:boolean, pageDown?:boolean, home?:boolean, end?:boolean, return?:boolean };
@@ -26,6 +27,7 @@ export interface KeyboardCtx {
   fileRailExpanded: boolean;
 }
 
+// @kern-source: keyboard:30
 export type KeyboardAction =
   | { type: 'none' }
   | { type: 'exit' }
@@ -59,6 +61,7 @@ export type KeyboardAction =
 /**
  * Pure keyboard decision tree. Takes current state, returns action to execute.
  */
+// @kern-source: keyboard:65
 export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
   const { input, key } = ctx;
   const normalizedCtrlInput = key.ctrl

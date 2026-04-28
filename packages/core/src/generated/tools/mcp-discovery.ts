@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path';
 
 import { homedir } from 'node:os';
 
+// @kern-source: mcp-discovery:9
 export interface McpServerConfig {
   name: string;
   command: string;
@@ -14,6 +15,7 @@ export interface McpServerConfig {
   url?: string;
 }
 
+// @kern-source: mcp-discovery:16
 function _readJsonSafe(path: string): unknown|null {
   try {
     if (!existsSync(path)) return null;
@@ -26,6 +28,7 @@ function _readJsonSafe(path: string): unknown|null {
 /**
  * Extract MCP server definitions from a JSON config. Supports Claude Code format (mcpServers: {name: {command, args, env}}) and array format.
  */
+// @kern-source: mcp-discovery:26
 function _extractMcpServers(data: unknown): McpServerConfig[] {
   if (!data || typeof data !== 'object') return [];
 
@@ -71,6 +74,7 @@ function _extractMcpServers(data: unknown): McpServerConfig[] {
 /**
  * Auto-discover MCP server configs from standard locations. Project-level overrides global. Returns deduplicated list by server name.
  */
+// @kern-source: mcp-discovery:70
 export function discoverMcpServers(cwd: string): McpServerConfig[] {
   const home = homedir();
   const servers = new Map<string, McpServerConfig>();
@@ -125,6 +129,7 @@ export function discoverMcpServers(cwd: string): McpServerConfig[] {
 /**
  * Compute a fingerprint of all MCP config source files. Changes when any config file is modified.
  */
+// @kern-source: mcp-discovery:123
 export function mcpDiscoveryFingerprint(cwd: string): string {
   const home = homedir();
   const paths = [
@@ -149,6 +154,7 @@ export function mcpDiscoveryFingerprint(cwd: string): string {
 /**
  * Convert discovered McpServerConfig[] to the wire format expected by PersistentSessionConfig.mcpServers.
  */
+// @kern-source: mcp-discovery:146
 export function mcpServersToWireFormat(servers: McpServerConfig[]): Array<Record<string,unknown>> {
   return servers.map(s => {
     const wire: Record<string, unknown> = { name: s.name, command: s.command };

@@ -16,6 +16,7 @@ import { runTribunal } from '@agon/forge';
 
 import { header, success, fail, info, bold, cyan, dim, green, yellow } from '../blocks/output-format.js';
 
+// @kern-source: tribunal:10
 export const tribunalCommand: ReturnType<typeof defineCommand> = defineCommand({
   meta: {
     name: 'tribunal',

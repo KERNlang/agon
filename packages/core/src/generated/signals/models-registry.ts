@@ -8,6 +8,7 @@ import { homedir } from 'node:os';
 
 import type { EngineDefinition } from '../models/types.js';
 
+// @kern-source: models-registry:6
 export interface ModelsDevModel {
   id: string;
   name: string;
@@ -20,6 +21,7 @@ export interface ModelsDevModel {
   provider?: {npm?:string, api?:string};
 }
 
+// @kern-source: models-registry:17
 export interface ModelsDevProvider {
   id: string;
   name: string;
@@ -30,6 +32,7 @@ export interface ModelsDevProvider {
   models: Record<string, ModelsDevModel>;
 }
 
+// @kern-source: models-registry:26
 export interface ModelEntry {
   providerId: string;
   providerName: string;
@@ -45,16 +48,20 @@ export interface ModelEntry {
   source?: 'api'|'cli';
 }
 
+// @kern-source: models-registry:40
 function getCacheDir(): string {
   const override = process.env.AGON_HOME?.trim();
   const home = override ? resolve(override) : join(homedir(), '.agon');
   return join(home, 'cache');
 }
 
+// @kern-source: models-registry:47
 export const CACHE_TTL_MS: number = 3600000;
 
+// @kern-source: models-registry:49
 export const MODELS_DEV_URL: string = 'https://models.dev/api.json';
 
+// @kern-source: models-registry:54
 export async function fetchModelsRegistry(): Promise<Record<string, ModelsDevProvider>> {
   const cacheDir = getCacheDir();
   const cacheFile = join(cacheDir, 'models-dev.json');
@@ -88,6 +95,7 @@ export async function fetchModelsRegistry(): Promise<Record<string, ModelsDevPro
   return data;
 }
 
+// @kern-source: models-registry:88
 export function resolveModelFormat(providerNpm: string, model?: ModelsDevModel): 'openai'|'anthropic' {
   // Model-level override takes precedence
   const npm = model?.provider?.npm ?? providerNpm;
@@ -95,6 +103,7 @@ export function resolveModelFormat(providerNpm: string, model?: ModelsDevModel):
   return 'openai';
 }
 
+// @kern-source: models-registry:96
 export const CANONICAL_API_URLS: Record<string, string> = ({
   anthropic: 'https://api.anthropic.com',
   openai: 'https://api.openai.com/v1',
@@ -105,6 +114,7 @@ export const CANONICAL_API_URLS: Record<string, string> = ({
   xai: 'https://api.x.ai/v1',
 });
 
+// @kern-source: models-registry:109
 export function resolveBaseUrl(provider: ModelsDevProvider, model?: ModelsDevModel): string|null {
   // Model-level override
   if (model?.provider?.api) return model.provider.api;
@@ -114,6 +124,7 @@ export function resolveBaseUrl(provider: ModelsDevProvider, model?: ModelsDevMod
   return CANONICAL_API_URLS[provider.id] ?? null;
 }
 
+// @kern-source: models-registry:119
 export function buildModelEntries(registry: Record<string, ModelsDevProvider>): ModelEntry[] {
   const entries: ModelEntry[] = [];
 
@@ -152,6 +163,7 @@ export function buildModelEntries(registry: Record<string, ModelsDevProvider>): 
   return entries;
 }
 
+// @kern-source: models-registry:158
 export function searchModels(entries: ModelEntry[], query: string): ModelEntry[] {
   if (!query.trim()) return entries;
   const q = query.toLowerCase();
@@ -216,6 +228,7 @@ export function searchModels(entries: ModelEntry[], query: string): ModelEntry[]
   return scored.map((s) => s.entry);
 }
 
+// @kern-source: models-registry:223
 export function normalizeBaseUrl(url: string): string {
   // Strip /anthropic/ only when it's the first path segment (proxy prefix)
   try {
@@ -230,6 +243,7 @@ export function normalizeBaseUrl(url: string): string {
   }
 }
 
+// @kern-source: models-registry:238
 export function modelEntryToEngineDef(entry: ModelEntry): Record<string, any> {
   return {
     schemaVersion: 3,
@@ -253,6 +267,7 @@ export function modelEntryToEngineDef(entry: ModelEntry): Record<string, any> {
 /**
  * Build model entries from installed CLI engines. Only includes engines whose binary is found on PATH.
  */
+// @kern-source: models-registry:259
 export function buildCliModelEntries(engines: EngineDefinition[], findBinary: (engine:EngineDefinition) => string|null): ModelEntry[] {
   const entries: ModelEntry[] = [];
 

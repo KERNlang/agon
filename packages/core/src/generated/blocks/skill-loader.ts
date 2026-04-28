@@ -8,6 +8,7 @@ import { homedir } from 'node:os';
 
 import { fileURLToPath } from 'node:url';
 
+// @kern-source: skill-loader:6
 export interface Skill {
   name: string;
   trigger: string;
@@ -19,6 +20,7 @@ export interface Skill {
   tools?: string[];
 }
 
+// @kern-source: skill-loader:16
 export function parseFrontmatter(content: string): {meta:Record<string,string>, body:string} {
   const match = content.match(/^---\s*\n([\s\S]*?)\n---\s*\n([\s\S]*)$/);
   if (!match) return { meta: {}, body: content };
@@ -34,6 +36,7 @@ export function parseFrontmatter(content: string): {meta:Record<string,string>, 
   return { meta, body: match[2].trim() };
 }
 
+// @kern-source: skill-loader:32
 export function loadSkillFile(filePath: string): Skill|null {
   try {
     const content = readFileSync(filePath, 'utf-8');
@@ -53,6 +56,7 @@ export function loadSkillFile(filePath: string): Skill|null {
   }
 }
 
+// @kern-source: skill-loader:52
 function loadSkillsFromDir(dir: string, source: string): Skill[] {
   const skills: Skill[] = [];
   if (!existsSync(dir)) return skills;
@@ -71,6 +75,7 @@ function loadSkillsFromDir(dir: string, source: string): Skill[] {
   return skills;
 }
 
+// @kern-source: skill-loader:71
 export function loadSkills(cwd?: string): Skill[] {
   const skills: Skill[] = [];
   const override = process.env.AGON_HOME?.trim();
@@ -96,11 +101,13 @@ export function loadSkills(cwd?: string): Skill[] {
   return Array.from(seen.values());
 }
 
+// @kern-source: skill-loader:97
 export function findSkill(trigger: string, skills: Skill[]): Skill|null {
   const normalized = trigger.startsWith('/') ? trigger : `/${trigger}`;
   return skills.find((s) => s.trigger === normalized) ?? null;
 }
 
+// @kern-source: skill-loader:103
 export function renderSkillPrompt(skill: Skill, input: string): string {
   return skill.prompt
     .replace(/\{input\}/g, input)

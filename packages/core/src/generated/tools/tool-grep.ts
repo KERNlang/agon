@@ -4,13 +4,16 @@ import type { ToolResult, ToolContext, ToolDefinition, PermissionDecision, ToolH
 
 import { spawnWithTimeout } from '../blocks/process.js';
 
+// @kern-source: tool-grep:7
 export const DEFAULT_HEAD_LIMIT: number = 250;
 
+// @kern-source: tool-grep:10
 export const GREP_TIMEOUT: number = 20000;
 
 /**
  * Truncate output to the first N lines.
  */
+// @kern-source: tool-grep:13
 export function applyHeadLimit(text: string, limit: number): string {
   const lines = text.split('\n');
   if (lines.length <= limit) return text;
@@ -20,6 +23,7 @@ export function applyHeadLimit(text: string, limit: number): string {
 /**
  * Factory: creates the Grep tool handler for content search via ripgrep.
  */
+// @kern-source: tool-grep:21
 export function createGrepTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Grep',

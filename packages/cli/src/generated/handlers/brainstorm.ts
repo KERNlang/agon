@@ -16,6 +16,7 @@ import { sessionResultStore } from '../models/session-results.js';
 
 import type { Dispatch, HandlerContext, EngineProgress } from '../../handlers/types.js';
 
+// @kern-source: brainstorm:10
 export async function handleBrainstorm(question: string, dispatch: Dispatch, ctx: HandlerContext): Promise<{winner:string, bids:{engineId:string,reasoning:string,approach:string,score:number}[], response:string}|null> {
   const bsAbort = new AbortController();
   try {

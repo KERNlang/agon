@@ -12,6 +12,7 @@ import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 
 import { buildAgentApprovalCallback } from './agent.js';
 
+// @kern-source: pipeline:8
 export async function handlePipeline(input: string, dispatch: Dispatch, ctx: HandlerContext, fitnessCmd?: string, opts?: {quiet?:boolean}): Promise<void> {
   const abort = new AbortController();
   try {

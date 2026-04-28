@@ -6,6 +6,7 @@ import { codeBlockBuffer } from '../../code-buffer.js';
 
 import type { Dispatch } from '../../handlers/types.js';
 
+// @kern-source: cp:5
 export function handleCp(index: number|undefined, dispatch: Dispatch): void {
   const blocks = codeBlockBuffer.blocks;
   if (blocks.length === 0) {

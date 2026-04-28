@@ -1127,10 +1127,13 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
       let toolCacheManifest: ToolCacheEntry[] = [];
 
       // ── In-session tool result deduplication ──
-      // Avoids re-reading the same file/grep when the engine asks twice.
+      // Avoids repeating stable discovery tools when the engine asks twice.
+      // Do not cache Read here: the Read tool owns mtime-aware dedup and must
+      // run on every explicit re-read so it can refresh the edit/write snapshot
+      // after another tool or process has changed the file.
       // Keyed by (toolName, serialized args). Values are results.
       const toolResultCache = new Map<string, { result: string; callId: string }>();
-      const CACHEABLE_TOOLS = new Set(['Read', 'Grep', 'Glob']);
+      const CACHEABLE_TOOLS = new Set(['Grep', 'Glob']);
       const cacheKey = (name: string, args: Record<string, unknown>) => {
         // Normalize: sort keys for stable hashing
         const sorted = Object.keys(args).sort().map(k => `${k}=${JSON.stringify(args[k])}`).join('&');

@@ -24,6 +24,14 @@ async function* streamTextToolCall(toolName: string, input: Record<string, unkno
   return {};
 }
 
+async function* streamStaleReadRetryBatch(count: number) {
+  const calls = Array.from({ length: count }, (_, index) =>
+    `<tool name="Read">${JSON.stringify({ file_path: `src/file-${index}.ts` })}</tool>`,
+  ).join('\n');
+  yield `I see the issue. The file was modified since my last read. Let me re-read and then edit.\n${calls}`;
+  return {};
+}
+
 function createMockProcess(onLine: (line: string, stdout: PassThrough) => void) {
   const proc = new EventEmitter() as any;
   const stdin = new PassThrough();
@@ -338,5 +346,36 @@ describe('persistent session streaming dedupe', () => {
     }
 
     expect(readCount).toBe(2);
+  });
+
+  it('stops repeated stale-read retry batches before burning tool calls', async () => {
+    const { createResumeSession } = await import('../../packages/core/src/generated/sessions/persistent-session.js');
+    let readCount = 0;
+    apiStreamDispatchWithHistoryMock.mockImplementation(() => streamStaleReadRetryBatch(25));
+
+    const session = createResumeSession({
+      engine: {
+        id: 'api-test',
+        api: { baseURL: 'https://example.invalid', apiKeyEnv: 'TEST_KEY', model: 'api-test' },
+      } as any,
+      binaryPath: '',
+      cwd: process.cwd(),
+      systemPrompt: 'You are Cesar.',
+      onToolCall: async () => {
+        readCount++;
+        return `read-${readCount}`;
+      },
+      toolLoopBaseBudget: 3,
+      toolLoopMaxBudget: 3,
+    });
+
+    await session.start();
+    const chunks = [];
+    for await (const chunk of session.send({ message: 'stale loop', toolLoopBaseBudget: 3, toolLoopMaxBudget: 3 })) {
+      chunks.push(chunk);
+    }
+
+    expect(readCount).toBe(0);
+    expect(chunks.some((chunk: any) => chunk.type === 'error' && /repeated read-only retry loop/.test(chunk.content))).toBe(true);
   });
 });

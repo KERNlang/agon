@@ -6,21 +6,19 @@ import { resolve, dirname, relative } from 'node:path';
 
 import type { ToolResult, ToolContext, ToolHandler, ToolDefinition, PermissionDecision } from '../models/tool-types.js';
 
-import { fileStateCache } from '../../file-state-cache.js';
-
 import { takeSnapshot } from '../blocks/file-history.js';
 
 /**
  * Replace curly/smart quotes with straight ASCII equivalents.
  */
-// @kern-source: tool-edit:11
+// @kern-source: tool-edit:10
 function normalizeCurlyQuotes(text: string): string {
   return text
     .replace(/[\u2018\u2019]/g, "'")
     .replace(/[\u201C\u201D]/g, '"');
 }
 
-// @kern-source: tool-edit:19
+// @kern-source: tool-edit:18
 function countOccurrences(haystack: string, needle: string): number {
   let count = 0;
   let pos = 0;
@@ -36,7 +34,7 @@ function countOccurrences(haystack: string, needle: string): number {
 /**
  * Factory for the Edit tool — exact string replacement with safety checks.
  */
-// @kern-source: tool-edit:32
+// @kern-source: tool-edit:31
 export function createEditTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Edit',
@@ -125,7 +123,7 @@ export function createEditTool(): ToolHandler {
     }
 
     // Read-before-write check: file must have been read via Read tool first
-    const cache = fileStateCache;
+    const cache = ctx.readFileState;
     if (!cache.has(filePath)) {
       return {
         ok: false,
@@ -143,7 +141,8 @@ export function createEditTool(): ToolHandler {
       return { ok: false, content: '', error: `Cannot stat file: ${err instanceof Error ? err.message : String(err)}` };
     }
 
-    if (cache.isStale(filePath, mtime)) {
+    const cachedState = cache.get(filePath);
+    if (!cachedState || mtime > cachedState.timestamp) {
       return {
         ok: false,
         content: '',

@@ -4,13 +4,15 @@ import from="node:path" names="join"
 import from="node:fs" names="mkdirSync"
 import from="node:url" names="fileURLToPath"
 import from="@agon/core" names="PersistentSession,PersistentSessionConfig" types=true
-import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,getAgonHome,resolveWorkingDir,scanProjectContext,createPersistentSession,ToolRegistry,FileStateCache,buildToolSystemPrompt,toolsToOpenAIFormat,executeToolCall,RUNS_DIR,tracker,discoverMcpServers,mcpDiscoveryFingerprint,mcpServersToWireFormat,listCesarPlans,saveConversation,formatChatContextForPrompt"
+import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,getAgonHome,resolveWorkingDir,scanProjectContext,createPersistentSession,ToolRegistry,getProjectFileStateCache,buildToolSystemPrompt,toolsToOpenAIFormat,executeToolCall,RUNS_DIR,tracker,discoverMcpServers,mcpDiscoveryFingerprint,mcpServersToWireFormat,listCesarPlans,saveConversation,formatChatContextForPrompt"
 import from="@agon/core" names="ToolContext,ToolCallResult" types=true
 import from="../../handlers/types.js" names="HandlerContext" types=true
 import from="./tools.js" names="createCesarToolRegistry"
 import from="../signals/output.js" names="getSessionAllowList"
 import from="./routing.js" names="buildRoutingContext"
 import from="./brain.js" names="extractDelegation"
+import from="./self-turn-approval.js" names="applyCesarSelfTurnApproval,approvalArgsFromCommand"
+import from="./tool-observability.js" names="recordCesarApprovalDecision,recordCesarToolTimeline"
 
 const name=CESAR_SYSTEM_PROMPT type=string
   handler <<<
@@ -335,12 +337,13 @@ fn name=saveCesarConversationSnapshot params="session:PersistentSession|null, ch
 fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, config:any" returns="((name:string, args:Record<string,unknown>, callId:string) => Promise<string>) | undefined"
   doc "Build the onToolCall callback for API engines with native function calling."
   handler <<<
-    const fsc = new FileStateCache();
+    const cwd = resolveWorkingDir();
+    const fsc = getProjectFileStateCache(cwd);
     const toolResultCache = new Map<string, string>();
     const CACHEABLE_TOOLS = new Set(['Grep', 'Glob']);
     const explorationMode = ctx.explorationMode ?? false;
     const sharedToolCtx: ToolContext = {
-      cwd: resolveWorkingDir(),
+      cwd,
       readFileState: (fsc as any).cache,
       abortSignal: undefined,
       permissionMode: (config as any).permissionMode ?? 'smart',
@@ -557,11 +560,45 @@ fn name=buildOnApproval params="ctx:HandlerContext, engineId:string" returns="(t
       const toolMap: Record<string, string> = { shell: 'Bash', bash: 'Bash', edit: 'Edit', write: 'Write', read: 'Read', grep: 'Grep', glob: 'Glob' };
       const agonTool = toolMap[tool.toLowerCase()] ?? tool;
       const perm = perms[agonTool];
+      const turnId = ctx.cesar?.turnId;
+      const cwd = resolveWorkingDir();
+      const logApproval = (decision: 'approved'|'denied'|'prompted'|'blocked', source: string, reason?: string, args?: Record<string, unknown> | string) => {
+        const payload = args ?? (agonTool === 'Bash' ? command : approvalArgsFromCommand(agonTool, command));
+        const path = payload && typeof payload === 'object' && typeof (payload as any).file_path === 'string' ? String((payload as any).file_path) : undefined;
+        if ((cfg as any).cesarApprovalLedger !== false) {
+          recordCesarApprovalDecision({
+            turnId,
+            engineId,
+            cwd,
+            tool: agonTool,
+            decision,
+            source,
+            reason,
+            mode,
+            path,
+            args: payload,
+          });
+        }
+        if ((cfg as any).cesarToolTimeline !== false) {
+          recordCesarToolTimeline({
+            turnId: turnId ?? `approval-${Date.now().toString(36)}`,
+            event: 'approval_decision',
+            engineId,
+            cwd,
+            tool: agonTool,
+            source,
+            status: decision,
+            reason,
+            input: payload,
+          });
+        }
+      };
 
       // Block writes during exploration mode
       if (ctx.explorationMode) {
         const WRITE_TOOLS = ['Edit', 'Write', 'Bash'];
         if (WRITE_TOOLS.includes(agonTool)) {
+          logApproval('blocked', 'policy.exploration', 'exploration mode is read-only');
           return 'BLOCKED: Exploration mode is read-only. Use Read, Grep, Glob tools only. Do not narrate around this. Either keep investigating, or wait for the user to disable exploration mode before retrying the same tool.';
         }
       }
@@ -571,6 +608,7 @@ fn name=buildOnApproval params="ctx:HandlerContext, engineId:string" returns="(t
       if (activePlan && ['planning', 'awaiting_approval'].includes(activePlan.state)) {
         const WRITE_TOOLS = ['Edit', 'Write'];
         if (WRITE_TOOLS.includes(agonTool)) {
+          logApproval('blocked', 'policy.plan-mode', 'plan mode blocks file writes');
           return 'BLOCKED: Plan mode — no code changes allowed. Call ProposePlan with the execution plan now, then wait for approval before retrying the same tool. Do not narrate instead of acting.';
         }
       }
@@ -578,10 +616,10 @@ fn name=buildOnApproval params="ctx:HandlerContext, engineId:string" returns="(t
       // R5 enforcement: block cat/grep/head/tail via Bash — use proper tools instead
       if (agonTool === 'Bash') {
         const cmd = command.trimStart();
-        if (/^cat\s/.test(cmd)) return 'BLOCKED: Use the Read tool instead of cat. Read is faster and tracked by Agon.';
-        if (/^(head|tail)\s/.test(cmd)) return 'BLOCKED: Use the Read tool with offset/limit instead of head/tail.';
-        if (/^(grep|rg)\s/.test(cmd)) return 'BLOCKED: Use the Grep tool instead of grep/rg. Grep is faster and tracked by Agon.';
-        if (/^find\s/.test(cmd)) return 'BLOCKED: Use the Glob tool instead of find. Glob is faster and tracked by Agon.';
+        if (/^cat\s/.test(cmd)) { logApproval('blocked', 'policy.bash-read-tool', 'cat should use Read'); return 'BLOCKED: Use the Read tool instead of cat. Read is faster and tracked by Agon.'; }
+        if (/^(head|tail)\s/.test(cmd)) { logApproval('blocked', 'policy.bash-read-tool', 'head/tail should use Read'); return 'BLOCKED: Use the Read tool with offset/limit instead of head/tail.'; }
+        if (/^(grep|rg)\s/.test(cmd)) { logApproval('blocked', 'policy.bash-search-tool', 'grep/rg should use Grep'); return 'BLOCKED: Use the Grep tool instead of grep/rg. Grep is faster and tracked by Agon.'; }
+        if (/^find\s/.test(cmd)) { logApproval('blocked', 'policy.bash-search-tool', 'find should use Glob'); return 'BLOCKED: Use the Glob tool instead of find. Glob is faster and tracked by Agon.'; }
       }
 
       // R1 enforcement for companion engines: block file writes until confidence is reported
@@ -589,15 +627,47 @@ fn name=buildOnApproval params="ctx:HandlerContext, engineId:string" returns="(t
       if (!ctx.cesar!.confidenceSatisfied) {
         const WRITE_TOOLS = ['Edit', 'Write'];
         if (WRITE_TOOLS.includes(agonTool)) {
+          logApproval('blocked', 'policy.confidence', 'ReportConfidence required before writes');
           return `BLOCKED: Report confidence first via ReportConfidence MCP tool before writing files. After ReportConfidence succeeds, retry the SAME ${agonTool} tool immediately. Do not narrate or explain the block.`;
         }
       }
 
       // deny → block immediately
-      if (perm === 'deny' || mode === 'deny-all') return false;
+      if (perm === 'deny' || mode === 'deny-all') {
+        logApproval('denied', perm === 'deny' ? 'settings.toolPermissions' : 'settings.permissionMode', perm === 'deny' ? `${agonTool} denied in settings` : 'permissionMode=deny-all');
+        return false;
+      }
+
+      // Cesar self-turn fast path: bounded edits/writes on files already read
+      // in the project cache do not need to interrupt the stream for another
+      // Y/N prompt. This intentionally runs after exploration/plan/confidence
+      // gates and explicit denies, and before the generic ask-mode fallback.
+      if (agonTool === 'Edit' || agonTool === 'Write') {
+        const approvalCwd = resolveWorkingDir();
+        const approvalCache = getProjectFileStateCache(approvalCwd);
+        const approvalArgs = approvalArgsFromCommand(agonTool, command);
+        const approvalCtx: ToolContext = {
+          cwd: approvalCwd,
+          readFileState: (approvalCache as any).cache,
+          permissionMode: mode as any,
+          explorationMode: ctx.explorationMode,
+          allowedCommands: allowed,
+          toolPermissions: perms,
+          sessionAllowList: getSessionAllowList(),
+          source: 'orchestrator' as const,
+        };
+        const selfTurn = applyCesarSelfTurnApproval(agonTool, approvalArgs, approvalCtx, cfg);
+        if (selfTurn.approve) {
+          logApproval('approved', 'cesar-self-turn', selfTurn.reason, approvalArgs);
+          return true;
+        }
+      }
 
       // allow → auto-approve
-      if (perm === 'allow' || mode === 'auto') return true;
+      if (perm === 'allow' || mode === 'auto') {
+        logApproval('approved', perm === 'allow' ? 'settings.toolPermissions' : 'settings.permissionMode', perm === 'allow' ? `${agonTool} allowed in settings` : 'permissionMode=auto');
+        return true;
+      }
 
       // smart → auto-approve orchestrator context and session allowlist, ask otherwise
       if (mode === 'smart') {
@@ -606,24 +676,37 @@ fn name=buildOnApproval params="ctx:HandlerContext, engineId:string" returns="(t
         if (agonTool === 'Bash' && sessionList.length > 0) {
           const cmdLower = command.toLowerCase();
           const base = command.trim().split(/\s+/)[0];
-          if (sessionList.some((a: string) => cmdLower.startsWith(a.toLowerCase()) || base === a)) return true;
+          if (sessionList.some((a: string) => cmdLower.startsWith(a.toLowerCase()) || base === a)) {
+            logApproval('approved', 'session-allowlist', 'Bash command matched session allowlist');
+            return true;
+          }
         }
         // Cesar tool loop is always orchestrator — auto-approve non-dangerous
+        logApproval('approved', 'settings.smart-orchestrator', 'permissionMode=smart orchestrator context');
         return true;
       }
 
       // For Bash: check allowedCommands whitelist
       if (agonTool === 'Bash' && allowed.length > 0) {
         const cmdLower = command.toLowerCase();
-        if (allowed.some((a: string) => cmdLower.startsWith(a.toLowerCase()))) return true;
+        if (allowed.some((a: string) => cmdLower.startsWith(a.toLowerCase()))) {
+          logApproval('approved', 'settings.allowedCommands', 'Bash command matched allowedCommands');
+          return true;
+        }
       }
 
       // ask → show permission prompt (same UI as Claude Code)
       return new Promise<boolean>((resolve) => {
         const dispatch = ctx.cesar!.lastDispatch;
         if (dispatch) {
-          dispatch({ type: 'permission-ask', tool: agonTool, command, reason: `Cesar (${engineId}) wants to execute`, resolve } as any);
+          logApproval('prompted', 'user-prompt', `Cesar (${engineId}) wants to execute`);
+          dispatch({ type: 'permission-ask', tool: agonTool, command, reason: `Cesar (${engineId}) wants to execute`, resolve: (approved: boolean | string) => {
+            const wasApproved = typeof approved === 'string' ? approved === 'y' || approved === 'a' : !!approved;
+            logApproval(wasApproved ? 'approved' : 'denied', 'user-prompt', wasApproved ? 'user approved' : 'user denied');
+            resolve(wasApproved);
+          } } as any);
         } else {
+          logApproval('approved', 'fallback.no-dispatch', 'no dispatch available for approval prompt');
           resolve(true);
         }
       });

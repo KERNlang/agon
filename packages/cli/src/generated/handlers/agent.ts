@@ -686,6 +686,8 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
     }
 
     const teamId = team.getRunId();
+    const shadowMode = opts?.shadowMode === true;
+    const foregroundEngineId = opts?.foregroundEngineId ?? memberEngineIds[0];
 
     // ── Emit team-start ───────────────────────────────────
     dispatch({
@@ -699,6 +701,7 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
     // Pre-emit step-start for each member so the UI shows N panels
     // immediately, before the first AgentEvent arrives.
     for (const id of memberEngineIds) {
+      if (shadowMode && id !== foregroundEngineId) continue;
       dispatch({
         type: 'agent-step-start',
         engineId: id,
@@ -716,9 +719,8 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
     // In shadow mode (Phase D), only the foreground engine's events are
     // bridged to the visible dispatch — shadow engines run silently in
     // background worktrees and their output is suppressed until post-step
-    // comparison. If a shadow wins, we apply its patch and emit engine-switch.
-    const shadowMode = opts?.shadowMode === true;
-    const foregroundEngineId = opts?.foregroundEngineId ?? memberEngineIds[0];
+    // comparison. If a shadow wins, we emit engine-switch and surface the
+    // winning patch through the normal review block.
 
     // In shadow mode, suppress dispatch for non-foreground engines by
     // wrapping the dispatch function to drop events from shadow engines.
@@ -751,6 +753,7 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
       // Emit cancelled step-end events for transcript/UI consistency,
       // then a team-complete with winner=null so the panels clear.
       for (const m of teamResult.members) {
+        if (shadowMode && m.engineId !== foregroundEngineId) continue;
         dispatch({
           type: 'agent-step-end',
           engineId: m.engineId,
@@ -799,6 +802,7 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
 
     // ── Emit step-end for each member ─────────────────────
     for (const m of teamResult.members) {
+      if (shadowMode && m.engineId !== foregroundEngineId) continue;
       const outcome: 'completed'|'cancelled'|'failed' =
         !m.stepResult ? 'failed'
         : m.stepResult.stopReason === 'completed' ? 'completed'
@@ -874,6 +878,10 @@ export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: Handl
         to: winnerInfo.winner,
         reason: 'synthesis',
         confidence: winnerInfo.bestScore,
+      });
+      dispatch({
+        type: 'info',
+        message: `Shadow worker ${winnerInfo.winner} beat foreground ${foregroundEngineId}; surfacing the shadow result.`,
       });
     }
 

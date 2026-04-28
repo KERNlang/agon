@@ -6,7 +6,7 @@ import { mkdirSync, appendFileSync, existsSync, readFileSync, unlinkSync, readdi
 
 import type { ImageAttachment, PersistentSession, ForgeManifest, ForgeJudgment } from '@agon/core';
 
-import { ensureAgonHome, RUNS_DIR, appendMessage, appendUserTurnIfAbsent, buildHistoryPrimedPrompt, tracker, resolveWorkingDir, ToolRegistry, FileStateCache, parseToolCalls, formatToolResults, runToolLoop, classifyTask, loadConfig, configSet } from '@agon/core';
+import { ensureAgonHome, RUNS_DIR, appendMessage, appendUserTurnIfAbsent, buildHistoryPrimedPrompt, tracker, resolveWorkingDir, ToolRegistry, getProjectFileStateCache, parseToolCalls, formatToolResults, runToolLoop, classifyTask, loadConfig, configSet, createStreamBridge } from '@agon/core';
 
 import type { ToolContext, ToolCallResult } from '@agon/core';
 
@@ -28,13 +28,33 @@ import { buildRoutingContext, deriveRoutingHints, shouldSpeculate } from './rout
 
 import { readCesarToolReliability, formatCesarReliabilityLine, shouldDowngradeCesarToolWork, buildWhatHappenedSummary } from './reliability.js';
 
-// @kern-source: brain:17
+import { applyCesarSelfTurnApproval } from './self-turn-approval.js';
+
+import { createCesarTurnId, recordCesarApprovalDecision, recordCesarToolTimeline } from './tool-observability.js';
+
+// @kern-source: brain:19
 export const yieldToInk: () => Promise<void> = () => new Promise<void>(resolve => setImmediate(resolve));
+
+// @kern-source: brain:22
+export const splitBeforeToolMarkup: (text:string) => { visible:string, hasToolMarkup:boolean } = (text: string) => {
+  const markers = ['<tool ', '<invoke ', '<tool_call', '<toolcall', '<tool_call_tool>', '<function=', '[TOOL_CALLS]'];
+  const lower = text.toLowerCase();
+  let idx = -1;
+  for (const marker of markers) {
+    const pos = lower.indexOf(marker.toLowerCase());
+    if (pos >= 0 && (idx === -1 || pos < idx)) idx = pos;
+  }
+  if (idx < 0) return { visible: text, hasToolMarkup: false };
+  return { visible: text.slice(0, idx), hasToolMarkup: true };
+};
+
+// @kern-source: brain:37
+export const XML_TOOL_MARKUP_HOLD_CHARS: number = 24;
 
 /**
  * Detect responses where a model narrates tool intent instead of actually calling tools. Used for Cesar tool-use telemetry, especially API models with weak function calling.
  */
-// @kern-source: brain:20
+// @kern-source: brain:40
 export function detectNarratedToolStall(text: string): boolean {
   const body = String(text ?? '').trim();
   if (!body) return false;
@@ -50,7 +70,7 @@ export function detectNarratedToolStall(text: string): boolean {
 /**
  * Expand a bare 'fix it' follow-up into an explicit prompt grounded in the most recent stored review result. This avoids making Cesar guess which reviewer findings the user means, especially because /review runs outside Cesar's live session history.
  */
-// @kern-source: brain:34
+// @kern-source: brain:54
 export function buildReviewFollowupPrompt(input: string, ctx: HandlerContext): { matched: boolean; prompt: string } {
   const trimmed = input.trim();
   const match = trimmed.match(/^fix it(?:\s+with\s+([a-z0-9._-]+))?[\s?!.,;:]*$/i);
@@ -88,7 +108,7 @@ export function buildReviewFollowupPrompt(input: string, ctx: HandlerContext): {
   return { matched: true, prompt };
 }
 
-// @kern-source: brain:73
+// @kern-source: brain:93
 export function extractDelegation(toolName: string, args: Record<string,unknown>): PendingDelegation {
   const argsRecord = args as Record<string, unknown>;
   const taskKindRaw = argsRecord.taskKind;
@@ -124,7 +144,7 @@ export function extractDelegation(toolName: string, args: Record<string,unknown>
   };
 }
 
-// @kern-source: brain:109
+// @kern-source: brain:129
 export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input: string, response: string, cesarEngineId: string, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>): Promise<CesarTurnOutcome> {
   if (streaming) dispatch({ type: 'streaming-end', engineId: cesarEngineId });
     if (!streaming) dispatch({ type: 'spinner-stop' });
@@ -147,7 +167,7 @@ export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input
   return { delegated: false, responded: true, decisionReason: 'delegation-cancelled', ...(telemetry ?? {}) };
 }
 
-// @kern-source: brain:132
+// @kern-source: brain:152
 export async function commitTurnAndSuggest(suggestion: {action:string, rest?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}, input: string, response: string, cesarEngineId: string, color: number, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>): Promise<CesarTurnOutcome> {
   if (streaming) dispatch({ type: 'streaming-end', engineId: cesarEngineId });
     if (!streaming) dispatch({ type: 'spinner-stop' });
@@ -167,10 +187,12 @@ export async function commitTurnAndSuggest(suggestion: {action:string, rest?:str
   return { delegated: false, responded: true, decisionReason: 'suggestion-cancelled', ...(telemetry ?? {}) };
 }
 
-// @kern-source: brain:152
+// @kern-source: brain:172
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<CesarTurnOutcome> {
   const abort = new AbortController();
       const _turnStart = Date.now();
+      const _turnId = createCesarTurnId();
+      const _turnCwd = resolveWorkingDir();
       const _toolsUsed: string[] = [];
       const _toolUseKeys = new Set<string>();
       let _toolEventCount = 0;
@@ -184,7 +206,13 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       let _actualCesarEngineId = '';
       let _actualCesarBackend = 'unknown';
       let _actualHasNativeTools = false;
+      let _timelineEnabled = (ctx.config as any).cesarToolTimeline !== false;
+      let _turnTimelineClosed = false;
       let restoreFastPathMode: (() => void) | null = null;
+      const recordTimeline = (record: any) => {
+        if (!_timelineEnabled) return;
+        recordCesarToolTimeline({ turnId: _turnId, ...record });
+      };
       const recordToolUse = (name: string, source: 'native'|'mcp'|'xml'|'eager'|'auto'|'signal', input?: string, status?: string) => {
         const toolName = String(name || 'tool');
         const normalizedSource = source === 'eager' ? 'xml' : source === 'auto' ? 'native' : source;
@@ -199,6 +227,15 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         }
         if (toolName === 'ReportConfidence') _confidenceToolUsed = true;
         if (status && /turn \d+\/\d+/.test(status)) _toolCallTurns++;
+        recordTimeline({
+          event: status && /^(done|ok|error|rejected|failed|completed)$/i.test(status) ? 'tool_result' : 'tool_call',
+          engineId: _actualCesarEngineId || undefined,
+          cwd: _turnCwd,
+          tool: toolName,
+          source: normalizedSource,
+          status: status ?? 'running',
+          input,
+        });
       };
       const buildToolTelemetry = () => ({
         cesarEngineId: _actualCesarEngineId || undefined,
@@ -262,12 +299,14 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       ctx.cesar!.reportedConfidence = undefined;
       ctx.cesar!.confidenceSatisfied = false;
       ctx.cesar!.blockedOnConfidence = null;
+      ctx.cesar!.turnId = _turnId;
       const _brainStartMs = Date.now();
       if (ctx.eventBus) await ctx.eventBus.emit('pre:cesar-brain', { input });
 
       try {
         ensureAgonHome();
         const config = ctx.config;
+        _timelineEnabled = (config as any).cesarToolTimeline !== false;
 
         if ((config as any).cesarEnabled === false) {
           ctx.cesar!.busy = false;
@@ -276,6 +315,13 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
 
         const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
         _actualCesarEngineId = cesarEngineId;
+        recordTimeline({
+          event: 'turn_start',
+          engineId: cesarEngineId,
+          cwd: _turnCwd,
+          status: 'running',
+          summary: { inputChars: input.length, images: images?.length ?? 0 },
+        });
         try {
           const resolvedForTelemetry = resolveCesarBackend(ctx, cesarEngineId);
           _actualCesarBackend = resolvedForTelemetry.backend ?? 'unknown';
@@ -364,11 +410,56 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         let parsedConfidence: number | null = null;
         let confidenceParsed = false;
         let insideThinkBlock = false;
+        let suppressXmlToolDisplay = false;
+        let sawStreamingXmlToolCall = false;
+        let xmlDisplayHold = '';
         let hadToolActivity = false; // tracks if native tool calls were shown to user
       let secondOpinionPromise: Promise<any> | null = null;
       let usedQuickNero = false;
         const eagerPromises: Promise<ToolCallResult>[] = [];
         let eagerToolCtx: ToolContext | null = null;
+        const shouldInterruptForXmlTool = () => {
+          if (ctx.cesar!.hasNativeTools) return false;
+          if ((config as any).cesarStreamingXmlTools === false) return false;
+          try { return parseToolCalls(response).hasToolCalls; } catch { return false; }
+        };
+        const noteXmlToolDetected = (streamingNow: boolean) => {
+          if (sawStreamingXmlToolCall || !shouldInterruptForXmlTool()) return;
+          sawStreamingXmlToolCall = true;
+          suppressXmlToolDisplay = true;
+          xmlDisplayHold = '';
+          recordTimeline({
+            event: 'xml_interrupt',
+            engineId: cesarEngineId,
+            cwd: _turnCwd,
+            source: 'xml',
+            status: 'parsed',
+            reason: 'complete XML tool call parsed during stream',
+            summary: { responseChars: response.length, streaming: streamingNow || undefined },
+          });
+        };
+        const takeXmlSafeDisplayChunk = (chunkText: string, force = false) => {
+          if (ctx.cesar!.hasNativeTools) return chunkText;
+          if (suppressXmlToolDisplay) {
+            xmlDisplayHold = '';
+            return '';
+          }
+          const combined = xmlDisplayHold + chunkText;
+          const split = splitBeforeToolMarkup(combined);
+          if (split.hasToolMarkup) {
+            suppressXmlToolDisplay = true;
+            xmlDisplayHold = '';
+            return split.visible;
+          }
+          if (force) {
+            xmlDisplayHold = '';
+            return combined;
+          }
+          const hold = Math.min(XML_TOOL_MARKUP_HOLD_CHARS, combined.length);
+          const visible = combined.slice(0, combined.length - hold);
+          xmlDisplayHold = combined.slice(combined.length - hold);
+          return visible;
+        };
         let routingHints = deriveRoutingHints(input, ctx);
         const answerFastPath = routingHints.intakeKind === 'chat'
           && routingHints.recommendedFlow === 'answer'
@@ -500,13 +591,66 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               const cfg = loadConfig();
               const allowed: string[] = (cfg as any).allowedCommands ?? [];
               const cmdBase = (req.args?.command ?? '').toString().trim().split(/\s+/)[0];
+              const reqTool = String(req.tool ?? 'tool');
+              const reqArgs = (req.args ?? {}) as Record<string, unknown>;
+              const logMcpApproval = (decision: 'approved'|'denied'|'prompted'|'blocked', source: string, reason?: string) => {
+                const reqPath = typeof reqArgs.file_path === 'string' ? String(reqArgs.file_path) : undefined;
+                if ((cfg as any).cesarApprovalLedger !== false) {
+                  recordCesarApprovalDecision({
+                    turnId: _turnId,
+                    engineId: cesarEngineId,
+                    cwd: _turnCwd,
+                    tool: reqTool,
+                    decision,
+                    source,
+                    reason,
+                    mode: String((cfg as any).permissionMode ?? 'ask'),
+                    path: reqPath,
+                    args: reqArgs,
+                  });
+                }
+                recordTimeline({
+                  event: 'approval_decision',
+                  engineId: cesarEngineId,
+                  cwd: _turnCwd,
+                  tool: reqTool,
+                  source,
+                  status: decision,
+                  reason,
+                  input: reqArgs,
+                });
+              };
               if (cmdBase && allowed.some((a: string) => cmdBase.toLowerCase().startsWith(a.toLowerCase()))) {
+                logMcpApproval('approved', 'mcp.allowedCommands', 'command matched allowedCommands');
                 writeFileSync(respPath, JSON.stringify({ type: 'permission-response', id: req.id, approved: true }));
                 continue;
               }
+              if (reqTool === 'Edit' || reqTool === 'Write') {
+                const approvalCwd = resolveWorkingDir();
+                const approvalCache = getProjectFileStateCache(approvalCwd);
+                const activePlan = ctx.activePlan;
+                const approvalCtx: ToolContext = {
+                  cwd: approvalCwd,
+                  readFileState: (approvalCache as any).cache,
+                  permissionMode: ((cfg as any).permissionMode ?? 'ask') as any,
+                  explorationMode: ctx.explorationMode ?? false,
+                  allowedCommands: allowed,
+                  toolPermissions: (cfg as any).toolPermissions ?? {},
+                  readOnlyMode: !!(activePlan && ['planning', 'awaiting_approval'].includes(activePlan.state)),
+                  source: 'orchestrator' as const,
+                };
+                const selfTurn = applyCesarSelfTurnApproval(reqTool, reqArgs, approvalCtx, cfg);
+                if (selfTurn.approve) {
+                  logMcpApproval('approved', 'mcp.cesar-self-turn', selfTurn.reason);
+                  writeFileSync(respPath, JSON.stringify({ type: 'permission-response', id: req.id, approved: true, reason: selfTurn.reason }));
+                  continue;
+                }
+              }
               // Dispatch permission-ask to UI
+              logMcpApproval('prompted', 'mcp.user-prompt', 'Cesar wants to execute');
               dispatch({ type: 'permission-ask', tool: req.tool, command: String(req.args?.command ?? req.args?.file_path ?? JSON.stringify(req.args)), reason: `Cesar wants to execute`, resolve: (approved: boolean | string) => {
                 const wasApproved = typeof approved === 'string' ? approved === 'y' || approved === 'a' : approved;
+                logMcpApproval(wasApproved ? 'approved' : 'denied', 'mcp.user-prompt', wasApproved ? 'user approved' : 'user denied');
                 // Handle "Always" — persist to config
                 if ((typeof approved === 'string' && approved === 'a') || approved === true) {
                   if (cmdBase && typeof approved === 'string' && approved === 'a') {
@@ -674,8 +818,17 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                   }
                 }
 
+                noteXmlToolDetected(false);
+
                 // Buffer before streaming to detect [SUGGEST:mode]
                 if (response.length < 40) continue;
+                if (!ctx.cesar!.hasNativeTools) {
+                  const split = splitBeforeToolMarkup(response);
+                  if (split.hasToolMarkup && !split.visible.trim()) {
+                    suppressXmlToolDisplay = true;
+                    continue;
+                  }
+                }
 
                 // Initial confidence is just informational — don't escalate yet.
                 // The model needs to investigate first. Escalation happens post-stream
@@ -698,42 +851,57 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                     cleanFirst = response.replace(/<think>[\s\S]*/gi, '');
                   }
                 }
+                if (!ctx.cesar!.hasNativeTools) {
+                  const split = splitBeforeToolMarkup(cleanFirst);
+                  cleanFirst = split.visible;
+                  if (split.hasToolMarkup) suppressXmlToolDisplay = true;
+                }
                 if (cleanFirst.trim()) dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: cleanFirst });
               } else {
                 response += chunk.content;
+                noteXmlToolDetected(true);
+                let displayChunk = chunk.content;
+                if (!ctx.cesar!.hasNativeTools) {
+                  displayChunk = takeXmlSafeDisplayChunk(displayChunk);
+                  if (!displayChunk) continue;
+                }
                 if (insideThinkBlock) {
                   // Dispatch thinking content as it streams
-                  if (chunk.content.includes('</think>')) {
+                  if (displayChunk.includes('</think>')) {
                     insideThinkBlock = false;
-                    const parts = chunk.content.split('</think>');
+                    const parts = displayChunk.split('</think>');
                     const thinkPart = parts[0]?.trim() ?? '';
                     if (thinkPart) dispatch({ type: 'thinking-chunk', engineId: cesarEngineId, chunk: thinkPart } as any);
                     const afterThink = parts.pop()?.trim() ?? '';
                     if (afterThink) dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: afterThink });
                   } else {
-                    dispatch({ type: 'thinking-chunk', engineId: cesarEngineId, chunk: chunk.content } as any);
+                    dispatch({ type: 'thinking-chunk', engineId: cesarEngineId, chunk: displayChunk } as any);
                   }
-                } else if (chunk.content.includes('<think>')) {
-                  const beforeThink = chunk.content.split('<think>')[0];
+                } else if (displayChunk.includes('<think>')) {
+                  const beforeThink = displayChunk.split('<think>')[0];
                   if (beforeThink) dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: beforeThink });
-                  if (!chunk.content.includes('</think>')) {
+                  if (!displayChunk.includes('</think>')) {
                     insideThinkBlock = true;
                     // Dispatch the thinking start
-                    const thinkStart = chunk.content.split('<think>')[1] ?? '';
+                    const thinkStart = displayChunk.split('<think>')[1] ?? '';
                     if (thinkStart.trim()) dispatch({ type: 'thinking-chunk', engineId: cesarEngineId, chunk: thinkStart.trim() } as any);
                   } else {
-                    const thinkMatch = chunk.content.match(/<think>([\s\S]*?)<\/think>/i);
+                    const thinkMatch = displayChunk.match(/<think>([\s\S]*?)<\/think>/i);
                     if (thinkMatch && thinkMatch[1].trim()) {
                       dispatch({ type: 'thinking-chunk', engineId: cesarEngineId, chunk: thinkMatch[1].trim() } as any);
                     }
-                    const afterThink = chunk.content.split('</think>').pop()?.trim() ?? '';
+                    const afterThink = displayChunk.split('</think>').pop()?.trim() ?? '';
                     if (afterThink) dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: afterThink });
                   }
                 } else {
-                  dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: chunk.content });
+                  dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: displayChunk });
                 }
               }
             }
+          }
+          const trailingXmlSafe = takeXmlSafeDisplayChunk('', true);
+          if (streaming && trailingXmlSafe.trim()) {
+            dispatch({ type: 'streaming-chunk', engineId: cesarEngineId, chunk: trailingXmlSafe });
           }
         } catch (err) {
           clearInterval(heartbeat);
@@ -922,19 +1090,48 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         // ── XML tool loop — CLI engines always, API engines if they emitted text-based tool calls (e.g. GLM-5.1) ──
         let ranToolLoop = false;
         let mutationDeferred = false;
-        const fileStateCache = new FileStateCache();
+        const cwd = resolveWorkingDir();
+        const fileStateCache = getProjectFileStateCache(cwd);
         const explorationMode = ctx.explorationMode ?? false;
         const toolCtx: ToolContext = {
-              cwd: resolveWorkingDir(), readFileState: (fileStateCache as any).cache, abortSignal: abort.signal,
+              cwd, readFileState: (fileStateCache as any).cache, abortSignal: abort.signal,
               permissionMode: (config as any).permissionMode ?? 'ask', explorationMode,
               allowedCommands: (config as any).allowedCommands ?? [], toolPermissions: (config as any).toolPermissions ?? {},
               onProgress: (msg: string) => dispatch({ type: 'spinner-update', message: `Cesar: ${msg}` }),
               readOnlyMode: true, // Phase 1: investigate only — mutating tools blocked until after escalation check
               blockedTools: cesarFastPath ? FAST_PATH_BLOCKED_TOOLS : undefined,
               blockedToolMessage: cesarFastPath ? `Blocked by fast-${fastPathMode}: do the direct work without orchestration.` : undefined,
+              source: 'orchestrator' as const,
         };
         const _lastToolInputs: Record<string, string> = {};
-        const hasTextToolCalls = response.includes('<tool_call_tool>') || response.includes('<tool name=');
+        const xmlToolBridge = createStreamBridge(dispatch as (event: Record<string,unknown>) => void, { initialEngineId: cesarEngineId });
+        const emitXmlToolEvent = (name: string, input: Record<string, unknown> | string, status: 'running' | 'ok' | 'error' | 'rejected', output?: string) => {
+          const normalizedInput = typeof input === 'string'
+            ? (() => { try { return JSON.parse(input); } catch { return { raw: input }; } })()
+            : input;
+          if (status !== 'running') {
+            recordTimeline({
+              event: 'tool_result',
+              engineId: cesarEngineId,
+              cwd: _turnCwd,
+              tool: name,
+              source: 'xml',
+              status,
+              input: normalizedInput,
+              output,
+            });
+          }
+          xmlToolBridge.bridge({
+            kind: 'tool_call',
+            engineId: cesarEngineId,
+            toolName: name,
+            status,
+            input: normalizedInput,
+            output,
+            error: status === 'error' ? output : undefined,
+          } as any);
+        };
+        const hasTextToolCalls = sawStreamingXmlToolCall || response.includes('<tool_call_tool>') || response.includes('<tool name=');
         if (toolRegistry && response && (!ctx.cesar!.hasNativeTools || hasTextToolCalls)) {
           const toolParsed = parseToolCalls(response);
           if (toolParsed.hasToolCalls) {
@@ -955,9 +1152,13 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                   if (chunk.type === 'text') nextResponse += chunk.content;
                   if (chunk.type === 'tool_call') {
                     const meta = (chunk.metadata ?? {}) as Record<string, unknown>;
-                    dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: chunk.content || 'tool',
-                      input: typeof meta.input === 'string' ? meta.input : meta.input ? JSON.stringify(meta.input) : '',
-                      status: (meta.status as any) ?? 'running', output: typeof meta.output === 'string' ? meta.output : undefined } as any);
+                    const rawStatus = String((meta.status as any) ?? 'running');
+                    emitXmlToolEvent(
+                      chunk.content || 'tool',
+                      typeof meta.input === 'string' ? meta.input : meta.input ? meta.input as Record<string, unknown> : {},
+                      rawStatus === 'done' || rawStatus === 'completed' ? 'ok' : rawStatus === 'error' || rawStatus === 'failed' ? 'error' : 'running',
+                      typeof meta.output === 'string' ? meta.output : undefined,
+                    );
                   }
                   if (chunk.type === 'done' || chunk.type === 'error') break;
                 }
@@ -970,7 +1171,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 onToolCall: (name: string, inp: Record<string, unknown>) => {
                   _lastToolInputs[name] = JSON.stringify(inp);
                   recordToolUse(name, 'xml', _lastToolInputs[name], 'running');
-                  dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: name, input: JSON.stringify(inp), status: 'running' });
+                  emitXmlToolEvent(name, inp, 'running');
                   // Intercept orchestration signal tools — set _pendingDelegation.
                   // 'Agent' is in the set so Cesar can spawn autonomous parallel agents
                   // from a chat turn without requiring the user to type /agent (PFB-1, RT-1).
@@ -998,7 +1199,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                   if (!result.result.ok && typeof result.result.error === 'string' && result.result.error.includes('[Investigation phase]')) {
                     mutationDeferred = true;
                   }
-                  dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: name, input: _lastToolInputs[name] ?? '', status: result.result.ok ? 'done' : 'error', output: out });
+                  emitXmlToolEvent(name, _lastToolInputs[name] ?? '{}', result.result.ok ? 'ok' : 'error', out);
                   delete _lastToolInputs[name];
                 },
                 onPermissionAsk: async (tool: string, message: string) => {
@@ -1176,11 +1377,13 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 {
                   onToolCall: (name: string, inp: Record<string, unknown>) => {
                     recordToolUse(name, 'xml', JSON.stringify(inp), 'running');
-                    dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: name, input: JSON.stringify(inp), status: 'running' });
+                    _lastToolInputs[name] = JSON.stringify(inp);
+                    emitXmlToolEvent(name, inp, 'running');
                   },
                   onToolResult: (name: string, result: any) => {
                     const out = result.result.ok ? result.result.content : result.result.error;
-                    dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: name, input: '', status: result.result.ok ? 'done' : 'error', output: out });
+                    emitXmlToolEvent(name, _lastToolInputs[name] ?? '{}', result.result.ok ? 'ok' : 'error', out);
+                    delete _lastToolInputs[name];
                   },
                   onPermissionAsk: async (tool: string, message: string) => {
                     return new Promise<boolean>((resolve) => {
@@ -1403,8 +1606,28 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           restoreFastPathMode = null;
         }
         ctx.eventBus?.emit('post:cesar-brain', { durationMs: Date.now() - _brainStartMs }).catch(() => {});
+        if (!_turnTimelineClosed) {
+          _turnTimelineClosed = true;
+          const telemetry = buildToolTelemetry();
+          recordTimeline({
+            event: 'turn_summary',
+            engineId: _actualCesarEngineId || undefined,
+            cwd: _turnCwd,
+            status: 'completed',
+            summary: {
+              durationMs: Date.now() - _turnStart,
+              toolCount: telemetry.toolCount,
+              toolEventCount: telemetry.toolEventCount,
+              nativeToolCalls: telemetry.nativeToolCalls,
+              mcpToolCalls: telemetry.mcpToolCalls,
+              xmlToolCalls: telemetry.xmlToolCalls,
+              confidenceToolUsed: telemetry.confidenceToolUsed,
+            },
+          });
+        }
         ctx.cesar!.busy = false;
         ctx.cesar!.busySince = null;
+        if (ctx.cesar!.turnId === _turnId) ctx.cesar!.turnId = undefined;
         dispatch({ type: 'spinner-stop' });
         ctx.setActiveAbort(null);
 

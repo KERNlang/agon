@@ -250,6 +250,7 @@ interface name=CesarState
   field name=planDispatch type="((event: any) => void) | null"
   field name=proposedPlan type="any | undefined"
   field name=lastEscalation type="string | null"
+  field name=turnId type="string | undefined" optional=true
   field name=sessionMcpServers type="Array<{name:string, type?:string, url?:string, command?:string, args?:string[]}>"
 
 interface name=HandlerContext

@@ -27,6 +27,7 @@ import from="../commands/doctor.js" names="diagnoseEngineDoctorEntry,checkDoctor
 import from="../cesar/routing.js" names="deriveRoutingHints"
 import from="../cesar/routing.js" names="shouldUseAgentTeam"
 import from="../cesar/session.js" names="buildCesarSystemPrompt,resolveCesarBackend"
+import from="../cesar/tool-observability.js" names="replayCesarHarnessLogs"
 import from="@agon/core" names="createSpeculator,loadOrCreateActiveThread"
 import from="@agon/core" names="SpeculatorMemberConfig" types=true
 
@@ -1217,6 +1218,19 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
               thread,
               taskKeywords: specInput.split(/\s+/).slice(0, 8),
               onMemberStart: (eid: string) => cb.dispatch({ type: 'spinner-update', message: `${eid} speculating…` }),
+              onMemberPreview: (pkg: any, diff: string, path: string) => {
+                const effectCount = Array.isArray(pkg.effects) ? pkg.effects.length : 0;
+                const lineCount = String(diff ?? '').split('\n').filter((line: string) =>
+                  (line.startsWith('+') && !line.startsWith('+++')) || (line.startsWith('-') && !line.startsWith('---'))
+                ).length;
+                const capped = diff && diff.length > 2400 ? `${diff.slice(0, 2400)}\n\n[preview truncated: ${diff.length - 2400} more chars]` : diff;
+                cb.dispatch({
+                  type: 'engine-block',
+                  engineId: pkg.engineId,
+                  color: ENGINE_COLORS[pkg.engineId] ?? 0x9333ea,
+                  content: `Speculative VirtualFS preview: ${effectCount} file effect(s), ${lineCount} changed line(s)\nPath: ${path}\n\n${capped || '(empty diff preview)'}`,
+                });
+              },
               onMemberComplete: (pkg: any, score: number) => cb.dispatch({ type: 'agent-step-end', engineId: pkg.engineId, turnIndex: 0, outcome: 'completed', toolCalls: pkg.toolCallCount, tokensUsed: pkg.tokensUsed, stopReason: `score:${score}` }),
             });
           } catch (err: any) {
@@ -1228,7 +1242,7 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
             cb.dispatch({ type: 'engine-switch', from: specEngineIds[0] !== result.winnerId ? specEngineIds[0] : undefined, to: result.winnerId, reason: 'synthesis' });
             const appliedSummary = result.appliedFiles.length > 0
               ? `\nApplied ${result.appliedFiles.length} file(s): ${result.appliedFiles.slice(0, 5).map((f: string) => f.split('/').pop()).join(', ')}`
-              : '\n(no file changes — Phase E v2 needed for VirtualFS tool wiring)';
+              : '\n(no file changes)';
             cb.dispatch({ type: 'engine-block', engineId: result.winnerId, color: 0x9333ea, content: `Speculator winner: ${result.winnerId}${appliedSummary}\n\n${result.winner?.slice(0, 500) ?? ''}` });
           } else {
             cb.dispatch({ type: 'warning', message: 'Speculator: no winner — all engines produced empty results.' });
@@ -1322,6 +1336,11 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
         const failing = entries.filter((entry: any) => entry.status === 'fail').length;
         const warnings = entries.filter((entry: any) => entry.status === 'warn').length;
         cb.dispatch({ type: 'info', message: `Summary: ${entries.length - failing - warnings} ok, ${warnings} warn, ${failing} fail` });
+        break;
+      }
+      case 'harness-replay': {
+        const result = replayCesarHarnessLogs({ turnId: (intent as any).turnId, limit: 8 });
+        cb.dispatch({ type: 'engine-block', engineId: 'harness-replay', color: ENGINE_COLORS.cesar ?? 124, content: result.rendered });
         break;
       }
       case 'engines': cb.setEnginePickerOpen(true); break;

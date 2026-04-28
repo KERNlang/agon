@@ -17,7 +17,7 @@
 //     tsc) where real filesystem is unavoidable. VirtualFS handles read/write
 //     tool calls; shell commands fall through to the worktree.
 //
-// Phase E v1 scope:
+// Implemented scope:
 //   - EffectPackage DU — typed description of file mutations an engine produced
 //   - VirtualFS service — in-memory overlay (path → content) on top of a
 //     disk-snapshot. Supports read, write, delete, list, diff.
@@ -132,14 +132,30 @@ service name=VirtualFS export=true
   field name=engineId type=string private=true
   field name=runId type=string private=true
   field name=startedAt type=number private=true
+  field name=onChange type="((path:string)=>void)|undefined" private=true
 
-  constructor params="snapshot:FileSnapshot,engineId:string,runId:string"
+  constructor params="snapshot:FileSnapshot,engineId:string,runId:string,onChange?:((path:string)=>void)"
     handler <<<
       this.snapshot = snapshot;
       this.overlay = new Map();
       this.engineId = engineId;
       this.runId = runId;
       this.startedAt = Date.now();
+      this.onChange = onChange;
+    >>>
+
+  method name=setOnChange params="onChange?:((path:string)=>void)" returns=void
+    doc "Register a best-effort change callback. Called after overlay writes/deletes with the changed path. Callers can choose whether to materialize an EffectPackage."
+    handler <<<
+      this.onChange = onChange;
+    >>>
+
+  method name=notifyChange params="absPath:string" returns=void
+    handler <<<
+      if (!this.onChange) return;
+      try {
+        this.onChange(resolve(absPath));
+      } catch { /* preview callbacks must not affect tool execution */ }
     >>>
 
   method name=read params="absPath:string" returns="string|null"
@@ -153,13 +169,19 @@ service name=VirtualFS export=true
   method name=write params="absPath:string,content:string" returns=void
     doc "Write (create or overwrite) a file in the overlay. Does NOT touch disk."
     handler <<<
-      this.overlay.set(resolve(absPath), content);
+      const key = resolve(absPath);
+      const previous = this.overlay.has(key) ? (this.overlay.get(key) ?? null) : snapshotRead(this.snapshot, key);
+      this.overlay.set(key, content);
+      if (previous !== content) this.notifyChange(key);
     >>>
 
   method name=delete params="absPath:string" returns=void
     doc "Mark a file as deleted in the overlay. Does NOT touch disk. Returns null from read() after this."
     handler <<<
-      this.overlay.set(resolve(absPath), null);
+      const key = resolve(absPath);
+      const previous = this.overlay.has(key) ? (this.overlay.get(key) ?? null) : snapshotRead(this.snapshot, key);
+      this.overlay.set(key, null);
+      if (previous !== null) this.notifyChange(key);
     >>>
 
   method name=exists params="absPath:string" returns=boolean
@@ -263,6 +285,33 @@ fn name=applyEffectPackage params="pkg:EffectPackage,targetDir:string" returns="
       }
     }
     return modified;
+  >>>
+
+fn name=relocateEffectPackage params="pkg:EffectPackage,fromDir:string,toDir:string" returns=EffectPackage export=true
+  doc "Rewrite absolute EffectPackage paths rooted at fromDir so they target the matching relative path under toDir. Used when a speculative member ran inside an isolated worktree but its VirtualFS overlay needs to commit to the real workspace."
+  handler <<<
+    const fromRoot = resolve(fromDir);
+    const toRoot = resolve(toDir);
+    const relocatePath = (path: string): string => {
+      const abs = resolve(path);
+      const rel = relative(fromRoot, abs);
+      if (rel.startsWith('..') || resolve(fromRoot, rel) !== abs) return abs;
+      return resolve(toRoot, rel);
+    };
+    const effects = pkg.effects.map((effect: FileEffect): FileEffect => {
+      if (effect.kind === 'write') {
+        return { ...effect, path: relocatePath(effect.path) };
+      }
+      if (effect.kind === 'delete') {
+        return { ...effect, path: relocatePath(effect.path) };
+      }
+      return {
+        ...effect,
+        from: relocatePath(effect.from),
+        to: relocatePath(effect.to),
+      };
+    });
+    return { ...pkg, effects };
   >>>
 
 fn name=effectPackageDiff params="pkg:EffectPackage" returns=string export=true

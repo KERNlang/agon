@@ -2,6 +2,7 @@
 
 import type { SessionResult } from '@agon/core';
 
+// @kern-source: session-results:3
 export class SessionResultStore {
   results: SessionResult[] = [];
 

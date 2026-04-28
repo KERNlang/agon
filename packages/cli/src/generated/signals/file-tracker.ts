@@ -6,6 +6,7 @@ import { spawnSync } from 'node:child_process';
 
 import { existsSync, readFileSync, statSync } from 'node:fs';
 
+// @kern-source: file-tracker:9
 export interface FileEntry {
   path: string;
   relPath: string;
@@ -14,10 +15,13 @@ export interface FileEntry {
   touchCount: number;
 }
 
+// @kern-source: file-tracker:16
 export const EDIT_TOOLS: Set<string> = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'AgonEdit', 'AgonWrite', 'apply_patch', 'applypatch', 'ApplyPatch']);
 
+// @kern-source: file-tracker:21
 export const READ_TOOLS: Set<string> = new Set(['Read', 'Glob', 'Grep']);
 
+// @kern-source: file-tracker:26
 export function extractFilePaths(tool: string, input: string): string[] {
   if (!input) return [];
   const paths: string[] = [];
@@ -60,10 +64,12 @@ export function extractFilePaths(tool: string, input: string): string[] {
   return paths;
 }
 
+// @kern-source: file-tracker:69
 export function extractFilePath(input: string): string|null {
   return extractFilePaths('', input)[0] ?? null;
 }
 
+// @kern-source: file-tracker:74
 export function recordToolCall(tool: string, input: string, status: string): void {
   const rawPaths = extractFilePaths(tool, input);
   if (rawPaths.length === 0) return;
@@ -96,21 +102,26 @@ export function recordToolCall(tool: string, input: string, status: string): voi
   if (touched > 0) _fileTrackerState.version += 1;
 }
 
+// @kern-source: file-tracker:107
 export function listFiles(): FileEntry[] {
   return Array.from(_fileTrackerState.files.values()).sort((a: FileEntry, b: FileEntry) => b.lastTouchedAt - a.lastTouchedAt);
 }
 
+// @kern-source: file-tracker:112
 export function getFileTrackerVersion(): number {
   return _fileTrackerState.version;
 }
 
+// @kern-source: file-tracker:117
 export function clearFileTracker(): void {
   _fileTrackerState.files.clear();
   _fileTrackerState.version += 1;
 }
 
+// @kern-source: file-tracker:123
 export const _fileTrackerState: { files: Map<string, FileEntry>; version: number } = ({ files: new Map<string, FileEntry>(), version: 0 });
 
+// @kern-source: file-tracker:128
 export function getFileDiff(absPath: string, maxLines?: number): string {
   // Runs `git diff HEAD -- <path>` and returns the raw unified-diff text,
   // capped at maxLines (default 40) to keep the rail panel tight. For

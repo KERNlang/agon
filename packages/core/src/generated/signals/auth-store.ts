@@ -6,22 +6,26 @@ import { join, dirname, resolve } from 'node:path';
 
 import { homedir } from 'node:os';
 
+// @kern-source: auth-store:5
 export interface AuthEntry {
   type: 'api';
   key: string;
   provider?: string;
 }
 
+// @kern-source: auth-store:10
 export interface AuthStore {
   entries: Record<string, AuthEntry>;
 }
 
+// @kern-source: auth-store:13
 function getAuthFile(): string {
   const override = process.env.AGON_HOME?.trim();
   const home = override ? resolve(override) : join(homedir(), '.agon');
   return join(home, 'auth.json');
 }
 
+// @kern-source: auth-store:20
 export function loadAuthStore(): AuthStore {
   const authFile = getAuthFile();
   if (!existsSync(authFile)) {
@@ -35,6 +39,7 @@ export function loadAuthStore(): AuthStore {
   }
 }
 
+// @kern-source: auth-store:34
 export function saveAuthStore(store: AuthStore): void {
   const authFile = getAuthFile();
   const dir = dirname(authFile);
@@ -43,6 +48,7 @@ export function saveAuthStore(store: AuthStore): void {
   try { chmodSync(authFile, 0o600); } catch (_e) { /* best effort */ }
 }
 
+// @kern-source: auth-store:43
 export function setAuthKey(envVar: string, key: string, providerName?: string): void {
   const store = loadAuthStore();
   store.entries[envVar] = { type: 'api', key, provider: providerName };
@@ -51,12 +57,14 @@ export function setAuthKey(envVar: string, key: string, providerName?: string): 
   process.env[envVar] = key;
 }
 
+// @kern-source: auth-store:52
 export function removeAuthKey(envVar: string): void {
   const store = loadAuthStore();
   delete store.entries[envVar];
   saveAuthStore(store);
 }
 
+// @kern-source: auth-store:59
 export function getAuthKey(envVar: string): string|null {
   // 1. Check process env first (explicit export takes precedence)
   if (process.env[envVar]) return process.env[envVar]!;
@@ -74,6 +82,7 @@ export function getAuthKey(envVar: string): string|null {
 /**
  * Load all stored keys into process.env at startup. Call once during init.
  */
+// @kern-source: auth-store:74
 export function loadAllAuthKeys(): void {
   const store = loadAuthStore();
   for (const [envVar, entry] of Object.entries(store.entries)) {
@@ -84,6 +93,7 @@ export function loadAllAuthKeys(): void {
   }
 }
 
+// @kern-source: auth-store:86
 export function listStoredProviders(): Array<{envVar:string, provider?:string}> {
   const store = loadAuthStore();
   return Object.entries(store.entries).map(([envVar, entry]) => ({

@@ -2,6 +2,7 @@
 
 import type { EngineRegistry, EngineAdapter, Plan, AgonConfig, ChatSession, PersistentSession, CesarMemory, EventBus, ToolRegistry } from '@agon/core';
 
+// @kern-source: handler-types:3
 export interface EngineProgress {
   id: string;
   status: string;
@@ -12,6 +13,7 @@ export interface EngineProgress {
   isAgent?: boolean;
 }
 
+// @kern-source: handler-types:12
 export type OutputEvent =
   | { type: 'text'; content: string }
   | { type: 'engine-block'; engineId: string; color: number; content: string }
@@ -60,6 +62,7 @@ export type OutputEvent =
   | { type: 'agent-routing'; mode: 'solo'|'team'; engines: string[]; reason: string }
   | { type: 'agent-team-complete'; teamId: string; winner: string|null; synthesizedPatch?: string|null; synthesizedAnalysis?: string|null; memberOutcomes: Array<{engineId:string,outcome:string,diffLines:number,passedFitness:boolean}>; teamCostUsd: number; teamDurationMs: number; synthesisRan?: boolean; synthesisChanged?: boolean; synthesisCostUsd?: number; synthesisFitnessRegressed?: boolean };
 
+// @kern-source: handler-types:183
 export interface PendingDelegation {
   action: string;
   task?: string;
@@ -90,8 +93,10 @@ export interface PendingDelegation {
   createdAt: number;
 }
 
+// @kern-source: handler-types:212
 export type CesarLiveMode = 'self' | 'self-nero' | 'delegate' | 'forge' | 'forge-slice' | 'team-forge' | 'brainstorm' | 'team-brainstorm' | 'campfire' | 'tribunal' | 'team-tribunal' | 'pipeline' | 'review' | 'agent' | 'team-agent' | 'plan';
 
+// @kern-source: handler-types:214
 export interface CesarTurnOutcome {
   mode?: CesarLiveMode;
   delegated: boolean;
@@ -112,6 +117,7 @@ export interface CesarTurnOutcome {
   maxTurns?: number;
 }
 
+// @kern-source: handler-types:233
 export interface CesarState {
   busy: boolean;
   busySince: number | null;
@@ -134,6 +140,7 @@ export interface CesarState {
   sessionMcpServers: Array<{name:string, type?:string, url?:string, command?:string, args?:string[]}>;
 }
 
+// @kern-source: handler-types:254
 export interface HandlerContext {
   registry: EngineRegistry;
   adapter: EngineAdapter;

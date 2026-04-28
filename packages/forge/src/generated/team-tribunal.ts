@@ -14,6 +14,7 @@ import type { TribunalMode } from './tribunal-modes.js';
 
 import { getModeConfig } from './tribunal-modes.js';
 
+// @kern-source: team-tribunal:13
 export interface TeamTribunalOptions {
   question: string;
   membersPerSide: number;
@@ -30,6 +31,7 @@ export interface TeamTribunalOptions {
   onEvent?: (event:ForgeEvent|TeamEvent)=>void;
 }
 
+// @kern-source: team-tribunal:28
 export async function runTeamCoopTribunal(team: TeamSpec, position: string, question: string, rounds: number, mode: TribunalMode, registry: EngineRegistry, adapter: EngineAdapter, timeout: number, outputDir: string, onEvent?: (event:ForgeEvent|TeamEvent)=>void, signal?: AbortSignal): Promise<{submission:TeamSubmission, arguments:string[]}> {
   const trace: TeamRoundTrace[] = [];
   const start = Date.now();
@@ -131,6 +133,7 @@ export async function runTeamCoopTribunal(team: TeamSpec, position: string, ques
   };
 }
 
+// @kern-source: team-tribunal:130
 export async function runTeamTribunal(options: TeamTribunalOptions): Promise<TeamMatchResult> {
   const config = loadConfig(process.cwd());
   const matchId = randomUUID().slice(0, 8);

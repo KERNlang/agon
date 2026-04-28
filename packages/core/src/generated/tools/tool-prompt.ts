@@ -4,6 +4,7 @@ import type { ToolDefinition, ToolHandler } from '../models/tool-types.js';
 
 import { ToolRegistry } from '../signals/tool-registry.js';
 
+// @kern-source: tool-prompt:8
 export const TOOL_USE_FORMAT: string = `Tool format — output this exact XML to call tools:
 
 <tool name="Read">{"file_path":"src/index.ts"}</tool>
@@ -20,6 +21,7 @@ Keep going until the task is DONE. Don't stop after reading one file — chain t
 /**
  * Describe a schema property including nested array/object structures for XML prompt.
  */
+// @kern-source: tool-prompt:24
 function describeSchemaProperty(key: string, spec: any, required: boolean): string {
   const opt = required ? '' : '?';
   const s = spec as any;
@@ -48,6 +50,7 @@ function describeSchemaProperty(key: string, spec: any, required: boolean): stri
   return `${key}${opt}:${s.type ?? 'string'}${enumHint}`;
 }
 
+// @kern-source: tool-prompt:54
 function toolDefinitionToPrompt(def: ToolDefinition): string {
   const schema = def.inputSchema as any;
   const props = schema.properties ?? schema;
@@ -66,6 +69,7 @@ function toolDefinitionToPrompt(def: ToolDefinition): string {
 /**
  * Generate the complete tool system prompt section for any LLM.
  */
+// @kern-source: tool-prompt:70
 export function generateToolPrompt(handlers: ToolHandler[]): string {
   const sections: string[] = [TOOL_USE_FORMAT, '\n## Available Tools\n'];
 
@@ -78,6 +82,7 @@ export function generateToolPrompt(handlers: ToolHandler[]): string {
   return sections.join('\n\n');
 }
 
+// @kern-source: tool-prompt:84
 function generateReadToolSchema(): Record<string,unknown> {
   return {
     file_path: { type: 'string', required: true, description: 'Absolute or relative path to file' },
@@ -86,6 +91,7 @@ function generateReadToolSchema(): Record<string,unknown> {
   };
 }
 
+// @kern-source: tool-prompt:93
 function generateEditToolSchema(): Record<string,unknown> {
   return {
     file_path: { type: 'string', required: true, description: 'Path to file to edit' },
@@ -95,6 +101,7 @@ function generateEditToolSchema(): Record<string,unknown> {
   };
 }
 
+// @kern-source: tool-prompt:103
 function generateWriteToolSchema(): Record<string,unknown> {
   return {
     file_path: { type: 'string', required: true, description: 'Path to file to write' },
@@ -102,6 +109,7 @@ function generateWriteToolSchema(): Record<string,unknown> {
   };
 }
 
+// @kern-source: tool-prompt:111
 function generateBashToolSchema(): Record<string,unknown> {
   return {
     command: { type: 'string', required: true, description: 'Shell command to execute' },
@@ -109,6 +117,7 @@ function generateBashToolSchema(): Record<string,unknown> {
   };
 }
 
+// @kern-source: tool-prompt:119
 function generateGrepToolSchema(): Record<string,unknown> {
   return {
     pattern: { type: 'string', required: true, description: 'Regex pattern to search for' },
@@ -118,6 +127,7 @@ function generateGrepToolSchema(): Record<string,unknown> {
   };
 }
 
+// @kern-source: tool-prompt:129
 function generateGlobToolSchema(): Record<string,unknown> {
   return {
     pattern: { type: 'string', required: true, description: 'Glob pattern (e.g. "**/*.ts")' },
@@ -128,6 +138,7 @@ function generateGlobToolSchema(): Record<string,unknown> {
 /**
  * Recursively convert a JSON Schema property, preserving nested structures for arrays/objects.
  */
+// @kern-source: tool-prompt:137
 function convertSchemaProperty(spec: any): Record<string,unknown> {
   const result: Record<string, unknown> = { type: spec.type ?? 'string' };
   if (spec.description) result.description = spec.description;
@@ -154,6 +165,7 @@ function convertSchemaProperty(spec: any): Record<string,unknown> {
 /**
  * Convert Agon tool definitions to OpenAI function calling format.
  */
+// @kern-source: tool-prompt:162
 export function toolsToOpenAIFormat(registry: ToolRegistry): Array<{type:string,function:{name:string,description:string,parameters:Record<string,unknown>}}> {
   const handlers = Array.from((registry as any).tools.values()) as ToolHandler[];
   return handlers.map((h: ToolHandler) => {

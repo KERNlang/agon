@@ -21,6 +21,7 @@ import { repoRoot, worktreeCreate, worktreeRemoveBestEffort, stashSnapshot, work
 /**
  * One engine in a speculative parallel run.
  */
+// @kern-source: speculator:40
 export interface SpeculatorMemberConfig {
   engineId: string;
   api: ApiConfig;
@@ -30,6 +31,7 @@ export interface SpeculatorMemberConfig {
 /**
  * Options for a Speculator run.
  */
+// @kern-source: speculator:46
 export interface SpeculatorOptions {
   members: SpeculatorMemberConfig[];
   prompt: string;
@@ -47,6 +49,7 @@ export interface SpeculatorOptions {
 /**
  * Outcome of a speculative parallel run. candidates contains all members' EffectPackages (including failed/empty ones). winner is the highest-scoring candidate, or null if all failed.
  */
+// @kern-source: speculator:62
 export interface SpeculatorResult {
   candidates: EffectPackage[];
   scores: Record<string,number>;
@@ -59,6 +62,7 @@ export interface SpeculatorResult {
 /**
  * Runs N agents against N VirtualFS instances in parallel. Each agent sees the same base snapshot. The winner's overlay is applied to the real filesystem. This is the core of Phase E speculative execution — multi-engine consensus at fastest-engine latency.
  */
+// @kern-source: speculator:73
 export class Speculator {
   private runId: string;
   private snapshot: FileSnapshot|null;
@@ -232,6 +236,7 @@ export class Speculator {
 /**
  * Create a fresh Speculator instance. One per agent invocation.
  */
+// @kern-source: speculator:250
 export function createSpeculator(): Speculator {
   return new Speculator();
 }

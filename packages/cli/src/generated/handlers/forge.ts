@@ -18,6 +18,7 @@ import { cesarJudgeForge, cesarConvergeForge } from '../../handlers/cesar-brain.
 
 import { sessionResultStore } from '../models/session-results.js';
 
+// @kern-source: forge:11
 function handleForgeEvent(event: any, plan: Plan, engineStatus: Record<string,string>, dispatch: Dispatch, ctx: HandlerContext): Plan {
   if (ctx.currentPlan?.state === 'cancelled') return plan;
   const id = event.engineId ?? '';
@@ -76,6 +77,7 @@ function handleForgeEvent(event: any, plan: Plan, engineStatus: Record<string,st
   return plan;
 }
 
+// @kern-source: forge:70
 export async function handleForge(task: string, fitnessCmd: string|null, dispatch: Dispatch, ctx: HandlerContext, existingPlan?: Plan, hardened?: boolean, skipPlanApproval?: boolean): Promise<{winner:string|null, patchPath:string|null, manifestPath:string, task:string, fitnessCmd:string}|null> {
   const forgeAbort = new AbortController();
   try {

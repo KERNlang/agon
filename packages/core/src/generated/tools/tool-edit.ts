@@ -13,12 +13,14 @@ import { takeSnapshot } from '../blocks/file-history.js';
 /**
  * Replace curly/smart quotes with straight ASCII equivalents.
  */
+// @kern-source: tool-edit:11
 function normalizeCurlyQuotes(text: string): string {
   return text
     .replace(/[\u2018\u2019]/g, "'")
     .replace(/[\u201C\u201D]/g, '"');
 }
 
+// @kern-source: tool-edit:19
 function countOccurrences(haystack: string, needle: string): number {
   let count = 0;
   let pos = 0;
@@ -34,6 +36,7 @@ function countOccurrences(haystack: string, needle: string): number {
 /**
  * Factory for the Edit tool — exact string replacement with safety checks.
  */
+// @kern-source: tool-edit:32
 export function createEditTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Edit',

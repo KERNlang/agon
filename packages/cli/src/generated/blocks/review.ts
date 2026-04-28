@@ -6,10 +6,12 @@ import { parsePatch, patchSummary, applyPatchWithUndo, copyToClipboard, resolveW
 
 import type { Dispatch } from '../../handlers/types.js';
 
+// @kern-source: review:8
 export interface ReviewAction {
   type: 'apply'|'edit'|'reject'|'copy';
 }
 
+// @kern-source: review:11
 export interface ReviewState {
   winnerId: string;
   patchPath: string;
@@ -19,6 +21,7 @@ export interface ReviewState {
 /**
  * Process a review action. Returns undo token if patch was applied, null otherwise.
  */
+// @kern-source: review:16
 export function handleReviewAction(action: ReviewAction, review: ReviewState, dispatch: Dispatch): string|null {
   switch (action.type) {
     case 'apply': {

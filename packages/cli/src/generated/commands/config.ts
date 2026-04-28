@@ -8,6 +8,7 @@ import type { AgonConfig } from '@agon/core';
 
 import { header, info, table, bold, success, fail } from '../blocks/output-format.js';
 
+// @kern-source: config:6
 export const configCommand: ReturnType<typeof defineCommand> = defineCommand({
   meta: {
     name: 'config',

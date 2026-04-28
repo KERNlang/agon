@@ -4,13 +4,16 @@ import type { ToolResult, ToolContext, ToolDefinition, PermissionDecision, ToolH
 
 import { spawnWithTimeout } from '../blocks/process.js';
 
+// @kern-source: tool-glob:7
 export const DEFAULT_MAX_FILES: number = 100;
 
+// @kern-source: tool-glob:10
 export const GLOB_TIMEOUT: number = 15000;
 
 /**
  * Factory: creates the Glob tool handler for file pattern matching via ripgrep.
  */
+// @kern-source: tool-glob:13
 export function createGlobTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Glob',

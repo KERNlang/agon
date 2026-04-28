@@ -5,6 +5,7 @@ import type { AgentEvent } from '../models/agent-event.js';
 /**
  * Minimal dispatch contract for StreamBridge. Compatible with the full Dispatch from handlers/types.ts — callers can pass it directly.
  */
+// @kern-source: stream-bridge:32
 export interface BridgeDispatch {
   call: (event: Record<string,unknown>) => void;
 }
@@ -12,6 +13,7 @@ export interface BridgeDispatch {
 /**
  * Fired by StreamBridge when the active engine changes. Mirrors the engine-switch OutputEvent variant.
  */
+// @kern-source: stream-bridge:36
 export interface EngineSwitch {
   from: string|undefined;
   to: string;
@@ -22,6 +24,7 @@ export interface EngineSwitch {
 /**
  * Converts AgentEvent → OutputEvent with engine-switch tracking. Construct one per agent invocation (solo or team) and call bridge(event) for every AgentEvent the inner loop emits.
  */
+// @kern-source: stream-bridge:45
 export class StreamBridge {
   activeEngineId: string|undefined;
   dispatch: (event: Record<string,unknown>) => void;
@@ -132,6 +135,7 @@ export class StreamBridge {
 /**
  * Create a StreamBridge for one agent invocation. Pass the same Dispatch function used by the handler.
  */
+// @kern-source: stream-bridge:167
 export function createStreamBridge(dispatch: (event:Record<string,unknown>)=>void, opts?: {initialEngineId?:string,onSwitch?:(sw:EngineSwitch)=>void}): StreamBridge {
   return new StreamBridge(dispatch, opts);
 }

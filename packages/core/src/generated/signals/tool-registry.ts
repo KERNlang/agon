@@ -2,6 +2,7 @@
 
 import type { ToolDefinition, ToolCall, ToolCallResult, ToolResult, ToolContext, PermissionDecision, ToolHandler } from '../models/tool-types.js';
 
+// @kern-source: tool-registry:6
 export class ToolRegistry {
   tools: Map<string, ToolHandler>;
 
@@ -38,6 +39,7 @@ export class ToolRegistry {
 /**
  * Three-phase pipeline: validate → permission → execute
  */
+// @kern-source: tool-registry:46
 export async function executeToolCall(call: ToolCall, ctx: ToolContext, registry: ToolRegistry, onPermissionAsk?: (tool:string,message:string)=>Promise<boolean|string>): Promise<ToolCallResult> {
   const start = Date.now();
   const handler = registry.get(call.name);
@@ -141,6 +143,7 @@ export async function executeToolCall(call: ToolCall, ctx: ToolContext, registry
 /**
  * Execute multiple tool calls, partitioned into concurrent/serial batches.
  */
+// @kern-source: tool-registry:148
 export async function executeToolCalls(calls: ToolCall[], ctx: ToolContext, registry: ToolRegistry, onPermissionAsk?: (tool:string,message:string)=>Promise<boolean|string>, onProgress?: (result:ToolCallResult)=>void): Promise<ToolCallResult[]> {
   const results: ToolCallResult[] = [];
 

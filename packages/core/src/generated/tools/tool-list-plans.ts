@@ -6,6 +6,7 @@ import type { ToolContext } from '../models/tool-types.js';
 
 import { listCesarPlans } from '../cesar/plan.js';
 
+// @kern-source: tool-list-plans:5
 export function createListPlansTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'ListPlans',

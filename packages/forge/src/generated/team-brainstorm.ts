@@ -16,6 +16,7 @@ import type { KernDraft } from '@kernlang/protocol';
 
 import { calibrateConfidence, qualityScore } from './brainstorm.js';
 
+// @kern-source: team-brainstorm:13
 export interface TeamBrainstormOptions {
   question: string;
   context?: string;
@@ -31,6 +32,7 @@ export interface TeamBrainstormOptions {
   onEvent?: (event:ForgeEvent|TeamEvent)=>void;
 }
 
+// @kern-source: team-brainstorm:27
 export async function runTeamCoopBrainstorm(team: TeamSpec, question: string, context: string|undefined, registry: EngineRegistry, adapter: EngineAdapter, timeout: number, outputDir: string, onEvent?: (event:ForgeEvent|TeamEvent)=>void, signal?: AbortSignal): Promise<{submission:TeamSubmission, proposal:string, score:number}> {
   const trace: TeamRoundTrace[] = [];
   const start = Date.now();
@@ -176,6 +178,7 @@ export async function runTeamCoopBrainstorm(team: TeamSpec, question: string, co
   };
 }
 
+// @kern-source: team-brainstorm:173
 export async function runTeamBrainstorm(options: TeamBrainstormOptions): Promise<TeamMatchResult> {
   const config = loadConfig(process.cwd());
   const matchId = randomUUID().slice(0, 8);

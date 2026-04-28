@@ -23,6 +23,7 @@ import { EventBus } from '../signals/event-bus.js';
 /**
  * Scan ~/.agon/extensions/ and <cwd>/.agon/extensions/ for extension directories.
  */
+// @kern-source: extension-loader:16
 export function discoverExtensionDirs(cwd: string): { dir: string; source: 'user' | 'repo' }[] {
   const results: { dir: string; source: 'user' | 'repo' }[] = [];
 
@@ -66,6 +67,7 @@ export function discoverExtensionDirs(cwd: string): { dir: string; source: 'user
 /**
  * Read and validate a manifest.json from an extension directory.
  */
+// @kern-source: extension-loader:58
 export function loadExtensionManifest(dir: string, source: 'builtin'|'user'|'repo'): LoadedExtension | null {
   const manifestPath = join(dir, 'manifest.json');
   try {
@@ -90,6 +92,7 @@ export function loadExtensionManifest(dir: string, source: 'builtin'|'user'|'rep
 /**
  * Discover and load all extensions. Later source wins for duplicate IDs.
  */
+// @kern-source: extension-loader:81
 export function loadExtensions(cwd: string): LoadedExtension[] {
   const dirs = discoverExtensionDirs(cwd);
   const byId = new Map<string, LoadedExtension>();
@@ -110,6 +113,7 @@ export function loadExtensions(cwd: string): LoadedExtension[] {
 /**
  * Dynamically import command handlers from an extension and register them.
  */
+// @kern-source: extension-loader:100
 export async function registerExtensionCommands(ext: LoadedExtension, commandRegistry: CommandRegistry): Promise<string[]> {
   const registered: string[] = [];
   const commands = ext.manifest.contributes?.commands;
@@ -155,6 +159,7 @@ export async function registerExtensionCommands(ext: LoadedExtension, commandReg
 /**
  * Load engine JSON definitions from an extension and register them.
  */
+// @kern-source: extension-loader:144
 export function registerExtensionEngines(ext: LoadedExtension, engineRegistry: EngineRegistry): string[] {
   const registered: string[] = [];
   const enginePaths = ext.manifest.contributes?.engines;
@@ -179,6 +184,7 @@ export function registerExtensionEngines(ext: LoadedExtension, engineRegistry: E
 /**
  * Convert skill contributions to Skill objects. Supports both inline prompts and handler-based skills.
  */
+// @kern-source: extension-loader:167
 export function registerExtensionSkills(ext: LoadedExtension): Skill[] {
   const skills: Skill[] = [];
   const skillContribs = ext.manifest.contributes?.skills;
@@ -223,6 +229,7 @@ export function registerExtensionSkills(ext: LoadedExtension): Skill[] {
 /**
  * Dynamically import hook handlers from an extension and register them on the event bus.
  */
+// @kern-source: extension-loader:210
 export async function registerExtensionHooks(ext: LoadedExtension, eventBus: EventBus): Promise<string[]> {
   const registered: string[] = [];
   const hookContribs = ext.manifest.contributes?.hooks;
@@ -250,6 +257,7 @@ export async function registerExtensionHooks(ext: LoadedExtension, eventBus: Eve
 /**
  * Main entry point — discover, load, and wire all extensions. Called once at app startup.
  */
+// @kern-source: extension-loader:236
 export async function initExtensions(cwd: string, commandRegistry: CommandRegistry, engineRegistry: EngineRegistry, eventBus?: EventBus): Promise<{ extensions: LoadedExtension[]; skills: Skill[]; systemPromptFragments: string[] }> {
   const extensions = loadExtensions(cwd);
   const allSkills: Skill[] = [];
@@ -296,6 +304,7 @@ export async function initExtensions(cwd: string, commandRegistry: CommandRegist
 /**
  * Build a sandboxed context object for extension command handlers.
  */
+// @kern-source: extension-loader:281
 export function buildExtensionContext(cb: any, source: string): Record<string, unknown> {
   return {
     dispatch: cb.dispatch,

@@ -6,6 +6,7 @@ import { loadConfig, resolveWorkingDir } from '@agon/core';
 
 import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 
+// @kern-source: commit:5
 function gitExec(cmd: string, cwd: string): string {
   try {
     return execSync(cmd, { cwd, encoding: 'utf-8', timeout: 10000, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
@@ -14,6 +15,7 @@ function gitExec(cmd: string, cwd: string): string {
   }
 }
 
+// @kern-source: commit:14
 function classifyChanges(diff: string): string {
   const lower = diff.toLowerCase();
   if (/\bfix(es|ed)?\b|\bbug\b|\bpatch\b/.test(lower)) return 'fix';
@@ -24,6 +26,7 @@ function classifyChanges(diff: string): string {
   return 'chore';
 }
 
+// @kern-source: commit:25
 export async function handleCommit(message: string|undefined, dispatch: Dispatch, ctx: HandlerContext): Promise<void> {
   const cwd = resolveWorkingDir();
 

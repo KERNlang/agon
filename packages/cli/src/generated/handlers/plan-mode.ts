@@ -16,6 +16,7 @@ import { runReviewCore, resolveReviewTarget, selectReviewEngine } from './review
 
 import { runAgentMode, runAgentTeam } from './agent.js';
 
+// @kern-source: plan-mode:10
 export async function handleProposePlan(args: any, dispatch: Dispatch, ctx: HandlerContext): Promise<CesarPlan> {
   // Tribunal fix #6: sanitize LLM-controlled step ids before they hit
   // filesystem joins. Anything outside [a-z0-9_-]{1,64} is replaced.
@@ -69,6 +70,7 @@ export async function handleProposePlan(args: any, dispatch: Dispatch, ctx: Hand
   return plan;
 }
 
+// @kern-source: plan-mode:64
 export function buildStepExecutors(ctx: HandlerContext): Record<string,StepExecutor> {
   const cwd = resolveWorkingDir();
   const outputDir = join(RUNS_DIR, `plan-exec-${Date.now()}`);

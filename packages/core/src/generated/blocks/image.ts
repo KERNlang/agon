@@ -8,8 +8,10 @@ import { homedir } from 'node:os';
 
 import type { ImageAttachment } from '../models/types.js';
 
+// @kern-source: image:6
 export const IMAGE_EXTENSIONS: Set<string> = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp']);
 
+// @kern-source: image:9
 export const MIME_MAP: Record<string,string> = ({
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
@@ -20,20 +22,25 @@ export const MIME_MAP: Record<string,string> = ({
   '.bmp': 'image/bmp',
 });
 
+// @kern-source: image:22
 export const IMAGE_PATH_REGEX: RegExp = /(?:^|\s)((?:\/[\w.\-]+)+\.(?:png|jpe?g|gif|webp|svg|bmp)|~\/[\w.\-\/]+\.(?:png|jpe?g|gif|webp|svg|bmp)|\.{1,2}\/[\w.\-\/]+\.(?:png|jpe?g|gif|webp|svg|bmp))/gi;
 
+// @kern-source: image:25
 export const IMG_CMD_REGEX: RegExp = /^\/img\s+(.+)$/i;
 
+// @kern-source: image:28
 export function isImagePath(filePath: string): boolean {
   const ext = extname(filePath).toLowerCase();
   return IMAGE_EXTENSIONS.has(ext);
 }
 
+// @kern-source: image:34
 export function mimeFromExt(filePath: string): string {
   const ext = extname(filePath).toLowerCase();
   return MIME_MAP[ext] ?? 'application/octet-stream';
 }
 
+// @kern-source: image:40
 export function resolveImagePath(rawPath: string, cwd: string): string|null {
   let resolved: string;
   if (rawPath.startsWith('~/')) {
@@ -46,6 +53,7 @@ export function resolveImagePath(rawPath: string, cwd: string): string|null {
   return existsSync(resolved) ? resolved : null;
 }
 
+// @kern-source: image:53
 export function buildImageAttachment(rawPath: string, cwd: string): ImageAttachment|null {
   const resolved = resolveImagePath(rawPath.trim(), cwd);
   if (!resolved) return null;
@@ -56,6 +64,7 @@ export function buildImageAttachment(rawPath: string, cwd: string): ImageAttachm
   };
 }
 
+// @kern-source: image:64
 export function extractImagesFromInput(input: string, cwd: string): {text:string, images:ImageAttachment[]} {
   const images: ImageAttachment[] = [];
 

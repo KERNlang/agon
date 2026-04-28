@@ -18,6 +18,7 @@ import { header, success, fail, warn, info, table, green, red, yellow, bold, cya
 
 import { icons } from '../signals/icons.js';
 
+// @kern-source: forge:11
 export const forgeCommand: any = defineCommand({
   meta: {
     name: 'forge',

@@ -6,6 +6,7 @@ import { realpathSync } from 'node:fs';
 
 import type { PermissionDecision, ToolContext } from '../models/tool-types.js';
 
+// @kern-source: tool-permissions:8
 export interface PermissionRule {
   tool: string;
   behavior: 'allow'|'ask'|'deny';
@@ -13,6 +14,7 @@ export interface PermissionRule {
   reason?: string;
 }
 
+// @kern-source: tool-permissions:16
 export const DANGEROUS_COMMANDS: string[] = [
   'rm -rf /', 'rm -rf ~', 'rm -rf *',
   'dd if=', 'mkfs.',
@@ -21,10 +23,13 @@ export const DANGEROUS_COMMANDS: string[] = [
   ':(){:|:&};:', // fork bomb
 ];
 
+// @kern-source: tool-permissions:27
 export const DANGEROUS_PREFIXES: string[] = ['sudo ', 'su ', 'doas '];
 
+// @kern-source: tool-permissions:32
 export const SAFE_SHELL_WRAPPERS: string[] = ['timeout', 'time', 'nice', 'nohup', 'env', 'command'];
 
+// @kern-source: tool-permissions:37
 export const READONLY_COMMANDS: Set<string> = new Set([
   'ls', 'cat', 'head', 'tail', 'less', 'more', 'wc', 'file', 'stat',
   'pwd', 'echo', 'printf', 'date', 'which', 'whereis', 'type',
@@ -36,6 +41,7 @@ export const READONLY_COMMANDS: Set<string> = new Set([
   'tree', 'du', 'df',
 ]);
 
+// @kern-source: tool-permissions:53
 export function stripShellWrappers(command: string): string {
   let cmd = command.trim();
   let changed = true;
@@ -57,6 +63,7 @@ export function stripShellWrappers(command: string): string {
   return cmd;
 }
 
+// @kern-source: tool-permissions:75
 export function extractBaseCommand(command: string): string {
   const stripped = stripShellWrappers(command);
   // Get first word (the actual command)
@@ -64,6 +71,7 @@ export function extractBaseCommand(command: string): string {
   return parts[0] ?? '';
 }
 
+// @kern-source: tool-permissions:83
 export function stripShellRedirections(command: string): string {
   return command
     .replace(/\s+\d*(?:>>?|<<?)\s*\S+/g, '')
@@ -71,6 +79,7 @@ export function stripShellRedirections(command: string): string {
     .trim();
 }
 
+// @kern-source: tool-permissions:91
 export function isDangerousCommand(command: string): boolean {
   const lower = command.toLowerCase().trim();
   for (const dangerous of DANGEROUS_COMMANDS) {
@@ -82,6 +91,7 @@ export function isDangerousCommand(command: string): boolean {
   return false;
 }
 
+// @kern-source: tool-permissions:103
 export function isReadOnlyCommand(command: string): boolean {
   const stripped = stripShellRedirections(stripShellWrappers(command)).trim();
   // Split on compound operators FIRST: &&, ||, ;, &  (but NOT single |)
@@ -101,10 +111,13 @@ export function isReadOnlyCommand(command: string): boolean {
   return false;
 }
 
+// @kern-source: tool-permissions:125
 export const _gitDirtyCache: {files:Set<string>|null,cwd:string|null,expiry:number} = { files: null as Set<string>|null, cwd: null as string|null, expiry: 0 };
 
+// @kern-source: tool-permissions:128
 export const GIT_DIRTY_CACHE_TTL: number = 2000  // 2 seconds;
 
+// @kern-source: tool-permissions:133
 export function getGitDirtyFiles(cwd: string): Set<string> {
   const now = Date.now();
   if (_gitDirtyCache.files && _gitDirtyCache.cwd === cwd && now < _gitDirtyCache.expiry) return _gitDirtyCache.files;
@@ -122,18 +135,21 @@ export function getGitDirtyFiles(cwd: string): Set<string> {
   return _gitDirtyCache.files;
 }
 
+// @kern-source: tool-permissions:151
 export function invalidateGitDirtyCache() {
   _gitDirtyCache.files = null;
   _gitDirtyCache.cwd = null;
   _gitDirtyCache.expiry = 0;
 }
 
+// @kern-source: tool-permissions:158
 export function isSessionAllowed(command: string, ctx: ToolContext): boolean {
   if (!ctx.sessionAllowList || ctx.sessionAllowList.length === 0) return false;
   const base = command.trim().split(/\s+/)[0];
   return ctx.sessionAllowList.some(ac => command.startsWith(ac) || base === ac);
 }
 
+// @kern-source: tool-permissions:165
 export function isGitDirtyFile(filePath: string, cwd: string): boolean {
   const dirty = getGitDirtyFiles(cwd);
   const name = filePath.split('/').pop() ?? filePath;
@@ -143,6 +159,7 @@ export function isGitDirtyFile(filePath: string, cwd: string): boolean {
   return false;
 }
 
+// @kern-source: tool-permissions:175
 export function checkBashPermission(command: string, ctx: ToolContext): PermissionDecision {
   if (isDangerousCommand(command)) {
     return { behavior: 'deny', message: `Dangerous command blocked: ${command.slice(0, 50)}`, reason: 'dangerous_pattern' };
@@ -181,6 +198,7 @@ export function checkBashPermission(command: string, ctx: ToolContext): Permissi
   return { behavior: 'ask', message: `This command requires approval`, reason: 'bash_mutating' };
 }
 
+// @kern-source: tool-permissions:214
 export function isPathUnderCwd(filePath: string, cwd: string): boolean {
   const resolved = isAbsolute(filePath) ? filePath : resolve(cwd, filePath);
   // Resolve symlinks to prevent traversal via symlinks
@@ -201,6 +219,7 @@ export function isPathUnderCwd(filePath: string, cwd: string): boolean {
   return !rel.startsWith('..');
 }
 
+// @kern-source: tool-permissions:235
 export function checkFileReadPermission(filePath: string, ctx: ToolContext): PermissionDecision {
   if (ctx.permissionMode === 'deny-all') {
     return { behavior: 'deny', message: 'All tool execution is denied' };
@@ -222,6 +241,7 @@ export function checkFileReadPermission(filePath: string, ctx: ToolContext): Per
   return { behavior: 'ask', message: `Read file outside workspace: ${resolved}` };
 }
 
+// @kern-source: tool-permissions:257
 export function checkFileWritePermission(filePath: string, ctx: ToolContext): PermissionDecision {
   if (ctx.permissionMode === 'deny-all') {
     return { behavior: 'deny', message: 'All tool execution is denied' };

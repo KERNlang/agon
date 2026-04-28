@@ -12,6 +12,7 @@ import { createCliAdapter } from '@agon/adapter-cli';
 
 import { header, success, fail, info, table, bold, green, red, dim } from '../blocks/output-format.js';
 
+// @kern-source: engine:8
 export const engineCommand: any = defineCommand({
   meta: {
     name: 'engine',

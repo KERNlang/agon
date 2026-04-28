@@ -10,8 +10,10 @@ import type { ParseResult } from './tool-parser.js';
 
 import { generateToolPrompt } from './tool-prompt.js';
 
+// @kern-source: tool-loop:11
 export const MAX_TOOL_TURNS: number = 25;
 
+// @kern-source: tool-loop:14
 export interface ToolLoopCallbacks {
   onToolCall?: (name: string, input: Record<string,unknown>) => void;
   onToolResult?: (name: string, result: ToolCallResult) => void;
@@ -20,6 +22,7 @@ export interface ToolLoopCallbacks {
   onTurnComplete?: (turn: number) => void;
 }
 
+// @kern-source: tool-loop:21
 export interface ToolLoopResult {
   finalText: string;
   toolCallCount: number;
@@ -30,6 +33,7 @@ export interface ToolLoopResult {
 /**
  * Generate the tool system prompt to inject into any engine's context.
  */
+// @kern-source: tool-loop:27
 export function buildToolSystemPrompt(registry: ToolRegistry): string {
   const handlers = Array.from((registry as any).tools.values()) as ToolHandler[];
   return generateToolPrompt(handlers);
@@ -38,6 +42,7 @@ export function buildToolSystemPrompt(registry: ToolRegistry): string {
 /**
  * Process a single engine response: parse tool calls, execute them, format results.
  */
+// @kern-source: tool-loop:34
 export async function processToolResponse(response: string, ctx: ToolContext, registry: ToolRegistry, callbacks?: ToolLoopCallbacks): Promise<{hasTools:boolean, textBefore:string, toolResults:string, textAfter:string}> {
   const parsed = parseToolCalls(response);
 
@@ -93,6 +98,7 @@ export async function processToolResponse(response: string, ctx: ToolContext, re
 /**
  * Full tool loop: repeatedly process responses until no more tool calls or max turns reached.
  */
+// @kern-source: tool-loop:88
 export async function runToolLoop(sendMessage: (message:string)=>Promise<string>, initialResponse: string, ctx: ToolContext, registry: ToolRegistry, callbacks?: ToolLoopCallbacks): Promise<ToolLoopResult> {
   let currentResponse = initialResponse;
   let totalToolCalls = 0;

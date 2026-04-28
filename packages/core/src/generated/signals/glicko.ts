@@ -8,27 +8,35 @@ import { homedir } from 'node:os';
 
 import type { GlickoRating, RatingRecord, EngineMeta, TaskClass } from '../models/types.js';
 
+// @kern-source: glicko:10
 function ratingsPath(): string {
   const override = process.env.AGON_HOME?.trim();
   const home = override ? resolve(override) : join(homedir(), '.agon');
   return join(home, 'ratings.json');
 }
 
+// @kern-source: glicko:17
 export const GLICKO_SCALE: number = 173.7178;
 
+// @kern-source: glicko:20
 export const DEFAULT_MU: number = 1500;
 
+// @kern-source: glicko:23
 export const DEFAULT_PHI: number = 350;
 
+// @kern-source: glicko:26
 export const DEFAULT_SIGMA: number = 0.06;
 
 /**
  * System constant — constrains volatility change. Lower = more conservative.
  */
+// @kern-source: glicko:29
 export const TAU: number = 0.5;
 
+// @kern-source: glicko:33
 export const CONVERGENCE_TOLERANCE: number = 0.000001;
 
+// @kern-source: glicko:36
 export function defaultGlickoRating(): GlickoRating {
   return {
     mu: DEFAULT_MU,
@@ -40,6 +48,7 @@ export function defaultGlickoRating(): GlickoRating {
   };
 }
 
+// @kern-source: glicko:48
 export function defaultEngineMeta(): EngineMeta {
   const now = new Date().toISOString();
   return {
@@ -51,6 +60,7 @@ export function defaultEngineMeta(): EngineMeta {
   };
 }
 
+// @kern-source: glicko:60
 export function loadRatings(): RatingRecord {
   try {
     return JSON.parse(readFileSync(ratingsPath(), 'utf-8')) as RatingRecord;
@@ -68,6 +78,7 @@ export function loadRatings(): RatingRecord {
   }
 }
 
+// @kern-source: glicko:78
 export function saveRatings(record: RatingRecord): void {
   const path = ratingsPath();
   mkdirSync(dirname(path), { recursive: true });
@@ -80,6 +91,7 @@ export function saveRatings(record: RatingRecord): void {
 /**
  * Load current Glicko-2 ratings.
  */
+// @kern-source: glicko:88
 export function getRatings(): RatingRecord {
   return loadRatings();
 }
@@ -87,6 +99,7 @@ export function getRatings(): RatingRecord {
 /**
  * Get a single engine's Glicko-2 rating, optionally for a specific mode.
  */
+// @kern-source: glicko:94
 export function getEngineGlickoRating(engineId: string, mode?: string): GlickoRating {
   const record = loadRatings();
   if (mode && record.byMode[mode as keyof typeof record.byMode]) {
@@ -98,6 +111,7 @@ export function getEngineGlickoRating(engineId: string, mode?: string): GlickoRa
 /**
  * Glicko-2 g(phi) function — reduces impact of uncertain opponents.
  */
+// @kern-source: glicko:104
 export function glickoG(phi: number): number {
   return 1 / Math.sqrt(1 + 3 * phi * phi / (Math.PI * Math.PI));
 }
@@ -105,6 +119,7 @@ export function glickoG(phi: number): number {
 /**
  * Glicko-2 expected score.
  */
+// @kern-source: glicko:110
 export function glickoE(mu: number, muJ: number, phiJ: number): number {
   return 1 / (1 + Math.exp(-glickoG(phiJ) * (mu - muJ)));
 }
@@ -112,6 +127,7 @@ export function glickoE(mu: number, muJ: number, phiJ: number): number {
 /**
  * Single pairwise Glicko-2 update.
  */
+// @kern-source: glicko:116
 export function updateGlicko(winnerId: string, loserId: string, taskClass: TaskClass, mode: 'forge'|'brainstorm'|'tribunal'): {winnerMu:number, loserMu:number} {
   const record = loadRatings();
   const now = new Date().toISOString();
@@ -188,6 +204,7 @@ export function updateGlicko(winnerId: string, loserId: string, taskClass: TaskC
 /**
  * Glicko-2 volatility update via Illinois algorithm (Step 5).
  */
+// @kern-source: glicko:191
 export function computeNewSigma(sigma: number, phi: number, v: number, delta: number): number {
   const a = Math.log(sigma * sigma);
   const tau2 = TAU * TAU;
@@ -232,6 +249,7 @@ export function computeNewSigma(sigma: number, phi: number, v: number, delta: nu
 /**
  * Pairwise Glicko-2 updates for all ranked positions. Higher score beats lower score.
  */
+// @kern-source: glicko:234
 export function updateGlickoRanked(ranked: Array<{engineId:string,score:number}>, taskClass: TaskClass, mode: 'forge'|'brainstorm'|'tribunal'): void {
   if (ranked.length < 2) return;
   for (let i = 0; i < ranked.length; i++) {
@@ -245,6 +263,7 @@ export function updateGlickoRanked(ranked: Array<{engineId:string,score:number}>
 /**
  * Conservative rating estimate for advisor/starter selection. Returns mu - 2*phi (lower bound of 95% CI).
  */
+// @kern-source: glicko:246
 export function advisorScore(engineId: string, mode: 'forge'|'brainstorm'|'tribunal'): number {
   const rating = getEngineGlickoRating(engineId, mode);
   // Apply inactivity: increase phi if engine hasn't competed recently

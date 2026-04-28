@@ -14,6 +14,7 @@ import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 
 import { buildAgentApprovalCallback } from './agent.js';
 
+// @kern-source: build:9
 function injectFileReferences(input: string, cwd: string): string {
   const FILE_REF = /(?:^|\s)([\w./-]+\.\w{1,10})\b/g;
   let result = input;
@@ -38,6 +39,7 @@ function injectFileReferences(input: string, cwd: string): string {
   return result;
 }
 
+// @kern-source: build:34
 export async function handleBuild(input: string, dispatch: Dispatch, ctx: HandlerContext, existingPlan?: Plan, skipPlanApproval?: boolean): Promise<void> {
   const abort = new AbortController();
   try {

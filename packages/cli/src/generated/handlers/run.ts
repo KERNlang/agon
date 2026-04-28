@@ -4,11 +4,14 @@ import { spawnWithTimeout } from '@agon/core';
 
 import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 
+// @kern-source: run:4
 export const RUN_DANGEROUS: readonly string[] = ['rm -rf /', 'dd if=', 'mkfs', '> /dev/', 'chmod 777', 'curl | sh', 'wget | sh'];
 
+// @kern-source: run:9
 export const RUN_SAFE: readonly string[] = ['ls', 'cat', 'head', 'tail', 'echo', 'pwd', 'which', 'date', 'wc', 'find', 'grep', 'tree',
  'git status', 'git log', 'git diff', 'git branch', 'npm test', 'npm run'];
 
+// @kern-source: run:15
 export async function handleRun(command: string, dispatch: Dispatch, ctx: HandlerContext): Promise<void> {
   if (!command.trim()) {
     dispatch({ type: 'error', message: 'Usage: /run <command>' });

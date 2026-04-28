@@ -14,6 +14,7 @@ import type { Job } from '../signals/job-manager.js';
 
 import type { EngineProgress } from '../../handlers/types.js';
 
+// @kern-source: status:51
 export function SpinnerBlock({ message, color }: { message:string; color?:number }) {
   return (
     <Text>
@@ -23,6 +24,7 @@ export function SpinnerBlock({ message, color }: { message:string; color?:number
   );
 }
 
+// @kern-source: status:67
 export function TokenGauge({ tokens, maxTokens }: { tokens:number; maxTokens:number }) {
   const pct = Math.min(100, Math.round((tokens / maxTokens) * 100));
   const barWidth = 12;
@@ -39,6 +41,7 @@ export function TokenGauge({ tokens, maxTokens }: { tokens:number; maxTokens:num
   );
 }
 
+// @kern-source: status:89
 function AgonTip() {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -56,6 +59,7 @@ function AgonTip() {
   );
 }
 
+// @kern-source: status:102
 export function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd, cwd, branch, explorationMode, toolOutputExpanded, thinkingExpanded, isActive, fullscreenEnabled, selectionMode }: { cesarId:string; chatMessageCount:number; totalTokens:number; totalCostUsd:number; cwd:string; branch?:string; explorationMode?:boolean; toolOutputExpanded?:boolean; thinkingExpanded?:boolean; isActive?:boolean; fullscreenEnabled?:boolean; selectionMode?:boolean }) {
   const cost = totalCostUsd > 0 ? `$${totalCostUsd.toFixed(2)}` : '';
   const msgs = chatMessageCount;
@@ -99,6 +103,7 @@ export function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd
   );
 }
 
+// @kern-source: status:161
 export function StatusLine({ startTime, engineId, color }: { startTime:number; engineId?:string; color?:number }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -133,6 +138,7 @@ export function StatusLine({ startTime, engineId, color }: { startTime:number; e
   );
 }
 
+// @kern-source: status:190
 const BackgroundJobRail = React.memo(function BackgroundJobRail({ jobs }: { jobs:Job[] }) {
   return (
     <Box paddingX={1}>
@@ -155,6 +161,7 @@ const BackgroundJobRail = React.memo(function BackgroundJobRail({ jobs }: { jobs
 });
 export { BackgroundJobRail };
 
+// @kern-source: status:210
 const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confidence, spinner, engines, startTime, streamSnippet, isActive, planModeQueued, activePlanState }: { cesarId:string; confidence?:number|null; spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; startTime:number; streamSnippet?:{ engineId: string; line: string } | null; isActive:boolean; planModeQueued?:boolean; activePlanState?:string|null }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -266,6 +273,7 @@ const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confide
 });
 export { CesarStatusStrip };
 
+// @kern-source: status:18
 export const AGON_TIPS: string[] = [
   'Run /forge <task> test with <cmd> to make engines compete on code',
   'Run /brainstorm to get confidence bids from all engines',

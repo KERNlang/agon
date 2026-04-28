@@ -4,6 +4,7 @@ import type { ToolResult, ToolContext, ToolDefinition, PermissionDecision, ToolH
 
 import { spawnWithTimeout } from '../blocks/process.js';
 
+// @kern-source: tool-bash:7
 export const DANGEROUS_PREFIXES: readonly string[] = [
   'rm -rf /',
   'dd if=',
@@ -14,6 +15,7 @@ export const DANGEROUS_PREFIXES: readonly string[] = [
   'wget | sh',
 ] as const;
 
+// @kern-source: tool-bash:20
 export const READONLY_COMMANDS: readonly string[] = [
   'ls', 'cat', 'head', 'tail',
   'git status', 'git log', 'git diff',
@@ -24,6 +26,7 @@ export const READONLY_COMMANDS: readonly string[] = [
 /**
  * Extract the actual command from wrappers like sudo, env, nice.
  */
+// @kern-source: tool-bash:30
 export function extractBaseCommand(command: string): string {
   let cmd = command.trim();
   // Strip common wrappers
@@ -43,6 +46,7 @@ export function extractBaseCommand(command: string): string {
 /**
  * Factory: creates the Bash tool handler for shell command execution.
  */
+// @kern-source: tool-bash:48
 export function createBashTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Bash',

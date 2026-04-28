@@ -8,12 +8,14 @@ import { homedir } from 'node:os';
 
 import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 
+// @kern-source: provider:6
 function enginesDir(): string {
   const override = process.env.AGON_HOME?.trim();
   const home = override ? resolve(override) : join(homedir(), '.agon');
   return join(home, 'engines');
 }
 
+// @kern-source: provider:13
 export async function handleProviderAdd(dispatch: Dispatch, ctx: HandlerContext, args: string): Promise<void> {
   // Parse: /provider add <id> <baseUrl> <apiKeyEnv> <model>
   const parts = args.trim().split(/\s+/);
@@ -62,6 +64,7 @@ export async function handleProviderAdd(dispatch: Dispatch, ctx: HandlerContext,
   dispatch({ type: 'info', message: `Use: /use ${id}` });
 }
 
+// @kern-source: provider:62
 export function handleProviderRemove(dispatch: Dispatch, ctx: HandlerContext, id: string): void {
   if (!id) {
     dispatch({ type: 'error', message: 'Usage: /provider remove <id>' });
@@ -80,6 +83,7 @@ export function handleProviderRemove(dispatch: Dispatch, ctx: HandlerContext, id
   dispatch({ type: 'success', message: `Removed provider: ${id}` });
 }
 
+// @kern-source: provider:81
 export function handleProviderList(dispatch: Dispatch): void {
   const dir = enginesDir();
   if (!existsSync(dir)) {
@@ -110,6 +114,7 @@ export function handleProviderList(dispatch: Dispatch): void {
   dispatch({ type: 'info', message: 'Add: /provider add <id> <baseUrl> <API_KEY_ENV> <model>' });
 }
 
+// @kern-source: provider:112
 export async function handleProvider(action: string, args: string, dispatch: Dispatch, ctx: HandlerContext): Promise<void> {
   switch (action) {
     case 'add': return handleProviderAdd(dispatch, ctx, args);

@@ -8,6 +8,7 @@ import type { GlickoRating } from '@agon/core';
 
 import { header, table, bold, dim, info } from '../blocks/output-format.js';
 
+// @kern-source: leaderboard:6
 export const leaderboardCommand: ReturnType<typeof defineCommand> = defineCommand({
   meta: {
     name: 'leaderboard',

@@ -6,6 +6,7 @@ import { join, resolve, relative, dirname, basename } from 'node:path';
 
 import { createHash } from 'node:crypto';
 
+// @kern-source: virtual-fs:41
 export type FileEffect =
   | { kind: 'write'; path: string; content: string; originalContent?: string }
   | { kind: 'delete'; path: string }
@@ -14,6 +15,7 @@ export type FileEffect =
 /**
  * The complete set of file mutations produced by one agent run. Deterministic, serializable, and diffable — the unit of comparison in the tournament phase.
  */
+// @kern-source: virtual-fs:52
 export interface EffectPackage {
   engineId: string;
   runId: string;
@@ -29,6 +31,7 @@ export interface EffectPackage {
 /**
  * A point-in-time read-only view of a directory. Populated lazily (files read on demand) and cached. The VirtualFS overlay sits on top of this.
  */
+// @kern-source: virtual-fs:66
 export interface FileSnapshot {
   snapshotId: string;
   rootDir: string;
@@ -38,6 +41,7 @@ export interface FileSnapshot {
 /**
  * Create a lazy snapshot of a directory. Files are read on demand and cached. Pass the absolute path to the worktree or real repo root.
  */
+// @kern-source: virtual-fs:72
 export function createFileSnapshot(rootDir: string): FileSnapshot {
   const snapshotId = createHash('sha256')
     .update(rootDir + Date.now().toString())
@@ -53,6 +57,7 @@ export function createFileSnapshot(rootDir: string): FileSnapshot {
 /**
  * Read a file from the snapshot. Populates cache on first access. Returns null if the file doesn't exist.
  */
+// @kern-source: virtual-fs:86
 export function snapshotRead(snap: FileSnapshot, absPath: string): string|null {
   const key = resolve(absPath);
   if (snap.cache.has(key)) return snap.cache.get(key) ?? null;
@@ -78,6 +83,7 @@ export function snapshotRead(snap: FileSnapshot, absPath: string): string|null {
 /**
  * List files in a directory from the snapshot (non-recursive). Returns absolute paths.
  */
+// @kern-source: virtual-fs:110
 export function snapshotList(snap: FileSnapshot, absDir: string): string[] {
   const dir = resolve(absDir);
   try {
@@ -94,6 +100,7 @@ export function snapshotList(snap: FileSnapshot, absDir: string): string[] {
 /**
  * In-memory filesystem overlay on top of a FileSnapshot. Reads go to the overlay first, then fall through to the snapshot. Writes and deletes only touch the overlay — the real disk is never modified until commit() is called.
  */
+// @kern-source: virtual-fs:127
 export class VirtualFS {
   private snapshot: FileSnapshot;
   private overlay: Map<string,string|null>;
@@ -195,6 +202,7 @@ export class VirtualFS {
 /**
  * Apply an EffectPackage to the real filesystem. Writes/deletes in pkg.effects are committed to targetDir. Returns a list of files modified. Does NOT create worktrees — call this after the tournament selects a winner to materialize their virtual changes.
  */
+// @kern-source: virtual-fs:242
 export function applyEffectPackage(pkg: EffectPackage, targetDir: string): string[] {
   const import_fs = require('node:fs');
   const modified: string[] = [];
@@ -222,6 +230,7 @@ export function applyEffectPackage(pkg: EffectPackage, targetDir: string): strin
 /**
  * Render an EffectPackage as a unified diff string for display and scoring. Lines are prefixed with + (added) or - (removed).
  */
+// @kern-source: virtual-fs:268
 export function effectPackageDiff(pkg: EffectPackage): string {
   const lines: string[] = [];
   for (const effect of pkg.effects) {
@@ -251,6 +260,7 @@ export function effectPackageDiff(pkg: EffectPackage): string {
 /**
  * Heuristic score for an EffectPackage. Higher is better. Used by Speculator.selectWinner() before full tribunal scoring. Based on: non-zero effects (baseline), response quality, tool call efficiency, file change count. This is a fast pre-filter — not a replacement for full fitness checks.
  */
+// @kern-source: virtual-fs:296
 export function scoreEffectPackage(pkg: EffectPackage, taskKeywords?: string[]): number {
   if (pkg.effects.length === 0) return 0; // Did nothing
   let score = 10;

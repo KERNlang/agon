@@ -9,6 +9,7 @@ import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 /**
  * Create and populate the standard Cesar tool registry. Single source of truth — no more duplication.
  */
+// @kern-source: tools:5
 export function createCesarToolRegistry(engineId?: string): ToolRegistry {
   const toolRegistry = new ToolRegistry();
   toolRegistry.register(createReadTool());
@@ -36,6 +37,7 @@ export function createCesarToolRegistry(engineId?: string): ToolRegistry {
 /**
  * Create a shared ToolContext for eager tool execution during streaming.
  */
+// @kern-source: tools:31
 export function createEagerToolContext(ctx: HandlerContext, config: any, signal: AbortSignal, dispatch: Dispatch): ToolContext {
   const fsc = new FileStateCache();
   const explorationMode = (ctx as any).explorationMode ?? false;
@@ -54,6 +56,7 @@ export function createEagerToolContext(ctx: HandlerContext, config: any, signal:
 /**
  * Execute a tool eagerly during streaming — parse input, run, dispatch result.
  */
+// @kern-source: tools:48
 export async function executeEagerTool(toolName: string, meta: Record<string,unknown>, toolRegistry: ToolRegistry, toolCtx: ToolContext, dispatch: Dispatch, cesarEngineId: string): Promise<ToolCallResult> {
   let parsedInput: Record<string, unknown> = {};
   try {

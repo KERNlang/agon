@@ -2,11 +2,13 @@
 
 import { icons } from '../signals/icons.js';
 
+// @kern-source: confidence:4
 export const CONFIDENCE_TIERS: { direct: number; quickNero: number; nero: number; brainstorm: number; advisor: number } = ({ direct: 96, quickNero: 93, nero: 88, brainstorm: 72, advisor: 72 });
 
 /**
  * Extract ~X% or Confidence: 0.X from the start of a response.
  */
+// @kern-source: confidence:9
 export function parseConfidence(response: string): { value: number | null; rest: string } {
   // Match ~X% at start (with optional whitespace)
   const tildeMatch = response.match(/^~(\d{1,3})%\s*/);
@@ -31,6 +33,7 @@ export function parseConfidence(response: string): { value: number | null; rest:
 /**
  * ANSI color for confidence badge: green 94+, yellow 90-93, red <90.
  */
+// @kern-source: confidence:32
 export function confidenceColor(value: number): string {
   if (value >= 96) return '\x1b[32m';  // green — direct
   if (value >= 93) return '\x1b[33m';  // yellow — quickNero
@@ -42,6 +45,7 @@ export function confidenceColor(value: number): string {
 /**
  * Formatted confidence badge with color.
  */
+// @kern-source: confidence:42
 export function confidenceBadge(value: number): string {
   const color = confidenceColor(value);
   const reset = '\x1b[0m';

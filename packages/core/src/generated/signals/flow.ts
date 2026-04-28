@@ -6,16 +6,20 @@ import { join, resolve } from 'node:path';
 
 import { homedir } from 'node:os';
 
+// @kern-source: flow:5
 function getFlowsDir(): string {
   const override = process.env.AGON_HOME?.trim();
   const home = override ? resolve(override) : join(homedir(), '.agon');
   return join(home, 'flows');
 }
 
+// @kern-source: flow:12
 export const FLOWS_DIR: string = getFlowsDir();
 
+// @kern-source: flow:17
 export const FRICTION_TAGS: readonly string[] = ['slow', 'wrong-mode', 'engine-error', 'unclear-output', 'timeout', 'context-lost', 'other'] as const;
 
+// @kern-source: flow:22
 export interface FlowTelemetry {
   engines: string[];
   durationMs: number;
@@ -23,6 +27,7 @@ export interface FlowTelemetry {
   touchedFileCount?: number;
 }
 
+// @kern-source: flow:28
 export interface FlowFeedback {
   satisfactionRating: number;
   goalMet: 'yes'|'no'|'partly';
@@ -31,6 +36,7 @@ export interface FlowFeedback {
   notes?: string;
 }
 
+// @kern-source: flow:35
 export interface FlowModeMeta {
   forgeId?: string;
   winnerEngine?: string;
@@ -44,6 +50,7 @@ export interface FlowModeMeta {
   cesarConfidence?: number;
 }
 
+// @kern-source: flow:47
 export interface FlowRecord {
   id: string;
   schemaVersion: 1;
@@ -57,10 +64,12 @@ export interface FlowRecord {
   modeMeta?: FlowModeMeta;
 }
 
+// @kern-source: flow:59
 function ensureFlowsDir(): void {
   mkdirSync(getFlowsDir(), { recursive: true });
 }
 
+// @kern-source: flow:64
 export function logFlow(record: FlowRecord): string {
   ensureFlowsDir();
   const filename = `flow-${record.id}.json`;
@@ -69,6 +78,7 @@ export function logFlow(record: FlowRecord): string {
   return filepath;
 }
 
+// @kern-source: flow:73
 export function readFlows(limit?: number): FlowRecord[] {
   ensureFlowsDir();
   let files: string[];
@@ -96,6 +106,7 @@ export function readFlows(limit?: number): FlowRecord[] {
   return records;
 }
 
+// @kern-source: flow:101
 export interface ModeStats {
   mode: string;
   count: number;
@@ -106,6 +117,7 @@ export interface ModeStats {
   followupRate: number;
 }
 
+// @kern-source: flow:110
 export interface FlowAnalysis {
   totalFlows: number;
   byMode: ModeStats[];
@@ -113,6 +125,7 @@ export interface FlowAnalysis {
   periodDays: number;
 }
 
+// @kern-source: flow:116
 export function analyzeFlows(days?: number): FlowAnalysis {
   const periodDays = days ?? 30;
   const cutoff = new Date(Date.now() - periodDays * 86400_000).toISOString();

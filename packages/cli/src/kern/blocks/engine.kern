@@ -39,6 +39,12 @@ fn name=shortToolPath params="filePath:string" returns=string
     return String(filePath ?? '').replace(`${process.cwd()}/`, '').replace(process.env.HOME ?? '', '~');
   >>>
 
+fn name=isCesarTelemetryLine params="message:string" returns=boolean
+  handler <<<
+    const text = String(message ?? '').trim();
+    return text.startsWith('Cesar route:') || text.startsWith('What happened:');
+  >>>
+
 fn name=parseToolInputPayload params="input:string" returns=any
   handler <<<
     const rawInput = String(input ?? '');
@@ -382,7 +388,11 @@ screen name=OutputBlockView target=ink memo=true
           return <Text>{'  '}<Text color="#ef4444">{icons().fail}</Text>{' '}{event.message}</Text>;
         }
         case 'warning': return <Text>{'  '}<Text color="#fbbf24">{icons().warning}</Text>{' '}{event.message}</Text>;
-        case 'info': return <Text dimColor>{'  '}{event.message}</Text>;
+        case 'info': {
+          const message = String(event.message ?? '');
+          const cesarTelemetry = isCesarTelemetryLine(message);
+          return <Text italic={cesarTelemetry} dimColor color={cesarTelemetry ? '#8b8b8b' : undefined}>{'  '}{message}</Text>;
+        }
         case 'permission-ask': {
           const permCmd = (event as any).command as string;
           const permDesc = (event as any).description as string | undefined;
@@ -423,13 +433,11 @@ screen name=OutputBlockView target=ink memo=true
           if (thinkingExpanded === false) return null;
           const thinkText = event.chunk as string;
           const lines = thinkText.split('\n').filter((l: string) => l.trim());
-          const preview = lines.length > 3 ? lines.slice(0, 3) : lines;
           return (
             <Box flexDirection="column" paddingLeft={2}>
-              {preview.map((line: string, i: number) => (
+              {lines.map((line: string, i: number) => (
                 <Text key={`think-${i}`} italic dimColor color="#8b8b8b">{'  \u25B9 '}{line}</Text>
               ))}
-              {lines.length > 3 && <Text italic dimColor color="#8b8b8b">{'  \u25B9 \u2026'}{lines.length - 3}{' more lines  '}<Text color="#f59e0b">{'Ctrl+T'}</Text></Text>}
             </Box>
           );
         }
@@ -899,10 +907,22 @@ screen name=ToolCallGroup target=ink memo=true
   prop name=blocks type="OutputBlock[]"
   render
     handler <<<
+      const labelForTool = (raw: unknown) => {
+        const toolKey = String(raw ?? '').toLowerCase();
+        if (toolKey === 'bash' || toolKey === 'run' || toolKey === 'agonbash') return 'Bash';
+        if (toolKey === 'read') return 'Read';
+        if (toolKey === 'grep' || toolKey === 'search') return 'Search';
+        if (toolKey === 'glob' || toolKey === 'find') return 'Find';
+        if (toolKey === 'edit' || toolKey === 'update' || toolKey === 'agonedit') return 'Update';
+        if (toolKey === 'write' || toolKey === 'agonwrite') return 'Write';
+        if (toolKey === 'applypatch' || toolKey === 'apply_patch') return 'Patch';
+        if (toolKey === 'reportconfidence') return 'Confidence';
+        if (toolKey === 'quicknero') return 'QuickNero';
+        return String(raw ?? 'Tool');
+      };
       const toolCounts: Record<string, number> = {};
       let errors = 0;
       let running = 0;
-      let groupEngineId = '';
       const changedFiles: string[] = [];
       const changeEvents: any[] = [];
       const changeRows: { key:string; text:string }[] = [];
@@ -913,12 +933,12 @@ screen name=ToolCallGroup target=ink memo=true
       };
       for (const b of blocks) {
         const ev = b.event as any;
-        groupEngineId = ev.engineId || groupEngineId;
-        const name = ev.tool || 'tool';
+        const rawName = ev.tool || 'tool';
+        const name = labelForTool(rawName);
         toolCounts[name] = (toolCounts[name] || 0) + 1;
         if (ev.status === 'error') errors++;
         if (ev.status === 'running') running++;
-        const toolKey = String(name).toLowerCase();
+        const toolKey = String(rawName).toLowerCase();
         const { rawInput, parsed } = parseToolInputPayload(ev.input ?? '');
         if ((toolKey === 'edit' || toolKey === 'update' || toolKey === 'write' || toolKey === 'agonedit' || toolKey === 'agonwrite') && typeof ev.input === 'string' && ev.input.trim().startsWith('{')) {
           try {
@@ -955,9 +975,9 @@ screen name=ToolCallGroup target=ink memo=true
       const summary = Object.entries(toolCounts)
         .map(([name, count]: [string, number]) => count > 1 ? `${name}\u00d7${count}` : name)
         .join(', ');
-      const eColor = engineColor(groupEngineId);
-      const statusColor = errors > 0 ? '#ef4444' : running > 0 ? '#fbbf24' : '#4ade80';
-      const statusIcon = errors > 0 ? icons().fail : running > 0 ? '\u27f3' : icons().success;
+      const statusSummary = errors > 0
+        ? ` \u00b7 ${errors} error${errors === 1 ? '' : 's'}`
+        : running > 0 ? ' \u00b7 running' : '';
       const changedSummary = changedFiles.length > 0
         ? ` \u00b7 changed ${changedFiles.length} file${changedFiles.length > 1 ? 's' : ''}: ${changedFiles.slice(0, 2).join(', ')}${changedFiles.length > 2 ? ', \u2026' : ''}`
         : '';
@@ -965,11 +985,7 @@ screen name=ToolCallGroup target=ink memo=true
       return (
         <Box paddingLeft={2} flexDirection="column">
           <Text>
-            <Text color={eColor}>{' \u23bf '}</Text>
-            <Text color={statusColor}>{statusIcon}</Text>
-            <Text bold>{` ${blocks.length} tool calls`}</Text>
-            <Text dimColor>{` (${summary})`}</Text>
-            {changedSummary && <Text color="#a78bfa">{changedSummary}</Text>}
+            <Text italic dimColor color="#8b8b8b">{'  \u25B9 '}{blocks.length}{' tool calls'}{summary ? ` \u00b7 ${summary}` : ''}{statusSummary}{changedSummary}</Text>
           </Text>
           {changeRows.map((row: { key:string; text:string }) => (
             <DiffLine key={row.key} line={row.text} maxWidth={contentWidth(10)} />

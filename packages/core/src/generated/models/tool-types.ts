@@ -32,12 +32,14 @@ export interface ToolContext {
   toolPermissions?: Record<string,'allow'|'ask'|'deny'>;
   onProgress?: ((message: string) => void);
   readOnlyMode?: boolean;
+  blockedTools?: string[];
+  blockedToolMessage?: string;
   virtualFs?: any;
   sessionAllowList?: string[];
   source?: 'user'|'orchestrator';
 }
 
-// @kern-source: tool-types:32
+// @kern-source: tool-types:34
 export interface FileState {
   content: string;
   timestamp: number;
@@ -46,7 +48,7 @@ export interface FileState {
   isPartialView?: boolean;
 }
 
-// @kern-source: tool-types:39
+// @kern-source: tool-types:41
 export interface ToolDefinition {
   name: string;
   description: string;
@@ -57,7 +59,7 @@ export interface ToolDefinition {
   isDestructive?: boolean;
 }
 
-// @kern-source: tool-types:48
+// @kern-source: tool-types:50
 export interface ToolHandler {
   definition: ToolDefinition;
   validate: (input: Record<string,unknown>, ctx: ToolContext) => string|null;
@@ -65,14 +67,14 @@ export interface ToolHandler {
   execute: (input: Record<string,unknown>, ctx: ToolContext) => Promise<ToolResult>;
 }
 
-// @kern-source: tool-types:54
+// @kern-source: tool-types:56
 export interface ToolCall {
   id: string;
   name: string;
   input: Record<string,unknown>;
 }
 
-// @kern-source: tool-types:59
+// @kern-source: tool-types:61
 export interface ToolCallResult {
   toolCallId: string;
   toolName: string;

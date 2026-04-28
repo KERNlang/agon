@@ -596,12 +596,12 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
             <Text>
               {nest}<Text color={toolColor}>{icon}{' '}<Text bold>{icons().edit + ' Patch'}</Text></Text>
               {fileSummary ? <Text>{'('}<Text color="#a78bfa">{fileSummary}</Text>{')'}</Text> : ''}
-              <Text dimColor>{' \u00b7 '}</Text><Text color="#ef4444">-{patch.deletions}</Text><Text dimColor>{' '}</Text><Text color="#4ade80">+{patch.additions}</Text><Text dimColor>{' lines \u00b7 '}</Text><Text color="#a78bfa" bold>{'[Ctrl+O] Open'}</Text>
+              <Text dimColor>{' \u00b7 '}</Text><Text color="#ef4444">-{patch.deletions}</Text><Text dimColor>{' '}</Text><Text color="#4ade80">+{patch.additions}</Text><Text dimColor>{' lines'}</Text>
             </Text>
             {shown.map((line: string, i: number) => (
               <DiffLine key={`patch-${i}`} line={line} maxWidth={codeWidth} />
             ))}
-            {omitted > 0 && <Text dimColor>{'    \u2026 '}{omitted}{' more patch lines  '}<Text color="#a78bfa">{'Ctrl+O'}</Text></Text>}
+            {omitted > 0 && <Text dimColor>{'    \u2026 '}{omitted}{' more patch lines'}</Text>}
           </Box>
         );
       }
@@ -839,21 +839,19 @@ const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:Out
         <Text bold>{` ${blocks.length} tool calls`}</Text>
         <Text dimColor>{` (${summary})`}</Text>
         {changedSummary && <Text color="#a78bfa">{changedSummary}</Text>}
-        {changeEvents.length > 0 && <Text dimColor>{' \u00b7 '}</Text>}
-        {changeEvents.length > 0 && <Text color="#a78bfa" bold>{'[Ctrl+O] Open'}</Text>}
       </Text>
       {changeRows.map((row: { key:string; text:string }) => (
         <DiffLine key={row.key} line={row.text} maxWidth={contentWidth(10)} />
       ))}
       {omittedChangeRows > 0 && (
-        <Text dimColor>{'    \u2026 '}{omittedChangeRows}{' more changed lines  '}<Text color="#a78bfa">{'Ctrl+O'}</Text></Text>
+        <Text dimColor>{'    \u2026 '}{omittedChangeRows}{' more changed lines'}</Text>
       )}
     </Box>
   );
 });
 export { ToolCallGroup };
 
-// @kern-source: engine:1002
+// @kern-source: engine:1000
 const DebateGroup = React.memo(function DebateGroup({ blocks }: { blocks:OutputBlock[] }) {
   const round = (blocks[0]?.event as any)?.round ?? '?';
   const w = contentWidth(6);
@@ -879,7 +877,7 @@ const DebateGroup = React.memo(function DebateGroup({ blocks }: { blocks:OutputB
 });
 export { DebateGroup };
 
-// @kern-source: engine:1031
+// @kern-source: engine:1029
 const BidGroup = React.memo(function BidGroup({ blocks }: { blocks:OutputBlock[] }) {
   const w = contentWidth(6);
   return (
@@ -1015,7 +1013,7 @@ export function parsePatchPreview(rawInput: string, parsed: any): { files:string
   return { files, lines, additions, deletions };
 }
 
-// @kern-source: engine:988
+// @kern-source: engine:986
 export function extractSummary(text: string, maxLen: number): string {
   let s = text.replace(/<think>[\s\S]*?<\/think>\s*/gi, '');
   s = s.replace(/^#+\s+.+\n/gm, '');

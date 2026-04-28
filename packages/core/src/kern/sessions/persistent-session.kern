@@ -1107,10 +1107,13 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
     let toolCacheManifest: ToolCacheEntry[] = [];
 
     // ── In-session tool result deduplication ──
-    // Avoids re-reading the same file/grep when the engine asks twice.
+    // Avoids repeating stable discovery tools when the engine asks twice.
+    // Do not cache Read here: the Read tool owns mtime-aware dedup and must
+    // run on every explicit re-read so it can refresh the edit/write snapshot
+    // after another tool or process has changed the file.
     // Keyed by (toolName, serialized args). Values are results.
     const toolResultCache = new Map<string, { result: string; callId: string }>();
-    const CACHEABLE_TOOLS = new Set(['Read', 'Grep', 'Glob']);
+    const CACHEABLE_TOOLS = new Set(['Grep', 'Glob']);
     const cacheKey = (name: string, args: Record<string, unknown>) => {
       // Normalize: sort keys for stable hashing
       const sorted = Object.keys(args).sort().map(k => `${k}=${JSON.stringify(args[k])}`).join('&');
@@ -1471,6 +1474,8 @@ Respond with ONLY the summary, no preamble.`;
           let step = 0;
           let productiveSteps = 0;
           let consecutiveErrors = 0;
+          let repeatedReadOnlyRetrySteps = 0;
+          let lastReadOnlySignature = '';
 
           // ── Solo-coding gate: track investigation vs write behavior ──
           // Architecture, not prompts: block writes that skip investigation
@@ -1590,6 +1595,23 @@ Respond with ONLY the summary, no preamble.`;
 
               // Emit all as running
               const parsedCalls = extractedCalls;
+              const readOnlyStep = parsedCalls.length > 0 && parsedCalls.every(tc => READ_TOOLS.has(tc.name));
+              const readOnlySignature = readOnlyStep
+                ? parsedCalls.map(tc => `${tc.name}:${cacheKey(tc.name, tc.args)}`).join('|')
+                : '';
+              const staleReadRetryText = /\bfile (?:has been |was )?modified since (?:my |the )?last read\b/i.test(fullResponse)
+                || /\bre-?read\b[\s\S]{0,120}\bedit\b/i.test(fullResponse);
+              if (readOnlyStep && (staleReadRetryText || (readOnlySignature && readOnlySignature === lastReadOnlySignature))) {
+                repeatedReadOnlyRetrySteps++;
+              } else if (!readOnlyStep) {
+                repeatedReadOnlyRetrySteps = 0;
+              }
+              lastReadOnlySignature = readOnlySignature;
+              if ((readOnlyStep && staleReadRetryText && parsedCalls.length > 20) || repeatedReadOnlyRetrySteps >= 3) {
+                yield { type: 'error' as const, content: 'Tool loop stopped: repeated read-only retry loop after a stale edit/read condition. Re-read has already reached the tool layer; stop repeating reads and either edit from the current content or explain the blocker.' };
+                messageHistory.push({ role: 'assistant', content: '[Tool loop stopped — repeated read-only stale-edit retry]' });
+                break;
+              }
               for (const tc of parsedCalls) {
                 if (tc.parseError) {
                   yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, status: 'error', output: `Malformed tool arguments from API: ${tc.arguments.slice(0, 200)}` } };

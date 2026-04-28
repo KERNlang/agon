@@ -73,6 +73,69 @@ describe('Cesar self-turn approval', () => {
     expect(decision.reason).toContain('changed since last read');
   });
 
+  it('keeps Cesar-owned matching disk content eligible after an mtime change', () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'agon-self-approval-'));
+    const filePath = join(cwd, 'src.ts');
+    const content = 'export const value = 2;\n';
+    writeFileSync(filePath, content);
+    const ctx = makeCtx(cwd, filePath, content, 1);
+    const cached = ctx.readFileState.get(filePath)! as any;
+    cached.lastTouchedBy = 'cesar';
+    cached.lastTouchedAt = Date.now();
+
+    const decision = applyCesarSelfTurnApproval(
+      'Edit',
+      { file_path: filePath, old_string: 'value = 2', new_string: 'value = 3' },
+      ctx,
+      {},
+    );
+
+    expect(decision.approve).toBe(true);
+    expect((ctx.readFileState.get(filePath)! as any).lastTouchedBy).toBe('cesar');
+    expect(ctx.readFileState.get(filePath)!.content).toContain('value = 3');
+  });
+
+  it('does not approve Cesar-owned cache entries when disk content differs', () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'agon-self-approval-'));
+    const filePath = join(cwd, 'src.ts');
+    const cachedContent = 'export const value = 2;\n';
+    writeFileSync(filePath, 'export const value = 999;\n');
+    const ctx = makeCtx(cwd, filePath, cachedContent, 1);
+    const cached = ctx.readFileState.get(filePath)! as any;
+    cached.lastTouchedBy = 'cesar';
+    cached.lastTouchedAt = Date.now();
+
+    const decision = applyCesarSelfTurnApproval(
+      'Edit',
+      { file_path: filePath, old_string: 'value = 2', new_string: 'value = 3' },
+      ctx,
+      {},
+    );
+
+    expect(decision.approve).toBe(false);
+    expect(decision.reason).toContain('changed since last read');
+  });
+
+  it('optimistically marks approved self-turn edits as Cesar-owned', () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'agon-self-approval-'));
+    const filePath = join(cwd, 'src.ts');
+    const content = 'export const value = 1;\n';
+    writeFileSync(filePath, content);
+    const ctx = makeCtx(cwd, filePath, content);
+
+    const decision = applyCesarSelfTurnApproval(
+      'Edit',
+      { file_path: filePath, old_string: 'value = 1', new_string: 'value = 2' },
+      ctx,
+      {},
+    );
+
+    const cached = ctx.readFileState.get(filePath)! as any;
+    expect(decision.approve).toBe(true);
+    expect(cached.content).toContain('value = 2');
+    expect(cached.lastTouchedBy).toBe('cesar');
+  });
+
   it('does not approve diffs above the configured threshold', () => {
     const cwd = mkdtempSync(join(tmpdir(), 'agon-self-approval-'));
     const filePath = join(cwd, 'src.ts');

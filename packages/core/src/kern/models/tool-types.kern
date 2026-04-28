@@ -37,6 +37,8 @@ interface name=FileState
   field name=offset type="number|undefined"
   field name=limit type="number|undefined"
   field name=isPartialView type=boolean optional=true
+  field name=lastTouchedBy type=string optional=true
+  field name=lastTouchedAt type=number optional=true
 
 interface name=ToolDefinition
   field name=name type=string

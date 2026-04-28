@@ -141,6 +141,26 @@ describe('cesar MCP session config', () => {
     await expect(onToolCall?.('Forge', { task: 'simple question' }, 'call_1')).rejects.toThrow(/\[BLOCKED_FAST_PATH\]/);
   });
 
+  it('stores ReportConfidence reasoning for inline display by the brain', async () => {
+    const cesar: any = {
+      confidenceSatisfied: false,
+      blockedOnConfidence: null,
+    };
+    const onToolCall = buildOnToolCall({
+      cesar,
+      explorationMode: false,
+    } as any, new ToolRegistry(), {});
+
+    await expect(onToolCall?.('ReportConfidence', {
+      value: 92,
+      reasoning: 'Read the touched files; tests still need to run.',
+    }, 'call_conf')).resolves.toContain('Confidence 92% recorded');
+
+    expect(cesar.reportedConfidence).toBe(92);
+    expect(cesar.reportedConfidenceReasoning).toBe('Read the touched files; tests still need to run.');
+    expect(cesar.confidenceSatisfied).toBe(true);
+  });
+
   it('does not session-cache Read tool calls above the mtime-aware Read tool', async () => {
     const registry = new ToolRegistry();
     let readCount = 0;

@@ -46,9 +46,11 @@ export interface FileState {
   offset: number|undefined;
   limit: number|undefined;
   isPartialView?: boolean;
+  lastTouchedBy?: string;
+  lastTouchedAt?: number;
 }
 
-// @kern-source: tool-types:41
+// @kern-source: tool-types:43
 export interface ToolDefinition {
   name: string;
   description: string;
@@ -59,7 +61,7 @@ export interface ToolDefinition {
   isDestructive?: boolean;
 }
 
-// @kern-source: tool-types:50
+// @kern-source: tool-types:52
 export interface ToolHandler {
   definition: ToolDefinition;
   validate: (input: Record<string,unknown>, ctx: ToolContext) => string|null;
@@ -67,14 +69,14 @@ export interface ToolHandler {
   execute: (input: Record<string,unknown>, ctx: ToolContext) => Promise<ToolResult>;
 }
 
-// @kern-source: tool-types:56
+// @kern-source: tool-types:58
 export interface ToolCall {
   id: string;
   name: string;
   input: Record<string,unknown>;
 }
 
-// @kern-source: tool-types:61
+// @kern-source: tool-types:63
 export interface ToolCallResult {
   toolCallId: string;
   toolName: string;

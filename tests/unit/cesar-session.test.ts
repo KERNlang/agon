@@ -2,7 +2,7 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
-import { buildCesarConversationSnapshot, canUseCesarMcp, loadCesarMcpServers, normalizeCesarMcpServers } from '../../packages/cli/src/generated/cesar/session.js';
+import { buildCesarConversationSnapshot, buildOnToolCall, canUseCesarMcp, loadCesarMcpServers, normalizeCesarMcpServers } from '../../packages/cli/src/generated/cesar/session.js';
 
 const testDirs: string[] = [];
 
@@ -128,5 +128,14 @@ describe('cesar MCP session config', () => {
       { role: 'assistant', content: '[codex] other engine reply' },
       { role: 'assistant', content: 'cesar reply' },
     ]);
+  });
+
+  it('reports blocked fast-path orchestration as a native tool error', async () => {
+    const onToolCall = buildOnToolCall({
+      cesar: { fastPathMode: 'answer' },
+      explorationMode: false,
+    } as any, {} as any, {});
+
+    await expect(onToolCall?.('Forge', { task: 'simple question' }, 'call_1')).rejects.toThrow(/\[BLOCKED_FAST_PATH\]/);
   });
 });

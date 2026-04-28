@@ -2209,6 +2209,14 @@ export async function handleProposedCesarPlan(proposed: CesarPlan, cb: DispatchC
   const policy = applyAutoApprovePolicy(proposed, cb.ctx.config as any);
   let currentProposal = proposed;
   let decided = false;
+  const persistPlanMarkdown = (plan: CesarPlan) => {
+    if (!plan.planFilePath) return;
+    try {
+      writeFileSync(plan.planFilePath, formatCesarPlanMarkdown(plan));
+    } catch (err) {
+      console.warn('[plan] failed to write plan file:', (err as Error).message ?? err);
+    }
+  };
 
   if (policy.approve) {
     cb.dispatch({ type: 'info', message: `Plan auto-approved (${policy.reason})` });
@@ -2222,6 +2230,7 @@ export async function handleProposedCesarPlan(proposed: CesarPlan, cb: DispatchC
     cb.setActivePlan(approved);
     cb.dispatch({ type: 'success', message: 'Plan auto-approved — executing...' });
     saveCesarPlan(approved);
+    persistPlanMarkdown(approved);
     await executeApprovedPlan(approved, cb);
     decided = true;
   } else if (proposed.autoApprove === true) {
@@ -2237,12 +2246,15 @@ export async function handleProposedCesarPlan(proposed: CesarPlan, cb: DispatchC
       cb.setActivePlan(approved);
       cb.dispatch({ type: 'success', message: 'Plan approved — executing...' });
       saveCesarPlan(approved);
+      persistPlanMarkdown(approved);
       await executeApprovedPlan(approved, cb);
       decided = true;
 
     } else if (trimmed === 'n' || trimmed === 'no') {
       const cancelled = cancelCesarPlan(currentProposal);
       cb.setActivePlan(cancelled);
+      saveCesarPlan(cancelled);
+      persistPlanMarkdown(cancelled);
       cb.dispatch({ type: 'plan-cancelled', plan: cancelled } as any);
       cb.dispatch({ type: 'info', message: 'Plan rejected.' });
       decided = true;
@@ -2303,7 +2315,7 @@ export async function handleProposedCesarPlan(proposed: CesarPlan, cb: DispatchC
 /**
  * Build executor callbacks. Holds a closure on the latest plan reference (mutated via onPlanUpdate) so step lookups always see appended steps like the auto-review cycle (tribunal fix #10). FU-3: persistence is debounced 300ms to avoid the sync-write storm Doppelganger flagged — onPlanUpdate fires once per step in a hot loop, but the disk write happens at most ~3x/sec. Terminal states (done/paused/cancelled) flush immediately so the .md/.json on disk reflect the final state. Callers should invoke .flush() before exit to drain any pending write.
  */
-// @kern-source: dispatch:2259
+// @kern-source: dispatch:2271
 export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks): any {
   let currentPlan = initialPlan;
   let pendingWriteTimer: ReturnType<typeof setTimeout> | null = null;
@@ -2380,7 +2392,7 @@ export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks
 /**
  * FU-4: shared executor for the auto-approve, manual-approve, and plan-resume paths. Wires the abort controller, builds callbacks (with debounced persistence), runs executePlan, runs finalizePlanWithReviewGate, and dispatches the terminal status. Eliminates the ~60 lines of triplication that lived in dispatch.kern and forced future changes (e.g., new callback hooks, new finalize behavior) to be applied to all three sites.
  */
-// @kern-source: dispatch:2334
+// @kern-source: dispatch:2346
 export async function executeApprovedPlan(approved: CesarPlan, cb: DispatchCallbacks): Promise<void> {
   const executors = buildStepExecutors(cb.ctx);
   const abortController = new AbortController();
@@ -2417,7 +2429,7 @@ export async function executeApprovedPlan(approved: CesarPlan, cb: DispatchCallb
 /**
  * Single source of truth for the post-execution self-review gate. Called from BOTH the plan-task and plan-resume terminal paths so resume cannot bypass the gate or the cycle cap (tribunal fix #4).
  */
-// @kern-source: dispatch:2369
+// @kern-source: dispatch:2381
 export async function finalizePlanWithReviewGate(finalPlan: CesarPlan, executors: Record<string,StepExecutor>, abortSignal: AbortSignal, cb: DispatchCallbacks): Promise<CesarPlan> {
   const MUTATING = new Set(['forge', 'teamforge', 'pipeline', 'agent', 'team-agent', 'delegate', 'self']);
   const planTouchedMutation = finalPlan.steps.some((s: any) => MUTATING.has(s.type) && (s.state === 'done' || s.state === 'failed'));

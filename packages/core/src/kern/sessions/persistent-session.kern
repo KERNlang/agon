@@ -18,6 +18,8 @@ interface name=SessionSendOptions
   field name=images type="string[]" optional=true
   field name=signal type=AbortSignal optional=true
   field name=systemPrompt type=string optional=true
+  field name=toolLoopBaseBudget type=number optional=true
+  field name=toolLoopMaxBudget type=number optional=true
 
 interface name=PersistentSessionConfig
   field name=engine type=EngineDefinition
@@ -30,6 +32,8 @@ interface name=PersistentSessionConfig
   field name=onTurnEnd type="(learnings: {filesRead:string[], filesModified:string[], decisions:string[], discoveries:string[], toolsUsed:string[]}) => void" optional=true
   field name=mcpServers type="Array<Record<string,unknown>>" optional=true
   field name=sessionContinuity type=boolean optional=true
+  field name=toolLoopBaseBudget type=number optional=true
+  field name=toolLoopMaxBudget type=number optional=true
 
 interface name=PersistentSession
   field name=alive type=boolean
@@ -1358,11 +1362,14 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
               }
             }
 
-            // ── Tier 3: LLM-based compaction as last resort ──
-            // If Tier 1+2 weren't enough, call a cheap model to produce a refined summary.
-            // Fires rarely (<5% of compactions). Uses the engine's own API config.
+            // ── Tier 3: LLM-based compaction as explicit last resort ──
+            // Disabled by default: foreground compaction competes with the
+            // user's turn, and provider-specific message rules can make a
+            // recovery path fail noisily. Set AGON_ENABLE_TIER3_COMPACTION=1
+            // to allow the old behavior when needed.
             const afterTier2 = estimateTokens(messageHistory);
-            if (afterTier2 > CONTEXT_LIMIT - COMPACTION_BUFFER && config.engine.api) {
+            const tier3CompactionEnabled = process.env.AGON_ENABLE_TIER3_COMPACTION === '1';
+            if (tier3CompactionEnabled && afterTier2 > CONTEXT_LIMIT - COMPACTION_BUFFER && config.engine.api) {
               try {
                 const { apiDispatch } = await import('../api/dispatch.js');
                 // Use same API config but request minimal tokens
@@ -1427,8 +1434,9 @@ Respond with ONLY the summary, no preamble.`;
               if (ctxPct > 80) {
                 statusParts.push(`[WARNING: Context is ${ctxPct}% full. Be concise. Avoid re-reading files you already have context on.]`);
               }
-              // Inject as system message — model sees it but it won't render in the chat UI
-              messageHistory.push({ role: 'system', content: statusParts.join('\n') });
+              // Inject as a user-scoped status note. Appending system messages
+              // mid-conversation breaks Anthropic/AI SDK message conversion.
+              messageHistory.push({ role: 'user', content: statusParts.join('\n') });
             }
           }
 
@@ -1450,8 +1458,14 @@ Respond with ONLY the summary, no preamble.`;
           // ── Agentic tool loop with dynamic budget ──
           // Productive steps (successful tool calls) extend the budget.
           // Failed steps shrink it. Models that work get more runway.
-          const BASE_BUDGET = 15;
-          const MAX_BUDGET = 30; // hard cap even for very productive sessions
+          const requestedBaseBudget = Number(opts.toolLoopBaseBudget ?? config.toolLoopBaseBudget ?? 15);
+          const requestedMaxBudget = Number(opts.toolLoopMaxBudget ?? config.toolLoopMaxBudget ?? 30);
+          const BASE_BUDGET = Number.isFinite(requestedBaseBudget) && requestedBaseBudget > 0
+            ? Math.max(1, Math.floor(requestedBaseBudget))
+            : 15;
+          const MAX_BUDGET = Number.isFinite(requestedMaxBudget) && requestedMaxBudget > 0
+            ? Math.max(BASE_BUDGET, Math.floor(requestedMaxBudget))
+            : 30; // hard cap even for very productive sessions
           const MAX_CONSECUTIVE_ERRORS = 3;
           let budget = BASE_BUDGET;
           let step = 0;

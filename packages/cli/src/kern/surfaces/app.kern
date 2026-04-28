@@ -2147,7 +2147,7 @@ screen name=App target=ink
   state name=modelPickerTargetEngine type="string|null" initial="null"
   state name=modelPickerCliGroups type="any[]" initial="[]"
   state name=cesarPickerOpen type=boolean initial=false
-  state name=streamingText type="Record<string,StreamingEntry>" initial="{}" throttle=90
+  state name=streamingText type="Record<string,StreamingEntry>" initial="{}" throttle=33
   state name=pendingImages type="ImageAttachment[]" initial="[]"
   state name=reviewEvent type="ReviewEvent|null" initial="null"
   state name=pendingPlanProposal type="OutputEvent|null" initial="null"

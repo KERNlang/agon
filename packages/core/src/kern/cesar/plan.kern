@@ -11,6 +11,37 @@ fn name=runtimeAgonPath params="...parts:string[]" returns="string" export=false
     return join(home, ...parts);
   >>>
 
+fn name=getCesarPlansDir returns=string export=true
+  doc "Canonical directory for Cesar execution plans. Markdown and JSON live together so the user can inspect and edit the exact plan Cesar proposed."
+  handler <<<
+    return runtimeAgonPath('plans');
+  >>>
+
+fn name=safeCesarPlanId params="planId:string" returns=string export=false
+  handler <<<
+    const sanitized = String(planId ?? '').replace(/[^a-zA-Z0-9_-]/g, '');
+    if (!sanitized) throw new Error(`Invalid plan ID: ${planId}`);
+    return sanitized;
+  >>>
+
+fn name=cesarPlanJsonPath params="planId:string" returns=string export=true
+  doc "Canonical JSON path for a Cesar plan under ~/.agon/plans."
+  handler <<<
+    const plansDir = getCesarPlansDir();
+    const full = resolve(plansDir, `${safeCesarPlanId(planId)}.json`);
+    if (!full.startsWith(resolve(plansDir))) throw new Error(`Invalid plan ID: ${planId}`);
+    return full;
+  >>>
+
+fn name=cesarPlanMarkdownPath params="planId:string" returns=string export=true
+  doc "Canonical Markdown path for a Cesar plan under ~/.agon/plans."
+  handler <<<
+    const plansDir = getCesarPlansDir();
+    const full = resolve(plansDir, `${safeCesarPlanId(planId)}.md`);
+    if (!full.startsWith(resolve(plansDir))) throw new Error(`Invalid plan ID: ${planId}`);
+    return full;
+  >>>
+
 type name=CesarPlanState values="planning|awaiting_approval|running|paused|done|cancelled"
 type name=CesarStepState values="pending|blocked|running|done|failed|skipped|cancelled"
 type name=CesarStepType values="self|forge|teamforge|delegate|brainstorm|campfire|tribunal|pipeline|review|agent|team-agent"
@@ -166,16 +197,20 @@ fn name=cancelCesarPlan params="plan:CesarPlan" returns=CesarPlan
   >>>
 
 fn name=saveCesarPlan params="plan:CesarPlan" returns=void export=true
-  doc "Persist a CesarPlan to ~/.agon/runs/<id>.json atomically. FU-8: write to a .tmp file then renameSync, so concurrent Agon sessions reading the same path observe either the old complete file or the new complete file — never a partial. POSIX rename within the same directory is atomic."
+  doc "Persist a CesarPlan to ~/.agon/plans/<id>.json atomically. Markdown lives beside it as <id>.md so the plan is discoverable and editable. FU-8: write to a .tmp file then renameSync, so concurrent Agon sessions reading the same path observe either the old complete file or the new complete file — never a partial. POSIX rename within the same directory is atomic."
   handler <<<
-    const dir = runtimeAgonPath('runs');
+    const dir = getCesarPlansDir();
     mkdirSync(dir, { recursive: true });
-    const finalPath = join(dir, `${plan.id}.json`);
+    const finalPath = cesarPlanJsonPath(plan.id);
+    const persistedPlan = {
+      ...plan,
+      planFilePath: plan.planFilePath ?? cesarPlanMarkdownPath(plan.id),
+    };
     // Unique tmp suffix so parallel saves of the SAME plan from different
     // sessions don't overwrite each other's tmp file before rename.
     const tmpPath = `${finalPath}.${process.pid}.${Date.now()}.tmp`;
     try {
-      writeFileSync(tmpPath, JSON.stringify(plan, null, 2));
+      writeFileSync(tmpPath, JSON.stringify(persistedPlan, null, 2));
       renameSync(tmpPath, finalPath);
     } catch (err) {
       try { unlinkSync(tmpPath); } catch { /* tmp may not exist */ }
@@ -184,30 +219,47 @@ fn name=saveCesarPlan params="plan:CesarPlan" returns=void export=true
   >>>
 
 fn name=loadCesarPlan params="planId:string" returns="CesarPlan|null" export=true
-  doc "Load a persisted CesarPlan from ~/.agon/runs/<id>.json."
+  doc "Load a persisted CesarPlan from ~/.agon/plans/<id>.json. Falls back to the legacy ~/.agon/runs path for old sessions."
   handler <<<
-    const filePath = runtimeAgonPath('runs', `${planId}.json`);
-    try {
-      return JSON.parse(readFileSync(filePath, 'utf-8'));
-    } catch {
-      return null;
+    const paths = [
+      cesarPlanJsonPath(planId),
+      runtimeAgonPath('runs', `${safeCesarPlanId(planId)}.json`),
+    ];
+    for (const filePath of paths) {
+      try {
+        const plan = JSON.parse(readFileSync(filePath, 'utf-8')) as CesarPlan;
+        return {
+          ...plan,
+          planFilePath: plan.planFilePath ?? cesarPlanMarkdownPath(plan.id),
+        };
+      } catch { /* try next location */ }
     }
+    return null;
   >>>
 
 fn name=listCesarPlans params="" returns="CesarPlan[]" export=true
-  doc "List all persisted CesarPlans from ~/.agon/runs/."
+  doc "List persisted CesarPlans from ~/.agon/plans, with legacy ~/.agon/runs fallback."
   handler <<<
-    const dir = runtimeAgonPath('runs');
-    try {
-      const files = readdirSync(dir).filter((f: string) => f.startsWith('cplan-') && f.endsWith('.json'));
-      return files.map((f: string) => {
+    const byId = new Map<string, CesarPlan>();
+    const readFromDir = (dir: string) => {
+      let files: string[] = [];
+      try {
+        files = readdirSync(dir).filter((f: string) => f.startsWith('cplan-') && f.endsWith('.json'));
+      } catch {
+        return;
+      }
+      for (const f of files) {
         try {
-          return JSON.parse(readFileSync(join(dir, f), 'utf-8')) as CesarPlan;
-        } catch {
-          return null;
-        }
-      }).filter(Boolean) as CesarPlan[];
-    } catch {
-      return [];
-    }
+          const plan = JSON.parse(readFileSync(join(dir, f), 'utf-8')) as CesarPlan;
+          if (!plan?.id || byId.has(plan.id)) continue;
+          byId.set(plan.id, {
+            ...plan,
+            planFilePath: plan.planFilePath ?? cesarPlanMarkdownPath(plan.id),
+          });
+        } catch { /* skip malformed plan */ }
+      }
+    };
+    readFromDir(getCesarPlansDir());
+    readFromDir(runtimeAgonPath('runs'));
+    return Array.from(byId.values()).sort((a, b) => String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? '')));
   >>>

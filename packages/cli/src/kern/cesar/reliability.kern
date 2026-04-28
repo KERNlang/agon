@@ -1,4 +1,4 @@
-import from="node:fs" names="existsSync,readFileSync"
+import from="node:fs" names="existsSync,readFileSync,statSync,openSync,readSync,closeSync"
 import from="node:path" names="join"
 import from="@agon/core" names="RUNS_DIR"
 
@@ -27,13 +27,33 @@ interface name=CesarToolReliability
   field name=reason type=string
 
 fn name=readCesarDecisionRecords params="limit?:number" returns="any[]" export=true
-  doc "Read recent Cesar decision records from ~/.agon/runs/cesar-decisions.jsonl. Returns an empty array when no log exists."
+  doc "Read recent Cesar decision records from ~/.agon/runs/cesar-decisions.jsonl. Tail-reads bounded windows when limit is set so long-running sessions do not parse the whole log every turn."
   handler <<<
     const reportPath = join(RUNS_DIR, 'cesar-decisions.jsonl');
     if (!existsSync(reportPath)) return [];
     let raw = '';
     try {
-      raw = readFileSync(reportPath, 'utf-8');
+      if (typeof limit === 'number' && limit > 0) {
+        const TAIL_BYTES = 256 * 1024;
+        const stat = statSync(reportPath);
+        const start = Math.max(0, stat.size - TAIL_BYTES);
+        const length = stat.size - start;
+        if (length <= 0) return [];
+        const fd = openSync(reportPath, 'r');
+        try {
+          const buffer = Buffer.alloc(length);
+          readSync(fd, buffer, 0, length, start);
+          raw = buffer.toString('utf-8');
+        } finally {
+          closeSync(fd);
+        }
+        if (start > 0) {
+          const firstNewline = raw.indexOf('\n');
+          raw = firstNewline >= 0 ? raw.slice(firstNewline + 1) : '';
+        }
+      } else {
+        raw = readFileSync(reportPath, 'utf-8');
+      }
     } catch {
       return [];
     }

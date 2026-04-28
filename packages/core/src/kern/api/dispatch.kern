@@ -96,10 +96,21 @@ fn name=convertMessagesForSdk params="messages:Array<{role:string,content:any,to
       }
     }
 
+    const systemParts: string[] = [];
+    for (const msg of messages) {
+      if (msg.role !== 'system') continue;
+      const content = typeof msg.content === 'string' ? msg.content : String(msg.content ?? '');
+      if (content.trim()) systemParts.push(content);
+    }
+
     const result: any[] = [];
+    if (systemParts.length > 0) {
+      result.push({ role: 'system', content: systemParts.join('\n\n') });
+    }
+
     for (const msg of messages) {
       if (msg.role === 'system') {
-        result.push({ role: 'system', content: typeof msg.content === 'string' ? msg.content : '' });
+        continue;
       } else if (msg.role === 'user') {
         result.push({ role: 'user', content: typeof msg.content === 'string' ? msg.content : String(msg.content ?? '') });
       } else if (msg.role === 'assistant') {

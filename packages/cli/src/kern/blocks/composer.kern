@@ -1,6 +1,6 @@
 // ── Composer View — memoized text-input subtree ────────────────────
 // Extracted from app.kern so that streaming-driven App re-renders
-// (~11x/sec via throttle=90 streamingText) don't reach the TextInput.
+// (~30x/sec via throttle=33 streamingText) don't reach the TextInput.
 // React.memo's shallow-equal rejects the re-render entirely because none
 // of these props depend on streamingText / liveSpinner / liveProgress /
 // cesarConfidence — the composer subtree stays still while Cesar streams.

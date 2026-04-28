@@ -12,6 +12,7 @@ import { EngineRegistry, loadConfig, worktreeCreate, worktreeRemoveBestEffort, w
 
 import { runFitness } from './fitness.js';
 
+// @kern-source: gauntlet:8
 export function buildBreakerPrompt(task: string, winnerDiff: string, engineId: string): string {
   return [
     `## BREAKER MODE`,
@@ -37,6 +38,7 @@ export function buildBreakerPrompt(task: string, winnerDiff: string, engineId: s
   ].join('\n');
 }
 
+// @kern-source: gauntlet:34
 export function buildRepairPrompt(task: string, breakerTests: string): string {
   return [
     `## REPAIR MODE`,
@@ -53,6 +55,7 @@ export function buildRepairPrompt(task: string, breakerTests: string): string {
   ].join('\n');
 }
 
+// @kern-source: gauntlet:51
 export async function validateBreakerArtifact(opts: {artifact:BreakerArtifact, winnerWorktree:string, cleanWorktree:string, fitnessTimeout:number, fitnessCmd?:string}): Promise<BreakerArtifact> {
   const { artifact, winnerWorktree, cleanWorktree, fitnessTimeout, fitnessCmd } = opts;
   const testRunner = fitnessCmd ?? 'npx vitest run';
@@ -125,6 +128,7 @@ export async function validateBreakerArtifact(opts: {artifact:BreakerArtifact, w
   return { ...artifact, validated: true, deterministic: true, testPath: winnerTestPath };
 }
 
+// @kern-source: gauntlet:124
 export async function runGauntlet(opts: {winnerId:string, losers:string[], task:string, winnerWorktree:string, fitnessCmd:string, taskClass:TaskClass, forgeDir:string, registry:EngineRegistry, adapter:EngineAdapter, timeout:number, fitnessTimeout:number, maxBreakers:number, repairTimeout:number, cwd:string, baseSha:string, onEvent?:(event:ForgeEvent)=>void, signal?: AbortSignal}): Promise<GauntletResult> {
   const { winnerId, losers, task, winnerWorktree, fitnessCmd, taskClass, forgeDir, registry, adapter, timeout, fitnessTimeout, maxBreakers, repairTimeout, cwd } = opts;
 

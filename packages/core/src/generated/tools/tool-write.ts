@@ -13,6 +13,7 @@ import { takeSnapshot } from '../blocks/file-history.js';
 /**
  * Factory for the Write tool — writes or creates files with safety guards.
  */
+// @kern-source: tool-write:11
 export function createWriteTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Write',

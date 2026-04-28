@@ -2,6 +2,7 @@
 
 import type { CesarPlan, CesarPlanStep } from './plan.js';
 
+// @kern-source: plan-formatter:3
 export function formatStepType(s: CesarPlanStep): string {
   switch (s.type) {
     case 'self': return 'self: Cesar';
@@ -16,6 +17,7 @@ export function formatStepType(s: CesarPlanStep): string {
   }
 }
 
+// @kern-source: plan-formatter:18
 export function formatCesarPlanMarkdown(plan: CesarPlan): string {
   const lines: string[] = [];
   lines.push(`# Plan: ${plan.intent}`);

@@ -12,6 +12,7 @@ import { applyInlineInputEdits, classifyDeleteInput, deleteWordBackward, findLin
 
 import { useStableInput } from '../../stable-input.js';
 
+// @kern-source: prompt-input:8
 export interface PromptToken {
   dimmed: boolean|undefined;
   highlighted: boolean;
@@ -20,10 +21,12 @@ export interface PromptToken {
   text: string;
 }
 
+// @kern-source: prompt-input:15
 export interface PromptLine {
   tokens: PromptToken[];
 }
 
+// @kern-source: prompt-input:18
 export interface PromptViewport {
   start: number;
   end: number;
@@ -31,6 +34,7 @@ export interface PromptViewport {
   hiddenBelow: number;
 }
 
+// @kern-source: prompt-input:253
 const PromptTextInput = React.memo(function PromptTextInput({ value, placeholder, focus, showCursor, highlightPastedText, ghostText, width, maxVisibleLines, onChange, onSubmit, onCtrlShortcut }: { value:string; placeholder:string|undefined; focus:boolean|undefined; showCursor:boolean|undefined; highlightPastedText:boolean|undefined; ghostText:string|undefined; width:number; maxVisibleLines:number|undefined; onChange:(value:string) => void; onSubmit:((value:string) => void)|undefined; onCtrlShortcut:((shortcut:string) => void)|undefined }) {
   const originalValue = value;
   const resolvedPlaceholder = placeholder ?? '';
@@ -255,6 +259,7 @@ const PromptTextInput = React.memo(function PromptTextInput({ value, placeholder
 });
 export { PromptTextInput };
 
+// @kern-source: prompt-input:24
 function isMouseReportInput(input: string): boolean {
   if (!input) return false;
   if (/\x1b\[<\d+;\d+;\d+[mM]/.test(input)) return true;
@@ -266,6 +271,7 @@ function isMouseReportInput(input: string): boolean {
   return false;
 }
 
+// @kern-source: prompt-input:36
 function stripMouseReportInput(input: string): string {
   if (!input) return input;
   return input
@@ -274,6 +280,7 @@ function stripMouseReportInput(input: string): string {
     .replace(/(?:\x1b\[|\[)?<\d+;\d+;\d*(?:[mM])?/g, '');
 }
 
+// @kern-source: prompt-input:45
 export function wrapPromptText(value: string, width: number): string[] {
   const safeWidth = Math.max(1, width);
   const lines = [''];
@@ -294,6 +301,7 @@ export function wrapPromptText(value: string, width: number): string[] {
   return lines;
 }
 
+// @kern-source: prompt-input:66
 export function locatePromptCursor(value: string, width: number, cursorOffset: number): {column:number, line:number, synthetic:boolean} {
   const safeWidth = Math.max(1, width);
   const boundedOffset = Math.max(0, Math.min(cursorOffset, value.length));
@@ -328,6 +336,7 @@ export function locatePromptCursor(value: string, width: number, cursorOffset: n
   return { line, column: col, synthetic: true };
 }
 
+// @kern-source: prompt-input:101
 export function selectPromptViewport(totalLines: number, cursorLine: number, maxVisibleLines: number): PromptViewport {
   const safeVisibleLines = Math.max(1, maxVisibleLines);
   const boundedCursor = Math.max(0, Math.min(cursorLine, Math.max(0, totalLines - 1)));
@@ -348,6 +357,7 @@ export function selectPromptViewport(totalLines: number, cursorLine: number, max
   };
 }
 
+// @kern-source: prompt-input:122
 function renderToken(token: PromptToken): string {
   if (token.kind === 'cursor') return chalk.inverse(' ');
   if (token.highlighted) return chalk.inverse(token.text);
@@ -355,6 +365,7 @@ function renderToken(token: PromptToken): string {
   return token.text;
 }
 
+// @kern-source: prompt-input:130
 function buildPlaceholderLines(placeholder: string, width: number, opts: {focus:boolean, showCursor:boolean}): {cursorLine:number, lines:PromptLine[]} {
   const safeWidth = Math.max(1, width);
   const lines: PromptLine[] = [{ tokens: [] }];
@@ -393,6 +404,7 @@ function buildPlaceholderLines(placeholder: string, width: number, opts: {focus:
   return { lines, cursorLine };
 }
 
+// @kern-source: prompt-input:169
 function buildValueLines(value: string, width: number, opts: {cursorOffset:number, cursorWidth:number, focus:boolean, highlightPastedText:boolean, showCursor:boolean}): {cursorLine:number, lines:PromptLine[]} {
   const safeWidth = Math.max(1, width);
   const lines: PromptLine[] = [{ tokens: [] }];
@@ -458,18 +470,22 @@ function buildValueLines(value: string, width: number, opts: {cursorOffset:numbe
   return { lines, cursorLine };
 }
 
+// @kern-source: prompt-input:235
 function lineLength(line: PromptLine): number {
   return line.tokens.length;
 }
 
+// @kern-source: prompt-input:238
 function pluralizeLines(count: number): string {
   return count === 1 ? 'line' : 'lines';
 }
 
+// @kern-source: prompt-input:241
 export function isDelegatedCtrlShortcut(input: string): boolean {
   return ['c', 'e', 'j', 'l', 'r', 't', 'y'].includes(input);
 }
 
+// @kern-source: prompt-input:244
 export function shouldAdoptPromptValue(originalValue: string, pendingEchoValue: string|null): boolean {
   if (pendingEchoValue === null) return true;
   if (originalValue === pendingEchoValue) return true;

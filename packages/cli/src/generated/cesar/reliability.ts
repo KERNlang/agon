@@ -6,8 +6,10 @@ import { join } from 'node:path';
 
 import { RUNS_DIR } from '@agon/core';
 
+// @kern-source: reliability:5
 export type CesarReliabilityLabel = 'unknown' | 'tool-capable' | 'watch' | 'advisory-only';
 
+// @kern-source: reliability:7
 export interface CesarToolReliability {
   engineId: string;
   backend: string;
@@ -34,6 +36,7 @@ export interface CesarToolReliability {
 /**
  * Read recent Cesar decision records from ~/.agon/runs/cesar-decisions.jsonl. Returns an empty array when no log exists.
  */
+// @kern-source: reliability:29
 export function readCesarDecisionRecords(limit?: number): any[] {
   const reportPath = join(RUNS_DIR, 'cesar-decisions.jsonl');
   if (!existsSync(reportPath)) return [];
@@ -55,6 +58,7 @@ export function readCesarDecisionRecords(limit?: number): any[] {
 /**
  * Classify whether a Cesar decision record represents a turn where real tools would normally be expected.
  */
+// @kern-source: reliability:49
 export function isToolHeavyCesarRecord(record: any): boolean {
   const flow = String(record?.recommendedFlow ?? record?.flow ?? '').toLowerCase();
   const intake = String(record?.intakeKind ?? '').toLowerCase();
@@ -66,6 +70,7 @@ export function isToolHeavyCesarRecord(record: any): boolean {
     || ['bugfix', 'feature', 'refactor'].includes(taskClass);
 }
 
+// @kern-source: reliability:62
 export function emptyCesarToolReliability(engineId?: string, backend?: string): CesarToolReliability {
   return {
     engineId: String(engineId ?? 'all'),
@@ -94,6 +99,7 @@ export function emptyCesarToolReliability(engineId?: string, backend?: string): 
 /**
  * Summarize observed Cesar tool reliability for one engine/backend from decision records.
  */
+// @kern-source: reliability:88
 export function summarizeCesarToolReliability(records: any[], engineId?: string, backend?: string): CesarToolReliability {
   const targetEngine = String(engineId ?? '').trim();
   const targetBackend = String(backend ?? '').trim();
@@ -214,6 +220,7 @@ export function summarizeCesarToolReliability(records: any[], engineId?: string,
 /**
  * Read and summarize recent Cesar tool reliability, falling back from exact backend to any backend for the same engine.
  */
+// @kern-source: reliability:207
 export function readCesarToolReliability(engineId?: string, backend?: string, limit?: number): CesarToolReliability {
   const records = readCesarDecisionRecords(limit ?? 200);
   let summary = summarizeCesarToolReliability(records, engineId, backend);
@@ -226,6 +233,7 @@ export function readCesarToolReliability(engineId?: string, backend?: string, li
 /**
  * Summarize recent Cesar tool reliability for every observed engine/backend pair.
  */
+// @kern-source: reliability:218
 export function summarizeAllCesarToolReliability(limit?: number): CesarToolReliability[] {
   const records = readCesarDecisionRecords(limit ?? 200);
   const pairs = new Map<string, { engineId: string; backend: string }>();
@@ -239,6 +247,7 @@ export function summarizeAllCesarToolReliability(limit?: number): CesarToolRelia
     .sort((a, b) => b.turns - a.turns || a.engineId.localeCompare(b.engineId));
 }
 
+// @kern-source: reliability:233
 export function formatCesarReliabilityLine(summary: CesarToolReliability): string {
   if (!summary || summary.turns <= 0) {
     const engine = summary?.engineId ?? 'all';
@@ -255,6 +264,7 @@ export function formatCesarReliabilityLine(summary: CesarToolReliability): strin
 /**
  * Return true when Cesar should bias away from self-tooling and toward plan/orchestration for this turn.
  */
+// @kern-source: reliability:247
 export function shouldDowngradeCesarToolWork(summary: CesarToolReliability, intakeKind?: string, recommendedFlow?: string): boolean {
   const intake = String(intakeKind ?? '').toLowerCase();
   const flow = String(recommendedFlow ?? '').toLowerCase();
@@ -271,6 +281,7 @@ export function shouldDowngradeCesarToolWork(summary: CesarToolReliability, inta
 /**
  * Build a compact visible summary of the actual tools Cesar used this turn.
  */
+// @kern-source: reliability:262
 export function buildWhatHappenedSummary(telemetry: Record<string,unknown>): string {
   const toolCount = Number(telemetry?.toolCount ?? 0) || 0;
   const eventCount = Number(telemetry?.toolEventCount ?? 0) || 0;

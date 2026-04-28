@@ -12,18 +12,25 @@ import { planCostEstimator } from '@agon/core';
 
 import type { CostEstimate, AgonConfig } from '@agon/core';
 
+// @kern-source: routing:8
 export type CesarUncertaintyFamily = 'none' | 'challenge' | 'tradeoff' | 'open' | 'fuzzy' | 'specialist' | 'implementation' | 'review';
 
+// @kern-source: routing:9
 export type CesarEscalationHint = 'self' | 'self-nero' | 'delegate' | 'tribunal' | 'brainstorm' | 'campfire' | 'forge' | 'review';
 
+// @kern-source: routing:10
 export type CesarBreadthHint = 'solo' | 'team';
 
+// @kern-source: routing:11
 export type CesarForgeScopeHint = 'none' | 'slice' | 'full';
 
+// @kern-source: routing:12
 export type CesarIntakeKind = 'chat' | 'quick-fix' | 'bug' | 'feature' | 'big-feature' | 'spec' | 'review' | 'decision' | 'exploration';
 
+// @kern-source: routing:13
 export type CesarFlowHint = 'answer' | 'quick-fix' | 'bug-fix' | 'spec-first' | 'plan-first' | 'forge-slice' | 'forge-full' | 'brainstorm' | 'tribunal' | 'campfire' | 'review';
 
+// @kern-source: routing:15
 export interface CesarRoutingHints {
   taskClass: TaskClass;
   intakeKind: CesarIntakeKind;
@@ -47,6 +54,7 @@ export interface CesarRoutingHints {
 /**
  * Cheap, deterministic routing hints for Cesar: intake kind, flow recommendation, uncertainty family, escalation shape, breadth, and forge scope.
  */
+// @kern-source: routing:34
 export function deriveRoutingHints(input: string, ctx: HandlerContext): CesarRoutingHints {
   const taskClass = classifyTask(input);
   const inputTokens = Math.ceil(input.length / 4);
@@ -268,6 +276,7 @@ export function deriveRoutingHints(input: string, ctx: HandlerContext): CesarRou
 /**
  * Build a lightweight routing context (~200-600 tokens) for Cesar to make intelligent intake, mode, and team decisions.
  */
+// @kern-source: routing:254
 export function buildRoutingContext(input: string, ctx: HandlerContext): string {
   const parts: string[] = [];
 
@@ -381,6 +390,7 @@ export function buildRoutingContext(input: string, ctx: HandlerContext): string 
 /**
  * Pure, zero-LLM-cost classification: should this /agent request run as a team (parallel engines) rather than solo? Returns true when the task pattern suggests cross-module fan-out AND at least 2 API engines are available. Based on the same FANOUT_RE/scopeDirSpread signals that buildRoutingContext includes in the Cesar prompt — but exported so dispatch can use them without a full brain call.
  */
+// @kern-source: routing:366
 export function shouldUseAgentTeam(input: string, ctx: HandlerContext): boolean {
   // Need at least 2 active engines for team mode to make sense.
   const available = ctx.activeEngines();
@@ -392,6 +402,7 @@ export function shouldUseAgentTeam(input: string, ctx: HandlerContext): boolean 
 /**
  * Cost-aware speculation gate. Returns true only when: (1) estimated step cost exceeds speculativeThresholdUsd, (2) uncertainty is not 'none', (3) ELO spread between top engines is below speculativeEloSpreadThreshold. Prevents wasteful scout+parallel runs on cheap, sure, or lopsided tasks.
  */
+// @kern-source: routing:376
 export function shouldSpeculate(hints: CesarRoutingHints, config: Required<AgonConfig>): boolean {
   const threshold = (config as any).speculativeThresholdUsd ?? 0.50;
   const eloThreshold = (config as any).speculativeEloSpreadThreshold ?? 15;

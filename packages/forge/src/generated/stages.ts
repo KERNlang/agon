@@ -10,10 +10,12 @@ import { runFitness } from './fitness.js';
 
 import type { StageResult, ForgeEventCallback, WorktreeEntry } from '../types.js';
 
+// @kern-source: stages:7
 function formatDispatchError(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+// @kern-source: stages:12
 function makeFailedResult(engineId: string, error: string, durationMs?: number): EngineResult {
   return {
     engineId,
@@ -28,6 +30,7 @@ function makeFailedResult(engineId: string, error: string, durationMs?: number):
   };
 }
 
+// @kern-source: stages:27
 export async function runBaseline(opts: {cwd:string, baseSha:string, fitnessCmd:string, fitnessTimeout:number, forgeDir:string, onEvent?:ForgeEventCallback}): Promise<boolean> {
   opts.onEvent?.({ type: 'baseline:start' });
 
@@ -51,6 +54,7 @@ export async function runBaseline(opts: {cwd:string, baseSha:string, fitnessCmd:
   }
 }
 
+// @kern-source: stages:51
 export async function runStage1(opts: {starter:string, forgePrompt:string, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal}): Promise<StageResult> {
   opts.onEvent?.({ type: 'stage1:start', engineId: opts.starter });
 
@@ -160,6 +164,7 @@ export async function runStage1(opts: {starter:string, forgePrompt:string, fitne
   return { engineResults, accepted, winner: result.pass ? opts.starter : null, metrics: [metric] };
 }
 
+// @kern-source: stages:161
 export async function runStage2(opts: {challengers:string[], forgePrompt:string, enginePrompts?:Map<string,string>, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal}): Promise<StageResult> {
   opts.onEvent?.({ type: 'stage2:start' });
 
@@ -268,6 +273,7 @@ export async function runStage2(opts: {challengers:string[], forgePrompt:string,
   return { engineResults: allResults, accepted: false, winner: null, metrics };
 }
 
+// @kern-source: stages:270
 export async function runStage2WithPeek(opts: {challengers:string[], forgePrompt:string, enginePrompts?:Map<string,string>, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal}): Promise<StageResult> {
   if (opts.challengers.length <= 1) {
     // Only one challenger — no peek possible, use normal stage2

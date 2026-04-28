@@ -8,6 +8,7 @@ import { homedir } from 'node:os';
 
 import type { TaskClass } from '../models/types.js';
 
+// @kern-source: engine-memory:6
 export interface EngineNote {
   taskClass: TaskClass;
   observation: string;
@@ -16,12 +17,14 @@ export interface EngineNote {
   filePatterns?: string[];
 }
 
+// @kern-source: engine-memory:13
 export interface EngineStrengthObservation {
   engineId: string;
   category: string;
   reason: string;
 }
 
+// @kern-source: engine-memory:18
 export interface EngineProfile {
   strengths: string[];
   weaknesses: string[];
@@ -29,17 +32,20 @@ export interface EngineProfile {
   notes: EngineNote[];
 }
 
+// @kern-source: engine-memory:24
 export interface EngineMemoryRecord {
   engines: Record<string,EngineProfile>;
   lastUpdated: string;
 }
 
+// @kern-source: engine-memory:28
 function memoryPath(): string {
   const override = process.env.AGON_HOME?.trim();
   const home = override ? resolve(override) : join(homedir(), '.agon');
   return join(home, 'engine-memory.json');
 }
 
+// @kern-source: engine-memory:35
 export function loadEngineMemory(): EngineMemoryRecord {
   try { return JSON.parse(readFileSync(memoryPath(), 'utf-8')) as EngineMemoryRecord; }
   catch (err) {
@@ -50,6 +56,7 @@ export function loadEngineMemory(): EngineMemoryRecord {
   }
 }
 
+// @kern-source: engine-memory:46
 function saveEngineMemory(record: EngineMemoryRecord): void {
   const override = process.env.AGON_HOME?.trim();
   const home = override ? resolve(override) : join(homedir(), '.agon');
@@ -61,6 +68,7 @@ function saveEngineMemory(record: EngineMemoryRecord): void {
   renameSync(tmpPath, path);
 }
 
+// @kern-source: engine-memory:58
 function ensureProfile(record: EngineMemoryRecord, engineId: string): EngineProfile {
   if (!record.engines[engineId]) {
     record.engines[engineId] = { strengths: [], weaknesses: [], tendencies: [], notes: [] };
@@ -68,6 +76,7 @@ function ensureProfile(record: EngineMemoryRecord, engineId: string): EngineProf
   return record.engines[engineId];
 }
 
+// @kern-source: engine-memory:66
 function uniqueStrings(values: string[], limit?: number): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
@@ -85,6 +94,7 @@ function uniqueStrings(values: string[], limit?: number): string[] {
 /**
  * Collapse a touched file path to a reusable routing-memory pattern.
  */
+// @kern-source: engine-memory:81
 export function filePathToMemoryPattern(path: string): string {
   const clean = String(path ?? '')
     .trim()
@@ -109,6 +119,7 @@ export function filePathToMemoryPattern(path: string): string {
 /**
  * Extract stable file-scope patterns from a unified diff for engine memory.
  */
+// @kern-source: engine-memory:104
 export function extractPatchFilePatterns(patch: string): string[] {
   const paths: string[] = [];
   for (const line of String(patch ?? '').split('\n')) {
@@ -123,6 +134,7 @@ export function extractPatchFilePatterns(patch: string): string[] {
   return uniqueStrings(paths.map(filePathToMemoryPattern).filter(Boolean), 12);
 }
 
+// @kern-source: engine-memory:120
 export function addEngineNote(engineId: string, taskClass: TaskClass, observation: string, forgeId?: string, filePatterns?: string[]): void {
   const record = loadEngineMemory();
   const profile = ensureProfile(record, engineId);
@@ -142,6 +154,7 @@ export function addEngineNote(engineId: string, taskClass: TaskClass, observatio
   saveEngineMemory(record);
 }
 
+// @kern-source: engine-memory:140
 export function setEngineStrengths(engineId: string, strengths: string[]): void {
   const record = loadEngineMemory();
   const profile = ensureProfile(record, engineId);
@@ -149,6 +162,7 @@ export function setEngineStrengths(engineId: string, strengths: string[]): void 
   saveEngineMemory(record);
 }
 
+// @kern-source: engine-memory:148
 export function setEngineWeaknesses(engineId: string, weaknesses: string[]): void {
   const record = loadEngineMemory();
   const profile = ensureProfile(record, engineId);
@@ -156,6 +170,7 @@ export function setEngineWeaknesses(engineId: string, weaknesses: string[]): voi
   saveEngineMemory(record);
 }
 
+// @kern-source: engine-memory:156
 export function addEngineTendency(engineId: string, tendency: string): void {
   const record = loadEngineMemory();
   const profile = ensureProfile(record, engineId);
@@ -166,11 +181,13 @@ export function addEngineTendency(engineId: string, tendency: string): void {
   saveEngineMemory(record);
 }
 
+// @kern-source: engine-memory:167
 export function getEngineProfile(engineId: string): EngineProfile|null {
   const record = loadEngineMemory();
   return record.engines[engineId] ?? null;
 }
 
+// @kern-source: engine-memory:173
 export function buildRolePrompt(engineId: string, taskClass: TaskClass): string {
   const profile = getEngineProfile(engineId);
   if (!profile) return '';
@@ -207,6 +224,7 @@ export function buildRolePrompt(engineId: string, taskClass: TaskClass): string 
     : '';
 }
 
+// @kern-source: engine-memory:210
 export function recordForgeOutcome(winnerId: string, loserIds: string[], taskClass: TaskClass, forgeId: string, winnerScore: number, loserScores: Record<string,number>, filePatterns?: string[]): void {
   // Auto-populate notes from forge outcomes
   const patterns = uniqueStrings(filePatterns ?? [], 12);
@@ -225,6 +243,7 @@ export function recordForgeOutcome(winnerId: string, loserIds: string[], taskCla
 /**
  * Record Cesar's final forge judgment so future routing learns from scorer overrides and per-engine strengths.
  */
+// @kern-source: engine-memory:226
 export function recordForgeJudgment(judgedWinnerId: string, automaticWinnerId: string|null, engineIds: string[], taskClass: TaskClass, forgeId: string, summary: string, strengths?: EngineStrengthObservation[], filePatterns?: string[]): void {
   const patterns = uniqueStrings(filePatterns ?? [], 12);
   const cleanSummary = String(summary ?? '').replace(/\s+/g, ' ').trim();

@@ -8,6 +8,7 @@ import type { AgonConfig } from '@agon/core';
 
 import { header, success, table } from '../blocks/output-format.js';
 
+// @kern-source: models:6
 export const modelsCommand: any = defineCommand({
   meta: {
     name: 'models',

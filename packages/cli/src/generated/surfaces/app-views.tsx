@@ -16,6 +16,7 @@ import { parseMarkdownBlocks, cleanEngineOutput } from '../blocks/markdown.js';
 
 import { icons } from '../signals/icons.js';
 
+// @kern-source: app-views:34
 const ChromeBar = React.memo(function ChromeBar({ mode, cwdLabel, engineCount, replState, runningJobs }: { mode:string; cwdLabel:string; engineCount:number; replState:string; runningJobs:Job[] }) {
   if (mode === 'chat') {
     return (
@@ -42,6 +43,7 @@ const ChromeBar = React.memo(function ChromeBar({ mode, cwdLabel, engineCount, r
 });
 export { ChromeBar };
 
+// @kern-source: app-views:67
 const TranscriptRowView = React.memo(function TranscriptRowView({ row }: { row:any }) {
   const borderPrefix = row.borderColor ? <Text color={row.borderColor}>{'\u2502 '}</Text> : null;
   const selectionRail = <Text color={row.selected ? '#60a5fa' : '#2b2b2b'}>{row.selected ? '\u258c' : ' '}</Text>;
@@ -173,6 +175,7 @@ const TranscriptRowView = React.memo(function TranscriptRowView({ row }: { row:a
 });
 export { TranscriptRowView };
 
+// @kern-source: app-views:201
 export function ToolDetailBlock({ title, subtitle, accentColor, rows, maxVisibleRows, onClose }: { title:string; subtitle:string; accentColor:string; rows:any[]; maxVisibleRows:number; onClose:() => void }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -249,6 +252,7 @@ export function ToolDetailBlock({ title, subtitle, accentColor, rows, maxVisible
   );
 }
 
+// @kern-source: app-views:279
 const StreamingView = React.memo(function StreamingView({ streamingText, mode, liveProgress }: { streamingText:{engineId:string,content:string} | null; mode:string; liveProgress:EngineProgress[] | null }) {
   return (
     <>
@@ -283,6 +287,7 @@ const StreamingView = React.memo(function StreamingView({ streamingText, mode, l
 });
 export { StreamingView };
 
+// @kern-source: app-views:16
 export function renderSelectedText(text: string, start: number, end: number, keyPrefix: string): any {
   const safeText = String(text ?? '');
   const startIndex = Math.max(0, Math.min(safeText.length, Number.isFinite(start) ? start : 0));

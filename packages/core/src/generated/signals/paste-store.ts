@@ -10,6 +10,7 @@ import { homedir } from 'node:os';
 
 import { ensureAgonHome } from './config.js';
 
+// @kern-source: paste-store:7
 function getPasteStoreDir(): string {
   const override = process.env.AGON_HOME?.trim();
   const home = override ? resolve(override) : join(homedir(), '.agon');
@@ -19,14 +20,17 @@ function getPasteStoreDir(): string {
 /**
  * Max age in ms before cleanup removes a paste (7 days)
  */
+// @kern-source: paste-store:14
 export const PASTE_MAX_AGE: number = 7 * 24 * 60 * 60 * 1000;
 
+// @kern-source: paste-store:18
 export interface PasteStoreResult {
   hash: string;
   preview: string;
   lineCount: number;
 }
 
+// @kern-source: paste-store:23
 function ensurePasteDir(): void {
   ensureAgonHome();
   mkdirSync(getPasteStoreDir(), { recursive: true });
@@ -35,6 +39,7 @@ function ensurePasteDir(): void {
 /**
  * Content-addressed storage for large pastes. SHA-256 hash as filename.
  */
+// @kern-source: paste-store:29
 export class PasteStore {
 
   store(text: string): PasteStoreResult {

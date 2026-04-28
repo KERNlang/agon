@@ -6,10 +6,12 @@ import { advanceCesarStep } from './plan.js';
 
 import { planCostEstimator } from './plan-cost-estimator.js';
 
+// @kern-source: plan-executor:5
 export interface StepExecutor {
   execute: (step:CesarPlanStep, context:Record<string,string|undefined>, signal?:AbortSignal)=>Promise<{result:CesarStepResult,contextExport?:string}>;
 }
 
+// @kern-source: plan-executor:8
 export interface PlanExecutorCallbacks {
   onStepStart: (stepId:string)=>void;
   onStepDone: (stepId:string, result:CesarStepResult)=>void;
@@ -18,10 +20,12 @@ export interface PlanExecutorCallbacks {
   summarizeStepOutput?: (stepId:string, output:string)=>Promise<string>;
 }
 
+// @kern-source: plan-executor:15
 export function getReadySteps(plan: CesarPlan): CesarPlanStep[] {
   return plan.steps.filter((s) => s.state === 'pending');
 }
 
+// @kern-source: plan-executor:20
 export async function executePlan(plan: CesarPlan, executors: Record<string,StepExecutor>, callbacks: PlanExecutorCallbacks, signal?: AbortSignal): Promise<CesarPlan> {
   let current = plan;
 

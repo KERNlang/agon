@@ -11,6 +11,7 @@ import { fileStateCache } from '../../file-state-cache.js';
 /**
  * Format text with cat -n style line numbers.
  */
+// @kern-source: tool-read:9
 function formatWithLineNumbers(text: string, startLine: number): string {
   const lines = text.split('\n');
   return lines.map((line, i) => {
@@ -22,6 +23,7 @@ function formatWithLineNumbers(text: string, startLine: number): string {
 /**
  * Factory for the Read tool — reads files with line numbers and caching.
  */
+// @kern-source: tool-read:19
 export function createReadTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Read',

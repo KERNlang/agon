@@ -5,6 +5,7 @@ import type { ToolResult, ToolContext, ToolHandler, ToolDefinition, PermissionDe
 /**
  * Signal tool — delegates to the competitive forge pipeline.
  */
+// @kern-source: tool-orchestration:9
 export function createForgeTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Forge',
@@ -49,6 +50,7 @@ export function createForgeTool(): ToolHandler {
 /**
  * Signal tool — delegates to multi-AI brainstorm.
  */
+// @kern-source: tool-orchestration:52
 export function createBrainstormTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Brainstorm',
@@ -87,6 +89,7 @@ export function createBrainstormTool(): ToolHandler {
 /**
  * Signal tool — delegates to AI tribunal debate.
  */
+// @kern-source: tool-orchestration:89
 export function createTribunalTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Tribunal',
@@ -132,6 +135,7 @@ export function createTribunalTool(): ToolHandler {
 /**
  * Signal tool — opens a campfire discussion with all AIs.
  */
+// @kern-source: tool-orchestration:133
 export function createCampfireTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Campfire',
@@ -169,6 +173,7 @@ export function createCampfireTool(): ToolHandler {
 /**
  * Signal tool — reports confidence level structurally instead of text.
  */
+// @kern-source: tool-orchestration:169
 export function createReportConfidenceTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'ReportConfidence',
@@ -216,6 +221,7 @@ export function createReportConfidenceTool(): ToolHandler {
 /**
  * Execution tool — delegates a subtask to a specific engine and returns the result inline.
  */
+// @kern-source: tool-orchestration:215
 export function createDelegateTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Delegate',
@@ -266,6 +272,7 @@ export function createDelegateTool(): ToolHandler {
 /**
  * Signal tool — delegates to code review.
  */
+// @kern-source: tool-orchestration:264
 export function createReviewTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Review',
@@ -302,6 +309,7 @@ export function createReviewTool(): ToolHandler {
 /**
  * Signal tool — delegates to the autonomous agent loop. Solo mode runs one engine in an autonomous tool-use loop. team:true mode spawns multiple parallel AgentSession instances in isolated worktrees and synthesizes the best result. Choose taskKind:edit for code changes (gets a typecheck-or-fail fitness gate) or taskKind:investigate for analysis tasks (no diff scoring). Always set taskKind explicitly. After calling, STOP and wait.
  */
+// @kern-source: tool-orchestration:299
 export function createAgentTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Agent',
@@ -355,6 +363,7 @@ export function createAgentTool(): ToolHandler {
 /**
  * Signal tool — Cesar requests a structured self-challenge (Quick Nero) after the tool loop.
  */
+// @kern-source: tool-orchestration:351
 export function createQuickNeroTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'QuickNero',
@@ -389,6 +398,7 @@ export function createQuickNeroTool(): ToolHandler {
 /**
  * Signal tool — delegates to full pipeline (brainstorm → forge → tribunal).
  */
+// @kern-source: tool-orchestration:384
 export function createPipelineTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Pipeline',

@@ -10,6 +10,7 @@ import { parseMarkdownBlocks } from './markdown.js';
 
 import { icons } from '../signals/icons.js';
 
+// @kern-source: plan-view:48
 export function PlanProposalView({ plan, markdown }: { plan:any; markdown?:string }) {
   const steps = plan.steps ?? [];
   const totalTokens = plan.totalEstimatedTokens ?? steps.reduce((sum: number, s: any) => sum + (s.estimatedTokens ?? 0), 0);
@@ -179,6 +180,7 @@ export function PlanProposalView({ plan, markdown }: { plan:any; markdown?:strin
   );
 }
 
+// @kern-source: plan-view:223
 export function PlanExecutionView({ plan }: { plan:any }) {
   const steps: any[] = plan.steps ?? [];
   const doneSteps = steps.filter((s: any) => s.state === 'done');
@@ -237,6 +239,7 @@ export function PlanExecutionView({ plan }: { plan:any }) {
   );
 }
 
+// @kern-source: plan-view:19
 export const STEP_TYPE_CONFIG: Record<string, {icon:string,color:string,label:string}> = ({
   self:       { icon: '\u2699',  color: '#a78bfa', label: 'Cesar' },
   forge:      { icon: '\u2694',  color: '#f97316', label: 'Forge' },
@@ -248,6 +251,7 @@ export const STEP_TYPE_CONFIG: Record<string, {icon:string,color:string,label:st
   pipeline:   { icon: '\u2192',  color: '#34d399', label: 'Pipeline' },
 }) as Record<string, {icon:string,color:string,label:string}>;
 
+// @kern-source: plan-view:33
 export const STEP_STATE_ICONS: Record<string, {icon:string,color:string}> = ({
   pending:   { icon: '\u25cb', color: '#64748b' },
   blocked:   { icon: '\u25a1', color: '#475569' },

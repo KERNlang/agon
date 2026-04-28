@@ -6,6 +6,7 @@ import type { FlowRecord, FlowFeedback, FlowTelemetry, FlowModeMeta, FlowAnalysi
 
 import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 
+// @kern-source: flow:5
 function buildTelemetry(ctx: HandlerContext, startTime: number): FlowTelemetry {
   const stats = tracker.getStats();
   const tokensByEngine: Record<string, {prompt:number, response:number}> = {};
@@ -19,6 +20,7 @@ function buildTelemetry(ctx: HandlerContext, startTime: number): FlowTelemetry {
   };
 }
 
+// @kern-source: flow:19
 export async function handleFlowReport(dispatch: Dispatch, ctx: HandlerContext, sessionMode: string, startTime: number, modeMeta?: FlowModeMeta): Promise<void> {
   const telemetry = buildTelemetry(ctx, startTime);
 
@@ -67,6 +69,7 @@ export async function handleFlowReport(dispatch: Dispatch, ctx: HandlerContext, 
   dispatch({ type: 'info', message: path });
 }
 
+// @kern-source: flow:68
 export function autoLogFlow(ctx: HandlerContext, sessionMode: string, startTime: number, completionState: 'completed'|'aborted'|'crashed', modeMeta?: FlowModeMeta): void {
   const telemetry = buildTelemetry(ctx, startTime);
   const record: FlowRecord = {
@@ -83,6 +86,7 @@ export function autoLogFlow(ctx: HandlerContext, sessionMode: string, startTime:
   logFlow(record);
 }
 
+// @kern-source: flow:85
 export function handleFlowAnalysis(dispatch: Dispatch): void {
   const analysis = analyzeFlows(30);
 

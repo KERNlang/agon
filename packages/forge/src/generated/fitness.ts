@@ -10,6 +10,7 @@ import { spawnWithTimeout, worktreeDiff, diffLineCount, diffFileCount, computeSc
 
 import { runLint, runStyleCheck } from './quality.js';
 
+// @kern-source: fitness:7
 export async function runFitness(opts: {engineId:string, worktreePath:string, fitnessCmd:string, timeout:number, forgeDir:string}): Promise<EngineResult> {
   const startTime = Date.now();
 

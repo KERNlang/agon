@@ -18,6 +18,7 @@ import { header, success, info, table, bold, cyan, green } from '../blocks/outpu
 
 import { icons } from '../signals/icons.js';
 
+// @kern-source: brainstorm:11
 export const brainstormCommand: any = defineCommand({
   meta: {
     name: 'brainstorm',

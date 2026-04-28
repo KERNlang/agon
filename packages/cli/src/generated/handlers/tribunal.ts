@@ -12,6 +12,7 @@ import { sessionResultStore } from '../models/session-results.js';
 
 import type { Dispatch, HandlerContext, EngineProgress } from '../../handlers/types.js';
 
+// @kern-source: tribunal:8
 export async function handleTribunal(question: string, dispatch: Dispatch, ctx: HandlerContext, tribunalMode?: string): Promise<void> {
   const tribunalAbort = new AbortController();
   try {

@@ -8,6 +8,7 @@ import { createInterface } from 'node:readline';
 
 import { execSync } from 'node:child_process';
 
+// @kern-source: agon-orchestration:15
 export const ORCHESTRATION_TOOLS: Array<{name:string,description:string,inputSchema:Record<string,unknown>}> = ([
   {
     name: 'Tribunal',
@@ -212,6 +213,7 @@ export const ORCHESTRATION_TOOLS: Array<{name:string,description:string,inputSch
 /**
  * Append a signal to the signal file (array). Supports ReportConfidence + orchestration in same turn.
  */
+// @kern-source: agon-orchestration:219
 export function writeSignal(tool: string, args: Record<string,unknown>) {
   const signalDir = process.env.AGON_SIGNAL_DIR;
   const sessionId = process.env.AGON_SESSION_ID;
@@ -231,6 +233,7 @@ export function writeSignal(tool: string, args: Record<string,unknown>) {
 /**
  * Handle an MCP tool call — write signal and return delegation message.
  */
+// @kern-source: agon-orchestration:237
 export function handleToolCall(name: string, args: Record<string,unknown>): string {
   const NON_BREAKING = new Set(['ReportConfidence', 'QuickNero']);
   const BREAK_AND_RESUME = new Set(['Delegate']);
@@ -247,6 +250,7 @@ export function handleToolCall(name: string, args: Record<string,unknown>): stri
   return 'Delegation accepted. The orchestrator will handle the rest. STOP responding now — do not continue after this tool call.';
 }
 
+// @kern-source: agon-orchestration:261
 function writePermissionRequest(id: string, tool: string, args: Record<string,unknown>): void {
   const signalDir = process.env.AGON_SIGNAL_DIR;
   const sessionId = process.env.AGON_SESSION_ID;
@@ -256,6 +260,7 @@ function writePermissionRequest(id: string, tool: string, args: Record<string,un
   writeFileSync(requestPath, JSON.stringify({ type: 'permission-request', id, tool, args, timestamp: Date.now() }));
 }
 
+// @kern-source: agon-orchestration:271
 function writeToolCompletion(id: string, tool: string, args: Record<string,unknown>, status: string, output: string): void {
   const signalDir = process.env.AGON_SIGNAL_DIR;
   const sessionId = process.env.AGON_SESSION_ID;
@@ -276,6 +281,7 @@ function writeToolCompletion(id: string, tool: string, args: Record<string,unkno
   } catch { /* completion signal is best-effort */ }
 }
 
+// @kern-source: agon-orchestration:292
 async function pollPermissionResponse(id: string, timeoutMs: number): Promise<{approved:boolean,reason?:string}> {
   const signalDir = process.env.AGON_SIGNAL_DIR;
   const sessionId = process.env.AGON_SESSION_ID;
@@ -301,6 +307,7 @@ async function pollPermissionResponse(id: string, timeoutMs: number): Promise<{a
 /**
  * Handle write tool calls with permission — request approval, wait, execute.
  */
+// @kern-source: agon-orchestration:315
 export async function handleWriteToolCall(name: string, args: Record<string,unknown>): Promise<string> {
   const requestId = `pr-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   const toolMap: Record<string, string> = { AgonBash: 'Bash', AgonEdit: 'Edit', AgonWrite: 'Write' };
@@ -367,6 +374,7 @@ export async function handleWriteToolCall(name: string, args: Record<string,unkn
 /**
  * Start the Agon orchestration MCP server on stdio. Line-delimited JSONRPC 2.0.
  */
+// @kern-source: agon-orchestration:380
 export function startMcpServer() {
   const rl = createInterface({ input: process.stdin, terminal: false });
 

@@ -12,6 +12,7 @@ import type { TribunalMode } from '@agon/forge';
 
 import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 
+// @kern-source: team-tribunal:8
 export async function handleTeamTribunal(question: string, dispatch: Dispatch, ctx: HandlerContext, tribunalMode?: string, membersPerSide?: number): Promise<void> {
   const teamAbort = new AbortController();
   try {

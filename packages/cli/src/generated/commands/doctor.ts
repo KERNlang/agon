@@ -20,6 +20,7 @@ import { header, table, info, success, fail, warn, green, red, yellow, dim, bold
 
 import { readCesarToolReliability, formatCesarReliabilityLine, shouldDowngradeCesarToolWork } from '../cesar/reliability.js';
 
+// @kern-source: doctor:12
 export interface EngineDoctorEntry {
   id: string;
   enabled: boolean;
@@ -29,6 +30,7 @@ export interface EngineDoctorEntry {
   detail: string;
 }
 
+// @kern-source: doctor:20
 export interface HarnessDoctorReport {
   headers: string[];
   rows: string[][];
@@ -36,22 +38,26 @@ export interface HarnessDoctorReport {
   ok: boolean;
 }
 
+// @kern-source: doctor:26
 export function shellQuoteForDoctor(value: string): string {
   const s = String(value ?? '');
   if (/^[A-Za-z0-9_@%+=:,./-]+$/.test(s)) return s;
   return `'${s.replace(/'/g, `'\\''`)}'`;
 }
 
+// @kern-source: doctor:33
 export function buildDoctorCleanupCommand(repo: string, path: string): string {
   return `git -C ${shellQuoteForDoctor(repo)} worktree prune && rm -rf ${shellQuoteForDoctor(path)}`;
 }
 
+// @kern-source: doctor:38
 export function formatDoctorStatus(status: 'ok'|'warn'|'fail'): string {
   if (status === 'ok') return green('ok');
   if (status === 'warn') return yellow('warn');
   return red('fail');
 }
 
+// @kern-source: doctor:45
 export function diagnoseEngineDoctorEntry(engine: EngineDefinition, registry: EngineRegistry, enabledIds: string[]): EngineDoctorEntry {
   const binaryPath = engine.binary ? registry.findBinary(engine) : null;
   const hasApi = !!engine.api;
@@ -114,6 +120,7 @@ export function diagnoseEngineDoctorEntry(engine: EngineDefinition, registry: En
   };
 }
 
+// @kern-source: doctor:108
 export function checkDoctorWorktree(cwd: string): {ok:boolean; message:string; cleanupCommand:string} {
   let root = '';
   let tempDir = '';
@@ -150,6 +157,7 @@ export function checkDoctorWorktree(cwd: string): {ok:boolean; message:string; c
 /**
  * Diagnose the live Cesar harness: selected engine, backend capability, native/MCP session state, and observed tool reliability.
  */
+// @kern-source: doctor:142
 export function buildHarnessDoctorReport(registry: EngineRegistry, config: any, cesar?: any): HarnessDoctorReport {
   const rows: string[][] = [];
   const selected = String((config as any)?.cesarEngine ?? (config as any)?.forgeFixedStarter ?? 'claude');
@@ -221,6 +229,7 @@ export function buildHarnessDoctorReport(registry: EngineRegistry, config: any, 
   };
 }
 
+// @kern-source: doctor:215
 export const doctorCommand: any = defineCommand({
   meta: {
     name: 'doctor',

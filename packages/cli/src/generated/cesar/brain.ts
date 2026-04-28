@@ -369,28 +369,45 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       const eagerPromises: Promise<ToolCallResult>[] = [];
       let eagerToolCtx: ToolContext | null = null;
       let routingHints = deriveRoutingHints(input, ctx);
+      const cesarFastPath = routingHints.intakeKind === 'chat'
+        && routingHints.recommendedFlow === 'answer'
+        && input.trim().length < 300
+        && !reviewFollowup.matched
+        && !(images && images.length > 0)
+        && !ctx.activePlan
+        && !ctx.neroMode
+        && !ctx.explorationMode;
       let routeReliability: any = null;
       let routeDowngrade = false;
-      try {
-        routeReliability = readCesarToolReliability(cesarEngineId, _actualCesarBackend === 'unknown' ? undefined : _actualCesarBackend, 200);
-        routeDowngrade = shouldDowngradeCesarToolWork(routeReliability, routingHints.intakeKind, routingHints.recommendedFlow);
-        const policy = routeDowngrade
-          ? ' | policy: route tool-heavy work through plan/orchestration'
-          : '';
+      if (cesarFastPath) {
         dispatch({
           type: 'info',
-          message: `Cesar route: ${routingHints.intakeKind} -> ${routingHints.recommendedFlow} | ${cesarEngineId}/${_actualCesarBackend} | tools: ${routeReliability.label}${policy}`,
+          message: `Cesar route: ${routingHints.intakeKind} -> ${routingHints.recommendedFlow} | ${cesarEngineId}/${_actualCesarBackend} | fast`,
         });
-      } catch { /* route card is advisory only */ }
+      } else {
+        try {
+          routeReliability = readCesarToolReliability(cesarEngineId, _actualCesarBackend === 'unknown' ? undefined : _actualCesarBackend, 200);
+          routeDowngrade = shouldDowngradeCesarToolWork(routeReliability, routingHints.intakeKind, routingHints.recommendedFlow);
+          const policy = routeDowngrade
+            ? ' | policy: route tool-heavy work through plan/orchestration'
+            : '';
+          dispatch({
+            type: 'info',
+            message: `Cesar route: ${routingHints.intakeKind} -> ${routingHints.recommendedFlow} | ${cesarEngineId}/${_actualCesarBackend} | tools: ${routeReliability.label}${policy}`,
+          });
+        } catch { /* route card is advisory only */ }
+      }
 
       // ── Build routing context (cheap: ~500ms, ~200 tokens) ──
       let enrichedInput = reviewFollowup.prompt;
-      try {
-        const routingCtx = buildRoutingContext(input, ctx);
-        if (routingCtx) {
-          enrichedInput = `[ROUTING CONTEXT — use this to decide mode + team]\n${routingCtx}\n\n${reviewFollowup.prompt}`;
-        }
-      } catch { /* routing context is best-effort */ }
+      if (!cesarFastPath) {
+        try {
+          const routingCtx = buildRoutingContext(input, ctx);
+          if (routingCtx) {
+            enrichedInput = `[ROUTING CONTEXT — use this to decide mode + team]\n${routingCtx}\n\n${reviewFollowup.prompt}`;
+          }
+        } catch { /* routing context is best-effort */ }
+      }
       if (routeReliability && routeDowngrade) {
         enrichedInput = `[CESAR TOOL RELIABILITY POLICY]\n${formatCesarReliabilityLine(routeReliability)}\nFor this tool-heavy task, do not pretend direct multi-step tooling happened. Prefer ProposePlan, Agent, Forge, Review, or another direct orchestration tool when execution is needed; if staying self, keep the answer advisory and explicit.\n\n${enrichedInput}`;
       }
@@ -751,7 +768,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       const inPlanMode = ctx.activePlan && ['planning', 'awaiting_approval'].includes(ctx.activePlan.state);
 
       // ── Cost-aware speculation gate: override team→solo if speculation isn't worth it ──
-      const speculate = shouldSpeculate(routingHints, config as any);
+      const speculate = cesarFastPath ? false : shouldSpeculate(routingHints, config as any);
       if (!speculate && routingHints.recommendedBreadth === 'team') {
         routingHints = { ...routingHints, recommendedBreadth: 'solo' as any };
         // Also downgrade forge scope if it was team-driven
@@ -977,6 +994,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       // ── Quick Nero: structured self-check before Cesar commits to staying local ──
       // Auto-gate fires on uncertainty-family signals OR when Cesar calls QuickNero() himself.
       const shouldQuickNero = parsedConfidence !== null
+        && !cesarFastPath
         && !secondOpinionPromise
         && !ctx.cesar!.advisorPending
         && !_isFollowUp

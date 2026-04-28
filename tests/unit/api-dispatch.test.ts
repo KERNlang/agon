@@ -33,6 +33,23 @@ describe('api-dispatch — AI SDK message conversion', () => {
     ]);
   });
 
+  it('merges separated system messages into one leading system message', () => {
+    const messages = [
+      { role: 'system', content: 'base rules' },
+      { role: 'user', content: 'hello' },
+      { role: 'system', content: 'context status' },
+      { role: 'assistant', content: 'hi' },
+    ];
+
+    const result = convertMessagesForSdk(messages, 'anthropic');
+
+    expect(result).toEqual([
+      { role: 'system', content: 'base rules\n\ncontext status' },
+      { role: 'user', content: 'hello' },
+      { role: 'assistant', content: [{ type: 'text', text: 'hi' }] },
+    ]);
+  });
+
   it('converts assistant message with tool_calls using input (not args)', () => {
     const messages = [
       { role: 'user', content: 'Read the file' },

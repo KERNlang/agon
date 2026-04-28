@@ -22,6 +22,11 @@ export function formatCesarPlanMarkdown(plan: CesarPlan): string {
   const lines: string[] = [];
   lines.push(`# Plan: ${plan.intent}`);
   lines.push('');
+  lines.push(`- Plan ID: \`${plan.id}\``);
+  if (plan.planFilePath) lines.push(`- Plan file: \`${plan.planFilePath}\``);
+  lines.push(`- Created: ${plan.createdAt}`);
+  lines.push(`- Status: ${plan.state}`);
+  lines.push('');
   if (plan.planningCost && typeof plan.planningCost.tokens === 'number') {
     const costStr = typeof plan.planningCost.costUsd === 'number' ? ` ($${plan.planningCost.costUsd.toFixed(4)})` : '';
     lines.push(`> Planning cost: ~${plan.planningCost.tokens.toLocaleString()} tokens${costStr}`);
@@ -34,7 +39,7 @@ export function formatCesarPlanMarkdown(plan: CesarPlan): string {
   // catch a malicious or wrong command.
   const stepsWithFitness = plan.steps.filter((s: CesarPlanStep) => s.fitnessCmd && s.fitnessCmd.trim().length > 0);
   if (stepsWithFitness.length > 0) {
-    lines.push('## ⚠ Shell Commands');
+    lines.push('## Shell Commands');
     lines.push('');
     lines.push('The following shell commands will be executed by this plan. Read them carefully before approving:');
     lines.push('');
@@ -51,8 +56,10 @@ export function formatCesarPlanMarkdown(plan: CesarPlan): string {
     const s = plan.steps[i];
     const num = i + 1;
     const typeLabel = formatStepType(s);
-    const stateIcon = s.state === 'done' ? '✓' : s.state === 'running' ? '●' : s.state === 'failed' ? '✗' : s.state === 'cancelled' ? '⊘' : '○';
-    lines.push(`### Step ${num}: ${s.description} [${typeLabel}] ${stateIcon} ${s.state ?? 'pending'}`);
+    const state = s.state ?? 'pending';
+    lines.push(`### Step ${num}: ${s.description}`);
+    lines.push(`- Type: ${typeLabel}`);
+    lines.push(`- State: ${state}`);
 
     if (s.rationale) lines.push(`- Rationale: ${s.rationale}`);
     if (s.fitnessCmd) lines.push(`- Fitness: \`${s.fitnessCmd}\``);
@@ -81,6 +88,7 @@ export function formatCesarPlanMarkdown(plan: CesarPlan): string {
     lines.push(`**Engines: ${allEngines.join(', ')}**`);
   }
   lines.push(`**Status: ${plan.state}**`);
+  if (plan.planFilePath) lines.push(`**Plan file: ${plan.planFilePath}**`);
 
   return lines.join('\n');
 }

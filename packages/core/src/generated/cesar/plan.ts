@@ -13,16 +13,53 @@ function runtimeAgonPath(...parts: string[]): string {
   return join(home, ...parts);
 }
 
+/**
+ * Canonical directory for Cesar execution plans. Markdown and JSON live together so the user can inspect and edit the exact plan Cesar proposed.
+ */
 // @kern-source: plan:14
+export function getCesarPlansDir(): string {
+  return runtimeAgonPath('plans');
+}
+
+// @kern-source: plan:20
+function safeCesarPlanId(planId: string): string {
+  const sanitized = String(planId ?? '').replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!sanitized) throw new Error(`Invalid plan ID: ${planId}`);
+  return sanitized;
+}
+
+/**
+ * Canonical JSON path for a Cesar plan under ~/.agon/plans.
+ */
+// @kern-source: plan:27
+export function cesarPlanJsonPath(planId: string): string {
+  const plansDir = getCesarPlansDir();
+  const full = resolve(plansDir, `${safeCesarPlanId(planId)}.json`);
+  if (!full.startsWith(resolve(plansDir))) throw new Error(`Invalid plan ID: ${planId}`);
+  return full;
+}
+
+/**
+ * Canonical Markdown path for a Cesar plan under ~/.agon/plans.
+ */
+// @kern-source: plan:36
+export function cesarPlanMarkdownPath(planId: string): string {
+  const plansDir = getCesarPlansDir();
+  const full = resolve(plansDir, `${safeCesarPlanId(planId)}.md`);
+  if (!full.startsWith(resolve(plansDir))) throw new Error(`Invalid plan ID: ${planId}`);
+  return full;
+}
+
+// @kern-source: plan:45
 export type CesarPlanState = 'planning' | 'awaiting_approval' | 'running' | 'paused' | 'done' | 'cancelled';
 
-// @kern-source: plan:15
+// @kern-source: plan:46
 export type CesarStepState = 'pending' | 'blocked' | 'running' | 'done' | 'failed' | 'skipped' | 'cancelled';
 
-// @kern-source: plan:16
+// @kern-source: plan:47
 export type CesarStepType = 'self' | 'forge' | 'teamforge' | 'delegate' | 'brainstorm' | 'campfire' | 'tribunal' | 'pipeline' | 'review' | 'agent' | 'team-agent';
 
-// @kern-source: plan:18
+// @kern-source: plan:49
 export interface CesarStepResult {
   status: 'success'|'failure';
   actualTokens: number;
@@ -32,7 +69,7 @@ export interface CesarStepResult {
   error?: string;
 }
 
-// @kern-source: plan:26
+// @kern-source: plan:57
 export interface CesarPlanStep {
   id: string;
   type: CesarStepType;
@@ -54,7 +91,7 @@ export interface CesarPlanStep {
   result?: CesarStepResult;
 }
 
-// @kern-source: plan:47
+// @kern-source: plan:78
 export interface CesarPlan {
   id: string;
   state: CesarPlanState;
@@ -78,7 +115,7 @@ export interface CesarPlan {
 /**
  * Create a new CesarPlan in 'planning' state. Steps with dependsOn are marked 'blocked', others 'pending'.
  */
-// @kern-source: plan:66
+// @kern-source: plan:97
 export function createCesarPlan(intent: string, steps: CesarPlanStep[]): CesarPlan {
   const id = `cplan-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const initializedSteps = steps.map(s => ({
@@ -104,7 +141,7 @@ export function createCesarPlan(intent: string, steps: CesarPlanStep[]): CesarPl
 /**
  * Transition plan from 'awaiting_approval' to 'running', set approvedAt.
  */
-// @kern-source: plan:90
+// @kern-source: plan:121
 export function approveCesarPlan(plan: CesarPlan): CesarPlan {
   return {
     ...plan,
@@ -116,7 +153,7 @@ export function approveCesarPlan(plan: CesarPlan): CesarPlan {
 /**
  * Mark a step done/failed, unblock dependents, determine plan state.
  */
-// @kern-source: plan:100
+// @kern-source: plan:131
 export function advanceCesarStep(plan: CesarPlan, stepId: string, result: CesarStepResult): CesarPlan {
   const stepIdx = plan.steps.findIndex(s => s.id === stepId);
   if (stepIdx === -1) return plan;
@@ -172,7 +209,7 @@ export function advanceCesarStep(plan: CesarPlan, stepId: string, result: CesarS
 /**
  * Cancel the plan: mark all non-complete steps as cancelled.
  */
-// @kern-source: plan:154
+// @kern-source: plan:185
 export function cancelCesarPlan(plan: CesarPlan): CesarPlan {
   const newSteps = plan.steps.map(s => {
     if (s.state === 'done' || s.state === 'failed') return s;
@@ -186,18 +223,22 @@ export function cancelCesarPlan(plan: CesarPlan): CesarPlan {
 }
 
 /**
- * Persist a CesarPlan to ~/.agon/runs/<id>.json atomically. FU-8: write to a .tmp file then renameSync, so concurrent Agon sessions reading the same path observe either the old complete file or the new complete file — never a partial. POSIX rename within the same directory is atomic.
+ * Persist a CesarPlan to ~/.agon/plans/<id>.json atomically. Markdown lives beside it as <id>.md so the plan is discoverable and editable. FU-8: write to a .tmp file then renameSync, so concurrent Agon sessions reading the same path observe either the old complete file or the new complete file — never a partial. POSIX rename within the same directory is atomic.
  */
-// @kern-source: plan:168
+// @kern-source: plan:199
 export function saveCesarPlan(plan: CesarPlan): void {
-  const dir = runtimeAgonPath('runs');
+  const dir = getCesarPlansDir();
   mkdirSync(dir, { recursive: true });
-  const finalPath = join(dir, `${plan.id}.json`);
+  const finalPath = cesarPlanJsonPath(plan.id);
+  const persistedPlan = {
+    ...plan,
+    planFilePath: plan.planFilePath ?? cesarPlanMarkdownPath(plan.id),
+  };
   // Unique tmp suffix so parallel saves of the SAME plan from different
   // sessions don't overwrite each other's tmp file before rename.
   const tmpPath = `${finalPath}.${process.pid}.${Date.now()}.tmp`;
   try {
-    writeFileSync(tmpPath, JSON.stringify(plan, null, 2));
+    writeFileSync(tmpPath, JSON.stringify(persistedPlan, null, 2));
     renameSync(tmpPath, finalPath);
   } catch (err) {
     try { unlinkSync(tmpPath); } catch { /* tmp may not exist */ }
@@ -206,34 +247,51 @@ export function saveCesarPlan(plan: CesarPlan): void {
 }
 
 /**
- * Load a persisted CesarPlan from ~/.agon/runs/<id>.json.
+ * Load a persisted CesarPlan from ~/.agon/plans/<id>.json. Falls back to the legacy ~/.agon/runs path for old sessions.
  */
-// @kern-source: plan:186
+// @kern-source: plan:221
 export function loadCesarPlan(planId: string): CesarPlan|null {
-  const filePath = runtimeAgonPath('runs', `${planId}.json`);
-  try {
-    return JSON.parse(readFileSync(filePath, 'utf-8'));
-  } catch {
-    return null;
+  const paths = [
+    cesarPlanJsonPath(planId),
+    runtimeAgonPath('runs', `${safeCesarPlanId(planId)}.json`),
+  ];
+  for (const filePath of paths) {
+    try {
+      const plan = JSON.parse(readFileSync(filePath, 'utf-8')) as CesarPlan;
+      return {
+        ...plan,
+        planFilePath: plan.planFilePath ?? cesarPlanMarkdownPath(plan.id),
+      };
+    } catch { /* try next location */ }
   }
+  return null;
 }
 
 /**
- * List all persisted CesarPlans from ~/.agon/runs/.
+ * List persisted CesarPlans from ~/.agon/plans, with legacy ~/.agon/runs fallback.
  */
-// @kern-source: plan:197
+// @kern-source: plan:240
 export function listCesarPlans(): CesarPlan[] {
-  const dir = runtimeAgonPath('runs');
-  try {
-    const files = readdirSync(dir).filter((f: string) => f.startsWith('cplan-') && f.endsWith('.json'));
-    return files.map((f: string) => {
+  const byId = new Map<string, CesarPlan>();
+  const readFromDir = (dir: string) => {
+    let files: string[] = [];
+    try {
+      files = readdirSync(dir).filter((f: string) => f.startsWith('cplan-') && f.endsWith('.json'));
+    } catch {
+      return;
+    }
+    for (const f of files) {
       try {
-        return JSON.parse(readFileSync(join(dir, f), 'utf-8')) as CesarPlan;
-      } catch {
-        return null;
-      }
-    }).filter(Boolean) as CesarPlan[];
-  } catch {
-    return [];
-  }
+        const plan = JSON.parse(readFileSync(join(dir, f), 'utf-8')) as CesarPlan;
+        if (!plan?.id || byId.has(plan.id)) continue;
+        byId.set(plan.id, {
+          ...plan,
+          planFilePath: plan.planFilePath ?? cesarPlanMarkdownPath(plan.id),
+        });
+      } catch { /* skip malformed plan */ }
+    }
+  };
+  readFromDir(getCesarPlansDir());
+  readFromDir(runtimeAgonPath('runs'));
+  return Array.from(byId.values()).sort((a, b) => String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? '')));
 }

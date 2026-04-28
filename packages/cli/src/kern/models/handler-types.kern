@@ -52,6 +52,7 @@ union name=OutputEvent discriminant=type
   variant name=plan-proposal
     field name=plan type=any
     field name=markdown type=string
+    field name=planFilePath type=string optional=true
   variant name=plan-execution
     field name=plan type=any
   variant name=plan-cancelled

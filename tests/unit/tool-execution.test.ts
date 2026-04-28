@@ -127,5 +127,37 @@ describe('tool-execution', () => {
       expect(result.result.ok).toBe(false);
       expect(result.result.error).toBe('BLOCKED: test denial');
     });
+
+    it('returns an error for tools blocked by the execution context', async () => {
+      const registry = new ToolRegistry();
+      let executed = false;
+      const tool: ToolHandler = {
+        definition: {
+          name: 'Forge',
+          description: 'signal tool',
+          inputSchema: { type: 'object', properties: {}, required: [] },
+          maxResultSizeChars: 1000,
+          isReadOnly: true,
+          isConcurrencySafe: true,
+        },
+        validate: () => null,
+        checkPermission: () => ({ behavior: 'allow' }),
+        execute: async () => {
+          executed = true;
+          return { ok: true, content: 'delegated' };
+        },
+      };
+      registry.register(tool);
+
+      const result = await executeToolCall(
+        { id: 'tc_blocked', name: 'Forge', input: {} },
+        { ...makeCtx(), blockedTools: ['Forge'], blockedToolMessage: 'Blocked by fast-answer' },
+        registry,
+      );
+
+      expect(result.result.ok).toBe(false);
+      expect(result.result.error).toBe('Blocked by fast-answer');
+      expect(executed).toBe(false);
+    });
   });
 });

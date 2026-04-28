@@ -107,12 +107,25 @@ fn name=convertMessagesForSdk params="messages:Array<{role:string,content:any,to
     if (systemParts.length > 0) {
       result.push({ role: 'system', content: systemParts.join('\n\n') });
     }
+    const pushMessage = (message: any) => {
+      const last = result[result.length - 1];
+      if (
+        message?.role === 'user'
+        && last?.role === 'user'
+        && typeof message.content === 'string'
+        && typeof last.content === 'string'
+      ) {
+        last.content = `${last.content}\n\n${message.content}`;
+        return;
+      }
+      result.push(message);
+    };
 
     for (const msg of messages) {
       if (msg.role === 'system') {
         continue;
       } else if (msg.role === 'user') {
-        result.push({ role: 'user', content: typeof msg.content === 'string' ? msg.content : String(msg.content ?? '') });
+        pushMessage({ role: 'user', content: typeof msg.content === 'string' ? msg.content : String(msg.content ?? '') });
       } else if (msg.role === 'assistant') {
         const parts: any[] = [];
         if (msg.content && typeof msg.content === 'string') {
@@ -136,9 +149,9 @@ fn name=convertMessagesForSdk params="messages:Array<{role:string,content:any,to
           }
         }
         if (parts.length > 0) {
-          result.push({ role: 'assistant', content: parts });
+          pushMessage({ role: 'assistant', content: parts });
         } else {
-          result.push({ role: 'assistant', content: '' });
+          pushMessage({ role: 'assistant', content: '' });
         }
       } else if (msg.role === 'tool') {
         const originalId = typeof (msg as any).tool_call_id === 'string' ? (msg as any).tool_call_id : '';
@@ -146,12 +159,12 @@ fn name=convertMessagesForSdk params="messages:Array<{role:string,content:any,to
         const toolName = toolCallId ? toolNameMap.get(toolCallId) : undefined;
         const outputValue = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
         if (!toolCallId || !toolName) {
-          result.push({
+          pushMessage({
             role: 'user',
             content: `[Recovered orphan tool result omitted from native tool channel]\n${outputValue}`,
           });
         } else {
-          result.push({
+          pushMessage({
             role: 'tool',
             content: [{
               type: 'tool-result',

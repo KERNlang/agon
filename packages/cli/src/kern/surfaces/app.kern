@@ -1244,12 +1244,7 @@ fn name=buildToolCallRows params="baseKey:string, event:any, toolOutputExpanded:
     const { rawInput, parsed, toolKey } = parseToolCallPayload(event);
     const collapsed = !toolOutputExpanded;
     const collapsedHint: any[] = [];
-    const changeOpenHint = collapsed && isMutatingToolCall(event)
-      ? [
-          { text: ' · ', dimColor: true },
-          { text: '[Ctrl+O] Open', color: '#a78bfa', bold: true },
-        ]
-      : [];
+    const changeOpenHint: any[] = [];
     const nestSegment = { text: ' ⏿ ', color: eColor };
     const pushSegmentsRow = (suffix: string, segments: any[], paddingLeft = 2) => {
       rows.push({ key: `${baseKey}-${suffix}`, kind: 'segments', paddingLeft, segments });
@@ -1257,8 +1252,6 @@ fn name=buildToolCallRows params="baseKey:string, event:any, toolOutputExpanded:
     const pushOpenHintRow = (suffix: string, text: string) => {
       pushSegmentsRow(suffix, [
         { text, dimColor: true },
-        { text: ' · ', dimColor: true },
-        { text: 'Ctrl+O full view', color: '#a78bfa' },
       ]);
     };
     const pushDiffPreview = (suffix: string, lines: string[], sign: string, expanded: boolean, label: string) => {
@@ -1693,8 +1686,6 @@ fn name=buildCollapsedToolGroupRows params="baseKey:string, events:any[]" return
         countSummary ? { text: ' · ', dimColor: true } : null,
         countSummary ? { text: countSummary, dimColor: true } : null,
         changedSummary ? { text: changedSummary, color: '#a78bfa' } : null,
-        changeEvents.length > 0 ? { text: ' · ', dimColor: true } : null,
-        changeEvents.length > 0 ? { text: '[Ctrl+O] Open', color: '#a78bfa', bold: true } : null,
       ].filter(Boolean),
     });
 
@@ -1853,8 +1844,6 @@ fn name=buildTranscriptRows params="blocks:OutputBlock[], mode:string, toolOutpu
             { text: '[N] No', color: '#ef4444', bold: true },
             { text: '  ', dimColor: true },
             { text: '[A] Always', color: '#60a5fa', bold: true },
-            detailViewerSupportsEvent(event) ? { text: '  ', dimColor: true } : null,
-            detailViewerSupportsEvent(event) ? { text: '[Ctrl+O] Open', color: '#a78bfa', bold: true } : null,
           ].filter(Boolean));
           pushSegmentsRow(`${baseKey}-perm-cmd`, 1, preview
             ? [

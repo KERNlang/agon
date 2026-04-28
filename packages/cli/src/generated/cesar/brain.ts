@@ -184,6 +184,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       let _actualCesarEngineId = '';
       let _actualCesarBackend = 'unknown';
       let _actualHasNativeTools = false;
+      let restoreFastPathMode: (() => void) | null = null;
       const recordToolUse = (name: string, source: 'native'|'mcp'|'xml'|'eager'|'auto'|'signal', input?: string, status?: string) => {
         const toolName = String(name || 'tool');
         const normalizedSource = source === 'eager' ? 'xml' : source === 'auto' ? 'native' : source;
@@ -389,6 +390,16 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         const fastPathMode = simpleEditFastPath ? 'edit' : (answerFastPath ? 'answer' : '');
         const fastPathBaseBudget = simpleEditFastPath ? 5 : 3;
         const fastPathMaxBudget = simpleEditFastPath ? 8 : 4;
+        const FAST_PATH_BLOCKED_TOOLS = ['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'Delegate', 'ProposePlan', 'QuickNero'];
+        if (cesarFastPath && !restoreFastPathMode) {
+          const hadPreviousFastPathMode = Object.prototype.hasOwnProperty.call(ctx.cesar as any, 'fastPathMode');
+          const previousFastPathMode = (ctx.cesar as any).fastPathMode;
+          (ctx.cesar as any).fastPathMode = fastPathMode;
+          restoreFastPathMode = () => {
+            if (hadPreviousFastPathMode) (ctx.cesar as any).fastPathMode = previousFastPathMode;
+            else delete (ctx.cesar as any).fastPathMode;
+          };
+        }
         let routeReliability: any = null;
         let routeDowngrade = false;
         if (cesarFastPath) {
@@ -515,10 +526,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         processMcpSideChannel();
 
         // ── Stream response ──
-        const previousFastPathMode = (ctx.cesar as any).fastPathMode;
         try {
-          if (cesarFastPath) (ctx.cesar as any).fastPathMode = fastPathMode;
-          else delete (ctx.cesar as any).fastPathMode;
           const sendOptions: any = { message: enrichedInput, signal: abort.signal, images: images?.map(img => img.path) };
           if (cesarFastPath) {
             sendOptions.toolLoopBaseBudget = fastPathBaseBudget;
@@ -741,9 +749,6 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             dispatch({ type: 'warning', message: 'Cesar session error — will restart on next message' });
             return { delegated: false, responded: false, decisionReason: 'stream-error' };
           }
-        } finally {
-          if (previousFastPathMode) (ctx.cesar as any).fastPathMode = previousFastPathMode;
-          else delete (ctx.cesar as any).fastPathMode;
         }
 
         clearInterval(heartbeat);
@@ -839,6 +844,19 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               unlinkSync(signalPath);
               for (const signal of (Array.isArray(signals) ? signals : [signals])) {
                 if (!signal.timestamp || Date.now() - signal.timestamp >= 60000) continue;
+                if (cesarFastPath && FAST_PATH_BLOCKED_TOOLS.includes(signal.tool)) {
+                  const toolInput = JSON.stringify(signal.args ?? {});
+                  recordToolUse(signal.tool, 'mcp', toolInput, 'error');
+                  dispatch({
+                    type: 'tool-call',
+                    engineId: cesarEngineId,
+                    tool: signal.tool,
+                    input: toolInput,
+                    status: 'error',
+                    output: `Blocked by fast-${fastPathMode}: do the direct work without orchestration.`,
+                  } as any);
+                  continue;
+                }
                 if (signal.tool === 'ReportConfidence') {
                   recordToolUse('ReportConfidence', 'mcp', JSON.stringify(signal.args ?? {}), 'done');
                   const value = typeof signal.args?.value === 'number' ? signal.args.value : null;
@@ -912,6 +930,8 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               allowedCommands: (config as any).allowedCommands ?? [], toolPermissions: (config as any).toolPermissions ?? {},
               onProgress: (msg: string) => dispatch({ type: 'spinner-update', message: `Cesar: ${msg}` }),
               readOnlyMode: true, // Phase 1: investigate only — mutating tools blocked until after escalation check
+              blockedTools: cesarFastPath ? FAST_PATH_BLOCKED_TOOLS : undefined,
+              blockedToolMessage: cesarFastPath ? `Blocked by fast-${fastPathMode}: do the direct work without orchestration.` : undefined,
         };
         const _lastToolInputs: Record<string, string> = {};
         const hasTextToolCalls = response.includes('<tool_call_tool>') || response.includes('<tool name=');
@@ -956,6 +976,9 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                   // from a chat turn without requiring the user to type /agent (PFB-1, RT-1).
                   const LOOP_ORCH = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent']);
                   if (LOOP_ORCH.has(name)) {
+                    if (cesarFastPath) {
+                      return;
+                    }
                     // Per-turn dedup guard (RT-13): first delegation wins.
                     if (!ctx.cesar!.pendingDelegation) {
                       ctx.cesar!.pendingDelegation = extractDelegation(name, (inp as Record<string, unknown>) ?? {});
@@ -963,6 +986,9 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                   }
                   // Stash ProposePlan args for onToolResult to wire up
                   if (name === 'ProposePlan') {
+                    if (cesarFastPath) {
+                      return;
+                    }
                     (ctx.cesar as any)._proposePlanArgs = inp;
                   }
                 },
@@ -1372,6 +1398,10 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       if (happened) dispatch({ type: 'info', message: happened });
       return { mode: usedQuickNero ? 'self-nero' : 'self', delegated: false, responded: hadToolActivity || ranToolLoop, decisionReason: hadToolActivity || ranToolLoop ? (usedQuickNero ? 'tool-loop-self-challenge' : 'tool-loop-self') : 'empty-turn', ...buildToolTelemetry() };
     } finally {
+        if (restoreFastPathMode) {
+          restoreFastPathMode();
+          restoreFastPathMode = null;
+        }
         ctx.eventBus?.emit('post:cesar-brain', { durationMs: Date.now() - _brainStartMs }).catch(() => {});
         ctx.cesar!.busy = false;
         ctx.cesar!.busySince = null;

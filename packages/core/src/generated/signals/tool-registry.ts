@@ -53,6 +53,16 @@ export async function executeToolCall(call: ToolCall, ctx: ToolContext, registry
     };
   }
 
+  const blockedTools = Array.isArray((ctx as any).blockedTools) ? (ctx as any).blockedTools as string[] : [];
+  if (blockedTools.includes(call.name)) {
+    return {
+      toolCallId: call.id,
+      toolName: call.name,
+      result: { ok: false, content: '', error: String((ctx as any).blockedToolMessage ?? `Tool blocked: ${call.name}`) },
+      durationMs: Date.now() - start,
+    };
+  }
+
   // Phase 0: Read-only gate — block mutating tools during investigation
   // Bash handles readOnlyMode in its own checkPermission (allows safe commands like ls, git diff)
   if (ctx.readOnlyMode && !handler.definition.isReadOnly && call.name !== 'Bash') {
@@ -143,7 +153,7 @@ export async function executeToolCall(call: ToolCall, ctx: ToolContext, registry
 /**
  * Execute multiple tool calls, partitioned into concurrent/serial batches.
  */
-// @kern-source: tool-registry:148
+// @kern-source: tool-registry:158
 export async function executeToolCalls(calls: ToolCall[], ctx: ToolContext, registry: ToolRegistry, onPermissionAsk?: (tool:string,message:string)=>Promise<boolean|string>, onProgress?: (result:ToolCallResult)=>void): Promise<ToolCallResult[]> {
   const results: ToolCallResult[] = [];
 

@@ -1,6 +1,6 @@
 // ── CesarPlan — type system + state machine for Cesar execution plans ──
 
-import from="node:fs" names="mkdirSync,writeFileSync,readFileSync,readdirSync,renameSync,unlinkSync"
+import from="node:fs" names="mkdirSync,writeFileSync,readFileSync,readdirSync,renameSync,unlinkSync,existsSync"
 import from="node:path" names="join,resolve"
 import from="node:os" names="homedir"
 
@@ -221,17 +221,22 @@ fn name=saveCesarPlan params="plan:CesarPlan" returns=void export=true
 fn name=loadCesarPlan params="planId:string" returns="CesarPlan|null" export=true
   doc "Load a persisted CesarPlan from ~/.agon/plans/<id>.json. Falls back to the legacy ~/.agon/runs path for old sessions."
   handler <<<
+    let safeId = '';
+    try {
+      safeId = safeCesarPlanId(planId);
+    } catch {
+      return null;
+    }
     const paths = [
-      cesarPlanJsonPath(planId),
-      runtimeAgonPath('runs', `${safeCesarPlanId(planId)}.json`),
+      { filePath: cesarPlanJsonPath(safeId), canonical: true },
+      { filePath: runtimeAgonPath('runs', `${safeId}.json`), canonical: false },
     ];
-    for (const filePath of paths) {
+    for (const entry of paths) {
       try {
-        const plan = JSON.parse(readFileSync(filePath, 'utf-8')) as CesarPlan;
-        return {
-          ...plan,
-          planFilePath: plan.planFilePath ?? cesarPlanMarkdownPath(plan.id),
-        };
+        const plan = JSON.parse(readFileSync(entry.filePath, 'utf-8')) as CesarPlan;
+        const fallbackMarkdownPath = cesarPlanMarkdownPath(plan.id);
+        const planFilePath = plan.planFilePath ?? (entry.canonical || existsSync(fallbackMarkdownPath) ? fallbackMarkdownPath : undefined);
+        return planFilePath ? { ...plan, planFilePath } : plan;
       } catch { /* try next location */ }
     }
     return null;
@@ -241,7 +246,7 @@ fn name=listCesarPlans params="" returns="CesarPlan[]" export=true
   doc "List persisted CesarPlans from ~/.agon/plans, with legacy ~/.agon/runs fallback."
   handler <<<
     const byId = new Map<string, CesarPlan>();
-    const readFromDir = (dir: string) => {
+    const readFromDir = (dir: string, canonical: boolean) => {
       let files: string[] = [];
       try {
         files = readdirSync(dir).filter((f: string) => f.startsWith('cplan-') && f.endsWith('.json'));
@@ -252,14 +257,13 @@ fn name=listCesarPlans params="" returns="CesarPlan[]" export=true
         try {
           const plan = JSON.parse(readFileSync(join(dir, f), 'utf-8')) as CesarPlan;
           if (!plan?.id || byId.has(plan.id)) continue;
-          byId.set(plan.id, {
-            ...plan,
-            planFilePath: plan.planFilePath ?? cesarPlanMarkdownPath(plan.id),
-          });
+          const fallbackMarkdownPath = cesarPlanMarkdownPath(plan.id);
+          const planFilePath = plan.planFilePath ?? (canonical || existsSync(fallbackMarkdownPath) ? fallbackMarkdownPath : undefined);
+          byId.set(plan.id, planFilePath ? { ...plan, planFilePath } : plan);
         } catch { /* skip malformed plan */ }
       }
     };
-    readFromDir(getCesarPlansDir());
-    readFromDir(runtimeAgonPath('runs'));
+    readFromDir(getCesarPlansDir(), true);
+    readFromDir(runtimeAgonPath('runs'), false);
     return Array.from(byId.values()).sort((a, b) => String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? '')));
   >>>

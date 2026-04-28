@@ -394,7 +394,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
     if (fastPathMode) {
       const BLOCKED_IN_FAST_PATH = ['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'Delegate', 'ProposePlan', 'QuickNero'];
       if (BLOCKED_IN_FAST_PATH.includes(name)) {
-        return `[BLOCKED_FAST_PATH] This is a ${fastPathMode} fast-path turn. Do the direct work with Read/Grep/Glob/Edit/Write/Bash as needed, then answer briefly. Do not plan, forge, delegate, review, or self-challenge unless the user explicitly asks.`;
+        throw new Error(`[BLOCKED_FAST_PATH] This is a ${fastPathMode} fast-path turn. Do the direct work with Read/Grep/Glob/Edit/Write/Bash as needed, then answer briefly. Do not plan, forge, delegate, review, or self-challenge unless the user explicitly asks.`);
       }
     }
 

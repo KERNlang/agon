@@ -356,7 +356,7 @@ describe('app scroll helpers', () => {
     expect(expandedRows.some((row: any) => row.key.includes('find-file-'))).toBe(true);
   });
 
-  it('keeps edit previews compact in the transcript and points large changes to the focused viewer', () => {
+  it('keeps edit previews compact in the transcript without dead shortcut hints', () => {
     const block = {
       id: 1,
       event: {
@@ -376,8 +376,10 @@ describe('app scroll helpers', () => {
 
     expect(rows.some((row: any) => row.kind === 'diff')).toBe(true);
     expect(rows.some((row: any) =>
-      row.kind === 'segments' && (row.segments ?? []).some((segment: any) => segment?.text === 'Ctrl+O full view'),
+      row.kind === 'segments' && (row.segments ?? []).some((segment: any) => /more .* lines/.test(String(segment?.text ?? ''))),
     )).toBe(true);
+    const text = transcriptRowsToPlainText(rows, 0, 0, 0, 999);
+    expect(text).not.toContain('Ctrl+O');
   });
 
   it('coalesces consecutive collapsed tool-call groups into one transcript row', () => {
@@ -500,7 +502,7 @@ describe('app scroll helpers', () => {
     const text = transcriptRowsToPlainText(rows, 0, 0, 0, 999);
 
     expect(text).toContain('changed 1 file: packages/cli/src/kern/surfaces/app.kern');
-    expect(text).toContain('[Ctrl+O] Open');
+    expect(text).not.toContain('[Ctrl+O] Open');
     expect(rows.some((row: any) => row.kind === 'diff' && row.text === '-old line')).toBe(true);
     expect(rows.some((row: any) => row.kind === 'diff' && row.text === '+new line')).toBe(true);
   });
@@ -535,12 +537,12 @@ describe('app scroll helpers', () => {
     const text = transcriptRowsToPlainText(rows, 0, 0, 0, 999);
 
     expect(text).toContain('changed 1 file: packages/cli/src/kern/cesar/session.kern');
-    expect(text).toContain('[Ctrl+O] Open');
+    expect(text).not.toContain('[Ctrl+O] Open');
     expect(rows.some((row: any) => row.kind === 'diff' && row.text === '-old mcp')).toBe(true);
     expect(rows.some((row: any) => row.kind === 'diff' && row.text === '+new mcp')).toBe(true);
   });
 
-  it('shows patch-tool changes and open hint inside collapsed tool-call groups', () => {
+  it('shows patch-tool changes inside collapsed tool-call groups', () => {
     const blocks = [
       {
         id: 1,
@@ -573,7 +575,7 @@ describe('app scroll helpers', () => {
     const text = transcriptRowsToPlainText(rows, 0, 0, 0, 999);
 
     expect(text).toContain('changed 1 file: packages/cli/src/kern/blocks/file-rail.kern');
-    expect(text).toContain('[Ctrl+O] Open');
+    expect(text).not.toContain('[Ctrl+O] Open');
     expect(rows.some((row: any) => row.kind === 'diff' && row.text === '-old rail')).toBe(true);
     expect(rows.some((row: any) => row.kind === 'diff' && row.text === '+new rail')).toBe(true);
   });

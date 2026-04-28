@@ -26,13 +26,13 @@ import { ForgeArena, BrainstormStorm, CampfireFire, TribunalCourt } from './aren
 
 import { PlanProposalView, PlanExecutionView } from './plan-view.js';
 
-// @kern-source: engine:135
+// @kern-source: engine:155
 export interface OutputBlock {
   id: number;
   event: OutputEvent;
 }
 
-// @kern-source: engine:141
+// @kern-source: engine:161
 export function EngineProgressView({ engines, mode }: { engines:EngineProgress[]; mode?:string }) {
   // Use explicit mode if it's an arena mode, otherwise detect from status text
   const arenaModes = ['forge', 'brainstorm', 'campfire', 'tribunal'];
@@ -71,7 +71,7 @@ export function EngineProgressView({ engines, mode }: { engines:EngineProgress[]
   );
 }
 
-// @kern-source: engine:185
+// @kern-source: engine:205
 const EngineBlock = React.memo(function EngineBlock({ engineId, color, content }: { engineId:string; color:number; content:string }) {
   const wrapWidth = contentWidth(8);
   const cleaned = cleanEngineOutput(content);
@@ -100,7 +100,7 @@ const EngineBlock = React.memo(function EngineBlock({ engineId, color, content }
 });
 export { EngineBlock };
 
-// @kern-source: engine:219
+// @kern-source: engine:239
 const ConversationalResponse = React.memo(function ConversationalResponse({ engineId, content }: { engineId:string; content:string }) {
   const wrapWidth = contentWidth(2);
   const cleaned = cleanEngineOutput(content);
@@ -117,7 +117,7 @@ const ConversationalResponse = React.memo(function ConversationalResponse({ engi
 });
 export { ConversationalResponse };
 
-// @kern-source: engine:240
+// @kern-source: engine:260
 export function DashboardView({ event }: { event:OutputEvent & { type: 'dashboard' } }) {
   return (
     <Box flexDirection="column" paddingX={1} paddingY={1}>
@@ -181,7 +181,7 @@ export function DashboardView({ event }: { event:OutputEvent & { type: 'dashboar
   );
 }
 
-// @kern-source: engine:308
+// @kern-source: engine:328
 function TableView({ headers, rows }: { headers:string[]; rows:string[][] }) {
   const widths = headers.map((h: string, i: number) =>
     Math.max(h.length, ...rows.map((r: string[]) => (r[i] ?? '').length)) + 2,
@@ -205,7 +205,7 @@ function TableView({ headers, rows }: { headers:string[]; rows:string[][] }) {
   );
 }
 
-// @kern-source: engine:337
+// @kern-source: engine:357
 const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolOutputExpanded, thinkingExpanded }: { event:OutputEvent; mode:string; toolOutputExpanded?:boolean; thinkingExpanded?:boolean }) {
   switch (event.type) {
     case 'text': {
@@ -418,6 +418,14 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
       // <Static> once finalized — so a per-block "Ctrl+E expand" hint
       // would be misleading (Ink cannot re-render past Static items).
       const collapsedHint = null;
+
+      if (toolKey === 'reportconfidence') {
+        return (
+          <Box paddingLeft={2}>
+            <Text italic dimColor color="#8b8b8b">{'  \u25B9 '}{formatConfidenceToolLabel(parsed, rawInput)}</Text>
+          </Box>
+        );
+      }
 
       // ── Bash / Run ──
       if (toolKey === 'bash' || toolKey === 'run' || toolKey === 'agonbash') {
@@ -768,7 +776,7 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
 });
 export { OutputBlockView };
 
-// @kern-source: engine:906
+// @kern-source: engine:934
 const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:OutputBlock[] }) {
   const labelForTool = (raw: unknown) => {
     const toolKey = String(raw ?? '').toLowerCase();
@@ -784,6 +792,7 @@ const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:Out
     return String(raw ?? 'Tool');
   };
   const toolCounts: Record<string, number> = {};
+  let confidenceLabel = '';
   let errors = 0;
   let running = 0;
   const changedFiles: string[] = [];
@@ -797,12 +806,16 @@ const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:Out
   for (const b of blocks) {
     const ev = b.event as any;
     const rawName = ev.tool || 'tool';
-    const name = labelForTool(rawName);
-    toolCounts[name] = (toolCounts[name] || 0) + 1;
-    if (ev.status === 'error') errors++;
-    if (ev.status === 'running') running++;
     const toolKey = String(rawName).toLowerCase();
     const { rawInput, parsed } = parseToolInputPayload(ev.input ?? '');
+    const name = labelForTool(rawName);
+    if (ev.status === 'error') errors++;
+    if (ev.status === 'running') running++;
+    if (toolKey === 'reportconfidence') {
+      confidenceLabel = formatConfidenceToolLabel(parsed, rawInput);
+      continue;
+    }
+    toolCounts[name] = (toolCounts[name] || 0) + 1;
     if ((toolKey === 'edit' || toolKey === 'update' || toolKey === 'write' || toolKey === 'agonedit' || toolKey === 'agonwrite') && typeof ev.input === 'string' && ev.input.trim().startsWith('{')) {
       try {
         const filePath = (parsed.file_path as string) || (parsed.filePath as string) || '';
@@ -848,7 +861,7 @@ const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:Out
   return (
     <Box paddingLeft={2} flexDirection="column">
       <Text>
-        <Text italic dimColor color="#8b8b8b">{'  \u25B9 '}{blocks.length}{' tool calls'}{summary ? ` \u00b7 ${summary}` : ''}{statusSummary}{changedSummary}</Text>
+        <Text italic dimColor color="#8b8b8b">{'  \u25B9 '}{confidenceLabel ? `${confidenceLabel} \u00b7 ` : ''}{blocks.length}{' tool calls'}{summary ? ` \u00b7 ${summary}` : ''}{statusSummary}{changedSummary}</Text>
       </Text>
       {changeRows.map((row: { key:string; text:string }) => (
         <DiffLine key={row.key} line={row.text} maxWidth={contentWidth(10)} />
@@ -861,7 +874,7 @@ const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:Out
 });
 export { ToolCallGroup };
 
-// @kern-source: engine:1016
+// @kern-source: engine:1049
 const DebateGroup = React.memo(function DebateGroup({ blocks }: { blocks:OutputBlock[] }) {
   const round = (blocks[0]?.event as any)?.round ?? '?';
   const w = contentWidth(6);
@@ -887,7 +900,7 @@ const DebateGroup = React.memo(function DebateGroup({ blocks }: { blocks:OutputB
 });
 export { DebateGroup };
 
-// @kern-source: engine:1045
+// @kern-source: engine:1078
 const BidGroup = React.memo(function BidGroup({ blocks }: { blocks:OutputBlock[] }) {
   const w = contentWidth(6);
   return (
@@ -957,6 +970,26 @@ export function parseToolInputPayload(input: string): any {
 }
 
 // @kern-source: engine:60
+export function formatConfidenceToolLabel(parsed: any, rawInput: string): string {
+  const rawValue = parsed?.value ?? parsed?.confidence ?? parsed?.score;
+  let value = Number(rawValue);
+  if (!Number.isFinite(value)) {
+    const text = String(rawInput ?? '');
+    const match = text.match(/"value"\s*:\s*(\d{1,3}(?:\.\d+)?)/) || text.match(/(\d{1,3})\s*%/);
+    if (match) value = Number(match[1]);
+  }
+  if (Number.isFinite(value)) {
+    const pct = value <= 1 && value > 0 ? Math.round(value * 100) : Math.round(value);
+    if (pct >= 0 && pct <= 100) {
+      const reasoning = String(parsed?.reasoning ?? parsed?.reason ?? parsed?.thought ?? '').replace(/\s+/g, ' ').trim();
+      const shortReasoning = reasoning.length > 180 ? `${reasoning.slice(0, 177)}\u2026` : reasoning;
+      return shortReasoning ? `${pct}% confidence \u00b7 ${shortReasoning}` : `${pct}% confidence`;
+    }
+  }
+  return 'confidence';
+}
+
+// @kern-source: engine:80
 export function extractPatchText(rawInput: string, parsed: any): string {
   const values = [
     parsed?.patch,
@@ -980,7 +1013,7 @@ export function extractPatchText(rawInput: string, parsed: any): string {
   return values[0] ?? '';
 }
 
-// @kern-source: engine:84
+// @kern-source: engine:104
 export function parsePatchPreview(rawInput: string, parsed: any): { files:string[]; lines:string[]; additions:number; deletions:number } {
   const patchText = extractPatchText(rawInput, parsed);
   const files: string[] = [];
@@ -1029,7 +1062,7 @@ export function parsePatchPreview(rawInput: string, parsed: any): { files:string
   return { files, lines, additions, deletions };
 }
 
-// @kern-source: engine:1002
+// @kern-source: engine:1035
 export function extractSummary(text: string, maxLen: number): string {
   let s = text.replace(/<think>[\s\S]*?<\/think>\s*/gi, '');
   s = s.replace(/^#+\s+.+\n/gm, '');

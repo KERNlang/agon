@@ -199,7 +199,7 @@ describe('app scroll helpers', () => {
     const previewRow = rows.find((row: any) => row.key.includes('tool-group-preview'));
 
     expect(summaryRow).toBeTruthy();
-    expect(previewRow).toBeTruthy();
+    expect(previewRow).toBeFalsy();
   });
 
   it('renders collapsed tool telemetry like thinking and hides raw confidence JSON previews', () => {
@@ -215,9 +215,12 @@ describe('app scroll helpers', () => {
 
     expect(summaryRow).toBeTruthy();
     expect(summaryRow.segments[0]).toMatchObject({ italic: true, dimColor: true });
-    expect(text).toContain('▹ 3 tool calls');
-    expect(text).toContain('Confidence');
+    expect(text).toContain('▹ 45% confidence');
+    expect(text).toContain('inspect first');
+    expect(text).toContain('3 tool calls');
     expect(text).not.toContain('⏿');
+    expect(text).not.toContain('git log');
+    expect(text).not.toContain('**/cesar/**');
     expect(text).not.toContain('"reasoning"');
     expect(text).not.toContain('{"value"');
   });

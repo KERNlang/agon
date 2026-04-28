@@ -60,7 +60,7 @@ function AgonTip() {
 }
 
 // @kern-source: status:102
-export function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd, cwd, branch, explorationMode, toolOutputExpanded, thinkingExpanded, isActive, fullscreenEnabled, selectionMode }: { cesarId:string; chatMessageCount:number; totalTokens:number; totalCostUsd:number; cwd:string; branch?:string; explorationMode?:boolean; toolOutputExpanded?:boolean; thinkingExpanded?:boolean; isActive?:boolean; fullscreenEnabled?:boolean; selectionMode?:boolean }) {
+export function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd, cwd, branch, explorationMode, toolOutputExpanded, isActive, fullscreenEnabled, selectionMode }: { cesarId:string; chatMessageCount:number; totalTokens:number; totalCostUsd:number; cwd:string; branch?:string; explorationMode?:boolean; toolOutputExpanded?:boolean; isActive?:boolean; fullscreenEnabled?:boolean; selectionMode?:boolean }) {
   const cost = totalCostUsd > 0 ? `$${totalCostUsd.toFixed(2)}` : '';
   const msgs = chatMessageCount;
   const tokens = totalTokens;
@@ -85,14 +85,8 @@ export function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd
         {toolOutputExpanded !== undefined && <Text dimColor>{' \u00b7 '}{toolOutputExpanded ? 'tools expanded (' : 'tools collapsed ('}</Text>}
         {toolOutputExpanded !== undefined && <Text color="#f59e0b">{'Ctrl+E'}</Text>}
         {toolOutputExpanded !== undefined && <Text dimColor>{')'}</Text>}
-        {thinkingExpanded !== undefined && <Text dimColor>{' \u00b7 '}{thinkingExpanded ? 'thinking shown (' : 'thinking hidden ('}</Text>}
-        {thinkingExpanded !== undefined && <Text color="#f59e0b">{'Ctrl+T'}</Text>}
-        {thinkingExpanded !== undefined && <Text dimColor>{')'}</Text>}
         <Text dimColor>{' \u00b7 files ('}</Text>
         <Text color="#f59e0b">{'Ctrl+B'}</Text>
-        <Text dimColor>{')'}</Text>
-        <Text dimColor>{' \u00b7 copy ('}</Text>
-        <Text color="#f59e0b">{'Ctrl+Y'}</Text>
         <Text dimColor>{')'}</Text>
         {selectionMode !== undefined && <Text dimColor>{' \u00b7 '}{selectionMode ? 'select' : 'scroll'}{' ('}</Text>}
         {selectionMode !== undefined && <Text color="#f59e0b">{'Ctrl+G'}</Text>}
@@ -103,7 +97,7 @@ export function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd
   );
 }
 
-// @kern-source: status:161
+// @kern-source: status:154
 export function StatusLine({ startTime, engineId, color }: { startTime:number; engineId?:string; color?:number }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -138,7 +132,7 @@ export function StatusLine({ startTime, engineId, color }: { startTime:number; e
   );
 }
 
-// @kern-source: status:190
+// @kern-source: status:183
 const BackgroundJobRail = React.memo(function BackgroundJobRail({ jobs }: { jobs:Job[] }) {
   return (
     <Box paddingX={1}>
@@ -161,7 +155,7 @@ const BackgroundJobRail = React.memo(function BackgroundJobRail({ jobs }: { jobs
 });
 export { BackgroundJobRail };
 
-// @kern-source: status:210
+// @kern-source: status:203
 const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confidence, spinner, engines, startTime, streamSnippet, isActive, planModeQueued, activePlanState }: { cesarId:string; confidence?:number|null; spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; startTime:number; streamSnippet?:{ engineId: string; line: string } | null; isActive:boolean; planModeQueued?:boolean; activePlanState?:string|null }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {

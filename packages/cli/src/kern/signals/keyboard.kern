@@ -40,11 +40,9 @@ union name=KeyboardAction
   variant name=submit
     field name=value type=string
   variant name=toggleToolExpand
-  variant name=toggleThinking
   variant name=toggleSelectionMode
   variant name=openToolDetail
   variant name=openResults
-  variant name=copyTranscript
   variant name=toggleFileRail
   variant name=fileRailSelectPrev
   variant name=fileRailSelectNext
@@ -73,13 +71,11 @@ fn name=resolveKeyboardInput params="ctx:KeyboardCtx" returns="KeyboardAction"
           '\x0f': 'o',
           '\x0c': 'l',
           '\x12': 'r',
-          '\x14': 't',
           '\x07': 'g',
-          '\x19': 'y',
           '\x02': 'b',
         } as Record<string, string>)[input] ?? input
       : input;
-    const delegatedCtrlShortcuts = new Set(['e', 'j', 'l', 'o', 'r', 't', 'y']);
+    const delegatedCtrlShortcuts = new Set(['e', 'j', 'l', 'o', 'r']);
 
     // Model/cesar picker open: only Ctrl+C gets through
     if (ctx.modelPickerOpen || ctx.cesarPickerOpen) {
@@ -152,9 +148,6 @@ fn name=resolveKeyboardInput params="ctx:KeyboardCtx" returns="KeyboardAction"
     // Ctrl+E: toggle tool output expansion
     if (key.ctrl && normalizedCtrlInput === 'e') return { type: 'toggleToolExpand' };
 
-    // Ctrl+T: toggle thinking expansion
-    if (key.ctrl && normalizedCtrlInput === 't') return { type: 'toggleThinking' };
-
     // Ctrl+G: toggle mouse selection mode
     if (key.ctrl && normalizedCtrlInput === 'g') return { type: 'toggleSelectionMode' };
 
@@ -163,9 +156,6 @@ fn name=resolveKeyboardInput params="ctx:KeyboardCtx" returns="KeyboardAction"
 
     // Ctrl+R: open results pager
     if (key.ctrl && normalizedCtrlInput === 'r') return { type: 'openResults' };
-
-    // Ctrl+Y: copy current transcript/results to clipboard
-    if (key.ctrl && normalizedCtrlInput === 'y') return { type: 'copyTranscript' };
 
     // Ctrl+B: toggle Files rail (right-side sidebar of session-touched files)
     if (key.ctrl && normalizedCtrlInput === 'b') return { type: 'toggleFileRail' };

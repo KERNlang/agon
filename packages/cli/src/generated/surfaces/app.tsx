@@ -6,7 +6,7 @@ import { Box, Static, Text, render } from 'ink';
 // ── Core ───────────────────────────────────────────────
 import { ScrollBox, AlternateScreen } from '@kernlang/terminal/runtime';
 
-import { EngineRegistry, loadConfig, ensureAgonHome, ensureCurrentWorkspace, startChatSession, getRatings, getActiveWorkspace, RUNS_DIR, extractImagesFromInput, resolveWorkingDir, currentBranch, configSet, createCesarMemory, modelEntryToEngineDef, appendMessage, getAgonHome, tracker, copyToClipboard } from '@agon/core';
+import { EngineRegistry, loadConfig, ensureAgonHome, ensureCurrentWorkspace, startChatSession, getRatings, getActiveWorkspace, RUNS_DIR, extractImagesFromInput, resolveWorkingDir, currentBranch, configSet, createCesarMemory, modelEntryToEngineDef, appendMessage, getAgonHome, tracker } from '@agon/core';
 
 import type { Plan, ChatSession, Skill, PersistentSession, ImageAttachment } from '@agon/core';
 
@@ -106,7 +106,7 @@ import { useStableInput } from '../../stable-input.js';
 
 import { parseProseToRichLines } from '../blocks/rich-text.js';
 
-// @kern-source: app:2115
+// @kern-source: app:2117
 export function App() {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -989,60 +989,9 @@ export function App() {
     setToolDetailEvent(event);
   }, [outputBlocks,dispatch]);
 
-  const copyCurrentTranscript = useCallback(() => {
-    const selectedContent = transcriptRowsToPlainText(
-      displayRows,
-      mouseSelection.anchorRow,
-      mouseSelection.anchorCol,
-      mouseSelection.focusRow,
-      mouseSelection.focusCol,
-    );
-    if (selectedContent) {
-      try {
-        copyToClipboard(selectedContent);
-        const range = normalizeTextSelection(
-          mouseSelection.anchorRow,
-          mouseSelection.anchorCol,
-          mouseSelection.focusRow,
-          mouseSelection.focusCol,
-        );
-        const lineCount = range ? range.endRow - range.startRow + 1 : 0;
-        dispatch({
-          type: 'success',
-          message: `Copied ${lineCount} selected line${lineCount === 1 ? '' : 's'} to clipboard`,
-        } as any);
-      } catch (err) {
-        dispatch({ type: 'error', message: `Copy failed: ${err instanceof Error ? err.message : String(err)}` } as any);
-      }
-      return;
-    }
-
-    let content = '';
-    if (mode === 'chat') {
-      if (chatSession.messages.length === 0) {
-        dispatch({ type: 'info', message: 'No chat messages yet.' } as any);
-        return;
-      }
-      content = formatChatTranscript(chatSession);
-    } else {
-      if (!sessionResultStore.hasResults()) {
-        dispatch({ type: 'info', message: 'No results yet — run /brainstorm, /campfire, /tribunal, or /forge first' } as any);
-        return;
-      }
-      content = formatSessionResults(sessionResultStore.getResults());
-    }
-
-    try {
-      copyToClipboard(content);
-      dispatch({ type: 'success', message: mode === 'chat' ? 'Chat transcript copied to clipboard' : 'Results copied to clipboard' } as any);
-    } catch (err) {
-      dispatch({ type: 'error', message: `Copy failed: ${err instanceof Error ? err.message : String(err)}` } as any);
-    }
-  }, [dispatch,mode,chatSession,displayRows,mouseSelection]);
-
   const toggleSelectionMode = useCallback(() => {
     if (terminalMode !== 'fullscreen') {
-      dispatch({ type: 'info', message: 'Native scrollback is active — select and copy directly in your terminal. Ctrl+Y still copies the transcript.' } as any);
+      dispatch({ type: 'info', message: 'Native scrollback is active — select and copy directly in your terminal.' } as any);
       return;
     }
     const next = !selectionMode;
@@ -1099,10 +1048,6 @@ export function App() {
         ctrlKeyHandledRef.current = true;
         handleCancelOrExit();
         return;
-      case 'y':
-        ctrlKeyHandledRef.current = true;
-        copyCurrentTranscript();
-        return;
       case 'e':
         ctrlKeyHandledRef.current = true;
         setToolOutputExpanded((prev: boolean) => !prev);
@@ -1110,10 +1055,6 @@ export function App() {
       case 'o':
         ctrlKeyHandledRef.current = true;
         openLatestToolDetail();
-        return;
-      case 't':
-        ctrlKeyHandledRef.current = true;
-        setThinkingExpanded((prev: boolean) => !prev);
         return;
       case 'l':
         ctrlKeyHandledRef.current = true;
@@ -1130,7 +1071,7 @@ export function App() {
       default:
         return;
     }
-  }, [handleCancelOrExit,handleSubmit,openLatestToolDetail,openResultsPager,copyCurrentTranscript]);
+  }, [handleCancelOrExit,handleSubmit,openLatestToolDetail,openResultsPager]);
 
   const handleKeyboardInput = useCallback((input:string,key:any) => {
     if (isTerminalFocusReport(input)) return;
@@ -1213,17 +1154,12 @@ export function App() {
       case 'toggleToolExpand':
         ctrlKeyHandledRef.current = true;
         setToolOutputExpanded((prev: boolean) => !prev); return;
-      case 'toggleThinking':
-        ctrlKeyHandledRef.current = true;
-        setThinkingExpanded((prev: boolean) => !prev); return;
       case 'toggleSelectionMode':
         toggleSelectionMode(); return;
       case 'openToolDetail':
         openLatestToolDetail(); return;
       case 'openResults':
         openResultsPager(); return;
-      case 'copyTranscript':
-        copyCurrentTranscript(); return;
       case 'toggleFileRail':
         setFileRailOpen((prev: boolean) => !prev);
         return;
@@ -1275,7 +1211,7 @@ export function App() {
         handleCancelOrExit();
         return;
     }
-  }, [modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,activePlan,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,copyCurrentTranscript,toggleSelectionMode,startupOnly,terminalMode]);
+  }, [modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,activePlan,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,toggleSelectionMode,startupOnly,terminalMode]);
 
   useEffect(() => {
     initExtensions(workspacePath, commandRegistry, registry, eventBus).then(({ extensions, skills: extSkills, systemPromptFragments }) => {
@@ -1664,7 +1600,7 @@ export function App() {
           const _cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
           return (<>
             <CesarStatusStrip cesarId={_cesarId} confidence={cesarConfidence} spinner={liveSpinner} engines={liveProgress} startTime={chatStartTimeRef.current || 0} streamSnippet={streamSnippet} isActive={replState !== 'idle' || runningJobs.length > 0} planModeQueued={planModeQueued} activePlanState={activePlan?.state ?? null} />
-            {mode === 'chat' && <StatusBar cesarId={statusStats.cesarId} chatMessageCount={statusStats.chatMessageCount} totalTokens={statusStats.totalTokens} totalCostUsd={statusStats.totalCostUsd} cwd={statusCwd} branch={statusBranch} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} thinkingExpanded={thinkingExpanded} isActive={replState !== 'idle'} fullscreenEnabled={terminalMode === 'fullscreen'} selectionMode={terminalMode === 'fullscreen' ? selectionMode : undefined} />}
+            {mode === 'chat' && <StatusBar cesarId={statusStats.cesarId} chatMessageCount={statusStats.chatMessageCount} totalTokens={statusStats.totalTokens} totalCostUsd={statusStats.totalCostUsd} cwd={statusCwd} branch={statusBranch} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} isActive={replState !== 'idle'} fullscreenEnabled={terminalMode === 'fullscreen'} selectionMode={terminalMode === 'fullscreen' ? selectionMode : undefined} />}
           </>);
         })()}
       </Box>
@@ -1737,6 +1673,12 @@ export function shortToolPath(filePath: string): string {
 }
 
 // @kern-source: app:85
+export function isCesarTelemetryLine(message: string): boolean {
+  const text = String(message ?? '').trim();
+  return text.startsWith('Cesar route:') || text.startsWith('What happened:');
+}
+
+// @kern-source: app:91
 export function parseToolCallPayload(event: any): any {
   const rawInput = String(event?.input ?? '');
   let parsed: Record<string, unknown> = {};
@@ -1752,7 +1694,7 @@ export function parseToolCallPayload(event: any): any {
   };
 }
 
-// @kern-source: app:101
+// @kern-source: app:107
 export function extractPatchText(rawInput: string, parsed: any): string {
   const values = [
     parsed?.patch,
@@ -1776,7 +1718,7 @@ export function extractPatchText(rawInput: string, parsed: any): string {
   return values[0] ?? '';
 }
 
-// @kern-source: app:125
+// @kern-source: app:131
 export function parsePatchPreview(rawInput: string, parsed: any): { files:string[]; lines:string[]; additions:number; deletions:number } {
   const patchText = extractPatchText(rawInput, parsed);
   const files: string[] = [];
@@ -1825,7 +1767,7 @@ export function parsePatchPreview(rawInput: string, parsed: any): { files:string
   return { files, lines, additions, deletions };
 }
 
-// @kern-source: app:174
+// @kern-source: app:180
 export function toolPreviewWindow(lineCount: number, expanded: boolean): any {
   if (lineCount <= 0) return { head: 0, tail: 0, skipped: 0 };
   const headLimit = expanded ? 10 : 3;
@@ -1842,7 +1784,7 @@ export function toolPreviewWindow(lineCount: number, expanded: boolean): any {
   };
 }
 
-// @kern-source: app:191
+// @kern-source: app:197
 export function toolCallSupportsDetailView(event: any): boolean {
   if (!event || event.type !== 'tool-call') return false;
   const { rawInput, parsed, toolKey } = parseToolCallPayload(event);
@@ -1862,7 +1804,7 @@ export function toolCallSupportsDetailView(event: any): boolean {
   return rawInput.length > 160 || outputText.length > 400;
 }
 
-// @kern-source: app:211
+// @kern-source: app:217
 export function detailViewerSupportsEvent(event: any): boolean {
   if (!event) return false;
   if (event.type === 'permission-ask') {
@@ -1872,12 +1814,12 @@ export function detailViewerSupportsEvent(event: any): boolean {
   return toolCallSupportsDetailView(event);
 }
 
-// @kern-source: app:221
+// @kern-source: app:227
 export function toolDetailViewportRows(termHeight: number): number {
   return Math.max(8, Math.min(18, termHeight - 14));
 }
 
-// @kern-source: app:226
+// @kern-source: app:232
 export function findLatestToolDetailEvent(blocks: OutputBlock[]): any {
   for (let index = blocks.length - 1; index >= 0; index -= 1) {
     const event = blocks[index]?.event as any;
@@ -1897,7 +1839,7 @@ export function findLatestToolDetailEvent(blocks: OutputBlock[]): any {
   return null;
 }
 
-// @kern-source: app:246
+// @kern-source: app:252
 export function buildToolDetailView(event: any): any {
   if (!event) {
     return { title: 'Detail viewer', subtitle: '', accentColor: '#a78bfa', rows: [] };
@@ -2099,19 +2041,19 @@ export function buildToolDetailView(event: any): any {
   };
 }
 
-// @kern-source: app:449
+// @kern-source: app:455
 export const _activeAborts: Set<AbortController> = new Set<AbortController>();
 
-// @kern-source: app:452
+// @kern-source: app:458
 export const _cancelCallback: { fn: (() => void) | null } = { fn: null };
 
-// @kern-source: app:455
+// @kern-source: app:461
 export const _cesarSessionRef: { session: PersistentSession | null } = { session: null };
 
-// @kern-source: app:458
+// @kern-source: app:464
 export const _lastSigintAt: { value: number } = { value: 0 };
 
-// @kern-source: app:461
+// @kern-source: app:467
 export function createInitialRegistry(): EngineRegistry {
   const reg = new EngineRegistry();
   const engDir = join(dirname(fileURLToPath(import.meta.url)), '../../../engines');
@@ -2119,7 +2061,7 @@ export function createInitialRegistry(): EngineRegistry {
   return reg;
 }
 
-// @kern-source: app:469
+// @kern-source: app:475
 export function drainStdinBuffer(): void {
   if (!process.stdin.isTTY || typeof process.stdin.read !== 'function') return;
   let chunk: string | Buffer | null;
@@ -2128,12 +2070,12 @@ export function drainStdinBuffer(): void {
   } while (chunk !== null);
 }
 
-// @kern-source: app:478
+// @kern-source: app:484
 export function maxScrollOffsetForRowCount(rowCount: number, rowBudget: number): number {
   return Math.max(0, rowCount - Math.max(1, rowBudget));
 }
 
-// @kern-source: app:483
+// @kern-source: app:489
 export function nextWheelAnimationStep(pending: number): {step:number,remaining:number} {
   if (!Number.isFinite(pending) || pending === 0) return { step: 0, remaining: 0 };
   const direction = pending > 0 ? 1 : -1;
@@ -2143,12 +2085,12 @@ export function nextWheelAnimationStep(pending: number): {step:number,remaining:
   return { step, remaining: pending - step };
 }
 
-// @kern-source: app:493
+// @kern-source: app:499
 export function clampNumber(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-// @kern-source: app:498
+// @kern-source: app:504
 export function charDisplayWidth(char: string): number {
   if (!char) return 0;
   const codePoint = char.codePointAt(0) ?? 0;
@@ -2183,7 +2125,7 @@ export function charDisplayWidth(char: string): number {
   return 1;
 }
 
-// @kern-source: app:533
+// @kern-source: app:539
 export function stringDisplayWidth(text: string): number {
   let width = 0;
   for (const char of Array.from(String(text ?? ''))) {
@@ -2192,7 +2134,7 @@ export function stringDisplayWidth(text: string): number {
   return width;
 }
 
-// @kern-source: app:542
+// @kern-source: app:548
 export function displayColumnToStringIndex(text: string, targetColumn: number): number {
   const value = String(text ?? '');
   if (!Number.isFinite(targetColumn) || targetColumn <= 0) return 0;
@@ -2209,13 +2151,13 @@ export function displayColumnToStringIndex(text: string, targetColumn: number): 
   return value.length;
 }
 
-// @kern-source: app:559
+// @kern-source: app:565
 export function normalizeRowSelection(anchor: number|null, focus: number|null): {start:number,end:number}|null {
   if (anchor === null || focus === null) return null;
   return { start: Math.min(anchor, focus), end: Math.max(anchor, focus) };
 }
 
-// @kern-source: app:565
+// @kern-source: app:571
 export function normalizeTextSelection(anchorRow: number|null, anchorCol: number|null, focusRow: number|null, focusCol: number|null): {startRow:number,startCol:number,endRow:number,endCol:number}|null {
   if (anchorRow === null || anchorCol === null || focusRow === null || focusCol === null) return null;
   if (anchorRow < focusRow) return { startRow: anchorRow, startCol: anchorCol, endRow: focusRow, endCol: focusCol };
@@ -2224,7 +2166,7 @@ export function normalizeTextSelection(anchorRow: number|null, anchorCol: number
   return { startRow: focusRow, startCol: focusCol, endRow: anchorRow, endCol: anchorCol };
 }
 
-// @kern-source: app:574
+// @kern-source: app:580
 export function richLineToPlainText(line: any): string {
   if (!line) return '';
   if (line.kind === 'blank') return '';
@@ -2245,7 +2187,7 @@ export function richLineToPlainText(line: any): string {
   return `${indent}${listIndent}${marker}${spanText}`;
 }
 
-// @kern-source: app:595
+// @kern-source: app:601
 export function transcriptRowToPlainText(row: any): string {
   if (!row) return '';
   if (row.kind === 'spacer') return '';
@@ -2260,14 +2202,14 @@ export function transcriptRowToPlainText(row: any): string {
   return `${prefix}${text}`;
 }
 
-// @kern-source: app:610
+// @kern-source: app:616
 export function transcriptRowTextStartColumn(row: any): number {
   const paddingLeft = Math.max(0, Number(row?.paddingLeft ?? 0));
   const borderColumns = row?.borderColor ? 2 : 0;
   return paddingLeft + borderColumns + 2;
 }
 
-// @kern-source: app:617
+// @kern-source: app:623
 export function resolveTranscriptColumnFromMouse(mouseX: number, row: any): number {
   const text = transcriptRowToPlainText(row);
   const startColumn = transcriptRowTextStartColumn(row);
@@ -2276,7 +2218,7 @@ export function resolveTranscriptColumnFromMouse(mouseX: number, row: any): numb
   return displayColumnToStringIndex(text, targetColumn);
 }
 
-// @kern-source: app:626
+// @kern-source: app:632
 export function transcriptRowsToPlainText(rows: any[], anchorRow: number|null, anchorCol: number|null, focusRow: number|null, focusCol: number|null): string {
   const range = normalizeTextSelection(anchorRow, anchorCol, focusRow, focusCol);
   if (!range) return '';
@@ -2301,7 +2243,7 @@ export function transcriptRowsToPlainText(rows: any[], anchorRow: number|null, a
   return lines.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd();
 }
 
-// @kern-source: app:651
+// @kern-source: app:657
 export function resolveTranscriptRowFromMouse(mouseY: number, viewportTopLine: number, firstVisibleRow: number, visibleRowCount: number): number|null {
   if (visibleRowCount <= 0) return null;
   const offset = mouseY - viewportTopLine;
@@ -2310,7 +2252,7 @@ export function resolveTranscriptRowFromMouse(mouseY: number, viewportTopLine: n
   return firstVisibleRow + clamped;
 }
 
-// @kern-source: app:660
+// @kern-source: app:666
 export function estimateVisibleBlockBudget(rows: number, mode: string, overlayReservedRows: number): number {
   // Chat mode keeps 7 rows for the composer/status chrome at minimum:
   // margin + bordered composer (3) + Cesar strip + two-line status bar.
@@ -2319,7 +2261,7 @@ export function estimateVisibleBlockBudget(rows: number, mode: string, overlayRe
   return Math.max(1, rows - reservedRows);
 }
 
-// @kern-source: app:669
+// @kern-source: app:675
 export function estimateWrappedRowCount(text: string, wrapWidth: number): number {
   const safeWidth = Math.max(1, wrapWidth);
   const lines = String(text ?? '').split('\n');
@@ -2333,7 +2275,7 @@ export function estimateWrappedRowCount(text: string, wrapWidth: number): number
 /**
  * Reserve extra transcript rows when the bottom composer is showing a multi-line question or permission card, so short terminals do not clip the actionable keys.
  */
-// @kern-source: app:680
+// @kern-source: app:686
 export function estimateQuestionReservedRows(questionState: any, termWidth: number): number {
   if (!questionState) return 0;
   const safeWidth = Math.max(24, termWidth - 12);
@@ -2369,7 +2311,7 @@ export function estimateQuestionReservedRows(questionState: any, termWidth: numb
 /**
  * Reserve extra rows above the base composer/status chrome for stacked prompt cards, queued-input badges, and chat spinner rows.
  */
-// @kern-source: app:714
+// @kern-source: app:720
 export function estimateBottomChromeExtraRows(mode: string, questionState: any, termWidth: number, pendingImageCount: number, inputQueueCount: number, hasLiveSpinner: boolean): number {
   let extraRows = 0;
   if (pendingImageCount > 0) extraRows += 1;
@@ -2379,7 +2321,7 @@ export function estimateBottomChromeExtraRows(mode: string, questionState: any, 
   return extraRows;
 }
 
-// @kern-source: app:725
+// @kern-source: app:731
 export function buildDashboardBlock(enabledOverride: string[]|null): OutputBlock {
   const registry = createInitialRegistry();
   const available = registry.availableIds();
@@ -2410,7 +2352,7 @@ export function buildDashboardBlock(enabledOverride: string[]|null): OutputBlock
   };
 }
 
-// @kern-source: app:756
+// @kern-source: app:762
 export function estimatePinnedLiveRows(mode: string, hasStream: boolean, hasProgress: boolean, agentCount: number): number {
   const streamRows = hasStream ? (mode === 'chat' ? 3 : 6) : 0;
   const progressRows = hasProgress ? (mode === 'chat' ? 3 : 5) : 0;
@@ -2418,7 +2360,7 @@ export function estimatePinnedLiveRows(mode: string, hasStream: boolean, hasProg
   return streamRows + progressRows + agentRows;
 }
 
-// @kern-source: app:764
+// @kern-source: app:770
 export function estimateWrappedRows(text: string, width: number): number {
   const safeWidth = Math.max(1, width);
   if (!text) return 0;
@@ -2428,7 +2370,7 @@ export function estimateWrappedRows(text: string, width: number): number {
   }, 0);
 }
 
-// @kern-source: app:774
+// @kern-source: app:780
 export function estimateToolCallRows(event: any, toolOutputExpanded: boolean, codeWidth: number): number {
   if (!event || event.type !== 'tool-call') return 0;
   if (!event.input && !event.output && (event.tool === 'Delegate' || event.tool === 'delegate')) return 0;
@@ -2498,7 +2440,7 @@ export function estimateToolCallRows(event: any, toolOutputExpanded: boolean, co
   return rows;
 }
 
-// @kern-source: app:844
+// @kern-source: app:850
 export function estimateOutputEventRows(event: OutputEvent, mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean): number {
   const proseWidth = contentWidth(4);
   const chatWidth = contentWidth(2);
@@ -2534,7 +2476,7 @@ export function estimateOutputEventRows(event: OutputEvent, mode: string, toolOu
     }
     case 'thinking-chunk':
       if (thinkingExpanded === false) return 0;
-      return Math.min(4, Math.max(1, String(event.chunk ?? '').split('\n').filter((line: string) => line.trim()).length));
+      return Math.max(1, String(event.chunk ?? '').split('\n').filter((line: string) => line.trim()).length);
     case 'streaming-chunk': {
       const chunkText = String(event.chunk ?? '');
       const isThinking = /^~?\d{1,3}%\s/.test(chunkText.trim());
@@ -2593,7 +2535,7 @@ export function estimateOutputEventRows(event: OutputEvent, mode: string, toolOu
   }
 }
 
-// @kern-source: app:939
+// @kern-source: app:945
 export function buildDisplayItems(blocks: OutputBlock[], toolOutputExpanded: boolean): OutputBlock[] {
   // Keep collapse as a per-block display concern, not a synthetic grouped
   // scroll unit. Grouped tool summaries make wheel scrolling jump because
@@ -2601,7 +2543,7 @@ export function buildDisplayItems(blocks: OutputBlock[], toolOutputExpanded: boo
   return blocks;
 }
 
-// @kern-source: app:947
+// @kern-source: app:953
 export function isToolCallLikeBlock(block: OutputBlock): boolean {
   const type = (block?.event as any)?.type;
   return type === 'tool-call' || type === 'tool-call-group';
@@ -2610,7 +2552,7 @@ export function isToolCallLikeBlock(block: OutputBlock): boolean {
 /**
  * Merge adjacent tool-call and tool-call-group blocks into one group so native/live renderers do not show repeated collapsed tool summaries.
  */
-// @kern-source: app:953
+// @kern-source: app:959
 export function coalesceToolCallBlocks(blocks: OutputBlock[]): OutputBlock[] {
   if (!Array.isArray(blocks) || blocks.length === 0) return [];
   const out: OutputBlock[] = [];
@@ -2654,12 +2596,12 @@ export function coalesceToolCallBlocks(blocks: OutputBlock[]): OutputBlock[] {
   return out;
 }
 
-// @kern-source: app:998
+// @kern-source: app:1004
 export function estimateDisplayItemRows(item: OutputBlock, mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean): number {
   return estimateOutputEventRows(item.event, mode, toolOutputExpanded, thinkingExpanded);
 }
 
-// @kern-source: app:1003
+// @kern-source: app:1009
 export function historyBlocksForTranscript(blocks: OutputBlock[]): OutputBlock[] {
   if (blocks.length === 1 && blocks[0]?.event?.type === 'dashboard') return [];
   return blocks;
@@ -2668,16 +2610,16 @@ export function historyBlocksForTranscript(blocks: OutputBlock[]): OutputBlock[]
 /**
  * Native transcript history. While idle, the startup dashboard is live chrome. Once the first real transcript row exists, keep the dashboard as the first chat-history block so the AGON header scrolls with the conversation instead of disappearing.
  */
-// @kern-source: app:1009
+// @kern-source: app:1015
 export function nativeTranscriptBlocksForStatic(blocks: OutputBlock[]): OutputBlock[] {
   if (blocks.length === 1 && blocks[0]?.event?.type === 'dashboard') return [];
   return blocks;
 }
 
 /**
- * Choose how many native transcript blocks are sealed into Static. The remaining tail stays live so recent rows can rerender for Ctrl+E/Ctrl+T while older rows remain in terminal scrollback.
+ * Choose how many native transcript blocks are sealed into Static. The remaining tail stays live so recent rows can rerender while older rows remain in terminal scrollback.
  */
-// @kern-source: app:1016
+// @kern-source: app:1022
 export function nativeArchiveBlockCount(blocks: OutputBlock[], mode: string, rowBudget: number, toolOutputExpanded: boolean, thinkingExpanded: boolean): number {
   if (!Array.isArray(blocks) || blocks.length === 0) return 0;
 
@@ -2708,19 +2650,19 @@ export function nativeArchiveBlockCount(blocks: OutputBlock[], mode: string, row
   return Math.max(0, Math.min(blocks.length, liveStart));
 }
 
-// @kern-source: app:1048
+// @kern-source: app:1054
 export function normalizeTerminalMode(value: any): 'native'|'fullscreen' {
   return value === 'fullscreen' ? 'fullscreen' : 'native';
 }
 
-// @kern-source: app:1053
+// @kern-source: app:1059
 export function fileRailWidthForTerminal(termWidth: number, expanded: boolean): number {
   const safeWidth = Math.max(40, Math.floor(Number(termWidth) || 100));
   if (expanded) return Math.max(36, Math.min(64, Math.floor(safeWidth * 0.3)));
   return Math.max(28, Math.min(42, Math.floor(safeWidth * 0.22)));
 }
 
-// @kern-source: app:1060
+// @kern-source: app:1066
 export function fileRailMaxRowsForTerminal(termHeight: number, terminalMode: string, expanded: boolean): number {
   const safeHeight = Math.max(8, Math.floor(Number(termHeight) || 24));
   if (terminalMode === 'native') {
@@ -2734,7 +2676,7 @@ export function fileRailMaxRowsForTerminal(termHeight: number, terminalMode: str
 /**
  * Pure terminal replay harness: summarizes the layout-sensitive parts of the REPL for fixed viewport sizes so unit tests can catch native/fullscreen regressions without launching an interactive TTY.
  */
-// @kern-source: app:1071
+// @kern-source: app:1077
 export function buildTerminalReplaySnapshot(blocks: OutputBlock[], opts: any): {terminalMode:'native'|'fullscreen'; mode:string; termWidth:number; termHeight:number; visibleBudget:number; transcriptRowCount:number; staticBlockCount:number; liveBlockCount:number; fileRailWidth:number; fileRailRows:number; headerRows:number; lowerChromeRows:number} {
   const terminalMode = normalizeTerminalMode(opts?.terminalMode);
   const mode = String(opts?.mode ?? 'chat');
@@ -2788,7 +2730,7 @@ export function buildTerminalReplaySnapshot(blocks: OutputBlock[], opts: any): {
   };
 }
 
-// @kern-source: app:1126
+// @kern-source: app:1132
 export function parseMarkdownToRows(baseKey: string, text: string, wrapWidth: number, paddingLeft: number, borderColor: string): any[] {
   const rows: any[] = [];
   const cleaned = String(text ?? '').trim();
@@ -2896,7 +2838,7 @@ export function parseMarkdownToRows(baseKey: string, text: string, wrapWidth: nu
   return rows;
 }
 
-// @kern-source: app:1234
+// @kern-source: app:1240
 export function buildToolCallRows(baseKey: string, event: any, toolOutputExpanded: boolean): any[] {
   if (!event.input && !event.output && (event.tool === 'Delegate' || event.tool === 'delegate')) return [];
 
@@ -3250,16 +3192,16 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
   return rows;
 }
 
-// @kern-source: app:1588
+// @kern-source: app:1594
 export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any[] {
   if (!events || events.length === 0) return [];
 
   const rows: any[] = [];
-  const accent = engineColor(events[0]?.engineId ?? '');
   const counts = new Map<string, number>();
   const previews: string[] = [];
   const changedFiles: string[] = [];
   const changeEvents: any[] = [];
+  const previewWorthyLabels = new Set(['Bash', 'Update', 'Write', 'Patch', 'QuickNero']);
   let errors = 0;
   let running = 0;
 
@@ -3309,7 +3251,7 @@ export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any
   for (const event of events) {
     const label = labelFor(event);
     counts.set(label, (counts.get(label) ?? 0) + 1);
-    if (previews.length < 3) previews.push(previewFor(event));
+    if (previews.length < 3 && previewWorthyLabels.has(label)) previews.push(previewFor(event));
     if (event.status === 'error') errors += 1;
     if (event.status === 'running') running += 1;
     if (isMutatingToolCall(event)) {
@@ -3333,8 +3275,9 @@ export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any
   const countSummary = Array.from(counts.entries())
     .map(([label, count]) => `${label}${count > 1 ? `×${count}` : ''}`)
     .join(' · ');
-  const statusIcon = errors > 0 ? icons().fail : running > 0 ? '⟳' : icons().success;
-  const statusColor = errors > 0 ? '#ef4444' : running > 0 ? '#fbbf24' : '#4ade80';
+  const statusSummary = errors > 0
+    ? ` · ${errors} error${errors === 1 ? '' : 's'}`
+    : running > 0 ? ' · running' : '';
   const changedSummary = changedFiles.length > 0
     ? ` · changed ${changedFiles.length} file${changedFiles.length > 1 ? 's' : ''}: ${changedFiles.slice(0, 2).join(', ')}${changedFiles.length > 2 ? ', …' : ''}`
     : '';
@@ -3344,18 +3287,15 @@ export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any
     kind: 'segments',
     paddingLeft: 2,
     segments: [
-      { text: '⏿ ', color: accent },
-      { text: statusIcon, color: statusColor },
-      { text: ' ' },
-      { text: `${events.length} tool calls`, bold: true },
-      countSummary ? { text: ' · ', dimColor: true } : null,
-      countSummary ? { text: countSummary, dimColor: true } : null,
-      changedSummary ? { text: changedSummary, color: '#a78bfa' } : null,
+      { text: `▹ ${events.length} tool calls`, color: '#8b8b8b', dimColor: true, italic: true },
+      countSummary ? { text: ' · ', color: '#8b8b8b', dimColor: true, italic: true } : null,
+      countSummary ? { text: countSummary, color: '#8b8b8b', dimColor: true, italic: true } : null,
+      statusSummary ? { text: statusSummary, color: '#8b8b8b', dimColor: true, italic: true } : null,
+      changedSummary ? { text: changedSummary, color: '#8b8b8b', dimColor: true, italic: true } : null,
     ].filter(Boolean),
   });
 
-  const previewWorthyLabels = new Set(['Bash', 'Update', 'Write', 'Patch', 'QuickNero']);
-  const shouldShowPreview = previews.length > 0 && events.some((event: any) => previewWorthyLabels.has(labelFor(event)));
+  const shouldShowPreview = previews.length > 0;
   if (shouldShowPreview) {
     rows.push({
       key: `${baseKey}-tool-group-preview`,
@@ -3375,7 +3315,7 @@ export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any
   return rows;
 }
 
-// @kern-source: app:1713
+// @kern-source: app:1717
 export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean): any[] {
   const rows: any[] = [];
   const proseWidth = contentWidth(4);
@@ -3479,7 +3419,12 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
         ]);
         return;
       case 'info':
-        pushSegmentsRow(`${baseKey}-info`, 0, [{ text: `  ${event.message}`, dimColor: true }]);
+        pushSegmentsRow(`${baseKey}-info`, 0, [{
+          text: `  ${event.message}`,
+          dimColor: true,
+          italic: isCesarTelemetryLine(String(event.message ?? '')),
+          color: isCesarTelemetryLine(String(event.message ?? '')) ? '#8b8b8b' : undefined,
+        }]);
         return;
       case 'error': {
         const errLines = String(event.message ?? '').split('\n');
@@ -3521,16 +3466,9 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
       case 'thinking-chunk': {
         if (thinkingExpanded === false) return;
         const lines = String(event.chunk ?? '').split('\n').filter((line: string) => line.trim());
-        const preview = lines.length > 3 ? lines.slice(0, 3) : lines;
-        preview.forEach((line: string, index: number) => {
+        lines.forEach((line: string, index: number) => {
           pushSegmentsRow(`${baseKey}-thinking-${index}`, 2, [{ text: `▹ ${line}`, color: '#8b8b8b', dimColor: true, italic: true }]);
         });
-        if (lines.length > 3) {
-          pushSegmentsRow(`${baseKey}-thinking-more`, 2, [
-            { text: `▹ … ${lines.length - 3} more lines  `, color: '#8b8b8b', dimColor: true, italic: true },
-            { text: 'Ctrl+T', color: '#f59e0b' },
-          ]);
-        }
         return;
       }
       case 'streaming-chunk': {
@@ -3776,7 +3714,7 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
   return rows;
 }
 
-// @kern-source: app:3676
+// @kern-source: app:3613
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

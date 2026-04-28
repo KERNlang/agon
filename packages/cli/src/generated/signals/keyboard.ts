@@ -38,11 +38,9 @@ export type KeyboardAction =
   | { type: 'togglePlanQueued' }
   | { type: 'submit'; value: string }
   | { type: 'toggleToolExpand' }
-  | { type: 'toggleThinking' }
   | { type: 'toggleSelectionMode' }
   | { type: 'openToolDetail' }
   | { type: 'openResults' }
-  | { type: 'copyTranscript' }
   | { type: 'toggleFileRail' }
   | { type: 'fileRailSelectPrev' }
   | { type: 'fileRailSelectNext' }
@@ -61,7 +59,7 @@ export type KeyboardAction =
 /**
  * Pure keyboard decision tree. Takes current state, returns action to execute.
  */
-// @kern-source: keyboard:65
+// @kern-source: keyboard:63
 export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
   const { input, key } = ctx;
   const normalizedCtrlInput = key.ctrl
@@ -71,13 +69,11 @@ export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
         '\x0f': 'o',
         '\x0c': 'l',
         '\x12': 'r',
-        '\x14': 't',
         '\x07': 'g',
-        '\x19': 'y',
         '\x02': 'b',
       } as Record<string, string>)[input] ?? input
     : input;
-  const delegatedCtrlShortcuts = new Set(['e', 'j', 'l', 'o', 'r', 't', 'y']);
+  const delegatedCtrlShortcuts = new Set(['e', 'j', 'l', 'o', 'r']);
 
   // Model/cesar picker open: only Ctrl+C gets through
   if (ctx.modelPickerOpen || ctx.cesarPickerOpen) {
@@ -150,9 +146,6 @@ export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
   // Ctrl+E: toggle tool output expansion
   if (key.ctrl && normalizedCtrlInput === 'e') return { type: 'toggleToolExpand' };
 
-  // Ctrl+T: toggle thinking expansion
-  if (key.ctrl && normalizedCtrlInput === 't') return { type: 'toggleThinking' };
-
   // Ctrl+G: toggle mouse selection mode
   if (key.ctrl && normalizedCtrlInput === 'g') return { type: 'toggleSelectionMode' };
 
@@ -161,9 +154,6 @@ export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
 
   // Ctrl+R: open results pager
   if (key.ctrl && normalizedCtrlInput === 'r') return { type: 'openResults' };
-
-  // Ctrl+Y: copy current transcript/results to clipboard
-  if (key.ctrl && normalizedCtrlInput === 'y') return { type: 'copyTranscript' };
 
   // Ctrl+B: toggle Files rail (right-side sidebar of session-touched files)
   if (key.ctrl && normalizedCtrlInput === 'b') return { type: 'toggleFileRail' };

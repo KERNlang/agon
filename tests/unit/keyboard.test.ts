@@ -46,12 +46,20 @@ describe('resolveKeyboardInput', () => {
     }))).toEqual({ type: 'toggleToolExpand' });
   });
 
-  it('routes ctrl+y to transcript copy when no text input owns it', () => {
+  it('ignores ctrl+y so native terminal copy/yank behavior is not advertised as app chrome', () => {
     expect(resolveKeyboardInput(baseCtx({
       input: '\x19',
       key: { ctrl: true },
       textInputActive: false,
-    }))).toEqual({ type: 'copyTranscript' });
+    }))).toEqual({ type: 'none' });
+  });
+
+  it('ignores unmapped ctrl shortcuts', () => {
+    expect(resolveKeyboardInput(baseCtx({
+      input: '\x14',
+      key: { ctrl: true },
+      textInputActive: false,
+    }))).toEqual({ type: 'none' });
   });
 
   it('routes ctrl+g to selection mode toggle when no text input owns it', () => {

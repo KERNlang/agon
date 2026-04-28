@@ -1680,16 +1680,29 @@ fn name=buildCollapsedToolGroupRows params="baseKey:string, events:any[]" return
       ? ` · changed ${changedFiles.length} file${changedFiles.length > 1 ? 's' : ''}: ${changedFiles.slice(0, 2).join(', ')}${changedFiles.length > 2 ? ', …' : ''}`
       : '';
 
+    if (confidenceLabel) {
+      rows.push({
+        key: `${baseKey}-confidence`,
+        kind: 'segments',
+        paddingLeft: 2,
+        segments: [
+          { text: `▹ ${confidenceLabel}`, color: '#8b8b8b', dimColor: true, italic: true },
+        ],
+      });
+    }
+
     rows.push({
       key: `${baseKey}-tool-group-head`,
       kind: 'segments',
-      paddingLeft: 2,
+      paddingLeft: 4,
       segments: [
-        { text: `▹ ${confidenceLabel ? `${confidenceLabel} · ` : ''}${events.length} tool calls`, color: '#8b8b8b', dimColor: true, italic: true },
-        countSummary ? { text: ' · ', color: '#8b8b8b', dimColor: true, italic: true } : null,
-        countSummary ? { text: countSummary, color: '#8b8b8b', dimColor: true, italic: true } : null,
-        statusSummary ? { text: statusSummary, color: '#8b8b8b', dimColor: true, italic: true } : null,
-        changedSummary ? { text: changedSummary, color: '#8b8b8b', dimColor: true, italic: true } : null,
+        { text: `${events.length} tool calls`, dimColor: true },
+        countSummary ? { text: ' · ', dimColor: true } : null,
+        countSummary ? { text: countSummary, dimColor: true } : null,
+        statusSummary ? { text: statusSummary, dimColor: true } : null,
+        changedSummary ? { text: changedSummary, dimColor: true } : null,
+        { text: '  ' },
+        { text: 'Ctrl+E', color: '#f59e0b' },
       ].filter(Boolean),
     });
 

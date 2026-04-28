@@ -106,7 +106,7 @@ import { useStableInput } from '../../stable-input.js';
 
 import { parseProseToRichLines } from '../blocks/rich-text.js';
 
-// @kern-source: app:2103
+// @kern-source: app:2116
 export function App() {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -3281,16 +3281,29 @@ export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any
     ? ` · changed ${changedFiles.length} file${changedFiles.length > 1 ? 's' : ''}: ${changedFiles.slice(0, 2).join(', ')}${changedFiles.length > 2 ? ', …' : ''}`
     : '';
 
+  if (confidenceLabel) {
+    rows.push({
+      key: `${baseKey}-confidence`,
+      kind: 'segments',
+      paddingLeft: 2,
+      segments: [
+        { text: `▹ ${confidenceLabel}`, color: '#8b8b8b', dimColor: true, italic: true },
+      ],
+    });
+  }
+
   rows.push({
     key: `${baseKey}-tool-group-head`,
     kind: 'segments',
-    paddingLeft: 2,
+    paddingLeft: 4,
     segments: [
-      { text: `▹ ${confidenceLabel ? `${confidenceLabel} · ` : ''}${events.length} tool calls`, color: '#8b8b8b', dimColor: true, italic: true },
-      countSummary ? { text: ' · ', color: '#8b8b8b', dimColor: true, italic: true } : null,
-      countSummary ? { text: countSummary, color: '#8b8b8b', dimColor: true, italic: true } : null,
-      statusSummary ? { text: statusSummary, color: '#8b8b8b', dimColor: true, italic: true } : null,
-      changedSummary ? { text: changedSummary, color: '#8b8b8b', dimColor: true, italic: true } : null,
+      { text: `${events.length} tool calls`, dimColor: true },
+      countSummary ? { text: ' · ', dimColor: true } : null,
+      countSummary ? { text: countSummary, dimColor: true } : null,
+      statusSummary ? { text: statusSummary, dimColor: true } : null,
+      changedSummary ? { text: changedSummary, dimColor: true } : null,
+      { text: '  ' },
+      { text: 'Ctrl+E', color: '#f59e0b' },
     ].filter(Boolean),
   });
 
@@ -3301,7 +3314,7 @@ export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any
   return rows;
 }
 
-// @kern-source: app:1703
+// @kern-source: app:1716
 export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean): any[] {
   const rows: any[] = [];
   const proseWidth = contentWidth(4);
@@ -3700,7 +3713,7 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
   return rows;
 }
 
-// @kern-source: app:3599
+// @kern-source: app:3612
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

@@ -1494,6 +1494,8 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
             let step = 0;
             let productiveSteps = 0;
             let consecutiveErrors = 0;
+            let repeatedReadOnlyRetrySteps = 0;
+            let lastReadOnlySignature = '';
 
             // ── Solo-coding gate: track investigation vs write behavior ──
             // Architecture, not prompts: block writes that skip investigation
@@ -1613,6 +1615,23 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
 
                 // Emit all as running
                 const parsedCalls = extractedCalls;
+                const readOnlyStep = parsedCalls.length > 0 && parsedCalls.every(tc => READ_TOOLS.has(tc.name));
+                const readOnlySignature = readOnlyStep
+                  ? parsedCalls.map(tc => `${tc.name}:${cacheKey(tc.name, tc.args)}`).join('|')
+                  : '';
+                const staleReadRetryText = /\bfile (?:has been |was )?modified since (?:my |the )?last read\b/i.test(fullResponse)
+                  || /\bre-?read\b[\s\S]{0,120}\bedit\b/i.test(fullResponse);
+                if (readOnlyStep && (staleReadRetryText || (readOnlySignature && readOnlySignature === lastReadOnlySignature))) {
+                  repeatedReadOnlyRetrySteps++;
+                } else if (!readOnlyStep) {
+                  repeatedReadOnlyRetrySteps = 0;
+                }
+                lastReadOnlySignature = readOnlySignature;
+                if ((readOnlyStep && staleReadRetryText && parsedCalls.length > 20) || repeatedReadOnlyRetrySteps >= 3) {
+                  yield { type: 'error' as const, content: 'Tool loop stopped: repeated read-only retry loop after a stale edit/read condition. Re-read has already reached the tool layer; stop repeating reads and either edit from the current content or explain the blocker.' };
+                  messageHistory.push({ role: 'assistant', content: '[Tool loop stopped — repeated read-only stale-edit retry]' });
+                  break;
+                }
                 for (const tc of parsedCalls) {
                   if (tc.parseError) {
                     yield { type: 'tool_call' as const, content: tc.name, metadata: { input: tc.args, status: 'error', output: `Malformed tool arguments from API: ${tc.arguments.slice(0, 200)}` } };

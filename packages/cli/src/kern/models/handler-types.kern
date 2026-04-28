@@ -240,6 +240,7 @@ interface name=CesarState
   field name=lastDispatch type="((event: any) => void) | null"
   field name=pendingDelegation type="PendingDelegation | null"
   field name=reportedConfidence type="number | undefined"
+  field name=reportedConfidenceReasoning type="string | undefined"
   field name=confidenceSatisfied type=boolean
   field name=blockedOnConfidence type="{ name:string; args:Record<string,unknown> } | null"
   field name=quickNeroRequested type=boolean optional=true

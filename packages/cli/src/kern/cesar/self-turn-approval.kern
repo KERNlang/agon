@@ -3,7 +3,7 @@
 // narrower than plan auto-approval: it only covers already-read files inside
 // the workspace, with small diffs, and it never overrides explicit deny modes.
 
-import from="node:fs" names="existsSync,statSync"
+import from="node:fs" names="existsSync,statSync,readFileSync"
 import from="node:path" names="resolve,relative,isAbsolute,basename"
 import from="@agon/core" names="ToolContext" types=true
 
@@ -110,6 +110,48 @@ fn name=estimateChangedTokens params="before:string,after:string" returns=number
     return Math.ceil((removed + added) / 4);
   >>>
 
+fn name=isStaleCachedRead params="filePath:string,cached:any" returns=boolean export=false
+  doc "Return true when a cached read is unsafe. Cesar-owned cache entries are verified against disk content so a previous self-approved edit does not force a redundant prompt."
+  handler <<<
+    let mtime = 0;
+    try {
+      mtime = statSync(filePath).mtimeMs;
+    } catch {
+      return true;
+    }
+
+    if (cached?.lastTouchedBy === 'cesar') {
+      try {
+        const current = readFileSync(filePath, 'utf-8');
+        if (current === cached.content) {
+          cached.timestamp = Math.max(Number(cached.timestamp ?? 0), mtime);
+          return false;
+        }
+      } catch {
+        return true;
+      }
+      return true;
+    }
+
+    return mtime > Number(cached?.timestamp ?? 0);
+  >>>
+
+fn name=markCesarTouchedCache params="cache:any,filePath:string,cached:any,nextContent:string" returns=void export=false
+  doc "Optimistically refresh the read cache after approving a Cesar-owned edit/write. The next approval verifies the expected content against disk."
+  handler <<<
+    const now = Date.now();
+    cache.set(filePath, {
+      ...cached,
+      content: nextContent,
+      timestamp: Math.max(Number(cached?.timestamp ?? 0), now),
+      offset: undefined,
+      limit: undefined,
+      isPartialView: false,
+      lastTouchedBy: 'cesar',
+      lastTouchedAt: now,
+    });
+  >>>
+
 fn name=applyCesarSelfTurnApproval params="tool:string,args:Record<string,unknown>,toolCtx:ToolContext,config:any" returns="{approve:boolean,reason:string,tool?:string,path?:string,diffTokens?:number}" export=true
   doc "Approve small Cesar-owned Edit/Write operations on already-read files without interrupting the user. Explicit deny modes, exploration/read-only mode, outside-cwd paths, sensitive files, stale reads, unknown files, and large diffs all fall through to the normal approval prompt."
   handler <<<
@@ -153,18 +195,14 @@ fn name=applyCesarSelfTurnApproval params="tool:string,args:Record<string,unknow
     if (!existsSync(filePath)) {
       return { approve: false, reason: 'file does not exist', tool: t, path: filePath };
     }
-    try {
-      const mtime = statSync(filePath).mtimeMs;
-      if (mtime > cached.timestamp) {
-        return { approve: false, reason: 'file changed since last read', tool: t, path: filePath };
-      }
-    } catch {
-      return { approve: false, reason: 'could not stat file', tool: t, path: filePath };
+    if (isStaleCachedRead(filePath, cached)) {
+      return { approve: false, reason: 'file changed since last read', tool: t, path: filePath };
     }
 
     const maxTokensRaw = Number((config as any).cesarSelfTurnAutoApproveMaxDiffTokens ?? 1200);
     const maxTokens = Number.isFinite(maxTokensRaw) && maxTokensRaw > 0 ? maxTokensRaw : 1200;
     let diffTokens = Number.POSITIVE_INFINITY;
+    let nextContent: string | null = null;
 
     if (t === 'Edit') {
       const oldString = normalizedArgs.old_string;
@@ -178,16 +216,24 @@ fn name=applyCesarSelfTurnApproval params="tool:string,args:Record<string,unknow
       }
       const perEditTokens = estimateChangedTokens(oldString, newString);
       diffTokens = perEditTokens * (((normalizedArgs as any).replace_all === true) ? occurrences : 1);
+      nextContent = ((normalizedArgs as any).replace_all === true)
+        ? cached.content.split(oldString).join(newString)
+        : cached.content.replace(oldString, newString);
     } else {
       const content = normalizedArgs.content;
       if (typeof content !== 'string') {
         return { approve: false, reason: 'Write missing content', tool: t, path: filePath };
       }
       diffTokens = estimateChangedTokens(cached.content, content);
+      nextContent = content;
     }
 
     if (diffTokens > maxTokens) {
       return { approve: false, reason: `diff estimate ${diffTokens} tokens exceeds ${maxTokens}`, tool: t, path: filePath, diffTokens };
+    }
+
+    if (nextContent !== null) {
+      markCesarTouchedCache(cache as Map<string, any>, filePath, cached, nextContent);
     }
 
     return { approve: true, reason: `bounded ${t} on previously read file (${diffTokens} tokens)`, tool: t, path: filePath, diffTokens };

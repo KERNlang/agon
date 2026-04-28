@@ -1453,7 +1453,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
         cb.ctx.cesar = {
           busy: false, busySince: null, queue: null,
           toolRegistry: null, hasNativeTools: false, lastDispatch: null,
-          pendingDelegation: null, reportedConfidence: undefined, confidenceSatisfied: false, blockedOnConfidence: null,
+          pendingDelegation: null, reportedConfidence: undefined, reportedConfidenceReasoning: undefined, confidenceSatisfied: false, blockedOnConfidence: null,
           autoNero: false, advisorPending: false, lastEscalation: null,
           mcpFingerprint: undefined, mcpSignalPath: undefined, planDispatch: null, proposedPlan: undefined, sessionMcpServers: [],
         };
@@ -2029,7 +2029,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
         cb.ctx.cesar = {
           busy: false, busySince: null, queue: null,
           toolRegistry: null, hasNativeTools: false, lastDispatch: null,
-          pendingDelegation: null, reportedConfidence: undefined, confidenceSatisfied: false, blockedOnConfidence: null,
+          pendingDelegation: null, reportedConfidence: undefined, reportedConfidenceReasoning: undefined, confidenceSatisfied: false, blockedOnConfidence: null,
           autoNero: false, advisorPending: false, lastEscalation: null,
           mcpFingerprint: undefined, mcpSignalPath: undefined, planDispatch: null, proposedPlan: undefined, sessionMcpServers: [],
         };

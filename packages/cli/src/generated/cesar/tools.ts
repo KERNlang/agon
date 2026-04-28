@@ -56,18 +56,77 @@ export function createEagerToolContext(ctx: HandlerContext, config: any, signal:
 }
 
 /**
- * Execute a tool eagerly during streaming — parse input, run, dispatch result.
+ * Parse a streaming tool input into a JSON object. Malformed input is returned as an explicit retryable error instead of being silently coerced.
  */
 // @kern-source: tools:50
-export async function executeEagerTool(toolName: string, meta: Record<string,unknown>, toolRegistry: ToolRegistry, toolCtx: ToolContext, dispatch: Dispatch, cesarEngineId: string): Promise<ToolCallResult> {
-  let parsedInput: Record<string, unknown> = {};
-  try {
-    parsedInput = typeof meta.input === 'string' ? JSON.parse(meta.input) : (meta.input as Record<string, unknown>);
-  } catch { parsedInput = { raw: meta.input }; }
+export function parseEagerToolInput(toolName: string, input: unknown): {ok:boolean,input?:Record<string,unknown>,error?:string,raw:string} {
+  const raw = typeof input === 'string'
+    ? input
+    : input === undefined ? ''
+    : (() => {
+      try { return JSON.stringify(input) ?? String(input); }
+      catch { return String(input); }
+    })();
 
+  if (input === undefined) {
+    return { ok: true, input: {}, raw };
+  }
+  if (input && typeof input === 'object' && !Array.isArray(input)) {
+    return { ok: true, input: input as Record<string, unknown>, raw };
+  }
+  if (typeof input !== 'string') {
+    return {
+      ok: false,
+      raw,
+      error: `Malformed ${toolName} tool input: expected a JSON object, got ${input === null ? 'null' : Array.isArray(input) ? 'array' : typeof input}. Re-emit the ${toolName} tool call with a complete JSON object matching its schema.`,
+    };
+  }
+
+  const trimmed = input.trim();
+  if (!trimmed) {
+    return { ok: true, input: {}, raw };
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return { ok: true, input: parsed as Record<string, unknown>, raw };
+    }
+    return {
+      ok: false,
+      raw,
+      error: `Malformed ${toolName} tool input: expected a JSON object, got ${parsed === null ? 'null' : Array.isArray(parsed) ? 'array' : typeof parsed}. Re-emit the ${toolName} tool call with a complete JSON object matching its schema.`,
+    };
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    return {
+      ok: false,
+      raw,
+      error: `Malformed ${toolName} tool input JSON: ${detail}. Re-emit the ${toolName} tool call with a complete JSON object matching its schema.`,
+    };
+  }
+}
+
+/**
+ * Execute a tool eagerly during streaming — parse input, run, dispatch result.
+ */
+// @kern-source: tools:100
+export async function executeEagerTool(toolName: string, meta: Record<string,unknown>, toolRegistry: ToolRegistry, toolCtx: ToolContext, dispatch: Dispatch, cesarEngineId: string): Promise<ToolCallResult> {
   const callId = (meta.toolCallId as string) ?? `eager-${Date.now()}`;
-  const toolInput = typeof meta.input === 'string' ? meta.input
-    : meta.input ? JSON.stringify(meta.input) : '';
+  const parsed = parseEagerToolInput(toolName, meta.input);
+  const toolInput = parsed.raw;
+  if (!parsed.ok) {
+    const error = parsed.error ?? `Malformed ${toolName} tool input`;
+    const result: ToolCallResult = {
+      toolCallId: callId,
+      toolName,
+      result: { ok: false, content: '', error },
+      durationMs: 0,
+    };
+    dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'error', output: error } as any);
+    return result;
+  }
+  const parsedInput = parsed.input ?? {};
 
   const result = await executeToolCall(
     { id: callId, name: toolName, input: parsedInput },
@@ -76,10 +135,7 @@ export async function executeEagerTool(toolName: string, meta: Record<string,unk
     async (tool: string, message: string) => {
       return new Promise<boolean>((resolve) => {
         let command = '';
-        try {
-          const parsed = typeof meta.input === 'string' ? JSON.parse(meta.input as string) : meta.input;
-          command = (parsed as any).command ?? (parsed as any).file_path ?? toolInput;
-        } catch { command = toolInput; }
+        command = (parsedInput as any).command ?? (parsedInput as any).file_path ?? toolInput;
         dispatch({ type: 'permission-ask', tool, command, reason: message, resolve } as any);
       });
     },

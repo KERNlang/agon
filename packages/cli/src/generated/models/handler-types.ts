@@ -127,6 +127,7 @@ export interface CesarState {
   lastDispatch: ((event: any) => void) | null;
   pendingDelegation: PendingDelegation | null;
   reportedConfidence: number | undefined;
+  reportedConfidenceReasoning: string | undefined;
   confidenceSatisfied: boolean;
   blockedOnConfidence: { name:string; args:Record<string,unknown> } | null;
   quickNeroRequested?: boolean;
@@ -141,7 +142,7 @@ export interface CesarState {
   sessionMcpServers: Array<{name:string, type?:string, url?:string, command?:string, args?:string[]}>;
 }
 
-// @kern-source: handler-types:256
+// @kern-source: handler-types:257
 export interface HandlerContext {
   registry: EngineRegistry;
   adapter: EngineAdapter;

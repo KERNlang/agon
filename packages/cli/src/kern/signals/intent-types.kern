@@ -40,6 +40,8 @@ union name=Intent discriminant=type
   variant name=tokens
   variant name=doctor
     field name=scope type=string optional=true
+  variant name=harness-replay
+    field name=turnId type=string optional=true
   variant name=plan
     field name=planId type=string optional=true
   variant name=plans

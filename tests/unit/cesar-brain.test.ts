@@ -1,8 +1,24 @@
 import { describe, it, expect } from 'vitest';
 import { parseSuggestion, parseConfidence, confidenceBadge, CONFIDENCE_TIERS, CESAR_SYSTEM_PROMPT, buildReviewFollowupPrompt, detectNarratedToolStall } from '../../packages/cli/src/handlers/cesar-brain.js';
+import { splitBeforeToolMarkup } from '../../packages/cli/src/generated/cesar/brain.js';
 import { createReportConfidenceTool, createForgeTool, createBrainstormTool, createTribunalTool, createCampfireTool, createPipelineTool } from '../../packages/core/src/tools.js';
 
 describe('Cesar Brain', () => {
+  describe('splitBeforeToolMarkup', () => {
+    it('keeps visible text before XML tool markup and suppresses the markup', () => {
+      expect(splitBeforeToolMarkup('Checking.\n<tool name="Read">{"file_path":"a.ts"}</tool>')).toEqual({
+        visible: 'Checking.\n',
+        hasToolMarkup: true,
+      });
+    });
+
+    it('detects Gemini-style tool markup', () => {
+      const result = splitBeforeToolMarkup('<tool_call_tool>{"name":"Read","arguments":{}}</tool_call_tool>');
+      expect(result.hasToolMarkup).toBe(true);
+      expect(result.visible).toBe('');
+    });
+  });
+
   describe('detectNarratedToolStall', () => {
     it('detects read/search narration without a real tool call', () => {
       expect(detectNarratedToolStall('Let me read packages/cli/src/kern/cesar/brain.kern first.')).toBe(true);

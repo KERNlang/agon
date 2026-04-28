@@ -200,7 +200,12 @@ fn name=createCompanionSession params="config:PersistentSessionConfig" returns="
               'item/permissions/requestApproval': 'Permission',
             };
             const toolName = methodToolMap[m] ?? msg.params?.tool ?? msg.params?.command?.type ?? msg.params?.name ?? m;
-            const toolCmd = msg.params?.command?.command ?? msg.params?.command ?? msg.params?.description ?? msg.params?.path ?? JSON.stringify(msg.params ?? {});
+            const approvalArgs = msg.params?.args ?? msg.params?.input ?? msg.params?.command ?? msg.params ?? {};
+            const toolCmd = String(toolName).toLowerCase().includes('bash') || String(toolName).toLowerCase().includes('shell')
+              ? (msg.params?.command?.command ?? msg.params?.command ?? msg.params?.description ?? JSON.stringify(msg.params ?? {}))
+              : (approvalArgs && typeof approvalArgs === 'object'
+                ? JSON.stringify(approvalArgs)
+                : (msg.params?.description ?? msg.params?.path ?? String(approvalArgs ?? '')));
 
             // Emit as tool_call for UI visibility
             for (const handler of notificationHandlers) {
@@ -542,7 +547,12 @@ fn name=createAcpSession params="config:PersistentSessionConfig" returns="Persis
               const options: any[] = msg.params?.options ?? [];
               const toolCall = msg.params?.toolCall ?? {};
               const tName = toolCall.name ?? toolCall.functionDeclaration?.name ?? msg.params?.name ?? 'tool';
-              const tCmd = toolCall.args?.command ?? toolCall.args?.file_path ?? (toolCall.args ? JSON.stringify(toolCall.args) : msg.params?.description ?? m);
+              const tArgs = toolCall.args ?? {};
+              const tCmd = String(tName).toLowerCase().includes('bash') || String(tName).toLowerCase().includes('shell')
+                ? (toolCall.args?.command ?? (toolCall.args ? JSON.stringify(toolCall.args) : msg.params?.description ?? m))
+                : (tArgs && typeof tArgs === 'object' && Object.keys(tArgs).length > 0
+                  ? JSON.stringify(tArgs)
+                  : (msg.params?.description ?? m));
               const allowOpt = options.find((o: any) => o.kind === 'allow_once') ?? options.find((o: any) => o.optionId?.includes('proceed_once'));
               const alwaysOpt = options.find((o: any) => o.kind === 'allow_always' || o.optionId?.includes('proceed_always'));
               const rejectOpt = options.find((o: any) => o.kind === 'reject_once') ?? options.find((o: any) => o.optionId?.includes('reject'));
@@ -571,7 +581,12 @@ fn name=createAcpSession params="config:PersistentSessionConfig" returns="Persis
 
             // Generic server request (other methods)
             const toolName = msg.params?.tool ?? msg.params?.name ?? msg.params?.type ?? m;
-            const toolCmd = msg.params?.command ?? msg.params?.description ?? JSON.stringify(msg.params ?? {});
+            const approvalArgs = msg.params?.args ?? msg.params?.input ?? msg.params?.command ?? msg.params ?? {};
+            const toolCmd = String(toolName).toLowerCase().includes('bash') || String(toolName).toLowerCase().includes('shell')
+              ? (msg.params?.command ?? msg.params?.description ?? JSON.stringify(msg.params ?? {}))
+              : (approvalArgs && typeof approvalArgs === 'object'
+                ? JSON.stringify(approvalArgs)
+                : (msg.params?.description ?? String(approvalArgs ?? '')));
 
             for (const handler of notificationHandlers) {
               handler('tool/approval', { tool: toolName, command: toolCmd, rpcId: msg.id });

@@ -78,7 +78,7 @@ export { runApiAgentLoop } from './generated/api/agent-loop.js';
 export type { ApiAgentOptions, ApiAgentResult } from './generated/api/agent-loop.js';
 // ── Tool System ──
 export type { ToolResult, ToolContext, ToolHandler, ToolDefinition, ToolCall, ToolCallResult, PermissionDecision, FileState as ToolFileState } from './tool-types.js';
-export { FileStateCache, fileStateCache } from './file-state-cache.js';
+export { FileStateCache, fileStateCache, getProjectFileStateCache, clearProjectFileStateCaches } from './file-state-cache.js';
 export { ToolRegistry, executeToolCall, executeToolCalls } from './tool-registry.js';
 export { checkBashPermission, checkFileReadPermission, checkFileWritePermission, isDangerousCommand, isReadOnlyCommand, isPathUnderCwd } from './tool-permissions.js';
 export { createReadTool, createEditTool, createWriteTool, createBashTool, createGrepTool, createGlobTool, createForgeTool, createBrainstormTool, createTribunalTool, createCampfireTool, createReportConfidenceTool, createDelegateTool, createPipelineTool, createReviewTool, createAgentTool, createProposePlanTool, createListPlansTool, createRetrieveResultTool, createQuickNeroTool } from './tools.js';
@@ -118,7 +118,7 @@ export type {
 export { StreamBridge, createStreamBridge } from './generated/cesar/stream-bridge.js';
 export type { EngineSwitch } from './generated/cesar/stream-bridge.js';
 export {
-  VirtualFS, createFileSnapshot, applyEffectPackage, effectPackageDiff, scoreEffectPackage, snapshotRead, snapshotList,
+  VirtualFS, createFileSnapshot, applyEffectPackage, relocateEffectPackage, effectPackageDiff, scoreEffectPackage, snapshotRead, snapshotList,
 } from './generated/forge/virtual-fs.js';
 export type {
   FileEffect, EffectPackage, FileSnapshot as VfsSnapshot,

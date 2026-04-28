@@ -18,12 +18,14 @@ import type { CompactionSummaryPart, ToolCacheEntry } from '../models/context-pa
 
 import { parseToolCalls, toolCallsToApiFormat } from '../tools/tool-parser.js';
 
+// @kern-source: persistent-session:11
 export interface SessionChunk {
   type: 'text'|'status'|'tool_call'|'error'|'done';
   content: string;
   metadata?: Record<string,unknown>;
 }
 
+// @kern-source: persistent-session:16
 export interface SessionSendOptions {
   message: string;
   images?: string[];
@@ -31,6 +33,7 @@ export interface SessionSendOptions {
   systemPrompt?: string;
 }
 
+// @kern-source: persistent-session:22
 export interface PersistentSessionConfig {
   engine: EngineDefinition;
   binaryPath: string;
@@ -44,6 +47,7 @@ export interface PersistentSessionConfig {
   sessionContinuity?: boolean;
 }
 
+// @kern-source: persistent-session:34
 export interface PersistentSession {
   alive: boolean;
   sessionId: string|null;
@@ -57,6 +61,7 @@ export interface PersistentSession {
 /**
  * Factory: picks the right session implementation based on engine config.
  */
+// @kern-source: persistent-session:43
 export function createPersistentSession(config: PersistentSessionConfig): PersistentSession {
   const engine = config.engine;
 
@@ -87,6 +92,7 @@ export function createPersistentSession(config: PersistentSessionConfig): Persis
 /**
  * Persistent JSONRPC session for Codex app-server. Process stays alive across turns.
  */
+// @kern-source: persistent-session:74
 export function createCompanionSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -450,6 +456,7 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
 /**
  * Persistent ACP (Agent Client Protocol) session for OpenCode. JSON-RPC 2.0 over stdio.
  */
+// @kern-source: persistent-session:438
 export function createAcpSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -797,6 +804,7 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
 /**
  * Persistent bidirectional NDJSON session for Claude Code. One process, multi-turn via stdin.
  */
+// @kern-source: persistent-session:786
 export function createStreamJsonSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -1102,6 +1110,7 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
 /**
  * Fallback: spawn per turn with --resume/--continue. Works for any CLI engine.
  */
+// @kern-source: persistent-session:1092
 export function createResumeSession(config: PersistentSessionConfig): PersistentSession {
   let alive = false;
       let sessionId: string | null = null;

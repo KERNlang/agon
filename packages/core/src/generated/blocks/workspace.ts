@@ -14,6 +14,7 @@ import { headSha, currentBranch, isDirty } from './git.js';
 
 import type { WorkspaceSnapshot } from './plan.js';
 
+// @kern-source: workspace:9
 export interface Workspace {
   id: string;
   path: string;
@@ -22,17 +23,20 @@ export interface Workspace {
   addedAt: number;
 }
 
+// @kern-source: workspace:16
 export interface WorkspaceState {
   workspaces: Workspace[];
   active: string;
 }
 
+// @kern-source: workspace:20
 function getWorkspacesPath(): string {
   const override = process.env.AGON_HOME?.trim();
   const home = override ? resolve(override) : join(homedir(), '.agon');
   return join(home, 'workspaces.json');
 }
 
+// @kern-source: workspace:27
 function loadState(): WorkspaceState {
   const WORKSPACES_PATH = getWorkspacesPath();
   ensureAgonHome();
@@ -45,6 +49,7 @@ function loadState(): WorkspaceState {
   }
 }
 
+// @kern-source: workspace:40
 function saveState(state: WorkspaceState): void {
   const WORKSPACES_PATH = getWorkspacesPath();
   const tmpPath = WORKSPACES_PATH + '.tmp';
@@ -52,6 +57,7 @@ function saveState(state: WorkspaceState): void {
   renameSync(tmpPath, WORKSPACES_PATH);
 }
 
+// @kern-source: workspace:48
 export function addWorkspace(rawPath: string): Workspace {
   const path = resolve(rawPath);
   const state = loadState();
@@ -67,6 +73,7 @@ export function addWorkspace(rawPath: string): Workspace {
   return ws;
 }
 
+// @kern-source: workspace:64
 export function removeWorkspace(idOrPath: string): boolean {
   const state = loadState();
   const idx = state.workspaces.findIndex(
@@ -79,15 +86,18 @@ export function removeWorkspace(idOrPath: string): boolean {
   return true;
 }
 
+// @kern-source: workspace:77
 export function listWorkspaces(): Workspace[] {
   return loadState().workspaces;
 }
 
+// @kern-source: workspace:82
 export function getActiveWorkspace(): Workspace|null {
   const state = loadState();
   return state.workspaces.find((w) => w.id === state.active) ?? null;
 }
 
+// @kern-source: workspace:88
 export function switchWorkspace(idOrPath: string): Workspace|null {
   const state = loadState();
   const ws = state.workspaces.find(
@@ -99,6 +109,7 @@ export function switchWorkspace(idOrPath: string): Workspace|null {
   return ws;
 }
 
+// @kern-source: workspace:100
 export function getWorkspace(idOrPath: string): Workspace|null {
   const state = loadState();
   return state.workspaces.find(
@@ -106,6 +117,7 @@ export function getWorkspace(idOrPath: string): Workspace|null {
   ) ?? null;
 }
 
+// @kern-source: workspace:108
 export function snapshotWorkspace(ws: Workspace): WorkspaceSnapshot {
   let sha = 'unknown';
   try { sha = headSha(ws.path); } catch (err) {
@@ -128,11 +140,13 @@ export function snapshotWorkspace(ws: Workspace): WorkspaceSnapshot {
 /**
  * Returns the active workspace path if set, otherwise process.cwd().
  */
+// @kern-source: workspace:128
 export function resolveWorkingDir(): string {
   const ws = getActiveWorkspace();
   return ws ? ws.path : process.cwd();
 }
 
+// @kern-source: workspace:135
 export function ensureCurrentWorkspace(cwd: string): Workspace {
   const state = loadState();
   const path = resolve(cwd);

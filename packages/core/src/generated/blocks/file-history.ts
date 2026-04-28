@@ -10,20 +10,24 @@ import { homedir } from 'node:os';
 
 import { ensureAgonHome } from '../signals/config.js';
 
+// @kern-source: file-history:7
 function snapshotsDir(): string {
   const override = process.env.AGON_HOME?.trim();
   const home = override ? resolve(override) : join(homedir(), '.agon');
   return join(home, 'snapshots');
 }
 
+// @kern-source: file-history:14
 export const MAX_SNAPSHOTS: number = 50;
 
+// @kern-source: file-history:17
 export interface FileSnapshot {
   path: string;
   content: string;
   timestamp: number;
 }
 
+// @kern-source: file-history:22
 export interface HistoryEntry {
   id: string;
   label: string;
@@ -32,6 +36,7 @@ export interface HistoryEntry {
   createdAt: string;
 }
 
+// @kern-source: file-history:29
 function ensureSnapshotsDir(): void {
   ensureAgonHome();
   mkdirSync(snapshotsDir(), { recursive: true });
@@ -40,6 +45,7 @@ function ensureSnapshotsDir(): void {
 /**
  * Snapshot files before modification. Returns entry that can be used for undo.
  */
+// @kern-source: file-history:35
 export function takeSnapshot(label: string, cwd: string, filePaths: string[]): HistoryEntry {
   ensureSnapshotsDir();
 
@@ -79,6 +85,7 @@ export function takeSnapshot(label: string, cwd: string, filePaths: string[]): H
 /**
  * Revert files to a snapshot state. Deletes files that didn't exist before.
  */
+// @kern-source: file-history:73
 export function revertSnapshot(id: string): {ok:boolean, error?:string, filesReverted:number} {
   ensureSnapshotsDir();
   const entryPath = join(snapshotsDir(), `${id}.json`);
@@ -119,6 +126,7 @@ export function revertSnapshot(id: string): {ok:boolean, error?:string, filesRev
   return { ok: true, filesReverted: reverted };
 }
 
+// @kern-source: file-history:115
 export function listSnapshots(): HistoryEntry[] {
   ensureSnapshotsDir();
   try {
@@ -135,6 +143,7 @@ export function listSnapshots(): HistoryEntry[] {
   }
 }
 
+// @kern-source: file-history:132
 function pruneSnapshots(): void {
   try {
     const files = readdirSync(snapshotsDir()).filter((f: string) => f.endsWith('.json')).sort();
@@ -147,6 +156,7 @@ function pruneSnapshots(): void {
   } catch (err) { console.warn('[file-history] failed to save snapshot:', (err as Error).message ?? err); }
 }
 
+// @kern-source: file-history:145
 export function getLatestSnapshotId(): string|null {
   ensureSnapshotsDir();
   try {

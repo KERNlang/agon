@@ -2,6 +2,7 @@
 
 import type { AgentBudget, AgentStepResult } from './agent-session.js';
 
+// @kern-source: agent-state:28
 export interface AgentMessage {
   role: 'system'|'user'|'assistant'|'tool';
   content: string;
@@ -10,6 +11,7 @@ export interface AgentMessage {
   timestamp: number;
 }
 
+// @kern-source: agent-state:37
 export interface AgentTurn {
   index: number;
   userPrompt: string;
@@ -24,6 +26,7 @@ export interface AgentTurn {
   error?: string;
 }
 
+// @kern-source: agent-state:52
 export interface AgentContext {
   engineId: string;
   systemPrompt?: string;
@@ -36,6 +39,7 @@ export interface AgentContext {
   cumulativeCostUsd: number;
 }
 
+// @kern-source: agent-state:65
 export type AgentPhase =
   | { kind: 'idle' }
   | { kind: 'running'; turnIndex: number; turnStartedAt: number }
@@ -44,6 +48,7 @@ export type AgentPhase =
   | { kind: 'failed'; reason: 'budget_turns'|'budget_tokens'|'budget_duration'|'error'|'rejected'; errorMessage?: string }
   | { kind: 'cancelled'; reason: string };
 
+// @kern-source: agent-state:85
 export interface AgentState {
   context: AgentContext;
   phase: AgentPhase;
@@ -52,6 +57,7 @@ export interface AgentState {
 /**
  * Create a fresh agent state in 'idle' phase with empty history.
  */
+// @kern-source: agent-state:91
 export function createAgentState(engineId: string, budget: AgentBudget, systemPrompt?: string, now?: number): AgentState {
   const startedAt = now ?? Date.now();
   const history: AgentMessage[] = [];
@@ -77,6 +83,7 @@ export function createAgentState(engineId: string, budget: AgentBudget, systemPr
 /**
  * Transition idle → running. Appends the user message to history. No-op if already terminal.
  */
+// @kern-source: agent-state:115
 export function beginTurn(state: AgentState, userPrompt: string, now?: number): AgentState {
   if (state.phase.kind === 'completed' || state.phase.kind === 'failed' || state.phase.kind === 'cancelled') {
     return state;
@@ -100,6 +107,7 @@ export function beginTurn(state: AgentState, userPrompt: string, now?: number): 
 /**
  * Transition running → idle on a completed step. Appends assistant message, records the turn, updates cumulative stats.
  */
+// @kern-source: agent-state:137
 export function completeTurn(state: AgentState, userPrompt: string, result: AgentStepResult, now?: number): AgentState {
   if (state.phase.kind !== 'running') return state;
   const completedAt = now ?? Date.now();
@@ -146,6 +154,7 @@ export function completeTurn(state: AgentState, userPrompt: string, result: Agen
 /**
  * Transition running → awaiting_approval. Caller (Phase 4 handler) resumes via approveTool/rejectTool.
  */
+// @kern-source: agent-state:182
 export function requestApproval(state: AgentState, toolName: string, toolInput: Record<string,unknown>, toolCallId: string): AgentState {
   if (state.phase.kind !== 'running') return state;
   return {
@@ -163,6 +172,7 @@ export function requestApproval(state: AgentState, toolName: string, toolInput: 
 /**
  * Transition awaiting_approval → running. Tool call proceeds.
  */
+// @kern-source: agent-state:198
 export function approveTool(state: AgentState, now?: number): AgentState {
   if (state.phase.kind !== 'awaiting_approval') return state;
   const turnStartedAt = now ?? Date.now();
@@ -175,6 +185,7 @@ export function approveTool(state: AgentState, now?: number): AgentState {
 /**
  * Transition awaiting_approval → running. Tool call rejected; caller should feed the refusal back to the model.
  */
+// @kern-source: agent-state:209
 export function rejectTool(state: AgentState, reason: string, now?: number): AgentState {
   if (state.phase.kind !== 'awaiting_approval') return state;
   const turnStartedAt = now ?? Date.now();
@@ -195,6 +206,7 @@ export function rejectTool(state: AgentState, reason: string, now?: number): Age
 /**
  * Transition any non-terminal phase → cancelled. Idempotent over terminal phases.
  */
+// @kern-source: agent-state:228
 export function cancelAgent(state: AgentState, reason: string): AgentState {
   if (state.phase.kind === 'completed' || state.phase.kind === 'failed' || state.phase.kind === 'cancelled') {
     return state;
@@ -205,6 +217,7 @@ export function cancelAgent(state: AgentState, reason: string): AgentState {
 /**
  * Transition any non-terminal phase → failed.
  */
+// @kern-source: agent-state:237
 export function failAgent(state: AgentState, reason: 'budget_turns'|'budget_tokens'|'budget_duration'|'error'|'rejected', errorMessage?: string): AgentState {
   if (state.phase.kind === 'completed' || state.phase.kind === 'failed' || state.phase.kind === 'cancelled') {
     return state;
@@ -215,6 +228,7 @@ export function failAgent(state: AgentState, reason: 'budget_turns'|'budget_toke
 /**
  * Transition idle → completed. Terminal success state.
  */
+// @kern-source: agent-state:246
 export function completeAgent(state: AgentState, finalResponse: string): AgentState {
   if (state.phase.kind !== 'idle') return state;
   return { context: state.context, phase: { kind: 'completed', finalResponse } };
@@ -223,6 +237,7 @@ export function completeAgent(state: AgentState, finalResponse: string): AgentSt
 /**
  * Returns a new failed state if any budget is exhausted, or null if the state is still within budget. Pure — does not mutate.
  */
+// @kern-source: agent-state:253
 export function checkBudget(state: AgentState, now?: number): AgentState|null {
   if (state.phase.kind === 'completed' || state.phase.kind === 'failed' || state.phase.kind === 'cancelled') {
     return null;
@@ -244,6 +259,7 @@ export function checkBudget(state: AgentState, now?: number): AgentState|null {
 /**
  * True if the state is in a terminal phase (completed/failed/cancelled).
  */
+// @kern-source: agent-state:273
 export function isTerminal(state: AgentState): boolean {
   return state.phase.kind === 'completed' || state.phase.kind === 'failed' || state.phase.kind === 'cancelled';
 }

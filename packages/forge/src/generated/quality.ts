@@ -2,6 +2,7 @@
 
 import { spawnWithTimeout } from '@agon/core';
 
+// @kern-source: quality:3
 export async function runLint(cwd: string): Promise<number> {
   try {
     const result = await spawnWithTimeout({
@@ -26,6 +27,7 @@ export async function runLint(cwd: string): Promise<number> {
   }
 }
 
+// @kern-source: quality:28
 export async function runStyleCheck(cwd: string): Promise<number> {
   try {
     const result = await spawnWithTimeout({

@@ -10,6 +10,7 @@ import { runFitness } from './fitness.js';
 
 import type { SynthesisResult, ForgeEventCallback } from '../types.js';
 
+// @kern-source: synthesis:7
 export function parseCritiques(output: string): Critique[] {
   const allMatches = [...output.matchAll(/\[[\s\S]*?\]/g)];
   const jsonMatch = allMatches.length > 0 ? [allMatches[allMatches.length - 1][0]] : null;
@@ -37,6 +38,7 @@ export function parseCritiques(output: string): Critique[] {
   }
 }
 
+// @kern-source: synthesis:35
 export async function runSynthesis(opts: {manifest:ForgeManifest, winner:string, losers:string[], registry:EngineRegistry, adapter:EngineAdapter, forgeDir:string, fitnessCmd:string, timeout:number, fitnessTimeout:number, maxCritiques:number, repoRoot:string, headSha:string, onEvent?:ForgeEventCallback}): Promise<SynthesisResult> {
   const { manifest, winner, losers, registry, adapter, forgeDir } = opts;
 

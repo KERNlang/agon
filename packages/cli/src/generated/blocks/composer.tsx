@@ -14,6 +14,7 @@ import { getGhostCompletion } from '../../ghost-text.js';
 
 import { truncateCodeLine } from './markdown.js';
 
+// @kern-source: composer:20
 const ComposerView = React.memo(function ComposerView({ mode, replState, planModeQueued, activePlanState, slashPickerOpen, inputValue, handleInputChange, handleSubmit, allSlashCommands, availableEngines, onSlashSelect, onSlashCancel, questionState, questionAnswer, onQuestionAnswerChange, onQuestionAnswerSubmit, onCtrlShortcut, termWidth, termHeight }: { mode:'chat'|'campfire'|'brainstorm'|'tribunal'; replState:string; planModeQueued:boolean; activePlanState:string|null; slashPickerOpen:boolean; inputValue:string; handleInputChange:(value:string) => void; handleSubmit:(value:string) => void; allSlashCommands:any[]; availableEngines:string[]; onSlashSelect:(cmd:string) => void; onSlashCancel:() => void; questionState:any; questionAnswer:string; onQuestionAnswerChange:(value:string) => void; onQuestionAnswerSubmit:(value:string) => void; onCtrlShortcut:(shortcut:string) => void; termWidth:number; termHeight:number }) {
   const placeholder = replState === 'idle'
     ? (mode === 'chat'

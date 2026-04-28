@@ -6,6 +6,7 @@ import { createInterface } from 'node:readline';
 
 import type { DispatchResult, CompanionConfig } from '../models/types.js';
 
+// @kern-source: companion-dispatch:5
 export interface JsonRpcMessage {
   jsonrpc?: string;
   id?: number;
@@ -15,6 +16,7 @@ export interface JsonRpcMessage {
   error?: {code:number,message:string};
 }
 
+// @kern-source: companion-dispatch:13
 export interface CompanionResult {
   text: string;
   threadId: string|null;
@@ -22,6 +24,7 @@ export interface CompanionResult {
   commands: Array<{command:string,exitCode:number,output:string}>;
 }
 
+// @kern-source: companion-dispatch:19
 export async function companionDispatch(opts: {config:CompanionConfig, binaryPath:string, prompt:string, cwd:string, timeout:number, mode:'exec'|'review'|'agent', model?:string, signal?:AbortSignal, systemPrompt?:string, onApproval?:(tool:string, command:string, reason?:string)=>Promise<boolean|string>}): Promise<DispatchResult> {
   if (opts.config.protocol !== 'jsonrpc' && opts.config.protocol !== 'acp' && opts.config.protocol !== 'stream-json') {
     return { exitCode: 2, stdout: '', stderr: `Protocol "${opts.config.protocol}" not supported for one-shot dispatch`, durationMs: 0, timedOut: false };

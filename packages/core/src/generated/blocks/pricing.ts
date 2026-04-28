@@ -5,6 +5,7 @@ import type { EngineDefinition } from '../models/types.js';
 /**
  * Per-engine input/output rates in USD per 1k tokens. Sourced from EngineDefinition.api.pricing if present, otherwise defaults to a conservative midmarket rate.
  */
+// @kern-source: pricing:9
 export interface PricingEntry {
   inputPer1k: number;
   outputPer1k: number;
@@ -13,11 +14,13 @@ export interface PricingEntry {
 /**
  * Conservative midmarket fallback when an engine has no pricing.input/output configured. Tuned to slightly overestimate cost so the AgentTeamBudget hard ceiling errs on the side of stopping early rather than overrunning.
  */
+// @kern-source: pricing:14
 export const DEFAULT_PRICING: PricingEntry = { inputPer1k: 0.003, outputPer1k: 0.015 } as PricingEntry;
 
 /**
  * Return per-engine pricing or the conservative default. Reads from engine.api.pricing if available.
  */
+// @kern-source: pricing:20
 export function getEnginePricing(engine: EngineDefinition): PricingEntry {
   const api = (engine as any).api;
   if (api && api.pricing && typeof api.pricing.input === 'number' && typeof api.pricing.output === 'number') {
@@ -29,6 +32,7 @@ export function getEnginePricing(engine: EngineDefinition): PricingEntry {
 /**
  * Convert raw token counts to USD cost using the engine's per-1k pricing. inputTokens and outputTokens are absolute counts (not in 1k units). Returns dollars.
  */
+// @kern-source: pricing:30
 export function tokensToCost(engine: EngineDefinition, inputTokens: number, outputTokens: number): number {
   const p = getEnginePricing(engine);
   return (inputTokens / 1000) * p.inputPer1k + (outputTokens / 1000) * p.outputPer1k;
@@ -37,6 +41,7 @@ export function tokensToCost(engine: EngineDefinition, inputTokens: number, outp
 /**
  * Rough cost estimate when only a single combined token count is available (input vs output split unknown). Assumes 80% input / 20% output as a conservative split for chat-style usage. Used by AgentTeamBudget polling where AgentSession only reports cumulative tokens, not split.
  */
+// @kern-source: pricing:37
 export function estimatedTokensToCost(engine: EngineDefinition, totalTokens: number): number {
   const inputTokens = Math.round(totalTokens * 0.8);
   const outputTokens = totalTokens - inputTokens;

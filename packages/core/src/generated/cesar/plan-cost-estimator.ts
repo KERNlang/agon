@@ -2,11 +2,13 @@
 
 import { estimateCost } from '../signals/token-tracker.js';
 
+// @kern-source: plan-cost-estimator:3
 export interface CostEstimate {
   tokens: number;
   costUsd: number;
 }
 
+// @kern-source: plan-cost-estimator:7
 export class PlanCostEstimator {
   private history: { type: string, tokens: number, costUsd: number }[] = [];
 

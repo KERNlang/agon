@@ -4,6 +4,7 @@ import type { EngineAdapter, EngineDefinition } from '../models/types.js';
 
 import type { EngineRegistry } from '../signals/engine-registry.js';
 
+// @kern-source: engine-discover:4
 export interface DiscoveryResult {
   id: string;
   displayName: string;
@@ -13,6 +14,7 @@ export interface DiscoveryResult {
   missingEnv: string[];
 }
 
+// @kern-source: engine-discover:12
 export async function discoverEngines(registry: EngineRegistry, adapter: EngineAdapter): Promise<DiscoveryResult[]> {
   const engines = registry.list();
 

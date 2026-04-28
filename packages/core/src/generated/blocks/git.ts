@@ -8,6 +8,7 @@ import { join } from 'node:path';
 
 import { GitError, WorktreeError } from '../models/errors.js';
 
+// @kern-source: git:6
 function git(args: string[], cwd?: string): string {
   try {
     return execFileSync('git', args, {
@@ -23,18 +24,22 @@ function git(args: string[], cwd?: string): string {
   }
 }
 
+// @kern-source: git:22
 export function repoRoot(cwd: string): string {
   return git(['rev-parse', '--show-toplevel'], cwd);
 }
 
+// @kern-source: git:27
 export function headSha(cwd: string): string {
   return git(['rev-parse', 'HEAD'], cwd);
 }
 
+// @kern-source: git:32
 export function worktreePrune(cwd: string): void {
   git(['worktree', 'prune'], cwd);
 }
 
+// @kern-source: git:37
 export function worktreeCreate(repoDir: string, worktreePath: string, sha: string): string {
   worktreePrune(repoDir);
   try {
@@ -50,6 +55,7 @@ export function worktreeCreate(repoDir: string, worktreePath: string, sha: strin
 /**
  * Strict worktree removal: one retry, then throws WorktreeError. Use when cleanup failure must be visible to the caller (e.g. AgentTeam where leaked worktrees collide on subsequent runs).
  */
+// @kern-source: git:50
 export function worktreeRemove(repoDir: string, worktreePath: string): void {
   let lastErr: unknown = null;
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -68,6 +74,7 @@ export function worktreeRemove(repoDir: string, worktreePath: string): void {
 /**
  * Best-effort worktree removal: logs warning on failure, never throws. For finally-block cleanup paths where the caller is already in an error path or doesn't need to know about cleanup failures.
  */
+// @kern-source: git:67
 export function worktreeRemoveBestEffort(repoDir: string, worktreePath: string): void {
   try {
     worktreeRemove(repoDir, worktreePath);
@@ -79,6 +86,7 @@ export function worktreeRemoveBestEffort(repoDir: string, worktreePath: string):
 /**
  * Janitor: scan .agon/agent-worktrees/<runId>/ and remove any directories whose mtime is older than threshold. Called at startup of every team run to clean up after cancelled/crashed runs that left worktrees behind.
  */
+// @kern-source: git:77
 export function worktreePruneAll(repoDir: string, olderThanMs: number): void {
   const baseDir = join(repoDir, '.agon', 'agent-worktrees');
   if (!existsSync(baseDir)) return;
@@ -108,6 +116,7 @@ export function worktreePruneAll(repoDir: string, olderThanMs: number): void {
 /**
  * Return the unified diff of all changes in a worktree against the base SHA, INCLUDING untracked files but EXCLUDING anything in .gitignore (node_modules, dist, .agon, etc.). Used by Phase 3 scoring to compute per-member diffs without the buggy worktreeDiff approach (which does git add -A and would stage node_modules).
  */
+// @kern-source: git:105
 export function worktreeChangedDiff(cwd: string, baseSha: string): string {
   try {
     // Diff tracked changes against baseSha
@@ -142,6 +151,7 @@ export function worktreeChangedDiff(cwd: string, baseSha: string): string {
 /**
  * Return shortstat numbers (file count, total lines changed) for a worktree against base SHA, including untracked files. Used by Phase 3 scoring without the node_modules-explosion bug of worktreeDiff. Untracked files are counted via direct filesystem read since they're not in the git index.
  */
+// @kern-source: git:138
 export function worktreeChangedShortstat(cwd: string, baseSha: string): {filesChanged:number,linesChanged:number} {
   let filesChanged = 0;
   let linesChanged = 0;
@@ -206,6 +216,7 @@ export function worktreeChangedShortstat(cwd: string, baseSha: string): {filesCh
 /**
  * Capture the working tree (modifications to TRACKED files only) as a stash-like commit SHA WITHOUT modifying the working tree. Returns the stash SHA, or HEAD SHA if the tree is clean. Used by AgentTeam to give parallel agents a worktree base that includes the user's in-progress edits to tracked files, so synthesized patches apply cleanly against the user's actual current state. KNOWN LIMITATION: untracked files (new files the user just created locally but hasn't `git add`-ed) are NOT in the snapshot — git stash create silently ignores -u. Agents will not see those files. Logs a warning when untracked files are present so the user knows.
  */
+// @kern-source: git:201
 export function stashSnapshot(cwd: string): string {
   try {
     // git stash create captures TRACKED modifications as a commit object
@@ -233,6 +244,7 @@ export function stashSnapshot(cwd: string): string {
   }
 }
 
+// @kern-source: git:230
 export function worktreeDiff(cwd: string): string {
   try {
     git(['add', '-A'], cwd);
@@ -243,6 +255,7 @@ export function worktreeDiff(cwd: string): string {
   }
 }
 
+// @kern-source: git:241
 export function readOnlyDiff(cwd: string): string {
   try {
     const staged = git(['diff', '--cached'], cwd);
@@ -254,6 +267,7 @@ export function readOnlyDiff(cwd: string): string {
   }
 }
 
+// @kern-source: git:253
 export function diffLineCount(diff: string): number {
   let count = 0;
   for (const line of diff.split('\n')) {
@@ -263,6 +277,7 @@ export function diffLineCount(diff: string): number {
   return count;
 }
 
+// @kern-source: git:263
 export function diffFileCount(cwd: string): number {
   try {
     const result = git(['diff', '--cached', '--name-only'], cwd);
@@ -273,6 +288,7 @@ export function diffFileCount(cwd: string): number {
   }
 }
 
+// @kern-source: git:274
 export function applyPatch(cwd: string, patchContent: string): void {
   if (!patchContent.trim()) return;
   try {
@@ -286,16 +302,19 @@ export function applyPatch(cwd: string, patchContent: string): void {
   }
 }
 
+// @kern-source: git:288
 export function currentBranch(cwd: string): string {
   try { return git(['rev-parse', '--abbrev-ref', 'HEAD'], cwd); }
   catch { return 'unknown'; }
 }
 
+// @kern-source: git:294
 export function isDirty(cwd: string): boolean {
   try { return git(['status', '--porcelain'], cwd).length > 0; }
   catch { return false; }
 }
 
+// @kern-source: git:300
 export function recentCommits(cwd: string, count?: number): string {
   try { return git(['log', '--oneline', `-${count ?? 10}`], cwd); }
   catch { return ''; }
@@ -304,6 +323,7 @@ export function recentCommits(cwd: string, count?: number): string {
 /**
  * Read-only: git status --short. Never mutates the working tree.
  */
+// @kern-source: git:306
 export function gitStatusShort(cwd: string): string {
   try { return git(['status', '--short'], cwd); }
   catch { return ''; }
@@ -312,6 +332,7 @@ export function gitStatusShort(cwd: string): string {
 /**
  * Read-only: git diff --stat for unstaged changes. No git add.
  */
+// @kern-source: git:313
 export function gitDiffStat(cwd: string): string {
   try { return git(['diff', '--stat'], cwd); }
   catch { return ''; }
@@ -320,6 +341,7 @@ export function gitDiffStat(cwd: string): string {
 /**
  * Read-only: list of changed file paths (unstaged + staged). No git add.
  */
+// @kern-source: git:320
 export function gitChangedFiles(cwd: string): string[] {
   try {
     const unstaged = git(['diff', '--name-only'], cwd);
@@ -335,6 +357,7 @@ export function gitChangedFiles(cwd: string): string[] {
 /**
  * Read-only: truncated git diff (unstaged). Caps output. No git add.
  */
+// @kern-source: git:334
 export function gitTruncatedDiff(cwd: string, maxLines?: number): string {
   try {
     const diff = git(['diff'], cwd);

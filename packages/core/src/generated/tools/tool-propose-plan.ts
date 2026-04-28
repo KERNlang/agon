@@ -4,6 +4,7 @@ import type { ToolHandler, ToolDefinition, ToolResult, PermissionDecision } from
 
 import type { ToolContext } from '../models/tool-types.js';
 
+// @kern-source: tool-propose-plan:4
 export function createProposePlanTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'ProposePlan',

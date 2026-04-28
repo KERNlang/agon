@@ -14,14 +14,17 @@ import { EngineNotFoundError } from '../models/errors.js';
 
 import { validateEngineConfig } from '../../schemas/engine-schema.js';
 
+// @kern-source: engine-registry:9
 function getAgonEnginesDir(): string {
   const override = process.env.AGON_HOME?.trim();
   const home = override ? resolve(override) : join(homedir(), '.agon');
   return join(home, 'engines');
 }
 
+// @kern-source: engine-registry:17
 export const _formatNormalizedSet: Set<string> = new Set<string>();
 
+// @kern-source: engine-registry:26
 export const _OPENAI_COMPAT_ONLY_HOST_SUFFIXES: string[] = [
   'api.kimi.com',
   'moonshot.cn',
@@ -38,6 +41,7 @@ export const _OPENAI_COMPAT_ONLY_HOST_SUFFIXES: string[] = [
 /**
  * Narrow normalization: if api.format='anthropic' but the baseUrl host is on the known-OpenAI-compat-only allowlist (Kimi/Moonshot, Groq, Together, DeepInfra, OpenRouter), rewrite to 'openai'. Every other non-Anthropic host is left alone — arbitrary Anthropic-compatible proxies are valid configurations and must not be silently coerced. Skips /coding/ API paths which are specialised endpoints that choose their own wire format. Mutates raw in place; logs once per engine id.
  */
+// @kern-source: engine-registry:42
 function normalizeEngineFormat(raw: any, fileLabel: string): void {
   const api = raw?.api;
   if (!api || api.format !== 'anthropic' || typeof api.baseUrl !== 'string') return;
@@ -59,6 +63,7 @@ function normalizeEngineFormat(raw: any, fileLabel: string): void {
   }
 }
 
+// @kern-source: engine-registry:65
 export class EngineRegistry {
   private engines: Map<string, EngineDefinition> = new Map();
   private binaryCache: Map<string, string | null> = new Map();

@@ -9,6 +9,7 @@ import type { HandlerContext } from '../../handlers/types.js';
 /**
  * Constructs the HandlerContext from React state. Called on each submit.
  */
+// @kern-source: app-context:8
 export function buildHandlerContext(registry: EngineRegistry, adapter: EngineAdapter, activeEngines: ()=>string[], chatSession: ChatSession, askQuestion: (prompt:string)=>Promise<string>, cesarSession: PersistentSession|null, currentPlan: Plan|null, setCurrentPlan: (plan:Plan|null)=>void, setActiveAbort: (abort:AbortController|null)=>void, setCesarSession: (session:PersistentSession|null)=>void, explorationMode: boolean, setExplorationMode: (mode:boolean)=>void, neroMode: boolean, setNeroMode: (mode:boolean)=>void, cesarMemory: CesarMemory): HandlerContext {
   const config = loadConfig();
   return {

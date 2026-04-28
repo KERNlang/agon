@@ -9,6 +9,7 @@ import { worktreeChangedDiff, worktreeChangedShortstat } from '../blocks/git.js'
 /**
  * Pick the winning engine via deterministic multi-factor tiebreaker. Filters to passing+positive-score results, then sorts by score desc, lintWarnings asc, styleScore desc, diffLines asc, filesChanged asc, durationSec asc. Moved from forge/stages.kern in Phase 3 — the canonical fleet scoring path used by both forge and AgentTeam.
  */
+// @kern-source: synthesis-utils:21
 export function determineWinner(results: Map<string,EngineResult>, spread: number): {winner:string|null, closeCall:boolean, bestScore:number, secondScore:number} {
   const passing = [...results.entries()]
     .filter(([_, r]) => r.pass && r.score > 0)
@@ -35,6 +36,7 @@ export function determineWinner(results: Map<string,EngineResult>, spread: numbe
 /**
  * Discriminator for how to score an AgentTeam result. 'edit' uses fitness gate + diff metrics. 'investigate' uses text-output metrics.
  */
+// @kern-source: synthesis-utils:48
 export interface AgentTaskKind {
   kind: 'edit'|'investigate';
 }
@@ -42,6 +44,7 @@ export interface AgentTaskKind {
 /**
  * Convert an AgentTeamResult into a Map<engineId,EngineResult> suitable for determineWinner. For taskKind='edit', fitnessPassed must be provided (pre-computed by runAgentTeam from typecheck-or-fail gate). For 'investigate', no fitness check; scoring uses message length + tool-call density.
  */
+// @kern-source: synthesis-utils:54
 export function scoreAgentTeamResult(teamResult: AgentTeamResult, repoRoot: string, taskKind: 'edit'|'investigate', fitnessPassed?: Map<string,boolean>): Map<string,EngineResult> {
   const out = new Map<string, EngineResult>();
   for (const m of teamResult.members) {

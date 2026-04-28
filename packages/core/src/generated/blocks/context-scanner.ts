@@ -6,8 +6,10 @@ import { join, basename } from 'node:path';
 
 import { currentBranch, gitStatusShort, gitChangedFiles, gitTruncatedDiff, recentCommits, repoRoot } from './git.js';
 
+// @kern-source: context-scanner:5
 export type ContextFormat = 'plain' | 'kern';
 
+// @kern-source: context-scanner:7
 export function isKernProject(cwd: string): boolean {
   if (existsSync(join(cwd, 'kern.config.ts'))) return true;
   try {
@@ -35,6 +37,7 @@ export function isKernProject(cwd: string): boolean {
 /**
  * Read-only file tree, 2 levels deep, excluding noise directories.
  */
+// @kern-source: context-scanner:32
 function buildFileTree(cwd: string, maxDepth?: number): string {
   const IGNORE = new Set(['node_modules', '.git', 'dist', '.next', '.cache', '.turbo', '__pycache__', '.venv', 'coverage', '.kern-gaps', '.kern']);
   const depth = maxDepth ?? 2;
@@ -68,6 +71,7 @@ function buildFileTree(cwd: string, maxDepth?: number): string {
   return lines.join('\n');
 }
 
+// @kern-source: context-scanner:67
 function detectProjectType(cwd: string): string {
   const markers: string[] = [];
   try {
@@ -87,6 +91,7 @@ function detectProjectType(cwd: string): string {
   return markers.join(', ') || 'unknown';
 }
 
+// @kern-source: context-scanner:87
 export function scanProjectContext(cwd: string, extraContext?: string, format?: ContextFormat): string {
   const MAX_CHARS = 6000;
   const sections: string[] = [];

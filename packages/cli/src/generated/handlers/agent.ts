@@ -12,6 +12,7 @@ import { join } from 'node:path';
 
 import { getSessionAllowList } from '../signals/output.js';
 
+// @kern-source: agent:24
 export interface RunAgentOptions {
   engineId?: string;
   maxTurns?: number;
@@ -21,6 +22,7 @@ export interface RunAgentOptions {
   parentSignal?: AbortSignal;
 }
 
+// @kern-source: agent:32
 export interface AgentContinuationResult {
   kind: string;
   status: string;
@@ -35,6 +37,7 @@ export interface AgentContinuationResult {
   workspaceChangedInPlace: boolean;
 }
 
+// @kern-source: agent:45
 export function clipAgentText(text: string|null|undefined, limit: number): string {
   const raw = String(text ?? '').trim();
   if (!raw) return '';
@@ -44,6 +47,7 @@ export function clipAgentText(text: string|null|undefined, limit: number): strin
 /**
  * Shared approval callback for delegated agent runs. Applies config-level allow/deny rules first, then falls back to the UI permission prompt.
  */
+// @kern-source: agent:52
 export function buildAgentApprovalCallback(dispatch: Dispatch, ctx: HandlerContext, engineId: string): (tool:string, command:string, reason?:string)=>Promise<boolean|string> {
   return async (tool: string, command: string, reason?: string): Promise<boolean | string> => {
     const cfg = ctx.config;
@@ -104,6 +108,7 @@ export function buildAgentApprovalCallback(dispatch: Dispatch, ctx: HandlerConte
 /**
  * Run one autonomous agent invocation. Creates a session, calls session.step() once (which internally loops up to maxInnerSteps tool calls), emits OutputEvents throughout, handles Ctrl+C via the KERN-generated abort signal bridged to session.cancel().
  */
+// @kern-source: agent:111
 export async function runAgentMode(input: string, dispatch: Dispatch, ctx: HandlerContext, opts?: RunAgentOptions): Promise<AgentContinuationResult|null> {
   const abort = new AbortController();
   // ── Resolve engine ─────────────────────────────────────────
@@ -462,6 +467,7 @@ export async function runAgentMode(input: string, dispatch: Dispatch, ctx: Handl
   return followUp;
 }
 
+// @kern-source: agent:478
 export interface RunAgentTeamOptions {
   engines?: string[];
   taskKind?: 'edit'|'investigate';
@@ -480,6 +486,7 @@ export interface RunAgentTeamOptions {
 /**
  * Run an autonomous agent team: N AgentSession instances in N worktrees with shared budget, synthesis, and explicit transcript events. Used by Cesar-driven team mode and by /agent-team slash command. Wraps AgentTeam from core/cesar/agent-team.kern.
  */
+// @kern-source: agent:492
 export async function runAgentTeam(input: string, dispatch: Dispatch, ctx: HandlerContext, opts?: RunAgentTeamOptions): Promise<AgentContinuationResult|null> {
   const abort = new AbortController();
   // ── Resolve members ───────────────────────────────────────

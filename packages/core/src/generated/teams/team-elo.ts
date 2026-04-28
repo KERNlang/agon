@@ -12,6 +12,7 @@ import { computeContributionWeights } from './team.js';
 
 import { TEAM_ELO_PATH } from '../signals/config.js';
 
+// @kern-source: team-elo:12
 export interface TeamCompositionRating {
   lineupKey: string;
   rating: number;
@@ -21,6 +22,7 @@ export interface TeamCompositionRating {
   matches: number;
 }
 
+// @kern-source: team-elo:20
 export interface TeamRoleRating {
   engineId: string;
   role: TeamRole;
@@ -30,19 +32,23 @@ export interface TeamRoleRating {
   matches: number;
 }
 
+// @kern-source: team-elo:28
 export interface TeamEloRecord {
   byFormat: Record<string, { compositions: Record<string, TeamCompositionRating>, roles: Record<string, TeamRoleRating> }>;
   lastUpdated: string;
 }
 
+// @kern-source: team-elo:32
 export function defaultCompositionRating(lineupKey: string): TeamCompositionRating {
   return { lineupKey, rating: 1500, wins: 0, losses: 0, draws: 0, matches: 0 };
 }
 
+// @kern-source: team-elo:37
 export function defaultRoleRating(engineId: string, role: TeamRole): TeamRoleRating {
   return { engineId, role, rating: 1500, wins: 0, losses: 0, matches: 0 };
 }
 
+// @kern-source: team-elo:42
 export function loadTeamElo(): TeamEloRecord {
   try {
     return JSON.parse(readFileSync(TEAM_ELO_PATH, 'utf-8')) as TeamEloRecord;
@@ -54,6 +60,7 @@ export function loadTeamElo(): TeamEloRecord {
   }
 }
 
+// @kern-source: team-elo:54
 export function saveTeamElo(record: TeamEloRecord): void {
   mkdirSync(dirname(TEAM_ELO_PATH), { recursive: true });
   record.lastUpdated = new Date().toISOString();
@@ -62,14 +69,17 @@ export function saveTeamElo(record: TeamEloRecord): void {
   renameSync(tmpPath, TEAM_ELO_PATH);
 }
 
+// @kern-source: team-elo:63
 export function expectedScore(rA: number, rB: number): number {
   return 1 / (1 + 10 ** ((rB - rA) / 400));
 }
 
+// @kern-source: team-elo:68
 export function getTeamElo(): TeamEloRecord {
   return loadTeamElo();
 }
 
+// @kern-source: team-elo:73
 export function predictTeamRating(members: TeamMember[], format: string): number {
   const record = loadTeamElo();
   const formatData = record.byFormat[format];
@@ -107,6 +117,7 @@ export function predictTeamRating(members: TeamMember[], format: string): number
   return Math.round(blended);
 }
 
+// @kern-source: team-elo:111
 export function updateTeamElo(match: TeamMatchResult, kFactor?: number): void {
   if (!match.winnerTeamId) return; // draw — skip for now
 

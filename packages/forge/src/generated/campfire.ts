@@ -4,11 +4,13 @@ import type { EngineRegistry, EngineAdapter } from '@agon/core';
 
 import { resolveWorkingDir } from '@agon/core';
 
+// @kern-source: campfire:4
 export interface CampfireResult {
   topic: string;
   rounds: {engineId:string,content:string}[];
 }
 
+// @kern-source: campfire:8
 export async function runCampfire(opts: {topic:string,context?:string,engines:string[],registry:EngineRegistry,adapter:EngineAdapter,strategy:'lead-first'|'all-respond',leadEngine?:string,seedPlan?:string,timeout:number,outputDir:string,signal?:AbortSignal}): Promise<CampfireResult> {
   const { topic, engines, registry, adapter, strategy, timeout, outputDir } = opts;
   const cwd = resolveWorkingDir();

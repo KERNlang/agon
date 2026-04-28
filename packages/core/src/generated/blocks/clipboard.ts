@@ -5,11 +5,13 @@ import { execSync } from 'node:child_process';
 /**
  * Cached result of Linux clipboard helper probe
  */
+// @kern-source: clipboard:3
 export const _linuxHelperCache: { cmd: string | null; probed: boolean } = { cmd: null, probed: false };
 
 /**
  * Detect the best clipboard write strategy for current environment.
  */
+// @kern-source: clipboard:7
 export function detectClipboardPath(): 'native'|'tmux'|'osc52' {
   if (process.env.TMUX) return 'tmux';
   if (process.env.SSH_CLIENT || process.env.SSH_TTY) return 'osc52';
@@ -19,6 +21,7 @@ export function detectClipboardPath(): 'native'|'tmux'|'osc52' {
 /**
  * Write text to clipboard via OSC 52 escape sequence.
  */
+// @kern-source: clipboard:16
 export function writeOsc52(text: string): void {
   const b64 = Buffer.from(text).toString('base64');
   process.stdout.write(`\x1b]52;c;${b64}\x07`);
@@ -27,6 +30,7 @@ export function writeOsc52(text: string): void {
 /**
  * Write text to tmux paste buffer + OSC 52 via DCS passthrough.
  */
+// @kern-source: clipboard:24
 export function writeTmuxClipboard(text: string): void {
   // Load into tmux buffer
   try {
@@ -41,6 +45,7 @@ export function writeTmuxClipboard(text: string): void {
 /**
  * Probe for available Linux clipboard helper. Caches result.
  */
+// @kern-source: clipboard:38
 export function probeLinuxHelper(): string|null {
   if (_linuxHelperCache.probed) return _linuxHelperCache.cmd;
   _linuxHelperCache.probed = true;
@@ -65,6 +70,7 @@ export function probeLinuxHelper(): string|null {
 /**
  * Copy text to system clipboard. Multi-path: native + OSC 52 on macOS, tmux buffer + DCS passthrough, Linux tool probing, SSH-only OSC 52.
  */
+// @kern-source: clipboard:62
 export function copyToClipboard(text: string): void {
   const path = detectClipboardPath();
   const platform = process.platform;

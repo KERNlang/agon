@@ -8,6 +8,7 @@ import type { Plan } from '@agon/core';
 
 import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 
+// @kern-source: plan:6
 export async function handlePlanShow(dispatch: Dispatch, ctx: HandlerContext, planId?: string): Promise<void> {
   let plan: Plan | null = null;
 
@@ -55,11 +56,13 @@ export async function handlePlanShow(dispatch: Dispatch, ctx: HandlerContext, pl
   }
 }
 
+// @kern-source: plan:54
 export function handlePlansList(dispatch: Dispatch): void {
   const plans = listPlans(20);
   dispatch({ type: 'plan-list', plans });
 }
 
+// @kern-source: plan:60
 export async function handleApprove(dispatch: Dispatch, ctx: HandlerContext): Promise<void> {
   if (!ctx.currentPlan) {
     dispatch({ type: 'warning', message: 'No active plan to approve.' });
@@ -83,6 +86,7 @@ export async function handleApprove(dispatch: Dispatch, ctx: HandlerContext): Pr
   }
 }
 
+// @kern-source: plan:84
 export async function handleRetry(dispatch: Dispatch, ctx: HandlerContext): Promise<void> {
   if (!ctx.currentPlan) {
     dispatch({ type: 'warning', message: 'No active plan to retry.' });
@@ -115,6 +119,7 @@ export async function handleRetry(dispatch: Dispatch, ctx: HandlerContext): Prom
   }
 }
 
+// @kern-source: plan:117
 export function handleCancel(dispatch: Dispatch, ctx: HandlerContext): void {
   if (!ctx.currentPlan) {
     dispatch({ type: 'warning', message: 'No active plan to cancel.' });
@@ -130,6 +135,7 @@ export function handleCancel(dispatch: Dispatch, ctx: HandlerContext): void {
   dispatch({ type: 'success', message: 'Plan cancelled.' });
 }
 
+// @kern-source: plan:133
 export async function handleApplyPatch(dispatch: Dispatch, ctx: HandlerContext, patchPath?: string, force?: boolean): Promise<void> {
   let resolvedPatchPath = patchPath;
   let manifestPath: string | null = null;

@@ -15,6 +15,7 @@ import { ConfigError } from '../models/errors.js';
 /**
  * Resolve Agon's storage root at runtime. AGON_HOME overrides ~/.agon and is primarily used for test isolation and sandbox-safe runs.
  */
+// @kern-source: config:8
 export function getAgonHome(): string {
   const override = process.env.AGON_HOME?.trim();
   return override ? resolve(override) : join(homedir(), '.agon');
@@ -23,30 +24,42 @@ export function getAgonHome(): string {
 /**
  * Build a path inside the active Agon storage root.
  */
+// @kern-source: config:15
 export function agonPath(...parts: string[]): string {
   return join(getAgonHome(), ...parts);
 }
 
+// @kern-source: config:21
 export const AGON_HOME: string = getAgonHome();
 
+// @kern-source: config:26
 export const GLOBAL_CONFIG_PATH: string = join(AGON_HOME, 'config.json');
 
+// @kern-source: config:31
 export const ELO_PATH: string = join(AGON_HOME, 'elo.json');
 
+// @kern-source: config:36
 export const RUNS_DIR: string = join(AGON_HOME, 'runs');
 
+// @kern-source: config:41
 export const RATINGS_PATH: string = join(AGON_HOME, 'ratings.json');
 
+// @kern-source: config:46
 export const TEAM_ELO_PATH: string = join(AGON_HOME, 'team-elo.json');
 
+// @kern-source: config:51
 export const CORPUS_PATH: string = join(AGON_HOME, 'corpus.json');
 
+// @kern-source: config:56
 export const SKILLS_DIR: string = join(AGON_HOME, 'skills');
 
+// @kern-source: config:61
 export const LOCAL_CONFIG_NAME: string = '.agon.json';
 
+// @kern-source: config:62
 export const LOCAL_PRIVATE_CONFIG_NAME: string = '.agon.local.json';
 
+// @kern-source: config:64
 export function loadConfig(cwd?: string): Required<AgonConfig> {
   function readJsonSafe<T>(path: string): T | null {
     try { return JSON.parse(readFileSync(path, 'utf-8')) as T; }
@@ -90,10 +103,12 @@ export function loadConfig(cwd?: string): Required<AgonConfig> {
   return merged;
 }
 
+// @kern-source: config:108
 export function configGet(key: keyof AgonConfig, cwd?: string): Required<AgonConfig>[keyof AgonConfig] {
   return loadConfig(cwd)[key];
 }
 
+// @kern-source: config:113
 export function configSet(key: keyof AgonConfig, value: AgonConfig[keyof AgonConfig]): void {
   if (!(key in DEFAULT_AGON_CONFIG)) {
     throw new ConfigError(`Unknown config key: ${String(key)}`);
@@ -120,6 +135,7 @@ export function configSet(key: keyof AgonConfig, value: AgonConfig[keyof AgonCon
 /**
  * Remove old run directories beyond retention limit. Keeps the 100 most recent.
  */
+// @kern-source: config:137
 export function pruneRuns(): void {
   // Review #10: dynamic runs dir via agonPath() — otherwise the frozen
   // RUNS_DIR const would prune the real ~/.agon/runs even in tests that
@@ -145,6 +161,7 @@ export function pruneRuns(): void {
   } catch { /* dir doesn't exist yet — not critical */ }
 }
 
+// @kern-source: config:164
 export function ensureAgonHome(): void {
   mkdirSync(getAgonHome(), { recursive: true });
   mkdirSync(agonPath('runs'), { recursive: true });

@@ -4,17 +4,20 @@ import type { CesarPlan, AgonConfig } from '@agon/core';
 
 import { planCostEstimator } from '@agon/core';
 
+// @kern-source: auto-approve-policy:16
 export interface AutoApproveDecision {
   approve: boolean;
   reason: string;
   adjustedCostUsd: number;
 }
 
+// @kern-source: auto-approve-policy:21
 export const MUTATING_STEP_TYPES: Set<string> = new Set(['forge', 'teamforge', 'pipeline', 'agent', 'team-agent', 'delegate', 'self']);
 
 /**
  * Decide whether a plan qualifies for autonomous execution without user confirmation.
  */
+// @kern-source: auto-approve-policy:26
 export function applyAutoApprovePolicy(plan: CesarPlan, config: AgonConfig): AutoApproveDecision {
   const mode = (config as any).cesarAutoApproveMode ?? 'safe-only';
   const maxCostUsd = (config as any).cesarAutoApproveMaxCostUsd as number | undefined;

@@ -14,6 +14,7 @@ import { header, info, table, bold, green, red, dim } from '../blocks/output-for
 
 import { icons } from '../signals/icons.js';
 
+// @kern-source: history:9
 function showRunDetail(id: string): void {
   let files: string[];
   try {
@@ -66,6 +67,7 @@ function showRunDetail(id: string): void {
   }
 }
 
+// @kern-source: history:62
 export const historyCommand: any = defineCommand({
   meta: {
     name: 'history',

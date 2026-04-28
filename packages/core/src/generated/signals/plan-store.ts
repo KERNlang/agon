@@ -10,17 +10,20 @@ import { ensureAgonHome } from './config.js';
 
 import type { Plan } from '../blocks/plan.js';
 
+// @kern-source: plan-store:7
 function getPlansDir(): string {
   const override = process.env.AGON_HOME?.trim();
   const home = override ? resolve(override) : join(homedir(), '.agon');
   return join(home, 'plans');
 }
 
+// @kern-source: plan-store:14
 function ensurePlansDir(): void {
   ensureAgonHome();
   mkdirSync(getPlansDir(), { recursive: true });
 }
 
+// @kern-source: plan-store:20
 function safePlanPath(id: string): string {
   const sanitized = id.replace(/[^a-zA-Z0-9_-]/g, '');
   const plansDir = getPlansDir();
@@ -29,6 +32,7 @@ function safePlanPath(id: string): string {
   return full;
 }
 
+// @kern-source: plan-store:29
 export function savePlan(plan: Plan): void {
   ensurePlansDir();
   const target = safePlanPath(plan.id);
@@ -37,6 +41,7 @@ export function savePlan(plan: Plan): void {
   renameSync(tmpPath, target);
 }
 
+// @kern-source: plan-store:38
 export function loadPlan(id: string): Plan|null {
   try { return JSON.parse(readFileSync(safePlanPath(id), 'utf-8')) as Plan; }
   catch (err) {
@@ -47,6 +52,7 @@ export function loadPlan(id: string): Plan|null {
   }
 }
 
+// @kern-source: plan-store:49
 export function listPlans(limit?: number): Plan[] {
   ensurePlansDir();
   try {
@@ -62,6 +68,7 @@ export function listPlans(limit?: number): Plan[] {
   }
 }
 
+// @kern-source: plan-store:65
 export function deletePlan(id: string): boolean {
   try { unlinkSync(safePlanPath(id)); return true; }
   catch (err) {

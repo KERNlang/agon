@@ -4,6 +4,7 @@ import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from '
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { prepareCandidate, printResolution, resolveKernCli, resolvePath, runCommand } from './kern-cli-resolver.mjs';
+import { addKernSourceTraces } from './kern-source-traces.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -81,6 +82,11 @@ if (postcompile) {
     process.exit(1);
   }
   runCommand('kern:compile', '/bin/bash', [postcompilePath], `postcompile (${postcompilePath})`);
+}
+
+const traceResult = addKernSourceTraces(srcDir, outDir);
+if (traceResult.updated > 0) {
+  console.log(`  kern-source-traces: annotated ${traceResult.updated}/${traceResult.files} generated files`);
 }
 
 stripTrailingWhitespaceTree(outDir);

@@ -7,6 +7,7 @@ import { stripBracketedPasteMarkers } from '../../input-utils.js';
 /**
  * Strip bracketed paste escapes from input while preserving pasted content.
  */
+// @kern-source: app-input:7
 export function cleanInputValue(value: string): string {
   return stripBracketedPasteMarkers(value);
 }
@@ -14,6 +15,7 @@ export function cleanInputValue(value: string): string {
 /**
  * Strip paste escapes and trim for submission.
  */
+// @kern-source: app-input:13
 export function cleanSubmitValue(value: string): string {
   return stripBracketedPasteMarkers(value).trim();
 }
@@ -21,6 +23,7 @@ export function cleanSubmitValue(value: string): string {
 /**
  * Find the single contiguous edit between two input values.
  */
+// @kern-source: app-input:19
 export function findInputChange(previous: string, next: string): {start:number, removed:string, inserted:string} {
   let start = 0;
   while (start < previous.length && start < next.length && previous[start] === next[start]) {
@@ -44,6 +47,7 @@ export function findInputChange(previous: string, next: string): {start:number, 
 /**
  * Navigate input history up/down.
  */
+// @kern-source: app-input:41
 export function navigateHistory(direction: 'up'|'down', currentIndex: number, history: string[]): {index:number, value:string} {
   if (direction === 'up' && history.length > 0) {
     const newIndex = currentIndex === -1 ? history.length - 1 : Math.max(0, currentIndex - 1);
@@ -59,6 +63,7 @@ export function navigateHistory(direction: 'up'|'down', currentIndex: number, hi
   return { index: currentIndex, value: '' };
 }
 
+// @kern-source: app-input:58
 export interface EscapeDecision {
   action: 'close-slash'|'close-engine-picker'|'cancel-question'|'interrupt'|'clear-input'|'noop';
 }
@@ -66,6 +71,7 @@ export interface EscapeDecision {
 /**
  * Resolve Esc behavior without destructive transcript clearing.
  */
+// @kern-source: app-input:61
 export function resolveEscapeAction(opts: {replState:string,inputValue:string,slashPickerOpen:boolean,enginePickerOpen:boolean,questionOpen:boolean}): EscapeDecision {
   if (opts.slashPickerOpen) return { action: 'close-slash' };
   if (opts.enginePickerOpen) return { action: 'close-engine-picker' };
@@ -85,6 +91,7 @@ export function resolveEscapeAction(opts: {replState:string,inputValue:string,sl
 /**
  * Get ghost text completion for current input.
  */
+// @kern-source: app-input:79
 export function tryGhostComplete(inputValue: string, commands: any[], engineIds: string[]): string|null {
   return getGhostCompletion(inputValue, commands, engineIds);
 }
@@ -92,6 +99,7 @@ export function tryGhostComplete(inputValue: string, commands: any[], engineIds:
 /**
  * Rank slash-command matches so prefix hits stay on top while substring hits remain reachable.
  */
+// @kern-source: app-input:85
 export function getSlashMatches(filter: string, commands: any[]): any[] {
   const normalizedFilter = filter.trim().toLowerCase();
   return commands
@@ -111,6 +119,7 @@ export function getSlashMatches(filter: string, commands: any[]): any[] {
 /**
  * Move a picker cursor with wrap-around.
  */
+// @kern-source: app-input:103
 export function movePickerCursor(direction: 'up'|'down', currentIndex: number, itemCount: number): number {
   if (itemCount <= 0) return 0;
   if (direction === 'up') return currentIndex <= 0 ? itemCount - 1 : currentIndex - 1;
@@ -120,6 +129,7 @@ export function movePickerCursor(direction: 'up'|'down', currentIndex: number, i
 /**
  * Only queue plan mode from Tab when the composer is idle and empty.
  */
+// @kern-source: app-input:111
 export function shouldQueuePlanModeOnTab(opts: {replState:string,inputValue:string,activePlanState?:string|null}): boolean {
   if (opts.replState !== 'idle') return false;
   if (opts.inputValue.trim()) return false;

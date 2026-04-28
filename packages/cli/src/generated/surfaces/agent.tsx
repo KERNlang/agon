@@ -8,6 +8,7 @@ import { ENGINE_COLORS } from '../blocks/output-format.js';
 
 import type { AgentPhase } from '@agon/core';
 
+// @kern-source: agent:76
 const AgentProgressView = React.memo(function AgentProgressView({ engineId, turnIndex, phase, userPrompt, toolCalls, lastTool, lastToolStatus, tokensUsed, elapsedMs, turnsRemaining, maxTurns, tokensRemaining, maxTokens, error }: { engineId:string; turnIndex:number; phase:'idle'|'running'|'awaiting_approval'|'completed'|'failed'|'cancelled'; userPrompt?:string; toolCalls:number; lastTool?:string; lastToolStatus?:'running'|'ok'|'error'|'rejected'; tokensUsed:number; elapsedMs:number; turnsRemaining:number; maxTurns:number; tokensRemaining?:number|null; maxTokens?:number|null; error?:string }) {
   const glyph = phaseGlyph(phase);
   const pColor = phaseColor(phase);
@@ -114,6 +115,7 @@ export { AgentProgressView };
 /**
  * Map an AgentPhase kind to a single-char status glyph.
  */
+// @kern-source: agent:22
 function phaseGlyph(phase: string): string {
   if (phase === 'running') return '\u25cf'; // ●
   if (phase === 'awaiting_approval') return '\u25c6'; // ◆
@@ -126,6 +128,7 @@ function phaseGlyph(phase: string): string {
 /**
  * Terminal color for a phase glyph.
  */
+// @kern-source: agent:33
 function phaseColor(phase: string): string {
   if (phase === 'running') return '#fbbf24';
   if (phase === 'awaiting_approval') return '#60a5fa';
@@ -138,6 +141,7 @@ function phaseColor(phase: string): string {
 /**
  * Unicode block-bar string. pct in [0,1], width is cell count.
  */
+// @kern-source: agent:44
 function progressBar(pct: number, width: number): string {
   const p = Math.max(0, Math.min(1, pct));
   const filled = Math.round(p * width);
@@ -148,6 +152,7 @@ function progressBar(pct: number, width: number): string {
 /**
  * Human-readable elapsed time (e.g. '42s', '3m12s', '1h04m').
  */
+// @kern-source: agent:53
 function formatElapsed(ms: number): string {
   const secs = Math.floor(ms / 1000);
   if (secs < 60) return `${secs}s`;
@@ -162,6 +167,7 @@ function formatElapsed(ms: number): string {
 /**
  * Render token count as 1.2k, 45k, 1.4M.
  */
+// @kern-source: agent:66
 function formatTokens(tokens: number): string {
   if (tokens < 1000) return `${tokens} tok`;
   if (tokens < 1_000_000) return `${(tokens / 1000).toFixed(1)}k tok`;

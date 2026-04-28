@@ -8,12 +8,14 @@ import type { BreakerArtifact, CorpusEntry, GapPattern, TaskClass } from '@agon/
 
 import { CORPUS_PATH, SKILLS_DIR } from '@agon/core';
 
+// @kern-source: corpus:6
 export interface CorpusRecord {
   entries: CorpusEntry[];
   patterns: GapPattern[];
   lastUpdated: string;
 }
 
+// @kern-source: corpus:11
 export function loadCorpus(): CorpusRecord {
   try {
     return JSON.parse(readFileSync(CORPUS_PATH, 'utf-8')) as CorpusRecord;
@@ -25,6 +27,7 @@ export function loadCorpus(): CorpusRecord {
   }
 }
 
+// @kern-source: corpus:23
 export function saveCorpus(record: CorpusRecord): void {
   mkdirSync(dirname(CORPUS_PATH), { recursive: true });
   record.lastUpdated = new Date().toISOString();
@@ -33,6 +36,7 @@ export function saveCorpus(record: CorpusRecord): void {
   renameSync(tmpPath, CORPUS_PATH);
 }
 
+// @kern-source: corpus:32
 export function addToCorpus(forgeId: string, taskClass: TaskClass, artifacts: BreakerArtifact[]): number {
   if (artifacts.length === 0) return 0;
 
@@ -87,6 +91,7 @@ export function addToCorpus(forgeId: string, taskClass: TaskClass, artifacts: Br
   return added;
 }
 
+// @kern-source: corpus:87
 export function extractPattern(failureMessage: string, testScript: string): string|undefined {
   // Normalize common failure patterns into categories
   const combined = (failureMessage + ' ' + testScript).toLowerCase();
@@ -111,6 +116,7 @@ export function extractPattern(failureMessage: string, testScript: string): stri
   return undefined;
 }
 
+// @kern-source: corpus:112
 export function getCorpusForReplay(taskClass: TaskClass, limit: number): CorpusEntry[] {
   const record = loadCorpus();
 
@@ -133,6 +139,7 @@ export function getCorpusForReplay(taskClass: TaskClass, limit: number): CorpusE
   return matching;
 }
 
+// @kern-source: corpus:135
 export function getGapPatterns(taskClass?: TaskClass, threshold?: number): GapPattern[] {
   const record = loadCorpus();
   const minFreq = threshold ?? 3;
@@ -143,6 +150,7 @@ export function getGapPatterns(taskClass?: TaskClass, threshold?: number): GapPa
     .sort((a, b) => b.frequency - a.frequency);
 }
 
+// @kern-source: corpus:146
 export function markPatternSkillProposed(pattern: string, taskClass: TaskClass, skillPath: string): void {
   const record = loadCorpus();
   const gap = record.patterns.find(
@@ -155,6 +163,7 @@ export function markPatternSkillProposed(pattern: string, taskClass: TaskClass, 
   }
 }
 
+// @kern-source: corpus:159
 export function getCorpusStats(): { totalEntries: number, totalPatterns: number, topPatterns: { pattern: string, frequency: number, taskClass: string }[] } {
   const record = loadCorpus();
   return {

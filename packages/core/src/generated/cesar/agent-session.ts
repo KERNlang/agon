@@ -16,12 +16,14 @@ import type { Semaphore } from '../blocks/semaphore.js';
 
 import type { ContextThread } from './context-thread.js';
 
+// @kern-source: agent-session:27
 export interface AgentBudget {
   maxTurns: number;
   maxTokens?: number;
   maxDurationMs: number;
 }
 
+// @kern-source: agent-session:34
 export interface AgentStepResult {
   response: string;
   toolCalls: number;
@@ -32,6 +34,7 @@ export interface AgentStepResult {
   error?: string;
 }
 
+// @kern-source: agent-session:45
 export interface AgentSessionStats {
   turnsUsed: number;
   turnsRemaining: number;
@@ -44,6 +47,7 @@ export interface AgentSessionStats {
   state: 'idle'|'running'|'completed'|'cancelled'|'failed';
 }
 
+// @kern-source: agent-session:58
 export interface AgentSessionConfig {
   engineId: string;
   api: ApiConfig;
@@ -65,6 +69,7 @@ export interface AgentSessionConfig {
 /**
  * Create a typed budget-exceeded error. Kind is attached to error.name for structural matching.
  */
+// @kern-source: agent-session:77
 export function makeBudgetError(kind: 'turns'|'tokens'|'duration', detail: string): Error {
   const err = new Error(`Agent budget exceeded: ${kind} — ${detail}`);
   err.name = `AgentBudget${kind.charAt(0).toUpperCase() + kind.slice(1)}Exceeded`;
@@ -74,6 +79,7 @@ export function makeBudgetError(kind: 'turns'|'tokens'|'duration', detail: strin
 /**
  * Stateful agent invocation wrapper with budget enforcement and abort. Phase 1: API engines only.
  */
+// @kern-source: agent-session:87
 export class AgentSession {
   private config: AgentSessionConfig;
   private turnsUsed: number = 0;

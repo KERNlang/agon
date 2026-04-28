@@ -6,18 +6,23 @@ import type { TaskClass } from '../models/types.js';
 
 import { getRatings } from '../signals/glicko.js';
 
+// @kern-source: team:8
 export type TeamRole = 'architect' | 'implementer' | 'reviewer' | 'captain';
 
+// @kern-source: team:9
 export type TeamComposeMode = 'explicit' | 'auto-balanced' | 'adaptive';
 
+// @kern-source: team:10
 export type TeamCoopStrategy = 'sequential' | 'parallel-merge' | 'role-based';
 
+// @kern-source: team:12
 export interface TeamMember {
   engineId: string;
   role: TeamRole;
   weight: number;
 }
 
+// @kern-source: team:17
 export interface TeamSpec {
   teamId: string;
   name: string;
@@ -27,11 +32,13 @@ export interface TeamSpec {
   aggregateElo: number;
 }
 
+// @kern-source: team:25
 export interface TeamFormat {
   membersPerSide: number;
   label: string;
 }
 
+// @kern-source: team:29
 export interface TeamRoundTrace {
   round: number;
   actor: string;
@@ -41,6 +48,7 @@ export interface TeamRoundTrace {
   durationMs: number;
 }
 
+// @kern-source: team:37
 export interface TeamSubmission {
   teamId: string;
   finalOutput: any;
@@ -50,12 +58,14 @@ export interface TeamSubmission {
   collaborationLift: number;
 }
 
+// @kern-source: team:45
 export interface TeamScoreCard {
   teamId: string;
   score: number;
   breakdown: Record<string,number>;
 }
 
+// @kern-source: team:50
 export interface TeamMatchResult {
   matchId: string;
   mode: 'forge'|'tribunal'|'brainstorm';
@@ -70,6 +80,7 @@ export interface TeamMatchResult {
 
 export type TeamEventType = 'team:compose' | 'team:round-start' | 'team:member-dispatch' | 'team:member-done' | 'team:round-done' | 'team:submit' | 'team:score' | 'team:winner' | 'team:match-done';
 
+// @kern-source: team:61
 export interface TeamEvent {
   type: TeamEventType;
   engineId?: string;
@@ -90,14 +101,17 @@ export interface TeamEventMap {
 
 export type TeamEventCallback = (event: TeamEvent) => void;
 
+// @kern-source: team:72
 export function lineupKey(engineIds: string[]): string {
   return [...engineIds].sort().join('+');
 }
 
+// @kern-source: team:77
 export function makeFormat(membersPerSide: number): TeamFormat {
   return { membersPerSide, label: `${membersPerSide}v${membersPerSide}` };
 }
 
+// @kern-source: team:82
 export function assignTeamRoles(engineIds: string[], taskClass: TaskClass): TeamMember[] {
   const ratings = getRatings();
   const classRatings = ratings.byTaskClass[taskClass] ?? {};
@@ -141,6 +155,7 @@ export function assignTeamRoles(engineIds: string[], taskClass: TaskClass): Team
   return members;
 }
 
+// @kern-source: team:126
 export function composeTeams(engineIds: string[], membersPerSide: number, mode: TeamComposeMode, taskClass: TaskClass, explicitTeams?: [string[], string[]]): [TeamSpec, TeamSpec] {
   const ratings = getRatings();
 
@@ -217,6 +232,7 @@ export function composeTeams(engineIds: string[], membersPerSide: number, mode: 
   return [specA, specB];
 }
 
+// @kern-source: team:203
 export function computeContributionWeights(team: TeamSpec, trace: TeamRoundTrace[]): Record<string,number> {
   // Start with default weights from role assignment
   const weights: Record<string, number> = {};

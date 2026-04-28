@@ -16,16 +16,19 @@ import { runFitness } from './fitness.js';
 
 import type { WorktreeEntry } from '../types.js';
 
+// @kern-source: team-forge:14
 export function shellQuoteForTeamForge(value: string): string {
   const s = String(value ?? '');
   if (/^[A-Za-z0-9_@%+=:,./-]+$/.test(s)) return s;
   return `'${s.replace(/'/g, `'\\''`)}'`;
 }
 
+// @kern-source: team-forge:21
 export function buildTeamForgeCleanupCommand(repoRootPath: string, forgeDir: string): string {
   return `git -C ${shellQuoteForTeamForge(repoRootPath)} worktree prune && rm -rf ${shellQuoteForTeamForge(forgeDir)}`;
 }
 
+// @kern-source: team-forge:26
 export function writeTeamForgeResultBundle(matchId: string, options: TeamForgeOptions, worktrees: WorktreeEntry[], repoRootPath: string, baseSha: string, sidechainPath: string, result?: TeamMatchResult|null, errorMessage?: string): string {
   const cleanupCommand = buildTeamForgeCleanupCommand(repoRootPath, options.forgeDir);
   const bundlePath = `${options.forgeDir}/result.json`;
@@ -96,6 +99,7 @@ export function writeTeamForgeResultBundle(matchId: string, options: TeamForgeOp
   return bundlePath;
 }
 
+// @kern-source: team-forge:97
 export interface TeamForgeOptions {
   task: string;
   fitnessCmd: string;
@@ -111,6 +115,7 @@ export interface TeamForgeOptions {
   signal?: AbortSignal;
 }
 
+// @kern-source: team-forge:111
 export async function runTeamCoopForge(team: TeamSpec, task: string, fitnessCmd: string, forgePrompt: string, registry: EngineRegistry, adapter: EngineAdapter, cwd: string, baseSha: string, forgeDir: string, worktrees: WorktreeEntry[], timeout: number, fitnessTimeout: number, maxReviewLoops: number, onEvent?: (event:ForgeEvent|TeamEvent)=>void, signal?: AbortSignal): Promise<TeamSubmission> {
   const trace: TeamRoundTrace[] = [];
   const start = Date.now();
@@ -368,6 +373,7 @@ export async function runTeamCoopForge(team: TeamSpec, task: string, fitnessCmd:
   };
 }
 
+// @kern-source: team-forge:369
 export async function runTeamForge(options: TeamForgeOptions, registry: EngineRegistry, adapter: EngineAdapter, onEvent?: (event:ForgeEvent|TeamEvent)=>void): Promise<TeamMatchResult> {
   const config = loadConfig(options.cwd);
   const matchId = randomUUID().slice(0, 8);

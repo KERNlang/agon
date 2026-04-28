@@ -2,6 +2,7 @@
 
 import type { EngineResult, ForgeEvent, Critique, DispatchMetric } from '@agon/core';
 
+// @kern-source: types:3
 export interface StageResult {
   engineResults: Map<string, EngineResult>;
   accepted: boolean;
@@ -9,6 +10,7 @@ export interface StageResult {
   metrics?: DispatchMetric[];
 }
 
+// @kern-source: types:9
 export interface SynthesisResult {
   pass: boolean;
   score: number;
@@ -18,6 +20,7 @@ export interface SynthesisResult {
   critiques: Critique[];
 }
 
+// @kern-source: types:20
 export interface WorktreeEntry {
   engineId: string;
   path: string;

@@ -193,7 +193,7 @@ export function buildCesarSystemPrompt(ctx: HandlerContext): string {
       try {
         const planCount = listCesarPlans().length;
         if (planCount > 0) {
-          systemParts.push(`PLANS: ${planCount} plan(s) stored in ~/.agon/runs/. Use the ListPlans tool to look up past plans when relevant (e.g. user references a previous task, or you want to check if something was already planned). Do NOT load plans proactively — only when the task relates to prior work.`);
+          systemParts.push(`PLANS: ${planCount} plan(s) stored in ~/.agon/plans/. Use the ListPlans tool to look up past plans when relevant (e.g. user references a previous task, or you want to check if something was already planned). Do NOT load plans proactively — only when the task relates to prior work.`);
         }
       } catch { /* plan history unavailable — not critical */ }
 

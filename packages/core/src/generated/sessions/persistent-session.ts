@@ -1378,11 +1378,14 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                 }
               }
 
-              // ── Tier 3: LLM-based compaction as last resort ──
-              // If Tier 1+2 weren't enough, call a cheap model to produce a refined summary.
-              // Fires rarely (<5% of compactions). Uses the engine's own API config.
+              // ── Tier 3: LLM-based compaction as explicit last resort ──
+              // Disabled by default: foreground compaction competes with the
+              // user's turn, and provider-specific message rules can make a
+              // recovery path fail noisily. Set AGON_ENABLE_TIER3_COMPACTION=1
+              // to allow the old behavior when needed.
               const afterTier2 = estimateTokens(messageHistory);
-              if (afterTier2 > CONTEXT_LIMIT - COMPACTION_BUFFER && config.engine.api) {
+              const tier3CompactionEnabled = process.env.AGON_ENABLE_TIER3_COMPACTION === '1';
+              if (tier3CompactionEnabled && afterTier2 > CONTEXT_LIMIT - COMPACTION_BUFFER && config.engine.api) {
                 try {
                   const { apiDispatch } = await import('../api/dispatch.js');
                   // Use same API config but request minimal tokens
@@ -1447,8 +1450,9 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
                 if (ctxPct > 80) {
                   statusParts.push(`[WARNING: Context is ${ctxPct}% full. Be concise. Avoid re-reading files you already have context on.]`);
                 }
-                // Inject as system message — model sees it but it won't render in the chat UI
-                messageHistory.push({ role: 'system', content: statusParts.join('\n') });
+                // Inject as a user-scoped status note. Appending system messages
+                // mid-conversation breaks Anthropic/AI SDK message conversion.
+                messageHistory.push({ role: 'user', content: statusParts.join('\n') });
               }
             }
 

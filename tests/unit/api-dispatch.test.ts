@@ -50,6 +50,23 @@ describe('api-dispatch — AI SDK message conversion', () => {
     ]);
   });
 
+  it('merges adjacent user messages after status/context normalization', () => {
+    const messages = [
+      { role: 'system', content: 'base rules' },
+      { role: 'user', content: 'original request' },
+      { role: 'user', content: '[CONTEXT STATUS]\ncompacted history loaded' },
+      { role: 'assistant', content: 'ok' },
+    ];
+
+    const result = convertMessagesForSdk(messages, 'anthropic');
+
+    expect(result).toEqual([
+      { role: 'system', content: 'base rules' },
+      { role: 'user', content: 'original request\n\n[CONTEXT STATUS]\ncompacted history loaded' },
+      { role: 'assistant', content: [{ type: 'text', text: 'ok' }] },
+    ]);
+  });
+
   it('converts assistant message with tool_calls using input (not args)', () => {
     const messages = [
       { role: 'user', content: 'Read the file' },
@@ -162,8 +179,7 @@ describe('api-dispatch — AI SDK message conversion', () => {
     const result = convertMessagesForSdk(messages);
 
     expect(result).toEqual([
-      { role: 'user', content: 'continue' },
-      { role: 'user', content: '[Recovered orphan tool result omitted from native tool channel]\nold file contents' },
+      { role: 'user', content: 'continue\n\n[Recovered orphan tool result omitted from native tool channel]\nold file contents' },
     ]);
   });
 

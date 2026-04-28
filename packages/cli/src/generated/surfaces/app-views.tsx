@@ -229,7 +229,7 @@ export function ToolDetailBlock({ title, subtitle, accentColor, rows, maxVisible
     <Box flexDirection="column" borderStyle="round" borderColor={accentColor} paddingX={1} marginY={1} width="100%">
       <Box justifyContent="space-between">
         <Text bold color={accentColor}>{title}</Text>
-        <Text dimColor>{'Esc / Ctrl+O close'}</Text>
+        <Text dimColor>{'Esc closes'}</Text>
       </Box>
       {subtitle ? <Text dimColor>{subtitle}</Text> : null}
       <Text dimColor>{'↑↓ or j/k scroll  PgUp/PgDn page  Home/End jump'}</Text>
@@ -269,7 +269,7 @@ const StreamingView = React.memo(function StreamingView({ streamingText, mode, l
           return (
             <Box marginY={1} paddingLeft={1}>
               <Text color={c} bold>{icons().dotOn + ' '}{streamingText.engineId}</Text>
-              <Text dimColor>{preview ? ` ${preview}` : ' streaming\u2026'}</Text>
+              <Text dimColor>{preview ? ` ${preview}` : ' thinking\u2026'}</Text>
             </Box>
           );
         }

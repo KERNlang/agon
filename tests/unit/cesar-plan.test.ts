@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createCesarPlan, approveCesarPlan, advanceCesarStep, cancelCesarPlan, saveCesarPlan, loadCesarPlan, listCesarPlans, cesarPlanJsonPath, cesarPlanMarkdownPath } from '../../packages/core/src/generated/cesar/plan.js';
@@ -106,6 +106,37 @@ describe('CesarPlan state machine', () => {
       expect(raw.planFilePath).toBe(markdownPath);
       expect(loadCesarPlan(plan.id)?.planFilePath).toBe(markdownPath);
       expect(listCesarPlans().map(p => p.id)).toContain(plan.id);
+    } finally {
+      if (previousAgonHome === undefined) delete process.env.AGON_HOME;
+      else process.env.AGON_HOME = previousAgonHome;
+      rmSync(agonHome, { recursive: true, force: true });
+    }
+  });
+
+  it('returns null for invalid plan ids', () => {
+    expect(loadCesarPlan('!!!')).toBeNull();
+  });
+
+  it('does not invent markdown paths for legacy run plans without markdown files', () => {
+    const previousAgonHome = process.env.AGON_HOME;
+    const agonHome = mkdtempSync(join(tmpdir(), 'agon-plan-legacy-test-'));
+
+    try {
+      process.env.AGON_HOME = agonHome;
+      const plan = {
+        ...createCesarPlan('legacy plan', [makeStep('s1')]),
+        state: 'awaiting_approval' as const,
+      };
+      const runsDir = join(agonHome, 'runs');
+      mkdirSync(runsDir, { recursive: true });
+      writeFileSync(join(runsDir, `${plan.id}.json`), JSON.stringify(plan, null, 2));
+
+      const loaded = loadCesarPlan(plan.id);
+      expect(loaded?.id).toBe(plan.id);
+      expect(loaded?.planFilePath).toBeUndefined();
+
+      const listed = listCesarPlans().find(p => p.id === plan.id);
+      expect(listed?.planFilePath).toBeUndefined();
     } finally {
       if (previousAgonHome === undefined) delete process.env.AGON_HOME;
       else process.env.AGON_HOME = previousAgonHome;

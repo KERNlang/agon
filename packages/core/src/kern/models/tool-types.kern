@@ -25,6 +25,8 @@ interface name=ToolContext
   field name=toolPermissions type="Record<string,'allow'|'ask'|'deny'>" optional=true
   field name=onProgress type="((message: string) => void)" optional=true
   field name=readOnlyMode type=boolean optional=true
+  field name=blockedTools type="string[]" optional=true
+  field name=blockedToolMessage type=string optional=true
   field name=virtualFs type="any" optional=true
   field name=sessionAllowList type="string[]" optional=true
   field name=source type="'user'|'orchestrator'" optional=true

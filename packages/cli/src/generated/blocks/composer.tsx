@@ -105,8 +105,6 @@ const ComposerView = React.memo(function ComposerView({ mode, replState, planMod
                 {noChoice ? <Text color={noChoice.color ?? '#ef4444'} bold>{'[N] '}{noChoice.label}</Text> : null}
                 {noChoice && (alwaysChoice || permissionNeedsDetail) ? <Text dimColor>{'  '}</Text> : null}
                 {alwaysChoice ? <Text color={alwaysChoice.color ?? '#60a5fa'} bold>{'[A] '}{alwaysChoice.label}</Text> : null}
-                {alwaysChoice && permissionNeedsDetail ? <Text dimColor>{'  '}</Text> : null}
-                {permissionNeedsDetail ? <Text color="#a78bfa" bold>{'[Ctrl+O] Open'}</Text> : null}
               </Text>
               {permissionPreview ? (
                 <Text dimColor>{'  $ '}{permissionPreview}{permissionHasMoreLines ? ' …' : ''}</Text>

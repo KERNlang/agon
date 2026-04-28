@@ -106,7 +106,7 @@ import { useStableInput } from '../../stable-input.js';
 
 import { parseProseToRichLines } from '../blocks/rich-text.js';
 
-// @kern-source: app:2126
+// @kern-source: app:2115
 export function App() {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -2909,12 +2909,7 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
   const { rawInput, parsed, toolKey } = parseToolCallPayload(event);
   const collapsed = !toolOutputExpanded;
   const collapsedHint: any[] = [];
-  const changeOpenHint = collapsed && isMutatingToolCall(event)
-    ? [
-        { text: ' · ', dimColor: true },
-        { text: '[Ctrl+O] Open', color: '#a78bfa', bold: true },
-      ]
-    : [];
+  const changeOpenHint: any[] = [];
   const nestSegment = { text: ' ⏿ ', color: eColor };
   const pushSegmentsRow = (suffix: string, segments: any[], paddingLeft = 2) => {
     rows.push({ key: `${baseKey}-${suffix}`, kind: 'segments', paddingLeft, segments });
@@ -2922,8 +2917,6 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
   const pushOpenHintRow = (suffix: string, text: string) => {
     pushSegmentsRow(suffix, [
       { text, dimColor: true },
-      { text: ' · ', dimColor: true },
-      { text: 'Ctrl+O full view', color: '#a78bfa' },
     ]);
   };
   const pushDiffPreview = (suffix: string, lines: string[], sign: string, expanded: boolean, label: string) => {
@@ -3257,7 +3250,7 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
   return rows;
 }
 
-// @kern-source: app:1595
+// @kern-source: app:1588
 export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any[] {
   if (!events || events.length === 0) return [];
 
@@ -3358,8 +3351,6 @@ export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any
       countSummary ? { text: ' · ', dimColor: true } : null,
       countSummary ? { text: countSummary, dimColor: true } : null,
       changedSummary ? { text: changedSummary, color: '#a78bfa' } : null,
-      changeEvents.length > 0 ? { text: ' · ', dimColor: true } : null,
-      changeEvents.length > 0 ? { text: '[Ctrl+O] Open', color: '#a78bfa', bold: true } : null,
     ].filter(Boolean),
   });
 
@@ -3384,7 +3375,7 @@ export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any
   return rows;
 }
 
-// @kern-source: app:1722
+// @kern-source: app:1713
 export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean): any[] {
   const rows: any[] = [];
   const proseWidth = contentWidth(4);
@@ -3518,8 +3509,6 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
           { text: '[N] No', color: '#ef4444', bold: true },
           { text: '  ', dimColor: true },
           { text: '[A] Always', color: '#60a5fa', bold: true },
-          detailViewerSupportsEvent(event) ? { text: '  ', dimColor: true } : null,
-          detailViewerSupportsEvent(event) ? { text: '[Ctrl+O] Open', color: '#a78bfa', bold: true } : null,
         ].filter(Boolean));
         pushSegmentsRow(`${baseKey}-perm-cmd`, 1, preview
           ? [
@@ -3787,7 +3776,7 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
   return rows;
 }
 
-// @kern-source: app:3687
+// @kern-source: app:3676
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

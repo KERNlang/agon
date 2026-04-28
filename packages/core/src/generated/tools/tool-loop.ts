@@ -20,9 +20,10 @@ export interface ToolLoopCallbacks {
   onPermissionAsk?: (tool: string, message: string) => Promise<boolean>;
   onText?: (text: string) => void;
   onTurnComplete?: (turn: number) => void;
+  maxTurns?: number;
 }
 
-// @kern-source: tool-loop:21
+// @kern-source: tool-loop:22
 export interface ToolLoopResult {
   finalText: string;
   toolCallCount: number;
@@ -33,7 +34,7 @@ export interface ToolLoopResult {
 /**
  * Generate the tool system prompt to inject into any engine's context.
  */
-// @kern-source: tool-loop:27
+// @kern-source: tool-loop:28
 export function buildToolSystemPrompt(registry: ToolRegistry): string {
   const handlers = Array.from((registry as any).tools.values()) as ToolHandler[];
   return generateToolPrompt(handlers);
@@ -42,7 +43,7 @@ export function buildToolSystemPrompt(registry: ToolRegistry): string {
 /**
  * Process a single engine response: parse tool calls, execute them, format results.
  */
-// @kern-source: tool-loop:34
+// @kern-source: tool-loop:35
 export async function processToolResponse(response: string, ctx: ToolContext, registry: ToolRegistry, callbacks?: ToolLoopCallbacks): Promise<{hasTools:boolean, textBefore:string, toolResults:string, textAfter:string}> {
   const parsed = parseToolCalls(response);
 
@@ -98,14 +99,18 @@ export async function processToolResponse(response: string, ctx: ToolContext, re
 /**
  * Full tool loop: repeatedly process responses until no more tool calls or max turns reached.
  */
-// @kern-source: tool-loop:88
+// @kern-source: tool-loop:89
 export async function runToolLoop(sendMessage: (message:string)=>Promise<string>, initialResponse: string, ctx: ToolContext, registry: ToolRegistry, callbacks?: ToolLoopCallbacks): Promise<ToolLoopResult> {
   let currentResponse = initialResponse;
   let totalToolCalls = 0;
   let turn = 0;
   const allText: string[] = [];
+  const requestedMaxTurns = Number(callbacks?.maxTurns ?? MAX_TOOL_TURNS);
+  const maxTurns = Number.isFinite(requestedMaxTurns) && requestedMaxTurns > 0
+    ? Math.max(1, Math.floor(requestedMaxTurns))
+    : MAX_TOOL_TURNS;
 
-  while (turn < MAX_TOOL_TURNS) {
+  while (turn < maxTurns) {
     if (ctx.abortSignal?.aborted) {
       return { finalText: allText.join('\n'), toolCallCount: totalToolCalls, turns: turn, aborted: true };
     }
@@ -135,8 +140,8 @@ export async function runToolLoop(sendMessage: (message:string)=>Promise<string>
     currentResponse = await sendMessage(nextMessage);
   }
 
-  if (turn >= MAX_TOOL_TURNS) {
-    allText.push(`\n[Tool loop reached maximum of ${MAX_TOOL_TURNS} turns]`);
+  if (turn >= maxTurns) {
+    allText.push(`\n[Tool loop reached maximum of ${maxTurns} turns]`);
   }
 
   return {

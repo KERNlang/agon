@@ -31,9 +31,11 @@ export interface SessionSendOptions {
   images?: string[];
   signal?: AbortSignal;
   systemPrompt?: string;
+  toolLoopBaseBudget?: number;
+  toolLoopMaxBudget?: number;
 }
 
-// @kern-source: persistent-session:22
+// @kern-source: persistent-session:24
 export interface PersistentSessionConfig {
   engine: EngineDefinition;
   binaryPath: string;
@@ -45,9 +47,11 @@ export interface PersistentSessionConfig {
   onTurnEnd?: (learnings: {filesRead:string[], filesModified:string[], decisions:string[], discoveries:string[], toolsUsed:string[]}) => void;
   mcpServers?: Array<Record<string,unknown>>;
   sessionContinuity?: boolean;
+  toolLoopBaseBudget?: number;
+  toolLoopMaxBudget?: number;
 }
 
-// @kern-source: persistent-session:34
+// @kern-source: persistent-session:38
 export interface PersistentSession {
   alive: boolean;
   sessionId: string|null;
@@ -61,7 +65,7 @@ export interface PersistentSession {
 /**
  * Factory: picks the right session implementation based on engine config.
  */
-// @kern-source: persistent-session:43
+// @kern-source: persistent-session:47
 export function createPersistentSession(config: PersistentSessionConfig): PersistentSession {
   const engine = config.engine;
 
@@ -92,7 +96,7 @@ export function createPersistentSession(config: PersistentSessionConfig): Persis
 /**
  * Persistent JSONRPC session for Codex app-server. Process stays alive across turns.
  */
-// @kern-source: persistent-session:74
+// @kern-source: persistent-session:78
 export function createCompanionSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -456,7 +460,7 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
 /**
  * Persistent ACP (Agent Client Protocol) session for OpenCode. JSON-RPC 2.0 over stdio.
  */
-// @kern-source: persistent-session:438
+// @kern-source: persistent-session:442
 export function createAcpSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -804,7 +808,7 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
 /**
  * Persistent bidirectional NDJSON session for Claude Code. One process, multi-turn via stdin.
  */
-// @kern-source: persistent-session:786
+// @kern-source: persistent-session:790
 export function createStreamJsonSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -1110,7 +1114,7 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
 /**
  * Fallback: spawn per turn with --resume/--continue. Works for any CLI engine.
  */
-// @kern-source: persistent-session:1092
+// @kern-source: persistent-session:1096
 export function createResumeSession(config: PersistentSessionConfig): PersistentSession {
   let alive = false;
       let sessionId: string | null = null;
@@ -1474,8 +1478,14 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
             // ── Agentic tool loop with dynamic budget ──
             // Productive steps (successful tool calls) extend the budget.
             // Failed steps shrink it. Models that work get more runway.
-            const BASE_BUDGET = 15;
-            const MAX_BUDGET = 30; // hard cap even for very productive sessions
+            const requestedBaseBudget = Number(opts.toolLoopBaseBudget ?? config.toolLoopBaseBudget ?? 15);
+            const requestedMaxBudget = Number(opts.toolLoopMaxBudget ?? config.toolLoopMaxBudget ?? 30);
+            const BASE_BUDGET = Number.isFinite(requestedBaseBudget) && requestedBaseBudget > 0
+              ? Math.max(1, Math.floor(requestedBaseBudget))
+              : 15;
+            const MAX_BUDGET = Number.isFinite(requestedMaxBudget) && requestedMaxBudget > 0
+              ? Math.max(BASE_BUDGET, Math.floor(requestedMaxBudget))
+              : 30; // hard cap even for very productive sessions
             const MAX_CONSECUTIVE_ERRORS = 3;
             let budget = BASE_BUDGET;
             let step = 0;

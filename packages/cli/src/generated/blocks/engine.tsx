@@ -26,13 +26,13 @@ import { ForgeArena, BrainstormStorm, CampfireFire, TribunalCourt } from './aren
 
 import { PlanProposalView, PlanExecutionView } from './plan-view.js';
 
-// @kern-source: engine:129
+// @kern-source: engine:155
 export interface OutputBlock {
   id: number;
   event: OutputEvent;
 }
 
-// @kern-source: engine:135
+// @kern-source: engine:161
 export function EngineProgressView({ engines, mode }: { engines:EngineProgress[]; mode?:string }) {
   // Use explicit mode if it's an arena mode, otherwise detect from status text
   const arenaModes = ['forge', 'brainstorm', 'campfire', 'tribunal'];
@@ -71,7 +71,7 @@ export function EngineProgressView({ engines, mode }: { engines:EngineProgress[]
   );
 }
 
-// @kern-source: engine:179
+// @kern-source: engine:205
 const EngineBlock = React.memo(function EngineBlock({ engineId, color, content }: { engineId:string; color:number; content:string }) {
   const wrapWidth = contentWidth(8);
   const cleaned = cleanEngineOutput(content);
@@ -100,7 +100,7 @@ const EngineBlock = React.memo(function EngineBlock({ engineId, color, content }
 });
 export { EngineBlock };
 
-// @kern-source: engine:213
+// @kern-source: engine:239
 const ConversationalResponse = React.memo(function ConversationalResponse({ engineId, content }: { engineId:string; content:string }) {
   const wrapWidth = contentWidth(2);
   const cleaned = cleanEngineOutput(content);
@@ -117,7 +117,7 @@ const ConversationalResponse = React.memo(function ConversationalResponse({ engi
 });
 export { ConversationalResponse };
 
-// @kern-source: engine:234
+// @kern-source: engine:260
 export function DashboardView({ event }: { event:OutputEvent & { type: 'dashboard' } }) {
   return (
     <Box flexDirection="column" paddingX={1} paddingY={1}>
@@ -181,7 +181,7 @@ export function DashboardView({ event }: { event:OutputEvent & { type: 'dashboar
   );
 }
 
-// @kern-source: engine:302
+// @kern-source: engine:328
 function TableView({ headers, rows }: { headers:string[]; rows:string[][] }) {
   const widths = headers.map((h: string, i: number) =>
     Math.max(h.length, ...rows.map((r: string[]) => (r[i] ?? '').length)) + 2,
@@ -205,7 +205,7 @@ function TableView({ headers, rows }: { headers:string[]; rows:string[][] }) {
   );
 }
 
-// @kern-source: engine:331
+// @kern-source: engine:357
 const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolOutputExpanded, thinkingExpanded }: { event:OutputEvent; mode:string; toolOutputExpanded?:boolean; thinkingExpanded?:boolean }) {
   switch (event.type) {
     case 'text': {
@@ -254,7 +254,11 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
       return <Text>{'  '}<Text color="#ef4444">{icons().fail}</Text>{' '}{event.message}</Text>;
     }
     case 'warning': return <Text>{'  '}<Text color="#fbbf24">{icons().warning}</Text>{' '}{event.message}</Text>;
-    case 'info': return <Text dimColor>{'  '}{event.message}</Text>;
+    case 'info': {
+      const message = String(event.message ?? '');
+      const cesarTelemetry = isCesarTelemetryLine(message);
+      return <Text italic={cesarTelemetry} dimColor color={cesarTelemetry ? '#8b8b8b' : undefined}>{'  '}{message}</Text>;
+    }
     case 'permission-ask': {
       const permCmd = (event as any).command as string;
       const permDesc = (event as any).description as string | undefined;
@@ -295,13 +299,11 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
       if (thinkingExpanded === false) return null;
       const thinkText = event.chunk as string;
       const lines = thinkText.split('\n').filter((l: string) => l.trim());
-      const preview = lines.length > 3 ? lines.slice(0, 3) : lines;
       return (
         <Box flexDirection="column" paddingLeft={2}>
-          {preview.map((line: string, i: number) => (
+          {lines.map((line: string, i: number) => (
             <Text key={`think-${i}`} italic dimColor color="#8b8b8b">{'  \u25B9 '}{line}</Text>
           ))}
-          {lines.length > 3 && <Text italic dimColor color="#8b8b8b">{'  \u25B9 \u2026'}{lines.length - 3}{' more lines  '}<Text color="#f59e0b">{'Ctrl+T'}</Text></Text>}
         </Box>
       );
     }
@@ -416,6 +418,14 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
       // <Static> once finalized — so a per-block "Ctrl+E expand" hint
       // would be misleading (Ink cannot re-render past Static items).
       const collapsedHint = null;
+
+      if (toolKey === 'reportconfidence') {
+        return (
+          <Box paddingLeft={2}>
+            <Text italic dimColor color="#8b8b8b">{'  \u25B9 '}{formatConfidenceToolLabel(parsed, rawInput)}</Text>
+          </Box>
+        );
+      }
 
       // ── Bash / Run ──
       if (toolKey === 'bash' || toolKey === 'run' || toolKey === 'agonbash') {
@@ -766,12 +776,25 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
 });
 export { OutputBlockView };
 
-// @kern-source: engine:898
+// @kern-source: engine:934
 const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:OutputBlock[] }) {
+  const labelForTool = (raw: unknown) => {
+    const toolKey = String(raw ?? '').toLowerCase();
+    if (toolKey === 'bash' || toolKey === 'run' || toolKey === 'agonbash') return 'Bash';
+    if (toolKey === 'read') return 'Read';
+    if (toolKey === 'grep' || toolKey === 'search') return 'Search';
+    if (toolKey === 'glob' || toolKey === 'find') return 'Find';
+    if (toolKey === 'edit' || toolKey === 'update' || toolKey === 'agonedit') return 'Update';
+    if (toolKey === 'write' || toolKey === 'agonwrite') return 'Write';
+    if (toolKey === 'applypatch' || toolKey === 'apply_patch') return 'Patch';
+    if (toolKey === 'reportconfidence') return 'Confidence';
+    if (toolKey === 'quicknero') return 'QuickNero';
+    return String(raw ?? 'Tool');
+  };
   const toolCounts: Record<string, number> = {};
+  let confidenceLabel = '';
   let errors = 0;
   let running = 0;
-  let groupEngineId = '';
   const changedFiles: string[] = [];
   const changeEvents: any[] = [];
   const changeRows: { key:string; text:string }[] = [];
@@ -782,13 +805,17 @@ const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:Out
   };
   for (const b of blocks) {
     const ev = b.event as any;
-    groupEngineId = ev.engineId || groupEngineId;
-    const name = ev.tool || 'tool';
-    toolCounts[name] = (toolCounts[name] || 0) + 1;
+    const rawName = ev.tool || 'tool';
+    const toolKey = String(rawName).toLowerCase();
+    const { rawInput, parsed } = parseToolInputPayload(ev.input ?? '');
+    const name = labelForTool(rawName);
     if (ev.status === 'error') errors++;
     if (ev.status === 'running') running++;
-    const toolKey = String(name).toLowerCase();
-    const { rawInput, parsed } = parseToolInputPayload(ev.input ?? '');
+    if (toolKey === 'reportconfidence') {
+      confidenceLabel = formatConfidenceToolLabel(parsed, rawInput);
+      continue;
+    }
+    toolCounts[name] = (toolCounts[name] || 0) + 1;
     if ((toolKey === 'edit' || toolKey === 'update' || toolKey === 'write' || toolKey === 'agonedit' || toolKey === 'agonwrite') && typeof ev.input === 'string' && ev.input.trim().startsWith('{')) {
       try {
         const filePath = (parsed.file_path as string) || (parsed.filePath as string) || '';
@@ -824,9 +851,9 @@ const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:Out
   const summary = Object.entries(toolCounts)
     .map(([name, count]: [string, number]) => count > 1 ? `${name}\u00d7${count}` : name)
     .join(', ');
-  const eColor = engineColor(groupEngineId);
-  const statusColor = errors > 0 ? '#ef4444' : running > 0 ? '#fbbf24' : '#4ade80';
-  const statusIcon = errors > 0 ? icons().fail : running > 0 ? '\u27f3' : icons().success;
+  const statusSummary = errors > 0
+    ? ` \u00b7 ${errors} error${errors === 1 ? '' : 's'}`
+    : running > 0 ? ' \u00b7 running' : '';
   const changedSummary = changedFiles.length > 0
     ? ` \u00b7 changed ${changedFiles.length} file${changedFiles.length > 1 ? 's' : ''}: ${changedFiles.slice(0, 2).join(', ')}${changedFiles.length > 2 ? ', \u2026' : ''}`
     : '';
@@ -834,11 +861,7 @@ const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:Out
   return (
     <Box paddingLeft={2} flexDirection="column">
       <Text>
-        <Text color={eColor}>{' \u23bf '}</Text>
-        <Text color={statusColor}>{statusIcon}</Text>
-        <Text bold>{` ${blocks.length} tool calls`}</Text>
-        <Text dimColor>{` (${summary})`}</Text>
-        {changedSummary && <Text color="#a78bfa">{changedSummary}</Text>}
+        <Text italic dimColor color="#8b8b8b">{'  \u25B9 '}{confidenceLabel ? `${confidenceLabel} \u00b7 ` : ''}{blocks.length}{' tool calls'}{summary ? ` \u00b7 ${summary}` : ''}{statusSummary}{changedSummary}</Text>
       </Text>
       {changeRows.map((row: { key:string; text:string }) => (
         <DiffLine key={row.key} line={row.text} maxWidth={contentWidth(10)} />
@@ -851,7 +874,7 @@ const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:Out
 });
 export { ToolCallGroup };
 
-// @kern-source: engine:1000
+// @kern-source: engine:1049
 const DebateGroup = React.memo(function DebateGroup({ blocks }: { blocks:OutputBlock[] }) {
   const round = (blocks[0]?.event as any)?.round ?? '?';
   const w = contentWidth(6);
@@ -877,7 +900,7 @@ const DebateGroup = React.memo(function DebateGroup({ blocks }: { blocks:OutputB
 });
 export { DebateGroup };
 
-// @kern-source: engine:1029
+// @kern-source: engine:1078
 const BidGroup = React.memo(function BidGroup({ blocks }: { blocks:OutputBlock[] }) {
   const w = contentWidth(6);
   return (
@@ -929,6 +952,12 @@ export function shortToolPath(filePath: string): string {
 }
 
 // @kern-source: engine:42
+export function isCesarTelemetryLine(message: string): boolean {
+  const text = String(message ?? '').trim();
+  return text.startsWith('Cesar route:') || text.startsWith('What happened:');
+}
+
+// @kern-source: engine:48
 export function parseToolInputPayload(input: string): any {
   const rawInput = String(input ?? '');
   let parsed: Record<string, unknown> = {};
@@ -940,7 +969,27 @@ export function parseToolInputPayload(input: string): any {
   return { rawInput, parsed };
 }
 
-// @kern-source: engine:54
+// @kern-source: engine:60
+export function formatConfidenceToolLabel(parsed: any, rawInput: string): string {
+  const rawValue = parsed?.value ?? parsed?.confidence ?? parsed?.score;
+  let value = Number(rawValue);
+  if (!Number.isFinite(value)) {
+    const text = String(rawInput ?? '');
+    const match = text.match(/"value"\s*:\s*(\d{1,3}(?:\.\d+)?)/) || text.match(/(\d{1,3})\s*%/);
+    if (match) value = Number(match[1]);
+  }
+  if (Number.isFinite(value)) {
+    const pct = value <= 1 && value > 0 ? Math.round(value * 100) : Math.round(value);
+    if (pct >= 0 && pct <= 100) {
+      const reasoning = String(parsed?.reasoning ?? parsed?.reason ?? parsed?.thought ?? '').replace(/\s+/g, ' ').trim();
+      const shortReasoning = reasoning.length > 180 ? `${reasoning.slice(0, 177)}\u2026` : reasoning;
+      return shortReasoning ? `${pct}% confidence \u00b7 ${shortReasoning}` : `${pct}% confidence`;
+    }
+  }
+  return 'confidence';
+}
+
+// @kern-source: engine:80
 export function extractPatchText(rawInput: string, parsed: any): string {
   const values = [
     parsed?.patch,
@@ -964,7 +1013,7 @@ export function extractPatchText(rawInput: string, parsed: any): string {
   return values[0] ?? '';
 }
 
-// @kern-source: engine:78
+// @kern-source: engine:104
 export function parsePatchPreview(rawInput: string, parsed: any): { files:string[]; lines:string[]; additions:number; deletions:number } {
   const patchText = extractPatchText(rawInput, parsed);
   const files: string[] = [];
@@ -1013,7 +1062,7 @@ export function parsePatchPreview(rawInput: string, parsed: any): { files:string
   return { files, lines, additions, deletions };
 }
 
-// @kern-source: engine:986
+// @kern-source: engine:1035
 export function extractSummary(text: string, maxLen: number): string {
   let s = text.replace(/<think>[\s\S]*?<\/think>\s*/gi, '');
   s = s.replace(/^#+\s+.+\n/gm, '');

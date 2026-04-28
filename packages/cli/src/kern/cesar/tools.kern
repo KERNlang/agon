@@ -1,4 +1,4 @@
-import from="@agon/core" names="ToolRegistry,FileStateCache,createReadTool,createEditTool,createWriteTool,createBashTool,createGrepTool,createGlobTool,createForgeTool,createBrainstormTool,createTribunalTool,createCampfireTool,createPipelineTool,createReviewTool,createDelegateTool,createAgentTool,createReportConfidenceTool,createProposePlanTool,createListPlansTool,createRetrieveResultTool,createQuickNeroTool,executeToolCall,resolveWorkingDir"
+import from="@agon/core" names="ToolRegistry,getProjectFileStateCache,createReadTool,createEditTool,createWriteTool,createBashTool,createGrepTool,createGlobTool,createForgeTool,createBrainstormTool,createTribunalTool,createCampfireTool,createPipelineTool,createReviewTool,createDelegateTool,createAgentTool,createReportConfidenceTool,createProposePlanTool,createListPlansTool,createRetrieveResultTool,createQuickNeroTool,executeToolCall,resolveWorkingDir"
 import from="@agon/core" names="ToolContext,ToolCallResult" types=true
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 
@@ -31,16 +31,18 @@ fn name=createCesarToolRegistry params="engineId?:string" returns="ToolRegistry"
 fn name=createEagerToolContext params="ctx:HandlerContext, config:any, signal:AbortSignal, dispatch:Dispatch" returns="ToolContext"
   doc "Create a shared ToolContext for eager tool execution during streaming."
   handler <<<
-    const fsc = new FileStateCache();
+    const cwd = resolveWorkingDir();
+    const fsc = getProjectFileStateCache(cwd);
     const explorationMode = (ctx as any).explorationMode ?? false;
     return {
-      cwd: resolveWorkingDir(),
+      cwd,
       readFileState: (fsc as any).cache,
       abortSignal: signal,
       permissionMode: (config as any).permissionMode ?? 'ask',
       explorationMode,
       allowedCommands: (config as any).allowedCommands ?? [],
       toolPermissions: (config as any).toolPermissions ?? {},
+      source: 'orchestrator' as const,
       onProgress: (msg: string) => dispatch({ type: 'spinner-update', message: `Cesar: ${msg}` }),
     };
   >>>

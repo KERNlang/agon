@@ -10,7 +10,7 @@ import type { ApiConfig } from '../api/dispatch.js';
 
 import type { ContextThread } from './context-thread.js';
 
-import { VirtualFS, createFileSnapshot, scoreEffectPackage, applyEffectPackage } from '../forge/virtual-fs.js';
+import { VirtualFS, createFileSnapshot, scoreEffectPackage, applyEffectPackage, relocateEffectPackage, effectPackageDiff } from '../forge/virtual-fs.js';
 
 import type { EffectPackage, FileSnapshot, FileEffect } from '../forge/virtual-fs.js';
 
@@ -21,7 +21,7 @@ import { repoRoot, worktreeCreate, worktreeRemoveBestEffort, stashSnapshot, work
 /**
  * One engine in a speculative parallel run.
  */
-// @kern-source: speculator:40
+// @kern-source: speculator:35
 export interface SpeculatorMemberConfig {
   engineId: string;
   api: ApiConfig;
@@ -31,7 +31,7 @@ export interface SpeculatorMemberConfig {
 /**
  * Options for a Speculator run.
  */
-// @kern-source: speculator:46
+// @kern-source: speculator:41
 export interface SpeculatorOptions {
   members: SpeculatorMemberConfig[];
   prompt: string;
@@ -42,6 +42,7 @@ export interface SpeculatorOptions {
   thread?: ContextThread;
   taskKeywords?: string[];
   onMemberStart?: (engineId:string)=>void;
+  onMemberPreview?: (pkg:EffectPackage,diff:string,path:string)=>void;
   onMemberComplete?: (pkg:EffectPackage,score:number)=>void;
   isolate?: boolean;
 }
@@ -49,7 +50,7 @@ export interface SpeculatorOptions {
 /**
  * Outcome of a speculative parallel run. candidates contains all members' EffectPackages (including failed/empty ones). winner is the highest-scoring candidate, or null if all failed.
  */
-// @kern-source: speculator:62
+// @kern-source: speculator:58
 export interface SpeculatorResult {
   candidates: EffectPackage[];
   scores: Record<string,number>;
@@ -62,7 +63,7 @@ export interface SpeculatorResult {
 /**
  * Runs N agents against N VirtualFS instances in parallel. Each agent sees the same base snapshot. The winner's overlay is applied to the real filesystem. This is the core of Phase E speculative execution — multi-engine consensus at fastest-engine latency.
  */
-// @kern-source: speculator:73
+// @kern-source: speculator:69
 export class Speculator {
   private runId: string;
   private snapshot: FileSnapshot|null;
@@ -83,6 +84,8 @@ export class Speculator {
     const candidates: EffectPackage[] = [];
     const scores: Record<string, number> = {};
     const worktreesByEngine: Record<string, string> = {};
+    const previewTimes = new Map<string, number>();
+    const previewDirty = new Map<string, string>();
 
     // Pre-create worktrees before fanning out so each agent has an isolated
     // filesystem. If worktree creation fails for a member, skip that member
@@ -106,6 +109,21 @@ export class Speculator {
       if (opts.onMemberStart) opts.onMemberStart(member.engineId);
 
       const vfs = new VirtualFS(this.snapshot!, member.engineId, this.runId);
+      if (opts.onMemberPreview) {
+        vfs.setOnChange((path: string) => {
+          const now = Date.now();
+          const last = previewTimes.get(member.engineId) ?? 0;
+          if (now - last < 900) {
+            previewDirty.set(member.engineId, path);
+            return;
+          }
+          previewTimes.set(member.engineId, now);
+          previewDirty.delete(member.engineId);
+          const pkg = vfs.toEffectPackage('', 0, 0);
+          const preview = effectPackageDiff(pkg);
+          opts.onMemberPreview!(pkg, preview, path);
+        });
+      }
       const startedAt = Date.now();
 
       // Pre-load thread context.
@@ -129,10 +147,9 @@ export class Speculator {
           maxSteps: opts.maxSteps ?? 10,
           historyMessages,
           onHistoryEntry,
-          // Phase E v2: inject VirtualFS so Read/Edit/Write calls from the
-          // inner loop's tool execution route through the overlay rather than
-          // touching the shared real filesystem. This gives each member true
-          // speculative isolation at the tool-call level.
+          // Inject VirtualFS so Read/Edit/Write calls route through the
+          // overlay rather than touching the shared real filesystem. Bash
+          // still runs in memberCwd, which is isolated when isolate=true.
           virtualFs: vfs,
         });
       } catch (err: any) {
@@ -140,11 +157,8 @@ export class Speculator {
         result = { response: '', toolCalls: 0, steps: 0 };
       }
 
-      // Phase E v1: build EffectPackage from response text only.
-      // In v2, tool calls will have mutated vfs.overlay and we'll get
-      // real file changes. For now, pkg.effects is always empty because
-      // the tools write to the worktree (real disk), not the VirtualFS overlay.
-      // Phase E v2 will wire ToolContext.virtualFs to capture those writes.
+      // Read/Edit/Write tool calls have mutated vfs.overlay; Bash changes
+      // live in memberCwd when isolate=true and are picked up via git diff.
       const pkg = vfs.toEffectPackage(
         result.response,
         result.toolCalls,
@@ -154,6 +168,12 @@ export class Speculator {
       scores[member.engineId] = score;
       candidates.push(pkg);
 
+      if (opts.onMemberPreview && pkg.effects.length > 0 && previewDirty.has(member.engineId)) {
+        const path = previewDirty.get(member.engineId) ?? memberCwd;
+        previewDirty.delete(member.engineId);
+        previewTimes.set(member.engineId, Date.now());
+        opts.onMemberPreview(pkg, effectPackageDiff(pkg), path);
+      }
       if (opts.onMemberComplete) opts.onMemberComplete(pkg, score);
       return { pkg, vfs, score, memberCwd };
     });
@@ -184,10 +204,8 @@ export class Speculator {
       const winnerCwd = winnerOutcome.memberCwd;
       try {
         if (isolate && winnerCwd !== cwd) {
-          // Phase E v1 (worktree mode): apply the winner's worktree diff to
-          // the real cwd using git's patch mechanism. This is the correct
-          // "commit the winning branch" step — equivalent to `git checkout winner`.
-          // Phase E v2 will use applyEffectPackage(vfs.toEffectPackage()) instead.
+          // Worktree mode: apply shell-command changes first. If the same
+          // file was also changed through VirtualFS, the overlay below wins.
           const diff = worktreeDiff(winnerCwd);
           if (diff && diff.trim()) {
             applyPatch(cwd, diff);
@@ -196,9 +214,15 @@ export class Speculator {
               .filter((l: string) => l.startsWith('+++ b/'))
               .map((l: string) => l.slice(6));
           }
-        } else if (winnerOutcome.pkg.effects.length > 0) {
-          // Phase E v2 (VirtualFS mode): apply overlay directly.
-          appliedFiles = applyEffectPackage(winnerOutcome.pkg, cwd);
+        }
+        if (winnerOutcome.pkg.effects.length > 0) {
+          // VirtualFS overlay mode: member paths may point at an isolated
+          // worktree, so relocate them into the real workspace before apply.
+          const pkgToApply = winnerCwd !== cwd
+            ? relocateEffectPackage(winnerOutcome.pkg, winnerCwd, cwd)
+            : winnerOutcome.pkg;
+          const overlayFiles = applyEffectPackage(pkgToApply, cwd);
+          appliedFiles = [...appliedFiles, ...overlayFiles];
         }
       } catch (err: any) {
         console.warn(`[agon] speculator: failed to apply winner ${winnerOutcome.pkg.engineId}: ${err instanceof Error ? err.message : String(err)}`);
@@ -236,7 +260,7 @@ export class Speculator {
 /**
  * Create a fresh Speculator instance. One per agent invocation.
  */
-// @kern-source: speculator:250
+// @kern-source: speculator:269
 export function createSpeculator(): Speculator {
   return new Speculator();
 }

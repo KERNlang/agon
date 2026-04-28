@@ -20,6 +20,7 @@ export type Intent =
   | { type: 'models' }
   | { type: 'tokens' }
   | { type: 'doctor'; scope?: string }
+  | { type: 'harness-replay'; turnId?: string }
   | { type: 'plan'; planId?: string }
   | { type: 'plans' }
   | { type: 'approve' }

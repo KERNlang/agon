@@ -2,22 +2,78 @@
 
 import type { FileState } from '../models/tool-types.js';
 
-// @kern-source: file-state-cache:6
+import { execFileSync } from 'node:child_process';
+
+import { resolve } from 'node:path';
+
+// @kern-source: file-state-cache:8
 export const MAX_CACHE_ENTRIES: number = 100;
 
-// @kern-source: file-state-cache:9
+// @kern-source: file-state-cache:11
 export const MAX_CACHE_BYTES: number = 25 * 1024 * 1024;
 
-// @kern-source: file-state-cache:12
+/**
+ * Create the Map exposed through ToolContext.readFileState. Tool code intentionally receives a Map, so the Map itself must enforce FileStateCache LRU/byte limits when callers use map.set() directly.
+ */
+// @kern-source: file-state-cache:14
+function createTrackedFileStateMap(owner: {totalBytes:number,accessOrder:string[]}): Map<string, FileState> {
+  class TrackedFileStateMap extends Map<string, FileState> {
+    override get(filePath: string): FileState | undefined {
+      const state = super.get(filePath);
+      if (state) {
+        owner.accessOrder = owner.accessOrder.filter((p: string) => p !== filePath);
+        owner.accessOrder.push(filePath);
+      }
+      return state;
+    }
+
+    override set(filePath: string, state: FileState): this {
+      const existing = super.get(filePath);
+      if (existing) owner.totalBytes -= existing.content.length;
+      super.set(filePath, state);
+      owner.totalBytes += state.content.length;
+      owner.accessOrder = owner.accessOrder.filter((p: string) => p !== filePath);
+      owner.accessOrder.push(filePath);
+      while (
+        (this.size > MAX_CACHE_ENTRIES || owner.totalBytes > MAX_CACHE_BYTES)
+        && owner.accessOrder.length > 0
+      ) {
+        const oldest = owner.accessOrder.shift()!;
+        const oldState = super.get(oldest);
+        if (oldState) {
+          owner.totalBytes -= oldState.content.length;
+          super.delete(oldest);
+        }
+      }
+      return this;
+    }
+
+    override delete(filePath: string): boolean {
+      const existing = super.get(filePath);
+      if (existing) owner.totalBytes -= existing.content.length;
+      owner.accessOrder = owner.accessOrder.filter((p: string) => p !== filePath);
+      return super.delete(filePath);
+    }
+
+    override clear(): void {
+      super.clear();
+      owner.totalBytes = 0;
+      owner.accessOrder = [];
+    }
+  }
+  return new TrackedFileStateMap();
+}
+
+// @kern-source: file-state-cache:64
 export class FileStateCache {
   cache: Map<string, FileState>;
   totalBytes: number;
   accessOrder: string[];
 
   constructor() {
-    this.cache = new Map();
     this.totalBytes = 0;
     this.accessOrder = [];
+    this.cache = createTrackedFileStateMap(this);
   }
 
   get(filePath: string): FileState|undefined {
@@ -31,15 +87,7 @@ export class FileStateCache {
   }
 
   set(filePath: string, state: FileState): void {
-    const existing = this.cache.get(filePath);
-    if (existing) {
-      this.totalBytes -= existing.content.length;
-    }
     this.cache.set(filePath, state);
-    this.totalBytes += state.content.length;
-    this.accessOrder = this.accessOrder.filter(p => p !== filePath);
-    this.accessOrder.push(filePath);
-    this.evict();
   }
 
   has(filePath: string): boolean {
@@ -59,18 +107,11 @@ export class FileStateCache {
   }
 
   remove(filePath: string): void {
-    const state = this.cache.get(filePath);
-    if (state) {
-      this.totalBytes -= state.content.length;
-      this.cache.delete(filePath);
-      this.accessOrder = this.accessOrder.filter(p => p !== filePath);
-    }
+    this.cache.delete(filePath);
   }
 
   clear(): void {
     this.cache.clear();
-    this.totalBytes = 0;
-    this.accessOrder = [];
   }
 
   size(): number {
@@ -90,4 +131,61 @@ export class FileStateCache {
       }
     }
   }
+}
+
+// @kern-source: file-state-cache:149
+export const _projectCaches: Map<string,{cache:FileStateCache,fingerprint:string}> = new Map<string, { cache: FileStateCache; fingerprint: string }>();
+
+// @kern-source: file-state-cache:154
+export const _projectFingerprintCache: Map<string,{value:{key:string,fingerprint:string},expires:number}> = new Map<string, { value: { key: string; fingerprint: string }; expires: number }>();
+
+// @kern-source: file-state-cache:159
+export const PROJECT_FINGERPRINT_TTL_MS: number = 1000;
+
+// @kern-source: file-state-cache:162
+function projectCacheFingerprint(cwd: string): {key:string,fingerprint:string} {
+  const absCwd = resolve(cwd || process.cwd());
+  const now = Date.now();
+  const cached = _projectFingerprintCache.get(absCwd);
+  if (cached && cached.expires > now) return cached.value;
+  try {
+    const root = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: absCwd, encoding: 'utf-8', timeout: 2000, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    let head = 'unknown';
+    try { head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf-8', timeout: 2000, stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { /* non-fatal */ }
+    const value = { key: root, fingerprint: head };
+    _projectFingerprintCache.set(absCwd, { value, expires: now + PROJECT_FINGERPRINT_TTL_MS });
+    return value;
+  } catch {
+    const value = { key: absCwd, fingerprint: 'nogit' };
+    _projectFingerprintCache.set(absCwd, { value, expires: now + PROJECT_FINGERPRINT_TTL_MS });
+    return value;
+  }
+}
+
+/**
+ * Return a FileStateCache scoped to the current project. The cache survives across Cesar turns and is invalidated when git HEAD changes.
+ */
+// @kern-source: file-state-cache:182
+export function getProjectFileStateCache(cwd: string): FileStateCache {
+  const fp = projectCacheFingerprint(cwd);
+  const existing = _projectCaches.get(fp.key);
+  if (existing) {
+    if (existing.fingerprint !== fp.fingerprint) {
+      existing.cache.clear();
+      existing.fingerprint = fp.fingerprint;
+    }
+    return existing.cache;
+  }
+  const cache = new FileStateCache();
+  _projectCaches.set(fp.key, { cache, fingerprint: fp.fingerprint });
+  return cache;
+}
+
+/**
+ * Clear all project-scoped file state caches. Test helper and emergency invalidation hook.
+ */
+// @kern-source: file-state-cache:199
+export function clearProjectFileStateCaches(): void {
+  _projectCaches.clear();
+  _projectFingerprintCache.clear();
 }

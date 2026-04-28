@@ -17,7 +17,7 @@ import from="../tools/tool-bash.js" names="createBashTool"
 import from="../tools/tool-grep.js" names="createGrepTool"
 import from="../tools/tool-glob.js" names="createGlobTool"
 import from="node:crypto" names="randomUUID"
-import from="../blocks/file-state-cache.js" names="FileStateCache"
+import from="../blocks/file-state-cache.js" names="getProjectFileStateCache"
 import from="../signals/session-store.js" names="saveToolResultToDisk"
 import from="../tools/tool-retrieve.js" names="createRetrieveResultTool"
 import from="../models/context-parts.js" names="ToolCacheEntry" types=true
@@ -117,7 +117,7 @@ fn name=runApiAgentLoop async=true params="opts:ApiAgentOptions" returns="Promis
     // Phase E v2: when virtualFs is provided (Speculator mode), inject it so
     // Read/Edit/Write tool calls route through the in-memory VirtualFS overlay
     // instead of touching the real filesystem.
-    const fsc = new FileStateCache();
+    const fsc = getProjectFileStateCache(opts.cwd);
     const toolCtx: ToolContext = {
       cwd: opts.cwd,
       readFileState: (fsc as any).cache,

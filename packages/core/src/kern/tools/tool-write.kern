@@ -5,7 +5,6 @@
 import from="node:fs" names="writeFileSync,statSync,existsSync,mkdirSync"
 import from="node:path" names="resolve,dirname,relative"
 import from="../models/tool-types.js" names="ToolResult,ToolContext,ToolHandler,ToolDefinition,PermissionDecision" types=true
-import from="../../file-state-cache.js" names="fileStateCache"
 import from="../blocks/file-history.js" names="takeSnapshot"
 
 fn name=createWriteTool returns=ToolHandler
@@ -65,7 +64,7 @@ fn name=createWriteTool returns=ToolHandler
       const filePath = resolve(ctx.cwd, input.file_path as string);
       const content = input.content as string;
       const relPath = relative(ctx.cwd, filePath);
-      const cache = fileStateCache;
+      const cache = ctx.readFileState;
 
       // Phase E v2: route through VirtualFS overlay when present.
       if (ctx.virtualFs) {
@@ -94,7 +93,8 @@ fn name=createWriteTool returns=ToolHandler
           return { ok: false, content: '', error: `Cannot stat file: ${err instanceof Error ? err.message : String(err)}` };
         }
 
-        if (cache.isStale(filePath, mtime)) {
+        const cachedState = cache.get(filePath);
+        if (!cachedState || mtime > cachedState.timestamp) {
           return {
             ok: false,
             content: '',

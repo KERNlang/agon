@@ -28,7 +28,7 @@ import { createGlobTool } from '../tools/tool-glob.js';
 
 import { randomUUID } from 'node:crypto';
 
-import { FileStateCache } from '../blocks/file-state-cache.js';
+import { getProjectFileStateCache } from '../blocks/file-state-cache.js';
 
 import { saveToolResultToDisk } from '../signals/session-store.js';
 
@@ -141,7 +141,7 @@ export async function runApiAgentLoop(opts: ApiAgentOptions): Promise<ApiAgentRe
   // Phase E v2: when virtualFs is provided (Speculator mode), inject it so
   // Read/Edit/Write tool calls route through the in-memory VirtualFS overlay
   // instead of touching the real filesystem.
-  const fsc = new FileStateCache();
+  const fsc = getProjectFileStateCache(opts.cwd);
   const toolCtx: ToolContext = {
     cwd: opts.cwd,
     readFileState: (fsc as any).cache,

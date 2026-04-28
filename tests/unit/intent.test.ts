@@ -124,6 +124,12 @@ describe('Intent Detection — Slash Commands', () => {
     if (r2.type === 'history') expect(r2.id).toBe('abc123');
   });
 
+  it('/harness-replay parses optional turn id', () => {
+    const r = detectIntent('/harness-replay cesar-abc123');
+    expect(r.type).toBe('harness-replay');
+    if (r.type === 'harness-replay') expect(r.turnId).toBe('cesar-abc123');
+  });
+
   it('/engines', () => {
     expect(detectIntent('/engines').type).toBe('engines');
   });

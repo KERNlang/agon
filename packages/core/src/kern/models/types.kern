@@ -192,6 +192,16 @@ config name=AgonConfig
     doc "Autonomous plan approval policy. 'off'=always prompt, 'safe-only'=only non-mutating plans, 'cost-bounded'=plans under cesarAutoApproveMaxCostUsd, 'always'=any plan with autoApprove=true."
   field name=cesarAutoApproveMaxCostUsd type=number optional=true
     doc "When cesarAutoApproveMode is 'cost-bounded' or 'always', the maximum estimated USD cost (including 2× review cycle estimate for mutating plans) that can be auto-approved without user confirmation."
+  field name=cesarSelfTurnAutoApprove type=boolean default=true
+    doc "When true, Cesar may auto-approve small Edit/Write operations during its own live turn if the target file is already known, inside the workspace, not sensitive, not stale, and under the diff token threshold."
+  field name=cesarSelfTurnAutoApproveMaxDiffTokens type=number default=1200
+    doc "Maximum estimated changed-token count for Cesar self-turn Edit/Write auto-approval."
+  field name=cesarApprovalLedger type=boolean default=true
+    doc "When true, write compact JSONL permission-decision records for Cesar tool approvals, prompts, and blocks."
+  field name=cesarToolTimeline type=boolean default=true
+    doc "When true, write compact JSONL per-turn tool timeline records for Cesar tool calls, results, and summaries."
+  field name=cesarStreamingXmlTools type=boolean default=true
+    doc "When true, interrupt text streaming as soon as a complete XML tool call is parsed so XML fallback tools can execute live instead of waiting for the whole response."
   field name=campfireObserverStrategy type="'lead-first'|'all-respond'" default=lead-first
   field name=hooks type="Record<string,Array<{command:string,engines?:string[],timeout?:number}>>" optional=true
   field name=permissionMode type="'auto'|'smart'|'ask'|'deny-all'" default=smart

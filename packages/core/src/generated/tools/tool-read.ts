@@ -6,12 +6,10 @@ import { resolve, relative } from 'node:path';
 
 import type { ToolResult, ToolContext, ToolHandler, ToolDefinition, PermissionDecision, FileState } from '../models/tool-types.js';
 
-import { fileStateCache } from '../../file-state-cache.js';
-
 /**
  * Format text with cat -n style line numbers.
  */
-// @kern-source: tool-read:9
+// @kern-source: tool-read:8
 function formatWithLineNumbers(text: string, startLine: number): string {
   const lines = text.split('\n');
   return lines.map((line, i) => {
@@ -23,7 +21,7 @@ function formatWithLineNumbers(text: string, startLine: number): string {
 /**
  * Factory for the Read tool — reads files with line numbers and caching.
  */
-// @kern-source: tool-read:19
+// @kern-source: tool-read:18
 export function createReadTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Read',
@@ -105,9 +103,9 @@ export function createReadTool(): ToolHandler {
     }
 
     // Dedup check: if cache has it and mtime hasn't changed, return short message
-    const cache = fileStateCache;
+    const cache = ctx.readFileState;
     const cached = cache.get(filePath);
-    if (cached && !cache.isStale(filePath, mtime)) {
+    if (cached && !(mtime > cached.timestamp)) {
       // If same offset/limit requested, file is unchanged
       const reqOffset = (input.offset as number | undefined) ?? 0;
       const reqLimit = (input.limit as number | undefined) ?? undefined;

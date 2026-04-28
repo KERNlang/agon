@@ -220,7 +220,12 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
             'item/permissions/requestApproval': 'Permission',
           };
           const toolName = methodToolMap[m] ?? msg.params?.tool ?? msg.params?.command?.type ?? msg.params?.name ?? m;
-          const toolCmd = msg.params?.command?.command ?? msg.params?.command ?? msg.params?.description ?? msg.params?.path ?? JSON.stringify(msg.params ?? {});
+          const approvalArgs = msg.params?.args ?? msg.params?.input ?? msg.params?.command ?? msg.params ?? {};
+          const toolCmd = String(toolName).toLowerCase().includes('bash') || String(toolName).toLowerCase().includes('shell')
+            ? (msg.params?.command?.command ?? msg.params?.command ?? msg.params?.description ?? JSON.stringify(msg.params ?? {}))
+            : (approvalArgs && typeof approvalArgs === 'object'
+              ? JSON.stringify(approvalArgs)
+              : (msg.params?.description ?? msg.params?.path ?? String(approvalArgs ?? '')));
 
           // Emit as tool_call for UI visibility
           for (const handler of notificationHandlers) {
@@ -460,7 +465,7 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
 /**
  * Persistent ACP (Agent Client Protocol) session for OpenCode. JSON-RPC 2.0 over stdio.
  */
-// @kern-source: persistent-session:442
+// @kern-source: persistent-session:447
 export function createAcpSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -562,7 +567,12 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
             const options: any[] = msg.params?.options ?? [];
             const toolCall = msg.params?.toolCall ?? {};
             const tName = toolCall.name ?? toolCall.functionDeclaration?.name ?? msg.params?.name ?? 'tool';
-            const tCmd = toolCall.args?.command ?? toolCall.args?.file_path ?? (toolCall.args ? JSON.stringify(toolCall.args) : msg.params?.description ?? m);
+            const tArgs = toolCall.args ?? {};
+            const tCmd = String(tName).toLowerCase().includes('bash') || String(tName).toLowerCase().includes('shell')
+              ? (toolCall.args?.command ?? (toolCall.args ? JSON.stringify(toolCall.args) : msg.params?.description ?? m))
+              : (tArgs && typeof tArgs === 'object' && Object.keys(tArgs).length > 0
+                ? JSON.stringify(tArgs)
+                : (msg.params?.description ?? m));
             const allowOpt = options.find((o: any) => o.kind === 'allow_once') ?? options.find((o: any) => o.optionId?.includes('proceed_once'));
             const alwaysOpt = options.find((o: any) => o.kind === 'allow_always' || o.optionId?.includes('proceed_always'));
             const rejectOpt = options.find((o: any) => o.kind === 'reject_once') ?? options.find((o: any) => o.optionId?.includes('reject'));
@@ -591,7 +601,12 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
 
           // Generic server request (other methods)
           const toolName = msg.params?.tool ?? msg.params?.name ?? msg.params?.type ?? m;
-          const toolCmd = msg.params?.command ?? msg.params?.description ?? JSON.stringify(msg.params ?? {});
+          const approvalArgs = msg.params?.args ?? msg.params?.input ?? msg.params?.command ?? msg.params ?? {};
+          const toolCmd = String(toolName).toLowerCase().includes('bash') || String(toolName).toLowerCase().includes('shell')
+            ? (msg.params?.command ?? msg.params?.description ?? JSON.stringify(msg.params ?? {}))
+            : (approvalArgs && typeof approvalArgs === 'object'
+              ? JSON.stringify(approvalArgs)
+              : (msg.params?.description ?? String(approvalArgs ?? '')));
 
           for (const handler of notificationHandlers) {
             handler('tool/approval', { tool: toolName, command: toolCmd, rpcId: msg.id });
@@ -808,7 +823,7 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
 /**
  * Persistent bidirectional NDJSON session for Claude Code. One process, multi-turn via stdin.
  */
-// @kern-source: persistent-session:790
+// @kern-source: persistent-session:805
 export function createStreamJsonSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -1114,7 +1129,7 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
 /**
  * Fallback: spawn per turn with --resume/--continue. Works for any CLI engine.
  */
-// @kern-source: persistent-session:1096
+// @kern-source: persistent-session:1111
 export function createResumeSession(config: PersistentSessionConfig): PersistentSession {
   let alive = false;
       let sessionId: string | null = null;

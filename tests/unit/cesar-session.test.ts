@@ -2,6 +2,8 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
+import { ToolRegistry } from '@agon/core';
+import type { ToolContext, ToolHandler } from '@agon/core';
 import { buildCesarConversationSnapshot, buildOnToolCall, canUseCesarMcp, loadCesarMcpServers, normalizeCesarMcpServers } from '../../packages/cli/src/generated/cesar/session.js';
 
 const testDirs: string[] = [];
@@ -137,5 +139,33 @@ describe('cesar MCP session config', () => {
     } as any, {} as any, {});
 
     await expect(onToolCall?.('Forge', { task: 'simple question' }, 'call_1')).rejects.toThrow(/\[BLOCKED_FAST_PATH\]/);
+  });
+
+  it('does not session-cache Read tool calls above the mtime-aware Read tool', async () => {
+    const registry = new ToolRegistry();
+    let readCount = 0;
+    const readTool: ToolHandler = {
+      definition: {
+        name: 'Read',
+        description: 'test read',
+        inputSchema: { type: 'object', properties: { file_path: { type: 'string' } }, required: ['file_path'] },
+        maxResultSizeChars: 1000,
+        isReadOnly: true,
+        isConcurrencySafe: true,
+      },
+      validate: () => null,
+      checkPermission: (_input: Record<string, unknown>, _ctx: ToolContext) => ({ behavior: 'allow' }),
+      execute: async () => ({ ok: true, content: `read-${++readCount}` }),
+    };
+    registry.register(readTool);
+
+    const onToolCall = buildOnToolCall({
+      cesar: { confidenceSatisfied: true },
+      explorationMode: false,
+    } as any, registry, {});
+
+    await expect(onToolCall?.('Read', { file_path: 'package.json' }, 'call_1')).resolves.toBe('read-1');
+    await expect(onToolCall?.('Read', { file_path: 'package.json' }, 'call_2')).resolves.toBe('read-2');
+    expect(readCount).toBe(2);
   });
 });

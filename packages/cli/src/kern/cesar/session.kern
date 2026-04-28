@@ -337,6 +337,7 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
   handler <<<
     const fsc = new FileStateCache();
     const toolResultCache = new Map<string, string>();
+    const CACHEABLE_TOOLS = new Set(['Grep', 'Glob']);
     const explorationMode = ctx.explorationMode ?? false;
     const sharedToolCtx: ToolContext = {
       cwd: resolveWorkingDir(),
@@ -507,9 +508,11 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
         return `[BLOCKED] Report confidence first. Call ReportConfidence(value) before using ${name}. After ReportConfidence succeeds, retry the SAME ${name} call immediately with the same arguments. Read/Grep/Glob are allowed for investigation.`;
       }
 
-      // Dedup: if exact same tool+args was called before, return cached result
+      // Dedup stable discovery tools. Do not cache Read here: the Read tool
+      // performs mtime-aware dedup itself and must run on explicit re-read so
+      // Edit/Write snapshots refresh after a file changes.
       const cacheKey = `${name}:${JSON.stringify(args)}`;
-      const cached = toolResultCache.get(cacheKey);
+      const cached = CACHEABLE_TOOLS.has(name) ? toolResultCache.get(cacheKey) : undefined;
       if (cached !== undefined) return cached;
 
       const result = await executeToolCall(
@@ -530,7 +533,7 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
       );
       const output = result.result.ok ? result.result.content : (result.result.error ?? 'Tool execution failed');
       // Cache read-only results. Invalidate on writes.
-      if (['Read', 'Grep', 'Glob'].includes(name)) {
+      if (CACHEABLE_TOOLS.has(name)) {
         toolResultCache.set(cacheKey, output);
       } else if (['Edit', 'Write', 'Bash'].includes(name)) {
         toolResultCache.clear();

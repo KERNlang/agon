@@ -161,7 +161,7 @@ export function App() {
     return (value: React.SetStateAction<Record<string,StreamingEntry>>) => {
       const now = Date.now();
       const elapsed = now - _lastCall;
-      if (elapsed >= 90) {
+      if (elapsed >= 33) {
         _lastCall = now;
         if (_pendingTimer) { clearTimeout(_pendingTimer); _pendingTimer = null; }
         setTimeout(() => _setStreamingTextRaw(value), 0);
@@ -172,7 +172,7 @@ export function App() {
             _lastCall = Date.now();
             _pendingTimer = null;
             _setStreamingTextRaw(_pendingValue);
-          }, 90 - elapsed);
+          }, 33 - elapsed);
         }
       }
     };

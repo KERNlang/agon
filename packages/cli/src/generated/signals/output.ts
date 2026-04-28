@@ -104,15 +104,18 @@ export function clearThinkingBuffer(): void {
 }
 
 // @kern-source: output:95
-export const _pendingToolCalls: any[] = [] as any[];
+export const TOOL_CALL_GROUP_FLUSH_MS: number = 500;
 
 // @kern-source: output:98
+export const _pendingToolCalls: any[] = [] as any[];
+
+// @kern-source: output:101
 export const _pendingFlushTimer: { timer: any, actions: any } = ({ timer: null, actions: null }) as any;
 
 /**
  * Emit any buffered tool-call events as a single tool-call-group block.
  */
-// @kern-source: output:101
+// @kern-source: output:104
 export function flushPendingToolCalls(actions: OutputActions): void {
   if (_pendingFlushTimer.timer) {
     clearTimeout(_pendingFlushTimer.timer);
@@ -125,22 +128,22 @@ export function flushPendingToolCalls(actions: OutputActions): void {
 }
 
 /**
- * Debounce-flush pending tool-calls 300ms after the last one — covers turns that end on a tool-call without any trailing event.
+ * Debounce-flush pending tool-calls after a quiet period — covers turns that end on a tool-call without any trailing event.
  */
-// @kern-source: output:114
+// @kern-source: output:117
 export function schedulePendingFlush(actions: OutputActions): void {
   _pendingFlushTimer.actions = actions;
   if (_pendingFlushTimer.timer) clearTimeout(_pendingFlushTimer.timer);
   _pendingFlushTimer.timer = setTimeout(() => {
     _pendingFlushTimer.timer = null;
     if (_pendingFlushTimer.actions) flushPendingToolCalls(_pendingFlushTimer.actions);
-  }, 300);
+  }, TOOL_CALL_GROUP_FLUSH_MS);
 }
 
 /**
  * Auto-approve queued permissions whose base command is already in allowedCommands.
  */
-// @kern-source: output:125
+// @kern-source: output:128
 function _drainAutoApproved(actions: OutputActions): void {
   const cfg = loadConfig();
   const allowed: string[] = (cfg as any).allowedCommands ?? [];
@@ -158,7 +161,7 @@ function _drainAutoApproved(actions: OutputActions): void {
   }
 }
 
-// @kern-source: output:144
+// @kern-source: output:147
 function _showNextPermission(actions: OutputActions): void {
   // First drain any that are now auto-approved (e.g. after "Always")
   _drainAutoApproved(actions);
@@ -218,7 +221,7 @@ function _showNextPermission(actions: OutputActions): void {
 /**
  * Process a single OutputEvent — updates spinner, streaming, and block state.
  */
-// @kern-source: output:201
+// @kern-source: output:204
 export function handleOutputEvent(event: OutputEvent, state: OutputState, actions: OutputActions, mode: string, chatStartTime: number): void {
   // Flush accumulated thinking buffer when any non-thinking event arrives
   if (event.type !== 'thinking-chunk' && _thinkingBuffer.content) {
@@ -561,8 +564,8 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
       // Buffer finalized tool-calls only. 'running' events only update
       // the live progress view above — committing them here would double-
       // count in the group summary (running + done for the same tool).
-      // The group flushes on the next non-tool event OR after a 300ms
-      // quiet period so terminal-tool-call turns still render eventually.
+      // The group flushes on the next non-tool event OR after a quiet
+      // period so terminal-tool-call turns still render eventually.
       if (te.status === 'done' || te.status === 'error') {
         _pendingToolCalls.push(event);
         schedulePendingFlush(actions);

@@ -367,6 +367,17 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
         }
       }
 
+      // Fast path: small answers/edits stay live and cheap. ReportConfidence
+      // remains allowed, but planning/delegation/self-check tools are gated so
+      // Cesar does not turn a one-file fix into a full orchestration cycle.
+      const fastPathMode = String((ctx.cesar as any)?.fastPathMode ?? '');
+      if (fastPathMode) {
+        const BLOCKED_IN_FAST_PATH = ['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'Delegate', 'ProposePlan', 'QuickNero'];
+        if (BLOCKED_IN_FAST_PATH.includes(name)) {
+          return `[BLOCKED_FAST_PATH] This is a ${fastPathMode} fast-path turn. Do the direct work with Read/Grep/Glob/Edit/Write/Bash as needed, then answer briefly. Do not plan, forge, delegate, review, or self-challenge unless the user explicitly asks.`;
+        }
+      }
+
       // ── Orchestration signal tools — intercept before execution ──
       const ORCH_TOOLS = new Set(['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent']);
       if (ORCH_TOOLS.has(name)) {

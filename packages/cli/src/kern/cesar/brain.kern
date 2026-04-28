@@ -351,7 +351,7 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
       const eagerPromises: Promise<ToolCallResult>[] = [];
       let eagerToolCtx: ToolContext | null = null;
       let routingHints = deriveRoutingHints(input, ctx);
-      const cesarFastPath = routingHints.intakeKind === 'chat'
+      const answerFastPath = routingHints.intakeKind === 'chat'
         && routingHints.recommendedFlow === 'answer'
         && input.trim().length < 300
         && !reviewFollowup.matched
@@ -359,12 +359,24 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
         && !ctx.activePlan
         && !ctx.neroMode
         && !ctx.explorationMode;
+      const simpleEditFastPath = routingHints.recommendedFlow === 'quick-fix'
+        && input.trim().length < 500
+        && routingHints.recommendedBreadth !== 'team'
+        && !reviewFollowup.matched
+        && !(images && images.length > 0)
+        && !ctx.activePlan
+        && !ctx.neroMode
+        && !ctx.explorationMode;
+      const cesarFastPath = answerFastPath || simpleEditFastPath;
+      const fastPathMode = simpleEditFastPath ? 'edit' : (answerFastPath ? 'answer' : '');
+      const fastPathBaseBudget = simpleEditFastPath ? 5 : 3;
+      const fastPathMaxBudget = simpleEditFastPath ? 8 : 4;
       let routeReliability: any = null;
       let routeDowngrade = false;
       if (cesarFastPath) {
         dispatch({
           type: 'info',
-          message: `Cesar route: ${routingHints.intakeKind} -> ${routingHints.recommendedFlow} | ${cesarEngineId}/${_actualCesarBackend} | fast`,
+          message: `Cesar route: ${routingHints.intakeKind} -> ${routingHints.recommendedFlow} | ${cesarEngineId}/${_actualCesarBackend} | fast-${fastPathMode}`,
         });
       } else {
         try {
@@ -382,7 +394,13 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
 
       // ── Build routing context (cheap: ~500ms, ~200 tokens) ──
       let enrichedInput = reviewFollowup.prompt;
-      if (!cesarFastPath) {
+      if (simpleEditFastPath) {
+        enrichedInput = `[FAST PATH — bounded edit]
+Stay live. Read only what you need, make the smallest direct change, and verify with the narrowest useful command.
+Do not call ProposePlan, Forge, Brainstorm, Tribunal, Campfire, Review, Agent, Delegate, Pipeline, or QuickNero unless the user explicitly asks for that mode.
+
+${reviewFollowup.prompt}`;
+      } else if (!cesarFastPath) {
         try {
           const routingCtx = buildRoutingContext(input, ctx);
           if (routingCtx) {
@@ -479,8 +497,16 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
       processMcpSideChannel();
 
       // ── Stream response ──
+      const previousFastPathMode = (ctx.cesar as any).fastPathMode;
       try {
-        const gen = session.send({ message: enrichedInput, signal: abort.signal, images: images?.map(img => img.path) });
+        if (cesarFastPath) (ctx.cesar as any).fastPathMode = fastPathMode;
+        else delete (ctx.cesar as any).fastPathMode;
+        const sendOptions: any = { message: enrichedInput, signal: abort.signal, images: images?.map(img => img.path) };
+        if (cesarFastPath) {
+          sendOptions.toolLoopBaseBudget = fastPathBaseBudget;
+          sendOptions.toolLoopMaxBudget = fastPathMaxBudget;
+        }
+        const gen = session.send(sendOptions);
 
         for await (const chunk of gen) {
           if (abort.signal.aborted) break;
@@ -511,6 +537,10 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
             dispatch({ type: 'spinner-update', message: `Cesar: ${toolName}…` });
 
             if (meta.input && STREAM_ORCH.has(toolName)) {
+              if (cesarFastPath) {
+                dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'error', output: `Blocked by fast-${fastPathMode}: do the direct work without orchestration.` } as any);
+                continue;
+              }
               if (!ctx.cesar!.pendingDelegation) {
                 ctx.cesar!.pendingDelegation = extractDelegation(toolName, (meta.input ?? {}) as Record<string, unknown>);
                 ctx.eventBus?.emit('cesar:delegation', { action: toolName.toLowerCase(), source: `stream-${toolStatus}` }).catch(() => {});
@@ -539,6 +569,10 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
               // which calls the noop handler and silently no-ops (PFB-1, RT-1).
               const EAGER_ORCH = STREAM_ORCH;
               if (EAGER_ORCH.has(toolName)) {
+                if (cesarFastPath) {
+                  dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'error', output: `Blocked by fast-${fastPathMode}: do the direct work without orchestration.` } as any);
+                  continue;
+                }
                 ctx.cesar!.pendingDelegation = extractDelegation(toolName, (meta.input ?? {}) as Record<string, unknown>);
                 ctx.eventBus?.emit('cesar:delegation', { action: toolName.toLowerCase(), source: 'stream' }).catch(() => {});
                 dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'done' } as any);
@@ -607,9 +641,11 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
               }
 
               // Check for suggestion/delegation marker
-              const suggestion = parseSuggestion(response);
-              if (suggestion.action) {
-                return await commitTurnAndSuggest({ action: suggestion.action!, rest: suggestion.rest, hardened: suggestion.hardened, tribunalMode: suggestion.tribunalMode, team: suggestion.team }, input, response, cesarEngineId, color, streaming, dispatch, ctx, buildToolTelemetry());
+              if (!cesarFastPath) {
+                const suggestion = parseSuggestion(response);
+                if (suggestion.action) {
+                  return await commitTurnAndSuggest({ action: suggestion.action!, rest: suggestion.rest, hardened: suggestion.hardened, tribunalMode: suggestion.tribunalMode, team: suggestion.team }, input, response, cesarEngineId, color, streaming, dispatch, ctx, buildToolTelemetry());
+                }
               }
 
               // Buffer before streaming to detect [SUGGEST:mode]
@@ -687,6 +723,9 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
           dispatch({ type: 'warning', message: 'Cesar session error — will restart on next message' });
           return { delegated: false, responded: false, decisionReason: 'stream-error' };
         }
+      } finally {
+        if (previousFastPathMode) (ctx.cesar as any).fastPathMode = previousFastPathMode;
+        else delete (ctx.cesar as any).fastPathMode;
       }
 
       clearInterval(heartbeat);
@@ -840,7 +879,7 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
 
       // Check final response for suggestion/delegation
       const finalSuggestion = parseSuggestion(response);
-      if (finalSuggestion.action) {
+      if (!cesarFastPath && finalSuggestion.action) {
         return await commitTurnAndSuggest({ action: finalSuggestion.action!, rest: finalSuggestion.rest, hardened: finalSuggestion.hardened, tribunalMode: finalSuggestion.tribunalMode, team: finalSuggestion.team }, input, response, cesarEngineId, color, streaming, dispatch, ctx, buildToolTelemetry());
       }
 
@@ -868,7 +907,12 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
               if (!session.alive || abort.signal.aborted) return '';
               dispatch({ type: 'spinner-start', message: 'Cesar processing results…', color });
               let nextResponse = '';
-              const gen = session.send({ message, signal: abort.signal });
+              const gen = session.send({
+                message,
+                signal: abort.signal,
+                toolLoopBaseBudget: cesarFastPath ? fastPathBaseBudget : undefined,
+                toolLoopMaxBudget: cesarFastPath ? fastPathMaxBudget : undefined,
+              });
               for await (const chunk of gen) {
                 if (chunk.type === 'text') nextResponse += chunk.content;
                 if (chunk.type === 'tool_call') {
@@ -923,6 +967,7 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
               },
               onText: (text: string) => { if (text.trim()) dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: text }); },
               onTurnComplete: (turn: number) => { dispatch({ type: 'spinner-update', message: `Cesar tool loop turn ${turn}…` }); },
+              maxTurns: cesarFastPath ? fastPathMaxBudget : undefined,
             },
           );
           response = loopResult.finalText.trim();
@@ -1070,7 +1115,12 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
                 if (!session.alive || abort.signal.aborted) return '';
                 dispatch({ type: 'spinner-start', message: 'Cesar executing…', color });
                 let nextResponse = '';
-                const gen = session.send({ message, signal: abort.signal });
+                const gen = session.send({
+                  message,
+                  signal: abort.signal,
+                  toolLoopBaseBudget: cesarFastPath ? fastPathBaseBudget : undefined,
+                  toolLoopMaxBudget: cesarFastPath ? fastPathMaxBudget : undefined,
+                });
                 for await (const chunk of gen) {
                   if (chunk.type === 'text') nextResponse += chunk.content;
                   if (chunk.type === 'done' || chunk.type === 'error') break;
@@ -1095,6 +1145,7 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
                 },
                 onText: (text: string) => { if (text.trim()) dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: text }); },
                 onTurnComplete: (turn: number) => { dispatch({ type: 'spinner-update', message: `Cesar executing turn ${turn}…` }); },
+                maxTurns: cesarFastPath ? fastPathMaxBudget : undefined,
               },
             );
             response = investigationResponse + '\n\n' + execResult.finalText.trim();

@@ -18,6 +18,8 @@ interface name=SessionSendOptions
   field name=images type="string[]" optional=true
   field name=signal type=AbortSignal optional=true
   field name=systemPrompt type=string optional=true
+  field name=toolLoopBaseBudget type=number optional=true
+  field name=toolLoopMaxBudget type=number optional=true
 
 interface name=PersistentSessionConfig
   field name=engine type=EngineDefinition
@@ -30,6 +32,8 @@ interface name=PersistentSessionConfig
   field name=onTurnEnd type="(learnings: {filesRead:string[], filesModified:string[], decisions:string[], discoveries:string[], toolsUsed:string[]}) => void" optional=true
   field name=mcpServers type="Array<Record<string,unknown>>" optional=true
   field name=sessionContinuity type=boolean optional=true
+  field name=toolLoopBaseBudget type=number optional=true
+  field name=toolLoopMaxBudget type=number optional=true
 
 interface name=PersistentSession
   field name=alive type=boolean
@@ -1454,8 +1458,14 @@ Respond with ONLY the summary, no preamble.`;
           // ── Agentic tool loop with dynamic budget ──
           // Productive steps (successful tool calls) extend the budget.
           // Failed steps shrink it. Models that work get more runway.
-          const BASE_BUDGET = 15;
-          const MAX_BUDGET = 30; // hard cap even for very productive sessions
+          const requestedBaseBudget = Number(opts.toolLoopBaseBudget ?? config.toolLoopBaseBudget ?? 15);
+          const requestedMaxBudget = Number(opts.toolLoopMaxBudget ?? config.toolLoopMaxBudget ?? 30);
+          const BASE_BUDGET = Number.isFinite(requestedBaseBudget) && requestedBaseBudget > 0
+            ? Math.max(1, Math.floor(requestedBaseBudget))
+            : 15;
+          const MAX_BUDGET = Number.isFinite(requestedMaxBudget) && requestedMaxBudget > 0
+            ? Math.max(BASE_BUDGET, Math.floor(requestedMaxBudget))
+            : 30; // hard cap even for very productive sessions
           const MAX_CONSECUTIVE_ERRORS = 3;
           let budget = BASE_BUDGET;
           let step = 0;

@@ -179,7 +179,7 @@ fn name=buildCesarSystemPrompt params="ctx:HandlerContext" returns=string export
     try {
       const planCount = listCesarPlans().length;
       if (planCount > 0) {
-        systemParts.push(`PLANS: ${planCount} plan(s) stored in ~/.agon/runs/. Use the ListPlans tool to look up past plans when relevant (e.g. user references a previous task, or you want to check if something was already planned). Do NOT load plans proactively — only when the task relates to prior work.`);
+        systemParts.push(`PLANS: ${planCount} plan(s) stored in ~/.agon/plans/. Use the ListPlans tool to look up past plans when relevant (e.g. user references a previous task, or you want to check if something was already planned). Do NOT load plans proactively — only when the task relates to prior work.`);
       }
     } catch { /* plan history unavailable — not critical */ }
 
@@ -364,6 +364,17 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
           if (destructivePatterns.test(cmd)) {
             return `[BLOCKED] Destructive commands are not available in plan mode. Use ProposePlan to propose your execution strategy.`;
           }
+        }
+      }
+
+      // Fast path: small answers/edits stay live and cheap. ReportConfidence
+      // remains allowed, but planning/delegation/self-check tools are gated so
+      // Cesar does not turn a one-file fix into a full orchestration cycle.
+      const fastPathMode = String((ctx.cesar as any)?.fastPathMode ?? '');
+      if (fastPathMode) {
+        const BLOCKED_IN_FAST_PATH = ['Forge', 'Brainstorm', 'Tribunal', 'Campfire', 'Pipeline', 'Review', 'Agent', 'Delegate', 'ProposePlan', 'QuickNero'];
+        if (BLOCKED_IN_FAST_PATH.includes(name)) {
+          return `[BLOCKED_FAST_PATH] This is a ${fastPathMode} fast-path turn. Do the direct work with Read/Grep/Glob/Edit/Write/Bash as needed, then answer briefly. Do not plan, forge, delegate, review, or self-challenge unless the user explicitly asks.`;
         }
       }
 

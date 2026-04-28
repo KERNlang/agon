@@ -8,19 +8,15 @@ import { contentWidth, engineColor, RenderedSegments } from './rendering.js';
 
 import { parseMarkdownBlocks } from './markdown.js';
 
-import { icons } from '../signals/icons.js';
-
-// @kern-source: plan-view:48
+// @kern-source: plan-view:47
 export function PlanProposalView({ plan, markdown }: { plan:any; markdown?:string }) {
   const steps = plan.steps ?? [];
   const totalTokens = plan.totalEstimatedTokens ?? steps.reduce((sum: number, s: any) => sum + (s.estimatedTokens ?? 0), 0);
   const totalCost = plan.totalEstimatedCostUsd ?? steps.reduce((sum: number, s: any) => sum + (s.estimatedCostUsd ?? 0), 0);
   const allEngines = [...new Set(steps.flatMap((s: any) => s.engines ?? (s.engine ? [s.engine] : [])))] as string[];
   const w = contentWidth(6);
-  const barWidth = Math.min(w, 64);
-  const bar = '\u2550'.repeat(barWidth);
-  const thinBar = '\u2500'.repeat(barWidth);
-  const planColor = '#c084fc';
+  const thinBar = '\u2500'.repeat(Math.min(w, 64));
+  const planFilePath = plan.planFilePath || (plan as any).planFilePath;
 
   // Claude-Code-style markdown rendering for the plan body. The
   // structured step boxes below are kept as a fallback when no
@@ -32,23 +28,22 @@ export function PlanProposalView({ plan, markdown }: { plan:any; markdown?:strin
     const segments = parseMarkdownBlocks(markdown);
     return (
       <Box flexDirection="column" paddingLeft={2} marginY={1}>
-        <Text color={planColor} bold>{'\u2554'}{bar}{'\u2557'}</Text>
-        <Text color={planColor}>{'\u2551 '}<Text bold color="white">{'\u25b8 PLAN'}</Text></Text>
-        <Text color={planColor}>{'\u2551 '}<Text dimColor>{steps.length}{' steps \u00b7 ~'}{totalTokens.toLocaleString()}{' tokens \u00b7 $'}{totalCost.toFixed(2)}{' est'}</Text></Text>
+        <Text bold color="white">Plan</Text>
+        <Text dimColor>{steps.length}{' steps · ~'}{totalTokens.toLocaleString()}{' tokens · $'}{totalCost.toFixed(2)}{' est'}</Text>
+        {planFilePath && <Text dimColor>{'File: '}{planFilePath}</Text>}
         {allEngines.length > 0 && (
           <Box>
-            <Text color={planColor}>{'\u2551 '}<Text dimColor>{'Engines: '}</Text></Text>
+            <Text dimColor>{'Engines: '}</Text>
             {allEngines.map((id: string, i: number) => (
               <Box key={id}>
-                <Text bold color={engineColor(id)}>{id}</Text>
+                <Text color={engineColor(id)}>{id}</Text>
                 {i < allEngines.length - 1 && <Text dimColor>{', '}</Text>}
               </Box>
             ))}
           </Box>
         )}
-        <Text color={planColor}>{'\u255f'}{thinBar}{'\u2562'}</Text>
-        <RenderedSegments segments={segments} borderColor={planColor} wrapWidth={wrapWidth} />
-        <Text color={planColor} bold>{'\u255a'}{bar}{'\u255d'}</Text>
+        <Text dimColor>{thinBar}</Text>
+        <RenderedSegments segments={segments} borderColor="" wrapWidth={wrapWidth} />
       </Box>
     );
   }
@@ -56,22 +51,21 @@ export function PlanProposalView({ plan, markdown }: { plan:any; markdown?:strin
   return (
     <Box flexDirection="column" paddingLeft={2} marginY={1}>
       {/* ── Header ── */}
-      <Text color={planColor} bold>{'\u2554'}{bar}{'\u2557'}</Text>
-      <Text color={planColor}>{'\u2551 '}<Text bold color="white">{'\u25b8 PLAN: '}{plan.intent}</Text></Text>
-      <Text color={planColor}>{'\u2551 '}<Text dimColor>{steps.length}{' steps \u00b7 ~'}{totalTokens.toLocaleString()}{' tokens \u00b7 $'}{totalCost.toFixed(2)}{' est'}</Text></Text>
+      <Text bold color="white">Plan: {plan.intent}</Text>
+      <Text dimColor>{steps.length}{' steps · ~'}{totalTokens.toLocaleString()}{' tokens · $'}{totalCost.toFixed(2)}{' est'}</Text>
+      {planFilePath && <Text dimColor>{'File: '}{planFilePath}</Text>}
       {allEngines.length > 0 && (
         <Box>
-          <Text color={planColor}>{'\u2551 '}<Text dimColor>{'Engines: '}</Text></Text>
+          <Text dimColor>{'Engines: '}</Text>
           {allEngines.map((id: string, i: number) => (
             <Box key={id}>
-              <Text bold color={engineColor(id)}>{id}</Text>
+              <Text color={engineColor(id)}>{id}</Text>
               {i < allEngines.length - 1 && <Text dimColor>{', '}</Text>}
             </Box>
           ))}
         </Box>
       )}
-      <Text color={planColor}>{'\u2551'}</Text>
-      <Text color={planColor}>{'\u255f'}{thinBar}{'\u2562'}</Text>
+      <Text dimColor>{thinBar}</Text>
 
       {/* ── Steps ── */}
       {steps.map((s: any, i: number) => {
@@ -86,7 +80,6 @@ export function PlanProposalView({ plan, markdown }: { plan:any; markdown?:strin
           <Box key={s.id} flexDirection="column">
             {/* Step number + type icon + description */}
             <Box>
-              <Text color={planColor}>{'\u2551 '}</Text>
               <Text color={stateInfo.color}>{stateInfo.icon}{' '}</Text>
               <Text bold color="white">{String(i + 1)}{'.'}</Text>
               <Text>{' '}</Text>
@@ -96,7 +89,6 @@ export function PlanProposalView({ plan, markdown }: { plan:any; markdown?:strin
 
             {/* Metadata line: type · engines · cost · flags */}
             <Box>
-              <Text color={planColor}>{'\u2551   '}</Text>
               <Text dimColor>{'  '}</Text>
               <Text color={cfg.color}>{cfg.label}</Text>
               {stepEngines.length > 0 && (
@@ -119,75 +111,64 @@ export function PlanProposalView({ plan, markdown }: { plan:any; markdown?:strin
             {/* Fitness command if present */}
             {hasFitness && (
               <Box>
-                <Text color={planColor}>{'\u2551   '}</Text>
-                <Text dimColor>{'  test: '}</Text>
-                <Text color="#fbbf24">{s.fitnessCmd}</Text>
+                <Text dimColor>{'    test: '}</Text>
+                <Text>{s.fitnessCmd}</Text>
               </Box>
             )}
 
             {/* Dependencies */}
             {hasDepends && (
               <Box>
-                <Text color={planColor}>{'\u2551   '}</Text>
-                <Text dimColor>{'  after: '}</Text>
-                <Text color="#94a3b8">{s.dependsOn.join(', ')}</Text>
+                <Text dimColor>{'    after: '}</Text>
+                <Text dimColor>{s.dependsOn.join(', ')}</Text>
               </Box>
             )}
 
             {/* Tribunal mode */}
             {s.tribunalMode && (
               <Box>
-                <Text color={planColor}>{'\u2551   '}</Text>
-                <Text dimColor>{'  mode: '}</Text>
-                <Text color="#c084fc">{s.tribunalMode}</Text>
+                <Text dimColor>{'    mode: '}</Text>
+                <Text dimColor>{s.tribunalMode}</Text>
               </Box>
             )}
 
             {/* Rationale — why this engine/approach was chosen */}
             {s.rationale && (
               <Box>
-                <Text color={planColor}>{'\u2551   '}</Text>
-                <Text dimColor>{'  why: '}</Text>
-                <Text color="#94a3b8">{s.rationale}</Text>
+                <Text dimColor>{'    why: '}</Text>
+                <Text dimColor>{s.rationale}</Text>
               </Box>
             )}
 
             {/* Verify command */}
             {s.verifyCmd && (
               <Box>
-                <Text color={planColor}>{'\u2551   '}</Text>
-                <Text dimColor>{'  verify: '}</Text>
-                <Text color="#34d399">{s.verifyCmd}</Text>
+                <Text dimColor>{'    verify: '}</Text>
+                <Text>{s.verifyCmd}</Text>
               </Box>
             )}
 
             {/* Separator between steps */}
             {i < steps.length - 1 && (
-              <Text color={planColor}>{'\u2551'}</Text>
+              <Text dimColor>{' '}</Text>
             )}
           </Box>
         );
       })}
 
-      {/* ── Footer ── */}
-      {/* No key hints here on purpose: the actual approval prompt is
-          shown by askQuestion() below this block once Cesar finishes.
-          Showing keys here while the composer is still active misleads
-          the user into typing "y/n/e" into chat instead of the prompt. */}
-      <Text color={planColor}>{'\u2551'}</Text>
-      <Text color={planColor} bold>{'\u255a'}{bar}{'\u255d'}</Text>
+      <Text dimColor>{thinBar}</Text>
     </Box>
   );
 }
 
-// @kern-source: plan-view:223
+// @kern-source: plan-view:205
 export function PlanExecutionView({ plan }: { plan:any }) {
   const steps: any[] = plan.steps ?? [];
   const doneSteps = steps.filter((s: any) => s.state === 'done');
   const failedSteps = steps.filter((s: any) => s.state === 'failed');
   const runningSteps = steps.filter((s: any) => s.state === 'running');
   const pct = steps.length > 0 ? Math.round((doneSteps.length / steps.length) * 100) : 0;
-  const planColor = '#c084fc';
+  const planColor = '#94a3b8';
   const barWidth = 20;
   const filled = Math.round((doneSteps.length / Math.max(steps.length, 1)) * barWidth);
   const progressBar = '\u2588'.repeat(filled) + '\u2591'.repeat(barWidth - filled);
@@ -239,19 +220,19 @@ export function PlanExecutionView({ plan }: { plan:any }) {
   );
 }
 
-// @kern-source: plan-view:19
+// @kern-source: plan-view:18
 export const STEP_TYPE_CONFIG: Record<string, {icon:string,color:string,label:string}> = ({
-  self:       { icon: '\u2699',  color: '#a78bfa', label: 'Cesar' },
-  forge:      { icon: '\u2694',  color: '#f97316', label: 'Forge' },
-  teamforge:  { icon: '\u2694\u2694', color: '#f97316', label: 'Team Forge' },
-  brainstorm: { icon: '\u26a1', color: '#22d3ee', label: 'Brainstorm' },
-  campfire:   { icon: '\u2500', color: '#f97316', label: 'Campfire' },
-  tribunal:   { icon: '\u2696',  color: '#c084fc', label: 'Tribunal' },
-  delegate:   { icon: '\u27a4',  color: '#60a5fa', label: 'Delegate' },
-  pipeline:   { icon: '\u2192',  color: '#34d399', label: 'Pipeline' },
+  self:       { icon: '\u2699',  color: '#94a3b8', label: 'Cesar' },
+  forge:      { icon: '\u2694',  color: '#cbd5e1', label: 'Forge' },
+  teamforge:  { icon: '\u2694\u2694', color: '#cbd5e1', label: 'Team Forge' },
+  brainstorm: { icon: '\u26a1', color: '#94a3b8', label: 'Brainstorm' },
+  campfire:   { icon: '\u2500', color: '#94a3b8', label: 'Campfire' },
+  tribunal:   { icon: '\u2696',  color: '#cbd5e1', label: 'Tribunal' },
+  delegate:   { icon: '\u27a4',  color: '#94a3b8', label: 'Delegate' },
+  pipeline:   { icon: '\u2192',  color: '#94a3b8', label: 'Pipeline' },
 }) as Record<string, {icon:string,color:string,label:string}>;
 
-// @kern-source: plan-view:33
+// @kern-source: plan-view:32
 export const STEP_STATE_ICONS: Record<string, {icon:string,color:string}> = ({
   pending:   { icon: '\u25cb', color: '#64748b' },
   blocked:   { icon: '\u25a1', color: '#475569' },

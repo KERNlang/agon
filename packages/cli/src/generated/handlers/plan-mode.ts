@@ -2,9 +2,9 @@
 
 import { writeFileSync, mkdirSync } from 'node:fs';
 
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 
-import { createCesarPlan, formatCesarPlanMarkdown, planCostEstimator, resolveWorkingDir, RUNS_DIR, tracker, getAgonHome, readPatchFromPath, applyPatchToTree } from '@agon/core';
+import { createCesarPlan, formatCesarPlanMarkdown, planCostEstimator, resolveWorkingDir, RUNS_DIR, tracker, readPatchFromPath, applyPatchToTree, cesarPlanMarkdownPath, saveCesarPlan } from '@agon/core';
 
 import type { CesarPlan, CesarPlanStep, CesarStepResult, StepExecutor } from '@agon/core';
 
@@ -59,14 +59,14 @@ export async function handleProposePlan(args: any, dispatch: Dispatch, ctx: Hand
     selfReview: typeof args.selfReview === 'boolean' ? args.selfReview : undefined,
   };
 
-  const slug = args.intent.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40);
-  const plansDir = join(getAgonHome(), 'plans');
-  const filePath = join(plansDir, `cesar-${Date.now()}-${slug}.md`);
-  mkdirSync(plansDir, { recursive: true });
-  writeFileSync(filePath, formatCesarPlanMarkdown(plan));
+  const filePath = cesarPlanMarkdownPath(plan.id);
   plan = { ...plan, planFilePath: filePath };
+  const markdown = formatCesarPlanMarkdown(plan);
+  mkdirSync(dirname(filePath), { recursive: true });
+  writeFileSync(filePath, markdown);
+  saveCesarPlan(plan);
 
-  dispatch({ type: 'plan-proposal' as any, plan, markdown: formatCesarPlanMarkdown(plan) });
+  dispatch({ type: 'plan-proposal' as any, plan, markdown, planFilePath: filePath });
   return plan;
 }
 

@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { createCesarPlan, approveCesarPlan, advanceCesarStep, cancelCesarPlan } from '../../packages/core/src/generated/cesar/plan.js';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createCesarPlan, approveCesarPlan, advanceCesarStep, cancelCesarPlan, saveCesarPlan, loadCesarPlan, listCesarPlans, cesarPlanJsonPath, cesarPlanMarkdownPath } from '../../packages/core/src/generated/cesar/plan.js';
 import type { CesarPlan, CesarPlanStep } from '../../packages/core/src/generated/cesar/plan.js';
 
 const makeStep = (id: string, overrides?: Partial<CesarPlanStep>): CesarPlanStep => ({
@@ -78,5 +81,35 @@ describe('CesarPlan state machine', () => {
     plan = cancelCesarPlan(plan);
     expect(plan.state).toBe('cancelled');
     expect(plan.steps.every(s => s.state === 'cancelled')).toBe(true);
+  });
+
+  it('persists plans under ~/.agon/plans with a stable markdown path', () => {
+    const previousAgonHome = process.env.AGON_HOME;
+    const agonHome = mkdtempSync(join(tmpdir(), 'agon-plan-test-'));
+
+    try {
+      process.env.AGON_HOME = agonHome;
+      const plan = {
+        ...createCesarPlan('show the whole plan', [makeStep('s1')]),
+        state: 'awaiting_approval' as const,
+      };
+
+      saveCesarPlan(plan);
+
+      const jsonPath = cesarPlanJsonPath(plan.id);
+      const markdownPath = cesarPlanMarkdownPath(plan.id);
+      expect(jsonPath).toBe(join(agonHome, 'plans', `${plan.id}.json`));
+      expect(markdownPath).toBe(join(agonHome, 'plans', `${plan.id}.md`));
+      expect(existsSync(jsonPath)).toBe(true);
+
+      const raw = JSON.parse(readFileSync(jsonPath, 'utf-8'));
+      expect(raw.planFilePath).toBe(markdownPath);
+      expect(loadCesarPlan(plan.id)?.planFilePath).toBe(markdownPath);
+      expect(listCesarPlans().map(p => p.id)).toContain(plan.id);
+    } finally {
+      if (previousAgonHome === undefined) delete process.env.AGON_HOME;
+      else process.env.AGON_HOME = previousAgonHome;
+      rmSync(agonHome, { recursive: true, force: true });
+    }
   });
 });

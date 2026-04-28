@@ -2160,6 +2160,14 @@ fn name=handleProposedCesarPlan async=true params="proposed:CesarPlan, cb:Dispat
     const policy = applyAutoApprovePolicy(proposed, cb.ctx.config as any);
     let currentProposal = proposed;
     let decided = false;
+    const persistPlanMarkdown = (plan: CesarPlan) => {
+      if (!plan.planFilePath) return;
+      try {
+        writeFileSync(plan.planFilePath, formatCesarPlanMarkdown(plan));
+      } catch (err) {
+        console.warn('[plan] failed to write plan file:', (err as Error).message ?? err);
+      }
+    };
 
     if (policy.approve) {
       cb.dispatch({ type: 'info', message: `Plan auto-approved (${policy.reason})` });
@@ -2173,6 +2181,7 @@ fn name=handleProposedCesarPlan async=true params="proposed:CesarPlan, cb:Dispat
       cb.setActivePlan(approved);
       cb.dispatch({ type: 'success', message: 'Plan auto-approved — executing...' });
       saveCesarPlan(approved);
+      persistPlanMarkdown(approved);
       await executeApprovedPlan(approved, cb);
       decided = true;
     } else if (proposed.autoApprove === true) {
@@ -2188,12 +2197,15 @@ fn name=handleProposedCesarPlan async=true params="proposed:CesarPlan, cb:Dispat
         cb.setActivePlan(approved);
         cb.dispatch({ type: 'success', message: 'Plan approved — executing...' });
         saveCesarPlan(approved);
+        persistPlanMarkdown(approved);
         await executeApprovedPlan(approved, cb);
         decided = true;
 
       } else if (trimmed === 'n' || trimmed === 'no') {
         const cancelled = cancelCesarPlan(currentProposal);
         cb.setActivePlan(cancelled);
+        saveCesarPlan(cancelled);
+        persistPlanMarkdown(cancelled);
         cb.dispatch({ type: 'plan-cancelled', plan: cancelled } as any);
         cb.dispatch({ type: 'info', message: 'Plan rejected.' });
         decided = true;

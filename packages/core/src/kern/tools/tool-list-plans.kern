@@ -6,12 +6,12 @@ fn name=createListPlansTool returns=ToolHandler export=true
   handler <<<
     const definition: ToolDefinition = {
       name: 'ListPlans',
-      description: 'List recent execution plans stored in ~/.agon/runs/. Returns plan ID, date, intent, step count, state, and cost. Use this when you need to check if a task was previously planned or to reference past plan approaches.',
+      description: 'List recent execution plans stored in ~/.agon/plans/. Returns plan ID, markdown file path, date, intent, step count, state, and cost. Use this when you need to check if a task was previously planned or to reference past plan approaches.',
       inputSchema: {
         type: 'object',
         properties: {
           limit: { type: 'number', description: 'Max plans to return (default 10).' },
-          state: { type: 'string', enum: ['done', 'cancelled', 'paused', 'running'], description: 'Filter by plan state.' },
+          state: { type: 'string', enum: ['planning', 'awaiting_approval', 'running', 'paused', 'done', 'cancelled'], description: 'Filter by plan state.' },
         },
       },
       maxResultSizeChars: 5000,
@@ -46,7 +46,8 @@ fn name=createListPlansTool returns=ToolHandler export=true
         const failedSteps = p.steps?.filter((s: any) => s.state === 'failed').length ?? 0;
         const cost = p.totalActualCostUsd > 0 ? `$${p.totalActualCostUsd.toFixed(4)}` : '-';
         const engines = [...new Set(p.steps?.flatMap((s: any) => s.engines ?? (s.engine ? [s.engine] : [])) ?? [])] as string[];
-        return `${p.id} | ${date} | ${p.state} | ${p.intent}\n  ${stepCount} steps (${doneSteps} done, ${failedSteps} failed) | cost: ${cost}${engines.length ? ` | engines: ${engines.join(', ')}` : ''}`;
+        const fileLine = p.planFilePath ? `\n  file: ${p.planFilePath}` : '';
+        return `${p.id} | ${date} | ${p.state} | ${p.intent}\n  ${stepCount} steps (${doneSteps} done, ${failedSteps} failed) | cost: ${cost}${engines.length ? ` | engines: ${engines.join(', ')}` : ''}${fileLine}`;
       });
 
       return { ok: true, content: `${plans.length} plan(s):\n\n${lines.join('\n\n')}` };

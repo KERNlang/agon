@@ -88,10 +88,13 @@ fn name=clearThinkingBuffer returns=void
 
 // ── Tool-call grouping buffer — bundles consecutive finalized tool-call
 // events into a single compact tool-call-group block, Claude-Code style.
-// Flushed when a non-tool event arrives OR after a 300ms quiet period so
+// Flushed when a non-tool event arrives OR after a 500ms quiet period so
 // turns that end on a tool-call (e.g., /run) don't leave the final row
 // stranded. Only status=done/error events are buffered — the running
 // event only updates AgentProgressView live.
+const name=TOOL_CALL_GROUP_FLUSH_MS type=number
+  handler <<< 500 >>>
+
 const name=_pendingToolCalls type="any[]"
   handler <<< [] as any[] >>>
 
@@ -112,14 +115,14 @@ fn name=flushPendingToolCalls params="actions:OutputActions" returns=void export
   >>>
 
 fn name=schedulePendingFlush params="actions:OutputActions" returns=void
-  doc "Debounce-flush pending tool-calls 300ms after the last one — covers turns that end on a tool-call without any trailing event."
+  doc "Debounce-flush pending tool-calls after a quiet period — covers turns that end on a tool-call without any trailing event."
   handler <<<
     _pendingFlushTimer.actions = actions;
     if (_pendingFlushTimer.timer) clearTimeout(_pendingFlushTimer.timer);
     _pendingFlushTimer.timer = setTimeout(() => {
       _pendingFlushTimer.timer = null;
       if (_pendingFlushTimer.actions) flushPendingToolCalls(_pendingFlushTimer.actions);
-    }, 300);
+    }, TOOL_CALL_GROUP_FLUSH_MS);
   >>>
 
 fn name=_drainAutoApproved params="actions:OutputActions" returns=void export=false
@@ -542,8 +545,8 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
         // Buffer finalized tool-calls only. 'running' events only update
         // the live progress view above — committing them here would double-
         // count in the group summary (running + done for the same tool).
-        // The group flushes on the next non-tool event OR after a 300ms
-        // quiet period so terminal-tool-call turns still render eventually.
+        // The group flushes on the next non-tool event OR after a quiet
+        // period so terminal-tool-call turns still render eventually.
         if (te.status === 'done' || te.status === 'error') {
           _pendingToolCalls.push(event);
           schedulePendingFlush(actions);

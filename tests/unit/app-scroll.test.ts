@@ -199,7 +199,49 @@ describe('app scroll helpers', () => {
     const previewRow = rows.find((row: any) => row.key.includes('tool-group-preview'));
 
     expect(summaryRow).toBeTruthy();
-    expect(previewRow).toBeTruthy();
+    expect(previewRow).toBeFalsy();
+  });
+
+  it('renders collapsed tool telemetry like thinking and hides raw confidence JSON previews', () => {
+    const blocks = [
+      { id: 1, event: { type: 'tool-call', engineId: 'cesar', tool: 'ReportConfidence', input: '{"value":45,"reasoning":"inspect first"}', status: 'done', output: 'ok' } },
+      { id: 2, event: { type: 'tool-call', engineId: 'cesar', tool: 'Bash', input: '{"command":"git log --oneline -20"}', status: 'done', output: 'abc' } },
+      { id: 3, event: { type: 'tool-call', engineId: 'cesar', tool: 'Glob', input: '{"pattern":"**/cesar/**"}', status: 'done', output: 'file' } },
+    ] as any;
+
+    const rows = buildTranscriptRows(blocks, 'chat', false, true);
+    const summaryRow = rows.find((row: any) => row.key.includes('tool-group-head'));
+    const text = transcriptRowsToPlainText(rows, 0, 0, 999, 999);
+
+    expect(summaryRow).toBeTruthy();
+    expect(summaryRow.segments[0]).toMatchObject({ italic: true, dimColor: true });
+    expect(text).toContain('▹ 45% confidence');
+    expect(text).toContain('inspect first');
+    expect(text).toContain('3 tool calls');
+    expect(text).not.toContain('⏿');
+    expect(text).not.toContain('git log');
+    expect(text).not.toContain('**/cesar/**');
+    expect(text).not.toContain('"reasoning"');
+    expect(text).not.toContain('{"value"');
+  });
+
+  it('renders Cesar route info as dim italic telemetry', () => {
+    const rows = buildTranscriptRows([
+      { id: 1, event: { type: 'info', message: 'Cesar route: big-feature -> plan-first | kimi/api | tools: watch' } },
+    ] as any, 'chat', false, true);
+
+    const infoRow = rows.find((row: any) => row.key.includes('info'));
+    expect(infoRow?.segments[0]).toMatchObject({ italic: true, dimColor: true, color: '#8b8b8b' });
+  });
+
+  it('renders all thinking lines now that thinking is always visible', () => {
+    const rows = buildTranscriptRows([
+      { id: 1, event: { type: 'thinking-chunk', engineId: 'cesar', chunk: 'one\ntwo\nthree\nfour\nfive' } },
+    ] as any, 'chat', false, true);
+    const text = transcriptRowsToPlainText(rows, 0, 0, 999, 999);
+
+    expect(text).toContain('▹ five');
+    expect(text).not.toContain('more lines');
   });
 
   it('renders permission requests as compact transcript rows', () => {

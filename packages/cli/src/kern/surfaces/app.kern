@@ -4,7 +4,7 @@
 import from="react" names="useState,useCallback,useEffect,useRef,useMemo"
 import from="ink" names="Box,Text,Static,render"
 import from="@kernlang/terminal/runtime" names="ScrollBox,AlternateScreen"
-import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,ensureCurrentWorkspace,startChatSession,getRatings,getActiveWorkspace,RUNS_DIR,extractImagesFromInput,resolveWorkingDir,currentBranch,configSet,createCesarMemory,modelEntryToEngineDef,appendMessage,getAgonHome,tracker,copyToClipboard"
+import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,ensureCurrentWorkspace,startChatSession,getRatings,getActiveWorkspace,RUNS_DIR,extractImagesFromInput,resolveWorkingDir,currentBranch,configSet,createCesarMemory,modelEntryToEngineDef,appendMessage,getAgonHome,tracker"
 import from="@agon/core" names="Plan,ChatSession,Skill,PersistentSession,ImageAttachment" types=true
 import from="../../handlers/types.js" names="EngineProgress" types=true
 import from="@agon/adapter-cli" names="createCliAdapter"
@@ -82,6 +82,12 @@ fn name=shortToolPath params="filePath:string" returns=string
     return String(filePath ?? '').replace(`${process.cwd()}/`, '').replace(process.env.HOME ?? '', '~');
   >>>
 
+fn name=isCesarTelemetryLine params="message:string" returns=boolean
+  handler <<<
+    const text = String(message ?? '').trim();
+    return text.startsWith('Cesar route:') || text.startsWith('What happened:');
+  >>>
+
 fn name=parseToolCallPayload params="event:any" returns=any confidence=0.85
   handler <<<
     const rawInput = String(event?.input ?? '');
@@ -96,6 +102,26 @@ fn name=parseToolCallPayload params="event:any" returns=any confidence=0.85
       parsed,
       toolKey: String(event?.tool ?? '').toLowerCase(),
     };
+  >>>
+
+fn name=formatConfidenceToolLabel params="parsed:any, rawInput:string" returns=string
+  handler <<<
+    const rawValue = parsed?.value ?? parsed?.confidence ?? parsed?.score;
+    let value = Number(rawValue);
+    if (!Number.isFinite(value)) {
+      const text = String(rawInput ?? '');
+      const match = text.match(/"value"\s*:\s*(\d{1,3}(?:\.\d+)?)/) || text.match(/(\d{1,3})\s*%/);
+      if (match) value = Number(match[1]);
+    }
+    if (Number.isFinite(value)) {
+      const pct = value <= 1 && value > 0 ? Math.round(value * 100) : Math.round(value);
+      if (pct >= 0 && pct <= 100) {
+        const reasoning = String(parsed?.reasoning ?? parsed?.reason ?? parsed?.thought ?? '').replace(/\s+/g, ' ').trim();
+        const shortReasoning = reasoning.length > 180 ? `${reasoning.slice(0, 177)}…` : reasoning;
+        return shortReasoning ? `${pct}% confidence · ${shortReasoning}` : `${pct}% confidence`;
+      }
+    }
+    return 'confidence';
   >>>
 
 fn name=extractPatchText params="rawInput:string, parsed:any" returns=string
@@ -877,7 +903,7 @@ fn name=estimateOutputEventRows params="event:OutputEvent, mode:string, toolOutp
       }
       case 'thinking-chunk':
         if (thinkingExpanded === false) return 0;
-        return Math.min(4, Math.max(1, String(event.chunk ?? '').split('\n').filter((line: string) => line.trim()).length));
+        return Math.max(1, String(event.chunk ?? '').split('\n').filter((line: string) => line.trim()).length);
       case 'streaming-chunk': {
         const chunkText = String(event.chunk ?? '');
         const isThinking = /^~?\d{1,3}%\s/.test(chunkText.trim());
@@ -1014,7 +1040,7 @@ fn name=nativeTranscriptBlocksForStatic params="blocks:OutputBlock[]" returns="O
   >>>
 
 fn name=nativeArchiveBlockCount params="blocks:OutputBlock[], mode:string, rowBudget:number, toolOutputExpanded:boolean, thinkingExpanded:boolean" returns=number export=true
-  doc "Choose how many native transcript blocks are sealed into Static. The remaining tail stays live so recent rows can rerender for Ctrl+E/Ctrl+T while older rows remain in terminal scrollback."
+  doc "Choose how many native transcript blocks are sealed into Static. The remaining tail stays live so recent rows can rerender while older rows remain in terminal scrollback."
   handler <<<
     if (!Array.isArray(blocks) || blocks.length === 0) return 0;
 
@@ -1281,6 +1307,13 @@ fn name=buildToolCallRows params="baseKey:string, event:any, toolOutputExpanded:
         });
       });
     };
+
+    if (toolKey === 'reportconfidence') {
+      pushSegmentsRow('confidence', [
+        { text: `▹ ${formatConfidenceToolLabel(parsed, rawInput)}`, color: '#8b8b8b', dimColor: true, italic: true },
+      ]);
+      return rows;
+    }
 
     if (toolKey === 'bash' || toolKey === 'run' || toolKey === 'agonbash') {
       const cmd = String((parsed.command as string) || rawInput || '');
@@ -1590,11 +1623,10 @@ fn name=buildCollapsedToolGroupRows params="baseKey:string, events:any[]" return
     if (!events || events.length === 0) return [];
 
     const rows: any[] = [];
-    const accent = engineColor(events[0]?.engineId ?? '');
     const counts = new Map<string, number>();
-    const previews: string[] = [];
     const changedFiles: string[] = [];
     const changeEvents: any[] = [];
+    let confidenceLabel = '';
     let errors = 0;
     let running = 0;
 
@@ -1612,52 +1644,25 @@ fn name=buildCollapsedToolGroupRows params="baseKey:string, events:any[]" return
       return String(event.tool ?? 'Tool');
     };
 
-    const previewFor = (event: any) => {
-      const rawInput = String(event.input ?? '');
-      let parsed: Record<string, unknown> = {};
-      try {
-        if (rawInput.trim().startsWith('{')) parsed = JSON.parse(rawInput);
-      } catch {
-        parsed = {};
-      }
-
-      const toolKey = String(event.tool ?? '').toLowerCase();
-      if (toolKey === 'bash' || toolKey === 'run' || toolKey === 'agonbash') {
-        const command = String((parsed.command as string) || rawInput || '').split('\n')[0] ?? '';
-        return truncateCodeLine(command, contentWidth(20));
-      }
-      if (toolKey === 'read' || toolKey === 'edit' || toolKey === 'update' || toolKey === 'write' || toolKey === 'agonedit' || toolKey === 'agonwrite') {
-        const filePath = String((parsed.file_path as string) || (parsed.filePath as string) || '');
-        return filePath ? filePath.replace(`${process.cwd()}/`, '').replace(process.env.HOME ?? '', '~') : labelFor(event);
-      }
-      if (toolKey === 'applypatch' || toolKey === 'apply_patch') {
-        const patch = parsePatchPreview(rawInput, parsed);
-        return patch.files[0] ? shortToolPath(patch.files[0]) : 'Patch';
-      }
-      if (toolKey === 'grep' || toolKey === 'search' || toolKey === 'glob' || toolKey === 'find') {
-        const pattern = String((parsed.pattern as string) || rawInput || '');
-        return truncateCodeLine(pattern, contentWidth(20));
-      }
-      return truncateCodeLine(rawInput, contentWidth(20));
-    };
-
     for (const event of events) {
-      const label = labelFor(event);
-      counts.set(label, (counts.get(label) ?? 0) + 1);
-      if (previews.length < 3) previews.push(previewFor(event));
+      const { rawInput, parsed, toolKey } = parseToolCallPayload(event);
       if (event.status === 'error') errors += 1;
       if (event.status === 'running') running += 1;
+      if (toolKey === 'reportconfidence') {
+        confidenceLabel = formatConfidenceToolLabel(parsed, rawInput);
+        continue;
+      }
+      const label = labelFor(event);
+      counts.set(label, (counts.get(label) ?? 0) + 1);
       if (isMutatingToolCall(event)) {
         changeEvents.push(event);
-        const parsed = parseToolCallPayload(event).parsed;
         const filePath = String((parsed.file_path as string) || (parsed.filePath as string) || '');
         if (filePath) {
           const shortPath = shortToolPath(filePath);
           if (!changedFiles.includes(shortPath)) changedFiles.push(shortPath);
         }
-        const { rawInput, parsed: payload, toolKey } = parseToolCallPayload(event);
         if (toolKey === 'applypatch' || toolKey === 'apply_patch') {
-          for (const patchFile of parsePatchPreview(rawInput, payload).files) {
+          for (const patchFile of parsePatchPreview(rawInput, parsed).files) {
             const shortPath = shortToolPath(patchFile);
             if (!changedFiles.includes(shortPath)) changedFiles.push(shortPath);
           }
@@ -1668,8 +1673,9 @@ fn name=buildCollapsedToolGroupRows params="baseKey:string, events:any[]" return
     const countSummary = Array.from(counts.entries())
       .map(([label, count]) => `${label}${count > 1 ? `×${count}` : ''}`)
       .join(' · ');
-    const statusIcon = errors > 0 ? icons().fail : running > 0 ? '⟳' : icons().success;
-    const statusColor = errors > 0 ? '#ef4444' : running > 0 ? '#fbbf24' : '#4ade80';
+    const statusSummary = errors > 0
+      ? ` · ${errors} error${errors === 1 ? '' : 's'}`
+      : running > 0 ? ' · running' : '';
     const changedSummary = changedFiles.length > 0
       ? ` · changed ${changedFiles.length} file${changedFiles.length > 1 ? 's' : ''}: ${changedFiles.slice(0, 2).join(', ')}${changedFiles.length > 2 ? ', …' : ''}`
       : '';
@@ -1679,29 +1685,13 @@ fn name=buildCollapsedToolGroupRows params="baseKey:string, events:any[]" return
       kind: 'segments',
       paddingLeft: 2,
       segments: [
-        { text: '⏿ ', color: accent },
-        { text: statusIcon, color: statusColor },
-        { text: ' ' },
-        { text: `${events.length} tool calls`, bold: true },
-        countSummary ? { text: ' · ', dimColor: true } : null,
-        countSummary ? { text: countSummary, dimColor: true } : null,
-        changedSummary ? { text: changedSummary, color: '#a78bfa' } : null,
+        { text: `▹ ${confidenceLabel ? `${confidenceLabel} · ` : ''}${events.length} tool calls`, color: '#8b8b8b', dimColor: true, italic: true },
+        countSummary ? { text: ' · ', color: '#8b8b8b', dimColor: true, italic: true } : null,
+        countSummary ? { text: countSummary, color: '#8b8b8b', dimColor: true, italic: true } : null,
+        statusSummary ? { text: statusSummary, color: '#8b8b8b', dimColor: true, italic: true } : null,
+        changedSummary ? { text: changedSummary, color: '#8b8b8b', dimColor: true, italic: true } : null,
       ].filter(Boolean),
     });
-
-    const previewWorthyLabels = new Set(['Bash', 'Update', 'Write', 'Patch', 'QuickNero']);
-    const shouldShowPreview = previews.length > 0 && events.some((event: any) => previewWorthyLabels.has(labelFor(event)));
-    if (shouldShowPreview) {
-      rows.push({
-        key: `${baseKey}-tool-group-preview`,
-        kind: 'segments',
-        paddingLeft: 2,
-        segments: previews.flatMap((preview: string, index: number) => ([
-          { text: index === 0 ? '    ' : ' • ', dimColor: true },
-          { text: preview, dimColor: true },
-        ])),
-      });
-    }
 
     changeEvents.forEach((event: any, index: number) => {
       rows.push(...buildToolCallRows(`${baseKey}-change-${index}`, event, false));
@@ -1814,7 +1804,12 @@ fn name=buildTranscriptRows params="blocks:OutputBlock[], mode:string, toolOutpu
           ]);
           return;
         case 'info':
-          pushSegmentsRow(`${baseKey}-info`, 0, [{ text: `  ${event.message}`, dimColor: true }]);
+          pushSegmentsRow(`${baseKey}-info`, 0, [{
+            text: `  ${event.message}`,
+            dimColor: true,
+            italic: isCesarTelemetryLine(String(event.message ?? '')),
+            color: isCesarTelemetryLine(String(event.message ?? '')) ? '#8b8b8b' : undefined,
+          }]);
           return;
         case 'error': {
           const errLines = String(event.message ?? '').split('\n');
@@ -1856,16 +1851,9 @@ fn name=buildTranscriptRows params="blocks:OutputBlock[], mode:string, toolOutpu
         case 'thinking-chunk': {
           if (thinkingExpanded === false) return;
           const lines = String(event.chunk ?? '').split('\n').filter((line: string) => line.trim());
-          const preview = lines.length > 3 ? lines.slice(0, 3) : lines;
-          preview.forEach((line: string, index: number) => {
+          lines.forEach((line: string, index: number) => {
             pushSegmentsRow(`${baseKey}-thinking-${index}`, 2, [{ text: `▹ ${line}`, color: '#8b8b8b', dimColor: true, italic: true }]);
           });
-          if (lines.length > 3) {
-            pushSegmentsRow(`${baseKey}-thinking-more`, 2, [
-              { text: `▹ … ${lines.length - 3} more lines  `, color: '#8b8b8b', dimColor: true, italic: true },
-              { text: 'Ctrl+T', color: '#f59e0b' },
-            ]);
-          }
           return;
         }
         case 'streaming-chunk': {
@@ -3098,62 +3086,10 @@ screen name=App target=ink
       setToolDetailEvent(event);
     >>>
 
-  callback name=copyCurrentTranscript params="" deps="dispatch,mode,chatSession,displayRows,mouseSelection"
-    handler <<<
-      const selectedContent = transcriptRowsToPlainText(
-        displayRows,
-        mouseSelection.anchorRow,
-        mouseSelection.anchorCol,
-        mouseSelection.focusRow,
-        mouseSelection.focusCol,
-      );
-      if (selectedContent) {
-        try {
-          copyToClipboard(selectedContent);
-          const range = normalizeTextSelection(
-            mouseSelection.anchorRow,
-            mouseSelection.anchorCol,
-            mouseSelection.focusRow,
-            mouseSelection.focusCol,
-          );
-          const lineCount = range ? range.endRow - range.startRow + 1 : 0;
-          dispatch({
-            type: 'success',
-            message: `Copied ${lineCount} selected line${lineCount === 1 ? '' : 's'} to clipboard`,
-          } as any);
-        } catch (err) {
-          dispatch({ type: 'error', message: `Copy failed: ${err instanceof Error ? err.message : String(err)}` } as any);
-        }
-        return;
-      }
-
-      let content = '';
-      if (mode === 'chat') {
-        if (chatSession.messages.length === 0) {
-          dispatch({ type: 'info', message: 'No chat messages yet.' } as any);
-          return;
-        }
-        content = formatChatTranscript(chatSession);
-      } else {
-        if (!sessionResultStore.hasResults()) {
-          dispatch({ type: 'info', message: 'No results yet — run /brainstorm, /campfire, /tribunal, or /forge first' } as any);
-          return;
-        }
-        content = formatSessionResults(sessionResultStore.getResults());
-      }
-
-      try {
-        copyToClipboard(content);
-        dispatch({ type: 'success', message: mode === 'chat' ? 'Chat transcript copied to clipboard' : 'Results copied to clipboard' } as any);
-      } catch (err) {
-        dispatch({ type: 'error', message: `Copy failed: ${err instanceof Error ? err.message : String(err)}` } as any);
-      }
-    >>>
-
   callback name=toggleSelectionMode params="" deps="selectionMode,dispatch,terminalMode"
     handler <<<
       if (terminalMode !== 'fullscreen') {
-        dispatch({ type: 'info', message: 'Native scrollback is active — select and copy directly in your terminal. Ctrl+Y still copies the transcript.' } as any);
+        dispatch({ type: 'info', message: 'Native scrollback is active — select and copy directly in your terminal.' } as any);
         return;
       }
       const next = !selectionMode;
@@ -3209,17 +3145,13 @@ screen name=App target=ink
       dispatch({ type: 'info', message: 'Press Ctrl+C again to exit.' } as any);
     >>>
 
-  callback name=handleComposerCtrlShortcut params="shortcut:string" deps="handleCancelOrExit,handleSubmit,openLatestToolDetail,openResultsPager,copyCurrentTranscript"
+  callback name=handleComposerCtrlShortcut params="shortcut:string" deps="handleCancelOrExit,handleSubmit,openLatestToolDetail,openResultsPager"
     handler <<<
       nestedCtrlShortcutRef.current = { key: shortcut, at: Date.now() };
       switch (shortcut) {
         case 'c':
           ctrlKeyHandledRef.current = true;
           handleCancelOrExit();
-          return;
-        case 'y':
-          ctrlKeyHandledRef.current = true;
-          copyCurrentTranscript();
           return;
         case 'e':
           ctrlKeyHandledRef.current = true;
@@ -3228,10 +3160,6 @@ screen name=App target=ink
         case 'o':
           ctrlKeyHandledRef.current = true;
           openLatestToolDetail();
-          return;
-        case 't':
-          ctrlKeyHandledRef.current = true;
-          setThinkingExpanded((prev: boolean) => !prev);
           return;
         case 'l':
           ctrlKeyHandledRef.current = true;
@@ -3279,7 +3207,7 @@ screen name=App target=ink
     >>>
 
   // ── Keyboard handling — pure decision tree + thin dispatcher ──
-  callback name=handleKeyboardInput params="input:string,key:any" deps="modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,activePlan,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,copyCurrentTranscript,toggleSelectionMode,startupOnly,terminalMode"
+  callback name=handleKeyboardInput params="input:string,key:any" deps="modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,activePlan,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,toggleSelectionMode,startupOnly,terminalMode"
     handler <<<
       if (isTerminalFocusReport(input)) return;
 
@@ -3361,17 +3289,12 @@ screen name=App target=ink
         case 'toggleToolExpand':
           ctrlKeyHandledRef.current = true;
           setToolOutputExpanded((prev: boolean) => !prev); return;
-        case 'toggleThinking':
-          ctrlKeyHandledRef.current = true;
-          setThinkingExpanded((prev: boolean) => !prev); return;
         case 'toggleSelectionMode':
           toggleSelectionMode(); return;
         case 'openToolDetail':
           openLatestToolDetail(); return;
         case 'openResults':
           openResultsPager(); return;
-        case 'copyTranscript':
-          copyCurrentTranscript(); return;
         case 'toggleFileRail':
           setFileRailOpen((prev: boolean) => !prev);
           return;
@@ -3627,7 +3550,7 @@ screen name=App target=ink
               const _cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
               return (<>
                 <CesarStatusStrip cesarId={_cesarId} confidence={cesarConfidence} spinner={liveSpinner} engines={liveProgress} startTime={chatStartTimeRef.current || 0} streamSnippet={streamSnippet} isActive={replState !== 'idle' || runningJobs.length > 0} planModeQueued={planModeQueued} activePlanState={activePlan?.state ?? null} />
-                {mode === 'chat' && <StatusBar cesarId={statusStats.cesarId} chatMessageCount={statusStats.chatMessageCount} totalTokens={statusStats.totalTokens} totalCostUsd={statusStats.totalCostUsd} cwd={statusCwd} branch={statusBranch} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} thinkingExpanded={thinkingExpanded} isActive={replState !== 'idle'} fullscreenEnabled={terminalMode === 'fullscreen'} selectionMode={terminalMode === 'fullscreen' ? selectionMode : undefined} />}
+                {mode === 'chat' && <StatusBar cesarId={statusStats.cesarId} chatMessageCount={statusStats.chatMessageCount} totalTokens={statusStats.totalTokens} totalCostUsd={statusStats.totalCostUsd} cwd={statusCwd} branch={statusBranch} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} isActive={replState !== 'idle'} fullscreenEnabled={terminalMode === 'fullscreen'} selectionMode={terminalMode === 'fullscreen' ? selectionMode : undefined} />}
               </>);
             })()}
           </Box>

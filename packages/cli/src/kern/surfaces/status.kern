@@ -108,7 +108,6 @@ screen name=StatusBar target=ink
   prop name=branch type=string optional=true
   prop name=explorationMode type=boolean optional=true
   prop name=toolOutputExpanded type=boolean optional=true
-  prop name=thinkingExpanded type=boolean optional=true
   prop name=isActive type=boolean optional=true
   prop name=fullscreenEnabled type=boolean optional=true
   prop name=selectionMode type=boolean optional=true
@@ -138,14 +137,8 @@ screen name=StatusBar target=ink
             {toolOutputExpanded !== undefined && <Text dimColor>{' \u00b7 '}{toolOutputExpanded ? 'tools expanded (' : 'tools collapsed ('}</Text>}
             {toolOutputExpanded !== undefined && <Text color="#f59e0b">{'Ctrl+E'}</Text>}
             {toolOutputExpanded !== undefined && <Text dimColor>{')'}</Text>}
-            {thinkingExpanded !== undefined && <Text dimColor>{' \u00b7 '}{thinkingExpanded ? 'thinking shown (' : 'thinking hidden ('}</Text>}
-            {thinkingExpanded !== undefined && <Text color="#f59e0b">{'Ctrl+T'}</Text>}
-            {thinkingExpanded !== undefined && <Text dimColor>{')'}</Text>}
             <Text dimColor>{' \u00b7 files ('}</Text>
             <Text color="#f59e0b">{'Ctrl+B'}</Text>
-            <Text dimColor>{')'}</Text>
-            <Text dimColor>{' \u00b7 copy ('}</Text>
-            <Text color="#f59e0b">{'Ctrl+Y'}</Text>
             <Text dimColor>{')'}</Text>
             {selectionMode !== undefined && <Text dimColor>{' \u00b7 '}{selectionMode ? 'select' : 'scroll'}{' ('}</Text>}
             {selectionMode !== undefined && <Text color="#f59e0b">{'Ctrl+G'}</Text>}

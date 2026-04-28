@@ -1,0 +1,281 @@
+// ── Cesar tool observability ────────────────────────────────────────
+// Compact JSONL records for the two things that make tool harnesses hard to
+// trust: why a permission decision happened, and what tool events happened in
+// a turn. These logs are intentionally summaries; they avoid storing full file
+// contents or full command output.
+
+import from="node:fs" names="appendFileSync,mkdirSync,existsSync,readFileSync"
+import from="node:path" names="join"
+import from="@agon/core" names="RUNS_DIR"
+
+interface name=CesarApprovalLedgerRecord export=true
+  field name=turnId type=string optional=true
+  field name=engineId type=string optional=true
+  field name=cwd type=string optional=true
+  field name=tool type=string
+  field name=decision type="'approved'|'denied'|'prompted'|'blocked'"
+  field name=source type=string
+  field name=reason type=string optional=true
+  field name=mode type=string optional=true
+  field name=path type=string optional=true
+  field name=args type="Record<string,unknown>|string" optional=true
+
+interface name=CesarToolTimelineRecord export=true
+  field name=turnId type=string
+  field name=event type="'turn_start'|'turn_summary'|'tool_call'|'tool_result'|'approval_decision'|'xml_interrupt'"
+  field name=engineId type=string optional=true
+  field name=cwd type=string optional=true
+  field name=tool type=string optional=true
+  field name=source type=string optional=true
+  field name=status type=string optional=true
+  field name=reason type=string optional=true
+  field name=input type="Record<string,unknown>|string" optional=true
+  field name=output type=string optional=true
+  field name=summary type="Record<string,unknown>" optional=true
+
+interface name=CesarHarnessReplayResult export=true
+  field name=turnCount type=number
+  field name=eventCount type=number
+  field name=approvalCount type=number
+  field name=errorCount type=number
+  field name=rendered type=string
+  field name=turns type="Array<Record<string,unknown>>"
+
+fn name=createCesarTurnId returns=string export=true
+  doc "Create a short stable-enough id for joining per-turn tool timeline and approval ledger records."
+  handler <<<
+    return `cesar-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  >>>
+
+fn name=looksSensitiveString params="value:string" returns=boolean export=false
+  handler <<<
+    return /(?:secret|token|password|credential|api[_-]?key|private[_-]?key)\s*[:=]/i.test(value)
+      || /-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(value)
+      || /\b(?:sk-[A-Za-z0-9_-]{16,}|ghp_[A-Za-z0-9_]{16,}|AKIA[0-9A-Z]{16})\b/.test(value);
+  >>>
+
+fn name=summarizeCommandString params="value:string" returns="Record<string,unknown>" export=false
+  handler <<<
+    const raw = String(value ?? '').trim();
+    const first = raw.split(/\s+/)[0] ?? '';
+    const sensitive = looksSensitiveString(raw);
+    const base = first.includes('=') || sensitive ? '[redacted-command]' : first;
+    return {
+      commandBase: base,
+      chars: raw.length,
+      redactedPreview: true,
+      sensitive: sensitive || undefined,
+    };
+  >>>
+
+fn name=summarizeValue params="key:string,value:unknown" returns=unknown export=false
+  handler <<<
+    const lower = key.toLowerCase();
+    if (/(secret|token|password|credential|api[_-]?key|private[_-]?key|content|old_string|new_string)/i.test(lower)) {
+      return typeof value === 'string' ? { redacted: true, chars: value.length } : { redacted: true };
+    }
+    if (typeof value === 'string') {
+      if (lower === 'command' || lower.endsWith('command')) return summarizeCommandString(value);
+      if (looksSensitiveString(value)) return { redacted: true, chars: value.length };
+      if (value.length <= 180) return value;
+      return { preview: value.slice(0, 180), chars: value.length };
+    }
+    if (typeof value === 'number' || typeof value === 'boolean' || value === null) return value;
+    if (Array.isArray(value)) return { type: 'array', length: value.length };
+    if (value && typeof value === 'object') return { type: 'object', keys: Object.keys(value as Record<string, unknown>).slice(0, 20) };
+    return String(value);
+  >>>
+
+fn name=summarizeToolPayload params="payload:Record<string,unknown>|string|undefined" returns="Record<string,unknown>|undefined" export=true
+  doc "Summarize tool input/output payloads for logs without storing full file contents or large blobs."
+  handler <<<
+    if (payload === undefined) return undefined;
+    if (typeof payload === 'string') {
+      const raw = payload.trim();
+      if (!raw) return {};
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          return summarizeToolPayload(parsed as Record<string, unknown>);
+        }
+      } catch { /* not JSON */ }
+      return summarizeCommandString(raw);
+    }
+
+    const out: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(payload)) {
+      if (value === undefined) continue;
+      out[key] = summarizeValue(key, value);
+    }
+    return out;
+  >>>
+
+fn name=appendCesarJsonl params="fileName:string,record:Record<string,unknown>,runsDir?:string" returns=void export=false
+  handler <<<
+    const dir = runsDir ?? RUNS_DIR;
+    mkdirSync(dir, { recursive: true });
+    appendFileSync(join(dir, fileName), JSON.stringify({
+      ts: new Date().toISOString(),
+      ...record,
+    }) + '\n');
+  >>>
+
+fn name=recordCesarApprovalDecision params="record:CesarApprovalLedgerRecord,runsDir?:string" returns=void export=true
+  doc "Append one permission decision to the persistent Cesar approval ledger. Best-effort: failures are swallowed by callers."
+  handler <<<
+    try {
+      const argsSummary = summarizeToolPayload(record.args);
+      appendCesarJsonl('cesar-approval-ledger.jsonl', {
+        kind: 'approval_decision',
+        turnId: record.turnId,
+        engineId: record.engineId,
+        cwd: record.cwd,
+        tool: record.tool,
+        decision: record.decision,
+        source: record.source,
+        reason: record.reason,
+        mode: record.mode,
+        path: record.path,
+        args: argsSummary,
+      }, runsDir);
+    } catch { /* observability must never block tools */ }
+  >>>
+
+fn name=recordCesarToolTimeline params="record:CesarToolTimelineRecord,runsDir?:string" returns=void export=true
+  doc "Append one compact per-turn tool timeline event. Best-effort and payload-summarized."
+  handler <<<
+    try {
+      appendCesarJsonl('cesar-tool-timeline.jsonl', {
+        kind: 'tool_timeline',
+        turnId: record.turnId,
+        event: record.event,
+        engineId: record.engineId,
+        cwd: record.cwd,
+        tool: record.tool,
+        source: record.source,
+        status: record.status,
+        reason: record.reason,
+        input: summarizeToolPayload(record.input),
+        output: typeof record.output === 'string'
+          ? { redacted: true, chars: record.output.length }
+          : undefined,
+        summary: record.summary,
+      }, runsDir);
+    } catch { /* observability must never block tools */ }
+  >>>
+
+fn name=readJsonlRecords params="filePath:string" returns="Array<Record<string,unknown>>" export=false
+  handler <<<
+    if (!existsSync(filePath)) return [];
+    const out: Array<Record<string, unknown>> = [];
+    const text = readFileSync(filePath, 'utf-8');
+    for (const line of text.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) out.push(parsed as Record<string, unknown>);
+      } catch {
+        out.push({ kind: 'parse_error', raw: trimmed.slice(0, 240) });
+      }
+    }
+    return out;
+  >>>
+
+fn name=eventTimeMs params="record:Record<string,unknown>" returns=number export=false
+  handler <<<
+    const ts = typeof record.ts === 'string' ? Date.parse(record.ts) : NaN;
+    return Number.isFinite(ts) ? ts : 0;
+  >>>
+
+fn name=replayCesarHarnessLogs params="opts?:{runsDir?:string,turnId?:string,limit?:number}" returns=CesarHarnessReplayResult export=true
+  doc "Replay the compact Cesar approval ledger and tool timeline into a readable per-turn summary. This is the CLI/UI surface for post-mortem harness debugging."
+  handler <<<
+    const dir = opts?.runsDir ?? RUNS_DIR;
+    const limitRaw = Number(opts?.limit ?? 5);
+    const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.floor(limitRaw) : 5;
+    const timeline = readJsonlRecords(join(dir, 'cesar-tool-timeline.jsonl'));
+    const approvals = readJsonlRecords(join(dir, 'cesar-approval-ledger.jsonl'));
+    const errors = timeline.filter((r) => r.kind === 'parse_error').length + approvals.filter((r) => r.kind === 'parse_error').length;
+
+    const grouped = new Map<string, Array<Record<string, unknown>>>();
+    for (const rec of timeline) {
+      const turnId = typeof rec.turnId === 'string' ? rec.turnId : 'unknown';
+      if (opts?.turnId && turnId !== opts.turnId) continue;
+      const arr = grouped.get(turnId) ?? [];
+      arr.push(rec);
+      grouped.set(turnId, arr);
+    }
+
+    const approvalByTurn = new Map<string, Array<Record<string, unknown>>>();
+    for (const rec of approvals) {
+      const turnId = typeof rec.turnId === 'string' ? rec.turnId : 'unknown';
+      if (opts?.turnId && turnId !== opts.turnId) continue;
+      const arr = approvalByTurn.get(turnId) ?? [];
+      arr.push(rec);
+      approvalByTurn.set(turnId, arr);
+    }
+
+    const turnSummaries = [...grouped.entries()].map(([turnId, events]) => {
+      events.sort((a, b) => eventTimeMs(a) - eventTimeMs(b));
+      const start = events.find((e) => e.event === 'turn_start') ?? events[0] ?? {};
+      const summary = events.find((e) => e.event === 'turn_summary')?.summary as Record<string, unknown> | undefined;
+      const toolEvents = events.filter((e) => e.event === 'tool_call' || e.event === 'tool_result');
+      const interruptCount = events.filter((e) => e.event === 'xml_interrupt').length;
+      const approvalsForTurn = approvalByTurn.get(turnId) ?? [];
+      const lastEvent = events[events.length - 1] ?? start;
+      return {
+        turnId,
+        ts: start.ts ?? lastEvent.ts,
+        engineId: start.engineId ?? summary?.engineId,
+        cwd: start.cwd,
+        durationMs: summary?.durationMs,
+        eventCount: events.length,
+        toolEventCount: toolEvents.length,
+        toolCallCount: toolEvents.filter((e) => e.event === 'tool_call').length,
+        toolResultCount: toolEvents.filter((e) => e.event === 'tool_result').length,
+        approvalCount: approvalsForTurn.length,
+        xmlInterrupts: interruptCount,
+        tools: [...new Set(toolEvents.map((e) => String(e.tool ?? '')).filter(Boolean))],
+        approvals: approvalsForTurn.map((a) => ({
+          tool: a.tool,
+          decision: a.decision,
+          source: a.source,
+          reason: a.reason,
+          path: a.path,
+        })),
+      } as Record<string, unknown>;
+    });
+
+    turnSummaries.sort((a, b) => eventTimeMs(b) - eventTimeMs(a));
+    const selected = turnSummaries.slice(0, limit);
+
+    const lines: string[] = [];
+    lines.push(`Cesar harness replay: ${selected.length}/${turnSummaries.length} turn(s), ${timeline.length} timeline event(s), ${approvals.length} approval decision(s)`);
+    if (errors > 0) lines.push(`Parse errors: ${errors}`);
+    if (selected.length === 0) {
+      lines.push(opts?.turnId ? `No events found for turnId ${opts.turnId}.` : 'No Cesar harness timeline records found yet.');
+    }
+    for (const turn of selected) {
+      const duration = typeof turn.durationMs === 'number' ? `${Math.round(turn.durationMs)}ms` : 'duration unknown';
+      const tools = Array.isArray(turn.tools) && turn.tools.length > 0 ? (turn.tools as string[]).join(', ') : 'no tools';
+      lines.push('');
+      lines.push(`Turn ${turn.turnId}`);
+      lines.push(`  engine=${turn.engineId ?? 'unknown'} ${duration} events=${turn.eventCount} tools=${turn.toolEventCount} approvals=${turn.approvalCount} xmlInterrupts=${turn.xmlInterrupts}`);
+      lines.push(`  tools: ${tools}`);
+      const turnApprovals = Array.isArray(turn.approvals) ? turn.approvals as Array<Record<string, unknown>> : [];
+      for (const approval of turnApprovals.slice(0, 5)) {
+        lines.push(`  approval: ${approval.tool ?? 'tool'} ${approval.decision ?? 'unknown'} via ${approval.source ?? 'unknown'}${approval.reason ? ` - ${approval.reason}` : ''}`);
+      }
+      if (turnApprovals.length > 5) lines.push(`  approval: ... ${turnApprovals.length - 5} more`);
+    }
+
+    return {
+      turnCount: selected.length,
+      eventCount: timeline.length,
+      approvalCount: approvals.length,
+      errorCount: errors,
+      rendered: lines.join('\n'),
+      turns: selected,
+    };
+  >>>

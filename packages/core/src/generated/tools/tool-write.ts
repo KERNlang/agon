@@ -6,14 +6,12 @@ import { resolve, dirname, relative } from 'node:path';
 
 import type { ToolResult, ToolContext, ToolHandler, ToolDefinition, PermissionDecision } from '../models/tool-types.js';
 
-import { fileStateCache } from '../../file-state-cache.js';
-
 import { takeSnapshot } from '../blocks/file-history.js';
 
 /**
  * Factory for the Write tool — writes or creates files with safety guards.
  */
-// @kern-source: tool-write:11
+// @kern-source: tool-write:10
 export function createWriteTool(): ToolHandler {
   const definition: ToolDefinition = {
     name: 'Write',
@@ -69,7 +67,7 @@ export function createWriteTool(): ToolHandler {
     const filePath = resolve(ctx.cwd, input.file_path as string);
     const content = input.content as string;
     const relPath = relative(ctx.cwd, filePath);
-    const cache = fileStateCache;
+    const cache = ctx.readFileState;
 
     // Phase E v2: route through VirtualFS overlay when present.
     if (ctx.virtualFs) {
@@ -98,7 +96,8 @@ export function createWriteTool(): ToolHandler {
         return { ok: false, content: '', error: `Cannot stat file: ${err instanceof Error ? err.message : String(err)}` };
       }
 
-      if (cache.isStale(filePath, mtime)) {
+      const cachedState = cache.get(filePath);
+      if (!cachedState || mtime > cachedState.timestamp) {
         return {
           ok: false,
           content: '',

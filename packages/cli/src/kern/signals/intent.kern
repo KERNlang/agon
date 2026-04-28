@@ -29,6 +29,7 @@ interface name=Intent
   field name=target type="string|undefined"
   field name=engineId type="string|undefined"
   field name=commandName type="string|undefined"
+  field name=turnId type="string|undefined"
 
 const name=SLASH_COMMANDS type="SlashCommand[]"
   handler <<<
@@ -72,6 +73,7 @@ const name=SLASH_COMMANDS type="SlashCommand[]"
       { cmd: '/run',         desc: '<cmd>                    — run shell command inline' },
       { cmd: '/commit',      desc: '[message]                — stage & commit with auto-generated message' },
       { cmd: '/doctor',      desc: '[engines|harness]        — diagnose engines, worktree, or Cesar harness' },
+      { cmd: '/harness-replay', desc: '[turnId]              — replay Cesar tool timeline + approval ledger' },
       { cmd: '/undo',        desc: '                        — revert last applied forge patch' },
       { cmd: '/jobs',        desc: '                        — list running/completed jobs' },
       { cmd: '/focus',       desc: '<id>                    — switch to background job output' },
@@ -334,6 +336,10 @@ fn name=parseSlashCommand params="input:string, commandRegistry?:any" returns=In
         return { type: 'tokens' } as Intent;
       case 'doctor':
         return { type: 'doctor', scope: rest || 'engines' } as unknown as Intent;
+      case 'harness-replay':
+      case 'replay-harness':
+      case 'tool-replay':
+        return { type: 'harness-replay', turnId: rest || undefined } as unknown as Intent;
       case 'cesar': {
         const cesarIds = rest
           .split(/[,\s]+/)

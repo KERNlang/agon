@@ -107,13 +107,26 @@ export class VirtualFS {
   private engineId: string;
   private runId: string;
   private startedAt: number;
+  private onChange: ((path:string)=>void)|undefined;
 
-  constructor(snapshot: FileSnapshot, engineId: string, runId: string) {
+  constructor(snapshot: FileSnapshot, engineId: string, runId: string, onChange?: ((path:string)=>void)) {
     this.snapshot = snapshot;
     this.overlay = new Map();
     this.engineId = engineId;
     this.runId = runId;
     this.startedAt = Date.now();
+    this.onChange = onChange;
+  }
+
+  setOnChange(onChange?: ((path:string)=>void)): void {
+    this.onChange = onChange;
+  }
+
+  notifyChange(absPath: string): void {
+    if (!this.onChange) return;
+    try {
+      this.onChange(resolve(absPath));
+    } catch { /* preview callbacks must not affect tool execution */ }
   }
 
   read(absPath: string): string|null {
@@ -123,11 +136,17 @@ export class VirtualFS {
   }
 
   write(absPath: string, content: string): void {
-    this.overlay.set(resolve(absPath), content);
+    const key = resolve(absPath);
+    const previous = this.overlay.has(key) ? (this.overlay.get(key) ?? null) : snapshotRead(this.snapshot, key);
+    this.overlay.set(key, content);
+    if (previous !== content) this.notifyChange(key);
   }
 
   delete(absPath: string): void {
-    this.overlay.set(resolve(absPath), null);
+    const key = resolve(absPath);
+    const previous = this.overlay.has(key) ? (this.overlay.get(key) ?? null) : snapshotRead(this.snapshot, key);
+    this.overlay.set(key, null);
+    if (previous !== null) this.notifyChange(key);
   }
 
   exists(absPath: string): boolean {
@@ -202,7 +221,7 @@ export class VirtualFS {
 /**
  * Apply an EffectPackage to the real filesystem. Writes/deletes in pkg.effects are committed to targetDir. Returns a list of files modified. Does NOT create worktrees — call this after the tournament selects a winner to materialize their virtual changes.
  */
-// @kern-source: virtual-fs:242
+// @kern-source: virtual-fs:264
 export function applyEffectPackage(pkg: EffectPackage, targetDir: string): string[] {
   const import_fs = require('node:fs');
   const modified: string[] = [];
@@ -228,9 +247,38 @@ export function applyEffectPackage(pkg: EffectPackage, targetDir: string): strin
 }
 
 /**
+ * Rewrite absolute EffectPackage paths rooted at fromDir so they target the matching relative path under toDir. Used when a speculative member ran inside an isolated worktree but its VirtualFS overlay needs to commit to the real workspace.
+ */
+// @kern-source: virtual-fs:290
+export function relocateEffectPackage(pkg: EffectPackage, fromDir: string, toDir: string): EffectPackage {
+  const fromRoot = resolve(fromDir);
+  const toRoot = resolve(toDir);
+  const relocatePath = (path: string): string => {
+    const abs = resolve(path);
+    const rel = relative(fromRoot, abs);
+    if (rel.startsWith('..') || resolve(fromRoot, rel) !== abs) return abs;
+    return resolve(toRoot, rel);
+  };
+  const effects = pkg.effects.map((effect: FileEffect): FileEffect => {
+    if (effect.kind === 'write') {
+      return { ...effect, path: relocatePath(effect.path) };
+    }
+    if (effect.kind === 'delete') {
+      return { ...effect, path: relocatePath(effect.path) };
+    }
+    return {
+      ...effect,
+      from: relocatePath(effect.from),
+      to: relocatePath(effect.to),
+    };
+  });
+  return { ...pkg, effects };
+}
+
+/**
  * Render an EffectPackage as a unified diff string for display and scoring. Lines are prefixed with + (added) or - (removed).
  */
-// @kern-source: virtual-fs:268
+// @kern-source: virtual-fs:317
 export function effectPackageDiff(pkg: EffectPackage): string {
   const lines: string[] = [];
   for (const effect of pkg.effects) {
@@ -260,7 +308,7 @@ export function effectPackageDiff(pkg: EffectPackage): string {
 /**
  * Heuristic score for an EffectPackage. Higher is better. Used by Speculator.selectWinner() before full tribunal scoring. Based on: non-zero effects (baseline), response quality, tool call efficiency, file change count. This is a fast pre-filter — not a replacement for full fitness checks.
  */
-// @kern-source: virtual-fs:296
+// @kern-source: virtual-fs:345
 export function scoreEffectPackage(pkg: EffectPackage, taskKeywords?: string[]): number {
   if (pkg.effects.length === 0) return 0; // Did nothing
   let score = 10;

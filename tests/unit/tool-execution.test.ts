@@ -2,6 +2,12 @@ import { describe, it, expect } from 'vitest';
 import { ToolRegistry, executeToolCall, FileStateCache, createReadTool, createGrepTool, createGlobTool } from '@agon/core';
 import type { ToolContext, ToolCall, ToolHandler } from '@agon/core';
 import { join } from 'node:path';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { getProjectFileStateCache, clearProjectFileStateCaches } from '../../packages/core/src/generated/blocks/file-state-cache.js';
+import { ToolRegistry as GeneratedToolRegistry, executeToolCall as generatedExecuteToolCall } from '../../packages/core/src/generated/signals/tool-registry.js';
+import { createReadTool as generatedCreateReadTool } from '../../packages/core/src/generated/tools/tool-read.js';
+import { createEditTool as generatedCreateEditTool } from '../../packages/core/src/generated/tools/tool-edit.js';
 
 const REPO_ROOT = join(import.meta.dirname, '../..');
 
@@ -65,6 +71,48 @@ describe('tool-execution', () => {
         cache.set(`/test/file${i}.ts`, { content: `content${i}`, timestamp: Date.now(), offset: undefined, limit: undefined });
       }
       expect(cache.size()).toBeLessThanOrEqual(100);
+    });
+
+    it('evicts when callers write through the exposed raw map', () => {
+      const cache = new FileStateCache();
+      const exposed = (cache as any).cache as Map<string, any>;
+      for (let i = 0; i < 105; i++) {
+        exposed.set(`/test/raw-file${i}.ts`, {
+          content: `content${i}`,
+          timestamp: Date.now(),
+          offset: undefined,
+          limit: undefined,
+        });
+      }
+      expect(cache.size()).toBeLessThanOrEqual(100);
+      expect(exposed.size).toBeLessThanOrEqual(100);
+    });
+
+    it('project cache preserves read-before-write state across tool contexts', async () => {
+      clearProjectFileStateCaches();
+      const cwd = mkdtempSync(join(tmpdir(), 'agon-project-cache-'));
+      const filePath = join(cwd, 'sample.ts');
+      writeFileSync(filePath, 'const value = 1;\n');
+
+      const registry = new GeneratedToolRegistry();
+      registry.register(generatedCreateReadTool());
+      registry.register(generatedCreateEditTool());
+
+      const readCache = getProjectFileStateCache(cwd);
+      const readCtx = { cwd, readFileState: (readCache as any).cache, permissionMode: 'auto' } as ToolContext;
+      const readResult = await generatedExecuteToolCall({ id: 'read_1', name: 'Read', input: { file_path: 'sample.ts' } }, readCtx, registry);
+      expect(readResult.result.ok).toBe(true);
+
+      const editCache = getProjectFileStateCache(cwd);
+      const editCtx = { cwd, readFileState: (editCache as any).cache, permissionMode: 'auto' } as ToolContext;
+      const editResult = await generatedExecuteToolCall(
+        { id: 'edit_1', name: 'Edit', input: { file_path: 'sample.ts', old_string: 'value = 1', new_string: 'value = 2' } },
+        editCtx,
+        registry,
+      );
+
+      expect(editResult.result.ok).toBe(true);
+      expect(readFileSync(filePath, 'utf-8')).toContain('value = 2');
     });
   });
 

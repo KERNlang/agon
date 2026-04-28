@@ -5,7 +5,6 @@
 import from="node:fs" names="readFileSync,writeFileSync,statSync,existsSync,mkdirSync"
 import from="node:path" names="resolve,dirname,relative"
 import from="../models/tool-types.js" names="ToolResult,ToolContext,ToolHandler,ToolDefinition,PermissionDecision" types=true
-import from="../../file-state-cache.js" names="fileStateCache"
 import from="../blocks/file-history.js" names="takeSnapshot"
 
 fn name=normalizeCurlyQuotes params="text:string" returns=string export=false
@@ -119,7 +118,7 @@ fn name=createEditTool returns=ToolHandler
       }
 
       // Read-before-write check: file must have been read via Read tool first
-      const cache = fileStateCache;
+      const cache = ctx.readFileState;
       if (!cache.has(filePath)) {
         return {
           ok: false,
@@ -137,7 +136,8 @@ fn name=createEditTool returns=ToolHandler
         return { ok: false, content: '', error: `Cannot stat file: ${err instanceof Error ? err.message : String(err)}` };
       }
 
-      if (cache.isStale(filePath, mtime)) {
+      const cachedState = cache.get(filePath);
+      if (!cachedState || mtime > cachedState.timestamp) {
         return {
           ok: false,
           content: '',

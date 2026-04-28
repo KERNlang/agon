@@ -37,6 +37,8 @@ interface name=CesarPlanStep
   field name=imports type="string[]" optional=true
   field name=estimatedTokens type=number
   field name=estimatedCostUsd type=number
+  field name=eloSpread type=number optional=true
+    doc "ELO spread between top two engines for this step's task class. Used in plan proposals to show cost-aware rationale."
   field name=rationale type=string optional=true
   field name=verifyCmd type=string optional=true
   field name=state type=CesarStepState optional=true

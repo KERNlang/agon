@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildAgentAutoResumePrompt, buildReviewAbsorptionPrompt, extractExecutionSpec, formatCesarRecoveryStatus, shouldAutoResumeAgentResult } from '../../packages/cli/src/generated/signals/dispatch.js';
+import { buildAgentAutoResumePrompt, buildDelegatedContinuationPrompt, buildReviewAbsorptionPrompt, collectRecentEngineContext, extractExecutionSpec, formatCesarRecoveryStatus, shouldAutoContinueDelegatedResult, shouldAutoResumeAgentResult } from '../../packages/cli/src/generated/signals/dispatch.js';
 
 describe('Dispatch routing helpers', () => {
   it('extracts forge fitness commands from conversational input', () => {
@@ -40,6 +40,33 @@ describe('Dispatch routing helpers', () => {
     expect(prompt).toContain('Do not ask the user what happened');
     expect(prompt).toContain('/tmp/team-agent-123/winner.patch');
     expect(prompt).toContain('not applied to the main workspace yet');
+  });
+
+  it('builds a delegated continuation prompt that tells Cesar to synthesize instead of rerunning the same mode', () => {
+    const prompt = buildDelegatedContinuationPrompt('Campfire discussion on harness UX\n\n[claude]: make disagreement visible');
+
+    expect(prompt).toContain('[DELEGATED RESULT]');
+    expect(prompt).toContain('[CONTINUE]');
+    expect(prompt).toContain('Do not re-run the same Brainstorm, Tribunal, Campfire, Review, Forge, or Agent');
+    expect(prompt).toContain('synthesize the concrete outcome');
+  });
+
+  it('collects recent engine context for post-delegation synthesis', () => {
+    const ctx = {
+      chatSession: {
+        messages: [
+          { role: 'user', content: 'question' },
+          { role: 'engine', engineId: 'claude', content: 'first answer' },
+          { role: 'engine', engineId: 'gemini', content: 'x'.repeat(20) },
+        ],
+      },
+    } as any;
+
+    const context = collectRecentEngineContext(ctx, 3, 5);
+
+    expect(context).toContain('[claude]: first');
+    expect(context).toContain('[gemini]: xxxxx');
+    expect(context).not.toContain('question');
   });
 
   it('builds a review absorption prompt that gives Cesar the findings and fix-plan task', () => {
@@ -89,5 +116,22 @@ describe('Dispatch routing helpers', () => {
     expect(shouldAutoResumeAgentResult({ status: 'completed' }, 5, 1, ctx)).toBe(false);
     expect(shouldAutoResumeAgentResult({ status: 'completed' }, 4, 2, ctx)).toBe(false);
     expect(shouldAutoResumeAgentResult({ status: 'cancelled' }, 4, 1, ctx)).toBe(false);
+  });
+
+  it('continues delegated results only while the same user turn is active', () => {
+    const ctx = {
+      inputEpoch: 7,
+      chatSession: {
+        messages: [
+          { role: 'user', content: 'ask campfire' },
+          { role: 'engine', content: 'delegating' },
+        ],
+      },
+    } as any;
+
+    expect(shouldAutoContinueDelegatedResult(7, 1, ctx)).toBe(true);
+    expect(shouldAutoContinueDelegatedResult(8, 1, ctx)).toBe(false);
+    expect(shouldAutoContinueDelegatedResult(7, 2, ctx)).toBe(false);
+    expect(shouldAutoContinueDelegatedResult(undefined, undefined, ctx)).toBe(true);
   });
 });

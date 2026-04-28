@@ -71,6 +71,7 @@ const name=SLASH_COMMANDS type="SlashCommand[]"
       { cmd: '/provider',    desc: 'add|remove|list          — manage API providers' },
       { cmd: '/run',         desc: '<cmd>                    — run shell command inline' },
       { cmd: '/commit',      desc: '[message]                — stage & commit with auto-generated message' },
+      { cmd: '/doctor',      desc: '[engines|harness]        — diagnose engines, worktree, or Cesar harness' },
       { cmd: '/undo',        desc: '                        — revert last applied forge patch' },
       { cmd: '/jobs',        desc: '                        — list running/completed jobs' },
       { cmd: '/focus',       desc: '<id>                    — switch to background job output' },

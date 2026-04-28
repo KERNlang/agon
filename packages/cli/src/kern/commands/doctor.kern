@@ -7,6 +7,7 @@ import from="@agon/core" names="EngineRegistry,loadConfig,resolveWorkingDir,repo
 import from="@agon/core" names="EngineDefinition" types=true
 import from="@agon/adapter-cli" names="createCliAdapter"
 import from="../blocks/output-format.js" names="header,table,info,success,fail,warn,green,red,yellow,dim,bold"
+import from="../cesar/reliability.js" names="readCesarToolReliability,formatCesarReliabilityLine,shouldDowngradeCesarToolWork"
 
 interface name=EngineDoctorEntry
   field name=id type=string
@@ -15,6 +16,12 @@ interface name=EngineDoctorEntry
   field name=backend type=string
   field name=modes type=string
   field name=detail type=string
+
+interface name=HarnessDoctorReport
+  field name=headers type="string[]"
+  field name=rows type="string[][]"
+  field name=summary type=string
+  field name=ok type=boolean
 
 fn name=shellQuoteForDoctor params="value:string" returns=string export=true
   handler <<<
@@ -132,6 +139,79 @@ fn name=checkDoctorWorktree params="cwd:string" returns="{ok:boolean; message:st
     }
   >>>
 
+fn name=buildHarnessDoctorReport params="registry:EngineRegistry, config:any, cesar?:any" returns=HarnessDoctorReport export=true
+  doc "Diagnose the live Cesar harness: selected engine, backend capability, native/MCP session state, and observed tool reliability."
+  handler <<<
+    const rows: string[][] = [];
+    const selected = String((config as any)?.cesarEngine ?? (config as any)?.forgeFixedStarter ?? 'claude');
+    const backendPref = String((config as any)?.cesarBackend ?? 'auto');
+    let engine: any = null;
+    let selectedStatus: 'ok'|'warn'|'fail' = 'ok';
+    let selectedDetail = 'configured';
+    try {
+      engine = registry.get(selected);
+    } catch {
+      selectedStatus = 'fail';
+      selectedDetail = 'selected Cesar engine is not registered';
+    }
+    rows.push(['Selected Cesar', selected, selectedStatus, selectedDetail]);
+
+    const caps: string[] = [];
+    if (engine?.exec) caps.push('exec');
+    if (engine?.review) caps.push('review');
+    if (engine?.agent) caps.push('agent');
+    if (engine?.companion) caps.push(`companion:${engine.companion.protocol ?? 'mcp'}`);
+    if (engine?.binary) caps.push('cli');
+    if (engine?.api) caps.push(`api:${engine.api.format ?? 'anthropic'}`);
+    rows.push(['Capability profile', selected, caps.length ? 'ok' : 'fail', caps.join(', ') || 'no exec/review/agent/cli/api capability']);
+
+    const binaryPath = engine?.binary ? registry.findBinary(engine) : null;
+    const apiKeyEnv = engine?.api?.apiKeyEnv ?? '';
+    const apiReady = !!(engine?.api && apiKeyEnv && process.env[apiKeyEnv]);
+    const cliReady = !!binaryPath;
+    let backend = 'unavailable';
+    let backendStatus: 'ok'|'warn'|'fail' = 'fail';
+    let backendDetail = 'no CLI binary or API key available';
+    if (backendPref === 'cli') {
+      backend = cliReady ? 'cli' : 'cli-unavailable';
+      backendStatus = cliReady ? 'ok' : (apiReady ? 'warn' : 'fail');
+      backendDetail = cliReady ? `CLI ${binaryPath}` : (apiReady ? 'CLI missing; API fallback exists but cesarBackend=cli' : `install ${engine?.binary ?? 'CLI'}`);
+    } else if (backendPref === 'api') {
+      backend = apiReady ? 'api' : 'api-unavailable';
+      backendStatus = apiReady ? 'ok' : (cliReady ? 'warn' : 'fail');
+      backendDetail = apiReady ? `${engine?.api?.model ?? 'model'} via ${apiKeyEnv}` : (cliReady ? `API key ${apiKeyEnv || 'missing'} not set; CLI fallback exists but cesarBackend=api` : `set ${apiKeyEnv || 'API key'}`);
+    } else {
+      backend = cliReady ? 'cli' : (apiReady ? 'api' : 'unavailable');
+      backendStatus = backend === 'unavailable' ? 'fail' : 'ok';
+      backendDetail = cliReady ? `auto -> CLI ${binaryPath}` : (apiReady ? `auto -> API ${engine?.api?.model ?? 'model'}` : `install ${engine?.binary ?? 'CLI'} or set ${apiKeyEnv || 'API key'}`);
+    }
+    rows.push(['Backend', `${backendPref} -> ${backend}`, backendStatus, backendDetail]);
+
+    const hasNative = cesar?.hasNativeTools === true;
+    const hasMcpSignal = typeof cesar?.mcpSignalPath === 'string' && cesar.mcpSignalPath.length > 0;
+    rows.push(['Native tools', selected, hasNative ? 'ok' : 'warn', hasNative ? 'active in current Cesar session' : 'not active yet; send a Cesar turn to test native tool streaming']);
+    rows.push(['MCP side-channel', selected, hasMcpSignal ? 'ok' : 'warn', hasMcpSignal ? `signal file ${cesar.mcpSignalPath}` : 'not active for current session']);
+
+    const reliability = readCesarToolReliability(selected, backend === 'unavailable' ? undefined : backend, 200);
+    const reliabilityStatus: 'ok'|'warn'|'fail' = reliability.label === 'tool-capable'
+      ? 'ok'
+      : reliability.label === 'advisory-only'
+        ? 'fail'
+        : 'warn';
+    rows.push(['Tool reliability', `${reliability.engineId}/${reliability.backend}`, reliabilityStatus, formatCesarReliabilityLine(reliability)]);
+    const downgrade = shouldDowngradeCesarToolWork(reliability, 'big-feature', 'plan-first');
+    rows.push(['Tool-heavy policy', selected, downgrade ? 'warn' : 'ok', downgrade ? 'bias broad/tool-heavy turns toward ProposePlan, Agent, Forge, or Review' : 'self-tooling is allowed when the task fits']);
+
+    const failing = rows.filter((row) => row[2] === 'fail').length;
+    const warnings = rows.filter((row) => row[2] === 'warn').length;
+    return {
+      headers: ['Check', 'Subject', 'Status', 'Detail'],
+      rows,
+      ok: failing === 0,
+      summary: `${rows.length - failing - warnings} ok, ${warnings} warn, ${failing} fail`,
+    };
+  >>>
+
 const name=doctorCommand type="any"
   handler <<<
     defineCommand({
@@ -142,22 +222,31 @@ const name=doctorCommand type="any"
       args: {
         scope: {
           type: 'positional',
-          description: 'Scope: engines',
+          description: 'Scope: engines|harness',
           required: false,
         },
       },
       async run({ args }) {
         const scope = String(args.scope ?? 'engines').trim() || 'engines';
-        if (scope !== 'engines') {
+        if (scope !== 'engines' && scope !== 'harness') {
           fail(`Unknown doctor scope: ${scope}`);
-          info('Available: engines');
+          info('Available: engines, harness');
           process.exit(1);
         }
 
         const registry = new EngineRegistry();
         registry.load(join(dirname(fileURLToPath(import.meta.url)), '../../../engines'));
-        const adapter = createCliAdapter(registry);
         const config = loadConfig(resolveWorkingDir());
+        if (scope === 'harness') {
+          const report = buildHarnessDoctorReport(registry, config);
+          header('Harness Doctor');
+          table(report.headers, report.rows);
+          if (report.ok) success(`Summary: ${report.summary}`);
+          else warn(`Summary: ${report.summary}`);
+          return;
+        }
+
+        const adapter = createCliAdapter(registry);
         const enabledIds = config.forgeEnabledEngines ?? [];
 
         header('Engine Doctor');

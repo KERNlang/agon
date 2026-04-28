@@ -42,7 +42,7 @@ import { handlePipeline } from '../handlers/pipeline.js';
 
 import { handleProvider } from '../handlers/provider.js';
 
-import { diagnoseEngineDoctorEntry, checkDoctorWorktree } from '../commands/doctor.js';
+import { diagnoseEngineDoctorEntry, checkDoctorWorktree, buildHarnessDoctorReport } from '../commands/doctor.js';
 
 import { deriveRoutingHints } from '../cesar/routing.js';
 
@@ -170,28 +170,68 @@ export interface DispatchCallbacks {
 /**
  * After /review or Review() finishes, feed ctx.lastReviewResult back into Cesar so the orchestrator can reason about findings and the fix plan.
  */
-export async function absorbReviewResultIntoCesar(sourceInput: string, cb: DispatchCallbacks): Promise<void> {
+export async function absorbReviewResultIntoCesar(sourceInput: string, cb: DispatchCallbacks, launchInputEpoch?: number, launchUserTurns?: number): Promise<void> {
   const review = cb.ctx.lastReviewResult;
   if (!review) return;
-  if (!cb.ctx.cesarSession?.alive) return;
   cb.dispatch({ type: 'info', message: 'Cesar absorbing review findings...' });
   const prompt = buildReviewAbsorptionPrompt(sourceInput, review);
-  await continueCesarAfterResult(prompt, cb);
+  await continueCesarAfterResult(prompt, cb, launchInputEpoch, launchUserTurns);
+}
+
+/**
+ * Build the prompt that feeds delegated orchestration results back to Cesar for synthesis or follow-up work.
+ */
+export function buildDelegatedContinuationPrompt(message: string): string {
+  return [
+    '[DELEGATED RESULT]',
+    message,
+    '',
+    '[CONTINUE]',
+    'Continue from this delegated result. Do not re-run the same Brainstorm, Tribunal, Campfire, Review, Forge, or Agent unless there is a genuinely new subproblem.',
+    'If more work is needed, use direct tools or a different focused delegation now. If the task is complete, synthesize the concrete outcome, recommendation, and remaining risk.',
+  ].join('\n');
+}
+
+/**
+ * Collect recent engine messages for post-delegation Cesar synthesis.
+ */
+export function collectRecentEngineContext(ctx: HandlerContext, maxMessages?: number, maxChars?: number): string {
+  const recentChat = ctx.chatSession?.messages?.slice(-(maxMessages ?? 12)) ?? [];
+  const cap = maxChars ?? 1500;
+  return recentChat
+    .filter((m: any) => m.role === 'engine' && m.content)
+    .map((m: any) => `[${m.engineId}]: ${String(m.content).slice(0, cap)}`)
+    .join('\n\n');
+}
+
+/**
+ * Guard post-delegation Cesar continuation so long-running jobs do not answer an old turn after the user has moved on.
+ */
+export function shouldAutoContinueDelegatedResult(launchInputEpoch?: number, launchUserTurns?: number, ctx?: HandlerContext): boolean {
+  if (!ctx) return true;
+  if (typeof launchInputEpoch !== 'number' || typeof launchUserTurns !== 'number') return true;
+  if ((ctx.inputEpoch ?? 0) !== launchInputEpoch) return false;
+  if (countTrackedUserTurns(ctx) !== launchUserTurns) return false;
+  return true;
 }
 
 /**
  * Feed a delegated result back through the full Cesar path, not the lightweight summarizer. This lets Cesar call tools, propose plans, or launch follow-up agents instead of being cut off after another model returns.
  */
-export async function continueCesarAfterResult(message: string, cb: DispatchCallbacks): Promise<void> {
-  if (!cb.ctx.cesarSession?.alive) return;
-  const prompt = [
-    '[DELEGATED RESULT]',
-    message,
-    '',
-    '[CONTINUE]',
-    'Continue from this result. If more work is needed, use tools or delegate now. If the task is complete, summarize concrete outcome and remaining risk.',
-  ].join('\n');
-  await routeWithCesar(prompt, [], cb);
+export async function continueCesarAfterResult(message: string, cb: DispatchCallbacks, launchInputEpoch?: number, launchUserTurns?: number): Promise<void> {
+  if (!shouldAutoContinueDelegatedResult(launchInputEpoch, launchUserTurns, cb.ctx)) {
+    cb.dispatch({ type: 'info', message: 'Skipped Cesar follow-up — user moved on while delegated job was running.' });
+    return;
+  }
+  const prompt = buildDelegatedContinuationPrompt(message);
+  const priorDepth = Number((cb.ctx as any).delegatedContinuationDepth ?? 0) || 0;
+  (cb.ctx as any).delegatedContinuationDepth = priorDepth + 1;
+  try {
+    await routeWithCesar(prompt, [], cb);
+  } finally {
+    if (priorDepth > 0) (cb.ctx as any).delegatedContinuationDepth = priorDepth;
+    else delete (cb.ctx as any).delegatedContinuationDepth;
+  }
 }
 
 export interface DispatchResult {
@@ -410,9 +450,17 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
           const label = labelSource.slice(0, 60).trim();
           const hardened = result.hardened ?? false;
           const tMode = result.tribunalMode;
+          const continuationEpoch = cb.ctx.inputEpoch ?? 0;
+          const continuationUserTurns = countTrackedUserTurns(cb.ctx);
           // P2 fix: normalize team prefix — brain may return action='forge' + team=true
           let routeAction = result.action;
           if (result.team && !routeAction.startsWith('team-')) routeAction = `team-${routeAction}`;
+          const inDelegatedContinuation = Number((cb.ctx as any).delegatedContinuationDepth ?? 0) > 0;
+          const RECURSIVE_THINKING_ACTIONS = ['brainstorm', 'tribunal', 'campfire', 'team-brainstorm', 'team-tribunal'];
+          if (inDelegatedContinuation && RECURSIVE_THINKING_ACTIONS.includes(routeAction)) {
+            cb.dispatch({ type: 'warning', message: `Skipped repeated ${routeAction} during delegated-result synthesis. Cesar should summarize or choose a focused execution step instead.` });
+            return false;
+          }
 
           // Plan mode: block execution delegations, allow thinking delegations.
           // Codex review P1: 'agent' and 'team-agent' must also be downgraded
@@ -482,7 +530,11 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
               const _cwdForge = resolveWorkingDir();
               cb.runAsJob('forge', label, withThreadOutcome(_cwdForge, isForgeSlice ? 'forge-slice' : 'forge', label, async () => {
                 const forgeResult = await handleForge(taskInput, fitnessCmd, cb.dispatch, cb.ctx, undefined, hardened, true);
-                if (isForgeSlice && forgeResult && cb.ctx.cesarSession?.alive) {
+                if (isForgeSlice && forgeResult) {
+                  if (!shouldAutoContinueDelegatedResult(continuationEpoch, continuationUserTurns, cb.ctx)) {
+                    cb.dispatch({ type: 'info', message: 'Skipped Cesar forge-slice integration — user moved on while forge was running.' });
+                    return forgeResult;
+                  }
                   cb.dispatch({ type: 'info', message: 'Cesar integrating forge slice…' });
                   await routeWithCesar(`[forge-slice integration]
 
@@ -519,11 +571,11 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
               const _cwdBs = resolveWorkingDir();
               cb.runAsJob('brainstorm', label, withThreadOutcome(_cwdBs, 'brainstorm', label, async () => {
                 const bsResult = await handleBrainstorm(taskInput, cb.dispatch, cb.ctx);
-                if (cb.ctx.cesarSession && bsResult) {
+                if (bsResult) {
                   cb.dispatch({ type: 'info', message: 'Cesar absorbing brainstorm results…' });
                   const bidSummary = bsResult.bids.map((b: any) => `**${b.engineId}** (score: ${b.score}): ${b.reasoning.slice(0, 800)}`).join('\n\n');
                   const cesarMsg = `Brainstorm complete. Winner: ${bsResult.winner}.\n\n## Engine Bids\n${bidSummary}\n\n## Winner's Full Response\n${bsResult.response}\n\nSynthesize the winning approach into a concrete plan. Be direct — the brainstorm already validated the ideas.`;
-                  await continueCesarAfterResult(cesarMsg, cb);
+                  await continueCesarAfterResult(cesarMsg, cb, continuationEpoch, continuationUserTurns);
                 }
                 return bsResult; // returned value captured by withThreadOutcome for richer summary
               }, cb.ctx));
@@ -534,11 +586,10 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
               const _cwdTBs = resolveWorkingDir();
               cb.runAsJob('team-brainstorm', label, withThreadOutcome(_cwdTBs, 'team-brainstorm', label, async () => {
                 await handleTeamBrainstorm(taskInput, cb.dispatch, cb.ctx);
-                if (cb.ctx.cesarSession) {
+                const chatContext = collectRecentEngineContext(cb.ctx, 10, 1500);
+                if (chatContext) {
                   cb.dispatch({ type: 'info', message: 'Cesar absorbing brainstorm results…' });
-                  const recentChat = cb.ctx.chatSession?.messages?.slice(-10) ?? [];
-                  const chatContext = recentChat.filter((m: any) => m.role === 'engine').map((m: any) => `[${m.engineId}]: ${m.content.slice(0, 1500)}`).join('\n\n');
-                  await continueCesarAfterResult(`Team brainstorm completed. Here are the engine responses:\n\n${chatContext}\n\nSynthesize the winning approach into a concrete plan.`, cb);
+                  await continueCesarAfterResult(`Team brainstorm completed. Here are the engine responses:\n\n${chatContext}\n\nSynthesize the winning approach into a concrete plan.`, cb, continuationEpoch, continuationUserTurns);
                 }
               }, cb.ctx));
               return true;
@@ -548,11 +599,8 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
               const _cwdTrib = resolveWorkingDir();
               cb.runAsJob('tribunal', label, withThreadOutcome(_cwdTrib, 'tribunal', label, async () => {
                 await handleTribunal(taskInput, cb.dispatch, cb.ctx, tMode);
-                if (cb.ctx.cesarSession?.alive) {
-                  const recentChat = cb.ctx.chatSession?.messages?.slice(-12) ?? [];
-                  const chatContext = recentChat.filter((m: any) => m.role === 'engine').map((m: any) => `[${m.engineId}]: ${m.content.slice(0, 1500)}`).join('\n\n');
-                  if (chatContext) await continueCesarAfterResult(`Tribunal${tMode ? ` (${tMode})` : ''} concluded on: "${taskInput.slice(0, 200)}"\n\n${chatContext}\n\nSummarize the verdict and key takeaways.`, cb);
-                }
+                const chatContext = collectRecentEngineContext(cb.ctx, 12, 1500);
+                if (chatContext) await continueCesarAfterResult(`Tribunal${tMode ? ` (${tMode})` : ''} concluded on: "${taskInput.slice(0, 200)}"\n\n${chatContext}\n\nSummarize the verdict and key takeaways.`, cb, continuationEpoch, continuationUserTurns);
               }, cb.ctx));
               return true;
             }
@@ -561,11 +609,8 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
               const _cwdTTrib = resolveWorkingDir();
               cb.runAsJob('team-tribunal', label, withThreadOutcome(_cwdTTrib, 'team-tribunal', label, async () => {
                 await handleTeamTribunal(taskInput, cb.dispatch, cb.ctx, tMode);
-                if (cb.ctx.cesarSession?.alive) {
-                  const recentChat = cb.ctx.chatSession?.messages?.slice(-12) ?? [];
-                  const chatContext = recentChat.filter((m: any) => m.role === 'engine').map((m: any) => `[${m.engineId}]: ${m.content.slice(0, 1500)}`).join('\n\n');
-                  if (chatContext) await continueCesarAfterResult(`Team tribunal${tMode ? ` (${tMode})` : ''} concluded on: "${taskInput.slice(0, 200)}"\n\n${chatContext}\n\nSummarize the verdict and key takeaways.`, cb);
-                }
+                const chatContext = collectRecentEngineContext(cb.ctx, 12, 1500);
+                if (chatContext) await continueCesarAfterResult(`Team tribunal${tMode ? ` (${tMode})` : ''} concluded on: "${taskInput.slice(0, 200)}"\n\n${chatContext}\n\nSummarize the verdict and key takeaways.`, cb, continuationEpoch, continuationUserTurns);
               }, cb.ctx));
               return true;
             }
@@ -574,11 +619,8 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
               const _cwdCamp = resolveWorkingDir();
               cb.runAsJob('campfire', label, withThreadOutcome(_cwdCamp, 'campfire', label, async () => {
                 await handleCampfire(taskInput, cb.dispatch, cb.ctx);
-                if (cb.ctx.cesarSession?.alive) {
-                  const recentChat = cb.ctx.chatSession?.messages?.slice(-12) ?? [];
-                  const chatContext = recentChat.filter((m: any) => m.role === 'engine').map((m: any) => `[${m.engineId}]: ${m.content.slice(0, 1500)}`).join('\n\n');
-                  if (chatContext) await continueCesarAfterResult(`Campfire discussion on: "${taskInput.slice(0, 200)}"\n\n${chatContext}\n\nSummarize the key insights and any consensus reached.`, cb);
-                }
+                const chatContext = collectRecentEngineContext(cb.ctx, 12, 1500);
+                if (chatContext) await continueCesarAfterResult(`Campfire discussion on: "${taskInput.slice(0, 200)}"\n\n${chatContext}\n\nSummarize the key insights and any consensus reached.`, cb, continuationEpoch, continuationUserTurns);
               }, cb.ctx));
               return true;
             }
@@ -597,7 +639,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
                     ? result.engines
                     : result.engineId ? [result.engineId as string] : undefined;
                   await handleReviewMany(cb.dispatch, cb.ctx, result.target as string | undefined, reviewEngines as string[] | undefined);
-                  await absorbReviewResultIntoCesar(taskInput, cb);
+                  await absorbReviewResultIntoCesar(taskInput, cb, continuationEpoch, continuationUserTurns);
                 }, cb.ctx));
               }
               return true;
@@ -644,11 +686,9 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
                   if (answer) {
                     cb.dispatch({ type: 'engine-block', engineId: targetEngineId, color: ENGINE_COLORS[targetEngineId] ?? 124, content: answer });
                   }
-                  // Feed result back to Cesar's persistent session so it can continue
-                  if (cb.ctx.cesarSession) {
-                    cb.dispatch({ type: 'info', message: `Feeding delegate result back to Cesar…` });
-                    await continueCesarAfterResult(`[Delegate → ${targetEngineId}] Result:\n${answer || '(empty response)'}`, cb);
-                  }
+                  // Feed result back to Cesar so it can continue even when the prior session was one-shot/API-backed.
+                  cb.dispatch({ type: 'info', message: `Feeding delegate result back to Cesar…` });
+                  await continueCesarAfterResult(`[Delegate → ${targetEngineId}] Result:\n${answer || '(empty response)'}`, cb, continuationEpoch, continuationUserTurns);
                 } catch (err) {
                   cb.dispatch({ type: 'error', message: `Delegate to ${targetEngineId} failed: ${err instanceof Error ? err.message : String(err)}` });
                 }
@@ -686,11 +726,43 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
             ? executionSpec.task || input
             : input;
           const recoveredFitness = crashDel.fitnessCmd ?? executionSpec.fitnessCmd;
+          const continuationEpoch = cb.ctx.inputEpoch ?? 0;
+          const continuationUserTurns = countTrackedUserTurns(cb.ctx);
           switch (action) {
             case 'forge': cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'forge', 'recovered delegation') }); cb.runAsJob('forge', label, async () => { await handleForge(recoveredTask, recoveredFitness, cb.dispatch, cb.ctx, undefined, crashDel.hardened ?? false, true); }); return true;
-            case 'brainstorm': cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'brainstorm', 'recovered delegation') }); cb.runAsJob('brainstorm', label, async () => { await handleBrainstorm(recoveredTask, cb.dispatch, cb.ctx); }); return true;
-            case 'tribunal': cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'tribunal', crashDel.tribunalMode ? `recovered delegation [${crashDel.tribunalMode}]` : 'recovered delegation') }); cb.runAsJob('tribunal', label, () => handleTribunal(recoveredTask, cb.dispatch, cb.ctx, crashDel.tribunalMode)); return true;
-            case 'campfire': cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'campfire', 'recovered delegation') }); cb.runAsJob('campfire', label, () => handleCampfire(recoveredTask, cb.dispatch, cb.ctx)); return true;
+            case 'brainstorm': {
+              cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'brainstorm', 'recovered delegation') });
+              const _cwdRecoverBs = resolveWorkingDir();
+              cb.runAsJob('brainstorm', label, withThreadOutcome(_cwdRecoverBs, 'brainstorm', label, async () => {
+                const bsResult = await handleBrainstorm(recoveredTask, cb.dispatch, cb.ctx);
+                if (bsResult) {
+                  const bidSummary = bsResult.bids.map((b: any) => `**${b.engineId}** (score: ${b.score}): ${b.reasoning.slice(0, 800)}`).join('\n\n');
+                  await continueCesarAfterResult(`Recovered brainstorm complete. Winner: ${bsResult.winner}.\n\n## Engine Bids\n${bidSummary}\n\n## Winner's Full Response\n${bsResult.response}\n\nSynthesize the winning approach and continue the original task.`, cb, continuationEpoch, continuationUserTurns);
+                }
+                return bsResult;
+              }, cb.ctx));
+              return true;
+            }
+            case 'tribunal': {
+              cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'tribunal', crashDel.tribunalMode ? `recovered delegation [${crashDel.tribunalMode}]` : 'recovered delegation') });
+              const _cwdRecoverTrib = resolveWorkingDir();
+              cb.runAsJob('tribunal', label, withThreadOutcome(_cwdRecoverTrib, 'tribunal', label, async () => {
+                await handleTribunal(recoveredTask, cb.dispatch, cb.ctx, crashDel.tribunalMode);
+                const chatContext = collectRecentEngineContext(cb.ctx, 12, 1500);
+                if (chatContext) await continueCesarAfterResult(`Recovered tribunal${crashDel.tribunalMode ? ` (${crashDel.tribunalMode})` : ''} concluded on: "${recoveredTask.slice(0, 200)}"\n\n${chatContext}\n\nSummarize the verdict and continue the original task.`, cb, continuationEpoch, continuationUserTurns);
+              }, cb.ctx));
+              return true;
+            }
+            case 'campfire': {
+              cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'campfire', 'recovered delegation') });
+              const _cwdRecoverCamp = resolveWorkingDir();
+              cb.runAsJob('campfire', label, withThreadOutcome(_cwdRecoverCamp, 'campfire', label, async () => {
+                await handleCampfire(recoveredTask, cb.dispatch, cb.ctx);
+                const chatContext = collectRecentEngineContext(cb.ctx, 12, 1500);
+                if (chatContext) await continueCesarAfterResult(`Recovered campfire discussion on: "${recoveredTask.slice(0, 200)}"\n\n${chatContext}\n\nSummarize the key insights and continue the original task.`, cb, continuationEpoch, continuationUserTurns);
+              }, cb.ctx));
+              return true;
+            }
             case 'pipeline': cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'pipeline', 'recovered delegation') }); cb.runAsJob('pipeline', label, () => handlePipeline(recoveredTask, cb.dispatch, cb.ctx, recoveredFitness ?? undefined)); return true;
             case 'review': {
               cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'review', 'recovered delegation') });
@@ -700,13 +772,31 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
                   ? crashDel.engines
                   : crashDel.engineId ? [crashDel.engineId] : undefined;
                 await handleReviewMany(cb.dispatch, cb.ctx, crashDel.target, reviewEngines);
-                await absorbReviewResultIntoCesar(recoveredTask, cb);
+                await absorbReviewResultIntoCesar(recoveredTask, cb, continuationEpoch, continuationUserTurns);
               }, cb.ctx));
               return true;
             }
             case 'team-forge': { const tf = recoveredFitness ?? await cb.askQuestion('What command tests this?'); if (tf.trim()) { cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'team-forge', 'recovered delegation') }); cb.runAsJob('team-forge', label, () => handleTeamForge(recoveredTask, tf.trim(), cb.dispatch, cb.ctx, undefined)); return true; } break; }
-            case 'team-brainstorm': cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'team-brainstorm', 'recovered delegation') }); cb.runAsJob('team-brainstorm', label, () => handleTeamBrainstorm(recoveredTask, cb.dispatch, cb.ctx)); return true;
-            case 'team-tribunal': cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'team-tribunal', crashDel.tribunalMode ? `recovered delegation [${crashDel.tribunalMode}]` : 'recovered delegation') }); cb.runAsJob('team-tribunal', label, () => handleTeamTribunal(recoveredTask, cb.dispatch, cb.ctx, crashDel.tribunalMode)); return true;
+            case 'team-brainstorm': {
+              cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'team-brainstorm', 'recovered delegation') });
+              const _cwdRecoverTBs = resolveWorkingDir();
+              cb.runAsJob('team-brainstorm', label, withThreadOutcome(_cwdRecoverTBs, 'team-brainstorm', label, async () => {
+                await handleTeamBrainstorm(recoveredTask, cb.dispatch, cb.ctx);
+                const chatContext = collectRecentEngineContext(cb.ctx, 12, 1500);
+                if (chatContext) await continueCesarAfterResult(`Recovered team brainstorm completed on: "${recoveredTask.slice(0, 200)}"\n\n${chatContext}\n\nSynthesize the winning approach and continue the original task.`, cb, continuationEpoch, continuationUserTurns);
+              }, cb.ctx));
+              return true;
+            }
+            case 'team-tribunal': {
+              cb.dispatch({ type: 'info', message: formatCesarRecoveryStatus('delegation', 'team-tribunal', crashDel.tribunalMode ? `recovered delegation [${crashDel.tribunalMode}]` : 'recovered delegation') });
+              const _cwdRecoverTTrib = resolveWorkingDir();
+              cb.runAsJob('team-tribunal', label, withThreadOutcome(_cwdRecoverTTrib, 'team-tribunal', label, async () => {
+                await handleTeamTribunal(recoveredTask, cb.dispatch, cb.ctx, crashDel.tribunalMode);
+                const chatContext = collectRecentEngineContext(cb.ctx, 12, 1500);
+                if (chatContext) await continueCesarAfterResult(`Recovered team tribunal${crashDel.tribunalMode ? ` (${crashDel.tribunalMode})` : ''} concluded on: "${recoveredTask.slice(0, 200)}"\n\n${chatContext}\n\nSummarize the verdict and continue the original task.`, cb, continuationEpoch, continuationUserTurns);
+              }, cb.ctx));
+              return true;
+            }
           }
         }
       }
@@ -791,24 +881,74 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
                 ? executionSpec.task || input
                 : input;
               const fallbackFitness = executionSpec.fitnessCmd;
+              const continuationEpoch = cb.ctx.inputEpoch ?? 0;
+              const continuationUserTurns = countTrackedUserTurns(cb.ctx);
               switch (action) {
                   case 'forge': cb.dispatch({ type: 'info', message: 'Cesar → forge' }); cb.runAsJob('forge', label, async () => { await handleForge(fallbackTask, fallbackFitness, cb.dispatch, cb.ctx, undefined, fallbackSuggestion.hardened ?? false, true); }); return true;
-                case 'brainstorm': cb.dispatch({ type: 'info', message: 'Cesar → brainstorm' }); cb.runAsJob('brainstorm', label, async () => { await handleBrainstorm(fallbackTask, cb.dispatch, cb.ctx); }); return true;
-                case 'tribunal': cb.dispatch({ type: 'info', message: `Cesar → tribunal${fallbackSuggestion.tribunalMode ? ` [${fallbackSuggestion.tribunalMode}]` : ''}` }); cb.runAsJob('tribunal', label, () => handleTribunal(fallbackTask, cb.dispatch, cb.ctx, fallbackSuggestion.tribunalMode)); return true;
-                case 'campfire': cb.dispatch({ type: 'info', message: 'Cesar → campfire' }); cb.runAsJob('campfire', label, () => handleCampfire(fallbackTask, cb.dispatch, cb.ctx)); return true;
+                case 'brainstorm': {
+                  cb.dispatch({ type: 'info', message: 'Cesar → brainstorm' });
+                  const _cwdFallbackBs = resolveWorkingDir();
+                  cb.runAsJob('brainstorm', label, withThreadOutcome(_cwdFallbackBs, 'brainstorm', label, async () => {
+                    const bsResult = await handleBrainstorm(fallbackTask, cb.dispatch, cb.ctx);
+                    if (bsResult) {
+                      const bidSummary = bsResult.bids.map((b: any) => `**${b.engineId}** (score: ${b.score}): ${b.reasoning.slice(0, 800)}`).join('\n\n');
+                      await continueCesarAfterResult(`Fallback brainstorm complete. Winner: ${bsResult.winner}.\n\n## Engine Bids\n${bidSummary}\n\n## Winner's Full Response\n${bsResult.response}\n\nSynthesize the winning approach and continue the original task.`, cb, continuationEpoch, continuationUserTurns);
+                    }
+                    return bsResult;
+                  }, cb.ctx));
+                  return true;
+                }
+                case 'tribunal': {
+                  cb.dispatch({ type: 'info', message: `Cesar → tribunal${fallbackSuggestion.tribunalMode ? ` [${fallbackSuggestion.tribunalMode}]` : ''}` });
+                  const _cwdFallbackTrib = resolveWorkingDir();
+                  cb.runAsJob('tribunal', label, withThreadOutcome(_cwdFallbackTrib, 'tribunal', label, async () => {
+                    await handleTribunal(fallbackTask, cb.dispatch, cb.ctx, fallbackSuggestion.tribunalMode);
+                    const chatContext = collectRecentEngineContext(cb.ctx, 12, 1500);
+                    if (chatContext) await continueCesarAfterResult(`Fallback tribunal${fallbackSuggestion.tribunalMode ? ` (${fallbackSuggestion.tribunalMode})` : ''} concluded on: "${fallbackTask.slice(0, 200)}"\n\n${chatContext}\n\nSummarize the verdict and continue the original task.`, cb, continuationEpoch, continuationUserTurns);
+                  }, cb.ctx));
+                  return true;
+                }
+                case 'campfire': {
+                  cb.dispatch({ type: 'info', message: 'Cesar → campfire' });
+                  const _cwdFallbackCamp = resolveWorkingDir();
+                  cb.runAsJob('campfire', label, withThreadOutcome(_cwdFallbackCamp, 'campfire', label, async () => {
+                    await handleCampfire(fallbackTask, cb.dispatch, cb.ctx);
+                    const chatContext = collectRecentEngineContext(cb.ctx, 12, 1500);
+                    if (chatContext) await continueCesarAfterResult(`Fallback campfire discussion on: "${fallbackTask.slice(0, 200)}"\n\n${chatContext}\n\nSummarize the key insights and continue the original task.`, cb, continuationEpoch, continuationUserTurns);
+                  }, cb.ctx));
+                  return true;
+                }
                 case 'pipeline': cb.dispatch({ type: 'info', message: 'Cesar → pipeline' }); cb.runAsJob('pipeline', label, () => handlePipeline(fallbackTask, cb.dispatch, cb.ctx, fallbackFitness ?? undefined)); return true;
                 case 'review': {
                   cb.dispatch({ type: 'info', message: 'Cesar → review' });
                   const _cwdReview = resolveWorkingDir();
                   cb.runAsJob('review', label, withThreadOutcome(_cwdReview, 'review', label, async () => {
                     await handleReviewMany(cb.dispatch, cb.ctx);
-                    await absorbReviewResultIntoCesar(input, cb);
+                    await absorbReviewResultIntoCesar(input, cb, continuationEpoch, continuationUserTurns);
                   }, cb.ctx));
                   return true;
                 }
                 case 'team-forge': { const tf = fallbackFitness ?? await cb.askQuestion('What command tests this?'); if (tf.trim()) { cb.dispatch({ type: 'info', message: 'Cesar → team-forge' }); cb.runAsJob('team-forge', label, () => handleTeamForge(fallbackTask, tf.trim(), cb.dispatch, cb.ctx, undefined)); return true; } break; }
-                case 'team-brainstorm': cb.dispatch({ type: 'info', message: 'Cesar → team-brainstorm' }); cb.runAsJob('team-brainstorm', label, () => handleTeamBrainstorm(fallbackTask, cb.dispatch, cb.ctx)); return true;
-                case 'team-tribunal': cb.dispatch({ type: 'info', message: `Cesar → team-tribunal${fallbackSuggestion.tribunalMode ? ` [${fallbackSuggestion.tribunalMode}]` : ''}` }); cb.runAsJob('team-tribunal', label, () => handleTeamTribunal(fallbackTask, cb.dispatch, cb.ctx, fallbackSuggestion.tribunalMode)); return true;
+                case 'team-brainstorm': {
+                  cb.dispatch({ type: 'info', message: 'Cesar → team-brainstorm' });
+                  const _cwdFallbackTBs = resolveWorkingDir();
+                  cb.runAsJob('team-brainstorm', label, withThreadOutcome(_cwdFallbackTBs, 'team-brainstorm', label, async () => {
+                    await handleTeamBrainstorm(fallbackTask, cb.dispatch, cb.ctx);
+                    const chatContext = collectRecentEngineContext(cb.ctx, 12, 1500);
+                    if (chatContext) await continueCesarAfterResult(`Fallback team brainstorm completed on: "${fallbackTask.slice(0, 200)}"\n\n${chatContext}\n\nSynthesize the winning approach and continue the original task.`, cb, continuationEpoch, continuationUserTurns);
+                  }, cb.ctx));
+                  return true;
+                }
+                case 'team-tribunal': {
+                  cb.dispatch({ type: 'info', message: `Cesar → team-tribunal${fallbackSuggestion.tribunalMode ? ` [${fallbackSuggestion.tribunalMode}]` : ''}` });
+                  const _cwdFallbackTTrib = resolveWorkingDir();
+                  cb.runAsJob('team-tribunal', label, withThreadOutcome(_cwdFallbackTTrib, 'team-tribunal', label, async () => {
+                    await handleTeamTribunal(fallbackTask, cb.dispatch, cb.ctx, fallbackSuggestion.tribunalMode);
+                    const chatContext = collectRecentEngineContext(cb.ctx, 12, 1500);
+                    if (chatContext) await continueCesarAfterResult(`Fallback team tribunal${fallbackSuggestion.tribunalMode ? ` (${fallbackSuggestion.tribunalMode})` : ''} concluded on: "${fallbackTask.slice(0, 200)}"\n\n${chatContext}\n\nSummarize the verdict and continue the original task.`, cb, continuationEpoch, continuationUserTurns);
+                  }, cb.ctx));
+                  return true;
+                }
               }
             }
             return false;
@@ -930,43 +1070,40 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
     case 'tribunal': {
       const _tCwd = resolveWorkingDir();
       const _tLabel = intent.question?.slice(0, 40) ?? 'tribunal';
+      const continuationEpoch = cb.ctx.inputEpoch ?? 0;
+      const continuationUserTurns = countTrackedUserTurns(cb.ctx);
       cb.runAsJob('tribunal', _tLabel, withThreadOutcome(_tCwd, 'tribunal', _tLabel, async () => {
         if (cb.eventBus) await cb.eventBus.emit('pre:tribunal', { question: intent.question, mode: intent.tribunalMode, cwd: _tCwd });
         await handleTribunal(intent.question, cb.dispatch, cb.ctx, intent.tribunalMode);
         if (cb.eventBus) cb.eventBus.emit('post:tribunal', { question: intent.question, cwd: _tCwd }).catch(() => {});
-        if (cb.ctx.cesarSession?.alive) {
-          const recentChat = cb.ctx.chatSession?.messages?.slice(-12) ?? [];
-          const chatContext = recentChat.filter((m: any) => m.role === 'engine').map((m: any) => `[${m.engineId}]: ${m.content.slice(0, 1500)}`).join('\n\n');
-          if (chatContext) await continueCesarAfterResult(`Tribunal concluded on: "${(intent.question ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize the verdict and key takeaways.`, cb);
-        }
+        const chatContext = collectRecentEngineContext(cb.ctx, 12, 1500);
+        if (chatContext) await continueCesarAfterResult(`Tribunal concluded on: "${(intent.question ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize the verdict and key takeaways.`, cb, continuationEpoch, continuationUserTurns);
       }, cb.ctx));
       return { handled: true, ranAsJob: true };
     }
     case 'campfire': {
       const _cCwd = resolveWorkingDir();
       const _cLabel = intent.topic?.slice(0, 40) ?? 'campfire';
+      const continuationEpoch = cb.ctx.inputEpoch ?? 0;
+      const continuationUserTurns = countTrackedUserTurns(cb.ctx);
       cb.runAsJob('campfire', _cLabel, withThreadOutcome(_cCwd, 'campfire', _cLabel, async () => {
         if (cb.eventBus) await cb.eventBus.emit('pre:campfire', { topic: intent.topic, cwd: _cCwd });
         await handleCampfire(intent.topic, cb.dispatch, cb.ctx);
         if (cb.eventBus) cb.eventBus.emit('post:campfire', { topic: intent.topic, cwd: _cCwd }).catch(() => {});
-        if (cb.ctx.cesarSession?.alive) {
-          const recentChat = cb.ctx.chatSession?.messages?.slice(-12) ?? [];
-          const chatContext = recentChat.filter((m: any) => m.role === 'engine').map((m: any) => `[${m.engineId}]: ${m.content.slice(0, 1500)}`).join('\n\n');
-          if (chatContext) await continueCesarAfterResult(`Campfire discussion on: "${(intent.topic ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize the key insights and any consensus reached.`, cb);
-        }
+        const chatContext = collectRecentEngineContext(cb.ctx, 12, 1500);
+        if (chatContext) await continueCesarAfterResult(`Campfire discussion on: "${(intent.topic ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize the key insights and any consensus reached.`, cb, continuationEpoch, continuationUserTurns);
       }, cb.ctx));
       return { handled: true, ranAsJob: true };
     }
     case 'team-tribunal': {
       const _ttCwd = resolveWorkingDir();
       const _ttLabel = intent.question?.slice(0, 40) ?? 'team-tribunal';
+      const continuationEpoch = cb.ctx.inputEpoch ?? 0;
+      const continuationUserTurns = countTrackedUserTurns(cb.ctx);
       cb.runAsJob('team-tribunal', _ttLabel, withThreadOutcome(_ttCwd, 'team-tribunal', _ttLabel, async () => {
         await handleTeamTribunal(intent.question, cb.dispatch, cb.ctx, intent.tribunalMode, intent.membersPerSide);
-        if (cb.ctx.cesarSession?.alive) {
-          const recentChat = cb.ctx.chatSession?.messages?.slice(-12) ?? [];
-          const chatContext = recentChat.filter((m: any) => m.role === 'engine').map((m: any) => `[${m.engineId}]: ${m.content.slice(0, 1500)}`).join('\n\n');
-          if (chatContext) await continueCesarAfterResult(`Team tribunal concluded on: "${(intent.question ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize the verdict and key takeaways.`, cb);
-        }
+        const chatContext = collectRecentEngineContext(cb.ctx, 12, 1500);
+        if (chatContext) await continueCesarAfterResult(`Team tribunal concluded on: "${(intent.question ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSummarize the verdict and key takeaways.`, cb, continuationEpoch, continuationUserTurns);
       }, cb.ctx));
       return { handled: true, ranAsJob: true };
     }
@@ -979,7 +1116,13 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
     case 'team-brainstorm': {
       const _tbCwd = resolveWorkingDir();
       const _tbLabel = intent.question?.slice(0, 40) ?? 'team-brainstorm';
-      cb.runAsJob('team-brainstorm', _tbLabel, withThreadOutcome(_tbCwd, 'team-brainstorm', _tbLabel, () => handleTeamBrainstorm(intent.question, cb.dispatch, cb.ctx, intent.membersPerSide), cb.ctx));
+      const continuationEpoch = cb.ctx.inputEpoch ?? 0;
+      const continuationUserTurns = countTrackedUserTurns(cb.ctx);
+      cb.runAsJob('team-brainstorm', _tbLabel, withThreadOutcome(_tbCwd, 'team-brainstorm', _tbLabel, async () => {
+        await handleTeamBrainstorm(intent.question, cb.dispatch, cb.ctx, intent.membersPerSide);
+        const chatContext = collectRecentEngineContext(cb.ctx, 12, 1500);
+        if (chatContext) await continueCesarAfterResult(`Team brainstorm completed on: "${(intent.question ?? '').slice(0, 200)}"\n\n${chatContext}\n\nSynthesize the winning approach into a concrete plan.`, cb, continuationEpoch, continuationUserTurns);
+      }, cb.ctx));
       return { handled: true, ranAsJob: true };
     }
     case 'build':
@@ -1166,8 +1309,20 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
     case 'history': handleHistory(cb.dispatch, intent.id); break;
     case 'doctor': {
       const scope = String(intent.scope ?? 'engines').trim() || 'engines';
+      if (scope === 'harness') {
+        const report = buildHarnessDoctorReport(cb.ctx.registry, cb.ctx.config, cb.ctx.cesar);
+        cb.dispatch({ type: 'header', title: 'Harness Doctor' });
+        cb.dispatch({
+          type: 'table',
+          headers: report.headers,
+          rows: report.rows,
+        });
+        cb.dispatch({ type: report.ok ? 'success' : 'warning', message: `Summary: ${report.summary}` });
+        break;
+      }
       if (scope !== 'engines') {
         cb.dispatch({ type: 'error', message: `Unknown doctor scope: ${scope}` });
+        cb.dispatch({ type: 'info', message: 'Available: engines, harness' });
         break;
       }
       const enabledIds = cb.ctx.config.forgeEnabledEngines ?? [];

@@ -223,6 +223,8 @@ export interface AgonConfig {
   autoReviewAfterForge?: boolean;
   autoReviewAfterImpl?: boolean;
   buddyTimeout?: number;
+  speculativeThresholdUsd?: number;
+  speculativeEloSpreadThreshold?: number;
 }
 
 export const DEFAULT_AGON_CONFIG: Required<AgonConfig> = {
@@ -280,6 +282,8 @@ export const DEFAULT_AGON_CONFIG: Required<AgonConfig> = {
   autoReviewAfterForge: true,
   autoReviewAfterImpl: true,
   buddyTimeout: 420,
+  speculativeThresholdUsd: 0.50,
+  speculativeEloSpreadThreshold: 15,
 };
 
 export interface ScoutBid {

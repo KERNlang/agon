@@ -47,7 +47,7 @@ export function registerBuiltinCommands(registry: CommandRegistry): void {
 
     // Info
     { name: 'tokens',      desc: '                        — show token usage & costs', category: 'info' },
-    { name: 'doctor',      desc: 'engines                 — diagnose engines + worktree health', category: 'info' },
+    { name: 'doctor',      desc: '[engines|harness]        — diagnose engines, worktree, or Cesar harness', category: 'info' },
     { name: 'leaderboard', desc: '                        — ELO rankings', category: 'info' },
     { name: 'history',     desc: '[id]                    — past forge runs', category: 'info' },
     { name: 'flow',        desc: '                        — log this session', category: 'info' },

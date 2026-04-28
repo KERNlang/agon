@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { fenceSeedPlan } from '../../packages/cli/src/handlers/cesar.js';
-import { deriveRoutingHints, buildRoutingContext } from '../../packages/cli/src/generated/cesar/routing.js';
+import { deriveRoutingHints, buildRoutingContext, shouldSpeculate } from '../../packages/cli/src/generated/cesar/routing.js';
 
 const routingCtx = {
   activeEngines: () => ['claude'],
@@ -127,6 +127,45 @@ describe('César Routing', () => {
     it('campfireObserverStrategy defaults to lead-first', async () => {
       const { DEFAULT_AGON_CONFIG } = await import('../../packages/core/src/types.js');
       expect(DEFAULT_AGON_CONFIG.campfireObserverStrategy).toBe('lead-first');
+    });
+
+    it('speculativeThresholdUsd defaults to 0.50', async () => {
+      const { DEFAULT_AGON_CONFIG } = await import('../../packages/core/src/types.js');
+      expect(DEFAULT_AGON_CONFIG.speculativeThresholdUsd).toBe(0.50);
+    });
+
+    it('speculativeEloSpreadThreshold defaults to 15', async () => {
+      const { DEFAULT_AGON_CONFIG } = await import('../../packages/core/src/types.js');
+      expect(DEFAULT_AGON_CONFIG.speculativeEloSpreadThreshold).toBe(15);
+    });
+  });
+
+  describe('shouldSpeculate gate', () => {
+    const baseConfig = { speculativeThresholdUsd: 0.50, speculativeEloSpreadThreshold: 15 } as any;
+
+    it('blocks speculation when cost is below threshold', () => {
+      const hints = { estimatedStepCost: { tokens: 1000, costUsd: 0.10 }, uncertaintyFamily: 'implementation', eloSpread: 8 } as any;
+      expect(shouldSpeculate(hints, baseConfig)).toBe(false);
+    });
+
+    it('allows speculation when cost is high and ELO spread is low', () => {
+      const hints = { estimatedStepCost: { tokens: 50000, costUsd: 2.00 }, uncertaintyFamily: 'implementation', eloSpread: 8 } as any;
+      expect(shouldSpeculate(hints, baseConfig)).toBe(true);
+    });
+
+    it('blocks speculation when ELO spread shows clear leader', () => {
+      const hints = { estimatedStepCost: { tokens: 50000, costUsd: 2.00 }, uncertaintyFamily: 'implementation', eloSpread: 25 } as any;
+      expect(shouldSpeculate(hints, baseConfig)).toBe(false);
+    });
+
+    it('blocks speculation when uncertaintyFamily is none', () => {
+      const hints = { estimatedStepCost: { tokens: 50000, costUsd: 2.00 }, uncertaintyFamily: 'none', eloSpread: 8 } as any;
+      expect(shouldSpeculate(hints, baseConfig)).toBe(false);
+    });
+
+    it('blocks speculation when no cost estimate available', () => {
+      const hints = { estimatedStepCost: undefined, uncertaintyFamily: 'implementation', eloSpread: 8 } as any;
+      expect(shouldSpeculate(hints, baseConfig)).toBe(false);
     });
   });
 });

@@ -44,6 +44,17 @@ export function PlanProposalView({ plan, markdown }: { plan:any; markdown?:strin
         )}
         <Text dimColor>{thinBar}</Text>
         <RenderedSegments segments={segments} borderColor="" wrapWidth={wrapWidth} />
+        <Text dimColor>{thinBar}</Text>
+        <Box>
+          <Text color="#fbbf24" bold>{'Awaiting approval: '}</Text>
+          <Text dimColor>{'type '}</Text>
+          <Text color="#4ade80" bold>{'go'}</Text>
+          <Text dimColor>{', '}</Text>
+          <Text color="#4ade80" bold>{'yes'}</Text>
+          <Text dimColor>{', or '}</Text>
+          <Text color="#4ade80" bold>{'/approve'}</Text>
+          <Text dimColor>{' to execute. Type feedback to revise.'}</Text>
+        </Box>
       </Box>
     );
   }
@@ -157,11 +168,21 @@ export function PlanProposalView({ plan, markdown }: { plan:any; markdown?:strin
       })}
 
       <Text dimColor>{thinBar}</Text>
+      <Box>
+        <Text color="#fbbf24" bold>{'Awaiting approval: '}</Text>
+        <Text dimColor>{'type '}</Text>
+        <Text color="#4ade80" bold>{'go'}</Text>
+        <Text dimColor>{', '}</Text>
+        <Text color="#4ade80" bold>{'yes'}</Text>
+        <Text dimColor>{', or '}</Text>
+        <Text color="#4ade80" bold>{'/approve'}</Text>
+        <Text dimColor>{' to execute. Type feedback to revise.'}</Text>
+      </Box>
     </Box>
   );
 }
 
-// @kern-source: plan-view:205
+// @kern-source: plan-view:226
 export function PlanExecutionView({ plan }: { plan:any }) {
   const steps: any[] = plan.steps ?? [];
   const doneSteps = steps.filter((s: any) => s.state === 'done');

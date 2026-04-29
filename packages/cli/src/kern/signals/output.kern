@@ -371,13 +371,11 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
         return;
       }
       case 'plan-proposal': {
-        // Plan-proposals render in the live-pane (dynamic zone) for immediate
-        // visibility while Cesar is still responding. They also commit to
-        // outputBlocks so the user can scroll back and see the full plan
-        // after the turn completes — fixing the "I can't see the plan" UX
-        // issue where the live-pane slot clears when the dynamic region updates.
+        // Plan-proposals are an active approval surface, not completed
+        // transcript content. Keep them pinned in the live pane so the
+        // composer stays actionable; committing the whole markdown plan to
+        // Static makes the UI look stuck at the bottom of a giant document.
         actions.setPendingPlanProposal(event);
-        actions.addBlock(event);
         return;
       }
       case 'plan-execution': {

@@ -199,6 +199,14 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
         cwd: config.cwd,
         detached: true,
       });
+      proc.stdin?.on('error', (err: Error) => {
+        alive = false;
+        for (const [id, pendingReq] of pending) {
+          pending.delete(id);
+          clearTimeout(pendingReq.timer);
+          pendingReq.reject(err);
+        }
+      });
 
       // Wire up JSONRPC line parser
       const rl = createInterface({ input: proc.stdout! });
@@ -465,7 +473,7 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
 /**
  * Persistent ACP (Agent Client Protocol) session for OpenCode. JSON-RPC 2.0 over stdio.
  */
-// @kern-source: persistent-session:447
+// @kern-source: persistent-session:455
 export function createAcpSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -548,6 +556,14 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
         stdio: ['pipe', 'pipe', 'pipe'],
         cwd: config.cwd,
         detached: true,
+      });
+      proc.stdin?.on('error', (err: Error) => {
+        alive = false;
+        for (const [id, pendingReq] of pending) {
+          pending.delete(id);
+          clearTimeout(pendingReq.timer);
+          pendingReq.reject(err);
+        }
       });
 
       const rl = createInterface({ input: proc.stdout! });
@@ -823,7 +839,7 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
 /**
  * Persistent bidirectional NDJSON session for Claude Code. One process, multi-turn via stdin.
  */
-// @kern-source: persistent-session:805
+// @kern-source: persistent-session:821
 export function createStreamJsonSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -908,6 +924,9 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
         stdio: ['pipe', 'pipe', 'pipe'],
         cwd: config.cwd,
         detached: true,
+      });
+      proc.stdin?.on('error', () => {
+        alive = false;
       });
 
       // Parse NDJSON from stdout
@@ -1129,7 +1148,7 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
 /**
  * Fallback: spawn per turn with --resume/--continue. Works for any CLI engine.
  */
-// @kern-source: persistent-session:1111
+// @kern-source: persistent-session:1130
 export function createResumeSession(config: PersistentSessionConfig): PersistentSession {
   let alive = false;
       let sessionId: string | null = null;

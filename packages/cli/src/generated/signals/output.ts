@@ -114,10 +114,19 @@ export const _pendingToolCalls: any[] = [] as any[];
 // @kern-source: output:103
 export const _pendingFlushTimer: { timer: any, actions: any } = ({ timer: null, actions: null }) as any;
 
+// @kern-source: output:106
+function toolCallKey(event: any): string {
+  return [
+    String(event?.engineId ?? ''),
+    String(event?.tool ?? ''),
+    String(event?.input ?? ''),
+  ].join('\u0000');
+}
+
 /**
  * Emit any buffered tool-call events as a single tool-call-group block.
  */
-// @kern-source: output:106
+// @kern-source: output:115
 export function flushPendingToolCalls(actions: OutputActions): void {
   if (_pendingFlushTimer.timer) {
     clearTimeout(_pendingFlushTimer.timer);
@@ -132,7 +141,7 @@ export function flushPendingToolCalls(actions: OutputActions): void {
 /**
  * Debounce-flush pending tool-calls after a quiet period — covers turns that end on a tool-call without any trailing event.
  */
-// @kern-source: output:119
+// @kern-source: output:128
 export function schedulePendingFlush(actions: OutputActions): void {
   _pendingFlushTimer.actions = actions;
   if (_pendingFlushTimer.timer) clearTimeout(_pendingFlushTimer.timer);
@@ -145,7 +154,7 @@ export function schedulePendingFlush(actions: OutputActions): void {
 /**
  * Auto-approve queued permissions whose base command is already in allowedCommands.
  */
-// @kern-source: output:130
+// @kern-source: output:139
 function _drainAutoApproved(actions: OutputActions): void {
   const cfg = loadConfig();
   const allowed: string[] = (cfg as any).allowedCommands ?? [];
@@ -163,7 +172,7 @@ function _drainAutoApproved(actions: OutputActions): void {
   }
 }
 
-// @kern-source: output:149
+// @kern-source: output:158
 function _showNextPermission(actions: OutputActions): void {
   // First drain any that are now auto-approved (e.g. after "Always")
   _drainAutoApproved(actions);
@@ -223,7 +232,7 @@ function _showNextPermission(actions: OutputActions): void {
 /**
  * Process a single OutputEvent — updates spinner, streaming, and block state.
  */
-// @kern-source: output:206
+// @kern-source: output:215
 export function handleOutputEvent(event: OutputEvent, state: OutputState, actions: OutputActions, mode: string, chatStartTime: number): void {
   // Flush accumulated thinking buffer when any non-thinking event arrives
   if (event.type !== 'thinking-chunk' && _thinkingBuffer.content) {
@@ -381,13 +390,11 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
       return;
     }
     case 'plan-proposal': {
-      // Plan-proposals render in the live-pane (dynamic zone) for immediate
-      // visibility while Cesar is still responding. They also commit to
-      // outputBlocks so the user can scroll back and see the full plan
-      // after the turn completes — fixing the "I can't see the plan" UX
-      // issue where the live-pane slot clears when the dynamic region updates.
+      // Plan-proposals are an active approval surface, not completed
+      // transcript content. Keep them pinned in the live pane so the
+      // composer stays actionable; committing the whole markdown plan to
+      // Static makes the UI look stuck at the bottom of a giant document.
       actions.setPendingPlanProposal(event);
-      actions.addBlock(event);
       return;
     }
     case 'plan-execution': {
@@ -565,14 +572,21 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
           },
         };
       });
-      // Buffer finalized tool-calls only. Normal 'running' events update
-      // the live progress view above — committing every one would double-
-      // count in the group summary (running + done for the same tool).
-      // PlanStep is the exception: a Cesar plan self-step can run for
-      // minutes as a black-box delegate, so we commit a running marker that
-      // Ctrl+E can expand while auto mode is still busy.
-      const isPlanStepRunning = te.status === 'running' && String(te.tool ?? '').toLowerCase() === 'planstep';
-      if (te.status === 'done' || te.status === 'error' || isPlanStepRunning) {
+      // Buffer running calls too so long-running Read/Edit/Bash calls are
+      // visible while auto mode is busy. Fast tools usually emit running
+      // then done before the debounce fires; replace that pending running
+      // entry with the final event so the transcript does not double-count.
+      const key = toolCallKey(te);
+      if (te.status === 'done' || te.status === 'error') {
+        for (let i = _pendingToolCalls.length - 1; i >= 0; i--) {
+          const pending = _pendingToolCalls[i];
+          if (pending?.status === 'running' && toolCallKey(pending) === key) {
+            _pendingToolCalls.splice(i, 1);
+          }
+        }
+        _pendingToolCalls.push(event);
+        schedulePendingFlush(actions);
+      } else if (te.status === 'running') {
         _pendingToolCalls.push(event);
         schedulePendingFlush(actions);
       }

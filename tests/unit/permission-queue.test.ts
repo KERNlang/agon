@@ -24,6 +24,7 @@ vi.mock('../../packages/cli/src/code-buffer.js', () => ({
 import {
   handleOutputEvent,
   clearPermissionQueue,
+  flushPendingToolCalls,
   _permissionQueue,
 } from '../../packages/cli/src/generated/signals/output.js';
 import type { OutputActions, OutputState } from '../../packages/cli/src/generated/signals/output.js';
@@ -37,8 +38,10 @@ function createMockActions(): OutputActions & { calls: Record<string, unknown[][
     setStreamingText: [],
     clearBlocks: [],
     setReviewEvent: [],
+    setPendingPlanProposal: [],
     setChatStartTime: [],
     flushStream: [],
+    setAgentProgress: [],
   };
   return {
     calls,
@@ -49,14 +52,16 @@ function createMockActions(): OutputActions & { calls: Record<string, unknown[][
     setStreamingText: vi.fn((...args) => calls.setStreamingText.push(args)),
     clearBlocks: vi.fn((...args) => calls.clearBlocks.push(args)),
     setReviewEvent: vi.fn((...args) => calls.setReviewEvent.push(args)),
+    setPendingPlanProposal: vi.fn((...args) => calls.setPendingPlanProposal.push(args)),
     setChatStartTime: vi.fn((...args) => calls.setChatStartTime.push(args)),
     flushStream: vi.fn((...args) => calls.flushStream.push(args)),
     getEngineColor: vi.fn(() => 245),
+    setAgentProgress: vi.fn((...args) => calls.setAgentProgress.push(args)),
   };
 }
 
 function emptyState(): OutputState {
-  return { liveSpinner: null, liveProgress: null, streamingText: null };
+  return { liveSpinner: null, liveProgress: null, streamingText: null, agentProgress: {} };
 }
 
 function firePermission(
@@ -204,5 +209,52 @@ describe('permission queue', () => {
     question.resolve('n');
 
     expect(resolve1).toHaveBeenCalledWith(false);
+  });
+
+  it('flushes slow running tool calls so active work is visible', () => {
+    const actions = createMockActions();
+
+    handleOutputEvent(
+      { type: 'tool-call', engineId: 'cesar', tool: 'Read', input: '{"file_path":"a.ts"}', status: 'running' } as any,
+      emptyState(),
+      actions,
+      'chat',
+      0,
+    );
+    flushPendingToolCalls(actions);
+
+    expect(actions.calls.addBlock).toHaveLength(1);
+    const group = actions.calls.addBlock[0][0] as any;
+    expect(group.type).toBe('tool-call-group');
+    expect(group.blocks[0].event).toMatchObject({ tool: 'Read', status: 'running' });
+  });
+
+  it('replaces an unflushed running tool call with the final result', () => {
+    const actions = createMockActions();
+    const running = { type: 'tool-call', engineId: 'cesar', tool: 'Read', input: '{"file_path":"a.ts"}', status: 'running' } as any;
+    const done = { ...running, status: 'done', output: 'file content' } as any;
+
+    handleOutputEvent(running, emptyState(), actions, 'chat', 0);
+    handleOutputEvent(done, emptyState(), actions, 'chat', 0);
+    flushPendingToolCalls(actions);
+
+    expect(actions.calls.addBlock).toHaveLength(1);
+    const group = actions.calls.addBlock[0][0] as any;
+    expect(group.blocks).toHaveLength(1);
+    expect(group.blocks[0].event).toMatchObject({ tool: 'Read', status: 'done', output: 'file content' });
+  });
+
+  it('keeps plan proposals in the live approval panel instead of transcript blocks', () => {
+    const actions = createMockActions();
+    const event = {
+      type: 'plan-proposal',
+      plan: { id: 'cplan-test', state: 'awaiting_approval', steps: [] },
+      markdown: '# Plan\n\nApprove me',
+    } as any;
+
+    handleOutputEvent(event, emptyState(), actions, 'chat', 0);
+
+    expect(actions.calls.setPendingPlanProposal).toEqual([[event]]);
+    expect(actions.calls.addBlock).toHaveLength(0);
   });
 });

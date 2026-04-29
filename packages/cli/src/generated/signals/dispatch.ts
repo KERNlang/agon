@@ -10,7 +10,7 @@ import { invalidateCwdCache } from '../handlers/chat.js';
 
 import type { ImageAttachment, ChatSession } from '@agon/core';
 
-import { approveCesarPlan, cancelCesarPlan, saveCesarPlan, loadCesarPlan, listCesarPlans, executePlan, formatCesarPlanMarkdown, planCostEstimator } from '@agon/core';
+import { approveCesarPlan, saveCesarPlan, loadCesarPlan, listCesarPlans, executePlan, formatCesarPlanMarkdown, planCostEstimator } from '@agon/core';
 
 import type { CesarPlan, CesarPlanStep, CesarStepResult, StepExecutor } from '@agon/core';
 
@@ -2627,7 +2627,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
 }
 
 /**
- * Shared approval loop for plans proposed by Cesar, whether from explicit /plan mode or a normal chat turn.
+ * Activate a proposed Cesar plan. Auto-approved plans execute immediately; manual approval is intentionally non-blocking so the REPL returns to idle and accepts go, yes, or /approve through the normal composer.
  */
 // @kern-source: dispatch:2547
 export async function handleProposedCesarPlan(proposed: CesarPlan, cb: DispatchCallbacks): Promise<void> {
@@ -2638,7 +2638,6 @@ export async function handleProposedCesarPlan(proposed: CesarPlan, cb: DispatchC
   }
 
   const policy = applyAutoApprovePolicy(proposed, cb.ctx.config as any);
-  let currentProposal = proposed;
   let decided = false;
   const persistPlanMarkdown = (plan: CesarPlan) => {
     if (!plan.planFilePath) return;
@@ -2651,13 +2650,13 @@ export async function handleProposedCesarPlan(proposed: CesarPlan, cb: DispatchC
 
   if (policy.approve) {
     cb.dispatch({ type: 'info', message: `Plan auto-approved (${policy.reason})` });
-    for (const s of currentProposal.steps) {
+    for (const s of proposed.steps) {
       if (s.fitnessCmd && s.fitnessCmd.trim().length > 0) {
         cb.dispatch({ type: 'warning', message: `fitnessCmd: ${s.fitnessCmd}` });
       }
     }
 
-    const approved = approveCesarPlan(currentProposal);
+    const approved = approveCesarPlan(proposed);
     cb.setActivePlan(approved);
     cb.dispatch({ type: 'success', message: 'Plan auto-approved — executing...' });
     saveCesarPlan(approved);
@@ -2668,109 +2667,16 @@ export async function handleProposedCesarPlan(proposed: CesarPlan, cb: DispatchC
     cb.dispatch({ type: 'info', message: `Plan requested autoApprove but policy rejected: ${policy.reason}` });
   }
 
-  while (!decided) {
-    const answer = await askChoiceQuestion(cb, 'Approve plan?', [
-      { key: '1', label: 'Yes - approve', color: '#4ade80' },
-      { key: '2', label: 'No - reject', color: '#ef4444' },
-      { key: '3', label: 'Other - add feedback', color: '#fbbf24' },
-    ], '1');
-    const trimmed = answer.trim().toLowerCase();
-
-    if (trimmed === '' || trimmed === '1' || isCesarPlanApprovalInput(trimmed)) {
-      const approved = approveCesarPlan(currentProposal);
-      cb.setActivePlan(approved);
-      cb.dispatch({ type: 'success', message: 'Plan approved — executing...' });
-      saveCesarPlan(approved);
-      persistPlanMarkdown(approved);
-      await executeApprovedPlan(approved, cb);
-      decided = true;
-
-    } else if (trimmed === '2' || trimmed === 'n' || trimmed === 'no') {
-      const cancelled = cancelCesarPlan(currentProposal);
-      cb.setActivePlan(cancelled);
-      saveCesarPlan(cancelled);
-      persistPlanMarkdown(cancelled);
-      cb.dispatch({ type: 'plan-cancelled', plan: cancelled } as any);
-      cb.dispatch({ type: 'info', message: 'Plan rejected.' });
-      decided = true;
-
-    } else if (trimmed === 'edit' || trimmed === 'e') {
-      const filePath = currentProposal.planFilePath;
-      if (filePath) {
-        cb.dispatch({ type: 'info', message: `Plan file: ${filePath}` });
-        cb.dispatch({ type: 'info', message: 'Edit the file in your editor, then press Enter to re-read and revise.' });
-        await cb.askQuestion('Press Enter when done editing...');
-        try {
-          const editedContent = readFileSync(filePath, 'utf-8');
-          cb.dispatch({ type: 'info', message: 'Re-reading edited plan and revising...' });
-          const reviseInput = `[PLAN REVISION] The user manually edited the plan file. Here is the updated content:\n\n${editedContent}\n\nParse the user's edits, incorporate them, and call ProposePlan IMMEDIATELY with the revised steps. Do NOT re-investigate.`;
-          try {
-            await routeWithCesar(reviseInput, [], cb);
-          } catch (err) {
-            cb.dispatch({ type: 'warning', message: `Cesar revision failed: ${err instanceof Error ? err.message : String(err)}. Try again, type N to reject, or type 'e' to re-edit.` });
-            continue;
-          }
-          const revised: CesarPlan | undefined = cb.ctx.cesar?.proposedPlan;
-          if (revised && revised.state === 'awaiting_approval') {
-            if (cb.ctx.cesar) cb.ctx.cesar.proposedPlan = undefined;
-            currentProposal = { ...revised, autoApprove: false };
-          } else {
-            cb.dispatch({ type: 'warning', message: 'Cesar did not produce a revised plan from your edits. Try giving text feedback instead.' });
-            decided = true;
-          }
-        } catch (err) {
-          cb.dispatch({ type: 'warning', message: `Could not read plan file: ${(err as Error).message}. Use /plan <task> to start over.` });
-          decided = true;
-        }
-      } else {
-        cb.dispatch({ type: 'warning', message: 'No plan file path available. Type feedback as text instead.' });
-      }
-
-    } else if (trimmed === '3' || trimmed === 'r' || trimmed === 'revise' || trimmed === 'feedback' || trimmed === 'other') {
-      const feedback = await cb.askQuestion('What should change?');
-      if (!feedback.trim()) continue;
-      cb.dispatch({ type: 'info', message: 'Revising plan with your feedback...' });
-      const reviseInput = `[PLAN REVISION] The user wants these changes: ${feedback}\n\nRevise the plan and call ProposePlan IMMEDIATELY with the updated steps. Do NOT re-investigate. Do NOT respond with text. Just call ProposePlan with the revised plan.`;
-      try {
-        await routeWithCesar(reviseInput, [], cb);
-      } catch (err) {
-        cb.dispatch({ type: 'warning', message: `Cesar revision failed: ${err instanceof Error ? err.message : String(err)}. Try again, type Y to approve the original, or N to reject.` });
-        continue;
-      }
-      const revised: CesarPlan | undefined = cb.ctx.cesar?.proposedPlan;
-      if (revised && revised.state === 'awaiting_approval') {
-        if (cb.ctx.cesar) cb.ctx.cesar.proposedPlan = undefined;
-        currentProposal = { ...revised, autoApprove: false };
-      } else {
-        cb.dispatch({ type: 'warning', message: 'Cesar did not produce a revised plan. Use /plan <task> to start over.' });
-        decided = true;
-      }
-
-    } else {
-      cb.dispatch({ type: 'info', message: 'Revising plan with your feedback...' });
-      const reviseInput = `[PLAN REVISION] The user wants these changes: ${answer}\n\nRevise the plan and call ProposePlan IMMEDIATELY with the updated steps. Do NOT re-investigate. Do NOT respond with text. Just call ProposePlan with the revised plan.`;
-      try {
-        await routeWithCesar(reviseInput, [], cb);
-      } catch (err) {
-        cb.dispatch({ type: 'warning', message: `Cesar revision failed: ${err instanceof Error ? err.message : String(err)}. Try again, type Y to approve the original, or N to reject.` });
-        continue;
-      }
-      const revised: CesarPlan | undefined = cb.ctx.cesar?.proposedPlan;
-      if (revised && revised.state === 'awaiting_approval') {
-        if (cb.ctx.cesar) cb.ctx.cesar.proposedPlan = undefined;
-        currentProposal = { ...revised, autoApprove: false };
-      } else {
-        cb.dispatch({ type: 'warning', message: 'Cesar did not produce a revised plan. Use /plan <task> to start over.' });
-        decided = true;
-      }
-    }
+  if (!decided) {
+    cb.setActivePlan(proposed);
+    cb.dispatch({ type: 'info', message: 'Plan awaiting approval. Type go, yes, or /approve to execute; /cancel rejects it.' });
   }
 }
 
 /**
  * Build executor callbacks. Holds a closure on the latest plan reference (mutated via onPlanUpdate) so step lookups always see appended steps like the auto-review cycle (tribunal fix #10). FU-3: persistence is debounced 300ms to avoid the sync-write storm Doppelganger flagged — onPlanUpdate fires once per step in a hot loop, but the disk write happens at most ~3x/sec. Terminal states (done/paused/cancelled) flush immediately so the .md/.json on disk reflect the final state. Callers should invoke .flush() before exit to drain any pending write.
  */
-// @kern-source: dispatch:2691
+// @kern-source: dispatch:2597
 export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks): any {
   let currentPlan = initialPlan;
   let pendingWriteTimer: ReturnType<typeof setTimeout> | null = null;
@@ -2897,7 +2803,7 @@ export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks
 /**
  * Return true when a failed plan step looks like it was interrupted by stall/fallback handling rather than a semantic task failure.
  */
-// @kern-source: dispatch:2816
+// @kern-source: dispatch:2722
 export function failedPlanStepIsFallbackRetryable(step: any): boolean {
   if (!step || step.state !== 'failed') return false;
   const result = step.result ?? {};
@@ -2909,7 +2815,7 @@ export function failedPlanStepIsFallbackRetryable(step: any): boolean {
 /**
  * Reset one retryable failed plan step and bind it to the fallback engine. The caller runs executePlan again with a fresh abort controller.
  */
-// @kern-source: dispatch:2826
+// @kern-source: dispatch:2732
 export function preparePlanFallbackRetry(plan: CesarPlan, fallbackEngine: string): CesarPlan|null {
   const engine = String(fallbackEngine ?? '').trim();
   if (!engine || !Array.isArray(plan.steps)) return null;
@@ -2949,7 +2855,7 @@ export function preparePlanFallbackRetry(plan: CesarPlan, fallbackEngine: string
 /**
  * FU-4: shared executor for the auto-approve, manual-approve, and plan-resume paths. Wires the abort controller, builds callbacks (with debounced persistence), runs executePlan, runs finalizePlanWithReviewGate, and dispatches the terminal status. Eliminates the ~60 lines of triplication that lived in dispatch.kern and forced future changes (e.g., new callback hooks, new finalize behavior) to be applied to all three sites.
  */
-// @kern-source: dispatch:2864
+// @kern-source: dispatch:2770
 export async function executeApprovedPlan(approved: CesarPlan, cb: DispatchCallbacks): Promise<void> {
   const executors = buildStepExecutors(cb.ctx, cb.dispatch);
   let abortController = new AbortController();
@@ -3020,7 +2926,7 @@ export async function executeApprovedPlan(approved: CesarPlan, cb: DispatchCallb
 /**
  * Single source of truth for the post-execution self-review gate. Called from BOTH the plan-task and plan-resume terminal paths so resume cannot bypass the gate or the cycle cap (tribunal fix #4).
  */
-// @kern-source: dispatch:2933
+// @kern-source: dispatch:2839
 export async function finalizePlanWithReviewGate(finalPlan: CesarPlan, executors: Record<string,StepExecutor>, abortSignal: AbortSignal, cb: DispatchCallbacks): Promise<CesarPlan> {
   const MUTATING = new Set(['forge', 'teamforge', 'pipeline', 'agent', 'team-agent', 'delegate', 'self']);
   const planTouchedMutation = finalPlan.steps.some((s: any) => MUTATING.has(s.type) && (s.state === 'done' || s.state === 'failed'));

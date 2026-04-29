@@ -1139,6 +1139,18 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                   ctx.cesar!.quickNeroRequested = true;
                 } else if (signal.tool === 'ProposePlan') {
                   recordToolUse('ProposePlan', 'mcp', JSON.stringify(signal.args ?? {}), 'done');
+                  const activePlan = ctx.activePlan;
+                  if (activePlan && activePlan.state === 'running') {
+                    dispatch({
+                      type: 'tool-call',
+                      engineId: cesarEngineId,
+                      tool: 'ProposePlan',
+                      input: JSON.stringify(signal.args ?? {}),
+                      status: 'error',
+                      output: 'A Cesar plan is already executing; nested plans are blocked. Finish the current approved step with direct tools.',
+                    } as any);
+                    continue;
+                  }
                   const { handleProposePlan } = await import('../handlers/plan-mode.js');
                   const planDispatch = ctx.cesar!.planDispatch ?? dispatch;
                   if (planDispatch) {
@@ -1324,11 +1336,23 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           const ppArgs = (ctx.cesar as any)._proposePlanArgs;
           delete (ctx.cesar as any)._proposePlanArgs;
           try {
-            const { handleProposePlan } = await import('../handlers/plan-mode.js');
-            const planDispatch = ctx.cesar!.planDispatch ?? dispatch;
-            const plan = await handleProposePlan(ppArgs, planDispatch, ctx);
-            if (ctx.setActivePlan) ctx.setActivePlan(plan);
-            ctx.cesar!.proposedPlan = plan;
+            const activePlan = ctx.activePlan;
+            if (activePlan && activePlan.state === 'running') {
+              dispatch({
+                type: 'tool-call',
+                engineId: cesarEngineId,
+                tool: 'ProposePlan',
+                input: JSON.stringify(ppArgs ?? {}),
+                status: 'error',
+                output: 'A Cesar plan is already executing; nested plans are blocked. Finish the current approved step with direct tools.',
+              } as any);
+            } else {
+              const { handleProposePlan } = await import('../handlers/plan-mode.js');
+              const planDispatch = ctx.cesar!.planDispatch ?? dispatch;
+              const plan = await handleProposePlan(ppArgs, planDispatch, ctx);
+              if (ctx.setActivePlan) ctx.setActivePlan(plan);
+              ctx.cesar!.proposedPlan = plan;
+            }
           } catch (err) {
             console.warn(`[agon] ProposePlan via tool loop failed: ${err instanceof Error ? err.message : String(err)}`);
           }

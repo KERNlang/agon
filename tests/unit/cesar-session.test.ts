@@ -222,6 +222,38 @@ describe('cesar MCP session config', () => {
     }, 'call_plan')).resolves.toContain('[PLAN_ERROR]');
   });
 
+  it('blocks nested ProposePlan calls while an approved plan is already running', async () => {
+    const events: any[] = [];
+    const cesar: any = {
+      planDispatch: (event: any) => events.push(event),
+    };
+    const onToolCall = buildOnToolCall({
+      cesar,
+      explorationMode: false,
+      activePlan: { id: 'cplan-running', state: 'running' },
+      setActivePlan: () => { throw new Error('nested plan should not activate'); },
+      registry: { availableIds: () => [] },
+    } as any, new ToolRegistry(), {});
+
+    const result = await onToolCall?.('ProposePlan', {
+      intent: 'Nested plan',
+      steps: [
+        {
+          id: 'nested',
+          type: 'self',
+          description: 'This should be blocked.',
+          estimatedTokens: 1000,
+          estimatedCostUsd: 0.01,
+        },
+      ],
+    }, 'call_nested_plan');
+
+    expect(result).toContain('[PLAN_ERROR]');
+    expect(result).toContain('already executing');
+    expect(cesar.proposedPlan).toBeUndefined();
+    expect(events).toEqual([]);
+  });
+
   it('does not session-cache Read tool calls above the mtime-aware Read tool', async () => {
     const registry = new ToolRegistry();
     let readCount = 0;

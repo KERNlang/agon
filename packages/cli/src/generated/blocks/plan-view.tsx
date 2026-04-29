@@ -62,7 +62,9 @@ export function PlanProposalView({ plan, markdown, costEstimate }: { plan:any; m
           <Text color="#4ade80" bold>{'yes'}</Text>
           <Text dimColor>{', or '}</Text>
           <Text color="#4ade80" bold>{'/approve'}</Text>
-          <Text dimColor>{' to execute. Type feedback to revise.'}</Text>
+          <Text dimColor>{' to execute. Type '}</Text>
+          <Text color="#ef4444" bold>{'/cancel'}</Text>
+          <Text dimColor>{' to reject.'}</Text>
         </Box>
       </Box>
     );
@@ -190,13 +192,15 @@ export function PlanProposalView({ plan, markdown, costEstimate }: { plan:any; m
         <Text color="#4ade80" bold>{'yes'}</Text>
         <Text dimColor>{', or '}</Text>
         <Text color="#4ade80" bold>{'/approve'}</Text>
-        <Text dimColor>{' to execute. Type feedback to revise.'}</Text>
+        <Text dimColor>{' to execute. Type '}</Text>
+        <Text color="#ef4444" bold>{'/cancel'}</Text>
+        <Text dimColor>{' to reject.'}</Text>
       </Box>
     </Box>
   );
 }
 
-// @kern-source: plan-view:241
+// @kern-source: plan-view:245
 export function PlanExecutionView({ plan }: { plan:any }) {
   const steps: any[] = plan.steps ?? [];
   const doneSteps = steps.filter((s: any) => s.state === 'done');

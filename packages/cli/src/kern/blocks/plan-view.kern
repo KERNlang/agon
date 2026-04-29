@@ -102,7 +102,9 @@ screen name=PlanProposalView target=ink
               <Text color="#4ade80" bold>{'yes'}</Text>
               <Text dimColor>{', or '}</Text>
               <Text color="#4ade80" bold>{'/approve'}</Text>
-              <Text dimColor>{' to execute. Type feedback to revise.'}</Text>
+              <Text dimColor>{' to execute. Type '}</Text>
+              <Text color="#ef4444" bold>{'/cancel'}</Text>
+              <Text dimColor>{' to reject.'}</Text>
             </Box>
           </Box>
         );
@@ -230,7 +232,9 @@ screen name=PlanProposalView target=ink
             <Text color="#4ade80" bold>{'yes'}</Text>
             <Text dimColor>{', or '}</Text>
             <Text color="#4ade80" bold>{'/approve'}</Text>
-            <Text dimColor>{' to execute. Type feedback to revise.'}</Text>
+            <Text dimColor>{' to execute. Type '}</Text>
+            <Text color="#ef4444" bold>{'/cancel'}</Text>
+            <Text dimColor>{' to reject.'}</Text>
           </Box>
         </Box>
       );

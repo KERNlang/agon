@@ -91,6 +91,88 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
     return contextStr ? `${step.description}\n\n${contextStr}` : step.description;
   };
 
+  const resolveStepEngines = (step: CesarPlanStep): string[] | undefined => {
+    const explicit = (step.engines ?? []).filter((id: any) => typeof id === 'string' && id.trim().length > 0);
+    if (explicit.length > 0) return explicit;
+    try {
+      const active = ctx.activeEngines?.() ?? [];
+      const clean = active.filter((id: any) => typeof id === 'string' && id.trim().length > 0);
+      if (clean.length > 0) return clean;
+    } catch {
+      // Fall through to runForge's config fallback for non-REPL callers.
+    }
+    return undefined;
+  };
+
+  const getPlanDispatch = (): Dispatch | undefined => liveDispatch ?? ctx.cesar?.planDispatch ?? ctx.cesar?.lastDispatch ?? undefined;
+
+  const emitPlanForgeProgress = (dispatch: Dispatch | undefined, engines: string[] | undefined, engineStatus: Record<string,string>, startTime: number) => {
+    if (!dispatch || !engines || engines.length === 0) return;
+    const elapsed = Math.floor((Date.now() - startTime) / 1000);
+    const progress: EngineProgress[] = engines.map((id: string) => {
+      const status = engineStatus[id] ?? 'queued';
+      return {
+        id,
+        status: status === 'done' ? `done (${engineStatus[`${id}:score`] ?? '?'})` : status,
+        elapsed,
+        done: status === 'done',
+        failed: status === 'failed',
+        score: engineStatus[`${id}:score`],
+      };
+    });
+    dispatch({ type: 'progress-update', engines: progress } as any);
+  };
+
+  const notePlanForgeEvent = (event: any, dispatch: Dispatch | undefined, engines: string[] | undefined, engineStatus: Record<string,string>, startTime: number) => {
+    const id = String(event?.engineId ?? event?.data?.engineId ?? '');
+    switch (event?.type) {
+      case 'baseline:start':
+        dispatch?.({ type: 'info', message: 'Forge baseline check...' } as any);
+        break;
+      case 'baseline:done':
+        if (event.data?.passes) dispatch?.({ type: 'warning', message: 'Baseline passes - fitness test may be non-discriminating' } as any);
+        break;
+      case 'stage1:dispatch':
+      case 'stage2:dispatch':
+        if (id) engineStatus[id] = 'building';
+        break;
+      case 'engine:failed':
+        if (id) {
+          engineStatus[id] = 'failed';
+          engineStatus[`${id}:score`] = '0';
+          engineStatus[`${id}:error`] = String(event.data?.error ?? 'failed');
+        }
+        break;
+      case 'stage1:accepted':
+      case 'stage1:score':
+      case 'stage2:score':
+        if (id) {
+          engineStatus[id] = 'done';
+          engineStatus[`${id}:score`] = String(event.data?.score ?? '?');
+        }
+        break;
+      case 'winner:determined':
+        if (event.data?.winner) {
+          const winner = String(event.data.winner);
+          engineStatus[winner] = 'done';
+          engineStatus[`${winner}:score`] = String(event.data?.bestScore ?? engineStatus[`${winner}:score`] ?? '?');
+          dispatch?.({ type: 'info', message: `Forge winner: ${winner}` } as any);
+        }
+        break;
+      case 'synthesis:start':
+        dispatch?.({ type: 'info', message: 'Forge synthesis...' } as any);
+        break;
+    }
+    emitPlanForgeProgress(dispatch, engines, engineStatus, startTime);
+  };
+
+  const startPlanForgeProgress = (dispatch: Dispatch | undefined, engines: string[] | undefined, engineStatus: Record<string,string>, startTime: number): any => {
+    if (!dispatch || !engines || engines.length === 0) return null;
+    dispatch({ type: 'info', message: `Forge engines: ${engines.join(', ')}` } as any);
+    emitPlanForgeProgress(dispatch, engines, engineStatus, startTime);
+    return setInterval(() => emitPlanForgeProgress(dispatch, engines, engineStatus, startTime), 500);
+  };
+
   // FU-9: applyForgeWinnerToCwd — shared helper that reads the winning
   // patch from the manifest and applies it to cwd via git apply. This
   // closes the tribunal fix #2 loop: before, runForge produced a winner
@@ -172,10 +254,16 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
       const startTime = Date.now();
       const before = snapshotTokens();
       const task = buildContext(step, context);
+      const engines = resolveStepEngines(step);
+      const dispatch = getPlanDispatch();
+      const engineStatus: Record<string,string> = {};
+      let progressInterval: any = null;
       try {
+        progressInterval = startPlanForgeProgress(dispatch, engines, engineStatus, startTime);
         const manifest = await runForge(
-          { task, fitnessCmd: step.fitnessCmd ?? 'echo "no fitness"', cwd, forgeDir: join(outputDir, step.id), engines: step.engines, signal },
+          { task, fitnessCmd: step.fitnessCmd ?? 'echo "no fitness"', cwd, forgeDir: join(outputDir, step.id), engines, signal },
           ctx.registry, ctx.adapter,
+          dispatch && engines ? (event: any) => notePlanForgeEvent(event, dispatch, engines, engineStatus, startTime) : undefined,
         );
         const after = snapshotTokens();
 
@@ -204,6 +292,9 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
       } catch (err) {
         const after = snapshotTokens();
         return { result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: '', error: err instanceof Error ? err.message : String(err) } };
+      } finally {
+        if (progressInterval) clearInterval(progressInterval);
+        dispatch?.({ type: 'progress-clear' } as any);
       }
     }),
 
@@ -211,10 +302,16 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
       const startTime = Date.now();
       const before = snapshotTokens();
       const task = buildContext(step, context);
+      const engines = resolveStepEngines(step);
+      const dispatch = getPlanDispatch();
+      const engineStatus: Record<string,string> = {};
+      let progressInterval: any = null;
       try {
+        progressInterval = startPlanForgeProgress(dispatch, engines, engineStatus, startTime);
         const manifest = await runForge(
-          { task, fitnessCmd: step.fitnessCmd ?? 'echo "no fitness"', cwd, forgeDir: join(outputDir, step.id), engines: step.engines, hardened: true, signal },
+          { task, fitnessCmd: step.fitnessCmd ?? 'echo "no fitness"', cwd, forgeDir: join(outputDir, step.id), engines, hardened: true, signal },
           ctx.registry, ctx.adapter,
+          dispatch && engines ? (event: any) => notePlanForgeEvent(event, dispatch, engines, engineStatus, startTime) : undefined,
         );
         const after = snapshotTokens();
         if (!manifest.winner) {
@@ -236,6 +333,9 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
       } catch (err) {
         const after = snapshotTokens();
         return { result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: '', error: err instanceof Error ? err.message : String(err) } };
+      } finally {
+        if (progressInterval) clearInterval(progressInterval);
+        dispatch?.({ type: 'progress-clear' } as any);
       }
     }),
 
@@ -244,7 +344,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
       const before = snapshotTokens();
       const question = buildContext(step, context);
       try {
-        const result = await runBrainstorm({ question, engines: step.engines ?? [], registry: ctx.registry, adapter: ctx.adapter, timeout: 120, outputDir: join(outputDir, step.id), signal });
+        const result = await runBrainstorm({ question, engines: resolveStepEngines(step) ?? [], registry: ctx.registry, adapter: ctx.adapter, timeout: 120, outputDir: join(outputDir, step.id), signal });
         const after = snapshotTokens();
         return {
           result: { status: 'success', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: `Winner: ${result.winner}\n${result.response}` },
@@ -263,7 +363,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
       try {
         // FU-1: thread signal so plan-level cancel propagates into the
         // tribunal's per-round dispatch loop.
-        const result = await runTribunal({ question, engines: step.engines ?? [], rounds: 2, mode: step.tribunalMode as any, registry: ctx.registry, adapter: ctx.adapter, timeout: 120, outputDir: join(outputDir, step.id), signal });
+        const result = await runTribunal({ question, engines: resolveStepEngines(step) ?? [], rounds: 2, mode: step.tribunalMode as any, registry: ctx.registry, adapter: ctx.adapter, timeout: 120, outputDir: join(outputDir, step.id), signal });
         const after = snapshotTokens();
         return {
           result: { status: 'success', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: result.summary },
@@ -280,7 +380,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
       const before = snapshotTokens();
       const topic = buildContext(step, context);
       try {
-        const result = await runCampfire({ topic, engines: step.engines ?? [], registry: ctx.registry, adapter: ctx.adapter, strategy: 'all-respond', timeout: 120, outputDir: join(outputDir, step.id), signal });
+        const result = await runCampfire({ topic, engines: resolveStepEngines(step) ?? [], registry: ctx.registry, adapter: ctx.adapter, strategy: 'all-respond', timeout: 120, outputDir: join(outputDir, step.id), signal });
         const after = snapshotTokens();
         const summary = result.rounds.map((r: any) => `${r.engineId}: ${r.content.slice(0, 200)}`).join('\n');
         return {
@@ -316,17 +416,28 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
       const before = snapshotTokens();
       const task = buildContext(step, context);
       let pipelineContext = '';
+      const engines = resolveStepEngines(step) ?? [];
+      const dispatch = getPlanDispatch();
+      const engineStatus: Record<string,string> = {};
+      let progressInterval: any = null;
       try {
         // 1. Brainstorm — get approach bids
-        const bsResult = await runBrainstorm({ question: task, engines: step.engines ?? [], registry: ctx.registry, adapter: ctx.adapter, timeout: 120, outputDir: join(outputDir, step.id, 'brainstorm'), signal });
+        const bsResult = await runBrainstorm({ question: task, engines, registry: ctx.registry, adapter: ctx.adapter, timeout: 120, outputDir: join(outputDir, step.id, 'brainstorm'), signal });
         pipelineContext = bsResult.response;
 
         // 2. Forge — compete on implementation
         const forgeTask = `${task}\n\nBrainstorm winner approach:\n${pipelineContext}`;
+        progressInterval = startPlanForgeProgress(dispatch, engines, engineStatus, startTime);
         const manifest = await runForge(
-          { task: forgeTask, fitnessCmd: step.fitnessCmd ?? 'echo "no fitness"', cwd, forgeDir: join(outputDir, step.id, 'forge'), engines: step.engines, signal },
+          { task: forgeTask, fitnessCmd: step.fitnessCmd ?? 'echo "no fitness"', cwd, forgeDir: join(outputDir, step.id, 'forge'), engines, signal },
           ctx.registry, ctx.adapter,
+          dispatch && engines.length > 0 ? (event: any) => notePlanForgeEvent(event, dispatch, engines, engineStatus, startTime) : undefined,
         );
+        if (progressInterval) {
+          clearInterval(progressInterval);
+          progressInterval = null;
+          dispatch?.({ type: 'progress-clear' } as any);
+        }
         if (!manifest.winner) {
           const after = snapshotTokens();
           return { result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: 'Pipeline forge step: no winner', error: 'Forge produced no winner' } };
@@ -334,7 +445,7 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
 
         // 3. Tribunal — review the forge winner
         const tribunalQ = `Review the implementation from forge winner ${manifest.winner} for: ${task}`;
-        const tResult = await runTribunal({ question: tribunalQ, engines: (step.engines ?? []).slice(0, 3), rounds: 2, registry: ctx.registry, adapter: ctx.adapter, timeout: 120, outputDir: join(outputDir, step.id, 'tribunal') });
+        const tResult = await runTribunal({ question: tribunalQ, engines: engines.slice(0, 3), rounds: 2, registry: ctx.registry, adapter: ctx.adapter, timeout: 120, outputDir: join(outputDir, step.id, 'tribunal'), signal });
 
         const after = snapshotTokens();
         return {
@@ -344,6 +455,9 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
       } catch (err) {
         const after = snapshotTokens();
         return { result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: pipelineContext ? `Partial pipeline (brainstorm done): ${pipelineContext.slice(0, 200)}` : '', error: err instanceof Error ? err.message : String(err) } };
+      } finally {
+        if (progressInterval) clearInterval(progressInterval);
+        dispatch?.({ type: 'progress-clear' } as any);
       }
     }),
 

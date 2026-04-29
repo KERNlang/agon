@@ -86,7 +86,18 @@ export function parseAutoModeCommand(input: string): 'on'|'off'|'toggle'|'status
   return (match[1] as 'on'|'off'|'toggle'|'status'|undefined) ?? 'toggle';
 }
 
+/**
+ * True when /btw should run as a side-channel instead of falling through to normal command dispatch.
+ */
 // @kern-source: app-input:77
+export function hasBtwSideChannelTarget(opts: {replState:string,activePlanState?:string|null,runningJobCount?:number}): boolean {
+  if (opts.replState !== 'idle') return true;
+  if ((opts.runningJobCount ?? 0) > 0) return true;
+  const planState = String(opts.activePlanState ?? '');
+  return ['planning', 'awaiting_approval', 'running', 'paused'].includes(planState);
+}
+
+// @kern-source: app-input:86
 export interface EscapeDecision {
   action: 'close-slash'|'close-engine-picker'|'cancel-question'|'interrupt'|'clear-input'|'noop';
 }
@@ -94,7 +105,7 @@ export interface EscapeDecision {
 /**
  * Resolve Esc behavior without destructive transcript clearing.
  */
-// @kern-source: app-input:80
+// @kern-source: app-input:89
 export function resolveEscapeAction(opts: {replState:string,inputValue:string,slashPickerOpen:boolean,enginePickerOpen:boolean,questionOpen:boolean}): EscapeDecision {
   if (opts.slashPickerOpen) return { action: 'close-slash' };
   if (opts.enginePickerOpen) return { action: 'close-engine-picker' };
@@ -114,7 +125,7 @@ export function resolveEscapeAction(opts: {replState:string,inputValue:string,sl
 /**
  * Get ghost text completion for current input.
  */
-// @kern-source: app-input:98
+// @kern-source: app-input:107
 export function tryGhostComplete(inputValue: string, commands: any[], engineIds: string[]): string|null {
   return getGhostCompletion(inputValue, commands, engineIds);
 }
@@ -122,7 +133,7 @@ export function tryGhostComplete(inputValue: string, commands: any[], engineIds:
 /**
  * Rank slash-command matches so prefix hits stay on top while substring hits remain reachable.
  */
-// @kern-source: app-input:104
+// @kern-source: app-input:113
 export function getSlashMatches(filter: string, commands: any[]): any[] {
   const normalizedFilter = filter.trim().toLowerCase();
   return commands
@@ -142,7 +153,7 @@ export function getSlashMatches(filter: string, commands: any[]): any[] {
 /**
  * Move a picker cursor with wrap-around.
  */
-// @kern-source: app-input:122
+// @kern-source: app-input:131
 export function movePickerCursor(direction: 'up'|'down', currentIndex: number, itemCount: number): number {
   if (itemCount <= 0) return 0;
   if (direction === 'up') return currentIndex <= 0 ? itemCount - 1 : currentIndex - 1;
@@ -152,7 +163,7 @@ export function movePickerCursor(direction: 'up'|'down', currentIndex: number, i
 /**
  * Only queue plan mode from Tab when the composer is idle and empty.
  */
-// @kern-source: app-input:130
+// @kern-source: app-input:139
 export function shouldQueuePlanModeOnTab(opts: {replState:string,inputValue:string,activePlanState?:string|null}): boolean {
   if (opts.replState !== 'idle') return false;
   if (opts.inputValue.trim()) return false;

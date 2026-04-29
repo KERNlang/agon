@@ -2734,7 +2734,7 @@ export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks
  */
 // @kern-source: dispatch:2659
 export async function executeApprovedPlan(approved: CesarPlan, cb: DispatchCallbacks): Promise<void> {
-  const executors = buildStepExecutors(cb.ctx);
+  const executors = buildStepExecutors(cb.ctx, cb.dispatch);
   const abortController = new AbortController();
   cb.ctx.setActiveAbort?.(abortController);
   const callbacks = buildPlanCallbacks(approved, cb);

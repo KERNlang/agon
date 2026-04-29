@@ -2659,7 +2659,7 @@ fn name=buildPlanCallbacks params="initialPlan:CesarPlan, cb:DispatchCallbacks" 
 fn name=executeApprovedPlan async=true params="approved:CesarPlan, cb:DispatchCallbacks" returns="Promise<void>" export=true
   doc "FU-4: shared executor for the auto-approve, manual-approve, and plan-resume paths. Wires the abort controller, builds callbacks (with debounced persistence), runs executePlan, runs finalizePlanWithReviewGate, and dispatches the terminal status. Eliminates the ~60 lines of triplication that lived in dispatch.kern and forced future changes (e.g., new callback hooks, new finalize behavior) to be applied to all three sites."
   handler <<<
-    const executors = buildStepExecutors(cb.ctx);
+    const executors = buildStepExecutors(cb.ctx, cb.dispatch);
     const abortController = new AbortController();
     cb.ctx.setActiveAbort?.(abortController);
     const callbacks = buildPlanCallbacks(approved, cb);

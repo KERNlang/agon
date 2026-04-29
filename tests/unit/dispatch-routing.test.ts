@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildAgentAutoResumePrompt, buildDelegatedContinuationPrompt, buildReviewAbsorptionPrompt, collectRecentEngineContext, extractExecutionSpec, formatCesarRecoveryStatus, isCesarPlanApprovalInput, shouldAutoContinueDelegatedResult, shouldAutoResumeAgentResult } from '../../packages/cli/src/generated/signals/dispatch.js';
+import { buildAgentAutoResumePrompt, buildBrainstormContinuationMessage, buildDelegatedContinuationPrompt, buildReviewAbsorptionPrompt, collectRecentEngineContext, extractExecutionSpec, formatCesarRecoveryStatus, isCesarPlanApprovalInput, shouldAutoContinueDelegatedResult, shouldAutoResumeAgentResult } from '../../packages/cli/src/generated/signals/dispatch.js';
 
 describe('Dispatch routing helpers', () => {
   it('extracts forge fitness commands from conversational input', () => {
@@ -56,6 +56,22 @@ describe('Dispatch routing helpers', () => {
     expect(prompt).toContain('[CONTINUE]');
     expect(prompt).toContain('Do not re-run the same Brainstorm, Tribunal, Campfire, Review, Forge, or Agent');
     expect(prompt).toContain('synthesize the concrete outcome');
+  });
+
+  it('formats brainstorm winners as Cesar continuation work instead of terminal output', () => {
+    const prompt = buildBrainstormContinuationMessage('Brainstorm complete', 'build engine telemetry', {
+      winner: 'kimi',
+      response: 'Use a telemetry service and dashboard.',
+      bids: [
+        { engineId: 'kimi', score: 114.25, reasoning: 'Best fit', approach: 'Implement in KERN' },
+      ],
+    });
+
+    expect(prompt).toContain('Brainstorm complete. Winner: kimi.');
+    expect(prompt).toContain('## Original User Request\nbuild engine telemetry');
+    expect(prompt).toContain('**kimi** (score: 114.25): Best fit');
+    expect(prompt).toContain('Cesar owns the final answer');
+    expect(prompt).toContain('Do not stop at the brainstorm card');
   });
 
   it('collects recent engine context for post-delegation synthesis', () => {

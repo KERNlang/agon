@@ -153,7 +153,7 @@ export async function handleBrainstorm(question: string, dispatch: Dispatch, ctx
       },
     });
 
-    dispatch({ type: 'info', message: `Winner: ${result.winner} — ask follow-ups or "/forge" to implement` });
+    dispatch({ type: 'info', message: `Winner: ${result.winner} — returning result to Cesar` });
     dispatch({ type: 'progress-clear' });
 
     return {

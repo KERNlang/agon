@@ -203,9 +203,27 @@ export function buildDelegatedContinuationPrompt(message: string): string {
 }
 
 /**
- * Collect recent engine messages for post-delegation Cesar synthesis.
+ * Format a Brainstorm winner as a Cesar continuation payload. Brainstorm is an input to Cesar, not a terminal answer.
  */
 // @kern-source: dispatch:175
+export function buildBrainstormContinuationMessage(source: string, question: string|undefined, result: any): string {
+  const bids = Array.isArray(result?.bids) ? result.bids : [];
+  const bidSummary = bids.map((b: any) => {
+    const engineId = b?.engineId ?? 'unknown';
+    const score = b?.score ?? 'n/a';
+    const reasoning = String(b?.reasoning ?? '').slice(0, 800);
+    const approach = b?.approach ? `\nApproach: ${String(b.approach).slice(0, 600)}` : '';
+    return `**${engineId}** (score: ${score}): ${reasoning}${approach}`;
+  }).join('\n\n') || 'No bids captured.';
+  const original = question ? `\n\n## Original User Request\n${String(question).slice(0, 2000)}` : '';
+  const winnerResponse = String(result?.response ?? '').slice(0, 6000);
+  return `${source}. Winner: ${result?.winner ?? 'none'}.${original}\n\n## Engine Bids\n${bidSummary}\n\n## Winner's Full Response\n${winnerResponse}\n\nCesar owns the final answer. Synthesize this result, explain the next best action, and if implementation is needed ask whether to forge/build or continue directly. Do not stop at the brainstorm card.`;
+}
+
+/**
+ * Collect recent engine messages for post-delegation Cesar synthesis.
+ */
+// @kern-source: dispatch:191
 export function collectRecentEngineContext(ctx: HandlerContext, maxMessages?: number, maxChars?: number): string {
   const recentChat = ctx.chatSession?.messages?.slice(-(maxMessages ?? 12)) ?? [];
   const cap = maxChars ?? 1500;
@@ -218,7 +236,7 @@ export function collectRecentEngineContext(ctx: HandlerContext, maxMessages?: nu
 /**
  * Guard post-delegation Cesar continuation so long-running jobs do not answer an old turn after the user has moved on.
  */
-// @kern-source: dispatch:186
+// @kern-source: dispatch:202
 export function shouldAutoContinueDelegatedResult(launchInputEpoch?: number, launchUserTurns?: number, ctx?: HandlerContext): boolean {
   if (!ctx) return true;
   if (typeof launchInputEpoch !== 'number' || typeof launchUserTurns !== 'number') return true;
@@ -230,7 +248,7 @@ export function shouldAutoContinueDelegatedResult(launchInputEpoch?: number, lau
 /**
  * Feed a delegated result back through the full Cesar path, not the lightweight summarizer. This lets Cesar call tools, propose plans, or launch follow-up agents instead of being cut off after another model returns.
  */
-// @kern-source: dispatch:196
+// @kern-source: dispatch:212
 export async function continueCesarAfterResult(message: string, cb: DispatchCallbacks, launchInputEpoch?: number, launchUserTurns?: number): Promise<void> {
   if (!shouldAutoContinueDelegatedResult(launchInputEpoch, launchUserTurns, cb.ctx)) {
     cb.dispatch({ type: 'info', message: 'Skipped Cesar follow-up — user moved on while delegated job was running.' });
@@ -247,7 +265,7 @@ export async function continueCesarAfterResult(message: string, cb: DispatchCall
   }
 }
 
-// @kern-source: dispatch:214
+// @kern-source: dispatch:230
 export interface DispatchResult {
   handled: boolean;
   ranAsJob: boolean;
@@ -256,7 +274,7 @@ export interface DispatchResult {
 /**
  * Handle mode-switching intents. Returns true if consumed.
  */
-// @kern-source: dispatch:218
+// @kern-source: dispatch:234
 export function handleModeSwitch(intentType: string, topic: string|undefined, question: string|undefined, cb: DispatchCallbacks): boolean {
   if (intentType === 'campfire' && !topic) {
     cb.setMode('campfire');
@@ -286,7 +304,7 @@ export function handleModeSwitch(intentType: string, topic: string|undefined, qu
 /**
  * Extract a fitness command from conversational execution input while keeping the task clean.
  */
-// @kern-source: dispatch:246
+// @kern-source: dispatch:262
 export function extractExecutionSpec(input: string): { task:string; fitnessCmd:string|null } {
   const fitnessMatch = FITNESS_PATTERN.exec(input);
   const fitnessCmd = fitnessMatch ? fitnessMatch[1].trim() : null;
@@ -299,7 +317,7 @@ export function extractExecutionSpec(input: string): { task:string; fitnessCmd:s
 /**
  * Compact user-facing Cesar recovery messages. Keep these short because they render in the live status/transcript path during failure handling.
  */
-// @kern-source: dispatch:257
+// @kern-source: dispatch:273
 export function formatCesarRecoveryStatus(stage: 'delegation'|'rebuild'|'retry'|'acting'|'failed', subject: string, detail?: string): string {
   const suffix = detail ? ` - ${detail}` : '';
   switch (stage) {
@@ -318,13 +336,13 @@ export function formatCesarRecoveryStatus(stage: 'delegation'|'rebuild'|'retry'|
   }
 }
 
-// @kern-source: dispatch:277
+// @kern-source: dispatch:293
 export function countTrackedUserTurns(ctx: HandlerContext): number {
   const messages = ctx.chatSession?.messages ?? [];
   return messages.filter((m: any) => m.role === 'user').length;
 }
 
-// @kern-source: dispatch:283
+// @kern-source: dispatch:299
 export function shouldAutoResumeAgentResult(result: any, launchInputEpoch: number, launchUserTurns: number, ctx: HandlerContext): boolean {
   if (!result || typeof result !== 'object') return false;
   const status = String((result as any).status ?? '').trim();
@@ -334,7 +352,7 @@ export function shouldAutoResumeAgentResult(result: any, launchInputEpoch: numbe
   return true;
 }
 
-// @kern-source: dispatch:293
+// @kern-source: dispatch:309
 export function buildAgentAutoResumePrompt(originalTask: string, result: any): string {
   if (!result || typeof result !== 'object') return '';
   const kind = String((result as any).kind ?? 'agent');
@@ -367,7 +385,7 @@ export function buildAgentAutoResumePrompt(originalTask: string, result: any): s
   return lines.join('\n');
 }
 
-// @kern-source: dispatch:326
+// @kern-source: dispatch:342
 export async function resumeCesarAfterAgent(originalTask: string, launchInputEpoch: number, launchUserTurns: number, result: any, cb: DispatchCallbacks): Promise<void> {
   if (!shouldAutoResumeAgentResult(result, launchInputEpoch, launchUserTurns, cb.ctx)) return;
   const prompt = buildAgentAutoResumePrompt(originalTask, result);
@@ -376,7 +394,7 @@ export async function resumeCesarAfterAgent(originalTask: string, launchInputEpo
   await routeWithCesar(prompt, [], cb);
 }
 
-// @kern-source: dispatch:335
+// @kern-source: dispatch:351
 export async function runAgentJobWithAutoResume(originalTask: string, cb: DispatchCallbacks, runner: ()=>Promise<any>): Promise<void> {
   const launchInputEpoch = cb.ctx.inputEpoch ?? 0;
   const launchUserTurns = countTrackedUserTurns(cb.ctx);
@@ -387,7 +405,7 @@ export async function runAgentJobWithAutoResume(originalTask: string, cb: Dispat
 /**
  * Build the message used to feed completed review findings back into Cesar so the orchestrator knows what the reviewer found and can propose the fix path.
  */
-// @kern-source: dispatch:343
+// @kern-source: dispatch:359
 export function buildReviewAbsorptionPrompt(sourceInput: string, review: { engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number }): string {
   const output = String(review.reviewOutput ?? '').trim();
   const cappedOutput = output.length > 12_000
@@ -415,7 +433,7 @@ export function buildReviewAbsorptionPrompt(sourceInput: string, review: { engin
 /**
  * Unified Cesar brain routing. Returns true if a background job was dispatched.
  */
-// @kern-source: dispatch:369
+// @kern-source: dispatch:385
 export async function routeWithCesar(input: string, images: ImageAttachment[], cb: DispatchCallbacks): Promise<boolean> {
   cb.setPendingImages(() => []);
       try {
@@ -625,9 +643,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
                 const bsResult = await handleBrainstorm(taskInput, cb.dispatch, cb.ctx);
                 if (bsResult) {
                   cb.dispatch({ type: 'info', message: 'Cesar absorbing brainstorm results…' });
-                  const bidSummary = bsResult.bids.map((b: any) => `**${b.engineId}** (score: ${b.score}): ${b.reasoning.slice(0, 800)}`).join('\n\n');
-                  const cesarMsg = `Brainstorm complete. Winner: ${bsResult.winner}.\n\n## Engine Bids\n${bidSummary}\n\n## Winner's Full Response\n${bsResult.response}\n\nSynthesize the winning approach into a concrete plan. Be direct — the brainstorm already validated the ideas.`;
-                  await continueCesarAfterResult(cesarMsg, cb, continuationEpoch, continuationUserTurns);
+                  await continueCesarAfterResult(buildBrainstormContinuationMessage('Brainstorm complete', taskInput, bsResult), cb, continuationEpoch, continuationUserTurns);
                 }
                 return bsResult; // returned value captured by withThreadOutcome for richer summary
               }, cb.ctx));
@@ -788,8 +804,8 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
               cb.runAsJob('brainstorm', label, withThreadOutcome(_cwdRecoverBs, 'brainstorm', label, async () => {
                 const bsResult = await handleBrainstorm(recoveredTask, cb.dispatch, cb.ctx);
                 if (bsResult) {
-                  const bidSummary = bsResult.bids.map((b: any) => `**${b.engineId}** (score: ${b.score}): ${b.reasoning.slice(0, 800)}`).join('\n\n');
-                  await continueCesarAfterResult(`Recovered brainstorm complete. Winner: ${bsResult.winner}.\n\n## Engine Bids\n${bidSummary}\n\n## Winner's Full Response\n${bsResult.response}\n\nSynthesize the winning approach and continue the original task.`, cb, continuationEpoch, continuationUserTurns);
+                  cb.dispatch({ type: 'info', message: 'Cesar absorbing brainstorm results…' });
+                  await continueCesarAfterResult(buildBrainstormContinuationMessage('Recovered brainstorm complete', recoveredTask, bsResult), cb, continuationEpoch, continuationUserTurns);
                 }
                 return bsResult;
               }, cb.ctx));
@@ -943,8 +959,8 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
                   cb.runAsJob('brainstorm', label, withThreadOutcome(_cwdFallbackBs, 'brainstorm', label, async () => {
                     const bsResult = await handleBrainstorm(fallbackTask, cb.dispatch, cb.ctx);
                     if (bsResult) {
-                      const bidSummary = bsResult.bids.map((b: any) => `**${b.engineId}** (score: ${b.score}): ${b.reasoning.slice(0, 800)}`).join('\n\n');
-                      await continueCesarAfterResult(`Fallback brainstorm complete. Winner: ${bsResult.winner}.\n\n## Engine Bids\n${bidSummary}\n\n## Winner's Full Response\n${bsResult.response}\n\nSynthesize the winning approach and continue the original task.`, cb, continuationEpoch, continuationUserTurns);
+                      cb.dispatch({ type: 'info', message: 'Cesar absorbing brainstorm results…' });
+                      await continueCesarAfterResult(buildBrainstormContinuationMessage('Fallback brainstorm complete', fallbackTask, bsResult), cb, continuationEpoch, continuationUserTurns);
                     }
                     return bsResult;
                   }, cb.ctx));
@@ -1072,7 +1088,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
 /**
  * Return true for natural approval replies users type after Cesar says go/run it.
  */
-// @kern-source: dispatch:1024
+// @kern-source: dispatch:1038
 export function isCesarPlanApprovalInput(input: string): boolean {
   const text = String(input ?? '').trim().toLowerCase().replace(/[.!]+$/g, '');
   return /^(?:y|yes|go|run|run it|start|start it|approve|approved|do it|proceed|execute|ok|okay|sure)$/i.test(text);
@@ -1081,7 +1097,7 @@ export function isCesarPlanApprovalInput(input: string): boolean {
 /**
  * Find the most relevant pending Cesar plan: proposed plan first, active plan second, then latest saved awaiting_approval plan.
  */
-// @kern-source: dispatch:1031
+// @kern-source: dispatch:1045
 export function findPendingCesarPlan(ctx: HandlerContext): CesarPlan | null {
   const proposed = ctx.cesar?.proposedPlan as CesarPlan | undefined;
   if (proposed && proposed.state === 'awaiting_approval') return proposed;
@@ -1096,7 +1112,7 @@ export function findPendingCesarPlan(ctx: HandlerContext): CesarPlan | null {
 /**
  * Approve and execute the pending CesarPlan, if one exists. Backs /approve and natural approval aliases like go.
  */
-// @kern-source: dispatch:1044
+// @kern-source: dispatch:1058
 export async function approvePendingCesarPlan(cb: DispatchCallbacks): Promise<boolean> {
   const pending = findPendingCesarPlan(cb.ctx);
   if (!pending) return false;
@@ -1120,7 +1136,7 @@ export async function approvePendingCesarPlan(cb: DispatchCallbacks): Promise<bo
 /**
  * Route a parsed intent to the correct handler. Registry-first, switch as fallback.
  */
-// @kern-source: dispatch:1066
+// @kern-source: dispatch:1080
 export async function dispatchIntent(intent: any, input: string, cb: DispatchCallbacks): Promise<DispatchResult> {
   // ── Emit pre:dispatch event ──
   if (cb.eventBus) {
@@ -1160,10 +1176,16 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
     case 'brainstorm': {
       const _bCwd = resolveWorkingDir();
       const _bLabel = intent.question?.slice(0, 40) ?? 'brainstorm';
+      const continuationEpoch = cb.ctx.inputEpoch ?? 0;
+      const continuationUserTurns = countTrackedUserTurns(cb.ctx);
       cb.runAsJob('brainstorm', _bLabel, withThreadOutcome(_bCwd, 'brainstorm', _bLabel, async () => {
         if (cb.eventBus) await cb.eventBus.emit('pre:brainstorm', { question: intent.question, cwd: _bCwd });
         const bsR = await handleBrainstorm(intent.question, cb.dispatch, cb.ctx);
         if (cb.eventBus) cb.eventBus.emit('post:brainstorm', { question: intent.question, cwd: _bCwd }).catch(() => {});
+        if (bsR) {
+          cb.dispatch({ type: 'info', message: 'Cesar absorbing brainstorm results…' });
+          await continueCesarAfterResult(buildBrainstormContinuationMessage('Brainstorm complete', intent.question, bsR), cb, continuationEpoch, continuationUserTurns);
+        }
         return bsR;
       }, cb.ctx));
       return { handled: true, ranAsJob: true };
@@ -1669,7 +1691,18 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
       const si = intent as any;
       const answer = await cb.askQuestion('Brainstorm with all engines? (y/n)');
       if (answer.toLowerCase().startsWith('y')) {
-        cb.runAsJob('brainstorm', si.question?.slice(0, 40) ?? 'brainstorm', async () => { await handleBrainstorm(si.question ?? si.input, cb.dispatch, cb.ctx); });
+        const continuationEpoch = cb.ctx.inputEpoch ?? 0;
+        const continuationUserTurns = countTrackedUserTurns(cb.ctx);
+        const question = si.question ?? si.input;
+        const _sCwd = resolveWorkingDir();
+        cb.runAsJob('brainstorm', si.question?.slice(0, 40) ?? 'brainstorm', withThreadOutcome(_sCwd, 'brainstorm', si.question?.slice(0, 40) ?? 'brainstorm', async () => {
+          const bsResult = await handleBrainstorm(question, cb.dispatch, cb.ctx);
+          if (bsResult) {
+            cb.dispatch({ type: 'info', message: 'Cesar absorbing brainstorm results…' });
+            await continueCesarAfterResult(buildBrainstormContinuationMessage('Brainstorm complete', question, bsResult), cb, continuationEpoch, continuationUserTurns);
+          }
+          return bsResult;
+        }, cb.ctx));
         return { handled: true, ranAsJob: true };
       }
       await handleChat(si.input, cb.dispatch, cb.ctx, cb.allImages);
@@ -2324,7 +2357,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
 /**
  * Shared approval loop for plans proposed by Cesar, whether from explicit /plan mode or a normal chat turn.
  */
-// @kern-source: dispatch:2268
+// @kern-source: dispatch:2299
 export async function handleProposedCesarPlan(proposed: CesarPlan, cb: DispatchCallbacks): Promise<void> {
   if (cb.ctx.cesar) cb.ctx.cesar.proposedPlan = undefined;
 
@@ -2441,7 +2474,7 @@ export async function handleProposedCesarPlan(proposed: CesarPlan, cb: DispatchC
 /**
  * Build executor callbacks. Holds a closure on the latest plan reference (mutated via onPlanUpdate) so step lookups always see appended steps like the auto-review cycle (tribunal fix #10). FU-3: persistence is debounced 300ms to avoid the sync-write storm Doppelganger flagged — onPlanUpdate fires once per step in a hot loop, but the disk write happens at most ~3x/sec. Terminal states (done/paused/cancelled) flush immediately so the .md/.json on disk reflect the final state. Callers should invoke .flush() before exit to drain any pending write.
  */
-// @kern-source: dispatch:2388
+// @kern-source: dispatch:2419
 export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks): any {
   let currentPlan = initialPlan;
   let pendingWriteTimer: ReturnType<typeof setTimeout> | null = null;
@@ -2518,7 +2551,7 @@ export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks
 /**
  * FU-4: shared executor for the auto-approve, manual-approve, and plan-resume paths. Wires the abort controller, builds callbacks (with debounced persistence), runs executePlan, runs finalizePlanWithReviewGate, and dispatches the terminal status. Eliminates the ~60 lines of triplication that lived in dispatch.kern and forced future changes (e.g., new callback hooks, new finalize behavior) to be applied to all three sites.
  */
-// @kern-source: dispatch:2463
+// @kern-source: dispatch:2494
 export async function executeApprovedPlan(approved: CesarPlan, cb: DispatchCallbacks): Promise<void> {
   const executors = buildStepExecutors(cb.ctx);
   const abortController = new AbortController();
@@ -2555,7 +2588,7 @@ export async function executeApprovedPlan(approved: CesarPlan, cb: DispatchCallb
 /**
  * Single source of truth for the post-execution self-review gate. Called from BOTH the plan-task and plan-resume terminal paths so resume cannot bypass the gate or the cycle cap (tribunal fix #4).
  */
-// @kern-source: dispatch:2498
+// @kern-source: dispatch:2529
 export async function finalizePlanWithReviewGate(finalPlan: CesarPlan, executors: Record<string,StepExecutor>, abortSignal: AbortSignal, cb: DispatchCallbacks): Promise<CesarPlan> {
   const MUTATING = new Set(['forge', 'teamforge', 'pipeline', 'agent', 'team-agent', 'delegate', 'self']);
   const planTouchedMutation = finalPlan.steps.some((s: any) => MUTATING.has(s.type) && (s.state === 'done' || s.state === 'failed'));

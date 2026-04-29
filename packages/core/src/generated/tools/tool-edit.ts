@@ -199,7 +199,7 @@ export function createEditTool(): ToolHandler {
 
     // Take snapshot before modification
     const relPath = relative(ctx.cwd, filePath);
-    takeSnapshot(`Edit: ${relPath}`, ctx.cwd, [relPath]);
+    const snapshot = takeSnapshot(`Edit: ${relPath}`, ctx.cwd, [relPath]);
 
     // Perform replacement
     const newContent = replaceAll
@@ -232,7 +232,7 @@ export function createEditTool(): ToolHandler {
       ? `Replaced ${replacements} occurrence${replacements !== 1 ? 's' : ''} in ${relPath}`
       : `Applied edit to ${relPath} (${linesChanged} line${linesChanged !== 1 ? 's' : ''})`;
 
-    return { ok: true, content: summary };
+    return { ok: true, content: `${summary} · checkpoint ${snapshot.id}` };
   };
 
   return { definition, validate, checkPermission, execute };

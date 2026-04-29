@@ -178,6 +178,48 @@ export function buildRecapTouchedFiles(beforeFiles: any[], afterFiles: any[]): a
 }
 
 // @kern-source: recap:183
+export function buildCesarRecapDiffPreview(files: any[], diffsByPath: Record<string,string>, maxFiles?: number, maxLinesPerFile?: number): any {
+  const previews: any[] = [];
+  const fileLimit = maxFiles ?? 4;
+  const lineLimit = maxLinesPerFile ?? 6;
+  for (const file of Array.isArray(files) ? files : []) {
+    if (previews.length >= fileLimit) break;
+    const status = String(file?.status ?? '');
+    if (status === 'read') continue;
+    const path = String(file?.path ?? '');
+    const relPath = String(file?.relPath ?? path);
+    const diff = String(diffsByPath?.[path] ?? diffsByPath?.[relPath] ?? '').trim();
+    if (!diff) continue;
+
+    let additions = 0;
+    let deletions = 0;
+    let candidateLines = 0;
+    const visibleLines: string[] = [];
+    for (const line of diff.split('\n')) {
+      if (line.startsWith('+') && !line.startsWith('+++')) additions += 1;
+      if (line.startsWith('-') && !line.startsWith('---')) deletions += 1;
+      const interesting =
+        line.startsWith('@@') ||
+        (line.startsWith('+') && !line.startsWith('+++')) ||
+        (line.startsWith('-') && !line.startsWith('---'));
+      if (!interesting) continue;
+      candidateLines += 1;
+      if (visibleLines.length < lineLimit) visibleLines.push(shortenRecapText(line, 120));
+    }
+    previews.push({
+      path,
+      relPath,
+      status,
+      additions,
+      deletions,
+      lines: visibleLines,
+      omitted: Math.max(0, candidateLines - visibleLines.length),
+    });
+  }
+  return { files: previews, totalFiles: previews.length };
+}
+
+// @kern-source: recap:225
 export function buildCesarTurnRecapEvent(capture: any, result: any, beforeFiles: any[], afterFiles: any[]): any {
   const orderedTools = (capture?.toolOrder ?? [])
     .map((key: string) => capture.toolEventsByKey?.[key])
@@ -185,10 +227,15 @@ export function buildCesarTurnRecapEvent(capture: any, result: any, beforeFiles:
   const toolCounts: Record<string, number> = {};
   let failedTools = 0;
   const commands: any[] = [];
+  const checkpoints: any[] = [];
   for (const t of orderedTools) {
     const label = recapToolLabel(t.tool);
     toolCounts[label] = (toolCounts[label] ?? 0) + 1;
     if (String(t.status).toLowerCase() === 'error') failedTools += 1;
+    const checkpoint = String(t.output ?? '').match(/\bcheckpoint\s+([a-z0-9]{6,12})\b/i);
+    if (checkpoint && !checkpoints.some((c: any) => c.id === checkpoint[1])) {
+      checkpoints.push({ id: checkpoint[1], label });
+    }
     const command = extractRecapCommand(t.tool, t.input);
     if (command) {
       commands.push({
@@ -223,16 +270,18 @@ export function buildCesarTurnRecapEvent(capture: any, result: any, beforeFiles:
     toolSummary,
     commands,
     files: buildRecapTouchedFiles(beforeFiles, afterFiles),
+    checkpoints,
     warnings: [...(capture?.warnings ?? []), ...(capture?.errors ?? [])].slice(0, 4),
   };
 }
 
-// @kern-source: recap:233
+// @kern-source: recap:281
 export function shouldEmitCesarRecap(event: any): boolean {
   if (!event || event.type !== 'cesar-recap') return false;
   if (String(event.outcome ?? '').startsWith('Handed off to ')) return true;
   return Number(event.toolCount ?? 0) > 0
     || (Array.isArray(event.files) && event.files.length > 0)
+    || (event.diffPreview && Array.isArray(event.diffPreview.files) && event.diffPreview.files.length > 0)
     || (Array.isArray(event.commands) && event.commands.length > 0)
     || (Array.isArray(event.warnings) && event.warnings.length > 0)
     || typeof event.confidence === 'number';

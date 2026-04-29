@@ -4,7 +4,7 @@
 
 import from="node:path" names="join,basename"
 import from="node:fs" names="mkdirSync,writeFileSync,readFileSync,appendFileSync"
-import from="@agon/core" names="resolveWorkingDir,extractImagesFromInput,buildImageAttachment,undoPatch,resumeChatSession,findSkill,renderSkillPrompt,configSet,startChatSession,currentBranch,gitChangedFiles,buildExtensionContext,sessionContext,RUNS_DIR,getAgonHome,clearConversation"
+import from="@agon/core" names="resolveWorkingDir,extractImagesFromInput,buildImageAttachment,undoPatch,listSnapshots,revertSnapshot,resumeChatSession,findSkill,renderSkillPrompt,configSet,startChatSession,currentBranch,gitChangedFiles,buildExtensionContext,sessionContext,RUNS_DIR,getAgonHome,clearConversation"
 import from="../handlers/chat.js" names="invalidateCwdCache"
 import from="@agon/core" names="ImageAttachment,ChatSession" types=true
 import from="@agon/core" names="approveCesarPlan,cancelCesarPlan,saveCesarPlan,loadCesarPlan,listCesarPlans,executePlan,formatCesarPlanMarkdown,planCostEstimator"
@@ -28,10 +28,10 @@ import from="../cesar/routing.js" names="deriveRoutingHints"
 import from="../cesar/routing.js" names="shouldUseAgentTeam"
 import from="../cesar/session.js" names="buildCesarSystemPrompt,resolveCesarBackend"
 import from="../cesar/tool-observability.js" names="replayCesarHarnessLogs"
-import from="../cesar/recap.js" names="createCesarRecapCapture,recordCesarRecapEvent,buildCesarTurnRecapEvent,shouldEmitCesarRecap"
+import from="../cesar/recap.js" names="createCesarRecapCapture,recordCesarRecapEvent,buildCesarTurnRecapEvent,buildCesarRecapDiffPreview,shouldEmitCesarRecap"
 import from="@agon/core" names="createSpeculator,loadOrCreateActiveThread"
 import from="@agon/core" names="SpeculatorMemberConfig" types=true
-import from="./file-tracker.js" names="listFiles"
+import from="./file-tracker.js" names="listFiles,getFileDiff"
 
 // ── Thread outcome capture helper ─────────────────────────────────────
 // After any non-trivial slash command (forge, brainstorm, tribunal, etc.),
@@ -381,6 +381,22 @@ fn name=routeWithCesar async=true params="input:string, images:ImageAttachment[]
       const result = await handleCesarBrain(input, cesarDispatch as any, cb.ctx, images);
       const emitRecap = () => {
         const recapEvent = buildCesarTurnRecapEvent(recapCapture, result, recapStartedFiles, listFiles());
+        const changedFiles = Array.isArray((recapEvent as any).files)
+          ? (recapEvent as any).files.filter((file: any) => String(file?.status ?? '') !== 'read').slice(0, 4)
+          : [];
+        if (changedFiles.length > 0) {
+          const diffsByPath: Record<string, string> = {};
+          for (const file of changedFiles) {
+            const path = String(file?.path ?? '');
+            if (!path) continue;
+            const diff = getFileDiff(path, 24);
+            if (diff.trim()) diffsByPath[path] = diff;
+          }
+          const diffPreview = buildCesarRecapDiffPreview(changedFiles, diffsByPath, 4, 6);
+          if (Array.isArray(diffPreview?.files) && diffPreview.files.length > 0) {
+            (recapEvent as any).diffPreview = diffPreview;
+          }
+        }
         if (shouldEmitCesarRecap(recapEvent)) cb.dispatch(recapEvent as any);
       };
       const proposedPlan: CesarPlan | undefined = cb.ctx.cesar?.proposedPlan;
@@ -1481,16 +1497,27 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
       case 'commit': await handleCommit(intent.input, cb.dispatch, cb.ctx); break;
 
       case 'undo': {
-        if (!cb.lastUndoToken) {
-          cb.dispatch({ type: 'warning', message: 'Nothing to undo. Apply a forge patch first.' });
+        const cwd = resolveWorkingDir();
+        if (cb.lastUndoToken) {
+          const undoResult = undoPatch(cwd, cb.lastUndoToken);
+          if (undoResult.ok) {
+            cb.dispatch({ type: 'success', message: 'Patch reverted successfully.' });
+            cb.setLastUndoToken(null);
+          } else {
+            cb.dispatch({ type: 'error', message: undoResult.error ?? 'Undo failed' });
+          }
           break;
         }
-        const undoResult = undoPatch(resolveWorkingDir(), cb.lastUndoToken);
-        if (undoResult.ok) {
-          cb.dispatch({ type: 'success', message: 'Patch reverted successfully.' });
-          cb.setLastUndoToken(null);
+        const snapshot = listSnapshots().find((entry: any) => String(entry?.cwd ?? '') === cwd);
+        if (!snapshot) {
+          cb.dispatch({ type: 'warning', message: 'Nothing to undo. No forge patch or Cesar checkpoint found for this workspace.' });
+          break;
+        }
+        const revertResult = revertSnapshot(snapshot.id);
+        if (revertResult.ok) {
+          cb.dispatch({ type: 'success', message: `Checkpoint ${snapshot.id} reverted (${revertResult.filesReverted} file${revertResult.filesReverted === 1 ? '' : 's'}).` });
         } else {
-          cb.dispatch({ type: 'error', message: undoResult.error ?? 'Undo failed' });
+          cb.dispatch({ type: 'error', message: revertResult.error ?? 'Checkpoint undo failed' });
         }
         break;
       }

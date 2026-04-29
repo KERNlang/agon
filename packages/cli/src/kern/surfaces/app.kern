@@ -999,9 +999,12 @@ fn name=estimateOutputEventRows params="event:OutputEvent, mode:string, toolOutp
       case 'cesar-recap': {
         const commandRows = Math.min(5, Array.isArray((event as any).commands) ? (event as any).commands.length : 0);
         const fileRows = Array.isArray((event as any).files) && (event as any).files.length > 0 ? 1 : 0;
+        const checkpointRows = Array.isArray((event as any).checkpoints) && (event as any).checkpoints.length > 0 ? 1 : 0;
+        const diffFiles = Array.isArray((event as any).diffPreview?.files) ? (event as any).diffPreview.files : [];
+        const diffRows = diffFiles.reduce((total: number, file: any) => total + 1 + Math.min(6, Array.isArray(file.lines) ? file.lines.length : 0) + (Number(file.omitted ?? 0) > 0 ? 1 : 0), 0);
         const warningRows = Math.min(3, Array.isArray((event as any).warnings) ? (event as any).warnings.length : 0);
         const reasoningRows = (event as any).confidenceReasoning ? 1 : 0;
-        return 3 + commandRows + fileRows + warningRows + reasoningRows;
+        return 3 + commandRows + fileRows + checkpointRows + diffRows + warningRows + reasoningRows;
       }
       case 'file-changes':
         return 1 + (((event as any).files as any[])?.length ?? 0);
@@ -2154,6 +2157,8 @@ fn name=buildTranscriptRows params="blocks:OutputBlock[], mode:string, toolOutpu
           const commands = Array.isArray((event as any).commands) ? (event as any).commands : [];
           const warnings = Array.isArray((event as any).warnings) ? (event as any).warnings : [];
           const toolSummary = Array.isArray((event as any).toolSummary) ? (event as any).toolSummary : [];
+          const checkpoints = Array.isArray((event as any).checkpoints) ? (event as any).checkpoints : [];
+          const diffFiles = Array.isArray((event as any).diffPreview?.files) ? (event as any).diffPreview.files : [];
           const confidence = typeof (event as any).confidence === 'number' ? `${Math.round((event as any).confidence)}% confidence` : '';
           const seconds = typeof (event as any).durationMs === 'number' ? `${(((event as any).durationMs) / 1000).toFixed(1)}s` : '';
           const failedTools = Number((event as any).failedTools ?? 0);
@@ -2189,6 +2194,33 @@ fn name=buildTranscriptRows params="blocks:OutputBlock[], mode:string, toolOutpu
               dimColor: true,
             }]);
           }
+          if (checkpoints.length > 0) {
+            pushSegmentsRow(`${baseKey}-recap-checkpoint`, 1, [{
+              text: `  checkpoint: ${checkpoints[0].id}${checkpoints.length > 1 ? ` (+${checkpoints.length - 1})` : ''} · /undo reverts latest`,
+              color: '#22d3ee',
+            }]);
+          }
+          diffFiles.slice(0, 4).forEach((file: any, index: number) => {
+            pushSegmentsRow(`${baseKey}-recap-diff-${index}`, 1, [
+              { text: `  Δ ${file.relPath ?? file.path}`, color: '#22d3ee' },
+              { text: ` +${Number(file.additions ?? 0)} -${Number(file.deletions ?? 0)}`, dimColor: true },
+            ]);
+            const lines = Array.isArray(file.lines) ? file.lines : [];
+            lines.slice(0, 6).forEach((line: string, lineIndex: number) => {
+              const color = line.startsWith('+') ? '#4ade80' : line.startsWith('-') ? '#ef4444' : '#fbbf24';
+              pushSegmentsRow(`${baseKey}-recap-diff-${index}-${lineIndex}`, 1, [{
+                text: `    ${line}`,
+                color,
+                dimColor: line.startsWith('@@'),
+              }]);
+            });
+            if (Number(file.omitted ?? 0) > 0) {
+              pushSegmentsRow(`${baseKey}-recap-diff-${index}-more`, 1, [{
+                text: `    … ${Number(file.omitted)} more diff lines`,
+                dimColor: true,
+              }]);
+            }
+          });
           warnings.slice(0, 3).forEach((warning: string, index: number) => {
             pushSegmentsRow(`${baseKey}-recap-warning-${index}`, 1, [
               { text: `  ${icons().warning}`, color: '#fbbf24' },

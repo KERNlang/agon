@@ -4,7 +4,7 @@ import { join, basename } from 'node:path';
 
 import { mkdirSync, writeFileSync, readFileSync, appendFileSync } from 'node:fs';
 
-import { resolveWorkingDir, extractImagesFromInput, buildImageAttachment, undoPatch, resumeChatSession, findSkill, renderSkillPrompt, configSet, startChatSession, currentBranch, gitChangedFiles, buildExtensionContext, sessionContext, RUNS_DIR, getAgonHome, clearConversation } from '@agon/core';
+import { resolveWorkingDir, extractImagesFromInput, buildImageAttachment, undoPatch, listSnapshots, revertSnapshot, resumeChatSession, findSkill, renderSkillPrompt, configSet, startChatSession, currentBranch, gitChangedFiles, buildExtensionContext, sessionContext, RUNS_DIR, getAgonHome, clearConversation } from '@agon/core';
 
 import { invalidateCwdCache } from '../handlers/chat.js';
 
@@ -52,13 +52,13 @@ import { buildCesarSystemPrompt, resolveCesarBackend } from '../cesar/session.js
 
 import { replayCesarHarnessLogs } from '../cesar/tool-observability.js';
 
-import { createCesarRecapCapture, recordCesarRecapEvent, buildCesarTurnRecapEvent, shouldEmitCesarRecap } from '../cesar/recap.js';
+import { createCesarRecapCapture, recordCesarRecapEvent, buildCesarTurnRecapEvent, buildCesarRecapDiffPreview, shouldEmitCesarRecap } from '../cesar/recap.js';
 
 import { createSpeculator, loadOrCreateActiveThread } from '@agon/core';
 
 import type { SpeculatorMemberConfig } from '@agon/core';
 
-import { listFiles } from './file-tracker.js';
+import { listFiles, getFileDiff } from './file-tracker.js';
 
 /**
  * Wraps a runAsJob callback with rich ContextThread outcome capture. Uses a message-ID snapshot (not index) so concurrent jobs don't pick up each other's messages in the slice (review finding from OpenCode + Gemini). After fn completes, appends: (1) a structured header with job type, label, duration, status; (2) engine responses added to chatSession DURING this job's execution (by ID diff), so forge/brainstorm/tribunal results land in Cesar's memory.
@@ -429,6 +429,22 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
         const result = await handleCesarBrain(input, cesarDispatch as any, cb.ctx, images);
         const emitRecap = () => {
           const recapEvent = buildCesarTurnRecapEvent(recapCapture, result, recapStartedFiles, listFiles());
+          const changedFiles = Array.isArray((recapEvent as any).files)
+            ? (recapEvent as any).files.filter((file: any) => String(file?.status ?? '') !== 'read').slice(0, 4)
+            : [];
+          if (changedFiles.length > 0) {
+            const diffsByPath: Record<string, string> = {};
+            for (const file of changedFiles) {
+              const path = String(file?.path ?? '');
+              if (!path) continue;
+              const diff = getFileDiff(path, 24);
+              if (diff.trim()) diffsByPath[path] = diff;
+            }
+            const diffPreview = buildCesarRecapDiffPreview(changedFiles, diffsByPath, 4, 6);
+            if (Array.isArray(diffPreview?.files) && diffPreview.files.length > 0) {
+              (recapEvent as any).diffPreview = diffPreview;
+            }
+          }
           if (shouldEmitCesarRecap(recapEvent)) cb.dispatch(recapEvent as any);
         };
         const proposedPlan: CesarPlan | undefined = cb.ctx.cesar?.proposedPlan;
@@ -1056,7 +1072,7 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
 /**
  * Route a parsed intent to the correct handler. Registry-first, switch as fallback.
  */
-// @kern-source: dispatch:1008
+// @kern-source: dispatch:1024
 export async function dispatchIntent(intent: any, input: string, cb: DispatchCallbacks): Promise<DispatchResult> {
   // ── Emit pre:dispatch event ──
   if (cb.eventBus) {
@@ -1531,16 +1547,27 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
     case 'commit': await handleCommit(intent.input, cb.dispatch, cb.ctx); break;
 
     case 'undo': {
-      if (!cb.lastUndoToken) {
-        cb.dispatch({ type: 'warning', message: 'Nothing to undo. Apply a forge patch first.' });
+      const cwd = resolveWorkingDir();
+      if (cb.lastUndoToken) {
+        const undoResult = undoPatch(cwd, cb.lastUndoToken);
+        if (undoResult.ok) {
+          cb.dispatch({ type: 'success', message: 'Patch reverted successfully.' });
+          cb.setLastUndoToken(null);
+        } else {
+          cb.dispatch({ type: 'error', message: undoResult.error ?? 'Undo failed' });
+        }
         break;
       }
-      const undoResult = undoPatch(resolveWorkingDir(), cb.lastUndoToken);
-      if (undoResult.ok) {
-        cb.dispatch({ type: 'success', message: 'Patch reverted successfully.' });
-        cb.setLastUndoToken(null);
+      const snapshot = listSnapshots().find((entry: any) => String(entry?.cwd ?? '') === cwd);
+      if (!snapshot) {
+        cb.dispatch({ type: 'warning', message: 'Nothing to undo. No forge patch or Cesar checkpoint found for this workspace.' });
+        break;
+      }
+      const revertResult = revertSnapshot(snapshot.id);
+      if (revertResult.ok) {
+        cb.dispatch({ type: 'success', message: `Checkpoint ${snapshot.id} reverted (${revertResult.filesReverted} file${revertResult.filesReverted === 1 ? '' : 's'}).` });
       } else {
-        cb.dispatch({ type: 'error', message: undoResult.error ?? 'Undo failed' });
+        cb.dispatch({ type: 'error', message: revertResult.error ?? 'Checkpoint undo failed' });
       }
       break;
     }
@@ -2245,7 +2272,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
 /**
  * Shared approval loop for plans proposed by Cesar, whether from explicit /plan mode or a normal chat turn.
  */
-// @kern-source: dispatch:2195
+// @kern-source: dispatch:2222
 export async function handleProposedCesarPlan(proposed: CesarPlan, cb: DispatchCallbacks): Promise<void> {
   if (cb.ctx.cesar) cb.ctx.cesar.proposedPlan = undefined;
 
@@ -2362,7 +2389,7 @@ export async function handleProposedCesarPlan(proposed: CesarPlan, cb: DispatchC
 /**
  * Build executor callbacks. Holds a closure on the latest plan reference (mutated via onPlanUpdate) so step lookups always see appended steps like the auto-review cycle (tribunal fix #10). FU-3: persistence is debounced 300ms to avoid the sync-write storm Doppelganger flagged — onPlanUpdate fires once per step in a hot loop, but the disk write happens at most ~3x/sec. Terminal states (done/paused/cancelled) flush immediately so the .md/.json on disk reflect the final state. Callers should invoke .flush() before exit to drain any pending write.
  */
-// @kern-source: dispatch:2315
+// @kern-source: dispatch:2342
 export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks): any {
   let currentPlan = initialPlan;
   let pendingWriteTimer: ReturnType<typeof setTimeout> | null = null;
@@ -2439,7 +2466,7 @@ export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks
 /**
  * FU-4: shared executor for the auto-approve, manual-approve, and plan-resume paths. Wires the abort controller, builds callbacks (with debounced persistence), runs executePlan, runs finalizePlanWithReviewGate, and dispatches the terminal status. Eliminates the ~60 lines of triplication that lived in dispatch.kern and forced future changes (e.g., new callback hooks, new finalize behavior) to be applied to all three sites.
  */
-// @kern-source: dispatch:2390
+// @kern-source: dispatch:2417
 export async function executeApprovedPlan(approved: CesarPlan, cb: DispatchCallbacks): Promise<void> {
   const executors = buildStepExecutors(cb.ctx);
   const abortController = new AbortController();
@@ -2476,7 +2503,7 @@ export async function executeApprovedPlan(approved: CesarPlan, cb: DispatchCallb
 /**
  * Single source of truth for the post-execution self-review gate. Called from BOTH the plan-task and plan-resume terminal paths so resume cannot bypass the gate or the cycle cap (tribunal fix #4).
  */
-// @kern-source: dispatch:2425
+// @kern-source: dispatch:2452
 export async function finalizePlanWithReviewGate(finalPlan: CesarPlan, executors: Record<string,StepExecutor>, abortSignal: AbortSignal, cb: DispatchCallbacks): Promise<CesarPlan> {
   const MUTATING = new Set(['forge', 'teamforge', 'pipeline', 'agent', 'team-agent', 'delegate', 'self']);
   const planTouchedMutation = finalPlan.steps.some((s: any) => MUTATING.has(s.type) && (s.state === 'done' || s.state === 'failed'));

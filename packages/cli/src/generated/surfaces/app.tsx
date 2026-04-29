@@ -106,7 +106,7 @@ import { useStableInput } from '../../stable-input.js';
 
 import { parseProseToRichLines } from '../blocks/rich-text.js';
 
-// @kern-source: app:2185
+// @kern-source: app:2240
 export function App() {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -2531,6 +2531,13 @@ export function estimateOutputEventRows(event: OutputEvent, mode: string, toolOu
       return estimateToolCallRows(event as any, toolOutputExpanded, codeWidth);
     case 'response-meta':
       return 1;
+    case 'cesar-recap': {
+      const commandRows = Math.min(5, Array.isArray((event as any).commands) ? (event as any).commands.length : 0);
+      const fileRows = Array.isArray((event as any).files) && (event as any).files.length > 0 ? 1 : 0;
+      const warningRows = Math.min(3, Array.isArray((event as any).warnings) ? (event as any).warnings.length : 0);
+      const reasoningRows = (event as any).confidenceReasoning ? 1 : 0;
+      return 3 + commandRows + fileRows + warningRows + reasoningRows;
+    }
     case 'file-changes':
       return 1 + (((event as any).files as any[])?.length ?? 0);
     case 'dashboard':
@@ -2561,7 +2568,7 @@ export function estimateOutputEventRows(event: OutputEvent, mode: string, toolOu
   }
 }
 
-// @kern-source: app:968
+// @kern-source: app:975
 export function buildDisplayItems(blocks: OutputBlock[], toolOutputExpanded: boolean): OutputBlock[] {
   // Keep collapse as a per-block display concern, not a synthetic grouped
   // scroll unit. Grouped tool summaries make wheel scrolling jump because
@@ -2569,7 +2576,7 @@ export function buildDisplayItems(blocks: OutputBlock[], toolOutputExpanded: boo
   return blocks;
 }
 
-// @kern-source: app:976
+// @kern-source: app:983
 export function isToolCallLikeBlock(block: OutputBlock): boolean {
   const type = (block?.event as any)?.type;
   return type === 'tool-call' || type === 'tool-call-group';
@@ -2578,7 +2585,7 @@ export function isToolCallLikeBlock(block: OutputBlock): boolean {
 /**
  * Merge adjacent tool-call and tool-call-group blocks into one group so native/live renderers do not show repeated collapsed tool summaries.
  */
-// @kern-source: app:982
+// @kern-source: app:989
 export function coalesceToolCallBlocks(blocks: OutputBlock[]): OutputBlock[] {
   if (!Array.isArray(blocks) || blocks.length === 0) return [];
   const out: OutputBlock[] = [];
@@ -2625,7 +2632,7 @@ export function coalesceToolCallBlocks(blocks: OutputBlock[]): OutputBlock[] {
 /**
  * Choose the native Static archive count. When tools are expanded, keep the latest tool-call island live because Ink Static cannot repaint already-sealed collapsed tool summaries.
  */
-// @kern-source: app:1027
+// @kern-source: app:1034
 export function effectiveNativeArchiveBlockCount(blocks: OutputBlock[], baseArchiveCount: number, targetArchiveCount: number, toolOutputExpanded: boolean): number {
   if (!Array.isArray(blocks) || blocks.length === 0) return 0;
 
@@ -2658,12 +2665,12 @@ export function effectiveNativeArchiveBlockCount(blocks: OutputBlock[], baseArch
   return count;
 }
 
-// @kern-source: app:1061
+// @kern-source: app:1068
 export function estimateDisplayItemRows(item: OutputBlock, mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean): number {
   return estimateOutputEventRows(item.event, mode, toolOutputExpanded, thinkingExpanded);
 }
 
-// @kern-source: app:1066
+// @kern-source: app:1073
 export function historyBlocksForTranscript(blocks: OutputBlock[]): OutputBlock[] {
   if (blocks.length === 1 && blocks[0]?.event?.type === 'dashboard') return [];
   return blocks;
@@ -2672,7 +2679,7 @@ export function historyBlocksForTranscript(blocks: OutputBlock[]): OutputBlock[]
 /**
  * Native transcript history. While idle, the startup dashboard is live chrome. Once the first real transcript row exists, keep the dashboard as the first chat-history block so the AGON header scrolls with the conversation instead of disappearing.
  */
-// @kern-source: app:1072
+// @kern-source: app:1079
 export function nativeTranscriptBlocksForStatic(blocks: OutputBlock[]): OutputBlock[] {
   if (blocks.length === 1 && blocks[0]?.event?.type === 'dashboard') return [];
   return blocks;
@@ -2681,7 +2688,7 @@ export function nativeTranscriptBlocksForStatic(blocks: OutputBlock[]): OutputBl
 /**
  * Choose how many native transcript blocks are sealed into Static. The remaining tail stays live so recent rows can rerender while older rows remain in terminal scrollback.
  */
-// @kern-source: app:1079
+// @kern-source: app:1086
 export function nativeArchiveBlockCount(blocks: OutputBlock[], mode: string, rowBudget: number, toolOutputExpanded: boolean, thinkingExpanded: boolean): number {
   if (!Array.isArray(blocks) || blocks.length === 0) return 0;
 
@@ -2715,7 +2722,7 @@ export function nativeArchiveBlockCount(blocks: OutputBlock[], mode: string, row
 /**
  * Detect same-turn duplicate completed engine output. A new user-message resets the guard so an intentional repeat request can still show identical text.
  */
-// @kern-source: app:1111
+// @kern-source: app:1118
 export function isDuplicateEngineBlock(blocks: OutputBlock[], event: any): boolean {
   if (!event || event.type !== 'engine-block') return false;
   const content = cleanEngineOutput(String(event.content ?? '')).trim();
@@ -2737,25 +2744,25 @@ export function isDuplicateEngineBlock(blocks: OutputBlock[], event: any): boole
 /**
  * Append a transcript block with cap/archive handling while suppressing accidental duplicate engine output.
  */
-// @kern-source: app:1131
+// @kern-source: app:1138
 export function appendTranscriptBlock(blocks: OutputBlock[], event: any, archivePath: string): OutputBlock[] {
   if (isDuplicateEngineBlock(blocks, event)) return blocks;
   return appendBlockWithCap(blocks, { id: Date.now() + Math.random(), event }, archivePath);
 }
 
-// @kern-source: app:1138
+// @kern-source: app:1145
 export function normalizeTerminalMode(value: any): 'native'|'fullscreen' {
   return value === 'fullscreen' ? 'fullscreen' : 'native';
 }
 
-// @kern-source: app:1143
+// @kern-source: app:1150
 export function fileRailWidthForTerminal(termWidth: number, expanded: boolean): number {
   const safeWidth = Math.max(40, Math.floor(Number(termWidth) || 100));
   if (expanded) return Math.max(36, Math.min(84, Math.floor(safeWidth * 0.35)));
   return Math.max(28, Math.min(42, Math.floor(safeWidth * 0.22)));
 }
 
-// @kern-source: app:1150
+// @kern-source: app:1157
 export function fileRailMaxRowsForTerminal(termHeight: number, terminalMode: string, expanded: boolean): number {
   const safeHeight = Math.max(8, Math.floor(Number(termHeight) || 24));
   if (terminalMode === 'native') {
@@ -2769,7 +2776,7 @@ export function fileRailMaxRowsForTerminal(termHeight: number, terminalMode: str
 /**
  * Pure terminal replay harness: summarizes the layout-sensitive parts of the REPL for fixed viewport sizes so unit tests can catch native/fullscreen regressions without launching an interactive TTY.
  */
-// @kern-source: app:1161
+// @kern-source: app:1168
 export function buildTerminalReplaySnapshot(blocks: OutputBlock[], opts: any): {terminalMode:'native'|'fullscreen'; mode:string; termWidth:number; termHeight:number; visibleBudget:number; transcriptRowCount:number; staticBlockCount:number; liveBlockCount:number; fileRailWidth:number; fileRailRows:number; headerRows:number; lowerChromeRows:number} {
   const terminalMode = normalizeTerminalMode(opts?.terminalMode);
   const mode = String(opts?.mode ?? 'chat');
@@ -2823,7 +2830,7 @@ export function buildTerminalReplaySnapshot(blocks: OutputBlock[], opts: any): {
   };
 }
 
-// @kern-source: app:1216
+// @kern-source: app:1223
 export function parseMarkdownToRows(baseKey: string, text: string, wrapWidth: number, paddingLeft: number, borderColor: string): any[] {
   const rows: any[] = [];
   const cleaned = String(text ?? '').trim();
@@ -2931,7 +2938,7 @@ export function parseMarkdownToRows(baseKey: string, text: string, wrapWidth: nu
   return rows;
 }
 
-// @kern-source: app:1324
+// @kern-source: app:1331
 export function buildToolCallRows(baseKey: string, event: any, toolOutputExpanded: boolean): any[] {
   if (!event.input && !event.output && (event.tool === 'Delegate' || event.tool === 'delegate')) return [];
 
@@ -3293,7 +3300,7 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
   return rows;
 }
 
-// @kern-source: app:1686
+// @kern-source: app:1693
 export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any[] {
   if (!events || events.length === 0) return [];
 
@@ -3388,7 +3395,7 @@ export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any
   return rows;
 }
 
-// @kern-source: app:1781
+// @kern-source: app:1788
 export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean): any[] {
   const rows: any[] = [];
   const proseWidth = contentWidth(4);
@@ -3682,6 +3689,54 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
         pushSegmentsRow(`${baseKey}-meta`, 2, [{ text: parts.join(' · '), dimColor: true }]);
         return;
       }
+      case 'cesar-recap': {
+        const files = Array.isArray((event as any).files) ? (event as any).files : [];
+        const commands = Array.isArray((event as any).commands) ? (event as any).commands : [];
+        const warnings = Array.isArray((event as any).warnings) ? (event as any).warnings : [];
+        const toolSummary = Array.isArray((event as any).toolSummary) ? (event as any).toolSummary : [];
+        const confidence = typeof (event as any).confidence === 'number' ? `${Math.round((event as any).confidence)}% confidence` : '';
+        const seconds = typeof (event as any).durationMs === 'number' ? `${(((event as any).durationMs) / 1000).toFixed(1)}s` : '';
+        const failedTools = Number((event as any).failedTools ?? 0);
+        const statusIcon = failedTools > 0 ? icons().warning : icons().success;
+        const statusColor = failedTools > 0 ? '#fbbf24' : '#4ade80';
+        const toolLine = toolSummary.length > 0
+          ? `${(event as any).toolCount ?? toolSummary.length} tools: ${toolSummary.slice(0, 8).join(', ')}${toolSummary.length > 8 ? ', ...' : ''}`
+          : `${(event as any).toolCount ?? 0} tools`;
+        const fileGlyph = (status: string) => status === 'edited' ? 'M' : status === 'created' ? '+' : 'r';
+        pushSegmentsRow(`${baseKey}-recap-head`, 1, [{ text: '◆ Cesar recap', color: '#f97316', bold: true }]);
+        pushSegmentsRow(`${baseKey}-recap-outcome`, 1, [
+          { text: statusIcon, color: statusColor },
+          { text: ` ${(event as any).outcome ?? 'Completed'}` },
+          { text: ` · ${(event as any).mode ?? 'self'}`, dimColor: true },
+          confidence ? { text: ` · ${confidence}`, dimColor: true } : null,
+          seconds ? { text: ` · ${seconds}`, dimColor: true } : null,
+        ].filter(Boolean));
+        pushSegmentsRow(`${baseKey}-recap-tools`, 1, [{ text: `  ${toolLine}${failedTools > 0 ? ` · ${failedTools} failed` : ''}`, dimColor: true }]);
+        if ((event as any).confidenceReasoning) {
+          pushSegmentsRow(`${baseKey}-recap-why`, 1, [{ text: `  why: ${(event as any).confidenceReasoning}`, dimColor: true, italic: true, color: '#8b8b8b' }]);
+        }
+        commands.slice(0, 5).forEach((cmd: any, index: number) => {
+          const failed = String(cmd.status).toLowerCase() === 'error';
+          pushSegmentsRow(`${baseKey}-recap-cmd-${index}`, 1, [
+            { text: `  ${failed ? icons().fail : icons().success}`, color: failed ? '#ef4444' : '#4ade80' },
+            { text: ` ${cmd.label}` },
+            { text: ` · ${cmd.command}`, dimColor: true },
+          ]);
+        });
+        if (files.length > 0) {
+          pushSegmentsRow(`${baseKey}-recap-files`, 1, [{
+            text: `  files: ${files.slice(0, 5).map((f: any) => `${fileGlyph(String(f.status))} ${f.relPath ?? f.path}`).join(', ')}${files.length > 5 ? `, +${files.length - 5} more` : ''}`,
+            dimColor: true,
+          }]);
+        }
+        warnings.slice(0, 3).forEach((warning: string, index: number) => {
+          pushSegmentsRow(`${baseKey}-recap-warning-${index}`, 1, [
+            { text: `  ${icons().warning}`, color: '#fbbf24' },
+            { text: ` ${warning}`, color: '#fbbf24' },
+          ]);
+        });
+        return;
+      }
       case 'file-changes':
         pushSegmentsRow(`${baseKey}-files-head`, 2, [{ text: 'Files changed', bold: true }]);
         (event.files ?? []).forEach((file: any, index: number) => {
@@ -3791,7 +3846,7 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
   return rows;
 }
 
-// @kern-source: app:3684
+// @kern-source: app:3739
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

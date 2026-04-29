@@ -110,6 +110,19 @@ union name=OutputEvent discriminant=type
     field name=cost type=number optional=true
   variant name=confidence-update
     field name=value type="number|null"
+  variant name=cesar-recap
+    field name=engineId type=string
+    field name=mode type=string
+    field name=outcome type=string
+    field name=durationMs type=number
+    field name=confidence type="number|null" optional=true
+    field name=confidenceReasoning type=string optional=true
+    field name=toolCount type=number
+    field name=failedTools type=number optional=true
+    field name=toolSummary type="string[]"
+    field name=commands type="Array<{ label: string; command: string; status: string }>"
+    field name=files type="Array<{ path: string; relPath: string; status: string; touchCount: number }>"
+    field name=warnings type="string[]"
   variant name=file-changes
     field name=files type="{ path: string; status: 'modified'|'created'|'deleted'; additions: number; deletions: number }[]"
   variant name=dashboard

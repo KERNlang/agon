@@ -28,8 +28,10 @@ import from="../cesar/routing.js" names="deriveRoutingHints"
 import from="../cesar/routing.js" names="shouldUseAgentTeam"
 import from="../cesar/session.js" names="buildCesarSystemPrompt,resolveCesarBackend"
 import from="../cesar/tool-observability.js" names="replayCesarHarnessLogs"
+import from="../cesar/recap.js" names="createCesarRecapCapture,recordCesarRecapEvent,buildCesarTurnRecapEvent,shouldEmitCesarRecap"
 import from="@agon/core" names="createSpeculator,loadOrCreateActiveThread"
 import from="@agon/core" names="SpeculatorMemberConfig" types=true
+import from="./file-tracker.js" names="listFiles"
 
 // ── Thread outcome capture helper ─────────────────────────────────────
 // After any non-trivial slash command (forge, brainstorm, tribunal, etc.),
@@ -370,9 +372,20 @@ fn name=routeWithCesar async=true params="input:string, images:ImageAttachment[]
     cb.setPendingImages(() => []);
     try {
       const routingHints = deriveRoutingHints(input, cb.ctx);
-      const result = await handleCesarBrain(input, cb.dispatch, cb.ctx, images);
+      const recapStartedFiles = listFiles();
+      const recapCapture = createCesarRecapCapture(input, Date.now());
+      const cesarDispatch = (event: any) => {
+        recordCesarRecapEvent(recapCapture, event);
+        cb.dispatch(event);
+      };
+      const result = await handleCesarBrain(input, cesarDispatch as any, cb.ctx, images);
+      const emitRecap = () => {
+        const recapEvent = buildCesarTurnRecapEvent(recapCapture, result, recapStartedFiles, listFiles());
+        if (shouldEmitCesarRecap(recapEvent)) cb.dispatch(recapEvent as any);
+      };
       const proposedPlan: CesarPlan | undefined = cb.ctx.cesar?.proposedPlan;
       if (proposedPlan && proposedPlan.state === 'awaiting_approval') {
+        emitRecap();
         cb.setActivePlan(proposedPlan);
         await handleProposedCesarPlan(proposedPlan, cb);
         return false;
@@ -415,6 +428,7 @@ fn name=routeWithCesar async=true params="input:string, images:ImageAttachment[]
           inputLen: input.length,
         }) + '\n');
       } catch { /* decision logging is best-effort */ }
+      emitRecap();
       if (result.delegated && result.action) {
         const labelSource = (result.task && result.task.trim())
           ? result.task

@@ -443,26 +443,22 @@ export function StatusLine({ startTime, engineId, color }: { startTime:number; e
 const BackgroundJobRail = React.memo(function BackgroundJobRail({ jobs }: { jobs:Job[] }) {
   return (
     <Box paddingX={1}>
-      {jobs.length > 0 && (
-                <Text dimColor>{'jobs: '}</Text>
-      )}
-      {(jobs).map((job, i) => (
-        <React.Fragment key={job.id}>
-                  <Text key={job.id}>
-                    <Text color={job.state === 'running' ? 'yellow' : job.state === 'done' ? 'green' : 'red'}>
-                      {'['}{job.id}{'] '}{job.type}{' '}
-                      {job.state === 'running' ? '...' : job.state === 'done' ? 'done' : 'failed'}
-                    </Text>
-                    {i < jobs.length - 1 && <Text dimColor>{'  '}</Text>}
-                  </Text>
-        </React.Fragment>
+      {jobs.length > 0 ? <Text dimColor>{'jobs: '}</Text> : null}
+      {jobs.map((job: Job, i: number) => (
+        <Text key={job.id}>
+          <Text color={job.state === 'running' ? 'yellow' : job.state === 'done' ? 'green' : 'red'}>
+            {'['}{job.id}{'] '}{job.type}{' '}
+            {job.state === 'running' ? '...' : job.state === 'done' ? 'done' : 'failed'}
+          </Text>
+          {i < jobs.length - 1 && <Text dimColor>{'  '}</Text>}
+        </Text>
       ))}
     </Box>
   );
 });
 export { BackgroundJobRail };
 
-// @kern-source: status:702
+// @kern-source: status:704
 const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confidence, spinner, engines, startTime, streamSnippet, isActive, planModeQueued, autoModeQueued, activePlanState, activePlan, scoreboard, rationale }: { cesarId:string; confidence?:number|null; spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; startTime:number; streamSnippet?:{ engineId: string; line: string } | null; isActive:boolean; planModeQueued?:boolean; autoModeQueued?:boolean; activePlanState?:string|null; activePlan?:any; scoreboard?:Scoreboard|null; rationale?:ModeRationale|null }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {

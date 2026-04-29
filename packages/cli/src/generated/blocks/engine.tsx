@@ -223,13 +223,17 @@ export function DashboardView({ event }: { event:OutputEvent & { type: 'dashboar
         </Box>
       </Box>
       <Text> </Text>
-      <Text dimColor>{'  Just talk, or type '}<Text color="#f97316">{'/'}</Text>{' for commands.'}</Text>
+      <Text dimColor>
+        {'  Just talk, type '}<Text color="#f97316">{'/'}</Text>{' for commands, '}
+        <Text color="#f97316">{'Tab'}</Text>{' plan, '}
+        <Text color="#f97316">{'Ctrl+A'}</Text>{' auto.'}
+      </Text>
       <Text> </Text>
     </Box>
   );
 }
 
-// @kern-source: engine:379
+// @kern-source: engine:383
 function TableView({ headers, rows }: { headers:string[]; rows:string[][] }) {
   const widths = headers.map((h: string, i: number) =>
     Math.max(h.length, ...rows.map((r: string[]) => (r[i] ?? '').length)) + 2,
@@ -253,7 +257,7 @@ function TableView({ headers, rows }: { headers:string[]; rows:string[][] }) {
   );
 }
 
-// @kern-source: engine:408
+// @kern-source: engine:412
 const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolOutputExpanded, thinkingExpanded }: { event:OutputEvent; mode:string; toolOutputExpanded?:boolean; thinkingExpanded?:boolean }) {
   switch (event.type) {
     case 'text': {
@@ -825,7 +829,7 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
 });
 export { OutputBlockView };
 
-// @kern-source: engine:986
+// @kern-source: engine:990
 const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:OutputBlock[] }) {
   const labelForTool = (raw: unknown) => {
     const toolKey = String(raw ?? '').toLowerCase();
@@ -926,7 +930,7 @@ const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:Out
 });
 export { ToolCallGroup };
 
-// @kern-source: engine:1104
+// @kern-source: engine:1108
 const DebateGroup = React.memo(function DebateGroup({ blocks }: { blocks:OutputBlock[] }) {
   const round = (blocks[0]?.event as any)?.round ?? '?';
   const w = contentWidth(6);
@@ -952,7 +956,7 @@ const DebateGroup = React.memo(function DebateGroup({ blocks }: { blocks:OutputB
 });
 export { DebateGroup };
 
-// @kern-source: engine:1133
+// @kern-source: engine:1137
 const BidGroup = React.memo(function BidGroup({ blocks }: { blocks:OutputBlock[] }) {
   const w = contentWidth(6);
   return (
@@ -1114,7 +1118,7 @@ export function parsePatchPreview(rawInput: string, parsed: any): { files:string
   return { files, lines, additions, deletions };
 }
 
-// @kern-source: engine:1090
+// @kern-source: engine:1094
 export function extractSummary(text: string, maxLen: number): string {
   let s = text.replace(/<think>[\s\S]*?<\/think>\s*/gi, '');
   s = s.replace(/^#+\s+.+\n/gm, '');

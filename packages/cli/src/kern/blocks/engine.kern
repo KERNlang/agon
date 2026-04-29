@@ -368,7 +368,11 @@ screen name=DashboardView target=ink export=true
             </Box>
           </Box>
           <Text> </Text>
-          <Text dimColor>{'  Just talk, or type '}<Text color="#f97316">{'/'}</Text>{' for commands.'}</Text>
+          <Text dimColor>
+            {'  Just talk, type '}<Text color="#f97316">{'/'}</Text>{' for commands, '}
+            <Text color="#f97316">{'Tab'}</Text>{' plan, '}
+            <Text color="#f97316">{'Ctrl+A'}</Text>{' auto.'}
+          </Text>
           <Text> </Text>
         </Box>
       );

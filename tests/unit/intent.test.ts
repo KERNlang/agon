@@ -344,6 +344,20 @@ describe('Intent Detection — Natural Language', () => {
     }
   });
 
+  it('parses explicit natural-language agent shortcuts without waiting for Cesar', () => {
+    const direct = detectIntent('agent fix paste handling and run tests');
+    expect(direct.type).toBe('agent');
+    if (direct.type === 'agent') expect(direct.input).toBe('fix paste handling and run tests');
+
+    const mode = detectIntent('agent mode inspect the auth flow');
+    expect(mode.type).toBe('agent');
+    if (mode.type === 'agent') expect(mode.input).toBe('inspect the auth flow');
+
+    const autonomous = detectIntent('autonomous agent update the docs');
+    expect(autonomous.type).toBe('agent');
+    if (autonomous.type === 'agent') expect(autonomous.input).toBe('update the docs');
+  });
+
   it('leaves natural-language review requests to Cesar', () => {
     const r = detectIntent('review this code for subtle bugs');
     expect(r.type).toBe('auto');

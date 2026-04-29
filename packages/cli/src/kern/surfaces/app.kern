@@ -2186,7 +2186,7 @@ fn name=buildTranscriptRows params="blocks:OutputBlock[], mode:string, toolOutpu
             { text: ' for commands. ', dimColor: true },
             { text: 'Tab', color: '#f97316' },
             { text: ' plan · ', dimColor: true },
-            { text: 'Shift+Tab', color: '#f97316' },
+            { text: 'Ctrl+A', color: '#f97316' },
             { text: ' auto', dimColor: true },
           ]);
           return;
@@ -3341,7 +3341,7 @@ screen name=App target=ink
     >>>
 
   // ── Keyboard handling — pure decision tree + thin dispatcher ──
-  callback name=handleKeyboardInput params="input:string,key:any" deps="modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,activePlan,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,toggleSelectionMode,startupOnly,terminalMode"
+  callback name=handleKeyboardInput params="input:string,key:any" deps="modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,autoModeQueued,activePlan,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,toggleSelectionMode,startupOnly,terminalMode"
     handler <<<
       if (isTerminalFocusReport(input)) return;
 

@@ -49,7 +49,7 @@ export function TokenGauge({ tokens, maxTokens }: { tokens:number; maxTokens:num
   );
 }
 
-// @kern-source: status:93
+// @kern-source: status:166
 function AgonTip() {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -67,7 +67,7 @@ function AgonTip() {
   );
 }
 
-// @kern-source: status:106
+// @kern-source: status:179
 export function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd, cwd, branch, explorationMode, toolOutputExpanded, autoModeQueued, isActive, fullscreenEnabled, selectionMode }: { cesarId:string; chatMessageCount:number; totalTokens:number; totalCostUsd:number; cwd:string; branch?:string; explorationMode?:boolean; toolOutputExpanded?:boolean; autoModeQueued?:boolean; isActive?:boolean; fullscreenEnabled?:boolean; selectionMode?:boolean }) {
   const cost = totalCostUsd > 0 ? `$${totalCostUsd.toFixed(2)}` : '';
   const msgs = chatMessageCount;
@@ -110,7 +110,7 @@ export function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd
   );
 }
 
-// @kern-source: status:164
+// @kern-source: status:237
 export function StatusLine({ startTime, engineId, color }: { startTime:number; engineId?:string; color?:number }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -145,7 +145,7 @@ export function StatusLine({ startTime, engineId, color }: { startTime:number; e
   );
 }
 
-// @kern-source: status:193
+// @kern-source: status:266
 const BackgroundJobRail = React.memo(function BackgroundJobRail({ jobs }: { jobs:Job[] }) {
   return (
     <Box paddingX={1}>
@@ -168,8 +168,8 @@ const BackgroundJobRail = React.memo(function BackgroundJobRail({ jobs }: { jobs
 });
 export { BackgroundJobRail };
 
-// @kern-source: status:213
-const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confidence, spinner, engines, startTime, streamSnippet, isActive, planModeQueued, autoModeQueued, activePlanState, scoreboard, rationale }: { cesarId:string; confidence?:number|null; spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; startTime:number; streamSnippet?:{ engineId: string; line: string } | null; isActive:boolean; planModeQueued?:boolean; autoModeQueued?:boolean; activePlanState?:string|null; scoreboard?:Scoreboard|null; rationale?:ModeRationale|null }) {
+// @kern-source: status:286
+const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confidence, spinner, engines, startTime, streamSnippet, isActive, planModeQueued, autoModeQueued, activePlanState, activePlan, scoreboard, rationale }: { cesarId:string; confidence?:number|null; spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; startTime:number; streamSnippet?:{ engineId: string; line: string } | null; isActive:boolean; planModeQueued?:boolean; autoModeQueued?:boolean; activePlanState?:string|null; activePlan?:any; scoreboard?:Scoreboard|null; rationale?:ModeRationale|null }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
     return (value) => setTimeout(() => setter(value), 0);
@@ -186,6 +186,7 @@ const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confide
     return () => clearInterval(_animId);
   }, [isActive]);
 
+  const planGauge = buildPlanPhaseGauge(activePlan, 12);
   // Plan badge (shared between idle and active)
   const hasPlan = planModeQueued || autoModeQueued || (activePlanState && ['planning', 'awaiting_approval', 'running', 'paused'].includes(activePlanState));
   let planLabel = '';
@@ -200,11 +201,21 @@ const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confide
   if (!isActive) {
     const confPart = (confidence !== null && confidence !== undefined) ? ` ${confidence}%` : '';
     return (
-      <Box paddingTop={0}>
+      <Box paddingTop={0} flexDirection="column">
         <Text>
           {hasPlan ? <><Text color={autoModeQueued ? '#f97316' : '#c084fc'} bold>{`\u25c8 ${planLabel.toUpperCase()}`}</Text><Text dimColor>{' \u2502 '}</Text></> : null}
           <Text dimColor>{'\u25c6 '}{cesarId}{confPart}{' \u2502 idle'}</Text>
         </Text>
+        {planGauge.visible ? (
+          <Text>
+            <Text color={planGauge.color} bold>{'PLAN '}{planGauge.shortId}</Text>
+            <Text dimColor>{' \u00b7 '}{planGauge.label}{' '}</Text>
+            <Text color={planGauge.color}>{planGauge.bar}</Text>
+            <Text dimColor>{' '}{planGauge.pct}{'% \u00b7 phase: '}{planGauge.phase}</Text>
+            {planGauge.current ? <Text dimColor>{' \u00b7 '}{planGauge.current}</Text> : null}
+            {planGauge.failed > 0 ? <Text color="#ef4444">{' \u00b7 '}{planGauge.failed}{' failed'}</Text> : null}
+          </Text>
+        ) : null}
       </Box>
     );
   }
@@ -283,6 +294,16 @@ const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confide
           {snippetStr ? <><Text dimColor>{' \u2502 '}</Text><Text dimColor wrap="truncate">{snippetStr}</Text></> : null}
         </Text>
       </Box>
+      {planGauge.visible ? (
+        <Text>
+          <Text color={planGauge.color} bold>{'PLAN '}{planGauge.shortId}</Text>
+          <Text dimColor>{' \u00b7 '}{planGauge.label}{' '}</Text>
+          <Text color={planGauge.color}>{planGauge.bar}</Text>
+          <Text dimColor>{' '}{planGauge.pct}{'% \u00b7 phase: '}{planGauge.phase}</Text>
+          {planGauge.current ? <Text dimColor>{' \u00b7 '}{planGauge.current}</Text> : null}
+          {planGauge.failed > 0 ? <Text color="#ef4444">{' \u00b7 '}{planGauge.failed}{' failed'}</Text> : null}
+        </Text>
+      ) : null}
       {rationaleStr ? <Text dimColor>{rationaleStr}</Text> : null}
       {scoreboardLines ? <Text dimColor>{scoreboardLines}</Text> : null}
     </Box>
@@ -318,3 +339,78 @@ export const AGON_TIPS: string[] = [
   'Even Rome was built with tests.',
   'The tribunal has spoken — but the emperor decides.',
 ];
+
+/**
+ * Build a compact phase/progress gauge from a CesarPlan-like object. Pure helper so tests can verify plan progress without rendering Ink.
+ */
+// @kern-source: status:91
+export function buildPlanPhaseGauge(plan: any, width: number = 12): any {
+  const steps = Array.isArray(plan?.steps) ? plan.steps : [];
+  if (!plan || steps.length === 0) {
+    return { visible: false };
+  }
+
+  const total = steps.length;
+  const stepState = (s: any) => String(s?.state ?? 'pending');
+  const done = steps.filter((s: any) => stepState(s) === 'done').length;
+  const skipped = steps.filter((s: any) => stepState(s) === 'skipped').length;
+  const failed = steps.filter((s: any) => stepState(s) === 'failed').length;
+  const runningIndex = steps.findIndex((s: any) => stepState(s) === 'running');
+  const failedIndex = steps.findIndex((s: any) => stepState(s) === 'failed');
+  const nextIndex = steps.findIndex((s: any) => ['pending', 'blocked'].includes(stepState(s)));
+  const completed = done + skipped;
+  const planState = String(plan.state ?? '');
+
+  let currentIndex = runningIndex >= 0
+    ? runningIndex
+    : (planState === 'paused' && failedIndex >= 0)
+      ? failedIndex
+      : nextIndex >= 0
+        ? nextIndex
+        : Math.max(0, total - 1);
+
+  if (currentIndex < 0) currentIndex = 0;
+  if (currentIndex >= total) currentIndex = total - 1;
+
+  const rawPct = total > 0 ? Math.round((completed / total) * 100) : 0;
+  const pct = planState === 'done' ? 100 : Math.max(0, Math.min(100, rawPct));
+  const barWidth = Math.max(4, Math.min(24, Math.floor(width || 12)));
+  const filled = Math.max(0, Math.min(barWidth, Math.round((pct / 100) * barWidth)));
+  const bar = '\u2588'.repeat(filled) + '\u2591'.repeat(barWidth - filled);
+  const phaseMap: Record<string, string> = {
+    planning: 'planning',
+    awaiting_approval: 'approval',
+    running: 'executing',
+    paused: 'paused',
+    done: 'complete',
+    cancelled: 'cancelled',
+  };
+  const phase = phaseMap[planState] ?? (planState || 'plan');
+  const colorMap: Record<string, string> = {
+    planning: '#c084fc',
+    awaiting_approval: '#60a5fa',
+    running: '#fbbf24',
+    paused: '#f97316',
+    done: '#4ade80',
+    cancelled: '#94a3b8',
+  };
+  const color = failed > 0 ? '#ef4444' : (colorMap[planState] ?? '#c084fc');
+  const description = String(steps[currentIndex]?.description ?? '').replace(/\s+/g, ' ').trim();
+  const current = description.length > 42 ? description.slice(0, 42) + '\u2026' : description;
+  const rawId = String(plan.id ?? 'plan');
+  const shortId = rawId.startsWith('cplan-') ? rawId.slice(6, 16) : rawId.slice(0, 10);
+
+  return {
+    visible: true,
+    shortId,
+    label: `Step ${currentIndex + 1}/${total}`,
+    phase,
+    bar,
+    pct,
+    done,
+    total,
+    failed,
+    current,
+    color,
+  };
+}

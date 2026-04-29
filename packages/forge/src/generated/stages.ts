@@ -12,10 +12,19 @@ import type { StageResult, ForgeEventCallback, WorktreeEntry } from '../types.js
 
 // @kern-source: stages:7
 function formatDispatchError(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
+  const message = err instanceof Error ? err.message : String(err);
+  const snippet = (err as any)?.stdout
+    ? String((err as any).stdout).slice(0, 240).replace(/\s+/g, ' ').trim()
+    : (err as any)?.stderr
+      ? String((err as any).stderr).slice(0, 240).replace(/\s+/g, ' ').trim()
+      : '';
+  if (snippet) {
+    return `${message} | snippet: ${snippet}${(err as any)?.stdout?.length > 240 || (err as any)?.stderr?.length > 240 ? '…' : ''}`;
+  }
+  return message;
 }
 
-// @kern-source: stages:12
+// @kern-source: stages:21
 function makeFailedResult(engineId: string, error: string, durationMs?: number): EngineResult {
   return {
     engineId,
@@ -33,7 +42,7 @@ function makeFailedResult(engineId: string, error: string, durationMs?: number):
 /**
  * Pick a one-shot fallback engine for a failed forge dispatch, excluding engines already used in this run slice.
  */
-// @kern-source: stages:27
+// @kern-source: stages:36
 export function selectForgeFallbackEngine(registry: EngineRegistry, sourceId: string, taskClass?: string, usedIds?: string[]): string|null {
   const used = new Set<string>(usedIds ?? []);
   used.add(sourceId);
@@ -48,12 +57,12 @@ export function selectForgeFallbackEngine(registry: EngineRegistry, sourceId: st
   return null;
 }
 
-// @kern-source: stages:43
+// @kern-source: stages:52
 function buildFallbackRetryPrompt(prompt: string, failedEngine: string, phase: string, error: string): string {
   return `${prompt}\n\n## FALLBACK RETRY\nYou are rerunning the same forge step after engine "${failedEngine}" failed during ${phase}.\nFailure: ${error}\nComplete the original task normally.`;
 }
 
-// @kern-source: stages:48
+// @kern-source: stages:57
 export async function runForgeEngineAttempt(opts: {engineId:string,prompt:string,dispatchMode:'exec'|'review',metricPhase:'stage1'|'stage1-fallback'|'stage2-scout'|'stage2-scout-fallback'|'stage2-follower'|'stage2-fallback',fitnessCmd:string,config:Required<AgonConfig>,registry:EngineRegistry,adapter:EngineAdapter,root:string,baseSha:string,forgeDir:string,worktrees:WorktreeEntry[],onEvent?:ForgeEventCallback,signal?:AbortSignal,eventType:string,eventData?:Record<string,unknown>,worktreePath?:string}): Promise<{result:EngineResult,metric:DispatchMetric,dispatchResult:any,worktreePath:string}> {
   const engine = opts.registry.get(opts.engineId);
   const wtPath = opts.worktreePath ?? join(opts.forgeDir, `wt-${opts.engineId}`);
@@ -124,7 +133,7 @@ export async function runForgeEngineAttempt(opts: {engineId:string,prompt:string
   return { result, metric, dispatchResult, worktreePath: wtPath };
 }
 
-// @kern-source: stages:119
+// @kern-source: stages:128
 export async function runBaseline(opts: {cwd:string, baseSha:string, fitnessCmd:string, fitnessTimeout:number, forgeDir:string, onEvent?:ForgeEventCallback}): Promise<boolean> {
   opts.onEvent?.({ type: 'baseline:start' });
 
@@ -148,7 +157,7 @@ export async function runBaseline(opts: {cwd:string, baseSha:string, fitnessCmd:
   }
 }
 
-// @kern-source: stages:143
+// @kern-source: stages:152
 export async function runStage1(opts: {starter:string, forgePrompt:string, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal, taskClass?:string, enginePrompts?:Map<string,string>}): Promise<StageResult> {
   opts.onEvent?.({ type: 'stage1:start', engineId: opts.starter });
 
@@ -243,7 +252,7 @@ export async function runStage1(opts: {starter:string, forgePrompt:string, fitne
   return { engineResults, accepted, winner: result?.pass ? result.engineId : null, metrics };
 }
 
-// @kern-source: stages:238
+// @kern-source: stages:247
 export async function runStage2(opts: {challengers:string[], forgePrompt:string, enginePrompts?:Map<string,string>, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal}): Promise<StageResult> {
   opts.onEvent?.({ type: 'stage2:start' });
 
@@ -341,7 +350,7 @@ export async function runStage2(opts: {challengers:string[], forgePrompt:string,
   return { engineResults: allResults, accepted: false, winner: null, metrics };
 }
 
-// @kern-source: stages:336
+// @kern-source: stages:345
 export async function runStage2WithPeek(opts: {challengers:string[], forgePrompt:string, enginePrompts?:Map<string,string>, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal}): Promise<StageResult> {
   if (opts.challengers.length <= 1) {
     // Only one challenger — no peek possible, use normal stage2

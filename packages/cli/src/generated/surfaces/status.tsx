@@ -76,9 +76,16 @@ export function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd
     claude: 1000000, codex: 200000, gemini: 1000000, opencode: 200000,
   };
   const contextBudget = contextWindows[cesarId] ?? 200000;
+  const vitals = telemetryVitals ? Array.from(telemetryVitals.values()) : [];
+  const visibleVitals = vitals.slice(0, 8);
+  const hiddenVitals = Math.max(0, vitals.length - visibleVitals.length);
+  const shortEngine = (id: string) => {
+    const text = String(id ?? '');
+    return text.length > 18 ? text.slice(0, 15) + '\u2026' : text;
+  };
 
   return (
-    <Box paddingTop={0}>
+    <Box paddingTop={0} flexDirection="column">
       <Text>
         {explorationMode ? <Text color="#22d3ee" bold>{'[explore] '}</Text> : null}
         <Text color="#60a5fa">{cwd}</Text>
@@ -105,25 +112,28 @@ export function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd
         {selectionMode !== undefined && <Text color="#f59e0b">{'Ctrl+G'}</Text>}
         {selectionMode !== undefined && <Text dimColor>{')'}</Text>}
         {isActive ? <Text dimColor>{' \u00b7 /btw ask'}</Text> : null}
-        {telemetryVitals && telemetryVitals.size > 0 ? (
-          <Text dimColor>{' \u00b7 engines: '}</Text>
-        ) : null}
-        {telemetryVitals && Array.from(telemetryVitals.values()).map((v: any) => (
-          <Text key={v.engineId}>
+      </Text>
+      {visibleVitals.length > 0 ? (
+        <Text>
+          <Text dimColor>{'engines: '}</Text>
+          {visibleVitals.map((v: any) => (
+            <Text key={v.engineId}>
             <Text color={v.state === 'stalled' ? '#ef4444' : v.state === 'offline' ? '#9ca3af' : v.state === 'fallback' ? '#f97316' : '#4ade80'}>
               {v.state === 'stalled' ? '\u26a0' : v.state === 'offline' ? '\u2718' : v.state === 'fallback' ? '\u21c4' : '\u25cf'}
             </Text>
-            <Text dimColor>{v.engineId}</Text>
+            <Text dimColor>{shortEngine(v.engineId)}</Text>
             {v.fallbackTo ? <Text dimColor>{`\u2192${v.fallbackTo}`}</Text> : null}
             <Text dimColor>{' '}</Text>
           </Text>
-        ))}
-      </Text>
+          ))}
+          {hiddenVitals > 0 ? <Text dimColor>{`+${hiddenVitals} more`}</Text> : null}
+        </Text>
+      ) : null}
     </Box>
   );
 }
 
-// @kern-source: status:251
+// @kern-source: status:261
 export function StatusLine({ startTime, engineId, color }: { startTime:number; engineId?:string; color?:number }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -158,7 +168,7 @@ export function StatusLine({ startTime, engineId, color }: { startTime:number; e
   );
 }
 
-// @kern-source: status:280
+// @kern-source: status:290
 const BackgroundJobRail = React.memo(function BackgroundJobRail({ jobs }: { jobs:Job[] }) {
   return (
     <Box paddingX={1}>
@@ -181,7 +191,7 @@ const BackgroundJobRail = React.memo(function BackgroundJobRail({ jobs }: { jobs
 });
 export { BackgroundJobRail };
 
-// @kern-source: status:300
+// @kern-source: status:310
 const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confidence, spinner, engines, startTime, streamSnippet, isActive, planModeQueued, autoModeQueued, activePlanState, activePlan, scoreboard, rationale }: { cesarId:string; confidence?:number|null; spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; startTime:number; streamSnippet?:{ engineId: string; line: string } | null; isActive:boolean; planModeQueued?:boolean; autoModeQueued?:boolean; activePlanState?:string|null; activePlan?:any; scoreboard?:Scoreboard|null; rationale?:ModeRationale|null }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {

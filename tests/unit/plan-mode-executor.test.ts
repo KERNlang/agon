@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { handleCesarBrainMock, runDelegateMock } = vi.hoisted(() => ({
+const { handleCesarBrainMock, runDelegateMock, runForgeMock } = vi.hoisted(() => ({
   handleCesarBrainMock: vi.fn(),
   runDelegateMock: vi.fn(),
+  runForgeMock: vi.fn(),
 }));
 
 vi.mock('../../packages/cli/src/generated/cesar/brain.js', () => ({
@@ -10,7 +11,7 @@ vi.mock('../../packages/cli/src/generated/cesar/brain.js', () => ({
 }));
 
 vi.mock('@agon/forge', () => ({
-  runForge: vi.fn(),
+  runForge: runForgeMock,
   runBrainstorm: vi.fn(),
   runTribunal: vi.fn(),
   runCampfire: vi.fn(),
@@ -55,6 +56,7 @@ describe('plan-mode self executor', () => {
   beforeEach(() => {
     handleCesarBrainMock.mockReset();
     runDelegateMock.mockReset();
+    runForgeMock.mockReset();
   });
 
   it('executes self steps through Cesar brain when live dispatch is available', async () => {
@@ -89,5 +91,30 @@ describe('plan-mode self executor', () => {
     expect(runDelegateMock).toHaveBeenCalledOnce();
     expect(result.result.status).toBe('success');
     expect(result.result.output).toBe('delegate response');
+  });
+
+  it('uses active engines and streams progress for plan forge steps without explicit engines', async () => {
+    const events: any[] = [];
+    runForgeMock.mockImplementation(async (options: any, _registry: any, _adapter: any, onEvent?: (event: any) => void) => {
+      expect(options.engines).toEqual(['claude', 'gemini', 'kimi']);
+      onEvent?.({ type: 'stage1:dispatch', engineId: 'gemini' });
+      onEvent?.({ type: 'stage1:score', engineId: 'gemini', data: { score: 91 } });
+      return { winner: null, results: {} };
+    });
+
+    const executors = buildStepExecutors(makeCtx({ activeEngines: () => ['claude', 'gemini', 'kimi'] }), (event: any) => events.push(event));
+    const result = await executors.forge.execute({
+      id: 'forge-step',
+      type: 'forge',
+      description: 'build a status dashboard',
+      fitnessCmd: 'npm test',
+      state: 'pending',
+    } as any, {});
+
+    expect(runForgeMock).toHaveBeenCalledOnce();
+    expect(result.result.status).toBe('failure');
+    expect(events.some((event) => event.type === 'info' && String(event.message).includes('claude, gemini, kimi'))).toBe(true);
+    expect(events.some((event) => event.type === 'progress-update' && event.engines?.some((engine: any) => engine.id === 'gemini' && engine.done === true && engine.score === '91'))).toBe(true);
+    expect(events.some((event) => event.type === 'progress-clear')).toBe(true);
   });
 });

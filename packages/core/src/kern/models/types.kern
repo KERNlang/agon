@@ -186,6 +186,8 @@ config name=AgonConfig
   field name=cesarPipelineThreshold type=number default=93
   field name=cesarEngine type=string default=claude
   field name=cesarBackend type="'cli'|'api'|'auto'" default=auto
+  field name=cesarActingFallback type="'ask'|'auto'|'off'" default=ask
+    doc "Controls whether Agon may switch to another engine as acting Cesar when the configured Cesar engine returns no response. 'ask'=prompt before switching, 'auto'=switch silently after same-engine retries fail, 'off'=never switch engines."
   field name=cesarMcpEnabled type=boolean default=false
   field name=cesarMcpConfigPath type=string default=""
   field name=cesarAutoApproveMode type="'off'|'safe-only'|'cost-bounded'|'always'" default="'safe-only'"

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { askChoiceQuestion, buildAgentAutoResumePrompt, buildBrainstormContinuationMessage, buildDelegatedContinuationPrompt, buildPlanCallbacks, buildReviewAbsorptionPrompt, collectRecentEngineContext, extractExecutionSpec, formatCesarPlanRuntimeStatus, formatCesarRecoveryStatus, isCesarPlanApprovalInput, isCesarPlanResumeInput, isCesarPlanStatusInput, isStrongCesarPlanApprovalInput, shouldApprovePendingCesarPlanInput, shouldAutoContinueDelegatedResult, shouldAutoResumeAgentResult } from '../../packages/cli/src/generated/signals/dispatch.js';
+import { askChoiceQuestion, buildAgentAutoResumePrompt, buildBrainstormContinuationMessage, buildDelegatedContinuationPrompt, buildPlanCallbacks, buildReviewAbsorptionPrompt, collectRecentEngineContext, extractExecutionSpec, formatCesarPlanRuntimeStatus, formatCesarRecoveryStatus, isCesarPlanApprovalInput, isCesarPlanResumeInput, isCesarPlanStatusInput, isStrongCesarPlanApprovalInput, normalizeCesarActingFallbackMode, shouldApprovePendingCesarPlanInput, shouldAutoContinueDelegatedResult, shouldAutoResumeAgentResult } from '../../packages/cli/src/generated/signals/dispatch.js';
 
 describe('Dispatch routing helpers', () => {
   it('extracts forge fitness commands from conversational input', () => {
@@ -155,6 +155,15 @@ describe('Dispatch routing helpers', () => {
     expect(formatCesarRecoveryStatus('rebuild', 'claude')).toBe('Cesar recovery: rebuilding claude session');
     expect(formatCesarRecoveryStatus('retry', 'kimi', 'log: /tmp/run')).toBe('Cesar recovery: retrying kimi with fresh dispatch - log: /tmp/run');
     expect(formatCesarRecoveryStatus('failed', 'all engines unavailable', 'run agon doctor engines')).toBe('Cesar recovery failed: all engines unavailable - run agon doctor engines');
+  });
+
+  it('normalizes acting-Cesar fallback policy without silently defaulting to auto', () => {
+    expect(normalizeCesarActingFallbackMode(undefined)).toBe('ask');
+    expect(normalizeCesarActingFallbackMode('auto')).toBe('auto');
+    expect(normalizeCesarActingFallbackMode('always')).toBe('auto');
+    expect(normalizeCesarActingFallbackMode('off')).toBe('off');
+    expect(normalizeCesarActingFallbackMode('same-only')).toBe('off');
+    expect(normalizeCesarActingFallbackMode('weird')).toBe('ask');
   });
 
   it('builds an auto-resume prompt for team-agent results with unapplied patch context', () => {

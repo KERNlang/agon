@@ -56,7 +56,7 @@ import { handleOutputEvent, clearPermissionQueue, clearThinkingBuffer } from '..
 
 import type { OutputActions, OutputState, AgentProgressSnapshot, StreamingEntry } from '../signals/output.js';
 
-import { appendInputHistory, cleanInputValue, cleanSubmitValue, findInputChange, navigateHistory, parseAutoModeCommand, resolveEscapeAction, shouldQueuePlanModeOnTab } from '../signals/app-input.js';
+import { appendInputHistory, cleanInputValue, cleanSubmitValue, findInputChange, hasBtwSideChannelTarget, navigateHistory, parseAutoModeCommand, resolveEscapeAction, shouldQueuePlanModeOnTab } from '../signals/app-input.js';
 
 import { resolveKeyboardInput } from '../signals/keyboard.js';
 
@@ -829,7 +829,12 @@ export function App() {
     }
     if (btwLower.startsWith('/btw ')) {
       const btwQuestion = input.trim().slice(5).trim();
-      if (btwQuestion && replState !== 'idle') {
+      const activeWorkForBtw = hasBtwSideChannelTarget({
+        replState,
+        activePlanState: activePlan?.state ?? null,
+        runningJobCount: jobManager.running().length,
+      });
+      if (btwQuestion && activeWorkForBtw) {
         // Fire side-dispatch — don't interrupt main task
         dispatch({ type: 'separator' } as any);
         dispatch({ type: 'user-message', content: `/btw ${btwQuestion}` } as any);
@@ -884,11 +889,12 @@ export function App() {
         });
         return;
       }
-      // If idle, just process as regular input (falls through to normal dispatch)
       if (!btwQuestion) {
         dispatch({ type: 'info', message: 'Usage: /btw <question>' } as any);
         return;
       }
+      dispatch({ type: 'info', message: 'No active work for /btw. Ask normally without the /btw prefix.' } as any);
+      return;
     }
     if (replState !== 'idle' && !jobManager.running().length) {
       setInputQueue((prev: string[]) => [...prev, input]);
@@ -943,7 +949,7 @@ export function App() {
       if (result.ranAsJob) return;
     } catch (err: any) { dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); }
     finally { setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state); }
-  }, [replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,planModeQueued,autoModeQueued,setPersistentAutoMode]);
+  }, [replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,activePlan,planModeQueued,autoModeQueued,setPersistentAutoMode]);
 
   const handleReviewActionCb = useCallback((action:'apply'|'edit'|'reject'|'copy') => {
     if (!reviewEvent) return;
@@ -4061,7 +4067,7 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
   return rows;
 }
 
-// @kern-source: app:3949
+// @kern-source: app:3955
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

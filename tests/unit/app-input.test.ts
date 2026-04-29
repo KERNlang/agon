@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { appendInputHistory, cleanInputValue, cleanSubmitValue, findInputChange, getSlashMatches, movePickerCursor, parseAutoModeCommand, resolveEscapeAction, shouldQueuePlanModeOnTab, tryGhostComplete } from '../../packages/cli/src/generated/signals/app-input.js';
+import { appendInputHistory, cleanInputValue, cleanSubmitValue, findInputChange, getSlashMatches, hasBtwSideChannelTarget, movePickerCursor, parseAutoModeCommand, resolveEscapeAction, shouldQueuePlanModeOnTab, tryGhostComplete } from '../../packages/cli/src/generated/signals/app-input.js';
 import { processPasteContent } from '../../packages/cli/src/generated/signals/paste-handler.js';
 import { pasteStore } from '@agon/core';
 
@@ -60,6 +60,13 @@ describe('app input helpers', () => {
     expect(parseAutoModeCommand('/autonomous off')).toBe('off');
     expect(parseAutoModeCommand('/auto status')).toBe('status');
     expect(parseAutoModeCommand('/auto fix login')).toBeNull();
+  });
+
+  it('allows /btw while a plan or background job is active even if the composer is idle', () => {
+    expect(hasBtwSideChannelTarget({ replState: 'streaming', activePlanState: null, runningJobCount: 0 })).toBe(true);
+    expect(hasBtwSideChannelTarget({ replState: 'idle', activePlanState: 'running', runningJobCount: 0 })).toBe(true);
+    expect(hasBtwSideChannelTarget({ replState: 'idle', activePlanState: null, runningJobCount: 1 })).toBe(true);
+    expect(hasBtwSideChannelTarget({ replState: 'idle', activePlanState: null, runningJobCount: 0 })).toBe(false);
   });
 });
 

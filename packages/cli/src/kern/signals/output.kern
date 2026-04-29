@@ -103,6 +103,15 @@ const name=_pendingToolCalls type="any[]"
 const name=_pendingFlushTimer type="{ timer: any, actions: any }"
   handler <<< ({ timer: null, actions: null }) as any >>>
 
+fn name=toolCallKey params="event:any" returns=string export=false
+  handler <<<
+    return [
+      String(event?.engineId ?? ''),
+      String(event?.tool ?? ''),
+      String(event?.input ?? ''),
+    ].join('\u0000');
+  >>>
+
 fn name=flushPendingToolCalls params="actions:OutputActions" returns=void export=true
   doc "Emit any buffered tool-call events as a single tool-call-group block."
   handler <<<
@@ -546,14 +555,21 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
             },
           };
         });
-        // Buffer finalized tool-calls only. Normal 'running' events update
-        // the live progress view above — committing every one would double-
-        // count in the group summary (running + done for the same tool).
-        // PlanStep is the exception: a Cesar plan self-step can run for
-        // minutes as a black-box delegate, so we commit a running marker that
-        // Ctrl+E can expand while auto mode is still busy.
-        const isPlanStepRunning = te.status === 'running' && String(te.tool ?? '').toLowerCase() === 'planstep';
-        if (te.status === 'done' || te.status === 'error' || isPlanStepRunning) {
+        // Buffer running calls too so long-running Read/Edit/Bash calls are
+        // visible while auto mode is busy. Fast tools usually emit running
+        // then done before the debounce fires; replace that pending running
+        // entry with the final event so the transcript does not double-count.
+        const key = toolCallKey(te);
+        if (te.status === 'done' || te.status === 'error') {
+          for (let i = _pendingToolCalls.length - 1; i >= 0; i--) {
+            const pending = _pendingToolCalls[i];
+            if (pending?.status === 'running' && toolCallKey(pending) === key) {
+              _pendingToolCalls.splice(i, 1);
+            }
+          }
+          _pendingToolCalls.push(event);
+          schedulePendingFlush(actions);
+        } else if (te.status === 'running') {
           _pendingToolCalls.push(event);
           schedulePendingFlush(actions);
         }

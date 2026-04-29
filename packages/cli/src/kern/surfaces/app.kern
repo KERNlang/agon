@@ -2387,7 +2387,7 @@ screen name=App target=ink
   state name=cesarSession type="PersistentSession|null" initial="null"
   state name=explorationMode type=boolean initial=false
   state name=neroMode type=boolean initial=false
-  state name=toolOutputExpanded type=boolean initial=false
+  state name=toolOutputExpanded type=boolean initial=true
   state name=thinkingExpanded type=boolean initial=true
   state name=cesarConfidence type="number|null" initial="null" throttle=200
   state name=liveScoreboard type="Scoreboard|null" initial="null"

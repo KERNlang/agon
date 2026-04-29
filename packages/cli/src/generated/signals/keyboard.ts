@@ -26,9 +26,10 @@ export interface KeyboardCtx {
   engineIds: string[];
   fileRailFocused: boolean;
   fileRailExpanded: boolean;
+  executionRailFocused: boolean;
 }
 
-// @kern-source: keyboard:31
+// @kern-source: keyboard:32
 export type KeyboardAction =
   | { type: 'none' }
   | { type: 'exit' }
@@ -40,15 +41,16 @@ export type KeyboardAction =
   | { type: 'toggleAutoQueued' }
   | { type: 'submit'; value: string }
   | { type: 'toggleToolExpand' }
-  | { type: 'toggleSelectionMode' }
   | { type: 'openToolDetail' }
   | { type: 'retryFailedTool' }
   | { type: 'openResults' }
   | { type: 'toggleFileRail' }
+  | { type: 'toggleExecutionRail' }
   | { type: 'fileRailSelectPrev' }
   | { type: 'fileRailSelectNext' }
   | { type: 'fileRailToggleExpand' }
   | { type: 'fileRailClose' }
+  | { type: 'executionRailClose' }
   | { type: 'closeSlash' }
   | { type: 'closeEnginePicker' }
   | { type: 'cancelQuestion' }
@@ -66,7 +68,7 @@ export type KeyboardAction =
 /**
  * Pure keyboard decision tree. Takes current state, returns action to execute.
  */
-// @kern-source: keyboard:71
+// @kern-source: keyboard:73
 export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
   const { input, key } = ctx;
   const normalizedCtrlInput = key.ctrl
@@ -80,6 +82,7 @@ export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
         '\x19': 'y',
         '\x07': 'g',
         '\x02': 'b',
+        '\x09': 'i',
       } as Record<string, string>)[input] ?? input
     : input;
   const delegatedCtrlShortcuts = new Set(['e', 'j', 'l', 'o', 'r', 'y']);
@@ -131,6 +134,10 @@ export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
     return { type: 'toggleAutoQueued' };
   }
 
+  // Ctrl+I: toggle live execution rail. In terminals that report Ctrl+I
+  // as Tab with key.ctrl set, this must run before the plain Tab handler.
+  if (key.ctrl && normalizedCtrlInput === 'i') return { type: 'toggleExecutionRail' };
+
   // Shift+Tab: queue auto mode
   if (isShiftTab && !ctx.slashPickerOpen && !ctx.enginePickerOpen && !ctx.questionState && !ctx.reviewEventOpen) {
     if (canQueueMode) {
@@ -166,6 +173,8 @@ export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
     }
   }
 
+  if (ctx.executionRailFocused && key.escape) return { type: 'executionRailClose' };
+
   // Scroll keys move HistoryView's sliced window forward/back — only
   // meaningful in fullscreen (alt-screen) mode. In native mode the
   // terminal's own scrollback owns the scroll UI; the app doesn't slice
@@ -177,9 +186,6 @@ export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
 
   // Ctrl+E: toggle tool output expansion
   if (key.ctrl && normalizedCtrlInput === 'e') return { type: 'toggleToolExpand' };
-
-  // Ctrl+G: toggle mouse selection mode
-  if (key.ctrl && normalizedCtrlInput === 'g') return { type: 'toggleSelectionMode' };
 
   // Ctrl+O: open focused tool detail view
   if (key.ctrl && normalizedCtrlInput === 'o') return { type: 'openToolDetail' };

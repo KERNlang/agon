@@ -47,15 +47,25 @@ const name=STEP_STATE_ICONS type="Record<string, {icon:string,color:string}>"
 screen name=PlanProposalView target=ink
   prop name=plan type=any
   prop name=markdown type=string optional=true
+  prop name=costEstimate type="{ totalTokens: number; totalCostUsd: number; steps: { id: string; tokens: number; costUsd: number }[] } | null" optional=true
   render
     handler <<<
       const steps = plan.steps ?? [];
-      const totalTokens = plan.totalEstimatedTokens ?? steps.reduce((sum: number, s: any) => sum + (s.estimatedTokens ?? 0), 0);
-      const totalCost = plan.totalEstimatedCostUsd ?? steps.reduce((sum: number, s: any) => sum + (s.estimatedCostUsd ?? 0), 0);
+      const est = costEstimate;
+      const totalTokens = est?.totalTokens ?? plan.totalEstimatedTokens ?? steps.reduce((sum: number, s: any) => sum + (s.estimatedTokens ?? 0), 0);
+      const totalCost = est?.totalCostUsd ?? plan.totalEstimatedCostUsd ?? steps.reduce((sum: number, s: any) => sum + (s.estimatedCostUsd ?? 0), 0);
       const allEngines = [...new Set(steps.flatMap((s: any) => s.engines ?? (s.engine ? [s.engine] : [])))] as string[];
       const w = contentWidth(6);
       const thinBar = '\u2500'.repeat(Math.min(w, 64));
       const planFilePath = plan.planFilePath || (plan as any).planFilePath;
+      const stepCost = (s: any) => {
+        const stepEst = est?.steps?.find((e: any) => e.id === s.id);
+        return stepEst?.costUsd ?? s.estimatedCostUsd ?? 0;
+      };
+      const stepTokens = (s: any) => {
+        const stepEst = est?.steps?.find((e: any) => e.id === s.id);
+        return stepEst?.tokens ?? s.estimatedTokens ?? 0;
+      };
 
       // Claude-Code-style markdown rendering for the plan body. The
       // structured step boxes below are kept as a fallback when no
@@ -125,6 +135,8 @@ screen name=PlanProposalView target=ink
             const hasDepends = s.dependsOn && s.dependsOn.length > 0;
             const hasFitness = s.fitnessCmd;
             const isParallel = s.parallel;
+            const cost = stepCost(s);
+            const tokens = stepTokens(s);
 
             return (
               <Box key={s.id} flexDirection="column">
@@ -152,8 +164,11 @@ screen name=PlanProposalView target=ink
                       ))}
                     </Box>
                   )}
-                  {s.estimatedCostUsd > 0 && (
-                    <Text dimColor>{' \u00b7 $'}{s.estimatedCostUsd.toFixed(2)}</Text>
+                  {tokens > 0 && (
+                    <Text dimColor>{' \u00b7 ~'}{tokens.toLocaleString()}{' t'}</Text>
+                  )}
+                  {cost > 0 && (
+                    <Text dimColor>{' \u00b7 $'}{cost.toFixed(2)}</Text>
                   )}
                   {isParallel && <Text color="#34d399">{' \u00b7 parallel'}</Text>}
                 </Box>

@@ -2,7 +2,9 @@
 
 import type { EngineRegistry, EngineAdapter, Plan, AgonConfig, ChatSession, PersistentSession, CesarMemory, EventBus, ToolRegistry } from '@agon/core';
 
-// @kern-source: handler-types:3
+import type { EngineVitals } from '../cesar/telemetry.js';
+
+// @kern-source: handler-types:4
 export interface EngineProgress {
   id: string;
   status: string;
@@ -13,7 +15,7 @@ export interface EngineProgress {
   isAgent?: boolean;
 }
 
-// @kern-source: handler-types:12
+// @kern-source: handler-types:13
 export type OutputEvent =
   | { type: 'text'; content: string }
   | { type: 'engine-block'; engineId: string; color: number; content: string }
@@ -63,7 +65,7 @@ export type OutputEvent =
   | { type: 'agent-routing'; mode: 'solo'|'team'; engines: string[]; reason: string }
   | { type: 'agent-team-complete'; teamId: string; winner: string|null; synthesizedPatch?: string|null; synthesizedAnalysis?: string|null; memberOutcomes: Array<{engineId:string,outcome:string,diffLines:number,passedFitness:boolean}>; teamCostUsd: number; teamDurationMs: number; synthesisRan?: boolean; synthesisChanged?: boolean; synthesisCostUsd?: number; synthesisFitnessRegressed?: boolean };
 
-// @kern-source: handler-types:199
+// @kern-source: handler-types:200
 export interface PendingDelegation {
   action: string;
   task?: string;
@@ -94,10 +96,10 @@ export interface PendingDelegation {
   createdAt: number;
 }
 
-// @kern-source: handler-types:228
+// @kern-source: handler-types:229
 export type CesarLiveMode = 'self' | 'self-nero' | 'delegate' | 'forge' | 'forge-slice' | 'team-forge' | 'brainstorm' | 'team-brainstorm' | 'campfire' | 'tribunal' | 'team-tribunal' | 'pipeline' | 'review' | 'agent' | 'team-agent' | 'plan';
 
-// @kern-source: handler-types:230
+// @kern-source: handler-types:231
 export interface CesarTurnOutcome {
   mode?: CesarLiveMode;
   delegated: boolean;
@@ -118,7 +120,7 @@ export interface CesarTurnOutcome {
   maxTurns?: number;
 }
 
-// @kern-source: handler-types:249
+// @kern-source: handler-types:250
 export interface CesarState {
   busy: boolean;
   busySince: number | null;
@@ -144,7 +146,7 @@ export interface CesarState {
   autoModeQueued?: boolean;
 }
 
-// @kern-source: handler-types:273
+// @kern-source: handler-types:274
 export interface HandlerContext {
   registry: EngineRegistry;
   adapter: EngineAdapter;
@@ -172,4 +174,6 @@ export interface HandlerContext {
   sessionMcpServers?: Array<Record<string,unknown>>;
   setSessionMcpServers?: ((servers: Array<Record<string,unknown>>) => void) | undefined;
   autoModeQueued?: boolean;
+  telemetryVitals?: Map<string, EngineVitals> | undefined;
+  recentFallbacks?: {from:string,to:string,reason:string,at:number}[] | undefined;
 }

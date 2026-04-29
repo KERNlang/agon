@@ -217,7 +217,7 @@ export function App() {
   const setExplorationMode = useMemo(() => __inkSafe(_setExplorationModeRaw), [_setExplorationModeRaw]);
   const [neroMode, _setNeroModeRaw] = useState<boolean>(false);
   const setNeroMode = useMemo(() => __inkSafe(_setNeroModeRaw), [_setNeroModeRaw]);
-  const [toolOutputExpanded, _setToolOutputExpandedRaw] = useState<boolean>(false);
+  const [toolOutputExpanded, _setToolOutputExpandedRaw] = useState<boolean>(true);
   const setToolOutputExpanded = useMemo(() => __inkSafe(_setToolOutputExpandedRaw), [_setToolOutputExpandedRaw]);
   const [thinkingExpanded, _setThinkingExpandedRaw] = useState<boolean>(true);
   const setThinkingExpanded = useMemo(() => __inkSafe(_setThinkingExpandedRaw), [_setThinkingExpandedRaw]);

@@ -34,6 +34,29 @@ type Options = {
   isActive?: boolean;
 };
 
+let activeRawModeUsers = 0;
+
+function acquireStableRawMode(setRawMode: (isEnabled: boolean) => void): () => void {
+  let released = false;
+  if (activeRawModeUsers === 0) setRawMode(true);
+  activeRawModeUsers += 1;
+
+  return () => {
+    if (released) return;
+    released = true;
+    activeRawModeUsers = Math.max(0, activeRawModeUsers - 1);
+    if (activeRawModeUsers === 0) setRawMode(false);
+  };
+}
+
+export function acquireStableRawModeForTests(setRawMode: (isEnabled: boolean) => void): () => void {
+  return acquireStableRawMode(setRawMode);
+}
+
+export function resetStableRawModeForTests(): void {
+  activeRawModeUsers = 0;
+}
+
 type BracketedPasteSegment = {
   kind: 'keys' | 'paste';
   value: string;
@@ -286,10 +309,7 @@ export function useStableInput(inputHandler: Handler, options: Options = {}) {
   // listener registration stable instead.
   useLayoutEffect(() => {
     if (options.isActive === false || !isRawModeSupported) return;
-    setRawMode(true);
-    return () => {
-      setRawMode(false);
-    };
+    return acquireStableRawMode(setRawMode);
   }, [options.isActive, isRawModeSupported, setRawMode]);
 
   useEffect(() => {

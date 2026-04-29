@@ -16,7 +16,9 @@ import { runReviewCore, resolveReviewTarget, selectReviewEngine } from './review
 
 import { runAgentMode, runAgentTeam } from './agent.js';
 
-// @kern-source: plan-mode:10
+import { handleCesarBrain } from '../cesar/brain.js';
+
+// @kern-source: plan-mode:11
 export async function handleProposePlan(args: any, dispatch: Dispatch, ctx: HandlerContext): Promise<CesarPlan> {
   // Tribunal fix #6: sanitize LLM-controlled step ids before they hit
   // filesystem joins. Anything outside [a-z0-9_-]{1,64} is replaced.
@@ -70,8 +72,8 @@ export async function handleProposePlan(args: any, dispatch: Dispatch, ctx: Hand
   return plan;
 }
 
-// @kern-source: plan-mode:64
-export function buildStepExecutors(ctx: HandlerContext): Record<string,StepExecutor> {
+// @kern-source: plan-mode:65
+export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch): Record<string,StepExecutor> {
   const cwd = resolveWorkingDir();
   const outputDir = join(RUNS_DIR, `plan-exec-${Date.now()}`);
   mkdirSync(outputDir, { recursive: true });
@@ -116,8 +118,44 @@ export function buildStepExecutors(ctx: HandlerContext): Record<string,StepExecu
       const before = snapshotTokens();
       const task = buildContext(step, context);
       try {
-        // Self step: delegate to the Cesar engine to analyze/synthesize
+        // Claude-style auto mode: a Cesar self-step must run through the
+        // same live tool loop as a normal Cesar turn so the user sees each
+        // Read/Edit/Bash and can interrupt instead of watching an opaque
+        // delegate call. Fall back to runDelegate only when no dispatch is
+        // available, which can happen in non-REPL tests or library callers.
         const engineId = step.engine ?? step.engines?.[0] ?? 'claude';
+        const dispatch = liveDispatch ?? ctx.cesar?.planDispatch ?? ctx.cesar?.lastDispatch;
+        if (dispatch) {
+          const captured: string[] = [];
+          const stepDispatch = (event: any) => {
+            dispatch(event);
+            if (event?.type === 'engine-block' && typeof event.content === 'string') captured.push(event.content);
+            else if (event?.type === 'streaming-chunk' && typeof event.chunk === 'string') captured.push(event.chunk);
+            else if (event?.type === 'tool-call' && (event.status === 'done' || event.status === 'error')) {
+              const status = event.status === 'error' ? 'failed' : 'done';
+              captured.push(`[tool:${event.tool}:${status}]`);
+            }
+          };
+          const prompt = [
+            '[APPROVED PLAN STEP]',
+            'Execute this already-approved Agon plan step now.',
+            'Do not call ProposePlan. Do not propose another plan. Do not ask whether to start.',
+            'Use the available tools directly and stream each tool call normally.',
+            `Step ${step.id}: ${task}`,
+            '',
+            'When the step is complete, finish with a concise recap of what changed and what remains.',
+          ].join('\n');
+          const outcome = await handleCesarBrain(prompt, stepDispatch as any, ctx, []);
+          const after = snapshotTokens();
+          if (signal?.aborted || outcome.decisionReason === 'aborted') {
+            return { result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: captured.join('\n').trim(), error: 'cancelled' } };
+          }
+          const output = captured.join('\n').trim() || `Cesar completed step ${step.id}.`;
+          return {
+            result: { status: 'success', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output },
+            contextExport: output.slice(0, 500),
+          };
+        }
         const result = await runDelegate({ engineId, task: `Analyze and respond:\n${task}`, registry: ctx.registry, adapter: ctx.adapter, timeout: 180, outputDir: join(outputDir, step.id), signal });
         const after = snapshotTokens();
         return {

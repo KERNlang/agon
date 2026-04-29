@@ -161,6 +161,67 @@ describe('cesar MCP session config', () => {
     expect(cesar.confidenceSatisfied).toBe(true);
   });
 
+  it('creates and displays ProposePlan calls when a plan dispatch is available', async () => {
+    const home = makeTempDir('propose-plan');
+    const previousHome = process.env.AGON_HOME;
+    process.env.AGON_HOME = home;
+    try {
+      const events: any[] = [];
+      let activePlan: any = null;
+      const cesar: any = {
+        planDispatch: (event: any) => events.push(event),
+      };
+      const onToolCall = buildOnToolCall({
+        cesar,
+        explorationMode: false,
+        setActivePlan: (plan: any) => { activePlan = plan; },
+        registry: { availableIds: () => [] },
+      } as any, new ToolRegistry(), {});
+
+      const result = await onToolCall?.('ProposePlan', {
+        intent: 'Build the telemetry dashboard.',
+        steps: [
+          {
+            id: 'spec',
+            type: 'self',
+            description: 'Write the KERN telemetry model and dashboard spec.',
+            estimatedTokens: 1000,
+            estimatedCostUsd: 0.01,
+          },
+        ],
+      }, 'call_plan');
+
+      expect(result).toContain('[PLAN_PROPOSED]');
+      expect(cesar.proposedPlan?.state).toBe('awaiting_approval');
+      expect(activePlan?.id).toBe(cesar.proposedPlan.id);
+      expect(events.some((event) => event.type === 'plan-proposal')).toBe(true);
+    } finally {
+      if (previousHome === undefined) delete process.env.AGON_HOME;
+      else process.env.AGON_HOME = previousHome;
+    }
+  });
+
+  it('does not falsely report ProposePlan success without a plan dispatch', async () => {
+    const onToolCall = buildOnToolCall({
+      cesar: {},
+      explorationMode: false,
+      registry: { availableIds: () => [] },
+    } as any, new ToolRegistry(), {});
+
+    await expect(onToolCall?.('ProposePlan', {
+      intent: 'Build the telemetry dashboard.',
+      steps: [
+        {
+          id: 'spec',
+          type: 'self',
+          description: 'Write the KERN telemetry model and dashboard spec.',
+          estimatedTokens: 1000,
+          estimatedCostUsd: 0.01,
+        },
+      ],
+    }, 'call_plan')).resolves.toContain('[PLAN_ERROR]');
+  });
+
   it('does not session-cache Read tool calls above the mtime-aware Read tool', async () => {
     const registry = new ToolRegistry();
     let readCount = 0;

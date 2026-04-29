@@ -1,0 +1,138 @@
+// ── Cesar Telemetry: live engine vitals, stall detection, and dashboard ──
+// Models for CPU/memory per engine, network health, and a compact
+// "who's working on what" view.  Consumed by the /status dashboard.
+
+import from="./scoreboard.js" names="Scoreboard,ScoreboardEntry" types=true
+
+// ── Types ──────────────────────────────────────────────────────────────
+
+type name=EngineVitalState values="idle|busy|stalled|offline|fallback"
+
+type name=NetworkHealth values="healthy|degraded|unreachable"
+
+interface name=EngineVitals export=true
+  field name=engineId type=string
+  field name=state type=EngineVitalState
+  field name=cpuPercent type=number optional=true doc="0-100, mockable"
+  field name=memPercent type=number optional=true doc="0-100, mockable"
+  field name=lastHeartbeatAt type=number doc="timestamp ms"
+  field name=stallDurationMs type=number optional=true doc="how long currently stalled"
+  field name=task type=string optional=true doc="what the engine is doing"
+  field name=taskDetail type=string optional=true doc="file or step name"
+  field name=network type=NetworkHealth optional=true
+  field name=latencyMs type=number optional=true doc="last round-trip"
+  field name=fallbackTo type=string optional=true doc="engine id we fell back to"
+  field name=fallbackReason type=string optional=true
+
+interface name=TelemetrySnapshot export=true
+  field name=timestamp type=number
+  field name=engines type="EngineVitals[]"
+  field name=overallHealth type="'healthy'|'degraded'|'critical'"
+  field name=activeRuns type=number doc="scoreboards with overallState==='running'"
+  field name=recentFallbacks type="{from:string,to:string,reason:string,at:number}[]"
+
+// ── Pure functions ─────────────────────────────────────────────────────
+
+fn name=createEngineVitals params="engineId:string" returns=EngineVitals export=true
+  handler <<<
+    return {
+      engineId,
+      state: 'idle',
+      lastHeartbeatAt: Date.now(),
+    };
+  >>>
+
+fn name=updateEngineVitals params="v:EngineVitals,partial:Partial<EngineVitals>" returns=EngineVitals export=true
+  handler <<<
+    return { ...v, ...partial, lastHeartbeatAt: Date.now() };
+  >>>
+
+fn name=markEngineStalled params="v:EngineVitals,stallThresholdMs:number" returns=EngineVitals export=true
+  handler <<<
+    const now = Date.now();
+    const elapsed = now - v.lastHeartbeatAt;
+    if (elapsed >= stallThresholdMs && v.state !== 'stalled') {
+      return { ...v, state: 'stalled', stallDurationMs: elapsed };
+    }
+    if (v.state === 'stalled' && elapsed < stallThresholdMs) {
+      return { ...v, state: 'busy', stallDurationMs: undefined };
+    }
+    if (v.state === 'stalled') {
+      return { ...v, stallDurationMs: elapsed };
+    }
+    return v;
+  >>>
+
+fn name=computeOverallHealth params="engines:EngineVitals[]" returns="'healthy'|'degraded'|'critical'" export=true
+  handler <<<
+    const stalled = engines.filter((e) => e.state === 'stalled').length;
+    const offline = engines.filter((e) => e.state === 'offline').length;
+    const fallback = engines.filter((e) => e.state === 'fallback').length;
+    if (stalled > 0 || offline > 0) return 'critical';
+    if (fallback > 0) return 'degraded';
+    return 'healthy';
+  >>>
+
+fn name=formatVitalBar params="label:string,value:number,width:number=10" returns=string export=false
+  handler <<<
+    const filled = Math.round((value / 100) * width);
+    const empty = width - filled;
+    const bar = '\u2588'.repeat(filled) + '\u2591'.repeat(empty);
+    return `${label} ${bar} ${value.toFixed(0)}%`;
+  >>>
+
+fn name=renderEngineVitalLine params="v:EngineVitals" returns=string export=true
+  handler <<<
+    const stateIcon: Record<EngineVitalState, string> = {
+      idle: '\u25cb',
+      busy: '\u25d0',
+      stalled: '\u26a0',
+      offline: '\u2718',
+      fallback: '\u21c4',
+    };
+    const netIcon: Record<NetworkHealth, string> = {
+      healthy: '\u2191',
+      degraded: '\u223f',
+      unreachable: '\u2718',
+    };
+    const parts: string[] = [];
+    parts.push(`${stateIcon[v.state]} ${v.engineId}`);
+    if (v.cpuPercent != null) parts.push(formatVitalBar('CPU', v.cpuPercent, 8));
+    if (v.memPercent != null) parts.push(formatVitalBar('MEM', v.memPercent, 8));
+    if (v.latencyMs != null) parts.push(`${v.latencyMs}ms`);
+    if (v.network) parts.push(netIcon[v.network]);
+    if (v.task) parts.push(`\u2014 ${v.task}${v.taskDetail ? ` (${v.taskDetail})` : ''}`);
+    if (v.stallDurationMs != null) parts.push(`[stalled ${(v.stallDurationMs / 1000).toFixed(1)}s]`);
+    if (v.fallbackTo) parts.push(`[fallback \u2192 ${v.fallbackTo}]`);
+    return parts.join('  ');
+  >>>
+
+fn name=renderTelemetrySnapshot params="snap:TelemetrySnapshot" returns=string export=true
+  handler <<<
+    const lines: string[] = [];
+    lines.push(`\u2500\u2500\u2500 Agon Telemetry ${new Date(snap.timestamp).toISOString()} \u2500\u2500\u2500`);
+    lines.push(`Health: ${snap.overallHealth.toUpperCase()}  |  Active runs: ${snap.activeRuns}`);
+    if (snap.recentFallbacks.length > 0) {
+      lines.push(`Recent fallbacks:`);
+      for (const fb of snap.recentFallbacks) {
+        lines.push(`  ${fb.from} \u2192 ${fb.to}  (${fb.reason})`);
+      }
+    }
+    lines.push('');
+    for (const v of snap.engines) {
+      lines.push(renderEngineVitalLine(v));
+    }
+    return lines.join('\n');
+  >>>
+
+// ── Watchdog / fallback helpers ────────────────────────────────────────
+
+fn name=shouldAutoFallback params="v:EngineVitals,thresholdMs:number" returns=boolean export=true
+  handler <<<
+    return v.state === 'stalled' && (v.stallDurationMs ?? 0) >= thresholdMs;
+  >>>
+
+fn name=buildFallbackToast params="from:string,to:string,reason:string" returns=string export=true
+  handler <<<
+    return `\u26a0  ${from} stalled \u2192 fallback to ${to} (${reason})`;
+  >>>

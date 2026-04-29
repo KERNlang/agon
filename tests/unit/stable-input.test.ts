@@ -1,6 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
-import { splitBracketedPasteInput, type BracketedPasteState } from '../../packages/cli/src/stable-input.js';
+import {
+  acquireStableRawModeForTests,
+  resetStableRawModeForTests,
+  splitBracketedPasteInput,
+  type BracketedPasteState,
+} from '../../packages/cli/src/stable-input.js';
 
 function consume(chunks: string[]) {
   let state: BracketedPasteState = { active: false, buffer: '' };
@@ -37,5 +42,37 @@ describe('stable input bracketed paste splitting', () => {
         { kind: 'keys', value: 'b' },
       ],
     });
+  });
+});
+
+describe('stable input raw mode ownership', () => {
+  afterEach(() => {
+    resetStableRawModeForTests();
+  });
+
+  it('keeps raw mode enabled until the last active input owner releases it', () => {
+    const calls: boolean[] = [];
+    const setRawMode = (enabled: boolean) => calls.push(enabled);
+
+    const releaseApp = acquireStableRawModeForTests(setRawMode);
+    const releaseComposer = acquireStableRawModeForTests(setRawMode);
+
+    expect(calls).toEqual([true]);
+
+    releaseComposer();
+    expect(calls).toEqual([true]);
+
+    releaseApp();
+    expect(calls).toEqual([true, false]);
+  });
+
+  it('ignores duplicate raw mode releases', () => {
+    const calls: boolean[] = [];
+    const release = acquireStableRawModeForTests((enabled) => calls.push(enabled));
+
+    release();
+    release();
+
+    expect(calls).toEqual([true, false]);
   });
 });

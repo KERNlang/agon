@@ -161,6 +161,27 @@ describe('resolveKeyboardInput', () => {
     }))).toEqual({ type: 'none' });
   });
 
+  it('resolves choice questions with their default on Enter', () => {
+    expect(resolveKeyboardInput(baseCtx({
+      input: '\r',
+      key: { return: true },
+      questionState: {
+        defaultChoiceKey: 'y',
+        choices: [{ key: 'y', label: 'Approve' }, { key: 'n', label: 'Reject' }],
+      },
+    }))).toEqual({ type: 'resolveChoice', choiceKey: 'y' });
+  });
+
+  it('resolves choice questions by visible key', () => {
+    expect(resolveKeyboardInput(baseCtx({
+      input: 'e',
+      key: {},
+      questionState: {
+        choices: [{ key: 'y', label: 'Approve' }, { key: 'e', label: 'Edit file' }],
+      },
+    }))).toEqual({ type: 'resolveChoice', choiceKey: 'e' });
+  });
+
   it('leaves PgUp/PgDn/Home/End to the terminal — main-buffer + native scrollback owns scroll', () => {
     // In Agon's current architecture (no alt-screen, transcript rows committed
     // to Static → terminal scrollback), the app has no in-app scroll surface.

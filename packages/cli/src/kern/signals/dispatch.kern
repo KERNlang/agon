@@ -172,6 +172,22 @@ fn name=buildDelegatedContinuationPrompt params="message:string" returns=string 
     ].join('\n');
   >>>
 
+fn name=buildBrainstormContinuationMessage params="source:string, question:string|undefined, result:any" returns=string export=true
+  doc "Format a Brainstorm winner as a Cesar continuation payload. Brainstorm is an input to Cesar, not a terminal answer."
+  handler <<<
+    const bids = Array.isArray(result?.bids) ? result.bids : [];
+    const bidSummary = bids.map((b: any) => {
+      const engineId = b?.engineId ?? 'unknown';
+      const score = b?.score ?? 'n/a';
+      const reasoning = String(b?.reasoning ?? '').slice(0, 800);
+      const approach = b?.approach ? `\nApproach: ${String(b.approach).slice(0, 600)}` : '';
+      return `**${engineId}** (score: ${score}): ${reasoning}${approach}`;
+    }).join('\n\n') || 'No bids captured.';
+    const original = question ? `\n\n## Original User Request\n${String(question).slice(0, 2000)}` : '';
+    const winnerResponse = String(result?.response ?? '').slice(0, 6000);
+    return `${source}. Winner: ${result?.winner ?? 'none'}.${original}\n\n## Engine Bids\n${bidSummary}\n\n## Winner's Full Response\n${winnerResponse}\n\nCesar owns the final answer. Synthesize this result, explain the next best action, and if implementation is needed ask whether to forge/build or continue directly. Do not stop at the brainstorm card.`;
+  >>>
+
 fn name=collectRecentEngineContext params="ctx:HandlerContext,maxMessages?:number,maxChars?:number" returns=string export=true
   doc "Collect recent engine messages for post-delegation Cesar synthesis."
   handler <<<
@@ -577,9 +593,7 @@ You still own the overall task. Integrate the forged slice with the rest of the 
               const bsResult = await handleBrainstorm(taskInput, cb.dispatch, cb.ctx);
               if (bsResult) {
                 cb.dispatch({ type: 'info', message: 'Cesar absorbing brainstorm results…' });
-                const bidSummary = bsResult.bids.map((b: any) => `**${b.engineId}** (score: ${b.score}): ${b.reasoning.slice(0, 800)}`).join('\n\n');
-                const cesarMsg = `Brainstorm complete. Winner: ${bsResult.winner}.\n\n## Engine Bids\n${bidSummary}\n\n## Winner's Full Response\n${bsResult.response}\n\nSynthesize the winning approach into a concrete plan. Be direct — the brainstorm already validated the ideas.`;
-                await continueCesarAfterResult(cesarMsg, cb, continuationEpoch, continuationUserTurns);
+                await continueCesarAfterResult(buildBrainstormContinuationMessage('Brainstorm complete', taskInput, bsResult), cb, continuationEpoch, continuationUserTurns);
               }
               return bsResult; // returned value captured by withThreadOutcome for richer summary
             }, cb.ctx));
@@ -740,8 +754,8 @@ You still own the overall task. Integrate the forged slice with the rest of the 
             cb.runAsJob('brainstorm', label, withThreadOutcome(_cwdRecoverBs, 'brainstorm', label, async () => {
               const bsResult = await handleBrainstorm(recoveredTask, cb.dispatch, cb.ctx);
               if (bsResult) {
-                const bidSummary = bsResult.bids.map((b: any) => `**${b.engineId}** (score: ${b.score}): ${b.reasoning.slice(0, 800)}`).join('\n\n');
-                await continueCesarAfterResult(`Recovered brainstorm complete. Winner: ${bsResult.winner}.\n\n## Engine Bids\n${bidSummary}\n\n## Winner's Full Response\n${bsResult.response}\n\nSynthesize the winning approach and continue the original task.`, cb, continuationEpoch, continuationUserTurns);
+                cb.dispatch({ type: 'info', message: 'Cesar absorbing brainstorm results…' });
+                await continueCesarAfterResult(buildBrainstormContinuationMessage('Recovered brainstorm complete', recoveredTask, bsResult), cb, continuationEpoch, continuationUserTurns);
               }
               return bsResult;
             }, cb.ctx));
@@ -895,8 +909,8 @@ You still own the overall task. Integrate the forged slice with the rest of the 
                 cb.runAsJob('brainstorm', label, withThreadOutcome(_cwdFallbackBs, 'brainstorm', label, async () => {
                   const bsResult = await handleBrainstorm(fallbackTask, cb.dispatch, cb.ctx);
                   if (bsResult) {
-                    const bidSummary = bsResult.bids.map((b: any) => `**${b.engineId}** (score: ${b.score}): ${b.reasoning.slice(0, 800)}`).join('\n\n');
-                    await continueCesarAfterResult(`Fallback brainstorm complete. Winner: ${bsResult.winner}.\n\n## Engine Bids\n${bidSummary}\n\n## Winner's Full Response\n${bsResult.response}\n\nSynthesize the winning approach and continue the original task.`, cb, continuationEpoch, continuationUserTurns);
+                    cb.dispatch({ type: 'info', message: 'Cesar absorbing brainstorm results…' });
+                    await continueCesarAfterResult(buildBrainstormContinuationMessage('Fallback brainstorm complete', fallbackTask, bsResult), cb, continuationEpoch, continuationUserTurns);
                   }
                   return bsResult;
                 }, cb.ctx));
@@ -1024,8 +1038,15 @@ You still own the overall task. Integrate the forged slice with the rest of the 
 fn name=isCesarPlanApprovalInput params="input:string" returns=boolean export=true
   doc "Return true for natural approval replies users type after Cesar says go/run it."
   handler <<<
-    const text = String(input ?? '').trim().toLowerCase().replace(/[.!]+$/g, '');
-    return /^(?:y|yes|go|run|run it|start|start it|approve|approved|do it|proceed|execute|ok|okay|sure)$/i.test(text);
+    const text = String(input ?? '').trim().toLowerCase().replace(/[.!?]+$/g, '').replace(/\s+/g, ' ');
+    return /^(?:y|yes|yes go|yes please|go|go ahead|ok go|okay go|ok do it|okay do it|ok do so|okay do so|run|run it|start|start it|approve|approved|do it|do so|proceed|execute|ok|okay|sure)$/i.test(text);
+  >>>
+
+fn name=isStrongCesarPlanApprovalInput params="input:string" returns=boolean export=true
+  doc "Return true for approval phrases strong enough to recover a saved pending plan even when no plan panel is active."
+  handler <<<
+    const text = String(input ?? '').trim().toLowerCase().replace(/[.!?]+$/g, '').replace(/\s+/g, ' ');
+    return /^(?:yes go|go|go ahead|ok go|okay go|ok do it|okay do it|ok do so|okay do so|run|run it|start|start it|approve|approved|do it|do so|proceed|execute)$/i.test(text);
   >>>
 
 fn name=findPendingCesarPlan params="ctx:HandlerContext" returns="CesarPlan | null" export=true
@@ -1039,6 +1060,87 @@ fn name=findPendingCesarPlan params="ctx:HandlerContext" returns="CesarPlan | nu
       .filter((p: CesarPlan) => p.state === 'awaiting_approval')
       .sort((a: CesarPlan, b: CesarPlan) => b.createdAt.localeCompare(a.createdAt));
     return saved[0] ?? null;
+  >>>
+
+fn name=findResumableCesarPlan params="ctx:HandlerContext" returns="CesarPlan | null" export=true
+  doc "Find the most relevant paused/running plan for resume and status recovery."
+  handler <<<
+    const active = ctx.activePlan as CesarPlan | undefined;
+    if (active && (active.state === 'paused' || active.state === 'running')) return active;
+    const saved = listCesarPlans()
+      .filter((p: CesarPlan) => p.state === 'paused' || p.state === 'running')
+      .sort((a: CesarPlan, b: CesarPlan) => b.createdAt.localeCompare(a.createdAt));
+    return saved[0] ?? null;
+  >>>
+
+fn name=shouldApprovePendingCesarPlanInput params="input:string,ctx:HandlerContext" returns=boolean export=true
+  doc "Treat natural approval text as /approve even if a previous session failed to surface the plan panel."
+  handler <<<
+    const text = String(input ?? '').trim();
+    if (!text || text.startsWith('/')) return false;
+    const proposed = ctx.cesar?.proposedPlan as CesarPlan | undefined;
+    const active = ctx.activePlan as CesarPlan | undefined;
+    const hasLivePending = (proposed && proposed.state === 'awaiting_approval') || (active && active.state === 'awaiting_approval');
+    if (hasLivePending) return isCesarPlanApprovalInput(text);
+    if (!isStrongCesarPlanApprovalInput(text)) return false;
+    return listCesarPlans().some((p: CesarPlan) => p.state === 'awaiting_approval');
+  >>>
+
+fn name=isCesarPlanResumeInput params="input:string" returns=boolean export=true
+  doc "Return true when the user is clearly telling a paused/running plan to continue."
+  handler <<<
+    const text = String(input ?? '').trim().toLowerCase().replace(/[.!?]+$/g, '').replace(/\s+/g, ' ');
+    return /^(?:go|run|resume|continue|proceed|start)(?:\b|$)/i.test(text)
+      || /^(?:do it|do so|keep going|carry on)$/i.test(text);
+  >>>
+
+fn name=isCesarPlanStatusInput params="input:string" returns=boolean export=true
+  doc "Return true for short status checks that should be answered from plan state instead of routed to Cesar chat."
+  handler <<<
+    const text = String(input ?? '').trim().toLowerCase().replace(/[.!?]+$/g, '').replace(/\s+/g, ' ');
+    return /^(?:done|done yet|status|progress|what happened|what did you do|what yu do|what you do|are you doing something|are you still working|still working|is it running|where are we)$/i.test(text);
+  >>>
+
+fn name=formatCesarPlanRuntimeStatus params="plan:CesarPlan" returns=string export=true
+  doc "Render a concise persisted plan status so Cesar chat cannot hallucinate whether a plan is running."
+  handler <<<
+    const total = plan.steps.length;
+    const done = plan.steps.filter((s: any) => s.state === 'done').length;
+    const failed = plan.steps.find((s: any) => s.state === 'failed');
+    const current = plan.steps.find((s: any) => s.state === 'running')
+      ?? plan.steps.find((s: any) => s.state === 'pending')
+      ?? plan.steps.find((s: any) => s.state === 'blocked');
+    const lines = [
+      `Plan ${plan.id.slice(0, 12)} is ${plan.state}: ${done}/${total} steps done.`,
+    ];
+    if (current) lines.push(`Next: ${current.description}`);
+    if (failed) lines.push(`Blocked: ${failed.description}${failed.result?.error ? ` — ${failed.result.error}` : ''}`);
+    if (plan.state === 'paused' || plan.state === 'running') lines.push('Use /plan resume or say "go" to continue it.');
+    return lines.join('\n');
+  >>>
+
+fn name=resumeCesarPlan async=true params="plan:CesarPlan, cb:DispatchCallbacks" returns="Promise<void>" export=true
+  doc "Resume a paused or stale-running Cesar plan through the shared executor path."
+  handler <<<
+    cb.dispatch({ type: 'info', message: `Resuming plan: ${plan.intent} (${plan.id})` });
+    const cyclesUsedAtResume = (plan as any).reviewCyclesUsed ?? 0;
+    const resetSteps = plan.steps.map((s: any) => {
+      if (s.state === 'failed' && s.type === 'review' && cyclesUsedAtResume >= 2) {
+        return s;
+      }
+      return s.state === 'failed' ? { ...s, state: 'pending' as any, result: undefined } : s;
+    });
+    const runningPlan: CesarPlan = { ...plan, steps: resetSteps, state: 'running' as any };
+    cb.setActivePlan(runningPlan);
+    saveCesarPlan(runningPlan);
+    if (runningPlan.planFilePath) {
+      try {
+        writeFileSync(runningPlan.planFilePath, formatCesarPlanMarkdown(runningPlan));
+      } catch (err) {
+        console.warn('[plan] failed to write resumed Cesar plan file:', (err as Error).message ?? err);
+      }
+    }
+    await executeApprovedPlan(runningPlan, cb);
   >>>
 
 fn name=approvePendingCesarPlan async=true params="cb:DispatchCallbacks" returns="Promise<boolean>" export=true
@@ -1063,6 +1165,14 @@ fn name=approvePendingCesarPlan async=true params="cb:DispatchCallbacks" returns
     return true;
   >>>
 
+fn name=askChoiceQuestion params="cb:DispatchCallbacks,prompt:string,choices:any[],defaultChoiceKey?:string" returns="Promise<string>" export=true
+  doc "Ask a keyboard-choice question in the composer instead of falling back to a blank free-text field."
+  handler <<<
+    return new Promise<string>((resolve) => {
+      cb.dispatch({ type: 'question', prompt, choices, defaultChoiceKey, resolve } as any);
+    });
+  >>>
+
 fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchCallbacks" returns="Promise<DispatchResult>"
   doc "Route a parsed intent to the correct handler. Registry-first, switch as fallback."
   handler <<<
@@ -1071,6 +1181,24 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
       await cb.eventBus.emit('pre:dispatch', { input, intentType: intent.type, cwd: resolveWorkingDir() });
     }
     const _emitPost = () => { if (cb.eventBus) cb.eventBus.emit('post:dispatch', { input, intentType: intent.type, cwd: resolveWorkingDir() }).catch(() => {}); };
+
+    if (shouldApprovePendingCesarPlanInput(input, cb.ctx)) {
+      if (await approvePendingCesarPlan(cb)) {
+        _emitPost();
+        return { handled: true, ranAsJob: false };
+      }
+    }
+    const resumablePlan = findResumableCesarPlan(cb.ctx);
+    if (resumablePlan && isCesarPlanResumeInput(input)) {
+      await resumeCesarPlan(resumablePlan, cb);
+      _emitPost();
+      return { handled: true, ranAsJob: false };
+    }
+    if (resumablePlan && isCesarPlanStatusInput(input)) {
+      cb.dispatch({ type: 'info', message: formatCesarPlanRuntimeStatus(resumablePlan) });
+      _emitPost();
+      return { handled: true, ranAsJob: false };
+    }
 
     // ── Registry-first dispatch — extensions and real handlers get priority ──
     if (cb.commandRegistry) {
@@ -1104,10 +1232,16 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
       case 'brainstorm': {
         const _bCwd = resolveWorkingDir();
         const _bLabel = intent.question?.slice(0, 40) ?? 'brainstorm';
+        const continuationEpoch = cb.ctx.inputEpoch ?? 0;
+        const continuationUserTurns = countTrackedUserTurns(cb.ctx);
         cb.runAsJob('brainstorm', _bLabel, withThreadOutcome(_bCwd, 'brainstorm', _bLabel, async () => {
           if (cb.eventBus) await cb.eventBus.emit('pre:brainstorm', { question: intent.question, cwd: _bCwd });
           const bsR = await handleBrainstorm(intent.question, cb.dispatch, cb.ctx);
           if (cb.eventBus) cb.eventBus.emit('post:brainstorm', { question: intent.question, cwd: _bCwd }).catch(() => {});
+          if (bsR) {
+            cb.dispatch({ type: 'info', message: 'Cesar absorbing brainstorm results…' });
+            await continueCesarAfterResult(buildBrainstormContinuationMessage('Brainstorm complete', intent.question, bsR), cb, continuationEpoch, continuationUserTurns);
+          }
           return bsR;
         }, cb.ctx));
         return { handled: true, ranAsJob: true };
@@ -1499,35 +1633,12 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
       }
       case 'plan-resume': {
         // Find the most recent paused plan and resume execution
-        const plans = listCesarPlans();
-        const resumable = plans
-          .filter((p: CesarPlan) => p.state === 'paused' || p.state === 'running')
-          .sort((a: CesarPlan, b: CesarPlan) => b.createdAt.localeCompare(a.createdAt));
-
-        if (resumable.length === 0) {
+        const resumePlan = findResumableCesarPlan(cb.ctx);
+        if (!resumePlan) {
           cb.dispatch({ type: 'info', message: 'No paused plan found to resume.' });
           break;
         }
-
-        const resumePlan = resumable[0];
-        cb.dispatch({ type: 'info', message: `Resuming plan: ${resumePlan.intent} (${resumePlan.id})` });
-
-        // Reset failed steps to pending so they can re-run.
-        // Tribunal fix #4b: do NOT reset failed REVIEW steps once the
-        // 2-cycle cap is exhausted — that would loop forever on
-        // unfixable blocking issues.
-        const cyclesUsedAtResume = (resumePlan as any).reviewCyclesUsed ?? 0;
-        const resetSteps = resumePlan.steps.map((s: any) => {
-          if (s.state === 'failed' && s.type === 'review' && cyclesUsedAtResume >= 2) {
-            return s; // leave failed; cap exhausted
-          }
-          return s.state === 'failed' ? { ...s, state: 'pending' as any, result: undefined } : s;
-        });
-        const runningPlan: CesarPlan = { ...resumePlan, steps: resetSteps, state: 'running' as any };
-        cb.setActivePlan(runningPlan);
-        // FU-4: shared executor helper handles both the original execute
-        // and the self-review gate, so resume cannot diverge from task.
-        await executeApprovedPlan(runningPlan, cb);
+        await resumeCesarPlan(resumePlan, cb);
         break;
       }
       case 'plans': handlePlansList(cb.dispatch); break;
@@ -1613,7 +1724,18 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
         const si = intent as any;
         const answer = await cb.askQuestion('Brainstorm with all engines? (y/n)');
         if (answer.toLowerCase().startsWith('y')) {
-          cb.runAsJob('brainstorm', si.question?.slice(0, 40) ?? 'brainstorm', async () => { await handleBrainstorm(si.question ?? si.input, cb.dispatch, cb.ctx); });
+          const continuationEpoch = cb.ctx.inputEpoch ?? 0;
+          const continuationUserTurns = countTrackedUserTurns(cb.ctx);
+          const question = si.question ?? si.input;
+          const _sCwd = resolveWorkingDir();
+          cb.runAsJob('brainstorm', si.question?.slice(0, 40) ?? 'brainstorm', withThreadOutcome(_sCwd, 'brainstorm', si.question?.slice(0, 40) ?? 'brainstorm', async () => {
+            const bsResult = await handleBrainstorm(question, cb.dispatch, cb.ctx);
+            if (bsResult) {
+              cb.dispatch({ type: 'info', message: 'Cesar absorbing brainstorm results…' });
+              await continueCesarAfterResult(buildBrainstormContinuationMessage('Brainstorm complete', question, bsResult), cb, continuationEpoch, continuationUserTurns);
+            }
+            return bsResult;
+          }, cb.ctx));
           return { handled: true, ranAsJob: true };
         }
         await handleChat(si.input, cb.dispatch, cb.ctx, cb.allImages);
@@ -2306,10 +2428,14 @@ fn name=handleProposedCesarPlan async=true params="proposed:CesarPlan, cb:Dispat
     }
 
     while (!decided) {
-      const answer = await cb.askQuestion('Approve plan? [Y/n/e(dit)] or give feedback to revise');
+      const answer = await askChoiceQuestion(cb, 'Approve plan?', [
+        { key: '1', label: 'Yes - approve', color: '#4ade80' },
+        { key: '2', label: 'No - reject', color: '#ef4444' },
+        { key: '3', label: 'Other - add feedback', color: '#fbbf24' },
+      ], '1');
       const trimmed = answer.trim().toLowerCase();
 
-      if (trimmed === '' || isCesarPlanApprovalInput(trimmed)) {
+      if (trimmed === '' || trimmed === '1' || isCesarPlanApprovalInput(trimmed)) {
         const approved = approveCesarPlan(currentProposal);
         cb.setActivePlan(approved);
         cb.dispatch({ type: 'success', message: 'Plan approved — executing...' });
@@ -2318,7 +2444,7 @@ fn name=handleProposedCesarPlan async=true params="proposed:CesarPlan, cb:Dispat
         await executeApprovedPlan(approved, cb);
         decided = true;
 
-      } else if (trimmed === 'n' || trimmed === 'no') {
+      } else if (trimmed === '2' || trimmed === 'n' || trimmed === 'no') {
         const cancelled = cancelCesarPlan(currentProposal);
         cb.setActivePlan(cancelled);
         saveCesarPlan(cancelled);
@@ -2359,6 +2485,26 @@ fn name=handleProposedCesarPlan async=true params="proposed:CesarPlan, cb:Dispat
           cb.dispatch({ type: 'warning', message: 'No plan file path available. Type feedback as text instead.' });
         }
 
+      } else if (trimmed === '3' || trimmed === 'r' || trimmed === 'revise' || trimmed === 'feedback' || trimmed === 'other') {
+        const feedback = await cb.askQuestion('What should change?');
+        if (!feedback.trim()) continue;
+        cb.dispatch({ type: 'info', message: 'Revising plan with your feedback...' });
+        const reviseInput = `[PLAN REVISION] The user wants these changes: ${feedback}\n\nRevise the plan and call ProposePlan IMMEDIATELY with the updated steps. Do NOT re-investigate. Do NOT respond with text. Just call ProposePlan with the revised plan.`;
+        try {
+          await routeWithCesar(reviseInput, [], cb);
+        } catch (err) {
+          cb.dispatch({ type: 'warning', message: `Cesar revision failed: ${err instanceof Error ? err.message : String(err)}. Try again, type Y to approve the original, or N to reject.` });
+          continue;
+        }
+        const revised: CesarPlan | undefined = cb.ctx.cesar?.proposedPlan;
+        if (revised && revised.state === 'awaiting_approval') {
+          if (cb.ctx.cesar) cb.ctx.cesar.proposedPlan = undefined;
+          currentProposal = { ...revised, autoApprove: false };
+        } else {
+          cb.dispatch({ type: 'warning', message: 'Cesar did not produce a revised plan. Use /plan <task> to start over.' });
+          decided = true;
+        }
+
       } else {
         cb.dispatch({ type: 'info', message: 'Revising plan with your feedback...' });
         const reviseInput = `[PLAN REVISION] The user wants these changes: ${answer}\n\nRevise the plan and call ProposePlan IMMEDIATELY with the updated steps. Do NOT re-investigate. Do NOT respond with text. Just call ProposePlan with the revised plan.`;
@@ -2390,7 +2536,44 @@ fn name=buildPlanCallbacks params="initialPlan:CesarPlan, cb:DispatchCallbacks" 
   handler <<<
     let currentPlan = initialPlan;
     let pendingWriteTimer: ReturnType<typeof setTimeout> | null = null;
+    let executionStartCommitted = false;
     const DEBOUNCE_MS = 300;
+    const stepTypeLabels: Record<string, string> = {
+      self: '\u2699 Cesar',
+      forge: '\u2694 Forge',
+      teamforge: '\u2694\u2694 Team Forge',
+      brainstorm: '\u26a1 Brainstorm',
+      campfire: '\u2500 Campfire',
+      tribunal: '\u2696 Tribunal',
+      delegate: '\u27a4 Delegate',
+      pipeline: '\u2192 Pipeline',
+      review: '\u2713 Review',
+      agent: '\u2699 Agent',
+      'team-agent': '\u2699\u2699 Team Agent',
+    };
+
+    const markStepRunning = (plan: CesarPlan, stepId: string): CesarPlan => ({
+      ...plan,
+      steps: plan.steps.map((s: any) => s.id === stepId ? { ...s, state: 'running' as any } : s),
+    } as CesarPlan);
+
+    const buildPlanStepToolInput = (stepId: string) => {
+      const step = currentPlan.steps.find((s: any) => s.id === stepId);
+      const idx = step ? currentPlan.steps.indexOf(step) + 1 : 0;
+      return {
+        planId: currentPlan.id,
+        stepId,
+        step: idx,
+        totalSteps: currentPlan.steps.length,
+        type: step?.type ?? 'unknown',
+        engine: step?.engine ?? null,
+        engines: step?.engines ?? [],
+        description: step?.description ?? stepId,
+        state: step?.state ?? 'pending',
+      };
+    };
+
+    const planStepEngineId = (step: any) => step?.engine ?? step?.engines?.[0] ?? 'cesar';
 
     const flushPersist = () => {
       if (pendingWriteTimer) {
@@ -2407,38 +2590,51 @@ fn name=buildPlanCallbacks params="initialPlan:CesarPlan, cb:DispatchCallbacks" 
 
     return {
       onStepStart: (stepId: string) => {
+        currentPlan = markStepRunning(currentPlan, stepId);
+        cb.setActivePlan(currentPlan);
         const step = currentPlan.steps.find((s: any) => s.id === stepId);
-        const cfg: Record<string, string> = {
-          self: '\u2699 Cesar',
-          forge: '\u2694 Forge',
-          teamforge: '\u2694\u2694 Team Forge',
-          brainstorm: '\u26a1 Brainstorm',
-          campfire: '\u2500 Campfire',
-          tribunal: '\u2696 Tribunal',
-          delegate: '\u27a4 Delegate',
-          pipeline: '\u2192 Pipeline',
-          review: '\u2713 Review',
-          agent: '\u2699 Agent',
-          'team-agent': '\u2699\u2699 Team Agent',
-        };
-        const typeLabel = step ? (cfg[step.type] ?? step.type) : '';
+        const typeLabel = step ? (stepTypeLabels[step.type] ?? step.type) : '';
         const stepEngines = step?.engines?.length ? ` \u2192 ${step.engines.join(', ')}` : (step?.engine ? ` \u2192 ${step.engine}` : '');
         const idx = step ? currentPlan.steps.indexOf(step) + 1 : 0;
-        cb.dispatch({ type: 'info', message: `Step ${idx}/${currentPlan.steps.length}: ${typeLabel}${stepEngines} \u2014 ${step?.description ?? stepId}` });
+        const msg = `Step ${idx}/${currentPlan.steps.length}: ${typeLabel}${stepEngines} \u2014 ${step?.description ?? stepId}`;
+        cb.dispatch({ type: 'spinner-start', message: msg, color: 214, engineId: planStepEngineId(step) } as any);
+        cb.dispatch({
+          type: 'tool-call',
+          engineId: 'cesar',
+          tool: 'PlanStep',
+          input: JSON.stringify(buildPlanStepToolInput(stepId)),
+          status: 'running',
+        } as any);
+        cb.dispatch({ type: 'info', message: msg });
       },
       onStepDone: (stepId: string, result: CesarStepResult) => {
         const step = currentPlan.steps.find((s: any) => s.id === stepId);
         const icon = result.status === 'success' ? '\u2713' : '\u2717';
         const msgType = result.status === 'success' ? 'success' : 'error';
+        cb.dispatch({ type: 'spinner-stop' } as any);
+        cb.dispatch({
+          type: 'tool-call',
+          engineId: 'cesar',
+          tool: 'PlanStep',
+          input: JSON.stringify(buildPlanStepToolInput(stepId)),
+          status: result.status === 'success' ? 'done' : 'error',
+          output: result.output ? result.output.slice(0, 4000) : '',
+          error: result.error,
+        } as any);
         cb.dispatch({ type: msgType, message: `${icon} ${step?.description ?? stepId} \u2014 ${result.status}${result.error ? ': ' + result.error : ''} (${(result.durationMs / 1000).toFixed(1)}s, $${result.actualCostUsd.toFixed(4)})` });
       },
       onPlanUpdate: (updated: CesarPlan) => {
+        const previousState = currentPlan.state;
         currentPlan = updated;
         cb.setActivePlan(updated);
-        cb.dispatch({ type: 'plan-execution', plan: updated } as any);
         // Terminal states flush immediately so disk reflects the final
         // state without waiting on the debounce window.
         const isTerminal = updated.state === 'done' || updated.state === 'paused' || updated.state === 'cancelled';
+        const shouldCommitExecutionRow = !executionStartCommitted || isTerminal || previousState !== updated.state;
+        if (shouldCommitExecutionRow) {
+          executionStartCommitted = true;
+          cb.dispatch({ type: 'plan-execution', plan: updated } as any);
+        }
         if (isTerminal) {
           flushPersist();
           return;
@@ -2463,7 +2659,7 @@ fn name=buildPlanCallbacks params="initialPlan:CesarPlan, cb:DispatchCallbacks" 
 fn name=executeApprovedPlan async=true params="approved:CesarPlan, cb:DispatchCallbacks" returns="Promise<void>" export=true
   doc "FU-4: shared executor for the auto-approve, manual-approve, and plan-resume paths. Wires the abort controller, builds callbacks (with debounced persistence), runs executePlan, runs finalizePlanWithReviewGate, and dispatches the terminal status. Eliminates the ~60 lines of triplication that lived in dispatch.kern and forced future changes (e.g., new callback hooks, new finalize behavior) to be applied to all three sites."
   handler <<<
-    const executors = buildStepExecutors(cb.ctx);
+    const executors = buildStepExecutors(cb.ctx, cb.dispatch);
     const abortController = new AbortController();
     cb.ctx.setActiveAbort?.(abortController);
     const callbacks = buildPlanCallbacks(approved, cb);
@@ -2482,7 +2678,13 @@ fn name=executeApprovedPlan async=true params="approved:CesarPlan, cb:DispatchCa
         cb.dispatch({ type: 'success', message: `Plan complete \u2014 ${finalPlan.steps.length} steps, $${finalPlan.totalActualCostUsd.toFixed(4)} actual cost` });
       } else if (finalPlan.state === 'paused') {
         const failedStep = finalPlan.steps.find((s: any) => s.state === 'failed');
-        cb.dispatch({ type: 'warning', message: `Plan paused \u2014 step "${failedStep?.description}" failed: ${failedStep?.result?.error ?? 'unknown'}` });
+        if (failedStep) {
+          cb.dispatch({ type: 'warning', message: `Plan paused \u2014 step "${failedStep.description}" failed: ${failedStep.result?.error ?? 'unknown'}` });
+        } else if (abortController.signal.aborted) {
+          cb.dispatch({ type: 'warning', message: 'Plan paused \u2014 execution was interrupted.' });
+        } else {
+          cb.dispatch({ type: 'warning', message: 'Plan paused.' });
+        }
         cb.dispatch({ type: 'info', message: 'Use /plan resume to retry, or /cancel to abort' });
       }
     } catch (err) {

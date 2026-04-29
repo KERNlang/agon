@@ -45,7 +45,7 @@ fn name=createEngineVitals params="engineId:string,partial?:Partial<EngineVitals
 
 fn name=updateEngineVitals params="v:EngineVitals,partial:Partial<EngineVitals>" returns=EngineVitals export=true
   handler <<<
-    return { ...v, ...partial, lastHeartbeatAt: Date.now() };
+    return { ...v, ...partial, lastHeartbeatAt: partial.lastHeartbeatAt ?? Date.now() };
   >>>
 
 fn name=markEngineStalled params="v:EngineVitals,stallThresholdMs:number" returns=EngineVitals export=true
@@ -130,7 +130,7 @@ fn name=renderTelemetrySnapshot params="snap:TelemetrySnapshot" returns=string e
 
 const name=STALL_THRESHOLD_MS type=number export=true
   doc "Time since last heartbeat after which an engine is considered stalled."
-  handler <<< 8000 >>>
+  handler <<< 30000 >>>
 
 // ── Watchdog / fallback helpers ────────────────────────────────────────
 

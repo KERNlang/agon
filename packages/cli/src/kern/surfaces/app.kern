@@ -38,7 +38,7 @@ import from="../blocks/review.js" names="handleReviewAction"
 import from="../blocks/engine.js" names="DashboardView,OutputBlockView"
 import from="../blocks/plan-view.js" names="PlanProposalView"
 import from="../cesar/session.js" names="saveCesarConversationSnapshot"
-import from="../../generated/surfaces/status.js" names="SpinnerBlock,StatusBar,CesarStatusStrip,BackgroundJobRail"
+import from="../../generated/surfaces/status.js" names="SpinnerBlock,StatusBar,CesarStatusStrip,BackgroundJobRail,StatusDashboard"
 import from="../../generated/blocks/controls.js" names="EnginePicker,ModelPicker,ReviewBlock,CesarPicker"
 import from="../../generated/blocks/composer.js" names="ComposerView"
 import from="../../generated/surfaces/agent.js" names="AgentProgressView"
@@ -52,7 +52,7 @@ import from="../../generated/blocks/controls.js" names="ReviewEvent" types=true
 import from="node:path" names="join,dirname"
 import from="node:url" names="fileURLToPath"
 import from="node:fs" names="readdirSync,readFileSync,writeFileSync,mkdirSync,unlinkSync"
-import from="node:os" names="tmpdir"
+import from="node:os" names="tmpdir,totalmem,cpus"
 import from="node:child_process" names="spawnSync"
 import from="../models/session-results.js" names="sessionResultStore"
 import from="../blocks/results-formatter.js" names="formatSessionResults,formatChatTranscript"
@@ -92,6 +92,70 @@ fn name=isCesarTelemetryLine params="message:string" returns=boolean
   handler <<<
     const text = String(message ?? '').trim();
     return text.startsWith('Cesar route:') || text.startsWith('What happened:');
+  >>>
+
+const name=_telemetryResourceSample type=any
+  handler <<< ({ lastCpu: null, lastAt: 0 }) >>>
+
+fn name=sampleLocalResourceVitals returns="{cpuPercent:number,memPercent:number}" export=false
+  handler <<<
+    const now = Date.now();
+    const current = process.cpuUsage();
+    const prev = _telemetryResourceSample.lastCpu;
+    const prevAt = Number(_telemetryResourceSample.lastAt ?? 0);
+    _telemetryResourceSample.lastCpu = current;
+    _telemetryResourceSample.lastAt = now;
+    let cpuPercent = 0;
+    if (prev && prevAt > 0 && now > prevAt) {
+      const deltaMicros = Math.max(0, (current.user - prev.user) + (current.system - prev.system));
+      const elapsedMicros = (now - prevAt) * 1000;
+      const coreCount = Math.max(1, cpus().length);
+      cpuPercent = Math.max(0, Math.min(100, (deltaMicros / (elapsedMicros * coreCount)) * 100));
+    }
+    const memPercent = Math.max(0, Math.min(100, (process.memoryUsage().rss / Math.max(1, totalmem())) * 100));
+    return { cpuPercent, memPercent };
+  >>>
+
+fn name=probeEngineVitals async=true params="registry:any,engineId:string" returns="Promise<Partial<EngineVitals>>" export=false
+  handler <<<
+    const started = Date.now();
+    const resources = sampleLocalResourceVitals();
+    const mockTarget = String(process.env.AGON_MOCK_STALL_ENGINE ?? '').trim();
+    if (mockTarget && (mockTarget === '*' || mockTarget === engineId)) {
+      const stallMs = Number(process.env.AGON_MOCK_STALL_MS ?? 35000);
+      await new Promise((resolve) => setTimeout(resolve, Number.isFinite(stallMs) ? stallMs : 35000));
+    }
+    const engine = registry.get(engineId);
+    const hasBinary = engine.binary ? registry.findBinary(engine) !== null : false;
+    const hasApiKey = !!(engine.api && process.env[engine.api.apiKeyEnv]);
+    const available = hasBinary || hasApiKey || (!engine.binary && !engine.api);
+    let network: 'healthy'|'degraded'|'unreachable' = available ? 'healthy' : 'unreachable';
+    let latencyMs = Date.now() - started;
+
+    if (engine.api && hasApiKey && typeof fetch === 'function') {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 1200);
+      try {
+        const res = await fetch(engine.api.baseUrl, { method: 'HEAD', signal: controller.signal } as any);
+        latencyMs = Date.now() - started;
+        network = res.status >= 500 ? 'degraded' : 'healthy';
+      } catch {
+        latencyMs = Date.now() - started;
+        network = 'degraded';
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+
+    return {
+      state: available ? 'idle' as any : 'offline' as any,
+      latencyMs,
+      network,
+      cpuPercent: resources.cpuPercent,
+      memPercent: resources.memPercent,
+      task: available ? (hasBinary ? 'cli ready' : hasApiKey ? 'api reachable' : 'ready') : 'missing binary/API key',
+      taskDetail: hasBinary ? 'local process telemetry' : undefined,
+    };
   >>>
 
 fn name=parseToolCallPayload params="event:any" returns=any confidence=0.85
@@ -2400,6 +2464,8 @@ screen name=App target=ink
   state name=cesarMemory type=any initial="() => createCesarMemory()"
   state name=sessionMcpServers type="Array<Record<string,unknown>>" initial="[]"
   state name=telemetryVitals type="Map<string,any>" initial="new Map()" throttle=500
+  state name=recentFallbacks type="{from:string,to:string,reason:string,at:number}[]" initial="[]"
+  state name=statusDashboardOpen type=boolean initial=false safe=false
 
   // ── Refs ──
   ref name=telemetryPollerRef type="any" initial="null"
@@ -2973,7 +3039,7 @@ screen name=App target=ink
       if (clearChat) dispatch({ type: 'clear' } as any);
     >>>
 
-  callback name=buildContext params="" deps="registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode,activePlan,extensionPromptFragments,sessionMcpServers"
+  callback name=buildContext params="" deps="registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode,activePlan,extensionPromptFragments,sessionMcpServers,telemetryVitals,recentFallbacks"
     handler <<<
       return {
         registry, adapter, activeEngines,
@@ -2993,6 +3059,8 @@ screen name=App target=ink
         activePlan, setActivePlan,
         extensionPromptFragments,
         sessionMcpServers, setSessionMcpServers,
+        telemetryVitals,
+        recentFallbacks,
       };
     >>>
 
@@ -3048,7 +3116,7 @@ screen name=App target=ink
     >>>
 
   // ── Telemetry poller lifecycle ──
-  effect deps="registry"
+  effect deps="registry,cesarSession"
     handler <<<
       if (telemetryPollerRef.current) {
         telemetryPollerRef.current.stop();
@@ -3056,22 +3124,21 @@ screen name=App target=ink
       }
       const poller = createTelemetryPoller({
         registry,
-        probe: async (id: string) => {
-          // Lightweight probe: check binary availability + mock latency
-          const engine = registry.get(id);
-          const hasBinary = engine.binary ? registry.findBinary(engine) !== null : true;
-          const hasApiKey = !!(engine.api && process.env[engine.api.apiKeyEnv]);
-          const available = hasBinary && hasApiKey;
-          return {
-            state: available ? 'idle' : 'offline',
-            latencyMs: 0,
-          };
-        },
+        probe: async (id: string) => probeEngineVitals(registry, id),
         intervalMs: 5000,
-        autoFallback: 'ask',
+        stallThresholdMs: 30000,
+        probeTimeoutMs: 2500,
+        autoFallback: 'auto',
         onAutoFallback: async (from: string, to: string, reason: string) => {
-          dispatch({ type: 'info', message: `Telemetry: ${from} stalled → fallback to ${to} (${reason}). Approve? (not wired yet)` } as any);
-          return false;
+          configSet('cesarEngine' as any, to as any);
+          setConfigVersion((v: number) => v + 1);
+          if (cesarSession) {
+            cesarSession.close();
+            setCesarSessionWrapped(null);
+          }
+          setRecentFallbacks((prev: any[]) => [...prev.slice(-7), { from, to, reason, at: Date.now() }]);
+          dispatch({ type: 'warning', message: `Telemetry: ${from} stalled — auto-fallback to ${to} (${reason})` } as any);
+          return true;
         },
       });
       poller.start();
@@ -3310,6 +3377,12 @@ screen name=App target=ink
       const { text: cleanInput, images: detectedImages } = extractImagesFromInput(input, resolveWorkingDir());
       const allImages = [...pendingImages, ...detectedImages];
       let intent = detectIntent(cleanInput || input, commandRegistry);
+      if (intent.type === 'status') {
+        setStatusDashboardOpen(true);
+        dispatch({ type: 'info', message: 'Status dashboard open. Press q or Esc to close.' } as any);
+        transition(finishReplState);
+        return;
+      }
       const ctx = buildContext();
       (ctx as any).autoModeQueued = autoModeForTurn;
       const cb: DispatchCallbacks = {
@@ -3588,9 +3661,17 @@ screen name=App target=ink
     >>>
 
   // ── Keyboard handling — pure decision tree + thin dispatcher ──
-  callback name=handleKeyboardInput params="input:string,key:any" deps="modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,autoModeQueued,activePlan,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry,toggleSelectionMode,startupOnly,terminalMode,setPersistentAutoMode"
+  callback name=handleKeyboardInput params="input:string,key:any" deps="modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,autoModeQueued,activePlan,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry,toggleSelectionMode,startupOnly,terminalMode,setPersistentAutoMode,statusDashboardOpen"
     handler <<<
       if (isTerminalFocusReport(input)) return;
+
+      if (statusDashboardOpen && !modelPickerOpen && !cesarPickerOpen && !enginePickerOpen && !reviewEvent && !toolDetailEvent && !slashPickerOpen && !questionState) {
+        if (key.escape || input === 'q' || input === 'Q' || (key.ctrl && input === '\x03')) {
+          setStatusDashboardOpen(false);
+          return;
+        }
+        return;
+      }
 
       // ScrollBox keyboard shortcuts (only when fullscreen owns the viewport and no modal is open).
       if (terminalMode === 'fullscreen' && !modelPickerOpen && !cesarPickerOpen && !enginePickerOpen && !reviewEvent && !toolDetailEvent && !slashPickerOpen && !questionState) {
@@ -3924,27 +4005,31 @@ screen name=App target=ink
                 <Text color="#fbbf24">{liveSpinner.message}</Text>
               </Box>
             )}
-        <ComposerView
-          mode={mode}
-          replState={replState}
-          planModeQueued={planModeQueued}
-          autoModeQueued={autoModeQueued}
-          activePlanState={activePlan?.state ?? null}
-              slashPickerOpen={slashPickerOpen}
-              inputValue={inputValue}
-              handleInputChange={handleInputChange}
-              handleSubmit={handleSubmit}
-              allSlashCommands={allSlashCommands}
-              availableEngines={availableEngines}
-              onSlashSelect={handleSlashSelect}
-              onSlashCancel={handleSlashCancel}
-          questionState={questionState}
-          questionAnswer={questionAnswer}
-          onQuestionAnswerChange={setQuestionAnswer}
-          onQuestionAnswerSubmit={handleQuestionAnswer}
-          termWidth={termWidth}
-          termHeight={termHeight}
-          onCtrlShortcut={handleComposerCtrlShortcut} />
+            {statusDashboardOpen ? (
+              <StatusDashboard telemetryVitals={telemetryVitals} recentFallbacks={recentFallbacks} width={termWidth} height={termHeight} />
+            ) : (
+              <ComposerView
+                mode={mode}
+                replState={replState}
+                planModeQueued={planModeQueued}
+                autoModeQueued={autoModeQueued}
+                activePlanState={activePlan?.state ?? null}
+                slashPickerOpen={slashPickerOpen}
+                inputValue={inputValue}
+                handleInputChange={handleInputChange}
+                handleSubmit={handleSubmit}
+                allSlashCommands={allSlashCommands}
+                availableEngines={availableEngines}
+                onSlashSelect={handleSlashSelect}
+                onSlashCancel={handleSlashCancel}
+                questionState={questionState}
+                questionAnswer={questionAnswer}
+                onQuestionAnswerChange={setQuestionAnswer}
+                onQuestionAnswerSubmit={handleQuestionAnswer}
+                termWidth={termWidth}
+                termHeight={termHeight}
+                onCtrlShortcut={handleComposerCtrlShortcut} />
+            )}
             {(() => {
               const _cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
               return (<>

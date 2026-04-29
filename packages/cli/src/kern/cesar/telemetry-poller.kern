@@ -28,6 +28,7 @@ interface name=TelemetryPollerOptions export=true
   field name=probe type="(engineId:string) => Promise<Partial<EngineVitals>>"
   field name=intervalMs type=number optional=true doc="defaults to DEFAULT_POLL_INTERVAL_MS"
   field name=stallThresholdMs type=number optional=true doc="defaults to STALL_THRESHOLD_MS"
+  field name=probeTimeoutMs type=number optional=true doc="per-engine probe timeout before the last heartbeat is left stale"
   field name=onFallback type="(engineId:string, vitals:EngineVitals) => void" optional=true doc="invoked once per idle→stalled transition (edge-triggered)"
   field name=autoFallback type=FallbackMode optional=true doc="auto=immediately dispatch to best candidate, ask=fire onAutoFallback for consent gate, off=disable"
   field name=onAutoFallback type="(from:string, to:string, reason:string) => Promise<boolean>" optional=true doc="for ask mode: return true to approve fallback"
@@ -42,6 +43,7 @@ service name=TelemetryPoller export=true
   field name=probe type="(engineId:string) => Promise<Partial<EngineVitals>>" private=true
   field name=intervalMs type=number private=true
   field name=stallThresholdMs type=number private=true
+  field name=probeTimeoutMs type=number private=true
   field name=onFallback type="((engineId:string, vitals:EngineVitals) => void)|undefined" private=true
   field name=autoFallback type=FallbackMode private=true
   field name=onAutoFallback type="((from:string, to:string, reason:string) => Promise<boolean>)|undefined" private=true
@@ -59,6 +61,7 @@ service name=TelemetryPoller export=true
       this.probe = opts.probe;
       this.intervalMs = opts.intervalMs ?? DEFAULT_POLL_INTERVAL_MS;
       this.stallThresholdMs = opts.stallThresholdMs ?? STALL_THRESHOLD_MS;
+      this.probeTimeoutMs = opts.probeTimeoutMs ?? Math.min(5000, this.stallThresholdMs);
       this.onFallback = opts.onFallback;
       this.autoFallback = opts.autoFallback ?? 'off';
       this.onAutoFallback = opts.onAutoFallback;
@@ -101,14 +104,27 @@ service name=TelemetryPoller export=true
         const ids = this.registry.listIds();
         const probes = await Promise.all(
           ids.map(async (id: string) => {
+            const prev = this.vitals.get(id) ?? {
+              engineId: id,
+              state: 'idle' as EngineVitalState,
+              lastHeartbeatAt: Date.now(),
+            };
             try {
-              const partial = await this.probe(id);
+              const timeout = new Promise<Partial<EngineVitals>>((resolve) => {
+                setTimeout(() => resolve({
+                  state: prev.state === 'offline' ? 'offline' as EngineVitalState : 'busy' as EngineVitalState,
+                  task: `probe timeout > ${this.probeTimeoutMs}ms`,
+                  lastHeartbeatAt: prev.lastHeartbeatAt,
+                }), this.probeTimeoutMs);
+              });
+              const partial = await Promise.race([this.probe(id), timeout]);
               return { id, partial, ok: true as const };
             } catch (err) {
               const reason = err instanceof Error ? err.message : String(err);
               const partial: Partial<EngineVitals> = {
                 state: 'offline' as EngineVitalState,
                 task: reason,
+                lastHeartbeatAt: prev.lastHeartbeatAt,
               };
               return { id, partial, ok: false as const };
             }
@@ -189,6 +205,12 @@ service name=TelemetryPoller export=true
       return new Map(this.vitals);
     >>>
 
+  method name=probeNow async=true returns="Promise<void>"
+    doc "Run one poll immediately. Public for /status refreshes and deterministic tests; start() still owns the interval loop."
+    handler <<<
+      await this.tick();
+    >>>
+
   method name=isRunning returns=boolean
     doc "Diagnostic: whether start() has been called and stop() hasn't."
     handler <<<
@@ -212,6 +234,10 @@ service name=TelemetryPoller export=true
       const candidate = chain[0];
       const reason = vitals.task ?? 'stalled';
       if (this.autoFallback === 'auto') {
+        if (this.onAutoFallback) {
+          const accepted = await this.onAutoFallback(engineId, candidate, reason);
+          if (!accepted) return;
+        }
         // Immediately mark fallback state on both engines
         const fromVitals = this.vitals.get(engineId);
         if (fromVitals) {
@@ -244,4 +270,19 @@ fn name=createTelemetryPoller params="opts:TelemetryPollerOptions" returns=Telem
   doc "Convenience constructor. Equivalent to `new TelemetryPoller(opts)`."
   handler <<<
     return new TelemetryPoller(opts);
+  >>>
+
+fn name=createMockStallProbe params="stallEngineId:string,stallMs:number=35000" returns="(engineId:string) => Promise<Partial<EngineVitals>>" export=true
+  doc "Test fixture for telemetry fallback: selected engine hangs for stallMs, all others report healthy."
+  handler <<<
+    return async (engineId: string) => {
+      if (stallEngineId === '*' || engineId === stallEngineId) {
+        await new Promise((resolve) => setTimeout(resolve, stallMs));
+      }
+      return {
+        state: 'idle' as EngineVitalState,
+        latencyMs: 1,
+        network: 'healthy' as any,
+      };
+    };
   >>>

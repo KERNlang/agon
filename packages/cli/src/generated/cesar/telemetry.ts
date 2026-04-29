@@ -45,7 +45,7 @@ export function createEngineVitals(engineId: string, partial?: Partial<EngineVit
 
 // @kern-source: telemetry:46
 export function updateEngineVitals(v: EngineVitals, partial: Partial<EngineVitals>): EngineVitals {
-  return { ...v, ...partial, lastHeartbeatAt: Date.now() };
+  return { ...v, ...partial, lastHeartbeatAt: partial.lastHeartbeatAt ?? Date.now() };
 }
 
 // @kern-source: telemetry:51
@@ -130,7 +130,7 @@ export function renderTelemetrySnapshot(snap: TelemetrySnapshot): string {
  * Time since last heartbeat after which an engine is considered stalled.
  */
 // @kern-source: telemetry:131
-export const STALL_THRESHOLD_MS: number = 8000;
+export const STALL_THRESHOLD_MS: number = 30000;
 
 // @kern-source: telemetry:137
 export function shouldAutoFallback(v: EngineVitals, thresholdMs: number): boolean {

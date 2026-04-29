@@ -74,7 +74,7 @@ import { PlanProposalView } from '../blocks/plan-view.js';
 
 import { saveCesarConversationSnapshot } from '../cesar/session.js';
 
-import { SpinnerBlock, StatusBar, CesarStatusStrip, BackgroundJobRail } from '../../generated/surfaces/status.js';
+import { SpinnerBlock, StatusBar, CesarStatusStrip, BackgroundJobRail, StatusDashboard } from '../../generated/surfaces/status.js';
 
 import { EnginePicker, ModelPicker, ReviewBlock, CesarPicker } from '../../generated/blocks/controls.js';
 
@@ -102,7 +102,7 @@ import { fileURLToPath } from 'node:url';
 
 import { readdirSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from 'node:fs';
 
-import { tmpdir } from 'node:os';
+import { tmpdir, totalmem, cpus } from 'node:os';
 
 import { spawnSync } from 'node:child_process';
 
@@ -118,7 +118,7 @@ import { useStableInput } from '../../stable-input.js';
 
 import { parseProseToRichLines } from '../blocks/rich-text.js';
 
-// @kern-source: app:2351
+// @kern-source: app:2415
 export function App() {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -285,6 +285,9 @@ export function App() {
       }
     };
   }, []);
+  const [recentFallbacks, _setRecentFallbacksRaw] = useState<{from:string,to:string,reason:string,at:number}[]>([]);
+  const setRecentFallbacks = useMemo(() => __inkSafe(_setRecentFallbacksRaw), [_setRecentFallbacksRaw]);
+  const [statusDashboardOpen, setStatusDashboardOpen] = useState<boolean>(false);
   const [registry, _setRegistryRaw] = useState<EngineRegistry>(createInitialRegistry());
   const setRegistry = useMemo(() => __inkSafe(_setRegistryRaw), [_setRegistryRaw]);
   const [adapter, _setAdapterRaw] = useState<EngineAdapter>(createCliAdapter(registry));
@@ -740,8 +743,10 @@ export function App() {
       activePlan, setActivePlan,
       extensionPromptFragments,
       sessionMcpServers, setSessionMcpServers,
+      telemetryVitals,
+      recentFallbacks,
     };
-  }, [registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode,activePlan,extensionPromptFragments,sessionMcpServers]);
+  }, [registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode,activePlan,extensionPromptFragments,sessionMcpServers,telemetryVitals,recentFallbacks]);
 
   const handleInputChange = useCallback((value:string) => {
     // Swallow input while a choice question is active — the keyboard handler
@@ -943,6 +948,12 @@ export function App() {
     const { text: cleanInput, images: detectedImages } = extractImagesFromInput(input, resolveWorkingDir());
     const allImages = [...pendingImages, ...detectedImages];
     let intent = detectIntent(cleanInput || input, commandRegistry);
+    if (intent.type === 'status') {
+      setStatusDashboardOpen(true);
+      dispatch({ type: 'info', message: 'Status dashboard open. Press q or Esc to close.' } as any);
+      transition(finishReplState);
+      return;
+    }
     const ctx = buildContext();
     (ctx as any).autoModeQueued = autoModeForTurn;
     const cb: DispatchCallbacks = {
@@ -1182,6 +1193,14 @@ export function App() {
   const handleKeyboardInput = useCallback((input:string,key:any) => {
     if (isTerminalFocusReport(input)) return;
 
+    if (statusDashboardOpen && !modelPickerOpen && !cesarPickerOpen && !enginePickerOpen && !reviewEvent && !toolDetailEvent && !slashPickerOpen && !questionState) {
+      if (key.escape || input === 'q' || input === 'Q' || (key.ctrl && input === '\x03')) {
+        setStatusDashboardOpen(false);
+        return;
+      }
+      return;
+    }
+
     // ScrollBox keyboard shortcuts (only when fullscreen owns the viewport and no modal is open).
     if (terminalMode === 'fullscreen' && !modelPickerOpen && !cesarPickerOpen && !enginePickerOpen && !reviewEvent && !toolDetailEvent && !slashPickerOpen && !questionState) {
       if (key.shift && key.name === 'pageup') {
@@ -1334,7 +1353,7 @@ export function App() {
         handleCancelOrExit();
         return;
     }
-  }, [modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,autoModeQueued,activePlan,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry,toggleSelectionMode,startupOnly,terminalMode,setPersistentAutoMode]);
+  }, [modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,autoModeQueued,activePlan,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry,toggleSelectionMode,startupOnly,terminalMode,setPersistentAutoMode,statusDashboardOpen]);
 
   useEffect(() => {
     initExtensions(workspacePath, commandRegistry, registry, eventBus).then(({ extensions, skills: extSkills, systemPromptFragments }) => {
@@ -1515,22 +1534,21 @@ export function App() {
     }
     const poller = createTelemetryPoller({
       registry,
-      probe: async (id: string) => {
-        // Lightweight probe: check binary availability + mock latency
-        const engine = registry.get(id);
-        const hasBinary = engine.binary ? registry.findBinary(engine) !== null : true;
-        const hasApiKey = !!(engine.api && process.env[engine.api.apiKeyEnv]);
-        const available = hasBinary && hasApiKey;
-        return {
-          state: available ? 'idle' : 'offline',
-          latencyMs: 0,
-        };
-      },
+      probe: async (id: string) => probeEngineVitals(registry, id),
       intervalMs: 5000,
-      autoFallback: 'ask',
+      stallThresholdMs: 30000,
+      probeTimeoutMs: 2500,
+      autoFallback: 'auto',
       onAutoFallback: async (from: string, to: string, reason: string) => {
-        dispatch({ type: 'info', message: `Telemetry: ${from} stalled → fallback to ${to} (${reason}). Approve? (not wired yet)` } as any);
-        return false;
+        configSet('cesarEngine' as any, to as any);
+        setConfigVersion((v: number) => v + 1);
+        if (cesarSession) {
+          cesarSession.close();
+          setCesarSessionWrapped(null);
+        }
+        setRecentFallbacks((prev: any[]) => [...prev.slice(-7), { from, to, reason, at: Date.now() }]);
+        dispatch({ type: 'warning', message: `Telemetry: ${from} stalled — auto-fallback to ${to} (${reason})` } as any);
+        return true;
       },
     });
     poller.start();
@@ -1543,7 +1561,7 @@ export function App() {
       poller.stop();
       telemetryPollerRef.current = null;
     };
-  }, [registry]);
+  }, [registry,cesarSession]);
 
   useEffect(() => {
     if (replState === 'idle' && inputQueue.length > 0) {
@@ -1758,27 +1776,31 @@ export function App() {
             <Text color="#fbbf24">{liveSpinner.message}</Text>
           </Box>
         )}
-    <ComposerView
-      mode={mode}
-      replState={replState}
-      planModeQueued={planModeQueued}
-      autoModeQueued={autoModeQueued}
-      activePlanState={activePlan?.state ?? null}
-          slashPickerOpen={slashPickerOpen}
-          inputValue={inputValue}
-          handleInputChange={handleInputChange}
-          handleSubmit={handleSubmit}
-          allSlashCommands={allSlashCommands}
-          availableEngines={availableEngines}
-          onSlashSelect={handleSlashSelect}
-          onSlashCancel={handleSlashCancel}
-      questionState={questionState}
-      questionAnswer={questionAnswer}
-      onQuestionAnswerChange={setQuestionAnswer}
-      onQuestionAnswerSubmit={handleQuestionAnswer}
-      termWidth={termWidth}
-      termHeight={termHeight}
-      onCtrlShortcut={handleComposerCtrlShortcut} />
+        {statusDashboardOpen ? (
+          <StatusDashboard telemetryVitals={telemetryVitals} recentFallbacks={recentFallbacks} width={termWidth} height={termHeight} />
+        ) : (
+          <ComposerView
+            mode={mode}
+            replState={replState}
+            planModeQueued={planModeQueued}
+            autoModeQueued={autoModeQueued}
+            activePlanState={activePlan?.state ?? null}
+            slashPickerOpen={slashPickerOpen}
+            inputValue={inputValue}
+            handleInputChange={handleInputChange}
+            handleSubmit={handleSubmit}
+            allSlashCommands={allSlashCommands}
+            availableEngines={availableEngines}
+            onSlashSelect={handleSlashSelect}
+            onSlashCancel={handleSlashCancel}
+            questionState={questionState}
+            questionAnswer={questionAnswer}
+            onQuestionAnswerChange={setQuestionAnswer}
+            onQuestionAnswerSubmit={handleQuestionAnswer}
+            termWidth={termWidth}
+            termHeight={termHeight}
+            onCtrlShortcut={handleComposerCtrlShortcut} />
+        )}
         {(() => {
           const _cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
           return (<>
@@ -1862,6 +1884,70 @@ export function isCesarTelemetryLine(message: string): boolean {
 }
 
 // @kern-source: app:97
+export const _telemetryResourceSample: any = ({ lastCpu: null, lastAt: 0 });
+
+// @kern-source: app:100
+function sampleLocalResourceVitals(): {cpuPercent:number,memPercent:number} {
+  const now = Date.now();
+  const current = process.cpuUsage();
+  const prev = _telemetryResourceSample.lastCpu;
+  const prevAt = Number(_telemetryResourceSample.lastAt ?? 0);
+  _telemetryResourceSample.lastCpu = current;
+  _telemetryResourceSample.lastAt = now;
+  let cpuPercent = 0;
+  if (prev && prevAt > 0 && now > prevAt) {
+    const deltaMicros = Math.max(0, (current.user - prev.user) + (current.system - prev.system));
+    const elapsedMicros = (now - prevAt) * 1000;
+    const coreCount = Math.max(1, cpus().length);
+    cpuPercent = Math.max(0, Math.min(100, (deltaMicros / (elapsedMicros * coreCount)) * 100));
+  }
+  const memPercent = Math.max(0, Math.min(100, (process.memoryUsage().rss / Math.max(1, totalmem())) * 100));
+  return { cpuPercent, memPercent };
+}
+
+// @kern-source: app:119
+async function probeEngineVitals(registry: any, engineId: string): Promise<Partial<EngineVitals>> {
+  const started = Date.now();
+  const resources = sampleLocalResourceVitals();
+  const mockTarget = String(process.env.AGON_MOCK_STALL_ENGINE ?? '').trim();
+  if (mockTarget && (mockTarget === '*' || mockTarget === engineId)) {
+    const stallMs = Number(process.env.AGON_MOCK_STALL_MS ?? 35000);
+    await new Promise((resolve) => setTimeout(resolve, Number.isFinite(stallMs) ? stallMs : 35000));
+  }
+  const engine = registry.get(engineId);
+  const hasBinary = engine.binary ? registry.findBinary(engine) !== null : false;
+  const hasApiKey = !!(engine.api && process.env[engine.api.apiKeyEnv]);
+  const available = hasBinary || hasApiKey || (!engine.binary && !engine.api);
+  let network: 'healthy'|'degraded'|'unreachable' = available ? 'healthy' : 'unreachable';
+  let latencyMs = Date.now() - started;
+
+  if (engine.api && hasApiKey && typeof fetch === 'function') {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 1200);
+    try {
+      const res = await fetch(engine.api.baseUrl, { method: 'HEAD', signal: controller.signal } as any);
+      latencyMs = Date.now() - started;
+      network = res.status >= 500 ? 'degraded' : 'healthy';
+    } catch {
+      latencyMs = Date.now() - started;
+      network = 'degraded';
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  return {
+    state: available ? 'idle' as any : 'offline' as any,
+    latencyMs,
+    network,
+    cpuPercent: resources.cpuPercent,
+    memPercent: resources.memPercent,
+    task: available ? (hasBinary ? 'cli ready' : hasApiKey ? 'api reachable' : 'ready') : 'missing binary/API key',
+    taskDetail: hasBinary ? 'local process telemetry' : undefined,
+  };
+}
+
+// @kern-source: app:161
 export function parseToolCallPayload(event: any): any {
   const rawInput = String(event?.input ?? '');
   let parsed: Record<string, unknown> = {};
@@ -1877,7 +1963,7 @@ export function parseToolCallPayload(event: any): any {
   };
 }
 
-// @kern-source: app:113
+// @kern-source: app:177
 export function formatConfidenceToolLabel(parsed: any, rawInput: string): string {
   const rawValue = parsed?.value ?? parsed?.confidence ?? parsed?.score;
   let value = Number(rawValue);
@@ -1896,7 +1982,7 @@ export function formatConfidenceToolLabel(parsed: any, rawInput: string): string
   return 'confidence';
 }
 
-// @kern-source: app:132
+// @kern-source: app:196
 export function extractPatchText(rawInput: string, parsed: any): string {
   const values = [
     parsed?.patch,
@@ -1920,7 +2006,7 @@ export function extractPatchText(rawInput: string, parsed: any): string {
   return values[0] ?? '';
 }
 
-// @kern-source: app:156
+// @kern-source: app:220
 export function parsePatchPreview(rawInput: string, parsed: any): { files:string[]; lines:string[]; additions:number; deletions:number } {
   const patchText = extractPatchText(rawInput, parsed);
   const files: string[] = [];
@@ -1969,7 +2055,7 @@ export function parsePatchPreview(rawInput: string, parsed: any): { files:string
   return { files, lines, additions, deletions };
 }
 
-// @kern-source: app:205
+// @kern-source: app:269
 export function toolPreviewWindow(lineCount: number, expanded: boolean): any {
   if (lineCount <= 0) return { head: 0, tail: 0, skipped: 0 };
   if (expanded) return { head: lineCount, tail: 0, skipped: 0 };
@@ -1987,7 +2073,7 @@ export function toolPreviewWindow(lineCount: number, expanded: boolean): any {
   };
 }
 
-// @kern-source: app:223
+// @kern-source: app:287
 export function toolCallSupportsDetailView(event: any): boolean {
   if (!event || event.type !== 'tool-call') return false;
   const { rawInput, parsed, toolKey } = parseToolCallPayload(event);
@@ -2007,7 +2093,7 @@ export function toolCallSupportsDetailView(event: any): boolean {
   return rawInput.length > 160 || outputText.length > 400;
 }
 
-// @kern-source: app:243
+// @kern-source: app:307
 export function detailViewerSupportsEvent(event: any): boolean {
   if (!event) return false;
   if (event.type === 'permission-ask') {
@@ -2017,12 +2103,12 @@ export function detailViewerSupportsEvent(event: any): boolean {
   return toolCallSupportsDetailView(event);
 }
 
-// @kern-source: app:253
+// @kern-source: app:317
 export function toolDetailViewportRows(termHeight: number): number {
   return Math.max(8, Math.min(18, termHeight - 14));
 }
 
-// @kern-source: app:258
+// @kern-source: app:322
 export function findLatestToolDetailEvent(blocks: OutputBlock[]): any {
   for (let index = blocks.length - 1; index >= 0; index -= 1) {
     const event = blocks[index]?.event as any;
@@ -2042,15 +2128,15 @@ export function findLatestToolDetailEvent(blocks: OutputBlock[]): any {
   return null;
 }
 
-// @kern-source: app:278
+// @kern-source: app:342
 export const COMPOSER_HISTORY_LIMIT: number = 200;
 
-// @kern-source: app:281
+// @kern-source: app:345
 export function composerHistoryPath(): string {
   return join(getAgonHome(), 'composer-history.json');
 }
 
-// @kern-source: app:284
+// @kern-source: app:348
 export function loadComposerInputHistory(): string[] {
   try {
     const parsed = JSON.parse(readFileSync(composerHistoryPath(), 'utf-8'));
@@ -2063,7 +2149,7 @@ export function loadComposerInputHistory(): string[] {
   }
 }
 
-// @kern-source: app:297
+// @kern-source: app:361
 export function saveComposerInputHistory(history: string[]): void {
   try {
     ensureAgonHome();
@@ -2074,7 +2160,7 @@ export function saveComposerInputHistory(history: string[]): void {
   }
 }
 
-// @kern-source: app:308
+// @kern-source: app:372
 export function findLatestFailedToolEvent(blocks: OutputBlock[]): any {
   for (let index = blocks.length - 1; index >= 0; index -= 1) {
     const event = blocks[index]?.event as any;
@@ -2090,7 +2176,7 @@ export function findLatestFailedToolEvent(blocks: OutputBlock[]): any {
   return null;
 }
 
-// @kern-source: app:324
+// @kern-source: app:388
 export function buildFailedToolRetryDraft(event: any): string {
   if (!event) return '';
   const { rawInput, parsed, toolKey } = parseToolCallPayload(event);
@@ -2105,7 +2191,7 @@ export function buildFailedToolRetryDraft(event: any): string {
   return `retry the failed ${toolName} call with corrected input:\n${payload}${suffix}`;
 }
 
-// @kern-source: app:339
+// @kern-source: app:403
 export function buildToolDetailView(event: any): any {
   if (!event) {
     return { title: 'Detail viewer', subtitle: '', accentColor: '#a78bfa', rows: [] };
@@ -2307,22 +2393,22 @@ export function buildToolDetailView(event: any): any {
   };
 }
 
-// @kern-source: app:542
+// @kern-source: app:606
 export const _activeAborts: Set<AbortController> = new Set<AbortController>();
 
-// @kern-source: app:545
+// @kern-source: app:609
 export const _cancelCallback: { fn: (() => void) | null } = { fn: null };
 
-// @kern-source: app:548
+// @kern-source: app:612
 export const _cesarSessionRef: { session: PersistentSession | null } = { session: null };
 
-// @kern-source: app:551
+// @kern-source: app:615
 export const _lastSigintAt: { value: number } = { value: 0 };
 
-// @kern-source: app:554
+// @kern-source: app:618
 export const _pauseState: { value: PauseState | null } = { value: null };
 
-// @kern-source: app:557
+// @kern-source: app:621
 export function createInitialRegistry(): EngineRegistry {
   const reg = new EngineRegistry();
   const engDir = join(dirname(fileURLToPath(import.meta.url)), '../../../engines');
@@ -2330,7 +2416,7 @@ export function createInitialRegistry(): EngineRegistry {
   return reg;
 }
 
-// @kern-source: app:565
+// @kern-source: app:629
 export function drainStdinBuffer(): void {
   if (!process.stdin.isTTY || typeof process.stdin.read !== 'function') return;
   let chunk: string | Buffer | null;
@@ -2339,12 +2425,12 @@ export function drainStdinBuffer(): void {
   } while (chunk !== null);
 }
 
-// @kern-source: app:574
+// @kern-source: app:638
 export function maxScrollOffsetForRowCount(rowCount: number, rowBudget: number): number {
   return Math.max(0, rowCount - Math.max(1, rowBudget));
 }
 
-// @kern-source: app:579
+// @kern-source: app:643
 export function nextWheelAnimationStep(pending: number): {step:number,remaining:number} {
   if (!Number.isFinite(pending) || pending === 0) return { step: 0, remaining: 0 };
   const direction = pending > 0 ? 1 : -1;
@@ -2354,12 +2440,12 @@ export function nextWheelAnimationStep(pending: number): {step:number,remaining:
   return { step, remaining: pending - step };
 }
 
-// @kern-source: app:589
+// @kern-source: app:653
 export function clampNumber(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-// @kern-source: app:594
+// @kern-source: app:658
 export function charDisplayWidth(char: string): number {
   if (!char) return 0;
   const codePoint = char.codePointAt(0) ?? 0;
@@ -2394,7 +2480,7 @@ export function charDisplayWidth(char: string): number {
   return 1;
 }
 
-// @kern-source: app:629
+// @kern-source: app:693
 export function stringDisplayWidth(text: string): number {
   let width = 0;
   for (const char of Array.from(String(text ?? ''))) {
@@ -2403,7 +2489,7 @@ export function stringDisplayWidth(text: string): number {
   return width;
 }
 
-// @kern-source: app:638
+// @kern-source: app:702
 export function displayColumnToStringIndex(text: string, targetColumn: number): number {
   const value = String(text ?? '');
   if (!Number.isFinite(targetColumn) || targetColumn <= 0) return 0;
@@ -2420,13 +2506,13 @@ export function displayColumnToStringIndex(text: string, targetColumn: number): 
   return value.length;
 }
 
-// @kern-source: app:655
+// @kern-source: app:719
 export function normalizeRowSelection(anchor: number|null, focus: number|null): {start:number,end:number}|null {
   if (anchor === null || focus === null) return null;
   return { start: Math.min(anchor, focus), end: Math.max(anchor, focus) };
 }
 
-// @kern-source: app:661
+// @kern-source: app:725
 export function normalizeTextSelection(anchorRow: number|null, anchorCol: number|null, focusRow: number|null, focusCol: number|null): {startRow:number,startCol:number,endRow:number,endCol:number}|null {
   if (anchorRow === null || anchorCol === null || focusRow === null || focusCol === null) return null;
   if (anchorRow < focusRow) return { startRow: anchorRow, startCol: anchorCol, endRow: focusRow, endCol: focusCol };
@@ -2435,7 +2521,7 @@ export function normalizeTextSelection(anchorRow: number|null, anchorCol: number
   return { startRow: focusRow, startCol: focusCol, endRow: anchorRow, endCol: anchorCol };
 }
 
-// @kern-source: app:670
+// @kern-source: app:734
 export function richLineToPlainText(line: any): string {
   if (!line) return '';
   if (line.kind === 'blank') return '';
@@ -2456,7 +2542,7 @@ export function richLineToPlainText(line: any): string {
   return `${indent}${listIndent}${marker}${spanText}`;
 }
 
-// @kern-source: app:691
+// @kern-source: app:755
 export function transcriptRowToPlainText(row: any): string {
   if (!row) return '';
   if (row.kind === 'spacer') return '';
@@ -2471,14 +2557,14 @@ export function transcriptRowToPlainText(row: any): string {
   return `${prefix}${text}`;
 }
 
-// @kern-source: app:706
+// @kern-source: app:770
 export function transcriptRowTextStartColumn(row: any): number {
   const paddingLeft = Math.max(0, Number(row?.paddingLeft ?? 0));
   const borderColumns = row?.borderColor ? 2 : 0;
   return paddingLeft + borderColumns + 2;
 }
 
-// @kern-source: app:713
+// @kern-source: app:777
 export function resolveTranscriptColumnFromMouse(mouseX: number, row: any): number {
   const text = transcriptRowToPlainText(row);
   const startColumn = transcriptRowTextStartColumn(row);
@@ -2487,7 +2573,7 @@ export function resolveTranscriptColumnFromMouse(mouseX: number, row: any): numb
   return displayColumnToStringIndex(text, targetColumn);
 }
 
-// @kern-source: app:722
+// @kern-source: app:786
 export function transcriptRowsToPlainText(rows: any[], anchorRow: number|null, anchorCol: number|null, focusRow: number|null, focusCol: number|null): string {
   const range = normalizeTextSelection(anchorRow, anchorCol, focusRow, focusCol);
   if (!range) return '';
@@ -2512,7 +2598,7 @@ export function transcriptRowsToPlainText(rows: any[], anchorRow: number|null, a
   return lines.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd();
 }
 
-// @kern-source: app:747
+// @kern-source: app:811
 export function resolveTranscriptRowFromMouse(mouseY: number, viewportTopLine: number, firstVisibleRow: number, visibleRowCount: number): number|null {
   if (visibleRowCount <= 0) return null;
   const offset = mouseY - viewportTopLine;
@@ -2521,7 +2607,7 @@ export function resolveTranscriptRowFromMouse(mouseY: number, viewportTopLine: n
   return firstVisibleRow + clamped;
 }
 
-// @kern-source: app:756
+// @kern-source: app:820
 export function estimateVisibleBlockBudget(rows: number, mode: string, overlayReservedRows: number): number {
   // Chat mode keeps 7 rows for the composer/status chrome at minimum:
   // margin + bordered composer (3) + Cesar strip + two-line status bar.
@@ -2530,7 +2616,7 @@ export function estimateVisibleBlockBudget(rows: number, mode: string, overlayRe
   return Math.max(1, rows - reservedRows);
 }
 
-// @kern-source: app:765
+// @kern-source: app:829
 export function estimateWrappedRowCount(text: string, wrapWidth: number): number {
   const safeWidth = Math.max(1, wrapWidth);
   const lines = String(text ?? '').split('\n');
@@ -2544,7 +2630,7 @@ export function estimateWrappedRowCount(text: string, wrapWidth: number): number
 /**
  * Reserve extra transcript rows when the bottom composer is showing a multi-line question or permission card, so short terminals do not clip the actionable keys.
  */
-// @kern-source: app:776
+// @kern-source: app:840
 export function estimateQuestionReservedRows(questionState: any, termWidth: number): number {
   if (!questionState) return 0;
   const safeWidth = Math.max(24, termWidth - 12);
@@ -2580,7 +2666,7 @@ export function estimateQuestionReservedRows(questionState: any, termWidth: numb
 /**
  * Reserve extra rows above the base composer/status chrome for stacked prompt cards, queued-input badges, and chat spinner rows.
  */
-// @kern-source: app:810
+// @kern-source: app:874
 export function estimateBottomChromeExtraRows(mode: string, questionState: any, termWidth: number, pendingImageCount: number, inputQueueCount: number, hasLiveSpinner: boolean): number {
   let extraRows = 0;
   if (pendingImageCount > 0) extraRows += 1;
@@ -2590,7 +2676,7 @@ export function estimateBottomChromeExtraRows(mode: string, questionState: any, 
   return extraRows;
 }
 
-// @kern-source: app:821
+// @kern-source: app:885
 export function buildDashboardBlock(enabledOverride: string[]|null): OutputBlock {
   const registry = createInitialRegistry();
   const available = registry.availableIds();
@@ -2621,7 +2707,7 @@ export function buildDashboardBlock(enabledOverride: string[]|null): OutputBlock
   };
 }
 
-// @kern-source: app:852
+// @kern-source: app:916
 export function estimatePinnedLiveRows(mode: string, hasStream: boolean, hasProgress: boolean, agentCount: number): number {
   const streamRows = hasStream ? (mode === 'chat' ? 3 : 6) : 0;
   const progressRows = hasProgress ? (mode === 'chat' ? 3 : 5) : 0;
@@ -2629,7 +2715,7 @@ export function estimatePinnedLiveRows(mode: string, hasStream: boolean, hasProg
   return streamRows + progressRows + agentRows;
 }
 
-// @kern-source: app:860
+// @kern-source: app:924
 export function estimateWrappedRows(text: string, width: number): number {
   const safeWidth = Math.max(1, width);
   if (!text) return 0;
@@ -2639,7 +2725,7 @@ export function estimateWrappedRows(text: string, width: number): number {
   }, 0);
 }
 
-// @kern-source: app:870
+// @kern-source: app:934
 export function estimateToolCallRows(event: any, toolOutputExpanded: boolean, codeWidth: number): number {
   if (!event || event.type !== 'tool-call') return 0;
   if (!event.input && !event.output && (event.tool === 'Delegate' || event.tool === 'delegate')) return 0;
@@ -2712,7 +2798,7 @@ export function estimateToolCallRows(event: any, toolOutputExpanded: boolean, co
   return rows;
 }
 
-// @kern-source: app:943
+// @kern-source: app:1007
 export function estimateOutputEventRows(event: OutputEvent, mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean): number {
   const proseWidth = contentWidth(4);
   const chatWidth = contentWidth(2);
@@ -2817,7 +2903,7 @@ export function estimateOutputEventRows(event: OutputEvent, mode: string, toolOu
   }
 }
 
-// @kern-source: app:1048
+// @kern-source: app:1112
 export function buildDisplayItems(blocks: OutputBlock[], toolOutputExpanded: boolean): OutputBlock[] {
   // Keep collapse as a per-block display concern, not a synthetic grouped
   // scroll unit. Grouped tool summaries make wheel scrolling jump because
@@ -2825,7 +2911,7 @@ export function buildDisplayItems(blocks: OutputBlock[], toolOutputExpanded: boo
   return blocks;
 }
 
-// @kern-source: app:1056
+// @kern-source: app:1120
 export function isToolCallLikeBlock(block: OutputBlock): boolean {
   const type = (block?.event as any)?.type;
   return type === 'tool-call' || type === 'tool-call-group';
@@ -2834,7 +2920,7 @@ export function isToolCallLikeBlock(block: OutputBlock): boolean {
 /**
  * Merge adjacent tool-call and tool-call-group blocks into one group so native/live renderers do not show repeated collapsed tool summaries.
  */
-// @kern-source: app:1062
+// @kern-source: app:1126
 export function coalesceToolCallBlocks(blocks: OutputBlock[]): OutputBlock[] {
   if (!Array.isArray(blocks) || blocks.length === 0) return [];
   const out: OutputBlock[] = [];
@@ -2881,7 +2967,7 @@ export function coalesceToolCallBlocks(blocks: OutputBlock[]): OutputBlock[] {
 /**
  * Choose the native Static archive count. When tools are expanded, keep the latest tool-call island live because Ink Static cannot repaint already-sealed collapsed tool summaries.
  */
-// @kern-source: app:1107
+// @kern-source: app:1171
 export function effectiveNativeArchiveBlockCount(blocks: OutputBlock[], baseArchiveCount: number, targetArchiveCount: number, toolOutputExpanded: boolean): number {
   if (!Array.isArray(blocks) || blocks.length === 0) return 0;
 
@@ -2914,12 +3000,12 @@ export function effectiveNativeArchiveBlockCount(blocks: OutputBlock[], baseArch
   return count;
 }
 
-// @kern-source: app:1141
+// @kern-source: app:1205
 export function estimateDisplayItemRows(item: OutputBlock, mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean): number {
   return estimateOutputEventRows(item.event, mode, toolOutputExpanded, thinkingExpanded);
 }
 
-// @kern-source: app:1146
+// @kern-source: app:1210
 export function historyBlocksForTranscript(blocks: OutputBlock[]): OutputBlock[] {
   if (blocks.length === 1 && blocks[0]?.event?.type === 'dashboard') return [];
   return blocks;
@@ -2928,7 +3014,7 @@ export function historyBlocksForTranscript(blocks: OutputBlock[]): OutputBlock[]
 /**
  * Native transcript history. While idle, the startup dashboard is live chrome. Once the first real transcript row exists, keep the dashboard as the first chat-history block so the AGON header scrolls with the conversation instead of disappearing.
  */
-// @kern-source: app:1152
+// @kern-source: app:1216
 export function nativeTranscriptBlocksForStatic(blocks: OutputBlock[]): OutputBlock[] {
   if (blocks.length === 1 && blocks[0]?.event?.type === 'dashboard') return [];
   return blocks;
@@ -2937,7 +3023,7 @@ export function nativeTranscriptBlocksForStatic(blocks: OutputBlock[]): OutputBl
 /**
  * Choose how many native transcript blocks are sealed into Static. The remaining tail stays live so recent rows can rerender while older rows remain in terminal scrollback.
  */
-// @kern-source: app:1159
+// @kern-source: app:1223
 export function nativeArchiveBlockCount(blocks: OutputBlock[], mode: string, rowBudget: number, toolOutputExpanded: boolean, thinkingExpanded: boolean): number {
   if (!Array.isArray(blocks) || blocks.length === 0) return 0;
 
@@ -2971,7 +3057,7 @@ export function nativeArchiveBlockCount(blocks: OutputBlock[], mode: string, row
 /**
  * Detect same-turn duplicate completed engine output. A new user-message resets the guard so an intentional repeat request can still show identical text.
  */
-// @kern-source: app:1191
+// @kern-source: app:1255
 export function isDuplicateEngineBlock(blocks: OutputBlock[], event: any): boolean {
   if (!event || event.type !== 'engine-block') return false;
   const content = cleanEngineOutput(String(event.content ?? '')).trim();
@@ -2993,25 +3079,25 @@ export function isDuplicateEngineBlock(blocks: OutputBlock[], event: any): boole
 /**
  * Append a transcript block with cap/archive handling while suppressing accidental duplicate engine output.
  */
-// @kern-source: app:1211
+// @kern-source: app:1275
 export function appendTranscriptBlock(blocks: OutputBlock[], event: any, archivePath: string): OutputBlock[] {
   if (isDuplicateEngineBlock(blocks, event)) return blocks;
   return appendBlockWithCap(blocks, { id: Date.now() + Math.random(), event }, archivePath);
 }
 
-// @kern-source: app:1218
+// @kern-source: app:1282
 export function normalizeTerminalMode(value: any): 'native'|'fullscreen' {
   return value === 'fullscreen' ? 'fullscreen' : 'native';
 }
 
-// @kern-source: app:1223
+// @kern-source: app:1287
 export function fileRailWidthForTerminal(termWidth: number, expanded: boolean): number {
   const safeWidth = Math.max(40, Math.floor(Number(termWidth) || 100));
   if (expanded) return Math.max(36, Math.min(84, Math.floor(safeWidth * 0.35)));
   return Math.max(28, Math.min(42, Math.floor(safeWidth * 0.22)));
 }
 
-// @kern-source: app:1230
+// @kern-source: app:1294
 export function fileRailMaxRowsForTerminal(termHeight: number, terminalMode: string, expanded: boolean): number {
   const safeHeight = Math.max(8, Math.floor(Number(termHeight) || 24));
   if (terminalMode === 'native') {
@@ -3025,7 +3111,7 @@ export function fileRailMaxRowsForTerminal(termHeight: number, terminalMode: str
 /**
  * Pure terminal replay harness: summarizes the layout-sensitive parts of the REPL for fixed viewport sizes so unit tests can catch native/fullscreen regressions without launching an interactive TTY.
  */
-// @kern-source: app:1241
+// @kern-source: app:1305
 export function buildTerminalReplaySnapshot(blocks: OutputBlock[], opts: any): {terminalMode:'native'|'fullscreen'; mode:string; termWidth:number; termHeight:number; visibleBudget:number; transcriptRowCount:number; staticBlockCount:number; liveBlockCount:number; fileRailWidth:number; fileRailRows:number; headerRows:number; lowerChromeRows:number} {
   const terminalMode = normalizeTerminalMode(opts?.terminalMode);
   const mode = String(opts?.mode ?? 'chat');
@@ -3079,7 +3165,7 @@ export function buildTerminalReplaySnapshot(blocks: OutputBlock[], opts: any): {
   };
 }
 
-// @kern-source: app:1296
+// @kern-source: app:1360
 export function parseMarkdownToRows(baseKey: string, text: string, wrapWidth: number, paddingLeft: number, borderColor: string): any[] {
   const rows: any[] = [];
   const cleaned = String(text ?? '').trim();
@@ -3187,7 +3273,7 @@ export function parseMarkdownToRows(baseKey: string, text: string, wrapWidth: nu
   return rows;
 }
 
-// @kern-source: app:1404
+// @kern-source: app:1468
 export function buildToolCallRows(baseKey: string, event: any, toolOutputExpanded: boolean): any[] {
   if (!event.input && !event.output && (event.tool === 'Delegate' || event.tool === 'delegate')) return [];
 
@@ -3558,7 +3644,7 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
   return rows;
 }
 
-// @kern-source: app:1775
+// @kern-source: app:1839
 export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any[] {
   if (!events || events.length === 0) return [];
 
@@ -3653,7 +3739,7 @@ export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any
   return rows;
 }
 
-// @kern-source: app:1870
+// @kern-source: app:1934
 export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean): any[] {
   const rows: any[] = [];
   const proseWidth = contentWidth(4);
@@ -4133,7 +4219,7 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
   return rows;
 }
 
-// @kern-source: app:3998
+// @kern-source: app:4083
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

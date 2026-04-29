@@ -134,6 +134,59 @@ export function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd
 }
 
 // @kern-source: status:261
+const StatusDashboard = React.memo(function StatusDashboard({ telemetryVitals, recentFallbacks, width, height }: { telemetryVitals:Map<string, any>; recentFallbacks?:{from:string,to:string,reason:string,at:number}[]; width?:number; height?:number }) {
+  const vitals = Array.from(telemetryVitals?.values?.() ?? []);
+  const rows = vitals.slice(0, Math.max(4, Math.min(20, (height ?? 24) - 8)));
+  const short = (value: any, max = 18) => {
+    const text = String(value ?? '');
+    return text.length > max ? text.slice(0, max - 1) + '\u2026' : text.padEnd(max, ' ');
+  };
+  const pct = (value: any) => typeof value === 'number' && Number.isFinite(value) ? `${Math.round(value).toString().padStart(3, ' ')}%` : '  -';
+  const latency = (value: any) => typeof value === 'number' && Number.isFinite(value) ? `${Math.round(value)}ms`.padStart(6, ' ') : '     -';
+  const mem = (value: any) => typeof value === 'number' && Number.isFinite(value) ? `${Math.round(value).toString().padStart(3, ' ')}%` : '  -';
+  const stateColor = (state: string) => state === 'stalled' ? '#ef4444' : state === 'offline' ? '#9ca3af' : state === 'fallback' ? '#f97316' : state === 'busy' ? '#fbbf24' : '#4ade80';
+  const stateIcon = (state: string) => state === 'stalled' ? '\u26a0' : state === 'offline' ? '\u2718' : state === 'fallback' ? '\u21c4' : state === 'busy' ? '\u25d0' : '\u25cf';
+  const health = rows.some((v: any) => v.state === 'stalled' || v.state === 'offline') ? 'critical'
+    : rows.some((v: any) => v.state === 'fallback') ? 'degraded'
+    : 'healthy';
+  const fallbacks = (recentFallbacks ?? []).slice(-4).reverse();
+
+  return (
+    <Box flexDirection="column" borderStyle="single" borderColor={health === 'critical' ? '#ef4444' : health === 'degraded' ? '#f97316' : '#22d3ee'} paddingX={1}>
+      <Text>
+        <Text color="#22d3ee" bold>{'AGON STATUS'}</Text>
+        <Text dimColor>{' · htop for engines · '}</Text>
+        <Text color={health === 'critical' ? '#ef4444' : health === 'degraded' ? '#f97316' : '#4ade80'} bold>{health.toUpperCase()}</Text>
+        <Text dimColor>{' · q/Esc closes'}</Text>
+      </Text>
+      <Text dimColor>{'ENGINE              ST  CPU  MEM    NET  WORK'}</Text>
+      {rows.length === 0 ? <Text dimColor>{'No telemetry snapshot yet; waiting for first poll.'}</Text> : null}
+      {rows.map((v: any) => (
+        <Text key={v.engineId}>
+          <Text color={engineColor(v.engineId)} bold>{short(v.engineId, 18)}</Text>
+          <Text>{'  '}</Text>
+          <Text color={stateColor(v.state)}>{stateIcon(v.state)}</Text>
+          <Text>{'  '}</Text>
+          <Text color={typeof v.cpuPercent === 'number' && v.cpuPercent > 75 ? '#f97316' : '#94a3b8'}>{pct(v.cpuPercent)}</Text>
+          <Text>{' '}</Text>
+          <Text color={typeof v.memPercent === 'number' && v.memPercent > 75 ? '#f97316' : '#94a3b8'}>{mem(v.memPercent)}</Text>
+          <Text>{' '}</Text>
+          <Text color={v.network === 'unreachable' ? '#ef4444' : v.network === 'degraded' ? '#fbbf24' : '#94a3b8'}>{latency(v.latencyMs)}</Text>
+          <Text>{'  '}</Text>
+          <Text dimColor>{String(v.task ?? v.network ?? '').slice(0, Math.max(18, (width ?? 100) - 56))}</Text>
+          {v.fallbackTo ? <Text color="#f97316">{` -> ${v.fallbackTo}`}</Text> : null}
+        </Text>
+      ))}
+      {fallbacks.length > 0 ? <Text dimColor>{'recent fallback:'}</Text> : null}
+      {fallbacks.map((fb: any, index: number) => (
+        <Text key={index} color="#f97316">{`  ${fb.from} -> ${fb.to} (${fb.reason})`}</Text>
+      ))}
+    </Box>
+  );
+});
+export { StatusDashboard };
+
+// @kern-source: status:320
 export function StatusLine({ startTime, engineId, color }: { startTime:number; engineId?:string; color?:number }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -168,7 +221,7 @@ export function StatusLine({ startTime, engineId, color }: { startTime:number; e
   );
 }
 
-// @kern-source: status:290
+// @kern-source: status:349
 const BackgroundJobRail = React.memo(function BackgroundJobRail({ jobs }: { jobs:Job[] }) {
   return (
     <Box paddingX={1}>
@@ -191,7 +244,7 @@ const BackgroundJobRail = React.memo(function BackgroundJobRail({ jobs }: { jobs
 });
 export { BackgroundJobRail };
 
-// @kern-source: status:310
+// @kern-source: status:369
 const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confidence, spinner, engines, startTime, streamSnippet, isActive, planModeQueued, autoModeQueued, activePlanState, activePlan, scoreboard, rationale }: { cesarId:string; confidence?:number|null; spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; startTime:number; streamSnippet?:{ engineId: string; line: string } | null; isActive:boolean; planModeQueued?:boolean; autoModeQueued?:boolean; activePlanState?:string|null; activePlan?:any; scoreboard?:Scoreboard|null; rationale?:ModeRationale|null }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {

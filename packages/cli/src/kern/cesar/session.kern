@@ -340,6 +340,7 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
     const cwd = resolveWorkingDir();
     const fsc = getProjectFileStateCache(cwd);
     const toolResultCache = new Map<string, string>();
+    const nativeToolErrorRetries = new Map<string, number>();
     const CACHEABLE_TOOLS = new Set(['Grep', 'Glob']);
     const explorationMode = ctx.explorationMode ?? false;
     const sharedToolCtx: ToolContext = {
@@ -537,7 +538,19 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
           });
         },
       );
-      const output = result.result.ok ? result.result.content : (result.result.error ?? 'Tool execution failed');
+      let output = result.result.ok ? result.result.content : (result.result.error ?? 'Tool execution failed');
+      if (!result.result.ok) {
+        const retryKey = `${name}:${JSON.stringify(args)}`;
+        const used = nativeToolErrorRetries.get(retryKey) ?? 0;
+        if (used <= 0) {
+          nativeToolErrorRetries.set(retryKey, 1);
+          output = `[RETRYABLE_TOOL_ERROR] ${output}\nRetry this ${name} call once with corrected input. Do not narrate before retrying.`;
+        } else {
+          output = `[TOOL_ERROR_FINAL] ${output}\nRepair retry already used for this exact ${name} input in this turn. Stop retrying this call and explain the blocker.`;
+        }
+      } else {
+        nativeToolErrorRetries.delete(`${name}:${JSON.stringify(args)}`);
+      }
       // Cache read-only results. Invalidate on writes.
       if (CACHEABLE_TOOLS.has(name)) {
         toolResultCache.set(cacheKey, output);

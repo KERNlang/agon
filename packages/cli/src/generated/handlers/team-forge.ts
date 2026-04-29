@@ -68,6 +68,15 @@ export async function handleTeamForge(task: string, fitnessCmd: string|null, dis
         if (event.type === 'team:member-dispatch' && event.data) {
           dispatch({ type: 'spinner-update', message: `${String(event.data.engineId)} (${String(event.data.role)}) working...` });
         }
+        if (event.type === 'engine:pid' && event.data) {
+          dispatch({ type: 'engine-pid', engineId: String(event.data.engineId ?? event.engineId), pid: Number(event.data.pid ?? 0), phase: event.data.phase } as any);
+        }
+        if (event.type === 'engine:pid-clear') {
+          dispatch({ type: 'engine-pid-clear', engineId: String(event.data?.engineId ?? event.engineId) } as any);
+        }
+        if (event.type === 'engine:fallback' && event.data) {
+          dispatch({ type: 'warning', message: `${String(event.data.from ?? event.engineId)} failed during ${String(event.data.phase ?? 'team forge')} — retrying on ${String(event.data.to ?? 'fallback')}` });
+        }
         if (event.type === 'team:score' && event.data) {
           dispatch({ type: 'info', message: `Team scored: ${String(event.data.score)}` });
         }

@@ -4,7 +4,7 @@ import { join, basename } from 'node:path';
 
 import { mkdirSync, writeFileSync, readFileSync, appendFileSync } from 'node:fs';
 
-import { resolveWorkingDir, extractImagesFromInput, buildImageAttachment, undoPatch, listSnapshots, revertSnapshot, resumeChatSession, findSkill, renderSkillPrompt, configSet, startChatSession, currentBranch, gitChangedFiles, buildExtensionContext, sessionContext, RUNS_DIR, getAgonHome, clearConversation } from '@agon/core';
+import { resolveWorkingDir, extractImagesFromInput, buildImageAttachment, undoPatch, listSnapshots, revertSnapshot, resumeChatSession, findSkill, renderSkillPrompt, configSet, loadConfig, startChatSession, currentBranch, gitChangedFiles, buildExtensionContext, sessionContext, RUNS_DIR, getAgonHome, clearConversation } from '@agon/core';
 
 import { invalidateCwdCache } from '../handlers/chat.js';
 
@@ -1792,6 +1792,25 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
 
     case 'undo': {
       const cwd = resolveWorkingDir();
+      const snapshotId = String((intent as any).snapshotId ?? '').trim();
+      if (snapshotId) {
+        const snapshot = listSnapshots().find((entry: any) => String(entry?.id ?? '') === snapshotId);
+        if (!snapshot) {
+          cb.dispatch({ type: 'warning', message: `Checkpoint ${snapshotId} not found.` });
+          break;
+        }
+        if (String(snapshot.cwd ?? '') !== cwd) {
+          cb.dispatch({ type: 'warning', message: `Checkpoint ${snapshotId} belongs to a different workspace.` });
+          break;
+        }
+        const revertResult = revertSnapshot(snapshot.id);
+        if (revertResult.ok) {
+          cb.dispatch({ type: 'success', message: `Checkpoint ${snapshot.id} reverted (${revertResult.filesReverted} file${revertResult.filesReverted === 1 ? '' : 's'}).` });
+        } else {
+          cb.dispatch({ type: 'error', message: revertResult.error ?? 'Checkpoint undo failed' });
+        }
+        break;
+      }
       if (cb.lastUndoToken) {
         const undoResult = undoPatch(cwd, cb.lastUndoToken);
         if (undoResult.ok) {
@@ -1812,6 +1831,27 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
         cb.dispatch({ type: 'success', message: `Checkpoint ${snapshot.id} reverted (${revertResult.filesReverted} file${revertResult.filesReverted === 1 ? '' : 's'}).` });
       } else {
         cb.dispatch({ type: 'error', message: revertResult.error ?? 'Checkpoint undo failed' });
+      }
+      break;
+    }
+
+    case 'checkpoints': {
+      const cwd = resolveWorkingDir();
+      const snapshots = listSnapshots().filter((entry: any) => String(entry?.cwd ?? '') === cwd).slice(0, 10);
+      if (snapshots.length === 0) {
+        cb.dispatch({ type: 'info', message: 'No checkpoints for this workspace.' });
+        break;
+      }
+      cb.dispatch({ type: 'header', title: 'Recent Checkpoints' });
+      for (const snapshot of snapshots) {
+        const files = Array.isArray(snapshot.files) ? snapshot.files : [];
+        const fileList = files.map((f: any) => String(f?.path ?? '')).filter(Boolean).slice(0, 3).join(', ');
+        const more = files.length > 3 ? ` +${files.length - 3}` : '';
+        const created = String(snapshot.createdAt ?? '').replace('T', ' ').replace(/\.\d+Z$/, 'Z');
+        cb.dispatch({
+          type: 'info',
+          message: `${snapshot.id} · ${snapshot.label ?? 'checkpoint'} · ${created} · ${files.length} file${files.length === 1 ? '' : 's'}${fileList ? ` (${fileList}${more})` : ''} · /undo ${snapshot.id}`,
+        });
       }
       break;
     }
@@ -2527,7 +2567,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
 /**
  * Shared approval loop for plans proposed by Cesar, whether from explicit /plan mode or a normal chat turn.
  */
-// @kern-source: dispatch:2449
+// @kern-source: dispatch:2489
 export async function handleProposedCesarPlan(proposed: CesarPlan, cb: DispatchCallbacks): Promise<void> {
   if (cb.ctx.cesar) cb.ctx.cesar.proposedPlan = undefined;
 
@@ -2668,7 +2708,7 @@ export async function handleProposedCesarPlan(proposed: CesarPlan, cb: DispatchC
 /**
  * Build executor callbacks. Holds a closure on the latest plan reference (mutated via onPlanUpdate) so step lookups always see appended steps like the auto-review cycle (tribunal fix #10). FU-3: persistence is debounced 300ms to avoid the sync-write storm Doppelganger flagged — onPlanUpdate fires once per step in a hot loop, but the disk write happens at most ~3x/sec. Terminal states (done/paused/cancelled) flush immediately so the .md/.json on disk reflect the final state. Callers should invoke .flush() before exit to drain any pending write.
  */
-// @kern-source: dispatch:2593
+// @kern-source: dispatch:2633
 export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks): any {
   let currentPlan = initialPlan;
   let pendingWriteTimer: ReturnType<typeof setTimeout> | null = null;
@@ -2793,14 +2833,66 @@ export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks
 }
 
 /**
+ * Return true when a failed plan step looks like it was interrupted by stall/fallback handling rather than a semantic task failure.
+ */
+// @kern-source: dispatch:2758
+export function failedPlanStepIsFallbackRetryable(step: any): boolean {
+  if (!step || step.state !== 'failed') return false;
+  const result = step.result ?? {};
+  const text = `${String(result.error ?? '')}\n${String(result.output ?? '')}`.toLowerCase();
+  if (!text.trim()) return false;
+  return /\b(cancelled|canceled|aborted|abort|stalled|timeout|timed out|no response|econnreset|socket hang up)\b/.test(text);
+}
+
+/**
+ * Reset one retryable failed plan step and bind it to the fallback engine. The caller runs executePlan again with a fresh abort controller.
+ */
+// @kern-source: dispatch:2768
+export function preparePlanFallbackRetry(plan: CesarPlan, fallbackEngine: string): CesarPlan|null {
+  const engine = String(fallbackEngine ?? '').trim();
+  if (!engine || !Array.isArray(plan.steps)) return null;
+  const failedIndex = plan.steps.findIndex((step: any) => failedPlanStepIsFallbackRetryable(step));
+  if (failedIndex < 0) return null;
+  const failedStep = plan.steps[failedIndex] as any;
+  const retriesUsed = (plan as any).fallbackRetriesUsed ?? {};
+  const used = Number(retriesUsed[failedStep.id] ?? 0);
+  if (used >= 1) return null;
+
+  const currentEngines = [failedStep.engine, ...(Array.isArray(failedStep.engines) ? failedStep.engines : [])]
+    .filter((id: any) => typeof id === 'string' && id.trim().length > 0);
+  if (currentEngines.length === 1 && currentEngines[0] === engine) return null;
+
+  const retryStep = {
+    ...failedStep,
+    state: 'pending' as any,
+    result: undefined,
+    engine,
+    engines: Array.isArray(failedStep.engines) || ['forge', 'teamforge', 'pipeline', 'brainstorm', 'campfire', 'tribunal'].includes(String(failedStep.type))
+      ? [engine]
+      : failedStep.engines,
+  };
+
+  return {
+    ...plan,
+    state: 'running' as any,
+    completedAt: undefined,
+    steps: plan.steps.map((step: any, index: number) => index === failedIndex ? retryStep : step),
+    fallbackRetriesUsed: {
+      ...retriesUsed,
+      [failedStep.id]: used + 1,
+    },
+  } as CesarPlan;
+}
+
+/**
  * FU-4: shared executor for the auto-approve, manual-approve, and plan-resume paths. Wires the abort controller, builds callbacks (with debounced persistence), runs executePlan, runs finalizePlanWithReviewGate, and dispatches the terminal status. Eliminates the ~60 lines of triplication that lived in dispatch.kern and forced future changes (e.g., new callback hooks, new finalize behavior) to be applied to all three sites.
  */
-// @kern-source: dispatch:2718
+// @kern-source: dispatch:2806
 export async function executeApprovedPlan(approved: CesarPlan, cb: DispatchCallbacks): Promise<void> {
   const executors = buildStepExecutors(cb.ctx, cb.dispatch);
-  const abortController = new AbortController();
+  let abortController = new AbortController();
   cb.ctx.setActiveAbort?.(abortController);
-  const callbacks = buildPlanCallbacks(approved, cb);
+  let callbacks = buildPlanCallbacks(approved, cb);
 
   try {
     let finalPlan = await executePlan(approved, executors, callbacks, abortController.signal);
@@ -2810,6 +2902,34 @@ export async function executeApprovedPlan(approved: CesarPlan, cb: DispatchCallb
       try {
         writeFileSync(finalPlan.planFilePath, formatCesarPlanMarkdown(finalPlan));
       } catch (err) { console.warn('[plan] failed to write plan file:', (err as Error).message ?? err); }
+    }
+    const fallbackEngine = String((loadConfig() as any).cesarEngine ?? cb.ctx.config?.cesarEngine ?? cb.ctx.config?.forgeFixedStarter ?? '').trim();
+    const retryPlan = preparePlanFallbackRetry(finalPlan, fallbackEngine);
+    if (retryPlan) {
+      const retryStep = retryPlan.steps.find((step: any) => step.state === 'pending' && (retryPlan.fallbackRetriesUsed?.[step.id] ?? 0) > 0);
+      cb.dispatch({
+        type: 'warning',
+        message: `Plan fallback retry — rerunning step "${retryStep?.description ?? 'unknown'}" on ${fallbackEngine}`,
+      });
+      try { (callbacks as any).flush?.(); } catch { /* ignore */ }
+      abortController = new AbortController();
+      cb.ctx.setActiveAbort?.(abortController);
+      callbacks = buildPlanCallbacks(retryPlan, cb);
+      cb.setActivePlan(retryPlan);
+      saveCesarPlan(retryPlan);
+      if (retryPlan.planFilePath) {
+        try {
+          writeFileSync(retryPlan.planFilePath, formatCesarPlanMarkdown(retryPlan));
+        } catch (err) { console.warn('[plan] failed to write fallback retry plan file:', (err as Error).message ?? err); }
+      }
+      finalPlan = await executePlan(retryPlan, executors, callbacks, abortController.signal);
+      cb.setActivePlan(finalPlan);
+      saveCesarPlan(finalPlan);
+      if (finalPlan.planFilePath) {
+        try {
+          writeFileSync(finalPlan.planFilePath, formatCesarPlanMarkdown(finalPlan));
+        } catch (err) { console.warn('[plan] failed to write plan file:', (err as Error).message ?? err); }
+      }
     }
     finalPlan = await finalizePlanWithReviewGate(finalPlan, executors, abortController.signal, cb);
     if (finalPlan.state === 'done') {
@@ -2838,7 +2958,7 @@ export async function executeApprovedPlan(approved: CesarPlan, cb: DispatchCallb
 /**
  * Single source of truth for the post-execution self-review gate. Called from BOTH the plan-task and plan-resume terminal paths so resume cannot bypass the gate or the cycle cap (tribunal fix #4).
  */
-// @kern-source: dispatch:2759
+// @kern-source: dispatch:2875
 export async function finalizePlanWithReviewGate(finalPlan: CesarPlan, executors: Record<string,StepExecutor>, abortSignal: AbortSignal, cb: DispatchCallbacks): Promise<CesarPlan> {
   const MUTATING = new Set(['forge', 'teamforge', 'pipeline', 'agent', 'team-agent', 'delegate', 'self']);
   const planTouchedMutation = finalPlan.steps.some((s: any) => MUTATING.has(s.type) && (s.state === 'done' || s.state === 'failed'));

@@ -116,8 +116,26 @@ fn name=sampleLocalResourceVitals returns="{cpuPercent:number,memPercent:number}
     return { cpuPercent, memPercent };
   >>>
 
-fn name=sampleEngineProcessVitals params="engine:any" returns="{cpuPercent?:number,memPercent?:number,processCount?:number,taskDetail?:string}" export=false
+fn name=sampleEngineProcessVitals params="engine:any,exactPid?:number|null" returns="{cpuPercent?:number,memPercent?:number,processCount?:number,taskDetail?:string}" export=false
   handler <<<
+    const pid = Number(exactPid ?? 0);
+    if (Number.isFinite(pid) && pid > 0) {
+      try {
+        const result = spawnSync('ps', ['-p', String(pid), '-o', 'pid=,pcpu=,pmem=,comm=,args='], { encoding: 'utf-8', timeout: 700 });
+        if (result.status !== 0 || !result.stdout.trim()) return {};
+        const line = String(result.stdout).split('\n').find((entry: string) => entry.trim());
+        if (!line) return {};
+        const parts = line.trim().split(/\s+/);
+        return {
+          cpuPercent: Math.max(0, Math.min(100, Number(parts[1]) || 0)),
+          memPercent: Math.max(0, Math.min(100, Number(parts[2]) || 0)),
+          processCount: 1,
+          taskDetail: `pid ${pid}`,
+        };
+      } catch {
+        return {};
+      }
+    }
     const binary = String(engine?.binary ?? '').trim();
     if (!binary) return {};
     try {
@@ -150,7 +168,7 @@ fn name=sampleEngineProcessVitals params="engine:any" returns="{cpuPercent?:numb
     }
   >>>
 
-fn name=probeEngineVitals async=true params="registry:any,engineId:string" returns="Promise<Partial<EngineVitals>>" export=false
+fn name=probeEngineVitals async=true params="registry:any,engineId:string,session?:PersistentSession|null,activePids?:Map<string,number>" returns="Promise<Partial<EngineVitals>>" export=false
   handler <<<
     const started = Date.now();
     const localResources = sampleLocalResourceVitals();
@@ -160,7 +178,8 @@ fn name=probeEngineVitals async=true params="registry:any,engineId:string" retur
       await new Promise((resolve) => setTimeout(resolve, Number.isFinite(stallMs) ? stallMs : 35000));
     }
     const engine = registry.get(engineId);
-    const processResources = sampleEngineProcessVitals(engine);
+    const exactPid = activePids?.get(engineId) ?? (session && session.engineId === engineId ? session.pid : null);
+    const processResources = sampleEngineProcessVitals(engine, exactPid);
     const hasBinary = engine.binary ? registry.findBinary(engine) !== null : false;
     const hasApiKey = !!(engine.api && process.env[engine.api.apiKeyEnv]);
     const available = hasBinary || hasApiKey || (!engine.binary && !engine.api);
@@ -390,6 +409,41 @@ fn name=findLatestToolEvent params="blocks:OutputBlock[]" returns=any
     return null;
   >>>
 
+fn name=buildExecutionRailStats params="blocks:OutputBlock[],files:any[],queueCount:number" returns=any export=true
+  doc "Count visible tool activity, touched files, and queued messages for the live execution rail."
+  handler <<<
+    let toolCount = 0;
+    let failedToolCount = 0;
+    let runningToolCount = 0;
+    let mutationCount = 0;
+    const visit = (event: any) => {
+      if (!event || event.type !== 'tool-call') return;
+      toolCount += 1;
+      if (event.status === 'error') failedToolCount += 1;
+      if (event.status === 'running') runningToolCount += 1;
+      if (isMutatingToolCall(event)) mutationCount += 1;
+    };
+    for (const block of blocks ?? []) {
+      const event = (block as any)?.event;
+      if (event?.type === 'tool-call-group' && Array.isArray(event.blocks)) {
+        for (const child of event.blocks) visit(child?.event);
+      } else {
+        visit(event);
+      }
+    }
+    const touchedFiles = Array.isArray(files) ? files : [];
+    const changedFileCount = touchedFiles.filter((file: any) => String(file?.status ?? '') !== 'read').length;
+    return {
+      toolCount,
+      failedToolCount,
+      runningToolCount,
+      mutationCount,
+      fileCount: touchedFiles.length,
+      changedFileCount,
+      queueCount: Math.max(0, Math.floor(Number(queueCount) || 0)),
+    };
+  >>>
+
 const name=COMPOSER_HISTORY_LIMIT type=number
   handler <<< 200 >>>
 
@@ -504,6 +558,13 @@ fn name=buildToolDetailView params="event:any" returns=any
       const commandLines = command ? command.split('\n') : [];
       const description = String(event.description ?? '').trim();
       const reason = String(event.reason ?? '').trim();
+      const previewEvent = {
+        type: 'tool-call',
+        engineId: 'cesar',
+        tool: event.tool,
+        input: command,
+        status: 'running',
+      } as any;
       if (description) pushSegmentsRow('permission-description', [{ text: description, dimColor: true }]);
       if (reason) pushSegmentsRow('permission-reason', [{ text: reason, color: '#fbbf24' }]);
       if (commandLines.length > 0) {
@@ -519,6 +580,10 @@ fn name=buildToolDetailView params="event:any" returns=any
             maxWidth: codeWidth,
           });
         });
+      }
+      if (isMutatingToolCall(previewEvent)) {
+        pushSegmentsRow('permission-preview-label', [{ text: 'Preview', color: '#22d3ee', bold: true }]);
+        rows.push(...buildToolCallRows('tool-detail-permission-preview', previewEvent, false));
       }
       return {
         title: `${String(event.tool ?? 'Command')} approval`,
@@ -2111,6 +2176,13 @@ fn name=buildTranscriptRows params="blocks:OutputBlock[], mode:string, toolOutpu
         }
         case 'permission-ask': {
           const preview = truncateCodeLine(String(event.command ?? '').split('\n')[0] ?? '', contentWidth(26));
+          const previewEvent = {
+            type: 'tool-call',
+            engineId: 'cesar',
+            tool: event.tool,
+            input: String(event.command ?? ''),
+            status: 'running',
+          } as any;
           pushSegmentsRow(`${baseKey}-perm-head`, 1, [
             { text: icons().warning, color: '#fbbf24' },
             { text: ` ${event.tool} approval requested`, color: '#fbbf24', bold: true },
@@ -2128,6 +2200,9 @@ fn name=buildTranscriptRows params="blocks:OutputBlock[], mode:string, toolOutpu
                 { text: preview, dimColor: true },
               ]
             : [{ text: '  respond below', dimColor: true }]);
+          if (isMutatingToolCall(previewEvent)) {
+            rows.push(...buildToolCallRows(`${baseKey}-perm-diff`, previewEvent, false));
+          }
           return;
         }
         case 'thinking-chunk': {
@@ -2320,7 +2395,7 @@ fn name=buildTranscriptRows params="blocks:OutputBlock[], mode:string, toolOutpu
           }
           if (checkpoints.length > 0) {
             pushSegmentsRow(`${baseKey}-recap-checkpoint`, 1, [{
-              text: `  checkpoint: ${checkpoints[0].id}${checkpoints.length > 1 ? ` (+${checkpoints.length - 1})` : ''} · /undo reverts latest`,
+              text: `  checkpoint: ${checkpoints[0].id}${checkpoints.length > 1 ? ` (+${checkpoints.length - 1})` : ''} · /undo ${checkpoints[0].id} reverts checkpoint`,
               color: '#22d3ee',
             }]);
           }
@@ -2515,6 +2590,7 @@ screen name=App target=ink
   state name=cesarMemory type=any initial="() => createCesarMemory()"
   state name=sessionMcpServers type="Array<Record<string,unknown>>" initial="[]"
   state name=telemetryVitals type="Map<string,any>" initial="new Map()" throttle=500
+  ref name=activeEnginePidsRef type="Map<string,number>" initial="new Map()"
   state name=recentFallbacks type="{from:string,to:string,reason:string,at:number}[]" initial="[]"
   state name=statusDashboardOpen type=boolean initial=false safe=false
   state name=statusDashboardFilter type="'all'|'problem'" initial="'all'" safe=false
@@ -2523,6 +2599,7 @@ screen name=App target=ink
   ref name=telemetryPollerRef type="any" initial="null"
   ref name=chatStartTimeRef type=number initial=0
   ref name=currentPlanRef type="Plan|null" initial="null"
+  ref name=activePlanRef type=any initial="null"
   ref name=streamingTextRef type="Record<string,StreamingEntry>" initial="{}"
   ref name=agentProgressRef type="Record<string,AgentProgressSnapshot>" initial="{}"
   ref name=lastReviewResultRef type="{ engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number } | null" initial="null"
@@ -2668,6 +2745,11 @@ screen name=App target=ink
   memo name=latestToolEvent deps="outputBlocks"
     handler <<<
       return findLatestToolEvent(outputBlocks);
+    >>>
+
+  memo name=executionRailStats deps="outputBlocks,fileRailVersion,inputQueue"
+    handler <<<
+      return buildExecutionRailStats(outputBlocks, listFiles(), inputQueue.length);
     >>>
 
   memo name=overlayReservedRows deps="enginePickerOpen, modelPickerOpen, cesarPickerOpen, reviewEvent, toolDetailEvent, termHeight"
@@ -2820,6 +2902,11 @@ screen name=App target=ink
   effect deps="mouseSelection"
     handler <<<
       mouseSelectionRef.current = mouseSelection;
+    >>>
+
+  effect deps="activePlan"
+    handler <<<
+      activePlanRef.current = activePlan;
     >>>
 
   effect deps="terminalMode,nativeTranscriptBlocks"
@@ -2982,6 +3069,12 @@ screen name=App target=ink
       setConfigVersion((v: number) => v + 1);
     >>>
 
+  callback name=setActivePlanWrapped params="plan:any" deps=""
+    handler <<<
+      activePlanRef.current = plan;
+      setActivePlan(plan);
+    >>>
+
   // ── Output actions (KERN bridge) ──
   memo name=outputActions deps=""
     handler <<<
@@ -3058,6 +3151,15 @@ screen name=App target=ink
         recordToolCall(tc.tool, tc.input, tc.status);
         setFileRailVersion(getFileTrackerVersion());
       }
+      if (et === 'engine-pid') {
+        const engineId = String((event as any).engineId ?? '').trim();
+        const pid = Number((event as any).pid ?? 0);
+        if (engineId && Number.isFinite(pid) && pid > 0) activeEnginePidsRef.current.set(engineId, pid);
+      }
+      if (et === 'engine-pid-clear') {
+        const engineId = String((event as any).engineId ?? '').trim();
+        if (engineId) activeEnginePidsRef.current.delete(engineId);
+      }
       const state: OutputState = { liveSpinner: null, liveProgress: null, streamingText: streamingTextRef.current ?? {}, agentProgress: agentProgressRef.current ?? {} };
       handleOutputEvent(event, state, outputActions, mode, chatStartTimeRef.current);
     >>>
@@ -3097,7 +3199,7 @@ screen name=App target=ink
       if (clearChat) dispatch({ type: 'clear' } as any);
     >>>
 
-  callback name=buildContext params="" deps="registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode,activePlan,extensionPromptFragments,sessionMcpServers,telemetryVitals,recentFallbacks"
+  callback name=buildContext params="" deps="registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode,activePlan,extensionPromptFragments,sessionMcpServers,telemetryVitals,recentFallbacks,setActivePlanWrapped"
     handler <<<
       return {
         registry, adapter, activeEngines,
@@ -3114,7 +3216,7 @@ screen name=App target=ink
         explorationMode, setExplorationMode,
         neroMode, setNeroMode,
         cesarMemory,
-        activePlan, setActivePlan,
+        activePlan: activePlanRef.current ?? activePlan, setActivePlan: setActivePlanWrapped,
         extensionPromptFragments,
         sessionMcpServers, setSessionMcpServers,
         telemetryVitals,
@@ -3182,7 +3284,7 @@ screen name=App target=ink
       }
       const poller = createTelemetryPoller({
         registry,
-        probe: async (id: string) => probeEngineVitals(registry, id),
+        probe: async (id: string) => probeEngineVitals(registry, id, _cesarSessionRef.session, activeEnginePidsRef.current),
         intervalMs: 5000,
         stallThresholdMs: 30000,
         probeTimeoutMs: 2500,
@@ -3193,6 +3295,14 @@ screen name=App target=ink
           if (retryActiveTurn && activeTurn) {
             activeTurn.retried = true;
           }
+          const plan = activePlanRef.current;
+          const runningStep = plan?.state === 'running' && Array.isArray(plan?.steps)
+            ? plan.steps.find((step: any) => String(step?.state ?? '') === 'running')
+            : null;
+          const stepEngines = runningStep
+            ? [runningStep.engine, ...(Array.isArray(runningStep.engines) ? runningStep.engines : [])].filter((id: any) => typeof id === 'string' && id.trim())
+            : [];
+          const retryActivePlan = !!(runningStep && !((plan as any).fallbackRetriesUsed?.[runningStep.id]) && (stepEngines.length === 0 || stepEngines.includes(from)));
           configSet('cesarEngine' as any, to as any);
           setConfigVersion((v: number) => v + 1);
           if (cesarSession) {
@@ -3200,7 +3310,10 @@ screen name=App target=ink
             setCesarSessionWrapped(null);
           }
           setRecentFallbacks((prev: any[]) => [...prev.slice(-7), { from, to, reason, at: Date.now() }]);
-          if (retryActiveTurn && activeTurn) {
+          if (retryActivePlan) {
+            if (activeAbortRef.current) activeAbortRef.current.abort();
+            dispatch({ type: 'warning', message: `Telemetry: ${from} stalled during plan step — switched to ${to} and retrying that step (${reason})` } as any);
+          } else if (retryActiveTurn && activeTurn) {
             if (activeAbortRef.current) activeAbortRef.current.abort();
             setInputQueue((prev: string[]) => [...prev, activeTurn.input]);
             dispatch({ type: 'warning', message: `Telemetry: ${from} stalled — switched to ${to} and retrying this prompt (${reason})` } as any);
@@ -3308,7 +3421,7 @@ screen name=App target=ink
       setInputValue(updatedValue);
     >>>
 
-  callback name=handleSubmit async=true params="value:string" deps="replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,activePlan,planModeQueued,autoModeQueued,setPersistentAutoMode"
+  callback name=handleSubmit async=true params="value:string" deps="replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,activePlan,planModeQueued,autoModeQueued,setPersistentAutoMode,setActivePlanWrapped"
     handler <<<
       inputEpochRef.current += 1;
       let input = cleanSubmitValue(value);
@@ -3474,7 +3587,7 @@ screen name=App target=ink
         allImages, allSlashCommands: allSlashCommands, dynamicSkills: [...dynamicSkills, ...extensionSkills], mode, lastUndoToken, sessionStartTime, jobManager,
         explorationMode, setExplorationMode,
         neroMode, setNeroMode,
-        setActivePlan,
+        setActivePlan: setActivePlanWrapped,
       };
       if (handleModeSwitch(intent.type, (intent as any).topic, (intent as any).question, cb)) {
         if (!(intent as any).input?.trim()) { transition(finishReplState); return; }
@@ -3970,6 +4083,7 @@ screen name=App target=ink
           activePlan={activePlan}
           lastTool={latestToolEvent}
           recentFallbacks={recentFallbacks}
+          stats={executionRailStats}
           toolOutputExpanded={toolOutputExpanded}
           startTime={chatStartTimeRef.current || 0}
           isActive={replState !== 'idle' || runningJobs.length > 0}

@@ -56,6 +56,7 @@ export interface PersistentSession {
   alive: boolean;
   sessionId: string|null;
   engineId: string;
+  pid?: number|null;
   start: () => Promise<void>;
   send: (opts: SessionSendOptions) => AsyncGenerator<SessionChunk, void, void>;
   close: () => void;
@@ -65,7 +66,7 @@ export interface PersistentSession {
 /**
  * Factory: picks the right session implementation based on engine config.
  */
-// @kern-source: persistent-session:47
+// @kern-source: persistent-session:48
 export function createPersistentSession(config: PersistentSessionConfig): PersistentSession {
   const engine = config.engine;
 
@@ -96,7 +97,7 @@ export function createPersistentSession(config: PersistentSessionConfig): Persis
 /**
  * Persistent JSONRPC session for Codex app-server. Process stays alive across turns.
  */
-// @kern-source: persistent-session:78
+// @kern-source: persistent-session:79
 export function createCompanionSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -188,6 +189,7 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
   const session: PersistentSession = {
     get alive() { return alive; },
     get sessionId() { return sessionId; },
+    get pid() { return proc?.pid ?? null; },
     engineId: config.engine.id,
 
     async start() {
@@ -473,7 +475,7 @@ export function createCompanionSession(config: PersistentSessionConfig): Persist
 /**
  * Persistent ACP (Agent Client Protocol) session for OpenCode. JSON-RPC 2.0 over stdio.
  */
-// @kern-source: persistent-session:455
+// @kern-source: persistent-session:457
 export function createAcpSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -543,6 +545,7 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
   const session: PersistentSession = {
     get alive() { return alive; },
     get sessionId() { return sessionId; },
+    get pid() { return proc?.pid ?? null; },
     engineId: config.engine.id,
 
     async start() {
@@ -839,7 +842,7 @@ export function createAcpSession(config: PersistentSessionConfig): PersistentSes
 /**
  * Persistent bidirectional NDJSON session for Claude Code. One process, multi-turn via stdin.
  */
-// @kern-source: persistent-session:821
+// @kern-source: persistent-session:824
 export function createStreamJsonSession(config: PersistentSessionConfig): PersistentSession {
   let proc: ChildProcess | null = null;
   let alive = false;
@@ -888,6 +891,7 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
   const session: PersistentSession = {
     get alive() { return alive; },
     get sessionId() { return sessionId; },
+    get pid() { return proc?.pid ?? null; },
     engineId: config.engine.id,
 
     async start() {
@@ -1148,11 +1152,12 @@ export function createStreamJsonSession(config: PersistentSessionConfig): Persis
 /**
  * Fallback: spawn per turn with --resume/--continue. Works for any CLI engine.
  */
-// @kern-source: persistent-session:1130
+// @kern-source: persistent-session:1134
 export function createResumeSession(config: PersistentSessionConfig): PersistentSession {
   let alive = false;
       let sessionId: string | null = null;
       let firstTurn = true;
+      let activePid: number | null = null;
       // Message history for API engines — enables multi-turn tool loops
       const messageHistory: Array<{role: string, content: any, tool_calls?: any[], tool_call_id?: string}> = [];
       // Compaction state — accumulates across compaction cycles
@@ -1177,6 +1182,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
       const session: PersistentSession = {
         get alive() { return alive; },
         get sessionId() { return sessionId; },
+        get pid() { return activePid; },
         engineId: config.engine.id,
 
         async start() {
@@ -2007,6 +2013,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
             cwd: config.cwd,
             detached: true,
           });
+          activePid = child.pid ?? null;
 
           const chunks: SessionChunk[] = [];
           let done = false;
@@ -2015,6 +2022,7 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
           // Abort: kill spawned child process
           const onAbort = () => {
             done = true;
+            activePid = null;
             chunks.push({ type: 'done', content: 'cancelled' });
             try { if (child.pid) process.kill(-child.pid, 'SIGTERM'); } catch (e) { console.warn(`[agon] session-stream: kill failed: ${e instanceof Error ? e.message : String(e)}`); try { child.kill('SIGTERM'); } catch { /* process already exited */ } }
             if (resolveWait) { resolveWait(); resolveWait = null; }
@@ -2050,12 +2058,14 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
 
           child.on('close', () => {
             done = true;
+            activePid = null;
             chunks.push({ type: 'done', content: 'end_turn' });
             if (resolveWait) { resolveWait(); resolveWait = null; }
           });
 
           child.on('error', (err: Error) => {
             done = true;
+            activePid = null;
             chunks.push({ type: 'error', content: err.message });
             if (resolveWait) { resolveWait(); resolveWait = null; }
           });
@@ -2074,11 +2084,13 @@ export function createResumeSession(config: PersistentSessionConfig): Persistent
           } finally {
             opts.signal?.removeEventListener('abort', onAbort);
             firstTurn = false;
+            if (done) activePid = null;
           }
         },
 
         close() {
           alive = false;
+          activePid = null;
         },
 
         getMessageHistory() {

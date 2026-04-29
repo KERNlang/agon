@@ -161,6 +161,96 @@ fn name=buildPlanPhaseGauge params="plan:any,width:number=12" returns=any export
     };
   >>>
 
+fn name=buildExecutionRailTimeline params="activePlan:any,lastTool:any,engines:any,recentFallbacks:any,limit:number=5" returns="any[]" export=true
+  doc "Build compact live rail rows from plan, tool, engine, and fallback state. Kept pure so the rail can evolve without baking logic into JSX."
+  handler <<<
+    const rows: any[] = [];
+    const maxRows = Math.max(1, Math.min(8, Math.floor(Number(limit) || 5)));
+    const compact = (value: any, max = 56) => {
+      const text = String(value ?? '').replace(/\s+/g, ' ').trim();
+      return text.length > max ? text.slice(0, max - 1) + '\u2026' : text;
+    };
+    const stateIcon = (state: string) => state === 'done' ? '\u2713'
+      : state === 'failed' ? '\u2717'
+      : state === 'running' ? '\u25d0'
+      : state === 'blocked' ? '\u25cc'
+      : state === 'skipped' ? '\u21b7'
+      : '\u00b7';
+    const stateColor = (state: string) => state === 'done' ? '#4ade80'
+      : state === 'failed' ? '#ef4444'
+      : state === 'running' ? '#fbbf24'
+      : state === 'blocked' ? '#94a3b8'
+      : state === 'skipped' ? '#60a5fa'
+      : '#6b7280';
+
+    const steps = Array.isArray(activePlan?.steps) ? activePlan.steps : [];
+    if (steps.length > 0) {
+      let focusIndex = steps.findIndex((s: any) => String(s?.state ?? 'pending') === 'running');
+      if (focusIndex < 0) focusIndex = steps.findIndex((s: any) => String(s?.state ?? 'pending') === 'failed');
+      if (focusIndex < 0) focusIndex = steps.findIndex((s: any) => ['pending', 'blocked'].includes(String(s?.state ?? 'pending')));
+      if (focusIndex < 0) focusIndex = Math.max(0, steps.length - 1);
+      const planRows = Math.min(Math.max(2, maxRows - 2), Math.min(4, steps.length));
+      let start = Math.max(0, focusIndex - 1);
+      if (start + planRows > steps.length) start = Math.max(0, steps.length - planRows);
+      for (let index = start; index < Math.min(steps.length, start + planRows); index += 1) {
+        const step = steps[index];
+        const state = String(step?.state ?? 'pending');
+        const engineText = Array.isArray(step?.engines) && step.engines.length > 0
+          ? ` -> ${step.engines.slice(0, 2).join(',')}${step.engines.length > 2 ? ',…' : ''}`
+          : step?.engine ? ` -> ${step.engine}` : '';
+        rows.push({
+          key: `plan-${index}`,
+          icon: stateIcon(state),
+          color: stateColor(state),
+          label: `${index + 1}/${steps.length} ${state}`,
+          detail: compact(`${step?.description ?? ''}${engineText}`, 58),
+        });
+      }
+    }
+
+    if (lastTool) {
+      let target = '';
+      try {
+        const raw = lastTool.input;
+        const parsed = typeof raw === 'string' && raw.trim().startsWith('{') ? JSON.parse(raw) : (raw && typeof raw === 'object' ? raw : {});
+        target = String(parsed.path ?? parsed.file_path ?? parsed.filePath ?? parsed.command ?? parsed.pattern ?? '').replace(`${process.cwd()}/`, '');
+      } catch {
+        target = '';
+      }
+      rows.push({
+        key: 'tool',
+        icon: String(lastTool.status ?? '') === 'error' ? '\u2717' : String(lastTool.status ?? '') === 'done' ? '\u2713' : '\u25d0',
+        color: String(lastTool.status ?? '') === 'error' ? '#ef4444' : String(lastTool.status ?? '') === 'done' ? '#4ade80' : '#fbbf24',
+        label: `${String(lastTool.tool ?? 'tool')} ${String(lastTool.status ?? '').trim()}`.trim(),
+        detail: compact(target, 58),
+      });
+    }
+
+    if (Array.isArray(engines) && engines.length > 0) {
+      rows.push({
+        key: 'engines',
+        icon: '\u25cf',
+        color: '#22d3ee',
+        label: `${engines.length} engine${engines.length === 1 ? '' : 's'}`,
+        detail: compact(engines.slice(0, 4).map((e: any) => `${e.id}:${String(e.status ?? '').slice(0, 14)}`).join('  '), 58),
+      });
+    }
+
+    const fallbacks = Array.isArray(recentFallbacks) ? recentFallbacks : [];
+    const fallback = fallbacks.length > 0 ? fallbacks[fallbacks.length - 1] : null;
+    if (fallback) {
+      rows.push({
+        key: 'fallback',
+        icon: '\u21c4',
+        color: '#f97316',
+        label: `${fallback.from} -> ${fallback.to}`,
+        detail: compact(fallback.reason, 58),
+      });
+    }
+
+    return rows.slice(-maxRows);
+  >>>
+
 // ── Screen: AgonTip ─────────────────────────────────────────────────
 
 screen name=AgonTip target=ink export=false
@@ -330,6 +420,7 @@ screen name=ExecutionRail target=ink memo=true export=named
   prop name=activePlanState type="string|null" optional=true
   prop name=activePlan type=any optional=true
   prop name=lastTool type=any optional=true
+  prop name=stats type=any optional=true
   prop name=recentFallbacks type="{from:string,to:string,reason:string,at:number}[]" optional=true
   prop name=toolOutputExpanded type=boolean optional=true
   prop name=startTime type=number optional=true
@@ -380,6 +471,13 @@ screen name=ExecutionRail target=ink memo=true export=named
 
       const fallback = recentFallbacks && recentFallbacks.length > 0 ? recentFallbacks[recentFallbacks.length - 1] : null;
       const toolMode = toolOutputExpanded ? 'expanded' : 'collapsed';
+      const toolCount = Math.max(0, Number(stats?.toolCount ?? 0));
+      const failedToolCount = Math.max(0, Number(stats?.failedToolCount ?? 0));
+      const runningToolCount = Math.max(0, Number(stats?.runningToolCount ?? 0));
+      const fileCount = Math.max(0, Number(stats?.fileCount ?? 0));
+      const changedFileCount = Math.max(0, Number(stats?.changedFileCount ?? 0));
+      const queueCount = Math.max(0, Number(stats?.queueCount ?? 0));
+      const timeline = buildExecutionRailTimeline(activePlan, lastTool, engines, recentFallbacks, 5);
 
       return (
         <Box flexDirection="column" borderStyle="single" borderColor="#374151" paddingX={1}>
@@ -389,6 +487,14 @@ screen name=ExecutionRail target=ink memo=true export=named
             <Text color={planGauge.visible ? planGauge.color : '#fbbf24'}>{phase}</Text>
             {planGauge.visible ? <Text color={planGauge.color}>{' '}{planGauge.bar}</Text> : null}
             {elapsed ? <Text dimColor>{' · '}{elapsed}</Text> : null}
+            <Text dimColor>{' · '}</Text>
+            <Text color={failedToolCount > 0 ? '#ef4444' : runningToolCount > 0 ? '#fbbf24' : '#f59e0b'}>{toolCount}</Text>
+            <Text dimColor>{' tools'}</Text>
+            {failedToolCount > 0 ? <Text color="#ef4444">{`/${failedToolCount} failed`}</Text> : null}
+            <Text dimColor>{' · '}</Text>
+            <Text color={changedFileCount > 0 ? '#22d3ee' : '#94a3b8'}>{changedFileCount > 0 ? changedFileCount : fileCount}</Text>
+            <Text dimColor>{changedFileCount > 0 ? ' changed' : ' files'}</Text>
+            {queueCount > 0 ? <Text color="#f97316">{` · ${queueCount} queued`}</Text> : null}
             <Text dimColor>{' · tools '}</Text>
             <Text color="#f59e0b">{toolMode}</Text>
             <Text dimColor>{' ('}</Text>
@@ -406,6 +512,17 @@ screen name=ExecutionRail target=ink memo=true export=named
               {toolName && fallback ? <Text dimColor>{'  '}</Text> : null}
               {fallback ? <><Text color="#f97316">{'fallback: '}{fallback.from}{' -> '}{fallback.to}</Text><Text dimColor>{' · '}{String(fallback.reason ?? '').slice(0, 42)}</Text></> : null}
             </Text>
+          ) : null}
+          {timeline.length > 0 ? (
+            <Box flexDirection="column">
+              {timeline.map((row: any) => (
+                <Text key={row.key}>
+                  <Text color={row.color}>{row.icon}</Text>
+                  <Text dimColor>{' '}{row.label}</Text>
+                  {row.detail ? <Text>{' · '}{row.detail}</Text> : null}
+                </Text>
+              ))}
+            </Box>
           ) : null}
         </Box>
       );

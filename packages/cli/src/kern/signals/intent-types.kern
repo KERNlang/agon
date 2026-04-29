@@ -95,6 +95,8 @@ union name=Intent discriminant=type
   variant name=commit
     field name=input type=string optional=true
   variant name=undo
+    field name=snapshotId type=string optional=true
+  variant name=checkpoints
   variant name=jobs
   variant name=focus
     field name=jobId type=string optional=true

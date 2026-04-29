@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { askChoiceQuestion, buildAgentAutoResumePrompt, buildBrainstormContinuationMessage, buildDelegatedContinuationPrompt, buildPlanCallbacks, buildReviewAbsorptionPrompt, collectRecentEngineContext, extractExecutionSpec, formatCesarPlanRuntimeStatus, formatCesarRecoveryStatus, isCesarPlanApprovalInput, isCesarPlanResumeInput, isCesarPlanStatusInput, isStrongCesarPlanApprovalInput, normalizeCesarActingFallbackMode, shouldApprovePendingCesarPlanInput, shouldAutoContinueDelegatedResult, shouldAutoResumeAgentResult } from '../../packages/cli/src/generated/signals/dispatch.js';
+import { askChoiceQuestion, buildAgentAutoResumePrompt, buildBrainstormContinuationMessage, buildDelegatedContinuationPrompt, buildPlanCallbacks, buildReviewAbsorptionPrompt, collectRecentEngineContext, extractExecutionSpec, failedPlanStepIsFallbackRetryable, formatCesarPlanRuntimeStatus, formatCesarRecoveryStatus, isCesarPlanApprovalInput, isCesarPlanResumeInput, isCesarPlanStatusInput, isStrongCesarPlanApprovalInput, normalizeCesarActingFallbackMode, preparePlanFallbackRetry, shouldApprovePendingCesarPlanInput, shouldAutoContinueDelegatedResult, shouldAutoResumeAgentResult } from '../../packages/cli/src/generated/signals/dispatch.js';
 
 describe('Dispatch routing helpers', () => {
   it('extracts forge fitness commands from conversational input', () => {
@@ -149,6 +149,33 @@ describe('Dispatch routing helpers', () => {
 
     event.resolve('1');
     await expect(promise).resolves.toBe('1');
+  });
+
+  it('prepares one retryable failed plan step on the fallback engine', () => {
+    const plan = {
+      id: 'cplan-fallback',
+      state: 'paused',
+      intent: 'fix',
+      steps: [
+        { id: 's1', type: 'forge', description: 'forge fix', state: 'failed', engines: ['claude'], result: { status: 'failure', actualTokens: 0, actualCostUsd: 0, durationMs: 10, output: '', error: 'cancelled' } },
+        { id: 's2', type: 'self', description: 'verify', state: 'pending' },
+      ],
+      totalEstimatedTokens: 0,
+      totalEstimatedCostUsd: 0,
+      totalActualTokens: 0,
+      totalActualCostUsd: 0,
+      stepContext: {},
+      createdAt: new Date().toISOString(),
+    } as any;
+
+    expect(failedPlanStepIsFallbackRetryable(plan.steps[0])).toBe(true);
+    const retry = preparePlanFallbackRetry(plan, 'codex') as any;
+
+    expect(retry.state).toBe('running');
+    expect(retry.steps[0]).toMatchObject({ state: 'pending', engine: 'codex', engines: ['codex'] });
+    expect(retry.steps[0].result).toBeUndefined();
+    expect(retry.fallbackRetriesUsed.s1).toBe(1);
+    expect(preparePlanFallbackRetry(retry, 'gemini')).toBeNull();
   });
 
   it('formats compact Cesar recovery statuses with log context', () => {

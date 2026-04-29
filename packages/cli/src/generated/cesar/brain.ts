@@ -68,9 +68,38 @@ export function detectNarratedToolStall(text: string): boolean {
 }
 
 /**
- * Expand a bare 'fix it' follow-up into an explicit prompt grounded in the most recent stored review result. This avoids making Cesar guess which reviewer findings the user means, especially because /review runs outside Cesar's live session history.
+ * Return unique tool names from failed eager tool results. Used to restrict one-shot repair retries to the tool that just failed.
  */
 // @kern-source: brain:54
+export function eagerFailedToolNames(results: ToolCallResult[]): string[] {
+  const names: string[] = [];
+  for (const result of results ?? []) {
+    if (result?.result?.ok) continue;
+    const name = String(result?.toolName ?? '').trim();
+    if (name && !names.includes(name)) names.push(name);
+  }
+  return names;
+}
+
+/**
+ * Gate eager tool repair retries. A corrected tool call may run once only if the same tool failed in the immediately previous eager batch.
+ */
+// @kern-source: brain:66
+export function shouldRunEagerRepairTool(toolName: string, meta: any, failedToolNames: string[], usedToolNames: string[]): boolean {
+  const name = String(toolName ?? '').trim();
+  if (!name) return false;
+  if (!failedToolNames.includes(name)) return false;
+  if (usedToolNames.includes(name)) return false;
+  const status = String(meta?.status ?? 'running').toLowerCase();
+  if (status !== 'running' && status !== 'native') return false;
+  if (!meta || !('input' in meta)) return false;
+  return true;
+}
+
+/**
+ * Expand a bare 'fix it' follow-up into an explicit prompt grounded in the most recent stored review result. This avoids making Cesar guess which reviewer findings the user means, especially because /review runs outside Cesar's live session history.
+ */
+// @kern-source: brain:79
 export function buildReviewFollowupPrompt(input: string, ctx: HandlerContext): { matched: boolean; prompt: string } {
   const trimmed = input.trim();
   const match = trimmed.match(/^fix it(?:\s+with\s+([a-z0-9._-]+))?[\s?!.,;:]*$/i);
@@ -108,7 +137,7 @@ export function buildReviewFollowupPrompt(input: string, ctx: HandlerContext): {
   return { matched: true, prompt };
 }
 
-// @kern-source: brain:93
+// @kern-source: brain:118
 export function extractDelegation(toolName: string, args: Record<string,unknown>): PendingDelegation {
   const argsRecord = args as Record<string, unknown>;
   const taskKindRaw = argsRecord.taskKind;
@@ -144,7 +173,7 @@ export function extractDelegation(toolName: string, args: Record<string,unknown>
   };
 }
 
-// @kern-source: brain:129
+// @kern-source: brain:154
 export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input: string, response: string, cesarEngineId: string, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>): Promise<CesarTurnOutcome> {
   if (streaming) dispatch({ type: 'streaming-end', engineId: cesarEngineId });
     if (!streaming) dispatch({ type: 'spinner-stop' });
@@ -167,7 +196,7 @@ export async function commitTurnAndDelegate(pendingDel: PendingDelegation, input
   return { delegated: false, responded: true, decisionReason: 'delegation-cancelled', ...(telemetry ?? {}) };
 }
 
-// @kern-source: brain:152
+// @kern-source: brain:177
 export async function commitTurnAndSuggest(suggestion: {action:string, rest?:string, hardened?:boolean, tribunalMode?:string, team?:boolean}, input: string, response: string, cesarEngineId: string, color: number, streaming: boolean, dispatch: Dispatch, ctx: HandlerContext, telemetry?: Record<string,unknown>): Promise<CesarTurnOutcome> {
   if (streaming) dispatch({ type: 'streaming-end', engineId: cesarEngineId });
     if (!streaming) dispatch({ type: 'spinner-stop' });
@@ -187,7 +216,7 @@ export async function commitTurnAndSuggest(suggestion: {action:string, rest?:str
   return { delegated: false, responded: true, decisionReason: 'suggestion-cancelled', ...(telemetry ?? {}) };
 }
 
-// @kern-source: brain:172
+// @kern-source: brain:197
 export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: HandlerContext, images?: ImageAttachment[]): Promise<CesarTurnOutcome> {
   const abort = new AbortController();
       const _turnStart = Date.now();
@@ -972,10 +1001,53 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           if (formatted && session.alive) {
             dispatch({ type: 'spinner-start', message: 'Cesar processing tool results…', color });
             let continuation = '';
+            const failedTools = eagerFailedToolNames(eagerResults);
+            const repairUsed: string[] = [];
+            const repairResults: ToolCallResult[] = [];
             const contGen = session.send({ message: formatted, signal: abort.signal });
             for await (const chunk of contGen) {
               if (chunk.type === 'text') continuation += chunk.content;
+              if (chunk.type === 'tool_call') {
+                const meta = (chunk.metadata ?? {}) as Record<string, unknown>;
+                const toolName = chunk.content || 'tool';
+                const toolInput = typeof meta.input === 'string' ? meta.input : meta.input ? JSON.stringify(meta.input) : '';
+                const toolStatus = (meta.status as string) ?? 'running';
+                recordToolUse(toolName, 'eager', toolInput, toolStatus === 'running' ? 'repair' : toolStatus);
+                if (shouldRunEagerRepairTool(toolName, meta, failedTools, repairUsed)) {
+                  repairUsed.push(toolName);
+                  dispatch({ type: 'spinner-update', message: `Cesar: retrying ${toolName} with corrected input…` });
+                  if (!eagerToolCtx) eagerToolCtx = createEagerToolContext(ctx, config, abort.signal, dispatch);
+                  repairResults.push(await executeEagerTool(toolName, meta, toolRegistry, eagerToolCtx, dispatch, cesarEngineId));
+                  continue;
+                }
+                if (toolStatus !== 'running' && toolStatus !== 'native') {
+                  dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: toolStatus as any, output: typeof meta.output === 'string' ? meta.output : undefined } as any);
+                } else if (failedTools.includes(toolName)) {
+                  dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'error', output: 'Repair retry already used for this tool in this turn.' } as any);
+                }
+              }
               if (chunk.type === 'done' || chunk.type === 'error') break;
+            }
+            if (repairResults.length > 0 && session.alive && !abort.signal.aborted) {
+              const repairFormatted = formatToolResults(
+                repairResults.map((r: ToolCallResult) => ({ name: r.toolName, content: r.result.content, error: r.result.error }))
+              );
+              if (repairFormatted) {
+                dispatch({ type: 'spinner-start', message: 'Cesar processing repaired tool result…', color });
+                let repairedContinuation = '';
+                const repairGen = session.send({ message: repairFormatted, signal: abort.signal });
+                for await (const chunk of repairGen) {
+                  if (chunk.type === 'text') repairedContinuation += chunk.content;
+                  if (chunk.type === 'tool_call') {
+                    const meta = (chunk.metadata ?? {}) as Record<string, unknown>;
+                    const toolName = chunk.content || 'tool';
+                    const toolInput = typeof meta.input === 'string' ? meta.input : meta.input ? JSON.stringify(meta.input) : '';
+                    dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'error', output: 'Tool repair loop is one retry per failed tool; further tool calls were not executed automatically.' } as any);
+                  }
+                  if (chunk.type === 'done' || chunk.type === 'error') break;
+                }
+                if (repairedContinuation.trim()) continuation = repairedContinuation.trim();
+              }
             }
             dispatch({ type: 'spinner-stop' });
             if (continuation.trim()) response = continuation.trim();

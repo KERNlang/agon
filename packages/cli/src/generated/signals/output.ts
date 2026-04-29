@@ -65,20 +65,22 @@ export interface OutputActions {
   flushStream: () => void;
   getEngineColor: (engineId:string) => number;
   setCesarConfidence: (val:number|null) => void;
+  setLiveScoreboard: (val:any) => void;
+  setLiveRationale: (val:any) => void;
   setAgentProgress: (updater:Record<string,AgentProgressSnapshot> | ((prev:Record<string,AgentProgressSnapshot>) => Record<string,AgentProgressSnapshot>)) => void;
   clearAgentProgressByTeam: (teamId:string) => void;
 }
 
-// @kern-source: output:60
+// @kern-source: output:62
 export const _thinkingBuffer: {engineId:string,content:string} = { engineId: '', content: '' };
 
-// @kern-source: output:64
+// @kern-source: output:66
 export const _permissionQueue: Array<{tool:string,command:string,description?:string,reason:string,resolve:(approved:boolean)=>void}> = [] as Array<{tool:string,command:string,description?:string,reason:string,resolve:(approved:boolean)=>void}>;
 
-// @kern-source: output:67
+// @kern-source: output:69
 export const _sessionAllowList: string[] = [] as string[];
 
-// @kern-source: output:70
+// @kern-source: output:72
 export function getSessionAllowList(): string[] {
   return _sessionAllowList;
 }
@@ -86,7 +88,7 @@ export function getSessionAllowList(): string[] {
 /**
  * Reject all queued permissions and clear the queue. Called on interrupt/cancel.
  */
-// @kern-source: output:73
+// @kern-source: output:75
 export function clearPermissionQueue(): void {
   while (_permissionQueue.length > 0) {
     const entry = _permissionQueue.shift()!;
@@ -97,25 +99,25 @@ export function clearPermissionQueue(): void {
 /**
  * Drop any buffered thinking-chunk content. Called on interrupt / clear / SIGINT so the next turn doesn't emit stale content as a fresh block.
  */
-// @kern-source: output:82
+// @kern-source: output:84
 export function clearThinkingBuffer(): void {
   _thinkingBuffer.engineId = '';
   _thinkingBuffer.content = '';
 }
 
-// @kern-source: output:95
+// @kern-source: output:97
 export const TOOL_CALL_GROUP_FLUSH_MS: number = 500;
 
-// @kern-source: output:98
+// @kern-source: output:100
 export const _pendingToolCalls: any[] = [] as any[];
 
-// @kern-source: output:101
+// @kern-source: output:103
 export const _pendingFlushTimer: { timer: any, actions: any } = ({ timer: null, actions: null }) as any;
 
 /**
  * Emit any buffered tool-call events as a single tool-call-group block.
  */
-// @kern-source: output:104
+// @kern-source: output:106
 export function flushPendingToolCalls(actions: OutputActions): void {
   if (_pendingFlushTimer.timer) {
     clearTimeout(_pendingFlushTimer.timer);
@@ -130,7 +132,7 @@ export function flushPendingToolCalls(actions: OutputActions): void {
 /**
  * Debounce-flush pending tool-calls after a quiet period — covers turns that end on a tool-call without any trailing event.
  */
-// @kern-source: output:117
+// @kern-source: output:119
 export function schedulePendingFlush(actions: OutputActions): void {
   _pendingFlushTimer.actions = actions;
   if (_pendingFlushTimer.timer) clearTimeout(_pendingFlushTimer.timer);
@@ -143,7 +145,7 @@ export function schedulePendingFlush(actions: OutputActions): void {
 /**
  * Auto-approve queued permissions whose base command is already in allowedCommands.
  */
-// @kern-source: output:128
+// @kern-source: output:130
 function _drainAutoApproved(actions: OutputActions): void {
   const cfg = loadConfig();
   const allowed: string[] = (cfg as any).allowedCommands ?? [];
@@ -161,7 +163,7 @@ function _drainAutoApproved(actions: OutputActions): void {
   }
 }
 
-// @kern-source: output:147
+// @kern-source: output:149
 function _showNextPermission(actions: OutputActions): void {
   // First drain any that are now auto-approved (e.g. after "Always")
   _drainAutoApproved(actions);
@@ -221,7 +223,7 @@ function _showNextPermission(actions: OutputActions): void {
 /**
  * Process a single OutputEvent — updates spinner, streaming, and block state.
  */
-// @kern-source: output:204
+// @kern-source: output:206
 export function handleOutputEvent(event: OutputEvent, state: OutputState, actions: OutputActions, mode: string, chatStartTime: number): void {
   // Flush accumulated thinking buffer when any non-thinking event arrives
   if (event.type !== 'thinking-chunk' && _thinkingBuffer.content) {
@@ -277,6 +279,8 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
       return;
     case 'progress-clear':
       actions.setLiveProgress(null);
+      if (actions.setLiveScoreboard) actions.setLiveScoreboard(null);
+      if (actions.setLiveRationale) actions.setLiveRationale(null);
       return;
     case 'thinking-chunk': {
       // Coalesce into buffer — flushed as a single block when next non-thinking event arrives

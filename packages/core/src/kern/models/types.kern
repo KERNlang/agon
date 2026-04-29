@@ -192,6 +192,10 @@ config name=AgonConfig
     doc "Autonomous plan approval policy. 'off'=always prompt, 'safe-only'=only non-mutating plans, 'cost-bounded'=plans under cesarAutoApproveMaxCostUsd, 'always'=any plan with autoApprove=true."
   field name=cesarAutoApproveMaxCostUsd type=number optional=true
     doc "When cesarAutoApproveMode is 'cost-bounded' or 'always', the maximum estimated USD cost (including 2× review cycle estimate for mutating plans) that can be auto-approved without user confirmation."
+  field name=cesarAutoMode type=boolean default=false
+    doc "When true, plain chat turns run with Cesar autonomous mode enabled by default until the user disables it."
+  field name=cesarAutoModePrompted type=boolean default=false
+    doc "Tracks whether the CLI has asked the first-run question for enabling default Cesar autonomous mode."
   field name=cesarSelfTurnAutoApprove type=boolean default=true
     doc "When true, Cesar may auto-approve small Edit/Write operations during its own live turn if the target file is already known, inside the workspace, not sensitive, not stale, and under the diff token threshold."
   field name=cesarSelfTurnAutoApproveMaxDiffTokens type=number default=1200

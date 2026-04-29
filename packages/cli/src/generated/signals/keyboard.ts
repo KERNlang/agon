@@ -193,7 +193,6 @@ export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
   // Escape: delegate to resolveEscapeAction
   if (key.escape) {
     if (ctx.planModeQueued) return { type: 'unqueuePlan' };
-    if (ctx.autoModeQueued) return { type: 'unqueueAuto' };
     const decision = resolveEscapeAction({
       replState: ctx.replState,
       inputValue: ctx.inputValue,

@@ -1097,6 +1097,14 @@ fn name=approvePendingCesarPlan async=true params="cb:DispatchCallbacks" returns
     return true;
   >>>
 
+fn name=askChoiceQuestion params="cb:DispatchCallbacks,prompt:string,choices:any[],defaultChoiceKey?:string" returns="Promise<string>" export=true
+  doc "Ask a keyboard-choice question in the composer instead of falling back to a blank free-text field."
+  handler <<<
+    return new Promise<string>((resolve) => {
+      cb.dispatch({ type: 'question', prompt, choices, defaultChoiceKey, resolve } as any);
+    });
+  >>>
+
 fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchCallbacks" returns="Promise<DispatchResult>"
   doc "Route a parsed intent to the correct handler. Registry-first, switch as fallback."
   handler <<<
@@ -2364,7 +2372,12 @@ fn name=handleProposedCesarPlan async=true params="proposed:CesarPlan, cb:Dispat
     }
 
     while (!decided) {
-      const answer = await cb.askQuestion('Approve plan? [Y/n/e(dit)] or give feedback to revise');
+      const answer = await askChoiceQuestion(cb, 'Approve plan?', [
+        { key: 'y', label: 'Approve', color: '#4ade80' },
+        { key: 'n', label: 'Reject', color: '#ef4444' },
+        { key: 'e', label: 'Edit file', color: '#60a5fa' },
+        { key: 'r', label: 'Revise with feedback', color: '#fbbf24' },
+      ], 'y');
       const trimmed = answer.trim().toLowerCase();
 
       if (trimmed === '' || isCesarPlanApprovalInput(trimmed)) {
@@ -2415,6 +2428,26 @@ fn name=handleProposedCesarPlan async=true params="proposed:CesarPlan, cb:Dispat
           }
         } else {
           cb.dispatch({ type: 'warning', message: 'No plan file path available. Type feedback as text instead.' });
+        }
+
+      } else if (trimmed === 'r' || trimmed === 'revise' || trimmed === 'feedback') {
+        const feedback = await cb.askQuestion('Revision feedback');
+        if (!feedback.trim()) continue;
+        cb.dispatch({ type: 'info', message: 'Revising plan with your feedback...' });
+        const reviseInput = `[PLAN REVISION] The user wants these changes: ${feedback}\n\nRevise the plan and call ProposePlan IMMEDIATELY with the updated steps. Do NOT re-investigate. Do NOT respond with text. Just call ProposePlan with the revised plan.`;
+        try {
+          await routeWithCesar(reviseInput, [], cb);
+        } catch (err) {
+          cb.dispatch({ type: 'warning', message: `Cesar revision failed: ${err instanceof Error ? err.message : String(err)}. Try again, type Y to approve the original, or N to reject.` });
+          continue;
+        }
+        const revised: CesarPlan | undefined = cb.ctx.cesar?.proposedPlan;
+        if (revised && revised.state === 'awaiting_approval') {
+          if (cb.ctx.cesar) cb.ctx.cesar.proposedPlan = undefined;
+          currentProposal = { ...revised, autoApprove: false };
+        } else {
+          cb.dispatch({ type: 'warning', message: 'Cesar did not produce a revised plan. Use /plan <task> to start over.' });
+          decided = true;
         }
 
       } else {

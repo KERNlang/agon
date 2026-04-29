@@ -99,6 +99,9 @@ export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
   // Choice-based question: single keypress resolves immediately
   if (ctx.questionState && ctx.questionState.choices) {
     if (key.ctrl && normalizedCtrlInput === 'o') return { type: 'openToolDetail' };
+    if ((key.return || input === '\r' || input === '\n') && ctx.questionState.defaultChoiceKey) {
+      return { type: 'resolveChoice', choiceKey: ctx.questionState.defaultChoiceKey };
+    }
     const pressed = input.toLowerCase();
     const choices = ctx.questionState.choices as { key: string; label: string }[];
     const match = choices.find((c) => c.key.toLowerCase() === pressed);

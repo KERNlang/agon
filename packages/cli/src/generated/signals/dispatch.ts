@@ -1158,9 +1158,19 @@ export async function approvePendingCesarPlan(cb: DispatchCallbacks): Promise<bo
 }
 
 /**
- * Route a parsed intent to the correct handler. Registry-first, switch as fallback.
+ * Ask a keyboard-choice question in the composer instead of falling back to a blank free-text field.
  */
 // @kern-source: dispatch:1100
+export function askChoiceQuestion(cb: DispatchCallbacks, prompt: string, choices: any[], defaultChoiceKey?: string): Promise<string> {
+  return new Promise<string>((resolve) => {
+    cb.dispatch({ type: 'question', prompt, choices, defaultChoiceKey, resolve } as any);
+  });
+}
+
+/**
+ * Route a parsed intent to the correct handler. Registry-first, switch as fallback.
+ */
+// @kern-source: dispatch:1108
 export async function dispatchIntent(intent: any, input: string, cb: DispatchCallbacks): Promise<DispatchResult> {
   // ── Emit pre:dispatch event ──
   if (cb.eventBus) {
@@ -2388,7 +2398,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
 /**
  * Shared approval loop for plans proposed by Cesar, whether from explicit /plan mode or a normal chat turn.
  */
-// @kern-source: dispatch:2326
+// @kern-source: dispatch:2334
 export async function handleProposedCesarPlan(proposed: CesarPlan, cb: DispatchCallbacks): Promise<void> {
   if (cb.ctx.cesar) cb.ctx.cesar.proposedPlan = undefined;
 
@@ -2428,7 +2438,12 @@ export async function handleProposedCesarPlan(proposed: CesarPlan, cb: DispatchC
   }
 
   while (!decided) {
-    const answer = await cb.askQuestion('Approve plan? [Y/n/e(dit)] or give feedback to revise');
+    const answer = await askChoiceQuestion(cb, 'Approve plan?', [
+      { key: 'y', label: 'Approve', color: '#4ade80' },
+      { key: 'n', label: 'Reject', color: '#ef4444' },
+      { key: 'e', label: 'Edit file', color: '#60a5fa' },
+      { key: 'r', label: 'Revise with feedback', color: '#fbbf24' },
+    ], 'y');
     const trimmed = answer.trim().toLowerCase();
 
     if (trimmed === '' || isCesarPlanApprovalInput(trimmed)) {
@@ -2481,6 +2496,26 @@ export async function handleProposedCesarPlan(proposed: CesarPlan, cb: DispatchC
         cb.dispatch({ type: 'warning', message: 'No plan file path available. Type feedback as text instead.' });
       }
 
+    } else if (trimmed === 'r' || trimmed === 'revise' || trimmed === 'feedback') {
+      const feedback = await cb.askQuestion('Revision feedback');
+      if (!feedback.trim()) continue;
+      cb.dispatch({ type: 'info', message: 'Revising plan with your feedback...' });
+      const reviseInput = `[PLAN REVISION] The user wants these changes: ${feedback}\n\nRevise the plan and call ProposePlan IMMEDIATELY with the updated steps. Do NOT re-investigate. Do NOT respond with text. Just call ProposePlan with the revised plan.`;
+      try {
+        await routeWithCesar(reviseInput, [], cb);
+      } catch (err) {
+        cb.dispatch({ type: 'warning', message: `Cesar revision failed: ${err instanceof Error ? err.message : String(err)}. Try again, type Y to approve the original, or N to reject.` });
+        continue;
+      }
+      const revised: CesarPlan | undefined = cb.ctx.cesar?.proposedPlan;
+      if (revised && revised.state === 'awaiting_approval') {
+        if (cb.ctx.cesar) cb.ctx.cesar.proposedPlan = undefined;
+        currentProposal = { ...revised, autoApprove: false };
+      } else {
+        cb.dispatch({ type: 'warning', message: 'Cesar did not produce a revised plan. Use /plan <task> to start over.' });
+        decided = true;
+      }
+
     } else {
       cb.dispatch({ type: 'info', message: 'Revising plan with your feedback...' });
       const reviseInput = `[PLAN REVISION] The user wants these changes: ${answer}\n\nRevise the plan and call ProposePlan IMMEDIATELY with the updated steps. Do NOT re-investigate. Do NOT respond with text. Just call ProposePlan with the revised plan.`;
@@ -2505,7 +2540,7 @@ export async function handleProposedCesarPlan(proposed: CesarPlan, cb: DispatchC
 /**
  * Build executor callbacks. Holds a closure on the latest plan reference (mutated via onPlanUpdate) so step lookups always see appended steps like the auto-review cycle (tribunal fix #10). FU-3: persistence is debounced 300ms to avoid the sync-write storm Doppelganger flagged — onPlanUpdate fires once per step in a hot loop, but the disk write happens at most ~3x/sec. Terminal states (done/paused/cancelled) flush immediately so the .md/.json on disk reflect the final state. Callers should invoke .flush() before exit to drain any pending write.
  */
-// @kern-source: dispatch:2446
+// @kern-source: dispatch:2479
 export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks): any {
   let currentPlan = initialPlan;
   let pendingWriteTimer: ReturnType<typeof setTimeout> | null = null;
@@ -2582,7 +2617,7 @@ export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks
 /**
  * FU-4: shared executor for the auto-approve, manual-approve, and plan-resume paths. Wires the abort controller, builds callbacks (with debounced persistence), runs executePlan, runs finalizePlanWithReviewGate, and dispatches the terminal status. Eliminates the ~60 lines of triplication that lived in dispatch.kern and forced future changes (e.g., new callback hooks, new finalize behavior) to be applied to all three sites.
  */
-// @kern-source: dispatch:2521
+// @kern-source: dispatch:2554
 export async function executeApprovedPlan(approved: CesarPlan, cb: DispatchCallbacks): Promise<void> {
   const executors = buildStepExecutors(cb.ctx);
   const abortController = new AbortController();
@@ -2619,7 +2654,7 @@ export async function executeApprovedPlan(approved: CesarPlan, cb: DispatchCallb
 /**
  * Single source of truth for the post-execution self-review gate. Called from BOTH the plan-task and plan-resume terminal paths so resume cannot bypass the gate or the cycle cap (tribunal fix #4).
  */
-// @kern-source: dispatch:2556
+// @kern-source: dispatch:2589
 export async function finalizePlanWithReviewGate(finalPlan: CesarPlan, executors: Record<string,StepExecutor>, abortSignal: AbortSignal, cb: DispatchCallbacks): Promise<CesarPlan> {
   const MUTATING = new Set(['forge', 'teamforge', 'pipeline', 'agent', 'team-agent', 'delegate', 'self']);
   const planTouchedMutation = finalPlan.steps.some((s: any) => MUTATING.has(s.type) && (s.state === 'done' || s.state === 'failed'));

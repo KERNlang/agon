@@ -19,11 +19,15 @@
     "build:cli:workspaces": "npm run build -w packages/core && npm run build -w packages/forge && npm run build -w packages/adapter-cli && npm run build -w packages/cli",
     "install:cli": "npm run build:cli && cd packages/cli && npm link",
     "typecheck": "tsc -b",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "test": "node scripts/run-node22.mjs vitest run",
+    "test:watch": "node scripts/run-node22.mjs vitest"
   },
   "engines": {
     "node": ">=22"
+  },
+  "volta": {
+    "node": "22.22.0",
+    "npm": "10.9.4"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

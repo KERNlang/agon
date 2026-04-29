@@ -28,6 +28,14 @@ export function getReadySteps(plan: CesarPlan): CesarPlanStep[] {
 // @kern-source: plan-executor:20
 export async function executePlan(plan: CesarPlan, executors: Record<string,StepExecutor>, callbacks: PlanExecutorCallbacks, signal?: AbortSignal): Promise<CesarPlan> {
   let current = plan;
+  const markStepsRunning = (target: CesarPlan, stepIds: string[]) => {
+    if (stepIds.length === 0) return target;
+    const selected = new Set(stepIds);
+    return {
+      ...target,
+      steps: target.steps.map((s) => selected.has(s.id) ? { ...s, state: 'running' as any } : s),
+    };
+  };
 
   while (current.state === 'running') {
     if (signal?.aborted) break;
@@ -40,6 +48,8 @@ export async function executePlan(plan: CesarPlan, executors: Record<string,Step
 
     // Execute parallel steps concurrently
     if (parallelSteps.length > 0) {
+      current = markStepsRunning(current, parallelSteps.map((s) => s.id));
+      callbacks.onPlanUpdate(current);
       const results = await Promise.all(parallelSteps.map(async (step) => {
         // FU-3: per-task abort check. Without this the parallel batch
         // is uninterruptible — a Ctrl-C mid-batch waits for the slowest
@@ -80,6 +90,8 @@ export async function executePlan(plan: CesarPlan, executors: Record<string,Step
     // Execute first sequential step
     if (sequentialSteps.length > 0 && current.state === 'running') {
       const step = sequentialSteps[0];
+      current = markStepsRunning(current, [step.id]);
+      callbacks.onPlanUpdate(current);
       callbacks.onStepStart(step.id);
       const executor = executors[step.type];
       if (!executor) {
@@ -118,6 +130,14 @@ export async function executePlan(plan: CesarPlan, executors: Record<string,Step
       }
     }
 
+    callbacks.onPlanUpdate(current);
+  }
+
+  if (signal?.aborted && current.state === 'running') {
+    current = {
+      ...current,
+      state: 'paused' as any,
+    };
     callbacks.onPlanUpdate(current);
   }
 

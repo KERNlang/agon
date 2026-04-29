@@ -314,6 +314,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       ctx.cesar!.confidenceSatisfied = false;
       ctx.cesar!.blockedOnConfidence = null;
       ctx.cesar!.turnId = _turnId;
+      ctx.cesar!.planDispatch = dispatch;
       const _brainStartMs = Date.now();
       if (ctx.eventBus) await ctx.eventBus.emit('pre:cesar-brain', { input });
 
@@ -1067,7 +1068,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 } else if (signal.tool === 'ProposePlan') {
                   recordToolUse('ProposePlan', 'mcp', JSON.stringify(signal.args ?? {}), 'done');
                   const { handleProposePlan } = await import('../handlers/plan-mode.js');
-                  const planDispatch = ctx.cesar!.planDispatch;
+                  const planDispatch = ctx.cesar!.planDispatch ?? dispatch;
                   if (planDispatch) {
                     try {
                       const plan = await handleProposePlan(signal.args ?? {}, planDispatch, ctx);

@@ -487,18 +487,19 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
       // Wire ProposePlan tool to actual plan creation + display
       const { handleProposePlan } = await import('../handlers/plan-mode.js');
       const dispatch = ctx.cesar!.planDispatch;
-      if (dispatch) {
-        try {
-          const plan = await handleProposePlan(args, dispatch, ctx);
-          // Set React state for UI
-          if (ctx.setActivePlan) {
-            ctx.setActivePlan(plan);
-          }
-          // Stash on ctx so app-dispatch can read it synchronously after routeWithCesar returns
-          ctx.cesar!.proposedPlan = plan;
-        } catch (err) {
-          console.warn(`[agon] ProposePlan handling failed: ${err instanceof Error ? err.message : String(err)}`);
+      if (!dispatch) {
+        return '[PLAN_ERROR] Internal plan display dispatch unavailable. Retry the plan request so Agon can render the approval panel.';
+      }
+      try {
+        const plan = await handleProposePlan(args, dispatch, ctx);
+        // Set React state for UI
+        if (ctx.setActivePlan) {
+          ctx.setActivePlan(plan);
         }
+        // Stash on ctx so app-dispatch can read it synchronously after routeWithCesar returns
+        ctx.cesar!.proposedPlan = plan;
+      } catch (err) {
+        console.warn(`[agon] ProposePlan handling failed: ${err instanceof Error ? err.message : String(err)}`);
       }
       return '[DELEGATION_BREAK] [PLAN_PROPOSED] Plan submitted for user approval.';
     }
@@ -573,7 +574,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
 /**
  * Build the onApproval callback for engine tool approvals. Returns true to approve, false to deny silently, or a string to deny with a reason the engine can see.
  */
-// @kern-source: session:551
+// @kern-source: session:552
 export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:string, command:string) => Promise<boolean|string> {
   const engine = ctx.registry.get(engineId);
   return async (tool: string, command: string): Promise<boolean | string> => {
@@ -739,7 +740,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
   };
 }
 
-// @kern-source: session:718
+// @kern-source: session:719
 export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unknown>> {
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -773,7 +774,7 @@ export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unkn
   return normalizeNamedRecord(raw);
 }
 
-// @kern-source: session:752
+// @kern-source: session:753
 export function loadCesarMcpServers(config: any, cwd: string): Array<Record<string,unknown>>|undefined {
   if (!(config as any).cesarMcpEnabled) return undefined;
 
@@ -797,7 +798,7 @@ export function loadCesarMcpServers(config: any, cwd: string): Array<Record<stri
   return servers;
 }
 
-// @kern-source: session:776
+// @kern-source: session:777
 export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
   if (!binaryPath) return false;
   const protocol = engine?.companion?.protocol;
@@ -807,7 +808,7 @@ export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
 /**
  * Compute a fingerprint of MCP-related config to detect changes. Includes both manual config and auto-discovery sources.
  */
-// @kern-source: session:783
+// @kern-source: session:784
 export function mcpConfigFingerprint(config: any): string {
   const enabled = !!(config as any).cesarMcpEnabled;
   const configPath = String((config as any).cesarMcpConfigPath ?? '');
@@ -827,7 +828,7 @@ export function mcpConfigFingerprint(config: any): string {
 /**
  * Single source of truth for which backend a Cesar engine will actually use. Honours config.cesarBackend preference ('auto' | 'cli' | 'api'). Pure — no side effects beyond registry lookups. Returns backend='none' when the engine has neither a usable binary nor an API key; callers decide how to handle that.
  */
-// @kern-source: session:801
+// @kern-source: session:802
 export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { backend: 'cli'|'api'|'none', binaryPath: string, hasBinary: boolean, hasApi: boolean, engine: any } {
   const config = ctx.config;
   const cesarEngineId = engineId ?? (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
@@ -852,7 +853,7 @@ export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { b
   return { backend: 'none', binaryPath: '', hasBinary, hasApi, engine };
 }
 
-// @kern-source: session:827
+// @kern-source: session:828
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
   const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';

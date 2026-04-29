@@ -1,0 +1,137 @@
+// ── Cesar Scoreboard: live engine stats during multi-engine runs ─────
+// Lightweight per-engine progress + outcome tracking for forge, brainstorm,
+// tribunal, campfire, and agent-team flows.  No React — pure data structures.
+
+import from="../blocks/output-format.js" names="ENGINE_COLORS"
+
+type name=ScoreboardEngineState values="waiting|running|done|failed|cancelled"
+
+interface name=ScoreboardEntry export=true
+  field name=engineId type=string
+  field name=state type=ScoreboardEngineState
+  field name=startedAt type=number optional=true
+  field name=finishedAt type=number optional=true
+  field name=progress type=number doc="0-100, advisory"
+  field name=score type=number optional=true doc="Forge score or confidence bid"
+  field name=result type=string optional=true doc="Short outcome label"
+  field name=error type=string optional=true
+
+interface name=Scoreboard export=true
+  field name=runId type=string
+  field name=mode type=string doc="forge|brainstorm|tribunal|campfire|agent-team"
+  field name=startedAt type=number
+  field name=entries type="ScoreboardEntry[]"
+  field name=overallState type="'running'|'done'|'failed'|'cancelled'"
+
+fn name=createScoreboard params="runId:string,mode:string,engineIds:string[]" returns=Scoreboard export=true
+  handler <<<
+    const now = Date.now();
+    return {
+      runId,
+      mode,
+      startedAt: now,
+      entries: engineIds.map((id) => ({
+        engineId: id,
+        state: 'waiting' as ScoreboardEngineState,
+        progress: 0,
+      })),
+      overallState: 'running',
+    };
+  >>>
+
+fn name=scoreboardFind params="board:Scoreboard,engineId:string" returns="ScoreboardEntry|undefined" export=false
+  handler <<<
+    return board.entries.find((e) => e.engineId === engineId);
+  >>>
+
+fn name=scoreboardStartEngine params="board:Scoreboard,engineId:string" returns=Scoreboard export=true
+  handler <<<
+    const entry = scoreboardFind(board, engineId);
+    if (!entry) return board;
+    entry.state = 'running';
+    entry.startedAt = Date.now();
+    return board;
+  >>>
+
+fn name=scoreboardUpdateProgress params="board:Scoreboard,engineId:string,progress:number" returns=Scoreboard export=true
+  handler <<<
+    const entry = scoreboardFind(board, engineId);
+    if (!entry) return board;
+    entry.progress = Math.max(0, Math.min(100, Math.floor(progress)));
+    return board;
+  >>>
+
+fn name=scoreboardFinishEngine params="board:Scoreboard,engineId:string,opts?:{score?:number,result?:string}" returns=Scoreboard export=true
+  handler <<<
+    const entry = scoreboardFind(board, engineId);
+    if (!entry) return board;
+    entry.state = 'done';
+    entry.finishedAt = Date.now();
+    entry.progress = 100;
+    if (opts?.score !== undefined) entry.score = opts.score;
+    if (opts?.result !== undefined) entry.result = opts.result;
+    scoreboardRecomputeOverall(board);
+    return board;
+  >>>
+
+fn name=scoreboardFailEngine params="board:Scoreboard,engineId:string,error:string" returns=Scoreboard export=true
+  handler <<<
+    const entry = scoreboardFind(board, engineId);
+    if (!entry) return board;
+    entry.state = 'failed';
+    entry.finishedAt = Date.now();
+    entry.error = error;
+    scoreboardRecomputeOverall(board);
+    return board;
+  >>>
+
+fn name=scoreboardCancelEngine params="board:Scoreboard,engineId:string" returns=Scoreboard export=true
+  handler <<<
+    const entry = scoreboardFind(board, engineId);
+    if (!entry) return board;
+    entry.state = 'cancelled';
+    entry.finishedAt = Date.now();
+    scoreboardRecomputeOverall(board);
+    return board;
+  >>>
+
+fn name=scoreboardRecomputeOverall params="board:Scoreboard" returns=void export=false
+  handler <<<
+    if (board.entries.every((e) => e.state === 'done')) {
+      board.overallState = 'done';
+    } else if (board.entries.every((e) => e.state === 'failed')) {
+      board.overallState = 'failed';
+    } else if (board.entries.every((e) => e.state === 'done' || e.state === 'failed' || e.state === 'cancelled')) {
+      board.overallState = 'done';
+    } else if (board.entries.some((e) => e.state === 'running')) {
+      board.overallState = 'running';
+    }
+  >>>
+
+fn name=formatScoreboardLine params="entry:ScoreboardEntry" returns=string export=true
+  handler <<<
+    // Inline icon literals to avoid loadConfig() dependency in test envs
+    const iconMap: Record<ScoreboardEngineState, string> = {
+      waiting: '\u25c7',
+      running: '\u25d0',
+      done: '\u2714',
+      failed: '\u2718',
+      cancelled: '\u25c7',
+    };
+    const color = ENGINE_COLORS[entry.engineId] ?? 245;
+    const icon = iconMap[entry.state];
+    const bar = entry.state === 'running'
+      ? `${entry.progress}%`
+      : (entry.state === 'done' && entry.score != null)
+        ? `score ${entry.score}`
+        : '';
+    const result = entry.result ? ` \u2014 ${entry.result}` : '';
+    const error = entry.error ? ` [${entry.error}]` : '';
+    return `\x1b[38;5;${color}m${icon} ${entry.engineId}${bar ? ` ${bar}` : ''}${result}${error}\x1b[0m`;
+  >>>
+
+fn name=renderScoreboard params="board:Scoreboard" returns=string export=true
+  handler <<<
+    const lines = board.entries.map((e) => formatScoreboardLine(e));
+    return lines.join('\n');
+  >>>

@@ -1,0 +1,62 @@
+// ── Mode Rationale: explain why auto-mode chose a given orchestration ──
+// Compact, human-readable justification surfaced in the status strip or as a
+// transient banner when Cesar auto-escalates.  Keeps the user in the loop.
+
+import from="./routing.js" names="CesarRoutingHints" types=true
+
+type name=ModeRationaleKind values="auto-escalation|auto-approve|speculation-gate|breadth-choice|scope-hint|cost-warning"
+
+interface name=ModeRationale export=true
+  field name=kind type=ModeRationaleKind
+  field name=flow type=string doc="e.g. forge-slice, tribunal, brainstorm"
+  field name=reason type=string
+  field name=confidence type=number optional=true doc="Cesar confidence in this choice"
+  field name=engines type=string[] optional=true doc="Engines involved"
+  field name=costUsd type=number optional=true
+
+fn name=buildModeRationale params="hints:CesarRoutingHints,opts?:{confidence?:number,engines?:string[],costUsd?:number,forced?:boolean}" returns=ModeRationale export=true
+  handler <<<
+    const confidence = opts?.confidence ?? 85;
+    const engines = opts?.engines ?? [];
+    const costUsd = opts?.costUsd;
+
+    if (opts?.forced) {
+      return {
+        kind: 'auto-escalation',
+        flow: hints.recommendedFlow,
+        reason: `Forced by user pattern — ${hints.flowReason}`,
+        confidence,
+        engines,
+        costUsd,
+      };
+    }
+
+    let kind: ModeRationaleKind = 'auto-escalation';
+    let reason = hints.flowReason;
+
+    if (hints.recommendedFlow === 'brainstorm' || hints.recommendedFlow === 'tribunal' || hints.recommendedFlow === 'campfire') {
+      kind = 'breadth-choice';
+      reason = `${hints.uncertaintyFamily} uncertainty → ${hints.recommendedFlow} (${hints.flowReason})`;
+    } else if (hints.recommendedFlow === 'forge-slice' || hints.recommendedFlow === 'forge-full') {
+      kind = 'auto-escalation';
+      reason = `Implementation with ${hints.recommendedForgeScope} scope — ${hints.flowReason}`;
+    } else if (hints.recommendedFlow === 'plan-first' || hints.recommendedFlow === 'spec-first') {
+      kind = 'scope-hint';
+      reason = `Multi-step work — ${hints.flowReason}`;
+    }
+
+    if (costUsd != null && costUsd > 1.0) {
+      kind = 'cost-warning';
+      reason = `${reason} (est. $${costUsd.toFixed(2)})`;
+    }
+
+    return { kind, flow: hints.recommendedFlow, reason, confidence, engines, costUsd };
+  >>>
+
+fn name=formatModeRationale params="r:ModeRationale" returns=string export=true
+  handler <<<
+    const flowLabel = r.flow.replace(/-/g, ' ');
+    const cost = r.costUsd != null ? ` [$${r.costUsd.toFixed(2)}]` : '';
+    const conf = r.confidence != null ? ` ~${r.confidence}%` : '';
+    return `▸ ${flowLabel}${conf}${cost} — ${r.reason}`;
+  >>>

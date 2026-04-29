@@ -8,29 +8,31 @@ import type { HandlerContext } from '../../handlers/types.js';
 
 import { readCesarToolReliability, formatCesarReliabilityLine, shouldDowngradeCesarToolWork } from './reliability.js';
 
+import { buildModeRationale, formatModeRationale } from './mode-rationale.js';
+
 import { planCostEstimator } from '@agon/core';
 
 import type { CostEstimate, AgonConfig } from '@agon/core';
 
-// @kern-source: routing:8
+// @kern-source: routing:9
 export type CesarUncertaintyFamily = 'none' | 'challenge' | 'tradeoff' | 'open' | 'fuzzy' | 'specialist' | 'implementation' | 'review';
 
-// @kern-source: routing:9
+// @kern-source: routing:10
 export type CesarEscalationHint = 'self' | 'self-nero' | 'delegate' | 'tribunal' | 'brainstorm' | 'campfire' | 'forge' | 'review';
 
-// @kern-source: routing:10
+// @kern-source: routing:11
 export type CesarBreadthHint = 'solo' | 'team';
 
-// @kern-source: routing:11
+// @kern-source: routing:12
 export type CesarForgeScopeHint = 'none' | 'slice' | 'full';
 
-// @kern-source: routing:12
+// @kern-source: routing:13
 export type CesarIntakeKind = 'chat' | 'quick-fix' | 'bug' | 'feature' | 'big-feature' | 'spec' | 'review' | 'decision' | 'exploration';
 
-// @kern-source: routing:13
+// @kern-source: routing:14
 export type CesarFlowHint = 'answer' | 'quick-fix' | 'bug-fix' | 'spec-first' | 'plan-first' | 'forge-slice' | 'forge-full' | 'brainstorm' | 'tribunal' | 'campfire' | 'review';
 
-// @kern-source: routing:15
+// @kern-source: routing:16
 export interface CesarRoutingHints {
   taskClass: TaskClass;
   intakeKind: CesarIntakeKind;
@@ -54,7 +56,7 @@ export interface CesarRoutingHints {
 /**
  * Cheap, deterministic routing hints for Cesar: intake kind, flow recommendation, uncertainty family, escalation shape, breadth, and forge scope.
  */
-// @kern-source: routing:34
+// @kern-source: routing:35
 export function deriveRoutingHints(input: string, ctx: HandlerContext): CesarRoutingHints {
   const taskClass = classifyTask(input);
   const inputTokens = Math.ceil(input.length / 4);
@@ -276,7 +278,7 @@ export function deriveRoutingHints(input: string, ctx: HandlerContext): CesarRou
 /**
  * Build a lightweight routing context (~200-600 tokens) for Cesar to make intelligent intake, mode, and team decisions.
  */
-// @kern-source: routing:254
+// @kern-source: routing:255
 export function buildRoutingContext(input: string, ctx: HandlerContext): string {
   const parts: string[] = [];
 
@@ -384,13 +386,25 @@ export function buildRoutingContext(input: string, ctx: HandlerContext): string 
     } catch { /* non-fatal — routing works without thread context */ }
   }
 
+  // ── Mode Rationale line (compact, human-readable) ──
+  try {
+    const rationale = buildModeRationale(hints, { confidence: undefined, engines: activeEngines, costUsd: hints.estimatedStepCost?.costUsd });
+    parts.push(`RATIONALE: ${formatModeRationale(rationale)}`);
+  } catch { /* rationale is advisory */ }
+
+  // ── Mode Rationale line (compact, human-readable) ──
+  try {
+    const rationale = buildModeRationale(hints, { confidence: undefined, engines: activeEngines, costUsd: hints.estimatedStepCost?.costUsd });
+    parts.push(`RATIONALE: ${formatModeRationale(rationale)}`);
+  } catch { /* rationale is advisory */ }
+
   return parts.join('\n');
 }
 
 /**
  * Pure, zero-LLM-cost classification: should this /agent request run as a team (parallel engines) rather than solo? Returns true when the task pattern suggests cross-module fan-out AND at least 2 API engines are available. Based on the same FANOUT_RE/scopeDirSpread signals that buildRoutingContext includes in the Cesar prompt — but exported so dispatch can use them without a full brain call.
  */
-// @kern-source: routing:366
+// @kern-source: routing:379
 export function shouldUseAgentTeam(input: string, ctx: HandlerContext): boolean {
   // Need at least 2 active engines for team mode to make sense.
   const available = ctx.activeEngines();
@@ -402,7 +416,7 @@ export function shouldUseAgentTeam(input: string, ctx: HandlerContext): boolean 
 /**
  * Cost-aware speculation gate. Returns true only when: (1) estimated step cost exceeds speculativeThresholdUsd, (2) uncertainty is not 'none', (3) ELO spread between top engines is below speculativeEloSpreadThreshold. Prevents wasteful scout+parallel runs on cheap, sure, or lopsided tasks.
  */
-// @kern-source: routing:376
+// @kern-source: routing:389
 export function shouldSpeculate(hints: CesarRoutingHints, config: Required<AgonConfig>): boolean {
   const threshold = (config as any).speculativeThresholdUsd ?? 0.50;
   const eloThreshold = (config as any).speculativeEloSpreadThreshold ?? 15;

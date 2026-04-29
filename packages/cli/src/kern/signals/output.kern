@@ -53,6 +53,8 @@ interface name=OutputActions
   field name=flushStream type="() => void"
   field name=getEngineColor type="(engineId:string) => number"
   field name=setCesarConfidence type="(val:number|null) => void"
+  field name=setLiveScoreboard type="(val:any) => void"
+  field name=setLiveRationale type="(val:any) => void"
   field name=setAgentProgress type="(updater:Record<string,AgentProgressSnapshot> | ((prev:Record<string,AgentProgressSnapshot>) => Record<string,AgentProgressSnapshot>)) => void"
   field name=clearAgentProgressByTeam type="(teamId:string) => void"
 
@@ -258,6 +260,8 @@ fn name=handleOutputEvent params="event:OutputEvent, state:OutputState, actions:
         return;
       case 'progress-clear':
         actions.setLiveProgress(null);
+        if (actions.setLiveScoreboard) actions.setLiveScoreboard(null);
+        if (actions.setLiveRationale) actions.setLiveRationale(null);
         return;
       case 'thinking-chunk': {
         // Coalesce into buffer — flushed as a single block when next non-thinking event arrives

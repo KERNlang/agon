@@ -22,6 +22,12 @@ interface name=IconSet
   field name=nero type=string
   field name=dotOn type=string
   field name=dotOff type=string
+  field name=play type=string
+  field name=refresh type=string
+  field name=flag type=string
+  field name=check type=string
+  field name=cross type=string
+  field name=spinner type=string
 
 const name=ROMAN_ICONS type=IconSet
   handler <<<
@@ -47,6 +53,12 @@ const name=ROMAN_ICONS type=IconSet
       nero:      '\u2020',
       dotOn:     '\u25c6',
       dotOff:    '\u25c7',
+      play:      '\u25b6',
+      refresh:   '\u21bb',
+      flag:      '\u2691',
+      check:     '\u2714',
+      cross:     '\u2718',
+      spinner:   '\u25d0',
     })
   >>>
 
@@ -74,6 +86,12 @@ const name=CLASSIC_ICONS type=IconSet
       nero:      '\u2694',
       dotOn:     '\u25cf',
       dotOff:    '\u25cb',
+      play:      '\u25b6',
+      refresh:   '\u21bb',
+      flag:      '\u2691',
+      check:     '\u2714',
+      cross:     '\u2718',
+      spinner:   '\u25d0',
     })
   >>>
 

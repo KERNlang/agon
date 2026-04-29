@@ -1062,6 +1062,17 @@ fn name=findPendingCesarPlan params="ctx:HandlerContext" returns="CesarPlan | nu
     return saved[0] ?? null;
   >>>
 
+fn name=findResumableCesarPlan params="ctx:HandlerContext" returns="CesarPlan | null" export=true
+  doc "Find the most relevant paused/running plan for resume and status recovery."
+  handler <<<
+    const active = ctx.activePlan as CesarPlan | undefined;
+    if (active && (active.state === 'paused' || active.state === 'running')) return active;
+    const saved = listCesarPlans()
+      .filter((p: CesarPlan) => p.state === 'paused' || p.state === 'running')
+      .sort((a: CesarPlan, b: CesarPlan) => b.createdAt.localeCompare(a.createdAt));
+    return saved[0] ?? null;
+  >>>
+
 fn name=shouldApprovePendingCesarPlanInput params="input:string,ctx:HandlerContext" returns=boolean export=true
   doc "Treat natural approval text as /approve even if a previous session failed to surface the plan panel."
   handler <<<
@@ -1073,6 +1084,63 @@ fn name=shouldApprovePendingCesarPlanInput params="input:string,ctx:HandlerConte
     if (hasLivePending) return isCesarPlanApprovalInput(text);
     if (!isStrongCesarPlanApprovalInput(text)) return false;
     return listCesarPlans().some((p: CesarPlan) => p.state === 'awaiting_approval');
+  >>>
+
+fn name=isCesarPlanResumeInput params="input:string" returns=boolean export=true
+  doc "Return true when the user is clearly telling a paused/running plan to continue."
+  handler <<<
+    const text = String(input ?? '').trim().toLowerCase().replace(/[.!?]+$/g, '').replace(/\s+/g, ' ');
+    return /^(?:go|run|resume|continue|proceed|start)(?:\b|$)/i.test(text)
+      || /^(?:do it|do so|keep going|carry on)$/i.test(text);
+  >>>
+
+fn name=isCesarPlanStatusInput params="input:string" returns=boolean export=true
+  doc "Return true for short status checks that should be answered from plan state instead of routed to Cesar chat."
+  handler <<<
+    const text = String(input ?? '').trim().toLowerCase().replace(/[.!?]+$/g, '').replace(/\s+/g, ' ');
+    return /^(?:done|done yet|status|progress|what happened|what did you do|what yu do|what you do|are you doing something|are you still working|still working|is it running|where are we)$/i.test(text);
+  >>>
+
+fn name=formatCesarPlanRuntimeStatus params="plan:CesarPlan" returns=string export=true
+  doc "Render a concise persisted plan status so Cesar chat cannot hallucinate whether a plan is running."
+  handler <<<
+    const total = plan.steps.length;
+    const done = plan.steps.filter((s: any) => s.state === 'done').length;
+    const failed = plan.steps.find((s: any) => s.state === 'failed');
+    const current = plan.steps.find((s: any) => s.state === 'running')
+      ?? plan.steps.find((s: any) => s.state === 'pending')
+      ?? plan.steps.find((s: any) => s.state === 'blocked');
+    const lines = [
+      `Plan ${plan.id.slice(0, 12)} is ${plan.state}: ${done}/${total} steps done.`,
+    ];
+    if (current) lines.push(`Next: ${current.description}`);
+    if (failed) lines.push(`Blocked: ${failed.description}${failed.result?.error ? ` — ${failed.result.error}` : ''}`);
+    if (plan.state === 'paused' || plan.state === 'running') lines.push('Use /plan resume or say "go" to continue it.');
+    return lines.join('\n');
+  >>>
+
+fn name=resumeCesarPlan async=true params="plan:CesarPlan, cb:DispatchCallbacks" returns="Promise<void>" export=true
+  doc "Resume a paused or stale-running Cesar plan through the shared executor path."
+  handler <<<
+    cb.dispatch({ type: 'info', message: `Resuming plan: ${plan.intent} (${plan.id})` });
+    const cyclesUsedAtResume = (plan as any).reviewCyclesUsed ?? 0;
+    const resetSteps = plan.steps.map((s: any) => {
+      if (s.state === 'failed' && s.type === 'review' && cyclesUsedAtResume >= 2) {
+        return s;
+      }
+      return s.state === 'failed' ? { ...s, state: 'pending' as any, result: undefined } : s;
+    });
+    const runningPlan: CesarPlan = { ...plan, steps: resetSteps, state: 'running' as any };
+    cb.setActivePlan(runningPlan);
+    saveCesarPlan(runningPlan);
+    if (runningPlan.planFilePath) {
+      try {
+        writeFileSync(runningPlan.planFilePath, formatCesarPlanMarkdown(runningPlan));
+      } catch (err) {
+        console.warn('[plan] failed to write resumed Cesar plan file:', (err as Error).message ?? err);
+      }
+    }
+    await executeApprovedPlan(runningPlan, cb);
   >>>
 
 fn name=approvePendingCesarPlan async=true params="cb:DispatchCallbacks" returns="Promise<boolean>" export=true
@@ -1119,6 +1187,17 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
         _emitPost();
         return { handled: true, ranAsJob: false };
       }
+    }
+    const resumablePlan = findResumableCesarPlan(cb.ctx);
+    if (resumablePlan && isCesarPlanResumeInput(input)) {
+      await resumeCesarPlan(resumablePlan, cb);
+      _emitPost();
+      return { handled: true, ranAsJob: false };
+    }
+    if (resumablePlan && isCesarPlanStatusInput(input)) {
+      cb.dispatch({ type: 'info', message: formatCesarPlanRuntimeStatus(resumablePlan) });
+      _emitPost();
+      return { handled: true, ranAsJob: false };
     }
 
     // ── Registry-first dispatch — extensions and real handlers get priority ──
@@ -1554,35 +1633,12 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
       }
       case 'plan-resume': {
         // Find the most recent paused plan and resume execution
-        const plans = listCesarPlans();
-        const resumable = plans
-          .filter((p: CesarPlan) => p.state === 'paused' || p.state === 'running')
-          .sort((a: CesarPlan, b: CesarPlan) => b.createdAt.localeCompare(a.createdAt));
-
-        if (resumable.length === 0) {
+        const resumePlan = findResumableCesarPlan(cb.ctx);
+        if (!resumePlan) {
           cb.dispatch({ type: 'info', message: 'No paused plan found to resume.' });
           break;
         }
-
-        const resumePlan = resumable[0];
-        cb.dispatch({ type: 'info', message: `Resuming plan: ${resumePlan.intent} (${resumePlan.id})` });
-
-        // Reset failed steps to pending so they can re-run.
-        // Tribunal fix #4b: do NOT reset failed REVIEW steps once the
-        // 2-cycle cap is exhausted — that would loop forever on
-        // unfixable blocking issues.
-        const cyclesUsedAtResume = (resumePlan as any).reviewCyclesUsed ?? 0;
-        const resetSteps = resumePlan.steps.map((s: any) => {
-          if (s.state === 'failed' && s.type === 'review' && cyclesUsedAtResume >= 2) {
-            return s; // leave failed; cap exhausted
-          }
-          return s.state === 'failed' ? { ...s, state: 'pending' as any, result: undefined } : s;
-        });
-        const runningPlan: CesarPlan = { ...resumePlan, steps: resetSteps, state: 'running' as any };
-        cb.setActivePlan(runningPlan);
-        // FU-4: shared executor helper handles both the original execute
-        // and the self-review gate, so resume cannot diverge from task.
-        await executeApprovedPlan(runningPlan, cb);
+        await resumeCesarPlan(resumePlan, cb);
         break;
       }
       case 'plans': handlePlansList(cb.dispatch); break;
@@ -2572,7 +2628,13 @@ fn name=executeApprovedPlan async=true params="approved:CesarPlan, cb:DispatchCa
         cb.dispatch({ type: 'success', message: `Plan complete \u2014 ${finalPlan.steps.length} steps, $${finalPlan.totalActualCostUsd.toFixed(4)} actual cost` });
       } else if (finalPlan.state === 'paused') {
         const failedStep = finalPlan.steps.find((s: any) => s.state === 'failed');
-        cb.dispatch({ type: 'warning', message: `Plan paused \u2014 step "${failedStep?.description}" failed: ${failedStep?.result?.error ?? 'unknown'}` });
+        if (failedStep) {
+          cb.dispatch({ type: 'warning', message: `Plan paused \u2014 step "${failedStep.description}" failed: ${failedStep.result?.error ?? 'unknown'}` });
+        } else if (abortController.signal.aborted) {
+          cb.dispatch({ type: 'warning', message: 'Plan paused \u2014 execution was interrupted.' });
+        } else {
+          cb.dispatch({ type: 'warning', message: 'Plan paused.' });
+        }
         cb.dispatch({ type: 'info', message: 'Use /plan resume to retry, or /cancel to abort' });
       }
     } catch (err) {

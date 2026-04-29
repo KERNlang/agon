@@ -113,5 +113,13 @@ fn name=executePlan async=true params="plan:CesarPlan, executors:Record<string,S
       callbacks.onPlanUpdate(current);
     }
 
+    if (signal?.aborted && current.state === 'running') {
+      current = {
+        ...current,
+        state: 'paused' as any,
+      };
+      callbacks.onPlanUpdate(current);
+    }
+
     return current;
   >>>

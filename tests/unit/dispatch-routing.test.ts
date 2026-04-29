@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { askChoiceQuestion, buildAgentAutoResumePrompt, buildBrainstormContinuationMessage, buildDelegatedContinuationPrompt, buildReviewAbsorptionPrompt, collectRecentEngineContext, extractExecutionSpec, formatCesarRecoveryStatus, isCesarPlanApprovalInput, isStrongCesarPlanApprovalInput, shouldApprovePendingCesarPlanInput, shouldAutoContinueDelegatedResult, shouldAutoResumeAgentResult } from '../../packages/cli/src/generated/signals/dispatch.js';
+import { askChoiceQuestion, buildAgentAutoResumePrompt, buildBrainstormContinuationMessage, buildDelegatedContinuationPrompt, buildReviewAbsorptionPrompt, collectRecentEngineContext, extractExecutionSpec, formatCesarPlanRuntimeStatus, formatCesarRecoveryStatus, isCesarPlanApprovalInput, isCesarPlanResumeInput, isCesarPlanStatusInput, isStrongCesarPlanApprovalInput, shouldApprovePendingCesarPlanInput, shouldAutoContinueDelegatedResult, shouldAutoResumeAgentResult } from '../../packages/cli/src/generated/signals/dispatch.js';
 
 describe('Dispatch routing helpers', () => {
   it('extracts forge fitness commands from conversational input', () => {
@@ -38,6 +38,31 @@ describe('Dispatch routing helpers', () => {
     expect(isStrongCesarPlanApprovalInput('run it')).toBe(true);
     expect(isStrongCesarPlanApprovalInput('ok')).toBe(false);
     expect(isStrongCesarPlanApprovalInput('sure')).toBe(false);
+  });
+
+  it('recognizes resume and status phrases for active Cesar plans', () => {
+    expect(isCesarPlanResumeInput('go wtf i said 3 times go')).toBe(true);
+    expect(isCesarPlanResumeInput('continue')).toBe(true);
+    expect(isCesarPlanResumeInput('done?')).toBe(false);
+    expect(isCesarPlanStatusInput('done?')).toBe(true);
+    expect(isCesarPlanStatusInput('what yu do')).toBe(true);
+    expect(isCesarPlanStatusInput('tell me a joke')).toBe(false);
+  });
+
+  it('formats persisted plan runtime status without asking Cesar to guess', () => {
+    const status = formatCesarPlanRuntimeStatus({
+      id: 'cplan-123456789',
+      state: 'paused',
+      intent: 'build telemetry',
+      steps: [
+        { id: 's1', state: 'done', description: 'write spec' },
+        { id: 's2', state: 'pending', description: 'build dashboard' },
+      ],
+    } as any);
+
+    expect(status).toContain('cplan-123456 is paused: 1/2 steps done');
+    expect(status).toContain('Next: build dashboard');
+    expect(status).toContain('Use /plan resume or say "go"');
   });
 
   it('approves natural text when a live plan is already pending', () => {

@@ -1119,9 +1119,22 @@ export function findPendingCesarPlan(ctx: HandlerContext): CesarPlan | null {
 }
 
 /**
- * Treat natural approval text as /approve even if a previous session failed to surface the plan panel.
+ * Find the most relevant paused/running plan for resume and status recovery.
  */
 // @kern-source: dispatch:1065
+export function findResumableCesarPlan(ctx: HandlerContext): CesarPlan | null {
+  const active = ctx.activePlan as CesarPlan | undefined;
+  if (active && (active.state === 'paused' || active.state === 'running')) return active;
+  const saved = listCesarPlans()
+    .filter((p: CesarPlan) => p.state === 'paused' || p.state === 'running')
+    .sort((a: CesarPlan, b: CesarPlan) => b.createdAt.localeCompare(a.createdAt));
+  return saved[0] ?? null;
+}
+
+/**
+ * Treat natural approval text as /approve even if a previous session failed to surface the plan panel.
+ */
+// @kern-source: dispatch:1076
 export function shouldApprovePendingCesarPlanInput(input: string, ctx: HandlerContext): boolean {
   const text = String(input ?? '').trim();
   if (!text || text.startsWith('/')) return false;
@@ -1134,9 +1147,74 @@ export function shouldApprovePendingCesarPlanInput(input: string, ctx: HandlerCo
 }
 
 /**
+ * Return true when the user is clearly telling a paused/running plan to continue.
+ */
+// @kern-source: dispatch:1089
+export function isCesarPlanResumeInput(input: string): boolean {
+  const text = String(input ?? '').trim().toLowerCase().replace(/[.!?]+$/g, '').replace(/\s+/g, ' ');
+  return /^(?:go|run|resume|continue|proceed|start)(?:\b|$)/i.test(text)
+    || /^(?:do it|do so|keep going|carry on)$/i.test(text);
+}
+
+/**
+ * Return true for short status checks that should be answered from plan state instead of routed to Cesar chat.
+ */
+// @kern-source: dispatch:1097
+export function isCesarPlanStatusInput(input: string): boolean {
+  const text = String(input ?? '').trim().toLowerCase().replace(/[.!?]+$/g, '').replace(/\s+/g, ' ');
+  return /^(?:done|done yet|status|progress|what happened|what did you do|what yu do|what you do|are you doing something|are you still working|still working|is it running|where are we)$/i.test(text);
+}
+
+/**
+ * Render a concise persisted plan status so Cesar chat cannot hallucinate whether a plan is running.
+ */
+// @kern-source: dispatch:1104
+export function formatCesarPlanRuntimeStatus(plan: CesarPlan): string {
+  const total = plan.steps.length;
+  const done = plan.steps.filter((s: any) => s.state === 'done').length;
+  const failed = plan.steps.find((s: any) => s.state === 'failed');
+  const current = plan.steps.find((s: any) => s.state === 'running')
+    ?? plan.steps.find((s: any) => s.state === 'pending')
+    ?? plan.steps.find((s: any) => s.state === 'blocked');
+  const lines = [
+    `Plan ${plan.id.slice(0, 12)} is ${plan.state}: ${done}/${total} steps done.`,
+  ];
+  if (current) lines.push(`Next: ${current.description}`);
+  if (failed) lines.push(`Blocked: ${failed.description}${failed.result?.error ? ` — ${failed.result.error}` : ''}`);
+  if (plan.state === 'paused' || plan.state === 'running') lines.push('Use /plan resume or say "go" to continue it.');
+  return lines.join('\n');
+}
+
+/**
+ * Resume a paused or stale-running Cesar plan through the shared executor path.
+ */
+// @kern-source: dispatch:1122
+export async function resumeCesarPlan(plan: CesarPlan, cb: DispatchCallbacks): Promise<void> {
+  cb.dispatch({ type: 'info', message: `Resuming plan: ${plan.intent} (${plan.id})` });
+  const cyclesUsedAtResume = (plan as any).reviewCyclesUsed ?? 0;
+  const resetSteps = plan.steps.map((s: any) => {
+    if (s.state === 'failed' && s.type === 'review' && cyclesUsedAtResume >= 2) {
+      return s;
+    }
+    return s.state === 'failed' ? { ...s, state: 'pending' as any, result: undefined } : s;
+  });
+  const runningPlan: CesarPlan = { ...plan, steps: resetSteps, state: 'running' as any };
+  cb.setActivePlan(runningPlan);
+  saveCesarPlan(runningPlan);
+  if (runningPlan.planFilePath) {
+    try {
+      writeFileSync(runningPlan.planFilePath, formatCesarPlanMarkdown(runningPlan));
+    } catch (err) {
+      console.warn('[plan] failed to write resumed Cesar plan file:', (err as Error).message ?? err);
+    }
+  }
+  await executeApprovedPlan(runningPlan, cb);
+}
+
+/**
  * Approve and execute the pending CesarPlan, if one exists. Backs /approve and natural approval aliases like go.
  */
-// @kern-source: dispatch:1078
+// @kern-source: dispatch:1146
 export async function approvePendingCesarPlan(cb: DispatchCallbacks): Promise<boolean> {
   const pending = findPendingCesarPlan(cb.ctx);
   if (!pending) return false;
@@ -1160,7 +1238,7 @@ export async function approvePendingCesarPlan(cb: DispatchCallbacks): Promise<bo
 /**
  * Ask a keyboard-choice question in the composer instead of falling back to a blank free-text field.
  */
-// @kern-source: dispatch:1100
+// @kern-source: dispatch:1168
 export function askChoiceQuestion(cb: DispatchCallbacks, prompt: string, choices: any[], defaultChoiceKey?: string): Promise<string> {
   return new Promise<string>((resolve) => {
     cb.dispatch({ type: 'question', prompt, choices, defaultChoiceKey, resolve } as any);
@@ -1170,7 +1248,7 @@ export function askChoiceQuestion(cb: DispatchCallbacks, prompt: string, choices
 /**
  * Route a parsed intent to the correct handler. Registry-first, switch as fallback.
  */
-// @kern-source: dispatch:1108
+// @kern-source: dispatch:1176
 export async function dispatchIntent(intent: any, input: string, cb: DispatchCallbacks): Promise<DispatchResult> {
   // ── Emit pre:dispatch event ──
   if (cb.eventBus) {
@@ -1183,6 +1261,17 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
       _emitPost();
       return { handled: true, ranAsJob: false };
     }
+  }
+  const resumablePlan = findResumableCesarPlan(cb.ctx);
+  if (resumablePlan && isCesarPlanResumeInput(input)) {
+    await resumeCesarPlan(resumablePlan, cb);
+    _emitPost();
+    return { handled: true, ranAsJob: false };
+  }
+  if (resumablePlan && isCesarPlanStatusInput(input)) {
+    cb.dispatch({ type: 'info', message: formatCesarPlanRuntimeStatus(resumablePlan) });
+    _emitPost();
+    return { handled: true, ranAsJob: false };
   }
 
   // ── Registry-first dispatch — extensions and real handlers get priority ──
@@ -1618,35 +1707,12 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
     }
     case 'plan-resume': {
       // Find the most recent paused plan and resume execution
-      const plans = listCesarPlans();
-      const resumable = plans
-        .filter((p: CesarPlan) => p.state === 'paused' || p.state === 'running')
-        .sort((a: CesarPlan, b: CesarPlan) => b.createdAt.localeCompare(a.createdAt));
-
-      if (resumable.length === 0) {
+      const resumePlan = findResumableCesarPlan(cb.ctx);
+      if (!resumePlan) {
         cb.dispatch({ type: 'info', message: 'No paused plan found to resume.' });
         break;
       }
-
-      const resumePlan = resumable[0];
-      cb.dispatch({ type: 'info', message: `Resuming plan: ${resumePlan.intent} (${resumePlan.id})` });
-
-      // Reset failed steps to pending so they can re-run.
-      // Tribunal fix #4b: do NOT reset failed REVIEW steps once the
-      // 2-cycle cap is exhausted — that would loop forever on
-      // unfixable blocking issues.
-      const cyclesUsedAtResume = (resumePlan as any).reviewCyclesUsed ?? 0;
-      const resetSteps = resumePlan.steps.map((s: any) => {
-        if (s.state === 'failed' && s.type === 'review' && cyclesUsedAtResume >= 2) {
-          return s; // leave failed; cap exhausted
-        }
-        return s.state === 'failed' ? { ...s, state: 'pending' as any, result: undefined } : s;
-      });
-      const runningPlan: CesarPlan = { ...resumePlan, steps: resetSteps, state: 'running' as any };
-      cb.setActivePlan(runningPlan);
-      // FU-4: shared executor helper handles both the original execute
-      // and the self-review gate, so resume cannot diverge from task.
-      await executeApprovedPlan(runningPlan, cb);
+      await resumeCesarPlan(resumePlan, cb);
       break;
     }
     case 'plans': handlePlansList(cb.dispatch); break;
@@ -2398,7 +2464,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
 /**
  * Shared approval loop for plans proposed by Cesar, whether from explicit /plan mode or a normal chat turn.
  */
-// @kern-source: dispatch:2334
+// @kern-source: dispatch:2390
 export async function handleProposedCesarPlan(proposed: CesarPlan, cb: DispatchCallbacks): Promise<void> {
   if (cb.ctx.cesar) cb.ctx.cesar.proposedPlan = undefined;
 
@@ -2539,7 +2605,7 @@ export async function handleProposedCesarPlan(proposed: CesarPlan, cb: DispatchC
 /**
  * Build executor callbacks. Holds a closure on the latest plan reference (mutated via onPlanUpdate) so step lookups always see appended steps like the auto-review cycle (tribunal fix #10). FU-3: persistence is debounced 300ms to avoid the sync-write storm Doppelganger flagged — onPlanUpdate fires once per step in a hot loop, but the disk write happens at most ~3x/sec. Terminal states (done/paused/cancelled) flush immediately so the .md/.json on disk reflect the final state. Callers should invoke .flush() before exit to drain any pending write.
  */
-// @kern-source: dispatch:2478
+// @kern-source: dispatch:2534
 export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks): any {
   let currentPlan = initialPlan;
   let pendingWriteTimer: ReturnType<typeof setTimeout> | null = null;
@@ -2616,7 +2682,7 @@ export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks
 /**
  * FU-4: shared executor for the auto-approve, manual-approve, and plan-resume paths. Wires the abort controller, builds callbacks (with debounced persistence), runs executePlan, runs finalizePlanWithReviewGate, and dispatches the terminal status. Eliminates the ~60 lines of triplication that lived in dispatch.kern and forced future changes (e.g., new callback hooks, new finalize behavior) to be applied to all three sites.
  */
-// @kern-source: dispatch:2553
+// @kern-source: dispatch:2609
 export async function executeApprovedPlan(approved: CesarPlan, cb: DispatchCallbacks): Promise<void> {
   const executors = buildStepExecutors(cb.ctx);
   const abortController = new AbortController();
@@ -2637,7 +2703,13 @@ export async function executeApprovedPlan(approved: CesarPlan, cb: DispatchCallb
       cb.dispatch({ type: 'success', message: `Plan complete \u2014 ${finalPlan.steps.length} steps, $${finalPlan.totalActualCostUsd.toFixed(4)} actual cost` });
     } else if (finalPlan.state === 'paused') {
       const failedStep = finalPlan.steps.find((s: any) => s.state === 'failed');
-      cb.dispatch({ type: 'warning', message: `Plan paused \u2014 step "${failedStep?.description}" failed: ${failedStep?.result?.error ?? 'unknown'}` });
+      if (failedStep) {
+        cb.dispatch({ type: 'warning', message: `Plan paused \u2014 step "${failedStep.description}" failed: ${failedStep.result?.error ?? 'unknown'}` });
+      } else if (abortController.signal.aborted) {
+        cb.dispatch({ type: 'warning', message: 'Plan paused \u2014 execution was interrupted.' });
+      } else {
+        cb.dispatch({ type: 'warning', message: 'Plan paused.' });
+      }
       cb.dispatch({ type: 'info', message: 'Use /plan resume to retry, or /cancel to abort' });
     }
   } catch (err) {
@@ -2653,7 +2725,7 @@ export async function executeApprovedPlan(approved: CesarPlan, cb: DispatchCallb
 /**
  * Single source of truth for the post-execution self-review gate. Called from BOTH the plan-task and plan-resume terminal paths so resume cannot bypass the gate or the cycle cap (tribunal fix #4).
  */
-// @kern-source: dispatch:2588
+// @kern-source: dispatch:2650
 export async function finalizePlanWithReviewGate(finalPlan: CesarPlan, executors: Record<string,StepExecutor>, abortSignal: AbortSignal, cb: DispatchCallbacks): Promise<CesarPlan> {
   const MUTATING = new Set(['forge', 'teamforge', 'pipeline', 'agent', 'team-agent', 'delegate', 'self']);
   const planTouchedMutation = finalPlan.steps.some((s: any) => MUTATING.has(s.type) && (s.state === 'done' || s.state === 'failed'));

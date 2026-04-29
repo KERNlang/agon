@@ -58,7 +58,7 @@ describe('resolveKeyboardInput', () => {
 
   it('ignores unmapped ctrl shortcuts', () => {
     expect(resolveKeyboardInput(baseCtx({
-      input: '\x14',
+      input: '\x07',
       key: { ctrl: true },
       textInputActive: false,
     }))).toEqual({ type: 'none' });
@@ -76,6 +76,22 @@ describe('resolveKeyboardInput', () => {
     expect(resolveKeyboardInput(baseCtx({
       input: '\t',
       key: { ctrl: true, tab: true },
+      textInputActive: false,
+    }))).toEqual({ type: 'toggleExecutionRail' });
+  });
+
+  it('routes raw ctrl+b to the file rail even when the terminal omits key.ctrl', () => {
+    expect(resolveKeyboardInput(baseCtx({
+      input: '\x02',
+      key: {},
+      textInputActive: false,
+    }))).toEqual({ type: 'toggleFileRail' });
+  });
+
+  it('routes raw ctrl+t to the live execution rail as a tab-safe alias', () => {
+    expect(resolveKeyboardInput(baseCtx({
+      input: '\x14',
+      key: {},
       textInputActive: false,
     }))).toEqual({ type: 'toggleExecutionRail' });
   });

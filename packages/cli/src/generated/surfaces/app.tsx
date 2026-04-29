@@ -1196,6 +1196,7 @@ export function App() {
         setToolOutputExpanded((prev: boolean) => !prev);
         return;
       case 'i':
+      case 't':
         ctrlKeyHandledRef.current = true;
         setFileRailOpen(false);
         setFileRailExpandedPath(null);
@@ -1229,25 +1230,25 @@ export function App() {
   const handleKeyboardInput = useCallback((input:string,key:any) => {
     if (isTerminalFocusReport(input)) return;
 
-    const globalCtrlInput = key.ctrl
-      ? ({
-          '\x01': 'a',
-          '\x03': 'c',
-          '\x05': 'e',
-          '\x0f': 'o',
-          '\x0a': 'j',
-          '\x0b': 'k',
-          '\x0c': 'l',
-          '\x12': 'r',
-          '\x14': 't',
-          '\x15': 'u',
-          '\x17': 'w',
-          '\x02': 'b',
-          '\x09': 'i',
-        } as Record<string, string>)[input] ?? input
-      : input;
+    const globalCtrlInputMap = {
+      '\x01': 'a',
+      '\x03': 'c',
+      '\x05': 'e',
+      '\x0f': 'o',
+      '\x0a': 'j',
+      '\x0b': 'k',
+      '\x0c': 'l',
+      '\x12': 'r',
+      '\x14': 't',
+      '\x15': 'u',
+      '\x17': 'w',
+      '\x02': 'b',
+      ...(key.ctrl ? { '\x09': 'i' } : {}),
+    } as Record<string, string>;
+    const globalCtrlInput = globalCtrlInputMap[input] ?? input;
+    const hasGlobalCtrlSignal = !!key.ctrl || ['\x01', '\x02', '\x03', '\x05', '\x0a', '\x0b', '\x0c', '\x0f', '\x12', '\x14', '\x15', '\x17'].includes(input);
     const textInputOwnsReservedShortcut = !statusDashboardOpen && !modelPickerOpen && !cesarPickerOpen && !enginePickerOpen && !reviewEvent && !toolDetailEvent && !slashPickerOpen && (!questionState || !questionState.choices);
-    if (key.ctrl && globalCtrlInput === 'e' && !textInputOwnsReservedShortcut) {
+    if (hasGlobalCtrlSignal && globalCtrlInput === 'e' && !textInputOwnsReservedShortcut) {
       const nested = nestedCtrlShortcutRef.current;
       if (nested.key === 'e' && Date.now() - nested.at < 120) {
         nestedCtrlShortcutRef.current = { key: '', at: 0 };
@@ -1295,24 +1296,24 @@ export function App() {
       }
     }
 
-    const normalizedCtrlInput = key.ctrl
-      ? ({
-          '\x01': 'a',
-          '\x03': 'c',
-          '\x05': 'e',
-          '\x0f': 'o',
-          '\x0a': 'j',
-          '\x0b': 'k',
-          '\x0c': 'l',
-          '\x12': 'r',
-          '\x14': 't',
-          '\x15': 'u',
-          '\x17': 'w',
-          '\x02': 'b',
-          '\x09': 'i',
-        } as Record<string, string>)[input] ?? input
-      : input;
-    if (key.ctrl && normalizedCtrlInput) {
+    const normalizedCtrlInputMap = {
+      '\x01': 'a',
+      '\x03': 'c',
+      '\x05': 'e',
+      '\x0f': 'o',
+      '\x0a': 'j',
+      '\x0b': 'k',
+      '\x0c': 'l',
+      '\x12': 'r',
+      '\x14': 't',
+      '\x15': 'u',
+      '\x17': 'w',
+      '\x02': 'b',
+      ...(key.ctrl ? { '\x09': 'i' } : {}),
+    } as Record<string, string>;
+    const normalizedCtrlInput = normalizedCtrlInputMap[input] ?? input;
+    const hasCtrlSignal = !!key.ctrl || ['\x01', '\x02', '\x03', '\x05', '\x0a', '\x0b', '\x0c', '\x0f', '\x12', '\x14', '\x15', '\x17'].includes(input);
+    if (hasCtrlSignal && normalizedCtrlInput) {
       const nested = nestedCtrlShortcutRef.current;
       if (nested.key === normalizedCtrlInput && Date.now() - nested.at < 120) {
         nestedCtrlShortcutRef.current = { key: '', at: 0 };
@@ -4528,7 +4529,7 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
   return rows;
 }
 
-// @kern-source: app:4395
+// @kern-source: app:4396
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

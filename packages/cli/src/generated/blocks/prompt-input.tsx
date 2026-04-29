@@ -125,28 +125,27 @@ const PromptTextInput = React.memo(function PromptTextInput({ value, placeholder
     const isForwardDelete = deleteMode === 'forward';
     const isBackspace = deleteMode === 'backward';
     const extendedKey = key as typeof key & { home?: boolean; end?: boolean };
-    const normalizedCtrlInput = key.ctrl
-      ? ({
-          '\x01': 'a',
-          '\x03': 'c',
-          '\x05': 'e',
-          '\x09': 'i',
-          '\x0a': 'j',
-          '\x0b': 'k',
-          '\x0c': 'l',
-          '\x12': 'r',
-          '\x14': 't',
-          '\x19': 'y',
-          '\x15': 'u',
-          '\x17': 'w',
-          '\x02': 'b',
-        } as Record<string, string>)[input] ?? input
-      : input;
-    const isReservedCtrlShortcut = key.ctrl && isDelegatedCtrlShortcut(normalizedCtrlInput);
-    const isSupportedCtrlEditShortcut = key.ctrl && ['a', 'k', 'u', 'w'].includes(normalizedCtrlInput);
+    const ctrlInputMap = {
+      '\x01': 'a',
+      '\x03': 'c',
+      '\x05': 'e',
+      '\x0b': 'k',
+      '\x0c': 'l',
+      '\x12': 'r',
+      '\x14': 't',
+      '\x19': 'y',
+      '\x15': 'u',
+      '\x17': 'w',
+      '\x02': 'b',
+      ...(key.ctrl ? { '\x09': 'i', '\x0a': 'j' } : {}),
+    } as Record<string, string>;
+    const normalizedCtrlInput = ctrlInputMap[input] ?? input;
+    const hasCtrlSignal = !!key.ctrl || ['\x01', '\x02', '\x03', '\x05', '\x0b', '\x0c', '\x12', '\x14', '\x15', '\x17', '\x19'].includes(input);
+    const isReservedCtrlShortcut = hasCtrlSignal && isDelegatedCtrlShortcut(normalizedCtrlInput);
+    const isSupportedCtrlEditShortcut = hasCtrlSignal && ['a', 'k', 'u', 'w'].includes(normalizedCtrlInput);
     const isWordLeft = (key.meta && (key.leftArrow || input === 'b')) || input === '\x1bb';
     const isWordRight = (key.meta && (key.rightArrow || input === 'f')) || input === '\x1bf';
-    const isDeleteWordBackward = (key.ctrl && normalizedCtrlInput === 'w') || (key.meta && isBackspace) || input === '\x1b\x7f';
+    const isDeleteWordBackward = (hasCtrlSignal && normalizedCtrlInput === 'w') || (key.meta && isBackspace) || input === '\x1b\x7f';
     const isShiftTab = (key.shift && key.tab) || input === '\x1b[Z';
     const hasSpecialKeySignal =
       isBackspace ||
@@ -174,7 +173,7 @@ const PromptTextInput = React.memo(function PromptTextInput({ value, placeholder
     }
 
     if (key.upArrow || key.downArrow || key.pageUp || key.pageDown || key.tab || isShiftTab) return;
-    if (key.ctrl && !isSupportedCtrlEditShortcut) return;
+    if (hasCtrlSignal && !isSupportedCtrlEditShortcut) return;
     if (key.meta && !isWordLeft && !isWordRight && !isDeleteWordBackward) return;
 
     if (key.return) {
@@ -189,7 +188,7 @@ const PromptTextInput = React.memo(function PromptTextInput({ value, placeholder
     let nextValue = currentValue;
     let nextCursorWidth = 0;
 
-    if (extendedKey.home || (key.ctrl && normalizedCtrlInput === 'a')) {
+    if (extendedKey.home || (hasCtrlSignal && normalizedCtrlInput === 'a')) {
       if (resolvedShowCursor) nextCursorOffset = findLineStart(currentValue, currentCursor.cursorOffset);
     } else if (extendedKey.end) {
       if (resolvedShowCursor) nextCursorOffset = findLineEnd(currentValue, currentCursor.cursorOffset);
@@ -207,11 +206,11 @@ const PromptTextInput = React.memo(function PromptTextInput({ value, placeholder
         nextValue = updated.value;
         nextCursorOffset = updated.cursorOffset;
       }
-    } else if (key.ctrl && normalizedCtrlInput === 'u') {
+    } else if (hasCtrlSignal && normalizedCtrlInput === 'u') {
       const lineStart = findLineStart(currentValue, currentCursor.cursorOffset);
       nextValue = currentValue.slice(0, lineStart) + currentValue.slice(currentCursor.cursorOffset);
       nextCursorOffset = lineStart;
-    } else if (key.ctrl && normalizedCtrlInput === 'k') {
+    } else if (hasCtrlSignal && normalizedCtrlInput === 'k') {
       const lineEnd = findLineEnd(currentValue, currentCursor.cursorOffset);
       nextValue = currentValue.slice(0, currentCursor.cursorOffset) + currentValue.slice(lineEnd);
     } else if (isBackspace) {

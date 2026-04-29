@@ -193,6 +193,84 @@ const StatusDashboard = React.memo(function StatusDashboard({ telemetryVitals, r
 export { StatusDashboard };
 
 // @kern-source: status:327
+const ExecutionRail = React.memo(function ExecutionRail({ spinner, engines, activePlanState, activePlan, lastTool, recentFallbacks, toolOutputExpanded, startTime, isActive }: { spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; activePlanState?:string|null; activePlan?:any; lastTool?:any; recentFallbacks?:{from:string,to:string,reason:string,at:number}[]; toolOutputExpanded?:boolean; startTime?:number; isActive?:boolean }) {
+  const planGauge = buildPlanPhaseGauge(activePlan, 10);
+  const now = Date.now();
+  const elapsedMs = startTime && startTime > 0 ? Math.max(0, now - startTime) : 0;
+  const elapsed = elapsedMs > 0
+    ? `${Math.floor(elapsedMs / 60000) > 0 ? Math.floor(elapsedMs / 60000) + 'm ' : ''}${Math.floor((elapsedMs / 1000) % 60)}s`
+    : '';
+  const phase = planGauge.visible
+    ? `${planGauge.phase} · ${planGauge.label} · ${planGauge.pct}%`
+    : activePlanState && activePlanState !== 'idle'
+      ? activePlanState
+      : spinner
+        ? 'working'
+        : engines && engines.length > 0
+          ? 'engines'
+          : 'idle';
+  const active = !!isActive || planGauge.visible || !!spinner || !!(engines && engines.length > 0);
+  if (!active) return null;
+
+  const spinnerText = spinner?.message ? String(spinner.message).replace(/\u2026$/, '').trim() : '';
+  const engineSummary = engines && engines.length > 0
+    ? engines.slice(0, 4).map((e: any) => `${e.id}:${String(e.status ?? '').slice(0, 12)}`).join('  ')
+    : '';
+  const hiddenEngines = engines && engines.length > 4 ? engines.length - 4 : 0;
+
+  let toolName = '';
+  let toolStatus = '';
+  let toolTarget = '';
+  if (lastTool) {
+    toolName = String(lastTool.tool ?? 'tool');
+    toolStatus = String(lastTool.status ?? '');
+    const raw = lastTool.input;
+    let parsed: any = {};
+    try {
+      if (typeof raw === 'string' && raw.trim().startsWith('{')) parsed = JSON.parse(raw);
+      else if (raw && typeof raw === 'object') parsed = raw;
+    } catch {
+      parsed = {};
+    }
+    toolTarget = String(parsed.path ?? parsed.file_path ?? parsed.filePath ?? parsed.command ?? parsed.pattern ?? '').replace(`${process.cwd()}/`, '');
+    if (toolTarget.length > 52) toolTarget = toolTarget.slice(0, 49) + '\u2026';
+  }
+
+  const fallback = recentFallbacks && recentFallbacks.length > 0 ? recentFallbacks[recentFallbacks.length - 1] : null;
+  const toolMode = toolOutputExpanded ? 'expanded' : 'collapsed';
+
+  return (
+    <Box flexDirection="column" borderStyle="single" borderColor="#374151" paddingX={1}>
+      <Text>
+        <Text color="#22d3ee" bold>{'LIVE'}</Text>
+        <Text dimColor>{' · phase '}</Text>
+        <Text color={planGauge.visible ? planGauge.color : '#fbbf24'}>{phase}</Text>
+        {planGauge.visible ? <Text color={planGauge.color}>{' '}{planGauge.bar}</Text> : null}
+        {elapsed ? <Text dimColor>{' · '}{elapsed}</Text> : null}
+        <Text dimColor>{' · tools '}</Text>
+        <Text color="#f59e0b">{toolMode}</Text>
+        <Text dimColor>{' ('}</Text>
+        <Text color="#f59e0b">{'Ctrl+E'}</Text>
+        <Text dimColor>{')'}</Text>
+      </Text>
+      <Text>
+        <Text dimColor>{'now: '}</Text>
+        <Text>{spinnerText || engineSummary || 'waiting for next event'}</Text>
+        {hiddenEngines > 0 ? <Text dimColor>{` +${hiddenEngines} more`}</Text> : null}
+      </Text>
+      {(toolName || fallback) ? (
+        <Text>
+          {toolName ? <><Text dimColor>{'tool: '}</Text><Text color={toolStatus === 'error' ? '#ef4444' : toolStatus === 'done' ? '#4ade80' : '#fbbf24'}>{toolName}{toolStatus ? ` ${toolStatus}` : ''}</Text>{toolTarget ? <Text dimColor>{' · '}{toolTarget}</Text> : null}</> : null}
+          {toolName && fallback ? <Text dimColor>{'  '}</Text> : null}
+          {fallback ? <><Text color="#f97316">{'fallback: '}{fallback.from}{' -> '}{fallback.to}</Text><Text dimColor>{' · '}{String(fallback.reason ?? '').slice(0, 42)}</Text></> : null}
+        </Text>
+      ) : null}
+    </Box>
+  );
+});
+export { ExecutionRail };
+
+// @kern-source: status:416
 export function StatusLine({ startTime, engineId, color }: { startTime:number; engineId?:string; color?:number }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -227,7 +305,7 @@ export function StatusLine({ startTime, engineId, color }: { startTime:number; e
   );
 }
 
-// @kern-source: status:356
+// @kern-source: status:445
 const BackgroundJobRail = React.memo(function BackgroundJobRail({ jobs }: { jobs:Job[] }) {
   return (
     <Box paddingX={1}>
@@ -250,7 +328,7 @@ const BackgroundJobRail = React.memo(function BackgroundJobRail({ jobs }: { jobs
 });
 export { BackgroundJobRail };
 
-// @kern-source: status:376
+// @kern-source: status:465
 const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confidence, spinner, engines, startTime, streamSnippet, isActive, planModeQueued, autoModeQueued, activePlanState, activePlan, scoreboard, rationale }: { cesarId:string; confidence?:number|null; spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; startTime:number; streamSnippet?:{ engineId: string; line: string } | null; isActive:boolean; planModeQueued?:boolean; autoModeQueued?:boolean; activePlanState?:string|null; activePlan?:any; scoreboard?:Scoreboard|null; rationale?:ModeRationale|null }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {

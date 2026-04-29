@@ -38,7 +38,7 @@ import from="../blocks/review.js" names="handleReviewAction"
 import from="../blocks/engine.js" names="DashboardView,OutputBlockView"
 import from="../blocks/plan-view.js" names="PlanProposalView"
 import from="../cesar/session.js" names="saveCesarConversationSnapshot"
-import from="../../generated/surfaces/status.js" names="SpinnerBlock,StatusBar,CesarStatusStrip,BackgroundJobRail,StatusDashboard"
+import from="../../generated/surfaces/status.js" names="SpinnerBlock,StatusBar,CesarStatusStrip,BackgroundJobRail,StatusDashboard,ExecutionRail"
 import from="../../generated/blocks/controls.js" names="EnginePicker,ModelPicker,ReviewBlock,CesarPicker"
 import from="../../generated/blocks/composer.js" names="ComposerView"
 import from="../../generated/surfaces/agent.js" names="AgentProgressView"
@@ -370,6 +370,22 @@ fn name=findLatestToolDetailEvent params="blocks:OutputBlock[]" returns=any
       }
       if (!detailViewerSupportsEvent(event)) continue;
       return event;
+    }
+    return null;
+  >>>
+
+fn name=findLatestToolEvent params="blocks:OutputBlock[]" returns=any
+  handler <<<
+    for (let index = blocks.length - 1; index >= 0; index -= 1) {
+      const event = blocks[index]?.event as any;
+      if (event?.type === 'tool-call-group' && Array.isArray(event.blocks)) {
+        for (let g = event.blocks.length - 1; g >= 0; g -= 1) {
+          const inner = event.blocks[g]?.event;
+          if (inner?.type === 'tool-call') return inner;
+        }
+        continue;
+      }
+      if (event?.type === 'tool-call') return event;
     }
     return null;
   >>>
@@ -2649,6 +2665,11 @@ screen name=App target=ink
       return { engineId: activeStream.engineId, line: lines[lines.length - 1].trim() };
     >>>
 
+  memo name=latestToolEvent deps="outputBlocks"
+    handler <<<
+      return findLatestToolEvent(outputBlocks);
+    >>>
+
   memo name=overlayReservedRows deps="enginePickerOpen, modelPickerOpen, cesarPickerOpen, reviewEvent, toolDetailEvent, termHeight"
     handler <<<
       if (toolDetailEvent) return toolDetailViewportRows(termHeight) + 5;
@@ -3720,6 +3741,34 @@ screen name=App target=ink
     handler <<<
       if (isTerminalFocusReport(input)) return;
 
+      const globalCtrlInput = key.ctrl
+        ? ({
+            '\x01': 'a',
+            '\x03': 'c',
+            '\x05': 'e',
+            '\x0f': 'o',
+            '\x0a': 'j',
+            '\x0b': 'k',
+            '\x0c': 'l',
+            '\x12': 'r',
+            '\x14': 't',
+            '\x15': 'u',
+            '\x17': 'w',
+          } as Record<string, string>)[input] ?? input
+        : input;
+      const textInputOwnsReservedShortcut = !statusDashboardOpen && !modelPickerOpen && !cesarPickerOpen && !enginePickerOpen && !reviewEvent && !toolDetailEvent && !slashPickerOpen && (!questionState || !questionState.choices);
+      if (key.ctrl && globalCtrlInput === 'e' && !textInputOwnsReservedShortcut) {
+        const nested = nestedCtrlShortcutRef.current;
+        if (nested.key === 'e' && Date.now() - nested.at < 120) {
+          nestedCtrlShortcutRef.current = { key: '', at: 0 };
+          return;
+        }
+        nestedCtrlShortcutRef.current = { key: 'e', at: Date.now() };
+        ctrlKeyHandledRef.current = true;
+        setToolOutputExpanded((prev: boolean) => !prev);
+        return;
+      }
+
       if (statusDashboardOpen && !modelPickerOpen && !cesarPickerOpen && !enginePickerOpen && !reviewEvent && !toolDetailEvent && !slashPickerOpen && !questionState) {
         if (key.escape || input === 'q' || input === 'Q' || (key.ctrl && input === '\x03')) {
           setStatusDashboardOpen(false);
@@ -3914,6 +3963,17 @@ screen name=App target=ink
       <Box flexDirection="column" flexShrink={0}>
         <ChromeBar mode={mode} cwdLabel={resolveWorkingDir().split('/').pop() ?? ''} engineCount={availableEngines.length} replState={replState} runningJobs={runningJobs} />
         <BackgroundJobRail jobs={runningJobs} />
+        <ExecutionRail
+          spinner={liveSpinner}
+          engines={liveProgress}
+          activePlanState={activePlan?.state ?? null}
+          activePlan={activePlan}
+          lastTool={latestToolEvent}
+          recentFallbacks={recentFallbacks}
+          toolOutputExpanded={toolOutputExpanded}
+          startTime={chatStartTimeRef.current || 0}
+          isActive={replState !== 'idle' || runningJobs.length > 0}
+        />
         {startupUseDashboardView && (displayRows.length === 0 || terminalMode === 'native') && (
           <Box flexDirection="column">
             <DashboardView event={outputBlocks[0]?.event as any} />

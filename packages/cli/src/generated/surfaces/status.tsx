@@ -191,10 +191,12 @@ const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confide
   // Idle: single dimmed line (no colored nesting issues)
   if (!isActive) {
     const confPart = (confidence !== null && confidence !== undefined) ? ` ${confidence}%` : '';
-    const planPart = hasPlan ? ` \u2502 \u25c8 ${planLabel.toUpperCase()}` : '';
     return (
       <Box paddingTop={0}>
-        <Text dimColor>{'\u25c6 '}{cesarId}{confPart}{' \u2502 idle'}{planPart}</Text>
+        <Text>
+          {hasPlan ? <><Text color={autoModeQueued ? '#f97316' : '#c084fc'} bold>{`\u25c8 ${planLabel.toUpperCase()}`}</Text><Text dimColor>{' \u2502 '}</Text></> : null}
+          <Text dimColor>{'\u25c6 '}{cesarId}{confPart}{' \u2502 idle'}</Text>
+        </Text>
       </Box>
     );
   }
@@ -256,6 +258,7 @@ const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confide
   return (
     <Box paddingTop={0}>
       <Text>
+        {hasPlan ? <><Text color={autoModeQueued ? '#f97316' : '#c084fc'} bold>{`\u25c8 ${planLabel.toUpperCase()}`}</Text><Text dimColor>{' \u2502 '}</Text></> : null}
         <Text color={cesarColor} bold>{'\u25c6 '}{cesarId}</Text>
         {confStr ? <Text color={confColor} bold>{confStr}</Text> : null}
         <Text dimColor>{' \u2502 '}</Text>
@@ -266,7 +269,6 @@ const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confide
       {engineDots.length > 0 && <Text>{engineDots}</Text>}
       <Text>
         {snippetStr ? <><Text dimColor>{' \u2502 '}</Text><Text dimColor wrap="truncate">{snippetStr}</Text></> : null}
-        {hasPlan ? <><Text dimColor>{' \u2502 '}</Text><Text color="#c084fc" bold>{`\u25c8 ${planLabel.toUpperCase()}`}</Text></> : null}
       </Text>
     </Box>
   );

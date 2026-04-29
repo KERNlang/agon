@@ -253,6 +253,7 @@ interface name=CesarState
   field name=lastEscalation type="string | null"
   field name=turnId type="string | undefined" optional=true
   field name=sessionMcpServers type="Array<{name:string, type?:string, url?:string, command?:string, args?:string[]}>"
+  field name=autoModeQueued type=boolean optional=true
 
 interface name=HandlerContext
   field name=registry type=EngineRegistry
@@ -280,3 +281,4 @@ interface name=HandlerContext
   field name=lastReviewResult type="{ engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number } | undefined" optional=true
   field name=sessionMcpServers type="Array<Record<string,unknown>>" optional=true
   field name=setSessionMcpServers type="((servers: Array<Record<string,unknown>>) => void) | undefined" optional=true
+  field name=autoModeQueued type=boolean optional=true

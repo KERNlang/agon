@@ -19,6 +19,7 @@ export interface KeyboardCtx {
   inputHistory: string[];
   historyIndex: number;
   planModeQueued: boolean;
+  autoModeQueued: boolean;
   activePlanState: string|null;
   outputBlockCount: number;
   commands: any[];
@@ -27,7 +28,7 @@ export interface KeyboardCtx {
   fileRailExpanded: boolean;
 }
 
-// @kern-source: keyboard:30
+// @kern-source: keyboard:31
 export type KeyboardAction =
   | { type: 'none' }
   | { type: 'exit' }
@@ -36,6 +37,7 @@ export type KeyboardAction =
   | { type: 'swallow' }
   | { type: 'ghostComplete'; ghost: string }
   | { type: 'togglePlanQueued' }
+  | { type: 'toggleAutoQueued' }
   | { type: 'submit'; value: string }
   | { type: 'toggleToolExpand' }
   | { type: 'toggleSelectionMode' }
@@ -52,6 +54,7 @@ export type KeyboardAction =
   | { type: 'interrupt' }
   | { type: 'clearInput' }
   | { type: 'unqueuePlan' }
+  | { type: 'unqueueAuto' }
   | { type: 'insertNewline' }
   | { type: 'historySet'; index: number; value: string }
   | { type: 'cancelOrExit' };
@@ -59,7 +62,7 @@ export type KeyboardAction =
 /**
  * Pure keyboard decision tree. Takes current state, returns action to execute.
  */
-// @kern-source: keyboard:63
+// @kern-source: keyboard:66
 export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
   const { input, key } = ctx;
   const normalizedCtrlInput = key.ctrl
@@ -117,6 +120,22 @@ export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
     return { type: 'none' };
   }
 
+  // Shift+Tab: queue auto mode
+  if (key.shift && (key.tab || input === '\t') && !ctx.slashPickerOpen && !ctx.enginePickerOpen && !ctx.questionState && !ctx.reviewEventOpen) {
+    if (shouldQueuePlanModeOnTab({ replState: ctx.replState, inputValue: ctx.inputValue, activePlanState: ctx.activePlanState })) {
+      return { type: 'toggleAutoQueued' };
+    }
+    return { type: 'none' };
+  }
+
+  // Shift+Tab: queue auto mode
+  if (key.shift && (key.tab || input === '\t') && !ctx.slashPickerOpen && !ctx.enginePickerOpen && !ctx.questionState && !ctx.reviewEventOpen) {
+    if (shouldQueuePlanModeOnTab({ replState: ctx.replState, inputValue: ctx.inputValue, activePlanState: ctx.activePlanState })) {
+      return { type: 'toggleAutoQueued' };
+    }
+    return { type: 'none' };
+  }
+
   // Ctrl+L: clear
   if (key.ctrl && normalizedCtrlInput === 'l') return { type: 'submit', value: '/clear' };
 
@@ -161,6 +180,7 @@ export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
   // Escape: delegate to resolveEscapeAction
   if (key.escape) {
     if (ctx.planModeQueued) return { type: 'unqueuePlan' };
+    if (ctx.autoModeQueued) return { type: 'unqueueAuto' };
     const decision = resolveEscapeAction({
       replState: ctx.replState,
       inputValue: ctx.inputValue,

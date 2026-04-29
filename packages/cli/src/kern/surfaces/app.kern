@@ -20,8 +20,12 @@ import from="../../handlers/types.js" names="OutputEvent,HandlerContext" types=t
 import from="../../code-buffer.js" names="codeBlockBuffer"
 import from="../signals/app-state.js" names="startCommandReplState,finishReplState,cancelReplState"
 import from="../signals/app-state.js" names="ReplStateState" types=true
+import from="../cesar/pause-state.js" names="createPauseState,renderPauseMenu,movePauseCursor,selectPauseAction,dismissPauseState"
+import from="../cesar/pause-state.js" names="PauseState" types=true
+import from="../cesar/scoreboard.js" names="Scoreboard" types=true
+import from="../cesar/mode-rationale.js" names="ModeRationale" types=true
 import from="../signals/paste-handler.js" names="processPasteContent,expandPastePlaceholders"
-import from="../signals/dispatch.js" names="dispatchIntent,handleModeSwitch"
+import from="../signals/dispatch.js" names="dispatchIntent,handleModeSwitch,isCesarPlanApprovalInput"
 import from="../signals/dispatch.js" names="DispatchCallbacks" types=true
 import from="../signals/output.js" names="handleOutputEvent,clearPermissionQueue,clearThinkingBuffer"
 import from="../signals/output.js" names="OutputActions,OutputState,AgentProgressSnapshot,StreamingEntry" types=true
@@ -544,6 +548,9 @@ const name=_cesarSessionRef type="{ session: PersistentSession | null }"
 
 const name=_lastSigintAt type="{ value: number }"
   handler <<< { value: 0 } >>>
+
+const name=_pauseState type="{ value: PauseState | null }"
+  handler <<< { value: null } >>>
 
 fn name=createInitialRegistry returns=EngineRegistry
   handler <<<
@@ -2383,9 +2390,11 @@ screen name=App target=ink
   state name=toolOutputExpanded type=boolean initial=false
   state name=thinkingExpanded type=boolean initial=true
   state name=cesarConfidence type="number|null" initial="null" throttle=200
+  state name=liveScoreboard type="Scoreboard|null" initial="null"
+  state name=liveRationale type="ModeRationale|null" initial="null"
   state name=agentProgress type="Record<string,AgentProgressSnapshot>" initial="{}"
   state name=planModeQueued type=boolean initial=false safe=false
-  state name=autoModeQueued type=boolean initial=false safe=false
+  state name=autoModeQueued type=boolean initial="() => loadConfig().cesarAutoMode === true" safe=false
   state name=cesarMemory type=any initial="() => createCesarMemory()"
   state name=sessionMcpServers type="Array<Record<string,unknown>>" initial="[]"
 
@@ -2837,6 +2846,14 @@ screen name=App target=ink
       return sessionEngines.filter((id: string) => available.includes(id));
     >>>
 
+  callback name=setPersistentAutoMode params="enabled:boolean" deps=""
+    handler <<<
+      configSet('cesarAutoMode' as any, enabled as any);
+      configSet('cesarAutoModePrompted' as any, true as any);
+      setAutoModeQueued(enabled);
+      setConfigVersion((v: number) => v + 1);
+    >>>
+
   // ── Output actions (KERN bridge) ──
   memo name=outputActions deps=""
     handler <<<
@@ -2879,6 +2896,8 @@ screen name=App target=ink
         },
         getEngineColor: (engineId: string) => ENGINE_COLORS[engineId] ?? 124,
         setCesarConfidence,
+        setLiveScoreboard: (val: Scoreboard | null) => setLiveScoreboard(val),
+        setLiveRationale: (val: ModeRationale | null) => setLiveRationale(val),
         setAgentProgress: (updater: Record<string,AgentProgressSnapshot> | ((prev: Record<string,AgentProgressSnapshot>) => Record<string,AgentProgressSnapshot>)) => {
           const prev = agentProgressRef.current;
           const next = typeof updater === 'function' ? (updater as (p: Record<string,AgentProgressSnapshot>) => Record<string,AgentProgressSnapshot>)(prev) : updater;
@@ -2986,6 +3005,29 @@ screen name=App target=ink
 
   effect deps=""
     handler <<<
+      const initialConfig = loadConfig();
+      if ((initialConfig as any).cesarAutoModePrompted === true) return;
+      setQuestionState({
+        prompt: 'Enable AUTO mode by default? Cesar may self-escalate plain tasks to plans; tool approval policy still applies.',
+        choices: [
+          { key: 'y', label: 'Always on', color: '#f97316' },
+          { key: 'n', label: 'Keep off', color: '#9ca3af' },
+        ],
+        resolve: (answer: string) => {
+          const enabled = String(answer ?? '').trim().toLowerCase() === 'y';
+          setPersistentAutoMode(enabled);
+          dispatch({
+            type: 'info',
+            message: enabled
+              ? 'AUTO is now always on. Change it anytime with /auto off or Ctrl+A.'
+              : 'AUTO is off by default. Enable it anytime with /auto on or Ctrl+A.',
+          } as any);
+        },
+      });
+    >>>
+
+  effect deps=""
+    handler <<<
       if (!process.stdin.isTTY || !process.stdout.isTTY) return;
       // Bracketed paste only. Fullscreen mode handles mouse tracking through
       // <AlternateScreen mouseTracking={!selectionMode}>.
@@ -3087,7 +3129,7 @@ screen name=App target=ink
       setInputValue(updatedValue);
     >>>
 
-  callback name=handleSubmit async=true params="value:string" deps="replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,planModeQueued,autoModeQueued"
+  callback name=handleSubmit async=true params="value:string" deps="replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,planModeQueued,autoModeQueued,setPersistentAutoMode"
     handler <<<
       inputEpochRef.current += 1;
       let input = cleanSubmitValue(value);
@@ -3113,19 +3155,23 @@ screen name=App target=ink
       const autoControl = parseAutoModeCommand(input);
       if (autoControl) {
         if (autoControl === 'status') {
-          dispatch({ type: 'info', message: autoModeQueued ? 'AUTO is ON — the next plain task may self-escalate through Cesar.' : 'AUTO is OFF.' } as any);
+          dispatch({ type: 'info', message: autoModeQueued ? 'AUTO is ON by default — plain tasks may self-escalate through Cesar.' : 'AUTO is OFF by default.' } as any);
           return;
         }
         const nextAutoModeQueued = autoControl === 'toggle' ? !autoModeQueued : autoControl === 'on';
         setPlanModeQueued(false);
-        setAutoModeQueued(nextAutoModeQueued);
+        setPersistentAutoMode(nextAutoModeQueued);
         dispatch({
           type: 'info',
           message: nextAutoModeQueued
-            ? 'AUTO ON — type a task and press Enter. Use /auto off or Esc to cancel.'
-            : 'AUTO OFF.',
+            ? 'AUTO ON by default. Plain tasks may self-escalate through Cesar. Use /auto off or Ctrl+A to disable.'
+            : 'AUTO OFF by default.',
         } as any);
         return;
+      }
+
+      if (!input.startsWith('/') && activePlan?.state === 'awaiting_approval' && isCesarPlanApprovalInput(input)) {
+        input = '/approve';
       }
 
       // /btw <question> — side-channel question during active dispatch
@@ -3204,13 +3250,11 @@ screen name=App target=ink
       }
       if (planModeQueued && input.trim() && !input.startsWith('/')) {
         setPlanModeQueued(false);
-        setAutoModeQueued(false);
         handleSubmit(`/plan ${input}`);
         return;
       }
       const autoModeForTurn = autoModeQueued && input.trim() && !input.startsWith('/');
       if (planModeQueued) setPlanModeQueued(false);
-      if (autoModeQueued) setAutoModeQueued(false);
       transition(startCommandReplState);
       dispatch({ type: 'separator' } as any);
       dispatch({ type: 'user-message', content: input } as any);
@@ -3495,7 +3539,7 @@ screen name=App target=ink
     >>>
 
   // ── Keyboard handling — pure decision tree + thin dispatcher ──
-  callback name=handleKeyboardInput params="input:string,key:any" deps="modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,autoModeQueued,activePlan,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry,toggleSelectionMode,startupOnly,terminalMode"
+  callback name=handleKeyboardInput params="input:string,key:any" deps="modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,autoModeQueued,activePlan,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry,toggleSelectionMode,startupOnly,terminalMode,setPersistentAutoMode"
     handler <<<
       if (isTerminalFocusReport(input)) return;
 
@@ -3571,17 +3615,16 @@ screen name=App target=ink
           setInputValue(inputValue + action.ghost + ' ');
           return;
         case 'togglePlanQueued':
-          setAutoModeQueued(false);
           setPlanModeQueued((prev: boolean) => !prev); return;
         case 'toggleAutoQueued':
           const nextAutoModeQueued = !autoModeQueued;
           setPlanModeQueued(false);
-          setAutoModeQueued(nextAutoModeQueued);
+          setPersistentAutoMode(nextAutoModeQueued);
           dispatch({
             type: 'info',
             message: nextAutoModeQueued
-              ? 'AUTO queued — type your task and press Enter. Esc cancels.'
-              : 'AUTO canceled.',
+              ? 'AUTO ON by default. Plain tasks may self-escalate through Cesar. Ctrl+A toggles it off.'
+              : 'AUTO OFF by default.',
           } as any);
           return;
         case 'submit':
@@ -3627,7 +3670,9 @@ screen name=App target=ink
         case 'unqueuePlan':
           setPlanModeQueued(false); return;
         case 'unqueueAuto':
-          setAutoModeQueued(false); return;
+          setPersistentAutoMode(false);
+          dispatch({ type: 'info', message: 'AUTO OFF by default.' } as any);
+          return;
         case 'closeSlash':
           setSlashPickerOpen(false); return;
         case 'closeEnginePicker':
@@ -3854,7 +3899,7 @@ screen name=App target=ink
             {(() => {
               const _cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
               return (<>
-                <CesarStatusStrip cesarId={_cesarId} confidence={cesarConfidence} spinner={liveSpinner} engines={liveProgress} startTime={chatStartTimeRef.current || 0} streamSnippet={streamSnippet} isActive={replState !== 'idle' || runningJobs.length > 0} planModeQueued={planModeQueued} autoModeQueued={autoModeQueued} activePlanState={activePlan?.state ?? null} />
+                <CesarStatusStrip cesarId={_cesarId} confidence={cesarConfidence} spinner={liveSpinner} engines={liveProgress} startTime={chatStartTimeRef.current || 0} streamSnippet={streamSnippet} isActive={replState !== 'idle' || runningJobs.length > 0} planModeQueued={planModeQueued} autoModeQueued={autoModeQueued} activePlanState={activePlan?.state ?? null} scoreboard={null} rationale={null} />
                 {mode === 'chat' && <StatusBar cesarId={statusStats.cesarId} chatMessageCount={statusStats.chatMessageCount} totalTokens={statusStats.totalTokens} totalCostUsd={statusStats.totalCostUsd} cwd={statusCwd} branch={statusBranch} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} autoModeQueued={autoModeQueued} isActive={replState !== 'idle'} fullscreenEnabled={terminalMode === 'fullscreen'} selectionMode={terminalMode === 'fullscreen' ? selectionMode : undefined} />}
               </>);
             })()}
@@ -3911,11 +3956,19 @@ fn name=startRepl async=true returns="Promise<void>"
         if (_cesarSessionRef.session) { try { _cesarSessionRef.session.close(); } catch { /* session already closed or errored */ } _cesarSessionRef.session = null; }
         process.exit(0);
       }
-      if (_activeAborts.size > 0) {
+      if (_pauseState.value?.active) {
+        // Second Ctrl+C during pause — hard cancel
+        _pauseState.value = dismissPauseState();
         for (const abort of _activeAborts) abort.abort();
         _activeAborts.clear();
         _lastSigintAt.value = now;
         if (_cancelCallback.fn) _cancelCallback.fn();
+        return;
+      }
+      if (_activeAborts.size > 0) {
+        // First Ctrl+C — enter pause state instead of immediate abort
+        _pauseState.value = createPauseState();
+        _lastSigintAt.value = now;
         return;
       }
       _lastSigintAt.value = now;

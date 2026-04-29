@@ -25,9 +25,15 @@ export interface IconSet {
   nero: string;
   dotOn: string;
   dotOff: string;
+  play: string;
+  refresh: string;
+  flag: string;
+  check: string;
+  cross: string;
+  spinner: string;
 }
 
-// @kern-source: icons:26
+// @kern-source: icons:32
 export const ROMAN_ICONS: IconSet = ({
   read:      '\u039e',
   edit:      '\u270e',
@@ -50,9 +56,15 @@ export const ROMAN_ICONS: IconSet = ({
   nero:      '\u2020',
   dotOn:     '\u25c6',
   dotOff:    '\u25c7',
+  play:      '\u25b6',
+  refresh:   '\u21bb',
+  flag:      '\u2691',
+  check:     '\u2714',
+  cross:     '\u2718',
+  spinner:   '\u25d0',
 });
 
-// @kern-source: icons:53
+// @kern-source: icons:65
 export const CLASSIC_ICONS: IconSet = ({
   read:      '\ud83d\udcc4',
   edit:      '\u270f\ufe0f',
@@ -75,12 +87,18 @@ export const CLASSIC_ICONS: IconSet = ({
   nero:      '\u2694',
   dotOn:     '\u25cf',
   dotOff:    '\u25cb',
+  play:      '\u25b6',
+  refresh:   '\u21bb',
+  flag:      '\u2691',
+  check:     '\u2714',
+  cross:     '\u2718',
+  spinner:   '\u25d0',
 });
 
 /**
  * Resolve icon set from config. Call once per render cycle.
  */
-// @kern-source: icons:80
+// @kern-source: icons:98
 export function icons(): IconSet {
   const theme = loadConfig().iconTheme ?? 'roman';
   return theme === 'classic' ? CLASSIC_ICONS : ROMAN_ICONS;

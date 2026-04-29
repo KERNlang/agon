@@ -12,7 +12,11 @@ import { sessionResultStore } from '../models/session-results.js';
 
 import type { Dispatch, HandlerContext, EngineProgress } from '../../handlers/types.js';
 
-// @kern-source: tribunal:8
+import { createScoreboard, scoreboardStartEngine, scoreboardFinishEngine, scoreboardFailEngine, renderScoreboard } from '../cesar/scoreboard.js';
+
+import { buildCheckpoint, recordCheckpoint } from '../cesar/checkpoint.js';
+
+// @kern-source: tribunal:10
 export async function handleTribunal(question: string, dispatch: Dispatch, ctx: HandlerContext, tribunalMode?: string): Promise<void> {
   const tribunalAbort = new AbortController();
   try {
@@ -48,6 +52,12 @@ export async function handleTribunal(question: string, dispatch: Dispatch, ctx: 
     if (projectCtx) dispatch({ type: 'info', message: `Context: ${tribunalCwd}` });
 
     ctx.setActiveAbort(tribunalAbort);
+
+    // ── Scoreboard + Checkpoint ──
+    const runId = `tribunal-${Date.now()}`;
+    const scoreboard = createScoreboard(runId, 'tribunal', engines);
+    const preCp = buildCheckpoint(runId, 'pre-dispatch', 'tribunal', engines, { question, mode });
+    recordCheckpoint(preCp);
 
     // Track per-engine state for progress-update
     const engineState: Record<string, { status: string; done: boolean }> = {};
@@ -105,6 +115,14 @@ export async function handleTribunal(question: string, dispatch: Dispatch, ctx: 
       dispatch({ type: 'progress-clear' });
       return;
     }
+
+    // Finalize scoreboard + checkpoint
+    for (const id of engines) {
+      scoreboardFinishEngine(scoreboard, id, { result: engineState[id]?.status ?? 'done' });
+    }
+    dispatch({ type: 'info', message: renderScoreboard(scoreboard) });
+    const postCp = buildCheckpoint(runId, 'post-dispatch', 'tribunal', engines, { question, mode });
+    recordCheckpoint(postCp);
 
     // Final progress with done state
     for (const id of engines) engineState[id] = { status: '\u2713 done', done: true };

@@ -7,6 +7,8 @@ import from="../blocks/output-format.js" names="ENGINE_COLORS"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext,EngineProgress" types=true
 import from="../../handlers/cesar-brain.js" names="cesarJudgeForge,cesarConvergeForge"
 import from="../models/session-results.js" names="sessionResultStore"
+import from="../cesar/scoreboard.js" names="createScoreboard,scoreboardStartEngine,scoreboardUpdateProgress,scoreboardFinishEngine,scoreboardFailEngine,renderScoreboard"
+import from="../cesar/checkpoint.js" names="buildCheckpoint,recordCheckpoint"
 
 fn name=handleForgeEvent params="event:any, plan:Plan, engineStatus:Record<string,string>, dispatch:Dispatch, ctx:HandlerContext" returns=Plan export=false
   handler <<<
@@ -152,6 +154,12 @@ fn name=handleForge params="task:string, fitnessCmd:string|null, dispatch:Dispat
     const engineStatus: Record<string, string> = {};
     const startTime = Date.now();
 
+    // ── Scoreboard + Checkpoint ──
+    const runId = `forge-${Date.now()}`;
+    const scoreboard = createScoreboard(runId, 'forge', engines);
+    const preCp = buildCheckpoint(runId, 'pre-dispatch', 'forge', engines, { task, fitnessCmd: fitness, hardened: hardened ?? false });
+    recordCheckpoint(preCp);
+
     // Phase 5c: pre-compute which engines have agent-mode config, so the
     // progress tick (called every 250ms) doesn't re-query the registry.
     const agentEngineIds = new Set<string>();
@@ -177,6 +185,13 @@ fn name=handleForge params="task:string, fitnessCmd:string|null, dispatch:Dispat
         };
       });
       dispatch({ type: 'progress-update', engines: progress });
+      // Sync scoreboard with engineStatus for live display
+      for (const id of engines) {
+        const s = engineStatus[id] ?? 'waiting';
+        if (s === 'building') scoreboardUpdateProgress(scoreboard, id, Math.min(95, elapsed * 2));
+        else if (s === 'done') scoreboardFinishEngine(scoreboard, id, { score: Number(engineStatus[`${id}:score`]) || undefined });
+        else if (s === 'failed') scoreboardFailEngine(scoreboard, id, engineStatus[`${id}:error`] ?? 'failed');
+      }
     }, 250);
 
     ctx.setActiveAbort(forgeAbort);
@@ -215,6 +230,16 @@ fn name=handleForge params="task:string, fitnessCmd:string|null, dispatch:Dispat
 
     clearInterval(progressInterval);
     dispatch({ type: 'progress-clear' });
+
+    // Finalize scoreboard + post-dispatch checkpoint
+    for (const id of engines) {
+      const s = engineStatus[id] ?? 'waiting';
+      if (s === 'done') scoreboardFinishEngine(scoreboard, id, { score: Number(engineStatus[`${id}:score`]) || undefined });
+      else if (s === 'failed') scoreboardFailEngine(scoreboard, id, engineStatus[`${id}:error`] ?? 'failed');
+    }
+    dispatch({ type: 'info', message: renderScoreboard(scoreboard) });
+    const postCp = buildCheckpoint(runId, 'post-dispatch', 'forge', engines, { winner: manifest.winner ?? null, task });
+    recordCheckpoint(postCp);
 
     const engineIds = Object.keys(manifest.results);
     const results = Object.values(manifest.results) as any[];

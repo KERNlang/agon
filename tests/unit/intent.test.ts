@@ -344,6 +344,68 @@ describe('Intent Detection — Natural Language', () => {
     }
   });
 
+  it('routes high-confidence natural review delegation', () => {
+    const r = detectIntent('review it with codex');
+    expect(r.type).toBe('review');
+    if (r.type === 'review') {
+      expect(r.engineId).toBe('codex');
+      expect(r.engineIds).toEqual(['codex']);
+      expect(r.target).toBeUndefined();
+    }
+
+    const ask = detectIntent('ask codex and gemini to review it');
+    expect(ask.type).toBe('review');
+    if (ask.type === 'review') {
+      expect(ask.engineId).toBe('codex');
+      expect(ask.engineIds).toEqual(['codex', 'gemini']);
+    }
+
+    const withAnd = detectIntent('review it with codex and gemini');
+    expect(withAnd.type).toBe('review');
+    if (withAnd.type === 'review') {
+      expect(withAnd.engineId).toBe('codex');
+      expect(withAnd.engineIds).toEqual(['codex', 'gemini']);
+      expect(withAnd.target).toBeUndefined();
+    }
+  });
+
+  it('routes high-confidence collaboration phrases to buddy flows', () => {
+    const brainstorm = detectIntent('can you ask others whether this design is good');
+    expect(brainstorm.type).toBe('brainstorm');
+    if (brainstorm.type === 'brainstorm') {
+      expect(brainstorm.question).toBe('whether this design is good');
+    }
+
+    const tribunal = detectIntent('debate whether REST or GraphQL fits');
+    expect(tribunal.type).toBe('tribunal');
+    if (tribunal.type === 'tribunal') {
+      expect(tribunal.question).toBe('whether REST or GraphQL fits');
+    }
+
+    const campfire = detectIntent('talk this through with the team');
+    expect(campfire.type).toBe('campfire');
+    if (campfire.type === 'campfire') {
+      expect(campfire.topic).toBe('talk this through with the team');
+    }
+  });
+
+  it('does not misroute feature requests that mention engines to brainstorm', () => {
+    const r = detectIntent('can you make Agon feel alive with real-time engine telemetry, CPU and memory per engine, a /status dashboard, fallback on stalls, keep it in KERN, spec first then build');
+    expect(r.type).toBe('auto');
+    if (r.type === 'auto') {
+      expect(r.input).toContain('real-time engine telemetry');
+    }
+  });
+
+  it('routes high-confidence competition phrases to forge', () => {
+    const r = detectIntent('make engines compete on fix auth test with npm test');
+    expect(r.type).toBe('forge');
+    if (r.type === 'forge') {
+      expect(r.task).toBe('fix auth');
+      expect(r.fitnessCmd).toBe('npm test');
+    }
+  });
+
   it('parses explicit natural-language agent shortcuts without waiting for Cesar', () => {
     const direct = detectIntent('agent fix paste handling and run tests');
     expect(direct.type).toBe('agent');

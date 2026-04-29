@@ -1021,6 +1021,48 @@ You still own the overall task. Integrate the forged slice with the rest of the 
     return false;
   >>>
 
+fn name=isCesarPlanApprovalInput params="input:string" returns=boolean export=true
+  doc "Return true for natural approval replies users type after Cesar says go/run it."
+  handler <<<
+    const text = String(input ?? '').trim().toLowerCase().replace(/[.!]+$/g, '');
+    return /^(?:y|yes|go|run|run it|start|start it|approve|approved|do it|proceed|execute|ok|okay|sure)$/i.test(text);
+  >>>
+
+fn name=findPendingCesarPlan params="ctx:HandlerContext" returns="CesarPlan | null" export=true
+  doc "Find the most relevant pending Cesar plan: proposed plan first, active plan second, then latest saved awaiting_approval plan."
+  handler <<<
+    const proposed = ctx.cesar?.proposedPlan as CesarPlan | undefined;
+    if (proposed && proposed.state === 'awaiting_approval') return proposed;
+    const active = ctx.activePlan as CesarPlan | undefined;
+    if (active && active.state === 'awaiting_approval') return active;
+    const saved = listCesarPlans()
+      .filter((p: CesarPlan) => p.state === 'awaiting_approval')
+      .sort((a: CesarPlan, b: CesarPlan) => b.createdAt.localeCompare(a.createdAt));
+    return saved[0] ?? null;
+  >>>
+
+fn name=approvePendingCesarPlan async=true params="cb:DispatchCallbacks" returns="Promise<boolean>" export=true
+  doc "Approve and execute the pending CesarPlan, if one exists. Backs /approve and natural approval aliases like go."
+  handler <<<
+    const pending = findPendingCesarPlan(cb.ctx);
+    if (!pending) return false;
+    if (cb.ctx.cesar?.proposedPlan?.id === pending.id) cb.ctx.cesar.proposedPlan = undefined;
+
+    const approved = approveCesarPlan(pending);
+    cb.setActivePlan(approved);
+    cb.dispatch({ type: 'success', message: 'Plan approved — executing...' });
+    saveCesarPlan(approved);
+    if (approved.planFilePath) {
+      try {
+        writeFileSync(approved.planFilePath, formatCesarPlanMarkdown(approved));
+      } catch (err) {
+        console.warn('[plan] failed to write approved Cesar plan file:', (err as Error).message ?? err);
+      }
+    }
+    await executeApprovedPlan(approved, cb);
+    return true;
+  >>>
+
 fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchCallbacks" returns="Promise<DispatchResult>"
   doc "Route a parsed intent to the correct handler. Registry-first, switch as fallback."
   handler <<<
@@ -1489,7 +1531,11 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
         break;
       }
       case 'plans': handlePlansList(cb.dispatch); break;
-      case 'approve': await handleApprove(cb.dispatch, cb.ctx); break;
+      case 'approve': {
+        if (await approvePendingCesarPlan(cb)) break;
+        await handleApprove(cb.dispatch, cb.ctx);
+        break;
+      }
       case 'retry': await handleRetry(cb.dispatch, cb.ctx); break;
       case 'cancel': handleCancel(cb.dispatch, cb.ctx); break;
       case 'apply': await handleApplyPatch(cb.dispatch, cb.ctx, intent.patchPath, intent.force); break;
@@ -2263,7 +2309,7 @@ fn name=handleProposedCesarPlan async=true params="proposed:CesarPlan, cb:Dispat
       const answer = await cb.askQuestion('Approve plan? [Y/n/e(dit)] or give feedback to revise');
       const trimmed = answer.trim().toLowerCase();
 
-      if (trimmed === 'y' || trimmed === 'yes' || trimmed === '') {
+      if (trimmed === '' || isCesarPlanApprovalInput(trimmed)) {
         const approved = approveCesarPlan(currentProposal);
         cb.setActivePlan(approved);
         cb.dispatch({ type: 'success', message: 'Plan approved — executing...' });

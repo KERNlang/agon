@@ -63,6 +63,10 @@ union name=KeyboardAction
     field name=index type=number
     field name=value type=string
   variant name=cancelOrExit
+  variant name=togglePauseMenu
+  variant name=movePauseCursor
+    field name=direction type="'up'|'down'"
+  variant name=selectPauseAction
 
 fn name=resolveKeyboardInput params="ctx:KeyboardCtx" returns="KeyboardAction"
   doc "Pure keyboard decision tree. Takes current state, returns action to execute."
@@ -192,7 +196,6 @@ fn name=resolveKeyboardInput params="ctx:KeyboardCtx" returns="KeyboardAction"
     // Escape: delegate to resolveEscapeAction
     if (key.escape) {
       if (ctx.planModeQueued) return { type: 'unqueuePlan' };
-      if (ctx.autoModeQueued) return { type: 'unqueueAuto' };
       const decision = resolveEscapeAction({
         replState: ctx.replState,
         inputValue: ctx.inputValue,
@@ -225,8 +228,13 @@ fn name=resolveKeyboardInput params="ctx:KeyboardCtx" returns="KeyboardAction"
       }
     }
 
-    // Ctrl+C: cancel or exit
-    if (input === '\x03' || (key.ctrl && normalizedCtrlInput === 'c')) return { type: 'cancelOrExit' };
+    // Ctrl+C: cancel or exit (or pause menu when orchestration is running)
+    if (input === '\x03' || (key.ctrl && normalizedCtrlInput === 'c')) {
+      if (ctx.replState === 'busy' || ctx.replState === 'streaming') {
+        return { type: 'togglePauseMenu' };
+      }
+      return { type: 'cancelOrExit' };
+    }
 
     return { type: 'none' };
   >>>

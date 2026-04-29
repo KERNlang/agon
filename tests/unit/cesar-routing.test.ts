@@ -138,6 +138,12 @@ describe('César Routing', () => {
       const { DEFAULT_AGON_CONFIG } = await import('../../packages/core/src/types.js');
       expect(DEFAULT_AGON_CONFIG.speculativeEloSpreadThreshold).toBe(15);
     });
+
+    it('persistent Cesar auto mode defaults off until the first-run prompt', async () => {
+      const { DEFAULT_AGON_CONFIG } = await import('../../packages/core/src/types.js');
+      expect(DEFAULT_AGON_CONFIG.cesarAutoMode).toBe(false);
+      expect(DEFAULT_AGON_CONFIG.cesarAutoModePrompted).toBe(false);
+    });
   });
 
   describe('shouldSpeculate gate', () => {

@@ -16,7 +16,11 @@ import { sessionResultStore } from '../models/session-results.js';
 
 import type { Dispatch, HandlerContext, EngineProgress } from '../../handlers/types.js';
 
-// @kern-source: brainstorm:10
+import { createScoreboard, scoreboardStartEngine, scoreboardFinishEngine, scoreboardFailEngine, renderScoreboard } from '../cesar/scoreboard.js';
+
+import { buildCheckpoint, recordCheckpoint } from '../cesar/checkpoint.js';
+
+// @kern-source: brainstorm:12
 export async function handleBrainstorm(question: string, dispatch: Dispatch, ctx: HandlerContext): Promise<{winner:string, bids:{engineId:string,reasoning:string,approach:string,score:number}[], response:string}|null> {
   const bsAbort = new AbortController();
   try {
@@ -45,6 +49,11 @@ export async function handleBrainstorm(question: string, dispatch: Dispatch, ctx
     if (projectCtx) dispatch({ type: 'info', message: `Context: ${bsCwd}` });
 
     ctx.setActiveAbort(bsAbort);
+
+    const runId = `brainstorm-${Date.now()}`;
+    const scoreboard = createScoreboard(runId, 'brainstorm', engines);
+    const preCp = buildCheckpoint(runId, 'pre-dispatch', 'brainstorm', engines, { question });
+    recordCheckpoint(preCp);
 
     const startTime = Date.now();
     const progressInterval = setInterval(() => {
@@ -80,6 +89,19 @@ export async function handleBrainstorm(question: string, dispatch: Dispatch, ctx
 
     clearInterval(progressInterval);
     dispatch({ type: 'progress-clear' });
+
+    // Finalize scoreboard + checkpoint
+    for (const bid of result.bids) {
+      scoreboardFinishEngine(scoreboard, bid.engineId, { score: bid.score, result: 'bid submitted' });
+    }
+    for (const id of engines) {
+      if (!result.bids.find((b: any) => b.engineId === id)) {
+        scoreboardFailEngine(scoreboard, id, 'no response');
+      }
+    }
+    dispatch({ type: 'info', message: renderScoreboard(scoreboard) });
+    const postCp = buildCheckpoint(runId, 'post-dispatch', 'brainstorm', engines, { winner: result.winner, question });
+    recordCheckpoint(postCp);
 
     const finalProgress: EngineProgress[] = engines.map((id: string) => {
       const bid = result.bids.find((b: any) => b.engineId === id);

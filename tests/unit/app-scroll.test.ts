@@ -22,6 +22,10 @@ import {
   stringDisplayWidth,
   transcriptRowsToPlainText,
 } from '../../packages/cli/src/generated/surfaces/app.js';
+import {
+  fileRailDetailRows,
+  resolveFileRailExpandedFile,
+} from '../../packages/cli/src/generated/blocks/file-rail.js';
 import { cleanupTestAgonHome } from '../helpers/agon-home.js';
 
 let testHome: string | undefined;
@@ -149,11 +153,24 @@ describe('app scroll helpers', () => {
     expect(normalizeTerminalMode('fullscreen')).toBe('fullscreen');
   });
 
-  it('keeps the file rail compact on wide native terminals', () => {
+  it('gives the expanded file rail enough room on wide native terminals', () => {
     expect(fileRailWidthForTerminal(220, false)).toBe(42);
-    expect(fileRailWidthForTerminal(220, true)).toBeLessThanOrEqual(64);
-    expect(fileRailMaxRowsForTerminal(80, 'native', false)).toBe(10);
-    expect(fileRailMaxRowsForTerminal(80, 'native', true)).toBe(18);
+    expect(fileRailWidthForTerminal(120, true)).toBe(42);
+    expect(fileRailWidthForTerminal(220, true)).toBe(77);
+    expect(fileRailMaxRowsForTerminal(80, 'native', false)).toBe(14);
+    expect(fileRailMaxRowsForTerminal(80, 'native', true)).toBe(36);
+  });
+
+  it('auto-previews the selected file when the file rail is focused', () => {
+    const files = [
+      { path: '/repo/a.ts', relPath: 'a.ts', status: 'read', lastTouchedAt: 1, touchCount: 1 },
+      { path: '/repo/b.ts', relPath: 'b.ts', status: 'edited', lastTouchedAt: 2, touchCount: 2 },
+    ] as any;
+
+    expect(resolveFileRailExpandedFile(files, 1, null, false)).toBeUndefined();
+    expect(resolveFileRailExpandedFile(files, 1, null, true)?.path).toBe('/repo/b.ts');
+    expect(resolveFileRailExpandedFile(files, 1, '/repo/a.ts', true)?.path).toBe('/repo/a.ts');
+    expect(fileRailDetailRows(36, true)).toBeGreaterThanOrEqual(20);
   });
 
   it('replays terminal render snapshots across native and fullscreen sizes', () => {

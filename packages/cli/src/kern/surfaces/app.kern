@@ -1143,7 +1143,7 @@ fn name=normalizeTerminalMode params="value:any" returns="'native'|'fullscreen'"
 fn name=fileRailWidthForTerminal params="termWidth:number, expanded:boolean" returns=number export=true
   handler <<<
     const safeWidth = Math.max(40, Math.floor(Number(termWidth) || 100));
-    if (expanded) return Math.max(36, Math.min(64, Math.floor(safeWidth * 0.3)));
+    if (expanded) return Math.max(36, Math.min(84, Math.floor(safeWidth * 0.35)));
     return Math.max(28, Math.min(42, Math.floor(safeWidth * 0.22)));
   >>>
 
@@ -1151,10 +1151,10 @@ fn name=fileRailMaxRowsForTerminal params="termHeight:number, terminalMode:strin
   handler <<<
     const safeHeight = Math.max(8, Math.floor(Number(termHeight) || 24));
     if (terminalMode === 'native') {
-      if (expanded) return Math.max(8, Math.min(18, safeHeight - 8));
-      return Math.max(5, Math.min(10, safeHeight - 10));
+      if (expanded) return Math.max(8, Math.min(36, safeHeight - 4));
+      return Math.max(5, Math.min(14, safeHeight - 8));
     }
-    if (expanded) return Math.max(12, safeHeight - 6);
+    if (expanded) return Math.max(12, safeHeight - 4);
     return Math.max(6, Math.min(12, 10));
   >>>
 
@@ -2128,7 +2128,11 @@ fn name=buildTranscriptRows params="blocks:OutputBlock[], mode:string, toolOutpu
           pushSegmentsRow(`${baseKey}-dash-help`, 0, [
             { text: '  Just talk, or type ', dimColor: true },
             { text: '/', color: '#f97316' },
-            { text: ' for commands.', dimColor: true },
+            { text: ' for commands. ', dimColor: true },
+            { text: 'Tab', color: '#f97316' },
+            { text: ' plan · ', dimColor: true },
+            { text: 'Shift+Tab', color: '#f97316' },
+            { text: ' auto', dimColor: true },
           ]);
           return;
         case 'agent-step-start':
@@ -3651,7 +3655,7 @@ screen name=App target=ink
             {lowerPanel}
           </Box>
           {showFileRail && (
-            <FileRail files={fileRailFiles} maxRows={fileRailMaxRows} width={fileRailWidth} focused={fileRailOpen && inputValue.trim().length === 0} selectedIndex={fileRailSelectedIdx} expandedPath={fileRailExpandedPath} />
+            <FileRail files={fileRailFiles} maxRows={fileRailMaxRows} width={fileRailWidth} focused={fileRailOpen && inputValue.trim().length === 0} selectedIndex={fileRailSelectedIdx} expandedPath={fileRailExpandedPath} autoExpandSelected={fileRailOpen && inputValue.trim().length === 0} />
           )}
         </Box>
       </>
@@ -3668,7 +3672,7 @@ screen name=App target=ink
       {lowerPanel}
       </Box>
       {showFileRail && (
-        <FileRail files={fileRailFiles} maxRows={fileRailMaxRows} width={fileRailWidth} focused={fileRailOpen && inputValue.trim().length === 0} selectedIndex={fileRailSelectedIdx} expandedPath={fileRailExpandedPath} />
+        <FileRail files={fileRailFiles} maxRows={fileRailMaxRows} width={fileRailWidth} focused={fileRailOpen && inputValue.trim().length === 0} selectedIndex={fileRailSelectedIdx} expandedPath={fileRailExpandedPath} autoExpandSelected={fileRailOpen && inputValue.trim().length === 0} />
       )}
       </Box>
       </Box>

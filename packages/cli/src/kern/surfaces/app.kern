@@ -29,7 +29,7 @@ import from="../signals/dispatch.js" names="dispatchIntent,handleModeSwitch,isCe
 import from="../signals/dispatch.js" names="DispatchCallbacks" types=true
 import from="../signals/output.js" names="handleOutputEvent,clearPermissionQueue,clearThinkingBuffer"
 import from="../signals/output.js" names="OutputActions,OutputState,AgentProgressSnapshot,StreamingEntry" types=true
-import from="../signals/app-input.js" names="appendInputHistory,cleanInputValue,cleanSubmitValue,findInputChange,navigateHistory,parseAutoModeCommand,resolveEscapeAction,shouldQueuePlanModeOnTab"
+import from="../signals/app-input.js" names="appendInputHistory,cleanInputValue,cleanSubmitValue,findInputChange,hasBtwSideChannelTarget,navigateHistory,parseAutoModeCommand,resolveEscapeAction,shouldQueuePlanModeOnTab"
 import from="../signals/keyboard.js" names="resolveKeyboardInput"
 import from="../signals/block-archive.js" names="makeBlockArchivePath,appendBlockWithCap"
 import from="../blocks/review.js" names="handleReviewAction"
@@ -3129,7 +3129,7 @@ screen name=App target=ink
       setInputValue(updatedValue);
     >>>
 
-  callback name=handleSubmit async=true params="value:string" deps="replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,planModeQueued,autoModeQueued,setPersistentAutoMode"
+  callback name=handleSubmit async=true params="value:string" deps="replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,activePlan,planModeQueued,autoModeQueued,setPersistentAutoMode"
     handler <<<
       inputEpochRef.current += 1;
       let input = cleanSubmitValue(value);
@@ -3182,7 +3182,12 @@ screen name=App target=ink
       }
       if (btwLower.startsWith('/btw ')) {
         const btwQuestion = input.trim().slice(5).trim();
-        if (btwQuestion && replState !== 'idle') {
+        const activeWorkForBtw = hasBtwSideChannelTarget({
+          replState,
+          activePlanState: activePlan?.state ?? null,
+          runningJobCount: jobManager.running().length,
+        });
+        if (btwQuestion && activeWorkForBtw) {
           // Fire side-dispatch — don't interrupt main task
           dispatch({ type: 'separator' } as any);
           dispatch({ type: 'user-message', content: `/btw ${btwQuestion}` } as any);
@@ -3237,11 +3242,12 @@ screen name=App target=ink
           });
           return;
         }
-        // If idle, just process as regular input (falls through to normal dispatch)
         if (!btwQuestion) {
           dispatch({ type: 'info', message: 'Usage: /btw <question>' } as any);
           return;
         }
+        dispatch({ type: 'info', message: 'No active work for /btw. Ask normally without the /btw prefix.' } as any);
+        return;
       }
       if (replState !== 'idle' && !jobManager.running().length) {
         setInputQueue((prev: string[]) => [...prev, input]);

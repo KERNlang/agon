@@ -57,6 +57,62 @@ fn name=companionDispatch async=true params="opts:{config:CompanionConfig, binar
     let turnCompleted: Record<string, unknown> | null = null;
     let turnError: Record<string, unknown> | null = null;
     let threadId: string | null = null;
+    let stdinError: Error | null = null;
+
+    function normalizeStdinError(err: unknown): Error {
+      const base = err instanceof Error ? err : new Error(String(err));
+      const code = (base as NodeJS.ErrnoException).code;
+      const suffix = code ? ` (${code})` : '';
+      return new Error(`Companion stdin closed${suffix}: ${base.message}`);
+    }
+
+    function setStdinError(err: unknown): Error {
+      const normalized = normalizeStdinError(err);
+      stdinError = normalized;
+      if (!turnError) turnError = { code: -32000, message: normalized.message };
+      for (const [id, pendingReq] of pending) {
+        pending.delete(id);
+        clearTimeout(pendingReq.timer);
+        pendingReq.reject(normalized);
+      }
+      return normalized;
+    }
+
+    function writeStdin(line: string): Promise<void> {
+      return new Promise((resolve, reject) => {
+        if (stdinError) { reject(stdinError); return; }
+        const stdin = proc.stdin;
+        if (!stdin || stdin.destroyed || !stdin.writable) {
+          reject(setStdinError(new Error('stdin is not writable')));
+          return;
+        }
+        stdin.write(line, (err?: Error | null) => {
+          if (err) reject(setStdinError(err));
+          else resolve();
+        });
+      });
+    }
+
+    function fireWriteStdin(line: string): void {
+      void writeStdin(line).catch((err) => {
+        setStdinError(err);
+      });
+    }
+
+    function endStdin(): void {
+      try {
+        proc.stdin?.end();
+      } catch (err) {
+        setStdinError(err);
+      }
+    }
+
+    proc.on('error', (err: Error) => {
+      if (!turnError) turnError = { code: -32000, message: err.message };
+    });
+    proc.stdin?.on('error', (err: Error) => {
+      setStdinError(err);
+    });
 
     // Parse line-delimited JSONRPC from stdout
     const rl = createInterface({ input: proc.stdout! });
@@ -84,14 +140,14 @@ fn name=companionDispatch async=true params="opts:{config:CompanionConfig, binar
               const optionId = approved
                 ? (allowOpt?.optionId ?? alwaysOpt?.optionId ?? 'proceed_once')
                 : (rejectOpt?.optionId ?? 'reject');
-              if (proc) proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { optionId } }) + '\n');
+              fireWriteStdin(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { optionId } }) + '\n');
             }).catch(() => {
               const optionId = rejectOpt?.optionId ?? 'reject';
-              if (proc) proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { optionId } }) + '\n');
+              fireWriteStdin(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { optionId } }) + '\n');
             });
           } else {
             const optionId = allowOpt?.optionId ?? alwaysOpt?.optionId ?? 'proceed_once';
-            proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { optionId } }) + '\n');
+            fireWriteStdin(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { optionId } }) + '\n');
           }
           return;
         }
@@ -109,15 +165,15 @@ fn name=companionDispatch async=true params="opts:{config:CompanionConfig, binar
         if (opts.onApproval) {
           opts.onApproval(String(toolName), String(toolCmd), 'Agent tool approval requested').then((result: boolean | string) => {
             if (typeof result === 'string') {
-              if (proc) proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, error: { code: -32001, message: result } }) + '\n');
+              fireWriteStdin(JSON.stringify({ jsonrpc: '2.0', id: msg.id, error: { code: -32001, message: result } }) + '\n');
             } else {
-              if (proc) proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: buildResult(result) }) + '\n');
+              fireWriteStdin(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: buildResult(result) }) + '\n');
             }
           }).catch(() => {
-            if (proc) proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: buildResult(false) }) + '\n');
+            fireWriteStdin(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: buildResult(false) }) + '\n');
           });
         } else {
-          proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: buildResult(true) }) + '\n');
+          fireWriteStdin(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: buildResult(true) }) + '\n');
         }
         return;
       }
@@ -186,18 +242,23 @@ fn name=companionDispatch async=true params="opts:{config:CompanionConfig, binar
           reject(new Error(`Timeout waiting for ${method}`));
         }, timeoutMs);
         pending.set(id, { resolve, reject, timer });
-        proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
+        void writeStdin(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n').catch((err) => {
+          pending.delete(id);
+          clearTimeout(timer);
+          reject(err);
+        });
       });
     }
 
     function notify(method: string): void {
-      proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', method }) + '\n');
+      fireWriteStdin(JSON.stringify({ jsonrpc: '2.0', method }) + '\n');
     }
 
     function killProc(): void {
       try {
         if (proc.pid) process.kill(-proc.pid, 'SIGTERM');
       } catch (e) {
+        if ((e as NodeJS.ErrnoException).code === 'ESRCH') return;
         console.warn(`[agon] companion-dispatch: group kill failed (pid=${proc.pid}): ${e instanceof Error ? e.message : String(e)}`);
         try { proc.kill('SIGTERM'); } catch (e2) { console.warn(`[agon] companion-dispatch: direct kill also failed: ${e2 instanceof Error ? e2.message : String(e2)}`); }
       }
@@ -234,8 +295,8 @@ fn name=companionDispatch async=true params="opts:{config:CompanionConfig, binar
           type: 'user',
           message: { role: 'user', content: opts.prompt },
         });
-        proc.stdin!.write(envelope + '\n');
-        proc.stdin!.end(); // Signal EOF — --max-turns 1 will complete after first response
+        await writeStdin(envelope + '\n');
+        endStdin(); // Signal EOF — --max-turns 1 will complete after first response
 
         // Wait for result event or process exit
         await waitForTurnComplete();

@@ -9,14 +9,23 @@ import { contentWidth, engineColor, RenderedSegments } from './rendering.js';
 import { parseMarkdownBlocks } from './markdown.js';
 
 // @kern-source: plan-view:47
-export function PlanProposalView({ plan, markdown }: { plan:any; markdown?:string }) {
+export function PlanProposalView({ plan, markdown, costEstimate }: { plan:any; markdown?:string; costEstimate?:{ totalTokens: number; totalCostUsd: number; steps: { id: string; tokens: number; costUsd: number }[] } | null }) {
   const steps = plan.steps ?? [];
-  const totalTokens = plan.totalEstimatedTokens ?? steps.reduce((sum: number, s: any) => sum + (s.estimatedTokens ?? 0), 0);
-  const totalCost = plan.totalEstimatedCostUsd ?? steps.reduce((sum: number, s: any) => sum + (s.estimatedCostUsd ?? 0), 0);
+  const est = costEstimate;
+  const totalTokens = est?.totalTokens ?? plan.totalEstimatedTokens ?? steps.reduce((sum: number, s: any) => sum + (s.estimatedTokens ?? 0), 0);
+  const totalCost = est?.totalCostUsd ?? plan.totalEstimatedCostUsd ?? steps.reduce((sum: number, s: any) => sum + (s.estimatedCostUsd ?? 0), 0);
   const allEngines = [...new Set(steps.flatMap((s: any) => s.engines ?? (s.engine ? [s.engine] : [])))] as string[];
   const w = contentWidth(6);
   const thinBar = '\u2500'.repeat(Math.min(w, 64));
   const planFilePath = plan.planFilePath || (plan as any).planFilePath;
+  const stepCost = (s: any) => {
+    const stepEst = est?.steps?.find((e: any) => e.id === s.id);
+    return stepEst?.costUsd ?? s.estimatedCostUsd ?? 0;
+  };
+  const stepTokens = (s: any) => {
+    const stepEst = est?.steps?.find((e: any) => e.id === s.id);
+    return stepEst?.tokens ?? s.estimatedTokens ?? 0;
+  };
 
   // Claude-Code-style markdown rendering for the plan body. The
   // structured step boxes below are kept as a fallback when no
@@ -86,6 +95,8 @@ export function PlanProposalView({ plan, markdown }: { plan:any; markdown?:strin
         const hasDepends = s.dependsOn && s.dependsOn.length > 0;
         const hasFitness = s.fitnessCmd;
         const isParallel = s.parallel;
+        const cost = stepCost(s);
+        const tokens = stepTokens(s);
 
         return (
           <Box key={s.id} flexDirection="column">
@@ -113,8 +124,11 @@ export function PlanProposalView({ plan, markdown }: { plan:any; markdown?:strin
                   ))}
                 </Box>
               )}
-              {s.estimatedCostUsd > 0 && (
-                <Text dimColor>{' \u00b7 $'}{s.estimatedCostUsd.toFixed(2)}</Text>
+              {tokens > 0 && (
+                <Text dimColor>{' \u00b7 ~'}{tokens.toLocaleString()}{' t'}</Text>
+              )}
+              {cost > 0 && (
+                <Text dimColor>{' \u00b7 $'}{cost.toFixed(2)}</Text>
               )}
               {isParallel && <Text color="#34d399">{' \u00b7 parallel'}</Text>}
             </Box>
@@ -182,7 +196,7 @@ export function PlanProposalView({ plan, markdown }: { plan:any; markdown?:strin
   );
 }
 
-// @kern-source: plan-view:226
+// @kern-source: plan-view:241
 export function PlanExecutionView({ plan }: { plan:any }) {
   const steps: any[] = plan.steps ?? [];
   const doneSteps = steps.filter((s: any) => s.state === 'done');

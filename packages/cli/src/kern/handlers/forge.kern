@@ -42,11 +42,16 @@ fn name=handleForgeEvent params="event:any, plan:Plan, engineStatus:Record<strin
         engineStatus[String(event.data?.to ?? '')] = 'fallback';
         dispatch({ type: 'warning', message: `${String(event.data?.from ?? id)} failed during ${String(event.data?.phase ?? 'forge')} — retrying on ${String(event.data?.to ?? 'fallback')}` });
         break;
-      case 'engine:failed':
+      case 'engine:failed': {
         engineStatus[id] = 'failed';
         engineStatus[`${id}:score`] = '0';
+        const errMsg = String(event.data?.error ?? 'failed');
+        engineStatus[`${id}:error`] = errMsg;
+        const snippet = errMsg.length > 120 ? errMsg.slice(0, 120) + '…' : errMsg;
+        dispatch({ type: 'warning', message: `${id} failed: ${snippet}` });
         dispatch({ type: 'engine-pid-clear', engineId: id } as any);
         break;
+      }
       case 'stage1:accepted':
         engineStatus[id] = 'done';
         engineStatus[`${id}:score`] = String(event.data?.score ?? '?');

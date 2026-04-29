@@ -49,7 +49,7 @@ export function TokenGauge({ tokens, maxTokens }: { tokens:number; maxTokens:num
   );
 }
 
-// @kern-source: status:166
+// @kern-source: status:256
 function AgonTip() {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -67,7 +67,7 @@ function AgonTip() {
   );
 }
 
-// @kern-source: status:179
+// @kern-source: status:269
 export function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd, cwd, branch, explorationMode, toolOutputExpanded, autoModeQueued, isActive, fullscreenEnabled, selectionMode, telemetryVitals }: { cesarId:string; chatMessageCount:number; totalTokens:number; totalCostUsd:number; cwd:string; branch?:string; explorationMode?:boolean; toolOutputExpanded?:boolean; autoModeQueued?:boolean; isActive?:boolean; fullscreenEnabled?:boolean; selectionMode?:boolean; telemetryVitals?:Map<string, any> }) {
   const cost = totalCostUsd > 0 ? `$${totalCostUsd.toFixed(2)}` : '';
   const msgs = chatMessageCount;
@@ -133,7 +133,7 @@ export function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd
   );
 }
 
-// @kern-source: status:261
+// @kern-source: status:351
 const StatusDashboard = React.memo(function StatusDashboard({ telemetryVitals, recentFallbacks, width, height, filter }: { telemetryVitals:Map<string, any>; recentFallbacks?:{from:string,to:string,reason:string,at:number}[]; width?:number; height?:number; filter?:'all'|'problem' }) {
   const vitals = Array.from(telemetryVitals?.values?.() ?? []);
   const severity: Record<string, number> = { stalled: 5, fallback: 4, offline: 3, busy: 2, idle: 1 };
@@ -192,8 +192,8 @@ const StatusDashboard = React.memo(function StatusDashboard({ telemetryVitals, r
 });
 export { StatusDashboard };
 
-// @kern-source: status:327
-const ExecutionRail = React.memo(function ExecutionRail({ spinner, engines, activePlanState, activePlan, lastTool, recentFallbacks, toolOutputExpanded, startTime, isActive }: { spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; activePlanState?:string|null; activePlan?:any; lastTool?:any; recentFallbacks?:{from:string,to:string,reason:string,at:number}[]; toolOutputExpanded?:boolean; startTime?:number; isActive?:boolean }) {
+// @kern-source: status:417
+const ExecutionRail = React.memo(function ExecutionRail({ spinner, engines, activePlanState, activePlan, lastTool, stats, recentFallbacks, toolOutputExpanded, startTime, isActive }: { spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; activePlanState?:string|null; activePlan?:any; lastTool?:any; stats?:any; recentFallbacks?:{from:string,to:string,reason:string,at:number}[]; toolOutputExpanded?:boolean; startTime?:number; isActive?:boolean }) {
   const planGauge = buildPlanPhaseGauge(activePlan, 10);
   const now = Date.now();
   const elapsedMs = startTime && startTime > 0 ? Math.max(0, now - startTime) : 0;
@@ -238,6 +238,13 @@ const ExecutionRail = React.memo(function ExecutionRail({ spinner, engines, acti
 
   const fallback = recentFallbacks && recentFallbacks.length > 0 ? recentFallbacks[recentFallbacks.length - 1] : null;
   const toolMode = toolOutputExpanded ? 'expanded' : 'collapsed';
+  const toolCount = Math.max(0, Number(stats?.toolCount ?? 0));
+  const failedToolCount = Math.max(0, Number(stats?.failedToolCount ?? 0));
+  const runningToolCount = Math.max(0, Number(stats?.runningToolCount ?? 0));
+  const fileCount = Math.max(0, Number(stats?.fileCount ?? 0));
+  const changedFileCount = Math.max(0, Number(stats?.changedFileCount ?? 0));
+  const queueCount = Math.max(0, Number(stats?.queueCount ?? 0));
+  const timeline = buildExecutionRailTimeline(activePlan, lastTool, engines, recentFallbacks, 5);
 
   return (
     <Box flexDirection="column" borderStyle="single" borderColor="#374151" paddingX={1}>
@@ -247,6 +254,14 @@ const ExecutionRail = React.memo(function ExecutionRail({ spinner, engines, acti
         <Text color={planGauge.visible ? planGauge.color : '#fbbf24'}>{phase}</Text>
         {planGauge.visible ? <Text color={planGauge.color}>{' '}{planGauge.bar}</Text> : null}
         {elapsed ? <Text dimColor>{' · '}{elapsed}</Text> : null}
+        <Text dimColor>{' · '}</Text>
+        <Text color={failedToolCount > 0 ? '#ef4444' : runningToolCount > 0 ? '#fbbf24' : '#f59e0b'}>{toolCount}</Text>
+        <Text dimColor>{' tools'}</Text>
+        {failedToolCount > 0 ? <Text color="#ef4444">{`/${failedToolCount} failed`}</Text> : null}
+        <Text dimColor>{' · '}</Text>
+        <Text color={changedFileCount > 0 ? '#22d3ee' : '#94a3b8'}>{changedFileCount > 0 ? changedFileCount : fileCount}</Text>
+        <Text dimColor>{changedFileCount > 0 ? ' changed' : ' files'}</Text>
+        {queueCount > 0 ? <Text color="#f97316">{` · ${queueCount} queued`}</Text> : null}
         <Text dimColor>{' · tools '}</Text>
         <Text color="#f59e0b">{toolMode}</Text>
         <Text dimColor>{' ('}</Text>
@@ -265,12 +280,23 @@ const ExecutionRail = React.memo(function ExecutionRail({ spinner, engines, acti
           {fallback ? <><Text color="#f97316">{'fallback: '}{fallback.from}{' -> '}{fallback.to}</Text><Text dimColor>{' · '}{String(fallback.reason ?? '').slice(0, 42)}</Text></> : null}
         </Text>
       ) : null}
+      {timeline.length > 0 ? (
+        <Box flexDirection="column">
+          {timeline.map((row: any) => (
+            <Text key={row.key}>
+              <Text color={row.color}>{row.icon}</Text>
+              <Text dimColor>{' '}{row.label}</Text>
+              {row.detail ? <Text>{' · '}{row.detail}</Text> : null}
+            </Text>
+          ))}
+        </Box>
+      ) : null}
     </Box>
   );
 });
 export { ExecutionRail };
 
-// @kern-source: status:416
+// @kern-source: status:533
 export function StatusLine({ startTime, engineId, color }: { startTime:number; engineId?:string; color?:number }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -305,7 +331,7 @@ export function StatusLine({ startTime, engineId, color }: { startTime:number; e
   );
 }
 
-// @kern-source: status:445
+// @kern-source: status:562
 const BackgroundJobRail = React.memo(function BackgroundJobRail({ jobs }: { jobs:Job[] }) {
   return (
     <Box paddingX={1}>
@@ -328,7 +354,7 @@ const BackgroundJobRail = React.memo(function BackgroundJobRail({ jobs }: { jobs
 });
 export { BackgroundJobRail };
 
-// @kern-source: status:465
+// @kern-source: status:582
 const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confidence, spinner, engines, startTime, streamSnippet, isActive, planModeQueued, autoModeQueued, activePlanState, activePlan, scoreboard, rationale }: { cesarId:string; confidence?:number|null; spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; startTime:number; streamSnippet?:{ engineId: string; line: string } | null; isActive:boolean; planModeQueued?:boolean; autoModeQueued?:boolean; activePlanState?:string|null; activePlan?:any; scoreboard?:Scoreboard|null; rationale?:ModeRationale|null }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -573,4 +599,96 @@ export function buildPlanPhaseGauge(plan: any, width: number = 12): any {
     current,
     color,
   };
+}
+
+/**
+ * Build compact live rail rows from plan, tool, engine, and fallback state. Kept pure so the rail can evolve without baking logic into JSX.
+ */
+// @kern-source: status:164
+export function buildExecutionRailTimeline(activePlan: any, lastTool: any, engines: any, recentFallbacks: any, limit: number = 5): any[] {
+  const rows: any[] = [];
+  const maxRows = Math.max(1, Math.min(8, Math.floor(Number(limit) || 5)));
+  const compact = (value: any, max = 56) => {
+    const text = String(value ?? '').replace(/\s+/g, ' ').trim();
+    return text.length > max ? text.slice(0, max - 1) + '\u2026' : text;
+  };
+  const stateIcon = (state: string) => state === 'done' ? '\u2713'
+    : state === 'failed' ? '\u2717'
+    : state === 'running' ? '\u25d0'
+    : state === 'blocked' ? '\u25cc'
+    : state === 'skipped' ? '\u21b7'
+    : '\u00b7';
+  const stateColor = (state: string) => state === 'done' ? '#4ade80'
+    : state === 'failed' ? '#ef4444'
+    : state === 'running' ? '#fbbf24'
+    : state === 'blocked' ? '#94a3b8'
+    : state === 'skipped' ? '#60a5fa'
+    : '#6b7280';
+
+  const steps = Array.isArray(activePlan?.steps) ? activePlan.steps : [];
+  if (steps.length > 0) {
+    let focusIndex = steps.findIndex((s: any) => String(s?.state ?? 'pending') === 'running');
+    if (focusIndex < 0) focusIndex = steps.findIndex((s: any) => String(s?.state ?? 'pending') === 'failed');
+    if (focusIndex < 0) focusIndex = steps.findIndex((s: any) => ['pending', 'blocked'].includes(String(s?.state ?? 'pending')));
+    if (focusIndex < 0) focusIndex = Math.max(0, steps.length - 1);
+    const planRows = Math.min(Math.max(2, maxRows - 2), Math.min(4, steps.length));
+    let start = Math.max(0, focusIndex - 1);
+    if (start + planRows > steps.length) start = Math.max(0, steps.length - planRows);
+    for (let index = start; index < Math.min(steps.length, start + planRows); index += 1) {
+      const step = steps[index];
+      const state = String(step?.state ?? 'pending');
+      const engineText = Array.isArray(step?.engines) && step.engines.length > 0
+        ? ` -> ${step.engines.slice(0, 2).join(',')}${step.engines.length > 2 ? ',…' : ''}`
+        : step?.engine ? ` -> ${step.engine}` : '';
+      rows.push({
+        key: `plan-${index}`,
+        icon: stateIcon(state),
+        color: stateColor(state),
+        label: `${index + 1}/${steps.length} ${state}`,
+        detail: compact(`${step?.description ?? ''}${engineText}`, 58),
+      });
+    }
+  }
+
+  if (lastTool) {
+    let target = '';
+    try {
+      const raw = lastTool.input;
+      const parsed = typeof raw === 'string' && raw.trim().startsWith('{') ? JSON.parse(raw) : (raw && typeof raw === 'object' ? raw : {});
+      target = String(parsed.path ?? parsed.file_path ?? parsed.filePath ?? parsed.command ?? parsed.pattern ?? '').replace(`${process.cwd()}/`, '');
+    } catch {
+      target = '';
+    }
+    rows.push({
+      key: 'tool',
+      icon: String(lastTool.status ?? '') === 'error' ? '\u2717' : String(lastTool.status ?? '') === 'done' ? '\u2713' : '\u25d0',
+      color: String(lastTool.status ?? '') === 'error' ? '#ef4444' : String(lastTool.status ?? '') === 'done' ? '#4ade80' : '#fbbf24',
+      label: `${String(lastTool.tool ?? 'tool')} ${String(lastTool.status ?? '').trim()}`.trim(),
+      detail: compact(target, 58),
+    });
+  }
+
+  if (Array.isArray(engines) && engines.length > 0) {
+    rows.push({
+      key: 'engines',
+      icon: '\u25cf',
+      color: '#22d3ee',
+      label: `${engines.length} engine${engines.length === 1 ? '' : 's'}`,
+      detail: compact(engines.slice(0, 4).map((e: any) => `${e.id}:${String(e.status ?? '').slice(0, 14)}`).join('  '), 58),
+    });
+  }
+
+  const fallbacks = Array.isArray(recentFallbacks) ? recentFallbacks : [];
+  const fallback = fallbacks.length > 0 ? fallbacks[fallbacks.length - 1] : null;
+  if (fallback) {
+    rows.push({
+      key: 'fallback',
+      icon: '\u21c4',
+      color: '#f97316',
+      label: `${fallback.from} -> ${fallback.to}`,
+      detail: compact(fallback.reason, 58),
+    });
+  }
+
+  return rows.slice(-maxRows);
 }

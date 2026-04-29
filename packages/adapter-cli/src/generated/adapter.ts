@@ -110,6 +110,7 @@ export class CliAdapter implements EngineAdapter {
       cwd: options.cwd,
       timeout: options.timeout * 1000,
       signal: options.signal,
+      onSpawn: options.onSpawn,
     });
 
     // Strip NDJSON system/hook messages from stream-json engines (Claude)
@@ -173,6 +174,7 @@ export class CliAdapter implements EngineAdapter {
       cwd: options.cwd,
       timeout: options.timeout * 1000,
       signal: options.signal,
+      onSpawn: options.onSpawn,
     });
 
     let result: DispatchResult;
@@ -309,6 +311,7 @@ export class CliAdapter implements EngineAdapter {
         cwd: options.cwd,
         timeout: options.timeout * 1000,
         signal: options.signal,
+        onSpawn: options.onSpawn,
       });
 
       // Strip NDJSON system/hook messages from stream-json engines (Claude)
@@ -373,6 +376,7 @@ export class CliAdapter implements EngineAdapter {
       cwd: options.cwd,
       timeout: options.timeout * 1000,
       signal: options.signal,
+      onSpawn: options.onSpawn,
     });
 
     let result: DispatchResult;

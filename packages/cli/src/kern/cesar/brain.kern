@@ -51,6 +51,31 @@ fn name=detectNarratedToolStall params="text:string" returns=boolean export=true
     return FAKE_GATE_RE.test(tail) || READ_INTENT_RE.test(tail) || SEARCH_INTENT_RE.test(tail) || DIR_INTENT_RE.test(tail) || STALL_RE.test(tail);
   >>>
 
+fn name=eagerFailedToolNames params="results:ToolCallResult[]" returns="string[]" export=true
+  doc "Return unique tool names from failed eager tool results. Used to restrict one-shot repair retries to the tool that just failed."
+  handler <<<
+    const names: string[] = [];
+    for (const result of results ?? []) {
+      if (result?.result?.ok) continue;
+      const name = String(result?.toolName ?? '').trim();
+      if (name && !names.includes(name)) names.push(name);
+    }
+    return names;
+  >>>
+
+fn name=shouldRunEagerRepairTool params="toolName:string,meta:any,failedToolNames:string[],usedToolNames:string[]" returns=boolean export=true
+  doc "Gate eager tool repair retries. A corrected tool call may run once only if the same tool failed in the immediately previous eager batch."
+  handler <<<
+    const name = String(toolName ?? '').trim();
+    if (!name) return false;
+    if (!failedToolNames.includes(name)) return false;
+    if (usedToolNames.includes(name)) return false;
+    const status = String(meta?.status ?? 'running').toLowerCase();
+    if (status !== 'running' && status !== 'native') return false;
+    if (!meta || !('input' in meta)) return false;
+    return true;
+  >>>
+
 fn name=buildReviewFollowupPrompt params="input:string, ctx:HandlerContext" returns="{ matched: boolean; prompt: string }" export=true
   doc "Expand a bare 'fix it' follow-up into an explicit prompt grounded in the most recent stored review result. This avoids making Cesar guess which reviewer findings the user means, especially because /review runs outside Cesar's live session history."
   handler <<<
@@ -954,10 +979,53 @@ ${reviewFollowup.prompt}`;
         if (formatted && session.alive) {
           dispatch({ type: 'spinner-start', message: 'Cesar processing tool results…', color });
           let continuation = '';
+          const failedTools = eagerFailedToolNames(eagerResults);
+          const repairUsed: string[] = [];
+          const repairResults: ToolCallResult[] = [];
           const contGen = session.send({ message: formatted, signal: abort.signal });
           for await (const chunk of contGen) {
             if (chunk.type === 'text') continuation += chunk.content;
+            if (chunk.type === 'tool_call') {
+              const meta = (chunk.metadata ?? {}) as Record<string, unknown>;
+              const toolName = chunk.content || 'tool';
+              const toolInput = typeof meta.input === 'string' ? meta.input : meta.input ? JSON.stringify(meta.input) : '';
+              const toolStatus = (meta.status as string) ?? 'running';
+              recordToolUse(toolName, 'eager', toolInput, toolStatus === 'running' ? 'repair' : toolStatus);
+              if (shouldRunEagerRepairTool(toolName, meta, failedTools, repairUsed)) {
+                repairUsed.push(toolName);
+                dispatch({ type: 'spinner-update', message: `Cesar: retrying ${toolName} with corrected input…` });
+                if (!eagerToolCtx) eagerToolCtx = createEagerToolContext(ctx, config, abort.signal, dispatch);
+                repairResults.push(await executeEagerTool(toolName, meta, toolRegistry, eagerToolCtx, dispatch, cesarEngineId));
+                continue;
+              }
+              if (toolStatus !== 'running' && toolStatus !== 'native') {
+                dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: toolStatus as any, output: typeof meta.output === 'string' ? meta.output : undefined } as any);
+              } else if (failedTools.includes(toolName)) {
+                dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'error', output: 'Repair retry already used for this tool in this turn.' } as any);
+              }
+            }
             if (chunk.type === 'done' || chunk.type === 'error') break;
+          }
+          if (repairResults.length > 0 && session.alive && !abort.signal.aborted) {
+            const repairFormatted = formatToolResults(
+              repairResults.map((r: ToolCallResult) => ({ name: r.toolName, content: r.result.content, error: r.result.error }))
+            );
+            if (repairFormatted) {
+              dispatch({ type: 'spinner-start', message: 'Cesar processing repaired tool result…', color });
+              let repairedContinuation = '';
+              const repairGen = session.send({ message: repairFormatted, signal: abort.signal });
+              for await (const chunk of repairGen) {
+                if (chunk.type === 'text') repairedContinuation += chunk.content;
+                if (chunk.type === 'tool_call') {
+                  const meta = (chunk.metadata ?? {}) as Record<string, unknown>;
+                  const toolName = chunk.content || 'tool';
+                  const toolInput = typeof meta.input === 'string' ? meta.input : meta.input ? JSON.stringify(meta.input) : '';
+                  dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: 'error', output: 'Tool repair loop is one retry per failed tool; further tool calls were not executed automatically.' } as any);
+                }
+                if (chunk.type === 'done' || chunk.type === 'error') break;
+              }
+              if (repairedContinuation.trim()) continuation = repairedContinuation.trim();
+            }
           }
           dispatch({ type: 'spinner-stop' });
           if (continuation.trim()) response = continuation.trim();

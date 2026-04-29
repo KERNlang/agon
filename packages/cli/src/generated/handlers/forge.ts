@@ -44,9 +44,20 @@ function handleForgeEvent(event: any, plan: Plan, engineStatus: Record<string,st
     case 'stage2:dispatch':
       engineStatus[id] = 'building';
       break;
+    case 'engine:pid':
+      dispatch({ type: 'engine-pid', engineId: id, pid: Number(event.data?.pid ?? 0), phase: event.data?.phase } as any);
+      break;
+    case 'engine:pid-clear':
+      dispatch({ type: 'engine-pid-clear', engineId: id } as any);
+      break;
+    case 'engine:fallback':
+      engineStatus[String(event.data?.to ?? '')] = 'fallback';
+      dispatch({ type: 'warning', message: `${String(event.data?.from ?? id)} failed during ${String(event.data?.phase ?? 'forge')} — retrying on ${String(event.data?.to ?? 'fallback')}` });
+      break;
     case 'engine:failed':
       engineStatus[id] = 'failed';
       engineStatus[`${id}:score`] = '0';
+      dispatch({ type: 'engine-pid-clear', engineId: id } as any);
       break;
     case 'stage1:accepted':
       engineStatus[id] = 'done';
@@ -81,7 +92,7 @@ function handleForgeEvent(event: any, plan: Plan, engineStatus: Record<string,st
   return plan;
 }
 
-// @kern-source: forge:72
+// @kern-source: forge:83
 export async function handleForge(task: string, fitnessCmd: string|null, dispatch: Dispatch, ctx: HandlerContext, existingPlan?: Plan, hardened?: boolean, skipPlanApproval?: boolean): Promise<{winner:string|null, patchPath:string|null, manifestPath:string, task:string, fitnessCmd:string}|null> {
   const forgeAbort = new AbortController();
   try {

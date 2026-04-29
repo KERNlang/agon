@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { parseSuggestion, parseConfidence, confidenceBadge, CONFIDENCE_TIERS, CESAR_SYSTEM_PROMPT, buildReviewFollowupPrompt, detectNarratedToolStall } from '../../packages/cli/src/handlers/cesar-brain.js';
-import { splitBeforeToolMarkup } from '../../packages/cli/src/generated/cesar/brain.js';
+import { eagerFailedToolNames, shouldRunEagerRepairTool, splitBeforeToolMarkup } from '../../packages/cli/src/generated/cesar/brain.js';
 import { createReportConfidenceTool, createForgeTool, createBrainstormTool, createTribunalTool, createCampfireTool, createPipelineTool } from '../../packages/core/src/tools.js';
 
 describe('Cesar Brain', () => {
@@ -31,6 +31,22 @@ describe('Cesar Brain', () => {
 
     it('does not flag normal answers', () => {
       expect(detectNarratedToolStall('The tools are wired, but Kimi may be weak at native tool calls.')).toBe(false);
+    });
+  });
+
+  describe('eager tool repair loop guards', () => {
+    it('limits repair retries to failed tools and only once per tool', () => {
+      const failedNames = eagerFailedToolNames([
+        { toolName: 'Read', result: { ok: false, error: 'Malformed JSON', content: '' } },
+        { toolName: 'Grep', result: { ok: true, content: 'ok' } },
+        { toolName: 'Read', result: { ok: false, error: 'Still bad', content: '' } },
+      ] as any);
+
+      expect(failedNames).toEqual(['Read']);
+      expect(shouldRunEagerRepairTool('Read', { status: 'running', input: { file_path: 'a.ts' } }, failedNames, [])).toBe(true);
+      expect(shouldRunEagerRepairTool('Read', { status: 'running', input: { file_path: 'a.ts' } }, failedNames, ['Read'])).toBe(false);
+      expect(shouldRunEagerRepairTool('Grep', { status: 'running', input: { pattern: 'x' } }, failedNames, [])).toBe(false);
+      expect(shouldRunEagerRepairTool('Read', { status: 'done', input: { file_path: 'a.ts' } }, failedNames, [])).toBe(false);
     });
   });
 

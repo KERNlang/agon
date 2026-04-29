@@ -172,6 +172,22 @@ fn name=buildDelegatedContinuationPrompt params="message:string" returns=string 
     ].join('\n');
   >>>
 
+fn name=buildBrainstormContinuationMessage params="source:string, question:string|undefined, result:any" returns=string export=true
+  doc "Format a Brainstorm winner as a Cesar continuation payload. Brainstorm is an input to Cesar, not a terminal answer."
+  handler <<<
+    const bids = Array.isArray(result?.bids) ? result.bids : [];
+    const bidSummary = bids.map((b: any) => {
+      const engineId = b?.engineId ?? 'unknown';
+      const score = b?.score ?? 'n/a';
+      const reasoning = String(b?.reasoning ?? '').slice(0, 800);
+      const approach = b?.approach ? `\nApproach: ${String(b.approach).slice(0, 600)}` : '';
+      return `**${engineId}** (score: ${score}): ${reasoning}${approach}`;
+    }).join('\n\n') || 'No bids captured.';
+    const original = question ? `\n\n## Original User Request\n${String(question).slice(0, 2000)}` : '';
+    const winnerResponse = String(result?.response ?? '').slice(0, 6000);
+    return `${source}. Winner: ${result?.winner ?? 'none'}.${original}\n\n## Engine Bids\n${bidSummary}\n\n## Winner's Full Response\n${winnerResponse}\n\nCesar owns the final answer. Synthesize this result, explain the next best action, and if implementation is needed ask whether to forge/build or continue directly. Do not stop at the brainstorm card.`;
+  >>>
+
 fn name=collectRecentEngineContext params="ctx:HandlerContext,maxMessages?:number,maxChars?:number" returns=string export=true
   doc "Collect recent engine messages for post-delegation Cesar synthesis."
   handler <<<
@@ -577,9 +593,7 @@ You still own the overall task. Integrate the forged slice with the rest of the 
               const bsResult = await handleBrainstorm(taskInput, cb.dispatch, cb.ctx);
               if (bsResult) {
                 cb.dispatch({ type: 'info', message: 'Cesar absorbing brainstorm results…' });
-                const bidSummary = bsResult.bids.map((b: any) => `**${b.engineId}** (score: ${b.score}): ${b.reasoning.slice(0, 800)}`).join('\n\n');
-                const cesarMsg = `Brainstorm complete. Winner: ${bsResult.winner}.\n\n## Engine Bids\n${bidSummary}\n\n## Winner's Full Response\n${bsResult.response}\n\nSynthesize the winning approach into a concrete plan. Be direct — the brainstorm already validated the ideas.`;
-                await continueCesarAfterResult(cesarMsg, cb, continuationEpoch, continuationUserTurns);
+                await continueCesarAfterResult(buildBrainstormContinuationMessage('Brainstorm complete', taskInput, bsResult), cb, continuationEpoch, continuationUserTurns);
               }
               return bsResult; // returned value captured by withThreadOutcome for richer summary
             }, cb.ctx));
@@ -740,8 +754,8 @@ You still own the overall task. Integrate the forged slice with the rest of the 
             cb.runAsJob('brainstorm', label, withThreadOutcome(_cwdRecoverBs, 'brainstorm', label, async () => {
               const bsResult = await handleBrainstorm(recoveredTask, cb.dispatch, cb.ctx);
               if (bsResult) {
-                const bidSummary = bsResult.bids.map((b: any) => `**${b.engineId}** (score: ${b.score}): ${b.reasoning.slice(0, 800)}`).join('\n\n');
-                await continueCesarAfterResult(`Recovered brainstorm complete. Winner: ${bsResult.winner}.\n\n## Engine Bids\n${bidSummary}\n\n## Winner's Full Response\n${bsResult.response}\n\nSynthesize the winning approach and continue the original task.`, cb, continuationEpoch, continuationUserTurns);
+                cb.dispatch({ type: 'info', message: 'Cesar absorbing brainstorm results…' });
+                await continueCesarAfterResult(buildBrainstormContinuationMessage('Recovered brainstorm complete', recoveredTask, bsResult), cb, continuationEpoch, continuationUserTurns);
               }
               return bsResult;
             }, cb.ctx));
@@ -895,8 +909,8 @@ You still own the overall task. Integrate the forged slice with the rest of the 
                 cb.runAsJob('brainstorm', label, withThreadOutcome(_cwdFallbackBs, 'brainstorm', label, async () => {
                   const bsResult = await handleBrainstorm(fallbackTask, cb.dispatch, cb.ctx);
                   if (bsResult) {
-                    const bidSummary = bsResult.bids.map((b: any) => `**${b.engineId}** (score: ${b.score}): ${b.reasoning.slice(0, 800)}`).join('\n\n');
-                    await continueCesarAfterResult(`Fallback brainstorm complete. Winner: ${bsResult.winner}.\n\n## Engine Bids\n${bidSummary}\n\n## Winner's Full Response\n${bsResult.response}\n\nSynthesize the winning approach and continue the original task.`, cb, continuationEpoch, continuationUserTurns);
+                    cb.dispatch({ type: 'info', message: 'Cesar absorbing brainstorm results…' });
+                    await continueCesarAfterResult(buildBrainstormContinuationMessage('Fallback brainstorm complete', fallbackTask, bsResult), cb, continuationEpoch, continuationUserTurns);
                   }
                   return bsResult;
                 }, cb.ctx));
@@ -1104,10 +1118,16 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
       case 'brainstorm': {
         const _bCwd = resolveWorkingDir();
         const _bLabel = intent.question?.slice(0, 40) ?? 'brainstorm';
+        const continuationEpoch = cb.ctx.inputEpoch ?? 0;
+        const continuationUserTurns = countTrackedUserTurns(cb.ctx);
         cb.runAsJob('brainstorm', _bLabel, withThreadOutcome(_bCwd, 'brainstorm', _bLabel, async () => {
           if (cb.eventBus) await cb.eventBus.emit('pre:brainstorm', { question: intent.question, cwd: _bCwd });
           const bsR = await handleBrainstorm(intent.question, cb.dispatch, cb.ctx);
           if (cb.eventBus) cb.eventBus.emit('post:brainstorm', { question: intent.question, cwd: _bCwd }).catch(() => {});
+          if (bsR) {
+            cb.dispatch({ type: 'info', message: 'Cesar absorbing brainstorm results…' });
+            await continueCesarAfterResult(buildBrainstormContinuationMessage('Brainstorm complete', intent.question, bsR), cb, continuationEpoch, continuationUserTurns);
+          }
           return bsR;
         }, cb.ctx));
         return { handled: true, ranAsJob: true };
@@ -1613,7 +1633,18 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
         const si = intent as any;
         const answer = await cb.askQuestion('Brainstorm with all engines? (y/n)');
         if (answer.toLowerCase().startsWith('y')) {
-          cb.runAsJob('brainstorm', si.question?.slice(0, 40) ?? 'brainstorm', async () => { await handleBrainstorm(si.question ?? si.input, cb.dispatch, cb.ctx); });
+          const continuationEpoch = cb.ctx.inputEpoch ?? 0;
+          const continuationUserTurns = countTrackedUserTurns(cb.ctx);
+          const question = si.question ?? si.input;
+          const _sCwd = resolveWorkingDir();
+          cb.runAsJob('brainstorm', si.question?.slice(0, 40) ?? 'brainstorm', withThreadOutcome(_sCwd, 'brainstorm', si.question?.slice(0, 40) ?? 'brainstorm', async () => {
+            const bsResult = await handleBrainstorm(question, cb.dispatch, cb.ctx);
+            if (bsResult) {
+              cb.dispatch({ type: 'info', message: 'Cesar absorbing brainstorm results…' });
+              await continueCesarAfterResult(buildBrainstormContinuationMessage('Brainstorm complete', question, bsResult), cb, continuationEpoch, continuationUserTurns);
+            }
+            return bsResult;
+          }, cb.ctx));
           return { handled: true, ranAsJob: true };
         }
         await handleChat(si.input, cb.dispatch, cb.ctx, cb.allImages);

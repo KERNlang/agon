@@ -114,6 +114,20 @@ describe('Intent Detection — Slash Commands', () => {
     expect(detectIntent('/elo').type).toBe('leaderboard');
   });
 
+  it('/undo accepts an explicit checkpoint id', () => {
+    const direct = detectIntent('/undo abc12345');
+    expect(direct.type).toBe('undo');
+    if (direct.type === 'undo') expect(direct.snapshotId).toBe('abc12345');
+
+    const named = detectIntent('/undo checkpoint abc12345');
+    expect(named.type).toBe('undo');
+    if (named.type === 'undo') expect(named.snapshotId).toBe('abc12345');
+  });
+
+  it('/checkpoints lists recent checkpoint snapshots', () => {
+    expect(detectIntent('/checkpoints').type).toBe('checkpoints');
+  });
+
   it('/history with optional id', () => {
     const r1 = detectIntent('/history');
     expect(r1.type).toBe('history');

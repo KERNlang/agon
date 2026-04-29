@@ -118,7 +118,7 @@ import { useStableInput } from '../../stable-input.js';
 
 import { parseProseToRichLines } from '../blocks/rich-text.js';
 
-// @kern-source: app:2466
+// @kern-source: app:2541
 export function App() {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -376,9 +376,11 @@ export function App() {
   const [configVersion, _setConfigVersionRaw] = useState<number>(0);
   const setConfigVersion = useMemo(() => __inkSafe(_setConfigVersionRaw), [_setConfigVersionRaw]);
 
+  const activeEnginePidsRef = useRef<Map<string,number>>(new Map());
   const telemetryPollerRef = useRef<any>(null);
   const chatStartTimeRef = useRef<number>(0);
   const currentPlanRef = useRef<Plan|null>(null);
+  const activePlanRef = useRef<any>(null);
   const streamingTextRef = useRef<Record<string,StreamingEntry>>({});
   const agentProgressRef = useRef<Record<string,AgentProgressSnapshot>>({});
   const lastReviewResultRef = useRef<{ engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number } | null>(null);
@@ -477,6 +479,10 @@ export function App() {
   const latestToolEvent = useMemo(() => {
           return findLatestToolEvent(outputBlocks);
   }, [outputBlocks]);
+
+  const executionRailStats = useMemo(() => {
+          return buildExecutionRailStats(outputBlocks, listFiles(), inputQueue.length);
+  }, [outputBlocks,fileRailVersion,inputQueue]);
 
   const overlayReservedRows = useMemo(() => {
           if (toolDetailEvent) return toolDetailViewportRows(termHeight) + 5;
@@ -681,6 +687,11 @@ export function App() {
     setConfigVersion((v: number) => v + 1);
   }, []);
 
+  const setActivePlanWrapped = useCallback((plan:any) => {
+    activePlanRef.current = plan;
+    setActivePlan(plan);
+  }, []);
+
   const dispatch = useCallback((event:OutputEvent) => {
     const et = (event as any).type;
     if (et === 'streaming-chunk' || et === 'thinking-chunk' || et === 'progress-update' || et === 'tool-call' || et === 'spinner-start' || et === 'spinner-update') {
@@ -692,6 +703,15 @@ export function App() {
       const tc = event as any;
       recordToolCall(tc.tool, tc.input, tc.status);
       setFileRailVersion(getFileTrackerVersion());
+    }
+    if (et === 'engine-pid') {
+      const engineId = String((event as any).engineId ?? '').trim();
+      const pid = Number((event as any).pid ?? 0);
+      if (engineId && Number.isFinite(pid) && pid > 0) activeEnginePidsRef.current.set(engineId, pid);
+    }
+    if (et === 'engine-pid-clear') {
+      const engineId = String((event as any).engineId ?? '').trim();
+      if (engineId) activeEnginePidsRef.current.delete(engineId);
     }
     const state: OutputState = { liveSpinner: null, liveProgress: null, streamingText: streamingTextRef.current ?? {}, agentProgress: agentProgressRef.current ?? {} };
     handleOutputEvent(event, state, outputActions, mode, chatStartTimeRef.current);
@@ -746,13 +766,13 @@ export function App() {
       explorationMode, setExplorationMode,
       neroMode, setNeroMode,
       cesarMemory,
-      activePlan, setActivePlan,
+      activePlan: activePlanRef.current ?? activePlan, setActivePlan: setActivePlanWrapped,
       extensionPromptFragments,
       sessionMcpServers, setSessionMcpServers,
       telemetryVitals,
       recentFallbacks,
     };
-  }, [registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode,activePlan,extensionPromptFragments,sessionMcpServers,telemetryVitals,recentFallbacks]);
+  }, [registry,adapter,activeEngines,chatSession,askQuestion,cesarSession,explorationMode,neroMode,activePlan,extensionPromptFragments,sessionMcpServers,telemetryVitals,recentFallbacks,setActivePlanWrapped]);
 
   const handleInputChange = useCallback((value:string) => {
     // Swallow input while a choice question is active — the keyboard handler
@@ -982,7 +1002,7 @@ export function App() {
       allImages, allSlashCommands: allSlashCommands, dynamicSkills: [...dynamicSkills, ...extensionSkills], mode, lastUndoToken, sessionStartTime, jobManager,
       explorationMode, setExplorationMode,
       neroMode, setNeroMode,
-      setActivePlan,
+      setActivePlan: setActivePlanWrapped,
     };
     if (handleModeSwitch(intent.type, (intent as any).topic, (intent as any).question, cb)) {
       if (!(intent as any).input?.trim()) { transition(finishReplState); return; }
@@ -1002,7 +1022,7 @@ export function App() {
       if (activeTurnRef.current?.input === input) activeTurnRef.current = null;
       setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state);
     }
-  }, [replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,activePlan,planModeQueued,autoModeQueued,setPersistentAutoMode]);
+  }, [replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,activePlan,planModeQueued,autoModeQueued,setPersistentAutoMode,setActivePlanWrapped]);
 
   const handleReviewActionCb = useCallback((action:'apply'|'edit'|'reject'|'copy') => {
     if (!reviewEvent) return;
@@ -1423,6 +1443,10 @@ export function App() {
   }, [mouseSelection]);
 
   useEffect(() => {
+    activePlanRef.current = activePlan;
+  }, [activePlan]);
+
+  useEffect(() => {
     const nextCount = nativeTranscriptBlocks.length;
     if (terminalMode !== 'native') {
       nativeTranscriptBlockCountRef.current = nextCount;
@@ -1583,7 +1607,7 @@ export function App() {
     }
     const poller = createTelemetryPoller({
       registry,
-      probe: async (id: string) => probeEngineVitals(registry, id),
+      probe: async (id: string) => probeEngineVitals(registry, id, _cesarSessionRef.session, activeEnginePidsRef.current),
       intervalMs: 5000,
       stallThresholdMs: 30000,
       probeTimeoutMs: 2500,
@@ -1594,6 +1618,14 @@ export function App() {
         if (retryActiveTurn && activeTurn) {
           activeTurn.retried = true;
         }
+        const plan = activePlanRef.current;
+        const runningStep = plan?.state === 'running' && Array.isArray(plan?.steps)
+          ? plan.steps.find((step: any) => String(step?.state ?? '') === 'running')
+          : null;
+        const stepEngines = runningStep
+          ? [runningStep.engine, ...(Array.isArray(runningStep.engines) ? runningStep.engines : [])].filter((id: any) => typeof id === 'string' && id.trim())
+          : [];
+        const retryActivePlan = !!(runningStep && !((plan as any).fallbackRetriesUsed?.[runningStep.id]) && (stepEngines.length === 0 || stepEngines.includes(from)));
         configSet('cesarEngine' as any, to as any);
         setConfigVersion((v: number) => v + 1);
         if (cesarSession) {
@@ -1601,7 +1633,10 @@ export function App() {
           setCesarSessionWrapped(null);
         }
         setRecentFallbacks((prev: any[]) => [...prev.slice(-7), { from, to, reason, at: Date.now() }]);
-        if (retryActiveTurn && activeTurn) {
+        if (retryActivePlan) {
+          if (activeAbortRef.current) activeAbortRef.current.abort();
+          dispatch({ type: 'warning', message: `Telemetry: ${from} stalled during plan step — switched to ${to} and retrying that step (${reason})` } as any);
+        } else if (retryActiveTurn && activeTurn) {
           if (activeAbortRef.current) activeAbortRef.current.abort();
           setInputQueue((prev: string[]) => [...prev, activeTurn.input]);
           dispatch({ type: 'warning', message: `Telemetry: ${from} stalled — switched to ${to} and retrying this prompt (${reason})` } as any);
@@ -1689,6 +1724,7 @@ export function App() {
       activePlan={activePlan}
       lastTool={latestToolEvent}
       recentFallbacks={recentFallbacks}
+      stats={executionRailStats}
       toolOutputExpanded={toolOutputExpanded}
       startTime={chatStartTimeRef.current || 0}
       isActive={replState !== 'idle' || runningJobs.length > 0}
@@ -1977,7 +2013,25 @@ function sampleLocalResourceVitals(): {cpuPercent:number,memPercent:number} {
 }
 
 // @kern-source: app:119
-function sampleEngineProcessVitals(engine: any): {cpuPercent?:number,memPercent?:number,processCount?:number,taskDetail?:string} {
+function sampleEngineProcessVitals(engine: any, exactPid?: number|null): {cpuPercent?:number,memPercent?:number,processCount?:number,taskDetail?:string} {
+  const pid = Number(exactPid ?? 0);
+  if (Number.isFinite(pid) && pid > 0) {
+    try {
+      const result = spawnSync('ps', ['-p', String(pid), '-o', 'pid=,pcpu=,pmem=,comm=,args='], { encoding: 'utf-8', timeout: 700 });
+      if (result.status !== 0 || !result.stdout.trim()) return {};
+      const line = String(result.stdout).split('\n').find((entry: string) => entry.trim());
+      if (!line) return {};
+      const parts = line.trim().split(/\s+/);
+      return {
+        cpuPercent: Math.max(0, Math.min(100, Number(parts[1]) || 0)),
+        memPercent: Math.max(0, Math.min(100, Number(parts[2]) || 0)),
+        processCount: 1,
+        taskDetail: `pid ${pid}`,
+      };
+    } catch {
+      return {};
+    }
+  }
   const binary = String(engine?.binary ?? '').trim();
   if (!binary) return {};
   try {
@@ -2010,8 +2064,8 @@ function sampleEngineProcessVitals(engine: any): {cpuPercent?:number,memPercent?
   }
 }
 
-// @kern-source: app:153
-async function probeEngineVitals(registry: any, engineId: string): Promise<Partial<EngineVitals>> {
+// @kern-source: app:171
+async function probeEngineVitals(registry: any, engineId: string, session?: PersistentSession|null, activePids?: Map<string,number>): Promise<Partial<EngineVitals>> {
   const started = Date.now();
   const localResources = sampleLocalResourceVitals();
   const mockTarget = String(process.env.AGON_MOCK_STALL_ENGINE ?? '').trim();
@@ -2020,7 +2074,8 @@ async function probeEngineVitals(registry: any, engineId: string): Promise<Parti
     await new Promise((resolve) => setTimeout(resolve, Number.isFinite(stallMs) ? stallMs : 35000));
   }
   const engine = registry.get(engineId);
-  const processResources = sampleEngineProcessVitals(engine);
+  const exactPid = activePids?.get(engineId) ?? (session && session.engineId === engineId ? session.pid : null);
+  const processResources = sampleEngineProcessVitals(engine, exactPid);
   const hasBinary = engine.binary ? registry.findBinary(engine) !== null : false;
   const hasApiKey = !!(engine.api && process.env[engine.api.apiKeyEnv]);
   const available = hasBinary || hasApiKey || (!engine.binary && !engine.api);
@@ -2053,7 +2108,7 @@ async function probeEngineVitals(registry: any, engineId: string): Promise<Parti
   };
 }
 
-// @kern-source: app:196
+// @kern-source: app:215
 export function parseToolCallPayload(event: any): any {
   const rawInput = String(event?.input ?? '');
   let parsed: Record<string, unknown> = {};
@@ -2069,7 +2124,7 @@ export function parseToolCallPayload(event: any): any {
   };
 }
 
-// @kern-source: app:212
+// @kern-source: app:231
 export function formatConfidenceToolLabel(parsed: any, rawInput: string): string {
   const rawValue = parsed?.value ?? parsed?.confidence ?? parsed?.score;
   let value = Number(rawValue);
@@ -2088,7 +2143,7 @@ export function formatConfidenceToolLabel(parsed: any, rawInput: string): string
   return 'confidence';
 }
 
-// @kern-source: app:231
+// @kern-source: app:250
 export function extractPatchText(rawInput: string, parsed: any): string {
   const values = [
     parsed?.patch,
@@ -2112,7 +2167,7 @@ export function extractPatchText(rawInput: string, parsed: any): string {
   return values[0] ?? '';
 }
 
-// @kern-source: app:255
+// @kern-source: app:274
 export function parsePatchPreview(rawInput: string, parsed: any): { files:string[]; lines:string[]; additions:number; deletions:number } {
   const patchText = extractPatchText(rawInput, parsed);
   const files: string[] = [];
@@ -2161,7 +2216,7 @@ export function parsePatchPreview(rawInput: string, parsed: any): { files:string
   return { files, lines, additions, deletions };
 }
 
-// @kern-source: app:304
+// @kern-source: app:323
 export function toolPreviewWindow(lineCount: number, expanded: boolean): any {
   if (lineCount <= 0) return { head: 0, tail: 0, skipped: 0 };
   if (expanded) return { head: lineCount, tail: 0, skipped: 0 };
@@ -2179,7 +2234,7 @@ export function toolPreviewWindow(lineCount: number, expanded: boolean): any {
   };
 }
 
-// @kern-source: app:322
+// @kern-source: app:341
 export function toolCallSupportsDetailView(event: any): boolean {
   if (!event || event.type !== 'tool-call') return false;
   const { rawInput, parsed, toolKey } = parseToolCallPayload(event);
@@ -2199,7 +2254,7 @@ export function toolCallSupportsDetailView(event: any): boolean {
   return rawInput.length > 160 || outputText.length > 400;
 }
 
-// @kern-source: app:342
+// @kern-source: app:361
 export function detailViewerSupportsEvent(event: any): boolean {
   if (!event) return false;
   if (event.type === 'permission-ask') {
@@ -2209,12 +2264,12 @@ export function detailViewerSupportsEvent(event: any): boolean {
   return toolCallSupportsDetailView(event);
 }
 
-// @kern-source: app:352
+// @kern-source: app:371
 export function toolDetailViewportRows(termHeight: number): number {
   return Math.max(8, Math.min(18, termHeight - 14));
 }
 
-// @kern-source: app:357
+// @kern-source: app:376
 export function findLatestToolDetailEvent(blocks: OutputBlock[]): any {
   for (let index = blocks.length - 1; index >= 0; index -= 1) {
     const event = blocks[index]?.event as any;
@@ -2234,7 +2289,7 @@ export function findLatestToolDetailEvent(blocks: OutputBlock[]): any {
   return null;
 }
 
-// @kern-source: app:377
+// @kern-source: app:396
 export function findLatestToolEvent(blocks: OutputBlock[]): any {
   for (let index = blocks.length - 1; index >= 0; index -= 1) {
     const event = blocks[index]?.event as any;
@@ -2250,15 +2305,52 @@ export function findLatestToolEvent(blocks: OutputBlock[]): any {
   return null;
 }
 
-// @kern-source: app:393
+/**
+ * Count visible tool activity, touched files, and queued messages for the live execution rail.
+ */
+// @kern-source: app:412
+export function buildExecutionRailStats(blocks: OutputBlock[], files: any[], queueCount: number): any {
+  let toolCount = 0;
+  let failedToolCount = 0;
+  let runningToolCount = 0;
+  let mutationCount = 0;
+  const visit = (event: any) => {
+    if (!event || event.type !== 'tool-call') return;
+    toolCount += 1;
+    if (event.status === 'error') failedToolCount += 1;
+    if (event.status === 'running') runningToolCount += 1;
+    if (isMutatingToolCall(event)) mutationCount += 1;
+  };
+  for (const block of blocks ?? []) {
+    const event = (block as any)?.event;
+    if (event?.type === 'tool-call-group' && Array.isArray(event.blocks)) {
+      for (const child of event.blocks) visit(child?.event);
+    } else {
+      visit(event);
+    }
+  }
+  const touchedFiles = Array.isArray(files) ? files : [];
+  const changedFileCount = touchedFiles.filter((file: any) => String(file?.status ?? '') !== 'read').length;
+  return {
+    toolCount,
+    failedToolCount,
+    runningToolCount,
+    mutationCount,
+    fileCount: touchedFiles.length,
+    changedFileCount,
+    queueCount: Math.max(0, Math.floor(Number(queueCount) || 0)),
+  };
+}
+
+// @kern-source: app:447
 export const COMPOSER_HISTORY_LIMIT: number = 200;
 
-// @kern-source: app:396
+// @kern-source: app:450
 export function composerHistoryPath(): string {
   return join(getAgonHome(), 'composer-history.json');
 }
 
-// @kern-source: app:399
+// @kern-source: app:453
 export function loadComposerInputHistory(): string[] {
   try {
     const parsed = JSON.parse(readFileSync(composerHistoryPath(), 'utf-8'));
@@ -2271,7 +2363,7 @@ export function loadComposerInputHistory(): string[] {
   }
 }
 
-// @kern-source: app:412
+// @kern-source: app:466
 export function saveComposerInputHistory(history: string[]): void {
   try {
     ensureAgonHome();
@@ -2282,7 +2374,7 @@ export function saveComposerInputHistory(history: string[]): void {
   }
 }
 
-// @kern-source: app:423
+// @kern-source: app:477
 export function findLatestFailedToolEvent(blocks: OutputBlock[]): any {
   for (let index = blocks.length - 1; index >= 0; index -= 1) {
     const event = blocks[index]?.event as any;
@@ -2298,7 +2390,7 @@ export function findLatestFailedToolEvent(blocks: OutputBlock[]): any {
   return null;
 }
 
-// @kern-source: app:439
+// @kern-source: app:493
 export function buildFailedToolRetryDraft(event: any): string {
   if (!event) return '';
   const { rawInput, parsed, toolKey } = parseToolCallPayload(event);
@@ -2313,7 +2405,7 @@ export function buildFailedToolRetryDraft(event: any): string {
   return `retry the failed ${toolName} call with corrected input:\n${payload}${suffix}`;
 }
 
-// @kern-source: app:454
+// @kern-source: app:508
 export function buildToolDetailView(event: any): any {
   if (!event) {
     return { title: 'Detail viewer', subtitle: '', accentColor: '#a78bfa', rows: [] };
@@ -2366,6 +2458,13 @@ export function buildToolDetailView(event: any): any {
     const commandLines = command ? command.split('\n') : [];
     const description = String(event.description ?? '').trim();
     const reason = String(event.reason ?? '').trim();
+    const previewEvent = {
+      type: 'tool-call',
+      engineId: 'cesar',
+      tool: event.tool,
+      input: command,
+      status: 'running',
+    } as any;
     if (description) pushSegmentsRow('permission-description', [{ text: description, dimColor: true }]);
     if (reason) pushSegmentsRow('permission-reason', [{ text: reason, color: '#fbbf24' }]);
     if (commandLines.length > 0) {
@@ -2381,6 +2480,10 @@ export function buildToolDetailView(event: any): any {
           maxWidth: codeWidth,
         });
       });
+    }
+    if (isMutatingToolCall(previewEvent)) {
+      pushSegmentsRow('permission-preview-label', [{ text: 'Preview', color: '#22d3ee', bold: true }]);
+      rows.push(...buildToolCallRows('tool-detail-permission-preview', previewEvent, false));
     }
     return {
       title: `${String(event.tool ?? 'Command')} approval`,
@@ -2515,22 +2618,22 @@ export function buildToolDetailView(event: any): any {
   };
 }
 
-// @kern-source: app:657
+// @kern-source: app:722
 export const _activeAborts: Set<AbortController> = new Set<AbortController>();
 
-// @kern-source: app:660
+// @kern-source: app:725
 export const _cancelCallback: { fn: (() => void) | null } = { fn: null };
 
-// @kern-source: app:663
+// @kern-source: app:728
 export const _cesarSessionRef: { session: PersistentSession | null } = { session: null };
 
-// @kern-source: app:666
+// @kern-source: app:731
 export const _lastSigintAt: { value: number } = { value: 0 };
 
-// @kern-source: app:669
+// @kern-source: app:734
 export const _pauseState: { value: PauseState | null } = { value: null };
 
-// @kern-source: app:672
+// @kern-source: app:737
 export function createInitialRegistry(): EngineRegistry {
   const reg = new EngineRegistry();
   const engDir = join(dirname(fileURLToPath(import.meta.url)), '../../../engines');
@@ -2538,7 +2641,7 @@ export function createInitialRegistry(): EngineRegistry {
   return reg;
 }
 
-// @kern-source: app:680
+// @kern-source: app:745
 export function drainStdinBuffer(): void {
   if (!process.stdin.isTTY || typeof process.stdin.read !== 'function') return;
   let chunk: string | Buffer | null;
@@ -2547,12 +2650,12 @@ export function drainStdinBuffer(): void {
   } while (chunk !== null);
 }
 
-// @kern-source: app:689
+// @kern-source: app:754
 export function maxScrollOffsetForRowCount(rowCount: number, rowBudget: number): number {
   return Math.max(0, rowCount - Math.max(1, rowBudget));
 }
 
-// @kern-source: app:694
+// @kern-source: app:759
 export function nextWheelAnimationStep(pending: number): {step:number,remaining:number} {
   if (!Number.isFinite(pending) || pending === 0) return { step: 0, remaining: 0 };
   const direction = pending > 0 ? 1 : -1;
@@ -2562,12 +2665,12 @@ export function nextWheelAnimationStep(pending: number): {step:number,remaining:
   return { step, remaining: pending - step };
 }
 
-// @kern-source: app:704
+// @kern-source: app:769
 export function clampNumber(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-// @kern-source: app:709
+// @kern-source: app:774
 export function charDisplayWidth(char: string): number {
   if (!char) return 0;
   const codePoint = char.codePointAt(0) ?? 0;
@@ -2602,7 +2705,7 @@ export function charDisplayWidth(char: string): number {
   return 1;
 }
 
-// @kern-source: app:744
+// @kern-source: app:809
 export function stringDisplayWidth(text: string): number {
   let width = 0;
   for (const char of Array.from(String(text ?? ''))) {
@@ -2611,7 +2714,7 @@ export function stringDisplayWidth(text: string): number {
   return width;
 }
 
-// @kern-source: app:753
+// @kern-source: app:818
 export function displayColumnToStringIndex(text: string, targetColumn: number): number {
   const value = String(text ?? '');
   if (!Number.isFinite(targetColumn) || targetColumn <= 0) return 0;
@@ -2628,13 +2731,13 @@ export function displayColumnToStringIndex(text: string, targetColumn: number): 
   return value.length;
 }
 
-// @kern-source: app:770
+// @kern-source: app:835
 export function normalizeRowSelection(anchor: number|null, focus: number|null): {start:number,end:number}|null {
   if (anchor === null || focus === null) return null;
   return { start: Math.min(anchor, focus), end: Math.max(anchor, focus) };
 }
 
-// @kern-source: app:776
+// @kern-source: app:841
 export function normalizeTextSelection(anchorRow: number|null, anchorCol: number|null, focusRow: number|null, focusCol: number|null): {startRow:number,startCol:number,endRow:number,endCol:number}|null {
   if (anchorRow === null || anchorCol === null || focusRow === null || focusCol === null) return null;
   if (anchorRow < focusRow) return { startRow: anchorRow, startCol: anchorCol, endRow: focusRow, endCol: focusCol };
@@ -2643,7 +2746,7 @@ export function normalizeTextSelection(anchorRow: number|null, anchorCol: number
   return { startRow: focusRow, startCol: focusCol, endRow: anchorRow, endCol: anchorCol };
 }
 
-// @kern-source: app:785
+// @kern-source: app:850
 export function richLineToPlainText(line: any): string {
   if (!line) return '';
   if (line.kind === 'blank') return '';
@@ -2664,7 +2767,7 @@ export function richLineToPlainText(line: any): string {
   return `${indent}${listIndent}${marker}${spanText}`;
 }
 
-// @kern-source: app:806
+// @kern-source: app:871
 export function transcriptRowToPlainText(row: any): string {
   if (!row) return '';
   if (row.kind === 'spacer') return '';
@@ -2679,14 +2782,14 @@ export function transcriptRowToPlainText(row: any): string {
   return `${prefix}${text}`;
 }
 
-// @kern-source: app:821
+// @kern-source: app:886
 export function transcriptRowTextStartColumn(row: any): number {
   const paddingLeft = Math.max(0, Number(row?.paddingLeft ?? 0));
   const borderColumns = row?.borderColor ? 2 : 0;
   return paddingLeft + borderColumns + 2;
 }
 
-// @kern-source: app:828
+// @kern-source: app:893
 export function resolveTranscriptColumnFromMouse(mouseX: number, row: any): number {
   const text = transcriptRowToPlainText(row);
   const startColumn = transcriptRowTextStartColumn(row);
@@ -2695,7 +2798,7 @@ export function resolveTranscriptColumnFromMouse(mouseX: number, row: any): numb
   return displayColumnToStringIndex(text, targetColumn);
 }
 
-// @kern-source: app:837
+// @kern-source: app:902
 export function transcriptRowsToPlainText(rows: any[], anchorRow: number|null, anchorCol: number|null, focusRow: number|null, focusCol: number|null): string {
   const range = normalizeTextSelection(anchorRow, anchorCol, focusRow, focusCol);
   if (!range) return '';
@@ -2720,7 +2823,7 @@ export function transcriptRowsToPlainText(rows: any[], anchorRow: number|null, a
   return lines.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd();
 }
 
-// @kern-source: app:862
+// @kern-source: app:927
 export function resolveTranscriptRowFromMouse(mouseY: number, viewportTopLine: number, firstVisibleRow: number, visibleRowCount: number): number|null {
   if (visibleRowCount <= 0) return null;
   const offset = mouseY - viewportTopLine;
@@ -2729,7 +2832,7 @@ export function resolveTranscriptRowFromMouse(mouseY: number, viewportTopLine: n
   return firstVisibleRow + clamped;
 }
 
-// @kern-source: app:871
+// @kern-source: app:936
 export function estimateVisibleBlockBudget(rows: number, mode: string, overlayReservedRows: number): number {
   // Chat mode keeps 7 rows for the composer/status chrome at minimum:
   // margin + bordered composer (3) + Cesar strip + two-line status bar.
@@ -2738,7 +2841,7 @@ export function estimateVisibleBlockBudget(rows: number, mode: string, overlayRe
   return Math.max(1, rows - reservedRows);
 }
 
-// @kern-source: app:880
+// @kern-source: app:945
 export function estimateWrappedRowCount(text: string, wrapWidth: number): number {
   const safeWidth = Math.max(1, wrapWidth);
   const lines = String(text ?? '').split('\n');
@@ -2752,7 +2855,7 @@ export function estimateWrappedRowCount(text: string, wrapWidth: number): number
 /**
  * Reserve extra transcript rows when the bottom composer is showing a multi-line question or permission card, so short terminals do not clip the actionable keys.
  */
-// @kern-source: app:891
+// @kern-source: app:956
 export function estimateQuestionReservedRows(questionState: any, termWidth: number): number {
   if (!questionState) return 0;
   const safeWidth = Math.max(24, termWidth - 12);
@@ -2788,7 +2891,7 @@ export function estimateQuestionReservedRows(questionState: any, termWidth: numb
 /**
  * Reserve extra rows above the base composer/status chrome for stacked prompt cards, queued-input badges, and chat spinner rows.
  */
-// @kern-source: app:925
+// @kern-source: app:990
 export function estimateBottomChromeExtraRows(mode: string, questionState: any, termWidth: number, pendingImageCount: number, inputQueueCount: number, hasLiveSpinner: boolean): number {
   let extraRows = 0;
   if (pendingImageCount > 0) extraRows += 1;
@@ -2798,7 +2901,7 @@ export function estimateBottomChromeExtraRows(mode: string, questionState: any, 
   return extraRows;
 }
 
-// @kern-source: app:936
+// @kern-source: app:1001
 export function buildDashboardBlock(enabledOverride: string[]|null): OutputBlock {
   const registry = createInitialRegistry();
   const available = registry.availableIds();
@@ -2829,7 +2932,7 @@ export function buildDashboardBlock(enabledOverride: string[]|null): OutputBlock
   };
 }
 
-// @kern-source: app:967
+// @kern-source: app:1032
 export function estimatePinnedLiveRows(mode: string, hasStream: boolean, hasProgress: boolean, agentCount: number): number {
   const streamRows = hasStream ? (mode === 'chat' ? 3 : 6) : 0;
   const progressRows = hasProgress ? (mode === 'chat' ? 3 : 5) : 0;
@@ -2837,7 +2940,7 @@ export function estimatePinnedLiveRows(mode: string, hasStream: boolean, hasProg
   return streamRows + progressRows + agentRows;
 }
 
-// @kern-source: app:975
+// @kern-source: app:1040
 export function estimateWrappedRows(text: string, width: number): number {
   const safeWidth = Math.max(1, width);
   if (!text) return 0;
@@ -2847,7 +2950,7 @@ export function estimateWrappedRows(text: string, width: number): number {
   }, 0);
 }
 
-// @kern-source: app:985
+// @kern-source: app:1050
 export function estimateToolCallRows(event: any, toolOutputExpanded: boolean, codeWidth: number): number {
   if (!event || event.type !== 'tool-call') return 0;
   if (!event.input && !event.output && (event.tool === 'Delegate' || event.tool === 'delegate')) return 0;
@@ -2920,7 +3023,7 @@ export function estimateToolCallRows(event: any, toolOutputExpanded: boolean, co
   return rows;
 }
 
-// @kern-source: app:1058
+// @kern-source: app:1123
 export function estimateOutputEventRows(event: OutputEvent, mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean): number {
   const proseWidth = contentWidth(4);
   const chatWidth = contentWidth(2);
@@ -3025,7 +3128,7 @@ export function estimateOutputEventRows(event: OutputEvent, mode: string, toolOu
   }
 }
 
-// @kern-source: app:1163
+// @kern-source: app:1228
 export function buildDisplayItems(blocks: OutputBlock[], toolOutputExpanded: boolean): OutputBlock[] {
   // Keep collapse as a per-block display concern, not a synthetic grouped
   // scroll unit. Grouped tool summaries make wheel scrolling jump because
@@ -3033,7 +3136,7 @@ export function buildDisplayItems(blocks: OutputBlock[], toolOutputExpanded: boo
   return blocks;
 }
 
-// @kern-source: app:1171
+// @kern-source: app:1236
 export function isToolCallLikeBlock(block: OutputBlock): boolean {
   const type = (block?.event as any)?.type;
   return type === 'tool-call' || type === 'tool-call-group';
@@ -3042,7 +3145,7 @@ export function isToolCallLikeBlock(block: OutputBlock): boolean {
 /**
  * Merge adjacent tool-call and tool-call-group blocks into one group so native/live renderers do not show repeated collapsed tool summaries.
  */
-// @kern-source: app:1177
+// @kern-source: app:1242
 export function coalesceToolCallBlocks(blocks: OutputBlock[]): OutputBlock[] {
   if (!Array.isArray(blocks) || blocks.length === 0) return [];
   const out: OutputBlock[] = [];
@@ -3089,7 +3192,7 @@ export function coalesceToolCallBlocks(blocks: OutputBlock[]): OutputBlock[] {
 /**
  * Choose the native Static archive count. When tools are expanded, keep the latest tool-call island live because Ink Static cannot repaint already-sealed collapsed tool summaries.
  */
-// @kern-source: app:1222
+// @kern-source: app:1287
 export function effectiveNativeArchiveBlockCount(blocks: OutputBlock[], baseArchiveCount: number, targetArchiveCount: number, toolOutputExpanded: boolean): number {
   if (!Array.isArray(blocks) || blocks.length === 0) return 0;
 
@@ -3122,12 +3225,12 @@ export function effectiveNativeArchiveBlockCount(blocks: OutputBlock[], baseArch
   return count;
 }
 
-// @kern-source: app:1256
+// @kern-source: app:1321
 export function estimateDisplayItemRows(item: OutputBlock, mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean): number {
   return estimateOutputEventRows(item.event, mode, toolOutputExpanded, thinkingExpanded);
 }
 
-// @kern-source: app:1261
+// @kern-source: app:1326
 export function historyBlocksForTranscript(blocks: OutputBlock[]): OutputBlock[] {
   if (blocks.length === 1 && blocks[0]?.event?.type === 'dashboard') return [];
   return blocks;
@@ -3136,7 +3239,7 @@ export function historyBlocksForTranscript(blocks: OutputBlock[]): OutputBlock[]
 /**
  * Native transcript history. While idle, the startup dashboard is live chrome. Once the first real transcript row exists, keep the dashboard as the first chat-history block so the AGON header scrolls with the conversation instead of disappearing.
  */
-// @kern-source: app:1267
+// @kern-source: app:1332
 export function nativeTranscriptBlocksForStatic(blocks: OutputBlock[]): OutputBlock[] {
   if (blocks.length === 1 && blocks[0]?.event?.type === 'dashboard') return [];
   return blocks;
@@ -3145,7 +3248,7 @@ export function nativeTranscriptBlocksForStatic(blocks: OutputBlock[]): OutputBl
 /**
  * Choose how many native transcript blocks are sealed into Static. The remaining tail stays live so recent rows can rerender while older rows remain in terminal scrollback.
  */
-// @kern-source: app:1274
+// @kern-source: app:1339
 export function nativeArchiveBlockCount(blocks: OutputBlock[], mode: string, rowBudget: number, toolOutputExpanded: boolean, thinkingExpanded: boolean): number {
   if (!Array.isArray(blocks) || blocks.length === 0) return 0;
 
@@ -3179,7 +3282,7 @@ export function nativeArchiveBlockCount(blocks: OutputBlock[], mode: string, row
 /**
  * Detect same-turn duplicate completed engine output. A new user-message resets the guard so an intentional repeat request can still show identical text.
  */
-// @kern-source: app:1306
+// @kern-source: app:1371
 export function isDuplicateEngineBlock(blocks: OutputBlock[], event: any): boolean {
   if (!event || event.type !== 'engine-block') return false;
   const content = cleanEngineOutput(String(event.content ?? '')).trim();
@@ -3201,25 +3304,25 @@ export function isDuplicateEngineBlock(blocks: OutputBlock[], event: any): boole
 /**
  * Append a transcript block with cap/archive handling while suppressing accidental duplicate engine output.
  */
-// @kern-source: app:1326
+// @kern-source: app:1391
 export function appendTranscriptBlock(blocks: OutputBlock[], event: any, archivePath: string): OutputBlock[] {
   if (isDuplicateEngineBlock(blocks, event)) return blocks;
   return appendBlockWithCap(blocks, { id: Date.now() + Math.random(), event }, archivePath);
 }
 
-// @kern-source: app:1333
+// @kern-source: app:1398
 export function normalizeTerminalMode(value: any): 'native'|'fullscreen' {
   return value === 'fullscreen' ? 'fullscreen' : 'native';
 }
 
-// @kern-source: app:1338
+// @kern-source: app:1403
 export function fileRailWidthForTerminal(termWidth: number, expanded: boolean): number {
   const safeWidth = Math.max(40, Math.floor(Number(termWidth) || 100));
   if (expanded) return Math.max(36, Math.min(84, Math.floor(safeWidth * 0.35)));
   return Math.max(28, Math.min(42, Math.floor(safeWidth * 0.22)));
 }
 
-// @kern-source: app:1345
+// @kern-source: app:1410
 export function fileRailMaxRowsForTerminal(termHeight: number, terminalMode: string, expanded: boolean): number {
   const safeHeight = Math.max(8, Math.floor(Number(termHeight) || 24));
   if (terminalMode === 'native') {
@@ -3233,7 +3336,7 @@ export function fileRailMaxRowsForTerminal(termHeight: number, terminalMode: str
 /**
  * Pure terminal replay harness: summarizes the layout-sensitive parts of the REPL for fixed viewport sizes so unit tests can catch native/fullscreen regressions without launching an interactive TTY.
  */
-// @kern-source: app:1356
+// @kern-source: app:1421
 export function buildTerminalReplaySnapshot(blocks: OutputBlock[], opts: any): {terminalMode:'native'|'fullscreen'; mode:string; termWidth:number; termHeight:number; visibleBudget:number; transcriptRowCount:number; staticBlockCount:number; liveBlockCount:number; fileRailWidth:number; fileRailRows:number; headerRows:number; lowerChromeRows:number} {
   const terminalMode = normalizeTerminalMode(opts?.terminalMode);
   const mode = String(opts?.mode ?? 'chat');
@@ -3287,7 +3390,7 @@ export function buildTerminalReplaySnapshot(blocks: OutputBlock[], opts: any): {
   };
 }
 
-// @kern-source: app:1411
+// @kern-source: app:1476
 export function parseMarkdownToRows(baseKey: string, text: string, wrapWidth: number, paddingLeft: number, borderColor: string): any[] {
   const rows: any[] = [];
   const cleaned = String(text ?? '').trim();
@@ -3395,7 +3498,7 @@ export function parseMarkdownToRows(baseKey: string, text: string, wrapWidth: nu
   return rows;
 }
 
-// @kern-source: app:1519
+// @kern-source: app:1584
 export function buildToolCallRows(baseKey: string, event: any, toolOutputExpanded: boolean): any[] {
   if (!event.input && !event.output && (event.tool === 'Delegate' || event.tool === 'delegate')) return [];
 
@@ -3766,7 +3869,7 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
   return rows;
 }
 
-// @kern-source: app:1890
+// @kern-source: app:1955
 export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any[] {
   if (!events || events.length === 0) return [];
 
@@ -3861,7 +3964,7 @@ export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any
   return rows;
 }
 
-// @kern-source: app:1985
+// @kern-source: app:2050
 export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean): any[] {
   const rows: any[] = [];
   const proseWidth = contentWidth(4);
@@ -3990,6 +4093,13 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
       }
       case 'permission-ask': {
         const preview = truncateCodeLine(String(event.command ?? '').split('\n')[0] ?? '', contentWidth(26));
+        const previewEvent = {
+          type: 'tool-call',
+          engineId: 'cesar',
+          tool: event.tool,
+          input: String(event.command ?? ''),
+          status: 'running',
+        } as any;
         pushSegmentsRow(`${baseKey}-perm-head`, 1, [
           { text: icons().warning, color: '#fbbf24' },
           { text: ` ${event.tool} approval requested`, color: '#fbbf24', bold: true },
@@ -4007,6 +4117,9 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
               { text: preview, dimColor: true },
             ]
           : [{ text: '  respond below', dimColor: true }]);
+        if (isMutatingToolCall(previewEvent)) {
+          rows.push(...buildToolCallRows(`${baseKey}-perm-diff`, previewEvent, false));
+        }
         return;
       }
       case 'thinking-chunk': {
@@ -4199,7 +4312,7 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
         }
         if (checkpoints.length > 0) {
           pushSegmentsRow(`${baseKey}-recap-checkpoint`, 1, [{
-            text: `  checkpoint: ${checkpoints[0].id}${checkpoints.length > 1 ? ` (+${checkpoints.length - 1})` : ''} · /undo reverts latest`,
+            text: `  checkpoint: ${checkpoints[0].id}${checkpoints.length > 1 ? ` (+${checkpoints.length - 1})` : ''} · /undo ${checkpoints[0].id} reverts checkpoint`,
             color: '#22d3ee',
           }]);
         }
@@ -4341,7 +4454,7 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
   return rows;
 }
 
-// @kern-source: app:4206
+// @kern-source: app:4320
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

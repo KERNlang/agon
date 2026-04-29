@@ -45,7 +45,8 @@ export type Intent =
   | { type: 'run'; input: string }
   | { type: 'cesar'; engineIds: string[] }
   | { type: 'commit'; input?: string }
-  | { type: 'undo' }
+  | { type: 'undo'; snapshotId?: string }
+  | { type: 'checkpoints' }
   | { type: 'jobs' }
   | { type: 'focus'; jobId?: string }
   | { type: 'explore' }

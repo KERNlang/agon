@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildPlanPhaseGauge } from '../../packages/cli/src/generated/surfaces/status.js';
+import { buildExecutionRailTimeline, buildPlanPhaseGauge } from '../../packages/cli/src/generated/surfaces/status.js';
 
 describe('buildPlanPhaseGauge', () => {
   it('shows the running step and completion percentage', () => {
@@ -47,5 +47,28 @@ describe('buildPlanPhaseGauge', () => {
   it('hides when there is no active plan with steps', () => {
     expect(buildPlanPhaseGauge(null).visible).toBe(false);
     expect(buildPlanPhaseGauge({ state: 'running', steps: [] }).visible).toBe(false);
+  });
+});
+
+describe('buildExecutionRailTimeline', () => {
+  it('surfaces current plan step, latest tool, and fallback context', () => {
+    const rows = buildExecutionRailTimeline(
+      {
+        state: 'running',
+        steps: [
+          { state: 'done', description: 'Inspect' },
+          { state: 'running', description: 'Patch fallback retry', engine: 'claude' },
+          { state: 'pending', description: 'Verify' },
+        ],
+      },
+      { tool: 'Edit', status: 'done', input: '{"file_path":"packages/cli/src/kern/surfaces/status.kern"}' },
+      [{ id: 'claude', status: 'building' }],
+      [{ from: 'claude', to: 'codex', reason: 'probe timeout > 30s', at: Date.now() }],
+      6,
+    );
+
+    expect(rows.some((row: any) => row.label === '2/3 running')).toBe(true);
+    expect(rows.some((row: any) => row.label === 'Edit done')).toBe(true);
+    expect(rows.at(-1)?.label).toBe('claude -> codex');
   });
 });

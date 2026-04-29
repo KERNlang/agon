@@ -110,12 +110,13 @@ export interface CesarPlan {
   autoApprove?: boolean;
   selfReview?: boolean;
   reviewCyclesUsed?: number;
+  fallbackRetriesUsed?: Record<string, number>;
 }
 
 /**
  * Create a new CesarPlan in 'planning' state. Steps with dependsOn are marked 'blocked', others 'pending'.
  */
-// @kern-source: plan:97
+// @kern-source: plan:98
 export function createCesarPlan(intent: string, steps: CesarPlanStep[]): CesarPlan {
   const id = `cplan-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const initializedSteps = steps.map(s => ({
@@ -141,7 +142,7 @@ export function createCesarPlan(intent: string, steps: CesarPlanStep[]): CesarPl
 /**
  * Transition plan from 'awaiting_approval' to 'running', set approvedAt.
  */
-// @kern-source: plan:121
+// @kern-source: plan:122
 export function approveCesarPlan(plan: CesarPlan): CesarPlan {
   return {
     ...plan,
@@ -153,7 +154,7 @@ export function approveCesarPlan(plan: CesarPlan): CesarPlan {
 /**
  * Mark a step done/failed, unblock dependents, determine plan state.
  */
-// @kern-source: plan:131
+// @kern-source: plan:132
 export function advanceCesarStep(plan: CesarPlan, stepId: string, result: CesarStepResult): CesarPlan {
   const stepIdx = plan.steps.findIndex(s => s.id === stepId);
   if (stepIdx === -1) return plan;
@@ -209,7 +210,7 @@ export function advanceCesarStep(plan: CesarPlan, stepId: string, result: CesarS
 /**
  * Cancel the plan: mark all non-complete steps as cancelled.
  */
-// @kern-source: plan:185
+// @kern-source: plan:186
 export function cancelCesarPlan(plan: CesarPlan): CesarPlan {
   const newSteps = plan.steps.map(s => {
     if (s.state === 'done' || s.state === 'failed') return s;
@@ -225,7 +226,7 @@ export function cancelCesarPlan(plan: CesarPlan): CesarPlan {
 /**
  * Persist a CesarPlan to ~/.agon/plans/<id>.json atomically. Markdown lives beside it as <id>.md so the plan is discoverable and editable. FU-8: write to a .tmp file then renameSync, so concurrent Agon sessions reading the same path observe either the old complete file or the new complete file — never a partial. POSIX rename within the same directory is atomic.
  */
-// @kern-source: plan:199
+// @kern-source: plan:200
 export function saveCesarPlan(plan: CesarPlan): void {
   const dir = getCesarPlansDir();
   mkdirSync(dir, { recursive: true });
@@ -249,7 +250,7 @@ export function saveCesarPlan(plan: CesarPlan): void {
 /**
  * Load a persisted CesarPlan from ~/.agon/plans/<id>.json. Falls back to the legacy ~/.agon/runs path for old sessions.
  */
-// @kern-source: plan:221
+// @kern-source: plan:222
 export function loadCesarPlan(planId: string): CesarPlan|null {
   let safeId = '';
   try {
@@ -275,7 +276,7 @@ export function loadCesarPlan(planId: string): CesarPlan|null {
 /**
  * List persisted CesarPlans from ~/.agon/plans, with legacy ~/.agon/runs fallback.
  */
-// @kern-source: plan:245
+// @kern-source: plan:246
 export function listCesarPlans(): CesarPlan[] {
   const byId = new Map<string, CesarPlan>();
   const readFromDir = (dir: string, canonical: boolean) => {

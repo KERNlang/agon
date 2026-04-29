@@ -93,6 +93,7 @@ interface name=CesarPlan
   field name=autoApprove type=boolean optional=true
   field name=selfReview type=boolean optional=true
   field name=reviewCyclesUsed type=number optional=true
+  field name=fallbackRetriesUsed type="Record<string, number>" optional=true
 
 fn name=createCesarPlan params="intent:string,steps:CesarPlanStep[]" returns=CesarPlan
   doc "Create a new CesarPlan in 'planning' state. Steps with dependsOn are marked 'blocked', others 'pending'."

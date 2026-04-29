@@ -6,7 +6,16 @@ import from="../types.js" names="StageResult,ForgeEventCallback,WorktreeEntry" t
 
 fn name=formatDispatchError params="err:unknown" returns=string export=false
   handler <<<
-    return err instanceof Error ? err.message : String(err);
+    const message = err instanceof Error ? err.message : String(err);
+    const snippet = (err as any)?.stdout
+      ? String((err as any).stdout).slice(0, 240).replace(/\s+/g, ' ').trim()
+      : (err as any)?.stderr
+        ? String((err as any).stderr).slice(0, 240).replace(/\s+/g, ' ').trim()
+        : '';
+    if (snippet) {
+      return `${message} | snippet: ${snippet}${(err as any)?.stdout?.length > 240 || (err as any)?.stderr?.length > 240 ? '…' : ''}`;
+    }
+    return message;
   >>>
 
 fn name=makeFailedResult params="engineId:string,error:string,durationMs?:number" returns=EngineResult export=false

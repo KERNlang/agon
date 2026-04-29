@@ -121,7 +121,15 @@ export async function runTribunal(opts: {question:string, engines:string[], roun
         const cleaned = result.stdout.trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, '');
         return { engineId: pos.engineId, argument: cleaned };
       } catch (err) {
-        console.warn(`[agon] tribunal dispatch (${pos.engineId}) round ${round} failed: ${err instanceof Error ? err.message : String(err)}`);
+        const message = err instanceof Error ? err.message : String(err);
+        const snippet = (err as any)?.stdout
+          ? String((err as any).stdout).slice(0, 200).replace(/\s+/g, ' ').trim()
+          : (err as any)?.stderr
+            ? String((err as any).stderr).slice(0, 200).replace(/\s+/g, ' ').trim()
+            : '';
+        const detail = snippet ? `${message} | snippet: ${snippet}${(err as any)?.stdout?.length > 200 || (err as any)?.stderr?.length > 200 ? '…' : ''}` : message;
+        console.warn(`[agon] tribunal dispatch (${pos.engineId}) round ${round} failed: ${detail}`);
+        opts.onEvent?.({ type: 'engine:failed' as any, engineId: pos.engineId, data: { engineId: pos.engineId, phase: `tribunal-round-${round}`, error: detail } });
         return { engineId: pos.engineId, argument: '(failed to respond)' };
       }
     });
@@ -173,7 +181,15 @@ export async function runTribunal(opts: {question:string, engines:string[], roun
     });
     summary = summaryResult.stdout.trim().replace(/<think>[\s\S]*?<\/think>\s*/gi, '');
   } catch (err) {
-    console.warn(`[agon] tribunal summary failed: ${err instanceof Error ? err.message : String(err)}`);
+    const message = err instanceof Error ? err.message : String(err);
+    const snippet = (err as any)?.stdout
+      ? String((err as any).stdout).slice(0, 200).replace(/\s+/g, ' ').trim()
+      : (err as any)?.stderr
+        ? String((err as any).stderr).slice(0, 200).replace(/\s+/g, ' ').trim()
+        : '';
+    const detail = snippet ? `${message} | snippet: ${snippet}${(err as any)?.stdout?.length > 200 || (err as any)?.stderr?.length > 200 ? '…' : ''}` : message;
+    console.warn(`[agon] tribunal summary failed: ${detail}`);
+    opts.onEvent?.({ type: 'engine:failed' as any, engineId: summaryEngine?.id ?? engines[0], data: { engineId: summaryEngine?.id ?? engines[0], phase: 'tribunal-summary', error: detail } });
     summary = buildFallbackSummary(positions);
   }
 

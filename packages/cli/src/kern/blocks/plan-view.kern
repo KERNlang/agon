@@ -62,6 +62,10 @@ screen name=PlanProposalView target=ink
         const stepEst = est?.steps?.find((e: any) => e.id === s.id);
         return stepEst?.costUsd ?? s.estimatedCostUsd ?? 0;
       };
+      const stepTokens = (s: any) => {
+        const stepEst = est?.steps?.find((e: any) => e.id === s.id);
+        return stepEst?.tokens ?? s.estimatedTokens ?? 0;
+      };
 
       // Claude-Code-style markdown rendering for the plan body. The
       // structured step boxes below are kept as a fallback when no
@@ -132,6 +136,7 @@ screen name=PlanProposalView target=ink
             const hasFitness = s.fitnessCmd;
             const isParallel = s.parallel;
             const cost = stepCost(s);
+            const tokens = stepTokens(s);
 
             return (
               <Box key={s.id} flexDirection="column">
@@ -158,6 +163,9 @@ screen name=PlanProposalView target=ink
                         </Box>
                       ))}
                     </Box>
+                  )}
+                  {tokens > 0 && (
+                    <Text dimColor>{' \u00b7 ~'}{tokens.toLocaleString()}{' t'}</Text>
                   )}
                   {cost > 0 && (
                     <Text dimColor>{' \u00b7 $'}{cost.toFixed(2)}</Text>

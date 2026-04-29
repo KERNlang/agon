@@ -316,6 +316,27 @@ screen name=StatusBar target=ink
             <Text color="#f59e0b">{'Ctrl+A'}</Text>
             <Text dimColor>{')'}</Text>
             {isActive ? <Text dimColor>{' \u00b7 /btw ask'}</Text> : null}
+            {(() => {
+              const vitals = Array.from(telemetryVitals?.values?.() ?? []);
+              if (vitals.length === 0) return null;
+              const stalled = vitals.filter((v: any) => v.state === 'stalled');
+              const offline = vitals.filter((v: any) => v.state === 'offline');
+              const fallback = vitals.filter((v: any) => v.state === 'fallback' || v.fallbackTo);
+              const busy = vitals.filter((v: any) => v.state === 'busy');
+              if (stalled.length > 0) {
+                return <Text dimColor>{' \u00b7 '}<Text color="#ef4444">{`\u26a0 ${stalled.length} stalled`}</Text></Text>;
+              }
+              if (offline.length > 0) {
+                return <Text dimColor>{' \u00b7 '}<Text color="#9ca3af">{`\u2718 ${offline.length} offline`}</Text></Text>;
+              }
+              if (fallback.length > 0) {
+                return <Text dimColor>{' \u00b7 '}<Text color="#f97316">{`\u21c4 ${fallback.length} fallback`}</Text></Text>;
+              }
+              if (busy.length > 0) {
+                return <Text dimColor>{' \u00b7 '}<Text color="#fbbf24">{`\u25d0 ${busy.length} busy`}</Text></Text>;
+              }
+              return <Text dimColor>{' \u00b7 '}<Text color="#4ade80">{'\u25cf all idle'}</Text></Text>;
+            })()}
           </Text>
         </Box>
       );

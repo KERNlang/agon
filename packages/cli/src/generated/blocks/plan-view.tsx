@@ -22,6 +22,10 @@ export function PlanProposalView({ plan, markdown, costEstimate }: { plan:any; m
     const stepEst = est?.steps?.find((e: any) => e.id === s.id);
     return stepEst?.costUsd ?? s.estimatedCostUsd ?? 0;
   };
+  const stepTokens = (s: any) => {
+    const stepEst = est?.steps?.find((e: any) => e.id === s.id);
+    return stepEst?.tokens ?? s.estimatedTokens ?? 0;
+  };
 
   // Claude-Code-style markdown rendering for the plan body. The
   // structured step boxes below are kept as a fallback when no
@@ -92,6 +96,7 @@ export function PlanProposalView({ plan, markdown, costEstimate }: { plan:any; m
         const hasFitness = s.fitnessCmd;
         const isParallel = s.parallel;
         const cost = stepCost(s);
+        const tokens = stepTokens(s);
 
         return (
           <Box key={s.id} flexDirection="column">
@@ -118,6 +123,9 @@ export function PlanProposalView({ plan, markdown, costEstimate }: { plan:any; m
                     </Box>
                   ))}
                 </Box>
+              )}
+              {tokens > 0 && (
+                <Text dimColor>{' \u00b7 ~'}{tokens.toLocaleString()}{' t'}</Text>
               )}
               {cost > 0 && (
                 <Text dimColor>{' \u00b7 $'}{cost.toFixed(2)}</Text>
@@ -188,7 +196,7 @@ export function PlanProposalView({ plan, markdown, costEstimate }: { plan:any; m
   );
 }
 
-// @kern-source: plan-view:233
+// @kern-source: plan-view:241
 export function PlanExecutionView({ plan }: { plan:any }) {
   const steps: any[] = plan.steps ?? [];
   const doneSteps = steps.filter((s: any) => s.state === 'done');

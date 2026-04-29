@@ -58,7 +58,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { cmd: '/history',     desc: '[id]                    — past forge runs' },
   { cmd: '/config',      desc: '[list|get|set]          — settings' },
   { cmd: '/plan',        desc: '<task> or no args    — plan mode or show plan' },
-  { cmd: '/auto',        desc: '<task>                   — run next task with autonomous mode' },
+  { cmd: '/auto',        desc: '[on|off|toggle|status] or <task> — autonomous mode control' },
   { cmd: '/plans',       desc: '                        — list recent plans' },
   { cmd: '/approve',     desc: '                        — approve current plan' },
   { cmd: '/retry',       desc: '                        — retry failed plan step' },

@@ -50,22 +50,24 @@ describe('Dispatch routing helpers', () => {
     expect(shouldApprovePendingCesarPlanInput('/approve', ctx)).toBe(false);
   });
 
-  it('dispatches choice questions with explicit choices and a default', async () => {
+  it('dispatches choice questions with explicit numeric choices and a default', async () => {
     let event: any = null;
     const promise = askChoiceQuestion({
       dispatch: (next: any) => { event = next; },
     } as any, 'Approve plan?', [
-      { key: 'y', label: 'Approve' },
-      { key: 'n', label: 'Reject' },
-    ], 'y');
+      { key: '1', label: 'Yes - approve' },
+      { key: '2', label: 'No - reject' },
+      { key: '3', label: 'Other - add feedback' },
+    ], '1');
 
     expect(event.type).toBe('question');
     expect(event.prompt).toBe('Approve plan?');
-    expect(event.choices).toHaveLength(2);
-    expect(event.defaultChoiceKey).toBe('y');
+    expect(event.choices).toHaveLength(3);
+    expect(event.choices.map((choice: any) => choice.key)).toEqual(['1', '2', '3']);
+    expect(event.defaultChoiceKey).toBe('1');
 
-    event.resolve('y');
-    await expect(promise).resolves.toBe('y');
+    event.resolve('1');
+    await expect(promise).resolves.toBe('1');
   });
 
   it('formats compact Cesar recovery statuses with log context', () => {

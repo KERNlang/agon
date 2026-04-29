@@ -2373,14 +2373,13 @@ fn name=handleProposedCesarPlan async=true params="proposed:CesarPlan, cb:Dispat
 
     while (!decided) {
       const answer = await askChoiceQuestion(cb, 'Approve plan?', [
-        { key: 'y', label: 'Approve', color: '#4ade80' },
-        { key: 'n', label: 'Reject', color: '#ef4444' },
-        { key: 'e', label: 'Edit file', color: '#60a5fa' },
-        { key: 'r', label: 'Revise with feedback', color: '#fbbf24' },
-      ], 'y');
+        { key: '1', label: 'Yes - approve', color: '#4ade80' },
+        { key: '2', label: 'No - reject', color: '#ef4444' },
+        { key: '3', label: 'Other - add feedback', color: '#fbbf24' },
+      ], '1');
       const trimmed = answer.trim().toLowerCase();
 
-      if (trimmed === '' || isCesarPlanApprovalInput(trimmed)) {
+      if (trimmed === '' || trimmed === '1' || isCesarPlanApprovalInput(trimmed)) {
         const approved = approveCesarPlan(currentProposal);
         cb.setActivePlan(approved);
         cb.dispatch({ type: 'success', message: 'Plan approved — executing...' });
@@ -2389,7 +2388,7 @@ fn name=handleProposedCesarPlan async=true params="proposed:CesarPlan, cb:Dispat
         await executeApprovedPlan(approved, cb);
         decided = true;
 
-      } else if (trimmed === 'n' || trimmed === 'no') {
+      } else if (trimmed === '2' || trimmed === 'n' || trimmed === 'no') {
         const cancelled = cancelCesarPlan(currentProposal);
         cb.setActivePlan(cancelled);
         saveCesarPlan(cancelled);
@@ -2430,8 +2429,8 @@ fn name=handleProposedCesarPlan async=true params="proposed:CesarPlan, cb:Dispat
           cb.dispatch({ type: 'warning', message: 'No plan file path available. Type feedback as text instead.' });
         }
 
-      } else if (trimmed === 'r' || trimmed === 'revise' || trimmed === 'feedback') {
-        const feedback = await cb.askQuestion('Revision feedback');
+      } else if (trimmed === '3' || trimmed === 'r' || trimmed === 'revise' || trimmed === 'feedback' || trimmed === 'other') {
+        const feedback = await cb.askQuestion('What should change?');
         if (!feedback.trim()) continue;
         cb.dispatch({ type: 'info', message: 'Revising plan with your feedback...' });
         const reviseInput = `[PLAN REVISION] The user wants these changes: ${feedback}\n\nRevise the plan and call ProposePlan IMMEDIATELY with the updated steps. Do NOT re-investigate. Do NOT respond with text. Just call ProposePlan with the revised plan.`;

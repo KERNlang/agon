@@ -140,6 +140,9 @@ screen name=StatusBar target=ink
             <Text dimColor>{' \u00b7 files ('}</Text>
             <Text color="#f59e0b">{'Ctrl+B'}</Text>
             <Text dimColor>{')'}</Text>
+            <Text dimColor>{' \u00b7 auto ('}</Text>
+            <Text color="#f59e0b">{'Ctrl+A'}</Text>
+            <Text dimColor>{')'}</Text>
             {selectionMode !== undefined && <Text dimColor>{' \u00b7 '}{selectionMode ? 'select' : 'scroll'}{' ('}</Text>}
             {selectionMode !== undefined && <Text color="#f59e0b">{'Ctrl+G'}</Text>}
             {selectionMode !== undefined && <Text dimColor>{')'}</Text>}

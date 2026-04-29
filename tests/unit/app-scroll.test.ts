@@ -5,6 +5,7 @@ import {
   buildTerminalReplaySnapshot,
   coalesceToolCallBlocks,
   displayColumnToStringIndex,
+  effectiveNativeArchiveBlockCount,
   estimateBottomChromeExtraRows,
   estimateQuestionReservedRows,
   fileRailMaxRowsForTerminal,
@@ -79,6 +80,26 @@ describe('app scroll helpers', () => {
     })) as any;
 
     expect(nativeArchiveBlockCount(blocks, 'chat', 2, false, true)).toBe(3);
+  });
+
+  it('keeps the latest native tool-call island live while tools are expanded', () => {
+    const blocks = [
+      { id: 1, event: { type: 'user-message', content: 'inspect' } },
+      {
+        id: 2,
+        event: {
+          type: 'tool-call-group',
+          blocks: [
+            { id: 21, event: { type: 'tool-call', engineId: 'cesar', tool: 'Read', input: '{"file_path":"a.ts"}', status: 'done', output: 'line 1' } },
+            { id: 22, event: { type: 'tool-call', engineId: 'cesar', tool: 'Grep', input: '{"pattern":"x"}', status: 'done', output: 'a.ts:x' } },
+          ],
+        },
+      },
+      { id: 3, event: { type: 'engine-block', engineId: 'cesar', color: 124, content: 'done' } },
+    ] as any;
+
+    expect(effectiveNativeArchiveBlockCount(blocks, 3, 3, true)).toBe(1);
+    expect(effectiveNativeArchiveBlockCount(blocks, 3, 3, false)).toBe(3);
   });
 
   it('archives a native block immediately when it cannot fit in the live row budget', () => {
@@ -227,6 +248,25 @@ describe('app scroll helpers', () => {
     expect(text).not.toContain('**/cesar/**');
     expect(text).not.toContain('"reasoning"');
     expect(text).not.toContain('{"value"');
+  });
+
+  it('does not truncate confidence reasoning in collapsed tool telemetry', () => {
+    const reasoning = 'I know the Agon harness architecture well, but I still need to verify the exact UI path before changing behavior.';
+    const rows = buildTranscriptRows([
+      {
+        id: 1,
+        event: {
+          type: 'tool-call-group',
+          blocks: [
+            { id: 11, event: { type: 'tool-call', engineId: 'cesar', tool: 'ReportConfidence', input: JSON.stringify({ value: 85, reasoning }), status: 'done', output: 'ok' } },
+          ],
+        },
+      },
+    ] as any, 'chat', false, true);
+
+    const text = transcriptRowsToPlainText(rows, 0, 0, 0, 999);
+    expect(text).toContain(`85% confidence · ${reasoning}`);
+    expect(text).not.toContain('…');
   });
 
   it('renders Cesar route info as dim italic telemetry', () => {
@@ -400,6 +440,70 @@ describe('app scroll helpers', () => {
     expect(expandedRows.some((row: any) => row.key.includes('-read-'))).toBe(true);
     expect(expandedRows.some((row: any) => row.key.includes('-search-'))).toBe(true);
     expect(expandedRows.some((row: any) => row.key.includes('find-file-'))).toBe(true);
+  });
+
+  it('expands grouped tool calls instead of making the summary disappear', () => {
+    const blocks = [
+      {
+        id: 1,
+        event: {
+          type: 'tool-call-group',
+          blocks: [
+            {
+              id: 11,
+              event: {
+                type: 'tool-call',
+                engineId: 'cesar',
+                tool: 'Read',
+                input: '{"file_path":"a.ts"}',
+                status: 'done',
+                output: 'line 1\nline 2',
+              },
+            },
+            {
+              id: 12,
+              event: {
+                type: 'tool-call',
+                engineId: 'cesar',
+                tool: 'Grep',
+                input: '{"pattern":"line"}',
+                status: 'done',
+                output: 'a.ts:1:line 1',
+              },
+            },
+          ],
+        },
+      },
+    ] as any;
+
+    const rows = buildTranscriptRows(blocks, 'chat', true, true);
+    const text = transcriptRowsToPlainText(rows, 0, 0, rows.length - 1, 999);
+
+    expect(text).not.toContain('2 tool calls');
+    expect(text).toContain('Read');
+    expect(text).toContain('line 2');
+    expect(text).toContain('Search');
+    expect(text).toContain('a.ts:1:line 1');
+  });
+
+  it('shows all read output lines when tools are expanded', () => {
+    const block = {
+      id: 1,
+      event: {
+        type: 'tool-call',
+        engineId: 'cesar',
+        tool: 'Read',
+        input: '{"file_path":"long.ts"}',
+        status: 'done',
+        output: Array.from({ length: 20 }, (_, index) => `line ${index + 1}`).join('\n'),
+      },
+    } as any;
+
+    const rows = buildTranscriptRows([block], 'chat', true, true);
+    const text = transcriptRowsToPlainText(rows, 0, 0, rows.length - 1, 999);
+
+    expect(text).toContain('line 20');
+    expect(text).not.toContain('more lines');
   });
 
   it('keeps edit previews compact in the transcript without dead shortcut hints', () => {

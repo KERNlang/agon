@@ -117,8 +117,7 @@ fn name=formatConfidenceToolLabel params="parsed:any, rawInput:string" returns=s
       const pct = value <= 1 && value > 0 ? Math.round(value * 100) : Math.round(value);
       if (pct >= 0 && pct <= 100) {
         const reasoning = String(parsed?.reasoning ?? parsed?.reason ?? parsed?.thought ?? '').replace(/\s+/g, ' ').trim();
-        const shortReasoning = reasoning.length > 180 ? `${reasoning.slice(0, 177)}…` : reasoning;
-        return shortReasoning ? `${pct}% confidence · ${shortReasoning}` : `${pct}% confidence`;
+        return reasoning ? `${pct}% confidence · ${reasoning}` : `${pct}% confidence`;
       }
     }
     return 'confidence';
@@ -200,6 +199,7 @@ fn name=parsePatchPreview params="rawInput:string, parsed:any" returns="{ files:
 fn name=toolPreviewWindow params="lineCount:number, expanded:boolean" returns=any
   handler <<<
     if (lineCount <= 0) return { head: 0, tail: 0, skipped: 0 };
+    if (expanded) return { head: lineCount, tail: 0, skipped: 0 };
     const headLimit = expanded ? 10 : 3;
     const tailLimit = expanded && lineCount > 18 ? 4 : 0;
     const showTail = tailLimit > 0 && lineCount > headLimit + tailLimit;
@@ -810,9 +810,14 @@ fn name=estimateToolCallRows params="event:any, toolOutputExpanded:boolean, code
       const cmd = (parsed.command as string) || rawInput || '';
       const cmdLineCount = cmd ? cmd.split('\n').length : 0;
       let rows = 1;
-      if (cmdLineCount > 0) rows += Math.min(3, cmdLineCount) + (cmdLineCount > 3 ? 1 : 0) + 1;
+      if (cmdLineCount > 0) {
+        rows += collapsed
+          ? Math.min(3, cmdLineCount) + (cmdLineCount > 3 ? 1 : 0) + 1
+          : cmdLineCount + 1;
+      }
       if (event.output && event.status !== 'running') {
         const outputLineCount = event.output.split('\n').length;
+        if (!collapsed) return rows + 1 + outputLineCount;
         const maxHead = outputLineCount > 80 ? 30 : 50;
         const tailCount = 5;
         const showTail = outputLineCount > maxHead + tailCount;
@@ -850,15 +855,13 @@ fn name=estimateToolCallRows params="event:any, toolOutputExpanded:boolean, code
     if (toolKey === 'read') {
       if (collapsed) return 1;
       const lineCount = event.output ? String(event.output).split('\n').length : 0;
-      const shown = Math.min(12, lineCount);
-      return 1 + shown + (lineCount > shown ? 1 : 0);
+      return 1 + lineCount;
     }
 
     if (toolKey === 'grep' || toolKey === 'search' || toolKey === 'glob' || toolKey === 'find') {
       if (collapsed) return 1;
       const lineCount = event.output ? String(event.output).split('\n').filter((line: string) => line.trim()).length : 0;
-      const shown = Math.min(10, lineCount);
-      return 1 + shown + (lineCount > shown ? 1 : 0);
+      return 1 + lineCount;
     }
 
     let rows = 1;
@@ -1019,6 +1022,40 @@ fn name=coalesceToolCallBlocks params="blocks:OutputBlock[]" returns="OutputBloc
     }
 
     return out;
+  >>>
+
+fn name=effectiveNativeArchiveBlockCount params="blocks:OutputBlock[], baseArchiveCount:number, targetArchiveCount:number, toolOutputExpanded:boolean" returns=number export=true
+  doc "Choose the native Static archive count. When tools are expanded, keep the latest tool-call island live because Ink Static cannot repaint already-sealed collapsed tool summaries."
+  handler <<<
+    if (!Array.isArray(blocks) || blocks.length === 0) return 0;
+
+    if (toolOutputExpanded) {
+      let latestToolIndex = -1;
+      for (let index = blocks.length - 1; index >= 0; index -= 1) {
+        if (isToolCallLikeBlock(blocks[index])) {
+          latestToolIndex = index;
+          break;
+        }
+      }
+      if (latestToolIndex >= 0) {
+        let islandStart = latestToolIndex;
+        while (islandStart > 0 && isToolCallLikeBlock(blocks[islandStart - 1])) {
+          islandStart -= 1;
+        }
+        return islandStart;
+      }
+    }
+
+    let count = Math.max(0, Math.min(blocks.length, Math.max(baseArchiveCount, targetArchiveCount)));
+    while (
+      count > 0
+      && count < blocks.length
+      && isToolCallLikeBlock(blocks[count - 1])
+      && isToolCallLikeBlock(blocks[count])
+    ) {
+      count -= 1;
+    }
+    return count;
   >>>
 
 fn name=estimateDisplayItemRows params="item:OutputBlock, mode:string, toolOutputExpanded:boolean, thinkingExpanded:boolean" returns=number
@@ -1340,13 +1377,14 @@ fn name=buildToolCallRows params="baseKey:string, event:any, toolOutputExpanded:
       ].filter(Boolean));
 
       const cmdLines = cmd ? cmd.split('\n') : [];
-      cmdLines.slice(0, 3).forEach((line: string, index: number) => {
+      const shownCmdLines = toolOutputExpanded ? cmdLines : cmdLines.slice(0, 3);
+      shownCmdLines.forEach((line: string, index: number) => {
         pushSegmentsRow(`bash-cmd-${index}`, [
           { text: `    ${index === 0 ? '$ ' : '  '}`, dimColor: true },
           { text: truncateCodeLine(line, codeWidth) },
         ]);
       });
-      if (cmdLines.length > 3) {
+      if (!toolOutputExpanded && cmdLines.length > 3) {
         pushSegmentsRow('bash-cmd-more', [{ text: '      …', dimColor: true }]);
       }
 
@@ -1354,8 +1392,8 @@ fn name=buildToolCallRows params="baseKey:string, event:any, toolOutputExpanded:
         const outputLines = String(event.output).split('\n');
         const maxHead = outputLines.length > 80 ? 30 : 50;
         const tailCount = 5;
-        const showTail = outputLines.length > maxHead + tailCount;
-        const headLines = outputLines.slice(0, showTail ? maxHead : outputLines.length);
+        const showTail = !toolOutputExpanded && outputLines.length > maxHead + tailCount;
+        const headLines = toolOutputExpanded ? outputLines : outputLines.slice(0, showTail ? maxHead : outputLines.length);
         const tailLines = showTail ? outputLines.slice(-tailCount) : [];
         const skipped = outputLines.length - headLines.length - tailLines.length;
 
@@ -1379,7 +1417,7 @@ fn name=buildToolCallRows params="baseKey:string, event:any, toolOutputExpanded:
             fallbackDim: true,
           });
         });
-        if (skipped > 0) {
+        if (!toolOutputExpanded && skipped > 0) {
           pushOpenHintRow('bash-skip', `    … ${skipped} more lines …`);
         }
         tailLines.forEach((line: string, index: number) => {
@@ -1496,7 +1534,7 @@ fn name=buildToolCallRows params="baseKey:string, event:any, toolOutputExpanded:
 
       if (event.output && event.status !== 'running') {
         const outputLines = String(event.output).split('\n');
-        const shownLines = outputLines.slice(0, 12);
+        const shownLines = outputLines;
         shownLines.forEach((line: string, index: number) => {
           rows.push({
             key: `${baseKey}-read-${index}`,
@@ -1541,7 +1579,7 @@ fn name=buildToolCallRows params="baseKey:string, event:any, toolOutputExpanded:
 
       if (event.output && event.status !== 'running') {
         const matchLines = String(event.output).split('\n').filter((line: string) => line.trim());
-        const shownLines = matchLines.slice(0, 10);
+        const shownLines = matchLines;
         shownLines.forEach((line: string, index: number) => {
           rows.push({
             key: `${baseKey}-search-${index}`,
@@ -1584,7 +1622,7 @@ fn name=buildToolCallRows params="baseKey:string, event:any, toolOutputExpanded:
 
       if (event.output && event.status !== 'running') {
         const files = String(event.output).split('\n').filter((line: string) => line.trim());
-        const shownFiles = files.slice(0, 10);
+        const shownFiles = files;
         shownFiles.forEach((file: string, index: number) => {
           pushSegmentsRow(`find-file-${index}`, [{ text: `    ${truncateCodeLine(file, codeWidth)}`, dimColor: true }]);
         });
@@ -2366,19 +2404,10 @@ screen name=App target=ink
       return nativeArchiveBlockCount(nativeTranscriptBlocks, mode, currentVisibleRowBudget, toolOutputExpanded, thinkingExpanded);
     >>>
 
-  memo name=effectiveNativeArchiveCount deps="nativeArchiveCount,nativeArchiveTarget,nativeTranscriptBlocks"
+  memo name=effectiveNativeArchiveCount deps="nativeArchiveCount,nativeArchiveTarget,nativeTranscriptBlocks,toolOutputExpanded"
     handler <<<
       const baseArchiveCount = nativeTranscriptBlocks.length < nativeTranscriptBlockCountRef.current ? 0 : nativeArchiveCount;
-      let count = Math.max(0, Math.min(nativeTranscriptBlocks.length, Math.max(baseArchiveCount, nativeArchiveTarget)));
-      while (
-        count > 0
-        && count < nativeTranscriptBlocks.length
-        && isToolCallLikeBlock(nativeTranscriptBlocks[count - 1])
-        && isToolCallLikeBlock(nativeTranscriptBlocks[count])
-      ) {
-        count -= 1;
-      }
-      return count;
+      return effectiveNativeArchiveBlockCount(nativeTranscriptBlocks, baseArchiveCount, nativeArchiveTarget, toolOutputExpanded);
     >>>
 
   memo name=nativeArchiveBlocks deps="nativeTranscriptBlocks,effectiveNativeArchiveCount"

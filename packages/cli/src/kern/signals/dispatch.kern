@@ -290,6 +290,15 @@ fn name=formatCesarRecoveryStatus params="stage:'delegation'|'rebuild'|'retry'|'
     }
   >>>
 
+fn name=normalizeCesarActingFallbackMode params="value:any" returns="'ask'|'auto'|'off'" export=true
+  doc "Normalize the cross-engine Cesar fallback policy. Defaults to ask so Agon never silently swaps from the user's chosen Cesar engine to another model."
+  handler <<<
+    const mode = String(value ?? 'ask').trim().toLowerCase();
+    if (mode === 'auto' || mode === 'always' || mode === 'on') return 'auto';
+    if (mode === 'off' || mode === 'never' || mode === 'same-only' || mode === 'same') return 'off';
+    return 'ask';
+  >>>
+
 fn name=countTrackedUserTurns params="ctx:HandlerContext" returns=number
   handler <<<
     const messages = ctx.chatSession?.messages ?? [];
@@ -991,9 +1000,39 @@ You still own the overall task. Integrate the forged slice with the rest of the 
       appendUserTurnIfAbsent(cb.ctx.chatSession, input);
     } catch (e) { console.warn(`[agon] dispatch: Cesar fallback failed: ${e instanceof Error ? e.message : String(e)}`); }
 
-    // Cesar completely unavailable — pick next best engine as acting Cesar with full context
+    // Cesar completely unavailable — only switch to an acting Cesar when
+    // policy allows it. Default is ask: silently swapping Kimi→Claude after
+    // an empty turn feels like the CLI lost the user's chosen lead engine.
     const available = cb.ctx.registry.availableIds();
-    const actingCesar = available.find((id: string) => id !== cesarId) ?? cesarId;
+    const actingCesar = available.find((id: string) => id !== cesarId);
+    if (!actingCesar) {
+      cb.dispatch({ type: 'error', message: formatCesarRecoveryStatus('failed', `${cesarId} returned no response`, 'no alternate engine available') });
+      return false;
+    }
+
+    const fallbackMode = normalizeCesarActingFallbackMode((cesarConfig as any).cesarActingFallback);
+    if (fallbackMode === 'off') {
+      cb.dispatch({ type: 'warning', message: `${cesarId} returned no response. Cross-engine acting-Cesar fallback is off; staying on ${cesarId}.` });
+      cb.dispatch({ type: 'info', message: 'Enable fallback with /config set cesarActingFallback ask or /config set cesarActingFallback auto.' });
+      return false;
+    }
+
+    if (fallbackMode === 'ask') {
+      const choice = await askChoiceQuestion(cb, `${cesarId} returned no response. Use ${actingCesar} as acting Cesar?`, [
+        { key: '1', label: `No - keep ${cesarId}` },
+        { key: '2', label: `Yes - use ${actingCesar} once` },
+        { key: '3', label: 'Always auto fallback' },
+      ], '1');
+      const trimmedChoice = choice.trim().toLowerCase();
+      if (trimmedChoice === '3') {
+        configSet('cesarActingFallback' as any, 'auto' as any);
+        cb.dispatch({ type: 'info', message: 'Saved: cesarActingFallback=auto' });
+      } else if (!(trimmedChoice === '2' || trimmedChoice === 'y' || trimmedChoice === 'yes')) {
+        cb.dispatch({ type: 'info', message: `Stayed on ${cesarId}. No acting-Cesar fallback used.` });
+        return false;
+      }
+    }
+
     cb.dispatch({ type: 'warning', message: formatCesarRecoveryStatus('acting', actingCesar, `${cesarId} unavailable`) });
 
     // Build context so acting Cesar can lead

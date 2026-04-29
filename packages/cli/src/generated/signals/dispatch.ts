@@ -2609,7 +2609,44 @@ export async function handleProposedCesarPlan(proposed: CesarPlan, cb: DispatchC
 export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks): any {
   let currentPlan = initialPlan;
   let pendingWriteTimer: ReturnType<typeof setTimeout> | null = null;
+  let executionStartCommitted = false;
   const DEBOUNCE_MS = 300;
+  const stepTypeLabels: Record<string, string> = {
+    self: '\u2699 Cesar',
+    forge: '\u2694 Forge',
+    teamforge: '\u2694\u2694 Team Forge',
+    brainstorm: '\u26a1 Brainstorm',
+    campfire: '\u2500 Campfire',
+    tribunal: '\u2696 Tribunal',
+    delegate: '\u27a4 Delegate',
+    pipeline: '\u2192 Pipeline',
+    review: '\u2713 Review',
+    agent: '\u2699 Agent',
+    'team-agent': '\u2699\u2699 Team Agent',
+  };
+
+  const markStepRunning = (plan: CesarPlan, stepId: string): CesarPlan => ({
+    ...plan,
+    steps: plan.steps.map((s: any) => s.id === stepId ? { ...s, state: 'running' as any } : s),
+  } as CesarPlan);
+
+  const buildPlanStepToolInput = (stepId: string) => {
+    const step = currentPlan.steps.find((s: any) => s.id === stepId);
+    const idx = step ? currentPlan.steps.indexOf(step) + 1 : 0;
+    return {
+      planId: currentPlan.id,
+      stepId,
+      step: idx,
+      totalSteps: currentPlan.steps.length,
+      type: step?.type ?? 'unknown',
+      engine: step?.engine ?? null,
+      engines: step?.engines ?? [],
+      description: step?.description ?? stepId,
+      state: step?.state ?? 'pending',
+    };
+  };
+
+  const planStepEngineId = (step: any) => step?.engine ?? step?.engines?.[0] ?? 'cesar';
 
   const flushPersist = () => {
     if (pendingWriteTimer) {
@@ -2626,38 +2663,51 @@ export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks
 
   return {
     onStepStart: (stepId: string) => {
+      currentPlan = markStepRunning(currentPlan, stepId);
+      cb.setActivePlan(currentPlan);
       const step = currentPlan.steps.find((s: any) => s.id === stepId);
-      const cfg: Record<string, string> = {
-        self: '\u2699 Cesar',
-        forge: '\u2694 Forge',
-        teamforge: '\u2694\u2694 Team Forge',
-        brainstorm: '\u26a1 Brainstorm',
-        campfire: '\u2500 Campfire',
-        tribunal: '\u2696 Tribunal',
-        delegate: '\u27a4 Delegate',
-        pipeline: '\u2192 Pipeline',
-        review: '\u2713 Review',
-        agent: '\u2699 Agent',
-        'team-agent': '\u2699\u2699 Team Agent',
-      };
-      const typeLabel = step ? (cfg[step.type] ?? step.type) : '';
+      const typeLabel = step ? (stepTypeLabels[step.type] ?? step.type) : '';
       const stepEngines = step?.engines?.length ? ` \u2192 ${step.engines.join(', ')}` : (step?.engine ? ` \u2192 ${step.engine}` : '');
       const idx = step ? currentPlan.steps.indexOf(step) + 1 : 0;
-      cb.dispatch({ type: 'info', message: `Step ${idx}/${currentPlan.steps.length}: ${typeLabel}${stepEngines} \u2014 ${step?.description ?? stepId}` });
+      const msg = `Step ${idx}/${currentPlan.steps.length}: ${typeLabel}${stepEngines} \u2014 ${step?.description ?? stepId}`;
+      cb.dispatch({ type: 'spinner-start', message: msg, color: 214, engineId: planStepEngineId(step) } as any);
+      cb.dispatch({
+        type: 'tool-call',
+        engineId: 'cesar',
+        tool: 'PlanStep',
+        input: JSON.stringify(buildPlanStepToolInput(stepId)),
+        status: 'running',
+      } as any);
+      cb.dispatch({ type: 'info', message: msg });
     },
     onStepDone: (stepId: string, result: CesarStepResult) => {
       const step = currentPlan.steps.find((s: any) => s.id === stepId);
       const icon = result.status === 'success' ? '\u2713' : '\u2717';
       const msgType = result.status === 'success' ? 'success' : 'error';
+      cb.dispatch({ type: 'spinner-stop' } as any);
+      cb.dispatch({
+        type: 'tool-call',
+        engineId: 'cesar',
+        tool: 'PlanStep',
+        input: JSON.stringify(buildPlanStepToolInput(stepId)),
+        status: result.status === 'success' ? 'done' : 'error',
+        output: result.output ? result.output.slice(0, 4000) : '',
+        error: result.error,
+      } as any);
       cb.dispatch({ type: msgType, message: `${icon} ${step?.description ?? stepId} \u2014 ${result.status}${result.error ? ': ' + result.error : ''} (${(result.durationMs / 1000).toFixed(1)}s, $${result.actualCostUsd.toFixed(4)})` });
     },
     onPlanUpdate: (updated: CesarPlan) => {
+      const previousState = currentPlan.state;
       currentPlan = updated;
       cb.setActivePlan(updated);
-      cb.dispatch({ type: 'plan-execution', plan: updated } as any);
       // Terminal states flush immediately so disk reflects the final
       // state without waiting on the debounce window.
       const isTerminal = updated.state === 'done' || updated.state === 'paused' || updated.state === 'cancelled';
+      const shouldCommitExecutionRow = !executionStartCommitted || isTerminal || previousState !== updated.state;
+      if (shouldCommitExecutionRow) {
+        executionStartCommitted = true;
+        cb.dispatch({ type: 'plan-execution', plan: updated } as any);
+      }
       if (isTerminal) {
         flushPersist();
         return;
@@ -2682,7 +2732,7 @@ export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks
 /**
  * FU-4: shared executor for the auto-approve, manual-approve, and plan-resume paths. Wires the abort controller, builds callbacks (with debounced persistence), runs executePlan, runs finalizePlanWithReviewGate, and dispatches the terminal status. Eliminates the ~60 lines of triplication that lived in dispatch.kern and forced future changes (e.g., new callback hooks, new finalize behavior) to be applied to all three sites.
  */
-// @kern-source: dispatch:2609
+// @kern-source: dispatch:2659
 export async function executeApprovedPlan(approved: CesarPlan, cb: DispatchCallbacks): Promise<void> {
   const executors = buildStepExecutors(cb.ctx);
   const abortController = new AbortController();
@@ -2725,7 +2775,7 @@ export async function executeApprovedPlan(approved: CesarPlan, cb: DispatchCallb
 /**
  * Single source of truth for the post-execution self-review gate. Called from BOTH the plan-task and plan-resume terminal paths so resume cannot bypass the gate or the cycle cap (tribunal fix #4).
  */
-// @kern-source: dispatch:2650
+// @kern-source: dispatch:2700
 export async function finalizePlanWithReviewGate(finalPlan: CesarPlan, executors: Record<string,StepExecutor>, abortSignal: AbortSignal, cb: DispatchCallbacks): Promise<CesarPlan> {
   const MUTATING = new Set(['forge', 'teamforge', 'pipeline', 'agent', 'team-agent', 'delegate', 'self']);
   const planTouchedMutation = finalPlan.steps.some((s: any) => MUTATING.has(s.type) && (s.state === 'done' || s.state === 'failed'));

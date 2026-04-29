@@ -565,12 +565,14 @@ export function handleOutputEvent(event: OutputEvent, state: OutputState, action
           },
         };
       });
-      // Buffer finalized tool-calls only. 'running' events only update
-      // the live progress view above — committing them here would double-
+      // Buffer finalized tool-calls only. Normal 'running' events update
+      // the live progress view above — committing every one would double-
       // count in the group summary (running + done for the same tool).
-      // The group flushes on the next non-tool event OR after a quiet
-      // period so terminal-tool-call turns still render eventually.
-      if (te.status === 'done' || te.status === 'error') {
+      // PlanStep is the exception: a Cesar plan self-step can run for
+      // minutes as a black-box delegate, so we commit a running marker that
+      // Ctrl+E can expand while auto mode is still busy.
+      const isPlanStepRunning = te.status === 'running' && String(te.tool ?? '').toLowerCase() === 'planstep';
+      if (te.status === 'done' || te.status === 'error' || isPlanStepRunning) {
         _pendingToolCalls.push(event);
         schedulePendingFlush(actions);
       }

@@ -107,6 +107,31 @@ describe('CesarPlan state machine', () => {
     expect(updates.at(-1)?.state).toBe('paused');
   });
 
+  it('publishes a running step update before a long executor finishes', async () => {
+    const plan = approveCesarPlan({
+      ...createCesarPlan('task', [makeStep('s1')]),
+      state: 'awaiting_approval' as const,
+    });
+    const updates: CesarPlan[] = [];
+
+    const finalPlan = await executePlan(plan, {
+      self: {
+        execute: async () => ({
+          result: { status: 'success', actualTokens: 0, actualCostUsd: 0, durationMs: 1, output: 'ok' },
+        }),
+      },
+    }, {
+      onStepStart: () => {},
+      onStepDone: () => {},
+      onPlanUpdate: (updated) => updates.push(updated),
+      onBudgetWarning: () => {},
+    });
+
+    expect(updates[0].steps[0].state).toBe('running');
+    expect(finalPlan.steps[0].state).toBe('done');
+    expect(updates.at(-1)?.steps[0].state).toBe('done');
+  });
+
   it('cancels a plan', () => {
     let plan = createCesarPlan('task', [makeStep('s1'), makeStep('s2')]);
     plan = cancelCesarPlan(plan);

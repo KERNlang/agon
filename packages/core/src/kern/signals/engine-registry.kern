@@ -212,3 +212,28 @@ service name=EngineRegistry
       }
       return available[Math.floor(Date.now() / 1000) % available.length];
     >>>
+
+  method name=getFallbackChain params="sourceId:string, taskClass?:string" returns="string[]"
+    doc "Return ranked candidate engines for fallback from sourceId, excluding source itself. Uses Glicko-2 ratings when available; falls back to available order."
+    handler <<<
+      const available = this.availableIds().filter((id: string) => id !== sourceId);
+      if (available.length === 0) return [];
+      try {
+        const { getEngineGlickoRating } = require('../signals/glicko.js');
+        const scored = available.map((id: string) => {
+          const r = getEngineGlickoRating(id, taskClass);
+          return { id, score: r.mu - 2 * r.phi };
+        });
+        scored.sort((a: any, b: any) => b.score - a.score);
+        return scored.map((s: any) => s.id);
+      } catch {
+        return available;
+      }
+    >>>
+
+  method name=getFallbackCandidate params="sourceId:string, taskClass?:string" returns="string|undefined"
+    doc "Top fallback candidate for sourceId, or undefined if none available."
+    handler <<<
+      const chain = this.getFallbackChain(sourceId, taskClass);
+      return chain[0];
+    >>>

@@ -20,6 +20,8 @@ const name=DEFAULT_POLL_INTERVAL_MS type=number export=true
 
 // ── Options shape ─────────────────────────────────────────────────────
 
+type name=FallbackMode values="ask|auto|off"
+
 interface name=TelemetryPollerOptions export=true
   doc "Construction parameters for TelemetryPoller. probe() returns a partial vitals patch — the poller merges it into the existing record and refreshes the heartbeat."
   field name=registry type=EngineRegistry
@@ -27,6 +29,9 @@ interface name=TelemetryPollerOptions export=true
   field name=intervalMs type=number optional=true doc="defaults to DEFAULT_POLL_INTERVAL_MS"
   field name=stallThresholdMs type=number optional=true doc="defaults to STALL_THRESHOLD_MS"
   field name=onFallback type="(engineId:string, vitals:EngineVitals) => void" optional=true doc="invoked once per idle→stalled transition (edge-triggered)"
+  field name=autoFallback type=FallbackMode optional=true doc="auto=immediately dispatch to best candidate, ask=fire onAutoFallback for consent gate, off=disable"
+  field name=onAutoFallback type="(from:string, to:string, reason:string) => Promise<boolean>" optional=true doc="for ask mode: return true to approve fallback"
+  field name=taskClass type=string optional=true doc="passed to registry.getFallbackChain for ranking"
 
 // ── The poller service ────────────────────────────────────────────────
 
@@ -38,11 +43,15 @@ service name=TelemetryPoller export=true
   field name=intervalMs type=number private=true
   field name=stallThresholdMs type=number private=true
   field name=onFallback type="((engineId:string, vitals:EngineVitals) => void)|undefined" private=true
+  field name=autoFallback type=FallbackMode private=true
+  field name=onAutoFallback type="((from:string, to:string, reason:string) => Promise<boolean>)|undefined" private=true
+  field name=taskClass type="string|undefined" private=true
   field name=vitals type="Map<string, EngineVitals>" private=true
   field name=subscribers type="Set<(snapshot: Map<string, EngineVitals>) => void>" private=true
   field name=stalledIds type="Set<string>" private=true
   field name=timer type="ReturnType<typeof setInterval>|undefined" private=true
   field name=tickInFlight type=boolean private=true
+  field name=catchUpTimer type="ReturnType<typeof setTimeout>|undefined" private=true
 
   constructor params="opts:TelemetryPollerOptions"
     handler <<<
@@ -51,11 +60,15 @@ service name=TelemetryPoller export=true
       this.intervalMs = opts.intervalMs ?? DEFAULT_POLL_INTERVAL_MS;
       this.stallThresholdMs = opts.stallThresholdMs ?? STALL_THRESHOLD_MS;
       this.onFallback = opts.onFallback;
+      this.autoFallback = opts.autoFallback ?? 'off';
+      this.onAutoFallback = opts.onAutoFallback;
+      this.taskClass = opts.taskClass;
       this.vitals = new Map();
       this.subscribers = new Set();
       this.stalledIds = new Set();
       this.timer = undefined;
       this.tickInFlight = false;
+      this.catchUpTimer = undefined;
     >>>
 
   method name=start returns=void
@@ -72,6 +85,10 @@ service name=TelemetryPoller export=true
       if (this.timer) {
         clearInterval(this.timer);
         this.timer = undefined;
+      }
+      if (this.catchUpTimer) {
+        clearTimeout(this.catchUpTimer);
+        this.catchUpTimer = undefined;
       }
     >>>
 
@@ -115,6 +132,7 @@ service name=TelemetryPoller export=true
               try { this.onFallback(id, checked); }
               catch { /* fallback handler errors must not break the poll loop */ }
             }
+            void this.handleAutoFallback(id, checked);
           } else if (!isStalled && wasStalled) {
             this.stalledIds.delete(id);
           }
@@ -130,6 +148,14 @@ service name=TelemetryPoller export=true
         this.notify();
       } finally {
         this.tickInFlight = false;
+        // Schedule catch-up tick if any engine is stalled so we recover faster
+        const hasStalled = Array.from(this.vitals.values()).some((v: EngineVitals) => v.state === 'stalled');
+        if (hasStalled && !this.catchUpTimer) {
+          this.catchUpTimer = setTimeout(() => {
+            this.catchUpTimer = undefined;
+            void this.tick();
+          }, Math.max(500, this.intervalMs / 4));
+        }
       }
     >>>
 
@@ -175,6 +201,41 @@ service name=TelemetryPoller export=true
       this.vitals.clear();
       this.stalledIds.clear();
       this.subscribers.clear();
+    >>>
+
+  method name=handleAutoFallback async=true params="engineId:string, vitals:EngineVitals" returns="Promise<void>" private=true
+    doc "If autoFallback is enabled, pick best candidate and either dispatch immediately (auto) or ask via onAutoFallback (ask)."
+    handler <<<
+      if (this.autoFallback === 'off') return;
+      const chain = this.registry.getFallbackChain(engineId, this.taskClass);
+      if (chain.length === 0) return;
+      const candidate = chain[0];
+      const reason = vitals.task ?? 'stalled';
+      if (this.autoFallback === 'auto') {
+        // Immediately mark fallback state on both engines
+        const fromVitals = this.vitals.get(engineId);
+        if (fromVitals) {
+          this.vitals.set(engineId, { ...fromVitals, state: 'fallback' as EngineVitalState, fallbackTo: candidate, fallbackReason: reason });
+        }
+        const toPrev = this.vitals.get(candidate) ?? { engineId: candidate, state: 'idle' as EngineVitalState, lastHeartbeatAt: Date.now() };
+        this.vitals.set(candidate, { ...toPrev, state: 'busy' as EngineVitalState, task: `fallback from ${engineId}` });
+        this.notify();
+        return;
+      }
+      if (this.autoFallback === 'ask' && this.onAutoFallback) {
+        try {
+          const approved = await this.onAutoFallback(engineId, candidate, reason);
+          if (approved) {
+            const fromVitals = this.vitals.get(engineId);
+            if (fromVitals) {
+              this.vitals.set(engineId, { ...fromVitals, state: 'fallback' as EngineVitalState, fallbackTo: candidate, fallbackReason: reason });
+            }
+            const toPrev = this.vitals.get(candidate) ?? { engineId: candidate, state: 'idle' as EngineVitalState, lastHeartbeatAt: Date.now() };
+            this.vitals.set(candidate, { ...toPrev, state: 'busy' as EngineVitalState, task: `fallback from ${engineId}` });
+            this.notify();
+          }
+        } catch { /* consent errors must not break poll loop */ }
+      }
     >>>
 
 // ── Factory ───────────────────────────────────────────────────────────

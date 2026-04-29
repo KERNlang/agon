@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildAgentAutoResumePrompt, buildBrainstormContinuationMessage, buildDelegatedContinuationPrompt, buildReviewAbsorptionPrompt, collectRecentEngineContext, extractExecutionSpec, formatCesarRecoveryStatus, isCesarPlanApprovalInput, isStrongCesarPlanApprovalInput, shouldApprovePendingCesarPlanInput, shouldAutoContinueDelegatedResult, shouldAutoResumeAgentResult } from '../../packages/cli/src/generated/signals/dispatch.js';
+import { askChoiceQuestion, buildAgentAutoResumePrompt, buildBrainstormContinuationMessage, buildDelegatedContinuationPrompt, buildReviewAbsorptionPrompt, collectRecentEngineContext, extractExecutionSpec, formatCesarRecoveryStatus, isCesarPlanApprovalInput, isStrongCesarPlanApprovalInput, shouldApprovePendingCesarPlanInput, shouldAutoContinueDelegatedResult, shouldAutoResumeAgentResult } from '../../packages/cli/src/generated/signals/dispatch.js';
 
 describe('Dispatch routing helpers', () => {
   it('extracts forge fitness commands from conversational input', () => {
@@ -48,6 +48,24 @@ describe('Dispatch routing helpers', () => {
     expect(shouldApprovePendingCesarPlanInput('ok', ctx)).toBe(true);
     expect(shouldApprovePendingCesarPlanInput('ok go', ctx)).toBe(true);
     expect(shouldApprovePendingCesarPlanInput('/approve', ctx)).toBe(false);
+  });
+
+  it('dispatches choice questions with explicit choices and a default', async () => {
+    let event: any = null;
+    const promise = askChoiceQuestion({
+      dispatch: (next: any) => { event = next; },
+    } as any, 'Approve plan?', [
+      { key: 'y', label: 'Approve' },
+      { key: 'n', label: 'Reject' },
+    ], 'y');
+
+    expect(event.type).toBe('question');
+    expect(event.prompt).toBe('Approve plan?');
+    expect(event.choices).toHaveLength(2);
+    expect(event.defaultChoiceKey).toBe('y');
+
+    event.resolve('y');
+    await expect(promise).resolves.toBe('y');
   });
 
   it('formats compact Cesar recovery statuses with log context', () => {

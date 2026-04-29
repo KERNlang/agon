@@ -239,7 +239,7 @@ fn name=pluralizeLines params="count:number" returns=string export=false
   handler <<< return count === 1 ? 'line' : 'lines'; >>>
 
 fn name=isDelegatedCtrlShortcut params="input:string" returns=boolean export=true
-  handler <<< return ['c', 'e', 'j', 'l', 'r', 't', 'y'].includes(input); >>>
+  handler <<< return ['b', 'c', 'e', 'i', 'j', 'l', 'r', 't', 'y'].includes(input); >>>
 
 fn name=shouldAdoptPromptValue params="originalValue:string, pendingEchoValue:string|null" returns=boolean export=true
   handler <<<
@@ -358,6 +358,7 @@ screen name=PromptTextInput target=ink memo=true export=named
               '\x01': 'a',
               '\x03': 'c',
               '\x05': 'e',
+              '\x09': 'i',
               '\x0a': 'j',
               '\x0b': 'k',
               '\x0c': 'l',
@@ -366,6 +367,7 @@ screen name=PromptTextInput target=ink memo=true export=named
               '\x19': 'y',
               '\x15': 'u',
               '\x17': 'w',
+              '\x02': 'b',
             } as Record<string, string>)[input] ?? input
           : input;
         const isReservedCtrlShortcut = key.ctrl && isDelegatedCtrlShortcut(normalizedCtrlInput);

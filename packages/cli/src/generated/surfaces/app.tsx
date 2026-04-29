@@ -6,7 +6,7 @@ import { Box, Static, Text, render } from 'ink';
 // ── Core ───────────────────────────────────────────────
 import { ScrollBox, AlternateScreen } from '@kernlang/terminal/runtime';
 
-import { EngineRegistry, loadConfig, ensureAgonHome, ensureCurrentWorkspace, startChatSession, getRatings, getActiveWorkspace, RUNS_DIR, extractImagesFromInput, resolveWorkingDir, currentBranch, configSet, createCesarMemory, modelEntryToEngineDef, appendMessage, getAgonHome, tracker } from '@agon/core';
+import { EngineRegistry, loadConfig, ensureAgonHome, ensureCurrentWorkspace, startChatSession, getRatings, getActiveWorkspace, RUNS_DIR, extractImagesFromInput, resolveWorkingDir, currentBranch, configSet, createCesarMemory, modelEntryToEngineDef, appendMessage, getAgonHome, tracker, planCostEstimator, cancelCesarPlan, saveCesarPlan, listCesarPlans } from '@agon/core';
 
 import type { Plan, ChatSession, Skill, PersistentSession, ImageAttachment } from '@agon/core';
 
@@ -74,7 +74,7 @@ import { PlanProposalView } from '../blocks/plan-view.js';
 
 import { saveCesarConversationSnapshot } from '../cesar/session.js';
 
-import { SpinnerBlock, StatusBar, CesarStatusStrip, BackgroundJobRail, StatusDashboard, ExecutionRail } from '../../generated/surfaces/status.js';
+import { SpinnerBlock, StatusBar, CesarStatusStrip, BackgroundJobRail, StatusDashboard, ExecutionRailPanel } from '../../generated/surfaces/status.js';
 
 import { EnginePicker, ModelPicker, ReviewBlock, CesarPicker } from '../../generated/blocks/controls.js';
 
@@ -355,14 +355,14 @@ export function App() {
       }
     };
   }, []);
-  const [selectionMode, _setSelectionModeRaw] = useState<boolean>(false);
-  const setSelectionMode = useMemo(() => __inkSafe(_setSelectionModeRaw), [_setSelectionModeRaw]);
   const [nativeStaticEpoch, _setNativeStaticEpochRaw] = useState<number>(0);
   const setNativeStaticEpoch = useMemo(() => __inkSafe(_setNativeStaticEpochRaw), [_setNativeStaticEpochRaw]);
   const [nativeArchiveCount, _setNativeArchiveCountRaw] = useState<number>(0);
   const setNativeArchiveCount = useMemo(() => __inkSafe(_setNativeArchiveCountRaw), [_setNativeArchiveCountRaw]);
   const [fileRailOpen, _setFileRailOpenRaw] = useState<boolean>(false);
   const setFileRailOpen = useMemo(() => __inkSafe(_setFileRailOpenRaw), [_setFileRailOpenRaw]);
+  const [executionRailOpen, _setExecutionRailOpenRaw] = useState<boolean>(false);
+  const setExecutionRailOpen = useMemo(() => __inkSafe(_setExecutionRailOpenRaw), [_setExecutionRailOpenRaw]);
   const [fileRailVersion, _setFileRailVersionRaw] = useState<number>(0);
   const setFileRailVersion = useMemo(() => __inkSafe(_setFileRailVersionRaw), [_setFileRailVersionRaw]);
   const [fileRailSelectedIdx, _setFileRailSelectedIdxRaw] = useState<number>(0);
@@ -736,11 +736,18 @@ export function App() {
     clearThinkingBuffer();
     setQuestionState(null);
     setQuestionAnswer('');
+    setPendingPlanProposal(null);
     setSlashPickerOpen(false);
     setEnginePickerOpen(false);
     setModelPickerOpen(false);
     setCesarPickerOpen(false);
     setReviewEvent(null);
+    const pendingPlan = activePlanRef.current;
+    if (pendingPlan && ['planning', 'awaiting_approval'].includes(String(pendingPlan.state ?? ''))) {
+      try { saveCesarPlan(cancelCesarPlan(pendingPlan)); } catch (_err) {}
+      activePlanRef.current = null;
+      setActivePlan(null);
+    }
 
     if (replState !== 'idle') {
       if (message) dispatch({ type: 'warning', message } as any);
@@ -1135,21 +1142,6 @@ export function App() {
     dispatch({ type: 'info', message: 'Drafted failed-tool retry in the composer. Edit it, then press Enter.' } as any);
   }, [outputBlocks,dispatch]);
 
-  const toggleSelectionMode = useCallback(() => {
-    if (terminalMode !== 'fullscreen') {
-      dispatch({ type: 'info', message: 'Native scrollback is active — select and copy directly in your terminal.' } as any);
-      return;
-    }
-    const next = !selectionMode;
-    setSelectionMode(next);
-    dispatch({
-      type: 'info',
-      message: next
-        ? 'Selection mode on — drag to select, Cmd+C to copy. Ctrl+G again for wheel scroll.'
-        : 'Wheel scroll on — mouse captured. Ctrl+G to select/copy with mouse again.',
-    } as any);
-  }, [selectionMode,dispatch,terminalMode]);
-
   const handleSlashSelect = useCallback((cmd:string) => {
     setPlanModeQueued(false);
     setSlashPickerOpen(false);
@@ -1190,6 +1182,11 @@ export function App() {
   const handleComposerCtrlShortcut = useCallback((shortcut:string) => {
     nestedCtrlShortcutRef.current = { key: shortcut, at: Date.now() };
     switch (shortcut) {
+      case 'b':
+        ctrlKeyHandledRef.current = true;
+        setExecutionRailOpen(false);
+        setFileRailOpen((prev: boolean) => !prev);
+        return;
       case 'c':
         ctrlKeyHandledRef.current = true;
         handleCancelOrExit();
@@ -1197,6 +1194,12 @@ export function App() {
       case 'e':
         ctrlKeyHandledRef.current = true;
         setToolOutputExpanded((prev: boolean) => !prev);
+        return;
+      case 'i':
+        ctrlKeyHandledRef.current = true;
+        setFileRailOpen(false);
+        setFileRailExpandedPath(null);
+        setExecutionRailOpen((prev: boolean) => !prev);
         return;
       case 'o':
         ctrlKeyHandledRef.current = true;
@@ -1239,6 +1242,8 @@ export function App() {
           '\x14': 't',
           '\x15': 'u',
           '\x17': 'w',
+          '\x02': 'b',
+          '\x09': 'i',
         } as Record<string, string>)[input] ?? input
       : input;
     const textInputOwnsReservedShortcut = !statusDashboardOpen && !modelPickerOpen && !cesarPickerOpen && !enginePickerOpen && !reviewEvent && !toolDetailEvent && !slashPickerOpen && (!questionState || !questionState.choices);
@@ -1303,6 +1308,8 @@ export function App() {
           '\x14': 't',
           '\x15': 'u',
           '\x17': 'w',
+          '\x02': 'b',
+          '\x09': 'i',
         } as Record<string, string>)[input] ?? input
       : input;
     if (key.ctrl && normalizedCtrlInput) {
@@ -1326,6 +1333,7 @@ export function App() {
       engineIds: availableEngines,
       fileRailFocused: fileRailOpen && inputValue.trim().length === 0,
       fileRailExpanded: fileRailExpandedPath !== null,
+      executionRailFocused: executionRailOpen && inputValue.trim().length === 0,
     });
 
     switch (action.type) {
@@ -1359,8 +1367,6 @@ export function App() {
       case 'toggleToolExpand':
         ctrlKeyHandledRef.current = true;
         setToolOutputExpanded((prev: boolean) => !prev); return;
-      case 'toggleSelectionMode':
-        toggleSelectionMode(); return;
       case 'openToolDetail':
         openLatestToolDetail(); return;
       case 'retryFailedTool':
@@ -1368,7 +1374,13 @@ export function App() {
       case 'openResults':
         openResultsPager(); return;
       case 'toggleFileRail':
+        setExecutionRailOpen(false);
         setFileRailOpen((prev: boolean) => !prev);
+        return;
+      case 'toggleExecutionRail':
+        setFileRailOpen(false);
+        setFileRailExpandedPath(null);
+        setExecutionRailOpen((prev: boolean) => !prev);
         return;
       case 'fileRailSelectPrev': {
         const files = listFiles();
@@ -1393,6 +1405,9 @@ export function App() {
       case 'fileRailClose':
         setFileRailOpen(false);
         setFileRailExpandedPath(null);
+        return;
+      case 'executionRailClose':
+        setExecutionRailOpen(false);
         return;
       case 'unqueuePlan':
         setPlanModeQueued(false); return;
@@ -1422,7 +1437,7 @@ export function App() {
         handleCancelOrExit();
         return;
     }
-  }, [modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,autoModeQueued,activePlan,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry,toggleSelectionMode,startupOnly,terminalMode,setPersistentAutoMode,statusDashboardOpen]);
+  }, [modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,autoModeQueued,activePlan,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry,startupOnly,terminalMode,setPersistentAutoMode,statusDashboardOpen]);
 
   useEffect(() => {
     initExtensions(workspacePath, commandRegistry, registry, eventBus).then(({ extensions, skills: extSkills, systemPromptFragments }) => {
@@ -1470,22 +1485,6 @@ export function App() {
   useEffect(() => {
     lastReviewResultRef.current = lastReviewResult;
   }, [lastReviewResult]);
-
-  useEffect(() => {
-    if (!selectionMode && !startupOnly) return;
-    if (
-      mouseSelectionRef.current.anchorRow === null
-      && mouseSelectionRef.current.anchorCol === null
-      && mouseSelectionRef.current.focusRow === null
-      && mouseSelectionRef.current.focusCol === null
-      && mouseSelectionRef.current.active === false
-      && mouseSelectionRef.current.moved === false
-    ) {
-      return;
-    }
-    mouseSelectionRef.current = { anchorRow: null, anchorCol: null, focusRow: null, focusCol: null, active: false, moved: false };
-    setMouseSelection({ anchorRow: null, anchorCol: null, focusRow: null, focusCol: null, active: false, moved: false });
-  }, [selectionMode,startupOnly]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -1563,6 +1562,37 @@ export function App() {
   }, [[]]);
 
   useEffect(() => {
+    try {
+      const plans = listCesarPlans();
+      const paused = plans.find((p: any) => p.state === 'paused' || p.state === 'running');
+      if (!paused) return;
+      const done = paused.steps.filter((s: any) => s.state === 'done').length;
+      const failed = paused.steps.find((s: any) => s.state === 'failed');
+      const remaining = paused.steps.length - done;
+      const lines = [
+        `Paused plan detected: ${paused.intent}`,
+        `${done}/${paused.steps.length} steps done · ${remaining} remaining`,
+      ];
+      if (failed) lines.push(`Failed step: ${failed.description}${failed.result?.error ? ` — ${failed.result.error}` : ''}`);
+      dispatch({ type: 'info', message: lines.join('\n') } as any);
+      setQuestionState({
+        prompt: 'Resume the paused plan?',
+        choices: [
+          { key: '1', label: 'Resume', color: '#4ade80' },
+          { key: '2', label: 'Dismiss', color: '#9ca3af' },
+        ],
+        resolve: (answer: string) => {
+          const trimmed = String(answer ?? '').trim().toLowerCase();
+          if (trimmed === '1' || trimmed === 'y' || trimmed === 'resume') {
+            dispatch({ type: 'info', message: 'Resuming paused plan…' } as any);
+            handleSubmit('/plan resume');
+          }
+        },
+      });
+    } catch { /* ignore plan detection errors on startup */ }
+  }, []);
+
+  useEffect(() => {
     const initialConfig = loadConfig();
     if ((initialConfig as any).cesarAutoModePrompted === true) return;
     setQuestionState({
@@ -1586,8 +1616,8 @@ export function App() {
 
   useEffect(() => {
     if (!process.stdin.isTTY || !process.stdout.isTTY) return;
-    // Bracketed paste only. Fullscreen mode handles mouse tracking through
-    // <AlternateScreen mouseTracking={!selectionMode}>.
+    // Bracketed paste only. Mouse tracking is not enabled; selection belongs
+    // to the terminal scrollback.
     process.stdout.write('\x1b[?2004h');
     const onResume = () => {
       process.stdout.write('\x1b[?2004h');
@@ -1686,21 +1716,29 @@ export function App() {
       clearThinkingBuffer();
       setQuestionState(null);
       setQuestionAnswer('');
+      setPendingPlanProposal(null);
       setSlashPickerOpen(false);
       setEnginePickerOpen(false);
       setModelPickerOpen(false);
       setCesarPickerOpen(false);
       setReviewEvent(null);
       setToolDetailEvent(null);
+      const pendingPlan = activePlanRef.current;
+      if (pendingPlan && ['planning', 'awaiting_approval'].includes(String(pendingPlan.state ?? ''))) {
+        try { saveCesarPlan(cancelCesarPlan(pendingPlan)); } catch (_err) {}
+        activePlanRef.current = null;
+        setActivePlan(null);
+      }
       setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state);
     };
   }, [setActiveAbort,outputActions]);
 
   useStableInput(handleKeyboardInput);
-  const showFileRail = fileRailOpen;
+  const showExecutionRail = executionRailOpen;
+  const showFileRail = fileRailOpen && !showExecutionRail;
   const fileRailFiles = useMemo(() => listFiles(), [fileRailVersion]);
-  const fileRailWidth = fileRailWidthForTerminal(termWidth, true);
-  const fileRailMaxRows = fileRailMaxRowsForTerminal(termHeight, terminalMode, true);
+  const sideRailWidth = fileRailWidthForTerminal(termWidth, true);
+  const sideRailMaxRows = fileRailMaxRowsForTerminal(termHeight, terminalMode, true);
   // Stable element array — without useMemo, every keystroke rebuilds N
   // React elements even though `displayRows` only changes on stream/mode.
   // ScrollBox also does React.Children.toArray on children; a stable ref
@@ -1717,18 +1755,6 @@ export function App() {
   <Box flexDirection="column" flexShrink={0}>
     <ChromeBar mode={mode} cwdLabel={resolveWorkingDir().split('/').pop() ?? ''} engineCount={availableEngines.length} replState={replState} runningJobs={runningJobs} />
     <BackgroundJobRail jobs={runningJobs} />
-    <ExecutionRail
-      spinner={liveSpinner}
-      engines={liveProgress}
-      activePlanState={activePlan?.state ?? null}
-      activePlan={activePlan}
-      lastTool={latestToolEvent}
-      recentFallbacks={recentFallbacks}
-      stats={executionRailStats}
-      toolOutputExpanded={toolOutputExpanded}
-      startTime={chatStartTimeRef.current || 0}
-      isActive={replState !== 'idle' || runningJobs.length > 0}
-    />
     {startupUseDashboardView && (displayRows.length === 0 || terminalMode === 'native') && (
       <Box flexDirection="column">
         <DashboardView event={outputBlocks[0]?.event as any} />
@@ -1772,9 +1798,23 @@ export function App() {
         )}
       </>
     )}
-    {pendingPlanProposal && (
-      <PlanProposalView plan={(pendingPlanProposal as any).plan} markdown={(pendingPlanProposal as any).markdown} />
-    )}
+    {pendingPlanProposal && (() => {
+      const plan = (pendingPlanProposal as any).plan;
+      const steps = plan?.steps ?? [];
+      const stepEsts = steps.map((s: any) => {
+        const e = planCostEstimator.estimate(s.type, s.engines ?? (s.engine ? [s.engine] : []));
+        return { id: s.id, tokens: e.tokens, costUsd: e.costUsd };
+      });
+      const totalTokens = stepEsts.reduce((sum: number, e: any) => sum + e.tokens, 0);
+      const totalCostUsd = stepEsts.reduce((sum: number, e: any) => sum + e.costUsd, 0);
+      return (
+        <PlanProposalView
+          plan={plan}
+          markdown={(pendingPlanProposal as any).markdown}
+          costEstimate={{ totalTokens, totalCostUsd, steps: stepEsts }}
+        />
+      );
+    })()}
     {toolDetailView && (
       <ToolDetailBlock
         title={toolDetailView.title}
@@ -1912,7 +1952,7 @@ export function App() {
           const _cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
           return (<>
             <CesarStatusStrip cesarId={_cesarId} confidence={cesarConfidence} spinner={liveSpinner} engines={liveProgress} startTime={chatStartTimeRef.current || 0} streamSnippet={streamSnippet} isActive={replState !== 'idle' || runningJobs.length > 0} planModeQueued={planModeQueued} autoModeQueued={autoModeQueued} activePlanState={activePlan?.state ?? null} activePlan={activePlan} scoreboard={null} rationale={null} />
-            {mode === 'chat' && <StatusBar cesarId={statusStats.cesarId} chatMessageCount={statusStats.chatMessageCount} totalTokens={statusStats.totalTokens} totalCostUsd={statusStats.totalCostUsd} cwd={statusCwd} branch={statusBranch} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} autoModeQueued={autoModeQueued} isActive={replState !== 'idle'} fullscreenEnabled={terminalMode === 'fullscreen'} selectionMode={terminalMode === 'fullscreen' ? selectionMode : undefined} telemetryVitals={telemetryVitals} />}
+            {mode === 'chat' && <StatusBar cesarId={statusStats.cesarId} chatMessageCount={statusStats.chatMessageCount} totalTokens={statusStats.totalTokens} totalCostUsd={statusStats.totalCostUsd} cwd={statusCwd} branch={statusBranch} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} autoModeQueued={autoModeQueued} isActive={replState !== 'idle'} fullscreenEnabled={terminalMode === 'fullscreen'} telemetryVitals={telemetryVitals} />}
           </>);
         })()}
       </Box>
@@ -1932,14 +1972,31 @@ export function App() {
         {lowerPanel}
       </Box>
       {showFileRail && (
-        <FileRail files={fileRailFiles} maxRows={fileRailMaxRows} width={fileRailWidth} focused={fileRailOpen && inputValue.trim().length === 0} selectedIndex={fileRailSelectedIdx} expandedPath={fileRailExpandedPath} autoExpandSelected={fileRailOpen && inputValue.trim().length === 0} />
+        <FileRail files={fileRailFiles} maxRows={sideRailMaxRows} width={sideRailWidth} focused={fileRailOpen && inputValue.trim().length === 0} selectedIndex={fileRailSelectedIdx} expandedPath={fileRailExpandedPath} autoExpandSelected={fileRailOpen && inputValue.trim().length === 0} />
+      )}
+      {showExecutionRail && (
+        <ExecutionRailPanel
+          spinner={liveSpinner}
+          engines={liveProgress}
+          activePlanState={activePlan?.state ?? null}
+          activePlan={activePlan}
+          lastTool={latestToolEvent}
+          recentFallbacks={recentFallbacks}
+          stats={executionRailStats}
+          toolOutputExpanded={toolOutputExpanded}
+          startTime={chatStartTimeRef.current || 0}
+          isActive={replState !== 'idle' || runningJobs.length > 0}
+          width={sideRailWidth}
+          maxRows={sideRailMaxRows}
+          focused={executionRailOpen && inputValue.trim().length === 0}
+        />
       )}
     </Box>
   </>
   );
 
   return (
-  <AlternateScreen mouseTracking={!selectionMode}>
+  <AlternateScreen>
   <Box flexDirection="column" flexGrow={1} width={termWidth} height={termHeight}>
   <Box flexDirection="row" flexGrow={1} width="100%">
   <Box flexDirection="column" flexGrow={1} minWidth={0} overflowX="hidden">
@@ -1949,7 +2006,24 @@ export function App() {
   {lowerPanel}
   </Box>
   {showFileRail && (
-    <FileRail files={fileRailFiles} maxRows={fileRailMaxRows} width={fileRailWidth} focused={fileRailOpen && inputValue.trim().length === 0} selectedIndex={fileRailSelectedIdx} expandedPath={fileRailExpandedPath} autoExpandSelected={fileRailOpen && inputValue.trim().length === 0} />
+    <FileRail files={fileRailFiles} maxRows={sideRailMaxRows} width={sideRailWidth} focused={fileRailOpen && inputValue.trim().length === 0} selectedIndex={fileRailSelectedIdx} expandedPath={fileRailExpandedPath} autoExpandSelected={fileRailOpen && inputValue.trim().length === 0} />
+  )}
+  {showExecutionRail && (
+    <ExecutionRailPanel
+      spinner={liveSpinner}
+      engines={liveProgress}
+      activePlanState={activePlan?.state ?? null}
+      activePlan={activePlan}
+      lastTool={latestToolEvent}
+      recentFallbacks={recentFallbacks}
+      stats={executionRailStats}
+      toolOutputExpanded={toolOutputExpanded}
+      startTime={chatStartTimeRef.current || 0}
+      isActive={replState !== 'idle' || runningJobs.length > 0}
+      width={sideRailWidth}
+      maxRows={sideRailMaxRows}
+      focused={executionRailOpen && inputValue.trim().length === 0}
+    />
   )}
   </Box>
   </Box>
@@ -4454,7 +4528,7 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
   return rows;
 }
 
-// @kern-source: app:4320
+// @kern-source: app:4395
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

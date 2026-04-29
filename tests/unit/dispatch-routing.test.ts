@@ -131,6 +131,15 @@ describe('Dispatch routing helpers', () => {
     expect(shouldApprovePendingCesarPlanInput('/approve', ctx)).toBe(false);
   });
 
+  it('does not approve stale saved plans from natural text without a live pending plan', () => {
+    const ctx = {
+      activePlan: null,
+      cesar: {},
+    } as any;
+
+    expect(shouldApprovePendingCesarPlanInput('ok go', ctx)).toBe(false);
+  });
+
   it('dispatches choice questions with explicit numeric choices and a default', async () => {
     let event: any = null;
     const promise = askChoiceQuestion({

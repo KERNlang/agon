@@ -27,6 +27,7 @@ interface name=KeyboardCtx
   field name=engineIds type="string[]"
   field name=fileRailFocused type=boolean
   field name=fileRailExpanded type=boolean
+  field name=executionRailFocused type=boolean
 
 union name=KeyboardAction
   variant name=none
@@ -42,15 +43,16 @@ union name=KeyboardAction
   variant name=submit
     field name=value type=string
   variant name=toggleToolExpand
-  variant name=toggleSelectionMode
   variant name=openToolDetail
   variant name=retryFailedTool
   variant name=openResults
   variant name=toggleFileRail
+  variant name=toggleExecutionRail
   variant name=fileRailSelectPrev
   variant name=fileRailSelectNext
   variant name=fileRailToggleExpand
   variant name=fileRailClose
+  variant name=executionRailClose
   variant name=closeSlash
   variant name=closeEnginePicker
   variant name=cancelQuestion
@@ -83,6 +85,7 @@ fn name=resolveKeyboardInput params="ctx:KeyboardCtx" returns="KeyboardAction"
           '\x19': 'y',
           '\x07': 'g',
           '\x02': 'b',
+          '\x09': 'i',
         } as Record<string, string>)[input] ?? input
       : input;
     const delegatedCtrlShortcuts = new Set(['e', 'j', 'l', 'o', 'r', 'y']);
@@ -134,6 +137,10 @@ fn name=resolveKeyboardInput params="ctx:KeyboardCtx" returns="KeyboardAction"
       return { type: 'toggleAutoQueued' };
     }
 
+    // Ctrl+I: toggle live execution rail. In terminals that report Ctrl+I
+    // as Tab with key.ctrl set, this must run before the plain Tab handler.
+    if (key.ctrl && normalizedCtrlInput === 'i') return { type: 'toggleExecutionRail' };
+
     // Shift+Tab: queue auto mode
     if (isShiftTab && !ctx.slashPickerOpen && !ctx.enginePickerOpen && !ctx.questionState && !ctx.reviewEventOpen) {
       if (canQueueMode) {
@@ -169,6 +176,8 @@ fn name=resolveKeyboardInput params="ctx:KeyboardCtx" returns="KeyboardAction"
       }
     }
 
+    if (ctx.executionRailFocused && key.escape) return { type: 'executionRailClose' };
+
     // Scroll keys move HistoryView's sliced window forward/back — only
     // meaningful in fullscreen (alt-screen) mode. In native mode the
     // terminal's own scrollback owns the scroll UI; the app doesn't slice
@@ -180,9 +189,6 @@ fn name=resolveKeyboardInput params="ctx:KeyboardCtx" returns="KeyboardAction"
 
     // Ctrl+E: toggle tool output expansion
     if (key.ctrl && normalizedCtrlInput === 'e') return { type: 'toggleToolExpand' };
-
-    // Ctrl+G: toggle mouse selection mode
-    if (key.ctrl && normalizedCtrlInput === 'g') return { type: 'toggleSelectionMode' };
 
     // Ctrl+O: open focused tool detail view
     if (key.ctrl && normalizedCtrlInput === 'o') return { type: 'openToolDetail' };

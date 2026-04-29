@@ -34,6 +34,16 @@ type Options = {
   isActive?: boolean;
 };
 
+type BracketedPasteSegment = {
+  kind: 'keys' | 'paste';
+  value: string;
+};
+
+export type BracketedPasteState = {
+  active: boolean;
+  buffer: string;
+};
+
 const metaKeyCodeRe = /^(?:\x1b)([a-zA-Z0-9])$/;
 const fnKeyRe = /^(?:\x1b+)(O|N|\[|\[\[)(?:(\d+)(?:;(\d+))?([~^$])|(?:1;)?(\d+)?([a-zA-Z]))/;
 const keyName: Record<string, string> = {
@@ -107,6 +117,8 @@ const keyName: Record<string, string> = {
   '[Z': 'tab',
 };
 const nonAlphanumericKeys = [...Object.values(keyName), 'backspace'];
+const pasteStartMarkers = ['\x1b[200~', '[200~'];
+const pasteEndMarkers = ['\x1b[201~', '[201~'];
 
 function isShiftKey(code: string): boolean {
   return ['[a', '[b', '[c', '[d', '[e', '[2$', '[3$', '[5$', '[6$', '[7$', '[8$', '[Z'].includes(code);
@@ -192,6 +204,63 @@ function parseKeypress(value: string | Buffer = ''): ParsedKeypress {
   return key;
 }
 
+function findMarker(value: string, markers: string[], fromIndex: number): { index: number; marker: string } | null {
+  let best: { index: number; marker: string } | null = null;
+  for (const marker of markers) {
+    const index = value.indexOf(marker, fromIndex);
+    if (index === -1) continue;
+    if (!best || index < best.index || (index === best.index && marker.length > best.marker.length)) {
+      best = { index, marker };
+    }
+  }
+  return best;
+}
+
+export function splitBracketedPasteInput(
+  state: BracketedPasteState,
+  chunk: string,
+): { state: BracketedPasteState; segments: BracketedPasteSegment[] } {
+  const segments: BracketedPasteSegment[] = [];
+  let active = state.active;
+  let buffer = state.buffer;
+  let index = 0;
+
+  while (index < chunk.length) {
+    if (!active) {
+      const start = findMarker(chunk, pasteStartMarkers, index);
+      if (!start) {
+        const value = chunk.slice(index);
+        if (value) segments.push({ kind: 'keys', value });
+        break;
+      }
+
+      const before = chunk.slice(index, start.index);
+      if (before) segments.push({ kind: 'keys', value: before });
+      active = true;
+      buffer = '';
+      index = start.index + start.marker.length;
+      continue;
+    }
+
+    const end = findMarker(chunk, pasteEndMarkers, index);
+    if (!end) {
+      buffer += chunk.slice(index);
+      break;
+    }
+
+    const pasted = buffer + chunk.slice(index, end.index);
+    if (pasted) segments.push({ kind: 'paste', value: pasted });
+    buffer = '';
+    active = false;
+    index = end.index + end.marker.length;
+  }
+
+  return {
+    state: { active, buffer },
+    segments,
+  };
+}
+
 type StdinContext = ReturnType<typeof useStdin> & {
   internal_exitOnCtrlC?: boolean;
   internal_eventEmitter?: {
@@ -204,6 +273,7 @@ export function useStableInput(inputHandler: Handler, options: Options = {}) {
   const { setRawMode, isRawModeSupported, internal_exitOnCtrlC, internal_eventEmitter } = useStdin() as StdinContext;
   const handlerRef = useRef(inputHandler);
   const isActiveRef = useRef(options.isActive !== false);
+  const pasteStateRef = useRef<BracketedPasteState>({ active: false, buffer: '' });
 
   useLayoutEffect(() => {
     handlerRef.current = inputHandler;
@@ -225,8 +295,8 @@ export function useStableInput(inputHandler: Handler, options: Options = {}) {
   useEffect(() => {
     if (!internal_eventEmitter) return;
 
-    const handleData = (data: string) => {
-      if (!isActiveRef.current) return;
+    const handleKeyData = (data: string) => {
+      if (!data) return;
 
       const keypress = parseKeypress(data);
       const key: Key = {
@@ -254,6 +324,21 @@ export function useStableInput(inputHandler: Handler, options: Options = {}) {
       if ((input === 'c' && key.ctrl) && internal_exitOnCtrlC) return;
 
       handlerRef.current(input, key);
+    };
+
+    const handleData = (data: string) => {
+      if (!isActiveRef.current) return;
+
+      const split = splitBracketedPasteInput(pasteStateRef.current, data);
+      pasteStateRef.current = split.state;
+
+      for (const segment of split.segments) {
+        if (segment.kind === 'paste') {
+          handlerRef.current(segment.value, {});
+        } else {
+          handleKeyData(segment.value);
+        }
+      }
     };
 
     internal_eventEmitter.on('input', handleData);

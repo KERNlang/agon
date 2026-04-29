@@ -126,6 +126,9 @@ const name=CODE_TASK_PATTERN type=RegExp
 const name=CODE_ARTIFACT_PATTERN type=RegExp
   handler <<< /(?:at \w+.*:\d+|\.[tj]sx?\b|\.[a-z]{2,4}:\d+|^[+-]{3}\s)/m >>>
 
+const name=AGENT_TRIGGER_PATTERN type=RegExp
+  handler <<< /^(?:agent(?:\s+mode)?|autonomous(?:\s+agent)?|run\s+agent)\s+([\s\S]+)$/i >>>
+
 fn name=classifyTask params="input:string" returns="'code'|'question'|'ambiguous'"
   handler <<<
     if (QUESTION_PATTERN.test(input)) return 'question';
@@ -148,6 +151,15 @@ fn name=parseForgeInput params="input:string" returns=Intent export=false
       ? cleaned.replace(FITNESS_PATTERN, '').trim()
       : cleaned;
     return { type: 'forge', task, fitnessCmd, hardened } as Intent;
+  >>>
+
+fn name=parseAgentShortcut params="input:string" returns="Intent|null" export=false
+  handler <<<
+    const match = input.match(AGENT_TRIGGER_PATTERN);
+    if (!match) return null;
+    const task = (match[1] ?? '').trim();
+    if (!task) return null;
+    return { type: 'agent', input: task } as Intent;
   >>>
 
 fn name=splitReviewArgs params="input:string" returns="string[]" export=false
@@ -507,6 +519,9 @@ fn name=detectIntent params="raw:string, commandRegistry?:any" returns=Intent
 
     if (EXIT_KEYWORDS.test(input)) return { type: 'exit' } as Intent;
     if (HELP_KEYWORDS.test(input)) return { type: 'help' } as Intent;
+
+    const agentShortcut = parseAgentShortcut(input);
+    if (agentShortcut) return agentShortcut;
 
     const reviewShortcut = parseReviewShortcut(input);
     if (reviewShortcut) return reviewShortcut;

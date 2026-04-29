@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { CommandRegistry } from '../../packages/core/src/command-registry.js';
+import { registerBuiltinCommands } from '../../packages/core/src/builtin-commands.js';
 
 describe('CommandRegistry', () => {
   it('registers and retrieves a command', () => {
@@ -93,5 +94,17 @@ describe('CommandRegistry', () => {
     reg.register({ definition: { name: 'x', description: '', category: 'test' }, parseArgs: () => ({}), execute: async () => ({ handled: true, ranAsJob: false }) });
     reg.register({ definition: { name: 'y', description: '', category: 'test' }, parseArgs: () => ({}), execute: async () => ({ handled: true, ranAsJob: false }) });
     expect(reg.names()).toEqual(expect.arrayContaining(['x', 'y']));
+  });
+
+  it('registers autonomous agent commands in builtin metadata', () => {
+    const reg = new CommandRegistry();
+    registerBuiltinCommands(reg);
+
+    expect(reg.has('agent')).toBe(true);
+    expect(reg.has('agent-solo')).toBe(true);
+    expect(reg.has('team-agent')).toBe(true);
+    expect(reg.has('speculate')).toBe(true);
+    expect(reg.has('auto')).toBe(true);
+    expect(reg.has('autonomous')).toBe(true);
   });
 });

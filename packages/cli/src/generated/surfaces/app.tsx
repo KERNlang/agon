@@ -721,6 +721,7 @@ export function App() {
     }
 
     if (justPastedRef.current) {
+      inputValueRef.current = nextValue;
       setInputValue(nextValue);
       return;
     }
@@ -729,6 +730,7 @@ export function App() {
     const looksLikePaste = value !== nextValue || change.inserted.length > 1;
 
     if (!looksLikePaste || !change.inserted) {
+      inputValueRef.current = nextValue;
       setInputValue(nextValue);
       return;
     }
@@ -739,6 +741,7 @@ export function App() {
     pasteCountRef.current += 1;
     const result = processPasteContent(change.inserted, pasteCountRef.current);
     if (result.type === 'empty') {
+      inputValueRef.current = nextValue;
       setInputValue(nextValue);
       return;
     }
@@ -749,6 +752,7 @@ export function App() {
 
     const replacement = result.type === 'stored' ? result.placeholder : result.content;
     const updatedValue = nextValue.slice(0, change.start) + replacement + nextValue.slice(change.start + change.inserted.length);
+    inputValueRef.current = updatedValue;
     setInputValue(updatedValue);
   }, [slashPickerOpen,enginePickerOpen,modelPickerOpen,questionState,planModeQueued,autoModeQueued]);
 
@@ -765,6 +769,7 @@ export function App() {
     input = expandPastePlaceholders(input, pasteHashesRef.current);
     pasteHashesRef.current.clear();
     pasteCountRef.current = 0;
+    inputValueRef.current = '';
     setInputValue(''); setInputHistory((prev: string[]) => [...prev, input]); setHistoryIndex(-1);
     // /btw <question> — side-channel question during active dispatch
     const btwLower = input.trim().toLowerCase();
@@ -3855,7 +3860,7 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
   return rows;
 }
 
-// @kern-source: app:3748
+// @kern-source: app:3753
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

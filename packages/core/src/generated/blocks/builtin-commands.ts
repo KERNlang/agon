@@ -24,6 +24,10 @@ export function registerBuiltinCommands(registry: CommandRegistry): void {
 
     // Execution
     { name: 'build',      desc: '<task>                   — agent builds in cwd (reads/edits/tests)', category: 'execution' },
+    { name: 'agent',      desc: '<task>                   — autonomous agent loop (solo/shadow/team auto-routed)', category: 'execution' },
+    { name: 'agent-solo', desc: '<task>                   — force solo agent mode, no shadow worker', category: 'execution' },
+    { name: 'team-agent', desc: '<task>                   — autonomous team agent loop', category: 'execution' },
+    { name: 'speculate',  desc: '<task>                   — parallel speculative agents in worktrees', category: 'execution' },
     { name: 'review',     desc: '[with <engine>] [<target>] — code review (uncommitted|branch:NAME|commit:SHA)', category: 'execution', aliases: ['cr'] },
     { name: 'pipeline',   desc: '<task> [test with <cmd>]  — build→review→fix loop', category: 'execution' },
     { name: 'run',         desc: '<cmd>                    — run shell command inline', category: 'execution' },
@@ -33,6 +37,7 @@ export function registerBuiltinCommands(registry: CommandRegistry): void {
 
     // Planning
     { name: 'plan',      desc: '<task> or no args    — plan mode or show plan', category: 'planning' },
+    { name: 'auto',      desc: '<task>                   — run one task with autonomous mode enabled', category: 'planning', aliases: ['autonomous'] },
     { name: 'plans',     desc: '                        — list recent plans', category: 'planning' },
     { name: 'approve',   desc: '                        — approve current plan', category: 'planning' },
     { name: 'retry',     desc: '                        — retry failed plan step', category: 'planning' },

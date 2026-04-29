@@ -132,6 +132,9 @@ export const CODE_TASK_PATTERN: RegExp = /^(fix|add|implement|refactor|debug|cre
 export const CODE_ARTIFACT_PATTERN: RegExp = /(?:at \w+.*:\d+|\.[tj]sx?\b|\.[a-z]{2,4}:\d+|^[+-]{3}\s)/m;
 
 // @kern-source: intent:129
+export const AGENT_TRIGGER_PATTERN: RegExp = /^(?:agent(?:\s+mode)?|autonomous(?:\s+agent)?|run\s+agent)\s+([\s\S]+)$/i;
+
+// @kern-source: intent:132
 export function classifyTask(input: string): 'code'|'question'|'ambiguous' {
   if (QUESTION_PATTERN.test(input)) return 'question';
   if (CODE_TASK_PATTERN.test(input)) return 'code';
@@ -139,7 +142,7 @@ export function classifyTask(input: string): 'code'|'question'|'ambiguous' {
   return 'ambiguous';
 }
 
-// @kern-source: intent:137
+// @kern-source: intent:140
 function parseForgeInput(input: string): Intent {
   // Only match --hardened as a standalone flag (not inside task text or test args)
   const hardenedMatch = input.match(/^(--hardened)\s+(.*)$/i) || input.match(/^(.*?)\s+(--hardened)\s*$/i);
@@ -155,7 +158,16 @@ function parseForgeInput(input: string): Intent {
   return { type: 'forge', task, fitnessCmd, hardened } as Intent;
 }
 
-// @kern-source: intent:153
+// @kern-source: intent:156
+function parseAgentShortcut(input: string): Intent|null {
+  const match = input.match(AGENT_TRIGGER_PATTERN);
+  if (!match) return null;
+  const task = (match[1] ?? '').trim();
+  if (!task) return null;
+  return { type: 'agent', input: task } as Intent;
+}
+
+// @kern-source: intent:165
 function splitReviewArgs(input: string): string[] {
   return input
     .split(/\s+/)
@@ -164,13 +176,13 @@ function splitReviewArgs(input: string): string[] {
     .filter(Boolean);
 }
 
-// @kern-source: intent:162
+// @kern-source: intent:174
 function isReviewTargetArg(part: string): boolean {
   const lower = part.toLowerCase();
   return lower === 'uncommitted' || lower.startsWith('branch:') || lower.startsWith('commit:');
 }
 
-// @kern-source: intent:168
+// @kern-source: intent:180
 function parseReviewInput(input: string): Intent {
   const reviewParts = splitReviewArgs(input);
   const engineIds: string[] = [];
@@ -199,7 +211,7 @@ function parseReviewInput(input: string): Intent {
   return { type: 'review', engineId, engineIds: engineIds.length > 0 ? engineIds : undefined, target } as Intent;
 }
 
-// @kern-source: intent:197
+// @kern-source: intent:209
 function parseReviewShortcut(input: string): Intent|null {
   const match = input.match(/^(?:review|cr)(?:\s+([\s\S]+))?$/i);
   if (!match) return null;
@@ -218,7 +230,7 @@ function parseReviewShortcut(input: string): Intent|null {
   return null;
 }
 
-// @kern-source: intent:216
+// @kern-source: intent:228
 function parseSlashCommand(input: string, commandRegistry?: any): Intent {
   const stripped = input.slice(1).trim();
   if (!stripped) return { type: 'slash-list' } as Intent;
@@ -501,7 +513,7 @@ function parseSlashCommand(input: string, commandRegistry?: any): Intent {
   }
 }
 
-// @kern-source: intent:499
+// @kern-source: intent:511
 export function detectIntent(raw: string, commandRegistry?: any): Intent {
   const input = raw.trim();
   if (!input) return { type: 'unknown', input: '' } as Intent;
@@ -512,6 +524,9 @@ export function detectIntent(raw: string, commandRegistry?: any): Intent {
 
   if (EXIT_KEYWORDS.test(input)) return { type: 'exit' } as Intent;
   if (HELP_KEYWORDS.test(input)) return { type: 'help' } as Intent;
+
+  const agentShortcut = parseAgentShortcut(input);
+  if (agentShortcut) return agentShortcut;
 
   const reviewShortcut = parseReviewShortcut(input);
   if (reviewShortcut) return reviewShortcut;

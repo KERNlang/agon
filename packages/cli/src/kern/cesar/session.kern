@@ -465,18 +465,19 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
         // Wire ProposePlan tool to actual plan creation + display
         const { handleProposePlan } = await import('../handlers/plan-mode.js');
         const dispatch = ctx.cesar!.planDispatch;
-        if (dispatch) {
-          try {
-            const plan = await handleProposePlan(args, dispatch, ctx);
-            // Set React state for UI
-            if (ctx.setActivePlan) {
-              ctx.setActivePlan(plan);
-            }
-            // Stash on ctx so app-dispatch can read it synchronously after routeWithCesar returns
-            ctx.cesar!.proposedPlan = plan;
-          } catch (err) {
-            console.warn(`[agon] ProposePlan handling failed: ${err instanceof Error ? err.message : String(err)}`);
+        if (!dispatch) {
+          return '[PLAN_ERROR] Internal plan display dispatch unavailable. Retry the plan request so Agon can render the approval panel.';
+        }
+        try {
+          const plan = await handleProposePlan(args, dispatch, ctx);
+          // Set React state for UI
+          if (ctx.setActivePlan) {
+            ctx.setActivePlan(plan);
           }
+          // Stash on ctx so app-dispatch can read it synchronously after routeWithCesar returns
+          ctx.cesar!.proposedPlan = plan;
+        } catch (err) {
+          console.warn(`[agon] ProposePlan handling failed: ${err instanceof Error ? err.message : String(err)}`);
         }
         return '[DELEGATION_BREAK] [PLAN_PROPOSED] Plan submitted for user approval.';
       }

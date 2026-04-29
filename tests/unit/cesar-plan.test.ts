@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createCesarPlan, approveCesarPlan, advanceCesarStep, cancelCesarPlan, saveCesarPlan, loadCesarPlan, listCesarPlans, cesarPlanJsonPath, cesarPlanMarkdownPath } from '../../packages/core/src/generated/cesar/plan.js';
 import type { CesarPlan, CesarPlanStep } from '../../packages/core/src/generated/cesar/plan.js';
+import { executePlan } from '../../packages/core/src/generated/cesar/plan-executor.js';
 
 const makeStep = (id: string, overrides?: Partial<CesarPlanStep>): CesarPlanStep => ({
   id,
@@ -74,6 +75,36 @@ describe('CesarPlan state machine', () => {
     plan = advanceCesarStep(plan, 's1', { status: 'failure', actualTokens: 0, actualCostUsd: 0, durationMs: 0, output: '', error: 'no winner' });
     expect(plan.state).toBe('paused');
     expect(plan.steps[0].state).toBe('failed');
+  });
+
+  it('pauses instead of leaving a stale running plan when aborted between steps', async () => {
+    const abort = new AbortController();
+    const plan = approveCesarPlan({
+      ...createCesarPlan('task', [makeStep('s1'), makeStep('s2')]),
+      state: 'awaiting_approval' as const,
+    });
+    const updates: CesarPlan[] = [];
+
+    const finalPlan = await executePlan(plan, {
+      self: {
+        execute: async () => {
+          abort.abort();
+          return {
+            result: { status: 'success', actualTokens: 0, actualCostUsd: 0, durationMs: 1, output: 'ok' },
+          };
+        },
+      },
+    }, {
+      onStepStart: () => {},
+      onStepDone: () => {},
+      onPlanUpdate: (updated) => updates.push(updated),
+      onBudgetWarning: () => {},
+    }, abort.signal);
+
+    expect(finalPlan.state).toBe('paused');
+    expect(finalPlan.steps[0].state).toBe('done');
+    expect(finalPlan.steps[1].state).toBe('pending');
+    expect(updates.at(-1)?.state).toBe('paused');
   });
 
   it('cancels a plan', () => {

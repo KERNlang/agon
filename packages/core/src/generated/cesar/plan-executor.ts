@@ -121,5 +121,13 @@ export async function executePlan(plan: CesarPlan, executors: Record<string,Step
     callbacks.onPlanUpdate(current);
   }
 
+  if (signal?.aborted && current.state === 'running') {
+    current = {
+      ...current,
+      state: 'paused' as any,
+    };
+    callbacks.onPlanUpdate(current);
+  }
+
   return current;
 }

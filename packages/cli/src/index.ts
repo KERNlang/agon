@@ -20,6 +20,46 @@ import { loadConfig, loadAllAuthKeys } from '@agon/core';
 // Load stored API keys from ~/.agon/auth.json into process.env at startup
 loadAllAuthKeys();
 
+function consumeTelemetryDebugFlags() {
+  const nextArgv = process.argv.slice(0, 2);
+  const args = process.argv.slice(2);
+
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg === '--mock-stall') {
+      const next = args[i + 1];
+      if (next && !next.startsWith('-')) {
+        process.env.AGON_MOCK_STALL_ENGINE = next;
+        i += 1;
+      } else {
+        process.env.AGON_MOCK_STALL_ENGINE = '*';
+      }
+      continue;
+    }
+    if (arg.startsWith('--mock-stall=')) {
+      process.env.AGON_MOCK_STALL_ENGINE = arg.slice('--mock-stall='.length) || '*';
+      continue;
+    }
+    if (arg === '--mock-stall-ms') {
+      const next = args[i + 1];
+      if (next && !next.startsWith('-')) {
+        process.env.AGON_MOCK_STALL_MS = next;
+        i += 1;
+      }
+      continue;
+    }
+    if (arg.startsWith('--mock-stall-ms=')) {
+      process.env.AGON_MOCK_STALL_MS = arg.slice('--mock-stall-ms='.length);
+      continue;
+    }
+    nextArgv.push(arg);
+  }
+
+  process.argv = nextArgv;
+}
+
+consumeTelemetryDebugFlags();
+
 const main = defineCommand({
   meta: {
     name: 'agon',

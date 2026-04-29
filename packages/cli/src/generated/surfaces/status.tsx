@@ -134,9 +134,15 @@ export function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd
 }
 
 // @kern-source: status:261
-const StatusDashboard = React.memo(function StatusDashboard({ telemetryVitals, recentFallbacks, width, height }: { telemetryVitals:Map<string, any>; recentFallbacks?:{from:string,to:string,reason:string,at:number}[]; width?:number; height?:number }) {
+const StatusDashboard = React.memo(function StatusDashboard({ telemetryVitals, recentFallbacks, width, height, filter }: { telemetryVitals:Map<string, any>; recentFallbacks?:{from:string,to:string,reason:string,at:number}[]; width?:number; height?:number; filter?:'all'|'problem' }) {
   const vitals = Array.from(telemetryVitals?.values?.() ?? []);
-  const rows = vitals.slice(0, Math.max(4, Math.min(20, (height ?? 24) - 8)));
+  const severity: Record<string, number> = { stalled: 5, fallback: 4, offline: 3, busy: 2, idle: 1 };
+  const filtered = filter === 'problem'
+    ? vitals.filter((v: any) => ['stalled', 'fallback', 'offline'].includes(String(v.state)))
+    : vitals;
+  const rows = filtered
+    .sort((a: any, b: any) => (severity[String(b.state)] ?? 0) - (severity[String(a.state)] ?? 0) || String(a.engineId).localeCompare(String(b.engineId)))
+    .slice(0, Math.max(4, Math.min(20, (height ?? 24) - 8)));
   const short = (value: any, max = 18) => {
     const text = String(value ?? '');
     return text.length > max ? text.slice(0, max - 1) + '\u2026' : text.padEnd(max, ' ');
@@ -157,7 +163,7 @@ const StatusDashboard = React.memo(function StatusDashboard({ telemetryVitals, r
         <Text color="#22d3ee" bold>{'AGON STATUS'}</Text>
         <Text dimColor>{' · htop for engines · '}</Text>
         <Text color={health === 'critical' ? '#ef4444' : health === 'degraded' ? '#f97316' : '#4ade80'} bold>{health.toUpperCase()}</Text>
-        <Text dimColor>{' · q/Esc closes'}</Text>
+        <Text dimColor>{` · filter: ${filter ?? 'all'} · a all · p problems · q/Esc closes`}</Text>
       </Text>
       <Text dimColor>{'ENGINE              ST  CPU  MEM    NET  WORK'}</Text>
       {rows.length === 0 ? <Text dimColor>{'No telemetry snapshot yet; waiting for first poll.'}</Text> : null}
@@ -186,7 +192,7 @@ const StatusDashboard = React.memo(function StatusDashboard({ telemetryVitals, r
 });
 export { StatusDashboard };
 
-// @kern-source: status:320
+// @kern-source: status:327
 export function StatusLine({ startTime, engineId, color }: { startTime:number; engineId?:string; color?:number }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -221,7 +227,7 @@ export function StatusLine({ startTime, engineId, color }: { startTime:number; e
   );
 }
 
-// @kern-source: status:349
+// @kern-source: status:356
 const BackgroundJobRail = React.memo(function BackgroundJobRail({ jobs }: { jobs:Job[] }) {
   return (
     <Box paddingX={1}>
@@ -244,7 +250,7 @@ const BackgroundJobRail = React.memo(function BackgroundJobRail({ jobs }: { jobs
 });
 export { BackgroundJobRail };
 
-// @kern-source: status:369
+// @kern-source: status:376
 const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confidence, spinner, engines, startTime, streamSnippet, isActive, planModeQueued, autoModeQueued, activePlanState, activePlan, scoreboard, rationale }: { cesarId:string; confidence?:number|null; spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; startTime:number; streamSnippet?:{ engineId: string; line: string } | null; isActive:boolean; planModeQueued?:boolean; autoModeQueued?:boolean; activePlanState?:string|null; activePlan?:any; scoreboard?:Scoreboard|null; rationale?:ModeRationale|null }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {

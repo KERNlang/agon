@@ -243,10 +243,17 @@ fn name=parseSemanticReviewShortcut params="input:string" returns="Intent|null" 
 fn name=stripCollaborationLeadIn params="input:string" returns=string export=false
   handler <<<
     return input
-      .replace(/^(?:can\s+you\s+|could\s+you\s+|please\s+)?(?:ask|have|get)\s+(?:the\s+)?(?:others|team|engines|models|everyone|all\s+engines)\s+(?:to\s+)?/i, '')
-      .replace(/^(?:can\s+you\s+|could\s+you\s+|please\s+)?(?:what\s+do\s+)?(?:the\s+)?(?:others|team|engines|models|everyone|all\s+engines)\s+(?:think\s+about\s+|say\s+about\s+)?/i, '')
-      .replace(/^(?:can\s+you\s+|could\s+you\s+|please\s+)?(?:talk|think)\s+(?:it|this)?\s*(?:through\s+)?with\s+(?:the\s+)?(?:others|team|engines|models|everyone|all\s+engines)\s*/i, '')
+      .replace(/^(?:can\s+you\s+|could\s+you\s+|please\s+)?(?:ask|have|get)\s+(?:the\s+)?(?:others|other\s+engines|team|engines|models|everyone|all\s+engines)\s+(?:to\s+)?/i, '')
+      .replace(/^(?:can\s+you\s+|could\s+you\s+|please\s+)?what\s+do\s+(?:the\s+)?(?:others|other\s+engines|team|engines|models|everyone|all\s+engines)\s+(?:think\s+about\s+|say\s+about\s+|recommend\s+for\s+)?/i, '')
+      .replace(/^(?:can\s+you\s+|could\s+you\s+|please\s+)?(?:talk|think)\s+(?:it|this)?\s*(?:through\s+)?with\s+(?:the\s+)?(?:others|other\s+engines|team|engines|models|everyone|all\s+engines)\s*/i, '')
       .trim();
+  >>>
+
+fn name=hasCollaborationAskShape params="input:string" returns=boolean export=false
+  handler <<<
+    return /^(?:can\s+you\s+|could\s+you\s+|please\s+)?(?:ask|have|get)\s+(?:the\s+)?(?:others|other\s+engines|team|engines|models|everyone|all\s+engines)\b/i.test(input)
+      || /^(?:can\s+you\s+|could\s+you\s+|please\s+)?what\s+do\s+(?:the\s+)?(?:others|other\s+engines|team|engines|models|everyone|all\s+engines)\s+(?:think|say|recommend)\b/i.test(input)
+      || /^(?:can\s+you\s+|could\s+you\s+|please\s+)?(?:brainstorm|compare|weigh\s+in)\s+(?:this|it)?\s*(?:with\s+)?(?:the\s+)?(?:others|other\s+engines|team|engines|models|everyone|all\s+engines)\b/i.test(input);
   >>>
 
 fn name=parseSemanticCollaborationShortcut params="input:string" returns="Intent|null" export=false
@@ -264,8 +271,7 @@ fn name=parseSemanticCollaborationShortcut params="input:string" returns="Intent
       return { type: 'campfire', topic: question || input } as Intent;
     }
 
-    if (/\b(?:ask|others|team|engines|models|everyone|all\s+engines|what\s+do\s+others\s+think)\b/i.test(input) &&
-        /\b(?:others|team|engines|models|everyone|all\s+engines)\b/i.test(input)) {
+    if (hasCollaborationAskShape(input)) {
       return { type: 'brainstorm', question: question || input } as Intent;
     }
 

@@ -112,10 +112,18 @@ export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
 
   const isShiftTab = (key.shift && (key.tab || input === '\t')) || input === '\x1b[Z';
   const isPlainTab = (key.tab || input === '\t') && !isShiftTab;
+  const canQueueMode = shouldQueuePlanModeOnTab({ replState: ctx.replState, inputValue: ctx.inputValue, activePlanState: ctx.activePlanState });
+
+  // Ctrl+A: reliable auto-mode shortcut for terminals that collapse
+  // Shift+Tab into a plain Tab. Only active on an empty idle composer;
+  // otherwise PromptTextInput keeps Ctrl+A for line-start editing.
+  if (key.ctrl && normalizedCtrlInput === 'a' && canQueueMode && !ctx.slashPickerOpen && !ctx.enginePickerOpen && !ctx.questionState && !ctx.reviewEventOpen) {
+    return { type: 'toggleAutoQueued' };
+  }
 
   // Shift+Tab: queue auto mode
   if (isShiftTab && !ctx.slashPickerOpen && !ctx.enginePickerOpen && !ctx.questionState && !ctx.reviewEventOpen) {
-    if (shouldQueuePlanModeOnTab({ replState: ctx.replState, inputValue: ctx.inputValue, activePlanState: ctx.activePlanState })) {
+    if (canQueueMode) {
       return { type: 'toggleAutoQueued' };
     }
     return { type: 'none' };
@@ -125,7 +133,7 @@ export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
   if (isPlainTab && !ctx.slashPickerOpen && !ctx.enginePickerOpen && !ctx.questionState && !ctx.reviewEventOpen) {
     const ghost = tryGhostComplete(ctx.inputValue, ctx.commands, ctx.engineIds);
     if (ghost) return { type: 'ghostComplete', ghost };
-    if (shouldQueuePlanModeOnTab({ replState: ctx.replState, inputValue: ctx.inputValue, activePlanState: ctx.activePlanState })) {
+    if (canQueueMode) {
       return { type: 'togglePlanQueued' };
     }
     return { type: 'none' };

@@ -1214,7 +1214,7 @@ export function App() {
         handleCancelOrExit();
         return;
     }
-  }, [modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,activePlan,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,toggleSelectionMode,startupOnly,terminalMode]);
+  }, [modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,autoModeQueued,activePlan,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,toggleSelectionMode,startupOnly,terminalMode]);
 
   useEffect(() => {
     initExtensions(workspacePath, commandRegistry, registry, eventBus).then(({ extensions, skills: extSkills, systemPromptFragments }) => {
@@ -3797,7 +3797,7 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
           { text: ' for commands. ', dimColor: true },
           { text: 'Tab', color: '#f97316' },
           { text: ' plan · ', dimColor: true },
-          { text: 'Shift+Tab', color: '#f97316' },
+          { text: 'Ctrl+A', color: '#f97316' },
           { text: ' auto', dimColor: true },
         ]);
         return;

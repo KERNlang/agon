@@ -131,6 +131,21 @@ describe('resolveKeyboardInput', () => {
     }))).toEqual({ type: 'toggleAutoQueued' });
   });
 
+  it('routes ctrl+a on an idle empty composer to queued auto mode', () => {
+    expect(resolveKeyboardInput(baseCtx({
+      input: 'a',
+      key: { ctrl: true },
+    }))).toEqual({ type: 'toggleAutoQueued' });
+  });
+
+  it('leaves ctrl+a alone when the composer has text so text editing owns it', () => {
+    expect(resolveKeyboardInput(baseCtx({
+      inputValue: 'hello',
+      input: 'a',
+      key: { ctrl: true },
+    }))).toEqual({ type: 'none' });
+  });
+
   it('leaves PgUp/PgDn/Home/End to the terminal — main-buffer + native scrollback owns scroll', () => {
     // In Agon's current architecture (no alt-screen, transcript rows committed
     // to Static → terminal scrollback), the app has no in-app scroll surface.

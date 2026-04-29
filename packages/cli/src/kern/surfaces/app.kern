@@ -21,7 +21,7 @@ import from="../../code-buffer.js" names="codeBlockBuffer"
 import from="../signals/app-state.js" names="startCommandReplState,finishReplState,cancelReplState"
 import from="../signals/app-state.js" names="ReplStateState" types=true
 import from="../signals/paste-handler.js" names="processPasteContent,expandPastePlaceholders"
-import from="../signals/dispatch.js" names="dispatchIntent,handleModeSwitch"
+import from="../signals/dispatch.js" names="dispatchIntent,handleModeSwitch,isCesarPlanApprovalInput"
 import from="../signals/dispatch.js" names="DispatchCallbacks" types=true
 import from="../signals/output.js" names="handleOutputEvent,clearPermissionQueue,clearThinkingBuffer"
 import from="../signals/output.js" names="OutputActions,OutputState,AgentProgressSnapshot,StreamingEntry" types=true
@@ -3126,6 +3126,10 @@ screen name=App target=ink
             : 'AUTO OFF.',
         } as any);
         return;
+      }
+
+      if (!input.startsWith('/') && activePlan?.state === 'awaiting_approval' && isCesarPlanApprovalInput(input)) {
+        input = '/approve';
       }
 
       // /btw <question> — side-channel question during active dispatch

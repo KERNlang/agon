@@ -40,7 +40,7 @@ import type { ReplStateState } from '../signals/app-state.js';
 
 import { processPasteContent, expandPastePlaceholders } from '../signals/paste-handler.js';
 
-import { dispatchIntent, handleModeSwitch } from '../signals/dispatch.js';
+import { dispatchIntent, handleModeSwitch, isCesarPlanApprovalInput } from '../signals/dispatch.js';
 
 import type { DispatchCallbacks } from '../signals/dispatch.js';
 
@@ -794,6 +794,10 @@ export function App() {
           : 'AUTO OFF.',
       } as any);
       return;
+    }
+
+    if (!input.startsWith('/') && activePlan?.state === 'awaiting_approval' && isCesarPlanApprovalInput(input)) {
+      input = '/approve';
     }
 
     // /btw <question> — side-channel question during active dispatch
@@ -4012,7 +4016,7 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
   return rows;
 }
 
-// @kern-source: app:3904
+// @kern-source: app:3908
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

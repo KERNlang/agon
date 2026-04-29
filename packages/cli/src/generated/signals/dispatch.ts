@@ -1070,9 +1070,57 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
 }
 
 /**
- * Route a parsed intent to the correct handler. Registry-first, switch as fallback.
+ * Return true for natural approval replies users type after Cesar says go/run it.
  */
 // @kern-source: dispatch:1024
+export function isCesarPlanApprovalInput(input: string): boolean {
+  const text = String(input ?? '').trim().toLowerCase().replace(/[.!]+$/g, '');
+  return /^(?:y|yes|go|run|run it|start|start it|approve|approved|do it|proceed|execute|ok|okay|sure)$/i.test(text);
+}
+
+/**
+ * Find the most relevant pending Cesar plan: proposed plan first, active plan second, then latest saved awaiting_approval plan.
+ */
+// @kern-source: dispatch:1031
+export function findPendingCesarPlan(ctx: HandlerContext): CesarPlan | null {
+  const proposed = ctx.cesar?.proposedPlan as CesarPlan | undefined;
+  if (proposed && proposed.state === 'awaiting_approval') return proposed;
+  const active = ctx.activePlan as CesarPlan | undefined;
+  if (active && active.state === 'awaiting_approval') return active;
+  const saved = listCesarPlans()
+    .filter((p: CesarPlan) => p.state === 'awaiting_approval')
+    .sort((a: CesarPlan, b: CesarPlan) => b.createdAt.localeCompare(a.createdAt));
+  return saved[0] ?? null;
+}
+
+/**
+ * Approve and execute the pending CesarPlan, if one exists. Backs /approve and natural approval aliases like go.
+ */
+// @kern-source: dispatch:1044
+export async function approvePendingCesarPlan(cb: DispatchCallbacks): Promise<boolean> {
+  const pending = findPendingCesarPlan(cb.ctx);
+  if (!pending) return false;
+  if (cb.ctx.cesar?.proposedPlan?.id === pending.id) cb.ctx.cesar.proposedPlan = undefined;
+
+  const approved = approveCesarPlan(pending);
+  cb.setActivePlan(approved);
+  cb.dispatch({ type: 'success', message: 'Plan approved — executing...' });
+  saveCesarPlan(approved);
+  if (approved.planFilePath) {
+    try {
+      writeFileSync(approved.planFilePath, formatCesarPlanMarkdown(approved));
+    } catch (err) {
+      console.warn('[plan] failed to write approved Cesar plan file:', (err as Error).message ?? err);
+    }
+  }
+  await executeApprovedPlan(approved, cb);
+  return true;
+}
+
+/**
+ * Route a parsed intent to the correct handler. Registry-first, switch as fallback.
+ */
+// @kern-source: dispatch:1066
 export async function dispatchIntent(intent: any, input: string, cb: DispatchCallbacks): Promise<DispatchResult> {
   // ── Emit pre:dispatch event ──
   if (cb.eventBus) {
@@ -1539,7 +1587,11 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
       break;
     }
     case 'plans': handlePlansList(cb.dispatch); break;
-    case 'approve': await handleApprove(cb.dispatch, cb.ctx); break;
+    case 'approve': {
+      if (await approvePendingCesarPlan(cb)) break;
+      await handleApprove(cb.dispatch, cb.ctx);
+      break;
+    }
     case 'retry': await handleRetry(cb.dispatch, cb.ctx); break;
     case 'cancel': handleCancel(cb.dispatch, cb.ctx); break;
     case 'apply': await handleApplyPatch(cb.dispatch, cb.ctx, intent.patchPath, intent.force); break;
@@ -2272,7 +2324,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
 /**
  * Shared approval loop for plans proposed by Cesar, whether from explicit /plan mode or a normal chat turn.
  */
-// @kern-source: dispatch:2222
+// @kern-source: dispatch:2268
 export async function handleProposedCesarPlan(proposed: CesarPlan, cb: DispatchCallbacks): Promise<void> {
   if (cb.ctx.cesar) cb.ctx.cesar.proposedPlan = undefined;
 
@@ -2315,7 +2367,7 @@ export async function handleProposedCesarPlan(proposed: CesarPlan, cb: DispatchC
     const answer = await cb.askQuestion('Approve plan? [Y/n/e(dit)] or give feedback to revise');
     const trimmed = answer.trim().toLowerCase();
 
-    if (trimmed === 'y' || trimmed === 'yes' || trimmed === '') {
+    if (trimmed === '' || isCesarPlanApprovalInput(trimmed)) {
       const approved = approveCesarPlan(currentProposal);
       cb.setActivePlan(approved);
       cb.dispatch({ type: 'success', message: 'Plan approved — executing...' });
@@ -2389,7 +2441,7 @@ export async function handleProposedCesarPlan(proposed: CesarPlan, cb: DispatchC
 /**
  * Build executor callbacks. Holds a closure on the latest plan reference (mutated via onPlanUpdate) so step lookups always see appended steps like the auto-review cycle (tribunal fix #10). FU-3: persistence is debounced 300ms to avoid the sync-write storm Doppelganger flagged — onPlanUpdate fires once per step in a hot loop, but the disk write happens at most ~3x/sec. Terminal states (done/paused/cancelled) flush immediately so the .md/.json on disk reflect the final state. Callers should invoke .flush() before exit to drain any pending write.
  */
-// @kern-source: dispatch:2342
+// @kern-source: dispatch:2388
 export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks): any {
   let currentPlan = initialPlan;
   let pendingWriteTimer: ReturnType<typeof setTimeout> | null = null;
@@ -2466,7 +2518,7 @@ export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks
 /**
  * FU-4: shared executor for the auto-approve, manual-approve, and plan-resume paths. Wires the abort controller, builds callbacks (with debounced persistence), runs executePlan, runs finalizePlanWithReviewGate, and dispatches the terminal status. Eliminates the ~60 lines of triplication that lived in dispatch.kern and forced future changes (e.g., new callback hooks, new finalize behavior) to be applied to all three sites.
  */
-// @kern-source: dispatch:2417
+// @kern-source: dispatch:2463
 export async function executeApprovedPlan(approved: CesarPlan, cb: DispatchCallbacks): Promise<void> {
   const executors = buildStepExecutors(cb.ctx);
   const abortController = new AbortController();
@@ -2503,7 +2555,7 @@ export async function executeApprovedPlan(approved: CesarPlan, cb: DispatchCallb
 /**
  * Single source of truth for the post-execution self-review gate. Called from BOTH the plan-task and plan-resume terminal paths so resume cannot bypass the gate or the cycle cap (tribunal fix #4).
  */
-// @kern-source: dispatch:2452
+// @kern-source: dispatch:2498
 export async function finalizePlanWithReviewGate(finalPlan: CesarPlan, executors: Record<string,StepExecutor>, abortSignal: AbortSignal, cb: DispatchCallbacks): Promise<CesarPlan> {
   const MUTATING = new Set(['forge', 'teamforge', 'pipeline', 'agent', 'team-agent', 'delegate', 'self']);
   const planTouchedMutation = finalPlan.steps.some((s: any) => MUTATING.has(s.type) && (s.state === 'done' || s.state === 'failed'));

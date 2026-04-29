@@ -38,6 +38,7 @@ function createMockActions(): OutputActions & { calls: Record<string, unknown[][
     setStreamingText: [],
     clearBlocks: [],
     setReviewEvent: [],
+    setPendingPlanProposal: [],
     setChatStartTime: [],
     flushStream: [],
     setAgentProgress: [],
@@ -51,6 +52,7 @@ function createMockActions(): OutputActions & { calls: Record<string, unknown[][
     setStreamingText: vi.fn((...args) => calls.setStreamingText.push(args)),
     clearBlocks: vi.fn((...args) => calls.clearBlocks.push(args)),
     setReviewEvent: vi.fn((...args) => calls.setReviewEvent.push(args)),
+    setPendingPlanProposal: vi.fn((...args) => calls.setPendingPlanProposal.push(args)),
     setChatStartTime: vi.fn((...args) => calls.setChatStartTime.push(args)),
     flushStream: vi.fn((...args) => calls.flushStream.push(args)),
     getEngineColor: vi.fn(() => 245),
@@ -240,5 +242,19 @@ describe('permission queue', () => {
     const group = actions.calls.addBlock[0][0] as any;
     expect(group.blocks).toHaveLength(1);
     expect(group.blocks[0].event).toMatchObject({ tool: 'Read', status: 'done', output: 'file content' });
+  });
+
+  it('keeps plan proposals in the live approval panel instead of transcript blocks', () => {
+    const actions = createMockActions();
+    const event = {
+      type: 'plan-proposal',
+      plan: { id: 'cplan-test', state: 'awaiting_approval', steps: [] },
+      markdown: '# Plan\n\nApprove me',
+    } as any;
+
+    handleOutputEvent(event, emptyState(), actions, 'chat', 0);
+
+    expect(actions.calls.setPendingPlanProposal).toEqual([[event]]);
+    expect(actions.calls.addBlock).toHaveLength(0);
   });
 });

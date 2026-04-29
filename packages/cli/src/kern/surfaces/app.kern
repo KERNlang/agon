@@ -116,16 +116,51 @@ fn name=sampleLocalResourceVitals returns="{cpuPercent:number,memPercent:number}
     return { cpuPercent, memPercent };
   >>>
 
+fn name=sampleEngineProcessVitals params="engine:any" returns="{cpuPercent?:number,memPercent?:number,processCount?:number,taskDetail?:string}" export=false
+  handler <<<
+    const binary = String(engine?.binary ?? '').trim();
+    if (!binary) return {};
+    try {
+      const result = spawnSync('ps', ['-axo', 'pid=,pcpu=,pmem=,comm=,args='], { encoding: 'utf-8', timeout: 700 });
+      if (result.status !== 0 || !result.stdout) return {};
+      const binaryName = binary.split('/').pop() || binary;
+      const lines = String(result.stdout).split('\n').filter((line: string) => {
+        const text = line.trim();
+        if (!text) return false;
+        if (!text.includes(binaryName) && !text.includes(binary)) return false;
+        if (text.includes('ps -axo') || text.includes('rg ') || text.includes('grep ')) return false;
+        return true;
+      });
+      let cpuPercent = 0;
+      let memPercent = 0;
+      for (const line of lines) {
+        const parts = line.trim().split(/\s+/);
+        cpuPercent += Number(parts[1]) || 0;
+        memPercent += Number(parts[2]) || 0;
+      }
+      if (lines.length === 0) return {};
+      return {
+        cpuPercent: Math.max(0, Math.min(100, cpuPercent)),
+        memPercent: Math.max(0, Math.min(100, memPercent)),
+        processCount: lines.length,
+        taskDetail: `${lines.length} process${lines.length === 1 ? '' : 'es'}`,
+      };
+    } catch {
+      return {};
+    }
+  >>>
+
 fn name=probeEngineVitals async=true params="registry:any,engineId:string" returns="Promise<Partial<EngineVitals>>" export=false
   handler <<<
     const started = Date.now();
-    const resources = sampleLocalResourceVitals();
+    const localResources = sampleLocalResourceVitals();
     const mockTarget = String(process.env.AGON_MOCK_STALL_ENGINE ?? '').trim();
     if (mockTarget && (mockTarget === '*' || mockTarget === engineId)) {
       const stallMs = Number(process.env.AGON_MOCK_STALL_MS ?? 35000);
       await new Promise((resolve) => setTimeout(resolve, Number.isFinite(stallMs) ? stallMs : 35000));
     }
     const engine = registry.get(engineId);
+    const processResources = sampleEngineProcessVitals(engine);
     const hasBinary = engine.binary ? registry.findBinary(engine) !== null : false;
     const hasApiKey = !!(engine.api && process.env[engine.api.apiKeyEnv]);
     const available = hasBinary || hasApiKey || (!engine.binary && !engine.api);
@@ -151,10 +186,10 @@ fn name=probeEngineVitals async=true params="registry:any,engineId:string" retur
       state: available ? 'idle' as any : 'offline' as any,
       latencyMs,
       network,
-      cpuPercent: resources.cpuPercent,
-      memPercent: resources.memPercent,
+      cpuPercent: processResources.cpuPercent ?? localResources.cpuPercent,
+      memPercent: processResources.memPercent ?? localResources.memPercent,
       task: available ? (hasBinary ? 'cli ready' : hasApiKey ? 'api reachable' : 'ready') : 'missing binary/API key',
-      taskDetail: hasBinary ? 'local process telemetry' : undefined,
+      taskDetail: processResources.taskDetail ?? (hasBinary ? 'cli process not active' : undefined),
     };
   >>>
 
@@ -2466,6 +2501,7 @@ screen name=App target=ink
   state name=telemetryVitals type="Map<string,any>" initial="new Map()" throttle=500
   state name=recentFallbacks type="{from:string,to:string,reason:string,at:number}[]" initial="[]"
   state name=statusDashboardOpen type=boolean initial=false safe=false
+  state name=statusDashboardFilter type="'all'|'problem'" initial="'all'" safe=false
 
   // ── Refs ──
   ref name=telemetryPollerRef type="any" initial="null"
@@ -2482,6 +2518,7 @@ screen name=App target=ink
   ref name=pasteHashesRef type="Map<string,string>" initial="new Map()"
   ref name=pasteCountRef type=number initial=0
   ref name=activeAbortRef type="AbortController|null" initial="null"
+  ref name=activeTurnRef type="{ input:string; engineId:string; retried:boolean }|null" initial="null"
   ref name=lastActivityTimeRef type=number initial="Date.now()"
   ref name=blockArchivePathRef type=string initial="makeBlockArchivePath(Date.now())"
   ref name=nestedCtrlShortcutRef type="{ key: string; at: number }" initial="{ key: '', at: 0 }"
@@ -3130,6 +3167,11 @@ screen name=App target=ink
         probeTimeoutMs: 2500,
         autoFallback: 'auto',
         onAutoFallback: async (from: string, to: string, reason: string) => {
+          const activeTurn = activeTurnRef.current;
+          const retryActiveTurn = !!(activeTurn && !activeTurn.retried && activeTurn.engineId === from && activeTurn.input);
+          if (retryActiveTurn && activeTurn) {
+            activeTurn.retried = true;
+          }
           configSet('cesarEngine' as any, to as any);
           setConfigVersion((v: number) => v + 1);
           if (cesarSession) {
@@ -3137,7 +3179,13 @@ screen name=App target=ink
             setCesarSessionWrapped(null);
           }
           setRecentFallbacks((prev: any[]) => [...prev.slice(-7), { from, to, reason, at: Date.now() }]);
-          dispatch({ type: 'warning', message: `Telemetry: ${from} stalled — auto-fallback to ${to} (${reason})` } as any);
+          if (retryActiveTurn && activeTurn) {
+            if (activeAbortRef.current) activeAbortRef.current.abort();
+            setInputQueue((prev: string[]) => [...prev, activeTurn.input]);
+            dispatch({ type: 'warning', message: `Telemetry: ${from} stalled — switched to ${to} and retrying this prompt (${reason})` } as any);
+          } else {
+            dispatch({ type: 'warning', message: `Telemetry: ${from} stalled — auto-fallback to ${to} (${reason})` } as any);
+          }
           return true;
         },
       });
@@ -3385,6 +3433,10 @@ screen name=App target=ink
       }
       const ctx = buildContext();
       (ctx as any).autoModeQueued = autoModeForTurn;
+      const cesarEngineForTurn = String((ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude');
+      activeTurnRef.current = (!input.startsWith('/') && mode === 'chat')
+        ? { input, engineId: cesarEngineForTurn, retried: false }
+        : null;
       const cb: DispatchCallbacks = {
         dispatch, ctx, commandRegistry, eventBus, loadedExtensions, setWorkspacePath,
         runAsJob: (type: string, label: string, fn: () => Promise<void>) => {
@@ -3417,7 +3469,10 @@ screen name=App target=ink
         const result = await dispatchIntent(intent, input, cb);
         if (result.ranAsJob) return;
       } catch (err: any) { dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); }
-      finally { setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state); }
+      finally {
+        if (activeTurnRef.current?.input === input) activeTurnRef.current = null;
+        setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state);
+      }
     >>>
 
   callback name=handleReviewActionCb params="action:'apply'|'edit'|'reject'|'copy'" deps="reviewEvent,dispatch"
@@ -3668,6 +3723,14 @@ screen name=App target=ink
       if (statusDashboardOpen && !modelPickerOpen && !cesarPickerOpen && !enginePickerOpen && !reviewEvent && !toolDetailEvent && !slashPickerOpen && !questionState) {
         if (key.escape || input === 'q' || input === 'Q' || (key.ctrl && input === '\x03')) {
           setStatusDashboardOpen(false);
+          return;
+        }
+        if (input === 'a' || input === 'A') {
+          setStatusDashboardFilter('all');
+          return;
+        }
+        if (input === 'p' || input === 'P') {
+          setStatusDashboardFilter('problem');
           return;
         }
         return;
@@ -4006,7 +4069,7 @@ screen name=App target=ink
               </Box>
             )}
             {statusDashboardOpen ? (
-              <StatusDashboard telemetryVitals={telemetryVitals} recentFallbacks={recentFallbacks} width={termWidth} height={termHeight} />
+              <StatusDashboard telemetryVitals={telemetryVitals} recentFallbacks={recentFallbacks} width={termWidth} height={termHeight} filter={statusDashboardFilter} />
             ) : (
               <ComposerView
                 mode={mode}

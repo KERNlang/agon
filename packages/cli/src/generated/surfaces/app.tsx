@@ -118,7 +118,7 @@ import { useStableInput } from '../../stable-input.js';
 
 import { parseProseToRichLines } from '../blocks/rich-text.js';
 
-// @kern-source: app:2415
+// @kern-source: app:2450
 export function App() {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -288,6 +288,7 @@ export function App() {
   const [recentFallbacks, _setRecentFallbacksRaw] = useState<{from:string,to:string,reason:string,at:number}[]>([]);
   const setRecentFallbacks = useMemo(() => __inkSafe(_setRecentFallbacksRaw), [_setRecentFallbacksRaw]);
   const [statusDashboardOpen, setStatusDashboardOpen] = useState<boolean>(false);
+  const [statusDashboardFilter, setStatusDashboardFilter] = useState<'all'|'problem'>('all');
   const [registry, _setRegistryRaw] = useState<EngineRegistry>(createInitialRegistry());
   const setRegistry = useMemo(() => __inkSafe(_setRegistryRaw), [_setRegistryRaw]);
   const [adapter, _setAdapterRaw] = useState<EngineAdapter>(createCliAdapter(registry));
@@ -389,6 +390,7 @@ export function App() {
   const pasteHashesRef = useRef<Map<string,string>>(new Map());
   const pasteCountRef = useRef<number>(0);
   const activeAbortRef = useRef<AbortController|null>(null);
+  const activeTurnRef = useRef<{ input:string; engineId:string; retried:boolean }|null>(null);
   const lastActivityTimeRef = useRef<number>(Date.now());
   const blockArchivePathRef = useRef<string>(makeBlockArchivePath(Date.now()));
   const nestedCtrlShortcutRef = useRef<{ key: string; at: number }>({ key: '', at: 0 });
@@ -956,6 +958,10 @@ export function App() {
     }
     const ctx = buildContext();
     (ctx as any).autoModeQueued = autoModeForTurn;
+    const cesarEngineForTurn = String((ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude');
+    activeTurnRef.current = (!input.startsWith('/') && mode === 'chat')
+      ? { input, engineId: cesarEngineForTurn, retried: false }
+      : null;
     const cb: DispatchCallbacks = {
       dispatch, ctx, commandRegistry, eventBus, loadedExtensions, setWorkspacePath,
       runAsJob: (type: string, label: string, fn: () => Promise<void>) => {
@@ -988,7 +994,10 @@ export function App() {
       const result = await dispatchIntent(intent, input, cb);
       if (result.ranAsJob) return;
     } catch (err: any) { dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); }
-    finally { setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state); }
+    finally {
+      if (activeTurnRef.current?.input === input) activeTurnRef.current = null;
+      setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state);
+    }
   }, [replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,activePlan,planModeQueued,autoModeQueued,setPersistentAutoMode]);
 
   const handleReviewActionCb = useCallback((action:'apply'|'edit'|'reject'|'copy') => {
@@ -1196,6 +1205,14 @@ export function App() {
     if (statusDashboardOpen && !modelPickerOpen && !cesarPickerOpen && !enginePickerOpen && !reviewEvent && !toolDetailEvent && !slashPickerOpen && !questionState) {
       if (key.escape || input === 'q' || input === 'Q' || (key.ctrl && input === '\x03')) {
         setStatusDashboardOpen(false);
+        return;
+      }
+      if (input === 'a' || input === 'A') {
+        setStatusDashboardFilter('all');
+        return;
+      }
+      if (input === 'p' || input === 'P') {
+        setStatusDashboardFilter('problem');
         return;
       }
       return;
@@ -1540,6 +1557,11 @@ export function App() {
       probeTimeoutMs: 2500,
       autoFallback: 'auto',
       onAutoFallback: async (from: string, to: string, reason: string) => {
+        const activeTurn = activeTurnRef.current;
+        const retryActiveTurn = !!(activeTurn && !activeTurn.retried && activeTurn.engineId === from && activeTurn.input);
+        if (retryActiveTurn && activeTurn) {
+          activeTurn.retried = true;
+        }
         configSet('cesarEngine' as any, to as any);
         setConfigVersion((v: number) => v + 1);
         if (cesarSession) {
@@ -1547,7 +1569,13 @@ export function App() {
           setCesarSessionWrapped(null);
         }
         setRecentFallbacks((prev: any[]) => [...prev.slice(-7), { from, to, reason, at: Date.now() }]);
-        dispatch({ type: 'warning', message: `Telemetry: ${from} stalled — auto-fallback to ${to} (${reason})` } as any);
+        if (retryActiveTurn && activeTurn) {
+          if (activeAbortRef.current) activeAbortRef.current.abort();
+          setInputQueue((prev: string[]) => [...prev, activeTurn.input]);
+          dispatch({ type: 'warning', message: `Telemetry: ${from} stalled — switched to ${to} and retrying this prompt (${reason})` } as any);
+        } else {
+          dispatch({ type: 'warning', message: `Telemetry: ${from} stalled — auto-fallback to ${to} (${reason})` } as any);
+        }
         return true;
       },
     });
@@ -1777,7 +1805,7 @@ export function App() {
           </Box>
         )}
         {statusDashboardOpen ? (
-          <StatusDashboard telemetryVitals={telemetryVitals} recentFallbacks={recentFallbacks} width={termWidth} height={termHeight} />
+          <StatusDashboard telemetryVitals={telemetryVitals} recentFallbacks={recentFallbacks} width={termWidth} height={termHeight} filter={statusDashboardFilter} />
         ) : (
           <ComposerView
             mode={mode}
@@ -1906,15 +1934,50 @@ function sampleLocalResourceVitals(): {cpuPercent:number,memPercent:number} {
 }
 
 // @kern-source: app:119
+function sampleEngineProcessVitals(engine: any): {cpuPercent?:number,memPercent?:number,processCount?:number,taskDetail?:string} {
+  const binary = String(engine?.binary ?? '').trim();
+  if (!binary) return {};
+  try {
+    const result = spawnSync('ps', ['-axo', 'pid=,pcpu=,pmem=,comm=,args='], { encoding: 'utf-8', timeout: 700 });
+    if (result.status !== 0 || !result.stdout) return {};
+    const binaryName = binary.split('/').pop() || binary;
+    const lines = String(result.stdout).split('\n').filter((line: string) => {
+      const text = line.trim();
+      if (!text) return false;
+      if (!text.includes(binaryName) && !text.includes(binary)) return false;
+      if (text.includes('ps -axo') || text.includes('rg ') || text.includes('grep ')) return false;
+      return true;
+    });
+    let cpuPercent = 0;
+    let memPercent = 0;
+    for (const line of lines) {
+      const parts = line.trim().split(/\s+/);
+      cpuPercent += Number(parts[1]) || 0;
+      memPercent += Number(parts[2]) || 0;
+    }
+    if (lines.length === 0) return {};
+    return {
+      cpuPercent: Math.max(0, Math.min(100, cpuPercent)),
+      memPercent: Math.max(0, Math.min(100, memPercent)),
+      processCount: lines.length,
+      taskDetail: `${lines.length} process${lines.length === 1 ? '' : 'es'}`,
+    };
+  } catch {
+    return {};
+  }
+}
+
+// @kern-source: app:153
 async function probeEngineVitals(registry: any, engineId: string): Promise<Partial<EngineVitals>> {
   const started = Date.now();
-  const resources = sampleLocalResourceVitals();
+  const localResources = sampleLocalResourceVitals();
   const mockTarget = String(process.env.AGON_MOCK_STALL_ENGINE ?? '').trim();
   if (mockTarget && (mockTarget === '*' || mockTarget === engineId)) {
     const stallMs = Number(process.env.AGON_MOCK_STALL_MS ?? 35000);
     await new Promise((resolve) => setTimeout(resolve, Number.isFinite(stallMs) ? stallMs : 35000));
   }
   const engine = registry.get(engineId);
+  const processResources = sampleEngineProcessVitals(engine);
   const hasBinary = engine.binary ? registry.findBinary(engine) !== null : false;
   const hasApiKey = !!(engine.api && process.env[engine.api.apiKeyEnv]);
   const available = hasBinary || hasApiKey || (!engine.binary && !engine.api);
@@ -1940,14 +2003,14 @@ async function probeEngineVitals(registry: any, engineId: string): Promise<Parti
     state: available ? 'idle' as any : 'offline' as any,
     latencyMs,
     network,
-    cpuPercent: resources.cpuPercent,
-    memPercent: resources.memPercent,
+    cpuPercent: processResources.cpuPercent ?? localResources.cpuPercent,
+    memPercent: processResources.memPercent ?? localResources.memPercent,
     task: available ? (hasBinary ? 'cli ready' : hasApiKey ? 'api reachable' : 'ready') : 'missing binary/API key',
-    taskDetail: hasBinary ? 'local process telemetry' : undefined,
+    taskDetail: processResources.taskDetail ?? (hasBinary ? 'cli process not active' : undefined),
   };
 }
 
-// @kern-source: app:161
+// @kern-source: app:196
 export function parseToolCallPayload(event: any): any {
   const rawInput = String(event?.input ?? '');
   let parsed: Record<string, unknown> = {};
@@ -1963,7 +2026,7 @@ export function parseToolCallPayload(event: any): any {
   };
 }
 
-// @kern-source: app:177
+// @kern-source: app:212
 export function formatConfidenceToolLabel(parsed: any, rawInput: string): string {
   const rawValue = parsed?.value ?? parsed?.confidence ?? parsed?.score;
   let value = Number(rawValue);
@@ -1982,7 +2045,7 @@ export function formatConfidenceToolLabel(parsed: any, rawInput: string): string
   return 'confidence';
 }
 
-// @kern-source: app:196
+// @kern-source: app:231
 export function extractPatchText(rawInput: string, parsed: any): string {
   const values = [
     parsed?.patch,
@@ -2006,7 +2069,7 @@ export function extractPatchText(rawInput: string, parsed: any): string {
   return values[0] ?? '';
 }
 
-// @kern-source: app:220
+// @kern-source: app:255
 export function parsePatchPreview(rawInput: string, parsed: any): { files:string[]; lines:string[]; additions:number; deletions:number } {
   const patchText = extractPatchText(rawInput, parsed);
   const files: string[] = [];
@@ -2055,7 +2118,7 @@ export function parsePatchPreview(rawInput: string, parsed: any): { files:string
   return { files, lines, additions, deletions };
 }
 
-// @kern-source: app:269
+// @kern-source: app:304
 export function toolPreviewWindow(lineCount: number, expanded: boolean): any {
   if (lineCount <= 0) return { head: 0, tail: 0, skipped: 0 };
   if (expanded) return { head: lineCount, tail: 0, skipped: 0 };
@@ -2073,7 +2136,7 @@ export function toolPreviewWindow(lineCount: number, expanded: boolean): any {
   };
 }
 
-// @kern-source: app:287
+// @kern-source: app:322
 export function toolCallSupportsDetailView(event: any): boolean {
   if (!event || event.type !== 'tool-call') return false;
   const { rawInput, parsed, toolKey } = parseToolCallPayload(event);
@@ -2093,7 +2156,7 @@ export function toolCallSupportsDetailView(event: any): boolean {
   return rawInput.length > 160 || outputText.length > 400;
 }
 
-// @kern-source: app:307
+// @kern-source: app:342
 export function detailViewerSupportsEvent(event: any): boolean {
   if (!event) return false;
   if (event.type === 'permission-ask') {
@@ -2103,12 +2166,12 @@ export function detailViewerSupportsEvent(event: any): boolean {
   return toolCallSupportsDetailView(event);
 }
 
-// @kern-source: app:317
+// @kern-source: app:352
 export function toolDetailViewportRows(termHeight: number): number {
   return Math.max(8, Math.min(18, termHeight - 14));
 }
 
-// @kern-source: app:322
+// @kern-source: app:357
 export function findLatestToolDetailEvent(blocks: OutputBlock[]): any {
   for (let index = blocks.length - 1; index >= 0; index -= 1) {
     const event = blocks[index]?.event as any;
@@ -2128,15 +2191,15 @@ export function findLatestToolDetailEvent(blocks: OutputBlock[]): any {
   return null;
 }
 
-// @kern-source: app:342
+// @kern-source: app:377
 export const COMPOSER_HISTORY_LIMIT: number = 200;
 
-// @kern-source: app:345
+// @kern-source: app:380
 export function composerHistoryPath(): string {
   return join(getAgonHome(), 'composer-history.json');
 }
 
-// @kern-source: app:348
+// @kern-source: app:383
 export function loadComposerInputHistory(): string[] {
   try {
     const parsed = JSON.parse(readFileSync(composerHistoryPath(), 'utf-8'));
@@ -2149,7 +2212,7 @@ export function loadComposerInputHistory(): string[] {
   }
 }
 
-// @kern-source: app:361
+// @kern-source: app:396
 export function saveComposerInputHistory(history: string[]): void {
   try {
     ensureAgonHome();
@@ -2160,7 +2223,7 @@ export function saveComposerInputHistory(history: string[]): void {
   }
 }
 
-// @kern-source: app:372
+// @kern-source: app:407
 export function findLatestFailedToolEvent(blocks: OutputBlock[]): any {
   for (let index = blocks.length - 1; index >= 0; index -= 1) {
     const event = blocks[index]?.event as any;
@@ -2176,7 +2239,7 @@ export function findLatestFailedToolEvent(blocks: OutputBlock[]): any {
   return null;
 }
 
-// @kern-source: app:388
+// @kern-source: app:423
 export function buildFailedToolRetryDraft(event: any): string {
   if (!event) return '';
   const { rawInput, parsed, toolKey } = parseToolCallPayload(event);
@@ -2191,7 +2254,7 @@ export function buildFailedToolRetryDraft(event: any): string {
   return `retry the failed ${toolName} call with corrected input:\n${payload}${suffix}`;
 }
 
-// @kern-source: app:403
+// @kern-source: app:438
 export function buildToolDetailView(event: any): any {
   if (!event) {
     return { title: 'Detail viewer', subtitle: '', accentColor: '#a78bfa', rows: [] };
@@ -2393,22 +2456,22 @@ export function buildToolDetailView(event: any): any {
   };
 }
 
-// @kern-source: app:606
+// @kern-source: app:641
 export const _activeAborts: Set<AbortController> = new Set<AbortController>();
 
-// @kern-source: app:609
+// @kern-source: app:644
 export const _cancelCallback: { fn: (() => void) | null } = { fn: null };
 
-// @kern-source: app:612
+// @kern-source: app:647
 export const _cesarSessionRef: { session: PersistentSession | null } = { session: null };
 
-// @kern-source: app:615
+// @kern-source: app:650
 export const _lastSigintAt: { value: number } = { value: 0 };
 
-// @kern-source: app:618
+// @kern-source: app:653
 export const _pauseState: { value: PauseState | null } = { value: null };
 
-// @kern-source: app:621
+// @kern-source: app:656
 export function createInitialRegistry(): EngineRegistry {
   const reg = new EngineRegistry();
   const engDir = join(dirname(fileURLToPath(import.meta.url)), '../../../engines');
@@ -2416,7 +2479,7 @@ export function createInitialRegistry(): EngineRegistry {
   return reg;
 }
 
-// @kern-source: app:629
+// @kern-source: app:664
 export function drainStdinBuffer(): void {
   if (!process.stdin.isTTY || typeof process.stdin.read !== 'function') return;
   let chunk: string | Buffer | null;
@@ -2425,12 +2488,12 @@ export function drainStdinBuffer(): void {
   } while (chunk !== null);
 }
 
-// @kern-source: app:638
+// @kern-source: app:673
 export function maxScrollOffsetForRowCount(rowCount: number, rowBudget: number): number {
   return Math.max(0, rowCount - Math.max(1, rowBudget));
 }
 
-// @kern-source: app:643
+// @kern-source: app:678
 export function nextWheelAnimationStep(pending: number): {step:number,remaining:number} {
   if (!Number.isFinite(pending) || pending === 0) return { step: 0, remaining: 0 };
   const direction = pending > 0 ? 1 : -1;
@@ -2440,12 +2503,12 @@ export function nextWheelAnimationStep(pending: number): {step:number,remaining:
   return { step, remaining: pending - step };
 }
 
-// @kern-source: app:653
+// @kern-source: app:688
 export function clampNumber(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-// @kern-source: app:658
+// @kern-source: app:693
 export function charDisplayWidth(char: string): number {
   if (!char) return 0;
   const codePoint = char.codePointAt(0) ?? 0;
@@ -2480,7 +2543,7 @@ export function charDisplayWidth(char: string): number {
   return 1;
 }
 
-// @kern-source: app:693
+// @kern-source: app:728
 export function stringDisplayWidth(text: string): number {
   let width = 0;
   for (const char of Array.from(String(text ?? ''))) {
@@ -2489,7 +2552,7 @@ export function stringDisplayWidth(text: string): number {
   return width;
 }
 
-// @kern-source: app:702
+// @kern-source: app:737
 export function displayColumnToStringIndex(text: string, targetColumn: number): number {
   const value = String(text ?? '');
   if (!Number.isFinite(targetColumn) || targetColumn <= 0) return 0;
@@ -2506,13 +2569,13 @@ export function displayColumnToStringIndex(text: string, targetColumn: number): 
   return value.length;
 }
 
-// @kern-source: app:719
+// @kern-source: app:754
 export function normalizeRowSelection(anchor: number|null, focus: number|null): {start:number,end:number}|null {
   if (anchor === null || focus === null) return null;
   return { start: Math.min(anchor, focus), end: Math.max(anchor, focus) };
 }
 
-// @kern-source: app:725
+// @kern-source: app:760
 export function normalizeTextSelection(anchorRow: number|null, anchorCol: number|null, focusRow: number|null, focusCol: number|null): {startRow:number,startCol:number,endRow:number,endCol:number}|null {
   if (anchorRow === null || anchorCol === null || focusRow === null || focusCol === null) return null;
   if (anchorRow < focusRow) return { startRow: anchorRow, startCol: anchorCol, endRow: focusRow, endCol: focusCol };
@@ -2521,7 +2584,7 @@ export function normalizeTextSelection(anchorRow: number|null, anchorCol: number
   return { startRow: focusRow, startCol: focusCol, endRow: anchorRow, endCol: anchorCol };
 }
 
-// @kern-source: app:734
+// @kern-source: app:769
 export function richLineToPlainText(line: any): string {
   if (!line) return '';
   if (line.kind === 'blank') return '';
@@ -2542,7 +2605,7 @@ export function richLineToPlainText(line: any): string {
   return `${indent}${listIndent}${marker}${spanText}`;
 }
 
-// @kern-source: app:755
+// @kern-source: app:790
 export function transcriptRowToPlainText(row: any): string {
   if (!row) return '';
   if (row.kind === 'spacer') return '';
@@ -2557,14 +2620,14 @@ export function transcriptRowToPlainText(row: any): string {
   return `${prefix}${text}`;
 }
 
-// @kern-source: app:770
+// @kern-source: app:805
 export function transcriptRowTextStartColumn(row: any): number {
   const paddingLeft = Math.max(0, Number(row?.paddingLeft ?? 0));
   const borderColumns = row?.borderColor ? 2 : 0;
   return paddingLeft + borderColumns + 2;
 }
 
-// @kern-source: app:777
+// @kern-source: app:812
 export function resolveTranscriptColumnFromMouse(mouseX: number, row: any): number {
   const text = transcriptRowToPlainText(row);
   const startColumn = transcriptRowTextStartColumn(row);
@@ -2573,7 +2636,7 @@ export function resolveTranscriptColumnFromMouse(mouseX: number, row: any): numb
   return displayColumnToStringIndex(text, targetColumn);
 }
 
-// @kern-source: app:786
+// @kern-source: app:821
 export function transcriptRowsToPlainText(rows: any[], anchorRow: number|null, anchorCol: number|null, focusRow: number|null, focusCol: number|null): string {
   const range = normalizeTextSelection(anchorRow, anchorCol, focusRow, focusCol);
   if (!range) return '';
@@ -2598,7 +2661,7 @@ export function transcriptRowsToPlainText(rows: any[], anchorRow: number|null, a
   return lines.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd();
 }
 
-// @kern-source: app:811
+// @kern-source: app:846
 export function resolveTranscriptRowFromMouse(mouseY: number, viewportTopLine: number, firstVisibleRow: number, visibleRowCount: number): number|null {
   if (visibleRowCount <= 0) return null;
   const offset = mouseY - viewportTopLine;
@@ -2607,7 +2670,7 @@ export function resolveTranscriptRowFromMouse(mouseY: number, viewportTopLine: n
   return firstVisibleRow + clamped;
 }
 
-// @kern-source: app:820
+// @kern-source: app:855
 export function estimateVisibleBlockBudget(rows: number, mode: string, overlayReservedRows: number): number {
   // Chat mode keeps 7 rows for the composer/status chrome at minimum:
   // margin + bordered composer (3) + Cesar strip + two-line status bar.
@@ -2616,7 +2679,7 @@ export function estimateVisibleBlockBudget(rows: number, mode: string, overlayRe
   return Math.max(1, rows - reservedRows);
 }
 
-// @kern-source: app:829
+// @kern-source: app:864
 export function estimateWrappedRowCount(text: string, wrapWidth: number): number {
   const safeWidth = Math.max(1, wrapWidth);
   const lines = String(text ?? '').split('\n');
@@ -2630,7 +2693,7 @@ export function estimateWrappedRowCount(text: string, wrapWidth: number): number
 /**
  * Reserve extra transcript rows when the bottom composer is showing a multi-line question or permission card, so short terminals do not clip the actionable keys.
  */
-// @kern-source: app:840
+// @kern-source: app:875
 export function estimateQuestionReservedRows(questionState: any, termWidth: number): number {
   if (!questionState) return 0;
   const safeWidth = Math.max(24, termWidth - 12);
@@ -2666,7 +2729,7 @@ export function estimateQuestionReservedRows(questionState: any, termWidth: numb
 /**
  * Reserve extra rows above the base composer/status chrome for stacked prompt cards, queued-input badges, and chat spinner rows.
  */
-// @kern-source: app:874
+// @kern-source: app:909
 export function estimateBottomChromeExtraRows(mode: string, questionState: any, termWidth: number, pendingImageCount: number, inputQueueCount: number, hasLiveSpinner: boolean): number {
   let extraRows = 0;
   if (pendingImageCount > 0) extraRows += 1;
@@ -2676,7 +2739,7 @@ export function estimateBottomChromeExtraRows(mode: string, questionState: any, 
   return extraRows;
 }
 
-// @kern-source: app:885
+// @kern-source: app:920
 export function buildDashboardBlock(enabledOverride: string[]|null): OutputBlock {
   const registry = createInitialRegistry();
   const available = registry.availableIds();
@@ -2707,7 +2770,7 @@ export function buildDashboardBlock(enabledOverride: string[]|null): OutputBlock
   };
 }
 
-// @kern-source: app:916
+// @kern-source: app:951
 export function estimatePinnedLiveRows(mode: string, hasStream: boolean, hasProgress: boolean, agentCount: number): number {
   const streamRows = hasStream ? (mode === 'chat' ? 3 : 6) : 0;
   const progressRows = hasProgress ? (mode === 'chat' ? 3 : 5) : 0;
@@ -2715,7 +2778,7 @@ export function estimatePinnedLiveRows(mode: string, hasStream: boolean, hasProg
   return streamRows + progressRows + agentRows;
 }
 
-// @kern-source: app:924
+// @kern-source: app:959
 export function estimateWrappedRows(text: string, width: number): number {
   const safeWidth = Math.max(1, width);
   if (!text) return 0;
@@ -2725,7 +2788,7 @@ export function estimateWrappedRows(text: string, width: number): number {
   }, 0);
 }
 
-// @kern-source: app:934
+// @kern-source: app:969
 export function estimateToolCallRows(event: any, toolOutputExpanded: boolean, codeWidth: number): number {
   if (!event || event.type !== 'tool-call') return 0;
   if (!event.input && !event.output && (event.tool === 'Delegate' || event.tool === 'delegate')) return 0;
@@ -2798,7 +2861,7 @@ export function estimateToolCallRows(event: any, toolOutputExpanded: boolean, co
   return rows;
 }
 
-// @kern-source: app:1007
+// @kern-source: app:1042
 export function estimateOutputEventRows(event: OutputEvent, mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean): number {
   const proseWidth = contentWidth(4);
   const chatWidth = contentWidth(2);
@@ -2903,7 +2966,7 @@ export function estimateOutputEventRows(event: OutputEvent, mode: string, toolOu
   }
 }
 
-// @kern-source: app:1112
+// @kern-source: app:1147
 export function buildDisplayItems(blocks: OutputBlock[], toolOutputExpanded: boolean): OutputBlock[] {
   // Keep collapse as a per-block display concern, not a synthetic grouped
   // scroll unit. Grouped tool summaries make wheel scrolling jump because
@@ -2911,7 +2974,7 @@ export function buildDisplayItems(blocks: OutputBlock[], toolOutputExpanded: boo
   return blocks;
 }
 
-// @kern-source: app:1120
+// @kern-source: app:1155
 export function isToolCallLikeBlock(block: OutputBlock): boolean {
   const type = (block?.event as any)?.type;
   return type === 'tool-call' || type === 'tool-call-group';
@@ -2920,7 +2983,7 @@ export function isToolCallLikeBlock(block: OutputBlock): boolean {
 /**
  * Merge adjacent tool-call and tool-call-group blocks into one group so native/live renderers do not show repeated collapsed tool summaries.
  */
-// @kern-source: app:1126
+// @kern-source: app:1161
 export function coalesceToolCallBlocks(blocks: OutputBlock[]): OutputBlock[] {
   if (!Array.isArray(blocks) || blocks.length === 0) return [];
   const out: OutputBlock[] = [];
@@ -2967,7 +3030,7 @@ export function coalesceToolCallBlocks(blocks: OutputBlock[]): OutputBlock[] {
 /**
  * Choose the native Static archive count. When tools are expanded, keep the latest tool-call island live because Ink Static cannot repaint already-sealed collapsed tool summaries.
  */
-// @kern-source: app:1171
+// @kern-source: app:1206
 export function effectiveNativeArchiveBlockCount(blocks: OutputBlock[], baseArchiveCount: number, targetArchiveCount: number, toolOutputExpanded: boolean): number {
   if (!Array.isArray(blocks) || blocks.length === 0) return 0;
 
@@ -3000,12 +3063,12 @@ export function effectiveNativeArchiveBlockCount(blocks: OutputBlock[], baseArch
   return count;
 }
 
-// @kern-source: app:1205
+// @kern-source: app:1240
 export function estimateDisplayItemRows(item: OutputBlock, mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean): number {
   return estimateOutputEventRows(item.event, mode, toolOutputExpanded, thinkingExpanded);
 }
 
-// @kern-source: app:1210
+// @kern-source: app:1245
 export function historyBlocksForTranscript(blocks: OutputBlock[]): OutputBlock[] {
   if (blocks.length === 1 && blocks[0]?.event?.type === 'dashboard') return [];
   return blocks;
@@ -3014,7 +3077,7 @@ export function historyBlocksForTranscript(blocks: OutputBlock[]): OutputBlock[]
 /**
  * Native transcript history. While idle, the startup dashboard is live chrome. Once the first real transcript row exists, keep the dashboard as the first chat-history block so the AGON header scrolls with the conversation instead of disappearing.
  */
-// @kern-source: app:1216
+// @kern-source: app:1251
 export function nativeTranscriptBlocksForStatic(blocks: OutputBlock[]): OutputBlock[] {
   if (blocks.length === 1 && blocks[0]?.event?.type === 'dashboard') return [];
   return blocks;
@@ -3023,7 +3086,7 @@ export function nativeTranscriptBlocksForStatic(blocks: OutputBlock[]): OutputBl
 /**
  * Choose how many native transcript blocks are sealed into Static. The remaining tail stays live so recent rows can rerender while older rows remain in terminal scrollback.
  */
-// @kern-source: app:1223
+// @kern-source: app:1258
 export function nativeArchiveBlockCount(blocks: OutputBlock[], mode: string, rowBudget: number, toolOutputExpanded: boolean, thinkingExpanded: boolean): number {
   if (!Array.isArray(blocks) || blocks.length === 0) return 0;
 
@@ -3057,7 +3120,7 @@ export function nativeArchiveBlockCount(blocks: OutputBlock[], mode: string, row
 /**
  * Detect same-turn duplicate completed engine output. A new user-message resets the guard so an intentional repeat request can still show identical text.
  */
-// @kern-source: app:1255
+// @kern-source: app:1290
 export function isDuplicateEngineBlock(blocks: OutputBlock[], event: any): boolean {
   if (!event || event.type !== 'engine-block') return false;
   const content = cleanEngineOutput(String(event.content ?? '')).trim();
@@ -3079,25 +3142,25 @@ export function isDuplicateEngineBlock(blocks: OutputBlock[], event: any): boole
 /**
  * Append a transcript block with cap/archive handling while suppressing accidental duplicate engine output.
  */
-// @kern-source: app:1275
+// @kern-source: app:1310
 export function appendTranscriptBlock(blocks: OutputBlock[], event: any, archivePath: string): OutputBlock[] {
   if (isDuplicateEngineBlock(blocks, event)) return blocks;
   return appendBlockWithCap(blocks, { id: Date.now() + Math.random(), event }, archivePath);
 }
 
-// @kern-source: app:1282
+// @kern-source: app:1317
 export function normalizeTerminalMode(value: any): 'native'|'fullscreen' {
   return value === 'fullscreen' ? 'fullscreen' : 'native';
 }
 
-// @kern-source: app:1287
+// @kern-source: app:1322
 export function fileRailWidthForTerminal(termWidth: number, expanded: boolean): number {
   const safeWidth = Math.max(40, Math.floor(Number(termWidth) || 100));
   if (expanded) return Math.max(36, Math.min(84, Math.floor(safeWidth * 0.35)));
   return Math.max(28, Math.min(42, Math.floor(safeWidth * 0.22)));
 }
 
-// @kern-source: app:1294
+// @kern-source: app:1329
 export function fileRailMaxRowsForTerminal(termHeight: number, terminalMode: string, expanded: boolean): number {
   const safeHeight = Math.max(8, Math.floor(Number(termHeight) || 24));
   if (terminalMode === 'native') {
@@ -3111,7 +3174,7 @@ export function fileRailMaxRowsForTerminal(termHeight: number, terminalMode: str
 /**
  * Pure terminal replay harness: summarizes the layout-sensitive parts of the REPL for fixed viewport sizes so unit tests can catch native/fullscreen regressions without launching an interactive TTY.
  */
-// @kern-source: app:1305
+// @kern-source: app:1340
 export function buildTerminalReplaySnapshot(blocks: OutputBlock[], opts: any): {terminalMode:'native'|'fullscreen'; mode:string; termWidth:number; termHeight:number; visibleBudget:number; transcriptRowCount:number; staticBlockCount:number; liveBlockCount:number; fileRailWidth:number; fileRailRows:number; headerRows:number; lowerChromeRows:number} {
   const terminalMode = normalizeTerminalMode(opts?.terminalMode);
   const mode = String(opts?.mode ?? 'chat');
@@ -3165,7 +3228,7 @@ export function buildTerminalReplaySnapshot(blocks: OutputBlock[], opts: any): {
   };
 }
 
-// @kern-source: app:1360
+// @kern-source: app:1395
 export function parseMarkdownToRows(baseKey: string, text: string, wrapWidth: number, paddingLeft: number, borderColor: string): any[] {
   const rows: any[] = [];
   const cleaned = String(text ?? '').trim();
@@ -3273,7 +3336,7 @@ export function parseMarkdownToRows(baseKey: string, text: string, wrapWidth: nu
   return rows;
 }
 
-// @kern-source: app:1468
+// @kern-source: app:1503
 export function buildToolCallRows(baseKey: string, event: any, toolOutputExpanded: boolean): any[] {
   if (!event.input && !event.output && (event.tool === 'Delegate' || event.tool === 'delegate')) return [];
 
@@ -3644,7 +3707,7 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
   return rows;
 }
 
-// @kern-source: app:1839
+// @kern-source: app:1874
 export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any[] {
   if (!events || events.length === 0) return [];
 
@@ -3739,7 +3802,7 @@ export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any
   return rows;
 }
 
-// @kern-source: app:1934
+// @kern-source: app:1969
 export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean): any[] {
   const rows: any[] = [];
   const proseWidth = contentWidth(4);
@@ -4219,7 +4282,7 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
   return rows;
 }
 
-// @kern-source: app:4083
+// @kern-source: app:4146
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

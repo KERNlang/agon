@@ -245,10 +245,14 @@ export function App() {
       }
     };
   }, []);
+  const [liveScoreboard, _setLiveScoreboardRaw] = useState<Scoreboard|null>(null);
+  const setLiveScoreboard = useMemo(() => __inkSafe(_setLiveScoreboardRaw), [_setLiveScoreboardRaw]);
+  const [liveRationale, _setLiveRationaleRaw] = useState<ModeRationale|null>(null);
+  const setLiveRationale = useMemo(() => __inkSafe(_setLiveRationaleRaw), [_setLiveRationaleRaw]);
   const [agentProgress, _setAgentProgressRaw] = useState<Record<string,AgentProgressSnapshot>>({});
   const setAgentProgress = useMemo(() => __inkSafe(_setAgentProgressRaw), [_setAgentProgressRaw]);
   const [planModeQueued, setPlanModeQueued] = useState<boolean>(false);
-  const [autoModeQueued, setAutoModeQueued] = useState<boolean>(false);
+  const [autoModeQueued, setAutoModeQueued] = useState<boolean>(() => loadConfig().cesarAutoMode === true);
   const [cesarMemory, _setCesarMemoryRaw] = useState<any>(() => createCesarMemory());
   const setCesarMemory = useMemo(() => __inkSafe(_setCesarMemoryRaw), [_setCesarMemoryRaw]);
   const [sessionMcpServers, _setSessionMcpServersRaw] = useState<Array<Record<string,unknown>>>([]);
@@ -582,6 +586,8 @@ export function App() {
             },
             getEngineColor: (engineId: string) => ENGINE_COLORS[engineId] ?? 124,
             setCesarConfidence,
+            setLiveScoreboard: (val: Scoreboard | null) => setLiveScoreboard(val),
+            setLiveRationale: (val: ModeRationale | null) => setLiveRationale(val),
             setAgentProgress: (updater: Record<string,AgentProgressSnapshot> | ((prev: Record<string,AgentProgressSnapshot>) => Record<string,AgentProgressSnapshot>)) => {
               const prev = agentProgressRef.current;
               const next = typeof updater === 'function' ? (updater as (p: Record<string,AgentProgressSnapshot>) => Record<string,AgentProgressSnapshot>)(prev) : updater;
@@ -629,6 +635,13 @@ export function App() {
     if (!sessionEngines) return available;
     return sessionEngines.filter((id: string) => available.includes(id));
   }, [registry,sessionEngines]);
+
+  const setPersistentAutoMode = useCallback((enabled:boolean) => {
+    configSet('cesarAutoMode' as any, enabled as any);
+    configSet('cesarAutoModePrompted' as any, true as any);
+    setAutoModeQueued(enabled);
+    setConfigVersion((v: number) => v + 1);
+  }, []);
 
   const dispatch = useCallback((event:OutputEvent) => {
     const et = (event as any).type;
@@ -789,17 +802,17 @@ export function App() {
     const autoControl = parseAutoModeCommand(input);
     if (autoControl) {
       if (autoControl === 'status') {
-        dispatch({ type: 'info', message: autoModeQueued ? 'AUTO is ON — the next plain task may self-escalate through Cesar.' : 'AUTO is OFF.' } as any);
+        dispatch({ type: 'info', message: autoModeQueued ? 'AUTO is ON by default — plain tasks may self-escalate through Cesar.' : 'AUTO is OFF by default.' } as any);
         return;
       }
       const nextAutoModeQueued = autoControl === 'toggle' ? !autoModeQueued : autoControl === 'on';
       setPlanModeQueued(false);
-      setAutoModeQueued(nextAutoModeQueued);
+      setPersistentAutoMode(nextAutoModeQueued);
       dispatch({
         type: 'info',
         message: nextAutoModeQueued
-          ? 'AUTO ON — type a task and press Enter. Use /auto off or Esc to cancel.'
-          : 'AUTO OFF.',
+          ? 'AUTO ON by default. Plain tasks may self-escalate through Cesar. Use /auto off or Ctrl+A to disable.'
+          : 'AUTO OFF by default.',
       } as any);
       return;
     }
@@ -884,13 +897,11 @@ export function App() {
     }
     if (planModeQueued && input.trim() && !input.startsWith('/')) {
       setPlanModeQueued(false);
-      setAutoModeQueued(false);
       handleSubmit(`/plan ${input}`);
       return;
     }
     const autoModeForTurn = autoModeQueued && input.trim() && !input.startsWith('/');
     if (planModeQueued) setPlanModeQueued(false);
-    if (autoModeQueued) setAutoModeQueued(false);
     transition(startCommandReplState);
     dispatch({ type: 'separator' } as any);
     dispatch({ type: 'user-message', content: input } as any);
@@ -932,7 +943,7 @@ export function App() {
       if (result.ranAsJob) return;
     } catch (err: any) { dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); }
     finally { setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state); }
-  }, [replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,planModeQueued,autoModeQueued]);
+  }, [replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,planModeQueued,autoModeQueued,setPersistentAutoMode]);
 
   const handleReviewActionCb = useCallback((action:'apply'|'edit'|'reject'|'copy') => {
     if (!reviewEvent) return;
@@ -1208,17 +1219,16 @@ export function App() {
         setInputValue(inputValue + action.ghost + ' ');
         return;
       case 'togglePlanQueued':
-        setAutoModeQueued(false);
         setPlanModeQueued((prev: boolean) => !prev); return;
       case 'toggleAutoQueued':
         const nextAutoModeQueued = !autoModeQueued;
         setPlanModeQueued(false);
-        setAutoModeQueued(nextAutoModeQueued);
+        setPersistentAutoMode(nextAutoModeQueued);
         dispatch({
           type: 'info',
           message: nextAutoModeQueued
-            ? 'AUTO queued — type your task and press Enter. Esc cancels.'
-            : 'AUTO canceled.',
+            ? 'AUTO ON by default. Plain tasks may self-escalate through Cesar. Ctrl+A toggles it off.'
+            : 'AUTO OFF by default.',
         } as any);
         return;
       case 'submit':
@@ -1264,7 +1274,9 @@ export function App() {
       case 'unqueuePlan':
         setPlanModeQueued(false); return;
       case 'unqueueAuto':
-        setAutoModeQueued(false); return;
+        setPersistentAutoMode(false);
+        dispatch({ type: 'info', message: 'AUTO OFF by default.' } as any);
+        return;
       case 'closeSlash':
         setSlashPickerOpen(false); return;
       case 'closeEnginePicker':
@@ -1287,7 +1299,7 @@ export function App() {
         handleCancelOrExit();
         return;
     }
-  }, [modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,autoModeQueued,activePlan,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry,toggleSelectionMode,startupOnly,terminalMode]);
+  }, [modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,autoModeQueued,activePlan,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry,toggleSelectionMode,startupOnly,terminalMode,setPersistentAutoMode]);
 
   useEffect(() => {
     initExtensions(workspacePath, commandRegistry, registry, eventBus).then(({ extensions, skills: extSkills, systemPromptFragments }) => {
@@ -1422,6 +1434,28 @@ export function App() {
     process.stdout.on('resize', onResize);
     return () => { process.stdout.off('resize', onResize); };
   }, [[]]);
+
+  useEffect(() => {
+    const initialConfig = loadConfig();
+    if ((initialConfig as any).cesarAutoModePrompted === true) return;
+    setQuestionState({
+      prompt: 'Enable AUTO mode by default? Cesar may self-escalate plain tasks to plans; tool approval policy still applies.',
+      choices: [
+        { key: 'y', label: 'Always on', color: '#f97316' },
+        { key: 'n', label: 'Keep off', color: '#9ca3af' },
+      ],
+      resolve: (answer: string) => {
+        const enabled = String(answer ?? '').trim().toLowerCase() === 'y';
+        setPersistentAutoMode(enabled);
+        dispatch({
+          type: 'info',
+          message: enabled
+            ? 'AUTO is now always on. Change it anytime with /auto off or Ctrl+A.'
+            : 'AUTO is off by default. Enable it anytime with /auto on or Ctrl+A.',
+        } as any);
+      },
+    });
+  }, []);
 
   useEffect(() => {
     if (!process.stdin.isTTY || !process.stdout.isTTY) return;
@@ -4027,7 +4061,7 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
   return rows;
 }
 
-// @kern-source: app:3915
+// @kern-source: app:3949
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

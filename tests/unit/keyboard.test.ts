@@ -154,6 +154,13 @@ describe('resolveKeyboardInput', () => {
     }))).toEqual({ type: 'none' });
   });
 
+  it('does not cancel persistent auto mode with escape', () => {
+    expect(resolveKeyboardInput(baseCtx({
+      autoModeQueued: true,
+      key: { escape: true },
+    }))).toEqual({ type: 'none' });
+  });
+
   it('leaves PgUp/PgDn/Home/End to the terminal — main-buffer + native scrollback owns scroll', () => {
     // In Agon's current architecture (no alt-screen, transcript rows committed
     // to Static → terminal scrollback), the app has no in-app scroll surface.

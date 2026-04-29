@@ -83,7 +83,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { cmd: '/commit',      desc: '[message]                — stage & commit with auto-generated message' },
   { cmd: '/doctor',      desc: '[engines|harness]        — diagnose engines, worktree, or Cesar harness' },
   { cmd: '/harness-replay', desc: '[turnId]              — replay Cesar tool timeline + approval ledger' },
-  { cmd: '/undo',        desc: '                        — revert last applied forge patch' },
+  { cmd: '/undo',        desc: '                        — revert last patch or Cesar checkpoint' },
   { cmd: '/jobs',        desc: '                        — list running/completed jobs' },
   { cmd: '/focus',       desc: '<id>                    — switch to background job output' },
   { cmd: '/explore',     desc: '                        — toggle exploration mode (read-only)' },

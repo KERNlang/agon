@@ -27,6 +27,7 @@ import {
   resolveFileRailExpandedFile,
 } from '../../packages/cli/src/generated/blocks/file-rail.js';
 import {
+  buildCesarRecapDiffPreview,
   buildCesarTurnRecapEvent,
   createCesarRecapCapture,
   recordCesarRecapEvent,
@@ -196,6 +197,14 @@ describe('app scroll helpers', () => {
       status: 'done',
       output: 'passed',
     });
+    recordCesarRecapEvent(capture, {
+      type: 'tool-call',
+      engineId: 'cesar',
+      tool: 'Edit',
+      input: '{"file_path":"a.ts","old_string":"old","new_string":"new"}',
+      status: 'done',
+      output: 'Applied edit to a.ts (1 line) · checkpoint abc12345',
+    });
     recordCesarRecapEvent(capture, { type: 'warning', message: 'One generated file was refreshed.' });
 
     const event = buildCesarTurnRecapEvent(
@@ -204,11 +213,15 @@ describe('app scroll helpers', () => {
       [{ path: '/repo/a.ts', relPath: 'a.ts', status: 'read', touchCount: 1, lastTouchedAt: 1 }],
       [{ path: '/repo/a.ts', relPath: 'a.ts', status: 'edited', touchCount: 2, lastTouchedAt: 2 }],
     );
+    event.diffPreview = buildCesarRecapDiffPreview(event.files, {
+      '/repo/a.ts': '@@ -1 +1 @@\n-old\n+new',
+    }, 4, 6);
 
     expect(shouldEmitCesarRecap(event)).toBe(true);
     expect(event.confidence).toBe(91);
     expect(event.commands[0].label).toBe('tests');
     expect(event.files[0].relPath).toBe('a.ts');
+    expect(event.checkpoints[0].id).toBe('abc12345');
 
     const rows = buildTranscriptRows([{ id: 1, event } as any], 'chat', false, true);
     const text = transcriptRowsToPlainText(rows, 0, 0, rows.length - 1, 999);
@@ -216,6 +229,8 @@ describe('app scroll helpers', () => {
     expect(text).toContain('91% confidence');
     expect(text).toContain('tests');
     expect(text).toContain('a.ts');
+    expect(text).toContain('checkpoint: abc12345');
+    expect(text).toContain('+new');
   });
 
   it('replays terminal render snapshots across native and fullscreen sizes', () => {

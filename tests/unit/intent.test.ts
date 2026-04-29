@@ -389,6 +389,14 @@ describe('Intent Detection — Natural Language', () => {
     }
   });
 
+  it('does not misroute feature requests that mention engines to brainstorm', () => {
+    const r = detectIntent('can you make Agon feel alive with real-time engine telemetry, CPU and memory per engine, a /status dashboard, fallback on stalls, keep it in KERN, spec first then build');
+    expect(r.type).toBe('auto');
+    if (r.type === 'auto') {
+      expect(r.input).toContain('real-time engine telemetry');
+    }
+  });
+
   it('routes high-confidence competition phrases to forge', () => {
     const r = detectIntent('make engines compete on fix auth test with npm test');
     expect(r.type).toBe('forge');

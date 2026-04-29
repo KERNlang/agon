@@ -44,6 +44,24 @@ describe('buildPlanPhaseGauge', () => {
     expect(gauge.current).toBe('Compile generated files');
   });
 
+  it('normalizes stale paused plans with all steps done to complete', () => {
+    const gauge = buildPlanPhaseGauge({
+      id: 'cplan-paused-complete',
+      state: 'paused',
+      steps: [
+        { state: 'done', description: 'Patch app' },
+        { state: 'done', description: 'Verify' },
+      ],
+    }, 10);
+
+    expect(gauge.label).toBe('Step 2/2');
+    expect(gauge.phase).toBe('complete');
+    expect(gauge.pct).toBe(100);
+    expect(gauge.failed).toBe(0);
+    expect(gauge.terminalComplete).toBe(true);
+    expect(gauge.rawPhase).toBe('paused');
+  });
+
   it('hides when there is no active plan with steps', () => {
     expect(buildPlanPhaseGauge(null).visible).toBe(false);
     expect(buildPlanPhaseGauge({ state: 'running', steps: [] }).visible).toBe(false);

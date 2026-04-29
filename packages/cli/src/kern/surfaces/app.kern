@@ -2600,6 +2600,7 @@ screen name=App target=ink
   ref name=chatStartTimeRef type=number initial=0
   ref name=currentPlanRef type="Plan|null" initial="null"
   ref name=activePlanRef type=any initial="null"
+  ref name=activePlanClearTimerRef type="ReturnType<typeof setTimeout>|null" initial="null"
   ref name=streamingTextRef type="Record<string,StreamingEntry>" initial="{}"
   ref name=agentProgressRef type="Record<string,AgentProgressSnapshot>" initial="{}"
   ref name=lastReviewResultRef type="{ engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number } | null" initial="null"
@@ -3054,8 +3055,37 @@ screen name=App target=ink
 
   callback name=setActivePlanWrapped params="plan:any" deps=""
     handler <<<
+      if (activePlanClearTimerRef.current) {
+        clearTimeout(activePlanClearTimerRef.current);
+        activePlanClearTimerRef.current = null;
+      }
       activePlanRef.current = plan;
       setActivePlan(plan);
+      const state = String(plan?.state ?? '');
+      const steps = Array.isArray(plan?.steps) ? plan.steps : [];
+      const allStepsComplete = steps.length > 0 && steps.every((step: any) => ['done', 'skipped'].includes(String(step?.state ?? ''))) && !steps.some((step: any) => String(step?.state ?? '') === 'failed');
+      const shouldRetire = state === 'done' || state === 'cancelled' || allStepsComplete;
+      if (plan && shouldRetire) {
+        const planId = String(plan.id ?? '');
+        activePlanClearTimerRef.current = setTimeout(() => {
+          const current = activePlanRef.current;
+          if (current && String(current.id ?? '') === planId) {
+            activePlanRef.current = null;
+            setActivePlan(null);
+          }
+          activePlanClearTimerRef.current = null;
+        }, 12000);
+      }
+    >>>
+
+  effect deps=""
+    handler <<<
+      return () => {
+        if (activePlanClearTimerRef.current) {
+          clearTimeout(activePlanClearTimerRef.current);
+          activePlanClearTimerRef.current = null;
+        }
+      };
     >>>
 
   // ── Output actions (KERN bridge) ──

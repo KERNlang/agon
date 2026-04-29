@@ -381,6 +381,7 @@ export function App() {
   const chatStartTimeRef = useRef<number>(0);
   const currentPlanRef = useRef<Plan|null>(null);
   const activePlanRef = useRef<any>(null);
+  const activePlanClearTimerRef = useRef<ReturnType<typeof setTimeout>|null>(null);
   const streamingTextRef = useRef<Record<string,StreamingEntry>>({});
   const agentProgressRef = useRef<Record<string,AgentProgressSnapshot>>({});
   const lastReviewResultRef = useRef<{ engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number } | null>(null);
@@ -688,8 +689,27 @@ export function App() {
   }, []);
 
   const setActivePlanWrapped = useCallback((plan:any) => {
+    if (activePlanClearTimerRef.current) {
+      clearTimeout(activePlanClearTimerRef.current);
+      activePlanClearTimerRef.current = null;
+    }
     activePlanRef.current = plan;
     setActivePlan(plan);
+    const state = String(plan?.state ?? '');
+    const steps = Array.isArray(plan?.steps) ? plan.steps : [];
+    const allStepsComplete = steps.length > 0 && steps.every((step: any) => ['done', 'skipped'].includes(String(step?.state ?? ''))) && !steps.some((step: any) => String(step?.state ?? '') === 'failed');
+    const shouldRetire = state === 'done' || state === 'cancelled' || allStepsComplete;
+    if (plan && shouldRetire) {
+      const planId = String(plan.id ?? '');
+      activePlanClearTimerRef.current = setTimeout(() => {
+        const current = activePlanRef.current;
+        if (current && String(current.id ?? '') === planId) {
+          activePlanRef.current = null;
+          setActivePlan(null);
+        }
+        activePlanClearTimerRef.current = null;
+      }, 12000);
+    }
   }, []);
 
   const dispatch = useCallback((event:OutputEvent) => {
@@ -1552,6 +1572,15 @@ export function App() {
       }
     };
   }, [eventBus,dispatch,chatSession]);
+
+  useEffect(() => {
+    return () => {
+      if (activePlanClearTimerRef.current) {
+        clearTimeout(activePlanClearTimerRef.current);
+        activePlanClearTimerRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const onResize = () => {
@@ -4529,7 +4558,7 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
   return rows;
 }
 
-// @kern-source: app:4396
+// @kern-source: app:4426
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

@@ -49,7 +49,7 @@ export function TokenGauge({ tokens, maxTokens }: { tokens:number; maxTokens:num
   );
 }
 
-// @kern-source: status:256
+// @kern-source: status:260
 function AgonTip() {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -67,7 +67,7 @@ function AgonTip() {
   );
 }
 
-// @kern-source: status:269
+// @kern-source: status:273
 export function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd, cwd, branch, explorationMode, toolOutputExpanded, autoModeQueued, isActive, fullscreenEnabled, telemetryVitals }: { cesarId:string; chatMessageCount:number; totalTokens:number; totalCostUsd:number; cwd:string; branch?:string; explorationMode?:boolean; toolOutputExpanded?:boolean; autoModeQueued?:boolean; isActive?:boolean; fullscreenEnabled?:boolean; telemetryVitals?:Map<string, any> }) {
   const cost = totalCostUsd > 0 ? `$${totalCostUsd.toFixed(2)}` : '';
   const msgs = chatMessageCount;
@@ -130,7 +130,7 @@ export function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd
   );
 }
 
-// @kern-source: status:347
+// @kern-source: status:351
 const StatusDashboard = React.memo(function StatusDashboard({ telemetryVitals, recentFallbacks, width, height, filter }: { telemetryVitals:Map<string, any>; recentFallbacks?:{from:string,to:string,reason:string,at:number}[]; width?:number; height?:number; filter?:'all'|'problem' }) {
   const vitals = Array.from(telemetryVitals?.values?.() ?? []);
   const severity: Record<string, number> = { stalled: 5, fallback: 4, offline: 3, busy: 2, idle: 1 };
@@ -189,7 +189,7 @@ const StatusDashboard = React.memo(function StatusDashboard({ telemetryVitals, r
 });
 export { StatusDashboard };
 
-// @kern-source: status:413
+// @kern-source: status:417
 const ExecutionRail = React.memo(function ExecutionRail({ spinner, engines, activePlanState, activePlan, lastTool, stats, recentFallbacks, toolOutputExpanded, startTime, isActive }: { spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; activePlanState?:string|null; activePlan?:any; lastTool?:any; stats?:any; recentFallbacks?:{from:string,to:string,reason:string,at:number}[]; toolOutputExpanded?:boolean; startTime?:number; isActive?:boolean }) {
   const planGauge = buildPlanPhaseGauge(activePlan, 10);
   const now = Date.now();
@@ -293,7 +293,7 @@ const ExecutionRail = React.memo(function ExecutionRail({ spinner, engines, acti
 });
 export { ExecutionRail };
 
-// @kern-source: status:527
+// @kern-source: status:531
 const ExecutionRailPanel = React.memo(function ExecutionRailPanel({ spinner, engines, activePlanState, activePlan, lastTool, stats, recentFallbacks, toolOutputExpanded, startTime, isActive, width, maxRows, focused }: { spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; activePlanState?:string|null; activePlan?:any; lastTool?:any; stats?:any; recentFallbacks?:{from:string,to:string,reason:string,at:number}[]; toolOutputExpanded?:boolean; startTime?:number; isActive?:boolean; width?:number; maxRows?:number; focused?:boolean }) {
   const safeWidth = Math.max(32, Math.floor(Number(width ?? 42)));
   const safeRows = Math.max(8, Math.floor(Number(maxRows ?? 12)));
@@ -404,7 +404,7 @@ const ExecutionRailPanel = React.memo(function ExecutionRailPanel({ spinner, eng
 });
 export { ExecutionRailPanel };
 
-// @kern-source: status:653
+// @kern-source: status:657
 export function StatusLine({ startTime, engineId, color }: { startTime:number; engineId?:string; color?:number }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -439,7 +439,7 @@ export function StatusLine({ startTime, engineId, color }: { startTime:number; e
   );
 }
 
-// @kern-source: status:682
+// @kern-source: status:686
 const BackgroundJobRail = React.memo(function BackgroundJobRail({ jobs }: { jobs:Job[] }) {
   return (
     <Box paddingX={1}>
@@ -458,7 +458,7 @@ const BackgroundJobRail = React.memo(function BackgroundJobRail({ jobs }: { jobs
 });
 export { BackgroundJobRail };
 
-// @kern-source: status:704
+// @kern-source: status:708
 const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confidence, spinner, engines, startTime, streamSnippet, isActive, planModeQueued, autoModeQueued, activePlanState, activePlan, scoreboard, rationale }: { cesarId:string; confidence?:number|null; spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; startTime:number; streamSnippet?:{ engineId: string; line: string } | null; isActive:boolean; planModeQueued?:boolean; autoModeQueued?:boolean; activePlanState?:string|null; activePlan?:any; scoreboard?:Scoreboard|null; rationale?:ModeRationale|null }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -477,15 +477,18 @@ const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confide
   }, [isActive]);
 
   const planGauge = buildPlanPhaseGauge(activePlan, 12);
+  const displayPlanState = planGauge.visible && planGauge.phase === 'complete' ? 'done' : activePlanState;
   // Plan badge (shared between idle and active)
-  const hasPlan = planModeQueued || autoModeQueued || (activePlanState && ['planning', 'awaiting_approval', 'running', 'paused'].includes(activePlanState));
+  const hasPlan = planModeQueued || autoModeQueued || (displayPlanState && ['planning', 'awaiting_approval', 'running', 'paused', 'done'].includes(displayPlanState));
   let planLabel = '';
   if (planModeQueued) planLabel = 'ready';
   else if (autoModeQueued) planLabel = 'auto';
-  else if (activePlanState === 'planning') planLabel = 'thinking';
-  else if (activePlanState === 'awaiting_approval') planLabel = 'review';
-  else if (activePlanState === 'running') planLabel = 'executing';
-  else if (activePlanState === 'paused') planLabel = 'paused';
+  else if (displayPlanState === 'planning') planLabel = 'thinking';
+  else if (displayPlanState === 'awaiting_approval') planLabel = 'review';
+  else if (displayPlanState === 'running') planLabel = 'executing';
+  else if (displayPlanState === 'paused') planLabel = 'paused';
+  else if (displayPlanState === 'done') planLabel = 'done';
+  const planBadgeColor = autoModeQueued ? '#f97316' : displayPlanState === 'done' ? '#4ade80' : '#c084fc';
 
   // Idle: single dimmed line (no colored nesting issues)
   if (!isActive) {
@@ -493,7 +496,7 @@ const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confide
     return (
       <Box paddingTop={0} flexDirection="column">
         <Text>
-          {hasPlan ? <><Text color={autoModeQueued ? '#f97316' : '#c084fc'} bold>{`\u25c8 ${planLabel.toUpperCase()}`}</Text><Text dimColor>{' \u2502 '}</Text></> : null}
+          {hasPlan ? <><Text color={planBadgeColor} bold>{`\u25c8 ${planLabel.toUpperCase()}`}</Text><Text dimColor>{' \u2502 '}</Text></> : null}
           <Text dimColor>{'\u25c6 '}{cesarId}{confPart}{' \u2502 idle'}</Text>
         </Text>
         {planGauge.visible ? (
@@ -553,7 +556,7 @@ const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confide
     <Box paddingTop={0} flexDirection="column">
       <Box>
         <Text>
-          {hasPlan ? <><Text color={autoModeQueued ? '#f97316' : '#c084fc'} bold>{`\u25c8 ${planLabel.toUpperCase()}`}</Text><Text dimColor>{' \u2502 '}</Text></> : null}
+          {hasPlan ? <><Text color={planBadgeColor} bold>{`\u25c8 ${planLabel.toUpperCase()}`}</Text><Text dimColor>{' \u2502 '}</Text></> : null}
           <Text color={cesarColor} bold>{'\u25c6 '}{cesarId}</Text>
           {confStr ? <Text color={confColor} bold>{confStr}</Text> : null}
           <Text dimColor>{' \u2502 '}</Text>
@@ -629,7 +632,9 @@ export function buildPlanPhaseGauge(plan: any, width: number = 12): any {
   const failedIndex = steps.findIndex((s: any) => stepState(s) === 'failed');
   const nextIndex = steps.findIndex((s: any) => ['pending', 'blocked'].includes(stepState(s)));
   const completed = done + skipped;
-  const planState = String(plan.state ?? '');
+  const rawPlanState = String(plan.state ?? '');
+  const allComplete = total > 0 && completed === total && failed === 0 && runningIndex < 0 && nextIndex < 0;
+  const planState = rawPlanState === 'paused' && allComplete ? 'done' : rawPlanState;
 
   let currentIndex = runningIndex >= 0
     ? runningIndex
@@ -682,13 +687,15 @@ export function buildPlanPhaseGauge(plan: any, width: number = 12): any {
     failed,
     current,
     color,
+    terminalComplete: planState === 'done',
+    rawPhase: rawPlanState,
   };
 }
 
 /**
  * Build compact live rail rows from plan, tool, engine, and fallback state. Kept pure so the rail can evolve without baking logic into JSX.
  */
-// @kern-source: status:164
+// @kern-source: status:168
 export function buildExecutionRailTimeline(activePlan: any, lastTool: any, engines: any, recentFallbacks: any, limit: number = 5): any[] {
   const rows: any[] = [];
   const maxRows = Math.max(1, Math.min(8, Math.floor(Number(limit) || 5)));

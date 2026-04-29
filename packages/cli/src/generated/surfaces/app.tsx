@@ -106,7 +106,7 @@ import { useStableInput } from '../../stable-input.js';
 
 import { parseProseToRichLines } from '../blocks/rich-text.js';
 
-// @kern-source: app:2154
+// @kern-source: app:2181
 export function App() {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -544,12 +544,12 @@ export function App() {
               setStreamingText(next);
             },
             addBlock: (event: any) => {
-              setOutputBlocks((prev: any) => appendBlockWithCap(prev, { id: Date.now() + Math.random(), event }, blockArchivePathRef.current));
+              setOutputBlocks((prev: any) => appendTranscriptBlock(prev, event, blockArchivePathRef.current));
             },
             replaceBlocksOfType: (eventType: string, event: any) => {
               setOutputBlocks((prev: any) => {
                 const filtered = prev.filter((b: any) => b.event.type !== eventType);
-                return appendBlockWithCap(filtered, { id: Date.now() + Math.random(), event }, blockArchivePathRef.current);
+                return appendTranscriptBlock(filtered, event, blockArchivePathRef.current);
               });
             },
             clearBlocks: () => setOutputBlocks([]),
@@ -566,7 +566,7 @@ export function App() {
                 const entry = prev[eid];
                 if (!entry) continue;
                 const color = ENGINE_COLORS[entry.engineId] ?? 124;
-                setOutputBlocks((blocks: any) => appendBlockWithCap(blocks, { id: Date.now() - 1 + Math.random(), event: { type: 'engine-block', engineId: entry.engineId, color, content: entry.content } }, blockArchivePathRef.current));
+                setOutputBlocks((blocks: any) => appendTranscriptBlock(blocks, { type: 'engine-block', engineId: entry.engineId, color, content: entry.content } as any, blockArchivePathRef.current));
               }
               streamingTextRef.current = {};
               setStreamingText({});
@@ -2700,19 +2700,50 @@ export function nativeArchiveBlockCount(blocks: OutputBlock[], mode: string, row
   return Math.max(0, Math.min(blocks.length, liveStart));
 }
 
+/**
+ * Detect same-turn duplicate completed engine output. A new user-message resets the guard so an intentional repeat request can still show identical text.
+ */
 // @kern-source: app:1111
+export function isDuplicateEngineBlock(blocks: OutputBlock[], event: any): boolean {
+  if (!event || event.type !== 'engine-block') return false;
+  const content = cleanEngineOutput(String(event.content ?? '')).trim();
+  if (!content) return false;
+  const engineId = String(event.engineId ?? '');
+  for (let index = blocks.length - 1; index >= 0 && index >= blocks.length - 24; index -= 1) {
+    const prev = blocks[index]?.event as any;
+    if (!prev) continue;
+    if (prev.type === 'user-message') return false;
+    if (prev.type !== 'engine-block') continue;
+    const prevContent = cleanEngineOutput(String(prev.content ?? '')).trim();
+    if (String(prev.engineId ?? '') === engineId && prevContent === content) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Append a transcript block with cap/archive handling while suppressing accidental duplicate engine output.
+ */
+// @kern-source: app:1131
+export function appendTranscriptBlock(blocks: OutputBlock[], event: any, archivePath: string): OutputBlock[] {
+  if (isDuplicateEngineBlock(blocks, event)) return blocks;
+  return appendBlockWithCap(blocks, { id: Date.now() + Math.random(), event }, archivePath);
+}
+
+// @kern-source: app:1138
 export function normalizeTerminalMode(value: any): 'native'|'fullscreen' {
   return value === 'fullscreen' ? 'fullscreen' : 'native';
 }
 
-// @kern-source: app:1116
+// @kern-source: app:1143
 export function fileRailWidthForTerminal(termWidth: number, expanded: boolean): number {
   const safeWidth = Math.max(40, Math.floor(Number(termWidth) || 100));
   if (expanded) return Math.max(36, Math.min(64, Math.floor(safeWidth * 0.3)));
   return Math.max(28, Math.min(42, Math.floor(safeWidth * 0.22)));
 }
 
-// @kern-source: app:1123
+// @kern-source: app:1150
 export function fileRailMaxRowsForTerminal(termHeight: number, terminalMode: string, expanded: boolean): number {
   const safeHeight = Math.max(8, Math.floor(Number(termHeight) || 24));
   if (terminalMode === 'native') {
@@ -2726,7 +2757,7 @@ export function fileRailMaxRowsForTerminal(termHeight: number, terminalMode: str
 /**
  * Pure terminal replay harness: summarizes the layout-sensitive parts of the REPL for fixed viewport sizes so unit tests can catch native/fullscreen regressions without launching an interactive TTY.
  */
-// @kern-source: app:1134
+// @kern-source: app:1161
 export function buildTerminalReplaySnapshot(blocks: OutputBlock[], opts: any): {terminalMode:'native'|'fullscreen'; mode:string; termWidth:number; termHeight:number; visibleBudget:number; transcriptRowCount:number; staticBlockCount:number; liveBlockCount:number; fileRailWidth:number; fileRailRows:number; headerRows:number; lowerChromeRows:number} {
   const terminalMode = normalizeTerminalMode(opts?.terminalMode);
   const mode = String(opts?.mode ?? 'chat');
@@ -2780,7 +2811,7 @@ export function buildTerminalReplaySnapshot(blocks: OutputBlock[], opts: any): {
   };
 }
 
-// @kern-source: app:1189
+// @kern-source: app:1216
 export function parseMarkdownToRows(baseKey: string, text: string, wrapWidth: number, paddingLeft: number, borderColor: string): any[] {
   const rows: any[] = [];
   const cleaned = String(text ?? '').trim();
@@ -2888,7 +2919,7 @@ export function parseMarkdownToRows(baseKey: string, text: string, wrapWidth: nu
   return rows;
 }
 
-// @kern-source: app:1297
+// @kern-source: app:1324
 export function buildToolCallRows(baseKey: string, event: any, toolOutputExpanded: boolean): any[] {
   if (!event.input && !event.output && (event.tool === 'Delegate' || event.tool === 'delegate')) return [];
 
@@ -3250,7 +3281,7 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
   return rows;
 }
 
-// @kern-source: app:1659
+// @kern-source: app:1686
 export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any[] {
   if (!events || events.length === 0) return [];
 
@@ -3345,7 +3376,7 @@ export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any
   return rows;
 }
 
-// @kern-source: app:1754
+// @kern-source: app:1781
 export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean): any[] {
   const rows: any[] = [];
   const proseWidth = contentWidth(4);
@@ -3744,7 +3775,7 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
   return rows;
 }
 
-// @kern-source: app:3641
+// @kern-source: app:3668
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

@@ -1108,6 +1108,33 @@ fn name=nativeArchiveBlockCount params="blocks:OutputBlock[], mode:string, rowBu
     return Math.max(0, Math.min(blocks.length, liveStart));
   >>>
 
+fn name=isDuplicateEngineBlock params="blocks:OutputBlock[], event:any" returns=boolean export=true
+  doc "Detect same-turn duplicate completed engine output. A new user-message resets the guard so an intentional repeat request can still show identical text."
+  handler <<<
+    if (!event || event.type !== 'engine-block') return false;
+    const content = cleanEngineOutput(String(event.content ?? '')).trim();
+    if (!content) return false;
+    const engineId = String(event.engineId ?? '');
+    for (let index = blocks.length - 1; index >= 0 && index >= blocks.length - 24; index -= 1) {
+      const prev = blocks[index]?.event as any;
+      if (!prev) continue;
+      if (prev.type === 'user-message') return false;
+      if (prev.type !== 'engine-block') continue;
+      const prevContent = cleanEngineOutput(String(prev.content ?? '')).trim();
+      if (String(prev.engineId ?? '') === engineId && prevContent === content) {
+        return true;
+      }
+    }
+    return false;
+  >>>
+
+fn name=appendTranscriptBlock params="blocks:OutputBlock[], event:any, archivePath:string" returns="OutputBlock[]" export=true
+  doc "Append a transcript block with cap/archive handling while suppressing accidental duplicate engine output."
+  handler <<<
+    if (isDuplicateEngineBlock(blocks, event)) return blocks;
+    return appendBlockWithCap(blocks, { id: Date.now() + Math.random(), event }, archivePath);
+  >>>
+
 fn name=normalizeTerminalMode params="value:any" returns="'native'|'fullscreen'" export=true
   handler <<<
     return value === 'fullscreen' ? 'fullscreen' : 'native';
@@ -2661,12 +2688,12 @@ screen name=App target=ink
           setStreamingText(next);
         },
         addBlock: (event: any) => {
-          setOutputBlocks((prev: any) => appendBlockWithCap(prev, { id: Date.now() + Math.random(), event }, blockArchivePathRef.current));
+          setOutputBlocks((prev: any) => appendTranscriptBlock(prev, event, blockArchivePathRef.current));
         },
         replaceBlocksOfType: (eventType: string, event: any) => {
           setOutputBlocks((prev: any) => {
             const filtered = prev.filter((b: any) => b.event.type !== eventType);
-            return appendBlockWithCap(filtered, { id: Date.now() + Math.random(), event }, blockArchivePathRef.current);
+            return appendTranscriptBlock(filtered, event, blockArchivePathRef.current);
           });
         },
         clearBlocks: () => setOutputBlocks([]),
@@ -2683,7 +2710,7 @@ screen name=App target=ink
             const entry = prev[eid];
             if (!entry) continue;
             const color = ENGINE_COLORS[entry.engineId] ?? 124;
-            setOutputBlocks((blocks: any) => appendBlockWithCap(blocks, { id: Date.now() - 1 + Math.random(), event: { type: 'engine-block', engineId: entry.engineId, color, content: entry.content } }, blockArchivePathRef.current));
+            setOutputBlocks((blocks: any) => appendTranscriptBlock(blocks, { type: 'engine-block', engineId: entry.engineId, color, content: entry.content } as any, blockArchivePathRef.current));
           }
           streamingTextRef.current = {};
           setStreamingText({});

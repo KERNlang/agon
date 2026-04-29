@@ -265,6 +265,8 @@ screen name=CesarRecapBlock target=ink memo=true
       const commands = Array.isArray((event as any).commands) ? (event as any).commands : [];
       const warnings = Array.isArray((event as any).warnings) ? (event as any).warnings : [];
       const toolSummary = Array.isArray((event as any).toolSummary) ? (event as any).toolSummary : [];
+      const checkpoints = Array.isArray((event as any).checkpoints) ? (event as any).checkpoints : [];
+      const diffFiles = Array.isArray((event as any).diffPreview?.files) ? (event as any).diffPreview.files : [];
       const confidence = typeof (event as any).confidence === 'number' ? `${Math.round((event as any).confidence)}% confidence` : '';
       const seconds = typeof (event as any).durationMs === 'number' ? `${(((event as any).durationMs) / 1000).toFixed(1)}s` : '';
       const failedTools = Number((event as any).failedTools ?? 0);
@@ -299,6 +301,23 @@ screen name=CesarRecapBlock target=ink memo=true
           {files.length > 0 && (
             <Text dimColor>{'  files: '}{files.slice(0, 5).map((f: any) => `${fileGlyph(String(f.status))} ${f.relPath ?? f.path}`).join(', ')}{files.length > 5 ? `, +${files.length - 5} more` : ''}</Text>
           )}
+          {checkpoints.length > 0 ? (
+            <Text color="#22d3ee">{'  checkpoint: '}{checkpoints[0].id}{checkpoints.length > 1 ? ` (+${checkpoints.length - 1})` : ''}<Text dimColor>{' · /undo reverts latest'}</Text></Text>
+          ) : null}
+          {diffFiles.slice(0, 4).map((file: any, index: number) => (
+            <Box key={`diff-${index}`} flexDirection="column">
+              <Text>
+                <Text color="#22d3ee">{'  \u0394 '}{file.relPath ?? file.path}</Text>
+                <Text dimColor>{' +'}{Number(file.additions ?? 0)}{' -'}{Number(file.deletions ?? 0)}</Text>
+              </Text>
+              {(Array.isArray(file.lines) ? file.lines : []).slice(0, 6).map((line: string, lineIndex: number) => (
+                <Text key={`diff-line-${index}-${lineIndex}`} color={line.startsWith('+') ? '#4ade80' : line.startsWith('-') ? '#ef4444' : '#fbbf24'} dimColor={line.startsWith('@@')}>
+                  {'    '}{line}
+                </Text>
+              ))}
+              {Number(file.omitted ?? 0) > 0 ? <Text dimColor>{'    \u2026 '}{Number(file.omitted)}{' more diff lines'}</Text> : null}
+            </Box>
+          ))}
           {warnings.slice(0, 3).map((warning: string, index: number) => (
             <Text key={`warn-${index}`} color="#fbbf24">{'  '}{icons().warning}{' '}{warning}</Text>
           ))}
@@ -368,7 +387,11 @@ screen name=DashboardView target=ink export=true
             </Box>
           </Box>
           <Text> </Text>
-          <Text dimColor>{'  Just talk, or type '}<Text color="#f97316">{'/'}</Text>{' for commands.'}</Text>
+          <Text dimColor>
+            {'  Just talk, type '}<Text color="#f97316">{'/'}</Text>{' for commands, '}
+            <Text color="#f97316">{'Tab'}</Text>{' plan, '}
+            <Text color="#f97316">{'Ctrl+A'}</Text>{' auto.'}
+          </Text>
           <Text> </Text>
         </Box>
       );

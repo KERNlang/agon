@@ -76,6 +76,7 @@ export function createWriteTool(): ToolHandler {
     }
 
     const fileExists = existsSync(filePath);
+    let snapshot: any = null;
 
     if (fileExists) {
       // Read-before-write check: existing files must have been read first
@@ -106,10 +107,10 @@ export function createWriteTool(): ToolHandler {
       }
 
       // Take snapshot of existing file before overwrite
-      takeSnapshot(`Write: ${relPath}`, ctx.cwd, [relPath]);
+      snapshot = takeSnapshot(`Write: ${relPath}`, ctx.cwd, [relPath]);
     } else {
       // New file — take snapshot recording it as non-existent (for undo = delete)
-      takeSnapshot(`Write (new): ${relPath}`, ctx.cwd, [relPath]);
+      snapshot = takeSnapshot(`Write (new): ${relPath}`, ctx.cwd, [relPath]);
     }
 
     // Create parent directories if needed
@@ -147,7 +148,7 @@ export function createWriteTool(): ToolHandler {
     const action = fileExists ? 'Updated' : 'Created';
     const summary = `${action} ${relPath} (${lineCount} line${lineCount !== 1 ? 's' : ''}, ${byteCount} bytes)`;
 
-    return { ok: true, content: summary };
+    return { ok: true, content: `${summary}${snapshot?.id ? ` · checkpoint ${snapshot.id}` : ''}` };
   };
 
   return { definition, validate, checkPermission, execute };

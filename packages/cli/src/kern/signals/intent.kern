@@ -30,6 +30,7 @@ interface name=Intent
   field name=engineId type="string|undefined"
   field name=commandName type="string|undefined"
   field name=turnId type="string|undefined"
+  field name=autoMode type="boolean|undefined"
 
 const name=SLASH_COMMANDS type="SlashCommand[]"
   handler <<<
@@ -50,6 +51,7 @@ const name=SLASH_COMMANDS type="SlashCommand[]"
       { cmd: '/history',     desc: '[id]                    — past forge runs' },
       { cmd: '/config',      desc: '[list|get|set]          — settings' },
       { cmd: '/plan',        desc: '<task> or no args    — plan mode or show plan' },
+      { cmd: '/auto',        desc: '[on|off|toggle|status] or <task> — autonomous mode control' },
       { cmd: '/plans',       desc: '                        — list recent plans' },
       { cmd: '/approve',     desc: '                        — approve current plan' },
       { cmd: '/retry',       desc: '                        — retry failed plan step' },
@@ -74,7 +76,7 @@ const name=SLASH_COMMANDS type="SlashCommand[]"
       { cmd: '/commit',      desc: '[message]                — stage & commit with auto-generated message' },
       { cmd: '/doctor',      desc: '[engines|harness]        — diagnose engines, worktree, or Cesar harness' },
       { cmd: '/harness-replay', desc: '[turnId]              — replay Cesar tool timeline + approval ledger' },
-      { cmd: '/undo',        desc: '                        — revert last applied forge patch' },
+      { cmd: '/undo',        desc: '                        — revert last patch or Cesar checkpoint' },
       { cmd: '/jobs',        desc: '                        — list running/completed jobs' },
       { cmd: '/focus',       desc: '<id>                    — switch to background job output' },
       { cmd: '/explore',     desc: '                        — toggle exploration mode (read-only)' },
@@ -124,6 +126,9 @@ const name=CODE_TASK_PATTERN type=RegExp
 const name=CODE_ARTIFACT_PATTERN type=RegExp
   handler <<< /(?:at \w+.*:\d+|\.[tj]sx?\b|\.[a-z]{2,4}:\d+|^[+-]{3}\s)/m >>>
 
+const name=AGENT_TRIGGER_PATTERN type=RegExp
+  handler <<< /^(?:agent(?:\s+mode)?|autonomous(?:\s+agent)?|run\s+agent)\s+([\s\S]+)$/i >>>
+
 fn name=classifyTask params="input:string" returns="'code'|'question'|'ambiguous'"
   handler <<<
     if (QUESTION_PATTERN.test(input)) return 'question';
@@ -146,6 +151,15 @@ fn name=parseForgeInput params="input:string" returns=Intent export=false
       ? cleaned.replace(FITNESS_PATTERN, '').trim()
       : cleaned;
     return { type: 'forge', task, fitnessCmd, hardened } as Intent;
+  >>>
+
+fn name=parseAgentShortcut params="input:string" returns="Intent|null" export=false
+  handler <<<
+    const match = input.match(AGENT_TRIGGER_PATTERN);
+    if (!match) return null;
+    const task = (match[1] ?? '').trim();
+    if (!task) return null;
+    return { type: 'agent', input: task } as Intent;
   >>>
 
 fn name=splitReviewArgs params="input:string" returns="string[]" export=false
@@ -371,6 +385,11 @@ fn name=parseSlashCommand params="input:string, commandRegistry?:any" returns=In
           }
           return { type: 'plan', planId: undefined } as Intent;
         }
+      case 'auto':
+      case 'autonomous': {
+        const autoTask = rest.trim();
+        return { type: 'auto', input: autoTask, taskClass: classifyTask(autoTask), autoMode: true } as Intent;
+      }
       case 'plans':
         return { type: 'plans' } as Intent;
       case 'approve':
@@ -500,6 +519,9 @@ fn name=detectIntent params="raw:string, commandRegistry?:any" returns=Intent
 
     if (EXIT_KEYWORDS.test(input)) return { type: 'exit' } as Intent;
     if (HELP_KEYWORDS.test(input)) return { type: 'help' } as Intent;
+
+    const agentShortcut = parseAgentShortcut(input);
+    if (agentShortcut) return agentShortcut;
 
     const reviewShortcut = parseReviewShortcut(input);
     if (reviewShortcut) return reviewShortcut;

@@ -25,9 +25,10 @@ export interface FileSnapshot {
   path: string;
   content: string;
   timestamp: number;
+  existed?: boolean;
 }
 
-// @kern-source: file-history:22
+// @kern-source: file-history:23
 export interface HistoryEntry {
   id: string;
   label: string;
@@ -36,7 +37,7 @@ export interface HistoryEntry {
   createdAt: string;
 }
 
-// @kern-source: file-history:29
+// @kern-source: file-history:30
 function ensureSnapshotsDir(): void {
   ensureAgonHome();
   mkdirSync(snapshotsDir(), { recursive: true });
@@ -45,7 +46,7 @@ function ensureSnapshotsDir(): void {
 /**
  * Snapshot files before modification. Returns entry that can be used for undo.
  */
-// @kern-source: file-history:35
+// @kern-source: file-history:36
 export function takeSnapshot(label: string, cwd: string, filePaths: string[]): HistoryEntry {
   ensureSnapshotsDir();
 
@@ -55,13 +56,13 @@ export function takeSnapshot(label: string, cwd: string, filePaths: string[]): H
     if (existsSync(fullPath)) {
       try {
         const content = readFileSync(fullPath, 'utf-8');
-        files.push({ path: fp, content, timestamp: Date.now() });
+        files.push({ path: fp, content, timestamp: Date.now(), existed: true });
       } catch (err) {
         console.warn(`[agon] snapshot: could not read ${fp}: ${err instanceof Error ? err.message : String(err)}`);
       }
     } else {
       // File doesn't exist yet — record as empty (for undo = delete)
-      files.push({ path: fp, content: '', timestamp: Date.now() });
+      files.push({ path: fp, content: '', timestamp: Date.now(), existed: false });
     }
   }
 
@@ -85,7 +86,7 @@ export function takeSnapshot(label: string, cwd: string, filePaths: string[]): H
 /**
  * Revert files to a snapshot state. Deletes files that didn't exist before.
  */
-// @kern-source: file-history:73
+// @kern-source: file-history:74
 export function revertSnapshot(id: string): {ok:boolean, error?:string, filesReverted:number} {
   ensureSnapshotsDir();
   const entryPath = join(snapshotsDir(), `${id}.json`);
@@ -104,7 +105,8 @@ export function revertSnapshot(id: string): {ok:boolean, error?:string, filesRev
   for (const snap of entry.files) {
     const fullPath = resolve(entry.cwd, snap.path);
     try {
-      if (snap.content === '') {
+      const existedBefore = typeof snap.existed === 'boolean' ? snap.existed : snap.content !== '';
+      if (!existedBefore) {
         // File didn't exist — delete if it was created
         if (existsSync(fullPath)) {
           unlinkSync(fullPath);
@@ -126,43 +128,56 @@ export function revertSnapshot(id: string): {ok:boolean, error?:string, filesRev
   return { ok: true, filesReverted: reverted };
 }
 
-// @kern-source: file-history:115
+// @kern-source: file-history:117
 export function listSnapshots(): HistoryEntry[] {
   ensureSnapshotsDir();
   try {
-    const files = readdirSync(snapshotsDir()).filter((f: string) => f.endsWith('.json')).sort().reverse();
-    return files.slice(0, 10).map((f: string) => {
+    const files = readdirSync(snapshotsDir()).filter((f: string) => f.endsWith('.json'));
+    const entries = files.map((f: string) => {
       try {
         return JSON.parse(readFileSync(join(snapshotsDir(), f), 'utf-8')) as HistoryEntry;
       } catch {
         return null;
       }
     }).filter(Boolean) as HistoryEntry[];
+    entries.sort((a, b) => {
+      const aTime = Date.parse(a.createdAt ?? '') || 0;
+      const bTime = Date.parse(b.createdAt ?? '') || 0;
+      return bTime - aTime;
+    });
+    return entries.slice(0, 10);
   } catch {
     return [];
   }
 }
 
-// @kern-source: file-history:132
+// @kern-source: file-history:140
 function pruneSnapshots(): void {
   try {
-    const files = readdirSync(snapshotsDir()).filter((f: string) => f.endsWith('.json')).sort();
+    const files = readdirSync(snapshotsDir()).filter((f: string) => f.endsWith('.json'));
     if (files.length > MAX_SNAPSHOTS) {
-      const toDelete = files.slice(0, files.length - MAX_SNAPSHOTS);
-      for (const f of toDelete) {
-        try { unlinkSync(join(snapshotsDir(), f)); } catch { /* snapshot already deleted or inaccessible */ }
+      const byAge = files.map((f: string) => {
+        try {
+          const entry = JSON.parse(readFileSync(join(snapshotsDir(), f), 'utf-8')) as HistoryEntry;
+          return { file: f, ts: Date.parse(entry.createdAt ?? '') || 0 };
+        } catch {
+          return { file: f, ts: 0 };
+        }
+      }).sort((a, b) => a.ts - b.ts);
+      const toDelete = byAge.slice(0, files.length - MAX_SNAPSHOTS);
+      for (const item of toDelete) {
+        try { unlinkSync(join(snapshotsDir(), item.file)); } catch { /* snapshot already deleted or inaccessible */ }
       }
     }
   } catch (err) { console.warn('[file-history] failed to save snapshot:', (err as Error).message ?? err); }
 }
 
-// @kern-source: file-history:145
+// @kern-source: file-history:161
 export function getLatestSnapshotId(): string|null {
   ensureSnapshotsDir();
   try {
-    const files = readdirSync(snapshotsDir()).filter((f: string) => f.endsWith('.json')).sort().reverse();
-    if (files.length === 0) return null;
-    return files[0].replace('.json', '');
+    const latest = listSnapshots()[0];
+    return latest?.id ?? null;
   } catch {
     return null;
   }

@@ -63,7 +63,30 @@ export function navigateHistory(direction: 'up'|'down', currentIndex: number, hi
   return { index: currentIndex, value: '' };
 }
 
+/**
+ * Append a submitted composer command with duplicate pruning and a bounded history length.
+ */
 // @kern-source: app-input:58
+export function appendInputHistory(history: string[], input: string, maxEntries?: number): string[] {
+  const max = Math.max(1, Math.floor(maxEntries ?? 200));
+  const entry = String(input ?? '').trim();
+  if (!entry) return history.slice(-max);
+  const deduped = history.filter((item: string) => item !== entry);
+  return [...deduped, entry].slice(-max);
+}
+
+/**
+ * Parse first-class /auto controls. /auto <task> intentionally returns null so normal autonomous task routing still works.
+ */
+// @kern-source: app-input:68
+export function parseAutoModeCommand(input: string): 'on'|'off'|'toggle'|'status'|null {
+  const trimmed = String(input ?? '').trim().toLowerCase();
+  const match = trimmed.match(/^\/(?:auto|autonomous)(?:\s+(on|off|toggle|status))?$/);
+  if (!match) return null;
+  return (match[1] as 'on'|'off'|'toggle'|'status'|undefined) ?? 'toggle';
+}
+
+// @kern-source: app-input:77
 export interface EscapeDecision {
   action: 'close-slash'|'close-engine-picker'|'cancel-question'|'interrupt'|'clear-input'|'noop';
 }
@@ -71,7 +94,7 @@ export interface EscapeDecision {
 /**
  * Resolve Esc behavior without destructive transcript clearing.
  */
-// @kern-source: app-input:61
+// @kern-source: app-input:80
 export function resolveEscapeAction(opts: {replState:string,inputValue:string,slashPickerOpen:boolean,enginePickerOpen:boolean,questionOpen:boolean}): EscapeDecision {
   if (opts.slashPickerOpen) return { action: 'close-slash' };
   if (opts.enginePickerOpen) return { action: 'close-engine-picker' };
@@ -91,7 +114,7 @@ export function resolveEscapeAction(opts: {replState:string,inputValue:string,sl
 /**
  * Get ghost text completion for current input.
  */
-// @kern-source: app-input:79
+// @kern-source: app-input:98
 export function tryGhostComplete(inputValue: string, commands: any[], engineIds: string[]): string|null {
   return getGhostCompletion(inputValue, commands, engineIds);
 }
@@ -99,7 +122,7 @@ export function tryGhostComplete(inputValue: string, commands: any[], engineIds:
 /**
  * Rank slash-command matches so prefix hits stay on top while substring hits remain reachable.
  */
-// @kern-source: app-input:85
+// @kern-source: app-input:104
 export function getSlashMatches(filter: string, commands: any[]): any[] {
   const normalizedFilter = filter.trim().toLowerCase();
   return commands
@@ -119,7 +142,7 @@ export function getSlashMatches(filter: string, commands: any[]): any[] {
 /**
  * Move a picker cursor with wrap-around.
  */
-// @kern-source: app-input:103
+// @kern-source: app-input:122
 export function movePickerCursor(direction: 'up'|'down', currentIndex: number, itemCount: number): number {
   if (itemCount <= 0) return 0;
   if (direction === 'up') return currentIndex <= 0 ? itemCount - 1 : currentIndex - 1;
@@ -129,7 +152,7 @@ export function movePickerCursor(direction: 'up'|'down', currentIndex: number, i
 /**
  * Only queue plan mode from Tab when the composer is idle and empty.
  */
-// @kern-source: app-input:111
+// @kern-source: app-input:130
 export function shouldQueuePlanModeOnTab(opts: {replState:string,inputValue:string,activePlanState?:string|null}): boolean {
   if (opts.replState !== 'idle') return false;
   if (opts.inputValue.trim()) return false;

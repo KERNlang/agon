@@ -123,6 +123,8 @@ const CesarRecapBlock = React.memo(function CesarRecapBlock({ event }: { event:O
   const commands = Array.isArray((event as any).commands) ? (event as any).commands : [];
   const warnings = Array.isArray((event as any).warnings) ? (event as any).warnings : [];
   const toolSummary = Array.isArray((event as any).toolSummary) ? (event as any).toolSummary : [];
+  const checkpoints = Array.isArray((event as any).checkpoints) ? (event as any).checkpoints : [];
+  const diffFiles = Array.isArray((event as any).diffPreview?.files) ? (event as any).diffPreview.files : [];
   const confidence = typeof (event as any).confidence === 'number' ? `${Math.round((event as any).confidence)}% confidence` : '';
   const seconds = typeof (event as any).durationMs === 'number' ? `${(((event as any).durationMs) / 1000).toFixed(1)}s` : '';
   const failedTools = Number((event as any).failedTools ?? 0);
@@ -157,6 +159,23 @@ const CesarRecapBlock = React.memo(function CesarRecapBlock({ event }: { event:O
       {files.length > 0 && (
         <Text dimColor>{'  files: '}{files.slice(0, 5).map((f: any) => `${fileGlyph(String(f.status))} ${f.relPath ?? f.path}`).join(', ')}{files.length > 5 ? `, +${files.length - 5} more` : ''}</Text>
       )}
+      {checkpoints.length > 0 ? (
+        <Text color="#22d3ee">{'  checkpoint: '}{checkpoints[0].id}{checkpoints.length > 1 ? ` (+${checkpoints.length - 1})` : ''}<Text dimColor>{' · /undo reverts latest'}</Text></Text>
+      ) : null}
+      {diffFiles.slice(0, 4).map((file: any, index: number) => (
+        <Box key={`diff-${index}`} flexDirection="column">
+          <Text>
+            <Text color="#22d3ee">{'  \u0394 '}{file.relPath ?? file.path}</Text>
+            <Text dimColor>{' +'}{Number(file.additions ?? 0)}{' -'}{Number(file.deletions ?? 0)}</Text>
+          </Text>
+          {(Array.isArray(file.lines) ? file.lines : []).slice(0, 6).map((line: string, lineIndex: number) => (
+            <Text key={`diff-line-${index}-${lineIndex}`} color={line.startsWith('+') ? '#4ade80' : line.startsWith('-') ? '#ef4444' : '#fbbf24'} dimColor={line.startsWith('@@')}>
+              {'    '}{line}
+            </Text>
+          ))}
+          {Number(file.omitted ?? 0) > 0 ? <Text dimColor>{'    \u2026 '}{Number(file.omitted)}{' more diff lines'}</Text> : null}
+        </Box>
+      ))}
       {warnings.slice(0, 3).map((warning: string, index: number) => (
         <Text key={`warn-${index}`} color="#fbbf24">{'  '}{icons().warning}{' '}{warning}</Text>
       ))}
@@ -165,7 +184,7 @@ const CesarRecapBlock = React.memo(function CesarRecapBlock({ event }: { event:O
 });
 export { CesarRecapBlock };
 
-// @kern-source: engine:311
+// @kern-source: engine:330
 export function DashboardView({ event }: { event:OutputEvent & { type: 'dashboard' } }) {
   return (
     <Box flexDirection="column" paddingX={1} paddingY={1}>
@@ -223,13 +242,17 @@ export function DashboardView({ event }: { event:OutputEvent & { type: 'dashboar
         </Box>
       </Box>
       <Text> </Text>
-      <Text dimColor>{'  Just talk, or type '}<Text color="#f97316">{'/'}</Text>{' for commands.'}</Text>
+      <Text dimColor>
+        {'  Just talk, type '}<Text color="#f97316">{'/'}</Text>{' for commands, '}
+        <Text color="#f97316">{'Tab'}</Text>{' plan, '}
+        <Text color="#f97316">{'Ctrl+A'}</Text>{' auto.'}
+      </Text>
       <Text> </Text>
     </Box>
   );
 }
 
-// @kern-source: engine:379
+// @kern-source: engine:402
 function TableView({ headers, rows }: { headers:string[]; rows:string[][] }) {
   const widths = headers.map((h: string, i: number) =>
     Math.max(h.length, ...rows.map((r: string[]) => (r[i] ?? '').length)) + 2,
@@ -253,7 +276,7 @@ function TableView({ headers, rows }: { headers:string[]; rows:string[][] }) {
   );
 }
 
-// @kern-source: engine:408
+// @kern-source: engine:431
 const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolOutputExpanded, thinkingExpanded }: { event:OutputEvent; mode:string; toolOutputExpanded?:boolean; thinkingExpanded?:boolean }) {
   switch (event.type) {
     case 'text': {
@@ -825,7 +848,7 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
 });
 export { OutputBlockView };
 
-// @kern-source: engine:986
+// @kern-source: engine:1009
 const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:OutputBlock[] }) {
   const labelForTool = (raw: unknown) => {
     const toolKey = String(raw ?? '').toLowerCase();
@@ -926,7 +949,7 @@ const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:Out
 });
 export { ToolCallGroup };
 
-// @kern-source: engine:1104
+// @kern-source: engine:1127
 const DebateGroup = React.memo(function DebateGroup({ blocks }: { blocks:OutputBlock[] }) {
   const round = (blocks[0]?.event as any)?.round ?? '?';
   const w = contentWidth(6);
@@ -952,7 +975,7 @@ const DebateGroup = React.memo(function DebateGroup({ blocks }: { blocks:OutputB
 });
 export { DebateGroup };
 
-// @kern-source: engine:1133
+// @kern-source: engine:1156
 const BidGroup = React.memo(function BidGroup({ blocks }: { blocks:OutputBlock[] }) {
   const w = contentWidth(6);
   return (
@@ -1114,7 +1137,7 @@ export function parsePatchPreview(rawInput: string, parsed: any): { files:string
   return { files, lines, additions, deletions };
 }
 
-// @kern-source: engine:1090
+// @kern-source: engine:1113
 export function extractSummary(text: string, maxLen: number): string {
   let s = text.replace(/<think>[\s\S]*?<\/think>\s*/gi, '');
   s = s.replace(/^#+\s+.+\n/gm, '');

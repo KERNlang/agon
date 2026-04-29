@@ -42,6 +42,7 @@ export type KeyboardAction =
   | { type: 'toggleToolExpand' }
   | { type: 'toggleSelectionMode' }
   | { type: 'openToolDetail' }
+  | { type: 'retryFailedTool' }
   | { type: 'openResults' }
   | { type: 'toggleFileRail' }
   | { type: 'fileRailSelectPrev' }
@@ -62,21 +63,23 @@ export type KeyboardAction =
 /**
  * Pure keyboard decision tree. Takes current state, returns action to execute.
  */
-// @kern-source: keyboard:66
+// @kern-source: keyboard:67
 export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
   const { input, key } = ctx;
   const normalizedCtrlInput = key.ctrl
     ? ({
         '\x03': 'c',
+        '\x01': 'a',
         '\x05': 'e',
         '\x0f': 'o',
         '\x0c': 'l',
         '\x12': 'r',
+        '\x19': 'y',
         '\x07': 'g',
         '\x02': 'b',
       } as Record<string, string>)[input] ?? input
     : input;
-  const delegatedCtrlShortcuts = new Set(['e', 'j', 'l', 'o', 'r']);
+  const delegatedCtrlShortcuts = new Set(['e', 'j', 'l', 'o', 'r', 'y']);
 
   // Model/cesar picker open: only Ctrl+C gets through
   if (ctx.modelPickerOpen || ctx.cesarPickerOpen) {
@@ -110,28 +113,32 @@ export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
     return { type: 'none' };
   }
 
+  const isShiftTab = (key.shift && (key.tab || input === '\t')) || input === '\x1b[Z';
+  const isPlainTab = (key.tab || input === '\t') && !isShiftTab;
+  const canQueueMode = shouldQueuePlanModeOnTab({ replState: ctx.replState, inputValue: ctx.inputValue, activePlanState: ctx.activePlanState });
+  const canToggleAutoMode = ctx.inputValue.trim().length === 0 && !ctx.slashPickerOpen && !ctx.enginePickerOpen && !ctx.questionState && !ctx.reviewEventOpen;
+
+  // Ctrl+A: reliable auto-mode shortcut for terminals that collapse
+  // Shift+Tab into a plain Tab. Only active on an empty composer;
+  // otherwise PromptTextInput keeps Ctrl+A for line-start editing.
+  if (key.ctrl && normalizedCtrlInput === 'a' && canToggleAutoMode) {
+    return { type: 'toggleAutoQueued' };
+  }
+
+  // Shift+Tab: queue auto mode
+  if (isShiftTab && !ctx.slashPickerOpen && !ctx.enginePickerOpen && !ctx.questionState && !ctx.reviewEventOpen) {
+    if (canQueueMode) {
+      return { type: 'toggleAutoQueued' };
+    }
+    return { type: 'none' };
+  }
+
   // Tab: ghost-complete or queue plan mode
-  if ((key.tab || input === '\t') && !ctx.slashPickerOpen && !ctx.enginePickerOpen && !ctx.questionState && !ctx.reviewEventOpen) {
+  if (isPlainTab && !ctx.slashPickerOpen && !ctx.enginePickerOpen && !ctx.questionState && !ctx.reviewEventOpen) {
     const ghost = tryGhostComplete(ctx.inputValue, ctx.commands, ctx.engineIds);
     if (ghost) return { type: 'ghostComplete', ghost };
-    if (shouldQueuePlanModeOnTab({ replState: ctx.replState, inputValue: ctx.inputValue, activePlanState: ctx.activePlanState })) {
+    if (canQueueMode) {
       return { type: 'togglePlanQueued' };
-    }
-    return { type: 'none' };
-  }
-
-  // Shift+Tab: queue auto mode
-  if (key.shift && (key.tab || input === '\t') && !ctx.slashPickerOpen && !ctx.enginePickerOpen && !ctx.questionState && !ctx.reviewEventOpen) {
-    if (shouldQueuePlanModeOnTab({ replState: ctx.replState, inputValue: ctx.inputValue, activePlanState: ctx.activePlanState })) {
-      return { type: 'toggleAutoQueued' };
-    }
-    return { type: 'none' };
-  }
-
-  // Shift+Tab: queue auto mode
-  if (key.shift && (key.tab || input === '\t') && !ctx.slashPickerOpen && !ctx.enginePickerOpen && !ctx.questionState && !ctx.reviewEventOpen) {
-    if (shouldQueuePlanModeOnTab({ replState: ctx.replState, inputValue: ctx.inputValue, activePlanState: ctx.activePlanState })) {
-      return { type: 'toggleAutoQueued' };
     }
     return { type: 'none' };
   }
@@ -170,6 +177,9 @@ export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
 
   // Ctrl+O: open focused tool detail view
   if (key.ctrl && normalizedCtrlInput === 'o') return { type: 'openToolDetail' };
+
+  // Ctrl+Y: draft an editable retry prompt for the latest failed tool.
+  if (key.ctrl && normalizedCtrlInput === 'y') return { type: 'retryFailedTool' };
 
   // Ctrl+R: open results pager
   if (key.ctrl && normalizedCtrlInput === 'r') return { type: 'openResults' };

@@ -64,6 +64,7 @@ Useful controls:
 
 - `Ctrl+E` toggle expanded tool output
 - `Ctrl+T` toggle thinking visibility
+- `Ctrl+A` queue auto mode when the prompt is idle and empty
 - `Ctrl+Y` copy the current selection or transcript
 - `Ctrl+G` enter mouse-selection mode for terminal copy in fullscreen mode
 - Native mode uses your terminal's own scroll keys and scrollbar; fullscreen mode uses `Shift+PageUp` / `Shift+PageDown` / `Home` / `End`

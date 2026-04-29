@@ -122,6 +122,8 @@ union name=OutputEvent discriminant=type
     field name=toolSummary type="string[]"
     field name=commands type="Array<{ label: string; command: string; status: string }>"
     field name=files type="Array<{ path: string; relPath: string; status: string; touchCount: number }>"
+    field name=checkpoints type="Array<{ id: string; label: string }>" optional=true
+    field name=diffPreview type="{ files: Array<{ path: string; relPath: string; status: string; additions: number; deletions: number; lines: string[]; omitted: number }>; totalFiles: number }" optional=true
     field name=warnings type="string[]"
   variant name=file-changes
     field name=files type="{ path: string; status: 'modified'|'created'|'deleted'; additions: number; deletions: number }[]"

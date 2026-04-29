@@ -153,6 +153,31 @@ describe('File History Snapshots', () => {
 
     rmSync(tempDir, { recursive: true, force: true });
   });
+
+  it('orders snapshots by creation time and reverts empty/new files correctly', async () => {
+    const { takeSnapshot, listSnapshots, getLatestSnapshotId, revertSnapshot } = await import('../../packages/core/src/file-history.js');
+
+    const tempDir = join(tmpdir(), `agon-test-snapshot-revert-${Date.now()}`);
+    mkdirSync(tempDir, { recursive: true });
+    writeFileSync(join(tempDir, 'empty.txt'), '');
+
+    const emptyEntry = takeSnapshot('empty file', tempDir, ['empty.txt']);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const newEntry = takeSnapshot('new file', tempDir, ['created.txt']);
+    writeFileSync(join(tempDir, 'empty.txt'), 'changed');
+    writeFileSync(join(tempDir, 'created.txt'), 'created');
+
+    expect(listSnapshots()[0].id).toBe(newEntry.id);
+    expect(getLatestSnapshotId()).toBe(newEntry.id);
+
+    expect(revertSnapshot(newEntry.id).ok).toBe(true);
+    expect(existsSync(join(tempDir, 'created.txt'))).toBe(false);
+
+    expect(revertSnapshot(emptyEntry.id).ok).toBe(true);
+    expect(readFileSync(join(tempDir, 'empty.txt'), 'utf8')).toBe('');
+
+    rmSync(tempDir, { recursive: true, force: true });
+  });
 });
 
 // ── 4. Context Scanner ────────────────────────────────────────────

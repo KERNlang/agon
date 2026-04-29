@@ -60,7 +60,7 @@ function AgonTip() {
 }
 
 // @kern-source: status:102
-export function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd, cwd, branch, explorationMode, toolOutputExpanded, isActive, fullscreenEnabled, selectionMode }: { cesarId:string; chatMessageCount:number; totalTokens:number; totalCostUsd:number; cwd:string; branch?:string; explorationMode?:boolean; toolOutputExpanded?:boolean; isActive?:boolean; fullscreenEnabled?:boolean; selectionMode?:boolean }) {
+export function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd, cwd, branch, explorationMode, toolOutputExpanded, autoModeQueued, isActive, fullscreenEnabled, selectionMode }: { cesarId:string; chatMessageCount:number; totalTokens:number; totalCostUsd:number; cwd:string; branch?:string; explorationMode?:boolean; toolOutputExpanded?:boolean; autoModeQueued?:boolean; isActive?:boolean; fullscreenEnabled?:boolean; selectionMode?:boolean }) {
   const cost = totalCostUsd > 0 ? `$${totalCostUsd.toFixed(2)}` : '';
   const msgs = chatMessageCount;
   const tokens = totalTokens;
@@ -88,6 +88,11 @@ export function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd
         <Text dimColor>{' \u00b7 files ('}</Text>
         <Text color="#f59e0b">{'Ctrl+B'}</Text>
         <Text dimColor>{')'}</Text>
+        <Text dimColor>{' \u00b7 '}</Text>
+        {autoModeQueued ? <Text color="#f97316" bold>{'AUTO ON'}</Text> : <Text dimColor>{'auto'}</Text>}
+        <Text dimColor>{' ('}</Text>
+        <Text color="#f59e0b">{'Ctrl+A'}</Text>
+        <Text dimColor>{')'}</Text>
         {selectionMode !== undefined && <Text dimColor>{' \u00b7 '}{selectionMode ? 'select' : 'scroll'}{' ('}</Text>}
         {selectionMode !== undefined && <Text color="#f59e0b">{'Ctrl+G'}</Text>}
         {selectionMode !== undefined && <Text dimColor>{')'}</Text>}
@@ -97,7 +102,7 @@ export function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd
   );
 }
 
-// @kern-source: status:154
+// @kern-source: status:160
 export function StatusLine({ startTime, engineId, color }: { startTime:number; engineId?:string; color?:number }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -132,7 +137,7 @@ export function StatusLine({ startTime, engineId, color }: { startTime:number; e
   );
 }
 
-// @kern-source: status:183
+// @kern-source: status:189
 const BackgroundJobRail = React.memo(function BackgroundJobRail({ jobs }: { jobs:Job[] }) {
   return (
     <Box paddingX={1}>
@@ -155,7 +160,7 @@ const BackgroundJobRail = React.memo(function BackgroundJobRail({ jobs }: { jobs
 });
 export { BackgroundJobRail };
 
-// @kern-source: status:203
+// @kern-source: status:209
 const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confidence, spinner, engines, startTime, streamSnippet, isActive, planModeQueued, autoModeQueued, activePlanState }: { cesarId:string; confidence?:number|null; spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; startTime:number; streamSnippet?:{ engineId: string; line: string } | null; isActive:boolean; planModeQueued?:boolean; autoModeQueued?:boolean; activePlanState?:string|null }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -186,10 +191,12 @@ const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confide
   // Idle: single dimmed line (no colored nesting issues)
   if (!isActive) {
     const confPart = (confidence !== null && confidence !== undefined) ? ` ${confidence}%` : '';
-    const planPart = hasPlan ? ` \u2502 \u25c8 ${planLabel.toUpperCase()}` : '';
     return (
       <Box paddingTop={0}>
-        <Text dimColor>{'\u25c6 '}{cesarId}{confPart}{' \u2502 idle'}{planPart}</Text>
+        <Text>
+          {hasPlan ? <><Text color={autoModeQueued ? '#f97316' : '#c084fc'} bold>{`\u25c8 ${planLabel.toUpperCase()}`}</Text><Text dimColor>{' \u2502 '}</Text></> : null}
+          <Text dimColor>{'\u25c6 '}{cesarId}{confPart}{' \u2502 idle'}</Text>
+        </Text>
       </Box>
     );
   }
@@ -251,6 +258,7 @@ const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confide
   return (
     <Box paddingTop={0}>
       <Text>
+        {hasPlan ? <><Text color={autoModeQueued ? '#f97316' : '#c084fc'} bold>{`\u25c8 ${planLabel.toUpperCase()}`}</Text><Text dimColor>{' \u2502 '}</Text></> : null}
         <Text color={cesarColor} bold>{'\u25c6 '}{cesarId}</Text>
         {confStr ? <Text color={confColor} bold>{confStr}</Text> : null}
         <Text dimColor>{' \u2502 '}</Text>
@@ -261,7 +269,6 @@ const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confide
       {engineDots.length > 0 && <Text>{engineDots}</Text>}
       <Text>
         {snippetStr ? <><Text dimColor>{' \u2502 '}</Text><Text dimColor wrap="truncate">{snippetStr}</Text></> : null}
-        {hasPlan ? <><Text dimColor>{' \u2502 '}</Text><Text color="#c084fc" bold>{`\u25c8 ${planLabel.toUpperCase()}`}</Text></> : null}
       </Text>
     </Box>
   );

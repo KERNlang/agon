@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   appendTranscriptBlock,
+  buildExecutionRailStats,
   buildTranscriptRows,
   buildTerminalReplaySnapshot,
   coalesceToolCallBlocks,
@@ -230,6 +231,7 @@ describe('app scroll helpers', () => {
     expect(text).toContain('tests');
     expect(text).toContain('a.ts');
     expect(text).toContain('checkpoint: abc12345');
+    expect(text).toContain('/undo abc12345');
     expect(text).toContain('+new');
   });
 
@@ -408,6 +410,50 @@ describe('app scroll helpers', () => {
     expect(rows.some((row: any) => row.key.includes('perm-actions'))).toBe(true);
     expect(rows.some((row: any) => row.key.includes('perm-cmd'))).toBe(true);
     expect(rows.length).toBeLessThanOrEqual(3);
+  });
+
+  it('adds inline diff preview to mutating permission requests', () => {
+    const rows = buildTranscriptRows([
+      {
+        id: 1,
+        event: {
+          type: 'permission-ask',
+          tool: 'Edit',
+          command: JSON.stringify({ file_path: 'src/app.ts', old_string: 'old value', new_string: 'new value' }),
+          reason: 'needs approval',
+          resolve: () => {},
+        },
+      },
+    ] as any, 'chat', false, true);
+
+    expect(rows.some((row: any) => row.kind === 'diff' && row.text === '-old value')).toBe(true);
+    expect(rows.some((row: any) => row.kind === 'diff' && row.text === '+new value')).toBe(true);
+  });
+
+  it('counts tool calls, changed files, and queued prompts for the execution rail', () => {
+    const stats = buildExecutionRailStats([
+      { id: 1, event: { type: 'tool-call', tool: 'Read', input: '{"file_path":"a.ts"}', status: 'done' } },
+      {
+        id: 2,
+        event: {
+          type: 'tool-call-group',
+          blocks: [
+            { id: 21, event: { type: 'tool-call', tool: 'Edit', input: '{"file_path":"a.ts","old_string":"a","new_string":"b"}', status: 'done' } },
+            { id: 22, event: { type: 'tool-call', tool: 'Bash', input: '{"command":"npm test"}', status: 'error' } },
+          ],
+        },
+      },
+    ] as any, [
+      { relPath: 'a.ts', status: 'edited' },
+      { relPath: 'README.md', status: 'read' },
+    ] as any, 2);
+
+    expect(stats.toolCount).toBe(3);
+    expect(stats.failedToolCount).toBe(1);
+    expect(stats.mutationCount).toBe(1);
+    expect(stats.fileCount).toBe(2);
+    expect(stats.changedFileCount).toBe(1);
+    expect(stats.queueCount).toBe(2);
   });
 
   it('reserves extra viewport rows while a permission prompt is open', () => {

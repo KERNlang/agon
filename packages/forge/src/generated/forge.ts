@@ -307,9 +307,11 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
       worktrees,
       onEvent,
       signal: options.signal,
+      taskClass,
+      enginePrompts,
     });
 
-    manifest.enginesDispatched = 1;
+    manifest.enginesDispatched = stage1.engineResults.size;
     const allMetrics: DispatchMetric[] = [...(stage1.metrics ?? [])];
     for (const [id, result] of stage1.engineResults) {
       manifest.results[id] = result;
@@ -323,21 +325,22 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
 
     if (stage1.accepted) {
       manifest.stage1Accepted = true;
-      manifest.winner = starter;
+      manifest.winner = stage1.winner;
       manifest.dispatchLog = allMetrics;
       writeForgeResultBundle(manifest, worktrees, options, root, sha, sidechain.path);
       writeManifest(manifest);
-      sidechain.log('stage1:accepted', starter, { score: stage1.engineResults.get(starter)?.score });
-      onEvent?.({ type: 'forge:done', engineId: starter, data: { stage1Accepted: true, score: stage1.engineResults.get(starter)?.score } });
+      sidechain.log('stage1:accepted', stage1.winner ?? undefined, { score: stage1.winner ? stage1.engineResults.get(stage1.winner)?.score : undefined });
+      onEvent?.({ type: 'forge:done', engineId: stage1.winner ?? undefined, data: { stage1Accepted: true, score: stage1.winner ? stage1.engineResults.get(stage1.winner)?.score : undefined } });
       return manifest;
     }
 
-    if (challengers.length > 0) {
+    const remainingChallengers = challengers.filter((id: string) => !stage1.engineResults.has(id));
+    if (remainingChallengers.length > 0) {
       // Use peek strategy when multiple challengers — first finisher's
       // approach is shared as context to followers
-      const stage2Fn = challengers.length > 1 ? runStage2WithPeek : runStage2;
+      const stage2Fn = remainingChallengers.length > 1 ? runStage2WithPeek : runStage2;
       const stage2 = await stage2Fn({
-        challengers,
+        challengers: remainingChallengers,
         forgePrompt,
         enginePrompts,
         fitnessCmd: options.fitnessCmd,
@@ -353,7 +356,7 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
         signal: options.signal,
       });
 
-      manifest.enginesDispatched = available.length;
+      manifest.enginesDispatched = stage2.engineResults.size;
       allMetrics.push(...(stage2.metrics ?? []));
       for (const [id, result] of stage2.engineResults) {
         manifest.results[id] = result;

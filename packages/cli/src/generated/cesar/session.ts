@@ -362,6 +362,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
   const cwd = resolveWorkingDir();
   const fsc = getProjectFileStateCache(cwd);
   const toolResultCache = new Map<string, string>();
+  const nativeToolErrorRetries = new Map<string, number>();
   const CACHEABLE_TOOLS = new Set(['Grep', 'Glob']);
   const explorationMode = ctx.explorationMode ?? false;
   const sharedToolCtx: ToolContext = {
@@ -559,7 +560,19 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
         });
       },
     );
-    const output = result.result.ok ? result.result.content : (result.result.error ?? 'Tool execution failed');
+    let output = result.result.ok ? result.result.content : (result.result.error ?? 'Tool execution failed');
+    if (!result.result.ok) {
+      const retryKey = `${name}:${JSON.stringify(args)}`;
+      const used = nativeToolErrorRetries.get(retryKey) ?? 0;
+      if (used <= 0) {
+        nativeToolErrorRetries.set(retryKey, 1);
+        output = `[RETRYABLE_TOOL_ERROR] ${output}\nRetry this ${name} call once with corrected input. Do not narrate before retrying.`;
+      } else {
+        output = `[TOOL_ERROR_FINAL] ${output}\nRepair retry already used for this exact ${name} input in this turn. Stop retrying this call and explain the blocker.`;
+      }
+    } else {
+      nativeToolErrorRetries.delete(`${name}:${JSON.stringify(args)}`);
+    }
     // Cache read-only results. Invalidate on writes.
     if (CACHEABLE_TOOLS.has(name)) {
       toolResultCache.set(cacheKey, output);
@@ -574,7 +587,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
 /**
  * Build the onApproval callback for engine tool approvals. Returns true to approve, false to deny silently, or a string to deny with a reason the engine can see.
  */
-// @kern-source: session:552
+// @kern-source: session:565
 export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:string, command:string) => Promise<boolean|string> {
   const engine = ctx.registry.get(engineId);
   return async (tool: string, command: string): Promise<boolean | string> => {
@@ -740,7 +753,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
   };
 }
 
-// @kern-source: session:719
+// @kern-source: session:732
 export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unknown>> {
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -774,7 +787,7 @@ export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unkn
   return normalizeNamedRecord(raw);
 }
 
-// @kern-source: session:753
+// @kern-source: session:766
 export function loadCesarMcpServers(config: any, cwd: string): Array<Record<string,unknown>>|undefined {
   if (!(config as any).cesarMcpEnabled) return undefined;
 
@@ -798,7 +811,7 @@ export function loadCesarMcpServers(config: any, cwd: string): Array<Record<stri
   return servers;
 }
 
-// @kern-source: session:777
+// @kern-source: session:790
 export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
   if (!binaryPath) return false;
   const protocol = engine?.companion?.protocol;
@@ -808,7 +821,7 @@ export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
 /**
  * Compute a fingerprint of MCP-related config to detect changes. Includes both manual config and auto-discovery sources.
  */
-// @kern-source: session:784
+// @kern-source: session:797
 export function mcpConfigFingerprint(config: any): string {
   const enabled = !!(config as any).cesarMcpEnabled;
   const configPath = String((config as any).cesarMcpConfigPath ?? '');
@@ -828,7 +841,7 @@ export function mcpConfigFingerprint(config: any): string {
 /**
  * Single source of truth for which backend a Cesar engine will actually use. Honours config.cesarBackend preference ('auto' | 'cli' | 'api'). Pure — no side effects beyond registry lookups. Returns backend='none' when the engine has neither a usable binary nor an API key; callers decide how to handle that.
  */
-// @kern-source: session:802
+// @kern-source: session:815
 export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { backend: 'cli'|'api'|'none', binaryPath: string, hasBinary: boolean, hasApi: boolean, engine: any } {
   const config = ctx.config;
   const cesarEngineId = engineId ?? (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
@@ -853,7 +866,7 @@ export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { b
   return { backend: 'none', binaryPath: '', hasBinary, hasApi, engine };
 }
 
-// @kern-source: session:828
+// @kern-source: session:841
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
   const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';

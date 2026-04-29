@@ -78,6 +78,7 @@ const name=SLASH_COMMANDS type="SlashCommand[]"
       { cmd: '/doctor',      desc: '[engines|harness]        — diagnose engines, worktree, or Cesar harness' },
       { cmd: '/harness-replay', desc: '[turnId]              — replay Cesar tool timeline + approval ledger' },
       { cmd: '/undo',        desc: '                        — revert last patch or Cesar checkpoint' },
+      { cmd: '/checkpoints', desc: '                 — list recent file checkpoints' },
       { cmd: '/jobs',        desc: '                        — list running/completed jobs' },
       { cmd: '/focus',       desc: '<id>                    — switch to background job output' },
       { cmd: '/explore',     desc: '                        — toggle exploration mode (read-only)' },
@@ -616,8 +617,13 @@ fn name=parseSlashCommand params="input:string, commandRegistry?:any" returns=In
         return { type: 'run', input: rest } as Intent;
       case 'commit':
         return { type: 'commit', input: rest || undefined } as Intent;
-      case 'undo':
-        return { type: 'undo' } as Intent;
+      case 'undo': {
+        const parts = rest.split(/\s+/).filter(Boolean);
+        const snapshotId = parts[0] === 'checkpoint' ? parts[1] : parts[0];
+        return { type: 'undo', snapshotId: snapshotId || undefined } as unknown as Intent;
+      }
+      case 'checkpoints':
+        return { type: 'checkpoints' } as unknown as Intent;
       case 'status':
         return { type: 'status' } as Intent;
       case 'jobs':

@@ -5,15 +5,19 @@ import { spawnWithTimeout } from '../../packages/core/src/generated/blocks/proce
 
 describe('spawnWithTimeout', () => {
   it('captures stdout from a simple command', async () => {
+    let spawnedPid: number | null = null;
     const result = await spawnWithTimeout({
       command: 'echo',
       args: ['hello world'],
       cwd: process.cwd(),
       timeout: 5000,
+      onSpawn: (pid) => { spawnedPid = pid; },
     });
     expect(result.stdout.trim()).toBe('hello world');
     expect(result.exitCode).toBe(0);
     expect(result.timedOut).toBe(false);
+    expect(result.pid).toBe(spawnedPid);
+    expect(typeof result.pid).toBe('number');
   });
 
   it('captures stderr', async () => {

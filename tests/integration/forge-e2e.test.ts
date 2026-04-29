@@ -174,6 +174,53 @@ describe('Forge E2E', () => {
     }
   });
 
+  it('retries a failed starter on a fallback engine outside the forge roster', async () => {
+    const agonHome = setupTestAgonHome('forge-starter-fallback');
+    const repoDir = createRepo('starter-fallback');
+    const forgeDir = join(tmpdir(), `agon-forge-output-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    const fakeNpx = createFakeNpx();
+    const events: any[] = [];
+
+    const adapter: EngineAdapter = {
+      dispatch: async (options: DispatchOptions): Promise<DispatchResult> => {
+        if (options.engine.id === 'starter') throw new Error('starter unavailable');
+        writeFileSync(join(options.cwd, 'generated.ts'), 'export const value = "world";\n');
+        return { exitCode: 0, stdout: `ok from ${options.engine.id}`, stderr: '', durationMs: 1, timedOut: false };
+      },
+      isAvailable: async () => true,
+      getVersion: async () => 'test',
+    };
+
+    try {
+      vi.resetModules();
+      const { EngineRegistry } = await import('../../packages/core/src/index.js');
+      const { runForge } = await import('../../packages/forge/src/index.js');
+      const registry = new EngineRegistry();
+      registry.register(makeEngine('starter'));
+      registry.register(makeEngine('backup'));
+
+      const manifest = await runForge({
+        task: 'Create generated.ts that returns world',
+        fitnessCmd: `grep -q '"world"' generated.ts`,
+        cwd: repoDir,
+        forgeDir,
+        engines: ['starter'],
+        starter: 'starter',
+      }, registry, adapter, (event) => events.push(event));
+
+      expect(manifest.winner).toBe('backup');
+      expect(manifest.results.starter?.pass).toBe(false);
+      expect(manifest.results.backup?.pass).toBe(true);
+      expect(events.some((e) => e.type === 'engine:fallback' && e.data?.to === 'backup')).toBe(true);
+    } finally {
+      cleanupTestAgonHome(agonHome);
+      process.env.PATH = fakeNpx.originalPath;
+      rmSync(fakeNpx.binDir, { recursive: true, force: true });
+      rmSync(repoDir, { recursive: true, force: true });
+      rmSync(forgeDir, { recursive: true, force: true });
+    }
+  });
+
   it('continues followers when the peek scout fails', async () => {
     const agonHome = setupTestAgonHome('forge-scout-fails');
     const repoDir = createRepo('scout-fails');

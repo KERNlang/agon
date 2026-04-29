@@ -75,6 +75,7 @@ interface name=DispatchOptions
   field name=permissionMode type="'auto'|'smart'|'ask'|'deny-all'" optional=true
   field name=allowedCommands type="string[]" optional=true
   field name=toolPermissions type="Record<string,'allow'|'ask'|'deny'>" optional=true
+  field name=onSpawn type="(pid:number)=>void" optional=true
 
 interface name=DispatchResult
   field name=exitCode type=number
@@ -82,6 +83,7 @@ interface name=DispatchResult
   field name=stderr type=string
   field name=durationMs type=number
   field name=timedOut type=boolean
+  field name=pid type="number|null" optional=true
   field name=usage type="{promptTokens:number,completionTokens:number,totalTokens:number,source:'sdk'|'cli-reported'|'estimated'}" optional=true
   field name=parts type="Array<{kind:'text',text:string}|{kind:'reasoning',text:string}|{kind:'tool_call',toolName:string,toolCallId:string,args:Record<string,unknown>}>" optional=true
   doc "Structured parts captured at stream time. Enables compaction to fold over typed data instead of parsing strings."
@@ -284,7 +286,7 @@ interface name=EngineResult
 
 interface name=DispatchMetric
   field name=engineId type=string
-  field name=phase type="'stage1'|'stage2-scout'|'stage2-follower'|'synthesis'|'gauntlet'"
+  field name=phase type="'stage1'|'stage1-fallback'|'stage2-scout'|'stage2-scout-fallback'|'stage2-follower'|'stage2-fallback'|'synthesis'|'gauntlet'"
   field name=dispatchDurationMs type=number
   field name=fitnessDurationMs type=number optional=true
   field name=totalDurationMs type=number

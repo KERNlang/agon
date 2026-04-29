@@ -39,6 +39,7 @@ interface name=PersistentSession
   field name=alive type=boolean
   field name=sessionId type="string|null"
   field name=engineId type=string
+  field name=pid type="number|null" optional=true
   field name=start type="() => Promise<void>"
   field name=send type="(opts: SessionSendOptions) => AsyncGenerator<SessionChunk, void, void>"
   field name=close type="() => void"
@@ -168,6 +169,7 @@ fn name=createCompanionSession params="config:PersistentSessionConfig" returns="
     const session: PersistentSession = {
       get alive() { return alive; },
       get sessionId() { return sessionId; },
+      get pid() { return proc?.pid ?? null; },
       engineId: config.engine.id,
 
       async start() {
@@ -523,6 +525,7 @@ fn name=createAcpSession params="config:PersistentSessionConfig" returns="Persis
     const session: PersistentSession = {
       get alive() { return alive; },
       get sessionId() { return sessionId; },
+      get pid() { return proc?.pid ?? null; },
       engineId: config.engine.id,
 
       async start() {
@@ -868,6 +871,7 @@ fn name=createStreamJsonSession params="config:PersistentSessionConfig" returns=
     const session: PersistentSession = {
       get alive() { return alive; },
       get sessionId() { return sessionId; },
+      get pid() { return proc?.pid ?? null; },
       engineId: config.engine.id,
 
       async start() {
@@ -1133,6 +1137,7 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
     let alive = false;
     let sessionId: string | null = null;
     let firstTurn = true;
+    let activePid: number | null = null;
     // Message history for API engines — enables multi-turn tool loops
     const messageHistory: Array<{role: string, content: any, tool_calls?: any[], tool_call_id?: string}> = [];
     // Compaction state — accumulates across compaction cycles
@@ -1157,6 +1162,7 @@ fn name=createResumeSession params="config:PersistentSessionConfig" returns="Per
     const session: PersistentSession = {
       get alive() { return alive; },
       get sessionId() { return sessionId; },
+      get pid() { return activePid; },
       engineId: config.engine.id,
 
       async start() {
@@ -1987,6 +1993,7 @@ Respond with ONLY the summary, no preamble.`;
           cwd: config.cwd,
           detached: true,
         });
+        activePid = child.pid ?? null;
 
         const chunks: SessionChunk[] = [];
         let done = false;
@@ -1995,6 +2002,7 @@ Respond with ONLY the summary, no preamble.`;
         // Abort: kill spawned child process
         const onAbort = () => {
           done = true;
+          activePid = null;
           chunks.push({ type: 'done', content: 'cancelled' });
           try { if (child.pid) process.kill(-child.pid, 'SIGTERM'); } catch (e) { console.warn(`[agon] session-stream: kill failed: ${e instanceof Error ? e.message : String(e)}`); try { child.kill('SIGTERM'); } catch { /* process already exited */ } }
           if (resolveWait) { resolveWait(); resolveWait = null; }
@@ -2030,12 +2038,14 @@ Respond with ONLY the summary, no preamble.`;
 
         child.on('close', () => {
           done = true;
+          activePid = null;
           chunks.push({ type: 'done', content: 'end_turn' });
           if (resolveWait) { resolveWait(); resolveWait = null; }
         });
 
         child.on('error', (err: Error) => {
           done = true;
+          activePid = null;
           chunks.push({ type: 'error', content: err.message });
           if (resolveWait) { resolveWait(); resolveWait = null; }
         });
@@ -2054,11 +2064,13 @@ Respond with ONLY the summary, no preamble.`;
         } finally {
           opts.signal?.removeEventListener('abort', onAbort);
           firstTurn = false;
+          if (done) activePid = null;
         }
       },
 
       close() {
         alive = false;
+        activePid = null;
       },
 
       getMessageHistory() {

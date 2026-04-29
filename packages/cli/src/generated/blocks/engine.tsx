@@ -160,7 +160,7 @@ const CesarRecapBlock = React.memo(function CesarRecapBlock({ event }: { event:O
         <Text dimColor>{'  files: '}{files.slice(0, 5).map((f: any) => `${fileGlyph(String(f.status))} ${f.relPath ?? f.path}`).join(', ')}{files.length > 5 ? `, +${files.length - 5} more` : ''}</Text>
       )}
       {checkpoints.length > 0 ? (
-        <Text color="#22d3ee">{'  checkpoint: '}{checkpoints[0].id}{checkpoints.length > 1 ? ` (+${checkpoints.length - 1})` : ''}<Text dimColor>{' · /undo reverts latest'}</Text></Text>
+        <Text color="#22d3ee">{'  checkpoint: '}{checkpoints[0].id}{checkpoints.length > 1 ? ` (+${checkpoints.length - 1})` : ''}<Text dimColor>{` · /undo ${checkpoints[0].id} reverts checkpoint`}</Text></Text>
       ) : null}
       {diffFiles.slice(0, 4).map((file: any, index: number) => (
         <Box key={`diff-${index}`} flexDirection="column">
@@ -337,6 +337,37 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
       const permTool = (event as any).tool as string;
       const cmdLines = permCmd.split('\n').slice(0, 6);
       const moreLines = permCmd.split('\n').length > 6;
+      const { rawInput, parsed } = parseToolInputPayload(permCmd);
+      const permToolKey = String(permTool ?? '').toLowerCase();
+      const previewRows: React.ReactNode[] = [];
+      const addDiffPreview = (key: string, lines: string[], sign: string, color: string) => {
+        lines.slice(0, 3).forEach((line: string, i: number) => {
+          previewRows.push(<Text key={`${key}-${i}`} color={color}>{'    '}{sign}{truncateCodeLine(line, contentWidth(12))}</Text>);
+        });
+        if (lines.length > 3) previewRows.push(<Text key={`${key}-more`} dimColor>{'    \u2026 '}{lines.length - 3}{' more lines'}</Text>);
+      };
+      if (permToolKey === 'edit' || permToolKey === 'update' || permToolKey === 'agonedit') {
+        const filePath = String((parsed.file_path as string) || (parsed.filePath as string) || '');
+        const oldLines = String((parsed.old_string as string) || (parsed.oldString as string) || '').split('\n').filter((line: string, index: number, all: string[]) => line.length > 0 || all.length === 1);
+        const newLines = String((parsed.new_string as string) || (parsed.newString as string) || '').split('\n').filter((line: string, index: number, all: string[]) => line.length > 0 || all.length === 1);
+        previewRows.push(<Text key="preview-head"><Text color="#22d3ee">{'  Preview update'}</Text>{filePath ? <Text color="#a78bfa">{' '}{shortToolPath(filePath)}</Text> : null}<Text dimColor>{' -'}{oldLines.length}{' +'}{newLines.length}</Text></Text>);
+        addDiffPreview('preview-old', oldLines, '-', '#ef4444');
+        addDiffPreview('preview-new', newLines, '+', '#4ade80');
+      } else if (permToolKey === 'write' || permToolKey === 'agonwrite') {
+        const filePath = String((parsed.file_path as string) || (parsed.filePath as string) || '');
+        const contentLines = String((parsed.content as string) || '').split('\n').filter((line: string, index: number, all: string[]) => line.length > 0 || all.length === 1);
+        previewRows.push(<Text key="preview-head"><Text color="#22d3ee">{'  Preview write'}</Text>{filePath ? <Text color="#a78bfa">{' '}{shortToolPath(filePath)}</Text> : null}<Text dimColor>{' +'}{contentLines.length}</Text></Text>);
+        addDiffPreview('preview-write', contentLines, '+', '#4ade80');
+      } else if (permToolKey === 'applypatch' || permToolKey === 'apply_patch') {
+        const patch = parsePatchPreview(rawInput, parsed);
+        if (patch.lines.length > 0 || patch.files.length > 0) {
+          previewRows.push(<Text key="preview-head"><Text color="#22d3ee">{'  Preview patch'}</Text><Text dimColor>{' -'}{patch.deletions}{' +'}{patch.additions}</Text>{patch.files.length > 0 ? <Text color="#a78bfa">{' '}{patch.files.slice(0, 2).map((filePath: string) => shortToolPath(filePath)).join(', ')}</Text> : null}</Text>);
+          patch.lines.slice(0, 6).forEach((line: string, i: number) => {
+            previewRows.push(<Text key={`preview-patch-${i}`} color={line.startsWith('+') ? '#4ade80' : line.startsWith('-') ? '#ef4444' : '#fbbf24'} dimColor={line.startsWith('@@')}>{'    '}{truncateCodeLine(line, contentWidth(12))}</Text>);
+          });
+          if (patch.lines.length > 6) previewRows.push(<Text key="preview-patch-more" dimColor>{'    \u2026 '}{patch.lines.length - 6}{' more lines'}</Text>);
+        }
+      }
       return (
         <Box flexDirection="column" paddingLeft={1} marginY={1}>
           <Box borderStyle="bold" borderColor="#fbbf24" paddingX={1} flexDirection="column">
@@ -352,6 +383,12 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
               </Text>
             ))}
             {moreLines && <Text dimColor>{'    \u2026'}</Text>}
+            {previewRows.length > 0 && (
+              <>
+                <Text> </Text>
+                {previewRows}
+              </>
+            )}
             {permDesc && (
               <>
                 <Text> </Text>
@@ -848,7 +885,7 @@ const OutputBlockView = React.memo(function OutputBlockView({ event, mode, toolO
 });
 export { OutputBlockView };
 
-// @kern-source: engine:1009
+// @kern-source: engine:1046
 const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:OutputBlock[] }) {
   const labelForTool = (raw: unknown) => {
     const toolKey = String(raw ?? '').toLowerCase();
@@ -949,7 +986,7 @@ const ToolCallGroup = React.memo(function ToolCallGroup({ blocks }: { blocks:Out
 });
 export { ToolCallGroup };
 
-// @kern-source: engine:1127
+// @kern-source: engine:1164
 const DebateGroup = React.memo(function DebateGroup({ blocks }: { blocks:OutputBlock[] }) {
   const round = (blocks[0]?.event as any)?.round ?? '?';
   const w = contentWidth(6);
@@ -975,7 +1012,7 @@ const DebateGroup = React.memo(function DebateGroup({ blocks }: { blocks:OutputB
 });
 export { DebateGroup };
 
-// @kern-source: engine:1156
+// @kern-source: engine:1193
 const BidGroup = React.memo(function BidGroup({ blocks }: { blocks:OutputBlock[] }) {
   const w = contentWidth(6);
   return (
@@ -1137,7 +1174,7 @@ export function parsePatchPreview(rawInput: string, parsed: any): { files:string
   return { files, lines, additions, deletions };
 }
 
-// @kern-source: engine:1113
+// @kern-source: engine:1150
 export function extractSummary(text: string, maxLen: number): string {
   let s = text.replace(/<think>[\s\S]*?<\/think>\s*/gi, '');
   s = s.replace(/^#+\s+.+\n/gm, '');

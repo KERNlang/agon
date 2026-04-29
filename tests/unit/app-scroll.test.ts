@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
+  appendTranscriptBlock,
   buildTranscriptRows,
   buildTerminalReplaySnapshot,
   coalesceToolCallBlocks,
@@ -12,6 +13,7 @@ import {
   fileRailWidthForTerminal,
   findLatestToolDetailEvent,
   historyBlocksForTranscript,
+  isDuplicateEngineBlock,
   maxScrollOffsetForRowCount,
   nativeArchiveBlockCount,
   nativeTranscriptBlocksForStatic,
@@ -100,6 +102,29 @@ describe('app scroll helpers', () => {
 
     expect(effectiveNativeArchiveBlockCount(blocks, 3, 3, true)).toBe(1);
     expect(effectiveNativeArchiveBlockCount(blocks, 3, 3, false)).toBe(3);
+  });
+
+  it('suppresses duplicate engine output before the next user turn', () => {
+    const event = { type: 'engine-block', engineId: 'kimi', color: 124, content: 'same answer' } as any;
+    const blocks = [
+      { id: 1, event },
+      { id: 2, event: { type: 'tool-call-group', blocks: [] } },
+      { id: 3, event: { type: 'response-meta', engineId: 'kimi', elapsed: 1000 } },
+    ] as any;
+
+    expect(isDuplicateEngineBlock(blocks, event)).toBe(true);
+    expect(appendTranscriptBlock(blocks, event, '/tmp/unused-archive.jsonl')).toBe(blocks);
+  });
+
+  it('allows identical engine output after a new user message', () => {
+    const event = { type: 'engine-block', engineId: 'kimi', color: 124, content: 'same answer' } as any;
+    const blocks = [
+      { id: 1, event },
+      { id: 2, event: { type: 'user-message', content: 'repeat that' } },
+    ] as any;
+
+    expect(isDuplicateEngineBlock(blocks, event)).toBe(false);
+    expect(appendTranscriptBlock(blocks, event, '/tmp/unused-archive.jsonl')).toHaveLength(3);
   });
 
   it('archives a native block immediately when it cannot fit in the live row budget', () => {

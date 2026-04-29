@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { askChoiceQuestion, buildAgentAutoResumePrompt, buildBrainstormContinuationMessage, buildDelegatedContinuationPrompt, buildReviewAbsorptionPrompt, collectRecentEngineContext, extractExecutionSpec, formatCesarPlanRuntimeStatus, formatCesarRecoveryStatus, isCesarPlanApprovalInput, isCesarPlanResumeInput, isCesarPlanStatusInput, isStrongCesarPlanApprovalInput, shouldApprovePendingCesarPlanInput, shouldAutoContinueDelegatedResult, shouldAutoResumeAgentResult } from '../../packages/cli/src/generated/signals/dispatch.js';
+import { askChoiceQuestion, buildAgentAutoResumePrompt, buildBrainstormContinuationMessage, buildDelegatedContinuationPrompt, buildPlanCallbacks, buildReviewAbsorptionPrompt, collectRecentEngineContext, extractExecutionSpec, formatCesarPlanRuntimeStatus, formatCesarRecoveryStatus, isCesarPlanApprovalInput, isCesarPlanResumeInput, isCesarPlanStatusInput, isStrongCesarPlanApprovalInput, shouldApprovePendingCesarPlanInput, shouldAutoContinueDelegatedResult, shouldAutoResumeAgentResult } from '../../packages/cli/src/generated/signals/dispatch.js';
 
 describe('Dispatch routing helpers', () => {
   it('extracts forge fitness commands from conversational input', () => {
@@ -63,6 +63,62 @@ describe('Dispatch routing helpers', () => {
     expect(status).toContain('cplan-123456 is paused: 1/2 steps done');
     expect(status).toContain('Next: build dashboard');
     expect(status).toContain('Use /plan resume or say "go"');
+  });
+
+  it('surfaces plan self-steps as live tool events and a running gauge state', () => {
+    const events: any[] = [];
+    let activePlan: any = null;
+    const callbacks = buildPlanCallbacks({
+      id: 'cplan-live-tools',
+      state: 'running',
+      intent: 'build telemetry',
+      steps: [
+        {
+          id: 's1',
+          type: 'self',
+          description: 'write telemetry poller',
+          estimatedTokens: 1000,
+          estimatedCostUsd: 0.01,
+          state: 'pending',
+        },
+        {
+          id: 's2',
+          type: 'self',
+          description: 'wire dashboard',
+          estimatedTokens: 1000,
+          estimatedCostUsd: 0.01,
+          state: 'pending',
+        },
+      ],
+      totalEstimatedTokens: 2000,
+      totalEstimatedCostUsd: 0.02,
+      totalActualTokens: 0,
+      totalActualCostUsd: 0,
+      stepContext: {},
+      createdAt: new Date().toISOString(),
+    } as any, {
+      dispatch: (event: any) => events.push(event),
+      setActivePlan: (plan: any) => { activePlan = plan; },
+    } as any);
+
+    callbacks.onStepStart('s1');
+
+    expect(activePlan.steps[0].state).toBe('running');
+    expect(events.some((event) => event.type === 'spinner-start' && event.message.includes('Step 1/2'))).toBe(true);
+    const runningTool = events.find((event) => event.type === 'tool-call' && event.tool === 'PlanStep' && event.status === 'running');
+    expect(JSON.parse(runningTool.input)).toMatchObject({
+      planId: 'cplan-live-tools',
+      stepId: 's1',
+      step: 1,
+      totalSteps: 2,
+      description: 'write telemetry poller',
+    });
+
+    callbacks.onStepDone('s1', { status: 'success', actualTokens: 0, actualCostUsd: 0, durationMs: 1200, output: 'created poller' });
+
+    expect(events.some((event) => event.type === 'spinner-stop')).toBe(true);
+    const doneTool = events.find((event) => event.type === 'tool-call' && event.tool === 'PlanStep' && event.status === 'done');
+    expect(doneTool.output).toBe('created poller');
   });
 
   it('approves natural text when a live plan is already pending', () => {

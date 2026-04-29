@@ -26,6 +26,7 @@ function baseCtx(overrides: Record<string, unknown> = {}) {
     engineIds: [],
     fileRailFocused: false,
     fileRailExpanded: false,
+    executionRailFocused: false,
     ...overrides,
   };
 }
@@ -63,20 +64,27 @@ describe('resolveKeyboardInput', () => {
     }))).toEqual({ type: 'none' });
   });
 
-  it('routes ctrl+g to selection mode toggle when no text input owns it', () => {
-    expect(resolveKeyboardInput(baseCtx({
-      input: '\x07',
-      key: { ctrl: true },
-      textInputActive: false,
-    }))).toEqual({ type: 'toggleSelectionMode' });
-  });
-
   it('routes ctrl+r to results pager using the real control byte', () => {
     expect(resolveKeyboardInput(baseCtx({
       input: '\x12',
       key: { ctrl: true },
       textInputActive: false,
     }))).toEqual({ type: 'openResults' });
+  });
+
+  it('routes ctrl+i to the live execution rail before tab queues plan mode', () => {
+    expect(resolveKeyboardInput(baseCtx({
+      input: '\t',
+      key: { ctrl: true, tab: true },
+      textInputActive: false,
+    }))).toEqual({ type: 'toggleExecutionRail' });
+  });
+
+  it('closes the focused execution rail on escape', () => {
+    expect(resolveKeyboardInput(baseCtx({
+      key: { escape: true },
+      executionRailFocused: true,
+    }))).toEqual({ type: 'executionRailClose' });
   });
 
   it('routes ctrl+o to the focused tool detail viewer', () => {

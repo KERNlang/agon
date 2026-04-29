@@ -1115,16 +1115,14 @@ fn name=findResumableCesarPlan params="ctx:HandlerContext" returns="CesarPlan | 
   >>>
 
 fn name=shouldApprovePendingCesarPlanInput params="input:string,ctx:HandlerContext" returns=boolean export=true
-  doc "Treat natural approval text as /approve even if a previous session failed to surface the plan panel."
+  doc "Treat natural approval text as /approve only when a live pending plan is visible in this session."
   handler <<<
     const text = String(input ?? '').trim();
     if (!text || text.startsWith('/')) return false;
     const proposed = ctx.cesar?.proposedPlan as CesarPlan | undefined;
     const active = ctx.activePlan as CesarPlan | undefined;
     const hasLivePending = (proposed && proposed.state === 'awaiting_approval') || (active && active.state === 'awaiting_approval');
-    if (hasLivePending) return isCesarPlanApprovalInput(text);
-    if (!isStrongCesarPlanApprovalInput(text)) return false;
-    return listCesarPlans().some((p: CesarPlan) => p.state === 'awaiting_approval');
+    return !!hasLivePending && isCesarPlanApprovalInput(text);
   >>>
 
 fn name=isCesarPlanResumeInput params="input:string" returns=boolean export=true
@@ -1160,18 +1158,78 @@ fn name=formatCesarPlanRuntimeStatus params="plan:CesarPlan" returns=string expo
     return lines.join('\n');
   >>>
 
-fn name=resumeCesarPlan async=true params="plan:CesarPlan, cb:DispatchCallbacks" returns="Promise<void>" export=true
-  doc "Resume a paused or stale-running Cesar plan through the shared executor path."
+fn name=buildResumePromptContext params="plan:CesarPlan" returns="{ doneCount:number; failedCount:number; remainingCount:number; failedStep:any|null; remainingCostUsd:number; remainingTokens:number }" export=true
+  doc "Compute resume prompt context: how many steps done/failed/remain, which step failed, and estimated cost to finish."
   handler <<<
-    cb.dispatch({ type: 'info', message: `Resuming plan: ${plan.intent} (${plan.id})` });
+    const steps = plan.steps ?? [];
+    const doneCount = steps.filter((s: any) => s.state === 'done').length;
+    const failedSteps = steps.filter((s: any) => s.state === 'failed');
+    const failedCount = failedSteps.length;
+    const failedStep = failedSteps[0] ?? null;
+    const remainingSteps = steps.filter((s: any) => s.state !== 'done' && s.state !== 'skipped');
+    const remainingCount = remainingSteps.length;
+    const remainingCostUsd = remainingSteps.reduce((sum: number, s: any) => sum + (s.estimatedCostUsd ?? 0), 0);
+    const remainingTokens = remainingSteps.reduce((sum: number, s: any) => sum + (s.estimatedTokens ?? 0), 0);
+    return { doneCount, failedCount, remainingCount, failedStep, remainingCostUsd, remainingTokens };
+  >>>
+
+fn name=skipCompletedSteps params="plan:CesarPlan" returns=CesarPlan export=true
+  doc "Mark done steps as skipped so executePlan skips them on resume. Keeps failed steps as pending (unless review-exhausted)."
+  handler <<<
     const cyclesUsedAtResume = (plan as any).reviewCyclesUsed ?? 0;
-    const resetSteps = plan.steps.map((s: any) => {
-      if (s.state === 'failed' && s.type === 'review' && cyclesUsedAtResume >= 2) {
-        return s;
-      }
-      return s.state === 'failed' ? { ...s, state: 'pending' as any, result: undefined } : s;
+    const newSteps = plan.steps.map((s: any) => {
+      if (s.state === 'done' || s.state === 'skipped') return { ...s, state: 'skipped' as any };
+      if (s.state === 'failed' && s.type === 'review' && cyclesUsedAtResume >= 2) return s;
+      if (s.state === 'failed') return { ...s, state: 'pending' as any, result: undefined };
+      if (s.state === 'blocked') return s;
+      return { ...s, state: 'pending' as any };
     });
-    const runningPlan: CesarPlan = { ...plan, steps: resetSteps, state: 'running' as any };
+    return { ...plan, steps: newSteps };
+  >>>
+
+fn name=resumeCesarPlan async=true params="plan:CesarPlan, cb:DispatchCallbacks" returns="Promise<void>" export=true
+  doc "Resume a paused or stale-running Cesar plan through the shared executor path. Shows a resume prompt with context before executing."
+  handler <<<
+    const ctx = buildResumePromptContext(plan);
+    const lines = [
+      `Resume plan: ${plan.intent}`,
+      `${ctx.doneCount}/${plan.steps.length} steps completed · ${ctx.remainingCount} remaining`,
+    ];
+    if (ctx.failedCount > 0 && ctx.failedStep) {
+      lines.push(`Failed step: ${ctx.failedStep.description}${ctx.failedStep.result?.error ? ` — ${ctx.failedStep.result.error}` : ''}`);
+    }
+    if (ctx.remainingCostUsd > 0) {
+      lines.push(`Estimated cost to finish: ~${ctx.remainingTokens.toLocaleString()} tokens · ${ctx.remainingCostUsd.toFixed(2)}`);
+    }
+    cb.dispatch({ type: 'info', message: lines.join('\n') });
+
+    const answer = await askChoiceQuestion(cb, 'Resume this plan?', [
+      { key: '1', label: 'Resume — continue from where it stopped', color: '#4ade80' },
+      { key: '2', label: 'Restart — rerun all steps from the beginning', color: '#fbbf24' },
+      { key: '3', label: 'Cancel — keep the plan paused', color: '#ef4444' },
+    ], '1');
+    const trimmed = answer.trim().toLowerCase();
+
+    if (trimmed === '3' || trimmed === 'c' || trimmed === 'cancel') {
+      cb.dispatch({ type: 'info', message: 'Plan resume cancelled.' });
+      return;
+    }
+
+    const restart = trimmed === '2' || trimmed === 'r' || trimmed === 'restart';
+    let runningPlan: CesarPlan;
+    if (restart) {
+      const freshSteps = plan.steps.map((s: any) => ({
+        ...s,
+        state: (s.dependsOn && s.dependsOn.length > 0 ? 'blocked' : 'pending') as any,
+        result: undefined,
+      }));
+      runningPlan = { ...plan, steps: freshSteps, state: 'running' as any, totalActualTokens: 0, totalActualCostUsd: 0 };
+      cb.dispatch({ type: 'info', message: `Restarting plan from step 1: ${plan.intent}` });
+    } else {
+      runningPlan = { ...skipCompletedSteps(plan), state: 'running' as any };
+      cb.dispatch({ type: 'info', message: `Resuming plan: ${plan.intent} (${plan.id})` });
+    }
+
     cb.setActivePlan(runningPlan);
     saveCesarPlan(runningPlan);
     if (runningPlan.planFilePath) {

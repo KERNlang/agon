@@ -130,6 +130,7 @@ const PromptTextInput = React.memo(function PromptTextInput({ value, placeholder
           '\x01': 'a',
           '\x03': 'c',
           '\x05': 'e',
+          '\x09': 'i',
           '\x0a': 'j',
           '\x0b': 'k',
           '\x0c': 'l',
@@ -138,6 +139,7 @@ const PromptTextInput = React.memo(function PromptTextInput({ value, placeholder
           '\x19': 'y',
           '\x15': 'u',
           '\x17': 'w',
+          '\x02': 'b',
         } as Record<string, string>)[input] ?? input
       : input;
     const isReservedCtrlShortcut = key.ctrl && isDelegatedCtrlShortcut(normalizedCtrlInput);
@@ -483,7 +485,7 @@ function pluralizeLines(count: number): string {
 
 // @kern-source: prompt-input:241
 export function isDelegatedCtrlShortcut(input: string): boolean {
-  return ['c', 'e', 'j', 'l', 'r', 't', 'y'].includes(input);
+  return ['b', 'c', 'e', 'i', 'j', 'l', 'r', 't', 'y'].includes(input);
 }
 
 // @kern-source: prompt-input:244

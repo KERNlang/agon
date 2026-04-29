@@ -842,15 +842,12 @@ export function App() {
     }
     if (planModeQueued && input.trim() && !input.startsWith('/')) {
       setPlanModeQueued(false);
+      setAutoModeQueued(false);
       handleSubmit(`/plan ${input}`);
       return;
     }
+    const autoModeForTurn = autoModeQueued && input.trim() && !input.startsWith('/');
     if (planModeQueued) setPlanModeQueued(false);
-    if (autoModeQueued && input.trim() && !input.startsWith('/')) {
-      setAutoModeQueued(false);
-      handleSubmit(`/autonomous ${input}`);
-      return;
-    }
     if (autoModeQueued) setAutoModeQueued(false);
     transition(startCommandReplState);
     dispatch({ type: 'separator' } as any);
@@ -858,8 +855,10 @@ export function App() {
     const { text: cleanInput, images: detectedImages } = extractImagesFromInput(input, resolveWorkingDir());
     const allImages = [...pendingImages, ...detectedImages];
     let intent = detectIntent(cleanInput || input, commandRegistry);
+    const ctx = buildContext();
+    (ctx as any).autoModeQueued = autoModeForTurn;
     const cb: DispatchCallbacks = {
-      dispatch, ctx: buildContext(), commandRegistry, eventBus, loadedExtensions, setWorkspacePath,
+      dispatch, ctx, commandRegistry, eventBus, loadedExtensions, setWorkspacePath,
       runAsJob: (type: string, label: string, fn: () => Promise<void>) => {
         const job = jobManager.create(type, label);
         setJobList([...jobManager.list()]);
@@ -891,7 +890,7 @@ export function App() {
       if (result.ranAsJob) return;
     } catch (err: any) { dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); }
     finally { setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state); }
-  }, [replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,planModeQueued]);
+  }, [replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,planModeQueued,autoModeQueued]);
 
   const handleReviewActionCb = useCallback((action:'apply'|'edit'|'reject'|'copy') => {
     if (!reviewEvent) return;
@@ -1146,8 +1145,10 @@ export function App() {
         setInputValue(inputValue + action.ghost + ' ');
         return;
       case 'togglePlanQueued':
+        setAutoModeQueued(false);
         setPlanModeQueued((prev: boolean) => !prev); return;
       case 'toggleAutoQueued':
+        setPlanModeQueued(false);
         setAutoModeQueued((prev: boolean) => !prev); return;
       case 'submit':
         handleSubmit(action.value); return;
@@ -3846,7 +3847,7 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
   return rows;
 }
 
-// @kern-source: app:3739
+// @kern-source: app:3740
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

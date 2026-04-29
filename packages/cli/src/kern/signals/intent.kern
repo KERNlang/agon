@@ -30,6 +30,7 @@ interface name=Intent
   field name=engineId type="string|undefined"
   field name=commandName type="string|undefined"
   field name=turnId type="string|undefined"
+  field name=autoMode type="boolean|undefined"
 
 const name=SLASH_COMMANDS type="SlashCommand[]"
   handler <<<
@@ -50,6 +51,7 @@ const name=SLASH_COMMANDS type="SlashCommand[]"
       { cmd: '/history',     desc: '[id]                    — past forge runs' },
       { cmd: '/config',      desc: '[list|get|set]          — settings' },
       { cmd: '/plan',        desc: '<task> or no args    — plan mode or show plan' },
+      { cmd: '/auto',        desc: '<task>                   — run next task with autonomous mode' },
       { cmd: '/plans',       desc: '                        — list recent plans' },
       { cmd: '/approve',     desc: '                        — approve current plan' },
       { cmd: '/retry',       desc: '                        — retry failed plan step' },
@@ -371,6 +373,11 @@ fn name=parseSlashCommand params="input:string, commandRegistry?:any" returns=In
           }
           return { type: 'plan', planId: undefined } as Intent;
         }
+      case 'auto':
+      case 'autonomous': {
+        const autoTask = rest.trim();
+        return { type: 'auto', input: autoTask, taskClass: classifyTask(autoTask), autoMode: true } as Intent;
+      }
       case 'plans':
         return { type: 'plans' } as Intent;
       case 'approve':

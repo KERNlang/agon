@@ -2219,7 +2219,18 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
           break;
         }
       }
-      if (await routeWithCesar(intent.input ?? input, cb.allImages, cb)) return { handled: true, ranAsJob: true };
+      const explicitAutoMode = (intent as any).autoMode === true;
+      if (explicitAutoMode && !(intent.input ?? '').trim()) {
+        cb.dispatch({ type: 'info', message: 'Usage: /auto <task> — run one task with autonomous mode enabled.' });
+        break;
+      }
+      const previousAutoMode = cb.ctx.autoModeQueued;
+      if (explicitAutoMode) cb.ctx.autoModeQueued = true;
+      try {
+        if (await routeWithCesar(intent.input ?? input, cb.allImages, cb)) return { handled: true, ranAsJob: true };
+      } finally {
+        if (explicitAutoMode) cb.ctx.autoModeQueued = previousAutoMode;
+      }
       break;
     }
 
@@ -2234,7 +2245,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
 /**
  * Shared approval loop for plans proposed by Cesar, whether from explicit /plan mode or a normal chat turn.
  */
-// @kern-source: dispatch:2184
+// @kern-source: dispatch:2195
 export async function handleProposedCesarPlan(proposed: CesarPlan, cb: DispatchCallbacks): Promise<void> {
   if (cb.ctx.cesar) cb.ctx.cesar.proposedPlan = undefined;
 
@@ -2351,7 +2362,7 @@ export async function handleProposedCesarPlan(proposed: CesarPlan, cb: DispatchC
 /**
  * Build executor callbacks. Holds a closure on the latest plan reference (mutated via onPlanUpdate) so step lookups always see appended steps like the auto-review cycle (tribunal fix #10). FU-3: persistence is debounced 300ms to avoid the sync-write storm Doppelganger flagged — onPlanUpdate fires once per step in a hot loop, but the disk write happens at most ~3x/sec. Terminal states (done/paused/cancelled) flush immediately so the .md/.json on disk reflect the final state. Callers should invoke .flush() before exit to drain any pending write.
  */
-// @kern-source: dispatch:2304
+// @kern-source: dispatch:2315
 export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks): any {
   let currentPlan = initialPlan;
   let pendingWriteTimer: ReturnType<typeof setTimeout> | null = null;
@@ -2428,7 +2439,7 @@ export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks
 /**
  * FU-4: shared executor for the auto-approve, manual-approve, and plan-resume paths. Wires the abort controller, builds callbacks (with debounced persistence), runs executePlan, runs finalizePlanWithReviewGate, and dispatches the terminal status. Eliminates the ~60 lines of triplication that lived in dispatch.kern and forced future changes (e.g., new callback hooks, new finalize behavior) to be applied to all three sites.
  */
-// @kern-source: dispatch:2379
+// @kern-source: dispatch:2390
 export async function executeApprovedPlan(approved: CesarPlan, cb: DispatchCallbacks): Promise<void> {
   const executors = buildStepExecutors(cb.ctx);
   const abortController = new AbortController();
@@ -2465,7 +2476,7 @@ export async function executeApprovedPlan(approved: CesarPlan, cb: DispatchCallb
 /**
  * Single source of truth for the post-execution self-review gate. Called from BOTH the plan-task and plan-resume terminal paths so resume cannot bypass the gate or the cycle cap (tribunal fix #4).
  */
-// @kern-source: dispatch:2414
+// @kern-source: dispatch:2425
 export async function finalizePlanWithReviewGate(finalPlan: CesarPlan, executors: Record<string,StepExecutor>, abortSignal: AbortSignal, cb: DispatchCallbacks): Promise<CesarPlan> {
   const MUTATING = new Set(['forge', 'teamforge', 'pipeline', 'agent', 'team-agent', 'delegate', 'self']);
   const planTouchedMutation = finalPlan.steps.some((s: any) => MUTATING.has(s.type) && (s.state === 'done' || s.state === 'failed'));

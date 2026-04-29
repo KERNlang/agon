@@ -2169,7 +2169,18 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
             break;
           }
         }
-        if (await routeWithCesar(intent.input ?? input, cb.allImages, cb)) return { handled: true, ranAsJob: true };
+        const explicitAutoMode = (intent as any).autoMode === true;
+        if (explicitAutoMode && !(intent.input ?? '').trim()) {
+          cb.dispatch({ type: 'info', message: 'Usage: /auto <task> — run one task with autonomous mode enabled.' });
+          break;
+        }
+        const previousAutoMode = cb.ctx.autoModeQueued;
+        if (explicitAutoMode) cb.ctx.autoModeQueued = true;
+        try {
+          if (await routeWithCesar(intent.input ?? input, cb.allImages, cb)) return { handled: true, ranAsJob: true };
+        } finally {
+          if (explicitAutoMode) cb.ctx.autoModeQueued = previousAutoMode;
+        }
         break;
       }
 

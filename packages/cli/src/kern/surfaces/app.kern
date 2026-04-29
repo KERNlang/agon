@@ -2981,7 +2981,7 @@ screen name=App target=ink
       setInputValue(updatedValue);
     >>>
 
-  callback name=handleSubmit async=true params="value:string" deps="replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,planModeQueued"
+  callback name=handleSubmit async=true params="value:string" deps="replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,planModeQueued,autoModeQueued"
     handler <<<
       inputEpochRef.current += 1;
       let input = cleanSubmitValue(value);
@@ -3072,15 +3072,12 @@ screen name=App target=ink
       }
       if (planModeQueued && input.trim() && !input.startsWith('/')) {
         setPlanModeQueued(false);
+        setAutoModeQueued(false);
         handleSubmit(`/plan ${input}`);
         return;
       }
+      const autoModeForTurn = autoModeQueued && input.trim() && !input.startsWith('/');
       if (planModeQueued) setPlanModeQueued(false);
-      if (autoModeQueued && input.trim() && !input.startsWith('/')) {
-        setAutoModeQueued(false);
-        handleSubmit(`/autonomous ${input}`);
-        return;
-      }
       if (autoModeQueued) setAutoModeQueued(false);
       transition(startCommandReplState);
       dispatch({ type: 'separator' } as any);
@@ -3088,8 +3085,10 @@ screen name=App target=ink
       const { text: cleanInput, images: detectedImages } = extractImagesFromInput(input, resolveWorkingDir());
       const allImages = [...pendingImages, ...detectedImages];
       let intent = detectIntent(cleanInput || input, commandRegistry);
+      const ctx = buildContext();
+      (ctx as any).autoModeQueued = autoModeForTurn;
       const cb: DispatchCallbacks = {
-        dispatch, ctx: buildContext(), commandRegistry, eventBus, loadedExtensions, setWorkspacePath,
+        dispatch, ctx, commandRegistry, eventBus, loadedExtensions, setWorkspacePath,
         runAsJob: (type: string, label: string, fn: () => Promise<void>) => {
           const job = jobManager.create(type, label);
           setJobList([...jobManager.list()]);
@@ -3418,8 +3417,10 @@ screen name=App target=ink
           setInputValue(inputValue + action.ghost + ' ');
           return;
         case 'togglePlanQueued':
+          setAutoModeQueued(false);
           setPlanModeQueued((prev: boolean) => !prev); return;
         case 'toggleAutoQueued':
+          setPlanModeQueued(false);
           setAutoModeQueued((prev: boolean) => !prev); return;
         case 'submit':
           handleSubmit(action.value); return;

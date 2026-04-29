@@ -19,6 +19,7 @@ function baseCtx(overrides: Record<string, unknown> = {}) {
     inputHistory: [],
     historyIndex: -1,
     planModeQueued: false,
+    autoModeQueued: false,
     activePlanState: null,
     outputBlockCount: 0,
     commands: [],
@@ -107,6 +108,27 @@ describe('resolveKeyboardInput', () => {
       toolDetailOpen: true,
       key: { pageDown: true },
     }))).toEqual({ type: 'none' });
+  });
+
+  it('routes plain tab to queued plan mode when the composer is idle and empty', () => {
+    expect(resolveKeyboardInput(baseCtx({
+      input: '\t',
+      key: { tab: true },
+    }))).toEqual({ type: 'togglePlanQueued' });
+  });
+
+  it('routes shift+tab to queued auto mode before the plain tab handler', () => {
+    expect(resolveKeyboardInput(baseCtx({
+      input: '\t',
+      key: { tab: true, shift: true },
+    }))).toEqual({ type: 'toggleAutoQueued' });
+  });
+
+  it('routes raw terminal shift+tab escape sequence to queued auto mode', () => {
+    expect(resolveKeyboardInput(baseCtx({
+      input: '\x1b[Z',
+      key: {},
+    }))).toEqual({ type: 'toggleAutoQueued' });
   });
 
   it('leaves PgUp/PgDn/Home/End to the terminal — main-buffer + native scrollback owns scroll', () => {

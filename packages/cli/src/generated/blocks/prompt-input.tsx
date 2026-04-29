@@ -145,6 +145,7 @@ const PromptTextInput = React.memo(function PromptTextInput({ value, placeholder
     const isWordLeft = (key.meta && (key.leftArrow || input === 'b')) || input === '\x1bb';
     const isWordRight = (key.meta && (key.rightArrow || input === 'f')) || input === '\x1bf';
     const isDeleteWordBackward = (key.ctrl && normalizedCtrlInput === 'w') || (key.meta && isBackspace) || input === '\x1b\x7f';
+    const isShiftTab = (key.shift && key.tab) || input === '\x1b[Z';
     const hasSpecialKeySignal =
       isBackspace ||
       isForwardDelete ||
@@ -156,7 +157,7 @@ const PromptTextInput = React.memo(function PromptTextInput({ value, placeholder
       key.pageUp ||
       key.pageDown ||
       key.tab ||
-      (key.shift && key.tab) ||
+      isShiftTab ||
       isWordLeft ||
       isWordRight ||
       isDeleteWordBackward ||
@@ -170,7 +171,7 @@ const PromptTextInput = React.memo(function PromptTextInput({ value, placeholder
       return;
     }
 
-    if (key.upArrow || key.downArrow || key.pageUp || key.pageDown || key.tab || (key.shift && key.tab)) return;
+    if (key.upArrow || key.downArrow || key.pageUp || key.pageDown || key.tab || isShiftTab) return;
     if (key.ctrl && !isSupportedCtrlEditShortcut) return;
     if (key.meta && !isWordLeft && !isWordRight && !isDeleteWordBackward) return;
 

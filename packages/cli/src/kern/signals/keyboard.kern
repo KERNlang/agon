@@ -112,28 +112,23 @@ fn name=resolveKeyboardInput params="ctx:KeyboardCtx" returns="KeyboardAction"
       return { type: 'none' };
     }
 
+    const isShiftTab = (key.shift && (key.tab || input === '\t')) || input === '\x1b[Z';
+    const isPlainTab = (key.tab || input === '\t') && !isShiftTab;
+
+    // Shift+Tab: queue auto mode
+    if (isShiftTab && !ctx.slashPickerOpen && !ctx.enginePickerOpen && !ctx.questionState && !ctx.reviewEventOpen) {
+      if (shouldQueuePlanModeOnTab({ replState: ctx.replState, inputValue: ctx.inputValue, activePlanState: ctx.activePlanState })) {
+        return { type: 'toggleAutoQueued' };
+      }
+      return { type: 'none' };
+    }
+
     // Tab: ghost-complete or queue plan mode
-    if ((key.tab || input === '\t') && !ctx.slashPickerOpen && !ctx.enginePickerOpen && !ctx.questionState && !ctx.reviewEventOpen) {
+    if (isPlainTab && !ctx.slashPickerOpen && !ctx.enginePickerOpen && !ctx.questionState && !ctx.reviewEventOpen) {
       const ghost = tryGhostComplete(ctx.inputValue, ctx.commands, ctx.engineIds);
       if (ghost) return { type: 'ghostComplete', ghost };
       if (shouldQueuePlanModeOnTab({ replState: ctx.replState, inputValue: ctx.inputValue, activePlanState: ctx.activePlanState })) {
         return { type: 'togglePlanQueued' };
-      }
-      return { type: 'none' };
-    }
-
-    // Shift+Tab: queue auto mode
-    if (key.shift && (key.tab || input === '\t') && !ctx.slashPickerOpen && !ctx.enginePickerOpen && !ctx.questionState && !ctx.reviewEventOpen) {
-      if (shouldQueuePlanModeOnTab({ replState: ctx.replState, inputValue: ctx.inputValue, activePlanState: ctx.activePlanState })) {
-        return { type: 'toggleAutoQueued' };
-      }
-      return { type: 'none' };
-    }
-
-    // Shift+Tab: queue auto mode
-    if (key.shift && (key.tab || input === '\t') && !ctx.slashPickerOpen && !ctx.enginePickerOpen && !ctx.questionState && !ctx.reviewEventOpen) {
-      if (shouldQueuePlanModeOnTab({ replState: ctx.replState, inputValue: ctx.inputValue, activePlanState: ctx.activePlanState })) {
-        return { type: 'toggleAutoQueued' };
       }
       return { type: 'none' };
     }

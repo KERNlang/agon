@@ -130,6 +130,23 @@ describe('Intent Detection — Slash Commands', () => {
     if (r.type === 'harness-replay') expect(r.turnId).toBe('cesar-abc123');
   });
 
+  it('/auto and /autonomous parse clean tasks with autonomous mode enabled', () => {
+    const auto = detectIntent('/auto fix login and run tests');
+    expect(auto.type).toBe('auto');
+    if (auto.type === 'auto') {
+      expect(auto.input).toBe('fix login and run tests');
+      expect(auto.taskClass).toBe('code');
+      expect(auto.autoMode).toBe(true);
+    }
+
+    const autonomous = detectIntent('/autonomous explain the harness flow');
+    expect(autonomous.type).toBe('auto');
+    if (autonomous.type === 'auto') {
+      expect(autonomous.input).toBe('explain the harness flow');
+      expect(autonomous.autoMode).toBe(true);
+    }
+  });
+
   it('/engines', () => {
     expect(detectIntent('/engines').type).toBe('engines');
   });

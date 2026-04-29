@@ -29,6 +29,8 @@ import from="../cesar/routing.js" names="shouldUseAgentTeam"
 import from="../cesar/session.js" names="buildCesarSystemPrompt,resolveCesarBackend"
 import from="../cesar/tool-observability.js" names="replayCesarHarnessLogs"
 import from="../cesar/recap.js" names="createCesarRecapCapture,recordCesarRecapEvent,buildCesarTurnRecapEvent,buildCesarRecapDiffPreview,shouldEmitCesarRecap"
+import from="../cesar/telemetry.js" names="renderTelemetrySnapshot,computeOverallHealth,createEngineVitals"
+import from="../cesar/telemetry.js" names="TelemetrySnapshot" types=true
 import from="@agon/core" names="createSpeculator,loadOrCreateActiveThread"
 import from="@agon/core" names="SpeculatorMemberConfig" types=true
 import from="./file-tracker.js" names="listFiles,getFileDiff"
@@ -1586,6 +1588,24 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
       case 'harness-replay': {
         const result = replayCesarHarnessLogs({ turnId: (intent as any).turnId, limit: 8 });
         cb.dispatch({ type: 'engine-block', engineId: 'harness-replay', color: ENGINE_COLORS.cesar ?? 124, content: result.rendered });
+        break;
+      }
+      case 'status': {
+        const registry = cb.ctx.registry;
+        const ids = registry.listIds();
+        const engines = ids.map((id: string) => {
+          const v = cb.ctx.telemetryVitals?.get(id);
+          if (v) return v;
+          return createEngineVitals(id);
+        });
+        const snap: TelemetrySnapshot = {
+          timestamp: Date.now(),
+          engines,
+          overallHealth: computeOverallHealth(engines),
+          activeRuns: 0,
+          recentFallbacks: (cb.ctx.recentFallbacks ?? []).slice(-5),
+        };
+        cb.dispatch({ type: 'info', message: renderTelemetrySnapshot(snap) });
         break;
       }
       case 'engines': cb.setEnginePickerOpen(true); break;

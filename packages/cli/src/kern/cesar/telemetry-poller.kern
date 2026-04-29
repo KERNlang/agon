@@ -1,0 +1,288 @@
+// ── Cesar Telemetry Poller: periodic engine probing + stall fallback ──
+// Drives the live dashboard. Owns the Map<engineId,EngineVitals>, ticks
+// every N seconds, broadcasts snapshots to subscribers, and fires a
+// fallback callback once per idle→stalled transition.
+//
+// The poller deliberately does not know HOW to probe an engine — that
+// strategy is injected at construction time. A real probe might shell
+// out to the engine's CLI, hit its API, or read a heartbeat file. The
+// poller just orchestrates timing, state, and propagation.
+
+import from="@agon/core" names="EngineRegistry"
+import from="./telemetry.js" names="STALL_THRESHOLD_MS,markEngineStalled,updateEngineVitals"
+import from="./telemetry.js" names="EngineVitals,EngineVitalState" types=true
+
+// ── Defaults ──────────────────────────────────────────────────────────
+
+const name=DEFAULT_POLL_INTERVAL_MS type=number export=true
+  doc "How often the poller probes every registered engine."
+  handler <<< 5000 >>>
+
+// ── Options shape ─────────────────────────────────────────────────────
+
+type name=FallbackMode values="ask|auto|off"
+
+interface name=TelemetryPollerOptions export=true
+  doc "Construction parameters for TelemetryPoller. probe() returns a partial vitals patch — the poller merges it into the existing record and refreshes the heartbeat."
+  field name=registry type=EngineRegistry
+  field name=probe type="(engineId:string) => Promise<Partial<EngineVitals>>"
+  field name=intervalMs type=number optional=true doc="defaults to DEFAULT_POLL_INTERVAL_MS"
+  field name=stallThresholdMs type=number optional=true doc="defaults to STALL_THRESHOLD_MS"
+  field name=probeTimeoutMs type=number optional=true doc="per-engine probe timeout before the last heartbeat is left stale"
+  field name=onFallback type="(engineId:string, vitals:EngineVitals) => void" optional=true doc="invoked once per idle→stalled transition (edge-triggered)"
+  field name=autoFallback type=FallbackMode optional=true doc="auto=immediately dispatch to best candidate, ask=fire onAutoFallback for consent gate, off=disable"
+  field name=onAutoFallback type="(from:string, to:string, reason:string) => Promise<boolean>" optional=true doc="for ask mode: return true to approve fallback"
+  field name=taskClass type=string optional=true doc="passed to registry.getFallbackChain for ranking"
+
+// ── The poller service ────────────────────────────────────────────────
+
+service name=TelemetryPoller export=true
+  doc "Polls every registered engine on a fixed interval, maintains a Map<engineId,EngineVitals>, fans out snapshots to subscribers, and triggers a fallback callback the first tick an engine flips to stalled. Construct one per app session; call start() to begin polling and stop() before disposal."
+
+  field name=registry type=EngineRegistry private=true
+  field name=probe type="(engineId:string) => Promise<Partial<EngineVitals>>" private=true
+  field name=intervalMs type=number private=true
+  field name=stallThresholdMs type=number private=true
+  field name=probeTimeoutMs type=number private=true
+  field name=onFallback type="((engineId:string, vitals:EngineVitals) => void)|undefined" private=true
+  field name=autoFallback type=FallbackMode private=true
+  field name=onAutoFallback type="((from:string, to:string, reason:string) => Promise<boolean>)|undefined" private=true
+  field name=taskClass type="string|undefined" private=true
+  field name=vitals type="Map<string, EngineVitals>" private=true
+  field name=subscribers type="Set<(snapshot: Map<string, EngineVitals>) => void>" private=true
+  field name=stalledIds type="Set<string>" private=true
+  field name=timer type="ReturnType<typeof setInterval>|undefined" private=true
+  field name=tickInFlight type=boolean private=true
+  field name=catchUpTimer type="ReturnType<typeof setTimeout>|undefined" private=true
+
+  constructor params="opts:TelemetryPollerOptions"
+    handler <<<
+      this.registry = opts.registry;
+      this.probe = opts.probe;
+      this.intervalMs = opts.intervalMs ?? DEFAULT_POLL_INTERVAL_MS;
+      this.stallThresholdMs = opts.stallThresholdMs ?? STALL_THRESHOLD_MS;
+      this.probeTimeoutMs = opts.probeTimeoutMs ?? Math.min(5000, this.stallThresholdMs);
+      this.onFallback = opts.onFallback;
+      this.autoFallback = opts.autoFallback ?? 'off';
+      this.onAutoFallback = opts.onAutoFallback;
+      this.taskClass = opts.taskClass;
+      this.vitals = new Map();
+      this.subscribers = new Set();
+      this.stalledIds = new Set();
+      this.timer = undefined;
+      this.tickInFlight = false;
+      this.catchUpTimer = undefined;
+    >>>
+
+  method name=start returns=void
+    doc "Begin polling. Idempotent — calling start() while already running is a no-op. Fires an immediate tick before scheduling the recurring one so the first snapshot is available without waiting a full interval."
+    handler <<<
+      if (this.timer) return;
+      void this.tick();
+      this.timer = setInterval(() => { void this.tick(); }, this.intervalMs);
+    >>>
+
+  method name=stop returns=void
+    doc "Halt polling and clear the interval. Vitals map and subscribers are retained — call clear() if you need to wipe them."
+    handler <<<
+      if (this.timer) {
+        clearInterval(this.timer);
+        this.timer = undefined;
+      }
+      if (this.catchUpTimer) {
+        clearTimeout(this.catchUpTimer);
+        this.catchUpTimer = undefined;
+      }
+    >>>
+
+  method name=tick async=true returns="Promise<void>" private=true
+    doc "One probe sweep: probe every registered engine in parallel, merge results, run stall detection, fire fallback on edge transitions, then notify subscribers. Re-entrant calls (slow probes overlapping the next interval tick) are dropped to avoid pile-up."
+    handler <<<
+      if (this.tickInFlight) return;
+      this.tickInFlight = true;
+      try {
+        const ids = this.registry.listIds();
+        const probes = await Promise.all(
+          ids.map(async (id: string) => {
+            const prev = this.vitals.get(id) ?? {
+              engineId: id,
+              state: 'idle' as EngineVitalState,
+              lastHeartbeatAt: Date.now(),
+            };
+            try {
+              const timeout = new Promise<Partial<EngineVitals>>((resolve) => {
+                setTimeout(() => resolve({
+                  state: prev.state === 'offline' ? 'offline' as EngineVitalState : 'busy' as EngineVitalState,
+                  task: `probe timeout > ${this.probeTimeoutMs}ms`,
+                  lastHeartbeatAt: prev.lastHeartbeatAt,
+                }), this.probeTimeoutMs);
+              });
+              const partial = await Promise.race([this.probe(id), timeout]);
+              return { id, partial, ok: true as const };
+            } catch (err) {
+              const reason = err instanceof Error ? err.message : String(err);
+              const partial: Partial<EngineVitals> = {
+                state: 'offline' as EngineVitalState,
+                task: reason,
+                lastHeartbeatAt: prev.lastHeartbeatAt,
+              };
+              return { id, partial, ok: false as const };
+            }
+          })
+        );
+        const now = Date.now();
+        for (const { id, partial } of probes) {
+          const prev = this.vitals.get(id) ?? {
+            engineId: id,
+            state: 'idle' as EngineVitalState,
+            lastHeartbeatAt: now,
+          };
+          const merged = updateEngineVitals(prev, partial);
+          const checked = markEngineStalled(merged, this.stallThresholdMs);
+          this.vitals.set(id, checked);
+          const isStalled = checked.state === 'stalled';
+          const wasStalled = this.stalledIds.has(id);
+          if (isStalled && !wasStalled) {
+            this.stalledIds.add(id);
+            if (this.onFallback) {
+              try { this.onFallback(id, checked); }
+              catch { /* fallback handler errors must not break the poll loop */ }
+            }
+            void this.handleAutoFallback(id, checked);
+          } else if (!isStalled && wasStalled) {
+            this.stalledIds.delete(id);
+          }
+        }
+        // Drop vitals for engines that have been unregistered since the last tick.
+        const liveIds = new Set(ids);
+        for (const id of Array.from(this.vitals.keys())) {
+          if (!liveIds.has(id)) {
+            this.vitals.delete(id);
+            this.stalledIds.delete(id);
+          }
+        }
+        this.notify();
+      } finally {
+        this.tickInFlight = false;
+        // Schedule catch-up tick if any engine is stalled so we recover faster
+        const hasStalled = Array.from(this.vitals.values()).some((v: EngineVitals) => v.state === 'stalled');
+        if (hasStalled && !this.catchUpTimer) {
+          this.catchUpTimer = setTimeout(() => {
+            this.catchUpTimer = undefined;
+            void this.tick();
+          }, Math.max(500, this.intervalMs / 4));
+        }
+      }
+    >>>
+
+  method name=notify private=true returns=void
+    doc "Broadcast the current vitals map to every subscriber. Subscriber errors are isolated."
+    handler <<<
+      for (const cb of this.subscribers) {
+        try { cb(this.vitals); }
+        catch { /* swallow — a broken subscriber must not nuke the others */ }
+      }
+    >>>
+
+  method name=subscribe params="cb:(snapshot: Map<string, EngineVitals>) => void" returns="() => void"
+    doc "Register a live-update callback. Fires immediately with the current snapshot, then again after every tick. Returns an unsubscribe function — call it when the consumer unmounts."
+    handler <<<
+      this.subscribers.add(cb);
+      try { cb(this.vitals); }
+      catch { /* initial-snapshot delivery failure shouldn't prevent registration */ }
+      return () => { this.subscribers.delete(cb); };
+    >>>
+
+  method name=getVitals params="engineId:string" returns="EngineVitals|undefined"
+    doc "Read one engine's last-known vitals without subscribing."
+    handler <<<
+      return this.vitals.get(engineId);
+    >>>
+
+  method name=snapshot returns="Map<string, EngineVitals>"
+    doc "Defensive copy of the current vitals map — safe to mutate or hand to React state."
+    handler <<<
+      return new Map(this.vitals);
+    >>>
+
+  method name=probeNow async=true returns="Promise<void>"
+    doc "Run one poll immediately. Public for /status refreshes and deterministic tests; start() still owns the interval loop."
+    handler <<<
+      await this.tick();
+    >>>
+
+  method name=isRunning returns=boolean
+    doc "Diagnostic: whether start() has been called and stop() hasn't."
+    handler <<<
+      return this.timer !== undefined;
+    >>>
+
+  method name=clear returns=void
+    doc "Reset all internal state — vitals, stall tracker, subscribers. Does not stop the timer."
+    handler <<<
+      this.vitals.clear();
+      this.stalledIds.clear();
+      this.subscribers.clear();
+    >>>
+
+  method name=handleAutoFallback async=true params="engineId:string, vitals:EngineVitals" returns="Promise<void>" private=true
+    doc "If autoFallback is enabled, pick best candidate and either dispatch immediately (auto) or ask via onAutoFallback (ask)."
+    handler <<<
+      if (this.autoFallback === 'off') return;
+      const chain = this.registry.getFallbackChain(engineId, this.taskClass);
+      if (chain.length === 0) return;
+      const candidate = chain[0];
+      const reason = vitals.task ?? 'stalled';
+      if (this.autoFallback === 'auto') {
+        if (this.onAutoFallback) {
+          const accepted = await this.onAutoFallback(engineId, candidate, reason);
+          if (!accepted) return;
+        }
+        // Immediately mark fallback state on both engines
+        const fromVitals = this.vitals.get(engineId);
+        if (fromVitals) {
+          this.vitals.set(engineId, { ...fromVitals, state: 'fallback' as EngineVitalState, fallbackTo: candidate, fallbackReason: reason });
+        }
+        const toPrev = this.vitals.get(candidate) ?? { engineId: candidate, state: 'idle' as EngineVitalState, lastHeartbeatAt: Date.now() };
+        this.vitals.set(candidate, { ...toPrev, state: 'busy' as EngineVitalState, task: `fallback from ${engineId}` });
+        this.notify();
+        return;
+      }
+      if (this.autoFallback === 'ask' && this.onAutoFallback) {
+        try {
+          const approved = await this.onAutoFallback(engineId, candidate, reason);
+          if (approved) {
+            const fromVitals = this.vitals.get(engineId);
+            if (fromVitals) {
+              this.vitals.set(engineId, { ...fromVitals, state: 'fallback' as EngineVitalState, fallbackTo: candidate, fallbackReason: reason });
+            }
+            const toPrev = this.vitals.get(candidate) ?? { engineId: candidate, state: 'idle' as EngineVitalState, lastHeartbeatAt: Date.now() };
+            this.vitals.set(candidate, { ...toPrev, state: 'busy' as EngineVitalState, task: `fallback from ${engineId}` });
+            this.notify();
+          }
+        } catch { /* consent errors must not break poll loop */ }
+      }
+    >>>
+
+// ── Factory ───────────────────────────────────────────────────────────
+
+fn name=createTelemetryPoller params="opts:TelemetryPollerOptions" returns=TelemetryPoller export=true
+  doc "Convenience constructor. Equivalent to `new TelemetryPoller(opts)`."
+  handler <<<
+    return new TelemetryPoller(opts);
+  >>>
+
+fn name=createMockStallProbe params="stallEngineId:string,stallMs:number=35000" returns="(engineId:string) => Promise<Partial<EngineVitals>>" export=true
+  doc "Test fixture for telemetry fallback: selected engine hangs for stallMs, all others report healthy."
+  handler <<<
+    return async (engineId: string) => {
+      if (stallEngineId === '*' || engineId === stallEngineId) {
+        await new Promise((resolve) => setTimeout(resolve, stallMs));
+      }
+      return {
+        state: 'idle' as EngineVitalState,
+        latencyMs: 1,
+        network: 'healthy' as any,
+      };
+    };
+  >>>

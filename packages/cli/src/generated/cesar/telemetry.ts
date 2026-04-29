@@ -34,20 +34,21 @@ export interface TelemetrySnapshot {
 }
 
 // @kern-source: telemetry:36
-export function createEngineVitals(engineId: string): EngineVitals {
+export function createEngineVitals(engineId: string, partial?: Partial<EngineVitals>): EngineVitals {
   return {
     engineId,
     state: 'idle',
     lastHeartbeatAt: Date.now(),
+    ...partial,
   };
 }
 
-// @kern-source: telemetry:45
+// @kern-source: telemetry:46
 export function updateEngineVitals(v: EngineVitals, partial: Partial<EngineVitals>): EngineVitals {
-  return { ...v, ...partial, lastHeartbeatAt: Date.now() };
+  return { ...v, ...partial, lastHeartbeatAt: partial.lastHeartbeatAt ?? Date.now() };
 }
 
-// @kern-source: telemetry:50
+// @kern-source: telemetry:51
 export function markEngineStalled(v: EngineVitals, stallThresholdMs: number): EngineVitals {
   const now = Date.now();
   const elapsed = now - v.lastHeartbeatAt;
@@ -63,7 +64,7 @@ export function markEngineStalled(v: EngineVitals, stallThresholdMs: number): En
   return v;
 }
 
-// @kern-source: telemetry:66
+// @kern-source: telemetry:67
 export function computeOverallHealth(engines: EngineVitals[]): 'healthy'|'degraded'|'critical' {
   const stalled = engines.filter((e) => e.state === 'stalled').length;
   const offline = engines.filter((e) => e.state === 'offline').length;
@@ -73,7 +74,7 @@ export function computeOverallHealth(engines: EngineVitals[]): 'healthy'|'degrad
   return 'healthy';
 }
 
-// @kern-source: telemetry:76
+// @kern-source: telemetry:77
 function formatVitalBar(label: string, value: number, width: number = 10): string {
   const filled = Math.round((value / 100) * width);
   const empty = width - filled;
@@ -81,7 +82,7 @@ function formatVitalBar(label: string, value: number, width: number = 10): strin
   return `${label} ${bar} ${value.toFixed(0)}%`;
 }
 
-// @kern-source: telemetry:84
+// @kern-source: telemetry:85
 export function renderEngineVitalLine(v: EngineVitals): string {
   const stateIcon: Record<EngineVitalState, string> = {
     idle: '\u25cb',
@@ -107,7 +108,7 @@ export function renderEngineVitalLine(v: EngineVitals): string {
   return parts.join('  ');
 }
 
-// @kern-source: telemetry:110
+// @kern-source: telemetry:111
 export function renderTelemetrySnapshot(snap: TelemetrySnapshot): string {
   const lines: string[] = [];
   lines.push(`\u2500\u2500\u2500 Agon Telemetry ${new Date(snap.timestamp).toISOString()} \u2500\u2500\u2500`);
@@ -125,12 +126,18 @@ export function renderTelemetrySnapshot(snap: TelemetrySnapshot): string {
   return lines.join('\n');
 }
 
-// @kern-source: telemetry:130
+/**
+ * Time since last heartbeat after which an engine is considered stalled.
+ */
+// @kern-source: telemetry:131
+export const STALL_THRESHOLD_MS: number = 30000;
+
+// @kern-source: telemetry:137
 export function shouldAutoFallback(v: EngineVitals, thresholdMs: number): boolean {
   return v.state === 'stalled' && (v.stallDurationMs ?? 0) >= thresholdMs;
 }
 
-// @kern-source: telemetry:135
+// @kern-source: telemetry:142
 export function buildFallbackToast(from: string, to: string, reason: string): string {
   return `\u26a0  ${from} stalled \u2192 fallback to ${to} (${reason})`;
 }

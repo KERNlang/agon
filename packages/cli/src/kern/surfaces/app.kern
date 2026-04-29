@@ -935,6 +935,13 @@ fn name=estimateOutputEventRows params="event:OutputEvent, mode:string, toolOutp
         return estimateToolCallRows(event as any, toolOutputExpanded, codeWidth);
       case 'response-meta':
         return 1;
+      case 'cesar-recap': {
+        const commandRows = Math.min(5, Array.isArray((event as any).commands) ? (event as any).commands.length : 0);
+        const fileRows = Array.isArray((event as any).files) && (event as any).files.length > 0 ? 1 : 0;
+        const warningRows = Math.min(3, Array.isArray((event as any).warnings) ? (event as any).warnings.length : 0);
+        const reasoningRows = (event as any).confidenceReasoning ? 1 : 0;
+        return 3 + commandRows + fileRows + warningRows + reasoningRows;
+      }
       case 'file-changes':
         return 1 + (((event as any).files as any[])?.length ?? 0);
       case 'dashboard':
@@ -2070,6 +2077,54 @@ fn name=buildTranscriptRows params="blocks:OutputBlock[], mode:string, toolOutpu
             event.cost ? `$${event.cost.toFixed(4)}` : '',
           ].filter(Boolean);
           pushSegmentsRow(`${baseKey}-meta`, 2, [{ text: parts.join(' · '), dimColor: true }]);
+          return;
+        }
+        case 'cesar-recap': {
+          const files = Array.isArray((event as any).files) ? (event as any).files : [];
+          const commands = Array.isArray((event as any).commands) ? (event as any).commands : [];
+          const warnings = Array.isArray((event as any).warnings) ? (event as any).warnings : [];
+          const toolSummary = Array.isArray((event as any).toolSummary) ? (event as any).toolSummary : [];
+          const confidence = typeof (event as any).confidence === 'number' ? `${Math.round((event as any).confidence)}% confidence` : '';
+          const seconds = typeof (event as any).durationMs === 'number' ? `${(((event as any).durationMs) / 1000).toFixed(1)}s` : '';
+          const failedTools = Number((event as any).failedTools ?? 0);
+          const statusIcon = failedTools > 0 ? icons().warning : icons().success;
+          const statusColor = failedTools > 0 ? '#fbbf24' : '#4ade80';
+          const toolLine = toolSummary.length > 0
+            ? `${(event as any).toolCount ?? toolSummary.length} tools: ${toolSummary.slice(0, 8).join(', ')}${toolSummary.length > 8 ? ', ...' : ''}`
+            : `${(event as any).toolCount ?? 0} tools`;
+          const fileGlyph = (status: string) => status === 'edited' ? 'M' : status === 'created' ? '+' : 'r';
+          pushSegmentsRow(`${baseKey}-recap-head`, 1, [{ text: '◆ Cesar recap', color: '#f97316', bold: true }]);
+          pushSegmentsRow(`${baseKey}-recap-outcome`, 1, [
+            { text: statusIcon, color: statusColor },
+            { text: ` ${(event as any).outcome ?? 'Completed'}` },
+            { text: ` · ${(event as any).mode ?? 'self'}`, dimColor: true },
+            confidence ? { text: ` · ${confidence}`, dimColor: true } : null,
+            seconds ? { text: ` · ${seconds}`, dimColor: true } : null,
+          ].filter(Boolean));
+          pushSegmentsRow(`${baseKey}-recap-tools`, 1, [{ text: `  ${toolLine}${failedTools > 0 ? ` · ${failedTools} failed` : ''}`, dimColor: true }]);
+          if ((event as any).confidenceReasoning) {
+            pushSegmentsRow(`${baseKey}-recap-why`, 1, [{ text: `  why: ${(event as any).confidenceReasoning}`, dimColor: true, italic: true, color: '#8b8b8b' }]);
+          }
+          commands.slice(0, 5).forEach((cmd: any, index: number) => {
+            const failed = String(cmd.status).toLowerCase() === 'error';
+            pushSegmentsRow(`${baseKey}-recap-cmd-${index}`, 1, [
+              { text: `  ${failed ? icons().fail : icons().success}`, color: failed ? '#ef4444' : '#4ade80' },
+              { text: ` ${cmd.label}` },
+              { text: ` · ${cmd.command}`, dimColor: true },
+            ]);
+          });
+          if (files.length > 0) {
+            pushSegmentsRow(`${baseKey}-recap-files`, 1, [{
+              text: `  files: ${files.slice(0, 5).map((f: any) => `${fileGlyph(String(f.status))} ${f.relPath ?? f.path}`).join(', ')}${files.length > 5 ? `, +${files.length - 5} more` : ''}`,
+              dimColor: true,
+            }]);
+          }
+          warnings.slice(0, 3).forEach((warning: string, index: number) => {
+            pushSegmentsRow(`${baseKey}-recap-warning-${index}`, 1, [
+              { text: `  ${icons().warning}`, color: '#fbbf24' },
+              { text: ` ${warning}`, color: '#fbbf24' },
+            ]);
+          });
           return;
         }
         case 'file-changes':

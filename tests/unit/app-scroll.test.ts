@@ -26,6 +26,12 @@ import {
   fileRailDetailRows,
   resolveFileRailExpandedFile,
 } from '../../packages/cli/src/generated/blocks/file-rail.js';
+import {
+  buildCesarTurnRecapEvent,
+  createCesarRecapCapture,
+  recordCesarRecapEvent,
+  shouldEmitCesarRecap,
+} from '../../packages/cli/src/generated/cesar/recap.js';
 import { cleanupTestAgonHome } from '../helpers/agon-home.js';
 
 let testHome: string | undefined;
@@ -171,6 +177,45 @@ describe('app scroll helpers', () => {
     expect(resolveFileRailExpandedFile(files, 1, null, true)?.path).toBe('/repo/b.ts');
     expect(resolveFileRailExpandedFile(files, 1, '/repo/a.ts', true)?.path).toBe('/repo/a.ts');
     expect(fileRailDetailRows(36, true)).toBeGreaterThanOrEqual(20);
+  });
+
+  it('renders deterministic Cesar recap rows from captured turn events', () => {
+    const capture = createCesarRecapCapture('fix and test', 1_000);
+    recordCesarRecapEvent(capture, {
+      type: 'tool-call',
+      engineId: 'cesar',
+      tool: 'ReportConfidence',
+      input: '{"value":91,"reasoning":"I inspected the affected files and have a narrow fix."}',
+      status: 'done',
+    });
+    recordCesarRecapEvent(capture, {
+      type: 'tool-call',
+      engineId: 'cesar',
+      tool: 'Bash',
+      input: '{"command":"npm test -- tests/unit/app-scroll.test.ts"}',
+      status: 'done',
+      output: 'passed',
+    });
+    recordCesarRecapEvent(capture, { type: 'warning', message: 'One generated file was refreshed.' });
+
+    const event = buildCesarTurnRecapEvent(
+      capture,
+      { mode: 'self', responded: true, cesarEngineId: 'cesar' },
+      [{ path: '/repo/a.ts', relPath: 'a.ts', status: 'read', touchCount: 1, lastTouchedAt: 1 }],
+      [{ path: '/repo/a.ts', relPath: 'a.ts', status: 'edited', touchCount: 2, lastTouchedAt: 2 }],
+    );
+
+    expect(shouldEmitCesarRecap(event)).toBe(true);
+    expect(event.confidence).toBe(91);
+    expect(event.commands[0].label).toBe('tests');
+    expect(event.files[0].relPath).toBe('a.ts');
+
+    const rows = buildTranscriptRows([{ id: 1, event } as any], 'chat', false, true);
+    const text = transcriptRowsToPlainText(rows, 0, 0, rows.length - 1, 999);
+    expect(text).toContain('Cesar recap');
+    expect(text).toContain('91% confidence');
+    expect(text).toContain('tests');
+    expect(text).toContain('a.ts');
   });
 
   it('replays terminal render snapshots across native and fullscreen sizes', () => {

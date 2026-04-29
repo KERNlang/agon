@@ -135,6 +135,23 @@ export const CODE_ARTIFACT_PATTERN: RegExp = /(?:at \w+.*:\d+|\.[tj]sx?\b|\.[a-z
 export const AGENT_TRIGGER_PATTERN: RegExp = /^(?:agent(?:\s+mode)?|autonomous(?:\s+agent)?|run\s+agent)\s+([\s\S]+)$/i;
 
 // @kern-source: intent:132
+export const KNOWN_COLLAB_ENGINE_IDS: Set<string> = new Set([
+  'claude',
+  'codex',
+  'gemini',
+  'qwen',
+  'kimi',
+  'opencode',
+  'open-code',
+  'minimax',
+  'zai',
+  'aider',
+  'cursor',
+  'gpt',
+  'openai',
+]);
+
+// @kern-source: intent:151
 export function classifyTask(input: string): 'code'|'question'|'ambiguous' {
   if (QUESTION_PATTERN.test(input)) return 'question';
   if (CODE_TASK_PATTERN.test(input)) return 'code';
@@ -142,7 +159,7 @@ export function classifyTask(input: string): 'code'|'question'|'ambiguous' {
   return 'ambiguous';
 }
 
-// @kern-source: intent:140
+// @kern-source: intent:159
 function parseForgeInput(input: string): Intent {
   // Only match --hardened as a standalone flag (not inside task text or test args)
   const hardenedMatch = input.match(/^(--hardened)\s+(.*)$/i) || input.match(/^(.*?)\s+(--hardened)\s*$/i);
@@ -158,7 +175,7 @@ function parseForgeInput(input: string): Intent {
   return { type: 'forge', task, fitnessCmd, hardened } as Intent;
 }
 
-// @kern-source: intent:156
+// @kern-source: intent:175
 function parseAgentShortcut(input: string): Intent|null {
   const match = input.match(AGENT_TRIGGER_PATTERN);
   if (!match) return null;
@@ -167,7 +184,121 @@ function parseAgentShortcut(input: string): Intent|null {
   return { type: 'agent', input: task } as Intent;
 }
 
-// @kern-source: intent:165
+// @kern-source: intent:184
+function normalizeEngineToken(part: string): string|null {
+  const cleaned = part
+    .trim()
+    .toLowerCase()
+    .replace(/^@+/, '')
+    .replace(/^[^\w-]+|[^\w-]+$/g, '');
+  if (!cleaned) return null;
+  if (KNOWN_COLLAB_ENGINE_IDS.has(cleaned)) return cleaned;
+  // Let model IDs like kimi-for-coding-k2p6 or zai-coding-plan-glm-5.1
+  // through when they are explicitly introduced by "with"/"ask".
+  if (/^(?:claude|codex|gemini|qwen|kimi|opencode|open-code|minimax|zai|aider|cursor|gpt|openai)[\w.-]*$/i.test(cleaned)) {
+    return cleaned;
+  }
+  return null;
+}
+
+// @kern-source: intent:201
+function parseExplicitEngineIds(input: string): string[] {
+  const engineIds: string[] = [];
+  const add = (value: string | null) => {
+    if (value && !engineIds.includes(value)) engineIds.push(value);
+  };
+
+  const collect = (segment: string) => {
+    segment
+      .split(/(?:,|\s+and\s+|\s+or\s+|\s+plus\s+|\s+with\s+|\s+)/i)
+      .map((part) => normalizeEngineToken(part))
+      .forEach(add);
+  };
+
+  const withMatch = input.match(/\bwith\s+([a-z0-9@_.-]+(?:\s*(?:,|and|or|plus)\s*[a-z0-9@_.-]+)*)/i);
+  if (withMatch) collect(withMatch[1]);
+
+  const askMatch = input.match(/\b(?:ask|have|get)\s+([a-z0-9@_.-]+(?:\s*(?:,|and|or|plus)\s*[a-z0-9@_.-]+)*)\s+(?:to\s+)?(?:review|check|audit|look|inspect|compare|weigh|think|debate)\b/i);
+  if (askMatch) collect(askMatch[1]);
+
+  return engineIds;
+}
+
+// @kern-source: intent:224
+function parseSemanticReviewShortcut(input: string): Intent|null {
+  const lower = input.toLowerCase();
+  const reviewVerb = /\b(?:review|check|audit|inspect|look\s+over)\b/i.test(input);
+  if (!reviewVerb) return null;
+
+  const hasDelegationShape =
+    /\bwith\s+[a-z0-9@_.-]+/i.test(input) ||
+    /\b(?:ask|have|get)\s+[a-z0-9@_.-]+(?:\s*(?:,|and|or|plus)\s*[a-z0-9@_.-]+)*\s+(?:to\s+)?(?:review|check|audit|look|inspect)\b/i.test(input);
+  if (!hasDelegationShape) return null;
+
+  const engineIds = parseExplicitEngineIds(input);
+  if (engineIds.length === 0) return null;
+
+  const targetMatch = lower.match(/\b(uncommitted|branch:[\w./-]+|commit:[a-f0-9]{4,40})\b/i);
+  const target = targetMatch ? targetMatch[1] : undefined;
+  return { type: 'review', engineId: engineIds[0], engineIds, target } as Intent;
+}
+
+// @kern-source: intent:243
+function stripCollaborationLeadIn(input: string): string {
+  return input
+    .replace(/^(?:can\s+you\s+|could\s+you\s+|please\s+)?(?:ask|have|get)\s+(?:the\s+)?(?:others|team|engines|models|everyone|all\s+engines)\s+(?:to\s+)?/i, '')
+    .replace(/^(?:can\s+you\s+|could\s+you\s+|please\s+)?(?:what\s+do\s+)?(?:the\s+)?(?:others|team|engines|models|everyone|all\s+engines)\s+(?:think\s+about\s+|say\s+about\s+)?/i, '')
+    .replace(/^(?:can\s+you\s+|could\s+you\s+|please\s+)?(?:talk|think)\s+(?:it|this)?\s*(?:through\s+)?with\s+(?:the\s+)?(?:others|team|engines|models|everyone|all\s+engines)\s*/i, '')
+    .trim();
+}
+
+// @kern-source: intent:252
+function parseSemanticCollaborationShortcut(input: string): Intent|null {
+  const question = stripCollaborationLeadIn(input);
+
+  if (/\b(?:debate|argue|tribunal|red-team|red\s+team)\b/i.test(input)) {
+    const cleaned = input
+      .replace(/^(?:can\s+you\s+|could\s+you\s+|please\s+)?(?:have|get|ask)?\s*(?:the\s+)?(?:others|team|engines|models|everyone|all\s+engines)?\s*(?:to\s+)?(?:debate|argue|tribunal|red-team|red\s+team)\s*/i, '')
+      .trim();
+    return { type: 'tribunal', question: cleaned || input } as Intent;
+  }
+
+  if (/\b(?:campfire|talk\s+(?:it|this)?\s*through|think\s+(?:it|this)?\s*through)\b/i.test(input) && /\b(?:others|team|engines|models|everyone|all\s+engines)\b/i.test(input)) {
+    return { type: 'campfire', topic: question || input } as Intent;
+  }
+
+  if (/\b(?:ask|others|team|engines|models|everyone|all\s+engines|what\s+do\s+others\s+think)\b/i.test(input) &&
+      /\b(?:others|team|engines|models|everyone|all\s+engines)\b/i.test(input)) {
+    return { type: 'brainstorm', question: question || input } as Intent;
+  }
+
+  return null;
+}
+
+// @kern-source: intent:275
+function parseSemanticForgeShortcut(input: string): Intent|null {
+  const hasForgeShape = /\b(?:forge\s+this|forge\s+it|have\s+(?:the\s+)?(?:engines|models|team|others)\s+compete|make\s+(?:the\s+)?(?:engines|models|team|others)\s+compete|competitive\s+(?:build|implementation|fix))\b/i.test(input);
+  if (!hasForgeShape) return null;
+
+  const task = input
+    .replace(/^(?:can\s+you\s+|could\s+you\s+|please\s+)?/i, '')
+    .replace(/^forge\s+(?:this|it)\s*/i, '')
+    .replace(/^have\s+(?:the\s+)?(?:engines|models|team|others)\s+compete\s+(?:on\s+|to\s+)?/i, '')
+    .replace(/^make\s+(?:the\s+)?(?:engines|models|team|others)\s+compete\s+(?:on\s+|to\s+)?/i, '')
+    .trim();
+
+  const parsed = parseForgeInput(task || input);
+  return { ...parsed, type: 'forge' } as Intent;
+}
+
+// @kern-source: intent:291
+function parseSemanticDelegationShortcut(input: string): Intent|null {
+  return parseSemanticReviewShortcut(input)
+    ?? parseSemanticForgeShortcut(input)
+    ?? parseSemanticCollaborationShortcut(input);
+}
+
+// @kern-source: intent:298
 function splitReviewArgs(input: string): string[] {
   return input
     .split(/\s+/)
@@ -176,13 +307,19 @@ function splitReviewArgs(input: string): string[] {
     .filter(Boolean);
 }
 
-// @kern-source: intent:174
+// @kern-source: intent:307
 function isReviewTargetArg(part: string): boolean {
   const lower = part.toLowerCase();
   return lower === 'uncommitted' || lower.startsWith('branch:') || lower.startsWith('commit:');
 }
 
-// @kern-source: intent:180
+// @kern-source: intent:313
+function isImplicitReviewSubjectArg(part: string): boolean {
+  const lower = part.toLowerCase();
+  return lower === 'it' || lower === 'this' || lower === 'that' || lower === 'them' || lower === 'changes' || lower === 'diff';
+}
+
+// @kern-source: intent:319
 function parseReviewInput(input: string): Intent {
   const reviewParts = splitReviewArgs(input);
   const engineIds: string[] = [];
@@ -192,6 +329,12 @@ function parseReviewInput(input: string): Intent {
   for (let i = 0; i < reviewParts.length; i += 1) {
     const part = reviewParts[i];
     const lower = part.toLowerCase();
+    if (lower === 'and' || lower === 'or' || lower === 'plus') {
+      continue;
+    }
+    if (isImplicitReviewSubjectArg(part)) {
+      continue;
+    }
     if (lower === 'with') {
       collectingEngines = true;
       continue;
@@ -211,7 +354,7 @@ function parseReviewInput(input: string): Intent {
   return { type: 'review', engineId, engineIds: engineIds.length > 0 ? engineIds : undefined, target } as Intent;
 }
 
-// @kern-source: intent:209
+// @kern-source: intent:354
 function parseReviewShortcut(input: string): Intent|null {
   const match = input.match(/^(?:review|cr)(?:\s+([\s\S]+))?$/i);
   if (!match) return null;
@@ -223,14 +366,18 @@ function parseReviewShortcut(input: string): Intent|null {
   const target = String(parsed.target ?? '').toLowerCase();
   const hasEngines = Array.isArray(parsed.engineIds) && parsed.engineIds.length > 0;
   const validTarget = !target || isReviewTargetArg(target);
-  if (hasEngines || validTarget) return parsed;
+  if (hasEngines && target && isImplicitReviewSubjectArg(target)) {
+    return { ...parsed, target: undefined } as Intent;
+  }
+  if (hasEngines && validTarget) return parsed;
+  if (!hasEngines && validTarget) return parsed;
 
   // Let natural-language review requests go through Cesar instead of
   // mis-parsing "review this code" as an invalid target named "this".
   return null;
 }
 
-// @kern-source: intent:228
+// @kern-source: intent:377
 function parseSlashCommand(input: string, commandRegistry?: any): Intent {
   const stripped = input.slice(1).trim();
   if (!stripped) return { type: 'slash-list' } as Intent;
@@ -513,7 +660,7 @@ function parseSlashCommand(input: string, commandRegistry?: any): Intent {
   }
 }
 
-// @kern-source: intent:511
+// @kern-source: intent:660
 export function detectIntent(raw: string, commandRegistry?: any): Intent {
   const input = raw.trim();
   if (!input) return { type: 'unknown', input: '' } as Intent;
@@ -530,6 +677,9 @@ export function detectIntent(raw: string, commandRegistry?: any): Intent {
 
   const reviewShortcut = parseReviewShortcut(input);
   if (reviewShortcut) return reviewShortcut;
+
+  const delegationShortcut = parseSemanticDelegationShortcut(input);
+  if (delegationShortcut) return delegationShortcut;
 
   // Only match keyword shortcuts for short, command-like inputs.
   // Skip if input looks like a natural language sentence (question words, pronouns, >4 words).

@@ -1,16 +1,19 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
+  appendTranscriptBlock,
   buildTranscriptRows,
   buildTerminalReplaySnapshot,
   coalesceToolCallBlocks,
   displayColumnToStringIndex,
+  effectiveNativeArchiveBlockCount,
   estimateBottomChromeExtraRows,
   estimateQuestionReservedRows,
   fileRailMaxRowsForTerminal,
   fileRailWidthForTerminal,
   findLatestToolDetailEvent,
   historyBlocksForTranscript,
+  isDuplicateEngineBlock,
   maxScrollOffsetForRowCount,
   nativeArchiveBlockCount,
   nativeTranscriptBlocksForStatic,
@@ -19,6 +22,16 @@ import {
   stringDisplayWidth,
   transcriptRowsToPlainText,
 } from '../../packages/cli/src/generated/surfaces/app.js';
+import {
+  fileRailDetailRows,
+  resolveFileRailExpandedFile,
+} from '../../packages/cli/src/generated/blocks/file-rail.js';
+import {
+  buildCesarTurnRecapEvent,
+  createCesarRecapCapture,
+  recordCesarRecapEvent,
+  shouldEmitCesarRecap,
+} from '../../packages/cli/src/generated/cesar/recap.js';
 import { cleanupTestAgonHome } from '../helpers/agon-home.js';
 
 let testHome: string | undefined;
@@ -81,6 +94,49 @@ describe('app scroll helpers', () => {
     expect(nativeArchiveBlockCount(blocks, 'chat', 2, false, true)).toBe(3);
   });
 
+  it('keeps the latest native tool-call island live while tools are expanded', () => {
+    const blocks = [
+      { id: 1, event: { type: 'user-message', content: 'inspect' } },
+      {
+        id: 2,
+        event: {
+          type: 'tool-call-group',
+          blocks: [
+            { id: 21, event: { type: 'tool-call', engineId: 'cesar', tool: 'Read', input: '{"file_path":"a.ts"}', status: 'done', output: 'line 1' } },
+            { id: 22, event: { type: 'tool-call', engineId: 'cesar', tool: 'Grep', input: '{"pattern":"x"}', status: 'done', output: 'a.ts:x' } },
+          ],
+        },
+      },
+      { id: 3, event: { type: 'engine-block', engineId: 'cesar', color: 124, content: 'done' } },
+    ] as any;
+
+    expect(effectiveNativeArchiveBlockCount(blocks, 3, 3, true)).toBe(1);
+    expect(effectiveNativeArchiveBlockCount(blocks, 3, 3, false)).toBe(3);
+  });
+
+  it('suppresses duplicate engine output before the next user turn', () => {
+    const event = { type: 'engine-block', engineId: 'kimi', color: 124, content: 'same answer' } as any;
+    const blocks = [
+      { id: 1, event },
+      { id: 2, event: { type: 'tool-call-group', blocks: [] } },
+      { id: 3, event: { type: 'response-meta', engineId: 'kimi', elapsed: 1000 } },
+    ] as any;
+
+    expect(isDuplicateEngineBlock(blocks, event)).toBe(true);
+    expect(appendTranscriptBlock(blocks, event, '/tmp/unused-archive.jsonl')).toBe(blocks);
+  });
+
+  it('allows identical engine output after a new user message', () => {
+    const event = { type: 'engine-block', engineId: 'kimi', color: 124, content: 'same answer' } as any;
+    const blocks = [
+      { id: 1, event },
+      { id: 2, event: { type: 'user-message', content: 'repeat that' } },
+    ] as any;
+
+    expect(isDuplicateEngineBlock(blocks, event)).toBe(false);
+    expect(appendTranscriptBlock(blocks, event, '/tmp/unused-archive.jsonl')).toHaveLength(3);
+  });
+
   it('archives a native block immediately when it cannot fit in the live row budget', () => {
     const blocks = [
       {
@@ -103,11 +159,63 @@ describe('app scroll helpers', () => {
     expect(normalizeTerminalMode('fullscreen')).toBe('fullscreen');
   });
 
-  it('keeps the file rail compact on wide native terminals', () => {
+  it('gives the expanded file rail enough room on wide native terminals', () => {
     expect(fileRailWidthForTerminal(220, false)).toBe(42);
-    expect(fileRailWidthForTerminal(220, true)).toBeLessThanOrEqual(64);
-    expect(fileRailMaxRowsForTerminal(80, 'native', false)).toBe(10);
-    expect(fileRailMaxRowsForTerminal(80, 'native', true)).toBe(18);
+    expect(fileRailWidthForTerminal(120, true)).toBe(42);
+    expect(fileRailWidthForTerminal(220, true)).toBe(77);
+    expect(fileRailMaxRowsForTerminal(80, 'native', false)).toBe(14);
+    expect(fileRailMaxRowsForTerminal(80, 'native', true)).toBe(36);
+  });
+
+  it('auto-previews the selected file when the file rail is focused', () => {
+    const files = [
+      { path: '/repo/a.ts', relPath: 'a.ts', status: 'read', lastTouchedAt: 1, touchCount: 1 },
+      { path: '/repo/b.ts', relPath: 'b.ts', status: 'edited', lastTouchedAt: 2, touchCount: 2 },
+    ] as any;
+
+    expect(resolveFileRailExpandedFile(files, 1, null, false)).toBeUndefined();
+    expect(resolveFileRailExpandedFile(files, 1, null, true)?.path).toBe('/repo/b.ts');
+    expect(resolveFileRailExpandedFile(files, 1, '/repo/a.ts', true)?.path).toBe('/repo/a.ts');
+    expect(fileRailDetailRows(36, true)).toBeGreaterThanOrEqual(20);
+  });
+
+  it('renders deterministic Cesar recap rows from captured turn events', () => {
+    const capture = createCesarRecapCapture('fix and test', 1_000);
+    recordCesarRecapEvent(capture, {
+      type: 'tool-call',
+      engineId: 'cesar',
+      tool: 'ReportConfidence',
+      input: '{"value":91,"reasoning":"I inspected the affected files and have a narrow fix."}',
+      status: 'done',
+    });
+    recordCesarRecapEvent(capture, {
+      type: 'tool-call',
+      engineId: 'cesar',
+      tool: 'Bash',
+      input: '{"command":"npm test -- tests/unit/app-scroll.test.ts"}',
+      status: 'done',
+      output: 'passed',
+    });
+    recordCesarRecapEvent(capture, { type: 'warning', message: 'One generated file was refreshed.' });
+
+    const event = buildCesarTurnRecapEvent(
+      capture,
+      { mode: 'self', responded: true, cesarEngineId: 'cesar' },
+      [{ path: '/repo/a.ts', relPath: 'a.ts', status: 'read', touchCount: 1, lastTouchedAt: 1 }],
+      [{ path: '/repo/a.ts', relPath: 'a.ts', status: 'edited', touchCount: 2, lastTouchedAt: 2 }],
+    );
+
+    expect(shouldEmitCesarRecap(event)).toBe(true);
+    expect(event.confidence).toBe(91);
+    expect(event.commands[0].label).toBe('tests');
+    expect(event.files[0].relPath).toBe('a.ts');
+
+    const rows = buildTranscriptRows([{ id: 1, event } as any], 'chat', false, true);
+    const text = transcriptRowsToPlainText(rows, 0, 0, rows.length - 1, 999);
+    expect(text).toContain('Cesar recap');
+    expect(text).toContain('91% confidence');
+    expect(text).toContain('tests');
+    expect(text).toContain('a.ts');
   });
 
   it('replays terminal render snapshots across native and fullscreen sizes', () => {
@@ -210,11 +318,15 @@ describe('app scroll helpers', () => {
     ] as any;
 
     const rows = buildTranscriptRows(blocks, 'chat', false, true);
+    const confidenceRow = rows.find((row: any) => row.key.includes('confidence'));
     const summaryRow = rows.find((row: any) => row.key.includes('tool-group-head'));
     const text = transcriptRowsToPlainText(rows, 0, 0, 999, 999);
 
+    expect(confidenceRow).toBeTruthy();
+    expect(confidenceRow.segments[0]).toMatchObject({ italic: true, dimColor: true });
     expect(summaryRow).toBeTruthy();
-    expect(summaryRow.segments[0]).toMatchObject({ italic: true, dimColor: true });
+    expect(summaryRow.paddingLeft).toBe(4);
+    expect(summaryRow.segments.some((segment: any) => segment.text === 'Ctrl+E')).toBe(true);
     expect(text).toContain('▹ 45% confidence');
     expect(text).toContain('inspect first');
     expect(text).toContain('3 tool calls');
@@ -223,6 +335,25 @@ describe('app scroll helpers', () => {
     expect(text).not.toContain('**/cesar/**');
     expect(text).not.toContain('"reasoning"');
     expect(text).not.toContain('{"value"');
+  });
+
+  it('does not truncate confidence reasoning in collapsed tool telemetry', () => {
+    const reasoning = 'I know the Agon harness architecture well, but I still need to verify the exact UI path before changing behavior.';
+    const rows = buildTranscriptRows([
+      {
+        id: 1,
+        event: {
+          type: 'tool-call-group',
+          blocks: [
+            { id: 11, event: { type: 'tool-call', engineId: 'cesar', tool: 'ReportConfidence', input: JSON.stringify({ value: 85, reasoning }), status: 'done', output: 'ok' } },
+          ],
+        },
+      },
+    ] as any, 'chat', false, true);
+
+    const text = transcriptRowsToPlainText(rows, 0, 0, 0, 999);
+    expect(text).toContain(`85% confidence · ${reasoning}`);
+    expect(text).not.toContain('…');
   });
 
   it('renders Cesar route info as dim italic telemetry', () => {
@@ -396,6 +527,70 @@ describe('app scroll helpers', () => {
     expect(expandedRows.some((row: any) => row.key.includes('-read-'))).toBe(true);
     expect(expandedRows.some((row: any) => row.key.includes('-search-'))).toBe(true);
     expect(expandedRows.some((row: any) => row.key.includes('find-file-'))).toBe(true);
+  });
+
+  it('expands grouped tool calls instead of making the summary disappear', () => {
+    const blocks = [
+      {
+        id: 1,
+        event: {
+          type: 'tool-call-group',
+          blocks: [
+            {
+              id: 11,
+              event: {
+                type: 'tool-call',
+                engineId: 'cesar',
+                tool: 'Read',
+                input: '{"file_path":"a.ts"}',
+                status: 'done',
+                output: 'line 1\nline 2',
+              },
+            },
+            {
+              id: 12,
+              event: {
+                type: 'tool-call',
+                engineId: 'cesar',
+                tool: 'Grep',
+                input: '{"pattern":"line"}',
+                status: 'done',
+                output: 'a.ts:1:line 1',
+              },
+            },
+          ],
+        },
+      },
+    ] as any;
+
+    const rows = buildTranscriptRows(blocks, 'chat', true, true);
+    const text = transcriptRowsToPlainText(rows, 0, 0, rows.length - 1, 999);
+
+    expect(text).not.toContain('2 tool calls');
+    expect(text).toContain('Read');
+    expect(text).toContain('line 2');
+    expect(text).toContain('Search');
+    expect(text).toContain('a.ts:1:line 1');
+  });
+
+  it('shows all read output lines when tools are expanded', () => {
+    const block = {
+      id: 1,
+      event: {
+        type: 'tool-call',
+        engineId: 'cesar',
+        tool: 'Read',
+        input: '{"file_path":"long.ts"}',
+        status: 'done',
+        output: Array.from({ length: 20 }, (_, index) => `line ${index + 1}`).join('\n'),
+      },
+    } as any;
+
+    const rows = buildTranscriptRows([block], 'chat', true, true);
+    const text = transcriptRowsToPlainText(rows, 0, 0, rows.length - 1, 999);
+
+    expect(text).toContain('line 20');
+    expect(text).not.toContain('more lines');
   });
 
   it('keeps edit previews compact in the transcript without dead shortcut hints', () => {

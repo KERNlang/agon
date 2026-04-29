@@ -27,6 +27,23 @@ fn name=truncateLeft params="s:string, max:number" returns=string export=true
     return '\u2026' + s.slice(s.length - max + 1);
   >>>
 
+fn name=resolveFileRailExpandedFile params="files:FileEntry[], selectedIndex:number|undefined, expandedPath:string|null|undefined, autoExpandSelected:boolean|undefined" returns="FileEntry|undefined" export=true
+  handler <<<
+    if (files.length === 0) return undefined;
+    if (expandedPath) return files.find((f: FileEntry) => f.path === expandedPath);
+    if (!autoExpandSelected) return undefined;
+    const sel = Math.max(0, Math.min(files.length - 1, selectedIndex ?? 0));
+    return files[sel];
+  >>>
+
+fn name=fileRailDetailRows params="maxRows:number, hasDetail:boolean" returns=number export=true
+  handler <<<
+    if (!hasDetail) return 0;
+    const safeRows = Math.max(4, Math.floor(Number(maxRows) || 0));
+    const rows = Math.floor(safeRows * 0.58);
+    return Math.max(4, Math.min(Math.max(4, safeRows - 5), rows));
+  >>>
+
 fn name=formatRelativeTime params="ms:number" returns=string export=true confidence=0.95
   handler <<<
     const diff = Date.now() - ms;
@@ -71,7 +88,7 @@ screen name=FileRailDetail target=ink export=false
             !ln.startsWith('+++ ') &&
             !ln.startsWith('\\ No newline'))
         : [];
-      const diffBudget = Math.max(4, maxRows - 6);
+      const diffBudget = Math.max(0, maxRows - 5);
       const visibleDiff = filtered.slice(0, diffBudget);
       const omitted = Math.max(0, filtered.length - visibleDiff.length);
       return (
@@ -109,15 +126,16 @@ screen name=FileRail target=ink memo=true
   prop name=focused type=boolean optional=true
   prop name=selectedIndex type=number optional=true
   prop name=expandedPath type="string|null" optional=true
+  prop name=autoExpandSelected type=boolean optional=true
   render wrapper="<Box flexDirection=\"column\" flexShrink={0} width={w} height={h} paddingLeft={1} borderStyle=\"single\" borderColor={borderColor} overflow=\"hidden\">"
     local name=w expr="width ?? 36"
     local name=h expr="Math.max(4, maxRows + 2)"
     local name=sel expr="Math.max(0, Math.min(files.length - 1, selectedIndex ?? 0))"
-    local name=expandedFile type="FileEntry | undefined" expr="expandedPath ? files.find((f: FileEntry) => f.path === expandedPath) : undefined"
+    local name=expandedFile type="FileEntry | undefined" expr="resolveFileRailExpandedFile(files, selectedIndex, expandedPath, autoExpandSelected)"
     local name=borderColor expr="focused ? '#22d3ee' : 'gray'"
     local name=pathMax expr="Math.max(4, w - 5)"
-    local name=detailRows expr="expandedFile ? 6 : 0"
-    local name=listBudget expr="Math.max(1, maxRows - detailRows - 2)"
+    local name=detailRows expr="fileRailDetailRows(maxRows, expandedFile != null)"
+    local name=listBudget expr="Math.max(3, maxRows - detailRows - 3)"
     local name=start expr="Math.max(0, Math.min(files.length - listBudget, sel - Math.floor(listBudget / 2)))"
     local name=visible type="FileEntry[]" expr="files.slice(start, start + listBudget)"
     conditional if="files.length === 0"
@@ -130,7 +148,7 @@ screen name=FileRail target=ink memo=true
       >>>
     conditional if="files.length > 0 && !!focused"
       handler <<<
-        <Text dimColor>{'\u2191\u2193 select  \u2192 expand  \u2190 collapse  esc close'}</Text>
+        <Text dimColor>{'\u2191\u2193 select  auto preview  \u2192 pin  esc close'}</Text>
       >>>
     conditional if="files.length > 0 && !focused"
       handler <<<
@@ -155,5 +173,5 @@ screen name=FileRail target=ink memo=true
       >>>
     conditional if="expandedFile != null"
       handler <<<
-        <FileRailDetail expandedFile={expandedFile as FileEntry} maxRows={maxRows} />
+        <FileRailDetail expandedFile={expandedFile as FileEntry} maxRows={detailRows} />
       >>>

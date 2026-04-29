@@ -177,4 +177,30 @@ describe('Eager Tool Execution', () => {
     expect(result.result.ok).toBe(true);
     expect(result.result.content).toContain('package.json');
   });
+
+  it('surfaces malformed streaming tool input as a retryable tool error', async () => {
+    const { ToolRegistry } = await import('../../packages/core/src/generated/signals/tool-registry.js');
+    const { executeEagerTool } = await import('../../packages/cli/src/generated/cesar/tools.js');
+
+    const registry = new ToolRegistry();
+    const events: any[] = [];
+    const result = await executeEagerTool(
+      'Read',
+      { toolCallId: 'bad_1', input: '{"file_path":' },
+      registry,
+      { cwd: REPO_ROOT, readFileState: new Map(), permissionMode: 'auto' } as any,
+      (event: any) => events.push(event),
+      'cesar',
+    );
+
+    expect(result.toolCallId).toBe('bad_1');
+    expect(result.result.ok).toBe(false);
+    expect(result.result.error).toContain('Malformed Read tool input JSON');
+    expect(result.result.error).toContain('Re-emit');
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'tool-call',
+      tool: 'Read',
+      status: 'error',
+    }));
+  });
 });

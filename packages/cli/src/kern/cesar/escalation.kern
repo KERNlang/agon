@@ -105,6 +105,7 @@ CHECK: the main flaw, risk, or confirmation`;
       if (ctx.cesar!.reportedConfidence !== undefined) {
         const toolConf = ctx.cesar!.reportedConfidence as number;
         ctx.cesar!.reportedConfidence = undefined;
+        ctx.cesar!.reportedConfidenceReasoning = undefined;
         const parsed = parseQuickNeroDecision(challengeText);
         return { challenged: true, newConfidence: toolConf, challengeText, decision: parsed.decision, team: parsed.team, scope: parsed.scope, rationale: parsed.rationale };
       }

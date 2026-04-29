@@ -156,7 +156,7 @@ const BackgroundJobRail = React.memo(function BackgroundJobRail({ jobs }: { jobs
 export { BackgroundJobRail };
 
 // @kern-source: status:203
-const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confidence, spinner, engines, startTime, streamSnippet, isActive, planModeQueued, activePlanState }: { cesarId:string; confidence?:number|null; spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; startTime:number; streamSnippet?:{ engineId: string; line: string } | null; isActive:boolean; planModeQueued?:boolean; activePlanState?:string|null }) {
+const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confidence, spinner, engines, startTime, streamSnippet, isActive, planModeQueued, autoModeQueued, activePlanState }: { cesarId:string; confidence?:number|null; spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; startTime:number; streamSnippet?:{ engineId: string; line: string } | null; isActive:boolean; planModeQueued?:boolean; autoModeQueued?:boolean; activePlanState?:string|null }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
     return (value) => setTimeout(() => setter(value), 0);
@@ -174,9 +174,10 @@ const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confide
   }, [isActive]);
 
   // Plan badge (shared between idle and active)
-  const hasPlan = planModeQueued || (activePlanState && ['planning', 'awaiting_approval', 'running', 'paused'].includes(activePlanState));
+  const hasPlan = planModeQueued || autoModeQueued || (activePlanState && ['planning', 'awaiting_approval', 'running', 'paused'].includes(activePlanState));
   let planLabel = '';
   if (planModeQueued) planLabel = 'ready';
+  else if (autoModeQueued) planLabel = 'auto';
   else if (activePlanState === 'planning') planLabel = 'thinking';
   else if (activePlanState === 'awaiting_approval') planLabel = 'review';
   else if (activePlanState === 'running') planLabel = 'executing';
@@ -185,7 +186,7 @@ const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confide
   // Idle: single dimmed line (no colored nesting issues)
   if (!isActive) {
     const confPart = (confidence !== null && confidence !== undefined) ? ` ${confidence}%` : '';
-    const planPart = hasPlan ? ` \u2502 \u25c8 PLAN` : '';
+    const planPart = hasPlan ? ` \u2502 \u25c8 ${planLabel.toUpperCase()}` : '';
     return (
       <Box paddingTop={0}>
         <Text dimColor>{'\u25c6 '}{cesarId}{confPart}{' \u2502 idle'}{planPart}</Text>
@@ -260,7 +261,7 @@ const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confide
       {engineDots.length > 0 && <Text>{engineDots}</Text>}
       <Text>
         {snippetStr ? <><Text dimColor>{' \u2502 '}</Text><Text dimColor wrap="truncate">{snippetStr}</Text></> : null}
-        {hasPlan ? <><Text dimColor>{' \u2502 '}</Text><Text color="#c084fc" bold>{'\u25c8 PLAN'}</Text></> : null}
+        {hasPlan ? <><Text dimColor>{' \u2502 '}</Text><Text color="#c084fc" bold>{`\u25c8 ${planLabel.toUpperCase()}`}</Text></> : null}
       </Text>
     </Box>
   );

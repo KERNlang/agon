@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildAgentAutoResumePrompt, buildBrainstormContinuationMessage, buildDelegatedContinuationPrompt, buildReviewAbsorptionPrompt, collectRecentEngineContext, extractExecutionSpec, formatCesarRecoveryStatus, isCesarPlanApprovalInput, shouldAutoContinueDelegatedResult, shouldAutoResumeAgentResult } from '../../packages/cli/src/generated/signals/dispatch.js';
+import { buildAgentAutoResumePrompt, buildBrainstormContinuationMessage, buildDelegatedContinuationPrompt, buildReviewAbsorptionPrompt, collectRecentEngineContext, extractExecutionSpec, formatCesarRecoveryStatus, isCesarPlanApprovalInput, isStrongCesarPlanApprovalInput, shouldApprovePendingCesarPlanInput, shouldAutoContinueDelegatedResult, shouldAutoResumeAgentResult } from '../../packages/cli/src/generated/signals/dispatch.js';
 
 describe('Dispatch routing helpers', () => {
   it('extracts forge fitness commands from conversational input', () => {
@@ -25,9 +25,29 @@ describe('Dispatch routing helpers', () => {
 
   it('recognizes natural Cesar plan approval replies', () => {
     expect(isCesarPlanApprovalInput('go')).toBe(true);
+    expect(isCesarPlanApprovalInput('ok go')).toBe(true);
+    expect(isCesarPlanApprovalInput('go ahead')).toBe(true);
+    expect(isCesarPlanApprovalInput('do so')).toBe(true);
     expect(isCesarPlanApprovalInput('run it')).toBe(true);
     expect(isCesarPlanApprovalInput('proceed!')).toBe(true);
     expect(isCesarPlanApprovalInput('change step 2')).toBe(false);
+  });
+
+  it('distinguishes strong approval phrases for hidden pending plan recovery', () => {
+    expect(isStrongCesarPlanApprovalInput('ok go')).toBe(true);
+    expect(isStrongCesarPlanApprovalInput('run it')).toBe(true);
+    expect(isStrongCesarPlanApprovalInput('ok')).toBe(false);
+    expect(isStrongCesarPlanApprovalInput('sure')).toBe(false);
+  });
+
+  it('approves natural text when a live plan is already pending', () => {
+    const ctx = {
+      activePlan: { state: 'awaiting_approval' },
+    } as any;
+
+    expect(shouldApprovePendingCesarPlanInput('ok', ctx)).toBe(true);
+    expect(shouldApprovePendingCesarPlanInput('ok go', ctx)).toBe(true);
+    expect(shouldApprovePendingCesarPlanInput('/approve', ctx)).toBe(false);
   });
 
   it('formats compact Cesar recovery statuses with log context', () => {

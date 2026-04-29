@@ -20,6 +20,7 @@ interface name=KeyboardCtx
   field name=inputHistory type="string[]"
   field name=historyIndex type=number
   field name=planModeQueued type=boolean
+  field name=autoModeQueued type=boolean
   field name=activePlanState type="string|null"
   field name=outputBlockCount type=number
   field name=commands type="any[]"
@@ -37,6 +38,7 @@ union name=KeyboardAction
   variant name=ghostComplete
     field name=ghost type=string
   variant name=togglePlanQueued
+  variant name=toggleAutoQueued
   variant name=submit
     field name=value type=string
   variant name=toggleToolExpand
@@ -54,6 +56,7 @@ union name=KeyboardAction
   variant name=interrupt
   variant name=clearInput
   variant name=unqueuePlan
+  variant name=unqueueAuto
   variant name=insertNewline
   variant name=historySet
     field name=index type=number
@@ -119,6 +122,22 @@ fn name=resolveKeyboardInput params="ctx:KeyboardCtx" returns="KeyboardAction"
       return { type: 'none' };
     }
 
+    // Shift+Tab: queue auto mode
+    if (key.shift && (key.tab || input === '\t') && !ctx.slashPickerOpen && !ctx.enginePickerOpen && !ctx.questionState && !ctx.reviewEventOpen) {
+      if (shouldQueuePlanModeOnTab({ replState: ctx.replState, inputValue: ctx.inputValue, activePlanState: ctx.activePlanState })) {
+        return { type: 'toggleAutoQueued' };
+      }
+      return { type: 'none' };
+    }
+
+    // Shift+Tab: queue auto mode
+    if (key.shift && (key.tab || input === '\t') && !ctx.slashPickerOpen && !ctx.enginePickerOpen && !ctx.questionState && !ctx.reviewEventOpen) {
+      if (shouldQueuePlanModeOnTab({ replState: ctx.replState, inputValue: ctx.inputValue, activePlanState: ctx.activePlanState })) {
+        return { type: 'toggleAutoQueued' };
+      }
+      return { type: 'none' };
+    }
+
     // Ctrl+L: clear
     if (key.ctrl && normalizedCtrlInput === 'l') return { type: 'submit', value: '/clear' };
 
@@ -163,6 +182,7 @@ fn name=resolveKeyboardInput params="ctx:KeyboardCtx" returns="KeyboardAction"
     // Escape: delegate to resolveEscapeAction
     if (key.escape) {
       if (ctx.planModeQueued) return { type: 'unqueuePlan' };
+      if (ctx.autoModeQueued) return { type: 'unqueueAuto' };
       const decision = resolveEscapeAction({
         replState: ctx.replState,
         inputValue: ctx.inputValue,

@@ -50,6 +50,7 @@ export type OutputEvent =
   | { type: 'user-message'; content: string }
   | { type: 'response-meta'; engineId: string; elapsed: number; inputTokens?: number; outputTokens?: number; cost?: number }
   | { type: 'confidence-update'; value: number|null }
+  | { type: 'cesar-recap'; engineId: string; mode: string; outcome: string; durationMs: number; confidence?: number|null; confidenceReasoning?: string; toolCount: number; failedTools?: number; toolSummary: string[]; commands: Array<{ label: string; command: string; status: string }>; files: Array<{ path: string; relPath: string; status: string; touchCount: number }>; warnings: string[] }
   | { type: 'file-changes'; files: { path: string; status: 'modified'|'created'|'deleted'; additions: number; deletions: number }[] }
   | { type: 'dashboard'; available: string[]; enabled: string[]; defaultEngine: string; eloTop?: { id: string; rating: number }; totalForges: number; workspace?: { name: string; path: string; isKern?: boolean }; runCount: number }
   | { type: 'agent-step-end'; engineId: string; turnIndex: number; outcome: 'completed'|'cancelled'|'failed'; toolCalls: number; tokensUsed: number; stopReason: string }
@@ -62,7 +63,7 @@ export type OutputEvent =
   | { type: 'agent-routing'; mode: 'solo'|'team'; engines: string[]; reason: string }
   | { type: 'agent-team-complete'; teamId: string; winner: string|null; synthesizedPatch?: string|null; synthesizedAnalysis?: string|null; memberOutcomes: Array<{engineId:string,outcome:string,diffLines:number,passedFitness:boolean}>; teamCostUsd: number; teamDurationMs: number; synthesisRan?: boolean; synthesisChanged?: boolean; synthesisCostUsd?: number; synthesisFitnessRegressed?: boolean };
 
-// @kern-source: handler-types:184
+// @kern-source: handler-types:197
 export interface PendingDelegation {
   action: string;
   task?: string;
@@ -93,10 +94,10 @@ export interface PendingDelegation {
   createdAt: number;
 }
 
-// @kern-source: handler-types:213
+// @kern-source: handler-types:226
 export type CesarLiveMode = 'self' | 'self-nero' | 'delegate' | 'forge' | 'forge-slice' | 'team-forge' | 'brainstorm' | 'team-brainstorm' | 'campfire' | 'tribunal' | 'team-tribunal' | 'pipeline' | 'review' | 'agent' | 'team-agent' | 'plan';
 
-// @kern-source: handler-types:215
+// @kern-source: handler-types:228
 export interface CesarTurnOutcome {
   mode?: CesarLiveMode;
   delegated: boolean;
@@ -117,7 +118,7 @@ export interface CesarTurnOutcome {
   maxTurns?: number;
 }
 
-// @kern-source: handler-types:234
+// @kern-source: handler-types:247
 export interface CesarState {
   busy: boolean;
   busySince: number | null;
@@ -127,6 +128,7 @@ export interface CesarState {
   lastDispatch: ((event: any) => void) | null;
   pendingDelegation: PendingDelegation | null;
   reportedConfidence: number | undefined;
+  reportedConfidenceReasoning: string | undefined;
   confidenceSatisfied: boolean;
   blockedOnConfidence: { name:string; args:Record<string,unknown> } | null;
   quickNeroRequested?: boolean;
@@ -139,9 +141,10 @@ export interface CesarState {
   lastEscalation: string | null;
   turnId?: string | undefined;
   sessionMcpServers: Array<{name:string, type?:string, url?:string, command?:string, args?:string[]}>;
+  autoModeQueued?: boolean;
 }
 
-// @kern-source: handler-types:256
+// @kern-source: handler-types:271
 export interface HandlerContext {
   registry: EngineRegistry;
   adapter: EngineAdapter;
@@ -168,4 +171,5 @@ export interface HandlerContext {
   lastReviewResult?: { engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number } | undefined;
   sessionMcpServers?: Array<Record<string,unknown>>;
   setSessionMcpServers?: ((servers: Array<Record<string,unknown>>) => void) | undefined;
+  autoModeQueued?: boolean;
 }

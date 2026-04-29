@@ -514,6 +514,8 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
       const value = typeof (args as any).value === 'number' ? (args as any).value : null;
       if (value !== null && value >= 0 && value <= 100) {
         ctx.cesar!.reportedConfidence = value;
+        const reasoning = String((args as any).reasoning ?? (args as any).reason ?? (args as any).thought ?? '').replace(/\s+/g, ' ').trim();
+        ctx.cesar!.reportedConfidenceReasoning = reasoning || undefined;
         ctx.cesar!.confidenceSatisfied = true;
         const blocked = ctx.cesar!.blockedOnConfidence;
         ctx.cesar!.blockedOnConfidence = null;
@@ -571,7 +573,7 @@ export function buildOnToolCall(ctx: HandlerContext, toolRegistry: ToolRegistry,
 /**
  * Build the onApproval callback for engine tool approvals. Returns true to approve, false to deny silently, or a string to deny with a reason the engine can see.
  */
-// @kern-source: session:549
+// @kern-source: session:551
 export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:string, command:string) => Promise<boolean|string> {
   const engine = ctx.registry.get(engineId);
   return async (tool: string, command: string): Promise<boolean | string> => {
@@ -737,7 +739,7 @@ export function buildOnApproval(ctx: HandlerContext, engineId: string): (tool:st
   };
 }
 
-// @kern-source: session:716
+// @kern-source: session:718
 export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unknown>> {
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -771,7 +773,7 @@ export function normalizeCesarMcpServers(raw: unknown): Array<Record<string,unkn
   return normalizeNamedRecord(raw);
 }
 
-// @kern-source: session:750
+// @kern-source: session:752
 export function loadCesarMcpServers(config: any, cwd: string): Array<Record<string,unknown>>|undefined {
   if (!(config as any).cesarMcpEnabled) return undefined;
 
@@ -795,7 +797,7 @@ export function loadCesarMcpServers(config: any, cwd: string): Array<Record<stri
   return servers;
 }
 
-// @kern-source: session:774
+// @kern-source: session:776
 export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
   if (!binaryPath) return false;
   const protocol = engine?.companion?.protocol;
@@ -805,7 +807,7 @@ export function canUseCesarMcp(engine: any, binaryPath: string): boolean {
 /**
  * Compute a fingerprint of MCP-related config to detect changes. Includes both manual config and auto-discovery sources.
  */
-// @kern-source: session:781
+// @kern-source: session:783
 export function mcpConfigFingerprint(config: any): string {
   const enabled = !!(config as any).cesarMcpEnabled;
   const configPath = String((config as any).cesarMcpConfigPath ?? '');
@@ -825,7 +827,7 @@ export function mcpConfigFingerprint(config: any): string {
 /**
  * Single source of truth for which backend a Cesar engine will actually use. Honours config.cesarBackend preference ('auto' | 'cli' | 'api'). Pure — no side effects beyond registry lookups. Returns backend='none' when the engine has neither a usable binary nor an API key; callers decide how to handle that.
  */
-// @kern-source: session:799
+// @kern-source: session:801
 export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { backend: 'cli'|'api'|'none', binaryPath: string, hasBinary: boolean, hasApi: boolean, engine: any } {
   const config = ctx.config;
   const cesarEngineId = engineId ?? (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
@@ -850,7 +852,7 @@ export function resolveCesarBackend(ctx: HandlerContext, engineId?: string): { b
   return { backend: 'none', binaryPath: '', hasBinary, hasApi, engine };
 }
 
-// @kern-source: session:825
+// @kern-source: session:827
 export async function ensureCesarSession(ctx: HandlerContext): Promise<PersistentSession> {
   const config = ctx.config;
   const cesarEngineId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
@@ -861,7 +863,7 @@ export async function ensureCesarSession(ctx: HandlerContext): Promise<Persisten
     ctx.cesar = {
       busy: false, busySince: null, queue: null,
       toolRegistry: null, hasNativeTools: false, lastDispatch: null,
-      pendingDelegation: null, reportedConfidence: undefined, confidenceSatisfied: false, blockedOnConfidence: null,
+      pendingDelegation: null, reportedConfidence: undefined, reportedConfidenceReasoning: undefined, confidenceSatisfied: false, blockedOnConfidence: null,
       autoNero: false, advisorPending: false, lastEscalation: null as string | null,
       mcpFingerprint: undefined, mcpSignalPath: undefined as string | undefined, planDispatch: null, proposedPlan: undefined,
       sessionMcpServers: [] as Array<{name:string, type?:string, url?:string, command?:string, args?:string[]}>,

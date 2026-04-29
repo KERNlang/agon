@@ -117,8 +117,7 @@ fn name=formatConfidenceToolLabel params="parsed:any, rawInput:string" returns=s
       const pct = value <= 1 && value > 0 ? Math.round(value * 100) : Math.round(value);
       if (pct >= 0 && pct <= 100) {
         const reasoning = String(parsed?.reasoning ?? parsed?.reason ?? parsed?.thought ?? '').replace(/\s+/g, ' ').trim();
-        const shortReasoning = reasoning.length > 180 ? `${reasoning.slice(0, 177)}…` : reasoning;
-        return shortReasoning ? `${pct}% confidence · ${shortReasoning}` : `${pct}% confidence`;
+        return reasoning ? `${pct}% confidence · ${reasoning}` : `${pct}% confidence`;
       }
     }
     return 'confidence';
@@ -200,6 +199,7 @@ fn name=parsePatchPreview params="rawInput:string, parsed:any" returns="{ files:
 fn name=toolPreviewWindow params="lineCount:number, expanded:boolean" returns=any
   handler <<<
     if (lineCount <= 0) return { head: 0, tail: 0, skipped: 0 };
+    if (expanded) return { head: lineCount, tail: 0, skipped: 0 };
     const headLimit = expanded ? 10 : 3;
     const tailLimit = expanded && lineCount > 18 ? 4 : 0;
     const showTail = tailLimit > 0 && lineCount > headLimit + tailLimit;
@@ -810,9 +810,14 @@ fn name=estimateToolCallRows params="event:any, toolOutputExpanded:boolean, code
       const cmd = (parsed.command as string) || rawInput || '';
       const cmdLineCount = cmd ? cmd.split('\n').length : 0;
       let rows = 1;
-      if (cmdLineCount > 0) rows += Math.min(3, cmdLineCount) + (cmdLineCount > 3 ? 1 : 0) + 1;
+      if (cmdLineCount > 0) {
+        rows += collapsed
+          ? Math.min(3, cmdLineCount) + (cmdLineCount > 3 ? 1 : 0) + 1
+          : cmdLineCount + 1;
+      }
       if (event.output && event.status !== 'running') {
         const outputLineCount = event.output.split('\n').length;
+        if (!collapsed) return rows + 1 + outputLineCount;
         const maxHead = outputLineCount > 80 ? 30 : 50;
         const tailCount = 5;
         const showTail = outputLineCount > maxHead + tailCount;
@@ -850,15 +855,13 @@ fn name=estimateToolCallRows params="event:any, toolOutputExpanded:boolean, code
     if (toolKey === 'read') {
       if (collapsed) return 1;
       const lineCount = event.output ? String(event.output).split('\n').length : 0;
-      const shown = Math.min(12, lineCount);
-      return 1 + shown + (lineCount > shown ? 1 : 0);
+      return 1 + lineCount;
     }
 
     if (toolKey === 'grep' || toolKey === 'search' || toolKey === 'glob' || toolKey === 'find') {
       if (collapsed) return 1;
       const lineCount = event.output ? String(event.output).split('\n').filter((line: string) => line.trim()).length : 0;
-      const shown = Math.min(10, lineCount);
-      return 1 + shown + (lineCount > shown ? 1 : 0);
+      return 1 + lineCount;
     }
 
     let rows = 1;
@@ -932,6 +935,13 @@ fn name=estimateOutputEventRows params="event:OutputEvent, mode:string, toolOutp
         return estimateToolCallRows(event as any, toolOutputExpanded, codeWidth);
       case 'response-meta':
         return 1;
+      case 'cesar-recap': {
+        const commandRows = Math.min(5, Array.isArray((event as any).commands) ? (event as any).commands.length : 0);
+        const fileRows = Array.isArray((event as any).files) && (event as any).files.length > 0 ? 1 : 0;
+        const warningRows = Math.min(3, Array.isArray((event as any).warnings) ? (event as any).warnings.length : 0);
+        const reasoningRows = (event as any).confidenceReasoning ? 1 : 0;
+        return 3 + commandRows + fileRows + warningRows + reasoningRows;
+      }
       case 'file-changes':
         return 1 + (((event as any).files as any[])?.length ?? 0);
       case 'dashboard':
@@ -1021,6 +1031,40 @@ fn name=coalesceToolCallBlocks params="blocks:OutputBlock[]" returns="OutputBloc
     return out;
   >>>
 
+fn name=effectiveNativeArchiveBlockCount params="blocks:OutputBlock[], baseArchiveCount:number, targetArchiveCount:number, toolOutputExpanded:boolean" returns=number export=true
+  doc "Choose the native Static archive count. When tools are expanded, keep the latest tool-call island live because Ink Static cannot repaint already-sealed collapsed tool summaries."
+  handler <<<
+    if (!Array.isArray(blocks) || blocks.length === 0) return 0;
+
+    if (toolOutputExpanded) {
+      let latestToolIndex = -1;
+      for (let index = blocks.length - 1; index >= 0; index -= 1) {
+        if (isToolCallLikeBlock(blocks[index])) {
+          latestToolIndex = index;
+          break;
+        }
+      }
+      if (latestToolIndex >= 0) {
+        let islandStart = latestToolIndex;
+        while (islandStart > 0 && isToolCallLikeBlock(blocks[islandStart - 1])) {
+          islandStart -= 1;
+        }
+        return islandStart;
+      }
+    }
+
+    let count = Math.max(0, Math.min(blocks.length, Math.max(baseArchiveCount, targetArchiveCount)));
+    while (
+      count > 0
+      && count < blocks.length
+      && isToolCallLikeBlock(blocks[count - 1])
+      && isToolCallLikeBlock(blocks[count])
+    ) {
+      count -= 1;
+    }
+    return count;
+  >>>
+
 fn name=estimateDisplayItemRows params="item:OutputBlock, mode:string, toolOutputExpanded:boolean, thinkingExpanded:boolean" returns=number
   handler <<<
     return estimateOutputEventRows(item.event, mode, toolOutputExpanded, thinkingExpanded);
@@ -1071,6 +1115,33 @@ fn name=nativeArchiveBlockCount params="blocks:OutputBlock[], mode:string, rowBu
     return Math.max(0, Math.min(blocks.length, liveStart));
   >>>
 
+fn name=isDuplicateEngineBlock params="blocks:OutputBlock[], event:any" returns=boolean export=true
+  doc "Detect same-turn duplicate completed engine output. A new user-message resets the guard so an intentional repeat request can still show identical text."
+  handler <<<
+    if (!event || event.type !== 'engine-block') return false;
+    const content = cleanEngineOutput(String(event.content ?? '')).trim();
+    if (!content) return false;
+    const engineId = String(event.engineId ?? '');
+    for (let index = blocks.length - 1; index >= 0 && index >= blocks.length - 24; index -= 1) {
+      const prev = blocks[index]?.event as any;
+      if (!prev) continue;
+      if (prev.type === 'user-message') return false;
+      if (prev.type !== 'engine-block') continue;
+      const prevContent = cleanEngineOutput(String(prev.content ?? '')).trim();
+      if (String(prev.engineId ?? '') === engineId && prevContent === content) {
+        return true;
+      }
+    }
+    return false;
+  >>>
+
+fn name=appendTranscriptBlock params="blocks:OutputBlock[], event:any, archivePath:string" returns="OutputBlock[]" export=true
+  doc "Append a transcript block with cap/archive handling while suppressing accidental duplicate engine output."
+  handler <<<
+    if (isDuplicateEngineBlock(blocks, event)) return blocks;
+    return appendBlockWithCap(blocks, { id: Date.now() + Math.random(), event }, archivePath);
+  >>>
+
 fn name=normalizeTerminalMode params="value:any" returns="'native'|'fullscreen'" export=true
   handler <<<
     return value === 'fullscreen' ? 'fullscreen' : 'native';
@@ -1079,7 +1150,7 @@ fn name=normalizeTerminalMode params="value:any" returns="'native'|'fullscreen'"
 fn name=fileRailWidthForTerminal params="termWidth:number, expanded:boolean" returns=number export=true
   handler <<<
     const safeWidth = Math.max(40, Math.floor(Number(termWidth) || 100));
-    if (expanded) return Math.max(36, Math.min(64, Math.floor(safeWidth * 0.3)));
+    if (expanded) return Math.max(36, Math.min(84, Math.floor(safeWidth * 0.35)));
     return Math.max(28, Math.min(42, Math.floor(safeWidth * 0.22)));
   >>>
 
@@ -1087,10 +1158,10 @@ fn name=fileRailMaxRowsForTerminal params="termHeight:number, terminalMode:strin
   handler <<<
     const safeHeight = Math.max(8, Math.floor(Number(termHeight) || 24));
     if (terminalMode === 'native') {
-      if (expanded) return Math.max(8, Math.min(18, safeHeight - 8));
-      return Math.max(5, Math.min(10, safeHeight - 10));
+      if (expanded) return Math.max(8, Math.min(36, safeHeight - 4));
+      return Math.max(5, Math.min(14, safeHeight - 8));
     }
-    if (expanded) return Math.max(12, safeHeight - 6);
+    if (expanded) return Math.max(12, safeHeight - 4);
     return Math.max(6, Math.min(12, 10));
   >>>
 
@@ -1340,13 +1411,14 @@ fn name=buildToolCallRows params="baseKey:string, event:any, toolOutputExpanded:
       ].filter(Boolean));
 
       const cmdLines = cmd ? cmd.split('\n') : [];
-      cmdLines.slice(0, 3).forEach((line: string, index: number) => {
+      const shownCmdLines = toolOutputExpanded ? cmdLines : cmdLines.slice(0, 3);
+      shownCmdLines.forEach((line: string, index: number) => {
         pushSegmentsRow(`bash-cmd-${index}`, [
           { text: `    ${index === 0 ? '$ ' : '  '}`, dimColor: true },
           { text: truncateCodeLine(line, codeWidth) },
         ]);
       });
-      if (cmdLines.length > 3) {
+      if (!toolOutputExpanded && cmdLines.length > 3) {
         pushSegmentsRow('bash-cmd-more', [{ text: '      …', dimColor: true }]);
       }
 
@@ -1354,8 +1426,8 @@ fn name=buildToolCallRows params="baseKey:string, event:any, toolOutputExpanded:
         const outputLines = String(event.output).split('\n');
         const maxHead = outputLines.length > 80 ? 30 : 50;
         const tailCount = 5;
-        const showTail = outputLines.length > maxHead + tailCount;
-        const headLines = outputLines.slice(0, showTail ? maxHead : outputLines.length);
+        const showTail = !toolOutputExpanded && outputLines.length > maxHead + tailCount;
+        const headLines = toolOutputExpanded ? outputLines : outputLines.slice(0, showTail ? maxHead : outputLines.length);
         const tailLines = showTail ? outputLines.slice(-tailCount) : [];
         const skipped = outputLines.length - headLines.length - tailLines.length;
 
@@ -1379,7 +1451,7 @@ fn name=buildToolCallRows params="baseKey:string, event:any, toolOutputExpanded:
             fallbackDim: true,
           });
         });
-        if (skipped > 0) {
+        if (!toolOutputExpanded && skipped > 0) {
           pushOpenHintRow('bash-skip', `    … ${skipped} more lines …`);
         }
         tailLines.forEach((line: string, index: number) => {
@@ -1496,7 +1568,7 @@ fn name=buildToolCallRows params="baseKey:string, event:any, toolOutputExpanded:
 
       if (event.output && event.status !== 'running') {
         const outputLines = String(event.output).split('\n');
-        const shownLines = outputLines.slice(0, 12);
+        const shownLines = outputLines;
         shownLines.forEach((line: string, index: number) => {
           rows.push({
             key: `${baseKey}-read-${index}`,
@@ -1541,7 +1613,7 @@ fn name=buildToolCallRows params="baseKey:string, event:any, toolOutputExpanded:
 
       if (event.output && event.status !== 'running') {
         const matchLines = String(event.output).split('\n').filter((line: string) => line.trim());
-        const shownLines = matchLines.slice(0, 10);
+        const shownLines = matchLines;
         shownLines.forEach((line: string, index: number) => {
           rows.push({
             key: `${baseKey}-search-${index}`,
@@ -1584,7 +1656,7 @@ fn name=buildToolCallRows params="baseKey:string, event:any, toolOutputExpanded:
 
       if (event.output && event.status !== 'running') {
         const files = String(event.output).split('\n').filter((line: string) => line.trim());
-        const shownFiles = files.slice(0, 10);
+        const shownFiles = files;
         shownFiles.forEach((file: string, index: number) => {
           pushSegmentsRow(`find-file-${index}`, [{ text: `    ${truncateCodeLine(file, codeWidth)}`, dimColor: true }]);
         });
@@ -1680,16 +1752,29 @@ fn name=buildCollapsedToolGroupRows params="baseKey:string, events:any[]" return
       ? ` · changed ${changedFiles.length} file${changedFiles.length > 1 ? 's' : ''}: ${changedFiles.slice(0, 2).join(', ')}${changedFiles.length > 2 ? ', …' : ''}`
       : '';
 
+    if (confidenceLabel) {
+      rows.push({
+        key: `${baseKey}-confidence`,
+        kind: 'segments',
+        paddingLeft: 2,
+        segments: [
+          { text: `▹ ${confidenceLabel}`, color: '#8b8b8b', dimColor: true, italic: true },
+        ],
+      });
+    }
+
     rows.push({
       key: `${baseKey}-tool-group-head`,
       kind: 'segments',
-      paddingLeft: 2,
+      paddingLeft: 4,
       segments: [
-        { text: `▹ ${confidenceLabel ? `${confidenceLabel} · ` : ''}${events.length} tool calls`, color: '#8b8b8b', dimColor: true, italic: true },
-        countSummary ? { text: ' · ', color: '#8b8b8b', dimColor: true, italic: true } : null,
-        countSummary ? { text: countSummary, color: '#8b8b8b', dimColor: true, italic: true } : null,
-        statusSummary ? { text: statusSummary, color: '#8b8b8b', dimColor: true, italic: true } : null,
-        changedSummary ? { text: changedSummary, color: '#8b8b8b', dimColor: true, italic: true } : null,
+        { text: `${events.length} tool calls`, dimColor: true },
+        countSummary ? { text: ' · ', dimColor: true } : null,
+        countSummary ? { text: countSummary, dimColor: true } : null,
+        statusSummary ? { text: statusSummary, dimColor: true } : null,
+        changedSummary ? { text: changedSummary, dimColor: true } : null,
+        { text: '  ' },
+        { text: 'Ctrl+E', color: '#f59e0b' },
       ].filter(Boolean),
     });
 
@@ -1994,6 +2079,54 @@ fn name=buildTranscriptRows params="blocks:OutputBlock[], mode:string, toolOutpu
           pushSegmentsRow(`${baseKey}-meta`, 2, [{ text: parts.join(' · '), dimColor: true }]);
           return;
         }
+        case 'cesar-recap': {
+          const files = Array.isArray((event as any).files) ? (event as any).files : [];
+          const commands = Array.isArray((event as any).commands) ? (event as any).commands : [];
+          const warnings = Array.isArray((event as any).warnings) ? (event as any).warnings : [];
+          const toolSummary = Array.isArray((event as any).toolSummary) ? (event as any).toolSummary : [];
+          const confidence = typeof (event as any).confidence === 'number' ? `${Math.round((event as any).confidence)}% confidence` : '';
+          const seconds = typeof (event as any).durationMs === 'number' ? `${(((event as any).durationMs) / 1000).toFixed(1)}s` : '';
+          const failedTools = Number((event as any).failedTools ?? 0);
+          const statusIcon = failedTools > 0 ? icons().warning : icons().success;
+          const statusColor = failedTools > 0 ? '#fbbf24' : '#4ade80';
+          const toolLine = toolSummary.length > 0
+            ? `${(event as any).toolCount ?? toolSummary.length} tools: ${toolSummary.slice(0, 8).join(', ')}${toolSummary.length > 8 ? ', ...' : ''}`
+            : `${(event as any).toolCount ?? 0} tools`;
+          const fileGlyph = (status: string) => status === 'edited' ? 'M' : status === 'created' ? '+' : 'r';
+          pushSegmentsRow(`${baseKey}-recap-head`, 1, [{ text: '◆ Cesar recap', color: '#f97316', bold: true }]);
+          pushSegmentsRow(`${baseKey}-recap-outcome`, 1, [
+            { text: statusIcon, color: statusColor },
+            { text: ` ${(event as any).outcome ?? 'Completed'}` },
+            { text: ` · ${(event as any).mode ?? 'self'}`, dimColor: true },
+            confidence ? { text: ` · ${confidence}`, dimColor: true } : null,
+            seconds ? { text: ` · ${seconds}`, dimColor: true } : null,
+          ].filter(Boolean));
+          pushSegmentsRow(`${baseKey}-recap-tools`, 1, [{ text: `  ${toolLine}${failedTools > 0 ? ` · ${failedTools} failed` : ''}`, dimColor: true }]);
+          if ((event as any).confidenceReasoning) {
+            pushSegmentsRow(`${baseKey}-recap-why`, 1, [{ text: `  why: ${(event as any).confidenceReasoning}`, dimColor: true, italic: true, color: '#8b8b8b' }]);
+          }
+          commands.slice(0, 5).forEach((cmd: any, index: number) => {
+            const failed = String(cmd.status).toLowerCase() === 'error';
+            pushSegmentsRow(`${baseKey}-recap-cmd-${index}`, 1, [
+              { text: `  ${failed ? icons().fail : icons().success}`, color: failed ? '#ef4444' : '#4ade80' },
+              { text: ` ${cmd.label}` },
+              { text: ` · ${cmd.command}`, dimColor: true },
+            ]);
+          });
+          if (files.length > 0) {
+            pushSegmentsRow(`${baseKey}-recap-files`, 1, [{
+              text: `  files: ${files.slice(0, 5).map((f: any) => `${fileGlyph(String(f.status))} ${f.relPath ?? f.path}`).join(', ')}${files.length > 5 ? `, +${files.length - 5} more` : ''}`,
+              dimColor: true,
+            }]);
+          }
+          warnings.slice(0, 3).forEach((warning: string, index: number) => {
+            pushSegmentsRow(`${baseKey}-recap-warning-${index}`, 1, [
+              { text: `  ${icons().warning}`, color: '#fbbf24' },
+              { text: ` ${warning}`, color: '#fbbf24' },
+            ]);
+          });
+          return;
+        }
         case 'file-changes':
           pushSegmentsRow(`${baseKey}-files-head`, 2, [{ text: 'Files changed', bold: true }]);
           (event.files ?? []).forEach((file: any, index: number) => {
@@ -2050,7 +2183,11 @@ fn name=buildTranscriptRows params="blocks:OutputBlock[], mode:string, toolOutpu
           pushSegmentsRow(`${baseKey}-dash-help`, 0, [
             { text: '  Just talk, or type ', dimColor: true },
             { text: '/', color: '#f97316' },
-            { text: ' for commands.', dimColor: true },
+            { text: ' for commands. ', dimColor: true },
+            { text: 'Tab', color: '#f97316' },
+            { text: ' plan · ', dimColor: true },
+            { text: 'Shift+Tab', color: '#f97316' },
+            { text: ' auto', dimColor: true },
           ]);
           return;
         case 'agent-step-start':
@@ -2146,6 +2283,7 @@ screen name=App target=ink
   state name=cesarConfidence type="number|null" initial="null" throttle=200
   state name=agentProgress type="Record<string,AgentProgressSnapshot>" initial="{}"
   state name=planModeQueued type=boolean initial=false safe=false
+  state name=autoModeQueued type=boolean initial=false safe=false
   state name=cesarMemory type=any initial="() => createCesarMemory()"
   state name=sessionMcpServers type="Array<Record<string,unknown>>" initial="[]"
 
@@ -2353,19 +2491,10 @@ screen name=App target=ink
       return nativeArchiveBlockCount(nativeTranscriptBlocks, mode, currentVisibleRowBudget, toolOutputExpanded, thinkingExpanded);
     >>>
 
-  memo name=effectiveNativeArchiveCount deps="nativeArchiveCount,nativeArchiveTarget,nativeTranscriptBlocks"
+  memo name=effectiveNativeArchiveCount deps="nativeArchiveCount,nativeArchiveTarget,nativeTranscriptBlocks,toolOutputExpanded"
     handler <<<
       const baseArchiveCount = nativeTranscriptBlocks.length < nativeTranscriptBlockCountRef.current ? 0 : nativeArchiveCount;
-      let count = Math.max(0, Math.min(nativeTranscriptBlocks.length, Math.max(baseArchiveCount, nativeArchiveTarget)));
-      while (
-        count > 0
-        && count < nativeTranscriptBlocks.length
-        && isToolCallLikeBlock(nativeTranscriptBlocks[count - 1])
-        && isToolCallLikeBlock(nativeTranscriptBlocks[count])
-      ) {
-        count -= 1;
-      }
-      return count;
+      return effectiveNativeArchiveBlockCount(nativeTranscriptBlocks, baseArchiveCount, nativeArchiveTarget, toolOutputExpanded);
     >>>
 
   memo name=nativeArchiveBlocks deps="nativeTranscriptBlocks,effectiveNativeArchiveCount"
@@ -2619,12 +2748,12 @@ screen name=App target=ink
           setStreamingText(next);
         },
         addBlock: (event: any) => {
-          setOutputBlocks((prev: any) => appendBlockWithCap(prev, { id: Date.now() + Math.random(), event }, blockArchivePathRef.current));
+          setOutputBlocks((prev: any) => appendTranscriptBlock(prev, event, blockArchivePathRef.current));
         },
         replaceBlocksOfType: (eventType: string, event: any) => {
           setOutputBlocks((prev: any) => {
             const filtered = prev.filter((b: any) => b.event.type !== eventType);
-            return appendBlockWithCap(filtered, { id: Date.now() + Math.random(), event }, blockArchivePathRef.current);
+            return appendTranscriptBlock(filtered, event, blockArchivePathRef.current);
           });
         },
         clearBlocks: () => setOutputBlocks([]),
@@ -2641,7 +2770,7 @@ screen name=App target=ink
             const entry = prev[eid];
             if (!entry) continue;
             const color = ENGINE_COLORS[entry.engineId] ?? 124;
-            setOutputBlocks((blocks: any) => appendBlockWithCap(blocks, { id: Date.now() - 1 + Math.random(), event: { type: 'engine-block', engineId: entry.engineId, color, content: entry.content } }, blockArchivePathRef.current));
+            setOutputBlocks((blocks: any) => appendTranscriptBlock(blocks, { type: 'engine-block', engineId: entry.engineId, color, content: entry.content } as any, blockArchivePathRef.current));
           }
           streamingTextRef.current = {};
           setStreamingText({});
@@ -2792,7 +2921,7 @@ screen name=App target=ink
     >>>
 
   // ── Input handlers ──
-  callback name=handleInputChange params="value:string" deps="slashPickerOpen,enginePickerOpen,modelPickerOpen,questionState,planModeQueued"
+  callback name=handleInputChange params="value:string" deps="slashPickerOpen,enginePickerOpen,modelPickerOpen,questionState,planModeQueued,autoModeQueued"
     handler <<<
       // Swallow input while a choice question is active — the keyboard handler
       // resolves the choice on a single keypress.
@@ -2947,6 +3076,12 @@ screen name=App target=ink
         return;
       }
       if (planModeQueued) setPlanModeQueued(false);
+      if (autoModeQueued && input.trim() && !input.startsWith('/')) {
+        setAutoModeQueued(false);
+        handleSubmit(`/autonomous ${input}`);
+        return;
+      }
+      if (autoModeQueued) setAutoModeQueued(false);
       transition(startCommandReplState);
       dispatch({ type: 'separator' } as any);
       dispatch({ type: 'user-message', content: input } as any);
@@ -3261,7 +3396,7 @@ screen name=App target=ink
         reviewEventOpen: !!reviewEvent,
         toolDetailOpen: !!toolDetailEvent,
         questionState, replState, inputValue, inputHistory, historyIndex,
-        planModeQueued, activePlanState: activePlan?.state ?? null,
+        planModeQueued, autoModeQueued, activePlanState: activePlan?.state ?? null,
         outputBlockCount: outputBlocks.length,
         commands: allSlashCommands,
         engineIds: availableEngines,
@@ -3284,6 +3419,8 @@ screen name=App target=ink
           return;
         case 'togglePlanQueued':
           setPlanModeQueued((prev: boolean) => !prev); return;
+        case 'toggleAutoQueued':
+          setAutoModeQueued((prev: boolean) => !prev); return;
         case 'submit':
           handleSubmit(action.value); return;
         case 'toggleToolExpand':
@@ -3324,6 +3461,8 @@ screen name=App target=ink
           return;
         case 'unqueuePlan':
           setPlanModeQueued(false); return;
+        case 'unqueueAuto':
+          setAutoModeQueued(false); return;
         case 'closeSlash':
           setSlashPickerOpen(false); return;
         case 'closeEnginePicker':
@@ -3530,6 +3669,7 @@ screen name=App target=ink
           mode={mode}
           replState={replState}
           planModeQueued={planModeQueued}
+          autoModeQueued={autoModeQueued}
           activePlanState={activePlan?.state ?? null}
               slashPickerOpen={slashPickerOpen}
               inputValue={inputValue}
@@ -3549,7 +3689,7 @@ screen name=App target=ink
             {(() => {
               const _cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
               return (<>
-                <CesarStatusStrip cesarId={_cesarId} confidence={cesarConfidence} spinner={liveSpinner} engines={liveProgress} startTime={chatStartTimeRef.current || 0} streamSnippet={streamSnippet} isActive={replState !== 'idle' || runningJobs.length > 0} planModeQueued={planModeQueued} activePlanState={activePlan?.state ?? null} />
+                <CesarStatusStrip cesarId={_cesarId} confidence={cesarConfidence} spinner={liveSpinner} engines={liveProgress} startTime={chatStartTimeRef.current || 0} streamSnippet={streamSnippet} isActive={replState !== 'idle' || runningJobs.length > 0} planModeQueued={planModeQueued} autoModeQueued={autoModeQueued} activePlanState={activePlan?.state ?? null} />
                 {mode === 'chat' && <StatusBar cesarId={statusStats.cesarId} chatMessageCount={statusStats.chatMessageCount} totalTokens={statusStats.totalTokens} totalCostUsd={statusStats.totalCostUsd} cwd={statusCwd} branch={statusBranch} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} isActive={replState !== 'idle'} fullscreenEnabled={terminalMode === 'fullscreen'} selectionMode={terminalMode === 'fullscreen' ? selectionMode : undefined} />}
               </>);
             })()}
@@ -3570,7 +3710,7 @@ screen name=App target=ink
             {lowerPanel}
           </Box>
           {showFileRail && (
-            <FileRail files={fileRailFiles} maxRows={fileRailMaxRows} width={fileRailWidth} focused={fileRailOpen && inputValue.trim().length === 0} selectedIndex={fileRailSelectedIdx} expandedPath={fileRailExpandedPath} />
+            <FileRail files={fileRailFiles} maxRows={fileRailMaxRows} width={fileRailWidth} focused={fileRailOpen && inputValue.trim().length === 0} selectedIndex={fileRailSelectedIdx} expandedPath={fileRailExpandedPath} autoExpandSelected={fileRailOpen && inputValue.trim().length === 0} />
           )}
         </Box>
       </>
@@ -3587,7 +3727,7 @@ screen name=App target=ink
       {lowerPanel}
       </Box>
       {showFileRail && (
-        <FileRail files={fileRailFiles} maxRows={fileRailMaxRows} width={fileRailWidth} focused={fileRailOpen && inputValue.trim().length === 0} selectedIndex={fileRailSelectedIdx} expandedPath={fileRailExpandedPath} />
+        <FileRail files={fileRailFiles} maxRows={fileRailMaxRows} width={fileRailWidth} focused={fileRailOpen && inputValue.trim().length === 0} selectedIndex={fileRailSelectedIdx} expandedPath={fileRailExpandedPath} autoExpandSelected={fileRailOpen && inputValue.trim().length === 0} />
       )}
       </Box>
       </Box>

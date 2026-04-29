@@ -221,6 +221,8 @@ export function createEditTool(): ToolHandler {
       offset: undefined,
       limit: undefined,
       isPartialView: false,
+      lastTouchedBy: ctx.source === 'orchestrator' ? 'cesar' : (ctx.source ?? 'tool'),
+      lastTouchedAt: Date.now(),
     });
 
     // Build success message

@@ -237,6 +237,19 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           input,
         });
       };
+      const normalizeConfidenceReasoning = (value: unknown): string => {
+        return String(value ?? '').replace(/\s+/g, ' ').trim();
+      };
+      const consumeStoredConfidenceReasoning = (): string => {
+        const reasoning = normalizeConfidenceReasoning(ctx.cesar?.reportedConfidenceReasoning);
+        if (ctx.cesar) ctx.cesar.reportedConfidenceReasoning = undefined;
+        return reasoning;
+      };
+      const dispatchConfidenceReasoning = (engineId: string, reasoning: string, suffix = '') => {
+        if (!reasoning) return;
+        const label = suffix ? `Confidence reasoning ${suffix}:` : 'Confidence reasoning:';
+        dispatch({ type: 'thinking-chunk', engineId, chunk: `${label} ${reasoning}` } as any);
+      };
       const buildToolTelemetry = () => ({
         cesarEngineId: _actualCesarEngineId || undefined,
         cesarBackend: _actualCesarBackend,
@@ -261,10 +274,10 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         ctx.cesar = {
           busy: false, busySince: null, queue: null,
           toolRegistry: null, hasNativeTools: false, lastDispatch: null,
-          pendingDelegation: null, reportedConfidence: undefined, confidenceSatisfied: false, blockedOnConfidence: null,
+          pendingDelegation: null, reportedConfidence: undefined, reportedConfidenceReasoning: undefined, confidenceSatisfied: false, blockedOnConfidence: null,
           autoNero: false, advisorPending: false, lastEscalation: null as string | null,
           mcpFingerprint: undefined, planDispatch: null, proposedPlan: undefined,
-          sessionMcpServers: [],
+          sessionMcpServers: [], autoModeQueued: false,
         };
       }
 
@@ -297,6 +310,7 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
       ctx.cesar!.busySince = Date.now();
       ctx.cesar!.lastEscalation = null;
       ctx.cesar!.reportedConfidence = undefined;
+      ctx.cesar!.reportedConfidenceReasoning = undefined;
       ctx.cesar!.confidenceSatisfied = false;
       ctx.cesar!.blockedOnConfidence = null;
       ctx.cesar!.turnId = _turnId;
@@ -527,6 +541,10 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               enrichedInput = `[ROUTING CONTEXT — use this to decide mode + team]\n${routingCtx}\n\n${reviewFollowup.prompt}`;
             }
           } catch { /* routing context is best-effort */ }
+        }
+        // Auto mode: user has pre-approved multi-step execution
+        if (ctx.autoModeQueued) {
+          enrichedInput = `[AUTONOMOUS MODE ACTIVE]\nThe user has toggled autonomous mode. You may self-escalate to ProposePlan when the task benefits from structured multi-step execution. Use your judgment — stay live for simple tasks, propose a plan for complex or risky work. The auto-approve policy still gates individual tool permissions.\n\n${enrichedInput}`;
         }
         if (routeReliability && routeDowngrade) {
           enrichedInput = `[CESAR TOOL RELIABILITY POLICY]\n${formatCesarReliabilityLine(routeReliability)}\nFor this tool-heavy task, do not pretend direct multi-step tooling happened. Prefer ProposePlan, Agent, Forge, Review, or another direct orchestration tool when execution is needed; if staying self, keep the answer advisory and explicit.\n\n${enrichedInput}`;
@@ -783,11 +801,13 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 // Check for tool-reported confidence (ReportConfidence tool)
                 if (!confidenceParsed && ctx.cesar!.reportedConfidence !== undefined) {
                   const toolConf = ctx.cesar!.reportedConfidence as number;
+                  const reasoning = consumeStoredConfidenceReasoning();
                   ctx.cesar!.reportedConfidence = undefined;
                   parsedConfidence = toolConf;
                   confidenceParsed = true;
                   dispatch({ type: 'info', message: confidenceBadge(toolConf) + ` Cesar` });
                   dispatch({ type: 'confidence-update', value: toolConf });
+                  dispatchConfidenceReasoning(cesarEngineId, reasoning);
                   if (toolConf >= CONFIDENCE_TIERS.direct && ctx.cesar!.autoNero) deactivateNero(ctx, dispatch);
                 }
 
@@ -994,11 +1014,13 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
         // Post-stream: consume tool-reported confidence
         if (!confidenceParsed && ctx.cesar!.reportedConfidence !== undefined) {
           const toolConf = ctx.cesar!.reportedConfidence as number;
+          const reasoning = consumeStoredConfidenceReasoning();
           ctx.cesar!.reportedConfidence = undefined;
           parsedConfidence = toolConf;
           confidenceParsed = true;
           dispatch({ type: 'info', message: confidenceBadge(toolConf) + ` Cesar` });
           dispatch({ type: 'confidence-update', value: toolConf });
+          dispatchConfidenceReasoning(cesarEngineId, reasoning);
           if (toolConf >= CONFIDENCE_TIERS.direct && ctx.cesar!.autoNero) deactivateNero(ctx, dispatch);
         }
 
@@ -1029,11 +1051,14 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                   recordToolUse('ReportConfidence', 'mcp', JSON.stringify(signal.args ?? {}), 'done');
                   const value = typeof signal.args?.value === 'number' ? signal.args.value : null;
                   if (value !== null && value >= 0 && value <= 100) {
+                    const reasoning = normalizeConfidenceReasoning(signal.args?.reasoning ?? signal.args?.reason ?? signal.args?.thought);
                     ctx.cesar!.reportedConfidence = value;
+                    ctx.cesar!.reportedConfidenceReasoning = reasoning || undefined;
                     ctx.cesar!.confidenceSatisfied = true;
                     parsedConfidence = value;
                     dispatch({ type: 'info', message: confidenceBadge(value) + ` Cesar (via MCP)` });
                     dispatch({ type: 'confidence-update', value });
+                    dispatchConfidenceReasoning(cesarEngineId, reasoning, '(via MCP)');
                   }
                 } else if (signal.tool === 'QuickNero') {
                   recordToolUse('QuickNero', 'mcp', JSON.stringify(signal.args ?? {}), 'done');

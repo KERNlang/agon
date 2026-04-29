@@ -106,7 +106,7 @@ import { useStableInput } from '../../stable-input.js';
 
 import { parseProseToRichLines } from '../blocks/rich-text.js';
 
-// @kern-source: app:2181
+// @kern-source: app:2185
 export function App() {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -1623,7 +1623,7 @@ export function App() {
         {lowerPanel}
       </Box>
       {showFileRail && (
-        <FileRail files={fileRailFiles} maxRows={fileRailMaxRows} width={fileRailWidth} focused={fileRailOpen && inputValue.trim().length === 0} selectedIndex={fileRailSelectedIdx} expandedPath={fileRailExpandedPath} />
+        <FileRail files={fileRailFiles} maxRows={fileRailMaxRows} width={fileRailWidth} focused={fileRailOpen && inputValue.trim().length === 0} selectedIndex={fileRailSelectedIdx} expandedPath={fileRailExpandedPath} autoExpandSelected={fileRailOpen && inputValue.trim().length === 0} />
       )}
     </Box>
   </>
@@ -1640,7 +1640,7 @@ export function App() {
   {lowerPanel}
   </Box>
   {showFileRail && (
-    <FileRail files={fileRailFiles} maxRows={fileRailMaxRows} width={fileRailWidth} focused={fileRailOpen && inputValue.trim().length === 0} selectedIndex={fileRailSelectedIdx} expandedPath={fileRailExpandedPath} />
+    <FileRail files={fileRailFiles} maxRows={fileRailMaxRows} width={fileRailWidth} focused={fileRailOpen && inputValue.trim().length === 0} selectedIndex={fileRailSelectedIdx} expandedPath={fileRailExpandedPath} autoExpandSelected={fileRailOpen && inputValue.trim().length === 0} />
   )}
   </Box>
   </Box>
@@ -2751,7 +2751,7 @@ export function normalizeTerminalMode(value: any): 'native'|'fullscreen' {
 // @kern-source: app:1143
 export function fileRailWidthForTerminal(termWidth: number, expanded: boolean): number {
   const safeWidth = Math.max(40, Math.floor(Number(termWidth) || 100));
-  if (expanded) return Math.max(36, Math.min(64, Math.floor(safeWidth * 0.3)));
+  if (expanded) return Math.max(36, Math.min(84, Math.floor(safeWidth * 0.35)));
   return Math.max(28, Math.min(42, Math.floor(safeWidth * 0.22)));
 }
 
@@ -2759,10 +2759,10 @@ export function fileRailWidthForTerminal(termWidth: number, expanded: boolean): 
 export function fileRailMaxRowsForTerminal(termHeight: number, terminalMode: string, expanded: boolean): number {
   const safeHeight = Math.max(8, Math.floor(Number(termHeight) || 24));
   if (terminalMode === 'native') {
-    if (expanded) return Math.max(8, Math.min(18, safeHeight - 8));
-    return Math.max(5, Math.min(10, safeHeight - 10));
+    if (expanded) return Math.max(8, Math.min(36, safeHeight - 4));
+    return Math.max(5, Math.min(14, safeHeight - 8));
   }
-  if (expanded) return Math.max(12, safeHeight - 6);
+  if (expanded) return Math.max(12, safeHeight - 4);
   return Math.max(6, Math.min(12, 10));
 }
 
@@ -3738,7 +3738,11 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
         pushSegmentsRow(`${baseKey}-dash-help`, 0, [
           { text: '  Just talk, or type ', dimColor: true },
           { text: '/', color: '#f97316' },
-          { text: ' for commands.', dimColor: true },
+          { text: ' for commands. ', dimColor: true },
+          { text: 'Tab', color: '#f97316' },
+          { text: ' plan · ', dimColor: true },
+          { text: 'Shift+Tab', color: '#f97316' },
+          { text: ' auto', dimColor: true },
         ]);
         return;
       case 'agent-step-start':
@@ -3787,7 +3791,7 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
   return rows;
 }
 
-// @kern-source: app:3680
+// @kern-source: app:3684
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

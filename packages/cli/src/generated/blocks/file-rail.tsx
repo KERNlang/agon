@@ -8,7 +8,7 @@ import type { FileEntry } from '../signals/file-tracker.js';
 
 import { getFileDiff } from '../signals/file-tracker.js';
 
-// @kern-source: file-rail:44
+// @kern-source: file-rail:61
 function FileRailEmpty() {
   return (
     <>
@@ -22,7 +22,7 @@ function FileRailEmpty() {
   );
 }
 
-// @kern-source: file-rail:58
+// @kern-source: file-rail:75
 function FileRailDetail({ expandedFile, maxRows }: { expandedFile:FileEntry; maxRows:number }) {
   const rawDiff = expandedFile.status !== 'read' ? getFileDiff(expandedFile.path, 400) : '';
   // Strip noisy git header lines — we already show the file path
@@ -35,7 +35,7 @@ function FileRailDetail({ expandedFile, maxRows }: { expandedFile:FileEntry; max
         !ln.startsWith('+++ ') &&
         !ln.startsWith('\\ No newline'))
     : [];
-  const diffBudget = Math.max(4, maxRows - 6);
+  const diffBudget = Math.max(0, maxRows - 5);
   const visibleDiff = filtered.slice(0, diffBudget);
   const omitted = Math.max(0, filtered.length - visibleDiff.length);
   return (
@@ -65,16 +65,16 @@ function FileRailDetail({ expandedFile, maxRows }: { expandedFile:FileEntry; max
   );
 }
 
-// @kern-source: file-rail:105
-const FileRail = React.memo(function FileRail({ files, maxRows, width, focused, selectedIndex, expandedPath }: { files:FileEntry[]; maxRows:number; width?:number; focused?:boolean; selectedIndex?:number; expandedPath?:string|null }) {
+// @kern-source: file-rail:122
+const FileRail = React.memo(function FileRail({ files, maxRows, width, focused, selectedIndex, expandedPath, autoExpandSelected }: { files:FileEntry[]; maxRows:number; width?:number; focused?:boolean; selectedIndex?:number; expandedPath?:string|null; autoExpandSelected?:boolean }) {
   const w = width ?? 36;
   const h = Math.max(4, maxRows + 2);
   const sel = Math.max(0, Math.min(files.length - 1, selectedIndex ?? 0));
-  const expandedFile: FileEntry | undefined = expandedPath ? files.find((f: FileEntry) => f.path === expandedPath) : undefined;
+  const expandedFile: FileEntry | undefined = resolveFileRailExpandedFile(files, selectedIndex, expandedPath, autoExpandSelected);
   const borderColor = focused ? '#22d3ee' : 'gray';
   const pathMax = Math.max(4, w - 5);
-  const detailRows = expandedFile ? 6 : 0;
-  const listBudget = Math.max(1, maxRows - detailRows - 2);
+  const detailRows = fileRailDetailRows(maxRows, expandedFile != null);
+  const listBudget = Math.max(3, maxRows - detailRows - 3);
   const start = Math.max(0, Math.min(files.length - listBudget, sel - Math.floor(listBudget / 2)));
   const visible: FileEntry[] = files.slice(start, start + listBudget);
   return (
@@ -86,7 +86,7 @@ const FileRail = React.memo(function FileRail({ files, maxRows, width, focused, 
                 <Text dimColor bold>{`FILES (${files.length})`}{focused ? <Text color="#22d3ee">{' \u25c6'}</Text> : null}</Text>
       )}
       {files.length > 0 && !!focused && (
-                <Text dimColor>{'\u2191\u2193 select  \u2192 expand  \u2190 collapse  esc close'}</Text>
+                <Text dimColor>{'\u2191\u2193 select  auto preview  \u2192 pin  esc close'}</Text>
       )}
       {files.length > 0 && !focused && (
                 <Text dimColor>{'\u2191\u2193 focus with empty composer'}</Text>
@@ -111,7 +111,7 @@ const FileRail = React.memo(function FileRail({ files, maxRows, width, focused, 
                 <Text dimColor>{`+${files.length - start - listBudget} more`}</Text>
       )}
       {expandedFile != null && (
-                <FileRailDetail expandedFile={expandedFile as FileEntry} maxRows={maxRows} />
+                <FileRailDetail expandedFile={expandedFile as FileEntry} maxRows={detailRows} />
       )}
     </Box>
   );
@@ -139,6 +139,23 @@ export function truncateLeft(s: string, max: number): string {
 }
 
 // @kern-source: file-rail:30
+export function resolveFileRailExpandedFile(files: FileEntry[], selectedIndex: number|undefined, expandedPath: string|null|undefined, autoExpandSelected: boolean|undefined): FileEntry|undefined {
+  if (files.length === 0) return undefined;
+  if (expandedPath) return files.find((f: FileEntry) => f.path === expandedPath);
+  if (!autoExpandSelected) return undefined;
+  const sel = Math.max(0, Math.min(files.length - 1, selectedIndex ?? 0));
+  return files[sel];
+}
+
+// @kern-source: file-rail:39
+export function fileRailDetailRows(maxRows: number, hasDetail: boolean): number {
+  if (!hasDetail) return 0;
+  const safeRows = Math.max(4, Math.floor(Number(maxRows) || 0));
+  const rows = Math.floor(safeRows * 0.58);
+  return Math.max(4, Math.min(Math.max(4, safeRows - 5), rows));
+}
+
+// @kern-source: file-rail:47
 export function formatRelativeTime(ms: number): string {
   const diff = Date.now() - ms;
   const s = Math.floor(diff / 1000);

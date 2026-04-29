@@ -1038,8 +1038,15 @@ You still own the overall task. Integrate the forged slice with the rest of the 
 fn name=isCesarPlanApprovalInput params="input:string" returns=boolean export=true
   doc "Return true for natural approval replies users type after Cesar says go/run it."
   handler <<<
-    const text = String(input ?? '').trim().toLowerCase().replace(/[.!]+$/g, '');
-    return /^(?:y|yes|go|run|run it|start|start it|approve|approved|do it|proceed|execute|ok|okay|sure)$/i.test(text);
+    const text = String(input ?? '').trim().toLowerCase().replace(/[.!?]+$/g, '').replace(/\s+/g, ' ');
+    return /^(?:y|yes|yes go|yes please|go|go ahead|ok go|okay go|ok do it|okay do it|ok do so|okay do so|run|run it|start|start it|approve|approved|do it|do so|proceed|execute|ok|okay|sure)$/i.test(text);
+  >>>
+
+fn name=isStrongCesarPlanApprovalInput params="input:string" returns=boolean export=true
+  doc "Return true for approval phrases strong enough to recover a saved pending plan even when no plan panel is active."
+  handler <<<
+    const text = String(input ?? '').trim().toLowerCase().replace(/[.!?]+$/g, '').replace(/\s+/g, ' ');
+    return /^(?:yes go|go|go ahead|ok go|okay go|ok do it|okay do it|ok do so|okay do so|run|run it|start|start it|approve|approved|do it|do so|proceed|execute)$/i.test(text);
   >>>
 
 fn name=findPendingCesarPlan params="ctx:HandlerContext" returns="CesarPlan | null" export=true
@@ -1053,6 +1060,19 @@ fn name=findPendingCesarPlan params="ctx:HandlerContext" returns="CesarPlan | nu
       .filter((p: CesarPlan) => p.state === 'awaiting_approval')
       .sort((a: CesarPlan, b: CesarPlan) => b.createdAt.localeCompare(a.createdAt));
     return saved[0] ?? null;
+  >>>
+
+fn name=shouldApprovePendingCesarPlanInput params="input:string,ctx:HandlerContext" returns=boolean export=true
+  doc "Treat natural approval text as /approve even if a previous session failed to surface the plan panel."
+  handler <<<
+    const text = String(input ?? '').trim();
+    if (!text || text.startsWith('/')) return false;
+    const proposed = ctx.cesar?.proposedPlan as CesarPlan | undefined;
+    const active = ctx.activePlan as CesarPlan | undefined;
+    const hasLivePending = (proposed && proposed.state === 'awaiting_approval') || (active && active.state === 'awaiting_approval');
+    if (hasLivePending) return isCesarPlanApprovalInput(text);
+    if (!isStrongCesarPlanApprovalInput(text)) return false;
+    return listCesarPlans().some((p: CesarPlan) => p.state === 'awaiting_approval');
   >>>
 
 fn name=approvePendingCesarPlan async=true params="cb:DispatchCallbacks" returns="Promise<boolean>" export=true
@@ -1085,6 +1105,13 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
       await cb.eventBus.emit('pre:dispatch', { input, intentType: intent.type, cwd: resolveWorkingDir() });
     }
     const _emitPost = () => { if (cb.eventBus) cb.eventBus.emit('post:dispatch', { input, intentType: intent.type, cwd: resolveWorkingDir() }).catch(() => {}); };
+
+    if (shouldApprovePendingCesarPlanInput(input, cb.ctx)) {
+      if (await approvePendingCesarPlan(cb)) {
+        _emitPost();
+        return { handled: true, ranAsJob: false };
+      }
+    }
 
     // ── Registry-first dispatch — extensions and real handlers get priority ──
     if (cb.commandRegistry) {

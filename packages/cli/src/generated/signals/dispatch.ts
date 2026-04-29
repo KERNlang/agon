@@ -1090,14 +1090,23 @@ export async function routeWithCesar(input: string, images: ImageAttachment[], c
  */
 // @kern-source: dispatch:1038
 export function isCesarPlanApprovalInput(input: string): boolean {
-  const text = String(input ?? '').trim().toLowerCase().replace(/[.!]+$/g, '');
-  return /^(?:y|yes|go|run|run it|start|start it|approve|approved|do it|proceed|execute|ok|okay|sure)$/i.test(text);
+  const text = String(input ?? '').trim().toLowerCase().replace(/[.!?]+$/g, '').replace(/\s+/g, ' ');
+  return /^(?:y|yes|yes go|yes please|go|go ahead|ok go|okay go|ok do it|okay do it|ok do so|okay do so|run|run it|start|start it|approve|approved|do it|do so|proceed|execute|ok|okay|sure)$/i.test(text);
+}
+
+/**
+ * Return true for approval phrases strong enough to recover a saved pending plan even when no plan panel is active.
+ */
+// @kern-source: dispatch:1045
+export function isStrongCesarPlanApprovalInput(input: string): boolean {
+  const text = String(input ?? '').trim().toLowerCase().replace(/[.!?]+$/g, '').replace(/\s+/g, ' ');
+  return /^(?:yes go|go|go ahead|ok go|okay go|ok do it|okay do it|ok do so|okay do so|run|run it|start|start it|approve|approved|do it|do so|proceed|execute)$/i.test(text);
 }
 
 /**
  * Find the most relevant pending Cesar plan: proposed plan first, active plan second, then latest saved awaiting_approval plan.
  */
-// @kern-source: dispatch:1045
+// @kern-source: dispatch:1052
 export function findPendingCesarPlan(ctx: HandlerContext): CesarPlan | null {
   const proposed = ctx.cesar?.proposedPlan as CesarPlan | undefined;
   if (proposed && proposed.state === 'awaiting_approval') return proposed;
@@ -1110,9 +1119,24 @@ export function findPendingCesarPlan(ctx: HandlerContext): CesarPlan | null {
 }
 
 /**
+ * Treat natural approval text as /approve even if a previous session failed to surface the plan panel.
+ */
+// @kern-source: dispatch:1065
+export function shouldApprovePendingCesarPlanInput(input: string, ctx: HandlerContext): boolean {
+  const text = String(input ?? '').trim();
+  if (!text || text.startsWith('/')) return false;
+  const proposed = ctx.cesar?.proposedPlan as CesarPlan | undefined;
+  const active = ctx.activePlan as CesarPlan | undefined;
+  const hasLivePending = (proposed && proposed.state === 'awaiting_approval') || (active && active.state === 'awaiting_approval');
+  if (hasLivePending) return isCesarPlanApprovalInput(text);
+  if (!isStrongCesarPlanApprovalInput(text)) return false;
+  return listCesarPlans().some((p: CesarPlan) => p.state === 'awaiting_approval');
+}
+
+/**
  * Approve and execute the pending CesarPlan, if one exists. Backs /approve and natural approval aliases like go.
  */
-// @kern-source: dispatch:1058
+// @kern-source: dispatch:1078
 export async function approvePendingCesarPlan(cb: DispatchCallbacks): Promise<boolean> {
   const pending = findPendingCesarPlan(cb.ctx);
   if (!pending) return false;
@@ -1136,13 +1160,20 @@ export async function approvePendingCesarPlan(cb: DispatchCallbacks): Promise<bo
 /**
  * Route a parsed intent to the correct handler. Registry-first, switch as fallback.
  */
-// @kern-source: dispatch:1080
+// @kern-source: dispatch:1100
 export async function dispatchIntent(intent: any, input: string, cb: DispatchCallbacks): Promise<DispatchResult> {
   // ── Emit pre:dispatch event ──
   if (cb.eventBus) {
     await cb.eventBus.emit('pre:dispatch', { input, intentType: intent.type, cwd: resolveWorkingDir() });
   }
   const _emitPost = () => { if (cb.eventBus) cb.eventBus.emit('post:dispatch', { input, intentType: intent.type, cwd: resolveWorkingDir() }).catch(() => {}); };
+
+  if (shouldApprovePendingCesarPlanInput(input, cb.ctx)) {
+    if (await approvePendingCesarPlan(cb)) {
+      _emitPost();
+      return { handled: true, ranAsJob: false };
+    }
+  }
 
   // ── Registry-first dispatch — extensions and real handlers get priority ──
   if (cb.commandRegistry) {
@@ -2357,7 +2388,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
 /**
  * Shared approval loop for plans proposed by Cesar, whether from explicit /plan mode or a normal chat turn.
  */
-// @kern-source: dispatch:2299
+// @kern-source: dispatch:2326
 export async function handleProposedCesarPlan(proposed: CesarPlan, cb: DispatchCallbacks): Promise<void> {
   if (cb.ctx.cesar) cb.ctx.cesar.proposedPlan = undefined;
 
@@ -2474,7 +2505,7 @@ export async function handleProposedCesarPlan(proposed: CesarPlan, cb: DispatchC
 /**
  * Build executor callbacks. Holds a closure on the latest plan reference (mutated via onPlanUpdate) so step lookups always see appended steps like the auto-review cycle (tribunal fix #10). FU-3: persistence is debounced 300ms to avoid the sync-write storm Doppelganger flagged — onPlanUpdate fires once per step in a hot loop, but the disk write happens at most ~3x/sec. Terminal states (done/paused/cancelled) flush immediately so the .md/.json on disk reflect the final state. Callers should invoke .flush() before exit to drain any pending write.
  */
-// @kern-source: dispatch:2419
+// @kern-source: dispatch:2446
 export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks): any {
   let currentPlan = initialPlan;
   let pendingWriteTimer: ReturnType<typeof setTimeout> | null = null;
@@ -2551,7 +2582,7 @@ export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks
 /**
  * FU-4: shared executor for the auto-approve, manual-approve, and plan-resume paths. Wires the abort controller, builds callbacks (with debounced persistence), runs executePlan, runs finalizePlanWithReviewGate, and dispatches the terminal status. Eliminates the ~60 lines of triplication that lived in dispatch.kern and forced future changes (e.g., new callback hooks, new finalize behavior) to be applied to all three sites.
  */
-// @kern-source: dispatch:2494
+// @kern-source: dispatch:2521
 export async function executeApprovedPlan(approved: CesarPlan, cb: DispatchCallbacks): Promise<void> {
   const executors = buildStepExecutors(cb.ctx);
   const abortController = new AbortController();
@@ -2588,7 +2619,7 @@ export async function executeApprovedPlan(approved: CesarPlan, cb: DispatchCallb
 /**
  * Single source of truth for the post-execution self-review gate. Called from BOTH the plan-task and plan-resume terminal paths so resume cannot bypass the gate or the cycle cap (tribunal fix #4).
  */
-// @kern-source: dispatch:2529
+// @kern-source: dispatch:2556
 export async function finalizePlanWithReviewGate(finalPlan: CesarPlan, executors: Record<string,StepExecutor>, abortSignal: AbortSignal, cb: DispatchCallbacks): Promise<CesarPlan> {
   const MUTATING = new Set(['forge', 'teamforge', 'pipeline', 'agent', 'team-agent', 'delegate', 'self']);
   const planTouchedMutation = finalPlan.steps.some((s: any) => MUTATING.has(s.type) && (s.state === 'done' || s.state === 'failed'));

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildAgentAutoResumePrompt, buildDelegatedContinuationPrompt, buildReviewAbsorptionPrompt, collectRecentEngineContext, extractExecutionSpec, formatCesarRecoveryStatus, shouldAutoContinueDelegatedResult, shouldAutoResumeAgentResult } from '../../packages/cli/src/generated/signals/dispatch.js';
+import { buildAgentAutoResumePrompt, buildDelegatedContinuationPrompt, buildReviewAbsorptionPrompt, collectRecentEngineContext, extractExecutionSpec, formatCesarRecoveryStatus, isCesarPlanApprovalInput, shouldAutoContinueDelegatedResult, shouldAutoResumeAgentResult } from '../../packages/cli/src/generated/signals/dispatch.js';
 
 describe('Dispatch routing helpers', () => {
   it('extracts forge fitness commands from conversational input', () => {
@@ -21,6 +21,13 @@ describe('Dispatch routing helpers', () => {
       task: 'fix login race',
       fitnessCmd: null,
     });
+  });
+
+  it('recognizes natural Cesar plan approval replies', () => {
+    expect(isCesarPlanApprovalInput('go')).toBe(true);
+    expect(isCesarPlanApprovalInput('run it')).toBe(true);
+    expect(isCesarPlanApprovalInput('proceed!')).toBe(true);
+    expect(isCesarPlanApprovalInput('change step 2')).toBe(false);
   });
 
   it('formats compact Cesar recovery statuses with log context', () => {

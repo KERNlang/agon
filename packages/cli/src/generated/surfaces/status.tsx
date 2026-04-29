@@ -14,7 +14,15 @@ import type { Job } from '../signals/job-manager.js';
 
 import type { EngineProgress } from '../../handlers/types.js';
 
-// @kern-source: status:51
+import { renderScoreboard } from '../cesar/scoreboard.js';
+
+import type { Scoreboard } from '../cesar/scoreboard.js';
+
+import { formatModeRationale } from '../cesar/mode-rationale.js';
+
+import type { ModeRationale } from '../cesar/mode-rationale.js';
+
+// @kern-source: status:55
 export function SpinnerBlock({ message, color }: { message:string; color?:number }) {
   return (
     <Text>
@@ -24,7 +32,7 @@ export function SpinnerBlock({ message, color }: { message:string; color?:number
   );
 }
 
-// @kern-source: status:67
+// @kern-source: status:71
 export function TokenGauge({ tokens, maxTokens }: { tokens:number; maxTokens:number }) {
   const pct = Math.min(100, Math.round((tokens / maxTokens) * 100));
   const barWidth = 12;
@@ -41,7 +49,7 @@ export function TokenGauge({ tokens, maxTokens }: { tokens:number; maxTokens:num
   );
 }
 
-// @kern-source: status:89
+// @kern-source: status:93
 function AgonTip() {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -59,7 +67,7 @@ function AgonTip() {
   );
 }
 
-// @kern-source: status:102
+// @kern-source: status:106
 export function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd, cwd, branch, explorationMode, toolOutputExpanded, autoModeQueued, isActive, fullscreenEnabled, selectionMode }: { cesarId:string; chatMessageCount:number; totalTokens:number; totalCostUsd:number; cwd:string; branch?:string; explorationMode?:boolean; toolOutputExpanded?:boolean; autoModeQueued?:boolean; isActive?:boolean; fullscreenEnabled?:boolean; selectionMode?:boolean }) {
   const cost = totalCostUsd > 0 ? `$${totalCostUsd.toFixed(2)}` : '';
   const msgs = chatMessageCount;
@@ -102,7 +110,7 @@ export function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd
   );
 }
 
-// @kern-source: status:160
+// @kern-source: status:164
 export function StatusLine({ startTime, engineId, color }: { startTime:number; engineId?:string; color?:number }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -137,7 +145,7 @@ export function StatusLine({ startTime, engineId, color }: { startTime:number; e
   );
 }
 
-// @kern-source: status:189
+// @kern-source: status:193
 const BackgroundJobRail = React.memo(function BackgroundJobRail({ jobs }: { jobs:Job[] }) {
   return (
     <Box paddingX={1}>
@@ -160,8 +168,8 @@ const BackgroundJobRail = React.memo(function BackgroundJobRail({ jobs }: { jobs
 });
 export { BackgroundJobRail };
 
-// @kern-source: status:209
-const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confidence, spinner, engines, startTime, streamSnippet, isActive, planModeQueued, autoModeQueued, activePlanState }: { cesarId:string; confidence?:number|null; spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; startTime:number; streamSnippet?:{ engineId: string; line: string } | null; isActive:boolean; planModeQueued?:boolean; autoModeQueued?:boolean; activePlanState?:string|null }) {
+// @kern-source: status:213
+const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confidence, spinner, engines, startTime, streamSnippet, isActive, planModeQueued, autoModeQueued, activePlanState, scoreboard, rationale }: { cesarId:string; confidence?:number|null; spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; startTime:number; streamSnippet?:{ engineId: string; line: string } | null; isActive:boolean; planModeQueued?:boolean; autoModeQueued?:boolean; activePlanState?:string|null; scoreboard?:Scoreboard|null; rationale?:ModeRationale|null }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
     return (value) => setTimeout(() => setter(value), 0);
@@ -255,27 +263,34 @@ const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confide
     snippetStr = streamSnippet.line.length > maxLen ? streamSnippet.line.slice(0, maxLen) + '\u2026' : streamSnippet.line;
   }
 
+  const scoreboardLines = scoreboard ? renderScoreboard(scoreboard) : '';
+  const rationaleStr = rationale ? formatModeRationale(rationale) : '';
+
   return (
-    <Box paddingTop={0}>
-      <Text>
-        {hasPlan ? <><Text color={autoModeQueued ? '#f97316' : '#c084fc'} bold>{`\u25c8 ${planLabel.toUpperCase()}`}</Text><Text dimColor>{' \u2502 '}</Text></> : null}
-        <Text color={cesarColor} bold>{'\u25c6 '}{cesarId}</Text>
-        {confStr ? <Text color={confColor} bold>{confStr}</Text> : null}
-        <Text dimColor>{' \u2502 '}</Text>
-        <Text color="#fbbf24">{activityStr}</Text>
-        {elapsedStr ? <Text dimColor>{elapsedStr}</Text> : null}
-        {engineDots.length > 0 ? <Text dimColor>{' \u2502 '}</Text> : null}
-      </Text>
-      {engineDots.length > 0 && <Text>{engineDots}</Text>}
-      <Text>
-        {snippetStr ? <><Text dimColor>{' \u2502 '}</Text><Text dimColor wrap="truncate">{snippetStr}</Text></> : null}
-      </Text>
+    <Box paddingTop={0} flexDirection="column">
+      <Box>
+        <Text>
+          {hasPlan ? <><Text color={autoModeQueued ? '#f97316' : '#c084fc'} bold>{`\u25c8 ${planLabel.toUpperCase()}`}</Text><Text dimColor>{' \u2502 '}</Text></> : null}
+          <Text color={cesarColor} bold>{'\u25c6 '}{cesarId}</Text>
+          {confStr ? <Text color={confColor} bold>{confStr}</Text> : null}
+          <Text dimColor>{' \u2502 '}</Text>
+          <Text color="#fbbf24">{activityStr}</Text>
+          {elapsedStr ? <Text dimColor>{elapsedStr}</Text> : null}
+          {engineDots.length > 0 ? <Text dimColor>{' \u2502 '}</Text> : null}
+        </Text>
+        {engineDots.length > 0 && <Text>{engineDots}</Text>}
+        <Text>
+          {snippetStr ? <><Text dimColor>{' \u2502 '}</Text><Text dimColor wrap="truncate">{snippetStr}</Text></> : null}
+        </Text>
+      </Box>
+      {rationaleStr ? <Text dimColor>{rationaleStr}</Text> : null}
+      {scoreboardLines ? <Text dimColor>{scoreboardLines}</Text> : null}
     </Box>
   );
 });
 export { CesarStatusStrip };
 
-// @kern-source: status:18
+// @kern-source: status:22
 export const AGON_TIPS: string[] = [
   'Run /forge <task> test with <cmd> to make engines compete on code',
   'Run /brainstorm to get confidence bids from all engines',

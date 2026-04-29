@@ -47,12 +47,12 @@ describe('resolveKeyboardInput', () => {
     }))).toEqual({ type: 'toggleToolExpand' });
   });
 
-  it('ignores ctrl+y so native terminal copy/yank behavior is not advertised as app chrome', () => {
+  it('routes ctrl+y to failed-tool retry when no text input owns it', () => {
     expect(resolveKeyboardInput(baseCtx({
       input: '\x19',
       key: { ctrl: true },
       textInputActive: false,
-    }))).toEqual({ type: 'none' });
+    }))).toEqual({ type: 'retryFailedTool' });
   });
 
   it('ignores unmapped ctrl shortcuts', () => {
@@ -133,6 +133,14 @@ describe('resolveKeyboardInput', () => {
 
   it('routes ctrl+a on an idle empty composer to queued auto mode', () => {
     expect(resolveKeyboardInput(baseCtx({
+      input: 'a',
+      key: { ctrl: true },
+    }))).toEqual({ type: 'toggleAutoQueued' });
+  });
+
+  it('routes ctrl+a on an active empty composer to queued auto mode', () => {
+    expect(resolveKeyboardInput(baseCtx({
+      replState: 'streaming',
       input: 'a',
       key: { ctrl: true },
     }))).toEqual({ type: 'toggleAutoQueued' });

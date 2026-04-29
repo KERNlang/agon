@@ -25,7 +25,7 @@ import from="../signals/dispatch.js" names="dispatchIntent,handleModeSwitch"
 import from="../signals/dispatch.js" names="DispatchCallbacks" types=true
 import from="../signals/output.js" names="handleOutputEvent,clearPermissionQueue,clearThinkingBuffer"
 import from="../signals/output.js" names="OutputActions,OutputState,AgentProgressSnapshot,StreamingEntry" types=true
-import from="../signals/app-input.js" names="cleanInputValue,cleanSubmitValue,findInputChange,navigateHistory,resolveEscapeAction,shouldQueuePlanModeOnTab"
+import from="../signals/app-input.js" names="appendInputHistory,cleanInputValue,cleanSubmitValue,findInputChange,navigateHistory,parseAutoModeCommand,resolveEscapeAction,shouldQueuePlanModeOnTab"
 import from="../signals/keyboard.js" names="resolveKeyboardInput"
 import from="../signals/block-archive.js" names="makeBlockArchivePath,appendBlockWithCap"
 import from="../blocks/review.js" names="handleReviewAction"
@@ -45,7 +45,7 @@ import from="../../generated/blocks/engine.js" names="OutputBlock" types=true
 import from="../../generated/blocks/controls.js" names="ReviewEvent" types=true
 import from="node:path" names="join,dirname"
 import from="node:url" names="fileURLToPath"
-import from="node:fs" names="readdirSync,writeFileSync,mkdirSync,unlinkSync"
+import from="node:fs" names="readdirSync,readFileSync,writeFileSync,mkdirSync,unlinkSync"
 import from="node:os" names="tmpdir"
 import from="node:child_process" names="spawnSync"
 import from="../models/session-results.js" names="sessionResultStore"
@@ -267,6 +267,67 @@ fn name=findLatestToolDetailEvent params="blocks:OutputBlock[]" returns=any
       return event;
     }
     return null;
+  >>>
+
+const name=COMPOSER_HISTORY_LIMIT type=number
+  handler <<< 200 >>>
+
+fn name=composerHistoryPath params="" returns=string
+  handler <<< return join(getAgonHome(), 'composer-history.json'); >>>
+
+fn name=loadComposerInputHistory params="" returns="string[]"
+  handler <<<
+    try {
+      const parsed = JSON.parse(readFileSync(composerHistoryPath(), 'utf-8'));
+      if (!Array.isArray(parsed)) return [];
+      return parsed
+        .filter((entry: any) => typeof entry === 'string' && entry.trim().length > 0)
+        .slice(-COMPOSER_HISTORY_LIMIT);
+    } catch {
+      return [];
+    }
+  >>>
+
+fn name=saveComposerInputHistory params="history:string[]" returns=void
+  handler <<<
+    try {
+      ensureAgonHome();
+      const entries = Array.isArray(history) ? history.slice(-COMPOSER_HISTORY_LIMIT) : [];
+      writeFileSync(composerHistoryPath(), JSON.stringify(entries, null, 2) + '\n', 'utf-8');
+    } catch {
+      // History is convenience state; never block the REPL on disk errors.
+    }
+  >>>
+
+fn name=findLatestFailedToolEvent params="blocks:OutputBlock[]" returns=any
+  handler <<<
+    for (let index = blocks.length - 1; index >= 0; index -= 1) {
+      const event = blocks[index]?.event as any;
+      if (event?.type === 'tool-call-group' && Array.isArray(event.blocks)) {
+        for (let g = event.blocks.length - 1; g >= 0; g -= 1) {
+          const inner = event.blocks[g]?.event;
+          if (inner?.type === 'tool-call' && inner.status === 'error') return inner;
+        }
+        continue;
+      }
+      if (event?.type === 'tool-call' && event.status === 'error') return event;
+    }
+    return null;
+  >>>
+
+fn name=buildFailedToolRetryDraft params="event:any" returns=string
+  handler <<<
+    if (!event) return '';
+    const { rawInput, parsed, toolKey } = parseToolCallPayload(event);
+    if (toolKey === 'bash' || toolKey === 'run' || toolKey === 'agonbash') {
+      const command = String((parsed.command as string) || rawInput || '').trim();
+      if (command) return `/run ${command}`;
+    }
+    const toolName = String(event.tool ?? 'tool');
+    const payload = rawInput || (event.input ? String(event.input) : '');
+    const error = String(event.output ?? '').trim();
+    const suffix = error ? `\n\nPrevious error:\n${error}` : '';
+    return `retry the failed ${toolName} call with corrected input:\n${payload}${suffix}`;
   >>>
 
 fn name=buildToolDetailView params="event:any" returns=any
@@ -1342,6 +1403,9 @@ fn name=buildToolCallRows params="baseKey:string, event:any, toolOutputExpanded:
     const collapsed = !toolOutputExpanded;
     const collapsedHint: any[] = [];
     const changeOpenHint: any[] = [];
+    if (event.status === 'error') {
+      collapsedHint.push({ text: ' · Ctrl+Y retry', color: '#fbbf24' });
+    }
     const nestSegment = { text: ' ⏿ ', color: eColor };
     const pushSegmentsRow = (suffix: string, segments: any[], paddingLeft = 2) => {
       rows.push({ key: `${baseKey}-${suffix}`, kind: 'segments', paddingLeft, segments });
@@ -1386,6 +1450,11 @@ fn name=buildToolCallRows params="baseKey:string, event:any, toolOutputExpanded:
       return rows;
     }
 
+    const pushRetryHintIfNeeded = (suffix: string) => {
+      if (event.status !== 'error') return;
+      pushOpenHintRow(suffix, '    Ctrl+Y drafts this failed tool into the composer so you can edit and retry.');
+    };
+
     if (toolKey === 'bash' || toolKey === 'run' || toolKey === 'agonbash') {
       const cmd = String((parsed.command as string) || rawInput || '');
       const desc = parsed.description as string | undefined;
@@ -1409,6 +1478,7 @@ fn name=buildToolCallRows params="baseKey:string, event:any, toolOutputExpanded:
         { text: `${icon} Bash`, color: toolColor, bold: true },
         desc ? { text: ` · ${desc}`, dimColor: true } : null,
       ].filter(Boolean));
+      pushRetryHintIfNeeded('bash-retry');
 
       const cmdLines = cmd ? cmd.split('\n') : [];
       const shownCmdLines = toolOutputExpanded ? cmdLines : cmdLines.slice(0, 3);
@@ -2242,7 +2312,7 @@ screen name=App target=ink
   state name=replState type="ReplStateState" initial="'idle'"
   state name=outputBlocks type="OutputBlock[]" initial="() => { const cfg = loadConfig(); const saved = cfg.forgeEnabledEngines; return [buildDashboardBlock(saved && saved.length > 0 ? saved : null)]; }"
   state name=inputValue type=string initial="''" safe=false
-  state name=inputHistory type="string[]" initial="[]"
+  state name=inputHistory type="string[]" initial="loadComposerInputHistory()"
   state name=inputQueue type="string[]" initial="[]"
   state name=historyIndex type=number initial=-1 safe=false
   state name=mode type="'chat'|'campfire'|'brainstorm'|'tribunal'" initial="'chat'"
@@ -3000,7 +3070,32 @@ screen name=App target=ink
       pasteHashesRef.current.clear();
       pasteCountRef.current = 0;
       inputValueRef.current = '';
-      setInputValue(''); setInputHistory((prev: string[]) => [...prev, input]); setHistoryIndex(-1);
+      setInputValue('');
+      setInputHistory((prev: string[]) => {
+        const next = appendInputHistory(prev, input, COMPOSER_HISTORY_LIMIT);
+        saveComposerInputHistory(next);
+        return next;
+      });
+      setHistoryIndex(-1);
+
+      const autoControl = parseAutoModeCommand(input);
+      if (autoControl) {
+        if (autoControl === 'status') {
+          dispatch({ type: 'info', message: autoModeQueued ? 'AUTO is ON — the next plain task may self-escalate through Cesar.' : 'AUTO is OFF.' } as any);
+          return;
+        }
+        const nextAutoModeQueued = autoControl === 'toggle' ? !autoModeQueued : autoControl === 'on';
+        setPlanModeQueued(false);
+        setAutoModeQueued(nextAutoModeQueued);
+        dispatch({
+          type: 'info',
+          message: nextAutoModeQueued
+            ? 'AUTO ON — type a task and press Enter. Use /auto off or Esc to cancel.'
+            : 'AUTO OFF.',
+        } as any);
+        return;
+      }
+
       // /btw <question> — side-channel question during active dispatch
       const btwLower = input.trim().toLowerCase();
       if (btwLower === '/btw') {
@@ -3225,6 +3320,24 @@ screen name=App target=ink
       setToolDetailEvent(event);
     >>>
 
+  callback name=draftLatestFailedToolRetry params="" deps="outputBlocks,dispatch"
+    handler <<<
+      const event = findLatestFailedToolEvent(outputBlocks);
+      if (!event) {
+        dispatch({ type: 'info', message: 'No failed tool call to retry/edit yet.' } as any);
+        return;
+      }
+      const draft = buildFailedToolRetryDraft(event);
+      if (!draft) {
+        dispatch({ type: 'info', message: 'No retry draft available for the latest failed tool.' } as any);
+        return;
+      }
+      inputValueRef.current = draft;
+      setInputValue(draft);
+      setHistoryIndex(-1);
+      dispatch({ type: 'info', message: 'Drafted failed-tool retry in the composer. Edit it, then press Enter.' } as any);
+    >>>
+
   callback name=toggleSelectionMode params="" deps="selectionMode,dispatch,terminalMode"
     handler <<<
       if (terminalMode !== 'fullscreen') {
@@ -3284,7 +3397,7 @@ screen name=App target=ink
       dispatch({ type: 'info', message: 'Press Ctrl+C again to exit.' } as any);
     >>>
 
-  callback name=handleComposerCtrlShortcut params="shortcut:string" deps="handleCancelOrExit,handleSubmit,openLatestToolDetail,openResultsPager"
+  callback name=handleComposerCtrlShortcut params="shortcut:string" deps="handleCancelOrExit,handleSubmit,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry"
     handler <<<
       nestedCtrlShortcutRef.current = { key: shortcut, at: Date.now() };
       switch (shortcut) {
@@ -3307,6 +3420,10 @@ screen name=App target=ink
         case 'r':
           ctrlKeyHandledRef.current = true;
           openResultsPager();
+          return;
+        case 'y':
+          ctrlKeyHandledRef.current = true;
+          draftLatestFailedToolRetry();
           return;
         case 'j':
           ctrlKeyHandledRef.current = true;
@@ -3346,7 +3463,7 @@ screen name=App target=ink
     >>>
 
   // ── Keyboard handling — pure decision tree + thin dispatcher ──
-  callback name=handleKeyboardInput params="input:string,key:any" deps="modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,autoModeQueued,activePlan,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,toggleSelectionMode,startupOnly,terminalMode"
+  callback name=handleKeyboardInput params="input:string,key:any" deps="modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,autoModeQueued,activePlan,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry,toggleSelectionMode,startupOnly,terminalMode"
     handler <<<
       if (isTerminalFocusReport(input)) return;
 
@@ -3444,6 +3561,8 @@ screen name=App target=ink
           toggleSelectionMode(); return;
         case 'openToolDetail':
           openLatestToolDetail(); return;
+        case 'retryFailedTool':
+          draftLatestFailedToolRetry(); return;
         case 'openResults':
           openResultsPager(); return;
         case 'toggleFileRail':
@@ -3704,7 +3823,7 @@ screen name=App target=ink
               const _cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
               return (<>
                 <CesarStatusStrip cesarId={_cesarId} confidence={cesarConfidence} spinner={liveSpinner} engines={liveProgress} startTime={chatStartTimeRef.current || 0} streamSnippet={streamSnippet} isActive={replState !== 'idle' || runningJobs.length > 0} planModeQueued={planModeQueued} autoModeQueued={autoModeQueued} activePlanState={activePlan?.state ?? null} />
-                {mode === 'chat' && <StatusBar cesarId={statusStats.cesarId} chatMessageCount={statusStats.chatMessageCount} totalTokens={statusStats.totalTokens} totalCostUsd={statusStats.totalCostUsd} cwd={statusCwd} branch={statusBranch} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} isActive={replState !== 'idle'} fullscreenEnabled={terminalMode === 'fullscreen'} selectionMode={terminalMode === 'fullscreen' ? selectionMode : undefined} />}
+                {mode === 'chat' && <StatusBar cesarId={statusStats.cesarId} chatMessageCount={statusStats.chatMessageCount} totalTokens={statusStats.totalTokens} totalCostUsd={statusStats.totalCostUsd} cwd={statusCwd} branch={statusBranch} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} autoModeQueued={autoModeQueued} isActive={replState !== 'idle'} fullscreenEnabled={terminalMode === 'fullscreen'} selectionMode={terminalMode === 'fullscreen' ? selectionMode : undefined} />}
               </>);
             })()}
           </Box>

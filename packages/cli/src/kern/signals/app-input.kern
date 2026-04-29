@@ -55,6 +55,25 @@ fn name=navigateHistory params="direction:'up'|'down', currentIndex:number, hist
     return { index: currentIndex, value: '' };
   >>>
 
+fn name=appendInputHistory params="history:string[], input:string, maxEntries?:number" returns="string[]"
+  doc "Append a submitted composer command with duplicate pruning and a bounded history length."
+  handler <<<
+    const max = Math.max(1, Math.floor(maxEntries ?? 200));
+    const entry = String(input ?? '').trim();
+    if (!entry) return history.slice(-max);
+    const deduped = history.filter((item: string) => item !== entry);
+    return [...deduped, entry].slice(-max);
+  >>>
+
+fn name=parseAutoModeCommand params="input:string" returns="'on'|'off'|'toggle'|'status'|null"
+  doc "Parse first-class /auto controls. /auto <task> intentionally returns null so normal autonomous task routing still works."
+  handler <<<
+    const trimmed = String(input ?? '').trim().toLowerCase();
+    const match = trimmed.match(/^\/(?:auto|autonomous)(?:\s+(on|off|toggle|status))?$/);
+    if (!match) return null;
+    return (match[1] as 'on'|'off'|'toggle'|'status'|undefined) ?? 'toggle';
+  >>>
+
 interface name=EscapeDecision
   field name=action type="'close-slash'|'close-engine-picker'|'cancel-question'|'interrupt'|'clear-input'|'noop'"
 

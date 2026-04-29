@@ -37,7 +37,7 @@ fn name=registerBuiltinCommands params="registry:CommandRegistry" returns=void
 
       // Planning
       { name: 'plan',      desc: '<task> or no args    — plan mode or show plan', category: 'planning' },
-      { name: 'auto',      desc: '<task>                   — run one task with autonomous mode enabled', category: 'planning', aliases: ['autonomous'] },
+      { name: 'auto',      desc: '[on|off|toggle|status] or <task> — autonomous mode control', category: 'planning', aliases: ['autonomous'] },
       { name: 'plans',     desc: '                        — list recent plans', category: 'planning' },
       { name: 'approve',   desc: '                        — approve current plan', category: 'planning' },
       { name: 'retry',     desc: '                        — retry failed plan step', category: 'planning' },

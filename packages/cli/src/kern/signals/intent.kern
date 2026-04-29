@@ -129,6 +129,25 @@ const name=CODE_ARTIFACT_PATTERN type=RegExp
 const name=AGENT_TRIGGER_PATTERN type=RegExp
   handler <<< /^(?:agent(?:\s+mode)?|autonomous(?:\s+agent)?|run\s+agent)\s+([\s\S]+)$/i >>>
 
+const name=KNOWN_COLLAB_ENGINE_IDS type="Set<string>"
+  handler <<<
+    new Set([
+      'claude',
+      'codex',
+      'gemini',
+      'qwen',
+      'kimi',
+      'opencode',
+      'open-code',
+      'minimax',
+      'zai',
+      'aider',
+      'cursor',
+      'gpt',
+      'openai',
+    ])
+  >>>
+
 fn name=classifyTask params="input:string" returns="'code'|'question'|'ambiguous'"
   handler <<<
     if (QUESTION_PATTERN.test(input)) return 'question';
@@ -162,6 +181,120 @@ fn name=parseAgentShortcut params="input:string" returns="Intent|null" export=fa
     return { type: 'agent', input: task } as Intent;
   >>>
 
+fn name=normalizeEngineToken params="part:string" returns="string|null" export=false
+  handler <<<
+    const cleaned = part
+      .trim()
+      .toLowerCase()
+      .replace(/^@+/, '')
+      .replace(/^[^\w-]+|[^\w-]+$/g, '');
+    if (!cleaned) return null;
+    if (KNOWN_COLLAB_ENGINE_IDS.has(cleaned)) return cleaned;
+    // Let model IDs like kimi-for-coding-k2p6 or zai-coding-plan-glm-5.1
+    // through when they are explicitly introduced by "with"/"ask".
+    if (/^(?:claude|codex|gemini|qwen|kimi|opencode|open-code|minimax|zai|aider|cursor|gpt|openai)[\w.-]*$/i.test(cleaned)) {
+      return cleaned;
+    }
+    return null;
+  >>>
+
+fn name=parseExplicitEngineIds params="input:string" returns="string[]" export=false
+  handler <<<
+    const engineIds: string[] = [];
+    const add = (value: string | null) => {
+      if (value && !engineIds.includes(value)) engineIds.push(value);
+    };
+
+    const collect = (segment: string) => {
+      segment
+        .split(/(?:,|\s+and\s+|\s+or\s+|\s+plus\s+|\s+with\s+|\s+)/i)
+        .map((part) => normalizeEngineToken(part))
+        .forEach(add);
+    };
+
+    const withMatch = input.match(/\bwith\s+([a-z0-9@_.-]+(?:\s*(?:,|and|or|plus)\s*[a-z0-9@_.-]+)*)/i);
+    if (withMatch) collect(withMatch[1]);
+
+    const askMatch = input.match(/\b(?:ask|have|get)\s+([a-z0-9@_.-]+(?:\s*(?:,|and|or|plus)\s*[a-z0-9@_.-]+)*)\s+(?:to\s+)?(?:review|check|audit|look|inspect|compare|weigh|think|debate)\b/i);
+    if (askMatch) collect(askMatch[1]);
+
+    return engineIds;
+  >>>
+
+fn name=parseSemanticReviewShortcut params="input:string" returns="Intent|null" export=false
+  handler <<<
+    const lower = input.toLowerCase();
+    const reviewVerb = /\b(?:review|check|audit|inspect|look\s+over)\b/i.test(input);
+    if (!reviewVerb) return null;
+
+    const hasDelegationShape =
+      /\bwith\s+[a-z0-9@_.-]+/i.test(input) ||
+      /\b(?:ask|have|get)\s+[a-z0-9@_.-]+(?:\s*(?:,|and|or|plus)\s*[a-z0-9@_.-]+)*\s+(?:to\s+)?(?:review|check|audit|look|inspect)\b/i.test(input);
+    if (!hasDelegationShape) return null;
+
+    const engineIds = parseExplicitEngineIds(input);
+    if (engineIds.length === 0) return null;
+
+    const targetMatch = lower.match(/\b(uncommitted|branch:[\w./-]+|commit:[a-f0-9]{4,40})\b/i);
+    const target = targetMatch ? targetMatch[1] : undefined;
+    return { type: 'review', engineId: engineIds[0], engineIds, target } as Intent;
+  >>>
+
+fn name=stripCollaborationLeadIn params="input:string" returns=string export=false
+  handler <<<
+    return input
+      .replace(/^(?:can\s+you\s+|could\s+you\s+|please\s+)?(?:ask|have|get)\s+(?:the\s+)?(?:others|team|engines|models|everyone|all\s+engines)\s+(?:to\s+)?/i, '')
+      .replace(/^(?:can\s+you\s+|could\s+you\s+|please\s+)?(?:what\s+do\s+)?(?:the\s+)?(?:others|team|engines|models|everyone|all\s+engines)\s+(?:think\s+about\s+|say\s+about\s+)?/i, '')
+      .replace(/^(?:can\s+you\s+|could\s+you\s+|please\s+)?(?:talk|think)\s+(?:it|this)?\s*(?:through\s+)?with\s+(?:the\s+)?(?:others|team|engines|models|everyone|all\s+engines)\s*/i, '')
+      .trim();
+  >>>
+
+fn name=parseSemanticCollaborationShortcut params="input:string" returns="Intent|null" export=false
+  handler <<<
+    const question = stripCollaborationLeadIn(input);
+
+    if (/\b(?:debate|argue|tribunal|red-team|red\s+team)\b/i.test(input)) {
+      const cleaned = input
+        .replace(/^(?:can\s+you\s+|could\s+you\s+|please\s+)?(?:have|get|ask)?\s*(?:the\s+)?(?:others|team|engines|models|everyone|all\s+engines)?\s*(?:to\s+)?(?:debate|argue|tribunal|red-team|red\s+team)\s*/i, '')
+        .trim();
+      return { type: 'tribunal', question: cleaned || input } as Intent;
+    }
+
+    if (/\b(?:campfire|talk\s+(?:it|this)?\s*through|think\s+(?:it|this)?\s*through)\b/i.test(input) && /\b(?:others|team|engines|models|everyone|all\s+engines)\b/i.test(input)) {
+      return { type: 'campfire', topic: question || input } as Intent;
+    }
+
+    if (/\b(?:ask|others|team|engines|models|everyone|all\s+engines|what\s+do\s+others\s+think)\b/i.test(input) &&
+        /\b(?:others|team|engines|models|everyone|all\s+engines)\b/i.test(input)) {
+      return { type: 'brainstorm', question: question || input } as Intent;
+    }
+
+    return null;
+  >>>
+
+fn name=parseSemanticForgeShortcut params="input:string" returns="Intent|null" export=false
+  handler <<<
+    const hasForgeShape = /\b(?:forge\s+this|forge\s+it|have\s+(?:the\s+)?(?:engines|models|team|others)\s+compete|make\s+(?:the\s+)?(?:engines|models|team|others)\s+compete|competitive\s+(?:build|implementation|fix))\b/i.test(input);
+    if (!hasForgeShape) return null;
+
+    const task = input
+      .replace(/^(?:can\s+you\s+|could\s+you\s+|please\s+)?/i, '')
+      .replace(/^forge\s+(?:this|it)\s*/i, '')
+      .replace(/^have\s+(?:the\s+)?(?:engines|models|team|others)\s+compete\s+(?:on\s+|to\s+)?/i, '')
+      .replace(/^make\s+(?:the\s+)?(?:engines|models|team|others)\s+compete\s+(?:on\s+|to\s+)?/i, '')
+      .trim();
+
+    const parsed = parseForgeInput(task || input);
+    return { ...parsed, type: 'forge' } as Intent;
+  >>>
+
+fn name=parseSemanticDelegationShortcut params="input:string" returns="Intent|null" export=false
+  handler <<<
+    return parseSemanticReviewShortcut(input)
+      ?? parseSemanticForgeShortcut(input)
+      ?? parseSemanticCollaborationShortcut(input);
+  >>>
+
 fn name=splitReviewArgs params="input:string" returns="string[]" export=false
   handler <<<
     return input
@@ -177,6 +310,12 @@ fn name=isReviewTargetArg params="part:string" returns=boolean export=false
     return lower === 'uncommitted' || lower.startsWith('branch:') || lower.startsWith('commit:');
   >>>
 
+fn name=isImplicitReviewSubjectArg params="part:string" returns=boolean export=false
+  handler <<<
+    const lower = part.toLowerCase();
+    return lower === 'it' || lower === 'this' || lower === 'that' || lower === 'them' || lower === 'changes' || lower === 'diff';
+  >>>
+
 fn name=parseReviewInput params="input:string" returns=Intent export=false
   handler <<<
     const reviewParts = splitReviewArgs(input);
@@ -187,6 +326,12 @@ fn name=parseReviewInput params="input:string" returns=Intent export=false
     for (let i = 0; i < reviewParts.length; i += 1) {
       const part = reviewParts[i];
       const lower = part.toLowerCase();
+      if (lower === 'and' || lower === 'or' || lower === 'plus') {
+        continue;
+      }
+      if (isImplicitReviewSubjectArg(part)) {
+        continue;
+      }
       if (lower === 'with') {
         collectingEngines = true;
         continue;
@@ -218,7 +363,11 @@ fn name=parseReviewShortcut params="input:string" returns="Intent|null" export=f
     const target = String(parsed.target ?? '').toLowerCase();
     const hasEngines = Array.isArray(parsed.engineIds) && parsed.engineIds.length > 0;
     const validTarget = !target || isReviewTargetArg(target);
-    if (hasEngines || validTarget) return parsed;
+    if (hasEngines && target && isImplicitReviewSubjectArg(target)) {
+      return { ...parsed, target: undefined } as Intent;
+    }
+    if (hasEngines && validTarget) return parsed;
+    if (!hasEngines && validTarget) return parsed;
 
     // Let natural-language review requests go through Cesar instead of
     // mis-parsing "review this code" as an invalid target named "this".
@@ -525,6 +674,9 @@ fn name=detectIntent params="raw:string, commandRegistry?:any" returns=Intent
 
     const reviewShortcut = parseReviewShortcut(input);
     if (reviewShortcut) return reviewShortcut;
+
+    const delegationShortcut = parseSemanticDelegationShortcut(input);
+    if (delegationShortcut) return delegationShortcut;
 
     // Only match keyword shortcuts for short, command-like inputs.
     // Skip if input looks like a natural language sentence (question words, pronouns, >4 words).

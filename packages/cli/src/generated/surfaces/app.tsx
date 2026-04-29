@@ -1148,8 +1148,16 @@ export function App() {
         setAutoModeQueued(false);
         setPlanModeQueued((prev: boolean) => !prev); return;
       case 'toggleAutoQueued':
+        const nextAutoModeQueued = !autoModeQueued;
         setPlanModeQueued(false);
-        setAutoModeQueued((prev: boolean) => !prev); return;
+        setAutoModeQueued(nextAutoModeQueued);
+        dispatch({
+          type: 'info',
+          message: nextAutoModeQueued
+            ? 'AUTO queued — type your task and press Enter. Esc cancels.'
+            : 'AUTO canceled.',
+        } as any);
+        return;
       case 'submit':
         handleSubmit(action.value); return;
       case 'toggleToolExpand':
@@ -3847,7 +3855,7 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
   return rows;
 }
 
-// @kern-source: app:3740
+// @kern-source: app:3748
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

@@ -15,7 +15,7 @@ import { getGhostCompletion } from '../../ghost-text.js';
 import { truncateCodeLine } from './markdown.js';
 
 // @kern-source: composer:20
-const ComposerView = React.memo(function ComposerView({ mode, replState, planModeQueued, activePlanState, slashPickerOpen, inputValue, handleInputChange, handleSubmit, allSlashCommands, availableEngines, onSlashSelect, onSlashCancel, questionState, questionAnswer, onQuestionAnswerChange, onQuestionAnswerSubmit, onCtrlShortcut, termWidth, termHeight }: { mode:'chat'|'campfire'|'brainstorm'|'tribunal'; replState:string; planModeQueued:boolean; activePlanState:string|null; slashPickerOpen:boolean; inputValue:string; handleInputChange:(value:string) => void; handleSubmit:(value:string) => void; allSlashCommands:any[]; availableEngines:string[]; onSlashSelect:(cmd:string) => void; onSlashCancel:() => void; questionState:any; questionAnswer:string; onQuestionAnswerChange:(value:string) => void; onQuestionAnswerSubmit:(value:string) => void; onCtrlShortcut:(shortcut:string) => void; termWidth:number; termHeight:number }) {
+const ComposerView = React.memo(function ComposerView({ mode, replState, planModeQueued, autoModeQueued, activePlanState, slashPickerOpen, inputValue, handleInputChange, handleSubmit, allSlashCommands, availableEngines, onSlashSelect, onSlashCancel, questionState, questionAnswer, onQuestionAnswerChange, onQuestionAnswerSubmit, onCtrlShortcut, termWidth, termHeight }: { mode:'chat'|'campfire'|'brainstorm'|'tribunal'; replState:string; planModeQueued:boolean; autoModeQueued:boolean; activePlanState:string|null; slashPickerOpen:boolean; inputValue:string; handleInputChange:(value:string) => void; handleSubmit:(value:string) => void; allSlashCommands:any[]; availableEngines:string[]; onSlashSelect:(cmd:string) => void; onSlashCancel:() => void; questionState:any; questionAnswer:string; onQuestionAnswerChange:(value:string) => void; onQuestionAnswerSubmit:(value:string) => void; onCtrlShortcut:(shortcut:string) => void; termWidth:number; termHeight:number }) {
   const placeholder = replState === 'idle'
     ? (mode === 'chat'
         ? ''
@@ -73,7 +73,7 @@ const ComposerView = React.memo(function ComposerView({ mode, replState, planMod
       {!questionState && (
         <Box borderStyle={mode === 'chat' ? 'round' : 'single'} borderColor={mode === 'chat' ? '#585858' : 'gray'} borderLeft={mode !== 'chat'} borderRight={mode !== 'chat'} borderTop borderBottom paddingX={1} width="100%">
           {mode !== 'chat' && (<Text><Text color={mode === 'campfire' ? '#f97316' : mode === 'brainstorm' ? '#22d3ee' : '#a78bfa'} bold>{mode === 'campfire' ? icons().campfire : mode === 'brainstorm' ? icons().brainstorm : icons().tribunal}{' '}{mode}</Text><Text dimColor>{' \u2502 '}</Text></Text>)}
-          <Text color={mode === 'chat' ? (planModeQueued || activePlanState === 'planning' ? '#c084fc' : '#585858') : '#fbbf24'}>{mode === 'chat' ? (planModeQueued ? '\u25c8 ' : '> ') : icons().prompt + ' '}</Text>
+          <Text color={mode === 'chat' ? (planModeQueued || autoModeQueued || activePlanState === 'planning' ? '#c084fc' : '#585858') : '#fbbf24'}>{mode === 'chat' ? (planModeQueued ? '\u25c8 ' : autoModeQueued ? '\u25b6 ' : '> ') : icons().prompt + ' '}</Text>
           <Box flexGrow={1}>
             {slashPickerOpen ? (
               <Text dimColor>{inputValue || '/'}</Text>

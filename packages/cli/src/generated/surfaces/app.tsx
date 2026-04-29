@@ -240,6 +240,7 @@ export function App() {
   const [agentProgress, _setAgentProgressRaw] = useState<Record<string,AgentProgressSnapshot>>({});
   const setAgentProgress = useMemo(() => __inkSafe(_setAgentProgressRaw), [_setAgentProgressRaw]);
   const [planModeQueued, setPlanModeQueued] = useState<boolean>(false);
+  const [autoModeQueued, setAutoModeQueued] = useState<boolean>(false);
   const [cesarMemory, _setCesarMemoryRaw] = useState<any>(() => createCesarMemory());
   const setCesarMemory = useMemo(() => __inkSafe(_setCesarMemoryRaw), [_setCesarMemoryRaw]);
   const [sessionMcpServers, _setSessionMcpServersRaw] = useState<Array<Record<string,unknown>>>([]);
@@ -749,7 +750,7 @@ export function App() {
     const replacement = result.type === 'stored' ? result.placeholder : result.content;
     const updatedValue = nextValue.slice(0, change.start) + replacement + nextValue.slice(change.start + change.inserted.length);
     setInputValue(updatedValue);
-  }, [slashPickerOpen,enginePickerOpen,modelPickerOpen,questionState,planModeQueued]);
+  }, [slashPickerOpen,enginePickerOpen,modelPickerOpen,questionState,planModeQueued,autoModeQueued]);
 
   const handleSubmit = useCallback(async (value:string) => {
     inputEpochRef.current += 1;
@@ -845,6 +846,12 @@ export function App() {
       return;
     }
     if (planModeQueued) setPlanModeQueued(false);
+    if (autoModeQueued && input.trim() && !input.startsWith('/')) {
+      setAutoModeQueued(false);
+      handleSubmit(`/autonomous ${input}`);
+      return;
+    }
+    if (autoModeQueued) setAutoModeQueued(false);
     transition(startCommandReplState);
     dispatch({ type: 'separator' } as any);
     dispatch({ type: 'user-message', content: input } as any);
@@ -1117,7 +1124,7 @@ export function App() {
       reviewEventOpen: !!reviewEvent,
       toolDetailOpen: !!toolDetailEvent,
       questionState, replState, inputValue, inputHistory, historyIndex,
-      planModeQueued, activePlanState: activePlan?.state ?? null,
+      planModeQueued, autoModeQueued, activePlanState: activePlan?.state ?? null,
       outputBlockCount: outputBlocks.length,
       commands: allSlashCommands,
       engineIds: availableEngines,
@@ -1140,6 +1147,8 @@ export function App() {
         return;
       case 'togglePlanQueued':
         setPlanModeQueued((prev: boolean) => !prev); return;
+      case 'toggleAutoQueued':
+        setAutoModeQueued((prev: boolean) => !prev); return;
       case 'submit':
         handleSubmit(action.value); return;
       case 'toggleToolExpand':
@@ -1180,6 +1189,8 @@ export function App() {
         return;
       case 'unqueuePlan':
         setPlanModeQueued(false); return;
+      case 'unqueueAuto':
+        setAutoModeQueued(false); return;
       case 'closeSlash':
         setSlashPickerOpen(false); return;
       case 'closeEnginePicker':
@@ -1571,6 +1582,7 @@ export function App() {
       mode={mode}
       replState={replState}
       planModeQueued={planModeQueued}
+      autoModeQueued={autoModeQueued}
       activePlanState={activePlan?.state ?? null}
           slashPickerOpen={slashPickerOpen}
           inputValue={inputValue}
@@ -1590,7 +1602,7 @@ export function App() {
         {(() => {
           const _cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
           return (<>
-            <CesarStatusStrip cesarId={_cesarId} confidence={cesarConfidence} spinner={liveSpinner} engines={liveProgress} startTime={chatStartTimeRef.current || 0} streamSnippet={streamSnippet} isActive={replState !== 'idle' || runningJobs.length > 0} planModeQueued={planModeQueued} activePlanState={activePlan?.state ?? null} />
+            <CesarStatusStrip cesarId={_cesarId} confidence={cesarConfidence} spinner={liveSpinner} engines={liveProgress} startTime={chatStartTimeRef.current || 0} streamSnippet={streamSnippet} isActive={replState !== 'idle' || runningJobs.length > 0} planModeQueued={planModeQueued} autoModeQueued={autoModeQueued} activePlanState={activePlan?.state ?? null} />
             {mode === 'chat' && <StatusBar cesarId={statusStats.cesarId} chatMessageCount={statusStats.chatMessageCount} totalTokens={statusStats.totalTokens} totalCostUsd={statusStats.totalCostUsd} cwd={statusCwd} branch={statusBranch} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} isActive={replState !== 'idle'} fullscreenEnabled={terminalMode === 'fullscreen'} selectionMode={terminalMode === 'fullscreen' ? selectionMode : undefined} />}
           </>);
         })()}
@@ -3775,7 +3787,7 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
   return rows;
 }
 
-// @kern-source: app:3668
+// @kern-source: app:3680
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

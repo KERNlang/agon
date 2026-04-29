@@ -140,9 +140,10 @@ export interface CesarState {
   lastEscalation: string | null;
   turnId?: string | undefined;
   sessionMcpServers: Array<{name:string, type?:string, url?:string, command?:string, args?:string[]}>;
+  autoModeQueued?: boolean;
 }
 
-// @kern-source: handler-types:257
+// @kern-source: handler-types:258
 export interface HandlerContext {
   registry: EngineRegistry;
   adapter: EngineAdapter;
@@ -169,4 +170,5 @@ export interface HandlerContext {
   lastReviewResult?: { engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number } | undefined;
   sessionMcpServers?: Array<Record<string,unknown>>;
   setSessionMcpServers?: ((servers: Array<Record<string,unknown>>) => void) | undefined;
+  autoModeQueued?: boolean;
 }

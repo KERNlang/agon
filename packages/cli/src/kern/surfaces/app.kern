@@ -2224,6 +2224,7 @@ screen name=App target=ink
   state name=cesarConfidence type="number|null" initial="null" throttle=200
   state name=agentProgress type="Record<string,AgentProgressSnapshot>" initial="{}"
   state name=planModeQueued type=boolean initial=false safe=false
+  state name=autoModeQueued type=boolean initial=false safe=false
   state name=cesarMemory type=any initial="() => createCesarMemory()"
   state name=sessionMcpServers type="Array<Record<string,unknown>>" initial="[]"
 
@@ -2861,7 +2862,7 @@ screen name=App target=ink
     >>>
 
   // ── Input handlers ──
-  callback name=handleInputChange params="value:string" deps="slashPickerOpen,enginePickerOpen,modelPickerOpen,questionState,planModeQueued"
+  callback name=handleInputChange params="value:string" deps="slashPickerOpen,enginePickerOpen,modelPickerOpen,questionState,planModeQueued,autoModeQueued"
     handler <<<
       // Swallow input while a choice question is active — the keyboard handler
       // resolves the choice on a single keypress.
@@ -3016,6 +3017,12 @@ screen name=App target=ink
         return;
       }
       if (planModeQueued) setPlanModeQueued(false);
+      if (autoModeQueued && input.trim() && !input.startsWith('/')) {
+        setAutoModeQueued(false);
+        handleSubmit(`/autonomous ${input}`);
+        return;
+      }
+      if (autoModeQueued) setAutoModeQueued(false);
       transition(startCommandReplState);
       dispatch({ type: 'separator' } as any);
       dispatch({ type: 'user-message', content: input } as any);
@@ -3330,7 +3337,7 @@ screen name=App target=ink
         reviewEventOpen: !!reviewEvent,
         toolDetailOpen: !!toolDetailEvent,
         questionState, replState, inputValue, inputHistory, historyIndex,
-        planModeQueued, activePlanState: activePlan?.state ?? null,
+        planModeQueued, autoModeQueued, activePlanState: activePlan?.state ?? null,
         outputBlockCount: outputBlocks.length,
         commands: allSlashCommands,
         engineIds: availableEngines,
@@ -3353,6 +3360,8 @@ screen name=App target=ink
           return;
         case 'togglePlanQueued':
           setPlanModeQueued((prev: boolean) => !prev); return;
+        case 'toggleAutoQueued':
+          setAutoModeQueued((prev: boolean) => !prev); return;
         case 'submit':
           handleSubmit(action.value); return;
         case 'toggleToolExpand':
@@ -3393,6 +3402,8 @@ screen name=App target=ink
           return;
         case 'unqueuePlan':
           setPlanModeQueued(false); return;
+        case 'unqueueAuto':
+          setAutoModeQueued(false); return;
         case 'closeSlash':
           setSlashPickerOpen(false); return;
         case 'closeEnginePicker':
@@ -3599,6 +3610,7 @@ screen name=App target=ink
           mode={mode}
           replState={replState}
           planModeQueued={planModeQueued}
+          autoModeQueued={autoModeQueued}
           activePlanState={activePlan?.state ?? null}
               slashPickerOpen={slashPickerOpen}
               inputValue={inputValue}
@@ -3618,7 +3630,7 @@ screen name=App target=ink
             {(() => {
               const _cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
               return (<>
-                <CesarStatusStrip cesarId={_cesarId} confidence={cesarConfidence} spinner={liveSpinner} engines={liveProgress} startTime={chatStartTimeRef.current || 0} streamSnippet={streamSnippet} isActive={replState !== 'idle' || runningJobs.length > 0} planModeQueued={planModeQueued} activePlanState={activePlan?.state ?? null} />
+                <CesarStatusStrip cesarId={_cesarId} confidence={cesarConfidence} spinner={liveSpinner} engines={liveProgress} startTime={chatStartTimeRef.current || 0} streamSnippet={streamSnippet} isActive={replState !== 'idle' || runningJobs.length > 0} planModeQueued={planModeQueued} autoModeQueued={autoModeQueued} activePlanState={activePlan?.state ?? null} />
                 {mode === 'chat' && <StatusBar cesarId={statusStats.cesarId} chatMessageCount={statusStats.chatMessageCount} totalTokens={statusStats.totalTokens} totalCostUsd={statusStats.totalCostUsd} cwd={statusCwd} branch={statusBranch} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} isActive={replState !== 'idle'} fullscreenEnabled={terminalMode === 'fullscreen'} selectionMode={terminalMode === 'fullscreen' ? selectionMode : undefined} />}
               </>);
             })()}

@@ -259,7 +259,7 @@ fn name=handleCesarBrain async=true params="input:string, dispatch:Dispatch, ctx
         pendingDelegation: null, reportedConfidence: undefined, reportedConfidenceReasoning: undefined, confidenceSatisfied: false, blockedOnConfidence: null,
         autoNero: false, advisorPending: false, lastEscalation: null as string | null,
         mcpFingerprint: undefined, planDispatch: null, proposedPlan: undefined,
-        sessionMcpServers: [],
+        sessionMcpServers: [], autoModeQueued: false,
       };
     }
 
@@ -523,6 +523,10 @@ ${reviewFollowup.prompt}`;
             enrichedInput = `[ROUTING CONTEXT — use this to decide mode + team]\n${routingCtx}\n\n${reviewFollowup.prompt}`;
           }
         } catch { /* routing context is best-effort */ }
+      }
+      // Auto mode: user has pre-approved multi-step execution
+      if (ctx.autoModeQueued) {
+        enrichedInput = `[AUTONOMOUS MODE ACTIVE]\nThe user has toggled autonomous mode. You may self-escalate to ProposePlan when the task benefits from structured multi-step execution. Use your judgment — stay live for simple tasks, propose a plan for complex or risky work. The auto-approve policy still gates individual tool permissions.\n\n${enrichedInput}`;
       }
       if (routeReliability && routeDowngrade) {
         enrichedInput = `[CESAR TOOL RELIABILITY POLICY]\n${formatCesarReliabilityLine(routeReliability)}\nFor this tool-heavy task, do not pretend direct multi-step tooling happened. Prefer ProposePlan, Agent, Forge, Review, or another direct orchestration tool when execution is needed; if staying self, keep the answer advisory and explicit.\n\n${enrichedInput}`;

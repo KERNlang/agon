@@ -21,6 +21,7 @@ screen name=ComposerView target=ink memo=true
   prop name=mode type="'chat'|'campfire'|'brainstorm'|'tribunal'"
   prop name=replState type=string
   prop name=planModeQueued type=boolean
+  prop name=autoModeQueued type=boolean
   prop name=activePlanState type="string|null"
   prop name=slashPickerOpen type=boolean
   prop name=inputValue type=string
@@ -96,7 +97,7 @@ screen name=ComposerView target=ink memo=true
           {!questionState && (
             <Box borderStyle={mode === 'chat' ? 'round' : 'single'} borderColor={mode === 'chat' ? '#585858' : 'gray'} borderLeft={mode !== 'chat'} borderRight={mode !== 'chat'} borderTop borderBottom paddingX={1} width="100%">
               {mode !== 'chat' && (<Text><Text color={mode === 'campfire' ? '#f97316' : mode === 'brainstorm' ? '#22d3ee' : '#a78bfa'} bold>{mode === 'campfire' ? icons().campfire : mode === 'brainstorm' ? icons().brainstorm : icons().tribunal}{' '}{mode}</Text><Text dimColor>{' \u2502 '}</Text></Text>)}
-              <Text color={mode === 'chat' ? (planModeQueued || activePlanState === 'planning' ? '#c084fc' : '#585858') : '#fbbf24'}>{mode === 'chat' ? (planModeQueued ? '\u25c8 ' : '> ') : icons().prompt + ' '}</Text>
+              <Text color={mode === 'chat' ? (planModeQueued || autoModeQueued || activePlanState === 'planning' ? '#c084fc' : '#585858') : '#fbbf24'}>{mode === 'chat' ? (planModeQueued ? '\u25c8 ' : autoModeQueued ? '\u25b6 ' : '> ') : icons().prompt + ' '}</Text>
               <Box flexGrow={1}>
                 {slashPickerOpen ? (
                   <Text dimColor>{inputValue || '/'}</Text>

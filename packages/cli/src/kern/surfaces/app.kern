@@ -20,6 +20,10 @@ import from="../../handlers/types.js" names="OutputEvent,HandlerContext" types=t
 import from="../../code-buffer.js" names="codeBlockBuffer"
 import from="../signals/app-state.js" names="startCommandReplState,finishReplState,cancelReplState"
 import from="../signals/app-state.js" names="ReplStateState" types=true
+import from="../cesar/pause-state.js" names="createPauseState,renderPauseMenu,movePauseCursor,selectPauseAction,dismissPauseState"
+import from="../cesar/pause-state.js" names="PauseState" types=true
+import from="../cesar/scoreboard.js" names="Scoreboard" types=true
+import from="../cesar/mode-rationale.js" names="ModeRationale" types=true
 import from="../signals/paste-handler.js" names="processPasteContent,expandPastePlaceholders"
 import from="../signals/dispatch.js" names="dispatchIntent,handleModeSwitch,isCesarPlanApprovalInput"
 import from="../signals/dispatch.js" names="DispatchCallbacks" types=true
@@ -544,6 +548,9 @@ const name=_cesarSessionRef type="{ session: PersistentSession | null }"
 
 const name=_lastSigintAt type="{ value: number }"
   handler <<< { value: 0 } >>>
+
+const name=_pauseState type="{ value: PauseState | null }"
+  handler <<< { value: null } >>>
 
 fn name=createInitialRegistry returns=EngineRegistry
   handler <<<
@@ -2383,6 +2390,8 @@ screen name=App target=ink
   state name=toolOutputExpanded type=boolean initial=false
   state name=thinkingExpanded type=boolean initial=true
   state name=cesarConfidence type="number|null" initial="null" throttle=200
+  state name=liveScoreboard type="Scoreboard|null" initial="null"
+  state name=liveRationale type="ModeRationale|null" initial="null"
   state name=agentProgress type="Record<string,AgentProgressSnapshot>" initial="{}"
   state name=planModeQueued type=boolean initial=false safe=false
   state name=autoModeQueued type=boolean initial=false safe=false
@@ -2879,6 +2888,8 @@ screen name=App target=ink
         },
         getEngineColor: (engineId: string) => ENGINE_COLORS[engineId] ?? 124,
         setCesarConfidence,
+        setLiveScoreboard: (val: Scoreboard | null) => setLiveScoreboard(val),
+        setLiveRationale: (val: ModeRationale | null) => setLiveRationale(val),
         setAgentProgress: (updater: Record<string,AgentProgressSnapshot> | ((prev: Record<string,AgentProgressSnapshot>) => Record<string,AgentProgressSnapshot>)) => {
           const prev = agentProgressRef.current;
           const next = typeof updater === 'function' ? (updater as (p: Record<string,AgentProgressSnapshot>) => Record<string,AgentProgressSnapshot>)(prev) : updater;
@@ -3858,7 +3869,7 @@ screen name=App target=ink
             {(() => {
               const _cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
               return (<>
-                <CesarStatusStrip cesarId={_cesarId} confidence={cesarConfidence} spinner={liveSpinner} engines={liveProgress} startTime={chatStartTimeRef.current || 0} streamSnippet={streamSnippet} isActive={replState !== 'idle' || runningJobs.length > 0} planModeQueued={planModeQueued} autoModeQueued={autoModeQueued} activePlanState={activePlan?.state ?? null} />
+                <CesarStatusStrip cesarId={_cesarId} confidence={cesarConfidence} spinner={liveSpinner} engines={liveProgress} startTime={chatStartTimeRef.current || 0} streamSnippet={streamSnippet} isActive={replState !== 'idle' || runningJobs.length > 0} planModeQueued={planModeQueued} autoModeQueued={autoModeQueued} activePlanState={activePlan?.state ?? null} scoreboard={null} rationale={null} />
                 {mode === 'chat' && <StatusBar cesarId={statusStats.cesarId} chatMessageCount={statusStats.chatMessageCount} totalTokens={statusStats.totalTokens} totalCostUsd={statusStats.totalCostUsd} cwd={statusCwd} branch={statusBranch} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} autoModeQueued={autoModeQueued} isActive={replState !== 'idle'} fullscreenEnabled={terminalMode === 'fullscreen'} selectionMode={terminalMode === 'fullscreen' ? selectionMode : undefined} />}
               </>);
             })()}
@@ -3915,11 +3926,19 @@ fn name=startRepl async=true returns="Promise<void>"
         if (_cesarSessionRef.session) { try { _cesarSessionRef.session.close(); } catch { /* session already closed or errored */ } _cesarSessionRef.session = null; }
         process.exit(0);
       }
-      if (_activeAborts.size > 0) {
+      if (_pauseState.value?.active) {
+        // Second Ctrl+C during pause — hard cancel
+        _pauseState.value = dismissPauseState();
         for (const abort of _activeAborts) abort.abort();
         _activeAborts.clear();
         _lastSigintAt.value = now;
         if (_cancelCallback.fn) _cancelCallback.fn();
+        return;
+      }
+      if (_activeAborts.size > 0) {
+        // First Ctrl+C — enter pause state instead of immediate abort
+        _pauseState.value = createPauseState();
+        _lastSigintAt.value = now;
         return;
       }
       _lastSigintAt.value = now;

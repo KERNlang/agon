@@ -12,6 +12,10 @@ import from="../blocks/output-format.js" names="ENGINE_COLORS"
 import from="../blocks/rendering.js" names="color256toHex,engineColor"
 import from="../signals/job-manager.js" names="Job" types=true
 import from="../../handlers/types.js" names="EngineProgress" types=true
+import from="../cesar/scoreboard.js" names="renderScoreboard"
+import from="../cesar/scoreboard.js" names="Scoreboard" types=true
+import from="../cesar/mode-rationale.js" names="formatModeRationale"
+import from="../cesar/mode-rationale.js" names="ModeRationale" types=true
 
 // ── Tip Constants ───────────────────────────────────────────────────
 
@@ -217,6 +221,8 @@ screen name=CesarStatusStrip target=ink memo=true export=named
   prop name=planModeQueued type=boolean optional=true
   prop name=autoModeQueued type=boolean optional=true
   prop name=activePlanState type="string|null" optional=true
+  prop name=scoreboard type="Scoreboard|null" optional=true
+  prop name=rationale type="ModeRationale|null" optional=true
   state name=now type=number initial="Date.now()"
   animation name=now interval=1000 update="Date.now()" active="isActive"
   render
@@ -298,21 +304,28 @@ screen name=CesarStatusStrip target=ink memo=true export=named
         snippetStr = streamSnippet.line.length > maxLen ? streamSnippet.line.slice(0, maxLen) + '\u2026' : streamSnippet.line;
       }
 
+      const scoreboardLines = scoreboard ? renderScoreboard(scoreboard) : '';
+      const rationaleStr = rationale ? formatModeRationale(rationale) : '';
+
       return (
-        <Box paddingTop={0}>
-          <Text>
-            {hasPlan ? <><Text color={autoModeQueued ? '#f97316' : '#c084fc'} bold>{`\u25c8 ${planLabel.toUpperCase()}`}</Text><Text dimColor>{' \u2502 '}</Text></> : null}
-            <Text color={cesarColor} bold>{'\u25c6 '}{cesarId}</Text>
-            {confStr ? <Text color={confColor} bold>{confStr}</Text> : null}
-            <Text dimColor>{' \u2502 '}</Text>
-            <Text color="#fbbf24">{activityStr}</Text>
-            {elapsedStr ? <Text dimColor>{elapsedStr}</Text> : null}
-            {engineDots.length > 0 ? <Text dimColor>{' \u2502 '}</Text> : null}
-          </Text>
-          {engineDots.length > 0 && <Text>{engineDots}</Text>}
-          <Text>
-            {snippetStr ? <><Text dimColor>{' \u2502 '}</Text><Text dimColor wrap="truncate">{snippetStr}</Text></> : null}
-          </Text>
+        <Box paddingTop={0} flexDirection="column">
+          <Box>
+            <Text>
+              {hasPlan ? <><Text color={autoModeQueued ? '#f97316' : '#c084fc'} bold>{`\u25c8 ${planLabel.toUpperCase()}`}</Text><Text dimColor>{' \u2502 '}</Text></> : null}
+              <Text color={cesarColor} bold>{'\u25c6 '}{cesarId}</Text>
+              {confStr ? <Text color={confColor} bold>{confStr}</Text> : null}
+              <Text dimColor>{' \u2502 '}</Text>
+              <Text color="#fbbf24">{activityStr}</Text>
+              {elapsedStr ? <Text dimColor>{elapsedStr}</Text> : null}
+              {engineDots.length > 0 ? <Text dimColor>{' \u2502 '}</Text> : null}
+            </Text>
+            {engineDots.length > 0 && <Text>{engineDots}</Text>}
+            <Text>
+              {snippetStr ? <><Text dimColor>{' \u2502 '}</Text><Text dimColor wrap="truncate">{snippetStr}</Text></> : null}
+            </Text>
+          </Box>
+          {rationaleStr ? <Text dimColor>{rationaleStr}</Text> : null}
+          {scoreboardLines ? <Text dimColor>{scoreboardLines}</Text> : null}
         </Box>
       );
     >>>

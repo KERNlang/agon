@@ -1,0 +1,76 @@
+// ── Pause State: Ctrl+C menu instead of hard kill ─────────────────────
+// When the user hits Ctrl+C during a running orchestration, show a compact
+// menu: resume, retry, cancel, or inspect checkpoint.  Pure state machine.
+
+type name=PauseMenuAction values="resume|retry|cancel|checkpoint|noop"
+
+interface name=PauseState export=true
+  field name=active type=boolean
+  field name=runId type=string optional=true
+  field name=mode type=string optional=true
+  field name=menuIndex type=number
+  field name=actions type="PauseMenuAction[]"
+
+const name=PAUSE_MENU_ITEMS type="{label:string,action:PauseMenuAction}[]"
+  handler <<<
+    // Inline icons to avoid loadConfig() dependency at module-eval time
+    [
+      { label: '\u25b6  Resume', action: 'resume' },
+      { label: '\u21bb Retry last step', action: 'retry' },
+      { label: '\u2691  Show checkpoint', action: 'checkpoint' },
+      { label: '\u2718 Cancel run', action: 'cancel' },
+    ]
+  >>>
+
+fn name=createPauseState params="runId?:string,mode?:string" returns=PauseState export=true
+  handler <<<
+    return {
+      active: true,
+      runId: runId ?? undefined,
+      mode: mode ?? undefined,
+      menuIndex: 0,
+      actions: PAUSE_MENU_ITEMS.map((i) => i.action),
+    };
+  >>>
+
+fn name=dismissPauseState returns=PauseState export=true
+  handler <<<
+    return {
+      active: false,
+      menuIndex: 0,
+      actions: [],
+    };
+  >>>
+
+fn name=movePauseCursor params="state:PauseState,direction:'up'|'down'" returns=PauseState export=true
+  handler <<<
+    if (!state.active || state.actions.length === 0) return state;
+    const delta = direction === 'up' ? -1 : 1;
+    const next = state.menuIndex + delta;
+    state.menuIndex = ((next % state.actions.length) + state.actions.length) % state.actions.length;
+    return state;
+  >>>
+
+fn name=selectPauseAction params="state:PauseState" returns="{state:PauseState,action:PauseMenuAction}" export=true
+  handler <<<
+    const action = state.actions[state.menuIndex] ?? 'noop';
+    if (action === 'cancel' || action === 'resume') {
+      return { state: dismissPauseState(), action };
+    }
+    return { state, action };
+  >>>
+
+fn name=renderPauseMenu params="state:PauseState" returns=string export=true
+  handler <<<
+    if (!state.active) return '';
+    const lines: string[] = [];
+    lines.push('');
+    lines.push(`⏸  Paused${state.mode ? ` — ${state.mode}` : ''}`);
+    for (let i = 0; i < PAUSE_MENU_ITEMS.length; i++) {
+      const item = PAUSE_MENU_ITEMS[i];
+      const prefix = i === state.menuIndex ? '> ' : '  ';
+      lines.push(`${prefix}${item.label}`);
+    }
+    lines.push('');
+    return lines.join('\n');
+  >>>

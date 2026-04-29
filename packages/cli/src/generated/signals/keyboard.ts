@@ -58,12 +58,15 @@ export type KeyboardAction =
   | { type: 'unqueueAuto' }
   | { type: 'insertNewline' }
   | { type: 'historySet'; index: number; value: string }
-  | { type: 'cancelOrExit' };
+  | { type: 'cancelOrExit' }
+  | { type: 'togglePauseMenu' }
+  | { type: 'movePauseCursor'; direction: 'up'|'down' }
+  | { type: 'selectPauseAction' };
 
 /**
  * Pure keyboard decision tree. Takes current state, returns action to execute.
  */
-// @kern-source: keyboard:67
+// @kern-source: keyboard:71
 export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
   const { input, key } = ctx;
   const normalizedCtrlInput = key.ctrl
@@ -223,8 +226,13 @@ export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
     }
   }
 
-  // Ctrl+C: cancel or exit
-  if (input === '\x03' || (key.ctrl && normalizedCtrlInput === 'c')) return { type: 'cancelOrExit' };
+  // Ctrl+C: cancel or exit (or pause menu when orchestration is running)
+  if (input === '\x03' || (key.ctrl && normalizedCtrlInput === 'c')) {
+    if (ctx.replState === 'busy' || ctx.replState === 'streaming') {
+      return { type: 'togglePauseMenu' };
+    }
+    return { type: 'cancelOrExit' };
+  }
 
   return { type: 'none' };
 }

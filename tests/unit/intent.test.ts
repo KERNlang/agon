@@ -130,6 +130,23 @@ describe('Intent Detection — Slash Commands', () => {
     if (r.type === 'harness-replay') expect(r.turnId).toBe('cesar-abc123');
   });
 
+  it('/auto and /autonomous parse clean tasks with autonomous mode enabled', () => {
+    const auto = detectIntent('/auto fix login and run tests');
+    expect(auto.type).toBe('auto');
+    if (auto.type === 'auto') {
+      expect(auto.input).toBe('fix login and run tests');
+      expect(auto.taskClass).toBe('code');
+      expect(auto.autoMode).toBe(true);
+    }
+
+    const autonomous = detectIntent('/autonomous explain the harness flow');
+    expect(autonomous.type).toBe('auto');
+    if (autonomous.type === 'auto') {
+      expect(autonomous.input).toBe('explain the harness flow');
+      expect(autonomous.autoMode).toBe(true);
+    }
+  });
+
   it('/engines', () => {
     expect(detectIntent('/engines').type).toBe('engines');
   });
@@ -325,6 +342,20 @@ describe('Intent Detection — Natural Language', () => {
       expect(r.engineIds).toEqual(['codex', 'gemini']);
       expect(r.target).toBeUndefined();
     }
+  });
+
+  it('parses explicit natural-language agent shortcuts without waiting for Cesar', () => {
+    const direct = detectIntent('agent fix paste handling and run tests');
+    expect(direct.type).toBe('agent');
+    if (direct.type === 'agent') expect(direct.input).toBe('fix paste handling and run tests');
+
+    const mode = detectIntent('agent mode inspect the auth flow');
+    expect(mode.type).toBe('agent');
+    if (mode.type === 'agent') expect(mode.input).toBe('inspect the auth flow');
+
+    const autonomous = detectIntent('autonomous agent update the docs');
+    expect(autonomous.type).toBe('agent');
+    if (autonomous.type === 'agent') expect(autonomous.input).toBe('update the docs');
   });
 
   it('leaves natural-language review requests to Cesar', () => {

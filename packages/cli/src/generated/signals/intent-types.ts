@@ -58,7 +58,7 @@ export type Intent =
   | { type: 'slash-list' }
   | { type: 'help' }
   | { type: 'exit' }
-  | { type: 'auto'; input: string; taskClass: 'code' | 'question' | 'ambiguous' }
+  | { type: 'auto'; input: string; taskClass: 'code' | 'question' | 'ambiguous'; autoMode?: boolean }
   | { type: 'mcp'; action: 'connect'|'disconnect'|'list'; server?: string }
   | { type: 'init'; scope?: string | undefined }
   | { type: 'create-skill'; skillName: string }

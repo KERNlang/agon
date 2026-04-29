@@ -119,6 +119,7 @@ union name=Intent discriminant=type
   variant name=auto
     field name=input type=string
     field name=taskClass type="'code' | 'question' | 'ambiguous'"
+    field name=autoMode type=boolean optional=true
   variant name=mcp
     field name=action type="'connect'|'disconnect'|'list'"
     field name=server type=string optional=true

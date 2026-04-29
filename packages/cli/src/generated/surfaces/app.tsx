@@ -48,7 +48,7 @@ import { handleOutputEvent, clearPermissionQueue, clearThinkingBuffer } from '..
 
 import type { OutputActions, OutputState, AgentProgressSnapshot, StreamingEntry } from '../signals/output.js';
 
-import { cleanInputValue, cleanSubmitValue, findInputChange, navigateHistory, resolveEscapeAction, shouldQueuePlanModeOnTab } from '../signals/app-input.js';
+import { appendInputHistory, cleanInputValue, cleanSubmitValue, findInputChange, navigateHistory, parseAutoModeCommand, resolveEscapeAction, shouldQueuePlanModeOnTab } from '../signals/app-input.js';
 
 import { resolveKeyboardInput } from '../signals/keyboard.js';
 
@@ -88,7 +88,7 @@ import { join, dirname } from 'node:path';
 
 import { fileURLToPath } from 'node:url';
 
-import { readdirSync, writeFileSync, mkdirSync, unlinkSync } from 'node:fs';
+import { readdirSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from 'node:fs';
 
 import { tmpdir } from 'node:os';
 
@@ -106,7 +106,7 @@ import { useStableInput } from '../../stable-input.js';
 
 import { parseProseToRichLines } from '../blocks/rich-text.js';
 
-// @kern-source: app:2240
+// @kern-source: app:2342
 export function App() {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -118,7 +118,7 @@ export function App() {
   const [outputBlocks, _setOutputBlocksRaw] = useState<OutputBlock[]>(() => { const cfg = loadConfig(); const saved = cfg.forgeEnabledEngines; return [buildDashboardBlock(saved && saved.length > 0 ? saved : null)]; });
   const setOutputBlocks = useMemo(() => __inkSafe(_setOutputBlocksRaw), [_setOutputBlocksRaw]);
   const [inputValue, setInputValue] = useState<string>('');
-  const [inputHistory, _setInputHistoryRaw] = useState<string[]>([]);
+  const [inputHistory, _setInputHistoryRaw] = useState<string[]>(loadComposerInputHistory());
   const setInputHistory = useMemo(() => __inkSafe(_setInputHistoryRaw), [_setInputHistoryRaw]);
   const [inputQueue, _setInputQueueRaw] = useState<string[]>([]);
   const setInputQueue = useMemo(() => __inkSafe(_setInputQueueRaw), [_setInputQueueRaw]);
@@ -721,6 +721,7 @@ export function App() {
     }
 
     if (justPastedRef.current) {
+      inputValueRef.current = nextValue;
       setInputValue(nextValue);
       return;
     }
@@ -729,6 +730,7 @@ export function App() {
     const looksLikePaste = value !== nextValue || change.inserted.length > 1;
 
     if (!looksLikePaste || !change.inserted) {
+      inputValueRef.current = nextValue;
       setInputValue(nextValue);
       return;
     }
@@ -739,6 +741,7 @@ export function App() {
     pasteCountRef.current += 1;
     const result = processPasteContent(change.inserted, pasteCountRef.current);
     if (result.type === 'empty') {
+      inputValueRef.current = nextValue;
       setInputValue(nextValue);
       return;
     }
@@ -749,6 +752,7 @@ export function App() {
 
     const replacement = result.type === 'stored' ? result.placeholder : result.content;
     const updatedValue = nextValue.slice(0, change.start) + replacement + nextValue.slice(change.start + change.inserted.length);
+    inputValueRef.current = updatedValue;
     setInputValue(updatedValue);
   }, [slashPickerOpen,enginePickerOpen,modelPickerOpen,questionState,planModeQueued,autoModeQueued]);
 
@@ -765,7 +769,33 @@ export function App() {
     input = expandPastePlaceholders(input, pasteHashesRef.current);
     pasteHashesRef.current.clear();
     pasteCountRef.current = 0;
-    setInputValue(''); setInputHistory((prev: string[]) => [...prev, input]); setHistoryIndex(-1);
+    inputValueRef.current = '';
+    setInputValue('');
+    setInputHistory((prev: string[]) => {
+      const next = appendInputHistory(prev, input, COMPOSER_HISTORY_LIMIT);
+      saveComposerInputHistory(next);
+      return next;
+    });
+    setHistoryIndex(-1);
+
+    const autoControl = parseAutoModeCommand(input);
+    if (autoControl) {
+      if (autoControl === 'status') {
+        dispatch({ type: 'info', message: autoModeQueued ? 'AUTO is ON — the next plain task may self-escalate through Cesar.' : 'AUTO is OFF.' } as any);
+        return;
+      }
+      const nextAutoModeQueued = autoControl === 'toggle' ? !autoModeQueued : autoControl === 'on';
+      setPlanModeQueued(false);
+      setAutoModeQueued(nextAutoModeQueued);
+      dispatch({
+        type: 'info',
+        message: nextAutoModeQueued
+          ? 'AUTO ON — type a task and press Enter. Use /auto off or Esc to cancel.'
+          : 'AUTO OFF.',
+      } as any);
+      return;
+    }
+
     // /btw <question> — side-channel question during active dispatch
     const btwLower = input.trim().toLowerCase();
     if (btwLower === '/btw') {
@@ -842,15 +872,12 @@ export function App() {
     }
     if (planModeQueued && input.trim() && !input.startsWith('/')) {
       setPlanModeQueued(false);
+      setAutoModeQueued(false);
       handleSubmit(`/plan ${input}`);
       return;
     }
+    const autoModeForTurn = autoModeQueued && input.trim() && !input.startsWith('/');
     if (planModeQueued) setPlanModeQueued(false);
-    if (autoModeQueued && input.trim() && !input.startsWith('/')) {
-      setAutoModeQueued(false);
-      handleSubmit(`/autonomous ${input}`);
-      return;
-    }
     if (autoModeQueued) setAutoModeQueued(false);
     transition(startCommandReplState);
     dispatch({ type: 'separator' } as any);
@@ -858,8 +885,10 @@ export function App() {
     const { text: cleanInput, images: detectedImages } = extractImagesFromInput(input, resolveWorkingDir());
     const allImages = [...pendingImages, ...detectedImages];
     let intent = detectIntent(cleanInput || input, commandRegistry);
+    const ctx = buildContext();
+    (ctx as any).autoModeQueued = autoModeForTurn;
     const cb: DispatchCallbacks = {
-      dispatch, ctx: buildContext(), commandRegistry, eventBus, loadedExtensions, setWorkspacePath,
+      dispatch, ctx, commandRegistry, eventBus, loadedExtensions, setWorkspacePath,
       runAsJob: (type: string, label: string, fn: () => Promise<void>) => {
         const job = jobManager.create(type, label);
         setJobList([...jobManager.list()]);
@@ -891,7 +920,7 @@ export function App() {
       if (result.ranAsJob) return;
     } catch (err: any) { dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) } as any); }
     finally { setReplState((prev: any) => prev === 'idle' ? prev : finishReplState({ state: prev }).state); }
-  }, [replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,planModeQueued]);
+  }, [replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,planModeQueued,autoModeQueued]);
 
   const handleReviewActionCb = useCallback((action:'apply'|'edit'|'reject'|'copy') => {
     if (!reviewEvent) return;
@@ -987,6 +1016,23 @@ export function App() {
     setToolDetailEvent(event);
   }, [outputBlocks,dispatch]);
 
+  const draftLatestFailedToolRetry = useCallback(() => {
+    const event = findLatestFailedToolEvent(outputBlocks);
+    if (!event) {
+      dispatch({ type: 'info', message: 'No failed tool call to retry/edit yet.' } as any);
+      return;
+    }
+    const draft = buildFailedToolRetryDraft(event);
+    if (!draft) {
+      dispatch({ type: 'info', message: 'No retry draft available for the latest failed tool.' } as any);
+      return;
+    }
+    inputValueRef.current = draft;
+    setInputValue(draft);
+    setHistoryIndex(-1);
+    dispatch({ type: 'info', message: 'Drafted failed-tool retry in the composer. Edit it, then press Enter.' } as any);
+  }, [outputBlocks,dispatch]);
+
   const toggleSelectionMode = useCallback(() => {
     if (terminalMode !== 'fullscreen') {
       dispatch({ type: 'info', message: 'Native scrollback is active — select and copy directly in your terminal.' } as any);
@@ -1062,6 +1108,10 @@ export function App() {
         ctrlKeyHandledRef.current = true;
         openResultsPager();
         return;
+      case 'y':
+        ctrlKeyHandledRef.current = true;
+        draftLatestFailedToolRetry();
+        return;
       case 'j':
         ctrlKeyHandledRef.current = true;
         setInputValue((prev: string) => prev + '\n');
@@ -1069,7 +1119,7 @@ export function App() {
       default:
         return;
     }
-  }, [handleCancelOrExit,handleSubmit,openLatestToolDetail,openResultsPager]);
+  }, [handleCancelOrExit,handleSubmit,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry]);
 
   const handleKeyboardInput = useCallback((input:string,key:any) => {
     if (isTerminalFocusReport(input)) return;
@@ -1146,9 +1196,19 @@ export function App() {
         setInputValue(inputValue + action.ghost + ' ');
         return;
       case 'togglePlanQueued':
+        setAutoModeQueued(false);
         setPlanModeQueued((prev: boolean) => !prev); return;
       case 'toggleAutoQueued':
-        setAutoModeQueued((prev: boolean) => !prev); return;
+        const nextAutoModeQueued = !autoModeQueued;
+        setPlanModeQueued(false);
+        setAutoModeQueued(nextAutoModeQueued);
+        dispatch({
+          type: 'info',
+          message: nextAutoModeQueued
+            ? 'AUTO queued — type your task and press Enter. Esc cancels.'
+            : 'AUTO canceled.',
+        } as any);
+        return;
       case 'submit':
         handleSubmit(action.value); return;
       case 'toggleToolExpand':
@@ -1158,6 +1218,8 @@ export function App() {
         toggleSelectionMode(); return;
       case 'openToolDetail':
         openLatestToolDetail(); return;
+      case 'retryFailedTool':
+        draftLatestFailedToolRetry(); return;
       case 'openResults':
         openResultsPager(); return;
       case 'toggleFileRail':
@@ -1213,7 +1275,7 @@ export function App() {
         handleCancelOrExit();
         return;
     }
-  }, [modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,activePlan,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,toggleSelectionMode,startupOnly,terminalMode]);
+  }, [modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,autoModeQueued,activePlan,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry,toggleSelectionMode,startupOnly,terminalMode]);
 
   useEffect(() => {
     initExtensions(workspacePath, commandRegistry, registry, eventBus).then(({ extensions, skills: extSkills, systemPromptFragments }) => {
@@ -1603,7 +1665,7 @@ export function App() {
           const _cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
           return (<>
             <CesarStatusStrip cesarId={_cesarId} confidence={cesarConfidence} spinner={liveSpinner} engines={liveProgress} startTime={chatStartTimeRef.current || 0} streamSnippet={streamSnippet} isActive={replState !== 'idle' || runningJobs.length > 0} planModeQueued={planModeQueued} autoModeQueued={autoModeQueued} activePlanState={activePlan?.state ?? null} />
-            {mode === 'chat' && <StatusBar cesarId={statusStats.cesarId} chatMessageCount={statusStats.chatMessageCount} totalTokens={statusStats.totalTokens} totalCostUsd={statusStats.totalCostUsd} cwd={statusCwd} branch={statusBranch} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} isActive={replState !== 'idle'} fullscreenEnabled={terminalMode === 'fullscreen'} selectionMode={terminalMode === 'fullscreen' ? selectionMode : undefined} />}
+            {mode === 'chat' && <StatusBar cesarId={statusStats.cesarId} chatMessageCount={statusStats.chatMessageCount} totalTokens={statusStats.totalTokens} totalCostUsd={statusStats.totalCostUsd} cwd={statusCwd} branch={statusBranch} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} autoModeQueued={autoModeQueued} isActive={replState !== 'idle'} fullscreenEnabled={terminalMode === 'fullscreen'} selectionMode={terminalMode === 'fullscreen' ? selectionMode : undefined} />}
           </>);
         })()}
       </Box>
@@ -1863,6 +1925,69 @@ export function findLatestToolDetailEvent(blocks: OutputBlock[]): any {
 }
 
 // @kern-source: app:272
+export const COMPOSER_HISTORY_LIMIT: number = 200;
+
+// @kern-source: app:275
+export function composerHistoryPath(): string {
+  return join(getAgonHome(), 'composer-history.json');
+}
+
+// @kern-source: app:278
+export function loadComposerInputHistory(): string[] {
+  try {
+    const parsed = JSON.parse(readFileSync(composerHistoryPath(), 'utf-8'));
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((entry: any) => typeof entry === 'string' && entry.trim().length > 0)
+      .slice(-COMPOSER_HISTORY_LIMIT);
+  } catch {
+    return [];
+  }
+}
+
+// @kern-source: app:291
+export function saveComposerInputHistory(history: string[]): void {
+  try {
+    ensureAgonHome();
+    const entries = Array.isArray(history) ? history.slice(-COMPOSER_HISTORY_LIMIT) : [];
+    writeFileSync(composerHistoryPath(), JSON.stringify(entries, null, 2) + '\n', 'utf-8');
+  } catch {
+    // History is convenience state; never block the REPL on disk errors.
+  }
+}
+
+// @kern-source: app:302
+export function findLatestFailedToolEvent(blocks: OutputBlock[]): any {
+  for (let index = blocks.length - 1; index >= 0; index -= 1) {
+    const event = blocks[index]?.event as any;
+    if (event?.type === 'tool-call-group' && Array.isArray(event.blocks)) {
+      for (let g = event.blocks.length - 1; g >= 0; g -= 1) {
+        const inner = event.blocks[g]?.event;
+        if (inner?.type === 'tool-call' && inner.status === 'error') return inner;
+      }
+      continue;
+    }
+    if (event?.type === 'tool-call' && event.status === 'error') return event;
+  }
+  return null;
+}
+
+// @kern-source: app:318
+export function buildFailedToolRetryDraft(event: any): string {
+  if (!event) return '';
+  const { rawInput, parsed, toolKey } = parseToolCallPayload(event);
+  if (toolKey === 'bash' || toolKey === 'run' || toolKey === 'agonbash') {
+    const command = String((parsed.command as string) || rawInput || '').trim();
+    if (command) return `/run ${command}`;
+  }
+  const toolName = String(event.tool ?? 'tool');
+  const payload = rawInput || (event.input ? String(event.input) : '');
+  const error = String(event.output ?? '').trim();
+  const suffix = error ? `\n\nPrevious error:\n${error}` : '';
+  return `retry the failed ${toolName} call with corrected input:\n${payload}${suffix}`;
+}
+
+// @kern-source: app:333
 export function buildToolDetailView(event: any): any {
   if (!event) {
     return { title: 'Detail viewer', subtitle: '', accentColor: '#a78bfa', rows: [] };
@@ -2064,19 +2189,19 @@ export function buildToolDetailView(event: any): any {
   };
 }
 
-// @kern-source: app:475
+// @kern-source: app:536
 export const _activeAborts: Set<AbortController> = new Set<AbortController>();
 
-// @kern-source: app:478
+// @kern-source: app:539
 export const _cancelCallback: { fn: (() => void) | null } = { fn: null };
 
-// @kern-source: app:481
+// @kern-source: app:542
 export const _cesarSessionRef: { session: PersistentSession | null } = { session: null };
 
-// @kern-source: app:484
+// @kern-source: app:545
 export const _lastSigintAt: { value: number } = { value: 0 };
 
-// @kern-source: app:487
+// @kern-source: app:548
 export function createInitialRegistry(): EngineRegistry {
   const reg = new EngineRegistry();
   const engDir = join(dirname(fileURLToPath(import.meta.url)), '../../../engines');
@@ -2084,7 +2209,7 @@ export function createInitialRegistry(): EngineRegistry {
   return reg;
 }
 
-// @kern-source: app:495
+// @kern-source: app:556
 export function drainStdinBuffer(): void {
   if (!process.stdin.isTTY || typeof process.stdin.read !== 'function') return;
   let chunk: string | Buffer | null;
@@ -2093,12 +2218,12 @@ export function drainStdinBuffer(): void {
   } while (chunk !== null);
 }
 
-// @kern-source: app:504
+// @kern-source: app:565
 export function maxScrollOffsetForRowCount(rowCount: number, rowBudget: number): number {
   return Math.max(0, rowCount - Math.max(1, rowBudget));
 }
 
-// @kern-source: app:509
+// @kern-source: app:570
 export function nextWheelAnimationStep(pending: number): {step:number,remaining:number} {
   if (!Number.isFinite(pending) || pending === 0) return { step: 0, remaining: 0 };
   const direction = pending > 0 ? 1 : -1;
@@ -2108,12 +2233,12 @@ export function nextWheelAnimationStep(pending: number): {step:number,remaining:
   return { step, remaining: pending - step };
 }
 
-// @kern-source: app:519
+// @kern-source: app:580
 export function clampNumber(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-// @kern-source: app:524
+// @kern-source: app:585
 export function charDisplayWidth(char: string): number {
   if (!char) return 0;
   const codePoint = char.codePointAt(0) ?? 0;
@@ -2148,7 +2273,7 @@ export function charDisplayWidth(char: string): number {
   return 1;
 }
 
-// @kern-source: app:559
+// @kern-source: app:620
 export function stringDisplayWidth(text: string): number {
   let width = 0;
   for (const char of Array.from(String(text ?? ''))) {
@@ -2157,7 +2282,7 @@ export function stringDisplayWidth(text: string): number {
   return width;
 }
 
-// @kern-source: app:568
+// @kern-source: app:629
 export function displayColumnToStringIndex(text: string, targetColumn: number): number {
   const value = String(text ?? '');
   if (!Number.isFinite(targetColumn) || targetColumn <= 0) return 0;
@@ -2174,13 +2299,13 @@ export function displayColumnToStringIndex(text: string, targetColumn: number): 
   return value.length;
 }
 
-// @kern-source: app:585
+// @kern-source: app:646
 export function normalizeRowSelection(anchor: number|null, focus: number|null): {start:number,end:number}|null {
   if (anchor === null || focus === null) return null;
   return { start: Math.min(anchor, focus), end: Math.max(anchor, focus) };
 }
 
-// @kern-source: app:591
+// @kern-source: app:652
 export function normalizeTextSelection(anchorRow: number|null, anchorCol: number|null, focusRow: number|null, focusCol: number|null): {startRow:number,startCol:number,endRow:number,endCol:number}|null {
   if (anchorRow === null || anchorCol === null || focusRow === null || focusCol === null) return null;
   if (anchorRow < focusRow) return { startRow: anchorRow, startCol: anchorCol, endRow: focusRow, endCol: focusCol };
@@ -2189,7 +2314,7 @@ export function normalizeTextSelection(anchorRow: number|null, anchorCol: number
   return { startRow: focusRow, startCol: focusCol, endRow: anchorRow, endCol: anchorCol };
 }
 
-// @kern-source: app:600
+// @kern-source: app:661
 export function richLineToPlainText(line: any): string {
   if (!line) return '';
   if (line.kind === 'blank') return '';
@@ -2210,7 +2335,7 @@ export function richLineToPlainText(line: any): string {
   return `${indent}${listIndent}${marker}${spanText}`;
 }
 
-// @kern-source: app:621
+// @kern-source: app:682
 export function transcriptRowToPlainText(row: any): string {
   if (!row) return '';
   if (row.kind === 'spacer') return '';
@@ -2225,14 +2350,14 @@ export function transcriptRowToPlainText(row: any): string {
   return `${prefix}${text}`;
 }
 
-// @kern-source: app:636
+// @kern-source: app:697
 export function transcriptRowTextStartColumn(row: any): number {
   const paddingLeft = Math.max(0, Number(row?.paddingLeft ?? 0));
   const borderColumns = row?.borderColor ? 2 : 0;
   return paddingLeft + borderColumns + 2;
 }
 
-// @kern-source: app:643
+// @kern-source: app:704
 export function resolveTranscriptColumnFromMouse(mouseX: number, row: any): number {
   const text = transcriptRowToPlainText(row);
   const startColumn = transcriptRowTextStartColumn(row);
@@ -2241,7 +2366,7 @@ export function resolveTranscriptColumnFromMouse(mouseX: number, row: any): numb
   return displayColumnToStringIndex(text, targetColumn);
 }
 
-// @kern-source: app:652
+// @kern-source: app:713
 export function transcriptRowsToPlainText(rows: any[], anchorRow: number|null, anchorCol: number|null, focusRow: number|null, focusCol: number|null): string {
   const range = normalizeTextSelection(anchorRow, anchorCol, focusRow, focusCol);
   if (!range) return '';
@@ -2266,7 +2391,7 @@ export function transcriptRowsToPlainText(rows: any[], anchorRow: number|null, a
   return lines.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd();
 }
 
-// @kern-source: app:677
+// @kern-source: app:738
 export function resolveTranscriptRowFromMouse(mouseY: number, viewportTopLine: number, firstVisibleRow: number, visibleRowCount: number): number|null {
   if (visibleRowCount <= 0) return null;
   const offset = mouseY - viewportTopLine;
@@ -2275,7 +2400,7 @@ export function resolveTranscriptRowFromMouse(mouseY: number, viewportTopLine: n
   return firstVisibleRow + clamped;
 }
 
-// @kern-source: app:686
+// @kern-source: app:747
 export function estimateVisibleBlockBudget(rows: number, mode: string, overlayReservedRows: number): number {
   // Chat mode keeps 7 rows for the composer/status chrome at minimum:
   // margin + bordered composer (3) + Cesar strip + two-line status bar.
@@ -2284,7 +2409,7 @@ export function estimateVisibleBlockBudget(rows: number, mode: string, overlayRe
   return Math.max(1, rows - reservedRows);
 }
 
-// @kern-source: app:695
+// @kern-source: app:756
 export function estimateWrappedRowCount(text: string, wrapWidth: number): number {
   const safeWidth = Math.max(1, wrapWidth);
   const lines = String(text ?? '').split('\n');
@@ -2298,7 +2423,7 @@ export function estimateWrappedRowCount(text: string, wrapWidth: number): number
 /**
  * Reserve extra transcript rows when the bottom composer is showing a multi-line question or permission card, so short terminals do not clip the actionable keys.
  */
-// @kern-source: app:706
+// @kern-source: app:767
 export function estimateQuestionReservedRows(questionState: any, termWidth: number): number {
   if (!questionState) return 0;
   const safeWidth = Math.max(24, termWidth - 12);
@@ -2334,7 +2459,7 @@ export function estimateQuestionReservedRows(questionState: any, termWidth: numb
 /**
  * Reserve extra rows above the base composer/status chrome for stacked prompt cards, queued-input badges, and chat spinner rows.
  */
-// @kern-source: app:740
+// @kern-source: app:801
 export function estimateBottomChromeExtraRows(mode: string, questionState: any, termWidth: number, pendingImageCount: number, inputQueueCount: number, hasLiveSpinner: boolean): number {
   let extraRows = 0;
   if (pendingImageCount > 0) extraRows += 1;
@@ -2344,7 +2469,7 @@ export function estimateBottomChromeExtraRows(mode: string, questionState: any, 
   return extraRows;
 }
 
-// @kern-source: app:751
+// @kern-source: app:812
 export function buildDashboardBlock(enabledOverride: string[]|null): OutputBlock {
   const registry = createInitialRegistry();
   const available = registry.availableIds();
@@ -2375,7 +2500,7 @@ export function buildDashboardBlock(enabledOverride: string[]|null): OutputBlock
   };
 }
 
-// @kern-source: app:782
+// @kern-source: app:843
 export function estimatePinnedLiveRows(mode: string, hasStream: boolean, hasProgress: boolean, agentCount: number): number {
   const streamRows = hasStream ? (mode === 'chat' ? 3 : 6) : 0;
   const progressRows = hasProgress ? (mode === 'chat' ? 3 : 5) : 0;
@@ -2383,7 +2508,7 @@ export function estimatePinnedLiveRows(mode: string, hasStream: boolean, hasProg
   return streamRows + progressRows + agentRows;
 }
 
-// @kern-source: app:790
+// @kern-source: app:851
 export function estimateWrappedRows(text: string, width: number): number {
   const safeWidth = Math.max(1, width);
   if (!text) return 0;
@@ -2393,7 +2518,7 @@ export function estimateWrappedRows(text: string, width: number): number {
   }, 0);
 }
 
-// @kern-source: app:800
+// @kern-source: app:861
 export function estimateToolCallRows(event: any, toolOutputExpanded: boolean, codeWidth: number): number {
   if (!event || event.type !== 'tool-call') return 0;
   if (!event.input && !event.output && (event.tool === 'Delegate' || event.tool === 'delegate')) return 0;
@@ -2466,7 +2591,7 @@ export function estimateToolCallRows(event: any, toolOutputExpanded: boolean, co
   return rows;
 }
 
-// @kern-source: app:873
+// @kern-source: app:934
 export function estimateOutputEventRows(event: OutputEvent, mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean): number {
   const proseWidth = contentWidth(4);
   const chatWidth = contentWidth(2);
@@ -2534,9 +2659,12 @@ export function estimateOutputEventRows(event: OutputEvent, mode: string, toolOu
     case 'cesar-recap': {
       const commandRows = Math.min(5, Array.isArray((event as any).commands) ? (event as any).commands.length : 0);
       const fileRows = Array.isArray((event as any).files) && (event as any).files.length > 0 ? 1 : 0;
+      const checkpointRows = Array.isArray((event as any).checkpoints) && (event as any).checkpoints.length > 0 ? 1 : 0;
+      const diffFiles = Array.isArray((event as any).diffPreview?.files) ? (event as any).diffPreview.files : [];
+      const diffRows = diffFiles.reduce((total: number, file: any) => total + 1 + Math.min(6, Array.isArray(file.lines) ? file.lines.length : 0) + (Number(file.omitted ?? 0) > 0 ? 1 : 0), 0);
       const warningRows = Math.min(3, Array.isArray((event as any).warnings) ? (event as any).warnings.length : 0);
       const reasoningRows = (event as any).confidenceReasoning ? 1 : 0;
-      return 3 + commandRows + fileRows + warningRows + reasoningRows;
+      return 3 + commandRows + fileRows + checkpointRows + diffRows + warningRows + reasoningRows;
     }
     case 'file-changes':
       return 1 + (((event as any).files as any[])?.length ?? 0);
@@ -2568,7 +2696,7 @@ export function estimateOutputEventRows(event: OutputEvent, mode: string, toolOu
   }
 }
 
-// @kern-source: app:975
+// @kern-source: app:1039
 export function buildDisplayItems(blocks: OutputBlock[], toolOutputExpanded: boolean): OutputBlock[] {
   // Keep collapse as a per-block display concern, not a synthetic grouped
   // scroll unit. Grouped tool summaries make wheel scrolling jump because
@@ -2576,7 +2704,7 @@ export function buildDisplayItems(blocks: OutputBlock[], toolOutputExpanded: boo
   return blocks;
 }
 
-// @kern-source: app:983
+// @kern-source: app:1047
 export function isToolCallLikeBlock(block: OutputBlock): boolean {
   const type = (block?.event as any)?.type;
   return type === 'tool-call' || type === 'tool-call-group';
@@ -2585,7 +2713,7 @@ export function isToolCallLikeBlock(block: OutputBlock): boolean {
 /**
  * Merge adjacent tool-call and tool-call-group blocks into one group so native/live renderers do not show repeated collapsed tool summaries.
  */
-// @kern-source: app:989
+// @kern-source: app:1053
 export function coalesceToolCallBlocks(blocks: OutputBlock[]): OutputBlock[] {
   if (!Array.isArray(blocks) || blocks.length === 0) return [];
   const out: OutputBlock[] = [];
@@ -2632,7 +2760,7 @@ export function coalesceToolCallBlocks(blocks: OutputBlock[]): OutputBlock[] {
 /**
  * Choose the native Static archive count. When tools are expanded, keep the latest tool-call island live because Ink Static cannot repaint already-sealed collapsed tool summaries.
  */
-// @kern-source: app:1034
+// @kern-source: app:1098
 export function effectiveNativeArchiveBlockCount(blocks: OutputBlock[], baseArchiveCount: number, targetArchiveCount: number, toolOutputExpanded: boolean): number {
   if (!Array.isArray(blocks) || blocks.length === 0) return 0;
 
@@ -2665,12 +2793,12 @@ export function effectiveNativeArchiveBlockCount(blocks: OutputBlock[], baseArch
   return count;
 }
 
-// @kern-source: app:1068
+// @kern-source: app:1132
 export function estimateDisplayItemRows(item: OutputBlock, mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean): number {
   return estimateOutputEventRows(item.event, mode, toolOutputExpanded, thinkingExpanded);
 }
 
-// @kern-source: app:1073
+// @kern-source: app:1137
 export function historyBlocksForTranscript(blocks: OutputBlock[]): OutputBlock[] {
   if (blocks.length === 1 && blocks[0]?.event?.type === 'dashboard') return [];
   return blocks;
@@ -2679,7 +2807,7 @@ export function historyBlocksForTranscript(blocks: OutputBlock[]): OutputBlock[]
 /**
  * Native transcript history. While idle, the startup dashboard is live chrome. Once the first real transcript row exists, keep the dashboard as the first chat-history block so the AGON header scrolls with the conversation instead of disappearing.
  */
-// @kern-source: app:1079
+// @kern-source: app:1143
 export function nativeTranscriptBlocksForStatic(blocks: OutputBlock[]): OutputBlock[] {
   if (blocks.length === 1 && blocks[0]?.event?.type === 'dashboard') return [];
   return blocks;
@@ -2688,7 +2816,7 @@ export function nativeTranscriptBlocksForStatic(blocks: OutputBlock[]): OutputBl
 /**
  * Choose how many native transcript blocks are sealed into Static. The remaining tail stays live so recent rows can rerender while older rows remain in terminal scrollback.
  */
-// @kern-source: app:1086
+// @kern-source: app:1150
 export function nativeArchiveBlockCount(blocks: OutputBlock[], mode: string, rowBudget: number, toolOutputExpanded: boolean, thinkingExpanded: boolean): number {
   if (!Array.isArray(blocks) || blocks.length === 0) return 0;
 
@@ -2722,7 +2850,7 @@ export function nativeArchiveBlockCount(blocks: OutputBlock[], mode: string, row
 /**
  * Detect same-turn duplicate completed engine output. A new user-message resets the guard so an intentional repeat request can still show identical text.
  */
-// @kern-source: app:1118
+// @kern-source: app:1182
 export function isDuplicateEngineBlock(blocks: OutputBlock[], event: any): boolean {
   if (!event || event.type !== 'engine-block') return false;
   const content = cleanEngineOutput(String(event.content ?? '')).trim();
@@ -2744,25 +2872,25 @@ export function isDuplicateEngineBlock(blocks: OutputBlock[], event: any): boole
 /**
  * Append a transcript block with cap/archive handling while suppressing accidental duplicate engine output.
  */
-// @kern-source: app:1138
+// @kern-source: app:1202
 export function appendTranscriptBlock(blocks: OutputBlock[], event: any, archivePath: string): OutputBlock[] {
   if (isDuplicateEngineBlock(blocks, event)) return blocks;
   return appendBlockWithCap(blocks, { id: Date.now() + Math.random(), event }, archivePath);
 }
 
-// @kern-source: app:1145
+// @kern-source: app:1209
 export function normalizeTerminalMode(value: any): 'native'|'fullscreen' {
   return value === 'fullscreen' ? 'fullscreen' : 'native';
 }
 
-// @kern-source: app:1150
+// @kern-source: app:1214
 export function fileRailWidthForTerminal(termWidth: number, expanded: boolean): number {
   const safeWidth = Math.max(40, Math.floor(Number(termWidth) || 100));
   if (expanded) return Math.max(36, Math.min(84, Math.floor(safeWidth * 0.35)));
   return Math.max(28, Math.min(42, Math.floor(safeWidth * 0.22)));
 }
 
-// @kern-source: app:1157
+// @kern-source: app:1221
 export function fileRailMaxRowsForTerminal(termHeight: number, terminalMode: string, expanded: boolean): number {
   const safeHeight = Math.max(8, Math.floor(Number(termHeight) || 24));
   if (terminalMode === 'native') {
@@ -2776,7 +2904,7 @@ export function fileRailMaxRowsForTerminal(termHeight: number, terminalMode: str
 /**
  * Pure terminal replay harness: summarizes the layout-sensitive parts of the REPL for fixed viewport sizes so unit tests can catch native/fullscreen regressions without launching an interactive TTY.
  */
-// @kern-source: app:1168
+// @kern-source: app:1232
 export function buildTerminalReplaySnapshot(blocks: OutputBlock[], opts: any): {terminalMode:'native'|'fullscreen'; mode:string; termWidth:number; termHeight:number; visibleBudget:number; transcriptRowCount:number; staticBlockCount:number; liveBlockCount:number; fileRailWidth:number; fileRailRows:number; headerRows:number; lowerChromeRows:number} {
   const terminalMode = normalizeTerminalMode(opts?.terminalMode);
   const mode = String(opts?.mode ?? 'chat');
@@ -2830,7 +2958,7 @@ export function buildTerminalReplaySnapshot(blocks: OutputBlock[], opts: any): {
   };
 }
 
-// @kern-source: app:1223
+// @kern-source: app:1287
 export function parseMarkdownToRows(baseKey: string, text: string, wrapWidth: number, paddingLeft: number, borderColor: string): any[] {
   const rows: any[] = [];
   const cleaned = String(text ?? '').trim();
@@ -2938,7 +3066,7 @@ export function parseMarkdownToRows(baseKey: string, text: string, wrapWidth: nu
   return rows;
 }
 
-// @kern-source: app:1331
+// @kern-source: app:1395
 export function buildToolCallRows(baseKey: string, event: any, toolOutputExpanded: boolean): any[] {
   if (!event.input && !event.output && (event.tool === 'Delegate' || event.tool === 'delegate')) return [];
 
@@ -2952,6 +3080,9 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
   const collapsed = !toolOutputExpanded;
   const collapsedHint: any[] = [];
   const changeOpenHint: any[] = [];
+  if (event.status === 'error') {
+    collapsedHint.push({ text: ' · Ctrl+Y retry', color: '#fbbf24' });
+  }
   const nestSegment = { text: ' ⏿ ', color: eColor };
   const pushSegmentsRow = (suffix: string, segments: any[], paddingLeft = 2) => {
     rows.push({ key: `${baseKey}-${suffix}`, kind: 'segments', paddingLeft, segments });
@@ -2996,6 +3127,11 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
     return rows;
   }
 
+  const pushRetryHintIfNeeded = (suffix: string) => {
+    if (event.status !== 'error') return;
+    pushOpenHintRow(suffix, '    Ctrl+Y drafts this failed tool into the composer so you can edit and retry.');
+  };
+
   if (toolKey === 'bash' || toolKey === 'run' || toolKey === 'agonbash') {
     const cmd = String((parsed.command as string) || rawInput || '');
     const desc = parsed.description as string | undefined;
@@ -3019,6 +3155,7 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
       { text: `${icon} Bash`, color: toolColor, bold: true },
       desc ? { text: ` · ${desc}`, dimColor: true } : null,
     ].filter(Boolean));
+    pushRetryHintIfNeeded('bash-retry');
 
     const cmdLines = cmd ? cmd.split('\n') : [];
     const shownCmdLines = toolOutputExpanded ? cmdLines : cmdLines.slice(0, 3);
@@ -3300,7 +3437,7 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
   return rows;
 }
 
-// @kern-source: app:1693
+// @kern-source: app:1766
 export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any[] {
   if (!events || events.length === 0) return [];
 
@@ -3395,7 +3532,7 @@ export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any
   return rows;
 }
 
-// @kern-source: app:1788
+// @kern-source: app:1861
 export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean): any[] {
   const rows: any[] = [];
   const proseWidth = contentWidth(4);
@@ -3694,6 +3831,8 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
         const commands = Array.isArray((event as any).commands) ? (event as any).commands : [];
         const warnings = Array.isArray((event as any).warnings) ? (event as any).warnings : [];
         const toolSummary = Array.isArray((event as any).toolSummary) ? (event as any).toolSummary : [];
+        const checkpoints = Array.isArray((event as any).checkpoints) ? (event as any).checkpoints : [];
+        const diffFiles = Array.isArray((event as any).diffPreview?.files) ? (event as any).diffPreview.files : [];
         const confidence = typeof (event as any).confidence === 'number' ? `${Math.round((event as any).confidence)}% confidence` : '';
         const seconds = typeof (event as any).durationMs === 'number' ? `${(((event as any).durationMs) / 1000).toFixed(1)}s` : '';
         const failedTools = Number((event as any).failedTools ?? 0);
@@ -3729,6 +3868,33 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
             dimColor: true,
           }]);
         }
+        if (checkpoints.length > 0) {
+          pushSegmentsRow(`${baseKey}-recap-checkpoint`, 1, [{
+            text: `  checkpoint: ${checkpoints[0].id}${checkpoints.length > 1 ? ` (+${checkpoints.length - 1})` : ''} · /undo reverts latest`,
+            color: '#22d3ee',
+          }]);
+        }
+        diffFiles.slice(0, 4).forEach((file: any, index: number) => {
+          pushSegmentsRow(`${baseKey}-recap-diff-${index}`, 1, [
+            { text: `  Δ ${file.relPath ?? file.path}`, color: '#22d3ee' },
+            { text: ` +${Number(file.additions ?? 0)} -${Number(file.deletions ?? 0)}`, dimColor: true },
+          ]);
+          const lines = Array.isArray(file.lines) ? file.lines : [];
+          lines.slice(0, 6).forEach((line: string, lineIndex: number) => {
+            const color = line.startsWith('+') ? '#4ade80' : line.startsWith('-') ? '#ef4444' : '#fbbf24';
+            pushSegmentsRow(`${baseKey}-recap-diff-${index}-${lineIndex}`, 1, [{
+              text: `    ${line}`,
+              color,
+              dimColor: line.startsWith('@@'),
+            }]);
+          });
+          if (Number(file.omitted ?? 0) > 0) {
+            pushSegmentsRow(`${baseKey}-recap-diff-${index}-more`, 1, [{
+              text: `    … ${Number(file.omitted)} more diff lines`,
+              dimColor: true,
+            }]);
+          }
+        });
         warnings.slice(0, 3).forEach((warning: string, index: number) => {
           pushSegmentsRow(`${baseKey}-recap-warning-${index}`, 1, [
             { text: `  ${icons().warning}`, color: '#fbbf24' },
@@ -3796,7 +3962,7 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
           { text: ' for commands. ', dimColor: true },
           { text: 'Tab', color: '#f97316' },
           { text: ' plan · ', dimColor: true },
-          { text: 'Shift+Tab', color: '#f97316' },
+          { text: 'Ctrl+A', color: '#f97316' },
           { text: ' auto', dimColor: true },
         ]);
         return;
@@ -3846,7 +4012,7 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
   return rows;
 }
 
-// @kern-source: app:3739
+// @kern-source: app:3904
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

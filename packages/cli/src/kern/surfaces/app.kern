@@ -25,7 +25,7 @@ import from="../signals/dispatch.js" names="dispatchIntent,handleModeSwitch"
 import from="../signals/dispatch.js" names="DispatchCallbacks" types=true
 import from="../signals/output.js" names="handleOutputEvent,clearPermissionQueue,clearThinkingBuffer"
 import from="../signals/output.js" names="OutputActions,OutputState,AgentProgressSnapshot,StreamingEntry" types=true
-import from="../signals/app-input.js" names="cleanInputValue,cleanSubmitValue,findInputChange,navigateHistory,resolveEscapeAction,shouldQueuePlanModeOnTab"
+import from="../signals/app-input.js" names="appendInputHistory,cleanInputValue,cleanSubmitValue,findInputChange,navigateHistory,parseAutoModeCommand,resolveEscapeAction,shouldQueuePlanModeOnTab"
 import from="../signals/keyboard.js" names="resolveKeyboardInput"
 import from="../signals/block-archive.js" names="makeBlockArchivePath,appendBlockWithCap"
 import from="../blocks/review.js" names="handleReviewAction"
@@ -45,7 +45,7 @@ import from="../../generated/blocks/engine.js" names="OutputBlock" types=true
 import from="../../generated/blocks/controls.js" names="ReviewEvent" types=true
 import from="node:path" names="join,dirname"
 import from="node:url" names="fileURLToPath"
-import from="node:fs" names="readdirSync,writeFileSync,mkdirSync,unlinkSync"
+import from="node:fs" names="readdirSync,readFileSync,writeFileSync,mkdirSync,unlinkSync"
 import from="node:os" names="tmpdir"
 import from="node:child_process" names="spawnSync"
 import from="../models/session-results.js" names="sessionResultStore"
@@ -267,6 +267,67 @@ fn name=findLatestToolDetailEvent params="blocks:OutputBlock[]" returns=any
       return event;
     }
     return null;
+  >>>
+
+const name=COMPOSER_HISTORY_LIMIT type=number
+  handler <<< 200 >>>
+
+fn name=composerHistoryPath params="" returns=string
+  handler <<< return join(getAgonHome(), 'composer-history.json'); >>>
+
+fn name=loadComposerInputHistory params="" returns="string[]"
+  handler <<<
+    try {
+      const parsed = JSON.parse(readFileSync(composerHistoryPath(), 'utf-8'));
+      if (!Array.isArray(parsed)) return [];
+      return parsed
+        .filter((entry: any) => typeof entry === 'string' && entry.trim().length > 0)
+        .slice(-COMPOSER_HISTORY_LIMIT);
+    } catch {
+      return [];
+    }
+  >>>
+
+fn name=saveComposerInputHistory params="history:string[]" returns=void
+  handler <<<
+    try {
+      ensureAgonHome();
+      const entries = Array.isArray(history) ? history.slice(-COMPOSER_HISTORY_LIMIT) : [];
+      writeFileSync(composerHistoryPath(), JSON.stringify(entries, null, 2) + '\n', 'utf-8');
+    } catch {
+      // History is convenience state; never block the REPL on disk errors.
+    }
+  >>>
+
+fn name=findLatestFailedToolEvent params="blocks:OutputBlock[]" returns=any
+  handler <<<
+    for (let index = blocks.length - 1; index >= 0; index -= 1) {
+      const event = blocks[index]?.event as any;
+      if (event?.type === 'tool-call-group' && Array.isArray(event.blocks)) {
+        for (let g = event.blocks.length - 1; g >= 0; g -= 1) {
+          const inner = event.blocks[g]?.event;
+          if (inner?.type === 'tool-call' && inner.status === 'error') return inner;
+        }
+        continue;
+      }
+      if (event?.type === 'tool-call' && event.status === 'error') return event;
+    }
+    return null;
+  >>>
+
+fn name=buildFailedToolRetryDraft params="event:any" returns=string
+  handler <<<
+    if (!event) return '';
+    const { rawInput, parsed, toolKey } = parseToolCallPayload(event);
+    if (toolKey === 'bash' || toolKey === 'run' || toolKey === 'agonbash') {
+      const command = String((parsed.command as string) || rawInput || '').trim();
+      if (command) return `/run ${command}`;
+    }
+    const toolName = String(event.tool ?? 'tool');
+    const payload = rawInput || (event.input ? String(event.input) : '');
+    const error = String(event.output ?? '').trim();
+    const suffix = error ? `\n\nPrevious error:\n${error}` : '';
+    return `retry the failed ${toolName} call with corrected input:\n${payload}${suffix}`;
   >>>
 
 fn name=buildToolDetailView params="event:any" returns=any
@@ -938,9 +999,12 @@ fn name=estimateOutputEventRows params="event:OutputEvent, mode:string, toolOutp
       case 'cesar-recap': {
         const commandRows = Math.min(5, Array.isArray((event as any).commands) ? (event as any).commands.length : 0);
         const fileRows = Array.isArray((event as any).files) && (event as any).files.length > 0 ? 1 : 0;
+        const checkpointRows = Array.isArray((event as any).checkpoints) && (event as any).checkpoints.length > 0 ? 1 : 0;
+        const diffFiles = Array.isArray((event as any).diffPreview?.files) ? (event as any).diffPreview.files : [];
+        const diffRows = diffFiles.reduce((total: number, file: any) => total + 1 + Math.min(6, Array.isArray(file.lines) ? file.lines.length : 0) + (Number(file.omitted ?? 0) > 0 ? 1 : 0), 0);
         const warningRows = Math.min(3, Array.isArray((event as any).warnings) ? (event as any).warnings.length : 0);
         const reasoningRows = (event as any).confidenceReasoning ? 1 : 0;
-        return 3 + commandRows + fileRows + warningRows + reasoningRows;
+        return 3 + commandRows + fileRows + checkpointRows + diffRows + warningRows + reasoningRows;
       }
       case 'file-changes':
         return 1 + (((event as any).files as any[])?.length ?? 0);
@@ -1342,6 +1406,9 @@ fn name=buildToolCallRows params="baseKey:string, event:any, toolOutputExpanded:
     const collapsed = !toolOutputExpanded;
     const collapsedHint: any[] = [];
     const changeOpenHint: any[] = [];
+    if (event.status === 'error') {
+      collapsedHint.push({ text: ' · Ctrl+Y retry', color: '#fbbf24' });
+    }
     const nestSegment = { text: ' ⏿ ', color: eColor };
     const pushSegmentsRow = (suffix: string, segments: any[], paddingLeft = 2) => {
       rows.push({ key: `${baseKey}-${suffix}`, kind: 'segments', paddingLeft, segments });
@@ -1386,6 +1453,11 @@ fn name=buildToolCallRows params="baseKey:string, event:any, toolOutputExpanded:
       return rows;
     }
 
+    const pushRetryHintIfNeeded = (suffix: string) => {
+      if (event.status !== 'error') return;
+      pushOpenHintRow(suffix, '    Ctrl+Y drafts this failed tool into the composer so you can edit and retry.');
+    };
+
     if (toolKey === 'bash' || toolKey === 'run' || toolKey === 'agonbash') {
       const cmd = String((parsed.command as string) || rawInput || '');
       const desc = parsed.description as string | undefined;
@@ -1409,6 +1481,7 @@ fn name=buildToolCallRows params="baseKey:string, event:any, toolOutputExpanded:
         { text: `${icon} Bash`, color: toolColor, bold: true },
         desc ? { text: ` · ${desc}`, dimColor: true } : null,
       ].filter(Boolean));
+      pushRetryHintIfNeeded('bash-retry');
 
       const cmdLines = cmd ? cmd.split('\n') : [];
       const shownCmdLines = toolOutputExpanded ? cmdLines : cmdLines.slice(0, 3);
@@ -2084,6 +2157,8 @@ fn name=buildTranscriptRows params="blocks:OutputBlock[], mode:string, toolOutpu
           const commands = Array.isArray((event as any).commands) ? (event as any).commands : [];
           const warnings = Array.isArray((event as any).warnings) ? (event as any).warnings : [];
           const toolSummary = Array.isArray((event as any).toolSummary) ? (event as any).toolSummary : [];
+          const checkpoints = Array.isArray((event as any).checkpoints) ? (event as any).checkpoints : [];
+          const diffFiles = Array.isArray((event as any).diffPreview?.files) ? (event as any).diffPreview.files : [];
           const confidence = typeof (event as any).confidence === 'number' ? `${Math.round((event as any).confidence)}% confidence` : '';
           const seconds = typeof (event as any).durationMs === 'number' ? `${(((event as any).durationMs) / 1000).toFixed(1)}s` : '';
           const failedTools = Number((event as any).failedTools ?? 0);
@@ -2119,6 +2194,33 @@ fn name=buildTranscriptRows params="blocks:OutputBlock[], mode:string, toolOutpu
               dimColor: true,
             }]);
           }
+          if (checkpoints.length > 0) {
+            pushSegmentsRow(`${baseKey}-recap-checkpoint`, 1, [{
+              text: `  checkpoint: ${checkpoints[0].id}${checkpoints.length > 1 ? ` (+${checkpoints.length - 1})` : ''} · /undo reverts latest`,
+              color: '#22d3ee',
+            }]);
+          }
+          diffFiles.slice(0, 4).forEach((file: any, index: number) => {
+            pushSegmentsRow(`${baseKey}-recap-diff-${index}`, 1, [
+              { text: `  Δ ${file.relPath ?? file.path}`, color: '#22d3ee' },
+              { text: ` +${Number(file.additions ?? 0)} -${Number(file.deletions ?? 0)}`, dimColor: true },
+            ]);
+            const lines = Array.isArray(file.lines) ? file.lines : [];
+            lines.slice(0, 6).forEach((line: string, lineIndex: number) => {
+              const color = line.startsWith('+') ? '#4ade80' : line.startsWith('-') ? '#ef4444' : '#fbbf24';
+              pushSegmentsRow(`${baseKey}-recap-diff-${index}-${lineIndex}`, 1, [{
+                text: `    ${line}`,
+                color,
+                dimColor: line.startsWith('@@'),
+              }]);
+            });
+            if (Number(file.omitted ?? 0) > 0) {
+              pushSegmentsRow(`${baseKey}-recap-diff-${index}-more`, 1, [{
+                text: `    … ${Number(file.omitted)} more diff lines`,
+                dimColor: true,
+              }]);
+            }
+          });
           warnings.slice(0, 3).forEach((warning: string, index: number) => {
             pushSegmentsRow(`${baseKey}-recap-warning-${index}`, 1, [
               { text: `  ${icons().warning}`, color: '#fbbf24' },
@@ -2186,7 +2288,7 @@ fn name=buildTranscriptRows params="blocks:OutputBlock[], mode:string, toolOutpu
             { text: ' for commands. ', dimColor: true },
             { text: 'Tab', color: '#f97316' },
             { text: ' plan · ', dimColor: true },
-            { text: 'Shift+Tab', color: '#f97316' },
+            { text: 'Ctrl+A', color: '#f97316' },
             { text: ' auto', dimColor: true },
           ]);
           return;
@@ -2242,7 +2344,7 @@ screen name=App target=ink
   state name=replState type="ReplStateState" initial="'idle'"
   state name=outputBlocks type="OutputBlock[]" initial="() => { const cfg = loadConfig(); const saved = cfg.forgeEnabledEngines; return [buildDashboardBlock(saved && saved.length > 0 ? saved : null)]; }"
   state name=inputValue type=string initial="''" safe=false
-  state name=inputHistory type="string[]" initial="[]"
+  state name=inputHistory type="string[]" initial="loadComposerInputHistory()"
   state name=inputQueue type="string[]" initial="[]"
   state name=historyIndex type=number initial=-1 safe=false
   state name=mode type="'chat'|'campfire'|'brainstorm'|'tribunal'" initial="'chat'"
@@ -2950,6 +3052,7 @@ screen name=App target=ink
       }
 
       if (justPastedRef.current) {
+        inputValueRef.current = nextValue;
         setInputValue(nextValue);
         return;
       }
@@ -2958,6 +3061,7 @@ screen name=App target=ink
       const looksLikePaste = value !== nextValue || change.inserted.length > 1;
 
       if (!looksLikePaste || !change.inserted) {
+        inputValueRef.current = nextValue;
         setInputValue(nextValue);
         return;
       }
@@ -2968,6 +3072,7 @@ screen name=App target=ink
       pasteCountRef.current += 1;
       const result = processPasteContent(change.inserted, pasteCountRef.current);
       if (result.type === 'empty') {
+        inputValueRef.current = nextValue;
         setInputValue(nextValue);
         return;
       }
@@ -2978,10 +3083,11 @@ screen name=App target=ink
 
       const replacement = result.type === 'stored' ? result.placeholder : result.content;
       const updatedValue = nextValue.slice(0, change.start) + replacement + nextValue.slice(change.start + change.inserted.length);
+      inputValueRef.current = updatedValue;
       setInputValue(updatedValue);
     >>>
 
-  callback name=handleSubmit async=true params="value:string" deps="replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,planModeQueued"
+  callback name=handleSubmit async=true params="value:string" deps="replState,dispatch,buildContext,mode,pendingImages,jobManager,loadedExtensions,extensionSkills,commandRegistry,eventBus,planModeQueued,autoModeQueued"
     handler <<<
       inputEpochRef.current += 1;
       let input = cleanSubmitValue(value);
@@ -2995,7 +3101,33 @@ screen name=App target=ink
       input = expandPastePlaceholders(input, pasteHashesRef.current);
       pasteHashesRef.current.clear();
       pasteCountRef.current = 0;
-      setInputValue(''); setInputHistory((prev: string[]) => [...prev, input]); setHistoryIndex(-1);
+      inputValueRef.current = '';
+      setInputValue('');
+      setInputHistory((prev: string[]) => {
+        const next = appendInputHistory(prev, input, COMPOSER_HISTORY_LIMIT);
+        saveComposerInputHistory(next);
+        return next;
+      });
+      setHistoryIndex(-1);
+
+      const autoControl = parseAutoModeCommand(input);
+      if (autoControl) {
+        if (autoControl === 'status') {
+          dispatch({ type: 'info', message: autoModeQueued ? 'AUTO is ON — the next plain task may self-escalate through Cesar.' : 'AUTO is OFF.' } as any);
+          return;
+        }
+        const nextAutoModeQueued = autoControl === 'toggle' ? !autoModeQueued : autoControl === 'on';
+        setPlanModeQueued(false);
+        setAutoModeQueued(nextAutoModeQueued);
+        dispatch({
+          type: 'info',
+          message: nextAutoModeQueued
+            ? 'AUTO ON — type a task and press Enter. Use /auto off or Esc to cancel.'
+            : 'AUTO OFF.',
+        } as any);
+        return;
+      }
+
       // /btw <question> — side-channel question during active dispatch
       const btwLower = input.trim().toLowerCase();
       if (btwLower === '/btw') {
@@ -3072,15 +3204,12 @@ screen name=App target=ink
       }
       if (planModeQueued && input.trim() && !input.startsWith('/')) {
         setPlanModeQueued(false);
+        setAutoModeQueued(false);
         handleSubmit(`/plan ${input}`);
         return;
       }
+      const autoModeForTurn = autoModeQueued && input.trim() && !input.startsWith('/');
       if (planModeQueued) setPlanModeQueued(false);
-      if (autoModeQueued && input.trim() && !input.startsWith('/')) {
-        setAutoModeQueued(false);
-        handleSubmit(`/autonomous ${input}`);
-        return;
-      }
       if (autoModeQueued) setAutoModeQueued(false);
       transition(startCommandReplState);
       dispatch({ type: 'separator' } as any);
@@ -3088,8 +3217,10 @@ screen name=App target=ink
       const { text: cleanInput, images: detectedImages } = extractImagesFromInput(input, resolveWorkingDir());
       const allImages = [...pendingImages, ...detectedImages];
       let intent = detectIntent(cleanInput || input, commandRegistry);
+      const ctx = buildContext();
+      (ctx as any).autoModeQueued = autoModeForTurn;
       const cb: DispatchCallbacks = {
-        dispatch, ctx: buildContext(), commandRegistry, eventBus, loadedExtensions, setWorkspacePath,
+        dispatch, ctx, commandRegistry, eventBus, loadedExtensions, setWorkspacePath,
         runAsJob: (type: string, label: string, fn: () => Promise<void>) => {
           const job = jobManager.create(type, label);
           setJobList([...jobManager.list()]);
@@ -3221,6 +3352,24 @@ screen name=App target=ink
       setToolDetailEvent(event);
     >>>
 
+  callback name=draftLatestFailedToolRetry params="" deps="outputBlocks,dispatch"
+    handler <<<
+      const event = findLatestFailedToolEvent(outputBlocks);
+      if (!event) {
+        dispatch({ type: 'info', message: 'No failed tool call to retry/edit yet.' } as any);
+        return;
+      }
+      const draft = buildFailedToolRetryDraft(event);
+      if (!draft) {
+        dispatch({ type: 'info', message: 'No retry draft available for the latest failed tool.' } as any);
+        return;
+      }
+      inputValueRef.current = draft;
+      setInputValue(draft);
+      setHistoryIndex(-1);
+      dispatch({ type: 'info', message: 'Drafted failed-tool retry in the composer. Edit it, then press Enter.' } as any);
+    >>>
+
   callback name=toggleSelectionMode params="" deps="selectionMode,dispatch,terminalMode"
     handler <<<
       if (terminalMode !== 'fullscreen') {
@@ -3280,7 +3429,7 @@ screen name=App target=ink
       dispatch({ type: 'info', message: 'Press Ctrl+C again to exit.' } as any);
     >>>
 
-  callback name=handleComposerCtrlShortcut params="shortcut:string" deps="handleCancelOrExit,handleSubmit,openLatestToolDetail,openResultsPager"
+  callback name=handleComposerCtrlShortcut params="shortcut:string" deps="handleCancelOrExit,handleSubmit,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry"
     handler <<<
       nestedCtrlShortcutRef.current = { key: shortcut, at: Date.now() };
       switch (shortcut) {
@@ -3303,6 +3452,10 @@ screen name=App target=ink
         case 'r':
           ctrlKeyHandledRef.current = true;
           openResultsPager();
+          return;
+        case 'y':
+          ctrlKeyHandledRef.current = true;
+          draftLatestFailedToolRetry();
           return;
         case 'j':
           ctrlKeyHandledRef.current = true;
@@ -3342,7 +3495,7 @@ screen name=App target=ink
     >>>
 
   // ── Keyboard handling — pure decision tree + thin dispatcher ──
-  callback name=handleKeyboardInput params="input:string,key:any" deps="modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,activePlan,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,toggleSelectionMode,startupOnly,terminalMode"
+  callback name=handleKeyboardInput params="input:string,key:any" deps="modelPickerOpen,cesarPickerOpen,slashPickerOpen,enginePickerOpen,reviewEvent,toolDetailEvent,questionState,replState,inputValue,inputHistory,historyIndex,planModeQueued,autoModeQueued,activePlan,outputBlocks,allSlashCommands,availableEngines,handleSubmit,interruptActiveRun,dispatch,openLatestToolDetail,openResultsPager,draftLatestFailedToolRetry,toggleSelectionMode,startupOnly,terminalMode"
     handler <<<
       if (isTerminalFocusReport(input)) return;
 
@@ -3418,9 +3571,19 @@ screen name=App target=ink
           setInputValue(inputValue + action.ghost + ' ');
           return;
         case 'togglePlanQueued':
+          setAutoModeQueued(false);
           setPlanModeQueued((prev: boolean) => !prev); return;
         case 'toggleAutoQueued':
-          setAutoModeQueued((prev: boolean) => !prev); return;
+          const nextAutoModeQueued = !autoModeQueued;
+          setPlanModeQueued(false);
+          setAutoModeQueued(nextAutoModeQueued);
+          dispatch({
+            type: 'info',
+            message: nextAutoModeQueued
+              ? 'AUTO queued — type your task and press Enter. Esc cancels.'
+              : 'AUTO canceled.',
+          } as any);
+          return;
         case 'submit':
           handleSubmit(action.value); return;
         case 'toggleToolExpand':
@@ -3430,6 +3593,8 @@ screen name=App target=ink
           toggleSelectionMode(); return;
         case 'openToolDetail':
           openLatestToolDetail(); return;
+        case 'retryFailedTool':
+          draftLatestFailedToolRetry(); return;
         case 'openResults':
           openResultsPager(); return;
         case 'toggleFileRail':
@@ -3690,7 +3855,7 @@ screen name=App target=ink
               const _cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
               return (<>
                 <CesarStatusStrip cesarId={_cesarId} confidence={cesarConfidence} spinner={liveSpinner} engines={liveProgress} startTime={chatStartTimeRef.current || 0} streamSnippet={streamSnippet} isActive={replState !== 'idle' || runningJobs.length > 0} planModeQueued={planModeQueued} autoModeQueued={autoModeQueued} activePlanState={activePlan?.state ?? null} />
-                {mode === 'chat' && <StatusBar cesarId={statusStats.cesarId} chatMessageCount={statusStats.chatMessageCount} totalTokens={statusStats.totalTokens} totalCostUsd={statusStats.totalCostUsd} cwd={statusCwd} branch={statusBranch} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} isActive={replState !== 'idle'} fullscreenEnabled={terminalMode === 'fullscreen'} selectionMode={terminalMode === 'fullscreen' ? selectionMode : undefined} />}
+                {mode === 'chat' && <StatusBar cesarId={statusStats.cesarId} chatMessageCount={statusStats.chatMessageCount} totalTokens={statusStats.totalTokens} totalCostUsd={statusStats.totalCostUsd} cwd={statusCwd} branch={statusBranch} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} autoModeQueued={autoModeQueued} isActive={replState !== 'idle'} fullscreenEnabled={terminalMode === 'fullscreen'} selectionMode={terminalMode === 'fullscreen' ? selectionMode : undefined} />}
               </>);
             })()}
           </Box>

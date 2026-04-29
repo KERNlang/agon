@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { cleanInputValue, cleanSubmitValue, findInputChange, getSlashMatches, movePickerCursor, resolveEscapeAction, shouldQueuePlanModeOnTab, tryGhostComplete } from '../../packages/cli/src/generated/signals/app-input.js';
+import { appendInputHistory, cleanInputValue, cleanSubmitValue, findInputChange, getSlashMatches, movePickerCursor, parseAutoModeCommand, resolveEscapeAction, shouldQueuePlanModeOnTab, tryGhostComplete } from '../../packages/cli/src/generated/signals/app-input.js';
 import { processPasteContent } from '../../packages/cli/src/generated/signals/paste-handler.js';
 import { pasteStore } from '@agon/core';
 
@@ -46,6 +46,20 @@ describe('app input helpers', () => {
     expect(movePickerCursor('down', 0, 3)).toBe(1);
     expect(movePickerCursor('down', 2, 3)).toBe(0);
     expect(movePickerCursor('down', 0, 0)).toBe(0);
+  });
+
+  it('appends composer history with duplicate pruning and max length', () => {
+    expect(appendInputHistory(['one', 'two'], 'one', 3)).toEqual(['two', 'one']);
+    expect(appendInputHistory(['one', 'two', 'three'], 'four', 3)).toEqual(['two', 'three', 'four']);
+    expect(appendInputHistory(['one'], '   ', 3)).toEqual(['one']);
+  });
+
+  it('parses first-class auto-mode controls without stealing /auto tasks', () => {
+    expect(parseAutoModeCommand('/auto')).toBe('toggle');
+    expect(parseAutoModeCommand('/auto on')).toBe('on');
+    expect(parseAutoModeCommand('/autonomous off')).toBe('off');
+    expect(parseAutoModeCommand('/auto status')).toBe('status');
+    expect(parseAutoModeCommand('/auto fix login')).toBeNull();
   });
 });
 

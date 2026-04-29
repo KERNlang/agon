@@ -19,6 +19,7 @@ function baseCtx(overrides: Record<string, unknown> = {}) {
     inputHistory: [],
     historyIndex: -1,
     planModeQueued: false,
+    autoModeQueued: false,
     activePlanState: null,
     outputBlockCount: 0,
     commands: [],
@@ -46,12 +47,12 @@ describe('resolveKeyboardInput', () => {
     }))).toEqual({ type: 'toggleToolExpand' });
   });
 
-  it('ignores ctrl+y so native terminal copy/yank behavior is not advertised as app chrome', () => {
+  it('routes ctrl+y to failed-tool retry when no text input owns it', () => {
     expect(resolveKeyboardInput(baseCtx({
       input: '\x19',
       key: { ctrl: true },
       textInputActive: false,
-    }))).toEqual({ type: 'none' });
+    }))).toEqual({ type: 'retryFailedTool' });
   });
 
   it('ignores unmapped ctrl shortcuts', () => {
@@ -106,6 +107,50 @@ describe('resolveKeyboardInput', () => {
     expect(resolveKeyboardInput(baseCtx({
       toolDetailOpen: true,
       key: { pageDown: true },
+    }))).toEqual({ type: 'none' });
+  });
+
+  it('routes plain tab to queued plan mode when the composer is idle and empty', () => {
+    expect(resolveKeyboardInput(baseCtx({
+      input: '\t',
+      key: { tab: true },
+    }))).toEqual({ type: 'togglePlanQueued' });
+  });
+
+  it('routes shift+tab to queued auto mode before the plain tab handler', () => {
+    expect(resolveKeyboardInput(baseCtx({
+      input: '\t',
+      key: { tab: true, shift: true },
+    }))).toEqual({ type: 'toggleAutoQueued' });
+  });
+
+  it('routes raw terminal shift+tab escape sequence to queued auto mode', () => {
+    expect(resolveKeyboardInput(baseCtx({
+      input: '\x1b[Z',
+      key: {},
+    }))).toEqual({ type: 'toggleAutoQueued' });
+  });
+
+  it('routes ctrl+a on an idle empty composer to queued auto mode', () => {
+    expect(resolveKeyboardInput(baseCtx({
+      input: 'a',
+      key: { ctrl: true },
+    }))).toEqual({ type: 'toggleAutoQueued' });
+  });
+
+  it('routes ctrl+a on an active empty composer to queued auto mode', () => {
+    expect(resolveKeyboardInput(baseCtx({
+      replState: 'streaming',
+      input: 'a',
+      key: { ctrl: true },
+    }))).toEqual({ type: 'toggleAutoQueued' });
+  });
+
+  it('leaves ctrl+a alone when the composer has text so text editing owns it', () => {
+    expect(resolveKeyboardInput(baseCtx({
+      inputValue: 'hello',
+      input: 'a',
+      key: { ctrl: true },
     }))).toEqual({ type: 'none' });
   });
 

@@ -189,6 +189,7 @@ screen name=StatusBar target=ink
   prop name=isActive type=boolean optional=true
   prop name=fullscreenEnabled type=boolean optional=true
   prop name=selectionMode type=boolean optional=true
+  prop name=telemetryVitals type="Map<string, any>" optional=true
   render
     handler <<<
       const cost = totalCostUsd > 0 ? `$${totalCostUsd.toFixed(2)}` : '';
@@ -227,6 +228,19 @@ screen name=StatusBar target=ink
             {selectionMode !== undefined && <Text color="#f59e0b">{'Ctrl+G'}</Text>}
             {selectionMode !== undefined && <Text dimColor>{')'}</Text>}
             {isActive ? <Text dimColor>{' \u00b7 /btw ask'}</Text> : null}
+            {telemetryVitals && telemetryVitals.size > 0 ? (
+              <Text dimColor>{' \u00b7 engines: '}</Text>
+            ) : null}
+            {telemetryVitals && Array.from(telemetryVitals.values()).map((v: any) => (
+              <Text key={v.engineId}>
+                <Text color={v.state === 'stalled' ? '#ef4444' : v.state === 'offline' ? '#9ca3af' : v.state === 'fallback' ? '#f97316' : '#4ade80'}>
+                  {v.state === 'stalled' ? '\u26a0' : v.state === 'offline' ? '\u2718' : v.state === 'fallback' ? '\u21c4' : '\u25cf'}
+                </Text>
+                <Text dimColor>{v.engineId}</Text>
+                {v.fallbackTo ? <Text dimColor>{`\u2192${v.fallbackTo}`}</Text> : null}
+                <Text dimColor>{' '}</Text>
+              </Text>
+            ))}
           </Text>
         </Box>
       );

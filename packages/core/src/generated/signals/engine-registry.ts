@@ -199,4 +199,25 @@ export class EngineRegistry {
     }
     return available[Math.floor(Date.now() / 1000) % available.length];
   }
+
+  getFallbackChain(sourceId: string, taskClass?: string): string[] {
+    const available = this.availableIds().filter((id: string) => id !== sourceId);
+    if (available.length === 0) return [];
+    try {
+      const { getEngineGlickoRating } = require('../signals/glicko.js');
+      const scored = available.map((id: string) => {
+        const r = getEngineGlickoRating(id, taskClass);
+        return { id, score: r.mu - 2 * r.phi };
+      });
+      scored.sort((a: any, b: any) => b.score - a.score);
+      return scored.map((s: any) => s.id);
+    } catch {
+      return available;
+    }
+  }
+
+  getFallbackCandidate(sourceId: string, taskClass?: string): string|undefined {
+    const chain = this.getFallbackChain(sourceId, taskClass);
+    return chain[0];
+  }
 }

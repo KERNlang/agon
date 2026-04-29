@@ -68,7 +68,7 @@ function AgonTip() {
 }
 
 // @kern-source: status:179
-export function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd, cwd, branch, explorationMode, toolOutputExpanded, autoModeQueued, isActive, fullscreenEnabled, selectionMode }: { cesarId:string; chatMessageCount:number; totalTokens:number; totalCostUsd:number; cwd:string; branch?:string; explorationMode?:boolean; toolOutputExpanded?:boolean; autoModeQueued?:boolean; isActive?:boolean; fullscreenEnabled?:boolean; selectionMode?:boolean }) {
+export function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd, cwd, branch, explorationMode, toolOutputExpanded, autoModeQueued, isActive, fullscreenEnabled, selectionMode, telemetryVitals }: { cesarId:string; chatMessageCount:number; totalTokens:number; totalCostUsd:number; cwd:string; branch?:string; explorationMode?:boolean; toolOutputExpanded?:boolean; autoModeQueued?:boolean; isActive?:boolean; fullscreenEnabled?:boolean; selectionMode?:boolean; telemetryVitals?:Map<string, any> }) {
   const cost = totalCostUsd > 0 ? `$${totalCostUsd.toFixed(2)}` : '';
   const msgs = chatMessageCount;
   const tokens = totalTokens;
@@ -105,12 +105,25 @@ export function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd
         {selectionMode !== undefined && <Text color="#f59e0b">{'Ctrl+G'}</Text>}
         {selectionMode !== undefined && <Text dimColor>{')'}</Text>}
         {isActive ? <Text dimColor>{' \u00b7 /btw ask'}</Text> : null}
+        {telemetryVitals && telemetryVitals.size > 0 ? (
+          <Text dimColor>{' \u00b7 engines: '}</Text>
+        ) : null}
+        {telemetryVitals && Array.from(telemetryVitals.values()).map((v: any) => (
+          <Text key={v.engineId}>
+            <Text color={v.state === 'stalled' ? '#ef4444' : v.state === 'offline' ? '#9ca3af' : v.state === 'fallback' ? '#f97316' : '#4ade80'}>
+              {v.state === 'stalled' ? '\u26a0' : v.state === 'offline' ? '\u2718' : v.state === 'fallback' ? '\u21c4' : '\u25cf'}
+            </Text>
+            <Text dimColor>{v.engineId}</Text>
+            {v.fallbackTo ? <Text dimColor>{`\u2192${v.fallbackTo}`}</Text> : null}
+            <Text dimColor>{' '}</Text>
+          </Text>
+        ))}
       </Text>
     </Box>
   );
 }
 
-// @kern-source: status:237
+// @kern-source: status:251
 export function StatusLine({ startTime, engineId, color }: { startTime:number; engineId?:string; color?:number }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -145,7 +158,7 @@ export function StatusLine({ startTime, engineId, color }: { startTime:number; e
   );
 }
 
-// @kern-source: status:266
+// @kern-source: status:280
 const BackgroundJobRail = React.memo(function BackgroundJobRail({ jobs }: { jobs:Job[] }) {
   return (
     <Box paddingX={1}>
@@ -168,7 +181,7 @@ const BackgroundJobRail = React.memo(function BackgroundJobRail({ jobs }: { jobs
 });
 export { BackgroundJobRail };
 
-// @kern-source: status:286
+// @kern-source: status:300
 const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confidence, spinner, engines, startTime, streamSnippet, isActive, planModeQueued, autoModeQueued, activePlanState, activePlan, scoreboard, rationale }: { cesarId:string; confidence?:number|null; spinner:{ message: string; engineId?: string } | null; engines:EngineProgress[]|null; startTime:number; streamSnippet?:{ engineId: string; line: string } | null; isActive:boolean; planModeQueued?:boolean; autoModeQueued?:boolean; activePlanState?:string|null; activePlan?:any; scoreboard?:Scoreboard|null; rationale?:ModeRationale|null }) {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {

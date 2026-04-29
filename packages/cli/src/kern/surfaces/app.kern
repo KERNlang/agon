@@ -27,6 +27,8 @@ import from="../cesar/mode-rationale.js" names="ModeRationale" types=true
 import from="../signals/paste-handler.js" names="processPasteContent,expandPastePlaceholders"
 import from="../signals/dispatch.js" names="dispatchIntent,handleModeSwitch,isCesarPlanApprovalInput"
 import from="../signals/dispatch.js" names="DispatchCallbacks" types=true
+import from="../cesar/telemetry-poller.js" names="createTelemetryPoller,TelemetryPoller"
+import from="../cesar/telemetry.js" names="EngineVitals" types=true
 import from="../signals/output.js" names="handleOutputEvent,clearPermissionQueue,clearThinkingBuffer"
 import from="../signals/output.js" names="OutputActions,OutputState,AgentProgressSnapshot,StreamingEntry" types=true
 import from="../signals/app-input.js" names="appendInputHistory,cleanInputValue,cleanSubmitValue,findInputChange,hasBtwSideChannelTarget,navigateHistory,parseAutoModeCommand,resolveEscapeAction,shouldQueuePlanModeOnTab"
@@ -2397,8 +2399,10 @@ screen name=App target=ink
   state name=autoModeQueued type=boolean initial="() => loadConfig().cesarAutoMode === true" safe=false
   state name=cesarMemory type=any initial="() => createCesarMemory()"
   state name=sessionMcpServers type="Array<Record<string,unknown>>" initial="[]"
+  state name=telemetryVitals type="Map<string,any>" initial="new Map()" throttle=500
 
   // ── Refs ──
+  ref name=telemetryPollerRef type="any" initial="null"
   ref name=chatStartTimeRef type=number initial=0
   ref name=currentPlanRef type="Plan|null" initial="null"
   ref name=streamingTextRef type="Record<string,StreamingEntry>" initial="{}"
@@ -3040,6 +3044,45 @@ screen name=App target=ink
         process.off('SIGCONT', onResume);
         drainStdinBuffer();
         process.stdout.write('\x1b[?2004l');
+      };
+    >>>
+
+  // ── Telemetry poller lifecycle ──
+  effect deps="registry"
+    handler <<<
+      if (telemetryPollerRef.current) {
+        telemetryPollerRef.current.stop();
+        telemetryPollerRef.current = null;
+      }
+      const poller = createTelemetryPoller({
+        registry,
+        probe: async (id: string) => {
+          // Lightweight probe: check binary availability + mock latency
+          const engine = registry.get(id);
+          const hasBinary = engine.binary ? registry.findBinary(engine) !== null : true;
+          const hasApiKey = !!(engine.api && process.env[engine.api.apiKeyEnv]);
+          const available = hasBinary && hasApiKey;
+          return {
+            state: available ? 'idle' : 'offline',
+            latencyMs: 0,
+          };
+        },
+        intervalMs: 5000,
+        autoFallback: 'ask',
+        onAutoFallback: async (from: string, to: string, reason: string) => {
+          dispatch({ type: 'info', message: `Telemetry: ${from} stalled → fallback to ${to} (${reason}). Approve? (not wired yet)` } as any);
+          return false;
+        },
+      });
+      poller.start();
+      telemetryPollerRef.current = poller;
+      const unsub = poller.subscribe((snapshot: Map<string, EngineVitals>) => {
+        setTelemetryVitals(new Map(snapshot));
+      });
+      return () => {
+        unsub();
+        poller.stop();
+        telemetryPollerRef.current = null;
       };
     >>>
 
@@ -3906,7 +3949,7 @@ screen name=App target=ink
               const _cesarId = (config as any).cesarEngine ?? config.forgeFixedStarter ?? 'claude';
               return (<>
                 <CesarStatusStrip cesarId={_cesarId} confidence={cesarConfidence} spinner={liveSpinner} engines={liveProgress} startTime={chatStartTimeRef.current || 0} streamSnippet={streamSnippet} isActive={replState !== 'idle' || runningJobs.length > 0} planModeQueued={planModeQueued} autoModeQueued={autoModeQueued} activePlanState={activePlan?.state ?? null} activePlan={activePlan} scoreboard={null} rationale={null} />
-                {mode === 'chat' && <StatusBar cesarId={statusStats.cesarId} chatMessageCount={statusStats.chatMessageCount} totalTokens={statusStats.totalTokens} totalCostUsd={statusStats.totalCostUsd} cwd={statusCwd} branch={statusBranch} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} autoModeQueued={autoModeQueued} isActive={replState !== 'idle'} fullscreenEnabled={terminalMode === 'fullscreen'} selectionMode={terminalMode === 'fullscreen' ? selectionMode : undefined} />}
+                {mode === 'chat' && <StatusBar cesarId={statusStats.cesarId} chatMessageCount={statusStats.chatMessageCount} totalTokens={statusStats.totalTokens} totalCostUsd={statusStats.totalCostUsd} cwd={statusCwd} branch={statusBranch} explorationMode={explorationMode} toolOutputExpanded={toolOutputExpanded} autoModeQueued={autoModeQueued} isActive={replState !== 'idle'} fullscreenEnabled={terminalMode === 'fullscreen'} selectionMode={terminalMode === 'fullscreen' ? selectionMode : undefined} telemetryVitals={telemetryVitals} />}
               </>);
             })()}
           </Box>

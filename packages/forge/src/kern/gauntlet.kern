@@ -237,36 +237,47 @@ fn name=runGauntlet async=true params="opts:{winnerId:string, losers:string[], t
 
       const repairPromptText = buildRepairPrompt(task, breakerTestsText);
 
-      // Dispatch winner for repair
+      // Dispatch winner for repair — wrap so a failed repair dispatch (timeout,
+      // crashed binary, network error) doesn't kill the entire gauntlet result.
+      // We still re-score after — if the dispatch failed before producing edits
+      // the worktree state is unchanged, postRepair == preRepair, repairPass is
+      // whatever the original score was.
       const winnerEngine = registry.get(winnerId);
       const hasAgent = !!winnerEngine.agent;
 
-      if (hasAgent && adapter.dispatchAgent) {
-        await adapter.dispatchAgent({
-          engine: winnerEngine,
-          prompt: repairPromptText,
-          cwd: winnerWorktree,
-          mode: 'agent',
-          timeout: repairTimeout,
-          outputDir: forgeDir,
-          signal: opts.signal,
-        });
-      } else {
-        await adapter.dispatch({
-          engine: winnerEngine,
-          prompt: repairPromptText,
-          cwd: winnerWorktree,
-          mode: 'exec',
-          timeout: repairTimeout,
-          outputDir: forgeDir,
-          signal: opts.signal,
-        });
+      let repairDispatchError: string | null = null;
+      try {
+        if (hasAgent && adapter.dispatchAgent) {
+          await adapter.dispatchAgent({
+            engine: winnerEngine,
+            prompt: repairPromptText,
+            cwd: winnerWorktree,
+            mode: 'agent',
+            timeout: repairTimeout,
+            outputDir: forgeDir,
+            signal: opts.signal,
+          });
+        } else {
+          await adapter.dispatch({
+            engine: winnerEngine,
+            prompt: repairPromptText,
+            cwd: winnerWorktree,
+            mode: 'exec',
+            timeout: repairTimeout,
+            outputDir: forgeDir,
+            signal: opts.signal,
+          });
+        }
+      } catch (repairErr) {
+        repairDispatchError = repairErr instanceof Error ? repairErr.message : String(repairErr);
+        console.warn(`[agon] gauntlet repair dispatch (${winnerId}) failed: ${repairDispatchError}`);
+        sidechain.log('repair:dispatch-failed', winnerId, { error: repairDispatchError });
       }
 
-      // Re-score after repair
+      // Re-score after repair (or after failed repair attempt)
       const postRepair = await runFitness({ engineId: winnerId, worktreePath: winnerWorktree, fitnessCmd, timeout: fitnessTimeout, forgeDir });
       postRepairScore = postRepair.score;
-      repairPass = postRepair.pass;
+      repairPass = postRepair.pass && !repairDispatchError;
 
       opts.onEvent?.({ type: 'gauntlet:repair-done' as any, data: { pass: repairPass, score: postRepairScore } });
       sidechain.log('repair:done', winnerId, { pass: repairPass, preScore: preRepairScore, postScore: postRepairScore });

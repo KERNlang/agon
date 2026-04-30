@@ -8,7 +8,7 @@ import type { ForgeOptions, EngineAdapter, EngineResult, ForgeEvent, TaskClass }
 
 import type { TeamSpec, TeamFormat, TeamComposeMode, TeamMember, TeamRoundTrace, TeamSubmission, TeamScoreCard, TeamMatchResult, TeamEvent } from '@agon/core';
 
-import { EngineRegistry, loadConfig, buildForgePrompt, repoRoot, stashSnapshot, worktreeCreate, worktreeRemoveBestEffort, classifyTask, createSidechainLogger, composeTeams, makeFormat, computeContributionWeights } from '@agon/core';
+import { EngineRegistry, loadConfig, buildForgePrompt, repoRoot, stashSnapshot, worktreeCreate, worktreeRemoveBestEffort, classifyTask, createSidechainLogger, composeTeams, makeFormat, computeContributionWeights, spawnWithTimeout } from '@agon/core';
 
 import { updateTeamElo } from '@agon/core';
 
@@ -359,16 +359,24 @@ export async function runTeamCoopForge(team: TeamSpec, task: string, fitnessCmd:
 
     const reviewEngine = registry.get(actualReviewer.engineId);
 
-    // Generate diff for review
-    const { execSync } = await import('node:child_process');
+    // Generate diff for review — async spawn to keep the event loop responsive
+    // for other concurrent engines. Synchronous execSync here used to block
+    // every other parallel team-forge engine for up to 10s per review iteration.
     let diff: string;
     try {
-      diff = execSync('git diff HEAD', { cwd: currentWorktree.path, encoding: 'utf-8', timeout: 10000 });
+      const diffResult = await spawnWithTimeout({
+        command: 'git',
+        args: ['diff', 'HEAD'],
+        cwd: currentWorktree.path,
+        timeout: 10_000,
+        signal,
+      });
+      diff = diffResult.exitCode === 0 ? diffResult.stdout : '(unable to generate diff)';
     } catch {
       diff = '(unable to generate diff)';
     }
 
-    if (!diff || diff.trim().length === 0) break;
+    if (!diff || diff.trim().length === 0 || diff === '(unable to generate diff)') break;
 
     const reviewPrompt = `## YOUR ROLE: REVIEWER\nReview this code change for the task below. If the code is good, respond with exactly "APPROVED". If it needs changes, describe the specific issues.\n\nTask: ${task}\n\n## DIFF:\n\`\`\`diff\n${diff.slice(0, 5000)}\n\`\`\``;
 
@@ -470,12 +478,19 @@ export async function runTeamCoopForge(team: TeamSpec, task: string, fitnessCmd:
   };
 }
 
-// @kern-source: team-forge:462
+// @kern-source: team-forge:470
 export async function runTeamForge(options: TeamForgeOptions, registry: EngineRegistry, adapter: EngineAdapter, onEvent?: (event:ForgeEvent|TeamEvent)=>void): Promise<TeamMatchResult> {
   const config = loadConfig(options.cwd);
   const matchId = randomUUID().slice(0, 8);
   const forgeDir = options.forgeDir;
   const worktrees: WorktreeEntry[] = [];
+
+  // Internal abort: fires before worktree cleanup so in-flight team
+  // dispatches receive SIGTERM via their own spawnWithTimeout signal handlers.
+  const teamAbort = new AbortController();
+  const teamSignal: AbortSignal = options.signal
+    ? AbortSignal.any([options.signal, teamAbort.signal])
+    : teamAbort.signal;
 
   mkdirSync(forgeDir, { recursive: true });
 
@@ -552,18 +567,43 @@ export async function runTeamForge(options: TeamForgeOptions, registry: EngineRe
     throw err;
   }
 
-  // Run both teams in parallel
+  // Run both teams in parallel — allSettled so one team's failure doesn't
+  // discard the other team's (potentially winning) submission.
   try {
-    const [subA, subB] = await Promise.all([
-      runTeamCoopForge(teamA, options.task, options.fitnessCmd, forgePrompt, registry, adapter, options.cwd, baseSha, forgeDir, worktrees, timeout, fitnessTimeout, maxLoops, onEvent, options.signal),
-      runTeamCoopForge(teamB, options.task, options.fitnessCmd, forgePrompt, registry, adapter, options.cwd, baseSha, forgeDir, worktrees, timeout, fitnessTimeout, maxLoops, onEvent, options.signal),
+    const settled = await Promise.allSettled([
+      runTeamCoopForge(teamA, options.task, options.fitnessCmd, forgePrompt, registry, adapter, options.cwd, baseSha, forgeDir, worktrees, timeout, fitnessTimeout, maxLoops, onEvent, teamSignal),
+      runTeamCoopForge(teamB, options.task, options.fitnessCmd, forgePrompt, registry, adapter, options.cwd, baseSha, forgeDir, worktrees, timeout, fitnessTimeout, maxLoops, onEvent, teamSignal),
     ]);
+    const [outA, outB] = settled;
+    if (outA.status === 'rejected' && outB.status === 'rejected') {
+      const errA = outA.reason instanceof Error ? outA.reason.message : String(outA.reason);
+      const errB = outB.reason instanceof Error ? outB.reason.message : String(outB.reason);
+      throw new Error(`Both teams failed — teamA: ${errA}; teamB: ${errB}`);
+    }
+    if (outA.status === 'rejected') {
+      const errA = outA.reason instanceof Error ? outA.reason.message : String(outA.reason);
+      console.warn(`[agon] team-forge: teamA (${teamA.teamId}) failed — awarding teamB by default: ${errA}`);
+      sidechain.log('team-forge:partial-failure', teamA.teamId, { failedTeam: 'A', error: errA });
+    }
+    if (outB.status === 'rejected') {
+      const errB = outB.reason instanceof Error ? outB.reason.message : String(outB.reason);
+      console.warn(`[agon] team-forge: teamB (${teamB.teamId}) failed — awarding teamA by default: ${errB}`);
+      sidechain.log('team-forge:partial-failure', teamB.teamId, { failedTeam: 'B', error: errB });
+    }
+    const subA = outA.status === 'fulfilled' ? outA.value : null;
+    const subB = outB.status === 'fulfilled' ? outB.value : null;
 
-    onEvent?.({ type: 'team:submit' as any, data: { teamId: teamA.teamId } });
-    onEvent?.({ type: 'team:submit' as any, data: { teamId: teamB.teamId } });
+    if (subA) onEvent?.({ type: 'team:submit' as any, data: { teamId: teamA.teamId } });
+    if (subB) onEvent?.({ type: 'team:submit' as any, data: { teamId: teamB.teamId } });
 
-    const resultA = subA.finalOutput as EngineResult;
-    const resultB = subB.finalOutput as EngineResult;
+    // Build EngineResult-shaped surrogates for failed teams so scoring + ELO
+    // still produce a valid match record (loss by forfeit).
+    const resultA: EngineResult = subA
+      ? (subA.finalOutput as EngineResult)
+      : { engineId: teamA.teamId, pass: false, score: 0, diffLines: 0, filesChanged: 0, durationSec: 0, lintWarnings: 0, styleScore: 0, patchPath: '', worktreePath: '' };
+    const resultB: EngineResult = subB
+      ? (subB.finalOutput as EngineResult)
+      : { engineId: teamB.teamId, pass: false, score: 0, diffLines: 0, filesChanged: 0, durationSec: 0, lintWarnings: 0, styleScore: 0, patchPath: '', worktreePath: '' };
 
     const scoreA: TeamScoreCard = { teamId: teamA.teamId, score: resultA.score, breakdown: { pass: resultA.pass ? 1 : 0, fitness: resultA.score, diffLines: resultA.diffLines } };
     const scoreB: TeamScoreCard = { teamId: teamB.teamId, score: resultB.score, breakdown: { pass: resultB.pass ? 1 : 0, fitness: resultB.score, diffLines: resultB.diffLines } };
@@ -581,13 +621,16 @@ export async function runTeamForge(options: TeamForgeOptions, registry: EngineRe
 
     onEvent?.({ type: 'team:winner' as any, data: { winnerTeamId } });
 
+    const submissions: Record<string, any> = {};
+    if (subA) submissions[teamA.teamId] = subA;
+    if (subB) submissions[teamB.teamId] = subB;
     const matchResult: TeamMatchResult = {
       matchId,
       mode: 'forge',
       task: options.task,
       format,
       teams: [teamA, teamB],
-      submissions: { [teamA.teamId]: subA, [teamB.teamId]: subB },
+      submissions,
       scorecards: { [teamA.teamId]: scoreA, [teamB.teamId]: scoreB },
       winnerTeamId,
       timestamp: new Date().toISOString(),
@@ -618,6 +661,12 @@ export async function runTeamForge(options: TeamForgeOptions, registry: EngineRe
     }
     throw err;
   } finally {
+    // Abort in-flight team dispatches before cleanup — same rationale as
+    // runForge: SIGTERM lands first, dirs get removed after. 1000ms grace
+    // matches spawnWithTimeout's SIGTERM→SIGKILL window so file handles
+    // are released before we try to remove worktree directories.
+    if (!teamAbort.signal.aborted) teamAbort.abort();
+    try { await new Promise(resolve => setTimeout(resolve, 1000)); } catch { /* non-fatal */ }
     for (const wt of worktrees) {
       worktreeRemoveBestEffort(wt.repoRoot, wt.path);
     }

@@ -2,18 +2,34 @@
 
 import type { EngineDefinition, EngineMode, EngineModeConfig, ImageAttachment } from '@agon/core';
 
-import { EngineNotFoundError, loadConfig } from '@agon/core';
+import { EngineNotFoundError, loadConfig, engineHealth, classifyDispatchFailure } from '@agon/core';
 
 import { statSync } from 'node:fs';
 
+/**
+ * Centralized engine-health recording for any dispatch return point. exitCode 0 + not timed out → mark ok (clears prior quarantine). Otherwise classify and quarantine only on auth-failed/unreachable — timeouts and generic failures stay in rotation since they may be transient.
+ */
 // @kern-source: adapter-helpers:5
+export function recordDispatchHealth(engineId: string, result: {exitCode?:number,stderr?:string,timedOut?:boolean}): void {
+  const exitCode = result.exitCode ?? 0;
+  if (exitCode === 0 && !result.timedOut) {
+    engineHealth.mark(engineId, 'ok', '');
+    return;
+  }
+  const status = classifyDispatchFailure({ stderr: result.stderr, exitCode, timedOut: result.timedOut });
+  if (status === 'auth-failed' || status === 'unreachable') {
+    engineHealth.mark(engineId, status, (result.stderr || '').split('\n')[0]);
+  }
+}
+
+// @kern-source: adapter-helpers:19
 export function resolveArgs(template: string[], vars: Record<string,string>): string[] {
   return template.map((arg) =>
     arg.replace(/\{(\w+)\}/g, (_: string, key: string) => vars[key] ?? ''),
   );
 }
 
-// @kern-source: adapter-helpers:12
+// @kern-source: adapter-helpers:26
 export function resolveModel(engine: EngineDefinition, cwd?: string): string|null {
   const modelConfig = engine.model;
   if (!modelConfig) return null;
@@ -29,14 +45,14 @@ export function resolveModel(engine: EngineDefinition, cwd?: string): string|nul
   return modelConfig.default ?? null;
 }
 
-// @kern-source: adapter-helpers:28
+// @kern-source: adapter-helpers:42
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes}B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
 }
 
-// @kern-source: adapter-helpers:35
+// @kern-source: adapter-helpers:49
 export function buildCommand(engine: EngineDefinition, mode: EngineMode, prompt: string, cwd: string, timeout: number, binaryPath: string, images?: ImageAttachment[]): {command:string, args:string[]} {
   const modeConfig = mode === 'agent' ? engine.agent
     : mode === 'exec' ? engine.exec
@@ -100,12 +116,12 @@ export function buildCommand(engine: EngineDefinition, mode: EngineMode, prompt:
   return { command: binaryPath, args };
 }
 
-// @kern-source: adapter-helpers:99
+// @kern-source: adapter-helpers:113
 export function supportsAgentMode(engine: EngineDefinition): boolean {
   return !!engine.agent;
 }
 
-// @kern-source: adapter-helpers:101
+// @kern-source: adapter-helpers:115
 export function resolveAgentArgs(engine: EngineDefinition, permissionLevel: 'full'|'plan'|'read-only'): EngineModeConfig|null {
   if (permissionLevel === 'read-only') return null;
   if (!engine.agent) return null;
@@ -123,7 +139,7 @@ export function resolveAgentArgs(engine: EngineDefinition, permissionLevel: 'ful
 /**
  * Extract text content from Claude stream-json NDJSON output. Returns plain text with system/hook messages removed.
  */
-// @kern-source: adapter-helpers:116
+// @kern-source: adapter-helpers:130
 export function stripStreamJson(stdout: string): string {
   const lines = stdout.split('\n');
   const textParts: string[] = [];
@@ -156,13 +172,13 @@ export function stripStreamJson(stdout: string): string {
 /**
  * Check if engine exec mode outputs stream-json NDJSON.
  */
-// @kern-source: adapter-helpers:147
+// @kern-source: adapter-helpers:161
 export function usesStreamJson(engine: EngineDefinition): boolean {
   const args = engine.exec?.args ?? [];
   return args.includes('stream-json') || args.some((a: string) => a === '--output-format' && args[args.indexOf(a) + 1] === 'stream-json');
 }
 
-// @kern-source: adapter-helpers:154
+// @kern-source: adapter-helpers:168
 export function checkEnvVars(engine: EngineDefinition): string|null {
   if (!engine.env) return null;
   for (const [envVar, config] of Object.entries(engine.env)) {

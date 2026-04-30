@@ -74,7 +74,10 @@ export async function runForgeEngineAttempt(opts: {engineId:string,prompt:string
 
   const dispatchStart = Date.now();
   let dispatchResult: any;
-  const useAgent = !!engine.agent && !!opts.adapter.dispatchAgent;
+  // Forge is a code-changing workflow. API-only engines must run through
+  // the tool-using agent loop; plain API chat can only return text and will
+  // never modify the worktree.
+  const useAgent = !!opts.adapter.dispatchAgent && (!!engine.agent || !!engine.api);
   const onSpawn = (pid: number) => opts.onEvent?.({
     type: 'engine:pid' as any,
     engineId: opts.engineId,
@@ -134,7 +137,7 @@ export async function runForgeEngineAttempt(opts: {engineId:string,prompt:string
   return { result, metric, dispatchResult, worktreePath: wtPath };
 }
 
-// @kern-source: stages:126
+// @kern-source: stages:129
 export async function runBaseline(opts: {cwd:string, baseSha:string, fitnessCmd:string, fitnessTimeout:number, forgeDir:string, onEvent?:ForgeEventCallback}): Promise<boolean> {
   opts.onEvent?.({ type: 'baseline:start' });
 
@@ -158,7 +161,7 @@ export async function runBaseline(opts: {cwd:string, baseSha:string, fitnessCmd:
   }
 }
 
-// @kern-source: stages:150
+// @kern-source: stages:153
 export async function runStage1(opts: {starter:string, forgePrompt:string, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal, taskClass?:string, enginePrompts?:Map<string,string>}): Promise<StageResult> {
   opts.onEvent?.({ type: 'stage1:start', engineId: opts.starter });
 
@@ -253,7 +256,7 @@ export async function runStage1(opts: {starter:string, forgePrompt:string, fitne
   return { engineResults, accepted, winner: result?.pass ? result.engineId : null, metrics };
 }
 
-// @kern-source: stages:245
+// @kern-source: stages:248
 export async function runStage2(opts: {challengers:string[], forgePrompt:string, enginePrompts?:Map<string,string>, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal}): Promise<StageResult> {
   opts.onEvent?.({ type: 'stage2:start' });
 
@@ -351,7 +354,7 @@ export async function runStage2(opts: {challengers:string[], forgePrompt:string,
   return { engineResults: allResults, accepted: false, winner: null, metrics };
 }
 
-// @kern-source: stages:343
+// @kern-source: stages:346
 export async function runStage2WithPeek(opts: {challengers:string[], forgePrompt:string, enginePrompts?:Map<string,string>, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal}): Promise<StageResult> {
   if (opts.challengers.length <= 1) {
     // Only one challenger — no peek possible, use normal stage2

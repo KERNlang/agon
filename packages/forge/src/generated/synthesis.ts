@@ -8,7 +8,7 @@ import { EngineRegistry, FitnessError, buildCritiquePrompt, buildSynthesisPrompt
 
 import { runFitness } from './fitness.js';
 
-import type { SynthesisResult, ForgeEventCallback } from '../types.js';
+import type { SynthesisResult, ForgeEventCallback, WorktreeEntry } from '../types.js';
 
 // @kern-source: synthesis:7
 export function parseCritiques(output: string): Critique[] {
@@ -39,7 +39,7 @@ export function parseCritiques(output: string): Critique[] {
 }
 
 // @kern-source: synthesis:35
-export async function runSynthesis(opts: {manifest:ForgeManifest, winner:string, losers:string[], registry:EngineRegistry, adapter:EngineAdapter, forgeDir:string, fitnessCmd:string, timeout:number, fitnessTimeout:number, maxCritiques:number, repoRoot:string, headSha:string, onEvent?:ForgeEventCallback}): Promise<SynthesisResult> {
+export async function runSynthesis(opts: {manifest:ForgeManifest, winner:string, losers:string[], registry:EngineRegistry, adapter:EngineAdapter, forgeDir:string, fitnessCmd:string, timeout:number, fitnessTimeout:number, maxCritiques:number, repoRoot:string, headSha:string, worktrees?:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal}): Promise<SynthesisResult> {
   const { manifest, winner, losers, registry, adapter, forgeDir } = opts;
 
   const winnerResult = manifest.results[winner];
@@ -47,6 +47,21 @@ export async function runSynthesis(opts: {manifest:ForgeManifest, winner:string,
     throw new FitnessError('Winner has no patch path — cannot synthesize');
   }
   const winnerPatch = readFileSync(winnerResult.patchPath, 'utf-8');
+  // Bail early on empty patches — synthesis can't refine zero changes, and
+  // applyPatch would silently no-op leaving synthesis on a clean checkout
+  // that re-runs fitness against the baseline. Wasted compute with a
+  // misleading "synthesis didn't improve" outcome.
+  if (!winnerPatch.trim()) {
+    opts.onEvent?.({ type: 'synthesis:done', data: { wins: false, score: winnerResult.score, originalScore: winnerResult.score } });
+    return {
+      pass: winnerResult.pass,
+      score: winnerResult.score,
+      wins: false,
+      patchPath: winnerResult.patchPath,
+      originalWinnerScore: winnerResult.score,
+      critiques: [],
+    };
+  }
 
   opts.onEvent?.({ type: 'synthesis:start' });
 
@@ -103,6 +118,7 @@ export async function runSynthesis(opts: {manifest:ForgeManifest, winner:string,
         mode: 'review',
         timeout: opts.timeout,
         outputDir: forgeDir,
+        signal: opts.signal,
       });
       return parseCritiques(result.stdout);
     } catch (err) {
@@ -131,6 +147,11 @@ export async function runSynthesis(opts: {manifest:ForgeManifest, winner:string,
 
   try {
     worktreeCreate(opts.repoRoot, synthWtPath, opts.headSha);
+    // Register the synth worktree in the shared cleanup list when provided —
+    // if this function is killed between worktreeCreate and the finally below
+    // (or the host process is hard-killed), the outer forge cleanup still
+    // catches the orphan.
+    opts.worktrees?.push({ engineId: 'synthesis', path: synthWtPath, repoRoot: opts.repoRoot });
     applyPatch(synthWtPath, winnerPatch);
 
     const synthPrompt = buildSynthesisPrompt({
@@ -149,6 +170,7 @@ export async function runSynthesis(opts: {manifest:ForgeManifest, winner:string,
         mode: 'agent',
         timeout: opts.timeout,
         outputDir: forgeDir,
+        signal: opts.signal,
       });
     } else {
       await adapter.dispatch({
@@ -158,6 +180,7 @@ export async function runSynthesis(opts: {manifest:ForgeManifest, winner:string,
         mode: 'exec',
         timeout: opts.timeout,
         outputDir: forgeDir,
+        signal: opts.signal,
       });
     }
 

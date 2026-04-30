@@ -6,7 +6,7 @@ import { mkdirSync, appendFileSync, existsSync, readFileSync, unlinkSync, readdi
 
 import type { ImageAttachment, PersistentSession, ForgeManifest, ForgeJudgment } from '@agon/core';
 
-import { ensureAgonHome, RUNS_DIR, appendMessage, appendUserTurnIfAbsent, buildHistoryPrimedPrompt, tracker, resolveWorkingDir, ToolRegistry, getProjectFileStateCache, parseToolCalls, formatToolResults, runToolLoop, classifyTask, loadConfig, configSet, createStreamBridge } from '@agon/core';
+import { ensureAgonHome, RUNS_DIR, appendMessage, appendUserTurnIfAbsent, buildHistoryPrimedPrompt, tracker, resolveWorkingDir, ToolRegistry, getProjectFileStateCache, parseToolCalls, formatToolResults, runToolLoop, classifyTask, loadConfig, configSet, createStreamBridge, engineHealth } from '@agon/core';
 
 import type { ToolContext, ToolCallResult } from '@agon/core';
 
@@ -434,6 +434,12 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
             appendUserTurnIfAbsent(ctx.chatSession, input);
             const brainHint = (freshResult.stderr || '').split('\n')[0].slice(0, 200).trim();
             if (brainHint) dispatch({ type: 'warning', message: `Cesar (${cesarEngineId}) returned no response: ${brainHint}` });
+            // Surface a health hint when adapter has quarantined this engine — the user
+            // needs to see why retries won't help so they can /cesar to a working engine.
+            const health = engineHealth.get(cesarEngineId);
+            if (health && (health.status === 'auth-failed' || health.status === 'unreachable')) {
+              dispatch({ type: 'warning', message: `Engine ${cesarEngineId} marked ${health.status} — run /cesar to switch to a healthy engine, or /engines to fix credentials.` });
+            }
             return { delegated: false, responded: false };
           } catch { /* truly failed */ }
           dispatch({ type: 'spinner-stop' });

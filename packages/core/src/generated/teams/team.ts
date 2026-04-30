@@ -76,11 +76,12 @@ export interface TeamMatchResult {
   scorecards: Record<string,TeamScoreCard>;
   winnerTeamId: string|null;
   timestamp: string;
+  error?: string;
 }
 
 export type TeamEventType = 'team:compose' | 'team:round-start' | 'team:member-dispatch' | 'team:member-done' | 'team:round-done' | 'team:submit' | 'team:score' | 'team:winner' | 'team:match-done';
 
-// @kern-source: team:61
+// @kern-source: team:62
 export interface TeamEvent {
   type: TeamEventType;
   engineId?: string;
@@ -101,17 +102,17 @@ export interface TeamEventMap {
 
 export type TeamEventCallback = (event: TeamEvent) => void;
 
-// @kern-source: team:72
+// @kern-source: team:73
 export function lineupKey(engineIds: string[]): string {
   return [...engineIds].sort().join('+');
 }
 
-// @kern-source: team:74
+// @kern-source: team:75
 export function makeFormat(membersPerSide: number): TeamFormat {
   return { membersPerSide, label: `${membersPerSide}v${membersPerSide}` };
 }
 
-// @kern-source: team:76
+// @kern-source: team:77
 export function assignTeamRoles(engineIds: string[], taskClass: TaskClass): TeamMember[] {
   const ratings = getRatings();
   const classRatings = ratings.byTaskClass[taskClass] ?? {};
@@ -155,7 +156,7 @@ export function assignTeamRoles(engineIds: string[], taskClass: TaskClass): Team
   return members;
 }
 
-// @kern-source: team:120
+// @kern-source: team:121
 export function composeTeams(engineIds: string[], membersPerSide: number, mode: TeamComposeMode, taskClass: TaskClass, explicitTeams?: [string[], string[]]): [TeamSpec, TeamSpec] {
   const ratings = getRatings();
 
@@ -232,7 +233,7 @@ export function composeTeams(engineIds: string[], membersPerSide: number, mode: 
   return [specA, specB];
 }
 
-// @kern-source: team:197
+// @kern-source: team:198
 export function computeContributionWeights(team: TeamSpec, trace: TeamRoundTrace[]): Record<string,number> {
   // Start with default weights from role assignment
   const weights: Record<string, number> = {};

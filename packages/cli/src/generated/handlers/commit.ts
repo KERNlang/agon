@@ -2,7 +2,7 @@
 
 import { execSync, execFileSync } from 'node:child_process';
 
-import { loadConfig, resolveWorkingDir } from '@agon/core';
+import { loadConfig, resolveWorkingDir, configGet } from '@agon/core';
 
 import type { Dispatch, HandlerContext } from '../../handlers/types.js';
 
@@ -73,6 +73,7 @@ export async function handleCommit(message: string|undefined, dispatch: Dispatch
 
   // Step 3: Generate or use provided commit message
   let commitMsg = message?.trim();
+  let agonGenerated = false;
   if (!commitMsg) {
     // Auto-classify from diff
     const changeType = classifyChanges(diff);
@@ -83,6 +84,7 @@ export async function handleCommit(message: string|undefined, dispatch: Dispatch
       : `${fileList.length} files`;
 
     commitMsg = `${changeType}: ${shortSummary}`;
+    agonGenerated = true;
 
     // Ask user to confirm/edit
     const answer = await ctx.askQuestion(`Commit message: "${commitMsg}" — ok? (y/edit/n)`);
@@ -92,7 +94,14 @@ export async function handleCommit(message: string|undefined, dispatch: Dispatch
     }
     if (answer.toLowerCase() !== 'y' && answer.trim()) {
       commitMsg = answer.trim();
+      agonGenerated = false; // User edited → not purely Agon-generated
     }
+  }
+
+  // Append Co-authored-by trailer when Agon generated the message and user hasn't disabled it
+  const autoCredit = configGet('autoCredit', cwd) as boolean;
+  if (agonGenerated && autoCredit) {
+    commitMsg += '\n\nCo-authored-by: Agon AI <agon@local>';
   }
 
   // Step 4: Commit with HEREDOC (safe for special chars)

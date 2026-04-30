@@ -125,6 +125,7 @@ const PromptTextInput = React.memo(function PromptTextInput({ value, placeholder
     const isForwardDelete = deleteMode === 'forward';
     const isBackspace = deleteMode === 'backward';
     const extendedKey = key as typeof key & { home?: boolean; end?: boolean };
+    const keyName = typeof key.name === 'string' ? key.name.toLowerCase() : '';
     const ctrlInputMap = {
       '\x01': 'a',
       '\x03': 'c',
@@ -139,7 +140,7 @@ const PromptTextInput = React.memo(function PromptTextInput({ value, placeholder
       '\x02': 'b',
       ...(key.ctrl ? { '\x09': 'i', '\x0a': 'j' } : {}),
     } as Record<string, string>;
-    const normalizedCtrlInput = ctrlInputMap[input] ?? input;
+    const normalizedCtrlInput = ctrlInputMap[input] ?? (key.ctrl && keyName ? keyName : input);
     const hasCtrlSignal = !!key.ctrl || ['\x01', '\x02', '\x03', '\x05', '\x0b', '\x0c', '\x12', '\x14', '\x15', '\x17', '\x19'].includes(input);
     const isReservedCtrlShortcut = hasCtrlSignal && isDelegatedCtrlShortcut(normalizedCtrlInput);
     const isSupportedCtrlEditShortcut = hasCtrlSignal && ['a', 'k', 'u', 'w'].includes(normalizedCtrlInput);

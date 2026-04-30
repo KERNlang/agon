@@ -451,8 +451,8 @@ fn name=buildOnToolCall params="ctx:HandlerContext, toolRegistry:ToolRegistry, c
 
       if (name === 'ProposePlan') {
         const activePlan = ctx.activePlan;
-        if (activePlan && activePlan.state === 'running') {
-          return '[PLAN_ERROR] A Cesar plan is already executing. Do not create a nested plan from inside an approved plan step. Finish the current step with direct tools and a concise recap.';
+        if (activePlan && ['running', 'paused'].includes(activePlan.state)) {
+          return '[PLAN_ERROR] A Cesar plan is already active. Do not create a nested plan from inside an approved or paused plan. Resume/cancel the current plan, or finish the current step with direct tools and a concise recap.';
         }
         // Validate engines exist before creating the plan
         const proposedSteps = (args as any).steps ?? [];

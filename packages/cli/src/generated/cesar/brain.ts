@@ -1140,14 +1140,14 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                 } else if (signal.tool === 'ProposePlan') {
                   recordToolUse('ProposePlan', 'mcp', JSON.stringify(signal.args ?? {}), 'done');
                   const activePlan = ctx.activePlan;
-                  if (activePlan && activePlan.state === 'running') {
+                  if (activePlan && ['running', 'paused'].includes(activePlan.state)) {
                     dispatch({
                       type: 'tool-call',
                       engineId: cesarEngineId,
                       tool: 'ProposePlan',
                       input: JSON.stringify(signal.args ?? {}),
                       status: 'error',
-                      output: 'A Cesar plan is already executing; nested plans are blocked. Finish the current approved step with direct tools.',
+                      output: 'A Cesar plan is already active; nested plans are blocked. Resume or cancel the current plan before proposing another.',
                     } as any);
                     continue;
                   }
@@ -1337,14 +1337,14 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
           delete (ctx.cesar as any)._proposePlanArgs;
           try {
             const activePlan = ctx.activePlan;
-            if (activePlan && activePlan.state === 'running') {
+            if (activePlan && ['running', 'paused'].includes(activePlan.state)) {
               dispatch({
                 type: 'tool-call',
                 engineId: cesarEngineId,
                 tool: 'ProposePlan',
                 input: JSON.stringify(ppArgs ?? {}),
                 status: 'error',
-                output: 'A Cesar plan is already executing; nested plans are blocked. Finish the current approved step with direct tools.',
+                output: 'A Cesar plan is already active; nested plans are blocked. Resume or cancel the current plan before proposing another.',
               } as any);
             } else {
               const { handleProposePlan } = await import('../handlers/plan-mode.js');

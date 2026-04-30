@@ -1130,14 +1130,14 @@ fn name=isCesarPlanResumeInput params="input:string" returns=boolean export=true
   handler <<<
     const text = String(input ?? '').trim().toLowerCase().replace(/[.!?]+$/g, '').replace(/\s+/g, ' ');
     return /^(?:go|run|resume|continue|proceed|start)(?:\b|$)/i.test(text)
-      || /^(?:do it|do so|keep going|carry on)$/i.test(text);
+      || /^(?:do it|do so|keep going|carry on|ok do last part|do last part|last part)$/i.test(text);
   >>>
 
 fn name=isCesarPlanStatusInput params="input:string" returns=boolean export=true
   doc "Return true for short status checks that should be answered from plan state instead of routed to Cesar chat."
   handler <<<
     const text = String(input ?? '').trim().toLowerCase().replace(/[.!?]+$/g, '').replace(/\s+/g, ' ');
-    return /^(?:done|done yet|status|progress|what happened|what did you do|what yu do|what you do|are you doing something|are you still working|still working|is it running|where are we)$/i.test(text);
+    return /^(?:done|done yet|status|progress|what happened|what went wrong|what did you do|what yu do|what you do|why stop|why stopped|why did it stop|are you doing something|are you still working|still working|is it running|where are we)$/i.test(text);
   >>>
 
 fn name=formatCesarPlanRuntimeStatus params="plan:CesarPlan" returns=string export=true

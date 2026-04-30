@@ -88,10 +88,34 @@ describe('resolveKeyboardInput', () => {
     }))).toEqual({ type: 'toggleFileRail' });
   });
 
+  it('routes ctrl+b to the file rail when Ink reports only key.name', () => {
+    expect(resolveKeyboardInput(baseCtx({
+      input: '',
+      key: { ctrl: true, name: 'b' },
+      textInputActive: false,
+    }))).toEqual({ type: 'toggleFileRail' });
+  });
+
+  it('defers key.name ctrl+b to the active text input', () => {
+    expect(resolveKeyboardInput(baseCtx({
+      input: '',
+      key: { ctrl: true, name: 'b' },
+      textInputActive: true,
+    }))).toEqual({ type: 'none' });
+  });
+
   it('routes raw ctrl+t to the live execution rail as a tab-safe alias', () => {
     expect(resolveKeyboardInput(baseCtx({
       input: '\x14',
       key: {},
+      textInputActive: false,
+    }))).toEqual({ type: 'toggleExecutionRail' });
+  });
+
+  it('routes ctrl+i to the live rail when Ink reports key.name', () => {
+    expect(resolveKeyboardInput(baseCtx({
+      input: '',
+      key: { ctrl: true, name: 'i' },
       textInputActive: false,
     }))).toEqual({ type: 'toggleExecutionRail' });
   });

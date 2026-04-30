@@ -6,7 +6,7 @@ import { Box, Static, Text, render } from 'ink';
 // ── Core ───────────────────────────────────────────────
 import { ScrollBox, AlternateScreen } from '@kernlang/terminal/runtime';
 
-import { EngineRegistry, loadConfig, ensureAgonHome, ensureCurrentWorkspace, startChatSession, getRatings, getActiveWorkspace, RUNS_DIR, extractImagesFromInput, resolveWorkingDir, currentBranch, configSet, createCesarMemory, modelEntryToEngineDef, appendMessage, getAgonHome, tracker, planCostEstimator, cancelCesarPlan, saveCesarPlan, listCesarPlans } from '@agon/core';
+import { EngineRegistry, loadConfig, ensureAgonHome, ensureCurrentWorkspace, startChatSession, getRatings, getActiveWorkspace, RUNS_DIR, extractImagesFromInput, resolveWorkingDir, currentBranch, configSet, createCesarMemory, modelEntryToEngineDef, appendMessage, getAgonHome, tracker, planCostEstimator, cancelCesarPlan, saveCesarPlan, listCesarPlans, loadCesarPlan } from '@agon/core';
 
 import type { Plan, ChatSession, Skill, PersistentSession, ImageAttachment } from '@agon/core';
 
@@ -221,7 +221,7 @@ export function App() {
   const setExplorationMode = useMemo(() => __inkSafe(_setExplorationModeRaw), [_setExplorationModeRaw]);
   const [neroMode, _setNeroModeRaw] = useState<boolean>(false);
   const setNeroMode = useMemo(() => __inkSafe(_setNeroModeRaw), [_setNeroModeRaw]);
-  const [toolOutputExpanded, _setToolOutputExpandedRaw] = useState<boolean>(true);
+  const [toolOutputExpanded, _setToolOutputExpandedRaw] = useState<boolean>(false);
   const setToolOutputExpanded = useMemo(() => __inkSafe(_setToolOutputExpandedRaw), [_setToolOutputExpandedRaw]);
   const [thinkingExpanded, _setThinkingExpandedRaw] = useState<boolean>(true);
   const setThinkingExpanded = useMemo(() => __inkSafe(_setThinkingExpandedRaw), [_setThinkingExpandedRaw]);
@@ -382,6 +382,8 @@ export function App() {
   const currentPlanRef = useRef<Plan|null>(null);
   const activePlanRef = useRef<any>(null);
   const activePlanClearTimerRef = useRef<ReturnType<typeof setTimeout>|null>(null);
+  const planWatcherTimerRef = useRef<ReturnType<typeof setInterval>|null>(null);
+  const planWatcherDebounceTimerRef = useRef<ReturnType<typeof setTimeout>|null>(null);
   const streamingTextRef = useRef<Record<string,StreamingEntry>>({});
   const agentProgressRef = useRef<Record<string,AgentProgressSnapshot>>({});
   const lastReviewResultRef = useRef<{ engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number } | null>(null);
@@ -1488,6 +1490,46 @@ export function App() {
   }, [activePlan]);
 
   useEffect(() => {
+    if (planWatcherTimerRef.current) { clearInterval(planWatcherTimerRef.current); planWatcherTimerRef.current = null; }
+    if (planWatcherDebounceTimerRef.current) { clearTimeout(planWatcherDebounceTimerRef.current); planWatcherDebounceTimerRef.current = null; }
+    if (!activePlan?.id) return;
+    const planId = activePlan.id;
+    planWatcherTimerRef.current = setInterval(() => {
+      try {
+        const loaded = loadCesarPlan(planId);
+        if (!loaded) return;
+        const current = activePlanRef.current;
+        const loadedMs = Date.parse(String(loaded.updatedAt ?? ''));
+        const currentMs = Date.parse(String(current?.updatedAt ?? ''));
+        const loadedValid = Number.isFinite(loadedMs);
+        const currentValid = Number.isFinite(currentMs);
+        if (loadedValid && currentValid) {
+          if (loadedMs <= currentMs) return;
+        } else if (loadedValid === currentValid) {
+          // Both missing/invalid — treat as unchanged unless structurally different
+          if (JSON.stringify(loaded) === JSON.stringify(current)) return;
+        }
+        if (planWatcherDebounceTimerRef.current) clearTimeout(planWatcherDebounceTimerRef.current);
+        planWatcherDebounceTimerRef.current = setTimeout(() => {
+          const latest = activePlanRef.current;
+          const latestMs = Date.parse(String(latest?.updatedAt ?? ''));
+          const latestValid = Number.isFinite(latestMs);
+          if (loadedValid && latestValid) {
+            if (loadedMs <= latestMs) return;
+          } else if (loadedValid === latestValid) {
+            if (JSON.stringify(loaded) === JSON.stringify(latest)) return;
+          }
+          setActivePlanWrapped(loaded);
+        }, 500);
+      } catch {}
+    }, 2000);
+    return () => {
+      if (planWatcherTimerRef.current) { clearInterval(planWatcherTimerRef.current); planWatcherTimerRef.current = null; }
+      if (planWatcherDebounceTimerRef.current) { clearTimeout(planWatcherDebounceTimerRef.current); planWatcherDebounceTimerRef.current = null; }
+    };
+  }, [activePlan,setActivePlanWrapped]);
+
+  useEffect(() => {
     const nextCount = nativeTranscriptBlocks.length;
     if (terminalMode !== 'native') {
       nativeTranscriptBlockCountRef.current = nextCount;
@@ -1598,8 +1640,23 @@ export function App() {
 
   useEffect(() => {
     try {
+      const MAX_RESUME_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
+      const now = Date.now();
       const plans = listCesarPlans();
-      const paused = plans.find((p: any) => p.state === 'paused' || p.state === 'running');
+      const candidates = plans
+        .filter((p: any) => p.state === 'paused' || p.state === 'running')
+        .filter((p: any) => {
+          const updatedAt = String(p.updatedAt ?? '');
+          if (!updatedAt) return true; // no timestamp = assume fresh
+          const ageMs = now - new Date(updatedAt).getTime();
+          return !Number.isFinite(ageMs) || ageMs <= MAX_RESUME_AGE_MS;
+        })
+        .sort((a: any, b: any) => {
+          const aTime = new Date(String(a.updatedAt ?? 0)).getTime();
+          const bTime = new Date(String(b.updatedAt ?? 0)).getTime();
+          return bTime - aTime;
+        });
+      const paused = candidates[0];
       if (!paused) return;
       const done = paused.steps.filter((s: any) => s.state === 'done').length;
       const failed = paused.steps.find((s: any) => s.state === 'failed');
@@ -4563,7 +4620,7 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
   return rows;
 }
 
-// @kern-source: app:4405
+// @kern-source: app:4467
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

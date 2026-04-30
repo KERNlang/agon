@@ -297,22 +297,25 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
       });
     }
 
-    const stage1 = await runStage1({
-      starter,
-      forgePrompt: enginePrompts.get(starter) ?? forgePrompt,
-      fitnessCmd: options.fitnessCmd,
-      config,
-      registry,
-      adapter,
-      cwd: options.cwd,
-      baseSha: sha,
-      forgeDir,
-      worktrees,
-      onEvent,
-      signal: options.signal,
-      taskClass,
-      enginePrompts,
-    });
+    const shouldRunStarterGate = available.length === 1;
+    const stage1 = shouldRunStarterGate
+      ? await runStage1({
+          starter,
+          forgePrompt: enginePrompts.get(starter) ?? forgePrompt,
+          fitnessCmd: options.fitnessCmd,
+          config,
+          registry,
+          adapter,
+          cwd: options.cwd,
+          baseSha: sha,
+          forgeDir,
+          worktrees,
+          onEvent,
+          signal: options.signal,
+          taskClass,
+          enginePrompts,
+        })
+      : { engineResults: new Map(), accepted: false, winner: null, metrics: [] };
 
     manifest.enginesDispatched = stage1.engineResults.size;
     const allMetrics: DispatchMetric[] = [...(stage1.metrics ?? [])];
@@ -326,7 +329,7 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
       sidechain.log('dispatch:complete', m.engineId, { phase: m.phase, durationMs: m.dispatchDurationMs, score: m.score, pass: m.pass, tokens: m.tokens });
     }
 
-    if (stage1.accepted) {
+    if (shouldRunStarterGate && stage1.accepted) {
       manifest.stage1Accepted = true;
       manifest.winner = stage1.winner;
       manifest.dispatchLog = allMetrics;
@@ -337,7 +340,8 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
       return manifest;
     }
 
-    const remainingChallengers = challengers.filter((id: string) => !stage1.engineResults.has(id));
+    const stage2EngineIds = shouldRunStarterGate ? challengers : available;
+    const remainingChallengers = stage2EngineIds.filter((id: string) => !stage1.engineResults.has(id));
     if (remainingChallengers.length > 0) {
       // Dispatch challengers in parallel. The old peek scout path serialized
       // everyone behind the first challenger, which made multi-engine forge

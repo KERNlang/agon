@@ -290,6 +290,8 @@ describe('Forge E2E', () => {
       expect(manifest.results.starter?.pass).toBe(false);
       expect(manifest.results.winner?.pass).toBe(true);
       expect(events.some((e) => e.type === 'engine:failed' && e.engineId === 'starter')).toBe(true);
+      expect(events.some((e) => e.type === 'stage1:start')).toBe(false);
+      expect(events.filter((e) => e.type === 'engine:worktree').map((e) => e.engineId).sort()).toEqual(['starter', 'winner']);
     } finally {
       cleanupTestAgonHome(agonHome);
       process.env.PATH = fakeNpx.originalPath;

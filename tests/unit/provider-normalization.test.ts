@@ -107,7 +107,7 @@ describe('provider-aware message normalization', () => {
     const result = convertMessagesForSdk(msgs as any, 'anthropic');
     expect(result).toHaveLength(3);
     const toolCall = result[1].content.find((p: any) => p.type === 'tool-call');
-    expect(toolCall).toBeDefined();
+    if (!toolCall) throw new Error('expected tool-call part');
     // Args should be empty object (fallback)
     expect(toolCall.input).toEqual({});
   });

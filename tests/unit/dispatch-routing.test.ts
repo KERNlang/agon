@@ -108,6 +108,7 @@ describe('Dispatch routing helpers', () => {
     expect(activePlan.steps[0].state).toBe('running');
     expect(events.some((event) => event.type === 'spinner-start' && event.message.includes('Step 1/2'))).toBe(true);
     const runningTool = events.find((event) => event.type === 'tool-call' && event.tool === 'PlanStep' && event.status === 'running');
+    if (!runningTool) throw new Error('expected running PlanStep tool event');
     expect(JSON.parse(runningTool.input)).toMatchObject({
       planId: 'cplan-live-tools',
       stepId: 's1',
@@ -120,6 +121,7 @@ describe('Dispatch routing helpers', () => {
 
     expect(events.some((event) => event.type === 'spinner-stop')).toBe(true);
     const doneTool = events.find((event) => event.type === 'tool-call' && event.tool === 'PlanStep' && event.status === 'done');
+    if (!doneTool) throw new Error('expected done PlanStep tool event');
     expect(doneTool.output).toBe('created poller');
   });
 

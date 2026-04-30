@@ -112,6 +112,19 @@ describe('spawnWithTimeout — Timeout', () => {
     expect(result.timedOut).toBe(true);
     expect(result.stdout).toContain('before');
   });
+
+  it('force-kills processes that ignore SIGTERM', async () => {
+    const result = await spawnWithTimeout({
+      command: 'sh',
+      args: ['-c', 'trap "" TERM; echo ready; while true; do sleep 1; done'],
+      cwd: process.cwd(),
+      timeout: 200,
+    });
+    expect(result.timedOut).toBe(true);
+    expect(result.exitCode).toBe(124);
+    expect(result.stdout).toContain('ready');
+    expect(result.durationMs).toBeLessThan(2500);
+  });
 });
 
 // ── Abort signal ────────────────────────────────────────────────────

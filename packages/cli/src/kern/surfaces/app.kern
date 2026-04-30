@@ -3312,16 +3312,14 @@ screen name=App target=ink
     >>>
 
   // ── Proactive resume prompt on startup ──
-  // Off by default — users prefer to ask Cesar explicitly when they want to
-  // resume. Gate behind config.resumePausedPlanOnStartup; flip the flag to
-  // restore the original behavior. When enabled, picks the freshest paused/
-  // running plan within the last 24h so a stale first match doesn't hide a
-  // newer viable candidate.
+  // If a paused plan exists from a previous session, offer to resume it.
+  // Skip plans that are done/cancelled, or older than 24 hours, to avoid
+  // stale interruptions every time the user logs in.
+  // Pick the freshest paused/running plan so a stale first match doesn't
+  // hide a newer viable candidate.
   effect deps=""
     handler <<<
       try {
-        const startupConfig = loadConfig();
-        if ((startupConfig as any).resumePausedPlanOnStartup !== true) return;
         const MAX_RESUME_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
         const now = Date.now();
         const plans = listCesarPlans();

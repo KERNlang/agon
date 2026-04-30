@@ -1675,8 +1675,6 @@ export function App() {
 
   useEffect(() => {
     try {
-      const startupConfig = loadConfig();
-      if ((startupConfig as any).resumePausedPlanOnStartup !== true) return;
       const MAX_RESUME_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
       const now = Date.now();
       const plans = listCesarPlans();
@@ -4657,7 +4655,7 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
   return rows;
 }
 
-// @kern-source: app:4507
+// @kern-source: app:4505
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

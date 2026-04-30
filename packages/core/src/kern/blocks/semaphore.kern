@@ -8,17 +8,11 @@
 // gated — they benefit from full parallelism. Only commands matching the
 // HEAVY_TOOL_PATTERN regex acquire the semaphore.
 
-const name=HEAVY_TOOL_PATTERN type="RegExp"
+const name=HEAVY_TOOL_PATTERN type="RegExp" value={{ /^(?:npm|yarn|pnpm)\s+(?:test|run\s+test|run\s+typecheck|run\s+build|install|ci)\b|^(?:tsc|cargo\s+(?:test|build|check)|pytest|go\s+test|mvn\s+(?:test|package)|gradle\s+(?:test|build))\b/ }}
   doc "Bash commands that should be serialized across team members. Anything matching this pattern goes through the semaphore. Tuned to be conservative — if in doubt, NOT a match (better to over-parallelize than to under-utilize)."
-  handler <<<
-    /^(?:npm|yarn|pnpm)\s+(?:test|run\s+test|run\s+typecheck|run\s+build|install|ci)\b|^(?:tsc|cargo\s+(?:test|build|check)|pytest|go\s+test|mvn\s+(?:test|package)|gradle\s+(?:test|build))\b/
-  >>>
 
-fn name=isHeavyTool params="command:string" returns=boolean export=true
+fn name=isHeavyTool params="command:string" returns=boolean export=true expr={{ return HEAVY_TOOL_PATTERN.test(command.trim()); }}
   doc "Return true if the given bash command should be serialized across team members."
-  handler <<<
-    return HEAVY_TOOL_PATTERN.test(command.trim());
-  >>>
 
 // ── The semaphore primitive ───────────────────────────────────────
 

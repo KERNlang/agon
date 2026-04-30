@@ -74,10 +74,7 @@ fn name=removeWorkspace params="idOrPath:string" returns=boolean
     return true;
   >>>
 
-fn name=listWorkspaces returns="Workspace[]"
-  handler <<<
-    return loadState().workspaces;
-  >>>
+fn name=listWorkspaces returns="Workspace[]" expr={{ return loadState().workspaces; }}
 
 fn name=getActiveWorkspace returns="Workspace|null"
   handler <<<

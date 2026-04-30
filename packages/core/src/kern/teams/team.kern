@@ -69,15 +69,9 @@ event name=TeamEvent
   type name="team:winner" data="{ winnerTeamId: string|null }"
   type name="team:match-done"
 
-fn name=lineupKey params="engineIds:string[]" returns=string
-  handler <<<
-    return [...engineIds].sort().join('+');
-  >>>
+fn name=lineupKey params="engineIds:string[]" returns=string expr={{ return [...engineIds].sort().join('+'); }}
 
-fn name=makeFormat params="membersPerSide:number" returns=TeamFormat
-  handler <<<
-    return { membersPerSide, label: `${membersPerSide}v${membersPerSide}` };
-  >>>
+fn name=makeFormat params="membersPerSide:number" returns=TeamFormat expr={{ return { membersPerSide, label: `${membersPerSide}v${membersPerSide}` }; }}
 
 fn name=assignTeamRoles params="engineIds:string[], taskClass:TaskClass" returns="TeamMember[]"
   handler <<<

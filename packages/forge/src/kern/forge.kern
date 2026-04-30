@@ -17,10 +17,7 @@ fn name=shellQuoteForForge params="value:string" returns=string export=true
     return `'${s.replace(/'/g, `'\\''`)}'`;
   >>>
 
-fn name=buildForgeCleanupCommand params="repoRootPath:string,forgeDir:string" returns=string export=true
-  handler <<<
-    return `git -C ${shellQuoteForForge(repoRootPath)} worktree prune && rm -rf ${shellQuoteForForge(forgeDir)}`;
-  >>>
+fn name=buildForgeCleanupCommand params="repoRootPath:string,forgeDir:string" returns=string export=true expr={{ return `git -C ${shellQuoteForForge(repoRootPath)} worktree prune && rm -rf ${shellQuoteForForge(forgeDir)}`; }}
 
 fn name=collectForgeFilePatterns params="manifest:ForgeManifest" returns="string[]" export=false
   handler <<<

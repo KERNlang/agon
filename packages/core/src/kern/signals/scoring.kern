@@ -1,14 +1,8 @@
 import from="../models/types.js" names="FitnessResult,ScoreWeights,ScoreComponents" types=true
 
-const name=DEFAULT_WEIGHTS type=ScoreWeights
-  handler <<<
-    { pass: 50, quality: 20, diff: 15, files: 10, duration: 5 }
-  >>>
+const name=DEFAULT_WEIGHTS type=ScoreWeights value={{ { pass: 50, quality: 20, diff: 15, files: 10, duration: 5 } }}
 
-fn name=clamp params="val:number,min:number,max:number" returns=number export=false
-  handler <<<
-    return Math.max(min, Math.min(max, val));
-  >>>
+fn name=clamp params="val:number,min:number,max:number" returns=number export=false expr={{ return Math.max(min, Math.min(max, val)); }}
 
 fn name=computeScore params="result:FitnessResult,weights?:ScoreWeights" returns=ScoreComponents
   handler <<<

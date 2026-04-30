@@ -8,8 +8,7 @@ import from="./tool-parser.js" names="parseToolCalls,toolCallsToApiFormat,format
 import from="./tool-parser.js" names="ParseResult" types=true
 import from="./tool-prompt.js" names="generateToolPrompt"
 
-const name=MAX_TOOL_TURNS type=number
-  handler <<< 25 >>>
+const name=MAX_TOOL_TURNS type=number value=25
 
 interface name=ToolLoopCallbacks
   field name=onToolCall type="(name: string, input: Record<string,unknown>) => void" optional=true

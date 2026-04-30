@@ -13,15 +13,9 @@ interface name=FileEntry export=true
   field name=lastTouchedAt type=number
   field name=touchCount type=number
 
-const name=EDIT_TOOLS type="Set<string>"
-  handler <<<
-    new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'AgonEdit', 'AgonWrite', 'apply_patch', 'applypatch', 'ApplyPatch'])
-  >>>
+const name=EDIT_TOOLS type="Set<string>" value={{ new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'AgonEdit', 'AgonWrite', 'apply_patch', 'applypatch', 'ApplyPatch']) }}
 
-const name=READ_TOOLS type="Set<string>"
-  handler <<<
-    new Set(['Read', 'Glob', 'Grep'])
-  >>>
+const name=READ_TOOLS type="Set<string>" value={{ new Set(['Read', 'Glob', 'Grep']) }}
 
 fn name=extractFilePaths params="tool:string, input:string" returns="string[]" export=true
   handler <<<
@@ -66,10 +60,7 @@ fn name=extractFilePaths params="tool:string, input:string" returns="string[]" e
     return paths;
   >>>
 
-fn name=extractFilePath params="input:string" returns="string|null" export=true
-  handler <<<
-    return extractFilePaths('', input)[0] ?? null;
-  >>>
+fn name=extractFilePath params="input:string" returns="string|null" export=true expr={{ return extractFilePaths('', input)[0] ?? null; }}
 
 fn name=recordToolCall params="tool:string, input:string, status:string" returns=void export=true confidence=0.9
   handler <<<
@@ -104,15 +95,9 @@ fn name=recordToolCall params="tool:string, input:string, status:string" returns
     if (touched > 0) _fileTrackerState.version += 1;
   >>>
 
-fn name=listFiles returns="FileEntry[]" export=true
-  handler <<<
-    return Array.from(_fileTrackerState.files.values()).sort((a: FileEntry, b: FileEntry) => b.lastTouchedAt - a.lastTouchedAt);
-  >>>
+fn name=listFiles returns="FileEntry[]" export=true expr={{ return Array.from(_fileTrackerState.files.values()).sort((a: FileEntry, b: FileEntry) => b.lastTouchedAt - a.lastTouchedAt); }}
 
-fn name=getFileTrackerVersion returns=number export=true
-  handler <<<
-    return _fileTrackerState.version;
-  >>>
+fn name=getFileTrackerVersion returns=number export=true expr={{ return _fileTrackerState.version; }}
 
 fn name=clearFileTracker returns=void export=true
   handler <<<
@@ -120,10 +105,7 @@ fn name=clearFileTracker returns=void export=true
     _fileTrackerState.version += 1;
   >>>
 
-const name=_fileTrackerState type="{ files: Map<string, FileEntry>; version: number }"
-  handler <<<
-    ({ files: new Map<string, FileEntry>(), version: 0 })
-  >>>
+const name=_fileTrackerState type="{ files: Map<string, FileEntry>; version: number }" value={{ ({ files: new Map<string, FileEntry>(), version: 0 }) }}
 
 fn name=getFileDiff params="absPath:string, maxLines?:number" returns=string export=true
   handler <<<

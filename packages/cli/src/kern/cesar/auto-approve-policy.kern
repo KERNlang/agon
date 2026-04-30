@@ -18,10 +18,7 @@ interface name=AutoApproveDecision export=true
   field name=reason type=string
   field name=adjustedCostUsd type=number
 
-const name=MUTATING_STEP_TYPES type="Set<string>"
-  handler <<<
-    new Set(['forge', 'teamforge', 'pipeline', 'agent', 'team-agent', 'delegate', 'self'])
-  >>>
+const name=MUTATING_STEP_TYPES type="Set<string>" value={{ new Set(['forge', 'teamforge', 'pipeline', 'agent', 'team-agent', 'delegate', 'self']) }}
 
 fn name=applyAutoApprovePolicy params="plan:CesarPlan, config:AgonConfig" returns=AutoApproveDecision export=true
   doc "Decide whether a plan qualifies for autonomous execution without user confirmation."

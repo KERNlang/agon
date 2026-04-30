@@ -12,10 +12,7 @@ interface name=PlanExecutorCallbacks export=true
   field name=onBudgetWarning type="(actual:number, estimated:number)=>void"
   field name=summarizeStepOutput type="(stepId:string, output:string)=>Promise<string>" optional=true
 
-fn name=getReadySteps params="plan:CesarPlan" returns="CesarPlanStep[]" export=true
-  handler <<<
-    return plan.steps.filter((s) => s.state === 'pending');
-  >>>
+fn name=getReadySteps params="plan:CesarPlan" returns="CesarPlanStep[]" export=true expr={{ return plan.steps.filter((s) => s.state === 'pending'); }}
 
 fn name=executePlan async=true params="plan:CesarPlan, executors:Record<string,StepExecutor>, callbacks:PlanExecutorCallbacks, signal?:AbortSignal" returns="Promise<CesarPlan>" export=true
   handler <<<

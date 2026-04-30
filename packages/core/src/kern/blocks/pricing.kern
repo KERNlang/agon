@@ -11,11 +11,8 @@ interface name=PricingEntry
   field name=inputPer1k type=number
   field name=outputPer1k type=number
 
-const name=DEFAULT_PRICING type=PricingEntry
+const name=DEFAULT_PRICING type=PricingEntry value={{ { inputPer1k: 0.003, outputPer1k: 0.015 } as PricingEntry }}
   doc "Conservative midmarket fallback when an engine has no pricing.input/output configured. Tuned to slightly overestimate cost so the AgentTeamBudget hard ceiling errs on the side of stopping early rather than overrunning."
-  handler <<<
-    { inputPer1k: 0.003, outputPer1k: 0.015 } as PricingEntry
-  >>>
 
 fn name=getEnginePricing params="engine:EngineDefinition" returns=PricingEntry export=true
   doc "Return per-engine pricing or the conservative default. Reads from engine.api.pricing if available."

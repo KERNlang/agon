@@ -232,14 +232,11 @@ fn name=buildValueLines params="value:string, width:number, opts:{cursorOffset:n
     return { lines, cursorLine };
   >>>
 
-fn name=lineLength params="line:PromptLine" returns=number export=false
-  handler <<< return line.tokens.length; >>>
+fn name=lineLength params="line:PromptLine" returns=number export=false expr={{ return line.tokens.length; }}
 
-fn name=pluralizeLines params="count:number" returns=string export=false
-  handler <<< return count === 1 ? 'line' : 'lines'; >>>
+fn name=pluralizeLines params="count:number" returns=string export=false expr={{ return count === 1 ? 'line' : 'lines'; }}
 
-fn name=isDelegatedCtrlShortcut params="input:string" returns=boolean export=true
-  handler <<< return ['b', 'c', 'e', 'i', 'j', 'l', 'r', 't', 'y'].includes(input); >>>
+fn name=isDelegatedCtrlShortcut params="input:string" returns=boolean export=true expr={{ return ['b', 'c', 'e', 'i', 'j', 'l', 'r', 't', 'y'].includes(input); }}
 
 fn name=shouldAdoptPromptValue params="originalValue:string, pendingEchoValue:string|null" returns=boolean export=true
   handler <<<

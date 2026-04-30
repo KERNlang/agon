@@ -94,42 +94,30 @@ const name=SLASH_COMMANDS type="SlashCommand[]"
     ]
   >>>
 
-const name=FITNESS_PATTERN type=RegExp
-  handler <<< /\b(?:test with|test:|--test|fitness:)\s+(.+)/i >>>
+const name=FITNESS_PATTERN type=RegExp value={{ /\b(?:test with|test:|--test|fitness:)\s+(.+)/i }}
 
 
-const name=LEADERBOARD_KEYWORDS type=RegExp
-  handler <<< /\b(leaderboard|elo|rankings?)\b/i >>>
+const name=LEADERBOARD_KEYWORDS type=RegExp value={{ /\b(leaderboard|elo|rankings?)\b/i }}
 
-const name=HISTORY_KEYWORDS type=RegExp
-  handler <<< /\b(history|last runs?|recent)\b/i >>>
+const name=HISTORY_KEYWORDS type=RegExp value={{ /\b(history|last runs?|recent)\b/i }}
 
-const name=ENGINES_KEYWORDS type=RegExp
-  handler <<< /\b(engines?|what engines)\b/i >>>
+const name=ENGINES_KEYWORDS type=RegExp value={{ /\b(engines?|what engines)\b/i }}
 
-const name=CONFIG_KEYWORDS type=RegExp
-  handler <<< /\b(config|settings?)\b/i >>>
+const name=CONFIG_KEYWORDS type=RegExp value={{ /\b(config|settings?)\b/i }}
 
-const name=HELP_KEYWORDS type=RegExp
-  handler <<< /^(help|\?)$/i >>>
+const name=HELP_KEYWORDS type=RegExp value={{ /^(help|\?)$/i }}
 
-const name=EXIT_KEYWORDS type=RegExp
-  handler <<< /^(exit|quit|bye)$/i >>>
+const name=EXIT_KEYWORDS type=RegExp value={{ /^(exit|quit|bye)$/i }}
 
-const name=SENTENCE_PREFIX type=RegExp
-  handler <<< /^(do|does|did|is|are|was|were|have|has|had|can|could|would|should|will|shall|i\s)/i >>>
+const name=SENTENCE_PREFIX type=RegExp value={{ /^(do|does|did|is|are|was|were|have|has|had|can|could|would|should|will|shall|i\s)/i }}
 
-const name=QUESTION_PATTERN type=RegExp
-  handler <<< /^(what|how|why|where|when|who|which|explain|describe|tell|show|list|is there|does|can you explain|walk me through)\b/i >>>
+const name=QUESTION_PATTERN type=RegExp value={{ /^(what|how|why|where|when|who|which|explain|describe|tell|show|list|is there|does|can you explain|walk me through)\b/i }}
 
-const name=CODE_TASK_PATTERN type=RegExp
-  handler <<< /^(fix|add|implement|refactor|debug|create|build|write|update|change|remove|delete|rename|move|test|deploy|install|upgrade|migrate|convert|extract|inline|optimize|port)\b/i >>>
+const name=CODE_TASK_PATTERN type=RegExp value={{ /^(fix|add|implement|refactor|debug|create|build|write|update|change|remove|delete|rename|move|test|deploy|install|upgrade|migrate|convert|extract|inline|optimize|port)\b/i }}
 
-const name=CODE_ARTIFACT_PATTERN type=RegExp
-  handler <<< /(?:at \w+.*:\d+|\.[tj]sx?\b|\.[a-z]{2,4}:\d+|^[+-]{3}\s)/m >>>
+const name=CODE_ARTIFACT_PATTERN type=RegExp value={{ /(?:at \w+.*:\d+|\.[tj]sx?\b|\.[a-z]{2,4}:\d+|^[+-]{3}\s)/m }}
 
-const name=AGENT_TRIGGER_PATTERN type=RegExp
-  handler <<< /^(?:agent(?:\s+mode)?|autonomous(?:\s+agent)?|run\s+agent)\s+([\s\S]+)$/i >>>
+const name=AGENT_TRIGGER_PATTERN type=RegExp value={{ /^(?:agent(?:\s+mode)?|autonomous(?:\s+agent)?|run\s+agent)\s+([\s\S]+)$/i }}
 
 const name=KNOWN_COLLAB_ENGINE_IDS type="Set<string>"
   handler <<<

@@ -13,6 +13,8 @@
     "postinstall": "patch-package",
     "kern:compile": "node scripts/run-agon-script.mjs kern:compile:workspaces",
     "kern:compile:workspaces": "npm run kern:compile -w packages/core && npm run kern:compile -w packages/forge && npm run kern:compile -w packages/adapter-cli && npm run kern:compile -w packages/cli && npm run kern:compile -w packages/mcp",
+    "kern:review": "node scripts/run-kern-review.mjs",
+    "kern:test": "node scripts/run-kern-test.mjs",
     "kern-gaps": "node scripts/run-kern-gaps.mjs",
     "build": "npm run build:cli && npm run build:types",
     "build:types": "tsc -b --force",
@@ -43,19 +45,20 @@
     "zod": "^4.3.6"
   },
   "optionalDependencies": {
-    "@kernlang/cli": "~3.3.9",
-    "@kernlang/core": "~3.3.9",
-    "@kernlang/evolve": "~3.3.9",
-    "@kernlang/express": "~3.3.9",
-    "@kernlang/fastapi": "~3.3.9",
-    "@kernlang/mcp": "~3.3.9",
-    "@kernlang/metrics": "~3.3.9",
-    "@kernlang/native": "~3.3.9",
-    "@kernlang/protocol": "~3.3.9",
-    "@kernlang/react": "~3.3.9",
-    "@kernlang/review": "~3.3.9",
-    "@kernlang/review-mcp": "~3.3.9",
-    "@kernlang/terminal": "~3.3.9",
-    "@kernlang/vue": "~3.3.9"
+    "@kernlang/cli": "~3.4.0",
+    "@kernlang/core": "~3.4.0",
+    "@kernlang/evolve": "~3.4.0",
+    "@kernlang/express": "~3.4.0",
+    "@kernlang/fastapi": "~3.4.0",
+    "@kernlang/mcp": "~3.4.0",
+    "@kernlang/metrics": "~3.4.0",
+    "@kernlang/native": "~3.4.0",
+    "@kernlang/protocol": "~3.4.0",
+    "@kernlang/react": "~3.4.0",
+    "@kernlang/review": "~3.4.0",
+    "@kernlang/review-mcp": "~3.4.0",
+    "@kernlang/terminal": "~3.4.0",
+    "@kernlang/test": "~3.4.0",
+    "@kernlang/vue": "~3.4.0"
   }
 }

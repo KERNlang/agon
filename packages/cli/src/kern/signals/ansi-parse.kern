@@ -119,12 +119,6 @@ fn name=parseAnsiText params="text:string" returns="AnsiSegment[]"
     return segments;
   >>>
 
-fn name=hasAnsiCodes params="text:string" returns=boolean
-  handler <<<
-    return /\x1b\[/.test(text);
-  >>>
+fn name=hasAnsiCodes params="text:string" returns=boolean expr={{ return /\x1b\[/.test(text); }}
 
-fn name=stripAnsi params="text:string" returns=string
-  handler <<<
-    return text.replace(/\x1b\[[0-9;]*m/g, '');
-  >>>
+fn name=stripAnsi params="text:string" returns=string expr={{ return text.replace(/\x1b\[[0-9;]*m/g, ''); }}

@@ -11,11 +11,8 @@ fn name=runtimeAgonPath params="...parts:string[]" returns="string" export=false
     return join(home, ...parts);
   >>>
 
-fn name=getCesarPlansDir returns=string export=true
+fn name=getCesarPlansDir returns=string export=true expr={{ return runtimeAgonPath('plans'); }}
   doc "Canonical directory for Cesar execution plans. Markdown and JSON live together so the user can inspect and edit the exact plan Cesar proposed."
-  handler <<<
-    return runtimeAgonPath('plans');
-  >>>
 
 fn name=safeCesarPlanId params="planId:string" returns=string export=false
   handler <<<

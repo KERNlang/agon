@@ -4,11 +4,9 @@
 import from="../models/tool-types.js" names="ToolResult,ToolContext,ToolDefinition,PermissionDecision,ToolHandler" types=true
 import from="../blocks/process.js" names="spawnWithTimeout"
 
-const name=DEFAULT_MAX_FILES type=number
-  handler <<< 100 >>>
+const name=DEFAULT_MAX_FILES type=number value=100
 
-const name=GLOB_TIMEOUT type=number
-  handler <<< 15000 >>>
+const name=GLOB_TIMEOUT type=number value=15000
 
 fn name=createGlobTool returns=ToolHandler
   doc "Factory: creates the Glob tool handler for file pattern matching via ripgrep."

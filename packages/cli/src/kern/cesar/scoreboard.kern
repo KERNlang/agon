@@ -39,10 +39,7 @@ fn name=createScoreboard params="runId:string,mode:string,engineIds:string[]" re
     };
   >>>
 
-fn name=scoreboardFind params="board:Scoreboard,engineId:string" returns="ScoreboardEntry|undefined" export=false
-  handler <<<
-    return board.entries.find((e) => e.engineId === engineId);
-  >>>
+fn name=scoreboardFind params="board:Scoreboard,engineId:string" returns="ScoreboardEntry|undefined" export=false expr={{ return board.entries.find((e) => e.engineId === engineId); }}
 
 fn name=scoreboardStartEngine params="board:Scoreboard,engineId:string" returns=Scoreboard export=true
   handler <<<

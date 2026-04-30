@@ -8,20 +8,11 @@ interface name=ContentSegment
   field name=rows type="string[][]|undefined"
   field name=alignments type="('left'|'center'|'right')[]|undefined"
 
-const name=FENCE_OPEN type=RegExp
-  handler <<<
-    /^```(\w*)\s*$/
-  >>>
+const name=FENCE_OPEN type=RegExp value={{ /^```(\w*)\s*$/ }}
 
-const name=FENCE_CLOSE type=RegExp
-  handler <<<
-    /^```\s*$/
-  >>>
+const name=FENCE_CLOSE type=RegExp value={{ /^```\s*$/ }}
 
-fn name=isTableSeparator params="line:string" returns=boolean export=false
-  handler <<<
-    return /^\|[\s:_-]+(\|[\s:_-]+)*\|?\s*$/.test(line.trim());
-  >>>
+fn name=isTableSeparator params="line:string" returns=boolean export=false expr={{ return /^\|[\s:_-]+(\|[\s:_-]+)*\|?\s*$/.test(line.trim()); }}
 
 fn name=isTableRow params="line:string" returns=boolean export=false
   handler <<<
@@ -40,10 +31,7 @@ fn name=parseTableAlignment params="sepLine:string" returns="('left'|'center'|'r
     });
   >>>
 
-fn name=parseTableCells params="line:string" returns="string[]" export=false
-  handler <<<
-    return line.trim().replace(/^\||\|$/g, '').split('|').map((c: string) => c.trim());
-  >>>
+fn name=parseTableCells params="line:string" returns="string[]" export=false expr={{ return line.trim().replace(/^\||\|$/g, '').split('|').map((c: string) => c.trim()); }}
 
 fn name=emitProseWithTables params="proseLines:string[], segments:ContentSegment[]" returns=void export=false
   handler <<<
@@ -80,11 +68,9 @@ fn name=emitProseWithTables params="proseLines:string[], segments:ContentSegment
     flushProse();
   >>>
 
-const name=_mdCache type="Map<string, ContentSegment[]>"
-  handler <<< new Map() >>>
+const name=_mdCache type="Map<string, ContentSegment[]>" value={{ new Map() }}
 
-const name=_MD_CACHE_MAX type=number
-  handler <<< 500 >>>
+const name=_MD_CACHE_MAX type=number value=500
 
 fn name=parseMarkdownBlocks params="text:string" returns="ContentSegment[]"
   handler <<<
@@ -397,8 +383,7 @@ fn name=addParagraphBreaks params="text:string" returns=string export=false
     return result.join('\n\n');
   >>>
 
-const name=_cleanCache type="Map<number, string>"
-  handler <<< new Map() >>>
+const name=_cleanCache type="Map<number, string>" value={{ new Map() }}
 
 fn name=cleanEngineOutput params="raw:string" returns=string
   handler <<<

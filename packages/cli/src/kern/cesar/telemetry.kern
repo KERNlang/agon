@@ -43,10 +43,7 @@ fn name=createEngineVitals params="engineId:string,partial?:Partial<EngineVitals
     };
   >>>
 
-fn name=updateEngineVitals params="v:EngineVitals,partial:Partial<EngineVitals>" returns=EngineVitals export=true
-  handler <<<
-    return { ...v, ...partial, lastHeartbeatAt: partial.lastHeartbeatAt ?? Date.now() };
-  >>>
+fn name=updateEngineVitals params="v:EngineVitals,partial:Partial<EngineVitals>" returns=EngineVitals export=true expr={{ return { ...v, ...partial, lastHeartbeatAt: partial.lastHeartbeatAt ?? Date.now() }; }}
 
 fn name=markEngineStalled params="v:EngineVitals,stallThresholdMs:number" returns=EngineVitals export=true
   handler <<<
@@ -128,18 +125,11 @@ fn name=renderTelemetrySnapshot params="snap:TelemetrySnapshot" returns=string e
 
 // ── Constants ──────────────────────────────────────────────────────────
 
-const name=STALL_THRESHOLD_MS type=number export=true
+const name=STALL_THRESHOLD_MS type=number export=true value=30000
   doc "Time since last heartbeat after which an engine is considered stalled."
-  handler <<< 30000 >>>
 
 // ── Watchdog / fallback helpers ────────────────────────────────────────
 
-fn name=shouldAutoFallback params="v:EngineVitals,thresholdMs:number" returns=boolean export=true
-  handler <<<
-    return v.state === 'stalled' && (v.stallDurationMs ?? 0) >= thresholdMs;
-  >>>
+fn name=shouldAutoFallback params="v:EngineVitals,thresholdMs:number" returns=boolean export=true expr={{ return v.state === 'stalled' && (v.stallDurationMs ?? 0) >= thresholdMs; }}
 
-fn name=buildFallbackToast params="from:string,to:string,reason:string" returns=string export=true
-  handler <<<
-    return `\u26a0  ${from} stalled \u2192 fallback to ${to} (${reason})`;
-  >>>
+fn name=buildFallbackToast params="from:string,to:string,reason:string" returns=string export=true expr={{ return `\u26a0  ${from} stalled \u2192 fallback to ${to} (${reason})`; }}

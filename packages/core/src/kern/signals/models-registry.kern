@@ -46,10 +46,7 @@ fn name=getCacheDir returns=string export=false
 
 const name=CACHE_TTL_MS type=number value=3600000
 
-const name=MODELS_DEV_URL type=string
-  handler <<<
-    'https://models.dev/api.json'
-  >>>
+const name=MODELS_DEV_URL type=string value={{ 'https://models.dev/api.json' }}
 
 fn name=fetchModelsRegistry async=true returns="Promise<Record<string, ModelsDevProvider>>"
   handler <<<

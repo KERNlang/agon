@@ -14,24 +14,18 @@ fn name=ratingsPath returns=string export=false
     return join(home, 'ratings.json');
   >>>
 
-const name=GLICKO_SCALE type=number
-  handler <<< 173.7178 >>>
+const name=GLICKO_SCALE type=number value=173.7178
 
-const name=DEFAULT_MU type=number
-  handler <<< 1500 >>>
+const name=DEFAULT_MU type=number value=1500
 
-const name=DEFAULT_PHI type=number
-  handler <<< 350 >>>
+const name=DEFAULT_PHI type=number value=350
 
-const name=DEFAULT_SIGMA type=number
-  handler <<< 0.06 >>>
+const name=DEFAULT_SIGMA type=number value=0.06
 
-const name=TAU type=number
+const name=TAU type=number value=0.5
   doc "System constant — constrains volatility change. Lower = more conservative."
-  handler <<< 0.5 >>>
 
-const name=CONVERGENCE_TOLERANCE type=number
-  handler <<< 0.000001 >>>
+const name=CONVERGENCE_TOLERANCE type=number value=0.000001
 
 fn name=defaultGlickoRating returns=GlickoRating
   handler <<<
@@ -85,11 +79,8 @@ fn name=saveRatings params="record:RatingRecord" returns=void
     renameSync(tmpPath, path);
   >>>
 
-fn name=getRatings returns=RatingRecord
+fn name=getRatings returns=RatingRecord expr={{ return loadRatings(); }}
   doc "Load current Glicko-2 ratings."
-  handler <<<
-    return loadRatings();
-  >>>
 
 fn name=getEngineGlickoRating params="engineId:string, mode?:string" returns=GlickoRating
   doc "Get a single engine's Glicko-2 rating, optionally for a specific mode."
@@ -101,17 +92,11 @@ fn name=getEngineGlickoRating params="engineId:string, mode?:string" returns=Gli
     return record.global[engineId] ?? defaultGlickoRating();
   >>>
 
-fn name=glickoG params="phi:number" returns=number
+fn name=glickoG params="phi:number" returns=number expr={{ return 1 / Math.sqrt(1 + 3 * phi * phi / (Math.PI * Math.PI)); }}
   doc "Glicko-2 g(phi) function — reduces impact of uncertain opponents."
-  handler <<<
-    return 1 / Math.sqrt(1 + 3 * phi * phi / (Math.PI * Math.PI));
-  >>>
 
-fn name=glickoE params="mu:number, muJ:number, phiJ:number" returns=number
+fn name=glickoE params="mu:number, muJ:number, phiJ:number" returns=number expr={{ return 1 / (1 + Math.exp(-glickoG(phiJ) * (mu - muJ))); }}
   doc "Glicko-2 expected score."
-  handler <<<
-    return 1 / (1 + Math.exp(-glickoG(phiJ) * (mu - muJ)));
-  >>>
 
 fn name=updateGlicko params="winnerId:string, loserId:string, taskClass:TaskClass, mode:'forge'|'brainstorm'|'tribunal'" returns="{winnerMu:number, loserMu:number}"
   doc "Single pairwise Glicko-2 update."

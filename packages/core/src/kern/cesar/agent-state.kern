@@ -270,8 +270,5 @@ fn name=checkBudget params="state:AgentState,now?:number" returns="AgentState|nu
     return null;
   >>>
 
-fn name=isTerminal params="state:AgentState" returns=boolean export=true
+fn name=isTerminal params="state:AgentState" returns=boolean export=true expr={{ return state.phase.kind === 'completed' || state.phase.kind === 'failed' || state.phase.kind === 'cancelled'; }}
   doc "True if the state is in a terminal phase (completed/failed/cancelled)."
-  handler <<<
-    return state.phase.kind === 'completed' || state.phase.kind === 'failed' || state.phase.kind === 'cancelled';
-  >>>

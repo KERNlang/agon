@@ -5,7 +5,7 @@ import { navigateHistory, resolveEscapeAction, shouldQueuePlanModeOnTab, tryGhos
 // @kern-source: keyboard:7
 export interface KeyboardCtx {
   input: string;
-  key: { ctrl?:boolean, shift?:boolean, escape?:boolean, tab?:boolean, upArrow?:boolean, downArrow?:boolean, leftArrow?:boolean, rightArrow?:boolean, pageUp?:boolean, pageDown?:boolean, home?:boolean, end?:boolean, return?:boolean };
+  key: { ctrl?:boolean, shift?:boolean, escape?:boolean, tab?:boolean, upArrow?:boolean, downArrow?:boolean, leftArrow?:boolean, rightArrow?:boolean, pageUp?:boolean, pageDown?:boolean, home?:boolean, end?:boolean, return?:boolean, name?:string };
   textInputActive: boolean;
   modelPickerOpen: boolean;
   cesarPickerOpen: boolean;
@@ -71,6 +71,7 @@ export type KeyboardAction =
 // @kern-source: keyboard:73
 export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
   const { input, key } = ctx;
+  const keyName = typeof key.name === 'string' ? key.name.toLowerCase() : '';
   const ctrlInputMap = {
     '\x03': 'c',
     '\x01': 'a',
@@ -84,7 +85,7 @@ export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
     '\x02': 'b',
     ...(key.ctrl ? { '\x09': 'i' } : {}),
   } as Record<string, string>;
-  const normalizedCtrlInput = ctrlInputMap[input] ?? input;
+  const normalizedCtrlInput = ctrlInputMap[input] ?? (key.ctrl && keyName ? keyName : input);
   const hasCtrlSignal = !!key.ctrl || ['\x01', '\x02', '\x03', '\x05', '\x07', '\x0c', '\x0f', '\x12', '\x14', '\x19'].includes(input);
   const delegatedCtrlShortcuts = new Set(['b', 'e', 'i', 'j', 'l', 'o', 'r', 't', 'y']);
 

@@ -1196,7 +1196,7 @@ export function shouldApprovePendingCesarPlanInput(input: string, ctx: HandlerCo
 export function isCesarPlanResumeInput(input: string): boolean {
   const text = String(input ?? '').trim().toLowerCase().replace(/[.!?]+$/g, '').replace(/\s+/g, ' ');
   return /^(?:go|run|resume|continue|proceed|start)(?:\b|$)/i.test(text)
-    || /^(?:do it|do so|keep going|carry on)$/i.test(text);
+    || /^(?:do it|do so|keep going|carry on|ok do last part|do last part|last part)$/i.test(text);
 }
 
 /**
@@ -1205,7 +1205,7 @@ export function isCesarPlanResumeInput(input: string): boolean {
 // @kern-source: dispatch:1136
 export function isCesarPlanStatusInput(input: string): boolean {
   const text = String(input ?? '').trim().toLowerCase().replace(/[.!?]+$/g, '').replace(/\s+/g, ' ');
-  return /^(?:done|done yet|status|progress|what happened|what did you do|what yu do|what you do|are you doing something|are you still working|still working|is it running|where are we)$/i.test(text);
+  return /^(?:done|done yet|status|progress|what happened|what went wrong|what did you do|what yu do|what you do|why stop|why stopped|why did it stop|are you doing something|are you still working|still working|is it running|where are we)$/i.test(text);
 }
 
 /**

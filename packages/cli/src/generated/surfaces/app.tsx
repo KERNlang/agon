@@ -698,9 +698,10 @@ export function App() {
     const state = String(plan?.state ?? '');
     const steps = Array.isArray(plan?.steps) ? plan.steps : [];
     const allStepsComplete = steps.length > 0 && steps.every((step: any) => ['done', 'skipped'].includes(String(step?.state ?? ''))) && !steps.some((step: any) => String(step?.state ?? '') === 'failed');
-    const shouldRetire = state === 'done' || state === 'cancelled' || allStepsComplete;
+    const shouldRetire = state === 'done' || state === 'cancelled' || state === 'paused' || allStepsComplete;
     if (plan && shouldRetire) {
       const planId = String(plan.id ?? '');
+      const retireMs = state === 'paused' ? 45000 : 12000;
       activePlanClearTimerRef.current = setTimeout(() => {
         const current = activePlanRef.current;
         if (current && String(current.id ?? '') === planId) {
@@ -708,7 +709,7 @@ export function App() {
           setActivePlan(null);
         }
         activePlanClearTimerRef.current = null;
-      }, 12000);
+      }, retireMs);
     }
   }, []);
 
@@ -1250,6 +1251,7 @@ export function App() {
   const handleKeyboardInput = useCallback((input:string,key:any) => {
     if (isTerminalFocusReport(input)) return;
 
+    const keyName = typeof key?.name === 'string' ? key.name.toLowerCase() : '';
     const globalCtrlInputMap = {
       '\x01': 'a',
       '\x03': 'c',
@@ -1265,7 +1267,7 @@ export function App() {
       '\x02': 'b',
       ...(key.ctrl ? { '\x09': 'i' } : {}),
     } as Record<string, string>;
-    const globalCtrlInput = globalCtrlInputMap[input] ?? input;
+    const globalCtrlInput = globalCtrlInputMap[input] ?? (key.ctrl && keyName ? keyName : input);
     const hasGlobalCtrlSignal = !!key.ctrl || ['\x01', '\x02', '\x03', '\x05', '\x0a', '\x0b', '\x0c', '\x0f', '\x12', '\x14', '\x15', '\x17'].includes(input);
     const textInputOwnsReservedShortcut = !statusDashboardOpen && !modelPickerOpen && !cesarPickerOpen && !enginePickerOpen && !reviewEvent && !toolDetailEvent && !slashPickerOpen && (!questionState || !questionState.choices);
     if (hasGlobalCtrlSignal && globalCtrlInput === 'e' && !textInputOwnsReservedShortcut) {
@@ -1331,7 +1333,7 @@ export function App() {
       '\x02': 'b',
       ...(key.ctrl ? { '\x09': 'i' } : {}),
     } as Record<string, string>;
-    const normalizedCtrlInput = normalizedCtrlInputMap[input] ?? input;
+    const normalizedCtrlInput = normalizedCtrlInputMap[input] ?? (key.ctrl && keyName ? keyName : input);
     const hasCtrlSignal = !!key.ctrl || ['\x01', '\x02', '\x03', '\x05', '\x0a', '\x0b', '\x0c', '\x0f', '\x12', '\x14', '\x15', '\x17'].includes(input);
     if (hasCtrlSignal && normalizedCtrlInput) {
       const nested = nestedCtrlShortcutRef.current;
@@ -4558,7 +4560,7 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
   return rows;
 }
 
-// @kern-source: app:4400
+// @kern-source: app:4402
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

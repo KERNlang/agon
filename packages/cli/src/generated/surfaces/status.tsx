@@ -96,7 +96,7 @@ export function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd
         <Text color="#f59e0b">{'Ctrl+B'}</Text>
         <Text dimColor>{')'}</Text>
         <Text dimColor>{' \u00b7 live ('}</Text>
-        <Text color="#f59e0b">{'Ctrl+I/T'}</Text>
+        <Text color="#f59e0b">{'Ctrl+T'}</Text>
         <Text dimColor>{')'}</Text>
         <Text dimColor>{' \u00b7 '}</Text>
         {autoModeQueued ? <Text color="#f97316" bold>{'AUTO ON'}</Text> : <Text dimColor>{'auto'}</Text>}
@@ -355,7 +355,7 @@ const ExecutionRailPanel = React.memo(function ExecutionRailPanel({ spinner, eng
     <Box flexDirection="column" flexShrink={0} width={safeWidth} height={safeRows + 2} paddingLeft={1} borderStyle="single" borderColor={borderColor} overflow="hidden">
       <Text>
         <Text color="#22d3ee" bold>{'LIVE'}</Text>
-        <Text dimColor>{' (Ctrl+I/T)'}</Text>
+        <Text dimColor>{' (Ctrl+T)'}</Text>
       </Text>
       <Text>
         <Text dimColor>{'phase '}</Text>

@@ -6,7 +6,7 @@ import from="./app-input.js" names="navigateHistory,resolveEscapeAction,shouldQu
 
 interface name=KeyboardCtx
   field name=input type=string
-  field name=key type="{ ctrl?:boolean, shift?:boolean, escape?:boolean, tab?:boolean, upArrow?:boolean, downArrow?:boolean, leftArrow?:boolean, rightArrow?:boolean, pageUp?:boolean, pageDown?:boolean, home?:boolean, end?:boolean, return?:boolean }"
+  field name=key type="{ ctrl?:boolean, shift?:boolean, escape?:boolean, tab?:boolean, upArrow?:boolean, downArrow?:boolean, leftArrow?:boolean, rightArrow?:boolean, pageUp?:boolean, pageDown?:boolean, home?:boolean, end?:boolean, return?:boolean, name?:string }"
   field name=textInputActive type=boolean
   field name=modelPickerOpen type=boolean
   field name=cesarPickerOpen type=boolean
@@ -74,6 +74,7 @@ fn name=resolveKeyboardInput params="ctx:KeyboardCtx" returns="KeyboardAction"
   doc "Pure keyboard decision tree. Takes current state, returns action to execute."
   handler <<<
     const { input, key } = ctx;
+    const keyName = typeof key.name === 'string' ? key.name.toLowerCase() : '';
     const ctrlInputMap = {
       '\x03': 'c',
       '\x01': 'a',
@@ -87,7 +88,7 @@ fn name=resolveKeyboardInput params="ctx:KeyboardCtx" returns="KeyboardAction"
       '\x02': 'b',
       ...(key.ctrl ? { '\x09': 'i' } : {}),
     } as Record<string, string>;
-    const normalizedCtrlInput = ctrlInputMap[input] ?? input;
+    const normalizedCtrlInput = ctrlInputMap[input] ?? (key.ctrl && keyName ? keyName : input);
     const hasCtrlSignal = !!key.ctrl || ['\x01', '\x02', '\x03', '\x05', '\x07', '\x0c', '\x0f', '\x12', '\x14', '\x19'].includes(input);
     const delegatedCtrlShortcuts = new Set(['b', 'e', 'i', 'j', 'l', 'o', 'r', 't', 'y']);
 

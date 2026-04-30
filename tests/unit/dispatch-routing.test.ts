@@ -43,8 +43,10 @@ describe('Dispatch routing helpers', () => {
   it('recognizes resume and status phrases for active Cesar plans', () => {
     expect(isCesarPlanResumeInput('go wtf i said 3 times go')).toBe(true);
     expect(isCesarPlanResumeInput('continue')).toBe(true);
+    expect(isCesarPlanResumeInput('ok do last part')).toBe(true);
     expect(isCesarPlanResumeInput('done?')).toBe(false);
     expect(isCesarPlanStatusInput('done?')).toBe(true);
+    expect(isCesarPlanStatusInput('why stop?')).toBe(true);
     expect(isCesarPlanStatusInput('what yu do')).toBe(true);
     expect(isCesarPlanStatusInput('tell me a joke')).toBe(false);
   });

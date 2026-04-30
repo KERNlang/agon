@@ -249,9 +249,39 @@ describe('cesar MCP session config', () => {
     }, 'call_nested_plan');
 
     expect(result).toContain('[PLAN_ERROR]');
-    expect(result).toContain('already executing');
+    expect(result).toContain('already active');
     expect(cesar.proposedPlan).toBeUndefined();
     expect(events).toEqual([]);
+  });
+
+  it('blocks nested ProposePlan calls while a plan is paused', async () => {
+    const cesar: any = {
+      planDispatch: () => { throw new Error('nested paused plan should not render'); },
+    };
+    const onToolCall = buildOnToolCall({
+      cesar,
+      explorationMode: false,
+      activePlan: { id: 'cplan-paused', state: 'paused' },
+      setActivePlan: () => { throw new Error('nested paused plan should not activate'); },
+      registry: { availableIds: () => [] },
+    } as any, new ToolRegistry(), {});
+
+    const result = await onToolCall?.('ProposePlan', {
+      intent: 'Nested paused plan',
+      steps: [
+        {
+          id: 'nested',
+          type: 'self',
+          description: 'This should be blocked while paused.',
+          estimatedTokens: 1000,
+          estimatedCostUsd: 0.01,
+        },
+      ],
+    }, 'call_paused_plan');
+
+    expect(result).toContain('[PLAN_ERROR]');
+    expect(result).toContain('already active');
+    expect(cesar.proposedPlan).toBeUndefined();
   });
 
   it('does not session-cache Read tool calls above the mtime-aware Read tool', async () => {

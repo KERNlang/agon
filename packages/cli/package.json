@@ -23,9 +23,11 @@
     "ink": "^7.0.1",
     "ink-spinner": "^5.0.0",
     "ink-text-input": "^6.0.0",
+    "pidusage": "^4.0.1",
     "react": "^19.2.0"
   },
   "devDependencies": {
+    "@types/pidusage": "^2.0.5",
     "@types/react": "^19.2.0"
   }
 }

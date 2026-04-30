@@ -476,39 +476,14 @@ const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confide
     return () => clearInterval(_animId);
   }, [isActive]);
 
-  const planGauge = buildPlanPhaseGauge(activePlan, 12);
-  const displayPlanState = planGauge.visible && planGauge.phase === 'complete' ? 'done' : activePlanState;
-  // Plan badge (shared between idle and active)
-  const hasPlan = planModeQueued || autoModeQueued || (displayPlanState && ['planning', 'awaiting_approval', 'running', 'paused', 'done'].includes(displayPlanState));
-  let planLabel = '';
-  if (planModeQueued) planLabel = 'ready';
-  else if (autoModeQueued) planLabel = 'auto';
-  else if (displayPlanState === 'planning') planLabel = 'thinking';
-  else if (displayPlanState === 'awaiting_approval') planLabel = 'review';
-  else if (displayPlanState === 'running') planLabel = 'executing';
-  else if (displayPlanState === 'paused') planLabel = 'paused';
-  else if (displayPlanState === 'done') planLabel = 'done';
-  const planBadgeColor = autoModeQueued ? '#f97316' : displayPlanState === 'done' ? '#4ade80' : '#c084fc';
-
   // Idle: single dimmed line (no colored nesting issues)
   if (!isActive) {
     const confPart = (confidence !== null && confidence !== undefined) ? ` ${confidence}%` : '';
     return (
       <Box paddingTop={0} flexDirection="column">
         <Text>
-          {hasPlan ? <><Text color={planBadgeColor} bold>{`\u25c8 ${planLabel.toUpperCase()}`}</Text><Text dimColor>{' \u2502 '}</Text></> : null}
           <Text dimColor>{'\u25c6 '}{cesarId}{confPart}{' \u2502 idle'}</Text>
         </Text>
-        {planGauge.visible ? (
-          <Text>
-            <Text color={planGauge.color} bold>{'PLAN '}{planGauge.shortId}</Text>
-            <Text dimColor>{' \u00b7 '}{planGauge.label}{' '}</Text>
-            <Text color={planGauge.color}>{planGauge.bar}</Text>
-            <Text dimColor>{' '}{planGauge.pct}{'% \u00b7 phase: '}{planGauge.phase}</Text>
-            {planGauge.current ? <Text dimColor>{' \u00b7 '}{planGauge.current}</Text> : null}
-            {planGauge.failed > 0 ? <Text color="#ef4444">{' \u00b7 '}{planGauge.failed}{' failed'}</Text> : null}
-          </Text>
-        ) : null}
       </Box>
     );
   }
@@ -556,7 +531,6 @@ const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confide
     <Box paddingTop={0} flexDirection="column">
       <Box>
         <Text>
-          {hasPlan ? <><Text color={planBadgeColor} bold>{`\u25c8 ${planLabel.toUpperCase()}`}</Text><Text dimColor>{' \u2502 '}</Text></> : null}
           <Text color={cesarColor} bold>{'\u25c6 '}{cesarId}</Text>
           {confStr ? <Text color={confColor} bold>{confStr}</Text> : null}
           <Text dimColor>{' \u2502 '}</Text>
@@ -567,16 +541,6 @@ const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confide
           {snippetStr ? <><Text dimColor>{' \u2502 '}</Text><Text dimColor wrap="truncate">{snippetStr}</Text></> : null}
         </Text>
       </Box>
-      {planGauge.visible ? (
-        <Text>
-          <Text color={planGauge.color} bold>{'PLAN '}{planGauge.shortId}</Text>
-          <Text dimColor>{' \u00b7 '}{planGauge.label}{' '}</Text>
-          <Text color={planGauge.color}>{planGauge.bar}</Text>
-          <Text dimColor>{' '}{planGauge.pct}{'% \u00b7 phase: '}{planGauge.phase}</Text>
-          {planGauge.current ? <Text dimColor>{' \u00b7 '}{planGauge.current}</Text> : null}
-          {planGauge.failed > 0 ? <Text color="#ef4444">{' \u00b7 '}{planGauge.failed}{' failed'}</Text> : null}
-        </Text>
-      ) : null}
       {rationaleStr ? <Text dimColor>{rationaleStr}</Text> : null}
       {scoreboardLines ? <Text dimColor>{scoreboardLines}</Text> : null}
     </Box>

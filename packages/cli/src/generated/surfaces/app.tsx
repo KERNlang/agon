@@ -1785,7 +1785,7 @@ export function App() {
   );
   const lowerPanel = (
   <Box flexDirection="column" flexShrink={0}>
-    <ChromeBar mode={mode} cwdLabel={resolveWorkingDir().split('/').pop() ?? ''} engineCount={availableEngines.length} replState={replState} runningJobs={runningJobs} />
+    <ChromeBar mode={mode} cwdLabel={resolveWorkingDir().split('/').pop() ?? ''} engineCount={availableEngines.length} replState={replState} runningJobs={runningJobs} planModeQueued={planModeQueued} autoModeQueued={autoModeQueued} activePlanState={activePlan?.state ?? null} activePlan={activePlan} />
     <BackgroundJobRail jobs={runningJobs} />
     {startupUseDashboardView && (displayRows.length === 0 || terminalMode === 'native') && (
       <Box flexDirection="column">

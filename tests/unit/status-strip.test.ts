@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { buildPlanChromeSummary } from '../../packages/cli/src/generated/surfaces/app-views.js';
 import { buildExecutionRailTimeline, buildPlanPhaseGauge } from '../../packages/cli/src/generated/surfaces/status.js';
 
 describe('buildPlanPhaseGauge', () => {
@@ -65,6 +66,31 @@ describe('buildPlanPhaseGauge', () => {
   it('hides when there is no active plan with steps', () => {
     expect(buildPlanPhaseGauge(null).visible).toBe(false);
     expect(buildPlanPhaseGauge({ state: 'running', steps: [] }).visible).toBe(false);
+  });
+});
+
+describe('buildPlanChromeSummary', () => {
+  it('moves paused plan progress into the sticky chrome summary', () => {
+    const summary = buildPlanChromeSummary({
+      id: 'cplan-1777496797-abc',
+      state: 'paused',
+      steps: [
+        { state: 'done', description: 'Inspect' },
+        { state: 'failed', description: 'Verify mutating changes against intent' },
+      ],
+    }, 'paused', false, false);
+
+    expect(summary.visible).toBe(true);
+    expect(summary.label).toBe('paused');
+    expect(summary.shortId).toBe('1777496797');
+    expect(summary.stepLabel).toBe('Step 2/2');
+    expect(summary.failed).toBe(1);
+    expect(summary.action).toBe('/plan resume');
+  });
+
+  it('shows approval actions without an active plan gauge', () => {
+    expect(buildPlanChromeSummary(null, 'awaiting_approval', false, false).action).toBe('go/yes');
+    expect(buildPlanChromeSummary(null, null, false, true).visible).toBe(false);
   });
 });
 

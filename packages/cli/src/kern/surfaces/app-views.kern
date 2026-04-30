@@ -8,6 +8,7 @@ import from="react" names="useEffect,useMemo,useState,useRef"
 import from="ink" names="Box,Text,useInput"
 import from="../../generated/blocks/engine.js" names="EngineProgressView,BRAND"
 import from="../../generated/blocks/rendering.js" names="RenderedSegments,contentWidth,engineColor,RichLineView,DiffLine,SyntaxLine,AnsiLine,GradientLine"
+import from="../../generated/surfaces/status.js" names="buildPlanPhaseGauge"
 import from="../../handlers/types.js" names="EngineProgress" types=true
 import from="../signals/job-manager.js" names="Job" types=true
 import from="../blocks/markdown.js" names="parseMarkdownBlocks,cleanEngineOutput"
@@ -30,6 +31,44 @@ fn name=renderSelectedText params="text:string,start:number,end:number,keyPrefix
     );
   >>>
 
+fn name=buildPlanChromeSummary params="activePlan:any,activePlanState?:string|null,planModeQueued?:boolean,autoModeQueued?:boolean" returns=any export=true
+  doc "Compact sticky plan chip for the top chrome. Keeps plan progress out of the noisy bottom status strip."
+  handler <<<
+    const gauge = buildPlanPhaseGauge(activePlan, 8);
+    const displayState = gauge.visible && gauge.phase === 'complete' ? 'done' : String(activePlanState ?? '');
+    const visible = !!(planModeQueued || gauge.visible || ['planning', 'awaiting_approval', 'running', 'paused', 'done'].includes(displayState));
+    if (!visible) return { visible: false };
+
+    let label = '';
+    if (planModeQueued) label = 'ready';
+    else if (displayState === 'planning') label = 'thinking';
+    else if (displayState === 'awaiting_approval') label = 'approval';
+    else if (displayState === 'running') label = 'running';
+    else if (displayState === 'paused') label = 'paused';
+    else if (displayState === 'done') label = 'done';
+    else label = displayState || 'plan';
+
+    let action = '';
+    if (displayState === 'awaiting_approval') action = 'go/yes';
+    else if (displayState === 'paused') action = '/plan resume';
+    else if (displayState === 'running') action = 'Ctrl+T details';
+    else if (planModeQueued) action = 'type task';
+
+    const failed = Number(gauge.failed ?? 0);
+    return {
+      visible: true,
+      label,
+      color: gauge.visible ? gauge.color : '#c084fc',
+      shortId: gauge.shortId ?? '',
+      bar: gauge.bar ?? '',
+      pct: Number(gauge.pct ?? 0),
+      stepLabel: gauge.label ?? '',
+      current: gauge.current ?? '',
+      failed,
+      action,
+    };
+  >>>
+
 // ── ChromeBar — compact session strip ──
 screen name=ChromeBar target=ink memo=true
   prop name=mode type="string"
@@ -37,28 +76,51 @@ screen name=ChromeBar target=ink memo=true
   prop name=engineCount type="number"
   prop name=replState type="string"
   prop name=runningJobs type="Job[]"
+  prop name=planModeQueued type=boolean optional=true
+  prop name=autoModeQueued type=boolean optional=true
+  prop name=activePlanState type="string|null" optional=true
+  prop name=activePlan type=any optional=true
   render
     handler <<<
+      const planChrome = buildPlanChromeSummary(activePlan, activePlanState, planModeQueued, autoModeQueued);
+      const planRow = planChrome.visible ? (
+        <Text>
+          <Text color={planChrome.color} bold>{'\u25c8 '}{String(planChrome.label).toUpperCase()}</Text>
+          {planChrome.shortId ? <Text color={planChrome.color} bold>{' \u00b7 PLAN '}{planChrome.shortId}</Text> : null}
+          {planChrome.stepLabel ? <Text dimColor>{' \u00b7 '}{planChrome.stepLabel}</Text> : null}
+          {planChrome.bar ? <Text color={planChrome.color}>{' '}{planChrome.bar}</Text> : null}
+          {planChrome.bar ? <Text dimColor>{' '}{planChrome.pct}{'%'}</Text> : null}
+          {planChrome.failed > 0 ? <Text color="#ef4444">{' \u00b7 '}{planChrome.failed}{' failed'}</Text> : null}
+          {planChrome.current ? <Text dimColor>{' \u00b7 '}{String(planChrome.current).slice(0, 72)}</Text> : null}
+          {planChrome.action ? <Text dimColor>{' \u00b7 '}{planChrome.action}</Text> : null}
+        </Text>
+      ) : null;
       if (mode === 'chat') {
         return (
-          <Box paddingX={1}>
-            <Text color="#f97316" bold>{'AGON'}</Text>
-            <Text dimColor>{' \u2502 '}{cwdLabel}</Text>
-            <Text dimColor>{' \u2502 '}{engineCount}{' engines'}</Text>
-            {replState !== 'idle' && (<><Text dimColor>{' \u2502 '}</Text><Text color="yellow">{replState}</Text></>)}
-            {runningJobs.length > 0 && (<><Text dimColor>{' \u203a '}</Text><Text color="#facc15">{runningJobs.map((j: Job) => `${j.type}: ${j.label.slice(0, 20)}`).join(', ')}</Text></>)}
+          <Box paddingX={1} flexDirection="column">
+            <Text>
+              <Text color="#f97316" bold>{'AGON'}</Text>
+              <Text dimColor>{' \u2502 '}{cwdLabel}</Text>
+              <Text dimColor>{' \u2502 '}{engineCount}{' engines'}</Text>
+              {replState !== 'idle' && (<><Text dimColor>{' \u2502 '}</Text><Text color="yellow">{replState}</Text></>)}
+              {runningJobs.length > 0 && (<><Text dimColor>{' \u203a '}</Text><Text color="#facc15">{runningJobs.map((j: Job) => `${j.type}: ${j.label.slice(0, 20)}`).join(', ')}</Text></>)}
+            </Text>
+            {planRow}
           </Box>
         );
       }
       return (
-        <Box paddingX={1}>
-          <Text dimColor>{icons().find + ' '}{cwdLabel}</Text>
-          <Text dimColor>{' \u2502 '}</Text>
-          <Text color={mode === 'campfire' ? '#f97316' : mode === 'brainstorm' ? '#22d3ee' : '#a78bfa'}>{mode}</Text>
-          <Text dimColor>{' \u2502 '}</Text>
-          <Text dimColor>{engineCount}{' engines'}</Text>
-          {replState !== 'idle' && (<><Text dimColor>{' \u2502 '}</Text><Text color="yellow">{replState}</Text></>)}
-          {runningJobs.length > 0 && (<><Text dimColor>{' \u203a '}</Text><Text color="#facc15">{runningJobs.map((j: Job) => `${j.type}: ${j.label.slice(0, 20)}`).join(', ')}</Text></>)}
+        <Box paddingX={1} flexDirection="column">
+          <Text>
+            <Text dimColor>{icons().find + ' '}{cwdLabel}</Text>
+            <Text dimColor>{' \u2502 '}</Text>
+            <Text color={mode === 'campfire' ? '#f97316' : mode === 'brainstorm' ? '#22d3ee' : '#a78bfa'}>{mode}</Text>
+            <Text dimColor>{' \u2502 '}</Text>
+            <Text dimColor>{engineCount}{' engines'}</Text>
+            {replState !== 'idle' && (<><Text dimColor>{' \u2502 '}</Text><Text color="yellow">{replState}</Text></>)}
+            {runningJobs.length > 0 && (<><Text dimColor>{' \u203a '}</Text><Text color="#facc15">{runningJobs.map((j: Job) => `${j.type}: ${j.label.slice(0, 20)}`).join(', ')}</Text></>)}
+          </Text>
+          {planRow}
         </Box>
       );
     >>>

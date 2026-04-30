@@ -442,7 +442,7 @@ export interface ForgeJudgment {
   shouldConverge: boolean;
 }
 
-export type ForgeEventType = 'baseline:start' | 'baseline:done' | 'stage1:start' | 'stage1:dispatch' | 'stage1:score' | 'stage1:accepted' | 'stage2:start' | 'stage2:dispatch' | 'stage2:score' | 'stage2:done' | 'engine:failed' | 'winner:determined' | 'synthesis:start' | 'synthesis:critique' | 'synthesis:refine' | 'synthesis:score' | 'synthesis:done' | 'elo:update' | 'gauntlet:start' | 'gauntlet:breaker-dispatch' | 'gauntlet:breaker-done' | 'gauntlet:attack-landed' | 'gauntlet:repair-start' | 'gauntlet:repair-done' | 'gauntlet:corpus-save' | 'gauntlet:done' | 'forge:done';
+export type ForgeEventType = 'baseline:start' | 'baseline:done' | 'stage1:start' | 'stage1:dispatch' | 'stage1:score' | 'stage1:accepted' | 'stage2:start' | 'stage2:dispatch' | 'stage2:score' | 'stage2:done' | 'engine:failed' | 'engine:worktree' | 'winner:determined' | 'synthesis:start' | 'synthesis:critique' | 'synthesis:refine' | 'synthesis:score' | 'synthesis:done' | 'elo:update' | 'gauntlet:start' | 'gauntlet:breaker-dispatch' | 'gauntlet:breaker-done' | 'gauntlet:attack-landed' | 'gauntlet:repair-start' | 'gauntlet:repair-done' | 'gauntlet:corpus-save' | 'gauntlet:done' | 'forge:done';
 
 // @kern-source: types:333
 export interface ForgeEvent {
@@ -456,13 +456,14 @@ export interface ForgeEventMap {
   'baseline:done': { passes: boolean };
   'stage1:start': Record<string, unknown>;
   'stage1:dispatch': { engineId: string };
-  'stage1:score': { engineId: string };
+  'stage1:score': { engineId: string, score?: number, pass?: boolean, worktreePath?: string };
   'stage1:accepted': { engineId: string, score: number };
   'stage2:start': Record<string, unknown>;
   'stage2:dispatch': { engineId: string };
-  'stage2:score': { engineId: string };
+  'stage2:score': { engineId: string, score?: number, pass?: boolean, worktreePath?: string };
   'stage2:done': Record<string, unknown>;
   'engine:failed': { engineId: string, phase: string, error: string };
+  'engine:worktree': { engineId: string, worktreePath: string, phase: string };
   'winner:determined': { winner: string, bestScore: number };
   'synthesis:start': Record<string, unknown>;
   'synthesis:critique': { engineId: string };
@@ -483,7 +484,7 @@ export interface ForgeEventMap {
 
 export type ForgeEventCallback = (event: ForgeEvent) => void;
 
-// @kern-source: types:362
+// @kern-source: types:363
 export interface BrainstormBid {
   engineId: string;
   confidence: number;
@@ -492,7 +493,7 @@ export interface BrainstormBid {
   score?: number;
 }
 
-// @kern-source: types:369
+// @kern-source: types:370
 export interface BrainstormResult {
   question: string;
   bids: BrainstormBid[];
@@ -500,7 +501,7 @@ export interface BrainstormResult {
   response: string;
 }
 
-// @kern-source: types:375
+// @kern-source: types:376
 export interface BreakerArtifact {
   engineId: string;
   testScript: string;
@@ -510,7 +511,7 @@ export interface BreakerArtifact {
   validated: boolean;
 }
 
-// @kern-source: types:383
+// @kern-source: types:384
 export interface GauntletResult {
   winnerId: string;
   breakerArtifacts: BreakerArtifact[];
@@ -523,7 +524,7 @@ export interface GauntletResult {
   patchPath?: string;
 }
 
-// @kern-source: types:394
+// @kern-source: types:395
 export interface CorpusEntry {
   forgeId: string;
   taskClass: TaskClass;
@@ -533,7 +534,7 @@ export interface CorpusEntry {
   pattern?: string;
 }
 
-// @kern-source: types:402
+// @kern-source: types:403
 export interface GapPattern {
   pattern: string;
   taskClass: TaskClass;
@@ -544,7 +545,7 @@ export interface GapPattern {
   skillPath?: string;
 }
 
-// @kern-source: types:411
+// @kern-source: types:412
 export interface Critique {
   file: string;
   lines: string;
@@ -552,5 +553,5 @@ export interface Critique {
   minimalFix: string;
 }
 
-// @kern-source: types:417
+// @kern-source: types:418
 export const DEFAULT_CONFIG: Required<AgonConfig> = DEFAULT_AGON_CONFIG;

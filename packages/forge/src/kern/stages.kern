@@ -57,6 +57,7 @@ fn name=runForgeEngineAttempt async=true params="opts:{engineId:string,prompt:st
     const wtPath = opts.worktreePath ?? join(opts.forgeDir, `wt-${opts.engineId}`);
     worktreeCreate(opts.root, wtPath, opts.baseSha);
     opts.worktrees.push({ engineId: opts.engineId, path: wtPath, repoRoot: opts.root });
+    opts.onEvent?.({ type: 'engine:worktree' as any, engineId: opts.engineId, data: { engineId: opts.engineId, worktreePath: wtPath, phase: opts.metricPhase } });
 
     opts.onEvent?.({ type: opts.eventType as any, engineId: opts.engineId, data: opts.eventData });
 
@@ -92,9 +93,8 @@ fn name=runForgeEngineAttempt async=true params="opts:{engineId:string,prompt:st
       });
     }
     const dispatchDurationMs = Date.now() - dispatchStart;
-
     opts.onEvent?.({ type: 'engine:pid-clear' as any, engineId: opts.engineId, data: { engineId: opts.engineId, phase: opts.metricPhase } });
-    opts.onEvent?.({ type: opts.metricPhase.includes('stage1') ? 'stage1:score' : 'stage2:score', engineId: opts.engineId });
+
     const fitnessStart = Date.now();
     const result = await runFitness({
       engineId: opts.engineId,
@@ -104,6 +104,7 @@ fn name=runForgeEngineAttempt async=true params="opts:{engineId:string,prompt:st
       forgeDir: opts.forgeDir,
     });
     const fitnessDurationMs = Date.now() - fitnessStart;
+    opts.onEvent?.({ type: opts.metricPhase.includes('stage1') ? 'stage1:score' : 'stage2:score', engineId: opts.engineId, data: { engineId: opts.engineId, score: result.score, pass: result.pass, worktreePath: wtPath } });
 
     const promptTokens = estimateTokens(opts.prompt);
     const responseTokens = dispatchResult?.stdout ? estimateTokens(dispatchResult.stdout) : 0;

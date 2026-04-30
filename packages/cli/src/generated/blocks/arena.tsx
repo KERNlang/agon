@@ -10,28 +10,31 @@ import { engineColor } from './rendering.js';
 
 import { icons } from '../signals/icons.js';
 
-// @kern-source: arena:33
+// @kern-source: arena:21
 export function ForgeArena({ engines }: { engines:EngineProgress[] }) {
-  const elapsed = engines[0]?.elapsed ?? 0;
-  const frame = elapsed % FORGE_BORDERS.length;
-  const borderPair: string[] = FORGE_BORDERS[frame];
   const maxElapsed = 120;
-  const leader = engines.reduce((acc: { leaderId: string; bestPct: number }, e: EngineProgress) => { const pct = e.done ? 1 : Math.min(e.elapsed / maxElapsed, 0.95); return (pct > acc.bestPct || e.done) ? { leaderId: e.id, bestPct: pct } : acc; }, { leaderId: '', bestPct: -1 });
+  const doneCount = engines.filter((e: EngineProgress) => e.done).length;
+  const failedCount = engines.filter((e: EngineProgress) => e.failed).length;
+  const leader = engines.reduce((acc: { leaderId: string; bestPct: number }, e: EngineProgress) => { const status = String(e.status ?? ''); const active = !e.done && !e.failed && !status.startsWith('queued') && !status.startsWith('preparing') && !status.startsWith('waiting'); const pct = e.done ? 1 : active ? Math.min(e.elapsed / maxElapsed, 0.9) : 0; return (pct > acc.bestPct || e.done) ? { leaderId: e.id, bestPct: pct } : acc; }, { leaderId: '', bestPct: -1 });
   return (
     <Box flexDirection="column" paddingLeft={2}>
-            <Text color="#f97316" bold>{borderPair[0]}</Text>
-            <Text color="#f97316">{'\u2551'}</Text>
+            <Text>
+              <Text color="#f97316" bold>{'Forge'}</Text>
+              <Text dimColor>{` ${doneCount}/${engines.length} done${failedCount ? ` · ${failedCount} failed` : ''}`}</Text>
+            </Text>
       {(engines).map((e, __i) => {
-        const pct = e.done ? 1 : Math.min(e.elapsed / maxElapsed, 0.95);
+        const status = String(e.status ?? '');
+        const isWaiting = status.startsWith('queued') || status.startsWith('preparing') || status.startsWith('waiting');
+        const isActive = !e.done && !e.failed && !isWaiting;
+        const pct = e.done ? 1 : e.failed ? 0 : isActive ? Math.min(e.elapsed / maxElapsed, 0.9) : 0;
         const bar = forgeBar(pct, 12);
         const isLead = e.id === leader.leaderId && !e.failed;
-        const statusTxt = e.done ? (e.score ? `\u2605 ${e.score}` : '\u2713 done') : e.failed ? '\u2717 fail' : `${Math.round(pct * 100)}%`;
+        const statusTxt = e.done ? (e.score ? `score ${e.score}` : 'done') : e.failed ? 'failed' : isWaiting ? status : `${status} ${Math.round(pct * 100)}%`;
         return (
           <React.Fragment key={e.id}>
                     <Box key={e.id}>
-                      <Text color="#f97316">{'\u2551 '}</Text>
                       <Text color={e.done ? 'green' : e.failed ? 'red' : 'yellow'}>
-                        {e.done ? '\u2713' : e.failed ? '\u2717' : isLead ? '\u2694' : '\u00b7'}
+                        {e.done ? '\u2713' : e.failed ? '\u2717' : isWaiting ? '\u25e6' : isLead ? '\u25b8' : '\u00b7'}
                       </Text>
                       <Text>{' '}</Text>
                       <Box width={16}>
@@ -41,18 +44,15 @@ export function ForgeArena({ engines }: { engines:EngineProgress[] }) {
                       <Text color={e.done ? '#22c55e' : e.failed ? '#ef4444' : '#f97316'}>{bar}</Text>
                       <Text>{' '}</Text>
                       <Text dimColor>{statusTxt}</Text>
-                      <Text color="#f97316">{' \u2551'}</Text>
                     </Box>
           </React.Fragment>
         );
       })}
-            <Text color="#f97316">{'\u2551'}</Text>
-            <Text color="#f97316" bold>{borderPair[1]}</Text>
     </Box>
   );
 }
 
-// @kern-source: arena:96
+// @kern-source: arena:78
 export function BrainstormStorm({ engines }: { engines:EngineProgress[] }) {
   const elapsed = engines[0]?.elapsed ?? 0;
   const frame = elapsed % STORM_BOLTS.length;
@@ -90,7 +90,7 @@ export function BrainstormStorm({ engines }: { engines:EngineProgress[] }) {
   );
 }
 
-// @kern-source: arena:156
+// @kern-source: arena:138
 export function CampfireFire({ engines }: { engines:EngineProgress[] }) {
   const elapsed = engines[0]?.elapsed ?? 0;
   const frame = elapsed % FIRE_FRAMES.length;
@@ -143,7 +143,7 @@ export function CampfireFire({ engines }: { engines:EngineProgress[] }) {
   );
 }
 
-// @kern-source: arena:222
+// @kern-source: arena:204
 export function TribunalCourt({ engines }: { engines:EngineProgress[] }) {
   const elapsed = engines[0]?.elapsed ?? 0;
   const frame = elapsed % SCALES_FRAMES.length;
@@ -190,23 +190,13 @@ export function TribunalCourt({ engines }: { engines:EngineProgress[] }) {
 }
 
 // @kern-source: arena:14
-export const FORGE_BORDERS: string[][] = [
-  ['\u2694\u2550\u2550\u2550\u2550\u2550 T H E  F O R G E \u2550\u2550\u2550\u2550\u2550\u2694',
-   '\u2694\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2694'],
-  ['\u2694\u2550\u2550\u2726\u2550\u2550 T H E  F O R G E \u2550\u2550\u2726\u2550\u2550\u2694',
-   '\u2694\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2694'],
-  ['\u2694\u2550\u2550\u2550\u2550\u2550 T H E  F O R G E \u2550\u2550\u2550\u2550\u2550\u2694',
-   '\u2694\u2550\u2726\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2726\u2550\u2694'],
-];
-
-// @kern-source: arena:26
 function forgeBar(pct: number, width: number): string {
   const filled = Math.round(pct * width);
   const half = pct > 0 && filled < width ? 1 : 0;
   return '\u2588'.repeat(filled) + (half ? '\u2592' : '') + '\u2591'.repeat(Math.max(0, width - filled - half));
 }
 
-// @kern-source: arena:78
+// @kern-source: arena:60
 export const STORM_BOLTS: string[] = [
   '\u26a1    \u26a1      \u26a1',
   '   \u26a1      \u26a1   ',
@@ -214,13 +204,13 @@ export const STORM_BOLTS: string[] = [
   '  \u26a1   \u26a1      ',
 ];
 
-// @kern-source: arena:88
+// @kern-source: arena:70
 export const STORM_CLOUDS: string[] = [
   '  \u2571\u2572\u2571\u2572\u2571\u2572\u2571\u2572\u2571\u2572\u2571\u2572',
   ' \u2572\u2571\u2572\u2571\u2572\u2571\u2572\u2571\u2572\u2571\u2572\u2571\u2572',
 ];
 
-// @kern-source: arena:138
+// @kern-source: arena:120
 export const FIRE_FRAMES: string[][] = [
   ['       (  ) (  )  ',
    '      (    )(   ) ',
@@ -236,7 +226,7 @@ export const FIRE_FRAMES: string[][] = [
    '      \u2571\u2591\u2592\u2593\u2588\u2588\u2593\u2592\u2591\u2572 '],
 ];
 
-// @kern-source: arena:213
+// @kern-source: arena:195
 export const SCALES_FRAMES: string[] = [
   '  \u2696\u2550\u2550\u2550\u2550 T R I B U N A L \u2550\u2550\u2550\u2550\u2696',
   '  \u2696\u2550\u2550\u2726\u2550 T R I B U N A L \u2550\u2726\u2550\u2550\u2696',

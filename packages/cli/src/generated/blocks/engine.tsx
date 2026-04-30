@@ -40,7 +40,7 @@ export function EngineProgressView({ engines, mode }: { engines:EngineProgress[]
     const s = engines[0]?.status ?? '';
     if (s.startsWith('drafting')) return 'brainstorm';
     if (s.startsWith('thinking')) return 'campfire';
-    if (['queued','building'].some(k => s.startsWith(k)) || s.startsWith('done (')) return 'forge';
+    if (['preparing','queued','building'].some(k => s.startsWith(k)) || s.startsWith('done (')) return 'forge';
     if (s.startsWith('R') || s.startsWith('waiting')) return 'tribunal';
     return 'default';
   })();

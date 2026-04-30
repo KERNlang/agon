@@ -68,6 +68,7 @@ export async function runForgeEngineAttempt(opts: {engineId:string,prompt:string
   const wtPath = opts.worktreePath ?? join(opts.forgeDir, `wt-${opts.engineId}`);
   worktreeCreate(opts.root, wtPath, opts.baseSha);
   opts.worktrees.push({ engineId: opts.engineId, path: wtPath, repoRoot: opts.root });
+  opts.onEvent?.({ type: 'engine:worktree' as any, engineId: opts.engineId, data: { engineId: opts.engineId, worktreePath: wtPath, phase: opts.metricPhase } });
 
   opts.onEvent?.({ type: opts.eventType as any, engineId: opts.engineId, data: opts.eventData });
 
@@ -103,9 +104,8 @@ export async function runForgeEngineAttempt(opts: {engineId:string,prompt:string
     });
   }
   const dispatchDurationMs = Date.now() - dispatchStart;
-
   opts.onEvent?.({ type: 'engine:pid-clear' as any, engineId: opts.engineId, data: { engineId: opts.engineId, phase: opts.metricPhase } });
-  opts.onEvent?.({ type: opts.metricPhase.includes('stage1') ? 'stage1:score' : 'stage2:score', engineId: opts.engineId });
+
   const fitnessStart = Date.now();
   const result = await runFitness({
     engineId: opts.engineId,
@@ -115,6 +115,7 @@ export async function runForgeEngineAttempt(opts: {engineId:string,prompt:string
     forgeDir: opts.forgeDir,
   });
   const fitnessDurationMs = Date.now() - fitnessStart;
+  opts.onEvent?.({ type: opts.metricPhase.includes('stage1') ? 'stage1:score' : 'stage2:score', engineId: opts.engineId, data: { engineId: opts.engineId, score: result.score, pass: result.pass, worktreePath: wtPath } });
 
   const promptTokens = estimateTokens(opts.prompt);
   const responseTokens = dispatchResult?.stdout ? estimateTokens(dispatchResult.stdout) : 0;
@@ -133,7 +134,7 @@ export async function runForgeEngineAttempt(opts: {engineId:string,prompt:string
   return { result, metric, dispatchResult, worktreePath: wtPath };
 }
 
-// @kern-source: stages:125
+// @kern-source: stages:126
 export async function runBaseline(opts: {cwd:string, baseSha:string, fitnessCmd:string, fitnessTimeout:number, forgeDir:string, onEvent?:ForgeEventCallback}): Promise<boolean> {
   opts.onEvent?.({ type: 'baseline:start' });
 
@@ -157,7 +158,7 @@ export async function runBaseline(opts: {cwd:string, baseSha:string, fitnessCmd:
   }
 }
 
-// @kern-source: stages:149
+// @kern-source: stages:150
 export async function runStage1(opts: {starter:string, forgePrompt:string, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal, taskClass?:string, enginePrompts?:Map<string,string>}): Promise<StageResult> {
   opts.onEvent?.({ type: 'stage1:start', engineId: opts.starter });
 
@@ -252,7 +253,7 @@ export async function runStage1(opts: {starter:string, forgePrompt:string, fitne
   return { engineResults, accepted, winner: result?.pass ? result.engineId : null, metrics };
 }
 
-// @kern-source: stages:244
+// @kern-source: stages:245
 export async function runStage2(opts: {challengers:string[], forgePrompt:string, enginePrompts?:Map<string,string>, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal}): Promise<StageResult> {
   opts.onEvent?.({ type: 'stage2:start' });
 
@@ -350,7 +351,7 @@ export async function runStage2(opts: {challengers:string[], forgePrompt:string,
   return { engineResults: allResults, accepted: false, winner: null, metrics };
 }
 
-// @kern-source: stages:342
+// @kern-source: stages:343
 export async function runStage2WithPeek(opts: {challengers:string[], forgePrompt:string, enginePrompts?:Map<string,string>, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal}): Promise<StageResult> {
   if (opts.challengers.length <= 1) {
     // Only one challenger — no peek possible, use normal stage2

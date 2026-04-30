@@ -2698,7 +2698,10 @@ export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks
 
   const markStepRunning = (plan: CesarPlan, stepId: string): CesarPlan => ({
     ...plan,
-    steps: plan.steps.map((s: any) => s.id === stepId ? { ...s, state: 'running' as any } : s),
+    steps: plan.steps.map((s: any) => s.id === stepId ? { ...s, state: 'running' as any, startedAt: s.startedAt ?? new Date().toISOString() } : s),
+    updatedAt: new Date().toISOString(),
+    activeStepId: stepId,
+    currentStepId: stepId,
   } as CesarPlan);
 
   const buildPlanStepToolInput = (stepId: string) => {
@@ -2803,7 +2806,7 @@ export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks
 /**
  * Return true when a failed plan step looks like it was interrupted by stall/fallback handling rather than a semantic task failure.
  */
-// @kern-source: dispatch:2722
+// @kern-source: dispatch:2725
 export function failedPlanStepIsFallbackRetryable(step: any): boolean {
   if (!step || step.state !== 'failed') return false;
   const result = step.result ?? {};
@@ -2815,7 +2818,7 @@ export function failedPlanStepIsFallbackRetryable(step: any): boolean {
 /**
  * Reset one retryable failed plan step and bind it to the fallback engine. The caller runs executePlan again with a fresh abort controller.
  */
-// @kern-source: dispatch:2732
+// @kern-source: dispatch:2735
 export function preparePlanFallbackRetry(plan: CesarPlan, fallbackEngine: string): CesarPlan|null {
   const engine = String(fallbackEngine ?? '').trim();
   if (!engine || !Array.isArray(plan.steps)) return null;
@@ -2855,7 +2858,7 @@ export function preparePlanFallbackRetry(plan: CesarPlan, fallbackEngine: string
 /**
  * FU-4: shared executor for the auto-approve, manual-approve, and plan-resume paths. Wires the abort controller, builds callbacks (with debounced persistence), runs executePlan, runs finalizePlanWithReviewGate, and dispatches the terminal status. Eliminates the ~60 lines of triplication that lived in dispatch.kern and forced future changes (e.g., new callback hooks, new finalize behavior) to be applied to all three sites.
  */
-// @kern-source: dispatch:2770
+// @kern-source: dispatch:2773
 export async function executeApprovedPlan(approved: CesarPlan, cb: DispatchCallbacks): Promise<void> {
   const executors = buildStepExecutors(cb.ctx, cb.dispatch);
   let abortController = new AbortController();
@@ -2926,7 +2929,7 @@ export async function executeApprovedPlan(approved: CesarPlan, cb: DispatchCallb
 /**
  * Single source of truth for the post-execution self-review gate. Called from BOTH the plan-task and plan-resume terminal paths so resume cannot bypass the gate or the cycle cap (tribunal fix #4).
  */
-// @kern-source: dispatch:2839
+// @kern-source: dispatch:2842
 export async function finalizePlanWithReviewGate(finalPlan: CesarPlan, executors: Record<string,StepExecutor>, abortSignal: AbortSignal, cb: DispatchCallbacks): Promise<CesarPlan> {
   const MUTATING = new Set(['forge', 'teamforge', 'pipeline', 'agent', 'team-agent', 'delegate', 'self']);
   const planTouchedMutation = finalPlan.steps.some((s: any) => MUTATING.has(s.type) && (s.state === 'done' || s.state === 'failed'));

@@ -2617,7 +2617,10 @@ fn name=buildPlanCallbacks params="initialPlan:CesarPlan, cb:DispatchCallbacks" 
 
     const markStepRunning = (plan: CesarPlan, stepId: string): CesarPlan => ({
       ...plan,
-      steps: plan.steps.map((s: any) => s.id === stepId ? { ...s, state: 'running' as any } : s),
+      steps: plan.steps.map((s: any) => s.id === stepId ? { ...s, state: 'running' as any, startedAt: s.startedAt ?? new Date().toISOString() } : s),
+      updatedAt: new Date().toISOString(),
+      activeStepId: stepId,
+      currentStepId: stepId,
     } as CesarPlan);
 
     const buildPlanStepToolInput = (stepId: string) => {

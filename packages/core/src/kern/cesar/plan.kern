@@ -71,6 +71,9 @@ interface name=CesarPlanStep
   field name=verifyCmd type=string optional=true
   field name=state type=CesarStepState optional=true
   field name=result type=CesarStepResult optional=true
+  field name=startedAt type=string optional=true
+  field name=completedAt type=string optional=true
+  field name=runDir type=string optional=true
 
 interface name=CesarPlan
   field name=id type=string
@@ -84,6 +87,9 @@ interface name=CesarPlan
   field name=totalActualCostUsd type=number
   field name=stepContext type="Record<string, string>"
   field name=createdAt type=string
+  field name=updatedAt type=string optional=true
+  field name=activeStepId type="string|null" optional=true
+  field name=currentStepId type="string|null" optional=true
   field name=approvedAt type=string optional=true
   field name=completedAt type=string optional=true
   field name=planFilePath type=string optional=true
@@ -102,6 +108,7 @@ fn name=createCesarPlan params="intent:string,steps:CesarPlanStep[]" returns=Ces
     }));
     const totalEstimatedTokens = steps.reduce((sum, s) => sum + s.estimatedTokens, 0);
     const totalEstimatedCostUsd = steps.reduce((sum, s) => sum + s.estimatedCostUsd, 0);
+    const now = new Date().toISOString();
     return {
       id,
       state: 'planning',
@@ -112,7 +119,10 @@ fn name=createCesarPlan params="intent:string,steps:CesarPlanStep[]" returns=Ces
       totalActualTokens: 0,
       totalActualCostUsd: 0,
       stepContext: {},
-      createdAt: new Date().toISOString(),
+      createdAt: now,
+      updatedAt: now,
+      activeStepId: null,
+      currentStepId: null,
     };
   >>>
 
@@ -123,6 +133,7 @@ fn name=approveCesarPlan params="plan:CesarPlan" returns=CesarPlan
       ...plan,
       state: 'running' as CesarPlanState,
       approvedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     };
   >>>
 
@@ -135,8 +146,9 @@ fn name=advanceCesarStep params="plan:CesarPlan,stepId:string,result:CesarStepRe
     const isSuccess = result.status === 'success';
     const stepState: CesarStepState = isSuccess ? 'done' : 'failed';
 
+    const now = new Date().toISOString();
     let newSteps = plan.steps.map((s, i) =>
-      i === stepIdx ? { ...s, state: stepState, result } : s,
+      i === stepIdx ? { ...s, state: stepState, result, completedAt: now } : s,
     );
 
     // Unblock dependent steps if this step succeeded
@@ -177,6 +189,9 @@ fn name=advanceCesarStep params="plan:CesarPlan,stepId:string,result:CesarStepRe
       totalActualTokens,
       totalActualCostUsd,
       completedAt,
+      updatedAt: now,
+      activeStepId: null,
+      currentStepId: null,
     };
   >>>
 
@@ -191,6 +206,9 @@ fn name=cancelCesarPlan params="plan:CesarPlan" returns=CesarPlan
       ...plan,
       steps: newSteps,
       state: 'cancelled' as CesarPlanState,
+      updatedAt: new Date().toISOString(),
+      activeStepId: null,
+      currentStepId: null,
     };
   >>>
 

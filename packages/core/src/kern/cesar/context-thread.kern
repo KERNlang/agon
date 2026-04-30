@@ -1078,13 +1078,15 @@ fn name=saveActivePointer params="pointer:ActivePointerMap" returns=void
 // loadOrCreateActiveThread so we can flush them on process exit / SIGINT.
 // WeakRef prevents this registry from keeping threads alive past their
 // natural lifetime. The exit handler is registered once.
-const name=_exitFlushRegistry type="Set<WeakRef<any>>" value={{ new Set<WeakRef<any>>() }}
+const name=_WeakRefCtor type="(new (value:any)=>{deref:()=>any})|undefined" value={{ (globalThis as any).WeakRef as (new (value:any)=>{deref:()=>any})|undefined }}
+
+const name=_exitFlushRegistry type="Set<{deref:()=>any}>" value={{ new Set<{deref:()=>any}>() }}
 
 const name=_exitHandlerRegistered type="{value:boolean}" value={{ { value: false } }}
 
 fn name=_registerExitFlush params="thread:ContextThread" returns=void
   handler <<<
-    _exitFlushRegistry.add(new WeakRef(thread));
+    _exitFlushRegistry.add(_WeakRefCtor ? new _WeakRefCtor(thread) : { deref: () => thread });
     if (_exitHandlerRegistered.value) return;
     _exitHandlerRegistered.value = true;
 

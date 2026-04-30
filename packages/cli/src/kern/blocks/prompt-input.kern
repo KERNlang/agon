@@ -236,7 +236,7 @@ fn name=lineLength params="line:PromptLine" returns=number export=false expr={{ 
 
 fn name=pluralizeLines params="count:number" returns=string export=false expr={{ return count === 1 ? 'line' : 'lines'; }}
 
-fn name=isDelegatedCtrlShortcut params="input:string" returns=boolean export=true expr={{ return ['b', 'c', 'e', 'i', 'j', 'l', 'r', 't', 'y'].includes(input); }}
+fn name=isDelegatedCtrlShortcut params="input:string" returns=boolean export=true expr={{ return ['b', 'c', 'e', 'g', 'i', 'j', 'l', 'r', 't', 'y'].includes(input); }}
 
 fn name=shouldAdoptPromptValue params="originalValue:string, pendingEchoValue:string|null" returns=boolean export=true
   handler <<<
@@ -355,6 +355,7 @@ screen name=PromptTextInput target=ink memo=true export=named
           '\x01': 'a',
           '\x03': 'c',
           '\x05': 'e',
+          '\x07': 'g',
           '\x0b': 'k',
           '\x0c': 'l',
           '\x12': 'r',
@@ -366,7 +367,7 @@ screen name=PromptTextInput target=ink memo=true export=named
           ...(key.ctrl ? { '\x09': 'i', '\x0a': 'j' } : {}),
         } as Record<string, string>;
         const normalizedCtrlInput = ctrlInputMap[input] ?? (key.ctrl && keyName ? keyName : input);
-        const hasCtrlSignal = !!key.ctrl || ['\x01', '\x02', '\x03', '\x05', '\x0b', '\x0c', '\x12', '\x14', '\x15', '\x17', '\x19'].includes(input);
+        const hasCtrlSignal = !!key.ctrl || ['\x01', '\x02', '\x03', '\x05', '\x07', '\x0b', '\x0c', '\x12', '\x14', '\x15', '\x17', '\x19'].includes(input);
         const isReservedCtrlShortcut = hasCtrlSignal && isDelegatedCtrlShortcut(normalizedCtrlInput);
         const isSupportedCtrlEditShortcut = hasCtrlSignal && ['a', 'k', 'u', 'w'].includes(normalizedCtrlInput);
         const isWordLeft = (key.meta && (key.leftArrow || input === 'b')) || input === '\x1bb';

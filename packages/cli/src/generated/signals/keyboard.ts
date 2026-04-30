@@ -87,7 +87,7 @@ export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
   } as Record<string, string>;
   const normalizedCtrlInput = ctrlInputMap[input] ?? (key.ctrl && keyName ? keyName : input);
   const hasCtrlSignal = !!key.ctrl || ['\x01', '\x02', '\x03', '\x05', '\x07', '\x0c', '\x0f', '\x12', '\x14', '\x19'].includes(input);
-  const delegatedCtrlShortcuts = new Set(['b', 'e', 'i', 'j', 'l', 'o', 'r', 't', 'y']);
+  const delegatedCtrlShortcuts = new Set(['b', 'e', 'g', 'i', 'j', 'l', 'o', 'r', 't', 'y']);
 
   // Model/cesar picker open: only Ctrl+C gets through
   if (ctx.modelPickerOpen || ctx.cesarPickerOpen) {
@@ -136,11 +136,10 @@ export function resolveKeyboardInput(ctx: KeyboardCtx): KeyboardAction {
     return { type: 'toggleAutoQueued' };
   }
 
-  // Ctrl+I: toggle live execution rail. In terminals that report Ctrl+I
-  // as Tab with key.ctrl set, this must run before the plain Tab handler.
-  // Ctrl+T is a reliable alias because many terminals collapse Ctrl+I into
-  // an indistinguishable plain Tab.
-  if (hasCtrlSignal && (normalizedCtrlInput === 'i' || normalizedCtrlInput === 't')) return { type: 'toggleExecutionRail' };
+  // Ctrl+G: toggle live execution rail. Ctrl+I/Ctrl+T remain hidden
+  // compatibility aliases, but Ctrl+G is the advertised shortcut because
+  // terminal/text-input layers commonly overload Tab/Ctrl+I and Ctrl+T.
+  if (hasCtrlSignal && (normalizedCtrlInput === 'g' || normalizedCtrlInput === 'i' || normalizedCtrlInput === 't')) return { type: 'toggleExecutionRail' };
 
   // Shift+Tab: queue auto mode
   if (isShiftTab && !ctx.slashPickerOpen && !ctx.enginePickerOpen && !ctx.questionState && !ctx.reviewEventOpen) {

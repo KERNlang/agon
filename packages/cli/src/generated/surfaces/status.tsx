@@ -96,7 +96,7 @@ export function StatusBar({ cesarId, chatMessageCount, totalTokens, totalCostUsd
         <Text color="#f59e0b">{'Ctrl+B'}</Text>
         <Text dimColor>{')'}</Text>
         <Text dimColor>{' \u00b7 live ('}</Text>
-        <Text color="#f59e0b">{'Ctrl+T'}</Text>
+        <Text color="#f59e0b">{'Ctrl+G'}</Text>
         <Text dimColor>{')'}</Text>
         <Text dimColor>{' \u00b7 '}</Text>
         {autoModeQueued ? <Text color="#f97316" bold>{'AUTO ON'}</Text> : <Text dimColor>{'auto'}</Text>}
@@ -347,7 +347,7 @@ const ExecutionRailPanel = React.memo(function ExecutionRailPanel({ spinner, eng
   const fileCount = Math.max(0, Number(stats?.fileCount ?? 0));
   const changedFileCount = Math.max(0, Number(stats?.changedFileCount ?? 0));
   const queueCount = Math.max(0, Number(stats?.queueCount ?? 0));
-  const timelineBudget = Math.max(3, Math.min(8, safeRows - 8));
+  const timelineBudget = Math.max(2, Math.min(5, safeRows - 9));
   const timeline = buildExecutionRailTimeline(activePlan, lastTool, engines, recentFallbacks, timelineBudget);
   const borderColor = focused || isActive || planGauge.visible || spinner ? '#22d3ee' : '#374151';
 
@@ -355,7 +355,7 @@ const ExecutionRailPanel = React.memo(function ExecutionRailPanel({ spinner, eng
     <Box flexDirection="column" flexShrink={0} width={safeWidth} height={safeRows + 2} paddingLeft={1} borderStyle="single" borderColor={borderColor} overflow="hidden">
       <Text>
         <Text color="#22d3ee" bold>{'LIVE'}</Text>
-        <Text dimColor>{' (Ctrl+T)'}</Text>
+        <Text dimColor>{' (Ctrl+G)'}</Text>
       </Text>
       <Text>
         <Text dimColor>{'phase '}</Text>
@@ -390,7 +390,7 @@ const ExecutionRailPanel = React.memo(function ExecutionRailPanel({ spinner, eng
       {fallback ? (
         <Text color="#f97316">{clip(`fallback ${fallback.from} -> ${fallback.to}`, inner)}</Text>
       ) : null}
-      {timeline.length > 0 ? <Text dimColor>{'timeline'}</Text> : null}
+      {timeline.length > 0 ? <Text dimColor>{'recent'}</Text> : null}
       {timeline.map((row: any) => (
         <Text key={row.key}>
           <Text color={row.color}>{row.icon}</Text>

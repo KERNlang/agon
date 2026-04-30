@@ -130,6 +130,7 @@ const PromptTextInput = React.memo(function PromptTextInput({ value, placeholder
       '\x01': 'a',
       '\x03': 'c',
       '\x05': 'e',
+      '\x07': 'g',
       '\x0b': 'k',
       '\x0c': 'l',
       '\x12': 'r',
@@ -141,7 +142,7 @@ const PromptTextInput = React.memo(function PromptTextInput({ value, placeholder
       ...(key.ctrl ? { '\x09': 'i', '\x0a': 'j' } : {}),
     } as Record<string, string>;
     const normalizedCtrlInput = ctrlInputMap[input] ?? (key.ctrl && keyName ? keyName : input);
-    const hasCtrlSignal = !!key.ctrl || ['\x01', '\x02', '\x03', '\x05', '\x0b', '\x0c', '\x12', '\x14', '\x15', '\x17', '\x19'].includes(input);
+    const hasCtrlSignal = !!key.ctrl || ['\x01', '\x02', '\x03', '\x05', '\x07', '\x0b', '\x0c', '\x12', '\x14', '\x15', '\x17', '\x19'].includes(input);
     const isReservedCtrlShortcut = hasCtrlSignal && isDelegatedCtrlShortcut(normalizedCtrlInput);
     const isSupportedCtrlEditShortcut = hasCtrlSignal && ['a', 'k', 'u', 'w'].includes(normalizedCtrlInput);
     const isWordLeft = (key.meta && (key.leftArrow || input === 'b')) || input === '\x1bb';
@@ -485,7 +486,7 @@ function pluralizeLines(count: number): string {
 
 // @kern-source: prompt-input:239
 export function isDelegatedCtrlShortcut(input: string): boolean {
-  return ['b', 'c', 'e', 'i', 'j', 'l', 'r', 't', 'y'].includes(input);
+  return ['b', 'c', 'e', 'g', 'i', 'j', 'l', 'r', 't', 'y'].includes(input);
 }
 
 // @kern-source: prompt-input:241

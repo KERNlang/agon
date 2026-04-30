@@ -31,9 +31,14 @@ export async function executePlan(plan: CesarPlan, executors: Record<string,Step
   const markStepsRunning = (target: CesarPlan, stepIds: string[]) => {
     if (stepIds.length === 0) return target;
     const selected = new Set(stepIds);
+    const now = new Date().toISOString();
+    const activeStepId = stepIds.length === 1 ? stepIds[0] : null;
     return {
       ...target,
-      steps: target.steps.map((s) => selected.has(s.id) ? { ...s, state: 'running' as any } : s),
+      steps: target.steps.map((s) => selected.has(s.id) ? { ...s, state: 'running' as any, startedAt: s.startedAt ?? now } : s),
+      updatedAt: now,
+      activeStepId,
+      currentStepId: activeStepId,
     };
   };
 
@@ -137,6 +142,9 @@ export async function executePlan(plan: CesarPlan, executors: Record<string,Step
     current = {
       ...current,
       state: 'paused' as any,
+      updatedAt: new Date().toISOString(),
+      activeStepId: null,
+      currentStepId: null,
     };
     callbacks.onPlanUpdate(current);
   }

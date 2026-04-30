@@ -1,5 +1,5 @@
 import from="node:child_process" names="execFileSync"
-import from="node:fs" names="readdirSync,statSync,existsSync,rmSync,readFileSync"
+import from="node:fs" names="readdirSync,statSync,existsSync,rmSync,readFileSync,symlinkSync,mkdirSync"
 import from="node:path" names="join"
 import from="../models/errors.js" names="GitError,WorktreeError"
 
@@ -28,11 +28,54 @@ fn name=headSha params="cwd:string" returns=string expr={{ return git(['rev-pars
 
 fn name=worktreePrune params="cwd:string" returns=void expr={{ git(['worktree', 'prune'], cwd); }}
 
+fn name=symlinkNodeModuleEntry params="sourcePath:string,targetPath:string" returns=void export=false
+  handler <<<
+    if (existsSync(targetPath)) return;
+    const sourceStat = statSync(sourcePath);
+    const linkType = sourceStat.isDirectory()
+      ? (process.platform === 'win32' ? 'junction' : 'dir')
+      : 'file';
+    symlinkSync(sourcePath, targetPath, linkType);
+  >>>
+
+fn name=linkWorktreeNodeModules params="repoDir:string,worktreePath:string" returns=void export=false
+  doc "External git worktrees live outside the repo, so Node cannot walk up to the root install. Create a shallow node_modules overlay: external deps link to the root install, while @agon workspace packages link back into the candidate worktree so runtime tests see candidate edits."
+  handler <<<
+    const source = join(repoDir, 'node_modules');
+    const target = join(worktreePath, 'node_modules');
+    if (!existsSync(source) || existsSync(target)) return;
+    try {
+      mkdirSync(target, { recursive: true });
+      const entries = readdirSync(source, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.name === '@agon') continue;
+        symlinkNodeModuleEntry(join(source, entry.name), join(target, entry.name));
+      }
+
+      const agonSource = join(source, '@agon');
+      if (existsSync(agonSource)) {
+        const agonTarget = join(target, '@agon');
+        mkdirSync(agonTarget, { recursive: true });
+        const agonEntries = readdirSync(agonSource, { withFileTypes: true });
+        for (const entry of agonEntries) {
+          const worktreePackage = join(worktreePath, 'packages', entry.name);
+          const packageSource = existsSync(worktreePackage)
+            ? worktreePackage
+            : join(agonSource, entry.name);
+          symlinkNodeModuleEntry(packageSource, join(agonTarget, entry.name));
+        }
+      }
+    } catch (err) {
+      console.warn(`[agon] worktree node_modules link failed for ${worktreePath}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  >>>
+
 fn name=worktreeCreate params="repoDir:string,worktreePath:string,sha:string" returns=string
   handler <<<
     worktreePrune(repoDir);
     try {
       git(['worktree', 'add', '--detach', worktreePath, sha], repoDir);
+      linkWorktreeNodeModules(repoDir, worktreePath);
       return worktreePath;
     } catch (err) {
       throw new WorktreeError(

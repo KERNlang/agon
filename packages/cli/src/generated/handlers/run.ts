@@ -17,9 +17,9 @@ export async function handleRun(command: string, dispatch: Dispatch, ctx: Handle
     dispatch({ type: 'error', message: 'Usage: /run <command>' });
     return;
   }
-  
+
   const lower = command.trim().toLowerCase();
-  
+
   // Block dangerous commands
   for (const prefix of RUN_DANGEROUS) {
     if (lower.startsWith(prefix)) {
@@ -27,10 +27,10 @@ export async function handleRun(command: string, dispatch: Dispatch, ctx: Handle
       return;
     }
   }
-  
+
   // Detect shell metacharacters — any command with chaining/piping is NOT safe
   const hasShellMeta = /[;&|`$(){}<>]|\bif\b|\bthen\b|\bwhile\b/.test(command);
-  
+
   // Auto-allow safe commands ONLY if no shell metacharacters present
   const isSafe = !hasShellMeta && RUN_SAFE.some(s => lower.startsWith(s));
   if (!isSafe) {
@@ -40,25 +40,25 @@ export async function handleRun(command: string, dispatch: Dispatch, ctx: Handle
       return;
     }
   }
-  
+
   dispatch({ type: 'spinner-start', message: `Running: ${command.slice(0, 60)}` });
-  
+
   try {
     // Show as tool-call for consistent display
     dispatch({ type: 'tool-call', engineId: 'run', tool: 'Bash', input: JSON.stringify({ command }), status: 'running' } as any);
-  
+
     const result = await spawnWithTimeout({
       command: '/bin/sh',
       args: ['-c', command],
       cwd: process.cwd(),
       timeout: 60000,
     });
-  
+
     dispatch({ type: 'spinner-stop' });
-  
+
     const output = [result.stdout, result.stderr].filter(Boolean).join('\n').trim();
     const exitInfo = result.timedOut ? 'timed out (60s)' : `exit ${result.exitCode}`;
-  
+
     dispatch({
       type: 'tool-call',
       engineId: 'run',

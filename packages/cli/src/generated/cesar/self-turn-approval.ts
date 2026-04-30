@@ -75,7 +75,7 @@ function normalizeApprovalArgs(args: Record<string,unknown>): Record<string,unkn
       nested.push(value[0] as Record<string, unknown>);
     }
   }
-  
+
   const src = nested.find((candidate) =>
     typeof (candidate.file_path ?? candidate.filePath ?? candidate.path) === 'string'
   ) ?? raw;
@@ -94,7 +94,7 @@ function estimateChangedTokens(before: string, after: string): number {
   let prefix = 0;
   const minLen = Math.min(before.length, after.length);
   while (prefix < minLen && before.charCodeAt(prefix) === after.charCodeAt(prefix)) prefix++;
-  
+
   let beforeEnd = before.length - 1;
   let afterEnd = after.length - 1;
   while (
@@ -105,7 +105,7 @@ function estimateChangedTokens(before: string, after: string): number {
     beforeEnd--;
     afterEnd--;
   }
-  
+
   const removed = Math.max(0, beforeEnd - prefix + 1);
   const added = Math.max(0, afterEnd - prefix + 1);
   return Math.ceil((removed + added) / 4);
@@ -122,7 +122,7 @@ function isStaleCachedRead(filePath: string, cached: any): boolean {
   } catch {
     return true;
   }
-  
+
   if (cached?.lastTouchedBy === 'cesar') {
     try {
       const current = readFileSync(filePath, 'utf-8');
@@ -135,7 +135,7 @@ function isStaleCachedRead(filePath: string, cached: any): boolean {
     }
     return true;
   }
-  
+
   return mtime > Number(cached?.timestamp ?? 0);
 }
 
@@ -171,7 +171,7 @@ export function applyCesarSelfTurnApproval(tool: string, args: Record<string,unk
   if ((toolCtx as any).explorationMode || (toolCtx as any).readOnlyMode) {
     return { approve: false, reason: 'read-only mode active' };
   }
-  
+
   const t = canonicalToolName(tool);
   if (t !== 'Edit' && t !== 'Write') {
     return { approve: false, reason: 'not a file edit/write' };
@@ -180,7 +180,7 @@ export function applyCesarSelfTurnApproval(tool: string, args: Record<string,unk
   if (configured === 'deny') {
     return { approve: false, reason: `${t} denied in settings`, tool: t };
   }
-  
+
   const normalizedArgs = normalizeApprovalArgs(args);
   const rawPath = normalizedArgs.file_path;
   if (typeof rawPath !== 'string' || rawPath.trim().length === 0) {
@@ -193,7 +193,7 @@ export function applyCesarSelfTurnApproval(tool: string, args: Record<string,unk
   if (isSensitivePath(filePath)) {
     return { approve: false, reason: 'sensitive file', tool: t, path: filePath };
   }
-  
+
   const cache = toolCtx.readFileState;
   const cached = cache.get(filePath);
   if (!cached) {
@@ -205,12 +205,12 @@ export function applyCesarSelfTurnApproval(tool: string, args: Record<string,unk
   if (isStaleCachedRead(filePath, cached)) {
     return { approve: false, reason: 'file changed since last read', tool: t, path: filePath };
   }
-  
+
   const maxTokensRaw = Number((config as any).cesarSelfTurnAutoApproveMaxDiffTokens ?? 1200);
   const maxTokens = Number.isFinite(maxTokensRaw) && maxTokensRaw > 0 ? maxTokensRaw : 1200;
   let diffTokens = Number.POSITIVE_INFINITY;
   let nextContent: string | null = null;
-  
+
   if (t === 'Edit') {
     const oldString = normalizedArgs.old_string;
     const newString = normalizedArgs.new_string;
@@ -234,14 +234,14 @@ export function applyCesarSelfTurnApproval(tool: string, args: Record<string,unk
     diffTokens = estimateChangedTokens(cached.content, content);
     nextContent = content;
   }
-  
+
   if (diffTokens > maxTokens) {
     return { approve: false, reason: `diff estimate ${diffTokens} tokens exceeds ${maxTokens}`, tool: t, path: filePath, diffTokens };
   }
-  
+
   if (nextContent !== null) {
     markCesarTouchedCache(cache as Map<string, any>, filePath, cached, nextContent);
   }
-  
+
   return { approve: true, reason: `bounded ${t} on previously read file (${diffTokens} tokens)`, tool: t, path: filePath, diffTokens };
 }

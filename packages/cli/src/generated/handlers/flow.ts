@@ -23,34 +23,34 @@ function buildTelemetry(ctx: HandlerContext, startTime: number): FlowTelemetry {
 // @kern-source: flow:19
 export async function handleFlowReport(dispatch: Dispatch, ctx: HandlerContext, sessionMode: string, startTime: number, modeMeta?: FlowModeMeta): Promise<void> {
   const telemetry = buildTelemetry(ctx, startTime);
-  
+
   dispatch({ type: 'header', title: 'Log Flow' });
   dispatch({ type: 'info', message: `Mode: ${sessionMode}  |  Engines: ${telemetry.engines.join(', ')}  |  Duration: ${Math.round(telemetry.durationMs / 1000)}s` });
-  
+
   const goalAnswer = await ctx.askQuestion('Goal met? [y/n/partly]');
   const goalMet = goalAnswer.trim().toLowerCase().startsWith('p') ? 'partly'
     : goalAnswer.trim().toLowerCase().startsWith('n') ? 'no' : 'yes';
-  
+
   const ratingAnswer = await ctx.askQuestion('Satisfaction (1-5)?');
   const satisfactionRating = Math.max(1, Math.min(5, parseInt(ratingAnswer.trim(), 10) || 3));
-  
+
   const followupAnswer = await ctx.askQuestion('Needs followup? [y/N]');
   const needsFollowup = followupAnswer.trim().toLowerCase() === 'y';
-  
+
   dispatch({ type: 'info', message: `Friction tags: ${FRICTION_TAGS.join(', ')}` });
   const frictionAnswer = await ctx.askQuestion('Friction? (comma-separated tags, or enter to skip)');
   const frictionTags = frictionAnswer.trim()
     ? frictionAnswer.split(',').map((s: string) => s.trim().toLowerCase()).filter((t: string) => FRICTION_TAGS.includes(t))
     : [];
-  
+
   let notes: string | undefined;
   if (frictionTags.length > 0) {
     const notesAnswer = await ctx.askQuestion('Notes? (optional, enter to skip)');
     notes = notesAnswer.trim() || undefined;
   }
-  
+
   const feedback: FlowFeedback = { satisfactionRating, goalMet: goalMet as 'yes'|'no'|'partly', needsFollowup, frictionTags, notes };
-  
+
   const record: FlowRecord = {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     schemaVersion: 1,
@@ -63,7 +63,7 @@ export async function handleFlowReport(dispatch: Dispatch, ctx: HandlerContext, 
     feedback,
     modeMeta,
   };
-  
+
   const path = logFlow(record);
   dispatch({ type: 'success', message: `Flow logged: ${record.id.slice(0, 12)}` });
   dispatch({ type: 'info', message: path });
@@ -89,16 +89,16 @@ export function autoLogFlow(ctx: HandlerContext, sessionMode: string, startTime:
 // @kern-source: flow:85
 export function handleFlowAnalysis(dispatch: Dispatch): void {
   const analysis = analyzeFlows(30);
-  
+
   dispatch({ type: 'header', title: `Flow Analytics — last ${analysis.periodDays} days` });
-  
+
   if (analysis.totalFlows === 0) {
     dispatch({ type: 'info', message: 'No flows logged yet. Use /flow to log a session.' });
     return;
   }
-  
+
   dispatch({ type: 'info', message: `${analysis.totalFlows} sessions tracked` });
-  
+
   const modeRows = analysis.byMode.map((m) => [
     m.mode,
     String(m.count),
@@ -109,7 +109,7 @@ export function handleFlowAnalysis(dispatch: Dispatch): void {
     `${m.followupRate}%`,
   ]);
   dispatch({ type: 'table', headers: ['Mode', 'Sessions', 'Satisfaction', 'Completed', 'Avg Time', 'Avg Tokens', 'Followup%'], rows: modeRows });
-  
+
   if (analysis.topFriction.length > 0) {
     dispatch({ type: 'separator' });
     dispatch({ type: 'info', message: 'Top friction:' });

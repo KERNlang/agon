@@ -40,7 +40,7 @@ export function formatChatTranscript(session: ChatSession): string {
   if (session.messages.length === 0) {
     return `${DIM}No chat messages in this session yet.${RESET}\n`;
   }
-  
+
   const lines: string[] = [];
   lines.push(`${BOLD}Chat Transcript${RESET}`);
   if (session.cwd || session.branch) {
@@ -48,7 +48,7 @@ export function formatChatTranscript(session: ChatSession): string {
     if (meta) lines.push(`${DIM}${meta}${RESET}`);
   }
   lines.push('');
-  
+
   for (const msg of session.messages) {
     const speaker = msg.role === 'user' ? 'USER' : (msg.engineId ?? 'ENGINE').toUpperCase();
     const color = msg.role === 'user' ? YELLOW : CYAN;
@@ -59,7 +59,7 @@ export function formatChatTranscript(session: ChatSession): string {
     lines.push(msg.content);
     lines.push('');
   }
-  
+
   return lines.join('\n');
 }
 
@@ -72,7 +72,7 @@ export function formatBrainstorm(r: SessionResult, idx: number): string {
   lines.push(`${DIM} Engines: ${r.engines.join(', ')}${r.winner ? ` · Winner: ${r.winner}` : ''}${RESET}`);
   lines.push(`${BOLD}${CYAN}${RULE}${RESET}`);
   lines.push('');
-  
+
   for (const bid of data.bids) {
     const isWinner = bid.engineId === r.winner;
     const marker = isWinner ? `${GREEN} (winner)${RESET}` : '';
@@ -82,13 +82,13 @@ export function formatBrainstorm(r: SessionResult, idx: number): string {
     if (bid.approach) lines.push(bid.approach);
     lines.push('');
   }
-  
+
   if (data.response) {
     lines.push(`${BOLD}${GREEN}── Winner's Response ──${RESET}`);
     lines.push(data.response);
     lines.push('');
   }
-  
+
   return lines.join('\n');
 }
 
@@ -101,13 +101,13 @@ export function formatCampfire(r: SessionResult, idx: number): string {
   lines.push(`${DIM} Engines: ${r.engines.join(', ')}${RESET}`);
   lines.push(`${BOLD}${YELLOW}${RULE}${RESET}`);
   lines.push('');
-  
+
   for (const round of data.rounds) {
     lines.push(`${BOLD}── ${round.engineId} ──${RESET}`);
     lines.push(round.content);
     lines.push('');
   }
-  
+
   return lines.join('\n');
 }
 
@@ -120,7 +120,7 @@ export function formatTribunal(r: SessionResult, idx: number): string {
   lines.push(`${DIM} Engines: ${r.engines.join(', ')}${RESET}`);
   lines.push(`${BOLD}${RED}${RULE}${RESET}`);
   lines.push('');
-  
+
   const roundNums = [...new Set(data.rounds.map(r => r.round))].sort();
   for (const num of roundNums) {
     lines.push(`${BOLD}${DIM}── Round ${num} ──${RESET}`);
@@ -131,11 +131,11 @@ export function formatTribunal(r: SessionResult, idx: number): string {
       lines.push('');
     }
   }
-  
+
   lines.push(`${BOLD}── Verdict ──${RESET}`);
   lines.push(data.verdict);
   lines.push('');
-  
+
   return lines.join('\n');
 }
 
@@ -148,11 +148,11 @@ export function formatForge(r: SessionResult, idx: number): string {
   lines.push(`${DIM} Engines: ${r.engines.join(', ')}${r.winner ? ` · Winner: ${r.winner}` : ''}${RESET}`);
   lines.push(`${BOLD}${GREEN}${RULE}${RESET}`);
   lines.push('');
-  
+
   const header = `${'Engine'.padEnd(20)} ${'Result'.padEnd(12)} ${'Score'.padEnd(8)} ${'Diff'.padEnd(12)} ${'Files'.padEnd(8)} ${'Time'.padEnd(8)}`;
   lines.push(`${BOLD}${header}${RESET}`);
   lines.push(THIN_RULE);
-  
+
   for (const row of data.scoreboard) {
     const result = row.pass ? `${GREEN}PASS${RESET}` : `${RED}FAIL${RESET}`;
     const isWinner = row.engineId === data.winner;
@@ -160,13 +160,13 @@ export function formatForge(r: SessionResult, idx: number): string {
     const namePad = isWinner ? 28 : 20;
     lines.push(`${name.padEnd(namePad)} ${result.padEnd(21)} ${String(row.score).padEnd(8)} ${(row.diffLines + ' lines').padEnd(12)} ${String(row.filesChanged).padEnd(8)} ${row.durationSec + 's'}`);
   }
-  
+
   if (data.synthesis) {
     lines.push('');
     const synthResult = data.synthesis.pass ? `${GREEN}PASS${RESET}` : `${RED}FAIL${RESET}`;
     lines.push(`${BOLD}Synthesis:${RESET} ${synthResult} (score: ${data.synthesis.score})`);
   }
-  
+
   lines.push('');
   return lines.join('\n');
 }
@@ -176,10 +176,10 @@ export function formatSessionResults(results: SessionResult[]): string {
   if (results.length === 0) {
     return `${DIM}No results in this session yet. Run /brainstorm, /campfire, /tribunal, or /forge first.${RESET}\n`;
   }
-  
+
   const sections: string[] = [];
   sections.push(`${BOLD}Session Results (${results.length})${RESET}\n`);
-  
+
   for (let i = 0; i < results.length; i++) {
     const r = results[i];
     const idx = i + 1;
@@ -190,6 +190,6 @@ export function formatSessionResults(results: SessionResult[]): string {
       case 'forge': sections.push(formatForge(r, idx)); break;
     }
   }
-  
+
   return sections.join('\n');
 }

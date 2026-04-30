@@ -26,7 +26,7 @@ import { buildCheckpoint, recordCheckpoint } from '../cesar/checkpoint.js';
 function handleForgeEvent(event: any, plan: Plan, engineStatus: Record<string,string>, dispatch: Dispatch, ctx: HandlerContext): Plan {
   if (ctx.currentPlan?.state === 'cancelled') return plan;
   const id = event.engineId ?? '';
-  
+
   switch (event.type) {
     case 'baseline:start':
       plan = mergeStepResult(plan, 'baseline', { state: 'running', attempts: [{ startedAt: new Date().toISOString() }] });
@@ -119,12 +119,12 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
   const forgeAbort = new AbortController();
   try {
     ensureAgonHome();
-    
+
     if (!task) {
       dispatch({ type: 'warning', message: 'No task provided. Usage: "fix the auth bug, test with npm test"' });
       return null;
     }
-    
+
     let fitness = fitnessCmd;
     if (!fitness) {
       fitness = await ctx.askQuestion('What command tests this?');
@@ -134,16 +134,16 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
         return null;
       }
     }
-    
+
     const engines = ctx.activeEngines();
     if (engines.length === 0) {
       dispatch({ type: 'error', message: 'No engines available. Install at least one AI CLI tool.' });
       return null;
     }
-    
+
     const config = ctx.config;
     let plan: Plan;
-    
+
     if (existingPlan) {
       plan = startPlan(existingPlan);
       ctx.setCurrentPlan(plan);
@@ -153,7 +153,7 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
       const snapshot = ws
         ? snapshotWorkspace(ws)
         : { id: 'cwd', path: resolveWorkingDir(), headSha: 'unknown', branch: 'unknown', dirty: false };
-    
+
       const forgeSteps: PlanStepInput[] = [
         { id: 'baseline', kind: 'fitness', label: 'Baseline fitness check', effects: ['exec'] },
         { id: 'dispatch', kind: 'dispatch', label: `Dispatch engines: ${engines.join(', ')}`, effects: ['exec', 'write', 'network'] },
@@ -163,16 +163,16 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
       if (config.forgeEnableSynthesis) {
         forgeSteps.push({ id: 'synthesis', kind: 'synthesis', label: 'Critique & synthesize', effects: ['exec', 'write', 'network'] });
       }
-    
+
       plan = createPlan(
         { type: 'forge', task, fitnessCmd: fitness, engines, hardened: hardened ?? false },
         snapshot,
         forgeSteps,
       );
       ctx.setCurrentPlan(plan);
-    
+
       dispatch({ type: 'plan', plan });
-    
+
       const approvalLevel = (config.approvalLevel ?? 'plan') as ApprovalLevel;
       if (!skipPlanApproval && approvalLevel !== 'auto') {
         const answer = await ctx.askQuestion('Approve plan? [Y/n]');
@@ -184,29 +184,29 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
           return null;
         }
       }
-    
+
       plan = approvePlan(plan);
       plan = startPlan(plan);
       ctx.setCurrentPlan(plan);
       savePlan(plan);
     }
-    
+
     const forgeDir = join(RUNS_DIR, `forge-${Date.now()}`);
     mkdirSync(forgeDir, { recursive: true });
     dispatch({ type: 'info', message: `Forge run dir: ${forgeDir}` });
-    
+
     const forgeCwd = resolveWorkingDir();
     const projectCtx = scanProjectContext(forgeCwd, config.projectContext || undefined, config.contextFormat);
-    
+
     const engineStatus: Record<string, string> = {};
     const startTime = Date.now();
-    
+
     // ── Scoreboard + Checkpoint ──
     const runId = `forge-${Date.now()}`;
     const scoreboard = createScoreboard(runId, 'forge', engines);
     const preCp = buildCheckpoint(runId, 'pre-dispatch', 'forge', engines, { task, fitnessCmd: fitness, hardened: hardened ?? false });
     recordCheckpoint(preCp);
-    
+
     // Phase 5c: pre-compute which engines have agent-mode config, so the
     // progress tick (called every 250ms) doesn't re-query the registry.
     const agentEngineIds = new Set<string>();
@@ -216,7 +216,7 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
         if ((eng as any).agent || (eng as any).api) agentEngineIds.add(id);
       } catch { /* engine not resolvable — treat as non-agent */ }
     }
-    
+
     const progressInterval = setInterval(() => {
       const elapsed = Math.floor((Date.now() - startTime) / 1000);
       const progress: EngineProgress[] = engines.map((id: string) => {
@@ -240,9 +240,9 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
         else if (s === 'failed') scoreboardFailEngine(scoreboard, id, engineStatus[`${id}:error`] ?? 'failed');
       }
     }, 250);
-    
+
     ctx.setActiveAbort(forgeAbort);
-    
+
     let manifest: any;
     try {
       manifest = await runForge(
@@ -274,10 +274,10 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
       }
       throw err;
     }
-    
+
     clearInterval(progressInterval);
     dispatch({ type: 'progress-clear' });
-    
+
     // runForge now never throws — it returns a manifest with error set on
     // fatal failure. Surface that as a user-visible warning so the run isn't
     // silently treated as successful with no winner.
@@ -319,7 +319,7 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
     // Note: the no-winner-with-no-error case is handled below, after the
     // scoreboard renders, so the user sees the metrics first then Cesar's
     // diagnosis. The cesarJudgeForge call (multi-pass case) stays where it was.
-    
+
     // Finalize scoreboard + post-dispatch checkpoint
     for (const id of engines) {
       const s = engineStatus[id] ?? 'waiting';
@@ -329,10 +329,10 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
     dispatch({ type: 'info', message: renderScoreboard(scoreboard) });
     const postCp = buildCheckpoint(runId, 'post-dispatch', 'forge', engines, { winner: manifest.winner ?? null, task });
     recordCheckpoint(postCp);
-    
+
     const engineIds = Object.keys(manifest.results);
     const results = Object.values(manifest.results) as any[];
-    
+
     dispatch({
       type: 'scoreboard',
       title: 'Forge Scoreboard',
@@ -346,7 +346,7 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
         { label: 'Time', values: results.map((r: any) => `${r.durationSec}s`) },
       ],
     });
-    
+
     // Route through Cesar for judgment + convergence analysis
     let judgment: any = null;
     const passingEngines = Object.values(manifest.results).filter((r: any) => r.pass).length;
@@ -362,10 +362,10 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
       try { await cesarReviewForgeOutcome(manifest, dispatch, ctx); }
       catch (err) { console.warn(`[agon] Cesar review (no-winner path) failed: ${err instanceof Error ? err.message : String(err)}`); }
     }
-    
+
     // Use Cesar's winner if available, otherwise fall back to automatic
     const finalWinner = judgment?.winner ?? manifest.winner;
-    
+
     // Convergence: if Cesar says merge best-of-breed, synthesize a converged patch
     if (judgment?.shouldConverge && judgment.convergencePlan.length > 0 && finalWinner) {
       dispatch({ type: 'info', message: 'Cesar recommends convergence — synthesizing best-of-breed…' });
@@ -377,7 +377,7 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
             dispatch({ type: 'success', message: 'Convergence complete — merged patch ready' });
             const convergedContent = readFileSync(convergedPath, 'utf-8');
             dispatch({ type: 'patch-review' as any, winnerId: 'convergence', patchPath: convergedPath, patchContent: convergedContent });
-    
+
             if ((ctx.config as any).sessionContinuity === true) {
               try {
                 const convergeThread = loadOrCreateActiveThread(resolveWorkingDir());
@@ -393,11 +393,11 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
                 dispatch({ type: 'warning', message: `Convergence diff NOT persisted to thread: ${threadErr instanceof Error ? threadErr.message : String(threadErr)}` });
               }
             }
-    
+
             // Skip normal winner patch — convergence replaces it
             dispatch({ type: 'info', message: `Manifest: ${forgeDir}/manifest.json` });
             dispatch({ type: 'info', message: `Result bundle: ${manifest.resultBundlePath ?? `${forgeDir}/result.json`}` });
-    
+
             for (const step of plan.steps) {
               if (step.result.state === 'pending' || step.result.state === 'running') {
                 plan = mergeStepResult(plan, step.id, { state: 'completed' });
@@ -442,7 +442,7 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
         }
       }
     }
-    
+
     if (finalWinner) {
       if (!judgment) dispatch({ type: 'success', message: `Winner: ${finalWinner}` });
       const patchPath = manifest.patches[finalWinner];
@@ -451,7 +451,7 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
         try {
           const patchContent = readFileSync(patchPath, 'utf-8');
           dispatch({ type: 'patch-review' as any, winnerId: finalWinner, patchPath, patchContent });
-    
+
           if ((ctx.config as any).sessionContinuity === true) {
             try {
               const cwd = resolveWorkingDir();
@@ -477,13 +477,13 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
     }
     dispatch({ type: 'info', message: `Manifest: ${forgeDir}/manifest.json` });
     dispatch({ type: 'info', message: `Result bundle: ${manifest.resultBundlePath ?? `${forgeDir}/result.json`}` });
-    
+
     for (const step of plan.steps) {
       if (step.result.state === 'pending' || step.result.state === 'running') {
         plan = mergeStepResult(plan, step.id, { state: 'completed' });
       }
     }
-    
+
     const anyPassed = Object.values(manifest.results).some((r: any) => r.pass);
     // Use Cesar's chosen winner (finalWinner) for plan artifacts, not automatic manifest.winner
     const winnerForPlan = finalWinner ?? manifest.winner;
@@ -494,14 +494,14 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
         : []),
     ];
     plan = mergeStepResult(plan, 'winner', { state: 'completed', artifacts: winnerArtifacts });
-    
+
     if (!anyPassed) {
       plan = { ...plan, state: 'failed', currentStepId: null, updatedAt: new Date().toISOString() } as Plan;
     }
     ctx.setCurrentPlan(plan);
     savePlan(plan);
     dispatch({ type: 'info', message: `Plan: ${plan.id}` });
-    
+
     sessionResultStore.add({
       type: 'forge',
       timestamp: new Date().toISOString(),
@@ -517,11 +517,11 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
         synthesis: manifest.synthesis ?? undefined,
       },
     });
-    
+
     for (const [id, r] of Object.entries(manifest.results) as [string, any][]) {
       tracker.record(id, { prompt: task, response: `score:${r.score} diff:${r.diffLines}` });
     }
-    
+
     return {
       winner: finalWinner ?? null,
       patchPath: finalWinner && manifest.patches[finalWinner] ? manifest.patches[finalWinner] : null,

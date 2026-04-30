@@ -67,7 +67,7 @@ export function parseEagerToolInput(toolName: string, input: unknown): {ok:boole
       try { return JSON.stringify(input) ?? String(input); }
       catch { return String(input); }
     })();
-  
+
   if (input === undefined) {
     return { ok: true, input: {}, raw };
   }
@@ -81,12 +81,12 @@ export function parseEagerToolInput(toolName: string, input: unknown): {ok:boole
       error: `Malformed ${toolName} tool input: expected a JSON object, got ${input === null ? 'null' : Array.isArray(input) ? 'array' : typeof input}. Re-emit the ${toolName} tool call with a complete JSON object matching its schema.`,
     };
   }
-  
+
   const trimmed = input.trim();
   if (!trimmed) {
     return { ok: true, input: {}, raw };
   }
-  
+
   try {
     const parsed = JSON.parse(trimmed);
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
@@ -127,7 +127,7 @@ export async function executeEagerTool(toolName: string, meta: Record<string,unk
     return result;
   }
   const parsedInput = parsed.input ?? {};
-  
+
   const result = await executeToolCall(
     { id: callId, name: toolName, input: parsedInput },
     toolCtx,
@@ -140,7 +140,7 @@ export async function executeEagerTool(toolName: string, meta: Record<string,unk
       });
     },
   );
-  
+
   const out = result.result.ok ? result.result.content : result.result.error;
   dispatch({ type: 'tool-call', engineId: cesarEngineId, tool: toolName, input: toolInput, status: result.result.ok ? 'done' : 'error', output: out } as any);
   return result;

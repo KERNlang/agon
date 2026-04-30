@@ -67,7 +67,7 @@ export function CodeBlockView({ segment, borderColor }: { segment:ContentSegment
   const isDiff = segment.language === 'diff' || lines.some((l: string) => /^[+-@]/.test(l));
   const capped = lines.slice(0, MAX_CODE_LINES);
   const overflow = lines.length - MAX_CODE_LINES;
-  
+
   const bc = borderColor || '#585858';
   return (
     <Box flexDirection="column">
@@ -108,7 +108,7 @@ export function RichSpanView({ span }: { span:InlineSpan }) {
   if (span.style.linkUrl) {
     return <><Text bold color="#60a5fa">{span.text}</Text><Text dimColor>{` (${span.style.linkUrl})`}</Text></>;
   }
-  
+
   let el = <Text>{span.text}</Text>;
   if (span.style.bold && span.style.italic) el = <Text bold italic>{span.text}</Text>;
   else if (span.style.bold) el = <Text bold>{span.text}</Text>;
@@ -121,19 +121,19 @@ export function RichSpanView({ span }: { span:InlineSpan }) {
 export function RichLineView({ line, borderColor }: { line:RichLine; borderColor?:string }) {
   const border = borderColor ? <Text color={borderColor}>{'\u2502 '}</Text> : null;
   const indent = line.indent > 0 ? '  '.repeat(line.indent) : '';
-  
+
   if (line.kind === 'blank') return <Text>{border}{' '}</Text>;
-  
+
   if (line.kind === 'hr') return <Text>{border}<Text dimColor>{'\u2500'.repeat(40)}</Text></Text>;
-  
+
   if (line.kind === 'h1') return <Text>{border}{indent}<Text bold color="cyan">{'# '}{line.spans.map((s: InlineSpan, i: number) => <RichSpanView key={i} span={s} />)}</Text></Text>;
   if (line.kind === 'h2') return <Text>{border}{indent}<Text bold color="white">{'## '}{line.spans.map((s: InlineSpan, i: number) => <RichSpanView key={i} span={s} />)}</Text></Text>;
   if (line.kind === 'h3') return <Text>{border}{indent}<Text bold color="#a0a0a0">{'### '}{line.spans.map((s: InlineSpan, i: number) => <RichSpanView key={i} span={s} />)}</Text></Text>;
-  
+
   if (line.kind === 'blockquote') {
     return <Text>{border}{indent}<Text dimColor>{'\u2502 '}</Text>{line.spans.map((s: InlineSpan, i: number) => <RichSpanView key={i} span={s} />)}</Text>;
   }
-  
+
   const marker = line.marker ?? '';
   const listIndent = (line.kind === 'bullet' || line.kind === 'ordered') && !indent ? ' ' : '';
   return <Text>{border}{indent}{listIndent}{marker}{line.spans.map((s: InlineSpan, i: number) => <RichSpanView key={i} span={s} />)}</Text>;
@@ -148,7 +148,7 @@ export function MarkdownTableView({ headers, rows, alignments, borderColor }: { 
     }
     return max;
   });
-  
+
   function padCell(text: string, colIdx: number): string {
     const w = colWidths[colIdx] ?? text.length;
     const align = alignments[colIdx] ?? 'left';
@@ -160,10 +160,10 @@ export function MarkdownTableView({ headers, rows, alignments, borderColor }: { 
     }
     return text.padEnd(w);
   }
-  
+
   const headerLine = headers.map((h: string, i: number) => padCell(h, i)).join('  ');
   const sepLine = colWidths.map((w: number) => '\u2500'.repeat(w)).join('\u2500\u2500');
-  
+
   return (
     <Box flexDirection="column">
       <Text><Text color={borderColor}>{'\u2502 '}</Text><Text bold>{headerLine}</Text></Text>
@@ -181,11 +181,11 @@ export function RenderedSegments({ segments, borderColor, wrapWidth }: { segment
     <>
       {segments.map((seg: ContentSegment, i: number) => {
         const spacer = i > 0 && borderColor ? <Text key={`sp-${i}`} color={borderColor}>{'\u2502'}</Text> : (i > 0 ? <Text key={`sp-${i}`}>{' '}</Text> : null);
-  
+
         if (seg.type === 'prose') {
           const richLines = parseProseToRichLines(seg.text ?? '', wrapWidth);
           if (richLines.length === 0) return null;
-  
+
           const spaced: RichLine[] = [];
           for (let j = 0; j < richLines.length; j++) {
             const line = richLines[j];
@@ -201,7 +201,7 @@ export function RenderedSegments({ segments, borderColor, wrapWidth }: { segment
               }
             }
           }
-  
+
           return (
             <React.Fragment key={`seg-${i}`}>
               {spacer}
@@ -376,7 +376,7 @@ export const TYPES: Set<string> = new Set([
 export function tokenizeLine(line: string): SyntaxToken[] {
   const tokens: SyntaxToken[] = [];
   const pattern = /\/\/.*$|\/\*.*?\*\/|#.*$|""".*?"""|'''.*?'''|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`|\b\d+(?:\.\d+)?\b|[a-zA-Z_$]\w*(?=\s*\()|[a-zA-Z_$]\w*|[{}()\[\];:,.<>=!&|?+\-*/%^~@]|\s+/g;
-  
+
   let match;
   let lastIndex = 0;
   while ((match = pattern.exec(line)) !== null) {
@@ -384,9 +384,9 @@ export function tokenizeLine(line: string): SyntaxToken[] {
       tokens.push({ text: line.slice(lastIndex, match.index) });
     }
     lastIndex = match.index + match[0].length;
-  
+
     const text = match[0];
-  
+
     if (text.startsWith('//') || text.startsWith('#') || text.startsWith('/*')) {
       tokens.push({ text, color: SYN_COMMENT });
     }
@@ -416,10 +416,10 @@ export function tokenizeLine(line: string): SyntaxToken[] {
       tokens.push({ text });
     }
   }
-  
+
   if (lastIndex < line.length) {
     tokens.push({ text: line.slice(lastIndex) });
   }
-  
+
   return tokens;
 }

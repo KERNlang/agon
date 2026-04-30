@@ -17,34 +17,34 @@ export async function handleTeamTribunal(question: string, dispatch: Dispatch, c
   const teamAbort = new AbortController();
   try {
     ensureAgonHome();
-    
+
     if (!question) {
       dispatch({ type: 'warning', message: 'Usage: /team-tribunal [2v2|3v3] [mode] <question>' });
       dispatch({ type: 'info', message: 'Modes: adversarial (default), socratic, red-team, steelman, synthesis, postmortem' });
       return;
     }
-    
+
     const active = ctx.activeEngines();
     if (active.length < 2) {
       dispatch({ type: 'error', message: `Team tribunal needs at least 2 engines. Only found: ${active.join(', ') || 'none'}` });
       return;
     }
-    
+
     const size = membersPerSide ?? 2;
     const mode = (tribunalMode ?? 'adversarial') as TribunalMode;
     const outputDir = join(RUNS_DIR, `team-tribunal-${Date.now()}`);
     mkdirSync(outputDir, { recursive: true });
-    
+
     const config = loadConfig(resolveWorkingDir());
     const tribunalCwd = resolveWorkingDir();
     const projectCtx = scanProjectContext(tribunalCwd, config.projectContext || undefined, config.contextFormat);
     const enrichedQuestion = projectCtx
       ? `${question}\n\n## PROJECT CONTEXT\n${projectCtx}`
       : question;
-    
+
     dispatch({ type: 'spinner-start', message: `Composing teams...` });
     ctx.setActiveAbort(teamAbort);
-    
+
     let result: any;
     try {
       result = await runTeamTribunal({
@@ -81,33 +81,33 @@ export async function handleTeamTribunal(question: string, dispatch: Dispatch, c
       dispatch({ type: 'spinner-stop' });
       throw err;
     }
-    
+
     if (teamAbort.signal.aborted) {
       dispatch({ type: 'spinner-stop' });
       return;
     }
-    
+
     dispatch({ type: 'spinner-stop' });
-    
+
     const [teamA, teamB] = result.teams;
     const subA = result.submissions[teamA.teamId];
     const subB = result.submissions[teamB.teamId];
     const cardA = result.scorecards[teamA.teamId];
     const cardB = result.scorecards[teamB.teamId];
-    
+
     dispatch({ type: 'team-argument', teamName: teamA.name, content: String(subA?.finalOutput ?? '(no submission)'), score: cardA?.score ?? 0, color: 34 } as any);
     dispatch({ type: 'team-argument', teamName: teamB.name, content: String(subB?.finalOutput ?? '(no submission)'), score: cardB?.score ?? 0, color: 33 } as any);
-    
+
     const isDraw = !result.winnerTeamId;
     const winner = result.winnerTeamId === teamA.teamId ? teamA : teamB;
     const loser = result.winnerTeamId === teamA.teamId ? teamB : teamA;
     const winCard = result.winnerTeamId ? result.scorecards[result.winnerTeamId] : cardA;
     const loseCard = result.winnerTeamId ? result.scorecards[result.winnerTeamId === teamA.teamId ? teamB.teamId : teamA.teamId] : cardB;
-    
+
     dispatch({ type: 'team-winner', winnerName: isDraw ? teamA.name : winner.name, winnerScore: isDraw ? (cardA?.score ?? 0) : (winCard?.score ?? 0), loserName: isDraw ? teamB.name : loser.name, loserScore: isDraw ? (cardB?.score ?? 0) : (loseCard?.score ?? 0), isDraw } as any);
-    
+
     dispatch({ type: 'info', message: `Saved: ${outputDir}` });
-    
+
     appendMessage(ctx.chatSession, { role: 'user', content: `[team-tribunal:${mode}:${size}v${size}] ${question}`, timestamp: new Date().toISOString() });
     appendMessage(ctx.chatSession, {
       role: 'engine',

@@ -128,8 +128,16 @@ fn name=worktreeRemove params="repoDir:string,worktreePath:string" returns=void
   >>>
 
 fn name=worktreeRemoveBestEffort params="repoDir:string,worktreePath:string" returns=void
-  doc "Best-effort worktree removal: logs warning on failure, never throws. For finally-block cleanup paths where the caller is already in an error path or doesn't need to know about cleanup failures."
+  doc "Best-effort worktree removal: idempotent (silent if already gone), logs warning on real failure, never throws. For finally-block cleanup paths where the caller is already in an error path or doesn't need to know about cleanup failures."
   handler <<<
+    // Skip silently if the worktree directory is already gone — git worktree remove
+    // on a missing path errors with 'is not a working tree' and floods cleanup logs
+    // when forge re-runs cleanup over already-cleaned paths. Also prune the registry
+    // so git's internal state doesn't drift.
+    if (!existsSync(worktreePath)) {
+      try { git(['worktree', 'prune'], repoDir); } catch { /* non-fatal */ }
+      return;
+    }
     try {
       worktreeRemove(repoDir, worktreePath);
     } catch (err) {
@@ -290,8 +298,28 @@ fn name=stashSnapshot params="cwd:string" returns=string
     }
   >>>
 
+fn name=isWorktreeOrRepo params="cwd:string" returns=boolean export=false
+  doc "Check if cwd exists AND is a git working tree (so 'git diff --cached' won't silently fall back to --no-index mode and reject the flag)."
+  handler <<<
+    if (!existsSync(cwd)) return false;
+    // git worktrees have a `.git` file (regular file pointing to the registry),
+    // a regular repo has a `.git` directory. Either is enough for diff/index ops.
+    if (existsSync(join(cwd, '.git'))) return true;
+    // Fall back to asking git directly — handles edge cases like submodules.
+    try {
+      execFileSync('git', ['rev-parse', '--is-inside-work-tree'], {
+        cwd, encoding: 'utf-8', timeout: 2_000,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  >>>
+
 fn name=worktreeDiff params="cwd:string" returns=string
   handler <<<
+    if (!isWorktreeOrRepo(cwd)) return '';
     try {
       git(['add', '-A'], cwd);
       return gitRaw(['diff', '--cached'], cwd);
@@ -303,6 +331,7 @@ fn name=worktreeDiff params="cwd:string" returns=string
 
 fn name=readOnlyDiff params="cwd:string" returns=string
   handler <<<
+    if (!isWorktreeOrRepo(cwd)) return '';
     try {
       const staged = gitRaw(['diff', '--cached'], cwd);
       const unstaged = gitRaw(['diff'], cwd);
@@ -325,6 +354,7 @@ fn name=diffLineCount params="diff:string" returns=number
 
 fn name=diffFileCount params="cwd:string" returns=number
   handler <<<
+    if (!isWorktreeOrRepo(cwd)) return 0;
     try {
       const result = git(['diff', '--cached', '--name-only'], cwd);
       return result ? result.split('\n').filter(Boolean).length : 0;

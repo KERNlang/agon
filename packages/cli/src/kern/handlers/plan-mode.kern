@@ -197,6 +197,10 @@ fn name=buildStepExecutors params="ctx:HandlerContext, liveDispatch?:Dispatch" r
     };
 
     const isAlreadySatisfiedNoopForge = (manifest: any): boolean => {
+      // Forge layer now sets manifest.alreadySatisfied for both the
+      // early-baseline-passes case and the all-no-op-after-stage2 case.
+      // Trust that flag when set.
+      if (manifest?.alreadySatisfied) return true;
       if (!manifest?.baselinePasses) return false;
       const results = Object.values(manifest.results ?? {}) as any[];
       if (results.length === 0) return false;
@@ -297,8 +301,18 @@ fn name=buildStepExecutors params="ctx:HandlerContext, liveDispatch?:Dispatch" r
                 contextExport: 'Forge step already satisfied; no patch needed.',
               };
             }
+            // Surface manifest.error (preflight/availability/execution failure
+            // from the new never-throws contract) so the user sees the actual
+            // cause instead of a generic "No winner" — which is misleading
+            // when forge couldn't even dispatch (e.g. "No available engines").
+            const errorReason = (manifest as any).error
+              ? `Forge error: ${(manifest as any).error}`
+              : 'No winner';
+            const output = (manifest as any).error
+              ? `${errorReason}\n${engineSummaries}`
+              : `No winner.\n${engineSummaries}`;
             return {
-              result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: `No winner.\n${engineSummaries}`, error: 'No winner' },
+              result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output, error: errorReason },
             };
           }
 

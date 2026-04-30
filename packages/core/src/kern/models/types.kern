@@ -309,6 +309,9 @@ interface name=ForgeManifest
   field name=closeCall type=boolean
   field name=stage1Accepted type=boolean
   field name=baselinePasses type=boolean
+  field name=alreadySatisfied type=boolean optional=true
+  field name=singleSurvivor type=boolean optional=true
+  field name=error type=string optional=true
   field name=starter type=string
   field name=enginesDispatched type=number
   field name=dispatchLog type="DispatchMetric[]" optional=true
@@ -359,6 +362,11 @@ event name=ForgeEvent
   type name="gauntlet:corpus-save" data="{ count: number }"
   type name="gauntlet:done" data="{ attacksLanded: number, repairPass: boolean }"
   type name="forge:done"
+  type name="forge:engine-skipped" data="{ engineId: string, status: string, reason: string }"
+  type name="forge:already-satisfied" data="{ baselinePasses: boolean }"
+  type name="forge:single-survivor" data="{ engineId: string, score: number, totalEngines: number, failedCount: number }"
+  type name="forge:no-engines-available" data="{ enabled: string[], skipped: string[] }"
+  type name="forge:fatal" data="{ phase: string, error: string }"
 
 interface name=BrainstormBid
   field name=engineId type=string

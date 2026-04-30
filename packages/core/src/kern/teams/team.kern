@@ -57,6 +57,7 @@ interface name=TeamMatchResult
   field name=scorecards type="Record<string,TeamScoreCard>"
   field name=winnerTeamId type="string|null"
   field name=timestamp type=string
+  field name=error type=string optional=true
 
 event name=TeamEvent
   type name="team:compose" data="{ teams: [TeamSpec, TeamSpec] }"

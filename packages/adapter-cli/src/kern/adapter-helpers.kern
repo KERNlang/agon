@@ -1,6 +1,20 @@
 import from="@agon/core" names="EngineDefinition,EngineMode,EngineModeConfig,ImageAttachment" types=true
-import from="@agon/core" names="EngineNotFoundError,loadConfig"
+import from="@agon/core" names="EngineNotFoundError,loadConfig,engineHealth,classifyDispatchFailure"
 import from="node:fs" names="statSync"
+
+fn name=recordDispatchHealth params="engineId:string, result:{exitCode?:number,stderr?:string,timedOut?:boolean}" returns=void
+  doc "Centralized engine-health recording for any dispatch return point. exitCode 0 + not timed out → mark ok (clears prior quarantine). Otherwise classify and quarantine only on auth-failed/unreachable — timeouts and generic failures stay in rotation since they may be transient."
+  handler <<<
+    const exitCode = result.exitCode ?? 0;
+    if (exitCode === 0 && !result.timedOut) {
+      engineHealth.mark(engineId, 'ok', '');
+      return;
+    }
+    const status = classifyDispatchFailure({ stderr: result.stderr, exitCode, timedOut: result.timedOut });
+    if (status === 'auth-failed' || status === 'unreachable') {
+      engineHealth.mark(engineId, status, (result.stderr || '').split('\n')[0]);
+    }
+  >>>
 
 fn name=resolveArgs params="template:string[], vars:Record<string,string>" returns="string[]"
   handler <<<

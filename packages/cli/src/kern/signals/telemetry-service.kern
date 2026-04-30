@@ -1,4 +1,4 @@
-import from="@agon/core" names="EngineRegistry,EventBus"
+import from="@agon/core" names="EngineRegistry,EventBus,engineHealth"
 import from="../cesar/telemetry.js" names="computeOverallHealth,createEngineVitals,markEngineStalled,updateEngineVitals"
 import from="../cesar/telemetry.js" names="EngineVitals,EngineVitalState,TelemetrySnapshot" types=true
 import from="node:os" names="totalmem"
@@ -216,7 +216,15 @@ service name=TelemetryService export=true singleton=true
 
       const hasBinary = !!(engine?.binary && this.opts.registry.findBinary(engine));
       const hasApiKey = !!(engine?.api?.apiKeyEnv && process.env[engine.api.apiKeyEnv]);
-      const available = hasBinary || hasApiKey || (!engine?.binary && !engine?.api);
+      const staticallyAvailable = hasBinary || hasApiKey || (!engine?.binary && !engine?.api);
+
+      // Engine-health overlay: an engine that's statically available but has been
+      // quarantined this session for auth-failed or unreachable should show as
+      // offline in the status bar, not 'idle' — otherwise the user thinks
+      // qwen/minimax is healthy when they have expired tokens.
+      const healthRecord = engineHealth.get(engineId);
+      const quarantined = healthRecord && (healthRecord.status === 'auth-failed' || healthRecord.status === 'unreachable');
+      const available = staticallyAvailable && !quarantined;
 
       let state: EngineVitalState = available ? (assignment ? 'busy' as EngineVitalState : 'idle' as EngineVitalState) : 'offline' as EngineVitalState;
       const rssBytes = Number(pidStats.rssBytes ?? 0);
@@ -236,7 +244,7 @@ service name=TelemetryService export=true singleton=true
         latencyMs: net.latencyMs,
         task: available
           ? (assignment ? assignment : hasBinary ? 'cli ready' : hasApiKey ? 'api reachable' : 'ready')
-          : 'missing binary/API key',
+          : (quarantined ? `${healthRecord!.status} this session` : 'missing binary/API key'),
         taskDetail: detailParts.length > 0 ? detailParts.join(' - ') : undefined,
         lastHeartbeatAt: heartbeatOk ? now : prior.lastHeartbeatAt,
       };

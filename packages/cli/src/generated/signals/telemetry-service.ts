@@ -61,7 +61,7 @@ export class TelemetryService {
     this.samplerTask = null;
     this.recentFallbacks = [];
     this.pidusageLoader = null;
-
+    
     const now = Date.now();
     const engines: EngineVitals[] = [];
     for (const id of opts.registry.listIds()) {
@@ -149,15 +149,15 @@ export class TelemetryService {
     const ids = this.opts.registry.listIds();
     const assignmentMap = this.buildAssignmentMap();
     const nextVitals: EngineVitals[] = [];
-
+    
     for (const id of ids) {
       const prior = this.vitals.get(id) ?? createEngineVitals(id, { state: 'idle' as EngineVitalState });
       const assignment = assignmentMap.get(id);
       let sampled = await this.sampleOneEngine(id, prior, assignment);
-
+    
       const wasStalled = this.stalledIds.has(id);
       const isStalled = sampled.state === 'stalled';
-
+    
       if (isStalled && !wasStalled) {
         this.stalledIds.add(id);
         this.emitEvent('engine:stall-detected', {
@@ -166,7 +166,7 @@ export class TelemetryService {
           at: Date.now(),
           stallDurationMs: sampled.stallDurationMs ?? 0,
         });
-
+    
         const candidate = this.pickFallbackCandidate(id);
         if (candidate) {
           const reason = `stall>${this.stallThresholdMs}ms`;
@@ -183,11 +183,11 @@ export class TelemetryService {
       } else if (!isStalled && wasStalled) {
         this.stalledIds.delete(id);
       }
-
+    
       this.vitals.set(id, sampled);
       nextVitals.push(sampled);
     }
-
+    
     // Drop vitals for engines that were removed from registry.
     const liveIds = new Set(ids);
     for (const id of Array.from(this.vitals.keys())) {
@@ -196,7 +196,7 @@ export class TelemetryService {
         this.stalledIds.delete(id);
       }
     }
-
+    
     const snapshot: TelemetrySnapshot = {
       timestamp: Date.now(),
       engines: nextVitals,
@@ -211,16 +211,16 @@ export class TelemetryService {
     let engine: any = null;
     try { engine = this.opts.registry.get(engineId); }
     catch { engine = null; }
-
+    
     const now = Date.now();
     const pid = this.resolvePid(engineId);
     const pidStats = await this.readPidusage(pid);
     const net = await this.sampleNetwork(engine);
-
+    
     const hasBinary = !!(engine?.binary && this.opts.registry.findBinary(engine));
     const hasApiKey = !!(engine?.api?.apiKeyEnv && process.env[engine.api.apiKeyEnv]);
     const staticallyAvailable = hasBinary || hasApiKey || (!engine?.binary && !engine?.api);
-
+    
     // Engine-health overlay: an engine that's statically available but has been
     // quarantined this session for auth-failed or unreachable should show as
     // offline in the status bar, not 'idle' — otherwise the user thinks
@@ -228,7 +228,7 @@ export class TelemetryService {
     const healthRecord = engineHealth.get(engineId);
     const quarantined = healthRecord && (healthRecord.status === 'auth-failed' || healthRecord.status === 'unreachable');
     const available = staticallyAvailable && !quarantined;
-
+    
     let state: EngineVitalState = available ? (assignment ? 'busy' as EngineVitalState : 'idle' as EngineVitalState) : 'offline' as EngineVitalState;
     const rssBytes = Number(pidStats.rssBytes ?? 0);
     const memPercent = rssBytes > 0 ? Math.max(0, Math.min(100, (rssBytes / Math.max(1, this.totalSystemMemory())) * 100)) : undefined;
@@ -237,7 +237,7 @@ export class TelemetryService {
     if (Number.isFinite(pid) && pid > 0) detailParts.push(`pid ${pid}`);
     if (rssBytes > 0) detailParts.push(`rss ${(rssBytes / (1024 * 1024)).toFixed(1)}MB`);
     if (assignment) detailParts.push(assignment);
-
+    
     const heartbeatOk = pidStats.ok || net.network === 'healthy';
     const partial: Partial<EngineVitals> = {
       state,
@@ -251,10 +251,10 @@ export class TelemetryService {
       taskDetail: detailParts.length > 0 ? detailParts.join(' - ') : undefined,
       lastHeartbeatAt: heartbeatOk ? now : prior.lastHeartbeatAt,
     };
-
+    
     let merged = updateEngineVitals(prior, partial);
     merged = markEngineStalled(merged, this.stallThresholdMs);
-
+    
     this.emitEvent('engine:heartbeat', {
       source: 'telemetry-service',
       engineId,
@@ -265,13 +265,13 @@ export class TelemetryService {
       network: net.network,
       assignment: assignment ?? null,
     });
-
+    
     return merged;
   }
 
   private buildAssignmentMap(): Map<string,string> {
     const assignments = new Map<string, string>();
-
+    
     const progress = this.opts.getProgressEngines ? (this.opts.getProgressEngines() ?? []) : [];
     for (const entry of progress) {
       const id = String((entry as any)?.id ?? '').trim();
@@ -280,7 +280,7 @@ export class TelemetryService {
       const elapsed = Number((entry as any)?.elapsed ?? 0);
       assignments.set(id, Number.isFinite(elapsed) && elapsed > 0 ? `${status} (${elapsed}s)` : status);
     }
-
+    
     const scoreboard = this.opts.getScoreboard ? this.opts.getScoreboard() : null;
     if (scoreboard && Array.isArray(scoreboard.engineIds)) {
       for (const rawId of scoreboard.engineIds) {
@@ -292,7 +292,7 @@ export class TelemetryService {
         }
       }
     }
-
+    
     const running = this.opts.jobManager?.running?.() ?? [];
     if (running.length > 0) {
       const summary = running
@@ -309,7 +309,7 @@ export class TelemetryService {
         }
       }
     }
-
+    
     return assignments;
   }
 
@@ -364,7 +364,7 @@ export class TelemetryService {
   private async sampleNetwork(engine: any): Promise<{network:'healthy'|'degraded'|'unreachable',latencyMs:number}> {
     const target = String(engine?.api?.baseUrl ?? this.networkProbeUrl);
     const started = Date.now();
-
+    
     if (typeof fetch === 'function') {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 1200);
@@ -379,13 +379,13 @@ export class TelemetryService {
         clearTimeout(timeout);
       }
     }
-
+    
     const pingTarget = '1.1.1.1';
     try {
       const result = await this.pingHost(pingTarget, 1200);
       if (result.ok) return { network: 'degraded', latencyMs: result.latencyMs };
     } catch { /* ignore */ }
-
+    
     return { network: 'unreachable', latencyMs: Math.max(1, Date.now() - started) };
   }
 
@@ -398,13 +398,13 @@ export class TelemetryService {
       proc.stdout.on('data', (chunk: any) => {
         output += String(chunk ?? '');
       });
-
+    
       const result = await new Promise<{ok:boolean,latencyMs:number}>((resolve) => {
         const timer = setTimeout(() => {
           try { proc.kill('SIGKILL'); } catch { /* ignore */ }
           resolve({ ok: false, latencyMs: Math.max(1, Date.now() - started) });
         }, timeoutMs);
-
+    
         proc.on('close', (code: number) => {
           clearTimeout(timer);
           if (code !== 0) {
@@ -415,13 +415,13 @@ export class TelemetryService {
           const latencyMs = parsed ? Math.max(1, Math.round(Number(parsed[1]) || 1)) : Math.max(1, Date.now() - started);
           resolve({ ok: true, latencyMs });
         });
-
+    
         proc.on('error', () => {
           clearTimeout(timer);
           resolve({ ok: false, latencyMs: Math.max(1, Date.now() - started) });
         });
       });
-
+    
       return result;
     } catch {
       return { ok: false, latencyMs: Math.max(1, timeoutMs) };

@@ -23,16 +23,16 @@ function showRunDetail(id: string): void {
     info(`Run "${id}" not found`);
     return;
   }
-
+  
   if (files.length === 0) {
     info(`Run "${id}" not found`);
     return;
   }
-
+  
   const manifest = JSON.parse(
     readFileSync(join(RUNS_DIR, files[0]), 'utf-8'),
   ) as ForgeManifest;
-
+  
   header(`Forge Run: ${manifest.forgeId.slice(0, 8)}`);
   console.log(`  Task:       ${manifest.task}`);
   console.log(`  Fitness:    ${manifest.fitnessCmd}`);
@@ -42,7 +42,7 @@ function showRunDetail(id: string): void {
   console.log(`  Winner:     ${manifest.winner ? bold(manifest.winner) : red('none')}`);
   console.log(`  Close call: ${manifest.closeCall ? 'yes' : 'no'}`);
   console.log(`  Stage 1:    ${manifest.stage1Accepted ? green('auto-accepted') : 'escalated'}`);
-
+  
   if (Object.keys(manifest.results).length > 0) {
     console.log('');
     header('Scores');
@@ -56,7 +56,7 @@ function showRunDetail(id: string): void {
     ]);
     table(['Engine', 'Status', 'Score', 'Diff', 'Files', 'Time'], rows);
   }
-
+  
   if (manifest.synthesis) {
     console.log('');
     header('Synthesis');

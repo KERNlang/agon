@@ -19,27 +19,27 @@ export async function handleCampfire(topic: string, dispatch: Dispatch, ctx: Han
   const cfAbort = new AbortController();
   try {
     ensureAgonHome();
-
+    
     const engines = ctx.activeEngines();
     if (engines.length === 0) {
       dispatch({ type: 'error', message: 'No engines available.' });
       return;
     }
-
+    
     const config = ctx.config;
     const cfCwd = resolveWorkingDir();
     const projectCtx = scanProjectContext(cfCwd, config.projectContext || undefined, config.contextFormat as 'plain' | 'kern');
     const strategy = opts?.observerStrategy ?? 'all-respond';
     const leadId = opts?.leadEngine && engines.includes(opts.leadEngine) ? opts.leadEngine : engines[0];
-
+    
     dispatch({ type: 'header', title: 'Campfire — no competition, just thinking together' });
     if (topic) dispatch({ type: 'info', message: `Topic: ${topic}` });
-
+    
     const outputDir = join(RUNS_DIR, `campfire-${Date.now()}`);
     mkdirSync(outputDir, { recursive: true });
-
+    
     ctx.setActiveAbort(cfAbort);
-
+    
     const startTime = Date.now();
     const progressInterval = setInterval(() => {
       const elapsed = Math.floor((Date.now() - startTime) / 1000);
@@ -52,7 +52,7 @@ export async function handleCampfire(topic: string, dispatch: Dispatch, ctx: Han
       }));
       dispatch({ type: 'progress-update', engines: progress });
     }, 250);
-
+    
     let progressCleared = false;
     function clearProgress(): void {
       if (progressCleared) return;
@@ -60,7 +60,7 @@ export async function handleCampfire(topic: string, dispatch: Dispatch, ctx: Han
       clearInterval(progressInterval);
       dispatch({ type: 'progress-clear' });
     }
-
+    
     let result;
     try {
       result = await runCampfire({
@@ -80,16 +80,16 @@ export async function handleCampfire(topic: string, dispatch: Dispatch, ctx: Han
       clearProgress();
       throw err;
     }
-
+    
     clearProgress();
-
+    
     for (const round of result.rounds) {
       const color = (ENGINE_COLORS as Record<string, number>)[round.engineId] ?? 124;
       dispatch({ type: 'engine-block', engineId: round.engineId, color, content: round.content });
       appendMessage(ctx.chatSession, { role: 'engine', engineId: round.engineId, content: round.content, timestamp: new Date().toISOString() });
       tracker.record(round.engineId, { prompt: topic, response: round.content });
     }
-
+    
     sessionResultStore.add({
       type: 'campfire',
       timestamp: new Date().toISOString(),

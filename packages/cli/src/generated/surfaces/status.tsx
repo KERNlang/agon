@@ -40,7 +40,7 @@ export function TokenGauge({ tokens, maxTokens }: { tokens:number; maxTokens:num
   const empty = barWidth - filled;
   const bar = '\u2588'.repeat(filled) + '\u2591'.repeat(empty);
   const barColor = pct > 80 ? '#ef4444' : pct > 60 ? '#fbbf24' : '#4ade80';
-
+  
   return (
     <Text>
       <Text color={barColor}>{bar}</Text>
@@ -153,7 +153,7 @@ const StatusDashboard = React.memo(function StatusDashboard({ telemetryVitals, r
     : rows.some((v: any) => v.state === 'fallback') ? 'degraded'
     : 'healthy';
   const fallbacks = (recentFallbacks ?? []).slice(-4).reverse();
-
+  
   return (
     <Box flexDirection="column" borderStyle="single" borderColor={health === 'critical' ? '#ef4444' : health === 'degraded' ? '#f97316' : '#22d3ee'} paddingX={1}>
       <Text>
@@ -208,13 +208,13 @@ const ExecutionRail = React.memo(function ExecutionRail({ spinner, engines, acti
           : 'idle';
   const active = !!isActive || planGauge.visible || !!spinner || !!(engines && engines.length > 0);
   if (!active) return null;
-
+  
   const spinnerText = spinner?.message ? String(spinner.message).replace(/\u2026$/, '').trim() : '';
   const engineSummary = engines && engines.length > 0
     ? engines.slice(0, 4).map((e: any) => `${e.id}:${String(e.status ?? '').slice(0, 12)}`).join('  ')
     : '';
   const hiddenEngines = engines && engines.length > 4 ? engines.length - 4 : 0;
-
+  
   let toolName = '';
   let toolStatus = '';
   let toolTarget = '';
@@ -232,7 +232,7 @@ const ExecutionRail = React.memo(function ExecutionRail({ spinner, engines, acti
     toolTarget = String(parsed.path ?? parsed.file_path ?? parsed.filePath ?? parsed.command ?? parsed.pattern ?? '').replace(`${process.cwd()}/`, '');
     if (toolTarget.length > 52) toolTarget = toolTarget.slice(0, 49) + '\u2026';
   }
-
+  
   const fallback = recentFallbacks && recentFallbacks.length > 0 ? recentFallbacks[recentFallbacks.length - 1] : null;
   const toolMode = toolOutputExpanded ? 'expanded' : 'collapsed';
   const toolCount = Math.max(0, Number(stats?.toolCount ?? 0));
@@ -242,7 +242,7 @@ const ExecutionRail = React.memo(function ExecutionRail({ spinner, engines, acti
   const changedFileCount = Math.max(0, Number(stats?.changedFileCount ?? 0));
   const queueCount = Math.max(0, Number(stats?.queueCount ?? 0));
   const timeline = buildExecutionRailTimeline(activePlan, lastTool, engines, recentFallbacks, 5);
-
+  
   return (
     <Box flexDirection="column" borderStyle="single" borderColor="#374151" paddingX={1}>
       <Text>
@@ -321,7 +321,7 @@ const ExecutionRailPanel = React.memo(function ExecutionRailPanel({ spinner, eng
   const engineSummary = engines && engines.length > 0
     ? engines.slice(0, 3).map((e: any) => `${e.id}:${String(e.status ?? '').slice(0, 10)}`).join('  ')
     : '';
-
+  
   let toolName = '';
   let toolStatus = '';
   let toolTarget = '';
@@ -338,7 +338,7 @@ const ExecutionRailPanel = React.memo(function ExecutionRailPanel({ spinner, eng
     }
     toolTarget = String(parsed.path ?? parsed.file_path ?? parsed.filePath ?? parsed.command ?? parsed.pattern ?? '').replace(`${process.cwd()}/`, '');
   }
-
+  
   const fallback = recentFallbacks && recentFallbacks.length > 0 ? recentFallbacks[recentFallbacks.length - 1] : null;
   const toolMode = toolOutputExpanded ? 'expanded' : 'collapsed';
   const toolCount = Math.max(0, Number(stats?.toolCount ?? 0));
@@ -350,7 +350,7 @@ const ExecutionRailPanel = React.memo(function ExecutionRailPanel({ spinner, eng
   const timelineBudget = Math.max(2, Math.min(5, safeRows - 9));
   const timeline = buildExecutionRailTimeline(activePlan, lastTool, engines, recentFallbacks, timelineBudget);
   const borderColor = focused || isActive || planGauge.visible || spinner ? '#22d3ee' : '#374151';
-
+  
   return (
     <Box flexDirection="column" flexShrink={0} width={safeWidth} height={safeRows + 2} paddingLeft={1} borderStyle="single" borderColor={borderColor} overflow="hidden">
       <Text>
@@ -487,10 +487,10 @@ const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confide
       </Box>
     );
   }
-
+  
   // Active: full colored strip
   const cesarColor = color256toHex(ENGINE_COLORS[cesarId] ?? 124);
-
+  
   // Confidence badge with tier coloring
   let confStr = '';
   let confColor = '#6b7280';
@@ -498,14 +498,14 @@ const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confide
     confStr = ` ${confidence}%`;
     confColor = confidence >= 96 ? '#4ade80' : confidence >= 88 ? '#fbbf24' : confidence >= 72 ? '#f97316' : '#ef4444';
   }
-
+  
   // Activity segment
   let activityStr = 'working';
   if (spinner) {
     const msg = spinner.message.replace(/\u2026$/, '').trim();
     activityStr = msg.length > 50 ? msg.slice(0, 50) + '\u2026' : msg;
   }
-
+  
   // Elapsed time (from operation start, not last activity)
   let elapsedStr = '';
   if (startTime > 0) {
@@ -516,17 +516,17 @@ const CesarStatusStrip = React.memo(function CesarStatusStrip({ cesarId, confide
       elapsedStr = mins > 0 ? ` ${mins}m ${secs}s` : ` ${elapsed}s`;
     }
   }
-
+  
   // Stream snippet
   let snippetStr = '';
   if (streamSnippet) {
     const maxLen = 40;
     snippetStr = streamSnippet.line.length > maxLen ? streamSnippet.line.slice(0, maxLen) + '\u2026' : streamSnippet.line;
   }
-
+  
   const scoreboardLines = scoreboard ? renderScoreboard(scoreboard) : '';
   const rationaleStr = rationale ? formatModeRationale(rationale) : '';
-
+  
   return (
     <Box paddingTop={0} flexDirection="column">
       <Box>
@@ -586,7 +586,7 @@ export function buildPlanPhaseGauge(plan: any, width: number = 12): any {
   if (!plan || steps.length === 0) {
     return { visible: false };
   }
-
+  
   const total = steps.length;
   const stepState = (s: any) => String(s?.state ?? 'pending');
   const done = steps.filter((s: any) => stepState(s) === 'done').length;
@@ -599,7 +599,7 @@ export function buildPlanPhaseGauge(plan: any, width: number = 12): any {
   const rawPlanState = String(plan.state ?? '');
   const allComplete = total > 0 && completed === total && failed === 0 && runningIndex < 0 && nextIndex < 0;
   const planState = rawPlanState === 'paused' && allComplete ? 'done' : rawPlanState;
-
+  
   let currentIndex = runningIndex >= 0
     ? runningIndex
     : (planState === 'paused' && failedIndex >= 0)
@@ -607,10 +607,10 @@ export function buildPlanPhaseGauge(plan: any, width: number = 12): any {
       : nextIndex >= 0
         ? nextIndex
         : Math.max(0, total - 1);
-
+  
   if (currentIndex < 0) currentIndex = 0;
   if (currentIndex >= total) currentIndex = total - 1;
-
+  
   const rawPct = total > 0 ? Math.round((completed / total) * 100) : 0;
   const pct = planState === 'done' ? 100 : Math.max(0, Math.min(100, rawPct));
   const barWidth = Math.max(4, Math.min(24, Math.floor(width || 12)));
@@ -638,7 +638,7 @@ export function buildPlanPhaseGauge(plan: any, width: number = 12): any {
   const current = description.length > 42 ? description.slice(0, 42) + '\u2026' : description;
   const rawId = String(plan.id ?? 'plan');
   const shortId = rawId.startsWith('cplan-') ? rawId.slice(6, 16) : rawId.slice(0, 10);
-
+  
   return {
     visible: true,
     shortId,
@@ -679,7 +679,7 @@ export function buildExecutionRailTimeline(activePlan: any, lastTool: any, engin
     : state === 'blocked' ? '#94a3b8'
     : state === 'skipped' ? '#60a5fa'
     : '#6b7280';
-
+  
   const steps = Array.isArray(activePlan?.steps) ? activePlan.steps : [];
   if (steps.length > 0) {
     let focusIndex = steps.findIndex((s: any) => String(s?.state ?? 'pending') === 'running');
@@ -704,7 +704,7 @@ export function buildExecutionRailTimeline(activePlan: any, lastTool: any, engin
       });
     }
   }
-
+  
   if (lastTool) {
     let target = '';
     try {
@@ -722,7 +722,7 @@ export function buildExecutionRailTimeline(activePlan: any, lastTool: any, engin
       detail: compact(target, 58),
     });
   }
-
+  
   if (Array.isArray(engines) && engines.length > 0) {
     rows.push({
       key: 'engines',
@@ -732,7 +732,7 @@ export function buildExecutionRailTimeline(activePlan: any, lastTool: any, engin
       detail: compact(engines.slice(0, 4).map((e: any) => `${e.id}:${String(e.status ?? '').slice(0, 14)}`).join('  '), 58),
     });
   }
-
+  
   const fallbacks = Array.isArray(recentFallbacks) ? recentFallbacks : [];
   const fallback = fallbacks.length > 0 ? fallbacks[fallbacks.length - 1] : null;
   if (fallback) {
@@ -744,6 +744,6 @@ export function buildExecutionRailTimeline(activePlan: any, lastTool: any, engin
       detail: compact(fallback.reason, 58),
     });
   }
-
+  
   return rows.slice(-maxRows);
 }

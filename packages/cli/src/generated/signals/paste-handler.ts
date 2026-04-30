@@ -15,9 +15,9 @@ export function processPasteContent(raw: string, pasteIndex?: number): PasteResu
   const normalized = raw.replace(/\r\n/g, '\n');
   const content = normalized.trimEnd();
   if (!content) return { type: 'empty' };
-
+  
   const isLong = content.length > 500;
-
+  
   if (isLong) {
     try {
       const result = pasteStore.store(content);
@@ -29,7 +29,7 @@ export function processPasteContent(raw: string, pasteIndex?: number): PasteResu
       // Storage failed — fall through to direct
     }
   }
-
+  
   return { type: 'direct', content: normalized };
 }
 

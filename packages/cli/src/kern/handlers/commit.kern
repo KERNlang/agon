@@ -1,5 +1,5 @@
 import from="node:child_process" names="execSync,execFileSync"
-import from="@agon/core" names="loadConfig,resolveWorkingDir"
+import from="@agon/core" names="loadConfig,resolveWorkingDir,configGet"
 import from="../../handlers/types.js" names="Dispatch,HandlerContext" types=true
 
 fn name=gitExec params="cmd:string, cwd:string" returns=string export=false
@@ -69,6 +69,7 @@ fn name=handleCommit async=true params="message:string|undefined, dispatch:Dispa
 
     // Step 3: Generate or use provided commit message
     let commitMsg = message?.trim();
+    let agonGenerated = false;
     if (!commitMsg) {
       // Auto-classify from diff
       const changeType = classifyChanges(diff);
@@ -79,6 +80,7 @@ fn name=handleCommit async=true params="message:string|undefined, dispatch:Dispa
         : `${fileList.length} files`;
 
       commitMsg = `${changeType}: ${shortSummary}`;
+      agonGenerated = true;
 
       // Ask user to confirm/edit
       const answer = await ctx.askQuestion(`Commit message: "${commitMsg}" — ok? (y/edit/n)`);
@@ -88,7 +90,14 @@ fn name=handleCommit async=true params="message:string|undefined, dispatch:Dispa
       }
       if (answer.toLowerCase() !== 'y' && answer.trim()) {
         commitMsg = answer.trim();
+        agonGenerated = false; // User edited → not purely Agon-generated
       }
+    }
+
+    // Append Co-authored-by trailer when Agon generated the message and user hasn't disabled it
+    const autoCredit = configGet('autoCredit', cwd) as boolean;
+    if (agonGenerated && autoCredit) {
+      commitMsg += '\n\nCo-authored-by: Agon AI <agon@local>';
     }
 
     // Step 4: Commit with HEREDOC (safe for special chars)

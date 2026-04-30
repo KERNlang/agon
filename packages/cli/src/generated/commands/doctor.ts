@@ -66,7 +66,7 @@ export function diagnoseEngineDoctorEntry(engine: EngineDefinition, registry: En
   const hasCliBackend = !!binaryPath;
   const hasApiBackend = hasApi && apiKeySet;
   const enabled = enabledIds.includes(engine.id);
-
+  
   const backendParts: string[] = [];
   if (engine.binary) backendParts.push(hasCliBackend ? `cli:${binaryPath}` : `cli missing:${engine.binary}`);
   if (hasApi) {
@@ -80,7 +80,7 @@ export function diagnoseEngineDoctorEntry(engine: EngineDefinition, registry: En
     engine.agent ? 'agent' : '',
     engine.companion ? 'companion' : '',
   ].filter(Boolean).join(', ') || 'none';
-
+  
   let status: 'ok'|'warn'|'fail' = 'ok';
   const details: string[] = [];
   if (!engine.binary && !hasApi) {
@@ -105,11 +105,11 @@ export function diagnoseEngineDoctorEntry(engine: EngineDefinition, registry: En
       details.push('enabled for forge but no agent/exec mode');
     }
   }
-
+  
   if (enabled) details.push('forge-enabled');
   if (engine.companion) details.push(`companion:${engine.companion.protocol}`);
   if (!details.length) details.push('ready');
-
+  
   return {
     id: engine.id,
     enabled,
@@ -172,7 +172,7 @@ export function buildHarnessDoctorReport(registry: EngineRegistry, config: any, 
     selectedDetail = 'selected Cesar engine is not registered';
   }
   rows.push(['Selected Cesar', selected, selectedStatus, selectedDetail]);
-
+  
   const caps: string[] = [];
   if (engine?.exec) caps.push('exec');
   if (engine?.review) caps.push('review');
@@ -181,7 +181,7 @@ export function buildHarnessDoctorReport(registry: EngineRegistry, config: any, 
   if (engine?.binary) caps.push('cli');
   if (engine?.api) caps.push(`api:${engine.api.format ?? 'anthropic'}`);
   rows.push(['Capability profile', selected, caps.length ? 'ok' : 'fail', caps.join(', ') || 'no exec/review/agent/cli/api capability']);
-
+  
   const binaryPath = engine?.binary ? registry.findBinary(engine) : null;
   const apiKeyEnv = engine?.api?.apiKeyEnv ?? '';
   const apiReady = !!(engine?.api && apiKeyEnv && process.env[apiKeyEnv]);
@@ -203,12 +203,12 @@ export function buildHarnessDoctorReport(registry: EngineRegistry, config: any, 
     backendDetail = cliReady ? `auto -> CLI ${binaryPath}` : (apiReady ? `auto -> API ${engine?.api?.model ?? 'model'}` : `install ${engine?.binary ?? 'CLI'} or set ${apiKeyEnv || 'API key'}`);
   }
   rows.push(['Backend', `${backendPref} -> ${backend}`, backendStatus, backendDetail]);
-
+  
   const hasNative = cesar?.hasNativeTools === true;
   const hasMcpSignal = typeof cesar?.mcpSignalPath === 'string' && cesar.mcpSignalPath.length > 0;
   rows.push(['Native tools', selected, hasNative ? 'ok' : 'warn', hasNative ? 'active in current Cesar session' : 'not active yet; send a Cesar turn to test native tool streaming']);
   rows.push(['MCP side-channel', selected, hasMcpSignal ? 'ok' : 'warn', hasMcpSignal ? `signal file ${cesar.mcpSignalPath}` : 'not active for current session']);
-
+  
   const reliability = readCesarToolReliability(selected, backend === 'unavailable' ? undefined : backend, 200);
   const reliabilityStatus: 'ok'|'warn'|'fail' = reliability.label === 'tool-capable'
     ? 'ok'
@@ -218,7 +218,7 @@ export function buildHarnessDoctorReport(registry: EngineRegistry, config: any, 
   rows.push(['Tool reliability', `${reliability.engineId}/${reliability.backend}`, reliabilityStatus, formatCesarReliabilityLine(reliability)]);
   const downgrade = shouldDowngradeCesarToolWork(reliability, 'big-feature', 'plan-first');
   rows.push(['Tool-heavy policy', selected, downgrade ? 'warn' : 'ok', downgrade ? 'bias broad/tool-heavy turns toward ProposePlan, Agent, Forge, or Review' : 'self-tooling is allowed when the task fits']);
-
+  
   const failing = rows.filter((row) => row[2] === 'fail').length;
   const warnings = rows.filter((row) => row[2] === 'warn').length;
   return {

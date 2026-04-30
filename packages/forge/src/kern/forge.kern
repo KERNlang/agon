@@ -126,12 +126,18 @@ fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistr
     // Internal abort controller — fires before worktree cleanup so any
     // in-flight engine dispatches get SIGTERM/SIGKILL'd through their own
     // spawnWithTimeout signal handlers BEFORE we yank the directories
-    // from underneath them. Combined with the user-provided external signal:
-    // either trigger aborts the dispatches.
+    // from underneath them. Forwards the external user signal into
+    // forgeAbort so EITHER trigger aborts the dispatches without needing
+    // AbortSignal.any (which kern-guard rejects as an undeclared reference).
     const forgeAbort = new AbortController();
-    const forgeSignal: AbortSignal = options.signal
-      ? AbortSignal.any([options.signal, forgeAbort.signal])
-      : forgeAbort.signal;
+    if (options.signal) {
+      if (options.signal.aborted) {
+        forgeAbort.abort();
+      } else {
+        options.signal.addEventListener('abort', () => forgeAbort.abort(), { once: true });
+      }
+    }
+    const forgeSignal = forgeAbort.signal;
 
     mkdirSync(forgeDir, { recursive: true });
 

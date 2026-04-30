@@ -58,19 +58,19 @@ export async function handleChat(input: string, dispatch: Dispatch, ctx: Handler
       dispatch({ type: 'error', message: 'No engines available.' });
       return;
     }
-
+    
     const { engineId: targetId, message } = detectTargetEngine(input, available);
     const config = ctx.config;
-
+    
     const engineId = targetId
       ?? config.forgeFixedStarter
       ?? available[0];
-
+    
     if (!available.includes(engineId)) {
       dispatch({ type: 'error', message: `${engineId} is not available. Try: ${available.join(', ')}` });
       return;
     }
-
+    
     let engine;
     try {
       engine = ctx.registry.get(engineId);
@@ -78,7 +78,7 @@ export async function handleChat(input: string, dispatch: Dispatch, ctx: Handler
       dispatch({ type: 'error', message: `${engineId}: ${err instanceof Error ? err.message : String(err)}` });
       return;
     }
-
+    
     const history = formatChatContextForPrompt(ctx.chatSession, {
       maxMessages: 12,
       maxChars: 8_000,
@@ -92,13 +92,13 @@ export async function handleChat(input: string, dispatch: Dispatch, ctx: Handler
     if (history) parts.push(history);
     parts.push(message);
     const prompt = parts.join('\n\n');
-
+    
     const color = ENGINE_COLORS[engineId] ?? 124;
     const outputDir = join(RUNS_DIR, `chat-${Date.now()}`);
     mkdirSync(outputDir, { recursive: true });
-
+    
     ctx.setActiveAbort(abort);
-
+    
     const forceNoTools = opts?.toolPolicy === 'none';
     const useAgent = !forceNoTools && !!engine.agent;
     const dispatchOpts = {
@@ -111,9 +111,9 @@ export async function handleChat(input: string, dispatch: Dispatch, ctx: Handler
       signal: abort.signal,
       images: images ?? [],
     };
-
+    
     dispatch({ type: 'spinner-start', message: `${engineId} thinking…`, color });
-
+    
     // Phase C: StreamBridge for chat — tracks engine attribution so the UI
     // emits engine-switch on the cold-start of this chat turn. Single-engine
     // chat doesn't switch mid-turn but the bridge ensures consistent event
@@ -121,16 +121,16 @@ export async function handleChat(input: string, dispatch: Dispatch, ctx: Handler
     const chatBridge = createStreamBridge(dispatch as (e: Record<string,unknown>) => void, {
       initialEngineId: engineId,
     });
-
+    
     let response = '';
     let streaming = false;
     let dispatchResult: DispatchResult | undefined;
-
+    
     try {
       if (useAgent && ctx.adapter.dispatchAgentStream) {
         const gen = ctx.adapter.dispatchAgentStream(dispatchOpts);
         const parser = new StreamParser();
-
+    
         while (true) {
           const iterResult = await gen.next();
           if (iterResult.done) {
@@ -142,13 +142,13 @@ export async function handleChat(input: string, dispatch: Dispatch, ctx: Handler
           }
           const value = iterResult.value;
           if (abort.signal.aborted) break;
-
+    
           if (value.startsWith('\x00')) {
             const status = value.slice(1).trim();
             if (status) dispatch({ type: 'spinner-update', message: `${engineId} ${status}` });
             continue;
           }
-
+    
           for (const parsed of parser.feed(value)) {
             if (parsed.type === 'status') {
               dispatch({ type: 'spinner-update', message: `${engineId} ${parsed.content}` });
@@ -168,7 +168,7 @@ export async function handleChat(input: string, dispatch: Dispatch, ctx: Handler
             }
           }
         }
-
+    
         // Flush any remaining buffered data
         for (const parsed of parser.flush()) {
           if (parsed.type === 'text' || parsed.type === 'raw') {
@@ -185,18 +185,18 @@ export async function handleChat(input: string, dispatch: Dispatch, ctx: Handler
       } else if (ctx.adapter.dispatchStream) {
         const gen = ctx.adapter.dispatchStream(dispatchOpts);
         const parser = new StreamParser();
-
+    
         while (true) {
           const { value, done } = await gen.next();
           if (done) break;
           if (abort.signal.aborted) break;
-
+    
           if (value.startsWith('\x00')) {
             const status = value.slice(1).trim();
             if (status) dispatch({ type: 'spinner-update', message: `${engineId} ${status}` });
             continue;
           }
-
+    
           for (const parsed of parser.feed(value)) {
             if (parsed.type === 'status') {
               dispatch({ type: 'spinner-update', message: `${engineId} ${parsed.content}` });
@@ -216,7 +216,7 @@ export async function handleChat(input: string, dispatch: Dispatch, ctx: Handler
             }
           }
         }
-
+    
         // Flush any remaining buffered data
         for (const parsed of parser.flush()) {
           if (parsed.type === 'text' || parsed.type === 'raw') {
@@ -240,14 +240,14 @@ export async function handleChat(input: string, dispatch: Dispatch, ctx: Handler
       dispatch({ type: 'error', message: `${engineId}: ${err instanceof Error ? err.message : String(err)}` });
       return;
     }
-
+    
     if (abort.signal.aborted) {
       dispatch({ type: 'spinner-stop' });
       return;
     }
-
+    
     response = response.trim();
-
+    
     if (!streaming && response) {
       dispatch({ type: 'spinner-stop' });
       dispatch({ type: 'engine-block', engineId, color, content: response });
@@ -257,7 +257,7 @@ export async function handleChat(input: string, dispatch: Dispatch, ctx: Handler
       dispatch({ type: 'streaming-end', engineId });
       await yieldToInk();
     }
-
+    
     // Emit file-changes event if agent dispatch returned a diff
     if (dispatchResult && (dispatchResult as any).diff) {
       const agentDiff = (dispatchResult as any).diff as string;
@@ -290,11 +290,11 @@ export async function handleChat(input: string, dispatch: Dispatch, ctx: Handler
         dispatch({ type: 'file-changes', files: Array.from(fileMap.entries()).map(([path, info]) => ({ path, ...info })) } as any);
       }
     }
-
+    
     if (response) {
       appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString(), images: images?.map(img => img.path) });
       appendMessage(ctx.chatSession, { role: 'engine', engineId, content: response, timestamp: new Date().toISOString() });
-
+    
       // Optional ContextThread continuity: off by default so new Agon
       // processes do not inherit stale chat/agent attempts.
       if ((config as any).sessionContinuity === true) {
@@ -307,7 +307,7 @@ export async function handleChat(input: string, dispatch: Dispatch, ctx: Handler
           console.warn(`[agon] context-thread: chat turn not persisted: ${threadErr instanceof Error ? threadErr.message : String(threadErr)}`);
         }
       }
-
+    
       if (dispatchResult?.usage) {
         tracker.record(engineId, { usage: dispatchResult.usage, model: engine.api?.model });
       } else {

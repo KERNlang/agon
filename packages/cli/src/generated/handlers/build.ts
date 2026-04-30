@@ -44,7 +44,7 @@ export async function handleBuild(input: string, dispatch: Dispatch, ctx: Handle
   const abort = new AbortController();
   try {
     ensureAgonHome();
-
+    
     // Respect /use selection — only consider active + agent-capable engines
     const active = ctx.activeEngines();
     const agentCapable = new Set(ctx.registry.agentCapableIds());
@@ -53,7 +53,7 @@ export async function handleBuild(input: string, dispatch: Dispatch, ctx: Handle
       dispatch({ type: 'error', message: 'No agent-capable engines in active set. Try /use claude or /use codex.' });
       return;
     }
-
+    
     // Detect target engine from input (e.g. "codex fix this")
     const lower = input.toLowerCase();
     let detected = '';
@@ -65,36 +65,36 @@ export async function handleBuild(input: string, dispatch: Dispatch, ctx: Handle
         break;
       }
     }
-
+    
     const preferred = ctx.config.forgeFixedStarter ?? 'claude';
     const engineId: string = detected || (agentIds.includes(preferred) ? preferred : agentIds[0]);
-
+    
     const config = ctx.config;
     const cwd = resolveWorkingDir();
     const projectCtx = scanProjectContext(cwd, config.projectContext || undefined, config.contextFormat as 'plain' | 'kern');
     const enriched = injectFileReferences(message, cwd);
-
+    
     const sessionHistory = formatChatContextForPrompt(ctx.chatSession, {
       maxMessages: 10,
       maxChars: 6_000,
       maxMessageChars: 700,
       maxSummaryChars: 3_000,
     });
-
+    
     const parts: string[] = [];
     if (projectCtx) parts.push(`## PROJECT CONTEXT\n${projectCtx}`);
     if (sessionHistory) parts.push(`## SESSION HISTORY (recent messages)\n${sessionHistory}`);
     parts.push(enriched);
     const prompt = parts.join('\n\n');
-
+    
     const engine = ctx.registry.get(engineId);
     const color = (ENGINE_COLORS as Record<string, number>)[engineId] ?? 124;
     const outputDir = join(RUNS_DIR, `build-${Date.now()}`);
     mkdirSync(outputDir, { recursive: true });
-
+    
     // ── Plan model: preview → approve → implement ──
     let plan: Plan;
-
+    
     if (existingPlan) {
       plan = startPlan(existingPlan);
       ctx.setCurrentPlan(plan);
@@ -104,20 +104,20 @@ export async function handleBuild(input: string, dispatch: Dispatch, ctx: Handle
       const snapshot = ws
         ? snapshotWorkspace(ws)
         : { id: 'cwd', path: cwd, headSha: 'unknown', branch: 'unknown', dirty: false };
-
+    
       const buildSteps: PlanStepInput[] = [
         { id: 'implement', kind: 'dispatch', label: `Agent build: ${engineId}`, effects: ['exec', 'write', 'network'] },
       ];
-
+    
       plan = createPlan(
         { type: 'build', task: message, engineId },
         snapshot,
         buildSteps,
       );
       ctx.setCurrentPlan(plan);
-
+    
       dispatch({ type: 'plan', plan });
-
+    
       const approvalLevel = (config.approvalLevel ?? 'plan') as ApprovalLevel;
       if (!skipPlanApproval && approvalLevel !== 'auto') {
         const answer = await ctx.askQuestion('Approve build plan? [Y/n]');
@@ -129,15 +129,15 @@ export async function handleBuild(input: string, dispatch: Dispatch, ctx: Handle
           return;
         }
       }
-
+    
       plan = approvePlan(plan);
       plan = startPlan(plan);
       ctx.setCurrentPlan(plan);
       savePlan(plan);
     }
-
+    
     ctx.setActiveAbort(abort);
-
+    
     const dispatchOpts = {
       engine,
       prompt,
@@ -151,29 +151,29 @@ export async function handleBuild(input: string, dispatch: Dispatch, ctx: Handle
       allowedCommands: (config as any).allowedCommands ?? [],
       toolPermissions: (config as any).toolPermissions ?? {},
     };
-
+    
     dispatch({ type: 'spinner-start', message: `${engineId} building…`, color });
-
+    
     let response = '';
     let streaming = false;
-
+    
     try {
       if (ctx.adapter.dispatchAgentStream) {
         const gen = ctx.adapter.dispatchAgentStream(dispatchOpts);
         const parser = new StreamParser();
-
+    
         while (true) {
           const iter = await gen.next();
           if (iter.done) break;
           if (abort.signal.aborted) break;
           const chunk = iter.value as string;
-
+    
           if (chunk.startsWith('\x00')) {
             const status = chunk.slice(1).trim();
             if (status) dispatch({ type: 'spinner-update', message: `${engineId} ${status}` });
             continue;
           }
-
+    
           for (const parsed of parser.feed(chunk)) {
             if (parsed.type === 'status') {
               dispatch({ type: 'spinner-update', message: `${engineId} ${parsed.content}` });
@@ -189,7 +189,7 @@ export async function handleBuild(input: string, dispatch: Dispatch, ctx: Handle
             }
           }
         }
-
+    
         for (const parsed of parser.flush()) {
           if (parsed.type === 'text' || parsed.type === 'raw') {
             if (!streaming) {
@@ -219,26 +219,26 @@ export async function handleBuild(input: string, dispatch: Dispatch, ctx: Handle
       savePlan(plan);
       return;
     }
-
+    
     if (abort.signal.aborted) {
       dispatch({ type: 'spinner-stop' });
       return;
     }
-
+    
     response = response.trim();
-
+    
     if (!streaming && response) {
       dispatch({ type: 'engine-block', engineId, color, content: response });
     }
     if (streaming) {
       dispatch({ type: 'streaming-end', engineId });
     }
-
+    
     if (response) {
       appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
       appendMessage(ctx.chatSession, { role: 'engine', engineId, content: response, timestamp: new Date().toISOString() });
       tracker.record(engineId, { prompt: input, response });
-
+    
       // Mark plan step as completed
       plan = mergeStepResult(plan, 'implement', { state: 'completed' as any, engineId });
       ctx.setCurrentPlan(plan);

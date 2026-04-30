@@ -6,7 +6,7 @@ import { Box, Static, Text, render } from 'ink';
 // ── Core ───────────────────────────────────────────────
 import { ScrollBox, AlternateScreen } from '@kernlang/terminal/runtime';
 
-import { EngineRegistry, loadConfig, ensureAgonHome, ensureCurrentWorkspace, startChatSession, getRatings, getActiveWorkspace, RUNS_DIR, extractImagesFromInput, resolveWorkingDir, currentBranch, configSet, createCesarMemory, modelEntryToEngineDef, appendMessage, getAgonHome, tracker, planCostEstimator, cancelCesarPlan, saveCesarPlan, listCesarPlans, loadCesarPlan, cesarPlanJsonPath } from '@agon/core';
+import { EngineRegistry, loadConfig, ensureAgonHome, ensureCurrentWorkspace, startChatSession, getRatings, getActiveWorkspace, RUNS_DIR, extractImagesFromInput, resolveWorkingDir, currentBranch, configSet, createCesarMemory, modelEntryToEngineDef, appendMessage, getAgonHome, tracker, planCostEstimator, cancelCesarPlan, saveCesarPlan, listCesarPlans, loadCesarPlan } from '@agon/core';
 
 import type { Plan, ChatSession, Skill, PersistentSession, ImageAttachment } from '@agon/core';
 
@@ -100,9 +100,7 @@ import { join, dirname } from 'node:path';
 
 import { fileURLToPath } from 'node:url';
 
-import { readdirSync, readFileSync, writeFileSync, mkdirSync, unlinkSync, statSync } from 'node:fs';
-
-import { createHash } from 'node:crypto';
+import { readdirSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from 'node:fs';
 
 import { tmpdir, totalmem, cpus } from 'node:os';
 
@@ -120,7 +118,7 @@ import { useStableInput } from '../../stable-input.js';
 
 import { parseProseToRichLines } from '../blocks/rich-text.js';
 
-// @kern-source: app:2516
+// @kern-source: app:2515
 export function App() {
   // Ink-safe setter: bridges microtask → macrotask for reliable repaints
   function __inkSafe<T>(setter: React.Dispatch<React.SetStateAction<T>>): React.Dispatch<React.SetStateAction<T>> {
@@ -386,8 +384,6 @@ export function App() {
   const activePlanClearTimerRef = useRef<ReturnType<typeof setTimeout>|null>(null);
   const planWatcherTimerRef = useRef<ReturnType<typeof setInterval>|null>(null);
   const planWatcherDebounceTimerRef = useRef<ReturnType<typeof setTimeout>|null>(null);
-  const planWatcherStatMtimeRef = useRef<number>(0);
-  const planWatcherBufferHashRef = useRef<string|null>(null);
   const streamingTextRef = useRef<Record<string,StreamingEntry>>({});
   const agentProgressRef = useRef<Record<string,AgentProgressSnapshot>>({});
   const lastReviewResultRef = useRef<{ engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number } | null>(null);
@@ -1498,66 +1494,35 @@ export function App() {
     if (planWatcherDebounceTimerRef.current) { clearTimeout(planWatcherDebounceTimerRef.current); planWatcherDebounceTimerRef.current = null; }
     if (!activePlan?.id) return;
     const planId = activePlan.id;
-    const planFilePath = (() => { try { return cesarPlanJsonPath(planId); } catch { return null; } })();
-    // Reset freshness cache when the watched plan changes — stale mtime/hash
-    // from a different plan would falsely bail on the new one's first tick.
-    planWatcherStatMtimeRef.current = 0;
-    planWatcherBufferHashRef.current = null;
-
-    // Stat→hash→parse pyramid. Each tier is cheaper than the next, and the
-    // common case (no on-disk change) bails after a single stat syscall.
-    // Replaces the old JSON.stringify-everything-every-tick hot loop, which
-    // compounded as the plan grew (steps, checkpoints, dispatch logs) and
-    // drove UI shake after a few work cycles. Buddies (codex+gemini)
-    // converged on this approach over the original A+B+C proposal.
     planWatcherTimerRef.current = setInterval(() => {
       try {
-        if (!planFilePath) return;
-
-        // Tier 1 — stat mtime. Free syscall, no allocation.
-        let mtimeMs: number;
-        try { mtimeMs = statSync(planFilePath).mtimeMs; }
-        catch { return; /* file gone or unreadable — wait for next tick */ }
-        if (mtimeMs === planWatcherStatMtimeRef.current) return;
-        planWatcherStatMtimeRef.current = mtimeMs;
-
-        // Tier 2 — raw buffer hash. Read bytes, hash via SHA-1 (built-in,
-        // microseconds for typical plan sizes). If hash matches, the file
-        // touched but content is identical — no parse, no update.
-        let raw: string;
-        try { raw = readFileSync(planFilePath, 'utf-8'); }
-        catch { return; }
-        const bufferHash = createHash('sha1').update(raw).digest('hex');
-        if (bufferHash === planWatcherBufferHashRef.current) return;
-        planWatcherBufferHashRef.current = bufferHash;
-
-        // Tier 3 — parse + Date.parse(updatedAt) compare. Only runs when
-        // we've already proven the buffer changed. updatedAt is a hint, not
-        // an invariant: if it's missing/invalid we still update because the
-        // hash already proved a real change on disk. This is the key
-        // safety property both buddies pushed back on in the original A.
-        let loaded: any;
-        try { loaded = JSON.parse(raw); }
-        catch { return; }
+        const loaded = loadCesarPlan(planId);
         if (!loaded) return;
         const current = activePlanRef.current;
         const loadedMs = Date.parse(String(loaded.updatedAt ?? ''));
         const currentMs = Date.parse(String(current?.updatedAt ?? ''));
-        if (Number.isFinite(loadedMs) && Number.isFinite(currentMs) && loadedMs <= currentMs) {
-          // Hash differed but updatedAt regressed — disk file is older than
-          // in-memory state (e.g. rollback). Don't clobber what's in memory.
-          return;
+        const loadedValid = Number.isFinite(loadedMs);
+        const currentValid = Number.isFinite(currentMs);
+        if (loadedValid && currentValid) {
+          if (loadedMs <= currentMs) return;
+        } else if (loadedValid === currentValid) {
+          // Both missing/invalid — treat as unchanged unless structurally different
+          if (JSON.stringify(loaded) === JSON.stringify(current)) return;
         }
-
         if (planWatcherDebounceTimerRef.current) clearTimeout(planWatcherDebounceTimerRef.current);
         planWatcherDebounceTimerRef.current = setTimeout(() => {
           const latest = activePlanRef.current;
           const latestMs = Date.parse(String(latest?.updatedAt ?? ''));
-          if (Number.isFinite(loadedMs) && Number.isFinite(latestMs) && loadedMs <= latestMs) return;
+          const latestValid = Number.isFinite(latestMs);
+          if (loadedValid && latestValid) {
+            if (loadedMs <= latestMs) return;
+          } else if (loadedValid === latestValid) {
+            if (JSON.stringify(loaded) === JSON.stringify(latest)) return;
+          }
           setActivePlanWrapped(loaded);
         }, 500);
       } catch {}
-    }, 3000);
+    }, 2000);
     return () => {
       if (planWatcherTimerRef.current) { clearInterval(planWatcherTimerRef.current); planWatcherTimerRef.current = null; }
       if (planWatcherDebounceTimerRef.current) { clearTimeout(planWatcherDebounceTimerRef.current); planWatcherDebounceTimerRef.current = null; }
@@ -2158,7 +2123,7 @@ export function App() {
   );
 }
 
-// @kern-source: app:65
+// @kern-source: app:64
 export function isMutatingToolCall(event: any): boolean {
   if (!event || event.type !== 'tool-call') return false;
   const toolKey = String(event.tool ?? '').toLowerCase();
@@ -2180,21 +2145,21 @@ export function isMutatingToolCall(event: any): boolean {
   }
 }
 
-// @kern-source: app:87
+// @kern-source: app:86
 export function shortToolPath(filePath: string): string {
   return String(filePath ?? '').replace(`${process.cwd()}/`, '').replace(process.env.HOME ?? '', '~');
 }
 
-// @kern-source: app:89
+// @kern-source: app:88
 export function isCesarTelemetryLine(message: string): boolean {
   const text = String(message ?? '').trim();
   return text.startsWith('Cesar route:') || text.startsWith('What happened:');
 }
 
-// @kern-source: app:95
+// @kern-source: app:94
 export const _telemetryResourceSample: any = ({ lastCpu: null, lastAt: 0 });
 
-// @kern-source: app:97
+// @kern-source: app:96
 function sampleLocalResourceVitals(): {cpuPercent:number,memPercent:number} {
   const now = Date.now();
   const current = process.cpuUsage();
@@ -2213,7 +2178,7 @@ function sampleLocalResourceVitals(): {cpuPercent:number,memPercent:number} {
   return { cpuPercent, memPercent };
 }
 
-// @kern-source: app:116
+// @kern-source: app:115
 function sampleEngineProcessVitals(engine: any, exactPid?: number|null): {cpuPercent?:number,memPercent?:number,processCount?:number,taskDetail?:string} {
   const pid = Number(exactPid ?? 0);
   if (Number.isFinite(pid) && pid > 0) {
@@ -2265,7 +2230,7 @@ function sampleEngineProcessVitals(engine: any, exactPid?: number|null): {cpuPer
   }
 }
 
-// @kern-source: app:168
+// @kern-source: app:167
 async function probeEngineVitals(registry: any, engineId: string, session?: PersistentSession|null, activePids?: Map<string,number>): Promise<Partial<EngineVitals>> {
   const started = Date.now();
   const localResources = sampleLocalResourceVitals();
@@ -2309,7 +2274,7 @@ async function probeEngineVitals(registry: any, engineId: string, session?: Pers
   };
 }
 
-// @kern-source: app:212
+// @kern-source: app:211
 export function parseToolCallPayload(event: any): any {
   const rawInput = String(event?.input ?? '');
   let parsed: Record<string, unknown> = {};
@@ -2325,7 +2290,7 @@ export function parseToolCallPayload(event: any): any {
   };
 }
 
-// @kern-source: app:228
+// @kern-source: app:227
 export function formatConfidenceToolLabel(parsed: any, rawInput: string): string {
   const rawValue = parsed?.value ?? parsed?.confidence ?? parsed?.score;
   let value = Number(rawValue);
@@ -2344,7 +2309,7 @@ export function formatConfidenceToolLabel(parsed: any, rawInput: string): string
   return 'confidence';
 }
 
-// @kern-source: app:247
+// @kern-source: app:246
 export function extractPatchText(rawInput: string, parsed: any): string {
   const values = [
     parsed?.patch,
@@ -2368,7 +2333,7 @@ export function extractPatchText(rawInput: string, parsed: any): string {
   return values[0] ?? '';
 }
 
-// @kern-source: app:271
+// @kern-source: app:270
 export function parsePatchPreview(rawInput: string, parsed: any): { files:string[]; lines:string[]; additions:number; deletions:number } {
   const patchText = extractPatchText(rawInput, parsed);
   const files: string[] = [];
@@ -2417,7 +2382,7 @@ export function parsePatchPreview(rawInput: string, parsed: any): { files:string
   return { files, lines, additions, deletions };
 }
 
-// @kern-source: app:320
+// @kern-source: app:319
 export function toolPreviewWindow(lineCount: number, expanded: boolean): any {
   if (lineCount <= 0) return { head: 0, tail: 0, skipped: 0 };
   if (expanded) return { head: lineCount, tail: 0, skipped: 0 };
@@ -2435,7 +2400,7 @@ export function toolPreviewWindow(lineCount: number, expanded: boolean): any {
   };
 }
 
-// @kern-source: app:338
+// @kern-source: app:337
 export function toolCallSupportsDetailView(event: any): boolean {
   if (!event || event.type !== 'tool-call') return false;
   const { rawInput, parsed, toolKey } = parseToolCallPayload(event);
@@ -2455,7 +2420,7 @@ export function toolCallSupportsDetailView(event: any): boolean {
   return rawInput.length > 160 || outputText.length > 400;
 }
 
-// @kern-source: app:358
+// @kern-source: app:357
 export function detailViewerSupportsEvent(event: any): boolean {
   if (!event) return false;
   if (event.type === 'permission-ask') {
@@ -2465,12 +2430,12 @@ export function detailViewerSupportsEvent(event: any): boolean {
   return toolCallSupportsDetailView(event);
 }
 
-// @kern-source: app:368
+// @kern-source: app:367
 export function toolDetailViewportRows(termHeight: number): number {
   return Math.max(8, Math.min(18, termHeight - 14));
 }
 
-// @kern-source: app:370
+// @kern-source: app:369
 export function findLatestToolDetailEvent(blocks: OutputBlock[]): any {
   for (let index = blocks.length - 1; index >= 0; index -= 1) {
     const event = blocks[index]?.event as any;
@@ -2490,7 +2455,7 @@ export function findLatestToolDetailEvent(blocks: OutputBlock[]): any {
   return null;
 }
 
-// @kern-source: app:390
+// @kern-source: app:389
 export function findLatestToolEvent(blocks: OutputBlock[]): any {
   for (let index = blocks.length - 1; index >= 0; index -= 1) {
     const event = blocks[index]?.event as any;
@@ -2509,7 +2474,7 @@ export function findLatestToolEvent(blocks: OutputBlock[]): any {
 /**
  * Count visible tool activity, touched files, and queued messages for the live execution rail.
  */
-// @kern-source: app:406
+// @kern-source: app:405
 export function buildExecutionRailStats(blocks: OutputBlock[], files: any[], queueCount: number): any {
   let toolCount = 0;
   let failedToolCount = 0;
@@ -2543,15 +2508,15 @@ export function buildExecutionRailStats(blocks: OutputBlock[], files: any[], que
   };
 }
 
-// @kern-source: app:441
+// @kern-source: app:440
 export const COMPOSER_HISTORY_LIMIT: number = 200;
 
-// @kern-source: app:443
+// @kern-source: app:442
 export function composerHistoryPath(): string {
   return join(getAgonHome(), 'composer-history.json');
 }
 
-// @kern-source: app:445
+// @kern-source: app:444
 export function loadComposerInputHistory(): string[] {
   try {
     const parsed = JSON.parse(readFileSync(composerHistoryPath(), 'utf-8'));
@@ -2564,7 +2529,7 @@ export function loadComposerInputHistory(): string[] {
   }
 }
 
-// @kern-source: app:458
+// @kern-source: app:457
 export function saveComposerInputHistory(history: string[]): void {
   try {
     ensureAgonHome();
@@ -2575,7 +2540,7 @@ export function saveComposerInputHistory(history: string[]): void {
   }
 }
 
-// @kern-source: app:469
+// @kern-source: app:468
 export function findLatestFailedToolEvent(blocks: OutputBlock[]): any {
   for (let index = blocks.length - 1; index >= 0; index -= 1) {
     const event = blocks[index]?.event as any;
@@ -2591,7 +2556,7 @@ export function findLatestFailedToolEvent(blocks: OutputBlock[]): any {
   return null;
 }
 
-// @kern-source: app:485
+// @kern-source: app:484
 export function buildFailedToolRetryDraft(event: any): string {
   if (!event) return '';
   const { rawInput, parsed, toolKey } = parseToolCallPayload(event);
@@ -2606,7 +2571,7 @@ export function buildFailedToolRetryDraft(event: any): string {
   return `retry the failed ${toolName} call with corrected input:\n${payload}${suffix}`;
 }
 
-// @kern-source: app:500
+// @kern-source: app:499
 export function buildToolDetailView(event: any): any {
   if (!event) {
     return { title: 'Detail viewer', subtitle: '', accentColor: '#a78bfa', rows: [] };
@@ -2819,22 +2784,22 @@ export function buildToolDetailView(event: any): any {
   };
 }
 
-// @kern-source: app:714
+// @kern-source: app:713
 export const _activeAborts: Set<AbortController> = new Set<AbortController>();
 
-// @kern-source: app:716
+// @kern-source: app:715
 export const _cancelCallback: { fn: (() => void) | null } = { fn: null };
 
-// @kern-source: app:718
+// @kern-source: app:717
 export const _cesarSessionRef: { session: PersistentSession | null } = { session: null };
 
-// @kern-source: app:720
+// @kern-source: app:719
 export const _lastSigintAt: { value: number } = { value: 0 };
 
-// @kern-source: app:722
+// @kern-source: app:721
 export const _pauseState: { value: PauseState | null } = { value: null };
 
-// @kern-source: app:724
+// @kern-source: app:723
 export function createInitialRegistry(): EngineRegistry {
   const reg = new EngineRegistry();
   const engDir = join(dirname(fileURLToPath(import.meta.url)), '../../../engines');
@@ -2842,7 +2807,7 @@ export function createInitialRegistry(): EngineRegistry {
   return reg;
 }
 
-// @kern-source: app:732
+// @kern-source: app:731
 export function drainStdinBuffer(): void {
   if (!process.stdin.isTTY || typeof process.stdin.read !== 'function') return;
   let chunk: string | Buffer | null;
@@ -2851,12 +2816,12 @@ export function drainStdinBuffer(): void {
   } while (chunk !== null);
 }
 
-// @kern-source: app:741
+// @kern-source: app:740
 export function maxScrollOffsetForRowCount(rowCount: number, rowBudget: number): number {
   return Math.max(0, rowCount - Math.max(1, rowBudget));
 }
 
-// @kern-source: app:743
+// @kern-source: app:742
 export function nextWheelAnimationStep(pending: number): {step:number,remaining:number} {
   if (!Number.isFinite(pending) || pending === 0) return { step: 0, remaining: 0 };
   const direction = pending > 0 ? 1 : -1;
@@ -2866,12 +2831,12 @@ export function nextWheelAnimationStep(pending: number): {step:number,remaining:
   return { step, remaining: pending - step };
 }
 
-// @kern-source: app:753
+// @kern-source: app:752
 export function clampNumber(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-// @kern-source: app:755
+// @kern-source: app:754
 export function charDisplayWidth(char: string): number {
   if (!char) return 0;
   const codePoint = char.codePointAt(0) ?? 0;
@@ -2906,7 +2871,7 @@ export function charDisplayWidth(char: string): number {
   return 1;
 }
 
-// @kern-source: app:790
+// @kern-source: app:789
 export function stringDisplayWidth(text: string): number {
   let width = 0;
   for (const char of Array.from(String(text ?? ''))) {
@@ -2915,7 +2880,7 @@ export function stringDisplayWidth(text: string): number {
   return width;
 }
 
-// @kern-source: app:799
+// @kern-source: app:798
 export function displayColumnToStringIndex(text: string, targetColumn: number): number {
   const value = String(text ?? '');
   if (!Number.isFinite(targetColumn) || targetColumn <= 0) return 0;
@@ -2932,13 +2897,13 @@ export function displayColumnToStringIndex(text: string, targetColumn: number): 
   return value.length;
 }
 
-// @kern-source: app:816
+// @kern-source: app:815
 export function normalizeRowSelection(anchor: number|null, focus: number|null): {start:number,end:number}|null {
   if (anchor === null || focus === null) return null;
   return { start: Math.min(anchor, focus), end: Math.max(anchor, focus) };
 }
 
-// @kern-source: app:822
+// @kern-source: app:821
 export function normalizeTextSelection(anchorRow: number|null, anchorCol: number|null, focusRow: number|null, focusCol: number|null): {startRow:number,startCol:number,endRow:number,endCol:number}|null {
   if (anchorRow === null || anchorCol === null || focusRow === null || focusCol === null) return null;
   if (anchorRow < focusRow) return { startRow: anchorRow, startCol: anchorCol, endRow: focusRow, endCol: focusCol };
@@ -2947,7 +2912,7 @@ export function normalizeTextSelection(anchorRow: number|null, anchorCol: number
   return { startRow: focusRow, startCol: focusCol, endRow: anchorRow, endCol: anchorCol };
 }
 
-// @kern-source: app:831
+// @kern-source: app:830
 export function richLineToPlainText(line: any): string {
   if (!line) return '';
   if (line.kind === 'blank') return '';
@@ -2968,7 +2933,7 @@ export function richLineToPlainText(line: any): string {
   return `${indent}${listIndent}${marker}${spanText}`;
 }
 
-// @kern-source: app:852
+// @kern-source: app:851
 export function transcriptRowToPlainText(row: any): string {
   if (!row) return '';
   if (row.kind === 'spacer') return '';
@@ -2983,14 +2948,14 @@ export function transcriptRowToPlainText(row: any): string {
   return `${prefix}${text}`;
 }
 
-// @kern-source: app:867
+// @kern-source: app:866
 export function transcriptRowTextStartColumn(row: any): number {
   const paddingLeft = Math.max(0, Number(row?.paddingLeft ?? 0));
   const borderColumns = row?.borderColor ? 2 : 0;
   return paddingLeft + borderColumns + 2;
 }
 
-// @kern-source: app:874
+// @kern-source: app:873
 export function resolveTranscriptColumnFromMouse(mouseX: number, row: any): number {
   const text = transcriptRowToPlainText(row);
   const startColumn = transcriptRowTextStartColumn(row);
@@ -2999,7 +2964,7 @@ export function resolveTranscriptColumnFromMouse(mouseX: number, row: any): numb
   return displayColumnToStringIndex(text, targetColumn);
 }
 
-// @kern-source: app:883
+// @kern-source: app:882
 export function transcriptRowsToPlainText(rows: any[], anchorRow: number|null, anchorCol: number|null, focusRow: number|null, focusCol: number|null): string {
   const range = normalizeTextSelection(anchorRow, anchorCol, focusRow, focusCol);
   if (!range) return '';
@@ -3024,7 +2989,7 @@ export function transcriptRowsToPlainText(rows: any[], anchorRow: number|null, a
   return lines.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd();
 }
 
-// @kern-source: app:908
+// @kern-source: app:907
 export function resolveTranscriptRowFromMouse(mouseY: number, viewportTopLine: number, firstVisibleRow: number, visibleRowCount: number): number|null {
   if (visibleRowCount <= 0) return null;
   const offset = mouseY - viewportTopLine;
@@ -3033,7 +2998,7 @@ export function resolveTranscriptRowFromMouse(mouseY: number, viewportTopLine: n
   return firstVisibleRow + clamped;
 }
 
-// @kern-source: app:917
+// @kern-source: app:916
 export function estimateVisibleBlockBudget(rows: number, mode: string, overlayReservedRows: number): number {
   // Chat mode keeps 7 rows for the composer/status chrome at minimum:
   // margin + bordered composer (3) + Cesar strip + two-line status bar.
@@ -3042,7 +3007,7 @@ export function estimateVisibleBlockBudget(rows: number, mode: string, overlayRe
   return Math.max(1, rows - reservedRows);
 }
 
-// @kern-source: app:926
+// @kern-source: app:925
 export function estimateWrappedRowCount(text: string, wrapWidth: number): number {
   const safeWidth = Math.max(1, wrapWidth);
   const lines = String(text ?? '').split('\n');
@@ -3056,7 +3021,7 @@ export function estimateWrappedRowCount(text: string, wrapWidth: number): number
 /**
  * Reserve extra transcript rows when the bottom composer is showing a multi-line question or permission card, so short terminals do not clip the actionable keys.
  */
-// @kern-source: app:937
+// @kern-source: app:936
 export function estimateQuestionReservedRows(questionState: any, termWidth: number): number {
   if (!questionState) return 0;
   const safeWidth = Math.max(24, termWidth - 12);
@@ -3092,7 +3057,7 @@ export function estimateQuestionReservedRows(questionState: any, termWidth: numb
 /**
  * Reserve extra rows above the base composer/status chrome for stacked prompt cards, queued-input badges, and chat spinner rows.
  */
-// @kern-source: app:971
+// @kern-source: app:970
 export function estimateBottomChromeExtraRows(mode: string, questionState: any, termWidth: number, pendingImageCount: number, inputQueueCount: number, hasLiveSpinner: boolean): number {
   let extraRows = 0;
   if (pendingImageCount > 0) extraRows += 1;
@@ -3102,7 +3067,7 @@ export function estimateBottomChromeExtraRows(mode: string, questionState: any, 
   return extraRows;
 }
 
-// @kern-source: app:982
+// @kern-source: app:981
 export function buildDashboardBlock(enabledOverride: string[]|null): OutputBlock {
   const registry = createInitialRegistry();
   const available = registry.availableIds();
@@ -3133,7 +3098,7 @@ export function buildDashboardBlock(enabledOverride: string[]|null): OutputBlock
   };
 }
 
-// @kern-source: app:1013
+// @kern-source: app:1012
 export function estimatePinnedLiveRows(mode: string, hasStream: boolean, hasProgress: boolean, agentCount: number): number {
   const streamRows = hasStream ? (mode === 'chat' ? 3 : 6) : 0;
   const progressRows = hasProgress ? (mode === 'chat' ? 3 : 5) : 0;
@@ -3141,7 +3106,7 @@ export function estimatePinnedLiveRows(mode: string, hasStream: boolean, hasProg
   return streamRows + progressRows + agentRows;
 }
 
-// @kern-source: app:1021
+// @kern-source: app:1020
 export function estimateWrappedRows(text: string, width: number): number {
   const safeWidth = Math.max(1, width);
   if (!text) return 0;
@@ -3151,7 +3116,7 @@ export function estimateWrappedRows(text: string, width: number): number {
   }, 0);
 }
 
-// @kern-source: app:1031
+// @kern-source: app:1030
 export function estimateToolCallRows(event: any, toolOutputExpanded: boolean, codeWidth: number): number {
   if (!event || event.type !== 'tool-call') return 0;
   if (!event.input && !event.output && (event.tool === 'Delegate' || event.tool === 'delegate')) return 0;
@@ -3224,7 +3189,7 @@ export function estimateToolCallRows(event: any, toolOutputExpanded: boolean, co
   return rows;
 }
 
-// @kern-source: app:1104
+// @kern-source: app:1103
 export function estimateOutputEventRows(event: OutputEvent, mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean): number {
   const proseWidth = contentWidth(4);
   const chatWidth = contentWidth(2);
@@ -3329,7 +3294,7 @@ export function estimateOutputEventRows(event: OutputEvent, mode: string, toolOu
   }
 }
 
-// @kern-source: app:1209
+// @kern-source: app:1208
 export function buildDisplayItems(blocks: OutputBlock[], toolOutputExpanded: boolean): OutputBlock[] {
   // Keep collapse as a per-block display concern, not a synthetic grouped
   // scroll unit. Grouped tool summaries make wheel scrolling jump because
@@ -3337,7 +3302,7 @@ export function buildDisplayItems(blocks: OutputBlock[], toolOutputExpanded: boo
   return blocks;
 }
 
-// @kern-source: app:1217
+// @kern-source: app:1216
 export function isToolCallLikeBlock(block: OutputBlock): boolean {
   const type = (block?.event as any)?.type;
   return type === 'tool-call' || type === 'tool-call-group';
@@ -3346,7 +3311,7 @@ export function isToolCallLikeBlock(block: OutputBlock): boolean {
 /**
  * Merge adjacent tool-call and tool-call-group blocks into one group so native/live renderers do not show repeated collapsed tool summaries.
  */
-// @kern-source: app:1223
+// @kern-source: app:1222
 export function coalesceToolCallBlocks(blocks: OutputBlock[]): OutputBlock[] {
   if (!Array.isArray(blocks) || blocks.length === 0) return [];
   const out: OutputBlock[] = [];
@@ -3393,7 +3358,7 @@ export function coalesceToolCallBlocks(blocks: OutputBlock[]): OutputBlock[] {
 /**
  * Choose the native Static archive count. When tools are expanded, keep the latest tool-call island live because Ink Static cannot repaint already-sealed collapsed tool summaries.
  */
-// @kern-source: app:1268
+// @kern-source: app:1267
 export function effectiveNativeArchiveBlockCount(blocks: OutputBlock[], baseArchiveCount: number, targetArchiveCount: number, toolOutputExpanded: boolean): number {
   if (!Array.isArray(blocks) || blocks.length === 0) return 0;
 
@@ -3426,12 +3391,12 @@ export function effectiveNativeArchiveBlockCount(blocks: OutputBlock[], baseArch
   return count;
 }
 
-// @kern-source: app:1302
+// @kern-source: app:1301
 export function estimateDisplayItemRows(item: OutputBlock, mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean): number {
   return estimateOutputEventRows(item.event, mode, toolOutputExpanded, thinkingExpanded);
 }
 
-// @kern-source: app:1304
+// @kern-source: app:1303
 export function historyBlocksForTranscript(blocks: OutputBlock[]): OutputBlock[] {
   if (blocks.length === 1 && blocks[0]?.event?.type === 'dashboard') return [];
   return blocks;
@@ -3440,7 +3405,7 @@ export function historyBlocksForTranscript(blocks: OutputBlock[]): OutputBlock[]
 /**
  * Native transcript history. While idle, the startup dashboard is live chrome. Once the first real transcript row exists, keep the dashboard as the first chat-history block so the AGON header scrolls with the conversation instead of disappearing.
  */
-// @kern-source: app:1310
+// @kern-source: app:1309
 export function nativeTranscriptBlocksForStatic(blocks: OutputBlock[]): OutputBlock[] {
   if (blocks.length === 1 && blocks[0]?.event?.type === 'dashboard') return [];
   return blocks;
@@ -3449,7 +3414,7 @@ export function nativeTranscriptBlocksForStatic(blocks: OutputBlock[]): OutputBl
 /**
  * Choose how many native transcript blocks are sealed into Static. The remaining tail stays live so recent rows can rerender while older rows remain in terminal scrollback.
  */
-// @kern-source: app:1317
+// @kern-source: app:1316
 export function nativeArchiveBlockCount(blocks: OutputBlock[], mode: string, rowBudget: number, toolOutputExpanded: boolean, thinkingExpanded: boolean): number {
   if (!Array.isArray(blocks) || blocks.length === 0) return 0;
 
@@ -3483,7 +3448,7 @@ export function nativeArchiveBlockCount(blocks: OutputBlock[], mode: string, row
 /**
  * Detect same-turn duplicate completed engine output. A new user-message resets the guard so an intentional repeat request can still show identical text.
  */
-// @kern-source: app:1349
+// @kern-source: app:1348
 export function isDuplicateEngineBlock(blocks: OutputBlock[], event: any): boolean {
   if (!event || event.type !== 'engine-block') return false;
   const content = cleanEngineOutput(String(event.content ?? '')).trim();
@@ -3505,25 +3470,25 @@ export function isDuplicateEngineBlock(blocks: OutputBlock[], event: any): boole
 /**
  * Append a transcript block with cap/archive handling while suppressing accidental duplicate engine output.
  */
-// @kern-source: app:1369
+// @kern-source: app:1368
 export function appendTranscriptBlock(blocks: OutputBlock[], event: any, archivePath: string): OutputBlock[] {
   if (isDuplicateEngineBlock(blocks, event)) return blocks;
   return appendBlockWithCap(blocks, { id: Date.now() + Math.random(), event }, archivePath);
 }
 
-// @kern-source: app:1376
+// @kern-source: app:1375
 export function normalizeTerminalMode(value: any): 'native'|'fullscreen' {
   return value === 'fullscreen' ? 'fullscreen' : 'native';
 }
 
-// @kern-source: app:1378
+// @kern-source: app:1377
 export function fileRailWidthForTerminal(termWidth: number, expanded: boolean): number {
   const safeWidth = Math.max(40, Math.floor(Number(termWidth) || 100));
   if (expanded) return Math.max(36, Math.min(84, Math.floor(safeWidth * 0.35)));
   return Math.max(28, Math.min(42, Math.floor(safeWidth * 0.22)));
 }
 
-// @kern-source: app:1385
+// @kern-source: app:1384
 export function fileRailMaxRowsForTerminal(termHeight: number, terminalMode: string, expanded: boolean): number {
   const safeHeight = Math.max(8, Math.floor(Number(termHeight) || 24));
   if (terminalMode === 'native') {
@@ -3537,7 +3502,7 @@ export function fileRailMaxRowsForTerminal(termHeight: number, terminalMode: str
 /**
  * Pure terminal replay harness: summarizes the layout-sensitive parts of the REPL for fixed viewport sizes so unit tests can catch native/fullscreen regressions without launching an interactive TTY.
  */
-// @kern-source: app:1396
+// @kern-source: app:1395
 export function buildTerminalReplaySnapshot(blocks: OutputBlock[], opts: any): {terminalMode:'native'|'fullscreen'; mode:string; termWidth:number; termHeight:number; visibleBudget:number; transcriptRowCount:number; staticBlockCount:number; liveBlockCount:number; fileRailWidth:number; fileRailRows:number; headerRows:number; lowerChromeRows:number} {
   const terminalMode = normalizeTerminalMode(opts?.terminalMode);
   const mode = String(opts?.mode ?? 'chat');
@@ -3591,7 +3556,7 @@ export function buildTerminalReplaySnapshot(blocks: OutputBlock[], opts: any): {
   };
 }
 
-// @kern-source: app:1451
+// @kern-source: app:1450
 export function parseMarkdownToRows(baseKey: string, text: string, wrapWidth: number, paddingLeft: number, borderColor: string): any[] {
   const rows: any[] = [];
   const cleaned = String(text ?? '').trim();
@@ -3699,7 +3664,7 @@ export function parseMarkdownToRows(baseKey: string, text: string, wrapWidth: nu
   return rows;
 }
 
-// @kern-source: app:1559
+// @kern-source: app:1558
 export function buildToolCallRows(baseKey: string, event: any, toolOutputExpanded: boolean): any[] {
   if (!event.input && !event.output && (event.tool === 'Delegate' || event.tool === 'delegate')) return [];
 
@@ -4070,7 +4035,7 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
   return rows;
 }
 
-// @kern-source: app:1930
+// @kern-source: app:1929
 export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any[] {
   if (!events || events.length === 0) return [];
 
@@ -4165,7 +4130,7 @@ export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any
   return rows;
 }
 
-// @kern-source: app:2025
+// @kern-source: app:2024
 export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOutputExpanded: boolean, thinkingExpanded: boolean): any[] {
   const rows: any[] = [];
   const proseWidth = contentWidth(4);
@@ -4655,7 +4620,7 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
   return rows;
 }
 
-// @kern-source: app:4505
+// @kern-source: app:4467
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

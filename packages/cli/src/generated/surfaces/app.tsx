@@ -1216,6 +1216,7 @@ export function App() {
         ctrlKeyHandledRef.current = true;
         setToolOutputExpanded((prev: boolean) => !prev);
         return;
+      case 'g':
       case 'i':
       case 't':
         ctrlKeyHandledRef.current = true;
@@ -1256,6 +1257,7 @@ export function App() {
       '\x01': 'a',
       '\x03': 'c',
       '\x05': 'e',
+      '\x07': 'g',
       '\x0f': 'o',
       '\x0a': 'j',
       '\x0b': 'k',
@@ -1268,7 +1270,7 @@ export function App() {
       ...(key.ctrl ? { '\x09': 'i' } : {}),
     } as Record<string, string>;
     const globalCtrlInput = globalCtrlInputMap[input] ?? (key.ctrl && keyName ? keyName : input);
-    const hasGlobalCtrlSignal = !!key.ctrl || ['\x01', '\x02', '\x03', '\x05', '\x0a', '\x0b', '\x0c', '\x0f', '\x12', '\x14', '\x15', '\x17'].includes(input);
+    const hasGlobalCtrlSignal = !!key.ctrl || ['\x01', '\x02', '\x03', '\x05', '\x07', '\x0a', '\x0b', '\x0c', '\x0f', '\x12', '\x14', '\x15', '\x17'].includes(input);
     const textInputOwnsReservedShortcut = !statusDashboardOpen && !modelPickerOpen && !cesarPickerOpen && !enginePickerOpen && !reviewEvent && !toolDetailEvent && !slashPickerOpen && (!questionState || !questionState.choices);
     if (hasGlobalCtrlSignal && globalCtrlInput === 'e' && !textInputOwnsReservedShortcut) {
       const nested = nestedCtrlShortcutRef.current;
@@ -1322,6 +1324,7 @@ export function App() {
       '\x01': 'a',
       '\x03': 'c',
       '\x05': 'e',
+      '\x07': 'g',
       '\x0f': 'o',
       '\x0a': 'j',
       '\x0b': 'k',
@@ -1334,7 +1337,7 @@ export function App() {
       ...(key.ctrl ? { '\x09': 'i' } : {}),
     } as Record<string, string>;
     const normalizedCtrlInput = normalizedCtrlInputMap[input] ?? (key.ctrl && keyName ? keyName : input);
-    const hasCtrlSignal = !!key.ctrl || ['\x01', '\x02', '\x03', '\x05', '\x0a', '\x0b', '\x0c', '\x0f', '\x12', '\x14', '\x15', '\x17'].includes(input);
+    const hasCtrlSignal = !!key.ctrl || ['\x01', '\x02', '\x03', '\x05', '\x07', '\x0a', '\x0b', '\x0c', '\x0f', '\x12', '\x14', '\x15', '\x17'].includes(input);
     if (hasCtrlSignal && normalizedCtrlInput) {
       const nested = nestedCtrlShortcutRef.current;
       if (nested.key === normalizedCtrlInput && Date.now() - nested.at < 120) {
@@ -4560,7 +4563,7 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
   return rows;
 }
 
-// @kern-source: app:4402
+// @kern-source: app:4405
 export async function startRepl(): Promise<void> {
   ensureAgonHome();
   ensureCurrentWorkspace(process.cwd());

@@ -347,7 +347,7 @@ export function buildPlanChromeSummary(activePlan: any, activePlanState?: string
   let action = '';
   if (displayState === 'awaiting_approval') action = 'go/yes';
   else if (displayState === 'paused') action = '/plan resume';
-  else if (displayState === 'running') action = 'Ctrl+T details';
+  else if (displayState === 'running') action = 'Ctrl+G rail';
   else if (planModeQueued) action = 'type task';
 
   const failed = Number(gauge.failed ?? 0);

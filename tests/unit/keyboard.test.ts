@@ -56,9 +56,25 @@ describe('resolveKeyboardInput', () => {
     }))).toEqual({ type: 'retryFailedTool' });
   });
 
-  it('ignores unmapped ctrl shortcuts', () => {
+  it('routes ctrl+g to the live execution rail as the advertised shortcut', () => {
     expect(resolveKeyboardInput(baseCtx({
       input: '\x07',
+      key: { ctrl: true },
+      textInputActive: false,
+    }))).toEqual({ type: 'toggleExecutionRail' });
+  });
+
+  it('defers ctrl+g to the active text input', () => {
+    expect(resolveKeyboardInput(baseCtx({
+      input: '\x07',
+      key: { ctrl: true },
+      textInputActive: true,
+    }))).toEqual({ type: 'none' });
+  });
+
+  it('ignores unmapped ctrl shortcuts', () => {
+    expect(resolveKeyboardInput(baseCtx({
+      input: '\x06',
       key: { ctrl: true },
       textInputActive: false,
     }))).toEqual({ type: 'none' });
@@ -104,7 +120,7 @@ describe('resolveKeyboardInput', () => {
     }))).toEqual({ type: 'none' });
   });
 
-  it('routes raw ctrl+t to the live execution rail as a tab-safe alias', () => {
+  it('keeps raw ctrl+t as a hidden live execution rail alias', () => {
     expect(resolveKeyboardInput(baseCtx({
       input: '\x14',
       key: {},

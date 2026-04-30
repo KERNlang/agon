@@ -1,31 +1,22 @@
 import from="@agon/core" names="SessionResult,BrainstormResultData,CampfireResultData,TribunalResultData,ForgeResultData,ChatSession" types=true
 
-const name=BOLD type=string
-  handler <<< '\x1b[1m' >>>
+const name=BOLD type=string value={{ '\x1b[1m' }}
 
-const name=DIM type=string
-  handler <<< '\x1b[2m' >>>
+const name=DIM type=string value={{ '\x1b[2m' }}
 
-const name=RESET type=string
-  handler <<< '\x1b[0m' >>>
+const name=RESET type=string value={{ '\x1b[0m' }}
 
-const name=CYAN type=string
-  handler <<< '\x1b[36m' >>>
+const name=CYAN type=string value={{ '\x1b[36m' }}
 
-const name=GREEN type=string
-  handler <<< '\x1b[32m' >>>
+const name=GREEN type=string value={{ '\x1b[32m' }}
 
-const name=RED type=string
-  handler <<< '\x1b[31m' >>>
+const name=RED type=string value={{ '\x1b[31m' }}
 
-const name=YELLOW type=string
-  handler <<< '\x1b[33m' >>>
+const name=YELLOW type=string value={{ '\x1b[33m' }}
 
-const name=RULE type=string
-  handler <<< '═'.repeat(70) >>>
+const name=RULE type=string value={{ '═'.repeat(70) }}
 
-const name=THIN_RULE type=string
-  handler <<< '─'.repeat(70) >>>
+const name=THIN_RULE type=string value={{ '─'.repeat(70) }}
 
 fn name=formatTime params="iso:string" returns=string
   handler <<<

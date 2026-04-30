@@ -266,8 +266,5 @@ service name=Speculator export=true
 
 // ── Factory ───────────────────────────────────────────────────────────
 
-fn name=createSpeculator returns=Speculator export=true
+fn name=createSpeculator returns=Speculator export=true expr={{ return new Speculator(); }}
   doc "Create a fresh Speculator instance. One per agent invocation."
-  handler <<<
-    return new Speculator();
-  >>>

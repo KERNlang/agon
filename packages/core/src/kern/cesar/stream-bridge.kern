@@ -45,9 +45,9 @@ interface name=EngineSwitch export=true
 service name=StreamBridge export=true
   doc "Converts AgentEvent → OutputEvent with engine-switch tracking. Construct one per agent invocation (solo or team) and call bridge(event) for every AgentEvent the inner loop emits."
 
-  field name=activeEngineId type="string|undefined" private
-  field name=dispatch type="(event: Record<string,unknown>) => void" private
-  field name=onSwitch type="((sw: EngineSwitch) => void)|undefined" private
+  field name=activeEngineId type="string|undefined" private=true
+  field name=dispatch type="(event: Record<string,unknown>) => void" private=true
+  field name=onSwitch type="((sw: EngineSwitch) => void)|undefined" private=true
 
   constructor params="dispatch:(event:Record<string,unknown>)=>void,opts?:{initialEngineId?:string,onSwitch?:(sw:EngineSwitch)=>void}"
     handler <<<
@@ -164,8 +164,5 @@ service name=StreamBridge export=true
 
 // ── Factory ───────────────────────────────────────────────────────────
 
-fn name=createStreamBridge params="dispatch:(event:Record<string,unknown>)=>void,opts?:{initialEngineId?:string,onSwitch?:(sw:EngineSwitch)=>void}" returns=StreamBridge export=true
+fn name=createStreamBridge params="dispatch:(event:Record<string,unknown>)=>void,opts?:{initialEngineId?:string,onSwitch?:(sw:EngineSwitch)=>void}" returns=StreamBridge export=true expr={{ return new StreamBridge(dispatch, opts); }}
   doc "Create a StreamBridge for one agent invocation. Pass the same Dispatch function used by the handler."
-  handler <<<
-    return new StreamBridge(dispatch, opts);
-  >>>

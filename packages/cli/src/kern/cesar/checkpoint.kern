@@ -20,10 +20,7 @@ interface name=Checkpoint export=true
   field name=engineIds type=string[]
   field name=metadata type="Record<string,unknown>" optional=true
 
-fn name=createCheckpointId returns=string export=false
-  handler <<<
-    return `chk-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-  >>>
+fn name=createCheckpointId returns=string export=false expr={{ return `chk-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`; }}
 
 fn name=buildCheckpoint params="runId:string,phase:CheckpointPhase,mode:string,engineIds:string[],metadata?:Record<string,unknown>" returns=Checkpoint export=true
   handler <<<
@@ -81,10 +78,7 @@ fn name=listCheckpoints params="opts?:{runId?:string,phase?:CheckpointPhase,limi
     return out.slice(0, limit);
   >>>
 
-fn name=lastCheckpointForRun params="runId:string,runsDir?:string" returns="Checkpoint|undefined" export=true
-  handler <<<
-    return listCheckpoints({ runId, limit: 1, runsDir })[0];
-  >>>
+fn name=lastCheckpointForRun params="runId:string,runsDir?:string" returns="Checkpoint|undefined" export=true expr={{ return listCheckpoints({ runId, limit: 1, runsDir })[0]; }}
 
 fn name=formatCheckpointLine params="cp:Checkpoint" returns=string export=true
   handler <<<

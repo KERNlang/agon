@@ -49,10 +49,7 @@ fn name=selectForgeFallbackEngine params="registry:EngineRegistry,sourceId:strin
     return null;
   >>>
 
-fn name=buildFallbackRetryPrompt params="prompt:string,failedEngine:string,phase:string,error:string" returns=string export=false
-  handler <<<
-    return `${prompt}\n\n## FALLBACK RETRY\nYou are rerunning the same forge step after engine "${failedEngine}" failed during ${phase}.\nFailure: ${error}\nComplete the original task normally.`;
-  >>>
+fn name=buildFallbackRetryPrompt params="prompt:string,failedEngine:string,phase:string,error:string" returns=string export=false expr={{ return `${prompt}\n\n## FALLBACK RETRY\nYou are rerunning the same forge step after engine "${failedEngine}" failed during ${phase}.\nFailure: ${error}\nComplete the original task normally.`; }}
 
 fn name=runForgeEngineAttempt async=true params="opts:{engineId:string,prompt:string,dispatchMode:'exec'|'review',metricPhase:'stage1'|'stage1-fallback'|'stage2-scout'|'stage2-scout-fallback'|'stage2-follower'|'stage2-fallback',fitnessCmd:string,config:Required<AgonConfig>,registry:EngineRegistry,adapter:EngineAdapter,root:string,baseSha:string,forgeDir:string,worktrees:WorktreeEntry[],onEvent?:ForgeEventCallback,signal?:AbortSignal,eventType:string,eventData?:Record<string,unknown>,worktreePath?:string}" returns="Promise<{result:EngineResult,metric:DispatchMetric,dispatchResult:any,worktreePath:string}>"
   handler <<<

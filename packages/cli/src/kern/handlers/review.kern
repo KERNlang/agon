@@ -142,7 +142,7 @@ interface name=ReviewCoreResult export=true
   field name=blocking type=boolean
   field name=parseFailed type=boolean
 
-const name=REVIEW_SENTINEL type=string value="'<!--AGON_REVIEW_FINDINGS_v1-->'"
+const name=REVIEW_SENTINEL type=string value={{ '<!--AGON_REVIEW_FINDINGS_v1-->' }}
 
 fn name=parseReviewBlocking params="response:string" returns="{blocking:boolean, parseFailed:boolean}" export=true
   doc "Sentinel-anchored, fail-closed parser. Tribunal fix #9 + Gemini (b): the engine MUST end its response with a unique sentinel followed by a JSON array of findings. We parse only the text after the LAST sentinel occurrence. Without a sentinel match the response is treated as blocking + parseFailed, so the user must explicitly approve. This blocks the prompt-injection attack where an attacker echoes `[{\"blocking\":false}]` inside diff content — the injected payload has no sentinel and the engine's actual structured output (which DOES carry the sentinel) is the only thing the parser will consider."

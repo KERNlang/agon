@@ -13,8 +13,7 @@ interface name=ApiConfig
   field name=idleTimeoutMs type=number optional=true
 
 // Model instance cache — provider+model objects are stateless, safe to reuse
-const name=_modelCache type="Map<string,{model:any, apiKey:string}>"
-  handler <<< new Map<string,{model:any, apiKey:string}>() >>>
+const name=_modelCache type="Map<string,{model:any, apiKey:string}>" value={{ new Map<string,{model:any, apiKey:string}>() }}
 
 fn name=buildModel params="config:ApiConfig" returns="any"
   doc "Create AI SDK model instance from ApiConfig — routes to openai-compatible or anthropic provider. Cached by baseUrl+model+format; invalidated if API key changes."
@@ -264,8 +263,7 @@ fn name=apiStreamDispatch generator=true async=true params="config:ApiConfig, pr
 // engine-registry also auto-normalizes format='anthropic' → 'openai' at load
 // time for non-Anthropic hosts, so this path should rarely fire in practice;
 // it's a belt-and-suspenders signal for engines registered programmatically.
-const name=_formatHintEmitted type="Set<string>"
-  handler <<< new Set<string>() >>>
+const name=_formatHintEmitted type="Set<string>" value={{ new Set<string>() }}
 
 fn name=formatMismatchHint params="config:ApiConfig" returns="string|null" export=false
   doc "Detect a common misconfiguration: format='anthropic' on a non-Anthropic base URL. Moonshot/Kimi/Groq/Together/DeepInfra etc. claim Anthropic compatibility loosely but actually serve OpenAI-shaped /chat/completions. Returns a one-line hint the first time we hit it for a given host, then null on subsequent calls for that host."

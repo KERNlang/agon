@@ -11,8 +11,7 @@ fn name=snapshotsDir returns=string export=false
     return join(home, 'snapshots');
   >>>
 
-const name=MAX_SNAPSHOTS type=number
-  handler <<< 50 >>>
+const name=MAX_SNAPSHOTS type=number value=50
 
 interface name=FileSnapshot
   field name=path type=string

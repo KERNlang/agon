@@ -11,9 +11,8 @@ fn name=getPasteStoreDir returns=string export=false
     return join(home, 'paste-cache');
   >>>
 
-const name=PASTE_MAX_AGE type=number
+const name=PASTE_MAX_AGE type=number value={{ 7 * 24 * 60 * 60 * 1000 }}
   doc "Max age in ms before cleanup removes a paste (7 days)"
-  handler <<< 7 * 24 * 60 * 60 * 1000 >>>
 
 interface name=PasteStoreResult
   field name=hash type=string

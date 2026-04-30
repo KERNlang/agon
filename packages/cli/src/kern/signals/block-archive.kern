@@ -7,11 +7,9 @@ import from="node:path" names="join,dirname"
 import from="@agon/core" names="RUNS_DIR"
 import from="../blocks/engine.js" names="OutputBlock" types=true
 
-const name=MAX_LIVE_BLOCKS type=number
-  handler <<< 500 >>>
+const name=MAX_LIVE_BLOCKS type=number value=500
 
-const name=ARCHIVE_BATCH type=number
-  handler <<< 100 >>>
+const name=ARCHIVE_BATCH type=number value=100
 
 fn name=makeBlockArchivePath params="sessionStartTime:number" returns=string
   doc "Per-session archive path under RUNS_DIR. Safe to call repeatedly — same sessionStartTime yields the same path."

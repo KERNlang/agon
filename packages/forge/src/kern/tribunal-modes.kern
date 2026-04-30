@@ -6,13 +6,9 @@ interface name=TribunalModeConfig
   field name=summaryStyle type="'verdict'|'questions'|'risk-register'|'decision-matrix'|'postmortem-report'"
   field name=maxRounds type=number
 
-const name=TRIBUNAL_MODES type="TribunalMode[]"
-  handler <<< ['adversarial', 'socratic', 'red-team', 'steelman', 'synthesis', 'postmortem'] >>>
+const name=TRIBUNAL_MODES type="TribunalMode[]" value={{ ['adversarial', 'socratic', 'red-team', 'steelman', 'synthesis', 'postmortem'] }}
 
-fn name=isTribunalMode params="s:string" returns="s is TribunalMode"
-  handler <<<
-    return TRIBUNAL_MODES.includes(s as TribunalMode);
-  >>>
+fn name=isTribunalMode params="s:string" returns="s is TribunalMode" expr={{ return TRIBUNAL_MODES.includes(s as TribunalMode); }}
 
 fn name=getModeConfig params="mode:TribunalMode, engineCount:number" returns="TribunalModeConfig"
   handler <<<

@@ -12,54 +12,28 @@ fn name=getAgonHome returns=string
     return override ? resolve(override) : join(homedir(), '.agon');
   >>>
 
-fn name=agonPath params="...parts:string[]" returns=string
+fn name=agonPath params="...parts:string[]" returns=string expr={{ return join(getAgonHome(), ...parts); }}
   doc "Build a path inside the active Agon storage root."
-  handler <<<
-    return join(getAgonHome(), ...parts);
-  >>>
 
-const name=AGON_HOME type=string
-  handler <<<
-    getAgonHome()
-  >>>
+const name=AGON_HOME type=string value={{ getAgonHome() }}
 
-const name=GLOBAL_CONFIG_PATH type=string
-  handler <<<
-    join(AGON_HOME, 'config.json')
-  >>>
+const name=GLOBAL_CONFIG_PATH type=string value={{ join(AGON_HOME, 'config.json') }}
 
-const name=ELO_PATH type=string
-  handler <<<
-    join(AGON_HOME, 'elo.json')
-  >>>
+const name=ELO_PATH type=string value={{ join(AGON_HOME, 'elo.json') }}
 
-const name=RUNS_DIR type=string
-  handler <<<
-    join(AGON_HOME, 'runs')
-  >>>
+const name=RUNS_DIR type=string value={{ join(AGON_HOME, 'runs') }}
 
-const name=RATINGS_PATH type=string
-  handler <<<
-    join(AGON_HOME, 'ratings.json')
-  >>>
+const name=RATINGS_PATH type=string value={{ join(AGON_HOME, 'ratings.json') }}
 
-const name=TEAM_ELO_PATH type=string
-  handler <<<
-    join(AGON_HOME, 'team-elo.json')
-  >>>
+const name=TEAM_ELO_PATH type=string value={{ join(AGON_HOME, 'team-elo.json') }}
 
-const name=CORPUS_PATH type=string
-  handler <<<
-    join(AGON_HOME, 'corpus.json')
-  >>>
+const name=CORPUS_PATH type=string value={{ join(AGON_HOME, 'corpus.json') }}
 
-const name=SKILLS_DIR type=string
-  handler <<<
-    join(AGON_HOME, 'skills')
-  >>>
+const name=SKILLS_DIR type=string value={{ join(AGON_HOME, 'skills') }}
 
-const name=LOCAL_CONFIG_NAME type=string value="'.agon.json'"
-const name=LOCAL_PRIVATE_CONFIG_NAME type=string value="'.agon.local.json'"
+const name=LOCAL_CONFIG_NAME type=string value={{ '.agon.json' }}
+
+const name=LOCAL_PRIVATE_CONFIG_NAME type=string value={{ '.agon.local.json' }}
 
 fn name=loadConfig params="cwd?:string" returns="Required<AgonConfig>"
   handler <<<
@@ -105,10 +79,7 @@ fn name=loadConfig params="cwd?:string" returns="Required<AgonConfig>"
     return merged;
   >>>
 
-fn name=configGet params="key:keyof AgonConfig,cwd?:string" returns="Required<AgonConfig>[keyof AgonConfig]"
-  handler <<<
-    return loadConfig(cwd)[key];
-  >>>
+fn name=configGet params="key:keyof AgonConfig,cwd?:string" returns="Required<AgonConfig>[keyof AgonConfig]" expr={{ return loadConfig(cwd)[key]; }}
 
 fn name=configSet params="key:keyof AgonConfig,value:AgonConfig[keyof AgonConfig]" returns=void
   handler <<<

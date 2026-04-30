@@ -24,15 +24,9 @@ const name=DANGEROUS_COMMANDS type="string[]"
     ]
   >>>
 
-const name=DANGEROUS_PREFIXES type="string[]"
-  handler <<<
-    ['sudo ', 'su ', 'doas ']
-  >>>
+const name=DANGEROUS_PREFIXES type="string[]" value={{ ['sudo ', 'su ', 'doas '] }}
 
-const name=SAFE_SHELL_WRAPPERS type="string[]"
-  handler <<<
-    ['timeout', 'time', 'nice', 'nohup', 'env', 'command']
-  >>>
+const name=SAFE_SHELL_WRAPPERS type="string[]" value={{ ['timeout', 'time', 'nice', 'nohup', 'env', 'command'] }}
 
 const name=READONLY_COMMANDS type="Set<string>"
   handler <<<
@@ -122,13 +116,9 @@ fn name=isReadOnlyCommand params="command:string" returns=boolean
 
 // ── Git-Dirty File Cache (for smart mode) ─────────────────────────
 
-const name=_gitDirtyCache type="{files:Set<string>|null,cwd:string|null,expiry:number}"
-  handler <<< { files: null as Set<string>|null, cwd: null as string|null, expiry: 0 } >>>
+const name=_gitDirtyCache type="{files:Set<string>|null,cwd:string|null,expiry:number}" value={{ { files: null as Set<string>|null, cwd: null as string|null, expiry: 0 } }}
 
-const name=GIT_DIRTY_CACHE_TTL type=number
-  handler <<<
-    2000  // 2 seconds
-  >>>
+const name=GIT_DIRTY_CACHE_TTL type=number value={{ 2000  // 2 seconds }}
 
 fn name=getGitDirtyFiles params="cwd:string" returns="Set<string>" export=true
   handler <<<

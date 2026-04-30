@@ -48,41 +48,23 @@ fn name=threadsDir returns=string export=false
     return join(home, 'threads');
   >>>
 
-fn name=activePointerPath returns=string export=false
-  handler <<<
-    return join(threadsDir(), 'active.json');
-  >>>
+fn name=activePointerPath returns=string export=false expr={{ return join(threadsDir(), 'active.json'); }}
 
-fn name=projectHash16 params="projectPath:string" returns=string export=true
+fn name=projectHash16 params="projectPath:string" returns=string export=true expr={{ return createHash('sha256').update(projectPath).digest('hex').slice(0, 16); }}
   doc "16-hex-char SHA256 prefix of an absolute project path. Keys threads per project. 16 chars = 64 bits, ~4B projects before 1% collision chance (red-team finding 11: 8 hex collides at 65k projects)."
-  handler <<<
-    return createHash('sha256').update(projectPath).digest('hex').slice(0, 16);
-  >>>
 
 // Deprecated alias kept for one release to allow external callers to migrate.
-fn name=projectSha8 params="projectPath:string" returns=string export=true
+fn name=projectSha8 params="projectPath:string" returns=string export=true expr={{ return projectHash16(projectPath); }}
   doc "DEPRECATED — use projectHash16. Kept as a thin alias for migration."
-  handler <<<
-    return projectHash16(projectPath);
-  >>>
 
-fn name=threadDirFor params="projectPath:string" returns=string
+fn name=threadDirFor params="projectPath:string" returns=string expr={{ return join(threadsDir(), projectHash16(projectPath)); }}
   doc "Absolute directory where threads for this project are stored."
-  handler <<<
-    return join(threadsDir(), projectHash16(projectPath));
-  >>>
 
 // Red-team finding 3: strict threadId regex. The only legal forms are 'thread_<ms>_<hex8>' (fresh IDs from the constructor) or a canonical uuid v4. Everything else is refused before the path is ever resolved.
-const name=THREAD_ID_RE type=RegExp
-  handler <<<
-    /^(thread_\d{10,16}_[0-9a-f]{8}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/
-  >>>
+const name=THREAD_ID_RE type=RegExp value={{ /^(thread_\d{10,16}_[0-9a-f]{8}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/ }}
 
-fn name=threadJournalPath params="projectPath:string,threadId:string" returns=string
+fn name=threadJournalPath params="projectPath:string,threadId:string" returns=string expr={{ return threadFilePath(projectPath, threadId).replace(/\.json$/, '.journal.jsonl'); }}
   doc "Path to the JSONL append journal for fast O(1) per-message writes. Parallel to the main JSON snapshot. On next full save(), the journal is merged and compacted."
-  handler <<<
-    return threadFilePath(projectPath, threadId).replace(/\.json$/, '.journal.jsonl');
-  >>>
 
 fn name=threadFilePath params="projectPath:string,threadId:string" returns=string
   doc "Absolute path for a thread's JSON file. Strictly validates threadId shape and asserts the resolved path stays inside the project's thread directory. Refuses any path traversal attempt or malformed id (red-team findings 2 + 3). Codex P1: uses path.sep alongside '/' so containment check works on Windows."
@@ -114,20 +96,11 @@ fn name=ensureThreadDir params="projectPath:string" returns=void
 // does the read-merge-write cycle, then releases. Concurrent writers
 // retry with exponential backoff rather than silently clobbering.
 
-const name=LOCK_MAX_RETRIES type=number
-  handler <<<
-    8
-  >>>
+const name=LOCK_MAX_RETRIES type=number value=8
 
-const name=LOCK_BASE_DELAY_MS type=number
-  handler <<<
-    20
-  >>>
+const name=LOCK_BASE_DELAY_MS type=number value=20
 
-fn name=threadLockPath params="projectPath:string,threadId:string" returns=string
-  handler <<<
-    return threadFilePath(projectPath, threadId) + '.lock';
-  >>>
+fn name=threadLockPath params="projectPath:string,threadId:string" returns=string expr={{ return threadFilePath(projectPath, threadId) + '.lock'; }}
 
 fn name=acquireLock params="lockPath:string" returns="Promise<number|null>" async=true
   doc "Try to acquire an O_EXCL lock file. Returns the fd on success, null after LOCK_MAX_RETRIES attempts. Exponential backoff with jitter between retries."
@@ -148,10 +121,7 @@ fn name=acquireLock params="lockPath:string" returns="Promise<number|null>" asyn
     return null; // give up after max retries
   >>>
 
-fn name=releaseLock params="lockPath:string" returns=void
-  handler <<<
-    try { unlinkSync(lockPath); } catch { /* already gone — ok */ }
-  >>>
+fn name=releaseLock params="lockPath:string" returns=void expr={{ try { unlinkSync(lockPath); } catch { /* already gone — ok */ } }}
 
 // ── Data types ───────────────────────────────────────────────────────
 
@@ -217,60 +187,39 @@ interface name=ThreadSnapshot
   field name=engineHead type="Record<string,string>"
   field name=fileTouches type="Record<string,FileTouch>"
 
-const name=SCHEMA_VERSION type=number
-  handler <<<
-    1
-  >>>
+const name=SCHEMA_VERSION type=number value=1
 
 // Hard message cap. With 1M context windows now standard across Codex,
 // Claude, Gemini, OpenCode+GLM, a day of coding with Cesar generates
 // ~200-400k tokens of session history — well within budget. Raised from
 // 500 to 2000 so full forge/brainstorm/tribunal decision trails survive
 // across a full working session without eviction.
-const name=MAX_MESSAGES_HARD_CAP type=number
-  handler <<<
-    2000
-  >>>
+const name=MAX_MESSAGES_HARD_CAP type=number value=2000
 
-const name=EVICT_TO type=number
-  handler <<<
-    1800
-  >>>
+const name=EVICT_TO type=number value=1800
 
 // Per-message truncation cap. Raised from 4000 to 30000 tokens so that
 // tool results (forge diffs, file reads, brainstorm reasoning) survive
 // verbatim in thread. With 1M context windows, truncating to 4k was
 // throwing away the most valuable information Cesar needs to not repeat
 // prior decisions or waste expensive runs.
-const name=MAX_PER_MESSAGE_TOKENS type=number
-  handler <<<
-    30000
-  >>>
+const name=MAX_PER_MESSAGE_TOKENS type=number value=30000
 
 // Keep-last-K: always include at least K recent messages verbatim.
 // Raised from 10 to 30 — with 1M windows and rich content per message,
 // there is room to give the engine far more recent context.
-const name=KEEP_LAST_K type=number
-  handler <<<
-    30
-  >>>
+const name=KEEP_LAST_K type=number value=30
 
 // Safety factor for token budget. Kept at 0.85 (slightly looser than 0.75)
 // since all engines now have 1M context and over-truncation is the greater
 // risk vs. marginally exceeding the rough estimate.
-const name=TOKEN_BUDGET_SAFETY_FACTOR type=number
-  handler <<<
-    0.85
-  >>>
+const name=TOKEN_BUDGET_SAFETY_FACTOR type=number value=0.85
 
 // Thread file size limit. Raised from 10MB to 100MB — with 30k tokens/msg
 // and 2000 message cap, a full day's session can legitimately reach 50MB.
 // At 100MB we're looking at pathological cases (binary content leaked in
 // despite redaction). Node's JSON.parse handles 100MB in ~300ms — acceptable.
-const name=MAX_THREAD_FILE_BYTES type=number
-  handler <<<
-    100 * 1024 * 1024
-  >>>
+const name=MAX_THREAD_FILE_BYTES type=number value={{ 100 * 1024 * 1024 }}
 
 // ── Secret redaction (red-team finding 1) ────────────────────────────
 //
@@ -1129,15 +1078,9 @@ fn name=saveActivePointer params="pointer:ActivePointerMap" returns=void
 // loadOrCreateActiveThread so we can flush them on process exit / SIGINT.
 // WeakRef prevents this registry from keeping threads alive past their
 // natural lifetime. The exit handler is registered once.
-const name=_exitFlushRegistry type="Set<WeakRef<any>>"
-  handler <<<
-    new Set<WeakRef<any>>()
-  >>>
+const name=_exitFlushRegistry type="Set<WeakRef<any>>" value={{ new Set<WeakRef<any>>() }}
 
-const name=_exitHandlerRegistered type="{value:boolean}"
-  handler <<<
-    { value: false }
-  >>>
+const name=_exitHandlerRegistered type="{value:boolean}" value={{ { value: false } }}
 
 fn name=_registerExitFlush params="thread:ContextThread" returns=void
   handler <<<

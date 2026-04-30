@@ -19,20 +19,11 @@ fn name=git params="args:string[],cwd?:string" returns=string export=false
     }
   >>>
 
-fn name=repoRoot params="cwd:string" returns=string
-  handler <<<
-    return git(['rev-parse', '--show-toplevel'], cwd);
-  >>>
+fn name=repoRoot params="cwd:string" returns=string expr={{ return git(['rev-parse', '--show-toplevel'], cwd); }}
 
-fn name=headSha params="cwd:string" returns=string
-  handler <<<
-    return git(['rev-parse', 'HEAD'], cwd);
-  >>>
+fn name=headSha params="cwd:string" returns=string expr={{ return git(['rev-parse', 'HEAD'], cwd); }}
 
-fn name=worktreePrune params="cwd:string" returns=void
-  handler <<<
-    git(['worktree', 'prune'], cwd);
-  >>>
+fn name=worktreePrune params="cwd:string" returns=void expr={{ git(['worktree', 'prune'], cwd); }}
 
 fn name=worktreeCreate params="repoDir:string,worktreePath:string,sha:string" returns=string
   handler <<<

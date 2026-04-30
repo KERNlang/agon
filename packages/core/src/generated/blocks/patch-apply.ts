@@ -29,13 +29,19 @@ export interface ApplyPreflight {
 }
 
 // @kern-source: patch-apply:20
+function normalizePatchContent(patchContent: string): string {
+  if (!patchContent.trim()) return patchContent;
+  return patchContent.endsWith('\n') ? patchContent : `${patchContent}\n`;
+}
+
+// @kern-source: patch-apply:26
 function getUndoDir(): string {
   const override = process.env.AGON_HOME?.trim();
   const home = override ? resolve(override) : join(homedir(), '.agon');
   return join(home, 'undo');
 }
 
-// @kern-source: patch-apply:27
+// @kern-source: patch-apply:33
 export function readPatchFromManifest(manifestPath: string): PatchInfo|null {
   try {
     const raw = readFileSync(manifestPath, 'utf-8');
@@ -43,7 +49,7 @@ export function readPatchFromManifest(manifestPath: string): PatchInfo|null {
     if (!manifest.winner) return null;
     const patchPath = manifest.patches[manifest.winner];
     if (!patchPath) return null;
-    const content = readFileSync(patchPath, 'utf-8');
+    const content = normalizePatchContent(readFileSync(patchPath, 'utf-8'));
     const lineCount = content.split('\n').filter(
       (l: string) => (l.startsWith('+') && !l.startsWith('+++')) || (l.startsWith('-') && !l.startsWith('---'))
     ).length;
@@ -54,10 +60,10 @@ export function readPatchFromManifest(manifestPath: string): PatchInfo|null {
   }
 }
 
-// @kern-source: patch-apply:46
+// @kern-source: patch-apply:52
 export function readPatchFromPath(patchPath: string): PatchInfo|null {
   try {
-    const content = readFileSync(patchPath, 'utf-8');
+    const content = normalizePatchContent(readFileSync(patchPath, 'utf-8'));
     if (!content.trim()) return null;
     const lineCount = content.split('\n').filter(
       (l: string) => (l.startsWith('+') && !l.startsWith('+++')) || (l.startsWith('-') && !l.startsWith('---'))
@@ -69,7 +75,7 @@ export function readPatchFromPath(patchPath: string): PatchInfo|null {
   }
 }
 
-// @kern-source: patch-apply:61
+// @kern-source: patch-apply:67
 export function isTreeDirty(cwd: string): boolean {
   try {
     const result = execSync('git status --porcelain', { cwd, encoding: 'utf-8' });
@@ -80,10 +86,10 @@ export function isTreeDirty(cwd: string): boolean {
   }
 }
 
-// @kern-source: patch-apply:72
+// @kern-source: patch-apply:78
 export function dryRunApply(cwd: string, patchContent: string): { ok:boolean, error?:string } {
   try {
-    execSync('git apply --check -', { cwd, input: patchContent, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
+    execSync('git apply --check -', { cwd, input: normalizePatchContent(patchContent), encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
     return { ok: true };
   } catch (err) {
     const msg = err instanceof Error ? (err as any).stderr || err.message : String(err);
@@ -91,10 +97,10 @@ export function dryRunApply(cwd: string, patchContent: string): { ok:boolean, er
   }
 }
 
-// @kern-source: patch-apply:83
+// @kern-source: patch-apply:89
 export function applyPatchToTree(cwd: string, patchContent: string): { ok:boolean, error?:string } {
   try {
-    execSync('git apply --allow-empty -', { cwd, input: patchContent, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
+    execSync('git apply --allow-empty -', { cwd, input: normalizePatchContent(patchContent), encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
     return { ok: true };
   } catch (err) {
     const msg = err instanceof Error ? (err as any).stderr || err.message : String(err);
@@ -102,7 +108,7 @@ export function applyPatchToTree(cwd: string, patchContent: string): { ok:boolea
   }
 }
 
-// @kern-source: patch-apply:94
+// @kern-source: patch-apply:100
 export function preflightApply(cwd: string, patchPath: string|null, manifestPath: string|null): ApplyPreflight {
   const dirtyTree = isTreeDirty(cwd);
 
@@ -132,7 +138,7 @@ export function preflightApply(cwd: string, patchPath: string|null, manifestPath
 /**
  * Apply patch and save an inverse for undo.
  */
-// @kern-source: patch-apply:121
+// @kern-source: patch-apply:127
 export function applyPatchWithUndo(cwd: string, patchContent: string): { ok:boolean, error?:string, undoToken?:string } {
   const undoDir = getUndoDir();
   mkdirSync(undoDir, { recursive: true });
@@ -143,7 +149,7 @@ export function applyPatchWithUndo(cwd: string, patchContent: string): { ok:bool
 
   // Apply the patch
   try {
-    execSync('git apply --allow-empty -', { cwd, input: patchContent, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
+    execSync('git apply --allow-empty -', { cwd, input: normalizePatchContent(patchContent), encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
   } catch (err) {
     const msg = err instanceof Error ? (err as any).stderr || err.message : String(err);
     return { ok: false, error: msg };
@@ -161,7 +167,7 @@ export function applyPatchWithUndo(cwd: string, patchContent: string): { ok:bool
 /**
  * Apply the saved inverse patch to undo a previous apply.
  */
-// @kern-source: patch-apply:148
+// @kern-source: patch-apply:154
 export function undoPatch(cwd: string, undoToken: string): { ok:boolean, error?:string } {
   const undoDir = getUndoDir();
   const inversePath = join(undoDir, `${undoToken}.patch`);
@@ -174,7 +180,7 @@ export function undoPatch(cwd: string, undoToken: string): { ok:boolean, error?:
   }
 
   try {
-    execSync('git apply --allow-empty -', { cwd, input: inverse, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
+    execSync('git apply --allow-empty -', { cwd, input: normalizePatchContent(inverse), encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
     return { ok: true };
   } catch (err) {
     const msg = err instanceof Error ? (err as any).stderr || err.message : String(err);

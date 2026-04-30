@@ -4,4 +4,4 @@ export { handleCesarBrain, yieldToInk, buildReviewFollowupPrompt, detectNarrated
 export { parseConfidence, confidenceBadge, CONFIDENCE_TIERS } from '../generated/cesar/confidence.js';
 export { parseSuggestion } from '../generated/cesar/suggestion.js';
 export { ensureCesarSession, CESAR_SYSTEM_PROMPT } from '../generated/cesar/session.js';
-export { cesarJudgeForge, cesarConvergeForge } from '../generated/cesar/judge.js';
+export { cesarJudgeForge, cesarConvergeForge, cesarReviewForgeOutcome } from '../generated/cesar/judge.js';

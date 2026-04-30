@@ -52,6 +52,142 @@ fn name=parseForgeJudgment params="response:string, manifest:ForgeManifest" retu
     return { winner, strengths, convergencePlan, summary, shouldConverge };
   >>>
 
+fn name=cesarReviewForgeOutcome async=true params="manifest:ForgeManifest, dispatch:Dispatch, ctx:HandlerContext" returns="Promise<void>"
+  doc "Run after every forge — narrate the outcome to the user via Cesar so the user always knows what happened. Handles error / already-satisfied / single-survivor / normal multi-pass states. For multi-pass, defers to cesarJudgeForge for full judgment. For single-survivor, asks Cesar to read the surviving patch and recommend accept-or-retry. For error, asks Cesar to explain the failure plainly."
+  handler <<<
+    let session;
+    try { session = await ensureCesarSession(ctx); }
+    catch { return; }
+    if (!session.alive) return;
+
+    const cesarEngineId = ((ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude');
+    const color = ENGINE_COLORS[cesarEngineId] ?? 124;
+
+    // ── Fatal forge error ────────────────────────────────────────────
+    if (manifest.error) {
+      const skippedDetail = manifest.engines.length > 0
+        ? `Engines configured: ${manifest.engines.join(', ')}.`
+        : 'No engines were dispatched.';
+      const errorPrompt = `The forge run failed before producing a winner.\n\nTASK: ${manifest.task}\nFITNESS COMMAND: ${manifest.fitnessCmd}\nERROR: ${manifest.error}\n${skippedDetail}\n\nIn 2-3 sentences, explain to the user what went wrong and the most likely fix (refresh API keys, install a CLI, check git state, etc.). Be specific and actionable. Do not pad. End with a confidence percentage on whatever fix you suggest.`;
+      dispatch({ type: 'spinner-start', message: 'Cesar reading forge failure…', color });
+      let response = '';
+      try {
+        const gen = session.send({ message: errorPrompt, signal: undefined });
+        for await (const chunk of gen) {
+          if (chunk.type === 'text') response += chunk.content;
+          if (chunk.type === 'done' || chunk.type === 'error') break;
+        }
+      } catch { /* swallow — we already showed a static warning */ }
+      dispatch({ type: 'spinner-stop' });
+      if (response.trim()) {
+        dispatch({ type: 'header', title: 'Cesar — Forge Failure' });
+        dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: response.trim() });
+      }
+      return;
+    }
+
+    // ── Already satisfied ────────────────────────────────────────────
+    if (manifest.alreadySatisfied) {
+      const satisfiedPrompt = `The forge baseline check passed before any engine ran. The task says: ${manifest.task}. The fitness command "${manifest.fitnessCmd}" already passes on a clean checkout. In 1-2 sentences, confirm to the user that the task appears already done and suggest next steps (verify, move on, or re-check if the fitness command is too lenient). End with a confidence percentage.`;
+      dispatch({ type: 'spinner-start', message: 'Cesar confirming task state…', color });
+      let response = '';
+      try {
+        const gen = session.send({ message: satisfiedPrompt, signal: undefined });
+        for await (const chunk of gen) {
+          if (chunk.type === 'text') response += chunk.content;
+          if (chunk.type === 'done' || chunk.type === 'error') break;
+        }
+      } catch { /* swallow */ }
+      dispatch({ type: 'spinner-stop' });
+      if (response.trim()) {
+        dispatch({ type: 'header', title: 'Cesar — Already Satisfied' });
+        dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: response.trim() });
+      }
+      return;
+    }
+
+    // ── Single survivor ─────────────────────────────────────────────
+    if (manifest.singleSurvivor && manifest.winner) {
+      const winnerId = manifest.winner;
+      const winnerResult = (manifest.results as any)[winnerId];
+      let winnerPatch = '';
+      const winnerPatchPath = manifest.patches[winnerId];
+      if (winnerPatchPath) {
+        try {
+          const fullPatch = readFileSync(winnerPatchPath, 'utf-8');
+          const lines = fullPatch.split('\n');
+          winnerPatch = lines.slice(0, 200).join('\n');
+          if (lines.length > 200) winnerPatch += `\n... (${lines.length - 200} more lines)`;
+        } catch { winnerPatch = '(patch file unreadable)'; }
+      }
+      const failedList = Object.entries(manifest.results as any)
+        .filter(([id, r]) => id !== winnerId && !(r as any).pass)
+        .map(([id, r]) => `- ${id}: ${(r as any).durationSec}s, ${(r as any).diffLines ?? 0} lines, ${(r as any).pass ? 'passed' : 'failed'}`)
+        .join('\n');
+
+      const survivorPrompt = `Forge produced exactly one passing result. The other engines failed.
+
+TASK: ${manifest.task}
+FITNESS COMMAND: ${manifest.fitnessCmd}
+SOLE SURVIVOR: ${winnerId} (score: ${winnerResult?.score ?? 0})
+OTHER ENGINES:
+${failedList || '(none reported)'}
+
+## SURVIVING PATCH (first 200 lines)
+
+\`\`\`diff
+${winnerPatch}
+\`\`\`
+
+Read the patch carefully. Tell the user:
+1. **Quality verdict** — does this look like a competent solution to the task? Note specific concerns or strengths.
+2. **Recommendation** — accept this patch, or run /forge again hoping for more engines? Be specific about why.
+3. **Apply hint** — if accept-worthy, give the exact path: ${winnerPatchPath ?? '(no patch path)'}
+
+End with a confidence percentage. Don't pad.`;
+
+      dispatch({ type: 'spinner-start', message: `Cesar reviewing ${winnerId}'s solo solution…`, color });
+      let response = '';
+      try {
+        const gen = session.send({ message: survivorPrompt, signal: undefined });
+        for await (const chunk of gen) {
+          if (chunk.type === 'text') response += chunk.content;
+          if (chunk.type === 'done' || chunk.type === 'error') break;
+        }
+      } catch { /* swallow */ }
+      dispatch({ type: 'spinner-stop' });
+      if (response.trim()) {
+        dispatch({ type: 'header', title: `Cesar — Single Survivor (${winnerId})` });
+        dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: response.trim() });
+      }
+      return;
+    }
+
+    // ── No winner at all (every engine failed and not all-no-op) ────
+    if (!manifest.winner) {
+      const noWinnerPrompt = `Forge dispatched ${manifest.enginesDispatched} engine(s) and none produced a passing result for: ${manifest.task}\n\nFitness command: ${manifest.fitnessCmd}\n\nEngine outcomes:\n${Object.entries(manifest.results as any).map(([id, r]) => `- ${id}: pass=${(r as any).pass}, score=${(r as any).score}, ${(r as any).diffLines ?? 0} lines`).join('\n')}\n\nIn 2-3 sentences, tell the user the most likely root cause (task too vague, fitness too strict, engines lacking context, etc.) and one concrete next move. End with a confidence percentage.`;
+      dispatch({ type: 'spinner-start', message: 'Cesar diagnosing forge failure…', color });
+      let response = '';
+      try {
+        const gen = session.send({ message: noWinnerPrompt, signal: undefined });
+        for await (const chunk of gen) {
+          if (chunk.type === 'text') response += chunk.content;
+          if (chunk.type === 'done' || chunk.type === 'error') break;
+        }
+      } catch { /* swallow */ }
+      dispatch({ type: 'spinner-stop' });
+      if (response.trim()) {
+        dispatch({ type: 'header', title: 'Cesar — No Winner' });
+        dispatch({ type: 'engine-block', engineId: cesarEngineId, color, content: response.trim() });
+      }
+      return;
+    }
+
+    // ── Normal multi-pass: defer to existing judge for full verdict ──
+    // (Caller can still invoke cesarJudgeForge separately if it wants the
+    // structured judgment with strengths + convergence plan.)
+  >>>
+
 fn name=cesarJudgeForge async=true params="manifest:ForgeManifest, dispatch:Dispatch, ctx:HandlerContext" returns="Promise<ForgeJudgment|null>"
   doc "Send forge results to Cesar for judgment + convergence plan."
   handler <<<

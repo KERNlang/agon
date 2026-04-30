@@ -1852,6 +1852,23 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
     case 'cp': handleCp(intent.index, cb.dispatch); break;
     case 'commit': await handleCommit(intent.input, cb.dispatch, cb.ctx); break;
 
+    case 'toggleAutoCredit': {
+      const desired = intent.autoCredit ?? false;
+      const current = cb.ctx.config.autoCredit ?? true;
+      if (desired === current) {
+        cb.dispatch({ type: 'info', message: `autoCredit is already ${current ? 'ON' : 'OFF'}.` });
+        break;
+      }
+      const answer = await cb.ctx.askQuestion(`Soll ich die automatische Co-Author-Zeile (autoCredit) ${desired ? 'einschalten' : 'ausschalten'}? (j/n)`);
+      if (answer.trim().toLowerCase() === 'j' || answer.trim().toLowerCase() === 'y') {
+        configSet('autoCredit', desired);
+        cb.dispatch({ type: 'success', message: `autoCredit ${desired ? 'eingeschaltet' : 'ausgeschaltet'}.` });
+      } else {
+        cb.dispatch({ type: 'info', message: 'autoCredit unverändert.' });
+      }
+      break;
+    }
+
     case 'undo': {
       const cwd = resolveWorkingDir();
       const snapshotId = String((intent as any).snapshotId ?? '').trim();
@@ -2629,7 +2646,7 @@ export async function dispatchIntent(intent: any, input: string, cb: DispatchCal
 /**
  * Activate a proposed Cesar plan. Auto-approved plans execute immediately; manual approval is intentionally non-blocking so the REPL returns to idle and accepts go, yes, or /approve through the normal composer.
  */
-// @kern-source: dispatch:2547
+// @kern-source: dispatch:2564
 export async function handleProposedCesarPlan(proposed: CesarPlan, cb: DispatchCallbacks): Promise<void> {
   if (cb.ctx.cesar) cb.ctx.cesar.proposedPlan = undefined;
 
@@ -2676,7 +2693,7 @@ export async function handleProposedCesarPlan(proposed: CesarPlan, cb: DispatchC
 /**
  * Build executor callbacks. Holds a closure on the latest plan reference (mutated via onPlanUpdate) so step lookups always see appended steps like the auto-review cycle (tribunal fix #10). FU-3: persistence is debounced 300ms to avoid the sync-write storm Doppelganger flagged — onPlanUpdate fires once per step in a hot loop, but the disk write happens at most ~3x/sec. Terminal states (done/paused/cancelled) flush immediately so the .md/.json on disk reflect the final state. Callers should invoke .flush() before exit to drain any pending write.
  */
-// @kern-source: dispatch:2597
+// @kern-source: dispatch:2614
 export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks): any {
   let currentPlan = initialPlan;
   let pendingWriteTimer: ReturnType<typeof setTimeout> | null = null;
@@ -2806,7 +2823,7 @@ export function buildPlanCallbacks(initialPlan: CesarPlan, cb: DispatchCallbacks
 /**
  * Return true when a failed plan step looks like it was interrupted by stall/fallback handling rather than a semantic task failure.
  */
-// @kern-source: dispatch:2725
+// @kern-source: dispatch:2742
 export function failedPlanStepIsFallbackRetryable(step: any): boolean {
   if (!step || step.state !== 'failed') return false;
   const result = step.result ?? {};
@@ -2818,7 +2835,7 @@ export function failedPlanStepIsFallbackRetryable(step: any): boolean {
 /**
  * Reset one retryable failed plan step and bind it to the fallback engine. The caller runs executePlan again with a fresh abort controller.
  */
-// @kern-source: dispatch:2735
+// @kern-source: dispatch:2752
 export function preparePlanFallbackRetry(plan: CesarPlan, fallbackEngine: string): CesarPlan|null {
   const engine = String(fallbackEngine ?? '').trim();
   if (!engine || !Array.isArray(plan.steps)) return null;
@@ -2858,7 +2875,7 @@ export function preparePlanFallbackRetry(plan: CesarPlan, fallbackEngine: string
 /**
  * FU-4: shared executor for the auto-approve, manual-approve, and plan-resume paths. Wires the abort controller, builds callbacks (with debounced persistence), runs executePlan, runs finalizePlanWithReviewGate, and dispatches the terminal status. Eliminates the ~60 lines of triplication that lived in dispatch.kern and forced future changes (e.g., new callback hooks, new finalize behavior) to be applied to all three sites.
  */
-// @kern-source: dispatch:2773
+// @kern-source: dispatch:2790
 export async function executeApprovedPlan(approved: CesarPlan, cb: DispatchCallbacks): Promise<void> {
   const executors = buildStepExecutors(cb.ctx, cb.dispatch);
   let abortController = new AbortController();
@@ -2929,7 +2946,7 @@ export async function executeApprovedPlan(approved: CesarPlan, cb: DispatchCallb
 /**
  * Single source of truth for the post-execution self-review gate. Called from BOTH the plan-task and plan-resume terminal paths so resume cannot bypass the gate or the cycle cap (tribunal fix #4).
  */
-// @kern-source: dispatch:2842
+// @kern-source: dispatch:2859
 export async function finalizePlanWithReviewGate(finalPlan: CesarPlan, executors: Record<string,StepExecutor>, abortSignal: AbortSignal, cb: DispatchCallbacks): Promise<CesarPlan> {
   const MUTATING = new Set(['forge', 'teamforge', 'pipeline', 'agent', 'team-agent', 'delegate', 'self']);
   const planTouchedMutation = finalPlan.steps.some((s: any) => MUTATING.has(s.type) && (s.state === 'done' || s.state === 'failed'));

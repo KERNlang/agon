@@ -2,7 +2,7 @@ import from="node:fs" names="readFileSync,existsSync"
 import from="@agon/core" names="EngineAdapter,EngineResult,ForgeManifest,Critique,StageContext" types=true
 import from="@agon/core" names="EngineRegistry,FitnessError,buildCritiquePrompt,buildSynthesisPrompt,worktreeCreate,worktreeRemoveBestEffort,applyPatch,buildStageContext,renderStageContext"
 import from="./fitness.js" names="runFitness"
-import from="../types.js" names="SynthesisResult,ForgeEventCallback" types=true
+import from="../types.js" names="SynthesisResult,ForgeEventCallback,WorktreeEntry" types=true
 
 fn name=parseCritiques params="output:string" returns="Critique[]"
   handler <<<
@@ -32,7 +32,7 @@ fn name=parseCritiques params="output:string" returns="Critique[]"
     }
   >>>
 
-fn name=runSynthesis async=true params="opts:{manifest:ForgeManifest, winner:string, losers:string[], registry:EngineRegistry, adapter:EngineAdapter, forgeDir:string, fitnessCmd:string, timeout:number, fitnessTimeout:number, maxCritiques:number, repoRoot:string, headSha:string, onEvent?:ForgeEventCallback}" returns="Promise<SynthesisResult>"
+fn name=runSynthesis async=true params="opts:{manifest:ForgeManifest, winner:string, losers:string[], registry:EngineRegistry, adapter:EngineAdapter, forgeDir:string, fitnessCmd:string, timeout:number, fitnessTimeout:number, maxCritiques:number, repoRoot:string, headSha:string, worktrees?:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal}" returns="Promise<SynthesisResult>"
   handler <<<
     const { manifest, winner, losers, registry, adapter, forgeDir } = opts;
 
@@ -41,6 +41,21 @@ fn name=runSynthesis async=true params="opts:{manifest:ForgeManifest, winner:str
       throw new FitnessError('Winner has no patch path — cannot synthesize');
     }
     const winnerPatch = readFileSync(winnerResult.patchPath, 'utf-8');
+    // Bail early on empty patches — synthesis can't refine zero changes, and
+    // applyPatch would silently no-op leaving synthesis on a clean checkout
+    // that re-runs fitness against the baseline. Wasted compute with a
+    // misleading "synthesis didn't improve" outcome.
+    if (!winnerPatch.trim()) {
+      opts.onEvent?.({ type: 'synthesis:done', data: { wins: false, score: winnerResult.score, originalScore: winnerResult.score } });
+      return {
+        pass: winnerResult.pass,
+        score: winnerResult.score,
+        wins: false,
+        patchPath: winnerResult.patchPath,
+        originalWinnerScore: winnerResult.score,
+        critiques: [],
+      };
+    }
 
     opts.onEvent?.({ type: 'synthesis:start' });
 
@@ -97,6 +112,7 @@ fn name=runSynthesis async=true params="opts:{manifest:ForgeManifest, winner:str
           mode: 'review',
           timeout: opts.timeout,
           outputDir: forgeDir,
+          signal: opts.signal,
         });
         return parseCritiques(result.stdout);
       } catch (err) {
@@ -125,6 +141,11 @@ fn name=runSynthesis async=true params="opts:{manifest:ForgeManifest, winner:str
 
     try {
       worktreeCreate(opts.repoRoot, synthWtPath, opts.headSha);
+      // Register the synth worktree in the shared cleanup list when provided —
+      // if this function is killed between worktreeCreate and the finally below
+      // (or the host process is hard-killed), the outer forge cleanup still
+      // catches the orphan.
+      opts.worktrees?.push({ engineId: 'synthesis', path: synthWtPath, repoRoot: opts.repoRoot });
       applyPatch(synthWtPath, winnerPatch);
 
       const synthPrompt = buildSynthesisPrompt({
@@ -143,6 +164,7 @@ fn name=runSynthesis async=true params="opts:{manifest:ForgeManifest, winner:str
           mode: 'agent',
           timeout: opts.timeout,
           outputDir: forgeDir,
+          signal: opts.signal,
         });
       } else {
         await adapter.dispatch({
@@ -152,6 +174,7 @@ fn name=runSynthesis async=true params="opts:{manifest:ForgeManifest, winner:str
           mode: 'exec',
           timeout: opts.timeout,
           outputDir: forgeDir,
+          signal: opts.signal,
         });
       }
 

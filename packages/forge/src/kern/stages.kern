@@ -1,6 +1,6 @@
 import from="node:path" names="join"
 import from="@agon/core" names="EngineAdapter,EngineResult,ForgeOptions,AgonConfig,DispatchMetric,StageContext" types=true
-import from="@agon/core" names="EngineRegistry,worktreeCreate,worktreeRemoveBestEffort,repoRoot,worktreeDiff,estimateTokens,estimateCost,buildStageContext,renderStageContext"
+import from="@agon/core" names="EngineRegistry,worktreeCreate,worktreeRemoveBestEffort,repoRoot,worktreeDiff,estimateTokens,estimateCost,buildStageContext,renderStageContext,engineHealth"
 import from="./fitness.js" names="runFitness"
 import from="../types.js" names="StageResult,ForgeEventCallback,WorktreeEntry" types=true
 
@@ -34,13 +34,15 @@ fn name=makeFailedResult params="engineId:string,error:string,durationMs?:number
   >>>
 
 fn name=selectForgeFallbackEngine params="registry:EngineRegistry,sourceId:string,taskClass?:string,usedIds?:string[]" returns="string|null" export=true
-  doc "Pick a one-shot fallback engine for a failed forge dispatch, excluding engines already used in this run slice."
+  doc "Pick a one-shot fallback engine for a failed forge dispatch, excluding engines already used in this run slice. Skips engines that have been session-quarantined for auth-failed or unreachable — retrying a known-bad engine just burns time."
   handler <<<
     const used = new Set<string>(usedIds ?? []);
     used.add(sourceId);
     const chain = registry.getFallbackChain(sourceId, taskClass);
     for (const id of chain) {
       if (used.has(id)) continue;
+      const health = engineHealth.get(id);
+      if (health && (health.status === 'auth-failed' || health.status === 'unreachable')) continue;
       try {
         const engine = registry.get(id);
         if (registry.isAvailable(engine)) return id;

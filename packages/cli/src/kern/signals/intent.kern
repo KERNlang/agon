@@ -31,6 +31,7 @@ interface name=Intent
   field name=commandName type="string|undefined"
   field name=turnId type="string|undefined"
   field name=autoMode type="boolean|undefined"
+  field name=autoCredit type="boolean|undefined"
 
 const name=SLASH_COMMANDS type="SlashCommand[]"
   handler <<<
@@ -118,6 +119,11 @@ const name=CODE_TASK_PATTERN type=RegExp value={{ /^(fix|add|implement|refactor|
 const name=CODE_ARTIFACT_PATTERN type=RegExp value={{ /(?:at \w+.*:\d+|\.[tj]sx?\b|\.[a-z]{2,4}:\d+|^[+-]{3}\s)/m }}
 
 const name=AGENT_TRIGGER_PATTERN type=RegExp value={{ /^(?:agent(?:\s+mode)?|autonomous(?:\s+agent)?|run\s+agent)\s+([\s\S]+)$/i }}
+
+// German natural-language phrases that signal the user wants to toggle autoCredit
+const name=AUTOCREDIT_OFF_KEYWORDS type=RegExp value={{ /\b(?:schalt(?:e|)?\s+(?:das|es|autoCredit)\s+ab|mach(?:e|)?\s+(?:das|es|autoCredit)\s+(?:aus|weg)|das\s+nervt|(?:autoCredit|co[\s-]?authored?|contributor)\s+(?:aus|ab|weg|nervt))\b/i }}
+
+const name=AUTOCREDIT_ON_KEYWORDS type=RegExp value={{ /\b(?:schalt(?:e|)?\s+(?:das|es|autoCredit)\s+an|mach(?:e|)?\s+(?:das|es|autoCredit)\s+an|(?:autoCredit|co[\s-]?authored?|contributor)\s+an)\b/i }}
 
 const name=KNOWN_COLLAB_ENGINE_IDS type="Set<string>"
   handler <<<
@@ -680,6 +686,14 @@ fn name=detectIntent params="raw:string, commandRegistry?:any" returns=Intent
 
     const delegationShortcut = parseSemanticDelegationShortcut(input);
     if (delegationShortcut) return delegationShortcut;
+
+    // Natural-language toggle for autoCredit (German + English)
+    if (AUTOCREDIT_OFF_KEYWORDS.test(input)) {
+      return { type: 'toggleAutoCredit', autoCredit: false, input } as Intent;
+    }
+    if (AUTOCREDIT_ON_KEYWORDS.test(input)) {
+      return { type: 'toggleAutoCredit', autoCredit: true, input } as Intent;
+    }
 
     // Only match keyword shortcuts for short, command-like inputs.
     // Skip if input looks like a natural language sentence (question words, pronouns, >4 words).

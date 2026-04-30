@@ -1,7 +1,7 @@
 import from="node:crypto" names="randomUUID"
 import from="node:fs" names="mkdirSync,writeFileSync,readFileSync"
 import from="@agon/core" names="ForgeOptions,ForgeManifest,EngineAdapter,ForgeEvent,AgonConfig,DispatchMetric" types=true
-import from="@agon/core" names="EngineRegistry,loadConfig,buildForgePrompt,repoRoot,stashSnapshot,worktreeRemoveBestEffort,updateGlickoRanked,classifyTask,createSidechainLogger,assignForgeRoles,buildSpecializedPrompt,recordForgeOutcome,extractPatchFilePatterns,tracker"
+import from="@agon/core" names="EngineRegistry,loadConfig,buildForgePrompt,repoRoot,stashSnapshot,worktreeRemoveBestEffort,updateGlickoRanked,classifyTask,createSidechainLogger,assignForgeRoles,buildSpecializedPrompt,recordForgeOutcome,extractPatchFilePatterns,tracker,engineHealth"
 import from="./stages.js" names="runBaseline,runStage1,runStage2"
 import from="@agon/core" names="determineWinner"
 import from="./synthesis.js" names="runSynthesis"
@@ -55,7 +55,11 @@ fn name=writeForgeResultBundle params="manifest:ForgeManifest, worktrees:Worktre
     const bundle = {
       type: 'forge',
       forgeId: manifest.forgeId,
-      status: errorMessage ? 'failed' : (manifest.winner ? 'completed' : 'no-winner'),
+      status: errorMessage
+        ? 'failed'
+        : (manifest.alreadySatisfied
+            ? 'already-satisfied'
+            : (manifest.winner ? 'completed' : 'no-winner')),
       winner: manifest.winner,
       failedEngines,
       task: manifest.task,
@@ -119,6 +123,22 @@ fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistr
     const forgeDir = options.forgeDir;
     const worktrees: WorktreeEntry[] = [];
 
+    // Internal abort controller — fires before worktree cleanup so any
+    // in-flight engine dispatches get SIGTERM/SIGKILL'd through their own
+    // spawnWithTimeout signal handlers BEFORE we yank the directories
+    // from underneath them. Forwards the external user signal into
+    // forgeAbort so EITHER trigger aborts the dispatches without needing
+    // AbortSignal.any (which kern-guard rejects as an undeclared reference).
+    const forgeAbort = new AbortController();
+    if (options.signal) {
+      if (options.signal.aborted) {
+        forgeAbort.abort();
+      } else {
+        options.signal.addEventListener('abort', () => forgeAbort.abort(), { once: true });
+      }
+    }
+    const forgeSignal = forgeAbort.signal;
+
     mkdirSync(forgeDir, { recursive: true });
 
     // Sidechain audit trail — every forge event logged as JSONL
@@ -152,6 +172,10 @@ fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistr
         starter: 'none',
         enginesDispatched: 0,
       };
+      // Persist error onto the manifest BEFORE writing — otherwise the
+      // saved manifest.json is missing the failure context that resume/
+      // inspection tools rely on.
+      manifest.error = error;
       try {
         writeForgeResultBundle(manifest, worktrees, options, root, sha, sidechain.path, error);
         writeManifest(manifest);
@@ -159,22 +183,40 @@ fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistr
       } catch (bundleErr) {
         console.warn(`[agon] forge result bundle write failed: ${bundleErr instanceof Error ? bundleErr.message : String(bundleErr)}`);
       }
-      throw err;
+      // Never throw — return the manifest with error set so callers can branch
+      // on data instead of try/catch. A failed forge is a result, not a crash.
+      onEvent?.({ type: 'forge:fatal', data: { phase: 'preflight', error } });
+      return manifest;
     }
 
     const enabledEngines = options.engines ?? config.forgeEnabledEngines;
+    const skippedQuarantine: Array<{ id: string; reason: string; status: string }> = [];
     const available = enabledEngines.filter((id: string) => {
       try {
         const engine = registry.get(id);
         // API-only engines participate via runApiAgentLoop in dispatchAgent.
         // But only if they have an api config — engines with neither binary nor api can't forge.
         if (!engine.binary && !engine.api) return false;
-        return registry.isAvailable(engine);
+        if (!registry.isAvailable(engine)) return false;
+        // Skip engines previously quarantined this session for auth/unreachable failures.
+        // Timeouts and generic failures stay in rotation — they may be transient.
+        const health = engineHealth.get(id);
+        if (health && (health.status === 'auth-failed' || health.status === 'unreachable')) {
+          skippedQuarantine.push({ id, reason: health.reason, status: health.status });
+          return false;
+        }
+        return true;
       } catch (err) {
         console.warn(`[agon] engine availability check failed for ${id}: ${err instanceof Error ? err.message : String(err)}`);
         return false;
       }
     });
+    if (skippedQuarantine.length > 0) {
+      for (const skip of skippedQuarantine) {
+        console.warn(`[agon] forge: skipping ${skip.id} (${skip.status} — ${skip.reason || 'unknown'})`);
+        onEvent?.({ type: 'forge:engine-skipped', data: { engineId: skip.id, status: skip.status, reason: skip.reason } });
+      }
+    }
 
     if (available.length === 0) {
       const error = `No available engines for forge. Install/configure at least one CLI or API engine. Enabled: ${enabledEngines.join(', ')}`;
@@ -194,6 +236,7 @@ fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistr
         starter: 'none',
         enginesDispatched: 0,
       };
+      manifest.error = error;
       try {
         writeForgeResultBundle(manifest, worktrees, options, root, sha, sidechain.path, error);
         writeManifest(manifest);
@@ -201,7 +244,8 @@ fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistr
       } catch (bundleErr) {
         console.warn(`[agon] forge result bundle write failed: ${bundleErr instanceof Error ? bundleErr.message : String(bundleErr)}`);
       }
-      throw new Error(error);
+      onEvent?.({ type: 'forge:no-engines-available', data: { enabled: enabledEngines, skipped: skippedQuarantine.map(s => s.id) } });
+      return manifest;
     }
 
     const starter = options.starter
@@ -278,6 +322,22 @@ fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistr
           forgeDir,
           onEvent,
         });
+        // Already-satisfied short-circuit: if the fitness command already passes
+        // on a clean checkout, dispatching engines is wasted compute — every
+        // engine will correctly produce a zero-byte patch and forge would
+        // declare "no-winner" against a non-discriminating test. Emit a distinct
+        // status so callers (plan-step orchestrator, /forge) can treat this as
+        // success instead of failure.
+        if (manifest.baselinePasses) {
+          manifest.alreadySatisfied = true;
+          manifest.dispatchLog = [];
+          writeForgeResultBundle(manifest, worktrees, options, root, sha, sidechain.path);
+          writeManifest(manifest);
+          sidechain.log('forge:already-satisfied', undefined, { baselinePasses: true });
+          onEvent?.({ type: 'forge:already-satisfied', data: { baselinePasses: true } });
+          onEvent?.({ type: 'forge:done', data: { alreadySatisfied: true } });
+          return manifest;
+        }
       }
 
       const shouldRunStarterGate = available.length === 1;
@@ -294,7 +354,7 @@ fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistr
             forgeDir,
             worktrees,
             onEvent,
-            signal: options.signal,
+            signal: forgeSignal,
             taskClass,
             enginePrompts,
           })
@@ -311,6 +371,11 @@ fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistr
         if (m.tokens) tracker.record(m.engineId, { usage: { promptTokens: m.tokens.prompt, completionTokens: m.tokens.response, totalTokens: m.tokens.prompt + m.tokens.response, source: 'cli-reported' as const } });
         sidechain.log('dispatch:complete', m.engineId, { phase: m.phase, durationMs: m.dispatchDurationMs, score: m.score, pass: m.pass, tokens: m.tokens });
       }
+      // Incremental persist after stage1 — if the process is killed during
+      // stage2 or synthesis, /forge resume can still see stage1 results
+      // instead of getting an empty pre-run skeleton.
+      manifest.dispatchLog = allMetrics;
+      try { writeManifest(manifest); } catch { /* best-effort intermediate write */ }
 
       if (shouldRunStarterGate && stage1.accepted) {
         manifest.stage1Accepted = true;
@@ -343,7 +408,7 @@ fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistr
           existingResults: stage1.engineResults,
           worktrees,
           onEvent,
-          signal: options.signal,
+          signal: forgeSignal,
         });
 
         manifest.enginesDispatched = stage2.engineResults.size;
@@ -357,6 +422,9 @@ fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistr
           if (m.tokens) tracker.record(m.engineId, { usage: { promptTokens: m.tokens.prompt, completionTokens: m.tokens.response, totalTokens: m.tokens.prompt + m.tokens.response, source: 'cli-reported' as const } });
           sidechain.log('dispatch:complete', m.engineId, { phase: m.phase, durationMs: m.dispatchDurationMs, score: m.score, pass: m.pass, tokens: m.tokens, error: m.error });
         }
+        // Incremental persist after stage2 — survives a kill during synthesis or gauntlet.
+        manifest.dispatchLog = allMetrics;
+        try { writeManifest(manifest); } catch { /* best-effort intermediate write */ }
 
         const { winner, closeCall, bestScore, secondScore } = determineWinner(
           stage2.engineResults,
@@ -365,12 +433,70 @@ fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistr
         manifest.winner = winner;
         manifest.closeCall = closeCall;
 
+        // Removed previous "all-no-op → alreadySatisfied" inference. It was
+        // unsafe: when forgeRequireBaselineCheck is true and baseline FAILS
+        // (baselinePasses=false) AND every engine crashes producing zero-diff
+        // synthetic results, we'd mark the run as satisfied — but the fitness
+        // command is genuinely failing. plan-mode trusts alreadySatisfied as
+        // success, so a broken codebase would be reported as done.
+        // alreadySatisfied is only set when runBaseline returned true (above).
+
         sidechain.log('winner:determined', winner ?? undefined, { closeCall, bestScore, secondScore });
         onEvent?.({
           type: 'winner:determined',
           engineId: winner ?? undefined,
           data: { winner: winner ?? null, closeCall, bestScore, secondScore },
         });
+
+        // Single-survivor detection: when only ONE engine produced a passing
+        // result out of N dispatched, surface that as a distinct event so the
+        // Cesar/UI layer can prompt the user: "only qwen made it through —
+        // accept this code or re-forge?". Distinct from no-winner (everyone
+        // failed) and clear-winner (multiple passed, top score wins
+        // confidently).
+        if (winner) {
+          const passingEngines = [...stage2.engineResults.values()].filter((r) => r.pass);
+          const failedEngines = [...stage2.engineResults.values()].filter((r) => !r.pass);
+          if (passingEngines.length === 1 && stage2.engineResults.size > 1) {
+            manifest.singleSurvivor = true;
+            sidechain.log('forge:single-survivor', winner, {
+              survivor: winner,
+              score: bestScore,
+              totalEngines: stage2.engineResults.size,
+              failedCount: failedEngines.length,
+            });
+            onEvent?.({
+              type: 'forge:single-survivor',
+              data: {
+                engineId: winner,
+                score: bestScore,
+                totalEngines: stage2.engineResults.size,
+                failedCount: failedEngines.length,
+              },
+            });
+          }
+        }
+
+        // Eager non-winner cleanup: synthesis reads patch files from disk
+        // (forgeDir), gauntlet only needs the winner's worktree. Cleaning
+        // losers now reduces the orphan-window when slow engines keep their
+        // worktrees alive until Promise.allSettled resolves. Patches and
+        // fitness logs are already persisted to forgeDir before this point.
+        if (winner) {
+          const losersToClean = worktrees.filter((wt) => wt.engineId !== winner && wt.engineId !== 'synthesis');
+          for (const wt of losersToClean) {
+            worktreeRemoveBestEffort(wt.repoRoot, wt.path);
+          }
+          // Remove cleaned entries from the shared array so the outer finally
+          // doesn't try to clean them again (already idempotent now, but
+          // skipping the no-op git invocation is cheaper).
+          for (let i = worktrees.length - 1; i >= 0; i--) {
+            if (worktrees[i].engineId !== winner && worktrees[i].engineId !== 'synthesis') {
+              worktrees.splice(i, 1);
+            }
+          }
+          sidechain.log('worktrees:eager-cleanup', undefined, { cleanedCount: losersToClean.length, remaining: worktrees.length });
+        }
 
         const passingCount = [...stage2.engineResults.values()].filter((r) => r.pass).length;
         if (closeCall && config.forgeEnableSynthesis && passingCount >= 2 && winner) {
@@ -389,7 +515,9 @@ fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistr
             maxCritiques: config.forgeMaxCritiques,
             repoRoot: root,
             headSha: sha,
+            worktrees,
             onEvent,
+            signal: forgeSignal,
           });
 
           manifest.synthesis = {
@@ -472,7 +600,7 @@ fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistr
               cwd: options.cwd,
               baseSha: sha,
               onEvent,
-              signal: options.signal,
+              signal: forgeSignal,
             });
 
             manifest.gauntlet = gauntletResult;
@@ -507,6 +635,9 @@ fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistr
       return manifest;
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
+      // Set error onto manifest BEFORE persisting so the saved bundle reflects
+      // the failure cause for resume/inspection.
+      manifest.error = error;
       try {
         writeForgeResultBundle(manifest, worktrees, options, root, sha, sidechain.path, error);
         writeManifest(manifest);
@@ -514,10 +645,31 @@ fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistr
       } catch (bundleErr) {
         console.warn(`[agon] forge result bundle write failed: ${bundleErr instanceof Error ? bundleErr.message : String(bundleErr)}`);
       }
-      throw err;
+      // Never bubble exceptions to the caller — return the manifest with
+      // error set. Callers branch on manifest.error instead of try/catch.
+      // A crashed forge is a result with partial data, not a process kill.
+      onEvent?.({ type: 'forge:fatal', data: { phase: 'execution', error } });
+      // Don't return inside the catch — let the finally run cleanup, then
+      // the function-level return below picks up `manifest`.
     } finally {
+      // Tell any in-flight engine dispatch to abort BEFORE we yank the
+      // worktrees from underneath them. spawnWithTimeout's signal handler
+      // sends SIGTERM (then SIGKILL after 750ms) to the child process group
+      // so by the time we hit the cleanup loop, workers are draining. The
+      // 250ms grace lets the SIGTERM land before we start removing dirs —
+      // without it, fast-killed children may still hold file handles.
+      if (!forgeAbort.signal.aborted) forgeAbort.abort();
+      // 1000ms grace: spawnWithTimeout sends SIGTERM, then waits 750ms before
+      // SIGKILL, then 750ms more for finish — total ~1.5s. We give 1000ms
+      // here so SIGKILL has fired and most child processes have released
+      // file handles before we start removing their worktrees. Worth the
+      // extra wait on cleanup vs. cleanup failures from busy-dir errors.
+      try { await new Promise(resolve => setTimeout(resolve, 1000)); } catch { /* non-fatal */ }
       for (const wt of worktrees) {
         worktreeRemoveBestEffort(wt.repoRoot, wt.path);
       }
     }
+    // Reached only on the catch path (try block returns directly). Manifest
+    // has error set; caller branches on it.
+    return manifest;
   >>>

@@ -6,9 +6,9 @@ import { join, dirname } from 'node:path';
 
 import type { EngineAdapter, EngineDefinition, DispatchOptions, DispatchResult, AgentDispatchResult } from '@agon/core';
 
-import { EngineRegistry, spawnWithTimeout, spawnStream, EngineNotFoundError, readOnlyDiff, diffLineCount, apiDispatch, apiStreamDispatch, companionDispatch, runHooks, hooksFailed, runApiAgentLoop, sessionContext, resolveWorkingDir } from '@agon/core';
+import { EngineRegistry, spawnWithTimeout, spawnStream, EngineNotFoundError, readOnlyDiff, diffLineCount, apiDispatch, apiStreamDispatch, companionDispatch, runHooks, hooksFailed, runApiAgentLoop, sessionContext, resolveWorkingDir, engineHealth, classifyDispatchFailure } from '@agon/core';
 
-import { buildCommand, checkEnvVars, resolveModel, stripStreamJson, usesStreamJson } from './adapter-helpers.js';
+import { buildCommand, checkEnvVars, resolveModel, stripStreamJson, usesStreamJson, recordDispatchHealth } from './adapter-helpers.js';
 
 // @kern-source: adapter:7
 export class CliAdapter implements EngineAdapter {
@@ -46,6 +46,7 @@ export class CliAdapter implements EngineAdapter {
         const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
         mkdirSync(dirname(outputPath), { recursive: true });
         writeFileSync(outputPath, result.stdout);
+        recordDispatchHealth(options.engine.id, result);
         return result;
       }
       throw new EngineNotFoundError(options.engine.id, options.engine.installHint);
@@ -81,6 +82,7 @@ export class CliAdapter implements EngineAdapter {
         const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
         mkdirSync(dirname(outputPath), { recursive: true });
         writeFileSync(outputPath, companionResult.stdout);
+        recordDispatchHealth(options.engine.id, companionResult);
         return companionResult;
       }
     }
@@ -121,6 +123,8 @@ export class CliAdapter implements EngineAdapter {
     const outputPath = join(options.outputDir, `${options.engine.id}-output.txt`);
     mkdirSync(dirname(outputPath), { recursive: true });
     writeFileSync(outputPath, result.stdout);
+
+    recordDispatchHealth(options.engine.id, result);
 
     runHooks('post_dispatch', { AGON_ENGINE: options.engine.id, AGON_MODE: options.mode, AGON_EXIT_CODE: String(result.exitCode) });
 
@@ -240,6 +244,16 @@ export class CliAdapter implements EngineAdapter {
         mkdirSync(dirname(outputPath), { recursive: true });
         writeFileSync(outputPath, result.response);
 
+        // runApiAgentLoop catches errors and packs them into result.response;
+        // it doesn't expose exitCode/stderr the same way as spawnWithTimeout.
+        // Best-effort: if the response begins with an auth-error sentinel,
+        // record. Otherwise treat as ok.
+        const respText = result.response ?? '';
+        const looksLikeAuth = /\b401\b|invalid api key|invalid access token|token (expired|invalid)|unauthori[sz]ed|authentication (failed|error)/i.test(respText.slice(0, 500));
+        recordDispatchHealth(options.engine.id, looksLikeAuth
+          ? { exitCode: 1, stderr: respText.slice(0, 500), timedOut: false }
+          : { exitCode: 0, stderr: '', timedOut: false });
+
         return {
           exitCode: 0,
           stdout: result.response,
@@ -297,6 +311,7 @@ export class CliAdapter implements EngineAdapter {
           const diff = newDiffLines.join('\n');
           const lines = diffLineCount(diff);
           const files = diff ? newDiffLines.filter((l: string) => l.startsWith('diff --git')).length : 0;
+          recordDispatchHealth(options.engine.id, companionResult);
           return { ...companionResult, diff, diffLines: lines, filesChanged: files };
         }
       }
@@ -339,6 +354,7 @@ export class CliAdapter implements EngineAdapter {
       const lines = diffLineCount(diff);
       const files = diff ? newDiffLines.filter((l: string) => l.startsWith('diff --git')).length : 0;
 
+      recordDispatchHealth(options.engine.id, result);
       return { ...result, diff, diffLines: lines, filesChanged: files };
   }
 

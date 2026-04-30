@@ -4,7 +4,7 @@
 import from="react" names="useState,useCallback,useEffect,useRef,useMemo"
 import from="ink" names="Box,Text,Static,render"
 import from="@kernlang/terminal/runtime" names="ScrollBox,AlternateScreen"
-import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,ensureCurrentWorkspace,startChatSession,getRatings,getActiveWorkspace,RUNS_DIR,extractImagesFromInput,resolveWorkingDir,currentBranch,configSet,createCesarMemory,modelEntryToEngineDef,appendMessage,getAgonHome,tracker,planCostEstimator,cancelCesarPlan,saveCesarPlan,listCesarPlans"
+import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,ensureCurrentWorkspace,startChatSession,getRatings,getActiveWorkspace,RUNS_DIR,extractImagesFromInput,resolveWorkingDir,currentBranch,configSet,createCesarMemory,modelEntryToEngineDef,appendMessage,getAgonHome,tracker,planCostEstimator,cancelCesarPlan,saveCesarPlan,listCesarPlans,loadCesarPlan"
 import from="@agon/core" names="Plan,ChatSession,Skill,PersistentSession,ImageAttachment" types=true
 import from="../../handlers/types.js" names="EngineProgress" types=true
 import from="@agon/adapter-cli" names="createCliAdapter"
@@ -2553,7 +2553,7 @@ screen name=App target=ink
   state name=cesarSession type="PersistentSession|null" initial="null"
   state name=explorationMode type=boolean initial=false
   state name=neroMode type=boolean initial=false
-  state name=toolOutputExpanded type=boolean initial=true
+  state name=toolOutputExpanded type=boolean initial=false
   state name=thinkingExpanded type=boolean initial=true
   state name=cesarConfidence type="number|null" initial="null" throttle=200
   state name=liveScoreboard type="Scoreboard|null" initial="null"
@@ -2575,6 +2575,8 @@ screen name=App target=ink
   ref name=currentPlanRef type="Plan|null" initial="null"
   ref name=activePlanRef type=any initial="null"
   ref name=activePlanClearTimerRef type="ReturnType<typeof setTimeout>|null" initial="null"
+  ref name=planWatcherTimerRef type="ReturnType<typeof setInterval>|null" initial="null"
+  ref name=planWatcherDebounceTimerRef type="ReturnType<typeof setTimeout>|null" initial="null"
   ref name=streamingTextRef type="Record<string,StreamingEntry>" initial="{}"
   ref name=agentProgressRef type="Record<string,AgentProgressSnapshot>" initial="{}"
   ref name=lastReviewResultRef type="{ engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number } | null" initial="null"
@@ -2882,6 +2884,47 @@ screen name=App target=ink
   effect deps="activePlan"
     handler <<<
       activePlanRef.current = activePlan;
+    >>>
+
+  effect deps="activePlan,setActivePlanWrapped"
+    handler <<<
+      if (planWatcherTimerRef.current) { clearInterval(planWatcherTimerRef.current); planWatcherTimerRef.current = null; }
+      if (planWatcherDebounceTimerRef.current) { clearTimeout(planWatcherDebounceTimerRef.current); planWatcherDebounceTimerRef.current = null; }
+      if (!activePlan?.id) return;
+      const planId = activePlan.id;
+      planWatcherTimerRef.current = setInterval(() => {
+        try {
+          const loaded = loadCesarPlan(planId);
+          if (!loaded) return;
+          const current = activePlanRef.current;
+          const loadedMs = Date.parse(String(loaded.updatedAt ?? ''));
+          const currentMs = Date.parse(String(current?.updatedAt ?? ''));
+          const loadedValid = Number.isFinite(loadedMs);
+          const currentValid = Number.isFinite(currentMs);
+          if (loadedValid && currentValid) {
+            if (loadedMs <= currentMs) return;
+          } else if (loadedValid === currentValid) {
+            // Both missing/invalid — treat as unchanged unless structurally different
+            if (JSON.stringify(loaded) === JSON.stringify(current)) return;
+          }
+          if (planWatcherDebounceTimerRef.current) clearTimeout(planWatcherDebounceTimerRef.current);
+          planWatcherDebounceTimerRef.current = setTimeout(() => {
+            const latest = activePlanRef.current;
+            const latestMs = Date.parse(String(latest?.updatedAt ?? ''));
+            const latestValid = Number.isFinite(latestMs);
+            if (loadedValid && latestValid) {
+              if (loadedMs <= latestMs) return;
+            } else if (loadedValid === latestValid) {
+              if (JSON.stringify(loaded) === JSON.stringify(latest)) return;
+            }
+            setActivePlanWrapped(loaded);
+          }, 500);
+        } catch {}
+      }, 2000);
+      return () => {
+        if (planWatcherTimerRef.current) { clearInterval(planWatcherTimerRef.current); planWatcherTimerRef.current = null; }
+        if (planWatcherDebounceTimerRef.current) { clearTimeout(planWatcherDebounceTimerRef.current); planWatcherDebounceTimerRef.current = null; }
+      };
     >>>
 
   effect deps="terminalMode,nativeTranscriptBlocks"
@@ -3232,11 +3275,30 @@ screen name=App target=ink
 
   // ── Proactive resume prompt on startup ──
   // If a paused plan exists from a previous session, offer to resume it.
+  // Skip plans that are done/cancelled, or older than 24 hours, to avoid
+  // stale interruptions every time the user logs in.
+  // Pick the freshest paused/running plan so a stale first match doesn't
+  // hide a newer viable candidate.
   effect deps=""
     handler <<<
       try {
+        const MAX_RESUME_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
+        const now = Date.now();
         const plans = listCesarPlans();
-        const paused = plans.find((p: any) => p.state === 'paused' || p.state === 'running');
+        const candidates = plans
+          .filter((p: any) => p.state === 'paused' || p.state === 'running')
+          .filter((p: any) => {
+            const updatedAt = String(p.updatedAt ?? '');
+            if (!updatedAt) return true; // no timestamp = assume fresh
+            const ageMs = now - new Date(updatedAt).getTime();
+            return !Number.isFinite(ageMs) || ageMs <= MAX_RESUME_AGE_MS;
+          })
+          .sort((a: any, b: any) => {
+            const aTime = new Date(String(a.updatedAt ?? 0)).getTime();
+            const bTime = new Date(String(b.updatedAt ?? 0)).getTime();
+            return bTime - aTime;
+          });
+        const paused = candidates[0];
         if (!paused) return;
         const done = paused.steps.filter((s: any) => s.state === 'done').length;
         const failed = paused.steps.find((s: any) => s.state === 'failed');

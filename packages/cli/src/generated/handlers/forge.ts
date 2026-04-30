@@ -14,7 +14,7 @@ import { ENGINE_COLORS } from '../blocks/output-format.js';
 
 import type { Dispatch, HandlerContext, EngineProgress } from '../../handlers/types.js';
 
-import { cesarJudgeForge, cesarConvergeForge } from '../../handlers/cesar-brain.js';
+import { cesarJudgeForge, cesarConvergeForge, cesarReviewForgeOutcome } from '../../handlers/cesar-brain.js';
 
 import { sessionResultStore } from '../models/session-results.js';
 
@@ -278,6 +278,48 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
     clearInterval(progressInterval);
     dispatch({ type: 'progress-clear' });
 
+    // runForge now never throws — it returns a manifest with error set on
+    // fatal failure. Surface that as a user-visible warning so the run isn't
+    // silently treated as successful with no winner.
+    if (manifest.error) {
+      dispatch({ type: 'warning', message: `Forge failed: ${manifest.error}` });
+      // Cesar narrates the failure with concrete next steps before we exit.
+      try { await cesarReviewForgeOutcome(manifest, dispatch, ctx); }
+      catch (err) { console.warn(`[agon] Cesar review (error path) failed: ${err instanceof Error ? err.message : String(err)}`); }
+      // runForge no longer throws — but plan-mode still expects to see the
+      // plan transition to 'failed' on a fatal forge failure. Without this,
+      // the plan stays 'started'/'pending' and the orchestrator never moves on.
+      if (ctx.currentPlan?.state !== 'cancelled') {
+        plan = failPlan(plan, manifest.error);
+        ctx.setCurrentPlan(plan);
+        savePlan(plan);
+      }
+      ctx.setActiveAbort(null);
+      return null;
+    }
+    if (manifest.alreadySatisfied) {
+      dispatch({ type: 'info', message: 'Forge: task already satisfied — fitness command passes on baseline, no engines dispatched.' });
+      try { await cesarReviewForgeOutcome(manifest, dispatch, ctx); }
+      catch (err) { console.warn(`[agon] Cesar review (already-satisfied path) failed: ${err instanceof Error ? err.message : String(err)}`); }
+      // alreadySatisfied = success, distinct from no-winner. Without this
+      // early return, the rest of the handler (scoreboard, judge, plan-finalize)
+      // sees an empty manifest.results and reports "No winner — all engines
+      // failed", marking the plan failed.
+      ctx.setActiveAbort(null);
+      return { winner: null, patchPath: null, manifestPath: `${forgeDir}/manifest.json`, task, fitnessCmd: fitness };
+    }
+    if (manifest.singleSurvivor && manifest.winner) {
+      const winner = manifest.winner;
+      const score = (manifest.results as any)[winner]?.score ?? 0;
+      dispatch({ type: 'warning', message: `Only ${winner} produced a passing result (score ${score}). Other engines failed.` });
+      // Cesar reads the surviving patch and tells the user accept/retry.
+      try { await cesarReviewForgeOutcome(manifest, dispatch, ctx); }
+      catch (err) { console.warn(`[agon] Cesar review (single-survivor path) failed: ${err instanceof Error ? err.message : String(err)}`); }
+    }
+    // Note: the no-winner-with-no-error case is handled below, after the
+    // scoreboard renders, so the user sees the metrics first then Cesar's
+    // diagnosis. The cesarJudgeForge call (multi-pass case) stays where it was.
+
     // Finalize scoreboard + post-dispatch checkpoint
     for (const id of engines) {
       const s = engineStatus[id] ?? 'waiting';
@@ -314,6 +356,11 @@ export async function handleForge(task: string, fitnessCmd: string|null, dispatc
       } catch (err) {
         console.warn(`[agon] Cesar judge failed: ${err instanceof Error ? err.message : String(err)}`);
       }
+    } else if (passingEngines === 0 && !manifest.alreadySatisfied && ctx.cesarSession) {
+      // No-winner-no-error: Cesar diagnoses the failure pattern so the user
+      // gets a real next-step instead of just a "no winner" scoreboard.
+      try { await cesarReviewForgeOutcome(manifest, dispatch, ctx); }
+      catch (err) { console.warn(`[agon] Cesar review (no-winner path) failed: ${err instanceof Error ? err.message : String(err)}`); }
     }
 
     // Use Cesar's winner if available, otherwise fall back to automatic

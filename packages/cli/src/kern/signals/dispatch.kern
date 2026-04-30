@@ -1770,6 +1770,23 @@ fn name=dispatchIntent async=true params="intent:any, input:string, cb:DispatchC
       case 'cp': handleCp(intent.index, cb.dispatch); break;
       case 'commit': await handleCommit(intent.input, cb.dispatch, cb.ctx); break;
 
+      case 'toggleAutoCredit': {
+        const desired = intent.autoCredit ?? false;
+        const current = cb.ctx.config.autoCredit ?? true;
+        if (desired === current) {
+          cb.dispatch({ type: 'info', message: `autoCredit is already ${current ? 'ON' : 'OFF'}.` });
+          break;
+        }
+        const answer = await cb.ctx.askQuestion(`Soll ich die automatische Co-Author-Zeile (autoCredit) ${desired ? 'einschalten' : 'ausschalten'}? (j/n)`);
+        if (answer.trim().toLowerCase() === 'j' || answer.trim().toLowerCase() === 'y') {
+          configSet('autoCredit', desired);
+          cb.dispatch({ type: 'success', message: `autoCredit ${desired ? 'eingeschaltet' : 'ausgeschaltet'}.` });
+        } else {
+          cb.dispatch({ type: 'info', message: 'autoCredit unverändert.' });
+        }
+        break;
+      }
+
       case 'undo': {
         const cwd = resolveWorkingDir();
         const snapshotId = String((intent as any).snapshotId ?? '').trim();

@@ -2,7 +2,7 @@ import from="node:crypto" names="randomUUID"
 import from="node:fs" names="mkdirSync,writeFileSync,readFileSync"
 import from="@agon/core" names="ForgeOptions,ForgeManifest,EngineAdapter,ForgeEvent,AgonConfig,DispatchMetric" types=true
 import from="@agon/core" names="EngineRegistry,loadConfig,buildForgePrompt,repoRoot,stashSnapshot,worktreeRemoveBestEffort,updateGlickoRanked,classifyTask,createSidechainLogger,assignForgeRoles,buildSpecializedPrompt,recordForgeOutcome,extractPatchFilePatterns,tracker"
-import from="./stages.js" names="runBaseline,runStage1,runStage2,runStage2WithPeek"
+import from="./stages.js" names="runBaseline,runStage1,runStage2"
 import from="@agon/core" names="determineWinner"
 import from="./synthesis.js" names="runSynthesis"
 import from="./gauntlet.js" names="runGauntlet"
@@ -322,10 +322,10 @@ fn name=runForge async=true params="options:ForgeOptions, registry:EngineRegistr
 
       const remainingChallengers = challengers.filter((id: string) => !stage1.engineResults.has(id));
       if (remainingChallengers.length > 0) {
-        // Use peek strategy when multiple challengers — first finisher's
-        // approach is shared as context to followers
-        const stage2Fn = remainingChallengers.length > 1 ? runStage2WithPeek : runStage2;
-        const stage2 = await stage2Fn({
+        // Dispatch challengers in parallel. The old peek scout path serialized
+        // everyone behind the first challenger, which made multi-engine forge
+        // look like only one engine was working.
+        const stage2 = await runStage2({
           challengers: remainingChallengers,
           forgePrompt,
           enginePrompts,

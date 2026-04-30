@@ -8,7 +8,7 @@ import type { ForgeOptions, ForgeManifest, EngineAdapter, ForgeEvent, AgonConfig
 
 import { EngineRegistry, loadConfig, buildForgePrompt, repoRoot, stashSnapshot, worktreeRemoveBestEffort, updateGlickoRanked, classifyTask, createSidechainLogger, assignForgeRoles, buildSpecializedPrompt, recordForgeOutcome, extractPatchFilePatterns, tracker } from '@agon/core';
 
-import { runBaseline, runStage1, runStage2, runStage2WithPeek } from './stages.js';
+import { runBaseline, runStage1, runStage2 } from './stages.js';
 
 import { determineWinner } from '@agon/core';
 
@@ -339,10 +339,10 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
 
     const remainingChallengers = challengers.filter((id: string) => !stage1.engineResults.has(id));
     if (remainingChallengers.length > 0) {
-      // Use peek strategy when multiple challengers — first finisher's
-      // approach is shared as context to followers
-      const stage2Fn = remainingChallengers.length > 1 ? runStage2WithPeek : runStage2;
-      const stage2 = await stage2Fn({
+      // Dispatch challengers in parallel. The old peek scout path serialized
+      // everyone behind the first challenger, which made multi-engine forge
+      // look like only one engine was working.
+      const stage2 = await runStage2({
         challengers: remainingChallengers,
         forgePrompt,
         enginePrompts,

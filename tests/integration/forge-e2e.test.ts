@@ -346,7 +346,7 @@ describe('Forge E2E', () => {
     }
   });
 
-  it('continues followers when the peek scout fails', async () => {
+  it('continues challengers when one stage2 engine fails', async () => {
     const agonHome = setupTestAgonHome('forge-scout-fails');
     const repoDir = createRepo('scout-fails');
     const forgeDir = join(tmpdir(), `agon-forge-output-${Date.now()}-${Math.random().toString(36).slice(2)}`);

@@ -3,7 +3,7 @@
 // @kern-source: ghost-text:1
 export function getGhostCompletion(input: string, commands: Array<{cmd:string}>, engineIds?: string[]): string|null {
   if (!input || !input.startsWith('/')) return null;
-  
+
   // Only complete engine names after /use.
   // Command names are handled by the slash picker so the input does not feel eager.
   if (engineIds && engineIds.length > 0) {
@@ -17,6 +17,6 @@ export function getGhostCompletion(input: string, commands: Array<{cmd:string}>,
       }
     }
   }
-  
+
   return null;
 }

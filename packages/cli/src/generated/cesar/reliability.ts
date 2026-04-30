@@ -130,11 +130,11 @@ export function summarizeCesarToolReliability(records: any[], engineId?: string,
     if (targetBackend && targetBackend !== 'all' && targetBackend !== 'auto' && recBackend !== targetBackend) return false;
     return true;
   });
-  
+
   if (filtered.length === 0) {
     return emptyCesarToolReliability(targetEngine || 'all', (targetBackend && targetBackend !== 'auto') ? targetBackend : 'all');
   }
-  
+
   let toolTurns = 0;
   let toolHeavyTurns = 0;
   let toolHeavyToolTurns = 0;
@@ -146,7 +146,7 @@ export function summarizeCesarToolReliability(records: any[], engineId?: string,
   let autoToolExecutions = 0;
   let confidenceToolTurns = 0;
   const toolNames: Record<string, number> = {};
-  
+
   for (const record of filtered) {
     const count = Number(record.toolCount ?? 0);
     const heavy = isToolHeavyCesarRecord(record);
@@ -170,7 +170,7 @@ export function summarizeCesarToolReliability(records: any[], engineId?: string,
       }
     }
   }
-  
+
   const turns = filtered.length;
   const toolTurnRate = turns > 0 ? toolTurns / turns : 0;
   const toolHeavyToolRate = toolHeavyTurns > 0 ? toolHeavyToolTurns / toolHeavyTurns : 0;
@@ -186,7 +186,7 @@ export function summarizeCesarToolReliability(records: any[], engineId?: string,
     .slice(0, 4)
     .map(([name, count]) => `${name}:${count}`)
     .join(', ') || '-';
-  
+
   let label: CesarReliabilityLabel = 'unknown';
   let reason = 'Need at least 3 logged Cesar turns before judging tool reliability.';
   if (turns >= 3) {
@@ -212,7 +212,7 @@ export function summarizeCesarToolReliability(records: any[], engineId?: string,
       reason = 'Enough turns exist, but none were tool-heavy enough to judge direct tool use.';
     }
   }
-  
+
   return {
     engineId: sampleEngine,
     backend: sampleBackend,
@@ -312,7 +312,7 @@ export function buildWhatHappenedSummary(telemetry: Record<string,unknown>): str
   const auto = Number(telemetry?.autoToolExecutions ?? 0) || 0;
   const confidence = telemetry?.confidenceToolUsed === true;
   if (toolCount <= 0 && eventCount <= 0 && stalls <= 0 && auto <= 0 && !confidence) return '';
-  
+
   const counts: Record<string, number> = {};
   if (Array.isArray(telemetry?.toolsUsed)) {
     for (const raw of telemetry.toolsUsed as unknown[]) {
@@ -326,7 +326,7 @@ export function buildWhatHappenedSummary(telemetry: Record<string,unknown>): str
     .slice(0, 4)
     .map(([name, count]) => count > 1 ? `${name} x${count}` : name)
     .join(', ');
-  
+
   const parts: string[] = [];
   if (toolCount > 0) parts.push(`${toolCount} tool${toolCount === 1 ? '' : 's'}${top ? ` (${top})` : ''}`);
   else if (eventCount > 0) parts.push(`${eventCount} tool event${eventCount === 1 ? '' : 's'}`);

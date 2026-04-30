@@ -771,12 +771,12 @@ export function App() {
       activePlanRef.current = null;
       setActivePlan(null);
     }
-    
+
     if (replState !== 'idle') {
       if (message) dispatch({ type: 'warning', message } as any);
       setReplState((prev: any) => prev === 'idle' ? prev : cancelReplState({ state: prev }).state);
     }
-    
+
     if (clearChat) dispatch({ type: 'clear' } as any);
   }, [replState,dispatch,trackAbort,outputActions]);
 
@@ -808,47 +808,47 @@ export function App() {
     // Swallow input while a choice question is active — the keyboard handler
     // resolves the choice on a single keypress.
     if (questionState && questionState.choices) return;
-    
+
     // Reject value changes caused by Ctrl+key shortcuts (the input hooks already handled them,
     // but TextInput still fires onChange with the raw character)
     if (ctrlKeyHandledRef.current) {
       ctrlKeyHandledRef.current = false;
       return;
     }
-    
+
     const nextValue = cleanInputValue(value);
     const prevValue = inputValueRef.current;
-    
+
     // "/" typed into empty input → open slash picker, swallow the character
     if (!prevValue && nextValue === '/' && !slashPickerOpen && !enginePickerOpen && !modelPickerOpen && !questionState && !justPastedRef.current) {
       if (planModeQueued) setPlanModeQueued(false);
       setSlashPickerOpen(true);
       return;
     }
-    
+
     // When slash picker is open, don't update inputValue — picker manages its own filter
     if (slashPickerOpen) {
       return;
     }
-    
+
     if (justPastedRef.current) {
       inputValueRef.current = nextValue;
       setInputValue(nextValue);
       return;
     }
-    
+
     const change = findInputChange(prevValue, nextValue);
     const looksLikePaste = value !== nextValue || change.inserted.length > 1;
-    
+
     if (!looksLikePaste || !change.inserted) {
       inputValueRef.current = nextValue;
       setInputValue(nextValue);
       return;
     }
-    
+
     justPastedRef.current = true;
     setTimeout(() => { justPastedRef.current = false; }, 100);
-    
+
     pasteCountRef.current += 1;
     const result = processPasteContent(change.inserted, pasteCountRef.current);
     if (result.type === 'empty') {
@@ -856,11 +856,11 @@ export function App() {
       setInputValue(nextValue);
       return;
     }
-    
+
     if (result.type === 'stored') {
       pasteHashesRef.current.set(String(pasteCountRef.current), result.fullHash);
     }
-    
+
     const replacement = result.type === 'stored' ? result.placeholder : result.content;
     const updatedValue = nextValue.slice(0, change.start) + replacement + nextValue.slice(change.start + change.inserted.length);
     inputValueRef.current = updatedValue;
@@ -888,7 +888,7 @@ export function App() {
       return next;
     });
     setHistoryIndex(-1);
-    
+
     const autoControl = parseAutoModeCommand(input);
     if (autoControl) {
       if (autoControl === 'status') {
@@ -906,11 +906,11 @@ export function App() {
       } as any);
       return;
     }
-    
+
     if (!input.startsWith('/') && activePlan?.state === 'awaiting_approval' && isCesarPlanApprovalInput(input)) {
       input = '/approve';
     }
-    
+
     // /btw <question> — side-channel question during active dispatch
     const btwLower = input.trim().toLowerCase();
     if (btwLower === '/btw') {
@@ -928,20 +928,20 @@ export function App() {
         // Fire side-dispatch — don't interrupt main task
         dispatch({ type: 'separator' } as any);
         dispatch({ type: 'user-message', content: `/btw ${btwQuestion}` } as any);
-    
+
         const ctx = buildContext();
         const cesarId = (ctx.config as any).cesarEngine ?? ctx.config.forgeFixedStarter ?? 'claude';
         let engineDef: any;
         try { engineDef = ctx.registry.get(cesarId); } catch { /* cesar engine not registered */ }
-    
+
         if (!engineDef) {
           dispatch({ type: 'error', message: `btw: engine ${cesarId} not available` } as any);
           return;
         }
-    
+
         const color = ENGINE_COLORS[cesarId] ?? 124;
         dispatch({ type: 'info', message: 'btw\u2026' } as any);
-    
+
         // Build context from streaming output (pick the most recent in-flight stream)
         let streamCtx = '';
         const streamEntries = Object.values(streamingTextRef.current ?? {});
@@ -955,9 +955,9 @@ export function App() {
             streamCtx = lines.slice(-10).join('\n');
           }
         }
-    
+
         const prompt = `The user asks while you are working on another task:\n\n${btwQuestion}\n\n${streamCtx ? '--- Recent output from the running task ---\n' + streamCtx + '\n---\n\n' : ''}Answer briefly and concisely. Keep it short.`;
-    
+
         const btwOutputDir = join(RUNS_DIR, `btw-${Date.now()}`);
         try { mkdirSync(btwOutputDir, { recursive: true }); } catch { /* dir already exists or parent missing */ }
         ctx.adapter.dispatch({
@@ -1064,12 +1064,12 @@ export function App() {
   const openCliModelPicker = useCallback((engineId:string) => {
     let engine: any = null;
     try { engine = registry.get(engineId); } catch { /* not found, fallback to id */ }
-    
+
     const env = (engine?.api?.apiKeyEnv ?? '').toLowerCase();
     const baseUrl = (engine?.api?.baseUrl ?? '').toLowerCase();
     const display = (engine?.displayName ?? '').toLowerCase();
     const defaultModel = (engine?.api?.model ?? '').toLowerCase();
-    
+
     let providerFilter = '';
     if (engineId === 'claude' || env.includes('anthropic') || baseUrl.includes('anthropic') || display.includes('anthropic')) providerFilter = 'provider:anthropic';
     else if (engineId === 'codex' || env.includes('openai') || baseUrl.includes('openai') || display.includes('openai')) providerFilter = 'provider:openai';
@@ -1079,7 +1079,7 @@ export function App() {
     else if (engineId === 'qwen' || display.includes('qwen')) providerFilter = 'provider:qwen';
     else if (engineId === 'minimax' || display.includes('minimax')) providerFilter = 'provider:minimax';
     else providerFilter = defaultModel;
-    
+
     setModelPickerTargetEngine(engineId);
     setModelPickerTitle(`Select model for ${engineId}`);
     setModelPickerInitialFilter(providerFilter);
@@ -1087,9 +1087,9 @@ export function App() {
     setModelPickerLoading(true);
     setEnginePickerOpen(false);
     setModelPickerOpen(true);
-    
+
     setModelPickerCliGroups([]);
-    
+
     import('@agon/core').then(({ fetchModelsRegistry, buildModelEntries, buildCliModelGroupsAsync }) => {
       buildCliModelGroupsAsync().then((cliGroups: any) => {
         setModelPickerCliGroups(cliGroups);
@@ -1185,7 +1185,7 @@ export function App() {
       interruptActiveRun(activeAbortRef.current ? 'Cancelled.' : 'Interrupted.', false);
       return;
     }
-    
+
     const now = Date.now();
     if (inputValue) {
       _lastSigintAt.value = now;
@@ -1193,11 +1193,11 @@ export function App() {
       dispatch({ type: 'info', message: 'Input cleared. Press Ctrl+C again to exit.' } as any);
       return;
     }
-    
+
     if (now - _lastSigintAt.value < 1200) {
       process.exit(0);
     }
-    
+
     _lastSigintAt.value = now;
     dispatch({ type: 'info', message: 'Press Ctrl+C again to exit.' } as any);
   }, [questionState,replState,inputValue,dispatch]);
@@ -1253,7 +1253,7 @@ export function App() {
 
   const handleKeyboardInput = useCallback((input:string,key:any) => {
     if (isTerminalFocusReport(input)) return;
-    
+
     const keyName = typeof key?.name === 'string' ? key.name.toLowerCase() : '';
     const globalCtrlInputMap = {
       '\x01': 'a',
@@ -1285,7 +1285,7 @@ export function App() {
       setToolOutputExpanded((prev: boolean) => !prev);
       return;
     }
-    
+
     if (statusDashboardOpen && !modelPickerOpen && !cesarPickerOpen && !enginePickerOpen && !reviewEvent && !toolDetailEvent && !slashPickerOpen && !questionState) {
       if (key.escape || input === 'q' || input === 'Q' || (key.ctrl && input === '\x03')) {
         setStatusDashboardOpen(false);
@@ -1301,7 +1301,7 @@ export function App() {
       }
       return;
     }
-    
+
     // ScrollBox keyboard shortcuts (only when fullscreen owns the viewport and no modal is open).
     if (terminalMode === 'fullscreen' && !modelPickerOpen && !cesarPickerOpen && !enginePickerOpen && !reviewEvent && !toolDetailEvent && !slashPickerOpen && !questionState) {
       if (key.shift && key.name === 'pageup') {
@@ -1321,7 +1321,7 @@ export function App() {
         return;
       }
     }
-    
+
     const normalizedCtrlInputMap = {
       '\x01': 'a',
       '\x03': 'c',
@@ -1347,7 +1347,7 @@ export function App() {
         return;
       }
     }
-    
+
     const action = resolveKeyboardInput({
       input, key,
       textInputActive: !modelPickerOpen && !cesarPickerOpen && !enginePickerOpen && !reviewEvent && !toolDetailEvent && !slashPickerOpen && (!questionState || !questionState.choices),
@@ -1363,7 +1363,7 @@ export function App() {
       fileRailExpanded: fileRailExpandedPath !== null,
       executionRailFocused: executionRailOpen && inputValue.trim().length === 0,
     });
-    
+
     switch (action.type) {
       case 'none': return;
       case 'exit': process.exit(0); return;
@@ -2051,7 +2051,7 @@ export function App() {
     )}
   </Box>
   );
-  
+
   if (terminalMode === 'native') return (
   <>
     <Static key={`native-static-${nativeStaticEpoch}`} items={nativeArchiveBlocks}>
@@ -2086,7 +2086,7 @@ export function App() {
     </Box>
   </>
   );
-  
+
   return (
   <AlternateScreen>
   <Box flexDirection="column" flexGrow={1} width={termWidth} height={termHeight}>
@@ -2247,7 +2247,7 @@ async function probeEngineVitals(registry: any, engineId: string, session?: Pers
   const available = hasBinary || hasApiKey || (!engine.binary && !engine.api);
   let network: 'healthy'|'degraded'|'unreachable' = available ? 'healthy' : 'unreachable';
   let latencyMs = Date.now() - started;
-  
+
   if (engine.api && hasApiKey && typeof fetch === 'function') {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 1200);
@@ -2262,7 +2262,7 @@ async function probeEngineVitals(registry: any, engineId: string, session?: Pers
       clearTimeout(timeout);
     }
   }
-  
+
   return {
     state: available ? 'idle' as any : 'offline' as any,
     latencyMs,
@@ -2344,7 +2344,7 @@ export function parsePatchPreview(rawInput: string, parsed: any): { files:string
     const clean = filePath.trim().replace(/^["']|["']$/g, '');
     if (clean && !files.includes(clean)) files.push(clean);
   };
-  
+
   for (const line of patchText.split('\n')) {
     const customFile = line.match(/^\*\*\* (?:Update|Add|Delete) File: (.+)$/);
     if (customFile) {
@@ -2378,7 +2378,7 @@ export function parsePatchPreview(rawInput: string, parsed: any): { files:string
       lines.push(line);
     }
   }
-  
+
   return { files, lines, additions, deletions };
 }
 
@@ -2405,10 +2405,10 @@ export function toolCallSupportsDetailView(event: any): boolean {
   if (!event || event.type !== 'tool-call') return false;
   const { rawInput, parsed, toolKey } = parseToolCallPayload(event);
   if (['edit', 'update', 'write', 'agonedit', 'agonwrite', 'applypatch', 'apply_patch'].includes(toolKey)) return true;
-  
+
   const outputText = String(event.output ?? '');
   const outputLines = outputText ? outputText.split('\n').length : 0;
-  
+
   if (toolKey === 'bash' || toolKey === 'run' || toolKey === 'agonbash') {
     const command = String((parsed.command as string) || rawInput || '');
     return command.split('\n').length > 3 || outputLines > 12 || outputText.length > 500;
@@ -2576,7 +2576,7 @@ export function buildToolDetailView(event: any): any {
   if (!event) {
     return { title: 'Detail viewer', subtitle: '', accentColor: '#a78bfa', rows: [] };
   }
-  
+
   const ic = icons();
   const accentColor = engineColor(event.engineId ?? '') || '#a78bfa';
   const codeWidth = contentWidth(12);
@@ -2618,7 +2618,7 @@ export function buildToolDetailView(event: any): any {
       });
     });
   };
-  
+
   if (event.type === 'permission-ask') {
     const command = String(event.command ?? '');
     const commandLines = command ? command.split('\n') : [];
@@ -2658,7 +2658,7 @@ export function buildToolDetailView(event: any): any {
       rows,
     };
   }
-  
+
   const { rawInput, parsed, toolKey } = parseToolCallPayload(event);
   const outputLines = String(event.output ?? '').split('\n').filter((line: string, index: number, all: string[]) => line.length > 0 || all.length === 1);
   const defaultLabel = (() => {
@@ -2675,7 +2675,7 @@ export function buildToolDetailView(event: any): any {
   const subtitleParts: string[] = [];
   if (event.engineId) subtitleParts.push(String(event.engineId));
   if (event.status) subtitleParts.push(String(event.status));
-  
+
   if (toolKey === 'bash' || toolKey === 'run' || toolKey === 'agonbash') {
     const command = String((parsed.command as string) || rawInput || '');
     const desc = String((parsed.description as string) || '').trim();
@@ -2775,7 +2775,7 @@ export function buildToolDetailView(event: any): any {
       pushSyntaxLines('generic-output', outputLines);
     }
   }
-  
+
   return {
     title,
     subtitle: subtitleParts.join(' · '),
@@ -2917,17 +2917,17 @@ export function richLineToPlainText(line: any): string {
   if (!line) return '';
   if (line.kind === 'blank') return '';
   if (line.kind === 'hr') return '─'.repeat(40);
-  
+
   const spanText = Array.isArray(line.spans)
     ? line.spans.map((span: any) => `${span.text ?? ''}${span?.style?.linkUrl ? ` (${span.style.linkUrl})` : ''}`).join('')
     : '';
   const indent = line.indent > 0 ? '  '.repeat(line.indent) : '';
-  
+
   if (line.kind === 'h1') return `${indent}# ${spanText}`;
   if (line.kind === 'h2') return `${indent}## ${spanText}`;
   if (line.kind === 'h3') return `${indent}### ${spanText}`;
   if (line.kind === 'blockquote') return `${indent}| ${spanText}`;
-  
+
   const marker = line.marker ?? '';
   const listIndent = (line.kind === 'bullet' || line.kind === 'ordered') && !indent ? ' ' : '';
   return `${indent}${listIndent}${marker}${spanText}`;
@@ -2942,7 +2942,7 @@ export function transcriptRowToPlainText(row: any): string {
   if (row.kind === 'segments') {
     return Array.isArray(row.segments) ? row.segments.map((segment: any) => segment?.text ?? '').join('') : '';
   }
-  
+
   const prefix = String(row.prefixText ?? '');
   const text = String(row.text ?? '');
   return `${prefix}${text}`;
@@ -3082,7 +3082,7 @@ export function buildDashboardBlock(enabledOverride: string[]|null): OutputBlock
   const enabled = enabledOverride ?? available;
   let runCount = 0;
   try { runCount = readdirSync(RUNS_DIR).filter((f: string) => f.endsWith('.json')).length; } catch { /* runs dir missing — first run */ }
-  
+
   return {
     id: 0,
     event: {
@@ -3120,11 +3120,11 @@ export function estimateWrappedRows(text: string, width: number): number {
 export function estimateToolCallRows(event: any, toolOutputExpanded: boolean, codeWidth: number): number {
   if (!event || event.type !== 'tool-call') return 0;
   if (!event.input && !event.output && (event.tool === 'Delegate' || event.tool === 'delegate')) return 0;
-  
+
   const { rawInput, parsed, toolKey } = parseToolCallPayload(event);
   const collapsed = !toolOutputExpanded;
   if (collapsed && !['edit', 'write', 'update', 'agonedit', 'agonwrite', 'applypatch', 'apply_patch'].includes(toolKey)) return 1;
-  
+
   if (toolKey === 'bash' || toolKey === 'run' || toolKey === 'agonbash') {
     const cmd = (parsed.command as string) || rawInput || '';
     const cmdLineCount = cmd ? cmd.split('\n').length : 0;
@@ -3145,7 +3145,7 @@ export function estimateToolCallRows(event: any, toolOutputExpanded: boolean, co
     }
     return rows;
   }
-  
+
   if (toolKey === 'edit' || toolKey === 'update' || toolKey === 'agonedit') {
     const oldStr = (parsed.old_string as string) || (parsed.oldString as string) || '';
     const newStr = (parsed.new_string as string) || (parsed.newString as string) || '';
@@ -3157,32 +3157,32 @@ export function estimateToolCallRows(event: any, toolOutputExpanded: boolean, co
       + oldWindow.head + oldWindow.tail + (oldWindow.skipped > 0 ? 1 : 0)
       + newWindow.head + newWindow.tail + (newWindow.skipped > 0 ? 1 : 0);
   }
-  
+
   if (toolKey === 'write' || toolKey === 'agonwrite') {
     const content = (parsed.content as string) || '';
     const lines = content ? content.split('\n') : [];
     const window = toolPreviewWindow(lines.length, !collapsed);
     return 1 + window.head + window.tail + (window.skipped > 0 ? 1 : 0);
   }
-  
+
   if (toolKey === 'applypatch' || toolKey === 'apply_patch') {
     const patch = parsePatchPreview(rawInput, parsed);
     const window = toolPreviewWindow(patch.lines.length, !collapsed);
     return 1 + window.head + window.tail + (window.skipped > 0 ? 1 : 0);
   }
-  
+
   if (toolKey === 'read') {
     if (collapsed) return 1;
     const lineCount = event.output ? String(event.output).split('\n').length : 0;
     return 1 + lineCount;
   }
-  
+
   if (toolKey === 'grep' || toolKey === 'search' || toolKey === 'glob' || toolKey === 'find') {
     if (collapsed) return 1;
     const lineCount = event.output ? String(event.output).split('\n').filter((line: string) => line.trim()).length : 0;
     return 1 + lineCount;
   }
-  
+
   let rows = 1;
   if (rawInput) rows += Math.min(3, estimateWrappedRows(rawInput, codeWidth));
   if (event.output && event.status === 'done') rows += 1 + Math.min(6, estimateWrappedRows(event.output, codeWidth));
@@ -3195,7 +3195,7 @@ export function estimateOutputEventRows(event: OutputEvent, mode: string, toolOu
   const chatWidth = contentWidth(2);
   const engineWidth = contentWidth(8);
   const codeWidth = contentWidth(10);
-  
+
   switch (event.type) {
     case 'text':
       return Math.max(1, estimateWrappedRows(event.content, proseWidth));
@@ -3316,7 +3316,7 @@ export function coalesceToolCallBlocks(blocks: OutputBlock[]): OutputBlock[] {
   if (!Array.isArray(blocks) || blocks.length === 0) return [];
   const out: OutputBlock[] = [];
   let index = 0;
-  
+
   const appendToolChildren = (block: OutputBlock, children: OutputBlock[]) => {
     const event = block.event as any;
     if (event?.type === 'tool-call') {
@@ -3329,7 +3329,7 @@ export function coalesceToolCallBlocks(blocks: OutputBlock[]): OutputBlock[] {
       }
     }
   };
-  
+
   while (index < blocks.length) {
     const block = blocks[index];
     if (!isToolCallLikeBlock(block)) {
@@ -3337,21 +3337,21 @@ export function coalesceToolCallBlocks(blocks: OutputBlock[]): OutputBlock[] {
       index += 1;
       continue;
     }
-  
+
     const children: OutputBlock[] = [];
     const first = block;
     while (index < blocks.length && isToolCallLikeBlock(blocks[index])) {
       appendToolChildren(blocks[index], children);
       index += 1;
     }
-  
+
     if (children.length === 1 && (first.event as any)?.type === 'tool-call') {
       out.push(first);
     } else {
       out.push({ id: first.id, event: { type: 'tool-call-group', blocks: children } as any });
     }
   }
-  
+
   return out;
 }
 
@@ -3361,7 +3361,7 @@ export function coalesceToolCallBlocks(blocks: OutputBlock[]): OutputBlock[] {
 // @kern-source: app:1267
 export function effectiveNativeArchiveBlockCount(blocks: OutputBlock[], baseArchiveCount: number, targetArchiveCount: number, toolOutputExpanded: boolean): number {
   if (!Array.isArray(blocks) || blocks.length === 0) return 0;
-  
+
   if (toolOutputExpanded) {
     let latestToolIndex = -1;
     for (let index = blocks.length - 1; index >= 0; index -= 1) {
@@ -3378,7 +3378,7 @@ export function effectiveNativeArchiveBlockCount(blocks: OutputBlock[], baseArch
       return islandStart;
     }
   }
-  
+
   let count = Math.max(0, Math.min(blocks.length, Math.max(baseArchiveCount, targetArchiveCount)));
   while (
     count > 0
@@ -3417,31 +3417,31 @@ export function nativeTranscriptBlocksForStatic(blocks: OutputBlock[]): OutputBl
 // @kern-source: app:1316
 export function nativeArchiveBlockCount(blocks: OutputBlock[], mode: string, rowBudget: number, toolOutputExpanded: boolean, thinkingExpanded: boolean): number {
   if (!Array.isArray(blocks) || blocks.length === 0) return 0;
-  
+
   const safeBudget = Math.max(1, Math.floor(Number(rowBudget) || 1));
   const maxLiveBlocks = 80;
   let rows = 0;
   let liveStart = blocks.length;
-  
+
   for (let index = blocks.length - 1; index >= 0; index -= 1) {
     const block = blocks[index];
     const event = block?.event as OutputEvent;
     const estimatedRows = Math.max(1, estimateOutputEventRows(event, mode, toolOutputExpanded, thinkingExpanded));
     const liveCountWithBlock = blocks.length - index;
-  
+
     if (estimatedRows > safeBudget && rows === 0) {
       liveStart = index + 1;
       break;
     }
-  
+
     if (rows > 0 && (rows + estimatedRows > safeBudget || liveCountWithBlock > maxLiveBlocks)) {
       break;
     }
-  
+
     rows += estimatedRows;
     liveStart = index;
   }
-  
+
   return Math.max(0, Math.min(blocks.length, liveStart));
 }
 
@@ -3520,7 +3520,7 @@ export function buildTerminalReplaySnapshot(blocks: OutputBlock[], opts: any): {
   const bottomChromeExtraRows = estimateBottomChromeExtraRows(mode, questionState, termWidth, pendingImageCount, inputQueueCount, hasLiveSpinner);
   const pinnedLiveRows = estimatePinnedLiveRows(mode, hasStream, hasProgress, agentCount);
   const visibleBudget = estimateVisibleBlockBudget(termHeight, mode, bottomChromeExtraRows + pinnedLiveRows);
-  
+
   const transcriptBlocks = terminalMode === 'native'
     ? nativeTranscriptBlocksForStatic(blocks)
     : historyBlocksForTranscript(blocks);
@@ -3534,12 +3534,12 @@ export function buildTerminalReplaySnapshot(blocks: OutputBlock[], opts: any): {
     termWidth,
     () => buildTranscriptRows(liveBlocks, mode, toolOutputExpanded, thinkingExpanded).length,
   );
-  
+
   const fileRailOpen = !!opts?.fileRailOpen;
   const fileRailExpanded = !!opts?.fileRailExpanded;
   const fileRailWidth = fileRailOpen ? fileRailWidthForTerminal(termWidth, fileRailExpanded) : 0;
   const fileRailRows = fileRailOpen ? fileRailMaxRowsForTerminal(termHeight, terminalMode, fileRailExpanded) : 0;
-  
+
   return {
     terminalMode,
     mode,
@@ -3561,11 +3561,11 @@ export function parseMarkdownToRows(baseKey: string, text: string, wrapWidth: nu
   const rows: any[] = [];
   const cleaned = String(text ?? '').trim();
   if (!cleaned) return rows;
-  
+
   const codeWidth = contentWidth(8);
   const segments = parseMarkdownBlocks(cleaned);
   let rowIndex = 0;
-  
+
   for (const segment of segments as any[]) {
     if (segment.type === 'prose') {
       const richLines = parseProseToRichLines(segment.text ?? '', wrapWidth);
@@ -3580,13 +3580,13 @@ export function parseMarkdownToRows(baseKey: string, text: string, wrapWidth: nu
       }
       continue;
     }
-  
+
     if (segment.type === 'code') {
       const codeLines = String(segment.code ?? '').split('\n');
       const shownLines = codeLines.slice(0, MAX_CODE_LINES);
       const overflow = codeLines.length - shownLines.length;
       const isDiff = segment.language === 'diff' || codeLines.some((line: string) => /^[+\-@]/.test(line));
-  
+
       rows.push({
         key: `${baseKey}-code-meta-${rowIndex++}`,
         kind: 'segments',
@@ -3599,7 +3599,7 @@ export function parseMarkdownToRows(baseKey: string, text: string, wrapWidth: nu
           segment.index !== undefined ? { text: ` [${segment.index}]`, color: '#585858' } : null,
         ].filter(Boolean),
       });
-  
+
       shownLines.forEach((line: string, index: number) => {
         rows.push({
           key: `${baseKey}-code-${rowIndex++}-${index}`,
@@ -3612,7 +3612,7 @@ export function parseMarkdownToRows(baseKey: string, text: string, wrapWidth: nu
           maxWidth: codeWidth,
         });
       });
-  
+
       if (overflow > 0) {
         rows.push({
           key: `${baseKey}-code-overflow-${rowIndex++}`,
@@ -3628,13 +3628,13 @@ export function parseMarkdownToRows(baseKey: string, text: string, wrapWidth: nu
       }
       continue;
     }
-  
+
     if (segment.type === 'table') {
       const headers = (segment.headers ?? []) as string[];
       const tableRows = (segment.rows ?? []) as string[][];
       const headerLine = headers.join(' │ ');
       const ruleWidth = Math.max(12, Math.min(wrapWidth, headerLine.length));
-  
+
       rows.push({
         key: `${baseKey}-table-head-${rowIndex++}`,
         kind: 'segments',
@@ -3660,14 +3660,14 @@ export function parseMarkdownToRows(baseKey: string, text: string, wrapWidth: nu
       });
     }
   }
-  
+
   return rows;
 }
 
 // @kern-source: app:1558
 export function buildToolCallRows(baseKey: string, event: any, toolOutputExpanded: boolean): any[] {
   if (!event.input && !event.output && (event.tool === 'Delegate' || event.tool === 'delegate')) return [];
-  
+
   const rows: any[] = [];
   const ic = icons();
   const toolColor = event.status === 'error' ? '#ef4444' : event.status === 'done' ? '#4ade80' : '#fbbf24';
@@ -3717,19 +3717,19 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
       });
     });
   };
-  
+
   if (toolKey === 'reportconfidence') {
     pushSegmentsRow('confidence', [
       { text: `▹ ${formatConfidenceToolLabel(parsed, rawInput)}`, color: '#8b8b8b', dimColor: true, italic: true },
     ]);
     return rows;
   }
-  
+
   const pushRetryHintIfNeeded = (suffix: string) => {
     if (event.status !== 'error') return;
     pushOpenHintRow(suffix, '    Ctrl+Y drafts this failed tool into the composer so you can edit and retry.');
   };
-  
+
   if (toolKey === 'bash' || toolKey === 'run' || toolKey === 'agonbash') {
     const cmd = String((parsed.command as string) || rawInput || '');
     const desc = parsed.description as string | undefined;
@@ -3747,14 +3747,14 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
       ].filter(Boolean));
       return rows;
     }
-  
+
     pushSegmentsRow('bash-head', [
       nestSegment,
       { text: `${icon} Bash`, color: toolColor, bold: true },
       desc ? { text: ` · ${desc}`, dimColor: true } : null,
     ].filter(Boolean));
     pushRetryHintIfNeeded('bash-retry');
-  
+
     const cmdLines = cmd ? cmd.split('\n') : [];
     const shownCmdLines = toolOutputExpanded ? cmdLines : cmdLines.slice(0, 3);
     shownCmdLines.forEach((line: string, index: number) => {
@@ -3766,7 +3766,7 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
     if (!toolOutputExpanded && cmdLines.length > 3) {
       pushSegmentsRow('bash-cmd-more', [{ text: '      …', dimColor: true }]);
     }
-  
+
     if (event.output && event.status !== 'running') {
       const outputLines = String(event.output).split('\n');
       const maxHead = outputLines.length > 80 ? 30 : 50;
@@ -3775,7 +3775,7 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
       const headLines = toolOutputExpanded ? outputLines : outputLines.slice(0, showTail ? maxHead : outputLines.length);
       const tailLines = showTail ? outputLines.slice(-tailCount) : [];
       const skipped = outputLines.length - headLines.length - tailLines.length;
-  
+
       pushSegmentsRow('bash-output-gap', [{ text: ' ', dimColor: true }]);
       headLines.forEach((line: string, index: number) => {
         if (event.status === 'error') {
@@ -3821,7 +3821,7 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
     }
     return rows;
   }
-  
+
   if (toolKey === 'edit' || toolKey === 'update' || toolKey === 'agonedit') {
     const filePath = String((parsed.file_path as string) || (parsed.filePath as string) || '');
     const oldStr = String((parsed.old_string as string) || (parsed.oldString as string) || '');
@@ -3829,7 +3829,7 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
     const shortPath = filePath ? shortToolPath(filePath) : '';
     const oldLines = oldStr ? oldStr.split('\n') : [];
     const newLines = newStr ? newStr.split('\n') : [];
-  
+
     pushSegmentsRow('edit-head', [
       nestSegment,
       { text: `${icon} ${ic.edit} Update`, color: toolColor, bold: true },
@@ -3846,13 +3846,13 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
     pushDiffPreview('edit-new', newLines, '+', !collapsed, 'added');
     return rows;
   }
-  
+
   if (toolKey === 'write' || toolKey === 'agonwrite') {
     const filePath = String((parsed.file_path as string) || (parsed.filePath as string) || '');
     const content = String((parsed.content as string) || '');
     const shortPath = filePath ? shortToolPath(filePath) : '';
     const lines = content ? content.split('\n') : [];
-  
+
     pushSegmentsRow('write-head', [
       nestSegment,
       { text: `${icon} ${ic.write} Write`, color: toolColor, bold: true },
@@ -3866,13 +3866,13 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
     pushDiffPreview('write', lines, '+', !collapsed, 'added');
     return rows;
   }
-  
+
   if (toolKey === 'applypatch' || toolKey === 'apply_patch') {
     const patch = parsePatchPreview(rawInput, parsed);
     const fileSummary = patch.files.length > 0
       ? ` (${patch.files.slice(0, 2).map((filePath: string) => shortToolPath(filePath)).join(', ')}${patch.files.length > 2 ? ', …' : ''})`
       : '';
-  
+
     pushSegmentsRow('patch-head', [
       nestSegment,
       { text: `${icon} ${ic.edit} Patch`, color: toolColor, bold: true },
@@ -3888,7 +3888,7 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
     pushDiffPreview('patch', patch.lines, '', !collapsed, 'changed');
     return rows;
   }
-  
+
   if (toolKey === 'read') {
     const filePath = String((parsed.file_path as string) || (parsed.filePath as string) || '');
     const shortPath = filePath ? shortToolPath(filePath) : '';
@@ -3903,14 +3903,14 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
       ].filter(Boolean));
       return rows;
     }
-  
+
     pushSegmentsRow('read-head', [
       nestSegment,
       { text: `${icon} ${ic.read} Read`, color: toolColor, bold: true },
       shortPath ? { text: ` (${shortPath})`, color: '#a78bfa' } : null,
       lineCount > 0 && event.status === 'done' ? { text: ` · ${lineCount} lines`, dimColor: true } : null,
     ].filter(Boolean));
-  
+
     if (event.output && event.status !== 'running') {
       const outputLines = String(event.output).split('\n');
       const shownLines = outputLines;
@@ -3931,7 +3931,7 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
     }
     return rows;
   }
-  
+
   if (toolKey === 'grep' || toolKey === 'search') {
     const pattern = String((parsed.pattern as string) || rawInput || '');
     const path = String((parsed.path as string) || '');
@@ -3947,7 +3947,7 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
       ].filter(Boolean));
       return rows;
     }
-  
+
     pushSegmentsRow('search-head', [
       nestSegment,
       { text: `${icon} ${ic.search} Search`, color: toolColor, bold: true },
@@ -3955,7 +3955,7 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
       shortPath ? { text: ` in ${shortPath}`, dimColor: true } : null,
       matchCount > 0 && event.status === 'done' ? { text: ` → ${matchCount} matches`, dimColor: true } : null,
     ].filter(Boolean));
-  
+
     if (event.output && event.status !== 'running') {
       const matchLines = String(event.output).split('\n').filter((line: string) => line.trim());
       const shownLines = matchLines;
@@ -3977,7 +3977,7 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
     }
     return rows;
   }
-  
+
   if (toolKey === 'glob' || toolKey === 'find') {
     const pattern = String((parsed.pattern as string) || rawInput || '');
     const fileCount = event.output ? String(event.output).split('\n').filter((line: string) => line.trim()).length : 0;
@@ -3991,14 +3991,14 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
       ].filter(Boolean));
       return rows;
     }
-  
+
     pushSegmentsRow('find-head', [
       nestSegment,
       { text: `${icon} ${ic.find} Find`, color: toolColor, bold: true },
       pattern ? { text: ` ${pattern}`, color: '#a78bfa' } : null,
       fileCount > 0 && event.status === 'done' ? { text: ` → ${fileCount} files`, dimColor: true } : null,
     ].filter(Boolean));
-  
+
     if (event.output && event.status !== 'running') {
       const files = String(event.output).split('\n').filter((line: string) => line.trim());
       const shownFiles = files;
@@ -4011,7 +4011,7 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
     }
     return rows;
   }
-  
+
   const label = (() => {
     if (event.tool === 'Read') return `${ic.read} Read`;
     if (event.tool === 'Edit') return `${ic.edit} Edit`;
@@ -4023,7 +4023,7 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
   })();
   const inputPreview = rawInput.length > 80 ? `${rawInput.slice(0, 79)}…` : rawInput;
   const outLines = event.output ? String(event.output).split('\n').length : 0;
-  
+
   pushSegmentsRow('generic', [
     nestSegment,
     { text: `${icon} ${label}`, color: toolColor, bold: true },
@@ -4031,14 +4031,14 @@ export function buildToolCallRows(baseKey: string, event: any, toolOutputExpande
     outLines > 0 && event.status === 'done' ? { text: ` → ${outLines} lines`, dimColor: true } : null,
     ...(collapsed ? collapsedHint : []),
   ].filter(Boolean));
-  
+
   return rows;
 }
 
 // @kern-source: app:1929
 export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any[] {
   if (!events || events.length === 0) return [];
-  
+
   const rows: any[] = [];
   const counts = new Map<string, number>();
   const changedFiles: string[] = [];
@@ -4046,7 +4046,7 @@ export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any
   let confidenceLabel = '';
   let errors = 0;
   let running = 0;
-  
+
   const labelFor = (event: any) => {
     const toolKey = String(event.tool ?? '').toLowerCase();
     if (toolKey === 'bash' || toolKey === 'run' || toolKey === 'agonbash') return 'Bash';
@@ -4060,7 +4060,7 @@ export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any
     if (toolKey === 'quicknero') return 'QuickNero';
     return String(event.tool ?? 'Tool');
   };
-  
+
   for (const event of events) {
     const { rawInput, parsed, toolKey } = parseToolCallPayload(event);
     if (event.status === 'error') errors += 1;
@@ -4086,7 +4086,7 @@ export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any
       }
     }
   }
-  
+
   const countSummary = Array.from(counts.entries())
     .map(([label, count]) => `${label}${count > 1 ? `×${count}` : ''}`)
     .join(' · ');
@@ -4096,7 +4096,7 @@ export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any
   const changedSummary = changedFiles.length > 0
     ? ` · changed ${changedFiles.length} file${changedFiles.length > 1 ? 's' : ''}: ${changedFiles.slice(0, 2).join(', ')}${changedFiles.length > 2 ? ', …' : ''}`
     : '';
-  
+
   if (confidenceLabel) {
     rows.push({
       key: `${baseKey}-confidence`,
@@ -4107,7 +4107,7 @@ export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any
       ],
     });
   }
-  
+
   rows.push({
     key: `${baseKey}-tool-group-head`,
     kind: 'segments',
@@ -4122,11 +4122,11 @@ export function buildCollapsedToolGroupRows(baseKey: string, events: any[]): any
       { text: 'Ctrl+E', color: '#f59e0b' },
     ].filter(Boolean),
   });
-  
+
   changeEvents.forEach((event: any, index: number) => {
     rows.push(...buildToolCallRows(`${baseKey}-change-${index}`, event, false));
   });
-  
+
   return rows;
 }
 
@@ -4154,13 +4154,13 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
       });
     });
   };
-  
+
   let skippedUntil = -1;
   blocks.forEach((block: OutputBlock, blockIndex: number) => {
     if (blockIndex < skippedUntil) return;
     const event = block.event as any;
     const baseKey = `block-${block.id}`;
-  
+
     if (!toolOutputExpanded && event.type === 'tool-call') {
       const groupedEvents = [event];
       let nextIndex = blockIndex + 1;
@@ -4170,14 +4170,14 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
         groupedEvents.push(nextEvent);
         nextIndex += 1;
       }
-  
+
       if (groupedEvents.length > 1) {
         rows.push(...buildCollapsedToolGroupRows(baseKey, groupedEvents));
         skippedUntil = nextIndex;
         return;
       }
     }
-  
+
     switch (event.type) {
       case 'text':
         pushRichText(baseKey, event.content, 2, proseWidth);
@@ -4616,7 +4616,7 @@ export function buildTranscriptRows(blocks: OutputBlock[], mode: string, toolOut
         pushSegmentsRow(`${baseKey}-fallback`, 2, [{ text: `[${event.type}]`, dimColor: true }]);
     }
   });
-  
+
   return rows;
 }
 

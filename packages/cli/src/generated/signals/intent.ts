@@ -209,20 +209,20 @@ function parseExplicitEngineIds(input: string): string[] {
   const add = (value: string | null) => {
     if (value && !engineIds.includes(value)) engineIds.push(value);
   };
-  
+
   const collect = (segment: string) => {
     segment
       .split(/(?:,|\s+and\s+|\s+or\s+|\s+plus\s+|\s+with\s+|\s+)/i)
       .map((part) => normalizeEngineToken(part))
       .forEach(add);
   };
-  
+
   const withMatch = input.match(/\bwith\s+([a-z0-9@_.-]+(?:\s*(?:,|and|or|plus)\s*[a-z0-9@_.-]+)*)/i);
   if (withMatch) collect(withMatch[1]);
-  
+
   const askMatch = input.match(/\b(?:ask|have|get)\s+([a-z0-9@_.-]+(?:\s*(?:,|and|or|plus)\s*[a-z0-9@_.-]+)*)\s+(?:to\s+)?(?:review|check|audit|look|inspect|compare|weigh|think|debate)\b/i);
   if (askMatch) collect(askMatch[1]);
-  
+
   return engineIds;
 }
 
@@ -231,15 +231,15 @@ function parseSemanticReviewShortcut(input: string): Intent|null {
   const lower = input.toLowerCase();
   const reviewVerb = /\b(?:review|check|audit|inspect|look\s+over)\b/i.test(input);
   if (!reviewVerb) return null;
-  
+
   const hasDelegationShape =
     /\bwith\s+[a-z0-9@_.-]+/i.test(input) ||
     /\b(?:ask|have|get)\s+[a-z0-9@_.-]+(?:\s*(?:,|and|or|plus)\s*[a-z0-9@_.-]+)*\s+(?:to\s+)?(?:review|check|audit|look|inspect)\b/i.test(input);
   if (!hasDelegationShape) return null;
-  
+
   const engineIds = parseExplicitEngineIds(input);
   if (engineIds.length === 0) return null;
-  
+
   const targetMatch = lower.match(/\b(uncommitted|branch:[\w./-]+|commit:[a-f0-9]{4,40})\b/i);
   const target = targetMatch ? targetMatch[1] : undefined;
   return { type: 'review', engineId: engineIds[0], engineIds, target } as Intent;
@@ -264,22 +264,22 @@ function hasCollaborationAskShape(input: string): boolean {
 // @kern-source: intent:249
 function parseSemanticCollaborationShortcut(input: string): Intent|null {
   const question = stripCollaborationLeadIn(input);
-  
+
   if (/\b(?:debate|argue|tribunal|red-team|red\s+team)\b/i.test(input)) {
     const cleaned = input
       .replace(/^(?:can\s+you\s+|could\s+you\s+|please\s+)?(?:have|get|ask)?\s*(?:the\s+)?(?:others|team|engines|models|everyone|all\s+engines)?\s*(?:to\s+)?(?:debate|argue|tribunal|red-team|red\s+team)\s*/i, '')
       .trim();
     return { type: 'tribunal', question: cleaned || input } as Intent;
   }
-  
+
   if (/\b(?:campfire|talk\s+(?:it|this)?\s*through|think\s+(?:it|this)?\s*through)\b/i.test(input) && /\b(?:others|team|engines|models|everyone|all\s+engines)\b/i.test(input)) {
     return { type: 'campfire', topic: question || input } as Intent;
   }
-  
+
   if (hasCollaborationAskShape(input)) {
     return { type: 'brainstorm', question: question || input } as Intent;
   }
-  
+
   return null;
 }
 
@@ -287,14 +287,14 @@ function parseSemanticCollaborationShortcut(input: string): Intent|null {
 function parseSemanticForgeShortcut(input: string): Intent|null {
   const hasForgeShape = /\b(?:forge\s+this|forge\s+it|have\s+(?:the\s+)?(?:engines|models|team|others)\s+compete|make\s+(?:the\s+)?(?:engines|models|team|others)\s+compete|competitive\s+(?:build|implementation|fix))\b/i.test(input);
   if (!hasForgeShape) return null;
-  
+
   const task = input
     .replace(/^(?:can\s+you\s+|could\s+you\s+|please\s+)?/i, '')
     .replace(/^forge\s+(?:this|it)\s*/i, '')
     .replace(/^have\s+(?:the\s+)?(?:engines|models|team|others)\s+compete\s+(?:on\s+|to\s+)?/i, '')
     .replace(/^make\s+(?:the\s+)?(?:engines|models|team|others)\s+compete\s+(?:on\s+|to\s+)?/i, '')
     .trim();
-  
+
   const parsed = parseForgeInput(task || input);
   return { ...parsed, type: 'forge' } as Intent;
 }
@@ -333,7 +333,7 @@ function parseReviewInput(input: string): Intent {
   const engineIds: string[] = [];
   let target: string | undefined;
   let collectingEngines = false;
-  
+
   for (let i = 0; i < reviewParts.length; i += 1) {
     const part = reviewParts[i];
     const lower = part.toLowerCase();
@@ -357,7 +357,7 @@ function parseReviewInput(input: string): Intent {
     }
     if (!target) target = part;
   }
-  
+
   const engineId = engineIds[0];
   return { type: 'review', engineId, engineIds: engineIds.length > 0 ? engineIds : undefined, target } as Intent;
 }
@@ -366,10 +366,10 @@ function parseReviewInput(input: string): Intent {
 function parseReviewShortcut(input: string): Intent|null {
   const match = input.match(/^(?:review|cr)(?:\s+([\s\S]+))?$/i);
   if (!match) return null;
-  
+
   const rest = (match[1] ?? '').trim();
   if (!rest) return parseReviewInput('');
-  
+
   const parsed = parseReviewInput(rest) as any;
   const target = String(parsed.target ?? '').toLowerCase();
   const hasEngines = Array.isArray(parsed.engineIds) && parsed.engineIds.length > 0;
@@ -379,7 +379,7 @@ function parseReviewShortcut(input: string): Intent|null {
   }
   if (hasEngines && validTarget) return parsed;
   if (!hasEngines && validTarget) return parsed;
-  
+
   // Let natural-language review requests go through Cesar instead of
   // mis-parsing "review this code" as an invalid target named "this".
   return null;
@@ -389,11 +389,11 @@ function parseReviewShortcut(input: string): Intent|null {
 function parseSlashCommand(input: string, commandRegistry?: any): Intent {
   const stripped = input.slice(1).trim();
   if (!stripped) return { type: 'slash-list' } as Intent;
-  
+
   const parts = stripped.split(/\s+/);
   const cmd = parts[0].toLowerCase();
   const rest = parts.slice(1).join(' ');
-  
+
   switch (cmd) {
     case 'forge':
       return parseForgeInput(rest || '');
@@ -679,23 +679,23 @@ function parseSlashCommand(input: string, commandRegistry?: any): Intent {
 export function detectIntent(raw: string, commandRegistry?: any): Intent {
   const input = raw.trim();
   if (!input) return { type: 'unknown', input: '' } as Intent;
-  
+
   if (input.startsWith('/')) {
     return parseSlashCommand(input, commandRegistry);
   }
-  
+
   if (EXIT_KEYWORDS.test(input)) return { type: 'exit' } as Intent;
   if (HELP_KEYWORDS.test(input)) return { type: 'help' } as Intent;
-  
+
   const agentShortcut = parseAgentShortcut(input);
   if (agentShortcut) return agentShortcut;
-  
+
   const reviewShortcut = parseReviewShortcut(input);
   if (reviewShortcut) return reviewShortcut;
-  
+
   const delegationShortcut = parseSemanticDelegationShortcut(input);
   if (delegationShortcut) return delegationShortcut;
-  
+
   // Only match keyword shortcuts for short, command-like inputs.
   // Skip if input looks like a natural language sentence (question words, pronouns, >4 words).
   const isCommandLike = input.split(/\s+/).length <= 4 && !SENTENCE_PREFIX.test(input);
@@ -705,6 +705,6 @@ export function detectIntent(raw: string, commandRegistry?: any): Intent {
     if (ENGINES_KEYWORDS.test(input)) return { type: 'engines' } as Intent;
     if (CONFIG_KEYWORDS.test(input)) return { type: 'config' } as Intent;
   }
-  
+
   return { type: 'auto', input, taskClass: classifyTask(input) } as Intent;
 }

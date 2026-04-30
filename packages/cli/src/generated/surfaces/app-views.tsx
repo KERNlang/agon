@@ -86,7 +86,7 @@ const TranscriptRowView = React.memo(function TranscriptRowView({ row }: { row:a
     row.selectionEnd ?? String(row.selectionText ?? '').length,
     row.key,
   ) : null;
-  
+
   if (row.kind === 'spacer') {
     return (
       <Box paddingLeft={row.paddingLeft ?? 0}>
@@ -95,7 +95,7 @@ const TranscriptRowView = React.memo(function TranscriptRowView({ row }: { row:a
       </Box>
     );
   }
-  
+
   if (row.kind === 'gradient') {
     if (selectedText) {
       return (
@@ -112,7 +112,7 @@ const TranscriptRowView = React.memo(function TranscriptRowView({ row }: { row:a
       </Box>
     );
   }
-  
+
   if (row.kind === 'rich') {
     if (selectedText) {
       return (
@@ -130,7 +130,7 @@ const TranscriptRowView = React.memo(function TranscriptRowView({ row }: { row:a
       </Box>
     );
   }
-  
+
   if (row.kind === 'segments') {
     if (selectedText) {
       return wrap(selectedText);
@@ -155,7 +155,7 @@ const TranscriptRowView = React.memo(function TranscriptRowView({ row }: { row:a
       </Text>,
     );
   }
-  
+
   if (row.kind === 'ansi') {
     if (selectedText) {
       return wrap(selectedText);
@@ -167,7 +167,7 @@ const TranscriptRowView = React.memo(function TranscriptRowView({ row }: { row:a
       </>,
     );
   }
-  
+
   if (row.kind === 'diff') {
     if (selectedText) {
       return wrap(selectedText);
@@ -179,7 +179,7 @@ const TranscriptRowView = React.memo(function TranscriptRowView({ row }: { row:a
       </>,
     );
   }
-  
+
   if (row.kind === 'syntax') {
     if (selectedText) {
       return wrap(selectedText);
@@ -191,7 +191,7 @@ const TranscriptRowView = React.memo(function TranscriptRowView({ row }: { row:a
       </>,
     );
   }
-  
+
   return null;
 });
 export { TranscriptRowView };
@@ -210,11 +210,11 @@ export function ToolDetailBlock({ title, subtitle, accentColor, rows, maxVisible
   const visibleCount = Math.max(6, Math.min(Math.max(1, maxVisibleRows), Math.max(1, totalRows)));
   const maxOffset = Math.max(0, totalRows - visibleCount);
   const visibleRows = useMemo(() => rows.slice(offset, offset + visibleCount), [rows, offset, visibleCount]);
-  
+
   useEffect(() => {
     setOffset(0);
   }, [title, subtitle, totalRows, visibleCount]);
-  
+
   useInput((input: string, key: any) => {
     const lower = input.toLowerCase();
     if (key.escape || (key.ctrl && lower === 'o')) {
@@ -245,7 +245,7 @@ export function ToolDetailBlock({ title, subtitle, accentColor, rows, maxVisible
       setOffset(maxOffset);
     }
   });
-  
+
   return (
     <Box flexDirection="column" borderStyle="round" borderColor={accentColor} paddingX={1} marginY={1} width="100%">
       <Box justifyContent="space-between">
@@ -334,7 +334,7 @@ export function buildPlanChromeSummary(activePlan: any, activePlanState?: string
   const displayState = gauge.visible && gauge.phase === 'complete' ? 'done' : String(activePlanState ?? '');
   const visible = !!(planModeQueued || gauge.visible || ['planning', 'awaiting_approval', 'running', 'paused', 'done'].includes(displayState));
   if (!visible) return { visible: false };
-  
+
   let label = '';
   if (planModeQueued) label = 'ready';
   else if (displayState === 'planning') label = 'thinking';
@@ -343,13 +343,13 @@ export function buildPlanChromeSummary(activePlan: any, activePlanState?: string
   else if (displayState === 'paused') label = 'paused';
   else if (displayState === 'done') label = 'done';
   else label = displayState || 'plan';
-  
+
   let action = '';
   if (displayState === 'awaiting_approval') action = 'go/yes';
   else if (displayState === 'paused') action = '/plan resume';
   else if (displayState === 'running') action = 'Ctrl+G rail';
   else if (planModeQueued) action = 'type task';
-  
+
   const failed = Number(gauge.failed ?? 0);
   return {
     visible: true,

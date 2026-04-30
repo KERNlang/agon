@@ -190,7 +190,7 @@ export function buildCesarRecapDiffPreview(files: any[], diffsByPath: Record<str
     const relPath = String(file?.relPath ?? path);
     const diff = String(diffsByPath?.[path] ?? diffsByPath?.[relPath] ?? '').trim();
     if (!diff) continue;
-  
+
     let additions = 0;
     let deletions = 0;
     let candidateLines = 0;

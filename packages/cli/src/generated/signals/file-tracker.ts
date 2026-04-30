@@ -36,9 +36,9 @@ export function extractFilePaths(tool: string, input: string): string[] {
     parsed = JSON.parse(input);
     addPath(parsed?.file_path ?? parsed?.path ?? parsed?.filePath);
   } catch { /* non-JSON tool input is common for apply_patch */ }
-  
+
   if (toolKey !== 'apply_patch' && toolKey !== 'applypatch') return paths;
-  
+
   const patchCandidates = [
     parsed?.patch,
     parsed?.content,
@@ -51,7 +51,7 @@ export function extractFilePaths(tool: string, input: string): string[] {
     value.includes('diff --git') ||
     value.split('\n').some((line: string) => line.startsWith('@@'))
   ) ?? patchCandidates[0] ?? '';
-  
+
   for (const line of patchText.split('\n')) {
     const customFile = line.match(/^\*\*\* (?:Update|Add|Delete) File: (.+)$/);
     if (customFile) { addPath(customFile[1]); continue; }
@@ -60,7 +60,7 @@ export function extractFilePaths(tool: string, input: string): string[] {
     if (line.startsWith('+++ b/')) { addPath(line.slice('+++ b/'.length)); continue; }
     if (line.startsWith('--- a/')) { addPath(line.slice('--- a/'.length)); continue; }
   }
-  
+
   return paths;
 }
 
@@ -77,7 +77,7 @@ export function recordToolCall(tool: string, input: string, status: string): voi
   const isEditTool = EDIT_TOOLS.has(tool) || EDIT_TOOLS.has(toolKey);
   const isReadTool = READ_TOOLS.has(tool);
   if (!isEditTool && !isReadTool) return;
-  
+
   const now = Date.now();
   let touched = 0;
   for (const raw of rawPaths) {

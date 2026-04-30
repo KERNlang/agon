@@ -4,7 +4,7 @@
 import from="react" names="useState,useCallback,useEffect,useRef,useMemo"
 import from="ink" names="Box,Text,Static,render"
 import from="@kernlang/terminal/runtime" names="ScrollBox,AlternateScreen"
-import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,ensureCurrentWorkspace,startChatSession,getRatings,getActiveWorkspace,RUNS_DIR,extractImagesFromInput,resolveWorkingDir,currentBranch,configSet,createCesarMemory,modelEntryToEngineDef,appendMessage,getAgonHome,tracker,planCostEstimator,cancelCesarPlan,saveCesarPlan,listCesarPlans,loadCesarPlan"
+import from="@agon/core" names="EngineRegistry,loadConfig,ensureAgonHome,ensureCurrentWorkspace,startChatSession,getRatings,getActiveWorkspace,RUNS_DIR,extractImagesFromInput,resolveWorkingDir,currentBranch,configSet,createCesarMemory,modelEntryToEngineDef,appendMessage,getAgonHome,tracker,planCostEstimator,cancelCesarPlan,saveCesarPlan,listCesarPlans,loadCesarPlan,cesarPlanJsonPath"
 import from="@agon/core" names="Plan,ChatSession,Skill,PersistentSession,ImageAttachment" types=true
 import from="../../handlers/types.js" names="EngineProgress" types=true
 import from="@agon/adapter-cli" names="createCliAdapter"
@@ -51,7 +51,7 @@ import from="../../generated/blocks/engine.js" names="OutputBlock" types=true
 import from="../../generated/blocks/controls.js" names="ReviewEvent" types=true
 import from="node:path" names="join,dirname"
 import from="node:url" names="fileURLToPath"
-import from="node:fs" names="readdirSync,readFileSync,writeFileSync,mkdirSync,unlinkSync"
+import from="node:fs" names="readdirSync,readFileSync,writeFileSync,mkdirSync,unlinkSync,statSync"
 import from="node:os" names="tmpdir,totalmem,cpus"
 import from="node:child_process" names="spawnSync"
 import from="../models/session-results.js" names="sessionResultStore"
@@ -2577,6 +2577,10 @@ screen name=App target=ink
   ref name=activePlanClearTimerRef type="ReturnType<typeof setTimeout>|null" initial="null"
   ref name=planWatcherTimerRef type="ReturnType<typeof setInterval>|null" initial="null"
   ref name=planWatcherDebounceTimerRef type="ReturnType<typeof setTimeout>|null" initial="null"
+  // Mtime cache for the plan watcher's idle bail-out. Persists across
+  // effect re-mounts so we don't pay full read+parse on every render that
+  // re-mounts the watcher.
+  ref name=planWatcherStatMtimeRef type="number" initial=0
   ref name=streamingTextRef type="Record<string,StreamingEntry>" initial="{}"
   ref name=agentProgressRef type="Record<string,AgentProgressSnapshot>" initial="{}"
   ref name=lastReviewResultRef type="{ engineId: string; target: string; label: string; diff: string; reviewOutput: string; timestamp: number } | null" initial="null"
@@ -2892,8 +2896,22 @@ screen name=App target=ink
       if (planWatcherDebounceTimerRef.current) { clearTimeout(planWatcherDebounceTimerRef.current); planWatcherDebounceTimerRef.current = null; }
       if (!activePlan?.id) return;
       const planId = activePlan.id;
+      const planFilePath = (() => { try { return cesarPlanJsonPath(planId); } catch { return null; } })();
       planWatcherTimerRef.current = setInterval(() => {
         try {
+          // Idle bail-out: free syscall, returns immediately when file hasn't
+          // been written since last tick. Skips the readFileSync + JSON.parse
+          // + comparison + stringify-fallback hot path that compounds as the
+          // plan grows. Only the gate — the rest of the body is identical to
+          // the original conservative logic so render-frequency is unchanged
+          // on real updates.
+          if (planFilePath) {
+            try {
+              const mtimeMs = statSync(planFilePath).mtimeMs;
+              if (mtimeMs === planWatcherStatMtimeRef.current) return;
+              planWatcherStatMtimeRef.current = mtimeMs;
+            } catch { /* file gone — fall through to loadCesarPlan which handles missing */ }
+          }
           const loaded = loadCesarPlan(planId);
           if (!loaded) return;
           const current = activePlanRef.current;
@@ -3274,14 +3292,16 @@ screen name=App target=ink
     >>>
 
   // ── Proactive resume prompt on startup ──
-  // If a paused plan exists from a previous session, offer to resume it.
-  // Skip plans that are done/cancelled, or older than 24 hours, to avoid
-  // stale interruptions every time the user logs in.
-  // Pick the freshest paused/running plan so a stale first match doesn't
-  // hide a newer viable candidate.
+  // Off by default. User preference: "alwys when i restart but i dont want
+  // old plans if so i would say cesar". Gate behind config; flip
+  // resumePausedPlanOnStartup=true to restore. When enabled, picks the
+  // freshest paused/running plan within the last 24h so a stale first match
+  // doesn't hide a newer viable candidate.
   effect deps=""
     handler <<<
       try {
+        const startupConfig = loadConfig();
+        if ((startupConfig as any).resumePausedPlanOnStartup !== true) return;
         const MAX_RESUME_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
         const now = Date.now();
         const plans = listCesarPlans();

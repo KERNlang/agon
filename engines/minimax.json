@@ -11,8 +11,5 @@
     "apiKeyEnv": "MINIMAX_API_KEY",
     "model": "MiniMax-M1",
     "maxTokens": 4096
-  },
-
-  "exec": { "args": [] },
-  "review": { "args": [] }
+  }
 }

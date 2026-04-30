@@ -124,4 +124,82 @@ describe('plan-mode self executor', () => {
     expect(events.some((event) => event.type === 'progress-update' && event.engines?.some((engine: any) => engine.id === 'gemini' && engine.done === true && engine.score === '91'))).toBe(true);
     expect(events.some((event) => event.type === 'progress-clear')).toBe(true);
   });
+
+  it('treats a baseline-passing no-op forge result as an already satisfied plan step', async () => {
+    runForgeMock.mockResolvedValue({
+      winner: null,
+      baselinePasses: true,
+      results: {
+        codex: {
+          engineId: 'codex',
+          pass: false,
+          score: 0,
+          diffLines: 0,
+          filesChanged: 0,
+          durationSec: 12,
+          lintWarnings: 0,
+          styleScore: 100,
+          fitnessLogPath: '/tmp/codex-fitness.txt',
+          dispatchStdout: 'Already implemented; no edits needed.',
+        },
+        kimi: {
+          engineId: 'kimi',
+          pass: false,
+          score: 0,
+          diffLines: 0,
+          filesChanged: 0,
+          durationSec: 12,
+          lintWarnings: 0,
+          styleScore: 100,
+          fitnessLogPath: '/tmp/kimi-fitness.txt',
+          dispatchStdout: '',
+        },
+      },
+    });
+
+    const executors = buildStepExecutors(makeCtx({ activeEngines: () => ['codex', 'kimi'] }), () => {});
+    const result = await executors.forge.execute({
+      id: 'forge-step',
+      type: 'forge',
+      description: 'build telemetry service',
+      fitnessCmd: 'npm test',
+      state: 'pending',
+    } as any, {});
+
+    expect(result.result.status).toBe('success');
+    expect(result.result.output).toContain('Already satisfied');
+    expect(result.contextExport).toContain('already satisfied');
+  });
+
+  it('does not treat dispatch crashes as already satisfied no-op forge results', async () => {
+    runForgeMock.mockResolvedValue({
+      winner: null,
+      baselinePasses: true,
+      results: {
+        claude: {
+          engineId: 'claude',
+          pass: false,
+          score: 0,
+          diffLines: 0,
+          filesChanged: 0,
+          durationSec: 0,
+          lintWarnings: 0,
+          styleScore: 0,
+          dispatchStdout: 'ERROR: dispatch timed out',
+        },
+      },
+    });
+
+    const executors = buildStepExecutors(makeCtx({ activeEngines: () => ['claude'] }), () => {});
+    const result = await executors.forge.execute({
+      id: 'forge-step',
+      type: 'forge',
+      description: 'build telemetry service',
+      fitnessCmd: 'npm test',
+      state: 'pending',
+    } as any, {});
+
+    expect(result.result.status).toBe('failure');
+    expect(result.result.error).toBe('No winner');
+  });
 });

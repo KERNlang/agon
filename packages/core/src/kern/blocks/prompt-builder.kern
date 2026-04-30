@@ -63,11 +63,11 @@ fn name=buildForgePrompt params="opts:{task:string;fitnessCmd:string;context?:st
     if (opts.context) sections.push(`## CONTEXT\n${opts.context}`);
     if (opts.agentMode) {
       sections.push(
-        `## CONSTRAINTS\n- You have full tool access. Read files, edit code, run commands directly.\n- Run the fitness test command to verify your work passes.\n- Iterate until the fitness test passes — read errors, fix them, re-run.\n- Modify only the files necessary to complete the task.\n- Exit when the fitness test passes.\n- Do not ask questions — make reasonable assumptions.`,
+        `## CONSTRAINTS\n- You have full tool access. Read files, edit code, run commands directly.\n- Fitness may already pass on the baseline. Do not treat a pre-existing pass as completion; inspect and implement the requested task first.\n- A forge candidate must produce a meaningful task-specific patch unless the requested change is already fully implemented.\n- If the requested change is already fully implemented, say that explicitly and leave the worktree clean.\n- Run the fitness test command to verify your work passes.\n- Iterate until the fitness test passes — read errors, fix them, re-run.\n- Modify only the files necessary to complete the task.\n- Exit when the task is implemented and the fitness test passes.\n- Do not ask questions — make reasonable assumptions.`,
       );
     } else {
       sections.push(
-        `## CONSTRAINTS\n- Write code, not plans. Implement the solution directly.\n- Modify only the files necessary to complete the task.\n- Run the fitness test command to verify your work passes.\n- Exit when the fitness test passes.\n- Do not ask questions — make reasonable assumptions.`,
+        `## CONSTRAINTS\n- Write code, not plans. Implement the solution directly.\n- Fitness may already pass on the baseline. Do not treat a pre-existing pass as completion; inspect and implement the requested task first.\n- A forge candidate must produce a meaningful task-specific patch unless the requested change is already fully implemented.\n- If the requested change is already fully implemented, say that explicitly and leave the worktree clean.\n- Modify only the files necessary to complete the task.\n- Run the fitness test command to verify your work passes.\n- Exit when the task is implemented and the fitness test passes.\n- Do not ask questions — make reasonable assumptions.`,
       );
     }
     return sections.join('\n\n');
@@ -118,11 +118,11 @@ fn name=buildForgePromptWithContext params="opts:{task:string;fitnessCmd:string;
 
     if (opts.agentMode) {
       sections.push(
-        `## CONSTRAINTS\n- You have full tool access. Read files, edit code, run commands directly.\n- Run the fitness test command to verify your work passes.\n- Iterate until the fitness test passes — read errors, fix them, re-run.\n- Modify only the files necessary to complete the task.\n- Exit when the fitness test passes.\n- Do not ask questions — make reasonable assumptions.`,
+        `## CONSTRAINTS\n- You have full tool access. Read files, edit code, run commands directly.\n- Fitness may already pass on the baseline. Do not treat a pre-existing pass as completion; inspect and implement the requested task first.\n- A forge candidate must produce a meaningful task-specific patch unless the requested change is already fully implemented.\n- If the requested change is already fully implemented, say that explicitly and leave the worktree clean.\n- Run the fitness test command to verify your work passes.\n- Iterate until the fitness test passes — read errors, fix them, re-run.\n- Modify only the files necessary to complete the task.\n- Exit when the task is implemented and the fitness test passes.\n- Do not ask questions — make reasonable assumptions.`,
       );
     } else {
       sections.push(
-        `## CONSTRAINTS\n- Write code, not plans. Implement the solution directly.\n- Modify only the files necessary to complete the task.\n- Run the fitness test command to verify your work passes.\n- Exit when the fitness test passes.\n- Do not ask questions — make reasonable assumptions.`,
+        `## CONSTRAINTS\n- Write code, not plans. Implement the solution directly.\n- Fitness may already pass on the baseline. Do not treat a pre-existing pass as completion; inspect and implement the requested task first.\n- A forge candidate must produce a meaningful task-specific patch unless the requested change is already fully implemented.\n- If the requested change is already fully implemented, say that explicitly and leave the worktree clean.\n- Modify only the files necessary to complete the task.\n- Run the fitness test command to verify your work passes.\n- Exit when the task is implemented and the fitness test passes.\n- Do not ask questions — make reasonable assumptions.`,
       );
     }
     return sections.join('\n\n');

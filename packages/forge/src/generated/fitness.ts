@@ -33,7 +33,7 @@ export async function runFitness(opts: {engineId:string, worktreePath:string, fi
   }
 
   const durationSec = Math.round((Date.now() - startTime) / 1000);
-  const pass = fitnessResult.exitCode === 0 && !fitnessResult.timedOut;
+  const commandPass = fitnessResult.exitCode === 0 && !fitnessResult.timedOut;
 
   let diff: string;
   let diffLines: number;
@@ -58,6 +58,10 @@ export async function runFitness(opts: {engineId:string, worktreePath:string, fi
   const patchPath = join(opts.forgeDir, `${opts.engineId}-patch.diff`);
   writeFileSync(patchPath, diff);
 
+  const requiresCandidateDiff = opts.engineId !== 'baseline';
+  const diffGatePass = !requiresCandidateDiff || diffLines > 0;
+  const pass = commandPass && diffGatePass;
+
   // Persist fitness stdout/stderr to disk — followers + synthesis can read WHY tests failed
   let fitnessLogPath: string | undefined;
   try {
@@ -65,6 +69,8 @@ export async function runFitness(opts: {engineId:string, worktreePath:string, fi
       `# Fitness Log: ${opts.engineId}`,
       `Exit code: ${fitnessResult.exitCode}`,
       `Timed out: ${fitnessResult.timedOut}`,
+      `Command pass: ${commandPass}`,
+      `Diff gate: ${requiresCandidateDiff ? (diffGatePass ? 'passed' : 'failed - no candidate changes') : 'not required for baseline'}`,
       `Pass: ${pass}`,
       `Duration: ${durationSec}s`,
       '',

@@ -17,6 +17,12 @@ interface name=ApplyPreflight
   field name=patch type=PatchInfo optional=true
   field name=dirtyTree type=boolean
 
+fn name=normalizePatchContent params="patchContent:string" returns=string export=false
+  handler <<<
+    if (!patchContent.trim()) return patchContent;
+    return patchContent.endsWith('\n') ? patchContent : `${patchContent}\n`;
+  >>>
+
 fn name=getUndoDir returns=string export=false
   handler <<<
     const override = process.env.AGON_HOME?.trim();
@@ -32,7 +38,7 @@ fn name=readPatchFromManifest params="manifestPath:string" returns="PatchInfo|nu
       if (!manifest.winner) return null;
       const patchPath = manifest.patches[manifest.winner];
       if (!patchPath) return null;
-      const content = readFileSync(patchPath, 'utf-8');
+      const content = normalizePatchContent(readFileSync(patchPath, 'utf-8'));
       const lineCount = content.split('\n').filter(
         (l: string) => (l.startsWith('+') && !l.startsWith('+++')) || (l.startsWith('-') && !l.startsWith('---'))
       ).length;
@@ -46,7 +52,7 @@ fn name=readPatchFromManifest params="manifestPath:string" returns="PatchInfo|nu
 fn name=readPatchFromPath params="patchPath:string" returns="PatchInfo|null"
   handler <<<
     try {
-      const content = readFileSync(patchPath, 'utf-8');
+      const content = normalizePatchContent(readFileSync(patchPath, 'utf-8'));
       if (!content.trim()) return null;
       const lineCount = content.split('\n').filter(
         (l: string) => (l.startsWith('+') && !l.startsWith('+++')) || (l.startsWith('-') && !l.startsWith('---'))
@@ -72,7 +78,7 @@ fn name=isTreeDirty params="cwd:string" returns="boolean"
 fn name=dryRunApply params="cwd:string, patchContent:string" returns="{ ok:boolean, error?:string }"
   handler <<<
     try {
-      execSync('git apply --check -', { cwd, input: patchContent, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
+      execSync('git apply --check -', { cwd, input: normalizePatchContent(patchContent), encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
       return { ok: true };
     } catch (err) {
       const msg = err instanceof Error ? (err as any).stderr || err.message : String(err);
@@ -83,7 +89,7 @@ fn name=dryRunApply params="cwd:string, patchContent:string" returns="{ ok:boole
 fn name=applyPatchToTree params="cwd:string, patchContent:string" returns="{ ok:boolean, error?:string }"
   handler <<<
     try {
-      execSync('git apply --allow-empty -', { cwd, input: patchContent, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
+      execSync('git apply --allow-empty -', { cwd, input: normalizePatchContent(patchContent), encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
       return { ok: true };
     } catch (err) {
       const msg = err instanceof Error ? (err as any).stderr || err.message : String(err);
@@ -130,7 +136,7 @@ fn name=applyPatchWithUndo params="cwd:string, patchContent:string" returns="{ o
 
     // Apply the patch
     try {
-      execSync('git apply --allow-empty -', { cwd, input: patchContent, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
+      execSync('git apply --allow-empty -', { cwd, input: normalizePatchContent(patchContent), encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
     } catch (err) {
       const msg = err instanceof Error ? (err as any).stderr || err.message : String(err);
       return { ok: false, error: msg };
@@ -159,7 +165,7 @@ fn name=undoPatch params="cwd:string, undoToken:string" returns="{ ok:boolean, e
     }
 
     try {
-      execSync('git apply --allow-empty -', { cwd, input: inverse, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
+      execSync('git apply --allow-empty -', { cwd, input: normalizePatchContent(inverse), encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
       return { ok: true };
     } catch (err) {
       const msg = err instanceof Error ? (err as any).stderr || err.message : String(err);

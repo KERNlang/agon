@@ -62,6 +62,7 @@ fn name=runForgeEngineAttempt async=true params="opts:{engineId:string,prompt:st
     opts.onEvent?.({ type: opts.eventType as any, engineId: opts.engineId, data: opts.eventData });
 
     const dispatchStart = Date.now();
+    let dispatchDurationMs = 0;
     let dispatchResult: any;
     // Forge is a code-changing workflow. API-only engines must run through
     // the tool-using agent loop; plain API chat can only return text and will
@@ -72,31 +73,34 @@ fn name=runForgeEngineAttempt async=true params="opts:{engineId:string,prompt:st
       engineId: opts.engineId,
       data: { engineId: opts.engineId, pid, phase: opts.metricPhase },
     });
-    if (useAgent) {
-      dispatchResult = await opts.adapter.dispatchAgent!({
-        engine,
-        prompt: opts.prompt,
-        cwd: wtPath,
-        mode: 'agent',
-        timeout: opts.config.forgeTimeout,
-        outputDir: opts.forgeDir,
-        signal: opts.signal,
-        onSpawn,
-      });
-    } else {
-      dispatchResult = await opts.adapter.dispatch({
-        engine,
-        prompt: opts.prompt,
-        cwd: wtPath,
-        mode: opts.dispatchMode,
-        timeout: opts.config.forgeTimeout,
-        outputDir: opts.forgeDir,
-        signal: opts.signal,
-        onSpawn,
-      });
+    try {
+      if (useAgent) {
+        dispatchResult = await opts.adapter.dispatchAgent!({
+          engine,
+          prompt: opts.prompt,
+          cwd: wtPath,
+          mode: 'agent',
+          timeout: opts.config.forgeTimeout,
+          outputDir: opts.forgeDir,
+          signal: opts.signal,
+          onSpawn,
+        });
+      } else {
+        dispatchResult = await opts.adapter.dispatch({
+          engine,
+          prompt: opts.prompt,
+          cwd: wtPath,
+          mode: opts.dispatchMode,
+          timeout: opts.config.forgeTimeout,
+          outputDir: opts.forgeDir,
+          signal: opts.signal,
+          onSpawn,
+        });
+      }
+    } finally {
+      dispatchDurationMs = Date.now() - dispatchStart;
+      opts.onEvent?.({ type: 'engine:pid-clear' as any, engineId: opts.engineId, data: { engineId: opts.engineId, phase: opts.metricPhase } });
     }
-    const dispatchDurationMs = Date.now() - dispatchStart;
-    opts.onEvent?.({ type: 'engine:pid-clear' as any, engineId: opts.engineId, data: { engineId: opts.engineId, phase: opts.metricPhase } });
 
     const fitnessStart = Date.now();
     const result = await runFitness({

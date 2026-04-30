@@ -271,7 +271,7 @@ export async function runStage2(opts: {challengers:string[], forgePrompt:string,
     const attempt = await runForgeEngineAttempt({
       engineId,
       prompt,
-      dispatchMode: 'review',
+      dispatchMode: 'exec',
       metricPhase: 'stage2-follower',
       fitnessCmd: opts.fitnessCmd,
       config: opts.config,
@@ -322,7 +322,7 @@ export async function runStage2(opts: {challengers:string[], forgePrompt:string,
           const fallback = await runForgeEngineAttempt({
             engineId: fallbackId,
             prompt: fallbackPrompt,
-            dispatchMode: 'review',
+            dispatchMode: 'exec',
             metricPhase: 'stage2-fallback',
             fitnessCmd: opts.fitnessCmd,
             config: opts.config,
@@ -383,7 +383,7 @@ export async function runStage2WithPeek(opts: {challengers:string[], forgePrompt
     const scoutAttempt = await runForgeEngineAttempt({
       engineId: scoutId,
       prompt: scoutPrompt,
-      dispatchMode: 'review',
+      dispatchMode: 'exec',
       metricPhase: 'stage2-scout',
       fitnessCmd: opts.fitnessCmd,
       config: opts.config,
@@ -445,7 +445,7 @@ export async function runStage2WithPeek(opts: {challengers:string[], forgePrompt
         const fallback = await runForgeEngineAttempt({
           engineId: fallbackId,
           prompt: fallbackPrompt,
-          dispatchMode: 'review',
+          dispatchMode: 'exec',
           metricPhase: 'stage2-scout-fallback',
           fitnessCmd: opts.fitnessCmd,
           config: opts.config,
@@ -479,7 +479,7 @@ export async function runStage2WithPeek(opts: {challengers:string[], forgePrompt
     const attempt = await runForgeEngineAttempt({
       engineId,
       prompt,
-      dispatchMode: 'review',
+      dispatchMode: 'exec',
       metricPhase: 'stage2-follower',
       fitnessCmd: opts.fitnessCmd,
       config: opts.config,
@@ -531,7 +531,7 @@ export async function runStage2WithPeek(opts: {challengers:string[], forgePrompt
           const fallback = await runForgeEngineAttempt({
             engineId: fallbackId,
             prompt: fallbackPrompt,
-            dispatchMode: 'review',
+            dispatchMode: 'exec',
             metricPhase: 'stage2-fallback',
             fitnessCmd: opts.fitnessCmd,
             config: opts.config,

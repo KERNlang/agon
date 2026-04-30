@@ -260,7 +260,7 @@ fn name=runStage2 async=true params="opts:{challengers:string[], forgePrompt:str
       const attempt = await runForgeEngineAttempt({
         engineId,
         prompt,
-        dispatchMode: 'review',
+        dispatchMode: 'exec',
         metricPhase: 'stage2-follower',
         fitnessCmd: opts.fitnessCmd,
         config: opts.config,
@@ -311,7 +311,7 @@ fn name=runStage2 async=true params="opts:{challengers:string[], forgePrompt:str
             const fallback = await runForgeEngineAttempt({
               engineId: fallbackId,
               prompt: fallbackPrompt,
-              dispatchMode: 'review',
+              dispatchMode: 'exec',
               metricPhase: 'stage2-fallback',
               fitnessCmd: opts.fitnessCmd,
               config: opts.config,
@@ -372,7 +372,7 @@ fn name=runStage2WithPeek async=true params="opts:{challengers:string[], forgePr
       const scoutAttempt = await runForgeEngineAttempt({
         engineId: scoutId,
         prompt: scoutPrompt,
-        dispatchMode: 'review',
+        dispatchMode: 'exec',
         metricPhase: 'stage2-scout',
         fitnessCmd: opts.fitnessCmd,
         config: opts.config,
@@ -434,7 +434,7 @@ fn name=runStage2WithPeek async=true params="opts:{challengers:string[], forgePr
           const fallback = await runForgeEngineAttempt({
             engineId: fallbackId,
             prompt: fallbackPrompt,
-            dispatchMode: 'review',
+            dispatchMode: 'exec',
             metricPhase: 'stage2-scout-fallback',
             fitnessCmd: opts.fitnessCmd,
             config: opts.config,
@@ -468,7 +468,7 @@ fn name=runStage2WithPeek async=true params="opts:{challengers:string[], forgePr
       const attempt = await runForgeEngineAttempt({
         engineId,
         prompt,
-        dispatchMode: 'review',
+        dispatchMode: 'exec',
         metricPhase: 'stage2-follower',
         fitnessCmd: opts.fitnessCmd,
         config: opts.config,
@@ -520,7 +520,7 @@ fn name=runStage2WithPeek async=true params="opts:{challengers:string[], forgePr
             const fallback = await runForgeEngineAttempt({
               engineId: fallbackId,
               prompt: fallbackPrompt,
-              dispatchMode: 'review',
+              dispatchMode: 'exec',
               metricPhase: 'stage2-fallback',
               fitnessCmd: opts.fitnessCmd,
               config: opts.config,

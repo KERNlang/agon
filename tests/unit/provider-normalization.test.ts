@@ -101,10 +101,11 @@ describe('provider-aware message normalization', () => {
         role: 'assistant', content: null,
         tool_calls: [{ id: 'c1', type: 'function', function: { name: 'Read', arguments: 'not json' } }],
       },
+      { role: 'tool', content: 'tool output', tool_call_id: 'c1' },
     ];
     // Should not throw
     const result = convertMessagesForSdk(msgs as any, 'anthropic');
-    expect(result).toHaveLength(2);
+    expect(result).toHaveLength(3);
     const toolCall = result[1].content.find((p: any) => p.type === 'tool-call');
     expect(toolCall).toBeDefined();
     // Args should be empty object (fallback)

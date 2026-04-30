@@ -1649,7 +1649,13 @@ Respond with ONLY the summary, no preamble.`;
               lastReadOnlySignature = readOnlySignature;
               if ((readOnlyStep && staleReadRetryText && parsedCalls.length > 20) || repeatedReadOnlyRetrySteps >= 3) {
                 yield { type: 'error' as const, content: 'Tool loop stopped: repeated read-only retry loop after a stale edit/read condition. Re-read has already reached the tool layer; stop repeating reads and either edit from the current content or explain the blocker.' };
-                messageHistory.push({ role: 'assistant', content: '[Tool loop stopped — repeated read-only stale-edit retry]' });
+                if (messageHistory[messageHistory.length - 1] === assistToolMsg) {
+                  messageHistory.pop();
+                }
+                messageHistory.push({
+                  role: 'assistant',
+                  content: `${cleanText ? `${cleanText}\n` : ''}[Tool loop stopped — repeated read-only stale-edit retry before executing duplicate read-only calls]`,
+                });
                 break;
               }
               for (const tc of parsedCalls) {

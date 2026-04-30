@@ -79,20 +79,29 @@ fn name=normalizeToolCallId params="id:string, format?:string" returns=string ex
 fn name=convertMessagesForSdk params="messages:Array<{role:string,content:any,tool_calls?:any[],tool_call_id?:string}>, format?:string" returns="any[]"
   doc "Convert Agon message history (OpenAI wire format) to AI SDK CoreMessage format. Handles per-provider normalization."
   handler <<<
-    // Build tool call ID -> name lookup for tool result messages
-    const toolNameMap = new Map<string, string>();
-    // Also build original→normalized ID mapping for tool results to match
+    // Build original→normalized ID mapping, and count tool results that still
+    // remain later in the history. The AI SDK requires every assistant
+    // tool-call part to have a matching tool-result part. If an interrupted
+    // stream left a dangling assistant tool_call in history, replay it as
+    // plain context instead of letting the SDK throw MissingToolResultsError.
     const idMap = new Map<string, string>();
     for (const msg of messages) {
       if (msg.tool_calls) {
         for (const tc of msg.tool_calls) {
           if (tc.id && tc.function?.name) {
             const normalizedId = normalizeToolCallId(tc.id, format);
-            toolNameMap.set(normalizedId, tc.function.name);
             idMap.set(tc.id, normalizedId);
           }
         }
       }
+    }
+    const resultRemainingById = new Map<string, number>();
+    for (const msg of messages as any[]) {
+      if (msg?.role !== 'tool') continue;
+      const originalId = typeof msg.tool_call_id === 'string' ? msg.tool_call_id : '';
+      if (!originalId) continue;
+      const normalizedId = idMap.get(originalId) ?? normalizeToolCallId(originalId, format);
+      resultRemainingById.set(normalizedId, (resultRemainingById.get(normalizedId) ?? 0) + 1);
     }
 
     const systemParts: string[] = [];
@@ -103,6 +112,7 @@ fn name=convertMessagesForSdk params="messages:Array<{role:string,content:any,to
     }
 
     const result: any[] = [];
+    const activeToolNamesById = new Map<string, string>();
     if (systemParts.length > 0) {
       result.push({ role: 'system', content: systemParts.join('\n\n') });
     }
@@ -131,6 +141,7 @@ fn name=convertMessagesForSdk params="messages:Array<{role:string,content:any,to
           parts.push({ type: 'text', text: msg.content });
         }
         if (msg.tool_calls) {
+          const droppedToolCalls: string[] = [];
           for (const tc of msg.tool_calls) {
             let args: Record<string, unknown> = {};
             try {
@@ -139,11 +150,23 @@ fn name=convertMessagesForSdk params="messages:Array<{role:string,content:any,to
                 : tc.function?.arguments ?? {};
             } catch { args = {}; /* malformed tool_calls JSON — use empty args */ }
             const normalizedId = idMap.get(tc.id) ?? normalizeToolCallId(tc.id ?? `call_${Date.now()}`, format);
+            const toolName = tc.function?.name ?? 'unknown';
+            if ((resultRemainingById.get(normalizedId) ?? 0) <= 0) {
+              droppedToolCalls.push(toolName);
+              continue;
+            }
+            activeToolNamesById.set(normalizedId, toolName);
             parts.push({
               type: 'tool-call',
               toolCallId: normalizedId,
-              toolName: tc.function?.name ?? 'unknown',
+              toolName,
               input: args,
+            });
+          }
+          if (droppedToolCalls.length > 0) {
+            parts.push({
+              type: 'text',
+              text: `[Recovered incomplete tool call${droppedToolCalls.length > 1 ? 's' : ''} omitted from native tool channel: ${droppedToolCalls.join(', ')}]`,
             });
           }
         }
@@ -155,7 +178,7 @@ fn name=convertMessagesForSdk params="messages:Array<{role:string,content:any,to
       } else if (msg.role === 'tool') {
         const originalId = typeof (msg as any).tool_call_id === 'string' ? (msg as any).tool_call_id : '';
         const toolCallId = originalId ? (idMap.get(originalId) ?? normalizeToolCallId(originalId, format)) : '';
-        const toolName = toolCallId ? toolNameMap.get(toolCallId) : undefined;
+        const toolName = toolCallId ? activeToolNamesById.get(toolCallId) : undefined;
         const outputValue = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
         if (!toolCallId || !toolName) {
           pushMessage({
@@ -175,6 +198,10 @@ fn name=convertMessagesForSdk params="messages:Array<{role:string,content:any,to
               },
             }],
           });
+          activeToolNamesById.delete(toolCallId);
+        }
+        if (toolCallId && resultRemainingById.has(toolCallId)) {
+          resultRemainingById.set(toolCallId, Math.max(0, (resultRemainingById.get(toolCallId) ?? 0) - 1));
         }
       }
     }

@@ -377,5 +377,8 @@ describe('persistent session streaming dedupe', () => {
 
     expect(readCount).toBe(0);
     expect(chunks.some((chunk: any) => chunk.type === 'error' && /repeated read-only retry loop/.test(chunk.content))).toBe(true);
+    const history = session.getMessageHistory();
+    expect(history.some((msg: any) => msg.role === 'assistant' && Array.isArray(msg.tool_calls))).toBe(false);
+    expect(history.some((msg: any) => msg.role === 'assistant' && /Tool loop stopped/.test(String(msg.content)))).toBe(true);
   });
 });

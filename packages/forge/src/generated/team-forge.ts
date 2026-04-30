@@ -215,10 +215,12 @@ export async function runTeamCoopForge(team: TeamSpec, task: string, fitnessCmd:
     const implEngine = registry.get(impl.engineId);
     const implPrompt = `${forgePrompt}\n\n## YOUR ROLE: IMPLEMENTER\nYou are implementing code based on the architect's plan below. Write the actual code changes.\n\n## ARCHITECT'S PLAN:\n${plan}\n\nTask: ${task}`;
 
-    const hasAgent = !!implEngine.agent;
+    // Team implementers mutate isolated worktrees. API-only engines must use
+    // the same tool loop as agent engines; plain API dispatch only returns text.
+    const hasAgent = !!adapter.dispatchAgent && (!!implEngine.agent || !!implEngine.api);
     let implResult;
-    if (hasAgent && adapter.dispatchAgent) {
-      implResult = await adapter.dispatchAgent({
+    if (hasAgent) {
+      implResult = await adapter.dispatchAgent!({
         engine: implEngine,
         prompt: implPrompt,
         cwd: wt.path,
@@ -281,7 +283,7 @@ export async function runTeamCoopForge(team: TeamSpec, task: string, fitnessCmd:
           const fallbackPrompt = `${forgePrompt}\n\n## YOUR ROLE: IMPLEMENTER FALLBACK\nYou are replacing failed implementer ${failed.engineId}. Failure: ${error}\n\n## ARCHITECT'S PLAN:\n${plan}\n\nTask: ${task}`;
           const startFallback = Date.now();
           let fallbackResult: any;
-          if (fallbackEngine.agent && adapter.dispatchAgent) {
+          if (adapter.dispatchAgent && (fallbackEngine.agent || fallbackEngine.api)) {
             fallbackResult = await adapter.dispatchAgent({
               engine: fallbackEngine,
               prompt: fallbackPrompt,
@@ -405,7 +407,7 @@ export async function runTeamCoopForge(team: TeamSpec, task: string, fitnessCmd:
     const revisePrompt = `${forgePrompt}\n\n## REVISION REQUIRED\nThe reviewer found issues with your implementation. Fix them.\n\n## REVIEW FEEDBACK:\n${reviewText}\n\nTask: ${task}`;
 
     const reviseEngine = registry.get(bestImpl.engineId);
-    if (reviseEngine.agent && adapter.dispatchAgent) {
+    if (adapter.dispatchAgent && (reviseEngine.agent || reviseEngine.api)) {
       await adapter.dispatchAgent({
         engine: reviseEngine,
         prompt: revisePrompt,
@@ -468,7 +470,7 @@ export async function runTeamCoopForge(team: TeamSpec, task: string, fitnessCmd:
   };
 }
 
-// @kern-source: team-forge:460
+// @kern-source: team-forge:462
 export async function runTeamForge(options: TeamForgeOptions, registry: EngineRegistry, adapter: EngineAdapter, onEvent?: (event:ForgeEvent|TeamEvent)=>void): Promise<TeamMatchResult> {
   const config = loadConfig(options.cwd);
   const matchId = randomUUID().slice(0, 8);

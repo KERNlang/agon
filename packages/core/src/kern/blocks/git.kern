@@ -22,6 +22,32 @@ fn name=git params="args:string[],cwd?:string" returns=string export=false
     }
   >>>
 
+fn name=gitRaw params="args:string[],cwd?:string" returns=string export=false
+  doc "Run git and preserve stdout exactly. Use for patch/diff payloads where trimming the final newline corrupts applyability."
+  handler <<<
+    try {
+      return execFileSync('git', args, {
+        cwd, encoding: 'utf-8', timeout: 30_000,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+    } catch (err: unknown) {
+      const e = err as { status?: number; stderr?: string|Buffer; stdout?: string|Buffer; message?: string };
+      const stderr = Buffer.isBuffer(e.stderr) ? e.stderr.toString('utf-8') : (e.stderr ?? '');
+      const stdout = Buffer.isBuffer(e.stdout) ? e.stdout.toString('utf-8') : (e.stdout ?? '');
+      const detail = stderr.trim() || stdout.trim() || e.message || 'unknown error';
+      throw new GitError(
+        `git ${args[0]} failed: ${detail}`,
+        e.status ?? 1,
+      );
+    }
+  >>>
+
+fn name=normalizePatchContent params="patchContent:string" returns=string export=false
+  handler <<<
+    if (!patchContent.trim()) return patchContent;
+    return patchContent.endsWith('\n') ? patchContent : `${patchContent}\n`;
+  >>>
+
 fn name=repoRoot params="cwd:string" returns=string expr={{ return git(['rev-parse', '--show-toplevel'], cwd); }}
 
 fn name=headSha params="cwd:string" returns=string expr={{ return git(['rev-parse', 'HEAD'], cwd); }}
@@ -144,7 +170,7 @@ fn name=worktreeChangedDiff params="cwd:string,baseSha:string" returns=string
   handler <<<
     try {
       // Diff tracked changes against baseSha
-      const trackedDiff = git(['diff', baseSha, '--'], cwd);
+      const trackedDiff = gitRaw(['diff', baseSha, '--'], cwd);
       // Add untracked files (respecting .gitignore via --exclude-standard)
       // We pipe each untracked file through git diff --no-index against /dev/null
       // to get a unified diff format.
@@ -268,7 +294,7 @@ fn name=worktreeDiff params="cwd:string" returns=string
   handler <<<
     try {
       git(['add', '-A'], cwd);
-      return git(['diff', '--cached'], cwd);
+      return gitRaw(['diff', '--cached'], cwd);
     } catch (err) {
       console.warn(`[agon] worktreeDiff failed: ${err instanceof Error ? err.message : String(err)}`);
       return '';
@@ -278,8 +304,8 @@ fn name=worktreeDiff params="cwd:string" returns=string
 fn name=readOnlyDiff params="cwd:string" returns=string
   handler <<<
     try {
-      const staged = git(['diff', '--cached'], cwd);
-      const unstaged = git(['diff'], cwd);
+      const staged = gitRaw(['diff', '--cached'], cwd);
+      const unstaged = gitRaw(['diff'], cwd);
       return staged + (staged && unstaged ? '\n' : '') + unstaged;
     } catch (err) {
       console.warn(`[agon] readOnlyDiff failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -313,7 +339,7 @@ fn name=applyPatch params="cwd:string,patchContent:string" returns=void
     if (!patchContent.trim()) return;
     try {
       execFileSync('git', ['apply', '--allow-empty', '-'], {
-        cwd, input: patchContent, encoding: 'utf-8', timeout: 30_000,
+        cwd, input: normalizePatchContent(patchContent), encoding: 'utf-8', timeout: 30_000,
         stdio: ['pipe', 'pipe', 'pipe'],
       });
     } catch (err: unknown) {

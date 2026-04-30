@@ -4,6 +4,7 @@ dist-tsc/
 *.tsbuildinfo
 .DS_Store
 coverage/
+docs/
 .agon/
 .agon.local.json
 .kern-dev.local.json

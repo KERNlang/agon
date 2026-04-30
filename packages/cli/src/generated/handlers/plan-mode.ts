@@ -157,8 +157,10 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
       case 'stage1:score':
       case 'stage2:score':
         if (id) {
-          engineStatus[id] = 'done';
+          const passed = event.data?.pass !== false;
+          engineStatus[id] = passed ? 'done' : 'failed';
           engineStatus[`${id}:score`] = String(event.data?.score ?? '?');
+          if (!passed) engineStatus[`${id}:error`] = Number(event.data?.score ?? 0) === 0 ? 'no candidate changes or fitness failed' : 'fitness failed';
         }
         break;
       case 'winner:determined':
@@ -202,6 +204,20 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
       return { ok: true };
     }
     return applyPatchToTree(cwd, patch.content);
+  };
+
+  const isAlreadySatisfiedNoopForge = (manifest: any): boolean => {
+    if (!manifest?.baselinePasses) return false;
+    const results = Object.values(manifest.results ?? {}) as any[];
+    if (results.length === 0) return false;
+    return results.every((r: any) => {
+      if (!r) return false;
+      const hasFitnessLog = typeof r.fitnessLogPath === 'string' && r.fitnessLogPath.length > 0;
+      const noPatch = Number(r.diffLines ?? 0) === 0 && Number(r.filesChanged ?? 0) === 0;
+      const zeroScore = Number(r.score ?? 0) === 0;
+      const notDispatchCrash = !String(r.dispatchStdout ?? '').startsWith('ERROR:');
+      return r.pass === false && hasFitnessLog && noPatch && zeroScore && notDispatchCrash;
+    });
   };
 
   return {
@@ -284,6 +300,13 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
           const engineSummaries = Object.entries(manifest.results ?? {}).map(([id, r]: [string, any]) => {
             return `  ${id}: ${r.pass ? 'PASS' : 'FAIL'} (score: ${r.score ?? 'N/A'}, ${r.diffLines ?? 0} lines)`;
           }).join('\n');
+          if (isAlreadySatisfiedNoopForge(manifest)) {
+            const message = `Already satisfied: baseline fitness passed and all forge candidates left a clean worktree.\n${engineSummaries}`;
+            return {
+              result: { status: 'success', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: message },
+              contextExport: 'Forge step already satisfied; no patch needed.',
+            };
+          }
           return {
             result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: `No winner.\n${engineSummaries}`, error: 'No winner' },
           };
@@ -331,6 +354,12 @@ export function buildStepExecutors(ctx: HandlerContext, liveDispatch?: Dispatch)
         );
         const after = snapshotTokens();
         if (!manifest.winner) {
+          if (isAlreadySatisfiedNoopForge(manifest)) {
+            return {
+              result: { status: 'success', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: 'Already satisfied: baseline fitness passed and all team-forge candidates left a clean worktree.' },
+              contextExport: 'TeamForge step already satisfied; no patch needed.',
+            };
+          }
           return {
             result: { status: 'failure', actualTokens: after.tokens - before.tokens, actualCostUsd: after.cost - before.cost, durationMs: Date.now() - startTime, output: 'No winner' },
           };

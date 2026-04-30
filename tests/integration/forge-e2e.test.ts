@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync, lstatSync, readlinkSync, symlinkSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -94,6 +94,46 @@ function createDeterministicAdapter(): EngineAdapter {
 }
 
 describe('Forge E2E', () => {
+  it('links dependencies into external worktrees while preserving workspace packages', async () => {
+    const repoDir = createRepo('worktree-node-modules');
+    const worktreePath = join(tmpdir(), `agon-forge-worktree-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    const kernModuleDir = join(repoDir, 'node_modules', '@kernlang', 'core');
+    const agonScopeDir = join(repoDir, 'node_modules', '@agon');
+    const agonPackageDir = join(repoDir, 'packages', 'core');
+
+    writeFileSync(join(repoDir, '.gitignore'), 'node_modules/\n');
+    mkdirSync(agonPackageDir, { recursive: true });
+    writeFileSync(join(agonPackageDir, 'package.json'), JSON.stringify({ name: '@agon/core', version: '0.0.0-test' }) + '\n');
+    git(repoDir, ['add', '.gitignore']);
+    git(repoDir, ['add', 'packages/core/package.json']);
+    git(repoDir, ['commit', '-m', 'ignore node modules']);
+    mkdirSync(kernModuleDir, { recursive: true });
+    writeFileSync(join(kernModuleDir, 'package.json'), JSON.stringify({ name: '@kernlang/core', version: '0.0.0-test' }) + '\n');
+    mkdirSync(agonScopeDir, { recursive: true });
+    symlinkSync('../../packages/core', join(agonScopeDir, 'core'), 'dir');
+
+    try {
+      vi.resetModules();
+      const { worktreeCreate, headSha } = await import('../../packages/core/src/index.js');
+      worktreeCreate(repoDir, worktreePath, headSha(repoDir));
+
+      const linkedNodeModules = join(worktreePath, 'node_modules');
+      const linkedKernScope = join(linkedNodeModules, '@kernlang');
+      const linkedAgonCore = join(linkedNodeModules, '@agon', 'core');
+      expect(existsSync(linkedNodeModules)).toBe(true);
+      expect(lstatSync(linkedNodeModules).isDirectory()).toBe(true);
+      expect(lstatSync(linkedKernScope).isSymbolicLink()).toBe(true);
+      expect(readlinkSync(linkedKernScope)).toBe(join(repoDir, 'node_modules', '@kernlang'));
+      expect(lstatSync(linkedAgonCore).isSymbolicLink()).toBe(true);
+      expect(readlinkSync(linkedAgonCore)).toBe(join(worktreePath, 'packages', 'core'));
+    } finally {
+      try { git(repoDir, ['worktree', 'remove', worktreePath, '--force']); } catch { /* best effort */ }
+      try { git(repoDir, ['worktree', 'prune']); } catch { /* best effort */ }
+      rmSync(repoDir, { recursive: true, force: true });
+      rmSync(worktreePath, { recursive: true, force: true });
+    }
+  });
+
   it('runs the real forge loop and persists the winning manifest and patch', async () => {
     const agonHome = setupTestAgonHome('forge-e2e');
     const repoDir = createRepo('repo');
@@ -479,6 +519,44 @@ describe('Forge E2E', () => {
       warnSpy.mockRestore();
       rmSync(forgeDir, { recursive: true, force: true });
       rmSync(missingWorktree, { recursive: true, force: true });
+    }
+  });
+
+  it('fails no-op forge candidates even when the fitness command passes', async () => {
+    const repoDir = createRepo('noop-fitness');
+    const forgeDir = join(tmpdir(), `agon-forge-output-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    const fakeNpx = createFakeNpx();
+    mkdirSync(forgeDir, { recursive: true });
+
+    try {
+      vi.resetModules();
+      const { runFitness } = await import('../../packages/forge/src/index.js');
+      const candidate = await runFitness({
+        engineId: 'noop',
+        worktreePath: repoDir,
+        fitnessCmd: 'true',
+        timeout: 1,
+        forgeDir,
+      });
+      const baseline = await runFitness({
+        engineId: 'baseline',
+        worktreePath: repoDir,
+        fitnessCmd: 'true',
+        timeout: 1,
+        forgeDir,
+      });
+
+      expect(candidate.pass).toBe(false);
+      expect(candidate.score).toBe(0);
+      expect(candidate.diffLines).toBe(0);
+      expect(readFileSync(candidate.fitnessLogPath!, 'utf-8')).toContain('Diff gate: failed - no candidate changes');
+      expect(baseline.pass).toBe(true);
+      expect(readFileSync(baseline.fitnessLogPath!, 'utf-8')).toContain('Diff gate: not required for baseline');
+    } finally {
+      process.env.PATH = fakeNpx.originalPath;
+      rmSync(fakeNpx.binDir, { recursive: true, force: true });
+      rmSync(repoDir, { recursive: true, force: true });
+      rmSync(forgeDir, { recursive: true, force: true });
     }
   });
 

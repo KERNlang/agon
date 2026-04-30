@@ -108,6 +108,14 @@ export async function runForgeEngineAttempt(opts: {engineId:string,prompt:string
         onSpawn,
       });
     }
+    const dispatchExitCode = typeof dispatchResult?.exitCode === 'number' ? dispatchResult.exitCode : 0;
+    if (dispatchResult?.timedOut || dispatchExitCode !== 0) {
+      const reason = dispatchResult?.timedOut
+        ? `dispatch timed out after ${opts.config.forgeTimeout}s`
+        : `dispatch exited with code ${dispatchExitCode}`;
+      const stderr = dispatchResult?.stderr ? `: ${String(dispatchResult.stderr).slice(0, 240).replace(/\s+/g, ' ').trim()}` : '';
+      throw new Error(`${reason}${stderr}`);
+    }
   } finally {
     dispatchDurationMs = Date.now() - dispatchStart;
     opts.onEvent?.({ type: 'engine:pid-clear' as any, engineId: opts.engineId, data: { engineId: opts.engineId, phase: opts.metricPhase } });
@@ -141,7 +149,7 @@ export async function runForgeEngineAttempt(opts: {engineId:string,prompt:string
   return { result, metric, dispatchResult, worktreePath: wtPath };
 }
 
-// @kern-source: stages:133
+// @kern-source: stages:141
 export async function runBaseline(opts: {cwd:string, baseSha:string, fitnessCmd:string, fitnessTimeout:number, forgeDir:string, onEvent?:ForgeEventCallback}): Promise<boolean> {
   opts.onEvent?.({ type: 'baseline:start' });
 
@@ -165,7 +173,7 @@ export async function runBaseline(opts: {cwd:string, baseSha:string, fitnessCmd:
   }
 }
 
-// @kern-source: stages:157
+// @kern-source: stages:165
 export async function runStage1(opts: {starter:string, forgePrompt:string, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal, taskClass?:string, enginePrompts?:Map<string,string>}): Promise<StageResult> {
   opts.onEvent?.({ type: 'stage1:start', engineId: opts.starter });
 
@@ -260,7 +268,7 @@ export async function runStage1(opts: {starter:string, forgePrompt:string, fitne
   return { engineResults, accepted, winner: result?.pass ? result.engineId : null, metrics };
 }
 
-// @kern-source: stages:252
+// @kern-source: stages:260
 export async function runStage2(opts: {challengers:string[], forgePrompt:string, enginePrompts?:Map<string,string>, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal}): Promise<StageResult> {
   opts.onEvent?.({ type: 'stage2:start' });
 
@@ -358,7 +366,7 @@ export async function runStage2(opts: {challengers:string[], forgePrompt:string,
   return { engineResults: allResults, accepted: false, winner: null, metrics };
 }
 
-// @kern-source: stages:350
+// @kern-source: stages:358
 export async function runStage2WithPeek(opts: {challengers:string[], forgePrompt:string, enginePrompts?:Map<string,string>, fitnessCmd:string, config:Required<AgonConfig>, registry:EngineRegistry, adapter:EngineAdapter, cwd:string, baseSha:string, forgeDir:string, existingResults:Map<string,EngineResult>, worktrees:WorktreeEntry[], onEvent?:ForgeEventCallback, signal?:AbortSignal}): Promise<StageResult> {
   if (opts.challengers.length <= 1) {
     // Only one challenger — no peek possible, use normal stage2

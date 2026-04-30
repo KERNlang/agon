@@ -82,8 +82,10 @@ function handleForgeEvent(event: any, plan: Plan, engineStatus: Record<string,st
     case 'stage1:score':
     case 'stage2:score': {
       if (id) {
-        engineStatus[id] = 'done';
+        const passed = event.data?.pass !== false;
+        engineStatus[id] = passed ? 'done' : 'failed';
         engineStatus[`${id}:score`] = String(event.data?.score ?? '?');
+        if (!passed) engineStatus[`${id}:error`] = Number(event.data?.score ?? 0) === 0 ? 'no candidate changes or fitness failed' : 'fitness failed';
       }
       const scoreStep = plan.steps.find((s: any) => s.id === 'score');
       if (scoreStep && scoreStep.result.state === 'pending') {
@@ -112,7 +114,7 @@ function handleForgeEvent(event: any, plan: Plan, engineStatus: Record<string,st
   return plan;
 }
 
-// @kern-source: forge:103
+// @kern-source: forge:105
 export async function handleForge(task: string, fitnessCmd: string|null, dispatch: Dispatch, ctx: HandlerContext, existingPlan?: Plan, hardened?: boolean, skipPlanApproval?: boolean): Promise<{winner:string|null, patchPath:string|null, manifestPath:string, task:string, fitnessCmd:string}|null> {
   const forgeAbort = new AbortController();
   try {

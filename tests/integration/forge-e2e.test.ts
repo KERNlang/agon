@@ -498,6 +498,82 @@ describe('Forge E2E', () => {
     }
   });
 
+  it('routes API-only team forge implementers through the tool-using agent loop', async () => {
+    const agonHome = setupTestAgonHome('team-forge-api-agent');
+    const repoDir = createRepo('team-forge-api-agent');
+    const forgeDir = join(tmpdir(), `agon-team-forge-api-output-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    const fakeNpx = createFakeNpx();
+    const previousApiKey = process.env.AGON_TEST_FORGE_API_KEY;
+    process.env.AGON_TEST_FORGE_API_KEY = 'test-key';
+
+    const dispatch = vi.fn(async (options: DispatchOptions): Promise<DispatchResult> => {
+      if (options.mode !== 'review') {
+        throw new Error('plain dispatch must not implement API-only team forge work');
+      }
+      return { exitCode: 0, stdout: 'Plan: write team.ts', stderr: '', durationMs: 1, timedOut: false };
+    });
+    const dispatchAgent = vi.fn(async (options: DispatchOptions) => {
+      const content = options.engine.id === 'api-winner'
+        ? 'export const value = "world";\n'
+        : 'export const value = "nope";\n';
+      writeFileSync(join(options.cwd, 'team.ts'), content);
+      return {
+        exitCode: 0,
+        stdout: 'agent implemented team.ts',
+        stderr: '',
+        durationMs: 1,
+        timedOut: false,
+        diff: '',
+        diffLines: 0,
+        filesChanged: 1,
+      };
+    });
+
+    const adapter: EngineAdapter = {
+      dispatch,
+      dispatchAgent,
+      isAvailable: async () => true,
+      getVersion: async () => 'test',
+    };
+
+    try {
+      vi.resetModules();
+      const { EngineRegistry } = await import('../../packages/core/src/index.js');
+      const { runTeamForge } = await import('../../packages/forge/src/index.js');
+      const registry = new EngineRegistry();
+      registry.register(makeApiEngine('api-winner'));
+      registry.register(makeApiEngine('api-loser'));
+
+      const result = await runTeamForge({
+        task: 'Create team.ts that returns world',
+        fitnessCmd: `grep -q '"world"' team.ts`,
+        cwd: repoDir,
+        forgeDir,
+        engines: ['api-winner', 'api-loser'],
+        membersPerSide: 1,
+        composeMode: 'explicit',
+        explicitTeams: [['api-winner'], ['api-loser']],
+        maxReviewLoops: 0,
+      }, registry, adapter);
+
+      expect(dispatch).toHaveBeenCalled();
+      expect(dispatch.mock.calls.every(([options]) => options.mode === 'review')).toBe(true);
+      expect(dispatchAgent).toHaveBeenCalledTimes(2);
+      expect(result.winnerTeamId).toBeTruthy();
+      const winnerOutput = result.submissions[result.winnerTeamId!].finalOutput as any;
+      expect(winnerOutput.pass).toBe(true);
+      expect(readFileSync(winnerOutput.patchPath, 'utf-8')).toContain('team.ts');
+    } finally {
+      cleanupTestAgonHome(agonHome);
+      process.env.PATH = fakeNpx.originalPath;
+      if (previousApiKey === undefined) delete process.env.AGON_TEST_FORGE_API_KEY;
+      else process.env.AGON_TEST_FORGE_API_KEY = previousApiKey;
+      rmSync(fakeNpx.binDir, { recursive: true, force: true });
+      rmSync(repoDir, { recursive: true, force: true });
+      rmSync(forgeDir, { recursive: true, force: true });
+    }
+  });
+
   it('returns brainstorm drafts when final synthesis dispatch fails', async () => {
     const agonHome = setupTestAgonHome('brainstorm-fallback');
     const outputDir = join(tmpdir(), `agon-brainstorm-output-${Date.now()}-${Math.random().toString(36).slice(2)}`);

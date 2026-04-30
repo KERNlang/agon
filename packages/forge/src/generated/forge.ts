@@ -227,7 +227,10 @@ export async function runForge(options: ForgeOptions, registry: EngineRegistry, 
   const challengers = available.filter((id: string) => id !== starter);
 
   const hasAgentEngines = available.some((id: string) => {
-    try { return !!registry.get(id).agent; } catch (_e) { return false; }
+    try {
+      const engine = registry.get(id);
+      return !!engine.agent || !!engine.api;
+    } catch (_e) { return false; }
   });
   let fullContext = options.context ?? '';
   if (options.seedPlan) {

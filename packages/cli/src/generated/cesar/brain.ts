@@ -1301,8 +1301,11 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
                       return;
                     }
                     (ctx.cesar as any)._proposePlanArgs = inp;
+                    emitXmlToolEvent(name, inp, 'ok', 'Plan submitted for user approval.');
+                    delete _lastToolInputs[name];
                   }
                 },
+                shouldStopAfterToolCall: (name: string) => name === 'ProposePlan',
                 onToolResult: (name: string, result: any) => {
                   const out = result.result.ok ? result.result.content : result.result.error;
                   // Track if a mutation was deferred during investigation
@@ -1352,6 +1355,13 @@ export async function handleCesarBrain(input: string, dispatch: Dispatch, ctx: H
               const plan = await handleProposePlan(ppArgs, planDispatch, ctx);
               if (ctx.setActivePlan) ctx.setActivePlan(plan);
               ctx.cesar!.proposedPlan = plan;
+              if (streaming) { dispatch({ type: 'streaming-end', engineId: cesarEngineId }); streaming = false; }
+              dispatch({ type: 'spinner-stop' });
+              if (response) {
+                appendMessage(ctx.chatSession, { role: 'user', content: input, timestamp: new Date().toISOString() });
+                appendMessage(ctx.chatSession, { role: 'engine', engineId: cesarEngineId, content: response, timestamp: new Date().toISOString() });
+              }
+              return { mode: 'self', delegated: false, responded: true, decisionReason: 'plan-proposed', ...buildToolTelemetry() };
             }
           } catch (err) {
             console.warn(`[agon] ProposePlan via tool loop failed: ${err instanceof Error ? err.message : String(err)}`);

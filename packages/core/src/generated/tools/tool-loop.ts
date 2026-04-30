@@ -16,6 +16,7 @@ export const MAX_TOOL_TURNS: number = 25;
 // @kern-source: tool-loop:13
 export interface ToolLoopCallbacks {
   onToolCall?: (name: string, input: Record<string,unknown>) => void;
+  shouldStopAfterToolCall?: (name: string, input: Record<string,unknown>) => boolean;
   onToolResult?: (name: string, result: ToolCallResult) => void;
   onPermissionAsk?: (tool: string, message: string) => Promise<boolean>;
   onText?: (text: string) => void;
@@ -23,7 +24,7 @@ export interface ToolLoopCallbacks {
   maxTurns?: number;
 }
 
-// @kern-source: tool-loop:21
+// @kern-source: tool-loop:22
 export interface ToolLoopResult {
   finalText: string;
   toolCallCount: number;
@@ -34,7 +35,7 @@ export interface ToolLoopResult {
 /**
  * Generate the tool system prompt to inject into any engine's context.
  */
-// @kern-source: tool-loop:27
+// @kern-source: tool-loop:28
 export function buildToolSystemPrompt(registry: ToolRegistry): string {
   const handlers = Array.from((registry as any).tools.values()) as ToolHandler[];
   return generateToolPrompt(handlers);
@@ -43,8 +44,8 @@ export function buildToolSystemPrompt(registry: ToolRegistry): string {
 /**
  * Process a single engine response: parse tool calls, execute them, format results.
  */
-// @kern-source: tool-loop:34
-export async function processToolResponse(response: string, ctx: ToolContext, registry: ToolRegistry, callbacks?: ToolLoopCallbacks): Promise<{hasTools:boolean, textBefore:string, toolResults:string, textAfter:string}> {
+// @kern-source: tool-loop:35
+export async function processToolResponse(response: string, ctx: ToolContext, registry: ToolRegistry, callbacks?: ToolLoopCallbacks): Promise<{hasTools:boolean, textBefore:string, toolResults:string, textAfter:string, stopped?:boolean}> {
   const parsed = parseToolCalls(response);
 
   if (!parsed.hasToolCalls) {
@@ -60,10 +61,24 @@ export async function processToolResponse(response: string, ctx: ToolContext, re
   const calls = toolCallsToApiFormat(parsed.toolCalls);
 
   // Notify about each tool call
+  let shouldStop = false;
   for (const call of calls) {
     if (callbacks?.onToolCall) {
       callbacks.onToolCall(call.name, call.input);
     }
+    if (callbacks?.shouldStopAfterToolCall?.(call.name, call.input)) {
+      shouldStop = true;
+    }
+  }
+
+  if (shouldStop) {
+    return {
+      hasTools: false,
+      textBefore: parsed.textBefore,
+      toolResults: '',
+      textAfter: parsed.textAfter,
+      stopped: true,
+    };
   }
 
   // Execute all tool calls
@@ -99,7 +114,7 @@ export async function processToolResponse(response: string, ctx: ToolContext, re
 /**
  * Full tool loop: repeatedly process responses until no more tool calls or max turns reached.
  */
-// @kern-source: tool-loop:88
+// @kern-source: tool-loop:103
 export async function runToolLoop(sendMessage: (message:string)=>Promise<string>, initialResponse: string, ctx: ToolContext, registry: ToolRegistry, callbacks?: ToolLoopCallbacks): Promise<ToolLoopResult> {
   let currentResponse = initialResponse;
   let totalToolCalls = 0;
@@ -116,6 +131,12 @@ export async function runToolLoop(sendMessage: (message:string)=>Promise<string>
     }
 
     const processed = await processToolResponse(currentResponse, ctx, registry, callbacks);
+
+    if (processed.stopped) {
+      if (processed.textBefore) allText.push(processed.textBefore);
+      totalToolCalls += parseToolCalls(currentResponse).toolCalls.length;
+      break;
+    }
 
     if (!processed.hasTools) {
       // No tool calls — we're done

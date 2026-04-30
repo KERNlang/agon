@@ -258,9 +258,11 @@ describe('Forge E2E', () => {
     const forgeDir = join(tmpdir(), `agon-forge-output-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     const fakeNpx = createFakeNpx();
     const events: any[] = [];
+    const modes: Array<{ engineId: string; mode: string }> = [];
 
     const adapter: EngineAdapter = {
       dispatch: async (options: DispatchOptions): Promise<DispatchResult> => {
+        modes.push({ engineId: options.engine.id, mode: options.mode });
         if (options.engine.id === 'starter') throw new Error('starter unavailable');
         writeFileSync(join(options.cwd, 'generated.ts'), 'export const value = "world";\n');
         return { exitCode: 0, stdout: 'ok', stderr: '', durationMs: 1, timedOut: false };
@@ -292,6 +294,7 @@ describe('Forge E2E', () => {
       expect(events.some((e) => e.type === 'engine:failed' && e.engineId === 'starter')).toBe(true);
       expect(events.some((e) => e.type === 'stage1:start')).toBe(false);
       expect(events.filter((e) => e.type === 'engine:worktree').map((e) => e.engineId).sort()).toEqual(['starter', 'winner']);
+      expect(modes.map((entry) => `${entry.engineId}:${entry.mode}`).sort()).toEqual(['starter:exec', 'winner:exec']);
     } finally {
       cleanupTestAgonHome(agonHome);
       process.env.PATH = fakeNpx.originalPath;
